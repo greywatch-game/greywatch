@@ -124,54 +124,49 @@ const HOOK = () => {
  * would pass a declaration list that disagrees with the module, and it would
  * count against the per-stage limits only what is used rather than what is
  * bound. The bumped ground is at 16 of 16 sampled textures and 16 of 16
- * samplers; one more on either side of the split fails here, by name. The
- * vertex buffers are one per attribute the variant reads, as a block draws.
+ * samplers; one more on either side of the split fails here, by name. There
+ * is no vertex buffer: since X3.5b the stage PULLS its attributes out of
+ * storage, so its six storage arrays count against the vertex stage's limit,
+ * on this device's DEFAULT limits.
  *
  * **And the compute cull those draws read (X3.3b)**: `render/wgsl/
  * clusterCull.ts` compiled and each of its three entry points built into a
  * compute pipeline on an `"auto"` layout — on the device here, not through
  * the cache, but as `PipelineCache.compute` builds them for the cull — one
- * more row, the same on every map. Since X3.4b every shape is built twice,
- * the second time with the scatter's INSTANCED vertex stage
- * (`celInstancedVertex`), and the instance cull's three entry points
- * (`render/wgsl/instanceCull.ts`) are a row of their own beside the
- * cluster cull's.
+ * more row, the same on every map. The instance cull's four entry points
+ * (`render/wgsl/instanceCull.ts`, X3.4b, expanded at X3.5b) are a row of
+ * their own beside the cluster cull's. Since X3.5b one vertex stage draws
+ * the blocks and the scatter alike, so each shape is built once.
  *
  * **And the pipeline STATES the world draws them in (X3.5).** A pipeline is
  * its fixed-function state as well as its modules, and `WorldBlocks` asks for
  * a recipe's with its `depthBias` — the ROADS' (`ROAD_DEPTH_UNITS`), since
  * X3.5 took the landform, and anything else this page's factory made with a
  * `zOffsetUnits`. So every (shape, bias) a cel material that keeps a recipe
- * carries is built once more, both stages, with that bias as `WorldBlocks`
+ * carries is built once more with that bias as `WorldBlocks`
  * states it — or the first frame to draw a road is the first to try it.
  */
 async function oursCheck({ shapes, biased }) {
   const { celFragment } = await import("/src/render/celFragment.ts");
-  const { bufferLayouts, celInstancedVertex, celVertex } = await import("/src/render/celVertex.ts");
+  const { celVertex } = await import("/src/render/celVertex.ts");
   const { PipelineCache } = await import("/src/render/PipelineCache.ts");
   const { FRAME_TARGETS } = await import("/src/render/targets.ts");
   const adapter = await navigator.gpu.requestAdapter();
   const device = await adapter.requestDevice();
   const cache = new PipelineCache(device);
   const out = [];
-  // Each shape twice: the blocks' vertex stage and the scatter's instanced
-  // one (X3.4b), against the same fragment.
-  const stages = [
-    ["", celVertex],
-    ["instanced ", celInstancedVertex],
-  ];
   // Every shape at no bias, then each biased (shape, bias) the page carries.
   const builds = [
     ...shapes.map((shape) => ({ shape, depthBias: 0 })),
     ...biased.map(({ shape, depthBias }) => ({ shape, depthBias })),
   ];
-  for (const { shape, depthBias } of builds) for (const [stage, vertexOf] of stages) {
-    const kind = depthBias === 0 ? stage : `${stage}bias ${depthBias} `;
+  for (const { shape, depthBias } of builds) {
+    const kind = depthBias === 0 ? "" : `bias ${depthBias} `;
     const defines = shape ? shape.split("+") : [];
     let vm;
     let fm;
     try {
-      vm = vertexOf(defines, FRAME_TARGETS);
+      vm = celVertex(defines, FRAME_TARGETS);
       fm = celFragment(defines, FRAME_TARGETS);
     } catch (e) {
       out.push({ error: `${kind}${String(e?.message ?? e)}`, source: "" });
@@ -185,7 +180,7 @@ async function oursCheck({ shapes, biased }) {
         vertexEntry: "main",
         fragment: fm,
         fragmentEntry: "main",
-        buffers: bufferLayouts(vm),
+        buffers: [],
         targets: FRAME_TARGETS,
         // As `WorldBlocks.ask` states it: no state at all for no bias.
         state: depthBias === 0 ? undefined : { depthBias },
@@ -214,7 +209,7 @@ async function oursCheck({ shapes, biased }) {
   const { INSTANCE_CULL_WGSL } = await import("/src/render/wgsl/instanceCull.ts");
   const culls = [
     ["cluster cull", CLUSTER_CULL_WGSL, ["cullClusters", "prefix", "scatter"]],
-    ["instance cull", INSTANCE_CULL_WGSL, ["cullInstances", "prefix", "place"]],
+    ["instance cull", INSTANCE_CULL_WGSL, ["cullInstances", "cullRecords", "prefix", "expand"]],
   ];
   for (const [label, code, entries] of culls) {
     device.pushErrorScope("validation");

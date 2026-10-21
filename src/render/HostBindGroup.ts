@@ -1,7 +1,7 @@
 /**
  * render/HostBindGroup.ts — One bind group built from a group's DECLARED
- * entries: the uniform buffers our renderer owns, and the textures the host
- * owns, resolved through it every frame.
+ * entries: the uniform and storage buffers our renderer owns, and the
+ * textures the host owns, resolved through it every frame.
  * Owns: `HostBindGroup` — the entries' binding numbers for one variant, what
  * each texture resolved to last, and one `GPUBindGroup` per layout it has
  * been asked for.
@@ -43,7 +43,7 @@ export class HostBindGroup {
     private readonly label: string,
     entries: readonly Binding[],
     defines: Iterable<string>,
-    /** The buffer behind each uniform entry the variant binds, by its `var`. */
+    /** The buffer behind each buffer entry the variant binds: a uniform block's by its `var`, a storage array's by its name. */
     buffers: { readonly [variable: string]: GPUBuffer },
   ) {
     const variant = new Set(defines);
@@ -61,9 +61,10 @@ export class HostBindGroup {
       }
       // A block the variant leaves empty is not declared, so not bound
       // (`declareGroups`).
-      if (!entry.fields.some((f) => guardHolds(f.when, variant))) return;
-      const buffer = buffers[entry.var];
-      if (!buffer) throw new Error(`${label}: no buffer for the block "${entry.var}"`);
+      if (entry.kind === "uniform" && !entry.fields.some((f) => guardHolds(f.when, variant))) return;
+      const name = entry.kind === "uniform" ? entry.var : entry.name;
+      const buffer = buffers[name];
+      if (!buffer) throw new Error(`${label}: no buffer for "${name}"`);
       this.buffers.push({ binding: first[e], resource: { buffer } });
     });
   }

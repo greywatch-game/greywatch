@@ -260,14 +260,12 @@ struct OldInstance {
   _b: u32,
   _c: u32,
 }
+// The set's head as scalars; the scan's three \`vec4u\`s after it went at X3.5b.
 struct OldSet {
   start: u32,
   end: u32,
   ramp: f32,
   rigged: u32,
-  base: vec4u,
-  bandStart: vec4u,
-  _pad: vec4u,
 }
 @group(0) @binding(1) var<storage, read> instances: array<Instance>;
 @group(0) @binding(5) var<storage, read> sets: array<Set>;

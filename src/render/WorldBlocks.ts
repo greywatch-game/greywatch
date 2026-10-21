@@ -1,87 +1,93 @@
 /**
- * render/WorldBlocks.ts — The static world's BLOCKS as our renderer draws
- * them in the frame's main pass: cut into clusters, culled on the GPU, and
+ * render/WorldBlocks.ts — The static world as our renderer draws it in the
+ * frame's main pass: the BLOCKS, cut into clusters, culled on the GPU and
  * drawn with ONE plain draw per material over its whole range, the survivors
  * at the front and triangles of no area after them (`BABYLON_EXIT.md`
- * X3.3b; X3.3a drew one per surface) — the SCATTER beside them, drawn as
- * instances of its variants, one indirect draw per variant per material
- * (X3.4b) — and the LANDFORM, the floor's patches, the rim's runs and the
- * map-wide road merge, cut, culled and drawn as the blocks are, after them
- * (X3.5).
+ * X3.3b); the SCATTER, instances of its variants expanded into their
+ * clusters on the GPU and drawn with ONE indirect draw per material over the
+ * survivors (X3.4b, folded at X3.5b); and the LANDFORM, the floor's patches,
+ * the rim's runs and the map-wide road merge, cut, culled and drawn as the
+ * blocks are, after them (X3.5) — every draw through the one pulled vertex
+ * stage (`celVertex.ts`), which reads its record off the index
+ * (`streamIndex.ts`).
  * Owns: `WorldBlocks` — the surfaces and the scatter's instanced parts handed
  * to it until the map is cut (`finish`), then each material GROUP's vertex
- * buffers (every surface of the group end to end, then every instanced part
- * of it), its two pipelines (the blocks', and the instanced stage's), its
- * material block and bind group, and its instanced parts' index buffer; the
- * identity `world` the blocks bind (group 2); each variant's three modules
- * (assembled once); the `ClusterCull` that writes the blocks' indices
- * and the `InstanceCull` that writes the scatter's
- * transforms and indirect arguments; and the one `FrameDraw`, ahead of
- * group 0's alpha-tested meshes (`DrawPoint` `"beforeAlphaTest"`) — the
- * blocks, the scatter, then the landform — with the `FramePrepare` that culls
- * ahead of it, both on the renderer only while a map's culls are built and
- * nobody has `stop`ped it.
+ * arrays (every instanced part of the group end to end, then every surface of
+ * it), its pipeline, its material block and bind group and its geometry bind
+ * group (group 2); the instances' transforms, which every group's group 2
+ * binds; each variant's two modules (assembled once); the `ClusterCull` that
+ * writes the blocks' indices and the `InstanceCull` that writes the
+ * scatter's; and the one `FrameDraw`, ahead of group 0's alpha-tested meshes
+ * (`DrawPoint` `"beforeAlphaTest"`) — the blocks, the scatter, then the
+ * landform — with the `FramePrepare` that culls ahead of it, both on the
+ * renderer only while a map's culls are built and nobody has `stop`ped it.
  * WHY THAT POINT, AND THE LANDFORM LAST: the turf (`GrassSystem`) is a blend
  * laid over the floor on group 0's alpha-tested list, and it writes no depth
  * of its own — so the floor, and a road beside it, must be drawn before that
  * list, or they would paint over it. The point is after the sky dome, so the
  * blocks are drawn there too, AHEAD of the landform: the floor behind a
  * building then fails the depth test before it shades, rather than being
- * shaded and painted over (`BABYLON_EXIT.md` X3.5, `FINDINGS.md` 61). Nothing
- * of Babylon's comes between the two LAYERS, so X3.5b's fold may draw them
- * as one stream, if it keeps the blocks ahead of the landform.
- * The BLOCKS are never drawn indirect: an Intel Xe-LPG dropped single
- * indirect draws at random, at arguments however written, and drew the same
- * triangles plain every frame (`docs/rendering.md`). The scatter's indirect
- * draws were never seen to drop.
+ * shaded and painted over (`BABYLON_EXIT.md` X3.5, `FINDINGS.md` 61).
+ * WHY TWO DRAWS FOR A GROUP THAT HAS SCATTER, AND NOT ONE: the BLOCKS are
+ * never drawn indirect — an Intel Xe-LPG dropped single indirect draws at
+ * random, at arguments however written, and drew the same triangles plain
+ * every frame (`docs/rendering.md`) — and the scatter cannot be drawn plain,
+ * because what survives of it is a count only the GPU knows, and a range that
+ * held every instance would hand the GPU the whole forest as triangles of no
+ * area every frame. So a group's blocks are one plain draw and its scatter
+ * one indirect draw, through one pipeline; the scatter's indirect draws were
+ * never seen to drop.
  * Invariants: a GROUP is one cel recipe IN ONE LAYER — one material, one
- * cluster draw and one draw per instanced part — and a surface or an
- * instanced part belongs to exactly one: a landform surface to its recipe's
- * landform group, a block surface and every instanced part to its recipe's
- * block group, so a rim wearing the pines' material never shares their group
- * or their scatter; the two layers share ONE cut, one cull, one cluster list
- * and one index buffer, each group drawing only its own range of it; its
+ * pipeline, one cluster draw and at most one scatter draw — and a surface or
+ * an instanced part belongs to exactly one: a landform surface to its
+ * recipe's landform group, a block surface and every instanced part to its
+ * recipe's block group, so a rim wearing the pines' material never shares
+ * their group or their scatter; the two layers share ONE cut, one cull, one
+ * cluster list and one index buffer, each group drawing only its own range of
+ * it, and the scatter's stream gives each group a region of its own; its
  * vertex arrays are uploaded once as Babylon uploads a mesh's (floats as
  * `float32`, a `Float64Array` rounded exactly as Babylon's `Float32Array` of
  * the same numbers is), an attribute a surface lacks but its variant reads
  * being 0 for every one of its vertices — what Babylon's empty vertex buffer
- * reads — and its indices once, rebased onto the group's buffers, as the
- * source the cull copies the survivors from; the map is CUT once (`finish`),
- * in the order the surfaces were added, and never re-cut; in a group that has
- * instanced parts, the pieces `finish` is told to CUT (the scatter's regions)
- * are taken out of every surface before it is uploaded, because those
- * triangles are drawn as instances instead — and a group with no surface of
- * its own draws none of its instanced parts, since Babylon draws that recipe
- * whole; a group draws only once its pipelines and the culls are built and
- * every group it binds is whole, so a frame with a pipeline compiling or a
- * texture unpublished draws that group not at all rather than wrongly; a
- * group one of whose pipelines FAILS draws nothing at all and hands every
- * surface of it back, since half of a recipe would be a hole where Babylon
- * draws the other half; a surface it will never draw — its group failed, or a
- * cull did, or the cut is past the device's limits — is handed to `onFailed`
- * in the turn that failure lands, never held for the map's other compiles, so
- * whoever took it can give it back at once; a material's block is re-copied
- * from its recipe only when asked (`writeMaterials`); nothing here allocates
- * on a frame but the culls' compute passes.
+ * reads — with its instanced parts FIRST, so a scatter index names its vertex
+ * with no per-group base (`streamIndex.ts`), and its block indices once,
+ * rebased onto the arrays, as the source the cull copies the survivors from;
+ * the map is CUT once (`finish`), in the order the surfaces were added, and
+ * never re-cut; in a group that has instanced parts, the pieces `finish` is
+ * told to CUT (the scatter's regions) are taken out of every surface before
+ * it is uploaded, because those triangles are drawn as instances instead —
+ * and a group with no surface of its own draws none of its instanced parts,
+ * since Babylon draws that recipe whole; a group draws only once its pipeline
+ * and the culls are built and every group it binds is whole, so a frame with
+ * a pipeline compiling or a texture unpublished draws that group not at all
+ * rather than wrongly; a group that will never draw — its pipeline FAILED, an
+ * instanced part of it lacks what its variant reads, or its scatter is past
+ * the stream index's budget — draws nothing at all and hands every surface of
+ * it back, since half of a recipe would be a hole where Babylon draws the
+ * other half (and Babylon's blocks still hold the scatter we would have cut);
+ * a surface it will never draw — its group failed, or a cull did, or the cut
+ * is past the device's limits — is handed to `onFailed` in the turn that
+ * failure lands, never held for the map's other compiles, so whoever took it
+ * can give it back at once; a material's block is re-copied from its recipe
+ * only when asked (`writeMaterials`); nothing here allocates on a frame but
+ * the culls' compute passes.
  * Never: imports Babylon; reads a node, or decides the reach or the size gate
  * (`ReachGate` is handed in); reads a Babylon material — a material is its
  * `CelRecipe`.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
  *
  * WHAT A DRAW BINDS, by group: 0 the frame (`Renderer`'s), 1 the recipe's
- * material, 2 the identity `world` (`celMaterial.ts`'s header) — the blocks'
- * draw only; an instanced draw reads its `world` per instance. Vertex buffers
- * in the vertex program's attribute order, one buffer an attribute
- * (`celVertex.ts`'s `bufferLayouts`); a block draw's index buffer is the
+ * material, 2 the group's geometry — its arrays, read at the vertex each
+ * index names, and the instances' transforms (`celVertex.ts`'s
+ * `CEL_GEOMETRY`); no vertex buffer. A block draw's index buffer is the
  * cluster cull's, `uint32`, and the draw is `drawIndexed` over the group's
- * whole range of it — none for a group whose cut kept no index; an
- * instanced draw's is the group's own instanced
- * index buffer, its instances the instance cull's `placed` bound at the SET's
- * region, and the draw `drawIndexedIndirect` at the part's own arguments.
+ * whole range of it — none for a group whose cut kept no index; a scatter
+ * draw's is the instance cull's stream, and the draw is `drawIndexedIndirect`
+ * at the group's own arguments.
  */
-import { CEL_MATERIAL_BLOCK, CEL_MATERIAL_TEXTURES, CEL_MESH_BLOCK, type CelRecipe } from "./celMaterial";
+import { CEL_MATERIAL_BLOCK, CEL_MATERIAL_TEXTURES, type CelRecipe } from "./celMaterial";
 import { celFragment } from "./celFragment";
-import { ATTRIBUTE_FORMATS, bufferLayouts, celInstancedVertex, celVertex } from "./celVertex";
+import { ATTRIBUTE_FLOATS, CEL_GEOMETRY, celVertex, TRANSFORM_WORDS } from "./celVertex";
 import {
   type BlockBox,
   ClusterCull,
@@ -95,13 +101,14 @@ import type { FrameUniforms } from "./frame";
 import { HostBindGroup } from "./HostBindGroup";
 import { InstanceCull, type InstanceTables } from "./InstanceCull";
 import type { PassTiming } from "./PassTimer";
-import type { BuiltPipeline, PipelineSpec } from "./PipelineCache";
+import type { BuiltPipeline } from "./PipelineCache";
 import type { FrameContext, Renderer } from "./Renderer";
+import { SCATTER_INSTANCES, SCATTER_VERTICES } from "./streamIndex";
 import { FRAME_TARGETS } from "./targets";
 import { UniformBlockBuffer } from "./UniformBlockBuffer";
 import type { AssembledModule, AssembledVertex } from "./wgsl/assemble";
 import { CLUSTER_WORDS } from "./wgsl/clusterCull";
-import { INDIRECT_BYTES, INSTANCE_WORDS, TRANSFORM_WORDS } from "./wgsl/instanceCull";
+import { INDIRECT_BYTES, INSTANCE_WORDS, RECORD_WORDS } from "./wgsl/instanceCull";
 
 /** How the blocks are cut — `CONFIG.graphics.clusters`. */
 export interface ClusterOptions {
@@ -132,10 +139,9 @@ interface MaterialSlot {
   readonly group: HostBindGroup;
 }
 
-/** One variant's three modules. */
+/** One variant's two modules. */
 interface Program {
   readonly vertex: AssembledVertex;
-  readonly instanced: AssembledVertex;
   readonly fragment: AssembledModule;
 }
 
@@ -151,37 +157,31 @@ interface InstancedPart {
   readonly set: number;
 }
 
-/** One instanced draw: a part of a set, at its own arguments. */
-interface InstancedDraw {
-  /** Where its set's region starts in `placed`, in bytes. */
-  readonly offset: number;
-}
-
 /** Which of the world's two layers a group is in: the blocks, drawn first, or the landform. */
 type WorldLayer = "blocks" | "landform";
 
-/** One material's draws in one layer: its surfaces' buffers end to end, its parts after them. */
+/** One material's draws in one layer: its instanced parts' arrays end to end, its surfaces' after them. */
 interface Group {
   readonly layer: WorldLayer;
   readonly material: MaterialSlot;
   readonly program: Program;
   /** Indices into `surfaces`, in the order added. */
   readonly members: number[];
-  /** Its instanced parts, in the order added; emptied at `finish` if it has no members. */
+  /** Its instanced parts, in the order added; emptied at `finish`. */
   instanced: InstancedPart[];
+  /** Why it cannot draw its scatter, if an instanced part lacked what its variant reads: it goes back at `finish`. */
+  withheld: string | null;
   /** In the vertex program's attribute order; empty until `finish`. */
   vertex: GPUBuffer[];
-  /** The instanced parts' indices, each part's own; null without parts. */
-  instancedIndex: GPUBuffer | null;
-  /** Its blocks' range of the cut's indices, `[indexBase, indexBase + indexCount)` — what its draw covers. */
+  /** Group 2: its arrays and the instances' transforms; null until `finish`. */
+  geometry: HostBindGroup | null;
+  /** Its range of the cluster cull's indices, `[indexBase, indexBase + indexCount)` — what its block draw covers. */
   indexBase: number;
   indexCount: number;
-  /** Its draws in the instance cull's table: `[drawStart, drawEnd)`. */
-  drawStart: number;
-  drawEnd: number;
+  /** It draws scatter: its region of the instance cull's stream, at its own arguments. */
+  scattered: boolean;
   built: BuiltPipeline | null;
-  instancedBuilt: BuiltPipeline | null;
-  /** A pipeline of this group failed: it draws nothing, its members went back. */
+  /** It draws nothing, and its members went back. */
   failed: boolean;
 }
 
@@ -193,6 +193,18 @@ const SOURCE: Readonly<Record<string, keyof SurfaceArrays>> = {
   uv: "uvs",
   uv2: "uvs2",
 };
+
+/** What the cut makes of the scatter for the instance cull, gathered group by group. */
+interface ScatterStream {
+  /** Each instanced part's clusters, with their first index into `source` and their range (group). */
+  readonly clusters: { readonly cluster: Cluster; readonly first: number; readonly range: number }[];
+  readonly records: number[];
+  readonly ranges: InstanceTables["ranges"][number][];
+  readonly source: Uint32Array;
+  /** Where the next range's source and region start. */
+  sourceAt: number;
+  streamAt: number;
+}
 
 export class WorldBlocks {
   /** Until `finish`; emptied there, so the build's arrays can go. */
@@ -208,22 +220,23 @@ export class WorldBlocks {
     blocks: new Map(),
     landform: new Map(),
   };
-  private readonly mesh: UniformBlockBuffer;
-  private readonly meshGroup: HostBindGroup;
   /**
    * Each variant's modules, assembled once rather than per surface: a map is
    * thousands of surfaces over a handful of variants.
    */
   private readonly programs = new Map<string, Program>();
+  /** Every instance's transform, `TRANSFORM_WORDS` each, in the instance table's order; null until `finish`. */
+  private transforms: GPUBuffer | null = null;
   private cull: ClusterCull | null = null;
   private instances: InstanceCull | null = null;
-  /** Each instanced draw, in the instance cull's draw order. */
-  private draws: InstancedDraw[] = [];
   /** Whether the culls are built: until then nothing draws. */
   private culling = false;
   private clusterCount = 0;
   private instanceCount = 0;
   private setCount = 0;
+  private recordCount = 0;
+  /** The scatter's stream, in indices: every record's, as if all survived. */
+  private streamLength = 0;
   /**
    * Bumped by `clear` and `stop`: a compile that settles for a map already
    * gone, or stopped, writes nothing — not the draw state, not a failure.
@@ -252,16 +265,7 @@ export class WorldBlocks {
     private readonly onFailed: (surfaces: readonly number[]) => void,
     /** The culls' diagnostics (`ClusterCull`'s `CullDiagnostics`); none but off the URL. */
     private readonly diagnostics: CullDiagnostics = NO_DIAGNOSTICS,
-  ) {
-    const device = renderer.device;
-    this.mesh = new UniformBlockBuffer(device, CEL_MESH_BLOCK, [], "world blocks: world");
-    this.mesh.write({ world: new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]) });
-    this.meshGroup = new HostBindGroup(device, "world blocks: world", [CEL_MESH_BLOCK], [], {
-      [CEL_MESH_BLOCK.var]: this.mesh.buffer,
-    });
-    // No textures: resolved once, whole for good.
-    this.meshGroup.refresh(renderer.host, {});
-  }
+  ) {}
 
   /** Draws issued last frame — what a census of the main pass adds to Babylon's. */
   get drawn(): number {
@@ -269,13 +273,23 @@ export class WorldBlocks {
   }
 
   /** What is handed over, and what it was cut into. */
-  get count(): { surfaces: number; clusters: number; groups: number; instances: number; sets: number } {
+  get count(): {
+    surfaces: number;
+    clusters: number;
+    groups: number;
+    instances: number;
+    sets: number;
+    records: number;
+    stream: number;
+  } {
     return {
       surfaces: this.surfaceCount,
       clusters: this.clusterCount,
       groups: this.groups.length,
       instances: this.instanceCount,
       sets: this.setCount,
+      records: this.recordCount,
+      stream: this.streamLength,
     };
   }
 
@@ -292,7 +306,9 @@ export class WorldBlocks {
     pieces: readonly PieceSpan[],
     landform: boolean,
   ): number {
-    const group = this.groupFor(label, geometry, recipe, landform ? "landform" : "blocks");
+    const group = this.groupFor(recipe, landform ? "landform" : "blocks");
+    const missing = missingAttribute(group, geometry);
+    if (missing) throw new Error(`world blocks: "${label}" has no ${missing}, which its variant reads`);
     const at = this.surfaces.length;
     this.surfaces.push({ geometry, pieces });
     group.members.push(at);
@@ -302,19 +318,26 @@ export class WorldBlocks {
 
   /**
    * Hands over one part of instance set `set` (`ScatterCut.sets`), drawn with
-   * `recipe` once per surviving instance. Its arrays are READ at `finish`.
+   * `recipe` once per surviving instance. Its arrays are READ at `finish`. A
+   * part lacking what its variant reads cannot be drawn while its pieces are
+   * cut out of the blocks, so its whole group goes back at `finish`.
    */
   addInstanced(set: number, label: string, geometry: SurfaceArrays, recipe: CelRecipe): void {
-    this.groupFor(label, geometry, recipe, "blocks").instanced.push({ geometry, set });
+    const group = this.groupFor(recipe, "blocks");
+    const missing = missingAttribute(group, geometry);
+    if (missing) group.withheld ??= `its instanced part "${label}" has no ${missing}, which its variant reads`;
+    else group.instanced.push({ geometry, set });
   }
 
   /**
-   * Cuts the map: every group's buffers uploaded and its pipelines asked for,
-   * every surface cut into clusters — the scatter's pieces cut out of it
-   * first, where its group draws them as instances — and the culls built.
-   * `blocks[s]` is surface `s`'s REACH box — its block's, as the frame's mesh
-   * walk files it, or the one box of no reach every landform surface is
-   * handed (`WorldCulling.reachBoxOf`); surfaces of one box share the object.
+   * Cuts the map: what will never draw handed back, every group's arrays
+   * uploaded and its pipeline asked for, every surface cut into clusters —
+   * the scatter's pieces cut out of it first, where its group draws them as
+   * instances — every instanced part cut into clusters too, and the culls
+   * built. `blocks[s]` is surface `s`'s REACH box — its block's, as the
+   * frame's mesh walk files it, or the one box of no reach every landform
+   * surface is handed (`WorldCulling.reachBoxOf`); surfaces of one box share
+   * the object.
    */
   finish(blocks: readonly BlockBox[], scatter: ScatterCut | null = null): void {
     const surfaces = this.surfaces;
@@ -326,137 +349,127 @@ export class WorldBlocks {
 
     // A recipe Babylon draws whole draws its scatter whole with it: a group
     // with no surface of ours keeps none of its instanced parts.
-    for (const group of this.groups) if (group.members.length === 0) group.instanced = [];
+    for (const group of this.groups) {
+      if (group.members.length > 0) continue;
+      group.instanced = [];
+      group.withheld = null;
+    }
+    this.handBack(scatter);
     // Each surface's sphere is of what Babylon would draw — the WHOLE surface,
     // scatter included — because the size gate and the band measure the mesh.
     const spheres = new Float32Array(surfaces.length * 4);
     surfaces.forEach((s, i) => writeSphere(toFloat32(s.geometry.positions), spheres, i * 4));
     if (scatter) this.cutScatter(scatter);
 
-    const blockIds = new Map<BlockBox, number>();
-    const blockList: BlockBox[] = [];
+    const sets = scatter?.sets ?? [];
+    const setStarts: number[] = [];
+    let instanceTotal = 0;
+    for (const s of sets) {
+      setStarts.push(instanceTotal);
+      instanceTotal += s.scales.length;
+    }
     let indexTotal = 0;
-    for (const s of surfaces) indexTotal += s.geometry.indices.length;
+    let sourceTotal = 0;
+    let streamLength = 0;
     const vertexTotals = this.groups.map((group) => {
+      // A group handed back uploads nothing (and kept no instanced part).
+      if (group.failed) return 0;
       let vertices = 0;
-      for (const s of group.members) vertices += surfaces[s].geometry.positions.length / 3;
-      for (const p of group.instanced) vertices += p.geometry.positions.length / 3;
+      for (const s of group.members) {
+        vertices += surfaces[s].geometry.positions.length / 3;
+        indexTotal += surfaces[s].geometry.indices.length;
+      }
+      for (const p of group.instanced) {
+        vertices += p.geometry.positions.length / 3;
+        sourceTotal += p.geometry.indices.length;
+        streamLength += p.geometry.indices.length * sets[p.set].scales.length;
+      }
       return vertices;
     });
-    // The largest buffer the cut makes: the indices (a storage binding), or
-    // a group's widest attribute (four floats a vertex).
+    // The largest buffers the cut makes: the indices and the scatter's stream
+    // (storage bindings both), or a group's widest array (four floats a vertex).
     let widest = 0;
     for (const vertices of vertexTotals) widest = Math.max(widest, vertices * 16);
     const limits = device.limits;
-    if (indexTotal * 4 > Math.min(limits.maxStorageBufferBindingSize, limits.maxBufferSize) || widest > limits.maxBufferSize) {
+    const storage = Math.min(limits.maxStorageBufferBindingSize, limits.maxBufferSize);
+    if (Math.max(indexTotal * 4, streamLength * 4, widest) > storage) {
       console.error("world blocks: the cut is past the device's buffer limits; the blocks go back to Babylon");
       this.giveUpAll();
       this.surfaces = [];
       return;
     }
+
+    this.transforms = this.transformBuffer(sets, instanceTotal);
     const indices = new Uint32Array(indexTotal);
     const cut: { surface: number; group: number; base: number; c: readonly Cluster[] }[] = [];
     const ranges: CullTables["groups"][number][] = [];
-    const draws: InstanceTables["draws"][number][] = [];
+    const stream: ScatterStream = {
+      clusters: [],
+      records: [],
+      ranges: [],
+      source: new Uint32Array(sourceTotal),
+      sourceAt: 0,
+      streamAt: 0,
+    };
     let indexAt = 0;
     let clusterCount = 0;
     this.groups.forEach((group, g) => {
       const start = clusterCount;
       const base = indexAt;
-      const attributes = group.program.vertex.attributes;
-      group.vertex = attributes.map((a) => this.vertexBuffer(group, a.name, a.type, vertexTotals[g]));
-      let vertexBase = 0;
+      group.indexBase = base;
+      // The instanced parts first: a scatter index names its vertex from the
+      // start of the arrays (`streamIndex.ts`). A group handed back keeps its
+      // place in both culls' tables, empty.
+      const vertexBase = this.cutInstanced(group, g, sets, setStarts, stream);
+      if (group.failed) {
+        ranges.push({ start, end: start, base });
+        return;
+      }
+      group.vertex = group.program.vertex.attributes.map((a) => this.vertexBuffer(group, a.name, a.type, vertexTotals[g]));
+      group.scattered = group.instanced.length > 0;
+      let at = vertexBase;
       for (const s of group.members) {
         const surface = surfaces[s];
         const geo = surface.geometry;
         const positions = toFloat32(geo.positions);
         const local = geo.indices;
-        for (let i = 0; i < local.length; i++) indices[indexAt + i] = local[i] + vertexBase;
+        for (let i = 0; i < local.length; i++) indices[indexAt + i] = local[i] + at;
         const clusters = cutClusters(positions, local, geo.colors, surface.pieces, this.options.triangles);
         cut.push({ surface: s, group: g, base: indexAt, c: clusters });
         clusterCount += clusters.length;
-        vertexBase += positions.length / 3;
+        at += positions.length / 3;
         indexAt += local.length;
       }
       ranges.push({ start, end: clusterCount, base });
-      group.indexBase = base;
       group.indexCount = indexAt - base;
-      // The instanced parts after the surfaces, each drawn at its own index
-      // range from its own vertex base.
-      group.drawStart = draws.length;
-      if (group.instanced.length > 0) {
-        let partIndices = 0;
-        for (const p of group.instanced) partIndices += p.geometry.indices.length;
-        group.instancedIndex = device.createBuffer({
-          label: `world blocks: [${group.material.recipe.defines.join("+")}] instanced indices`,
-          size: Math.max(4, partIndices * 4),
-          usage: GPUBufferUsage.INDEX,
-          mappedAtCreation: true,
-        });
-        const dst = new Uint32Array(group.instancedIndex.getMappedRange());
-        let firstIndex = 0;
-        for (const p of group.instanced) {
-          dst.set(p.geometry.indices, firstIndex);
-          draws.push({
-            set: p.set,
-            indexCount: p.geometry.indices.length,
-            firstIndex,
-            baseVertex: vertexBase,
-          });
-          firstIndex += p.geometry.indices.length;
-          vertexBase += p.geometry.positions.length / 3;
-        }
-        group.instancedIndex.unmap();
-      }
-      group.drawEnd = draws.length;
       for (const b of group.vertex) b.unmap();
+      this.geometryOf(group);
       this.ask(group);
     });
 
-    const words = new ArrayBuffer(Math.max(1, clusterCount) * CLUSTER_WORDS * 4);
-    const f = new Float32Array(words);
-    const u = new Uint32Array(words);
-    let k = 0;
-    for (const { surface, group, base, c } of cut) {
-      const box = blocks[surface];
-      let block = blockIds.get(box);
-      if (block === undefined) {
-        block = blockList.length;
-        blockIds.set(box, block);
-        blockList.push(box);
-      }
-      for (const cl of c) {
-        const o = k * CLUSTER_WORDS;
-        f[o] = cl.lo[0];
-        f[o + 1] = cl.lo[1];
-        f[o + 2] = cl.lo[2];
-        u[o + 3] = base + cl.indexStart;
-        f[o + 4] = cl.hi[0];
-        f[o + 5] = cl.hi[1];
-        f[o + 6] = cl.hi[2];
-        u[o + 7] = cl.indexCount;
-        u[o + 8] = group;
-        u[o + 9] = block;
-        u[o + 10] = surface;
-        u[o + 11] = cl.piece;
-        f[o + 12] = cl.ramp;
-        u[o + 13] = cl.rigged ? 1 : 0;
-        k++;
-      }
-    }
     this.clusterCount = clusterCount;
     const bands = this.options.nearBands;
     const bands2 = [bands[0] * bands[0], bands[1] * bands[1], bands[2] * bands[2]];
     this.cull = new ClusterCull(
       device,
       this.renderer.pipelines,
-      { clusters: words, clusterCount, blocks: blockList, spheres, groups: ranges, indices, bands2 },
+      { clusters: clusterWords(cut, blocks), clusterCount, blocks: uniqueBoxes(blocks), spheres, groups: ranges, indices, bands2 },
       this.gate,
       this.diagnostics,
     );
     const ready: Promise<boolean>[] = [this.cull.ready];
-    if (scatter && draws.length > 0) {
-      const tables = this.instanceTables(scatter.sets, draws, bands2);
+    this.recordCount = stream.records.length / RECORD_WORDS;
+    this.streamLength = streamLength;
+    if (this.recordCount > 0) {
+      const tables: InstanceTables = {
+        ...this.instanceTables(sets),
+        clusters: scatterClusterWords(stream.clusters),
+        records: Uint32Array.from(stream.records),
+        ranges: stream.ranges,
+        source: stream.source,
+        streamLength,
+        bands2,
+      };
       this.instances = new InstanceCull(device, this.renderer.pipelines, tables, this.gate, this.diagnostics);
       ready.push(this.instances.ready);
     }
@@ -498,22 +511,24 @@ export class WorldBlocks {
     this.generation++;
     for (const g of this.groups) {
       for (const b of g.vertex) b.destroy();
-      g.instancedIndex?.destroy();
       g.material.block.destroy();
     }
+    this.transforms?.destroy();
+    this.transforms = null;
     this.unhook?.();
     this.unhook = null;
     this.cull?.dispose();
     this.cull = null;
     this.instances?.dispose();
     this.instances = null;
-    this.draws = [];
     this.culling = false;
     this.surfaces = [];
     this.surfaceCount = 0;
     this.clusterCount = 0;
     this.instanceCount = 0;
     this.setCount = 0;
+    this.recordCount = 0;
+    this.streamLength = 0;
     this.groups.length = 0;
     this.groupOf.blocks.clear();
     this.groupOf.landform.clear();
@@ -522,16 +537,14 @@ export class WorldBlocks {
 
   dispose(): void {
     this.clear();
-    this.mesh.destroy();
   }
 
   /**
-   * The group of `recipe` in `layer`, made on its first surface;
-   * refuses a surface missing what its variant reads. One recipe's groups at
-   * the two layers share its program (assembled once a variant) and each own
-   * a material slot, as each owns its buffers.
+   * The group of `recipe` in `layer`, made on its first surface or part. One
+   * recipe's groups at the two layers share its program (assembled once a
+   * variant) and each own a material slot, as each owns its arrays.
    */
-  private groupFor(label: string, geometry: SurfaceArrays, recipe: CelRecipe, layer: WorldLayer): Group {
+  private groupFor(recipe: CelRecipe, layer: WorldLayer): Group {
     if (this.cull) throw new Error("world blocks: a surface added after the map was cut");
     const of = this.groupOf[layer];
     let group = of.get(recipe);
@@ -542,25 +555,45 @@ export class WorldBlocks {
         program: this.programOf(recipe.defines),
         members: [],
         instanced: [],
+        withheld: null,
         vertex: [],
-        instancedIndex: null,
+        geometry: null,
         indexBase: 0,
         indexCount: 0,
-        drawStart: 0,
-        drawEnd: 0,
+        scattered: false,
         built: null,
-        instancedBuilt: null,
         failed: false,
       };
       of.set(recipe, group);
       this.groups.push(group);
     }
-    for (const a of group.program.vertex.attributes) {
-      if (!geometry[SOURCE[a.name]] && a.name !== "uv") {
-        throw new Error(`world blocks: "${label}" has no ${a.name}, which its variant reads`);
+    return group;
+  }
+
+  /**
+   * Hands back, before anything is cut or uploaded, every group that could
+   * not draw its scatter: one with an instanced part it withheld, and one
+   * whose scatter the stream index cannot address (`streamIndex.ts`) — the
+   * map's instances past `SCATTER_INSTANCES` take every such group back, a
+   * group's instanced vertices past `SCATTER_VERTICES` take that one.
+   */
+  private handBack(scatter: ScatterCut | null): void {
+    let instances = 0;
+    for (const s of scatter?.sets ?? []) instances += s.scales.length;
+    for (const group of this.groups) {
+      if (group.withheld) {
+        this.fail(group, group.withheld);
+        continue;
+      }
+      if (group.instanced.length === 0) continue;
+      let vertices = 0;
+      for (const p of group.instanced) vertices += p.geometry.positions.length / 3;
+      if (instances > SCATTER_INSTANCES) {
+        this.fail(group, `the map's ${instances} instances are past the stream index's ${SCATTER_INSTANCES}`);
+      } else if (vertices > SCATTER_VERTICES) {
+        this.fail(group, `its ${vertices} instanced vertices are past the stream index's ${SCATTER_VERTICES}`);
       }
     }
-    return group;
   }
 
   /**
@@ -595,16 +628,51 @@ export class WorldBlocks {
   }
 
   /**
-   * The instance cull's tables: every set's instances, set by set, each with
-   * its world sphere — the set's own sphere (over every part of it, in its
-   * own frame) moved by the instance's matrix and grown by its scale — and
-   * the most its set's vertices can sway.
+   * Group `g`'s instanced parts for the instance cull: each part's indices
+   * into the stream's source, rebased onto the group's arrays, where the parts
+   * come first; each part cut into clusters in its set's own frame; and a
+   * RECORD for every cluster of every instance wearing it — part by part,
+   * instance by instance, cluster by cluster — which is the group's range.
+   * Returns the vertices the parts take, where the group's surfaces start.
    */
-  private instanceTables(
+  private cutInstanced(
+    group: Group,
+    g: number,
     sets: readonly InstanceSet[],
-    draws: InstanceTables["draws"],
-    bands2: readonly number[],
-  ): InstanceTables {
+    setStarts: readonly number[],
+    stream: ScatterStream,
+  ): number {
+    const recordStart = stream.records.length / RECORD_WORDS;
+    const regionStart = stream.streamAt;
+    let vertexBase = 0;
+    for (const p of group.instanced) {
+      const positions = toFloat32(p.geometry.positions);
+      const local = p.geometry.indices;
+      for (let i = 0; i < local.length; i++) stream.source[stream.sourceAt + i] = local[i] + vertexBase;
+      const first = stream.clusters.length;
+      const clusters = cutClusters(positions, local, p.geometry.colors, [], this.options.triangles);
+      for (const cluster of clusters) {
+        stream.clusters.push({ cluster, first: stream.sourceAt + cluster.indexStart, range: g });
+      }
+      const instances = sets[p.set].scales.length;
+      for (let i = setStarts[p.set], end = i + instances; i < end; i++) {
+        for (let c = 0; c < clusters.length; c++) stream.records.push(i, first + c);
+      }
+      stream.sourceAt += local.length;
+      stream.streamAt += local.length * instances;
+      vertexBase += positions.length / 3;
+    }
+    stream.ranges.push({ start: recordStart, end: stream.records.length / RECORD_WORDS, base: regionStart });
+    return vertexBase;
+  }
+
+  /**
+   * The instance cull's instance and set tables: every set's instances, set
+   * by set, each with its world sphere — the set's own sphere (over every
+   * part of it drawn, in its own frame) moved by the instance's matrix and
+   * grown by its scale — and the most its set's vertices can sway.
+   */
+  private instanceTables(sets: readonly InstanceSet[]): Pick<InstanceTables, "instances" | "instanceCount" | "sets"> {
     // Each set's sphere and sway, over every part drawn of it.
     const lo = sets.map(() => [Infinity, Infinity, Infinity]);
     const hi = sets.map(() => [-Infinity, -Infinity, -Infinity]);
@@ -635,10 +703,8 @@ export class WorldBlocks {
     const f = new Float32Array(words);
     const u = new Uint32Array(words);
     const out: InstanceTables["sets"][number][] = [];
-    const starts: number[] = [];
     let at = 0;
     sets.forEach((set, s) => {
-      starts.push(at);
       const l = lo[s];
       const h = hi[s];
       const cx = (l[0] + h[0]) / 2;
@@ -653,19 +719,7 @@ export class WorldBlocks {
         f[o + 1] = m[1] * cx + m[5] * cy + m[9] * cz + m[13];
         f[o + 2] = m[2] * cx + m[6] * cy + m[10] * cz + m[14];
         f[o + 3] = Number.isFinite(r) ? r * set.scales[i] : 0;
-        // Each column of the matrix, with that row of its translation in w.
-        f[o + 4] = m[0];
-        f[o + 5] = m[1];
-        f[o + 6] = m[2];
-        f[o + 7] = m[12];
-        f[o + 8] = m[4];
-        f[o + 9] = m[5];
-        f[o + 10] = m[6];
-        f[o + 11] = m[13];
-        f[o + 12] = m[8];
-        f[o + 13] = m[9];
-        f[o + 14] = m[10];
-        f[o + 15] = m[14];
+        writeTransform(m, f, o + 4);
         u[o + 16] = s;
       }
       out.push({ start: at, end: at + n, ramp: ramp[s], rigged: rigged[s] });
@@ -673,8 +727,30 @@ export class WorldBlocks {
     });
     this.instanceCount = total;
     this.setCount = sets.length;
-    this.draws = draws.map((d) => ({ offset: starts[d.set] * TRANSFORM_WORDS * 4 }));
-    return { instances: words, instanceCount: total, sets: out, draws, bands2 };
+    return { instances: words, instanceCount: total, sets: out };
+  }
+
+  /**
+   * Every instance's transform, set by set as the instance table orders
+   * them: what group 2 binds in every group, so a map with no scatter still
+   * binds one, never read.
+   */
+  private transformBuffer(sets: readonly InstanceSet[], total: number): GPUBuffer {
+    const buffer = this.renderer.device.createBuffer({
+      label: "world blocks: transforms",
+      size: Math.max(1, total) * TRANSFORM_WORDS * 4,
+      usage: GPUBufferUsage.STORAGE,
+      mappedAtCreation: true,
+    });
+    const dst = new Float32Array(buffer.getMappedRange());
+    let at = 0;
+    for (const set of sets) {
+      for (let i = 0; i < set.scales.length; i++, at++) {
+        writeTransform(set.matrices.subarray(i * 16, i * 16 + 16), dst, at * TRANSFORM_WORDS);
+      }
+    }
+    buffer.unmap();
+    return buffer;
   }
 
   /**
@@ -696,25 +772,26 @@ export class WorldBlocks {
     this.onFailed(Array.from({ length: this.surfaceCount }, (_, s) => s));
   }
 
-  /** A pipeline of `group` failed: it draws nothing, and its surfaces go back at once. */
-  private fail(group: Group, which: string, err: unknown): void {
+  /** `group` will never draw: it draws nothing, and its surfaces go back at once. */
+  private fail(group: Group, why: string, err?: unknown): void {
     if (group.failed) return;
     group.failed = true;
+    group.instanced = [];
     console.error(
-      `world blocks: [${group.material.recipe.defines.join("+")}] has no ${which} pipeline; ` +
+      `world blocks: [${group.material.recipe.defines.join("+")}] ${why}; ` +
         `its ${group.members.length} surfaces go back to Babylon`,
-      err,
+      ...(err === undefined ? [] : [err]),
     );
     this.onFailed(group.members);
   }
 
-  /** One attribute's buffer for the whole group, MAPPED, filled surface by surface, then part by part. */
+  /** One attribute's array for the whole group, MAPPED, filled part by part, then surface by surface. */
   private vertexBuffer(group: Group, name: string, type: string, vertexTotal: number): GPUBuffer {
-    const floats = ATTRIBUTE_FORMATS[type].floats;
+    const floats = ATTRIBUTE_FLOATS[type];
     const buffer = this.renderer.device.createBuffer({
       label: `world blocks: [${group.material.recipe.defines.join("+")}] ${name}`,
-      size: Math.max(4, vertexTotal * floats * 4),
-      usage: GPUBufferUsage.VERTEX,
+      size: Math.max(16, vertexTotal * floats * 4),
+      usage: GPUBufferUsage.STORAGE,
       mappedAtCreation: true,
     });
     const dst = new Float32Array(buffer.getMappedRange());
@@ -725,48 +802,53 @@ export class WorldBlocks {
       if (array) dst.set(array, at);
       at += (geo.positions.length / 3) * floats;
     };
-    for (const s of group.members) write(this.surfaces[s].geometry);
     for (const p of group.instanced) write(p.geometry);
+    for (const s of group.members) write(this.surfaces[s].geometry);
     return buffer;
   }
 
-  /** Asks for a group's pipelines; a failure of either hands every member back, at once. */
+  /** Group 2 for `group`: its arrays by the storage each attribute is read out of, and the transforms. */
+  private geometryOf(group: Group): void {
+    const buffers: Record<string, GPUBuffer> = { transforms: this.transforms! };
+    group.program.vertex.attributes.forEach((a, k) => {
+      buffers[a.from!] = group.vertex[k];
+    });
+    const label = `world blocks: [${group.material.recipe.defines.join("+")}] geometry`;
+    group.geometry = new HostBindGroup(this.renderer.device, label, CEL_GEOMETRY, group.material.recipe.defines, buffers);
+    // No textures: resolved once, whole for good.
+    group.geometry.refresh(this.renderer.host, {});
+  }
+
+  /** Asks for a group's pipeline; a failure hands every member back, at once. */
   private ask(group: Group): void {
     const recipe = group.material.recipe;
     const generation = this.generation;
-    const state = recipe.depthBias === 0 ? undefined : { depthBias: recipe.depthBias };
-    const spec = (vertex: AssembledVertex): PipelineSpec => ({
-      vertex,
-      vertexEntry: "main",
-      fragment: group.program.fragment,
-      fragmentEntry: "main",
-      buffers: bufferLayouts(vertex),
-      targets: FRAME_TARGETS,
-      state,
-    });
-    const failed = (which: string) => (err: unknown) => {
-      if (generation === this.generation) this.fail(group, which, err);
-    };
-    this.renderer.pipelines.get(spec(group.program.vertex)).then((built) => {
-      group.built = built;
-    }, failed("block"));
-    if (group.drawEnd > group.drawStart) {
-      this.renderer.pipelines.get(spec(group.program.instanced)).then((built) => {
-        group.instancedBuilt = built;
-      }, failed("instanced"));
-    }
+    this.renderer.pipelines
+      .get({
+        vertex: group.program.vertex,
+        vertexEntry: "main",
+        fragment: group.program.fragment,
+        fragmentEntry: "main",
+        buffers: [],
+        targets: FRAME_TARGETS,
+        state: recipe.depthBias === 0 ? undefined : { depthBias: recipe.depthBias },
+      })
+      .then(
+        (built) => {
+          group.built = built;
+        },
+        (err: unknown) => {
+          if (generation === this.generation) this.fail(group, "has no pipeline", err);
+        },
+      );
   }
 
-  /** The three modules of the variant `defines`, assembled once. */
+  /** The two modules of the variant `defines`, assembled once. */
   private programOf(defines: readonly string[]): Program {
     const key = defines.join("+");
     let program = this.programs.get(key);
     if (!program) {
-      program = {
-        vertex: celVertex(defines, FRAME_TARGETS),
-        instanced: celInstancedVertex(defines, FRAME_TARGETS),
-        fragment: celFragment(defines, FRAME_TARGETS),
-      };
+      program = { vertex: celVertex(defines, FRAME_TARGETS), fragment: celFragment(defines, FRAME_TARGETS) };
       this.programs.set(key, program);
     }
     return program;
@@ -814,6 +896,27 @@ export class WorldBlocks {
   };
 
   /**
+   * Binds `group`'s pipeline and its three groups; false, binding nothing,
+   * while its pipeline is compiling, it failed, or a texture it binds is
+   * unpublished.
+   */
+  private bind(pass: GPURenderPassEncoder, ctx: FrameContext, group: Group): boolean {
+    const built = group.built;
+    if (!built || group.failed || !group.geometry) return false;
+    const material = group.material;
+    material.group.refresh(this.renderer.host, material.recipe.textures);
+    const frame = ctx.frameGroup(built.groups[0]);
+    const own = material.group.get(built.groups[1]);
+    const geometry = group.geometry.get(built.groups[2]);
+    if (!frame || !own || !geometry) return false;
+    pass.setPipeline(built.pipeline);
+    pass.setBindGroup(0, frame);
+    pass.setBindGroup(1, own);
+    pass.setBindGroup(2, geometry);
+    return true;
+  }
+
+  /**
    * The surfaces of `layer`'s groups: one plain draw a group over its whole
    * range of the cull's indices — the groups whose recipe carries a depth
    * BIAS first (the roads), then the rest in the order first added.
@@ -827,7 +930,6 @@ export class WorldBlocks {
    */
   private drawClusters(pass: GPURenderPassEncoder, ctx: FrameContext, cull: ClusterCull, layer: WorldLayer): number {
     let drawn = 0;
-    const host = this.renderer.host;
     const groups = this.groups;
     const n = groups.length;
     pass.setIndexBuffer(cull.indices, "uint32");
@@ -836,64 +938,128 @@ export class WorldBlocks {
       const group = groups[lap % n];
       if (group.layer !== layer) continue;
       if ((group.material.recipe.depthBias !== 0) !== (lap < n)) continue;
-      const built = group.built;
-      // A group whose surfaces were all scatter draws its parts as instances.
-      if (!built || group.failed || group.indexCount === 0) continue;
-      const material = group.material;
-      material.group.refresh(host, material.recipe.textures);
-      const frame = ctx.frameGroup(built.groups[0]);
-      const own = material.group.get(built.groups[1]);
-      const world = this.meshGroup.get(built.groups[2]);
-      if (!frame || !own || !world) continue;
-      pass.setPipeline(built.pipeline);
-      pass.setBindGroup(0, frame);
-      pass.setBindGroup(1, own);
-      pass.setBindGroup(2, world);
-      const vertex = group.vertex;
-      for (let k = 0; k < vertex.length; k++) pass.setVertexBuffer(k, vertex[k]);
+      // A group whose surfaces were all scatter draws only its stream.
+      if (group.indexCount === 0 || !this.bind(pass, ctx, group)) continue;
       pass.drawIndexed(group.indexCount, 1, group.indexBase, 0, 0);
       drawn++;
     }
     return drawn;
   }
 
-  /** The scatter: each group's parts against its own index buffer, each part's instances bound at its set's region. */
+  /** The scatter: one indirect draw a group that has any, over its region of the stream. */
   private drawScatter(pass: GPURenderPassEncoder, ctx: FrameContext): number {
     const instances = this.instances;
     if (!instances) return 0;
     let drawn = 0;
-    const host = this.renderer.host;
     const groups = this.groups;
-    const draws = this.draws;
+    pass.setIndexBuffer(instances.indices, "uint32");
     for (let g = 0; g < groups.length; g++) {
-      const group = groups[g];
-      const built = group.instancedBuilt;
-      if (!built || group.failed || !group.instancedIndex) continue;
-      const material = group.material;
-      material.group.refresh(host, material.recipe.textures);
-      const frame = ctx.frameGroup(built.groups[0]);
-      const own = material.group.get(built.groups[1]);
-      if (!frame || !own) continue;
-      pass.setPipeline(built.pipeline);
-      pass.setBindGroup(0, frame);
-      pass.setBindGroup(1, own);
-      const vertex = group.vertex;
-      for (let k = 0; k < vertex.length; k++) pass.setVertexBuffer(k, vertex[k]);
-      pass.setIndexBuffer(group.instancedIndex, "uint32");
-      const slot = vertex.length;
-      for (let d = group.drawStart; d < group.drawEnd; d++) {
-        pass.setVertexBuffer(slot, instances.placed, draws[d].offset);
-        pass.drawIndexedIndirect(instances.args, d * INDIRECT_BYTES);
-        drawn++;
-      }
+      if (!groups[g].scattered || !this.bind(pass, ctx, groups[g])) continue;
+      pass.drawIndexedIndirect(instances.args, g * INDIRECT_BYTES);
+      drawn++;
     }
     return drawn;
   }
 }
 
+/** The first attribute `group`'s variant reads that `geometry` lacks, or null; an absent `uv` reads 0. */
+function missingAttribute(group: Group, geometry: SurfaceArrays): string | null {
+  for (const a of group.program.vertex.attributes) {
+    if (!geometry[SOURCE[a.name]] && a.name !== "uv") return a.name;
+  }
+  return null;
+}
+
 /** A float array as the device holds it — rounded exactly as `new Float32Array(numbers)`. */
 function toFloat32(a: Float32Array | Float64Array): Float32Array {
   return a instanceof Float32Array ? a : Float32Array.from(a);
+}
+
+/**
+ * A world matrix laid out as WGSL's `mat4x4f` reads it, as the vertex stage
+ * and the cull read a transform: each of its first three columns, with that
+ * row of its translation in w — into `out[at..at + 12)`.
+ */
+function writeTransform(m: Float32Array, out: Float32Array, at: number): void {
+  out[at] = m[0];
+  out[at + 1] = m[1];
+  out[at + 2] = m[2];
+  out[at + 3] = m[12];
+  out[at + 4] = m[4];
+  out[at + 5] = m[5];
+  out[at + 6] = m[6];
+  out[at + 7] = m[13];
+  out[at + 8] = m[8];
+  out[at + 9] = m[9];
+  out[at + 10] = m[10];
+  out[at + 11] = m[14];
+}
+
+/** Each distinct reach box once, in the order first met — the cluster cull's block table. */
+function uniqueBoxes(blocks: readonly BlockBox[]): BlockBox[] {
+  return [...new Set(blocks)];
+}
+
+/**
+ * The block clusters as the cluster cull's `Cluster`: each surface's, in cut
+ * order, its block the index of its reach box in `uniqueBoxes`' order.
+ */
+function clusterWords(
+  cut: readonly { surface: number; group: number; base: number; c: readonly Cluster[] }[],
+  blocks: readonly BlockBox[],
+): ArrayBuffer {
+  const blockIds = new Map<BlockBox, number>();
+  for (const box of blocks) if (!blockIds.has(box)) blockIds.set(box, blockIds.size);
+  let count = 0;
+  for (const { c } of cut) count += c.length;
+  const words = new ArrayBuffer(Math.max(1, count) * CLUSTER_WORDS * 4);
+  const f = new Float32Array(words);
+  const u = new Uint32Array(words);
+  let k = 0;
+  for (const { surface, group, base, c } of cut) {
+    const block = blockIds.get(blocks[surface])!;
+    for (const cl of c) {
+      const o = k * CLUSTER_WORDS;
+      f[o] = cl.lo[0];
+      f[o + 1] = cl.lo[1];
+      f[o + 2] = cl.lo[2];
+      u[o + 3] = base + cl.indexStart;
+      f[o + 4] = cl.hi[0];
+      f[o + 5] = cl.hi[1];
+      f[o + 6] = cl.hi[2];
+      u[o + 7] = cl.indexCount;
+      u[o + 8] = group;
+      u[o + 9] = block;
+      u[o + 10] = surface;
+      u[o + 11] = cl.piece;
+      f[o + 12] = cl.ramp;
+      u[o + 13] = cl.rigged ? 1 : 0;
+      k++;
+    }
+  }
+  return words;
+}
+
+/** The instanced parts' clusters as the instance cull reads them — `InstanceTables.clusters`. */
+function scatterClusterWords(clusters: ScatterStream["clusters"]): ArrayBuffer {
+  const words = new ArrayBuffer(Math.max(1, clusters.length) * CLUSTER_WORDS * 4);
+  const f = new Float32Array(words);
+  const u = new Uint32Array(words);
+  clusters.forEach(({ cluster, first, range }, k) => {
+    const o = k * CLUSTER_WORDS;
+    f[o] = cluster.lo[0];
+    f[o + 1] = cluster.lo[1];
+    f[o + 2] = cluster.lo[2];
+    u[o + 3] = first;
+    f[o + 4] = cluster.hi[0];
+    f[o + 5] = cluster.hi[1];
+    f[o + 6] = cluster.hi[2];
+    u[o + 7] = cluster.indexCount;
+    u[o + 8] = range;
+    f[o + 12] = cluster.ramp;
+    u[o + 13] = cluster.rigged ? 1 : 0;
+  });
+  return words;
 }
 
 /**

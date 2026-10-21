@@ -2382,34 +2382,39 @@ src/
                         #   and material (group 1) uniforms and textures, the
                         #   inputs (CEL_VARYINGS), over the shared celSurface
                         #   body
-    celVertex.ts        # The cel vertex stage as WE declare it: the
-                        #   attributes, the frame and the draw's world, over
-                        #   the shared celVertex body — and its INSTANCED twin,
-                        #   world read per instance (the scatter, X3.4b);
-                        #   bufferLayouts, the vertex buffers a stage is drawn
-                        #   with. Every stage compiled per variant by
+    celVertex.ts        # The cel vertex stage as WE declare it, PULLED: the
+                        #   attributes read out of storage arrays (group 2,
+                        #   CEL_GEOMETRY) at the vertex the stream index names,
+                        #   world identity or the instance's transform, over
+                        #   the shared celVertex body — one stage for blocks
+                        #   and scatter (X3.5b). Every variant compiled by
                         #   plans/webgpu-ref/shaders.mjs
-    WorldBlocks.ts      # The map's block and landform surfaces drawn by US:
-                        #   one GROUP per recipe a point (its surfaces' buffers
-                        #   end to end, then its scatter parts; one material),
-                        #   the map cut once (finish), ONE plain drawIndexed a
-                        #   group — the landform's ahead of group 0's
-                        #   alpha-tested meshes, the blocks' at the end of its
-                        #   opaque ones — then one per
-                        #   scatter variant per material, instanced (X3.4b) —
-                        #   the scatter's pieces cut out of the blocks that do;
-                        #   what it will never draw goes to onFailed as it
-                        #   lands, a group whole; stop() for good
+    streamIndex.ts      # The fold's index (X3.5b): top bit set = scatter,
+                        #   13 bits instance, 18 bits vertex; the budget a cut
+                        #   is held to, and the same constants as WGSL
+    WorldBlocks.ts      # The map's block, landform and scatter drawn by US:
+                        #   one GROUP per recipe a layer (its scatter parts'
+                        #   arrays first, then its surfaces'; one material, one
+                        #   pipeline), the map cut once (finish), ONE plain
+                        #   drawIndexed a group and ONE indirect draw of its
+                        #   scatter, ahead of group 0's alpha-tested meshes —
+                        #   blocks, scatter, landform — the scatter's pieces
+                        #   cut out of the blocks; what it will never draw (a
+                        #   failed pipeline, a part it cannot draw, past the
+                        #   stream budget) goes to onFailed as it lands, a
+                        #   group whole; stop() for good
     clusters.ts         # cutClusters: a surface cut into short runs of
                         #   one piece's triangles, each with its box and how
                         #   the wind can move it (BABYLON_EXIT.md X3.3b) — an
                         #   unpieced surface (the landform) as one NO_PIECE
                         #   span; withoutPieces, a surface with pieces cut out
-    InstanceCull.ts     # The scatter's per-instance GPU cull, beside
-                        #   ClusterCull and on its terms (X3.4b): reach, size
-                        #   gate, frustum per instance sphere; survivors
-                        #   scanned NEAR-FIRST into each set's own region of
-                        #   `placed` and every instanced draw's indirect args
+    InstanceCull.ts     # The scatter's GPU cull, beside ClusterCull and on
+                        #   its terms (X3.4b): reach, size gate, frustum per
+                        #   instance sphere, then each kept instance's clusters
+                        #   against the frustum (X3.5b); the kept (instance,
+                        #   cluster) records scanned NEAR-FIRST into each
+                        #   group's region of one index stream, and each
+                        #   group's ONE indirect draw's args
     ClusterCull.ts      # The GPU cull, once a frame, recorded into the host's
                         #   encoder ahead of the draws (inside gpu.frame;
                         #   pipelines from PipelineCache) — reach, size gate,
@@ -2439,8 +2444,9 @@ src/
                         #   assembleVertex: plain WGSL with explicit
                         #   @group/@binding, uniforms.<name> routed to its
                         #   block, strided arrays read via .el, and Babylon's y
-                        #   flip for the kind of pass. firstBindings, the one
-                        #   numbering rule a bind group is built by
+                        #   flip for the kind of pass; a PULLED vertex stage's
+                        #   attribute reads out of storage. firstBindings, the
+                        #   one numbering rule a bind group is built by
       layout.ts         # blockLayout: a uniform block's byte offsets and
                         #   strides by WGSL's rules, from the same data; the
                         #   guard rule assemble.ts shares
@@ -2448,9 +2454,9 @@ src/
                         #   and the record layouts ClusterCull uploads;
                         #   CULL_DECLARATIONS, the uniform as words and the
                         #   records as whole vec4s, both culls' and the probe's
-      instanceCull.ts   # The instance cull's WGSL — cullInstances, prefix,
-                        #   place — and the record layouts InstanceCull
-                        #   uploads
+      instanceCull.ts   # The instance cull's WGSL — cullInstances,
+                        #   cullRecords, prefix, expand — and the record
+                        #   layouts InstanceCull uploads
       cullProbe.ts      # ?cullcheck's probes: each cull's test re-run with
                         #   its inputs read each way they have been declared,
                         #   one bit a form, over the cull's own buffers, and

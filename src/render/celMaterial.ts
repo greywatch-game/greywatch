@@ -1,12 +1,12 @@
 /**
  * render/celMaterial.ts — A cel MATERIAL as our renderer draws one: its own
- * uniform block (group 1), the textures it binds there, the fixed-function
- * state it carries, and the per-draw block beside it (group 2).
+ * uniform block (group 1), the textures it binds there, and the
+ * fixed-function state it carries; group 2, the draw's geometry, is the
+ * vertex stage's (`celVertex.ts`).
  * Owns: `CEL_MATERIAL_FIELDS` and `CEL_MATERIAL_BLOCK` (group 1, binding 0
  * of the cel program), `CEL_MATERIAL_TEXTURES` (the rest of group 1),
- * `CEL_MESH_BLOCK` (group 2: the draw's `world`), `MaterialUniforms` and
- * `createMaterialUniforms`, and `CelRecipe` — what a material is drawn WITH,
- * as plain data.
+ * `MaterialUniforms` and `createMaterialUniforms`, and `CelRecipe` — what a
+ * material is drawn WITH, as plain data.
  * Invariants: a field or texture here is one a material is BORN with from its
  * own spec, never shared state (that is the frame's, `frame.ts`) — the split
  * `CelMaterialFactory` already makes, read off the code; a recipe is filled by
@@ -17,13 +17,6 @@
  * Never: imports Babylon — a texture is a `HostTexture`, which only the
  * frame's host can resolve.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
- *
- * WHY `world` IS A GROUP OF ITS OWN. It is the one value the cel vertex stage
- * reads that is neither the frame's nor the material's: one material draws
- * many meshes, and one mesh is one draw. The world's blocks are all at
- * identity — `BlockMerge` bakes every transform into the vertices — so every
- * block draw binds one shared identity buffer, and the group is there for
- * the first thing drawn that is not at identity.
  */
 import type { HostTexture } from "./frameHost";
 import { guardHolds } from "./wgsl/layout";
@@ -69,14 +62,6 @@ export const CEL_MATERIAL_TEXTURES = [
   },
   { kind: "sampled", name: "reflectionCube", type: "texture_cube<f32>", when: ["CEL_GLASS"] },
 ] as const satisfies readonly Binding[];
-
-/** The draw's own block: group 2, binding 0 of the cel program — see the header. */
-export const CEL_MESH_BLOCK = {
-  kind: "uniform",
-  var: "mesh",
-  struct: "CelMesh",
-  fields: [{ name: "world", type: "mat4x4f" }],
-} as const satisfies Binding;
 
 /** The name of a material field — what the shader calls it. */
 export type CelMaterialField = (typeof CEL_MATERIAL_FIELDS)[number]["name"];

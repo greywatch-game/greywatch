@@ -1,121 +1,103 @@
 /**
  * render/celVertex.ts — The cel material's VERTEX stage as our renderer
  * declares it: the same body Babylon's `ShaderMaterial` runs (`celVertex`),
- * against explicit bind groups and vertex buffers — once for a surface drawn
- * at one `world` (the blocks) and once for a surface drawn as INSTANCES (the
- * scatter, `BABYLON_EXIT.md` X3.4b).
+ * against explicit bind groups, its attributes PULLED out of storage, so one
+ * stage draws the world's whole stream — the blocks and the landform at
+ * identity and the scatter at its instances (`BABYLON_EXIT.md` X3.5b, the
+ * fold).
  * Owns: `CEL_VERTEX_PROGRAM` — the attributes, the frame block (group 0), the
- * draw's `world` (group 2) and the outputs, which are the fragment's
- * `CEL_VARYINGS` — and `celVertex`, one variant of it as a plain WGSL module;
- * `CEL_INSTANCED_VERTEX_PROGRAM` and `celInstancedVertex`, the same with
- * `world` read per instance; and `bufferLayouts`, the vertex buffers an
- * assembled stage is drawn with.
+ * draw's geometry (group 2, `CEL_GEOMETRY`) and the outputs, which are the
+ * fragment's `CEL_VARYINGS` — and `celVertex`, one variant of it as a plain
+ * WGSL module; the layout of an instance's transform (`TRANSFORM_WORDS`) and
+ * how many floats each attribute type takes a vertex (`ATTRIBUTE_FLOATS`).
  * Invariants: declares every name the shared body reads, by Babylon's names
  * because the body reads them by name (`CelShader.ts`'s `celVertexShader`);
  * the attributes are Babylon's, under Babylon's guards — `color` and `uv` in
- * every variant, `uv2` under `CEL_PALETTE` — and a mesh missing an
- * unguarded one is drawn with it reading zero, as Babylon's empty buffer
- * reads (`render/WorldBlocks.ts`); group 1 is declared EMPTY here and is the
- * fragment's, so the numbers stay the program's; the instanced program is the
- * plain one with `world` moved from group 2 into a private block its `main`
- * builds from three per-instance columns (`world0..2`, each a column of the
- * matrix with that row of its translation in w — `InstanceCull`'s
- * `placed`), so the body is the same text on both; a vertex attribute is a
- * buffer of its own and every instance attribute shares ONE buffer, packed in
- * list order.
+ * every variant, `uv2` under `CEL_PALETTE` — each read out of its own array
+ * in group 2 at the vertex the stream index names (`streamIndex.ts`), and a
+ * mesh missing an unguarded one is drawn with it reading zero, as Babylon's
+ * empty buffer reads (`render/WorldBlocks.ts`); `world` is a private block
+ * `main` writes before the body runs — identity for an index with the
+ * scatter bit clear, else the instance's transform out of `transforms`, three
+ * columns of the matrix each with that row of its translation in w — so the
+ * body is the same text as Babylon's; group 1 is declared EMPTY here and is
+ * the fragment's, so the numbers stay the program's.
  * Never: imports Babylon; restates a body.
  * Contract: `docs/rendering.md`, "Hand-written WGSL".
+ *
+ * WHY GROUP 2 IS THE GEOMETRY. One material draws a group's whole stream,
+ * blocks and scatter at once, so what differs between two draws of one
+ * recipe — the blocks' layer and the landform's — is the arrays the stream
+ * indexes; and the vertex an index names is not the index itself once it
+ * carries an instance, so the input assembler cannot fetch it. The arrays
+ * are storage, read at the decoded vertex, and the transforms beside them.
  */
 import { WGSL_CHUNKS } from "../shaders/wgsl/chunks";
 import { CEL_VARYINGS } from "./celFragment";
-import { CEL_MESH_BLOCK } from "./celMaterial";
 import { FRAME_BLOCK } from "./frame";
+import { STREAM_INDEX_WGSL } from "./streamIndex";
 import {
   assembleVertex,
   type AssembledVertex,
   type Attribute,
+  type Binding,
   type StageTarget,
   type VertexProgram,
 } from "./wgsl/assemble";
 
+/** Group 2 of the cel program: every attribute's array, then the instances' transforms. */
+export const CEL_GEOMETRY = [
+  { kind: "storage", name: "positionData", type: "array<f32>" },
+  { kind: "storage", name: "normalData", type: "array<f32>" },
+  { kind: "storage", name: "colorData", type: "array<vec4f>" },
+  { kind: "storage", name: "uvData", type: "array<vec2f>" },
+  { kind: "storage", name: "uv2Data", type: "array<vec2f>", when: ["CEL_PALETTE"] },
+  { kind: "storage", name: "transforms", type: "array<vec4f>" },
+] as const satisfies readonly Binding[];
+
 const CEL_ATTRIBUTES: readonly Attribute[] = [
-  { name: "position", type: "vec3f" },
-  { name: "normal", type: "vec3f" },
-  { name: "color", type: "vec4f" },
-  { name: "uv", type: "vec2f" },
-  { name: "uv2", type: "vec2f", when: ["CEL_PALETTE"] },
+  { name: "position", type: "vec3f", from: "positionData" },
+  { name: "normal", type: "vec3f", from: "normalData" },
+  { name: "color", type: "vec4f", from: "colorData" },
+  { name: "uv", type: "vec2f", from: "uvData" },
+  { name: "uv2", type: "vec2f", when: ["CEL_PALETTE"], from: "uv2Data" },
 ];
+
+/** One instance's transform in `transforms`, in 32-bit words: three `vec4f` columns. */
+export const TRANSFORM_WORDS = 12;
+
+/** The floats each attribute type takes a vertex, packed tight in its array. */
+export const ATTRIBUTE_FLOATS: Readonly<Record<string, number>> = { vec2f: 2, vec3f: 3, vec4f: 4 };
 
 /** The cel vertex stage, declared for our renderer. */
 export const CEL_VERTEX_PROGRAM: VertexProgram = {
   label: "cel-vertex",
-  groups: [[FRAME_BLOCK], [], [CEL_MESH_BLOCK]],
+  groups: [[FRAME_BLOCK], [], CEL_GEOMETRY],
   attributes: CEL_ATTRIBUTES,
   varyings: CEL_VARYINGS,
   includes: WGSL_CHUNKS,
   body: "#include<celVertex>",
   entry: "celVertex",
-};
-
-/**
- * The same stage drawn as INSTANCES: `world` is per instance, built by
- * `main` from three columns, and group 2 is not bound at all.
- */
-export const CEL_INSTANCED_VERTEX_PROGRAM: VertexProgram = {
-  ...CEL_VERTEX_PROGRAM,
-  label: "cel-vertex-instanced",
-  groups: [[FRAME_BLOCK], []],
-  attributes: [
-    ...CEL_ATTRIBUTES,
-    { name: "world0", type: "vec4f", step: "instance" },
-    { name: "world1", type: "vec4f", step: "instance" },
-    { name: "world2", type: "vec4f", step: "instance" },
-  ],
   privates: [{ var: "instance", struct: "CelInstance", fields: [{ name: "world", type: "mat4x4f" }] }],
+  declarations: STREAM_INDEX_WGSL,
+  pull: "vertex",
   prelude: [
-    "  let w0 = vertexInputs.world0;",
-    "  let w1 = vertexInputs.world1;",
-    "  let w2 = vertexInputs.world2;",
+    "  let scattered = vertexIndex >= SCATTER_BIT;",
+    "  let vertex = select(vertexIndex, vertexIndex & VERTEX_MASK, scattered);",
     "  instance.world = mat4x4f(",
-    "    vec4f(w0.xyz, 0.0), vec4f(w1.xyz, 0.0), vec4f(w2.xyz, 0.0), vec4f(w0.w, w1.w, w2.w, 1.0));",
+    "    vec4f(1.0, 0.0, 0.0, 0.0), vec4f(0.0, 1.0, 0.0, 0.0), vec4f(0.0, 0.0, 1.0, 0.0), vec4f(0.0, 0.0, 0.0, 1.0));",
+    "  if (scattered) {",
+    "    let t = ((vertexIndex >> VERTEX_BITS) & INSTANCE_MASK) * 3u;",
+    "    let w0 = transforms[t];",
+    "    let w1 = transforms[t + 1u];",
+    "    let w2 = transforms[t + 2u];",
+    "    instance.world = mat4x4f(",
+    "      vec4f(w0.xyz, 0.0), vec4f(w1.xyz, 0.0), vec4f(w2.xyz, 0.0), vec4f(w0.w, w1.w, w2.w, 1.0));",
+    "  }",
   ].join("\n"),
 };
 
 /** One variant of the cel vertex stage, for a pass of `target`'s kind. */
 export function celVertex(defines: Iterable<string>, target: StageTarget): AssembledVertex {
   return assembleVertex(CEL_VERTEX_PROGRAM, defines, target);
-}
-
-/** One variant of the instanced cel vertex stage. */
-export function celInstancedVertex(defines: Iterable<string>, target: StageTarget): AssembledVertex {
-  return assembleVertex(CEL_INSTANCED_VERTEX_PROGRAM, defines, target);
-}
-
-/** The floats per vertex of each attribute type, and its vertex format. */
-export const ATTRIBUTE_FORMATS: Readonly<Record<string, { readonly floats: number; readonly format: GPUVertexFormat }>> = {
-  vec2f: { floats: 2, format: "float32x2" },
-  vec3f: { floats: 3, format: "float32x3" },
-  vec4f: { floats: 4, format: "float32x4" },
-};
-
-/**
- * The vertex buffers `vertex` is drawn with: one a vertex attribute, tightly
- * packed, in the stage's order; then, if it reads any, ONE buffer holding
- * every instance attribute, packed in order and stepped per instance.
- */
-export function bufferLayouts(vertex: AssembledVertex): GPUVertexBufferLayout[] {
-  const out: GPUVertexBufferLayout[] = [];
-  const instanced: GPUVertexAttribute[] = [];
-  let stride = 0;
-  for (const a of vertex.attributes) {
-    const f = ATTRIBUTE_FORMATS[a.type];
-    if (a.instance) {
-      instanced.push({ shaderLocation: a.location, offset: stride, format: f.format });
-      stride += f.floats * 4;
-    } else {
-      out.push({ arrayStride: f.floats * 4, attributes: [{ shaderLocation: a.location, offset: 0, format: f.format }] });
-    }
-  }
-  if (instanced.length > 0) out.push({ arrayStride: stride, stepMode: "instance", attributes: instanced });
-  return out;
 }

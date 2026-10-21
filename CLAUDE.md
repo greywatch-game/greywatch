@@ -598,7 +598,9 @@ still draw it (a DEV check says so). **The SCATTER is drawn twice over and the
 two must agree**: our main pass draws it as INSTANCES of its variants, its
 colour baked once per kind, and cuts its pieces out of the blocks it takes,
 while Babylon's merged copy stays in those blocks for every other pass
-(`BuildOptions.onScatter`). **Any other mesh carrying `metadata.block` is one
+(`BuildOptions.onScatter`) — and **an index names its instance and vertex in
+32 bits** (`render/streamIndex.ts`), so a recipe's variants past 262,144
+vertices, or a map past 8,192 placements, go back to Babylon whole. **Any other mesh carrying `metadata.block` is one
 only while the camera is inside the map's `fogEnd`**, **a body's RIG only while
 the root the roster switches is enabled**, and **everything else is ELIGIBLE**.
 **A BODY is measured ONCE, off its rig ROOT, and drops WHOLE.** **Anything

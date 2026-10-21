@@ -1,56 +1,65 @@
 /**
- * render/wgsl/instanceCull.ts — The scatter's INSTANCE cull's WGSL: three
+ * render/wgsl/instanceCull.ts — The scatter's INSTANCE cull's WGSL: four
  * entry points, run in order once a frame (`InstanceCull.dispatch`,
- * `BABYLON_EXIT.md` X3.4b) — the cluster cull's shape (`clusterCull.ts`)
- * over placements instead of clusters.
+ * `BABYLON_EXIT.md` X3.4b; expanded into clusters at X3.5b, the fold) — the
+ * cluster cull's shape (`clusterCull.ts`) over each surviving instance's
+ * clusters.
  * Owns: `INSTANCE_CULL_WGSL`; `INSTANCE_DECLARATIONS`, the instance and set
  * records as the cull and the probe declare them; the byte layouts it reads
  * (`INSTANCE_CULL_UNIFORM_BYTES`, `INSTANCE_WORDS`, `SET_WORDS`,
- * `DRAW_WORDS`, `TRANSFORM_WORDS`), the indirect arguments it writes
+ * `RECORD_WORDS`, `RANGE_WORDS`), the indirect arguments it writes
  * (`INDIRECT_BYTES`) and its workgroup sizes.
- * Invariants: a SET is one variant of one kind — the instances that wear it,
- * contiguous in the instance table — and its survivors are written to the
- * set's OWN region of the output (its first instance onward), so a draw binds
- * that region at a fixed offset and needs no `firstInstance` (an indirect
- * draw may not have one without `indirect-first-instance`); within a set the
- * survivors are written in one ORDER that is a pure function of the frame's
- * inputs — by near-first band, then by instance index — through a SCAN, never
- * an atomic append, so the same eye draws the same instances in the same
- * order; an instance is dropped only if its sphere lies past the reach, it is
- * under the size gate, or its sphere (grown by the most its set's vertices
- * can sway) lies wholly outside one of the five planes; every draw's instance
- * count is its set's survivors, written by `prefix`, and the rest of its
- * arguments are the draw's own, written there too.
+ * Invariants: an instance is dropped only if its sphere lies past the reach,
+ * it is under the size gate, or its sphere (grown by the most its set's
+ * vertices can sway) lies wholly outside one of the five planes — its BAND
+ * is the instance's, the distance to its sphere's centre, so every cluster
+ * of it shares one; a RECORD is one cluster of one instance, and is dropped
+ * with its instance or when the cluster's box, moved by the instance's
+ * matrix and grown by the most the cluster's vertices can sway, lies wholly
+ * outside one of the five planes; a RANGE is one group's records, contiguous
+ * in the record table, and its surviving records' indices are written to the
+ * range's own region of the stream in one ORDER that is a pure function of
+ * the frame's inputs — by near-first band, then by record index — through a
+ * SCAN, never an atomic append, so the same eye draws the same triangles in
+ * the same order; every index written is its cluster's source index with the
+ * scatter bit and the instance set above it (`render/streamIndex.ts`); each
+ * range's draw is ONE indirect draw whose count is its survivors' indices,
+ * from the start of its region, written by `prefix`.
  * Never: reads a node — everything it reads was uploaded as numbers.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
  *
- * THE THREE PASSES:
- * - `cullInstances` (a thread an instance, `SCAN_SIZE` a workgroup): the
- *   tests, the band, and an exclusive scan of each band's survivors within
- *   the workgroup — `local[i]`, with the workgroup's total in `sums[w]`.
+ * THE FOUR PASSES:
+ * - `cullInstances` (a thread an instance): the tests, and the band —
+ *   `instanceBand[i]`, `NONE` for a dropped one (what `?cullcheck` reads).
+ * - `cullRecords` (a thread a record, `SCAN_SIZE` a workgroup): the record's
+ *   instance's band, the cluster's box test, and an exclusive scan of each
+ *   band's index count within the workgroup — `local[r]`, with the
+ *   workgroup's total in `sums[w]`, as the cluster cull's first pass.
  * - `prefix` (ONE workgroup): `sums` scanned in place, the grand total at
- *   `sums[workgroups]`; then each set's per-band survivors and where each band
- *   starts in the set's region, and every draw's indirect arguments.
- * - `place` (a thread an instance): a survivor's transform copied to its slot.
+ *   `sums[workgroups]`; then each range's per-band totals, where each band
+ *   starts in its region, and its draw's indirect arguments.
+ * - `expand` (a workgroup a record): a surviving record's indices, encoded,
+ *   copied to where the scan says.
  */
 
+import { STREAM_INDEX_WGSL } from "../streamIndex";
 import { CULL_DECLARATIONS } from "./clusterCull";
 
-/** Threads in a `cullInstances` and a `prefix` workgroup. */
+/** Threads in a `cullInstances`, `cullRecords` and `prefix` workgroup. */
 export const INSTANCE_SCAN_SIZE = 256;
-/** Threads in a `place` workgroup. */
-export const PLACE_SIZE = 64;
+/** Threads in an `expand` workgroup. */
+export const EXPAND_SIZE = 64;
 /** An instance's record, in 32-bit words (`Instance` below). */
 export const INSTANCE_WORDS = 20;
 /** A set's record, in 32-bit words (`Set` below). */
-export const SET_WORDS = 16;
-/** A draw's record, in 32-bit words (`Draw` below). */
-export const DRAW_WORDS = 4;
-/** A transform as the vertex stage reads it: three `vec4f` columns, in words. */
-export const TRANSFORM_WORDS = 12;
-/** The uniform block (`Cull` below), in bytes. */
+export const SET_WORDS = 4;
+/** A record — an instance and one cluster of it — in 32-bit words. */
+export const RECORD_WORDS = 2;
+/** A range's record, in 32-bit words (`Range` below). */
+export const RANGE_WORDS = 12;
+/** The uniform block (`Cull`), in bytes. */
 export const INSTANCE_CULL_UNIFORM_BYTES = 144;
-/** `drawIndexedIndirect`'s five arguments, in bytes — one a draw. */
+/** `drawIndexedIndirect`'s five arguments, in bytes — one a range. */
 export const INDIRECT_BYTES = 20;
 
 /**
@@ -59,7 +68,7 @@ export const INDIRECT_BYTES = 20;
  */
 export const INSTANCE_DECLARATIONS = /* wgsl */ `
 // The transform is the world matrix's three columns, each with the matching
-// row of its translation in w: the vertex stage rebuilds the matrix from them.
+// row of its translation in w.
 struct Instance {
   // The bounding sphere: centre, radius.
   sphere: vec4f,
@@ -73,9 +82,6 @@ struct Instance {
 struct Set {
   // start, end, the ramp weight as float bits, whether it is rigged.
   head: vec4u,
-  base: vec4u,
-  bandStart: vec4u,
-  _pad: vec4u,
 }
 
 /** Whether a sphere's centre lies outside plane \`p\` by more than \`grow\` metres. */
@@ -86,7 +92,7 @@ fn outsidePoint(p: vec4f, at: vec3f, grow: f32) -> bool {
 
 export const INSTANCE_CULL_WGSL = /* wgsl */ `
 const SCAN: u32 = ${INSTANCE_SCAN_SIZE}u;
-const PLACE: u32 = ${PLACE_SIZE}u;
+const EXPAND: u32 = ${EXPAND_SIZE}u;
 const NONE: u32 = 0xffffffffu;
 // A frustum plane's slack, metres: float error at a few kilometres, never an
 // instance that is in view.
@@ -94,22 +100,38 @@ const SLACK: f32 = 0.05;
 
 ${CULL_DECLARATIONS}
 ${INSTANCE_DECLARATIONS}
+${STREAM_INDEX_WGSL}
 
-struct Draw {
-  owner: u32,
-  indexCount: u32,
-  firstIndex: u32,
-  baseVertex: i32,
+// The uniform block's word 8: instances (\`itemCount\`), records, the record
+// scan's workgroups, ranges.
+fn recordCount() -> u32 { return cull[8].y; }
+fn recordWorkgroups() -> u32 { return cull[8].z; }
+fn rangeCount() -> u32 { return cull[8].w; }
+
+struct Range {
+  start: u32,
+  end: u32,
+  outBase: u32,
+  _pad: u32,
+  base: vec4u,
+  bandStart: vec4u,
 }
 
 @group(0) @binding(1) var<storage, read> instances: array<Instance>;
-@group(0) @binding(2) var<storage, read_write> bandOf: array<u32>;
+@group(0) @binding(2) var<storage, read_write> instanceBand: array<u32>;
 @group(0) @binding(3) var<storage, read_write> local: array<vec4u>;
 @group(0) @binding(4) var<storage, read_write> sums: array<vec4u>;
-@group(0) @binding(5) var<storage, read_write> sets: array<Set>;
-@group(0) @binding(6) var<storage, read> draws: array<Draw>;
-@group(0) @binding(7) var<storage, read_write> args: array<u32>;
-@group(0) @binding(8) var<storage, read_write> placed: array<vec4f>;
+@group(0) @binding(5) var<storage, read> sets: array<Set>;
+// Each instanced part's clusters, in its set's own frame: \`Cluster\` with the
+// first index into \`source\` in lo.w, the count in hi.w and the range in refs.x.
+@group(0) @binding(6) var<storage, read> clusters: array<Cluster>;
+// Each record's instance and cluster.
+@group(0) @binding(7) var<storage, read> records: array<vec2u>;
+@group(0) @binding(8) var<storage, read_write> recordBand: array<u32>;
+@group(0) @binding(9) var<storage, read_write> ranges: array<Range>;
+@group(0) @binding(10) var<storage, read> source: array<u32>;
+@group(0) @binding(11) var<storage, read_write> written: array<u32>;
+@group(0) @binding(12) var<storage, read_write> args: array<u32>;
 
 var<workgroup> scan: array<vec4u, SCAN>;
 
@@ -143,43 +165,73 @@ fn visible(inst: Instance) -> bool {
     outsidePoint(plane(cull[4]), at, grow));
 }
 
+/**
+ * Whether cluster \`c\` of instance \`inst\` may be in view: its box in the
+ * set's frame moved by the instance's matrix to the world box around it —
+ * the middle moved, the half-size through the matrix's absolute value.
+ */
+fn inView(inst: Instance, c: Cluster) -> bool {
+  let lo = bitcast<vec3f>(c.lo.xyz);
+  let hi = bitcast<vec3f>(c.hi.xyz);
+  let m = 0.5 * (lo + hi);
+  let h = 0.5 * (hi - lo);
+  let mid = inst.c0.xyz * m.x + inst.c1.xyz * m.y + inst.c2.xyz * m.z + vec3f(inst.c0.w, inst.c1.w, inst.c2.w);
+  let half = abs(inst.c0.xyz) * h.x + abs(inst.c1.xyz) * h.y + abs(inst.c2.xyz) * h.z;
+  let grow = bitcast<f32>(c.sway.x) * rampReach() + select(0.0, rigReach(), c.sway.y != 0u) + SLACK;
+  return !(outsideBox(plane(cull[0]), mid, half, grow) || outsideBox(plane(cull[1]), mid, half, grow) ||
+    outsideBox(plane(cull[2]), mid, half, grow) || outsideBox(plane(cull[3]), mid, half, grow) ||
+    outsideBox(plane(cull[4]), mid, half, grow));
+}
+
 @compute @workgroup_size(${INSTANCE_SCAN_SIZE})
-fn cullInstances(
+fn cullInstances(@builtin(global_invocation_id) gid: vec3u) {
+  let i = gid.x;
+  if (i >= itemCount()) { return; }
+  let inst = instances[i];
+  var band = NONE;
+  if (visible(inst)) {
+    let d = inst.sphere.xyz - eye();
+    let d2 = dot(d, d);
+    let b = bands2();
+    band = select(select(select(3u, 2u, d2 < b.z), 1u, d2 < b.y), 0u, d2 < b.x);
+  }
+  instanceBand[i] = band;
+}
+
+@compute @workgroup_size(${INSTANCE_SCAN_SIZE})
+fn cullRecords(
   @builtin(global_invocation_id) gid: vec3u,
   @builtin(local_invocation_index) li: u32,
   @builtin(workgroup_id) wid: vec3u,
 ) {
-  let i = gid.x;
+  let r = gid.x;
   var v = vec4u(0u);
-  if (i < itemCount()) {
-    let inst = instances[i];
-    var band = NONE;
-    if (visible(inst)) {
-      let d = inst.sphere.xyz - eye();
-      let d2 = dot(d, d);
-      let b = bands2();
-      band = select(select(select(3u, 2u, d2 < b.z), 1u, d2 < b.y), 0u, d2 < b.x);
-      v[band] = 1u;
+  if (r < recordCount()) {
+    let rec = records[r];
+    var band = instanceBand[rec.x];
+    if (band != NONE) {
+      let c = clusters[rec.y];
+      if (inView(instances[rec.x], c)) { v[band] = c.hi.w; } else { band = NONE; }
     }
-    bandOf[i] = band;
+    recordBand[r] = band;
   }
   scan[li] = v;
   workgroupBarrier();
   scanWorkgroup(li);
-  if (i < itemCount()) { local[i] = scan[li] - v; }
+  if (r < recordCount()) { local[r] = scan[li] - v; }
   if (li == SCAN - 1u) { sums[wid.x] = scan[li]; }
 }
 
-/** What the scan has written ahead of instance \`x\`; the grand total at \`x == instances\`. */
+/** What the scan has written ahead of record \`x\`; the grand total at \`x == records\`. */
 fn ahead(x: u32) -> vec4u {
-  if (x >= itemCount()) { return sums[cull[8].z]; }
+  if (x >= recordCount()) { return sums[recordWorkgroups()]; }
   return sums[x / SCAN] + local[x];
 }
 
 @compute @workgroup_size(${INSTANCE_SCAN_SIZE})
 fn prefix(@builtin(local_invocation_index) li: u32) {
   // Each thread scans a run of the workgroups' totals in place.
-  let n = cull[8].z;
+  let n = recordWorkgroups();
   let per = (n + SCAN - 1u) / SCAN;
   let k0 = min(n, li * per);
   let k1 = min(n, k0 + per);
@@ -196,41 +248,38 @@ fn prefix(@builtin(local_invocation_index) li: u32) {
   }
   if (li == SCAN - 1u) { sums[n] = scan[li]; }
   storageBarrier();
-  for (var s = li; s < cull[8].y; s += SCAN) {
-    let base = ahead(sets[s].head.x);
-    let t = ahead(sets[s].head.y) - base;
-    sets[s].base = base;
-    sets[s].bandStart = vec4u(0u, t.x, t.x + t.y, t.x + t.y + t.z);
-  }
-  // A draw's count is its set's survivors, read off the scan rather than off
-  // \`sets\`, which other threads of this loop are still writing.
-  for (var d = li; d < cull[8].w; d += SCAN) {
-    let draw = draws[d];
-    let head = sets[draw.owner].head;
-    let t = ahead(head.y) - ahead(head.x);
-    let o = d * 5u;
-    args[o] = draw.indexCount;
-    args[o + 1u] = t.x + t.y + t.z + t.w;
-    args[o + 2u] = draw.firstIndex;
-    args[o + 3u] = bitcast<u32>(draw.baseVertex);
+  for (var g = li; g < rangeCount(); g += SCAN) {
+    let range = ranges[g];
+    let base = ahead(range.start);
+    let t = ahead(range.end) - base;
+    ranges[g].base = base;
+    ranges[g].bandStart = vec4u(0u, t.x, t.x + t.y, t.x + t.y + t.z);
+    let o = g * 5u;
+    args[o] = t.x + t.y + t.z + t.w;
+    args[o + 1u] = 1u;
+    args[o + 2u] = range.outBase;
+    args[o + 3u] = 0u;
     args[o + 4u] = 0u;
   }
 }
 
-@compute @workgroup_size(${PLACE_SIZE})
-fn place(
-  @builtin(global_invocation_id) gid: vec3u,
+@compute @workgroup_size(${EXPAND_SIZE})
+fn expand(
+  @builtin(local_invocation_index) li: u32,
+  @builtin(workgroup_id) wid: vec3u,
   @builtin(num_workgroups) nw: vec3u,
 ) {
-  let i = gid.y * nw.x * PLACE + gid.x;
-  if (i >= itemCount()) { return; }
-  let band = bandOf[i];
+  let r = wid.y * nw.x + wid.x;
+  if (r >= recordCount()) { return; }
+  let band = recordBand[r];
   if (band == NONE) { return; }
-  let inst = instances[i];
-  let s = sets[inst.refs.x];
-  let slot = s.head.x + s.bandStart[band] + (ahead(i)[band] - s.base[band]);
-  placed[slot * 3u] = inst.c0;
-  placed[slot * 3u + 1u] = inst.c1;
-  placed[slot * 3u + 2u] = inst.c2;
+  let rec = records[r];
+  let c = clusters[rec.y];
+  let g = ranges[c.refs.x];
+  let at = g.outBase + (ahead(r)[band] - g.base[band]) + g.bandStart[band];
+  let high = SCATTER_BIT | (rec.x << VERTEX_BITS);
+  for (var k = li; k < c.hi.w; k += EXPAND) {
+    written[at + k] = high | source[c.lo.w + k];
+  }
 }
 `;

@@ -1461,7 +1461,7 @@ fixes, 0dd2d09 the measurement's fix).
     stream is one in the main pass as in every other, if it keeps the
     blocks ahead of the landform (its "What", below).
 
-### X3.5b — The fold: one draw a recipe, blocks and scatter together — **M–L** (decision)
+### X3.5b — The fold: one draw a recipe, blocks and scatter together — **M–L** (decision) — **LANDED**
 
 Numbered after X3.5 rather than renumbering X3.6, whose sub-steps are named
 across the tree. **Decided** (the user, 2026-10-14): it lands before X3.6.
@@ -1556,12 +1556,97 @@ floor its shading:
   the new vertex stage and both culls; X0.3; the phone's tick and
   `gpu.frame` on Greyfen, Harrowmead and Sarab.
 
+**Landed** (2026-10-21).
+- **What it is.** One vertex stage draws the whole stream, PULLED: no vertex
+  buffer, every attribute read out of a storage array in group 2 at the
+  vertex the index names, and `world` built in `main` — identity for a
+  block's or the landform's index, the instance's transform for a scatter
+  index (`render/celVertex.ts`, the assembler's `VertexProgram.pull` and
+  storage bindings). The index is `render/streamIndex.ts`: the top bit set
+  is scatter, then 13 bits of instance, then 18 of vertex counted from the
+  start of the group's arrays, where its instanced parts now lie FIRST — so
+  the "per-group base" of the decision above is not needed at all. The
+  instance cull keeps its per-instance tests (what `?cullcheck` reads) and
+  then EXPANDS: each instanced part is cut into clusters in its set's frame,
+  a record is one cluster of one instance, kept when its instance is and its
+  box moved by the instance's matrix is not wholly outside a plane, and the
+  kept records are scanned near-first into their group's region of one
+  stream, each index written with the scatter bit and the instance set
+  (`wgsl/instanceCull.ts`: `cullInstances`, `cullRecords`, `prefix`,
+  `expand`). A group is one pipeline where it was two.
+- **What it is NOT: one draw a recipe.** A group with scatter is TWO draws,
+  its blocks' plain draw and its scatter's ONE indirect draw, through one
+  pipeline. This decision post-dates the plan above: the Intel laptop
+  (2026-10-18, `docs/rendering.md`) made the blocks never-indirect after
+  this step was written, and the scatter cannot be drawn plain — its
+  survivors are a count only the GPU knows, and a plain range holding every
+  instance would hand the GPU the whole forest as triangles of no area every
+  frame. Folding the landform into its recipe's group was not done either:
+  the groups stay one per recipe A LAYER, which keeps every block ahead of
+  every landform draw, and the one recipe in both layers (the rim wearing
+  the pines' material) costs one draw.
+- **The two things X3.4b left, settled.** The size gate stays per INSTANCE:
+  the fold was to move no pixel against X3.5's picture, and a gate per block
+  surface would have moved every distant prop that drops today. And a part
+  `BlockHandover.install` cannot draw (an array its variant reads missing)
+  now hands its whole group back (`WorldBlocks.addInstanced` withholds it,
+  `finish` hands it back before anything is cut), where it was skipped while
+  its pieces were still cut — a hole. A cut past the index's budget goes
+  back the same way, whole: the map's instances past 8,192, or a group's
+  instanced vertices past 262,144.
+- **Measured** (the BEFORE at f70be50 in a worktree, the same session):
+  - **`census.mjs --against --fall`: every row falls.** Ours a vantage,
+    before to after: Hollowmere 113 to 8, Greyfen 161 to 17, Coldharbour 172
+    to 19, Harrowmead 212 to 14, Sarab 208 to 13, Cinderhaven 206 to 11,
+    Kurenai 122 to 24; Babylon's unmoved. Totals over the vantages: 1,749 to
+    384, 1,090 to 226, 2,206 to 829, 3,861 to 891, 2,818 to 673, 1,008 to
+    228, 428 to 134.
+  - **The bank, against the BEFORE** (`--check --keep` both sides, graded at
+    `CHECK_TOLERANCE`): **61 of 61 within the floor, 57 byte-identical.**
+    The four that move are Greyfen's `treeline` (0.0008% of pixels),
+    `marsh` (0.0005%), `crossing` (0.0002%) and `ground` (0.0001%), each
+    mean 0.0000/255: equal-depth ties, the scatter's draw order now being
+    near-first across a group's parts rather than part by part. No page or
+    console error on either side, so the DEV trade check was silent.
+  - **What it COST is memory, and it is the step's open trade.** The stream
+    is sized for every record surviving, because a range can never overrun
+    — that is every scatter index Babylon's merge holds. Our world's buffers
+    at the deploy, before to after: Greyfen 86.8 to 206.9 MB (the stream
+    30.9M indices), Harrowmead 82.4 to 166.7 (21.6M), Kurenai 154.4 to 218.1
+    (16.4M), Hollowmere 83.3 to 90.6, Coldharbour 138.8 to 148.9, Sarab 74.7
+    to 86.4, Cinderhaven 271.8 to 278.5. X3.3c held 680 MB on Greyfen and
+    the phone drew it, so this is not a wall. **The lever, not built:** a
+    region capacity under the full expansion, `prefix` clamping each draw's
+    count to it and `expand` skipping what lands past it — near-first, so
+    an overflow drops the FARTHEST records of the view that overflowed. It
+    trades a pop in a rare view for the memory, which is the user's call.
+  - `shaders.mjs`: clean on seven maps — one build a shape now (10/10 and
+    12/12, the two culls included), the pulled stage's six storage arrays
+    within a default device's limits. `gate.mjs`: clean on seven maps,
+    nothing handed back on any (`handedBack` 0, every taken surface drawn).
+    `npm run build` and `corecheck` pass.
+  - **X0.3 on the desktop** (`bench.mjs greyfen harrowmead sarab --max
+    --gpu --runs 3`, 3440x1440, the BEFORE then the AFTER in one session;
+    every run fought `83e8e74ef36916ba`, `3ae90f2f08fb0643` and
+    `986c2e35557fb679`, every segment's spread within 8%). **The fights got
+    faster**, the CPU no longer encoding a draw a part: mean new / old
+    Greyfen 0.947, Harrowmead 0.932, Sarab 0.865 (its tick 11.19 to 9.77
+    ms). The vantages and the path held, 0.995 to 1.017. `gpu.frame` held
+    within 2% on every group (Greyfen's path 5.75 to 5.61 ms, Sarab's
+    vantages 3.60 to 3.67). **The cull grew as expected**, the instances
+    expanded into their records: `gpu.cull` Greyfen 0.027 to 0.095 ms on the
+    vantages (0.5% to 1.7% of the frame), Harrowmead 0.029 to 0.085, Sarab
+    0.029 to 0.041 — finding 61's BEFORE, now its AFTER.
+- **Owed.** The phone's tick and `gpu.frame` on Greyfen, Harrowmead and
+  Sarab against the BEFORE of 2026-10-21 (above), in one session beside a
+  BEFORE if the difference is under ~8%.
+
 ### X3.6 — The static world's other passes (PERF_PLAN B3) — **L, as four sub-steps**
 
 Each sub-step lands on its own. Under rule 5, each pass's texture moves to our
 side here, and Babylon's materials, which still draw the bodies and the rest,
-sample a wrapped view of it. Every pass draws through X3.5b's fold: one draw a
-recipe a pass.
+sample a wrapped view of it. Every pass draws through X3.5b's fold: a group's
+plain draw and, with scatter, its one indirect draw, a pass.
 
 - **X3.6a — the world's shadows:** both cascades, the foliage map and the
   lightning flash map (`ShadowSystem`, today a `ShadowGenerator` with a
@@ -1917,6 +2002,6 @@ Phase 1 actually took.
 | X3.4 | Every prop was unique, so there were no variants to instance: how many variants a kind, or defer the step? | **Decided** 2026-10-14: 16 variants a kind, each placement under its own yaw and scale; maple's four crowns four variants each (X3.4). |
 | X3.4 | Scatter AO: baked per kind (cheaper, changes the look) or per instance? | **Decided** 2026-10-14: per kind, judged in the bank. If the look is wrong, the fix is X3.4's "If the look is wrong" (a per-kind bake plus a per-instance term), not a per-instance bake. |
 | X3.5b | X3.4b's instanced draws are one a part of a set, issued every frame: fold them into one draw a recipe, and when? | **Decided** 2026-10-14: fold them by vertex pulling, blocks and scatter in one stream, before X3.6 repeats them in every pass. Fewer variants was not the lever: it halves the count and costs the look. |
-| X3.5b | The instance in the index's high bits, or non-indexed draws over (record, corner)? | The step's first decision: the high bits unless a map's counts break the 32-bit budget. |
+| X3.5b | The instance in the index's high bits, or non-indexed draws over (record, corner)? | **Decided** 2026-10-20: the high bits, with the scatter addressed in its own region (13 bits of instance, 18 of vertex, its parts laid first); landed 2026-10-21, at two draws a group with scatter, since the blocks stay never-indirect. |
 | X4.2 | Which hull parts drop at range (the tank's links and wheels, the MG rings)? | An art call; PERF_PLAN A3 measured +6.5% at 300 m on Cinderhaven. |
 | X6.2 | Is it ready to merge to `develop`? | Only when X6.2's "Before" list passes in full. |

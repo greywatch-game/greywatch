@@ -7,9 +7,11 @@
  * `assembleFragment` and `assembleVertex`, which emit the stage's input and
  * output structs, the uniform structs, every `@group`/`@binding`, the
  * preprocessed body and the entry point — with Babylon's y flip for the kind
- * of pass the module is built for; and the two rewrites that make a body
- * written for Babylon's accessors read ours — `uniforms.<name>` to the block
- * that declares it, and a strided scalar array's element to its `.el`.
+ * of pass the module is built for, and for a PULLED vertex stage the reads of
+ * its attributes out of storage (`VertexProgram.pull`); and the two rewrites
+ * that make a body written for Babylon's accessors read ours —
+ * `uniforms.<name>` to the block that declares it, and a strided scalar
+ * array's element to its `.el`.
  * Invariants: a binding's number is its place in its group's list, counted
  * over every entry whatever the variant (a texture entry takes two: its
  * sampler, then itself), so a binding keeps its number in every variant of a
@@ -104,6 +106,14 @@ export type Binding =
       /** `texture_2d<f32>`, `texture_3d<f32>`, `texture_cube<f32>`, … */
       readonly type: string;
       readonly when?: Guard;
+    }
+  | {
+      /** A read-only storage buffer — what a pulled attribute is read out of. */
+      readonly kind: "storage";
+      readonly name: string;
+      /** `array<f32>`, `array<vec4f>`, … */
+      readonly type: string;
+      readonly when?: Guard;
     };
 
 /**
@@ -144,12 +154,24 @@ export interface Attribute {
   readonly type: string;
   readonly when?: Guard;
   /**
-   * `"instance"`: read once an INSTANCE rather than once a vertex. A draw
-   * packs every instance attribute into one buffer, in list order
-   * (`render/celVertex.ts`'s `bufferLayouts`). Absent is a vertex's own.
+   * In a PULLED stage (`VertexProgram.pull`), the storage binding it is read
+   * out of, declared as `PULLED_STORAGE` says its type is stored; a vertex
+   * buffer's attribute has none.
    */
-  readonly step?: "instance";
+  readonly from?: string;
 }
+
+/**
+ * The storage array a pulled attribute of each type is read out of. A
+ * `vec3f` is three floats of an `array<f32>`, because an `array<vec3f>` in
+ * storage is strided to 16 bytes and a vertex's arrays are packed tight.
+ */
+export const PULLED_STORAGE: Readonly<Record<string, string>> = {
+  f32: "array<f32>",
+  vec2f: "array<vec2f>",
+  vec3f: "array<f32>",
+  vec4f: "array<vec4f>",
+};
 
 /**
  * A block of values a vertex stage's `main` WRITES before calling the body,
@@ -187,9 +209,19 @@ export interface VertexProgram {
   /**
    * WGSL statements `main` runs after it has copied its inputs into
    * `vertexInputs` and before it calls `entry`: where a `PrivateBlock` is
-   * written.
+   * written. In a pulled stage it runs FIRST, and defines the `u32` the
+   * attributes are read at when that is not `vertexIndex` itself (`pull`).
    */
   readonly prelude?: string;
+  /** WGSL at module scope, after the bind groups: constants the prelude reads. */
+  readonly declarations?: string;
+  /**
+   * Set, the stage is PULLED: `main` takes `@builtin(vertex_index)
+   * vertexIndex` and no vertex buffer, and reads every attribute out of its
+   * `from` storage binding at the vertex this names — `vertexIndex`, or a
+   * `u32` the prelude defines.
+   */
+  readonly pull?: string;
 }
 
 /** What kind of pass a module is built for: the one fact the flip turns on. */
@@ -198,13 +230,14 @@ export interface StageTarget {
   readonly flipY: boolean;
 }
 
-/** One attribute as a variant resolved it: what a vertex buffer layout is built from. */
+/** One attribute as a variant resolved it: what its buffer is built and bound from. */
 export interface AssembledAttribute {
   readonly name: string;
-  readonly location: number;
   readonly type: string;
-  /** Read once an instance — see `Attribute.step`. */
-  readonly instance: boolean;
+  /** A vertex buffer's attribute: its location; null in a pulled stage. */
+  readonly location: number | null;
+  /** A pulled attribute: the storage binding it is read out of; null otherwise. */
+  readonly from: string | null;
 }
 
 /** A vertex module, and the attributes it reads. */
@@ -216,9 +249,9 @@ export interface AssembledVertex extends AssembledModule {
 export interface AssembledBinding {
   readonly group: number;
   readonly binding: number;
-  readonly kind: "uniform" | "sampler" | "texture";
+  readonly kind: "uniform" | "sampler" | "texture" | "storage";
   readonly name: string;
-  /** The WGSL type: the struct's name, `sampler`, or the texture type. */
+  /** The WGSL type: the struct's name, `sampler`, the texture type, or the storage array's. */
   readonly type: string;
 }
 
@@ -301,12 +334,20 @@ export function assembleVertex(
   const variant = new Set(defines);
   const tag = `${program.label} [${[...variant].sort().join("+")}]`;
   const holds = (when?: Guard): boolean => guardHolds(when, variant);
+  const pull = program.pull;
 
-  const attributes = program.attributes
+  const attributes: AssembledAttribute[] = program.attributes
     .filter((a) => holds(a.when))
-    .map((a, location) => ({ name: a.name, location, type: a.type, instance: a.step === "instance" }));
+    .map((a, location) => {
+      if ((pull === undefined) !== (a.from === undefined)) {
+        throw new Error(`${tag}: "${a.name}" names its storage when, and only when, the stage is pulled`);
+      }
+      return { name: a.name, type: a.type, location: pull === undefined ? location : null, from: a.from ?? null };
+    });
   const lines = ["struct VertexInputs {"];
-  for (const a of attributes) lines.push(`  @location(${a.location}) ${a.name}: ${a.type},`);
+  for (const a of attributes) {
+    lines.push(a.location === null ? `  ${a.name}: ${a.type},` : `  @location(${a.location}) ${a.name}: ${a.type},`);
+  }
   lines.push("}", "var<private> vertexInputs: VertexInputs;");
 
   lines.push("struct FragmentInputs {", "  @builtin(position) position: vec4f,");
@@ -330,6 +371,7 @@ export function assembleVertex(
     if (members.length === 0) continue;
     lines.push(`struct ${block.struct} {`, ...members, "}", `var<private> ${block.var}: ${block.struct};`);
   }
+  if (program.declarations) lines.push(program.declarations);
   lines.push(
     bindUniforms(
       preprocess(program.body, { defines: variant, includes: program.includes, label: tag }),
@@ -338,11 +380,18 @@ export function assembleVertex(
       tag,
     ),
   );
+  const prelude = program.prelude ? [program.prelude] : [];
+  const inputs =
+    pull === undefined
+      ? ["fn main(input: VertexInputs) -> FragmentInputs {", "  vertexInputs = input;", ...prelude]
+      : [
+          "fn main(@builtin(vertex_index) vertexIndex: u32) -> FragmentInputs {",
+          ...prelude,
+          ...attributes.map((a) => `  vertexInputs.${a.name} = ${pullRead(a, pull, declared.bindings, tag)};`),
+        ];
   lines.push(
     "@vertex",
-    "fn main(input: VertexInputs) -> FragmentInputs {",
-    "  vertexInputs = input;",
-    ...(program.prelude ? [program.prelude] : []),
+    ...inputs,
     `  ${program.entry}();`,
     // Babylon's own line, with the factor its internals buffer holds for a
     // texture pass (the header).
@@ -351,6 +400,22 @@ export function assembleVertex(
     "}",
   );
   return { label: tag, code: lines.join("\n"), bindings: declared.bindings, attributes };
+}
+
+/**
+ * The expression a pulled attribute is read with at vertex `index`, out of
+ * its storage binding — which the variant must bind, stored as
+ * `PULLED_STORAGE` says an attribute of its type is.
+ */
+function pullRead(a: AssembledAttribute, index: string, bindings: readonly AssembledBinding[], tag: string): string {
+  const from = a.from!;
+  const want = PULLED_STORAGE[a.type];
+  const storage = bindings.find((b) => b.kind === "storage" && b.name === from);
+  if (!want || !storage || storage.type !== want) {
+    throw new Error(`${tag}: "${a.name}" is read out of "${from}", which this variant does not bind as ${want}`);
+  }
+  if (a.type !== "vec3f") return `${from}[${index}]`;
+  return `vec3f(${from}[${index} * 3u], ${from}[${index} * 3u + 1u], ${from}[${index} * 3u + 2u])`;
 }
 
 /** What `declareGroups` hands back: the WGSL, what it binds, and how a body's names route. */
@@ -387,6 +452,11 @@ export function declareGroups(
       const at = first[e];
       if (!holds(entry.when)) return;
       const prefix = `@group(${group}) @binding(${at})`;
+      if (entry.kind === "storage") {
+        declare.push(`${prefix} var<storage, read> ${entry.name}: ${entry.type};`);
+        bindings.push({ group, binding: at, kind: "storage", name: entry.name, type: entry.type });
+        return;
+      }
       if (entry.kind === "sampled") {
         const sampler = `${entry.name}Sampler`;
         declare.push(`${prefix} var ${sampler}: sampler;`);

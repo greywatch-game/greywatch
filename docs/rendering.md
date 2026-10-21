@@ -3400,16 +3400,29 @@ probes and the lamps' atlas — until X3.6 moves those passes.
 - **`render/WorldBlocks.ts` draws one GROUP per cel recipe A LAYER** — the
   blocks' and the landform's, so the rim (which wears the pines' material)
   never shares a group, or the scatter's instanced parts, with a block —
-  every surface of the group end to end on
-  one set of vertex buffers (an attribute a surface lacks but the variant
+  every instanced part of the group and then every surface of it end to end
+  on one set of storage ARRAYS (an attribute a surface lacks but the variant
   reads is zeros, which is what Babylon's empty buffer reads), one pipeline,
-  one material, the identity `world` at group 2, and ONE plain `drawIndexed`
-  over the group's whole range of the cull's indices — never an indirect draw
-  (below). **The two layers are ONE cut, one cull, one cluster list and one
-  index buffer**, drawn by ONE `FrameDraw` at `"beforeAlphaTest"` — the
-  blocks, the scatter, then the landform — so nothing of Babylon's comes
-  between them, and X3.5b's fold may be one stream in the main pass as in
-  every other, if it keeps the blocks ahead of the landform.
+  one material, its geometry at group 2, and ONE plain `drawIndexed` over the
+  group's whole range of the cull's indices — never an indirect draw
+  (below) — beside at most ONE indirect draw of its scatter (X3.5b, below).
+  **The two layers are ONE cut, one cull, one cluster list and one index
+  buffer**, drawn by ONE `FrameDraw` at `"beforeAlphaTest"` — the blocks,
+  the scatter, then the landform — so nothing of Babylon's comes between
+  them and the blocks stay ahead of the landform.
+- **The vertex stage PULLS its attributes** (`render/celVertex.ts`,
+  `VertexProgram.pull` in `wgsl/assemble.ts`): no vertex buffer is bound;
+  `main` decodes the INDEX (`render/streamIndex.ts`) into a vertex and, for
+  the scatter, an instance, then reads each attribute out of its array in
+  group 2 at that vertex and builds `world` — identity, or the instance's
+  transform out of the same group — into the private block the body reads
+  `uniforms.world` from. An index with its top bit clear is a plain vertex
+  (a block's or the landform's); one with it set carries the instance in
+  the next 13 bits and the vertex in the low 18, counted from the start of
+  the group's arrays, where its instanced parts lie FIRST so no per-group
+  base is added. **The cut is held to that budget** (8,192 instances a map,
+  262,144 instanced vertices a group): what does not fit goes back to
+  Babylon whole, never drawn wrapped.
 - **A recipe's DEPTH BIAS is its pipeline's** (`CelRecipe.depthBias`, Babylon's
   `zOffsetUnits`, `PipelineState.depthBias`), asked for by `WorldBlocks` with
   the recipe — so the roads' `ROAD_DEPTH_UNITS` (-8) is drawn by our side as
@@ -3537,27 +3550,47 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
   something is drawn twice or not at all. A recipe our side does not take is
   drawn whole by Babylon, scatter and all, so a group with no surface of its
   own draws none of its instanced parts.
-- **A group is ours WHOLE or Babylon's whole.** It has two pipelines, the
-  blocks' and the instanced stage's (`celVertex.ts`'s
-  `CEL_INSTANCED_VERTEX_PROGRAM`: the same body, `world` built per instance
-  in `main` from three columns, through a `PrivateBlock` the assembler routes
-  `uniforms.world` to). If either fails, the group draws nothing and every
-  surface of it goes back, since Babylon's surfaces would draw the scatter
-  our side was cutting out.
-- **The instances are culled on the GPU the way the clusters are**
-  (`render/InstanceCull.ts`, `render/wgsl/instanceCull.ts`), recorded into
-  the same encoder: the instance's sphere against the reach, the size gate
-  and the five planes, grown by the most its set can sway. Survivors are
-  scanned near-first into their SET's own region of `placed`, which is bound
-  as the instance buffer at that region's offset, because an indirect draw
-  may not carry a `firstInstance` without `indirect-first-instance`. **The
-  size gate is per INSTANCE here, where it was per block surface**, so a
-  scrap of litter under 3 px drops where its block never would.
-- **A draw a variant a material**: WebGPU has no multi-draw-indirect, so
-  Greyfen's main pass went from our 9 draws to 160 (9 groups and 151
-  instanced). An empty one costs two calls and no instance. What it bought
-  is memory: our side of Greyfen holds 81 MB where it held 680 (its clusters
-  86,192 to 4,731).
+- **A group is ours WHOLE or Babylon's whole.** It has ONE pipeline, which
+  draws its blocks and its scatter alike (the pulled stage, above). If it
+  fails, the group draws nothing and every surface of it goes back, since
+  Babylon's surfaces would draw the scatter our side was cutting out — and so
+  does a group whose instanced part lacks an array its variant reads
+  (`WorldBlocks.addInstanced`), which until X3.5b was skipped while its
+  pieces were still cut, a hole.
+- **The instances are culled on the GPU the way the clusters are, and then
+  EXPANDED into their clusters** (`render/InstanceCull.ts`,
+  `render/wgsl/instanceCull.ts`; the fold, X3.5b), recorded into the same
+  encoder. Each instance's sphere is tested against the reach, the size gate
+  and the five planes, grown by the most its set can sway, and its band is
+  the sphere's — what `?cullcheck` reads. Each instanced part is cut into
+  clusters in its set's own frame as a block is (`clusters.ts`), and a
+  RECORD is one cluster of one instance: kept when its instance is and its
+  box, moved by the instance's matrix and grown by its own sway, is not
+  wholly outside a plane — so a big tree half in view draws half. The kept
+  records are scanned near-first into their group's own region of ONE
+  stream, by a scan and never an atomic append, each index written as its
+  cluster's with the scatter bit and the instance set above it. **The size
+  gate is per INSTANCE**, where Babylon's was per block surface, so a scrap
+  of litter under 3 px drops where its block never would — kept at X3.5b on
+  purpose, because the fold was to move no pixel against X3.4b's picture and
+  a gate per surface would have.
+- **A draw a group, not a draw a variant a material.** X3.4b drew one
+  `drawIndexedIndirect` per part of a set, because WebGPU has no
+  multi-draw-indirect: Greyfen's main pass was our 9 draws and 151
+  instanced, most of them empty. Folded, each group with scatter draws its
+  whole region of the stream with ONE indirect draw at a count the prefix
+  writes. **It is still a SECOND draw beside the group's plain one**, and
+  that is the Intel rule below rather than a step left undone: the blocks
+  may not be drawn indirect, and the scatter cannot be drawn plain, since
+  its survivors are a count only the GPU knows and a range that held every
+  instance is the whole forest as triangles of no area every frame. Our
+  draws a vantage fell 161 to 17 on Greyfen and 212 to 14 on Harrowmead,
+  and the desktop's fights got 5-13% faster. **The stream is sized for every
+  record surviving and never cleared, and that is MEMORY**: it holds every
+  scatter index Babylon's merge holds, so our side of Greyfen went from the
+  87 MB X3.4b left it at (680 before X3.4b) to 207, Harrowmead 82 to 167
+  (`BABYLON_EXIT.md` X3.5b has the lever, a region capacity under the full
+  expansion, which drops the farthest records of a view that overflows).
 - **Three URL switches A/B all of this on a device nobody here owns**, in a
   shipped build (`core/urlOverrides.ts`), and a capture names whichever was
   set in `graphics.forced`. `?babylonworld` takes nothing, so Babylon draws
@@ -3620,10 +3653,12 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
   indirect-draw hangs on Iris Xe-class iGPUs; this is not that, but it is
   the same path.)
 - **The scatter's indirect draws were never seen to drop**, on that laptop or
-  anywhere, and stay indirect: an instance count is not a range a plain draw
-  can cover with triangles of no area. A device that drops THEM owes the
-  instance cull the same question, and the switches above are how it was
-  asked. The SECTIONS OF GRASS that flicker on the same laptop are older
+  anywhere, and stay indirect: what survives of the scatter is not a range a
+  plain draw can cover with triangles of no area. Since the fold (X3.5b) they
+  are one a group rather than one a part of a set, each over far more
+  triangles — the shape the blocks were in when they dropped — so a device
+  that drops THEM owes the instance cull the same question, and the switches
+  above are how it was asked. The SECTIONS OF GRASS that flicker on the same laptop are older
   than our renderer and draw nothing indirect: `FINDINGS.md` 62.
 - **The hunt's switches are GONE**, taken out once the laptop stopped
   flickering and the phone drew right on the plain draw (2026-10-18):

@@ -2795,8 +2795,9 @@ this is its BEFORE.
   and X3.5's with Cinderhaven's landform. **How to settle it**: on the
   desktop, whose NVIDIA driver draws indirect faithfully, a URL diagnostic
   that draws the blocks and the landform INDIRECT at their survivors'
-  count, A/B against the plain draw with `gpu.frame`. X3.5b's fold draws
-  the same way, so it inherits the answer.
+  count, A/B against the plain draw with `gpu.frame`. X3.5b's fold kept
+  the blocks and the landform on that plain draw (only the scatter is drawn
+  indirect, one draw a group), so the answer is still owed and still theirs.
 - **The phone's `gpu.frame`** on Greyfen and Cinderhaven (finding 52) is the
   number this matters for; the desktop only says where to look.
 

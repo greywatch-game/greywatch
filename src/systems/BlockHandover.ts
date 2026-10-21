@@ -152,11 +152,13 @@ export class BlockHandover {
     if (field) {
       field.sets.forEach((set, s) => {
         for (const part of set.parts) {
+          // A part wears the block merge's palette material, so a recipe our
+          // side cannot keep is one whose blocks it never took either: Babylon
+          // draws that recipe whole, scatter and all. A part our side cannot
+          // draw for want of an array hands its whole group back
+          // (`WorldBlocks.addInstanced`), never skipped while its pieces are cut.
           const recipe = this.mats.celRecipe(part.material);
-          const g = part.geometry;
-          if (!recipe || !g.normals || !g.colors) continue;
-          if (recipe.defines.includes("CEL_PALETTE") && !g.uvs2) continue;
-          this.blocks.addInstanced(s, part.name, g, recipe);
+          if (recipe) this.blocks.addInstanced(s, part.name, part.geometry, recipe);
         }
       });
     }

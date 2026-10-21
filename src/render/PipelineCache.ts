@@ -248,6 +248,7 @@ function pipelineKey(spec: PipelineSpec): string {
 function layoutEntry(b: AssembledBinding, visibility: number): GPUBindGroupLayoutEntry {
   const entry: GPUBindGroupLayoutEntry = { binding: b.binding, visibility };
   if (b.kind === "uniform") entry.buffer = { type: "uniform" };
+  else if (b.kind === "storage") entry.buffer = { type: "read-only-storage" };
   else if (b.kind === "sampler") entry.sampler = { type: "filtering" };
   else entry.texture = { sampleType: "float", viewDimension: viewDimension(b.type) };
   return entry;
