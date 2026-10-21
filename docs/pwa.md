@@ -140,7 +140,10 @@ Details about the phone, each of which was a visible bug first:
   canvas, so fullscreening the canvas plays the game with no tickets, no flags, no
   vitals and no deploy map. It is gated on a coarse pointer: an installed app is
   already fullscreen from the manifest, and on the desktop the pointer lock does the
-  immersing.
+  immersing. **`Game` re-applies the render scale on `fullscreenchange`**, now and
+  300 ms later as on `orientationchange`, because two phone captures drew a canvas
+  that had not followed its window — suspected, not proven, to be the fullscreen
+  step; the profiler's `viewport` (report version 18) says on the next capture.
 - **A touch is felt nowhere in `InputManager`, and every screen a phone meets
   carries its own button** — the menu's and the round-over card's Deploy, the deploy
   screen's Deploy plate (`.dp-go`), the kit screen's — each listening for its own

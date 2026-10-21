@@ -58,7 +58,10 @@
  * size at which the runs AGREE: at the bank's 1920x1080 a frame here is ~2.5 ms,
  * the browser's pacing jitter is a tenth of it, and one vantage's hold moved
  * 23% between three runs while every segment at 3440x1440 stayed within 4%.
- * A run says its size in every capture (`device.backingStore`).
+ * A run says the size its frames were drawn at (`viewport`, report version
+ * 18): each run's line prints each group's backing store, and a group that
+ * was resized under it (`sizes` over 1) or drew a canvas that did not follow
+ * its window (`staleFrames`) is WARNED about — it measured another workload.
  *
  * **Uncapped by default**, the opposite of `gate.mjs`, because a benchmark
  * that the display's rate holds at a ceiling reports the ceiling: every run
@@ -136,6 +139,8 @@ console.log(
 
 const results = {};
 const failures = [];
+/** What a run measured that it should not have, short of a failure — the size. */
+const warnings = [];
 for (const id of targets) {
   const runs = [];
   for (let r = 0; r < RUNS; r++) {
@@ -149,9 +154,20 @@ for (const id of targets) {
         ).join("  ") +
         `  fight ${run.bench?.fight.hash ?? "?"}` +
         `  sim ${run.simMode ?? "?"}` +
+        `  size ${GROUPS.map((k) => g[k]?.backingStore ?? "?").join("/")}` +
         (run.errors.length ? `  ! ${run.errors.length} errors` : ""),
     );
     for (const e of run.errors.slice(0, 3)) console.log(`   ! ${e.slice(0, 200)}`);
+    // The size every frame was drawn at (report version 18); an older
+    // capture has no `sizes` and says nothing.
+    for (const k of GROUPS) {
+      const s = g[k];
+      if (!s || s.sizes === undefined) continue;
+      if (s.sizes > 1) warnings.push(`${id} run ${r + 1} ${k}: resized under it (${s.sizes} sizes)`);
+      if (s.staleFrames > 0) {
+        warnings.push(`${id} run ${r + 1} ${k}: ${s.staleFrames} frames on a canvas that did not follow its window`);
+      }
+    }
   }
   results[id] = summarise(id, runs);
 }
@@ -249,6 +265,11 @@ if (OUT) {
 await browser.close();
 vite?.stop();
 
+if (warnings.length) {
+  console.log(`\n${warnings.length} size warning(s) — those groups measured another workload:`);
+  for (const w of warnings) console.log(`  ${w}`);
+}
+
 if (failures.length) {
   console.log(`\n${failures.length} failure(s):`);
   for (const f of failures) console.log(`  ${f}`);
@@ -300,6 +321,7 @@ async function benchOnce(id) {
       bench: r.bench,
       device: r.device,
       graphics: r.graphics,
+      viewport: r.viewport ?? null,
       window: r.window,
       frame: r.frame,
       gpu: r.gpu,

@@ -2,8 +2,9 @@
  * FrameProfile.ts — where a frame's milliseconds went, recorded continuously
  * and captured backwards.
  * Owns: the RECORDER — the ring that holds the recent past, the brackets that
- * fill it, the hooks on the scene, the engine and the device, the clock-grain,
- * overhead and heap probes, and the `window.__profile` handle. The phase list
+ * fill it, the hooks on the scene, the engine, the device and the window's
+ * size (`watchWindow`), the clock-grain, overhead and heap probes, and the
+ * `window.__profile` handle. The phase list
  * is `profilePhases.ts`'s and what a capture SAYS is `profileReport.ts`'s,
  * which this hands a `ProfileRing` at the moment of a capture. Owns NO game
  * state and reads none: `Game` brackets the phases it already sequences,
@@ -396,6 +397,31 @@ export class FrameProfile {
   private meshWalkMs: Float32Array | null = null;
   private rttMs: Float32Array | null = null;
   private particlesMs: Float32Array | null = null;
+  /**
+   * The size each row was DRAWN at, and the window it was drawn in.
+   *
+   * `canvasW`/`canvasH` are the backing store, read as `getRenderWidth(true)`
+   * — the canvas itself, never a render target that happens to be bound —
+   * which is a property read and no layout. `windowW`/`windowH` are the
+   * window's CSS size as the last `resize` left it (`winW`/`winH`, kept by
+   * `watchWindow`), because `innerWidth` read per frame can flush a layout.
+   * `scaleAt` is the engine's hardware scaling level, which is what turns the
+   * one into the size the other should have been (`ProfileReport.viewport`).
+   * All five are ASSIGNED on every row, so a lap leaves nothing behind.
+   *
+   * **Read at save, the size answered for the wrong moment**: three phone
+   * captures in one session all read an 832x384 window, one with the
+   * 1170x540 canvas that window makes and two with a 1170x618 one it does
+   * not, and nothing said which size their runs had been drawn at.
+   */
+  private canvasW: Uint16Array | null = null;
+  private canvasH: Uint16Array | null = null;
+  private windowW: Uint16Array | null = null;
+  private windowH: Uint16Array | null = null;
+  private scaleAt: Float64Array | null = null;
+  /** `innerWidth`/`innerHeight` as the last `resize` left them — see `watchWindow`. */
+  private winW = 0;
+  private winH = 0;
   /**
    * Which segment of a benchmark each row was, as an index into `segments`
    * plus one — 0 is a row nobody labelled, which is every row outside a
@@ -790,6 +816,11 @@ export class FrameProfile {
     this.meshWalkMs = new Float32Array(n);
     this.rttMs = new Float32Array(n);
     this.particlesMs = new Float32Array(n);
+    this.canvasW = new Uint16Array(n);
+    this.canvasH = new Uint16Array(n);
+    this.windowW = new Uint16Array(n);
+    this.windowH = new Uint16Array(n);
+    this.scaleAt = new Float64Array(n);
     this.segmentAt = new Uint8Array(n);
     this.segments = [];
     this.segmentNow = 0;
@@ -856,6 +887,7 @@ export class FrameProfile {
     this.hookRender(scene, glow);
     this.hookEngine(scene);
     this.hookCreation();
+    this.watchWindow();
 
     this.on = true;
     this.grainMs = probeGrain();
@@ -926,6 +958,11 @@ export class FrameProfile {
     this.meshWalkMs = null;
     this.rttMs = null;
     this.particlesMs = null;
+    this.canvasW = null;
+    this.canvasH = null;
+    this.windowW = null;
+    this.windowH = null;
+    this.scaleAt = null;
     this.segmentAt = null;
     this.segments = [];
     this.segmentNow = 0;
@@ -1393,6 +1430,14 @@ export class FrameProfile {
       this.rttMs![i] = instr.renderTargetsRenderTimeCounter.current;
       this.particlesMs![i] = instr.particlesRenderTimeCounter.current;
     }
+    // The size this row was drawn at — see `canvasW`. A row with no engine
+    // reads 0, which the report skips.
+    const engine = this.scene?.getEngine() ?? null;
+    this.canvasW![i] = engine ? engine.getRenderWidth(true) : 0;
+    this.canvasH![i] = engine ? engine.getRenderHeight(true) : 0;
+    this.scaleAt![i] = engine ? engine.getHardwareScalingLevel() : 0;
+    this.windowW![i] = this.winW;
+    this.windowH![i] = this.winH;
     // The collections the sentinel reported since the last frame closed, and
     // the heap they left behind. `gcPending` is cleared here rather than in the
     // callback, so a collection that fires between two frames lands on the one
@@ -1597,6 +1642,11 @@ export class FrameProfile {
       meshWalkMs: this.meshWalkMs!,
       rttMs: this.rttMs!,
       particlesMs: this.particlesMs!,
+      canvasW: this.canvasW!,
+      canvasH: this.canvasH!,
+      windowW: this.windowW!,
+      windowH: this.windowH!,
+      scaleAt: this.scaleAt!,
       segmentAt: this.segmentAt!,
       segments: this.segments,
       bench: this.bench,
@@ -1644,6 +1694,21 @@ export class FrameProfile {
       cullTimed: this.cullTimer !== null,
       engine,
     };
+  }
+
+  /**
+   * Keeps the window's CSS size for `endFrame` to file — see `canvasW`. Read
+   * once now and again on every `resize`, never per frame; off with the
+   * other hooks, so a halted or disarmed profiler listens to nothing.
+   */
+  private watchWindow(): void {
+    const read = (): void => {
+      this.winW = window.innerWidth;
+      this.winH = window.innerHeight;
+    };
+    read();
+    window.addEventListener("resize", read);
+    this.unhook.push(() => window.removeEventListener("resize", read));
   }
 
   /**

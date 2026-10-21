@@ -1374,9 +1374,13 @@ fixes, 0dd2d09 the measurement's fix).
     run), render scale 0.5, cap 60, shadows, grass, Trees and glow `low`,
     volumetrics, GI, ground relief and FXAA off, **blur and grain OFF**
     (`FINDINGS.md` 52 had both on, so its frames are not this table's), the
-    minimap on. The backing store was **1170x540 on Greyfen and 1170x618 on
-    the other two**: a run whose `device.backingStore` differs is not
-    comparable. Fight hashes `83e8e74ef36916ba`, `3ae90f2f08fb0643`,
+    minimap on. The backing store read at save was **1170x540 on Greyfen and
+    1170x618 on the other two**, in an 832x384 window on all three: Greyfen's
+    is the canvas that window makes, and Harrowmead's and Sarab's is not —
+    their canvas had not followed the window (about 440 CSS pixels tall in a
+    384-pixel window), so they may have shaded up to 14% more rows, and an
+    at-save reading cannot say what the runs were drawn at. Report version
+    18 files the size of every frame (`viewport`, `docs/profiling.md`). Fight hashes `83e8e74ef36916ba`, `3ae90f2f08fb0643`,
     `986c2e35557fb679`. "GPU" is `gpu.frame`'s mean over its samples.
 
     | map | part | mean | p95 | 1% low | tick | render | draws | GPU |
@@ -1400,9 +1404,13 @@ fixes, 0dd2d09 the measurement's fix).
     20.4, Harrowmead 15.8-24.6, Sarab 10.8 to 17.7), so heat and the fight
     are not separable in one run. **What is short of the protocol**: one
     run a map rather than two, no stated warm-up before Greyfen, and
-    Greyfen's smaller screen. X3.5b's AFTER takes a thrown-away warm-up,
-    then two runs a map in this order and at these backing stores, and
-    re-takes this BEFORE beside it if a store will not match.
+    Harrowmead's and Sarab's stale canvases. **This BEFORE is re-taken on a
+    v18 build**, which holds a phone's run for a tap and a fullscreen,
+    settled canvas before it measures (`docs/profiling.md`), with a
+    thrown-away warm-up, then two runs a map in this order, every group's
+    `viewport` a single matched size (`staleFrames` 0, `sizes` 1, the
+    1170x540 an 832x384 window makes); X3.5b's AFTER repeats it the same
+    way.
   - **The landform's remaining GPU rise** (Cinderhaven's vantages and path,
     0.8-0.9 ms of `gpu.frame` on the desktop after 0dd2d09) went to
     `FINDINGS.md` 61 with the blocks'. The order half is settled below; what

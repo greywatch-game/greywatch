@@ -229,6 +229,24 @@ to its menu with the chip up and the run handed over: `VIEW` reads it. Nothing
 else is needed, and nothing the player chose is changed — the map and the enemy
 tier are the run's for its length and the stored picks come back after it.
 
+**On a touch device the run HOLDS before its first measured frame, until it is
+TAPPED** (`Game.holdBench`, `ProfileChip.setHold`). A run is a URL, and a page
+that was typed or refreshed cannot be fullscreen — taking the screen needs a
+gesture — so a phone that started measuring on its own was measured at
+whatever the browser's chrome left, or on a canvas that never followed its
+window (report version 18's `viewport`, below). So the bench builds the map,
+then puts up **Tap to start the benchmark** over the held scene; the tap is
+the gesture `enterFullscreenOnTouch` takes the screen with, and the run starts
+once the page is fullscreen and the canvas has matched its window, unchanged,
+for `holdSettle` (0.6 s, past the late re-apply 300 ms after a
+`fullscreenchange`). A refusal, or a browser with no element fullscreen,
+starts it after `holdWait` on the same settle, and `holdCap` starts it
+whatever the canvas is doing — the capture says what it was drawn at either
+way. **Nothing in the hold is measured or stepped**: the world is held as
+`deploy` holds it and the ring is armed only when it ends, so the fight hash
+is the seed's. Escape in the hold goes back to the menu with no capture. **A
+fine pointer never holds**, so the desktop and `bench.mjs` run as before.
+
 **What it plays, in order** (`BenchScript`, every length in
 `CONFIG.profiling.bench`):
 
@@ -321,7 +339,8 @@ measurements — `rehearsal`, `settle` and `lead`. Report version 13 rolls them 
 `segments.list` (each label) and `segments.groups` (`vantages`, `path`,
 `fight`), each with the wall clock's mean, p50, p95, p99 and 1% low, the tick,
 `render`, the draw and mesh counts and `gpu.frame` over the rows that got a
-reading (from version 18 `gpu.cull` too, over its own) — and from version 14 `sim`, the core's step and its phases over
+reading (from version 18 `gpu.cull` too, over its own, and the size the rows
+were drawn at, below) — and from version 14 `sim`, the core's step and its phases over
 the rows that ran one, which is the fight and its lead and never a vantage or
 the path, where the world is held (version 15 alone also carried
 `sim.hop`, the old Worker host's `simWait` and `simSync` over the same rows,
@@ -1172,6 +1191,35 @@ says which). It is read once, at the capture, through a
 reader `Game` pushes (`FrameProfile.setBlocks`), so it describes the end of
 the window and not every frame in it. The viewer prints it beside `taken` as
 `ours`.
+
+**From report version 18 a capture says the SIZE every frame was drawn at**
+(`viewport`), and **`device.window` and `device.backingStore` are read at SAVE
+and say nothing about the frames.** Three phone captures taken one after
+another on 2026-10-20 all read an 832x384 window at save (dpr 2.8125, render
+scale 0.5): Greyfen's canvas was the 1170x540 that window makes, and
+Harrowmead's and Sarab's were 1170x618 — a canvas about 440 CSS pixels tall
+in a 384-pixel window, one that had not followed its window's last resize, so
+those runs may have shaded up to 14% more rows than Greyfen's — and nothing in
+the capture could say which size the RUNS had been drawn at. So every row now
+files the canvas's backing store (`getRenderWidth(true)`: the canvas, never a
+bound render target, and a property read rather than a layout), the window's
+CSS size as the last `resize` left it (a listener the profiler hooks with its
+others, because `innerWidth` read per frame can flush a layout) and the
+engine's scaling level. `viewport` lists every (window, backing store) pair
+the window's rows saw, most frames first, with the canvas Babylon's `resize`
+would have made of that window (`expected`, the CSS size over the level,
+truncated as `setSize` truncates) and **`matched` false where the canvas was
+more than a pixel off it — a canvas that did not follow its window, drawing a
+different workload from the one the window implies**. Every `SegmentStat`
+carries the backing store most of its rows were drawn at (`backingStore`), how
+many pairs its rows saw (`sizes`, over 1 being a stretch resized under it) and
+how many of its rows drew a stale canvas (`staleFrames`). The viewer's
+`Viewport` row prints the list and says MIXED or STALE, the segment table
+grows a `size` column when a stretch differs, and `bench.mjs` prints each
+group's size on a run's line and warns on either. `Game` re-applies the render
+scale on `fullscreenchange` as it does on `orientationchange`, now and 300 ms
+later, on the suspicion — unproven — that going fullscreen is what the stale
+canvases missed; the next capture says whether it was.
 
 **From report version 16 `sim` is the page's own local match's step**, carried
 back over the owner channel and summed (`BABYLON_EXIT.md` X2.5c), and

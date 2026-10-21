@@ -1,7 +1,8 @@
 /**
- * profile.css — the frame profiler's chip, and only that.
- * Owns: #prof and everything under it. Imported by ProfileChip.ts, which is
- * the one module that writes this markup — the rule every screen here follows.
+ * profile.css — the frame profiler's chip and its benchmark prompt.
+ * Owns: #prof and everything under it, and #prof-hold, a benchmark's
+ * prompt. Imported by ProfileChip.ts, which is the one module that writes
+ * this markup — the rule every screen here follows.
  */
 
 /* Top LEFT, which is the one corner of the HUD nothing else claims: the fps
@@ -121,3 +122,24 @@
 }
 
 #prof .pr-flash.hidden { display: none; }
+
+/* A benchmark's hold on a touch device (`ProfileChip.setHold`): the whole
+   screen is the target, above the touch zones and the chip, because the tap
+   it asks for is the gesture that takes the screen. Plain words on a dimmed
+   scene — it is a wait before an instrument, not a screen of the game. */
+#prof-hold {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 18px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.85);
+  touch-action: none;
+  pointer-events: auto;
+}

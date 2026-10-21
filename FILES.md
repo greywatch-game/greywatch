@@ -643,7 +643,8 @@ src/
                         #   JSON the viewer reads; v14 adds SegmentStat.sim,
                         #   v16 drops the old host's hop, v17 adds blocks —
                         #   our renderer's take, read at the capture — v18
-                        #   gpu.cull, our culls' GPU time off PassTimer),
+                        #   gpu.cull, our culls' GPU time off PassTimer, and
+                        #   viewport, the size every frame was drawn at),
                         #   buildReport, buildTrace and
                         #   the stats. Allocates freely and never writes the
                         #   ProfileRing it is lent
@@ -2007,6 +2008,8 @@ src/
                         #   the ring is never reached for. benchDone writes a
                         #   finished benchmark to the hand-off key with no tab
                         #   (no gesture to open one) and keeps a line up
+                        #   — and setHold raises #prof-hold, the TAP a
+                        #   touch device's benchmark waits for (Game.holdBench)
     TouchControls.ts    # The on-screen controls a phone plays with: a FLOATING
       touch.css         #   (or, by setting, FIXED) movement stick in the left
                         #   zone, a look DRAG in the right one, and the button

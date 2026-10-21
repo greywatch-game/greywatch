@@ -1266,7 +1266,23 @@ function renderReport(r) {
     kv("Graphics", "not recorded — a capture before report v10");
   }
   kv("Pointer", dev.coarsePointer == null ? "not recorded" : dev.coarsePointer ? "coarse (touch defaults)" : "fine");
-  kv("Viewport", (dev.window || "?") + "  →  " + (dev.backingStore || "?"));
+  // What the rows were DRAWN at (report version 18), most frames first; an
+  // older capture has only the size read at save, which says nothing about
+  // its frames. A canvas that did not follow its window is a different
+  // workload from the one the window implies, so it is said in capitals.
+  const sizes = r.viewport || null;
+  if (sizes && sizes.length) {
+    const stale = sizes.filter(v => !v.matched).reduce((a, v) => a + v.frames, 0);
+    kv("Viewport", sizes.map(v => v.window + "  →  " + v.backingStore +
+        (v.matched ? "" : " (STALE: the window makes " + v.expected + ")") +
+        (sizes.length > 1 ? " · " + v.frames + " frames" : "")).join("  |  ") +
+      (sizes.length > 1 ? " — MIXED: resized inside this window" : "") +
+      (stale ? " — " + stale + " frames drawn on a canvas that did not follow its window" : ""));
+    kv("At save", (dev.window || "?") + "  →  " + (dev.backingStore || "?"));
+  } else {
+    kv("Viewport", (dev.window || "?") + "  →  " + (dev.backingStore || "?") +
+      " — read at save; a capture before report v18 does not say what its frames were drawn at");
+  }
   kv("Pixel ratio", String(dev.devicePixelRatio != null ? dev.devicePixelRatio : "?"));
   kv("Cores / memory", (dev.hardwareConcurrency || "?") + " ×  " + (dev.deviceMemoryGb != null ? dev.deviceMemoryGb + " GB" : "?"));
   kv("Browser", dev.userAgent || "?");
@@ -1325,7 +1341,13 @@ function renderBench(r) {
   $("n-bench").textContent = notes.join(" · ");
   if (!seg) return;
   const head = el("tr");
-  for (const k of ["", "frames", "fps", "mean", "p95", "1% low", "tick", "render", "sim", "draws", "gpu", "cull"]) {
+  // The size column is only drawn when a stretch was resized, drew a stale
+  // canvas, or differs from the rest (report version 18) — otherwise it is
+  // the Viewport row's one size on every line.
+  const all = (seg.groups || []).concat(seg.list || []);
+  const sized = all.some(s => s.backingStore !== undefined && (s.sizes > 1 || s.staleFrames > 0 ||
+    s.backingStore !== all[0].backingStore));
+  for (const k of ["", "frames", "fps", "mean", "p95", "1% low", "tick", "render", "sim", "draws", "gpu", "cull"].concat(sized ? ["size"] : [])) {
     head.appendChild(el("th", null, k));
   }
   table.appendChild(head);
@@ -1346,6 +1368,11 @@ function renderBench(r) {
     tr.appendChild(el("td", "num", s.gpuSamples ? fmt(s.gpuFrame, 2) + " ms" : "—"));
     // Our culls (report version 18), in microseconds: "—" where none landed.
     tr.appendChild(el("td", "num", s.gpuCullSamples ? fmt(s.gpuCull * 1000, 0) + " µs" : "—"));
+    if (sized) {
+      tr.appendChild(el("td", "num", (s.backingStore || "?") +
+        (s.sizes > 1 ? " MIXED (" + s.sizes + ")" : "") +
+        (s.staleFrames > 0 ? " STALE ×" + s.staleFrames : "")));
+    }
     table.appendChild(tr);
   };
   for (const g of seg.groups || []) row(g, "group");

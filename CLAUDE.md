@@ -1245,7 +1245,7 @@ answer, not a gap**: `frame` + `present` short of the wall clock is a wait
 nobody can name.
 
 **THE BENCHMARK IS A URL** (`?bench=<map>`, `bench/BenchScript.ts`), ending in a
-labelled capture on a HALTED ring, so a phone runs it with nothing but the link.
+labelled capture on a HALTED ring, so a phone runs it off the link and one tap.
 **Every bench frame is the FIXED step `tick` hands down**, which is why the
 world must step by `tick`'s `dt` and by no clock of its own: anything that reads
 the refresh clock, the wall clock or `Math.random` for an OUTCOME makes two runs

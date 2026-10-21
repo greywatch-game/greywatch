@@ -22,6 +22,14 @@
  *  - **The plan is a function of the MAP alone** — its vantage rows, its
  *    collider boxes, its floor — so it is the same plan on every run and every
  *    device, and moves only when the map or `CONFIG.profiling.bench` does.
+ *  - **Its first frame is the run's first MEASURED frame, and on a touch
+ *    device that waits for a TAP** (`Game.holdBench`, the world held and
+ *    the ring not armed): a run is a URL, a page typed or refreshed cannot
+ *    be fullscreen without a gesture, and nothing is measured until the
+ *    page is fullscreen (or refused it) and its canvas has matched its
+ *    window for `CONFIG.profiling.bench.holdSettle`. Nothing here sees the
+ *    hold: the plan starts when `next` is first asked, and a fine pointer
+ *    asks on the first frame.
  * Never: touches a system, a mesh, the camera or the scene. It answers in
  * numbers and `Game.updateBench` spends them — the shape `PipelineWarmup` has
  * with the building card. Reached only through a dynamic import behind

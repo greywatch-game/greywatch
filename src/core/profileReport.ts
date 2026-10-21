@@ -298,6 +298,26 @@ export interface ProfileSegment {
 }
 
 /**
+ * One size the window's rows were drawn at — `ProfileReport.viewport`.
+ *
+ * `expected` is the canvas Babylon's `resize` makes of that window at the
+ * scaling level in force: the CSS size over the level, truncated, as
+ * `setSize` does. **`matched` false is a canvas that did not follow its
+ * window**, which is a different workload from the one the window implies —
+ * a stale canvas drawn at more rows, or fewer, than the screen shows.
+ */
+export interface ViewportSize {
+  /** The window's CSS size, `innerWidth`x`innerHeight` as the last `resize` left it. */
+  window: string;
+  /** The canvas's backing store — never a bound render target. */
+  backingStore: string;
+  expected: string;
+  /** `backingStore` within a pixel of `expected` on both axes. */
+  matched: boolean;
+  frames: number;
+}
+
+/**
  * One labelled stretch of a benchmark, or one group of them — the figures a
  * run is compared on. Milliseconds throughout.
  *
@@ -334,6 +354,15 @@ export interface SegmentStat {
    */
   gpuCull: number;
   gpuCullSamples: number;
+  /**
+   * The backing store most of the stretch's rows were drawn at, how many
+   * sizes its rows saw (`ViewportSize`'s pairs: over 1 is a stretch that was
+   * resized under it), and how many of its rows drew a canvas that did not
+   * match its window. Report version 18.
+   */
+  backingStore: string;
+  sizes: number;
+  staleFrames: number;
   /**
    * The simulation core's step over the rows that ran one — the `fight` and
    * its lead, never a vantage or the path, which step nothing — or null where
@@ -476,8 +505,12 @@ export interface ProfileReport {
   device: {
     userAgent: string;
     devicePixelRatio: number;
+    /** The window's CSS size AT SAVE — `viewport` is what the rows saw. */
     window: string;
-    /** Backing-store size, which is the render scale already spent. */
+    /**
+     * Backing-store size AT SAVE, which is the render scale already spent.
+     * It says nothing about the frames: `viewport` does.
+     */
     backingStore: string;
     hardwareConcurrency: number;
     /** `navigator.deviceMemory` where the browser has it. */
@@ -496,6 +529,13 @@ export interface ProfileReport {
    * aggregates are a blend of two configurations.
    */
   graphics: (ProfileGraphics & { inForceSeconds: number }) | null;
+  /**
+   * Every size the window's rows were drawn at, most frames first — one
+   * entry for a capture nothing resized, and any `matched: false` is a
+   * canvas that never followed its window. Absent before report version 18,
+   * where only `device`'s at-save reading existed.
+   */
+  viewport: ViewportSize[];
   /**
    * The benchmark that recorded this ring, or null for a ring nobody scripted.
    * Absent before report version 13.
@@ -846,6 +886,12 @@ export interface ProfileRing {
   readonly meshWalkMs: Float32Array;
   readonly rttMs: Float32Array;
   readonly particlesMs: Float32Array;
+  /** Per row: the backing store, the window's CSS size and the scaling level — `FrameProfile.canvasW`. */
+  readonly canvasW: Uint16Array;
+  readonly canvasH: Uint16Array;
+  readonly windowW: Uint16Array;
+  readonly windowH: Uint16Array;
+  readonly scaleAt: Float64Array;
   /** Per row: an index into `segments` plus one, 0 for none. */
   readonly segmentAt: Uint8Array;
   readonly segments: readonly ProfileSegment[];
@@ -1083,7 +1129,11 @@ export function buildReport(
     // is cleared when the ring laps its row, as the LoAF's has been since
     // v9: before it a row not measured on this lap kept the last lap's, so a
     // v17 capture over a ring that had lapped could carry `gpu.frame` and
-    // `gpu.mainPass` readings from outside its window.
+    // `gpu.mainPass` readings from outside its window. And `viewport`,
+    // with `SegmentStat.backingStore`/`sizes`/`staleFrames`: the size every
+    // row was DRAWN at and the window it was drawn in. Before it the only
+    // size was `device`'s, read at save, and a canvas that had not followed
+    // its window could not be told from one that had.
     version: 18,
     takenAt: new Date().toISOString(),
     reason,
@@ -1100,6 +1150,7 @@ export function buildReport(
           inForceSeconds: round((performance.now() - r.graphicsAt) / 1000, 1),
         }
       : null,
+    viewport: viewportSizes(r, ringRows(first, n, cap)),
     bench: r.bench
       ? { ...r.bench, vantages: [...r.bench.vantages], path: { ...r.bench.path }, fight: { ...r.bench.fight } }
       : null,
@@ -1340,6 +1391,9 @@ function segmentStat(
   let gpuN = 0;
   let cull = 0;
   let cullN = 0;
+  const sizes = viewportSizes(r, at);
+  let stale = 0;
+  for (const v of sizes) if (!v.matched) stale += v.frames;
   let sim = 0;
   let sims = 0;
   const kids = new Float64Array(SIM_CHILDREN.length);
@@ -1398,6 +1452,9 @@ function segmentStat(
     gpuSamples: gpuN,
     gpuCull: cullN > 0 ? round(cull / cullN, 4) : 0,
     gpuCullSamples: cullN,
+    backingStore: sizes.length > 0 ? sizes[0].backingStore : "?",
+    sizes: sizes.length,
+    staleFrames: stale,
     sim:
       sims > 0
         ? {
@@ -1409,6 +1466,50 @@ function segmentStat(
           }
         : null,
   };
+}
+
+/** The window's rows in ring order, oldest first. Capture-time only. */
+function ringRows(first: number, n: number, cap: number): number[] {
+  const at: number[] = [];
+  for (let k = 0; k < n; k++) at.push((first + k) % cap);
+  return at;
+}
+
+/**
+ * Every (window, backing store, expected) the given rows were drawn at, most
+ * frames first — `ViewportSize`. A row with no engine read 0 and is skipped.
+ * Capture-time only.
+ */
+function viewportSizes(r: ProfileRing, at: readonly number[]): ViewportSize[] {
+  const byKey = new Map<string, ViewportSize>();
+  for (const i of at) {
+    const cw = r.canvasW[i];
+    const ch = r.canvasH[i];
+    const level = r.scaleAt[i];
+    if (cw === 0 || ch === 0 || level <= 0) continue;
+    const ww = r.windowW[i];
+    const wh = r.windowH[i];
+    // `AbstractEngine.resize` hands `setSize` the CSS size over the level,
+    // and `setSize` truncates (`| 0`). The canvas's own CSS box is what it
+    // measures; the window stands in for it because `#game-canvas` fills the
+    // page, and a pixel of slack absorbs the two roundings.
+    const ew = (ww / level) | 0;
+    const eh = (wh / level) | 0;
+    const key = `${ww}x${wh} ${cw}x${ch} ${ew}x${eh}`;
+    const seen = byKey.get(key);
+    if (seen) {
+      seen.frames++;
+      continue;
+    }
+    byKey.set(key, {
+      window: `${ww}x${wh}`,
+      backingStore: `${cw}x${ch}`,
+      expected: `${ew}x${eh}`,
+      matched: Math.abs(cw - ew) <= 1 && Math.abs(ch - eh) <= 1,
+      frames: 1,
+    });
+  }
+  return [...byKey.values()].sort((a, b) => b.frames - a.frames);
 }
 
 function counterMeans(

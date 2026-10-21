@@ -293,5 +293,18 @@ export const profiling = {
     chaseBack: 3.5,
     chaseUp: 1.1,
     chaseTurn: 4,
+    /**
+     * The HOLD a run takes on a touch device before anything is measured
+     * (`Game.holdBench`), in WALL-CLOCK seconds because nothing in it is a
+     * bench frame: after the tap, the canvas must match its window, unchanged,
+     * for `holdSettle` — past the late re-apply `Game` makes 300 ms after a
+     * `fullscreenchange` — in fullscreen, or once `holdWait` has passed
+     * without it (refused, or a browser with no element fullscreen). At
+     * `holdCap` the run starts whatever the canvas is doing, and the
+     * capture's `viewport` says what it was drawn at.
+     */
+    holdSettle: 0.6,
+    holdWait: 2,
+    holdCap: 6,
   },
 } as const;

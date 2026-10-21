@@ -355,6 +355,20 @@ interface BenchRun {
    * (`endBench`): the ring is halted and nothing more is stepped or recorded.
    */
   ending: boolean;
+  /**
+   * The HOLD before a touch device's run (`holdBench`): `tap` until the
+   * prompt is tapped, `settle` until the screen has, and null once the run
+   * has started — from the first frame on a fine pointer.
+   */
+  hold: "tap" | "settle" | null;
+  /** Wall-clock seconds since the tap, and the sizes unchanged for how long. */
+  holdFor: number;
+  holdStill: number;
+  /** The canvas and the window the settle last saw. */
+  holdCanvasW: number;
+  holdCanvasH: number;
+  holdWindowW: number;
+  holdWindowH: number;
 }
 
 /**
@@ -2205,6 +2219,16 @@ export class Game {
       this.applyRenderScale();
       window.setTimeout(() => this.applyRenderScale(), 300);
     });
+    // The same pair on a phone going fullscreen (`pwa/register.ts`), and for
+    // a suspected version of the same reason: three phone captures in one
+    // session all read an 832x384 window at save, and two of them a 1170x618
+    // canvas that window does not make — a canvas that had not followed its
+    // window. Unproven; the profiler now files the size every frame was drawn
+    // at (`ProfileReport.viewport`), so the next capture says which.
+    document.addEventListener("fullscreenchange", () => {
+      this.applyRenderScale();
+      window.setTimeout(() => this.applyRenderScale(), 300);
+    });
 
     // The profiler's capture key, and it is deliberately NOT behind the DEV
     // gate below: under a pointer lock the chip's buttons cannot be clicked at
@@ -2248,6 +2272,14 @@ export class Game {
     this.profChip.onCapture = (full) =>
       this.prof.capture(full ? "save" : "keep", full);
     this.profChip.onTrace = () => this.prof.trace();
+    // A benchmark's hold, tapped: the run waits on the screen from here
+    // (`Game.holdBench`).
+    this.profChip.onHoldTap = () => {
+      const run = this.bench;
+      if (run?.hold !== "tap") return;
+      run.hold = "settle";
+      this.profChip.setHold("Starting…");
+    };
     this.overlayScreen.onDifficulty = (tier) => this.setDifficulty(tier);
     this.overlayScreen.onMap = (index) => this.setMap(index);
     this.overlayScreen.onOpenLoadout = () => this.openLoadout();
@@ -4236,6 +4268,7 @@ export class Game {
     if (this.bench) {
       this.difficulty = this.bench.difficulty;
       this.bench = null;
+      this.profChip.setHold(null);
     }
     // Takes down the pause card, the kit screen and the settings with it —
     // whichever of them the player was looking at when they quit. All three used
@@ -8801,6 +8834,14 @@ export class Game {
       focus: -1,
       roundEnded: false,
       ending: false,
+      // The `enterFullscreenOnTouch` gate: only a touch device holds.
+      hold: window.matchMedia("(pointer: coarse)").matches ? "tap" : null,
+      holdFor: 0,
+      holdStill: 0,
+      holdCanvasW: 0,
+      holdCanvasH: 0,
+      holdWindowW: 0,
+      holdWindowH: 0,
     };
     this.difficulty = CONFIG.bots.skill.defaultDifficulty;
     this.startRound();
@@ -8820,17 +8861,37 @@ export class Game {
    * as a WATCHER (`openLocalRound`) — a peer with no seat — so every slot on
    * both sides is a fielded bot, and the page's own body is left dead so
    * nothing on this side draws or offers it.
+   *
+   * **On a touch device the run HOLDS first** (`holdBench`), and everything
+   * from the ring's arming on waits for it in `startBench`.
    */
   private enterBench(): void {
     const run = this.bench;
     const map = this.map;
     if (!run || !map) return;
-    const script = new run.kit.BenchScript(this.mapDef.id, {
+    run.script = new run.kit.BenchScript(this.mapDef.id, {
       size: map.size,
       boxes: map.colliderBoxes,
       surfaceAt: (x, z) => map.terrain.surfaceAt(x, z, true),
     });
-    run.script = script;
+    this.deployScreen.hide();
+    this.player.alive = false;
+    this.cameraSys.reset(0);
+    if (run.hold !== null) this.profChip.setHold("Tap to start the benchmark");
+    else this.startBench(run);
+    this.go("bench");
+  }
+
+  /**
+   * A benchmark's first measured frame is next: the ring armed over the
+   * script and nothing before it, and the fight's zero marked. From
+   * `enterBench` on a fine pointer, and from `holdBench` once a touch
+   * device's hold is over.
+   */
+  private startBench(run: BenchRun): void {
+    const script = run.script!;
+    run.hold = null;
+    this.profChip.setHold(null);
     this.prof.disarm();
     // Two spare rows: the frame that ends the run is recorded half-way, and
     // a ring that laps by one would drop the run's first frame.
@@ -8838,16 +8899,62 @@ export class Game {
     this.prof.setMap(this.mapDef.id);
     this.prof.setSegments(script.segments);
     this.profChip.setArmed(true);
-    this.deployScreen.hide();
     this.minimap.setVisible(true);
-    this.player.alive = false;
     // The fight's zero: every award and death is stamped with the match's
     // tick less this one (`FightHash`), folded where the match runs — no
     // wire event carries a bot's award. Posted behind the round's `begin`,
     // and ahead of the first fight step.
     this.localOwner.match.markFight().catch((err: unknown) => console.error("[bench] markFight:", err));
-    this.cameraSys.reset(0);
-    this.go("bench");
+  }
+
+  /**
+   * A touch device's run waiting to start, which is a frame of the `bench`
+   * step with the world HELD — nothing stepped, nothing advanced, the ring
+   * not armed — so the fight it then fights is the seed's, hash for hash.
+   *
+   * **A run is a URL, and a page that was typed or refreshed is not
+   * fullscreen**: taking the screen needs a gesture, and a run measured
+   * before the gesture lands is drawn at whatever the browser's chrome left —
+   * or on a canvas that never followed the window at all (`docs/profiling.md`,
+   * report version 18). So the prompt asks for the tap (`ProfileChip.setHold`
+   * — the document's own `pointerdown` makes the fullscreen request), and the
+   * run starts once the page is fullscreen and the canvas has matched its
+   * window, unchanged, for `holdSettle`. A refusal, or a browser with no
+   * element fullscreen, starts it after `holdWait` on the same settle, and
+   * `holdCap` starts it whatever the canvas is doing: the capture's
+   * `viewport` says what it was drawn at either way.
+   */
+  private holdBench(run: BenchRun, seconds: number): void {
+    if (run.hold !== "settle") return;
+    const c = CONFIG.profiling.bench;
+    run.holdFor += seconds;
+    const cw = this.engine.getRenderWidth(true);
+    const ch = this.engine.getRenderHeight(true);
+    const ww = window.innerWidth;
+    const wh = window.innerHeight;
+    if (
+      cw !== run.holdCanvasW ||
+      ch !== run.holdCanvasH ||
+      ww !== run.holdWindowW ||
+      wh !== run.holdWindowH
+    ) {
+      run.holdCanvasW = cw;
+      run.holdCanvasH = ch;
+      run.holdWindowW = ww;
+      run.holdWindowH = wh;
+      run.holdStill = 0;
+    } else {
+      run.holdStill += seconds;
+    }
+    // What `AbstractEngine.resize` makes of the window — the test the
+    // capture's `viewport` applies (`profileReport.ts`).
+    const level = this.engine.getHardwareScalingLevel();
+    const matched =
+      Math.abs(cw - ((ww / level) | 0)) <= 1 && Math.abs(ch - ((wh / level) | 0)) <= 1;
+    const screen = document.fullscreenElement !== null || run.holdFor >= c.holdWait;
+    if ((screen && matched && run.holdStill >= c.holdSettle) || run.holdFor >= c.holdCap) {
+      this.startBench(run);
+    }
   }
 
   /**
@@ -8866,8 +8973,15 @@ export class Game {
     const run = this.bench;
     const script = run?.script;
     if (!run || !script || run.ending) return;
+    // Escape before the run started measured nothing, so there is no
+    // capture to take: the run is let go with the round (`enterMenu`).
     if (this.input.pausePressed) {
-      this.endBench(false);
+      if (run.hold !== null) this.enterMenu();
+      else this.endBench(false);
+      return;
+    }
+    if (run.hold !== null) {
+      this.holdBench(run, realMs / 1000);
       return;
     }
     const cue = script.next(realMs);
