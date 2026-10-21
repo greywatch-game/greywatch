@@ -10,8 +10,10 @@
  * the stream the scatter draws (`indices`, each range's survivors from the
  * start of its own region, every index carrying its instance —
  * `render/streamIndex.ts`) and the INDIRECT arguments (`args`, one
- * `drawIndexedIndirect` a range); `InstanceTables`, what a map's scatter
- * hands it.
+ * `drawIndexedIndirect` a range); the WORK LIST of surviving records and
+ * its length, cleared ahead of each frame's pass, and the indirect
+ * dispatch `expand` runs over it with; `InstanceTables`, what a map's
+ * scatter hands it.
  * Invariants: ClusterCull's, over instances and then their clusters — every
  * table is uploaded once, when the map is cut; a frame's inputs are numbers
  * only (the frame's view-projection, eye and wind, and the reach and size
@@ -51,6 +53,7 @@ import type { PipelineCache } from "./PipelineCache";
 import { SCAN_SIZE } from "./wgsl/clusterCull";
 import { INSTANCE_FORMS, INSTANCE_PROBE_WGSL } from "./wgsl/cullProbe";
 import {
+  DISPATCH_BYTES,
   INDIRECT_BYTES,
   INSTANCE_CULL_UNIFORM_BYTES,
   INSTANCE_CULL_WGSL,
@@ -105,8 +108,10 @@ export class InstanceCull {
   private readonly count: number;
   private readonly instanceWorkgroups: number;
   private readonly recordWorkgroups: number;
-  private readonly expandX: number;
-  private readonly expandY: number;
+  /** The work list's length, cleared ahead of each frame's pass. */
+  private readonly survivorCount: GPUBuffer;
+  /** `expand`'s workgroups, written by `prefix`: a `dispatchWorkgroupsIndirect`'s arguments, then the count. */
+  private readonly expandGroups: GPUBuffer;
   /** The four passes in dispatch order: instances, records, prefix, expand. */
   private readonly passes: { pipeline: GPUComputePipeline; group: GPUBindGroup }[] = [];
   /** Which tests run — `CullMode`; "full" but for a diagnostic. */
@@ -127,9 +132,6 @@ export class InstanceCull {
     this.count = n;
     this.instanceWorkgroups = Math.max(1, Math.ceil(n / SCAN_SIZE));
     this.recordWorkgroups = Math.max(1, Math.ceil(records / SCAN_SIZE));
-    const maxX = device.limits.maxComputeWorkgroupsPerDimension;
-    this.expandX = Math.max(1, Math.min(records, maxX));
-    this.expandY = Math.max(1, Math.ceil(records / this.expandX));
 
     const storage = GPUBufferUsage.STORAGE;
     // `?cullcheck` copies the uniform block and the verdicts out.
@@ -146,7 +148,10 @@ export class InstanceCull {
     const sets = this.upload("sets", storage, setWords(tables.sets));
     const clusters = this.upload("clusters", storage, new Uint8Array(tables.clusters));
     const recordTable = this.upload("records", storage, tables.records);
-    const recordBand = this.make("record bands", records * 4, storage);
+    // COPY_DST for the clear ahead of each frame's pass.
+    this.survivorCount = this.make("survivor count", 4, storage | GPUBufferUsage.COPY_DST);
+    const survivors = this.make("survivors", records * 16, storage);
+    this.expandGroups = this.make("expand workgroups", DISPATCH_BYTES, storage | GPUBufferUsage.INDIRECT);
     const ranges = this.upload("ranges", storage, rangeWords(tables.ranges));
     const source = this.upload("source indices", storage, tables.source);
     this.indices = this.make("stream", tables.streamLength * 4, storage | GPUBufferUsage.INDEX);
@@ -190,14 +195,20 @@ export class InstanceCull {
       { entry: "cullInstances", bind: [[0, this.uniform], [1, instances], [2, instanceBand], [5, sets]] },
       {
         entry: "cullRecords",
-        bind: [[0, this.uniform], [1, instances], [2, instanceBand], [3, local], [4, sums], [6, clusters], [7, recordTable], [8, recordBand]],
+        bind: [
+          [0, this.uniform], [1, instances], [2, instanceBand], [3, local], [4, sums], [6, clusters], [7, recordTable],
+          [13, this.survivorCount], [14, survivors],
+        ],
       },
-      { entry: "prefix", bind: [[0, this.uniform], [3, local], [4, sums], [9, ranges], [12, this.args]] },
+      {
+        entry: "prefix",
+        bind: [[0, this.uniform], [3, local], [4, sums], [9, ranges], [12, this.args], [13, this.survivorCount], [15, this.expandGroups]],
+      },
       {
         entry: "expand",
         bind: [
-          [0, this.uniform], [3, local], [4, sums], [6, clusters], [7, recordTable], [8, recordBand], [9, ranges],
-          [10, source], [11, this.indices],
+          [0, this.uniform], [3, local], [4, sums], [6, clusters], [9, ranges], [10, source], [11, this.indices],
+          [14, survivors], [16, this.expandGroups],
         ],
       },
     ];
@@ -253,6 +264,8 @@ export class InstanceCull {
     openTests(this.mode, f, u);
     this.device.queue.writeBuffer(this.uniform, 0, this.bytes);
 
+    // The work list starts empty: `cullRecords` appends to it.
+    encoder.clearBuffer(this.survivorCount);
     const pass = encoder.beginComputePass(timing ? timing.pass(PASS) : PASS);
     const passes = this.passes;
     pass.setPipeline(passes[0].pipeline);
@@ -266,7 +279,7 @@ export class InstanceCull {
     pass.dispatchWorkgroups(1);
     pass.setPipeline(passes[3].pipeline);
     pass.setBindGroup(0, passes[3].group);
-    pass.dispatchWorkgroups(this.expandX, this.expandY);
+    pass.dispatchWorkgroupsIndirect(this.expandGroups, 0);
     pass.end();
     this.check?.record(encoder, this.bytes);
   }

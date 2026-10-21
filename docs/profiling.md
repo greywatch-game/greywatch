@@ -1189,7 +1189,9 @@ of ours or a main pass our renderer refused; when it equals `taken`, Babylon
 drew every block (the cull failed, or the pass was refused, and the console
 says which). It is read once, at the capture, through a
 reader `Game` pushes (`FrameProfile.setBlocks`), so it describes the end of
-the window and not every frame in it. The viewer prints it beside `taken` as
+the window and not every frame in it — **and for a HALTED ring (a
+benchmark's) at the halt, from report version 19**, because a run saved
+after its map was torn down read the menu's `taken: 0` instead. The viewer prints it beside `taken` as
 `ours`.
 
 **From report version 18 a capture says the SIZE every frame was drawn at**

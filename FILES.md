@@ -644,7 +644,8 @@ src/
                         #   v16 drops the old host's hop, v17 adds blocks —
                         #   our renderer's take, read at the capture — v18
                         #   gpu.cull, our culls' GPU time off PassTimer, and
-                        #   viewport, the size every frame was drawn at),
+                        #   viewport, the size every frame was drawn at; v19
+                        #   reads a halted ring's blocks at the halt),
                         #   buildReport, buildTrace and
                         #   the stats. Allocates freely and never writes the
                         #   ProfileRing it is lent
@@ -2414,7 +2415,9 @@ src/
                         #   against the frustum (X3.5b); the kept (instance,
                         #   cluster) records scanned NEAR-FIRST into each
                         #   group's region of one index stream, and each
-                        #   group's ONE indirect draw's args
+                        #   group's ONE indirect draw's args; the copy is
+                        #   dispatched indirect over a work list of the
+                        #   survivors, never over every record
     ClusterCull.ts      # The GPU cull, once a frame, recorded into the host's
                         #   encoder ahead of the draws (inside gpu.frame;
                         #   pipelines from PipelineCache) — reach, size gate,

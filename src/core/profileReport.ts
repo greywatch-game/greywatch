@@ -415,9 +415,10 @@ export interface BenchFacts {
 }
 
 /**
- * Our renderer's take of the map's blocks when the capture was taken
+ * Our renderer's take of the map's blocks when the capture was taken — or,
+ * for a HALTED ring (a benchmark's), when it halted
  * (`systems/BlockHandover.ts`, `BABYLON_EXIT.md` X3.3) — read through the
- * reader `Game` pushes, at the capture and never per frame. `drawn` is the
+ * reader `Game` pushes, at the capture or the halt and never per frame. `drawn` is the
  * main pass's draws of ours last frame, which `counters.drawCalls` (Babylon's
  * own counter) does not see; `handedBack` is how many taken surfaces went
  * back to Babylon's main pass — a failed compile's, or every one once the
@@ -1134,7 +1135,11 @@ export function buildReport(
     // row was DRAWN at and the window it was drawn in. Before it the only
     // size was `device`'s, read at save, and a canvas that had not followed
     // its window could not be told from one that had.
-    version: 18,
+    // 19: a HALTED ring's `blocks` is read as it halted — a benchmark's last
+    // frame — not at the capture. Before it a benchmark saved after its map
+    // was torn down read the menu's `taken: 0` (2026-10-21's phone
+    // captures). Nothing else changed meaning.
+    version: 19,
     takenAt: new Date().toISOString(),
     reason,
     map: r.mapId,

@@ -1678,11 +1678,40 @@ floor its shading:
     Sarab ran first and cool where it had run last, Greyfen second where it
     had run first — so the pulled vertex stage's own price on the phone is
     not resolved by these runs.
-- **Owed.** (1) The cull's phone cost — the lever is its `expand` pass,
-  which launches a workgroup for EVERY record (83,846 on Greyfen, to the
-  cluster cull's 5,612 for its scatter pass) whether or not it survived. (2)
-  A same-order AFTER (Greyfen, Harrowmead, Sarab) to price the rest of the
-  frame, ideally after (1), since (1) moves it.
+- **The cull's `expand`, launched over the survivors** (2026-10-21, after
+  the phone's AFTER). It launched a workgroup for EVERY record (83,846 on
+  Greyfen, to the cluster cull's 5,612 for its scatter pass) whether or not
+  it survived. Now each workgroup of `cullRecords` appends its survivors to
+  a WORK LIST in one global atomic — record, band, instance and cluster in
+  a `vec4u`, so `expand` reads no record or band table and both passes stay
+  at the default eight storage buffers — `prefix` writes `expand`'s
+  workgroup count from the list's length, and `expand` is dispatched
+  INDIRECT over it. The append orders nothing: the scan has already placed
+  every index, so the stream is the same stream.
+  - **The first form tripled the desktop's cull** (Greyfen 0.095 to 0.290
+    ms, Harrowmead 0.082 to 0.519): `expand`'s bound check was an
+    `atomicLoad` of the count in every thread of every workgroup, all at one
+    address. `prefix` now writes the count beside the dispatch arguments and
+    `expand` reads it through a plain read-only binding of that buffer.
+  - **Desktop, paired against ebdcb6f in one session** (`bench.mjs
+    greyfen harrowmead sarab --max --gpu --runs 3`, the canonical hashes,
+    every spread within 8%): `gpu.cull` Greyfen 0.095 to 0.068 ms, Harrowmead
+    0.082 to 0.090, Sarab 0.040 to 0.058 — the clear, the barrier and the
+    indirect dispatch are about 0.02 ms whatever the map, which Sarab's few
+    records show — and the frame within 3% on every group. The desktop
+    cannot price it: an empty workgroup was nearly free on NVIDIA, which is
+    why it paid 0.07 ms where the phone paid 1.2. **The phone's `gpu.cull`
+    is the reading.**
+  - The bank, against the BEFORE at f70be50: 61 of 61 within the floor,
+    the same four Greyfen tie rows as the step's own AFTER, no console
+    error.
+- **And the capture's `blocks`** (report version 19): a halted ring's is read
+  as it halted, the benchmark's last frame, so a run saved from the menu
+  afterwards reports the run (Sarab headless: 303 taken, 13 draws, where the
+  live reading was the menu's 0).
+- **Owed.** The phone's AFTER again, in the BEFORE's order (a warm-up, then
+  Greyfen, Harrowmead, Sarab): `gpu.cull` prices the work list, and the same
+  order prices the rest of the frame.
 
 ### X3.6 — The static world's other passes (PERF_PLAN B3) — **L, as four sub-steps**
 

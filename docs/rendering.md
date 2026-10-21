@@ -3571,7 +3571,13 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
   wholly outside a plane — so a big tree half in view draws half. The kept
   records are scanned near-first into their group's own region of ONE
   stream, by a scan and never an atomic append, each index written as its
-  cluster's with the scatter bit and the instance set above it. **The size
+  cluster's with the scatter bit and the instance set above it. **The copy
+  is launched over the SURVIVORS only**: each workgroup of the record pass
+  appends its survivors to a work list in one atomic, and the copy is
+  dispatched indirect at its length — an append that orders nothing, since
+  the scan has already placed every index. Launched at a workgroup a RECORD
+  it was 83,846 workgroups on Greyfen whatever survived, and the cull cost
+  the phone 1.1-1.4 ms of a 16-22 ms frame. **The size
   gate is per INSTANCE**, where Babylon's was per block surface, so a scrap
   of litter under 3 px drops where its block never would — kept at X3.5b on
   purpose, because the fold was to move no pixel against X3.5's picture and

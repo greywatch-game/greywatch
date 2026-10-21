@@ -22,7 +22,9 @@
  * same order; every index written is its cluster's source index as a scatter
  * index of its instance (`render/streamIndex.ts`'s `scatterIndex`); each
  * range's draw is ONE indirect draw whose count is its survivors' indices,
- * from the start of its region, written by `prefix`.
+ * from the start of its region, written by `prefix`; the WORK LIST of
+ * survivors is appended to a workgroup's run at a time, in no order, because
+ * it decides only which workgroup copies a record, never where it lands.
  * Never: reads a node — everything it reads was uploaded as numbers.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
  *
@@ -32,11 +34,20 @@
  * - `cullRecords` (a thread a record, `SCAN_SIZE` a workgroup): the record's
  *   instance's band, the cluster's box test, and an exclusive scan of each
  *   band's index count within the workgroup — `local[r]`, with the
- *   workgroup's total in `sums[w]`, as the cluster cull's first pass.
+ *   workgroup's total in `sums[w]`, as the cluster cull's first pass — and
+ *   each survivor appended to the WORK LIST, one append a workgroup.
  * - `prefix` (ONE workgroup): `sums` scanned in place, then each range opened
- *   and its draw's indirect arguments written.
- * - `expand` (a workgroup a record): a surviving record's indices, encoded,
- *   copied to where the scan says.
+ *   and its draw's indirect arguments written, and `expand`'s workgroup
+ *   count from the work list's length.
+ * - `expand` (a workgroup a SURVIVOR, dispatched indirect): its indices,
+ *   encoded, copied to where the scan says. Launched over the work list,
+ *   never over every record: at a workgroup a record it launched 83,846 on
+ *   Greyfen whatever survived, and the cull cost the phone 1.1-1.4 ms
+ *   (`BABYLON_EXIT.md` X3.5b).
+ * `cullRecords` and `expand` bind eight storage buffers each, the least
+ * `maxStorageBuffersPerShaderStage` a device may have — which is why a
+ * survivor carries its band, instance and cluster rather than `expand`
+ * reading the record and band tables again.
  */
 
 import { STREAM_INDEX_WGSL } from "../streamIndex";
@@ -44,6 +55,10 @@ import { CULL_DECLARATIONS, SCAN_DECLARATIONS, SCAN_SIZE } from "./clusterCull";
 
 /** Threads in an `expand` workgroup. */
 const EXPAND_SIZE = 64;
+/** The least `maxComputeWorkgroupsPerDimension` WebGPU allows: `expand`'s first dimension. */
+const MAX_WORKGROUPS = 65535;
+/** `dispatchWorkgroupsIndirect`'s three arguments and the count after them, in bytes — `expand`'s. */
+export const DISPATCH_BYTES = 16;
 /** An instance's record, in 32-bit words (`Instance` below). */
 export const INSTANCE_WORDS = 20;
 /** A set's record, in 32-bit words (`Set` below). */
@@ -110,12 +125,26 @@ fn rangeCount() -> u32 { return cull[8].w; }
 @group(0) @binding(6) var<storage, read> clusters: array<Cluster>;
 // Each record's instance and cluster.
 @group(0) @binding(7) var<storage, read> records: array<vec2u>;
-@group(0) @binding(8) var<storage, read_write> recordBand: array<u32>;
 // A range is one group's records.
 @group(0) @binding(9) var<storage, read_write> ranges: array<Range>;
 @group(0) @binding(10) var<storage, read> source: array<u32>;
 @group(0) @binding(11) var<storage, read_write> written: array<u32>;
 @group(0) @binding(12) var<storage, read_write> args: array<u32>;
+// The WORK LIST: each surviving record, its band, its instance and its
+// cluster, in no particular order, and how many there are. Its order decides
+// nothing — \`slotOf\` places every index — so it may be appended to.
+@group(0) @binding(13) var<storage, read_write> survivorCount: atomic<u32>;
+@group(0) @binding(14) var<storage, read_write> survivors: array<vec4u>;
+// \`expand\`'s workgroups, written by \`prefix\` from the count — and the count
+// itself in word 3, past the three a dispatch reads, which \`expand\` reads
+// through a plain binding of the same buffer (\`expandArgs\`): an atomic load
+// in every thread of every workgroup is every thread queueing at one address.
+@group(0) @binding(15) var<storage, read_write> expandGroups: array<u32>;
+@group(0) @binding(16) var<storage, read> expandArgs: array<u32>;
+
+// A workgroup's survivors, and where their run of the work list starts.
+var<workgroup> keptHere: atomic<u32>;
+var<workgroup> keptBase: u32;
 
 fn visible(inst: Instance) -> bool {
   let at = inst.sphere.xyz;
@@ -177,17 +206,26 @@ fn cullRecords(
 ) {
   let r = gid.x;
   var v = vec4u(0u);
+  var kept = vec4u(NONE);
+  var slot = 0u;
   if (r < recordCount()) {
     let rec = records[r];
-    var band = instanceBand[rec.x];
+    let band = instanceBand[rec.x];
     if (band != NONE) {
       let c = clusters[rec.y];
-      if (inView(instances[rec.x], c)) { v[band] = c.hi.w; } else { band = NONE; }
+      if (inView(instances[rec.x], c)) {
+        v[band] = c.hi.w;
+        kept = vec4u(r, band, rec.x, rec.y);
+        slot = atomicAdd(&keptHere, 1u);
+      }
     }
-    recordBand[r] = band;
   }
   scan[li] = v;
   workgroupBarrier();
+  // The workgroup's survivors take their run of the work list in one append.
+  if (li == 0u) { keptBase = atomicAdd(&survivorCount, atomicLoad(&keptHere)); }
+  workgroupBarrier();
+  if (kept.x != NONE) { survivors[keptBase + slot] = kept; }
   scanWorkgroup(li);
   if (r < recordCount()) { local[r] = scan[li] - v; }
   if (li == SCAN - 1u) { sums[wid.x] = scan[li]; }
@@ -195,6 +233,16 @@ fn cullRecords(
 
 @compute @workgroup_size(${SCAN_SIZE})
 fn prefix(@builtin(local_invocation_index) li: u32) {
+  if (li == 0u) {
+    // A workgroup a survivor, folded into a second dimension past the least
+    // \`maxComputeWorkgroupsPerDimension\` a device may have.
+    let n = atomicLoad(&survivorCount);
+    let x = min(n, ${MAX_WORKGROUPS}u);
+    expandGroups[0] = x;
+    expandGroups[1] = select(1u, (n + x - 1u) / x, x > 0u);
+    expandGroups[2] = 1u;
+    expandGroups[3] = n;
+  }
   scanSums(li);
   for (var g = li; g < rangeCount(); g += SCAN) {
     let t = openRange(g, recordCount());
@@ -213,15 +261,14 @@ fn expand(
   @builtin(workgroup_id) wid: vec3u,
   @builtin(num_workgroups) nw: vec3u,
 ) {
-  let r = wid.y * nw.x + wid.x;
-  if (r >= recordCount()) { return; }
-  let band = recordBand[r];
-  if (band == NONE) { return; }
-  let rec = records[r];
-  let c = clusters[rec.y];
-  let at = slotOf(r, recordCount(), band, ranges[c.refs.x]);
-  for (var k = li; k < c.hi.w; k += EXPAND) {
-    written[at + k] = scatterIndex(rec.x, source[c.lo.w + k]);
+  let k = wid.y * nw.x + wid.x;
+  if (k >= expandArgs[3]) { return; }
+  // The survivor's record, band, instance and cluster.
+  let kept = survivors[k];
+  let c = clusters[kept.w];
+  let at = slotOf(kept.x, recordCount(), kept.y, ranges[c.refs.x]);
+  for (var i = li; i < c.hi.w; i += EXPAND) {
+    written[at + i] = scatterIndex(kept.z, source[c.lo.w + i]);
   }
 }
 `;

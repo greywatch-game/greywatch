@@ -676,6 +676,12 @@ export class FrameProfile {
    */
   private blocksOf: (() => BlockFacts) | null = null;
   /**
+   * `blocksOf`'s answer as the ring HALTED, which a halted ring's capture
+   * reports: a benchmark's capture is often saved after its map is gone,
+   * when the live answer is the menu's nothing. Null while recording.
+   */
+  private blocksAtHalt: BlockFacts | null = null;
+  /**
    * How many rows the ring holds — `CONFIG.profiling.frames`, or what `arm`
    * was asked for. Fixed between an `arm` and the next.
    */
@@ -723,7 +729,8 @@ export class FrameProfile {
 
   /**
    * How a capture reads our renderer's take of the map's blocks — asked at
-   * the capture, never per frame. Set by `Game` at construction.
+   * the capture, or at `halt` for a halted ring's, never per frame. Set by
+   * `Game` at construction.
    */
   setBlocks(read: () => BlockFacts): void {
     this.blocksOf = read;
@@ -801,6 +808,7 @@ export class FrameProfile {
     if (this.on) return;
     // A HALTED ring is still held, and arming again replaces it.
     if (this.frameAt) this.disarm();
+    this.blocksAtHalt = null;
     this.cap = Math.max(2, Math.floor(frames));
     const n = this.capacity;
     this.startMs = new Float32Array(n * SLOTS);
@@ -925,6 +933,8 @@ export class FrameProfile {
   halt(): void {
     if (!this.on) return;
     this.on = false;
+    // The run's last frame is the one the blocks are reported at.
+    this.blocksAtHalt = this.blocksOf?.() ?? null;
     for (const off of this.unhook) off();
     this.unhook = [];
     this.inDraw = false;
@@ -1687,7 +1697,8 @@ export class FrameProfile {
       mapId: this.mapId,
       seed: this.seed,
       simMode: this.simMode,
-      blocks: this.blocksOf?.() ?? null,
+      // A halted ring answers for its run, never for what came after it.
+      blocks: this.on ? (this.blocksOf?.() ?? null) : this.blocksAtHalt,
       graphics: this.graphics,
       graphicsAt: this.graphicsAt,
       gpuRequested: this.gpuRequested,
