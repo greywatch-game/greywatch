@@ -1203,8 +1203,9 @@ those runs may have shaded up to 14% more rows than Greyfen's — and nothing in
 the capture could say which size the RUNS had been drawn at. So every row now
 files the canvas's backing store (`getRenderWidth(true)`: the canvas, never a
 bound render target, and a property read rather than a layout), the window's
-CSS size as the last `resize` left it (a listener the profiler hooks with its
-others, because `innerWidth` read per frame can flush a layout) and the
+CSS size as last read (on every `resize` and once a second, hooked with the
+profiler's others — `innerWidth` read per frame can flush a layout, and a
+size kept only by the event a stale canvas missed would miss it too) and the
 engine's scaling level. `viewport` lists every (window, backing store) pair
 the window's rows saw, most frames first, with the canvas Babylon's `resize`
 would have made of that window (`expected`, the CSS size over the level,

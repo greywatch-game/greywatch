@@ -403,8 +403,9 @@ export class FrameProfile {
    * `canvasW`/`canvasH` are the backing store, read as `getRenderWidth(true)`
    * — the canvas itself, never a render target that happens to be bound —
    * which is a property read and no layout. `windowW`/`windowH` are the
-   * window's CSS size as the last `resize` left it (`winW`/`winH`, kept by
-   * `watchWindow`), because `innerWidth` read per frame can flush a layout.
+   * window's CSS size as `watchWindow` last read it (`winW`/`winH`: on a
+   * `resize` and once a second), because `innerWidth` read per frame can
+   * flush a layout.
    * `scaleAt` is the engine's hardware scaling level, which is what turns the
    * one into the size the other should have been (`ProfileReport.viewport`).
    * All five are ASSIGNED on every row, so a lap leaves nothing behind.
@@ -419,7 +420,7 @@ export class FrameProfile {
   private windowW: Uint16Array | null = null;
   private windowH: Uint16Array | null = null;
   private scaleAt: Float64Array | null = null;
-  /** `innerWidth`/`innerHeight` as the last `resize` left them — see `watchWindow`. */
+  /** `innerWidth`/`innerHeight` as `watchWindow` last read them. */
   private winW = 0;
   private winH = 0;
   /**
@@ -1698,8 +1699,14 @@ export class FrameProfile {
 
   /**
    * Keeps the window's CSS size for `endFrame` to file — see `canvasW`. Read
-   * once now and again on every `resize`, never per frame; off with the
-   * other hooks, so a halted or disarmed profiler listens to nothing.
+   * once now, again on every `resize`, and once a second besides, never per
+   * frame; off with the other hooks, so a halted or disarmed profiler listens
+   * to nothing.
+   *
+   * **The second is not belt and braces.** What a stale canvas MISSED is a
+   * window change its resize never followed — a `resize` read before the
+   * layout settled, or none at all — and a window size kept by that same
+   * event would miss it alike, and file the stale canvas as MATCHED.
    */
   private watchWindow(): void {
     const read = (): void => {
@@ -1708,7 +1715,11 @@ export class FrameProfile {
     };
     read();
     window.addEventListener("resize", read);
-    this.unhook.push(() => window.removeEventListener("resize", read));
+    const poll = window.setInterval(read, 1000);
+    this.unhook.push(() => {
+      window.removeEventListener("resize", read);
+      window.clearInterval(poll);
+    });
   }
 
   /**

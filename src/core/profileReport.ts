@@ -307,7 +307,7 @@ export interface ProfileSegment {
  * a stale canvas drawn at more rows, or fewer, than the screen shows.
  */
 export interface ViewportSize {
-  /** The window's CSS size, `innerWidth`x`innerHeight` as the last `resize` left it. */
+  /** The window's CSS size, `innerWidth`x`innerHeight` as last read (a `resize`, or each second). */
   window: string;
   /** The canvas's backing store — never a bound render target. */
   backingStore: string;
