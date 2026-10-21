@@ -1642,9 +1642,47 @@ floor its shading:
     expanded into their records: `gpu.cull` Greyfen 0.027 to 0.095 ms on the
     vantages (0.5% to 1.7% of the frame), Harrowmead 0.029 to 0.085, Sarab
     0.029 to 0.041 — finding 61's BEFORE, now its AFTER.
-- **Owed.** The phone's tick and `gpu.frame` on Greyfen, Harrowmead and
-  Sarab against the BEFORE of 2026-10-21 (above), in one session beside a
-  BEFORE if the difference is under ~8%.
+- **The phone's AFTER, taken 2026-10-21** on the deployed ebdcb6f, the
+  BEFORE's settings and protocol (a thrown-away warm-up, then one
+  `?bench=<map>&gpu` run a map, 06:00-06:20 UTC; every frame one matched
+  1170x540, `staleFrames` 0; the three canonical fight hashes) — but in the
+  order **Sarab, Greyfen, Harrowmead**, where the BEFORE ran Greyfen,
+  Harrowmead, Sarab. (`blocks` reads 0 taken in all three: it is read at
+  the save, after the bench's map is gone. The cull's own counter is what
+  says ours drew.) BEFORE to AFTER:
+
+  | map | part | mean | tick | GPU | cull |
+  | --- | --- | --- | --- | --- | --- |
+  | Greyfen | vantages | 18.0 → 20.4 | 4.71 → 5.07 | 13.2 → 15.7 | 0.27 → 1.44 |
+  | Greyfen | path | 19.4 → 22.1 | 5.23 → 5.34 | 15.8 → 18.3 | 0.26 → 1.35 |
+  | Greyfen | fight | 23.7 → 28.1 | 11.15 → 11.61 | 17.7 → 22.2 | 0.34 → 1.76 |
+  | Harrowmead | vantages | 19.5 → 21.5 | 5.61 → 6.28 | 14.6 → 16.8 | 0.34 → 1.61 |
+  | Harrowmead | path | 22.6 → 22.5 | 6.47 → 6.48 | 18.0 → 18.0 | 0.35 → 1.48 |
+  | Harrowmead | fight | 25.8 → 25.9 | 11.13 → 11.62 | 20.4 → 20.5 | 0.47 → 1.90 |
+  | Sarab | vantages | 17.0 → 16.7 | 6.28 → 4.99 | 11.3 → 10.8 | 0.46 → 0.44 |
+  | Sarab | path | 16.7 → 16.7 | 6.22 → 4.85 | 11.1 → 11.1 | 0.39 → 0.38 |
+  | Sarab | fight | 22.7 → 18.4 | 18.34 → 13.60 | 15.6 → 11.9 | 0.57 → 0.47 |
+
+  - **What is certain: the expanded cull costs the phone 1.1-1.4 ms of GPU**
+    on the two forest maps (Greyfen's 83,846 records, Harrowmead's 59,995)
+    and nothing on Sarab (9,638) — 7-10% of the frame, where the desktop
+    paid 0.07 ms. A counter of its own, so the run order cannot make it.
+  - **What is certain the other way: Sarab's fight is a quarter cheaper on
+    the CPU** — its tick 18.34 to 13.60 ms, its p95 36.1 to 28.0, the
+    fight that was the phone's one CPU-bound part — and every Sarab tick
+    fell 1.3 ms: the draws a part are gone from the encoding.
+  - **What the order confounds: the rest of `gpu.frame`.** Greyfen's GPU
+    rose 2.5 ms on the vantages, of which the cull is 1.2; Harrowmead's
+    vantages rose 2.2 while its path and fight held; Sarab's fight fell
+    3.7. Every one of those moves the way swapping the order moves heat —
+    Sarab ran first and cool where it had run last, Greyfen second where it
+    had run first — so the pulled vertex stage's own price on the phone is
+    not resolved by these runs.
+- **Owed.** (1) The cull's phone cost — the lever is its `expand` pass,
+  which launches a workgroup for EVERY record (83,846 on Greyfen, to the
+  cluster cull's 5,612 for its scatter pass) whether or not it survived. (2)
+  A same-order AFTER (Greyfen, Harrowmead, Sarab) to price the rest of the
+  frame, ideally after (1), since (1) moves it.
 
 ### X3.6 — The static world's other passes (PERF_PLAN B3) — **L, as four sub-steps**
 
