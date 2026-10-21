@@ -1459,9 +1459,10 @@ fixes, 0dd2d09 the measurement's fix).
   - **X3.5b's main pass** is no longer two draws a recipe: nothing of
     Babylon's comes between the blocks and the landform, so the fold's
     stream is one in the main pass as in every other, if it keeps the
-    blocks ahead of the landform (its "What", below).
+    blocks ahead of the landform (its "What", below). (It landed at two
+    draws a group with scatter, for the Intel rule: X3.5b's record.)
 
-### X3.5b — The fold: one draw a recipe, blocks and scatter together — **M–L** (decision) — **LANDED**
+### X3.5b — The fold: one draw a recipe, blocks and scatter together — **M–L** (decision) — **LANDED** (52e1343, review fixes after it)
 
 Numbered after X3.5 rather than renumbering X3.6, whose sub-steps are named
 across the tree. **Decided** (the user, 2026-10-14): it lands before X3.6.
@@ -1619,7 +1620,11 @@ floor its shading:
     region capacity under the full expansion, `prefix` clamping each draw's
     count to it and `expand` skipping what lands past it — near-first, so
     an overflow drops the FARTHEST records of the view that overflowed. It
-    trades a pop in a rare view for the memory, which is the user's call.
+    trades a pop in a rare view for the memory, which is the user's call
+    (`FINDINGS.md` 63). **It is also a limit**: Babylon asks the device for
+    no limits, so a storage binding is the default 128 MiB on every device,
+    and Greyfen's stream is 92% of it; a stream past it hands back the
+    groups that draw scatter (`WorldBlocks.measure`), never the map.
   - `shaders.mjs`: clean on seven maps — one build a shape now (10/10 and
     12/12, the two culls included), the pulled stage's six storage arrays
     within a default device's limits. `gate.mjs`: clean on seven maps,

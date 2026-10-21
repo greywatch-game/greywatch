@@ -3370,7 +3370,9 @@ differently is refused when the layout is built. A texture binding is laid out a
 bound later owes its binding a field saying so, or the layout refuses the
 view. None of the sixteen the cel program binds is either: every shadow map
 is `rgba16float`, the lamps' atlas `r16float`, the cloud field `rg8unorm`,
-the volume `rgba16float` and `rgba8unorm`, and the ground `rgba8unorm`.
+the volume `rgba16float` and `rgba8unorm`, and the ground `rgba8unorm`. A
+STORAGE binding (the pulled vertex stage's arrays and transforms, X3.5b) is
+laid out `read-only-storage`, and no pipeline binds a vertex buffer.
 
 **The world's BLOCKS are drawn by our side, in the MAIN pass, in every
 build** (`BABYLON_EXIT.md` X3.3a, X3.3b and X3.3c) — **and since X3.5 its
@@ -3572,7 +3574,7 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
   cluster's with the scatter bit and the instance set above it. **The size
   gate is per INSTANCE**, where Babylon's was per block surface, so a scrap
   of litter under 3 px drops where its block never would — kept at X3.5b on
-  purpose, because the fold was to move no pixel against X3.4b's picture and
+  purpose, because the fold was to move no pixel against X3.5's picture and
   a gate per surface would have.
 - **A draw a group, not a draw a variant a material.** X3.4b drew one
   `drawIndexedIndirect` per part of a set, because WebGPU has no
@@ -3589,8 +3591,11 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
   record surviving and never cleared, and that is MEMORY**: it holds every
   scatter index Babylon's merge holds, so our side of Greyfen went from the
   87 MB X3.4b left it at (680 before X3.4b) to 207, Harrowmead 82 to 167
-  (`BABYLON_EXIT.md` X3.5b has the lever, a region capacity under the full
-  expansion, which drops the farthest records of a view that overflows).
+  (`FINDINGS.md` 63 has the lever, a region capacity under the full
+  expansion, which drops the farthest records of a view that overflows). It
+  is also a LIMIT: Babylon asks the device for no limits, so a storage
+  binding is the default 128 MiB everywhere and Greyfen's stream is 92% of
+  it; a stream past it hands back the scatter's groups, never the map.
 - **Three URL switches A/B all of this on a device nobody here owns**, in a
   shipped build (`core/urlOverrides.ts`), and a capture names whichever was
   set in `graphics.forced`. `?babylonworld` takes nothing, so Babylon draws

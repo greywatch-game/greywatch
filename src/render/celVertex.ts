@@ -8,8 +8,9 @@
  * Owns: `CEL_VERTEX_PROGRAM` — the attributes, the frame block (group 0), the
  * draw's geometry (group 2, `CEL_GEOMETRY`) and the outputs, which are the
  * fragment's `CEL_VARYINGS` — and `celVertex`, one variant of it as a plain
- * WGSL module; the layout of an instance's transform (`TRANSFORM_WORDS`) and
- * how many floats each attribute type takes a vertex (`ATTRIBUTE_FLOATS`).
+ * WGSL module; the layout of an instance's transform in `transforms`
+ * (`TRANSFORM_WORDS`, `writeTransform`), which the instance cull's records
+ * carry the same way.
  * Invariants: declares every name the shared body reads, by Babylon's names
  * because the body reads them by name (`CelShader.ts`'s `celVertexShader`);
  * the attributes are Babylon's, under Babylon's guards — `color` and `uv` in
@@ -66,8 +67,20 @@ const CEL_ATTRIBUTES: readonly Attribute[] = [
 /** One instance's transform in `transforms`, in 32-bit words: three `vec4f` columns. */
 export const TRANSFORM_WORDS = 12;
 
-/** The floats each attribute type takes a vertex, packed tight in its array. */
-export const ATTRIBUTE_FLOATS: Readonly<Record<string, number>> = { vec2f: 2, vec3f: 3, vec4f: 4 };
+/**
+ * A world matrix laid out as WGSL's `mat4x4f` reads it (`m`, 16 floats) as
+ * a transform: each of its first three columns, with that row of its
+ * translation in w — into `out[at..at + TRANSFORM_WORDS)`. The last row of
+ * a placement's matrix is (0, 0, 0, 1), so nothing is lost.
+ */
+export function writeTransform(m: ArrayLike<number>, out: Float32Array, at: number): void {
+  for (let c = 0; c < 3; c++) {
+    out[at + c * 4] = m[c * 4];
+    out[at + c * 4 + 1] = m[c * 4 + 1];
+    out[at + c * 4 + 2] = m[c * 4 + 2];
+    out[at + c * 4 + 3] = m[12 + c];
+  }
+}
 
 /** The cel vertex stage, declared for our renderer. */
 export const CEL_VERTEX_PROGRAM: VertexProgram = {
@@ -80,14 +93,18 @@ export const CEL_VERTEX_PROGRAM: VertexProgram = {
   entry: "celVertex",
   privates: [{ var: "instance", struct: "CelInstance", fields: [{ name: "world", type: "mat4x4f" }] }],
   declarations: STREAM_INDEX_WGSL,
-  pull: "vertex",
+  pull: {
+    vertex: "vertex",
+    decode: [
+      "  let scattered = isScatter(vertexIndex);",
+      "  let vertex = select(vertexIndex, scatterVertex(vertexIndex), scattered);",
+    ].join("\n"),
+  },
   prelude: [
-    "  let scattered = vertexIndex >= SCATTER_BIT;",
-    "  let vertex = select(vertexIndex, vertexIndex & VERTEX_MASK, scattered);",
     "  instance.world = mat4x4f(",
     "    vec4f(1.0, 0.0, 0.0, 0.0), vec4f(0.0, 1.0, 0.0, 0.0), vec4f(0.0, 0.0, 1.0, 0.0), vec4f(0.0, 0.0, 0.0, 1.0));",
     "  if (scattered) {",
-    "    let t = ((vertexIndex >> VERTEX_BITS) & INSTANCE_MASK) * 3u;",
+    `    let t = scatterInstance(vertexIndex) * ${TRANSFORM_WORDS / 4}u;`,
     "    let w0 = transforms[t];",
     "    let w1 = transforms[t + 1u];",
     "    let w2 = transforms[t + 2u];",

@@ -47,7 +47,7 @@ import {
   CLUSTER_CULL_WGSL,
   CLUSTER_WORDS,
   CULL_UNIFORM_BYTES,
-  GROUP_WORDS,
+  RANGE_WORDS,
   SCAN_SIZE,
 } from "./wgsl/clusterCull";
 import { CLUSTER_FORMS, CLUSTER_PROBE_WGSL } from "./wgsl/cullProbe";
@@ -122,6 +122,13 @@ export interface BlockBox {
   readonly maxZ: number;
 }
 
+/** A RANGE of a cull's items `[start, end)`, and where its region of the output starts (`base`, the WGSL's `outBase`). */
+export interface ScanRange {
+  readonly start: number;
+  readonly end: number;
+  readonly base: number;
+}
+
 /** What a map's cut hands the cull — every array in the order it is drawn. */
 export interface CullTables {
   /** `CLUSTER_WORDS` a cluster, laid out as the WGSL's `Cluster`. */
@@ -130,9 +137,9 @@ export interface CullTables {
   readonly blocks: readonly BlockBox[];
   /** Each surface's bounding sphere, four floats: centre, radius. */
   readonly spheres: Float32Array;
-  /** Each group's first cluster, end, and where its indices start. */
-  readonly groups: readonly { readonly start: number; readonly end: number; readonly base: number }[];
-  /** Every group's indices, rebased onto its own vertex buffers, in group order. */
+  /** Each group's range: its first cluster, end, and where its indices start. */
+  readonly groups: readonly ScanRange[];
+  /** Every group's indices, rebased onto its arrays (past its instanced parts), in group order. */
   readonly indices: Uint32Array;
   /** The square of each near-first band's end, metres (three). */
   readonly bands2: readonly number[];
@@ -194,7 +201,7 @@ export class ClusterCull {
     const bandOf = this.make("bands", n * 4, storage | read);
     const local = this.make("local", n * 16, storage);
     const sums = this.make("sums", (this.workgroups + 1) * 16, storage);
-    const groups = this.upload("groups", storage, groupWords(tables.groups));
+    const groups = this.upload("groups", storage, rangeWords(tables.groups));
     const source = this.upload("source indices", storage, tables.indices);
     // COPY_DST for the clear ahead of each frame's scatter.
     this.indices = this.make("indices", tables.indices.byteLength, storage | GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST);
@@ -499,11 +506,11 @@ function blockWords(blocks: readonly BlockBox[]): Float32Array {
   return out;
 }
 
-/** The groups as the WGSL's `Group`, the scan's half zero. */
-function groupWords(groups: CullTables["groups"]): Uint32Array {
-  const out = new Uint32Array(Math.max(1, groups.length) * GROUP_WORDS);
-  groups.forEach((g, i) => {
-    const o = i * GROUP_WORDS;
+/** A cull's ranges as `SCAN_DECLARATIONS`' `Range` — both culls' — the scan's half zero. */
+export function rangeWords(ranges: readonly ScanRange[]): Uint32Array {
+  const out = new Uint32Array(Math.max(1, ranges.length) * RANGE_WORDS);
+  ranges.forEach((g, i) => {
+    const o = i * RANGE_WORDS;
     out[o] = g.start;
     out[o + 1] = g.end;
     out[o + 2] = g.base;

@@ -62,7 +62,8 @@
  * a pipeline compiling or a texture unpublished draws that group not at all
  * rather than wrongly; a group that will never draw — its pipeline FAILED, an
  * instanced part of it lacks what its variant reads, or its scatter is past
- * the stream index's budget — draws nothing at all and hands every surface of
+ * the stream index's budget or the stream past the device's limits — draws
+ * nothing at all and hands every surface of
  * it back, since half of a recipe would be a hole where Babylon draws the
  * other half (and Babylon's blocks still hold the scatter we would have cut);
  * a surface it will never draw — its group failed, or a cull did, or the cut
@@ -87,14 +88,14 @@
  */
 import { CEL_MATERIAL_BLOCK, CEL_MATERIAL_TEXTURES, type CelRecipe } from "./celMaterial";
 import { celFragment } from "./celFragment";
-import { ATTRIBUTE_FLOATS, CEL_GEOMETRY, celVertex, TRANSFORM_WORDS } from "./celVertex";
+import { CEL_GEOMETRY, celVertex, TRANSFORM_WORDS, writeTransform } from "./celVertex";
 import {
   type BlockBox,
   ClusterCull,
   type CullDiagnostics,
-  type CullTables,
   NO_DIAGNOSTICS,
   type ReachGate,
+  type ScanRange,
 } from "./ClusterCull";
 import { type Cluster, cutClusters, type PieceSpan, type SurfaceArrays, withoutPieces } from "./clusters";
 import type { FrameUniforms } from "./frame";
@@ -106,7 +107,7 @@ import type { FrameContext, Renderer } from "./Renderer";
 import { SCATTER_INSTANCES, SCATTER_VERTICES } from "./streamIndex";
 import { FRAME_TARGETS } from "./targets";
 import { UniformBlockBuffer } from "./UniformBlockBuffer";
-import type { AssembledModule, AssembledVertex } from "./wgsl/assemble";
+import { type AssembledModule, type AssembledVertex, PULLED_ATTRIBUTES } from "./wgsl/assemble";
 import { CLUSTER_WORDS } from "./wgsl/clusterCull";
 import { INDIRECT_BYTES, INSTANCE_WORDS, RECORD_WORDS } from "./wgsl/instanceCull";
 
@@ -171,8 +172,8 @@ interface Group {
   instanced: InstancedPart[];
   /** Why it cannot draw its scatter, if an instanced part lacked what its variant reads: it goes back at `finish`. */
   withheld: string | null;
-  /** In the vertex program's attribute order; empty until `finish`. */
-  vertex: GPUBuffer[];
+  /** Its storage arrays, in the vertex program's attribute order; empty until `finish`. */
+  arrays: GPUBuffer[];
   /** Group 2: its arrays and the instances' transforms; null until `finish`. */
   geometry: HostBindGroup | null;
   /** Its range of the cluster cull's indices, `[indexBase, indexBase + indexCount)` — what its block draw covers. */
@@ -194,12 +195,38 @@ const SOURCE: Readonly<Record<string, keyof SurfaceArrays>> = {
   uv2: "uvs2",
 };
 
+/** One surface as the cut left it: its group, where its indices start, and its clusters. */
+interface CutSurface {
+  readonly surface: number;
+  readonly group: number;
+  readonly base: number;
+  readonly c: readonly Cluster[];
+}
+
+/** Where the cut has got to in the cluster cull's indices and clusters. */
+interface CutCursor {
+  index: number;
+  cluster: number;
+}
+
+/** What the cut will make (`WorldBlocks.measure`). */
+interface CutSize {
+  /** The cluster cull's indices. */
+  indices: number;
+  /** The instanced parts' indices, every group's. */
+  source: number;
+  /** The scatter's stream: every record's indices. */
+  stream: number;
+  /** Each group's vertices, in group order. */
+  readonly vertices: number[];
+}
+
 /** What the cut makes of the scatter for the instance cull, gathered group by group. */
 interface ScatterStream {
   /** Each instanced part's clusters, with their first index into `source` and their range (group). */
   readonly clusters: { readonly cluster: Cluster; readonly first: number; readonly range: number }[];
   readonly records: number[];
-  readonly ranges: InstanceTables["ranges"][number][];
+  readonly ranges: ScanRange[];
   readonly source: Uint32Array;
   /** Where the next range's source and region start. */
   sourceAt: number;
@@ -234,9 +261,6 @@ export class WorldBlocks {
   private clusterCount = 0;
   private instanceCount = 0;
   private setCount = 0;
-  private recordCount = 0;
-  /** The scatter's stream, in indices: every record's, as if all survived. */
-  private streamLength = 0;
   /**
    * Bumped by `clear` and `stop`: a compile that settles for a map already
    * gone, or stopped, writes nothing — not the draw state, not a failure.
@@ -273,23 +297,13 @@ export class WorldBlocks {
   }
 
   /** What is handed over, and what it was cut into. */
-  get count(): {
-    surfaces: number;
-    clusters: number;
-    groups: number;
-    instances: number;
-    sets: number;
-    records: number;
-    stream: number;
-  } {
+  get count(): { surfaces: number; clusters: number; groups: number; instances: number; sets: number } {
     return {
       surfaces: this.surfaceCount,
       clusters: this.clusterCount,
       groups: this.groups.length,
       instances: this.instanceCount,
       sets: this.setCount,
-      records: this.recordCount,
-      stream: this.streamLength,
     };
   }
 
@@ -346,6 +360,13 @@ export class WorldBlocks {
     // no instance either — Babylon draws every recipe whole.
     if (surfaces.length === 0) return;
     const device = this.renderer.device;
+    const sets = scatter?.sets ?? [];
+    const setStarts: number[] = [];
+    let instanceTotal = 0;
+    for (const s of sets) {
+      setStarts.push(instanceTotal);
+      instanceTotal += s.scales.length;
+    }
 
     // A recipe Babylon draws whole draws its scatter whole with it: a group
     // with no surface of ours keeps none of its instanced parts.
@@ -354,120 +375,67 @@ export class WorldBlocks {
       group.instanced = [];
       group.withheld = null;
     }
-    this.handBack(scatter);
+    this.handBack(instanceTotal);
     // Each surface's sphere is of what Babylon would draw — the WHOLE surface,
     // scatter included — because the size gate and the band measure the mesh.
     const spheres = new Float32Array(surfaces.length * 4);
     surfaces.forEach((s, i) => writeSphere(toFloat32(s.geometry.positions), spheres, i * 4));
     if (scatter) this.cutScatter(scatter);
 
-    const sets = scatter?.sets ?? [];
-    const setStarts: number[] = [];
-    let instanceTotal = 0;
-    for (const s of sets) {
-      setStarts.push(instanceTotal);
-      instanceTotal += s.scales.length;
-    }
-    let indexTotal = 0;
-    let sourceTotal = 0;
-    let streamLength = 0;
-    const vertexTotals = this.groups.map((group) => {
-      // A group handed back uploads nothing (and kept no instanced part).
-      if (group.failed) return 0;
-      let vertices = 0;
-      for (const s of group.members) {
-        vertices += surfaces[s].geometry.positions.length / 3;
-        indexTotal += surfaces[s].geometry.indices.length;
-      }
-      for (const p of group.instanced) {
-        vertices += p.geometry.positions.length / 3;
-        sourceTotal += p.geometry.indices.length;
-        streamLength += p.geometry.indices.length * sets[p.set].scales.length;
-      }
-      return vertices;
-    });
-    // The largest buffers the cut makes: the indices and the scatter's stream
-    // (storage bindings both), or a group's widest array (four floats a vertex).
-    let widest = 0;
-    for (const vertices of vertexTotals) widest = Math.max(widest, vertices * 16);
-    const limits = device.limits;
-    const storage = Math.min(limits.maxStorageBufferBindingSize, limits.maxBufferSize);
-    if (Math.max(indexTotal * 4, streamLength * 4, widest) > storage) {
+    const size = this.measure(sets);
+    if (!size) {
       console.error("world blocks: the cut is past the device's buffer limits; the blocks go back to Babylon");
       this.giveUpAll();
-      this.surfaces = [];
+      this.release();
       return;
     }
 
     this.transforms = this.transformBuffer(sets, instanceTotal);
-    const indices = new Uint32Array(indexTotal);
-    const cut: { surface: number; group: number; base: number; c: readonly Cluster[] }[] = [];
-    const ranges: CullTables["groups"][number][] = [];
+    const indices = new Uint32Array(size.indices);
+    const cut: CutSurface[] = [];
+    const ranges: ScanRange[] = [];
     const stream: ScatterStream = {
       clusters: [],
       records: [],
       ranges: [],
-      source: new Uint32Array(sourceTotal),
+      source: new Uint32Array(size.source),
       sourceAt: 0,
       streamAt: 0,
     };
-    let indexAt = 0;
-    let clusterCount = 0;
+    const at: CutCursor = { index: 0, cluster: 0 };
     this.groups.forEach((group, g) => {
-      const start = clusterCount;
-      const base = indexAt;
-      group.indexBase = base;
+      const start = at.cluster;
+      group.indexBase = at.index;
       // The instanced parts first: a scatter index names its vertex from the
       // start of the arrays (`streamIndex.ts`). A group handed back keeps its
       // place in both culls' tables, empty.
       const vertexBase = this.cutInstanced(group, g, sets, setStarts, stream);
-      if (group.failed) {
-        ranges.push({ start, end: start, base });
-        return;
-      }
-      group.vertex = group.program.vertex.attributes.map((a) => this.vertexBuffer(group, a.name, a.type, vertexTotals[g]));
-      group.scattered = group.instanced.length > 0;
-      let at = vertexBase;
-      for (const s of group.members) {
-        const surface = surfaces[s];
-        const geo = surface.geometry;
-        const positions = toFloat32(geo.positions);
-        const local = geo.indices;
-        for (let i = 0; i < local.length; i++) indices[indexAt + i] = local[i] + at;
-        const clusters = cutClusters(positions, local, geo.colors, surface.pieces, this.options.triangles);
-        cut.push({ surface: s, group: g, base: indexAt, c: clusters });
-        clusterCount += clusters.length;
-        at += positions.length / 3;
-        indexAt += local.length;
-      }
-      ranges.push({ start, end: clusterCount, base });
-      group.indexCount = indexAt - base;
-      for (const b of group.vertex) b.unmap();
-      this.geometryOf(group);
-      this.ask(group);
+      if (!group.failed) this.cutGroup(group, g, vertexBase, size.vertices[g], indices, at, cut);
+      ranges.push({ start, end: at.cluster, base: group.indexBase });
+      group.indexCount = at.index - group.indexBase;
     });
 
+    const clusterCount = at.cluster;
     this.clusterCount = clusterCount;
     const bands = this.options.nearBands;
     const bands2 = [bands[0] * bands[0], bands[1] * bands[1], bands[2] * bands[2]];
+    const boxes = uniqueBoxes(blocks);
     this.cull = new ClusterCull(
       device,
       this.renderer.pipelines,
-      { clusters: clusterWords(cut, blocks), clusterCount, blocks: uniqueBoxes(blocks), spheres, groups: ranges, indices, bands2 },
+      { clusters: clusterWords(cut, blocks, boxes), clusterCount, blocks: boxes, spheres, groups: ranges, indices, bands2 },
       this.gate,
       this.diagnostics,
     );
     const ready: Promise<boolean>[] = [this.cull.ready];
-    this.recordCount = stream.records.length / RECORD_WORDS;
-    this.streamLength = streamLength;
-    if (this.recordCount > 0) {
+    if (stream.records.length > 0) {
       const tables: InstanceTables = {
-        ...this.instanceTables(sets),
+        ...this.instanceTables(sets, setStarts),
         clusters: scatterClusterWords(stream.clusters),
         records: Uint32Array.from(stream.records),
         ranges: stream.ranges,
         source: stream.source,
-        streamLength,
+        streamLength: size.stream,
         bands2,
       };
       this.instances = new InstanceCull(device, this.renderer.pipelines, tables, this.gate, this.diagnostics);
@@ -481,7 +449,92 @@ export class WorldBlocks {
       if (ok) this.hook();
       else this.giveUpAll();
     });
-    // The build's arrays are ours no longer.
+    this.release();
+  }
+
+  /**
+   * What the cut will make — the cluster cull's indices, the scatter's source
+   * and stream, each group's vertices — or null when the blocks' indices or a
+   * group's widest array (four floats a vertex) are past the device's limits.
+   * A STREAM past them hands back only the groups that draw scatter, as the
+   * index's budget does: on the default limits (Babylon asks for no others)
+   * Greyfen's 30.9M indices are 92% of a storage binding, and a denser forest
+   * should cost Babylon the scatter's recipes, not the map.
+   */
+  private measure(sets: readonly InstanceSet[]): CutSize | null {
+    const limits = this.renderer.device.limits;
+    const storage = Math.min(limits.maxStorageBufferBindingSize, limits.maxBufferSize);
+    let size = this.sizes(sets);
+    if (size.stream * 4 > storage) {
+      for (const group of this.groups) {
+        if (group.instanced.length === 0) continue;
+        this.fail(group, `the scatter's stream (${size.stream} indices) is past the device's ${storage} bytes`);
+      }
+      size = this.sizes(sets);
+    }
+    let widest = 0;
+    for (const vertices of size.vertices) widest = Math.max(widest, vertices * 16);
+    return Math.max(size.indices * 4, widest) > storage ? null : size;
+  }
+
+  /** `measure`'s count, over the groups not handed back. */
+  private sizes(sets: readonly InstanceSet[]): CutSize {
+    const size: CutSize = { indices: 0, source: 0, stream: 0, vertices: [] };
+    for (const group of this.groups) {
+      let vertices = 0;
+      // A group handed back uploads nothing (and kept no instanced part).
+      if (!group.failed) {
+        for (const s of group.members) {
+          vertices += this.surfaces[s].geometry.positions.length / 3;
+          size.indices += this.surfaces[s].geometry.indices.length;
+        }
+      }
+      for (const p of group.instanced) {
+        vertices += p.geometry.positions.length / 3;
+        size.source += p.geometry.indices.length;
+        size.stream += p.geometry.indices.length * sets[p.set].scales.length;
+      }
+      size.vertices.push(vertices);
+    }
+    return size;
+  }
+
+  /**
+   * Group `g`'s arrays uploaded, its surfaces' indices rebased past its
+   * `vertexBase` instanced vertices and cut into clusters at `at`, and its
+   * pipeline asked for.
+   */
+  private cutGroup(
+    group: Group,
+    g: number,
+    vertexBase: number,
+    vertexTotal: number,
+    indices: Uint32Array,
+    at: CutCursor,
+    cut: CutSurface[],
+  ): void {
+    group.arrays = group.program.vertex.attributes.map((a) => this.attributeArray(group, a.name, a.type, vertexTotal));
+    group.scattered = group.instanced.length > 0;
+    let vertex = vertexBase;
+    for (const s of group.members) {
+      const surface = this.surfaces[s];
+      const geo = surface.geometry;
+      const positions = toFloat32(geo.positions);
+      const local = geo.indices;
+      for (let i = 0; i < local.length; i++) indices[at.index + i] = local[i] + vertex;
+      const clusters = cutClusters(positions, local, geo.colors, surface.pieces, this.options.triangles);
+      cut.push({ surface: s, group: g, base: at.index, c: clusters });
+      at.cluster += clusters.length;
+      at.index += local.length;
+      vertex += positions.length / 3;
+    }
+    for (const b of group.arrays) b.unmap();
+    this.geometryOf(group);
+    this.ask(group);
+  }
+
+  /** The build's arrays are ours no longer, cut or not. */
+  private release(): void {
     this.surfaces = [];
     for (const group of this.groups) group.instanced = [];
   }
@@ -510,7 +563,7 @@ export class WorldBlocks {
   clear(): void {
     this.generation++;
     for (const g of this.groups) {
-      for (const b of g.vertex) b.destroy();
+      for (const b of g.arrays) b.destroy();
       g.material.block.destroy();
     }
     this.transforms?.destroy();
@@ -527,8 +580,6 @@ export class WorldBlocks {
     this.clusterCount = 0;
     this.instanceCount = 0;
     this.setCount = 0;
-    this.recordCount = 0;
-    this.streamLength = 0;
     this.groups.length = 0;
     this.groupOf.blocks.clear();
     this.groupOf.landform.clear();
@@ -556,7 +607,7 @@ export class WorldBlocks {
         members: [],
         instanced: [],
         withheld: null,
-        vertex: [],
+        arrays: [],
         geometry: null,
         indexBase: 0,
         indexCount: 0,
@@ -577,9 +628,7 @@ export class WorldBlocks {
    * map's instances past `SCATTER_INSTANCES` take every such group back, a
    * group's instanced vertices past `SCATTER_VERTICES` take that one.
    */
-  private handBack(scatter: ScatterCut | null): void {
-    let instances = 0;
-    for (const s of scatter?.sets ?? []) instances += s.scales.length;
+  private handBack(instances: number): void {
     for (const group of this.groups) {
       if (group.withheld) {
         this.fail(group, group.withheld);
@@ -670,9 +719,14 @@ export class WorldBlocks {
    * The instance cull's instance and set tables: every set's instances, set
    * by set, each with its world sphere — the set's own sphere (over every
    * part of it drawn, in its own frame) moved by the instance's matrix and
-   * grown by its scale — and the most its set's vertices can sway.
+   * grown by its scale — and the most its set's vertices can sway. A set
+   * none of whose parts is drawn (every one in a group handed back) has a
+   * sphere of nothing at its placement: no record names it.
    */
-  private instanceTables(sets: readonly InstanceSet[]): Pick<InstanceTables, "instances" | "instanceCount" | "sets"> {
+  private instanceTables(
+    sets: readonly InstanceSet[],
+    setStarts: readonly number[],
+  ): Pick<InstanceTables, "instances" | "instanceCount" | "sets"> {
     // Each set's sphere and sway, over every part drawn of it.
     const lo = sets.map(() => [Infinity, Infinity, Infinity]);
     const hi = sets.map(() => [-Infinity, -Infinity, -Infinity]);
@@ -697,20 +751,20 @@ export class WorldBlocks {
         }
       }
     }
-    let total = 0;
-    for (const s of sets) total += s.scales.length;
+    const total = sets.length === 0 ? 0 : setStarts[sets.length - 1] + sets[sets.length - 1].scales.length;
     const words = new ArrayBuffer(Math.max(1, total) * INSTANCE_WORDS * 4);
     const f = new Float32Array(words);
     const u = new Uint32Array(words);
     const out: InstanceTables["sets"][number][] = [];
-    let at = 0;
     sets.forEach((set, s) => {
       const l = lo[s];
       const h = hi[s];
-      const cx = (l[0] + h[0]) / 2;
-      const cy = (l[1] + h[1]) / 2;
-      const cz = (l[2] + h[2]) / 2;
-      const r = Math.hypot(h[0] - l[0], h[1] - l[1], h[2] - l[2]) / 2;
+      const drawn = l[0] <= h[0];
+      const cx = drawn ? (l[0] + h[0]) / 2 : 0;
+      const cy = drawn ? (l[1] + h[1]) / 2 : 0;
+      const cz = drawn ? (l[2] + h[2]) / 2 : 0;
+      const r = drawn ? Math.hypot(h[0] - l[0], h[1] - l[1], h[2] - l[2]) / 2 : 0;
+      const at = setStarts[s];
       const n = set.scales.length;
       for (let i = 0; i < n; i++) {
         const m = set.matrices.subarray(i * 16, i * 16 + 16);
@@ -718,12 +772,11 @@ export class WorldBlocks {
         f[o] = m[0] * cx + m[4] * cy + m[8] * cz + m[12];
         f[o + 1] = m[1] * cx + m[5] * cy + m[9] * cz + m[13];
         f[o + 2] = m[2] * cx + m[6] * cy + m[10] * cz + m[14];
-        f[o + 3] = Number.isFinite(r) ? r * set.scales[i] : 0;
+        f[o + 3] = r * set.scales[i];
         writeTransform(m, f, o + 4);
         u[o + 16] = s;
       }
       out.push({ start: at, end: at + n, ramp: ramp[s], rigged: rigged[s] });
-      at += n;
     });
     this.instanceCount = total;
     this.setCount = sets.length;
@@ -733,7 +786,10 @@ export class WorldBlocks {
   /**
    * Every instance's transform, set by set as the instance table orders
    * them: what group 2 binds in every group, so a map with no scatter still
-   * binds one, never read.
+   * binds one, never read. A buffer of its own rather than the instance
+   * cull's table, whose records carry the same transform: the stage reads
+   * twelve words an instance, never the cull's twenty, and a group binds it
+   * whether or not there is a cull.
    */
   private transformBuffer(sets: readonly InstanceSet[], total: number): GPUBuffer {
     const buffer = this.renderer.device.createBuffer({
@@ -786,8 +842,8 @@ export class WorldBlocks {
   }
 
   /** One attribute's array for the whole group, MAPPED, filled part by part, then surface by surface. */
-  private vertexBuffer(group: Group, name: string, type: string, vertexTotal: number): GPUBuffer {
-    const floats = ATTRIBUTE_FLOATS[type];
+  private attributeArray(group: Group, name: string, type: string, vertexTotal: number): GPUBuffer {
+    const floats = PULLED_ATTRIBUTES[type].floats;
     const buffer = this.renderer.device.createBuffer({
       label: `world blocks: [${group.material.recipe.defines.join("+")}] ${name}`,
       size: Math.max(16, vertexTotal * floats * 4),
@@ -811,7 +867,7 @@ export class WorldBlocks {
   private geometryOf(group: Group): void {
     const buffers: Record<string, GPUBuffer> = { transforms: this.transforms! };
     group.program.vertex.attributes.forEach((a, k) => {
-      buffers[a.from!] = group.vertex[k];
+      buffers[a.from] = group.arrays[k];
     });
     const label = `world blocks: [${group.material.recipe.defines.join("+")}] geometry`;
     group.geometry = new HostBindGroup(this.renderer.device, label, CEL_GEOMETRY, group.material.recipe.defines, buffers);
@@ -829,7 +885,6 @@ export class WorldBlocks {
         vertexEntry: "main",
         fragment: group.program.fragment,
         fragmentEntry: "main",
-        buffers: [],
         targets: FRAME_TARGETS,
         state: recipe.depthBias === 0 ? undefined : { depthBias: recipe.depthBias },
       })
@@ -975,26 +1030,6 @@ function toFloat32(a: Float32Array | Float64Array): Float32Array {
   return a instanceof Float32Array ? a : Float32Array.from(a);
 }
 
-/**
- * A world matrix laid out as WGSL's `mat4x4f` reads it, as the vertex stage
- * and the cull read a transform: each of its first three columns, with that
- * row of its translation in w — into `out[at..at + 12)`.
- */
-function writeTransform(m: Float32Array, out: Float32Array, at: number): void {
-  out[at] = m[0];
-  out[at + 1] = m[1];
-  out[at + 2] = m[2];
-  out[at + 3] = m[12];
-  out[at + 4] = m[4];
-  out[at + 5] = m[5];
-  out[at + 6] = m[6];
-  out[at + 7] = m[13];
-  out[at + 8] = m[8];
-  out[at + 9] = m[9];
-  out[at + 10] = m[10];
-  out[at + 11] = m[14];
-}
-
 /** Each distinct reach box once, in the order first met — the cluster cull's block table. */
 function uniqueBoxes(blocks: readonly BlockBox[]): BlockBox[] {
   return [...new Set(blocks)];
@@ -1002,14 +1037,10 @@ function uniqueBoxes(blocks: readonly BlockBox[]): BlockBox[] {
 
 /**
  * The block clusters as the cluster cull's `Cluster`: each surface's, in cut
- * order, its block the index of its reach box in `uniqueBoxes`' order.
+ * order, its block the index of its reach box in `boxes` (`uniqueBoxes`).
  */
-function clusterWords(
-  cut: readonly { surface: number; group: number; base: number; c: readonly Cluster[] }[],
-  blocks: readonly BlockBox[],
-): ArrayBuffer {
-  const blockIds = new Map<BlockBox, number>();
-  for (const box of blocks) if (!blockIds.has(box)) blockIds.set(box, blockIds.size);
+function clusterWords(cut: readonly CutSurface[], blocks: readonly BlockBox[], boxes: readonly BlockBox[]): ArrayBuffer {
+  const blockIds = new Map(boxes.map((box, i) => [box, i]));
   let count = 0;
   for (const { c } of cut) count += c.length;
   const words = new ArrayBuffer(Math.max(1, count) * CLUSTER_WORDS * 4);
@@ -1018,48 +1049,48 @@ function clusterWords(
   let k = 0;
   for (const { surface, group, base, c } of cut) {
     const block = blockIds.get(blocks[surface])!;
-    for (const cl of c) {
-      const o = k * CLUSTER_WORDS;
-      f[o] = cl.lo[0];
-      f[o + 1] = cl.lo[1];
-      f[o + 2] = cl.lo[2];
-      u[o + 3] = base + cl.indexStart;
-      f[o + 4] = cl.hi[0];
-      f[o + 5] = cl.hi[1];
-      f[o + 6] = cl.hi[2];
-      u[o + 7] = cl.indexCount;
-      u[o + 8] = group;
-      u[o + 9] = block;
-      u[o + 10] = surface;
-      u[o + 11] = cl.piece;
-      f[o + 12] = cl.ramp;
-      u[o + 13] = cl.rigged ? 1 : 0;
-      k++;
-    }
+    for (const cl of c) writeCluster(f, u, k++, cl, base + cl.indexStart, [group, block, surface, cl.piece]);
   }
   return words;
 }
 
-/** The instanced parts' clusters as the instance cull reads them — `InstanceTables.clusters`. */
+/**
+ * The instanced parts' clusters as the instance cull reads them
+ * (`InstanceTables.clusters`): the same record, its first index into the
+ * stream's source and its range in the place of a group.
+ */
 function scatterClusterWords(clusters: ScatterStream["clusters"]): ArrayBuffer {
   const words = new ArrayBuffer(Math.max(1, clusters.length) * CLUSTER_WORDS * 4);
   const f = new Float32Array(words);
   const u = new Uint32Array(words);
-  clusters.forEach(({ cluster, first, range }, k) => {
-    const o = k * CLUSTER_WORDS;
-    f[o] = cluster.lo[0];
-    f[o + 1] = cluster.lo[1];
-    f[o + 2] = cluster.lo[2];
-    u[o + 3] = first;
-    f[o + 4] = cluster.hi[0];
-    f[o + 5] = cluster.hi[1];
-    f[o + 6] = cluster.hi[2];
-    u[o + 7] = cluster.indexCount;
-    u[o + 8] = range;
-    f[o + 12] = cluster.ramp;
-    u[o + 13] = cluster.rigged ? 1 : 0;
-  });
+  clusters.forEach(({ cluster, first, range }, k) => writeCluster(f, u, k, cluster, first, [range, 0, 0, 0]));
   return words;
+}
+
+/**
+ * Cluster `k` as `CULL_DECLARATIONS`' `Cluster`: its box and its first index
+ * and count, its four `refs`, and its sway.
+ */
+function writeCluster(
+  f: Float32Array,
+  u: Uint32Array,
+  k: number,
+  cl: Cluster,
+  first: number,
+  refs: readonly [number, number, number, number],
+): void {
+  const o = k * CLUSTER_WORDS;
+  f[o] = cl.lo[0];
+  f[o + 1] = cl.lo[1];
+  f[o + 2] = cl.lo[2];
+  u[o + 3] = first;
+  f[o + 4] = cl.hi[0];
+  f[o + 5] = cl.hi[1];
+  f[o + 6] = cl.hi[2];
+  u[o + 7] = cl.indexCount;
+  for (let r = 0; r < 4; r++) u[o + 8 + r] = refs[r];
+  f[o + 12] = cl.ramp;
+  u[o + 13] = cl.rigged ? 1 : 0;
 }
 
 /**

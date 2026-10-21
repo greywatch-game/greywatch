@@ -3,12 +3,13 @@
  * DECLARATIONS, stated as data, and the one function that turns them and a
  * body into a plain WGSL module with explicit bind groups.
  * Owns: the declaration types (`FragmentProgram`, `VertexProgram`, `Binding`,
- * `UniformField`, `Varying`, `Attribute`, `PrivateBlock`, `Guard`, `StageTarget`);
+ * `UniformField`, `Varying`, `Attribute`, `PrivateBlock`, `Guard`, `StageTarget`)
+ * and how a pulled attribute is stored (`PULLED_ATTRIBUTES`);
  * `assembleFragment` and `assembleVertex`, which emit the stage's input and
  * output structs, the uniform structs, every `@group`/`@binding`, the
  * preprocessed body and the entry point — with Babylon's y flip for the kind
- * of pass the module is built for, and for a PULLED vertex stage the reads of
- * its attributes out of storage (`VertexProgram.pull`); and the two rewrites
+ * of pass the module is built for, and a vertex stage's reads of its
+ * attributes out of storage (`VertexProgram.pull`); and the two rewrites
  * that make a body written for Babylon's accessors read ours —
  * `uniforms.<name>` to the block that declares it, and a strided scalar
  * array's element to its `.el`.
@@ -145,32 +146,30 @@ export interface FragmentProgram {
 }
 
 /**
- * One vertex attribute, read by a body as `vertexInputs.<name>`. Locations are
- * counted over the attributes the variant HAS, in list order.
+ * One vertex attribute, read by a body as `vertexInputs.<name>` and PULLED
+ * out of a storage array: `main` reads it at the vertex its program's
+ * `pull` names (`VertexProgram.pull`).
  */
 export interface Attribute {
   readonly name: string;
   /** `f32`, `vec2f`, `vec3f` or `vec4f` — every attribute here is float. */
   readonly type: string;
   readonly when?: Guard;
-  /**
-   * In a PULLED stage (`VertexProgram.pull`), the storage binding it is read
-   * out of, declared as `PULLED_STORAGE` says its type is stored; a vertex
-   * buffer's attribute has none.
-   */
-  readonly from?: string;
+  /** The storage binding it is read out of, declared as `PULLED_ATTRIBUTES` says its type is stored. */
+  readonly from: string;
 }
 
 /**
- * The storage array a pulled attribute of each type is read out of. A
- * `vec3f` is three floats of an `array<f32>`, because an `array<vec3f>` in
- * storage is strided to 16 bytes and a vertex's arrays are packed tight.
+ * How a pulled attribute of each type is stored: the storage array it is
+ * read out of, and the floats it takes a vertex there — packed tight, which
+ * is why a `vec3f` is three floats of an `array<f32>` (an `array<vec3f>`
+ * in storage is strided to 16 bytes). Whoever fills an array packs it so.
  */
-export const PULLED_STORAGE: Readonly<Record<string, string>> = {
-  f32: "array<f32>",
-  vec2f: "array<vec2f>",
-  vec3f: "array<f32>",
-  vec4f: "array<vec4f>",
+export const PULLED_ATTRIBUTES: Readonly<Record<string, { readonly storage: string; readonly floats: number }>> = {
+  f32: { storage: "array<f32>", floats: 1 },
+  vec2f: { storage: "array<vec2f>", floats: 2 },
+  vec3f: { storage: "array<f32>", floats: 3 },
+  vec4f: { storage: "array<vec4f>", floats: 4 },
 };
 
 /**
@@ -207,21 +206,20 @@ export interface VertexProgram {
   /** Blocks `main` writes before the body runs — see `PrivateBlock`. */
   readonly privates?: readonly PrivateBlock[];
   /**
-   * WGSL statements `main` runs after it has copied its inputs into
+   * Where `main` reads the attributes: it takes `@builtin(vertex_index)
+   * vertexIndex` and no vertex buffer, runs `decode` (WGSL statements, which
+   * define `vertex` when it is not `vertexIndex` itself), and reads every
+   * attribute out of its storage at `vertex`.
+   */
+  readonly pull: { readonly vertex: string; readonly decode?: string };
+  /**
+   * WGSL statements `main` runs after it has read the attributes into
    * `vertexInputs` and before it calls `entry`: where a `PrivateBlock` is
-   * written. In a pulled stage it runs FIRST, and defines the `u32` the
-   * attributes are read at when that is not `vertexIndex` itself (`pull`).
+   * written.
    */
   readonly prelude?: string;
-  /** WGSL at module scope, after the bind groups: constants the prelude reads. */
+  /** WGSL at module scope, after the bind groups and before the body: what `decode` and `prelude` call. */
   readonly declarations?: string;
-  /**
-   * Set, the stage is PULLED: `main` takes `@builtin(vertex_index)
-   * vertexIndex` and no vertex buffer, and reads every attribute out of its
-   * `from` storage binding at the vertex this names — `vertexIndex`, or a
-   * `u32` the prelude defines.
-   */
-  readonly pull?: string;
 }
 
 /** What kind of pass a module is built for: the one fact the flip turns on. */
@@ -230,14 +228,12 @@ export interface StageTarget {
   readonly flipY: boolean;
 }
 
-/** One attribute as a variant resolved it: what its buffer is built and bound from. */
+/** One attribute as a variant resolved it: what its array is filled and bound as. */
 export interface AssembledAttribute {
   readonly name: string;
   readonly type: string;
-  /** A vertex buffer's attribute: its location; null in a pulled stage. */
-  readonly location: number | null;
-  /** A pulled attribute: the storage binding it is read out of; null otherwise. */
-  readonly from: string | null;
+  /** The storage binding it is read out of. */
+  readonly from: string;
 }
 
 /** A vertex module, and the attributes it reads. */
@@ -334,20 +330,12 @@ export function assembleVertex(
   const variant = new Set(defines);
   const tag = `${program.label} [${[...variant].sort().join("+")}]`;
   const holds = (when?: Guard): boolean => guardHolds(when, variant);
-  const pull = program.pull;
 
   const attributes: AssembledAttribute[] = program.attributes
     .filter((a) => holds(a.when))
-    .map((a, location) => {
-      if ((pull === undefined) !== (a.from === undefined)) {
-        throw new Error(`${tag}: "${a.name}" names its storage when, and only when, the stage is pulled`);
-      }
-      return { name: a.name, type: a.type, location: pull === undefined ? location : null, from: a.from ?? null };
-    });
+    .map((a) => ({ name: a.name, type: a.type, from: a.from }));
   const lines = ["struct VertexInputs {"];
-  for (const a of attributes) {
-    lines.push(a.location === null ? `  ${a.name}: ${a.type},` : `  @location(${a.location}) ${a.name}: ${a.type},`);
-  }
+  for (const a of attributes) lines.push(`  ${a.name}: ${a.type},`);
   lines.push("}", "var<private> vertexInputs: VertexInputs;");
 
   lines.push("struct FragmentInputs {", "  @builtin(position) position: vec4f,");
@@ -380,18 +368,13 @@ export function assembleVertex(
       tag,
     ),
   );
-  const prelude = program.prelude ? [program.prelude] : [];
-  const inputs =
-    pull === undefined
-      ? ["fn main(input: VertexInputs) -> FragmentInputs {", "  vertexInputs = input;", ...prelude]
-      : [
-          "fn main(@builtin(vertex_index) vertexIndex: u32) -> FragmentInputs {",
-          ...prelude,
-          ...attributes.map((a) => `  vertexInputs.${a.name} = ${pullRead(a, pull, declared.bindings, tag)};`),
-        ];
+  const { vertex, decode } = program.pull;
   lines.push(
     "@vertex",
-    ...inputs,
+    "fn main(@builtin(vertex_index) vertexIndex: u32) -> FragmentInputs {",
+    ...(decode ? [decode] : []),
+    ...attributes.map((a) => `  vertexInputs.${a.name} = ${pullRead(a, vertex, declared.bindings, tag)};`),
+    ...(program.prelude ? [program.prelude] : []),
     `  ${program.entry}();`,
     // Babylon's own line, with the factor its internals buffer holds for a
     // texture pass (the header).
@@ -403,13 +386,13 @@ export function assembleVertex(
 }
 
 /**
- * The expression a pulled attribute is read with at vertex `index`, out of
- * its storage binding — which the variant must bind, stored as
- * `PULLED_STORAGE` says an attribute of its type is.
+ * The expression an attribute is read with at vertex `index`, out of its
+ * storage binding — which the variant must bind, stored as
+ * `PULLED_ATTRIBUTES` says an attribute of its type is.
  */
 function pullRead(a: AssembledAttribute, index: string, bindings: readonly AssembledBinding[], tag: string): string {
-  const from = a.from!;
-  const want = PULLED_STORAGE[a.type];
+  const from = a.from;
+  const want = PULLED_ATTRIBUTES[a.type]?.storage;
   const storage = bindings.find((b) => b.kind === "storage" && b.name === from);
   if (!want || !storage || storage.type !== want) {
     throw new Error(`${tag}: "${a.name}" is read out of "${from}", which this variant does not bind as ${want}`);

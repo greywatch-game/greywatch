@@ -37,6 +37,8 @@ import {
   type ReachGate,
   NO_DIAGNOSTICS,
   openTests,
+  rangeWords,
+  type ScanRange,
   rampReach,
   rigReach,
   writePlanes,
@@ -46,14 +48,13 @@ import { closeness, CullCheck, type CullCheckSpec } from "./CullCheck";
 import type { FrameUniforms } from "./frame";
 import type { PassTiming } from "./PassTimer";
 import type { PipelineCache } from "./PipelineCache";
+import { SCAN_SIZE } from "./wgsl/clusterCull";
 import { INSTANCE_FORMS, INSTANCE_PROBE_WGSL } from "./wgsl/cullProbe";
 import {
   INDIRECT_BYTES,
   INSTANCE_CULL_UNIFORM_BYTES,
   INSTANCE_CULL_WGSL,
-  INSTANCE_SCAN_SIZE,
   INSTANCE_WORDS,
-  RANGE_WORDS,
   RECORD_WORDS,
   SET_WORDS,
 } from "./wgsl/instanceCull";
@@ -74,7 +75,7 @@ export interface InstanceTables {
   /** `RECORD_WORDS` a record: its instance, then its cluster — every range's contiguous, in range order. */
   readonly records: Uint32Array;
   /** Each range's records `[start, end)` and where its region of the stream starts. */
-  readonly ranges: readonly { readonly start: number; readonly end: number; readonly base: number }[];
+  readonly ranges: readonly ScanRange[];
   /** Every instanced part's indices, each onto its group's arrays. */
   readonly source: Uint32Array;
   /** The stream's length in indices: every record's, as if every one survived. */
@@ -124,8 +125,8 @@ export class InstanceCull {
     const n = tables.instanceCount;
     const records = tables.records.length / RECORD_WORDS;
     this.count = n;
-    this.instanceWorkgroups = Math.max(1, Math.ceil(n / INSTANCE_SCAN_SIZE));
-    this.recordWorkgroups = Math.max(1, Math.ceil(records / INSTANCE_SCAN_SIZE));
+    this.instanceWorkgroups = Math.max(1, Math.ceil(n / SCAN_SIZE));
+    this.recordWorkgroups = Math.max(1, Math.ceil(records / SCAN_SIZE));
     const maxX = device.limits.maxComputeWorkgroupsPerDimension;
     this.expandX = Math.max(1, Math.min(records, maxX));
     this.expandY = Math.max(1, Math.ceil(records / this.expandX));
@@ -377,18 +378,6 @@ function setWords(sets: InstanceTables["sets"]): Uint32Array {
     out[o + 1] = s.end;
     f[o + 2] = s.ramp;
     out[o + 3] = s.rigged ? 1 : 0;
-  });
-  return out;
-}
-
-/** The ranges as the WGSL's `Range`, the scan's half zero. */
-function rangeWords(ranges: InstanceTables["ranges"]): Uint32Array {
-  const out = new Uint32Array(Math.max(1, ranges.length) * RANGE_WORDS);
-  ranges.forEach((r, i) => {
-    const o = i * RANGE_WORDS;
-    out[o] = r.start;
-    out[o + 1] = r.end;
-    out[o + 2] = r.base;
   });
   return out;
 }

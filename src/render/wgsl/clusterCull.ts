@@ -2,9 +2,11 @@
  * render/wgsl/clusterCull.ts — The compute cull's WGSL: three entry points,
  * run in order once a frame (`ClusterCull.dispatch`, `BABYLON_EXIT.md` X3.3b).
  * Owns: `CLUSTER_CULL_WGSL`; `CULL_DECLARATIONS`, the uniform block and the
- * cluster and block records as both culls and the probe declare them; the
- * byte layouts they read (`CULL_UNIFORM_BYTES`, `CLUSTER_WORDS`,
- * `GROUP_WORDS`, `BLOCK_WORDS`) and its workgroup sizes.
+ * cluster and block records as both culls and the probe declare them;
+ * `SCAN_DECLARATIONS`, the near-first scan both culls order their survivors
+ * by — one copy, so both keep one order the one way; the byte layouts they
+ * read (`CULL_UNIFORM_BYTES`, `CLUSTER_WORDS`, `RANGE_WORDS`,
+ * `BLOCK_WORDS`) and the workgroup sizes.
  * Invariants: the surviving clusters of a group are written in one ORDER
  * that is a pure function of the frame's inputs — by near-first band, then
  * by cluster index — through a SCAN, never an atomic append, so the same eye
@@ -33,14 +35,14 @@
  *   the blocks are drawn plain over the whole of it (`ClusterCull.ts`).
  */
 
-/** Threads in a `cull` and a `prefix` workgroup. */
+/** Threads in a scanning workgroup — a `cull` pass's and a `prefix`'s, in both culls. */
 export const SCAN_SIZE = 256;
 /** Threads in a `scatter` workgroup. */
 export const SCATTER_SIZE = 64;
 /** A cluster's record, in 32-bit words (`Cluster` below). */
 export const CLUSTER_WORDS = 16;
-/** A group's record, in 32-bit words (`Group` below). */
-export const GROUP_WORDS = 12;
+/** A range's record, in 32-bit words (`Range`, `SCAN_DECLARATIONS`). */
+export const RANGE_WORDS = 12;
 /** A block's box, in 32-bit words (`Box` below). */
 export const BLOCK_WORDS = 8;
 /** The uniform block (`Cull` below), in bytes. */
@@ -106,17 +108,21 @@ fn outsideBox(p: vec4f, mid: vec3f, half: vec3f, grow: f32) -> bool {
 }
 `;
 
-export const CLUSTER_CULL_WGSL = /* wgsl */ `
+/**
+ * The near-first SCAN, as both culls run it over their own items (clusters
+ * here, an instance's clusters in `instanceCull.ts`): each item's four band
+ * lanes scanned within its workgroup into `local`, the workgroups' totals
+ * into `sums` and then scanned in place by `scanSums`, the grand total at
+ * `sums[workgroups]` (the uniform's word 8 z). A RANGE is a run of items that
+ * writes one region of the output, `openRange` sets where each of its bands
+ * starts there, and `slotOf` is where an item's first index goes — by band,
+ * then by item index, a pure function of the frame's inputs, never an atomic
+ * append. A module that includes it declares `local`, `sums` and `ranges`.
+ */
+export const SCAN_DECLARATIONS = /* wgsl */ `
 const SCAN: u32 = ${SCAN_SIZE}u;
-const SCATTER: u32 = ${SCATTER_SIZE}u;
-const NONE: u32 = 0xffffffffu;
-// A frustum plane's slack, metres: float error at a few kilometres, never a
-// cluster that is in view.
-const SLACK: f32 = 0.05;
 
-${CULL_DECLARATIONS}
-
-struct Group {
+struct Range {
   start: u32,
   end: u32,
   outBase: u32,
@@ -124,16 +130,6 @@ struct Group {
   base: vec4u,
   bandStart: vec4u,
 }
-
-@group(0) @binding(1) var<storage, read> clusters: array<Cluster>;
-@group(0) @binding(2) var<storage, read> blocks: array<Box>;
-@group(0) @binding(3) var<storage, read> spheres: array<vec4f>;
-@group(0) @binding(4) var<storage, read_write> bandOf: array<u32>;
-@group(0) @binding(5) var<storage, read_write> local: array<vec4u>;
-@group(0) @binding(6) var<storage, read_write> sums: array<vec4u>;
-@group(0) @binding(7) var<storage, read_write> groups: array<Group>;
-@group(0) @binding(9) var<storage, read> source: array<u32>;
-@group(0) @binding(10) var<storage, read_write> written: array<u32>;
 
 var<workgroup> scan: array<vec4u, SCAN>;
 
@@ -147,6 +143,70 @@ fn scanWorkgroup(li: u32) {
     workgroupBarrier();
   }
 }
+
+/** What the scan has written ahead of item \`x\` of \`count\`; the grand total at \`x == count\`. */
+fn aheadOf(x: u32, count: u32) -> vec4u {
+  if (x >= count) { return sums[cull[8].z]; }
+  return sums[x / SCAN] + local[x];
+}
+
+/** A \`prefix\`'s first half, in ONE workgroup: the workgroups' totals scanned in place. */
+fn scanSums(li: u32) {
+  // Each thread scans a run of the workgroups' totals in place.
+  let n = cull[8].z;
+  let per = (n + SCAN - 1u) / SCAN;
+  let k0 = min(n, li * per);
+  let k1 = min(n, k0 + per);
+  var run = vec4u(0u);
+  for (var k = k0; k < k1; k++) { run = run + sums[k]; }
+  scan[li] = run;
+  workgroupBarrier();
+  scanWorkgroup(li);
+  var at = scan[li] - run;
+  for (var k = k0; k < k1; k++) {
+    let s = sums[k];
+    sums[k] = at;
+    at = at + s;
+  }
+  if (li == SCAN - 1u) { sums[n] = scan[li]; }
+  storageBarrier();
+}
+
+/** Range \`g\`'s per-band totals, returned, and where each of its bands starts in its region. */
+fn openRange(g: u32, count: u32) -> vec4u {
+  let base = aheadOf(ranges[g].start, count);
+  let t = aheadOf(ranges[g].end, count) - base;
+  ranges[g].base = base;
+  ranges[g].bandStart = vec4u(0u, t.x, t.x + t.y, t.x + t.y + t.z);
+  return t;
+}
+
+/** Where item \`i\` of \`count\`, kept in \`band\`, of range \`r\`, writes its first index. */
+fn slotOf(i: u32, count: u32, band: u32, r: Range) -> u32 {
+  return r.outBase + (aheadOf(i, count)[band] - r.base[band]) + r.bandStart[band];
+}
+`;
+
+export const CLUSTER_CULL_WGSL = /* wgsl */ `
+const SCATTER: u32 = ${SCATTER_SIZE}u;
+const NONE: u32 = 0xffffffffu;
+// A frustum plane's slack, metres: float error at a few kilometres, never a
+// cluster that is in view.
+const SLACK: f32 = 0.05;
+
+${CULL_DECLARATIONS}
+${SCAN_DECLARATIONS}
+
+@group(0) @binding(1) var<storage, read> clusters: array<Cluster>;
+@group(0) @binding(2) var<storage, read> blocks: array<Box>;
+@group(0) @binding(3) var<storage, read> spheres: array<vec4f>;
+@group(0) @binding(4) var<storage, read_write> bandOf: array<u32>;
+@group(0) @binding(5) var<storage, read_write> local: array<vec4u>;
+@group(0) @binding(6) var<storage, read_write> sums: array<vec4u>;
+// A range is one group's clusters.
+@group(0) @binding(7) var<storage, read_write> ranges: array<Range>;
+@group(0) @binding(9) var<storage, read> source: array<u32>;
+@group(0) @binding(10) var<storage, read_write> written: array<u32>;
 
 /** Squared distance from the eye to a box; 0 inside it. */
 fn dist2(lo: vec3f, hi: vec3f) -> f32 {
@@ -207,38 +267,10 @@ fn cullClusters(
   if (li == SCAN - 1u) { sums[wid.x] = scan[li]; }
 }
 
-/** What the scan has written ahead of cluster \`x\`; the grand total at \`x == clusters\`. */
-fn ahead(x: u32) -> vec4u {
-  if (x >= itemCount()) { return sums[cull[8].z]; }
-  return sums[x / SCAN] + local[x];
-}
-
 @compute @workgroup_size(${SCAN_SIZE})
 fn prefix(@builtin(local_invocation_index) li: u32) {
-  // Each thread scans a run of the workgroups' totals in place.
-  let n = cull[8].z;
-  let per = (n + SCAN - 1u) / SCAN;
-  let k0 = min(n, li * per);
-  let k1 = min(n, k0 + per);
-  var run = vec4u(0u);
-  for (var k = k0; k < k1; k++) { run = run + sums[k]; }
-  scan[li] = run;
-  workgroupBarrier();
-  scanWorkgroup(li);
-  var at = scan[li] - run;
-  for (var k = k0; k < k1; k++) {
-    let s = sums[k];
-    sums[k] = at;
-    at = at + s;
-  }
-  if (li == SCAN - 1u) { sums[n] = scan[li]; }
-  storageBarrier();
-  for (var g = li; g < cull[8].y; g += SCAN) {
-    let base = ahead(groups[g].start);
-    let t = ahead(groups[g].end) - base;
-    groups[g].base = base;
-    groups[g].bandStart = vec4u(0u, t.x, t.x + t.y, t.x + t.y + t.z);
-  }
+  scanSums(li);
+  for (var g = li; g < cull[8].y; g += SCAN) { openRange(g, itemCount()); }
 }
 
 @compute @workgroup_size(${SCATTER_SIZE})
@@ -252,8 +284,7 @@ fn scatter(
   let band = bandOf[i];
   if (band == NONE) { return; }
   let c = clusters[i];
-  let g = groups[c.refs.x];
-  let at = g.outBase + (ahead(i)[band] - g.base[band]) + g.bandStart[band];
+  let at = slotOf(i, itemCount(), band, ranges[c.refs.x]);
   for (var k = li; k < c.hi.w; k += SCATTER) {
     written[at + k] = source[c.lo.w + k];
   }

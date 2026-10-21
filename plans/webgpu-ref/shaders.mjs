@@ -180,7 +180,6 @@ async function oursCheck({ shapes, biased }) {
         vertexEntry: "main",
         fragment: fm,
         fragmentEntry: "main",
-        buffers: [],
         targets: FRAME_TARGETS,
         // As `WorldBlocks.ask` states it: no state at all for no bias.
         state: depthBias === 0 ? undefined : { depthBias },

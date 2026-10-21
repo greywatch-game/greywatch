@@ -6,9 +6,10 @@
  * a `GPUBindGroupLayout` (`layoutEntry`), and the compile counts the building
  * card's warm-up reads (`CompileProgress`).
  * Invariants: a pipeline is keyed on its shader VARIANT (both modules'
- * CODE, which a label is not trusted to stand for), its VERTEX LAYOUT, its
- * TARGETS (`targetsKey`) and its fixed-function state, and nothing else
- * distinguishes two; it is built with `createRenderPipelineAsync`, so a
+ * CODE, which a label is not trusted to stand for), its TARGETS
+ * (`targetsKey`) and its fixed-function state, and nothing else distinguishes
+ * two — it binds no vertex buffer, every vertex stage pulling its attributes
+ * out of storage (`wgsl/assemble.ts`); it is built with `createRenderPipelineAsync`, so a
  * compile never stalls a frame and a caller asks AHEAD of the frame that
  * draws with it (`docs/rendering.md`: WebGPU compiles a pipeline on the
  * frame that first uses it, which is what the warm-up exists to move); a
@@ -66,7 +67,6 @@ export interface PipelineSpec {
   readonly vertexEntry: string;
   readonly fragment: ShaderSource;
   readonly fragmentEntry: string;
-  readonly buffers: readonly GPUVertexBufferLayout[];
   readonly targets: PassTargets;
   readonly state?: PipelineState;
 }
@@ -154,7 +154,6 @@ export class PipelineCache implements CompileProgress {
       vertex: {
         module: this.module(spec.vertex),
         entryPoint: spec.vertexEntry,
-        buffers: spec.buffers,
       },
       fragment: {
         module: this.module(spec.fragment),
@@ -233,12 +232,11 @@ export class PipelineCache implements CompileProgress {
   }
 }
 
-/** The key a pipeline is cached under: variant, vertex layout, targets, state. */
+/** The key a pipeline is cached under: variant, targets, state. */
 function pipelineKey(spec: PipelineSpec): string {
   return [
     `${spec.vertex.label}:${spec.vertexEntry}:${spec.vertex.code}`,
     `${spec.fragment.label}:${spec.fragmentEntry}:${spec.fragment.code}`,
-    JSON.stringify(spec.buffers),
     targetsKey(spec.targets),
     JSON.stringify(spec.state ?? {}),
   ].join("|");

@@ -49,7 +49,7 @@
  * Never: draws, or reads a material's uniforms — a material reaches our side
  * as its recipe; writes a property on a mesh.
  * Contract: `docs/rendering.md`, "Our renderer's frame";
- * `BABYLON_EXIT.md` X3.3a, X3.3b, X3.3c, X3.4, X3.5.
+ * `BABYLON_EXIT.md` X3.3a, X3.3b, X3.3c, X3.4, X3.4b, X3.5, X3.5b.
  */
 import type { AbstractMesh, Mesh } from "@babylonjs/core";
 import { CONFIG } from "../config";

@@ -2775,7 +2775,9 @@ scales with the clusters (Cinderhaven cuts 18,928, Greyfen 5,612) as it
 should. `gpu.frame` read within 0.03 ms
 of 39d84ea's medians on every path, so the timer moved nothing it measures.
 X3.5b makes the cull bigger (the instances expanded into their clusters);
-this is its BEFORE.
+this is its BEFORE. Its AFTER (`BABYLON_EXIT.md` X3.5b): Greyfen 0.027 to
+0.095 ms on the vantages, 1.7% of the frame, Harrowmead 0.029 to 0.085,
+Sarab 0.029 to 0.041 — still not it.
 
 ### What is left
 
@@ -2831,3 +2833,49 @@ that is a guess from the shape, not a reading.
 - **A diagnostic switch that holds the patch choice fixed** (the meshes and
   their instance buffers written once, as `?cullonce` did for the blocks):
   if the flicker stops, it is the rewrite; if not, it is the draw.
+
+## 63. The scatter's stream holds every index Babylon's merge holds, and that is 120 MB on Greyfen
+
+**Status:** open; measured, the lever not built — it trades a picture for
+the memory, so it is the user's call. Found landing `BABYLON_EXIT.md` X3.5b
+(2026-10-21).
+
+### What was measured
+
+The fold writes each group's surviving (instance, cluster) records into one
+index stream (`render/InstanceCull.ts`), and the stream is sized for EVERY
+record surviving, so no view can overrun a region. That is every scatter
+index the merged blocks hold. Our world's GPU buffers at the deploy, before
+the fold to after it (a scratch script summing `createBuffer` by label):
+
+| map | before | after | the stream |
+| --- | --- | --- | --- |
+| Greyfen | 86.8 MB | 206.9 MB | 30.9M indices |
+| Harrowmead | 82.4 | 166.7 | 21.6M |
+| Kurenai | 154.4 | 218.1 | 16.4M |
+| Hollowmere | 83.3 | 90.6 | 1.9M |
+| Coldharbour | 138.8 | 148.9 | 2.6M |
+| Sarab | 74.7 | 86.4 | 3.0M |
+| Cinderhaven | 271.8 | 278.5 | 1.7M |
+
+Nothing per frame reads the unwritten part: the stream is never cleared, and
+a group's indirect draw covers only its survivors. X3.3c held 680 MB on
+Greyfen and the phone drew it, so this is a cost and not a wall.
+
+**It is also a LIMIT.** Babylon asks the device for no limits (`main.ts`
+passes none and `setMaximumLimits` is off), so a storage binding is the
+default 128 MiB on every device, and Greyfen's stream is 92% of it. A stream
+past it hands back the groups that draw scatter (`WorldBlocks.measure`), so
+a denser forest costs Babylon those recipes, never the map.
+
+### The lever
+
+A region CAPACITY under the full expansion: `prefix` clamps each range's
+draw count to it and `expand` skips a record whose slot lands past it. The
+scan is near-first, so an overflow drops the FARTHEST records of the view
+that overflowed — a pop at the back of a rare view, in exchange for the
+memory and the limit's headroom. What a capacity should be is a reading:
+the most any frame keeps, over every vantage and the bench's path and
+fight, per map, which a `?cullcheck`-style readback of the args would
+give. Asking the adapter for its own `maxStorageBufferBindingSize` would
+lift the limit but not the memory.
