@@ -1,7 +1,8 @@
 /**
- * register.ts — the two things that turn the page into an installable app:
- * the service worker registration, and the fullscreen gesture a phone needs
- * when the game is opened in a browser tab rather than from the home screen.
+ * register.ts — the things that turn the page into an installable app: the
+ * service worker registration, the fullscreen gesture a phone needs when the
+ * game is opened in a browser tab rather than from the home screen, and the
+ * screen WAKE LOCK a round holds (`keepScreenAwake`).
  *
  * Nothing here touches the game. `Game` owns the round; this owns the window
  * the round is drawn in, which is why it is a module of its own rather than
@@ -126,4 +127,66 @@ export function enterFullscreenOnTouch(): void {
       }
     })
     .catch(() => {});
+}
+
+/** Whether the caller wants the screen kept on — see `keepScreenAwake`. */
+let awakeWanted = false;
+/** The lock while one is held, and whether a request is in flight. */
+let awakeLock: WakeLockSentinel | null = null;
+let awakeAsking = false;
+let awakeWatching = false;
+
+/**
+ * Keeps the screen on while `on`: the Screen Wake Lock API, asked for while
+ * the page is visible and let go otherwise.
+ *
+ * `Game` passes `ScreenStack.inRound` every frame, so a round on screen —
+ * the deploy map, the world, the death cam and a benchmark — holds it, and
+ * the menu, a pause and the round-over card do not. A benchmark is the case
+ * that needed it: a phone running one is touched by nobody for minutes, and
+ * a screen that dims or sleeps mid-run stops the run. Called every frame, so
+ * an unchanged answer returns on the first line.
+ *
+ * The browser releases the lock itself whenever the page is HIDDEN, so it is
+ * asked for again on `visibilitychange`. A browser without the API, an
+ * insecure page or a refusal (a battery saver) simply leaves the screen to
+ * its own timeout: the game plays either way.
+ */
+export function keepScreenAwake(on: boolean): void {
+  if (on === awakeWanted) return;
+  awakeWanted = on;
+  if (!awakeWatching) {
+    awakeWatching = true;
+    document.addEventListener("visibilitychange", syncWakeLock);
+  }
+  syncWakeLock();
+}
+
+function syncWakeLock(): void {
+  if (!("wakeLock" in navigator)) return;
+  if (!awakeWanted || document.visibilityState !== "visible") {
+    const held = awakeLock;
+    awakeLock = null;
+    if (held) void held.release().catch(() => {});
+    return;
+  }
+  if (awakeLock || awakeAsking) return;
+  awakeAsking = true;
+  navigator.wakeLock
+    .request("screen")
+    .then((lock) => {
+      awakeAsking = false;
+      // Wanted no longer, or hidden, while the request was in flight.
+      if (!awakeWanted || document.visibilityState !== "visible") {
+        void lock.release().catch(() => {});
+        return;
+      }
+      awakeLock = lock;
+      lock.addEventListener("release", () => {
+        if (awakeLock === lock) awakeLock = null;
+      });
+    })
+    .catch(() => {
+      awakeAsking = false;
+    });
 }

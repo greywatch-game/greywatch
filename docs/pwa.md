@@ -8,7 +8,7 @@ for `public/`, `src/pwa/` and the service-worker plugin.
 The build installs to a home screen and launches fullscreen, landscape and offline.
 Four files carry it: `public/manifest.webmanifest`, `public/icons/`,
 `src/pwa/register.ts` and `src/pwa/sw.js`. Nothing in the game knows any of this
-exists — `Game`'s one line is the fullscreen gesture.
+exists — `Game`'s two lines are the fullscreen gesture and the wake lock.
 
 **`public/` is the one place a URL is written by hand.** Vite copies it to `dist/`
 unhashed, which is the point: a manifest names its icons, `index.html` names the
@@ -144,6 +144,14 @@ Details about the phone, each of which was a visible bug first:
   300 ms later as on `orientationchange`, because two phone captures drew a canvas
   that had not followed its window — suspected, not proven, to be the fullscreen
   step; the profiler's `viewport` (report version 18) says on the next capture.
+- **A round on screen keeps the screen ON** (`keepScreenAwake`, the Screen Wake
+  Lock API), asked from `tick` with `ScreenStack.inRound`: the deploy map, the
+  world, the death cam and a benchmark hold it, and the menu, a pause and the
+  round-over card let the screen sleep on its own timeout. A benchmark is why:
+  nobody touches a phone running one, and a screen that dims mid-run stops it.
+  The browser drops the lock whenever the page is hidden, so it is asked for
+  again on `visibilitychange`; a refusal or a browser without it leaves the
+  screen to its timeout and the game plays either way.
 - **A touch is felt nowhere in `InputManager`, and every screen a phone meets
   carries its own button** — the menu's and the round-over card's Deploy, the deploy
   screen's Deploy plate (`.dp-go`), the kit screen's — each listening for its own

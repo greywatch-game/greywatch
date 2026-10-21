@@ -246,7 +246,7 @@ import { TouchControls } from "../ui/TouchControls";
 import { GyroInput } from "./GyroInput";
 import { CullCheckPanel } from "../ui/CullCheckPanel";
 import { ProfileChip } from "../ui/ProfileChip";
-import { enterFullscreenOnTouch } from "../pwa/register";
+import { enterFullscreenOnTouch, keepScreenAwake } from "../pwa/register";
 import { CameraSystem } from "./CameraSystem";
 import { InputManager } from "./InputManager";
 import {
@@ -3514,6 +3514,9 @@ export class Game {
     // open a menu is a frame rate you cannot investigate. It takes the real
     // delta rather than the clamped one — see `HUD.setFps`.
     this.hud.setFps(this.engine.getFps(), real);
+    // A round on screen keeps it on, a menu and a pause let it sleep
+    // (`pwa/register.ts`); unchanged, it returns on its first line.
+    keepScreenAwake(this.screens.inRound);
     // Beside the readout above and on the same terms: every state, because a
     // hitch on the deploy screen is still a hitch and a ring that stopped
     // filling the moment a menu opened would be a ring nobody could trust.

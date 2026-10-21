@@ -2207,7 +2207,7 @@ src/
   pwa/
     register.ts         # SW registration, the update check that is the only
                         #   thing that ever looks for a new build, and the
-                        #   touch fullscreen gesture.
+                        #   touch fullscreen gesture and the wake lock.
                         #   Knows nothing about the game
     sw.js               # The service worker, as a TEMPLATE — not typechecked,
                         #   never imported; vite.config.ts emits dist/sw.js.
