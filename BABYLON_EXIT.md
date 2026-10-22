@@ -1742,9 +1742,42 @@ floor its shading:
     the BEFORE on both forest maps — while Sarab's rose 0.15-0.3 ms (the
     desktop's fixed overhead was 0.02). The driver can move a counter as
     well, so the ratios are the reading, not the milliseconds.
+- **Where the rest goes: the INDICES the expansion writes** (2026-10-22, a
+  scratch probe on the desktop, 1ec93a4, the phone's settings and canvas —
+  832x384 at 2.8125, render scale 0.5, Trees `low`, so 1170x540 and the
+  same size gate — reading `args` and the work list's length back every
+  400 ms through each `?bench=<map>`, the canonical hashes). What survives
+  is the camera's and the settings', not the device's, so it is the phone's
+  count. Means a frame, against the phone's `gpu.cull` over the BEFORE:
+
+  | map | records | part | survivors | indices | phone cull over BEFORE |
+  | --- | --- | --- | --- | --- | --- |
+  | Sarab | 9,638 | vantages | 960 | 0.29 M | +0.15 |
+  | Sarab | | path | 870 | 0.26 M | +0.16 |
+  | Sarab | | fight | 1,820 | 0.54 M | +0.19 |
+  | Greyfen | 53,485 | vantages | 4,820 | 1.73 M | +0.48 |
+  | Greyfen | | path | 5,350 | 1.92 M | +0.39 |
+  | Greyfen | | fight | 5,880 | 2.11 M | +0.53 |
+  | Harrowmead | 41,695 | vantages | 8,530 | 3.00 M | +0.83 |
+  | Harrowmead | | path | 8,710 | 3.05 M | +0.85 |
+  | Harrowmead | | fight | 11,460 | 4.04 M | +1.28 |
+
+  - **The cost follows the indices, not the records.** Greyfen has 28% more
+    records than Harrowmead and costs 40-60% less, Harrowmead writing 1.6-1.9x
+    its indices. About 0.1 ms plus 0.25-0.3 ms a million indices fits all
+    nine; a million is 4 MiB written and 4 MiB of `source` read, so the
+    phone is moving the stream at roughly 25-30 GB/s, where the desktop's
+    bandwidth makes the same bytes 0.03 ms. The record pass is not the cost,
+    so skipping a culled instance's records would not buy it back.
+  - **A survivor is about 355 indices** on both forest maps (a cluster of
+    ~120 triangles), and 10% (Greyfen) to 28% (Harrowmead) of the records
+    survive — which is why the work list halved Greyfen's cull and took
+    less off Harrowmead's: it removed the empty workgroups, not the writes.
+  - The milliseconds carry the Android 17 caveat above; the ordering and
+    the fit do not depend on them.
 - **Owed.** A same-session pair on Android 17 (3b9be6c, then 1ec93a4, each a
-  warm-up then Greyfen, Harrowmead, Sarab) to price the frame; and where the
-  cull's remaining forest-map cost goes, which `gpu.cull` cannot split.
+  warm-up then Greyfen, Harrowmead, Sarab) to price the frame; and a
+  decision on the stream's writes, which is the user's (`FINDINGS.md` 63).
 
 ### X3.6 — The static world's other passes (PERF_PLAN B3) — **L, as four sub-steps**
 

@@ -2879,3 +2879,33 @@ the most any frame keeps, over every vantage and the bench's path and
 fight, per map, which a `?cullcheck`-style readback of the args would
 give. Asking the adapter for its own `maxStorageBufferBindingSize` would
 lift the limit but not the memory.
+
+### What a frame WRITES, which is what the phone pays
+
+Measured 2026-10-22 (`BABYLON_EXIT.md` X3.5b, "Where the rest goes"): the
+expansion rewrites every surviving index every frame, 2 M on Greyfen's
+bench and 3-4 M on Harrowmead's at the phone's settings (8 and 12-16 MiB
+written, as much again read from `source`), and the phone's cull over the
+BEFORE follows those indices at about 0.25-0.3 ms a million, where the
+desktop pays 0.03. That is the fold's standing price on a phone,
+0.4-1.3 ms on the forest maps, against what the fold bought on the CPU
+(Sarab's fight tick -25%).
+
+The capacity reading, at the phone's settings (Trees `low`; `max` over the
+same probe's 400 ms samples, so a floor and not a proof): the most any
+sampled frame kept was 16% of the stream on Greyfen (3.0 M of 19.2 M), 51%
+on Harrowmead (7.4 M of 14.6 M), 24% on Sarab (0.7 M of 3.0 M).
+
+The levers on the WRITES, none built:
+- **Draw the work list instead of an expanded stream.** Clusters padded to
+  one fixed index count; a non-indexed indirect draw whose vertex index
+  names the survivor (`/ K`) and the corner (`% K`), and the vertex stage
+  reads the survivor and `source` itself. The cull writes 16 bytes a
+  survivor (94 KB on Greyfen, not 8 MiB) and `expand` goes; the price is
+  the post-transform cache, so the scatter's vertex work rises up to about
+  3x, which on a GPU-bound phone may cost more than it saves. Only a phone
+  run can say.
+- **Fewer indices a survivor far off** — a distance rung of each variant,
+  so the far scatter writes and draws less. Moves pixels; the user's call.
+- **A 16-bit `source`**, each index local to its cluster: a quarter of the
+  traffic, no picture change.
