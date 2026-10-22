@@ -2907,5 +2907,6 @@ The levers on the WRITES, none built:
   run can say.
 - **Fewer indices a survivor far off** — a distance rung of each variant,
   so the far scatter writes and draws less. Moves pixels; the user's call.
-- **A 16-bit `source`**, each index local to its cluster: a quarter of the
-  traffic, no picture change.
+- ~~**A 16-bit `source`**~~ — BUILT 2026-10-22: each index local to its
+  part, the part's first vertex on its clusters, so a quarter of the
+  traffic goes and no pixel moves. The phone's reading of it is owed.

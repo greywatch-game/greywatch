@@ -3571,7 +3571,10 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
   wholly outside a plane — so a big tree half in view draws half. The kept
   records are scanned near-first into their group's own region of ONE
   stream, by a scan and never an atomic append, each index written as its
-  cluster's with the scatter bit and the instance set above it. **The copy
+  cluster's with the scatter bit and the instance set above it. **The copy's
+  source is 16 bits an index, local to its part** (the part's first vertex
+  on each cluster): a frame's bytes are the cull's price on a phone, so the
+  read is halved, and a part past 65,536 vertices hands its group back. **The copy
   is launched over the SURVIVORS only**: each workgroup of the record pass
   appends its survivors to a work list in one atomic, and the copy is
   dispatched indirect at its length — an append that orders nothing, since

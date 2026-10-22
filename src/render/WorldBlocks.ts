@@ -109,7 +109,7 @@ import { FRAME_TARGETS } from "./targets";
 import { UniformBlockBuffer } from "./UniformBlockBuffer";
 import { type AssembledModule, type AssembledVertex, PULLED_ATTRIBUTES } from "./wgsl/assemble";
 import { CLUSTER_WORDS } from "./wgsl/clusterCull";
-import { INDIRECT_BYTES, INSTANCE_WORDS, RECORD_WORDS } from "./wgsl/instanceCull";
+import { INDIRECT_BYTES, INSTANCE_WORDS, RECORD_WORDS, SOURCE_VERTICES } from "./wgsl/instanceCull";
 
 /** How the blocks are cut — `CONFIG.graphics.clusters`. */
 export interface ClusterOptions {
@@ -223,11 +223,12 @@ interface CutSize {
 
 /** What the cut makes of the scatter for the instance cull, gathered group by group. */
 interface ScatterStream {
-  /** Each instanced part's clusters, with their first index into `source` and their range (group). */
-  readonly clusters: { readonly cluster: Cluster; readonly first: number; readonly range: number }[];
+  /** Each instanced part's clusters, with their first index into `source`, their range (group) and their part's first vertex. */
+  readonly clusters: { readonly cluster: Cluster; readonly first: number; readonly range: number; readonly base: number }[];
   readonly records: number[];
   readonly ranges: ScanRange[];
-  readonly source: Uint32Array;
+  /** Each part's own indices, 16 bits (`SOURCE_VERTICES`). */
+  readonly source: Uint16Array;
   /** Where the next range's source and region start. */
   sourceAt: number;
   streamAt: number;
@@ -398,7 +399,7 @@ export class WorldBlocks {
       clusters: [],
       records: [],
       ranges: [],
-      source: new Uint32Array(size.source),
+      source: new Uint16Array(size.source),
       sourceAt: 0,
       streamAt: 0,
     };
@@ -626,7 +627,8 @@ export class WorldBlocks {
    * not draw its scatter: one with an instanced part it withheld, and one
    * whose scatter the stream index cannot address (`streamIndex.ts`) — the
    * map's instances past `SCATTER_INSTANCES` take every such group back, a
-   * group's instanced vertices past `SCATTER_VERTICES` take that one.
+   * group's instanced vertices past `SCATTER_VERTICES` take that one — or
+   * the cull's 16-bit source cannot, a part past `SOURCE_VERTICES`.
    */
   private handBack(instances: number): void {
     for (const group of this.groups) {
@@ -636,11 +638,17 @@ export class WorldBlocks {
       }
       if (group.instanced.length === 0) continue;
       let vertices = 0;
-      for (const p of group.instanced) vertices += p.geometry.positions.length / 3;
+      let widest = 0;
+      for (const p of group.instanced) {
+        vertices += p.geometry.positions.length / 3;
+        widest = Math.max(widest, p.geometry.positions.length / 3);
+      }
       if (instances > SCATTER_INSTANCES) {
         this.fail(group, `the map's ${instances} instances are past the stream index's ${SCATTER_INSTANCES}`);
       } else if (vertices > SCATTER_VERTICES) {
         this.fail(group, `its ${vertices} instanced vertices are past the stream index's ${SCATTER_VERTICES}`);
+      } else if (widest > SOURCE_VERTICES) {
+        this.fail(group, `an instanced part's ${widest} vertices are past the cull's 16-bit source (${SOURCE_VERTICES})`);
       }
     }
   }
@@ -677,9 +685,10 @@ export class WorldBlocks {
   }
 
   /**
-   * Group `g`'s instanced parts for the instance cull: each part's indices
-   * into the stream's source, rebased onto the group's arrays, where the parts
-   * come first; each part cut into clusters in its set's own frame; and a
+   * Group `g`'s instanced parts for the instance cull: each part's own
+   * indices into the stream's 16-bit source, every cluster of it carrying
+   * where the part starts in the group's arrays, where the parts come first;
+   * each part cut into clusters in its set's own frame; and a
    * RECORD for every cluster of every instance wearing it — part by part,
    * instance by instance, cluster by cluster — which is the group's range.
    * Returns the vertices the parts take, where the group's surfaces start.
@@ -697,11 +706,11 @@ export class WorldBlocks {
     for (const p of group.instanced) {
       const positions = toFloat32(p.geometry.positions);
       const local = p.geometry.indices;
-      for (let i = 0; i < local.length; i++) stream.source[stream.sourceAt + i] = local[i] + vertexBase;
+      stream.source.set(local, stream.sourceAt);
       const first = stream.clusters.length;
       const clusters = cutClusters(positions, local, p.geometry.colors, [], this.options.triangles);
       for (const cluster of clusters) {
-        stream.clusters.push({ cluster, first: stream.sourceAt + cluster.indexStart, range: g });
+        stream.clusters.push({ cluster, first: stream.sourceAt + cluster.indexStart, range: g, base: vertexBase });
       }
       const instances = sets[p.set].scales.length;
       for (let i = setStarts[p.set], end = i + instances; i < end; i++) {
@@ -1057,13 +1066,14 @@ function clusterWords(cut: readonly CutSurface[], blocks: readonly BlockBox[], b
 /**
  * The instanced parts' clusters as the instance cull reads them
  * (`InstanceTables.clusters`): the same record, its first index into the
- * stream's source and its range in the place of a group.
+ * stream's source and its range in the place of a group, and its part's
+ * first vertex beside it.
  */
 function scatterClusterWords(clusters: ScatterStream["clusters"]): ArrayBuffer {
   const words = new ArrayBuffer(Math.max(1, clusters.length) * CLUSTER_WORDS * 4);
   const f = new Float32Array(words);
   const u = new Uint32Array(words);
-  clusters.forEach(({ cluster, first, range }, k) => writeCluster(f, u, k, cluster, first, [range, 0, 0, 0]));
+  clusters.forEach(({ cluster, first, range, base }, k) => writeCluster(f, u, k, cluster, first, [range, base, 0, 0]));
   return words;
 }
 

@@ -79,8 +79,8 @@ export interface InstanceTables {
   readonly records: Uint32Array;
   /** Each range's records `[start, end)` and where its region of the stream starts. */
   readonly ranges: readonly ScanRange[];
-  /** Every instanced part's indices, each onto its group's arrays. */
-  readonly source: Uint32Array;
+  /** Every instanced part's indices, each local to its part (`SOURCE_VERTICES`); its clusters carry where it starts. */
+  readonly source: Uint16Array;
   /** The stream's length in indices: every record's, as if every one survived. */
   readonly streamLength: number;
   /** The square of each near-first band's end, metres (three). */
@@ -303,7 +303,7 @@ export class InstanceCull {
     return buffer;
   }
 
-  private upload(label: string, usage: number, data: Uint8Array | Uint32Array): GPUBuffer {
+  private upload(label: string, usage: number, data: Uint8Array | Uint16Array | Uint32Array): GPUBuffer {
     const buffer = this.device.createBuffer({
       label: `instance cull: ${label}`,
       size: Math.max(16, Math.ceil(data.byteLength / 4) * 4),

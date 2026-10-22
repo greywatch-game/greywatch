@@ -7,7 +7,8 @@
  * Owns: `INSTANCE_CULL_WGSL`; `INSTANCE_DECLARATIONS`, the instance and set
  * records as the cull and the probe declare them; the byte layouts it reads
  * (`INSTANCE_CULL_UNIFORM_BYTES`, `INSTANCE_WORDS`, `SET_WORDS`,
- * `RECORD_WORDS`) and the indirect arguments it writes (`INDIRECT_BYTES`).
+ * `RECORD_WORDS`, `SOURCE_VERTICES`) and the indirect arguments it writes
+ * (`INDIRECT_BYTES`).
  * Invariants: an instance is dropped only if its sphere lies past the reach,
  * it is under the size gate, or its sphere (grown by the most its set's
  * vertices can sway) lies wholly outside one of the five planes — its BAND
@@ -19,8 +20,9 @@
  * in the record table, and its surviving records' indices are written to the
  * range's own region of the stream in the scan's ORDER — by near-first band,
  * then by record index — so the same eye draws the same triangles in the
- * same order; every index written is its cluster's source index as a scatter
- * index of its instance (`render/streamIndex.ts`'s `scatterIndex`); each
+ * same order; every index written is its part's first vertex plus its
+ * cluster's 16-bit SOURCE index, as a scatter index of its instance
+ * (`render/streamIndex.ts`'s `scatterIndex`); each
  * range's draw is ONE indirect draw whose count is its survivors' indices,
  * from the start of its region, written by `prefix`; the WORK LIST of
  * survivors is appended to a workgroup's run at a time, in no order, because
@@ -48,6 +50,11 @@
  * `maxStorageBuffersPerShaderStage` a device may have — which is why a
  * survivor carries its band, instance and cluster rather than `expand`
  * reading the record and band tables again.
+ * `source` is 16 BITS an index, local to its part, two to a word: a frame's
+ * bytes are the cull's price on a phone — about 0.25-0.3 ms a million
+ * indices, a million being 4 MiB written and, at 32 bits, 4 MiB read
+ * (`BABYLON_EXIT.md` X3.5b, `FINDINGS.md` 63) — so the read is halved, and
+ * a part past `SOURCE_VERTICES` hands its group back (`WorldBlocks`).
  */
 
 import { STREAM_INDEX_WGSL } from "../streamIndex";
@@ -59,6 +66,8 @@ const EXPAND_SIZE = 64;
 const MAX_WORKGROUPS = 65535;
 /** `dispatchWorkgroupsIndirect`'s three arguments and the count after them, in bytes — `expand`'s. */
 export const DISPATCH_BYTES = 16;
+/** The most vertices one instanced part may hold: its `source` indices are 16 bits. */
+export const SOURCE_VERTICES = 2 ** 16;
 /** An instance's record, in 32-bit words (`Instance` below). */
 export const INSTANCE_WORDS = 20;
 /** A set's record, in 32-bit words (`Set` below). */
@@ -121,12 +130,14 @@ fn rangeCount() -> u32 { return cull[8].w; }
 @group(0) @binding(4) var<storage, read_write> sums: array<vec4u>;
 @group(0) @binding(5) var<storage, read> sets: array<Set>;
 // Each instanced part's clusters, in its set's own frame: \`Cluster\` with the
-// first index into \`source\` in lo.w, the count in hi.w and the range in refs.x.
+// first index into \`source\` in lo.w, the count in hi.w, the range in refs.x
+// and its part's first vertex in its group's arrays in refs.y.
 @group(0) @binding(6) var<storage, read> clusters: array<Cluster>;
 // Each record's instance and cluster.
 @group(0) @binding(7) var<storage, read> records: array<vec2u>;
 // A range is one group's records.
 @group(0) @binding(9) var<storage, read_write> ranges: array<Range>;
+// Each instanced part's indices, local to the part, 16 bits two to a word.
 @group(0) @binding(10) var<storage, read> source: array<u32>;
 @group(0) @binding(11) var<storage, read_write> written: array<u32>;
 @group(0) @binding(12) var<storage, read_write> args: array<u32>;
@@ -268,7 +279,13 @@ fn expand(
   let c = clusters[kept.w];
   let at = slotOf(kept.x, recordCount(), kept.y, ranges[c.refs.x]);
   for (var i = li; i < c.hi.w; i += EXPAND) {
-    written[at + i] = scatterIndex(kept.z, source[c.lo.w + i]);
+    written[at + i] = scatterIndex(kept.z, c.refs.y + sourceIndex(c.lo.w + i));
   }
+}
+
+// The \`j\`th 16-bit index of \`source\`: the low half of its word for an even
+// \`j\`, the high for an odd (the buffer is little-endian, as WebGPU's are).
+fn sourceIndex(j: u32) -> u32 {
+  return (source[j >> 1u] >> ((j & 1u) << 4u)) & 0xffffu;
 }
 `;

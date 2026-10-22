@@ -1775,9 +1775,31 @@ floor its shading:
     less off Harrowmead's: it removed the empty workgroups, not the writes.
   - The milliseconds carry the Android 17 caveat above; the ordering and
     the fit do not depend on them.
-- **Owed.** A same-session pair on Android 17 (3b9be6c, then 1ec93a4, each a
-  warm-up then Greyfen, Harrowmead, Sarab) to price the frame; and a
-  decision on the stream's writes, which is the user's (`FINDINGS.md` 63).
+- **The copy's source at 16 bits** (2026-10-22, the third lever of
+  `FINDINGS.md` 63). `expand` read a 32-bit `source` index for every index
+  it wrote, so a million indices was 8 MiB of traffic; the source is now 16
+  bits an index, local to its PART, two to a word (`sourceIndex`), and each
+  scatter cluster carries its part's first vertex in its group's arrays in
+  the spare `refs.y` — so the stream it writes is the same stream, bit for
+  bit, at three quarters of the bytes. A part past 65,536 vertices
+  (`SOURCE_VERTICES`) hands its group back in `WorldBlocks.handBack`
+  beside the stream index's two budgets; no shipped part is near it (the
+  census below is unchanged on every map).
+  - **The picture is the same picture**: the bank's 61 frames pixel-identical
+    to 1ec93a4's own (mean 0, max 0, every one), and its report against the
+    banked frames identical line for line; the census (`--against` X3.5b's
+    AFTER) equal on all seven maps; `shaders.mjs` clean on seven; gate.mjs
+    clean on Greyfen, Harrowmead and Sarab; build passes.
+  - **Desktop, against 1ec93a4's own run** (`bench.mjs --max --gpu --runs
+    3`, the canonical hashes, every segment within 8%): `gpu.cull` Greyfen
+    0.068 to 0.067 ms, Harrowmead 0.090 to 0.085, Sarab 0.058 to 0.057; the
+    look parts within 1%. The fights read 6-12% faster on the CPU tick, which
+    a GPU buffer's format cannot do — a day apart, that is the session. As
+    before, the desktop's bandwidth hides what this saves.
+- **Owed.** The phone on this build; a same-session pair on Android 17
+  (3b9be6c, then this build, each a warm-up then Greyfen, Harrowmead,
+  Sarab) prices the frame as well as the cull. And a decision on the
+  stream's writes, which is the user's (`FINDINGS.md` 63).
 
 ### X3.6 — The static world's other passes (PERF_PLAN B3) — **L, as four sub-steps**
 

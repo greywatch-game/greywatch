@@ -600,7 +600,9 @@ colour baked once per kind, and cuts its pieces out of the blocks it takes,
 while Babylon's merged copy stays in those blocks for every other pass
 (`BuildOptions.onScatter`) — and **an index names its instance and vertex in
 32 bits** (`render/streamIndex.ts`), so a recipe whose instanced parts pass
-262,144 vertices, or a map past 8,192 placements, goes back to Babylon whole.
+262,144 vertices, or a map past 8,192 placements, goes back to Babylon whole
+— as does one whose single scatter VARIANT part passes 65,536, its cull's
+source indices being 16 bits (`SOURCE_VERTICES`).
 **Any other mesh carrying `metadata.block` is one
 only while the camera is inside the map's `fogEnd`**, **a body's RIG only while
 the root the roster switches is enabled**, and **everything else is ELIGIBLE**.
