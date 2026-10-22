@@ -1709,9 +1709,42 @@ floor its shading:
   as it halted, the benchmark's last frame, so a run saved from the menu
   afterwards reports the run (Sarab headless: 303 taken, 13 draws, where the
   live reading was the menu's 0).
-- **Owed.** The phone's AFTER again, in the BEFORE's order (a warm-up, then
-  Greyfen, Harrowmead, Sarab): `gpu.cull` prices the work list, and the same
-  order prices the rest of the frame.
+- **The phone on the work list, taken 2026-10-22** on the deployed 1ec93a4
+  (report version 19, `blocks` filled), the BEFORE's settings and its ORDER
+  (a thrown-away warm-up, then Greyfen, Harrowmead, Sarab, 04:41-04:55 UTC,
+  the canonical hashes) — **but on Android 17, which the phone took the day
+  before**, Chrome still 155. Sarab's canvas was stale again (1170x618, not
+  matched); Greyfen and Harrowmead were one matched 1170x540. BEFORE
+  (f70be50) → ebdcb6f → 1ec93a4:
+
+  | map | part | tick | GPU | cull |
+  | --- | --- | --- | --- | --- |
+  | Greyfen | vantages | 4.71 → 5.07 → 3.71 | 13.2 → 15.7 → 11.4 | 0.27 → 1.44 → 0.75 |
+  | Greyfen | path | 5.23 → 5.34 → 3.89 | 15.8 → 18.3 → 11.8 | 0.26 → 1.35 → 0.65 |
+  | Greyfen | fight | 11.15 → 11.61 → 9.60 | 17.7 → 22.2 → 13.1 | 0.34 → 1.76 → 0.87 |
+  | Harrowmead | vantages | 5.61 → 6.28 → 5.66 | 14.6 → 16.8 → 13.8 | 0.34 → 1.61 → 1.17 |
+  | Harrowmead | path | 6.47 → 6.48 → 6.04 | 18.0 → 18.0 → 15.0 | 0.35 → 1.48 → 1.20 |
+  | Harrowmead | fight | 11.13 → 11.62 → 11.44 | 20.4 → 20.5 → 18.2 | 0.47 → 1.90 → 1.75 |
+  | Sarab | vantages | 6.28 → 4.99 → 5.97 | 11.3 → 10.8 → 11.1 | 0.46 → 0.44 → 0.61 |
+  | Sarab | path | 6.22 → 4.85 → 5.87 | 11.1 → 11.1 → 11.4 | 0.39 → 0.38 → 0.55 |
+  | Sarab | fight | 18.34 → 13.60 → 17.25 | 15.6 → 11.9 → 13.5 | 0.57 → 0.47 → 0.76 |
+
+  - **The phone moved under the code, so the frame is not priced.**
+    ebdcb6f to 1ec93a4 changed only the cull, yet Greyfen's GPU less its
+    cull fell 14.3 to 10.7 ms (-25%) and its tick 5.07 to 3.71: that is the
+    OS, the order or both, not the work list. Greyfen's look parts now hold
+    the 60 cap (p95 17.2 where it was 45.4). Against the BEFORE at the same
+    place in the order the rest of the frame is 11-17% lower on Greyfen and
+    Harrowmead, but across an OS update that is a hint, not a price.
+  - **The cull is a counter of its own, and the work list roughly halved
+    it on Greyfen** (1.44 to 0.75 on the vantages) **and took a quarter
+    off Harrowmead's look parts and 8% off its fight** — still 2.5-3.7x
+    the BEFORE on both forest maps — while Sarab's rose 0.15-0.3 ms (the
+    desktop's fixed overhead was 0.02). The driver can move a counter as
+    well, so the ratios are the reading, not the milliseconds.
+- **Owed.** A same-session pair on Android 17 (3b9be6c, then 1ec93a4, each a
+  warm-up then Greyfen, Harrowmead, Sarab) to price the frame; and where the
+  cull's remaining forest-map cost goes, which `gpu.cull` cannot split.
 
 ### X3.6 — The static world's other passes (PERF_PLAN B3) — **L, as four sub-steps**
 
