@@ -3574,7 +3574,18 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
   cluster's with the scatter bit and the instance set above it. **The copy's
   source is 16 bits an index, local to its part** (the part's first vertex
   on each cluster): a frame's bytes are the cull's price on a phone, so the
-  read is halved, and a part past 65,536 vertices hands its group back. **The copy
+  read is halved, and a part past 65,536 vertices hands its group back.
+  **`?scatterlist` draws the survivors' LIST instead** (an A/B, off by
+  default): the scan counts survivors, the last pass writes one 16-byte
+  entry a surviving cluster (instance, first source index, count, part),
+  and each group's scatter is one non-indexed `drawIndirect` of 384 corners
+  a survivor (a cluster's most, so a short cluster ends in triangles of no
+  area). The vertex stage's list twin reads the entry and the 16-bit source
+  itself, and only the groups that draw scatter wear it, binding the list
+  and the source beside their arrays — eight storage buffers in a palette
+  variant, the default limit. The same triangles in the same order, so the
+  same picture; the stream is never allocated. What it trades is the
+  post-transform reuse of a shared corner, which only a phone can price. **The copy
   is launched over the SURVIVORS only**: each workgroup of the record pass
   appends its survivors to a work list in one atomic, and the copy is
   dispatched indirect at its length — an append that orders nothing, since
@@ -3680,7 +3691,8 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
   `?drawcheck`, `?directdraw`, `?indirectcpu`, `?skipempty` and
   `?scatterfirst` all stand in the history at 4459cd5, for a device that
   needs the question asked again. `?cullcheck`, `?nocull`, `?nofrustum` and
-  `?babylonworld` stay.
+  `?babylonworld` stay, and `?scatterlist` (X3.5b) is a later A/B of a
+  different kind: the same picture by another draw.
 - **A cull reads its tables as WHOLE `vec4`s and its uniform block as
   WORDS** (`clusterCull.ts`'s `CULL_DECLARATIONS`, `instanceCull.ts`'s
   `INSTANCE_DECLARATIONS`): no `vec3f` beside a scalar and no scalar

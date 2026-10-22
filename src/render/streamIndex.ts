@@ -6,7 +6,9 @@
  * scatter bit above both), the budget a map's cut is held to
  * (`SCATTER_VERTICES`, `SCATTER_INSTANCES`), and the encode and decode as
  * WGSL (`STREAM_INDEX_WGSL`) — the one spelling of each, for the cull that
- * writes an index and the stage that reads one.
+ * writes an index and the stage that reads one; and `?scatterlist`'s other
+ * encoding, where the scatter draws its survivors' list rather than an
+ * expanded stream (`LIST_WORDS`, `scatterListWgsl`).
  * Invariants: an index with the scatter bit CLEAR is a plain vertex of its
  * group's arrays, drawn at identity — a block's, or the landform's; one with
  * it SET is a scatter vertex: the instance in the next `INSTANCE_BITS`, the
@@ -56,3 +58,29 @@ fn isScatter(index: u32) -> bool { return (index & SCATTER_BIT) != 0u; }
 fn scatterInstance(index: u32) -> u32 { return (index >> ${VERTEX_BITS}u) & INSTANCE_MASK; }
 fn scatterVertex(index: u32) -> u32 { return index & VERTEX_MASK; }
 `;
+
+/**
+ * `?scatterlist` (`BABYLON_EXIT.md` X3.5b): a survivor's ENTRY in the
+ * scatter's list, in 32-bit words — its instance, its cluster's first index
+ * into the cull's 16-bit source, the cluster's index count, and its part's
+ * first vertex in its group's arrays.
+ */
+export const LIST_WORDS = 4;
+
+/**
+ * The list encoding as WGSL, for a list whose survivors each take `stride`
+ * indices — a cluster's most, so every survivor's run is one length and a
+ * cluster short of it ends in triangles of no area. A scatter index is the
+ * scatter bit over `slot * stride + corner`: `listIndex` is where slot
+ * `slot`'s run starts (the cull's draw arguments), `listSlot` and
+ * `listCorner` read an index (the vertex stage). The bit stays where the
+ * stream's is, so `isScatter` tells a list index from a block's either way.
+ */
+export function scatterListWgsl(stride: number): string {
+  return /* wgsl */ `
+const LIST_STRIDE: u32 = ${stride}u;
+fn listIndex(slot: u32) -> u32 { return SCATTER_BIT | (slot * LIST_STRIDE); }
+fn listSlot(index: u32) -> u32 { return (index & ~SCATTER_BIT) / LIST_STRIDE; }
+fn listCorner(index: u32) -> u32 { return (index & ~SCATTER_BIT) % LIST_STRIDE; }
+`;
+}

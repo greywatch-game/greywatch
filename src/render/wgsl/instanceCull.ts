@@ -4,7 +4,7 @@
  * `BABYLON_EXIT.md` X3.4b; expanded into clusters at X3.5b, the fold) — the
  * cluster cull's shape (`clusterCull.ts`), and its scan
  * (`SCAN_DECLARATIONS`), over each surviving instance's clusters.
- * Owns: `INSTANCE_CULL_WGSL`; `INSTANCE_DECLARATIONS`, the instance and set
+ * Owns: `instanceCullWgsl`, in either mode; `INSTANCE_DECLARATIONS`, the instance and set
  * records as the cull and the probe declare them; the byte layouts it reads
  * (`INSTANCE_CULL_UNIFORM_BYTES`, `INSTANCE_WORDS`, `SET_WORDS`,
  * `RECORD_WORDS`, `SOURCE_VERTICES`) and the indirect arguments it writes
@@ -55,9 +55,19 @@
  * indices, a million being 4 MiB written and, at 32 bits, 4 MiB read
  * (`BABYLON_EXIT.md` X3.5b, `FINDINGS.md` 63) — so the read is halved, and
  * a part past `SOURCE_VERTICES` hands its group back (`WorldBlocks`).
+ *
+ * THE LIST MODE (`?scatterlist`, an A/B for a phone). The expansion's writes
+ * ARE the phone's price, so in list mode nothing is expanded: the scan counts
+ * SURVIVORS rather than indices, `expand` is a thread a survivor writing its
+ * one ENTRY where the scan puts it (`streamIndex.ts`'s `LIST_WORDS`), and
+ * each range's draw is a NON-indexed `drawIndirect` of `LIST_STRIDE` corners
+ * a survivor, which the vertex stage reads back through the list
+ * (`render/celVertex.ts`). The same survivors in the same order, so the same
+ * triangles in the same order — at 16 bytes a survivor rather than ~1.4 KB,
+ * and the vertex stage's reuse of a shared corner given up for it.
  */
 
-import { STREAM_INDEX_WGSL } from "../streamIndex";
+import { scatterListWgsl, STREAM_INDEX_WGSL } from "../streamIndex";
 import { CULL_DECLARATIONS, SCAN_DECLARATIONS, SCAN_SIZE } from "./clusterCull";
 
 /** Threads in an `expand` workgroup. */
@@ -76,7 +86,7 @@ export const SET_WORDS = 4;
 export const RECORD_WORDS = 2;
 /** The uniform block (`CULL_DECLARATIONS`' `cull`), in bytes. */
 export const INSTANCE_CULL_UNIFORM_BYTES = 144;
-/** `drawIndexedIndirect`'s five arguments, in bytes — one a range. */
+/** `drawIndexedIndirect`'s five arguments, in bytes — one a range (list mode's `drawIndirect` reads the first four). */
 export const INDIRECT_BYTES = 20;
 
 /**
@@ -107,7 +117,13 @@ fn outsidePoint(p: vec4f, at: vec3f, grow: f32) -> bool {
 }
 `;
 
-export const INSTANCE_CULL_WGSL = /* wgsl */ `
+/**
+ * The instance cull's four entry points: expanding each survivor into the
+ * stream, or, given the list's `stride` (`?scatterlist`), writing its entry.
+ */
+export function instanceCullWgsl(listStride: number | null = null): string {
+  const list = listStride !== null;
+  return /* wgsl */ `
 const EXPAND: u32 = ${EXPAND_SIZE}u;
 const NONE: u32 = 0xffffffffu;
 // A frustum plane's slack, metres: float error at a few kilometres, never an
@@ -118,6 +134,8 @@ ${CULL_DECLARATIONS}
 ${SCAN_DECLARATIONS}
 ${INSTANCE_DECLARATIONS}
 ${STREAM_INDEX_WGSL}
+${list ? scatterListWgsl(listStride) : ""}
+${sourceIndexWgsl("source")}
 
 // The uniform block's word 8: instances (\`itemCount\`), records, the record
 // scan's workgroups (what \`aheadOf\` reads), ranges.
@@ -139,7 +157,8 @@ fn rangeCount() -> u32 { return cull[8].w; }
 @group(0) @binding(9) var<storage, read_write> ranges: array<Range>;
 // Each instanced part's indices, local to the part, 16 bits two to a word.
 @group(0) @binding(10) var<storage, read> source: array<u32>;
-@group(0) @binding(11) var<storage, read_write> written: array<u32>;
+// The stream — or, in list mode, the list of survivors' entries.
+@group(0) @binding(11) var<storage, read_write> written: array<${list ? "vec4u" : "u32"}>;
 @group(0) @binding(12) var<storage, read_write> args: array<u32>;
 // The WORK LIST: each surviving record, its band, its instance and its
 // cluster, in no particular order, and how many there are. Its order decides
@@ -225,7 +244,8 @@ fn cullRecords(
     if (band != NONE) {
       let c = clusters[rec.y];
       if (inView(instances[rec.x], c)) {
-        v[band] = c.hi.w;
+        // What the scan places: its indices, or in list mode its one entry.
+        v[band] = ${list ? "1u" : "c.hi.w"};
         kept = vec4u(r, band, rec.x, rec.y);
         slot = atomicAdd(&keptHere, 1u);
       }
@@ -245,12 +265,14 @@ fn cullRecords(
 @compute @workgroup_size(${SCAN_SIZE})
 fn prefix(@builtin(local_invocation_index) li: u32) {
   if (li == 0u) {
-    // A workgroup a survivor, folded into a second dimension past the least
-    // \`maxComputeWorkgroupsPerDimension\` a device may have.
+    // A workgroup a survivor (in list mode a thread), folded into a second
+    // dimension past the least \`maxComputeWorkgroupsPerDimension\` a device
+    // may have.
     let n = atomicLoad(&survivorCount);
-    let x = min(n, ${MAX_WORKGROUPS}u);
+    let groups = ${list ? "(n + EXPAND - 1u) / EXPAND" : "n"};
+    let x = min(groups, ${MAX_WORKGROUPS}u);
     expandGroups[0] = x;
-    expandGroups[1] = select(1u, (n + x - 1u) / x, x > 0u);
+    expandGroups[1] = select(1u, (groups + x - 1u) / x, x > 0u);
     expandGroups[2] = 1u;
     expandGroups[3] = n;
   }
@@ -258,9 +280,14 @@ fn prefix(@builtin(local_invocation_index) li: u32) {
   for (var g = li; g < rangeCount(); g += SCAN) {
     let t = openRange(g, recordCount());
     let o = g * 5u;
-    args[o] = t.x + t.y + t.z + t.w;
+    ${list
+      ? `// A drawIndirect: every survivor's run of corners, from the range's first.
+    args[o] = (t.x + t.y + t.z + t.w) * LIST_STRIDE;
     args[o + 1u] = 1u;
-    args[o + 2u] = ranges[g].outBase;
+    args[o + 2u] = listIndex(ranges[g].outBase);`
+      : `args[o] = t.x + t.y + t.z + t.w;
+    args[o + 1u] = 1u;
+    args[o + 2u] = ranges[g].outBase;`}
     args[o + 3u] = 0u;
     args[o + 4u] = 0u;
   }
@@ -272,7 +299,15 @@ fn expand(
   @builtin(workgroup_id) wid: vec3u,
   @builtin(num_workgroups) nw: vec3u,
 ) {
-  let k = wid.y * nw.x + wid.x;
+${list
+  ? `  let k = (wid.y * nw.x + wid.x) * EXPAND + li;
+  if (k >= expandArgs[3]) { return; }
+  // The survivor's record, band, instance and cluster; its entry where the
+  // scan puts it.
+  let kept = survivors[k];
+  let c = clusters[kept.w];
+  written[slotOf(kept.x, recordCount(), kept.y, ranges[c.refs.x])] = vec4u(kept.z, c.lo.w, c.hi.w, c.refs.y);`
+  : `  let k = wid.y * nw.x + wid.x;
   if (k >= expandArgs[3]) { return; }
   // The survivor's record, band, instance and cluster.
   let kept = survivors[k];
@@ -280,12 +315,21 @@ fn expand(
   let at = slotOf(kept.x, recordCount(), kept.y, ranges[c.refs.x]);
   for (var i = li; i < c.hi.w; i += EXPAND) {
     written[at + i] = scatterIndex(kept.z, c.refs.y + sourceIndex(c.lo.w + i));
-  }
-}
-
-// The \`j\`th 16-bit index of \`source\`: the low half of its word for an even
-// \`j\`, the high for an odd (the buffer is little-endian, as WebGPU's are).
-fn sourceIndex(j: u32) -> u32 {
-  return (source[j >> 1u] >> ((j & 1u) << 4u)) & 0xffffu;
+  }`}
 }
 `;
+}
+
+/**
+ * `sourceIndex(j)`, the `j`th 16-bit index of the source bound as `source`
+ * — the low half of its word for an even `j`, the high for an odd (the
+ * buffer is little-endian, as WebGPU's are): the one spelling of the read,
+ * for the cull's `expand` and the vertex stage's list.
+ */
+export function sourceIndexWgsl(source: string): string {
+  return /* wgsl */ `
+fn sourceIndex(j: u32) -> u32 {
+  return (${source}[j >> 1u] >> ((j & 1u) << 4u)) & 0xffffu;
+}
+`;
+}

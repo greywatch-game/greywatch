@@ -7,10 +7,11 @@
  * fold).
  * Owns: `CEL_VERTEX_PROGRAM` — the attributes, the frame block (group 0), the
  * draw's geometry (group 2, `CEL_GEOMETRY`) and the outputs, which are the
- * fragment's `CEL_VARYINGS` — and `celVertex`, one variant of it as a plain
- * WGSL module; the layout of an instance's transform in `transforms`
- * (`TRANSFORM_WORDS`, `writeTransform`), which the instance cull's records
- * carry the same way.
+ * fragment's `CEL_VARYINGS` — its `?scatterlist` twin, which reads a scatter
+ * vertex through the survivors' list (`CEL_SCATTER_LIST`, `celGeometry`),
+ * and `celVertex`, one variant of either as a plain WGSL module; the layout
+ * of an instance's transform in `transforms` (`TRANSFORM_WORDS`,
+ * `writeTransform`), which the instance cull's records carry the same way.
  * Invariants: declares every name the shared body reads, by Babylon's names
  * because the body reads them by name (`CelShader.ts`'s `celVertexShader`);
  * the attributes are Babylon's, under Babylon's guards — `color` and `uv` in
@@ -20,9 +21,12 @@
  * empty buffer reads (`render/WorldBlocks.ts`); `world` is a private block
  * `main` writes before the body runs — identity for an index with the
  * scatter bit clear, else the instance's transform out of `transforms`, three
- * columns of the matrix each with that row of its translation in w — so the
- * body is the same text as Babylon's; group 1 is declared EMPTY here and is
- * the fragment's, so the numbers stay the program's.
+ * columns of the matrix each with that row of its translation in w (in list
+ * mode the index names a survivor's entry and a corner of its cluster, and
+ * the entry the instance, the source index and the part, a corner past the
+ * cluster's last repeating it so a short run ends in triangles of no
+ * area) — so the body is the same text as Babylon's; group 1 is declared
+ * EMPTY here and is the fragment's, so the numbers stay the program's.
  * Never: imports Babylon; restates a body.
  * Contract: `docs/rendering.md`, "Hand-written WGSL".
  *
@@ -36,7 +40,7 @@
 import { WGSL_CHUNKS } from "../shaders/wgsl/chunks";
 import { CEL_VARYINGS } from "./celFragment";
 import { FRAME_BLOCK } from "./frame";
-import { STREAM_INDEX_WGSL } from "./streamIndex";
+import { scatterListWgsl, STREAM_INDEX_WGSL } from "./streamIndex";
 import {
   assembleVertex,
   type AssembledVertex,
@@ -45,6 +49,7 @@ import {
   type StageTarget,
   type VertexProgram,
 } from "./wgsl/assemble";
+import { sourceIndexWgsl } from "./wgsl/instanceCull";
 
 /** Group 2 of the cel program: every attribute's array, then the instances' transforms. */
 export const CEL_GEOMETRY = [
@@ -55,6 +60,21 @@ export const CEL_GEOMETRY = [
   { kind: "storage", name: "uv2Data", type: "array<vec2f>", when: ["CEL_PALETTE"] },
   { kind: "storage", name: "transforms", type: "array<vec4f>" },
 ] as const satisfies readonly Binding[];
+
+/**
+ * Group 2's two more in list mode (`?scatterlist`): the instance cull's list
+ * of survivors' entries (`streamIndex.ts`'s `LIST_WORDS`) and the 16-bit
+ * source they index (`wgsl/instanceCull.ts`).
+ */
+export const CEL_SCATTER_LIST = [
+  { kind: "storage", name: "scatterList", type: "array<vec4u>" },
+  { kind: "storage", name: "scatterSource", type: "array<u32>" },
+] as const satisfies readonly Binding[];
+
+/** Group 2 as a variant built for `listStride` binds it: `CEL_GEOMETRY`, and the list's two in list mode. */
+export function celGeometry(listStride: number | null): readonly Binding[] {
+  return listStride === null ? CEL_GEOMETRY : [...CEL_GEOMETRY, ...CEL_SCATTER_LIST];
+}
 
 const CEL_ATTRIBUTES: readonly Attribute[] = [
   { name: "position", type: "vec3f", from: "positionData" },
@@ -82,39 +102,75 @@ export function writeTransform(m: ArrayLike<number>, out: Float32Array, at: numb
   }
 }
 
-/** The cel vertex stage, declared for our renderer. */
-export const CEL_VERTEX_PROGRAM: VertexProgram = {
-  label: "cel-vertex",
-  groups: [[FRAME_BLOCK], [], CEL_GEOMETRY],
-  attributes: CEL_ATTRIBUTES,
-  varyings: CEL_VARYINGS,
-  includes: WGSL_CHUNKS,
-  body: "#include<celVertex>",
-  entry: "celVertex",
-  privates: [{ var: "instance", struct: "CelInstance", fields: [{ name: "world", type: "mat4x4f" }] }],
-  declarations: STREAM_INDEX_WGSL,
-  pull: {
-    vertex: "vertex",
-    decode: [
-      "  let scattered = isScatter(vertexIndex);",
-      "  let vertex = select(vertexIndex, scatterVertex(vertexIndex), scattered);",
-    ].join("\n"),
-  },
-  prelude: [
-    "  instance.world = mat4x4f(",
-    "    vec4f(1.0, 0.0, 0.0, 0.0), vec4f(0.0, 1.0, 0.0, 0.0), vec4f(0.0, 0.0, 1.0, 0.0), vec4f(0.0, 0.0, 0.0, 1.0));",
-    "  if (scattered) {",
-    `    let t = scatterInstance(vertexIndex) * ${TRANSFORM_WORDS / 4}u;`,
-    "    let w0 = transforms[t];",
-    "    let w1 = transforms[t + 1u];",
-    "    let w2 = transforms[t + 2u];",
-    "    instance.world = mat4x4f(",
-    "      vec4f(w0.xyz, 0.0), vec4f(w1.xyz, 0.0), vec4f(w2.xyz, 0.0), vec4f(w0.w, w1.w, w2.w, 1.0));",
-    "  }",
-  ].join("\n"),
-};
+/**
+ * `main`'s decode: whether the index is the scatter's, the vertex it names
+ * and the instance it is drawn at (`drawnAt`, read only when scattered).
+ */
+const STREAM_DECODE = [
+  "  let scattered = isScatter(vertexIndex);",
+  "  let vertex = select(vertexIndex, scatterVertex(vertexIndex), scattered);",
+  "  let drawnAt = scatterInstance(vertexIndex);",
+].join("\n");
 
-/** One variant of the cel vertex stage, for a pass of `target`'s kind. */
-export function celVertex(defines: Iterable<string>, target: StageTarget): AssembledVertex {
-  return assembleVertex(CEL_VERTEX_PROGRAM, defines, target);
+/** The same out of the list: the survivor's entry, and the corner's source index clamped to its cluster. */
+const LIST_DECODE = [
+  "  let scattered = isScatter(vertexIndex);",
+  "  var vertex = vertexIndex;",
+  "  var drawnAt = 0u;",
+  "  if (scattered) {",
+  "    let entry = scatterList[listSlot(vertexIndex)];",
+  "    vertex = entry.w + sourceIndex(entry.y + min(listCorner(vertexIndex), entry.z - 1u));",
+  "    drawnAt = entry.x;",
+  "  }",
+].join("\n");
+
+/** `main`'s prelude: `world`, identity or the instance's transform. */
+const CEL_PRELUDE = [
+  "  instance.world = mat4x4f(",
+  "    vec4f(1.0, 0.0, 0.0, 0.0), vec4f(0.0, 1.0, 0.0, 0.0), vec4f(0.0, 0.0, 1.0, 0.0), vec4f(0.0, 0.0, 0.0, 1.0));",
+  "  if (scattered) {",
+  `    let t = drawnAt * ${TRANSFORM_WORDS / 4}u;`,
+  "    let w0 = transforms[t];",
+  "    let w1 = transforms[t + 1u];",
+  "    let w2 = transforms[t + 2u];",
+  "    instance.world = mat4x4f(",
+  "      vec4f(w0.xyz, 0.0), vec4f(w1.xyz, 0.0), vec4f(w2.xyz, 0.0), vec4f(w0.w, w1.w, w2.w, 1.0));",
+  "  }",
+].join("\n");
+
+/** The cel vertex stage — or with `listStride`, its list-mode twin — declared for our renderer. */
+function celProgram(listStride: number | null): VertexProgram {
+  const list = listStride !== null;
+  return {
+    label: list ? "cel-vertex-list" : "cel-vertex",
+    groups: [[FRAME_BLOCK], [], celGeometry(listStride)],
+    attributes: CEL_ATTRIBUTES,
+    varyings: CEL_VARYINGS,
+    includes: WGSL_CHUNKS,
+    body: "#include<celVertex>",
+    entry: "celVertex",
+    privates: [{ var: "instance", struct: "CelInstance", fields: [{ name: "world", type: "mat4x4f" }] }],
+    declarations: list
+      ? [STREAM_INDEX_WGSL, scatterListWgsl(listStride), sourceIndexWgsl("scatterSource")].join("\n")
+      : STREAM_INDEX_WGSL,
+    pull: { vertex: "vertex", decode: list ? LIST_DECODE : STREAM_DECODE },
+    prelude: CEL_PRELUDE,
+  };
+}
+
+/** The cel vertex stage, declared for our renderer. */
+export const CEL_VERTEX_PROGRAM: VertexProgram = celProgram(null);
+
+/** Its list-mode twins, one a stride (there is one: the map's cluster size). */
+const listPrograms = new Map<number, VertexProgram>();
+
+/**
+ * One variant of the cel vertex stage, for a pass of `target`'s kind — the
+ * list-mode twin when `listStride` is given (`?scatterlist`).
+ */
+export function celVertex(defines: Iterable<string>, target: StageTarget, listStride: number | null = null): AssembledVertex {
+  if (listStride === null) return assembleVertex(CEL_VERTEX_PROGRAM, defines, target);
+  let program = listPrograms.get(listStride);
+  if (!program) listPrograms.set(listStride, (program = celProgram(listStride)));
+  return assembleVertex(program, defines, target);
 }

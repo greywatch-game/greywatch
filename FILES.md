@@ -2426,7 +2426,7 @@ src/
                         #   buffer, cleared first so the rest of each group's
                         #   range is triangles of no area (never indirect).
                         #   ReachGate, BlockBox, CullMode and CullDiagnostics
-                        #   (?nocull, ?nofrustum, ?cullcheck)
+                        #   (?nocull, ?nofrustum, ?cullcheck, ?scatterlist)
     PassTimer.ts        # ?gpu's timer of our compute passes (gpu.cull):
                         #   timestamp writes on each cull's pass, summed, one
                         #   reading in flight, mapped the frame after its

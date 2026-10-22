@@ -84,11 +84,14 @@
  * cluster cull's, `uint32`, and the draw is `drawIndexed` over the group's
  * whole range of it — none for a group whose cut kept no index; a scatter
  * draw's is the instance cull's stream, and the draw is `drawIndexedIndirect`
- * at the group's own arguments.
+ * at the group's own arguments — or under `?scatterlist` no index buffer and
+ * a `drawIndirect`, its group's vertex stage the list-mode twin, whose group
+ * 2 binds the cull's list and source as well (`celVertex.ts`'s
+ * `celGeometry`); every group with no scatter keeps the plain stage.
  */
 import { CEL_MATERIAL_BLOCK, CEL_MATERIAL_TEXTURES, type CelRecipe } from "./celMaterial";
 import { celFragment } from "./celFragment";
-import { CEL_GEOMETRY, celVertex, TRANSFORM_WORDS, writeTransform } from "./celVertex";
+import { celGeometry, celVertex, TRANSFORM_WORDS, writeTransform } from "./celVertex";
 import {
   type BlockBox,
   ClusterCull,
@@ -144,6 +147,8 @@ interface MaterialSlot {
 interface Program {
   readonly vertex: AssembledVertex;
   readonly fragment: AssembledModule;
+  /** The list's stride its vertex stage was built for (`?scatterlist`), or null for the plain stage. */
+  readonly listStride: number | null;
 }
 
 /** A surface as handed over, held until the map is cut. */
@@ -165,7 +170,8 @@ type WorldLayer = "blocks" | "landform";
 interface Group {
   readonly layer: WorldLayer;
   readonly material: MaterialSlot;
-  readonly program: Program;
+  /** Its variant: chosen when the group is made, and its list-mode twin chosen at `finish` for a group drawing scatter under `?scatterlist`. */
+  program: Program;
   /** Indices into `surfaces`, in the order added. */
   readonly members: number[];
   /** Its instanced parts, in the order added; emptied at `finish`. */
@@ -217,6 +223,8 @@ interface CutSize {
   source: number;
   /** The scatter's stream: every record's indices. */
   stream: number;
+  /** The scatter's records: what the list holds at most (`?scatterlist`). */
+  records: number;
   /** Each group's vertices, in group order. */
   readonly vertices: number[];
 }
@@ -291,6 +299,9 @@ export class WorldBlocks {
     /** The culls' diagnostics (`ClusterCull`'s `CullDiagnostics`); none but off the URL. */
     private readonly diagnostics: CullDiagnostics = NO_DIAGNOSTICS,
   ) {}
+
+  /** `?scatterlist`: the corners a survivor's run takes — a cluster's most — or null for the expanded stream. */
+  private readonly listStride = this.diagnostics.scatterList ? this.options.triangles * 3 : null;
 
   /** Draws issued last frame — what a census of the main pass adds to Babylon's. */
   get drawn(): number {
@@ -439,8 +450,17 @@ export class WorldBlocks {
         streamLength: size.stream,
         bands2,
       };
-      this.instances = new InstanceCull(device, this.renderer.pipelines, tables, this.gate, this.diagnostics);
+      this.instances = new InstanceCull(device, this.renderer.pipelines, tables, this.gate, this.listStride, this.diagnostics);
       ready.push(this.instances.ready);
+    }
+    // Group 2 and the pipelines last, once the list a group's scatter reads
+    // under `?scatterlist` exists.
+    const stride = this.instances?.listStride ?? null;
+    for (const group of this.groups) {
+      if (group.failed) continue;
+      if (group.scattered && stride !== null) group.program = this.programOf(group.material.recipe.defines, stride);
+      this.geometryOf(group);
+      this.ask(group);
     }
     const generation = this.generation;
     void Promise.all(ready).then((oks) => {
@@ -460,16 +480,24 @@ export class WorldBlocks {
    * A STREAM past them hands back only the groups that draw scatter, as the
    * index's budget does: on the default limits (Babylon asks for no others)
    * Greyfen's 30.9M indices are 92% of a storage binding, and a denser forest
-   * should cost Babylon the scatter's recipes, not the map.
+   * should cost Babylon the scatter's recipes, not the map. Under
+   * `?scatterlist` nothing is expanded, and what can overflow instead is the
+   * index naming a corner of a survivor's run (`streamIndex.ts`).
    */
   private measure(sets: readonly InstanceSet[]): CutSize | null {
     const limits = this.renderer.device.limits;
     const storage = Math.min(limits.maxStorageBufferBindingSize, limits.maxBufferSize);
     let size = this.sizes(sets);
-    if (size.stream * 4 > storage) {
+    const stride = this.listStride;
+    const past =
+      stride === null
+        ? size.stream * 4 > storage && `the scatter's stream (${size.stream} indices) is past the device's ${storage} bytes`
+        : size.records * stride >= SCATTER_VERTICES * SCATTER_INSTANCES &&
+          `the scatter's list (${size.records} records of ${stride} corners) is past what an index names`;
+    if (past) {
       for (const group of this.groups) {
         if (group.instanced.length === 0) continue;
-        this.fail(group, `the scatter's stream (${size.stream} indices) is past the device's ${storage} bytes`);
+        this.fail(group, past);
       }
       size = this.sizes(sets);
     }
@@ -480,7 +508,7 @@ export class WorldBlocks {
 
   /** `measure`'s count, over the groups not handed back. */
   private sizes(sets: readonly InstanceSet[]): CutSize {
-    const size: CutSize = { indices: 0, source: 0, stream: 0, vertices: [] };
+    const size: CutSize = { indices: 0, source: 0, stream: 0, records: 0, vertices: [] };
     for (const group of this.groups) {
       let vertices = 0;
       // A group handed back uploads nothing (and kept no instanced part).
@@ -494,6 +522,9 @@ export class WorldBlocks {
         vertices += p.geometry.positions.length / 3;
         size.source += p.geometry.indices.length;
         size.stream += p.geometry.indices.length * sets[p.set].scales.length;
+        // `cutClusters` cuts a part with no piece into runs of the most a cluster holds.
+        const clusters = Math.ceil(p.geometry.indices.length / (this.options.triangles * 3));
+        size.records += clusters * sets[p.set].scales.length;
       }
       size.vertices.push(vertices);
     }
@@ -502,8 +533,8 @@ export class WorldBlocks {
 
   /**
    * Group `g`'s arrays uploaded, its surfaces' indices rebased past its
-   * `vertexBase` instanced vertices and cut into clusters at `at`, and its
-   * pipeline asked for.
+   * `vertexBase` instanced vertices and cut into clusters at `at`; its group 2
+   * and its pipeline wait for `finish` to have built the culls.
    */
   private cutGroup(
     group: Group,
@@ -530,8 +561,6 @@ export class WorldBlocks {
       vertex += positions.length / 3;
     }
     for (const b of group.arrays) b.unmap();
-    this.geometryOf(group);
-    this.ask(group);
   }
 
   /** The build's arrays are ours no longer, cut or not. */
@@ -720,7 +749,9 @@ export class WorldBlocks {
       stream.streamAt += local.length * instances;
       vertexBase += positions.length / 3;
     }
-    stream.ranges.push({ start: recordStart, end: stream.records.length / RECORD_WORDS, base: regionStart });
+    // The list's entries are a record's, so its region starts at its first.
+    const base = this.listStride === null ? regionStart : recordStart;
+    stream.ranges.push({ start: recordStart, end: stream.records.length / RECORD_WORDS, base });
     return vertexBase;
   }
 
@@ -872,14 +903,24 @@ export class WorldBlocks {
     return buffer;
   }
 
-  /** Group 2 for `group`: its arrays by the storage each attribute is read out of, and the transforms. */
+  /**
+   * Group 2 for `group`: its arrays by the storage each attribute is read out
+   * of, and the transforms — and the instance cull's list and source for a
+   * list-mode stage.
+   */
   private geometryOf(group: Group): void {
     const buffers: Record<string, GPUBuffer> = { transforms: this.transforms! };
     group.program.vertex.attributes.forEach((a, k) => {
       buffers[a.from] = group.arrays[k];
     });
+    const stride = group.program.listStride;
+    if (stride !== null) {
+      buffers.scatterList = this.instances!.stream;
+      buffers.scatterSource = this.instances!.source;
+    }
     const label = `world blocks: [${group.material.recipe.defines.join("+")}] geometry`;
-    group.geometry = new HostBindGroup(this.renderer.device, label, CEL_GEOMETRY, group.material.recipe.defines, buffers);
+    const entries = celGeometry(stride);
+    group.geometry = new HostBindGroup(this.renderer.device, label, entries, group.material.recipe.defines, buffers);
     // No textures: resolved once, whole for good.
     group.geometry.refresh(this.renderer.host, {});
   }
@@ -907,12 +948,16 @@ export class WorldBlocks {
       );
   }
 
-  /** The two modules of the variant `defines`, assembled once. */
-  private programOf(defines: readonly string[]): Program {
-    const key = defines.join("+");
+  /** The two modules of the variant `defines` — its vertex stage the list's twin given a stride — assembled once. */
+  private programOf(defines: readonly string[], listStride: number | null = null): Program {
+    const key = `${defines.join("+")}${listStride === null ? "" : ` list ${listStride}`}`;
     let program = this.programs.get(key);
     if (!program) {
-      program = { vertex: celVertex(defines, FRAME_TARGETS), fragment: celFragment(defines, FRAME_TARGETS) };
+      program = {
+        vertex: celVertex(defines, FRAME_TARGETS, listStride),
+        fragment: celFragment(defines, FRAME_TARGETS),
+        listStride,
+      };
       this.programs.set(key, program);
     }
     return program;
@@ -1010,16 +1055,21 @@ export class WorldBlocks {
     return drawn;
   }
 
-  /** The scatter: one indirect draw a group that has any, over its region of the stream. */
+  /**
+   * The scatter: one indirect draw a group that has any, over its region of
+   * the stream — or under `?scatterlist` of its survivors' runs, unindexed.
+   */
   private drawScatter(pass: GPURenderPassEncoder, ctx: FrameContext): number {
     const instances = this.instances;
     if (!instances) return 0;
     let drawn = 0;
     const groups = this.groups;
-    pass.setIndexBuffer(instances.indices, "uint32");
+    const list = instances.listStride !== null;
+    if (!list) pass.setIndexBuffer(instances.stream, "uint32");
     for (let g = 0; g < groups.length; g++) {
       if (!groups[g].scattered || !this.bind(pass, ctx, groups[g])) continue;
-      pass.drawIndexedIndirect(instances.args, g * INDIRECT_BYTES);
+      if (list) pass.drawIndirect(instances.args, g * INDIRECT_BYTES);
+      else pass.drawIndexedIndirect(instances.args, g * INDIRECT_BYTES);
       drawn++;
     }
     return drawn;

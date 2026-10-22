@@ -1796,10 +1796,42 @@ floor its shading:
     look parts within 1%. The fights read 6-12% faster on the CPU tick, which
     a GPU buffer's format cannot do — a day apart, that is the session. As
     before, the desktop's bandwidth hides what this saves.
-- **Owed.** The phone on this build; a same-session pair on Android 17
-  (3b9be6c, then this build, each a warm-up then Greyfen, Harrowmead,
-  Sarab) prices the frame as well as the cull. And a decision on the
-  stream's writes, which is the user's (`FINDINGS.md` 63).
+- **`?scatterlist`: the survivors' list drawn, nothing expanded**
+  (2026-10-22, `FINDINGS.md` 63's first lever, as an A/B a phone can take
+  from one build). The scan counts SURVIVORS; `expand` is a thread a
+  survivor writing its one 16-byte entry (instance, first source index,
+  count, part — `streamIndex.ts`'s `LIST_WORDS`) where the scan puts it;
+  each range's draw is a non-indexed `drawIndirect` of 384 corners a
+  survivor (128 triangles, a cluster's most), first corner the scatter bit
+  over `slot * 384`; and the vertex stage's list twin (`celVertex`'s
+  third argument) reads the entry and the 16-bit source itself, a corner
+  past its cluster's count repeating the last so a short cluster ends in
+  triangles of no area. Only the groups that draw scatter wear the twin,
+  chosen at `finish` once the cull exists (so group 2 and the pipeline ask
+  moved after it), binding the list and the source beside their arrays:
+  eight storage buffers in a palette variant, the default limit, which
+  `shaders.mjs` now builds on every map. The stream is never allocated —
+  Sarab's list is 154 KB where its stream was 12 MB.
+  - **The same picture**: the bank under `?scatterlist` pixel-identical to
+    stream mode's frames, all 61 (mean 0, max 0), no console error; the
+    census under it equal on all seven maps; a probe saw the list cull,
+    the list stage and only `drawIndirect` under the flag, and only
+    `drawIndexedIndirect` without; captures say `forced: ["scatterlist"]`.
+  - **Desktop, the two modes back to back** (`bench.mjs --max --gpu --runs
+    3`, then `--query scatterlist`, the canonical hashes): `gpu.cull`
+    Greyfen 0.066 to 0.050 ms, Harrowmead 0.085 to 0.053 (fight 0.097 to
+    0.057), Sarab 0.057 to 0.050 — while `gpu.frame` ROSE 1-3% (Greyfen's
+    vantages 5.37 to 5.51, Harrowmead's fight 5.44 to 5.60, Sarab +0.4-1.1%):
+    the vertex stage's lost reuse costs the desktop about 0.15 ms where the
+    cull saves 0.03. The phone's cull saves an order more, and its vertex
+    work costs what only its run can say.
+- **Owed.** The phone's A/B on this build, one session: a thrown-away
+  warm-up, then each map twice back to back, `?bench=<map>&gpu` and
+  `?bench=<map>&gpu&scatterlist`, alternating which goes first (Greyfen
+  plain first, Harrowmead list first, Sarab plain first); `gpu.frame` per
+  pair decides it, `gpu.cull` says what the writes were. A same-session
+  pair against 3b9be6c still prices the fold itself. And the user's
+  decision on the stream's writes (`FINDINGS.md` 63).
 
 ### X3.6 — The static world's other passes (PERF_PLAN B3) — **L, as four sub-steps**
 

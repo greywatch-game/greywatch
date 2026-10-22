@@ -2897,7 +2897,8 @@ sampled frame kept was 16% of the stream on Greyfen (3.0 M of 19.2 M), 51%
 on Harrowmead (7.4 M of 14.6 M), 24% on Sarab (0.7 M of 3.0 M).
 
 The levers on the WRITES, none built:
-- **Draw the work list instead of an expanded stream.** Clusters padded to
+- **Draw the work list instead of an expanded stream** — BUILT behind
+  `?scatterlist` 2026-10-22, the phone's A/B owed. Clusters padded to
   one fixed index count; a non-indexed indirect draw whose vertex index
   names the survivor (`/ K`) and the corner (`% K`), and the vertex stage
   reads the survivor and `source` itself. The cull writes 16 bytes a

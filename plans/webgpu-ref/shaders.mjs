@@ -136,7 +136,10 @@ const HOOK = () => {
  * more row, the same on every map. The instance cull's four entry points
  * (`render/wgsl/instanceCull.ts`, X3.4b, expanded at X3.5b) are a row of
  * their own beside the cluster cull's. Since X3.5b one vertex stage draws
- * the blocks and the scatter alike, so each shape is built once.
+ * the blocks and the scatter alike, so each shape is built once — and once
+ * more as `?scatterlist`'s twin, which binds the instance cull's list and
+ * source beside the arrays (eight storage buffers in a palette variant, the
+ * default limit), with the instance cull's list-mode entry points a row too.
  *
  * **And the pipeline STATES the world draws them in (X3.5).** A pipeline is
  * its fixed-function state as well as its modules, and `WorldBlocks` asks for
@@ -151,22 +154,27 @@ async function oursCheck({ shapes, biased }) {
   const { celVertex } = await import("/src/render/celVertex.ts");
   const { PipelineCache } = await import("/src/render/PipelineCache.ts");
   const { FRAME_TARGETS } = await import("/src/render/targets.ts");
+  const { CONFIG } = await import("/src/config/index.ts");
+  // `?scatterlist`'s stride, as `WorldBlocks` takes it.
+  const listStride = CONFIG.graphics.clusters.triangles * 3;
   const adapter = await navigator.gpu.requestAdapter();
   const device = await adapter.requestDevice();
   const cache = new PipelineCache(device);
   const out = [];
-  // Every shape at no bias, then each biased (shape, bias) the page carries.
+  // Every shape at no bias, then each biased (shape, bias) the page carries,
+  // then every shape's list-mode twin.
   const builds = [
-    ...shapes.map((shape) => ({ shape, depthBias: 0 })),
-    ...biased.map(({ shape, depthBias }) => ({ shape, depthBias })),
+    ...shapes.map((shape) => ({ shape, depthBias: 0, list: null })),
+    ...biased.map(({ shape, depthBias }) => ({ shape, depthBias, list: null })),
+    ...shapes.map((shape) => ({ shape, depthBias: 0, list: listStride })),
   ];
-  for (const { shape, depthBias } of builds) {
-    const kind = depthBias === 0 ? "" : `bias ${depthBias} `;
+  for (const { shape, depthBias, list } of builds) {
+    const kind = `${list === null ? "" : "list "}${depthBias === 0 ? "" : `bias ${depthBias} `}`;
     const defines = shape ? shape.split("+") : [];
     let vm;
     let fm;
     try {
-      vm = celVertex(defines, FRAME_TARGETS);
+      vm = celVertex(defines, FRAME_TARGETS, list);
       fm = celFragment(defines, FRAME_TARGETS);
     } catch (e) {
       out.push({ error: `${kind}${String(e?.message ?? e)}`, source: "" });
@@ -205,10 +213,12 @@ async function oursCheck({ shapes, biased }) {
     });
   }
   const { CLUSTER_CULL_WGSL } = await import("/src/render/wgsl/clusterCull.ts");
-  const { INSTANCE_CULL_WGSL } = await import("/src/render/wgsl/instanceCull.ts");
+  const { instanceCullWgsl } = await import("/src/render/wgsl/instanceCull.ts");
+  const instanceEntries = ["cullInstances", "cullRecords", "prefix", "expand"];
   const culls = [
     ["cluster cull", CLUSTER_CULL_WGSL, ["cullClusters", "prefix", "scatter"]],
-    ["instance cull", INSTANCE_CULL_WGSL, ["cullInstances", "cullRecords", "prefix", "expand"]],
+    ["instance cull", instanceCullWgsl(), instanceEntries],
+    ["instance cull (list)", instanceCullWgsl(listStride), instanceEntries],
   ];
   for (const [label, code, entries] of culls) {
     device.pushErrorScope("validation");
