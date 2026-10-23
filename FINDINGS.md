@@ -2834,3 +2834,39 @@ that is a guess from the shape, not a reading.
 - **A diagnostic switch that holds the patch choice fixed** (the meshes and
   their instance buffers written once, as `?cullonce` did for the blocks):
   if the flicker stops, it is the rewrite; if not, it is the draw.
+
+## 64. The desktop's D3D12 device hangs under the uncapped 3440x1440 benchmark, before X3.6a as after it
+
+**Status:** open; measured 2026-10-23 on the desktop (the RTX box, Chrome's
+Dawn on D3D12), cause unknown.
+
+### What was measured
+
+A watchdog over the benchmark's own workload (`?bench=<map>&gpu`, a fresh
+page a run, `bench.mjs`'s `--max` settings, uncapped, 3440x1440, nine runs
+back to back in one headless browser: Greyfen, Harrowmead, Sarab three times
+over) caught runs that stop drawing for good: Dawn reports
+`ID3D12Device::GetDeviceRemovedReason ... DXGI_ERROR_DEVICE_HUNG`, Babylon
+"WebGPU context lost ... successfully restored", every later `mapAsync`
+fails on the lost device, and no frame is drawn again. At the parent of
+X3.6a (a78a4eb) 6 of 9 runs hung, on all three maps; at 4fd2e85 (X3.6a) 4 of
+9, on Greyfen and Harrowmead. A run hangs anywhere from frame 137 to 7,374.
+The same session's ordinary instruments mostly pass (`bench.mjs --runs 3`
+completed nine of nine more than once), which is why it reads as a flake
+there: `bench.mjs` waits 40 minutes before it says so, and `gate.mjs` dies
+on an empty frame list.
+
+### What is derived
+
+A device HUNG is the GPU running one piece of work past the driver's timeout
+(TDR), not a validation error. That it happens without X3.6a's shadow passes
+puts it in work both builds do; the forest maps' scatter list and the
+3440x1440 max-settings frame are the first suspects, the machine's state that
+day (a long session of uncapped runs) the third.
+
+### How to settle it
+- The same loop CAPPED, and at 1920x1080: if both stop hanging, it is load.
+- The same loop at X3.5b's parent (before the scatter list): if it stops, it
+  is the list's draw or its cull.
+- A fresh boot of the machine, the loop again.
+

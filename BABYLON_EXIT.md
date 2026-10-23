@@ -2012,13 +2012,15 @@ plain draw and, with scatter, its one indirect draw, a pass.
     uncapped. The maps redraw only when a window moves: none on a still
     camera, bursts of 2-10 a second of the three static maps together as the
     benchmark's camera moves on.
-  - **Two stalls, not reproduced.** The first AFTER benchmark's third
-    Greyfen run never left `loading` (its 40-minute timeout), and one gate
-    run recorded no frame in Hollowmere's warm window, each in a chain right
-    after another browser session; neither came back in five fresh
-    `?bench=greyfen` boots at the benchmark's settings (each in the round in
-    ~10 s, the maps `ready` long before the bake gate asked), 3 x 40 s of
-    play, a full gate and a full nine-run benchmark. Watched, not explained.
+  - **Two stalls, and they are not this step's.** The first AFTER
+    benchmark's third Greyfen run never reached the round (its 40-minute
+    timeout), and one gate run recorded no frame in Hollowmere's warm
+    window. A watchdog over the benchmark's workload, nine runs back to back
+    in one browser (`--max`, uncapped, 3440x1440), caught the cause:
+    `DXGI_ERROR_DEVICE_HUNG`, the D3D12 device removed mid-run, rendering
+    stopped. And it is the MACHINE's, not the step's — the identical loop at
+    the parent, a78a4eb, hung 6 of 9 runs (all three maps), against 4 of 9
+    at 4fd2e85 (Greyfen 3, Harrowmead 1). `FINDINGS.md` 64.
   - **What the shadow view costs in memory** — measured off every buffer and texture made through the install:
     the textures are 40 MiB on the `high` rung (two 2048 and two 1024
     `r16float` maps and one `depth32float` attachment a size), where the
@@ -2046,8 +2048,8 @@ plain draw and, with scatter, its one indirect draw, a pass.
   stopped one (now always made afresh); `settled` waited on the LATEST ask,
   which a moving window renews for as long as it moves, so the probes' bake
   could be held off without limit (now each map's FIRST draw since its
-  casters or its texture changed — a fit for the two stalls above, not shown
-  to be their cause); the culls' second view built on the `off` rung, where
+  casters or its texture changed; the two stalls above turned out to be
+  the device, not this); the culls' second view built on the `off` rung, where
   no map is drawn (no caster is held there now: `WorldShadows.rungDraws`,
   which `ShadowSystem.setQuality` states — a rung switched on mid-map draws
   on the generators until the next map); the foliage and flash matrices
