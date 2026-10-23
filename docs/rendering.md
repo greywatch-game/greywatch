@@ -1831,7 +1831,8 @@ needing it (233 runs against 229): stars, the galactic band and the halo are
 painted over the whole ramp, and the clouds stand in front of it.
 
 The exceptions are the THREE `DirectionalLight`s, which no material reads: each
-exists only to define a shadow camera for its `ShadowGenerator`.
+exists only to define a shadow camera — for its `ShadowGenerator`, or for the
+map our renderer draws in its place since X3.6a ("Our renderer's frame").
 `ShadowSystem`'s is the world's and it owns a second, the foliage's (see below);
 `BodyShadows`'s is the bodies'. The last two are pinned to layers no world mesh
 carries (`includeOnlyWithLayerMask`), so neither can reach a `StandardMaterial`. The cel fragment shader samples
@@ -1907,7 +1908,8 @@ against the reference, not two.
 re-render every frame, frame limiter off: **~0.04 ms a frame on Coldharbour**
 (10 foliage casters in the window) and **~0.13 ms on Harrowmead** (58). Those
 are 2% and 7% of a bare scene-render frame of under 2 ms, and a real round's
-frame is several times that. The map is 1024² half-float RGBA, 8 MB.
+frame is several times that. The map is 1024² half-float RGBA, 8 MB — 2 MB since
+X3.6a, ours being one half-float channel.
 
 ### The bodies' map: why soldiers and hulls have one of their own
 
@@ -1996,7 +1998,9 @@ comparable). Read it as free and re-measure before believing any figure smaller
 than the spread.
 
 **The depth pass draws only the casters standing in the window, and has to do that
-culling itself.** Babylon culls nothing off an explicit `renderList`:
+culling itself** — a generator's on the CPU here, ours on the GPU over the
+light's frustum since X3.6a (`WorldDepth`). Babylon culls nothing off an
+explicit `renderList`:
 `ObjectRenderer._prepareRenderingManager` dispatches every enabled, visible mesh in
 it, so the pass was submitting the whole village on every re-render — 314 casters and
 79k triangles against the ~150 that can reach a 110 m window.
@@ -2062,7 +2066,8 @@ a bind group that fails to build. It is 8-bit RGBA on purpose — 255 reads back
 as depth 1.0, past every receiver, and a 32-bit float is not filterable under
 WebGPU. A rung change REBUILDS a generator at its new size (a
 `ShadowGenerator`'s size is fixed at construction) and re-adds the casters
-`setCasters` last handed over; a map whose size did not move is left alone.
+`setCasters` last handed over — or, while the maps are our renderer's, re-makes
+its texture, owed a draw; a map whose size did not move is left alone.
 **The sizes start at -1, not 0**, because 0 is off's own size and a first
 `setQuality("off")` that compared equal to it bound nothing at all — measured,
 every cel material's bind group failed and the round never left `loading`.
@@ -3381,8 +3386,9 @@ the map-wide road merge. X3.3a and X3.3b proved
 them behind a DEV switch, `?ourworld`, against the bank Babylon drew without
 it; X3.3c took the switch out, so Babylon draws a block in the main pass only
 when the handover refused it or handed it back. **Their Babylon meshes STAY**, and are
-still drawn by Babylon in every OTHER pass — the shadow maps, the reflection
-probes and the lamps' atlas — until X3.6 moves those passes.
+still drawn by Babylon in the reflection probes and the lamps' atlas until
+X3.6b and X3.6c move those passes; the world's directional shadow maps are
+our side's since X3.6a (below).
 
 - **`systems/BlockHandover.ts` decides which surfaces are TAKEN.** A
   surface is taken if it is block-merged OR the landform, at identity, never
@@ -3702,6 +3708,84 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
   uniform as written, so the FORM of the arithmetic was not the cause and
   its INPUTS were. Whether the read was is the probe's next answer; until a
   device gives it, this is how a cull here declares what it reads.
+
+**The world's directional SHADOW MAPS are drawn by our side too, into
+textures it OWNS** (`BABYLON_EXIT.md` X3.6a): the far and near cascades, the
+foliage's front-face map and the lightning's. `render/WorldShadows.ts` owns
+the four textures, `render/WorldDepth.ts` draws the casters into them, and
+`ShadowSystem` still decides everything about WHERE a map stands and WHEN it
+is redrawn — the lights, the snap, the hold, the strike — and hands the
+light's matrix over.
+
+- **The maps are ours WHOLE or not at all, decided per map install.**
+  `BlockHandover` sees every surface the build makes and asks of each
+  whether Babylon's generator would have drawn it — not `noShadowCaster`,
+  not blended — and, if so, holds it: a surface the main pass takes casts
+  from its own group, and a caster it does not take (the emissive palette's
+  merges, which keep no recipe) is held for the shadow maps ALONE
+  (`WorldBlocks.addCaster`: positions only, in a "casters" group cut after
+  every other, which the main pass's cull leaves out as a tail and nothing
+  draws in the main pass). Only when EVERY caster is held are the casters
+  handed to `WorldShadows` (`setCasters`); one it cannot hold — not block
+  merged, not at identity, `updatable` — leaves the whole map's shadows to
+  the generators, as an editor build and `?babylonworld` do. Half a map
+  drawn by each side would be the order of two renderers deciding one depth
+  test, and a caster drawn by neither a hole.
+- **A caster handed back LOSES the maps to Babylon for the rest of the map**
+  (`WorldShadows.lose`): a group's or a cull's failure, or a refused main
+  pass. The hand-over runs after the task in hand (`queueMicrotask`),
+  because a refusal lands INSIDE a render whose unsubmitted commands still
+  hold the textures the generators' hand-over destroys — disposing Babylon's
+  wrapped view of one destroys the `GPUTexture` it wraps.
+- **Babylon's readers sample a WRAPPED view** (`WebGPUEngine.
+  wrapWebGPUTexture`, re-pointed at itself so it has a view, nearest and
+  clamped as the generator's map was), and our frame binds the texture
+  itself (`OwnTexture`, through `ShadowBindings.fillFrameTextures`) — rule 5
+  both ways. **The format is `r16float`, where Babylon's was `rgba16float`**
+  with the depth in red and 1 in the other three, which no reader reads
+  (`textureGather` of channel 0, the volumetrics' `.x`): the same numbers in
+  a quarter of the memory. The depth attachments are `depth32float`, one a
+  SIZE in use, shared by the maps that size, which draw one after another.
+- **What is written is Babylon's number**: the clip z of the light's
+  orthographic projection under the half-z range (`celDepth.ts`; Babylon's
+  `vDepthMetricSM` with `depthValuesSM` (0, 1), no bias, no depth clamp), from
+  a matrix built by `getTransformMatrix`'s own helpers in its own order
+  (`ShadowSystem.lightTransform`), drawn upside down as every render target
+  is (`SHADOW_TARGETS.flipY`). **No caster SWAYS in a shadow map** — Babylon's
+  depth pass never ran the cel vertex body — so the depth stage reads only a
+  position, and the culls are told no sway. **Faces by the generator's rule**:
+  the back faces for the three that forced them, whatever a mesh's
+  orientation, the front for the foliage's.
+- **Each map is a SECOND VIEW of the main pass's culls** (`ClusterCull` and
+  `InstanceCull` handed the main pass's, so the tables are uploaded once):
+  the light's view-projection, no reach and no size gate (Babylon culled
+  nothing off a render list but the window, and an orthographic light's
+  frustum is exact for that), and a PASS MASK — each cluster's record
+  carries the passes it is drawn in (`PASS_CASTS`, and `PASS_SOLID` for a
+  translucent solid), which the main pass's cull, handed 0, never tests. One
+  view serves all four maps in one submit: each dispatch's inputs go to a
+  staging SLOT of their own and are copied into the uniform block in the
+  encoder (`CullUniform`), because a `writeBuffer` lands before the whole
+  submit, and each map's draws read the indices its own dispatch wrote just
+  before them.
+- **A map is drawn only when ASKED**, on the next frame our renderer
+  prepares, into the encoder Babylon submits ahead of every pass of its own
+  (`FramePrepare`) — so a probe or the main pass that frame samples the map
+  drawn for it. A texture is born cleared to LIT by a submit of its own, and
+  cleared again when the casters go. **`ShadowSystem.ready` is what a reader
+  that keeps the answer waits on**: the probes' bake gate asks it beside
+  `gi.converged`, since ours draws a frame or more after the install, once
+  its pipelines are built.
+- **Measured against the generators** (X3.6a, a scratch readback of both
+  sides' maps at each map's menu vantage in one page): every map ours, every
+  caster held, and the maps equal to the texel but for 0.0000-0.02% of
+  texels — Greyfen worst, its scatter's instances moved by their matrices
+  on the GPU where Babylon's merged copy was moved on the CPU. And the
+  memory: 40 MiB of textures on the `high` rung where the generators held
+  about 120, against 10-28 MiB for the culls' second view.
+- **Not timed on our side**: the shadow maps' culls are not in `gpu.cull`,
+  and `shadowPass` (`FrameProfile`) brackets only Babylon's generators, which
+  a round no longer has for the world's maps — only the bodies'.
 
 ## Block visibility: how much of the map the frame walks
 

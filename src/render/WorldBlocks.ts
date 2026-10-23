@@ -9,7 +9,11 @@
  * patches, the rim's runs and the map-wide road merge, cut, culled and drawn
  * as the blocks are, after them (X3.5) — every draw through the one pulled
  * vertex stage (`celVertex.ts`), which reads its record off the index
- * (`scatterList.ts`).
+ * (`scatterList.ts`). And, since X3.6a, the same map as the world's shadow
+ * maps record it (`WorldDepth`, which it builds at the cut over the same
+ * tables): every surface and instanced part carries the shadow passes it is
+ * drawn in, and the CASTERS no main pass of ours draws — the emissive
+ * palette's — are held here for the shadow maps alone (`addCaster`).
  * Owns: `WorldBlocks` — the surfaces and the scatter's instanced parts handed
  * to it until the map is cut (`finish`), then each material GROUP's vertex
  * arrays (every instanced part of the group end to end, then every surface of
@@ -22,7 +26,7 @@
  * alpha-tested meshes (`DrawPoint` `"beforeAlphaTest"`) — the blocks, the
  * scatter, then the landform — with the `FramePrepare` that culls ahead of
  * it, both on the renderer only while a map's culls are built and nobody has
- * `stop`ped it.
+ * `stop`ped it; and the map's `WorldDepth`, when `finish` is asked for one.
  * WHY THAT POINT, AND THE LANDFORM LAST: the turf (`GrassSystem`) is a blend
  * laid over the floor on group 0's alpha-tested list, and it writes no depth
  * of its own — so the floor, and a road beside it, must be drawn before that
@@ -44,9 +48,12 @@
  * an instanced part belongs to exactly one: a landform surface to its
  * recipe's landform group, a block surface and every instanced part to its
  * recipe's block group, so a rim wearing the pines' material never shares
- * their group or their scatter; the two layers share ONE cut, one cull, one
- * cluster list and one index buffer, each group drawing only its own range of
- * it, and the scatter's list gives each group a run of its own; its
+ * their group or their scatter; the CASTERS are one group of no recipe, its
+ * arrays the positions alone, drawn in no main pass and cut LAST, so the main
+ * pass's cull leaves its clusters out as a tail (`count`); the layers share
+ * ONE cut, one set of cull tables, one cluster list and one index buffer
+ * each cull view writes, each group drawing only its own range of it, and
+ * the scatter's list gives each group a run of its own; its
  * vertex arrays are uploaded once as Babylon uploads a mesh's (floats as
  * `float32`, a `Float64Array` rounded exactly as Babylon's `Float32Array` of
  * the same numbers is), an attribute a surface lacks but its variant reads
@@ -71,7 +78,10 @@
  * a surface it will never draw — its group failed, or a cull did, or the cut
  * is past the device's limits — is handed to `onFailed` in the turn that
  * failure lands, never held for the map's other compiles, so whoever took it
- * can give it back at once; a material's block is re-copied from its recipe
+ * can give it back at once; the map's `WorldDepth` is built only when every
+ * group with a shadow pass is still whole at the cut — a map whose casters
+ * already went back draws its shadows on Babylon's side, and a depth nobody
+ * will use is not built; a material's block is re-copied from its recipe
  * only when asked (`writeMaterials`); nothing here allocates on a frame but
  * the culls' compute passes.
  * Never: imports Babylon; reads a node, or decides the reach or the size gate
@@ -96,7 +106,9 @@ import { celGeometry, celVertex } from "./celVertex";
 import {
   type BlockBox,
   ClusterCull,
+  createCullInputs,
   type CullDiagnostics,
+  frameInputs,
   NO_DIAGNOSTICS,
   type ReachGate,
   type ScanRange,
@@ -121,9 +133,11 @@ import {
 import { listStride } from "./scatterList";
 import { FRAME_TARGETS } from "./targets";
 import { UniformBlockBuffer } from "./UniformBlockBuffer";
-import { type AssembledModule, type AssembledVertex, PULLED_ATTRIBUTES } from "./wgsl/assemble";
+import { type AssembledAttribute, type AssembledModule, type AssembledVertex, PULLED_ATTRIBUTES } from "./wgsl/assemble";
 import { CLUSTER_WORDS, writeCluster } from "./wgsl/clusterCull";
 import { INDIRECT_BYTES } from "./wgsl/instanceCull";
+import { type DepthGroup, WorldDepth } from "./WorldDepth";
+import { WORLD_SHADOW_MAPS } from "./WorldShadows";
 
 /** How the blocks are cut — `CONFIG.graphics.clusters`. */
 export interface ClusterOptions {
@@ -150,17 +164,32 @@ interface Program {
 interface Surface {
   geometry: SurfaceArrays;
   pieces: readonly PieceSpan[];
+  /** The shadow passes it is drawn in (`PASS_CASTS`, `PASS_SOLID`). */
+  readonly passes: number;
 }
 
-/** Which of the world's two layers a group is in: the blocks, drawn first, or the landform. */
-type WorldLayer = "blocks" | "landform";
+/**
+ * Which layer a group is in: the blocks, drawn first, or the landform — or
+ * the CASTERS, held for the shadow maps alone and drawn in no main pass
+ * (`addCaster`), whose groups are always cut last.
+ */
+type WorldLayer = "blocks" | "landform" | "casters";
+
+/** What a caster held for the shadow maps alone reads: its positions. */
+const CASTER_ATTRIBUTES: readonly AssembledAttribute[] = [{ name: "position", type: "vec3f", from: "positionData" }];
 
 /** One material's draws in one layer: its instanced parts' arrays end to end, its surfaces' after them. */
 interface Group {
   readonly layer: WorldLayer;
-  readonly material: MaterialSlot;
-  /** Its variant: chosen when the group is made, and its scatter twin chosen at `finish` for a group drawing scatter. */
-  program: Program;
+  /** Its recipe's GPU half; null for the casters, which no main pass draws. */
+  readonly material: MaterialSlot | null;
+  /**
+   * Its variant: chosen when the group is made, and its scatter twin chosen
+   * at `finish` for a group drawing scatter; null for the casters.
+   */
+  program: Program | null;
+  /** What its arrays hold: its vertex stage's attributes, or a caster's positions alone. */
+  readonly attributes: readonly AssembledAttribute[];
   /** Indices into `surfaces`, in the order added. */
   readonly members: number[];
   /** Its instanced parts, in the order added; emptied at `finish`. */
@@ -179,6 +208,9 @@ interface Group {
   built: BuiltPipeline | null;
   /** It draws nothing, and its members went back. */
   failed: boolean;
+  /** The shadow passes its surfaces, and its instanced parts, are drawn in, together. */
+  surfacePasses: number;
+  scatterPasses: number;
 }
 
 /** Which of a surface's arrays an attribute is read from. */
@@ -190,12 +222,13 @@ const SOURCE: Readonly<Record<string, keyof SurfaceArrays>> = {
   uv2: "uvs2",
 };
 
-/** One surface as the cut left it: its group, where its indices start, and its clusters. */
+/** One surface as the cut left it: its group, where its indices start, its clusters, and its shadow passes. */
 interface CutSurface {
   readonly surface: number;
   readonly group: number;
   readonly base: number;
   readonly c: readonly Cluster[];
+  readonly passes: number;
 }
 
 /** Where the cut has got to in the cluster cull's indices and clusters. */
@@ -225,10 +258,11 @@ export class WorldBlocks {
    * draws its own in, its biased ones first (`drawClusters`).
    */
   private readonly groups: Group[] = [];
-  /** Each layer's groups by recipe: one recipe in both layers is two groups. */
-  private readonly groupOf: Record<WorldLayer, Map<CelRecipe, Group>> = {
+  /** Each layer's groups by recipe: one recipe in both layers is two groups, and the casters' is keyed on none. */
+  private readonly groupOf: Record<WorldLayer, Map<CelRecipe | null, Group>> = {
     blocks: new Map(),
     landform: new Map(),
+    casters: new Map(),
   };
   /**
    * Each variant's modules, assembled once rather than per surface: a map is
@@ -239,6 +273,10 @@ export class WorldBlocks {
   private transforms: GPUBuffer | null = null;
   private cull: ClusterCull | null = null;
   private instances: InstanceCull | null = null;
+  /** The map as the shadow maps record it, when `finish` was asked for it. */
+  private worldDepth: WorldDepth | null = null;
+  /** The main pass's cull inputs, refilled every frame. */
+  private readonly inputs = createCullInputs();
   /** Whether the culls are built: until then nothing draws. */
   private culling = false;
   private clusterCount = 0;
@@ -283,6 +321,14 @@ export class WorldBlocks {
     return this.drawnLast;
   }
 
+  /**
+   * The map as the world's shadow maps record it (`WorldShadows`) — built by
+   * `finish` when asked; null before, without the ask, and after `clear`.
+   */
+  get depth(): WorldDepth | null {
+    return this.worldDepth;
+  }
+
   /** What is handed over, and what it was cut into. */
   get count(): { surfaces: number; clusters: number; groups: number; instances: number; sets: number } {
     return {
@@ -297,8 +343,9 @@ export class WorldBlocks {
   /**
    * Hands over one surface, drawn with `recipe` — a block, or with `landform`
    * the floor, the rim or the road merge, drawn ahead of the alpha-tested
-   * meshes (see the header); its index is the surface's, for `onFailed`. Its
-   * arrays are READ at `finish`, so they must stand until then.
+   * meshes (see the header) — and in the shadow passes `passes` names; its
+   * index is the surface's, for `onFailed`. Its arrays are READ at `finish`,
+   * so they must stand until then.
    */
   add(
     label: string,
@@ -306,28 +353,48 @@ export class WorldBlocks {
     recipe: CelRecipe,
     pieces: readonly PieceSpan[],
     landform: boolean,
+    passes: number,
   ): number {
-    const group = this.groupFor(recipe, landform ? "landform" : "blocks");
+    return this.addTo(this.groupFor(recipe, landform ? "landform" : "blocks"), label, geometry, pieces, passes);
+  }
+
+  /**
+   * Hands over one surface our side draws in NO main pass — a caster whose
+   * material keeps no recipe, the emissive palette's — so that the shadow
+   * passes `passes` names are drawn whole by our side: its positions alone
+   * are uploaded, and cut after every other group's. Its index is the
+   * surface's, as `add`'s.
+   */
+  addCaster(label: string, geometry: SurfaceArrays, pieces: readonly PieceSpan[], passes: number): number {
+    return this.addTo(this.groupFor(null, "casters"), label, geometry, pieces, passes);
+  }
+
+  private addTo(group: Group, label: string, geometry: SurfaceArrays, pieces: readonly PieceSpan[], passes: number): number {
     const missing = missingAttribute(group, geometry);
     if (missing) throw new Error(`world blocks: "${label}" has no ${missing}, which its variant reads`);
     const at = this.surfaces.length;
-    this.surfaces.push({ geometry, pieces });
+    this.surfaces.push({ geometry, pieces, passes });
     group.members.push(at);
+    group.surfacePasses |= passes;
     this.surfaceCount = this.surfaces.length;
     return at;
   }
 
   /**
    * Hands over one part of instance set `set` (`ScatterCut.sets`), drawn with
-   * `recipe` once per surviving instance. Its arrays are READ at `finish`. A
-   * part lacking what its variant reads cannot be drawn while its pieces are
-   * cut out of the blocks, so its whole group goes back at `finish`.
+   * `recipe` once per surviving instance, and in the shadow passes `passes`
+   * names. Its arrays are READ at `finish`. A part lacking what its variant
+   * reads cannot be drawn while its pieces are cut out of the blocks, so its
+   * whole group goes back at `finish`.
    */
-  addInstanced(set: number, label: string, geometry: SurfaceArrays, recipe: CelRecipe): void {
+  addInstanced(set: number, label: string, geometry: SurfaceArrays, recipe: CelRecipe, passes: number): void {
     const group = this.groupFor(recipe, "blocks");
     const missing = missingAttribute(group, geometry);
     if (missing) group.withheld ??= `its instanced part "${label}" has no ${missing}, which its variant reads`;
-    else group.instanced.push({ geometry, set });
+    else {
+      group.instanced.push({ geometry, set, passes });
+      group.scatterPasses |= passes;
+    }
   }
 
   /**
@@ -338,9 +405,12 @@ export class WorldBlocks {
    * built. `blocks[s]` is surface `s`'s REACH box — its block's, as the
    * frame's mesh walk files it, or the one box of no reach every landform
    * surface is handed (`WorldCulling.reachBoxOf`); surfaces of one box share
-   * the object.
+   * the object. With `shadows`, the map as the shadow maps record it is
+   * built too (`depth`), over the same tables — unless a group with a shadow
+   * pass went back before the cut, when the map's shadows are not ours to
+   * draw.
    */
-  finish(blocks: readonly BlockBox[], scatter: ScatterCut | null = null): void {
+  finish(blocks: readonly BlockBox[], scatter: ScatterCut | null = null, shadows = false): void {
     const surfaces = this.surfaces;
     if (blocks.length !== surfaces.length) throw new Error("world blocks: a block for every surface");
     // Nothing taken (an editor build, a map of loose surfaces): no cull, and
@@ -348,6 +418,9 @@ export class WorldBlocks {
     if (surfaces.length === 0) return;
     const device = this.renderer.device;
     const sets = scatter?.sets ?? [];
+    // The casters last, so the main pass's cull can leave their clusters out
+    // as a tail (`drawn` below). A stable sort keeps every other group's order.
+    this.groups.sort((a, b) => Number(a.layer === "casters") - Number(b.layer === "casters"));
 
     // A recipe Babylon draws whole draws its scatter whole with it: a group
     // with no surface of ours keeps none of its instanced parts.
@@ -377,6 +450,8 @@ export class WorldBlocks {
     const ranges: ScanRange[] = [];
     const scatterTables = new ScatterTables(sets, size.source, this.options.triangles);
     const at: CutCursor = { index: 0, cluster: 0 };
+    // The clusters the main pass culls: every group's but the casters'.
+    let drawn = 0;
     this.groups.forEach((group, g) => {
       const start = at.cluster;
       group.indexBase = at.index;
@@ -391,6 +466,7 @@ export class WorldBlocks {
       if (!group.failed) this.cutGroup(group, g, parts.vertices, size.vertices[g], indices, at, cut);
       ranges.push({ start, end: at.cluster, base: group.indexBase });
       group.indexCount = at.index - group.indexBase;
+      if (group.layer !== "casters") drawn = at.cluster;
     });
 
     const clusterCount = at.cluster;
@@ -398,11 +474,12 @@ export class WorldBlocks {
     const bands = this.options.nearBands;
     const bands2 = [bands[0] * bands[0], bands[1] * bands[1], bands[2] * bands[2]];
     const boxes = uniqueBoxes(blocks);
+    const main = { label: "main pass", slots: 1 };
     this.cull = new ClusterCull(
       device,
       this.renderer.pipelines,
       { clusters: clusterWords(cut, blocks, boxes), clusterCount, blocks: boxes, spheres, groups: ranges, indices, bands2 },
-      this.gate,
+      { ...main, count: drawn },
       this.diagnostics,
     );
     const ready: Promise<boolean>[] = [this.cull.ready];
@@ -410,16 +487,30 @@ export class WorldBlocks {
       const tables = scatterTables.tables(bands2);
       this.instanceCount = tables.instanceCount;
       this.setCount = tables.sets.length;
-      this.instances = new InstanceCull(device, this.renderer.pipelines, tables, this.gate, this.stride, this.diagnostics);
+      this.instances = new InstanceCull(device, this.renderer.pipelines, tables, this.stride, main, this.diagnostics);
       ready.push(this.instances.ready);
     }
     // Group 2 and the pipelines last, once the list a group's scatter reads
-    // exists.
+    // exists. The casters have neither: no main pass draws them.
     for (const group of this.groups) {
-      if (group.failed) continue;
+      if (group.failed || !group.material) continue;
       if (group.scattered) group.program = this.programOf(group.material.recipe.defines, this.stride);
       this.geometryOf(group);
       this.ask(group);
+    }
+    const casterLost = this.groups.some((g) => g.failed && (g.surfacePasses | g.scatterPasses) !== 0);
+    if (shadows && !casterLost) {
+      this.worldDepth = new WorldDepth(
+        this.renderer,
+        this.cull,
+        this.instances,
+        this.depthGroups(),
+        this.transforms,
+        clusterCount,
+        this.stride,
+        // A slot for every map one submit may draw.
+        WORLD_SHADOW_MAPS.length,
+      );
     }
     const generation = this.generation;
     void Promise.all(ready).then((oks) => {
@@ -493,7 +584,7 @@ export class WorldBlocks {
     at: CutCursor,
     cut: CutSurface[],
   ): void {
-    group.arrays = group.program.vertex.attributes.map((a) => this.attributeArray(group, a.name, a.type, vertexTotal));
+    group.arrays = group.attributes.map((a) => this.attributeArray(group, a.name, a.type, vertexTotal));
     let vertex = vertexBase;
     for (const s of group.members) {
       const surface = this.surfaces[s];
@@ -502,7 +593,7 @@ export class WorldBlocks {
       const local = geo.indices;
       for (let i = 0; i < local.length; i++) indices[at.index + i] = local[i] + vertex;
       const clusters = cutClusters(positions, local, geo.colors, surface.pieces, this.options.triangles);
-      cut.push({ surface: s, group: g, base: at.index, c: clusters });
+      cut.push({ surface: s, group: g, base: at.index, c: clusters, passes: surface.passes });
       at.cluster += clusters.length;
       at.index += local.length;
       vertex += positions.length / 3;
@@ -533,7 +624,7 @@ export class WorldBlocks {
 
   /** Re-copies every material's block from its recipe — after its owner rewrote one. */
   writeMaterials(): void {
-    for (const g of this.groups) g.material.block.write(g.material.recipe.values);
+    for (const { material } of this.groups) material?.block.write(material.recipe.values);
   }
 
   /** Drops every surface, group and material: the map they were is gone. */
@@ -541,12 +632,15 @@ export class WorldBlocks {
     this.generation++;
     for (const g of this.groups) {
       for (const b of g.arrays) b.destroy();
-      g.material.block.destroy();
+      g.material?.block.destroy();
     }
     this.transforms?.destroy();
     this.transforms = null;
     this.unhook?.();
     this.unhook = null;
+    // Ahead of the culls, whose tables its views read.
+    this.worldDepth?.dispose();
+    this.worldDepth = null;
     this.cull?.dispose();
     this.cull = null;
     this.instances?.dispose();
@@ -560,6 +654,7 @@ export class WorldBlocks {
     this.groups.length = 0;
     this.groupOf.blocks.clear();
     this.groupOf.landform.clear();
+    this.groupOf.casters.clear();
     this.drawnLast = 0;
   }
 
@@ -570,17 +665,20 @@ export class WorldBlocks {
   /**
    * The group of `recipe` in `layer`, made on its first surface or part. One
    * recipe's groups at the two layers share its program (assembled once a
-   * variant) and each own a material slot, as each owns its arrays.
+   * variant) and each own a material slot, as each owns its arrays. The
+   * casters are one group, of no recipe.
    */
-  private groupFor(recipe: CelRecipe, layer: WorldLayer): Group {
+  private groupFor(recipe: CelRecipe | null, layer: WorldLayer): Group {
     if (this.cull) throw new Error("world blocks: a surface added after the map was cut");
     const of = this.groupOf[layer];
     let group = of.get(recipe);
     if (!group) {
+      const program = recipe ? this.programOf(recipe.defines) : null;
       group = {
         layer,
-        material: this.materialOf(recipe),
-        program: this.programOf(recipe.defines),
+        material: recipe ? this.materialOf(recipe) : null,
+        program,
+        attributes: program ? program.vertex.attributes : CASTER_ATTRIBUTES,
         members: [],
         instanced: [],
         withheld: null,
@@ -591,6 +689,8 @@ export class WorldBlocks {
         scattered: false,
         built: null,
         failed: false,
+        surfacePasses: 0,
+        scatterPasses: 0,
       };
       of.set(recipe, group);
       this.groups.push(group);
@@ -638,7 +738,7 @@ export class WorldBlocks {
         for (const p of group.instanced) drawn += p.geometry.indices.length * scatter.sets[p.set].scales.length;
         if (drawn !== cutIndices) {
           console.error(
-            `world blocks: [${group.material.recipe.defines.join("+")}] cut ${cutIndices} scatter indices ` +
+            `world blocks: ${labelOf(group)} cut ${cutIndices} scatter indices ` +
               `out of its blocks and draws ${drawn} as instances (BABYLON_EXIT.md X3.4b)`,
           );
         }
@@ -671,7 +771,7 @@ export class WorldBlocks {
     group.failed = true;
     group.instanced = [];
     console.error(
-      `world blocks: [${group.material.recipe.defines.join("+")}] ${why}; ` +
+      `world blocks: ${labelOf(group)} ${why}; ` +
         `its ${group.members.length} surfaces go back to Babylon`,
       ...(err === undefined ? [] : [err]),
     );
@@ -682,7 +782,7 @@ export class WorldBlocks {
   private attributeArray(group: Group, name: string, type: string, vertexTotal: number): GPUBuffer {
     const floats = PULLED_ATTRIBUTES[type].floats;
     const buffer = this.renderer.device.createBuffer({
-      label: `world blocks: [${group.material.recipe.defines.join("+")}] ${name}`,
+      label: `world blocks: ${labelOf(group)} ${name}`,
       size: Math.max(16, vertexTotal * floats * 4),
       usage: GPUBufferUsage.STORAGE,
       mappedAtCreation: true,
@@ -706,31 +806,34 @@ export class WorldBlocks {
    * scatter twin.
    */
   private geometryOf(group: Group): void {
+    const program = group.program!;
+    const defines = group.material!.recipe.defines;
     const buffers: Record<string, GPUBuffer> = { transforms: this.transforms! };
-    group.program.vertex.attributes.forEach((a, k) => {
+    group.attributes.forEach((a, k) => {
       buffers[a.from] = group.arrays[k];
     });
-    const stride = group.program.stride;
+    const stride = program.stride;
     if (stride !== null) {
       buffers.scatterList = this.instances!.list;
       buffers.scatterSource = this.instances!.source;
     }
-    const label = `world blocks: [${group.material.recipe.defines.join("+")}] geometry`;
+    const label = `world blocks: ${labelOf(group)} geometry`;
     const entries = celGeometry(stride);
-    group.geometry = new HostBindGroup(this.renderer.device, label, entries, group.material.recipe.defines, buffers);
+    group.geometry = new HostBindGroup(this.renderer.device, label, entries, defines, buffers);
     // No textures: resolved once, whole for good.
     group.geometry.refresh(this.renderer.host, {});
   }
 
   /** Asks for a group's pipeline; a failure hands every member back, at once. */
   private ask(group: Group): void {
-    const recipe = group.material.recipe;
+    const recipe = group.material!.recipe;
+    const program = group.program!;
     const generation = this.generation;
     this.renderer.pipelines
       .get({
-        vertex: group.program.vertex,
+        vertex: program.vertex,
         vertexEntry: "main",
-        fragment: group.program.fragment,
+        fragment: program.fragment,
         fragmentEntry: "main",
         targets: FRAME_TARGETS,
         state: recipe.depthBias === 0 ? undefined : { depthBias: recipe.depthBias },
@@ -775,6 +878,28 @@ export class WorldBlocks {
     return { recipe, block, group };
   }
 
+  /**
+   * Each group as the shadow maps draw it (`WorldDepth`), in group order: a
+   * group handed back draws in none, its arrays never uploaded.
+   */
+  private depthGroups(): DepthGroup[] {
+    const out: DepthGroup[] = [];
+    this.groups.forEach((group, g) => {
+      if (group.failed) return;
+      const positions = group.arrays[group.attributes.findIndex((a) => a.name === "position")];
+      out.push({
+        label: labelOf(group),
+        positions,
+        indexBase: group.indexBase,
+        indexCount: group.indexCount,
+        surfacePasses: group.surfacePasses,
+        scatterRange: group.scattered ? g : -1,
+        scatterPasses: group.scatterPasses,
+      });
+    });
+    return out;
+  }
+
   /** As the main pass begins: this frame's culls, ahead of the draws. */
   private readonly prepare = (
     frame: FrameUniforms,
@@ -782,8 +907,9 @@ export class WorldBlocks {
     timing: PassTiming | null,
   ): void => {
     if (!this.culling) return;
-    this.cull?.dispatch(frame, encoder, timing);
-    this.instances?.dispatch(frame, encoder, timing);
+    frameInputs(frame, this.gate, this.inputs);
+    this.cull?.dispatch(this.inputs, encoder, timing);
+    this.instances?.dispatch(this.inputs, encoder, timing);
   };
 
   /**
@@ -808,8 +934,8 @@ export class WorldBlocks {
    */
   private bind(pass: GPURenderPassEncoder, ctx: FrameContext, group: Group): boolean {
     const built = group.built;
-    if (!built || group.failed || !group.geometry) return false;
     const material = group.material;
+    if (!built || group.failed || !group.geometry || !material) return false;
     material.group.refresh(this.renderer.host, material.recipe.textures);
     const frame = ctx.frameGroup(built.groups[0]);
     const own = material.group.get(built.groups[1]);
@@ -834,7 +960,7 @@ export class WorldBlocks {
    * shades. Measured at X3.5 on Cinderhaven (`BABYLON_EXIT.md`): about half
    * the landform's rise at a road crossing, most of it in the town.
    */
-  private drawClusters(pass: GPURenderPassEncoder, ctx: FrameContext, cull: ClusterCull, layer: WorldLayer): number {
+  private drawClusters(pass: GPURenderPassEncoder, ctx: FrameContext, cull: ClusterCull, layer: "blocks" | "landform"): number {
     let drawn = 0;
     const groups = this.groups;
     const n = groups.length;
@@ -842,8 +968,9 @@ export class WorldBlocks {
     // Twice over the groups: the biased ones on the first lap, the rest on the second.
     for (let lap = 0; lap < 2 * n; lap++) {
       const group = groups[lap % n];
-      if (group.layer !== layer) continue;
-      if ((group.material.recipe.depthBias !== 0) !== (lap < n)) continue;
+      const material = group.material;
+      if (group.layer !== layer || !material) continue;
+      if ((material.recipe.depthBias !== 0) !== (lap < n)) continue;
       // A group whose surfaces were all scatter draws only its list.
       if (group.indexCount === 0 || !this.bind(pass, ctx, group)) continue;
       pass.drawIndexed(group.indexCount, 1, group.indexBase, 0, 0);
@@ -867,9 +994,14 @@ export class WorldBlocks {
   }
 }
 
+/** How a group is named in a label or a message: its recipe's defines, or the casters. */
+function labelOf(group: Group): string {
+  return group.material ? `[${group.material.recipe.defines.join("+")}]` : "[casters]";
+}
+
 /** The first attribute `group`'s variant reads that `geometry` lacks, or null; an absent `uv` reads 0. */
 function missingAttribute(group: Group, geometry: SurfaceArrays): string | null {
-  for (const a of group.program.vertex.attributes) {
+  for (const a of group.attributes) {
     if (!geometry[SOURCE[a.name]] && a.name !== "uv") return a.name;
   }
   return null;
@@ -892,9 +1024,9 @@ function clusterWords(cut: readonly CutSurface[], blocks: readonly BlockBox[], b
   const f = new Float32Array(words);
   const u = new Uint32Array(words);
   let k = 0;
-  for (const { surface, group, base, c } of cut) {
+  for (const { surface, group, base, c, passes } of cut) {
     const block = blockIds.get(blocks[surface])!;
-    for (const cl of c) writeCluster(f, u, k++, cl, base + cl.indexStart, [group, block, surface, cl.piece]);
+    for (const cl of c) writeCluster(f, u, k++, cl, base + cl.indexStart, [group, block, surface, cl.piece], passes);
   }
   return words;
 }

@@ -38,9 +38,23 @@ import {
 } from "@babylonjs/core";
 import { hostTexture } from "../render/babylonSeam";
 import type { FrameTextures, FrameUniforms } from "../render/frame";
+import type { OwnTexture } from "../render/HostBindGroup";
 import { MAX_POINT_LIGHTS } from "./wgsl/celSurface";
 
 export class ShadowBindings {
+  /**
+   * The world's four maps as OUR renderer binds them, while it owns them
+   * (`render/WorldShadows.ts`, `BABYLON_EXIT.md` X3.6a): the textures the
+   * fields below are Babylon's wrapped views of, handed to our frame as
+   * themselves rather than through those views. Null while a map is
+   * Babylon's own, or off.
+   */
+  private readonly own: {
+    shadowMap: OwnTexture | null;
+    nearShadowMap: OwnTexture | null;
+    flashMap: OwnTexture | null;
+    foliageMap: OwnTexture | null;
+  } = { shadowMap: null, nearShadowMap: null, flashMap: null, foliageMap: null };
   // Shadow-map state, pushed onto every cel material as it is created.
   private shadowMap: BaseTexture | null = null;
   private shadowMatrix = Matrix.Identity();
@@ -162,16 +176,18 @@ export class ShadowBindings {
    * The maps `applyShadow` binds, as our renderer's frame textures — off the
    * same fields, so a map replaced here is replaced there on the next frame;
    * one never published is null, which draws nothing, as a Babylon material
-   * with that sampler unbound draws nothing.
+   * with that sampler unbound draws nothing. A map our renderer owns is
+   * handed as its own texture, never as Babylon's wrapped view of it.
    */
   fillFrameTextures(out: FrameTextures): void {
-    out.shadowMap = this.shadowMap && hostTexture(this.shadowMap);
-    out.nearShadowMap = this.nearShadowMap && hostTexture(this.nearShadowMap);
+    const own = this.own;
+    out.shadowMap = own.shadowMap ?? (this.shadowMap && hostTexture(this.shadowMap));
+    out.nearShadowMap = own.nearShadowMap ?? (this.nearShadowMap && hostTexture(this.nearShadowMap));
     out.bodyShadowMap = this.bodyShadowMap && hostTexture(this.bodyShadowMap);
     out.localAtlasMap = this.localAtlasMap && hostTexture(this.localAtlasMap);
-    out.flashMap = this.flashMap && hostTexture(this.flashMap);
+    out.flashMap = own.flashMap ?? (this.flashMap && hostTexture(this.flashMap));
     out.cloudShadowMap = hostTexture(this.cloudShadowMap);
-    out.foliageMap = this.foliageMap && hostTexture(this.foliageMap);
+    out.foliageMap = own.foliageMap ?? (this.foliageMap && hostTexture(this.foliageMap));
   }
 
   /**
@@ -263,11 +279,14 @@ export class ShadowBindings {
   }
 
   /**
-   * Binds the ShadowSystem's depth map to every cel material. Called once at
-   * startup — the texture object is stable even though its contents re-render.
+   * Binds the ShadowSystem's depth map to every cel material — once a rung,
+   * and once each time the map changes hands; the texture object is stable
+   * while its contents re-render. `own` is the same texture as our renderer
+   * holds it, when the map is our renderer's.
    */
-  setShadowMap(map: BaseTexture): void {
+  setShadowMap(map: BaseTexture, own: OwnTexture | null = null): void {
     this.shadowMap = map;
+    this.own.shadowMap = own;
     this.eachShadowReader((mat) => mat.setTexture("shadowMap", map));
   }
 
@@ -282,8 +301,9 @@ export class ShadowBindings {
    * 1x1 on a rung without one, read through a matrix that puts every receiver
    * OUTSIDE its window so the far map answers alone.
    */
-  setNearShadowMap(map: BaseTexture): void {
+  setNearShadowMap(map: BaseTexture, own: OwnTexture | null = null): void {
     this.nearShadowMap = map;
+    this.own.nearShadowMap = own;
     this.eachShadowReader((mat) => mat.setTexture("nearShadowMap", map));
   }
 
@@ -352,9 +372,10 @@ export class ShadowBindings {
     this.flashColor.copyFrom(color).scaleInPlace(Math.max(0, amount));
   }
 
-  /** The lightning's own depth map, bound once per rung like the others. */
-  setFlashMap(map: BaseTexture): void {
+  /** The lightning's own depth map, bound once per rung like the others, and `own` as `setShadowMap`'s. */
+  setFlashMap(map: BaseTexture, own: OwnTexture | null = null): void {
     this.flashMap = map;
+    this.own.flashMap = own;
     this.eachShadowReader((mat) => mat.setTexture("flashMap", map));
   }
 
@@ -415,8 +436,9 @@ export class ShadowBindings {
    * Pushed over the CACHE and not over `eachShadowReader`: grass and water
    * carry no translucency and do not declare it.
    */
-  setFoliageMap(map: BaseTexture): void {
+  setFoliageMap(map: BaseTexture, own: OwnTexture | null = null): void {
     this.foliageMap = map;
+    this.own.foliageMap = own;
     this.cels.forEach((mat) => mat.setTexture("foliageMap", map));
   }
 

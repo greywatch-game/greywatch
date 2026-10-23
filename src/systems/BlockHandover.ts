@@ -1,11 +1,14 @@
 /**
  * systems/BlockHandover.ts — The map's BLOCKS, and since X3.5 its LANDFORM,
  * handed from Babylon's main pass to our renderer's (`BABYLON_EXIT.md` X3.3,
- * X3.5): which surfaces are taken, their arrays handed over on the way past
- * the build, and the map cut once it is filed.
+ * X3.5), and since X3.6a its shadow CASTERS to our renderer's shadow maps:
+ * which surfaces are taken, their arrays handed over on the way past the
+ * build, and the map cut once it is filed.
  * Owns: `BlockHandover` — our renderer's `WorldBlocks`, the taken meshes in
- * surface order, which of them were handed back, the material epoch last
- * copied, and the build's scatter FIELD until the map is cut (X3.4b).
+ * surface order, which of them were handed back and which are held for the
+ * shadow maps alone, which of them cast, whether the handover holds every
+ * caster the map has, the material epoch last copied, and the build's
+ * scatter FIELD until the map is cut (X3.4b).
  * Invariants: a surface is TAKEN only if our pipeline draws it exactly as
  * Babylon would — block-merged or the LANDFORM (`WorldSurface.landform`: the
  * floor's patches, the rim's runs and the map-wide road merge, which the
@@ -45,21 +48,34 @@
  * group that draws them so — Babylon's copy of them stays in its meshes for
  * every other pass, until X3.6 — while a recipe our side does not take is
  * drawn whole by Babylon, scatter and all, and a group that fails goes back
- * whole, scatter and all.
+ * whole, scatter and all. THE SHADOW MAPS ARE TAKEN WHOLE OR NOT AT ALL
+ * (X3.6a): a surface CASTS as Babylon's generator would have drawn it — not
+ * `noShadowCaster`, not blended — into the world's maps (`PASS_CASTS`), and
+ * a translucent SOLID into the foliage's too (`PASS_SOLID`); a caster the
+ * main pass does not take is held for the shadow maps alone
+ * (`WorldBlocks.addCaster`: its positions, at identity, never `updatable`);
+ * and only when EVERY caster is held, taken or so, are the casters handed
+ * to `WorldShadows` — one we cannot hold leaves the whole map's shadows to
+ * Babylon's generators, and a caster handed back later, or a refused main
+ * pass, LOSES them to Babylon for the rest of the map
+ * (`WorldShadows.lose`), so no caster is ever drawn by neither side or in
+ * half a map.
  * Never: draws, or reads a material's uniforms — a material reaches our side
  * as its recipe; writes a property on a mesh.
  * Contract: `docs/rendering.md`, "Our renderer's frame";
- * `BABYLON_EXIT.md` X3.3a, X3.3b, X3.3c, X3.4, X3.4b, X3.5, X3.5b.
+ * `BABYLON_EXIT.md` X3.3a, X3.3b, X3.3c, X3.4, X3.4b, X3.5, X3.5b, X3.6a.
  */
-import type { AbstractMesh, Mesh } from "@babylonjs/core";
+import type { AbstractMesh, Material, Mesh } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { type BlockBox, type CullDiagnostics, NO_DIAGNOSTICS } from "../render/ClusterCull";
 import type { Renderer } from "../render/Renderer";
+import { PASS_CASTS, PASS_SOLID } from "../render/wgsl/clusterCull";
 import { WorldBlocks } from "../render/WorldBlocks";
+import type { WorldShadows } from "../render/WorldShadows";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { ScatterField } from "../world/scatterVariants";
 import type { WorldGeometry, WorldSurface } from "../world/worldGeometry";
-import type { WorldCulling } from "./WorldCulling";
+import { NO_REACH, type WorldCulling } from "./WorldCulling";
 
 /** The layer mask a mesh is born with, which every camera in the game sees. */
 const DEFAULT_LAYER_MASK = 0x0fffffff;
@@ -72,6 +88,12 @@ export class BlockHandover {
   private landform = new Set<Mesh>();
   /** Of those, the ones handed back to Babylon's main pass. */
   private back = new Set<Mesh>();
+  /** Of those, the ones held for the shadow maps alone (`WorldBlocks.addCaster`), which no main pass of ours draws. */
+  private castersOnly = new Set<Mesh>();
+  /** The surfaces that cast, by index — one of them handed back loses the shadow maps. */
+  private casting = new Set<number>();
+  /** Every caster of the map built so far is held, taken or for the shadow maps alone. */
+  private allCasters = true;
   /** The whole map was handed back, its main pass refused. */
   private handedBack = false;
   /** `CelMaterialFactory.materialEpoch` as last copied; -1 is never. */
@@ -87,6 +109,8 @@ export class BlockHandover {
     renderer: Renderer,
     private readonly mats: CelMaterialFactory,
     private readonly culling: WorldCulling,
+    /** Our renderer's shadow maps, handed the casters when every one is held. */
+    private readonly shadows: WorldShadows,
     /** Our culls' diagnostics — `?nocull`, `?nofrustum`, `?cullcheck` (`core/urlOverrides.ts`). */
     diagnostics: CullDiagnostics = NO_DIAGNOSTICS,
   ) {
@@ -103,17 +127,12 @@ export class BlockHandover {
 
   /**
    * The build's `BuildOptions.onSurface`: takes `surface` if our side draws it
-   * — see the header for the test — and hands its arrays over while they can
-   * still be read.
+   * — see the header for the test — or holds it for the shadow maps alone if
+   * it casts, and hands its arrays over while they can still be read.
    */
   readonly onSurface = (surface: WorldSurface, mesh: Mesh): void => {
     const { part } = surface;
-    if ((surface.block === null && !surface.landform) || surface.updatable) return;
-    // Drawn in group 0's slot, at the world's own origin, by every camera.
-    if (mesh.renderingGroupId !== 0 || mesh.parent !== null) return;
-    if (mesh.layerMask !== DEFAULT_LAYER_MASK) return;
-    const recipe = this.mats.celRecipe(part.material);
-    if (!recipe) return;
+    const passes = this.passesOf(part.metadata, part.material, mesh);
     const p = part.position;
     const r = part.rotation;
     const k = part.scaling;
@@ -121,14 +140,66 @@ export class BlockHandover {
       p.x === 0 && p.y === 0 && p.z === 0 &&
       r.x === 0 && r.y === 0 && r.z === 0 &&
       k.x === 1 && k.y === 1 && k.z === 1 &&
-      part.rotationQuaternion === null;
-    const g = part.geometry;
-    if (!atIdentity || !g.normals || !g.colors) return;
-    if (recipe.defines.includes("CEL_PALETTE") && !g.uvs2) return;
-    const at = this.blocks.add(part.name, g, recipe, surface.pieces, surface.landform);
+      part.rotationQuaternion === null &&
+      mesh.parent === null;
+    let at = this.takeForMainPass(surface, mesh, atIdentity, passes);
+    if (at === null) {
+      at = this.holdCaster(surface, atIdentity, passes);
+      // A caster our side can hold in neither way: the map's shadows stay Babylon's.
+      if (at === null) {
+        if (passes !== 0) this.allCasters = false;
+        return;
+      }
+      this.castersOnly.add(mesh);
+    }
     this.meshes[at] = mesh;
+    if (passes !== 0) this.casting.add(at);
     if (surface.landform) this.landform.add(mesh);
   };
+
+  /**
+   * `surface` added to the main pass's blocks if our pipeline draws it exactly
+   * as Babylon would — see the header for the test — and its index; else null.
+   */
+  private takeForMainPass(surface: WorldSurface, mesh: Mesh, atIdentity: boolean, passes: number): number | null {
+    const { part } = surface;
+    if ((surface.block === null && !surface.landform) || surface.updatable) return null;
+    // Drawn in group 0's slot, at the world's own origin, by every camera.
+    if (mesh.renderingGroupId !== 0 || !atIdentity) return null;
+    if (mesh.layerMask !== DEFAULT_LAYER_MASK) return null;
+    const recipe = this.mats.celRecipe(part.material);
+    if (!recipe) return null;
+    const g = part.geometry;
+    if (!g.normals || !g.colors) return null;
+    if (recipe.defines.includes("CEL_PALETTE") && !g.uvs2) return null;
+    return this.blocks.add(part.name, g, recipe, surface.pieces, surface.landform, passes);
+  }
+
+  /**
+   * `surface`, a caster the main pass does not take, held for the shadow maps
+   * alone if its positions are world positions and nothing rewrites them —
+   * a block merge, at identity, never `updatable` — and its index; else null.
+   */
+  private holdCaster(surface: WorldSurface, atIdentity: boolean, passes: number): number | null {
+    if (passes === 0 || surface.block === null || surface.updatable || !atIdentity) return null;
+    return this.blocks.addCaster(surface.part.name, surface.part.geometry, surface.pieces, passes);
+  }
+
+  /**
+   * The shadow passes a surface or a part is drawn in, as Babylon's
+   * generators would have been handed it (`ShadowSystem.casts`): none for a
+   * `noShadowCaster` one or one its generator skips as blended
+   * (`transparencyShadow` off), the world's maps for the rest, and the
+   * foliage's too for a translucent SOLID (`CelMaterialFactory.isSolid`).
+   * The generators' own statement of it is `ShadowSystem.casts`, which the
+   * blend test is not in because a generator makes it itself: the two must
+   * agree, or a map's shadows differ by who draws them.
+   */
+  private passesOf(metadata: { noShadowCaster?: boolean } | null | undefined, material: Material | null, mesh: Mesh | null): number {
+    if (metadata?.noShadowCaster) return 0;
+    if (material && mesh && material.needAlphaBlendingForMesh(mesh)) return 0;
+    return PASS_CASTS | (this.mats.isSolid(material) ? PASS_SOLID : 0);
+  }
 
   /**
    * The build's `BuildOptions.onScatter`: the scatter as our side draws it,
@@ -158,7 +229,10 @@ export class BlockHandover {
           // draw for want of an array hands its whole group back
           // (`WorldBlocks.addInstanced`), never skipped while its pieces are cut.
           const recipe = this.mats.celRecipe(part.material);
-          if (recipe) this.blocks.addInstanced(s, part.name, part.geometry, recipe);
+          if (recipe) {
+            const passes = this.passesOf(part.metadata, part.material, null);
+            this.blocks.addInstanced(s, part.name, part.geometry, recipe, passes);
+          }
         }
       });
     }
@@ -166,8 +240,14 @@ export class BlockHandover {
     this.handedBack = false;
     this.epoch = -1;
     this.reported = false;
-    this.take(meshes);
-    const boxes: BlockBox[] = meshes.map((mesh) => this.culling.reachBoxOf(mesh));
+    this.fileTaken(meshes);
+    // A caster held for the shadow maps alone is not taken, so the cull has no
+    // reach box for it — and needs none: no main pass draws it, and a shadow
+    // map's cull measures no reach.
+    const boxes: BlockBox[] = meshes.map((mesh) =>
+      this.castersOnly.has(mesh) ? NO_REACH : this.culling.reachBoxOf(mesh),
+    );
+    const holdsAll = this.allCasters && this.casting.size > 0;
     this.blocks.finish(
       boxes,
       field
@@ -176,7 +256,14 @@ export class BlockHandover {
             sets: field.sets.map((set) => ({ matrices: set.matrices, scales: set.scales })),
           }
         : null,
+      holdsAll,
     );
+    // The cut may already have handed casters back — a group it could not
+    // draw, or the whole map past the device's limits — before there were
+    // casters to lose: then the map's shadows were never ours to hand over.
+    let whole = holdsAll;
+    for (const at of this.casting) if (this.back.has(this.meshes[at])) whole = false;
+    this.shadows.setCasters(whole ? this.blocks.depth : null);
   }
 
   /**
@@ -192,22 +279,30 @@ export class BlockHandover {
     handedBack: number;
   } {
     const { surfaces, clusters, groups } = this.blocks.count;
+    // The main pass's: a caster held for the shadow maps alone is not taken from it.
+    const taken = surfaces - this.castersOnly.size;
+    let back = 0;
+    for (const mesh of this.back) if (!this.castersOnly.has(mesh)) back++;
     return {
-      taken: surfaces,
+      taken,
       clusters,
       groups,
       drawn: this.blocks.drawn,
-      handedBack: this.handedBack ? surfaces : this.back.size,
+      handedBack: this.handedBack ? taken : back,
     };
   }
 
-  /** The map is going: every surface, buffer and material of ours with it. */
+  /** The map is going: every surface, buffer and material of ours with it, and the shadow maps' casters first. */
   clear(): void {
+    this.shadows.setCasters(null);
     this.blocks.clear();
     this.field = null;
     this.meshes = [];
     this.landform = new Set();
     this.back = new Set();
+    this.castersOnly = new Set();
+    this.casting = new Set();
+    this.allCasters = true;
     this.handedBack = false;
   }
 
@@ -227,14 +322,21 @@ export class BlockHandover {
   private readonly failed = (surfaces: readonly number[]): void => {
     if (this.handedBack) return;
     for (const at of surfaces) this.back.add(this.meshes[at]);
-    this.take(this.meshes.filter((m) => !this.back.has(m)));
+    // A caster going back is Babylon's to draw into a map: so is every other.
+    if (surfaces.some((at) => this.casting.has(at))) this.shadows.lose();
+    this.fileTaken(this.meshes.filter((m) => !this.back.has(m)));
   };
 
-  /** Tells the cull `meshes` are ours, each as the block or the landform the build said it was. */
-  private take(meshes: readonly Mesh[]): void {
+  /**
+   * Tells the cull `meshes` are ours, each as the block or the landform the
+   * build said it was — but for those held for the shadow maps alone, which
+   * the main pass is never told of.
+   */
+  private fileTaken(meshes: readonly Mesh[]): void {
+    const drawn = meshes.filter((m) => !this.castersOnly.has(m));
     this.culling.setTaken(
-      meshes.filter((m) => !this.landform.has(m)),
-      meshes.filter((m) => this.landform.has(m)),
+      drawn.filter((m) => !this.landform.has(m)),
+      drawn.filter((m) => this.landform.has(m)),
     );
   }
 
@@ -248,6 +350,7 @@ export class BlockHandover {
   private readonly refused = (): void => {
     if (this.handedBack || this.meshes.length === 0) return;
     this.handedBack = true;
+    this.shadows.lose();
     this.blocks.stop();
     this.culling.setTaken([], []);
     console.error(
@@ -257,9 +360,10 @@ export class BlockHandover {
 
   /**
    * Once a frame as the main pass begins: a material rewritten by its owner
-   * is copied again, and a DEV build checks that no taken mesh has been
-   * switched, hidden or faded — Babylon would stop drawing it, or draw it
-   * blended, and our side, which reads no node, would not follow.
+   * is copied again, and a DEV build checks that no mesh of ours — taken, or
+   * held for the shadow maps alone — has been switched, hidden or faded:
+   * Babylon would stop drawing or casting it, or draw it blended, and our
+   * side, which reads no node, would not follow.
    */
   private readonly frame = (): void => {
     if (this.mats.materialEpoch !== this.epoch) {
@@ -274,7 +378,7 @@ export class BlockHandover {
       if (mesh.isVisible && mesh.visibility === 1 && mesh.isEnabled()) continue;
       this.reported = true;
       console.error(
-        `BlockHandover: "${mesh.name}" was switched off, hidden or faded after it was taken; our renderer still draws it opaque (BABYLON_EXIT.md X3.3b)`,
+        `BlockHandover: "${mesh.name}" was switched off, hidden or faded after it was taken; our renderer still draws it (BABYLON_EXIT.md X3.3b, X3.6a)`,
       );
       return;
     }

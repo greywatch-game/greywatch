@@ -123,7 +123,7 @@ import type { GameMap } from "../world/MapBuilder";
  * is none, and a box from minus to plus the largest float leaves every
  * distance to it 0.
  */
-const NO_REACH: BlockBox = {
+export const NO_REACH: BlockBox = {
   minX: -F32_MAX,
   minY: -F32_MAX,
   minZ: -F32_MAX,

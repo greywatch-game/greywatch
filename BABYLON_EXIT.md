@@ -1903,7 +1903,7 @@ plain draw and, with scatter, its one indirect draw, a pass.
   lightning flash map (`ShadowSystem`, today a `ShadowGenerator` with a
   `DirectionalLight` per map). The texel snap (`core/shadowWindow.ts`), the
   back-face recording and "only re-render when the snapped focus moves" all
-  hold.
+  hold **LANDED** (below).
 - **X3.6b — the lamps' atlas:** `LocalShadows`' static faces.
 - **X3.6c — the reflection bake:** `ReflectionSystem`'s probes, which draw the
   world from each probe with the probe's eye passed explicitly. That removes
@@ -1914,6 +1914,136 @@ plain draw and, with scatter, its one indirect draw, a pass.
 
 - **Verify, each:** the bank; X0.3; and for X3.6c, the probe-eye harness that
   measured 242b986, run again.
+
+**X3.6a landed** (2026-10-23).
+- **What it is.** The world's four directional maps — both cascades, the
+  foliage's front-face map and the lightning's — are textures our renderer
+  OWNS (`render/WorldShadows.ts`) and draws the casters into
+  (`render/WorldDepth.ts`, the depth program `render/celDepth.ts`) whenever
+  the handover holds EVERY caster a map has; Babylon's readers (the cel
+  materials, the grass, the water, the volumetrics) sample a wrapped view
+  (`WebGPUEngine.wrapWebGPUTexture`), and our frame binds the texture itself
+  (`OwnTexture`) — rule 5 both ways. `ShadowSystem` keeps the lights, the
+  windows, the snap, the hold and the strike, and hands each map's matrix
+  over; its `ShadowGenerator`s are the path for an editor build,
+  `?babylonworld`, a map with a caster the handover cannot hold, and a map
+  whose casters are LOST mid-map (a group's or a cull's failure, a refused
+  main pass: `WorldShadows.lose`, handed over after the task in hand because
+  a refusal lands inside a render whose unsubmitted commands still hold the
+  textures).
+- **Every caster held, two ways.** A surface the main pass takes casts from
+  its own group; a caster it does not take — the emissive palette's merges,
+  which keep no recipe — is held for the shadow maps ALONE
+  (`WorldBlocks.addCaster`: positions only, one "casters" group cut after
+  every other, which the main pass's cull leaves out as a tail and no main
+  pass draws). Which surfaces cast is Babylon's generator's rule, stated
+  once a side (`BlockHandover.passesOf`, `ShadowSystem.casts`): not
+  `noShadowCaster`, not blended; `PASS_SOLID` too for a translucent solid.
+  Every shipped map holds every caster: 78 casting surfaces on Hollowmere
+  (24 of them emissive, held alone), 353 on Greyfen (9), 154 on Coldharbour
+  (46), 108 on Harrowmead (4), 171 on Sarab (6), 179 on Cinderhaven (49),
+  170 on Kurenai (4).
+- **A map is a second VIEW of the main pass's culls.** `ClusterCull` and
+  `InstanceCull` split into a map's TABLES, uploaded once by the main pass's
+  view, and per-view outputs; a cull reads its inputs as data
+  (`CullInputs`: a view-projection, an eye, the reach, the size gate, the
+  sway, a PASS MASK), and each cluster's record carries the passes it is
+  drawn in (`sway.z`; the uniform block grew a tenth `vec4u` for the mask,
+  which the main pass's view sets to 0 and never tests). The shadow view is
+  told the light's matrix and eye, no reach, no gate and no sway — Babylon's
+  depth pass culled nothing but the window and never swayed a vertex — and
+  serves all four maps in one submit through a staging SLOT a map
+  (`CullUniform`), each map's draws reading the indices its own dispatch
+  wrote. Faces by the generator's rule (the back for the far, near and
+  flash maps, the front for the foliage's).
+- **Babylon's number, at a quarter of the memory.** The depth is the light's
+  clip z under the half-z range from a matrix built by `getTransformMatrix`'s
+  own helpers in its order (`ShadowSystem.lightTransform`), drawn upside down
+  as every render target is, into `r16float` where Babylon's was
+  `rgba16float` with three channels nobody read; the `depth32float`
+  attachments are one a size, shared. A map is drawn only when
+  `ShadowSystem` asks, on the next frame our renderer prepares, into the
+  encoder Babylon submits ahead of every pass of its own; the probes' bake
+  waits on `ShadowSystem.ready` beside `gi.converged`.
+- **Measured.**
+  - **The maps themselves, against the generators** (a scratch readback of
+    both sides' maps at each map's menu vantage in one page, after the
+    review's fixes): texels differing, far / near / foliage —
+    Hollowmere 7 / 2 / 0 (of 4.2 M, 4.2 M and 1 M), Greyfen 837 / 357 / 155,
+    Coldharbour 0 / 2 / 0, Harrowmead 66 / 14 / 21, Sarab 10 / 2 / 0,
+    Cinderhaven 3 / 6 / 0, Kurenai 63 / 72 / 8 — Greyfen's far map the worst
+    at 0.02% of its texels.
+    Coldharbour's far map is identical; what differs is a triangle's edge
+    across a texel's centre, worst on Greyfen, whose scatter is 87% of the
+    world: its instances are moved by their matrices on the GPU where
+    Babylon's merged copy was moved on the CPU.
+  - **The bank, against a BEFORE kept at a78a4eb in the same session**
+    (`--check --keep` both sides, graded at `CHECK_TOLERANCE`): **61 of 61
+    within the floor, 37 byte-identical**, the worst Greyfen's `crossing`
+    (0.0088% of pixels, mean 0.0004/255), `menu`, `canopy`, `marsh` and
+    `treeline` (under 0.01% each), and Harrowmead's `borderland`. No
+    console or page error. The bank, the census and `shaders.mjs` ran before the
+    review's fixes; the readback above, taken after them, matches its own
+    reading before them texel for texel, and the gate and the benchmark ran
+    on the committed code but for the culls' buffer labels.
+  - **`census.mjs --against`** the BEFORE: equal on all seven maps (384,
+    226, 829, 891, 673, 228, 134) — the step moves no main-pass draw.
+  - **`shaders.mjs`**: clean on seven maps, our builds 15/15 and 19/19 (the
+    depth pipelines, plain and scatter, by faces, among them). **`gate.mjs`**:
+    clean on seven.
+  - **The paths no instrument covers**, forced in a scratch page on
+    Hollowmere: a rung change to `low` and back while the maps are ours
+    (re-made, redrawn), a strike (the flash map drawn), a forced LOSS (the
+    four generators built, `depthMap` theirs), a second round after it (ours
+    again, no generator), and the editor (`F2`: the generators). No page or
+    console error.
+  - **X0.3 on the desktop** (`bench.mjs greyfen harrowmead sarab --max --gpu --runs 3`,
+    3440x1440, the BEFORE at a78a4eb in the same session, the canonical fight
+    hashes on every run, every segment within 3.1%): the mean frame new /
+    old 0.997-1.000 on the vantages, 0.998-1.002 on the path and 0.929-0.972
+    in the fights. Babylon's draw counter falls where its depth passes went —
+    the paths 97 to 38 (Greyfen), 76 to 58 (Harrowmead), 86 to 65 (Sarab).
+    `gpu.frame` within 2% on the look parts; Greyfen's fight 6.11 to 6.53 ms
+    over 351 and 133 samples. The tick rose on Greyfen's vantages (3.90 to
+    4.50 ms), all of it in `render` at equal draws, and is BACK-PRESSURE on a
+    GPU-bound segment rather than work: at one vantage in one page, the maps
+    handed back and forth three times a side, `scene.render`'s span reads
+    0.69-0.83 ms ours against 0.67-0.75 Babylon's capped, and lower ours
+    uncapped. The maps redraw only when a window moves: none on a still
+    camera, bursts of 2-10 a second of the three static maps together as the
+    benchmark's camera moves on.
+  - **Two stalls, not reproduced.** The first AFTER benchmark's third
+    Greyfen run never left `loading` (its 40-minute timeout), and one gate
+    run recorded no frame in Hollowmere's warm window, each in a chain right
+    after another browser session; neither came back in five fresh
+    `?bench=greyfen` boots at the benchmark's settings (each in the round in
+    ~10 s, the maps `ready` long before the bake gate asked), 3 x 40 s of
+    play, a full gate and a full nine-run benchmark. Watched, not explained.
+  - **What the shadow view costs in memory** — measured off every buffer and texture made through the install:
+    the textures are 40 MiB on the `high` rung (two 2048 and two 1024
+    `r16float` maps and one `depth32float` attachment a size), where the
+    generators held about 120 (an `rgba16float` colour and a `depth32float`
+    of its own a map); the second view of the culls is 12.1 MiB on Greyfen
+    and Harrowmead, 9.6 on Sarab, 16.5 on Kurenai and 27.6 on Cinderhaven
+    (an index buffer as large as the map's, and the scatter's per-record
+    scratch). So the step takes 50-70 MiB off every map.
+- **What the review found** (fixed before the commit): `WorldBlocks`'
+  contract header still described two layers; a `WorldDepth` was built for a
+  map whose casters had already gone back at the cut (now skipped, and the
+  install already refused the hand-over when a casting surface went back
+  during the cut); the
+  map count restated as `SHADOW_SLOTS`; a closure and iterators made on a
+  redraw frame; the shadow view's eye at the origin (the light's now, so the
+  survivors are ordered nearest the light first); a view's buffers labelled
+  as the map's (each now names its view); comments the step made false (the
+  uniform's nine words, a reader's channel).
+- **Owed onward.**
+  - The shadow maps are not timed on our side: their culls are not in
+    `gpu.cull`, and `shadowPass` brackets only Babylon's generators — in a
+    round, only the bodies'. The phone's reading of the step is its
+    `gpu.frame`, against X3.5b's.
+  - X3.6b, the lamps' atlas, holds `map.visuals` the same way: the caster
+    groups and the pass mask are its to extend.
 
 **After X3.6:** Babylon builds no block, scatter or terrain mesh for a round.
 Editor builds keep the old path until X5.3.

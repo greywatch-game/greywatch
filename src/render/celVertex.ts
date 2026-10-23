@@ -9,7 +9,9 @@
  * fragment's `CEL_VARYINGS` — its SCATTER twin, for a group that draws
  * scatter, which reads a scatter vertex through the survivors' list
  * (`CEL_SCATTER_LIST`, `celGeometry`), and `celVertex`, one variant of
- * either as a plain WGSL module; the layout
+ * either as a plain WGSL module; `pulledWorld`, how either reads its vertex
+ * and builds `world`, which the depth twin shares (`render/celDepth.ts`);
+ * the layout
  * of an instance's transform in `transforms` (`TRANSFORM_WORDS`,
  * `writeTransform`), which the instance cull's records carry the same way.
  * Invariants: declares every name the shared body reads, by Babylon's names
@@ -149,6 +151,18 @@ function celProgram(stride: number | null): VertexProgram {
     includes: WGSL_CHUNKS,
     body: "#include<celVertex>",
     entry: "celVertex",
+    ...pulledWorld(stride),
+  };
+}
+
+/**
+ * How a stage over the world's arrays reads its vertex and builds `world` —
+ * the plain stage's, or with the list's `stride` the scatter twin's: one
+ * statement the cel stage and its depth twin (`render/celDepth.ts`) both
+ * spread into their programs, so the two decode an index alike.
+ */
+export function pulledWorld(stride: number | null): Pick<VertexProgram, "privates" | "declarations" | "pull" | "prelude"> {
+  return {
     privates: [{ var: "instance", struct: "CelInstance", fields: [{ name: "world", type: "mat4x4f" }] }],
     declarations: stride === null ? "" : [scatterListWgsl(stride), sourceIndexWgsl("scatterSource")].join("\n"),
     pull: { vertex: "vertex", decode: stride === null ? PLAIN_DECODE : SCATTER_DECODE },

@@ -53,6 +53,8 @@ export interface ScatterCut {
 export interface InstancedPart {
   readonly geometry: SurfaceArrays;
   readonly set: number;
+  /** The shadow passes its clusters are drawn in (`PASS_CASTS`, `PASS_SOLID`). */
+  readonly passes: number;
 }
 
 /** The records `part` makes: its clusters — runs of the most a cluster holds, as `cutClusters` cuts a part with no piece — times its set's instances. */
@@ -122,6 +124,8 @@ interface PartCluster {
   readonly range: number;
   /** Its part's first vertex in its group's arrays. */
   readonly base: number;
+  /** Its part's shadow passes. */
+  readonly passes: number;
 }
 
 /** The instance cull's tables, built as the cut walks its groups. */
@@ -188,7 +192,7 @@ export class ScatterTables {
       const first = this.clusters.length;
       const clusters = cutClusters(positions, local, p.geometry.colors, [], this.triangles);
       for (const cluster of clusters) {
-        this.clusters.push({ cluster, first: this.sourceAt + cluster.indexStart, range, base: vertices });
+        this.clusters.push({ cluster, first: this.sourceAt + cluster.indexStart, range, base: vertices, passes: p.passes });
       }
       for (let i = this.setStarts[p.set], end = i + this.sets[p.set].scales.length; i < end; i++) {
         for (let c = 0; c < clusters.length; c++) this.records.push(i, first + c);
@@ -268,13 +272,15 @@ export class ScatterTables {
 /**
  * The instanced parts' clusters as the instance cull reads them
  * (`InstanceTables.clusters`): the same record, its first index into the
- * 16-bit source and its range in the place of a group, and its part's
- * first vertex beside it.
+ * 16-bit source and its range in the place of a group, its part's first
+ * vertex beside it, and its part's shadow passes.
  */
 function clusterWords(clusters: readonly PartCluster[]): ArrayBuffer {
   const words = new ArrayBuffer(Math.max(1, clusters.length) * CLUSTER_WORDS * 4);
   const f = new Float32Array(words);
   const u = new Uint32Array(words);
-  clusters.forEach(({ cluster, first, range, base }, k) => writeCluster(f, u, k, cluster, first, [range, base, 0, 0]));
+  clusters.forEach(({ cluster, first, range, base, passes }, k) =>
+    writeCluster(f, u, k, cluster, first, [range, base, 0, 0], passes),
+  );
   return words;
 }

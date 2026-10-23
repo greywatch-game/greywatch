@@ -1,38 +1,45 @@
 /**
- * render/ClusterCull.ts — The static world's clusters culled on the GPU once
- * a frame, writing each group's surviving indices at the front of its range
- * and zeros after them (`BABYLON_EXIT.md` X3.3b; the WGSL is
- * `wgsl/clusterCull.ts`).
- * Owns: `ClusterCull` — the three compute passes' bind groups (their
- * pipelines are the renderer's `PipelineCache`'s, shared by every map), the
- * cluster, block and sphere tables, the scan's buffers, each group's record,
- * and the index buffer the blocks draw (`indices`, cleared and written
- * every frame); `ReachGate`, what whoever decides the reach and the size
- * gate hands it; `rangeWords`, the range record as both culls upload it
+ * render/ClusterCull.ts — The static world's clusters culled on the GPU,
+ * writing each group's surviving indices at the front of its range and zeros
+ * after them (`BABYLON_EXIT.md` X3.3b; the WGSL is `wgsl/clusterCull.ts`) —
+ * once a frame for the main pass, and once a drawn map for each shadow map
+ * (X3.6a), each a VIEW of one map's tables.
+ * Owns: `ClusterCull` — one view: its three compute passes' bind groups
+ * (their pipelines are the renderer's `PipelineCache`'s, shared by every
+ * map), its uniform block (`CullUniform`), the scan's buffers, each group's
+ * record, and the index buffer its draws index (`indices`, cleared and
+ * written every dispatch) — and, for the view that uploaded them, the
+ * cluster, block, sphere and source tables every view of the map reads;
+ * `CullInputs`, what a view is culled for, and `frameInputs`, the main
+ * pass's; `writeInputs`, the uniform block's per-dispatch half as both culls
+ * lay it out; `ReachGate`, what whoever decides the reach and the size gate
+ * hands it; `rangeWords`, the range record as both culls upload it
  * (`InstanceCull`'s too).
  * Invariants: every table is uploaded once, when the map is cut, and never
- * re-cut; a frame's inputs are numbers only — the frame's own
- * view-projection and eye (`FrameUniforms`), the reach and the size gate as
- * `ReachGate` holds them, and the most the wind can move a vertex, derived
- * from the frame's own wind — so the cull never reads a node; the frustum is
+ * re-cut, by the map's first view, which every other view of it reads and
+ * outlives; a dispatch's inputs are numbers only — a view-projection, an
+ * eye, the reach and the size gate, the most the wind moves a vertex, and a
+ * pass mask (`CullInputs`) — so the cull never reads a node; the frustum is
  * the view-projection's four side planes and the eye's own plane, normalised
- * here, and a cluster is dropped only when its box lies wholly outside one,
- * so it drops nothing the frustum did not already hide; the reach is measured
- * to the box each surface was handed (`BlockBox`), which for the landform is
- * one the reach is never short of; the work is RECORDED
- * when the frame's main pass begins into the encoder the host submits ahead
- * of the frame's draws (`FrameHost.prepareEncoder`), so it reaches the GPU
- * before the draws that read it and inside the frame's GPU timer — once a
- * submit, because the frame's inputs are a `writeBuffer` the whole submit
- * reads (`FramePrepare`); a group's range of `indices` is CLEARED ahead
- * of the scatter every frame, so whatever its survivors do not fill is index
- * 0 three times over — a triangle of no area, which the plain draw over the
- * group's whole range (`WorldBlocks`) hands the GPU to discard — and the
- * blocks are never drawn INDIRECT: an Intel Xe-LPG dropped single indirect
- * draws at random, whatever wrote their arguments (`docs/rendering.md`);
- * until the pipelines are built (`ready`) nothing is dispatched and
- * `indices` stays the zeros it was made with, so a group draws nothing
- * rather than garbage.
+ * here, and a cluster is dropped only when it is not in the view's pass, or
+ * its box lies wholly outside one plane, so it drops nothing the frustum did
+ * not already hide; the reach is measured to the box each surface was handed
+ * (`BlockBox`), which for the landform is one the reach is never short of;
+ * the work is RECORDED into the encoder the host submits ahead of the
+ * frame's draws (`FrameHost.prepareEncoder`), so it reaches the GPU before
+ * the draws that read it and inside the frame's GPU timer — the main pass's
+ * view once a submit, as the main pass begins, because its inputs are a
+ * `writeBuffer` the whole submit reads (`FramePrepare`), and another view
+ * once a SLOT a submit, each dispatch's inputs copied into its block in the
+ * encoder ahead of its own pass (`CullUniform`); a view's `indices` are
+ * CLEARED ahead of each dispatch's scatter, so whatever its survivors do not
+ * fill is index 0 three times over — a triangle of no area, which the plain
+ * draw over a group's whole range (`WorldBlocks`, `WorldDepth`) hands the
+ * GPU to discard — and the blocks are never drawn INDIRECT: an Intel Xe-LPG
+ * dropped single indirect draws at random, whatever wrote their arguments
+ * (`docs/rendering.md`); until the pipelines are built (`ready`) nothing is
+ * dispatched and `indices` stays the zeros it was made with, so a group
+ * draws nothing rather than garbage.
  * Never: imports Babylon; reads a node; submits; allocates on a frame beyond
  * the compute pass WebGPU makes for every pass; sets anything after
  * `dispose`, however late its pipelines arrive.
@@ -94,7 +101,7 @@ export const NO_DIAGNOSTICS: CullDiagnostics = { mode: "full", report: null };
  * has written it — both culls lay the planes, the reach and the gate out
  * alike (`wgsl/clusterCull.ts`, `wgsl/instanceCull.ts`).
  */
-export function openTests(mode: CullMode, f: Float32Array, u: Uint32Array): void {
+function openTests(mode: CullMode, f: Float32Array, u: Uint32Array): void {
   if (mode === "full") return;
   // Every plane 0x + 0y + 0z + 1: nothing lies outside it.
   for (let k = 0; k < 5; k++) {
@@ -146,6 +153,158 @@ export interface CullTables {
   readonly bands2: readonly number[];
 }
 
+/**
+ * What ONE cull reads for the view it culls for — the main pass's camera, or
+ * a shadow map's light: numbers only, so no cull reads a node. Filled in
+ * place by whoever owns the view and handed to `dispatch` (`frameInputs` is
+ * the main pass's).
+ */
+export interface CullInputs {
+  /** The view-projection, 16 floats as WGSL's `mat4x4f` reads them: the frustum's planes. */
+  readonly viewProjection: Float32Array;
+  /** Where distances are measured from: the reach, the size gate and the near-first bands. */
+  readonly eye: Float32Array;
+  /** The reach squared, metres; `F32_MAX` is no reach. */
+  reach2: number;
+  /** Whether the size gate applies, and its two numbers (`ReachGate`). */
+  sizeGate: boolean;
+  perRad: number;
+  px2: number;
+  /** The most a ramp weight of 1, and a rigged vertex, moves this frame: 0 for a pass that draws no sway. */
+  rampReach: number;
+  rigReach: number;
+  /** The passes a cluster must be drawn in to be kept (`PASS_CASTS`, `PASS_SOLID`); 0 keeps every one. */
+  mask: number;
+}
+
+/** A `CullInputs` with no reach, no gate, no sway and no mask: what a view fills in place. */
+export function createCullInputs(): CullInputs {
+  return {
+    viewProjection: new Float32Array(16),
+    eye: new Float32Array(3),
+    reach2: F32_MAX,
+    sizeGate: false,
+    perRad: 0,
+    px2: 0,
+    rampReach: 0,
+    rigReach: 0,
+    mask: 0,
+  };
+}
+
+/** The MAIN pass's inputs: the frame's camera and wind, and the reach and size gate as `gate` holds them. */
+export function frameInputs(frame: FrameUniforms, gate: ReachGate, out: CullInputs): void {
+  out.viewProjection.set(frame.viewProjection);
+  out.eye.set(frame.camPos);
+  out.reach2 = Math.min(F32_MAX, gate.reach * gate.reach);
+  out.sizeGate = gate.sizeGate;
+  out.perRad = gate.perRad;
+  out.px2 = gate.px2;
+  out.rampReach = rampReach(frame);
+  out.rigReach = rigReach(frame);
+  out.mask = 0;
+}
+
+/**
+ * `inputs` into a cull's uniform block — `CULL_DECLARATIONS`' words 0 to 7
+ * and 9; word 8 is each cull's own — then the tests `mode` turns off opened.
+ * Both culls lay the block out alike.
+ */
+export function writeInputs(inputs: CullInputs, mode: CullMode, f: Float32Array, u: Uint32Array): void {
+  writePlanes(inputs.viewProjection, f);
+  f[20] = inputs.eye[0];
+  f[21] = inputs.eye[1];
+  f[22] = inputs.eye[2];
+  f[23] = inputs.reach2;
+  f[24] = inputs.perRad;
+  f[25] = inputs.px2;
+  u[26] = inputs.sizeGate ? 1 : 0;
+  f[27] = inputs.rampReach;
+  f[31] = inputs.rigReach;
+  u[36] = inputs.mask;
+  openTests(mode, f, u);
+}
+
+/**
+ * How one VIEW of a map's cull is made: what it is called, and how many
+ * times it is dispatched in one submit (`slots`), each with inputs of its
+ * own.
+ */
+export interface CullView {
+  readonly label: string;
+  readonly slots: number;
+}
+
+/** A staging slot's stride: past either cull's block. */
+const UNIFORM_SLOT = 256;
+
+/**
+ * A cull's uniform block, written once per dispatch (`CullView.slots`). A
+ * `writeBuffer` lands ahead of the whole submit, so two dispatches through
+ * one block written that way would both read the second's inputs: with one
+ * slot the block is written in place, and with more each dispatch's inputs
+ * go to a staging slot of their own and are COPIED into the block in the
+ * encoder, in order, ahead of the pass that reads them.
+ */
+export class CullUniform {
+  /** What the cull's passes bind. */
+  readonly buffer: GPUBuffer;
+  private readonly staging: GPUBuffer | null;
+
+  constructor(
+    private readonly device: GPUDevice,
+    label: string,
+    private readonly bytes: number,
+    slots: number,
+    /** Usage beyond a uniform's: `?cullcheck` copies the block out. */
+    usage: number,
+  ) {
+    this.buffer = device.createBuffer({
+      label: `${label}: uniform`,
+      size: bytes,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST | usage,
+    });
+    this.staging =
+      slots > 1
+        ? device.createBuffer({
+            label: `${label}: uniform slots`,
+            size: slots * UNIFORM_SLOT,
+            usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
+          })
+        : null;
+  }
+
+  /** `data` as the block the next pass recorded into `encoder` reads, as dispatch `slot` of this submit. */
+  write(data: ArrayBuffer, encoder: GPUCommandEncoder, slot: number): void {
+    if (!this.staging) {
+      this.device.queue.writeBuffer(this.buffer, 0, data);
+      return;
+    }
+    this.device.queue.writeBuffer(this.staging, slot * UNIFORM_SLOT, data);
+    encoder.copyBufferToBuffer(this.staging, slot * UNIFORM_SLOT, this.buffer, 0, this.bytes);
+  }
+
+  destroy(): void {
+    this.buffer.destroy();
+    this.staging?.destroy();
+  }
+}
+
+/** A map's cluster tables as uploaded once, which every view of its cull reads. */
+interface ClusterTableBuffers {
+  readonly clusters: GPUBuffer;
+  readonly clusterCount: number;
+  readonly blocks: GPUBuffer;
+  readonly spheres: GPUBuffer;
+  readonly source: GPUBuffer;
+  /** Each group's range, as `rangeWords` lays it out: every view uploads its own, which its scan writes. */
+  readonly ranges: Uint32Array;
+  readonly groupCount: number;
+  readonly indexBytes: number;
+  readonly bands2: readonly number[];
+  readonly buffers: readonly GPUBuffer[];
+}
+
 /** The descriptor a frame's pass is begun with, made once. */
 const PASS: GPUComputePassDescriptor = { label: "cluster cull" };
 
@@ -161,8 +320,12 @@ export class ClusterCull {
   /** Set by `dispose`: pipelines that arrive after it are dropped. */
   private disposed = false;
 
+  /** The map's tables: the view that uploaded them owns them, and every view reads them. */
+  private readonly tables: ClusterTableBuffers;
+  private readonly ownsTables: boolean;
+  /** This view's own buffers. */
   private readonly buffers: GPUBuffer[] = [];
-  private readonly uniform: GPUBuffer;
+  private readonly uniform: CullUniform;
   private readonly bytes = new ArrayBuffer(CULL_UNIFORM_BYTES);
   private readonly f32 = new Float32Array(this.bytes);
   private readonly u32 = new Uint32Array(this.bytes);
@@ -172,20 +335,31 @@ export class ClusterCull {
   private readonly scatterY: number;
   /** The three passes in dispatch order: cull, prefix, scatter. */
   private readonly passes: { pipeline: GPUComputePipeline; group: GPUBindGroup }[] = [];
+  /** The view's name, which every buffer it makes is labelled with — the tables the first view's. */
+  private readonly viewLabel: string;
   /** Which tests run — `CullMode`; "full" but for a diagnostic. */
   private readonly mode: CullMode;
   /** `?cullcheck`'s reader, or null. */
   private readonly check: CullCheck | null;
 
+  /**
+   * The cull of a map's `tables`, which it uploads — or, handed another
+   * `ClusterCull`, a second VIEW of that one's tables, which uploads none,
+   * writes indices of its own and must be disposed no later than the cull it
+   * reads (`WorldDepth`'s, for the shadow maps). Only the first view takes
+   * `?cullcheck`'s report.
+   */
   constructor(
     private readonly device: GPUDevice,
     pipelines: PipelineCache,
-    tables: CullTables,
-    private readonly gate: ReachGate,
+    source: CullTables | ClusterCull,
+    /** With the clusters it culls: the first `count`, so a view may leave out a tail no pass of it draws. */
+    view: CullView & { readonly count: number },
     diagnostics: CullDiagnostics = NO_DIAGNOSTICS,
   ) {
     this.mode = diagnostics.mode;
-    const n = tables.clusterCount;
+    this.viewLabel = view.label;
+    const n = view.count;
     this.clusterCount = n;
     this.workgroups = Math.max(1, Math.ceil(n / SCAN_SIZE));
     const maxX = device.limits.maxComputeWorkgroupsPerDimension;
@@ -193,62 +367,66 @@ export class ClusterCull {
     this.scatterY = Math.max(1, Math.ceil(n / this.scatterX));
 
     const storage = GPUBufferUsage.STORAGE;
+    const shared = source instanceof ClusterCull;
+    const report = shared ? null : diagnostics.report;
     // `?cullcheck` copies the uniform block and the verdicts out.
-    const read = diagnostics.report ? GPUBufferUsage.COPY_SRC : 0;
-    this.uniform = this.make("uniform", CULL_UNIFORM_BYTES, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST | read);
-    const clusters = this.upload("clusters", storage | read, new Uint8Array(tables.clusters));
-    const blocks = this.upload("blocks", storage, blockWords(tables.blocks));
-    const spheres = this.upload("spheres", storage, tables.spheres);
+    const read = report ? GPUBufferUsage.COPY_SRC : 0;
+    this.ownsTables = !shared;
+    this.tables = shared ? source.tables : this.uploadTables(source, read);
+    const t = this.tables;
+    if (n > t.clusterCount) throw new Error(`cluster cull: ${view.label} culls past its ${t.clusterCount} clusters`);
+    this.uniform = new CullUniform(device, `cluster cull: ${view.label}`, CULL_UNIFORM_BYTES, view.slots, read);
     const bandOf = this.make("bands", n * 4, storage | read);
     const local = this.make("local", n * 16, storage);
     const sums = this.make("sums", (this.workgroups + 1) * 16, storage);
-    const groups = this.upload("groups", storage, rangeWords(tables.groups));
-    const source = this.upload("source indices", storage, tables.indices);
+    const groups = this.upload("groups", storage, t.ranges);
     // COPY_DST for the clear ahead of each frame's scatter.
-    this.indices = this.make("indices", tables.indices.byteLength, storage | GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST);
+    this.indices = this.make("indices", t.indexBytes, storage | GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST);
 
     // The static half of the uniform block.
     const u = this.u32;
     const f = this.f32;
-    f[28] = tables.bands2[0];
-    f[29] = tables.bands2[1];
-    f[30] = tables.bands2[2];
+    f[28] = t.bands2[0];
+    f[29] = t.bands2[1];
+    f[30] = t.bands2[2];
     u[32] = n;
-    u[33] = tables.groups.length;
+    u[33] = t.groupCount;
     u[34] = this.workgroups;
 
-    this.check = diagnostics.report
-      ? new CullCheck(
-          device,
-          pipelines,
-          {
-            label: "clusters",
-            count: n,
-            uniform: this.uniform,
-            uniformBytes: CULL_UNIFORM_BYTES,
-            bands: bandOf,
-            probe: CLUSTER_PROBE_WGSL,
-            data: clusters,
-            dataBytes: new Uint8Array(tables.clusters),
-            probeBind: [[0, this.uniform], [12, this.uniform], [1, clusters], [11, clusters], [2, blocks], [10, blocks], [3, spheres]],
-            forms: CLUSTER_FORMS,
-            ...clusterReplay(tables),
-          },
-          diagnostics.report,
-        )
-      : null;
+    const uniform = this.uniform.buffer;
+    this.check =
+      report && !shared
+        ? new CullCheck(
+            device,
+            pipelines,
+            {
+              label: "clusters",
+              count: n,
+              uniform,
+              uniformBytes: CULL_UNIFORM_BYTES,
+              bands: bandOf,
+              probe: CLUSTER_PROBE_WGSL,
+              data: t.clusters,
+              dataBytes: new Uint8Array(source.clusters),
+              probeBind: [[0, uniform], [12, uniform], [1, t.clusters], [11, t.clusters], [2, t.blocks], [10, t.blocks], [3, t.spheres]],
+              forms: CLUSTER_FORMS,
+              ...clusterReplay(source),
+            },
+            report,
+          )
+        : null;
 
     // Each entry point's own bindings: an "auto" layout holds only what its
     // entry point reads, so each pass binds exactly those.
     const entries: { entry: string; bind: readonly [number, GPUBuffer][] }[] = [
       {
         entry: "cullClusters",
-        bind: [[0, this.uniform], [1, clusters], [2, blocks], [3, spheres], [4, bandOf], [5, local], [6, sums]],
+        bind: [[0, uniform], [1, t.clusters], [2, t.blocks], [3, t.spheres], [4, bandOf], [5, local], [6, sums]],
       },
-      { entry: "prefix", bind: [[0, this.uniform], [5, local], [6, sums], [7, groups]] },
+      { entry: "prefix", bind: [[0, uniform], [5, local], [6, sums], [7, groups]] },
       {
         entry: "scatter",
-        bind: [[0, this.uniform], [1, clusters], [4, bandOf], [5, local], [6, sums], [7, groups], [9, source], [10, this.indices]],
+        bind: [[0, uniform], [1, t.clusters], [4, bandOf], [5, local], [6, sums], [7, groups], [9, t.source], [10, this.indices]],
       },
     ];
     this.ready = Promise.all(
@@ -258,7 +436,7 @@ export class ClusterCull {
           .then((pipeline) => ({
             pipeline,
             group: device.createBindGroup({
-              label: `cluster cull: ${entry}`,
+              label: `cluster cull: ${view.label}: ${entry}`,
               layout: pipeline.getBindGroupLayout(0),
               entries: bind.map(([binding, buffer]) => ({ binding, resource: { buffer } })),
             }),
@@ -272,41 +450,27 @@ export class ClusterCull {
         return true;
       },
       (err: unknown) => {
-        // A cull disposed with its map has no blocks left to give back.
-        if (!this.disposed) {
-          console.error("cluster cull: a pipeline did not build; the blocks go back to Babylon", err);
-        }
+        // A cull disposed with its map has nothing left to give back.
+        if (!this.disposed) console.error(`cluster cull: a pipeline did not build for ${view.label}`, err);
         return false;
       },
     );
   }
 
   /**
-   * Culls this frame's clusters against `frame` (its view-projection, its
-   * eye and its wind) and the reach and size gate, recording the work into
-   * `encoder` — the host's, submitted ahead of the frame's draws. Called once
-   * a frame as the main pass begins (`Renderer.onFrame`); its one pass is
-   * timed when `timing` is handed (`gpu.cull`), the index clear ahead of it
-   * not.
+   * Culls the clusters for `inputs` — the view's camera or light, reach,
+   * size gate, sway and pass mask — recording the work into `encoder`, the
+   * host's, submitted ahead of the frame's draws: once a frame as the main
+   * pass begins for the main pass's view (`Renderer.onFrame`), and up to
+   * `slots` times a submit for another, each at its own `slot`, so a draw
+   * reading `indices` reads the dispatch recorded last before it. Its one
+   * pass is timed when `timing` is handed (`gpu.cull`), the index clear
+   * ahead of it not.
    */
-  dispatch(frame: FrameUniforms, encoder: GPUCommandEncoder, timing: PassTiming | null = null): void {
+  dispatch(inputs: CullInputs, encoder: GPUCommandEncoder, timing: PassTiming | null = null, slot = 0): void {
     if (!this.built || this.clusterCount === 0) return;
-    const f = this.f32;
-    const u = this.u32;
-    writePlanes(frame.viewProjection, f);
-    const eye = frame.camPos;
-    f[20] = eye[0];
-    f[21] = eye[1];
-    f[22] = eye[2];
-    const g = this.gate;
-    f[23] = Math.min(F32_MAX, g.reach * g.reach);
-    f[24] = g.perRad;
-    f[25] = g.px2;
-    u[26] = g.sizeGate ? 1 : 0;
-    f[27] = rampReach(frame);
-    f[31] = rigReach(frame);
-    openTests(this.mode, f, u);
-    this.device.queue.writeBuffer(this.uniform, 0, this.bytes);
+    writeInputs(inputs, this.mode, this.f32, this.u32);
+    this.uniform.write(this.bytes, encoder, slot);
 
     // What the survivors do not fill is a triangle of no area.
     encoder.clearBuffer(this.indices);
@@ -325,18 +489,46 @@ export class ClusterCull {
     this.check?.record(encoder, this.bytes);
   }
 
+  /** This view's buffers destroyed — and the tables, if this view uploaded them. */
   dispose(): void {
     this.check?.dispose();
     for (const b of this.buffers) b.destroy();
     this.buffers.length = 0;
+    this.uniform.destroy();
+    if (this.ownsTables) for (const b of this.tables.buffers) b.destroy();
     this.passes.length = 0;
     this.built = false;
     this.disposed = true;
   }
 
+  /** `tables` uploaded once, for every view of this cull to read. */
+  private uploadTables(tables: CullTables, read: number): ClusterTableBuffers {
+    const storage = GPUBufferUsage.STORAGE;
+    const buffers: GPUBuffer[] = [];
+    const up = (label: string, usage: number, data: Uint8Array | Uint32Array | Float32Array): GPUBuffer => {
+      const b = this.upload(label, usage, data);
+      // Not this view's own: `dispose` destroys the tables apart.
+      this.buffers.pop();
+      buffers.push(b);
+      return b;
+    };
+    return {
+      clusters: up("clusters", storage | read, new Uint8Array(tables.clusters)),
+      clusterCount: tables.clusterCount,
+      blocks: up("blocks", storage, blockWords(tables.blocks)),
+      spheres: up("spheres", storage, tables.spheres),
+      source: up("source indices", storage, tables.indices),
+      ranges: rangeWords(tables.groups),
+      groupCount: tables.groups.length,
+      indexBytes: tables.indices.byteLength,
+      bands2: tables.bands2,
+      buffers,
+    };
+  }
+
   private make(label: string, size: number, usage: number): GPUBuffer {
     const buffer = this.device.createBuffer({
-      label: `cluster cull: ${label}`,
+      label: `cluster cull: ${this.viewLabel}: ${label}`,
       size: Math.max(16, Math.ceil(size / 4) * 4),
       usage,
     });
@@ -346,7 +538,7 @@ export class ClusterCull {
 
   private upload(label: string, usage: number, data: Uint8Array | Uint32Array | Float32Array): GPUBuffer {
     const buffer = this.device.createBuffer({
-      label: `cluster cull: ${label}`,
+      label: `cluster cull: ${this.viewLabel}: ${label}`,
       size: Math.max(16, Math.ceil(data.byteLength / 4) * 4),
       usage,
       mappedAtCreation: true,

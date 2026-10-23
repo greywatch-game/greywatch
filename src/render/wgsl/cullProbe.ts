@@ -10,8 +10,10 @@
  * `UNIFORM_ECHO_WORDS`) and `PROBE_SIZE`.
  * Invariants: every form runs ONE `decide` — the same arithmetic — over
  * inputs read one of two ways each: the uniform block as the struct of
- * scalars and `vec4f`s the culls declared before 2026-10-16, or as the nine
- * `vec4u`s of words they declare now (`CULL_DECLARATIONS`); the records as
+ * scalars and `vec4f`s the culls declared before 2026-10-16, or as the
+ * `vec4u`s of words they declare now (`CULL_DECLARATIONS`: nine of them then,
+ * ten since X3.6a's pass mask, which the probe echoes nothing of and does not
+ * test — only a main pass's view, whose mask is 0, takes a check); the records as
  * the structs with a `vec3f` beside a scalar they declared before, or as the
  * whole `vec4`s they declare now. Bit 0 is old/old, bit 3 new/new — the
  * culls' own reads. The old declarations are bound to the SAME buffers at

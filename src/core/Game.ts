@@ -107,6 +107,7 @@ import {
 } from "../shaders/CelShader";
 import { BabylonFrameHost } from "../render/babylonSeam";
 import { Renderer } from "../render/Renderer";
+import { WorldShadows } from "../render/WorldShadows";
 import { PaperGrain } from "../shaders/PaperGrain";
 import { CelInk } from "../shaders/CelInk";
 import { fxaaShaderIsOurs } from "../shaders/Fxaa";
@@ -697,6 +698,8 @@ export class Game {
    */
   private readonly lightning = new LightningStrikes();
   private shadows: ShadowSystem;
+  /** The world's directional maps as our renderer owns them, which `shadows` hands over to or takes back. */
+  private readonly worldShadows: WorldShadows;
   /**
    * The bodies' own shadow map — soldiers and hulls, and nothing static.
    *
@@ -1460,9 +1463,12 @@ export class Game {
       { timePasses: urlFlag("gpu") },
     );
     this.prof.setCullTimer(this.renderer.timer);
+    // The world's four directional maps as our renderer draws them, whenever
+    // the handover holds every caster a map has (`BABYLON_EXIT.md` X3.6a).
+    this.worldShadows = new WorldShadows(this.renderer);
     // Stepped moon shadows + contact blobs. Must exist before any cel
     // material is created so the shadow map binds on creation.
-    this.shadows = new ShadowSystem(this.scene, this.mats, this.shadowQuality);
+    this.shadows = new ShadowSystem(this.scene, this.mats, this.shadowQuality, this.worldShadows);
     // Same rule as the line above, and it binds a sampler every cel material
     // DECLARES: `SHADOW_SAMPLER_NAMES` lists `bodyShadowMap`, and a declared
     // sampler with nothing behind it is a bind group that fails to build and
@@ -1734,8 +1740,10 @@ export class Game {
     // map itself. Built here so a pane material is born holding the sampler.
     this.reflections = new ReflectionSystem(this.scene, this.mats);
     // A cube is baked once per install and keeps the bounce it was baked
-    // under, so the bake waits for the volume `installMap` has just cleared.
-    this.reflections.setBakeGate(() => this.gi.converged);
+    // under, so the bake waits for the volume `installMap` has just cleared —
+    // and the shadows it samples, which our renderer draws a frame or more
+    // after the install, once its pipelines are built (`ShadowSystem.ready`).
+    this.reflections.setBakeGate(() => this.gi.converged && this.shadows.ready);
     // Takes over `scene.getActiveMeshCandidates`, and offers the WHOLE scene
     // until a map is installed — so where in this constructor it stands
     // decides nothing: it rebuilds its list off `scene.meshes` wholesale the
@@ -1743,7 +1751,7 @@ export class Game {
     // flag. Nothing it does is visible to a ray, a collision, a shadow caster
     // or a cube probe; see `WorldCulling`, which is the whole argument.
     this.culling = new WorldCulling(this.scene);
-    this.handover = new BlockHandover(this.renderer, this.mats, this.culling, {
+    this.handover = new BlockHandover(this.renderer, this.mats, this.culling, this.worldShadows, {
       mode: this.overrides.cullMode,
       // After the HUD, which built `#hud`.
       report: this.overrides.cullCheck ? new CullCheckPanel().show : null,

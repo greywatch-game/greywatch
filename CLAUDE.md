@@ -538,7 +538,13 @@ texel-snapped focus MOVES, so **nothing that ANIMATES may be registered with
 its collider box**, so moving either moves a shadow, and **the local player
 casts nothing**. **Where a window STANDS is `core/shadowWindow.ts`.** **The
 world's map is two CASCADES of one caster set and records BACK faces**, so
-**every caster must be a CLOSED shape**.
+**every caster must be a CLOSED shape**. **The world's four maps (both
+cascades, the foliage's and the lightning's) are OUR renderer's whenever the
+handover holds EVERY caster** (`render/WorldShadows.ts`; Babylon's readers
+sample a wrapped view), and `ShadowSystem`'s generators otherwise — the
+editor, `?babylonworld`, a caster lost mid-map — so **a new world caster must
+be one the handover can hold (block-merged, at identity, never
+`updatable`) or the whole map's shadows go back to Babylon**.
 
 **THE LAMPS CAST INTO ONE ATLAS** (`systems/LocalShadows.ts`), **a light casts
 by what it SAYS** (`PointLightData.shadow`), and the bumped ground variant is at
@@ -592,13 +598,14 @@ it never disables, never hides, never unpickles. **A collider is never a
 candidate, and nor is a BLOCK or the LANDFORM our renderer TAKES**
 (`BlockHandover`; the BUILD marks `WorldSurface.landform`), drawn in the MAIN
 pass by `src/render/` — **blocks, then landform, before the alpha-test list** —
-their Babylon meshes kept for every OTHER pass, and **a taken mesh is never
+their Babylon meshes kept for the probes and the lamps' atlas (the world's
+shadow maps are drawn by our side too), and **a taken mesh is never
 switched off, hidden or faded after its build** — ours reads no node and would
 still draw it (a DEV check says so). **The SCATTER is drawn twice over and the
 two must agree**: our main pass draws it as INSTANCES of its variants, its
 colour baked once per kind, and cuts its pieces out of the blocks it takes,
-while Babylon's merged copy stays in those blocks for every other pass
-(`BuildOptions.onScatter`) — and **a scatter index names a survivor's entry and
+while Babylon's merged copy stays in those blocks for the passes Babylon
+still draws (`BuildOptions.onScatter`) — and **a scatter index names a survivor's entry and
 a corner in 31 bits** (`render/scatterList.ts`), so a map whose scatter
 records times a cluster's most indices (`listStride`) pass 2^31 hands every recipe
 that draws scatter back to Babylon whole, blocks and all, as does a recipe
@@ -624,9 +631,10 @@ vertex for that one**.
 **OUR renderer (`src/render/`) draws INSIDE Babylon's frame through ONE seam**
 (`render/babylonSeam.ts`, the only file there that names Babylon, and only as
 types). A draw is QUEUED into Babylon's bundle list and never issued, and
-work owed AHEAD of the draws (the cluster cull) is RECORDED into the encoder
-the host submits first (`prepareEncoder`), never submitted on its own. The
-attachments are stated once (`FRAME_TARGETS`). The frame's uniforms are PULLED
+work owed AHEAD of the draws (the cluster cull, a shadow map's pass) is
+RECORDED into the encoder the host submits first (`prepareEncoder`), never
+submitted on its own. The attachments are stated once (`FRAME_TARGETS`,
+`SHADOW_TARGETS`). The frame's uniforms are PULLED
 off the factory's fields (`CelMaterialFactory.fillFrame`), so **a new value
 every cel material holds owes `render/frame.ts` a field and `fillFrame` a
 line**, or our draws shade without it — a shared TEXTURE the same, in

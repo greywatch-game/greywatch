@@ -1,17 +1,21 @@
 /**
  * render/HostBindGroup.ts — One bind group built from a group's DECLARED
- * entries: the uniform and storage buffers our renderer owns, and the
- * textures the host owns, resolved through it every frame.
+ * entries: the uniform and storage buffers our renderer owns, the textures
+ * the host owns, resolved through it every frame, and the textures our
+ * renderer owns, read where they lie.
  * Owns: `HostBindGroup` — the entries' binding numbers for one variant, what
  * each texture resolved to last, and one `GPUBindGroup` per layout it has
- * been asked for.
+ * been asked for; `OwnTexture`, a texture of our renderer's as a group binds
+ * it.
  * Invariants: the binding numbers are `firstBindings`', the rule the WGSL is
  * declared by, so the group and the module are one statement; a texture is
- * the host's own view and sampler (`FrameHost.bind`), compared every frame
- * and never kept across a change — a group is re-made only on the frame
- * something behind one of its handles moved, and a group with a texture
- * missing is not made at all (null: the caller draws nothing); `refresh`
- * allocates nothing.
+ * the host's own view and sampler (`FrameHost.bind`) or, for one our
+ * renderer owns, the view and sampler its owner holds (`OwnTexture` —
+ * `BABYLON_EXIT.md` rule 5: the owner reads its own, through no host),
+ * either compared every frame and never kept across a change — a group is
+ * re-made only on the frame something behind one of its handles moved, and
+ * a group with a texture missing is not made at all (null: the caller draws
+ * nothing); `refresh` allocates nothing.
  * Never: imports Babylon; copies a texture; owns a buffer it was handed.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
  */
@@ -27,8 +31,18 @@ interface TextureSlot {
   readonly bound: BoundTexture;
 }
 
-/** What a group's textures are looked up in: a handle per declared name. */
-export type TextureHandles = { readonly [name: string]: HostTexture | null | undefined };
+/**
+ * A texture OUR renderer owns, as a bind group binds it: its view and its
+ * sampler, which its owner rewrites in place when it re-makes the texture,
+ * and null while it has none (`render/WorldShadows.ts`).
+ */
+export class OwnTexture {
+  view: GPUTextureView | null = null;
+  sampler: GPUSampler | null = null;
+}
+
+/** What a group's textures are looked up in: a handle per declared name, the host's or our own. */
+export type TextureHandles = { readonly [name: string]: HostTexture | OwnTexture | null | undefined };
 
 export class HostBindGroup {
   private readonly buffers: GPUBindGroupEntry[] = [];
@@ -77,7 +91,10 @@ export class HostBindGroup {
     for (let i = 0; i < this.slots.length; i++) {
       const slot = this.slots[i];
       const handle = handles[slot.name];
-      if (handle) host.bind(handle, scratch);
+      if (handle instanceof OwnTexture) {
+        scratch.view = handle.view;
+        scratch.sampler = handle.sampler;
+      } else if (handle) host.bind(handle, scratch);
       else {
         scratch.view = null;
         scratch.sampler = null;

@@ -1196,7 +1196,11 @@ src/
                         #   and clear() is the only thing that renumbers
     ShadowSystem.ts     # Moon shadow maps (stepped) + blob shadows. The STATIC
                         #   world's casters in two cascades (near + far),
-                        #   re-rendered only when the snapped focus moves
+                        #   re-rendered only when the snapped focus moves;
+                        #   the four world maps OUR renderer's
+                        #   (render/WorldShadows) whenever the handover holds
+                        #   every caster, its own ShadowGenerators otherwise
+                        #   (the editor, ?babylonworld, a caster lost)
     BodyShadows.ts      # The BODIES' shadow map: soldiers and hulls and nothing
                         #   static, re-rendered every frame, its own tighter
                         #   window (4.7 cm texels against the world's 5.4).
@@ -1267,7 +1271,12 @@ src/
                         #   candidates, cut at install against their cells, a
                         #   failed compile's surfaces handed back to Babylon as
                         #   it lands, the whole map on a refused main pass;
-                        #   their meshes stay for every other pass. The
+                        #   their meshes stay for the probes and the lamps'
+                        #   atlas. Every CASTER held too (X3.6a) — a taken
+                        #   one in its group, an emissive one for the shadow
+                        #   maps alone (WorldBlocks.addCaster) — or the
+                        #   map's shadows stay Babylon's; one handed back
+                        #   loses them (WorldShadows.lose). The
                         #   scatter's field (BuildOptions.onScatter) added as
                         #   instances at install, its pieces cut out of the
                         #   taken blocks (X3.4b). Reads no
@@ -2357,7 +2366,9 @@ src/
                         #   gpu.cull); refuses to draw if the pass is not
                         #   FRAME_TARGETS, and tells onRefused listeners
     targets.ts          # FRAME_TARGETS, stated once: rgba8unorm, depth32float,
-                        #   1 sample, flipY (CelInk's target, not the canvas)
+                        #   1 sample, flipY (CelInk's target, not the canvas);
+                        #   SHADOW_TARGETS, a world shadow map's: r16float,
+                        #   depth32float, 1 sample, flipY
     frame.ts            # FRAME_BLOCK (group 0, binding 0 of every program:
                         #   camera, environment, wind, lights, shadows, GI,
                         #   palette LAST) and FrameUniforms, the plain struct
@@ -2371,8 +2382,9 @@ src/
     FrameUniformBuffer.ts # The frame block's UniformBlockBuffer, laid out for
                         #   the palette's variant; one buffer per pass
     HostBindGroup.ts    # A bind group from a group's DECLARED entries: our
-                        #   buffers and the host's textures, re-resolved every
-                        #   frame and re-made only when a view moved
+                        #   buffers, the host's textures and our own
+                        #   (OwnTexture), re-resolved every frame and re-made
+                        #   only when a view moved
     PipelineCache.ts    # Shader modules, explicit bind-group layouts and
                         #   createRenderPipelineAsync pipelines, keyed on
                         #   variant, vertex layout, targets and state; the
@@ -2390,6 +2402,20 @@ src/
                         #   the shared celVertex body — one stage for blocks
                         #   and scatter (X3.5b). Every variant compiled by
                         #   plans/webgpu-ref/shaders.mjs
+    celDepth.ts         # The world's DEPTH program (X3.6a): Babylon's
+                        #   shadowMap shader as this game's generators compile
+                        #   it — the light's clip z, no sway — pulled as the
+                        #   cel stage is (pulledWorld), and its scatter twin
+    WorldDepth.ts       # The static world as a directional shadow map records
+                        #   it: a second VIEW of each of the map's culls (a
+                        #   slot a map a submit, a pass mask), the depth
+                        #   pipelines by faces, and one map's pass recorded —
+                        #   a plain draw a group, an indirect draw its scatter
+    WorldShadows.ts     # The world's four directional maps as OUR textures
+                        #   (far, near, foliage, flash): made cleared to lit,
+                        #   drawn when ShadowSystem asks, recorded ahead of
+                        #   Babylon's passes; OwnTexture for our frame, a
+                        #   texture for Babylon to wrap; lose() hands them back
     scatterList.ts      # The scatter's draw (X3.5b): a survivor's 16-byte
                         #   ENTRY, an index = top bit + slot * stride +
                         #   corner (listStride: a cluster's most indices),
@@ -2410,7 +2436,11 @@ src/
                         #   cut out of the blocks; what it will never draw (a
                         #   failed pipeline, a part it cannot draw, past the
                         #   list's budget) goes to onFailed as it lands, a
-                        #   group whole; stop() for good
+                        #   group whole; stop() for good. The casters held
+                        #   for the shadow maps alone (addCaster) are one
+                        #   group, cut last and drawn in no main pass; each
+                        #   surface and part carries its shadow passes, and
+                        #   finish builds the map's WorldDepth when asked
     clusters.ts         # cutClusters: a surface cut into short runs of
                         #   one piece's triangles, each with its box and how
                         #   the wind can move it (BABYLON_EXIT.md X3.3b) — an
@@ -2425,15 +2455,18 @@ src/
                         #   each group's ONE indirect draw's args; the last
                         #   pass is dispatched indirect over a work list of the
                         #   survivors, never over every record
-    ClusterCull.ts      # The GPU cull, once a frame, recorded into the host's
-                        #   encoder ahead of the draws (inside gpu.frame;
-                        #   pipelines from PipelineCache) — reach, size gate,
-                        #   frustum; survivors
+    ClusterCull.ts      # The GPU cull, a VIEW of a map's tables (the main
+                        #   pass's uploads them, a shadow map's reads them),
+                        #   recorded into the host's encoder ahead of the
+                        #   draws (inside gpu.frame; pipelines from
+                        #   PipelineCache) — pass mask, reach, size gate,
+                        #   frustum, as CullInputs; survivors
                         #   scanned NEAR-FIRST (by surface) into the index
                         #   buffer, cleared first so the rest of each group's
                         #   range is triangles of no area (never indirect).
                         #   ReachGate, BlockBox, CullMode and CullDiagnostics
-                        #   (?nocull, ?nofrustum, ?cullcheck)
+                        #   (?nocull, ?nofrustum, ?cullcheck); CullUniform, a
+                        #   slot a dispatch in one submit
     PassTimer.ts        # ?gpu's timer of our compute passes (gpu.cull):
                         #   timestamp writes on each cull's pass, summed, one
                         #   reading in flight, mapped the frame after its

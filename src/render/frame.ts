@@ -7,7 +7,8 @@
  * `Float32Array` per field, named as the shader names it) and
  * `createFrameUniforms`; `FRAME_TEXTURES`, the rest of group 0 — every
  * shadow map, the foliage map and the irradiance volume — and
- * `FrameTextures`, the handles they are bound from.
+ * `FrameTextures`, the handles they are bound from — the host's, or our
+ * renderer's own (`OwnTexture`: the world's shadow maps since X3.6a).
  * Invariants: one LAYOUT in every variant but the last field — a name only
  * some programs read is declared for all of them, and the one guarded field,
  * the 2 KB palette, is LAST, so every variant reads the same offsets (the
@@ -36,6 +37,7 @@
 import { MAX_PALETTE, MAX_POINT_LIGHTS } from "../shaders/wgsl/celSurface";
 import { GI_SLOTS } from "../shaders/wgsl/giTrace";
 import type { HostTexture } from "./frameHost";
+import type { OwnTexture } from "./HostBindGroup";
 import type { Binding, UniformField } from "./wgsl/assemble";
 
 // `giSlotChannel` is one channel per POINT-LIGHT slot, and the volume's table
@@ -146,15 +148,16 @@ export const FRAME_TEXTURES = [
 export type FrameTexture = (typeof FRAME_TEXTURES)[number]["name"];
 
 /**
- * The frame's textures as last pulled: a handle per binding, or null for one
- * its owner has not published yet — a frame with any null draws nothing, as
- * a Babylon material with a sampler unbound draws nothing.
+ * The frame's textures as last pulled: a handle per binding — the host's, or
+ * one of our renderer's own — or null for one its owner has not published
+ * yet: a frame with any null draws nothing, as a Babylon material with a
+ * sampler unbound draws nothing.
  */
-export type FrameTextures = { [K in FrameTexture]: HostTexture | null };
+export type FrameTextures = { [K in FrameTexture]: HostTexture | OwnTexture | null };
 
 /** Every frame texture unpublished. Made once by whoever fills it. */
 export function createFrameTextures(): FrameTextures {
-  const out: Partial<Record<FrameTexture, HostTexture | null>> = {};
+  const out: Partial<Record<FrameTexture, HostTexture | OwnTexture | null>> = {};
   for (const t of FRAME_TEXTURES) out[t.name] = null;
   return out as FrameTextures;
 }

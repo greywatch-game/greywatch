@@ -13,7 +13,8 @@
  * vertices can sway) lies wholly outside one of the five planes — its BAND
  * is the instance's, the distance to its sphere's centre, so every cluster
  * of it shares one; a RECORD is one cluster of one instance, and is dropped
- * with its instance or when the cluster's box, moved by the instance's
+ * with its instance, when its cluster is not drawn in the cull's pass
+ * (`passMask`), or when the cluster's box, moved by the instance's
  * matrix and grown by the most the cluster's vertices can sway, lies wholly
  * outside one of the five planes; a RANGE is one group's records, contiguous
  * in the record table, and each surviving record's ENTRY is written to the
@@ -72,7 +73,7 @@ export const SET_WORDS = 4;
 /** A record — an instance and one cluster of it — in 32-bit words. */
 export const RECORD_WORDS = 2;
 /** The uniform block (`CULL_DECLARATIONS`' `cull`), in bytes. */
-export const INSTANCE_CULL_UNIFORM_BYTES = 144;
+export const INSTANCE_CULL_UNIFORM_BYTES = 160;
 /** `drawIndirect`'s four arguments, in bytes — one a range. */
 export const INDIRECT_BYTES = 16;
 
@@ -180,6 +181,7 @@ fn visible(inst: Instance) -> bool {
  * the middle moved, the half-size through the matrix's absolute value.
  */
 fn inView(inst: Instance, c: Cluster) -> bool {
+  if (!inPass(c)) { return false; }
   let lo = bitcast<vec3f>(c.lo.xyz);
   let hi = bitcast<vec3f>(c.hi.xyz);
   let m = 0.5 * (lo + hi);

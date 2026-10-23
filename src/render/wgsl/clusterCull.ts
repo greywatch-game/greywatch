@@ -16,9 +16,9 @@
  * to its sphere's centre, as Babylon sorts a mesh), so a surface's clusters
  * keep their own index order whatever the eye does and only whole surfaces
  * trade places as it moves, as Babylon's meshes do; a cluster is dropped
- * only if its block is past the reach, its surface is under the size gate,
- * or its box (grown by the most its vertices can sway) is wholly outside one
- * of the five planes.
+ * only if it is not drawn in the cull's pass (`passMask`), its block is past
+ * the reach, its surface is under the size gate, or its box (grown by the
+ * most its vertices can sway) is wholly outside one of the five planes.
  * Never: reads a node — everything it reads was uploaded as numbers.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
  *
@@ -48,10 +48,21 @@ export const RANGE_WORDS = 12;
 /** A block's box, in 32-bit words (`Box` below). */
 export const BLOCK_WORDS = 8;
 /** The uniform block (`Cull` below), in bytes. */
-export const CULL_UNIFORM_BYTES = 144;
+export const CULL_UNIFORM_BYTES = 160;
 
 /**
- * The uniform block (`CULL_UNIFORM_BYTES`) as nine `vec4u`s of words, and the
+ * The PASSES a cluster is drawn in beside the main one, one bit each, in its
+ * record's `sway.z`: a cull handed a mask keeps only the clusters that meet
+ * it (`passMask`), and the main pass's cull is handed 0, which tests nothing.
+ * - `PASS_CASTS`: a caster in the world's directional shadow maps — the far
+ *   and near cascades and the lightning's (`render/WorldShadows.ts`).
+ * - `PASS_SOLID`: a translucent SOLID, which the foliage's map records.
+ */
+export const PASS_CASTS = 1;
+export const PASS_SOLID = 2;
+
+/**
+ * The uniform block (`CULL_UNIFORM_BYTES`) as ten `vec4u`s of words, and the
  * cluster and block records as whole `vec4`s — the one declaration of each,
  * shared with the instance cull (`wgsl/instanceCull.ts`) and `?cullcheck`'s
  * probe (`wgsl/cullProbe.ts`). No `vec3f` beside a scalar and no scalar
@@ -68,9 +79,11 @@ export const CULL_UNIFORM_BYTES = 144;
  *   move in w.
  * - word 8: the item count, the second count (groups or sets), workgroups,
  *   and the instance cull's draws.
+ * - word 9: the pass mask in x (`PASS_CASTS`, `PASS_SOLID`; 0 tests nothing),
+ *   padding.
  */
 export const CULL_DECLARATIONS = /* wgsl */ `
-@group(0) @binding(0) var<uniform> cull: array<vec4u, 9>;
+@group(0) @binding(0) var<uniform> cull: array<vec4u, 10>;
 
 fn plane(p: vec4u) -> vec4f { return bitcast<vec4f>(p); }
 fn eye() -> vec3f { return bitcast<vec3f>(cull[5].xyz); }
@@ -82,6 +95,7 @@ fn rampReach() -> f32 { return bitcast<f32>(cull[6].w); }
 fn bands2() -> vec3f { return bitcast<vec3f>(cull[7].xyz); }
 fn rigReach() -> f32 { return bitcast<f32>(cull[7].w); }
 fn itemCount() -> u32 { return cull[8].x; }
+fn passMask() -> u32 { return cull[9].x; }
 
 struct Cluster {
   // The box's low corner as float bits, and its first index in w.
@@ -90,7 +104,8 @@ struct Cluster {
   hi: vec4u,
   // group, block, surface, piece.
   refs: vec4u,
-  // The ramp weight as float bits, whether it is rigged, and padding.
+  // The ramp weight as float bits, whether it is rigged, the passes it is
+  // drawn in (\`PASS_CASTS\`, \`PASS_SOLID\`), and padding.
   sway: vec4u,
 }
 
@@ -108,11 +123,18 @@ struct Box {
 fn outsideBox(p: vec4f, mid: vec3f, half: vec3f, grow: f32) -> bool {
   return dot(p.xyz, mid) + dot(abs(p.xyz), half) + p.w < -grow;
 }
+
+/** Whether cluster \`c\` is drawn in this cull's pass: every one, under a mask of 0. */
+fn inPass(c: Cluster) -> bool {
+  let mask = passMask();
+  return mask == 0u || (c.sway.z & mask) != 0u;
+}
 `;
 
 /**
  * Cluster `k` as `CULL_DECLARATIONS`' `Cluster` — both culls' record: its
- * box, its first index and count, its four `refs`, and its sway.
+ * box, its first index and count, its four `refs`, its sway and the passes
+ * it is drawn in beside the main one (`passes`, `PASS_CASTS | PASS_SOLID`).
  */
 export function writeCluster(
   f: Float32Array,
@@ -121,6 +143,7 @@ export function writeCluster(
   cl: Cluster,
   first: number,
   refs: readonly [number, number, number, number],
+  passes: number,
 ): void {
   const o = k * CLUSTER_WORDS;
   f[o] = cl.lo[0];
@@ -134,6 +157,7 @@ export function writeCluster(
   for (let r = 0; r < 4; r++) u[o + 8 + r] = refs[r];
   f[o + 12] = cl.ramp;
   u[o + 13] = cl.rigged ? 1 : 0;
+  u[o + 14] = passes;
 }
 
 /**
@@ -244,6 +268,7 @@ fn dist2(lo: vec3f, hi: vec3f) -> f32 {
 }
 
 fn visible(c: Cluster) -> bool {
+  if (!inPass(c)) { return false; }
   let b = blocks[c.refs.y];
   if (dist2(b.lo.xyz, b.hi.xyz) > reach2()) { return false; }
   if (gateOn()) {

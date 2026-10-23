@@ -1,8 +1,9 @@
 /**
- * render/targets.ts — The attachments the frame's main pass draws into,
- * stated ONCE: every pipeline our renderer builds for that pass is built
- * against this, and nothing else in `src/render/` writes a format.
- * Owns: `FRAME_TARGETS` and `targetsKey`.
+ * render/targets.ts — The attachments the frame's main pass draws into, and
+ * the ones the world's shadow maps are drawn into, each stated ONCE: every
+ * pipeline our renderer builds for one of those passes is built against
+ * its own, and nothing else in `src/render/` writes a format.
+ * Owns: `FRAME_TARGETS`, `SHADOW_TARGETS` and `targetsKey`.
  * Invariants: `FRAME_TARGETS` is what the host's open pass is
  * (`FrameHost.passIs`), checked by `Renderer` on every frame it draws — a
  * pass that is not REFUSES the frame's draws rather than recording a
@@ -30,6 +31,23 @@ import type { PassTargets } from "./frameHost";
 /** The frame's main pass, as every pipeline drawn into it is built. */
 export const FRAME_TARGETS: PassTargets = {
   colorFormats: ["rgba8unorm"],
+  depthFormat: "depth32float",
+  sampleCount: 1,
+  flipY: true,
+};
+
+/**
+ * A world shadow map's pass (`render/WorldShadows.ts`, `BABYLON_EXIT.md`
+ * X3.6a): the caster's depth in an `r16float` colour attachment, which every
+ * reader samples through a FILTERING sampler for channel 0 alone (the cel
+ * lookup's `textureGather`, the volumetrics' `.x`) — Babylon's map was `rgba16float` with the depth in red and 1 in the
+ * other three, which no reader reads, so the one channel is the same numbers
+ * in a quarter of the memory; a `depth32float` attachment for the test, as
+ * Babylon's; one sample; and drawn upside down as Babylon draws every render
+ * target, which is the way up every reader's `clip.xy * 0.5 + 0.5` assumes.
+ */
+export const SHADOW_TARGETS: PassTargets = {
+  colorFormats: ["r16float"],
   depthFormat: "depth32float",
   sampleCount: 1,
   flipY: true,

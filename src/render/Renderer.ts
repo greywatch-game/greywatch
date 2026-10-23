@@ -33,8 +33,9 @@
  * and every `onRefused` listener is told, on every frame it is refused, so a
  * draw that something else would otherwise draw can be handed back to it;
  * nothing here allocates on a frame.
- * Never: imports Babylon — it is handed a `FrameHost`; draws into any pass
- * but the main one; reads a Babylon material.
+ * Never: imports Babylon — it is handed a `FrameHost`; draws into any of the
+ * HOST's passes but the main one (a prepare's pass into a texture of ours is
+ * the prepare's); reads a Babylon material.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
  *
  * WHERE A DRAW LANDS, in the host's own order, at one of three points of
@@ -98,10 +99,13 @@ export type FrameDraw = (pass: GPURenderPassEncoder, ctx: FrameContext) => void;
 
 /**
  * Work for the frame that must reach the GPU before the main pass's draws do
- * — a compute cull. Run once a frame as the pass begins, after the frame is
- * filled; it records into `encoder`, the host's own, which is submitted ahead
- * of the frame's draws and inside its GPU timer (`FrameHost.prepareEncoder`),
- * and it records nothing into the pass, submits nothing and keeps neither.
+ * — a compute cull, or a pass into a texture our renderer owns that the
+ * frame samples (a world shadow map, `WorldShadows`). Run once a frame as
+ * the pass begins, after the frame is filled; it records into `encoder`, the
+ * host's own, which is submitted ahead of every pass of the host's and inside
+ * the frame's GPU timer (`FrameHost.prepareEncoder`) — a pass it records is
+ * begun and ended there — and it records nothing into the main pass, submits
+ * nothing and keeps neither.
  * `timing` is non-null on a frame whose passes are timed (`PassTimer`): each
  * compute pass it records then begins with `timing.pass(its descriptor)`, so
  * `gpu.cull` is the sum of them.
