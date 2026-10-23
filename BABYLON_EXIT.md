@@ -1915,7 +1915,7 @@ plain draw and, with scatter, its one indirect draw, a pass.
 - **Verify, each:** the bank; X0.3; and for X3.6c, the probe-eye harness that
   measured 242b986, run again.
 
-**X3.6a landed** (2026-10-23).
+**X3.6a landed** (93d5918, the post-commit review's fixes after it; 2026-10-23).
 - **What it is.** The world's four directional maps — both cascades, the
   foliage's front-face map and the lightning's — are textures our renderer
   OWNS (`render/WorldShadows.ts`) and draws the casters into
@@ -2026,17 +2026,40 @@ plain draw and, with scatter, its one indirect draw, a pass.
     of its own a map); the second view of the culls is 12.1 MiB on Greyfen
     and Harrowmead, 9.6 on Sarab, 16.5 on Kurenai and 27.6 on Cinderhaven
     (an index buffer as large as the map's, and the scatter's per-record
-    scratch). So the step takes 50-70 MiB off every map.
+    scratch). So the step takes 50-70 MiB off every map on a rung that
+    draws one; on `off` it holds nothing (no caster is held, review below).
 - **What the review found** (fixed before the commit): `WorldBlocks`'
   contract header still described two layers; a `WorldDepth` was built for a
   map whose casters had already gone back at the cut (now skipped, and the
   install already refused the hand-over when a casting surface went back
   during the cut); the
   map count restated as `SHADOW_SLOTS`; a closure and iterators made on a
-  redraw frame; the shadow view's eye at the origin (the light's now, so the
-  survivors are ordered nearest the light first); a view's buffers labelled
+  redraw frame; the shadow view's eye at the origin (the light's now — the
+  bands are the camera's, which a light ~90 m back mostly lands past, so it
+  orders little); a view's buffers labelled
   as the map's (each now names its view); comments the step made false (the
   uniform's nine words, a reader's channel).
+- **What the post-commit review found** (a second, independent reader over
+  93d5918; fixed after it): `ShadowSystem.remakeOurs` kept a texture of the
+  same size under a view it had just disposed, which Babylon destroys at its
+  frame's end — latent, no path re-made a map at its own size, but nothing
+  stopped one (now always made afresh); `settled` waited on the LATEST ask,
+  which a moving window renews for as long as it moves, so the probes' bake
+  could be held off without limit (now each map's FIRST draw since its
+  casters or its texture changed — a fit for the two stalls above, not shown
+  to be their cause); the culls' second view built on the `off` rung, where
+  no map is drawn (no caster is held there now: `WorldShadows.rungDraws`,
+  which `ShadowSystem.setQuality` states — a rung switched on mid-map draws
+  on the generators until the next map); the foliage and flash matrices
+  not re-published on a hand-over; two `Vector3.Up()` a redraw; a scatter
+  part never asked whether it blends; `WorldBlocks` told whether to build
+  the depth by a boolean and counting the slots itself (it is handed the
+  count); and docs the step had over-claimed (the eye's ordering, which
+  the camera's bands mostly lose; the memory on `off`; whose meshes cast
+  on the fallback). A single group's failed pipeline still loses every
+  map, deliberately: one owner a map. Re-checked after the fixes: the
+  readback on seven maps, the gate on seven, and the paths above with a
+  round on `off` (no caster held, no generator) and back on `high` (ours).
 - **Owed onward.**
   - The shadow maps are not timed on our side: their culls are not in
     `gpu.cull`, and `shadowPass` brackets only Babylon's generators — in a

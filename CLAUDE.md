@@ -599,7 +599,7 @@ candidate, and nor is a BLOCK or the LANDFORM our renderer TAKES**
 (`BlockHandover`; the BUILD marks `WorldSurface.landform`), drawn in the MAIN
 pass by `src/render/` — **blocks, then landform, before the alpha-test list** —
 their Babylon meshes kept for the probes and the lamps' atlas (the world's
-shadow maps are drawn by our side too), and **a taken mesh is never
+shadow maps are drawn by our side too, while it holds every caster), and **a taken mesh is never
 switched off, hidden or faded after its build** — ours reads no node and would
 still draw it (a DEV check says so). **The SCATTER is drawn twice over and the
 two must agree**: our main pass draws it as INSTANCES of its variants, its

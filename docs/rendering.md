@@ -1909,7 +1909,8 @@ re-render every frame, frame limiter off: **~0.04 ms a frame on Coldharbour**
 (10 foliage casters in the window) and **~0.13 ms on Harrowmead** (58). Those
 are 2% and 7% of a bare scene-render frame of under 2 ms, and a real round's
 frame is several times that. The map is 1024² half-float RGBA, 8 MB — 2 MB since
-X3.6a, ours being one half-float channel.
+X3.6a, ours being one half-float channel, beside a 4 MB `depth32float`
+attachment it shares with the lightning's map.
 
 ### The bodies' map: why soldiers and hulls have one of their own
 
@@ -3735,8 +3736,13 @@ light's matrix over.
   (`WorldShadows.lose`): a group's or a cull's failure, or a refused main
   pass. The hand-over runs after the task in hand (`queueMicrotask`),
   because a refusal lands INSIDE a render whose unsubmitted commands still
-  hold the textures the generators' hand-over destroys — disposing Babylon's
-  wrapped view of one destroys the `GPUTexture` it wraps.
+  hold the textures the generators' hand-over destroys (`WorldShadows
+  .setSize` destroys at once; disposing Babylon's wrapped view of one
+  destroys the `GPUTexture` it wraps too, at the end of Babylon's frame — so
+  a texture of ours is always made afresh under a fresh view). **Losing is
+  deliberately WHOLESALE**: a single group's failed main-pass pipeline does
+  not stop our depth drawing it, but the rule is one owner a map, and the
+  path is a backstop no shipped map takes.
 - **Babylon's readers sample a WRAPPED view** (`WebGPUEngine.
   wrapWebGPUTexture`, re-pointed at itself so it has a view, nearest and
   clamped as the generator's map was), and our frame binds the texture
@@ -3744,7 +3750,9 @@ light's matrix over.
   both ways. **The format is `r16float`, where Babylon's was `rgba16float`**
   with the depth in red and 1 in the other three, which no reader reads
   (`textureGather` of channel 0, the volumetrics' `.x`): the same numbers in
-  a quarter of the memory. The depth attachments are `depth32float`, one a
+  a quarter of the memory. **A rung with every map OFF holds no caster**
+  (`WorldShadows.rungDraws`), so turning the shadows on mid-map draws on the
+  generators until the next map. The depth attachments are `depth32float`, one a
   SIZE in use, shared by the maps that size, which draw one after another.
 - **What is written is Babylon's number**: the clip z of the light's
   orthographic projection under the half-z range (`celDepth.ts`; Babylon's

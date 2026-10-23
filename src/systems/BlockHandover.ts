@@ -189,7 +189,9 @@ export class BlockHandover {
    * The shadow passes a surface or a part is drawn in, as Babylon's
    * generators would have been handed it (`ShadowSystem.casts`): none for a
    * `noShadowCaster` one or one its generator skips as blended
-   * (`transparencyShadow` off), the world's maps for the rest, and the
+   * (`transparencyShadow` off), the world's maps for the rest — and, a rung
+   * that draws no map, held for none: a later rung that does draws on the
+   * generators until the next map — and the
    * foliage's too for a translucent SOLID (`CelMaterialFactory.isSolid`).
    * The generators' own statement of it is `ShadowSystem.casts`, which the
    * blend test is not in because a generator makes it itself: the two must
@@ -197,7 +199,8 @@ export class BlockHandover {
    */
   private passesOf(metadata: { noShadowCaster?: boolean } | null | undefined, material: Material | null, mesh: Mesh | null): number {
     if (metadata?.noShadowCaster) return 0;
-    if (material && mesh && material.needAlphaBlendingForMesh(mesh)) return 0;
+    // A part has no mesh of its own: its material alone says whether it blends.
+    if (material && (mesh ? material.needAlphaBlendingForMesh(mesh) : material.needAlphaBlending())) return 0;
     return PASS_CASTS | (this.mats.isSolid(material) ? PASS_SOLID : 0);
   }
 
@@ -247,7 +250,9 @@ export class BlockHandover {
     const boxes: BlockBox[] = meshes.map((mesh) =>
       this.castersOnly.has(mesh) ? NO_REACH : this.culling.reachBoxOf(mesh),
     );
-    const holdsAll = this.allCasters && this.casting.size > 0;
+    // Held for maps that draw: on a rung with every map off there is nothing
+    // to draw them into, and the generators (of none) are the map's.
+    const holdsAll = this.allCasters && this.casting.size > 0 && this.shadows.rungDraws;
     this.blocks.finish(
       boxes,
       field
@@ -256,7 +261,7 @@ export class BlockHandover {
             sets: field.sets.map((set) => ({ matrices: set.matrices, scales: set.scales })),
           }
         : null,
-      holdsAll,
+      holdsAll ? this.shadows.slots : 0,
     );
     // The cut may already have handed casters back — a group it could not
     // draw, or the whole map past the device's limits — before there were

@@ -137,7 +137,6 @@ import { type AssembledAttribute, type AssembledModule, type AssembledVertex, PU
 import { CLUSTER_WORDS, writeCluster } from "./wgsl/clusterCull";
 import { INDIRECT_BYTES } from "./wgsl/instanceCull";
 import { type DepthGroup, WorldDepth } from "./WorldDepth";
-import { WORLD_SHADOW_MAPS } from "./WorldShadows";
 
 /** How the blocks are cut — `CONFIG.graphics.clusters`. */
 export interface ClusterOptions {
@@ -405,12 +404,12 @@ export class WorldBlocks {
    * built. `blocks[s]` is surface `s`'s REACH box — its block's, as the
    * frame's mesh walk files it, or the one box of no reach every landform
    * surface is handed (`WorldCulling.reachBoxOf`); surfaces of one box share
-   * the object. With `shadows`, the map as the shadow maps record it is
-   * built too (`depth`), over the same tables — unless a group with a shadow
-   * pass went back before the cut, when the map's shadows are not ours to
-   * draw.
+   * the object. With `shadowSlots`, the map as that many shadow maps record
+   * it in one submit is built too (`depth`), over the same tables — unless a
+   * group with a shadow pass went back before the cut, when the map's
+   * shadows are not ours to draw.
    */
-  finish(blocks: readonly BlockBox[], scatter: ScatterCut | null = null, shadows = false): void {
+  finish(blocks: readonly BlockBox[], scatter: ScatterCut | null = null, shadowSlots = 0): void {
     const surfaces = this.surfaces;
     if (blocks.length !== surfaces.length) throw new Error("world blocks: a block for every surface");
     // Nothing taken (an editor build, a map of loose surfaces): no cull, and
@@ -499,7 +498,7 @@ export class WorldBlocks {
       this.ask(group);
     }
     const casterLost = this.groups.some((g) => g.failed && (g.surfacePasses | g.scatterPasses) !== 0);
-    if (shadows && !casterLost) {
+    if (shadowSlots > 0 && !casterLost) {
       this.worldDepth = new WorldDepth(
         this.renderer,
         this.cull,
@@ -508,8 +507,7 @@ export class WorldBlocks {
         this.transforms,
         clusterCount,
         this.stride,
-        // A slot for every map one submit may draw.
-        WORLD_SHADOW_MAPS.length,
+        shadowSlots,
       );
     }
     const generation = this.generation;

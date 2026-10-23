@@ -8,9 +8,10 @@
  * format), the depth attachments they share by size, each map's light block
  * (`DEPTH_BLOCK`) and its bind groups, the pass each is drawn with, the
  * `OwnTexture` our renderer binds it through and the sampler behind it, which
- * maps are owed a draw, and the casters they are drawn from (`WorldDepth`,
- * the map's, while its shadows are ours); `WORLD_SHADOW_MAPS` and
- * `WorldShadowMap`.
+ * maps are owed a draw and which have not been drawn since their casters
+ * or their texture changed; it HOLDS the casters they are drawn from
+ * (`WorldDepth`, the map's while its shadows are ours), which `WorldBlocks`
+ * owns; `WORLD_SHADOW_MAPS` and `WorldShadowMap`.
  * Invariants: a map is drawn only when ASKED (`draw`, which `ShadowSystem`
  * calls when a window it places moves, as Babylon's generator re-rendered
  * only when its refresh counter was reset) and is drawn ONCE for the ask, on
@@ -19,18 +20,22 @@
  * frame, a probe's or the main pass's, samples the map drawn for it; until
  * the casters are built, and on a frame our renderer prepares nothing (it
  * draws nothing of the world's either, which only the first frames of a map
- * behind the building card do), an ask waits, and `settled` says so; its
- * survivors are ordered nearest the LIGHT first (`draw`'s `eye`), so the
- * depth test spares the casters behind them their fragments; a texture is
+ * behind the building card do), an ask waits; `settled` says whether every
+ * map ASKED for since its casters or its texture changed has been drawn once
+ * — never whether the latest ask has, which a moving window keeps renewing;
+ * its survivors are banded from where the light stands (`draw`'s `eye`) by
+ * the camera's bands, which a light ~90 m back mostly lands past, so the
+ * order is the scan's and buys the depth test little; a texture is
  * born and re-made CLEARED TO LIT (depth 1, past every receiver) by a submit
  * of its own, so no reader ever samples a map nobody drew, and a map with no
  * casters is cleared to lit as well — and so is the lightning's re-made by a
  * rung change, until the next strike, where Babylon's re-made generator drew
  * the last strike again; the far, near and lightning maps keep
  * the casters' BACK faces and the foliage's their front, each its own pass
- * mask (`PASS_CASTS`, `PASS_SOLID`); a texture is destroyed only when its
- * map is re-sized or this is disposed, and whoever handed a wrapped view of
- * it to Babylon must have let that view go first (`ShadowSystem`); nothing
+ * mask (`PASS_CASTS`, `PASS_SOLID`); a texture is destroyed when its map is
+ * re-sized or this is disposed — and by Babylon, at the end of its frame,
+ * when a wrapped view of it is disposed, so whoever wraps one lets the view
+ * go only with the texture it wraps (`ShadowSystem.remakeOurs`); nothing
  * here allocates on a frame but the passes WebGPU makes.
  * Never: imports Babylon; decides where a light stands or when a window has
  * moved — the matrix is handed in, as `ShadowSystem` places it; reads a node.
@@ -85,6 +90,10 @@ interface ShadowMapState {
   pass: GPURenderPassDescriptor | null;
   /** It was asked for and not drawn yet. */
   pending: boolean;
+  /** It has been drawn since its casters or its texture last changed. */
+  drawnOnce: boolean;
+  /** It was asked for since then and not drawn yet: what `settled` waits on. */
+  owedFirst: boolean;
 }
 
 export class WorldShadows {
@@ -133,6 +142,8 @@ export class WorldShadows {
         inputs,
         pass: null,
         pending: false,
+        drawnOnce: false,
+        owedFirst: false,
       };
       return map;
     };
@@ -151,15 +162,31 @@ export class WorldShadows {
   }
 
   /**
-   * Whether every map asked for has been drawn from built casters — what a
-   * reader that must not sample a map before its first draw waits on (the
-   * probes' bake, `ShadowSystem.ready`). False with no casters.
+   * Whether every map asked for since its casters or its texture changed has
+   * been drawn once from built casters — what a reader that samples a map
+   * once and keeps the answer waits on (the probes' bake, `ShadowSystem
+   * .ready`). Not whether the LATEST ask has been: a window that keeps moving
+   * keeps asking, and a gate on that could wait for as long as it moves.
+   * False with no casters.
    */
   get settled(): boolean {
     if (!this.depth || !this.built) return false;
     const order = this.order;
-    for (let i = 0; i < order.length; i++) if (order[i].pending && order[i].colour) return false;
+    for (let i = 0; i < order.length; i++) if (order[i].owedFirst) return false;
     return true;
+  }
+
+  /**
+   * Whether the shadow rung draws any of the four maps, whoever holds them —
+   * stated by `ShadowSystem.setQuality`, which alone knows the rung's sizes
+   * (these textures have none while Babylon's generators hold the maps).
+   * With none, a map's casters would be held for nothing.
+   */
+  rungDraws = true;
+
+  /** How many maps one submit may draw: a slot each in the casters' culls. */
+  get slots(): number {
+    return WORLD_SHADOW_MAPS.length;
   }
 
   /** `name`'s texture, or null while it has none — what a Babylon reader is handed a wrapped view of. */
@@ -193,6 +220,8 @@ export class WorldShadows {
     map.own.view = null;
     map.own.sampler = null;
     map.size = size;
+    map.drawnOnce = false;
+    map.owedFirst = false;
     this.releaseDepths();
     if (size <= 0) {
       map.pending = false;
@@ -235,6 +264,7 @@ export class WorldShadows {
     map.inputs.viewProjection.set(viewProjection);
     map.inputs.eye.set(eye);
     map.pending = true;
+    if (!map.drawnOnce) map.owedFirst = true;
   }
 
   /**
@@ -249,6 +279,10 @@ export class WorldShadows {
     this.unhook = null;
     this.depth = depth;
     this.built = false;
+    for (let i = 0; i < this.order.length; i++) {
+      this.order[i].drawnOnce = false;
+      this.order[i].owedFirst = false;
+    }
     if (!depth) {
       for (const name of WORLD_SHADOW_MAPS) {
         const map = this.maps[name];
@@ -354,6 +388,8 @@ export class WorldShadows {
       map.light.write(map.lightValues);
       depth.record(encoder, map.pass, map.inputs, map.faces, map.lightGroup, map.slot);
       map.pending = false;
+      map.drawnOnce = true;
+      map.owedFirst = false;
     }
   };
 }

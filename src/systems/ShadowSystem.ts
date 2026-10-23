@@ -386,6 +386,7 @@ export class ShadowSystem {
       foliage: tier.foliage,
       flash: Math.min(tier.sun, FLASH_MAP_MAX),
     };
+    this.world.rungDraws = WORLD_SHADOW_MAPS.some((name) => sizes[name] > 0);
     for (const name of WORLD_SHADOW_MAPS) {
       const map = this.maps[name];
       if (sizes[name] === map.size) continue;
@@ -464,13 +465,15 @@ export class ShadowSystem {
   }
 
   /**
-   * `map`'s texture of ours re-made at its size — cleared to lit, owed a draw
-   * — and Babylon's view of it with it. The old view goes FIRST: disposing it
-   * destroys the texture it wraps, which is the one being replaced.
+   * `map`'s texture of ours re-made at its size — cleared to lit — and
+   * Babylon's view of it with it. Disposing the old view destroys the texture
+   * it wraps (Babylon releases it at the end of its frame), so the texture is
+   * made AFRESH whatever its size, never kept under a view that is going.
    */
   private remakeOurs(map: WorldMap): void {
     map.wrapped?.dispose();
     map.wrapped = null;
+    this.world.setSize(map.name, 0);
     this.world.setSize(map.name, map.size);
     map.wrapped = this.wrap(map.name);
   }
@@ -556,14 +559,20 @@ export class ShadowSystem {
         );
         shadows.setNearShadowMatrix(this.matrixOf(map) ?? this.nearOffMatrix);
         return;
-      case "flash":
+      case "flash": {
         shadows.setFlashMap(texture, own);
         shadows.setFlashParams(depthBias(c.bias, c.depthRange));
+        const matrix = this.matrixOf(map);
+        if (matrix) shadows.setFlashMatrix(matrix);
         return;
-      case "foliage":
+      }
+      case "foliage": {
         shadows.setFoliageMap(texture, own);
         shadows.setFoliageParams(depthBias(1, c.depthRange));
+        const matrix = this.matrixOf(map);
+        if (matrix) shadows.setFoliageMatrix(matrix);
         return;
+      }
     }
   }
 
@@ -579,9 +588,10 @@ export class ShadowSystem {
     const light = map.light;
     const dir = this.lightDir;
     Vector3.NormalizeToRef(light.direction, dir);
-    if (Math.abs(Vector3.Dot(dir, Vector3.Up())) === 1.0) dir.z = 0.0000000000001;
+    // `UpReadOnly` where Babylon makes a fresh `Up()`: the same numbers, no garbage.
+    if (Math.abs(Vector3.Dot(dir, Vector3.UpReadOnly)) === 1.0) dir.z = 0.0000000000001;
     light.position.addToRef(dir, this.lightTarget);
-    Matrix.LookAtLHToRef(light.position, this.lightTarget, Vector3.Up(), this.lightView);
+    Matrix.LookAtLHToRef(light.position, this.lightTarget, Vector3.UpReadOnly, this.lightView);
     Matrix.OrthoLHToRef(
       light.shadowFrustumSize,
       light.shadowFrustumSize,

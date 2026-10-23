@@ -4807,6 +4807,8 @@ export class Game {
     // the player's (`applySettings`). A vignette that reads as dread over a
     // night village reads as a lens fault over a bright one.
     this.post.setGrade(environment.grade);
+    // AFTER `handover.install`, which hands `WorldShadows` the casters when it
+    // holds every one: who draws this map's shadows is read off that here.
     this.shadows.setCasters(map.visuals);
     // The lamps' casters: the colliders a MOVING light's proxies are drawn
     // from, and the visuals a fixture's static tile is baked from. Every light
