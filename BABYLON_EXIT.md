@@ -2067,8 +2067,10 @@ plain draw and, with scatter, its one indirect draw, a pass.
 - **Owed onward.**
   - The shadow maps are not timed on our side: their culls are not in
     `gpu.cull`, and `shadowPass` brackets only Babylon's generators — in a
-    round, only the bodies'. The phone's reading of the step is its
-    `gpu.frame`, against X3.5b's.
+    round, only the bodies'. So when the phone's FOLLOW-UP reading is taken
+    (owed as every step's has been since X3.3c, the user's to take; the
+    step's own Verify — the bank and X0.3 — is above), it is read as
+    `gpu.frame` against X3.5b's.
   - X3.6b, the lamps' atlas, holds `map.visuals` the same way: the caster
     groups and the pass mask are its to extend.
 
