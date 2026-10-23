@@ -2864,9 +2864,16 @@ puts it in work both builds do; the forest maps' scatter list and the
 3440x1440 max-settings frame are the first suspects, the machine's state that
 day (a long session of uncapped runs) the third.
 
+**At 1920x1080 it still hangs** (the same loop at 4fd2e85, 2026-10-23): 4
+of 9 runs, Greyfen, Harrowmead and Sarab each — so it is not the 3440x1440
+canvas's fill. Sarab hanging there, a map whose scatter list is a sixth of
+the forest maps', weighs against the list as well.
+
 ### How to settle it
-- The same loop CAPPED, and at 1920x1080: if both stop hanging, it is load.
-- The same loop at X3.5b's parent (before the scatter list): if it stops, it
-  is the list's draw or its cull.
-- A fresh boot of the machine, the loop again.
+- A fresh boot of the machine, the loop again: the benchmark completed run
+  after run on this box until this session, so its state is the first
+  suspect now.
+- The same loop CAPPED (`launchClient`'s browser), which halves the GPU's
+  duty: if it stops, it is sustained load on this card.
+- Only then the same loop at X3.5b's parent (before the scatter list).
 
