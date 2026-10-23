@@ -3424,9 +3424,11 @@ probes and the lamps' atlas — until X3.6 moves those passes.
   group that draws scatter wears the stage's SCATTER twin, which binds the
   list and the 16-bit source beside its arrays — eight storage buffers in a
   palette variant, the default limit. **The cut is held to what that can
-  name**: a scatter whose records times 384 corners pass 2^31, or whose
-  part passes 65,536 vertices, goes back to Babylon whole, never drawn
-  wrapped.
+  name**: a scatter whose records times `listStride`'s corners (384 at the
+  shipped 128 triangles a cluster) pass 2^31, or whose list passes the
+  device's storage limit, hands every recipe that draws scatter back to
+  Babylon whole, and a part past 65,536 vertices its own recipe — never
+  drawn wrapped (`scatterCut.ts`'s `listPast` and `sourcePast`).
 - **A recipe's DEPTH BIAS is its pipeline's** (`CelRecipe.depthBias`, Babylon's
   `zOffsetUnits`, `PipelineState.depthBias`), asked for by `WorldBlocks` with
   the recipe — so the roads' `ROAD_DEPTH_UNITS` (-8) is drawn by our side as
@@ -3574,7 +3576,7 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
   records are scanned near-first into their group's own run of ONE LIST, by
   a scan and never an atomic append, each a 16-byte ENTRY (instance, first
   source index, count, part), and each group's scatter is one non-indexed
-  `drawIndirect` of 384 corners a survivor (a cluster's most, so a short
+  `drawIndirect` of `listStride` corners a survivor (a cluster's most, so a short
   cluster ends in triangles of no area): the vertex stage reads the entry
   and the part's 16-bit SOURCE index itself, the part's first vertex on the
   entry. **The cull writes no index, and that is the phone's price rather

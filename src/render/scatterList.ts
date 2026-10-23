@@ -5,7 +5,8 @@
  * the scatter's draw names an entry and a corner of its cluster, which the
  * vertex stage reads back through the list and the 16-bit source.
  * Owns: the entry (`LIST_WORDS`), the index's encoding — the scatter bit and
- * the corners beneath it (`SCATTER_CORNERS`) — and its WGSL
+ * the corners beneath it (`SCATTER_CORNERS`), and the corners a survivor
+ * takes (`listStride`) — and its WGSL
  * (`scatterListWgsl`), the source's width (`SOURCE_VERTICES`) and its read
  * (`sourceIndexWgsl`): the one spelling of each, for the cull that writes an
  * entry and the stage that reads one.
@@ -37,6 +38,15 @@ export const LIST_WORDS = 4;
 export const SCATTER_CORNERS = 2 ** 31;
 /** The most vertices one instanced part may hold: its source indices are 16 bits. */
 export const SOURCE_VERTICES = 2 ** 16;
+
+/**
+ * The corners a survivor's run takes in the scatter's draw, for clusters of
+ * at most `triangles` triangles (`CONFIG.graphics.clusters`): a cluster's
+ * most indices, so every run is one length — the list's `stride`.
+ */
+export function listStride(triangles: number): number {
+  return triangles * 3;
+}
 
 /**
  * The list's encoding as WGSL, for a list whose survivors each take `stride`

@@ -155,8 +155,9 @@ async function oursCheck({ shapes, biased }) {
   const { PipelineCache } = await import("/src/render/PipelineCache.ts");
   const { FRAME_TARGETS } = await import("/src/render/targets.ts");
   const { CONFIG } = await import("/src/config/index.ts");
+  const { listStride } = await import("/src/render/scatterList.ts");
   // The scatter list's stride, as `WorldBlocks` takes it.
-  const stride = CONFIG.graphics.clusters.triangles * 3;
+  const stride = listStride(CONFIG.graphics.clusters.triangles);
   const adapter = await navigator.gpu.requestAdapter();
   const device = await adapter.requestDevice();
   const cache = new PipelineCache(device);

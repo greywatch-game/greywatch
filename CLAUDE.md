@@ -600,7 +600,7 @@ colour baked once per kind, and cuts its pieces out of the blocks it takes,
 while Babylon's merged copy stays in those blocks for every other pass
 (`BuildOptions.onScatter`) — and **a scatter index names a survivor's entry and
 a corner in 31 bits** (`render/scatterList.ts`), so a map whose scatter
-records times a cluster's most indices (384) pass 2^31 hands every recipe
+records times a cluster's most indices (`listStride`) pass 2^31 hands every recipe
 that draws scatter back to Babylon whole, blocks and all, as does a recipe
 whose single scatter VARIANT part passes 65,536 vertices, its source indices
 being 16 bits (`SOURCE_VERTICES`).

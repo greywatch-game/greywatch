@@ -2391,9 +2391,15 @@ src/
                         #   and scatter (X3.5b). Every variant compiled by
                         #   plans/webgpu-ref/shaders.mjs
     scatterList.ts      # The scatter's draw (X3.5b): a survivor's 16-byte
-                        #   ENTRY, an index = top bit + slot * 384 + corner,
-                        #   the 16-bit source and its read, as WGSL; the
-                        #   budget a cut is held to
+                        #   ENTRY, an index = top bit + slot * stride +
+                        #   corner (listStride: a cluster's most indices),
+                        #   the 16-bit source and its read, as WGSL
+    scatterCut.ts       # The scatter's half of WorldBlocks' cut: the
+                        #   instance cull's tables built group by group
+                        #   (ScatterTables — clusters, records, ranges, the
+                        #   16-bit source, each instance's sphere), the
+                        #   instances' transforms, and the budget a cut is
+                        #   held to (partRecords, listPast, sourcePast)
     WorldBlocks.ts      # The map's block, landform and scatter drawn by US:
                         #   one GROUP per recipe a layer (its scatter parts'
                         #   arrays first, then its surfaces'; one material, one

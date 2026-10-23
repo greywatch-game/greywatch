@@ -4,7 +4,8 @@
  * `BABYLON_EXIT.md` X3.3b) — a block's, or the landform's (X3.5).
  * Owns: `cutClusters` and the `Cluster` it makes; `withoutPieces`, a surface
  * with some of its pieces cut out (the scatter's, which our renderer draws
- * as instances instead — `BABYLON_EXIT.md` X3.4b).
+ * as instances instead — `BABYLON_EXIT.md` X3.4b); `toFloat32`, a surface's
+ * floats as the device holds them.
  * Invariants: a cluster is a run of at most `maxTriangles` CONSECUTIVE
  * triangles of ONE piece, in the surface's own index order, so the clusters
  * of a surface tile its index list in order and a cluster's piece is the
@@ -94,6 +95,11 @@ export function withoutPieces(
     pieces: out,
     cutIndices: geometry.indices.length - indexTotal,
   };
+}
+
+/** A float array as the device holds it — rounded exactly as `new Float32Array(numbers)`. */
+export function toFloat32(a: Float32Array | Float64Array): Float32Array {
+  return a instanceof Float32Array ? a : Float32Array.from(a);
 }
 
 /**
