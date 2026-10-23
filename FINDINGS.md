@@ -2777,7 +2777,8 @@ of 39d84ea's medians on every path, so the timer moved nothing it measures.
 X3.5b makes the cull bigger (the instances expanded into their clusters);
 this is its BEFORE. Its AFTER (`BABYLON_EXIT.md` X3.5b): Greyfen 0.027 to
 0.095 ms on the vantages, 1.7% of the frame, Harrowmead 0.029 to 0.085,
-Sarab 0.029 to 0.041 — still not it.
+Sarab 0.029 to 0.041 — still not it; since the survivors' list (e07ae7c)
+0.049-0.057 ms on all three.
 
 ### What is left
 

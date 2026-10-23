@@ -417,6 +417,10 @@ export class WorldBlocks {
       // starts. A group handed back keeps its place in both culls' tables,
       // empty.
       const vertexBase = this.cutInstanced(group, g, sets, setStarts, scatterTables);
+      // It draws scatter only if a record is its, so a group that does has
+      // an instance cull to bind (a part of no triangle makes no record).
+      const range = scatterTables.ranges[g];
+      group.scattered = !group.failed && range.end > range.start;
       if (!group.failed) this.cutGroup(group, g, vertexBase, size.vertices[g], indices, at, cut);
       ranges.push({ start, end: at.cluster, base: group.indexBase });
       group.indexCount = at.index - group.indexBase;
@@ -534,7 +538,6 @@ export class WorldBlocks {
     cut: CutSurface[],
   ): void {
     group.arrays = group.program.vertex.attributes.map((a) => this.attributeArray(group, a.name, a.type, vertexTotal));
-    group.scattered = group.instanced.length > 0;
     let vertex = vertexBase;
     for (const s of group.members) {
       const surface = this.surfaces[s];

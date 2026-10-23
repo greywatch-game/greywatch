@@ -74,7 +74,8 @@ export interface InstanceTables {
   /**
    * `CLUSTER_WORDS` a cluster of an instanced part, laid out as the WGSL's
    * `Cluster` in its set's own frame: its first index into `source` in word
-   * 3, its index count in 7, its range in 8, its sway in 12 and 13.
+   * 3, its index count in 7, its range in 8, its part's first vertex in its
+   * group's arrays in 9, its sway in 12 and 13.
    */
   readonly clusters: ArrayBuffer;
   /** `RECORD_WORDS` a record: its instance, then its cluster — every range's contiguous, in range order. */
