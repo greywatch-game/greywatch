@@ -2876,6 +2876,13 @@ before and after X3.6a, full size and 1080p, uncapped and capped — hangs
 about half the runs, which points at the machine's state rather than at
 anything a run draws.
 
+**And it hangs with OUR RENDERER OUT of the frame** (`?babylonworld`, the
+same loop at 4fd2e85: nothing taken, Babylon drawing every block, the floor
+and the world's shadow maps through its generators — `ours: false` in every
+dump): 5 of 9 runs, all three maps. So the hang is not in anything the
+Babylon exit has drawn, X3.6a or earlier; it is in what Babylon still draws,
+or in the machine.
+
 ### How to settle it
 - A fresh boot of the machine, then the loop again (the scratch watchdog,
   or plainly `bench.mjs greyfen harrowmead sarab --max --runs 3` twice): the

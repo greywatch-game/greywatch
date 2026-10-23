@@ -2020,7 +2020,9 @@ plain draw and, with scatter, its one indirect draw, a pass.
     `DXGI_ERROR_DEVICE_HUNG`, the D3D12 device removed mid-run, rendering
     stopped. And it is the MACHINE's, not the step's — the identical loop at
     the parent, a78a4eb, hung 6 of 9 runs (all three maps), against 4 of 9
-    at 4fd2e85 (Greyfen 3, Harrowmead 1). `FINDINGS.md` 64.
+    at 4fd2e85 (Greyfen 3, Harrowmead 1) — and 4 of 9 at 1920x1080, 4 of 9
+    capped at 60, and 5 of 9 under `?babylonworld`, our renderer drawing
+    nothing at all. `FINDINGS.md` 64.
   - **What the shadow view costs in memory** — measured off every buffer and texture made through the install:
     the textures are 40 MiB on the `high` rung (two 2048 and two 1024
     `r16float` maps and one `depth32float` attachment a size), where the
