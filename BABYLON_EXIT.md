@@ -1825,13 +1825,50 @@ floor its shading:
     the vertex stage's lost reuse costs the desktop about 0.15 ms where the
     cull saves 0.03. The phone's cull saves an order more, and its vertex
     work costs what only its run can say.
-- **Owed.** The phone's A/B on this build, one session: a thrown-away
-  warm-up, then each map twice back to back, `?bench=<map>&gpu` and
-  `?bench=<map>&gpu&scatterlist`, alternating which goes first (Greyfen
-  plain first, Harrowmead list first, Sarab plain first); `gpu.frame` per
-  pair decides it, `gpu.cull` says what the writes were. A same-session
-  pair against 3b9be6c still prices the fold itself. And the user's
-  decision on the stream's writes (`FINDINGS.md` 63).
+- **The phone's A/B, taken 2026-10-23** on the deployed d763327 (Android 17,
+  Chrome 155, report version 19, one matched 1170x540 on all six, the
+  canonical hashes), in the protocol's order: Greyfen stream then list,
+  Harrowmead list then stream, Sarab stream then list, 00:52-01:22 UTC.
+  Stream → list, the segment groups' means (GPU less cull is the one
+  subtracted from the other):
+
+  | map | part | tick | GPU | cull | GPU less cull |
+  | --- | --- | --- | --- | --- | --- |
+  | Greyfen | vantages | 4.04 → 4.04 | 12.29 → 11.97 | 0.82 → 0.40 | 11.47 → 11.58 |
+  | Greyfen | path | 5.03 → 4.80 | 15.07 → 14.44 | 0.87 → 0.38 | 14.20 → 14.06 |
+  | Greyfen | fight | 12.92 → 11.71 | 18.11 → 16.97 | 1.17 → 0.51 | 16.94 → 16.46 |
+  | Harrowmead | vantages | 5.14 → 4.46 | 12.64 → 12.04 | 1.09 → 0.41 | 11.55 → 11.63 |
+  | Harrowmead | path | 4.83 → 4.39 | 13.34 → 11.87 | 1.08 → 0.36 | 12.26 → 11.51 |
+  | Harrowmead | fight | 10.59 → 9.88 | 15.49 → 14.98 | 1.53 → 0.49 | 13.96 → 14.49 |
+  | Sarab | vantages | 4.88 → 5.79 | 10.59 → 10.83 | 0.62 → 0.51 | 9.97 → 10.32 |
+  | Sarab | path | 4.90 → 5.06 | 10.78 → 11.16 | 0.55 → 0.45 | 10.23 → 10.71 |
+  | Sarab | fight | 13.84 → 16.80 | 10.19 → 11.09 | 0.65 → 0.53 | 9.54 → 10.56 |
+
+  - **The list takes 55-70% off the forest maps' cull** (0.4-1.0 ms) and
+    15-20% off Sarab's (0.1): the writes were the cost, as the probe said.
+  - **The lost vertex reuse costs the phone too, about half of what the
+    cull saves.** Paired vantage by vantage on medians where the tick says
+    the phone was in one state (Greyfen's, Harrowmead's millpond,
+    borderland, ground and crossing), the rest of the GPU frame rose 0-0.8
+    ms; both forest fights +0.7 (medians). On Sarab it rose 0.1-1.0, but
+    its list run was the hotter one (tick +19% on the vantages, +21% on the
+    fight, which a GPU binding cannot do).
+  - **So the frame: a small win on the forest maps, a small loss on
+    Sarab.** Greyfen's list run went second and still read 0.3-1.1 ms
+    lower on every group (fight 18.1 to 17.0, frame 24.4 to 23.5 ms);
+    Harrowmead's 0.5-1.5 lower, but it went first and the stream run's
+    tick was 7-15% higher, so that is the heat's as much as the list's.
+    Sarab 0.24-0.9 higher, its fight bound by the CPU either way (tick
+    13.8-16.8 against a 10-11 ms GPU). The look parts held the 60 cap in
+    both modes on every map.
+  - **The 16-bit source has no phone reading.** The stream mode's cull
+    against 1ec93a4's capture a day earlier: Greyfen 0.75 to 0.82 on the
+    vantages (fight 0.87 to 1.17), Harrowmead 1.17 to 1.09 (fight 1.75 to
+    1.53), Sarab within 0.1 — across sessions and either way, so nothing.
+- **Owed.** The user's decision between the two modes — the list also
+  retires `FINDINGS.md` 63's memory (Greyfen's stream 124 MB, its list
+  1.3 MB) and the 128 MiB binding limit. A same-session pair against
+  3b9be6c still prices the fold itself.
 
 ### X3.6 — The static world's other passes (PERF_PLAN B3) — **L, as four sub-steps**
 

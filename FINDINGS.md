@@ -2896,18 +2896,23 @@ same probe's 400 ms samples, so a floor and not a proof): the most any
 sampled frame kept was 16% of the stream on Greyfen (3.0 M of 19.2 M), 51%
 on Harrowmead (7.4 M of 14.6 M), 24% on Sarab (0.7 M of 3.0 M).
 
-The levers on the WRITES, none built:
+The levers on the WRITES:
 - **Draw the work list instead of an expanded stream** — BUILT behind
-  `?scatterlist` 2026-10-22, the phone's A/B owed. Clusters padded to
+  `?scatterlist` 2026-10-22 and MEASURED on the phone 2026-10-23
+  (`BABYLON_EXIT.md` X3.5b): the forest maps' cull 55-70% lower (0.4-1.0
+  ms), about half of it given back to the lost vertex reuse, so their GPU
+  frame 0.3-1 ms lower; Sarab's 0.2-0.9 higher, partly heat. Which mode is
+  the default is the user's call — the list also retires this finding's
+  memory and limit. Clusters padded to
   one fixed index count; a non-indexed indirect draw whose vertex index
   names the survivor (`/ K`) and the corner (`% K`), and the vertex stage
   reads the survivor and `source` itself. The cull writes 16 bytes a
   survivor (94 KB on Greyfen, not 8 MiB) and `expand` goes; the price is
   the post-transform cache, so the scatter's vertex work rises up to about
-  3x, which on a GPU-bound phone may cost more than it saves. Only a phone
-  run can say.
+  3x.
 - **Fewer indices a survivor far off** — a distance rung of each variant,
   so the far scatter writes and draws less. Moves pixels; the user's call.
 - ~~**A 16-bit `source`**~~ — BUILT 2026-10-22: each index local to its
   part, the part's first vertex on its clusters, so a quarter of the
-  traffic goes and no pixel moves. The phone's reading of it is owed.
+  traffic goes and no pixel moves. The phone shows nothing either way
+  across sessions (2026-10-23).
