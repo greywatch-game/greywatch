@@ -83,16 +83,10 @@ export type CullMode = "full" | "nofrustum" | "none";
 export interface CullDiagnostics {
   readonly mode: CullMode;
   readonly report: CullReport | null;
-  /**
-   * `?scatterlist`: the scatter draws its survivors' LIST rather than an
-   * expanded stream (`wgsl/instanceCull.ts`'s header) — an A/B of what the
-   * expansion's writes cost against the vertex stage's lost reuse.
-   */
-  readonly scatterList: boolean;
 }
 
 /** Every test, and no check: what a cull runs with but for a diagnostic. */
-export const NO_DIAGNOSTICS: CullDiagnostics = { mode: "full", report: null, scatterList: false };
+export const NO_DIAGNOSTICS: CullDiagnostics = { mode: "full", report: null };
 
 /**
  * Opens the tests `mode` turns off in a cull's uniform block, after the frame

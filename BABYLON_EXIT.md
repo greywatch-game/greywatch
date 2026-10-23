@@ -1865,10 +1865,32 @@ floor its shading:
     against 1ec93a4's capture a day earlier: Greyfen 0.75 to 0.82 on the
     vantages (fight 0.87 to 1.17), Harrowmead 1.17 to 1.09 (fight 1.75 to
     1.53), Sarab within 0.1 — across sessions and either way, so nothing.
-- **Owed.** The user's decision between the two modes — the list also
-  retires `FINDINGS.md` 63's memory (Greyfen's stream 124 MB, its list
-  1.3 MB) and the 128 MiB binding limit. A same-session pair against
-  3b9be6c still prices the fold itself.
+- **The list is the only draw now, and the stream is gone** (2026-10-23,
+  the user's decision on the A/B above). The cull writes the list and
+  nothing else: no stream buffer, no `expand` that copies indices, no
+  `drawIndexedIndirect`, no `?scatterlist`. `render/streamIndex.ts` became
+  `render/scatterList.ts` — the entry, an index as the scatter bit over
+  `slot * 384 + corner`, the 16-bit source and its read — and the 13/18-bit
+  split went with the stream, so the budget a cut is held to is the list's:
+  records times 384 corners past 2^31, or the list past the device's
+  storage limit, hands back the scatter's groups, and a part past 65,536
+  vertices its own (CLAUDE.md states it). The vertex stage keeps two
+  variants, the plain one (every index a plain vertex, no list bound) for a
+  group without scatter and the SCATTER twin for one with; `drawIndirect`'s
+  arguments are four words a range, not five. `FINDINGS.md` 63 — the
+  stream's 124 MB on Greyfen and 92% of a default storage binding — is
+  deleted as fixed; its distance-rung idea went with it, unmeasured.
+  - **The same picture**: the bank's 61 frames pixel-identical to
+    `?scatterlist`'s and to the stream mode's (mean 0, max 0, every one),
+    its report against the banked frames identical line for line, no
+    console error; the census (`--against` X3.5b's AFTER) equal on all
+    seven maps; `shaders.mjs` clean on seven (a row fewer, the one cull);
+    gate.mjs clean on Greyfen, Harrowmead and Sarab; build passes.
+  - **Desktop, against the flagged list run** (`--max --gpu --runs 3`, the
+    canonical hashes): every group within 2% but Sarab's fight (7% faster
+    on the tick, the session's); `gpu.cull` 0.049-0.057 ms on all three.
+- **Owed.** A same-session pair against 3b9be6c still prices the fold
+  itself.
 
 ### X3.6 — The static world's other passes (PERF_PLAN B3) — **L, as four sub-steps**
 

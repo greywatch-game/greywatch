@@ -2385,14 +2385,15 @@ src/
                         #   body
     celVertex.ts        # The cel vertex stage as WE declare it, PULLED: the
                         #   attributes read out of storage arrays (group 2,
-                        #   CEL_GEOMETRY) at the vertex the stream index names,
+                        #   CEL_GEOMETRY) at the vertex the index names,
                         #   world identity or the instance's transform, over
                         #   the shared celVertex body — one stage for blocks
                         #   and scatter (X3.5b). Every variant compiled by
                         #   plans/webgpu-ref/shaders.mjs
-    streamIndex.ts      # The fold's index (X3.5b): top bit set = scatter,
-                        #   13 bits instance, 18 bits vertex; the budget a cut
-                        #   is held to, and the same constants as WGSL
+    scatterList.ts      # The scatter's draw (X3.5b): a survivor's 16-byte
+                        #   ENTRY, an index = top bit + slot * 384 + corner,
+                        #   the 16-bit source and its read, as WGSL; the
+                        #   budget a cut is held to
     WorldBlocks.ts      # The map's block, landform and scatter drawn by US:
                         #   one GROUP per recipe a layer (its scatter parts'
                         #   arrays first, then its surfaces'; one material, one
@@ -2402,7 +2403,7 @@ src/
                         #   blocks, scatter, landform — the scatter's pieces
                         #   cut out of the blocks; what it will never draw (a
                         #   failed pipeline, a part it cannot draw, past the
-                        #   stream budget) goes to onFailed as it lands, a
+                        #   list's budget) goes to onFailed as it lands, a
                         #   group whole; stop() for good
     clusters.ts         # cutClusters: a surface cut into short runs of
                         #   one piece's triangles, each with its box and how
@@ -2414,9 +2415,9 @@ src/
                         #   instance sphere, then each kept instance's clusters
                         #   against the frustum (X3.5b); the kept (instance,
                         #   cluster) records scanned NEAR-FIRST into each
-                        #   group's region of one index stream, and each
-                        #   group's ONE indirect draw's args; the copy is
-                        #   dispatched indirect over a work list of the
+                        #   group's run of one LIST of 16-byte entries, and
+                        #   each group's ONE indirect draw's args; the last
+                        #   pass is dispatched indirect over a work list of the
                         #   survivors, never over every record
     ClusterCull.ts      # The GPU cull, once a frame, recorded into the host's
                         #   encoder ahead of the draws (inside gpu.frame;
@@ -2426,7 +2427,7 @@ src/
                         #   buffer, cleared first so the rest of each group's
                         #   range is triangles of no area (never indirect).
                         #   ReachGate, BlockBox, CullMode and CullDiagnostics
-                        #   (?nocull, ?nofrustum, ?cullcheck, ?scatterlist)
+                        #   (?nocull, ?nofrustum, ?cullcheck)
     PassTimer.ts        # ?gpu's timer of our compute passes (gpu.cull):
                         #   timestamp writes on each cull's pass, summed, one
                         #   reading in flight, mapped the frame after its

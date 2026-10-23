@@ -123,14 +123,6 @@ export class UrlOverrides {
    */
   readonly cullCheck: boolean;
   /**
-   * `?scatterlist` — the scatter is drawn from its survivors' list, one
-   * entry a surviving cluster, rather than from a stream of every index
-   * expanded (`render/wgsl/instanceCull.ts`'s header). An A/B for a phone,
-   * where the expansion's writes are the cull's price; the picture is the
-   * same either way.
-   */
-  readonly scatterList: boolean;
-  /**
    * Which of the above the URL set, by the name a capture files it under —
    * `graphics.forced`, so a report off a device nobody here owns says which of
    * its numbers were somebody's experiment rather than the player's choice.
@@ -155,7 +147,6 @@ export class UrlOverrides {
     this.ourWorld = !urlFlag("babylonworld");
     this.cullMode = urlFlag("nocull") ? "none" : urlFlag("nofrustum") ? "nofrustum" : "full";
     this.cullCheck = urlFlag("cullcheck");
-    this.scatterList = urlFlag("scatterlist");
     const forced: string[] = [];
     if (this.giForced) forced.push("gi");
     if (this.shadowsForced) forced.push("shadows");
@@ -164,7 +155,6 @@ export class UrlOverrides {
     if (!this.ourWorld) forced.push("babylonworld");
     if (this.cullMode !== "full") forced.push(this.cullMode === "none" ? "nocull" : "nofrustum");
     if (this.cullCheck) forced.push("cullcheck");
-    if (this.scatterList) forced.push("scatterlist");
     this.forced = forced;
   }
 

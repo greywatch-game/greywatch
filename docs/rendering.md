@@ -3414,17 +3414,19 @@ probes and the lamps' atlas — until X3.6 moves those passes.
   them and the blocks stay ahead of the landform.
 - **The vertex stage PULLS its attributes** (`render/celVertex.ts`,
   `VertexProgram.pull` in `wgsl/assemble.ts`): no vertex buffer is bound;
-  `main` decodes the INDEX (`render/streamIndex.ts`) into a vertex and, for
+  `main` decodes the INDEX (`render/scatterList.ts`) into a vertex and, for
   the scatter, an instance, then reads each attribute out of its array in
   group 2 at that vertex and builds `world` — identity, or the instance's
   transform out of the same group — into the private block the body reads
   `uniforms.world` from. An index with its top bit clear is a plain vertex
-  (a block's or the landform's); one with it set carries the instance in
-  the next 13 bits and the vertex in the low 18, counted from the start of
-  the group's arrays, where its instanced parts lie FIRST so no per-group
-  base is added. **The cut is held to that budget** (8,192 instances a map,
-  262,144 instanced vertices a group): what does not fit goes back to
-  Babylon whole, never drawn wrapped.
+  (a block's or the landform's); one with it set names a survivor's ENTRY
+  in the scatter's list and a corner of its cluster (below), and only a
+  group that draws scatter wears the stage's SCATTER twin, which binds the
+  list and the 16-bit source beside its arrays — eight storage buffers in a
+  palette variant, the default limit. **The cut is held to what that can
+  name**: a scatter whose records times 384 corners pass 2^31, or whose
+  part passes 65,536 vertices, goes back to Babylon whole, never drawn
+  wrapped.
 - **A recipe's DEPTH BIAS is its pipeline's** (`CelRecipe.depthBias`, Babylon's
   `zOffsetUnits`, `PipelineState.depthBias`), asked for by `WorldBlocks` with
   the recipe — so the roads' `ROAD_DEPTH_UNITS` (-8) is drawn by our side as
@@ -3559,8 +3561,8 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
   does a group whose instanced part lacks an array its variant reads
   (`WorldBlocks.addInstanced`), which until X3.5b was skipped while its
   pieces were still cut, a hole.
-- **The instances are culled on the GPU the way the clusters are, and then
-  EXPANDED into their clusters** (`render/InstanceCull.ts`,
+- **The instances are culled on the GPU the way the clusters are, over
+  their clusters** (`render/InstanceCull.ts`,
   `render/wgsl/instanceCull.ts`; the fold, X3.5b), recorded into the same
   encoder. Each instance's sphere is tested against the reach, the size gate
   and the five planes, grown by the most its set can sway, and its band is
@@ -3569,29 +3571,27 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
   RECORD is one cluster of one instance: kept when its instance is and its
   box, moved by the instance's matrix and grown by its own sway, is not
   wholly outside a plane — so a big tree half in view draws half. The kept
-  records are scanned near-first into their group's own region of ONE
-  stream, by a scan and never an atomic append, each index written as its
-  cluster's with the scatter bit and the instance set above it. **The copy's
-  source is 16 bits an index, local to its part** (the part's first vertex
-  on each cluster): a frame's bytes are the cull's price on a phone, so the
-  read is halved, and a part past 65,536 vertices hands its group back.
-  **`?scatterlist` draws the survivors' LIST instead** (an A/B, off by
-  default): the scan counts survivors, the last pass writes one 16-byte
-  entry a surviving cluster (instance, first source index, count, part),
-  and each group's scatter is one non-indexed `drawIndirect` of 384 corners
-  a survivor (a cluster's most, so a short cluster ends in triangles of no
-  area). The vertex stage's list twin reads the entry and the 16-bit source
-  itself, and only the groups that draw scatter wear it, binding the list
-  and the source beside their arrays — eight storage buffers in a palette
-  variant, the default limit. The same triangles in the same order, so the
-  same picture; the stream is never allocated. What it trades is the
-  post-transform reuse of a shared corner, which only a phone can price. **The copy
-  is launched over the SURVIVORS only**: each workgroup of the record pass
-  appends its survivors to a work list in one atomic, and the copy is
-  dispatched indirect at its length — an append that orders nothing, since
-  the scan has already placed every index. Launched at a workgroup a RECORD
-  it was 83,846 workgroups on Greyfen whatever survived, and the cull cost
-  the phone 1.1-1.4 ms of a 16-22 ms frame. **The size
+  records are scanned near-first into their group's own run of ONE LIST, by
+  a scan and never an atomic append, each a 16-byte ENTRY (instance, first
+  source index, count, part), and each group's scatter is one non-indexed
+  `drawIndirect` of 384 corners a survivor (a cluster's most, so a short
+  cluster ends in triangles of no area): the vertex stage reads the entry
+  and the part's 16-bit SOURCE index itself, the part's first vertex on the
+  entry. **The cull writes no index, and that is the phone's price rather
+  than a tidiness**: it EXPANDED every survivor into an index stream until
+  2026-10-23, 2-4 M indices a frame on the forest maps at the phone's
+  settings, which the phone paid at about 0.25-0.3 ms a million, and the
+  stream was sized for every record surviving — 124 MB on Greyfen and 92%
+  of a default storage binding. The list took 55-70% off the phone's cull
+  and about half of that went back to the vertex stage's lost reuse of a
+  shared corner, which the desktop pays at 1-3% of its frame
+  (`BABYLON_EXIT.md` X3.5b). **The last pass is launched over the SURVIVORS
+  only**: each workgroup of the record pass appends its survivors to a work
+  list in one atomic, and the last pass is dispatched indirect at its
+  length — an append that orders nothing, since the scan has already placed
+  every entry. Launched at a workgroup a RECORD it was 83,846 workgroups on
+  Greyfen whatever survived, and the cull cost the phone 1.1-1.4 ms of a
+  16-22 ms frame. **The size
   gate is per INSTANCE**, where Babylon's was per block surface, so a scrap
   of litter under 3 px drops where its block never would — kept at X3.5b on
   purpose, because the fold was to move no pixel against X3.5's picture and
@@ -3600,22 +3600,17 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
   `drawIndexedIndirect` per part of a set, because WebGPU has no
   multi-draw-indirect: Greyfen's main pass was our 9 draws and 151
   instanced, most of them empty. Folded, each group with scatter draws its
-  whole region of the stream with ONE indirect draw at a count the prefix
+  whole run of the list with ONE indirect draw at a count the prefix
   writes. **It is still a SECOND draw beside the group's plain one**, and
   that is the Intel rule below rather than a step left undone: the blocks
   may not be drawn indirect, and the scatter cannot be drawn plain, since
   its survivors are a count only the GPU knows and a range that held every
   instance is the whole forest as triangles of no area every frame. Our
   draws a vantage fell 161 to 17 on Greyfen and 212 to 14 on Harrowmead,
-  and the desktop's fights got 5-13% faster. **The stream is sized for every
-  record surviving and never cleared, and that is MEMORY**: it holds every
-  scatter index Babylon's merge holds, so our side of Greyfen went from the
-  87 MB X3.4b left it at (680 before X3.4b) to 207, Harrowmead 82 to 167
-  (`FINDINGS.md` 63 has the lever, a region capacity under the full
-  expansion, which drops the farthest records of a view that overflows). It
-  is also a LIMIT: Babylon asks the device for no limits, so a storage
-  binding is the default 128 MiB everywhere and Greyfen's stream is 92% of
-  it; a stream past it hands back the scatter's groups, never the map.
+  and the desktop's fights got 5-13% faster. **The list is sized for every
+  record surviving and never cleared**, 16 bytes a record (1.3 MB on
+  Greyfen); a list past the device's limits hands back the scatter's
+  groups, never the map.
 - **Three URL switches A/B all of this on a device nobody here owns**, in a
   shipped build (`core/urlOverrides.ts`), and a capture names whichever was
   set in `graphics.forced`. `?babylonworld` takes nothing, so Babylon draws
@@ -3691,8 +3686,8 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
   `?drawcheck`, `?directdraw`, `?indirectcpu`, `?skipempty` and
   `?scatterfirst` all stand in the history at 4459cd5, for a device that
   needs the question asked again. `?cullcheck`, `?nocull`, `?nofrustum` and
-  `?babylonworld` stay, and `?scatterlist` (X3.5b) is a later A/B of a
-  different kind: the same picture by another draw.
+  `?babylonworld` stay. `?scatterlist` (X3.5b), an A/B of the same picture
+  by another draw, is gone too: the list it drew is the only draw now.
 - **A cull reads its tables as WHOLE `vec4`s and its uniform block as
   WORDS** (`clusterCull.ts`'s `CULL_DECLARATIONS`, `instanceCull.ts`'s
   `INSTANCE_DECLARATIONS`): no `vec3f` beside a scalar and no scalar

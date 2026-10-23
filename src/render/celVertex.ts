@@ -2,45 +2,46 @@
  * render/celVertex.ts — The cel material's VERTEX stage as our renderer
  * declares it: the same body Babylon's `ShaderMaterial` runs (`celVertex`),
  * against explicit bind groups, its attributes PULLED out of storage, so one
- * stage draws the world's whole stream — the blocks and the landform at
- * identity and the scatter at its instances (`BABYLON_EXIT.md` X3.5b, the
- * fold).
+ * stage draws the world whole — the blocks and the landform at identity and
+ * the scatter at its instances (`BABYLON_EXIT.md` X3.5b, the fold).
  * Owns: `CEL_VERTEX_PROGRAM` — the attributes, the frame block (group 0), the
  * draw's geometry (group 2, `CEL_GEOMETRY`) and the outputs, which are the
- * fragment's `CEL_VARYINGS` — its `?scatterlist` twin, which reads a scatter
- * vertex through the survivors' list (`CEL_SCATTER_LIST`, `celGeometry`),
- * and `celVertex`, one variant of either as a plain WGSL module; the layout
+ * fragment's `CEL_VARYINGS` — its SCATTER twin, for a group that draws
+ * scatter, which reads a scatter vertex through the survivors' list
+ * (`CEL_SCATTER_LIST`, `celGeometry`), and `celVertex`, one variant of
+ * either as a plain WGSL module; the layout
  * of an instance's transform in `transforms` (`TRANSFORM_WORDS`,
  * `writeTransform`), which the instance cull's records carry the same way.
  * Invariants: declares every name the shared body reads, by Babylon's names
  * because the body reads them by name (`CelShader.ts`'s `celVertexShader`);
  * the attributes are Babylon's, under Babylon's guards — `color` and `uv` in
  * every variant, `uv2` under `CEL_PALETTE` — each read out of its own array
- * in group 2 at the vertex the stream index names (`streamIndex.ts`), and a
+ * in group 2 at the vertex the index names (`scatterList.ts`), and a
  * mesh missing an unguarded one is drawn with it reading zero, as Babylon's
  * empty buffer reads (`render/WorldBlocks.ts`); `world` is a private block
  * `main` writes before the body runs — identity for an index with the
  * scatter bit clear, else the instance's transform out of `transforms`, three
- * columns of the matrix each with that row of its translation in w (in list
- * mode the index names a survivor's entry and a corner of its cluster, and
- * the entry the instance, the source index and the part, a corner past the
- * cluster's last repeating it so a short run ends in triangles of no
- * area) — so the body is the same text as Babylon's; group 1 is declared
+ * columns of the matrix each with that row of its translation in w (the
+ * index names a survivor's entry and a corner of its cluster, and the entry
+ * the instance, the source index and the part, a corner past the cluster's
+ * last repeating it so a short run ends in triangles of no area) — so the
+ * body is the same text as Babylon's; the plain stage reads every index as
+ * a plain vertex, since a group without scatter binds no list; group 1 is declared
  * EMPTY here and is the fragment's, so the numbers stay the program's.
  * Never: imports Babylon; restates a body.
  * Contract: `docs/rendering.md`, "Hand-written WGSL".
  *
- * WHY GROUP 2 IS THE GEOMETRY. One material draws a group's whole stream,
- * blocks and scatter at once, so what differs between two draws of one
- * recipe — the blocks' layer and the landform's — is the arrays the stream
- * indexes; and the vertex an index names is not the index itself once it
- * carries an instance, so the input assembler cannot fetch it. The arrays
+ * WHY GROUP 2 IS THE GEOMETRY. One material draws a group's blocks and its
+ * scatter through one pipeline, so what differs between two draws of one
+ * recipe — the blocks' layer and the landform's — is the arrays its indices
+ * read; and the vertex a scatter index names is not the index itself, so the
+ * input assembler cannot fetch it. The arrays
  * are storage, read at the decoded vertex, and the transforms beside them.
  */
 import { WGSL_CHUNKS } from "../shaders/wgsl/chunks";
 import { CEL_VARYINGS } from "./celFragment";
 import { FRAME_BLOCK } from "./frame";
-import { scatterListWgsl, STREAM_INDEX_WGSL } from "./streamIndex";
+import { scatterListWgsl, sourceIndexWgsl } from "./scatterList";
 import {
   assembleVertex,
   type AssembledVertex,
@@ -49,7 +50,6 @@ import {
   type StageTarget,
   type VertexProgram,
 } from "./wgsl/assemble";
-import { sourceIndexWgsl } from "./wgsl/instanceCull";
 
 /** Group 2 of the cel program: every attribute's array, then the instances' transforms. */
 export const CEL_GEOMETRY = [
@@ -62,18 +62,17 @@ export const CEL_GEOMETRY = [
 ] as const satisfies readonly Binding[];
 
 /**
- * Group 2's two more in list mode (`?scatterlist`): the instance cull's list
- * of survivors' entries (`streamIndex.ts`'s `LIST_WORDS`) and the 16-bit
- * source they index (`wgsl/instanceCull.ts`).
+ * Group 2's two more for a group that draws scatter: the instance cull's list
+ * of survivors' entries and the 16-bit source they index (`scatterList.ts`).
  */
 export const CEL_SCATTER_LIST = [
   { kind: "storage", name: "scatterList", type: "array<vec4u>" },
   { kind: "storage", name: "scatterSource", type: "array<u32>" },
 ] as const satisfies readonly Binding[];
 
-/** Group 2 as a variant built for `listStride` binds it: `CEL_GEOMETRY`, and the list's two in list mode. */
-export function celGeometry(listStride: number | null): readonly Binding[] {
-  return listStride === null ? CEL_GEOMETRY : [...CEL_GEOMETRY, ...CEL_SCATTER_LIST];
+/** Group 2 as a variant built for `stride` binds it: `CEL_GEOMETRY`, and the list's two for the scatter twin. */
+export function celGeometry(stride: number | null): readonly Binding[] {
+  return stride === null ? CEL_GEOMETRY : [...CEL_GEOMETRY, ...CEL_SCATTER_LIST];
 }
 
 const CEL_ATTRIBUTES: readonly Attribute[] = [
@@ -102,18 +101,20 @@ export function writeTransform(m: ArrayLike<number>, out: Float32Array, at: numb
   }
 }
 
-/**
- * `main`'s decode: whether the index is the scatter's, the vertex it names
- * and the instance it is drawn at (`drawnAt`, read only when scattered).
- */
-const STREAM_DECODE = [
-  "  let scattered = isScatter(vertexIndex);",
-  "  let vertex = select(vertexIndex, scatterVertex(vertexIndex), scattered);",
-  "  let drawnAt = scatterInstance(vertexIndex);",
+/** `main`'s decode in the plain stage: every index is a plain vertex, drawn at identity. */
+const PLAIN_DECODE = [
+  "  let scattered = false;",
+  "  let vertex = vertexIndex;",
+  "  let drawnAt = 0u;",
 ].join("\n");
 
-/** The same out of the list: the survivor's entry, and the corner's source index clamped to its cluster. */
-const LIST_DECODE = [
+/**
+ * The scatter twin's: whether the index is the scatter's, the vertex it names
+ * — through the survivor's entry, the corner's source index clamped to its
+ * cluster — and the instance it is drawn at (`drawnAt`, read only when
+ * scattered).
+ */
+const SCATTER_DECODE = [
   "  let scattered = isScatter(vertexIndex);",
   "  var vertex = vertexIndex;",
   "  var drawnAt = 0u;",
@@ -138,22 +139,19 @@ const CEL_PRELUDE = [
   "  }",
 ].join("\n");
 
-/** The cel vertex stage — or with `listStride`, its list-mode twin — declared for our renderer. */
-function celProgram(listStride: number | null): VertexProgram {
-  const list = listStride !== null;
+/** The cel vertex stage — or with the list's `stride`, its scatter twin — declared for our renderer. */
+function celProgram(stride: number | null): VertexProgram {
   return {
-    label: list ? "cel-vertex-list" : "cel-vertex",
-    groups: [[FRAME_BLOCK], [], celGeometry(listStride)],
+    label: stride === null ? "cel-vertex" : "cel-vertex-scatter",
+    groups: [[FRAME_BLOCK], [], celGeometry(stride)],
     attributes: CEL_ATTRIBUTES,
     varyings: CEL_VARYINGS,
     includes: WGSL_CHUNKS,
     body: "#include<celVertex>",
     entry: "celVertex",
     privates: [{ var: "instance", struct: "CelInstance", fields: [{ name: "world", type: "mat4x4f" }] }],
-    declarations: list
-      ? [STREAM_INDEX_WGSL, scatterListWgsl(listStride), sourceIndexWgsl("scatterSource")].join("\n")
-      : STREAM_INDEX_WGSL,
-    pull: { vertex: "vertex", decode: list ? LIST_DECODE : STREAM_DECODE },
+    declarations: stride === null ? "" : [scatterListWgsl(stride), sourceIndexWgsl("scatterSource")].join("\n"),
+    pull: { vertex: "vertex", decode: stride === null ? PLAIN_DECODE : SCATTER_DECODE },
     prelude: CEL_PRELUDE,
   };
 }
@@ -161,16 +159,16 @@ function celProgram(listStride: number | null): VertexProgram {
 /** The cel vertex stage, declared for our renderer. */
 export const CEL_VERTEX_PROGRAM: VertexProgram = celProgram(null);
 
-/** Its list-mode twins, one a stride (there is one: the map's cluster size). */
-const listPrograms = new Map<number, VertexProgram>();
+/** Its scatter twins, one a stride (there is one: the map's cluster size). */
+const scatterPrograms = new Map<number, VertexProgram>();
 
 /**
  * One variant of the cel vertex stage, for a pass of `target`'s kind — the
- * list-mode twin when `listStride` is given (`?scatterlist`).
+ * scatter twin when the list's `stride` is given.
  */
-export function celVertex(defines: Iterable<string>, target: StageTarget, listStride: number | null = null): AssembledVertex {
-  if (listStride === null) return assembleVertex(CEL_VERTEX_PROGRAM, defines, target);
-  let program = listPrograms.get(listStride);
-  if (!program) listPrograms.set(listStride, (program = celProgram(listStride)));
+export function celVertex(defines: Iterable<string>, target: StageTarget, stride: number | null = null): AssembledVertex {
+  if (stride === null) return assembleVertex(CEL_VERTEX_PROGRAM, defines, target);
+  let program = scatterPrograms.get(stride);
+  if (!program) scatterPrograms.set(stride, (program = celProgram(stride)));
   return assembleVertex(program, defines, target);
 }

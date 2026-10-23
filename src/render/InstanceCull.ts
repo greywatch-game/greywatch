@@ -1,32 +1,29 @@
 /**
  * render/InstanceCull.ts — The scatter's instances culled on the GPU once a
- * frame and EXPANDED into their clusters: each group's surviving
- * (instance, cluster) records written into the scatter's STREAM as indices,
- * and each group's one indirect draw over them (`BABYLON_EXIT.md` X3.4b,
- * X3.5b — the fold; the WGSL is `wgsl/instanceCull.ts`).
+ * frame, over their clusters: each group's surviving (instance, cluster)
+ * records written into the scatter's LIST as entries, and each group's one
+ * indirect draw over them (`BABYLON_EXIT.md` X3.4b, X3.5b — the fold; the
+ * WGSL is `wgsl/instanceCull.ts`).
  * Owns: `InstanceCull` — the four compute passes' bind groups (their
  * pipelines are the renderer's `PipelineCache`'s), the instance, set,
- * cluster, record and range tables, the source indices, the scan's buffers,
- * the stream the scatter draws (`stream`, each range's survivors from the
- * start of its own region, every index carrying its instance —
- * `render/streamIndex.ts`) and the INDIRECT arguments (`args`, one
- * `drawIndexedIndirect` a range); the WORK LIST of surviving records and
- * its length, cleared ahead of each frame's pass, and the indirect
- * dispatch `expand` runs over it with; `InstanceTables`, what a map's
- * scatter hands it.
- * In list mode (`?scatterlist`, `listStride` set) `stream` is instead the
- * LIST of survivors' entries, each range's from its first record, drawn
- * non-indexed (`wgsl/instanceCull.ts`'s header), and `source` is bound to
- * the vertex stage as well.
+ * cluster, record and range tables, the scan's buffers, the 16-bit source
+ * indices and the list the vertex stage reads them through (`source`,
+ * `list`, each range's survivors' entries from its first record —
+ * `render/scatterList.ts`) and the INDIRECT arguments (`args`, one
+ * `drawIndirect` a range); the WORK LIST of surviving records and its
+ * length, cleared ahead of each frame's pass, and the indirect dispatch
+ * `expand` runs over it with; `InstanceTables`, what a map's scatter
+ * hands it.
  * Invariants: ClusterCull's, over instances and then their clusters — every
  * table is uploaded once, when the map is cut; a frame's inputs are numbers
  * only (the frame's view-projection, eye and wind, and the reach and size
  * gate as `ReachGate` holds them), so it never reads a node; an instance is
  * dropped only when its sphere lies past the reach, under the size gate, or
  * wholly outside one of the five planes, and a cluster of a kept instance
- * only when its moved box lies wholly outside one of them; the stream is
- * sized for every record surviving, so no frame can overrun a region, and is
- * never cleared, because a range's draw counts only what its survivors wrote;
+ * only when its moved box lies wholly outside one of them; the list is
+ * sized for every record surviving, so no frame can overrun a range's run, and
+ * is never cleared, because a range's draw counts only what its survivors
+ * wrote;
  * it is RECORDED into the encoder the host submits ahead of the frame's
  * draws, once a submit; until the pipelines are built nothing is dispatched
  * and `args` stays the zeros it was made with, so every range draws nothing.
@@ -54,7 +51,7 @@ import { closeness, CullCheck, type CullCheckSpec } from "./CullCheck";
 import type { FrameUniforms } from "./frame";
 import type { PassTiming } from "./PassTimer";
 import type { PipelineCache } from "./PipelineCache";
-import { LIST_WORDS } from "./streamIndex";
+import { LIST_WORDS } from "./scatterList";
 import { SCAN_SIZE } from "./wgsl/clusterCull";
 import { INSTANCE_FORMS, INSTANCE_PROBE_WGSL } from "./wgsl/cullProbe";
 import {
@@ -82,12 +79,10 @@ export interface InstanceTables {
   readonly clusters: ArrayBuffer;
   /** `RECORD_WORDS` a record: its instance, then its cluster — every range's contiguous, in range order. */
   readonly records: Uint32Array;
-  /** Each range's records `[start, end)` and where its region of the stream starts. */
+  /** Each range's records `[start, end)` and where its run of the list starts: its first record. */
   readonly ranges: readonly ScanRange[];
   /** Every instanced part's indices, each local to its part (`SOURCE_VERTICES`); its clusters carry where it starts. */
   readonly source: Uint16Array;
-  /** The stream's length in indices: every record's, as if every one survived. */
-  readonly streamLength: number;
   /** The square of each near-first band's end, metres (three). */
   readonly bands2: readonly number[];
 }
@@ -96,15 +91,11 @@ export interface InstanceTables {
 const PASS: GPUComputePassDescriptor = { label: "instance cull" };
 
 export class InstanceCull {
-  /**
-   * The scatter's stream, an index buffer: each range's surviving indices
-   * from the start of its region — or in list mode its list, each range's
-   * survivors' entries from its first record.
-   */
-  readonly stream: GPUBuffer;
-  /** Every instanced part's 16-bit indices: what `expand` copies, and in list mode what the vertex stage reads. */
+  /** The scatter's list: each range's survivors' entries, from its first record. */
+  readonly list: GPUBuffer;
+  /** Every instanced part's 16-bit indices, which the vertex stage reads through the list. */
   readonly source: GPUBuffer;
-  /** Each range's `drawIndexedIndirect` arguments, at `INDIRECT_BYTES` a range. */
+  /** Each range's `drawIndirect` arguments, at `INDIRECT_BYTES` a range. */
   readonly args: GPUBuffer;
   /** Resolves true once the four pipelines are built; false if one failed. */
   readonly ready: Promise<boolean>;
@@ -135,8 +126,8 @@ export class InstanceCull {
     pipelines: PipelineCache,
     tables: InstanceTables,
     private readonly gate: ReachGate,
-    /** `?scatterlist`: the corners a survivor's run takes in the list, or null for the expanded stream. */
-    readonly listStride: number | null = null,
+    /** The corners a survivor's run takes in the draw: a cluster's most indices. */
+    stride: number,
     diagnostics: CullDiagnostics = NO_DIAGNOSTICS,
   ) {
     this.mode = diagnostics.mode;
@@ -166,11 +157,8 @@ export class InstanceCull {
     const survivors = this.make("survivors", records * 16, storage);
     this.expandGroups = this.make("expand workgroups", DISPATCH_BYTES, storage | GPUBufferUsage.INDIRECT);
     const ranges = this.upload("ranges", storage, rangeWords(tables.ranges));
-    const source = (this.source = this.upload("source indices", storage, tables.source));
-    const list = listStride !== null;
-    this.stream = list
-      ? this.make("list", records * LIST_WORDS * 4, storage)
-      : this.make("stream", tables.streamLength * 4, storage | GPUBufferUsage.INDEX);
+    this.source = this.upload("source indices", storage, tables.source);
+    this.list = this.make("list", records * LIST_WORDS * 4, storage);
     this.args = this.make("args", tables.ranges.length * INDIRECT_BYTES, storage | GPUBufferUsage.INDIRECT);
 
     // The static half of the uniform block.
@@ -207,7 +195,7 @@ export class InstanceCull {
 
     // Each entry point's own bindings: an "auto" layout holds only what its
     // entry point reads, so each pass binds exactly those.
-    const code = instanceCullWgsl(listStride);
+    const code = instanceCullWgsl(stride);
     const entries: { entry: string; bind: readonly (readonly [number, GPUBuffer])[] }[] = [
       { entry: "cullInstances", bind: [[0, this.uniform], [1, instances], [2, instanceBand], [5, sets]] },
       {
@@ -224,9 +212,7 @@ export class InstanceCull {
       {
         entry: "expand",
         bind: [
-          // The list's entries name the source rather than copy it.
-          ...(list ? [] : [[10, source] as const]),
-          [0, this.uniform], [3, local], [4, sums], [6, clusters], [9, ranges], [11, this.stream],
+          [0, this.uniform], [3, local], [4, sums], [6, clusters], [9, ranges], [11, this.list],
           [14, survivors], [16, this.expandGroups],
         ],
       },
@@ -234,7 +220,7 @@ export class InstanceCull {
     this.ready = Promise.all(
       entries.map(({ entry, bind }) =>
         pipelines
-          .compute(list ? "instance cull (list)" : "instance cull", code, entry)
+          .compute("instance cull", code, entry)
           .then((pipeline) => ({
             pipeline,
             group: device.createBindGroup({
