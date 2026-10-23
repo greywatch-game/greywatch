@@ -2869,11 +2869,19 @@ of 9 runs, Greyfen, Harrowmead and Sarab each — so it is not the 3440x1440
 canvas's fill. Sarab hanging there, a map whose scatter list is a sixth of
 the forest maps', weighs against the list as well.
 
+**Capped it still hangs** (the same loop at 4fd2e85 through `launchClient`'s
+browser, the frame held to 60, 3440x1440): 4 of 9 runs, all three maps, one
+of them 27 s in. So it is not sustained load either. Every reading taken —
+before and after X3.6a, full size and 1080p, uncapped and capped — hangs
+about half the runs, which points at the machine's state rather than at
+anything a run draws.
+
 ### How to settle it
-- A fresh boot of the machine, the loop again: the benchmark completed run
-  after run on this box until this session, so its state is the first
-  suspect now.
-- The same loop CAPPED (`launchClient`'s browser), which halves the GPU's
-  duty: if it stops, it is sustained load on this card.
-- Only then the same loop at X3.5b's parent (before the scatter list).
+- A fresh boot of the machine, then the loop again (the scratch watchdog,
+  or plainly `bench.mjs greyfen harrowmead sarab --max --runs 3` twice): the
+  benchmark completed run after run on this box until 2026-10-23. If it
+  hangs after a boot, the driver (`ref/mode.json` names the one the bank was
+  taken on) is the next thing to move.
+- Only if a fresh box hangs: the same loop at X3.5b's parent, before the
+  scatter list.
 
