@@ -2463,7 +2463,9 @@ src/
       clusterCull.ts    # The cull's WGSL — cullClusters, prefix, scatter —
                         #   and the record layouts ClusterCull uploads;
                         #   CULL_DECLARATIONS, the uniform as words and the
-                        #   records as whole vec4s, both culls' and the probe's
+                        #   records as whole vec4s, both culls' and the probe's;
+                        #   writeCluster, the cluster record as both hosts
+                        #   write it
       instanceCull.ts   # The instance cull's WGSL — cullInstances,
                         #   cullRecords, prefix, expand — and the record
                         #   layouts InstanceCull uploads

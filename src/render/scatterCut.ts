@@ -25,12 +25,12 @@
  * Never: imports Babylon; reads a node; uploads but the transforms.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
  */
-import { type ScanRange, writeCluster } from "./ClusterCull";
+import type { ScanRange } from "./ClusterCull";
 import { TRANSFORM_WORDS, writeTransform } from "./celVertex";
 import { type Cluster, cutClusters, type SurfaceArrays, toFloat32 } from "./clusters";
 import type { InstanceTables } from "./InstanceCull";
 import { LIST_WORDS, listStride, SCATTER_CORNERS, SOURCE_VERTICES } from "./scatterList";
-import { CLUSTER_WORDS } from "./wgsl/clusterCull";
+import { CLUSTER_WORDS, writeCluster } from "./wgsl/clusterCull";
 import { INSTANCE_WORDS, RECORD_WORDS } from "./wgsl/instanceCull";
 
 /** One SET of instances: a variant's placements, as `finish` is handed them. */

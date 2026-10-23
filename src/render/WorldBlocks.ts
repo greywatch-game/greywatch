@@ -100,7 +100,6 @@ import {
   NO_DIAGNOSTICS,
   type ReachGate,
   type ScanRange,
-  writeCluster,
 } from "./ClusterCull";
 import { type Cluster, cutClusters, type PieceSpan, type SurfaceArrays, toFloat32, withoutPieces } from "./clusters";
 import type { FrameUniforms } from "./frame";
@@ -123,7 +122,7 @@ import { listStride } from "./scatterList";
 import { FRAME_TARGETS } from "./targets";
 import { UniformBlockBuffer } from "./UniformBlockBuffer";
 import { type AssembledModule, type AssembledVertex, PULLED_ATTRIBUTES } from "./wgsl/assemble";
-import { CLUSTER_WORDS } from "./wgsl/clusterCull";
+import { CLUSTER_WORDS, writeCluster } from "./wgsl/clusterCull";
 import { INDIRECT_BYTES } from "./wgsl/instanceCull";
 
 /** How the blocks are cut — `CONFIG.graphics.clusters`. */
@@ -386,7 +385,8 @@ export class WorldBlocks {
       // empty — so range `g` of each is group `g`'s.
       const parts = scatterTables.add(group.instanced);
       // It draws scatter only if a record is its, so a group that does has
-      // an instance cull to bind (a part of no triangle makes no record).
+      // an instance cull to bind (a part of no triangle makes no record). A
+      // failed group makes none: `fail` emptied its instanced parts.
       group.scattered = parts.records > 0;
       if (!group.failed) this.cutGroup(group, g, parts.vertices, size.vertices[g], indices, at, cut);
       ranges.push({ start, end: at.cluster, base: group.indexBase });

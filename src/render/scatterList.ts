@@ -19,7 +19,8 @@
  * a corner past the cluster's count repeats its last, so a short cluster
  * ends in triangles of no area; a source index is 16 bits, local to its
  * part, two to a word; a cut whose list or part does not fit is handed back
- * (`WorldBlocks`), never drawn wrapped.
+ * (`WorldBlocks`, by `scatterCut.ts`'s `listPast` and `sourcePast`), never
+ * drawn wrapped.
  * Never: imports Babylon.
  *
  * WHY A LIST AND NOT A STREAM. The cull used to EXPAND every survivor into

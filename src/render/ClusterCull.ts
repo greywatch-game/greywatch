@@ -8,8 +8,8 @@
  * cluster, block and sphere tables, the scan's buffers, each group's record,
  * and the index buffer the blocks draw (`indices`, cleared and written
  * every frame); `ReachGate`, what whoever decides the reach and the size
- * gate hands it; `rangeWords` and `writeCluster`, the range and cluster
- * records as both culls upload them (`InstanceCull`'s too).
+ * gate hands it; `rangeWords`, the range record as both culls upload it
+ * (`InstanceCull`'s too).
  * Invariants: every table is uploaded once, when the map is cut, and never
  * re-cut; a frame's inputs are numbers only — the frame's own
  * view-projection and eye (`FrameUniforms`), the reach and the size gate as
@@ -38,7 +38,7 @@
  * `dispose`, however late its pipelines arrive.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
  */
-import { type Cluster, NO_PIECE } from "./clusters";
+import { NO_PIECE } from "./clusters";
 import { closeness, CullCheck, type CullCheckSpec, type CullReport } from "./CullCheck";
 import type { FrameUniforms } from "./frame";
 import type { PassTiming } from "./PassTimer";
@@ -517,30 +517,4 @@ export function rangeWords(ranges: readonly ScanRange[]): Uint32Array {
     out[o + 2] = g.base;
   });
   return out;
-}
-
-/**
- * Cluster `k` as `CULL_DECLARATIONS`' `Cluster` — both culls' record: its
- * box, its first index and count, its four `refs`, and its sway.
- */
-export function writeCluster(
-  f: Float32Array,
-  u: Uint32Array,
-  k: number,
-  cl: Cluster,
-  first: number,
-  refs: readonly [number, number, number, number],
-): void {
-  const o = k * CLUSTER_WORDS;
-  f[o] = cl.lo[0];
-  f[o + 1] = cl.lo[1];
-  f[o + 2] = cl.lo[2];
-  u[o + 3] = first;
-  f[o + 4] = cl.hi[0];
-  f[o + 5] = cl.hi[1];
-  f[o + 6] = cl.hi[2];
-  u[o + 7] = cl.indexCount;
-  for (let r = 0; r < 4; r++) u[o + 8 + r] = refs[r];
-  f[o + 12] = cl.ramp;
-  u[o + 13] = cl.rigged ? 1 : 0;
 }

@@ -6,7 +6,8 @@
  * `SCAN_DECLARATIONS`, the near-first scan both culls order their survivors
  * by — one copy, so both keep one order the one way; the byte layouts they
  * read (`CULL_UNIFORM_BYTES`, `CLUSTER_WORDS`, `RANGE_WORDS`,
- * `BLOCK_WORDS`) and the workgroup sizes.
+ * `BLOCK_WORDS`) and the workgroup sizes; `writeCluster`, the cluster record
+ * as both culls' hosts write it, beside the one declaration it writes.
  * Invariants: the surviving clusters of a group are written in one ORDER
  * that is a pure function of the frame's inputs — by near-first band, then
  * by cluster index — through a SCAN, never an atomic append, so the same eye
@@ -34,6 +35,7 @@
  *   host CLEARED first, so the rest of the region is triangles of no area and
  *   the blocks are drawn plain over the whole of it (`ClusterCull.ts`).
  */
+import type { Cluster } from "../clusters";
 
 /** Threads in a scanning workgroup — a `cull` pass's and a `prefix`'s, in both culls. */
 export const SCAN_SIZE = 256;
@@ -107,6 +109,32 @@ fn outsideBox(p: vec4f, mid: vec3f, half: vec3f, grow: f32) -> bool {
   return dot(p.xyz, mid) + dot(abs(p.xyz), half) + p.w < -grow;
 }
 `;
+
+/**
+ * Cluster `k` as `CULL_DECLARATIONS`' `Cluster` — both culls' record: its
+ * box, its first index and count, its four `refs`, and its sway.
+ */
+export function writeCluster(
+  f: Float32Array,
+  u: Uint32Array,
+  k: number,
+  cl: Cluster,
+  first: number,
+  refs: readonly [number, number, number, number],
+): void {
+  const o = k * CLUSTER_WORDS;
+  f[o] = cl.lo[0];
+  f[o + 1] = cl.lo[1];
+  f[o + 2] = cl.lo[2];
+  u[o + 3] = first;
+  f[o + 4] = cl.hi[0];
+  f[o + 5] = cl.hi[1];
+  f[o + 6] = cl.hi[2];
+  u[o + 7] = cl.indexCount;
+  for (let r = 0; r < 4; r++) u[o + 8 + r] = refs[r];
+  f[o + 12] = cl.ramp;
+  u[o + 13] = cl.rigged ? 1 : 0;
+}
 
 /**
  * The near-first SCAN, as both culls run it over their own items (clusters
