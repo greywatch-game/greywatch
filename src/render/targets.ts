@@ -1,13 +1,14 @@
 /**
- * render/targets.ts — The attachments the frame's main pass draws into, and
- * the ones the shadow maps and the lamps' atlas are drawn into, each stated
- * ONCE: every pipeline our renderer builds for one of those passes is built
- * against its own, and nothing else in `src/render/` writes a format.
- * Owns: `FRAME_TARGETS`, `SHADOW_TARGETS` and `targetsKey`.
- * Invariants: `FRAME_TARGETS` is what the host's open pass is
- * (`FrameHost.passIs`), checked by `Renderer` on every frame it draws — a
- * pass that is not REFUSES the frame's draws rather than recording a
- * pipeline it cannot take.
+ * render/targets.ts — The attachments the frame's main pass draws into, the
+ * glow's mask, and the ones the shadow maps and the lamps' atlas are drawn
+ * into, each stated ONCE: every pipeline our renderer builds for one of those
+ * passes is built against its own, and nothing else in `src/render/` writes a
+ * format.
+ * Owns: `FRAME_TARGETS`, `GLOW_TARGETS`, `SHADOW_TARGETS` and `targetsKey`.
+ * Invariants: `FRAME_TARGETS` is what the host's main pass is, and
+ * `GLOW_TARGETS` what its glow mask's pass is (`FrameHost.passIs`), each
+ * checked by `Renderer` on every frame it draws there — a pass that is not
+ * REFUSES the frame's draws rather than recording a pipeline it cannot take.
  * Never: imports Babylon; is read off the pass per draw — a pipeline is
  * compiled ahead, so the formats it is compiled for must be known ahead.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
@@ -30,6 +31,23 @@ import type { PassTargets } from "./frameHost";
 
 /** The frame's main pass, as every pipeline drawn into it is built. */
 export const FRAME_TARGETS: PassTargets = {
+  colorFormats: ["rgba8unorm"],
+  depthFormat: "depth32float",
+  sampleCount: 1,
+  flipY: true,
+};
+
+/**
+ * The glow's MASK pass (`shaders/GlowPass.ts`), which our renderer draws the
+ * emissive palette into (`render/WorldGlow.ts`, `BABYLON_EXIT.md` X3.6d): the
+ * mask is Babylon's render target, an `rgba8unorm` colour
+ * (`TEXTURETYPE_UNSIGNED_BYTE`), and its depth is the FRAME's, borrowed
+ * (`shareDepth`), so `depth32float`; one sample; and a texture, drawn upside
+ * down. The same values as `FRAME_TARGETS`, stated apart because they are
+ * true for another reason — a change to the post chain's first target and a
+ * change to the mask's format are two changes, and each pass refuses its own.
+ */
+export const GLOW_TARGETS: PassTargets = {
   colorFormats: ["rgba8unorm"],
   depthFormat: "depth32float",
   sampleCount: 1,

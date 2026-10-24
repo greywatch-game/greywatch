@@ -1871,10 +1871,12 @@ export class CelMaterialFactory {
       );
       // What our renderer draws it with in a probe's bake: the same table and
       // fog band, held here and read by reference (`emissiveRecipe`).
-      this.emissiveRecipes.set(mat, {
+      const recipe: EmissiveRecipe = {
         depthBias: depthUnits,
         values: { emissivePalette: this.emissivePalette, fogRange: this.emissiveFogRange },
-      });
+      };
+      this.emissiveRecipes.set(mat, recipe);
+      this.emissiveMaterials.set(recipe, mat);
       mat.setFog(fogState.color, fogState.start, fogState.end);
       // The cel cache's eye, seeded here for `applyCamera`'s reason: the walk
       // in `updateCamera` is guarded, and skips a material it has never seen.
@@ -1886,8 +1888,9 @@ export class CelMaterialFactory {
 
   private readonly emissiveWorld: (EmissiveWorldMaterial | null)[] = [null, null];
 
-  /** What our renderer draws each palette material with (`emissiveRecipe`). */
+  /** What our renderer draws each palette material with (`emissiveRecipe`), and the other way round. */
   private readonly emissiveRecipes = new Map<EmissiveWorldMaterial, EmissiveRecipe>();
+  private readonly emissiveMaterials = new Map<EmissiveRecipe, EmissiveWorldMaterial>();
 
   /**
    * The palette's fog band as `EmissiveWorldMaterial.setFog` computes it —
@@ -1905,6 +1908,17 @@ export class CelMaterialFactory {
    */
   emissiveRecipe(mat: unknown): EmissiveRecipe | null {
     return this.emissiveRecipes.get(mat as EmissiveWorldMaterial) ?? null;
+  }
+
+  /**
+   * `emissiveRecipe` the other way round: the palette material `recipe`
+   * draws, or null for a recipe this factory did not make. What a question
+   * about the MATERIAL is asked of when our renderer draws the recipe — the
+   * glow's rules, which read a material's emissive colour, intensity and
+   * alpha (`render/WorldGlow.ts`).
+   */
+  emissiveMaterialOf(recipe: EmissiveRecipe): EmissiveWorldMaterial | null {
+    return this.emissiveMaterials.get(recipe) ?? null;
   }
 
   /** The map's emissive palette, flattened — `palette`'s twin. */

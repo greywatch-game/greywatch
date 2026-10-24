@@ -7,7 +7,8 @@
  * Invariants: everything a `FrameHost` hands over is WebGPU's or plain data —
  * a device, a pass encoder, a command encoder, a texture view and a sampler,
  * formats, floats; a draw reaches the pass through `queue` and nothing else,
- * in the host's own order; work owed ahead of the draws reaches the GPU
+ * in the host's own order — in the main pass, or in the glow's mask when
+ * that pass's owner says it opened; work owed ahead of the draws reaches the GPU
  * through `prepareEncoder` and nothing else — recorded there, never kept,
  * finished or submitted by the renderer; a texture the host owns is handed over as ITS view, read where it
  * lies and never copied (`BABYLON_EXIT.md` rule 5).
@@ -80,7 +81,9 @@ export interface FrameHost {
   /** Whether the pass open now is exactly `t`. The per-frame test: allocates nothing. */
   passIs(t: PassTargets): boolean;
   /**
-   * Records `run` into the open pass at this point in the host's draw order.
+   * Records `run` into the open pass at this point in the host's draw order —
+   * the main pass at one of its hooks (`onMainPass`), or the glow's mask,
+   * which its owner announces as it opens (`Renderer.glowMaskOpened`).
    * It is called once, later in the same frame, with the pass. The pipeline,
    * bind groups and buffers are unset when it starts, so it sets every one it
    * uses; the viewport, scissor, stencil reference and blend constant are the

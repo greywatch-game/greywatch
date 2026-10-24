@@ -13,7 +13,8 @@
  * scalars and `vec4f`s the culls declared before 2026-10-16, or as the
  * `vec4u`s of words they declare now (`CULL_DECLARATIONS`: nine of them then,
  * ten since X3.6a's pass mask, which the probe echoes nothing of and does not
- * test — only a main pass's view, whose mask is 0, takes a check); the records as
+ * test — only a main pass's view, whose mask is 0, takes a check, and whose
+ * size gate it mirrors by skipping a cluster in `PASS_GLOW`); the records as
  * the structs with a `vec3f` beside a scalar they declared before, or as the
  * whole `vec4`s they declare now. Bit 0 is old/old, bit 3 new/new — the
  * culls' own reads. The old declarations are bound to the SAME buffers at
@@ -28,7 +29,7 @@
  * the old/old form's deciding test. The UNIFORM echo, written by item 0: its
  * 36 words read through the old struct, then through the words.
  */
-import { CULL_DECLARATIONS } from "./clusterCull";
+import { CULL_DECLARATIONS, PASS_GLOW } from "./clusterCull";
 import { INSTANCE_DECLARATIONS } from "./instanceCull";
 
 /** Threads in a probe workgroup. */
@@ -169,19 +170,22 @@ struct R {
   sphere: vec4f,
   ramp: f32,
   rigged: bool,
+  // In \`PASS_GLOW\`: a light source, which the size gate never drops.
+  glow: bool,
 }
 
 fn rOld(i: u32) -> R {
   let c = oldClusters[i];
   let b = oldBlocks[c.block];
-  return R(c.lo, c.hi, b.lo, b.hi, spheres[c.surface], c.ramp, c.rigged != 0u);
+  // The passes are word 14 in both forms (\`_a\` here).
+  return R(c.lo, c.hi, b.lo, b.hi, spheres[c.surface], c.ramp, c.rigged != 0u, (c._a & ${PASS_GLOW}u) != 0u);
 }
 
 fn rNew(i: u32) -> R {
   let c = clusters[i];
   let b = blocks[c.refs.y];
   return R(bitcast<vec3f>(c.lo.xyz), bitcast<vec3f>(c.hi.xyz), b.lo.xyz, b.hi.xyz, spheres[c.refs.z],
-    bitcast<f32>(c.sway.x), c.sway.y != 0u);
+    bitcast<f32>(c.sway.x), c.sway.y != 0u, (c.sway.z & ${PASS_GLOW}u) != 0u);
 }
 
 fn grow(u: U, r: R) -> f32 {
@@ -197,7 +201,7 @@ fn far(p: vec4f, r: R) -> f32 {
 fn decide(u: U, r: R) -> u32 {
   let d = max(max(r.blo - u.eye, vec3f(0.0)), u.eye - r.bhi);
   if (dot(d, d) > u.reach2) { return 1u; }
-  if (u.gate) {
+  if (u.gate && !r.glow) {
     let s = r.sphere.xyz - u.eye;
     let d2 = dot(s, s);
     if (d2 > 1.0) {

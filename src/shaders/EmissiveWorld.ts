@@ -2,7 +2,12 @@
  * EmissiveWorld.ts — The one material every lit window, lamp lens, ember and
  * sign in a map's MERGED world wears, whatever colour it emits: the emissive
  * palette, `getWorldCel`'s twin for the light sources. And the twin of it
- * `GlowPass` draws their bloom with.
+ * `GlowPass` draws their bloom with — the FALLBACK since X3.6d: whenever the
+ * handover holds the whole palette, our renderer draws its mask
+ * (`render/WorldGlow.ts`, over the same bodies) and `GlowPass` never dresses
+ * a palette mesh in this twin; it is drawn for an editor build,
+ * `?babylonworld`, a map whose palette ours cannot hold whole and a loss
+ * mid-map. The MAIN pass's palette is still this material's on every path.
  * Owns: Babylon's declarations of both WGSL stages (their bodies are
  * `wgsl/emissiveWorld.ts`'s, which a probe's bake on our renderer draws too)
  * and `EmissiveWorldMaterial` (`MAX_EMISSIVE_PALETTE` is the bodies' module's).
@@ -17,8 +22,10 @@
  * `ShaderMaterial`'s `cameraPosition` (see WHY ITS OWN EYE). The
  * mask twin runs the SAME vertex function, which is what lets its LEQUAL test
  * tie against the depth the main pass wrote, and carries the same polygon
- * offset. Never given a vertex colour buffer (`vertexShading` skips it). Never
- * worn by anything but a merge: every vertex it draws carries a slot.
+ * offset — and so does our renderer's mask, whose tie against this
+ * material's depth rests on the same text (`wgsl/emissiveWorld.ts`). Never
+ * given a vertex colour buffer (`vertexShading` skips it). Never worn by
+ * anything but a merge: every vertex it draws carries a slot.
  *
  * WHY IT EXISTS. `docs/rendering.md`, "The paint palette": the block merge
  * splits once per MATERIAL, and the albedo palette took a matte surface's

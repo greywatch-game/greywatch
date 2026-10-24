@@ -8,7 +8,8 @@
  * read (`CULL_UNIFORM_BYTES`, `CLUSTER_WORDS`, `RANGE_WORDS`,
  * `BLOCK_WORDS`) and the workgroup sizes; `writeCluster`, the cluster record
  * as both culls' hosts write it, beside the one declaration it writes; the
- * pass bits (`PASS_PROBE` among them) and the probe view's flags; `blockKey`,
+ * pass bits (`PASS_PROBE` and `PASS_GLOW` among them) and the probe view's
+ * flags; `blockKey`,
  * a block's coordinates as the cull reads them, and the ONE parse of a
  * `"bx,bz"` key into them (`blockCoordsOf`, `blockKeyOf`).
  * Invariants: the surviving clusters of a group are written in one ORDER
@@ -22,8 +23,10 @@
  * only if it is not drawn in the cull's pass (`passMask`), its block is past
  * the reach (a probe view's: its SURFACE's sphere, `PROBE_SPHERE_REACH`), it
  * is filed under a block the view leaves out (`PROBE_EXCLUDE`), its surface
- * is under the size gate, or its box (grown by the most its vertices can
- * sway) is wholly outside one of the five planes.
+ * is under the size gate — which never drops a cluster in `PASS_GLOW`, a
+ * light source, as the frame's mesh walk never size-gates an emissive — or
+ * its box (grown by the most its vertices can sway) is wholly outside one of
+ * the five planes.
  * Never: reads a node — everything it reads was uploaded as numbers.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
  *
@@ -69,11 +72,19 @@ export const CULL_UNIFORM_BYTES = 160;
  *   X3.6c) — every surface the main pass takes, and the emissive palette's
  *   held for it, whatever casts: Babylon's bake drew the map's visuals whole
  *   but for the glazing.
+ * - `PASS_GLOW`: drawn in the glow's MASK through the MAIN view
+ *   (`render/WorldGlow.ts`, X3.6d) — the emissive palette held for it. No
+ *   cull is ever handed it as a mask: the main view keeps every cluster it
+ *   counts whatever its passes, and what the bit changes there is the size
+ *   gate, which never drops a light source (`WorldCulling`'s `glows` —
+ *   Babylon never size-gated an emissive mesh, and a lamp lens a few pixels
+ *   across is exactly what a bloom is for).
  */
 export const PASS_CASTS = 1;
 export const PASS_SOLID = 2;
 export const PASS_LAMPS = 4;
 export const PASS_PROBE = 8;
+export const PASS_GLOW = 16;
 /** The shadow passes, together: what makes a surface a CASTER, which `PASS_PROBE` does not. */
 export const SHADOW_PASSES = PASS_CASTS | PASS_SOLID | PASS_LAMPS;
 
@@ -193,8 +204,8 @@ struct Cluster {
   // group, block, surface, piece.
   refs: vec4u,
   // The ramp weight as float bits, whether it is rigged, the passes it is
-  // drawn in (\`PASS_CASTS\`, \`PASS_SOLID\`, \`PASS_LAMPS\`, \`PASS_PROBE\`),
-  // and its surface's block (\`blockKey\`; an instanced part's carries none).
+  // drawn in (\`PASS_CASTS\`, \`PASS_SOLID\`, \`PASS_LAMPS\`, \`PASS_PROBE\`,
+  // \`PASS_GLOW\`), and its surface's block (\`blockKey\`; an instanced part's carries none).
   sway: vec4u,
 }
 
@@ -224,7 +235,7 @@ fn inPass(c: Cluster) -> bool {
  * Cluster `k` as `CULL_DECLARATIONS`' `Cluster` — both culls' record: its
  * box, its first index and count, its four `refs`, its sway, the passes it
  * is drawn in beside the main one (`passes`: `PASS_CASTS`, `PASS_SOLID`,
- * `PASS_LAMPS`, `PASS_PROBE`) and its surface's block (`key`, `blockKey`).
+ * `PASS_LAMPS`, `PASS_PROBE`, `PASS_GLOW`) and its surface's block (`key`, `blockKey`).
  */
 export function writeCluster(
   f: Float32Array,
@@ -371,7 +382,9 @@ fn visible(c: Cluster) -> bool {
     let b = blocks[c.refs.y];
     if (dist2(b.lo.xyz, b.hi.xyz) > reach2()) { return false; }
   }
-  if (gateOn()) {
+  // A light source is never size-gated (\`PASS_GLOW\`): the glow's mask draws
+  // the palette through this view, and Babylon never gated an emissive mesh.
+  if (gateOn() && (c.sway.z & ${PASS_GLOW}u) == 0u) {
     let s = spheres[c.refs.z];
     let d = s.xyz - eye();
     let d2 = dot(d, d);

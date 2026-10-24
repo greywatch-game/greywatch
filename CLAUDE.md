@@ -537,21 +537,18 @@ texel-snapped focus MOVES, so **nothing that ANIMATES may be registered with
 `shadows.setCasters`**. Soldiers and hulls have a map of their own
 (`systems/BodyShadows.ts`): **a rig's shape is `RAGDOLL_BONES` and a hull's is
 its collider box**, so moving either moves a shadow, and **the local player
-casts nothing**. **Where a window STANDS is `core/shadowWindow.ts`.** **The
-world's map is two CASCADES of one caster set and records BACK faces**, so
-**every caster must be a CLOSED shape**. **The world's four maps (both cascades,
-the foliage's and the lightning's) are OUR renderer's whenever the handover
-holds EVERY caster** (`render/WorldShadows.ts`), `ShadowSystem`'s generators
-otherwise, so **a new world caster must be one the handover can hold
-(block-merged, at identity, never `updatable`) or the whole map's shadows go
-back to Babylon** — BLENDED OR NOT, since the lamps' atlas casts every surface
-not `noShadowCaster`.
+casts nothing**. **The world's map is two CASCADES of one caster set and
+records BACK faces**, so **every caster must be a CLOSED shape**. **The world's
+four maps (both cascades, the foliage's and the lightning's) are OUR renderer's
+whenever the handover holds EVERY caster** (`render/WorldShadows.ts`),
+`ShadowSystem`'s generators otherwise, so **a new world caster must be one the
+handover can hold (block-merged, at identity, never `updatable`) or the whole
+map's shadows go back to Babylon** — BLENDED OR NOT, since the lamps' atlas
+casts every surface not `noShadowCaster`.
 
 **THE LAMPS CAST INTO ONE ATLAS** (`systems/LocalShadows.ts`), **a light casts
 by what it SAYS** (`PointLightData.shadow`), and the bumped ground variant is at
 **16 of WebGPU's 16 sampled textures per stage** — a new texture owes a PACKING.
-**The atlas changes hands WITH the world's maps** (`render/LampAtlas.ts`), and
-**`LocalShadows` decides everything either side draws**.
 
 **Nothing drawn outside the cel shader gets fog for free, and everything that
 draws outside it owes the same fade** `CelMaterialFactory.setEnvironment`
@@ -583,11 +580,9 @@ literal 0 in the grass and the water, the clear in `applyEnvironment`), every
 alpha-blended draw accumulates into it (`ALPHA_COMBINE`), and `CelInk` scales
 its edge by `1 - a`. **A REFLECTION PROBE inverts it** (`opaqueAlpha` is 1 for a
 bake), so **a shader that hardcodes either value breaks one of the two passes
-silently**. **The EMISSIVE palette is the one deliberate exception**
-(`shaders/wgsl/emissiveWorld.ts` hardcodes **1** in both passes) — do not "fix"
-it onto `opaqueAlpha`. **The sky's CLOUDS write the depth of a point 7 km out**,
-so every surface must be nearer. **Nothing on the floor writing NO depth is
-OPAQUE**.
+silently** — the emissive palette's hardcoded **1** is the one deliberate
+exception (`docs/rendering.md`). **The sky's CLOUDS write the depth of a point 7 km out**, so every
+surface must be nearer. **Nothing on the floor writing NO depth is OPAQUE**.
 
 **The world is OPAQUE with exactly one exception, and it is glazing.** Glass you
 can see THROUGH is `getGlass` over a cube `ReflectionSystem` bakes **one per
@@ -602,11 +597,9 @@ shadow caster**, and see-through glazing gets no ink.
 **replaces `scene.getActiveMeshCandidates` and writes nothing onto any mesh**:
 it never disables, never hides, never unpickles. **A collider is never a
 candidate, and nor is a BLOCK or the LANDFORM our renderer TAKES**
-(`BlockHandover`; the BUILD marks `WorldSurface.landform`), drawn in the MAIN
-pass by `src/render/` — **blocks, then landform, before the alpha-test list** —
-their Babylon meshes kept for any pass handed BACK to Babylon, and **a taken
-mesh is never switched off, hidden or faded after its build** — ours reads no
-node and would still draw it (a DEV check says so). **The SCATTER is drawn twice
+(`BlockHandover`; the BUILD marks `WorldSurface.landform`), and **a taken mesh
+is never switched off, hidden or faded after its build** — ours reads no node
+and would still draw it (a DEV check says so). **The SCATTER is drawn twice
 over and the two must agree**: our main pass draws it as INSTANCES of its
 variants, its colour baked once per kind, and cuts its pieces out of the blocks
 it takes, while Babylon's merged copy stays in those blocks for any pass handed
@@ -624,7 +617,10 @@ per mesh every frame** — an emissive colour, no `metadata.noGlow`, and `Game`'
 `GlowRules` — so nothing excludes a mesh by hand. **A map's merged emissives are
 a PALETTE like its albedo** (`shaders/EmissiveWorld.ts`): their colour is a slot
 in `uv2.x` under a WHITE `emissiveColor`, so **a new reader asking a material
-what it emits must ask the vertex for that one**.
+what it emits must ask the vertex for that one**. **The palette's MASK is OUR
+renderer's whenever the handover holds the WHOLE palette**
+(`render/WorldGlow.ts`; the mask stays Babylon's), so **a palette surface it
+cannot hold, or one marked `noGlow`, sends the whole palette mask back**.
 
 **OUR renderer (`src/render/`) draws INSIDE Babylon's frame through ONE seam**
 (`render/babylonSeam.ts`, the only file there that names Babylon, and only as
@@ -643,8 +639,8 @@ window, back faces and the foliage's third map, the bodies' map, the rungs, the
 lamps' atlas, lightning, the ink's NIB and its coverage channel's two blended
 exceptions, the wind's rigs, the fire, the glazing and reflection bake, the
 grass and turf, the water, the WGSL traps, our renderer's frame and its seam,
-the candidate list and size gate, the glow's three failed attempts, and the sky
-and its clouds' depths.
+the candidate list and size gate, the glow's three failed attempts and the
+palette's mask, and the sky and its clouds' depths.
 ### The map is data, not code
 
 `src/world/hollowmere/layout.ts` is the entire level — placements, scatter
@@ -908,7 +904,9 @@ that same object, unchanged; `GameMap.world` keeps it beside the mesh:
   it; **it is deliberately absent now from grass, water and both debris pools**,
   which the ink does draw on purpose.
 - `noGlow: true` — out of the bloom. `GlowPass` reads it per mesh every frame,
-  so a mesh built at any time needs only the flag. A mesh that stays in bloom
+  so a mesh built at any time needs only the flag — but the emissive
+  PALETTE's is read at the TAKE (`BlockHandover`), so it is set before the
+  build. A mesh that stays in bloom
   is faded with distance instead (`GlowRules.colour` in `Game`), and
   `infiniteDistance` is that fade's one exemption — it is what every sky mesh
   sets, and the moon is not in the valley to be fogged out of.

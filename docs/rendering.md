@@ -734,6 +734,12 @@ renders; our renderer's bake holds 1 in a frame of its own
 and the cube comes back alpha 0 everywhere and every pane reflects nothing but
 sky.
 
+**The EMISSIVE palette is the one deliberate exception**
+(`shaders/wgsl/emissiveWorld.ts` hardcodes **1** in both passes) — do not "fix"
+it onto `opaqueAlpha`. (Its third pass, the glow's mask under `GLOW_MASK`,
+writes the bloom's alpha, `glowColor.a`, which is not coverage: the mask is not
+the frame.)
+
 **The CLOUDS write coverage 0 like every opaque surface, and need nothing from the
 ink** — they write the depth of a point 7 km out (see the sky section), past every map's fog
 band, so the ink's own fade has taken their line work off before it is drawn. A
@@ -3282,6 +3288,23 @@ its group 0 fell inside the window would depend on which observer was
 added first, and the review of X3.2 found the renderer safe only because
 `Game` happened to build it before `GlowPass`.
 
+**The glow's MASK is the one other pass of Babylon's that ours draws in
+(X3.6d), and it is ANNOUNCED rather than found.** No target test could tell
+the renderer the mask's pass is open without a hook of its own in the seam,
+and none is needed: the mask's owner says so. `GlowPass` raises
+`onMaskOpenObservable` from inside its own clear, the pass begun and nothing
+of Babylon's queued in it; `Game` hands that to `Renderer.glowMaskOpened`,
+which queues the mask's draws (`addGlowMask`) there — FIRST — through the same
+`queue` and `passIs` as the main pass, against `GLOW_TARGETS` (the same values
+as `FRAME_TARGETS`, stated apart because they are true for another reason),
+refusing a pass that is not with the main pass's rule and listeners of its own
+(`onGlowMaskRefused`). It draws only on a frame whose `begin` filled the frame,
+and it binds the main pass's group 0: the mask is drawn from the same camera,
+in the same submit, so the frame block written once for the main pass is the
+mask's too. `begin` fills the frame when either pass has a draw, and a
+`FramePrepare` reads `Renderer.context` to ask whether a draw can bind this
+frame (`WorldGlow`'s verdict).
+
 **A draw lands at one of THREE points of rendering group 0** (`DrawPoint`),
 all before the viewmodel's group, whose auto-clear `Game` turns off, so the
 pass is not restarted between them, and in this order every frame:
@@ -3504,9 +3527,10 @@ them behind a DEV switch, `?ourworld`, against the bank Babylon drew without
 it; X3.3c took the switch out, so Babylon draws a block in the main pass only
 when the handover refused it or handed it back. **Their Babylon meshes STAY**,
 for whichever pass is handed back to Babylon: the world's directional shadow
-maps are our side's since X3.6a, the lamps' atlas since X3.6b and the
-reflection bake since X3.6c (below), each Babylon's again on the path that
-keeps it Babylon's.
+maps are our side's since X3.6a, the lamps' atlas since X3.6b, the
+reflection bake since X3.6c and the emissive palette's share of the glow's
+mask since X3.6d (below), each Babylon's again on the path that keeps it
+Babylon's.
 
 - **`systems/BlockHandover.ts` decides which surfaces are TAKEN.** A
   surface is taken if it is block-merged OR the landform, at identity, never
@@ -3636,7 +3660,9 @@ keeps it Babylon's.
   by its cell, the landform by the box of no reach), so a block whose mesh
   was filed in no cell is refused, never taken as landform. The
   glow's mask, which reads the main pass's active meshes, keeps only what
-  glows, which a taken mesh never does.
+  glows, which a taken mesh never does; the emissive palette, which is never
+  taken, is drawn into the mask by our side through the main view whenever
+  the handover holds it whole (X3.6d, "The palette's mask, ours").
 - **A taken mesh is never switched off, hidden or faded after its build.**
   Nothing in the tree does it to a block, and the cull could not follow: a
   faded mesh goes to Babylon's blended list and ours would still draw it
@@ -3851,8 +3877,8 @@ light's matrix over.
   from its own group, and a caster it does not take (the emissive palette's
   merges, which keep no recipe) is held for the shadow maps ALONE
   (`WorldBlocks.addCaster`: positions only, in the HELD layer cut after
-  every other, which the main pass's cull leaves out as a tail and nothing
-  draws in the main pass). Only when EVERY caster is held are the casters
+  every other, the casters' group LAST of all, which the main pass's cull
+  leaves out as a tail and nothing draws in the main pass). Only when EVERY caster is held are the casters
   handed to `WorldShadows` (`setCasters`); one it cannot hold — not block
   merged, not at identity, `updatable` — leaves the whole map's shadows to
   the generators, as an editor build and `?babylonworld` do. Half a map
@@ -4001,7 +4027,9 @@ bake" above; what it owes this frame is below.
   surface and scatter part is in `PASS_PROBE`; the emissive PALETTE, which no
   main pass of ours draws, is HELD for it with its positions and its slots
   (`WorldBlocks.addEmissive`), one group a palette material, cut after every
-  other group's; a fire is left out. The world is handed to `ProbeBake` at
+  drawn group's and ahead of the casters' — inside the main view's count since
+  X3.6d, for the glow's mask, which the main pass never draws; a fire is left
+  out. The world is handed to `ProbeBake` at
   the cut unless a surface it draws already went back, and one handed back
   later, or a refused main pass, LOSES the bake (`ProbeBake.lose`, after the
   task in hand) — Babylon's from the next frame, the whole install queued
@@ -4298,7 +4326,10 @@ because it seemed wise.**
   `emissiveColor` — `CelMaterialFactory.getEmissive`'s unlit `StandardMaterial`,
   or the fire's `FlameMaterial`, which declares one for exactly this test and the
   glow's — and every lit surface wears a plain `ShaderMaterial`, which has no
-  such property to read at all.
+  such property to read at all. **Our GPU cull keeps the same exemption** for
+  the one emissive it culls, the palette the glow's mask draws through the main
+  view (`PASS_GLOW`, X3.6d): a cluster carrying that bit is never size-gated,
+  and `?cullcheck`'s probe and replay skip it the same way.
 - **Anything outside rendering group 0**, plus `infiniteDistance`. This is the
   one that was found the expensive way. `offer` runs inside `Game.tick`, BEFORE
   `scene.render()` bakes world matrices, and the viewmodel hangs off the camera
@@ -4428,6 +4459,18 @@ all in the counter this finding is named after. Not chased.
   it had moved. The fire is the one such material: `FlameMaterial.glowMask`
   hands back a twin compiled from the same WGSL under `GLOW_MASK`, fed the same
   clock, and painted through the same `GlowRules.colour`.
+- **The emissive PALETTE's share of the mask is OUR renderer's whenever the
+  handover holds the whole palette** (`render/WorldGlow.ts`, `BABYLON_EXIT.md`
+  X3.6d; "The palette's mask, ours", under "The glow: what the depth share
+  replaced", below). **The mask stays this pass's**: ours draws INTO it, FIRST,
+  as its pass opens (`GlowPass.onMaskOpenObservable`, from inside the clear),
+  and `GlowPass` leaves the palette's meshes out of its list on exactly the
+  frames ours draws them (`GlowRules.drawnElsewhere`) — so the palette's twin
+  (`EmissiveWorld.ts`) is the FALLBACK. **Two ways to send it back that a
+  builder can reach**: a palette surface the handover cannot hold, and a
+  palette surface marked `noGlow` — read at the TAKE, as `noShadowCaster` is,
+  so a flag set after the build is one ours does not see (a DEV check says
+  so). Either leaves the map's WHOLE palette mask to `GlowPass`.
 - **The blur is off the backing store.** The mask stays full resolution because
   depth sharing needs it and the ink reads it as its emissive mask, but the blur
   starts from a half-resolution downsample: Babylon's own `kernelBlur`, across and
@@ -5040,7 +5083,13 @@ and ours draws none (`FINDINGS.md` 51) — so the fire's half is a correctness f
 picture can show until that one is found. It declares a WHITE `emissiveColor`, as the fire declares one, so
 `GlowPass` and `WorldCulling`'s gate still find it by the one property they ask,
 and it brings its own mask twin (`SelfMasking`). `vertexShading` skips it
-(`isEmissiveWorld`).
+(`isEmissiveWorld`). **Since X3.6d that twin is the FALLBACK**: whenever the
+handover holds the whole palette, our renderer draws the palette's mask
+(`render/WorldGlow.ts`, the same body under `GLOW_MASK`, through the main
+pass's view of the culls) and `GlowPass` never dresses a palette mesh in the
+twin — it is drawn for an editor build, `?babylonworld`, a palette ours cannot
+hold whole, and a loss mid-map ("The palette's mask, ours", under the glow,
+below). The palette's MAIN-pass draw is still this material's on every path.
 
 **The bloom is the one thing that changed, and it changed toward the wall.**
 `GlowRules.colour` fades a bloom by the fog at a mesh's bounding-sphere centre,
@@ -5435,6 +5484,83 @@ The residue is the blur resampling at full resolution rather than half; it is
 not occlusion, which the spike proved separately by showing the normal and
 inverted depth tests PARTITION the emissive pixels exactly (926 + 748 against
 1,672 unoccluded).
+
+### The palette's mask, ours (`BABYLON_EXIT.md` X3.6d)
+
+**The merged world's lit windows, lenses, embers and signs are drawn into the
+mask by OUR renderer whenever the handover holds the WHOLE emissive palette**
+(`render/WorldGlow.ts`), and `GlowPass` draws everything else in it as before:
+the bodies, the effects, the fire's twin, the viewmodel and the moon. It is the
+depth share carried one step further, and it rests on the same tie: a mask draw
+writes no depth and tests LEQUAL against the depth the main pass wrote, so it
+lands exactly where that pass's draw of the same vertex landed.
+
+- **The mask stays `GlowPass`'s** (`BABYLON_EXIT.md` rule 5): its texture, its
+  clear, its borrowed depth and its blur, which `CelInk` reads. Ours draws
+  INTO its pass, as it draws into the main pass, through the same seam items
+  (`FrameHost.queue`, `passIs` against `GLOW_TARGETS`) and no new one —
+  nothing wrapped, nothing copied.
+- **Where: FIRST, right after the clear.** `GlowPass` announces the pass from
+  inside its own clear observer (`onMaskOpenObservable`): WebGPU's `clear()`
+  ends whatever pass was open and begins the mask's at once, after Babylon has
+  built the mask's list and before it has queued any of it, every frame,
+  whether or not its own list holds anything. Three other places were
+  rejected: a rendering group's hook (an EMPTY group is never visited, and
+  group 0 of the mask often is once the palette is ours), the target's
+  after-render (ours would land after the blended mask draws and paint over a
+  tracer or a fire), and a second observer on the clear (order between two
+  observers is a race, the class of bug X3.2's seam was written to end).
+  First is also the order Babylon kept: the palette drew in its OPAQUE queue,
+  ahead of every blended mask draw. With no depth written, order matters only
+  where two mask draws pass on one pixel; what is left is a coplanar opaque
+  emissive tie, which the mask's readback measures (`BABYLON_EXIT.md` X3.6d).
+- **What: the MAIN pass's own view of the culls**, no cull of its own
+  (`WorldBlocks.glowView`). The palette's clusters are cut AHEAD of the held
+  casters, inside the count the main view culls (the casters stay its tail),
+  so the main cull writes the palette's survivors into its index buffer every
+  frame and the main pass, which has no recipe for them, never draws them.
+  **They are never SIZE-GATED** (`PASS_GLOW`): Babylon never gated an emissive
+  mesh (`WorldCulling`'s `glows`), and a lamp lens a few pixels across is what
+  a bloom is for. They keep no reach box: a palette cluster past the reach is
+  past the emissive fog band's end, where the mask's pixel is the clear's own
+  `(0, 0, 0, 1)`, so the reach cannot move a texel.
+- **How: the mask twin's program in the pulled form**
+  (`emissiveWorld(GLOW_TARGETS, true)`): the one body under `GLOW_MASK`, one
+  pipeline a palette bias (plain and over-glass: at most two draws a frame), no
+  depth written, `less-equal`, back faces culled, no blend. Its group 1 is the
+  palette material's block laid out for the mask's variant, `glowColor` LAST,
+  so the bake's program reads a prefix of the same buffer and one bind group
+  serves both.
+- **Who decides: `Game`, as for every other mesh.** `GlowRules` grew a third
+  question, `drawnElsewhere`, and its first two are stated once each
+  (`glowAdmits`, `bloomColour`) and PULLED by `WorldGlow` once a frame, the
+  colour written to a block only when it moved. The VERDICT is made in a
+  renderer prepare as the main pass begins — the world held, its pipelines
+  built, the rules admitting group 0, every palette group drawable — and
+  `GlowPass` builds its list after it, at the end of the draw phase, so one side
+  draws each frame's palette: a frame with a pipeline compiling or a texture
+  unpublished is Babylon's. On the kit screen neither side draws it, and nor
+  does either on the one frame a refused MASK pass is found: Babylon builds the
+  mask's list before the clear that announces the pass, so the list that frame
+  has already left the palette out and the loss reaches the next one.
+- **When it goes back.** Per install, `BlockHandover` hands `WorldGlow` the
+  world only if every surface wearing a palette material was held for the mask
+  (`PASS_GLOW`) and none went back at the cut — a surface it cannot hold, or
+  one marked `noGlow` (read AT THE TAKE), leaves the map's whole palette mask
+  to `GlowPass`. Mid-map, a palette surface handed back, a refused main pass
+  and a refused MASK pass (`Renderer.onGlowMaskRefused`) LOSE it: `drawing`
+  false at once, so `GlowPass`'s next list has the palette, the draw and the
+  prepare off the renderer after the task in hand. A mask pipeline that FAILS
+  latches it broken for the session. The editor and `?babylonworld` take
+  nothing, so theirs is `GlowPass`'s. **A loss mid-map compiles the twin IN
+  the round**: on our path `GlowPass` skips the palette before dressing it, so
+  `EmissiveWorldMask` is never built and the warm-up never shows it, and its
+  first frames after a loss are a compile and a few frames of no palette bloom
+  while the override is not ready — the same price X3.6a's generators pay on a
+  loss, and paid on a path no shipped map takes.
+- **What it cost and saved** is `BABYLON_EXIT.md` X3.6d's record. The palette
+  is 6,864 + 11,292 triangles at two biases on Coldharbour, 22,378 on
+  Hollowmere and 10,020 on Cinderhaven, read at the install.
 
 ## Impacts: the one pooled effect that reads the world
 

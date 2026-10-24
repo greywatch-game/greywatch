@@ -1694,7 +1694,7 @@ priced on the phone: the A/B above, Off against On.
 
 ---
 
-## 43. The bloom is a SECOND GEOMETRY PASS over every lit window in view — **the EMISSIVE palette is LANDED (Coldharbour's worst view 114 -> 48 mask draws); its frame cost on a phone is not measured**
+## 43. The bloom is a SECOND GEOMETRY PASS over every lit window in view — **the EMISSIVE palette is LANDED (Coldharbour's worst view 114 -> 48 mask draws), and since `BABYLON_EXIT.md` X3.6d its mask is OUR renderer's at one or two draws a frame; its frame cost on a phone is not measured**
 
 **Status:** decomposed and measured on the Windows box under a CPU throttle at
 the phone's viewport. Two levers **LANDED**: the frozen mask material, and the
@@ -1800,6 +1800,19 @@ throttled per-draw figures says roughly 0.4 ms at Coldharbour's mean view and
 1.5-2 ms at its worst, and next to nothing on Greyfen, where the phone captures
 were taken (three draws). That is arithmetic, not a measurement: read `glow` and
 `drawWorld` on the phone at a Coldharbour street view before quoting it.
+
+**Since X3.6d the palette's share of the mask is our renderer's**
+(`render/WorldGlow.ts`): one draw a palette BIAS — two on Coldharbour, one on
+every other shipped map — culled through the main pass's own view, where
+Babylon's mask list held one draw a palette mesh in view. Over the bank's 61
+rows the mean of Babylon's mask draws a row fell from 19.67 to 0.44 on
+Coldharbour, 14.50 to 3.00 on Cinderhaven, 11.85 to 2.69 on Hollowmere, 6.13 to
+2.47 on Harrowmead, 4.00 to 0.83 on Greyfen, 2.33 to 0.33 on Kurenai and 1.73
+to 0.36 on Sarab (what is left is the fires and the other emissives), the mask
+read back texel for texel the same. On the desktop X0.3 it moved no frame
+(`BABYLON_EXIT.md` X3.6d); the phone reading this entry is waiting for is
+still owed, and now measures the cluster-culled draw rather than the per-mesh
+one.
 
 The two cheaper levers this entry named beside the palette are both LOOK
 decisions: a bloom quality rung, and a distance cap on the mask, which the

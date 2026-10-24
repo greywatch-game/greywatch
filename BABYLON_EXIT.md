@@ -1896,8 +1896,12 @@ floor its shading:
 
 Each sub-step lands on its own. Under rule 5, each pass's texture moves to our
 side here, and Babylon's materials, which still draw the bodies and the rest,
-sample a wrapped view of it. Every pass draws through X3.5b's fold: a group's
-plain draw and, with scatter, its one indirect draw, a pass.
+sample a wrapped view of it — but for X3.6d's: the glow's MASK stays
+`GlowPass`'s, because the bodies, the effects, the fire, the viewmodel and the
+moon still draw into it and its blur and the ink read it, so ours draws INTO
+Babylon's pass there, as it draws into the main pass, and nothing is wrapped.
+Every pass draws through X3.5b's fold: a group's plain draw and, with scatter,
+its one indirect draw, a pass.
 
 - **X3.6a — the world's shadows:** both cascades, the foliage map and the
   lightning flash map (`ShadowSystem`, today a `ShadowGenerator` with a
@@ -1913,7 +1917,7 @@ plain draw and, with scatter, its one indirect draw, a pass.
   `scene.activeCamera`. The bake still drains behind the loading card
   **LANDED** (below).
 - **X3.6d — the glow mask** for the emissive palette's static meshes
-  (`GlowPass`; `shaders/EmissiveWorld.ts`).
+  (`GlowPass`; `shaders/EmissiveWorld.ts`) **LANDED** (below).
 
 - **Verify, each:** the bank; X0.3; and for X3.6c, the probe-eye harness that
   measured 242b986, run again.
@@ -2359,8 +2363,154 @@ plain draw and, with scatter, its one indirect draw, a pass.
     X3.3c: the bake is under the loading card, so it is read as the card's
     length, not the frame.
 
-**After X3.6:** Babylon builds no block, scatter or terrain mesh for a round.
-Editor builds keep the old path until X5.3.
+**X3.6d landed** (2026-10-24).
+- **What it is.** The emissive palette's share of the glow's MASK is drawn by
+  OUR renderer (`render/WorldGlow.ts`) whenever the handover holds the WHOLE
+  palette, and `GlowPass` leaves those meshes out of its list on the frames
+  ours means to draw them (`GlowRules.drawnElsewhere`). **The mask does not
+  move** (rule 5, the X3.6 intro's one exception): the bodies, the effects,
+  the fire's twin, the viewmodel and the moon still draw into it and its blur
+  and the ink read it, so ours draws INTO Babylon's pass, as it draws into the
+  main pass, and nothing is wrapped or copied. The palette's MAIN-pass draw
+  stays Babylon's: moving it changes which side wins an equal-depth tie with
+  a coplanar wall, a picture change owed its own commit ("Decisions that are
+  yours"). Every shipped map holds the whole palette: one draw a palette
+  BIAS, two on Coldharbour (6,864 triangles at the over-glass bias and 11,292
+  plain, 10 and 36 surfaces) and one elsewhere (Hollowmere 22,378 triangles
+  over 29 surfaces, Cinderhaven 10,020 over 53).
+- **Where: FIRST in the mask's pass, right after its clear.** `GlowPass`
+  announces the pass from inside its own clear observer
+  (`onMaskOpenObservable`, wired to `Renderer.glowMaskOpened` by `Game`, so
+  `GlowPass` imports nothing of `src/render/`): WebGPU's `clear()` begins the
+  mask's pass at once, after Babylon built the list and before it queued any
+  of it, every frame. A rendering group's hook was refused (an empty group is
+  never visited, and the mask's group 0 often is once the palette is ours),
+  the target's after-render too (it lands after the blended mask draws), and
+  a second clear observer (an order race). No new seam item: `FrameHost.queue`
+  and `passIs` against `GLOW_TARGETS` (`render/targets.ts`). With no depth
+  written, first is also Babylon's order, the palette having drawn in its
+  opaque queue.
+- **The tie is across the two renderers**, and holds by construction: the same
+  vertex body both sides include (`EMISSIVE_WORLD_VERTEX`), `world` identity
+  on both, the same float32 view-projection, the same flip, the same depth
+  bias; LEQUAL against the depth Babylon's palette wrote in the main pass.
+- **Culled through the MAIN view**, no view of its own
+  (`WorldBlocks.glowView`): the held groups are cut palette first and casters
+  last, the main view's count runs through the palette, the main pass (which
+  has no recipe for them) never draws them, and a palette cluster is never
+  SIZE-GATED (`PASS_GLOW`, mirrored in the CPU replay and `cullProbe`), as
+  Babylon never gated an emissive. No reach: past it the mask's pixel is the
+  clear's own. Its memory is the main view's per-cluster scratch for the
+  palette's clusters, a few KB.
+- **The program** is the twin's in the pulled form (`emissiveWorld(GLOW_TARGETS,
+  true)`, the one body under `GLOW_MASK`), `glowColor` appended LAST to the
+  palette's block so the bake's program reads a prefix and one bind group
+  serves both. The rules stay `Game`'s, each stated once (`glowAdmits`,
+  `bloomColour`) and PULLED once a frame; a colour is written only when it
+  moved.
+- **Who decides.** `BlockHandover` per install (a palette surface it cannot
+  hold, or one marked `noGlow` — read at the take — leaves the map's whole
+  palette mask to `GlowPass`); `WorldGlow` per frame, in a renderer prepare as
+  the main pass begins (held, built, admitted, drawable), before `GlowPass`
+  builds its list. A palette surface handed back, a refused main pass or a
+  refused MASK pass LOSE it (the draw and the prepare off the renderer after
+  the task in hand); a failed mask pipeline latches it broken for the
+  session; the editor and `?babylonworld` take nothing. Two costs, both off
+  the shipped path: the one frame a refused mask pass is found has the
+  palette in neither side's draw (Babylon built the list before the clear
+  that announces the pass), and a loss mid-map compiles Babylon's twin in
+  the round.
+- **Measured.**
+  - **The mask itself, ours against Babylon's** (a scratch readback of the
+    mask texture at every bank row, 61 rows on seven maps: ours, ours again,
+    Babylon's after `lose()`, ours after taking it back): **0 texels on every
+    row**, and 0 ours against ours. Thirteen rows hold no lit texel at all
+    (eight of Sarab's eleven, Greyfen's `treeline` and `canopy`,
+    Harrowmead's `borderland` and `ground`, Coldharbour's `shopfront`), so
+    the proof is the other 48.
+  - **Babylon's mask draws, a row's mean** (ours drawing / after `lose()`):
+    Coldharbour 0.44 / 19.67, Cinderhaven 3.00 / 14.50, Hollowmere 2.69 /
+    11.85, Harrowmead 2.47 / 6.13, Greyfen 0.83 / 4.00, Kurenai 0.33 / 2.33,
+    Sarab 0.36 / 1.73 — no palette mesh left in Babylon's list while ours
+    draws (`FINDINGS.md` 43).
+  - **The bank, against a BEFORE kept at 5752574 in a worktree**
+    (`--check --keep` both sides): **61 of 61 byte-identical**. No console or
+    page error.
+  - **`census.mjs --against`** the BEFORE: equal on all seven maps (384,
+    226, 829, 891, 673, 228, 134). **`shaders.mjs`**: clean on seven, ours
+    15/15 and 19/19 (it builds neither palette program, as before).
+    **`gate.mjs`**: clean on seven.
+  - **The held-group reorder moved no shadow**: the world's four maps read
+    back through a compute `textureLoad` (they are not `COPY_SRC`) at the
+    menu vantage, BEFORE against AFTER, are byte-identical on Greyfen and
+    Coldharbour.
+  - **The paths no instrument covers**, forced in a scratch page on
+    Coldharbour and Hollowmere (the night map): deploy and a round (ours);
+    the kit screen (neither side; ours again on leaving it); the Glow rung
+    `low` and back, a resize to 1280x720 and back, render scale 0.5 and back
+    (ours throughout); a forced `lose()` (Babylon's: 46 and 5 palette meshes
+    in its list), a second round (ours); a forced main-pass refusal (both
+    handed back), a third round (ours); the editor (nothing held) and
+    leaving it (ours); `?babylonworld` (Babylon's). No page error; the only
+    console errors are the refusal's own two diagnostics. `?cullcheck` on
+    Coldharbour in a round: 0 disagreements.
+  - **X0.3 on the desktop** (`bench.mjs`'s run, `--max --gpu`, uncapped,
+    3440x1440, BEFORE in the worktree and AFTER alternated run by run, three a
+    side, on Coldharbour, Cinderhaven and Hollowmere, where the palette is;
+    the canonical fight hashes on all 18 runs, no hang): the mean frame new /
+    old 0.997-1.000 on the vantages, 0.979-1.001 on the path (Cinderhaven's
+    0.979 inside the BEFORE's own spread) and 0.996-1.012 in the fights;
+    `gpu.frame` 0.950-1.026 over 14-37 samples a look group. Babylon's draw
+    counter fell in every group: Coldharbour 112 to 95 on the vantages, 79 to
+    68 on the path, 302 to 283 in the fight; Cinderhaven 108 to 92, 97 to 84,
+    371 to 340; Hollowmere 48 to 40, 43 to 37, 245 to 233. The bench's
+    install rose ~2 s on every map, and is the main tree's cold dev server
+    again (X3.6c's reading): `installRound` timed in both trees is level
+    (Hollowmere 4.95-5.4 s against 4.93-5.7, Coldharbour 6.3-6.4 against
+    6.4-6.5; the warm-up waits ~40 ms more on Coldharbour for two more
+    pipelines and compiles nothing in play), and a second run in one
+    invocation reads 5.13 against 5.26 s.
+  - These ran before the review's fixes below, which change comments, a
+    prepare's signature and a `ready` that answered false for a disposed
+    view; typecheck, build and corecheck were run again after them, and
+    the mask readback on Coldharbour and Hollowmere (six rows, 0 texels).
+- **What the review found** (an independent reader before the commit; fixed
+  before it). No defect on the shipped path. CLAUDE.md's cut had taken the
+  emissive palette's hardcoded coverage of 1 out of the spine while leaving
+  "a shader that hardcodes either value breaks one of the two passes" — the
+  exception is back as a clause. The contracts over-claimed "exactly the
+  frames": a refused mask pass is found after Babylon's list was built
+  (softened in `WorldGlow`, `GlowPass` and `docs/rendering.md`). The twin's
+  compile after a mid-map loss was undocumented. A view's `ready` answered
+  false for a DISPOSED view, which `WorldGlow` reads as a failed pipeline and
+  latches broken for the session — safe while every dispose follows a
+  generation bump, but a guard the generation already is (now a pipeline
+  question alone, in `glowView` and `probeView` both). `Renderer.context` had
+  been made public for one prepare (a prepare is handed the `FrameContext`
+  now). The `noGlow` bullet named every block-merged emissive where only the
+  palette's is read at the take; `VERIFYING.md`'s re-take only holds on a map
+  that held the whole palette. Kept: `WorldGlow`'s lifecycle has
+  `ProbeBake`'s shape (a generation, `broken`, the loss after the task) — a
+  second copy of a small shape rather than a base class for two.
+- **Owed onward.**
+  - The palette's main pass, and deleting the fallbacks ("After X3.6",
+    "Decisions that are yours").
+  - The phone's FOLLOW-UP reading, the user's to take as every step's since
+    X3.3c, which is also the tie's check on a second GPU: a driver that
+    rounds the shared vertex body differently would drop palette bloom
+    wherever ours lands behind Babylon's depth. `FINDINGS.md` 43's phone
+    reading is the same capture.
+  - `shaders.mjs` builds neither palette program (X3.6c's item, still open).
+
+**After X3.6:** every pass that draws a block, the scatter, the landform or the
+emissive palette's mask is our renderer's whenever the handover holds what that
+pass draws: the main pass, the world's four maps, the lamps' atlas, the probes'
+bake and the glow's mask. Babylon still BUILDS every one of those meshes, as
+the fallback each pass hands back to (an editor build, `?babylonworld`, a
+surface ours cannot hold, a loss mid-map), and still draws the emissive
+palette's main pass. Phase 3's end condition is met only once the fallbacks are
+deleted and the palette's main pass moves; no step names either yet. Editor
+builds keep the old path until X5.3.
 
 ---
 
@@ -2698,5 +2848,6 @@ Phase 1 actually took.
 | X3.4 | Scatter AO: baked per kind (cheaper, changes the look) or per instance? | **Decided** 2026-10-14: per kind, judged in the bank. If the look is wrong, the fix is X3.4's "If the look is wrong" (a per-kind bake plus a per-instance term), not a per-instance bake. |
 | X3.5b | X3.4b's instanced draws are one a part of a set, issued every frame: fold them into one draw a recipe, and when? | **Decided** 2026-10-14: fold them by vertex pulling, blocks and scatter in one stream, before X3.6 repeats them in every pass. Fewer variants was not the lever: it halves the count and costs the look. |
 | X3.5b | The instance in the index's high bits, or non-indexed draws over (record, corner)? | **Decided** 2026-10-20: the high bits, with the scatter addressed in its own region (13 bits of instance, 18 of vertex, its parts laid first); landed 2026-10-21, at two draws a group with scatter, since the blocks stay never-indirect. |
+| X3.6d | After X3.6 Babylon still BUILDS every world mesh, as the fallback each pass hands back to, and still draws the emissive palette's MAIN pass. Which step deletes the fallbacks, and which moves the palette's main pass? | Open. Phase 3's end condition ("Babylon builds no world mesh for a round") needs both, and no step names either. The palette's main pass was left Babylon's at X3.6d because moving it changes which side wins an equal-depth tie with a coplanar wall — a picture change, owed its own commit with the bank's numbers (rule 2). |
 | X4.2 | Which hull parts drop at range (the tank's links and wheels, the MG rings)? | An art call; PERF_PLAN A3 measured +6.5% at 300 m on Cinderhaven. |
 | X6.2 | Is it ready to merge to `develop`? | Only when X6.2's "Before" list passes in full. |

@@ -1,23 +1,31 @@
 /**
  * render/emissiveWorld.ts — The emissive palette as OUR renderer draws it: the
  * lit windows, lamp lenses, embers and signs of a map's merged world, into a
- * reflection probe's faces (`render/ProbeBake.ts`, `BABYLON_EXIT.md` X3.6c) —
- * Babylon's `EmissiveWorldMaterial` in the pulled form.
- * Owns: `EMISSIVE_BLOCK` (group 1: the palette and the fog band), the
- * geometry it reads (group 2, `EMISSIVE_GEOMETRY`: the positions, the slots
- * in `uv2` and the instances' transforms, which the shared decode names),
- * `EMISSIVE_ATTRIBUTES`, `EmissiveRecipe` (what a palette material is drawn
- * WITH, as plain data) and `emissiveWorld`, the program's two modules.
+ * reflection probe's faces (`render/ProbeBake.ts`, `BABYLON_EXIT.md` X3.6c)
+ * and into the glow's MASK (`render/WorldGlow.ts`, X3.6d) — Babylon's
+ * `EmissiveWorldMaterial` and its mask twin in the pulled form.
+ * Owns: `EMISSIVE_BLOCK` (group 1: the palette, the fog band and, for the
+ * mask, the bloom's colour), the geometry it reads (group 2,
+ * `EMISSIVE_GEOMETRY`: the positions, the slots in `uv2` and the instances'
+ * transforms, which the shared decode names), `EMISSIVE_ATTRIBUTES`,
+ * `EmissiveRecipe` (what a palette material is drawn WITH, as plain data) and
+ * `emissiveWorld`, the program's two modules for either pass.
  * Invariants: the pixel is `EmissiveWorldMaterial`'s, by its one body
  * (`shaders/wgsl/emissiveWorld.ts`) — the slot's colour faded toward the fog
  * by `EmissiveFog`'s curve over the radial distance to the FRAME's `camPos`
- * (a bake's frame holds the probe there), alpha 1 — and the vertex is its
- * vertex, `world` identity as the merge's is, read through the cel stage's
- * own decode (`pulledWorld`); group 0 is the cel FRAGMENT's whole group, so
- * one frame bind group serves the cel pipelines and these; the fog band is
- * the material's own pair as the factory computes it (`fogRange`: start and
- * the reciprocal of the band, on the CPU, so it rounds as Babylon's did), and
- * the palette the factory's table — both a PULL off the factory
+ * (a bake's frame holds the probe there), alpha 1 — or, under `GLOW_MASK`,
+ * its mask twin's — faded toward black on the same curve and scaled by the
+ * bloom's colour (`glowColor`, `GlowRules`' answer for that material); and the
+ * vertex is its vertex in both, `world` identity as the merge's is, read
+ * through the cel stage's own decode (`pulledWorld`) — so the mask's LEQUAL
+ * test ties against the depth Babylon's palette wrote; group 0 is the cel
+ * FRAGMENT's whole group, so one frame bind group serves the cel pipelines
+ * and these; group 1 is laid out for the MASK's variant, `glowColor` LAST, so
+ * the bake's program reads a prefix of the same buffer and one bind group
+ * serves both (no layout states a `minBindingSize`); the fog band is the
+ * material's own pair as the factory computes it (`fogRange`: start and the
+ * reciprocal of the band, on the CPU, so it rounds as Babylon's did), and the
+ * palette the factory's table — both a PULL off the factory
  * (`CelMaterialFactory.emissiveRecipe`), never read off a material; back
  * faces are culled and the material's own depth bias is its pipeline's.
  * Never: imports Babylon; restates the body.
@@ -37,7 +45,11 @@ import {
   type StageTarget,
 } from "./wgsl/assemble";
 
-/** Group 1: the map's emissive colours and the fog band they fade on. */
+/**
+ * Group 1: the map's emissive colours and the fog band they fade on — and,
+ * for the glow's mask, the bloom's colour, LAST, so the offsets the bake's
+ * program reads are the same in both variants.
+ */
 export const EMISSIVE_BLOCK = {
   kind: "uniform",
   var: "emissive",
@@ -45,8 +57,13 @@ export const EMISSIVE_BLOCK = {
   fields: [
     { name: "emissivePalette", type: "vec3f", count: MAX_EMISSIVE_PALETTE },
     { name: "fogRange", type: "vec2f" },
+    // rgb the bloom's scale for this material (`GlowRules`), a its alpha.
+    { name: "glowColor", type: "vec4f", when: ["GLOW_MASK"] },
   ],
 } as const satisfies Binding;
+
+/** The variant a palette block is laid out for: the mask's, whose layout the bake's is a prefix of. */
+export const EMISSIVE_BLOCK_DEFINES = ["GLOW_MASK"] as const;
 
 /** Group 2: the positions, the slots and the transforms the shared decode names. */
 export const EMISSIVE_GEOMETRY = [
@@ -76,12 +93,23 @@ const VARYINGS = [
 
 /** The frame's palette is declared, so group 0 is laid out as every cel program's is. */
 const DEFINES = ["CEL_PALETTE"];
+/** The mask's fragment: the same, and the body's `GLOW_MASK` arm. */
+const GLOW_DEFINES = ["CEL_PALETTE", "GLOW_MASK"];
 
-const programs = new Map<boolean, { vertex: AssembledVertex; fragment: AssembledModule }>();
+const programs = new Map<string, { vertex: AssembledVertex; fragment: AssembledModule }>();
 
-/** The emissive palette's two modules for a pass of `target`'s kind (a probe's face is `FRAME_TARGETS`). */
-export function emissiveWorld(target: StageTarget): { vertex: AssembledVertex; fragment: AssembledModule } {
-  let program = programs.get(target.flipY);
+/**
+ * The emissive palette's two modules for a pass of `target`'s kind — a
+ * probe's face is `FRAME_TARGETS`, the glow's mask `GLOW_TARGETS` — with
+ * `glow` the mask twin's fragment. The vertex stage is ONE text either way,
+ * which is what the mask's LEQUAL tie rests on.
+ */
+export function emissiveWorld(
+  target: StageTarget,
+  glow = false,
+): { vertex: AssembledVertex; fragment: AssembledModule } {
+  const key = `${target.flipY}|${glow}`;
+  let program = programs.get(key);
   if (!program) {
     program = {
       vertex: assembleVertex(
@@ -100,18 +128,18 @@ export function emissiveWorld(target: StageTarget): { vertex: AssembledVertex; f
       ),
       fragment: assembleFragment(
         {
-          label: "emissive-fragment",
+          label: glow ? "emissive-glow-fragment" : "emissive-fragment",
           groups: [[FRAME_BLOCK, ...FRAME_TEXTURES], [EMISSIVE_BLOCK]],
           varyings: VARYINGS,
           includes: {},
           body: EMISSIVE_WORLD_SURFACE,
           surface: "emissiveWorldSurface",
         },
-        DEFINES,
+        glow ? GLOW_DEFINES : DEFINES,
         target,
       ),
     };
-    programs.set(target.flipY, program);
+    programs.set(key, program);
   }
   return program;
 }

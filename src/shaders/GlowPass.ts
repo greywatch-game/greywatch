@@ -6,7 +6,15 @@
  * Invariants: the mask is drawn against the frame's OWN depth, borrowed at the
  * size that depth is at on the frame it is borrowed — so a bloom that reaches
  * through a wall is a bug here and never a tuning question; nothing here draws
- * into that depth; and every Babylon call is public API.
+ * into that depth; the mask is THIS pass's texture even where our renderer
+ * draws into it (`BABYLON_EXIT.md` rule 5, X3.6d): the moment its pass opens
+ * is announced (`onMaskOpenObservable`, from inside the clear, before any
+ * mesh of Babylon's is queued), and a mesh drawn there by someone else is left
+ * out of the list on the frames they mean to draw it (`GlowRules
+ * .drawnElsewhere`; a pass of theirs refused after this list is built
+ * leaves that one frame without it) — so this file imports nothing of `src/render/` and knows
+ * no more than that a mesh is someone else's this frame; and every Babylon
+ * call is public API.
  *
  * WHAT IT REPLACED, AND WHY. The bloom was a `GlowLayer` with `GlowDepth`
  * bolted on from the outside. The layer is built to own four things — its
@@ -76,6 +84,16 @@
  * and adding the bloom after its own `mix` is exactly the order the separate
  * pass kept. The one difference is that the inked frame is no longer rounded
  * to 8 bits before the bloom lands on it, which is under half a step.
+ *
+ * THE EMISSIVE PALETTE'S MASK IS OUR RENDERER'S, whenever the handover holds
+ * the whole palette (`render/WorldGlow.ts`, X3.6d): it draws the merged
+ * world's lit windows and lenses FIRST in this pass, right after the clear —
+ * the palette was in Babylon's opaque queue, ahead of every blended mask
+ * draw, and first keeps that order — and this pass leaves those meshes out of
+ * its list (`drawnElsewhere`), so the palette's twin below is the FALLBACK:
+ * an editor build, `?babylonworld`, a palette surface ours cannot hold or one
+ * marked `noGlow`, and a loss mid-map. Everything else in the mask is still
+ * drawn here.
  *
  * A MATERIAL WHOSE VERTICES MOVE BRINGS ITS OWN MASK (`SelfMasking`). The
  * stock variants transform by `world` and `viewProjection` alone, so a surface
@@ -247,6 +265,13 @@ export interface GlowRules {
    * material's alpha. Asked at bind time, once per draw.
    */
   colour(mesh: AbstractMesh, material: StandardMaterial, out: Color4): void;
+  /**
+   * Whether an emissive mesh is drawn into the mask by someone else THIS
+   * frame — our renderer's emissive palette (`render/WorldGlow.ts`) — and so
+   * is left out of the list. Asked once per emissive mesh per frame, before
+   * `admits`; a mesh left out is never dressed.
+   */
+  drawnElsewhere(mesh: AbstractMesh, material: Material): boolean;
 }
 
 /**
@@ -367,6 +392,16 @@ export class GlowPass {
   readonly onAfterWorkObservable = new Observable<void>();
 
   /**
+   * Fired as the MASK's pass opens: inside its clear, with the pass begun and
+   * nothing of Babylon's queued in it yet, every frame the mask is drawn —
+   * whether or not this pass has a mesh of its own to draw. What `Game` hands
+   * our renderer, which draws the emissive palette there FIRST
+   * (`Renderer.glowMaskOpened`). Inside the work bracket above, so the
+   * profiler's `glow` phase is ours too.
+   */
+  readonly onMaskOpenObservable = new Observable<void>();
+
+  /**
    * The mask box-filtered to quarter resolution, which the `low` rung blurs
    * from (see the header). 1x1 on `high`, which never reads it.
    */
@@ -420,7 +455,17 @@ export class GlowPass {
     // took it would leave nothing to occlude against, and every lamp in the
     // map would bloom through the wall it hangs on. An observer here replaces
     // Babylon's default clear rather than adding to one.
-    this.mask.onClearObservable.add((e) => e.clear(NEUTRAL, true, false, false));
+    //
+    // And the pass OPENS here: the clear ends whatever pass was open and
+    // begins the mask's at once, the list already built and nothing of it
+    // queued — so this, and not a rendering group's hook (an empty group is
+    // never visited), nor the target's after-render (past the blended draws),
+    // nor a second clear observer (whose order would be a race), is where a
+    // draw that must come FIRST is told (`onMaskOpenObservable`).
+    this.mask.onClearObservable.add((e) => {
+      e.clear(NEUTRAL, true, false, false);
+      this.onMaskOpenObservable.notifyObservers();
+    });
     // NULL, not the empty array a target is born with: with no list of its own
     // the target hands `getCustomRenderList` the frame's ACTIVE meshes — the
     // culling already done — and with an empty one it hands it nothing, which
@@ -514,6 +559,8 @@ export class GlowPass {
       const material = mesh.material as Emissive | null;
       const e = material?.emissiveColor;
       if (!material || !e || (e.r <= 0 && e.g <= 0 && e.b <= 0)) continue;
+      // Drawn into this mask by our renderer this frame (`render/WorldGlow.ts`).
+      if (this.rules.drawnElsewhere(mesh, material)) continue;
       if (mesh.metadata?.noGlow === true) continue;
       if (!this.rules.admits(mesh)) continue;
       if (import.meta.env.DEV && !this.warnedInstances && (mesh as Mesh).hasInstances) {

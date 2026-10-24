@@ -2,9 +2,10 @@
  * render/ClusterCull.ts — The static world's clusters culled on the GPU,
  * writing each group's surviving indices at the front of its range and zeros
  * after them (`BABYLON_EXIT.md` X3.3b; the WGSL is `wgsl/clusterCull.ts`) —
- * once a frame for the main pass, once a drawn map for each shadow map
- * (X3.6a) and once a face for a reflection probe's bake (X3.6c), each a VIEW
- * of one map's tables.
+ * once a frame for the main pass — whose survivors the glow's mask draws
+ * the emissive palette from too (X3.6d) — once a drawn map for each shadow
+ * map (X3.6a) and once a face for a reflection probe's bake (X3.6c), each a
+ * VIEW of one map's tables.
  * Owns: `ClusterCull` — one view: its three compute passes' bind groups
  * (their pipelines are the renderer's `PipelineCache`'s, shared by every
  * map), its uniform block (`CullUniform`), the scan's buffers, each group's
@@ -21,7 +22,9 @@
  * outlives; a dispatch's inputs are numbers only — a view-projection, an
  * eye, the reach and the size gate, the most the wind moves a vertex, a
  * pass mask and a probe view's two tests (`CullInputs`) — so the cull never
- * reads a node; the frustum is
+ * reads a node; the size gate never drops a cluster in `PASS_GLOW` (the
+ * emissive palette, which the glow's mask draws through the main pass's view,
+ * X3.6d), as the frame's mesh walk never gates an emissive; the frustum is
  * the view-projection's four side planes and the eye's own plane, normalised
  * here, and a cluster is dropped only when it is not in the view's pass, or
  * its box lies wholly outside one plane, so it drops nothing the frustum did
@@ -60,6 +63,7 @@ import {
   CLUSTER_CULL_WGSL,
   CLUSTER_WORDS,
   CULL_UNIFORM_BYTES,
+  PASS_GLOW,
   RANGE_WORDS,
   SCAN_SIZE,
 } from "./wgsl/clusterCull";
@@ -674,7 +678,8 @@ function clusterReplay(
       const d2b = boxDist2(f, tables.blocks[cu[o + 9]]);
       near[0] = closeness(d2b, f[23]);
       if (d2b > f[23]) return 1;
-      if (u[26] !== 0) {
+      // A light source is never size-gated (`PASS_GLOW`, `visible`).
+      if (u[26] !== 0 && (cu[o + 14] & PASS_GLOW) === 0) {
         const { d2, w2 } = sphere(f, cu[o + 10]);
         if (d2 > 1) {
           near[0] = Math.min(near[0], closeness(w2, f[25] * d2));

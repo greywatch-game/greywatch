@@ -79,7 +79,10 @@
  * and the distance fade on each — the bloom is the one
  * pass that reads a material and never asks where the mesh stands, so without
  * it a glow is the last thing left when the world around it has gone to fog;
- * infiniteDistance exempts the moon),
+ * infiniteDistance exempts the moon — asked of Babylon's meshes by `GlowPass`
+ * and of the emissive palette by our renderer's `WorldGlow`, one statement
+ * each (`glowAdmits`, `bloomColour`), and which meshes `GlowPass` leaves to
+ * `WorldGlow` this frame),
  * ShadowSystem wiring (casters re-registered per round from map.visuals),
  * WorldCulling wiring (the map filed per install, the eye pushed from `tick` in
  * every state beside the shader's own — it decides how much of the map Babylon
@@ -88,6 +91,7 @@
  */
 import {
   Color3,
+  Color4,
   DefaultRenderingPipeline,
   Matrix,
   type PostProcess,
@@ -109,12 +113,13 @@ import { BabylonFrameHost } from "../render/babylonSeam";
 import { Renderer } from "../render/Renderer";
 import { LampAtlas } from "../render/LampAtlas";
 import { ProbeBake } from "../render/ProbeBake";
+import { WorldGlow } from "../render/WorldGlow";
 import { WorldShadows } from "../render/WorldShadows";
 import { PaperGrain } from "../shaders/PaperGrain";
 import { CelInk } from "../shaders/CelInk";
 import { fxaaShaderIsOurs } from "../shaders/Fxaa";
 import { FrameDepth } from "../shaders/FrameDepth";
-import { fadesOwnBloom } from "../shaders/EmissiveWorld";
+import { fadesOwnBloom, isEmissiveWorld } from "../shaders/EmissiveWorld";
 import { GlowPass } from "../shaders/GlowPass";
 import { MotionBlur } from "../shaders/MotionBlur";
 import { Volumetrics, type VolumetricRung } from "../shaders/Volumetrics";
@@ -728,6 +733,13 @@ export class Game {
   private readonly lampAtlas: LampAtlas;
   /** The reflection bake as our renderer draws it, whenever the handover holds every surface a bake draws (X3.6c). */
   private readonly probeBake: ProbeBake;
+  /**
+   * The emissive palette's share of the glow's mask as our renderer draws it,
+   * whenever the handover holds the whole palette (X3.6d). Public for the
+   * reason `glow` is: the smoke scripts that read the mask back ask it
+   * whether it is drawing (`drawing`, `drawn`) and force a `lose`.
+   */
+  readonly worldGlow: WorldGlow;
   /**
    * The URL's session overrides of the display settings — `?gi=`,
    * `?shadows=`, `?volumetrics=` and `?nominimap` — and of the round's seed,
@@ -1502,6 +1514,23 @@ export class Game {
       CONFIG.graphics.reflection.size,
       CONFIG.graphics.reflection.probesPerFrame,
     );
+    // The emissive palette's share of the glow's mask as our renderer draws
+    // it, whenever the handover holds the whole palette (`BABYLON_EXIT.md`
+    // X3.6d): drawn first in `GlowPass`'s mask, which stays Babylon's. The
+    // rules are the glow's own two (below), asked of the palette's materials.
+    this.worldGlow = new WorldGlow(this.renderer, {
+      admits: () => this.glowAdmits(0),
+      colour: (recipe, out) => {
+        const material = this.mats.emissiveMaterialOf(recipe);
+        const c = this.paletteBloom;
+        if (material) this.bloomColour(material, 1, c);
+        else c.set(0, 0, 0, 1);
+        out[0] = c.r;
+        out[1] = c.g;
+        out[2] = c.b;
+        out[3] = c.a;
+      },
+    });
     // The same rule again, for the irradiance volume's seven textures: every
     // cel material declares them, so they are published before the first one
     // exists and stay published whatever the setting says.
@@ -1585,27 +1614,13 @@ export class Game {
     // is not in the valley, and its bounding sphere is a dome radius away, so
     // any distance fade would delete it outright.
     const glow = new GlowPass(this.scene, this.cameraSys.camera, {
-      // The kit screen hangs a dark card behind the weapon (see
-      // `inspect.backdrop`), and the one thing in the game that card cannot
-      // cover is the bloom: it is composited over the FINISHED frame, so a lamp
-      // the bench is standing in front of blooms straight through it. Only what
-      // is on the stage may bloom while the stage is up, which still leaves the
-      // reticle and the hot parts of the weapon itself glowing — exactly what
-      // the screen is for. "On the stage" is the viewmodel's rendering group,
-      // and nothing else is in it: the moon, which shared it once and needed an
-      // `infiniteDistance` test to be picked back out, draws in group 0 now
-      // (see `Sky.apply`).
-      admits: (mesh) =>
-        this.state !== "loadout" || mesh.renderingGroupId === VIEWMODEL_GROUP,
+      admits: (mesh) => this.glowAdmits(mesh.renderingGroupId),
       colour: (mesh, material, out) => {
-        const emissive = material.emissiveColor;
-        // Read off the base Material: only PBR declares it.
-        let k =
-          (material as { emissiveIntensity?: number }).emissiveIntensity ?? 1;
-        // …and the emissive palette fades its own, PER PIXEL, because one of
-        // its meshes is a whole block's lamps and a centre would be a whole
-        // block wrong (`EmissiveWorld.ts`). Its colour is white, so what goes
-        // over is this rule's scale alone.
+        let fade = 1;
+        // The emissive palette fades its own, PER PIXEL, because one of its
+        // meshes is a whole block's lamps and a centre would be a whole block
+        // wrong (`EmissiveWorld.ts`). Its colour is white, so what goes over
+        // is this rule's scale alone.
         if (!mesh.infiniteDistance && !fadesOwnBloom(material)) {
           // The sphere's CENTRE, deliberately — not the NEAR point, which is
           // what a per-mesh ink width used to be measured to. A bloom is a soft
@@ -1621,12 +1636,21 @@ export class Game {
             sphere.centerWorld,
             this.cameraSys.camera.globalPosition,
           );
-          k *= 1 - fogAmountAt(d);
+          fade = 1 - fogAmountAt(d);
         }
-        out.set(emissive.r * k, emissive.g * k, emissive.b * k, material.alpha);
+        this.bloomColour(material, fade, out);
       },
+      // The emissive palette, on the frames our renderer draws it into the
+      // mask (`WorldGlow`, decided as the main pass began): then never
+      // Babylon's twin as well — and only the meshes it holds, so a palette
+      // mesh outside the handover is still bloomed here.
+      drawnElsewhere: (mesh, material) =>
+        this.worldGlow.drawing && isEmissiveWorld(material) && this.handover.glows(mesh),
     });
     this.glow = glow;
+    // The mask's pass has opened: our renderer's palette goes in FIRST, ahead
+    // of everything `GlowPass` draws there (`Renderer.glowMaskOpened`).
+    glow.onMaskOpenObservable.add(() => this.renderer.glowMaskOpened());
     // THE INK GOES ON FIRST, and the ordering is the whole of why it is
     // constructed here rather than beside the other three passes. A
     // `PostProcess` given a camera attaches itself, and `attachPostProcess`
@@ -1777,7 +1801,7 @@ export class Game {
     // flag. Nothing it does is visible to a ray, a collision, a shadow caster
     // or a cube probe; see `WorldCulling`, which is the whole argument.
     this.culling = new WorldCulling(this.scene);
-    this.handover = new BlockHandover(this.renderer, this.mats, this.culling, this.worldShadows, this.lampAtlas, this.probeBake, {
+    this.handover = new BlockHandover(this.renderer, this.mats, this.culling, this.worldShadows, this.lampAtlas, this.probeBake, this.worldGlow, {
       mode: this.overrides.cullMode,
       // After the HUD, which built `#hud`.
       report: this.overrides.cullCheck ? new CullCheckPanel().show : null,
@@ -1916,6 +1940,47 @@ export class Game {
     else this.joinFromUrl();
     this.engine.runRenderLoop(() => this.tick());
   }
+
+  /**
+   * Whether an emissive mesh in rendering group `groupId` may bloom this
+   * frame — `GlowRules.admits` for Babylon's meshes, and for the emissive
+   * palette our renderer draws into the mask (group 0, `WorldGlow`).
+   *
+   * The kit screen hangs a dark card behind the weapon (see
+   * `inspect.backdrop`), and the one thing in the game that card cannot
+   * cover is the bloom: it is composited over the FINISHED frame, so a lamp
+   * the bench is standing in front of blooms straight through it. Only what
+   * is on the stage may bloom while the stage is up, which still leaves the
+   * reticle and the hot parts of the weapon itself glowing — exactly what
+   * the screen is for. "On the stage" is the viewmodel's rendering group,
+   * and nothing else is in it: the moon, which shared it once and needed an
+   * `infiniteDistance` test to be picked back out, draws in group 0 now
+   * (see `Sky.apply`).
+   */
+  private glowAdmits(groupId: number): boolean {
+    return this.state !== "loadout" || groupId === VIEWMODEL_GROUP;
+  }
+
+  /**
+   * A material's bloom colour, into `out` — its emissive colour times its
+   * intensity and `fade`, the alpha its own: `GlowRules.colour` for one of
+   * Babylon's meshes, which passes the distance fade it measured (or 1), and
+   * the emissive palette's for our renderer, which fades per pixel and
+   * passes 1.
+   */
+  private bloomColour(
+    material: { readonly emissiveColor: Color3; readonly alpha: number },
+    fade: number,
+    out: Color4,
+  ): void {
+    const emissive = material.emissiveColor;
+    // Read off the base Material: only PBR declares it.
+    const k = ((material as { emissiveIntensity?: number }).emissiveIntensity ?? 1) * fade;
+    out.set(emissive.r * k, emissive.g * k, emissive.b * k, material.alpha);
+  }
+
+  /** `WorldGlow`'s colour, pulled once a frame per palette material: scratch, so no frame allocates. */
+  private readonly paletteBloom = new Color4();
 
   /**
    * Installs every cross-system callback. **This is the wiring rule's one

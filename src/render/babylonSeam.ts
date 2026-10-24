@@ -11,6 +11,11 @@
  * begin and where its opaque and alpha-tested meshes end — and a
  * Babylon texture's own view and sampler (`bind`); and `hostTexture`, the one
  * crossing that turns a Babylon texture into the handle the renderer holds.
+ * Items 2 to 5 are reached in a second pass of Babylon's too, the glow's MASK
+ * (`BABYLON_EXIT.md` X3.6d): our renderer is TOLD when that pass opens
+ * (`GlowPass.onMaskOpenObservable`, wired by `Game`) and then asks `passIs`
+ * and `queue`s into it exactly as into the main pass — no internal beyond
+ * the list below, and no hook here, because the mask's owner announces it.
  * Invariants: NAMES Babylon's types and loads none of it (every import here
  * is `import type`, so the Babylon-free gate walks this file as it walks the
  * rest of `src/render/`); every Babylon INTERNAL anything in `src/render/`
@@ -246,8 +251,10 @@ export class BabylonFrameHost implements FrameHost {
   }
 
   /**
-   * Items 2 and 3. Babylon's bundles reset the pipeline, the bind groups and
-   * the vertex and index buffers around an item. The viewport, the scissor,
+   * Items 2 and 3, into whichever pass is open: the main pass at one of its
+   * hooks, or the glow's mask as it opens. Babylon's bundles reset the
+   * pipeline, the bind groups and the vertex and index buffers around an
+   * item. The viewport, the scissor,
    * the stencil reference and the blend constant they do NOT reset, and
    * Babylon re-emits one only when its own cache thinks it changed — so an
    * item that sets any of the four leaves Babylon's next draws with it.

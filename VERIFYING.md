@@ -1568,6 +1568,17 @@ is one machine's:
   `g.shadows.generator.getShadowMap().renderList` (40 pane meshes against 316
   casters on Coldharbour). A pane that gains either is drawn as a dark plate or
   lays a hard shadow through clear glass.
+- **The glow's MASK reads back the same way, and it is the place to check who
+  drew the palette's bloom** (`BABYLON_EXIT.md` X3.6d): `g.glow.mask
+  .getInternalTexture()._hardwareTexture.underlyingResource` is an
+  `rgba8unorm` render target Babylon made with `COPY_SRC`, so a
+  `copyTextureToBuffer` off `g.renderer.device` between frames reads the last
+  frame's mask. `g.worldGlow.drawing` and `.drawn` say whether ours drew the
+  palette into it; `g.worldGlow.lose()` hands it to `GlowPass` (Babylon's twin)
+  from the next frame, and `g.worldGlow.setWorld(g.handover.blocks)` takes it
+  back — only on a map whose install held the whole palette (`blocks` is
+  private to TypeScript, not to a page script): on any other it would draw
+  some palette meshes twice and some not at all. Ours against Babylon's at a frozen vantage reads 0 texels.
 - **What a pane REFLECTS is checkable without a screenshot, and the CUBE is the
   place to check it.** There is one probe per glazed map block —
   `g.reflections.probes[slot]` against `g.map.paneGroups[slot]`, 40 of each on

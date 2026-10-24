@@ -1294,6 +1294,11 @@ src/
                         #   every taken surface, the palette held for it with
                         #   its slots, fires left out; probeHolds answers
                         #   ReflectionSystem, a loss goes to ProbeBake.lose.
+                        #   The glow's mask likewise (X3.6d): PASS_GLOW on the
+                        #   held palette unless noGlow (read at the take), the
+                        #   world handed to WorldGlow only when the WHOLE
+                        #   palette is held; glows answers Game's
+                        #   drawnElsewhere, a loss goes to WorldGlow.lose.
                         #   The scatter's field (BuildOptions.onScatter) added
                         #   as instances at install, its pieces cut out of the
                         #   taken blocks (X3.4b). Reads no node per frame (a
@@ -2255,7 +2260,8 @@ src/
                         #   per-material value is set through own(), which
                         #   keeps it in the material's RECIPE (celRecipe) for
                         #   src/render/, and the palette material's recipe is
-                        #   emissiveRecipe; fillFrame and fillFrameTextures are
+                        #   emissiveRecipe (emissiveMaterialOf the other way,
+                        #   for the glow's rules); fillFrame and fillFrameTextures are
                         #   the frame's pulls, fillBakeFrame a reflection
                         #   bake's frame (the clouds held off, alpha 1, the
                         #   probe's eye). writePaletteIndex stamps
@@ -2277,7 +2283,11 @@ src/
                         #   `low`), and an additive
                         #   compose the ink runs as its last line (a WGSL
                         #   snippet, not a pass). Public API only;
-                        #   `Game` supplies the rules (what blooms, how bright)
+                        #   `Game` supplies the rules (what blooms, how bright,
+                        #   what is drawnElsewhere — the palette, when OUR
+                        #   renderer draws it, render/WorldGlow.ts); the mask
+                        #   pass's opening announced from inside its clear
+                        #   (onMaskOpenObservable), where ours draws FIRST
     Fxaa.ts             # FXAA's fragment shader, registered under the name
                         #   Babylon's pass looks up so it runs this text: the
                         #   same shader with CONFIG.graphics.fxaa's three
@@ -2294,8 +2304,9 @@ src/
                         #   windows, lenses and embers wear, the colour a slot
                         #   in uv2.x (getEmissive + EmissiveFog to the same
                         #   pixel), and a glow-mask twin that fades the bloom
-                        #   per PIXEL. Two per factory, by over-glass offset.
-                        #   WGSL
+                        #   per PIXEL — the FALLBACK since X3.6d, when our
+                        #   renderer draws the palette's mask. Two per factory,
+                        #   by over-glass offset. WGSL
     Dither.ts           # One LSB of triangular noise, in the three surface
                         #   shaders. Fixes 8-bit banding in the fog. Owns the
                         #   ARGUMENT and the WGSL; wgsl/chunks.ts files it as
@@ -2319,6 +2330,8 @@ src/
                         #   pixel and the glow mask's) and MAX_EMISSIVE_PALETTE,
                         #   Babylon-free: EmissiveWorld.ts declares them for
                         #   Babylon, render/emissiveWorld.ts for a probe's bake
+                        #   and the glow's mask — three readers, one vertex text
+                        #   (the mask's LEQUAL tie)
       includes.ts       # Babylon's half of chunks.ts: its DECLARATIONS for
                         #   each chunk, and every chunk registered as an
                         #   include (declarations + body, comments stripped:
@@ -2379,13 +2392,16 @@ src/
                         #   submitted ahead of the draws (prepareEncoder), and
                         #   group 0's _renderAlphaTest, wrapped for the point
                         #   between its opaque and alpha-tested lists — ten.
+                        #   The glow's mask pass reached by the same items
+                        #   (passIs, queue) when GlowPass announces it.
                         #   hostTexture, the one crossing that mints a
                         #   HostTexture
     frameHost.ts        # FrameHost (what the renderer needs from whoever owns
-                        #   the frame: the device, the queue, the four main-
-                        #   pass hooks, the encoder it submits ahead of the
-                        #   draws, a texture's view and sampler NOW),
-                        #   PassTargets, HostTexture
+                        #   the frame: the device, the queue — into the main
+                        #   pass, or the glow's mask when its owner says it
+                        #   opened — the four main-pass hooks, the encoder it
+                        #   submits ahead of the draws, a texture's view and
+                        #   sampler NOW), PassTargets, HostTexture
     Renderer.ts         # Renderer: the frame's uniforms, textures and their
                         #   group 0, the pipeline cache, the FrameDraws it
                         #   queues at three points of group 0 in the MAIN pass —
@@ -2397,11 +2413,17 @@ src/
                         #   host's prepareEncoder, never submitted, and timed
                         #   under ?gpu (its PassTimer, gpu.cull); refuses to
                         #   draw if the pass is not FRAME_TARGETS, and tells
-                        #   onRefused listeners
+                        #   onRefused listeners. And the GLOW MASK's draws
+                        #   (addGlowMask, X3.6d): queued FIRST in GlowPass's
+                        #   mask when told it opened (glowMaskOpened), off the
+                        #   main pass's frame, refused unless GLOW_TARGETS
+                        #   (onGlowMaskRefused); context, group 0 for a prepare
     targets.ts          # FRAME_TARGETS, stated once: rgba8unorm, depth32float,
                         #   1 sample, flipY (CelInk's target, not the canvas);
-                        #   SHADOW_TARGETS, a world shadow map's: r16float,
-                        #   depth32float, 1 sample, flipY
+                        #   GLOW_TARGETS, the glow mask's: the same values for
+                        #   its own reason (an rgba8unorm target, the frame's
+                        #   borrowed depth); SHADOW_TARGETS, a world shadow
+                        #   map's: r16float, depth32float, 1 sample, flipY
     frame.ts            # FRAME_BLOCK (group 0, binding 0 of every program:
                         #   camera, environment, wind, lights, shadows, GI,
                         #   palette LAST) and FrameUniforms, the plain struct
@@ -2461,7 +2483,9 @@ src/
                         #   instanced proxy pass; OwnTexture for our frame, a
                         #   texture for Babylon to wrap; lose() hands it back
     emissiveWorld.ts    # The emissive palette as WE draw it into a probe's
-                        #   faces (X3.6c): its block (palette, fog band), its
+                        #   faces (X3.6c) and the glow's mask (X3.6d, the
+                        #   GLOW_MASK fragment): its block (palette, fog band,
+                        #   glowColor LAST — one buffer serves both), its
                         #   geometry (positions, slots), EmissiveRecipe and the
                         #   program, the pixel EmissiveWorld's by its one body
     cubeMips.ts         # A cube's MIP CHAIN as WE make it (X3.6c): each level
@@ -2479,6 +2503,16 @@ src/
                         #   decides nothing; lose() hands the bake back to
                         #   Babylon, and a failed mips pipeline latches it
                         #   broken for the session
+    WorldGlow.ts        # The emissive palette's share of the glow's MASK as
+                        #   OURS (X3.6d): drawn FIRST in GlowPass's mask pass
+                        #   (Renderer.addGlowMask), from the main view's culls
+                        #   (WorldBlocks.glowView), a pipeline a bias, no depth
+                        #   written, LEQUAL; this frame's verdict (drawing),
+                        #   made in a prepare off Game's rules (GlowWorldRules,
+                        #   pulled) before GlowPass lists its meshes; the bloom
+                        #   colour written when it moves; decides nothing about
+                        #   what blooms, owns no mask; lose() hands the palette
+                        #   back, a failed pipeline latches it broken
     WorldShadows.ts     # The world's four directional maps as OUR textures
                         #   (far, near, foliage, flash): made cleared to lit,
                         #   drawn when ShadowSystem asks, recorded ahead of
@@ -2505,14 +2539,17 @@ src/
                         #   failed pipeline, a part it cannot draw, past the
                         #   list's budget) goes to onFailed as it lands, a
                         #   group whole; stop() for good. The HELD layer —
-                        #   the casters for the shadow maps alone (addCaster)
-                        #   and the emissive palette for the probes' bake
-                        #   (addEmissive), a group a material — cut last and
-                        #   drawn in no main pass; each surface and part
-                        #   carries its passes (and its block), finish builds
-                        #   the map's WorldDepth when asked, and probeView a
-                        #   probe bake's view of the culls, drawn by the same
-                        #   code (DrawView, groupsFor)
+                        #   the emissive palette for the probes' bake and the
+                        #   glow's mask (addEmissive), a group a material, then
+                        #   the casters for the shadow maps alone (addCaster) —
+                        #   cut last and drawn in no main pass, the palette
+                        #   inside the main view's count and the casters its
+                        #   tail; each surface and part carries its passes
+                        #   (and its block), finish builds the map's
+                        #   WorldDepth when asked, probeView a probe bake's
+                        #   view of the culls and glowView the glow mask's
+                        #   (the main view itself), drawn by the same code
+                        #   (DrawView, groupsFor, drawableIn by pass bit)
     clusters.ts         # cutClusters: a surface cut into short runs of
                         #   one piece's triangles, each with its box and how
                         #   the wind can move it (BABYLON_EXIT.md X3.3b) — an
@@ -2534,7 +2571,8 @@ src/
                         #   PipelineCache) — pass mask, reach, size gate,
                         #   frustum, and a probe view's two tests (the reach to
                         #   a surface's sphere, its own blocks left out by the
-                        #   blockKey a cluster carries), as CullInputs;
+                        #   blockKey a cluster carries), as CullInputs — the
+                        #   size gate never drops a PASS_GLOW cluster;
                         #   survivors scanned NEAR-FIRST (by surface) into the
                         #   index buffer, cleared first so the rest of each
                         #   group's range is triangles of no area (never
@@ -2572,7 +2610,8 @@ src/
                         #   CULL_DECLARATIONS, the uniform as words and the
                         #   records as whole vec4s, both culls' and the probe's;
                         #   writeCluster, the cluster record as both hosts
-                        #   write it; the pass bits; blockKey and the ONE
+                        #   write it; the pass bits (PASS_GLOW never
+                        #   size-gated); blockKey and the ONE
                         #   parse of a "bx,bz" key (blockCoordsOf,
                         #   blockKeyOf) the probe view's exclusion reads
       instanceCull.ts   # The instance cull's WGSL — cullInstances,
@@ -2580,6 +2619,7 @@ src/
                         #   layouts InstanceCull uploads
       cullProbe.ts      # ?cullcheck's probes: each cull's test re-run with
                         #   its inputs read each way they have been declared,
-                        #   one bit a form, over the cull's own buffers, and
-                        #   what the shader read echoed out
+                        #   one bit a form, over the cull's own buffers (the
+                        #   size gate skipping PASS_GLOW, as the cull does),
+                        #   and what the shader read echoed out
 ```

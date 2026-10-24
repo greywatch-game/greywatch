@@ -1,18 +1,23 @@
 /**
  * wgsl/emissiveWorld.ts — The emissive palette's two BODIES, as plain strings
- * both renderers assemble: Babylon's `EmissiveWorldMaterial` (and its glow
- * mask twin, `shaders/EmissiveWorld.ts`) and ours, which draws the palette
- * into a reflection probe's faces (`render/emissiveWorld.ts`, `BABYLON_EXIT.md`
- * X3.6c).
+ * both renderers assemble, and three programs read: Babylon's
+ * `EmissiveWorldMaterial`, which draws the palette into the frame (and its
+ * glow mask twin, `shaders/EmissiveWorld.ts`, now the fallback), and ours
+ * (`render/emissiveWorld.ts`), which draws it into a reflection probe's faces
+ * (`BABYLON_EXIT.md` X3.6c) and, under `GLOW_MASK`, into the glow's mask
+ * (`render/WorldGlow.ts`, X3.6d) — where its LEQUAL test ties against the
+ * depth Babylon's draw of the same vertex wrote, because the vertex stage is
+ * this one text on both sides.
  * Owns: `EMISSIVE_WORLD_VERTEX` (`emissiveWorldVertex`, the vertex stage),
  * `EMISSIVE_WORLD_SURFACE` (`emissiveWorldSurface`, the pixel — the frame's
  * and, under `GLOW_MASK`, the bloom's) and `MAX_EMISSIVE_PALETTE`.
  * Invariants: a body DECLARES NOTHING (`wgsl/chunks.ts`' rule, for the same
  * reason): it reads `uniforms.<name>`, `vertexInputs.<name>` and
  * `fragmentInputs.<name>` and writes `vertexOutputs.<name>`, and each side
- * declares those its own way — so the palette's pixel is one text, and the
+ * declares those its own way — so the palette's pixel is one text, the
  * emissive palette a probe's cube shows is the palette the frame shows by
- * construction (its lit windows and lenses, never a point light).
+ * construction (its lit windows and lenses, never a point light), and the
+ * bloom our mask draws is the bloom Babylon's twin drew.
  * Never: imports Babylon (`src/render/` imports this, and the build gate
  * walks it); declares a binding.
  * Contract: `docs/rendering.md`, "The paint palette" and "Hand-written WGSL".
