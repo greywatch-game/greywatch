@@ -1269,7 +1269,8 @@ src/
                         #   every sweep unable to tell it ran. A collider
                         #   is never a candidate, a mesh carrying metadata.block
                         #   is one inside the map's fogEnd, everything else
-                        #   always is. A TAKEN block or the taken landform
+                        #   always is. A TAKEN block (the emissive palette's
+                        #   among them since X3.6e) or the taken landform
                         #   (BlockHandover) is never one, in every build;
                         #   reachGate states the reach and the size gate as
                         #   numbers for the GPU cull, reachBoxOf the box: a
@@ -1285,8 +1286,9 @@ src/
                         #   it lands, the whole map on a refused main pass;
                         #   their meshes stay for Babylon's other passes and
                         #   its fallbacks. Every CASTER held too (X3.6a,
-                        #   X3.6b) — a taken one in its group, an emissive one
-                        #   HELD (WorldBlocks.addCaster) — and handed to the
+                        #   X3.6b) — a taken one in its group, the palette in
+                        #   its own, any other HELD (WorldBlocks.addCaster) —
+                        #   and handed to the
                         #   world's maps and the lamps' atlas together, or the
                         #   map's shadows stay Babylon's; one handed back loses
                         #   them (WorldShadows.lose, LampAtlas.lose). The
@@ -1295,10 +1297,15 @@ src/
                         #   its slots, fires left out; probeHolds answers
                         #   ReflectionSystem, a loss goes to ProbeBake.lose.
                         #   The glow's mask likewise (X3.6d): PASS_GLOW on the
-                        #   held palette unless noGlow (read at the take), the
+                        #   palette unless noGlow (read at the take), the
                         #   world handed to WorldGlow only when the WHOLE
-                        #   palette is held; glows answers Game's
-                        #   drawnElsewhere, a loss goes to WorldGlow.lose.
+                        #   palette is held — and with it (X3.6e) the
+                        #   palette TAKEN for the main pass, by its cells'
+                        #   reach boxes: one decision for both, made before
+                        #   the cut and confirmed after it, and any loss of
+                        #   the mask (WorldGlow.onLost) hands the main pass
+                        #   back too (dropPalette); takePalette re-takes both
+                        #   for a scratch script.
                         #   The scatter's field (BuildOptions.onScatter) added
                         #   as instances at install, its pieces cut out of the
                         #   taken blocks (X3.4b). Reads no node per frame (a
@@ -2283,11 +2290,12 @@ src/
                         #   `low`), and an additive
                         #   compose the ink runs as its last line (a WGSL
                         #   snippet, not a pass). Public API only;
-                        #   `Game` supplies the rules (what blooms, how bright,
-                        #   what is drawnElsewhere — the palette, when OUR
-                        #   renderer draws it, render/WorldGlow.ts); the mask
-                        #   pass's opening announced from inside its clear
-                        #   (onMaskOpenObservable), where ours draws FIRST
+                        #   `Game` supplies the rules (what blooms, how
+                        #   bright); the mask pass's opening announced from
+                        #   inside its clear (onMaskOpenObservable), where
+                        #   OUR palette draws FIRST (render/WorldGlow.ts) —
+                        #   never in this list while ours holds it, being no
+                        #   candidate (X3.6e)
     Fxaa.ts             # FXAA's fragment shader, registered under the name
                         #   Babylon's pass looks up so it runs this text: the
                         #   same shader with CONFIG.graphics.fxaa's three
@@ -2304,11 +2312,13 @@ src/
                         #   windows, lenses and embers wear, the colour a slot
                         #   in uv2.x (getEmissive + EmissiveFog to the same
                         #   pixel), and a glow-mask twin that fades the bloom
-                        #   per PIXEL — the FALLBACK since X3.6d, when our
-                        #   renderer draws the palette's mask: an editor build,
-                        #   ?babylonworld, a palette ours cannot hold whole, a
-                        #   failed mask pipeline (for the session), a loss
-                        #   mid-map. Two per factory, by over-glass offset. WGSL
+                        #   per PIXEL — both the FALLBACK since X3.6e (the
+                        #   twin since X3.6d), when our renderer draws the
+                        #   palette in the main pass and its mask: an editor
+                        #   build, ?babylonworld, a palette ours cannot hold
+                        #   whole, a failed mask pipeline (for the session), a
+                        #   loss mid-map (both then compile in the round). Two
+                        #   per factory, by over-glass offset. WGSL
     Dither.ts           # One LSB of triangular noise, in the three surface
                         #   shaders. Fixes 8-bit banding in the fog. Owns the
                         #   ARGUMENT and the WGSL; wgsl/chunks.ts files it as
@@ -2331,9 +2341,9 @@ src/
       emissiveWorld.ts  # The emissive palette's two BODIES (its vertex, its
                         #   pixel and the glow mask's) and MAX_EMISSIVE_PALETTE,
                         #   Babylon-free: EmissiveWorld.ts declares them for
-                        #   Babylon, render/emissiveWorld.ts for a probe's bake
-                        #   and the glow's mask — three readers, one vertex text
-                        #   (the mask's LEQUAL tie)
+                        #   Babylon, render/emissiveWorld.ts for the main pass,
+                        #   a probe's bake and the glow's mask — three readers,
+                        #   one vertex text (the mask's LEQUAL tie)
       includes.ts       # Babylon's half of chunks.ts: its DECLARATIONS for
                         #   each chunk, and every chunk registered as an
                         #   include (declarations + body, comments stripped:
@@ -2415,7 +2425,9 @@ src/
                         #   host's prepareEncoder, never submitted, and timed
                         #   under ?gpu (its PassTimer, gpu.cull); refuses to
                         #   draw if the pass is not FRAME_TARGETS, and tells
-                        #   onRefused listeners. And the GLOW MASK's draws
+                        #   onRefused listeners (the palette FIRST in the
+                        #   "beforeAlphaTest" draw, X3.6e). And the GLOW
+                        #   MASK's draws
                         #   (addGlowMask, X3.6d): queued FIRST in GlowPass's
                         #   mask when told it opened (glowMaskOpened), off the
                         #   main pass's frame, refused unless GLOW_TARGETS
@@ -2485,8 +2497,9 @@ src/
                         #   off WorldDepth at a cull slot of its own, one
                         #   instanced proxy pass; OwnTexture for our frame, a
                         #   texture for Babylon to wrap; lose() hands it back
-    emissiveWorld.ts    # The emissive palette as WE draw it into a probe's
-                        #   faces (X3.6c) and the glow's mask (X3.6d, the
+    emissiveWorld.ts    # The emissive palette as WE draw it into the main
+                        #   pass (X3.6e) and a probe's faces (X3.6c), one
+                        #   program, and the glow's mask (X3.6d, the
                         #   GLOW_MASK fragment): its block (palette, fog band,
                         #   glowColor LAST — one buffer serves both), its
                         #   geometry (positions, slots), EmissiveRecipe and the
@@ -2510,12 +2523,15 @@ src/
                         #   OURS (X3.6d): drawn FIRST in GlowPass's mask pass
                         #   (Renderer.addGlowMask), from the main view's culls
                         #   (WorldBlocks.glowView), a pipeline a bias, no depth
-                        #   written, LEQUAL; this frame's verdict (drawing),
-                        #   made in a prepare off Game's rules (GlowWorldRules,
-                        #   pulled) before GlowPass lists its meshes; the bloom
-                        #   colour written when it moves; decides nothing about
-                        #   what blooms, owns no mask; lose() hands the palette
-                        #   back, a failed pipeline latches it broken
+                        #   written, LEQUAL against OUR main pass's palette
+                        #   (X3.6e); this frame's verdict (drawing), made in a
+                        #   prepare off Game's rules (GlowWorldRules, pulled) —
+                        #   a frame not ours has no palette bloom, never
+                        #   Babylon's; the bloom colour written when it moves;
+                        #   decides nothing about what blooms, owns no mask;
+                        #   lose() hands the palette back and tells onLost (the
+                        #   handover drops its main pass too), a failed
+                        #   pipeline latches it broken (usable false)
     WorldShadows.ts     # The world's four directional maps as OUR textures
                         #   (far, near, foliage, flash): made cleared to lit,
                         #   drawn when ShadowSystem asks, recorded ahead of
@@ -2537,22 +2553,26 @@ src/
                         #   pipeline), the map cut once (finish), ONE plain
                         #   drawIndexed a group and ONE indirect draw of its
                         #   scatter, ahead of group 0's alpha-tested meshes —
-                        #   blocks, scatter, landform — the scatter's pieces
-                        #   cut out of the blocks; what it will never draw (a
-                        #   failed pipeline, a part it cannot draw, past the
-                        #   list's budget) goes to onFailed as it lands, a
-                        #   group whole; stop() for good. The HELD layer —
-                        #   the emissive palette for the probes' bake and the
-                        #   glow's mask (addEmissive), a group a material, then
-                        #   the casters for the shadow maps alone (addCaster) —
-                        #   cut last and drawn in no main pass, the palette
-                        #   inside the main view's count and the casters its
-                        #   tail; each surface and part carries its passes
+                        #   the palette (while setPaletteMain), blocks,
+                        #   scatter, landform — the scatter's pieces cut out
+                        #   of the blocks; what it will never draw (a failed
+                        #   pipeline, a part it cannot draw, past the list's
+                        #   budget) goes to onFailed as it lands, a group
+                        #   whole; stop() for good. The PALETTE layer
+                        #   (addEmissive, a group a material: the main pass
+                        #   by the bake's pipelines, mainPalette, asked once
+                        #   at the cut; the probes' bake; the glow's mask),
+                        #   then the HELD casters for the shadow maps alone
+                        #   (addCaster), cut last, the palette inside the
+                        #   main view's count and the casters its tail,
+                        #   drawn in no main pass; each surface and part
+                        #   carries its passes
                         #   (and its block), finish builds the map's
                         #   WorldDepth when asked, probeView a probe bake's
                         #   view of the culls and glowView the glow mask's
                         #   (the main view itself), drawn by the same code
-                        #   (DrawView, groupsFor, drawableIn by pass bit)
+                        #   (DrawView, groupsFor, drawPalette, drawableIn by
+                        #   pass bit)
     clusters.ts         # cutClusters: a surface cut into short runs of
                         #   one piece's triangles, each with its box and how
                         #   the wind can move it (BABYLON_EXIT.md X3.3b) — an
@@ -2614,7 +2634,8 @@ src/
                         #   records as whole vec4s, both culls' and the probe's;
                         #   writeCluster, the cluster record as both hosts
                         #   write it; the pass bits (PASS_GLOW never
-                        #   size-gated); blockKey and the ONE
+                        #   size-gated, in the main pass and the mask);
+                        #   blockKey and the ONE
                         #   parse of a "bx,bz" key (blockCoordsOf,
                         #   blockKeyOf) the probe view's exclusion reads
       instanceCull.ts   # The instance cull's WGSL — cullInstances,

@@ -1694,7 +1694,7 @@ priced on the phone: the A/B above, Off against On.
 
 ---
 
-## 43. The bloom is a SECOND GEOMETRY PASS over every lit window in view — **the EMISSIVE palette is LANDED (Coldharbour's worst view 114 -> 48 mask draws), and since `BABYLON_EXIT.md` X3.6d its mask is OUR renderer's at one or two draws a frame; its frame cost on a phone is not measured**
+## 43. The bloom is a SECOND GEOMETRY PASS over every lit window in view — **the EMISSIVE palette is LANDED (Coldharbour's worst view 114 -> 48 mask draws), and since `BABYLON_EXIT.md` X3.6d its mask, and since X3.6e its main pass, are OUR renderer's at one or two draws a frame each; its frame cost on a phone is not measured**
 
 **Status:** decomposed and measured on the Windows box under a CPU throttle at
 the phone's viewport. Two levers **LANDED**: the frozen mask material, and the
@@ -1813,6 +1813,19 @@ read back texel for texel the same. On the desktop X0.3 it moved no frame
 (`BABYLON_EXIT.md` X3.6d); the phone reading this entry is waiting for is
 still owed, and now measures the cluster-culled draw rather than the per-mesh
 one.
+
+**Since X3.6e the palette's MAIN-pass draw is ours too**, on the same
+decision (`BlockHandover`): the bake's pipeline, one draw a bias, FIRST in our
+`"beforeAlphaTest"` draw, so Babylon's main pass draws no palette mesh while
+ours holds the palette. Over the bank's 61 rows Babylon's main-pass draws fell
+by every palette mesh it had in view — 173 over Coldharbour's nine rows (about
+19 a row), 119 over Hollowmere's 13, 46 over Cinderhaven's four, 55 over
+Harrowmead's 15, 19 over Greyfen's six, 15 over Sarab's 11, 6 over Kurenai's
+three — and ours rose by one draw a row (two on Coldharbour), the bank 59 of
+61 byte-identical (`BABYLON_EXIT.md` X3.6e). So the per-mesh cost this entry
+opened on is gone from BOTH passes on our path, and the phone reading owed
+above now reads two cluster-culled draws a bias where it read two per palette
+mesh.
 
 The two cheaper levers this entry named beside the palette are both LOOK
 decisions: a bloom quality rung, and a distance cap on the mask, which the

@@ -1,9 +1,10 @@
 /**
  * render/emissiveWorld.ts — The emissive palette as OUR renderer draws it: the
  * lit windows, lamp lenses, embers and signs of a map's merged world, into a
- * reflection probe's faces (`render/ProbeBake.ts`, `BABYLON_EXIT.md` X3.6c)
- * and into the glow's MASK (`render/WorldGlow.ts`, X3.6d) — Babylon's
- * `EmissiveWorldMaterial` and its mask twin in the pulled form.
+ * reflection probe's faces (`render/ProbeBake.ts`, `BABYLON_EXIT.md` X3.6c),
+ * into the glow's MASK (`render/WorldGlow.ts`, X3.6d) and into the frame's
+ * MAIN pass (`render/WorldBlocks.ts`, X3.6e: the bake's own pipelines) —
+ * Babylon's `EmissiveWorldMaterial` and its mask twin in the pulled form.
  * Owns: `EMISSIVE_BLOCK` (group 1: the palette, the fog band and, for the
  * mask, the bloom's colour), the geometry it reads (group 2,
  * `EMISSIVE_GEOMETRY`: the positions, the slots in `uv2` and the instances'
@@ -18,7 +19,9 @@
  * bloom's colour (`glowColor`, `GlowRules`' answer for that material); and the
  * vertex is its vertex in both, `world` identity as the merge's is, read
  * through the cel stage's own decode (`pulledWorld`) — so the mask's LEQUAL
- * test ties against the depth Babylon's palette wrote; group 0 is the cel
+ * test ties against the depth the main pass's palette wrote (ours, by the
+ * same vertex module; Babylon's, by the same text, on the fallback); group 0
+ * is the cel
  * FRAGMENT's whole group, so one frame bind group serves the cel pipelines
  * and these; group 1 is laid out for the MASK's variant, `glowColor` LAST, so
  * the bake's program reads a prefix of the same buffer and one bind group
@@ -72,7 +75,7 @@ export const EMISSIVE_GEOMETRY = [
   { kind: "storage", name: "transforms", type: "array<vec4f>" },
 ] as const satisfies readonly Binding[];
 
-/** What a held palette surface's arrays hold: its positions and its slots. */
+/** What a palette surface's arrays hold: its positions and its slots. */
 export const EMISSIVE_ATTRIBUTES: readonly AssembledAttribute[] = [
   { name: "position", type: "vec3f", from: "positionData" },
   { name: "uv2", type: "vec2f", from: "uv2Data" },
@@ -99,10 +102,10 @@ const GLOW_DEFINES = ["CEL_PALETTE", "GLOW_MASK"];
 const programs = new Map<string, { vertex: AssembledVertex; fragment: AssembledModule }>();
 
 /**
- * The emissive palette's two modules for a pass of `target`'s kind — a
- * probe's face is `FRAME_TARGETS`, the glow's mask `GLOW_TARGETS` — with
- * `glow` the mask twin's fragment. The vertex stage is ONE text either way,
- * which is what the mask's LEQUAL tie rests on.
+ * The emissive palette's two modules for a pass of `target`'s kind — the
+ * main pass and a probe's face are `FRAME_TARGETS`, the glow's mask
+ * `GLOW_TARGETS` — with `glow` the mask twin's fragment. The vertex stage is
+ * ONE text either way, which is what the mask's LEQUAL tie rests on.
  */
 export function emissiveWorld(
   target: StageTarget,

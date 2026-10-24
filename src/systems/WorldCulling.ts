@@ -2,10 +2,11 @@
  * WorldCulling.ts — What the frame's own mesh walk is allowed to see.
  * Owns: `Scene.getActiveMeshCandidates`, the map's meshes filed into cull
  * cells, and the list handed back to Babylon each frame — and the TAKEN
- * meshes, the blocks and the landform our renderer draws in the main pass
- * instead (`setTaken`), never candidates, with the reach and the size gate
- * this file decides handed to its GPU cull as numbers (`reachGate`) and the
- * box each is measured to (`reachBoxOf`).
+ * meshes, the blocks (the emissive palette's among them) and the landform
+ * our renderer draws in the main pass instead (`setTaken`), never
+ * candidates, with the reach and the size gate this file decides handed to
+ * its GPU cull as numbers (`reachGate`) and the box each is measured to
+ * (`reachBoxOf`).
  * There are TWO lists and they run on different clocks: `eligible` is the
  * structural answer, rebuilt only when a cell, a pool or the scene's
  * membership moves, and `candidates` is that list minus whatever is switched
@@ -87,17 +88,20 @@
  * gate per surface, the frustum (`reachBoxOf`).
  *
  * **A TAKEN mesh is one our renderer draws in the main pass**
- * (`systems/BlockHandover.ts`, `BABYLON_EXIT.md` X3.3, X3.5), in every build
- * and whatever the handover's test admits: a BLOCK, filed in its cell like
- * any block, which is the box our renderer's GPU cull measures the reach to,
- * or the LANDFORM — one of the map's own visuals that carries no block —
+ * (`systems/BlockHandover.ts`, `BABYLON_EXIT.md` X3.3, X3.5, X3.6e), in every
+ * build and whatever the handover's test admits: a BLOCK, filed in its cell
+ * like any block — the emissive PALETTE's merges among them, taken WITH its
+ * glow mask — which is the box our renderer's GPU cull measures the reach
+ * to, or the LANDFORM — one of the map's own visuals that carries no block —
  * which is measured to a box no reach is ever short of (`reachBoxOf`). Either
  * way it is never a candidate — so the main pass's mesh walk never sees it,
  * and nothing else does either: every other pass draws from a list of its own
  * (the shadow maps, the probes, the lamps' atlas), and the glow's mask, which
- * reads the main pass's ACTIVE meshes, keeps only what glows, which a taken
- * mesh never does. What this file decides for the candidates — the reach, and
- * the size gate's scale this frame — it states as numbers in `reachGate`, so
+ * reads the main pass's ACTIVE meshes, keeps only what glows — and the one
+ * taken mesh that glows, the palette, our renderer draws into the mask
+ * itself, on the same decision. What this file decides for the candidates —
+ * the reach, and the size gate's scale this frame — it states as numbers in
+ * `reachGate`, so
  * the GPU cull decides a taken mesh's clusters as this decides a candidate,
  * and reads no node to do it.
  *

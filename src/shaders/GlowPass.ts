@@ -9,12 +9,10 @@
  * into that depth; the mask is THIS pass's texture even where our renderer
  * draws into it (`BABYLON_EXIT.md` rule 5, X3.6d): the moment its pass opens
  * is announced (`onMaskOpenObservable`, from inside the clear, before any
- * mesh of Babylon's is queued), and a mesh drawn there by someone else is left
- * out of the list on the frames they mean to draw it (`GlowRules
- * .drawnElsewhere`; a pass of theirs refused after this list is built
- * leaves that one frame without it) — so this file imports nothing of
- * `src/render/` and knows no more than that a mesh is someone else's this
- * frame; and every Babylon call is public API.
+ * mesh of Babylon's is queued) — so this file imports nothing of
+ * `src/render/`, and what our renderer draws there never reaches this list,
+ * being no ACTIVE mesh of the frame (its main pass is ours too, X3.6e); and
+ * every Babylon call is public API.
  *
  * WHAT IT REPLACED, AND WHY. The bloom was a `GlowLayer` with `GlowDepth`
  * bolted on from the outside. The layer is built to own four things — its
@@ -89,11 +87,13 @@
  * the whole palette (`render/WorldGlow.ts`, X3.6d): it draws the merged
  * world's lit windows and lenses FIRST in this pass, right after the clear —
  * the palette was in Babylon's opaque queue, ahead of every blended mask
- * draw, and first keeps that order — and this pass leaves those meshes out of
- * its list (`drawnElsewhere`), so the palette's twin below is the FALLBACK:
- * an editor build, `?babylonworld`, a palette surface ours cannot hold or one
- * marked `noGlow`, a failed mask pipeline (for the session) and a loss
- * mid-map. Everything else in the mask is still drawn here.
+ * draw, and first keeps that order. Its MAIN pass is ours on the same
+ * decision (X3.6e), so those meshes are never candidates, never in the
+ * frame's active list and never in this one; the palette's twin below is the
+ * FALLBACK, with its main material: an editor build, `?babylonworld`, a
+ * palette surface ours cannot hold or one marked `noGlow`, a failed mask
+ * pipeline (for the session) and a loss mid-map. Everything else in the mask
+ * is still drawn here.
  *
  * A MATERIAL WHOSE VERTICES MOVE BRINGS ITS OWN MASK (`SelfMasking`). The
  * stock variants transform by `world` and `viewProjection` alone, so a surface
@@ -265,13 +265,6 @@ export interface GlowRules {
    * material's alpha. Asked at bind time, once per draw.
    */
   colour(mesh: AbstractMesh, material: StandardMaterial, out: Color4): void;
-  /**
-   * Whether an emissive mesh is drawn into the mask by someone else THIS
-   * frame — our renderer's emissive palette (`render/WorldGlow.ts`) — and so
-   * is left out of the list. Asked once per emissive mesh per frame, before
-   * `admits`; a mesh left out is never dressed.
-   */
-  drawnElsewhere(mesh: AbstractMesh): boolean;
 }
 
 /**
@@ -559,8 +552,6 @@ export class GlowPass {
       const material = mesh.material as Emissive | null;
       const e = material?.emissiveColor;
       if (!material || !e || (e.r <= 0 && e.g <= 0 && e.b <= 0)) continue;
-      // Drawn into this mask by our renderer this frame (`render/WorldGlow.ts`).
-      if (this.rules.drawnElsewhere(mesh)) continue;
       if (mesh.metadata?.noGlow === true) continue;
       if (!this.rules.admits(mesh)) continue;
       if (import.meta.env.DEV && !this.warnedInstances && (mesh as Mesh).hasInstances) {

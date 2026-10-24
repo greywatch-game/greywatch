@@ -3,45 +3,51 @@
  * OUR renderer draws it (`BABYLON_EXIT.md` X3.6d): the lit windows, lamp
  * lenses, embers and signs of a map's merged world, drawn FIRST into the mask
  * pass Babylon's `GlowPass` opens, from the main pass's own view of the culls
- * (`WorldBlocks.glowView`); `GlowPass` leaves those meshes out of its list on
- * the frames this means to draw them.
+ * (`WorldBlocks.glowView`). Since X3.6e the palette's MAIN pass is ours on
+ * the same decision (`BlockHandover`), so while this holds a world the
+ * palette is no candidate and `GlowPass` never meets one of its meshes.
  * Owns: `WorldGlow` — the world it draws while the handover holds the whole
  * palette (`GlowSource`, the map's `WorldBlocks`; the handover owns it), that
  * world's `GlowWorld` (a mask pipeline a palette bias, at most two), this
  * frame's verdict (`drawing`), each palette material's last-written bloom
  * colour, the mask draw, the prepare and the mask's refusal listener
  * (`Renderer.onGlowMaskRefused`) it registers on the renderer while it holds
- * a world, the draws it issued last (`drawn`), and `broken`;
- * `GlowSource`, `GlowWorld` and `GlowWorldRules`.
+ * a world, the draws it issued last (`drawn`), `broken`, and the listeners a
+ * LOSS is announced to (`onLost`); `GlowSource`, `GlowWorld` and
+ * `GlowWorldRules`.
  * Invariants: it DECIDES NOTHING about what blooms — whether the palette may
  * bloom this frame, and how brightly, are `Game`'s rules (`GlowRules`, the
  * same questions `GlowPass` asks of Babylon's meshes, PULLED once a frame
- * through `GlowWorldRules`), and which world it holds is the handover's; ONE
- * side draws each frame's palette: the verdict is made in a renderer prepare,
- * as the main pass begins — the world held, its pipelines built, not broken,
- * the rules admitting the palette and every palette group drawable — and
- * `GlowPass` builds its list after it, at the end of the draw phase, asking
- * it (`Game`'s `GlowRules.drawnElsewhere`), so a frame with a pipeline
- * compiling or a texture unpublished is Babylon's — and the one frame a
- * refused MASK pass is found is NEITHER side's, Babylon having built the
- * mask's list before the clear that announces the pass; the mask is NOT this
- * module's (rule 5): `GlowPass` owns it and its clear, Babylon's bodies,
- * effects, fire, viewmodel and moon still draw into it, and ours draws FIRST
- * in that pass, right after its clear (`Renderer.addGlowMask`) — no depth
- * written, LEQUAL against the depth Babylon's palette wrote in the main pass
- * at the same bias, so it lands where Babylon's twin landed; a bloom colour
- * is written to a palette material's block only when it changed; a LOSS
- * (`lose`) hands the palette back at once — `drawing` false, so `GlowPass`'s
- * next list has it — and takes the draw, the prepare and the refusal
- * listener off the renderer after the task in hand, because it may land
- * inside a render (a refused pass); a mask pipeline that FAILS latches it
- * BROKEN for the session, every map's palette mask then Babylon's; nothing
- * here allocates on a frame.
+ * through `GlowWorldRules`), and which world it holds is the handover's; the
+ * verdict is made in a renderer prepare, as the main pass begins — the world
+ * held, its pipelines built, not broken, the rules admitting the palette and
+ * every palette group drawable — and a frame it is not ours is a frame with
+ * no palette bloom, never Babylon's: the palette is our main pass's too, so
+ * no mesh of it is in `GlowPass`'s list while a world is held (a pipeline
+ * compiling or a texture unpublished is the warm-up's to prevent, as a block
+ * group's hole in the main pass is); the mask is NOT this module's (rule 5):
+ * `GlowPass` owns it and its clear, Babylon's bodies, effects, fire,
+ * viewmodel and moon still draw into it, and ours draws FIRST in that pass,
+ * right after its clear (`Renderer.addGlowMask`) — no depth written, LEQUAL
+ * against the depth OUR main pass's palette wrote, by the same vertex module
+ * at the same bias, so it lands where the main pass's palette landed; a bloom
+ * colour is written to a palette material's block only when it changed; a
+ * LOSS (`lose`) hands the palette back at once — `drawing` false — tells its
+ * `onLost` listeners in the same call, so the handover hands the palette's
+ * main pass back WITH it (the palette is a candidate again from the next
+ * tick, in both of Babylon's passes), and takes the draw, the prepare and the
+ * refusal listener off the renderer after the task in hand, because it may
+ * land inside a render (a refused pass) — and the one frame a refused MASK
+ * pass is found has no palette bloom from either side; a mask pipeline that
+ * FAILS latches it BROKEN for the session (`usable` false), every map's
+ * palette then Babylon's in both passes; nothing here allocates on a frame.
  * Never: imports Babylon; reads a node, a mesh's metadata or a material — a
  * material reaches it as its `EmissiveRecipe`; owns, clears or binds the
- * mask; draws in the main pass.
+ * mask; draws in the main pass; announces a loss when no world was held (a
+ * map going, `setWorld(null)`, is no loss).
  * Contract: `docs/rendering.md`, "The glow: what the depth share replaced"
- * (its "The palette's mask, ours") and "Our renderer's frame".
+ * (its "The palette, ours: the mask (X3.6d) and the main pass (X3.6e)") and
+ * "Our renderer's frame".
  */
 import type { EmissiveRecipe } from "./emissiveWorld";
 import type { FrameUniforms } from "./frame";
@@ -100,17 +106,15 @@ export class WorldGlow {
   private readonly colour = new Float32Array(4);
   /** Takes the draw, the prepare and the refusal back off the renderer; null while nothing is registered. */
   private unhook: (() => void) | null = null;
+  /** Told of every LOSS of a held world (`onLost`). */
+  private readonly lostListeners = new Set<() => void>();
 
   constructor(
     private readonly renderer: Renderer,
     private readonly rules: GlowWorldRules,
   ) {}
 
-  /**
-   * Whether ours draws the emissive palette into the glow's mask THIS frame —
-   * decided as the main pass begins, and what `GlowPass` asks (through
-   * `Game`'s `GlowRules.drawnElsewhere`) before it lists Babylon's meshes.
-   */
+  /** Whether ours draws the emissive palette into the glow's mask THIS frame — decided as the main pass begins. */
   get drawing(): boolean {
     return this.ours;
   }
@@ -118,6 +122,24 @@ export class WorldGlow {
   /** Whether a world is held: the map's palette mask may be ours. */
   get holds(): boolean {
     return this.world !== null;
+  }
+
+  /** Whether a world handed over may be held: no mask pipeline has failed this session. */
+  get usable(): boolean {
+    return !this.broken;
+  }
+
+  /**
+   * `listener` told of every LOSS of a held world (`lose`: a palette surface
+   * handed back, a refused main or mask pass, a failed mask pipeline), in the
+   * call that loses it — so the palette's main pass goes back with its mask.
+   * Never told of a world dropped for a map going. Returns its remove.
+   */
+  onLost(listener: () => void): () => void {
+    this.lostListeners.add(listener);
+    return () => {
+      this.lostListeners.delete(listener);
+    };
   }
 
   /** The draws issued into the last mask — what a census of the mask adds to Babylon's. */
@@ -164,9 +186,10 @@ export class WorldGlow {
   /**
    * The world can no longer draw what Babylon's twin would — a palette
    * surface went back to Babylon, the main pass or the mask's was refused, a
-   * pipeline failed: the palette is Babylon's from `GlowPass`'s next list,
-   * and the draw, the prepare and the refusal listener come off the renderer
-   * once the task in hand is done.
+   * pipeline failed: the `onLost` listeners are told at once (the handover
+   * hands the palette's main pass back, so it is a candidate, and in
+   * `GlowPass`'s list, from the next tick), and the draw, the prepare and the
+   * refusal listener come off the renderer once the task in hand is done.
    */
   lose(): void {
     if (!this.world) return;
@@ -184,6 +207,7 @@ export class WorldGlow {
       unhook?.();
       world.dispose();
     });
+    for (const listener of this.lostListeners) listener();
   }
 
   dispose(): void {

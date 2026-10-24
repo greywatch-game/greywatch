@@ -73,15 +73,17 @@ export const CULL_UNIFORM_BYTES = 160;
  *   held for it, whatever casts: Babylon's bake drew the map's visuals whole
  *   but for the glazing.
  * - `PASS_GLOW`: drawn in the glow's MASK through the MAIN view
- *   (`render/WorldGlow.ts`, X3.6d) — the emissive palette held for it. No
- *   cull is ever handed it as a mask: the main view keeps every cluster it
- *   counts whatever its passes, and what the bit changes there is the size
- *   gate, which never drops a light source (`WorldCulling`'s `glows` —
- *   Babylon never size-gated an emissive mesh, and a lamp lens a few pixels
- *   across is exactly what a bloom is for). So the one bit means TWO things,
- *   drawn in the mask and never size-gated, which can share it only while
- *   the mask has no view of its own: a future mask view, handed a pass mask
- *   as the probe's view is, would have to split it into two bits.
+ *   (`render/WorldGlow.ts`, X3.6d) — the emissive palette, which the main
+ *   pass draws through the same view while it is ours (X3.6e). No cull is
+ *   ever handed it as a mask: the main view keeps every cluster it counts
+ *   whatever its passes, and what the bit changes there is the size gate,
+ *   for the main pass and the mask alike, which never drops a light source
+ *   (`WorldCulling`'s `glows` — Babylon never size-gated an emissive mesh,
+ *   and a lamp lens a few pixels across is exactly what a bloom is for). So
+ *   the one bit means TWO things, drawn in the mask and never size-gated,
+ *   which can share it only while the mask has no view of its own: a future
+ *   mask view, handed a pass mask as the probe's view is, would have to
+ *   split it into two bits.
  */
 export const PASS_CASTS = 1;
 export const PASS_SOLID = 2;
@@ -385,8 +387,9 @@ fn visible(c: Cluster) -> bool {
     let b = blocks[c.refs.y];
     if (dist2(b.lo.xyz, b.hi.xyz) > reach2()) { return false; }
   }
-  // A light source is never size-gated (\`PASS_GLOW\`): the glow's mask draws
-  // the palette through this view, and Babylon never gated an emissive mesh.
+  // A light source is never size-gated (\`PASS_GLOW\`): the main pass and the
+  // glow's mask draw the palette through this view, and Babylon never gated
+  // an emissive mesh.
   if (gateOn() && (c.sway.z & ${PASS_GLOW}u) == 0u) {
     let s = spheres[c.refs.z];
     let d = s.xyz - eye();

@@ -81,8 +81,7 @@
  * it a glow is the last thing left when the world around it has gone to fog;
  * infiniteDistance exempts the moon — asked of Babylon's meshes by `GlowPass`
  * and of the emissive palette by our renderer's `WorldGlow`, one statement
- * each (`glowAdmits`, `bloomColour`), and which meshes `GlowPass` leaves to
- * `WorldGlow` this frame),
+ * each (`glowAdmits`, `bloomColour`)),
  * ShadowSystem wiring (casters re-registered per round from map.visuals),
  * WorldCulling wiring (the map filed per install, the eye pushed from `tick` in
  * every state beside the shader's own — it decides how much of the map Babylon
@@ -1517,8 +1516,9 @@ export class Game {
     );
     // The emissive palette's share of the glow's mask as our renderer draws
     // it, whenever the handover holds the whole palette (`BABYLON_EXIT.md`
-    // X3.6d): drawn first in `GlowPass`'s mask, which stays Babylon's. The
-    // rules are the glow's own two (below), asked of the palette's materials.
+    // X3.6d) — with its main pass (X3.6e): drawn first in `GlowPass`'s mask,
+    // which stays Babylon's. The rules are the glow's own two (below), asked
+    // of the palette's materials.
     this.worldGlow = new WorldGlow(this.renderer, {
       admits: () => this.glowAdmits(0),
       colour: (recipe, out) => {
@@ -1564,9 +1564,11 @@ export class Game {
     // fill it is buying back.
     //
     // **The map's BLOCKS are no longer in this queue** (`BABYLON_EXIT.md`
-    // X3.3), **nor is its LANDFORM** (X3.5): our renderer draws both AFTER
-    // all of it, ahead of the group's alpha-tested meshes — the blocks and
-    // the scatter first and the floor, the rim and the roads after them
+    // X3.3), **nor is its LANDFORM** (X3.5), **nor its emissive PALETTE**
+    // (X3.6e): our renderer draws them AFTER all of it, ahead of the group's
+    // alpha-tested meshes — the palette first, so a lit window ties with its
+    // own wall as it did when this queue drew it, then the blocks and the
+    // scatter and the floor, the rim and the roads after them
     // (`render/Renderer.ts`, `"beforeAlphaTest"`) — so the floor behind a
     // building fails the depth test before it shades. What this sort still
     // orders is what Babylon draws; what is left of the cost of ours coming
@@ -1641,12 +1643,10 @@ export class Game {
         }
         this.bloomColour(material, fade, out);
       },
-      // The emissive palette, on the frames our renderer draws it into the
-      // mask (`WorldGlow`, decided as the main pass began): then never
-      // Babylon's twin as well. Which meshes those are is the handover's
-      // answer — the palette meshes it holds for the mask (`glowHolds`), and
-      // it hands the mask over only when that is every one of them.
-      drawnElsewhere: (mesh) => this.worldGlow.drawing && this.handover.glowHolds(mesh),
+      // The emissive palette never reaches this list while our renderer holds
+      // it: its main pass is ours with its mask (`BlockHandover`, X3.6e), so
+      // its meshes are no candidates and never ACTIVE, and a loss of either
+      // hands both back to Babylon together.
     });
     this.glow = glow;
     // The mask's pass has opened: our renderer's palette goes in FIRST, ahead

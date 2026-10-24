@@ -596,11 +596,11 @@ shadow caster**, and see-through glazing gets no ink.
 **The frame WALKS the scene, and the scene is the map.** `WorldCulling`
 **replaces `scene.getActiveMeshCandidates` and writes nothing onto any mesh**:
 it never disables, never hides, never unpickles. **A collider is never a
-candidate, and nor is a BLOCK or the LANDFORM our renderer TAKES**
-(`BlockHandover`; the BUILD marks `WorldSurface.landform`), and **a taken mesh
-is never switched off, hidden or faded after its build** — ours reads no node
-and would still draw it (a DEV check says so). **The SCATTER is drawn twice
-over and the two must agree**: our main pass draws it as INSTANCES of its
+candidate, nor is a BLOCK, the LANDFORM or the emissive PALETTE our renderer
+TAKES** (`BlockHandover`; the BUILD marks `WorldSurface.landform`), and **a
+taken mesh is never switched off, hidden or faded after its build** — ours reads
+no node and would still draw it (a DEV check says so). **The SCATTER is drawn
+twice over and the two must agree**: our main pass draws it as INSTANCES of its
 variants, its colour baked once per kind, and cuts its pieces out of the blocks
 it takes, while Babylon's merged copy stays in those blocks for any pass handed
 back to Babylon (`BuildOptions.onScatter`). **Any other mesh carrying
@@ -617,10 +617,10 @@ per mesh every frame** — an emissive colour, no `metadata.noGlow`, and `Game`'
 `GlowRules` — so nothing excludes a mesh by hand. **A map's merged emissives are
 a PALETTE like its albedo** (`shaders/EmissiveWorld.ts`): their colour is a slot
 in `uv2.x` under a WHITE `emissiveColor`, so **a new reader asking a material
-what it emits must ask the vertex for that one**. **The palette's SHARE of the
-mask is drawn by OUR renderer whenever the handover holds the WHOLE palette**
-(`render/WorldGlow.ts`; the mask itself stays `GlowPass`'s), so **a palette
-surface it cannot hold, or one marked `noGlow`, sends that share back whole**.
+what it emits must ask the vertex for that one**. **The palette is OUR
+renderer's in the main pass and the mask TOGETHER whenever the handover holds
+the WHOLE palette** (the mask itself stays `GlowPass`'s) — one decision, so **a
+palette surface it cannot hold, or one marked `noGlow`, sends both back whole**.
 
 **OUR renderer (`src/render/`) draws INSIDE Babylon's frame through ONE seam**
 (`render/babylonSeam.ts`, the only file there that names Babylon, and only as
@@ -640,7 +640,7 @@ lamps' atlas, lightning, the ink's NIB and its coverage channel's two blended
 exceptions, the wind's rigs, the fire, the glazing and reflection bake, the
 grass and turf, the water, the WGSL traps, our renderer's frame and its seam,
 the candidate list and size gate, the glow's three failed attempts and the
-palette's mask, and the sky and its clouds' depths.
+palette in both passes, and the sky and its clouds' depths.
 ### The map is data, not code
 
 `src/world/hollowmere/layout.ts` is the entire level — placements, scatter
@@ -907,10 +907,11 @@ that same object, unchanged; `GameMap.world` keeps it beside the mesh:
   so a mesh built at any time needs only the flag — but the emissive PALETTE's
   is read at the TAKE (`BlockHandover`), so it must be on the part when the
   build hands it over, never set on the mesh afterwards (a DEV check says so),
-  and one there sends the whole palette mask back to `GlowPass`. A mesh that
-  stays in bloom is faded with distance instead (`GlowRules.colour` in `Game`),
-  and `infiniteDistance` is that fade's one exemption — it is what every sky
-  mesh sets, and the moon is not in the valley to be fogged out of.
+  and one there sends the whole palette, its main pass and its mask, back to
+  Babylon. A mesh that stays in bloom is faded with distance instead
+  (`GlowRules.colour` in `Game`), and `infiniteDistance` is that fade's one
+  exemption — it is what every sky mesh sets, and the moon is not in the
+  valley to be fogged out of.
 - `noShadowCaster: true` — excluded from `ShadowSystem.setCasters()`. Flat receivers
   (ground, roads) need it: casting from them is pure shadow acne.
 - `block: "3,2"` — which map block a merged visual came from (the block's side

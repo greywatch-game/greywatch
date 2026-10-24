@@ -1,13 +1,13 @@
 /**
  * wgsl/emissiveWorld.ts — The emissive palette's two BODIES, as plain strings
  * both renderers assemble, and three programs read: Babylon's
- * `EmissiveWorldMaterial`, which draws the palette into the frame (and its
- * glow mask twin, `shaders/EmissiveWorld.ts`, now the fallback), and ours
- * (`render/emissiveWorld.ts`), which draws it into a reflection probe's faces
- * (`BABYLON_EXIT.md` X3.6c) and, under `GLOW_MASK`, into the glow's mask
- * (`render/WorldGlow.ts`, X3.6d) — where its LEQUAL test ties against the
- * depth Babylon's draw of the same vertex wrote, because the vertex stage is
- * this one text on both sides.
+ * `EmissiveWorldMaterial` and its glow mask twin (`shaders/EmissiveWorld.ts`,
+ * both the fallback now), and ours (`render/emissiveWorld.ts`), which draws
+ * the palette into the frame's main pass (`BABYLON_EXIT.md` X3.6e) and a
+ * reflection probe's faces (X3.6c) and, under `GLOW_MASK`, into the glow's
+ * mask (`render/WorldGlow.ts`, X3.6d) — where its LEQUAL test ties against
+ * the depth the main pass's draw of the same vertex wrote, because the vertex
+ * stage is this one text on both sides.
  * Owns: `EMISSIVE_WORLD_VERTEX` (`emissiveWorldVertex`, the vertex stage),
  * `EMISSIVE_WORLD_SURFACE` (`emissiveWorldSurface`, the pixel — the frame's
  * and, under `GLOW_MASK`, the bloom's) and `MAX_EMISSIVE_PALETTE`.

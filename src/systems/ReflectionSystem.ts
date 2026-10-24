@@ -121,7 +121,7 @@ import type { GameMap, PaneGroup, WorldBox } from "../world/MapBuilder";
 export interface ProbeHolding {
   /** Our renderer draws every mesh of it. */
   readonly ours: boolean;
-  /** Meshes the main pass takes, the palette held for the bake, fires left out, and anything ours cannot draw. */
+  /** Meshes the main pass takes (but the palette), the emissive palette, fires left out, and anything ours cannot draw. */
   readonly taken: number;
   readonly palette: number;
   readonly fires: number;

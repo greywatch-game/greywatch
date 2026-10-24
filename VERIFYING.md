@@ -1569,21 +1569,30 @@ is one machine's:
   casters on Coldharbour). A pane that gains either is drawn as a dark plate or
   lays a hard shadow through clear glass.
 - **The glow's MASK reads back the same way, and it is the place to check who
-  drew the palette's bloom** (`BABYLON_EXIT.md` X3.6d): `g.glow.mask
+  drew the palette's bloom** (`BABYLON_EXIT.md` X3.6d, X3.6e): `g.glow.mask
   .getInternalTexture()._hardwareTexture.underlyingResource` is an
   `rgba8unorm` render target Babylon made with `COPY_SRC`, so a
   `copyTextureToBuffer` off `g.renderer.device` between frames reads the last
   frame's mask. `g.worldGlow.drawing` and `.drawn` say whether ours drew the
-  palette into it; `g.worldGlow.lose()` hands it to `GlowPass` (Babylon's twin)
-  from the next frame, and `g.worldGlow.setWorld(g.handover.blocks)` takes it
-  back — only on a map whose install held the whole palette (`blocks` is
-  private to TypeScript, not to a page script). On any other, `GlowPass`
-  leaves out exactly the meshes the handover holds for the mask
-  (`glowHolds`) while ours draws every palette GROUP that holds one, whole:
-  a palette mesh it never held stays `GlowPass`'s, but one marked `noGlow`
-  that shares a group with a held one is bloomed by ours where Babylon's is
-  dark, and one whose group went back is bloomed by neither. Ours against
-  Babylon's at a frozen vantage reads 0 texels.
+  palette into it. **Since X3.6e the palette's MAIN pass goes with its mask**:
+  `g.worldGlow.lose()` hands BOTH to Babylon (its `onLost` tells the handover,
+  which puts the palette back in the candidate list from the next tick), and
+  `g.handover.takePalette()` takes both back — true if it did, and only on a
+  map whose install gave the palette its cells' reach boxes. **Do not re-take
+  with `g.worldGlow.setWorld(...)` any more**: that takes the MASK alone while
+  the palette is still Babylon's candidate, and with nothing left to keep
+  `GlowPass` off it (`drawnElsewhere` is gone) the palette is bloomed twice.
+  After a loss, settle until Babylon's palette is ready (its main material and
+  mask twin compile in the round: poll `isReady` on the palette meshes in
+  `g.scene.getActiveMeshes()`, filtered on `EmissiveWorldMaterial`, and two
+  consecutive grabs agreeing) before reading Babylon's side. That active list
+  holds no palette mesh while ours holds the palette, and N after a loss. Ours
+  against Babylon's at a frozen bank vantage reads 0 texels in the mask and 0
+  pixels in the frame, but for a palette mesh inside the candidate walk's
+  12 m reach HYSTERESIS, which Babylon still draws and our exact reach drops
+  (`pastReach` in the X3.6e scratch readback: a cell box past
+  `g.culling.reachGate.reach` — `culling` is private to TypeScript, not to a
+  page script).
 - **What a pane REFLECTS is checkable without a screenshot, and the CUBE is the
   place to check it.** There is one probe per glazed map block —
   `g.reflections.probes[slot]` against `g.map.paneGroups[slot]`, 40 of each on

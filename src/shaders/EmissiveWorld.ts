@@ -2,13 +2,14 @@
  * EmissiveWorld.ts — The one material every lit window, lamp lens, ember and
  * sign in a map's MERGED world wears, whatever colour it emits: the emissive
  * palette, `getWorldCel`'s twin for the light sources. And the twin of it
- * `GlowPass` draws their bloom with — the FALLBACK since X3.6d: whenever the
- * handover holds the whole palette, our renderer draws its mask
- * (`render/WorldGlow.ts`, over the same bodies) and `GlowPass` never dresses
- * a palette mesh in this twin; it is drawn for an editor build,
+ * `GlowPass` draws their bloom with. BOTH are the FALLBACK since X3.6e (the
+ * twin since X3.6d): whenever the handover holds the whole palette, our
+ * renderer draws it in the main pass (`render/WorldBlocks.ts`) and its mask
+ * (`render/WorldGlow.ts`), over the same bodies, and no palette mesh is a
+ * candidate for Babylon's frame; both are drawn for an editor build,
  * `?babylonworld`, a map whose palette ours cannot hold whole, a failed mask
- * pipeline (for the session) and a loss mid-map. The MAIN pass's palette is
- * still this material's on every path.
+ * pipeline (for the session) and a loss mid-map — when both compile in the
+ * round, the warm-up never having drawn them.
  * Owns: Babylon's declarations of both WGSL stages (their bodies are
  * `wgsl/emissiveWorld.ts`'s, which a probe's bake on our renderer draws too)
  * and `EmissiveWorldMaterial` (`MAX_EMISSIVE_PALETTE` is the bodies' module's).

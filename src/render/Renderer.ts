@@ -62,7 +62,10 @@
  *   the depth buffer, and in the picture, before it draws. The world's other
  *   opaque draws go here too, AHEAD of the floor (`WorldBlocks`): the point
  *   is after the sky dome, which writes no depth, and a building drawn
- *   before the floor behind it spares that floor its shading.
+ *   before the floor behind it spares that floor its shading. The emissive
+ *   palette goes FIRST in that one draw, where Babylon's opaque queue had
+ *   it ahead of every surface of ours, so an equal-depth tie with its own
+ *   wall goes the way it went.
  * - `"opaque"`: after the group's opaque and alpha-tested meshes and before
  *   anything blended in it — its particles and its transparent meshes. No
  *   OPAQUE draw goes later, because the blended surfaces write no depth: an
