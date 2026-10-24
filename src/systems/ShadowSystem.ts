@@ -94,8 +94,8 @@ import {
   litShadowTexture,
   SHADOW_NEAR,
   ShadowWindow,
-  wrapShadowTexture,
 } from "../core/shadowWindow";
+import { wrapShadowTexture } from "../core/wrappedTextures";
 import type { ShadowQuality } from "../core/settings";
 import type { Combatant } from "../entities/Combatant";
 import { WORLD_SHADOW_MAPS, type WorldShadowMap, type WorldShadows } from "../render/WorldShadows";

@@ -57,7 +57,7 @@ import {
 import { CONFIG } from "../config";
 import { kindOf } from "../entities/vehicleKinds";
 import { MAX_PALETTE, type CelMaterialFactory } from "../shaders/CelShader";
-import { MAX_EMISSIVE_PALETTE } from "../shaders/EmissiveWorld";
+import { MAX_EMISSIVE_PALETTE } from "../shaders/wgsl/emissiveWorld";
 import { bakeVertexShading, shadeVertices, shadingContext, takesShading } from "./vertexShading";
 import { swayLayerOf } from "./sway";
 import { begin as beginProfile, record, since } from "./buildProfile";

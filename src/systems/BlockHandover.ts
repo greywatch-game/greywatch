@@ -85,7 +85,7 @@ import type { LampAtlas } from "../render/LampAtlas";
 import type { ProbeBake } from "../render/ProbeBake";
 import {
   blockKey,
-  NO_BLOCK,
+  blockKeyOf,
   PASS_CASTS,
   PASS_LAMPS,
   PASS_PROBE,
@@ -96,6 +96,7 @@ import { WorldBlocks } from "../render/WorldBlocks";
 import type { WorldDepth } from "../render/WorldDepth";
 import type { WorldShadows } from "../render/WorldShadows";
 import type { CelMaterialFactory } from "../shaders/CelShader";
+import type { ProbeHolding } from "./ReflectionSystem";
 import { isFlame } from "../shaders/FlameShader";
 import type { ScatterField } from "../world/scatterVariants";
 import type { WorldGeometry, WorldSurface } from "../world/worldGeometry";
@@ -117,7 +118,7 @@ export class BlockHandover {
    * draws: the casters held for the shadows alone (`WorldBlocks.addCaster`)
    * and the emissive palette held for the probes' bake (`addEmissive`).
    */
-  private castersOnly = new Set<Mesh>();
+  private held = new Set<Mesh>();
   /** The surfaces that cast, by index — one of them handed back loses the shadows. */
   private casting = new Set<number>();
   /** The surfaces a probe's bake draws (`PASS_PROBE`), by index — one of them handed back loses the bake. */
@@ -169,7 +170,7 @@ export class BlockHandover {
   readonly onSurface = (surface: WorldSurface, mesh: Mesh): void => {
     const { part } = surface;
     const passes = this.passesOf(part.metadata, part.material, mesh);
-    const key = keyOf(surface.block);
+    const key = blockKeyOf(surface.block);
     const p = part.position;
     const r = part.rotation;
     const k = part.scaling;
@@ -193,7 +194,7 @@ export class BlockHandover {
         if ((passes & SHADOW_PASSES) !== 0) this.allCasters = false;
         return;
       }
-      this.castersOnly.add(mesh);
+      this.held.add(mesh);
     }
     this.meshes[at] = mesh;
     if ((drawn & SHADOW_PASSES) !== 0) this.casting.add(at);
@@ -312,7 +313,7 @@ export class BlockHandover {
     // light's range) draws one past it, which the face's far plane clips or
     // stores as a distance over 1 — lit, as no caster at all would read.
     const boxes: BlockBox[] = meshes.map((mesh) =>
-      this.castersOnly.has(mesh) ? NO_REACH : this.culling.reachBoxOf(mesh),
+      this.held.has(mesh) ? NO_REACH : this.culling.reachBoxOf(mesh),
     );
     // Held for shadows that draw: on a rung with every map and the atlas off
     // there is nothing to draw them into, and Babylon's (of none) are the map's.
@@ -355,7 +356,7 @@ export class BlockHandover {
    * no bake has ever drawn (`FINDINGS.md` 51) — and, of the list, how many
    * fall where. False with no world handed to the bake.
    */
-  probeHolds(list: readonly Mesh[]): { ours: boolean; taken: number; palette: number; fires: number; other: number } {
+  probeHolds(list: readonly Mesh[]): ProbeHolding {
     const at = new Map<Mesh, number>();
     this.meshes.forEach((m, i) => at.set(m, i));
     let taken = 0;
@@ -366,7 +367,7 @@ export class BlockHandover {
       const i = at.get(mesh);
       if (this.fires.has(mesh)) fires++;
       else if (i === undefined || this.back.has(mesh) || !this.probing.has(i)) other++;
-      else if (this.castersOnly.has(mesh)) palette++;
+      else if (this.held.has(mesh)) palette++;
       else taken++;
     }
     const ours = this.probes.holds && other === 0 && !this.handedBack;
@@ -385,11 +386,6 @@ export class BlockHandover {
     this.lamps.lose();
   }
 
-  /** The world a probe's bake draws can no longer draw what Babylon's would: the bake goes back to Babylon. */
-  private loseProbes(): void {
-    this.probes.lose();
-  }
-
   /**
    * How many surfaces are taken, how many clusters and material groups they
    * were cut into, how many draws our side issued last frame, and how many
@@ -404,9 +400,9 @@ export class BlockHandover {
   } {
     const { surfaces, clusters, groups } = this.blocks.count;
     // The main pass's: a caster held for the shadows alone is not taken from it.
-    const taken = surfaces - this.castersOnly.size;
+    const taken = surfaces - this.held.size;
     let back = 0;
-    for (const mesh of this.back) if (!this.castersOnly.has(mesh)) back++;
+    for (const mesh of this.back) if (!this.held.has(mesh)) back++;
     return {
       taken,
       clusters,
@@ -426,7 +422,7 @@ export class BlockHandover {
     this.meshes = [];
     this.landform = new Set();
     this.back = new Set();
-    this.castersOnly = new Set();
+    this.held = new Set();
     this.casting = new Set();
     this.probing = new Set();
     this.fires = new Set();
@@ -453,7 +449,7 @@ export class BlockHandover {
     // A caster going back is Babylon's to draw into a shadow: so is every other.
     if (surfaces.some((at) => this.casting.has(at))) this.loseCasters();
     // …and one a probe's bake draws is Babylon's to bake: so is every other.
-    if (surfaces.some((at) => this.probing.has(at))) this.loseProbes();
+    if (surfaces.some((at) => this.probing.has(at))) this.probes.lose();
     this.fileTaken(this.meshes.filter((m) => !this.back.has(m)));
   };
 
@@ -463,7 +459,7 @@ export class BlockHandover {
    * the main pass is never told of.
    */
   private fileTaken(meshes: readonly Mesh[]): void {
-    const drawn = meshes.filter((m) => !this.castersOnly.has(m));
+    const drawn = meshes.filter((m) => !this.held.has(m));
     this.culling.setTaken(
       drawn.filter((m) => !this.landform.has(m)),
       drawn.filter((m) => this.landform.has(m)),
@@ -481,7 +477,7 @@ export class BlockHandover {
     if (this.handedBack || this.meshes.length === 0) return;
     this.handedBack = true;
     this.loseCasters();
-    this.loseProbes();
+    this.probes.lose();
     this.blocks.stop();
     this.culling.setTaken([], []);
     console.error(
@@ -514,13 +510,4 @@ export class BlockHandover {
       return;
     }
   }
-}
-
-/** A block merge's key ("bx,bz") as the culls carry it (`blockKey`); `NO_BLOCK` for none, or one that is not a pair. */
-function keyOf(block: string | null): number {
-  if (block === null) return NO_BLOCK;
-  const comma = block.indexOf(",");
-  const bx = Number(block.slice(0, comma));
-  const bz = Number(block.slice(comma + 1));
-  return comma < 0 || !Number.isInteger(bx) || !Number.isInteger(bz) ? NO_BLOCK : blockKey(bx, bz);
 }

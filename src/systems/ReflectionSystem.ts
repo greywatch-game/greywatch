@@ -39,8 +39,9 @@
  *   and the D3D12 device is lost inside it. `queue` and `releaseBatch` are
  *   what turn that into `drawsPerFrame` at a time. It is still a BUILD step;
  *   it is no longer a build step that happens in one command submission.
- * - **On our renderer's path the budget is PROBES** (`probesPerFrame`,
- *   `releaseOurs`), released only once our bake's pipelines are built
+ * - **On our renderer's path the budget is PROBES** — the bake's own
+ *   (`ProbeBake.perFrame`, which this asks rather than reading the config) —
+ *   and its own queue (`jobs`, `releaseOurs`), released only once our bake's pipelines are built
  *   (`ProbeBake.ready`) as well as through the gate, and `bakePending` counts
  *   those released and not yet recorded; its view of the culls is opened with
  *   the queue and closed when the queue and the bake have drained.
@@ -105,10 +106,10 @@ import {
   Vector3,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import { wrapCubeTexture } from "../core/shadowWindow";
+import { wrapCubeTexture } from "../core/wrappedTextures";
 import { Vector3 as MathVector3 } from "../math";
 import type { ProbeBake, ProbeExclusion, ProbeJob } from "../render/ProbeBake";
-import { blockKey } from "../render/wgsl/clusterCull";
+import { blockCoordsOf, blockKey } from "../render/wgsl/clusterCull";
 import type {
   CelMaterialFactory,
   CubeReflection,
@@ -136,12 +137,8 @@ interface OurProbe {
   readonly job: ProbeJob;
 }
 
-/** A queued probe: Babylon's with its list, or one of ours — and what it costs (Babylon's: draws). */
-interface Queued {
-  readonly probe: ReflectionProbe | null;
-  readonly ours: OurProbe | null;
-  readonly draws: number;
-}
+/** The two pools a probe is in, both renderers'. */
+type Pool = "glazing" | "water";
 
 /** What one install bakes, as `build` and `bakeWater` planned it. */
 interface InstallPlan {
@@ -219,25 +216,32 @@ export class ReflectionSystem {
    */
   private readonly waterProbes: ReflectionProbe[] = [];
   /**
-   * Our renderer's cubes, by pool and slot (`ProbeBake.cube`), each with the
-   * wrapped view Babylon's readers are handed (`wrapCubeTexture`) and the
-   * probe as our bake is handed it. Made on first use and kept for the
-   * process, as Babylon's pools are: a wrapped view is never disposed, since
-   * disposing one destroys the texture it wraps.
+   * Our renderer's cubes, by pool and slot (`ProbeBake.cube`, which keeps no
+   * index of its own), each with the wrapped view Babylon's readers are
+   * handed (`wrapCubeTexture`) and the probe as our bake is handed it. Made
+   * on first use and kept for the process, as Babylon's pools are: a wrapped
+   * view is never disposed, since disposing one destroys the texture it
+   * wraps.
    */
-  private readonly ours = new Map<string, OurProbe>();
+  private readonly oursPools: Record<Pool, OurProbe[]> = { glazing: [], water: [] };
   /**
    * The probes that have been given a render list and are waiting for a frame
-   * to bake on, oldest first, each with what it will cost when it does.
+   * to bake on, oldest first, each with what it will cost when it does —
+   * Babylon's path.
    *
    * **This is the whole of the spread**, and it is a queue rather than a rate
    * because what a frame can afford is DRAWS and a probe's render list is not
    * a constant: a map whose lists are short releases more probes per frame
    * than one whose lists are long, without either of them being told how big
-   * it is. On OUR renderer's path an entry is a probe of ours and the budget
-   * is probes (`probesPerFrame`) — see `releaseOurs`.
+   * it is.
    */
-  private readonly queue: Queued[] = [];
+  private readonly queue: { probe: ReflectionProbe; draws: number }[] = [];
+  /**
+   * OUR renderer's path's queue: probes of ours waiting for a frame, oldest
+   * first, released at the bake's own budget (`ProbeBake.perFrame`) — see
+   * `releaseOurs`.
+   */
+  private readonly jobs: ProbeJob[] = [];
   /**
    * The probes released and not yet seen to bake, with what each will cost if
    * it renders again.
@@ -278,9 +282,6 @@ export class ReflectionSystem {
    * harness can re-bake a frozen world (`rebake`).
    */
   private plan: InstallPlan | null = null;
-  /** Every pool slot ever baked, for the count `probeCount` reports: the default cube is glazing slot 0. */
-  private readonly glassSlotsBaked = new Set<number>([0]);
-  private readonly waterSlotsBaked = new Set<number>();
   /**
    * The list one FACE of one probe is actually drawn from — `renderList`
    * minus whatever that face cannot see. See `faceOf`, which is the only
@@ -340,7 +341,7 @@ export class ReflectionSystem {
     });
     // A loss of our renderer's world before its bake drained: the bake is
     // Babylon's, whole, from the next frame. See `oursLost`.
-    bake.onLost(() => this.oursLost());
+    bake.onLost((dropped) => this.oursLost(dropped));
     // Probe 0 exists before any map does, because `MapBuilder` asks for a
     // glazing material during the build and that material has to be born with
     // a cube bound to it — see `CelMaterialFactory.setDefaultReflection`. It
@@ -404,8 +405,8 @@ export class ReflectionSystem {
    * frame.
    */
   get bakePending(): number {
+    if (this.oursPath) return this.jobs.length + this.bake.unrecorded;
     let pending = this.queue.length;
-    if (this.oursPath) return pending + this.bake.unrecorded;
     for (const held of this.inFlight) {
       if (held.probe.cubeTexture.currentRefreshId === -1) pending++;
     }
@@ -414,21 +415,26 @@ export class ReflectionSystem {
 
   /**
    * Whose this install's bake is — "ours" (`ProbeBake`) or "babylon" — and
-   * what of its list falls where (`BlockHandover.probeHolds`). For a reading
-   * (`plans/webgpu-ref`, a scratch script); nothing in the game asks.
+   * what of its list falls where (`BlockHandover.probeHolds`). For a scratch
+   * reading (`VERIFYING.md`, the cube readback); nothing in the game asks.
    */
   get path(): { path: "ours" | "babylon"; holding: ProbeHolding } {
     return { path: this.oursPath ? "ours" : "babylon", holding: this.holding };
   }
 
   /**
-   * How many cubes this process has baked, both pools — the default cube
-   * counted, as glazing slot 0. On Babylon's path that is the scene's custom
-   * targets, which the reference gate counted before our renderer baked any
-   * (`plans/webgpu-ref/gate.json`), so its numbers keep their meaning.
+   * How many pool SLOTS this process has baked, both pools, whichever
+   * renderer baked them — read off the pools, each grown only to bake a slot
+   * (Babylon's glazing pool holds the default cube as slot 0). On Babylon's
+   * path alone that is the scene's custom targets, which the reference gate
+   * counted before our renderer baked any (`plans/webgpu-ref/gate.json`), so
+   * its numbers keep their meaning on both paths.
    */
   get probeCount(): number {
-    return this.glassSlotsBaked.size + this.waterSlotsBaked.size;
+    const ours = this.oursPools;
+    return (
+      Math.max(this.probes.length, ours.glazing.length) + Math.max(this.waterProbes.length, ours.water.length)
+    );
   }
 
   /**
@@ -543,7 +549,7 @@ export class ReflectionSystem {
       slotOf.push(slot);
     }
 
-    const listed = this.queueGlazing(this.plan);
+    this.queueGlazing(this.plan);
 
     for (let i = 0; i < map.paneGroups.length; i++) {
       const group = map.paneGroups[i];
@@ -560,6 +566,12 @@ export class ReflectionSystem {
     this.pointGlazing(this.plan);
 
     if (import.meta.env.DEV) {
+      // The lists as Babylon's bake would hold them, counted for the log
+      // alone: our renderer's path builds none.
+      let listed = 0;
+      for (const g of glazing) {
+        listed += neighbourhood(opaque, g.at, cfg.radius, (m) => !encloses(m, g.served)).length;
+      }
       const n = Math.max(slots.size, 1);
       const draws = listed * 6;
       console.info(
@@ -593,6 +605,7 @@ export class ReflectionSystem {
     for (const probe of this.waterProbes) probe.cubeTexture.renderList = [];
     this.queue.length = 0;
     this.inFlight.length = 0;
+    this.jobs.length = 0;
     this.closeOurs();
     this.oursPath = false;
     this.holding = NOT_OURS;
@@ -707,51 +720,48 @@ export class ReflectionSystem {
     }
     this.queue.length = 0;
     this.inFlight.length = 0;
+    this.jobs.length = 0;
     this.queueGlazing(plan);
     this.queueWater(plan);
   }
 
   /**
    * The glazing's probes of `plan` queued on this install's path — each
-   * probe's list on Babylon's, a probe of ours on our renderer's — and how
-   * many meshes Babylon's lists hold between them.
+   * probe's list on Babylon's, a probe of ours on our renderer's, which
+   * builds no list.
    */
-  private queueGlazing(plan: InstallPlan): number {
+  private queueGlazing(plan: InstallPlan): void {
     const cfg = CONFIG.graphics.reflection;
-    let listed = 0;
     for (const g of plan.glazing) {
-      this.glassSlotsBaked.add(g.slot);
       // Two subtractions answering different questions: `encloses` takes out
       // the building the probe is STANDING IN, and the radius takes out the
       // city it could not see the far side of. Neither is a distance test
       // standing in for the other — see `encloses` on why the enclosure
       // stopped being one. On our renderer's path both are the cull's, told
-      // as numbers (`exclusionOf`, `ProbeJob.reach`): the same tests on the
-      // same meshes.
-      const list = neighbourhood(plan.opaque, g.at, cfg.radius, (m) => !encloses(m, g.served));
-      listed += list.length;
+      // as numbers (`exclusionOf`, `ProbeJob.reach`): the same two tests on
+      // the same surfaces — a block's and the landform's sphere is its mesh's
+      // — but a SCATTER instance is reached by its own sphere, where Babylon's
+      // reached the merged block mesh its copy sat in, so one near the radius
+      // drops alone where Babylon kept or dropped its whole block.
       if (this.oursPath) {
-        const ours = this.ourProbe(`glazing ${g.slot}`, g.at, exclusionOf(g.served, plan.perCell));
-        this.queue.push({ probe: null, ours, draws: 6 });
+        this.jobs.push(this.ourProbe("glazing", g.slot, g.at, exclusionOf(g.served, plan.perCell)));
         continue;
       }
       const probe = this.probeAt(g.slot);
       probe.position.copyFrom(g.at);
+      const list = neighbourhood(plan.opaque, g.at, cfg.radius, (m) => !encloses(m, g.served));
       probe.cubeTexture.renderList = list;
-      this.queue.push({ probe, ours: null, draws: list.length * 6 });
+      this.queue.push({ probe, draws: list.length * 6 });
     }
     if (this.oursPath && plan.glazing.length > 0) this.openOurs();
-    return listed;
   }
 
   /** The water's probes of `plan` queued on this install's path. Water has no block and so leaves nothing out. */
   private queueWater(plan: InstallPlan): void {
     const cfg = CONFIG.graphics.reflection;
     for (const w of plan.water) {
-      this.waterSlotsBaked.add(w.slot);
       if (this.oursPath) {
-        const ours = this.ourProbe(`water ${w.slot}`, w.at, null);
-        this.queue.push({ probe: null, ours, draws: 6 });
+        this.jobs.push(this.ourProbe("water", w.slot, w.at, null));
         continue;
       }
       const probe = this.waterProbeAt(w.slot);
@@ -764,7 +774,7 @@ export class ReflectionSystem {
       // are the same list.
       const list = neighbourhood(plan.opaque, probe.position, cfg.radius, keepAll);
       probe.cubeTexture.renderList = list;
-      this.queue.push({ probe, ours: null, draws: list.length * 6 });
+      this.queue.push({ probe, draws: list.length * 6 });
     }
     if (this.oursPath && plan.water.length > 0) this.openOurs();
   }
@@ -776,7 +786,7 @@ export class ReflectionSystem {
       this.boxMin.copyFrom(boxMin);
       this.boxMax.copyFrom(boxMax);
       const refl: ProbeReflection = {
-        cube: this.oursPath ? this.ourCube(`glazing ${slot}`).wrapped : this.probeAt(slot).cubeTexture,
+        cube: this.oursPath ? this.ourCube("glazing", slot).wrapped : this.probeAt(slot).cubeTexture,
         boxMin: this.boxMin,
         boxMax: this.boxMax,
         at: plan.glazing[slot].at,
@@ -788,20 +798,27 @@ export class ReflectionSystem {
 
   /** Water body `slot`'s cube on this install's path. */
   private waterCube(slot: number): BaseTexture {
-    return this.oursPath ? this.ourCube(`water ${slot}`).wrapped : this.waterProbeAt(slot).cubeTexture;
+    return this.oursPath ? this.ourCube("water", slot).wrapped : this.waterProbeAt(slot).cubeTexture;
   }
 
   /**
-   * Our renderer's bake was LOST before it drained (`ProbeBake.lose`: a
-   * surface it draws went back to Babylon, the main pass was refused, a
-   * pipeline or a cull failed): the whole of this install's bake is queued
+   * Our renderer's bake was LOST (`ProbeBake.lose`: a surface it draws went
+   * back to Babylon, the main pass was refused, a pipeline or a cull failed),
+   * `dropped` of its released probes unrecorded. Before it drained — a probe
+   * still queued or dropped — the whole of this install's bake is queued
    * again on Babylon's side and every reader pointed at Babylon's cubes. A
-   * loss after the bake drained changes nothing — the cubes stand, and
-   * nothing reads our renderer again until the next install.
+   * loss after the bake drained changes nothing, the frame between its last
+   * probe recorded and its view closing included: the cubes stand, and
+   * nothing reads our renderer again until the next install (a `rebake`
+   * then is Babylon's).
    */
-  private oursLost(): void {
+  private oursLost(dropped: number): void {
     const plan = this.plan;
-    if (!this.oursPath || !this.oursOpen || !plan) return;
+    if (!this.oursPath || !plan) return;
+    if (this.jobs.length + dropped === 0) {
+      this.oursOpen = false;
+      return;
+    }
     if (import.meta.env.DEV) {
       console.warn("[reflection] our renderer's bake was lost before it drained; it is Babylon's from the next frame");
     }
@@ -814,6 +831,7 @@ export class ReflectionSystem {
     this.oursPath = false;
     this.queue.length = 0;
     this.inFlight.length = 0;
+    this.jobs.length = 0;
     this.queueGlazing(plan);
     this.queueWater(plan);
     this.pointGlazing(plan);
@@ -834,8 +852,8 @@ export class ReflectionSystem {
   }
 
   /**
-   * Our renderer's share of the outstanding bake this frame: up to
-   * `probesPerFrame` probes released, oldest first, as the gate and our
+   * Our renderer's share of the outstanding bake this frame: up to the
+   * bake's own budget (`ProbeBake.perFrame`) released, oldest first, as the gate and our
    * bake's pipelines allow — and, once the queue and the bake have both
    * drained, the bake closed, its view of the culls dropped. Released here,
    * our bake records them as this frame's main pass begins
@@ -848,53 +866,55 @@ export class ReflectionSystem {
    */
   private releaseOurs(): void {
     if (!this.oursOpen) return;
-    if (this.queue.length === 0) {
+    const jobs = this.jobs;
+    if (jobs.length === 0) {
       if (this.bake.unrecorded === 0) this.closeOurs();
       return;
     }
     if (!this.bakeGate() || !this.bake.ready) return;
-    const room = CONFIG.graphics.reflection.probesPerFrame - this.bake.unrecorded;
+    const room = this.bake.perFrame - this.bake.unrecorded;
     const camera = this.scene.activeCamera;
     let taken = 0;
-    for (; taken < room && taken < this.queue.length; taken++) {
-      const job = this.queue[taken].ours!.job;
+    for (; taken < room && taken < jobs.length; taken++) {
+      const job = jobs[taken];
       // The camera's planes, as Babylon's probe projected each face with the
       // active camera's on the frame it baked.
       job.near = camera?.minZ ?? 1;
       job.far = camera?.maxZ ?? 10000;
       this.bake.release(job);
     }
-    this.queue.splice(0, taken);
+    jobs.splice(0, taken);
   }
 
-  /** The probe of ours under `key`, standing at `at` and leaving out `exclude`, re-pointed for this install. */
-  private ourProbe(key: string, at: Vector3, exclude: ProbeExclusion | null): OurProbe {
-    const ours = this.ourCube(key);
-    ours.job.eye.set(at.x, at.y, at.z);
-    ours.job.reach = CONFIG.graphics.reflection.radius;
-    ours.job.exclude = exclude;
-    return ours;
+  /** The probe of ours in `pool`'s `slot`, standing at `at` and leaving out `exclude`, re-pointed for this install. */
+  private ourProbe(pool: Pool, slot: number, at: Vector3, exclude: ProbeExclusion | null): ProbeJob {
+    const job = this.ourCube(pool, slot).job;
+    job.eye.set(at.x, at.y, at.z);
+    job.reach = CONFIG.graphics.reflection.radius;
+    job.exclude = exclude;
+    return job;
   }
 
-  /** The cube of ours under `key`, made on first use with its wrapped view and its probe. */
-  private ourCube(key: string): OurProbe {
-    let ours = this.ours.get(key);
-    if (!ours) {
-      const texture = this.bake.cube(key);
-      ours = {
-        wrapped: wrapCubeTexture(this.scene, texture, `reflection ${key}`),
+  /** The cube of ours in `pool`'s `slot`, made on first use with its wrapped view and its probe. */
+  private ourCube(pool: Pool, slot: number): OurProbe {
+    const slots = this.oursPools[pool];
+    // Grown to the slot, as Babylon's pools are by `probeAt`.
+    while (slots.length <= slot) {
+      const name = `${pool} ${slots.length}`;
+      const cube = this.bake.cube(name);
+      slots.push({
+        wrapped: wrapCubeTexture(this.scene, cube.texture, `reflection ${name}`),
         job: {
-          cube: texture,
+          cube,
           eye: new MathVector3(),
           near: 1,
           far: 10000,
           reach: CONFIG.graphics.reflection.radius,
           exclude: null,
         },
-      };
-      this.ours.set(key, ours);
+      });
     }
-    return ours;
+    return slots[slot];
   }
 
   /**
@@ -945,9 +965,8 @@ export class ReflectionSystem {
       // whose head costs more than the whole budget would never drain. On a
       // frame already committed to re-bakes it waits, which is the point.
       if (spent > 0 && spent + next.draws > budget) break;
-      const probe = next.probe!;
-      this.release(probe);
-      this.inFlight.push({ probe, draws: next.draws });
+      this.release(next.probe);
+      this.inFlight.push(next);
       spent += next.draws;
       taken++;
     }
@@ -1352,12 +1371,9 @@ function blocksPerCell(groups: readonly PaneGroup[], cap: number): number {
  */
 function cellKey(block: string, perCell: number): string {
   if (perCell === 1) return block;
-  const comma = block.indexOf(",");
-  if (comma < 0) return block;
-  const bx = Number(block.slice(0, comma));
-  const bz = Number(block.slice(comma + 1));
-  if (!Number.isFinite(bx) || !Number.isFinite(bz)) return block;
-  return `${Math.floor(bx / perCell)},${Math.floor(bz / perCell)}`;
+  const at = blockCoordsOf(block);
+  if (!at) return block;
+  return `${Math.floor(at[0] / perCell)},${Math.floor(at[1] / perCell)}`;
 }
 
 /** A box's top face. `rotX` is ignored: nothing that carries one is a room. */
@@ -1418,27 +1434,23 @@ function encloses(mesh: Mesh, blocks: ReadonlySet<string>): boolean {
  * cull is told them (`ProbeExclusion`): the cell they share at `perCell`, and
  * each of them a bit of it — `encloses`' question, asked of a block's
  * coordinates rather than its key. A key that is not a pair of integers (an
- * editor's, which bakes nothing) leaves nothing out. A cell past 32 blocks
- * (`perCell` 6 and up, which nothing in the tree reaches) leaves out all of
- * it, which is the cull's own reading of a bit it has not got.
+ * editor's, which bakes nothing) leaves nothing out. **A cell of more than
+ * 32 blocks (`perCell` 6 and up, which nothing in the tree reaches) leaves
+ * out the WHOLE cell**, served or not: every bit is set here, and the cull
+ * drops a block past the 32nd whatever the bits say (`probeExcludes`) — one
+ * rule, stated on both sides.
  */
 function exclusionOf(served: ReadonlySet<string>, perCell: number): ProbeExclusion | null {
   let cell = -1;
-  let cx = 0;
-  let cz = 0;
   let bits = 0;
   for (const key of served) {
-    const comma = key.indexOf(",");
-    const bx = Number(key.slice(0, comma));
-    const bz = Number(key.slice(comma + 1));
-    if (comma < 0 || !Number.isInteger(bx) || !Number.isInteger(bz)) return null;
-    if (cell < 0) {
-      cx = Math.floor(bx / perCell);
-      cz = Math.floor(bz / perCell);
-      cell = blockKey(cx, cz);
-    }
-    const local = bx - cx * perCell + (bz - cz * perCell) * perCell;
-    bits = (local >= 32 ? 0xffffffff : bits | (1 << local)) >>> 0;
+    const at = blockCoordsOf(key);
+    if (!at) return null;
+    const cx = Math.floor(at[0] / perCell);
+    const cz = Math.floor(at[1] / perCell);
+    cell = blockKey(cx, cz);
+    bits = (bits | (1 << (at[0] - cx * perCell + (at[1] - cz * perCell) * perCell))) >>> 0;
   }
-  return cell < 0 ? null : { cell, perCell, served: bits };
+  if (cell < 0) return null;
+  return { cell, perCell, served: perCell * perCell > 32 ? 0xffffffff : bits };
 }

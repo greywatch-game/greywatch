@@ -1575,11 +1575,13 @@ is one machine's:
   alpha over 128 is world, everything else is the sky the shader fills in.
   **That is Babylon's bake** (`?babylonworld`, or `g.reflections.path` reading
   `"babylon"`). **On our renderer's path those probes bake nothing** but the
-  default cube: the cubes are `g.reflections.ours.get("glazing <slot>")` (and
-  `"water <slot>"`), `.job.cube` a raw `GPUTexture` made without `COPY_SRC`, so
-  a readback patches `GPUDevice.prototype.createTexture` in an init script to
-  add it to every six-layer texture, then `copyTextureToBuffer` each face and
-  level off `g.renderer.device`. Three standing checks:
+  default cube: the cubes are `g.reflections.oursPools.glazing[slot]` (and
+  `.water[slot]`), `.job.cube.texture` a raw `GPUTexture` made with
+  `COPY_SRC`, so a readback is `copyTextureToBuffer` of each face and level off
+  `g.renderer.device` and nothing else — and so is Babylon's, to compare
+  (`probe.cubeTexture.getInternalTexture()._hardwareTexture
+  .underlyingResource`; Babylon makes a render target with `COPY_SRC`).
+  Three standing checks:
   - **Coverage says the enclosure rule fired.** Mean coverage over all six faces
     is 0.711 across the 40 probes as shipped. Put the enclosing meshes back
     (`probe.cubeTexture.renderList = allOpaque; probe.cubeTexture.render()`) and
@@ -1941,7 +1943,7 @@ is one machine's:
   parameter space in one page session with no rebuild. Two readings that mean
   something when the water looks wrong: `g.reflections.waterProbes[0].cubeTexture`
   answers `readPixels(face)` on Babylon's bake (on ours the cube is
-  `g.reflections.ours.get("water 0").job.cube`, read as the glazing section
+  `g.reflections.oursPools.water[0].job.cube.texture`, read as the glazing section
   says) — face 2 is the DOWN view and face 3 the sky, because
   a cube rendered into is stored mirrored about the horizon — and a water surface
   that comes back as one flat colour at every angle is almost always the cube's

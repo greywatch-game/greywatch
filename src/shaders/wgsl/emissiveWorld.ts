@@ -11,7 +11,8 @@
  * reason): it reads `uniforms.<name>`, `vertexInputs.<name>` and
  * `fragmentInputs.<name>` and writes `vertexOutputs.<name>`, and each side
  * declares those its own way — so the palette's pixel is one text, and the
- * probe's lamps are the frame's lamps by construction.
+ * emissive palette a probe's cube shows is the palette the frame shows by
+ * construction (its lit windows and lenses, never a point light).
  * Never: imports Babylon (`src/render/` imports this, and the build gate
  * walks it); declares a binding.
  * Contract: `docs/rendering.md`, "The paint palette" and "Hand-written WGSL".

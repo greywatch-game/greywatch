@@ -6,7 +6,9 @@
  * chain after them; Babylon's glazing and water sample a wrapped view of it.
  * Owns: `ProbeBake` — the cube pool (`cube`: `rgba8unorm`, six layers, a
  * full mip chain, never destroyed, as Babylon's probe pool is never
- * disposed), the face passes made with each cube and the one `depth32float`
+ * disposed; each handed out as a `ProbeCube`, which whoever asked for it
+ * indexes — `ReflectionSystem` does — and which a `ProbeJob` carries), the
+ * face passes made with each cube and the one `depth32float`
  * attachment they share, the bake's FRAME (its `FrameUniformBuffer`, the
  * staging slots each face's camera reaches it through, and its group-0 bind
  * group over the frame's textures), each face's cull inputs, the mip
@@ -14,8 +16,8 @@
  * world's probe VIEW (`ProbeWorld`, `WorldBlocks.probeView`) from the bake
  * being opened (`open`) to its draining (`close`); it HOLDS the world it
  * draws (`ProbeSource`, the map's `WorldBlocks` while every bake surface is
- * ours), which the handover owns; `ProbeJob`, `ProbeExclusion` and
- * `ProbeSource`.
+ * ours), which the handover owns; `ProbeCube`, `ProbeJob`, `ProbeExclusion`,
+ * `ProbeSource` and `ProbeWorld`.
  * Invariants: it DECIDES NOTHING — which probes there are, where each
  * stands, what it leaves out, how far it reaches, when it is released and
  * which path a map's bake takes are `ReflectionSystem`'s; a released probe
@@ -31,11 +33,16 @@
  * layer `f`, cleared to transparent black and depth 1 — culled at a slot of
  * its own (`PASS_PROBE`, the reach to a surface's sphere, the probe's blocks
  * left out), so its draws read its own survivors, and its frame is the
- * factory's bake frame (`fill`: the frame's values, the probe's eye, an
- * opaque alpha of 1 and the clouds' shadow held off) with the face's
- * view-projection, each face's camera reaching the one buffer through a
- * staging slot copied in the encoder ahead of its pass, never a second
- * `writeBuffer` to it; a probe's mips follow its sixth face; the view is
+ * factory's bake frame (`fill`, ONCE a recorded frame: the frame's values,
+ * an opaque alpha of 1 and the clouds' shadow held off) with the face's
+ * view-projection and its probe's eye, each face's camera reaching the one
+ * buffer through a staging slot copied in the encoder ahead of its pass,
+ * never a second `writeBuffer` to it; a probe's mips follow its sixth face;
+ * a cube can be COPIED from (`COPY_SRC`), so a readback needs no help
+ * (`VERIFYING.md`); a mips pipeline that FAILS latches the bake BROKEN for
+ * the session — no world is held from then on (`holds` false), so every
+ * map's bake is Babylon's — and a lost bake reports how many released
+ * probes it dropped (`onLost`); the view is
  * built when a bake is opened and destroyed when it drains, so a round
  * holds none; a cube is born zeroed by WebGPU — alpha 0, the sky a pane
  * shows before any probe has claimed it — and is never cleared but by its
@@ -70,10 +77,17 @@ export interface ProbeExclusion {
   readonly served: number;
 }
 
+/** A cube of the pool, as `cube` hands it out: its texture, and the six passes its faces are drawn with. */
+export interface ProbeCube {
+  /** What a reader is handed a wrapped view of. */
+  readonly texture: GPUTexture;
+  readonly faces: readonly GPURenderPassDescriptor[];
+}
+
 /** One probe as `ReflectionSystem` releases it: plain numbers and the cube it is baked into. */
 export interface ProbeJob {
   /** One of this bake's cubes (`cube`). */
-  readonly cube: GPUTexture;
+  readonly cube: ProbeCube;
   /** Where it stands. */
   readonly eye: Vector3;
   /** The camera's near and far planes, which Babylon's probe projected its faces with. */
@@ -123,21 +137,17 @@ const SLOT_BYTES = 256;
 /** Transparent black: alpha 0 is where the readers put sky. */
 const CLEAR: GPUColor = { r: 0, g: 0, b: 0, a: 0 };
 
-/** A cube of the pool, with the six passes its faces are drawn with. */
-interface Cube {
-  readonly texture: GPUTexture;
-  readonly faces: GPURenderPassDescriptor[];
-}
-
 export class ProbeBake {
   private readonly device: GPUDevice;
   private readonly mipCount: number;
-  private readonly cubes = new Map<string, Cube>();
-  private readonly byTexture = new Map<GPUTexture, Cube>();
+  /** Every cube made, for `dispose` alone: whoever asked for one indexes it. */
+  private readonly cubes: ProbeCube[] = [];
   private readonly depth: GPUTexture;
   private readonly depthView: GPUTextureView;
   private readonly mips: CubeMips;
   private mipsBuilt = false;
+  /** The mips' pipeline failed: no world is held again this session (`holds`). */
+  private broken = false;
 
   /** The bake's frame: its values, its buffer and its group 0. */
   private readonly frame: FrameUniforms = createFrameUniforms();
@@ -160,8 +170,8 @@ export class ProbeBake {
   private generation = 0;
   /** Released, not yet recorded, oldest first. */
   private readonly released: ProbeJob[] = [];
-  /** Told when the world handed over cannot draw, and the bake must be Babylon's. */
-  private lost: (() => void) | null = null;
+  /** Told when the world handed over cannot draw, and the bake must be Babylon's — with how many released probes were dropped. */
+  private lost: ((dropped: number) => void) | null = null;
   private readonly unhook: () => void;
 
   /** Scratch for a face's camera. */
@@ -176,8 +186,12 @@ export class ProbeBake {
     private readonly fill: (out: FrameUniforms, eye: Vector3) => void,
     /** A face's side, texels (`CONFIG.graphics.reflection.size`). */
     private readonly size: number,
-    /** The most probes one frame records (`CONFIG.graphics.reflection.probesPerFrame`). */
-    private readonly perFrame: number,
+    /**
+     * The most probes one frame records (`CONFIG.graphics.reflection
+     * .probesPerFrame`) — the one statement of the budget, which
+     * `ReflectionSystem` releases against.
+     */
+    readonly perFrame: number,
   ) {
     const device = renderer.device;
     this.device = device;
@@ -192,7 +206,10 @@ export class ProbeBake {
     this.mips = new CubeMips(device, renderer.pipelines, FRAME_TARGETS.colorFormats[0]);
     void this.mips.ready.then((ok) => {
       this.mipsBuilt = ok;
-      if (!ok) this.lose();
+      if (ok) return;
+      // No cube of ours can be finished: the bake is Babylon's for the session.
+      this.broken = true;
+      this.lose();
     });
 
     this.frameBuffer = new FrameUniformBuffer(device, "probe bake");
@@ -231,7 +248,7 @@ export class ProbeBake {
     return this.faceCulls.length;
   }
 
-  /** Whether a world is held: the map's bake may be ours. */
+  /** Whether a world is held — never once the bake is broken: the map's bake may be ours. */
   get holds(): boolean {
     return this.source !== null;
   }
@@ -251,47 +268,43 @@ export class ProbeBake {
   }
 
   /** Who is told when the world handed over cannot draw, and the bake must be Babylon's. */
-  onLost(lost: () => void): void {
+  onLost(lost: (dropped: number) => void): void {
     this.lost = lost;
   }
 
   /**
-   * The pool's cube under `key`, made on the first ask and kept for the
-   * process: what a probe is baked into and a reader is handed a wrapped
-   * view of.
+   * A new cube of the pool, kept for the process: what a probe is baked into
+   * and a reader is handed a wrapped view of. Whoever asks indexes it.
    */
-  cube(key: string): GPUTexture {
-    let cube = this.cubes.get(key);
-    if (!cube) {
-      const texture = this.device.createTexture({
-        label: `probe bake: ${key}`,
-        size: [this.size, this.size, FACE_LOOKS.length],
-        mipLevelCount: this.mipCount,
-        format: FRAME_TARGETS.colorFormats[0],
-        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
-      });
-      const faces = FACE_LOOKS.map((_, f) => ({
-        label: `probe bake: ${key} face ${f}`,
-        colorAttachments: [
-          {
-            view: texture.createView({ dimension: "2d", baseMipLevel: 0, mipLevelCount: 1, baseArrayLayer: f, arrayLayerCount: 1 }),
-            loadOp: "clear" as const,
-            storeOp: "store" as const,
-            clearValue: CLEAR,
-          },
-        ],
-        depthStencilAttachment: {
-          view: this.depthView,
-          depthLoadOp: "clear" as const,
-          depthStoreOp: "discard" as const,
-          depthClearValue: 1,
+  cube(label: string): ProbeCube {
+    const texture = this.device.createTexture({
+      label: `probe bake: ${label}`,
+      size: [this.size, this.size, FACE_LOOKS.length],
+      mipLevelCount: this.mipCount,
+      format: FRAME_TARGETS.colorFormats[0],
+      // COPY_SRC so a readback reads it as it lies (`VERIFYING.md`).
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC,
+    });
+    const faces = FACE_LOOKS.map((_, f) => ({
+      label: `probe bake: ${label} face ${f}`,
+      colorAttachments: [
+        {
+          view: texture.createView({ dimension: "2d", baseMipLevel: 0, mipLevelCount: 1, baseArrayLayer: f, arrayLayerCount: 1 }),
+          loadOp: "clear" as const,
+          storeOp: "store" as const,
+          clearValue: CLEAR,
         },
-      }));
-      cube = { texture, faces };
-      this.cubes.set(key, cube);
-      this.byTexture.set(texture, cube);
-    }
-    return cube.texture;
+      ],
+      depthStencilAttachment: {
+        view: this.depthView,
+        depthLoadOp: "clear" as const,
+        depthStoreOp: "discard" as const,
+        depthClearValue: 1,
+      },
+    }));
+    const cube: ProbeCube = { texture, faces };
+    this.cubes.push(cube);
+    return cube;
   }
 
   /**
@@ -302,7 +315,7 @@ export class ProbeBake {
   setWorld(source: ProbeSource | null): void {
     this.dropView();
     this.released.length = 0;
-    this.source = source;
+    this.source = this.broken ? null : source;
   }
 
   /** A bake is queued: the view of the world's culls is built for it, if it is not standing. */
@@ -350,6 +363,7 @@ export class ProbeBake {
   lose(): void {
     if (!this.source && !this.view) return;
     this.source = null;
+    const dropped = this.released.length;
     this.released.length = 0;
     const view = this.view;
     this.view = null;
@@ -359,19 +373,18 @@ export class ProbeBake {
     // submitted, still hold the view's buffers.
     queueMicrotask(() => {
       view?.dispose();
-      this.lost?.();
+      this.lost?.(dropped);
     });
   }
 
   dispose(): void {
     this.unhook();
     this.setWorld(null);
-    for (const cube of this.cubes.values()) {
+    for (const cube of this.cubes) {
       this.mips.forget(cube.texture);
       cube.texture.destroy();
     }
-    this.cubes.clear();
-    this.byTexture.clear();
+    this.cubes.length = 0;
     this.depth.destroy();
     this.frameBuffer.destroy();
     this.staging.destroy();
@@ -404,24 +417,30 @@ export class ProbeBake {
     this.frameBindings.refresh(this.renderer.host, this.renderer.textures);
     if (!view.drawable(this.group0)) return;
     const probes = Math.min(released.length, this.perFrame);
-    // The frame every face shares, once; each face's camera over it below.
+    // The frame every face shares, once; each face's camera — its
+    // view-projection and its probe's eye — over it below.
     this.fill(frame, released[0].eye);
     this.frameBuffer.write(frame);
     const values = this.slotValues;
+    const alpha = frame.opaqueAlpha[0];
     const ramp = rampReach(frame);
     const rig = rigReach(frame);
     let slot = 0;
     for (let p = 0; p < probes; p++) {
       const job = released[p];
-      this.fill(frame, job.eye);
+      const eye = job.eye;
       for (let f = 0; f < FACE_LOOKS.length; f++, slot++) {
         const inputs = this.faceCulls[slot];
         this.faceCamera(job, f, inputs.viewProjection);
         const o = (slot * SLOT_BYTES) / 4;
         values.set(inputs.viewProjection, o);
-        values.set(frame.camPos, o + 16);
-        values[o + 19] = frame.opaqueAlpha[0];
-        inputs.eye.set(frame.camPos);
+        values[o + 16] = eye.x;
+        values[o + 17] = eye.y;
+        values[o + 18] = eye.z;
+        values[o + 19] = alpha;
+        inputs.eye[0] = eye.x;
+        inputs.eye[1] = eye.y;
+        inputs.eye[2] = eye.z;
         inputs.reach2 = job.reach * job.reach;
         inputs.rampReach = ramp;
         inputs.rigReach = rig;
@@ -434,7 +453,7 @@ export class ProbeBake {
     this.device.queue.writeBuffer(this.staging, 0, values, 0, (slot * SLOT_BYTES) / 4);
     slot = 0;
     for (let p = 0; p < probes; p++) {
-      const cube = this.byTexture.get(released[p].cube)!;
+      const cube = released[p].cube;
       for (let f = 0; f < FACE_LOOKS.length; f++, slot++) {
         encoder.copyBufferToBuffer(this.staging, slot * SLOT_BYTES, this.frameBuffer.buffer, 0, this.cameraBytes);
         view.cull(this.faceCulls[slot], encoder, slot);

@@ -2199,12 +2199,13 @@ plain draw and, with scatter, its one indirect draw, a pass.
   - What X4.1 leaves to do for the atlas is where a body's boxes come from:
     the draw is ours already.
 
-**X3.6c landed** (HASH; 2026-10-24).
+**X3.6c landed** (9a3cdbb, the post-commit review's fixes after it;
+2026-10-24).
 - **What it is.** Each probe's cube is a texture our renderer OWNS
   (`render/ProbeBake.ts`: `rgba8unorm`, six layers, a full mip chain, pooled
   for the process as Babylon's probes are) and draws whenever the handover
   holds every surface the bake draws; Babylon's glazing and water sample a
-  wrapped cube view (`wrapCubeTexture`, `core/shadowWindow.ts`, its sampler
+  wrapped cube view (`wrapCubeTexture`, `core/wrappedTextures.ts`, its sampler
   derived from `INVCUBIC_MODE` as the probe cube's was). `ReflectionSystem`
   still decides everything — the probes, where each stands, its box, what it
   leaves out, the queue, the gate, `bakePending` — and picks the path per
@@ -2313,6 +2314,42 @@ plain draw and, with scatter, its one indirect draw, a pass.
     Coldharbour, Greyfen and Hollowmere matches its record exactly. These ran
     before the draw-order fix, which moves the order inside the probe view
     and nothing else.
+- **What the post-commit review found** (two independent readers over
+  9a3cdbb, one for correctness and one for shape and contracts; fixed after
+  it). No defect on the shipped path. Four on the edges: a mips pipeline
+  that failed at construction left the bake on our path with no fallback,
+  every install waiting out the card on cubes never baked (`ProbeBake` now
+  latches broken for the session and every map's bake is Babylon's); a loss
+  in the one frame between the last probe recorded and the view closing
+  threw a finished bake away and re-queued it on Babylon's side (a loss now
+  re-queues only what is still queued or was dropped unrecorded); past 32
+  blocks a cell the CPU and the cull disagreed on what a probe leaves out
+  (both now leave out the whole cell, which nothing in the tree reaches);
+  and the probe view's memory, unmeasured until then — 9.0 MiB on
+  Hollowmere, 9.6 Sarab, 12.1 Greyfen and Harrowmead, 15.3 Coldharbour, 16.6
+  Kurenai, 27.6 Cinderhaven, nearly all of it the view's own index buffer,
+  X3.6a's shadow view's order, and held only while a bake drains. On the
+  shape: `FILES.md` not rewritten for six modules whose contracts moved
+  (rule 7); CLAUDE.md's rendering section grown past its cap (cut back by
+  moving rules only a renderer author can break to `docs/rendering.md`);
+  the bake's frame filled once a probe and its shadows twice (once a
+  recorded frame now); Babylon's render lists built on our path for a DEV
+  log; the block key parsed in three places and computed in a fourth (one
+  parse beside `blockKey`; `blockOf` and `blockCell` from `merge.ts`); the
+  two paths sharing one queue of nullable entries (ours has its own
+  `ProbeJob` queue); the cube pool indexed twice (`ProbeCube`); the
+  per-frame budget read in two places; `probeCount` kept by hand; the bind
+  groups assembled three ways in `WorldBlocks` (`groupsFor`); stale names
+  (the "casters" layer is "held"); the wrappers moved to
+  `core/wrappedTextures.ts`; the cubes made `COPY_SRC`, so a readback needs
+  no patch. Re-checked after the fixes: the cube readback on Coldharbour,
+  Harrowmead and Sarab equal to its numbers above, the probe-eye check, the
+  paths on Coldharbour and Hollowmere, both edge cases forced in a page,
+  and after them the bank on seven maps byte-identical to 9a3cdbb's frames
+  (61 of 61), the gate clean on seven, `merge:hash` identical to the
+  parent's and parity passing. A third reader over the fixes found the
+  "added after the map was cut" guard narrowed to the add that makes a
+  group (now asked of every add again) and three stale lines.
 - **Owed onward.**
   - The fire, when it moves (X4.4), owes the bake a program, and
     `FINDINGS.md` 51's near case is still open.

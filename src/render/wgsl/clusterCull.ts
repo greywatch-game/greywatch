@@ -7,7 +7,10 @@
  * by — one copy, so both keep one order the one way; the byte layouts they
  * read (`CULL_UNIFORM_BYTES`, `CLUSTER_WORDS`, `RANGE_WORDS`,
  * `BLOCK_WORDS`) and the workgroup sizes; `writeCluster`, the cluster record
- * as both culls' hosts write it, beside the one declaration it writes.
+ * as both culls' hosts write it, beside the one declaration it writes; the
+ * pass bits (`PASS_PROBE` among them) and the probe view's flags; `blockKey`,
+ * a block's coordinates as the cull reads them, and the ONE parse of a
+ * `"bx,bz"` key into them (`blockCoordsOf`, `blockKeyOf`).
  * Invariants: the surviving clusters of a group are written in one ORDER
  * that is a pure function of the frame's inputs — by near-first band, then
  * by cluster index — through a SCAN, never an atomic append, so the same eye
@@ -96,6 +99,25 @@ export function blockKey(bx: number, bz: number): number {
 export const NO_BLOCK = 0;
 
 /**
+ * A block merge's key ("bx,bz", `world/merge.ts`' `blockOf`) as its grid
+ * coordinates — the ONE parse of it — or null for a key that is not a pair
+ * of integers (an editor build's, which keys per placement).
+ */
+export function blockCoordsOf(block: string): readonly [number, number] | null {
+  const comma = block.indexOf(",");
+  if (comma < 0) return null;
+  const bx = Number(block.slice(0, comma));
+  const bz = Number(block.slice(comma + 1));
+  return Number.isInteger(bx) && Number.isInteger(bz) ? [bx, bz] : null;
+}
+
+/** A block merge's key as the culls carry it (`blockKey`); `NO_BLOCK` for none, or one that is not a pair. */
+export function blockKeyOf(block: string | null): number {
+  const at = block === null ? null : blockCoordsOf(block);
+  return at ? blockKey(at[0], at[1]) : NO_BLOCK;
+}
+
+/**
  * The uniform block (`CULL_UNIFORM_BYTES`) as ten `vec4u`s of words, and the
  * cluster and block records as whole `vec4`s — the one declaration of each,
  * shared with the instance cull (`wgsl/instanceCull.ts`) and `?cullcheck`'s
@@ -144,7 +166,10 @@ fn floorDiv(a: i32, b: i32) -> i32 {
 /**
  * Whether a probe view leaves out what is filed under block \`key\`
  * (\`blockKey\`): one of the blocks the probe SERVES — its cell's, and of
- * those the ones word 9 w names — and never anything of no block.
+ * those the ones word 9 w names — and never anything of no block. A cell of
+ * more than 32 blocks is left out WHOLE: a block past the 32nd has no bit and
+ * is dropped, and the host sets all 32 for such a cell
+ * (\`ReflectionSystem\`'s \`exclusionOf\`) — one rule on both sides.
  */
 fn probeExcludes(key: u32) -> bool {
   let y = cull[9].y;

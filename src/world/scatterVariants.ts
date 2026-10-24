@@ -40,7 +40,7 @@ import { CONFIG } from "../config";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { ScatterSpec } from "./layout";
 import { Matrix, Quaternion, Vector3 } from "../math";
-import { mergeByMaterial, type Palette } from "./merge";
+import { blockCell, mergeByMaterial, type Palette } from "./merge";
 import { flattenParts, Part } from "./parts";
 import { mapleCrownOf } from "./props";
 import { mulberry32 } from "./rng";
@@ -233,7 +233,7 @@ export class ScatterVariants {
         matrices: Float32Array.from(w.matrices),
         scales: Float32Array.from(w.scales),
         // As `BlockMerge.add` keys the region the copy was filed under.
-        blocks: Int32Array.from(w.origins, (o) => Math.floor(o / blockSize)),
+        blocks: Int32Array.from(w.origins, (o) => blockCell(o, blockSize)),
       });
     }
     return { sets };

@@ -600,9 +600,12 @@ src/
                         #   be two windows off one focus. One instance each,
                         #   never shared, since the snap is in ITS map's texels.
                         #   Also the 1x1 LIT texture a shadow map switched OFF
-                        #   is bound as (a declared sampler must be bound), and
-                        #   Babylon's wrapped view of a shadow texture OUR
-                        #   renderer owns (wrapShadowTexture)
+                        #   is bound as (a declared sampler must be bound)
+    wrappedTextures.ts  # Babylon's wrapped VIEWS of textures OUR renderer
+                        #   owns: a shadow texture's (wrapShadowTexture, for
+                        #   ShadowSystem and LocalShadows) and a probe's cube
+                        #   (wrapCubeTexture, for ReflectionSystem); disposing
+                        #   one destroys the texture it wraps
     proxyBoxes.ts       # What a soldier and a hull ARE to a shadow: boxes,
                         #   packed as thin-instance matrices. RAGDOLL_BONES and
                         #   the collider, shared by BodyShadows and LocalShadows
@@ -1232,13 +1235,17 @@ src/
                         #   strike), the sky and the volume's sky fill; onStrike
                         #   is the thunder
     ReflectionSystem.ts # The world as glass sees it: one cube per GLAZED
-                        #   BLOCK, baked from the map's own geometry per
-                        #   install with whatever encloses the probe left out,
-                        #   and the box the shader parallax-corrects the
-                        #   mirrored ray against. The only render target here
-                        #   besides the shadow map. The bake is spent a budget
-                        #   of draws per FRAME, under the loading card, and
-                        #   each face draws only what that face can SEE
+                        #   BLOCK (one per water body too), baked from the map's
+                        #   own geometry per install with whatever encloses the
+                        #   probe left out, and the box the shader parallax-
+                        #   corrects the mirrored ray against. Decides every
+                        #   probe and picks the PATH per install: our renderer's
+                        #   bake (render/ProbeBake, its own queue, a budget of
+                        #   PROBES a frame) whenever the handover holds every
+                        #   mesh a probe draws, Babylon's ReflectionProbes (a
+                        #   budget of DRAWS a frame, each face drawing only what
+                        #   it can SEE) otherwise or after a loss before the
+                        #   drain. Either is spent under the loading card
     Atmosphere.ts       # Ash field on the GPU, simulated by a compute shader.
                         #   No CPU fallback — WebGPU is a hard requirement and
                         #   guarantees it
@@ -1276,23 +1283,29 @@ src/
                         #   candidates, cut at install against their cells, a
                         #   failed compile's surfaces handed back to Babylon as
                         #   it lands, the whole map on a refused main pass;
-                        #   their meshes stay for the probes. Every CASTER
-                        #   held too (X3.6a, X3.6b) — a taken one in its
-                        #   group, an emissive one for the shadows alone
-                        #   (WorldBlocks.addCaster) — and handed to the
-                        #   world's maps and the lamps' atlas together, or
-                        #   the map's shadows stay Babylon's; one handed back
-                        #   loses them (WorldShadows.lose, LampAtlas.lose). The
-                        #   scatter's field (BuildOptions.onScatter) added as
-                        #   instances at install, its pieces cut out of the
-                        #   taken blocks (X3.4b). Reads no
-                        #   node per frame (a DEV check that none is switched,
-                        #   hidden or faded)
+                        #   their meshes stay for Babylon's other passes and
+                        #   its fallbacks. Every CASTER held too (X3.6a,
+                        #   X3.6b) — a taken one in its group, an emissive one
+                        #   HELD (WorldBlocks.addCaster) — and handed to the
+                        #   world's maps and the lamps' atlas together, or the
+                        #   map's shadows stay Babylon's; one handed back loses
+                        #   them (WorldShadows.lose, LampAtlas.lose). The
+                        #   reflection bake likewise (X3.6c): PASS_PROBE on
+                        #   every taken surface, the palette held for it with
+                        #   its slots, fires left out; probeHolds answers
+                        #   ReflectionSystem, a loss goes to ProbeBake.lose.
+                        #   The scatter's field (BuildOptions.onScatter) added
+                        #   as instances at install, its pieces cut out of the
+                        #   taken blocks (X3.4b). Reads no node per frame (a
+                        #   DEV check that none is switched, hidden or faded)
     WaterSystem.ts      # Water surfaces from map WaterRects; bakes their bed depth
                         #   and stands the one wave GRID under the eye (`follow`,
                         #   pushed from `tick` in every state). `setWash` is the
                         #   rotor sites, pushed from `tick` and not from the
-                        #   camera tail — see it for why
+                        #   camera tail — see it for why. Hands its mirrors'
+                        #   sites to the reflection bake and a REBIND for a
+                        #   body's cube, which a bake lost before it drained
+                        #   uses to point it at Babylon's
     GrassSystem.ts      # The grass field stood around the EYE: patches of
                         #   blade seeds chosen per frame in view (`follow`,
                         #   pushed from `tick` in every state), each drawn from
@@ -1382,8 +1395,11 @@ src/
                         #   build off streams of its own, in the prop's own
                         #   frame; which one a placement wears (a hash, never
                         #   a draw); a placement's parts cloned off it, and its
-                        #   matrix recorded; the FIELD our renderer draws the
-                        #   scatter from, a set of instances per worn variant
+                        #   matrix and its region's origin recorded; the FIELD
+                        #   our renderer draws the scatter from, a set of
+                        #   instances per worn variant, each placement with the
+                        #   block its copy is merged into (ScatterSet.blocks,
+                        #   its REGION's, on merge.ts' lattice)
     rng.ts              # mulberry32 — the seeded PRNG world-building uses,
                         #   and the map generators' too: Node loads it by type
                         #   stripping through scripts/lib/mapgen.mjs, the
@@ -1399,10 +1415,12 @@ src/
                         #   Types only; MapBuilder re-exports every one
     merge.ts            # The visual merges, on WorldSurfaces: mergeByMaterial,
                         #   then BlockMerge and PaneBlocks per map block (one
-                        #   key, one metadata.block), tag; the
-                        #   palette slot through CelShader's writePaletteIndex;
-                        #   mergeSurfaces, the one 2+ merge, carrying the piece
-                        #   ranges. Nothing in it touches the device
+                        #   key, one metadata.block — blockOf, on the lattice
+                        #   blockCell states, which the scatter's field files
+                        #   placements under too), tag; the palette slot through
+                        #   CelShader's writePaletteIndex; mergeSurfaces, the one
+                        #   2+ merge, carrying the piece ranges. Nothing in it
+                        #   touches the device
     blocks.ts           # BLOCK_SIZE, and nothing else: the merge block of a map
                         #   that states none, and the fixed LOCALITY unit of the
                         #   physics buckets and the pane index. Imports
@@ -2236,8 +2254,11 @@ src/
                         #   (wgsl/celVertex.ts, wgsl/celSurface.ts). Every
                         #   per-material value is set through own(), which
                         #   keeps it in the material's RECIPE (celRecipe) for
-                        #   src/render/; fillFrame and fillFrameTextures are
-                        #   the frame's pulls. writePaletteIndex stamps
+                        #   src/render/, and the palette material's recipe is
+                        #   emissiveRecipe; fillFrame and fillFrameTextures are
+                        #   the frame's pulls, fillBakeFrame a reflection
+                        #   bake's frame (the clouds held off, alpha 1, the
+                        #   probe's eye). writePaletteIndex stamps
                         #   a part's palette slot into its buffer's uv2 for
                         #   both palette merges (the map's, the soldier's)
     ShadowBindings.ts   # Every shadow a lit material samples (world, bodies,
@@ -2371,10 +2392,12 @@ src/
                         #   before its alpha-tested meshes, where its opaque
                         #   and alpha-tested meshes end, and after it — and the
                         #   FramePrepares run as it begins (a compute cull),
-                        #   recorded into the host's prepareEncoder, never
-                        #   submitted, and timed under ?gpu (its PassTimer,
-                        #   gpu.cull); refuses to draw if the pass is not
-                        #   FRAME_TARGETS, and tells onRefused listeners
+                        #   the LATE ones after the rest (a probe's bake, which
+                        #   samples what the others draw), recorded into the
+                        #   host's prepareEncoder, never submitted, and timed
+                        #   under ?gpu (its PassTimer, gpu.cull); refuses to
+                        #   draw if the pass is not FRAME_TARGETS, and tells
+                        #   onRefused listeners
     targets.ts          # FRAME_TARGETS, stated once: rgba8unorm, depth32float,
                         #   1 sample, flipY (CelInk's target, not the canvas);
                         #   SHADOW_TARGETS, a world shadow map's: r16float,
@@ -2446,13 +2469,16 @@ src/
                         #   generateCubeMipmaps filter for filter; a pass and
                         #   bind group per face per level, kept with the cube
     ProbeBake.ts        # The reflection bake as OURS (X3.6c): the cube pool
-                        #   (never destroyed), each released probe's six faces
-                        #   — Babylon's looks and projection, the probe's eye
-                        #   PASSED in the bake's own frame, a slot each in a
+                        #   (never destroyed, COPY_SRC; each a ProbeCube that
+                        #   ReflectionSystem indexes), each released probe's six
+                        #   faces — Babylon's looks and projection, the probe's
+                        #   eye PASSED in the bake's own frame, a slot each in a
                         #   probe VIEW of the main pass's culls (PASS_PROBE,
                         #   sphere reach, own blocks left out) — then its mips,
-                        #   recorded late in prepareEncoder; decides nothing;
-                        #   lose() hands the bake back to Babylon
+                        #   recorded late in prepareEncoder, perFrame a frame;
+                        #   decides nothing; lose() hands the bake back to
+                        #   Babylon, and a failed mips pipeline latches it
+                        #   broken for the session
     WorldShadows.ts     # The world's four directional maps as OUR textures
                         #   (far, near, foliage, flash): made cleared to lit,
                         #   drawn when ShadowSystem asks, recorded ahead of
@@ -2478,14 +2504,15 @@ src/
                         #   cut out of the blocks; what it will never draw (a
                         #   failed pipeline, a part it cannot draw, past the
                         #   list's budget) goes to onFailed as it lands, a
-                        #   group whole; stop() for good. The casters held
-                        #   for the shadow maps alone (addCaster) are one
-                        #   group and the emissive palette held for the
-                        #   probes' bake (addEmissive) one a material, cut
-                        #   last and drawn in no main pass; each surface and
-                        #   part carries its passes (and its block), finish
-                        #   builds the map's WorldDepth when asked, and
-                        #   probeView a probe bake's view of the culls
+                        #   group whole; stop() for good. The HELD layer —
+                        #   the casters for the shadow maps alone (addCaster)
+                        #   and the emissive palette for the probes' bake
+                        #   (addEmissive), a group a material — cut last and
+                        #   drawn in no main pass; each surface and part
+                        #   carries its passes (and its block), finish builds
+                        #   the map's WorldDepth when asked, and probeView a
+                        #   probe bake's view of the culls, drawn by the same
+                        #   code (DrawView, groupsFor)
     clusters.ts         # cutClusters: a surface cut into short runs of
                         #   one piece's triangles, each with its box and how
                         #   the wind can move it (BABYLON_EXIT.md X3.3b) — an
@@ -2501,17 +2528,19 @@ src/
                         #   pass is dispatched indirect over a work list of the
                         #   survivors, never over every record
     ClusterCull.ts      # The GPU cull, a VIEW of a map's tables (the main
-                        #   pass's uploads them, a shadow map's reads them),
-                        #   recorded into the host's encoder ahead of the
-                        #   draws (inside gpu.frame; pipelines from
+                        #   pass's uploads them; a shadow map's and a probe
+                        #   bake's read them), recorded into the host's encoder
+                        #   ahead of the draws (inside gpu.frame; pipelines from
                         #   PipelineCache) — pass mask, reach, size gate,
-                        #   frustum, as CullInputs; survivors
-                        #   scanned NEAR-FIRST (by surface) into the index
-                        #   buffer, cleared first so the rest of each group's
-                        #   range is triangles of no area (never indirect).
-                        #   ReachGate, BlockBox, CullMode and CullDiagnostics
-                        #   (?nocull, ?nofrustum, ?cullcheck); CullUniform, a
-                        #   slot a dispatch in one submit
+                        #   frustum, and a probe view's two tests (the reach to
+                        #   a surface's sphere, its own blocks left out by the
+                        #   blockKey a cluster carries), as CullInputs;
+                        #   survivors scanned NEAR-FIRST (by surface) into the
+                        #   index buffer, cleared first so the rest of each
+                        #   group's range is triangles of no area (never
+                        #   indirect). ReachGate, BlockBox, CullMode and
+                        #   CullDiagnostics (?nocull, ?nofrustum, ?cullcheck);
+                        #   CullUniform, a slot a dispatch in one submit
     PassTimer.ts        # ?gpu's timer of our compute passes (gpu.cull):
                         #   timestamp writes on each cull's pass, summed, one
                         #   reading in flight, mapped the frame after its
@@ -2543,7 +2572,9 @@ src/
                         #   CULL_DECLARATIONS, the uniform as words and the
                         #   records as whole vec4s, both culls' and the probe's;
                         #   writeCluster, the cluster record as both hosts
-                        #   write it
+                        #   write it; the pass bits; blockKey and the ONE
+                        #   parse of a "bx,bz" key (blockCoordsOf,
+                        #   blockKeyOf) the probe view's exclusion reads
       instanceCull.ts   # The instance cull's WGSL — cullInstances,
                         #   cullRecords, prefix, expand — and the record
                         #   layouts InstanceCull uploads

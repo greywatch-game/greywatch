@@ -5,7 +5,7 @@
  * `GlowPass` draws their bloom with.
  * Owns: Babylon's declarations of both WGSL stages (their bodies are
  * `wgsl/emissiveWorld.ts`'s, which a probe's bake on our renderer draws too)
- * and `EmissiveWorldMaterial`; re-exports `MAX_EMISSIVE_PALETTE`.
+ * and `EmissiveWorldMaterial` (`MAX_EMISSIVE_PALETTE` is the bodies' module's).
  * Is fed the fog and the palette by `CelMaterialFactory`, which is the only
  * thing that makes one (`getEmissiveWorld`), and the palette itself is
  * discovered by `MapBuilder`'s block merge.
@@ -75,8 +75,6 @@ import {
 } from "@babylonjs/core";
 import type { SelfMasking } from "./GlowPass";
 import { EMISSIVE_WORLD_SURFACE, EMISSIVE_WORLD_VERTEX, MAX_EMISSIVE_PALETTE } from "./wgsl/emissiveWorld";
-
-export { MAX_EMISSIVE_PALETTE };
 
 // The bodies are `wgsl/emissiveWorld.ts`'s, which our renderer assembles too
 // (a probe's bake, `render/emissiveWorld.ts`): this file holds Babylon's

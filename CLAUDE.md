@@ -513,7 +513,8 @@ as a phone.
 **Every shader in the tree is hand-written WGSL** (`shaderLanguage` is
 load-bearing; the default is GLSL), and **a sampler a material DECLARES must be
 BOUND, used or not**, or the draw is silently lost. **A shared body declares
-NOTHING** (`wgsl/chunks.ts`): `src/render/` includes it too, so both sides declare.
+NOTHING** (`wgsl/chunks.ts`): `src/render/` includes it too, so both sides
+declare.
 
 **Every cel material is FROZEN, and `CelMaterialFactory.remember` is the one
 door into the cache.** **What breaks it is a mesh that GAINS or LOSES a vertex
@@ -538,22 +539,19 @@ texel-snapped focus MOVES, so **nothing that ANIMATES may be registered with
 its collider box**, so moving either moves a shadow, and **the local player
 casts nothing**. **Where a window STANDS is `core/shadowWindow.ts`.** **The
 world's map is two CASCADES of one caster set and records BACK faces**, so
-**every caster must be a CLOSED shape**. **The world's four maps (both
-cascades, the foliage's and the lightning's) are OUR renderer's whenever the
-handover holds EVERY caster** (`render/WorldShadows.ts`; Babylon's readers
-sample a wrapped view), and `ShadowSystem`'s generators otherwise — the
-editor, `?babylonworld`, a caster lost mid-map — so **a new world caster must
-be one the handover can hold (block-merged, at identity, never
-`updatable`) or the whole map's shadows go back to Babylon** — BLENDED OR
-NOT, since the lamps' atlas casts every surface not `noShadowCaster`.
+**every caster must be a CLOSED shape**. **The world's four maps (both cascades,
+the foliage's and the lightning's) are OUR renderer's whenever the handover
+holds EVERY caster** (`render/WorldShadows.ts`), `ShadowSystem`'s generators
+otherwise, so **a new world caster must be one the handover can hold
+(block-merged, at identity, never `updatable`) or the whole map's shadows go
+back to Babylon** — BLENDED OR NOT, since the lamps' atlas casts every surface
+not `noShadowCaster`.
 
 **THE LAMPS CAST INTO ONE ATLAS** (`systems/LocalShadows.ts`), **a light casts
 by what it SAYS** (`PointLightData.shadow`), and the bumped ground variant is at
 **16 of WebGPU's 16 sampled textures per stage** — a new texture owes a PACKING.
-**The atlas changes hands WITH the world's maps**: OUR renderer's
-(`render/LampAtlas.ts`, every pass of it) on the same handover of the same
-casters, `LocalShadows`' render target otherwise, and **`LocalShadows` decides
-everything either side draws** — which lights, which tiles, which faces bake.
+**The atlas changes hands WITH the world's maps** (`render/LampAtlas.ts`), and
+**`LocalShadows` decides everything either side draws**.
 
 **Nothing drawn outside the cel shader gets fog for free, and everything that
 draws outside it owes the same fade** `CelMaterialFactory.setEnvironment`
@@ -586,20 +584,19 @@ alpha-blended draw accumulates into it (`ALPHA_COMBINE`), and `CelInk` scales
 its edge by `1 - a`. **A REFLECTION PROBE inverts it** (`opaqueAlpha` is 1 for a
 bake), so **a shader that hardcodes either value breaks one of the two passes
 silently**. **The EMISSIVE palette is the one deliberate exception**
-(`shaders/wgsl/emissiveWorld.ts` hardcodes **1** in both passes) — do not "fix" it onto
-`opaqueAlpha`. **The sky's CLOUDS write the depth of a point 7 km out**, so
-every surface must be nearer; they draw on group 0's ALPHA-TEST list, after our
-blocks and floor. **Nothing on the floor writing NO depth is OPAQUE**.
+(`shaders/wgsl/emissiveWorld.ts` hardcodes **1** in both passes) — do not "fix"
+it onto `opaqueAlpha`. **The sky's CLOUDS write the depth of a point 7 km out**,
+so every surface must be nearer. **Nothing on the floor writing NO depth is
+OPAQUE**.
 
 **The world is OPAQUE with exactly one exception, and it is glazing.** Glass you
 can see THROUGH is `getGlass` over a cube `ReflectionSystem` bakes **one per
-GLAZED BLOCK** — by OUR renderer (`render/ProbeBake.ts`, read through a
-wrapped cube) whenever the handover holds every surface it draws, so **a new
-world surface our side cannot draw sends the map's whole BAKE back to
-Babylon's `ReflectionProbe`s** (a fire is left out, `FINDINGS.md` 51). Glass
-you cannot is `Build.pane({ backed })`, which writes DEPTH — so **`backed` is
-a claim about the WORLD that nothing throws over**. **No pane
-of either kind is a shadow caster**, and see-through glazing gets no ink.
+GLAZED BLOCK** — by OUR renderer (`render/ProbeBake.ts`) whenever the handover
+holds every surface it draws, so **a new world surface our side cannot draw
+sends the map's whole BAKE back to Babylon's `ReflectionProbe`s**. Glass you
+cannot is `Build.pane({ backed })`, which writes DEPTH — so **`backed` is a
+claim about the WORLD that nothing throws over**. **No pane of either kind is a
+shadow caster**, and see-through glazing gets no ink.
 
 **The frame WALKS the scene, and the scene is the map.** `WorldCulling`
 **replaces `scene.getActiveMeshCandidates` and writes nothing onto any mesh**:
@@ -607,51 +604,37 @@ it never disables, never hides, never unpickles. **A collider is never a
 candidate, and nor is a BLOCK or the LANDFORM our renderer TAKES**
 (`BlockHandover`; the BUILD marks `WorldSurface.landform`), drawn in the MAIN
 pass by `src/render/` — **blocks, then landform, before the alpha-test list** —
-their Babylon meshes kept for a pass handed BACK (the world's shadow maps,
-the lamps' atlas and the reflection bake are our side's too, while it holds
-what each draws), and **a taken mesh is never
-switched off, hidden or faded after its build** — ours reads no node and would
-still draw it (a DEV check says so). **The SCATTER is drawn twice over and the
-two must agree**: our main pass draws it as INSTANCES of its variants, its
-colour baked once per kind, and cuts its pieces out of the blocks it takes,
-while Babylon's merged copy stays in those blocks for any pass handed back to
-Babylon (`BuildOptions.onScatter`) — and **a scatter index names a survivor's entry and
-a corner in 31 bits** (`render/scatterList.ts`), so a map whose scatter
-records times a cluster's most indices (`listStride`) pass 2^31 hands every recipe
-that draws scatter back to Babylon whole, blocks and all, as does a recipe
-whose single scatter VARIANT part passes 65,536 vertices, its source indices
-being 16 bits (`SOURCE_VERTICES`).
-**Any other mesh carrying `metadata.block` is one
-only while the camera is inside the map's `fogEnd`**, **a body's RIG only while
-the root the roster switches is enabled**, and **everything else is ELIGIBLE**.
-**A BODY is measured ONCE, off its rig ROOT, and drops WHOLE.** **Anything
-EMISSIVE and anything outside rendering group 0 are exempt outright.** **Nothing
-pooled may ever be block-keyed**, and the rigs are **filed mesh by mesh and
-never by ancestry** (`RagdollSystem` reparents a corpse's joints).
+their Babylon meshes kept for any pass handed BACK to Babylon, and **a taken
+mesh is never switched off, hidden or faded after its build** — ours reads no
+node and would still draw it (a DEV check says so). **The SCATTER is drawn twice
+over and the two must agree**: our main pass draws it as INSTANCES of its
+variants, its colour baked once per kind, and cuts its pieces out of the blocks
+it takes, while Babylon's merged copy stays in those blocks for any pass handed
+back to Babylon (`BuildOptions.onScatter`). **Any other mesh carrying
+`metadata.block` is one only while the camera is inside the map's `fogEnd`**,
+**a body's RIG only while the root the roster switches is enabled**, and
+**everything else is ELIGIBLE**. **Anything EMISSIVE and anything outside
+rendering group 0 are exempt outright.** **Nothing pooled may ever be
+block-keyed**, and the rigs are **filed mesh by mesh, never by ancestry**
+(`RagdollSystem` reparents a corpse's joints).
 
 **The GLOW draws the EMISSIVE meshes and nothing else, its occlusion being the
 FRAME's own depth buffer** (`src/shaders/GlowPass.ts`). **What may bloom is read
 per mesh every frame** — an emissive colour, no `metadata.noGlow`, and `Game`'s
-`GlowRules` — so nothing excludes a mesh by hand, and `CelInk` stays first in
-the chain. **A map's merged emissives are a PALETTE like its albedo**
-(`shaders/EmissiveWorld.ts`): their colour is a slot in `uv2.x` under a WHITE
-`emissiveColor`, so **a new reader asking a material what it emits must ask the
-vertex for that one**.
+`GlowRules` — so nothing excludes a mesh by hand. **A map's merged emissives are
+a PALETTE like its albedo** (`shaders/EmissiveWorld.ts`): their colour is a slot
+in `uv2.x` under a WHITE `emissiveColor`, so **a new reader asking a material
+what it emits must ask the vertex for that one**.
 
 **OUR renderer (`src/render/`) draws INSIDE Babylon's frame through ONE seam**
 (`render/babylonSeam.ts`, the only file there that names Babylon, and only as
-types). A draw is QUEUED into Babylon's bundle list and never issued, and
-work owed AHEAD of the draws (the cluster cull, a shadow map's pass) is
-RECORDED into the encoder the host submits first (`prepareEncoder`), never
-submitted on its own. The attachments are stated once (`FRAME_TARGETS`,
-`SHADOW_TARGETS`). The frame's uniforms are PULLED
-off the factory's fields (`CelMaterialFactory.fillFrame`), so **a new value
-every cel material holds owes `render/frame.ts` a field and `fillFrame` a
-line**, or our draws shade without it — a shared TEXTURE the same, in
-`FRAME_TEXTURES` and `fillFrameTextures`. **A material's OWN value is set
-through the factory's `own`**, which keeps it in the recipe our renderer
-draws that material with (`render/celMaterial.ts`); a `setFloat` beside it is
-a value Babylon's draw has and ours does not.
+types). The frame's uniforms are PULLED off the factory's fields
+(`CelMaterialFactory.fillFrame`), so **a new value every cel material holds owes
+`render/frame.ts` a field and `fillFrame` a line**, or our draws shade without
+it — a shared TEXTURE the same, in `FRAME_TEXTURES` and `fillFrameTextures`. **A
+material's OWN value is set through the factory's `own`**, which keeps it in the
+recipe our renderer draws that material with (`render/celMaterial.ts`); a
+`setFloat` beside it is a value Babylon's draw has and ours does not.
 
 → **[`docs/rendering.md`](docs/rendering.md)** — the frozen define set, the
 irradiance volume (why not Lumen, why the blend is 1), the four light terms and
@@ -660,8 +643,8 @@ window, back faces and the foliage's third map, the bodies' map, the rungs, the
 lamps' atlas, lightning, the ink's NIB and its coverage channel's two blended
 exceptions, the wind's rigs, the fire, the glazing and reflection bake, the
 grass and turf, the water, the WGSL traps, our renderer's frame and its seam,
-the candidate list and size gate,
-the glow's three failed attempts, and the sky and its clouds' depths.
+the candidate list and size gate, the glow's three failed attempts, and the sky
+and its clouds' depths.
 ### The map is data, not code
 
 `src/world/hollowmere/layout.ts` is the entire level — placements, scatter

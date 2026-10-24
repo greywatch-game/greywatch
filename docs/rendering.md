@@ -1378,9 +1378,11 @@ Babylon's side and points every reader at Babylon's cubes. A bake of ours that
 drained depends on our renderer for nothing: its cubes stand. On our path:
 
 - **`ProbeBake` owns the cubes** (`rgba8unorm`, six layers, the full mip
-  chain), pooled by key and never destroyed, as Babylon's pool is never
-  disposed. **Babylon's glazing and water sample a WRAPPED cube view**
-  (`core/shadowWindow.ts`'s `wrapCubeTexture`: a cube over all six layers and
+  chain, `COPY_SRC` so a readback needs no help), never destroyed, as
+  Babylon's pool is never disposed; each is handed out as a `ProbeCube`, and
+  `ReflectionSystem`'s pools (`oursPools`, by pool and slot) are the one index
+  of them. **Babylon's glazing and water sample a WRAPPED cube view**
+  (`core/wrappedTextures.ts`' `wrapCubeTexture`: a cube over all six layers and
   every level, trilinear, and `INVCUBIC_MODE`, from which Babylon's bind
   derives the wrap as it did for a probe's cube) — never disposed either,
   since disposing a wrapped view destroys the cube. The default cube stays
@@ -1397,7 +1399,12 @@ drained depends on our renderer for nothing: its cubes stand. On our path:
   scatter part, and the emissive palette's held surfaces. Its two tests are
   Babylon's list as the CULL asks them (below): the reach to the near side of
   the SURFACE's sphere (`PROBE_SPHERE_REACH`, where every other view measures
-  the block's box) and the probe's own blocks left out (`PROBE_EXCLUDE`).
+  the block's box) and the probe's own blocks left out (`PROBE_EXCLUDE`) —
+  a cell of more than 32 blocks left out WHOLE, one rule on the CPU
+  (`exclusionOf` sets every bit) and the GPU (a block past the 32nd has no
+  bit). A scatter INSTANCE is reached by its own sphere, not by the merged
+  block mesh Babylon's list held its copy in, so near the radius one drops
+  alone where Babylon kept or dropped its whole block.
 - **The palette is drawn by a program of ours** (`render/emissiveWorld.ts`,
   the one body `shaders/wgsl/emissiveWorld.ts` that Babylon's material calls
   too), its table and fog band a PULL off the factory
@@ -1405,21 +1412,33 @@ drained depends on our renderer for nothing: its cubes stand. On our path:
   fire is drawn**: there is no flame program on our side until the fire
   moves (X4.4).
 - **The eye is PASSED, never borrowed**: the bake's frame is a
-  `FrameUniformBuffer` of its own, filled by `CelMaterialFactory.fillBakeFrame`
-  — the frame's values with `camPos` at the probe, `opaqueAlpha` 1 and the
-  clouds' shadow held off — each face's camera reaching it through a staging
-  slot copied in the encoder ahead of its pass. Nothing on any material moves.
+  `FrameUniformBuffer` of its own, filled ONCE a recorded frame by
+  `CelMaterialFactory.fillBakeFrame` (`fillFrame(out, true)`: the frame's
+  values with `opaqueAlpha` 1 and the clouds' shadow held off) — each face's
+  camera, its view-projection and its probe's eye, reaching it through a
+  staging slot copied in the encoder ahead of its pass. Nothing on any
+  material moves.
 - **The mips are ours** (`render/cubeMips.ts`): Babylon's
   `generateCubeMipmaps` number for number, each level a box average of the
   one above, recorded after a probe's sixth face.
-- **The budget is PROBES** (`probesPerFrame`, 8), released from the same hook
-  as Babylon's batches once our pipelines are built (`ProbeBake.ready`) and
+- **The budget is PROBES** (`probesPerFrame`, 8 — `ProbeBake.perFrame`, which
+  `ReflectionSystem` asks; ours has a queue of its own, `jobs`), released from
+  the same hook as Babylon's batches once our pipelines are built (`ProbeBake.ready`) and
   recorded as the next main pass our renderer prepares begins, into the
   encoder the host submits first and AFTER the world's shadow maps and the
   lamps' atlas (`Renderer.onFrame`'s `late`), so a face samples them as that
   frame draws them. `bakePending` counts the queue and
   the released-not-recorded. Coldharbour's 39 drain in 5 frames of 5-6 ms,
-  ~41 ms of wall clock, on the Windows box.
+  ~41 ms of wall clock, on the Windows box. The view of the culls holds
+  9-28 MiB while it stands (Hollowmere 9.0, Sarab 9.6, Greyfen 12.1,
+  Harrowmead 12.1, Coldharbour 15.3, Kurenai 16.6, Cinderhaven 27.6: almost
+  all of it the second index buffer, as large as the map's).
+- **A loss after the drain changes nothing** — the frame between the last
+  probe recorded and the view closing included: `ProbeBake.lose` reports how
+  many released probes it dropped, and only outstanding work (queued or
+  dropped) sends the install's bake to Babylon. **A failed mips pipeline
+  latches the bake BROKEN for the session**: no world is held again, so every
+  map's bake is Babylon's.
 
 **The glazing is no longer the only thing that samples a probe.** The water
 takes one per body from a pool of its own, without the parallax correction and
@@ -3831,7 +3850,7 @@ light's matrix over.
   not blended — and, if so, holds it: a surface the main pass takes casts
   from its own group, and a caster it does not take (the emissive palette's
   merges, which keep no recipe) is held for the shadow maps ALONE
-  (`WorldBlocks.addCaster`: positions only, in a "casters" group cut after
+  (`WorldBlocks.addCaster`: positions only, in the HELD layer cut after
   every other, which the main pass's cull leaves out as a tail and nothing
   draws in the main pass). Only when EVERY caster is held are the casters
   handed to `WorldShadows` (`setCasters`); one it cannot hold — not block

@@ -3,7 +3,10 @@
  * material within a structure or a scatter field (`mergeByMaterial`), then per
  * map block across neighbours (`BlockMerge` for everything opaque,
  * `PaneBlocks` for the glazing, which has to keep its breakable panes'
- * vertex ranges). Plus `tag`, the editor's per-item mark. `BLOCK_SIZE`, the
+ * vertex ranges). Plus `tag`, the editor's per-item mark, and the block
+ * LATTICE both passes cut on (`blockCell`, `blockOf`: a key "bx,bz"), which
+ * the scatter's field files each placement under too
+ * (`scatterVariants.ts`, `ScatterSet.blocks`). `BLOCK_SIZE`, the
  * block side a map that states none is merged at, is `blocks.ts`'s.
  * Everything here runs on `WorldSurface`s (`worldGeometry.ts`) — `Part`s and
  * their bookkeeping, typed arrays and nothing on the device — and what it
@@ -17,9 +20,12 @@
  * collider — `MapBuilder` drives every function here and is still the only
  * place a collider is made.
  * Invariants: `BlockMerge.finish` and `PaneBlocks.finish` write the SAME
- * `metadata.block` key off the same block size, which is what
- * `ReflectionSystem.encloses` and `WorldCulling` both rest on (the metadata
- * contract in `CLAUDE.md`). A merged surface carries the exemptions and the
+ * `metadata.block` key off the same block size (`blockOf`), which is what
+ * `ReflectionSystem.encloses`, `WorldCulling` and our renderer's probe bake
+ * (the key parsed once, `render/wgsl/clusterCull.ts`' `blockCoordsOf`, by
+ * `BlockHandover` and `ReflectionSystem`) all rest on (the metadata contract
+ * in `CLAUDE.md`), and a scatter placement's block is its REGION's, on the
+ * same lattice (`blockCell`). A merged surface carries the exemptions and the
  * sway mark its group was KEYED on, never ones read back off a member. A
  * merge of two or more is `mergeSurfaces` — `mergeParts` (`Mesh.MergeMeshes`'
  * arithmetic, each member under its own world matrix, NOT renormalised) into a
@@ -58,6 +64,16 @@ export function tag(target: { metadata: PartMetadata | null }, ref: EditorRef): 
   target.metadata = { ...(target.metadata ?? {}), editorRef: ref };
 }
 
+/** The block lattice's cell `v` (an x or a z, metres) falls in, at blocks of `size` metres. */
+export function blockCell(v: number, size: number): number {
+  return Math.floor(v / size);
+}
+
+/** The block key ("bx,bz") a point is filed under — `BlockMerge`'s, `PaneBlocks`', `metadata.block`. */
+export function blockOf(x: number, z: number, size: number): string {
+  return `${blockCell(x, size)},${blockCell(z, size)}`;
+}
+
 /**
  * The second merge pass: collapses every structure and scatter field into one
  * surface per (map block, material).
@@ -92,7 +108,7 @@ export class BlockMerge {
 
   /** Files a positioned, per-material merged surface under its map block. */
   add(x: number, z: number, surface: WorldSurface): void {
-    const key = `${Math.floor(x / this.blockSize)},${Math.floor(z / this.blockSize)}`;
+    const key = blockOf(x, z, this.blockSize);
     const group = this.blocks.get(key);
     if (group) group.push(surface);
     else this.blocks.set(key, [surface]);
@@ -177,9 +193,7 @@ export class PaneBlocks {
     item: EditorItem | null,
     placement: number,
   ): void {
-    const key = item
-      ? `item${placement}`
-      : `${Math.floor(x / this.blockSize)},${Math.floor(z / this.blockSize)}`;
+    const key = item ? `item${placement}` : blockOf(x, z, this.blockSize);
     if (item) this.owners.set(key, { item, placement });
     const existing = this.blocks.get(key);
     if (existing) existing.push(group);

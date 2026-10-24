@@ -81,7 +81,8 @@ import {
 import { CONFIG } from "../config";
 import type { GeometryBuffer } from "../geometry/buffer";
 import { attachEmissiveFog, setEmissiveFog } from "./EmissiveFog";
-import { EmissiveWorldMaterial, MAX_EMISSIVE_PALETTE } from "./EmissiveWorld";
+import { EmissiveWorldMaterial } from "./EmissiveWorld";
+import { MAX_EMISSIVE_PALETTE } from "./wgsl/emissiveWorld";
 import { FlameMaterial } from "./FlameShader";
 import { BlastMaterial } from "./BlastShader";
 import type { Vector3Like } from "../math";
@@ -2157,8 +2158,10 @@ export class CelMaterialFactory {
    * is what this factory writes, and the factory is what holds the values.
    * The camera's matrix is not here — the factory never had it; Babylon fills
    * `viewProjection` from the scene's camera, and so does the renderer's host.
+   * With `bake`, the clouds' shadow is held off as a reflection bake holds it
+   * (`fillBakeFrame`).
    */
-  fillFrame(out: FrameUniforms): void {
+  fillFrame(out: FrameUniforms, bake = false): void {
     this.camPos.toArray(out.camPos);
     out.opaqueAlpha[0] = this.opaqueAlpha;
     this.lightDir.toArray(out.lightDir);
@@ -2196,7 +2199,7 @@ export class CelMaterialFactory {
     out.pointColor.set(this.pointColor);
     out.pointRange.set(this.pointRange);
     out.pointCount[0] = this.pointCount;
-    this.shadows.fillFrame(out);
+    this.shadows.fillFrame(out, bake);
     const gi = this.gi;
     if (gi) {
       gi.grid.toArray(out.giGrid);
@@ -2218,12 +2221,11 @@ export class CelMaterialFactory {
    * PASSED, never borrowed: nothing the factory holds moves for it.
    */
   fillBakeFrame(out: FrameUniforms, eye: Vector3Like): void {
-    this.fillFrame(out);
+    this.fillFrame(out, true);
     out.camPos[0] = eye.x;
     out.camPos[1] = eye.y;
     out.camPos[2] = eye.z;
     out.opaqueAlpha[0] = 1;
-    this.shadows.fillFrame(out, true);
   }
 
   /**

@@ -54,14 +54,16 @@
  * an instanced part belongs to exactly one: a landform surface to its
  * recipe's landform group, a block surface and every instanced part to its
  * recipe's block group, so a rim wearing the pines' material never shares
- * their group or their scatter; the CASTERS are one group of no recipe, its
- * arrays the positions alone, drawn in no main pass and cut LAST, so the main
- * pass's cull leaves its clusters out as a tail (`count`) — and so are the
- * held palette groups, one a material, positions and slots; a probe's view
+ * their group or their scatter; the HELD layer, drawn in no main pass and
+ * cut LAST so the main pass's cull leaves its clusters out as a tail
+ * (`count`), is the CASTERS' one group of no recipe (its arrays the positions
+ * alone) and one group a palette material (positions and slots), each found
+ * by its own lookup; a probe's view
  * culls every cluster and draws what is in `PASS_PROBE` with the main pass's
  * own pipelines and material groups, through the face's frame, each
  * scattered group's twin bound to its own list — the draw code is ONE
- * (`drawClusters`, `drawScatter`, `bind`, over a `DrawView`), never a copy;
+ * (`drawClusters`, `drawScatter`, `bind` and `drawHeld` over a `DrawView`,
+ * every draw's three groups made by `groupsFor`), never a copy;
  * the layers share
  * ONE cut, one set of cull tables, one cluster list and one index buffer
  * each cull view writes, each group drawing only its own range of it, and
@@ -197,7 +199,7 @@ interface Surface {
  * maps alone (`addCaster`) and the emissive palette held for the probes'
  * bake and its own shadows (`addEmissive`), whose groups are always cut last.
  */
-type WorldLayer = "blocks" | "landform" | "casters";
+type WorldLayer = "blocks" | "landform" | "held";
 
 /** What a caster held for the shadow maps alone reads: its positions. */
 const CASTER_ATTRIBUTES: readonly AssembledAttribute[] = [{ name: "position", type: "vec3f", from: "positionData" }];
@@ -300,16 +302,16 @@ export class WorldBlocks {
    * draws its own in, its biased ones first (`drawClusters`).
    */
   private readonly groups: Group[] = [];
-  /**
-   * Each layer's groups by recipe: one recipe in both layers is two groups;
-   * the casters' is keyed on none and each held palette material's on its
-   * recipe.
-   */
-  private readonly groupOf: Record<WorldLayer, Map<CelRecipe | EmissiveRecipe | null, Group>> = {
+  /** The drawn layers' groups by recipe: one recipe in both layers is two groups. */
+  private readonly groupOf: Record<"blocks" | "landform", Map<CelRecipe, Group>> = {
     blocks: new Map(),
     landform: new Map(),
-    casters: new Map(),
   };
+  /** The HELD layer's groups: the casters' one, of no recipe, and one a palette material. */
+  private heldCasters: Group | null = null;
+  private readonly heldPalette = new Map<EmissiveRecipe, Group>();
+  /** A group's three bind groups for one draw, as `groupsFor` last filled them. */
+  private readonly bound: GPUBindGroup[] = [];
   /**
    * Each variant's modules, assembled once rather than per surface: a map is
    * thousands of surfaces over a handful of variants.
@@ -417,7 +419,7 @@ export class WorldBlocks {
    * surface's, as `add`'s.
    */
   addCaster(label: string, geometry: SurfaceArrays, pieces: readonly PieceSpan[], passes: number, key: number = NO_BLOCK): number {
-    return this.addTo(this.groupFor(null, "casters"), label, geometry, pieces, passes, key);
+    return this.addTo(this.heldGroup(null), label, geometry, pieces, passes, key);
   }
 
   /**
@@ -435,7 +437,7 @@ export class WorldBlocks {
     passes: number,
     key: number,
   ): number {
-    return this.addTo(this.groupFor(recipe, "casters"), label, geometry, pieces, passes, key);
+    return this.addTo(this.heldGroup(recipe), label, geometry, pieces, passes, key);
   }
 
   private addTo(
@@ -494,9 +496,9 @@ export class WorldBlocks {
     if (surfaces.length === 0) return;
     const device = this.renderer.device;
     const sets = scatter?.sets ?? [];
-    // The casters last, so the main pass's cull can leave their clusters out
-    // as a tail (`drawn` below). A stable sort keeps every other group's order.
-    this.groups.sort((a, b) => Number(a.layer === "casters") - Number(b.layer === "casters"));
+    // The held groups last, so the main pass's cull can leave their clusters
+    // out as a tail (`drawn` below). A stable sort keeps every other group's order.
+    this.groups.sort((a, b) => Number(a.layer === "held") - Number(b.layer === "held"));
 
     // A recipe Babylon draws whole draws its scatter whole with it: a group
     // with no surface of ours keeps none of its instanced parts.
@@ -526,7 +528,7 @@ export class WorldBlocks {
     const ranges: ScanRange[] = [];
     const scatterTables = new ScatterTables(sets, size.source, this.options.triangles);
     const at: CutCursor = { index: 0, cluster: 0 };
-    // The clusters the main pass culls: every group's but the casters'.
+    // The clusters the main pass culls: every group's but the held ones'.
     let drawn = 0;
     this.groups.forEach((group, g) => {
       const start = at.cluster;
@@ -542,7 +544,7 @@ export class WorldBlocks {
       if (!group.failed) this.cutGroup(group, g, parts.vertices, size.vertices[g], indices, at, cut);
       ranges.push({ start, end: at.cluster, base: group.indexBase });
       group.indexCount = at.index - group.indexBase;
-      if (group.layer !== "casters") drawn = at.cluster;
+      if (group.layer !== "held") drawn = at.cluster;
     });
 
     const clusterCount = at.cluster;
@@ -744,7 +746,8 @@ export class WorldBlocks {
     this.groups.length = 0;
     this.groupOf.blocks.clear();
     this.groupOf.landform.clear();
-    this.groupOf.casters.clear();
+    this.heldCasters = null;
+    this.heldPalette.clear();
     this.drawnLast = 0;
   }
 
@@ -753,42 +756,69 @@ export class WorldBlocks {
   }
 
   /**
-   * The group of `recipe` in `layer`, made on its first surface or part. One
-   * recipe's groups at the two layers share its program (assembled once a
-   * variant) and each own a material slot, as each owns its arrays. The
-   * casters are one group, of no recipe; each palette material held is one,
-   * of its own.
+   * The group of `recipe` in a drawn `layer`, made on its first surface or
+   * part. One recipe's groups at the two layers share its program (assembled
+   * once a variant) and each own a material slot, as each owns its arrays.
    */
-  private groupFor(recipe: CelRecipe | EmissiveRecipe | null, layer: WorldLayer): Group {
-    if (this.cull) throw new Error("world blocks: a surface added after the map was cut");
+  private groupFor(recipe: CelRecipe, layer: "blocks" | "landform"): Group {
+    this.uncut();
     const of = this.groupOf[layer];
     let group = of.get(recipe);
     if (!group) {
-      const cel = recipe && "defines" in recipe ? recipe : null;
-      const emissive = recipe && !("defines" in recipe) ? this.emissiveOf(recipe) : null;
-      const program = cel ? this.programOf(cel.defines) : null;
-      group = {
-        layer,
-        material: cel ? this.materialOf(cel) : null,
-        emissive,
-        program,
-        attributes: program ? program.vertex.attributes : emissive ? EMISSIVE_ATTRIBUTES : CASTER_ATTRIBUTES,
-        members: [],
-        instanced: [],
-        withheld: null,
-        arrays: [],
-        geometry: null,
-        indexBase: 0,
-        indexCount: 0,
-        scattered: false,
-        built: null,
-        failed: false,
-        surfacePasses: 0,
-        scatterPasses: 0,
-      };
+      group = this.newGroup(layer, recipe, null);
       of.set(recipe, group);
-      this.groups.push(group);
     }
+    return group;
+  }
+
+  /**
+   * The HELD group of a palette material (`palette`), or the casters' one
+   * (null), made on its first surface.
+   */
+  private heldGroup(palette: EmissiveRecipe | null): Group {
+    this.uncut();
+    if (!palette) return (this.heldCasters ??= this.newGroup("held", null, null));
+    let group = this.heldPalette.get(palette);
+    if (!group) {
+      group = this.newGroup("held", null, palette);
+      this.heldPalette.set(palette, group);
+    }
+    return group;
+  }
+
+  /**
+   * Every surface and part goes through `groupFor` or `heldGroup`, so this
+   * is asked of every add, not only of the one that makes a group: a surface
+   * filed after the cut would be held and never drawn.
+   */
+  private uncut(): void {
+    if (this.cull) throw new Error("world blocks: a surface added after the map was cut");
+  }
+
+  /** A new group in `layer`, of a cel recipe, a palette material, or neither (the casters). */
+  private newGroup(layer: WorldLayer, cel: CelRecipe | null, palette: EmissiveRecipe | null): Group {
+    const emissive = palette ? this.emissiveOf(palette) : null;
+    const program = cel ? this.programOf(cel.defines) : null;
+    const group: Group = {
+      layer,
+      material: cel ? this.materialOf(cel) : null,
+      emissive,
+      program,
+      attributes: program ? program.vertex.attributes : emissive ? EMISSIVE_ATTRIBUTES : CASTER_ATTRIBUTES,
+      members: [],
+      instanced: [],
+      withheld: null,
+      arrays: [],
+      geometry: null,
+      indexBase: 0,
+      indexCount: 0,
+      scattered: false,
+      built: null,
+      failed: false,
+      surfacePasses: 0,
+      scatterPasses: 0,
+    };
+    this.groups.push(group);
     return group;
   }
 
@@ -1160,20 +1190,44 @@ export class WorldBlocks {
       if (group.emissive) {
         if (group.indexCount === 0) continue;
         const built = emissive.get(group.emissive.recipe.depthBias);
-        if (!built || !group0(built.groups[0]) || !group.emissive.group.get(built.groups[1])) return false;
-        if (!group.geometry?.get(built.groups[2])) return false;
+        if (!built || !this.groupsFor(group, built, group.geometry, group0)) return false;
         continue;
       }
-      const material = group.material;
-      if (!material) return false;
+      if (!group.material) return false;
       if (group.indexCount === 0 && !group.scattered) continue;
       const built = group.built;
-      if (!built) return false;
-      material.group.refresh(this.renderer.host, material.recipe.textures);
-      if (!group0(built.groups[0]) || !material.group.get(built.groups[1])) return false;
-      if (!view.geometry[g]?.get(built.groups[2])) return false;
+      if (!built || !this.groupsFor(group, built, view.geometry[g], group0)) return false;
     }
     return true;
+  }
+
+  /**
+   * `group`'s three bind groups for `built` — the view's frame (`group0`),
+   * its material's (a cel recipe's, its textures re-resolved, or a palette
+   * material's) and `geometry`, its group 2 in the view drawing it — into
+   * `bound`: false while one is not whole. The ONE place a draw's groups are
+   * made, for every draw and every view (`bind`, `drawHeld`, `drawableIn`).
+   */
+  private groupsFor(group: Group, built: BuiltPipeline, geometry: HostBindGroup | null, group0: FrameGroup): boolean {
+    const material = group.material;
+    if (material) material.group.refresh(this.renderer.host, material.recipe.textures);
+    const own = material ? material.group : group.emissive?.group;
+    const frame = group0(built.groups[0]);
+    const mine = own?.get(built.groups[1]);
+    const bound = geometry?.get(built.groups[2]);
+    if (!frame || !mine || !bound) return false;
+    this.bound[0] = frame;
+    this.bound[1] = mine;
+    this.bound[2] = bound;
+    return true;
+  }
+
+  /** `built` and the three groups `groupsFor` last filled, set on `pass`. */
+  private use(pass: GPURenderPassEncoder, built: BuiltPipeline): void {
+    pass.setPipeline(built.pipeline);
+    pass.setBindGroup(0, this.bound[0]);
+    pass.setBindGroup(1, this.bound[1]);
+    pass.setBindGroup(2, this.bound[2]);
   }
 
   /**
@@ -1183,17 +1237,8 @@ export class WorldBlocks {
    */
   private bind(pass: GPURenderPassEncoder, group0: FrameGroup, group: Group, geometry: HostBindGroup | null): boolean {
     const built = group.built;
-    const material = group.material;
-    if (!built || group.failed || !geometry || !material) return false;
-    material.group.refresh(this.renderer.host, material.recipe.textures);
-    const frame = group0(built.groups[0]);
-    const own = material.group.get(built.groups[1]);
-    const bound = geometry.get(built.groups[2]);
-    if (!frame || !own || !bound) return false;
-    pass.setPipeline(built.pipeline);
-    pass.setBindGroup(0, frame);
-    pass.setBindGroup(1, own);
-    pass.setBindGroup(2, bound);
+    if (!built || group.failed || !group.material || !this.groupsFor(group, built, geometry, group0)) return false;
+    this.use(pass, built);
     return true;
   }
 
@@ -1277,21 +1322,14 @@ export class WorldBlocks {
       const own = group.emissive;
       if (!own || group.failed || group.indexCount === 0) continue;
       const built = emissive.get(own.recipe.depthBias);
-      if (!built) continue;
-      const frame = group0(built.groups[0]);
-      const material = own.group.get(built.groups[1]);
-      const geometry = group.geometry?.get(built.groups[2]);
-      if (!frame || !material || !geometry) continue;
-      pass.setPipeline(built.pipeline);
-      pass.setBindGroup(0, frame);
-      pass.setBindGroup(1, material);
-      pass.setBindGroup(2, geometry);
+      if (!built || !this.groupsFor(group, built, group.geometry, group0)) continue;
+      this.use(pass, built);
       pass.drawIndexed(group.indexCount, 1, group.indexBase, 0, 0);
     }
   }
 }
 
-/** How a group is named in a label or a message: its recipe's defines, a palette material, or the casters. */
+/** How a group is named in a label or a message: its recipe's defines, a held palette material, or the held casters. */
 function labelOf(group: Group): string {
   if (group.material) return `[${group.material.recipe.defines.join("+")}]`;
   return group.emissive ? `[emissive, bias ${group.emissive.recipe.depthBias}]` : "[casters]";
