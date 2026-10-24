@@ -1,12 +1,15 @@
 /**
  * LocalShadows.ts — shadows from the POINT and SPOT lights: one depth atlas,
  * which lights get tiles in it, and the passes that fill them.
- * Owns the atlas render target, its tile allocation, the static cache per
- * fixture, the proxy mesh every moving shadow is drawn as, and the per-slot
- * cone/tile arrays the shaders read (written into `ShadowBindings`' own
- * arrays, which every `celShadow` consumer holds by reference). Owns no light
- * — `LightingSystem` decides which lights exist and which won a slot, and this
- * decides only which of THOSE cast.
+ * Owns the atlas's tile allocation, the static cache per fixture, each
+ * frame's work (which tiles are cleared, which static faces baked, the
+ * proxies every moving shadow is drawn as), the per-slot cone/tile arrays the
+ * shaders read (written into `ShadowBindings`' own arrays, which every
+ * `celShadow` consumer holds by reference), and — while the atlas is
+ * Babylon's — its render target, the proxy mesh and the passes that draw it,
+ * or — while it is our renderer's — Babylon's wrapped view of it. Owns no
+ * light — `LightingSystem` decides which lights exist and which won a slot,
+ * and this decides only which of THOSE cast.
  * Invariants:
  * - A tile holds the RADIAL distance to the nearest caster over the light's
  *   range, from BACK faces (the moon map's rule, for its reason), and
@@ -20,7 +23,16 @@
  *   `LAYER`, which no camera sees, and are drawn by explicit lists only.
  * - Every pass renders INTO the atlas without clearing it — a static tile
  *   survives the frames it is not redrawn on — so every tile a pass writes is
- *   cleared first, by the clear sheet, in a pass of its own.
+ *   cleared first, by the clear sheet in a pass of its own (or, ours, a copy).
+ * - WHO DRAWS THE ATLAS is decided per map install, as the world's maps are
+ *   (`ShadowSystem`): our renderer (`render/LampAtlas.ts`, `BABYLON_EXIT.md`
+ *   X3.6b) whenever the handover holds every caster the map has
+ *   (`LampAtlas.casters`, set by `BlockHandover`), and this file's render
+ *   target otherwise — an editor build, `?babylonworld`, a caster the
+ *   handover could not take, or casters LOST mid-map (`LampAtlas.onLost`).
+ *   Everything that DECIDES is the same for both: which lights cast, their
+ *   tiles, which faces bake when, and what is published; only the drawing
+ *   moves, handed over once a frame as `AtlasWork`.
  * Contract: `docs/rendering.md`.
  *
  * ## WHY ONE ATLAS
@@ -63,6 +75,7 @@
  */
 import {
   type AbstractMesh,
+  type BaseTexture,
   Color4,
   Constants,
   Mesh,
@@ -82,7 +95,9 @@ import {
 import { CONFIG } from "../config";
 import { ProxyBoxes, type ShadowBody, type ShadowHull } from "../core/proxyBoxes";
 import type { ShadowQuality } from "../core/settings";
-import { litShadowTexture } from "../core/shadowWindow";
+import { litShadowTexture, wrapShadowTexture } from "../core/shadowWindow";
+import type { AtlasWork, LampAtlas } from "../render/LampAtlas";
+import { MAX_TILES } from "../render/lampDepth";
 import {
   type CelMaterialFactory,
   MAX_POINT_LIGHTS,
@@ -97,12 +112,6 @@ import type { WorldBox } from "../world/MapBuilder";
  * header states the mechanism.
  */
 const LAYER = 0x10000000;
-
-/**
- * The most tiles any rung's atlas holds. It sizes two uniform arrays, so it is
- * a compile-time literal; the constructor checks every rung fits.
- */
-const MAX_TILES = 64;
 
 /** The cube's faces, in the order `celShadow`'s `localLayer` numbers them. */
 const CUBE: readonly Vector3[] = [
@@ -264,7 +273,14 @@ interface Entry {
 }
 
 export class LocalShadows {
+  /** The atlas's render target, while the atlas is Babylon's. */
   private atlas: RenderTargetTexture | null = null;
+  /** The atlas is our renderer's (`LampAtlas`), and Babylon reads `wrapped`. */
+  private ours = false;
+  /** Babylon's view of our renderer's atlas, while it is ours and has one. */
+  private wrapped: BaseTexture | null = null;
+  /** The atlas has been stood up at `tier` by whichever side holds it. */
+  private standing = false;
   private tier: (typeof CONFIG.graphics.localShadows.tiers)[ShadowQuality] =
     CONFIG.graphics.localShadows.tiers.off;
   private tilesPerRow = 0;
@@ -283,8 +299,8 @@ export class LocalShadows {
 
   private readonly proxy: Mesh;
   private readonly proxyMat: ShaderMaterial;
-  private readonly proxyMatrices: Float32Array;
-  private readonly proxyTiles: Float32Array;
+  private readonly proxyMatrices: Float32Array<ArrayBuffer>;
+  private readonly proxyTiles: Float32Array<ArrayBuffer>;
   private proxyCount = 0;
   private clearSheet: Mesh | null = null;
   private readonly clearMat: ShaderMaterial;
@@ -315,8 +331,10 @@ export class LocalShadows {
   private readonly bodyBoxCount: number[] = [];
   private bodyCount = 0;
 
-  /** This frame's work, built in `update` and drawn in `render`. */
+  /** This frame's work, built in `update` and drawn in `render` — or, ours, handed over as `work`. */
   private bakeQueue: { entry: Entry; face: number }[] = [];
+  /** The same work as our renderer reads it: one object over the arrays above, refilled each frame. */
+  private readonly work: AtlasWork;
   private bakeLists: AbstractMesh[][] = [];
   private drawDynamic = false;
   private readonly proxyList: AbstractMesh[] = [];
@@ -337,6 +355,8 @@ export class LocalShadows {
     private readonly scene: Scene,
     private readonly mats: CelMaterialFactory,
     quality: ShadowQuality,
+    /** Our renderer's atlas: who draws it whenever the handover holds every caster. */
+    private readonly lamps: LampAtlas,
   ) {
     const c = CONFIG.graphics.localShadows;
     for (const t of Object.values(c.tiers)) {
@@ -380,6 +400,20 @@ export class LocalShadows {
     const bodies = CONFIG.graphics.bodyShadows.maxBodies + CONFIG.graphics.bodyShadows.maxHulls;
     this.bodyMatrices = new Float32Array(bodies * this.bodyBoxes.perBody * 16);
 
+    this.work = {
+      faces: this.faces,
+      clear: this.clearFlags,
+      bakeTiles: new Int32Array(c.staticFacesPerFrame),
+      bakes: 0,
+      proxyMatrices: this.proxyMatrices,
+      proxyTiles: this.proxyTiles,
+      proxies: 0,
+      dynamic: false,
+    };
+    // Our casters going back to Babylon mid-map: the atlas is this file's
+    // render target again from the next frame.
+    lamps.onLost(() => this.handOver(false));
+
     // Drawn inside the scene's render, before its own targets: nothing is
     // bound yet, and the main pass that samples the atlas comes after.
     this.renderObserver = scene.onBeforeRenderTargetsRenderObservable.add(() =>
@@ -416,21 +450,47 @@ export class LocalShadows {
   }
 
   /**
-   * Stands the atlas up at a rung's size, or takes it down. Every light loses
-   * its tiles, because a tile's index means a different rectangle at a
-   * different size.
+   * Stands the atlas up at a rung's size, or takes it down, on whichever side
+   * holds it (`remake`). A rung of the same size leaves it alone.
    */
   setQuality(quality: ShadowQuality): void {
     const tier = CONFIG.graphics.localShadows.tiers[quality];
-    const same =
-      tier.atlas === this.tier.atlas && tier.tile === this.tier.tile && this.atlas !== null;
+    const same = tier.atlas === this.tier.atlas && tier.tile === this.tier.tile && this.standing;
     this.tier = tier;
+    this.lamps.rungDraws = tier.atlas > 0;
     if (same) return;
+    this.remake();
+  }
+
+  /**
+   * Hands the atlas to our renderer (`ours`) or to this file's render
+   * target, re-made on its new owner at the rung's size. A hand to the side
+   * that already holds it is nothing.
+   */
+  private handOver(ours: boolean): void {
+    if (ours === this.ours) return;
+    this.ours = ours;
+    if (this.standing) this.remake();
+  }
+
+  /**
+   * The atlas at `tier`'s size, on whichever side holds it — none on a rung
+   * without one — bound to every reader. Every light loses its tiles,
+   * because a tile's index means a different rectangle at a different size
+   * and a fresh texture holds none of them. Babylon's view of our texture is
+   * let go first, which destroys the texture it wraps, so ours is re-made
+   * AFRESH whatever its size (`wrapShadowTexture`).
+   */
+  private remake(): void {
+    const tier = this.tier;
     this.releaseAll();
     this.atlas?.dispose();
     this.atlas = null;
     this.clearSheet?.dispose();
     this.clearSheet = null;
+    this.wrapped?.dispose();
+    this.wrapped = null;
+    this.lamps.setSize(0, 0);
     this.tilesPerRow = 0;
     this.tileCount = 0;
     this.owner = [];
@@ -438,10 +498,16 @@ export class LocalShadows {
       this.tilesPerRow = Math.floor(tier.atlas / tier.tile);
       this.tileCount = this.tilesPerRow * this.tilesPerRow;
       this.owner = new Array(this.tileCount).fill(null);
-      this.atlas = this.buildAtlas(tier.atlas);
-      this.clearSheet = this.buildClearSheet();
-      this.fullClear = true;
+      if (this.ours) {
+        this.lamps.setSize(tier.atlas, tier.tile);
+        this.wrapped = wrapShadowTexture(this.scene, this.lamps.texture!, "localShadowAtlas");
+      } else {
+        this.atlas = this.buildAtlas(tier.atlas);
+        this.clearSheet = this.buildClearSheet();
+        this.fullClear = true;
+      }
     }
+    this.standing = true;
     // A new atlas is a new render pass, and `ready` asks per pass.
     this.warm = false;
     const side = 1 / Math.max(1, this.tilesPerRow);
@@ -455,7 +521,10 @@ export class LocalShadows {
     );
     const c = CONFIG.graphics.localShadows;
     slots.params.set(c.bias, c.normalBias, 0, 0);
-    this.mats.shadows.setLocalShadowMap(this.atlas ?? litShadowTexture(this.scene));
+    this.mats.shadows.setLocalShadowMap(
+      this.atlas ?? this.wrapped ?? litShadowTexture(this.scene),
+      this.wrapped ? this.lamps.own : null,
+    );
     this.publish([]);
   }
 
@@ -530,6 +599,11 @@ export class LocalShadows {
    * The map's collider boxes and visual meshes, from `installMap`. The boxes
    * a moving light can see are indexed once here — glass and porous boxes out,
    * as a round sees them — and each is composed into its matrix once.
+   *
+   * **And it is where the atlas changes hands**: after `BlockHandover
+   * .install`, which hands `LampAtlas` the casters when it holds every one,
+   * so the atlas is ours from here when it did and this file's when it did
+   * not.
    */
   setWorld(
     size: number,
@@ -571,12 +645,15 @@ export class LocalShadows {
       }
     }
     this.visuals = visuals.filter((v) => !v.metadata?.noShadowCaster);
+    this.handOver(this.lamps.casters !== null);
   }
 
   /**
    * No world at all: `Game.teardownMap`, for the menu. Every tile is given
    * up and nothing of the disposed map is held; `update` finds no index and
-   * releases, as it does before the first `setWorld`.
+   * releases, as it does before the first `setWorld`. Whoever holds the
+   * atlas keeps it — there is nothing to cast either way — so a round does
+   * not re-make it on its way out.
    */
   clearWorld(): void {
     this.releaseAll();
@@ -599,6 +676,10 @@ export class LocalShadows {
     bodies: readonly ShadowBody[],
     hulls: readonly ShadowHull[],
   ): void {
+    // Work our renderer never recorded — a frame that prepared nothing — was
+    // counted baked and drawn when it was laid out, so every light gives its
+    // tiles back and starts again rather than publishing a tile nobody drew.
+    if (this.ours && this.lamps.owed) this.releaseAll();
     this.frame++;
     this.bakeQueue.length = 0;
     this.drawDynamic = false;
@@ -606,7 +687,7 @@ export class LocalShadows {
     this.clearFlags.fill(0);
     const tier = this.tier;
     this.published = active;
-    if (!this.atlas || tier.lights === 0 || !this.index || !this.ready()) {
+    if (!this.hasAtlas || tier.lights === 0 || !this.index || !this.ready()) {
       this.releaseAll();
       this.publish(active);
       return;
@@ -651,12 +732,37 @@ export class LocalShadows {
         this.drawDynamic = true;
       }
     }
-    this.proxy.thinInstanceCount = this.proxyCount;
-    if (this.proxyCount > 0) {
-      this.proxy.thinInstanceBufferUpdated("matrix");
-      this.proxy.thinInstanceBufferUpdated("tileId");
+    if (this.ours) {
+      this.queueOurs();
+    } else {
+      this.proxy.thinInstanceCount = this.proxyCount;
+      if (this.proxyCount > 0) {
+        this.proxy.thinInstanceBufferUpdated("matrix");
+        this.proxy.thinInstanceBufferUpdated("tileId");
+      }
     }
     this.publish(active);
+  }
+
+  /** Whether the atlas stands, on whichever side holds it. */
+  private get hasAtlas(): boolean {
+    return this.ours ? this.lamps.texture !== null : this.atlas !== null;
+  }
+
+  /**
+   * This frame's work handed to our renderer, which records it as the main
+   * pass begins — before the main pass reads the slots `update` publishes,
+   * which is what lets a static layer be published once its last face is
+   * QUEUED, on our side as on Babylon's.
+   */
+  private queueOurs(): void {
+    const work = this.work;
+    const bake = this.bakeQueue;
+    for (let j = 0; j < bake.length; j++) work.bakeTiles[j] = bake[j].entry.staticBase + bake[j].face;
+    work.bakes = bake.length;
+    work.proxies = this.proxyCount;
+    work.dynamic = this.drawDynamic;
+    this.lamps.queue(work);
   }
 
   /**
@@ -671,6 +777,8 @@ export class LocalShadows {
    * outlive every frame until the atlas (and its pass id) is rebuilt.
    */
   private ready(): boolean {
+    // Ours: its pipelines and the casters built (`LampAtlas.ready`).
+    if (this.ours) return this.lamps.ready;
     if (this.warm) return true;
     const atlas = this.atlas;
     if (!atlas || !this.clearSheet) return false;
@@ -1247,7 +1355,8 @@ export class LocalShadows {
 
   /**
    * This frame's passes: the clears, a pass per static face in the queue,
-   * then one for every dynamic tile. Nothing is drawn on a frame with no work.
+   * then one for every dynamic tile. Nothing is drawn on a frame with no
+   * work — nor on any frame while the atlas is ours, which `LampAtlas` draws.
    */
   private render(): void {
     const atlas = this.atlas;
@@ -1353,15 +1462,12 @@ export class LocalShadows {
     this.list = [];
   }
 
-  /** The atlas, for a reader that is not a material (none yet). */
-  get depthMap(): RenderTargetTexture | null {
-    return this.atlas;
-  }
-
   dispose(): void {
     this.scene.onBeforeRenderTargetsRenderObservable.remove(this.renderObserver);
     this.atlas?.dispose();
     this.atlas = null;
+    this.wrapped?.dispose();
+    this.wrapped = null;
     this.clearSheet?.dispose();
     this.proxy.dispose();
     this.proxyMat.dispose();

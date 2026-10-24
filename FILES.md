@@ -600,7 +600,9 @@ src/
                         #   be two windows off one focus. One instance each,
                         #   never shared, since the snap is in ITS map's texels.
                         #   Also the 1x1 LIT texture a shadow map switched OFF
-                        #   is bound as (a declared sampler must be bound)
+                        #   is bound as (a declared sampler must be bound), and
+                        #   Babylon's wrapped view of a shadow texture OUR
+                        #   renderer owns (wrapShadowTexture)
     proxyBoxes.ts       # What a soldier and a hull ARE to a shadow: boxes,
                         #   packed as thin-instance matrices. RAGDOLL_BONES and
                         #   the collider, shared by BodyShadows and LocalShadows
@@ -1217,7 +1219,10 @@ src/
                         #   static tile; bodies, hulls and every MOVING light's
                         #   colliders are box proxies redrawn each frame in one
                         #   draw. The vertex stage maps each face into its own
-                        #   tile, so one pass fills many
+                        #   tile, so one pass fills many. Decides everything;
+                        #   draws it only while the atlas is Babylon's — OUR
+                        #   renderer's (render/LampAtlas) whenever the handover
+                        #   holds every caster, handed the frame's AtlasWork
     LightningStrikes.ts # When lightning strikes, from where, how bright: a
                         #   seeded SCHEDULE read off a clock (the authority's
                         #   in a match; offline its own, which holds with the
@@ -1271,12 +1276,13 @@ src/
                         #   candidates, cut at install against their cells, a
                         #   failed compile's surfaces handed back to Babylon as
                         #   it lands, the whole map on a refused main pass;
-                        #   their meshes stay for the probes and the lamps'
-                        #   atlas. Every CASTER held too (X3.6a) — a taken
-                        #   one in its group, an emissive one for the shadow
-                        #   maps alone (WorldBlocks.addCaster) — or the
-                        #   map's shadows stay Babylon's; one handed back
-                        #   loses them (WorldShadows.lose). The
+                        #   their meshes stay for the probes. Every CASTER
+                        #   held too (X3.6a, X3.6b) — a taken one in its
+                        #   group, an emissive one for the shadows alone
+                        #   (WorldBlocks.addCaster) — and handed to the
+                        #   world's maps and the lamps' atlas together, or
+                        #   the map's shadows stay Babylon's; one handed back
+                        #   loses them (WorldShadows.lose, LampAtlas.lose). The
                         #   scatter's field (BuildOptions.onScatter) added as
                         #   instances at install, its pieces cut out of the
                         #   taken blocks (X3.4b). Reads no
@@ -2406,11 +2412,27 @@ src/
                         #   shadowMap shader as this game's generators compile
                         #   it — the light's clip z, no sway — pulled as the
                         #   cel stage is (pulledWorld), and its scatter twin
-    WorldDepth.ts       # The static world as a directional shadow map records
-                        #   it: a second VIEW of each of the map's culls (a
-                        #   slot a map a submit, a pass mask), the depth
-                        #   pipelines by faces, and one map's pass recorded —
-                        #   a plain draw a group, an indirect draw its scatter
+    WorldDepth.ts       # The static world as a shadow pass records it: a
+                        #   second VIEW of each of the map's culls (a slot a
+                        #   pass a submit, a pass mask), the depth pipelines
+                        #   by kind (a directional map's back or front faces,
+                        #   a lamp's face), a pass's culls (cull) and its
+                        #   draws into the caller's pass (draw) — a plain
+                        #   draw a group, an indirect draw its scatter
+    lampDepth.ts        # The lamps' DEPTH program (X3.6b): LocalShadows'
+                        #   localShadowDepth — a face's perspective offset
+                        #   into its tile, the radial distance, the off-face
+                        #   discard — as a static face over the world's
+                        #   arrays (and its scatter twin) and as the proxy
+                        #   box; MAX_TILES; faceInputs, a face as the
+                        #   view-projection its casters are culled with
+    LampAtlas.ts        # The lamps' atlas as OUR texture (X3.6b): made at
+                        #   the far value, and each frame LocalShadows hands
+                        #   it (AtlasWork) recorded ahead of Babylon's passes
+                        #   — tiles cleared by a copy, a pass a static face
+                        #   off WorldDepth at a cull slot of its own, one
+                        #   instanced proxy pass; OwnTexture for our frame, a
+                        #   texture for Babylon to wrap; lose() hands it back
     WorldShadows.ts     # The world's four directional maps as OUR textures
                         #   (far, near, foliage, flash): made cleared to lit,
                         #   drawn when ShadowSystem asks, recorded ahead of

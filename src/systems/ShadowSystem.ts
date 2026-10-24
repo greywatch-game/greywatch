@@ -75,7 +75,7 @@
  */
 import {
   type AbstractMesh,
-  BaseTexture,
+  type BaseTexture,
   Color3,
   DirectionalLight,
   DynamicTexture,
@@ -86,9 +86,7 @@ import {
   type Scene,
   ShadowGenerator,
   StandardMaterial,
-  Texture,
   Vector3,
-  type WebGPUEngine,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import {
@@ -96,6 +94,7 @@ import {
   litShadowTexture,
   SHADOW_NEAR,
   ShadowWindow,
+  wrapShadowTexture,
 } from "../core/shadowWindow";
 import type { ShadowQuality } from "../core/settings";
 import type { Combatant } from "../entities/Combatant";
@@ -478,24 +477,10 @@ export class ShadowSystem {
     map.wrapped = this.wrap(map.name);
   }
 
-  /**
-   * Babylon's view of our `name` texture (`BABYLON_EXIT.md` rule 5: the side
-   * that does not own a texture reads a wrapped view of it), sampled as the
-   * generator's was — nearest, clamped. A wrapped texture has no view until
-   * it is re-pointed, so it is re-pointed at itself.
-   */
+  /** Babylon's view of our `name` texture, sampled as the generator's was (`wrapShadowTexture`). */
   private wrap(name: WorldShadowMap): BaseTexture | null {
     const texture = this.world.texture(name);
-    if (!texture) return null;
-    const engine = this.scene.getEngine() as WebGPUEngine;
-    const internal = engine.wrapWebGPUTexture(texture);
-    engine.updateWrappedWebGPUTexture(internal, texture);
-    engine.updateTextureSamplingMode(Texture.NEAREST_SAMPLINGMODE, internal);
-    const wrapped = new BaseTexture(this.scene, internal);
-    wrapped.name = `${name}Shadow`;
-    wrapped.wrapU = Texture.CLAMP_ADDRESSMODE;
-    wrapped.wrapV = Texture.CLAMP_ADDRESSMODE;
-    return wrapped;
+    return texture ? wrapShadowTexture(this.scene, texture, `${name}Shadow`) : null;
   }
 
   /**

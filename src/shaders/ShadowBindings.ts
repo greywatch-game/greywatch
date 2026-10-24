@@ -43,18 +43,19 @@ import { MAX_POINT_LIGHTS } from "./wgsl/celSurface";
 
 export class ShadowBindings {
   /**
-   * The world's four maps as OUR renderer binds them, while it owns them
-   * (`render/WorldShadows.ts`, `BABYLON_EXIT.md` X3.6a): the textures the
-   * fields below are Babylon's wrapped views of, handed to our frame as
-   * themselves rather than through those views. Null while a map is
-   * Babylon's own, or off.
+   * The world's four maps and the lamps' atlas as OUR renderer binds them,
+   * while it owns them (`render/WorldShadows.ts`, `render/LampAtlas.ts`,
+   * `BABYLON_EXIT.md` X3.6a and X3.6b): the textures the fields below are
+   * Babylon's wrapped views of, handed to our frame as themselves rather
+   * than through those views. Null while a map is Babylon's own, or off.
    */
   private readonly own: {
     shadowMap: OwnTexture | null;
     nearShadowMap: OwnTexture | null;
     flashMap: OwnTexture | null;
     foliageMap: OwnTexture | null;
-  } = { shadowMap: null, nearShadowMap: null, flashMap: null, foliageMap: null };
+    localAtlasMap: OwnTexture | null;
+  } = { shadowMap: null, nearShadowMap: null, flashMap: null, foliageMap: null, localAtlasMap: null };
   // Shadow-map state, pushed onto every cel material as it is created.
   private shadowMap: BaseTexture | null = null;
   private shadowMatrix = Matrix.Identity();
@@ -184,7 +185,7 @@ export class ShadowBindings {
     out.shadowMap = own.shadowMap ?? (this.shadowMap && hostTexture(this.shadowMap));
     out.nearShadowMap = own.nearShadowMap ?? (this.nearShadowMap && hostTexture(this.nearShadowMap));
     out.bodyShadowMap = this.bodyShadowMap && hostTexture(this.bodyShadowMap);
-    out.localAtlasMap = this.localAtlasMap && hostTexture(this.localAtlasMap);
+    out.localAtlasMap = own.localAtlasMap ?? (this.localAtlasMap && hostTexture(this.localAtlasMap));
     out.flashMap = own.flashMap ?? (this.flashMap && hostTexture(this.flashMap));
     out.cloudShadowMap = hostTexture(this.cloudShadowMap);
     out.foliageMap = own.foliageMap ?? (this.foliageMap && hostTexture(this.foliageMap));
@@ -391,12 +392,14 @@ export class ShadowBindings {
   }
 
   /**
-   * The lamps' atlas and its shape (`systems/LocalShadows.ts`). Walks the
-   * shadow readers only when the TEXTURE changes, which is a rung change;
-   * the two vectors are held by reference and are rewritten in place.
+   * The lamps' atlas and its shape (`systems/LocalShadows.ts`), and `own` as
+   * `setShadowMap`'s. Walks the shadow readers only when the TEXTURE changes,
+   * which is a rung change or the atlas changing hands; the two vectors are
+   * held by reference and are rewritten in place.
    */
-  setLocalShadowMap(map: BaseTexture): void {
+  setLocalShadowMap(map: BaseTexture, own: OwnTexture | null = null): void {
     this.localAtlasMap = map;
+    this.own.localAtlasMap = own;
     this.eachShadowReader((mat) => mat.setTexture("localAtlasMap", map));
   }
 

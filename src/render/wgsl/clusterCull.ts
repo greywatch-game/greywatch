@@ -57,9 +57,13 @@ export const CULL_UNIFORM_BYTES = 160;
  * - `PASS_CASTS`: a caster in the world's directional shadow maps — the far
  *   and near cascades and the lightning's (`render/WorldShadows.ts`).
  * - `PASS_SOLID`: a translucent SOLID, which the foliage's map records.
+ * - `PASS_LAMPS`: a caster in the lamps' atlas — a fixture's static faces
+ *   (`render/LampAtlas.ts`), which take everything not marked
+ *   `noShadowCaster`, blended or not, as `LocalShadows`' bake always did.
  */
 export const PASS_CASTS = 1;
 export const PASS_SOLID = 2;
+export const PASS_LAMPS = 4;
 
 /**
  * The uniform block (`CULL_UNIFORM_BYTES`) as ten `vec4u`s of words, and the
@@ -79,7 +83,8 @@ export const PASS_SOLID = 2;
  *   move in w.
  * - word 8: the item count, the second count (groups or sets), workgroups,
  *   and the instance cull's draws.
- * - word 9: the pass mask in x (`PASS_CASTS`, `PASS_SOLID`; 0 tests nothing),
+ * - word 9: the pass mask in x (`PASS_CASTS`, `PASS_SOLID`, `PASS_LAMPS`; 0
+ *   tests nothing),
  *   padding.
  */
 export const CULL_DECLARATIONS = /* wgsl */ `
@@ -105,7 +110,7 @@ struct Cluster {
   // group, block, surface, piece.
   refs: vec4u,
   // The ramp weight as float bits, whether it is rigged, the passes it is
-  // drawn in (\`PASS_CASTS\`, \`PASS_SOLID\`), and padding.
+  // drawn in (\`PASS_CASTS\`, \`PASS_SOLID\`, \`PASS_LAMPS\`), and padding.
   sway: vec4u,
 }
 
@@ -134,7 +139,8 @@ fn inPass(c: Cluster) -> bool {
 /**
  * Cluster `k` as `CULL_DECLARATIONS`' `Cluster` — both culls' record: its
  * box, its first index and count, its four `refs`, its sway and the passes
- * it is drawn in beside the main one (`passes`, `PASS_CASTS | PASS_SOLID`).
+ * it is drawn in beside the main one (`passes`: `PASS_CASTS`, `PASS_SOLID`,
+ * `PASS_LAMPS`).
  */
 export function writeCluster(
   f: Float32Array,

@@ -51,14 +51,14 @@ import type { Renderer } from "./Renderer";
 import { SHADOW_TARGETS } from "./targets";
 import { type BlockValues, UniformBlockBuffer } from "./UniformBlockBuffer";
 import { PASS_CASTS, PASS_SOLID } from "./wgsl/clusterCull";
-import type { DepthFaces, WorldDepth } from "./WorldDepth";
+import type { DepthKind, WorldDepth } from "./WorldDepth";
 
 /** The world's directional shadow maps, in the order a frame draws those owed. */
 export const WORLD_SHADOW_MAPS = ["far", "near", "foliage", "flash"] as const;
 export type WorldShadowMap = (typeof WORLD_SHADOW_MAPS)[number];
 
 /** What each map records: which faces, and the clusters of which pass. */
-const RECORDS: Readonly<Record<WorldShadowMap, { readonly faces: DepthFaces; readonly mask: number }>> = {
+const RECORDS: Readonly<Record<WorldShadowMap, { readonly faces: DepthKind; readonly mask: number }>> = {
   far: { faces: "back", mask: PASS_CASTS },
   near: { faces: "back", mask: PASS_CASTS },
   foliage: { faces: "front", mask: PASS_SOLID },
@@ -76,13 +76,13 @@ interface ShadowMapState {
   /** What our renderer binds it as; its view is null while the map has no texture. */
   readonly own: OwnTexture;
   /** What it records and how: `RECORDS`' row. */
-  readonly faces: DepthFaces;
+  readonly faces: DepthKind;
   /** Its light block, and the bind group made of it against each layout asked. */
   readonly light: UniformBlockBuffer;
   /** What its block is written from: the light's view-projection, which `inputs` holds. */
   readonly lightValues: BlockValues;
   readonly groups: Map<GPUBindGroupLayout, GPUBindGroup>;
-  /** `groups`' maker, as `WorldDepth.record` asks for group 0: made once, so a draw makes no closure. */
+  /** `groups`' maker, as `WorldDepth.draw` asks for group 0: made once, so a draw makes no closure. */
   readonly lightGroup: (layout: GPUBindGroupLayout) => GPUBindGroup;
   /** What its casters are culled for: its light, its pass mask, no reach, no gate, no sway. */
   readonly inputs: CullInputs;
@@ -386,7 +386,11 @@ export class WorldShadows {
       const map = order[i];
       if (!map.pending || !map.pass) continue;
       map.light.write(map.lightValues);
-      depth.record(encoder, map.pass, map.inputs, map.faces, map.lightGroup, map.slot);
+      if (depth.cull(map.inputs, encoder, map.slot)) {
+        const pass = encoder.beginRenderPass(map.pass);
+        depth.draw(pass, map.faces, map.inputs.mask, map.lightGroup);
+        pass.end();
+      }
       map.pending = false;
       map.drawnOnce = true;
       map.owedFirst = false;

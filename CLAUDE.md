@@ -549,6 +549,10 @@ be one the handover can hold (block-merged, at identity, never
 **THE LAMPS CAST INTO ONE ATLAS** (`systems/LocalShadows.ts`), **a light casts
 by what it SAYS** (`PointLightData.shadow`), and the bumped ground variant is at
 **16 of WebGPU's 16 sampled textures per stage** — a new texture owes a PACKING.
+**The atlas changes hands WITH the world's maps**: OUR renderer's
+(`render/LampAtlas.ts`, every pass of it) on the same handover of the same
+casters, `LocalShadows`' render target otherwise, and **`LocalShadows` decides
+everything either side draws** — which lights, which tiles, which faces bake.
 
 **Nothing drawn outside the cel shader gets fog for free, and everything that
 draws outside it owes the same fade** `CelMaterialFactory.setEnvironment`
@@ -598,8 +602,8 @@ it never disables, never hides, never unpickles. **A collider is never a
 candidate, and nor is a BLOCK or the LANDFORM our renderer TAKES**
 (`BlockHandover`; the BUILD marks `WorldSurface.landform`), drawn in the MAIN
 pass by `src/render/` — **blocks, then landform, before the alpha-test list** —
-their Babylon meshes kept for the probes and the lamps' atlas (the world's
-shadow maps are drawn by our side too, while it holds every caster), and **a taken mesh is never
+their Babylon meshes kept for the probes (the world's shadow maps and the
+lamps' atlas are drawn by our side too, while it holds every caster), and **a taken mesh is never
 switched off, hidden or faded after its build** — ours reads no node and would
 still draw it (a DEV check says so). **The SCATTER is drawn twice over and the
 two must agree**: our main pass draws it as INSTANCES of its variants, its

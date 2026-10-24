@@ -32,11 +32,13 @@
  * caster depths and the hard edges crawl just the same.
  */
 import {
-  type BaseTexture,
+  BaseTexture,
   type DirectionalLight,
   RawTexture,
   type Scene,
+  Texture,
   Vector3,
+  type WebGPUEngine,
 } from "@babylonjs/core";
 
 /**
@@ -70,6 +72,30 @@ export function litShadowTexture(scene: Scene): BaseTexture {
   return tex;
 }
 const litByScene = new WeakMap<Scene, BaseTexture>();
+
+/**
+ * Babylon's view of a shadow texture OUR renderer owns (`BABYLON_EXIT.md`
+ * rule 5: the side that does not own a texture reads a wrapped view of it) —
+ * a world map's (`ShadowSystem`) or the lamps' atlas (`LocalShadows`) —
+ * sampled as Babylon's own shadow textures were: nearest, clamped. A wrapped
+ * texture has no view until it is re-pointed, so it is re-pointed at itself.
+ *
+ * **Disposing the view DESTROYS the texture it wraps** (Babylon releases it
+ * at the end of its frame), so whoever holds one lets it go only with that
+ * texture, and re-makes the texture afresh rather than keeping it under a
+ * view that is going.
+ */
+export function wrapShadowTexture(scene: Scene, texture: GPUTexture, name: string): BaseTexture {
+  const engine = scene.getEngine() as WebGPUEngine;
+  const internal = engine.wrapWebGPUTexture(texture);
+  engine.updateWrappedWebGPUTexture(internal, texture);
+  engine.updateTextureSamplingMode(Texture.NEAREST_SAMPLINGMODE, internal);
+  const wrapped = new BaseTexture(scene, internal);
+  wrapped.name = name;
+  wrapped.wrapU = Texture.CLAMP_ADDRESSMODE;
+  wrapped.wrapV = Texture.CLAMP_ADDRESSMODE;
+  return wrapped;
+}
 
 /**
  * The near plane of every shadow volume in the game, in metres along the

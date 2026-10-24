@@ -1,8 +1,8 @@
 /**
  * render/targets.ts — The attachments the frame's main pass draws into, and
- * the ones the world's shadow maps are drawn into, each stated ONCE: every
- * pipeline our renderer builds for one of those passes is built against
- * its own, and nothing else in `src/render/` writes a format.
+ * the ones the shadow maps and the lamps' atlas are drawn into, each stated
+ * ONCE: every pipeline our renderer builds for one of those passes is built
+ * against its own, and nothing else in `src/render/` writes a format.
  * Owns: `FRAME_TARGETS`, `SHADOW_TARGETS` and `targetsKey`.
  * Invariants: `FRAME_TARGETS` is what the host's open pass is
  * (`FrameHost.passIs`), checked by `Renderer` on every frame it draws — a
@@ -45,6 +45,9 @@ export const FRAME_TARGETS: PassTargets = {
  * in a quarter of the memory; a `depth32float` attachment for the test, as
  * Babylon's; one sample; and drawn upside down as Babylon draws every render
  * target, which is the way up every reader's `clip.xy * 0.5 + 0.5` assumes.
+ * The lamps' atlas is drawn into the same (`render/LampAtlas.ts`, X3.6b),
+ * its one channel the radial distance its render target held in Babylon's
+ * `r16float` already.
  */
 export const SHADOW_TARGETS: PassTargets = {
   colorFormats: ["r16float"],

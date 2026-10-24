@@ -2161,6 +2161,14 @@ drawn at depth ALWAYS in a pass of its own. The work `update` lays out is
 CONSUMED by `render` — a state that runs no `update` must not re-bake last
 frame's queue every frame.
 
+**All of that is the path that keeps the atlas BABYLON's.** Since X3.6b the
+atlas is OUR renderer's whenever the handover holds every caster
+(`render/LampAtlas.ts`), and the same passes are drawn there in the same
+order — a tile cleared by a copy rather than a sheet, a static face over the
+world's casters culled for it rather than a list of meshes picked by bounds,
+the proxies as one instanced box — off the same decisions, which stay here
+(see "Our renderer's frame").
+
 **A tile stores RADIAL distance over the light's range, from BACK faces**, and
 the receiver is offset along its true facet toward the light — the moon map's
 two rules, for its reasons. `nearClear` (0.35 m) is every face's near plane
@@ -3387,9 +3395,9 @@ the map-wide road merge. X3.3a and X3.3b proved
 them behind a DEV switch, `?ourworld`, against the bank Babylon drew without
 it; X3.3c took the switch out, so Babylon draws a block in the main pass only
 when the handover refused it or handed it back. **Their Babylon meshes STAY**, and are
-still drawn by Babylon in the reflection probes and the lamps' atlas until
-X3.6b and X3.6c move those passes; the world's directional shadow maps are
-our side's since X3.6a (below).
+still drawn by Babylon in the reflection probes until X3.6c moves that pass;
+the world's directional shadow maps are our side's since X3.6a and the lamps'
+atlas since X3.6b (below).
 
 - **`systems/BlockHandover.ts` decides which surfaces are TAKEN.** A
   surface is taken if it is block-merged OR the landform, at identity, never
@@ -3553,9 +3561,9 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
   otherwise, is a per-kind bake plus a term or two per INSTANCE, never a
   per-instance bake (`BABYLON_EXIT.md` X3.4).
 - **Babylon's copy of the scatter stays in the blocks**, built from the same
-  variants, because the shadow maps, the probes and the lamps' atlas still
-  draw Babylon's meshes until X3.6: the shadows are the variants' shapes
-  too. In the MAIN pass the scatter's pieces (its regions) are CUT out of
+  variants, because the probes still draw Babylon's meshes until X3.6c, as
+  the shadow maps and the lamps' atlas do on the path that keeps them
+  Babylon's: the shadows are the variants' shapes too. In the MAIN pass the scatter's pieces (its regions) are CUT out of
   every taken block of a group that draws them as instances
   (`clusters.ts`'s `withoutPieces`) before the block is uploaded, and **a
   DEV build checks the trade is one for one**: the indices cut out of a group
@@ -3794,6 +3802,77 @@ light's matrix over.
 - **Not timed on our side**: the shadow maps' culls are not in `gpu.cull`,
   and `shadowPass` (`FrameProfile`) brackets only Babylon's generators, which
   a round no longer has for the world's maps — only the bodies'.
+
+**The lamps' ATLAS is drawn by our side too, into a texture it owns**
+(`BABYLON_EXIT.md` X3.6b): every pass of it, static and dynamic.
+`render/LampAtlas.ts` owns the texture and records the frame's passes,
+`render/lampDepth.ts` is the program, and `LocalShadows` still decides
+everything — which lights cast, which tiles each holds, which faces bake on
+which frame, what is published to the slots — and hands the frame's work
+over once a frame (`AtlasWork`, `LampAtlas.queue`).
+
+- **It changes hands WITH the world's maps.** `BlockHandover` holds the same
+  casters for both and hands them to `WorldShadows` and `LampAtlas` together
+  (`setCasters`), at slots of the culls apart — the world's four first, then
+  `staticFacesPerFrame` for the atlas; a caster it cannot hold, a loss
+  mid-map, an editor build and `?babylonworld` leave the atlas to
+  `LocalShadows`' render target, exactly as they leave the maps to the
+  generators, and a loss hands it back after the task in hand for the
+  maps' reason. `LocalShadows.setWorld` reads who holds it, after the
+  install, as `ShadowSystem.setCasters` does.
+- **The atlas's casters are its own pass, `PASS_LAMPS`**: every surface not
+  `noShadowCaster`, BLENDED OR NOT, because `LocalShadows`' bake drew its
+  visuals whatever their material — where the world's maps skip a blended
+  one. On every shipped map the two sets are the same surfaces.
+- **The texture must be one side's whole, so every pass moved, not only the
+  static faces.** A static tile and a dynamic one share the texture and the
+  shader binds one atlas (16 of 16 textures), so the proxies a moving light
+  and the bodies are drawn as moved with the bakes: one instanced unit box
+  (the kit's `createBox`, Babylon's `CreateBox` number for number, unrolled
+  into 36 corners), its matrix and tile an instance's, one draw for every
+  dynamic tile — what X4.1 leaves to do for the atlas is where a body's
+  boxes come from.
+- **A frame's passes keep Babylon's order**: every tile flagged CLEARED first
+  — a copy of a tile of the far value (`copyBufferToTexture`), where Babylon
+  drew a clear sheet in a pass of its own — then a pass a static face, each
+  after its own culls, then one pass for every dynamic tile. **Nothing else
+  is ever cleared**: the colour is LOADED by every pass, because a static
+  tile survives every frame that does not bake it; the depth attachment is
+  cleared by every pass and stored by none, because no tile is drawn by two.
+  A new texture is born holding the far value, by a submit of its own.
+- **A static face is a VIEW of the world's casters**, culled for the face as
+  a directional map is for its light (`WorldDepth.cull`, then `draw` into
+  the pass the atlas opens): the face's own perspective as a view-projection
+  (`faceInputs`) — the clip position the vertex stage computes before it is
+  offset into the tile, so its side planes are the face's frustum — the
+  light as the eye, and the light's RANGE as the reach: a caster wholly past
+  it stores a distance over 1, which shadows nothing, since the lookup is
+  only asked inside the range. Babylon's bake picked whole meshes by the
+  same tests on their bounds and let the fragment stage cut them to the
+  face; the cull keeps the clusters the face can see, which draws the same
+  texels wherever a receiver can READ them. **Past the range the two
+  disagree, and that is not a difference**: Babylon tested a MESH against
+  the range and the cull tests a cluster's BLOCK, so either side may store
+  a distance over 1 where the other kept the far value — and every value
+  from 1 up reads "lit" alike, the lookup being asked only inside the
+  range. An oracle comparing the two clamps both at 1 first. The tile is a
+  uniform a face slot holds (a 256-byte offset of one buffer a slot),
+  written once a frame.
+- **What is written is Babylon's number**: the radial distance over the
+  range, from the casters' BACK faces (its material culled the front), the
+  fragment discarded outside the face's frustum — `localShadowDepth`'s
+  arithmetic, in the pulled form, the vertex decoded as the cel stage
+  decodes it (`pulledWorld`). No caster sways, as before.
+- **Published once QUEUED, on our side as on Babylon's.** `LocalShadows`
+  counts a static layer live the frame its last face is queued, because the
+  work is drawn before the main pass reads the slots; ours is recorded in
+  the prepare encoder, which the host submits ahead of every pass of its
+  own, so the promise holds. **Work our renderer never recorded** — a frame
+  that prepared nothing — is `LampAtlas.owed` at the next `update`, and
+  every light gives its tiles back rather than publish one nobody drew.
+  `LampAtlas.ready` (the proxies' pipeline and the casters built) stands
+  where Babylon's compiled-effect check stood: until it holds, no light is
+  shadowed.
 
 ## Block visibility: how much of the map the frame walks
 

@@ -107,6 +107,7 @@ import {
 } from "../shaders/CelShader";
 import { BabylonFrameHost } from "../render/babylonSeam";
 import { Renderer } from "../render/Renderer";
+import { LampAtlas } from "../render/LampAtlas";
 import { WorldShadows } from "../render/WorldShadows";
 import { PaperGrain } from "../shaders/PaperGrain";
 import { CelInk } from "../shaders/CelInk";
@@ -722,6 +723,8 @@ export class Game {
    * and everything that moves redrawn from proxies (`systems/LocalShadows.ts`).
    */
   private localShadows: LocalShadows;
+  /** The lamps' atlas as our renderer owns it, which `localShadows` hands over to or takes back. */
+  private readonly lampAtlas: LampAtlas;
   /**
    * The URL's session overrides of the display settings — `?gi=`,
    * `?shadows=`, `?volumetrics=` and `?nominimap` — and of the round's seed,
@@ -1478,7 +1481,14 @@ export class Game {
     // The lamps' atlas, for the same rule: `SHADOW_SAMPLER_NAMES` lists it, so
     // it is bound before the first material exists — the lit 1x1 on a rung
     // that has none.
-    this.localShadows = new LocalShadows(this.scene, this.mats, this.shadowQuality);
+    // Its atlas is our renderer's whenever the handover holds every caster,
+    // as the world's maps are (`BABYLON_EXIT.md` X3.6b).
+    this.lampAtlas = new LampAtlas(
+      this.renderer,
+      CONFIG.graphics.localShadows.staticFacesPerFrame,
+      CONFIG.graphics.localShadows.maxProxies,
+    );
+    this.localShadows = new LocalShadows(this.scene, this.mats, this.shadowQuality, this.lampAtlas);
     // The same rule again, for the irradiance volume's seven textures: every
     // cel material declares them, so they are published before the first one
     // exists and stay published whatever the setting says.
@@ -1751,7 +1761,7 @@ export class Game {
     // flag. Nothing it does is visible to a ray, a collision, a shadow caster
     // or a cube probe; see `WorldCulling`, which is the whole argument.
     this.culling = new WorldCulling(this.scene);
-    this.handover = new BlockHandover(this.renderer, this.mats, this.culling, this.worldShadows, {
+    this.handover = new BlockHandover(this.renderer, this.mats, this.culling, this.worldShadows, this.lampAtlas, {
       mode: this.overrides.cullMode,
       // After the HUD, which built `#hud`.
       report: this.overrides.cullCheck ? new CullCheckPanel().show : null,

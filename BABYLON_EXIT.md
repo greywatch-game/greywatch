@@ -1904,7 +1904,9 @@ plain draw and, with scatter, its one indirect draw, a pass.
   `DirectionalLight` per map). The texel snap (`core/shadowWindow.ts`), the
   back-face recording and "only re-render when the snapped focus moves" all
   hold **LANDED** (below).
-- **X3.6b — the lamps' atlas:** `LocalShadows`' static faces.
+- **X3.6b — the lamps' atlas:** `LocalShadows`' static faces — and, the
+  texture being one side's whole, its dynamic tiles and its clears with
+  them **LANDED** (below).
 - **X3.6c — the reflection bake:** `ReflectionSystem`'s probes, which draw the
   world from each probe with the probe's eye passed explicitly. That removes
   the class of bug 242b986 and a858c74 fixed: a `ReflectionProbe` never moving
@@ -2073,6 +2075,102 @@ plain draw and, with scatter, its one indirect draw, a pass.
     `gpu.frame` against X3.5b's.
   - X3.6b, the lamps' atlas, holds `map.visuals` the same way: the caster
     groups and the pass mask are its to extend.
+
+**X3.6b landed** (the commit carrying this record, the post-commit review's
+fixes after it; 2026-10-23).
+- **What it is.** The lamps' atlas is a texture our renderer OWNS
+  (`render/LampAtlas.ts`, an `r16float` colour as Babylon's render target's
+  was, and a `depth32float` attachment) and draws EVERY pass
+  of whenever the handover holds every caster; Babylon's cel materials
+  sample a wrapped view (`wrapShadowTexture`, now `core/shadowWindow.ts`'s,
+  which `ShadowSystem` uses too) and our frame binds the texture itself
+  (`ShadowBindings`' `own.localAtlasMap`). `LocalShadows` still decides
+  everything — which lights cast, which tiles each holds, which faces bake
+  on which frame, what reaches the slots — and on our side hands the frame's
+  work over as one `AtlasWork` over the arrays it already filled
+  (`LampAtlas.queue`), where Babylon's side draws it into its render target
+  as before. Who holds it is read at `LocalShadows.setWorld`, after the
+  install, as the world's maps are; a loss (`LampAtlas.lose`, beside
+  `WorldShadows.lose`) hands it back after the task in hand.
+- **Every pass moved, not only the static faces.** A static tile and a
+  dynamic one share the texture, and the cel stage binds one atlas at 16 of
+  16 textures, so the step could not leave the proxies Babylon's: the
+  proxies (collider boxes and bodies) are one instanced unit box (the
+  kit's `createBox`, unrolled into 36 corners), its matrix and tile an
+  instance's, one draw for every dynamic tile; a tile flagged cleared is a
+  `copyBufferToTexture` of a tile of the far value. The passes keep
+  Babylon's order (clears, static faces, proxies); the colour is loaded by
+  every pass and the depth cleared by every pass and stored by none.
+- **A static face is a view of the culls.** The atlas's casters are their own
+  pass bit, `PASS_LAMPS` — every surface not `noShadowCaster`, BLENDED OR
+  NOT, because Babylon's bake drew its visuals whatever their material;
+  on every shipped map no blended surface casts, so the set is the world
+  maps'. Each static face is culled as a directional map is
+  (`WorldDepth` split into `cull` and `draw`, the pass the caller's), at a
+  slot of its own after the world's four (`staticFacesPerFrame` slots):
+  the face's perspective as a view-projection (`lampDepth.faceInputs`), the
+  light as the eye, the light's range as the reach. The program
+  (`render/lampDepth.ts`) is `localShadowDepth` in the pulled form — the
+  radial distance over the range from the back faces, the fragment
+  discarded outside the face — over the world's arrays, its scatter twin and
+  the proxies'.
+- **Measured.**
+  - **The atlas itself, against Babylon's** (a scratch readback, ours / Babylon's /
+    ours again from a fresh allocation at one eye, three vantages near
+    clusters of shadowed fixtures a map; static tiles on `high`, the
+    dynamic ones on `low`, where every light is proxies). Ours against ours
+    is 0 texels everywhere; the dynamic tiles are identical to Babylon's on
+    every map. On the static tiles, first on seven maps, then on Harrowmead
+    and Hollowmere after the reach fix below:
+    texels a receiver can read differently (both values clamped at 1, the
+    lookup being asked only inside the range; over 0.01): Harrowmead 0 / 0 /
+    0, Hollowmere 3 / 0 / 5 — silhouette edges across a texel centre, both
+    sides covering the same count of in-range texels on every tile. Before
+    the clamp, the raw count over 0.01 is 70 / 70 / 448 and 281 / 0 / 5:
+    texels past the range where one side stored a distance over 1 and the
+    other the far value — Babylon tested a MESH against the range, the cull
+    tests a cluster's BLOCK — which read "lit" alike. The first seven-map
+    readback (before the fix) was edge and rounding differences of the same
+    kind: Greyfen 62 texels at most, Coldharbour 27 at 0.0005, Sarab and
+    Cinderhaven under 0.19% of a tile's texels, Kurenai 0.
+  - **The bank, against a BEFORE kept at e1fbb9a in a worktree**
+    (`--check --keep` both sides): **61 of 61 byte-identical**. No console
+    or page error.
+  - **`census.mjs --against`** the BEFORE: equal on all seven maps (384,
+    226, 829, 891, 673, 228, 134).
+  - **`shaders.mjs`**: clean on seven maps, our builds 15/15 and 19/19 (the
+    lamp pipelines among them). **`gate.mjs`**: clean on seven.
+  - **The paths no instrument covers**, forced in a scratch page on
+    Hollowmere and Coldharbour: ours after every install on all seven maps;
+    a rung change (`low`, `off` and back) while the atlas is ours; a forced
+    LOSS (Babylon's render target, then ours again on the next map); a
+    second round; a round installed on `off` and raised (Babylon's until the
+    next map, as the world's maps); the editor and `?babylonworld`
+    (Babylon's). No page or console error. These ran before the reach fix,
+    which changes one number in the cull's inputs.
+  - **X0.3 on the desktop** (`bench.mjs`'s run, settings and summary —
+    `--max`, `&gpu`, uncapped, 3440x1440, three runs a side — through a
+    scratch driver that alternates the two trees run by run in one browser
+    and abandons a run the device hangs, the canonical fight hashes on all
+    18 runs, every segment within 0.978-1.013): the mean frame new / old
+    0.997-1.000 on the vantages, 0.995-1.000 on the path, 0.994-1.013 in
+    the fights; `gpu.frame` level; Babylon's draw counter equal or 1-3
+    lower.
+  - **The machine's device hang (`FINDINGS.md` 64) was at its worst all
+    session**: 64 nvlddmkm event-153 hangs in about three hours, every
+    stall killed matching one, on both trees (the BEFORE's Cinderhaven bank
+    2 of 3, its Hollowmere census 3 of 3), so every GPU instrument above ran
+    one map a process with retries, and nothing is the step's.
+- **Owed onward.**
+  - The atlas's passes are not timed on our side (not in `gpu.cull`, and
+    `shadowPass` brackets only Babylon's generators); the phone's FOLLOW-UP
+    reading, the user's to take as every step's since X3.3c, is read as
+    `gpu.frame` against X3.6a's.
+  - Dynamic tiles with BODIES in them were not compared texel for texel (the
+    `low` rung's comparison has the collider boxes only); the bodies go
+    through the same instanced draw, their boxes `LocalShadows`'.
+  - What X4.1 leaves to do for the atlas is where a body's boxes come from:
+    the draw is ours already.
 
 **After X3.6:** Babylon builds no block, scatter or terrain mesh for a round.
 Editor builds keep the old path until X5.3.

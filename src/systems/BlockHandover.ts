@@ -1,12 +1,12 @@
 /**
  * systems/BlockHandover.ts — The map's BLOCKS, and since X3.5 its LANDFORM,
  * handed from Babylon's main pass to our renderer's (`BABYLON_EXIT.md` X3.3,
- * X3.5), and since X3.6a its shadow CASTERS to our renderer's shadow maps:
- * which surfaces are taken, their arrays handed over on the way past the
- * build, and the map cut once it is filed.
+ * X3.5), and since X3.6a its shadow CASTERS to our renderer's shadow maps —
+ * since X3.6b the lamps' atlas too: which surfaces are taken, their arrays
+ * handed over on the way past the build, and the map cut once it is filed.
  * Owns: `BlockHandover` — our renderer's `WorldBlocks`, the taken meshes in
  * surface order, which of them were handed back and which are held for the
- * shadow maps alone, which of them cast, whether the handover holds every
+ * shadows alone, which of them cast, whether the handover holds every
  * caster the map has, the material epoch last copied, and the build's
  * scatter FIELD until the map is cut (X3.4b).
  * Invariants: a surface is TAKEN only if our pipeline draws it exactly as
@@ -27,8 +27,9 @@
  * REFUSES (`Renderer.onRefused`) hands back the whole map, for the rest of
  * it, from the next frame — the refused one is the one frame drawn without
  * them; a taken mesh is drawn by our side
- * in the MAIN pass only and stays Babylon's in every other (the shadow maps,
- * the probes, the lamps' atlas), because only the main pass's candidate list
+ * in the MAIN pass only and stays Babylon's in every other Babylon draws (the
+ * probes, and the shadow maps and the lamps' atlas while they are Babylon's),
+ * because only the main pass's candidate list
  * is told (`WorldCulling.setTaken`); what our side draws of it each frame is
  * decided on the GPU, cluster by cluster, from numbers alone — the frame's
  * camera, and the reach and size gate `WorldCulling` decides
@@ -48,18 +49,20 @@
  * group that draws them so — Babylon's copy of them stays in its meshes for
  * every other pass, until X3.6 — while a recipe our side does not take is
  * drawn whole by Babylon, scatter and all, and a group that fails goes back
- * whole, scatter and all. THE SHADOW MAPS ARE TAKEN WHOLE OR NOT AT ALL
- * (X3.6a): a surface CASTS as Babylon's generator would have drawn it — not
- * `noShadowCaster`, not blended — into the world's maps (`PASS_CASTS`), and
- * a translucent SOLID into the foliage's too (`PASS_SOLID`); a caster the
- * main pass does not take is held for the shadow maps alone
- * (`WorldBlocks.addCaster`: its positions, at identity, never `updatable`);
- * and only when EVERY caster is held, taken or so, are the casters handed
- * to `WorldShadows` — one we cannot hold leaves the whole map's shadows to
- * Babylon's generators, and a caster handed back later, or a refused main
- * pass, LOSES them to Babylon for the rest of the map
- * (`WorldShadows.lose`), so no caster is ever drawn by neither side or in
- * half a map.
+ * whole, scatter and all. THE SHADOWS ARE TAKEN WHOLE OR NOT AT ALL
+ * (X3.6a, X3.6b): a surface CASTS as Babylon would have drawn it — into the
+ * world's maps (`PASS_CASTS`) if it is not `noShadowCaster` and not blended,
+ * a translucent SOLID into the foliage's too (`PASS_SOLID`), and into the
+ * lamps' atlas (`PASS_LAMPS`) if it is not `noShadowCaster`, blended or not,
+ * as `LocalShadows`' bake drew it; a caster the main pass does not take is
+ * held for the shadows alone (`WorldBlocks.addCaster`: its positions, at
+ * identity, never `updatable`); and only when EVERY caster is held, taken or
+ * so, are the casters handed to `WorldShadows` and `LampAtlas` together, at
+ * slots of the culls apart — one we cannot hold leaves the whole map's
+ * shadows to Babylon (its generators and the atlas's render target), and a
+ * caster handed back later, or a refused main pass, LOSES them to Babylon for
+ * the rest of the map (`WorldShadows.lose`, `LampAtlas.lose`), so no caster
+ * is ever drawn by neither side or in half a map.
  * Never: draws, or reads a material's uniforms — a material reaches our side
  * as its recipe; writes a property on a mesh.
  * Contract: `docs/rendering.md`, "Our renderer's frame";
@@ -69,8 +72,10 @@ import type { AbstractMesh, Material, Mesh } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { type BlockBox, type CullDiagnostics, NO_DIAGNOSTICS } from "../render/ClusterCull";
 import type { Renderer } from "../render/Renderer";
-import { PASS_CASTS, PASS_SOLID } from "../render/wgsl/clusterCull";
+import type { LampAtlas } from "../render/LampAtlas";
+import { PASS_CASTS, PASS_LAMPS, PASS_SOLID } from "../render/wgsl/clusterCull";
 import { WorldBlocks } from "../render/WorldBlocks";
+import type { WorldDepth } from "../render/WorldDepth";
 import type { WorldShadows } from "../render/WorldShadows";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { ScatterField } from "../world/scatterVariants";
@@ -88,11 +93,11 @@ export class BlockHandover {
   private landform = new Set<Mesh>();
   /** Of those, the ones handed back to Babylon's main pass. */
   private back = new Set<Mesh>();
-  /** Of those, the ones held for the shadow maps alone (`WorldBlocks.addCaster`), which no main pass of ours draws. */
+  /** Of those, the ones held for the shadows alone (`WorldBlocks.addCaster`), which no main pass of ours draws. */
   private castersOnly = new Set<Mesh>();
-  /** The surfaces that cast, by index — one of them handed back loses the shadow maps. */
+  /** The surfaces that cast, by index — one of them handed back loses the shadows. */
   private casting = new Set<number>();
-  /** Every caster of the map built so far is held, taken or for the shadow maps alone. */
+  /** Every caster of the map built so far is held, taken or for the shadows alone. */
   private allCasters = true;
   /** The whole map was handed back, its main pass refused. */
   private handedBack = false;
@@ -111,6 +116,8 @@ export class BlockHandover {
     private readonly culling: WorldCulling,
     /** Our renderer's shadow maps, handed the casters when every one is held. */
     private readonly shadows: WorldShadows,
+    /** Our renderer's lamps' atlas, handed the same casters with them. */
+    private readonly lamps: LampAtlas,
     /** Our culls' diagnostics — `?nocull`, `?nofrustum`, `?cullcheck` (`core/urlOverrides.ts`). */
     diagnostics: CullDiagnostics = NO_DIAGNOSTICS,
   ) {
@@ -127,7 +134,7 @@ export class BlockHandover {
 
   /**
    * The build's `BuildOptions.onSurface`: takes `surface` if our side draws it
-   * — see the header for the test — or holds it for the shadow maps alone if
+   * — see the header for the test — or holds it for the shadows alone if
    * it casts, and hands its arrays over while they can still be read.
    */
   readonly onSurface = (surface: WorldSurface, mesh: Mesh): void => {
@@ -176,7 +183,7 @@ export class BlockHandover {
   }
 
   /**
-   * `surface`, a caster the main pass does not take, held for the shadow maps
+   * `surface`, a caster the main pass does not take, held for the shadows
    * alone if its positions are world positions and nothing rewrites them —
    * a block merge, at identity, never `updatable` — and its index; else null.
    */
@@ -186,22 +193,22 @@ export class BlockHandover {
   }
 
   /**
-   * The shadow passes a surface or a part is drawn in, as Babylon's
-   * generators would have been handed it (`ShadowSystem.casts`): none for a
-   * `noShadowCaster` one or one its generator skips as blended
-   * (`transparencyShadow` off), the world's maps for the rest — and, a rung
-   * that draws no map, held for none: a later rung that does draws on the
-   * generators until the next map — and the
-   * foliage's too for a translucent SOLID (`CelMaterialFactory.isSolid`).
-   * The generators' own statement of it is `ShadowSystem.casts`, which the
-   * blend test is not in because a generator makes it itself: the two must
-   * agree, or a map's shadows differ by who draws them.
+   * The shadow passes a surface or a part is drawn in, as Babylon would have
+   * drawn it: none for a `noShadowCaster` one; the lamps' atlas for every
+   * other (`LocalShadows`' bake drew its visuals whatever their material);
+   * the world's maps for those Babylon's generators would have been handed
+   * (`ShadowSystem.casts`) — not one a generator skips as blended
+   * (`transparencyShadow` off) — and the foliage's too for a translucent
+   * SOLID (`CelMaterialFactory.isSolid`). The generators' own statement of
+   * it is `ShadowSystem.casts`, which the blend test is not in because a
+   * generator makes it itself, and the atlas's is `LocalShadows.setWorld`'s
+   * filter: each must agree, or a shadow differs by who draws it.
    */
   private passesOf(metadata: { noShadowCaster?: boolean } | null | undefined, material: Material | null, mesh: Mesh | null): number {
     if (metadata?.noShadowCaster) return 0;
     // A part has no mesh of its own: its material alone says whether it blends.
-    if (material && (mesh ? material.needAlphaBlendingForMesh(mesh) : material.needAlphaBlending())) return 0;
-    return PASS_CASTS | (this.mats.isSolid(material) ? PASS_SOLID : 0);
+    if (material && (mesh ? material.needAlphaBlendingForMesh(mesh) : material.needAlphaBlending())) return PASS_LAMPS;
+    return PASS_LAMPS | PASS_CASTS | (this.mats.isSolid(material) ? PASS_SOLID : 0);
   }
 
   /**
@@ -244,15 +251,16 @@ export class BlockHandover {
     this.epoch = -1;
     this.reported = false;
     this.fileTaken(meshes);
-    // A caster held for the shadow maps alone is not taken, so the cull has no
+    // A caster held for the shadows alone is not taken, so the cull has no
     // reach box for it — and needs none: no main pass draws it, and a shadow
-    // map's cull measures no reach.
+    // pass's cull measures from the light, past every box.
     const boxes: BlockBox[] = meshes.map((mesh) =>
       this.castersOnly.has(mesh) ? NO_REACH : this.culling.reachBoxOf(mesh),
     );
-    // Held for maps that draw: on a rung with every map off there is nothing
-    // to draw them into, and the generators (of none) are the map's.
-    const holdsAll = this.allCasters && this.casting.size > 0 && this.shadows.rungDraws;
+    // Held for shadows that draw: on a rung with every map and the atlas off
+    // there is nothing to draw them into, and Babylon's (of none) are the map's.
+    const holdsAll =
+      this.allCasters && this.casting.size > 0 && (this.shadows.rungDraws || this.lamps.rungDraws);
     this.blocks.finish(
       boxes,
       field
@@ -261,14 +269,27 @@ export class BlockHandover {
             sets: field.sets.map((set) => ({ matrices: set.matrices, scales: set.scales })),
           }
         : null,
-      holdsAll ? this.shadows.slots : 0,
+      // The world's maps' slots first, then the atlas's static faces'.
+      holdsAll ? this.shadows.slots + this.lamps.slots : 0,
     );
     // The cut may already have handed casters back — a group it could not
     // draw, or the whole map past the device's limits — before there were
     // casters to lose: then the map's shadows were never ours to hand over.
     let whole = holdsAll;
     for (const at of this.casting) if (this.back.has(this.meshes[at])) whole = false;
-    this.shadows.setCasters(whole ? this.blocks.depth : null);
+    this.handCasters(whole ? this.blocks.depth : null);
+  }
+
+  /** The casters to every shadow of ours — or none, when the map's shadows are Babylon's. */
+  private handCasters(depth: WorldDepth | null): void {
+    this.shadows.setCasters(depth);
+    this.lamps.setCasters(depth, this.shadows.slots);
+  }
+
+  /** The casters can no longer draw what Babylon would: every shadow of ours goes back to Babylon. */
+  private loseCasters(): void {
+    this.shadows.lose();
+    this.lamps.lose();
   }
 
   /**
@@ -284,7 +305,7 @@ export class BlockHandover {
     handedBack: number;
   } {
     const { surfaces, clusters, groups } = this.blocks.count;
-    // The main pass's: a caster held for the shadow maps alone is not taken from it.
+    // The main pass's: a caster held for the shadows alone is not taken from it.
     const taken = surfaces - this.castersOnly.size;
     let back = 0;
     for (const mesh of this.back) if (!this.castersOnly.has(mesh)) back++;
@@ -297,9 +318,9 @@ export class BlockHandover {
     };
   }
 
-  /** The map is going: every surface, buffer and material of ours with it, and the shadow maps' casters first. */
+  /** The map is going: every surface, buffer and material of ours with it, and the shadows' casters first. */
   clear(): void {
-    this.shadows.setCasters(null);
+    this.handCasters(null);
     this.blocks.clear();
     this.field = null;
     this.meshes = [];
@@ -327,14 +348,14 @@ export class BlockHandover {
   private readonly failed = (surfaces: readonly number[]): void => {
     if (this.handedBack) return;
     for (const at of surfaces) this.back.add(this.meshes[at]);
-    // A caster going back is Babylon's to draw into a map: so is every other.
-    if (surfaces.some((at) => this.casting.has(at))) this.shadows.lose();
+    // A caster going back is Babylon's to draw into a shadow: so is every other.
+    if (surfaces.some((at) => this.casting.has(at))) this.loseCasters();
     this.fileTaken(this.meshes.filter((m) => !this.back.has(m)));
   };
 
   /**
    * Tells the cull `meshes` are ours, each as the block or the landform the
-   * build said it was — but for those held for the shadow maps alone, which
+   * build said it was — but for those held for the shadows alone, which
    * the main pass is never told of.
    */
   private fileTaken(meshes: readonly Mesh[]): void {
@@ -355,7 +376,7 @@ export class BlockHandover {
   private readonly refused = (): void => {
     if (this.handedBack || this.meshes.length === 0) return;
     this.handedBack = true;
-    this.shadows.lose();
+    this.loseCasters();
     this.blocks.stop();
     this.culling.setTaken([], []);
     console.error(
@@ -366,7 +387,7 @@ export class BlockHandover {
   /**
    * Once a frame as the main pass begins: a material rewritten by its owner
    * is copied again, and a DEV build checks that no mesh of ours — taken, or
-   * held for the shadow maps alone — has been switched, hidden or faded:
+   * held for the shadows alone — has been switched, hidden or faded:
    * Babylon would stop drawing or casting it, or draw it blended, and our
    * side, which reads no node, would not follow.
    */
