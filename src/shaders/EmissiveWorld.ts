@@ -3,7 +3,9 @@
  * sign in a map's MERGED world wears, whatever colour it emits: the emissive
  * palette, `getWorldCel`'s twin for the light sources. And the twin of it
  * `GlowPass` draws their bloom with.
- * Owns: both WGSL stages, `EmissiveWorldMaterial` and `MAX_EMISSIVE_PALETTE`.
+ * Owns: Babylon's declarations of both WGSL stages (their bodies are
+ * `wgsl/emissiveWorld.ts`'s, which a probe's bake on our renderer draws too)
+ * and `EmissiveWorldMaterial`; re-exports `MAX_EMISSIVE_PALETTE`.
  * Is fed the fog and the palette by `CelMaterialFactory`, which is the only
  * thing that makes one (`getEmissiveWorld`), and the palette itself is
  * discovered by `MapBuilder`'s block merge.
@@ -47,6 +49,9 @@
  * stand. So this takes `camPos` from `CelMaterialFactory.updateCamera`, the
  * one eye `ReflectionSystem` already moves per face and puts back — the wall
  * and the window in front of it fog against the same point by construction.
+ * (That is Babylon's bake. Our renderer's draws this palette into a probe's
+ * faces with its own program and the bake's own frame, whose `camPos` IS the
+ * probe — `render/emissiveWorld.ts`, `BABYLON_EXIT.md` X3.6c.)
  *
  * WHY IT DECLARES `emissiveColor`. `GlowPass` and `WorldCulling` decide what is
  * a light source by that property and nothing else, exactly as for the fire
@@ -69,16 +74,13 @@ import {
   Vector3,
 } from "@babylonjs/core";
 import type { SelfMasking } from "./GlowPass";
+import { EMISSIVE_WORLD_SURFACE, EMISSIVE_WORLD_VERTEX, MAX_EMISSIVE_PALETTE } from "./wgsl/emissiveWorld";
 
-/**
- * How many emissive colours one map's merged world may carry before the merge
- * stops collapsing them — `MAX_PALETTE`'s twin, and overflow is graceful for
- * the same reason: slot 0 means "keep your own material". The shipped maps use
- * at most 19 materials (Coldharbour, over-glass variants counted apart), so
- * this is better than a doubling of the hexes behind them.
- */
-export const MAX_EMISSIVE_PALETTE = 32;
+export { MAX_EMISSIVE_PALETTE };
 
+// The bodies are `wgsl/emissiveWorld.ts`'s, which our renderer assembles too
+// (a probe's bake, `render/emissiveWorld.ts`): this file holds Babylon's
+// declarations and the `main`s that call them.
 ShaderStore.ShadersStoreWGSL["emissiveWorldVertexShader"] = `
 attribute position: vec3f;
 attribute uv2: vec2f;
@@ -88,18 +90,10 @@ uniform viewProjection: mat4x4f;
 
 varying vPosW: vec3f;
 varying vSlot: f32;
-
+${EMISSIVE_WORLD_VERTEX}
 @vertex
 fn main(input: VertexInputs) -> FragmentInputs {
-  // World first, then the view-projection — the order Babylon's own
-  // StandardMaterial transforms in, so the depth this writes is the depth that
-  // material wrote for the same vertex.
-  let worldPos = uniforms.world * vec4f(vertexInputs.position, 1.0);
-  vertexOutputs.position = uniforms.viewProjection * worldPos;
-  vertexOutputs.vPosW = worldPos.xyz;
-  // The 1-based slot \`writePaletteIndex\` stamped on every vertex of a source
-  // mesh — constant across a triangle, so interpolation cannot move it.
-  vertexOutputs.vSlot = vertexInputs.uv2.x;
+  emissiveWorldVertex();
 }
 `;
 
@@ -118,24 +112,10 @@ uniform fogRange: vec2f;
 // rgb = GlowRules' scale for this mesh (unfaded — see the header), a = alpha.
 uniform glowColor: vec4f;
 #endif
-
+${EMISSIVE_WORLD_SURFACE}
 @fragment
 fn main(input: FragmentInputs) -> FragmentOutputs {
-  let col = uniforms.emissivePalette[u32(fragmentInputs.vSlot + 0.5) - 1u];
-  let t = clamp((distance(fragmentInputs.vPosW, uniforms.camPos) - uniforms.fogRange.x) * uniforms.fogRange.y, 0.0, 1.0);
-#ifdef GLOW_MASK
-  // Toward BLACK, where the frame below fades toward the fog — a bloom of the
-  // fog colour is a white haze round every far lamp (GlowPass's header).
-  fragmentOutputs.color = vec4f(col * (1.0 - t * t) * uniforms.glowColor.rgb, uniforms.glowColor.a);
-#else
-  // What the unlit StandardMaterial wrote — clamp(emissive) with no light, the
-  // material's alpha of 1 — and then EmissiveFog's mix. Alpha is 1 in a
-  // reflection bake and in the frame alike, which is what that material wrote
-  // into the coverage channel and so what this keeps: an emissive pixel takes
-  // no ink in the frame (GlowPass.mask already holds it out) and is city in a
-  // probe's cube.
-  fragmentOutputs.color = vec4f(mix(col, uniforms.fogColor, t * t), 1.0);
-#endif
+  fragmentOutputs.color = emissiveWorldSurface();
 }
 `;
 

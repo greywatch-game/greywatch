@@ -3,8 +3,9 @@
  * their clusters: each group's surviving (instance, cluster) records written
  * into the scatter's LIST as entries, and each group's one indirect draw over
  * them (`BABYLON_EXIT.md` X3.4b, X3.5b — the fold; the WGSL is
- * `wgsl/instanceCull.ts`) — once a frame for the main pass, and once a drawn
- * map for each shadow map (X3.6a), each a VIEW of one map's tables.
+ * `wgsl/instanceCull.ts`) — once a frame for the main pass, once a drawn
+ * map for each shadow map (X3.6a) and once a face for a reflection probe's
+ * bake (X3.6c), each a VIEW of one map's tables.
  * Owns: `InstanceCull` — one view: its four compute passes' bind groups
  * (their pipelines are the renderer's `PipelineCache`'s), its uniform block,
  * the scan's buffers, its range table, the list the vertex stage reads

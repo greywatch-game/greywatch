@@ -21,7 +21,8 @@
  * frame; every `FramePrepare` runs right after that fill, on the same frames,
  * so what it hands the GPU is this frame's, and records into the host's
  * encoder rather than submitting one of its own, so the frame's GPU timer
- * sees it — and, with a `timer`, is handed the `PassTiming` its passes take
+ * sees it, the LATE ones after the rest (`onFrame`'s `late`) — and, with a
+ * `timer`, is handed the `PassTiming` its passes take
  * their timestamp writes from on a frame being timed, null on every other
  * (`gpu.cull`); without one, timing costs the frame one null test; a frame
  * draws only if it was
@@ -154,6 +155,7 @@ export class Renderer {
   private readonly opaque: FrameDraw[] = [];
   private readonly after: FrameDraw[] = [];
   private readonly prepares: FramePrepare[] = [];
+  private readonly latePrepares: FramePrepare[] = [];
   private readonly refusals: (() => void)[] = [];
   private readonly ctx: FrameContext;
   private readonly hook: { dispose(): void };
@@ -209,12 +211,19 @@ export class Renderer {
     };
   }
 
-  /** Runs `prepare` in every main pass from the next one on, until the returned function is called. */
-  onFrame(prepare: FramePrepare): () => void {
-    this.prepares.push(prepare);
+  /**
+   * Runs `prepare` in every main pass from the next one on, until the
+   * returned function is called — with `late`, after every prepare that is
+   * not: work that SAMPLES what the others draw this frame (a probe's bake
+   * reads the world's shadow maps and the lamps' atlas), whatever order the
+   * two were added in.
+   */
+  onFrame(prepare: FramePrepare, late = false): () => void {
+    const list = late ? this.latePrepares : this.prepares;
+    list.push(prepare);
     return () => {
-      const i = this.prepares.indexOf(prepare);
-      if (i >= 0) this.prepares.splice(i, 1);
+      const i = list.indexOf(prepare);
+      if (i >= 0) list.splice(i, 1);
     };
   }
 
@@ -240,6 +249,7 @@ export class Renderer {
     this.opaque.length = 0;
     this.after.length = 0;
     this.prepares.length = 0;
+    this.latePrepares.length = 0;
     this.refusals.length = 0;
     this.frameBuffer.destroy();
     this.timer?.dispose();
@@ -257,10 +267,12 @@ export class Renderer {
     this.fillTextures(this.textures);
     this.frameBindings.refresh(this.host, this.textures);
     const prepares = this.prepares;
-    if (prepares.length === 0) return;
+    const late = this.latePrepares;
+    if (prepares.length + late.length === 0) return;
     const encoder = this.host.prepareEncoder();
     const timing = timer !== null && timer.open() ? timer : null;
     for (let i = 0; i < prepares.length; i++) prepares[i](this.frame, encoder, timing);
+    for (let i = 0; i < late.length; i++) late[i](this.frame, encoder, timing);
     if (timing) timing.close(encoder);
   };
 

@@ -81,10 +81,12 @@ export class BlockMerge {
    * rather than read off the constant so that this pass and the glazing's know
    * they are cutting on the same lattice by construction. Both are given the
    * one value `MapBuilder.build` resolved. `mint` is the build's birth counter
-   * (`worldGeometry.ts`), which a merge of two or more draws from.
+   * (`worldGeometry.ts`), which a merge of two or more draws from. Read back
+   * by the scatter's field, which names the block each placement's copy is
+   * filed under on this same lattice (`ScatterSet.blocks`).
    */
   constructor(
-    private readonly blockSize: number,
+    readonly blockSize: number,
     private readonly mint: Mint,
   ) {}
 

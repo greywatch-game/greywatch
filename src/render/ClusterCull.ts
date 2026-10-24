@@ -2,8 +2,9 @@
  * render/ClusterCull.ts — The static world's clusters culled on the GPU,
  * writing each group's surviving indices at the front of its range and zeros
  * after them (`BABYLON_EXIT.md` X3.3b; the WGSL is `wgsl/clusterCull.ts`) —
- * once a frame for the main pass, and once a drawn map for each shadow map
- * (X3.6a), each a VIEW of one map's tables.
+ * once a frame for the main pass, once a drawn map for each shadow map
+ * (X3.6a) and once a face for a reflection probe's bake (X3.6c), each a VIEW
+ * of one map's tables.
  * Owns: `ClusterCull` — one view: its three compute passes' bind groups
  * (their pipelines are the renderer's `PipelineCache`'s, shared by every
  * map), its uniform block (`CullUniform`), the scan's buffers, each group's
@@ -18,13 +19,17 @@
  * Invariants: every table is uploaded once, when the map is cut, and never
  * re-cut, by the map's first view, which every other view of it reads and
  * outlives; a dispatch's inputs are numbers only — a view-projection, an
- * eye, the reach and the size gate, the most the wind moves a vertex, and a
- * pass mask (`CullInputs`) — so the cull never reads a node; the frustum is
+ * eye, the reach and the size gate, the most the wind moves a vertex, a
+ * pass mask and a probe view's two tests (`CullInputs`) — so the cull never
+ * reads a node; the frustum is
  * the view-projection's four side planes and the eye's own plane, normalised
  * here, and a cluster is dropped only when it is not in the view's pass, or
  * its box lies wholly outside one plane, so it drops nothing the frustum did
  * not already hide; the reach is measured to the box each surface was handed
- * (`BlockBox`), which for the landform is one the reach is never short of;
+ * (`BlockBox`), which for the landform is one the reach is never short of —
+ * or, in a probe's view, to the near side of the surface's own sphere, as
+ * Babylon's bake measured a mesh, and a probe's view leaves out the blocks
+ * the probe serves (`ReflectionSystem.encloses`);
  * the work is RECORDED into the encoder the host submits ahead of the
  * frame's draws (`FrameHost.prepareEncoder`), so it reaches the GPU before
  * the draws that read it and inside the frame's GPU timer — the main pass's
@@ -173,8 +178,16 @@ export interface CullInputs {
   /** The most a ramp weight of 1, and a rigged vertex, moves this frame: 0 for a pass that draws no sway. */
   rampReach: number;
   rigReach: number;
-  /** The passes a cluster must be drawn in to be kept (`PASS_CASTS`, `PASS_SOLID`); 0 keeps every one. */
+  /** The passes a cluster must be drawn in to be kept (`PASS_CASTS`, `PASS_SOLID`, `PASS_PROBE`); 0 keeps every one. */
   mask: number;
+  /**
+   * A probe view's tests (`PROBE_SPHERE_REACH`, `PROBE_EXCLUDE`) and, from bit
+   * 8, its cell's side in blocks; the cell (`blockKey`); and which blocks of
+   * the cell it leaves out, a bit each, row by row. 0 for every other view.
+   */
+  probe: number;
+  probeCell: number;
+  probeServed: number;
 }
 
 /** A `CullInputs` with no reach, no gate, no sway and no mask: what a view fills in place. */
@@ -189,6 +202,9 @@ export function createCullInputs(): CullInputs {
     rampReach: 0,
     rigReach: 0,
     mask: 0,
+    probe: 0,
+    probeCell: 0,
+    probeServed: 0,
   };
 }
 
@@ -203,6 +219,9 @@ export function frameInputs(frame: FrameUniforms, gate: ReachGate, out: CullInpu
   out.rampReach = rampReach(frame);
   out.rigReach = rigReach(frame);
   out.mask = 0;
+  out.probe = 0;
+  out.probeCell = 0;
+  out.probeServed = 0;
 }
 
 /**
@@ -222,6 +241,9 @@ export function writeInputs(inputs: CullInputs, mode: CullMode, f: Float32Array,
   f[27] = inputs.rampReach;
   f[31] = inputs.rigReach;
   u[36] = inputs.mask;
+  u[37] = inputs.probe;
+  u[38] = inputs.probeCell;
+  u[39] = inputs.probeServed;
   openTests(mode, f, u);
 }
 

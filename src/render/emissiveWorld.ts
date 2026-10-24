@@ -1,0 +1,117 @@
+/**
+ * render/emissiveWorld.ts — The emissive palette as OUR renderer draws it: the
+ * lit windows, lamp lenses, embers and signs of a map's merged world, into a
+ * reflection probe's faces (`render/ProbeBake.ts`, `BABYLON_EXIT.md` X3.6c) —
+ * Babylon's `EmissiveWorldMaterial` in the pulled form.
+ * Owns: `EMISSIVE_BLOCK` (group 1: the palette and the fog band), the
+ * geometry it reads (group 2, `EMISSIVE_GEOMETRY`: the positions, the slots
+ * in `uv2` and the instances' transforms, which the shared decode names),
+ * `EMISSIVE_ATTRIBUTES`, `EmissiveRecipe` (what a palette material is drawn
+ * WITH, as plain data) and `emissiveWorld`, the program's two modules.
+ * Invariants: the pixel is `EmissiveWorldMaterial`'s, by its one body
+ * (`shaders/wgsl/emissiveWorld.ts`) — the slot's colour faded toward the fog
+ * by `EmissiveFog`'s curve over the radial distance to the FRAME's `camPos`
+ * (a bake's frame holds the probe there), alpha 1 — and the vertex is its
+ * vertex, `world` identity as the merge's is, read through the cel stage's
+ * own decode (`pulledWorld`); group 0 is the cel FRAGMENT's whole group, so
+ * one frame bind group serves the cel pipelines and these; the fog band is
+ * the material's own pair as the factory computes it (`fogRange`: start and
+ * the reciprocal of the band, on the CPU, so it rounds as Babylon's did), and
+ * the palette the factory's table — both a PULL off the factory
+ * (`CelMaterialFactory.emissiveRecipe`), never read off a material; back
+ * faces are culled and the material's own depth bias is its pipeline's.
+ * Never: imports Babylon; restates the body.
+ * Contract: `docs/rendering.md`, "The paint palette" and "Our renderer's
+ * frame".
+ */
+import { EMISSIVE_WORLD_SURFACE, EMISSIVE_WORLD_VERTEX, MAX_EMISSIVE_PALETTE } from "../shaders/wgsl/emissiveWorld";
+import { pulledWorld } from "./celVertex";
+import { FRAME_BLOCK, FRAME_TEXTURES } from "./frame";
+import {
+  assembleFragment,
+  assembleVertex,
+  type AssembledAttribute,
+  type AssembledModule,
+  type AssembledVertex,
+  type Binding,
+  type StageTarget,
+} from "./wgsl/assemble";
+
+/** Group 1: the map's emissive colours and the fog band they fade on. */
+export const EMISSIVE_BLOCK = {
+  kind: "uniform",
+  var: "emissive",
+  struct: "EmissiveMaterial",
+  fields: [
+    { name: "emissivePalette", type: "vec3f", count: MAX_EMISSIVE_PALETTE },
+    { name: "fogRange", type: "vec2f" },
+  ],
+} as const satisfies Binding;
+
+/** Group 2: the positions, the slots and the transforms the shared decode names. */
+export const EMISSIVE_GEOMETRY = [
+  { kind: "storage", name: "positionData", type: "array<f32>" },
+  { kind: "storage", name: "uv2Data", type: "array<vec2f>" },
+  { kind: "storage", name: "transforms", type: "array<vec4f>" },
+] as const satisfies readonly Binding[];
+
+/** What a held palette surface's arrays hold: its positions and its slots. */
+export const EMISSIVE_ATTRIBUTES: readonly AssembledAttribute[] = [
+  { name: "position", type: "vec3f", from: "positionData" },
+  { name: "uv2", type: "vec2f", from: "uv2Data" },
+];
+
+/** What a palette material is drawn with, as the factory that made it states it. */
+export interface EmissiveRecipe {
+  /** Babylon's `zOffsetUnits` — the pipeline's `depthBias` (the over-glass twin's). */
+  readonly depthBias: number;
+  /** The block, filled in place; `CelMaterialFactory.materialEpoch` moves when either is rewritten. */
+  readonly values: { readonly emissivePalette: Float32Array; readonly fogRange: Float32Array };
+}
+
+const VARYINGS = [
+  { name: "vPosW", type: "vec3f" },
+  { name: "vSlot", type: "f32" },
+] as const;
+
+/** The frame's palette is declared, so group 0 is laid out as every cel program's is. */
+const DEFINES = ["CEL_PALETTE"];
+
+const programs = new Map<boolean, { vertex: AssembledVertex; fragment: AssembledModule }>();
+
+/** The emissive palette's two modules for a pass of `target`'s kind (a probe's face is `FRAME_TARGETS`). */
+export function emissiveWorld(target: StageTarget): { vertex: AssembledVertex; fragment: AssembledModule } {
+  let program = programs.get(target.flipY);
+  if (!program) {
+    program = {
+      vertex: assembleVertex(
+        {
+          label: "emissive-vertex",
+          groups: [[FRAME_BLOCK], [], EMISSIVE_GEOMETRY],
+          attributes: EMISSIVE_ATTRIBUTES,
+          varyings: VARYINGS,
+          includes: {},
+          body: EMISSIVE_WORLD_VERTEX,
+          entry: "emissiveWorldVertex",
+          ...pulledWorld(null),
+        },
+        DEFINES,
+        target,
+      ),
+      fragment: assembleFragment(
+        {
+          label: "emissive-fragment",
+          groups: [[FRAME_BLOCK, ...FRAME_TEXTURES], [EMISSIVE_BLOCK]],
+          varyings: VARYINGS,
+          includes: {},
+          body: EMISSIVE_WORLD_SURFACE,
+          surface: "emissiveWorldSurface",
+        },
+        DEFINES,
+        target,
+      ),
+    };
+    programs.set(target.flipY, program);
+  }
+  return program;
+}

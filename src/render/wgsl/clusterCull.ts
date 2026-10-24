@@ -17,8 +17,10 @@
  * keep their own index order whatever the eye does and only whole surfaces
  * trade places as it moves, as Babylon's meshes do; a cluster is dropped
  * only if it is not drawn in the cull's pass (`passMask`), its block is past
- * the reach, its surface is under the size gate, or its box (grown by the
- * most its vertices can sway) is wholly outside one of the five planes.
+ * the reach (a probe view's: its SURFACE's sphere, `PROBE_SPHERE_REACH`), it
+ * is filed under a block the view leaves out (`PROBE_EXCLUDE`), its surface
+ * is under the size gate, or its box (grown by the most its vertices can
+ * sway) is wholly outside one of the five planes.
  * Never: reads a node — everything it reads was uploaded as numbers.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
  *
@@ -60,10 +62,38 @@ export const CULL_UNIFORM_BYTES = 160;
  * - `PASS_LAMPS`: a caster in the lamps' atlas — a fixture's static faces
  *   (`render/LampAtlas.ts`), which take everything not marked
  *   `noShadowCaster`, blended or not, as `LocalShadows`' bake always did.
+ * - `PASS_PROBE`: in a reflection probe's bake (`render/ProbeBake.ts`,
+ *   X3.6c) — every surface the main pass takes, and the emissive palette's
+ *   held for it, whatever casts: Babylon's bake drew the map's visuals whole
+ *   but for the glazing.
  */
 export const PASS_CASTS = 1;
 export const PASS_SOLID = 2;
 export const PASS_LAMPS = 4;
+export const PASS_PROBE = 8;
+/** The shadow passes, together: what makes a surface a CASTER, which `PASS_PROBE` does not. */
+export const SHADOW_PASSES = PASS_CASTS | PASS_SOLID | PASS_LAMPS;
+
+/**
+ * A probe view's two tests beside the pass mask, in the uniform block's word 9
+ * y (`CullInputs.probe`): the reach measured to a cluster's SURFACE sphere's
+ * near side rather than its block's box — the test Babylon's bake made of a
+ * mesh (`ReflectionSystem.neighbourhood`) — and the probe's own BLOCKS left
+ * out (`ReflectionSystem.encloses`). Every other view sets neither.
+ */
+export const PROBE_SPHERE_REACH = 1;
+export const PROBE_EXCLUDE = 2;
+
+/**
+ * A map block's grid coordinates (`metadata.block`, "bx,bz") as the culls
+ * carry them — each offset by 2^15 into 16 bits, so 0 is NO block: the
+ * landform, a caster of no key, a scatter instance of no region.
+ */
+export function blockKey(bx: number, bz: number): number {
+  return (((bx + 32768) & 0xffff) | (((bz + 32768) & 0xffff) << 16)) >>> 0;
+}
+/** What a surface or an instance of no block carries (`blockKey`). */
+export const NO_BLOCK = 0;
 
 /**
  * The uniform block (`CULL_UNIFORM_BYTES`) as ten `vec4u`s of words, and the
@@ -83,9 +113,11 @@ export const PASS_LAMPS = 4;
  *   move in w.
  * - word 8: the item count, the second count (groups or sets), workgroups,
  *   and the instance cull's draws.
- * - word 9: the pass mask in x (`PASS_CASTS`, `PASS_SOLID`, `PASS_LAMPS`; 0
- *   tests nothing),
- *   padding.
+ * - word 9: the pass mask in x (`PASS_CASTS`, `PASS_SOLID`, `PASS_LAMPS`,
+ *   `PASS_PROBE`; 0 tests nothing); a probe view's tests in y
+ *   (`PROBE_SPHERE_REACH`, `PROBE_EXCLUDE`) with its cell's side in blocks
+ *   from bit 8; the cell (`blockKey`) in z; the blocks of the cell it leaves
+ *   out in w, a bit each, row by row — 0 in y, z and w for every other view.
  */
 export const CULL_DECLARATIONS = /* wgsl */ `
 @group(0) @binding(0) var<uniform> cull: array<vec4u, 10>;
@@ -101,6 +133,32 @@ fn bands2() -> vec3f { return bitcast<vec3f>(cull[7].xyz); }
 fn rigReach() -> f32 { return bitcast<f32>(cull[7].w); }
 fn itemCount() -> u32 { return cull[8].x; }
 fn passMask() -> u32 { return cull[9].x; }
+fn sphereReach() -> bool { return (cull[9].y & ${PROBE_SPHERE_REACH}u) != 0u; }
+
+/** \`a\` over \`b\`, rounded DOWN as \`Math.floor\` is — WGSL's integer division rounds toward zero. */
+fn floorDiv(a: i32, b: i32) -> i32 {
+  let q = a / b;
+  return select(q, q - 1, (a % b != 0) && ((a < 0) != (b < 0)));
+}
+
+/**
+ * Whether a probe view leaves out what is filed under block \`key\`
+ * (\`blockKey\`): one of the blocks the probe SERVES — its cell's, and of
+ * those the ones word 9 w names — and never anything of no block.
+ */
+fn probeExcludes(key: u32) -> bool {
+  let y = cull[9].y;
+  if ((y & ${PROBE_EXCLUDE}u) == 0u || key == ${NO_BLOCK}u) { return false; }
+  let per = max(i32(y >> 8u), 1);
+  let bx = i32(key & 0xffffu) - 32768;
+  let bz = i32(key >> 16u) - 32768;
+  let cx = floorDiv(bx, per);
+  let cz = floorDiv(bz, per);
+  let cell = cull[9].z;
+  if (cx != i32(cell & 0xffffu) - 32768 || cz != i32(cell >> 16u) - 32768) { return false; }
+  let local = u32((bx - cx * per) + (bz - cz * per) * per);
+  return local >= 32u || ((cull[9].w >> local) & 1u) != 0u;
+}
 
 struct Cluster {
   // The box's low corner as float bits, and its first index in w.
@@ -110,7 +168,8 @@ struct Cluster {
   // group, block, surface, piece.
   refs: vec4u,
   // The ramp weight as float bits, whether it is rigged, the passes it is
-  // drawn in (\`PASS_CASTS\`, \`PASS_SOLID\`, \`PASS_LAMPS\`), and padding.
+  // drawn in (\`PASS_CASTS\`, \`PASS_SOLID\`, \`PASS_LAMPS\`, \`PASS_PROBE\`),
+  // and its surface's block (\`blockKey\`; an instanced part's carries none).
   sway: vec4u,
 }
 
@@ -138,9 +197,9 @@ fn inPass(c: Cluster) -> bool {
 
 /**
  * Cluster `k` as `CULL_DECLARATIONS`' `Cluster` — both culls' record: its
- * box, its first index and count, its four `refs`, its sway and the passes
- * it is drawn in beside the main one (`passes`: `PASS_CASTS`, `PASS_SOLID`,
- * `PASS_LAMPS`).
+ * box, its first index and count, its four `refs`, its sway, the passes it
+ * is drawn in beside the main one (`passes`: `PASS_CASTS`, `PASS_SOLID`,
+ * `PASS_LAMPS`, `PASS_PROBE`) and its surface's block (`key`, `blockKey`).
  */
 export function writeCluster(
   f: Float32Array,
@@ -150,6 +209,7 @@ export function writeCluster(
   first: number,
   refs: readonly [number, number, number, number],
   passes: number,
+  key: number = NO_BLOCK,
 ): void {
   const o = k * CLUSTER_WORDS;
   f[o] = cl.lo[0];
@@ -164,6 +224,7 @@ export function writeCluster(
   f[o + 12] = cl.ramp;
   u[o + 13] = cl.rigged ? 1 : 0;
   u[o + 14] = passes;
+  u[o + 15] = key;
 }
 
 /**
@@ -274,9 +335,17 @@ fn dist2(lo: vec3f, hi: vec3f) -> f32 {
 }
 
 fn visible(c: Cluster) -> bool {
-  if (!inPass(c)) { return false; }
-  let b = blocks[c.refs.y];
-  if (dist2(b.lo.xyz, b.hi.xyz) > reach2()) { return false; }
+  if (!inPass(c) || probeExcludes(c.sway.w)) { return false; }
+  if (sphereReach()) {
+    // A probe's reach: to the near side of the SURFACE's sphere, as Babylon's
+    // bake measured a mesh.
+    let s = spheres[c.refs.z];
+    let gap = max(0.0, length(s.xyz - eye()) - s.w);
+    if (gap * gap > reach2()) { return false; }
+  } else {
+    let b = blocks[c.refs.y];
+    if (dist2(b.lo.xyz, b.hi.xyz) > reach2()) { return false; }
+  }
   if (gateOn()) {
     let s = spheres[c.refs.z];
     let d = s.xyz - eye();

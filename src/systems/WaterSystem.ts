@@ -19,6 +19,7 @@
  * every material must be born holding.
  */
 import {
+  type BaseTexture,
   BoundingInfo,
   Color3,
   Constants,
@@ -209,12 +210,12 @@ export class WaterSystem {
     rects: WaterRect[],
     env: EnvironmentSpec,
     terrain: TerrainField,
-    reflect: (sites: readonly Vector3[]) => CubeReflection[],
+    reflect: (sites: readonly Vector3[], rebind: (site: number, cube: BaseTexture) => void) => CubeReflection[],
   ): void {
     this.dispose();
     const colors = env.water;
     if (rects.length === 0 || !colors) {
-      reflect([]);
+      reflect([], noRebind);
       return;
     }
 
@@ -230,7 +231,13 @@ export class WaterSystem {
     // have to be known before a single material exists, because the second is
     // where the mirror is baked from.
     const beds = rects.map((r) => this.bakeDepth(r, waterY(r, terrain), terrain));
-    const mirrors = reflect(beds.map((b) => b.site));
+    // A body's mirror handed another cube after the build — a bake lost
+    // before it drained is baked again on Babylon's side
+    // (`ReflectionSystem.bakeWater`).
+    const mirrors = reflect(
+      beds.map((b) => b.site),
+      (site, cube) => this.bodies[site]?.mat.setTexture("reflectionCube", cube),
+    );
 
     const w = CONFIG.water;
     const lit = env.lighting;
@@ -587,3 +594,6 @@ export class WaterSystem {
     this.bodies = [];
   }
 }
+
+/** A dry build's: no body to hand a cube. */
+function noRebind(): void {}

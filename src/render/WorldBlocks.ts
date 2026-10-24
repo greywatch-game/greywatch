@@ -13,7 +13,11 @@
  * maps record it (`WorldDepth`, which it builds at the cut over the same
  * tables): every surface and instanced part carries the shadow passes it is
  * drawn in, and the CASTERS no main pass of ours draws — the emissive
- * palette's — are held here for the shadow maps alone (`addCaster`).
+ * palette's — are held here for the shadow maps alone (`addCaster`). And,
+ * since X3.6c, the map as a reflection probe's faces draw it (`probeView`):
+ * every taken surface and part in `PASS_PROBE`, and the emissive palette
+ * HELD for it with its slots (`addEmissive`), drawn there by its own program
+ * (`render/emissiveWorld.ts`).
  * Owns: `WorldBlocks` — the surfaces and the scatter's instanced parts handed
  * to it until the map is cut (`finish`), then each material GROUP's vertex
  * arrays (every instanced part of the group end to end, then every surface of
@@ -26,7 +30,9 @@
  * alpha-tested meshes (`DrawPoint` `"beforeAlphaTest"`) — the blocks, the
  * scatter, then the landform — with the `FramePrepare` that culls ahead of
  * it, both on the renderer only while a map's culls are built and nobody has
- * `stop`ped it; and the map's `WorldDepth`, when `finish` is asked for one.
+ * `stop`ped it; and the map's `WorldDepth`, when `finish` is asked for one; each held
+ * palette material's block and groups; the probes' VIEWS of the culls
+ * (`probeView`) while their holder keeps them, and with the map at the latest.
  * WHY THAT POINT, AND THE LANDFORM LAST: the turf (`GrassSystem`) is a blend
  * laid over the floor on group 0's alpha-tested list, and it writes no depth
  * of its own — so the floor, and a road beside it, must be drawn before that
@@ -50,7 +56,13 @@
  * recipe's block group, so a rim wearing the pines' material never shares
  * their group or their scatter; the CASTERS are one group of no recipe, its
  * arrays the positions alone, drawn in no main pass and cut LAST, so the main
- * pass's cull leaves its clusters out as a tail (`count`); the layers share
+ * pass's cull leaves its clusters out as a tail (`count`) — and so are the
+ * held palette groups, one a material, positions and slots; a probe's view
+ * culls every cluster and draws what is in `PASS_PROBE` with the main pass's
+ * own pipelines and material groups, through the face's frame, each
+ * scattered group's twin bound to its own list — the draw code is ONE
+ * (`drawClusters`, `drawScatter`, `bind`, over a `DrawView`), never a copy;
+ * the layers share
  * ONE cut, one set of cull tables, one cluster list and one index buffer
  * each cull view writes, each group drawing only its own range of it, and
  * the scatter's list gives each group a run of its own; its
@@ -108,17 +120,20 @@ import {
   ClusterCull,
   createCullInputs,
   type CullDiagnostics,
+  type CullInputs,
   frameInputs,
   NO_DIAGNOSTICS,
   type ReachGate,
   type ScanRange,
 } from "./ClusterCull";
 import { type Cluster, cutClusters, type PieceSpan, type SurfaceArrays, toFloat32, withoutPieces } from "./clusters";
+import { EMISSIVE_ATTRIBUTES, EMISSIVE_BLOCK, EMISSIVE_GEOMETRY, emissiveWorld, type EmissiveRecipe } from "./emissiveWorld";
 import type { FrameUniforms } from "./frame";
 import { HostBindGroup } from "./HostBindGroup";
 import { InstanceCull } from "./InstanceCull";
 import type { PassTiming } from "./PassTimer";
 import type { BuiltPipeline } from "./PipelineCache";
+import type { ProbeWorld } from "./ProbeBake";
 import type { FrameContext, Renderer } from "./Renderer";
 import {
   type InstancedPart,
@@ -134,7 +149,7 @@ import { listStride } from "./scatterList";
 import { FRAME_TARGETS } from "./targets";
 import { UniformBlockBuffer } from "./UniformBlockBuffer";
 import { type AssembledAttribute, type AssembledModule, type AssembledVertex, PULLED_ATTRIBUTES } from "./wgsl/assemble";
-import { CLUSTER_WORDS, writeCluster } from "./wgsl/clusterCull";
+import { CLUSTER_WORDS, NO_BLOCK, PASS_PROBE, SHADOW_PASSES, writeCluster } from "./wgsl/clusterCull";
 import { INDIRECT_BYTES } from "./wgsl/instanceCull";
 import { type DepthGroup, WorldDepth } from "./WorldDepth";
 
@@ -151,6 +166,13 @@ interface MaterialSlot {
   readonly group: HostBindGroup;
 }
 
+/** A palette material's GPU half (`EmissiveRecipe`): its block's buffer and its group 1. */
+interface EmissiveSlot {
+  readonly recipe: EmissiveRecipe;
+  readonly block: UniformBlockBuffer;
+  readonly group: HostBindGroup;
+}
+
 /** One variant's two modules. */
 interface Program {
   readonly vertex: AssembledVertex;
@@ -163,14 +185,17 @@ interface Program {
 interface Surface {
   geometry: SurfaceArrays;
   pieces: readonly PieceSpan[];
-  /** The shadow passes it is drawn in (`PASS_CASTS`, `PASS_SOLID`). */
+  /** The passes it is drawn in beside the main one (`PASS_CASTS`, `PASS_SOLID`, `PASS_LAMPS`, `PASS_PROBE`). */
   readonly passes: number;
+  /** Its block (`blockKey`), which a probe's view leaves out by; `NO_BLOCK` for the landform. */
+  readonly key: number;
 }
 
 /**
  * Which layer a group is in: the blocks, drawn first, or the landform — or
- * the CASTERS, held for the shadow maps alone and drawn in no main pass
- * (`addCaster`), whose groups are always cut last.
+ * the HELD surfaces, drawn in no main pass: the casters held for the shadow
+ * maps alone (`addCaster`) and the emissive palette held for the probes'
+ * bake and its own shadows (`addEmissive`), whose groups are always cut last.
  */
 type WorldLayer = "blocks" | "landform" | "casters";
 
@@ -180,14 +205,16 @@ const CASTER_ATTRIBUTES: readonly AssembledAttribute[] = [{ name: "position", ty
 /** One material's draws in one layer: its instanced parts' arrays end to end, its surfaces' after them. */
 interface Group {
   readonly layer: WorldLayer;
-  /** Its recipe's GPU half; null for the casters, which no main pass draws. */
+  /** Its recipe's GPU half; null for the held groups, which no main pass draws. */
   readonly material: MaterialSlot | null;
+  /** A held palette group's material, which a probe's face draws it with; null for every other group. */
+  readonly emissive: EmissiveSlot | null;
   /**
    * Its variant: chosen when the group is made, and its scatter twin chosen
    * at `finish` for a group drawing scatter; null for the casters.
    */
   program: Program | null;
-  /** What its arrays hold: its vertex stage's attributes, or a caster's positions alone. */
+  /** What its arrays hold: its vertex stage's attributes, a caster's positions alone, or a palette surface's positions and slots. */
   readonly attributes: readonly AssembledAttribute[];
   /** Indices into `surfaces`, in the order added. */
   readonly members: number[];
@@ -197,7 +224,7 @@ interface Group {
   withheld: string | null;
   /** Its storage arrays, in the vertex program's attribute order; empty until `finish`. */
   arrays: GPUBuffer[];
-  /** Group 2: its arrays and the instances' transforms; null until `finish`. */
+  /** Group 2: its arrays and the instances' transforms (a palette group's, for the probes' bake); null until `finish`. */
   geometry: HostBindGroup | null;
   /** Its range of the cluster cull's indices, `[indexBase, indexBase + indexCount)` — what its block draw covers. */
   indexBase: number;
@@ -207,7 +234,7 @@ interface Group {
   built: BuiltPipeline | null;
   /** It draws nothing, and its members went back. */
   failed: boolean;
-  /** The shadow passes its surfaces, and its instanced parts, are drawn in, together. */
+  /** The passes beside the main one its surfaces, and its instanced parts, are drawn in, together. */
   surfacePasses: number;
   scatterPasses: number;
 }
@@ -221,14 +248,30 @@ const SOURCE: Readonly<Record<string, keyof SurfaceArrays>> = {
   uv2: "uvs2",
 };
 
-/** One surface as the cut left it: its group, where its indices start, its clusters, and its shadow passes. */
+/** One surface as the cut left it: its group, where its indices start, its clusters, its passes and its block. */
 interface CutSurface {
   readonly surface: number;
   readonly group: number;
   readonly base: number;
   readonly c: readonly Cluster[];
   readonly passes: number;
+  readonly key: number;
 }
+
+/**
+ * What one VIEW of the map draws through: its cluster cull's survivors, its
+ * instance cull's list and arguments, and each group's geometry for it — the
+ * main pass's own, or a probe's, whose scatter twins bind its list.
+ */
+interface DrawView {
+  readonly cull: ClusterCull;
+  readonly instances: InstanceCull | null;
+  /** By group: its group 2 in this view. */
+  readonly geometry: readonly (HostBindGroup | null)[];
+}
+
+/** A view's group 0, made against the layout a pipeline was built with; null while a texture is unpublished. */
+type FrameGroup = (layout: GPUBindGroupLayout) => GPUBindGroup | null;
 
 /** Where the cut has got to in the cluster cull's indices and clusters. */
 interface CutCursor {
@@ -257,8 +300,12 @@ export class WorldBlocks {
    * draws its own in, its biased ones first (`drawClusters`).
    */
   private readonly groups: Group[] = [];
-  /** Each layer's groups by recipe: one recipe in both layers is two groups, and the casters' is keyed on none. */
-  private readonly groupOf: Record<WorldLayer, Map<CelRecipe | null, Group>> = {
+  /**
+   * Each layer's groups by recipe: one recipe in both layers is two groups;
+   * the casters' is keyed on none and each held palette material's on its
+   * recipe.
+   */
+  private readonly groupOf: Record<WorldLayer, Map<CelRecipe | EmissiveRecipe | null, Group>> = {
     blocks: new Map(),
     landform: new Map(),
     casters: new Map(),
@@ -272,6 +319,10 @@ export class WorldBlocks {
   private transforms: GPUBuffer | null = null;
   private cull: ClusterCull | null = null;
   private instances: InstanceCull | null = null;
+  /** The main pass's view of the culls, once built. */
+  private mainView: DrawView | null = null;
+  /** The probes' views standing (`probeView`), disposed with the map at the latest — ahead of the culls they read. */
+  private readonly probeViews = new Set<ProbeWorld>();
   /** The map as the shadow maps record it, when `finish` was asked for it. */
   private worldDepth: WorldDepth | null = null;
   /** The main pass's cull inputs, refilled every frame. */
@@ -353,8 +404,9 @@ export class WorldBlocks {
     pieces: readonly PieceSpan[],
     landform: boolean,
     passes: number,
+    key: number = NO_BLOCK,
   ): number {
-    return this.addTo(this.groupFor(recipe, landform ? "landform" : "blocks"), label, geometry, pieces, passes);
+    return this.addTo(this.groupFor(recipe, landform ? "landform" : "blocks"), label, geometry, pieces, passes, key);
   }
 
   /**
@@ -364,15 +416,40 @@ export class WorldBlocks {
    * are uploaded, and cut after every other group's. Its index is the
    * surface's, as `add`'s.
    */
-  addCaster(label: string, geometry: SurfaceArrays, pieces: readonly PieceSpan[], passes: number): number {
-    return this.addTo(this.groupFor(null, "casters"), label, geometry, pieces, passes);
+  addCaster(label: string, geometry: SurfaceArrays, pieces: readonly PieceSpan[], passes: number, key: number = NO_BLOCK): number {
+    return this.addTo(this.groupFor(null, "casters"), label, geometry, pieces, passes, key);
   }
 
-  private addTo(group: Group, label: string, geometry: SurfaceArrays, pieces: readonly PieceSpan[], passes: number): number {
+  /**
+   * Hands over one surface of the emissive PALETTE (its material's `recipe`),
+   * which no main pass of ours draws: held with its positions and its slots,
+   * cut after every other group's, for the passes `passes` names — a probe's
+   * faces (`PASS_PROBE`, drawn by `render/emissiveWorld.ts`) and any shadow
+   * pass it casts in. Its index is the surface's, as `add`'s.
+   */
+  addEmissive(
+    label: string,
+    geometry: SurfaceArrays,
+    pieces: readonly PieceSpan[],
+    recipe: EmissiveRecipe,
+    passes: number,
+    key: number,
+  ): number {
+    return this.addTo(this.groupFor(recipe, "casters"), label, geometry, pieces, passes, key);
+  }
+
+  private addTo(
+    group: Group,
+    label: string,
+    geometry: SurfaceArrays,
+    pieces: readonly PieceSpan[],
+    passes: number,
+    key: number,
+  ): number {
     const missing = missingAttribute(group, geometry);
     if (missing) throw new Error(`world blocks: "${label}" has no ${missing}, which its variant reads`);
     const at = this.surfaces.length;
-    this.surfaces.push({ geometry, pieces, passes });
+    this.surfaces.push({ geometry, pieces, passes, key });
     group.members.push(at);
     group.surfacePasses |= passes;
     this.surfaceCount = this.surfaces.length;
@@ -490,14 +567,22 @@ export class WorldBlocks {
       ready.push(this.instances.ready);
     }
     // Group 2 and the pipelines last, once the list a group's scatter reads
-    // exists. The casters have neither: no main pass draws them.
+    // exists. The casters have neither: no main pass draws them. A palette
+    // group's group 2 is made here for the probes' bake, whose view asks for
+    // its pipeline (`probeView`).
     for (const group of this.groups) {
-      if (group.failed || !group.material) continue;
+      if (group.failed) continue;
+      if (group.emissive) {
+        this.emissiveGeometryOf(group);
+        continue;
+      }
+      if (!group.material) continue;
       if (group.scattered) group.program = this.programOf(group.material.recipe.defines, this.stride);
       this.geometryOf(group);
       this.ask(group);
     }
-    const casterLost = this.groups.some((g) => g.failed && (g.surfacePasses | g.scatterPasses) !== 0);
+    this.mainView = { cull: this.cull, instances: this.instances, geometry: this.groups.map((g) => g.geometry) };
+    const casterLost = this.groups.some((g) => g.failed && ((g.surfacePasses | g.scatterPasses) & SHADOW_PASSES) !== 0);
     if (shadowSlots > 0 && !casterLost) {
       this.worldDepth = new WorldDepth(
         this.renderer,
@@ -591,7 +676,7 @@ export class WorldBlocks {
       const local = geo.indices;
       for (let i = 0; i < local.length; i++) indices[at.index + i] = local[i] + vertex;
       const clusters = cutClusters(positions, local, geo.colors, surface.pieces, this.options.triangles);
-      cut.push({ surface: s, group: g, base: at.index, c: clusters, passes: surface.passes });
+      cut.push({ surface: s, group: g, base: at.index, c: clusters, passes: surface.passes, key: surface.key });
       at.cluster += clusters.length;
       at.index += local.length;
       vertex += positions.length / 3;
@@ -622,7 +707,10 @@ export class WorldBlocks {
 
   /** Re-copies every material's block from its recipe — after its owner rewrote one. */
   writeMaterials(): void {
-    for (const { material } of this.groups) material?.block.write(material.recipe.values);
+    for (const { material, emissive } of this.groups) {
+      material?.block.write(material.recipe.values);
+      emissive?.block.write(emissive.recipe.values);
+    }
   }
 
   /** Drops every surface, group and material: the map they were is gone. */
@@ -631,14 +719,18 @@ export class WorldBlocks {
     for (const g of this.groups) {
       for (const b of g.arrays) b.destroy();
       g.material?.block.destroy();
+      g.emissive?.block.destroy();
     }
     this.transforms?.destroy();
     this.transforms = null;
     this.unhook?.();
     this.unhook = null;
-    // Ahead of the culls, whose tables its views read.
+    // Ahead of the culls, whose tables their views read.
     this.worldDepth?.dispose();
     this.worldDepth = null;
+    for (const view of this.probeViews) view.dispose();
+    this.probeViews.clear();
+    this.mainView = null;
     this.cull?.dispose();
     this.cull = null;
     this.instances?.dispose();
@@ -664,19 +756,23 @@ export class WorldBlocks {
    * The group of `recipe` in `layer`, made on its first surface or part. One
    * recipe's groups at the two layers share its program (assembled once a
    * variant) and each own a material slot, as each owns its arrays. The
-   * casters are one group, of no recipe.
+   * casters are one group, of no recipe; each palette material held is one,
+   * of its own.
    */
-  private groupFor(recipe: CelRecipe | null, layer: WorldLayer): Group {
+  private groupFor(recipe: CelRecipe | EmissiveRecipe | null, layer: WorldLayer): Group {
     if (this.cull) throw new Error("world blocks: a surface added after the map was cut");
     const of = this.groupOf[layer];
     let group = of.get(recipe);
     if (!group) {
-      const program = recipe ? this.programOf(recipe.defines) : null;
+      const cel = recipe && "defines" in recipe ? recipe : null;
+      const emissive = recipe && !("defines" in recipe) ? this.emissiveOf(recipe) : null;
+      const program = cel ? this.programOf(cel.defines) : null;
       group = {
         layer,
-        material: recipe ? this.materialOf(recipe) : null,
+        material: cel ? this.materialOf(cel) : null,
+        emissive,
         program,
-        attributes: program ? program.vertex.attributes : CASTER_ATTRIBUTES,
+        attributes: program ? program.vertex.attributes : emissive ? EMISSIVE_ATTRIBUTES : CASTER_ATTRIBUTES,
         members: [],
         instanced: [],
         withheld: null,
@@ -861,6 +957,28 @@ export class WorldBlocks {
     return program;
   }
 
+  /** A palette material's block and group 1, as `materialOf` makes a cel recipe's. */
+  private emissiveOf(recipe: EmissiveRecipe): EmissiveSlot {
+    const device = this.renderer.device;
+    const label = `world blocks: emissive [bias ${recipe.depthBias}]`;
+    const block = new UniformBlockBuffer(device, EMISSIVE_BLOCK, [], label);
+    block.write(recipe.values);
+    const group = new HostBindGroup(device, label, [EMISSIVE_BLOCK], [], { [EMISSIVE_BLOCK.var]: block.buffer });
+    // No textures: resolved once, whole for good.
+    group.refresh(this.renderer.host, {});
+    return { recipe, block, group };
+  }
+
+  /** A held palette group's group 2 — its positions, its slots and the transforms — for the probes' bake. */
+  private emissiveGeometryOf(group: Group): void {
+    const buffers: Record<string, GPUBuffer> = { transforms: this.transforms! };
+    group.attributes.forEach((a, k) => {
+      buffers[a.from] = group.arrays[k];
+    });
+    group.geometry = new HostBindGroup(this.renderer.device, `world blocks: ${labelOf(group)} geometry`, EMISSIVE_GEOMETRY, [], buffers);
+    group.geometry.refresh(this.renderer.host, {});
+  }
+
   private materialOf(recipe: CelRecipe): MaterialSlot {
     const device = this.renderer.device;
     const label = `world blocks: material [${recipe.defines.join("+")}]`;
@@ -917,84 +1035,266 @@ export class WorldBlocks {
    */
   private readonly draw = (pass: GPURenderPassEncoder, ctx: FrameContext): void => {
     let drawn = 0;
-    const cull = this.cull;
-    if (this.culling && cull) {
-      drawn = this.drawClusters(pass, ctx, cull, "blocks") + this.drawScatter(pass, ctx);
-      drawn += this.drawClusters(pass, ctx, cull, "landform");
+    const view = this.mainView;
+    if (this.culling && view) {
+      const frame = ctx.frameGroup;
+      drawn = this.drawClusters(pass, frame, view, "blocks", true) + this.drawScatter(pass, frame, view);
+      drawn += this.drawClusters(pass, frame, view, "landform", true);
     }
     this.drawnLast = drawn;
   };
 
   /**
-   * Binds `group`'s pipeline and its three groups; false, binding nothing,
-   * while its pipeline is compiling, it failed, or a texture it binds is
-   * unpublished.
+   * A second VIEW of the map's culls for a reflection probe's faces, `slots`
+   * of them a submit (`render/ProbeBake.ts`, `BABYLON_EXIT.md` X3.6c): every
+   * cluster in `PASS_PROBE` — the taken surfaces and the palette held for it
+   * — culled for a face and drawn with the main pass's own pipelines and
+   * material groups through the face's frame, each scattered group's twin
+   * bound to this view's list, then the palette with its own program
+   * (`render/emissiveWorld.ts`). Null before the map is cut. Disposed by
+   * whoever holds it, and with the map at the latest.
    */
-  private bind(pass: GPURenderPassEncoder, ctx: FrameContext, group: Group): boolean {
-    const built = group.built;
-    const material = group.material;
-    if (!built || group.failed || !group.geometry || !material) return false;
-    material.group.refresh(this.renderer.host, material.recipe.textures);
-    const frame = ctx.frameGroup(built.groups[0]);
-    const own = material.group.get(built.groups[1]);
-    const geometry = group.geometry.get(built.groups[2]);
-    if (!frame || !own || !geometry) return false;
-    pass.setPipeline(built.pipeline);
-    pass.setBindGroup(0, frame);
-    pass.setBindGroup(1, own);
-    pass.setBindGroup(2, geometry);
+  probeView(slots: number): ProbeWorld | null {
+    const main = this.cull;
+    const mainView = this.mainView;
+    if (!main || !mainView || !this.transforms) return null;
+    const device = this.renderer.device;
+    const pipelines = this.renderer.pipelines;
+    const named = { label: "probes", slots };
+    const clusters = new ClusterCull(device, pipelines, main, { ...named, count: this.clusterCount });
+    const instances = this.instances ? new InstanceCull(device, pipelines, this.instances, this.stride, named) : null;
+    const geometry = this.groups.map((group, g) => {
+      const program = group.program;
+      if (!group.scattered || !instances || group.failed || !group.material || !program || program.stride === null) {
+        return mainView.geometry[g];
+      }
+      const buffers: Record<string, GPUBuffer> = { transforms: this.transforms!, scatterList: instances.list, scatterSource: instances.source };
+      group.attributes.forEach((a, k) => {
+        buffers[a.from] = group.arrays[k];
+      });
+      const bound = new HostBindGroup(
+        device,
+        `world blocks: ${labelOf(group)} probe geometry`,
+        celGeometry(program.stride),
+        group.material.recipe.defines,
+        buffers,
+      );
+      bound.refresh(this.renderer.host, {});
+      return bound;
+    });
+    const view: DrawView = { cull: clusters, instances, geometry };
+    // The palette's pipeline, by its material's depth bias.
+    const emissive = new Map<number, BuiltPipeline | null>();
+    const asks: Promise<boolean>[] = [clusters.ready];
+    if (instances) asks.push(instances.ready);
+    const program = emissiveWorld(FRAME_TARGETS);
+    for (const group of this.groups) {
+      if (!group.emissive || group.failed) continue;
+      const bias = group.emissive.recipe.depthBias;
+      if (emissive.has(bias)) continue;
+      emissive.set(bias, null);
+      asks.push(
+        pipelines
+          .get({
+            vertex: program.vertex,
+            vertexEntry: "main",
+            fragment: program.fragment,
+            fragmentEntry: "main",
+            targets: FRAME_TARGETS,
+            state: bias === 0 ? undefined : { depthBias: bias },
+          })
+          .then(
+            (built) => {
+              emissive.set(bias, built);
+              return true;
+            },
+            (err: unknown) => {
+              console.error("world blocks: the emissive palette's pipeline did not build; the probes' bake goes back to Babylon", err);
+              return false;
+            },
+          ),
+      );
+    }
+    let disposed = false;
+    const world: ProbeWorld = {
+      ready: Promise.all(asks).then(
+        (oks) => !disposed && oks.every(Boolean),
+        () => false,
+      ),
+      drawable: (group0) => this.drawableIn(group0, view, emissive),
+      cull: (inputs: CullInputs, encoder: GPUCommandEncoder, slot: number) => {
+        clusters.dispatch(inputs, encoder, null, slot);
+        instances?.dispatch(inputs, encoder, null, slot);
+      },
+      draw: (pass, group0) => {
+        // In the order groups were first added, the biased ones with them —
+        // Babylon's bake's order, which a face's far horizon reads: see
+        // `drawClusters`.
+        this.drawClusters(pass, group0, view, "blocks", false);
+        this.drawScatter(pass, group0, view);
+        this.drawClusters(pass, group0, view, "landform", false);
+        this.drawHeld(pass, group0, view, emissive);
+      },
+      dispose: () => {
+        if (disposed) return;
+        disposed = true;
+        this.probeViews.delete(world);
+        clusters.dispose();
+        instances?.dispose();
+      },
+    };
+    this.probeViews.add(world);
+    return world;
+  }
+
+  /**
+   * Whether every group with something in `PASS_PROBE` can draw in `view`
+   * NOW — its pipeline built, its three groups whole — so a face is never
+   * recorded with a group missing from it.
+   */
+  private drawableIn(group0: FrameGroup, view: DrawView, emissive: ReadonlyMap<number, BuiltPipeline | null>): boolean {
+    const groups = this.groups;
+    for (let g = 0; g < groups.length; g++) {
+      const group = groups[g];
+      if (group.failed || ((group.surfacePasses | group.scatterPasses) & PASS_PROBE) === 0) continue;
+      if (group.emissive) {
+        if (group.indexCount === 0) continue;
+        const built = emissive.get(group.emissive.recipe.depthBias);
+        if (!built || !group0(built.groups[0]) || !group.emissive.group.get(built.groups[1])) return false;
+        if (!group.geometry?.get(built.groups[2])) return false;
+        continue;
+      }
+      const material = group.material;
+      if (!material) return false;
+      if (group.indexCount === 0 && !group.scattered) continue;
+      const built = group.built;
+      if (!built) return false;
+      material.group.refresh(this.renderer.host, material.recipe.textures);
+      if (!group0(built.groups[0]) || !material.group.get(built.groups[1])) return false;
+      if (!view.geometry[g]?.get(built.groups[2])) return false;
+    }
     return true;
   }
 
   /**
-   * The surfaces of `layer`'s groups: one plain draw a group over its whole
-   * range of the cull's indices — the groups whose recipe carries a depth
-   * BIAS first (the roads), then the rest in the order first added.
-   *
-   * The bias decides which surface wins, never the order, so the picture is
-   * the same either way; the order decides what is SHADED. Drawn after the
-   * floor, every road pixel was the bumped floor shaded and then painted
-   * over; drawn first, the floor under a road fails the depth test before it
-   * shades. Measured at X3.5 on Cinderhaven (`BABYLON_EXIT.md`): about half
-   * the landform's rise at a road crossing, most of it in the town.
+   * Binds `group`'s pipeline and its three groups — `geometry` being its
+   * group 2 in the view drawing it; false, binding nothing, while its
+   * pipeline is compiling, it failed, or a texture it binds is unpublished.
    */
-  private drawClusters(pass: GPURenderPassEncoder, ctx: FrameContext, cull: ClusterCull, layer: "blocks" | "landform"): number {
+  private bind(pass: GPURenderPassEncoder, group0: FrameGroup, group: Group, geometry: HostBindGroup | null): boolean {
+    const built = group.built;
+    const material = group.material;
+    if (!built || group.failed || !geometry || !material) return false;
+    material.group.refresh(this.renderer.host, material.recipe.textures);
+    const frame = group0(built.groups[0]);
+    const own = material.group.get(built.groups[1]);
+    const bound = geometry.get(built.groups[2]);
+    if (!frame || !own || !bound) return false;
+    pass.setPipeline(built.pipeline);
+    pass.setBindGroup(0, frame);
+    pass.setBindGroup(1, own);
+    pass.setBindGroup(2, bound);
+    return true;
+  }
+
+  /**
+   * The surfaces of `layer`'s groups in `view`: one plain draw a group over
+   * its whole range of the view's indices — with `biasedFirst` the groups
+   * whose recipe carries a depth BIAS first (the roads), then the rest in
+   * the order first added; without it, all of them in that order.
+   *
+   * Near the eye the bias decides which surface wins, never the order, so
+   * the picture is the same either way and the order decides what is SHADED.
+   * Drawn after the floor, every road pixel was the bumped floor shaded and
+   * then painted over; drawn first, the floor under a road fails the depth
+   * test before it shades. Measured at X3.5 on Cinderhaven
+   * (`BABYLON_EXIT.md`): about half the landform's rise at a road crossing,
+   * most of it in the town. The main pass draws biased first for that.
+   *
+   * **At a grazing FAR horizon the bias no longer separates them and the
+   * order does decide** — measured in a probe's face on Sarab (X3.6c): 14
+   * texels of road at the horizon where Babylon's bake, which drew the floor
+   * first, has sand, and 0 with the roads drawn in group order. A bake is a
+   * build step, where shading is not what is paid for, so a probe's view
+   * draws in group order (`biasedFirst` false) and its horizon is Babylon's.
+   */
+  private drawClusters(
+    pass: GPURenderPassEncoder,
+    group0: FrameGroup,
+    view: DrawView,
+    layer: "blocks" | "landform",
+    biasedFirst: boolean,
+  ): number {
     let drawn = 0;
     const groups = this.groups;
     const n = groups.length;
-    pass.setIndexBuffer(cull.indices, "uint32");
-    // Twice over the groups: the biased ones on the first lap, the rest on the second.
-    for (let lap = 0; lap < 2 * n; lap++) {
-      const group = groups[lap % n];
+    pass.setIndexBuffer(view.cull.indices, "uint32");
+    // Twice over the groups: the biased ones on the first lap, the rest on the
+    // second — or once, in order.
+    for (let lap = biasedFirst ? 0 : n; lap < 2 * n; lap++) {
+      const g = lap % n;
+      const group = groups[g];
       const material = group.material;
       if (group.layer !== layer || !material) continue;
-      if ((material.recipe.depthBias !== 0) !== (lap < n)) continue;
+      if (biasedFirst && (material.recipe.depthBias !== 0) !== (lap < n)) continue;
       // A group whose surfaces were all scatter draws only its list.
-      if (group.indexCount === 0 || !this.bind(pass, ctx, group)) continue;
+      if (group.indexCount === 0 || !this.bind(pass, group0, group, view.geometry[g])) continue;
       pass.drawIndexed(group.indexCount, 1, group.indexBase, 0, 0);
       drawn++;
     }
     return drawn;
   }
 
-  /** The scatter: one indirect draw a group that has any, over its survivors' runs, unindexed. */
-  private drawScatter(pass: GPURenderPassEncoder, ctx: FrameContext): number {
-    const instances = this.instances;
+  /** The scatter in `view`: one indirect draw a group that has any, over its survivors' runs, unindexed. */
+  private drawScatter(pass: GPURenderPassEncoder, group0: FrameGroup, view: DrawView): number {
+    const instances = view.instances;
     if (!instances) return 0;
     let drawn = 0;
     const groups = this.groups;
     for (let g = 0; g < groups.length; g++) {
-      if (!groups[g].scattered || !this.bind(pass, ctx, groups[g])) continue;
+      if (!groups[g].scattered || !this.bind(pass, group0, groups[g], view.geometry[g])) continue;
       pass.drawIndirect(instances.args, g * INDIRECT_BYTES);
       drawn++;
     }
     return drawn;
   }
+
+  /**
+   * The emissive palette held for the probes' bake, in `view`: one plain
+   * draw a palette group over its range of the view's indices, with its own
+   * program (`emissive`, by its material's bias) — drawn by no main pass.
+   */
+  private drawHeld(
+    pass: GPURenderPassEncoder,
+    group0: FrameGroup,
+    view: DrawView,
+    emissive: ReadonlyMap<number, BuiltPipeline | null>,
+  ): void {
+    const groups = this.groups;
+    pass.setIndexBuffer(view.cull.indices, "uint32");
+    for (let g = 0; g < groups.length; g++) {
+      const group = groups[g];
+      const own = group.emissive;
+      if (!own || group.failed || group.indexCount === 0) continue;
+      const built = emissive.get(own.recipe.depthBias);
+      if (!built) continue;
+      const frame = group0(built.groups[0]);
+      const material = own.group.get(built.groups[1]);
+      const geometry = group.geometry?.get(built.groups[2]);
+      if (!frame || !material || !geometry) continue;
+      pass.setPipeline(built.pipeline);
+      pass.setBindGroup(0, frame);
+      pass.setBindGroup(1, material);
+      pass.setBindGroup(2, geometry);
+      pass.drawIndexed(group.indexCount, 1, group.indexBase, 0, 0);
+    }
+  }
 }
 
-/** How a group is named in a label or a message: its recipe's defines, or the casters. */
+/** How a group is named in a label or a message: its recipe's defines, a palette material, or the casters. */
 function labelOf(group: Group): string {
-  return group.material ? `[${group.material.recipe.defines.join("+")}]` : "[casters]";
+  if (group.material) return `[${group.material.recipe.defines.join("+")}]`;
+  return group.emissive ? `[emissive, bias ${group.emissive.recipe.depthBias}]` : "[casters]";
 }
 
 /** The first attribute `group`'s variant reads that `geometry` lacks, or null; an absent `uv` reads 0. */
@@ -1022,9 +1322,9 @@ function clusterWords(cut: readonly CutSurface[], blocks: readonly BlockBox[], b
   const f = new Float32Array(words);
   const u = new Uint32Array(words);
   let k = 0;
-  for (const { surface, group, base, c, passes } of cut) {
+  for (const { surface, group, base, c, passes, key } of cut) {
     const block = blockIds.get(blocks[surface])!;
-    for (const cl of c) writeCluster(f, u, k++, cl, base + cl.indexStart, [group, block, surface, cl.piece], passes);
+    for (const cl of c) writeCluster(f, u, k++, cl, base + cl.indexStart, [group, block, surface, cl.piece], passes, key);
   }
   return words;
 }

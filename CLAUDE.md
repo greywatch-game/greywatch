@@ -586,15 +586,19 @@ alpha-blended draw accumulates into it (`ALPHA_COMBINE`), and `CelInk` scales
 its edge by `1 - a`. **A REFLECTION PROBE inverts it** (`opaqueAlpha` is 1 for a
 bake), so **a shader that hardcodes either value breaks one of the two passes
 silently**. **The EMISSIVE palette is the one deliberate exception**
-(`EmissiveWorld.ts` hardcodes **1** in both passes) — do not "fix" it onto
+(`shaders/wgsl/emissiveWorld.ts` hardcodes **1** in both passes) — do not "fix" it onto
 `opaqueAlpha`. **The sky's CLOUDS write the depth of a point 7 km out**, so
 every surface must be nearer; they draw on group 0's ALPHA-TEST list, after our
 blocks and floor. **Nothing on the floor writing NO depth is OPAQUE**.
 
 **The world is OPAQUE with exactly one exception, and it is glazing.** Glass you
 can see THROUGH is `getGlass` over a cube `ReflectionSystem` bakes **one per
-GLAZED BLOCK**. Glass you cannot is `Build.pane({ backed })`, which writes DEPTH
-— so **`backed` is a claim about the WORLD that nothing throws over**. **No pane
+GLAZED BLOCK** — by OUR renderer (`render/ProbeBake.ts`, read through a
+wrapped cube) whenever the handover holds every surface it draws, so **a new
+world surface our side cannot draw sends the map's whole BAKE back to
+Babylon's `ReflectionProbe`s** (a fire is left out, `FINDINGS.md` 51). Glass
+you cannot is `Build.pane({ backed })`, which writes DEPTH — so **`backed` is
+a claim about the WORLD that nothing throws over**. **No pane
 of either kind is a shadow caster**, and see-through glazing gets no ink.
 
 **The frame WALKS the scene, and the scene is the map.** `WorldCulling`
@@ -603,14 +607,15 @@ it never disables, never hides, never unpickles. **A collider is never a
 candidate, and nor is a BLOCK or the LANDFORM our renderer TAKES**
 (`BlockHandover`; the BUILD marks `WorldSurface.landform`), drawn in the MAIN
 pass by `src/render/` — **blocks, then landform, before the alpha-test list** —
-their Babylon meshes kept for the probes (the world's shadow maps and the
-lamps' atlas are drawn by our side too, while it holds every caster), and **a taken mesh is never
+their Babylon meshes kept for a pass handed BACK (the world's shadow maps,
+the lamps' atlas and the reflection bake are our side's too, while it holds
+what each draws), and **a taken mesh is never
 switched off, hidden or faded after its build** — ours reads no node and would
 still draw it (a DEV check says so). **The SCATTER is drawn twice over and the
 two must agree**: our main pass draws it as INSTANCES of its variants, its
 colour baked once per kind, and cuts its pieces out of the blocks it takes,
-while Babylon's merged copy stays in those blocks for the passes Babylon
-still draws (`BuildOptions.onScatter`) — and **a scatter index names a survivor's entry and
+while Babylon's merged copy stays in those blocks for any pass handed back to
+Babylon (`BuildOptions.onScatter`) — and **a scatter index names a survivor's entry and
 a corner in 31 bits** (`render/scatterList.ts`), so a map whose scatter
 records times a cluster's most indices (`listStride`) pass 2^31 hands every recipe
 that draws scatter back to Babylon whole, blocks and all, as does a recipe
@@ -935,7 +940,10 @@ that same object, unchanged; `GameMap.world` keeps it beside the mesh:
   building. **Two readers.** `ReflectionSystem.encloses`: a probe drops its
   own building from its bake, and since the albedo palette took the colour out
   of the merge key there is no longer any geometry-shaped way to ask which
-  building a mesh IS. And `WorldCulling`, which files every mesh carrying one
+  building a mesh IS — asked as NUMBERS in our renderer's bake (`blockKey`,
+  off the record's mirror `WorldSurface.block`, and for a scatter instance
+  the REGION its copy was merged under, `ScatterSet.blocks`), so those keep
+  the merge's lattice. And `WorldCulling`, which files every mesh carrying one
   into a cull cell — see the rendering section.
 - `surface: "ground"` — what a round that stops here kicks up. The odd one out:
   it is a **value with a default**, not a flag, and **absent means `"hard"`**.

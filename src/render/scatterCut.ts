@@ -19,6 +19,8 @@
  * sphere is its set's — over every part handed of it, in its own frame —
  * moved by its matrix and grown by its scale, and a set none of whose parts
  * is handed has a sphere of nothing at its placement, which no record names;
+ * an instance carries the block its copy was merged into (`InstanceSet.keys`),
+ * which a probe's view leaves out by;
  * the transforms are every set's instances in the instance table's order.
  * `partRecords` counts what `ScatterTables.add` makes, so the budget is
  * checked before anything is cut.
@@ -39,6 +41,12 @@ export interface InstanceSet {
   readonly matrices: Float32Array;
   /** Each instance's uniform scale. */
   readonly scales: Float32Array;
+  /**
+   * The block each instance's copy was merged into, as the culls carry it
+   * (`blockKey`): its REGION's, which is where the block merge files a
+   * scatter field — never the instance's own place (`ScatterSet.blocks`).
+   */
+  readonly keys: Uint32Array;
 }
 
 /** What `finish` is told about the scatter: which pieces to cut, and the sets. */
@@ -236,6 +244,7 @@ export class ScatterTables {
         f[o + 3] = r * set.scales[i];
         writeTransform(m, f, o + 4);
         u[o + 16] = s;
+        u[o + 17] = set.keys[i];
       }
       out.push({ start: at, end: at + n, ramp: this.ramp[s], rigged: this.rigged[s] });
     });

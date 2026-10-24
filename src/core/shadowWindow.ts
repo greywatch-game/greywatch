@@ -4,7 +4,9 @@
  * shadow reader may be bound to that no generator renders: the LIT texture
  * a map switched off reads (`litShadowTexture`), and Babylon's wrapped VIEW
  * of a shadow texture our renderer owns (`wrapShadowTexture`), which both
- * `ShadowSystem` and `LocalShadows` hand their readers. Owns the light's own
+ * `ShadowSystem` and `LocalShadows` hand their readers — and its twin for a
+ * reflection probe's cube of ours (`wrapCubeTexture`), which
+ * `ReflectionSystem` hands the glazing and the water. Owns the light's own
  * cross-axis basis and the last snapped focus; owns no light, no generator
  * and no render target, and never renders anything.
  * Invariants: `place` writes `light.position` and nothing else on the light —
@@ -214,4 +216,33 @@ export class ShadowWindow {
     );
     return true;
   }
+}
+
+/**
+ * Babylon's view of a reflection probe's CUBE our renderer owns
+ * (`render/ProbeBake.ts`, `BABYLON_EXIT.md` X3.6c) — what the glazing and the
+ * water are handed in place of a `ReflectionProbe`'s cube, sampled as that
+ * cube was: a cube view over all six layers and the whole mip chain,
+ * trilinear, and the coordinates mode Babylon's cube render target takes
+ * (`INVCUBIC_MODE`), from which Babylon's bind derives the cube's wrap. Here
+ * beside `wrapShadowTexture` because it is the same crossing for a second
+ * kind of texture, and `shadowWindow.ts` is where the game's wrapped views
+ * are made.
+ *
+ * **Disposing it DESTROYS the cube**, as `wrapShadowTexture`'s does: the cube
+ * pool is never disposed, and neither is a view of it.
+ */
+export function wrapCubeTexture(scene: Scene, texture: GPUTexture, name: string): BaseTexture {
+  const engine = scene.getEngine() as WebGPUEngine;
+  const internal = engine.wrapWebGPUTexture(texture);
+  // Read by the re-point below, which makes the view a cube's and gives it
+  // every level.
+  internal.isCube = true;
+  internal.generateMipMaps = texture.mipLevelCount > 1;
+  engine.updateWrappedWebGPUTexture(internal, texture);
+  engine.updateTextureSamplingMode(Texture.TRILINEAR_SAMPLINGMODE, internal);
+  const wrapped = new BaseTexture(scene, internal);
+  wrapped.name = name;
+  wrapped.coordinatesMode = Texture.INVCUBIC_MODE;
+  return wrapped;
 }

@@ -5,7 +5,8 @@
  * Owns: `ScatterVariants` — one build's variants, made the first time a kind
  * is asked for and kept for the build; which variant a placement wears
  * (`pick`); a placement's parts, cloned off its variant (`place`), and its
- * world matrix, recorded as it is placed; and the FIELD our renderer draws
+ * world matrix and its region's origin, recorded as it is placed; and the
+ * FIELD our renderer draws
  * the scatter from (`field`: each worn variant a `ScatterSet` of instances,
  * `BABYLON_EXIT.md` X3.4b).
  * Invariants: a variant is its kind's builder run off a stream of its OWN,
@@ -85,6 +86,14 @@ export interface ScatterSet {
   readonly matrices: Float32Array;
   /** Each placement's uniform scale. */
   readonly scales: Float32Array;
+  /**
+   * The map block each placement's copy was merged into, two integers a
+   * placement (`bx`, `bz`): its REGION's, which is where `MapBuilder` files a
+   * scatter field's merge (`BlockMerge.add` at the region's origin) — never the
+   * placement's own place. What a reflection probe leaves out of its own
+   * bake by (`ReflectionSystem.encloses`).
+   */
+  readonly blocks: Int32Array;
 }
 
 /** Every set a build's placements wear, in the order each was first worn. */
@@ -118,7 +127,10 @@ export class ScatterVariants {
    * Each worn variant's placements, keyed `kind/variant`, in the order each
    * was first worn: their matrices and scales, as `ScatterSet` holds them.
    */
-  private readonly worn = new Map<string, { kind: Kind; variant: number; matrices: number[]; scales: number[] }>();
+  private readonly worn = new Map<
+    string,
+    { kind: Kind; variant: number; matrices: number[]; scales: number[]; origins: number[] }
+  >();
   private readonly local = new Matrix();
   private readonly region = new Matrix();
   private readonly turn = new Quaternion();
@@ -190,7 +202,13 @@ export class ScatterVariants {
    * matrices of the placements wearing it. A set none of whose parts is kept
    * is left out.
    */
-  field(palette: Palette, keep: (part: Part) => boolean, shade: (part: Part) => void): ScatterField {
+  field(
+    palette: Palette,
+    keep: (part: Part) => boolean,
+    shade: (part: Part) => void,
+    /** The block merge's side, metres (`MapLayout.blockSize`): what a placement's block is read off. */
+    blockSize: number,
+  ): ScatterField {
     const sets: ScatterSet[] = [];
     for (const w of this.worn.values()) {
       const mint = mintFrom();
@@ -214,6 +232,8 @@ export class ScatterVariants {
         parts,
         matrices: Float32Array.from(w.matrices),
         scales: Float32Array.from(w.scales),
+        // As `BlockMerge.add` keys the region the copy was filed under.
+        blocks: Int32Array.from(w.origins, (o) => Math.floor(o / blockSize)),
       });
     }
     return { sets };
@@ -236,7 +256,7 @@ export class ScatterVariants {
   ): void {
     const key = `${kind}/${v}`;
     let w = this.worn.get(key);
-    if (!w) this.worn.set(key, (w = { kind, variant: v, matrices: [], scales: [] }));
+    if (!w) this.worn.set(key, (w = { kind, variant: v, matrices: [], scales: [], origins: [] }));
     this.size.copyFromFloats(scale, scale, scale);
     Quaternion.RotationYawPitchRollToRef(yaw, 0, 0, this.turn);
     this.at.copyFromFloats(x, y, z);
@@ -249,6 +269,7 @@ export class ScatterVariants {
     const m = this.local.m;
     for (let i = 0; i < 16; i++) w.matrices.push(m[i]);
     w.scales.push(scale);
+    w.origins.push(frame.x, frame.z);
   }
 
   /**

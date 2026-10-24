@@ -84,6 +84,8 @@ import { attachEmissiveFog, setEmissiveFog } from "./EmissiveFog";
 import { EmissiveWorldMaterial, MAX_EMISSIVE_PALETTE } from "./EmissiveWorld";
 import { FlameMaterial } from "./FlameShader";
 import { BlastMaterial } from "./BlastShader";
+import type { Vector3Like } from "../math";
+import type { EmissiveRecipe } from "../render/emissiveWorld";
 import type { FrameTextures, FrameUniforms } from "../render/frame";
 import {
   createMaterialUniforms,
@@ -1859,12 +1861,19 @@ export class CelMaterialFactory {
     const i = overGlass ? 1 : 0;
     let mat = this.emissiveWorld[i];
     if (!mat) {
+      const depthUnits = overGlass ? CelMaterialFactory.OVER_GLASS_DEPTH_UNITS : 0;
       mat = new EmissiveWorldMaterial(
         this.scene,
         overGlass ? "emissive-world-over-glass" : "emissive-world",
-        overGlass ? CelMaterialFactory.OVER_GLASS_DEPTH_UNITS : 0,
+        depthUnits,
         this.emissivePalette,
       );
+      // What our renderer draws it with in a probe's bake: the same table and
+      // fog band, held here and read by reference (`emissiveRecipe`).
+      this.emissiveRecipes.set(mat, {
+        depthBias: depthUnits,
+        values: { emissivePalette: this.emissivePalette, fogRange: this.emissiveFogRange },
+      });
       mat.setFog(fogState.color, fogState.start, fogState.end);
       // The cel cache's eye, seeded here for `applyCamera`'s reason: the walk
       // in `updateCamera` is guarded, and skips a material it has never seen.
@@ -1875,6 +1884,27 @@ export class CelMaterialFactory {
   }
 
   private readonly emissiveWorld: (EmissiveWorldMaterial | null)[] = [null, null];
+
+  /** What our renderer draws each palette material with (`emissiveRecipe`). */
+  private readonly emissiveRecipes = new Map<EmissiveWorldMaterial, EmissiveRecipe>();
+
+  /**
+   * The palette's fog band as `EmissiveWorldMaterial.setFog` computes it —
+   * start, and the reciprocal of the band — kept for our renderer's copy of
+   * the pixel, so it rounds as Babylon's uniform does.
+   */
+  private readonly emissiveFogRange = new Float32Array(2);
+
+  /**
+   * What our renderer draws `mat` with if it is one of the emissive
+   * palette's two materials (`render/emissiveWorld.ts`): its depth bias, and
+   * the palette and fog band by reference — `celRecipe`'s twin, a PULL off
+   * what the factory holds, never a read of the material; null otherwise.
+   * `materialEpoch` moves when either is rewritten.
+   */
+  emissiveRecipe(mat: unknown): EmissiveRecipe | null {
+    return this.emissiveRecipes.get(mat as EmissiveWorldMaterial) ?? null;
+  }
 
   /** The map's emissive palette, flattened — `palette`'s twin. */
   private readonly emissivePalette = new Float32Array(MAX_EMISSIVE_PALETTE * 3);
@@ -1892,6 +1922,7 @@ export class CelMaterialFactory {
       this.emissivePalette[i * 3 + 2] = colors[i].b;
     }
     for (const mat of this.emissiveWorld) mat?.setPalette(this.emissivePalette);
+    this.materialEpoch++;
   }
 
   /**
@@ -1983,6 +2014,9 @@ export class CelMaterialFactory {
     // materials behind every window, flame and tracer.
     setEmissiveFog(fogState.color, fogState.start, fogState.end);
     for (const mat of this.emissiveWorld) mat?.setFog(fogState.color, fogState.start, fogState.end);
+    this.emissiveFogRange[0] = fogState.start;
+    this.emissiveFogRange[1] = 1 / Math.max(0.001, fogState.end - fogState.start);
+    this.materialEpoch++;
     this.flame?.setFog(fogState.color, fogState.start, fogState.end);
     this.blast?.setFog(fogState.color, fogState.start, fogState.end);
     this.mistColor = env.mistColor;
@@ -2173,6 +2207,23 @@ export class CelMaterialFactory {
       out.giSlotChannel.set(gi.slotChannel);
     }
     out.celPalette.set(this.palette);
+  }
+
+  /**
+   * A reflection probe's frame for our renderer's bake (`render/ProbeBake.ts`,
+   * `BABYLON_EXIT.md` X3.6c): `fillFrame`'s, with what a bake changes stated
+   * HERE, where Babylon's bake changes it on the materials — the eye at the
+   * probe (`updateCamera`), the opaque alpha 1 (`setOpaqueAlpha`) and the
+   * clouds' shadow held off (`ShadowBindings.holdCloudShadow`). The eye is
+   * PASSED, never borrowed: nothing the factory holds moves for it.
+   */
+  fillBakeFrame(out: FrameUniforms, eye: Vector3Like): void {
+    this.fillFrame(out);
+    out.camPos[0] = eye.x;
+    out.camPos[1] = eye.y;
+    out.camPos[2] = eye.z;
+    out.opaqueAlpha[0] = 1;
+    this.shadows.fillFrame(out, true);
   }
 
   /**

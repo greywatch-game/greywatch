@@ -978,7 +978,7 @@ export class MapBuilder {
    * Babylon's in the block it was merged into. Null when the bake is off
    * (`ao.strength` 0), which leaves every block whole.
    */
-  private scatterField(palette: Palette, size: number): ScatterField | null {
+  private scatterField(palette: Palette, size: number, blockSize: number): ScatterField | null {
     const ctx = shadingContext([], new TerrainField(undefined), size);
     if (!ctx || !this.variants) return null;
     const identity = Matrix.Identity().m;
@@ -989,6 +989,7 @@ export class MapBuilder {
         const { positions, normals } = part.geometry;
         part.geometry.colors = shadeVertices(ctx, positions, normals!, identity, swayLayerOf(part));
       },
+      blockSize,
     );
   }
 
@@ -1256,7 +1257,7 @@ export class MapBuilder {
     // palette is published. Not on an editor build, whose blocks are not
     // merged and whose surfaces our renderer never takes.
     if (onScatter && !run.index) {
-      const field = record("scatterField", () => this.scatterField(palette, size));
+      const field = record("scatterField", () => this.scatterField(palette, size, blocks.blockSize));
       if (field) onScatter(field);
     }
     // Published before anything draws and after the merge that discovers it —

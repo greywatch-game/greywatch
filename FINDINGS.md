@@ -348,6 +348,17 @@ not to be it.
 
 ## 10. The reflection bake is draw-call bound, and a distance cull halves the list
 
+**Since X3.6c this is the FALLBACK's entry.** Whenever the handover holds every
+surface a bake draws, our renderer bakes the cubes (`render/ProbeBake.ts`), a
+face being a cull and a pass over its survivors rather than a draw a mesh, so
+no term below prices it: Coldharbour's 39 probes drain in 5 frames of 5-6 ms,
+~41 ms of wall clock, at `probesPerFrame` 8 on the Windows box. Everything
+below — the per-draw cost, the worst frame, `drawsPerFrame` — is Babylon's
+`ReflectionProbe` bake, which is still what `?babylonworld`, a map with a bake
+surface our side cannot draw and a bake lost before it drained take (an editor
+build bakes nothing on either). The PICTURE questions at the end (the 800 m hole, `perCell`, a
+wider block) bear on both paths, which share the radius and the enclosure.
+
 **Measured, headless (SwiftShader, Coldharbour); superseded on real hardware —
 see the end of this entry.** `ReflectionSystem` bakes 37
 probes at install — one per glazed map block — which is 222 cube faces over
@@ -2110,13 +2121,25 @@ result decides where `PERF_PLAN.md` Part B stands.
 
 ---
 
-## 51. A reflection probe never draws a FIRE, and nothing says it should not
+## 51. A reflection probe barely draws a FIRE, and nothing says it should not
 
-**Status:** open, cause not found. Seen while checking that the fire fogs a
+**Status:** open, cause not found — **and narrowed by X3.6c**. Babylon's bake
+DOES draw a fire, but only far off and only as single dark-red texels: taking
+the `-flame-` merges out of Babylon's lists alone moved **6 texels** in
+X3.6c's cube readback (3 on Sarab, 3 on Cinderhaven) and nothing else.
+**Our renderer's bake leaves every fire out by construction**
+(`BlockHandover`: a `FlameMaterial` merge is neither taken nor held for it, and
+`probeHolds` counts it apart) — there is no flame program on our side until
+the fire moves (`BABYLON_EXIT.md` X4.4) — so on our path no probe draws a fire
+at all, and the picture moved by those 6 texels against Babylon's. What is
+still unexplained is the near case below: a fire stood AROUND a probe draws
+nothing.
+
+Seen while checking that the fire fogs a
 bake against the probe's eye rather than the player's (`FlameMaterial.setEye`).
 A probe's list is `map.visuals`, which holds every block's merged
 `block<x>,<y>-flame-…` mesh, and the fire's fragment writes `opaqueAlpha` for
-exactly this pass — so it is meant to be in the glass. It is not.
+exactly this pass — so it is meant to be in the glass, and up close it is not.
 
 Measured on Coldharbour by cutting one probe's list to a single fire mesh,
 standing it 6 m off the probe at three times its size (bounding radius 15 m,
@@ -2134,7 +2157,11 @@ light source the glass should show most, and today it shows the lamps beside
 the fire and not the fire. Start where the fire differs from the two that
 draw: its `normal` and `uv` attributes, the vertex stage's displacement, and
 how a frozen `FlameMaterial` builds its effect for a render pass it has not
-drawn in before.
+drawn in before — and now that a far fire does reach a cube, what differs up
+close: the probe inside the fire's sphere, and the tongues built inside out
+(`docs/rendering.md`, the fire). On our renderer the answer is owed when the
+fire gets a program of ours (X4.4), which is when a fire could first enter
+our bake.
 
 ## 52. The exit's "before": Greyfen and Sarab, the desktop at max and the phone at minimum — **the phone's fight on Sarab is CPU in the render, and its look frames on Greyfen are not**
 
@@ -2892,3 +2919,29 @@ or in the machine.
 - Only if a fresh box hangs: the same loop at X3.5b's parent, before the
   scatter list.
 
+
+## 65. The building card gives up on the reflection bake when the irradiance volume is slow to converge
+
+**Open, measured 2026-10-24 during `BABYLON_EXIT.md` X3.6c, and older than
+it.** `Game.updateBakeWait` counts every frame `bakePending` does not fall
+toward `CONFIG.graphics.reflection.drainStallFrames` (120) — including the
+frames the bake's GATE holds it (`setBakeGate`: `gi.converged` and the
+shadows' `ready`), when nothing has been released and nothing can fall. So a
+first install whose volume takes more than 120 frames to converge gives up
+on the whole bake ("[reflection] giving up on the bake with 1 of 1 probe(s)
+outstanding — no progress for 120 frames") and the probes bake in the round,
+which is the frame the wait exists to keep out of it.
+
+### What was measured
+A per-frame timeline of Greyfen's install (`?bench=greyfen`, max settings,
+3440x1440), both trees in one browser, three runs a side: on every run the
+queue waited on `gi.converged` alone once it was queued — the shadows and,
+on X3.6c's side, `ProbeBake.ready` were open on the frame it was queued. The
+give-up fired once, on the PARENT tree (aef7328), on a cold first run; X3.6c's
+own first run reached 101 stalled frames before the volume converged and the
+probe baked.
+
+### How to settle it
+Count toward the stall only the frames on which the gate is OPEN, leaving
+`drainCapMs` (90 s) as the backstop for a gate that never opens; then the
+same timeline on a cold first install of each map with water or glazing.

@@ -238,6 +238,19 @@ caseOf(["Matrix#decompose"], () => {
     return [ok, s, q, t];
   }];
 });
+caseOf(["Matrix.LookAtLHToRef"], () => {
+  // A probe face's look (an axis step off the eye) as often as not, and the
+  // degenerate up-along-the-look case the X-axis shortcut is for.
+  const e = v3(), axis = Math.floor(rand() * 6), up = rand() < 0.8 ? [0, 1, 0] : v3();
+  const t = rand() < 0.5 ? e.map((c, i) => c + (i === axis >> 1 ? (axis & 1 ? -1 : 1) : 0)) : v3();
+  return [[e, t, up], (L) => { const m = L.Matrix.LookAtLHToRef(V(L, e), V(L, t), V(L, up), new L.Matrix()); return [m, m.isIdentity()]; }];
+});
+caseOf(["Matrix.PerspectiveFovLHToRef", "NDC_TO_HALF_Z_RANGE"], () => {
+  const fov = rand() < 0.5 ? Math.PI / 2 : rand() * 3, aspect = rand() < 0.5 ? 1 : 0.2 + rand() * 3;
+  const n = rand() < 0.1 ? 0 : rand() * 2, f = rand() < 0.1 ? 0 : n + rand() * 5000;
+  const fixed = rand() < 0.8, half = rand() < 0.8, tilt = rand() < 0.8 ? 0 : angle(), rev = rand() < 0.2;
+  return [[fov, aspect, n, f, fixed, half, tilt, rev], (L) => { const m = L.Matrix.PerspectiveFovLHToRef(fov, aspect, n, f, new L.Matrix(), fixed, half, tilt, rev); return [m, m.isIdentity()]; }];
+});
 caseOf(["Matrix.FromXYZAxesToRef"], () => { const a = v3(), b = v3(), c = v3(); return [[a, b, c], (L) => L.Matrix.FromXYZAxesToRef(V(L, a), V(L, b), V(L, c), new L.Matrix())]; });
 
 // Color3 / Color4

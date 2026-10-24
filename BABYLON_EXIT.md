@@ -1910,7 +1910,8 @@ plain draw and, with scatter, its one indirect draw, a pass.
 - **X3.6c — the reflection bake:** `ReflectionSystem`'s probes, which draw the
   world from each probe with the probe's eye passed explicitly. That removes
   the class of bug 242b986 and a858c74 fixed: a `ReflectionProbe` never moving
-  `scene.activeCamera`. The bake still drains behind the loading card.
+  `scene.activeCamera`. The bake still drains behind the loading card
+  **LANDED** (below).
 - **X3.6d — the glow mask** for the emissive palette's static meshes
   (`GlowPass`; `shaders/EmissiveWorld.ts`).
 
@@ -2197,6 +2198,129 @@ plain draw and, with scatter, its one indirect draw, a pass.
     through the same instanced draw, their boxes `LocalShadows`'.
   - What X4.1 leaves to do for the atlas is where a body's boxes come from:
     the draw is ours already.
+
+**X3.6c landed** (HASH; 2026-10-24).
+- **What it is.** Each probe's cube is a texture our renderer OWNS
+  (`render/ProbeBake.ts`: `rgba8unorm`, six layers, a full mip chain, pooled
+  for the process as Babylon's probes are) and draws whenever the handover
+  holds every surface the bake draws; Babylon's glazing and water sample a
+  wrapped cube view (`wrapCubeTexture`, `core/shadowWindow.ts`, its sampler
+  derived from `INVCUBIC_MODE` as the probe cube's was). `ReflectionSystem`
+  still decides everything — the probes, where each stands, its box, what it
+  leaves out, the queue, the gate, `bakePending` — and picks the path per
+  install (`path`); Babylon's `ReflectionProbe`s are the fallback for the
+  editor (which bakes nothing), `?babylonworld`, a map with a bake surface
+  our side cannot draw, and a LOSS before the bake drained, which re-queues
+  the install on Babylon's side and re-points every reader (the water through
+  a `rebind` callback).
+- **The eye is PASSED, not borrowed.** The bake has a frame of its own (a
+  second `FrameUniformBuffer`, its group 0 over the frame's textures), filled
+  by `CelMaterialFactory.fillBakeFrame` — the frame's values seen from the
+  probe, `opaqueAlpha` 1, the clouds' shadow held off — and each face's
+  camera (view-projection, eye, alpha: the block's first 80 bytes) reaches it
+  through a staging slot copied in the encoder ahead of its pass. On our path
+  `ReflectionSystem` moves no material's eye and flips no alpha, so the class
+  of bug 242b986 and a858c74 fixed (a `ReflectionProbe` never moving
+  `scene.activeCamera`) has no surface left to land on. A face is Babylon's
+  face: `ReflectionProbe`'s six looks, `LookAtLH` and a 90-degree
+  `PerspectiveFovLH` over the camera's near and far in the half-z range
+  (both added to `src/math`, `math-check` cases beside them).
+- **A face is a third VIEW of the main pass's culls**, built when a bake is
+  queued and destroyed when it drains, so a round holds none: a slot a face
+  (`probesPerFrame` 8 probes a submit), the pass bit `PASS_PROBE` (every
+  taken surface and scatter part, and the emissive palette), and two tests
+  the probe view alone turns on in the uniform's word 9 — the reach to the
+  near side of a cluster's SURFACE sphere, Babylon's `neighbourhood` test on
+  the same mesh, and its own blocks left out, `encloses` asked as numbers (a
+  cluster's block, a scatter placement's REGION block as `BlockMerge` filed
+  its copy, the cell at `perCell` and a bit a served block). It draws through
+  the main pass's own draw code (`WorldBlocks`' `DrawView`), in the order the
+  groups were added — floor before roads: at a grazing far horizon the road's
+  bias no longer separates them, and Babylon's bake drew the floor first
+  (Sarab, 14 texels before the order was kept). It records LATE in the
+  prepare (`Renderer.onFrame`'s `late`), after the world's shadow maps and the
+  lamps' atlas, and only when every group it draws is drawable.
+- **What Babylon's bake drew that ours had not.** The emissive palette, held
+  for the bake with its slots (`WorldBlocks.addEmissive`, a group a material,
+  cut last, drawn in no main pass) and drawn by `render/emissiveWorld.ts`
+  over the one body both sides now include (`shaders/wgsl/emissiveWorld.ts`);
+  its palette and fog reach our side as data (`emissiveRecipe`). Fire is left
+  out (`FINDINGS.md` 51: Babylon's bake drew a distant fire as a dark texel
+  and a near one not at all). Mips are ours (`render/cubeMips.ts`, Babylon's
+  `generateCubeMipmaps` filter for filter). Every shipped map holds the whole
+  bake: taken / palette / fires left out / other —
+  Hollowmere 95 / 29 / 11 / 0 (2 water probes), Greyfen 385 / 10 / 3 / 0 (1),
+  Coldharbour 172 / 46 / 2 / 0 (39), Harrowmead 120 / 4 / 2 / 0 (1), Sarab
+  303 / 7 / 2 / 0 (28), Cinderhaven 323 / 53 / 15 / 0 (14), Kurenai
+  251 / 4 / 0 / 0 (3).
+- **Measured.**
+  - **The cubes, against Babylon's** (a scratch readback, both bakes of the
+    same probes in one page under the freeze, every face and level; Babylon
+    against itself 0 texels on every map). The landform alone and the palette
+    alone are 0 texels on all seven maps. What differs is the SCATTER — every
+    differing texel on or within a texel of where ours draws it, but ~15
+    single texels on three maps, near scatter or fog-coloured at the
+    horizon — X3.4's difference (instances under their own matrices, one
+    colour bake a kind) seen from a probe, plus 6 texels of distant fire
+    (3 Sarab, 3 Cinderhaven): mip 0 differs at 0.02% of texels (Cinderhaven)
+    to 2.5% (Greyfen, mostly 1-2/255) and 2.2% (Kurenai, at most 22/255);
+    Harrowmead 768 texels, Hollowmere 416, Coldharbour 3,885, Sarab 18,417
+    (a palm's fronds over a probe; one-texel coverage edges give the 255s).
+    Coverage (alpha) identical but a few edge texels; the mips carry mip 0's
+    differences down and shrink them.
+  - **The probe-eye check** (242b986's harness, made again): a Coldharbour
+    glazing probe baked with the camera at the probe and 600 m off it reads
+    back IDENTICAL on our path, 0 of 131,070 texels over every face and level,
+    the frame's eye confirmed moved.
+  - **The bank, against a BEFORE kept at aef7328 in a worktree** (`--check
+    --keep` both sides): 34 of 61 byte-identical, 50 within the floor. The 11
+    over it are Harrowmead's `millpond` and the ten sight shots over the same
+    water (2.3-5.0% of pixels, mean 0.04-0.07/255, at most 76): the pond's
+    reflection of the trees, the cube's scatter difference bent by the chop,
+    and nothing above the waterline. The rest — Greyfen's `marsh` (0.64%),
+    Coldharbour's three curtain walls (under 0.1%), Sarab's `ground` and
+    `shelf` — are within it. No console or page error.
+  - **`census.mjs --against`** the BEFORE: equal on all seven maps (384,
+    226, 829, 891, 673, 228, 134). **`shaders.mjs`**: clean on seven, ours
+    15/15 and 19/19. **`gate.mjs`**: clean on seven, the probe counts as
+    `gate.json`'s.
+  - **The bake's cost.** A frame of 8 probes is 5-6 ms from the frame's start
+    to its queue's work done on the desktop, against 1-3 idle: Coldharbour's
+    39 probes drain in 5 frames, ~41 ms of wall time, where Babylon's bake
+    spent one ~2.3 s frame on them; Cinderhaven's 14 in 2 frames, ~17 ms.
+  - **X0.3 on the desktop** (`bench.mjs`'s run, `--max --gpu`, uncapped,
+    3440x1440, one run an invocation, alternated BEFORE and AFTER run by run, three a side, the
+    BEFORE in the worktree at aef7328; the canonical fight hashes on all 18
+    runs, one BEFORE run lost to `FINDINGS.md` 64's hang and retried): the
+    mean frame new / old 0.999-1.001 on the vantages, 0.999-1.000 on the path
+    and 1.002-1.004 in the fights; `gpu.frame` 0.975-1.028; the draw counts
+    equal. The bench's INSTALL rose (Greyfen 10.4 to 13.4 s, Harrowmead 12.4 to
+    13.4, Sarab 11.8 to 12.2, medians), and a timeline of the install, both
+    trees in one browser and alternated, three runs a side, did not
+    reproduce it — 8.8 to 8.7 s, 11.0 to 9.4 and 10.3 to 8.8 (Babylon's 43,254
+    bake draws in one of Sarab's frames are gone; the warm-up compiles one
+    pipeline more, ours) — so it is the bench starting a cold dev server and
+    browser for every run, not the bake: in every run the queue waited on
+    `gi.converged` alone. That wait found `FINDINGS.md` 65, older than this
+    step.
+  - **The paths no instrument covers**, forced in a scratch page on
+    Coldharbour (glazing and water) and Hollowmere (water): the install, a
+    shadow rung `low` mid-bake and back, a forced loss mid-bake (Babylon's,
+    the readers re-pointed), a second round (ours again), a loss after the
+    bake drained and a `rebake` (Babylon's), a third round, the editor (`F2`,
+    nothing baked) and `?babylonworld` (Babylon's, the probe counts as
+    before). No page or console error. X3.6a's shadow readback on
+    Coldharbour, Greyfen and Hollowmere matches its record exactly. These ran
+    before the draw-order fix, which moves the order inside the probe view
+    and nothing else.
+- **Owed onward.**
+  - The fire, when it moves (X4.4), owes the bake a program, and
+    `FINDINGS.md` 51's near case is still open.
+  - `shaders.mjs` builds neither the palette's program nor the mips'; the
+    gate and the bank compiled both on every map.
+  - The phone's FOLLOW-UP reading, the user's to take as every step's since
+    X3.3c: the bake is under the loading card, so it is read as the card's
+    length, not the frame.
 
 **After X3.6:** Babylon builds no block, scatter or terrain mesh for a round.
 Editor builds keep the old path until X5.3.

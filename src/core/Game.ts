@@ -108,6 +108,7 @@ import {
 import { BabylonFrameHost } from "../render/babylonSeam";
 import { Renderer } from "../render/Renderer";
 import { LampAtlas } from "../render/LampAtlas";
+import { ProbeBake } from "../render/ProbeBake";
 import { WorldShadows } from "../render/WorldShadows";
 import { PaperGrain } from "../shaders/PaperGrain";
 import { CelInk } from "../shaders/CelInk";
@@ -725,6 +726,8 @@ export class Game {
   private localShadows: LocalShadows;
   /** The lamps' atlas as our renderer owns it, which `localShadows` hands over to or takes back. */
   private readonly lampAtlas: LampAtlas;
+  /** The reflection bake as our renderer draws it, whenever the handover holds every surface a bake draws (X3.6c). */
+  private readonly probeBake: ProbeBake;
   /**
    * The URL's session overrides of the display settings — `?gi=`,
    * `?shadows=`, `?volumetrics=` and `?nominimap` — and of the round's seed,
@@ -1489,6 +1492,16 @@ export class Game {
       CONFIG.graphics.localShadows.maxProxies,
     );
     this.localShadows = new LocalShadows(this.scene, this.mats, this.shadowQuality, this.lampAtlas);
+    // The reflection probes' cubes as our renderer bakes them, whenever the
+    // handover holds every surface a bake draws (`BABYLON_EXIT.md` X3.6c):
+    // the probe's eye is PASSED in a frame of the bake's own, which the
+    // factory fills, rather than moved onto every material.
+    this.probeBake = new ProbeBake(
+      this.renderer,
+      (out, eye) => this.mats.fillBakeFrame(out, eye),
+      CONFIG.graphics.reflection.size,
+      CONFIG.graphics.reflection.probesPerFrame,
+    );
     // The same rule again, for the irradiance volume's seven textures: every
     // cel material declares them, so they are published before the first one
     // exists and stay published whatever the setting says.
@@ -1748,7 +1761,10 @@ export class Game {
     // Same relationship to `mats` as the two above, in the other direction:
     // this one PUBLISHES to it — the cube the glazing samples, baked from the
     // map itself. Built here so a pane material is born holding the sampler.
-    this.reflections = new ReflectionSystem(this.scene, this.mats);
+    this.reflections = new ReflectionSystem(this.scene, this.mats, this.probeBake);
+    // Whose bake an install's is: ours whenever the handover holds every mesh
+    // a probe draws — asked of it here, at the call, the wiring rule.
+    this.reflections.setOurs((list) => this.handover.probeHolds(list));
     // A cube is baked once per install and keeps the bounce it was baked
     // under, so the bake waits for the volume `installMap` has just cleared —
     // and the shadows it samples, which our renderer draws a frame or more
@@ -1761,7 +1777,7 @@ export class Game {
     // flag. Nothing it does is visible to a ray, a collision, a shadow caster
     // or a cube probe; see `WorldCulling`, which is the whole argument.
     this.culling = new WorldCulling(this.scene);
-    this.handover = new BlockHandover(this.renderer, this.mats, this.culling, this.worldShadows, this.lampAtlas, {
+    this.handover = new BlockHandover(this.renderer, this.mats, this.culling, this.worldShadows, this.lampAtlas, this.probeBake, {
       mode: this.overrides.cullMode,
       // After the HUD, which built `#hud`.
       report: this.overrides.cullCheck ? new CullCheckPanel().show : null,
@@ -4845,8 +4861,8 @@ export class Game {
     // set of points — handed in as a callback rather than reached for, and
     // called from INSIDE the build because a probe has to stand where the
     // water is and only the bed-depth bake knows where that is.
-    this.water.build(map.water, environment, map.terrain, (sites) =>
-      this.reflections.bakeWater(sites, map, opts?.editor === true),
+    this.water.build(map.water, environment, map.terrain, (sites, rebind) =>
+      this.reflections.bakeWater(sites, map, opts?.editor === true, rebind),
     );
     this.grass.build(
       map.grass,

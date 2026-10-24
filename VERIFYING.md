@@ -21,7 +21,7 @@ you are on before you believe anything else in this section.
 | WebGPU adapter | `nvidia/lovelace`, 21 features | `google/swiftshader`, CPU |
 | headless presents a canvas | **yes**, via `channel: "chromium"` | **no**, one frame then device loss |
 | `--enable-unsafe-webgpu` | no-op | **required**, and its absence is invisible |
-| Coldharbour's 40-probe bake | ~1.4 s, one frame | takes the device |
+| Coldharbour's reflection bake | ours ~41 ms over 5 frames; Babylon's ~1.4 s, one frame | Babylon's takes the device; ours not tried |
 | a round | 46–176 fps | ~0.5–2 fps |
 | the one-second check | — | `ls /dev/dri` |
 
@@ -390,7 +390,13 @@ you are on before you believe anything else in this section.
   maps. Both are correct. A reference bank must be taken and checked in the
   same mode; `plans/webgpu-ref/bank.mjs` records the mode and refuses a
   mismatch.
-- **Coldharbour's shipped forty-probe bake completes here** — all forty, one
+- **Coldharbour's bake is OUR RENDERER's now and drains in five frames**
+  (X3.6c, `render/ProbeBake.ts`): 39 probes at `probesPerFrame` 8, frames of
+  5-6 ms against an idle 1-3, ~41 ms of wall clock, under the loading card.
+  `g.reflections.path` says which bake an install took. **What follows is
+  BABYLON's bake**, which `?babylonworld` (or a map whose bake surfaces our
+  side cannot draw) still takes, and every number in it is that path's.
+  Coldharbour's shipped forty-probe bake completes here — all forty, one
   frame, no device loss — and the probes are refresh-once, so it is a build cost
   and never a frame cost. **It is one frame BY BUDGET now rather than by
   default**: `CONFIG.graphics.reflection.drawsPerFrame` (50,000) is set just
@@ -428,10 +434,11 @@ you are on before you believe anything else in this section.
   exactly that. **`g.reflections.bakePending === 0` is still the honest thing
   to warm on** if a script starts a round by any route other than waiting for
   `deploy` — and note it is `bakePending` rather than `queue.length`, because a
-  released probe that has not rendered yet is in neither the queue nor the
-  past.
-- **The reflection drain cannot be CPU-PROFILED, and finding out costs twenty
-  minutes.** A CDP `Profiler` capture at a 500 us interval over the 1500 m drain
+  released probe that has not rendered yet (on our path, not RECORDED yet) is
+  in neither the queue nor the past.
+- **Babylon's reflection drain cannot be CPU-PROFILED, and finding out costs
+  twenty minutes** (ours is a cull and a pass a face, not 50,000 draws, and
+  has not been tried under the profiler). A CDP `Profiler` capture at a 500 us interval over the 1500 m drain
   ran past **twenty minutes** against an unprofiled 37 seconds and had to be
   killed: a frame issuing 50,000 draws is a deep stack being sampled two
   thousand times a second, and the overhead is multiplicative rather than
@@ -553,7 +560,10 @@ you are on before you believe anything else in this section.
     the Windows box the same bake completes in one frame and needs nothing done
     to it** (~1.4 s — see the Windows section above), so
     what follows is a workaround for this machine and not a property of the
-    game. **The stagger it used to describe is IN the game now** — the bake is
+    game. **It is BABYLON's bake**: since X3.6c a round bakes on our renderer
+    (five frames of 8 probes on Coldharbour), which nobody has run on this
+    machine, so `?babylonworld` is how to get the bake described here, and
+    `probesPerFrame` is the lever on ours. **The stagger it used to describe is IN the game now** — the bake is
     spent `CONFIG.graphics.reflection.drawsPerFrame` at a time
     (`ReflectionSystem.releaseBatch`) — but the budget is sized so Coldharbour
     is one batch, which is the frame this machine cannot finish. So the lever
@@ -1562,8 +1572,14 @@ is one machine's:
   place to check it.** There is one probe per glazed map block —
   `g.reflections.probes[slot]` against `g.map.paneGroups[slot]`, 40 of each on
   Coldharbour — and `probe.cubeTexture.readPixels(face)` gives one baked face:
-  alpha over 128 is world, everything else is the sky the shader fills in. Three
-  standing checks:
+  alpha over 128 is world, everything else is the sky the shader fills in.
+  **That is Babylon's bake** (`?babylonworld`, or `g.reflections.path` reading
+  `"babylon"`). **On our renderer's path those probes bake nothing** but the
+  default cube: the cubes are `g.reflections.ours.get("glazing <slot>")` (and
+  `"water <slot>"`), `.job.cube` a raw `GPUTexture` made without `COPY_SRC`, so
+  a readback patches `GPUDevice.prototype.createTexture` in an init script to
+  add it to every six-layer texture, then `copyTextureToBuffer` each face and
+  level off `g.renderer.device`. Three standing checks:
   - **Coverage says the enclosure rule fired.** Mean coverage over all six faces
     is 0.711 across the 40 probes as shipped. Put the enclosing meshes back
     (`probe.cubeTexture.renderList = allOpaque; probe.cubeTexture.render()`) and
@@ -1582,7 +1598,10 @@ is one machine's:
   of `g.reflections.probes[i].position` instead, the bake put the eye back
   wrong and the install frame fogged the whole map from a point inside it. It
   self-corrects on the next frame, so this is only ever visible as an
-  assertion — read it in the same `evaluate` that starts the round.
+  assertion — read it in the same `evaluate` that starts the round. Babylon's
+  bake only: ours PASSES the eye in a frame of its own and moves nothing, and
+  the check there is a cube baked with the camera at the probe and 600 m off
+  it coming back identical.
 - **Whether the glazing is DRAWN at all is a separate question from how it
   looks, it is a number, and it has to be asked at RANGE** — that is where
   glass past ~100 m was found not to be drawn at all
@@ -1801,8 +1820,10 @@ is one machine's:
     what said the difference could not be in the uniforms. **The phase is
     seeded in `LightingSystem` now** (`FLICKER_SEED`, re-seeded in `clear`), so
     a script inherits that one and does not have to reach for it; what a script
-    still owes is `resetRefreshCounter()` on both probe pools AFTER pinning the
-    clocks, then a few frames. That reaches byte-identity across processes.
+    still owes is a re-bake AFTER pinning the clocks — `g.reflections.rebake()`
+    then waiting `bakePending` out, which works on either path (before X3.6c,
+    `resetRefreshCounter()` on both probe pools and a few frames, which bakes
+    nothing on our renderer's). That reaches byte-identity across processes.
     `plans/webgpu-ref/harness.mjs`'s `freeze` is the worked version and carries
     the whole argument.
 - **The pause lid is a free camera**, and it is raised with `g.raiseLid("paused")`
@@ -1919,7 +1940,9 @@ is one machine's:
   you get a second Babylon and a class the materials reject) sweeps a whole
   parameter space in one page session with no rebuild. Two readings that mean
   something when the water looks wrong: `g.reflections.waterProbes[0].cubeTexture`
-  answers `readPixels(face)` — face 2 is the DOWN view and face 3 the sky, because
+  answers `readPixels(face)` on Babylon's bake (on ours the cube is
+  `g.reflections.ours.get("water 0").job.cube`, read as the glazing section
+  says) — face 2 is the DOWN view and face 3 the sky, because
   a cube rendered into is stored mirrored about the horizon — and a water surface
   that comes back as one flat colour at every angle is almost always the cube's
   average, i.e. the mip level, rather than a broken bake.

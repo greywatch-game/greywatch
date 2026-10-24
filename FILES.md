@@ -2294,6 +2294,10 @@ src/
                         #   transform, the wind's ramp and rigged layers, the
                         #   varyings. Babylon-free; shared verbatim with
                         #   src/render/; no y flip (each side's main owns it)
+      emissiveWorld.ts  # The emissive palette's two BODIES (its vertex, its
+                        #   pixel and the glow mask's) and MAX_EMISSIVE_PALETTE,
+                        #   Babylon-free: EmissiveWorld.ts declares them for
+                        #   Babylon, render/emissiveWorld.ts for a probe's bake
       includes.ts       # Babylon's half of chunks.ts: its DECLARATIONS for
                         #   each chunk, and every chunk registered as an
                         #   include (declarations + body, comments stripped:
@@ -2433,6 +2437,22 @@ src/
                         #   off WorldDepth at a cull slot of its own, one
                         #   instanced proxy pass; OwnTexture for our frame, a
                         #   texture for Babylon to wrap; lose() hands it back
+    emissiveWorld.ts    # The emissive palette as WE draw it into a probe's
+                        #   faces (X3.6c): its block (palette, fog band), its
+                        #   geometry (positions, slots), EmissiveRecipe and the
+                        #   program, the pixel EmissiveWorld's by its one body
+    cubeMips.ts         # A cube's MIP CHAIN as WE make it (X3.6c): each level
+                        #   of each face from the one above, Babylon's
+                        #   generateCubeMipmaps filter for filter; a pass and
+                        #   bind group per face per level, kept with the cube
+    ProbeBake.ts        # The reflection bake as OURS (X3.6c): the cube pool
+                        #   (never destroyed), each released probe's six faces
+                        #   — Babylon's looks and projection, the probe's eye
+                        #   PASSED in the bake's own frame, a slot each in a
+                        #   probe VIEW of the main pass's culls (PASS_PROBE,
+                        #   sphere reach, own blocks left out) — then its mips,
+                        #   recorded late in prepareEncoder; decides nothing;
+                        #   lose() hands the bake back to Babylon
     WorldShadows.ts     # The world's four directional maps as OUR textures
                         #   (far, near, foliage, flash): made cleared to lit,
                         #   drawn when ShadowSystem asks, recorded ahead of
@@ -2460,9 +2480,12 @@ src/
                         #   list's budget) goes to onFailed as it lands, a
                         #   group whole; stop() for good. The casters held
                         #   for the shadow maps alone (addCaster) are one
-                        #   group, cut last and drawn in no main pass; each
-                        #   surface and part carries its shadow passes, and
-                        #   finish builds the map's WorldDepth when asked
+                        #   group and the emissive palette held for the
+                        #   probes' bake (addEmissive) one a material, cut
+                        #   last and drawn in no main pass; each surface and
+                        #   part carries its passes (and its block), finish
+                        #   builds the map's WorldDepth when asked, and
+                        #   probeView a probe bake's view of the culls
     clusters.ts         # cutClusters: a surface cut into short runs of
                         #   one piece's triangles, each with its box and how
                         #   the wind can move it (BABYLON_EXIT.md X3.3b) — an

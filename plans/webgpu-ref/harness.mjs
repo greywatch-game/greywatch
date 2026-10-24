@@ -199,7 +199,10 @@ export function installRound(page) {
     return {
       installMs,
       bakeFrameMs: Math.round(performance.now() - frameStart),
-      probes: g.scene.customRenderTargets.length,
+      // The cubes baked, both pools, on whichever renderer baked them — on
+      // Babylon's path the scene's custom targets, as this always counted
+      // (`ReflectionSystem.probeCount`).
+      probes: g.reflections.probeCount ?? g.scene.customRenderTargets.length,
       probesRenderOnce: g.scene.customRenderTargets.every((rt) => rt.refreshRate === 0),
       paneGroups: g.map.paneGroups.length,
     };
@@ -580,8 +583,27 @@ export function freeze(page, set = FREEZE_SET, { windTime = 0, turn = 0 } = {}) 
       // Resetting the counter re-bakes on the next frame, so the caller's
       // settle after the freeze is what makes it land. **This must come last**
       // — a re-bake before the clocks are pinned re-bakes the same problem.
-      for (const p of g.reflections.probes ?? []) p.cubeTexture.resetRefreshCounter();
-      for (const p of g.reflections.waterProbes ?? []) p.cubeTexture.resetRefreshCounter();
+      //
+      // Since X3.6c a map's bake may be our renderer's, spent over frames
+      // (`CONFIG.graphics.reflection.probesPerFrame`), so the install's probes
+      // are queued again on whichever path the bake took and waited out here
+      // rather than left to the caller's settle (`ReflectionSystem.rebake`).
+      const r = g.reflections;
+      if (r.rebake) {
+        r.rebake();
+        for (let frames = 0; r.bakePending > 0; frames++) {
+          if (frames > 600) throw new Error("the re-bake never drained");
+          await new Promise((res) => {
+            const o = g.scene.onAfterRenderObservable.add(() => {
+              g.scene.onAfterRenderObservable.remove(o);
+              res();
+            });
+          });
+        }
+      } else {
+        for (const p of r.probes ?? []) p.cubeTexture.resetRefreshCounter();
+        for (const p of r.waterProbes ?? []) p.cubeTexture.resetRefreshCounter();
+      }
     }
   }, [set, windTime, turn, GI_SWEEPS]);
 }

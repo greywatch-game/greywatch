@@ -1160,6 +1160,67 @@ export class Matrix {
     return result;
   }
 
+  /** Babylon's: the left-handed view matrix of an eye looking at `target`. */
+  static LookAtLHToRef<T extends Matrix>(eye: Vector3Like, target: Vector3Like, up: Vector3Like, result: T): T {
+    const xAxis = TMP_VECTOR3[0];
+    const yAxis = TMP_VECTOR3[1];
+    const zAxis = TMP_VECTOR3[2];
+    // Z axis
+    zAxis.copyFromFloats(target.x - eye.x, target.y - eye.y, target.z - eye.z);
+    zAxis.normalize();
+    // X axis
+    Vector3.CrossToRef(up, zAxis, xAxis);
+    const xSquareLength = xAxis.lengthSquared();
+    if (xSquareLength === 0) {
+      xAxis.x = 1.0;
+    } else {
+      xAxis.normalizeFromLength(Math.sqrt(xSquareLength));
+    }
+    // Y axis
+    Vector3.CrossToRef(zAxis, xAxis, yAxis);
+    yAxis.normalize();
+    // Eye angles
+    const ex = -Vector3.Dot(xAxis, eye);
+    const ey = -Vector3.Dot(yAxis, eye);
+    const ez = -Vector3.Dot(zAxis, eye);
+    Matrix.FromValuesToRef(
+      xAxis.x, yAxis.x, zAxis.x, 0.0,
+      xAxis.y, yAxis.y, zAxis.y, 0.0,
+      xAxis.z, yAxis.z, zAxis.z, 0.0,
+      ex, ey, ez, 1.0,
+      result,
+    );
+    return result;
+  }
+
+  /** Babylon's left-handed perspective projection; `halfZRange` is WebGPU's [0, 1] depth. */
+  static PerspectiveFovLHToRef<T extends Matrix>(
+    fov: number,
+    aspect: number,
+    znear: number,
+    zfar: number,
+    result: T,
+    isVerticalFovFixed = true,
+    halfZRange?: boolean,
+    projectionPlaneTilt = 0,
+    reverseDepthBufferMode = false,
+  ): T {
+    const n = znear;
+    const f = zfar;
+    const t = 1.0 / Math.tan(fov * 0.5);
+    const a = isVerticalFovFixed ? t / aspect : t;
+    const b = isVerticalFovFixed ? t : t * aspect;
+    const c = reverseDepthBufferMode && n === 0 ? -1 : f !== 0 ? (f + n) / (f - n) : 1;
+    const d = reverseDepthBufferMode && n === 0 ? 2 * f : f !== 0 ? (-2.0 * f * n) / (f - n) : -2 * n;
+    const rot = Math.tan(projectionPlaneTilt);
+    Matrix.FromValuesToRef(a, 0.0, 0.0, 0.0, 0.0, b, 0.0, rot, 0.0, 0.0, c, 1.0, 0.0, 0.0, d, 0.0, result);
+    if (halfZRange) {
+      result.multiplyToRef(NDC_TO_HALF_Z_RANGE, result);
+    }
+    result._updateIdentityStatus(false);
+    return result;
+  }
+
   static FromQuaternionToRef<T extends Matrix>(quat: QuaternionLike, result: T): T {
     const xx = quat.x * quat.x;
     const yy = quat.y * quat.y;
@@ -1265,3 +1326,5 @@ const TMP_MATRIX = [Matrix.Identity(), Matrix.Identity()];
 const UP_READ_ONLY = Vector3.Up();
 const ZERO_READ_ONLY = Vector3.Zero();
 const IDENTITY_READ_ONLY = Matrix.Identity();
+/** Babylon's `mtxConvertNDCToHalfZRange`: a [-1, 1] depth range onto WebGPU's [0, 1]. */
+const NDC_TO_HALF_Z_RANGE = Matrix.FromValues(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 1);

@@ -1464,6 +1464,23 @@ export const graphics = {
      */
     drawsPerFrame: 50_000,
     /**
+     * How many probes one frame of OUR renderer's bake records
+     * (`render/ProbeBake.ts`, `BABYLON_EXIT.md` X3.6c) — `drawsPerFrame`'s
+     * counterpart on that path, and a count of PROBES because what a face of
+     * ours costs is a cull of the map and a pass over its survivors, a draw a
+     * material group, whatever the probe's list: six of them and the mips.
+     * It is also the culls' slot count (six a probe), held by the bake's view
+     * only while a bake drains.
+     *
+     * **8 is a frame the desktop does not notice**: measured on the Windows
+     * box (2026-10-23, frame start to the queue's work done), a frame of 8
+     * probes is 5-6 ms where an idle one is 1-3, and Coldharbour's 39 drain in
+     * 5 frames and ~41 ms of wall clock — the one ~2.3 s frame Babylon's bake
+     * spent on them is gone. More a frame buys nothing a building card can
+     * show; fewer only stretches the card on the one map with many probes.
+     */
+    probesPerFrame: 8,
+    /**
      * How many frames the building card will wait WITHOUT the outstanding
      * probe count going down before it gives up and lets the rest of the bake
      * land in the round.

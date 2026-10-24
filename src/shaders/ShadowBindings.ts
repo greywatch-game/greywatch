@@ -199,7 +199,7 @@ export class ShadowBindings {
    * flash and the lamps' slots are rewritten in place by their owners — so the
    * only copy that cannot miss a change is one taken off the fields.
    */
-  fillFrame(out: FrameUniforms): void {
+  fillFrame(out: FrameUniforms, bake = false): void {
     out.lightMatrix.set(this.shadowMatrix.m);
     this.shadowParams.toArray(out.shadowParams);
     out.nearLightMatrix.set(this.nearShadowMatrix.m);
@@ -210,6 +210,9 @@ export class ShadowBindings {
     this.foliageParams.toArray(out.foliageParams);
     // What the materials HOLD, `w` forced while a bake holds the clouds off.
     this.cloudShadowPushed.toArray(out.cloudShadow);
+    // …and held off for a reflection bake on our renderer, as `holdCloudShadow`
+    // holds it for Babylon's: the bake's frame is a frame of its own.
+    if (bake) out.cloudShadow[3] = 1;
     this.cloudShadowRay.toArray(out.cloudShadowRay);
     this.flashDir.toArray(out.flashDir);
     this.flashColor.toArray(out.flashColor);

@@ -5,10 +5,10 @@
  * since X3.6b the lamps' atlas too: which surfaces are taken, their arrays
  * handed over on the way past the build, and the map cut once it is filed.
  * Owns: `BlockHandover` — our renderer's `WorldBlocks`, the taken meshes in
- * surface order, which of them were handed back and which are held for the
- * shadows alone, which of them cast, whether the handover holds every
- * caster the map has, the material epoch last copied, and the build's
- * scatter FIELD until the map is cut (X3.4b).
+ * surface order, which of them were handed back and which are held rather
+ * than taken, which of them cast and which a probe's bake draws, the fires,
+ * whether the handover holds every caster the map has, the material epoch
+ * last copied, and the build's scatter FIELD until the map is cut (X3.4b).
  * Invariants: a surface is TAKEN only if our pipeline draws it exactly as
  * Babylon would — block-merged or the LANDFORM (`WorldSurface.landform`: the
  * floor's patches, the rim's runs and the map-wide road merge, which the
@@ -62,7 +62,16 @@
  * shadows to Babylon (its generators and the atlas's render target), and a
  * caster handed back later, or a refused main pass, LOSES them to Babylon for
  * the rest of the map (`WorldShadows.lose`, `LampAtlas.lose`), so no caster
- * is ever drawn by neither side or in half a map.
+ * is ever drawn by neither side or in half a map. THE REFLECTION BAKE TOO
+ * (X3.6c): every taken surface and part is in a probe's bake (`PASS_PROBE`),
+ * the emissive palette is held for it with its slots
+ * (`WorldBlocks.addEmissive`, `CelMaterialFactory.emissiveRecipe`) whether it
+ * casts or not, a FIRE is left out of it as Babylon's bake leaves it
+ * (`FINDINGS.md` 51), and the world is handed to `ProbeBake` when no surface
+ * it draws went back at the cut; `probeHolds` answers `ReflectionSystem`
+ * whether that is every mesh of a probe's list, and a surface it draws handed
+ * back later, or a refused main pass, LOSES the bake to Babylon
+ * (`ProbeBake.lose`).
  * Never: draws, or reads a material's uniforms — a material reaches our side
  * as its recipe; writes a property on a mesh.
  * Contract: `docs/rendering.md`, "Our renderer's frame";
@@ -73,11 +82,21 @@ import { CONFIG } from "../config";
 import { type BlockBox, type CullDiagnostics, NO_DIAGNOSTICS } from "../render/ClusterCull";
 import type { Renderer } from "../render/Renderer";
 import type { LampAtlas } from "../render/LampAtlas";
-import { PASS_CASTS, PASS_LAMPS, PASS_SOLID } from "../render/wgsl/clusterCull";
+import type { ProbeBake } from "../render/ProbeBake";
+import {
+  blockKey,
+  NO_BLOCK,
+  PASS_CASTS,
+  PASS_LAMPS,
+  PASS_PROBE,
+  PASS_SOLID,
+  SHADOW_PASSES,
+} from "../render/wgsl/clusterCull";
 import { WorldBlocks } from "../render/WorldBlocks";
 import type { WorldDepth } from "../render/WorldDepth";
 import type { WorldShadows } from "../render/WorldShadows";
 import type { CelMaterialFactory } from "../shaders/CelShader";
+import { isFlame } from "../shaders/FlameShader";
 import type { ScatterField } from "../world/scatterVariants";
 import type { WorldGeometry, WorldSurface } from "../world/worldGeometry";
 import { NO_REACH, type WorldCulling } from "./WorldCulling";
@@ -93,10 +112,18 @@ export class BlockHandover {
   private landform = new Set<Mesh>();
   /** Of those, the ones handed back to Babylon's main pass. */
   private back = new Set<Mesh>();
-  /** Of those, the ones held for the shadows alone (`WorldBlocks.addCaster`), which no main pass of ours draws. */
+  /**
+   * Of those, the ones HELD rather than taken, which no main pass of ours
+   * draws: the casters held for the shadows alone (`WorldBlocks.addCaster`)
+   * and the emissive palette held for the probes' bake (`addEmissive`).
+   */
   private castersOnly = new Set<Mesh>();
   /** The surfaces that cast, by index — one of them handed back loses the shadows. */
   private casting = new Set<number>();
+  /** The surfaces a probe's bake draws (`PASS_PROBE`), by index — one of them handed back loses the bake. */
+  private probing = new Set<number>();
+  /** The fires (`FlameMaterial` merges), which no probe has ever drawn (`FINDINGS.md` 51) and ours draws none of. */
+  private fires = new Set<Mesh>();
   /** Every caster of the map built so far is held, taken or for the shadows alone. */
   private allCasters = true;
   /** The whole map was handed back, its main pass refused. */
@@ -118,6 +145,8 @@ export class BlockHandover {
     private readonly shadows: WorldShadows,
     /** Our renderer's lamps' atlas, handed the same casters with them. */
     private readonly lamps: LampAtlas,
+    /** Our renderer's reflection bake, handed the world when it holds every surface a bake draws. */
+    private readonly probes: ProbeBake,
     /** Our culls' diagnostics — `?nocull`, `?nofrustum`, `?cullcheck` (`core/urlOverrides.ts`). */
     diagnostics: CullDiagnostics = NO_DIAGNOSTICS,
   ) {
@@ -140,6 +169,7 @@ export class BlockHandover {
   readonly onSurface = (surface: WorldSurface, mesh: Mesh): void => {
     const { part } = surface;
     const passes = this.passesOf(part.metadata, part.material, mesh);
+    const key = keyOf(surface.block);
     const p = part.position;
     const r = part.rotation;
     const k = part.scaling;
@@ -149,18 +179,25 @@ export class BlockHandover {
       k.x === 1 && k.y === 1 && k.z === 1 &&
       part.rotationQuaternion === null &&
       mesh.parent === null;
-    let at = this.takeForMainPass(surface, mesh, atIdentity, passes);
+    // Every surface the main pass takes is in a probe's bake too: Babylon's
+    // drew the map's visuals whole but for the glazing, which is never taken.
+    let at = this.takeForMainPass(surface, mesh, atIdentity, passes | PASS_PROBE, key);
+    let drawn = passes | PASS_PROBE;
     if (at === null) {
-      at = this.holdCaster(surface, atIdentity, passes);
+      drawn = this.heldPasses(surface, mesh, atIdentity, passes);
+      at = this.hold(surface, atIdentity, drawn, key);
+      // A fire is left out of our bake as Babylon's left it out of its own.
+      if (isFlame(part.material)) this.fires.add(mesh);
       // A caster our side can hold in neither way: the map's shadows stay Babylon's.
       if (at === null) {
-        if (passes !== 0) this.allCasters = false;
+        if ((passes & SHADOW_PASSES) !== 0) this.allCasters = false;
         return;
       }
       this.castersOnly.add(mesh);
     }
     this.meshes[at] = mesh;
-    if (passes !== 0) this.casting.add(at);
+    if ((drawn & SHADOW_PASSES) !== 0) this.casting.add(at);
+    if ((drawn & PASS_PROBE) !== 0) this.probing.add(at);
     if (surface.landform) this.landform.add(mesh);
   };
 
@@ -168,7 +205,7 @@ export class BlockHandover {
    * `surface` added to the main pass's blocks if our pipeline draws it exactly
    * as Babylon would — see the header for the test — and its index; else null.
    */
-  private takeForMainPass(surface: WorldSurface, mesh: Mesh, atIdentity: boolean, passes: number): number | null {
+  private takeForMainPass(surface: WorldSurface, mesh: Mesh, atIdentity: boolean, passes: number, key: number): number | null {
     const { part } = surface;
     if ((surface.block === null && !surface.landform) || surface.updatable) return null;
     // Drawn in group 0's slot, at the world's own origin, by every camera.
@@ -179,17 +216,35 @@ export class BlockHandover {
     const g = part.geometry;
     if (!g.normals || !g.colors) return null;
     if (recipe.defines.includes("CEL_PALETTE") && !g.uvs2) return null;
-    return this.blocks.add(part.name, g, recipe, surface.pieces, surface.landform, passes);
+    return this.blocks.add(part.name, g, recipe, surface.pieces, surface.landform, passes, key);
   }
 
   /**
-   * `surface`, a caster the main pass does not take, held for the shadows
-   * alone if its positions are world positions and nothing rewrites them —
-   * a block merge, at identity, never `updatable` — and its index; else null.
+   * The passes a surface the main pass does not take is held for: its
+   * shadow passes, and a probe's bake (`PASS_PROBE`) if it is the emissive
+   * PALETTE (`CelMaterialFactory.emissiveRecipe`) with its slots, drawn as
+   * Babylon draws it — rendering group 0, every camera's layer mask.
    */
-  private holdCaster(surface: WorldSurface, atIdentity: boolean, passes: number): number | null {
+  private heldPasses(surface: WorldSurface, mesh: Mesh, atIdentity: boolean, passes: number): number {
+    const { part } = surface;
+    if (!atIdentity || !this.mats.emissiveRecipe(part.material) || !part.geometry.uvs2) return passes;
+    if (mesh.renderingGroupId !== 0 || mesh.layerMask !== DEFAULT_LAYER_MASK) return passes;
+    return passes | PASS_PROBE;
+  }
+
+  /**
+   * `surface`, which the main pass does not take, held for the passes
+   * `passes` names if its positions are world positions and nothing rewrites
+   * them — a block merge, at identity, never `updatable`: the palette with its
+   * slots for a probe's bake (and its shadows), a caster's positions alone for
+   * the shadows — and its index; else null.
+   */
+  private hold(surface: WorldSurface, atIdentity: boolean, passes: number, key: number): number | null {
     if (passes === 0 || surface.block === null || surface.updatable || !atIdentity) return null;
-    return this.blocks.addCaster(surface.part.name, surface.part.geometry, surface.pieces, passes);
+    const { part } = surface;
+    const palette = (passes & PASS_PROBE) !== 0 ? this.mats.emissiveRecipe(part.material) : null;
+    if (palette) return this.blocks.addEmissive(part.name, part.geometry, surface.pieces, palette, passes, key);
+    return this.blocks.addCaster(part.name, part.geometry, surface.pieces, passes, key);
   }
 
   /**
@@ -240,7 +295,7 @@ export class BlockHandover {
           // (`WorldBlocks.addInstanced`), never skipped while its pieces are cut.
           const recipe = this.mats.celRecipe(part.material);
           if (recipe) {
-            const passes = this.passesOf(part.metadata, part.material, null);
+            const passes = this.passesOf(part.metadata, part.material, null) | PASS_PROBE;
             this.blocks.addInstanced(s, part.name, part.geometry, recipe, passes);
           }
         }
@@ -268,7 +323,13 @@ export class BlockHandover {
       field
         ? {
             cut: (piece) => world.pieces[piece]?.list === "scatter",
-            sets: field.sets.map((set) => ({ matrices: set.matrices, scales: set.scales })),
+            sets: field.sets.map((set) => ({
+              matrices: set.matrices,
+              scales: set.scales,
+              keys: Uint32Array.from({ length: set.scales.length }, (_, i) =>
+                blockKey(set.blocks[i * 2], set.blocks[i * 2 + 1]),
+              ),
+            })),
           }
         : null,
       // The world's maps' slots first, then the atlas's static faces'.
@@ -280,6 +341,36 @@ export class BlockHandover {
     let whole = holdsAll;
     for (const at of this.casting) if (this.back.has(this.meshes[at])) whole = false;
     this.handCasters(whole ? this.blocks.depth : null);
+    // And the world a probe's bake draws, under the same rule: none, if a
+    // surface it draws already went back.
+    let probes = this.probing.size > 0;
+    for (const at of this.probing) if (this.back.has(this.meshes[at])) probes = false;
+    this.probes.setWorld(probes ? this.blocks : null);
+  }
+
+  /**
+   * Whether our renderer's bake draws every mesh of `list` — a probe's
+   * render list as Babylon's bake would have it (`ReflectionSystem`): each
+   * taken and not handed back, or the palette held for it, or a FIRE, which
+   * no bake has ever drawn (`FINDINGS.md` 51) — and, of the list, how many
+   * fall where. False with no world handed to the bake.
+   */
+  probeHolds(list: readonly Mesh[]): { ours: boolean; taken: number; palette: number; fires: number; other: number } {
+    const at = new Map<Mesh, number>();
+    this.meshes.forEach((m, i) => at.set(m, i));
+    let taken = 0;
+    let palette = 0;
+    let fires = 0;
+    let other = 0;
+    for (const mesh of list) {
+      const i = at.get(mesh);
+      if (this.fires.has(mesh)) fires++;
+      else if (i === undefined || this.back.has(mesh) || !this.probing.has(i)) other++;
+      else if (this.castersOnly.has(mesh)) palette++;
+      else taken++;
+    }
+    const ours = this.probes.holds && other === 0 && !this.handedBack;
+    return { ours, taken, palette, fires, other };
   }
 
   /** The casters to every shadow of ours — or none, when the map's shadows are Babylon's. */
@@ -292,6 +383,11 @@ export class BlockHandover {
   private loseCasters(): void {
     this.shadows.lose();
     this.lamps.lose();
+  }
+
+  /** The world a probe's bake draws can no longer draw what Babylon's would: the bake goes back to Babylon. */
+  private loseProbes(): void {
+    this.probes.lose();
   }
 
   /**
@@ -323,6 +419,8 @@ export class BlockHandover {
   /** The map is going: every surface, buffer and material of ours with it, and the shadows' casters first. */
   clear(): void {
     this.handCasters(null);
+    // Ahead of the blocks, whose culls the bake's view reads.
+    this.probes.setWorld(null);
     this.blocks.clear();
     this.field = null;
     this.meshes = [];
@@ -330,6 +428,8 @@ export class BlockHandover {
     this.back = new Set();
     this.castersOnly = new Set();
     this.casting = new Set();
+    this.probing = new Set();
+    this.fires = new Set();
     this.allCasters = true;
     this.handedBack = false;
   }
@@ -352,6 +452,8 @@ export class BlockHandover {
     for (const at of surfaces) this.back.add(this.meshes[at]);
     // A caster going back is Babylon's to draw into a shadow: so is every other.
     if (surfaces.some((at) => this.casting.has(at))) this.loseCasters();
+    // …and one a probe's bake draws is Babylon's to bake: so is every other.
+    if (surfaces.some((at) => this.probing.has(at))) this.loseProbes();
     this.fileTaken(this.meshes.filter((m) => !this.back.has(m)));
   };
 
@@ -379,6 +481,7 @@ export class BlockHandover {
     if (this.handedBack || this.meshes.length === 0) return;
     this.handedBack = true;
     this.loseCasters();
+    this.loseProbes();
     this.blocks.stop();
     this.culling.setTaken([], []);
     console.error(
@@ -411,4 +514,13 @@ export class BlockHandover {
       return;
     }
   }
+}
+
+/** A block merge's key ("bx,bz") as the culls carry it (`blockKey`); `NO_BLOCK` for none, or one that is not a pair. */
+function keyOf(block: string | null): number {
+  if (block === null) return NO_BLOCK;
+  const comma = block.indexOf(",");
+  const bx = Number(block.slice(0, comma));
+  const bz = Number(block.slice(comma + 1));
+  return comma < 0 || !Number.isInteger(bx) || !Number.isInteger(bz) ? NO_BLOCK : blockKey(bx, bz);
 }
