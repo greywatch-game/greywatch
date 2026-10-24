@@ -1824,8 +1824,9 @@ Harrowmead's 15, 19 over Greyfen's six, 15 over Sarab's 11, 6 over Kurenai's
 three — and ours rose by one draw a row (two on Coldharbour), the bank 59 of
 61 byte-identical (`BABYLON_EXIT.md` X3.6e). So the per-mesh cost this entry
 opened on is gone from BOTH passes on our path, and the phone reading owed
-above now reads two cluster-culled draws a bias where it read two per palette
-mesh.
+above now reads two cluster-culled draws a bias where, just before X3.6e, it
+read one per palette mesh in the main pass and one a bias in the mask (ours
+since X3.6d).
 
 The two cheaper levers this entry named beside the palette are both LOOK
 decisions: a bloom quality rung, and a distance cap on the mask, which the

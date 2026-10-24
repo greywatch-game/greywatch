@@ -2389,12 +2389,12 @@ its one indirect draw, a pass.
   the fire's twin, the viewmodel and the moon still draw into it and its blur
   and the ink read it, so ours draws INTO Babylon's pass, as it draws into the
   main pass, and nothing is wrapped or copied. The palette's MAIN-pass draw
-  stays Babylon's: moving it changes which side wins an equal-depth tie with
-  a coplanar wall, a picture change owed its own commit ("Decisions that are
-  yours"). Every shipped map holds the whole palette: one draw a palette
-  BIAS, two on Coldharbour (6,864 triangles at the over-glass bias and 11,292
-  plain, 10 and 36 surfaces) and one elsewhere (Hollowmere 22,378 triangles
-  over 29 surfaces, Cinderhaven 10,020 over 53).
+  stays Babylon's (moved at X3.6e): moving it changes which side wins an
+  equal-depth tie with a coplanar wall, a picture change owed its own commit
+  ("Decisions that are yours"). Every shipped map holds the whole palette: one
+  draw a palette BIAS, two on Coldharbour (6,864 triangles at the over-glass
+  bias and 11,292 plain, 10 and 36 surfaces) and one elsewhere (Hollowmere
+  22,378 triangles over 29 surfaces, Cinderhaven 10,020 over 53).
 - **Where: FIRST in the mask's pass, right after its clear.** `GlowPass`
   announces the pass from inside its own clear observer
   (`onMaskOpenObservable`, wired to `Renderer.glowMaskOpened` by `Game`, so
@@ -2418,9 +2418,9 @@ its one indirect draw, a pass.
   SIZE-GATED (`PASS_GLOW`, mirrored in the CPU replay and `cullProbe`), as
   Babylon never gated an emissive. No reach (`NO_REACH`, as every held
   surface, where Babylon's twin is reach-culled as a block): past that reach
-  the mask's pixel is the clear's own. (Still true of the mask; X3.6e gives
-  the palette its cell's box for the MAIN pass, where past the reach is the
-  sky.) Its memory is the main view's
+  the mask's pixel is the clear's own. (Harmless in the mask still; X3.6e
+  gives every palette surface its cell's box, which the MAIN pass needs,
+  past the reach being the sky there.) Its memory is the main view's
   per-cluster scratch for the palette's clusters, a few KB — counted at EVERY
   cut, even on a map whose palette mask goes back to `GlowPass`, where they
   are scanned and never drawn; kept, as the price of one cut whatever the
@@ -2542,8 +2542,8 @@ its one indirect draw, a pass.
   section still 133 lines. One reader held that the palette's clusters are
   reach-culled by their block; they were not — every held surface was given
   `NO_REACH` at the install and filed in no cell — so "no reach" stood,
-  argued more fully (since X3.6e a main-taken palette is filed in its cell
-  and reach-culled by its box). Kept: the main view counts the palette's
+  argued more fully (since X3.6e every palette surface is cut with its cell's
+  box and reach-culled by it). Kept: the main view counts the palette's
   clusters at every cut, even on a map whose palette mask goes back to
   `GlowPass` (a few KB, scanned and never drawn). Re-checked after the fixes:
   the mask readback on seven maps (61 rows, 0 texels ours against Babylon's),
@@ -2560,8 +2560,9 @@ its one indirect draw, a pass.
     reading is the same capture.
   - `shaders.mjs` builds neither palette program (X3.6c's item, still open).
 
-**X3.6e landed** (2026-10-24; added after X3.6d by the user's decision of the
-same day, "Decisions that are yours").
+**X3.6e landed** (806511f, the post-commit review's fixes after it;
+2026-10-24; added after X3.6d by the user's decision of the same day,
+"Decisions that are yours").
 - **What it is.** The emissive palette's MAIN-pass draw is OUR renderer's
   whenever the handover holds the WHOLE palette — the same decision that
   hands X3.6d's mask over, so the palette is ours in both passes or in
@@ -2571,63 +2572,28 @@ same day, "Decisions that are yours").
   `EmissiveWorldMaterial` and its mask twin are both the fallback. Deleting
   Babylon's fallback meshes is not part of it.
 - **Where: FIRST in `WorldBlocks`' one `"beforeAlphaTest"` draw** — the
-  palette, the blocks, the scatter, the landform. Babylon drew the palette in
-  its opaque queue, ahead of every draw of ours, and the depth test is LEQUAL
-  with depth written on both sides, so at an EXACTLY equal depth the later
-  draw wins: a lit window coplanar with its own block's mullion or wall went
-  to the block. First among ours keeps every such tie; after the blocks would
-  have flipped X3.3a's residue class at every lit window; `"opaque"` is past
-  the alpha-tested list and the group's start is the sky dome's objection. No
-  second `FrameDraw` (order between two at one point is registration order).
-  What it gives up is an exact tie with an unbiased Babylon opaque mesh
-  (bodies, hulls, flags, water, debris), none of which is coplanar with a
-  palette surface — every Babylon-drawn partner that is (a backed pane, the
-  over-glass palette, glazing, a bullet mark) is separated by a depth bias —
-  and palette against palette across two blocks. The table is
-  `docs/rendering.md`'s ("The palette, ours").
-- **The reach: the cell's box, not `NO_REACH`.** X3.6d held the palette with
-  no reach, which was harmless for the MASK and still is (past the reach the
-  mask's pixel is the clear's own black). In the MAIN pass that pixel is
-  `fogColor` at alpha 1 with depth written: against the landform,
-  fogColor-on-fogColor, but against the SKY's gradient a speck of fog over
-  every far lit window, with a coverage and a depth the frame never had. So
-  a main-taken palette surface is handed its cell's box
-  (`WorldCulling.reachBoxOf`), the box a taken block of that cell gets and
-  what Babylon's candidate was offered by; the decision is made
-  PROVISIONALLY before the cut, because the cull hands a box only for a taken
-  mesh, and confirmed after it. The lamps' atlas now culls a palette cluster
-  past a light's range by the same box (the same verdict the face's far plane
-  gave). A palette the main pass does not take keeps `NO_REACH`.
-- **The program** is the bake's, unchanged: `emissiveWorld(FRAME_TARGETS)`,
-  the body's non-`GLOW_MASK` arm (alpha 1, the coverage exception kept), one
-  pipeline a bias with Babylon's material state (back faces culled, depth
-  written, `less-equal`, no blend). `PipelineCache` keys on the spec, so it is
-  the pipeline a probe's face already drew with: asked ONCE at the cut
-  (`WorldBlocks.mainPalette`) and reused by `probeView`. Group 0 is the main
-  frame, whose `camPos` and `fogColor` are the factory's — the values Babylon's
-  material was fed. The mask's vertex module and the main pass's are one text
-  under one define set, so one `GPUShaderModule`: the mask's tie is ours
-  against ours now, which closes X3.6d's driver-rounding risk for the palette.
-- **One decision, and every loss returns both.** `BlockHandover` decides at
-  the install (the palette whole, held for the mask, `WorldGlow.usable`),
-  files the palette as blocks, cuts, hands `WorldGlow` the world, and then
-  either turns the main draw on (`WorldBlocks.setPaletteMain`) or drops it. A
-  palette surface handed back (a failed main palette pipeline among them,
-  which fails its bias's groups as a cel group's does — over-broad: the
-  shadows and the bake go too, the block rule), a refused main pass, a refused
-  MASK pass and a failed mask pipeline each LOSE the mask, and the new
-  `WorldGlow.onLost` tells the handover in the same call, which drops the
-  main pass with it (`dropPalette`): our draw off, the palette a candidate
-  again from the next tick. **The price of a loss rose**: Babylon's main
-  palette material is never a candidate on our path either, so the warm-up
-  never draws it, and a loss mid-map compiles it AND the mask twin in the
-  round — measured, ONE frame's hitch and no frame without its lit windows:
-  Babylon compiles both inside the first frame after the loss and draws them
-  in it (below); paid on a path no shipped map takes. The editor and `?babylonworld` take
-  nothing. **The mask's per-frame verdict no longer hands a frame to
-  Babylon**: a frame ours cannot draw the mask (a pipeline compiling, a
-  texture unpublished) has no palette bloom, the class of a block group's
-  hole, which the warm-up covers.
+  palette, the blocks, the scatter, the landform — so every equal-depth tie
+  with a surface of ours goes as Babylon's opaque queue, which drew the
+  palette ahead of all of ours, sent it. The argument, the tie table and the
+  two residues are `docs/rendering.md`'s ("The palette, ours: the mask
+  (X3.6d) and the main pass (X3.6e)").
+- **The reach: the cell's box, not `NO_REACH`**, because in the main pass
+  past the reach is the SKY: every palette surface is cut with its cell's box
+  whoever draws it (`WorldCulling.reachBoxOf` answers a filed mesh, taken or
+  not), the box Babylon's candidate was offered by; every other view reads it
+  to the same picture (the same section).
+- **The program** is the bake's, unchanged — `emissiveWorld(FRAME_TARGETS)`,
+  one pipeline a bias, asked once at the cut (`WorldBlocks.mainPalette`) and
+  shared with `probeView` — so the mask's tie is ours against ours, which
+  closes X3.6d's driver-rounding risk for the palette (the same section).
+- **One decision, and every loss returns both.** `BlockHandover` decides once,
+  after the cut (`claimPalette`); every loss of the mask hands the main pass
+  back with it (`WorldGlow.onLost`, `dropPalette`), and a failed main-pass
+  palette pipeline is a loss of both that hands no surface back, so the
+  shadows stay ours (the same section). A loss mid-map compiles Babylon's
+  palette material and its twin in the round, the warm-up never having drawn
+  them: one frame's hitch, no frame without its lit windows (measured below).
+  The editor and `?babylonworld` take nothing.
 - **What became dead, and was deleted.** `GlowRules.drawnElsewhere` and the
   handover's `glowHolds` (X3.6d's way of keeping `GlowPass` off the palette on
   the frames ours drew it) answered false on every path once the palette
@@ -2640,12 +2606,13 @@ same day, "Decisions that are yours").
   (the game never calls it).
 - **Deviations from the design**, all in shape: `takePalette` is public (a
   private method nothing calls fails `noUnusedLocals`); `palettePipelines`
-  takes a failure callback rather than a message, so the main ask can fail
-  its groups; the main palette pipelines are asked at the cut even on a map
-  whose main pass stays Babylon's (a probe's face shares them); a palette
-  surface's failure re-files the cull twice (once through `onLost`), which is
-  harmless; a palette dropped after the cut keeps its cells' boxes, so
-  `takePalette` can still re-take it. `shaders.mjs` still builds neither
+  takes a failure callback rather than a message, so the main ask can tell
+  the handover (`WorldBlocks.onPaletteFailed`); the main palette pipelines
+  are asked at the cut even on a map whose main pass stays Babylon's (a
+  probe's face shares them); a palette surface's failure re-files the cull
+  twice (once through `onLost`), which is harmless; every palette surface is
+  cut with its cell's box whoever draws it, so `takePalette` can re-take it
+  after any loss that handed nothing back. `shaders.mjs` still builds neither
   palette program (X3.6c's item).
 - **Measured.**
   - **The bank, against a BEFORE kept at c34a06b in a worktree**
@@ -2710,7 +2677,9 @@ same day, "Decisions that are yours").
     drawn by neither); the Glow rung `low` and back, the shadow rung `low`
     and back, a resize to 1280x720 and back, render scale 0.5 and back (ours
     throughout); a forced `worldGlow.lose()` (both passes Babylon's together:
-    46 and 5 palette meshes in its list, taken 218 to 172 and 124 to 95); a
+    46 and 5 palette meshes in its list; `stats` read taken 218 to 172 and
+    124 to 95 then, 218 and 124 with 46 and 29 handed back since the
+    review's fix below); a
     forced mask refusal (both back together); a forced main-pass refusal
     (everything back); a round after each (ours); the editor (nothing taken)
     and leaving it (ours); `?babylonworld` (Babylon's in both passes). No
@@ -2741,6 +2710,36 @@ same day, "Decisions that are yours").
     (Hollowmere 5.19 and 4.95 s against 5.12 and 4.95, Coldharbour 6.09 and
     6.02 against 6.19 and 6.14), the warm-up compiling the same pipelines on
     both sides.
+- **What the post-commit review found** (two independent readers over
+  806511f, one for correctness and one for shape and contracts; fixed after
+  it). No defect on the shipped path; both found the two passes always on
+  one side. Latent: the main palette pipeline was asked at every cut,
+  whoever drew the palette, and its failure FAILED the palette's groups —
+  handing the map's shadow maps and the lamps' atlas back to Babylon over a
+  pipeline nothing might have drawn with, on every map. A failure now fails
+  no group: it latches for the map, LOSES the palette (both passes, through
+  the mask's loss) when it was ours, refuses a later take, and costs the
+  bake through the probe view's `ready` — the shadows and the atlas, drawing
+  the palette with their own depth pipelines, stay ours (forced on
+  Coldharbour and Hollowmere with the palette ours and not). `stats` stopped
+  counting the palette after a loss (it counts against "taken this install"
+  now). On the shape: the decision was made twice, provisionally before the
+  cut and again after it, only because `WorldCulling.reachBoxOf` answered a
+  TAKEN mesh — it answers any mesh filed in a cell now, every palette
+  surface is cut with its cell's box, and the decision is made once
+  (`paletteBoxed` and `WorldGlow.usable` deleted); `takePalette` restated
+  the end of `install` (one `claimPalette`); `heldGroup` made palette groups
+  (`paletteGroup`, `casterGroup`); `hold` and `onSurface` tested palette
+  against caster twice; four headers still described X3.6d's world (a mask
+  tied against Babylon's depth, `GlowPass` skipping the palette, the fallback
+  compiling in the round on every path rather than after a loss alone); "the
+  palette is in no Babylon list" stated ten times (once now, and pointers);
+  and this note and `docs/rendering.md` arguing the same points twice (the
+  note cut to pointers, the hysteresis argued once). Re-checked after the
+  fixes: the bank 61 of 61 byte-identical to 806511f's frames, the in-page
+  A/B on seven maps as above, the census equal to 806511f's, the gate clean
+  on seven, the paths on Coldharbour and Hollowmere as before, typecheck,
+  build and corecheck.
 - **Owed onward.**
   - Deleting the fallbacks ("After X3.6", "Decisions that are yours").
   - The phone's FOLLOW-UP reading, the user's to take as every step's since

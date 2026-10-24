@@ -101,9 +101,8 @@
  * taken mesh that glows, the palette, our renderer draws into the mask
  * itself, on the same decision. What this file decides for the candidates —
  * the reach, and the size gate's scale this frame — it states as numbers in
- * `reachGate`, so
- * the GPU cull decides a taken mesh's clusters as this decides a candidate,
- * and reads no node to do it.
+ * `reachGate`, so the GPU cull decides a taken mesh's clusters as this
+ * decides a candidate, and reads no node to do it.
  *
  * The reach is the map's own `fogEnd` plus `CONFIG.graphics.culling.pad`, and
  * on a map whose fog never closes — `fogEnd` past its own diagonal, which the
@@ -122,7 +121,9 @@ import type { GameMap } from "../world/MapBuilder";
  * to the size gate and the frustum, exactly as `rebuildList` keeps a loose
  * mesh. **The sky is behind the landform** — see "The landform is
  * deliberately loose" in the header — so a reach cut into it would be a hole
- * onto a gradient rather than onto `fogColor`. FINITE, near the largest `f32`
+ * onto a gradient rather than onto `fogColor`. Its one other user is
+ * `BlockHandover`: a caster held for the shadow maps alone, which no main
+ * pass draws, is cut with it too. FINITE, near the largest `f32`
  * (`F32_MAX`, 3e38), never Infinity: the cull's arithmetic may assume there
  * is none, and a box from minus to plus the largest float leaves every
  * distance to it 0.
@@ -538,17 +539,24 @@ export class WorldCulling {
   }
 
   /**
-   * The box our renderer's cull measures a TAKEN mesh's reach to: for a block
-   * the box of the cell it was filed in — the bounds of every mesh of its
-   * block, glazing included — and for the landform `NO_REACH`, which the
+   * The box our renderer's cull measures a mesh's reach to: for a mesh filed
+   * in a cell, TAKEN OR NOT, the box of that cell — the bounds of every mesh
+   * of its block, glazing included, what a candidate of it is offered by — so
+   * a surface may be cut before the handover decides who draws it (the
+   * emissive palette is); and for the TAKEN landform `NO_REACH`, which the
    * reach never cuts, as it never cuts a loose mesh. `setTaken` has already
    * refused a mesh that is not what it was handed as, so a taken mesh in no
-   * cell IS the landform. Meshes of one block share the object, and every
-   * landform surface shares the one box.
+   * cell IS the landform; a mesh neither filed nor taken has no box, and is
+   * refused. Meshes of one block share the object, and every landform surface
+   * shares the one box.
    */
   reachBoxOf(mesh: AbstractMesh): BlockBox {
-    if (!this.taken.has(mesh)) throw new Error(`WorldCulling: "${mesh.name}" is not taken`);
-    return this.cellOf.get(mesh) ?? NO_REACH;
+    const cell = this.cellOf.get(mesh);
+    if (cell) return cell;
+    if (!this.taken.has(mesh)) {
+      throw new Error(`WorldCulling: "${mesh.name}" is filed in no cell and not taken`);
+    }
+    return NO_REACH;
   }
 
   /**
@@ -746,11 +754,12 @@ export class WorldCulling {
     // the threshold it was tuned at, so a hull holds off until half the range
     // the measurement chose. It fails the other way just as quietly: anything
     // that oversamples the CSS grid shrinks the gate instead and hands back
-    // the CPU `FINDINGS.md` 39 bought (3 px is -0.51 ms there, 2 px -0.11). The level already carries
-    // `devicePixelRatio`, since `Game.applyRenderScale` is what built it from
-    // one, and it is 1 at every default install — so this is arithmetically
-    // the shipped gate on the reference machine and on a fresh install of any
-    // density, and only moves once the player has moved the slider.
+    // the CPU `FINDINGS.md` 39 bought (3 px is -0.51 ms there, 2 px -0.11). The
+    // level already carries `devicePixelRatio`, since `Game.applyRenderScale`
+    // is what built it from one, and it is 1 at every default install — so this
+    // is arithmetically the shipped gate on the reference machine and on a
+    // fresh install of any density, and only moves once the player has moved
+    // the slider.
     const cam = this.scene.activeCamera;
     const minPx = CONFIG.graphics.culling.minPixels;
     const gate = !this.warm && minPx > 0 && cam !== null;

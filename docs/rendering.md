@@ -3348,33 +3348,32 @@ pass is not restarted between them, and in this order every frame:
 Every opaque draw of Babylon's in the group lands BEFORE an opaque draw of
 ours. **Between two draws that both WRITE depth** that changes only which of
 two surfaces at EXACTLY the same depth wins under `less-equal` — in the
-PICTURE. (The palette crossed that line at X3.6e, and is drawn FIRST of ours
-for exactly this reason: what it lost is an exact tie with an unbiased Babylon
-opaque mesh, none of which is coplanar with a lit window.) **A draw that
-writes NO depth is another matter**: nothing stops a later surface painting
-over it, so whatever Babylon draws OPAQUE without writing depth is drawn over
-by every surface of ours behind it. Since X3.5 that includes the FLOOR. **So a
-mesh that lies on the floor and writes no depth must be BLENDED or on group
-0's ALPHA-TEST list (the turf, the clouds), never on the opaque list**, or the
-floor paints over it every frame — a rule anyone adding a decal, a mark or a
-sheet on the ground can break without touching the renderer (`CLAUDE.md`
-states it). The sky dome is the one deliberate case: it writes no depth, draws
-first, and is MEANT to be painted over by everything, ours included. The
-clouds, on the alpha-tested list, land after our blocks and our landform,
-which their 7 km depth makes harmless: a surface nearer than that wins the
-depth test whichever draws first. **The turf lands after the blocks too**, as
-it did when Babylon's opaque list drew them: where its sheet floats over a
-slab laid level with the floor, it blends over the slab's edge (Greyfen's
-`crossing` row, a grave ledger). From X3.3c to X3.5 the blocks drew after the
-turf and hid that; the order since puts back Babylon's picture (the row
-against `?babylonworld`). In the GPU's time the order is the point: `Game`'s
-front-to-back sort no longer reaches the blocks or the landform, so the loose
-props are shaded before the buildings that hide them, but the floor no longer
-is — measured at X3.5, the blocks drawn ahead of the landform took 4-7% off
-`gpu.frame` on the paths of Greyfen, Sarab and Cinderhaven (`FINDINGS.md` 61
-holds what is left). Drawing ours at the group's START was weighed and
-refused: the sky dome writes no depth and draws first, at a 600 m radius, so a
-block past 600 m drawn before it would be painted over.
+PICTURE (the palette's ties are tabled in "The palette, ours", under the glow).
+**A draw that writes NO depth is another matter**: nothing stops a
+later surface painting over it, so whatever Babylon draws OPAQUE without
+writing depth is drawn over by every surface of ours behind it. Since X3.5
+that includes the FLOOR. **So a mesh that lies on the floor and
+writes no depth must be BLENDED or on group 0's ALPHA-TEST list (the turf, the
+clouds), never on the opaque list**, or the floor paints over it every frame —
+a rule anyone adding a decal, a mark or a sheet on the ground can break
+without touching the renderer (`CLAUDE.md` states it). The sky dome is the one
+deliberate case: it writes no depth, draws first, and is MEANT to be painted
+over by everything, ours included. The clouds, on the alpha-tested list,
+land after our blocks and our landform, which their 7 km depth makes
+harmless: a surface nearer than that wins the depth test whichever draws
+first. **The turf lands after the blocks too**, as it did when Babylon's
+opaque list drew them: where its sheet floats over a slab laid level with the
+floor, it blends over the slab's edge (Greyfen's `crossing` row, a grave
+ledger). From X3.3c to X3.5 the blocks drew after the turf and hid that; the
+order since puts back Babylon's picture (the row against `?babylonworld`). In
+the GPU's time the order is the point: `Game`'s front-to-back sort no longer
+reaches the blocks or the landform, so the loose props are shaded before the
+buildings that hide them, but the floor no longer is — measured at X3.5, the
+blocks drawn ahead of the landform took 4-7% off `gpu.frame` on the paths of
+Greyfen, Sarab and Cinderhaven (`FINDINGS.md` 61 holds what is left). Drawing
+ours at the group's START was weighed and refused: the sky dome writes no
+depth and draws first, at a 600 m radius, so a block past 600 m drawn before
+it would be painted over.
 
 **The attachments are stated ONCE** (`render/targets.ts`, `FRAME_TARGETS`).
 A pipeline is compiled AHEAD of the frame that draws with it, so its formats
@@ -3666,13 +3665,13 @@ Babylon's.
   block, the landform; never a candidate unless a failed compile hands it
   back — and every other pass draws from a list of its own. **The handover
   says which each is** (`setTaken`'s two lists; `reachBoxOf` then answers a
-  taken mesh by its cell, the landform by the box of no reach), so a block
+  filed mesh by its cell, taken or not, and the taken landform by the box of
+  no reach), so a block
   whose mesh was filed in no cell is refused, never taken as landform. The
   glow's mask, which reads the main pass's active meshes, keeps only what
   glows; the one taken mesh that glows, the emissive palette, is drawn into
   the mask by our side through the main view on the same decision that takes
-  it, so it is in neither of Babylon's lists while ours holds it (X3.6d,
-  X3.6e; "The palette, ours").
+  it (X3.6d, X3.6e; "The palette, ours").
 - **A taken mesh is never switched off, hidden or faded after its build.**
   Nothing in the tree does it to a block, and the cull could not follow: a
   faded mesh goes to Babylon's blended list and ours would still draw it
@@ -4044,9 +4043,10 @@ bake" above; what it owes this frame is below.
   the main pass too since X3.6e, with the same pipelines a face uses
   (`WorldBlocks.mainPalette`); a fire is left out. The world is handed to
   `ProbeBake` at the cut unless a surface it draws already went back, and one
-  handed back later, or a refused main pass, LOSES the bake (`ProbeBake.lose`,
-  after the task in hand) — Babylon's from the next frame, the whole install
-  queued again there.
+  handed back later, a refused main pass, or a failed palette pipeline (the
+  view answering unready) LOSES the bake (`ProbeBake.lose`, after the task in
+  hand) — Babylon's from the next frame, the whole install queued again
+  there.
 - **A face draws through the main pass's own draw code**, parametrised by a
   view (`DrawView`: `drawClusters`, `drawScatter`, `bind`, `drawPalette`) and
   never copied;
@@ -4121,7 +4121,11 @@ decide a taken mesh, as numbers handed to the cull (`reachGate`), so the
 class changes who draws a block and never whether it is drawn — but for the
 reach's HYSTERESIS, which is the candidate walk's alone: a cell stays on
 until `culling.hysteresis` (12 m) past the reach, and the GPU cull tests the
-reach exactly every frame (X3.6e measured the two pixels it moves).
+reach exactly every frame. So a mesh Babylon still draws inside that band
+stands there without the taken walls around it, which ours has already
+dropped; X3.6e measured it on two rows of the bank, a lit window drawn
+fog-dark past the reach on Babylon's side where ours drops window and wall
+together.
 
 **Most of the win is the hidden class and it is exact rather than a trade.** A
 collider proxy cannot draw — `MapBuilder.boxMesh` sets `isVisible = false` and
@@ -4484,9 +4488,7 @@ all in the counter this finding is named after. Not chased.
   X3.6e; "The palette, ours", under "The glow: what the depth share
   replaced", below). **The mask stays this pass's**: ours draws INTO it,
   FIRST, as its pass opens (`GlowPass.onMaskOpenObservable`, from inside the
-  clear), and the palette's meshes never reach this pass's list, being no
-  candidates and so never ACTIVE (a refused mask pass leaves its one frame to
-  neither) — so the palette's main material and its twin (`EmissiveWorld.ts`)
+  clear), and the palette's main material and its twin (`EmissiveWorld.ts`)
   are the FALLBACK. **Two ways to send it back that a builder can reach**: a
   palette surface the handover cannot hold, and a palette surface marked
   `noGlow` — read at the TAKE, as `noShadowCaster` is, so a flag set after the
@@ -5109,10 +5111,10 @@ the FALLBACK** (the twin since X3.6d): whenever the handover holds the whole
 palette, our renderer draws the palette in the main pass
 (`render/WorldBlocks.ts`, the bake's own program) and into the mask
 (`render/WorldGlow.ts`, the same body under `GLOW_MASK`, through the main
-pass's view of the culls), and no palette mesh is a candidate for Babylon's
-frame — both are drawn for an editor build, `?babylonworld`, a palette ours
-cannot hold whole, a failed mask pipeline (for the session) and a loss
-mid-map ("The palette, ours", under the glow, below).
+pass's view of the culls) — both are drawn for an editor build,
+`?babylonworld`, a palette ours cannot hold whole, a failed mask pipeline
+(for the session) and a loss mid-map ("The palette, ours", under the glow,
+below).
 
 **The bloom is the one thing that changed, and it changed toward the wall.**
 `GlowRules.colour` fades a bloom by the fog at a mesh's bounding-sphere centre,
@@ -5584,29 +5586,24 @@ draw of OURS, by the same vertex module.
   mesh (`WorldCulling`'s `glows`), and a lamp lens a few pixels across is what
   a bloom is for.
 - **The reach: the CELL's box, because in the main pass past the fog is the
-  SKY.** A palette surface the main pass takes is filed as a BLOCK
-  (`WorldCulling.setTaken`) and handed its cell's reach box
-  (`WorldCulling.reachBoxOf`) — the box a taken block of that cell gets, and
-  what Babylon's candidate was offered by. X3.6d held the palette with
-  `NO_REACH` (as every HELD surface: the handover files only what the main
-  pass draws), and for the MASK that was harmless and still is — a cluster
-  past the reach is past the emissive fog band's end, where the mask's pixel
-  is the clear's own `(0, 0, 0, 1)`. In the MAIN pass that pixel is
-  `fogColor` at alpha 1 with depth written: against the landform,
-  fogColor-on-fogColor, but against the SKY's gradient a change, and a
-  coverage and a depth the frame never had. So the box. The cell box is also
-  no farther than any triangle in it, so the lamps' atlas — which culls by a
-  reach to the cluster's block box — now culls a palette cluster past a
-  light's range rather than drawing it for the face's far plane to clip: the
-  same verdict, as a taken block's already was. A palette the main pass does
-  NOT take keeps `NO_REACH`; one taken and later dropped keeps its cell box
-  (only the main and lamp views read it, and they give the same verdict).
-  **The GPU reach is EXACT and Babylon's is not**: a candidate cell switches
-  on at the reach and OFF only `CONFIG.graphics.culling.hysteresis` (12 m)
-  past it, while our cull tests the reach every frame. So a palette mesh
-  Babylon kept on inside that band was drawn — fog-dark, without the walls
-  around it, which our cull had already dropped — and ours now drops window
-  and wall together: the bank's only two moved rows (`BABYLON_EXIT.md` X3.6e).
+  SKY.** Every palette surface is cut with its cell's reach box
+  (`WorldCulling.reachBoxOf`, which answers a filed mesh, taken or not) —
+  the box a taken block of that cell gets, and what Babylon's candidate was
+  offered by — whoever draws it, so the cut never waits on who does. X3.6d
+  held the palette with `NO_REACH` (as every HELD surface), and for the MASK
+  that was harmless and still is — a cluster past the reach is past the
+  emissive fog band's end, where the mask's pixel is the clear's own
+  `(0, 0, 0, 1)`. In the MAIN pass that pixel is `fogColor` at alpha 1 with
+  depth written: against the landform, fogColor-on-fogColor, but against the
+  SKY's gradient a change, and a coverage and a depth the frame never had.
+  So the box. The cell box is also no farther than any triangle in it, so
+  the lamps' atlas — which culls by a reach to the cluster's block box —
+  culls a palette cluster past a light's range rather than drawing it for
+  the face's far plane to clip: the same verdict, as a taken block's already
+  was. The world's maps cull by no reach and a probe's bake by a surface's
+  sphere, so neither reads the box. The bank's two moved rows at X3.6e are
+  the reach's HYSTERESIS, which is Babylon's walk's alone ("Block
+  visibility", under its class table).
 - **How: the bake's program in the main pass, the mask twin's in the mask.**
   The main pass draws with `emissiveWorld(FRAME_TARGETS)` — the body's
   non-`GLOW_MASK` arm, fogged toward `uniforms.fogColor` over the radial
@@ -5636,25 +5633,24 @@ draw of OURS, by the same vertex module.
   ACTIVE and never in `GlowPass`'s list. That is the class of a block group's
   hole in the main pass (a pipeline compiling, a texture unpublished), and the
   warm-up covers it. On the kit screen nothing blooms the palette, as before.
-  X3.6d's third rule, `drawnElsewhere` (with the handover's `glowHolds`), had
-  `GlowPass` skip the palette on the frames ours drew it; with the palette out
-  of the candidate list it answered false on every path and was deleted.
 - **When it goes back: ONE decision for both passes, and every loss returns
-  both.** Per install, `BlockHandover` decides provisionally before the cut
-  (the palette whole, held for the mask, `WorldGlow.usable`) — because the
-  cut needs the reach boxes, which the cull hands only for a taken mesh — and
-  confirms after it (the mask held, no palette surface back at the cut), else
-  drops it: a surface it cannot hold, or one marked `noGlow` (read AT THE
-  TAKE), leaves the map's whole palette, main pass and mask, to Babylon.
-  Mid-map, a palette surface handed back (a FAILED main palette pipeline
-  among them, which hands its bias's groups back as a cel group's failure
-  does — over-broad, it loses the shadows and the bake too, the block rule),
-  a refused main pass, a refused MASK pass (`Renderer.onGlowMaskRefused`) and
-  a failed mask pipeline (latched for the session) each LOSE the mask, and
-  `WorldGlow.onLost` tells the handover in the same call, which drops the
-  palette's main pass with it (`dropPalette`): our draw off, the palette a
-  candidate again from the next tick. So no palette mesh is drawn in one pass
-  by each side, or bloomed by neither. The one frame a refused MASK pass is
+  both.** Per install, `BlockHandover` decides ONCE, after the cut
+  (`claimPalette`: the palette whole, held for the mask, nothing of it back,
+  the mask's world held), else leaves both to Babylon: a surface it cannot
+  hold, or one marked `noGlow` (read AT THE TAKE), leaves the map's whole
+  palette, main pass and mask, to Babylon. Mid-map, a palette surface handed
+  back, a refused main pass, a refused MASK pass
+  (`Renderer.onGlowMaskRefused`) and a failed mask pipeline (latched for the
+  session) each LOSE the mask, and `WorldGlow.onLost` tells the handover in
+  the same call, which drops the palette's main pass with it (`dropPalette`):
+  our draw off, the palette a candidate again from the next tick. So no
+  palette mesh is drawn in one pass by each side, or bloomed by neither. **A
+  failed MAIN-pass palette pipeline costs only what draws with it**: it
+  hands no surface back — the shadow maps draw the palette with pipelines of
+  their own and stay ours — but loses the mask, and with it the main pass
+  (`WorldBlocks.onPaletteFailed`; nothing, on a map whose palette was never
+  ours), and the bake, whose view answers unready; the handover refuses the
+  palette for the rest of the map. The one frame a refused MASK pass is
   found has no palette bloom from either side: Babylon builds the mask's list
   before the clear that announces the pass. The editor and `?babylonworld`
   take nothing. **A loss mid-map compiles Babylon's main material AND its mask

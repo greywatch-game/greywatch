@@ -4,8 +4,8 @@
  * lenses, embers and signs of a map's merged world, drawn FIRST into the mask
  * pass Babylon's `GlowPass` opens, from the main pass's own view of the culls
  * (`WorldBlocks.glowView`). Since X3.6e the palette's MAIN pass is ours on
- * the same decision (`BlockHandover`), so while this holds a world the
- * palette is no candidate and `GlowPass` never meets one of its meshes.
+ * the same decision (`BlockHandover`, which says what that keeps out of
+ * Babylon's lists).
  * Owns: `WorldGlow` — the world it draws while the handover holds the whole
  * palette (`GlowSource`, the map's `WorldBlocks`; the handover owns it), that
  * world's `GlowWorld` (a mask pipeline a palette bias, at most two), this
@@ -22,10 +22,10 @@
  * verdict is made in a renderer prepare, as the main pass begins — the world
  * held, its pipelines built, not broken, the rules admitting the palette and
  * every palette group drawable — and a frame it is not ours is a frame with
- * no palette bloom, never Babylon's: the palette is our main pass's too, so
- * no mesh of it is in `GlowPass`'s list while a world is held (a pipeline
- * compiling or a texture unpublished is the warm-up's to prevent, as a block
- * group's hole in the main pass is); the mask is NOT this module's (rule 5):
+ * no palette bloom, never Babylon's, the palette being our main pass's too
+ * while a world is held (a pipeline compiling or a texture unpublished is
+ * the warm-up's to prevent, as a block group's hole in the main pass is);
+ * the mask is NOT this module's (rule 5):
  * `GlowPass` owns it and its clear, Babylon's bodies, effects, fire,
  * viewmodel and moon still draw into it, and ours draws FIRST in that pass,
  * right after its clear (`Renderer.addGlowMask`) — no depth written, LEQUAL
@@ -39,8 +39,9 @@
  * refusal listener off the renderer after the task in hand, because it may
  * land inside a render (a refused pass) — and the one frame a refused MASK
  * pass is found has no palette bloom from either side; a mask pipeline that
- * FAILS latches it BROKEN for the session (`usable` false), every map's
- * palette then Babylon's in both passes; nothing here allocates on a frame.
+ * FAILS latches it BROKEN for the session (no world held again), every
+ * map's palette then Babylon's in both passes; nothing here allocates on a
+ * frame.
  * Never: imports Babylon; reads a node, a mesh's metadata or a material — a
  * material reaches it as its `EmissiveRecipe`; owns, clears or binds the
  * mask; draws in the main pass; announces a loss when no world was held (a
@@ -95,7 +96,7 @@ export class WorldGlow {
   private broken = false;
   /** Bumped whenever the world changes: a build that settles for one already gone does nothing. */
   private generation = 0;
-  /** This frame's verdict: ours draws the palette into the mask, and `GlowPass` leaves it out. */
+  /** This frame's verdict: ours draws the palette into the mask. */
   private ours = false;
   private drawnLast = 0;
   /**
@@ -114,7 +115,11 @@ export class WorldGlow {
     private readonly rules: GlowWorldRules,
   ) {}
 
-  /** Whether ours draws the emissive palette into the glow's mask THIS frame — decided as the main pass begins. */
+  /**
+   * Whether ours draws the emissive palette into the glow's mask THIS frame —
+   * decided as the main pass begins. Nothing in the game reads it; a scratch
+   * script does (`VERIFYING.md`).
+   */
   get drawing(): boolean {
     return this.ours;
   }
@@ -124,15 +129,11 @@ export class WorldGlow {
     return this.world !== null;
   }
 
-  /** Whether a world handed over may be held: no mask pipeline has failed this session. */
-  get usable(): boolean {
-    return !this.broken;
-  }
-
   /**
    * `listener` told of every LOSS of a held world (`lose`: a palette surface
-   * handed back, a refused main or mask pass, a failed mask pipeline), in the
-   * call that loses it — so the palette's main pass goes back with its mask.
+   * handed back, a refused main or mask pass, a failed mask or main-pass
+   * palette pipeline), in the call that loses it — so the palette's main
+   * pass goes back with its mask.
    * Never told of a world dropped for a map going. Returns its remove.
    */
   onLost(listener: () => void): () => void {
@@ -151,7 +152,10 @@ export class WorldGlow {
    * The world the palette's mask is drawn from from now on — the map's, when
    * the handover holds the whole palette — or null: then the mask's palette
    * is Babylon's. Its pipelines are asked for here, at the install, under the
-   * building card, whose warm-up waits on the renderer's cache.
+   * building card, whose warm-up waits on the renderer's cache. Only the
+   * handover hands it a world, with the palette's main pass: a world set
+   * alone would take the mask while Babylon's main pass still holds the
+   * palette ACTIVE, and `GlowPass` would bloom it a second time.
    */
   setWorld(source: GlowSource | null): void {
     this.drop();
@@ -186,10 +190,11 @@ export class WorldGlow {
   /**
    * The world can no longer draw what Babylon's twin would — a palette
    * surface went back to Babylon, the main pass or the mask's was refused, a
-   * pipeline failed: the `onLost` listeners are told at once (the handover
-   * hands the palette's main pass back, so it is a candidate, and in
-   * `GlowPass`'s list, from the next tick), and the draw, the prepare and the
-   * refusal listener come off the renderer once the task in hand is done.
+   * mask pipeline or the main pass's palette pipeline failed: the `onLost`
+   * listeners are told at once (the handover hands the palette's main pass
+   * back, so it is a candidate, and in `GlowPass`'s list, from the next
+   * tick), and the draw, the prepare and the refusal listener come off the
+   * renderer once the task in hand is done.
    */
   lose(): void {
     if (!this.world) return;

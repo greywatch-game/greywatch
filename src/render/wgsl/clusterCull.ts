@@ -70,7 +70,7 @@ export const CULL_UNIFORM_BYTES = 160;
  *   `noShadowCaster`, blended or not, as `LocalShadows`' bake always did.
  * - `PASS_PROBE`: in a reflection probe's bake (`render/ProbeBake.ts`,
  *   X3.6c) — every surface the main pass takes, and the emissive palette's
- *   held for it, whatever casts: Babylon's bake drew the map's visuals whole
+ *   surfaces, whatever casts: Babylon's bake drew the map's visuals whole
  *   but for the glazing.
  * - `PASS_GLOW`: drawn in the glow's MASK through the MAIN view
  *   (`render/WorldGlow.ts`, X3.6d) — the emissive palette, which the main

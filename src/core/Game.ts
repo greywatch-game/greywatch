@@ -1643,10 +1643,6 @@ export class Game {
         }
         this.bloomColour(material, fade, out);
       },
-      // The emissive palette never reaches this list while our renderer holds
-      // it: its main pass is ours with its mask (`BlockHandover`, X3.6e), so
-      // its meshes are no candidates and never ACTIVE, and a loss of either
-      // hands both back to Babylon together.
     });
     this.glow = glow;
     // The mask's pass has opened: our renderer's palette goes in FIRST, ahead

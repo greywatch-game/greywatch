@@ -38,7 +38,8 @@
  * and the map's `WorldDepth`, when `finish` is asked for one; each palette
  * material's block (laid out for the mask's variant, so it carries the
  * bloom's colour too) and groups, and the palette's main-pass pipelines, one
- * a bias (`mainPalette`, which a probe's face draws with too); the probes'
+ * a bias (`mainPalette`, which a probe's face draws with too), and whether
+ * one failed for the map (`paletteFailed`); the probes'
  * VIEWS of the culls (`probeView`) and the glow's (`glowView`) while their
  * holders keep them, and with the map at the latest.
  * WHY THAT POINT, AND THE LANDFORM LAST: the turf (`GrassSystem`) is a blend
@@ -77,13 +78,16 @@
  * glow's mask draw the palette from the main pass's survivors; the main
  * pass draws the palette FIRST and by its own program — the bake's
  * pipelines, one a bias (`mainPalette`), asked once at the cut whoever draws
- * it, a failed one handing its groups back as a cel group's does; a probe's
- * view culls every cluster and draws what is in `PASS_PROBE` with the main
- * pass's own pipelines and material groups, through the face's frame, each
- * scattered group's twin bound to its own list; the glow's view is the main
- * view itself, no cull of its own, drawing the palette groups alone with the
- * mask's pipelines, and drawable only while the main view's culls are —
- * the draw code is ONE (`drawClusters`, `drawScatter`, `bind` and
+ * it — and a failed one hands NO group back: whoever took the palette is
+ * told (`onPaletteFailed`) and gives back its main pass and its mask, a
+ * probe's view built on them answers unready (its bake lost, as at X3.6c),
+ * and the shadow maps, whose pipelines these are not, keep drawing it; a
+ * probe's view culls every cluster and draws what is in `PASS_PROBE` with
+ * the main pass's own pipelines and material groups, through the face's
+ * frame, each scattered group's twin bound to its own list; the glow's view
+ * is the main view itself, no cull of its own, drawing the palette groups
+ * alone with the mask's pipelines, and drawable only while the main view's
+ * culls are — the draw code is ONE (`drawClusters`, `drawScatter`, `bind` and
  * `drawPalette` over a `DrawView`, every draw's three groups made by
  * `groupsFor`, and what a view can draw asked by `drawableIn` of its pass
  * bit), never a copy;
@@ -341,9 +345,10 @@ export class WorldBlocks {
     blocks: new Map(),
     landform: new Map(),
   };
-  /** The held casters' one group, of no recipe, and the palette's, one a palette material. */
+  /** The held casters' one group, of no recipe. */
   private heldCasters: Group | null = null;
-  private readonly heldPalette = new Map<EmissiveRecipe, Group>();
+  /** The palette's groups, one a palette material. */
+  private readonly paletteGroups = new Map<EmissiveRecipe, Group>();
   /**
    * The palette's main-pass pipelines (`emissiveWorld(FRAME_TARGETS)`), by
    * depth bias, null until each lands — asked once at the cut, and the ones a
@@ -352,6 +357,8 @@ export class WorldBlocks {
   private mainPalette = new Map<number, BuiltPipeline | null>();
   /** Resolves true once every one of `mainPalette` is built; false if one failed. */
   private mainPaletteReady: Promise<boolean> = Promise.resolve(true);
+  /** One of `mainPalette` failed for this map: see `paletteFailed`. */
+  private mainPaletteFailed = false;
   /** The palette is drawn in the main pass — the handover's to say (`setPaletteMain`). */
   private paletteMain = false;
   /** A group's three bind groups for one draw, as `groupsFor` last filled them. */
@@ -408,6 +415,13 @@ export class WorldBlocks {
      * them back.
      */
     private readonly onFailed: (surfaces: readonly number[]) => void,
+    /**
+     * Told, once a map, that a main-pass palette pipeline FAILED
+     * (`paletteFailed`): no palette group goes back, the shadow maps still
+     * drawing them, so whoever handed the palette's main pass over takes it
+     * back itself.
+     */
+    private readonly onPaletteFailed: () => void,
     /** The culls' diagnostics (`ClusterCull`'s `CullDiagnostics`); none but off the URL. */
     private readonly diagnostics: CullDiagnostics = NO_DIAGNOSTICS,
   ) {
@@ -425,6 +439,15 @@ export class WorldBlocks {
    */
   get depth(): WorldDepth | null {
     return this.worldDepth;
+  }
+
+  /**
+   * Whether a main-pass palette pipeline (`mainPalette`) failed for this
+   * map: no main pass of ours draws the palette again until the next cut, so
+   * `setPaletteMain(true)` is not asked.
+   */
+  get paletteFailed(): boolean {
+    return this.mainPaletteFailed;
   }
 
   /** What is handed over, and what it was cut into. */
@@ -464,7 +487,7 @@ export class WorldBlocks {
    * every other group's. Its index is the surface's, as `add`'s.
    */
   addCaster(label: string, geometry: SurfaceArrays, pieces: readonly PieceSpan[], passes: number, key: number = NO_BLOCK): number {
-    return this.addTo(this.heldGroup(null), label, geometry, pieces, passes, key);
+    return this.addTo(this.casterGroup(), label, geometry, pieces, passes, key);
   }
 
   /**
@@ -485,7 +508,7 @@ export class WorldBlocks {
     passes: number,
     key: number,
   ): number {
-    return this.addTo(this.heldGroup(recipe), label, geometry, pieces, passes, key);
+    return this.addTo(this.paletteGroup(recipe), label, geometry, pieces, passes, key);
   }
 
   private addTo(
@@ -802,17 +825,19 @@ export class WorldBlocks {
     this.groupOf.blocks.clear();
     this.groupOf.landform.clear();
     this.heldCasters = null;
-    this.heldPalette.clear();
+    this.paletteGroups.clear();
     this.mainPalette = new Map();
     this.mainPaletteReady = Promise.resolve(true);
+    this.mainPaletteFailed = false;
     this.paletteMain = false;
     this.drawnLast = 0;
   }
 
   /**
    * Whether the palette is drawn in the main pass from the next draw — the
-   * handover's decision, made with the glow's mask's (`BlockHandover`), and
-   * safe inside a render: the draw reads it as it is queued.
+   * handover's decision, made with the glow's mask's (`BlockHandover`, its
+   * only writer), never asked true once `paletteFailed`, and safe inside a
+   * render: the draw reads it as it is queued.
    */
   setPaletteMain(on: boolean): void {
     this.paletteMain = on;
@@ -838,25 +863,28 @@ export class WorldBlocks {
     return group;
   }
 
-  /**
-   * The PALETTE group of a palette material (`palette`), or the held casters'
-   * one (null), made on its first surface.
-   */
-  private heldGroup(palette: EmissiveRecipe | null): Group {
+  /** The PALETTE group of palette material `recipe`, made on its first surface. */
+  private paletteGroup(recipe: EmissiveRecipe): Group {
     this.uncut();
-    if (!palette) return (this.heldCasters ??= this.newGroup("held", null, null));
-    let group = this.heldPalette.get(palette);
+    let group = this.paletteGroups.get(recipe);
     if (!group) {
-      group = this.newGroup("palette", null, palette);
-      this.heldPalette.set(palette, group);
+      group = this.newGroup("palette", null, recipe);
+      this.paletteGroups.set(recipe, group);
     }
     return group;
   }
 
+  /** The held casters' one group, made on its first surface. */
+  private casterGroup(): Group {
+    this.uncut();
+    return (this.heldCasters ??= this.newGroup("held", null, null));
+  }
+
   /**
-   * Every surface and part goes through `groupFor` or `heldGroup`, so this
-   * is asked of every add, not only of the one that makes a group: a surface
-   * filed after the cut would be held and never drawn.
+   * Every surface and part goes through `groupFor`, `paletteGroup` or
+   * `casterGroup`, so this is asked of every add, not only of the one that
+   * makes a group: a surface filed after the cut would be held and never
+   * drawn.
    */
   private uncut(): void {
     if (this.cull) throw new Error("world blocks: a surface added after the map was cut");
@@ -1042,8 +1070,12 @@ export class WorldBlocks {
   /**
    * Asks for the palette's main-pass pipelines (`mainPalette`), one a bias —
    * whether or not the main pass is handed the palette, because a probe's
-   * face draws with the same ones (`probeView`) — and a failure hands every
-   * palette group of that bias back, at once, as `ask` does a cel group's.
+   * face draws with the same ones (`probeView`). A failure hands NO group back,
+   * where `ask`'s hands back a cel group: the shadow maps draw the palette with
+   * pipelines of their own, so it costs only what draws with these — the main
+   * pass and with it the mask (`onPaletteFailed`, once a map, which takes back
+   * nothing if the main pass never held the palette), and a probe's bake (its
+   * view's `ready` answers false).
    */
   private askPalette(): void {
     const generation = this.generation;
@@ -1052,10 +1084,14 @@ export class WorldBlocks {
       FRAME_TARGETS,
       (bias) => (bias === 0 ? undefined : { depthBias: bias }),
       (bias, err) => {
-        if (generation !== this.generation) return;
-        for (const group of this.groups) {
-          if (group.emissive?.recipe.depthBias === bias) this.fail(group, "has no pipeline", err);
-        }
+        if (generation !== this.generation || this.mainPaletteFailed) return;
+        this.mainPaletteFailed = true;
+        console.error(
+          `world blocks: the emissive palette's main-pass pipeline [bias ${bias}] did not build; ` +
+            "the palette is Babylon's in the main pass, the glow's mask and the bake for this map",
+          err,
+        );
+        this.onPaletteFailed();
       },
     );
     this.mainPalette = built;
@@ -1541,7 +1577,7 @@ function cutRank(group: Group): number {
 /** How a group is named in a label or a message: its recipe's defines, a palette material, or the held casters. */
 function labelOf(group: Group): string {
   if (group.material) return `[${group.material.recipe.defines.join("+")}]`;
-  return group.layer === "palette" ? `[emissive, bias ${group.emissive!.recipe.depthBias}]` : "[casters]";
+  return group.emissive ? `[emissive, bias ${group.emissive.recipe.depthBias}]` : "[casters]";
 }
 
 /** The first attribute `group`'s variant reads that `geometry` lacks, or null; an absent `uv` reads 0. */

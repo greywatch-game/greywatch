@@ -19,9 +19,8 @@
  * bloom's colour (`glowColor`, `GlowRules`' answer for that material); and the
  * vertex is its vertex in both, `world` identity as the merge's is, read
  * through the cel stage's own decode (`pulledWorld`) — so the mask's LEQUAL
- * test ties against the depth the main pass's palette wrote (ours, by the
- * same vertex module; Babylon's, by the same text, on the fallback); group 0
- * is the cel
+ * test ties against the depth our main pass's palette wrote, by the same
+ * vertex module (on the fallback neither is ours); group 0 is the cel
  * FRAGMENT's whole group, so one frame bind group serves the cel pipelines
  * and these; group 1 is laid out for the MASK's variant, `glowColor` LAST, so
  * the bake's program reads a prefix of the same buffer and one bind group

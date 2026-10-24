@@ -1578,10 +1578,10 @@ is one machine's:
   `g.worldGlow.lose()` hands BOTH to Babylon (its `onLost` tells the handover,
   which puts the palette back in the candidate list from the next tick), and
   `g.handover.takePalette()` takes both back — true if it did, and only on a
-  map whose install gave the palette its cells' reach boxes. **Do not re-take
-  with `g.worldGlow.setWorld(...)` any more**: that takes the MASK alone while
-  the palette is still Babylon's candidate, and with nothing left to keep
-  `GlowPass` off it (`drawnElsewhere` is gone) the palette is bloomed twice.
+  map that could hold the whole palette (nothing of it, nor the map, handed
+  back since, no palette pipeline failed). **Do not re-take with
+  `g.worldGlow.setWorld(...)`**: that takes the MASK alone while the palette
+  is still Babylon's candidate, and `GlowPass` blooms it a second time.
   After a loss, settle until Babylon's palette is ready (its main material and
   mask twin compile in the round: poll `isReady` on the palette meshes in
   `g.scene.getActiveMeshes()`, filtered on `EmissiveWorldMaterial`, and two
@@ -1589,10 +1589,11 @@ is one machine's:
   holds no palette mesh while ours holds the palette, and N after a loss. Ours
   against Babylon's at a frozen bank vantage reads 0 texels in the mask and 0
   pixels in the frame, but for a palette mesh inside the candidate walk's
-  12 m reach HYSTERESIS, which Babylon still draws and our exact reach drops
-  (`pastReach` in the X3.6e scratch readback: a cell box past
-  `g.culling.reachGate.reach` — `culling` is private to TypeScript, not to a
-  page script).
+  12 m reach HYSTERESIS, which Babylon still draws and our exact reach drops.
+  To attribute such a pixel, count the palette meshes in Babylon's active
+  list whose cell box lies past the reach: `g.culling.reachBoxOf(mesh)` is
+  the box, `g.culling.reachGate.reach` the reach, measured from the camera
+  (`culling` is private to TypeScript, not to a page script).
 - **What a pane REFLECTS is checkable without a screenshot, and the CUBE is the
   place to check it.** There is one probe per glazed map block —
   `g.reflections.probes[slot]` against `g.map.paneGroups[slot]`, 40 of each on

@@ -10,9 +10,8 @@
  * draws into it (`BABYLON_EXIT.md` rule 5, X3.6d): the moment its pass opens
  * is announced (`onMaskOpenObservable`, from inside the clear, before any
  * mesh of Babylon's is queued) — so this file imports nothing of
- * `src/render/`, and what our renderer draws there never reaches this list,
- * being no ACTIVE mesh of the frame (its main pass is ours too, X3.6e); and
- * every Babylon call is public API.
+ * `src/render/`, and what our renderer draws there never reaches this list
+ * (`BlockHandover` says why); and every Babylon call is public API.
  *
  * WHAT IT REPLACED, AND WHY. The bloom was a `GlowLayer` with `GlowDepth`
  * bolted on from the outside. The layer is built to own four things — its
@@ -88,12 +87,10 @@
  * world's lit windows and lenses FIRST in this pass, right after the clear —
  * the palette was in Babylon's opaque queue, ahead of every blended mask
  * draw, and first keeps that order. Its MAIN pass is ours on the same
- * decision (X3.6e), so those meshes are never candidates, never in the
- * frame's active list and never in this one; the palette's twin below is the
- * FALLBACK, with its main material: an editor build, `?babylonworld`, a
- * palette surface ours cannot hold or one marked `noGlow`, a failed mask
- * pipeline (for the session) and a loss mid-map. Everything else in the mask
- * is still drawn here.
+ * decision (X3.6e); the palette's twin below is the FALLBACK, with its main
+ * material: an editor build, `?babylonworld`, a palette surface ours cannot
+ * hold or one marked `noGlow`, a failed mask pipeline (for the session) and
+ * a loss mid-map. Everything else in the mask is still drawn here.
  *
  * A MATERIAL WHOSE VERTICES MOVE BRINGS ITS OWN MASK (`SelfMasking`). The
  * stock variants transform by `world` and `viewProjection` alone, so a surface

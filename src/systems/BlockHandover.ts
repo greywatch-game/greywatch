@@ -11,10 +11,11 @@
  * PALETTE and which are casters held rather than taken, which of them cast,
  * which a probe's bake draws and which the glow's mask draws, the fires,
  * whether the handover holds every caster the map has and the WHOLE emissive
- * palette, whether the palette is the main pass's (`paletteMain`) and was
- * given its cells' boxes at the cut, the material epoch last copied, the
- * listener it registers for a loss of the mask (`WorldGlow.onLost`), and the
- * build's scatter FIELD until the map is cut (X3.4b).
+ * palette, whether the palette is the main pass's (`paletteMain`) and whether
+ * it was at any time this install (`paletteTaken`, which `stats` counts it
+ * by), the material epoch last copied, the listener it registers for a loss
+ * of the mask (`WorldGlow.onLost`), and the build's scatter FIELD until the
+ * map is cut (X3.4b).
  * Invariants: a surface is TAKEN only if our pipeline draws it exactly as
  * Babylon would — block-merged or the LANDFORM (`WorldSurface.landform`: the
  * floor's patches, the rim's runs and the map-wide road merge, which the
@@ -26,10 +27,11 @@
  * (below) — and all are drawn by our side ahead of group 0's alpha-tested
  * meshes, the palette first and the blocks before the landform
  * (`WorldBlocks`'s header says why); nothing is taken from an EDITOR build,
- * which `Game` hands no `onSurface` — its blocks are unmerged, and its brush rewrites the
- * floor's meshes in place — and every other surface stays Babylon's in every
- * pass, as do the taken surfaces our side will never draw (handed back whole,
- * so every surface is drawn by one side): a pipeline's or the cull's failure
+ * which `Game` hands no `onSurface` — its blocks are unmerged, and its brush
+ * rewrites the floor's meshes in place — and every other surface stays
+ * Babylon's in every pass, as do the taken surfaces our side will never draw
+ * (handed back whole, so every surface is drawn by one side): a pipeline's
+ * (but the palette's main pass's, below) or the cull's failure
  * hands back its surfaces in the turn it lands, and a main pass our renderer
  * REFUSES (`Renderer.onRefused`) hands back the whole map, for the rest of
  * it, from the next frame — the refused one is the one frame drawn without
@@ -86,16 +88,19 @@
  * the cut: one it could not hold, or one marked `noGlow`, leaves the whole
  * map's palette mask to Babylon's `GlowPass`, so no palette mesh is ever
  * bloomed by neither side or by both. AND THE PALETTE'S MAIN PASS WITH IT
- * (X3.6e), ONE DECISION: whenever the mask is handed over, the palette is
- * TAKEN from Babylon's main pass as a block (`WorldCulling.setTaken`),
- * reach-culled by its cell's box as Babylon's candidate was — decided
- * provisionally before the cut, because the box is the cull's to hand only
- * for a taken mesh, and confirmed after it (the mask held, no palette
- * surface back), else dropped — and a palette not taken keeps no reach; a
- * palette surface handed back later, or a refused main pass, LOSES the mask
- * to Babylon (`WorldGlow.lose`) — a refused MASK pass, or a failed mask
- * pipeline, loses it too, which `WorldGlow` hears itself — and EVERY loss of
- * the mask hands the palette's main pass back with it (`WorldGlow.onLost`,
+ * (X3.6e), ONE DECISION, made once, after the cut (`claimPalette`): whenever
+ * the mask is handed over, the palette is TAKEN from Babylon's main pass as a
+ * block (`WorldCulling.setTaken`) — so, while ours holds it, no palette mesh
+ * is a candidate, ACTIVE, or in `GlowPass`'s list, which is decided here and
+ * nowhere else — and every palette surface is cut with its cell's box
+ * whoever draws it (see `install`); a palette surface handed back later, or
+ * a refused main pass, LOSES the mask to Babylon (`WorldGlow.lose`) — a
+ * refused MASK pass, or a failed mask pipeline, loses it too, which
+ * `WorldGlow` hears itself — and so does a failed main-pass palette pipeline
+ * (`WorldBlocks.paletteFailed`), which hands back NO surface, the shadows
+ * drawing the palette with pipelines of their own and the bake losing
+ * itself, and refuses the palette for the rest of the map; EVERY loss of the
+ * mask hands the palette's main pass back with it (`WorldGlow.onLost`,
  * `dropPalette`), so it is a candidate in both of Babylon's passes from the
  * next tick and never drawn in one pass by each side; a DEV build reports a
  * palette mesh our mask holds whose `noGlow` was set after the take.
@@ -153,8 +158,11 @@ export class BlockHandover {
   private palette = new Set<Mesh>();
   /** The palette is the main pass's and the mask's, ours together — one decision (X3.6e). */
   private paletteMain = false;
-  /** The cut gave the palette its cells' reach boxes: it may be taken again (`takePalette`). */
-  private paletteBoxed = false;
+  /**
+   * The palette was the main pass's at any time this install: `stats` counts
+   * it as taken, and once dropped as handed back.
+   */
+  private paletteTaken = false;
   /** The surfaces that cast, by index — one of them handed back loses the shadows. */
   private casting = new Set<number>();
   /** The surfaces a probe's bake draws (`PASS_PROBE`), by index — one of them handed back loses the bake. */
@@ -201,6 +209,7 @@ export class BlockHandover {
       culling.reachGate,
       CONFIG.graphics.clusters,
       this.failed,
+      this.mainPaletteFailed,
       diagnostics,
     );
     this.removeFrame = renderer.onFrame(this.frame);
@@ -236,19 +245,17 @@ export class BlockHandover {
     const palette = this.mats.emissiveRecipe(part.material) !== null;
     if (at === null) {
       drawn = this.heldPasses(surface, mesh, atIdentity, passes);
-      at = this.hold(surface, atIdentity, drawn, key);
+      const held = this.hold(surface, atIdentity, drawn, key);
       // A fire is left out of our bake as Babylon's left it out of its own.
       if (isFlame(part.material)) this.fires.add(mesh);
-      if (palette && (at === null || (drawn & PASS_GLOW) === 0)) this.wholePalette = false;
+      if (palette && (held === null || (drawn & PASS_GLOW) === 0)) this.wholePalette = false;
       // A caster our side can hold in neither way: the map's shadows stay Babylon's.
-      if (at === null) {
+      if (held === null) {
         if ((passes & SHADOW_PASSES) !== 0) this.allCasters = false;
         return;
       }
-      // The palette is held with its slots for a probe's bake (`heldPasses`);
-      // anything else held is a caster's positions alone.
-      if ((drawn & PASS_PROBE) !== 0) this.palette.add(mesh);
-      else this.held.add(mesh);
+      at = held.at;
+      (held.palette ? this.palette : this.held).add(mesh);
     }
     this.meshes[at] = mesh;
     if ((drawn & SHADOW_PASSES) !== 0) this.casting.add(at);
@@ -299,14 +306,23 @@ export class BlockHandover {
    * `passes` names if its positions are world positions and nothing rewrites
    * them — a block merge, at identity, never `updatable`: the palette with its
    * slots for a probe's bake (and its shadows), a caster's positions alone for
-   * the shadows — and its index; else null.
+   * the shadows — its index, and which of the two it was made; else null.
    */
-  private hold(surface: WorldSurface, atIdentity: boolean, passes: number, key: number): number | null {
+  private hold(
+    surface: WorldSurface,
+    atIdentity: boolean,
+    passes: number,
+    key: number,
+  ): { at: number; palette: boolean } | null {
     if (passes === 0 || surface.block === null || surface.updatable || !atIdentity) return null;
     const { part } = surface;
     const palette = (passes & PASS_PROBE) !== 0 ? this.mats.emissiveRecipe(part.material) : null;
-    if (palette) return this.blocks.addEmissive(part.name, part.geometry, surface.pieces, palette, passes, key);
-    return this.blocks.addCaster(part.name, part.geometry, surface.pieces, passes, key);
+    if (palette) {
+      const at = this.blocks.addEmissive(part.name, part.geometry, surface.pieces, palette, passes, key);
+      return { at, palette: true };
+    }
+    const at = this.blocks.addCaster(part.name, part.geometry, surface.pieces, passes, key);
+    return { at, palette: false };
   }
 
   /**
@@ -365,26 +381,28 @@ export class BlockHandover {
     }
     this.back = new Set();
     this.handedBack = false;
+    this.paletteMain = false;
+    this.paletteTaken = false;
     this.epoch = -1;
     this.reported = false;
-    // The palette's main pass and its share of the glow's mask are ONE
-    // decision, made here provisionally — the palette whole, held for the
-    // mask, and a mask that may still be ours — because the cut needs the
-    // palette's reach boxes, which the cull hands only for a taken mesh; it
-    // is confirmed after the cut, below, or dropped.
-    this.paletteMain = this.wholePalette && this.glowing.size > 0 && this.glow.usable;
-    this.paletteBoxed = this.paletteMain;
+    // The palette is not taken yet: whether it is, in its main pass and its
+    // mask together, is decided once, after the cut (`claimPalette`).
     this.fileTaken(meshes);
-    // A caster held for the shadows alone is not taken, so the cull has no
-    // reach box for it, and is never reach-culled: no main pass draws it, the
-    // world's maps cull by no reach, and a lamp face (which reaches only its
-    // light's range) draws one past it, which the face's far plane clips or
-    // stores as a distance over 1 — lit, as no caster at all would read. So
-    // is a palette the main pass does not take. A palette it does take is a
-    // block's: its cell's box, as Babylon's candidate was offered by — past
-    // the fog, the main pass's pixel is `fogColor` written over the SKY.
+    // A caster held for the shadows alone is never reach-culled: no main pass
+    // draws it, the world's maps cull by no reach, and a lamp face (which
+    // reaches only its light's range) draws one past it, which the face's far
+    // plane clips or stores as a distance over 1 — lit, as no caster at all
+    // would read. Every other surface is measured to the box the cull files
+    // it by: a block's cell, the landform's `NO_REACH` — and the PALETTE's
+    // cell whoever draws it, the box Babylon's candidate was offered by. Ours
+    // in the main pass, it must be: past the reach a lit window is `fogColor`
+    // written over the SKY. Every other view reads that box to the same
+    // picture — the mask (past the reach its pixel is the clear's own), the
+    // lamps' atlas (the box holds the mesh, so a light's range drops nothing
+    // a face would draw), the world's maps (no reach) and a probe's bake (a
+    // surface's sphere) — so the cut need not wait on the decision.
     const boxes: BlockBox[] = meshes.map((mesh) =>
-      this.held.has(mesh) || (this.palette.has(mesh) && !this.paletteMain) ? NO_REACH : this.culling.reachBoxOf(mesh),
+      this.held.has(mesh) ? NO_REACH : this.culling.reachBoxOf(mesh),
     );
     // Held for shadows that draw: on a rung with every map and the atlas off
     // there is nothing to draw them into, and Babylon's (of none) are the map's.
@@ -418,37 +436,46 @@ export class BlockHandover {
     let probes = this.probing.size > 0;
     for (const at of this.probing) if (this.back.has(this.meshes[at])) probes = false;
     this.probes.setWorld(probes ? this.blocks : null);
-    // And the palette, WHOLE, in its mask and its main pass together: every
-    // palette surface held for it, none gone back at the cut, and the mask
-    // held — else both are Babylon's.
-    let glow = this.paletteMain;
-    for (const at of this.glowing) if (this.back.has(this.meshes[at])) glow = false;
-    this.glow.setWorld(glow ? this.blocks : null);
-    if (glow && this.glow.holds) this.blocks.setPaletteMain(true);
-    else this.dropPalette();
+    // And the palette, WHOLE, in its mask and its main pass together.
+    this.claimPalette();
   }
 
   /**
-   * The palette taken back for its main pass and its mask together after a
-   * loss — what `install` does for it — when the cut gave it its cells'
-   * boxes and nothing of it, nor the map, went back since: whether it is
-   * ours again. The game never calls it; a scratch script re-taking the
-   * palette after a forced `WorldGlow.lose` does (`VERIFYING.md`).
+   * The palette's main pass and its share of the glow's mask, taken
+   * together — ONE decision (X3.6e): every surface wearing a palette material
+   * held for the mask (`wholePalette`), none of them gone back, the map not
+   * handed back, no main-pass palette pipeline failed
+   * (`WorldBlocks.paletteFailed`), and the mask's world held (`WorldGlow`
+   * refuses one for the session once a mask pipeline failed) — else both
+   * stay Babylon's. Whether the palette is ours. `install` asks it after the
+   * cut; `takePalette` again after a loss.
    */
-  takePalette(): boolean {
-    if (this.paletteMain || !this.paletteBoxed || this.handedBack) return this.paletteMain;
+  private claimPalette(): boolean {
+    if (this.paletteMain) return true;
+    if (!this.wholePalette || this.glowing.size === 0) return false;
+    if (this.handedBack || this.blocks.paletteFailed) return false;
     for (const at of this.glowing) if (this.back.has(this.meshes[at])) return false;
     this.glow.setWorld(this.blocks);
     if (!this.glow.holds) return false;
     this.paletteMain = true;
+    this.paletteTaken = true;
     this.blocks.setPaletteMain(true);
     this.fileTaken(this.meshes.filter((m) => !this.back.has(m)));
     return true;
   }
 
   /**
-   * `WorldGlow.onLost`, and an install whose palette did not come whole
-   * through the cut: the palette's main pass goes back to Babylon with its
+   * The palette taken back for its main pass and its mask together after a
+   * loss (`claimPalette`): whether it is ours again. The game never calls
+   * it; a scratch script re-taking the palette after a forced
+   * `WorldGlow.lose` does (`VERIFYING.md`).
+   */
+  takePalette(): boolean {
+    return this.claimPalette();
+  }
+
+  /**
+   * `WorldGlow.onLost`: the palette's main pass goes back to Babylon with its
    * mask — our draw off, the palette a candidate again from the next tick
    * (unless the whole map already went back). Safe inside a render: nothing
    * here is drawn or spliced, only decided.
@@ -498,10 +525,11 @@ export class BlockHandover {
   }
 
   /**
-   * How many surfaces are taken — the palette among them while it is the
-   * main pass's — how many clusters and material groups they were cut into,
-   * how many draws our side issued last frame, and how many taken surfaces
-   * went back to Babylon — every one, once a pass was refused.
+   * How many surfaces are taken — the palette among them once it was the
+   * main pass's this install — how many clusters and material groups they
+   * were cut into, how many draws our side issued last frame, and how many
+   * taken surfaces went back to Babylon — the palette's every one while its
+   * main pass is Babylon's again, and every one once a pass was refused.
    */
   get stats(): {
     taken: number;
@@ -512,11 +540,12 @@ export class BlockHandover {
   } {
     const { surfaces, clusters, groups } = this.blocks.count;
     // The main pass's: a caster held for the shadows alone is not taken from
-    // it, nor the palette while its main pass is Babylon's.
-    const palette = this.paletteMain ? 0 : this.palette.size;
-    const taken = surfaces - this.held.size - palette;
-    let back = 0;
-    for (const mesh of this.back) if (!this.held.has(mesh) && (this.paletteMain || !this.palette.has(mesh))) back++;
+    // it, nor the palette if its main pass was never ours this install. A
+    // palette taken and dropped is handed back WHOLE (a loss is never
+    // partial), whether or not a surface of it is in `back`.
+    const taken = surfaces - this.held.size - (this.paletteTaken ? 0 : this.palette.size);
+    let back = this.paletteTaken && !this.paletteMain ? this.palette.size : 0;
+    for (const mesh of this.back) if (!this.held.has(mesh) && !this.palette.has(mesh)) back++;
     return {
       taken,
       clusters,
@@ -540,7 +569,7 @@ export class BlockHandover {
     this.held = new Set();
     this.palette = new Set();
     this.paletteMain = false;
-    this.paletteBoxed = false;
+    this.paletteTaken = false;
     this.casting = new Set();
     this.probing = new Set();
     this.glowing = new Set();
@@ -576,6 +605,19 @@ export class BlockHandover {
     // in its main pass too (`dropPalette`, told by the loss).
     if (surfaces.some((at) => this.glowing.has(at))) this.glow.lose();
     this.fileTaken(this.meshes.filter((m) => !this.back.has(m)));
+  };
+
+  /**
+   * `WorldBlocks.onPaletteFailed`: a main-pass palette pipeline failed, so no
+   * main pass of ours draws the palette this map. Its main pass and its mask
+   * go back together through the mask's loss (`dropPalette`, told by it) —
+   * nothing, if they were never ours — and no surface goes back: the shadow
+   * maps draw the palette with pipelines of their own, and a probe's bake,
+   * which drew with these, loses itself (`ProbeBake.open`). `claimPalette`
+   * refuses it from now on.
+   */
+  private readonly mainPaletteFailed = (): void => {
+    this.glow.lose();
   };
 
   /**
@@ -636,7 +678,7 @@ export class BlockHandover {
       if (mesh.isVisible && mesh.visibility === 1 && mesh.isEnabled()) continue;
       this.reported = true;
       console.error(
-        `BlockHandover: "${mesh.name}" was switched off, hidden or faded after it was taken; our renderer still draws it (BABYLON_EXIT.md X3.3b, X3.6a)`,
+        `BlockHandover: "${mesh.name}" was switched off, hidden or faded after it was taken; our renderer still draws it (BABYLON_EXIT.md X3.3b, X3.6a, X3.6e)`,
       );
       return;
     }

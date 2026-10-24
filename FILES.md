@@ -1274,7 +1274,8 @@ src/
                         #   (BlockHandover) is never one, in every build;
                         #   reachGate states the reach and the size gate as
                         #   numbers for the GPU cull, reachBoxOf the box: a
-                        #   block's cell, the landform's NO_REACH
+                        #   filed block's cell, taken or not, the taken
+                        #   landform's NO_REACH
     BlockHandover.ts    # Which block surfaces, and since X3.5 which landform
                         #   surfaces (WorldSurface.landform), OUR renderer
                         #   draws in the main pass, in every build but the
@@ -1288,24 +1289,29 @@ src/
                         #   its fallbacks. Every CASTER held too (X3.6a,
                         #   X3.6b) — a taken one in its group, the palette in
                         #   its own, any other HELD (WorldBlocks.addCaster) —
-                        #   and handed to the
-                        #   world's maps and the lamps' atlas together, or the
-                        #   map's shadows stay Babylon's; one handed back loses
-                        #   them (WorldShadows.lose, LampAtlas.lose). The
+                        #   and handed to the world's maps and the lamps'
+                        #   atlas together, or the map's shadows stay
+                        #   Babylon's; one handed back loses them
+                        #   (WorldShadows.lose, LampAtlas.lose). The
                         #   reflection bake likewise (X3.6c): PASS_PROBE on
-                        #   every taken surface, the palette held for it with
-                        #   its slots, fires left out; probeHolds answers
-                        #   ReflectionSystem, a loss goes to ProbeBake.lose.
+                        #   every taken surface and the emissive palette's
+                        #   surfaces, with their slots, fires left out;
+                        #   probeHolds answers ReflectionSystem, a loss goes
+                        #   to ProbeBake.lose.
                         #   The glow's mask likewise (X3.6d): PASS_GLOW on the
                         #   palette unless noGlow (read at the take), the
                         #   world handed to WorldGlow only when the WHOLE
                         #   palette is held — and with it (X3.6e) the
-                        #   palette TAKEN for the main pass, by its cells'
-                        #   reach boxes: one decision for both, made before
-                        #   the cut and confirmed after it, and any loss of
-                        #   the mask (WorldGlow.onLost) hands the main pass
-                        #   back too (dropPalette); takePalette re-takes both
-                        #   for a scratch script.
+                        #   palette TAKEN for the main pass, so no palette
+                        #   mesh is a candidate, ACTIVE or in GlowPass's list
+                        #   while ours holds it: one decision for both, made
+                        #   once after the cut (claimPalette; the palette is
+                        #   cut by its cells' boxes whoever draws it), and any
+                        #   loss of the mask (WorldGlow.onLost) hands the main
+                        #   pass back too (dropPalette) — a failed main-pass
+                        #   palette pipeline among them, which hands back no
+                        #   surface, so the shadows stay ours; takePalette
+                        #   re-takes both for a scratch script.
                         #   The scatter's field (BuildOptions.onScatter) added
                         #   as instances at install, its pieces cut out of the
                         #   taken blocks (X3.4b). Reads no node per frame (a
@@ -2293,9 +2299,7 @@ src/
                         #   `Game` supplies the rules (what blooms, how
                         #   bright); the mask pass's opening announced from
                         #   inside its clear (onMaskOpenObservable), where
-                        #   OUR palette draws FIRST (render/WorldGlow.ts) —
-                        #   never in this list while ours holds it, being no
-                        #   candidate (X3.6e)
+                        #   OUR palette draws FIRST (render/WorldGlow.ts)
     Fxaa.ts             # FXAA's fragment shader, registered under the name
                         #   Babylon's pass looks up so it runs this text: the
                         #   same shader with CONFIG.graphics.fxaa's three
@@ -2317,8 +2321,10 @@ src/
                         #   palette in the main pass and its mask: an editor
                         #   build, ?babylonworld, a palette ours cannot hold
                         #   whole, a failed mask pipeline (for the session), a
-                        #   loss mid-map (both then compile in the round). Two
-                        #   per factory, by over-glass offset. WGSL
+                        #   loss mid-map (the one that compiles them in the
+                        #   round: one frame's hitch, no frame without its
+                        #   windows). Two per factory, by over-glass offset.
+                        #   WGSL
     Dither.ts           # One LSB of triangular noise, in the three surface
                         #   shaders. Fixes 8-bit banding in the fog. Owns the
                         #   ARGUMENT and the WGSL; wgsl/chunks.ts files it as
@@ -2417,17 +2423,16 @@ src/
     Renderer.ts         # Renderer: the frame's uniforms, textures and their
                         #   group 0, the pipeline cache, the FrameDraws it
                         #   queues at three points of group 0 in the MAIN pass —
-                        #   before its alpha-tested meshes, where its opaque
-                        #   and alpha-tested meshes end, and after it — and the
+                        #   before its alpha-tested meshes (the palette FIRST
+                        #   in that draw, X3.6e), where its opaque and
+                        #   alpha-tested meshes end, and after it — and the
                         #   FramePrepares run as it begins (a compute cull),
                         #   the LATE ones after the rest (a probe's bake, which
                         #   samples what the others draw), recorded into the
                         #   host's prepareEncoder, never submitted, and timed
                         #   under ?gpu (its PassTimer, gpu.cull); refuses to
                         #   draw if the pass is not FRAME_TARGETS, and tells
-                        #   onRefused listeners (the palette FIRST in the
-                        #   "beforeAlphaTest" draw, X3.6e). And the GLOW
-                        #   MASK's draws
+                        #   onRefused listeners. And the GLOW MASK's draws
                         #   (addGlowMask, X3.6d): queued FIRST in GlowPass's
                         #   mask when told it opened (glowMaskOpened), off the
                         #   main pass's frame, refused unless GLOW_TARGETS
@@ -2531,7 +2536,7 @@ src/
                         #   decides nothing about what blooms, owns no mask;
                         #   lose() hands the palette back and tells onLost (the
                         #   handover drops its main pass too), a failed
-                        #   pipeline latches it broken (usable false)
+                        #   mask pipeline latches it broken for the session
     WorldShadows.ts     # The world's four directional maps as OUR textures
                         #   (far, near, foliage, flash): made cleared to lit,
                         #   drawn when ShadowSystem asks, recorded ahead of
@@ -2561,7 +2566,9 @@ src/
                         #   whole; stop() for good. The PALETTE layer
                         #   (addEmissive, a group a material: the main pass
                         #   by the bake's pipelines, mainPalette, asked once
-                        #   at the cut; the probes' bake; the glow's mask),
+                        #   at the cut, whose failure hands no group back but
+                        #   tells onPaletteFailed; the probes' bake; the
+                        #   glow's mask),
                         #   then the HELD casters for the shadow maps alone
                         #   (addCaster), cut last, the palette inside the
                         #   main view's count and the casters its tail,

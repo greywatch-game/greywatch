@@ -5,14 +5,17 @@
  * `GlowPass` draws their bloom with. BOTH are the FALLBACK since X3.6e (the
  * twin since X3.6d): whenever the handover holds the whole palette, our
  * renderer draws it in the main pass (`render/WorldBlocks.ts`) and its mask
- * (`render/WorldGlow.ts`), over the same bodies, and no palette mesh is a
- * candidate for Babylon's frame; both are drawn for an editor build,
+ * (`render/WorldGlow.ts`), over the same bodies (`BlockHandover` says what
+ * that keeps out of Babylon's lists); both are drawn for an editor build,
  * `?babylonworld`, a map whose palette ours cannot hold whole, a failed mask
- * pipeline (for the session) and a loss mid-map — when both compile in the
- * round, the warm-up never having drawn them.
+ * pipeline (for the session) and after a loss mid-map — and only that last
+ * compiles them in the round, the palette being a candidate from the install
+ * on every other, which the warm-up draws: ONE frame's hitch, measured, with
+ * no frame missing its lit windows (`BABYLON_EXIT.md` X3.6e).
  * Owns: Babylon's declarations of both WGSL stages (their bodies are
- * `wgsl/emissiveWorld.ts`'s, which a probe's bake on our renderer draws too)
- * and `EmissiveWorldMaterial` (`MAX_EMISSIVE_PALETTE` is the bodies' module's).
+ * `wgsl/emissiveWorld.ts`'s, which our renderer draws in the main pass, the
+ * glow's mask and a probe's bake) and `EmissiveWorldMaterial`
+ * (`MAX_EMISSIVE_PALETTE` is the bodies' module's).
  * Is fed the fog and the palette by `CelMaterialFactory`, which is the only
  * thing that makes one (`getEmissiveWorld`), and the palette itself is
  * discovered by `MapBuilder`'s block merge.
@@ -23,9 +26,9 @@
  * of a reflection bake. Its EYE is the cel materials' `camPos`, never
  * `ShaderMaterial`'s `cameraPosition` (see WHY ITS OWN EYE). The
  * mask twin runs the SAME vertex function, which is what lets its LEQUAL test
- * tie against the depth the main pass wrote, and carries the same polygon
- * offset — and so does our renderer's mask, whose tie against this
- * material's depth rests on the same text (`wgsl/emissiveWorld.ts`). Never
+ * tie against the depth this material wrote, and carries the same polygon
+ * offset; our renderer's mask ties against OUR main pass's palette, never
+ * against this material, the two going back to Babylon together. Never
  * given a vertex colour buffer (`vertexShading` skips it). Never worn by
  * anything but a merge: every vertex it draws carries a slot.
  *
