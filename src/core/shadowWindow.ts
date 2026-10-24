@@ -1,11 +1,17 @@
 /**
  * shadowWindow.ts — where a directional shadow camera STANDS, and the texel
- * snap that stops its edges crawling. Owns the light's own cross-axis basis
- * and the last snapped focus; owns no light, no generator and no render target,
- * and never renders anything.
+ * snap that stops its edges crawling — and the two Babylon textures every
+ * shadow reader may be bound to that no generator renders: the LIT texture
+ * a map switched off reads (`litShadowTexture`), and Babylon's wrapped VIEW
+ * of a shadow texture our renderer owns (`wrapShadowTexture`), which both
+ * `ShadowSystem` and `LocalShadows` hand their readers. Owns the light's own
+ * cross-axis basis and the last snapped focus; owns no light, no generator
+ * and no render target, and never renders anything.
  * Invariants: `place` writes `light.position` and nothing else on the light —
  * the frustum side, the depth range and the refresh schedule all belong to
- * whoever owns the generator. Contract: `docs/rendering.md`.
+ * whoever owns the generator; a wrapped view is disposed only with the
+ * texture it wraps, which disposing it destroys. Contract:
+ * `docs/rendering.md`.
  *
  * **There are THREE shadow maps in this game and this is the arithmetic they
  * share**, which is the whole reason it is a module rather than a method (the

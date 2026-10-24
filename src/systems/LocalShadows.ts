@@ -5,9 +5,10 @@
  * frame's work (which tiles are cleared, which static faces baked, the
  * proxies every moving shadow is drawn as), the per-slot cone/tile arrays the
  * shaders read (written into `ShadowBindings`' own arrays, which every
- * `celShadow` consumer holds by reference), and — while the atlas is
- * Babylon's — its render target, the proxy mesh and the passes that draw it,
- * or — while it is our renderer's — Babylon's wrapped view of it. Owns no
+ * `celShadow` consumer holds by reference), the proxy mesh and its arrays
+ * (kept whichever side holds the atlas: they are `AtlasWork`'s too), and —
+ * while the atlas is Babylon's — its render target and the passes that draw
+ * it, or — while it is our renderer's — Babylon's wrapped view of it. Owns no
  * light — `LightingSystem` decides which lights exist and which won a slot,
  * and this decides only which of THOSE cast.
  * Invariants:
@@ -279,7 +280,11 @@ export class LocalShadows {
   private ours = false;
   /** Babylon's view of our renderer's atlas, while it is ours and has one. */
   private wrapped: BaseTexture | null = null;
-  /** The atlas has been stood up at `tier` by whichever side holds it. */
+  /**
+   * The atlas has been stood up once — false only until the constructor's
+   * `setQuality`, which must stand it up even at a rung equal to `tier`'s
+   * starting value.
+   */
   private standing = false;
   private tier: (typeof CONFIG.graphics.localShadows.tiers)[ShadowQuality] =
     CONFIG.graphics.localShadows.tiers.off;
@@ -470,7 +475,7 @@ export class LocalShadows {
   private handOver(ours: boolean): void {
     if (ours === this.ours) return;
     this.ours = ours;
-    if (this.standing) this.remake();
+    this.remake();
   }
 
   /**
@@ -678,8 +683,13 @@ export class LocalShadows {
   ): void {
     // Work our renderer never recorded — a frame that prepared nothing — was
     // counted baked and drawn when it was laid out, so every light gives its
-    // tiles back and starts again rather than publishing a tile nobody drew.
-    if (this.ours && this.lamps.owed) this.releaseAll();
+    // tiles back and starts again rather than publishing a tile nobody drew;
+    // the work is dropped too, or a later frame would draw it into tiles now
+    // free, mid-refill.
+    if (this.ours && this.lamps.owed) {
+      this.lamps.drop();
+      this.releaseAll();
+    }
     this.frame++;
     this.bakeQueue.length = 0;
     this.drawDynamic = false;

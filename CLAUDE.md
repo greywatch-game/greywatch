@@ -544,7 +544,8 @@ handover holds EVERY caster** (`render/WorldShadows.ts`; Babylon's readers
 sample a wrapped view), and `ShadowSystem`'s generators otherwise — the
 editor, `?babylonworld`, a caster lost mid-map — so **a new world caster must
 be one the handover can hold (block-merged, at identity, never
-`updatable`) or the whole map's shadows go back to Babylon**.
+`updatable`) or the whole map's shadows go back to Babylon** — BLENDED OR
+NOT, since the lamps' atlas casts every surface not `noShadowCaster`.
 
 **THE LAMPS CAST INTO ONE ATLAS** (`systems/LocalShadows.ts`), **a light casts
 by what it SAYS** (`PointLightData.shadow`), and the bumped ground variant is at

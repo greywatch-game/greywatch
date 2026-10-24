@@ -33,7 +33,9 @@
  * when a wrapped view of it is disposed, so whoever wraps one lets the view
  * go only with the texture it wraps (`LocalShadows.remake`); `ready` is
  * false until the proxies' pipeline and the casters are built, and
- * `LocalShadows` shadows no light until it is true; nothing here allocates
+ * `LocalShadows` shadows no light until it is true — a pipeline that FAILS
+ * loses the casters and takes none again, so the atlas goes back to
+ * Babylon's render target rather than dark; nothing here allocates
  * on a frame but the passes WebGPU makes.
  * Never: imports Babylon; reads a node; decides a face or a tile.
  * Contract: `docs/rendering.md`, "The lamps' shadows" and "Our renderer's
@@ -102,9 +104,15 @@ export class LampAtlas {
   private tilesPerRow = 0;
   private colour: GPUTexture | null = null;
   private depthTexture: GPUTexture | null = null;
-  /** A tile of the far value, copied over every tile a frame clears. */
+  /**
+   * A tile of the far value, copied over every tile a frame clears, as one
+   * copy's three descriptors — made with the atlas, the origin moved a tile.
+   */
   private far: GPUBuffer | null = null;
-  private farRow = 0;
+  private farCopy: GPUTexelCopyBufferInfo | null = null;
+  private readonly tileOrigin = { x: 0, y: 0 };
+  private tileCopy: GPUTexelCopyTextureInfo | null = null;
+  private readonly tileSize = { width: 0, height: 0 };
   /** Every pass but the clears: the atlas kept, the depth cleared. */
   private pass: GPURenderPassDescriptor | null = null;
 
@@ -137,6 +145,8 @@ export class LampAtlas {
 
   /** The proxies' pipeline once built, and their buffers. */
   private proxyPipeline: BuiltPipeline | null = null;
+  /** The proxies' pipeline did not build: the atlas can never be ours, and no caster is taken for it. */
+  private failed = false;
   private readonly boxPositions: GPUBuffer;
   private readonly proxyMatrices: GPUBuffer;
   private readonly proxyTiles: GPUBuffer;
@@ -154,6 +164,13 @@ export class LampAtlas {
   /** The frame's work, queued and not yet recorded. */
   private work: AtlasWork | null = null;
   private readonly unhook: () => void;
+
+  /**
+   * Whether the shadow rung draws an atlas at all, whoever holds it — stated
+   * by `LocalShadows.setQuality`, which alone knows the rung. With none,
+   * casters would be held for it for nothing.
+   */
+  rungDraws = true;
 
   constructor(
     renderer: Renderer,
@@ -246,7 +263,12 @@ export class LampAtlas {
         (built) => {
           this.proxyPipeline = built;
         },
-        (err: unknown) => console.error("lamp atlas: the proxies' pipeline did not build; the lamps cast nothing", err),
+        (err: unknown) => {
+          // Babylon's render target can still draw every pass: hand it back.
+          console.error("lamp atlas: the proxies' pipeline did not build; the atlas stays Babylon's", err);
+          this.failed = true;
+          this.lose();
+        },
       );
     this.unhook = renderer.onFrame(this.prepare);
   }
@@ -269,13 +291,6 @@ export class LampAtlas {
   get owed(): boolean {
     return this.work !== null;
   }
-
-  /**
-   * Whether the shadow rung draws an atlas at all, whoever holds it — stated
-   * by `LocalShadows.setQuality`, which alone knows the rung. With none,
-   * casters would be held for it for nothing.
-   */
-  rungDraws = true;
 
   /** The atlas, or null while it has none — what a Babylon reader is handed a wrapped view of. */
   get texture(): GPUTexture | null {
@@ -300,6 +315,8 @@ export class LampAtlas {
     this.colour = null;
     this.depthTexture = null;
     this.far = null;
+    this.farCopy = null;
+    this.tileCopy = null;
     this.pass = null;
     this.own.view = null;
     this.own.sampler = null;
@@ -325,16 +342,20 @@ export class LampAtlas {
       usage: GPUTextureUsage.RENDER_ATTACHMENT,
     });
     // One tile of the far value, its rows padded to what a copy takes.
-    this.farRow = Math.ceil((tile * 2) / ROW_ALIGN) * ROW_ALIGN;
+    const farRow = Math.ceil((tile * 2) / ROW_ALIGN) * ROW_ALIGN;
     const far = device.createBuffer({
       label: "lamp atlas: far tile",
-      size: this.farRow * tile,
+      size: farRow * tile,
       usage: GPUBufferUsage.COPY_SRC,
       mappedAtCreation: true,
     });
     new Uint16Array(far.getMappedRange()).fill(HALF_ONE);
     far.unmap();
     this.far = far;
+    this.farCopy = { buffer: far, bytesPerRow: farRow };
+    this.tileCopy = { texture: colour, origin: this.tileOrigin };
+    this.tileSize.width = tile;
+    this.tileSize.height = tile;
     const view = colour.createView();
     this.own.view = view;
     this.own.sampler = this.sampler;
@@ -359,9 +380,10 @@ export class LampAtlas {
    * The casters the static faces are drawn from from now on, at the culls'
    * slots from `firstSlot` (past the world's maps'), or null when the atlas
    * is not ours. Their build is waited on here; one that fails is LOST
-   * (`onLost`).
+   * (`onLost`). None are taken once the proxies' pipeline has failed.
    */
   setCasters(depth: WorldDepth | null, firstSlot: number): void {
+    if (this.failed) depth = null;
     this.generation++;
     this.depth = depth;
     this.built = false;
@@ -399,6 +421,11 @@ export class LampAtlas {
     this.work = work;
   }
 
+  /** Drops work no frame recorded (`owed`), whose tiles were given back: nothing is drawn into them. */
+  drop(): void {
+    this.work = null;
+  }
+
   dispose(): void {
     this.unhook();
     this.setCasters(null, 0);
@@ -415,8 +442,9 @@ export class LampAtlas {
     const work = this.work;
     this.work = null;
     const pass = this.pass;
-    const colour = this.colour;
-    if (!work || !pass || !colour || !this.ready) return;
+    const farCopy = this.farCopy;
+    const tileCopy = this.tileCopy;
+    if (!work || !pass || !farCopy || !tileCopy || !this.ready) return;
     const tiles = this.tilesPerRow * this.tilesPerRow;
     let cleared = false;
     for (let t = 0; t < tiles && !cleared; t++) cleared = work.clear[t] > 0.5;
@@ -433,12 +461,9 @@ export class LampAtlas {
     for (let t = 0; t < tiles; t++) {
       if (work.clear[t] <= 0.5) continue;
       const row = Math.floor(t / this.tilesPerRow);
-      const col = t - row * this.tilesPerRow;
-      encoder.copyBufferToTexture(
-        { buffer: this.far!, bytesPerRow: this.farRow },
-        { texture: colour, origin: { x: col * tile, y: row * tile } },
-        { width: tile, height: tile },
-      );
+      this.tileOrigin.x = (t - row * this.tilesPerRow) * tile;
+      this.tileOrigin.y = row * tile;
+      encoder.copyBufferToTexture(farCopy, tileCopy, this.tileSize);
     }
 
     const depth = this.depth!;

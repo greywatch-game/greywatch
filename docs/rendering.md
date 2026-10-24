@@ -3165,8 +3165,9 @@ follow:
   one left changed is Babylon's next draws drawn with it.
 
 **The main pass is told apart by its TARGET, not by the group.** Every
-shadow map, probe face, the lamps' atlas and the glow draw rendering group
-0 too, each into its own target. The frame's target is the one bound as
+probe face, the glow, and every shadow pass Babylon still draws (the
+bodies' map, and the world's maps and the lamps' atlas on the path that
+keeps them Babylon's) draw rendering group 0 too, each into its own target. The frame's target is the one bound as
 `onBeforeDrawPhaseObservable` fires (the post chain binds it just before),
 and a group counts only if it finishes into that same target before the
 draw phase ends (`FrameHost.onMainPass`). **The window alone is not

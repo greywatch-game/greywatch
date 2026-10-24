@@ -2076,8 +2076,8 @@ plain draw and, with scatter, its one indirect draw, a pass.
   - X3.6b, the lamps' atlas, holds `map.visuals` the same way: the caster
     groups and the pass mask are its to extend.
 
-**X3.6b landed** (the commit carrying this record, the post-commit review's
-fixes after it; 2026-10-23).
+**X3.6b landed** (5b31851, the post-commit review's fixes after it;
+2026-10-23).
 - **What it is.** The lamps' atlas is a texture our renderer OWNS
   (`render/LampAtlas.ts`, an `r16float` colour as Babylon's render target's
   was, and a `depth32float` attachment) and draws EVERY pass
@@ -2161,6 +2161,32 @@ fixes after it; 2026-10-23).
     stall killed matching one, on both trees (the BEFORE's Cinderhaven bank
     2 of 3, its Hollowmere census 3 of 3), so every GPU instrument above ran
     one map a process with retries, and nothing is the step's.
+- **What the post-commit review found** (an independent reader over
+  5b31851; fixed after it): the tile clears built four descriptor objects a
+  copy, a frame (now three made with the atlas, the origin moved a tile);
+  a proxies' pipeline that failed to build left `ready` false for good, so
+  every lamp went unshadowed with Babylon's render target sitting idle (it
+  now loses the casters and takes none again: the atlas is Babylon's);
+  work no frame recorded stayed queued across an `update` that returned
+  early, and a later frame could draw it, mid-refill, into tiles just given
+  back — unread, every tile being cleared before it is published, but
+  wrong (it is dropped with the tiles now); `shadowWindow.ts`'s header
+  never named the two textures it makes; a comment that a shadow cull uses
+  no reach, which a lamp face's does; a guard in `LocalShadows.handOver`
+  that could not fail; `LocalShadows`' header saying the proxy mesh is
+  kept only on Babylon's side; a line of `docs/rendering.md` naming the
+  atlas and the world's maps among Babylon's group-0 passes, stale since
+  X3.6a; and CLAUDE.md's rule for a new world caster,
+  which now says blended or not, since `PASS_LAMPS` makes a blended
+  caster the handover cannot hold cost the world's maps too. Kept as they
+  are: the atlas-sized depth attachment cleared by every pass (a copy
+  cannot write `depth32float`, and Babylon's clear sheet reset it a tile a
+  pass), and the prepare hooked for the atlas's life (one early return a
+  frame, where `WorldShadows` hooks while its casters are built).
+  Re-checked after the fixes: the readback on Harrowmead and Hollowmere,
+  every count as before them; the paths above on Hollowmere and
+  Coldharbour, 14 of 14 each, no page or console error. A failed proxies'
+  pipeline was not forced.
 - **Owed onward.**
   - The atlas's passes are not timed on our side (not in `gpu.cull`, and
     `shadowPass` brackets only Babylon's generators); the phone's FOLLOW-UP

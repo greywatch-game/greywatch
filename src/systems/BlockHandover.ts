@@ -252,8 +252,10 @@ export class BlockHandover {
     this.reported = false;
     this.fileTaken(meshes);
     // A caster held for the shadows alone is not taken, so the cull has no
-    // reach box for it — and needs none: no main pass draws it, and a shadow
-    // pass's cull measures from the light, past every box.
+    // reach box for it, and is never reach-culled: no main pass draws it, the
+    // world's maps cull by no reach, and a lamp face (which reaches only its
+    // light's range) draws one past it, which the face's far plane clips or
+    // stores as a distance over 1 — lit, as no caster at all would read.
     const boxes: BlockBox[] = meshes.map((mesh) =>
       this.castersOnly.has(mesh) ? NO_REACH : this.culling.reachBoxOf(mesh),
     );
