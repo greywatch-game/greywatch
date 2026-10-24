@@ -12,9 +12,9 @@
  * mesh of Babylon's is queued), and a mesh drawn there by someone else is left
  * out of the list on the frames they mean to draw it (`GlowRules
  * .drawnElsewhere`; a pass of theirs refused after this list is built
- * leaves that one frame without it) — so this file imports nothing of `src/render/` and knows
- * no more than that a mesh is someone else's this frame; and every Babylon
- * call is public API.
+ * leaves that one frame without it) — so this file imports nothing of
+ * `src/render/` and knows no more than that a mesh is someone else's this
+ * frame; and every Babylon call is public API.
  *
  * WHAT IT REPLACED, AND WHY. The bloom was a `GlowLayer` with `GlowDepth`
  * bolted on from the outside. The layer is built to own four things — its
@@ -92,8 +92,8 @@
  * draw, and first keeps that order — and this pass leaves those meshes out of
  * its list (`drawnElsewhere`), so the palette's twin below is the FALLBACK:
  * an editor build, `?babylonworld`, a palette surface ours cannot hold or one
- * marked `noGlow`, and a loss mid-map. Everything else in the mask is still
- * drawn here.
+ * marked `noGlow`, a failed mask pipeline (for the session) and a loss
+ * mid-map. Everything else in the mask is still drawn here.
  *
  * A MATERIAL WHOSE VERTICES MOVE BRINGS ITS OWN MASK (`SelfMasking`). The
  * stock variants transform by `world` and `viewProjection` alone, so a surface
@@ -271,7 +271,7 @@ export interface GlowRules {
    * is left out of the list. Asked once per emissive mesh per frame, before
    * `admits`; a mesh left out is never dressed.
    */
-  drawnElsewhere(mesh: AbstractMesh, material: Material): boolean;
+  drawnElsewhere(mesh: AbstractMesh): boolean;
 }
 
 /**
@@ -560,7 +560,7 @@ export class GlowPass {
       const e = material?.emissiveColor;
       if (!material || !e || (e.r <= 0 && e.g <= 0 && e.b <= 0)) continue;
       // Drawn into this mask by our renderer this frame (`render/WorldGlow.ts`).
-      if (this.rules.drawnElsewhere(mesh, material)) continue;
+      if (this.rules.drawnElsewhere(mesh)) continue;
       if (mesh.metadata?.noGlow === true) continue;
       if (!this.rules.admits(mesh)) continue;
       if (import.meta.env.DEV && !this.warnedInstances && (mesh as Mesh).hasInstances) {

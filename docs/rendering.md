@@ -3302,8 +3302,8 @@ refusing a pass that is not with the main pass's rule and listeners of its own
 and it binds the main pass's group 0: the mask is drawn from the same camera,
 in the same submit, so the frame block written once for the main pass is the
 mask's too. `begin` fills the frame when either pass has a draw, and a
-`FramePrepare` reads `Renderer.context` to ask whether a draw can bind this
-frame (`WorldGlow`'s verdict).
+`FramePrepare` is handed the `FrameContext` (its fourth argument) to ask
+whether a draw can bind this frame (`WorldGlow`'s verdict).
 
 **A draw lands at one of THREE points of rendering group 0** (`DrawPoint`),
 all before the viewmodel's group, whose auto-clear `Game` turns off, so the
@@ -3878,12 +3878,13 @@ light's matrix over.
   merges, which keep no recipe) is held for the shadow maps ALONE
   (`WorldBlocks.addCaster`: positions only, in the HELD layer cut after
   every other, the casters' group LAST of all, which the main pass's cull
-  leaves out as a tail and nothing draws in the main pass). Only when EVERY caster is held are the casters
-  handed to `WorldShadows` (`setCasters`); one it cannot hold — not block
-  merged, not at identity, `updatable` — leaves the whole map's shadows to
-  the generators, as an editor build and `?babylonworld` do. Half a map
-  drawn by each side would be the order of two renderers deciding one depth
-  test, and a caster drawn by neither a hole.
+  leaves out as a tail and nothing draws in the main pass). Only when EVERY
+  caster is held are the casters handed to `WorldShadows` (`setCasters`);
+  one it cannot hold — not block merged, not at identity, `updatable` —
+  leaves the whole map's shadows to the generators, as an editor build and
+  `?babylonworld` do. Half a map drawn by each side would be the order of
+  two renderers deciding one depth test, and a caster drawn by neither a
+  hole.
 - **A caster handed back LOSES the maps to Babylon for the rest of the map**
   (`WorldShadows.lose`): a group's or a cull's failure, or a refused main
   pass. The hand-over runs after the task in hand (`queueMicrotask`),
@@ -4464,8 +4465,9 @@ all in the counter this finding is named after. Not chased.
   X3.6d; "The palette's mask, ours", under "The glow: what the depth share
   replaced", below). **The mask stays this pass's**: ours draws INTO it, FIRST,
   as its pass opens (`GlowPass.onMaskOpenObservable`, from inside the clear),
-  and `GlowPass` leaves the palette's meshes out of its list on exactly the
-  frames ours draws them (`GlowRules.drawnElsewhere`) — so the palette's twin
+  and `GlowPass` leaves the palette's meshes out of its list on the frames
+  ours means to draw them (`GlowRules.drawnElsewhere`; a refused mask pass
+  leaves its one frame to neither) — so the palette's twin
   (`EmissiveWorld.ts`) is the FALLBACK. **Two ways to send it back that a
   builder can reach**: a palette surface the handover cannot hold, and a
   palette surface marked `noGlow` — read at the TAKE, as `noShadowCaster` is,
@@ -5088,8 +5090,8 @@ handover holds the whole palette, our renderer draws the palette's mask
 (`render/WorldGlow.ts`, the same body under `GLOW_MASK`, through the main
 pass's view of the culls) and `GlowPass` never dresses a palette mesh in the
 twin — it is drawn for an editor build, `?babylonworld`, a palette ours cannot
-hold whole, and a loss mid-map ("The palette's mask, ours", under the glow,
-below). The palette's MAIN-pass draw is still this material's on every path.
+hold whole, a failed mask pipeline (for the session) and a loss mid-map ("The
+palette's mask, ours", under the glow, below). The palette's MAIN-pass draw is still this material's on every path.
 
 **The bloom is the one thing that changed, and it changed toward the wall.**
 `GlowRules.colour` fades a bloom by the fog at a mesh's bounding-sphere centre,
@@ -5521,9 +5523,12 @@ lands exactly where that pass's draw of the same vertex landed.
   frame and the main pass, which has no recipe for them, never draws them.
   **They are never SIZE-GATED** (`PASS_GLOW`): Babylon never gated an emissive
   mesh (`WorldCulling`'s `glows`), and a lamp lens a few pixels across is what
-  a bloom is for. They keep no reach box: a palette cluster past the reach is
-  past the emissive fog band's end, where the mask's pixel is the clear's own
-  `(0, 0, 0, 1)`, so the reach cannot move a texel.
+  a bloom is for. They keep no reach box either (`NO_REACH`, as every HELD
+  surface: the handover files only what the main pass draws), where Babylon's
+  twin, a block, is reach-culled as a candidate: harmless, because a palette
+  cluster past that reach is past the emissive fog band's end, where the
+  mask's pixel is the clear's own `(0, 0, 0, 1)`, so the reach cannot move a
+  texel.
 - **How: the mask twin's program in the pulled form**
   (`emissiveWorld(GLOW_TARGETS, true)`): the one body under `GLOW_MASK`, one
   pipeline a palette bias (plain and over-glass: at most two draws a frame), no

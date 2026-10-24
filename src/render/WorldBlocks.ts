@@ -149,10 +149,11 @@ import {
   type EmissiveRecipe,
 } from "./emissiveWorld";
 import type { FrameUniforms } from "./frame";
+import type { PassTargets } from "./frameHost";
 import { HostBindGroup } from "./HostBindGroup";
 import { InstanceCull } from "./InstanceCull";
 import type { PassTiming } from "./PassTimer";
-import type { BuiltPipeline } from "./PipelineCache";
+import type { BuiltPipeline, PipelineState } from "./PipelineCache";
 import type { ProbeWorld } from "./ProbeBake";
 import type { FrameContext, Renderer } from "./Renderer";
 import {
@@ -206,7 +207,7 @@ interface Program {
 interface Surface {
   geometry: SurfaceArrays;
   pieces: readonly PieceSpan[];
-  /** The passes it is drawn in beside the main one (`PASS_CASTS`, `PASS_SOLID`, `PASS_LAMPS`, `PASS_PROBE`). */
+  /** The passes it is drawn in beside the main one (`PASS_CASTS`, `PASS_SOLID`, `PASS_LAMPS`, `PASS_PROBE`, `PASS_GLOW`). */
   readonly passes: number;
   /** Its block (`blockKey`), which a probe's view leaves out by; `NO_BLOCK` for the landform. */
   readonly key: number;
@@ -447,9 +448,11 @@ export class WorldBlocks {
   /**
    * Hands over one surface of the emissive PALETTE (its material's `recipe`),
    * which no main pass of ours draws: held with its positions and its slots,
-   * cut after every other group's, for the passes `passes` names — a probe's
-   * faces (`PASS_PROBE`, drawn by `render/emissiveWorld.ts`) and any shadow
-   * pass it casts in. Its index is the surface's, as `add`'s.
+   * cut after every drawn group's and AHEAD of the held casters (`cutRank`),
+   * so inside the count the main view culls, for the passes `passes` names —
+   * a probe's faces (`PASS_PROBE`, drawn by `render/emissiveWorld.ts`), the
+   * glow's mask (`PASS_GLOW`, drawn through the main view: `glowView`) and
+   * any shadow pass it casts in. Its index is the surface's, as `add`'s.
    */
   addEmissive(
     label: string,
@@ -609,7 +612,7 @@ export class WorldBlocks {
       this.ask(group);
     }
     this.mainView = { cull: this.cull, instances: this.instances, geometry: this.groups.map((g) => g.geometry) };
-    const casterLost = this.groups.some((g) => g.failed && ((g.surfacePasses | g.scatterPasses) & SHADOW_PASSES) !== 0);
+    const casterLost = this.groups.some((g) => g.failed && drawsIn(g, SHADOW_PASSES));
     if (shadowSlots > 0 && !casterLost) {
       this.worldDepth = new WorldDepth(
         this.renderer,
@@ -1145,37 +1148,14 @@ export class WorldBlocks {
     });
     const view: DrawView = { cull: clusters, instances, geometry };
     // The palette's pipeline, by its material's depth bias.
-    const emissive = new Map<number, BuiltPipeline | null>();
-    const asks: Promise<boolean>[] = [clusters.ready];
+    const { built: emissive, asks } = this.palettePipelines(
+      emissiveWorld(FRAME_TARGETS),
+      FRAME_TARGETS,
+      (bias) => (bias === 0 ? undefined : { depthBias: bias }),
+      "world blocks: the emissive palette's pipeline did not build; the probes' bake goes back to Babylon",
+    );
+    asks.push(clusters.ready);
     if (instances) asks.push(instances.ready);
-    const program = emissiveWorld(FRAME_TARGETS);
-    for (const group of this.groups) {
-      if (!group.emissive || group.failed) continue;
-      const bias = group.emissive.recipe.depthBias;
-      if (emissive.has(bias)) continue;
-      emissive.set(bias, null);
-      asks.push(
-        pipelines
-          .get({
-            vertex: program.vertex,
-            vertexEntry: "main",
-            fragment: program.fragment,
-            fragmentEntry: "main",
-            targets: FRAME_TARGETS,
-            state: bias === 0 ? undefined : { depthBias: bias },
-          })
-          .then(
-            (built) => {
-              emissive.set(bias, built);
-              return true;
-            },
-            (err: unknown) => {
-              console.error("world blocks: the emissive palette's pipeline did not build; the probes' bake goes back to Babylon", err);
-              return false;
-            },
-          ),
-      );
-    }
     let disposed = false;
     const world: ProbeWorld = {
       ready: Promise.all(asks).then(
@@ -1225,40 +1205,19 @@ export class WorldBlocks {
     const palettes: Group[] = [];
     for (const group of this.groups) if (group.emissive && !group.failed) palettes.push(group);
     if (palettes.length === 0) return null;
-    const pipelines = this.renderer.pipelines;
-    const program = emissiveWorld(GLOW_TARGETS, true);
     // The mask's pipeline, by its material's depth bias: at most two.
-    const built = new Map<number, BuiltPipeline | null>();
-    const asks: Promise<boolean>[] = [];
-    for (const group of palettes) {
-      const bias = group.emissive!.recipe.depthBias;
-      if (built.has(bias)) continue;
-      built.set(bias, null);
-      asks.push(
-        pipelines
-          .get({
-            vertex: program.vertex,
-            vertexEntry: "main",
-            fragment: program.fragment,
-            fragmentEntry: "main",
-            targets: GLOW_TARGETS,
-            // No depth written: every pixel's depth is the main pass's, which
-            // Babylon's palette wrote at this same bias.
-            state: bias === 0 ? { depthWrite: false } : { depthWrite: false, depthBias: bias },
-          })
-          .then(
-            (pipeline) => {
-              built.set(bias, pipeline);
-              return true;
-            },
-            (err: unknown) => {
-              console.error("world blocks: the glow mask's palette pipeline did not build; the mask goes back to Babylon", err);
-              return false;
-            },
-          ),
-      );
-    }
+    const { built, asks } = this.palettePipelines(
+      emissiveWorld(GLOW_TARGETS, true),
+      GLOW_TARGETS,
+      // No depth written: every pixel's depth is the main pass's, which
+      // Babylon's palette wrote at this same bias.
+      (bias) => (bias === 0 ? { depthWrite: false } : { depthWrite: false, depthBias: bias }),
+      "world blocks: the glow mask's palette pipeline did not build; the mask goes back to Babylon",
+    );
     const recipes = palettes.map((g) => g.emissive!.recipe);
+    // One object a view, refilled for each write: a bloom colour that moves
+    // every frame allocates nothing.
+    const values = { glowColor: new Float32Array(4) };
     let disposed = false;
     const world: GlowWorld = {
       ready: Promise.all(asks).then(
@@ -1270,7 +1229,9 @@ export class WorldBlocks {
       drawable: (group0) => !disposed && this.culling && this.drawableIn(group0, main, built, PASS_GLOW),
       draw: (pass, group0) => (disposed || !this.culling ? 0 : this.drawHeld(pass, group0, main, built, PASS_GLOW)),
       writeColour: (k, colour) => {
-        if (!disposed) palettes[k].emissive!.block.write({ glowColor: colour });
+        if (disposed) return;
+        values.glowColor.set(colour);
+        palettes[k].emissive!.block.write(values);
       },
       dispose: () => {
         if (disposed) return;
@@ -1280,6 +1241,53 @@ export class WorldBlocks {
     };
     this.glowViews.add(world);
     return world;
+  }
+
+  /**
+   * The emissive palette's pipelines for one held pass — `program` into
+   * `targets`, each built with `state(bias)` — one a depth bias among the
+   * palette groups still whole (at most two): `built` maps a bias to its
+   * pipeline, null until it lands, and `asks` holds one promise a bias, true
+   * once built and false, `failure` logged, if it failed. The ONE place a
+   * view asks for them (`probeView`, `glowView`).
+   */
+  private palettePipelines(
+    program: { vertex: AssembledVertex; fragment: AssembledModule },
+    targets: PassTargets,
+    state: (bias: number) => PipelineState | undefined,
+    failure: string,
+  ): { built: Map<number, BuiltPipeline | null>; asks: Promise<boolean>[] } {
+    const pipelines = this.renderer.pipelines;
+    const built = new Map<number, BuiltPipeline | null>();
+    const asks: Promise<boolean>[] = [];
+    for (const group of this.groups) {
+      if (!group.emissive || group.failed) continue;
+      const bias = group.emissive.recipe.depthBias;
+      if (built.has(bias)) continue;
+      built.set(bias, null);
+      asks.push(
+        pipelines
+          .get({
+            vertex: program.vertex,
+            vertexEntry: "main",
+            fragment: program.fragment,
+            fragmentEntry: "main",
+            targets,
+            state: state(bias),
+          })
+          .then(
+            (pipeline) => {
+              built.set(bias, pipeline);
+              return true;
+            },
+            (err: unknown) => {
+              console.error(failure, err);
+              return false;
+            },
+          ),
+      );
+    }
+    return { built, asks };
   }
 
   /**
@@ -1297,7 +1305,7 @@ export class WorldBlocks {
     const groups = this.groups;
     for (let g = 0; g < groups.length; g++) {
       const group = groups[g];
-      if (group.failed || ((group.surfacePasses | group.scatterPasses) & passBit) === 0) continue;
+      if (group.failed || !drawsIn(group, passBit)) continue;
       if (group.emissive) {
         if (group.indexCount === 0) continue;
         const built = emissive.get(group.emissive.recipe.depthBias);
@@ -1434,7 +1442,7 @@ export class WorldBlocks {
     for (let g = 0; g < groups.length; g++) {
       const group = groups[g];
       const own = group.emissive;
-      if (!own || group.failed || group.indexCount === 0 || (group.surfacePasses & passBit) === 0) continue;
+      if (!own || group.failed || group.indexCount === 0 || !drawsIn(group, passBit)) continue;
       const built = emissive.get(own.recipe.depthBias);
       if (!built || !this.groupsFor(group, built, group.geometry, group0)) continue;
       this.use(pass, built);
@@ -1443,6 +1451,15 @@ export class WorldBlocks {
     }
     return drawn;
   }
+}
+
+/**
+ * Whether anything of `group` — a surface or an instanced part — is drawn in
+ * a pass of `passBits`: the ONE test of a group's passes, for every view
+ * (`drawableIn`, `drawHeld`) and for the shadows' handback at the cut.
+ */
+function drawsIn(group: Group, passBits: number): boolean {
+  return ((group.surfacePasses | group.scatterPasses) & passBits) !== 0;
 }
 
 /** `cutRank` of the held casters' group: the tail no main view counts. */

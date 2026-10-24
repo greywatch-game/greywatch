@@ -2363,7 +2363,8 @@ its one indirect draw, a pass.
     X3.3c: the bake is under the loading card, so it is read as the card's
     length, not the frame.
 
-**X3.6d landed** (2026-10-24).
+**X3.6d landed** (6dc5122, the post-commit review's fixes after it;
+2026-10-24).
 - **What it is.** The emissive palette's share of the glow's MASK is drawn by
   OUR renderer (`render/WorldGlow.ts`) whenever the handover holds the WHOLE
   palette, and `GlowPass` leaves those meshes out of its list on the frames
@@ -2399,9 +2400,13 @@ its one indirect draw, a pass.
   last, the main view's count runs through the palette, the main pass (which
   has no recipe for them) never draws them, and a palette cluster is never
   SIZE-GATED (`PASS_GLOW`, mirrored in the CPU replay and `cullProbe`), as
-  Babylon never gated an emissive. No reach: past it the mask's pixel is the
-  clear's own. Its memory is the main view's per-cluster scratch for the
-  palette's clusters, a few KB.
+  Babylon never gated an emissive. No reach (`NO_REACH`, as every held
+  surface, where Babylon's twin is reach-culled as a block): past that reach
+  the mask's pixel is the clear's own. Its memory is the main view's
+  per-cluster scratch for the palette's clusters, a few KB — counted at EVERY
+  cut, even on a map whose palette mask goes back to `GlowPass`, where they
+  are scanned and never drawn; kept, as the price of one cut whatever the
+  handover decides.
 - **The program** is the twin's in the pulled form (`emissiveWorld(GLOW_TARGETS,
   true)`, the one body under `GLOW_MASK`), `glowColor` appended LAST to the
   palette's block so the bake's program reads a prefix and one bind group
@@ -2456,17 +2461,17 @@ its one indirect draw, a pass.
     Coldharbour in a round: 0 disagreements.
   - **X0.3 on the desktop** (`bench.mjs`'s run, `--max --gpu`, uncapped,
     3440x1440, BEFORE in the worktree and AFTER alternated run by run, three a
-    side, on Coldharbour, Cinderhaven and Hollowmere, where the palette is;
-    the canonical fight hashes on all 18 runs, no hang): the mean frame new /
-    old 0.997-1.000 on the vantages, 0.979-1.001 on the path (Cinderhaven's
-    0.979 inside the BEFORE's own spread) and 0.996-1.012 in the fights;
-    `gpu.frame` 0.950-1.026 over 14-37 samples a look group. Babylon's draw
-    counter fell in every group: Coldharbour 112 to 95 on the vantages, 79 to
-    68 on the path, 302 to 283 in the fight; Cinderhaven 108 to 92, 97 to 84,
-    371 to 340; Hollowmere 48 to 40, 43 to 37, 245 to 233. The bench's
-    install rose ~2 s on every map, and is the main tree's cold dev server
-    again (X3.6c's reading): `installRound` timed in both trees is level
-    (Hollowmere 4.95-5.4 s against 4.93-5.7, Coldharbour 6.3-6.4 against
+    side, on Coldharbour, Cinderhaven and Hollowmere, where the palette is
+    largest; the canonical fight hashes on all 18 runs, no hang): the mean
+    frame new / old 0.997-1.000 on the vantages, 0.979-1.001 on the path
+    (Cinderhaven's 0.979 inside the BEFORE's own spread) and 0.996-1.012 in
+    the fights; `gpu.frame` 0.950-1.026 over 14-37 samples a look group.
+    Babylon's draw counter fell in every group: Coldharbour 112 to 95 on the
+    vantages, 79 to 68 on the path, 302 to 283 in the fight; Cinderhaven 108
+    to 92, 97 to 84, 371 to 340; Hollowmere 48 to 40, 43 to 37, 245 to 233.
+    The bench's install rose ~2 s on every map, and is the main tree's cold
+    dev server again (X3.6c's reading): `installRound` timed in both trees is
+    level (Hollowmere 4.95-5.4 s against 4.93-5.7, Coldharbour 6.3-6.4 against
     6.4-6.5; the warm-up waits ~40 ms more on Coldharbour for two more
     pipelines and compiles nothing in play), and a second run in one
     invocation reads 5.13 against 5.26 s.
@@ -2492,6 +2497,39 @@ its one indirect draw, a pass.
   that held the whole palette. Kept: `WorldGlow`'s lifecycle has
   `ProbeBake`'s shape (a generation, `broken`, the loss after the task) — a
   second copy of a small shape rather than a base class for two.
+- **What the post-commit review found** (two independent readers over
+  6dc5122, one for correctness and one for shape and contracts; fixed after
+  it). No defect on the shipped path; both traced the frame's order
+  (the verdict, `GlowPass`'s list, the clear, the queued draw) through
+  Babylon 9.28 and found it as documented. Latent: the colour write built an
+  object a call, so a bloom that ever animates would allocate a frame (one
+  values object a view now); the DEV `noGlow` check read the meshes held for
+  the mask after a loss had handed them back (it now asks whether the world
+  is still held); the mask is opened once a frame and a second open would
+  queue nothing of ours (stated on `maskFilled`). On the shape: the
+  palette's pipelines by bias were built by the same 25 lines in `probeView`
+  and `glowView` (one `palettePipelines` now, which a third palette pass
+  would otherwise have made three); `drawnElsewhere` asked the material too,
+  which the handover's answer already covers (it takes the mesh alone, and
+  `glows` is `glowHolds`, beside `probeHolds`); `drawHeld` and `drawableIn`
+  tested a group's passes two ways (one `drawsIn`); contract text the step
+  or its pre-commit fixes left false (a prepare reading `Renderer.context`,
+  "exactly the frames" in one more place, `addEmissive` cut "after every
+  other group", the pass-bit list without `PASS_GLOW`, the refusal listener
+  missing from `WorldGlow`'s owns, "`GlowRules`' two questions", the failed
+  mask pipeline missing from four fallback lists, the `noGlow` bullet's
+  unsatisfiable "set before the build", and `VERIFYING.md`'s re-take, which
+  draws nothing twice); CLAUDE.md's coverage clause got its "do not fix it"
+  back and its glow clause stopped reading as a contradiction, the rendering
+  section still 133 lines. One reader held that the palette's clusters are
+  reach-culled by their block; they are not — every held surface is given
+  `NO_REACH` at the install and filed in no cell — so "no reach" stands,
+  argued more fully. Kept: the main view counts the palette's clusters at
+  every cut, even on a map whose palette mask goes back to `GlowPass` (a few
+  KB, scanned and never drawn). Re-checked after the fixes: the mask readback
+  on seven maps (61 rows, 0 texels ours against Babylon's), the bank 61 of 61
+  byte-identical to 6dc5122's frames, the gate clean on seven, the paths on
+  Coldharbour and Hollowmere as before, typecheck, build and corecheck.
 - **Owed onward.**
   - The palette's main pass, and deleting the fallbacks ("After X3.6",
     "Decisions that are yours").

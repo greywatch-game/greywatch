@@ -1577,8 +1577,13 @@ is one machine's:
   palette into it; `g.worldGlow.lose()` hands it to `GlowPass` (Babylon's twin)
   from the next frame, and `g.worldGlow.setWorld(g.handover.blocks)` takes it
   back — only on a map whose install held the whole palette (`blocks` is
-  private to TypeScript, not to a page script): on any other it would draw
-  some palette meshes twice and some not at all. Ours against Babylon's at a frozen vantage reads 0 texels.
+  private to TypeScript, not to a page script). On any other, `GlowPass`
+  leaves out exactly the meshes the handover holds for the mask
+  (`glowHolds`) while ours draws every palette GROUP that holds one, whole:
+  a palette mesh it never held stays `GlowPass`'s, but one marked `noGlow`
+  that shares a group with a held one is bloomed by ours where Babylon's is
+  dark, and one whose group went back is bloomed by neither. Ours against
+  Babylon's at a frozen vantage reads 0 texels.
 - **What a pane REFLECTS is checkable without a screenshot, and the CUBE is the
   place to check it.** There is one probe per glazed map block —
   `g.reflections.probes[slot]` against `g.map.paneGroups[slot]`, 40 of each on

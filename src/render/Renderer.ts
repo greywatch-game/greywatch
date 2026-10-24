@@ -179,7 +179,13 @@ export class Renderer {
   private readonly hook: { dispose(): void };
   /** Whether `begin` filled and uploaded the frame this draw phase. */
   private filled = false;
-  /** Whether `begin` filled the frame for the glow's mask, which opens after the main pass — until it does. */
+  /**
+   * Whether `begin` filled the frame for the glow's mask, which opens after
+   * the main pass — until it does: spent by the FIRST open after `begin`. The
+   * mask is opened once a frame (one camera: `GlowPass.render` returns for
+   * any other), and a second open in one frame would queue nothing of ours
+   * while `GlowPass`'s list had left the palette out.
+   */
   private maskFilled = false;
   /** Whether the last pass checked was refused — so a refusal is reported once per change. */
   private refused = false;

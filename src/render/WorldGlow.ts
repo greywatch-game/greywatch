@@ -9,8 +9,9 @@
  * palette (`GlowSource`, the map's `WorldBlocks`; the handover owns it), that
  * world's `GlowWorld` (a mask pipeline a palette bias, at most two), this
  * frame's verdict (`drawing`), each palette material's last-written bloom
- * colour, the mask draw and the prepare it registers on the renderer while
- * it holds a world, the draws it issued last (`drawn`), and `broken`;
+ * colour, the mask draw, the prepare and the mask's refusal listener
+ * (`Renderer.onGlowMaskRefused`) it registers on the renderer while it holds
+ * a world, the draws it issued last (`drawn`), and `broken`;
  * `GlowSource`, `GlowWorld` and `GlowWorldRules`.
  * Invariants: it DECIDES NOTHING about what blooms — whether the palette may
  * bloom this frame, and how brightly, are `Game`'s rules (`GlowRules`, the
@@ -31,15 +32,16 @@
  * at the same bias, so it lands where Babylon's twin landed; a bloom colour
  * is written to a palette material's block only when it changed; a LOSS
  * (`lose`) hands the palette back at once — `drawing` false, so `GlowPass`'s
- * next list has it — and takes the draw and the prepare off the renderer
- * after the task in hand, because it may land inside a render (a refused
- * pass); a mask pipeline that FAILS latches it BROKEN for the session, every
- * map's palette mask then Babylon's; nothing here allocates on a frame.
+ * next list has it — and takes the draw, the prepare and the refusal
+ * listener off the renderer after the task in hand, because it may land
+ * inside a render (a refused pass); a mask pipeline that FAILS latches it
+ * BROKEN for the session, every map's palette mask then Babylon's; nothing
+ * here allocates on a frame.
  * Never: imports Babylon; reads a node, a mesh's metadata or a material — a
  * material reaches it as its `EmissiveRecipe`; owns, clears or binds the
  * mask; draws in the main pass.
  * Contract: `docs/rendering.md`, "The glow: what the depth share replaced"
- * and "Our renderer's frame".
+ * (its "The palette's mask, ours") and "Our renderer's frame".
  */
 import type { EmissiveRecipe } from "./emissiveWorld";
 import type { FrameUniforms } from "./frame";
@@ -70,7 +72,7 @@ export interface GlowWorld {
   dispose(): void;
 }
 
-/** What `Game` decides about the palette's bloom: `GlowRules`' two questions, asked of the palette. */
+/** What `Game` decides about the palette's bloom: `GlowRules`' `admits` and `colour`, asked of the palette. */
 export interface GlowWorldRules {
   /** Whether the world's emissive meshes may bloom this frame (rendering group 0). */
   admits(): boolean;
@@ -90,7 +92,10 @@ export class WorldGlow {
   /** This frame's verdict: ours draws the palette into the mask, and `GlowPass` leaves it out. */
   private ours = false;
   private drawnLast = 0;
-  /** Each palette material's colour as last written, four floats apiece; NaN is never. */
+  /**
+   * Each palette material's colour as last written, four floats apiece; NaN:
+   * never written, so the first frame writes every colour.
+   */
   private written = new Float32Array(0);
   private readonly colour = new Float32Array(4);
   /** Takes the draw, the prepare and the refusal back off the renderer; null while nothing is registered. */
@@ -160,8 +165,8 @@ export class WorldGlow {
    * The world can no longer draw what Babylon's twin would — a palette
    * surface went back to Babylon, the main pass or the mask's was refused, a
    * pipeline failed: the palette is Babylon's from `GlowPass`'s next list,
-   * and the draw and the prepare come off the renderer once the task in hand
-   * is done.
+   * and the draw, the prepare and the refusal listener come off the renderer
+   * once the task in hand is done.
    */
   lose(): void {
     if (!this.world) return;

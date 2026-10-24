@@ -579,10 +579,10 @@ tree owes it.** Everything opaque writes **0** (`CelShader`'s `opaqueAlpha`, a
 literal 0 in the grass and the water, the clear in `applyEnvironment`), every
 alpha-blended draw accumulates into it (`ALPHA_COMBINE`), and `CelInk` scales
 its edge by `1 - a`. **A REFLECTION PROBE inverts it** (`opaqueAlpha` is 1 for a
-bake), so **a shader that hardcodes either value breaks one of the two passes
-silently** — the emissive palette's hardcoded **1** is the one deliberate
-exception (`docs/rendering.md`). **The sky's CLOUDS write the depth of a point 7 km out**, so every
-surface must be nearer. **Nothing on the floor writing NO depth is OPAQUE**.
+bake), so **a shader that hardcodes either value breaks a pass silently** — the
+EMISSIVE palette's **1** is deliberate: do not "fix" it onto `opaqueAlpha`.
+**The sky's CLOUDS write the depth of a point 7 km out**, so every surface must
+be nearer. **Nothing on the floor writing NO depth is OPAQUE**.
 
 **The world is OPAQUE with exactly one exception, and it is glazing.** Glass you
 can see THROUGH is `getGlass` over a cube `ReflectionSystem` bakes **one per
@@ -617,10 +617,10 @@ per mesh every frame** — an emissive colour, no `metadata.noGlow`, and `Game`'
 `GlowRules` — so nothing excludes a mesh by hand. **A map's merged emissives are
 a PALETTE like its albedo** (`shaders/EmissiveWorld.ts`): their colour is a slot
 in `uv2.x` under a WHITE `emissiveColor`, so **a new reader asking a material
-what it emits must ask the vertex for that one**. **The palette's MASK is OUR
-renderer's whenever the handover holds the WHOLE palette**
-(`render/WorldGlow.ts`; the mask stays Babylon's), so **a palette surface it
-cannot hold, or one marked `noGlow`, sends the whole palette mask back**.
+what it emits must ask the vertex for that one**. **The palette's SHARE of the
+mask is drawn by OUR renderer whenever the handover holds the WHOLE palette**
+(`render/WorldGlow.ts`; the mask itself stays `GlowPass`'s), so **a palette
+surface it cannot hold, or one marked `noGlow`, sends that share back whole**.
 
 **OUR renderer (`src/render/`) draws INSIDE Babylon's frame through ONE seam**
 (`render/babylonSeam.ts`, the only file there that names Babylon, and only as
@@ -904,12 +904,13 @@ that same object, unchanged; `GameMap.world` keeps it beside the mesh:
   it; **it is deliberately absent now from grass, water and both debris pools**,
   which the ink does draw on purpose.
 - `noGlow: true` — out of the bloom. `GlowPass` reads it per mesh every frame,
-  so a mesh built at any time needs only the flag — but the emissive
-  PALETTE's is read at the TAKE (`BlockHandover`), so it is set before the
-  build. A mesh that stays in bloom
-  is faded with distance instead (`GlowRules.colour` in `Game`), and
-  `infiniteDistance` is that fade's one exemption — it is what every sky mesh
-  sets, and the moon is not in the valley to be fogged out of.
+  so a mesh built at any time needs only the flag — but the emissive PALETTE's
+  is read at the TAKE (`BlockHandover`), so it must be on the part when the
+  build hands it over, never set on the mesh afterwards (a DEV check says so),
+  and one there sends the whole palette mask back to `GlowPass`. A mesh that
+  stays in bloom is faded with distance instead (`GlowRules.colour` in `Game`),
+  and `infiniteDistance` is that fade's one exemption — it is what every sky
+  mesh sets, and the moon is not in the valley to be fogged out of.
 - `noShadowCaster: true` — excluded from `ShadowSystem.setCasters()`. Flat receivers
   (ground, roads) need it: casting from them is pure shadow acne.
 - `block: "3,2"` — which map block a merged visual came from (the block's side

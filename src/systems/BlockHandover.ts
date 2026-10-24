@@ -81,11 +81,12 @@
  * EVERY surface wearing a palette material was held so and none went back at
  * the cut: one it could not hold, or one marked `noGlow`, leaves the whole
  * map's palette mask to Babylon's `GlowPass`, so no palette mesh is ever
- * bloomed by neither side or by both; `glows` answers `Game`, mesh by mesh,
- * whether the mask's palette mesh is one of ours; a palette surface handed
- * back later, a refused main pass or a refused mask pass LOSES the mask to
- * Babylon (`WorldGlow.lose`), and a DEV build reports a held palette mesh
- * whose `noGlow` was set after the take.
+ * bloomed by neither side or by both; `glowHolds` answers `Game`, mesh by
+ * mesh, whether the mask's palette mesh is one of ours; a palette surface
+ * handed back later, or a refused main pass, LOSES the mask to Babylon
+ * (`WorldGlow.lose`) — a refused MASK pass loses it too, but `WorldGlow`
+ * hears that itself (`Renderer.onGlowMaskRefused`) — and a DEV build reports
+ * a palette mesh our mask holds whose `noGlow` was set after the take.
  * Never: draws, or reads a material's uniforms — a material reaches our side
  * as its recipe; writes a property on a mesh.
  * Contract: `docs/rendering.md`, "Our renderer's frame";
@@ -142,7 +143,7 @@ export class BlockHandover {
   private probing = new Set<number>();
   /** The surfaces the glow's mask draws (`PASS_GLOW`), by index — one of them handed back loses the mask. */
   private glowing = new Set<number>();
-  /** The same surfaces' meshes, which `glows` answers `Game` with. */
+  /** The same surfaces' meshes, which `glowHolds` answers `Game` with. */
   private glowingMeshes = new Set<Mesh>();
   /** Every surface wearing a palette material is held for the glow's mask: none our side cannot hold, none `noGlow`. */
   private wholePalette = true;
@@ -396,7 +397,7 @@ export class BlockHandover {
    * `GlowRules.drawnElsewhere` asks before `GlowPass` lists it. Allocates
    * nothing.
    */
-  glows(mesh: AbstractMesh): boolean {
+  glowHolds(mesh: AbstractMesh): boolean {
     return this.glowingMeshes.has(mesh as Mesh);
   }
 
@@ -548,9 +549,10 @@ export class BlockHandover {
    * is copied again, and a DEV build checks that no mesh of ours — taken, or
    * held for the shadows alone — has been switched, hidden or faded:
    * Babylon would stop drawing or casting it, or draw it blended, and our
-   * side, which reads no node, would not follow; nor a palette mesh the
-   * glow's mask draws given `noGlow` after the take, which `GlowPass` would
-   * honour and ours, having read it there, would not.
+   * side, which reads no node, would not follow; nor, while `WorldGlow`
+   * holds the mask's palette, a palette mesh of it given `noGlow` after the
+   * take, which `GlowPass` would honour and ours, having read it there,
+   * would not.
    */
   private readonly frame = (): void => {
     if (this.mats.materialEpoch !== this.epoch) {
@@ -569,6 +571,9 @@ export class BlockHandover {
       );
       return;
     }
+    // Only while the mask is ours: after a loss the palette is `GlowPass`'s,
+    // which honours a `noGlow` set at any time, and `glowingMeshes` outlives it.
+    if (!this.glow.holds) return;
     for (const mesh of meshes) {
       if (mesh.metadata?.noGlow !== true || !this.glowingMeshes.has(mesh as Mesh)) continue;
       this.reported = true;

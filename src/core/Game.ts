@@ -119,7 +119,7 @@ import { PaperGrain } from "../shaders/PaperGrain";
 import { CelInk } from "../shaders/CelInk";
 import { fxaaShaderIsOurs } from "../shaders/Fxaa";
 import { FrameDepth } from "../shaders/FrameDepth";
-import { fadesOwnBloom, isEmissiveWorld } from "../shaders/EmissiveWorld";
+import { fadesOwnBloom } from "../shaders/EmissiveWorld";
 import { GlowPass } from "../shaders/GlowPass";
 import { MotionBlur } from "../shaders/MotionBlur";
 import { Volumetrics, type VolumetricRung } from "../shaders/Volumetrics";
@@ -737,7 +737,8 @@ export class Game {
    * The emissive palette's share of the glow's mask as our renderer draws it,
    * whenever the handover holds the whole palette (X3.6d). Public for the
    * reason `glow` is: the smoke scripts that read the mask back ask it
-   * whether it is drawing (`drawing`, `drawn`) and force a `lose`.
+   * whether it holds a world (`holds`) and is drawing (`drawing`, `drawn`),
+   * and force a `lose`.
    */
   readonly worldGlow: WorldGlow;
   /**
@@ -1642,10 +1643,10 @@ export class Game {
       },
       // The emissive palette, on the frames our renderer draws it into the
       // mask (`WorldGlow`, decided as the main pass began): then never
-      // Babylon's twin as well — and only the meshes it holds, so a palette
-      // mesh outside the handover is still bloomed here.
-      drawnElsewhere: (mesh, material) =>
-        this.worldGlow.drawing && isEmissiveWorld(material) && this.handover.glows(mesh),
+      // Babylon's twin as well. Which meshes those are is the handover's
+      // answer — the palette meshes it holds for the mask (`glowHolds`), and
+      // it hands the mask over only when that is every one of them.
+      drawnElsewhere: (mesh) => this.worldGlow.drawing && this.handover.glowHolds(mesh),
     });
     this.glow = glow;
     // The mask's pass has opened: our renderer's palette goes in FIRST, ahead

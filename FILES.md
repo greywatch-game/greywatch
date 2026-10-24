@@ -2305,8 +2305,10 @@ src/
                         #   in uv2.x (getEmissive + EmissiveFog to the same
                         #   pixel), and a glow-mask twin that fades the bloom
                         #   per PIXEL — the FALLBACK since X3.6d, when our
-                        #   renderer draws the palette's mask. Two per factory,
-                        #   by over-glass offset. WGSL
+                        #   renderer draws the palette's mask: an editor build,
+                        #   ?babylonworld, a palette ours cannot hold whole, a
+                        #   failed mask pipeline (for the session), a loss
+                        #   mid-map. Two per factory, by over-glass offset. WGSL
     Dither.ts           # One LSB of triangular noise, in the three surface
                         #   shaders. Fixes 8-bit banding in the fog. Owns the
                         #   ARGUMENT and the WGSL; wgsl/chunks.ts files it as
@@ -2417,7 +2419,8 @@ src/
                         #   (addGlowMask, X3.6d): queued FIRST in GlowPass's
                         #   mask when told it opened (glowMaskOpened), off the
                         #   main pass's frame, refused unless GLOW_TARGETS
-                        #   (onGlowMaskRefused); context, group 0 for a prepare
+                        #   (onGlowMaskRefused); a prepare is handed the
+                        #   FrameContext (group 0) as a draw is
     targets.ts          # FRAME_TARGETS, stated once: rgba8unorm, depth32float,
                         #   1 sample, flipY (CelInk's target, not the canvas);
                         #   GLOW_TARGETS, the glow mask's: the same values for

@@ -78,7 +78,10 @@ export const CULL_UNIFORM_BYTES = 160;
  *   counts whatever its passes, and what the bit changes there is the size
  *   gate, which never drops a light source (`WorldCulling`'s `glows` —
  *   Babylon never size-gated an emissive mesh, and a lamp lens a few pixels
- *   across is exactly what a bloom is for).
+ *   across is exactly what a bloom is for). So the one bit means TWO things,
+ *   drawn in the mask and never size-gated, which can share it only while
+ *   the mask has no view of its own: a future mask view, handed a pass mask
+ *   as the probe's view is, would have to split it into two bits.
  */
 export const PASS_CASTS = 1;
 export const PASS_SOLID = 2;
