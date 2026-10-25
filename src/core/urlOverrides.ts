@@ -7,7 +7,10 @@
  * benchmark on that map instead of offering a menu (`bench/BenchScript.ts`) —
  * and `?babylonworld`, `?nocull` and `?nofrustum`, which take our renderer's
  * static world or its culls out, for an A/B on a device (`BABYLON_EXIT.md`),
- * and `?cullcheck`, which reads those culls back on the device.
+ * `?cullcheck`, which reads those culls back on the device, and
+ * `?scatterindirect`, which puts the scatter back on the indirect path the
+ * Intel laptop lost every tree on (TEMPORARY, out once that laptop has
+ * answered).
  * Owns: reading them once, validating each against its own table, the rule
  * that an override BEATS the setting it shadows, and the list of which ones a
  * capture must say were forced. Owns the URL-flag reader `FrameProfile` uses
@@ -25,7 +28,7 @@
  * be offered — `?nominimap` is a flag precisely because losing the map is not
  * a setting.
  */
-import type { CullMode } from "../render/ClusterCull";
+import type { CullMode, ScatterDraw } from "../render/ClusterCull";
 import { isVolumetricRung, type VolumetricRung } from "../shaders/Volumetrics";
 import { parseSeed } from "../systems/RoundRandom";
 import {
@@ -123,6 +126,19 @@ export class UrlOverrides {
    */
   readonly cullCheck: boolean;
   /**
+   * `?scatterindirect` — the scatter drawn as it was before 2026-10-24: its
+   * list never cleared, `expand` dispatched and every range drawn INDIRECT
+   * (`render/InstanceCull.ts`'s `ScatterDraw`); `?scatterindirect=dispatch`
+   * — the shipping plain draw with `expand` alone dispatched indirect. The
+   * Intel laptop's A/B, in one deploy: whether the old path flickers there
+   * in the same build, and whether that driver drops an indirect DISPATCH —
+   * the suspect, since it lost every tree at once, and a dropped one over the
+   * cleared list blanks every tree for a frame. TEMPORARY: it comes out once the
+   * laptop has answered, as the blocks' hunt's switches did (6c6db6d).
+   * "plain" when absent.
+   */
+  readonly scatterDraw: ScatterDraw;
+  /**
    * Which of the above the URL set, by the name a capture files it under —
    * `graphics.forced`, so a report off a device nobody here owns says which of
    * its numbers were somebody's experiment rather than the player's choice.
@@ -147,6 +163,8 @@ export class UrlOverrides {
     this.ourWorld = !urlFlag("babylonworld");
     this.cullMode = urlFlag("nocull") ? "none" : urlFlag("nofrustum") ? "nofrustum" : "full";
     this.cullCheck = urlFlag("cullcheck");
+    const scatter = urlParam("scatterindirect");
+    this.scatterDraw = scatter === null ? "plain" : scatter === "dispatch" ? "dispatch" : "indirect";
     const forced: string[] = [];
     if (this.giForced) forced.push("gi");
     if (this.shadowsForced) forced.push("shadows");
@@ -155,6 +173,9 @@ export class UrlOverrides {
     if (!this.ourWorld) forced.push("babylonworld");
     if (this.cullMode !== "full") forced.push(this.cullMode === "none" ? "nocull" : "nofrustum");
     if (this.cullCheck) forced.push("cullcheck");
+    if (this.scatterDraw !== "plain") {
+      forced.push(this.scatterDraw === "dispatch" ? "scatterindirect=dispatch" : "scatterindirect");
+    }
     this.forced = forced;
   }
 

@@ -17,8 +17,12 @@
  * survivor's instance, its cluster's first index into the source, the
  * cluster's index count and its part's first vertex in its group's arrays;
  * a corner past the cluster's count repeats its last, so a short cluster
- * ends in triangles of no area; a source index is 16 bits, local to its
- * part, two to a word; a cut whose list or part does not fit is handed back
+ * ends in triangles of no area; a ZERO entry — a count of 0, which no
+ * cluster has — draws NOTHING, every corner of it clipped before an
+ * attribute is read (`celVertex.ts`'s decode), so the list may be cleared
+ * and drawn past what the cull wrote (`InstanceCull`); a source index is 16
+ * bits, local to its part, two to a word; a cut whose list or part does not
+ * fit is handed back
  * (`WorldBlocks`, by `scatterCut.ts`'s `listPast` and `sourcePast`), never
  * drawn wrapped.
  * Never: imports Babylon.

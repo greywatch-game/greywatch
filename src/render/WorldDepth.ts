@@ -5,7 +5,9 @@
  * a pass its caller opens — a directional map `WorldShadows` draws
  * (`BABYLON_EXIT.md` X3.6a), or a static face of the lamps' atlas `LampAtlas`
  * draws (X3.6b). The same groups as the main pass, the same fold — a group's
- * plain draw over its whole range and, with scatter, its one indirect draw.
+ * plain draw over its whole range and, with scatter, its one plain draw to
+ * the bound the shadow view's last cull computed (`InstanceCull.drawRange`),
+ * none for a bound of 0.
  * Owns: `WorldDepth` — a second VIEW of each of the map's culls (`ClusterCull`
  * and `InstanceCull` handed the main pass's, so the tables are uploaded once),
  * with a slot for every pass a submit can draw; the depth pipelines, by what
@@ -42,7 +44,6 @@ import { lampDepth } from "./lampDepth";
 import type { BuiltPipeline } from "./PipelineCache";
 import type { Renderer } from "./Renderer";
 import { SHADOW_TARGETS } from "./targets";
-import { INDIRECT_BYTES } from "./wgsl/instanceCull";
 
 /**
  * What a shadow pass records of a caster: a directional map's far side or its
@@ -219,11 +220,11 @@ export class WorldDepth {
       pass.setBindGroup(0, group0(scatter.groups[0]));
       for (let i = 0; i < all.length; i++) {
         const { group, scatter: geometry } = all[i];
-        if (!geometry || (group.scatterPasses & mask) === 0) continue;
+        if (!geometry || (group.scatterPasses & mask) === 0 || instances.empty(group.scatterRange)) continue;
         const bound = geometry.get(scatter.groups[1]);
         if (!bound) continue;
         pass.setBindGroup(1, bound);
-        pass.drawIndirect(instances.args, group.scatterRange * INDIRECT_BYTES);
+        instances.drawRange(pass, group.scatterRange);
       }
     }
   }

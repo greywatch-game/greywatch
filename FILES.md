@@ -592,7 +592,10 @@ src/
                         #   in; the `forced` list a capture files. Also the
                         #   URL-flag reader (?profile, ?gpu), and ?seed= — the
                         #   round seed every round of the session plays from —
-                        #   and ?bench=, the benchmark's map. Applies nothing
+                        #   and ?bench=, the benchmark's map; the renderer's
+                        #   A/B switches (?babylonworld ?nocull ?nofrustum
+                        #   ?cullcheck, and ?scatterindirect[=dispatch], the
+                        #   scatter's old indirect path, TEMPORARY). Applies nothing
     shadowWindow.ts     # Where a directional shadow camera STANDS, and the
                         #   texel snap that stops its edges crawling. Both maps
                         #   place themselves with it — ShadowSystem's and
@@ -2475,7 +2478,9 @@ src/
                         #   CEL_GEOMETRY) at the vertex the index names,
                         #   world identity or the instance's transform, over
                         #   the shared celVertex body — one stage for blocks
-                        #   and scatter (X3.5b). Every variant compiled by
+                        #   and scatter (X3.5b); a ZERO list entry draws
+                        #   nothing (the corner clipped before any read), in
+                        #   every stage sharing the decode. Every variant compiled by
                         #   plans/webgpu-ref/shaders.mjs
     celDepth.ts         # The world's DEPTH program (X3.6a): Babylon's
                         #   shadowMap shader as this game's generators compile
@@ -2487,7 +2492,8 @@ src/
                         #   by kind (a directional map's back or front faces,
                         #   a lamp's face), a pass's culls (cull) and its
                         #   draws into the caller's pass (draw) — a plain
-                        #   draw a group, an indirect draw its scatter
+                        #   draw a group, and a plain draw its scatter to the
+                        #   shadow view's bound (InstanceCull.drawRange)
     lampDepth.ts        # The lamps' DEPTH program (X3.6b): LocalShadows'
                         #   localShadowDepth — a face's perspective offset
                         #   into its tile, the radial distance, the off-face
@@ -2545,7 +2551,8 @@ src/
     scatterList.ts      # The scatter's draw (X3.5b): a survivor's 16-byte
                         #   ENTRY, an index = top bit + slot * stride +
                         #   corner (listStride: a cluster's most indices),
-                        #   the 16-bit source and its read, as WGSL
+                        #   the 16-bit source and its read, as WGSL; a zero
+                        #   entry draws nothing
     scatterCut.ts       # The scatter's half of WorldBlocks' cut: the
                         #   instance cull's tables built group by group
                         #   (ScatterTables — clusters, records, ranges, the
@@ -2556,8 +2563,9 @@ src/
                         #   one GROUP per recipe a layer (its scatter parts'
                         #   arrays first, then its surfaces'; one material, one
                         #   pipeline), the map cut once (finish), ONE plain
-                        #   drawIndexed a group and ONE indirect draw of its
-                        #   scatter, ahead of group 0's alpha-tested meshes —
+                        #   drawIndexed a group and ONE plain draw of its
+                        #   scatter to the CPU's bound (none at 0), ahead of
+                        #   group 0's alpha-tested meshes —
                         #   the palette (while setPaletteMain), blocks,
                         #   scatter, landform — the scatter's pieces cut out
                         #   of the blocks; what it will never draw (a failed
@@ -2590,10 +2598,16 @@ src/
                         #   instance sphere, then each kept instance's clusters
                         #   against the frustum (X3.5b); the kept (instance,
                         #   cluster) records scanned NEAR-FIRST into each
-                        #   group's run of one LIST of 16-byte entries, and
-                        #   each group's ONE indirect draw's args; the last
-                        #   pass is dispatched indirect over a work list of the
-                        #   survivors, never over every record
+                        #   group's run of one LIST of 16-byte entries,
+                        #   cleared ahead of each dispatch; each range's BOUND
+                        #   on its survivors computed on the CPU off the same
+                        #   uniform words (the instance test replayed, widened,
+                        #   over a set's runs), and its ONE plain draw to it
+                        #   (drawRange, empty) — never fewer than the GPU
+                        #   keeps; the last pass dispatched direct, its threads
+                        #   past the work list's length returning at once.
+                        #   ?scatterindirect: the old indirect draw and
+                        #   dispatch (args, still written), TEMPORARY
     ClusterCull.ts      # The GPU cull, a VIEW of a map's tables (the main
                         #   pass's uploads them; a shadow map's and a probe
                         #   bake's read them), recorded into the host's encoder
@@ -2606,8 +2620,9 @@ src/
                         #   survivors scanned NEAR-FIRST (by surface) into the
                         #   index buffer, cleared first so the rest of each
                         #   group's range is triangles of no area (never
-                        #   indirect). ReachGate, BlockBox, CullMode and
-                        #   CullDiagnostics (?nocull, ?nofrustum, ?cullcheck);
+                        #   indirect). ReachGate, BlockBox, CullMode,
+                        #   ScatterDraw and CullDiagnostics (?nocull,
+                        #   ?nofrustum, ?cullcheck, ?scatterindirect);
                         #   CullUniform, a slot a dispatch in one submit
     PassTimer.ts        # ?gpu's timer of our compute passes (gpu.cull):
                         #   timestamp writes on each cull's pass, summed, one
@@ -2647,7 +2662,8 @@ src/
                         #   blockKeyOf) the probe view's exclusion reads
       instanceCull.ts   # The instance cull's WGSL — cullInstances,
                         #   cullRecords, prefix, expand — and the record
-                        #   layouts InstanceCull uploads
+                        #   layouts InstanceCull uploads; the plane slack and
+                        #   expand's workgroup the CPU's bound reads too
       cullProbe.ts      # ?cullcheck's probes: each cull's test re-run with
                         #   its inputs read each way they have been declared,
                         #   one bit a form, over the cull's own buffers (the

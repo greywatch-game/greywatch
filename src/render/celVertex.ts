@@ -27,7 +27,12 @@
  * index names a survivor's entry and a corner of its cluster, and the entry
  * the instance, the source index and the part, a corner past the cluster's
  * last repeating it so a short run ends in triangles of no area) — so the
- * body is the same text as Babylon's; the plain stage reads every index as
+ * body is the same text as Babylon's; a ZERO entry, a slot of the list past
+ * what the cull wrote (the plain draw runs to a bound, `InstanceCull`), is
+ * drawn as nothing — its corner put outside the clip volume and returned
+ * before an attribute is read, which an entry the cull wrote (a cluster of
+ * at least one index) never is — in every stage that spreads this decode
+ * (the cel stage, `celDepth`, `lampDepth`); the plain stage reads every index as
  * a plain vertex, since a group without scatter binds no list; group 1 is declared
  * EMPTY here and is the fragment's, so the numbers stay the program's.
  * Never: imports Babylon; restates a body.
@@ -114,7 +119,9 @@ const PLAIN_DECODE = [
  * The scatter twin's: whether the index is the scatter's, the vertex it names
  * — through the survivor's entry, the corner's source index clamped to its
  * cluster — and the instance it is drawn at (`drawnAt`, read only when
- * scattered).
+ * scattered). A zero entry — no cluster, a slot past the cull's count —
+ * returns at once, its corner outside the x plane, so it is clipped under
+ * either depth convention and costs one read of the list.
  */
 const SCATTER_DECODE = [
   "  let scattered = isScatter(vertexIndex);",
@@ -122,6 +129,10 @@ const SCATTER_DECODE = [
   "  var drawnAt = 0u;",
   "  if (scattered) {",
   "    let entry = scatterList[listSlot(vertexIndex)];",
+  "    if (entry.z == 0u) {",
+  "      vertexOutputs.position = vec4f(2.0, 2.0, 2.0, 1.0);",
+  "      return vertexOutputs;",
+  "    }",
   "    vertex = entry.w + sourceIndex(entry.y + min(listCorner(vertexIndex), entry.z - 1u));",
   "    drawnAt = entry.x;",
   "  }",

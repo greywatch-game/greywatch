@@ -4,8 +4,9 @@
  * drawn with ONE plain draw per material over its whole range, the survivors
  * at the front and triangles of no area after them (`BABYLON_EXIT.md`
  * X3.3b); the SCATTER, instances of its variants culled over their
- * clusters on the GPU and drawn with ONE indirect draw per material over the
- * survivors' list (X3.4b, folded at X3.5b); and the LANDFORM, the floor's
+ * clusters on the GPU and drawn with ONE plain draw per material over the
+ * survivors' list, to a bound the CPU computes (X3.4b, folded at X3.5b,
+ * plain since 2026-10-24); and the LANDFORM, the floor's
  * patches, the rim's runs and the map-wide road merge, cut, culled and drawn
  * as the blocks are, after them (X3.5) — every draw through the one pulled
  * vertex stage (`celVertex.ts`), which reads its record off the index
@@ -54,15 +55,18 @@
  * depth the LATER draw wins — so a lit window coplanar with its own block's
  * mullion or wall went to the block. Drawn first among ours, every such tie
  * goes the way it went; drawn after the blocks, every one of them flips.
- * WHY TWO DRAWS FOR A GROUP THAT HAS SCATTER, AND NOT ONE: the BLOCKS are
- * never drawn indirect — an Intel Xe-LPG dropped single indirect draws at
- * random, at arguments however written, and drew the same triangles plain
- * every frame (`docs/rendering.md`) — and the scatter cannot be drawn plain,
- * because what survives of it is a count only the GPU knows, and a range that
- * held every instance would hand the GPU the whole forest as triangles of no
- * area every frame. So a group's blocks are one plain draw and its scatter
- * one indirect draw, through one pipeline; the scatter's indirect draws were
- * never seen to drop.
+ * WHY TWO DRAWS FOR A GROUP THAT HAS SCATTER, AND NOT ONE: nothing of the
+ * world is drawn or dispatched indirect — an Intel Xe-LPG dropped single
+ * indirect draws at random, at arguments however written (the blocks',
+ * 2026-10-18), and lost every tree at once while the scatter was indirect
+ * (2026-10-24, its one dispatch the suspect, pending that laptop's A/B), and
+ * drew the same triangles plain every frame (`docs/rendering.md`) — and the blocks' draw runs over the whole
+ * range of a cull that writes zeros past its survivors, where the scatter's
+ * runs only to a bound the CPU computes off the instances (`InstanceCull`),
+ * since a range that held every record would hand the GPU the whole forest
+ * as corners of no area every frame. So a group's blocks are one plain draw
+ * over their range and its scatter one plain draw to its bound, through one
+ * pipeline; a scatter range whose bound is 0 is not drawn or bound.
  * Invariants: a GROUP is one cel recipe IN ONE LAYER — one material, one
  * pipeline, one cluster draw and at most one scatter draw — and a surface or
  * an instanced part belongs to exactly one: a landform surface to its
@@ -136,8 +140,9 @@
  * `CEL_GEOMETRY`); no vertex buffer. A block draw's index buffer is the
  * cluster cull's, `uint32`, and the draw is `drawIndexed` over the group's
  * whole range of it — none for a group whose cut kept no index; a scatter
- * draw has no index buffer and is a `drawIndirect` at the group's own
- * arguments, its group's vertex stage the scatter twin, whose group 2 binds
+ * draw has no index buffer and is a plain `draw` to the group's bound
+ * (`InstanceCull.drawRange`; a `drawIndirect` at its arguments under the
+ * A/B), its group's vertex stage the scatter twin, whose group 2 binds
  * the cull's list and source as well (`celVertex.ts`'s `celGeometry`);
  * every group with no scatter keeps the plain stage.
  */
@@ -187,7 +192,6 @@ import { FRAME_TARGETS, GLOW_TARGETS } from "./targets";
 import { UniformBlockBuffer } from "./UniformBlockBuffer";
 import { type AssembledAttribute, type AssembledModule, type AssembledVertex, PULLED_ATTRIBUTES } from "./wgsl/assemble";
 import { CLUSTER_WORDS, NO_BLOCK, PASS_GLOW, PASS_PROBE, SHADOW_PASSES, writeCluster } from "./wgsl/clusterCull";
-import { INDIRECT_BYTES } from "./wgsl/instanceCull";
 import type { GlowWorld } from "./WorldGlow";
 import { type DepthGroup, WorldDepth } from "./WorldDepth";
 
@@ -1506,16 +1510,19 @@ export class WorldBlocks {
     return drawn;
   }
 
-  /** The scatter in `view`: one indirect draw a group that has any, over its survivors' runs, unindexed. */
+  /**
+   * The scatter in `view`: one plain draw a group that has any, over its
+   * survivors' runs to the bound its cull's last dispatch computed,
+   * unindexed — none, and nothing bound, for a group whose bound is 0.
+   */
   private drawScatter(pass: GPURenderPassEncoder, group0: FrameGroup, view: DrawView): number {
     const instances = view.instances;
     if (!instances) return 0;
     let drawn = 0;
     const groups = this.groups;
     for (let g = 0; g < groups.length; g++) {
-      if (!groups[g].scattered || !this.bind(pass, group0, groups[g], view.geometry[g])) continue;
-      pass.drawIndirect(instances.args, g * INDIRECT_BYTES);
-      drawn++;
+      if (!groups[g].scattered || instances.empty(g) || !this.bind(pass, group0, groups[g], view.geometry[g])) continue;
+      if (instances.drawRange(pass, g)) drawn++;
     }
     return drawn;
   }

@@ -1326,7 +1326,7 @@ export const graphics = {
   /**
    * How our renderer cuts the blocks it draws (`render/WorldBlocks.ts`,
    * `BABYLON_EXIT.md` X3.3b): into CLUSTERS, culled
-   * per frame on the GPU and drawn with one indirect draw per material.
+   * per frame on the GPU and drawn with one plain draw per material.
    */
   clusters: {
     /**

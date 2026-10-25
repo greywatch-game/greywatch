@@ -783,8 +783,11 @@ did.
     **Since 2026-10-18 the blocks' draw is a PLAIN `drawIndexed` over the
     group's whole range**, the cull clearing its output first so the
     survivors' remainder is triangles of no area: an Intel Xe-LPG dropped
-    single indirect draws at random (`docs/rendering.md`, "THE BLOCKS ARE
-    NEVER DRAWN INDIRECT"). The scatter's draws (X3.4b) stay indirect.
+    single indirect draws at random (`docs/rendering.md`, "NOTHING OF THE
+    STATIC WORLD IS DRAWN OR DISPATCHED INDIRECT"). The scatter's draws
+    (X3.4b) stayed indirect until 2026-10-24, when the same laptop's trees
+    went too; nothing of the scatter is indirect since (X3.5b's landed
+    list).
   - **Keep the door open for the GPU side** (deferred until after the exit;
     "What this plan does not do"). Where the cull compacts the surviving
     clusters, it writes them NEAR-FIRST, so that a later depth-ordered draw
@@ -1576,13 +1579,15 @@ floor its shading:
   (`wgsl/instanceCull.ts`: `cullInstances`, `cullRecords`, `prefix`,
   `expand`). A group is one pipeline where it was two.
 - **What it is NOT: one draw a recipe.** A group with scatter is TWO draws,
-  its blocks' plain draw and its scatter's ONE indirect draw, through one
-  pipeline. This decision post-dates the plan above: the Intel laptop
-  (2026-10-18, `docs/rendering.md`) made the blocks never-indirect after
-  this step was written, and the scatter cannot be drawn plain — its
-  survivors are a count only the GPU knows, and a plain range holding every
-  instance would hand the GPU the whole forest as triangles of no area every
-  frame. Folding the landform into its recipe's group was not done either:
+  its blocks' plain draw and its scatter's ONE draw, through one pipeline.
+  This decision post-dates the plan above: the Intel laptop (2026-10-18,
+  `docs/rendering.md`) made the blocks never-indirect after this step was
+  written, and the scatter's draw could not be the blocks' — a plain range
+  holding every record would hand the GPU the whole forest as triangles of
+  no area every frame — so it was drawn INDIRECT at the survivors' count,
+  until the same laptop's trees went too (2026-10-24): it is a plain draw
+  to a BOUND the CPU computes since, `expand` dispatched direct (the dated
+  note at the end of this step's landed list). Folding the landform into its recipe's group was not done either:
   the groups stay one per recipe A LAYER, which keeps every block ahead of
   every landform draw, and the one recipe in both layers (the rim wearing
   the pines' material) costs one draw.
@@ -1889,6 +1894,92 @@ floor its shading:
   - **Desktop, against the flagged list run** (`--max --gpu --runs 3`, the
     canonical hashes): every group within 2% but Sarab's fight (7% faster
     on the tick, the session's); `gpu.cull` 0.049-0.057 ms on all three.
+- **2026-10-24: the scatter is drawn PLAIN, at a bound the CPU computes —
+  a fix, not a step.** It corrects this step's draw in every view X3.6a-c
+  built on it, and changes no plan.
+  - **What was seen.** On the Intel Xe-LPG laptop, on the deployed X3.6e,
+    the trees and scatter props flickered; not under `?babylonworld`, still
+    under `?nocull` — so our path, and the scatter's draws and its `expand`
+    were the only indirect calls left. EVERY tree and prop went at the same
+    time, all kinds together, never a single tree or one kind alone: each
+    group has its own draw, so that points at the one indirect DISPATCH that
+    serves them all (`expand`) rather than a dropped draw — PENDING the
+    laptop's `?scatterindirect=dispatch`. The fix takes both out, so it
+    stands either way; since the blocks had flickered with arguments the CPU
+    wrote, the draw is a direct `draw()`, not an indirect one at a CPU count
+    (`docs/rendering.md`, "NOTHING OF THE STATIC WORLD IS DRAWN OR
+    DISPATCHED INDIRECT").
+  - **What changed.** Each range is `draw(bound * 384, 1, SCATTER_BIT +
+    base * 384, 0)` (`InstanceCull.drawRange`, `empty`), from both draw
+    sites (`WorldBlocks.drawScatter`, `WorldDepth.draw`), so the main pass,
+    the probes' faces, both cascades, the foliage's and the lightning's maps
+    and the lamps' static faces changed together. The BOUND: the CPU
+    replays the instance test off the uniform words the GPU reads, each test
+    widened past float error and a probe's own blocks never left out, and
+    adds every in-pass record of each kept instance off a run table built
+    at the cut — never fewer than the GPU keeps, since its cluster test only
+    drops more. The list is CLEARED ahead of each dispatch and a zero entry
+    draws nothing (a guard in the shared decode, `celVertex.ts`: the corner
+    outside the clip volume, returned before any read); a range whose bound
+    is 0 is not drawn; `expand` is dispatched DIRECT, a thread a record,
+    because over a cleared list a dropped dispatch would blank every tree.
+    Rejected (the design, in this session's scratch): a plain draw over the
+    list's whole capacity (32 M corners a pass on Greyfen), a count read
+    back a few frames late (pop-in on a cut, a probe face with no history),
+    and gating it to the device (nobody knows which devices drop).
+  - **The A/B in one deploy, TEMPORARY**: `?scatterindirect` is the path
+    before this exactly (no clear, no bound, `expand` and every range
+    indirect); `?scatterindirect=dispatch` the plain draw with `expand`
+    alone indirect, which asks whether that driver drops an indirect
+    DISPATCH too (a dropped one blanks every tree at once). Both are named
+    in a capture's `graphics.forced`, and come out once the laptop has
+    answered.
+  - **Measured on the desktop** (`--max`, the RTX box; the scratch logs
+    are this session's):
+    - **The same picture**: the bank's 61 frames byte-identical to ed51e1d's
+      (a BEFORE in the worktree), and again under `?scatterindirect` and
+      under `?scatterindirect=dispatch` — 61 of 61 each, mean 0, max 0 — its
+      report identical line for line, no console error.
+    - **The bound is never short**: a probe copied every dispatch's `args`
+      out in its own encoder and compared each range with the CPU's bound,
+      through a whole `?bench=<map>` on seven maps (the install's probe
+      bake, the vantages at eight headings, the path, the fight: 3,670-7,138
+      dispatches a map; every one but every fourth of the main pass's) —
+      max(count - bound) 0 in every view, at max settings (3440x1440) and at
+      a phone's (2400x1080, Trees, shadows, GI, grass and bloom low).
+      Bound over count, summed over the run: the main pass 1.004 (Sarab) to
+      1.20 (Greyfen) at max, 1.004-1.19 at the phone's; the cascades
+      1.01-1.20, the foliage map 1.04-1.14, a probe's faces 1.02-1.09, the
+      lamps' faces 1.18-1.87 over a few thousand survivors; a single
+      dispatch's ratio runs higher where its count is a handful. Under
+      1.5 everywhere it matters, so the lever (the clusters of a straddling
+      instance tested on the CPU) is not built.
+    - **The census** (`--against` ed51e1d's): ours lower on five maps —
+      Greyfen 213 to 205, Coldharbour 674 to 672, Harrowmead 851 to 847,
+      Sarab 669 to 661, Kurenai 131 to 125, a range at bound 0 drawing
+      nothing — and equal on Hollowmere (278) and Cinderhaven (186);
+      `?scatterindirect` equal to ed51e1d on all seven.
+    - `gate.mjs` and `shaders.mjs` clean on seven; typecheck, build,
+      corecheck.
+    - **X0.3** (`bench.mjs --max --gpu`, 3440x1440, uncapped, one run an
+      invocation, plain alternated with `?scatterindirect`, three a side,
+      the canonical fight hashes on all 18), plain over indirect: Greyfen
+      frame 1.001 / 1.003 / 0.996 (vantages / path / fight), `gpu.frame`
+      1.002 / 0.999 / 0.994, tick 1.005 / 0.996 / 0.998; Harrowmead frame
+      1.000 / 0.997 / 0.984, `gpu.frame` 0.984 / 1.013 / 1.000, tick
+      1.004 / 0.993 / 0.980; Kurenai frame 0.995 / 0.997 / 0.988,
+      `gpu.frame` 0.994 / 1.035 (17 samples) / 0.998, tick 1.008 / 0.988 /
+      0.988. `gpu.cull` fell about a third on all three (51-61 to 33-42
+      µs): the indirect `expand` cost more than the direct one and the
+      clear. Nothing past the session's floor. Greyfen's bench install read
+      1.1 s longer on the plain arm; a paired install at 1920x1080 did not
+      reproduce it (8.4-8.9 s plain, 8.6-9.3 s indirect), and `dispatch`
+      took 25-35 µs a call with the bound against 5 without.
+  - **Owed**: the laptop — the default, `?scatterindirect` and
+    `?scatterindirect=dispatch`, four loads each; `=dispatch` flickering
+    (every tree at once) settles the attribution on `expand`, and decides
+    how the rule is worded; and the phone's A/B against `?scatterindirect`,
+    alternated.
 - **Owed.** A same-session pair against 3b9be6c still prices the fold
   itself.
 
@@ -1901,7 +1992,8 @@ sample a wrapped view of it — but for X3.6d's: the glow's MASK stays
 moon still draw into it and its blur and the ink read it, so ours draws INTO
 Babylon's pass there, as it draws into the main pass, and nothing is wrapped.
 Every pass draws through X3.5b's fold: a group's plain draw and, with scatter,
-its one indirect draw, a pass.
+its one draw, a pass — indirect when these steps landed, plain at a bound the
+CPU computes since 2026-10-24 (X3.5b's landed list).
 
 - **X3.6a — the world's shadows:** both cascades, the foliage map and the
   lightning flash map (`ShadowSystem`, today a `ShadowGenerator` with a
@@ -3092,7 +3184,7 @@ Phase 1 actually took.
 | X3.4 | Every prop was unique, so there were no variants to instance: how many variants a kind, or defer the step? | **Decided** 2026-10-14: 16 variants a kind, each placement under its own yaw and scale; maple's four crowns four variants each (X3.4). |
 | X3.4 | Scatter AO: baked per kind (cheaper, changes the look) or per instance? | **Decided** 2026-10-14: per kind, judged in the bank. If the look is wrong, the fix is X3.4's "If the look is wrong" (a per-kind bake plus a per-instance term), not a per-instance bake. |
 | X3.5b | X3.4b's instanced draws are one a part of a set, issued every frame: fold them into one draw a recipe, and when? | **Decided** 2026-10-14: fold them by vertex pulling, blocks and scatter in one stream, before X3.6 repeats them in every pass. Fewer variants was not the lever: it halves the count and costs the look. |
-| X3.5b | The instance in the index's high bits, or non-indexed draws over (record, corner)? | **Decided** 2026-10-20: the high bits, with the scatter addressed in its own region (13 bits of instance, 18 of vertex, its parts laid first); landed 2026-10-21, at two draws a group with scatter, since the blocks stay never-indirect. |
+| X3.5b | The instance in the index's high bits, or non-indexed draws over (record, corner)? | **Decided** 2026-10-20: the high bits, with the scatter addressed in its own region (13 bits of instance, 18 of vertex, its parts laid first); landed 2026-10-21, at two draws a group with scatter, since the blocks stay never-indirect; the scatter's draw plain since 2026-10-24, at a bound the CPU computes, and its `expand` direct, for the Intel laptop whose trees went too. |
 | X3.6d | After X3.6 Babylon still BUILDS every world mesh, as the fallback each pass hands back to, and still draws the emissive palette's MAIN pass. Which step deletes the fallbacks, and which moves the palette's main pass? | **Decided** 2026-10-24 for the palette's main pass: option 1, move it in its own step and measure first — it changes which side wins an equal-depth tie with a coplanar wall, a picture change owed its own commit with the bank's numbers (rule 2); landed as X3.6e (59 of 61 rows byte-identical, the two that moved the reach's hysteresis rather than a tie). Deleting the fallbacks is still **open**: Phase 3's end condition ("Babylon builds no world mesh for a round") needs it, and no step names it. |
 | X4.2 | Which hull parts drop at range (the tank's links and wheels, the MG rings)? | An art call; PERF_PLAN A3 measured +6.5% at 300 m on Cinderhaven. |
 | X6.2 | Is it ready to merge to `develop`? | Only when X6.2's "Before" list passes in full. |

@@ -1802,6 +1802,7 @@ export class Game {
       mode: this.overrides.cullMode,
       // After the HUD, which built `#hud`.
       report: this.overrides.cullCheck ? new CullCheckPanel().show : null,
+      scatterDraw: this.overrides.scatterDraw,
     });
     // A capture says what our renderer took and drew, which Babylon's own
     // draw counter cannot (`ProfileReport.blocks`).

@@ -2853,8 +2853,20 @@ Sarab 0.029 to 0.041 — still not it; since the survivors' list (e07ae7c)
   desktop, whose NVIDIA driver draws indirect faithfully, a URL diagnostic
   that draws the blocks and the landform INDIRECT at their survivors'
   count, A/B against the plain draw with `gpu.frame`. X3.5b's fold kept
-  the blocks and the landform on that plain draw (only the scatter is drawn
-  indirect, one draw a group), so the answer is still owed and still theirs.
+  the blocks and the landform on that plain draw, and since 2026-10-24
+  NOTHING of the world is drawn or dispatched indirect — the scatter is a
+  plain draw to a bound the CPU computes, its tail of zero entries clipped
+  before a read, and its `expand` direct (`docs/rendering.md`) — so the
+  answer is still owed and still theirs.
+- **On that Intel laptop `?babylonworld` reads a bit FASTER than our path**
+  (the user, 2026-10-24, by eye: unmeasured). A capture is owed before it
+  is a finding of its own — `?bench=<map>&gpu` against
+  `?bench=<map>&gpu&babylonworld`, alternated, on Greyfen, Kurenai and
+  Cinderhaven, Chrome started with `--enable-unsafe-webgpu` so
+  `gpu.frameMeasurable` is true. The walk above is one suspect there; the
+  scatter's non-indexed pulled draw, the culls repeated in every view, and
+  the indirect path's validation (which the scatter's plain draw removed:
+  `?scatterindirect` prices it) are the others.
 - **The phone's `gpu.frame`** on Greyfen and Cinderhaven (finding 52) is the
   number this matters for; the desktop only says where to look.
 
@@ -2862,14 +2874,22 @@ Sarab 0.029 to 0.041 — still not it; since the survivors' list (e07ae7c)
 
 **Status:** open; one observation, nothing measured. Reported 2026-10-18 by
 the user on the laptop whose buildings flickered from dropped INDIRECT draws
-(`docs/rendering.md`, "THE BLOCKS ARE NEVER DRAWN INDIRECT"). It was parked
-then as minor.
+(`docs/rendering.md`, "NOTHING OF THE STATIC WORLD IS DRAWN OR DISPATCHED
+INDIRECT"). It was parked then as minor.
 
 ### What was observed
 
 "Sections of grass" blink out on that laptop (Intel Xe-LPG, Chrome), and the
 user dates it from before the exit work began. The buildings' flicker is
-fixed and its trees never flickered.
+fixed. Its trees were said never to flicker on 2026-10-18, and on
+2026-10-24 they did, on the deployed X3.6e — EVERY tree and prop at the same
+time, all kinds together, never a single tree and never one kind alone; not
+under `?babylonworld`, still under `?nocull`. All at once points at the one
+indirect DISPATCH that serves the whole scatter (`expand`) rather than a
+group's own indirect draw — PENDING the laptop's `?scatterindirect=dispatch`.
+Since then nothing of the scatter is indirect (`docs/rendering.md`, the same
+section), so a section of GRASS still going on that build is this finding's
+alone.
 
 ### What is derived from the code
 

@@ -7,7 +7,9 @@
  * Owns: `instanceCullWgsl`; `INSTANCE_DECLARATIONS`, the instance and set
  * records as the cull and the probe declare them; the byte layouts it reads
  * (`INSTANCE_CULL_UNIFORM_BYTES`, `INSTANCE_WORDS`, `SET_WORDS`,
- * `RECORD_WORDS`) and the indirect arguments it writes (`INDIRECT_BYTES`).
+ * `RECORD_WORDS`) and the indirect arguments it writes (`INDIRECT_BYTES`);
+ * the plane slack (`INSTANCE_SLACK`) and `expand`'s workgroup
+ * (`EXPAND_SIZE`), which the CPU's bound reads too (`InstanceCull`).
  * Invariants: an instance is dropped only if its sphere lies past the reach,
  * its region is filed under a block a probe's view leaves out
  * (`probeExcludes`), it is under the size gate, or its sphere (grown by the
@@ -23,9 +25,12 @@
  * range's own run of the LIST, from its first record, in the scan's ORDER —
  * by near-first band, then by record index — so the same eye draws the same
  * triangles in the same order (`render/scatterList.ts` is the entry and the
- * index); each range's draw is ONE non-indexed indirect draw of
- * `LIST_STRIDE` corners a survivor, from its run's first, written by
- * `prefix`; the WORK LIST of survivors is appended to a workgroup's run at a
+ * index); each range's draw is ONE non-indexed PLAIN draw of
+ * `LIST_STRIDE` corners a survivor up to a bound the CPU computes, from its
+ * run's first (`InstanceCull.drawRange`) — `prefix` still writes each
+ * range's indirect arguments, the survivors' count, which the A/B's
+ * indirect arm draws (`?scatterindirect`) and a probe reads back against the
+ * bound; the WORK LIST of survivors is appended to a workgroup's run at a
  * time, in no order, because it decides only which thread writes an entry,
  * never where it lands.
  * Never: reads a node — everything it reads was uploaded as numbers.
@@ -40,13 +45,15 @@
  *   workgroup's total in `sums[w]`, as the cluster cull's first pass — and
  *   each survivor appended to the WORK LIST, one append a workgroup.
  * - `prefix` (ONE workgroup): `sums` scanned in place, then each range opened
- *   and its draw's indirect arguments written, and `expand`'s workgroup
- *   count from the work list's length.
- * - `expand` (a thread a SURVIVOR, dispatched indirect): its entry written
- *   where the scan says. Launched over the work list, never over every
- *   record: at a workgroup a record it launched 83,846 on Greyfen whatever
- *   survived, and the cull cost the phone 1.1-1.4 ms (`BABYLON_EXIT.md`
- *   X3.5b).
+ *   and its indirect arguments written, and `expand`'s workgroup count and
+ *   the work list's length (word 3).
+ * - `expand` (a thread a SURVIVOR): its entry written where the scan says.
+ *   Dispatched DIRECT, a thread a record (`EXPAND_SIZE` a workgroup), its
+ *   threads past the work list's length returning at once — 1,310
+ *   workgroups on Greyfen, where a workgroup a record was 83,846 and cost
+ *   the phone 1.1-1.4 ms (`BABYLON_EXIT.md` X3.5b) — because once the list
+ *   is cleared a dropped dispatch would blank the scatter; indirect, at
+ *   `prefix`'s count, only under the A/B (`?scatterindirect`, either arm).
  * `cullRecords` and `expand` bind at most eight storage buffers each, the
  * least `maxStorageBuffersPerShaderStage` a device may have — which is why a
  * survivor carries its band, instance and cluster rather than `expand`
@@ -63,7 +70,12 @@ import { scatterListWgsl } from "../scatterList";
 import { CULL_DECLARATIONS, SCAN_DECLARATIONS, SCAN_SIZE } from "./clusterCull";
 
 /** Threads in an `expand` workgroup. */
-const EXPAND_SIZE = 64;
+export const EXPAND_SIZE = 64;
+/**
+ * A frustum plane's slack for an instance's sphere, metres: float error at a
+ * few kilometres, never an instance that is in view.
+ */
+export const INSTANCE_SLACK = 0.05;
 /** The least `maxComputeWorkgroupsPerDimension` WebGPU allows: `expand`'s first dimension. */
 const MAX_WORKGROUPS = 65535;
 /** `dispatchWorkgroupsIndirect`'s three arguments and the count after them, in bytes — `expand`'s. */
@@ -113,9 +125,8 @@ export function instanceCullWgsl(stride: number): string {
   return /* wgsl */ `
 const EXPAND: u32 = ${EXPAND_SIZE}u;
 const NONE: u32 = 0xffffffffu;
-// A frustum plane's slack, metres: float error at a few kilometres, never an
-// instance that is in view.
-const SLACK: f32 = 0.05;
+// A frustum plane's slack, metres (\`INSTANCE_SLACK\`).
+const SLACK: f32 = ${INSTANCE_SLACK};
 
 ${CULL_DECLARATIONS}
 ${SCAN_DECLARATIONS}

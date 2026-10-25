@@ -3561,7 +3561,8 @@ Babylon's.
   reads is zeros, which is what Babylon's empty buffer reads), one pipeline,
   one material, its geometry at group 2, and ONE plain `drawIndexed` over the
   group's whole range of the cull's indices — never an indirect draw
-  (below) — beside at most ONE indirect draw of its scatter (X3.5b, below).
+  (below) — beside at most ONE plain draw of its scatter at a bound the CPU
+  computes (X3.5b, below).
   **The two layers are ONE cut, one cull, one cluster list and one index
   buffer**, drawn by ONE `FrameDraw` at `"beforeAlphaTest"` — the palette
   (since X3.6e, while the handover holds it), the blocks, the scatter, then
@@ -3744,8 +3745,9 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
   records are scanned near-first into their group's own run of ONE LIST, by
   a scan and never an atomic append, each a 16-byte ENTRY (instance, first
   source index, count, part), and each group's scatter is one non-indexed
-  `drawIndirect` of `listStride` corners a survivor (a cluster's most, so a short
-  cluster ends in triangles of no area): the vertex stage reads the entry
+  plain `draw` of `listStride` corners a survivor, up to a BOUND the CPU
+  computes (below; a cluster's most, so a short cluster ends in triangles
+  of no area): the vertex stage reads the entry
   and the part's 16-bit SOURCE index itself, the part's first vertex on the
   entry. **The cull writes no index, and that is the phone's price rather
   than a tidiness**: it EXPANDED every survivor into an index stream until
@@ -3755,13 +3757,16 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
   of a default storage binding. The list took 55-70% off the phone's cull
   and about half of that went back to the vertex stage's lost reuse of a
   shared corner, which the desktop pays at 1-3% of its frame
-  (`BABYLON_EXIT.md` X3.5b). **The last pass is launched over the SURVIVORS
-  only**: each workgroup of the record pass appends its survivors to a work
-  list in one atomic, and the last pass is dispatched indirect at its
-  length — an append that orders nothing, since the scan has already placed
-  every entry. Launched at a workgroup a RECORD it was 83,846 workgroups on
-  Greyfen whatever survived, and the cull cost the phone 1.1-1.4 ms of a
-  16-22 ms frame. **The size
+  (`BABYLON_EXIT.md` X3.5b). **The last pass runs a thread a SURVIVOR**:
+  each workgroup of the record pass appends its survivors to a work list in
+  one atomic — an append that orders nothing, since the scan has already
+  placed every entry — and the last pass is dispatched DIRECT, a thread a
+  record at 64 a workgroup (1,310 workgroups on Greyfen), each thread past
+  the work list's length returning at once. Launched at a workgroup a
+  RECORD it was 83,846 workgroups on Greyfen whatever survived, and the cull
+  cost the phone 1.1-1.4 ms of a 16-22 ms frame. It was dispatched INDIRECT
+  at the list's length until 2026-10-24; it is direct because, the list now
+  being cleared, a dropped dispatch would blank the scatter (below). **The size
   gate is per INSTANCE**, where Babylon's was per block surface, so a scrap
   of litter under 3 px drops where its block never would — kept at X3.5b on
   purpose, because the fold was to move no pixel against X3.5's picture and
@@ -3770,17 +3775,17 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
   `drawIndexedIndirect` per part of a set, because WebGPU has no
   multi-draw-indirect: Greyfen's main pass was our 9 draws and 151
   instanced, most of them empty. Folded, each group with scatter draws its
-  whole run of the list with ONE indirect draw at a count the prefix
-  writes. **It is still a SECOND draw beside the group's plain one**, and
-  that is the Intel rule below rather than a step left undone: the blocks
-  may not be drawn indirect, and the scatter cannot be drawn plain, since
-  its survivors are a count only the GPU knows and a range that held every
-  instance is the whole forest as triangles of no area every frame. Our
-  draws a vantage fell 161 to 17 on Greyfen and 212 to 14 on Harrowmead,
-  and the desktop's fights got 5-13% faster. **The list is sized for every
-  record surviving and never cleared**, 16 bytes a record (1.3 MB on
-  Greyfen); a list past the device's limits hands back the scatter's
-  groups, never the map.
+  whole run of the list with ONE draw — indirect at the prefix's count
+  until 2026-10-24, plain at the CPU's bound since (below). **It is still a
+  SECOND draw beside the group's plain one**: the blocks' draw runs over a
+  range the cull zeroes past its survivors, and the scatter's cannot — a
+  range that held every record is the whole forest as corners of no area
+  every frame, 32 M on Greyfen — so it runs only to its bound. Our draws a
+  vantage fell 161 to 17 on Greyfen and 212 to 14 on Harrowmead, and the
+  desktop's fights got 5-13% faster. **The list is sized for every record
+  surviving and CLEARED ahead of each dispatch**, 16 bytes a record (1.3 MB
+  on Greyfen, cleared whole); a list past the device's limits hands back
+  the scatter's groups, never the map.
 - **Three URL switches A/B all of this on a device nobody here owns**, in a
   shipped build (`core/urlOverrides.ts`), and a capture names whichever was
   set in `graphics.forced`. `?babylonworld` takes nothing, so Babylon draws
@@ -3789,7 +3794,12 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
   turns off the five planes only (`ClusterCull.ts`'s `openTests`). So a
   picture that is wrong by default and right under `?nocull` is a cull's
   DECISION, and one still wrong under `?nocull` and right under
-  `?babylonworld` is our DRAW. Diagnostics, never settings.
+  `?babylonworld` is our DRAW. Diagnostics, never settings. **A fourth is
+  TEMPORARY**: `?scatterindirect` puts the scatter back on its old path
+  exactly — the list never cleared, `expand` dispatched and every range
+  drawn indirect — and `?scatterindirect=dispatch` keeps the plain draw
+  and dispatches `expand` alone indirect (`ScatterDraw`, below). It is the
+  Intel laptop's A/B, and comes out once that laptop has answered.
 - **`?cullcheck` says WHICH decision, on the device** (`render/CullCheck.ts`).
   About once a second each cull copies out the uniform block the GPU read and
   every verdict it made, and the CPU replays the WGSL test over the same
@@ -3812,7 +3822,9 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
   the far corner). `why` is the probe's own new/new verdict on what the cull
   dropped against the CPU, so `why kept` is the cull shader disagreeing with
   an identical read. A desktop reads zero everywhere.
-- **THE BLOCKS ARE NEVER DRAWN INDIRECT.** The cull writes each group's
+- **NOTHING OF THE STATIC WORLD IS DRAWN OR DISPATCHED INDIRECT** — the
+  blocks since 2026-10-18, and the scatter's draws and the instance cull's
+  last pass since 2026-10-24 (below). **The blocks:** the cull writes each group's
   survivors near-first at the front of its range, as ever, into a buffer
   CLEARED ahead of the scatter every frame (`encoder.clearBuffer`), so the
   rest of the range is index 0 three times over — a triangle of no area —
@@ -3842,14 +3854,67 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
   Babylon never met it because Babylon never draws indirect. (Intel lists
   indirect-draw hangs on Iris Xe-class iGPUs; this is not that, but it is
   the same path.)
-- **The scatter's indirect draws were never seen to drop**, on that laptop or
-  anywhere, and stay indirect: what survives of the scatter is not a range a
-  plain draw can cover with triangles of no area. Since the fold (X3.5b) they
-  are one a group rather than one a part of a set, each over far more
-  triangles — the shape the blocks were in when they dropped — so a device
-  that drops THEM owes the instance cull the same question, and the switches
-  above are how it was asked. The SECTIONS OF GRASS that flicker on the same laptop are older
-  than our renderer and draw nothing indirect: `FINDINGS.md` 62.
+- **Then the scatter went too (2026-10-24), and since then nothing of it
+  is indirect: it is drawn plain at a BOUND the CPU computes, and `expand`
+  is dispatched direct.** On the same laptop, on the deployed X3.6e, the
+  trees and scatter props flickered — not under `?babylonworld`, still
+  under `?nocull`, so our path and no cull's decision. **EVERY tree and
+  prop vanished at the same time**, all kinds together, never a single tree
+  and never one kind alone. Each group has a draw of its own, so a dropped
+  draw would take one recipe at a time, as the blocks' did; ALL of them at
+  once points at what serves the whole scatter — the one indirect DISPATCH,
+  `expand`, which writes every group's entries. **That attribution is
+  PENDING the laptop's `?scatterindirect=dispatch`** (the plain draws with
+  `expand` alone indirect, over a cleared list, so a dropped dispatch
+  blanks every tree for a frame): the fix takes BOTH indirect calls out, so
+  it does not need the answer, and the rule's wording waits on it. Since
+  the blocks flickered with arguments the CPU wrote, an indirect draw at a
+  CPU count was no fix either way: **the draw is a direct `draw()`**,
+  `draw(bound * listStride, 1, SCATTER_BIT + base * listStride, 0)` a range
+  (`InstanceCull.drawRange`; `+`, never a JS `|`, which is signed).
+  - **The BOUND is never short.** A plain draw cannot cover what survives
+    with triangles of no area as the blocks' does — the whole range is the
+    whole forest every frame — so it runs to an upper bound on each range's
+    survivors, computed per dispatch. The CPU replays the instance test
+    (`visible`) off the very uniform words the GPU reads, so `?nocull` and
+    `?nofrustum` are followed for free, each test WIDENED past float error
+    (the reach 1 cm, the size gate 1e-4, each plane 0.1 m past the GPU's
+    slack) and a probe's own blocks never left out; then it adds every
+    record in the view's pass of each kept instance, off a table of RUNS
+    built at the cut (a set's instances share their clusters). The GPU's
+    cluster-box test only drops more, so its count is never above the
+    bound. 729-2,995 instances a map, a loop of tens of microseconds; no
+    readback, so no frame late and no pop on a camera cut.
+  - **Past the count, NOTHING is drawn.** The list is CLEARED ahead of each
+    dispatch, so the slots between the GPU's count and the bound are zero
+    entries, and a zero entry's corner is put outside the clip volume and
+    returned before an attribute is read (`celVertex.ts`'s decode, shared
+    by the cel stage, `celDepth` and `lampDepth`) — one read of the list a
+    corner. A real entry never takes that branch, so the guard moves no
+    pixel. A range whose bound is 0 is neither bound nor drawn.
+  - **`expand` is dispatched DIRECT** (above): it is the suspect for what
+    the laptop showed, and over a cleared list a dropped dispatch would
+    blank every tree for a frame. Whether that driver drops an indirect
+    DISPATCH is the `=dispatch` arm's question; the blocks' cull never had
+    one.
+  - **Every pass that draws scatter goes through the one draw** — the main
+    pass, the probes' faces, both cascades, the foliage's and the
+    lightning's maps and the lamps' static faces — and each caller draws a
+    dispatch's survivors before it records the view's next, so the bound a
+    draw reads is its own dispatch's.
+  - **Its price is the tail**: `bound - count` survivors' runs of
+    `listStride` corners that each cost a read and a compare — the bound
+    1.004-1.20 times the GPU's count in the main pass, 1.01-1.20 in the
+    cascades and 1.02-1.09 in a probe's faces, on seven maps (Greyfen the
+    loosest) — plus the clear (0.08-1.34 MB a dispatch) and some 25-35 µs
+    of CPU a dispatch on the desktop. Measured there: the bank
+    byte-identical 61 of 61, a readback of the GPU's count against the bound
+    in every view on seven maps never short, and the forest maps' frame
+    within 2% of the indirect path's with `gpu.cull` a third lower
+    (`BABYLON_EXIT.md` X3.5b's landed list has the numbers).
+
+  The SECTIONS OF GRASS that flicker on the same laptop are older than our
+  renderer and draw nothing indirect: `FINDINGS.md` 62.
 - **The hunt's switches are GONE**, taken out once the laptop stopped
   flickering and the phone drew right on the plain draw (2026-10-18):
   `?cullquiet`, `?cullflags`, `?cullsplit`, `?cullcopy`, `?cullonce`,
@@ -3858,6 +3923,9 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
   needs the question asked again. `?cullcheck`, `?nocull`, `?nofrustum` and
   `?babylonworld` stay. `?scatterlist` (X3.5b), an A/B of the same picture
   by another draw, is gone too: the list it drew is the only draw now.
+  `?scatterindirect` (2026-10-24) is the scatter's hunt's, and goes the
+  same way once the laptop has answered — `args` with it, if nothing else
+  reads them by then.
 - **A cull reads its tables as WHOLE `vec4`s and its uniform block as
   WORDS** (`clusterCull.ts`'s `CULL_DECLARATIONS`, `instanceCull.ts`'s
   `INSTANCE_DECLARATIONS`): no `vec3f` beside a scalar and no scalar
