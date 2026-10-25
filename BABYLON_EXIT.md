@@ -2920,7 +2920,10 @@ is checked against its parent.
   - Every handback becomes `worldFailed`: `BlockHandover`'s `back`,
     `handedBack`, `takePalette`, `dropPalette` and its DEV node check;
     `WorldBlocks.fail`/`giveUpAll`; the losses of `WorldShadows`, `LampAtlas`,
-    `ProbeBake` and `WorldGlow`.
+    `ProbeBake` and `WorldGlow`; and `WorldCulling.setMap`'s two throws
+    (X3.7a's: the visuals and the records out of step, a block-keyed mesh
+    with no record), invariants of the build that throw in every build today
+    and reach the player as an uncaught error rather than the menu.
   - `?babylonworld` is deleted (decided 2026-10-24); X3.7b's parent is tagged
     `exit-babylonworld` and pushed, the last build that has it, so a device
     A/B against Babylon's world stays one deploy away.
@@ -2977,7 +2980,8 @@ is checked against its parent.
   un-merging the scatter from the blocks, the Material objects (Phase 4),
   device-loss recovery (X5.4).
 
-**X3.7a landed** (2026-10-25, in one commit; no picture change).
+**X3.7a landed** (c52ebb4, the post-commit review's fixes after it;
+2026-10-25; no picture change).
 - **What it is.** Two readers that asked a world MESH now ask its RECORD,
   so X3.7b can make none. `BlockHandover.onSurface`'s verdict: identity off
   the part's own transform (no parent by then), the blend off the material
@@ -3034,8 +3038,10 @@ is checked against its parent.
     shipped and `--editor`; the record's arrays equal to their mesh's
     buffers on **3,828 of 3,828** shipped visuals (1,957 on the seven maps,
     1,871 the proving ground's) and **28,473 of 28,473** editor-build ones.
-    The new baseline is `merge-after.json` / `merge-after-editor.json` in
-    this step's scratch record; X3.7b's run takes its own BEFORE at X3.7a.
+    The new baseline is `merge-baseline-x37a.json` /
+    `merge-baseline-x37a-editor.json` in this step's scratch record, taken
+    after the review's fixes with the record's bounds in it (below); X3.7b's
+    run takes its own BEFORE at X3.7a.
   - **`census --against` the BEFORE**: every row equal (Hollowmere 278,
     Greyfen 205, Coldharbour 672, Harrowmead 847, Sarab 661, Cinderhaven 186,
     Kurenai 125). **`gate.mjs`** clean on seven. **`shaders.mjs`** clean on
@@ -3065,6 +3071,36 @@ is checked against its parent.
     `installRound` timed in-page, alternately, after a warm boot, is level
     (Greyfen 8.34/8.37 s then 5.88/5.78 against 8.39/8.28 then 5.82/5.81;
     Cinderhaven 8.88/8.58 then 5.91/5.87 against 8.55/8.94 then 5.85/5.92).
+- **What the post-commit review found** (an independent reader over
+  c52ebb4; fixed after it). No defect and nothing architectural. The
+  TRANSFORMED branch of `boundsOf` had no automated check: the DEV
+  comparison in `setMap` sees only filed surfaces, all at identity on a
+  play build, and `merge:hash` hashed no bounds. It now hashes each
+  visual's record bounds (`bounds`) and checks them against the mesh's
+  bounding info bit for bit on every run (`bounds≠mesh`), so `--editor`
+  puts the transformed path under test each time. `setMap`'s two throws
+  (the visuals and the records out of step, a block-keyed mesh that is no
+  map visual) run in a production build: kept as invariants, stated in
+  `WorldCulling`'s header, and routed through `worldFailed` at X3.7b
+  (above). "A cell needs no mesh to be filed" overclaimed: filing is still
+  per mesh, and only a cell's BOX needs none (`docs/rendering.md`,
+  `SurfaceRecord.bounds`). `gateOf`'s reason ("so the test needs no mesh")
+  could not apply, a candidate being a mesh: the gate reads the record
+  because the plan asks it to, the two agreeing, so the verdict is the
+  mesh's. Names: `filedBounds`, `recordByMesh`, `releaseArrays`'
+  `surfaceIndex`. `merge:hash`'s summary counted a visual with no sink
+  arrays as unequal but not as compared; it is counted apart now and still
+  fails the run. `boundsOf`'s transformed path allocated three vectors a
+  surface (module scratches now, bit-identical: the check above); the DEV
+  bounds stats reset on `setMap(null)`; `misread` is in `BlockHandover`'s
+  Owns. Re-checked after the fixes: `merge:hash` identical to the earlier
+  baselines on all eight maps, shipped and `--editor`, but for the new
+  `bounds` field; the record bounds equal to the mesh's on **3,828 of
+  3,828** shipped visuals (628 off identity) and **28,473 of 28,473**
+  editor-build ones (27,488 off identity); the DEV bounds check on
+  Coldharbour 234 of 234 and Greyfen 357 of 357, every visual equal; the
+  bank 61 of 61 byte-identical to the BEFORE at 2293c09, no console or page
+  error; typecheck, build and corecheck.
 - **Owed onward.** X3.7b, whose gate the headroom above meets: the
   defaults are the floor every WebGPU adapter must grant and the device asks
   for nothing more, so a phone gets the same limits; what can still differ

@@ -14,8 +14,9 @@
  * palette, whether the palette is the main pass's (`paletteMain`) and whether
  * it was at any time this install (`paletteTaken`, which `stats` counts it
  * by), the material epoch last copied, the listener it registers for a loss
- * of the mask (`WorldGlow.onLost`), and the build's scatter FIELD until the
- * map is cut (X3.4b).
+ * of the mask (`WorldGlow.onLost`), the build's scatter FIELD until the
+ * map is cut (X3.4b), and the DEV birth check's once-a-page latch
+ * (`misread`, X3.7a).
  * Invariants: a surface is TAKEN only if our pipeline draws it exactly as
  * Babylon would — block-merged or the LANDFORM (`WorldSurface.landform`: the
  * floor's patches, the rim's runs and the map-wide road merge, which the

@@ -4303,7 +4303,8 @@ hang over its own seam. Measuring what is there cannot be wrong in the direction
 that matters. **They are read off each surface's RECORD** (`SurfaceRecord.
 bounds`, `boundsOf`, taken off its arrays before they are released — X3.7a),
 which is Babylon's bounding info computed step for step under the part's own
-world matrix, so a cell needs no mesh to be filed; a DEV build compares every
+world matrix, so a cell's BOX needs no mesh to be grown — filing is still per
+mesh, until X3.7b files the records themselves; a DEV build compares every
 filed surface's box and sphere with its mesh's, bit for bit
 (`WorldCulling.stats.boundsMismatched`, and a console error).
 

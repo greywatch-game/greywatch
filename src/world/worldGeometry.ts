@@ -145,10 +145,12 @@ export interface SurfaceRecord {
   name: string;
   /**
    * Its WORLD bounds, taken from its arrays before they are released
-   * (`boundsOf`): what `WorldCulling` files a cell and size-gates a candidate
-   * by, in place of the mesh's bounding info, which is the same numbers bit
-   * for bit (a DEV build checks every filed surface) — so the record can stand
-   * for a surface whose mesh is never made (`BABYLON_EXIT.md` X3.7).
+   * (`boundsOf`): what `WorldCulling` grows a cell's box from and size-gates a
+   * filed candidate by, in place of the mesh's bounding info, which is the
+   * same numbers bit for bit (a DEV build checks every filed surface). Filing
+   * is still per MESH; what needs none now is the cell's box, which is the
+   * half of the cull a surface with no mesh will still owe (`BABYLON_EXIT.md`
+   * X3.7b).
    */
   bounds: SurfaceBounds;
   /**
@@ -200,6 +202,9 @@ const BOUND_MAX = new Vector3();
 const BOUND_CENTER = new Vector3();
 const BOUND_CORNERS = Array.from({ length: 8 }, () => new Vector3());
 const BOUND_POINT = new Vector3();
+const BOUND_LO = new Vector3();
+const BOUND_HI = new Vector3();
+const BOUND_SCALE = new Vector3();
 
 /**
  * The world bounds of `positions` under `world`, as Babylon computes a mesh's
@@ -246,15 +251,15 @@ export function boundsOf(positions: ArrayLike<number>, world: Matrix): SurfaceBo
   c[5].copyFromFloats(max.x, max.y, min.z);
   c[6].copyFromFloats(min.x, max.y, max.z);
   c[7].copyFromFloats(max.x, min.y, max.z);
-  const lo = new Vector3().setAll(Number.MAX_VALUE);
-  const hi = new Vector3().setAll(-Number.MAX_VALUE);
+  const lo = BOUND_LO.setAll(Number.MAX_VALUE);
+  const hi = BOUND_HI.setAll(-Number.MAX_VALUE);
   for (const corner of c) {
     Vector3.TransformCoordinatesToRef(corner, world, BOUND_POINT);
     lo.minimizeInPlace(BOUND_POINT);
     hi.maximizeInPlace(BOUND_POINT);
   }
   const centerWorld = Vector3.TransformCoordinatesToRef(center, world, BOUND_POINT);
-  const scale = Vector3.TransformNormalFromFloatsToRef(1.0, 1.0, 1.0, world, new Vector3());
+  const scale = Vector3.TransformNormalFromFloatsToRef(1.0, 1.0, 1.0, world, BOUND_SCALE);
   return {
     minX: lo.x,
     minY: lo.y,
@@ -307,9 +312,9 @@ const RELEASED = Object.freeze(new GeometryBuffer({ positions: [], indices: [] }
 export type SurfaceSink = (index: number, geometry: GeometryBuffer) => void;
 
 /** Drops a part's arrays — see `SurfaceRecord` — through the DEV sink first (`SurfaceSink`). */
-export function releaseArrays(part: Part, index: number): void {
+export function releaseArrays(part: Part, surfaceIndex: number): void {
   if (import.meta.env.DEV) {
-    (globalThis as { __surfaceSink?: SurfaceSink }).__surfaceSink?.(index, part.geometry);
+    (globalThis as { __surfaceSink?: SurfaceSink }).__surfaceSink?.(surfaceIndex, part.geometry);
   }
   part.geometry = RELEASED;
 }

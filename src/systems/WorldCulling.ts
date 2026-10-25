@@ -21,7 +21,18 @@
  * in Babylon or in this game reads that list. So every ray, every collision,
  * every shadow caster, every cube probe and every vertex range into a pane is
  * indifferent to it BY CONSTRUCTION. It must stay that way: the moment this
- * disables a mesh it acquires all four of those problems at once.
+ * disables a mesh it acquires all four of those problems at once. And every
+ * mesh it files in a cell is one of the map's VISUALS with a RECORD beside
+ * it — `GameMap.visuals` and `world.surfaces` aligned one for one, which
+ * `setMap` THROWS on in every build, as it does on a block-keyed mesh that is
+ * no map visual: those are the build's own contract broken rather than a
+ * state a map can be in, and a cell grown from anything else would be a box
+ * nobody measured (`BABYLON_EXIT.md` X3.7b routes both through
+ * `Game.worldFailed`).
+ * Never: writes a property on a mesh; grows a cell's box off a mesh's
+ * bounding info rather than its record's; files a block-keyed mesh that has
+ * no record, or a map whose visuals and records disagree in length — it
+ * throws instead.
  *
  * **The frame walks the SCENE, and the scene is the map.**
  * `_evaluateActiveMeshes` iterates every candidate every frame — a Map get for
@@ -278,16 +289,18 @@ export class WorldCulling {
    * air where the soldier was.
    *
    * **A mesh filed in a CELL maps to its record's bounds** (`SurfaceRecord.
-   * bounds`), and is tested off that sphere rather than its mesh's — the same
-   * numbers bit for bit (`setMap` checks them in DEV), read off the RECORD so
-   * the test needs no mesh (`BABYLON_EXIT.md` X3.7a). Every other mesh — a
+   * bounds`), and is tested off that sphere rather than its mesh's, because
+   * X3.7 asks the size gate to read the record wherever the cells do
+   * (`BABYLON_EXIT.md` X3.7a). A candidate is still a mesh; the record and the
+   * mesh hold the same numbers bit for bit (`setMap` checks them in DEV), so
+   * the verdict is the one the mesh's own sphere gave. Every other mesh — a
    * loose one, the landform, an editor build's, an effect — is absent and
    * tested off its own bounding info, which an editor move rewrites under it.
    */
   private gateOf = new Map<AbstractMesh, Pool | SurfaceBounds | null>();
 
   /** Every mesh filed in a cell, and the bounds its record holds — see `gateOf`. */
-  private boundsOf = new Map<AbstractMesh, SurfaceBounds>();
+  private filedBounds = new Map<AbstractMesh, SurfaceBounds>();
 
   /** The map's collider proxies: never candidates, at any distance. */
   private hidden = new Set<AbstractMesh>();
@@ -405,7 +418,7 @@ export class WorldCulling {
   setMap(map: GameMap | null, fogEnd: number): void {
     this.hidden = new Set();
     this.cellOf = new Map();
-    this.boundsOf = new Map();
+    this.filedBounds = new Map();
     this.cells = [];
     this.unfiled = new Set();
     this.listDirty = true;
@@ -414,6 +427,8 @@ export class WorldCulling {
     this.stats.hidden = 0;
     this.stats.blocked = 0;
     this.stats.cells = 0;
+    this.stats.boundsChecked = 0;
+    this.stats.boundsMismatched = 0;
     // The lists handed to Babylon, emptied rather than only marked dirty:
     // `offer` rewrites `candidates` by LENGTH, so everything past it is last
     // build's meshes, disposed and kept alive by this array alone.
@@ -459,15 +474,15 @@ export class WorldCulling {
         `WorldCulling: the map holds ${map.visuals.length} visuals and ${surfaces.length} surface records`,
       );
     }
-    const recordOf = new Map<AbstractMesh, SurfaceRecord>();
-    map.visuals.forEach((mesh, i) => recordOf.set(mesh, surfaces[i]));
+    const recordByMesh = new Map<AbstractMesh, SurfaceRecord>();
+    map.visuals.forEach((mesh, i) => recordByMesh.set(mesh, surfaces[i]));
     let mismatched = 0;
     const byKey = new Map<string, Cell>();
     const file = (mesh: Mesh): void => {
       const key: unknown = mesh.metadata?.block;
       if (typeof key !== "string" || key === "") return;
       if (this.cellOf.has(mesh) || this.hidden.has(mesh)) return;
-      const record = recordOf.get(mesh);
+      const record = recordByMesh.get(mesh);
       if (!record) throw new Error(`WorldCulling: "${mesh.name}" carries a block but is no map visual`);
       const b = record.bounds;
       if (import.meta.env.DEV && !sameBounds(mesh, b)) mismatched++;
@@ -493,7 +508,7 @@ export class WorldCulling {
         this.cells.push(cell);
       }
       this.cellOf.set(mesh, cell);
-      this.boundsOf.set(mesh, b);
+      this.filedBounds.set(mesh, b);
       this.stats.blocked++;
     };
 
@@ -725,7 +740,8 @@ export class WorldCulling {
       data.push(mesh);
     }
     // The pool FIRST, because a rig's visor is both and the body wins — see
-    // `gateOf` — then the emissive exemption, then a filed mesh's record.
+    // `gateOf` — then the emissive exemption, then a filed mesh's record,
+    // which the size gate reads where the cells do (X3.7a).
     // Everything the gate tests off its own mesh is left out, so that case is
     // a miss rather than an entry.
     this.gateOf = new Map();
@@ -734,7 +750,7 @@ export class WorldCulling {
       if (pool) this.gateOf.set(mesh, pool);
       else if (glows(mesh)) this.gateOf.set(mesh, null);
       else {
-        const bounds = this.boundsOf.get(mesh);
+        const bounds = this.filedBounds.get(mesh);
         if (bounds) this.gateOf.set(mesh, bounds);
       }
     }
@@ -867,7 +883,8 @@ export class WorldCulling {
         if (how === undefined) {
           if (tooSmallMesh(mesh, eye, perRad, px2)) continue;
         } else if (how !== null) {
-          // A body's verdict, taken once off its root; else a filed surface's record.
+          // A body's verdict, taken once off its root; else a filed surface's
+          // record, the same sphere its mesh holds — see `gateOf`.
           const small =
             "root" in how
               ? how.small

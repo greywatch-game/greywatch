@@ -206,7 +206,10 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   frozen matrix, and each visual's PIECE ranges
                               #   and its RECORD's arrays, hashed through the DEV
                               #   sink as they are released (SurfaceSink) and
-                              #   checked equal to its mesh's buffers every run;
+                              #   checked equal to its mesh's buffers every run,
+                              #   and its RECORD's bounds, checked bit for bit
+                              #   against its mesh's bounding info every run
+                              #   (`--editor` is the off-identity path);
                               #   the panes, pane groups, editor items (indices
                               #   into visuals) and the piece table.
                               #   `--profile` prints the build's phases. Same

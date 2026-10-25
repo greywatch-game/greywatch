@@ -33,7 +33,18 @@
  * mesh's buffers hash to. **Every run checks the two halves agree** wherever
  * a visual has a mesh's buffers to compare (a failure, named `arrays≠buffers`),
  * against no baseline at all; that is what lets a later baseline lean on the
- * record's hashes alone for a surface no mesh is made of (X3.7b).
+ * record's hashes alone for a surface no mesh is made of (X3.7b). A visual
+ * whose arrays never reached the sink fails the run too, counted apart.
+ *
+ * **And its record's BOUNDS** (`bounds`: `SurfaceRecord.bounds`' ten numbers,
+ * box then sphere, hashed as their f64 bits), which `WorldCulling` grows its
+ * cells from. **Every run also checks them against the mesh's own bounding
+ * info bit for bit** (`minimumWorld`/`maximumWorld`, `centerWorld`/
+ * `radiusWorld`, read where the DEV check in `WorldCulling.setMap` reads them;
+ * a failure, named `bounds≠mesh`), over EVERY visual rather than only the
+ * filed ones — so `--editor`, whose visuals are placed off identity, puts
+ * `boundsOf`'s transformed path under test on every run, which the shipped
+ * build's (all at identity but the odd loose mesh) does not.
  *
  * **Four per-mesh fields describe the UPLOAD rather than the geometry**, because
  * a merge that moves onto arrays and uploads at the end can get each wrong
@@ -144,6 +155,11 @@ function fingerprintMap() {
     return "f64:" + hashWords(new Uint32Array(f.buffer));
   };
   const num = (x) => (x === undefined || x === null ? null : +x.toFixed(9));
+  // A record's bounds in one order, box then sphere, and their f64 bits' hash.
+  const boundsWords = (b) => [
+    b.minX, b.minY, b.minZ, b.maxX, b.maxY, b.maxZ, b.centerX, b.centerY, b.centerZ, b.radius,
+  ];
+  const hashBounds = (words) => hashArray(Float64Array.from(words));
   const vec = (v) => (v ? [num(v.x), num(v.y), num(v.z)] : null);
   // Metadata as stable JSON: keys sorted, anything that is not plain data
   // (a Mesh, a function) named by its type rather than walked.
@@ -247,8 +263,33 @@ function fingerprintMap() {
       out.arrays = sunk[i]?.arrays ?? null;
       out.arrayIndex = sunk[i]?.index ?? null;
     }
+    const b = surfaces?.[i]?.bounds;
+    if (b) out.bounds = hashBounds(boundsWords(b));
     return out;
   });
+  // The record's bounds against the mesh's bounding info, bit for bit — a
+  // check rather than a fingerprint, so kept out of `visuals` (no baseline
+  // ever records the mesh's half): see the header.
+  const boundsCheck = { compared: 0, offIdentity: 0, unequal: [] };
+  if (surfaces) {
+    map.visuals.forEach((m, i) => {
+      const b = surfaces[i]?.bounds;
+      if (!b) return;
+      const info = m.getBoundingInfo();
+      const box = info.boundingBox;
+      const sphere = info.boundingSphere;
+      const mine = [
+        box.minimumWorld.x, box.minimumWorld.y, box.minimumWorld.z,
+        box.maximumWorld.x, box.maximumWorld.y, box.maximumWorld.z,
+        sphere.centerWorld.x, sphere.centerWorld.y, sphere.centerWorld.z,
+        sphere.radiusWorld,
+      ];
+      boundsCheck.compared++;
+      if (!m.getWorldMatrix().isIdentity()) boundsCheck.offIdentity++;
+      const theirs = boundsWords(b);
+      if (!mine.every((v, k) => Object.is(v, theirs[k]))) boundsCheck.unequal.push([i, m.name]);
+    });
+  }
   // Indices into `visuals`, by identity: -1 is a mesh the list does not hold.
   const visualIndex = new Map();
   map.visuals.forEach((m, i) => visualIndex.set(m, i));
@@ -287,6 +328,7 @@ function fingerprintMap() {
       sceneMeshes: g.scene.meshes.length,
       sceneGeometries: g.scene.geometries.length,
     },
+    boundsCheck,
   };
 }
 
@@ -514,14 +556,16 @@ if (stranded > 0) process.exitCode = 1;
 
 // Every visual's record hashes must be its mesh's buffers' — the same arrays,
 // read before the release and after the upload — whatever any baseline says.
+// A visual with no arrays at all is counted apart: it was never compared.
 let unequal = 0;
 let compared = 0;
+let missing = 0;
 for (const [id, r] of Object.entries(result)) {
   if (r.error) continue;
   r.visuals.forEach((m, i) => {
     if (!m.arrays) {
-      unequal++;
-      if (unequal <= 5) console.log(`${id}.visuals[${i}] ${m.name}: no arrays reached the sink`);
+      missing++;
+      if (missing <= 5) console.log(`${id}.visuals[${i}] ${m.name}: no arrays reached the sink`);
       return;
     }
     if (!m.onDevice) return;
@@ -534,8 +578,31 @@ for (const [id, r] of Object.entries(result)) {
     if (unequal <= 5) console.log(`${id}.visuals[${i}] ${m.name}: arrays≠buffers (${moved.join(", ")})`);
   });
 }
-console.log(`record arrays: ${compared - unequal} of ${compared} visuals equal to their mesh's buffers`);
-if (unequal > 0) process.exitCode = 1;
+console.log(
+  `record arrays: ${compared - unequal} of ${compared} visuals equal to their mesh's buffers` +
+    (missing > 0 ? `; ${missing} visuals had no arrays reach the sink` : ""),
+);
+if (unequal > 0 || missing > 0) process.exitCode = 1;
+
+// Every visual's record bounds must be its mesh's bounding info, bit for bit,
+// whatever any baseline says — the transformed path included (see the header).
+let boundsCompared = 0;
+let boundsOff = 0;
+let boundsUnequal = 0;
+for (const [id, r] of Object.entries(result)) {
+  if (r.error || !r.boundsCheck) continue;
+  boundsCompared += r.boundsCheck.compared;
+  boundsOff += r.boundsCheck.offIdentity;
+  for (const [i, name] of r.boundsCheck.unequal) {
+    boundsUnequal++;
+    if (boundsUnequal <= 5) console.log(`${id}.visuals[${i}] ${name}: bounds≠mesh`);
+  }
+}
+console.log(
+  `record bounds: ${boundsCompared - boundsUnequal} of ${boundsCompared} visuals equal to their mesh's ` +
+    `bounding info (${boundsOff} off identity)`,
+);
+if (boundsUnequal > 0) process.exitCode = 1;
 
 if (outFile) {
   writeFileSync(outFile, JSON.stringify(result));

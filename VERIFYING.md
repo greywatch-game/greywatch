@@ -1600,11 +1600,13 @@ is one machine's:
   compared, `SurfaceRecord.bounds` against the mesh's bounding info bit for
   bit, and how many differed (a console error names the count); the
   handover's verdict off the record is checked against each mesh as it is
-  made, and a disagreement is one console error a page. To check every
-  visual rather than the filed ones — the landform, or an EDITOR build, whose
-  2,000-odd meshes are almost all off identity and so exercise the transformed
-  path — compare `g.map.world.surfaces[i].bounds` with
-  `g.map.visuals[i].getBoundingInfo()` by `Object.is` yourself.
+  made, and a disagreement is one console error a page. EVERY visual rather
+  than the filed ones — the landform, or an EDITOR build, whose 2,000-odd
+  meshes are almost all off identity and so exercise the transformed path —
+  is `npm run merge:hash`'s on every run (`bounds≠mesh`, and the `record
+  bounds` line counts those off identity; `--editor` for the transformed
+  path). In a scratch page, compare `g.map.world.surfaces[i].bounds` with
+  `g.map.visuals[i].getBoundingInfo()` by `Object.is`, as it does.
 - **What a pane REFLECTS is checkable without a screenshot, and the CUBE is the
   place to check it.** There is one probe per glazed map block —
   `g.reflections.probes[slot]` against `g.map.paneGroups[slot]`, 40 of each on
