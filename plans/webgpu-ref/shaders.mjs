@@ -148,12 +148,22 @@ const HOOK = () => {
  * `zOffsetUnits`. So every (shape, bias) a cel material that keeps a recipe
  * carries is built once more with that bias as `WorldBlocks`
  * states it — or the first frame to draw a road is the first to try it.
+ *
+ * **And the emissive PALETTE's two programs (`render/emissiveWorld.ts`,
+ * X3.6c-e)**, at every depth bias a palette material on the page carries
+ * (`CelMaterialFactory.emissiveRecipe`): the main pass's and a probe face's
+ * (`emissiveWorld(FRAME_TARGETS)`, `WorldBlocks.askPalette`'s state) and the
+ * glow MASK's twin (`emissiveWorld(GLOW_TARGETS, true)`, no depth written,
+ * `WorldBlocks.glowView`'s) — every map's main pass draws its lit windows
+ * with the first (`BABYLON_EXIT.md` X3.7a), so a failed one is a failed round
+ * once the fallback is gone (X3.7b). A map with no palette builds neither.
  */
-async function oursCheck({ shapes, biased }) {
+async function oursCheck({ shapes, biased, paletteBiases }) {
   const { celFragment } = await import("/src/render/celFragment.ts");
   const { celVertex } = await import("/src/render/celVertex.ts");
   const { PipelineCache } = await import("/src/render/PipelineCache.ts");
-  const { FRAME_TARGETS } = await import("/src/render/targets.ts");
+  const { FRAME_TARGETS, GLOW_TARGETS } = await import("/src/render/targets.ts");
+  const { emissiveWorld } = await import("/src/render/emissiveWorld.ts");
   const { CONFIG } = await import("/src/config/index.ts");
   const { listStride } = await import("/src/render/scatterList.ts");
   // The scatter list's stride, as `WorldBlocks` takes it.
@@ -164,19 +174,38 @@ async function oursCheck({ shapes, biased }) {
   const out = [];
   // Every shape at no bias, then each biased (shape, bias) the page carries,
   // then every shape's scatter twin.
+  // Then the palette's two programs at each bias (see the header).
   const builds = [
     ...shapes.map((shape) => ({ shape, depthBias: 0, scatter: null })),
     ...biased.map(({ shape, depthBias }) => ({ shape, depthBias, scatter: null })),
     ...shapes.map((shape) => ({ shape, depthBias: 0, scatter: stride })),
+    ...paletteBiases.map((depthBias) => ({ palette: "main", depthBias, scatter: null })),
+    ...paletteBiases.map((depthBias) => ({ palette: "glow", depthBias, scatter: null })),
   ];
-  for (const { shape, depthBias, scatter } of builds) {
-    const kind = `${scatter === null ? "" : "scatter "}${depthBias === 0 ? "" : `bias ${depthBias} `}`;
+  for (const { shape, palette, depthBias, scatter } of builds) {
+    const kind =
+      `${palette ? `palette ${palette} ` : ""}${scatter === null ? "" : "scatter "}` +
+      `${depthBias === 0 ? "" : `bias ${depthBias} `}`;
     const defines = shape ? shape.split("+") : [];
+    const targets = palette === "glow" ? GLOW_TARGETS : FRAME_TARGETS;
+    // As `WorldBlocks` states each: the mask writes no depth.
+    const state =
+      palette === "glow"
+        ? depthBias === 0
+          ? { depthWrite: false }
+          : { depthWrite: false, depthBias }
+        : depthBias === 0
+          ? undefined
+          : { depthBias };
     let vm;
     let fm;
     try {
-      vm = celVertex(defines, FRAME_TARGETS, scatter);
-      fm = celFragment(defines, FRAME_TARGETS);
+      if (palette) {
+        ({ vertex: vm, fragment: fm } = emissiveWorld(targets, palette === "glow"));
+      } else {
+        vm = celVertex(defines, FRAME_TARGETS, scatter);
+        fm = celFragment(defines, FRAME_TARGETS);
+      }
     } catch (e) {
       out.push({ error: `${kind}${String(e?.message ?? e)}`, source: "" });
       continue;
@@ -189,9 +218,9 @@ async function oursCheck({ shapes, biased }) {
         vertexEntry: "main",
         fragment: fm,
         fragmentEntry: "main",
-        targets: FRAME_TARGETS,
+        targets,
         // As `WorldBlocks.ask` states it: no state at all for no bias.
-        state: depthBias === 0 ? undefined : { depthBias },
+        state,
       });
     } catch (e) {
       built = String(e?.message ?? e);
@@ -319,6 +348,8 @@ for (const id of MAPS) {
     // Each (shape, bias) a material our renderer could draw carries — a recipe
     // with a depth bias (X3.5's roads) — for `oursCheck`'s pipeline states.
     const biased = new Map();
+    // Each depth bias a palette material carries, for its two programs.
+    const paletteBiases = new Set();
     for (const mat of shaders) {
       const effect = mat.getEffect?.();
       const defines = mat._options.defines
@@ -327,6 +358,8 @@ for (const id of MAPS) {
         .sort();
       const isCel = mat.name.startsWith("cel-");
       if (isCel) cel.add(defines.join("+"));
+      const palette = g.mats.emissiveRecipe(mat);
+      if (palette) paletteBiases.add(palette.depthBias);
       const recipe = g.mats.celRecipe(mat);
       if (recipe && recipe.depthBias !== 0) {
         // In the recipe's own order, as `WorldBlocks` assembles it.
@@ -360,13 +393,18 @@ for (const id of MAPS) {
       materials,
       cel: [...cel].sort(),
       biased: [...biased.values()],
+      paletteBiases: [...paletteBiases].sort((a, b) => a - b),
       modules,
       moduleCount: window.__modules.length,
     };
   });
 
   for (const v of out.cel) seen.add(v);
-  const ours = await page.evaluate(oursCheck, { shapes: out.cel, biased: out.biased });
+  const ours = await page.evaluate(oursCheck, {
+    shapes: out.cel,
+    biased: out.biased,
+    paletteBiases: out.paletteBiases,
+  });
   const badOurs = ours.filter((o) => o.error);
 
   const badMats = out.materials.filter((m) => !m.ready || m.error);
@@ -376,7 +414,8 @@ for (const id of MAPS) {
   console.log(
     `${id.padEnd(13)} ${String(celCount).padStart(3)} cel materials  ` +
       `${String(out.moduleCount).padStart(3)} modules  ` +
-      `${out.cel.length} variants  ${ours.length - badOurs.length}/${ours.length} ours  ${status}`,
+      `${out.cel.length} variants  ${ours.length - badOurs.length}/${ours.length} ours ` +
+      `(palette biases [${out.paletteBiases.join(", ")}])  ${status}`,
   );
   for (const o of badOurs) {
     failures.push(`${id}: ours ${o.error}`);

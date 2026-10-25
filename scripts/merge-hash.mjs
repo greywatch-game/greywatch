@@ -23,6 +23,18 @@
  * of a merged mesh came from — what a destructible building will need, and
  * what nothing else in this file can see moving (`world/worldGeometry.ts`).
  *
+ * **Each VISUAL's ARRAYS are hashed off its RECORD too** (`arrays`, `arrayIndex`
+ * — `BABYLON_EXIT.md` X3.7a), through the DEV sink `world/worldGeometry.ts`
+ * hands each surface's arrays to as they are released (`SurfaceSink`,
+ * `window.__surfaceSink`, installed before the page boots): every attribute
+ * under the vertex kind Babylon names it by, in the type Babylon was handed
+ * it in — a `Float32Array` as its own bits, anything else as doubles, the
+ * indices included — so a surface's record hashes are the very strings its
+ * mesh's buffers hash to. **Every run checks the two halves agree** wherever
+ * a visual has a mesh's buffers to compare (a failure, named `arrays≠buffers`),
+ * against no baseline at all; that is what lets a later baseline lean on the
+ * record's hashes alone for a surface no mesh is made of (X3.7b).
+ *
  * **Four per-mesh fields describe the UPLOAD rather than the geometry**, because
  * a merge that moves onto arrays and uploads at the end can get each wrong
  * without moving a vertex: `sceneRank` (the mesh's rank within its list by its
@@ -220,18 +232,23 @@ function fingerprintMap() {
     return list.map((m, i) => meshRecord(m, rank[i]));
   };
   // The visuals' piece ranges, off the record `GameMap.world` keeps aligned
-  // with them. Absent on a build older than the piece id.
+  // with them, and their arrays' hashes, off the sink (`installSink`) — each
+  // absent on a build older than it.
   const surfaces = map.world?.surfaces;
-  const visuals = records(map.visuals).map((r, i) =>
-    surfaces
-      ? {
-          ...r,
-          pieces: surfaces[i].pieces.map((p) => [
-            p.piece, p.vertexStart, p.vertexCount, p.indexStart, p.indexCount,
-          ]),
-        }
-      : r,
-  );
+  const sunk = window.__surfaceHashes;
+  const visuals = records(map.visuals).map((r, i) => {
+    const out = { ...r };
+    if (surfaces) {
+      out.pieces = surfaces[i].pieces.map((p) => [
+        p.piece, p.vertexStart, p.vertexCount, p.indexStart, p.indexCount,
+      ]);
+    }
+    if (sunk) {
+      out.arrays = sunk[i]?.arrays ?? null;
+      out.arrayIndex = sunk[i]?.index ?? null;
+    }
+    return out;
+  });
   // Indices into `visuals`, by identity: -1 is a mesh the list does not hold.
   const visualIndex = new Map();
   map.visuals.forEach((m, i) => visualIndex.set(m, i));
@@ -273,6 +290,57 @@ function fingerprintMap() {
   };
 }
 
+/**
+ * Runs IN THE PAGE before it boots: the DEV sink every surface's arrays pass
+ * through as they are released (`SurfaceSink`), hashed there and then — the
+ * arrays are not kept — into `window.__surfaceHashes`, by the surface's index
+ * in its build's list (`GameMap.visuals` order). The hashing is
+ * `fingerprintMap`'s `hashArray`, applied to what the adapter hands Babylon
+ * (`world/parts.ts`'s `vertexDataOf`): a `Float32Array` as itself, any other
+ * array as the doubles of the plain array Babylon held.
+ */
+function installSink() {
+  const hashWords = (words) => {
+    let a = 0x811c9dc5;
+    let b = 0x9747b28c;
+    for (let i = 0; i < words.length; i++) {
+      const w = words[i];
+      a = Math.imul(a ^ w, 0x01000193);
+      b = Math.imul(b ^ w, 0x5bd1e995) ^ (b >>> 13);
+    }
+    return (
+      (a >>> 0).toString(16).padStart(8, "0") +
+      (b >>> 0).toString(16).padStart(8, "0") +
+      ":" +
+      words.length
+    );
+  };
+  const asBabylon = (arr) => {
+    if (!arr) return null;
+    if (arr instanceof Float32Array) {
+      return hashWords(new Uint32Array(arr.buffer, arr.byteOffset, arr.byteLength / 4));
+    }
+    const f = arr instanceof Float64Array ? arr : Float64Array.from(arr);
+    return "f64:" + hashWords(new Uint32Array(f.buffer, f.byteOffset, f.byteLength / 4));
+  };
+  // Babylon's vertex kinds, by the buffer field each is uploaded from.
+  const KINDS = [
+    ["position", "positions"],
+    ["normal", "normals"],
+    ["uv", "uvs"],
+    ["uv2", "uvs2"],
+    ["color", "colors"],
+  ];
+  window.__surfaceHashes = [];
+  window.__surfaceSink = (index, geometry) => {
+    const arrays = {};
+    for (const [kind, field] of KINDS) {
+      if (geometry[field]) arrays[kind] = asBabylon(geometry[field]);
+    }
+    window.__surfaceHashes[index] = { arrays, index: asBabylon(geometry.indices) };
+  };
+}
+
 async function buildOne(browser, url, id, editor) {
   const page = await browser.newPage();
   try {
@@ -281,6 +349,7 @@ async function buildOne(browser, url, id, editor) {
       ([key, value]) => window.localStorage.setItem(key, value),
       [MAP_KEY, id],
     );
+    await page.addInitScript(installSink);
     await page.goto(url, { waitUntil: "domcontentloaded" });
     await page.waitForFunction(() => Boolean(window.__celshock), null, { timeout: 60_000 });
     await page.evaluate(async (deadlineMs) => {
@@ -304,7 +373,9 @@ async function buildOne(browser, url, id, editor) {
       // the editor's UI. Private, and reached anyway: this is a DEV page.
       // Braced so it returns nothing: the `GameMap` it hands back is a scene
       // graph, and Playwright would try to serialise it.
+      // The sink's hashes start again: they are the editor build's from here.
       await page.evaluate(() => {
+        window.__surfaceHashes = [];
         window.__celshock.buildEditorMap();
       });
     }
@@ -331,9 +402,9 @@ function fieldsThatMoved(a, b) {
   for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) {
     // A field an older fingerprint did not record is not a difference.
     if (!(k in a)) continue;
-    if (k === "buffers") {
-      for (const kind of new Set([...Object.keys(a.buffers), ...Object.keys(b.buffers)])) {
-        if (a.buffers[kind] !== b.buffers[kind]) moved.push(`buffer:${kind}`);
+    if (k === "buffers" || (k === "arrays" && a.arrays && b.arrays)) {
+      for (const kind of new Set([...Object.keys(a[k]), ...Object.keys(b[k])])) {
+        if (a[k][kind] !== b[k][kind]) moved.push(`${k === "buffers" ? "buffer" : "array"}:${kind}`);
       }
     } else if (JSON.stringify(a[k]) !== JSON.stringify(b[k])) {
       moved.push(k);
@@ -440,6 +511,31 @@ for (const [id, r] of Object.entries(result)) {
   }
 }
 if (stranded > 0) process.exitCode = 1;
+
+// Every visual's record hashes must be its mesh's buffers' — the same arrays,
+// read before the release and after the upload — whatever any baseline says.
+let unequal = 0;
+let compared = 0;
+for (const [id, r] of Object.entries(result)) {
+  if (r.error) continue;
+  r.visuals.forEach((m, i) => {
+    if (!m.arrays) {
+      unequal++;
+      if (unequal <= 5) console.log(`${id}.visuals[${i}] ${m.name}: no arrays reached the sink`);
+      return;
+    }
+    if (!m.onDevice) return;
+    compared++;
+    const kinds = new Set([...Object.keys(m.arrays), ...Object.keys(m.buffers)]);
+    const moved = [...kinds].filter((k) => m.arrays[k] !== m.buffers[k]);
+    if (m.arrayIndex !== m.index) moved.push("index");
+    if (moved.length === 0) return;
+    unequal++;
+    if (unequal <= 5) console.log(`${id}.visuals[${i}] ${m.name}: arrays≠buffers (${moved.join(", ")})`);
+  });
+}
+console.log(`record arrays: ${compared - unequal} of ${compared} visuals equal to their mesh's buffers`);
+if (unequal > 0) process.exitCode = 1;
 
 if (outFile) {
   writeFileSync(outFile, JSON.stringify(result));

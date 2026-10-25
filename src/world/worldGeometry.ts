@@ -7,7 +7,9 @@
  * editor item it joins),
  * `PaneSurfaceGroup` (a glazing surface and the breakable panes that live in
  * it), `SurfaceRecord` and `WorldGeometry` (what `GameMap.world` keeps of a
- * build once its meshes are made — everything but the arrays), and
+ * build once its meshes are made — everything but the arrays, and since
+ * X3.7a the world BOUNDS taken off them, `boundsOf`), the DEV `SurfaceSink`
+ * the arrays pass through as they are released, and
  * ADMISSION: the one place a builder's parts enter the merge
  * (`admitStructure`, `admitProp`), each minted a birth and filed under its
  * PIECE; and the piece ranges' arithmetic (`concatPieces`, `assertPieces`).
@@ -52,6 +54,7 @@
  */
 import type { Material } from "@babylonjs/core";
 import { GeometryBuffer } from "../geometry/buffer";
+import { Matrix, Vector3 } from "../math";
 import type { Part, PartMetadata } from "./parts";
 import type { Structure } from "./kit/core";
 import type { EditorItem, EditorRef } from "./mapTypes";
@@ -124,7 +127,7 @@ export interface PaneSurfaceGroup {
 
 /**
  * What the map KEEPS of a surface once its mesh is made (`GameMap.world`):
- * its name, its material, its METADATA (the very object its mesh carries —
+ * its name, its world bounds, its material, its METADATA (the very object its mesh carries —
  * `block`, the exemptions, `sway`, `editorRef`), its block, its piece ranges,
  * whether its positions are writable, and how many vertices and indices it
  * holds — which is the merge's KEY (block, material, sway, exemptions) and
@@ -140,6 +143,14 @@ export interface PaneSurfaceGroup {
  */
 export interface SurfaceRecord {
   name: string;
+  /**
+   * Its WORLD bounds, taken from its arrays before they are released
+   * (`boundsOf`): what `WorldCulling` files a cell and size-gates a candidate
+   * by, in place of the mesh's bounding info, which is the same numbers bit
+   * for bit (a DEV build checks every filed surface) — so the record can stand
+   * for a surface whose mesh is never made (`BABYLON_EXIT.md` X3.7).
+   */
+  bounds: SurfaceBounds;
   /**
    * The material the BUILD gave it, and the merge keyed it on. Not
    * necessarily the mesh's for the life of the map: `ReflectionSystem` hands
@@ -165,11 +176,109 @@ export interface WorldGeometry {
   pieces: EditorRef[];
 }
 
-/** A surface's record — see `SurfaceRecord`. Taken BEFORE its arrays are released. */
-export function recordOf(surface: WorldSurface): SurfaceRecord {
+/**
+ * A surface's world bounds: the axis-aligned box and the sphere Babylon's
+ * `BoundingInfo` holds for its mesh once the world matrix is applied
+ * (`minimumWorld`/`maximumWorld`, `centerWorld`/`radiusWorld`). The box's
+ * fields are a `BlockBox`'s, so a cell grown from them is one.
+ */
+export interface SurfaceBounds {
+  minX: number;
+  minY: number;
+  minZ: number;
+  maxX: number;
+  maxY: number;
+  maxZ: number;
+  centerX: number;
+  centerY: number;
+  centerZ: number;
+  radius: number;
+}
+
+const BOUND_MIN = new Vector3();
+const BOUND_MAX = new Vector3();
+const BOUND_CENTER = new Vector3();
+const BOUND_CORNERS = Array.from({ length: 8 }, () => new Vector3());
+const BOUND_POINT = new Vector3();
+
+/**
+ * The world bounds of `positions` under `world`, as Babylon computes a mesh's
+ * — step for step, because `WorldCulling` reads these where it read the
+ * mesh's and a DEV build compares the bits: `extractMinAndMax` over every
+ * vertex (from the largest float down and up, no bias), then `BoundingBox`'s
+ * and `BoundingSphere`'s `reConstruct` and `_update` — the local box copied
+ * whole under an identity matrix, else its eight corners transformed in
+ * Babylon's order and re-boxed; the sphere's centre the local box's midpoint
+ * and its radius half the local diagonal, transformed and scaled by the
+ * matrix's largest axis.
+ */
+export function boundsOf(positions: ArrayLike<number>, world: Matrix): SurfaceBounds {
+  const min = BOUND_MIN.setAll(Number.MAX_VALUE);
+  const max = BOUND_MAX.setAll(-Number.MAX_VALUE);
+  for (let i = 0; i < positions.length; i += 3) {
+    min.minimizeInPlaceFromFloats(positions[i], positions[i + 1], positions[i + 2]);
+    max.maximizeInPlaceFromFloats(positions[i], positions[i + 1], positions[i + 2]);
+  }
+  // `BoundingSphere.reConstruct`: the radius off the local box, before `_update`.
+  const radius = Vector3.Distance(min, max) * 0.5;
+  const center = max.addToRef(min, BOUND_CENTER).scaleInPlace(0.5);
+  if (world.isIdentity()) {
+    return {
+      minX: min.x,
+      minY: min.y,
+      minZ: min.z,
+      maxX: max.x,
+      maxY: max.y,
+      maxZ: max.z,
+      centerX: center.x,
+      centerY: center.y,
+      centerZ: center.z,
+      radius,
+    };
+  }
+  // `BoundingBox.reConstruct`'s corners, in its order, then `_update`.
+  const c = BOUND_CORNERS;
+  c[0].copyFromFloats(min.x, min.y, min.z);
+  c[1].copyFromFloats(max.x, max.y, max.z);
+  c[2].copyFromFloats(max.x, min.y, min.z);
+  c[3].copyFromFloats(min.x, max.y, min.z);
+  c[4].copyFromFloats(min.x, min.y, max.z);
+  c[5].copyFromFloats(max.x, max.y, min.z);
+  c[6].copyFromFloats(min.x, max.y, max.z);
+  c[7].copyFromFloats(max.x, min.y, max.z);
+  const lo = new Vector3().setAll(Number.MAX_VALUE);
+  const hi = new Vector3().setAll(-Number.MAX_VALUE);
+  for (const corner of c) {
+    Vector3.TransformCoordinatesToRef(corner, world, BOUND_POINT);
+    lo.minimizeInPlace(BOUND_POINT);
+    hi.maximizeInPlace(BOUND_POINT);
+  }
+  const centerWorld = Vector3.TransformCoordinatesToRef(center, world, BOUND_POINT);
+  const scale = Vector3.TransformNormalFromFloatsToRef(1.0, 1.0, 1.0, world, new Vector3());
+  return {
+    minX: lo.x,
+    minY: lo.y,
+    minZ: lo.z,
+    maxX: hi.x,
+    maxY: hi.y,
+    maxZ: hi.z,
+    centerX: centerWorld.x,
+    centerY: centerWorld.y,
+    centerZ: centerWorld.z,
+    radius: Math.max(Math.abs(scale.x), Math.abs(scale.y), Math.abs(scale.z)) * radius,
+  };
+}
+
+/**
+ * A surface's record — see `SurfaceRecord`. Taken BEFORE its arrays are
+ * released; `world` is its part's world matrix (`worldMatrixOf`), which its
+ * bounds are taken under.
+ */
+export function recordOf(surface: WorldSurface, world: Matrix): SurfaceRecord {
   const { part } = surface;
   return {
     name: part.name,
+    bounds: boundsOf(part.geometry.positions, world),
     material: part.material,
     metadata: part.metadata,
     block: surface.block,
@@ -186,8 +295,22 @@ export function recordOf(surface: WorldSurface): SurfaceRecord {
  */
 const RELEASED = Object.freeze(new GeometryBuffer({ positions: [], indices: [] }));
 
-/** Drops a part's arrays — see `SurfaceRecord`. */
-export function releaseArrays(part: Part): void {
+/**
+ * DEV: what an instrument reads a surface's ARRAYS through, at the one
+ * moment they still exist — handed the surface's index in its build's list
+ * (`GameMap.visuals` order) and its buffer, synchronously, as they are
+ * released. `npm run merge:hash` sets `window.__surfaceSink` before the page
+ * boots and hashes them there, so its fingerprint reaches a surface that has
+ * no mesh to read back (`BABYLON_EXIT.md` X3.7). It must not KEEP the arrays:
+ * the release is what holds the world's geometry once on the CPU.
+ */
+export type SurfaceSink = (index: number, geometry: GeometryBuffer) => void;
+
+/** Drops a part's arrays — see `SurfaceRecord` — through the DEV sink first (`SurfaceSink`). */
+export function releaseArrays(part: Part, index: number): void {
+  if (import.meta.env.DEV) {
+    (globalThis as { __surfaceSink?: SurfaceSink }).__surfaceSink?.(index, part.geometry);
+  }
   part.geometry = RELEASED;
 }
 

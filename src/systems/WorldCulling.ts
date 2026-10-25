@@ -1,7 +1,9 @@
 /**
  * WorldCulling.ts — What the frame's own mesh walk is allowed to see.
  * Owns: `Scene.getActiveMeshCandidates`, the map's meshes filed into cull
- * cells, and the list handed back to Babylon each frame — and the TAKEN
+ * cells — each cell's box grown from its surfaces' RECORDS
+ * (`SurfaceRecord.bounds`, X3.7a), not their meshes, which a DEV build checks
+ * bit for bit — and the list handed back to Babylon each frame — and the TAKEN
  * meshes, the blocks (the emissive palette's among them) and the landform
  * our renderer draws in the main pass instead (`setTaken`), never
  * candidates, with the reach and the size gate this file decides handed to
@@ -113,6 +115,7 @@ import type { AbstractMesh, Mesh, Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { type BlockBox, F32_MAX, type ReachGate } from "../render/ClusterCull";
 import type { GameMap } from "../world/MapBuilder";
+import type { SurfaceBounds, SurfaceRecord } from "../world/worldGeometry";
 
 /**
  * The reach box of the LANDFORM — the floor, the rim and the road merge, once
@@ -145,7 +148,8 @@ export const NO_REACH: BlockBox = {
  * mesh to its cell, because the list is rebuilt by walking the scene in ORDER
  * rather than by concatenating cells (see `rebuildList`).
  *
- * The bounds are the MESHES' rather than the block's nominal square, which is
+ * The bounds are the MESHES' rather than the block's nominal square — read off
+ * each one's record (`SurfaceRecord.bounds`), the same numbers — which is
  * also why nothing here has to be told how big a block IS on this map: the key
  * is a name and not an alignment claim — a merged block's
  * geometry can hang over its own seam, and a mesh filed by its key can be much
@@ -272,8 +276,18 @@ export class WorldCulling {
    * A visor is the only emissive on a rig; it belongs to a body that is being
    * dropped whole, and an exemption would leave a pair of eyes hanging in the
    * air where the soldier was.
+   *
+   * **A mesh filed in a CELL maps to its record's bounds** (`SurfaceRecord.
+   * bounds`), and is tested off that sphere rather than its mesh's — the same
+   * numbers bit for bit (`setMap` checks them in DEV), read off the RECORD so
+   * the test needs no mesh (`BABYLON_EXIT.md` X3.7a). Every other mesh — a
+   * loose one, the landform, an editor build's, an effect — is absent and
+   * tested off its own bounding info, which an editor move rewrites under it.
    */
-  private gateOf = new Map<AbstractMesh, Pool | null>();
+  private gateOf = new Map<AbstractMesh, Pool | SurfaceBounds | null>();
+
+  /** Every mesh filed in a cell, and the bounds its record holds — see `gateOf`. */
+  private boundsOf = new Map<AbstractMesh, SurfaceBounds>();
 
   /** The map's collider proxies: never candidates, at any distance. */
   private hidden = new Set<AbstractMesh>();
@@ -355,6 +369,9 @@ export class WorldCulling {
     /** What Babylon was actually handed this frame — `candidates` minus the
      * meshes that are switched off right now. See `offer`. */
     offered: 0,
+    /** DEV: how many filed surfaces `setMap` compared, record bounds against mesh, and how many differed. */
+    boundsChecked: 0,
+    boundsMismatched: 0,
   };
 
   constructor(private scene: Scene) {
@@ -388,6 +405,7 @@ export class WorldCulling {
   setMap(map: GameMap | null, fogEnd: number): void {
     this.hidden = new Set();
     this.cellOf = new Map();
+    this.boundsOf = new Map();
     this.cells = [];
     this.unfiled = new Set();
     this.listDirty = true;
@@ -432,38 +450,50 @@ export class WorldCulling {
       this.stats.hidden++;
     }
 
+    // Each visual's RECORD (`GameMap.world`, aligned with `visuals`): a cell
+    // is grown from its bounds, taken off its arrays before they were
+    // released — its mesh's bounding info's numbers, bit for bit.
+    const surfaces = map.world.surfaces;
+    if (surfaces.length !== map.visuals.length) {
+      throw new Error(
+        `WorldCulling: the map holds ${map.visuals.length} visuals and ${surfaces.length} surface records`,
+      );
+    }
+    const recordOf = new Map<AbstractMesh, SurfaceRecord>();
+    map.visuals.forEach((mesh, i) => recordOf.set(mesh, surfaces[i]));
+    let mismatched = 0;
     const byKey = new Map<string, Cell>();
     const file = (mesh: Mesh): void => {
       const key: unknown = mesh.metadata?.block;
       if (typeof key !== "string" || key === "") return;
       if (this.cellOf.has(mesh) || this.hidden.has(mesh)) return;
-      // A frozen world matrix is already computed and the bounding info with
-      // it, so this is a read rather than a recompute — see `markVisual`.
-      const box = mesh.getBoundingInfo().boundingBox;
-      const lo = box.minimumWorld;
-      const hi = box.maximumWorld;
+      const record = recordOf.get(mesh);
+      if (!record) throw new Error(`WorldCulling: "${mesh.name}" carries a block but is no map visual`);
+      const b = record.bounds;
+      if (import.meta.env.DEV && !sameBounds(mesh, b)) mismatched++;
       let cell = byKey.get(key);
       if (cell) {
-        if (lo.x < cell.minX) cell.minX = lo.x;
-        if (lo.y < cell.minY) cell.minY = lo.y;
-        if (lo.z < cell.minZ) cell.minZ = lo.z;
-        if (hi.x > cell.maxX) cell.maxX = hi.x;
-        if (hi.y > cell.maxY) cell.maxY = hi.y;
-        if (hi.z > cell.maxZ) cell.maxZ = hi.z;
+        if (b.minX < cell.minX) cell.minX = b.minX;
+        if (b.minY < cell.minY) cell.minY = b.minY;
+        if (b.minZ < cell.minZ) cell.minZ = b.minZ;
+        if (b.maxX > cell.maxX) cell.maxX = b.maxX;
+        if (b.maxY > cell.maxY) cell.maxY = b.maxY;
+        if (b.maxZ > cell.maxZ) cell.maxZ = b.maxZ;
       } else {
         cell = {
-          minX: lo.x,
-          minY: lo.y,
-          minZ: lo.z,
-          maxX: hi.x,
-          maxY: hi.y,
-          maxZ: hi.z,
+          minX: b.minX,
+          minY: b.minY,
+          minZ: b.minZ,
+          maxX: b.maxX,
+          maxY: b.maxY,
+          maxZ: b.maxZ,
           on: true,
         };
         byKey.set(key, cell);
         this.cells.push(cell);
       }
       this.cellOf.set(mesh, cell);
+      this.boundsOf.set(mesh, b);
       this.stats.blocked++;
     };
 
@@ -477,6 +507,15 @@ export class WorldCulling {
       if (!this.cellOf.has(mesh) && !this.hidden.has(mesh)) this.unfiled.add(mesh);
     }
     this.stats.cells = this.cells.length;
+    if (import.meta.env.DEV) {
+      this.stats.boundsChecked = this.cellOf.size;
+      this.stats.boundsMismatched = mismatched;
+      if (mismatched > 0) {
+        console.error(
+          `WorldCulling: ${mismatched} of ${this.cellOf.size} filed surfaces' record bounds differ from their mesh's bounding info (BABYLON_EXIT.md X3.7a)`,
+        );
+      }
+    }
   }
 
   /**
@@ -686,13 +725,18 @@ export class WorldCulling {
       data.push(mesh);
     }
     // The pool FIRST, because a rig's visor is both and the body wins — see
-    // `gateOf`. Everything the gate simply tests per mesh is left out, so the
-    // ordinary case is a miss rather than an entry.
+    // `gateOf` — then the emissive exemption, then a filed mesh's record.
+    // Everything the gate tests off its own mesh is left out, so that case is
+    // a miss rather than an entry.
     this.gateOf = new Map();
     for (const mesh of data) {
       const pool = this.poolOf.get(mesh);
       if (pool) this.gateOf.set(mesh, pool);
       else if (glows(mesh)) this.gateOf.set(mesh, null);
+      else {
+        const bounds = this.boundsOf.get(mesh);
+        if (bounds) this.gateOf.set(mesh, bounds);
+      }
     }
     this.listDirty = false;
     let cellsOn = 0;
@@ -799,7 +843,7 @@ export class WorldCulling {
       // densest map in the tree, also makes the measurement this frame's
       // rather than last frame's.
       pool.root.computeWorldMatrix(true);
-      pool.small = this.tooSmall(pool.root, eye, perRad, px2);
+      pool.small = tooSmallMesh(pool.root, eye, perRad, px2);
     }
     let k = 0;
     for (let i = 0; i < n; i++) {
@@ -821,9 +865,14 @@ export class WorldCulling {
         // the only question here.
         const how = this.gateOf.get(mesh);
         if (how === undefined) {
-          if (this.tooSmall(mesh, eye, perRad, px2)) continue;
-        } else if (how !== null && how.small) {
-          continue;
+          if (tooSmallMesh(mesh, eye, perRad, px2)) continue;
+        } else if (how !== null) {
+          // A body's verdict, taken once off its root; else a filed surface's record.
+          const small =
+            "root" in how
+              ? how.small
+              : tooSmall(how.centerX, how.centerY, how.centerZ, how.radius, eye, perRad, px2);
+          if (small) continue;
         }
       }
       out[k++] = mesh;
@@ -835,36 +884,65 @@ export class WorldCulling {
     this.candidates.length = k;
     this.stats.offered = k;
   }
+}
 
-  /**
-   * Whether a mesh's bounding sphere projects smaller than the gate, in CSS
-   * pixels of the frame.
-   *
-   * The one place a projected size is measured, because `offer` now asks the
-   * question of two different things — a loose mesh, and a body's ROOT — and
-   * two copies of this arithmetic is two answers that can drift apart.
-   *
-   * `d2 > 1` is the guard on standing inside a thing: the projection diverges
-   * at zero distance and a metre is nearer than anything this should be
-   * dropping.
-   */
-  private tooSmall(
-    mesh: AbstractMesh,
-    eye: Vector3,
-    perRad: number,
-    px2: number,
-  ): boolean {
-    const sphere = mesh.getBoundingInfo().boundingSphere;
-    const c = sphere.centerWorld;
-    const dx = c.x - eye.x;
-    const dy = c.y - eye.y;
-    const dz = c.z - eye.z;
-    const d2 = dx * dx + dy * dy + dz * dz;
-    if (d2 <= 1) return false;
-    // Projected diameter is `2r / dist * perRad`; compared SQUARED, so the
-    // per-candidate cost is multiplies and no square root. Taking the root
-    // instead measured as a LOSS at the thresholds that drop little.
-    const w = 2 * sphere.radiusWorld * perRad;
-    return w * w < px2 * d2;
-  }
+/** `tooSmall` off a mesh's own world bounding sphere. */
+function tooSmallMesh(mesh: AbstractMesh, eye: Vector3, perRad: number, px2: number): boolean {
+  const sphere = mesh.getBoundingInfo().boundingSphere;
+  const c = sphere.centerWorld;
+  return tooSmall(c.x, c.y, c.z, sphere.radiusWorld, eye, perRad, px2);
+}
+
+/**
+ * Whether a world bounding sphere projects smaller than the gate, in CSS
+ * pixels of the frame.
+ *
+ * The one place a projected size is measured, because `offer` asks the
+ * question of three different things — a loose mesh, a body's ROOT and a
+ * filed surface's record — and two copies of this arithmetic is two answers
+ * that can drift apart.
+ *
+ * `d2 > 1` is the guard on standing inside a thing: the projection diverges
+ * at zero distance and a metre is nearer than anything this should be
+ * dropping.
+ */
+function tooSmall(
+  cx: number,
+  cy: number,
+  cz: number,
+  radius: number,
+  eye: Vector3,
+  perRad: number,
+  px2: number,
+): boolean {
+  const dx = cx - eye.x;
+  const dy = cy - eye.y;
+  const dz = cz - eye.z;
+  const d2 = dx * dx + dy * dy + dz * dz;
+  if (d2 <= 1) return false;
+  // Projected diameter is `2r / dist * perRad`; compared SQUARED, so the
+  // per-candidate cost is multiplies and no square root. Taking the root
+  // instead measured as a LOSS at the thresholds that drop little.
+  const w = 2 * radius * perRad;
+  return w * w < px2 * d2;
+}
+
+/**
+ * DEV: whether a filed surface's record bounds are its mesh's bounding info
+ * bit for bit — the world box a cell is grown from and the world sphere the
+ * size gate measures (`Object.is`, so a signed zero counts).
+ */
+function sameBounds(mesh: AbstractMesh, b: SurfaceBounds): boolean {
+  // A frozen world matrix is already computed and the bounding info with it,
+  // so this is a read rather than a recompute — see `MapBuilder.markVisual`.
+  const info = mesh.getBoundingInfo();
+  const lo = info.boundingBox.minimumWorld;
+  const hi = info.boundingBox.maximumWorld;
+  const c = info.boundingSphere.centerWorld;
+  return (
+    Object.is(lo.x, b.minX) && Object.is(lo.y, b.minY) && Object.is(lo.z, b.minZ) &&
+    Object.is(hi.x, b.maxX) && Object.is(hi.y, b.maxY) && Object.is(hi.z, b.maxZ) &&
+    Object.is(c.x, b.centerX) && Object.is(c.y, b.centerY) && Object.is(c.z, b.centerZ) &&
+    Object.is(info.boundingSphere.radiusWorld, b.radius)
+  );
 }

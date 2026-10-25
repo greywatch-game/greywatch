@@ -1594,6 +1594,17 @@ is one machine's:
   list whose cell box lies past the reach: `g.culling.reachBoxOf(mesh)` is
   the box, `g.culling.reachGate.reach` the reach, measured from the camera
   (`culling` is private to TypeScript, not to a page script).
+- **Whether the RECORD still describes the mesh is two DEV reads, not a
+  screenshot** (`BABYLON_EXIT.md` X3.7a). `g.culling.stats.boundsChecked` and
+  `.boundsMismatched` are how many filed surfaces `WorldCulling.setMap`
+  compared, `SurfaceRecord.bounds` against the mesh's bounding info bit for
+  bit, and how many differed (a console error names the count); the
+  handover's verdict off the record is checked against each mesh as it is
+  made, and a disagreement is one console error a page. To check every
+  visual rather than the filed ones — the landform, or an EDITOR build, whose
+  2,000-odd meshes are almost all off identity and so exercise the transformed
+  path — compare `g.map.world.surfaces[i].bounds` with
+  `g.map.visuals[i].getBoundingInfo()` by `Object.is` yourself.
 - **What a pane REFLECTS is checkable without a screenshot, and the CUBE is the
   place to check it.** There is one probe per glazed map block —
   `g.reflections.probes[slot]` against `g.map.paneGroups[slot]`, 40 of each on

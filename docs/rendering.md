@@ -3541,7 +3541,14 @@ Babylon's.
 - **`systems/BlockHandover.ts` decides which surfaces are TAKEN.** A
   surface is taken if it is block-merged OR the landform, at identity, never
   written after the build, on the default layer mask, and on a material that
-  keeps a recipe. Its arrays are handed over as the build makes its mesh
+  keeps a recipe. **The test is asked of the surface's RECORD, never of its
+  mesh** (X3.7a), so it holds for a surface no mesh is made of: identity is
+  the part's own transform, the blend is the material's (`blends`, what
+  `needAlphaBlendingForMesh` answers for a mesh at full visibility with no
+  vertex alpha, which is every world mesh), and rendering group 0 on the
+  default layer mask is every world mesh by construction, `worldMeshes`
+  setting neither — a DEV build checks each mesh against that verdict until
+  X3.7b makes none. Its arrays are handed over as the build makes its mesh
   (`BuildOptions.onSurface`), the one moment they can still be read, and
   read once more when the map is CUT (`WorldBlocks.finish`, from
   `installMap` after `WorldCulling.setMap`). `Game.handover` is always
@@ -4293,7 +4300,12 @@ leaving the table alone.
 is a name, not an alignment claim: terrain patches are cut on the heightfield's
 grid lines rather than on `BLOCK_SIZE` seams, and a merged block's geometry can
 hang over its own seam. Measuring what is there cannot be wrong in the direction
-that matters.
+that matters. **They are read off each surface's RECORD** (`SurfaceRecord.
+bounds`, `boundsOf`, taken off its arrays before they are released — X3.7a),
+which is Babylon's bounding info computed step for step under the part's own
+world matrix, so a cell needs no mesh to be filed; a DEV build compares every
+filed surface's box and sphere with its mesh's, bit for bit
+(`WorldCulling.stats.boundsMismatched`, and a console error).
 
 **The candidate list is `scene.meshes` MINUS things, in scene ORDER, and the
 order was measured rather than assumed.** A list assembled as loose-then-cells
@@ -4317,7 +4329,10 @@ bounding sphere, in pixels: `2r / dist * (renderHeight * scalingLevel / fov)`.
 One number is therefore right at every resolution and every field of view, and
 it tightens by itself when a sight goes up, because narrowing the FOV is exactly
 what makes a far thing bigger. It is compared SQUARED — a `sqrt` per candidate
-measured as a net LOSS at the thresholds that drop little.
+measured as a net LOSS at the thresholds that drop little. A mesh filed in a
+cell is measured off its RECORD's sphere (the cell's own source, the same bits);
+everything else — a loose mesh, an editor build's, a pool's root — off its own
+bounding info.
 
 **The scaling level in that formula is what makes the pixel a fixed unit, and
 without it the gate was a different gate on every rung of the render-scale

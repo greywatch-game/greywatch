@@ -102,7 +102,10 @@ node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--gpu] [--max] [
   reader is compiled for every shape, drawn or not — and the per-stage
   texture and sampler limits are counted against what is bound. Beside them
   it builds the compute cull those draws read (`src/render/wgsl/
-  clusterCull.ts`, X3.3b), each of its three entry points into a pipeline.
+  clusterCull.ts`, X3.3b), each of its three entry points into a pipeline,
+  and (since X3.7a) the emissive PALETTE's two programs — the main pass's
+  and a probe face's, and the glow mask's twin — at every depth bias a
+  palette material on the page carries.
   Exits non-zero, so it stands in front of a merge beside
   `gate.mjs`. It is also the strongest place the transpiler tripwire is asked,
   because it forces the CACHED materials to compile rather than the drawn ones.

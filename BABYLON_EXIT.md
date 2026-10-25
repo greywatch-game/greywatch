@@ -2863,7 +2863,7 @@ CPU computes since 2026-10-24 (X3.5b's landed list).
   - The phone's FOLLOW-UP reading, the user's to take as every step's since
     X3.3c (`FINDINGS.md` 43's capture is the same one).
   - `shaders.mjs` builds neither palette program (X3.6c's item, still open),
-    and every map's main pass now depends on one of them.
+    and every map's main pass now depends on one of them. Closed at X3.7a.
 
 **After X3.6:** every pass that draws a block, the scatter, the landform or the
 emissive palette is our renderer's whenever the handover holds what that pass
@@ -2899,7 +2899,7 @@ is checked against its parent.
   throws in DEV and `merge:hash` refuses it on seven maps at every foliage
   rung, so it cannot ship; a failed pipeline fails the install under the card;
   a refused pass is a backstop; device loss is unchanged (X5.4).
-- **X3.7a — the take off the RECORD (no picture change).**
+- **X3.7a — the take off the RECORD (no picture change).** Landed (below).
   - `BlockHandover.onSurface` decides from the surface's record, not its mesh:
     the rendering group and layer mask `worldMeshes`' defaults, identity off
     the part, the blend from the material.
@@ -2976,6 +2976,100 @@ is checked against its parent.
 - **Not this step's:** the editor's path (X5.3), glazing (X4.6), fires (X4.4),
   un-merging the scatter from the blocks, the Material objects (Phase 4),
   device-loss recovery (X5.4).
+
+**X3.7a landed** (2026-10-25, in one commit; no picture change).
+- **What it is.** Two readers that asked a world MESH now ask its RECORD,
+  so X3.7b can make none. `BlockHandover.onSurface`'s verdict: identity off
+  the part's own transform (no parent by then), the blend off the material
+  (`blends`: its `transparencyMode` when stated, else `needAlphaBlending` —
+  what `needAlphaBlendingForMesh` answers at visibility 1 with no vertex
+  alpha, which `worldMeshes` guarantees), and rendering group 0 on the
+  default layer mask by construction (`worldMeshes` sets neither); the
+  scatter parts' passes go through the same `blends`. `SurfaceRecord.bounds`
+  (`boundsOf`, `worldGeometry.ts`): Babylon's `extractMinAndMax`,
+  `BoundingBox` and `BoundingSphere` step for step on the arrays before they
+  are released, under the part's world matrix (`worldMatrixOf`);
+  `WorldCulling` grows its cells from them and size-gates a filed mesh off
+  the record's sphere (one `gateOf` entry, no extra lookup a candidate),
+  everything else off its own bounding info. The contract is
+  `docs/rendering.md` (the handover's bullet, "A cell's bounds", the size
+  gate) and the two headers.
+- **The DEV checks, until X3.7b.** `WorldCulling.setMap` compares every
+  filed surface's box and sphere with its mesh's by `Object.is`
+  (`stats.boundsChecked`/`boundsMismatched`, a console error);
+  `BlockHandover.checkBirth` compares each mesh's group, mask, parent and
+  `needAlphaBlendingForMesh` with the record's verdict (one console error a
+  page). `VERIFYING.md` has the reads.
+- **`merge:hash` hashes the record's arrays** through a DEV sink
+  (`SurfaceSink`, `window.__surfaceSink`, called by `releaseArrays`) — each
+  attribute under Babylon's kind name in the type Babylon was handed, so
+  the strings are the mesh buffers' own — and every run checks the two
+  halves equal wherever a visual has a mesh (`arrays≠buffers` fails it).
+- **`shaders.mjs` builds both palette programs** (X3.6c's item, closed):
+  `emissiveWorld(FRAME_TARGETS)` at `askPalette`'s state and
+  `emissiveWorld(GLOW_TARGETS, true)` at `glowView`'s, at every depth bias a
+  palette material on the page carries.
+- **Deviations.** The sink is a page global set by the script rather than
+  a `BuildOptions` field, so the editor's build (which takes no `onSurface`)
+  is hashed by the same door; `releaseArrays` takes the surface's index for
+  it. The sphere is read off the record only for a FILED mesh: a loose one,
+  the landform and every editor-build mesh keep their own, which an editor
+  move or a sculpt rewrites under the record. The DEV `checkBirth` and the
+  bounds comparison are transitional and go with the meshes at X3.7b.
+- **Measured.**
+  - **The bank, against a BEFORE kept at 2293c09 in the worktree**
+    (`--check --keep` both sides): **61 of 61 byte-identical**, no console or
+    page error; the same 34 stale rows over the bank's tolerance on both
+    sides. (A first AFTER run lost its page on Sarab's `tank` row, and a
+    first `--editor` hash its Sarab page, both to Vite full reloads while
+    this step's files were being edited and the collision bake rewrote
+    `collision.ts`; re-run with the tree still, both clean.)
+  - **The DEV bounds check on seven maps**: every filed surface equal bit for
+    bit — Hollowmere 94, Greyfen 357, Coldharbour 234, Harrowmead 110, Sarab
+    202, Cinderhaven 212, Kurenai 174 — and every VISUAL equal on each
+    (the landform too); Coldharbour's EDITOR build, 2,154 visuals of which
+    2,094 are off identity, all equal, so the transformed path is exact as
+    well. The birth check silent on all seven.
+  - **`merge:hash`**: identical to the BEFORE's on all eight registry maps,
+    shipped and `--editor`; the record's arrays equal to their mesh's
+    buffers on **3,828 of 3,828** shipped visuals (1,957 on the seven maps,
+    1,871 the proving ground's) and **28,473 of 28,473** editor-build ones.
+    The new baseline is `merge-after.json` / `merge-after-editor.json` in
+    this step's scratch record; X3.7b's run takes its own BEFORE at X3.7a.
+  - **`census --against` the BEFORE**: every row equal (Hollowmere 278,
+    Greyfen 205, Coldharbour 672, Harrowmead 847, Sarab 661, Cinderhaven 186,
+    Kurenai 125). **`gate.mjs`** clean on seven. **`shaders.mjs`** clean on
+    seven, ours 17/17 (21/21 on Sarab and Cinderhaven, 23/23 on Coldharbour,
+    whose palette carries biases 0 and -24) — two more a bias than X3.6e's.
+  - **Buffers against WebGPU's DEFAULT limits** (`createBuffer` wrapped from
+    boot, foliage `high`, the largest rung; the game asks no raised limits —
+    `setMaximumLimits` is off and the device reads 256 MiB / 128 MiB):
+    **no shipped map is near either limit.** The largest buffer on every map
+    is a world group's storage array, the `CEL_PALETTE` group's colour:
+    Cinderhaven 56.0 MiB (44% of the 128 MiB binding limit), Kurenai 30.6,
+    Coldharbour 24.9, Greyfen 17.5, Hollowmere 17.2, Harrowmead 13.3, Sarab
+    12.7; the next are the same group's positions and normals (Cinderhaven
+    42.0) and, on Coldharbour, Harrowmead and Sarab, the main view's source
+    indices (14.7 MiB at most). Nothing over 56 MiB is made on any map.
+  - **`kit:hash`** identical; **`parity`** passes on eight; **`collision`**
+    rewrote nothing (every bake byte-identical); typecheck, build and
+    corecheck pass.
+  - **X0.3 on the desktop** (`bench.mjs`, `--max --gpu`, uncapped,
+    3440x1440, the BEFORE at 2293c09 and the AFTER alternated run by run,
+    three a side, on Greyfen, Coldharbour and Cinderhaven; the canonical
+    fight hashes on all 18 runs): the mean frame new / old 0.995-1.001 on
+    the vantages, 0.998-1.000 on the path and 0.994-0.996 in the fights;
+    `gpu.frame` 0.978-1.020; draws equal but Cinderhaven's fight 308 to 309.
+    The bench's install on Greyfen, each run's first map, rose ~2 s (9.6 to
+    11.8 s) and is the main tree's cold dev server again (X3.6e's reading):
+    `installRound` timed in-page, alternately, after a warm boot, is level
+    (Greyfen 8.34/8.37 s then 5.88/5.78 against 8.39/8.28 then 5.82/5.81;
+    Cinderhaven 8.88/8.58 then 5.91/5.87 against 8.55/8.94 then 5.85/5.92).
+- **Owed onward.** X3.7b, whose gate the headroom above meets: the
+  defaults are the floor every WebGPU adapter must grant and the device asks
+  for nothing more, so a phone gets the same limits; what can still differ
+  there is memory, not a limit. The phone's FOLLOW-UP reading as every
+  step's since X3.3c.
 
 ---
 

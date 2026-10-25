@@ -533,9 +533,9 @@ export interface GameMap {
   visuals: Mesh[];
   /**
    * What the build KEPT of the record `visuals` were made of — one
-   * `SurfaceRecord` per entry, aligned with `visuals`: its block, its piece
-   * ranges, its material and the very metadata object its mesh carries,
-   * whether its positions are writable, and its counts. **Not its vertex
+   * `SurfaceRecord` per entry, aligned with `visuals`: its world bounds, its
+   * block, its piece ranges, its material and the very metadata object its
+   * mesh carries, whether its positions are writable, and its counts. **Not its vertex
    * arrays**, which went to the device with the mesh — see `SurfaceRecord`.
    * Empty on the authority, which draws nothing (`paneGroups`' reason).
    */

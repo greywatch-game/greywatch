@@ -159,6 +159,8 @@ const TMP_DECOMPOSED = new Quaternion();
 const TMP_COMPOSED = new Matrix();
 const TMP_DETACHED_SCALE = new Vector3();
 const TMP_DETACHED_POSITION = new Vector3();
+/** `worldMeshes`' scratch: each surface's world matrix, which its record's bounds are taken under. */
+const TMP_WORLD = new Matrix();
 
 /**
  * `TransformNode.computeWorldMatrix` for a part: its local matrix, times its
@@ -384,7 +386,10 @@ export function drawnMesh(
  * keeps — rather than twice. `plain` is the build's `PlainArrays`, which is
  * how the floor's mesh comes out holding the arrays its collider clone was
  * already made of. `onSurface` (`BuildOptions.onSurface`) is handed each
- * surface and its mesh on the way past, before the release.
+ * surface and its mesh on the way past, before the release, and the record's
+ * BOUNDS are taken off the arrays under the part's own world matrix
+ * (`worldMatrixOf`, the mesh's) — Babylon's bounding info, which a DEV build
+ * checks against the mesh's (`WorldCulling.setMap`).
  */
 export function worldMeshes(
   surfaces: readonly WorldSurface[],
@@ -414,9 +419,9 @@ export function worldMeshes(
       if (positions) mesh.setVerticesData(VertexBuffer.PositionKind, positions, true);
     }
     meshes[i] = mesh;
-    records[i] = recordOf(surface);
+    records[i] = recordOf(surface, worldMatrixOf(surface.part, TMP_WORLD));
     onSurface?.(surface, mesh);
-    releaseArrays(surface.part);
+    releaseArrays(surface.part, i);
   }
   surfaces.forEach((surface, i) => surface.owner?.visuals.push(meshes[i]));
   return { meshes, records };

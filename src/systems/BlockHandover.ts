@@ -19,13 +19,18 @@
  * Invariants: a surface is TAKEN only if our pipeline draws it exactly as
  * Babylon would — block-merged or the LANDFORM (`WorldSurface.landform`: the
  * floor's patches, the rim's runs and the map-wide road merge, which the
- * BUILD marks and nothing here guesses), in rendering group 0, at identity
- * and under no parent, never written after its build (`updatable` is a
- * breakable pane's), on the layer mask every camera sees, and on a cel
- * material that keeps a recipe (`CelMaterialFactory.celRecipe`: no glazing,
- * no cloth, no emissive) — or is the emissive PALETTE, taken WITH its mask
- * (below) — and all are drawn by our side ahead of group 0's alpha-tested
- * meshes, the palette first and the blocks before the landform
+ * BUILD marks and nothing here guesses), at identity, never written after
+ * its build (`updatable` is a breakable pane's), and on a cel material that
+ * keeps a recipe (`CelMaterialFactory.celRecipe`: no glazing, no cloth, no
+ * emissive) — or is the emissive PALETTE, taken WITH its mask (below) — and
+ * that test is asked of the surface's RECORD, never of its mesh
+ * (`BABYLON_EXIT.md` X3.7a): the identity off the part's own transform, the
+ * blend off the material (`blends`), and rendering group 0 on the layer mask
+ * every camera sees by construction, those being what `worldMeshes` makes
+ * every world mesh with (it sets neither, and the part has no parent by
+ * then) — a DEV build checks each mesh against its record's verdict, until
+ * X3.7b makes none; and all are drawn by our side ahead of group 0's
+ * alpha-tested meshes, the palette first and the blocks before the landform
  * (`WorldBlocks`'s header says why); nothing is taken from an EDITOR build,
  * which `Game` hands no `onSurface` — its blocks are unmerged, and its brush
  * rewrites the floor's meshes in place — and every other surface stays
@@ -108,9 +113,9 @@
  * as its recipe; writes a property on a mesh.
  * Contract: `docs/rendering.md`, "Our renderer's frame";
  * `BABYLON_EXIT.md` X3.3a, X3.3b, X3.3c, X3.4, X3.4b, X3.5, X3.5b, X3.6a,
- * X3.6b, X3.6c, X3.6d, X3.6e.
+ * X3.6b, X3.6c, X3.6d, X3.6e, X3.7a.
  */
-import type { AbstractMesh, Material, Mesh } from "@babylonjs/core";
+import { type AbstractMesh, Material, type Mesh } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { type BlockBox, type CullDiagnostics, NO_DIAGNOSTICS } from "../render/ClusterCull";
 import type { Renderer } from "../render/Renderer";
@@ -137,8 +142,26 @@ import type { ScatterField } from "../world/scatterVariants";
 import type { WorldGeometry, WorldSurface } from "../world/worldGeometry";
 import { NO_REACH, type WorldCulling } from "./WorldCulling";
 
-/** The layer mask a mesh is born with, which every camera in the game sees. */
+/** The layer mask a mesh is born with, which every camera in the game sees — the DEV check's. */
 const DEFAULT_LAYER_MASK = 0x0fffffff;
+
+/**
+ * Whether `material` draws BLENDED, as `Material.needAlphaBlendingForMesh`
+ * answers for every world mesh `worldMeshes` makes — `visibility` 1 and no
+ * vertex alpha (it clears `hasVertexAlpha` on every surface the bake gave
+ * colours): the material's `transparencyMode` when it states one, else its
+ * own `needAlphaBlending`. Asked of the material alone, so a surface's
+ * shadow passes are decided off its record (`BABYLON_EXIT.md` X3.7a), and a
+ * scatter part's — which has no mesh at all — by the same words.
+ */
+function blends(material: Material | null): boolean {
+  if (!material) return false;
+  const mode = material.transparencyMode;
+  if (mode !== null && mode !== undefined) {
+    return mode === Material.MATERIAL_ALPHABLEND || mode === Material.MATERIAL_ALPHATESTANDBLEND;
+  }
+  return material.needAlphaBlending();
+}
 
 export class BlockHandover {
   private readonly blocks: WorldBlocks;
@@ -183,6 +206,8 @@ export class BlockHandover {
   private epoch = -1;
   /** The DEV check has reported a changed mesh: once a map is enough. */
   private reported = false;
+  /** The DEV check has reported a mesh its record's verdict does not describe: once a page is enough. */
+  private misread = false;
   /** The build's scatter, held from `onScatter` until `install` hands it over. */
   private field: ScatterField | null = null;
   private readonly removeFrame: () => void;
@@ -225,26 +250,28 @@ export class BlockHandover {
    */
   readonly onSurface = (surface: WorldSurface, mesh: Mesh): void => {
     const { part } = surface;
-    const passes = this.passesOf(part.metadata, part.material, mesh);
+    if (import.meta.env.DEV) this.checkBirth(surface, mesh);
+    const passes = this.passesOf(part.metadata, part.material);
     const key = blockKeyOf(surface.block);
     const p = part.position;
     const r = part.rotation;
     const k = part.scaling;
+    // The part's own transform: it has no parent by now (`worldMeshes`
+    // refuses one), so this is the mesh's world matrix being the identity.
     const atIdentity =
       p.x === 0 && p.y === 0 && p.z === 0 &&
       r.x === 0 && r.y === 0 && r.z === 0 &&
       k.x === 1 && k.y === 1 && k.z === 1 &&
-      part.rotationQuaternion === null &&
-      mesh.parent === null;
+      part.rotationQuaternion === null;
     // Every surface the main pass takes is in a probe's bake too: Babylon's
     // drew the map's visuals whole but for the glazing, which is never taken.
-    let at = this.takeForMainPass(surface, mesh, atIdentity, passes | PASS_PROBE, key);
+    let at = this.takeForMainPass(surface, atIdentity, passes | PASS_PROBE, key);
     let drawn = passes | PASS_PROBE;
     // A palette surface is ours in the glow's mask only if it is held for it;
     // one that is not leaves the map's whole palette mask to Babylon.
     const palette = this.mats.emissiveRecipe(part.material) !== null;
     if (at === null) {
-      drawn = this.heldPasses(surface, mesh, atIdentity, passes);
+      drawn = this.heldPasses(surface, atIdentity, passes);
       const held = this.hold(surface, atIdentity, drawn, key);
       // A fire is left out of our bake as Babylon's left it out of its own.
       if (isFlame(part.material)) this.fires.add(mesh);
@@ -269,14 +296,15 @@ export class BlockHandover {
 
   /**
    * `surface` added to the main pass's blocks if our pipeline draws it exactly
-   * as Babylon would — see the header for the test — and its index; else null.
+   * as Babylon would — see the header for the test, which is the record's —
+   * and its index; else null.
    */
-  private takeForMainPass(surface: WorldSurface, mesh: Mesh, atIdentity: boolean, passes: number, key: number): number | null {
+  private takeForMainPass(surface: WorldSurface, atIdentity: boolean, passes: number, key: number): number | null {
     const { part } = surface;
     if ((surface.block === null && !surface.landform) || surface.updatable) return null;
-    // Drawn in group 0's slot, at the world's own origin, by every camera.
-    if (mesh.renderingGroupId !== 0 || !atIdentity) return null;
-    if (mesh.layerMask !== DEFAULT_LAYER_MASK) return null;
+    // At the world's own origin; group 0's slot and every camera's mask are
+    // every world mesh's (see the header).
+    if (!atIdentity) return null;
     const recipe = this.mats.celRecipe(part.material);
     if (!recipe) return null;
     const g = part.geometry;
@@ -290,13 +318,13 @@ export class BlockHandover {
    * shadow passes, and a probe's bake (`PASS_PROBE`) and the glow's mask
    * (`PASS_GLOW`) if it is the emissive PALETTE
    * (`CelMaterialFactory.emissiveRecipe`) with its slots, drawn as Babylon
-   * draws it — rendering group 0, every camera's layer mask — the mask only
-   * if it is not `noGlow`, which `GlowPass` reads off the same object.
+   * draws it — at identity, and in rendering group 0 on every camera's layer
+   * mask as every world mesh is (see the header) — the mask only if it is not
+   * `noGlow`, which `GlowPass` reads off the same object.
    */
-  private heldPasses(surface: WorldSurface, mesh: Mesh, atIdentity: boolean, passes: number): number {
+  private heldPasses(surface: WorldSurface, atIdentity: boolean, passes: number): number {
     const { part } = surface;
     if (!atIdentity || !this.mats.emissiveRecipe(part.material) || !part.geometry.uvs2) return passes;
-    if (mesh.renderingGroupId !== 0 || mesh.layerMask !== DEFAULT_LAYER_MASK) return passes;
     const glows = (part.metadata as { noGlow?: boolean } | null | undefined)?.noGlow !== true;
     return passes | PASS_PROBE | (glows ? PASS_GLOW : 0);
   }
@@ -335,12 +363,12 @@ export class BlockHandover {
    * SOLID (`CelMaterialFactory.isSolid`). The generators' own statement of
    * it is `ShadowSystem.casts`, which the blend test is not in because a
    * generator makes it itself, and the atlas's is `LocalShadows.setWorld`'s
-   * filter: each must agree, or a shadow differs by who draws it.
+   * filter: each must agree, or a shadow differs by who draws it. The blend
+   * is the material's (`blends`), for a surface and a scatter part alike.
    */
-  private passesOf(metadata: { noShadowCaster?: boolean } | null | undefined, material: Material | null, mesh: Mesh | null): number {
+  private passesOf(metadata: { noShadowCaster?: boolean } | null | undefined, material: Material | null): number {
     if (metadata?.noShadowCaster) return 0;
-    // A part has no mesh of its own: its material alone says whether it blends.
-    if (material && (mesh ? material.needAlphaBlendingForMesh(mesh) : material.needAlphaBlending())) return PASS_LAMPS;
+    if (blends(material)) return PASS_LAMPS;
     return PASS_LAMPS | PASS_CASTS | (this.mats.isSolid(material) ? PASS_SOLID : 0);
   }
 
@@ -373,7 +401,7 @@ export class BlockHandover {
           // (`WorldBlocks.addInstanced`), never skipped while its pieces are cut.
           const recipe = this.mats.celRecipe(part.material);
           if (recipe) {
-            const passes = this.passesOf(part.metadata, part.material, null) | PASS_PROBE;
+            const passes = this.passesOf(part.metadata, part.material) | PASS_PROBE;
             this.blocks.addInstanced(s, part.name, part.geometry, recipe, passes);
           }
         }
@@ -672,6 +700,33 @@ export class BlockHandover {
     }
     if (import.meta.env.DEV && !this.reported) this.check(this.meshes);
   };
+
+  /**
+   * DEV: the mesh `worldMeshes` made of `surface` is what its record's verdict
+   * assumes (see the header) — rendering group 0, every camera's layer mask,
+   * no parent, and blended exactly when its material is (`blends`, against
+   * `needAlphaBlendingForMesh`) — so a verdict taken off the record is the one
+   * the mesh would have given. Until X3.7b makes no mesh to ask.
+   */
+  private checkBirth(surface: WorldSurface, mesh: Mesh): void {
+    if (this.misread) return;
+    const material = surface.part.material;
+    const meshBlends = material !== null && material.needAlphaBlendingForMesh(mesh);
+    if (
+      mesh.renderingGroupId === 0 &&
+      mesh.layerMask === DEFAULT_LAYER_MASK &&
+      mesh.parent === null &&
+      meshBlends === blends(material)
+    ) {
+      return;
+    }
+    this.misread = true;
+    console.error(
+      `BlockHandover: "${mesh.name}" is not the mesh its record describes (group ${mesh.renderingGroupId}, ` +
+        `mask ${mesh.layerMask.toString(16)}, parent ${mesh.parent?.name ?? "none"}, blends ${meshBlends}); ` +
+        "the handover's verdict is the record's (BABYLON_EXIT.md X3.7a)",
+    );
+  }
 
   private check(meshes: readonly AbstractMesh[]): void {
     for (const mesh of meshes) {

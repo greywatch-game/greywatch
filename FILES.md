@@ -203,7 +203,10 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   nothing; `--editor` does the editor's unmerged
                               #   build. Per mesh also its creation rank in the
                               #   scene, updatable positions, vertex alpha and
-                              #   frozen matrix, and each visual's PIECE ranges;
+                              #   frozen matrix, and each visual's PIECE ranges
+                              #   and its RECORD's arrays, hashed through the DEV
+                              #   sink as they are released (SurfaceSink) and
+                              #   checked equal to its mesh's buffers every run;
                               #   the panes, pane groups, editor items (indices
                               #   into visuals) and the piece table.
                               #   `--profile` prints the build's phases. Same
@@ -1277,12 +1280,19 @@ src/
                         #   reachGate states the reach and the size gate as
                         #   numbers for the GPU cull, reachBoxOf the box: a
                         #   filed block's cell, taken or not, the taken
-                        #   landform's NO_REACH
+                        #   landform's NO_REACH. A cell's box and a filed
+                        #   mesh's size gate read its RECORD's bounds
+                        #   (SurfaceRecord.bounds, X3.7a), checked bit for bit
+                        #   against the mesh's bounding info in DEV
     BlockHandover.ts    # Which block surfaces, and since X3.5 which landform
                         #   surfaces (WorldSurface.landform), OUR renderer
                         #   draws in the main pass, in every build but the
                         #   editor's (BABYLON_EXIT.md X3.3, X3.5) —
-                        #   taken at the build (BuildOptions.onSurface),
+                        #   taken at the build (BuildOptions.onSurface), on a
+                        #   verdict asked of the surface's RECORD and never its
+                        #   mesh (X3.7a: the part's transform, the material's
+                        #   blend, group 0 and the default mask by
+                        #   construction; a DEV check that the mesh agrees),
                         #   handed to render/WorldBlocks, kept out of the
                         #   candidates, cut at install against their cells, a
                         #   failed compile's surfaces handed back to Babylon as
@@ -1453,7 +1463,10 @@ src/
                         #   and its editor item),
                         #   PaneSurfaceGroup, SurfaceRecord / WorldGeometry
                         #   (GameMap.world: everything kept but the arrays,
-                        #   which releaseArrays drops at upload), and admission
+                        #   which releaseArrays drops at upload — through the
+                        #   DEV SurfaceSink merge:hash reads them by — and
+                        #   since X3.7a the world BOUNDS, boundsOf, Babylon's
+                        #   bounding info step for step), and admission
                         #   (admitStructure / admitProp), the one door a part
                         #   enters the merge by, refusing a shared array in DEV.
                         #   The PIECE id (a layout item) and its ranges'
