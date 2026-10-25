@@ -83,7 +83,7 @@ then the frame loop itself, at which point taking the frame is mostly deletion.
 | **0. Instruments** | nothing — the oracles this plan needs and the "before" | the bank and the benchmark both reproduce |
 | **1. Data off Babylon types** | math, geometry and the merge become plain arrays | `kit:hash` and `merge:hash` identical, no pixel moved |
 | **2. The simulation off the scene** | sweeps, state, the server, Havok, one core in a Worker | `server/` and the simulation import nothing from Babylon (a build gate says so) |
-| **3. The static world** | our renderer draws blocks, scatter and terrain, in every pass | Babylon builds no world mesh for a round |
+| **3. The static world** | our renderer draws blocks, scatter and terrain, in every pass | Babylon builds no mesh in a round for anything our renderer draws (glazing and fires stay Babylon's until X4.6 and X4.4) |
 | **4. Everything else that draws** | bodies, hulls, the viewmodel, effects, sky, water, glass, grass, particles | Babylon's scene draws nothing but the post chain |
 | **5. The frame** | GI compute, the post chain, the editor, the loop | Babylon's engine is not constructed |
 | **6. The cut** | the package, the gates, the docs, then the merge | `develop` carries the exit as one merge commit |
@@ -2872,8 +2872,110 @@ maps, the lamps' atlas, the probes' bake and the glow's mask. Babylon no
 longer draws the palette's main pass while the handover holds it. It still
 BUILDS every one of those meshes, as the fallback each pass hands back to (an
 editor build, `?babylonworld`, a surface ours cannot hold, a loss mid-map).
-Phase 3's end condition is met only once the fallbacks are deleted; no step
-names that yet. Editor builds keep the old path until X5.3.
+Phase 3's end condition is met only once the fallbacks are deleted: X3.7,
+below. Editor builds keep the old path until X5.3.
+
+### X3.7 — Babylon builds no world mesh for a round — **L, as three sub-steps** (decided 2026-10-24)
+
+The fallback each pass of X3.6 hands back to goes. After X3.6 Babylon still
+BUILDS a mesh for every surface our renderer draws (the blocks with the
+scatter's merged copy in them, the landform, the emissive palette) and keeps
+the machinery that would draw them (`ShadowSystem`'s generators,
+`LocalShadows`' render target, `ReflectionSystem`'s `ReflectionProbe`s,
+`GlowPass`'s palette twin), for an editor build, `?babylonworld`, a surface
+ours cannot hold, or a loss mid-map. Every shipped map holds every surface in
+every pass, the Intel laptop's flicker is fixed (68b84b3) and the phone's
+world reads right (the user, 2026-10-24), so the safety net is now only cost:
+the world built twice (Greyfen's scatter copy alone was +120 MB at X3.5b),
+install time, and a dozen handback paths. Each sub-step lands on its own and
+is checked against its parent.
+
+- **What becomes of a failure** (decided 2026-10-24): **the world draws whole
+  or the round does not start.** One `Game.worldFailed(reason)`, run after the
+  task in hand as a `lose()` is today: a `console.error`, back to the menu
+  (`leaveMatch` online) and a toast that the map could not be drawn —
+  `loadHeights`' precedent, there being no honest half-build to fall back to
+  and no fallback engine (`CLAUDE.md`). A surface the handover cannot hold
+  throws in DEV and `merge:hash` refuses it on seven maps at every foliage
+  rung, so it cannot ship; a failed pipeline fails the install under the card;
+  a refused pass is a backstop; device loss is unchanged (X5.4).
+- **X3.7a — the take off the RECORD (no picture change).**
+  - `BlockHandover.onSurface` decides from the surface's record, not its mesh:
+    the rendering group and layer mask `worldMeshes`' defaults, identity off
+    the part, the blend from the material.
+  - `SurfaceRecord.bounds`, taken from the arrays before they are released;
+    `WorldCulling`'s cell boxes and spheres read them where they read
+    `getBoundingInfo` today (`WorldCulling.ts` 442, 857). A DEV check against
+    the mesh's test and its world box, bit for bit, on seven maps.
+  - `merge:hash` hashes the record's arrays through a sink before release (a
+    new baseline whose per-surface hashes equal the old buffers').
+  - `shaders.mjs` builds both palette programs (owed since X3.6c): after X3.7b
+    a failed one fails the round.
+  - Each map's buffer sizes recorded against WebGPU's default limits (128 and
+    256 MiB): with no fallback, a device with less headroom gets the error.
+- **X3.7b — the cut.**
+  - `worldMeshes` makes no mesh for a surface ours draws; `GameMap.visuals` is
+    Babylon's meshes alone (glazing, fires, and an editor build's every
+    mesh), and `world.surfaces` stays complete, each saying who draws it.
+  - Every handback becomes `worldFailed`: `BlockHandover`'s `back`,
+    `handedBack`, `takePalette`, `dropPalette` and its DEV node check;
+    `WorldBlocks.fail`/`giveUpAll`; the losses of `WorldShadows`, `LampAtlas`,
+    `ProbeBake` and `WorldGlow`.
+  - `?babylonworld` is deleted (decided 2026-10-24); X3.7b's parent is tagged
+    `exit-babylonworld` and pushed, the last build that has it, so a device
+    A/B against Babylon's world stays one deploy away.
+  - `WorldCulling` files cells off the records and drops `setTaken`;
+    `reachBoxOf` keys on the block.
+  - The casters are held on every shadow rung, so a rung raised from `off`
+    draws ours, not the generators until the next map.
+  - `noGlow` is read per surface (`heldPasses` already drops `PASS_GLOW` per
+    surface): "the whole palette" existed only because `GlowPass` was the
+    fallback.
+  - **Measured here:** the JS heap after a GC, GPU bytes (`createBuffer` and
+    `createTexture` wrapped, as X3.6a did), `installRound` timed in the page
+    and alternated (the bench's install reads a cold dev server), and
+    `scene.meshes`/`geometries` a map — before and after.
+- **X3.7c — Babylon's world passes narrowed.** Deleted for a round: the
+  `ReflectionProbe` path (the editor's strength-0 default cube replaced by one
+  of ours), `GlowPass`'s palette twin and `EmissiveWorld`'s Babylon stages,
+  the `lose`/`onLost`/`broken` latches. `ShadowSystem`'s generators and
+  `LocalShadows`' render target stay for the editor's build alone, X5.3's to
+  delete. Babylon still draws, in a round: the bodies and `BodyShadows`, the
+  hulls, the viewmodel, the effects and fires, the sky, clouds and moon, the
+  water, grass, glazing, flags, rings, blobs and particles, and the glow
+  mask's non-world emissives.
+- **Keeps:** the cel and emissive MATERIAL objects, never compiled in a
+  round, which the merge keys on and which hold the recipes (Phase 4); the
+  scatter merged into the block ARRAYS, whose spheres, cell boxes and probe
+  region key read it (un-merging it moves them, a picture change of its own);
+  `metadata.block` on glazing and fires, which stay in `WorldCulling`'s
+  blocked class.
+- **Verify, each sub-step:** the bank `--check --keep` against a BEFORE at the
+  parent (61 of 61 byte-identical expected; where it could move: the cell
+  boxes, the take test, candidate order, the default cube); `census
+  --against` equal (its `handedBack` 0 from X3.7b); `gate`, `shaders`;
+  `merge:hash` against X3.7a's baseline and `--editor` unchanged; `kit:hash`,
+  `parity`, `collision`; typecheck, build, corecheck; the forced paths in a
+  scratch page (each former loss ends in the error and the menu; a shadow rung
+  `off` to `high`; `F2` select, drag, sculpt and save); X0.3 alternated three
+  a side, `--max --gpu`, 3440x1440, on Greyfen, Coldharbour and Cinderhaven.
+- **Rewrites (rule 7):** `CLAUDE.md`'s rendering section (the four maps' and
+  the bake's "back to Babylon" clauses become the refusal, "the SCATTER is
+  drawn twice over" becomes once, `WorldCulling`'s taken-mesh rules, the
+  glow's palette clause) and its metadata section (`worldMeshes` hands a mesh
+  only where one is made, `encloses` goes with Babylon's bake, the `noGlow`
+  bullet); `docs/rendering.md`; `docs/game.md` (`installMap`, `teardownMap`,
+  `worldFailed`); `docs/editor.md`; `docs/world.md`; `FILES.md`;
+  `VERIFYING.md` (the forced-loss, `takePalette` and `?babylonworld`
+  recipes); `FINDINGS.md` 61 and 64; "After X3.6" above; the shape table.
+- **Risks:** the device A/B leaves the URL (the tag above keeps it); a phone
+  with tighter limits gets the error rather than a picture (X3.7a's headroom
+  and the phone's reading come before X3.7b lands); the editor's path
+  diverges further and the bank cannot see it (`merge:hash --editor`, `F2` by
+  hand); `merge:hash` across X3.7b compares only against X3.7a's baseline.
+- **Not this step's:** the editor's path (X5.3), glazing (X4.6), fires (X4.4),
+  un-merging the scatter from the blocks, the Material objects (Phase 4),
+  device-loss recovery (X5.4).
 
 ---
 
@@ -2933,7 +3035,9 @@ chain, and the frozen cel-material cache and its traps are deleted with
 - **Do:**
   - The pools on our side: tracers, sparks, impact discs, bullet marks (a cel
     material in `WorldCulling`'s size gate today), `BlastFx`'s billows, the
-    fires (`FlameMaterial`), grenades, rockets, mines, shards and debris.
+    fires (`FlameMaterial`; their block merges are the one world surface
+    besides glazing that X3.7 leaves a Babylon mesh in a round), grenades,
+    rockets, mines, shards and debris.
   - **The warm-up changes shape**: every pipeline a round can use is created
     from a declared list during loading, so the `warm(on)` poses become a list
     of pipeline keys.
@@ -2959,7 +3063,8 @@ The dome, stars, moon and cloud ring (`Sky`, `cloudMasses`, `CloudShader`).
 - **Do:**
   - `WaterSystem`: its bed-depth bake and its probes.
   - See-through glazing over X3.6c's cubes, and `backed` panes, which write
-    depth.
+    depth — Babylon meshes in a round until here (`PaneBlocks`, the breakable
+    panes `GlassFx` writes included; X3.7 keeps them).
   - `GrassSystem`'s field around the eye (thin instances, its own frustum
     test).
   - `FlagCloth`, and `CaptureZoneSystem`'s rings.
@@ -3029,6 +3134,9 @@ in an append-only list) go away.
 
 It stays behind its one dynamic `import()` in a DEV branch.
 
+- **Inherits from X3.7:** the editor's build is the last Babylon draws whole —
+  every mesh, `ShadowSystem`'s generators and `LocalShadows`' render target,
+  kept for it alone; X5.3 deletes them.
 - **Verify:** select, drag, rotate, sculpt, lay a path road, save — and
   confirm the save patches `layout.ts` byte for byte for untouched entries
   (`docs/editor.md`). `merge:hash --editor`.
@@ -3118,9 +3226,9 @@ Each is rewritten by the step that breaks it, in the same commit.
 | `CLAUDE.md`: no deep static import, keep `optimizeDeps.exclude`; the two WASMs that never ship | X6.1 |
 | `CLAUDE.md`: every cel material is frozen; `remember`; a vertex colour buffer gained after a first draw | end of Phase 4 (deleted) |
 | `CLAUDE.md`: `shaderLanguage` is load-bearing; a declared sampler must be bound | X3.1, X5.2 (becomes a bind-group-layout rule) |
-| `CLAUDE.md`: the two shadow maps; the lamps' atlas | X3.6a, X3.6b, X4.1 |
+| `CLAUDE.md`: the two shadow maps; the lamps' atlas | X3.6a, X3.6b, X3.7, X4.1 |
 | `CLAUDE.md`: the frame walks the scene (`WorldCulling`) | X3.3c through X4.7 |
-| `CLAUDE.md`: the glow | X3.6d, X3.6e, X5.2 |
+| `CLAUDE.md`: the glow | X3.6d, X3.6e, X3.7, X5.2 |
 | `CLAUDE.md`: visual meshes and collider proxies; exactly three sweeps | X2.1, X2.3 |
 | `CLAUDE.md`: mesh metadata is a contract | X1.4 (moves to the geometry record), X3.3 onward |
 | `CLAUDE.md`: the forced world matrix on the authority | X2.2 |
@@ -3211,6 +3319,9 @@ Phase 1 actually took.
 | X3.4 | Scatter AO: baked per kind (cheaper, changes the look) or per instance? | **Decided** 2026-10-14: per kind, judged in the bank. If the look is wrong, the fix is X3.4's "If the look is wrong" (a per-kind bake plus a per-instance term), not a per-instance bake. |
 | X3.5b | X3.4b's instanced draws are one a part of a set, issued every frame: fold them into one draw a recipe, and when? | **Decided** 2026-10-14: fold them by vertex pulling, blocks and scatter in one stream, before X3.6 repeats them in every pass. Fewer variants was not the lever: it halves the count and costs the look. |
 | X3.5b | The instance in the index's high bits, or non-indexed draws over (record, corner)? | **Decided** 2026-10-20: the high bits, with the scatter addressed in its own region (13 bits of instance, 18 of vertex, its parts laid first); landed 2026-10-21, at two draws a group with scatter, since the blocks stay never-indirect; the scatter's draw plain since 2026-10-24, at a bound the CPU computes, and its `expand` direct, for the Intel laptop whose trees went too. |
-| X3.6d | After X3.6 Babylon still BUILDS every world mesh, as the fallback each pass hands back to, and still draws the emissive palette's MAIN pass. Which step deletes the fallbacks, and which moves the palette's main pass? | **Decided** 2026-10-24 for the palette's main pass: option 1, move it in its own step and measure first — it changes which side wins an equal-depth tie with a coplanar wall, a picture change owed its own commit with the bank's numbers (rule 2); landed as X3.6e (59 of 61 rows byte-identical, the two that moved the reach's hysteresis rather than a tie). Deleting the fallbacks is still **open**: Phase 3's end condition ("Babylon builds no world mesh for a round") needs it, and no step names it. |
+| X3.6d | After X3.6 Babylon still BUILDS every world mesh, as the fallback each pass hands back to, and still draws the emissive palette's MAIN pass. Which step deletes the fallbacks, and which moves the palette's main pass? | **Decided** 2026-10-24 for the palette's main pass: option 1, move it in its own step and measure first — it changes which side wins an equal-depth tie with a coplanar wall, a picture change owed its own commit with the bank's numbers (rule 2); landed as X3.6e (59 of 61 rows byte-identical, the two that moved the reach's hysteresis rather than a tie). Deleting the fallbacks **decided** 2026-10-24, after the Intel laptop's flicker was fixed and the phone's world read right: X3.7, in three sub-steps. |
+| X3.7 | With no fallback, what does a world our renderer cannot draw become? | **Decided** 2026-10-24: back to the menu with a toast and a `console.error` (`Game.worldFailed`), not a hole in the world; a surface the handover cannot hold is refused in DEV and by `merge:hash`, so it cannot ship (X3.7). |
+| X3.7 | Glazing and fires stay Babylon meshes until X4.6 and X4.4: how does Phase 3's end condition read? | **Decided** 2026-10-24: "Babylon builds no mesh in a round for anything our renderer draws" (the shape table). |
+| X3.7 | `?babylonworld` cannot exist without the meshes: delete it? | **Decided** 2026-10-24: yes, in X3.7b, with its parent tagged `exit-babylonworld` and pushed for a device A/B against Babylon's world. |
 | X4.2 | Which hull parts drop at range (the tank's links and wheels, the MG rings)? | An art call; PERF_PLAN A3 measured +6.5% at 300 m on Cinderhaven. |
 | X6.2 | Is it ready to merge to `develop`? | Only when X6.2's "Before" list passes in full. |
