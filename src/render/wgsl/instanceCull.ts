@@ -8,8 +8,9 @@
  * records as the cull and the probe declare them; the byte layouts it reads
  * (`INSTANCE_CULL_UNIFORM_BYTES`, `INSTANCE_WORDS`, `SET_WORDS`,
  * `RECORD_WORDS`) and the indirect arguments it writes (`INDIRECT_BYTES`);
- * the plane slack (`INSTANCE_SLACK`) and `expand`'s workgroup
- * (`EXPAND_SIZE`), which the CPU's bound reads too (`InstanceCull`).
+ * the plane slack (`INSTANCE_SLACK`), which the CPU's bound reads too, and
+ * `expand`'s workgroup (`EXPAND_SIZE`), which its direct dispatch is sized
+ * by (`InstanceCull`).
  * Invariants: an instance is dropped only if its sphere lies past the reach,
  * its region is filed under a block a probe's view leaves out
  * (`probeExcludes`), it is under the size gate, or its sphere (grown by the
@@ -28,12 +29,16 @@
  * index); each range's draw is ONE non-indexed PLAIN draw of
  * `LIST_STRIDE` corners a survivor up to a bound the CPU computes, from its
  * run's first (`InstanceCull.drawRange`) — `prefix` still writes each
- * range's indirect arguments, the survivors' count, which the A/B's
- * indirect arm draws (`?scatterindirect`) and a probe reads back against the
- * bound; the WORK LIST of survivors is appended to a workgroup's run at a
- * time, in no order, because it decides only which thread writes an entry,
- * never where it lands.
- * Never: reads a node — everything it reads was uploaded as numbers.
+ * range's indirect arguments, which nothing reads but the TEMPORARY A/B's
+ * indirect arm (`ScatterDraw`); the WORK LIST of survivors is appended to a
+ * workgroup's run at a time, in no order, because it decides only which
+ * thread writes an entry, never where it lands. `visible` is MIRRORED on the
+ * CPU by `InstanceCull.bound`, which must keep whatever it keeps: a test
+ * here that KEEPS more (a new sway term in `grow`, a larger slack, a looser
+ * gate) owes `bound` the same widening, or the plain draw stops short of a
+ * survivor and trees vanish without a word.
+ * Never: reads a node — everything it reads was uploaded as numbers; widens
+ * `visible` without `InstanceCull.bound`.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
  *
  * THE FOUR PASSES:
@@ -51,9 +56,8 @@
  *   Dispatched DIRECT, a thread a record (`EXPAND_SIZE` a workgroup), its
  *   threads past the work list's length returning at once — 1,310
  *   workgroups on Greyfen, where a workgroup a record was 83,846 and cost
- *   the phone 1.1-1.4 ms (`BABYLON_EXIT.md` X3.5b) — because once the list
- *   is cleared a dropped dispatch would blank the scatter; indirect, at
- *   `prefix`'s count, only under the A/B (`?scatterindirect`, either arm).
+ *   the phone 1.1-1.4 ms (`BABYLON_EXIT.md` X3.5b); indirect, at `prefix`'s
+ *   count, only under the A/B (`ScatterDraw`).
  * `cullRecords` and `expand` bind at most eight storage buffers each, the
  * least `maxStorageBuffersPerShaderStage` a device may have — which is why a
  * survivor carries its band, instance and cluster rather than `expand`

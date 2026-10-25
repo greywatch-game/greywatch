@@ -1587,10 +1587,11 @@ floor its shading:
   no area every frame — so it was drawn INDIRECT at the survivors' count,
   until the same laptop's trees went too (2026-10-24): it is a plain draw
   to a BOUND the CPU computes since, `expand` dispatched direct (the dated
-  note at the end of this step's landed list). Folding the landform into its recipe's group was not done either:
-  the groups stay one per recipe A LAYER, which keeps every block ahead of
-  every landform draw, and the one recipe in both layers (the rim wearing
-  the pines' material) costs one draw.
+  note at the end of this step's landed list). Folding the landform into
+  its recipe's group was not done either: the groups stay one per recipe A
+  LAYER, which keeps every block ahead of every landform draw, and the one
+  recipe in both layers (the rim wearing the pines' material) costs one
+  draw.
 - **The two things X3.4b left, settled.** The size gate stays per INSTANCE:
   the fold was to move no pixel against X3.5's picture, and a gate per block
   surface would have moved every distant prop that drops today. And a part
@@ -1896,44 +1897,19 @@ floor its shading:
     on the tick, the session's); `gpu.cull` 0.049-0.057 ms on all three.
 - **2026-10-24: the scatter is drawn PLAIN, at a bound the CPU computes —
   a fix, not a step.** It corrects this step's draw in every view X3.6a-c
-  built on it, and changes no plan.
-  - **What was seen.** On the Intel Xe-LPG laptop, on the deployed X3.6e,
-    the trees and scatter props flickered; not under `?babylonworld`, still
-    under `?nocull` — so our path, and the scatter's draws and its `expand`
-    were the only indirect calls left. EVERY tree and prop went at the same
-    time, all kinds together, never a single tree or one kind alone: each
-    group has its own draw, so that points at the one indirect DISPATCH that
-    serves them all (`expand`) rather than a dropped draw — PENDING the
-    laptop's `?scatterindirect=dispatch`. The fix takes both out, so it
-    stands either way; since the blocks had flickered with arguments the CPU
-    wrote, the draw is a direct `draw()`, not an indirect one at a CPU count
-    (`docs/rendering.md`, "NOTHING OF THE STATIC WORLD IS DRAWN OR
-    DISPATCHED INDIRECT").
-  - **What changed.** Each range is `draw(bound * 384, 1, SCATTER_BIT +
-    base * 384, 0)` (`InstanceCull.drawRange`, `empty`), from both draw
-    sites (`WorldBlocks.drawScatter`, `WorldDepth.draw`), so the main pass,
-    the probes' faces, both cascades, the foliage's and the lightning's maps
-    and the lamps' static faces changed together. The BOUND: the CPU
-    replays the instance test off the uniform words the GPU reads, each test
-    widened past float error and a probe's own blocks never left out, and
-    adds every in-pass record of each kept instance off a run table built
-    at the cut — never fewer than the GPU keeps, since its cluster test only
-    drops more. The list is CLEARED ahead of each dispatch and a zero entry
-    draws nothing (a guard in the shared decode, `celVertex.ts`: the corner
-    outside the clip volume, returned before any read); a range whose bound
-    is 0 is not drawn; `expand` is dispatched DIRECT, a thread a record,
-    because over a cleared list a dropped dispatch would blank every tree.
-    Rejected (the design, in this session's scratch): a plain draw over the
-    list's whole capacity (32 M corners a pass on Greyfen), a count read
+  built on it, and changes no plan. What the laptop showed, why `expand` is
+  the suspect — PENDING the laptop's `?scatterindirect=dispatch` — and the
+  bound, the cleared list and the zero entry are argued in
+  `docs/rendering.md`, "NOTHING OF THE STATIC WORLD IS DRAWN OR DISPATCHED
+  INDIRECT". Each range is `draw(bound * 384, 1, SCATTER_CORNERS + base *
+  384, 0)` (`InstanceCull.drawRange`, `empty`) from both draw sites
+  (`WorldBlocks.drawScatter`, `WorldDepth.draw`), so every view changed
+  together. The A/B is TEMPORARY, its arms `ScatterDraw`'s
+  (`render/ClusterCull.ts`), named in a capture's `graphics.forced`.
+  - **Rejected** (the design, in this session's scratch): a plain draw over
+    the list's whole capacity (32 M corners a pass on Greyfen), a count read
     back a few frames late (pop-in on a cut, a probe face with no history),
     and gating it to the device (nobody knows which devices drop).
-  - **The A/B in one deploy, TEMPORARY**: `?scatterindirect` is the path
-    before this exactly (no clear, no bound, `expand` and every range
-    indirect); `?scatterindirect=dispatch` the plain draw with `expand`
-    alone indirect, which asks whether that driver drops an indirect
-    DISPATCH too (a dropped one blanks every tree at once). Both are named
-    in a capture's `graphics.forced`, and come out once the laptop has
-    answered.
   - **Measured on the desktop** (`--max`, the RTX box; the scratch logs
     are this session's):
     - **The same picture**: the bank's 61 frames byte-identical to ed51e1d's
@@ -1975,11 +1951,44 @@ floor its shading:
       1.1 s longer on the plain arm; a paired install at 1920x1080 did not
       reproduce it (8.4-8.9 s plain, 8.6-9.3 s indirect), and `dispatch`
       took 25-35 µs a call with the bound against 5 without.
+  - **What the post-commit review found** (two independent readers over
+    e172f88, one for correctness and one for shape and contracts; fixed
+    after it). No correctness defect: the bound was confirmed against
+    `visible` test by test (the reach, the size gate and its near cut, the
+    five planes and each set's sway, a probe's exclusion left out), the
+    order of every caller (a dispatch's survivors drawn before the view's
+    next), the zero guard in the shared decode, and the arithmetic (`+`
+    over the sign bit, the bound times the stride under 2^31). On the
+    shape: nothing stated that `visible` has a CPU mirror (both headers and
+    `bound`'s doc now do: a test that keeps more owes `bound` the same
+    widening); `args` was described as read back by a probe that is not in
+    the tree; `EXPAND_SIZE` was said to be read by the bound (it sizes the
+    direct dispatch); a citation put `ScatterDraw` in `InstanceCull.ts`;
+    `WorldBlocks`' header had a sentence with no subject; `SLACK_CPU` is
+    `PLANE_SLACK`; `drawRange` returned a boolean no caller needed (`void`,
+    behind `empty`); `CullDiagnostics` did not say a sharing view draws as
+    the uploading view does; the A/B's branches and parameters were
+    untagged (each now `TEMPORARY (?scatterindirect)`, and
+    `docs/rendering.md`'s strip note lists what goes dead with them); the
+    `InstanceCull` header's invariants described both arms in a 30-line
+    chain; and the arms were described in eleven places (once now, on
+    `ScatterDraw`, and pointers — this note's argument cut to the one in
+    `docs/rendering.md`, `SCATTER_BIT` there and here named as the TS
+    constant, `SCATTER_CORNERS`). Re-checked after the fixes: the bank 61
+    of 61 byte-identical to ed51e1d's frames on the default arm, its report
+    identical line for line to the commit's; typecheck, build and
+    corecheck. The A/B arms were not re-banked: the fixes moved none of
+    their branches.
   - **Owed**: the laptop — the default, `?scatterindirect` and
     `?scatterindirect=dispatch`, four loads each; `=dispatch` flickering
     (every tree at once) settles the attribution on `expand`, and decides
-    how the rule is worded; and the phone's A/B against `?scatterindirect`,
-    alternated.
+    how the rule is worded. `?scatterindirect=<anything but dispatch>` is
+    the full indirect arm. And the phone's A/B against `?scatterindirect`,
+    alternated, which is where the bound's CPU would show: `bound()` loops
+    over every instance of the map on every dispatch, each lamp face's and
+    each probe face's included, 25-35 µs a dispatch on the desktop, so a
+    phone frame re-baking several lamp faces, or a probe burst, could add a
+    few ms of CPU.
 - **Owed.** A same-session pair against 3b9be6c still prices the fold
   itself.
 

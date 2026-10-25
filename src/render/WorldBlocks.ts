@@ -56,17 +56,18 @@
  * mullion or wall went to the block. Drawn first among ours, every such tie
  * goes the way it went; drawn after the blocks, every one of them flips.
  * WHY TWO DRAWS FOR A GROUP THAT HAS SCATTER, AND NOT ONE: nothing of the
- * world is drawn or dispatched indirect — an Intel Xe-LPG dropped single
- * indirect draws at random, at arguments however written (the blocks',
- * 2026-10-18), and lost every tree at once while the scatter was indirect
- * (2026-10-24, its one dispatch the suspect, pending that laptop's A/B), and
- * drew the same triangles plain every frame (`docs/rendering.md`) — and the blocks' draw runs over the whole
- * range of a cull that writes zeros past its survivors, where the scatter's
- * runs only to a bound the CPU computes off the instances (`InstanceCull`),
- * since a range that held every record would hand the GPU the whole forest
- * as corners of no area every frame. So a group's blocks are one plain draw
- * over their range and its scatter one plain draw to its bound, through one
- * pipeline; a scatter range whose bound is 0 is not drawn or bound.
+ * world is drawn or dispatched indirect, because an Intel Xe-LPG dropped
+ * single indirect draws at random, at arguments however written, while it
+ * drew the same triangles plain every frame (the blocks', 2026-10-18), and
+ * lost every tree at once while the scatter was indirect (2026-10-24, its
+ * one dispatch the suspect, pending that laptop's A/B; `docs/rendering.md`).
+ * The blocks' draw runs over the whole range of a cull that writes zeros
+ * past its survivors, where the scatter's runs only to a bound the CPU
+ * computes off the instances (`InstanceCull`), since a range that held every
+ * record would hand the GPU the whole forest as corners of no area every
+ * frame. So a group's blocks are one plain draw over their range and its
+ * scatter one plain draw to its bound, through one pipeline; a scatter range
+ * whose bound is 0 is not drawn or bound.
  * Invariants: a GROUP is one cel recipe IN ONE LAYER — one material, one
  * pipeline, one cluster draw and at most one scatter draw — and a surface or
  * an instanced part belongs to exactly one: a landform surface to its
@@ -1522,7 +1523,8 @@ export class WorldBlocks {
     const groups = this.groups;
     for (let g = 0; g < groups.length; g++) {
       if (!groups[g].scattered || instances.empty(g) || !this.bind(pass, group0, groups[g], view.geometry[g])) continue;
-      if (instances.drawRange(pass, g)) drawn++;
+      instances.drawRange(pass, g);
+      drawn++;
     }
     return drawn;
   }

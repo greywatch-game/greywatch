@@ -2881,15 +2881,10 @@ INDIRECT"). It was parked then as minor.
 
 "Sections of grass" blink out on that laptop (Intel Xe-LPG, Chrome), and the
 user dates it from before the exit work began. The buildings' flicker is
-fixed. Its trees were said never to flicker on 2026-10-18, and on
-2026-10-24 they did, on the deployed X3.6e — EVERY tree and prop at the same
-time, all kinds together, never a single tree and never one kind alone; not
-under `?babylonworld`, still under `?nocull`. All at once points at the one
-indirect DISPATCH that serves the whole scatter (`expand`) rather than a
-group's own indirect draw — PENDING the laptop's `?scatterindirect=dispatch`.
-Since then nothing of the scatter is indirect (`docs/rendering.md`, the same
-section), so a section of GRASS still going on that build is this finding's
-alone.
+fixed, and so, pending that laptop's A/B, is its trees' (every tree at once,
+2026-10-24; `docs/rendering.md`, the same section): nothing of the scatter is
+indirect now, so a section of GRASS still going on that build is this
+finding's alone.
 
 ### What is derived from the code
 

@@ -110,18 +110,23 @@ export type ScatterDraw = "plain" | "indirect" | "dispatch";
 
 /**
  * A cull's diagnostics, all off the URL (`core/urlOverrides.ts`): which
- * tests run (`CullMode`), where `?cullcheck` reports its readings
+ * tests run (`CullMode`, per view), where `?cullcheck` reports its readings
  * (`CullCheck`) — null for no check — and how the scatter is drawn
- * (`ScatterDraw`).
+ * (`ScatterDraw`), which is the MAP's: a view sharing another's tables draws
+ * the scatter as the uploading view does, its own `scatterDraw` ignored.
  */
 export interface CullDiagnostics {
   readonly mode: CullMode;
   readonly report: CullReport | null;
-  readonly scatterDraw: ScatterDraw;
+  readonly scatterDraw: ScatterDraw; // TEMPORARY (?scatterindirect)
 }
 
 /** Every test, no check, the scatter drawn plain: what a cull runs with but for a diagnostic. */
-export const NO_DIAGNOSTICS: CullDiagnostics = { mode: "full", report: null, scatterDraw: "plain" };
+export const NO_DIAGNOSTICS: CullDiagnostics = {
+  mode: "full",
+  report: null,
+  scatterDraw: "plain", // TEMPORARY (?scatterindirect)
+};
 
 /**
  * Opens the tests `mode` turns off in a cull's uniform block, after the frame

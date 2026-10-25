@@ -13,8 +13,8 @@
  * through (`list`, each range's survivors' entries from its first record —
  * `render/scatterList.ts`), each range's BOUND for the dispatch recorded last
  * (`bounds`) and the draw at it (`drawRange`, `empty`), the indirect
- * arguments `prefix` still writes (`args`, one `drawIndirect` a range: the
- * A/B's draw and the survivor count a probe reads), the WORK LIST of
+ * arguments `prefix` still writes (`args`, one `drawIndirect` a range, which
+ * nothing in the tree reads but the A/B's indirect arm), the WORK LIST of
  * surviving records and its length, cleared ahead of each dispatch's pass,
  * and `expand`'s workgroups over it — and, for the view that uploaded them,
  * the instance, set, cluster and record tables and the 16-bit source
@@ -28,34 +28,25 @@
  * node; an instance is dropped only when its sphere lies past the reach,
  * under the size gate, or wholly outside one of the five planes, and a
  * cluster of a kept instance only when it is not in the view's pass or its
- * moved box lies wholly outside one of them; the list is
- * sized for every record surviving, so no frame can overrun a range's run;
- * a range's BOUND is never fewer than the survivors the GPU writes into it —
- * the CPU replays the instance test off the very uniform words the GPU
- * reads, each test widened past float error (`SLACK_CPU`, `REACH_SLACK`,
+ * moved box lies wholly outside one of them; the list is sized for every
+ * record surviving, so no frame can overrun a range's run.
+ * A range's BOUND is never fewer than the survivors the GPU writes into it:
+ * `bound` replays the WGSL's `visible` off the very uniform words the GPU
+ * reads, each test widened past float error (`PLANE_SLACK`, `REACH_SLACK`,
  * `GATE_SLACK`) and a probe's own blocks never left out, and counts every
- * record in the view's pass of an instance it keeps, the cluster's box test
- * only ever dropping more — so the plain draw's `bound * stride` corners
- * cover every survivor's run; the list is CLEARED ahead of each dispatch, so
- * the slots past the GPU's count hold zero entries, which the vertex stage
- * draws as nothing (`celVertex.ts`); a range whose bound is 0 is not drawn;
- * `expand` is dispatched DIRECT, a thread a record, its threads past the
- * count returning at once — once the list is cleared, a dropped `expand`
- * would blank the whole scatter for a frame; NOTHING of the scatter is drawn
- * or dispatched indirect, because an Intel Xe-LPG dropped single indirect
- * draws at random and lost every tree at once while the scatter was
- * indirect — `expand`'s one dispatch the suspect, pending its A/B
- * (`docs/rendering.md`) — but under the A/B, which is
- * TEMPORARY (`?scatterindirect`): `indirect` is the path before 2026-10-24
- * exactly, the list never cleared, no bound computed, `expand` and every
- * range's draw indirect; `dispatch` is the plain draw with `expand` alone
- * dispatched indirect;
- * it is RECORDED into the encoder the host submits ahead of the frame's
- * draws, once a submit for the main pass's view and once a slot a submit for
- * another (`CullUniform`), and every caller draws a dispatch's survivors
- * before it records the view's next, so the bounds a draw reads are its own
- * dispatch's; until the pipelines are built nothing is dispatched and the
- * bounds and `args` stay the zeros they were made with, so every range draws
+ * in-pass record of an instance it keeps, the cluster's box test only ever
+ * dropping more. The list is CLEARED ahead of each dispatch, so its slots
+ * past the GPU's count are zero entries, which draw nothing (`celVertex.ts`);
+ * a range whose bound is 0 is not drawn; `expand` is dispatched DIRECT, a
+ * thread a record. Nothing of the scatter is drawn or dispatched indirect
+ * (`docs/rendering.md`, the Intel rule) but under the TEMPORARY A/B, whose
+ * arms are `ScatterDraw`'s.
+ * A dispatch is RECORDED into the encoder the host submits ahead of the
+ * frame's draws, once a submit for the main pass's view and once a slot a
+ * submit for another (`CullUniform`), and every caller draws a dispatch's
+ * survivors before it records the view's next, so the bounds a draw reads
+ * are its own dispatch's; until the pipelines are built nothing is
+ * dispatched and the bounds (and `args`) stay zero, so every range draws
  * nothing.
  * `?cullcheck` reads the INSTANCES' verdicts (`instanceBand`); a cluster's
  * test is the cluster cull's own box test, over a moved box.
@@ -125,7 +116,7 @@ const PASS: GPUComputePassDescriptor = { label: "instance cull" };
  * The bound's plane slack past the GPU's own (`INSTANCE_SLACK`), metres: an
  * f32 plane test a few kilometres out is off by a millimetre, never by this.
  */
-const SLACK_CPU = 0.1;
+const PLANE_SLACK = 0.1;
 /** The bound's reach slack, metres: an instance is left out only this much past the GPU's reach. */
 const REACH_SLACK = 0.01;
 /** The bound's size gate: an instance is left out only this share further under the gate. */
@@ -170,7 +161,7 @@ interface InstanceTableBuffers {
   /** The instances and the sets' runs, on the CPU for the bound. */
   readonly bound: InstanceBoundTables;
   /** How every view of the map draws the scatter: the uploading view's. */
-  readonly scatterDraw: ScatterDraw;
+  readonly scatterDraw: ScatterDraw; // TEMPORARY (?scatterindirect)
 }
 
 export class InstanceCull {
@@ -180,8 +171,8 @@ export class InstanceCull {
   readonly source: GPUBuffer;
   /**
    * Each range's `drawIndirect` arguments, at `INDIRECT_BYTES` a range, which
-   * `prefix` writes every dispatch: what the A/B's indirect arm draws, and
-   * the survivor count a probe reads back against `bounds`.
+   * `prefix` writes every dispatch. Nothing in the tree reads them but the
+   * A/B's indirect arm's draw; they go with it.
    */
   readonly args: GPUBuffer;
   /**
@@ -215,7 +206,7 @@ export class InstanceCull {
   /** Each range's first corner in the draw: the scatter bit plus its first record's run. */
   private readonly firstVertex: readonly number[];
   /** How the scatter is drawn (`ScatterDraw`): the map's first view's. */
-  private readonly scatterDraw: ScatterDraw;
+  private readonly scatterDraw: ScatterDraw; // TEMPORARY (?scatterindirect)
   /** The work list's length, cleared ahead of each dispatch's pass. */
   private readonly survivorCount: GPUBuffer;
   /** `expand`'s workgroups, written by `prefix`: a `dispatchWorkgroupsIndirect`'s arguments, then the count. */
@@ -380,6 +371,7 @@ export class InstanceCull {
     if (!this.built || this.count === 0) return;
     writeInputs(inputs, this.mode, this.f32, this.u32);
     this.uniform.write(this.bytes, encoder, slot);
+    // TEMPORARY (?scatterindirect): the indirect arm neither clears nor bounds.
     if (this.scatterDraw !== "indirect") {
       this.bound();
       // Every slot past the GPU's count a zero entry, which draws nothing.
@@ -401,6 +393,7 @@ export class InstanceCull {
     pass.dispatchWorkgroups(1);
     pass.setPipeline(passes[3].pipeline);
     pass.setBindGroup(0, passes[3].group);
+    // TEMPORARY (?scatterindirect): both A/B arms dispatch `expand` indirect.
     if (this.scatterDraw === "plain") pass.dispatchWorkgroups(this.expandX, this.expandY);
     else pass.dispatchWorkgroupsIndirect(this.expandGroups, 0);
     pass.end();
@@ -409,28 +402,26 @@ export class InstanceCull {
 
   /**
    * Whether range `g` draws nothing off the dispatch recorded last — its
-   * bound is 0 — so a caller binds nothing for it. Never under the indirect
-   * arm, whose count only the GPU knows.
+   * bound is 0 — so a caller binds and draws nothing for it. Never under the
+   * indirect arm, whose count only the GPU knows.
    */
   empty(g: number): boolean {
+    // TEMPORARY (?scatterindirect): the arm's test.
     return this.scatterDraw !== "indirect" && this.bounds[g] === 0;
   }
 
   /**
-   * Range `g`'s draw into `pass`, its pipeline and groups bound: one plain
-   * draw of `stride` corners a survivor up to its bound, from its run's
-   * first — or, under the indirect arm, its `drawIndirect`. False, drawing
-   * nothing, for an empty range.
+   * Range `g`'s draw into `pass`, its pipeline and groups bound and `empty`
+   * false: one plain draw of `stride` corners a survivor up to its bound,
+   * from its run's first — or, under the indirect arm, its `drawIndirect`.
    */
-  drawRange(pass: GPURenderPassEncoder, g: number): boolean {
+  drawRange(pass: GPURenderPassEncoder, g: number): void {
+    // TEMPORARY (?scatterindirect): the indirect arm's draw.
     if (this.scatterDraw === "indirect") {
       pass.drawIndirect(this.args, g * INDIRECT_BYTES);
-      return true;
+      return;
     }
-    const n = this.bounds[g];
-    if (n === 0) return false;
-    pass.draw(n * this.stride, 1, this.firstVertex[g], 0);
-    return true;
+    pass.draw(this.bounds[g] * this.stride, 1, this.firstVertex[g], 0);
   }
 
   /**
@@ -438,7 +429,10 @@ export class InstanceCull {
    * it: `wgsl/instanceCull.ts`'s `visible` replayed over every instance, each
    * test widened so the CPU keeps whatever the GPU might (the header), and a
    * kept instance's runs in the view's pass added to their ranges — set by
-   * set, a set's instances sharing their runs.
+   * set, a set's instances sharing their runs. `visible` is the source of
+   * truth: a test there that KEEPS more (a new sway term in its `grow`, a
+   * larger slack, a looser gate) owes this loop the same widening, or the
+   * plain draw stops short of a survivor and trees vanish without a word.
    */
   private bound(): void {
     const b = this.bounds;
@@ -461,7 +455,7 @@ export class InstanceCull {
       const r1 = runStart[s + 1];
       if (r0 === r1) continue;
       const set = sets[s];
-      const sway = set.ramp * rampReach + (set.rigged ? rigReach : 0) + INSTANCE_SLACK + SLACK_CPU;
+      const sway = set.ramp * rampReach + (set.rigged ? rigReach : 0) + INSTANCE_SLACK + PLANE_SLACK;
       let kept = 0;
       for (let i = set.start; i < set.end; i++) {
         const o = i * INSTANCE_WORDS;
@@ -511,7 +505,11 @@ export class InstanceCull {
   }
 
   /** `tables` uploaded once, for every view of this cull to read and to draw as `scatterDraw` says. */
-  private uploadTables(tables: InstanceTables, read: number, scatterDraw: ScatterDraw): InstanceTableBuffers {
+  private uploadTables(
+    tables: InstanceTables,
+    read: number,
+    scatterDraw: ScatterDraw, // TEMPORARY (?scatterindirect)
+  ): InstanceTableBuffers {
     const storage = GPUBufferUsage.STORAGE;
     const buffers: GPUBuffer[] = [];
     const up = (label: string, usage: number, data: Uint8Array | Uint16Array | Uint32Array): GPUBuffer => {

@@ -595,7 +595,7 @@ src/
                         #   and ?bench=, the benchmark's map; the renderer's
                         #   A/B switches (?babylonworld ?nocull ?nofrustum
                         #   ?cullcheck, and ?scatterindirect[=dispatch], the
-                        #   scatter's old indirect path, TEMPORARY). Applies nothing
+                        #   scatter's A/B, ScatterDraw, TEMPORARY). Applies nothing
     shadowWindow.ts     # Where a directional shadow camera STANDS, and the
                         #   texel snap that stops its edges crawling. Both maps
                         #   place themselves with it — ShadowSystem's and
@@ -2606,8 +2606,7 @@ src/
                         #   (drawRange, empty) — never fewer than the GPU
                         #   keeps; the last pass dispatched direct, its threads
                         #   past the work list's length returning at once.
-                        #   ?scatterindirect: the old indirect draw and
-                        #   dispatch (args, still written), TEMPORARY
+                        #   ?scatterindirect's A/B (ScatterDraw), TEMPORARY
     ClusterCull.ts      # The GPU cull, a VIEW of a map's tables (the main
                         #   pass's uploads them; a shadow map's and a probe
                         #   bake's read them), recorded into the host's encoder
@@ -2662,8 +2661,9 @@ src/
                         #   blockKeyOf) the probe view's exclusion reads
       instanceCull.ts   # The instance cull's WGSL — cullInstances,
                         #   cullRecords, prefix, expand — and the record
-                        #   layouts InstanceCull uploads; the plane slack and
-                        #   expand's workgroup the CPU's bound reads too
+                        #   layouts InstanceCull uploads; the plane slack the
+                        #   CPU's bound reads too, and expand's workgroup its
+                        #   direct dispatch is sized by
       cullProbe.ts      # ?cullcheck's probes: each cull's test re-run with
                         #   its inputs read each way they have been declared,
                         #   one bit a form, over the cull's own buffers (the
