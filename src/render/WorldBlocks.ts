@@ -57,10 +57,10 @@
  * goes the way it went; drawn after the blocks, every one of them flips.
  * WHY TWO DRAWS FOR A GROUP THAT HAS SCATTER, AND NOT ONE: nothing of the
  * world is drawn or dispatched indirect, because an Intel Xe-LPG dropped
- * single indirect draws at random, at arguments however written, while it
- * drew the same triangles plain every frame (the blocks', 2026-10-18), and
- * lost every tree at once while the scatter was indirect (2026-10-24, its
- * one dispatch the suspect, pending that laptop's A/B; `docs/rendering.md`).
+ * indirect draws, at arguments however written, while it drew the same
+ * triangles plain every frame — the blocks' (2026-10-18), then the
+ * scatter's, every tree at once (2026-10-24; its A/B named the draws, not
+ * `expand`'s dispatch — `docs/rendering.md`).
  * The blocks' draw runs over the whole range of a cull that writes zeros
  * past its survivors, where the scatter's runs only to a bound the CPU
  * computes off the instances (`InstanceCull`), since a range that held every
@@ -142,8 +142,8 @@
  * cluster cull's, `uint32`, and the draw is `drawIndexed` over the group's
  * whole range of it — none for a group whose cut kept no index; a scatter
  * draw has no index buffer and is a plain `draw` to the group's bound
- * (`InstanceCull.drawRange`; a `drawIndirect` at its arguments under the
- * A/B), its group's vertex stage the scatter twin, whose group 2 binds
+ * (`InstanceCull.drawRange`), its group's vertex stage the scatter twin,
+ * whose group 2 binds
  * the cull's list and source as well (`celVertex.ts`'s `celGeometry`);
  * every group with no scatter keeps the plain stage.
  */
@@ -274,7 +274,7 @@ interface Group {
   /** Its range of the cluster cull's indices, `[indexBase, indexBase + indexCount)` — what its block draw covers. */
   indexBase: number;
   indexCount: number;
-  /** It draws scatter: its run of the instance cull's list, at its own arguments. */
+  /** It draws scatter: its run of the instance cull's list, to its own bound. */
   scattered: boolean;
   built: BuiltPipeline | null;
   /** It draws nothing, and its members went back. */
@@ -305,7 +305,7 @@ interface CutSurface {
 
 /**
  * What one VIEW of the map draws through: its cluster cull's survivors, its
- * instance cull's list and arguments, and each group's geometry for it — the
+ * instance cull's list and bounds, and each group's geometry for it — the
  * main pass's own, or a probe's, whose scatter twins bind its list.
  */
 interface DrawView {

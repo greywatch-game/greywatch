@@ -55,16 +55,15 @@ export function listStride(triangles: number): number {
 
 /**
  * The list's encoding as WGSL, for a list whose survivors each take `stride`
- * corners: `listIndex` is where slot `slot`'s run starts (the cull's draw
- * arguments); `isScatter`, `listSlot` and `listCorner` read an index (the
- * vertex stage).
+ * corners: `isScatter`, `listSlot` and `listCorner` read an index (the
+ * vertex stage). Where a range's run starts is the CPU's
+ * (`InstanceCull`'s `firstVertex`).
  */
 export function scatterListWgsl(stride: number): string {
   return /* wgsl */ `
 const SCATTER_BIT: u32 = ${SCATTER_CORNERS}u;
 const LIST_STRIDE: u32 = ${stride}u;
 fn isScatter(index: u32) -> bool { return (index & SCATTER_BIT) != 0u; }
-fn listIndex(slot: u32) -> u32 { return SCATTER_BIT | (slot * LIST_STRIDE); }
 fn listSlot(index: u32) -> u32 { return (index & ~SCATTER_BIT) / LIST_STRIDE; }
 fn listCorner(index: u32) -> u32 { return (index & ~SCATTER_BIT) % LIST_STRIDE; }
 `;

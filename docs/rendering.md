@@ -3794,11 +3794,7 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
   turns off the five planes only (`ClusterCull.ts`'s `openTests`). So a
   picture that is wrong by default and right under `?nocull` is a cull's
   DECISION, and one still wrong under `?nocull` and right under
-  `?babylonworld` is our DRAW. Diagnostics, never settings. **A fourth is
-  TEMPORARY**: `?scatterindirect` and `?scatterindirect=dispatch`, the
-  Intel laptop's A/B of the scatter's indirect calls (their arms are
-  `render/ClusterCull.ts`'s `ScatterDraw`; below), out once that laptop has
-  answered.
+  `?babylonworld` is our DRAW. Diagnostics, never settings.
 - **`?cullcheck` says WHICH decision, on the device** (`render/CullCheck.ts`).
   About once a second each cull copies out the uniform block the GPU read and
   every verdict it made, and the CPU replays the WGSL test over the same
@@ -3859,17 +3855,21 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
   trees and scatter props flickered — not under `?babylonworld`, still
   under `?nocull`, so our path and no cull's decision. **EVERY tree and
   prop vanished at the same time**, all kinds together, never a single tree
-  and never one kind alone. Each group has a draw of its own, so a dropped
-  draw would take one recipe at a time, as the blocks' did; ALL of them at
-  once points at what serves the whole scatter — the one indirect DISPATCH,
-  `expand`, which writes every group's entries. **That attribution is
-  PENDING the laptop's `?scatterindirect=dispatch`** (the A/B's arms are
-  `ScatterDraw`'s, `render/ClusterCull.ts`): the fix takes BOTH indirect
-  calls out, so it does not need the answer, and the rule's wording waits
-  on it. Since the blocks flickered with arguments the CPU wrote, an
-  indirect draw at a CPU count was no fix either way: **the draw is a
-  direct `draw()`**, `draw(bound * listStride, 1, SCATTER_CORNERS + base *
-  listStride, 0)` a range (`InstanceCull.drawRange`; `+`, never a JS `|`,
+  and never one kind alone. That first read as the one indirect DISPATCH
+  serving the whole scatter (`expand`) rather than a group's draw, and the
+  fix took both indirect calls out; **the laptop's A/B (2026-10-24, on the
+  deployed 071a95e, four loads each) DISPROVED it**: the default (nothing
+  indirect) never flickered; the path before exactly — the list never
+  cleared, `expand` dispatched and every range drawn indirect — FLICKERED;
+  the plain draw with `expand` alone dispatched indirect never flickered.
+  **So it was the scatter's indirect DRAWS**, and the indirect dispatch was
+  not seen to drop there. Read as the evidence goes and no further: every
+  tree going together says that driver drops the indirect draws of a whole
+  pass or frame together, not one draw at random as the blocks' symptom
+  read on 2026-10-18. Since the blocks flickered with arguments the CPU
+  wrote, an indirect draw at a CPU count was no fix either way: **the draw
+  is a direct `draw()`**, `draw(bound * listStride, 1, SCATTER_CORNERS +
+  base * listStride, 0)` a range (`InstanceCull.drawRange`; `+`, never a JS `|`,
   which is signed).
   - **The BOUND is never short.** A plain draw cannot cover what survives
     with triangles of no area as the blocks' does — the whole range is the
@@ -3895,8 +3895,12 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
     by the cel stage, `celDepth` and `lampDepth`) — one read of the list a
     corner. A real entry never takes that branch, so the guard moves no
     pixel. A range whose bound is 0 is neither bound nor drawn.
-  - **`expand` is dispatched DIRECT** (above): it is the suspect for what
-    the laptop showed, and over a cleared list a dropped dispatch would
+  - **`expand` is dispatched DIRECT anyway**, though the laptop's A/B
+    cleared its indirect dispatch: the rule stays ONE rule — nothing of the
+    static world drawn OR dispatched indirect — which is less code (no
+    dispatch arguments for `prefix` to write) and cost nothing measurable
+    (`gpu.cull` fell about a third on the desktop with the direct dispatch,
+    `BABYLON_EXIT.md` X3.5b). Over a cleared list a dropped dispatch would
     blank every tree for a frame. The blocks' cull never had one.
   - **Every pass that draws scatter goes through the one draw** — the main
     pass, the probes' faces, both cascades, the foliage's and the
@@ -3919,13 +3923,11 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
   needs the question asked again. `?cullcheck`, `?nocull`, `?nofrustum` and
   `?babylonworld` stay. `?scatterlist` (X3.5b), an A/B of the same picture
   by another draw, is gone too: the list it drew is the only draw now.
-  `?scatterindirect` (2026-10-24) is the scatter's hunt's, and goes the
-  same way once the laptop has answered (every branch and parameter of it
-  is tagged `TEMPORARY (?scatterindirect)`). What goes dead with it:
-  `InstanceCull.args` and its buffer (the WGSL's `args` binding, `prefix`'s
-  writes into it, `INDIRECT_BYTES`), the indirect words `prefix` writes
-  into `expandGroups[0..2]`, that buffer's `INDIRECT` usage,
-  `DISPATCH_BYTES` and `MAX_WORKGROUPS`.
+  `?scatterindirect` and `?scatterindirect=dispatch`, the scatter's A/B
+  (2026-10-24), went the same way once the laptop had answered, and with
+  them the indirect arguments `prefix` wrote for a range's draw and for
+  `expand`'s dispatch, which only those arms read; the arms stand in the
+  history at 071a95e.
 - **A cull reads its tables as WHOLE `vec4`s and its uniform block as
   WORDS** (`clusterCull.ts`'s `CULL_DECLARATIONS`, `instanceCull.ts`'s
   `INSTANCE_DECLARATIONS`): no `vec3f` beside a scalar and no scalar

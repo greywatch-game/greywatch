@@ -7,10 +7,9 @@
  * Owns: `instanceCullWgsl`; `INSTANCE_DECLARATIONS`, the instance and set
  * records as the cull and the probe declare them; the byte layouts it reads
  * (`INSTANCE_CULL_UNIFORM_BYTES`, `INSTANCE_WORDS`, `SET_WORDS`,
- * `RECORD_WORDS`) and the indirect arguments it writes (`INDIRECT_BYTES`);
- * the plane slack (`INSTANCE_SLACK`), which the CPU's bound reads too, and
- * `expand`'s workgroup (`EXPAND_SIZE`), which its direct dispatch is sized
- * by (`InstanceCull`).
+ * `RECORD_WORDS`); the plane slack (`INSTANCE_SLACK`), which the CPU's
+ * bound reads too, and `expand`'s workgroup (`EXPAND_SIZE`), which its
+ * direct dispatch is sized by (`InstanceCull`).
  * Invariants: an instance is dropped only if its sphere lies past the reach,
  * its region is filed under a block a probe's view leaves out
  * (`probeExcludes`), it is under the size gate, or its sphere (grown by the
@@ -28,11 +27,11 @@
  * triangles in the same order (`render/scatterList.ts` is the entry and the
  * index); each range's draw is ONE non-indexed PLAIN draw of
  * `LIST_STRIDE` corners a survivor up to a bound the CPU computes, from its
- * run's first (`InstanceCull.drawRange`) — `prefix` still writes each
- * range's indirect arguments, which nothing reads but the TEMPORARY A/B's
- * indirect arm (`ScatterDraw`); the WORK LIST of survivors is appended to a
- * workgroup's run at a time, in no order, because it decides only which
- * thread writes an entry, never where it lands. `visible` is MIRRORED on the
+ * run's first (`InstanceCull.drawRange`), and nothing here writes an
+ * indirect call's arguments (`docs/rendering.md`, the Intel rule); the WORK
+ * LIST of survivors is appended to a workgroup's run at a time, in no order,
+ * because it decides only which thread writes an entry, never where it
+ * lands. `visible` is MIRRORED on the
  * CPU by `InstanceCull.bound`, which must keep whatever it keeps: a test
  * here that KEEPS more (a new sway term in `grow`, a larger slack, a looser
  * gate) owes `bound` the same widening, or the plain draw stops short of a
@@ -49,15 +48,14 @@
  *   band's survivors within the workgroup — `local[r]`, with the
  *   workgroup's total in `sums[w]`, as the cluster cull's first pass — and
  *   each survivor appended to the WORK LIST, one append a workgroup.
- * - `prefix` (ONE workgroup): `sums` scanned in place, then each range opened
- *   and its indirect arguments written, and `expand`'s workgroup count and
- *   the work list's length (word 3).
+ * - `prefix` (ONE workgroup): `sums` scanned in place, then each range opened.
  * - `expand` (a thread a SURVIVOR): its entry written where the scan says.
  *   Dispatched DIRECT, a thread a record (`EXPAND_SIZE` a workgroup), its
  *   threads past the work list's length returning at once — 1,310
  *   workgroups on Greyfen, where a workgroup a record was 83,846 and cost
- *   the phone 1.1-1.4 ms (`BABYLON_EXIT.md` X3.5b); indirect, at `prefix`'s
- *   count, only under the A/B (`ScatterDraw`).
+ *   the phone 1.1-1.4 ms (`BABYLON_EXIT.md` X3.5b). The work list's length
+ *   is read through a plain binding of the counter `cullRecords` appended
+ *   with (`survivorTotal`).
  * `cullRecords` and `expand` bind at most eight storage buffers each, the
  * least `maxStorageBuffersPerShaderStage` a device may have — which is why a
  * survivor carries its band, instance and cluster rather than `expand`
@@ -80,10 +78,6 @@ export const EXPAND_SIZE = 64;
  * few kilometres, never an instance that is in view.
  */
 export const INSTANCE_SLACK = 0.05;
-/** The least `maxComputeWorkgroupsPerDimension` WebGPU allows: `expand`'s first dimension. */
-const MAX_WORKGROUPS = 65535;
-/** `dispatchWorkgroupsIndirect`'s three arguments and the count after them, in bytes — `expand`'s. */
-export const DISPATCH_BYTES = 16;
 /** An instance's record, in 32-bit words (`Instance` below). */
 export const INSTANCE_WORDS = 20;
 /** A set's record, in 32-bit words (`Set` below). */
@@ -92,8 +86,6 @@ export const SET_WORDS = 4;
 export const RECORD_WORDS = 2;
 /** The uniform block (`CULL_DECLARATIONS`' `cull`), in bytes. */
 export const INSTANCE_CULL_UNIFORM_BYTES = 160;
-/** `drawIndirect`'s four arguments, in bytes — one a range. */
-export const INDIRECT_BYTES = 16;
 
 /**
  * The instance and set records as whole `vec4`s — `CULL_DECLARATIONS`'s rule
@@ -157,18 +149,15 @@ fn rangeCount() -> u32 { return cull[8].w; }
 @group(0) @binding(9) var<storage, read_write> ranges: array<Range>;
 // The LIST: each survivor's entry — instance, first source index, count, part.
 @group(0) @binding(11) var<storage, read_write> list: array<vec4u>;
-@group(0) @binding(12) var<storage, read_write> args: array<u32>;
 // The WORK LIST: each surviving record, its band, its instance and its
 // cluster, in no particular order, and how many there are. Its order decides
 // nothing — \`slotOf\` places every entry — so it may be appended to.
 @group(0) @binding(13) var<storage, read_write> survivorCount: atomic<u32>;
 @group(0) @binding(14) var<storage, read_write> survivors: array<vec4u>;
-// \`expand\`'s workgroups, written by \`prefix\` from the count — and the count
-// itself in word 3, past the three a dispatch reads, which \`expand\` reads
-// through a plain binding of the same buffer (\`expandArgs\`): an atomic load
-// in every thread of every workgroup is every thread queueing at one address.
-@group(0) @binding(15) var<storage, read_write> expandGroups: array<u32>;
-@group(0) @binding(16) var<storage, read> expandArgs: array<u32>;
+// The same count as \`expand\` reads it, through a plain read-only binding of
+// the same buffer: an atomic load in every thread of every workgroup is every
+// thread queueing at one address.
+@group(0) @binding(15) var<storage, read> survivorTotal: u32;
 
 // A workgroup's survivors, and where their run of the work list starts.
 var<workgroup> keptHere: atomic<u32>;
@@ -265,27 +254,8 @@ fn cullRecords(
 
 @compute @workgroup_size(${SCAN_SIZE})
 fn prefix(@builtin(local_invocation_index) li: u32) {
-  if (li == 0u) {
-    // A thread a survivor, folded into a second dimension past the least
-    // \`maxComputeWorkgroupsPerDimension\` a device may have.
-    let n = atomicLoad(&survivorCount);
-    let groups = (n + EXPAND - 1u) / EXPAND;
-    let x = min(groups, ${MAX_WORKGROUPS}u);
-    expandGroups[0] = x;
-    expandGroups[1] = select(1u, (groups + x - 1u) / x, x > 0u);
-    expandGroups[2] = 1u;
-    expandGroups[3] = n;
-  }
   scanSums(li);
-  for (var g = li; g < rangeCount(); g += SCAN) {
-    let t = openRange(g, recordCount());
-    // A drawIndirect: every survivor's run of corners, from the range's first.
-    let o = g * ${INDIRECT_BYTES / 4}u;
-    args[o] = (t.x + t.y + t.z + t.w) * LIST_STRIDE;
-    args[o + 1u] = 1u;
-    args[o + 2u] = listIndex(ranges[g].outBase);
-    args[o + 3u] = 0u;
-  }
+  for (var g = li; g < rangeCount(); g += SCAN) { openRange(g, recordCount()); }
 }
 
 @compute @workgroup_size(${EXPAND_SIZE})
@@ -295,7 +265,7 @@ fn expand(
   @builtin(num_workgroups) nw: vec3u,
 ) {
   let k = (wid.y * nw.x + wid.x) * EXPAND + li;
-  if (k >= expandArgs[3]) { return; }
+  if (k >= survivorTotal) { return; }
   // The survivor's record, band, instance and cluster; its entry where the
   // scan puts it.
   let kept = survivors[k];

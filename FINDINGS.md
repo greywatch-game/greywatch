@@ -2865,8 +2865,8 @@ Sarab 0.029 to 0.041 — still not it; since the survivors' list (e07ae7c)
   Cinderhaven, Chrome started with `--enable-unsafe-webgpu` so
   `gpu.frameMeasurable` is true. The walk above is one suspect there; the
   scatter's non-indexed pulled draw, the culls repeated in every view, and
-  the indirect path's validation (which the scatter's plain draw removed:
-  `?scatterindirect` prices it) are the others.
+  the indirect path's validation (which the scatter's plain draw removed: a
+  capture of a build before e172f88 prices it) are the others.
 - **The phone's `gpu.frame`** on Greyfen and Cinderhaven (finding 52) is the
   number this matters for; the desktop only says where to look.
 
@@ -2881,10 +2881,10 @@ INDIRECT"). It was parked then as minor.
 
 "Sections of grass" blink out on that laptop (Intel Xe-LPG, Chrome), and the
 user dates it from before the exit work began. The buildings' flicker is
-fixed, and so, pending that laptop's A/B, is its trees' (every tree at once,
-2026-10-24; `docs/rendering.md`, the same section): nothing of the scatter is
-indirect now, so a section of GRASS still going on that build is this
-finding's alone.
+fixed, and so is its trees' (every tree at once, 2026-10-24): that laptop's
+A/B named the scatter's indirect DRAWS, now drawn plain (`docs/rendering.md`,
+the same section). So a section of GRASS still going on a build after
+071a95e is this finding's alone.
 
 ### What is derived from the code
 

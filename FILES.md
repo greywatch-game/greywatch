@@ -594,8 +594,7 @@ src/
                         #   round seed every round of the session plays from —
                         #   and ?bench=, the benchmark's map; the renderer's
                         #   A/B switches (?babylonworld ?nocull ?nofrustum
-                        #   ?cullcheck, and ?scatterindirect[=dispatch], the
-                        #   scatter's A/B, ScatterDraw, TEMPORARY). Applies nothing
+                        #   ?cullcheck). Applies nothing
     shadowWindow.ts     # Where a directional shadow camera STANDS, and the
                         #   texel snap that stops its edges crawling. Both maps
                         #   place themselves with it — ShadowSystem's and
@@ -2606,7 +2605,7 @@ src/
                         #   (drawRange, empty) — never fewer than the GPU
                         #   keeps; the last pass dispatched direct, its threads
                         #   past the work list's length returning at once.
-                        #   ?scatterindirect's A/B (ScatterDraw), TEMPORARY
+                        #   Nothing drawn or dispatched indirect
     ClusterCull.ts      # The GPU cull, a VIEW of a map's tables (the main
                         #   pass's uploads them; a shadow map's and a probe
                         #   bake's read them), recorded into the host's encoder
@@ -2619,9 +2618,8 @@ src/
                         #   survivors scanned NEAR-FIRST (by surface) into the
                         #   index buffer, cleared first so the rest of each
                         #   group's range is triangles of no area (never
-                        #   indirect). ReachGate, BlockBox, CullMode,
-                        #   ScatterDraw and CullDiagnostics (?nocull,
-                        #   ?nofrustum, ?cullcheck, ?scatterindirect);
+                        #   indirect). ReachGate, BlockBox, CullMode and
+                        #   CullDiagnostics (?nocull, ?nofrustum, ?cullcheck);
                         #   CullUniform, a slot a dispatch in one submit
     PassTimer.ts        # ?gpu's timer of our compute passes (gpu.cull):
                         #   timestamp writes on each cull's pass, summed, one

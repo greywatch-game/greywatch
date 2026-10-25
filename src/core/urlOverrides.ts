@@ -7,10 +7,7 @@
  * benchmark on that map instead of offering a menu (`bench/BenchScript.ts`) —
  * and `?babylonworld`, `?nocull` and `?nofrustum`, which take our renderer's
  * static world or its culls out, for an A/B on a device (`BABYLON_EXIT.md`),
- * `?cullcheck`, which reads those culls back on the device, and
- * `?scatterindirect` and `?scatterindirect=dispatch`, the Intel laptop's A/B
- * of the scatter's indirect calls (`render/ClusterCull.ts`'s `ScatterDraw`;
- * TEMPORARY, out once that laptop has answered).
+ * and `?cullcheck`, which reads those culls back on the device.
  * Owns: reading them once, validating each against its own table, the rule
  * that an override BEATS the setting it shadows, and the list of which ones a
  * capture must say were forced. Owns the URL-flag reader `FrameProfile` uses
@@ -28,7 +25,7 @@
  * be offered — `?nominimap` is a flag precisely because losing the map is not
  * a setting.
  */
-import type { CullMode, ScatterDraw } from "../render/ClusterCull";
+import type { CullMode } from "../render/ClusterCull";
 import { isVolumetricRung, type VolumetricRung } from "../shaders/Volumetrics";
 import { parseSeed } from "../systems/RoundRandom";
 import {
@@ -126,14 +123,6 @@ export class UrlOverrides {
    */
   readonly cullCheck: boolean;
   /**
-   * `?scatterindirect` ("indirect") and `?scatterindirect=dispatch`
-   * ("dispatch"): the Intel laptop's A/B, whose arms are
-   * `render/ClusterCull.ts`'s `ScatterDraw`; any other value is the full
-   * indirect arm, and "plain" when absent. TEMPORARY: it comes out once the
-   * laptop has answered, as the blocks' hunt's switches did (6c6db6d).
-   */
-  readonly scatterDraw: ScatterDraw;
-  /**
    * Which of the above the URL set, by the name a capture files it under —
    * `graphics.forced`, so a report off a device nobody here owns says which of
    * its numbers were somebody's experiment rather than the player's choice.
@@ -158,8 +147,6 @@ export class UrlOverrides {
     this.ourWorld = !urlFlag("babylonworld");
     this.cullMode = urlFlag("nocull") ? "none" : urlFlag("nofrustum") ? "nofrustum" : "full";
     this.cullCheck = urlFlag("cullcheck");
-    const scatter = urlParam("scatterindirect"); // TEMPORARY (?scatterindirect)
-    this.scatterDraw = scatter === null ? "plain" : scatter === "dispatch" ? "dispatch" : "indirect";
     const forced: string[] = [];
     if (this.giForced) forced.push("gi");
     if (this.shadowsForced) forced.push("shadows");
@@ -168,10 +155,6 @@ export class UrlOverrides {
     if (!this.ourWorld) forced.push("babylonworld");
     if (this.cullMode !== "full") forced.push(this.cullMode === "none" ? "nocull" : "nofrustum");
     if (this.cullCheck) forced.push("cullcheck");
-    // TEMPORARY (?scatterindirect)
-    if (this.scatterDraw !== "plain") {
-      forced.push(this.scatterDraw === "dispatch" ? "scatterindirect=dispatch" : "scatterindirect");
-    }
     this.forced = forced;
   }
 

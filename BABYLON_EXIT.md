@@ -1897,15 +1897,18 @@ floor its shading:
     on the tick, the session's); `gpu.cull` 0.049-0.057 ms on all three.
 - **2026-10-24: the scatter is drawn PLAIN, at a bound the CPU computes —
   a fix, not a step.** It corrects this step's draw in every view X3.6a-c
-  built on it, and changes no plan. What the laptop showed, why `expand` is
-  the suspect — PENDING the laptop's `?scatterindirect=dispatch` — and the
-  bound, the cleared list and the zero entry are argued in
+  built on it, and changes no plan. What the laptop showed, its A/B's
+  answer (the scatter's indirect DRAWS, not `expand`'s dispatch) and why
+  `expand` stays direct anyway, and the bound, the cleared list and the
+  zero entry are argued in
   `docs/rendering.md`, "NOTHING OF THE STATIC WORLD IS DRAWN OR DISPATCHED
   INDIRECT". Each range is `draw(bound * 384, 1, SCATTER_CORNERS + base *
   384, 0)` (`InstanceCull.drawRange`, `empty`) from both draw sites
   (`WorldBlocks.drawScatter`, `WorldDepth.draw`), so every view changed
-  together. The A/B is TEMPORARY, its arms `ScatterDraw`'s
-  (`render/ClusterCull.ts`), named in a capture's `graphics.forced`.
+  together. The A/B shipped with it as a TEMPORARY switch
+  (`?scatterindirect`, the path before exactly; `?scatterindirect=dispatch`,
+  the plain draw with `expand` alone indirect), named in a capture's
+  `graphics.forced`, and was stripped once the laptop answered (below).
   - **Rejected** (the design, in this session's scratch): a plain draw over
     the list's whole capacity (32 M corners a pass on Greyfen), a count read
     back a few frames late (pop-in on a cut, a probe face with no history),
@@ -1979,16 +1982,30 @@ floor its shading:
     identical line for line to the commit's; typecheck, build and
     corecheck. The A/B arms were not re-banked: the fixes moved none of
     their branches.
-  - **Owed**: the laptop — the default, `?scatterindirect` and
-    `?scatterindirect=dispatch`, four loads each; `=dispatch` flickering
-    (every tree at once) settles the attribution on `expand`, and decides
-    how the rule is worded. `?scatterindirect=<anything but dispatch>` is
-    the full indirect arm. And the phone's A/B against `?scatterindirect`,
-    alternated, which is where the bound's CPU would show: `bound()` loops
-    over every instance of the map on every dispatch, each lamp face's and
-    each probe face's included, 25-35 µs a dispatch on the desktop, so a
-    phone frame re-baking several lamp faces, or a probe burst, could add a
-    few ms of CPU.
+  - **The laptop answered** (the user, 2026-10-24, on the deployed
+    071a95e, four loads each): the default — no flicker;
+    `?scatterindirect` — FLICKERS; `?scatterindirect=dispatch` — no
+    flicker. So it was the scatter's indirect DRAWS, and the suspicion on
+    `expand`'s indirect dispatch is DISPROVED; every tree going together
+    reads as that driver dropping a whole pass's or frame's indirect draws
+    together, not one at random as the blocks' symptom read on 2026-10-18.
+    `expand` stays direct anyway, by the user's decision, so the rule stays
+    one rule (nothing of the static world drawn OR dispatched indirect):
+    less code, and the direct dispatch cost nothing (`gpu.cull` fell about
+    a third, above). The switches came out in the commit after 071a95e,
+    with the indirect arguments `prefix` wrote for them (`args`, `expand`'s
+    dispatch words, `INDIRECT_BYTES`, `DISPATCH_BYTES`, `MAX_WORKGROUPS`);
+    `expand` now reads the work list's length through a plain binding of
+    the counter `cullRecords` appends with. Re-checked: the bank 61 of 61
+    byte-identical to ed51e1d's frames, the census as e172f88's default on
+    all seven, `gate.mjs` and `shaders.mjs` clean on seven, typecheck,
+    build, corecheck.
+  - **Owed**: the phone, against a capture of the build before e172f88
+    (there is no switch any more), alternated, which is where the bound's
+    CPU would show: `bound()` loops over every instance of the map on every
+    dispatch, each lamp face's and each probe face's included, 25-35 µs a
+    dispatch on the desktop, so a phone frame re-baking several lamp faces,
+    or a probe burst, could add a few ms of CPU.
 - **Owed.** A same-session pair against 3b9be6c still prices the fold
   itself.
 

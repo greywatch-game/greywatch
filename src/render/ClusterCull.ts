@@ -45,11 +45,11 @@
  * draw over a group's whole range (`WorldBlocks`, `WorldDepth`) hands the
  * GPU to discard — and nothing of the static world is drawn or dispatched
  * INDIRECT, the blocks here nor the scatter (`InstanceCull`, at a bound the
- * CPU computes): an Intel Xe-LPG dropped single indirect draws at random,
- * whatever wrote their arguments (the blocks', 2026-10-18), and lost every
- * tree at once while the scatter was indirect (2026-10-24, `expand`'s
- * dispatch the suspect, pending that laptop's A/B — `docs/rendering.md`);
- * until the pipelines are built (`ready`) nothing is
+ * CPU computes): an Intel Xe-LPG dropped indirect draws, whatever wrote
+ * their arguments — the blocks' (2026-10-18), then the scatter's, every tree
+ * at once (2026-10-24, its A/B naming the draws and not `expand`'s indirect
+ * dispatch, which is direct anyway to keep the rule one rule —
+ * `docs/rendering.md`); until the pipelines are built (`ready`) nothing is
  * dispatched and `indices` stays the zeros it was made with, so a group
  * draws nothing rather than garbage.
  * Never: imports Babylon; reads a node; submits; allocates on a frame beyond
@@ -97,36 +97,17 @@ export interface ReachGate {
 export type CullMode = "full" | "nofrustum" | "none";
 
 /**
- * How the scatter's list is drawn (`InstanceCull`): PLAIN, one direct draw a
- * range at the bound the CPU computes, the list cleared and `expand`
- * dispatched direct — the shipping path; or, for the laptop's A/B
- * (`?scatterindirect`, TEMPORARY), INDIRECT — the path before 2026-10-24
- * exactly, the list never cleared, `expand` dispatched and each range drawn
- * indirect — or DISPATCH, the plain draw over the cleared list with `expand`
- * alone dispatched indirect, which asks whether the device drops an indirect
- * DISPATCH: the suspect, since the laptop lost every tree at once.
- */
-export type ScatterDraw = "plain" | "indirect" | "dispatch";
-
-/**
- * A cull's diagnostics, all off the URL (`core/urlOverrides.ts`): which
- * tests run (`CullMode`, per view), where `?cullcheck` reports its readings
- * (`CullCheck`) — null for no check — and how the scatter is drawn
- * (`ScatterDraw`), which is the MAP's: a view sharing another's tables draws
- * the scatter as the uploading view does, its own `scatterDraw` ignored.
+ * A cull's two diagnostics, both off the URL (`core/urlOverrides.ts`): which
+ * tests run (`CullMode`, per view), and where `?cullcheck` reports its
+ * readings (`CullCheck`) — null for no check.
  */
 export interface CullDiagnostics {
   readonly mode: CullMode;
   readonly report: CullReport | null;
-  readonly scatterDraw: ScatterDraw; // TEMPORARY (?scatterindirect)
 }
 
-/** Every test, no check, the scatter drawn plain: what a cull runs with but for a diagnostic. */
-export const NO_DIAGNOSTICS: CullDiagnostics = {
-  mode: "full",
-  report: null,
-  scatterDraw: "plain", // TEMPORARY (?scatterindirect)
-};
+/** Every test, and no check: what a cull runs with but for a diagnostic. */
+export const NO_DIAGNOSTICS: CullDiagnostics = { mode: "full", report: null };
 
 /**
  * Opens the tests `mode` turns off in a cull's uniform block, after the frame
