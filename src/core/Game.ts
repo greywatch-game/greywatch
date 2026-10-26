@@ -220,7 +220,7 @@ import { Sky } from "../systems/Sky";
 import { LightningStrikes } from "../systems/LightningStrikes";
 import { WaterSystem } from "../systems/WaterSystem";
 import { WorldCulling, type PooledBody } from "../systems/WorldCulling";
-import { BlockHandover } from "../systems/BlockHandover";
+import { BlockHandover, type WorldOwner } from "../systems/BlockHandover";
 import {
   applyEnvironment,
   bodyDrawDistanceOf,
@@ -540,6 +540,14 @@ export class Game {
   readonly handover: BlockHandover;
   /** A `worldFailed` is waiting for the task in hand to end: a second is the same failure. */
   private worldFailing = false;
+  /**
+   * Whose world the round in hand is drawn with: the owner `installMap`
+   * latched into the handover for it (a fresh object an install), and null
+   * from `startRound` until the new round installs — while the OLD map still
+   * stands under its building card, whose failure is then no news of the
+   * round being built (`worldFailed`).
+   */
+  private roundWorld: WorldOwner | null = null;
   private input: InputManager;
   private cameraSys: CameraSystem;
   private hud: HUD;
@@ -1811,7 +1819,7 @@ export class Game {
       this.lampAtlas,
       this.probeBake,
       this.worldGlow,
-      (reason) => this.worldFailed(reason),
+      (reason, owner) => this.worldFailed(reason, owner),
       {
         mode: this.overrides.cullMode,
         // After the HUD, which built `#hud`.
@@ -3610,16 +3618,30 @@ export class Game {
    * whose caller must finish its turn before the map it built is taken
    * down. ONE a failure: the handover says each install's once, and a
    * second arriving before the first is spent is the same round's.
+   *
+   * **A failure belongs to the INSTALL it came from** (`owner`, which names
+   * the map in the console line and the toast — never `mapDef`, which a
+   * welcome may already have moved to the next one). One from the map still
+   * standing under the NEXT round's building card — landing between
+   * `startRound` and that round's install, which will tear it down anyway —
+   * is said against its own map and is not the new round's end: a pass
+   * broken for the session fails the new install on its own account.
    */
-  private worldFailed(reason: string): void {
+  private worldFailed(reason: string, owner: WorldOwner): void {
+    if (owner !== this.roundWorld && this.buildPending()) {
+      console.error(
+        `[world] ${owner.id}: the map could not be drawn — ${reason} ` +
+          "(it was already being replaced; the round being built is not affected)",
+      );
+      return;
+    }
     if (this.worldFailing) return;
     this.worldFailing = true;
-    const def = this.mapDef;
     queueMicrotask(() => {
       this.worldFailing = false;
-      console.error(`[world] ${def.id}: the map could not be drawn — ${reason}`);
+      console.error(`[world] ${owner.id}: the map could not be drawn — ${reason}`);
       this.enterMenu();
-      this.hud.toast(`${def.name} could not be drawn on this device`);
+      this.hud.toast(`${owner.name} could not be drawn on this device`);
     });
   }
 
@@ -4935,9 +4957,21 @@ export class Game {
     const unfiled = this.culling.setMap(map, environment.fogEnd);
     // And the fresh map's world to our renderer, cut against the cells the
     // cull grew — unless the cull found the build's own contract broken, which
-    // is the world failing rather than a map to cut.
-    if (unfiled) this.worldFailed(`the cull refused the build: ${unfiled}`);
-    else this.handover.install(map);
+    // is the world failing rather than a map to cut. Whose world it is, for
+    // its failure: a fresh owner an install, the round's from here on. An
+    // EDITOR build is Babylon's whole and nothing of it fails the world: a
+    // refusal there is said on the console, the editor kept open over a map
+    // the cull files nothing of (every mesh offered, as a loose one is).
+    const owner: WorldOwner = { id: this.mapDef.id, name: this.mapDef.name };
+    const editor = opts?.editor === true;
+    if (!editor) this.roundWorld = owner;
+    if (unfiled && editor) {
+      console.error(`[world] ${owner.id}: the cull refused the editor's build — ${unfiled}; nothing is filed`);
+    } else if (unfiled) {
+      this.worldFailed(`the cull refused the build: ${unfiled}`, owner);
+    } else {
+      this.handover.install(map, owner, editor);
+    }
     // How hard the grade is pushed is the map's; whether it runs at all stays
     // the player's (`applySettings`). A vignette that reads as dread over a
     // night village reads as a lens fault over a bright one.
@@ -5193,6 +5227,10 @@ export class Game {
     // an authority rotating the map under a client mid-drain asks for. `go`
     // below ends the standing wait.
     if (this.buildPending()) return;
+    // The round in hand is the one about to be built, which has installed
+    // nothing yet: a failure of the map still standing under the card is the
+    // old map's (`worldFailed`).
+    this.roundWorld = null;
     // A spawn held for the build this one REPLACES is a position in a world
     // that is never going to exist. Safe to drop rather than carry, because
     // both things that get here with one standing hand out a fresh body

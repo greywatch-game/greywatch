@@ -51,19 +51,26 @@
  * in every pass, and Babylon is made none — on a shipped build every surface
  * but the glazing and the fires) is fingerprinted off its RECORD alone: its
  * name, material, metadata, counts, piece ranges, bounds and the arrays the
- * sink hashed, and `mesh: false`. Compared with a baseline that holds a mesh
- * of it (X3.7a's), only those fields are compared — the arrays against the
+ * sink hashed, and `mesh: false`; a surface WITH a mesh says `mesh: true`.
+ * Compared with a baseline that holds a mesh of it (X3.7a's, which records
+ * no `mesh` field), only those fields are compared — the arrays against the
  * baseline's, which X3.7a proved equal to its mesh's buffers — and every
  * mesh field it has no mesh to hold is not a difference; the run says how
- * many surfaces of each map have no mesh rather than failing on them. A
- * surface WITH a mesh is compared field for field as before, its
+ * many surfaces of each map have no mesh rather than failing on them.
+ * **Against a baseline that records `mesh` (X3.7b's on), a surface that
+ * GAINS or LOSES its mesh is a difference** (`mesh` moved), whatever else
+ * matches — a fire made meshless would otherwise pass on its record alone.
+ * A surface WITH a mesh is compared field for field as before, its
  * `sceneRank` against the baseline's ranks re-ranked over the surfaces that
- * still have one.
+ * still have one (and that had one in the scene: a baseline rank of -1 takes
+ * no slot).
  *
  * **A map that fails to build is a failure on every run** — whatever any
  * baseline says — and the build is watched for a page error rather than
  * waited out: a surface our renderer cannot hold THROWS in a DEV build
- * (`BlockHandover.refuse`), so this is what refuses a map that has one.
+ * (held by `BlockHandover.refuse`, thrown at the install once the world has
+ * been failed — a page error out of `buildRound`, the page going on to the
+ * menu), so this is what refuses a map that has one.
  * `--foliage <rung>` builds at that crown rung (`Settings.foliage`: `low`,
  * `medium`, `high`), which is how that refusal is asked of every rung.
  *
@@ -283,7 +290,7 @@ function fingerprintMap() {
     const v = surfaces ? visualOf(s, i) : i;
     const out =
       v >= 0
-        ? { ...meshRecords[v] }
+        ? { ...meshRecords[v], mesh: true }
         : {
             name: s.name,
             material: s.material ? s.material.name : null,
@@ -441,7 +448,7 @@ async function buildOne(browser, url, id, editor) {
       await page.addInitScript((rung) => window.localStorage.setItem("greywatch.setting.foliage", rung), foliage);
     }
     // A build that throws — a surface our renderer cannot hold, in a DEV
-    // build (`BlockHandover.refuse`) — is a failure at once, not a wait.
+    // build (`BlockHandover.install`) — is a failure at once, not a wait.
     await page.addInitScript(() => {
       window.__buildErrors = [];
       window.addEventListener("error", (e) => window.__buildErrors.push(String(e.message)));
@@ -499,23 +506,26 @@ async function buildOne(browser, url, id, editor) {
 
 /**
  * `before`'s scene ranks over the first `n` entries, re-ranked among those
- * `after` still holds a mesh of (`mesh !== false`), in the same order — or
+ * `after` still holds a mesh of (`mesh !== false`) and that were in the
+ * scene before (a rank of -1, which takes no slot), in the same order — or
  * null when every one still has a mesh. A surface with none ranks -1.
  */
 function reRanked(before, after, n) {
   if (!after.some((m) => m.mesh === false)) return null;
   const kept = [];
-  for (let i = 0; i < n; i++) if (after[i].mesh !== false) kept.push(i);
+  for (let i = 0; i < n; i++) if (after[i].mesh !== false && before[i].sceneRank >= 0) kept.push(i);
   kept.sort((x, y) => before[x].sceneRank - before[y].sceneRank);
   const out = new Array(n).fill(-1);
-  kept.forEach((i, r) => (out[i] = before[i].sceneRank < 0 ? -1 : r));
+  kept.forEach((i, r) => (out[i] = r));
   return out;
 }
 
 /**
  * The fields of two mesh records that differ, by name. An `after` with no
  * mesh (`mesh: false`) is compared on the fields it holds alone — its
- * record's — and its arrays against the baseline's (see the header).
+ * record's — and its arrays against the baseline's (see the header); `mesh`
+ * itself is compared wherever both sides record it, so a surface that
+ * gained or lost its mesh is a difference.
  */
 function fieldsThatMoved(a, b) {
   const moved = [];

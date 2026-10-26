@@ -14,9 +14,10 @@
  * the emissive PALETTE and which are casters held rather than drawn (a
  * casting FIRE's: Babylon draws its main pass), which of them cast, which a
  * probe's bake draws and which the glow's mask draws, the fires, the held
- * casters' meshes (for the DEV node check), the refusal a production build
- * holds until the install (`refusal`) and the install's failure, once it
- * failed (`failure`), the material epoch last copied, the listeners it
+ * casters' meshes (for the DEV node check), the refusal held until the
+ * install (`refusal`), whose world the install is (`owner`, latched at the
+ * install and handed back with its failure) and the install's failure, once
+ * it failed (`failure`), the material epoch last copied, the listeners it
  * registers for a loss of each of our passes (`WorldShadows`, `LampAtlas`,
  * `ProbeBake`, `WorldGlow` — `onLost`), and the build's scatter FIELD until
  * the map is cut (X3.4b).
@@ -39,20 +40,26 @@
  * its shadow: a caster among them is HELD for the shadows alone
  * (`WorldBlocks.addCaster`: its positions, at identity, never `updatable`),
  * and one that casts but cannot be held, a palette surface that cannot be
- * held, or one a probe's list holds that is neither a fire nor ours
- * (`probeHolds`) is REFUSED — it throws in a DEV build (so `npm run
- * merge:hash` cannot pass a map that has one), and fails the world at the
- * install in a production one. **THE WORLD DRAWS WHOLE OR THE ROUND DOES
- * NOT START** (`BABYLON_EXIT.md` X3.7b): every former handback is the
- * world's failure — a group or a cull our side cannot draw
- * (`WorldBlocks.onFailed`), a cut past the device's limits, a main-pass
- * palette pipeline that failed, a main pass our renderer REFUSES
+ * held, or a mesh Babylon is made that is neither the glazing nor a fire
+ * (`strayMesh`: one a probe's list would hold, a held caster's among them)
+ * is REFUSED — held to the install, which fails the world on it, and then
+ * THROWN in a DEV build (so `npm run merge:hash` cannot pass a map that has
+ * one, and the page still reaches the menu). **THE WORLD DRAWS WHOLE OR THE
+ * ROUND DOES NOT START** (`BABYLON_EXIT.md` X3.7b): every former handback is
+ * the world's failure — a group or a cull our side cannot draw
+ * (`WorldBlocks.onFailed`), a surface filed under a block the cull grew no
+ * cell for (`WorldCulling.reachBoxOf`), a cut past the device's limits, a
+ * main-pass palette pipeline that failed, a main pass our renderer REFUSES
  * (`Renderer.onRefused`), a loss of any of our passes (each one's
  * `onLost`), a pass whose holder will take no world (a pipeline failed for
  * the session), and in DEV a held caster switched off, hidden or faded —
  * each said ONCE an install (`fail`), our draws stopped there and then, and
- * handed to `Game.worldFailed`, which takes the round down after the task in
- * hand; nothing goes back to Babylon, which has no mesh to draw it with.
+ * handed to `Game.worldFailed` with the install's OWNER (`WorldOwner`), so a
+ * failure names the map it came from and is never another round's, and
+ * nothing of an EDITOR build fails (`install`'s `editor`, the build's kind,
+ * never whether ours took a surface); `Game` takes the round down after the
+ * task in hand; nothing goes back to Babylon, which has no mesh to draw it
+ * with.
  * Our surfaces are drawn ahead of group 0's alpha-tested meshes, the
  * palette first and the blocks before the landform (`WorldBlocks`'s header
  * says why); nothing is taken from an EDITOR build, which `Game` hands no
@@ -137,10 +144,23 @@ function blends(material: Material | null): boolean {
   return material.needAlphaBlending();
 }
 
-/** What the build hands `install`: its records, and the meshes Babylon was given. */
+/** What the build hands `install`: its records, the meshes Babylon was given, and which of them are the glazing. */
 export interface InstalledWorld {
   readonly world: WorldGeometry;
   readonly visuals: readonly Mesh[];
+  readonly paneGroups: readonly { readonly mesh: Mesh }[];
+}
+
+/**
+ * Whose world an install is: the map it was built of — named in its
+ * failure's console line and toast — as a FRESH object an install, so a
+ * failure says which install it came from, and `Game.worldFailed` can tell
+ * the round in hand's from the map still standing under the next round's
+ * building card (`BABYLON_EXIT.md` X3.7b's review).
+ */
+export interface WorldOwner {
+  readonly id: string;
+  readonly name: string;
 }
 
 export class BlockHandover {
@@ -172,8 +192,14 @@ export class BlockHandover {
   private fires = new Set<Mesh>();
   /** The held casters' meshes, found at `install`: what the DEV node check reads. */
   private heldMeshes: Mesh[] = [];
-  /** A surface this build could not hold, in a production build: the install fails on it (`refuse`). */
+  /** A surface this build could not hold: the install fails on it (`refuse`). */
   private refusal: string | null = null;
+  /**
+   * Whose world this is, latched at `install` and handed back with its
+   * failure: null for an EDITOR build — Babylon's whole, so nothing of it can
+   * fail the world — and from a `clear` until the next install.
+   */
+  private owner: WorldOwner | null = null;
   /** Why this install failed, once it did: said once (`fail`). */
   private failure: string | null = null;
   /** `CelMaterialFactory.materialEpoch` as last copied; -1 is never. */
@@ -197,11 +223,12 @@ export class BlockHandover {
     /** Our renderer's share of the glow's mask, handed the world when a palette surface glows. */
     private readonly glow: WorldGlow,
     /**
-     * Told, once an install, that the world cannot be drawn and why — after
-     * our draws have stopped. `Game.worldFailed`, which takes the round down
-     * after the task in hand (a failure may land inside a render).
+     * Told, once an install, that the world cannot be drawn, why, and whose
+     * install it was — after our draws have stopped. `Game.worldFailed`,
+     * which takes the round down after the task in hand (a failure may land
+     * inside a render).
      */
-    private readonly worldFailed: (reason: string) => void,
+    private readonly worldFailed: (reason: string, owner: WorldOwner) => void,
     /** Our culls' diagnostics — `?nocull`, `?nofrustum`, `?cullcheck` (`core/urlOverrides.ts`). */
     diagnostics: CullDiagnostics = NO_DIAGNOSTICS,
   ) {
@@ -359,16 +386,14 @@ export class BlockHandover {
   }
 
   /**
-   * A surface this build cannot hold: thrown in a DEV build, so the map
-   * fails where it is built and `npm run merge:hash` refuses it; in a
-   * production build held until `install`, which fails the world on it, the
-   * surface made a mesh meanwhile so the build completes. Answers `false`
-   * for `onSurface`.
+   * A surface this build cannot hold: held until `install`, which fails the
+   * world on it — the surface made a mesh meanwhile, so the build completes
+   * and the map it built is torn down whole — and in a DEV build then
+   * THROWS, so `npm run merge:hash` refuses the map, the page still reaching
+   * the menu (`fail` is told first). Answers `false` for `onSurface`.
    */
   private refuse(why: string): false {
-    const message = `BlockHandover: ${why} (BABYLON_EXIT.md X3.7b: the world draws whole or the round does not start)`;
-    if (import.meta.env.DEV) throw new Error(message);
-    this.refusal ??= message;
+    this.refusal ??= `BlockHandover: ${why} (BABYLON_EXIT.md X3.7b: the world draws whole or the round does not start)`;
     return false;
   }
 
@@ -386,11 +411,18 @@ export class BlockHandover {
    * instances and its pieces (`world`'s scatter regions) cut out of the
    * blocks that draw them so, and hands every pass of ours its world — the
    * casters to the shadows on every rung, the world to the bake, the palette
-   * to the main pass and its glowing share to the mask. A pass that will
-   * take none, a refusal held from the build, or a cut that fails, fails the
-   * world (`fail`).
+   * to the main pass and its glowing share to the mask. `owner` is latched
+   * for the install's failure; an EDITOR build (`editor`) is taken from by
+   * nothing and fails nothing — the exemption is the build's kind, never
+   * that ours took no surface, so a production refusal on a map ours took
+   * nothing of still fails. A pass that will take none, a refusal held from
+   * the build (thrown after it in a DEV build: `refuse`), a mesh Babylon was
+   * made that is neither the glazing nor a fire (`strayMesh`), a surface
+   * filed under a block no cell was grown for, or a cut that fails, fails
+   * the world (`fail`).
    */
-  install(map: InstalledWorld): void {
+  install(map: InstalledWorld, owner: WorldOwner, editor: boolean): void {
+    this.owner = editor ? null : owner;
     const meshOf = (index: number): Mesh | null => {
       const v = map.world.surfaces[index]?.visual ?? -1;
       return v >= 0 ? (map.visuals[v] ?? null) : null;
@@ -400,8 +432,14 @@ export class BlockHandover {
     this.epoch = -1;
     const field = this.field;
     this.field = null;
+    if (editor) return;
+    const stray = this.strayMesh(map);
+    if (stray) this.refuse(stray);
     if (this.refusal) {
       this.fail(this.refusal);
+      // DEV: a page error out of `buildRound` too, which `merge:hash` fails
+      // on — after `fail`, so the page still reaches the menu.
+      if (import.meta.env.DEV) throw new Error(this.refusal);
       return;
     }
     if (field) {
@@ -431,9 +469,22 @@ export class BlockHandover {
     // clear's own), the lamps' atlas (the box holds the surface, so a light's
     // range drops nothing a face would draw), the world's maps (no reach) and
     // a probe's bake (a surface's sphere).
-    const boxes: BlockBox[] = this.reach.map((block, at) =>
-      this.held.has(at) ? NO_REACH : this.culling.reachBoxOf(block),
-    );
+    const boxes: BlockBox[] = [];
+    for (let at = 0; at < this.reach.length; at++) {
+      const block = this.reach[at];
+      const box = this.held.has(at) ? NO_REACH : this.culling.reachBoxOf(block);
+      // The build's contract broken — a surface filed under a block no
+      // record grew a cell for — refused as `setMap` refuses its own.
+      if (!box) {
+        this.fail(
+          block === ""
+            ? "the cull grew no cell for a surface of ours that is filed under no block"
+            : `the cull grew no cell for block "${block}", which a surface of ours is filed under`,
+        );
+        return;
+      }
+      boxes.push(box);
+    }
     this.blocks.finish(
       boxes,
       field
@@ -482,32 +533,48 @@ export class BlockHandover {
   }
 
   /**
+   * The first mesh Babylon was made that is neither the glazing (no probe's
+   * list holds a pane) nor a FIRE (which no bake has ever drawn,
+   * `FINDINGS.md` 51), with how many others — a mesh a probe's list would
+   * hold (`ReflectionSystem`'s, the visuals but the panes) that our bake
+   * cannot draw, a held caster's among them; null for none, every shipped
+   * map. Asked at the install, of every map, so the verdict is the take's
+   * and never rests on when or whether `ReflectionSystem.build` asks
+   * `probeHolds`, which only counts.
+   */
+  private strayMesh(map: InstalledWorld): string | null {
+    const panes = new Set(map.paneGroups.map((g) => g.mesh));
+    let first: Mesh | null = null;
+    let others = 0;
+    for (const mesh of map.visuals) {
+      if (panes.has(mesh) || this.fires.has(mesh)) continue;
+      if (first) others++;
+      else first = mesh;
+    }
+    return first
+      ? `Babylon was made "${first.name}" and ${others} other meshes a probe's list would hold, which our renderer cannot bake`
+      : null;
+  }
+
+  /**
    * Whether our renderer's bake draws every mesh of `list` — a probe's
    * render list as Babylon's bake would have it (`ReflectionSystem`): on a
    * shipped map nothing but the FIRES, which no bake has ever drawn
    * (`FINDINGS.md` 51), every other mesh of the map's being glazing, which
    * no list holds — and how many of our surfaces a bake draws, the palette
-   * among them. Any other mesh is one ours cannot bake and Babylon would
-   * have, and is REFUSED (`refuse`; in production, the world fails).
+   * among them. Any other mesh is one ours cannot bake, which the install
+   * has already refused (`strayMesh`): this only counts.
    */
   probeHolds(list: readonly Mesh[]): ProbeHolding {
     let fires = 0;
     let other = 0;
-    let first: Mesh | null = null;
     for (const mesh of list) {
       if (this.fires.has(mesh)) fires++;
-      else {
-        other++;
-        first ??= mesh;
-      }
+      else other++;
     }
     let palette = 0;
     for (const at of this.probing) if (this.palette.has(at)) palette++;
     const taken = this.probing.size - palette;
-    if (first) {
-      this.refuse(`a probe's list holds "${first.name}" and ${other - 1} other meshes our renderer cannot bake`);
-      if (this.refusal) this.fail(this.refusal);
-    }
     const ours = this.probes.holds && other === 0 && this.failure === null;
     return { ours, taken, palette, fires, other };
   }
@@ -557,6 +624,7 @@ export class BlockHandover {
     this.fires = new Set();
     this.heldMeshes = [];
     this.refusal = null;
+    this.owner = null;
     this.failure = null;
   }
 
@@ -571,15 +639,17 @@ export class BlockHandover {
   /**
    * The world cannot be drawn: said once an install — our draws stopped at
    * once (`WorldBlocks.stop`, safe inside a render: its buffers stay until
-   * `clear`) — and handed to `Game.worldFailed`. Nothing of a map that is
-   * not ours (an editor build, the menu) can fail: every holder drops a loss
-   * that lands after its world went.
+   * `clear`) — and handed to `Game.worldFailed` with the install's owner.
+   * Nothing of a world with no owner can fail: an EDITOR build (Babylon's
+   * whole, `install`), or none installed (the menu, a build not yet
+   * installed) — every holder drops a loss that lands after its world went.
    */
   private fail(reason: string): void {
-    if (this.failure !== null || this.reach.length === 0) return;
+    const owner = this.owner;
+    if (this.failure !== null || owner === null) return;
     this.failure = reason;
     this.blocks.stop();
-    this.worldFailed(reason);
+    this.worldFailed(reason, owner);
   }
 
   /** `WorldBlocks.onFailed`: surfaces our side will never draw — and Babylon has no mesh of. */

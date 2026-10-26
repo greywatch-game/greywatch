@@ -16,9 +16,10 @@
  * (`CONFIG.graphics.warmup.oursCapMs`): they were asked for as the map was
  * built and compile off the frame, so drawing does not hurry them, but a
  * group of ours still compiling draws NOTHING and Babylon no longer draws the
- * blocks in the main pass — so the vantages are drawn with ours built, and a
- * surface a failed compile handed back to Babylon is compiled by Babylon at a
- * vantage like any other mesh. A vantage is then held until it has drawn
+ * blocks in the main pass — so the vantages are drawn with ours built; a
+ * compile of ours that FAILS fails the world under the card (`BABYLON_EXIT.md`
+ * X3.7b: `Game.worldFailed`), Babylon holding no mesh of it to compile at a
+ * vantage instead. A vantage is then held until it has drawn
  * `CONFIG.graphics.warmup.quietFrames` in a row that created nothing in
  * either cache and left nothing of ours compiling, because a mesh whose
  * effect is still compiling is SKIPPED by a frame rather than compiled by it

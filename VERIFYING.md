@@ -1595,10 +1595,17 @@ is one machine's:
   (`Game.worldFailing`), and a stray second `[world]` line is a bug. **The
   cull's refusal** is forced by `g.culling.setMap = () => "forced"` before
   `g.startRound()`: the round must reach the menu, not the deploy screen, and
-  not hang the card. **A refused SURFACE throws in a DEV build** (a page error
-  out of `buildRound`, the card left up) — which is what `npm run
-  merge:hash` fails on, at every crown rung (`--foliage`) — and in a
-  production build fails at the install like the rest.
+  not hang the card. **A refused SURFACE is held to the install**, which
+  fails the world like the rest (the one `[world]` line, the menu, the toast)
+  — and a DEV build then THROWS (a page error out of `buildRound`, the page
+  still reaching the menu), which is what `npm run merge:hash` fails on, at
+  every crown rung (`--foliage`). Force one by wrapping `g.handover
+  .onSurface` before `g.startRound()` to mark the first block surface
+  `updatable` (a caster nothing can hold). **A failure of the OLD map under
+  the next round's card** (a loss forced right after a Restart's
+  `g.startRound()`) is said against the old map — `[world] <map>: … (it was
+  already being replaced…)` — and the new round reaches the deploy screen
+  (`Game.roundWorld`).
 - **Whether the RECORD still describes the mesh is `npm run merge:hash`'s**
   (`BABYLON_EXIT.md` X3.7a): EVERY surface that has a mesh — on a shipped
   build the glazing and the fires, on an EDITOR build every one, 2,000-odd

@@ -1374,13 +1374,15 @@ GPU.
 — which probes, where each stands, what it leaves out, how far it reaches,
 when it is released, and which path an install takes. `ProbeBake` decides
 nothing. **The install's bake is OURS in every round** (`BlockHandover
-.probeHolds`, asked once by `build`): every surface of ours is in it — a
-block, the landform, the emissive palette with its slots — and of Babylon's
-meshes a FIRE alone, which ours leaves out (`FINDINGS.md` 51); the glazing is
-in no list. **Since X3.7b Babylon is made no mesh of what ours draws, so a
-list holding any other mesh is one ours cannot bake and Babylon's bake would
-have** — REFUSED: a DEV build throws, a production one fails the world
-(`Game.worldFailed`, the menu and a toast). An editor build bakes nothing;
+.probeHolds`, asked once by `build`, which counts): every surface of ours is
+in it — a block, the landform, the emissive palette with its slots — and of
+Babylon's meshes a FIRE alone, which ours leaves out (`FINDINGS.md` 51); the
+glazing is in no list. **Since X3.7b Babylon is made no mesh of what ours
+draws, so any other mesh Babylon is made is one ours cannot bake and
+Babylon's bake would have** — REFUSED at the TAKE, on every map whether it
+has glazing or not (`BlockHandover.install`'s `strayMesh`): the world fails
+(`Game.worldFailed`, the menu and a toast), and a DEV build throws after it
+so `merge:hash` refuses the map. An editor build bakes nothing;
 and a LOSS (`ProbeBake.lose`: a pipeline or a cull that failed) fails the
 world too, there being no Babylon mesh to queue the install again on. A bake
 of ours that drained depends on our renderer for nothing: its cubes stand.
@@ -2787,8 +2789,10 @@ produces a flat wash that looks exactly like a broken sampler:
 `ReflectionSystem.bakeWater` holds a **separate probe pool** from the glazing's,
 because the two are baked at different moments of one `installMap` and `build`
 parks everything it owns on the way in; it takes the path `build` picked (on
-ours its cubes are keyed apart in `ProbeBake`'s pool), and a body is handed
-Babylon's cube again (`rebind`) if ours is lost before it drained. The site is not the rect's centre — a
+ours its cubes are keyed apart in `ProbeBake`'s pool). A bake of ours lost
+before it drained fails the world (X3.7b: the menu, no Babylon bake to fall
+back on), so the `rebind` it hands over is called only by `ReflectionSystem`'s
+`toBabylon`, which the harness's `rebake` alone reaches and X3.7c deletes. The site is not the rect's centre — a
 rect is its extent and not its shore, and Greyfen's flood is one 250 m rect of
 which 11% is wet — so `WaterSystem.bakeDepth` hands over the depth-weighted
 centroid of the WET cells it found on its way past. Editor builds park the
@@ -3601,9 +3605,11 @@ a refused pass, a loss of any pass of ours) is `Game.worldFailed`: a
   palette variant, the default limit. **The cut is held to what that can
   name**: a scatter whose records times `listStride`'s corners (384 at the
   shipped 128 triangles a cluster) pass 2^31, or whose list passes the
-  device's storage limit, hands every recipe that draws scatter back to
-  Babylon whole, and a part past 65,536 vertices its own recipe — never
-  drawn wrapped (`scatterCut.ts`'s `listPast` and `sourcePast`).
+  device's storage limit, fails every recipe that draws scatter, and a part
+  past 65,536 vertices its own recipe — never drawn wrapped
+  (`scatterCut.ts`'s `listPast` and `sourcePast`) — and since X3.7b a failed
+  recipe is the WORLD's failure (`WorldBlocks.onFailed`, `Game.worldFailed`),
+  Babylon holding no mesh to draw it with.
 - **A recipe's DEPTH BIAS is its pipeline's** (`CelRecipe.depthBias`, Babylon's
   `zOffsetUnits`, `PipelineState.depthBias`), asked for by `WorldBlocks` with
   the recipe — so the roads' `ROAD_DEPTH_UNITS` (-8) is drawn by our side as
@@ -3684,7 +3690,9 @@ a refused pass, a loss of any pass of ours) is `Game.worldFailed`: a
   under a block, mesh or none — and `reachBoxOf` answers a surface of ours
   by its BLOCK (its record's `metadata.block`): that block's cell, or, for
   the landform (no block), the box of no reach. A key no cell was grown for
-  is refused. The glow's mask, which reads the main pass's active meshes,
+  answers null and is REFUSED — the build's contract broken, as `setMap`'s
+  two reasons are: `BlockHandover.install` fails the world on it
+  (`Game.worldFailed`), never an uncaught throw. The glow's mask, which reads the main pass's active meshes,
   keeps only what glows; the palette, which glows, is drawn into the mask by
   our side through the main view (X3.6d, X3.6e; "The palette, ours").
 - **A HELD caster is never switched off, hidden or faded after its build**
@@ -5738,7 +5746,10 @@ draw of OURS, by the same vertex module.
   so keeps `PASS_GLOW` off and is cut into a palette group of its own
   material (`WorldBlocks.paletteGroup`), since the mask draws a group whole
   — it is still a `LIGHT_SOURCE`, which no size gate drops (the cull's bit
-  that shared `PASS_GLOW` until the two meanings came apart here). A
+  that shared `PASS_GLOW` until the two meanings came apart here) — and
+  the mask asks its pipelines only for the groups it DRAWS (`glowView`), so
+  a bias only a quiet group carries compiles no mask pipeline that could
+  fail the world for a pass drawing nothing with it. A
   palette surface the handover cannot hold is REFUSED; a refused main pass,
   a refused MASK pass (`Renderer.onGlowMaskRefused`), a failed mask pipeline
   (latched for the session) and a failed MAIN-pass palette pipeline

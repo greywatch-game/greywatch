@@ -213,8 +213,10 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   entry a SURFACE: one our renderer draws whole
                               #   has no mesh (X3.7b) and is fingerprinted and
                               #   compared off its record, the run saying how
-                              #   many; a build that fails — a surface ours
-                              #   cannot hold throws in DEV — fails the run,
+                              #   many (`mesh: true`/`false`, a flip a
+                              #   difference); a build that fails — a surface
+                              #   ours cannot hold, thrown in DEV at the
+                              #   install — fails the run,
                               #   `--foliage <rung>` asking it of a crown rung;
                               #   the panes, pane groups, editor items (surface
                               #   indices) and the piece table.
@@ -1293,9 +1295,10 @@ src/
                         #   gate reads its record's sphere; reachGate states
                         #   the reach and the size gate as numbers for the GPU
                         #   cull, reachBoxOf the box by the BLOCK (the
-                        #   landform's NO_REACH). setMap REFUSES a build whose
-                        #   visuals and records disagree, handing back the
-                        #   reason for Game.worldFailed
+                        #   landform's NO_REACH, null for a block no cell grew
+                        #   for). setMap REFUSES a build whose visuals and
+                        #   records disagree, handing back the reason for
+                        #   Game.worldFailed
     BlockHandover.ts    # The map's world as OUR renderer draws it, in every
                         #   pass of every build but the editor's, with NO
                         #   fallback (BABYLON_EXIT.md X3.3-X3.7b): every block
@@ -1310,18 +1313,23 @@ src/
                         #   HELD (WorldBlocks.addCaster) — and handed to the
                         #   world's maps and the lamps' atlas together on
                         #   every rung; the world to the bake (PASS_PROBE,
-                        #   fires left out; probeHolds answers
+                        #   fires left out; probeHolds counts for
                         #   ReflectionSystem); the palette's main pass at the
                         #   install and its mask to WorldGlow, noGlow read PER
                         #   SURFACE (a group of its own, LIGHT_SOURCE kept).
-                        #   A surface it cannot hold is REFUSED (a DEV throw,
-                        #   else at install), and every former handback — a
+                        #   A surface it cannot hold, or a Babylon mesh not
+                        #   glazing nor a fire (strayMesh), is REFUSED at the
+                        #   install (and thrown after it in DEV), and every
+                        #   former handback — a block no cell grew for, a
                         #   failed group or cull, a cut past the limits, a
                         #   refused pass, a loss of any pass of ours (their
                         #   onLost), a pass that takes no world — fails the
-                        #   world once (Game.worldFailed). The scatter's field
-                        #   (BuildOptions.onScatter) added as instances at
-                        #   install, its pieces cut out of the blocks (X3.4b).
+                        #   world once (Game.worldFailed), with the install's
+                        #   WorldOwner (latched at install: a stale one is
+                        #   ignored; an editor build fails nothing). The
+                        #   scatter's field (BuildOptions.onScatter) added as
+                        #   instances at install, its pieces cut out of the
+                        #   blocks (X3.4b).
                         #   Reads no node per frame (a DEV check that no held
                         #   caster is switched, hidden or faded)
     WaterSystem.ts      # Water surfaces from map WaterRects; bakes their bed depth
@@ -1330,8 +1338,8 @@ src/
                         #   rotor sites, pushed from `tick` and not from the
                         #   camera tail — see it for why. Hands its mirrors'
                         #   sites to the reflection bake and a REBIND for a
-                        #   body's cube, which a bake lost before it drained
-                        #   uses to point it at Babylon's
+                        #   body's cube, called only by the harness's rebake
+                        #   (toBabylon, X3.7c's): a lost bake fails the world
     GrassSystem.ts      # The grass field stood around the EYE: patches of
                         #   blade seeds chosen per frame in view (`follow`,
                         #   pushed from `tick` in every state), each drawn from

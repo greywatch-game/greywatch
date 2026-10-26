@@ -28,11 +28,13 @@
  * those are the build's own contract broken rather than a state a map can
  * be in, and a cell grown from anything else would be a box nobody measured.
  * A refusal files nothing and is handed back as its reason, which `Game`
- * spends on `worldFailed` (the menu and a toast, `BABYLON_EXIT.md` X3.7b).
+ * spends on `worldFailed` (the menu and a toast, `BABYLON_EXIT.md` X3.7b) —
+ * and a reach asked for a block no cell was grown for answers null rather
+ * than a box (`reachBoxOf`), which the handover refuses the same way.
  * Never: writes a property on a mesh; grows a cell's box off a mesh's
  * bounding info rather than its record's; files a block-keyed mesh that has
  * no record, or a map whose visuals and records disagree — it refuses the
- * map instead.
+ * map instead; throws for a build's broken contract.
  *
  * **The frame walks the SCENE, and the scene is the map.**
  * `_evaluateActiveMeshes` iterates every candidate every frame — a Map get for
@@ -575,13 +577,14 @@ export class WorldCulling {
    * is offered by — and for `null`, the LANDFORM, `NO_REACH`, which the
    * reach never cuts, as it never cuts a loose mesh. Surfaces of one block
    * share the object, and every landform surface shares the one box. A key
-   * no cell was grown for is refused: a record filed under a block grows one.
+   * no cell was grown for — a record filed under a block grows one, so the
+   * build's contract is broken — answers null, which the caller REFUSES as
+   * it refuses `setMap`'s reasons: the world fails (`BlockHandover.install`,
+   * `Game.worldFailed`), never an uncaught throw inside `installMap`.
    */
-  reachBoxOf(block: string | null): BlockBox {
+  reachBoxOf(block: string | null): BlockBox | null {
     if (block === null) return NO_REACH;
-    const cell = this.cellByKey.get(block);
-    if (!cell) throw new Error(`WorldCulling: no cell was grown for block "${block}"`);
-    return cell;
+    return this.cellByKey.get(block) ?? null;
   }
 
   /**

@@ -11,8 +11,9 @@
  * it leaves out, how far it reaches, when it is released, and which path an
  * install takes. OUR renderer's (`render/ProbeBake.ts`) in every round —
  * the handover holding every mesh a probe's list holds (`setOurs`,
- * `BlockHandover.probeHolds`, which REFUSES a list it cannot: the round
- * does not start, `BABYLON_EXIT.md` X3.7b): its cubes, its faces culled and
+ * `BlockHandover.probeHolds`, which counts: a mesh ours cannot bake was
+ * refused at the install, and the round does not start, `BABYLON_EXIT.md`
+ * X3.7b): its cubes, its faces culled and
  * drawn from the main pass's own world with the probe's eye PASSED, and
  * Babylon's readers handed a wrapped view of each cube (`wrapCubeTexture`).
  * BABYLON's `ReflectionProbe`s only where ours holds no world — an editor
@@ -582,8 +583,9 @@ export class ReflectionSystem {
           `and ${((opaque.length * slots.size - listed) / n).toFixed(1)} dropped each, ` +
           (this.oursPath
             ? `baked by our renderer (${this.holding.taken} taken, ${this.holding.palette} palette, ${this.holding.fires} fires left out)`
-            : `${draws} draws over ${Math.ceil(draws / cfg.drawsPerFrame)} frame(s)` +
-              (this.holding.other > 0 ? ` on Babylon's side (${this.holding.other} meshes ours cannot draw)` : "")) +
+            : `${draws} draws over ${Math.ceil(draws / cfg.drawsPerFrame)} frame(s) on Babylon's side, ` +
+              "in a world already failed (X3.7b)" +
+              (this.holding.other > 0 ? ` (${this.holding.other} meshes ours cannot draw)` : "")) +
           `, queued in ${(performance.now() - started).toFixed(1)} ms`,
       );
     }
@@ -713,8 +715,9 @@ export class ReflectionSystem {
   rebake(): void {
     const plan = this.plan;
     if (!plan) return;
-    // Our renderer's world was lost after its bake drained: the cubes it
-    // baked stand, but a bake now is Babylon's.
+    // Our renderer's bake holds no world: a loss, which since X3.7b fails
+    // the world (the round goes, this with it), so only a harness reaches
+    // this — Babylon's path, X3.7c's to delete.
     if (this.oursPath && !this.bake.holds) {
       this.toBabylon(plan);
       return;

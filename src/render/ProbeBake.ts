@@ -355,8 +355,9 @@ export class ProbeBake {
   /**
    * The world can no longer draw what Babylon's bake would — a pipeline or a
    * cull failed: the world, the view and every probe released are dropped,
-   * and whoever asked to be told takes the bake over (`onLost`) once the task
-   * in hand is done.
+   * and whoever asked to be told is, once the task in hand is done
+   * (`onLost`) — the handover, which fails the world on it (`BABYLON_EXIT.md`
+   * X3.7b); nobody takes the bake over.
    */
   lose(): void {
     if (!this.source && !this.view) return;

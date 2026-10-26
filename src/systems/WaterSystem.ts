@@ -231,9 +231,10 @@ export class WaterSystem {
     // have to be known before a single material exists, because the second is
     // where the mirror is baked from.
     const beds = rects.map((r) => this.bakeDepth(r, waterY(r, terrain), terrain));
-    // A body's mirror handed another cube after the build — a bake lost
-    // before it drained is baked again on Babylon's side
-    // (`ReflectionSystem.bakeWater`).
+    // A body's mirror handed another cube after the build: since X3.7b a
+    // bake of ours lost before it drained fails the world instead, so only
+    // `ReflectionSystem`'s `toBabylon` calls it — reached by the harness's
+    // `rebake` alone, and X3.7c's to delete (`ReflectionSystem.bakeWater`).
     const mirrors = reflect(
       beds.map((b) => b.site),
       (site, cube) => this.bodies[site]?.mat.setTexture("reflectionCube", cube),

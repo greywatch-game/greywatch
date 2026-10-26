@@ -3112,7 +3112,8 @@ is checked against its parent.
   there is memory, not a limit. The phone's FOLLOW-UP reading as every
   step's since X3.3c.
 
-**X3.7b landed** (this commit; 2026-10-25; no picture change).
+**X3.7b landed** (b5c0a1e, the post-commit review's fixes after it;
+2026-10-25; no picture change).
 - **What it is.** Babylon is made no mesh of anything our renderer draws.
   `worldMeshes` asks `BuildOptions.onSurface` — now `(surface, index) =>
   boolean` — BEFORE a mesh exists, and makes none of a surface ours draws
@@ -3261,6 +3262,70 @@ is checked against its parent.
   kept for the harness); `WorldBlocks.setPaletteMain` and the HELD layer
   (`addCaster`, a casting fire's — no shipped map has one) stay; the
   generators and the lamps' render target are the editor's (X5.3).
+- **What the post-commit review found** (an independent reader over
+  b5c0a1e; fixed after it). No game-code defect and nothing architectural;
+  one defect in the ORACLE. `merge:hash --against` could not see a surface
+  LOSE its mesh: only a meshless entry said `mesh` (`false`), and a field a
+  side lacks is not compared, so a fire made meshless would have vanished
+  and passed. A meshed entry now says `mesh: true` and a `mesh` that moved
+  is a difference (a baseline that records none, X3.7a's, still compares
+  as before); `reRanked` no longer gives a baseline rank of -1 a slot.
+  Proved on Hollowmere and Coldharbour with one fire forced meshless: the
+  new script against the new baseline fails on exactly that entry
+  (`visuals[61]`, `visuals[109]`: `mesh`), the old one against the old
+  baseline passed it; reverted, both maps identical. Five LATENT paths, none
+  reachable on a shipped map: `WorldCulling.reachBoxOf` threw, uncaught
+  inside `installMap`, for a surface of ours filed under a block no cell
+  was grown for — it answers null now and `BlockHandover.install` fails the
+  world on it, as `setMap`'s reasons are; `fail`'s guard was "ours took a
+  surface" (`reach` non-empty), meant for the editor, which also swallowed
+  a production refusal on a map ours took nothing of — the handover now
+  latches an OWNER at the install (`WorldOwner`, a fresh `{ id, name }`
+  each) and an editor build latches none (`install`'s `editor`); the glow
+  mask asked a pipeline for every palette group's bias, a quiet (`noGlow`)
+  group's too, which could have failed the world for a pass drawing
+  nothing with it (`palettePipelines` takes the groups the pass draws); a
+  loss of the OLD map landing between `startRound` and the new install
+  aborted the NEW round under a toast naming the new map — the failure now
+  carries its owner, which names the map in the line and the toast, and
+  one whose owner is not the round in hand while a build is pending
+  (`Game.roundWorld`, null from `startRound` to the install) is said and
+  ignored; and a cull refusal of an EDITOR build would have taken the page
+  to the menu with the editor open — it is a `console.error` now, the
+  editor kept over a map the cull files nothing of. Two of SHAPE: the
+  refusal of a Babylon mesh that is neither the glazing nor a fire (a held
+  non-fire caster among them) ran in `probeHolds` only because
+  `ReflectionSystem.build` asked it ahead of an early return — it is the
+  install's now (`strayMesh`, every map), and `probeHolds` only counts; and
+  a DEV refusal stranded the page under the building card (it threw at the
+  take, out of `buildRound`, the state still `loading`) — a refusal is held
+  to the install in every build, which fails the world and THEN throws in
+  DEV, so `merge:hash` still sees a page error, the map was built whole
+  and is torn down, and the page reaches the menu. Docs: the stale
+  handback claims in `PipelineWarmup`'s header, the scatter list's limits
+  and the water's rebind (`docs/rendering.md`, `WaterSystem`, `FILES.md`;
+  the `toBabylon` branch it serves is X3.7c's to delete), `ProbeBake.lose`,
+  `ReflectionSystem`'s log line and `rebake`, `CLAUDE.md`'s "any other mesh
+  carrying `metadata.block`" (no line added), `docs/game.md`'s failure
+  paragraph, `VERIFYING.md`'s forced-loss recipe (the refused surface, the
+  old map's loss), and this note's hash. Left for X3.7c as planned:
+  `setPaletteMain` (only ever `true`), `ProbeBake.lose`'s unread `dropped`
+  count, and `toBabylon`. Re-checked after the fixes: `merge:hash`
+  identical to X3.7b's baselines on all eight maps, shipped and `--editor`,
+  the new baselines (`merge-baseline-x37b.json`,
+  `merge-baseline-x37b-editor.json` in this step's scratch record)
+  differing from those only by `mesh: true` on the 889 and 28,473 meshed
+  entries; `census --against` the BEFORE equal on seven; `gate.mjs` clean
+  on seven; the forced paths on Coldharbour — the ten of X3.7b, a surface
+  filed under no block, a refused surface (one `[world]` line, the DEV
+  throw as a page error, the menu, the toast), the old map's shadows lost
+  right after a Restart's `startRound` (one line naming it, "already being
+  replaced", the new round deployed with every pass ours, no toast) and a
+  clean round after; an editor build the cull refuses (one line, the
+  editor kept, no toast, a clean round on leaving it); `F2` select, drag,
+  sculpt and save (restored); the bank 61 of 61 byte-identical to the
+  BEFORE at d795e76 (its Sarab re-run) and to X3.7b's AFTER, the same 34
+  stale rows, no console or page error; typecheck, build and corecheck.
 - **Owed onward.** X3.7c. The phone's FOLLOW-UP reading, as every step's
   since X3.3c — X3.7b's gain is memory the phone feels most. Pushing the tag
   `exit-babylonworld` (the user's call).

@@ -349,13 +349,23 @@ inside a render, or inside `installMap` itself) — a `console.error`,
 through `leaveMatch`) and a toast that the map could not be drawn:
 `loadHeights`' move, for its reason, there being no honest half-world to play
 in and no fallback engine. Its doors are the handover's — a surface it cannot
-hold (a DEV throw instead, so `merge:hash` refuses the map), a group or a cull
-that fails (under the building card, where a pipeline settles), a cut past
-the device's limits, a refused pass, a loss of any pass of ours — and the
-cull's, which REFUSES a build whose own contract is broken (`setMap` hands
-back the reason rather than throwing, and `installMap` hands nothing over
-after it). `teardownMap` takes our side down first (`handover.clear`), ahead
-of the map's meshes.
+hold, failed at the install (and thrown after it in a DEV build, so
+`merge:hash` refuses the map — the page still reaching the menu, the map it
+built whole and torn down), a group or a cull that fails (under the building
+card, where a pipeline settles), a cut past the device's limits, a refused
+pass, a loss of any pass of ours — and the cull's, which REFUSES a build
+whose own contract is broken (`setMap` hands back the reason rather than
+throwing, `reachBoxOf` a null, and `installMap` hands nothing over after
+it). **A failure belongs to the INSTALL it came from**: the handover latches
+a fresh `WorldOwner` at each install and hands it back with the failure, so
+the console line and the toast name the map that failed, and one of the OLD
+map still standing under the next round's building card (between
+`startRound` and that round's install, `Game.roundWorld` null) is said and
+ignored rather than ending the round being built. **An EDITOR build fails
+nothing** — the exemption is the build's kind (`install`'s `editor`), never
+whether ours took a surface — and a cull refusal of one is a
+`console.error`, the editor kept open. `teardownMap` takes our side down
+first (`handover.clear`), ahead of the map's meshes.
 
 **It also lets go of the map's DATA, and that half is proved rather than
 reviewed.** `Player`'s ground, the `rays` eight

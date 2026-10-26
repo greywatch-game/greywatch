@@ -1088,7 +1088,10 @@ export class WorldBlocks {
    */
   private askPalette(): void {
     const generation = this.generation;
+    // Every palette group, the quiet ones too: the main pass and a probe's
+    // face draw every one.
     const { built, asks } = this.palettePipelines(
+      this.groups,
       emissiveWorld(FRAME_TARGETS),
       FRAME_TARGETS,
       (bias) => (bias === 0 ? undefined : { depthBias: bias }),
@@ -1311,8 +1314,12 @@ export class WorldBlocks {
       if (group.emissive && !group.failed && drawsIn(group, PASS_GLOW)) palettes.push(group);
     }
     if (palettes.length === 0) return null;
-    // The mask's pipeline, by its material's depth bias: at most two.
+    // The mask's pipeline, by its material's depth bias: at most two — and
+    // only for the groups the mask DRAWS, so a bias only a `noGlow` (quiet)
+    // group carries asks for none, and cannot fail the world for a pass
+    // that would draw nothing with it.
     const { built, asks } = this.palettePipelines(
+      palettes,
       emissiveWorld(GLOW_TARGETS, true),
       GLOW_TARGETS,
       // No depth written: every pixel's depth is the main pass's, which its
@@ -1354,12 +1361,15 @@ export class WorldBlocks {
   /**
    * The emissive palette's pipelines for one pass — `program` into `targets`,
    * each built with `state(bias)` — one a depth bias among the palette groups
-   * still whole (at most two): `built` maps a bias to its pipeline, null until
-   * it lands, and `asks` holds one promise a bias, true once built and false,
-   * `failed` told, if it failed. The ONE place they are asked for (the main
-   * pass's, which a probe's face shares: `askPalette`; the mask's: `glowView`).
+   * of `groups` still whole (at most two), `groups` being those the pass
+   * draws: `built` maps a bias to its pipeline, null until it lands, and
+   * `asks` holds one promise a bias, true once built and false, `failed`
+   * told, if it failed. The ONE place they are asked for (the main pass's,
+   * which a probe's face shares, over every palette group: `askPalette`; the
+   * mask's, over the groups that glow: `glowView`).
    */
   private palettePipelines(
+    groups: readonly Group[],
     program: { vertex: AssembledVertex; fragment: AssembledModule },
     targets: PassTargets,
     state: (bias: number) => PipelineState | undefined,
@@ -1368,7 +1378,7 @@ export class WorldBlocks {
     const pipelines = this.renderer.pipelines;
     const built = new Map<number, BuiltPipeline | null>();
     const asks: Promise<boolean>[] = [];
-    for (const group of this.groups) {
+    for (const group of groups) {
       if (!group.emissive || group.failed) continue;
       const bias = group.emissive.recipe.depthBias;
       if (built.has(bias)) continue;
