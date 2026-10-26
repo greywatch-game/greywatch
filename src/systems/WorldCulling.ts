@@ -220,8 +220,9 @@ interface Pool {
  *
  * Exact rather than a name test: a material carrying an `emissiveColor` is a
  * light source — `CelMaterialFactory.getEmissive`'s unlit `StandardMaterial`,
- * or the fire (`FlameMaterial`) or the map's emissive palette
- * (`EmissiveWorldMaterial`), which declare one for this test and the glow's.
+ * or the fire (`FlameMaterial`), which declares one for this test and the
+ * glow's (the map's emissive palette, `EmissiveWorldMaterial`, declares one
+ * too, and is worn by no mesh: our renderer draws it).
  * Every lit surface wears a plain `ShaderMaterial`, which has no such property
  * to read.
  */

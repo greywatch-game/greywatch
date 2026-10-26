@@ -101,17 +101,17 @@
  * wrap modes and filtering level and the engine's empty textures and
  * anisotropy cap (`bind`).
  *
- * WHAT IS NOT HERE. Six touches of Babylon internals in four files predate
+ * WHAT IS NOT HERE. Four touches of Babylon internals in three files predate
  * this one and stay where they were written, because none of them is our
  * renderer's and one cannot move here at all: `shaders/FrameDepth.ts` (the
  * frame's depth texture, `_currentRenderTarget._depthStencilTexture`),
- * `core/webgpuLeaks.ts` (`_deletePipelineContext`),
- * `systems/ReflectionSystem.ts` (`_releaseRenderPassId`,
- * `_removeDrawWrapper`) and `core/FrameProfile.ts` (the timestamp query, and
- * a patch on `WebGPUCacheRenderPipeline`'s prototype — a Babylon VALUE, which
- * this directory may not import). Each leaves with the code that owns it:
+ * `core/webgpuLeaks.ts` (`_deletePipelineContext`) and
+ * `core/FrameProfile.ts` (the timestamp query, and a patch on
+ * `WebGPUCacheRenderPipeline`'s prototype — a Babylon VALUE, which this
+ * directory may not import). Each leaves with the code that owns it:
  * FrameDepth when the frame's depth is ours (X5.4), the rest with Babylon
- * (X6.1). So rule 4 holds here as "every internal OUR RENDERER reaches";
+ * (X6.1). `systems/ReflectionSystem.ts`' two (`_releaseRenderPassId`,
+ * `_removeDrawWrapper`) left with Babylon's bake at X3.7c. So rule 4 holds here as "every internal OUR RENDERER reaches";
  * `BABYLON_EXIT.md` records that reading at X3.2.
  */
 import type {

@@ -167,7 +167,7 @@ export class WorldDepth {
         return true;
       },
       (err: unknown) => {
-        if (!this.disposed) console.error("world depth: a pipeline did not build; the world's shadows go back to Babylon", err);
+        if (!this.disposed) console.error("world depth: a pipeline did not build; the world's shadows cannot be drawn", err);
         return false;
       },
     );

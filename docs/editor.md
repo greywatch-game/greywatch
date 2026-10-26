@@ -35,16 +35,23 @@ Things it deliberately does not do:
   to move). Its blocks are unmerged, and the terrain brush rewrites the
   floor's meshes in place, which a copy of ours cut once could not follow.
   Since X3.7b a ROUND is no Babylon mesh at all, so this is the one build
-  that still uses Babylon's world passes — the shadow generators, the lamps'
-  render target, the palette's main material and its mask twin — and the
-  reference bank cannot see it: `npm run merge:hash -- --editor` and `F2` by
-  hand (select, drag, sculpt, save) are what watch it.
+  that still uses Babylon's world passes — the shadow generators and the
+  lamps' render target, kept for it ALONE since X3.7c and X5.3's to delete
+  (the emissive palette's Babylon stages and mask twin went at X3.7c: an
+  editor build never merges its blocks, so it never wore the palette; its
+  emissives are `getEmissive`'s `StandardMaterial`s, which `GlowPass` blooms
+  as ever) — and the reference bank cannot see it: `npm run merge:hash --
+  --editor` and `F2` by hand (select, drag, sculpt, save) are what watch it.
 - **It does not bake reflections, and it registers no physics world.** Both are
   build steps that are affordable because the world is static, and this is the
   view where it is not: they are refused on the `editor` flag `installMap`
   already carries. The bake was one frame of ~300,000 draw calls after every
-  tier-3 rebuild on Coldharbour — see [`rendering.md`](rendering.md). The glass
-  still draws; it shows the analytic sky and no city.
+  tier-3 rebuild on Coldharbour, on Babylon's bake — see
+  [`rendering.md`](rendering.md); our renderer's bake (the only one since
+  X3.7c) draws no Babylon mesh, and an editor build is all Babylon meshes.
+  The glass still draws, bound to `ReflectionSystem`'s default cube (one of
+  ours, nothing baked, at a strength of 0 — Babylon's probe 0 until X3.7c):
+  it shows the analytic sky and no city.
 
   **What that frame costs is now a measured time and not just a draw count, and
   it is bigger than the figure this rule was written against.** The SHIPPED bake

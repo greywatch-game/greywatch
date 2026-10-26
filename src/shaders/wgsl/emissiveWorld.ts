@@ -1,23 +1,22 @@
 /**
- * wgsl/emissiveWorld.ts — The emissive palette's two BODIES, as plain strings
- * both renderers assemble, and three programs read: Babylon's
- * `EmissiveWorldMaterial` and its glow mask twin (`shaders/EmissiveWorld.ts`,
- * both the fallback now), and ours (`render/emissiveWorld.ts`), which draws
- * the palette into the frame's main pass (`BABYLON_EXIT.md` X3.6e) and a
- * reflection probe's faces (X3.6c) and, under `GLOW_MASK`, into the glow's
- * mask (`render/WorldGlow.ts`, X3.6d) — where its LEQUAL test ties against
- * the depth the main pass's draw of the same vertex wrote, because the vertex
- * stage is this one text on both sides.
+ * wgsl/emissiveWorld.ts — The emissive palette's two BODIES, as plain
+ * strings OUR renderer assembles (`render/emissiveWorld.ts`) — Babylon's
+ * stages that read them went with X3.7c (`shaders/EmissiveWorld.ts`) —
+ * drawing the palette into the frame's main pass (`BABYLON_EXIT.md` X3.6e)
+ * and a reflection probe's faces (X3.6c) and, under `GLOW_MASK`, into the
+ * glow's mask (`render/WorldGlow.ts`, X3.6d) — where its LEQUAL test ties
+ * against the depth the main pass's draw of the same vertex wrote, because
+ * the vertex stage is this one text in both.
  * Owns: `EMISSIVE_WORLD_VERTEX` (`emissiveWorldVertex`, the vertex stage),
  * `EMISSIVE_WORLD_SURFACE` (`emissiveWorldSurface`, the pixel — the frame's
  * and, under `GLOW_MASK`, the bloom's) and `MAX_EMISSIVE_PALETTE`.
  * Invariants: a body DECLARES NOTHING (`wgsl/chunks.ts`' rule, for the same
  * reason): it reads `uniforms.<name>`, `vertexInputs.<name>` and
- * `fragmentInputs.<name>` and writes `vertexOutputs.<name>`, and each side
- * declares those its own way — so the palette's pixel is one text, the
+ * `fragmentInputs.<name>` and writes `vertexOutputs.<name>`, and its
+ * assembler declares those — so the palette's pixel is one text, the
  * emissive palette a probe's cube shows is the palette the frame shows by
  * construction (its lit windows and lenses, never a point light), and the
- * bloom our mask draws is the bloom Babylon's twin drew.
+ * bloom our mask draws is the bloom Babylon's twin drew until X3.7c.
  * Never: imports Babylon (`src/render/` imports this, and the build gate
  * walks it); declares a binding.
  * Contract: `docs/rendering.md`, "The paint palette" and "Hand-written WGSL".
@@ -49,8 +48,8 @@ fn emissiveWorldVertex() {
 
 /**
  * The pixel: the slot's colour faded toward the fog by `EmissiveFog`'s curve
- * over the radial distance to `camPos` — the cel materials' eye, a probe's
- * in a bake (`EmissiveWorld.ts`, "WHY ITS OWN EYE") — alpha 1; under
+ * over the radial distance to `camPos` — the frame's eye, a probe's in a
+ * bake's frame — alpha 1; under
  * `GLOW_MASK` faded toward BLACK instead and scaled by the bloom's colour.
  */
 export const EMISSIVE_WORLD_SURFACE = /* wgsl */ `

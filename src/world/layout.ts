@@ -553,8 +553,9 @@ export interface MapLayout {
    * there being two fields — see `terrainBlock`.
    *
    * Two things key off the block and both follow this for free, because they
-   * read the KEY the merge wrote rather than a size: `ReflectionSystem.encloses`
-   * (one cube probe per glazed block, and the pane groups that agree with it)
+   * read the KEY the merge wrote rather than a size: the reflection bake's
+   * exclusion (`ReflectionSystem`: one cube probe per glazed block, and the
+   * pane groups that agree with it)
    * and `WorldCulling` (one cull cell per block, bounded by its meshes rather
    * than by the nominal square). What does NOT follow it is the world layer's
    * unit of LOCALITY — the physics buckets and the pane index — which is a

@@ -314,7 +314,7 @@ boot: the map disposed and `Game.map` null, the shots' tracers and marks
 (`GrenadeFx`, `AntiTankFx`), the fleet's views (`VehicleViews`, before the
 fleet they draw), the fleet and rotor rings let go, every fire's light the
 page holds (a fire the authority lit is put out by nothing this page will hear
-again), the water and grass disposed, the reflection probes parked, the mote field
+again), the water and grass disposed, the reflection bake's queue emptied, the mote field
 stopped, both shadow maps' casters and the lamps' atlas emptied, the bodies' blob shadows hidden, the traced
 bounce's buffers dropped, the candidate list and the physics world cleared (with
 their corpses, shards and rubble), and the fires' voices and the storm's thunder
@@ -353,7 +353,10 @@ hold, failed at the install (and thrown after it in a DEV build, so
 `merge:hash` refuses the map — the page still reaching the menu, the map it
 built whole and torn down), a group or a cull that fails (under the building
 card, where a pipeline settles), a cut past the device's limits, a refused
-pass, a loss of any pass of ours — and the cull's, which REFUSES a build
+pass, a pass of ours that cannot draw the world it was handed (each is
+handed its world WITH the install's failure and tells it, since X3.7c: no
+pass latches a loss, and a pipeline failed for the session fails every
+install after it through its settled promise) — and the cull's, which REFUSES a build
 whose own contract is broken (`setMap` hands back the reason rather than
 throwing, `reachBoxOf` a null, and `installMap` hands nothing over after
 it). **A failure belongs to the INSTALL it came from**: the handover latches

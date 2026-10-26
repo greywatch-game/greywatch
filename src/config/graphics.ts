@@ -1430,47 +1430,25 @@ export const graphics = {
      * 160 MiB at `size` 128 is 320 probes. Coldharbour asks for 40 and the
      * 900 m proving ground for 265, so **nothing in the tree today groups
      * anything** and this is a bounded worst case rather than a live lever.
-     * It is stated as memory because memory is what it protects; the draw cost
-     * of a probe is `drawsPerFrame`'s business.
+     * It is stated as memory because memory is what it protects; what a
+     * frame of the bake costs is `probesPerFrame`'s business.
      */
     poolBudgetMiB: 160,
     /**
-     * How many face draws one FRAME of the bake may issue before the rest of
-     * it waits for the next one.
+     * How many probes one frame of the bake records (`render/ProbeBake.ts`,
+     * `BABYLON_EXIT.md` X3.6c) — what stops a bake being ONE frame, and a
+     * count of PROBES because what a face costs is a cull of the map and a
+     * pass over its survivors, a draw a material group, whatever the probe
+     * reaches: six of them and the mips. It is also the culls' slot count
+     * (six a probe), held by the bake's view only while a bake drains.
      *
-     * **A bake is a build step, and this is what stops it being one frame.**
-     * Every probe is refresh-once, so before this they all landed on the frame
-     * after the install: Coldharbour's 40 probes over 175 meshes each are
-     * 41,934 draws and cost ~2.3 s in that one frame, and the 900 m proving
-     * ground asks for **1,373,340**. At that point the frame does not merely
-     * run long — the D3D12 device is LOST inside it on
-     * `ID3D12Device::CreateDescriptorHeap` and Babylon's attempt to recreate
-     * it fails too, at both extents S0 measured. That is a resource ceiling
-     * reached inside one command submission, so a slower bake fails
-     * identically and only a SMALLER one does not.
-     *
-     * **50,000 is just over Coldharbour's whole bake and that is the whole
-     * derivation**: the largest thing that ships still completes on the frame
-     * it always did, so no shipped map's glass moves and the banked reference
-     * frames cannot either. The proving ground spends the same budget over ten
-     * frames of ~2.8 s. Lower would be smoother and is what the Chromebook
-     * wants (`VERIFYING.md`); it would also take Coldharbour off its one
-     * frame, which is the property this number is chosen to keep.
-     *
-     * A probe costing more than the whole budget still goes, on a frame of its
-     * own rather than never, and a frame already committed to re-baking a
-     * probe whose meshes were not ready spends that against this first — see
-     * `ReflectionSystem.releaseBatch`.
-     */
-    drawsPerFrame: 50_000,
-    /**
-     * How many probes one frame of OUR renderer's bake records
-     * (`render/ProbeBake.ts`, `BABYLON_EXIT.md` X3.6c) — `drawsPerFrame`'s
-     * counterpart on that path, and a count of PROBES because what a face of
-     * ours costs is a cull of the map and a pass over its survivors, a draw a
-     * material group, whatever the probe's list: six of them and the mips.
-     * It is also the culls' slot count (six a probe), held by the bake's view
-     * only while a bake drains.
+     * **A bake issued in one frame is a lost device**, which is why it is
+     * spread at all: Babylon's bake, which drew a probe's whole list per
+     * face, put Coldharbour's 40 probes into one frame of 41,934 draws and
+     * ~2.3 s, and the 900 m proving ground's 1,373,340 draws lost the D3D12
+     * device inside that one command submission
+     * (`ID3D12Device::CreateDescriptorHeap`) — the draw budget that spread it
+     * went with Babylon's bake at X3.7c.
      *
      * **8 is a frame the desktop does not notice**: measured on the Windows
      * box (2026-10-23, frame start to the queue's work done), a frame of 8
@@ -1491,13 +1469,13 @@ export const graphics = {
      * scene still renders, so it is the one place in the state machine those
      * frames can be spent without the player in them; what it costs is that
      * the card is up for as long as the bake takes, which at 1500 m is 47
-     * frames — 44.8 seconds of them before `faceOf` cut the draws and 10.6
-     * after.
+     * frames — 44.8 seconds of them on Babylon's bake before its per-face
+     * cull and 10.6 after (that bake went at X3.7c).
      *
      * **This cap is a WEDGE detector and not a timeout**, which is why it
-     * counts stalled frames rather than elapsed ones. A probe re-bakes in full
-     * until every mesh in its list has a compiled material, so a material that
-     * never compiles is a queue that never drains — and that is
+     * counts stalled frames rather than elapsed ones. A released probe waits
+     * for a frame on which every group the bake draws can draw, so a pipeline
+     * that never settles is a queue that never drains — and that is
      * indistinguishable from a slow machine by any wall clock. 120 frames is
      * long past the two or three a legitimate re-bake takes and short enough
      * that a wedge is a pause rather than a hang. The state machine has no

@@ -14,9 +14,9 @@
  * set by `BlockHandover`), the four maps are textures
  * `render/WorldShadows.ts` owns and draws, and Babylon's readers sample a
  * wrapped view of each (rule 5); an EDITOR build, which hands ours nothing,
- * draws them with this file's `ShadowGenerator`s, as before, and a loss of
- * ours mid-map is the world's failure (`BlockHandover`, X3.7b), never theirs
- * to take over. Everything else here is the same for both: the lights, the
+ * draws them with this file's `ShadowGenerator`s (kept for it alone, X5.3's
+ * to delete), and casters ours cannot draw are the world's failure
+ * (`BlockHandover`, X3.7b), never the generators' to take over. Everything else here is the same for both: the lights, the
  * windows, the snap, the hold and when a map is redrawn.
  *
  * Casters are the merged static world meshes, re-registered via setCasters()

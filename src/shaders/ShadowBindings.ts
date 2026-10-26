@@ -6,8 +6,9 @@
  * `CelMaterialFactory` owns one (`mats.shadows`) and lends it its cache. The
  * maps are published by the systems that render them (`ShadowSystem`,
  * `BodyShadows`, `LocalShadows`, and `Sky`'s field through `Game`); `Game`
- * also pushes the clouds and the lightning each frame, `ReflectionSystem`
- * holds the clouds off for a bake, and grass and water register here.
+ * also pushes the clouds and the lightning each frame, and grass and water
+ * register here; a reflection bake's frame holds the clouds off on its own
+ * (`fillFrame`'s `bake`).
  * Invariants: **every sampler `SHADOW_SAMPLER_NAMES` names, and `foliageMap`
  * on a cel material, is BOUND on every material that declares it, always** — a
  * declared sampler with nothing behind it is a bind group that fails to build
@@ -79,10 +80,10 @@ export class ShadowBindings {
   private readonly noCloudShadow: BaseTexture;
   private readonly cloudShadowArea = new Vector4(0, 0, 0, 1);
   private readonly cloudShadowRay = new Vector4(0, 0, 0, 0);
-  // What the materials actually hold: the area with `w` forced to 1 while a
-  // reflection bake holds the term off — see `holdCloudShadow`.
+  // What the materials actually hold, by reference: the area as last
+  // pushed (`setCloudShadow`). No Babylon draw holds it off since X3.7c —
+  // a bake's frame is our renderer's, and holds it off itself (`fillFrame`).
   private readonly cloudShadowPushed = new Vector4(0, 0, 0, 1);
-  private cloudShadowHeld = false;
   // The foliage's front-face map — see `setFoliageMap`. Cel materials only:
   // grass and water have no translucency and do not declare it.
   private foliageMap: BaseTexture | null = null;
@@ -208,10 +209,12 @@ export class ShadowBindings {
     this.bodyShadowParams.toArray(out.bodyShadowParams);
     out.foliageLightMatrix.set(this.foliageMatrix.m);
     this.foliageParams.toArray(out.foliageParams);
-    // What the materials HOLD, `w` forced while a bake holds the clouds off.
+    // What the materials HOLD…
     this.cloudShadowPushed.toArray(out.cloudShadow);
-    // …and held off for a reflection bake on our renderer, as `holdCloudShadow`
-    // holds it for Babylon's: the bake's frame is a frame of its own.
+    // …held off for a reflection bake (`w` 1): a cube is baked ONCE and the
+    // shadow moves, so a cloud's shadow caught in a bake would stay painted
+    // into every pane and pond that reflects it for the rest of the round
+    // while the real one drifted off. The bake's frame is a frame of its own.
     if (bake) out.cloudShadow[3] = 1;
     this.cloudShadowRay.toArray(out.cloudShadowRay);
     this.flashDir.toArray(out.flashDir);
@@ -259,27 +262,9 @@ export class ShadowBindings {
     this.pushCloudShadow();
   }
 
-  /**
-   * Holds the clouds' shadow OFF for a reflection bake, and lets it go again.
-   *
-   * **A cube is baked once and the shadow moves**, so a cloud's shadow caught
-   * in a bake would stay painted into every pane and pond that reflects it for
-   * the rest of the round while the real one drifted off. `ReflectionSystem`
-   * holds it on the hook that moves the eye into the probe and lets it go on
-   * the one that moves it back, so the main pass of the same frame finds it
-   * as it was. One write into the vector every reader holds (see
-   * `setCloudShadow`), so it walks nothing either.
-   */
-  holdCloudShadow(held: boolean): void {
-    if (held === this.cloudShadowHeld) return;
-    this.cloudShadowHeld = held;
-    this.pushCloudShadow();
-  }
-
   /** Rewrites what every reader holds by reference — see `setCloudShadow`. */
   private pushCloudShadow(): void {
     this.cloudShadowPushed.copyFrom(this.cloudShadowArea);
-    if (this.cloudShadowHeld) this.cloudShadowPushed.w = 1;
   }
 
   /**

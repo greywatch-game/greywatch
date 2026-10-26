@@ -69,11 +69,12 @@ granularities, and the difference is forced**:
   it was not for the ink: a bloom is a soft blob with no edge to misplace, and
   only 4 of 290 emissive meshes span more than half the fog band.
   **The emissive palette is the exception, and fades its bloom per PIXEL**
-  (`shaders/EmissiveWorld.ts`, its mask twin): one of its meshes is every lamp
-  in a 48 m block whatever its colour, so a centre would fade the near window
-  as if it stood at the far one. `GlowRules.colour` leaves that material's
-  colour unfaded (`fadesOwnBloom`) and the twin evaluates `fogAmountAt`'s curve
-  at each pixel instead — see "The emissive palette" below.
+  (`shaders/EmissiveWorld.ts`; our renderer's mask program, `WorldGlow`): one
+  of its surfaces is every lamp in a 48 m block whatever its colour, so a
+  centre would fade the near window as if it stood at the far one.
+  `GlowRules.colour` leaves that material's colour unfaded (`fadesOwnBloom`)
+  and the mask evaluates `fogAmountAt`'s curve at each pixel instead — see
+  "The emissive palette" below.
 - **The emissive material fades per PIXEL**, through a `MaterialPluginBase` in
   `src/shaders/EmissiveFog.ts` that injects the same curve at
   `CUSTOM_FRAGMENT_MAIN_END`. A plugin *can* declare real uniforms, so
@@ -726,11 +727,10 @@ visible on Coldharbour's parked cars. And a REFLECTION PROBE wants the OPPOSITE
 value out of the same line, because in a cube that channel is the bake's own
 coverage mask — the thing `city.a` and `cube.a` read to tell the city from the
 sky above it. That is the whole reason `opaqueAlpha` is a uniform rather than a
-constant: on Babylon's bake `ReflectionSystem` flips it to 1 for the length of
-a bake, on the same two hooks that already lend the bake the probe's eye, and a
-walk of the material cache therefore happens only on the frames a probe
-renders; our renderer's bake holds 1 in a frame of its own
-(`CelMaterialFactory.fillBakeFrame`) and walks nothing. Get that flip wrong
+constant: the bake holds 1 in a frame of its own
+(`CelMaterialFactory.fillBakeFrame`) while every material Babylon draws holds
+the frame's 0 — Babylon's bake, until X3.7c, flipped it on the materials for
+the length of a bake, on the hooks that lent the bake the probe's eye. Get that flip wrong
 and the cube comes back alpha 0 everywhere and every pane reflects nothing but
 sky.
 
@@ -1362,93 +1362,96 @@ throws, which is what `skyLightColor` beside it already is. The horizon end is
 `fogColor` because `SkySpec.horizonColor` is required to sit close to it, which
 is the one place that requirement is load-bearing rather than cosmetic.
 
-**The city half is DECIDED by `systems/ReflectionSystem.ts`, and since X3.6c
-it is DRAWN by our renderer** (`render/ProbeBake.ts`) — since X3.7b in every
-round, Babylon's `ReflectionProbe`s standing for no round at all (X3.7c
-deletes them). It is affordable for one reason and it
-is the same reason the whole world layer is merged and frozen: the world is
-static, so this is not a pass, it is a build step that happens to run on the
-GPU.
+**The city half is DECIDED by `systems/ReflectionSystem.ts` and DRAWN by our
+renderer** (`render/ProbeBake.ts`, X3.6c) — the only bake there is since
+X3.7c, which deleted Babylon's `ReflectionProbe` path. It is affordable for
+one reason and it is the same reason the whole world layer is merged and
+frozen: the world is static, so this is not a pass, it is a build step that
+happens to run on the GPU.
 
-**There are TWO bakes, and `ReflectionSystem` decides everything about both**
-— which probes, where each stands, what it leaves out, how far it reaches,
-when it is released, and which path an install takes. `ProbeBake` decides
-nothing. **The install's bake is OURS in every round** (`BlockHandover
-.probeHolds`, asked once by `build`, which counts): every surface of ours is
-in it — a block, the landform, the emissive palette with its slots — and of
-Babylon's meshes a FIRE alone, which ours leaves out (`FINDINGS.md` 51); the
-glazing is in no list. **Since X3.7b Babylon is made no mesh of what ours
-draws, so any other mesh Babylon is made is one ours cannot bake and
-Babylon's bake would have** — REFUSED at the TAKE, on every map whether it
-has glazing or not (`BlockHandover.install`'s `strayMesh`): the world fails
-(`Game.worldFailed`, the menu and a toast), and a DEV build throws after it
-so `merge:hash` refuses the map. An editor build bakes nothing;
-and a LOSS (`ProbeBake.lose`: a pipeline or a cull that failed) fails the
-world too, there being no Babylon mesh to queue the install again on. A bake
-of ours that drained depends on our renderer for nothing: its cubes stand.
-On our path:
+**`ReflectionSystem` decides everything about the bake** — which probes,
+where each stands, what it leaves out, how far it reaches, when it is
+released, and whether an install bakes at all. `ProbeBake` decides nothing.
+Every surface of ours is in it — a block, the landform, the emissive palette
+with its slots — and of Babylon's meshes none: the glazing is in no bake, and
+a FIRE is left out as Babylon's bake left it (`FINDINGS.md` 51). **Since X3.7b
+Babylon is made no mesh of what ours draws, so any other mesh Babylon is made
+is one the bake would owe and cannot draw** — REFUSED at the TAKE, on every
+map whether it has glazing or not (`BlockHandover.install`'s `strayMesh`): the
+world fails (`Game.worldFailed`, the menu and a toast), and a DEV build throws
+after it so `merge:hash` refuses the map. **A build our bake holds no world
+for bakes nothing** — an editor build, and a round whose world has already
+failed — and a bake that cannot draw the world it was handed fails the world
+too (below). A bake that drained depends on our renderer for nothing: its
+cubes stand.
 
 - **`ProbeBake` owns the cubes** (`rgba8unorm`, six layers, the full mip
-  chain, `COPY_SRC` so a readback needs no help), never destroyed, as
-  Babylon's pool is never disposed; each is handed out as a `ProbeCube`, and
-  `ReflectionSystem`'s pools (`oursPools`, by pool and slot) are the one index
-  of them. **Babylon's glazing and water sample a WRAPPED cube view**
-  (`core/wrappedTextures.ts`' `wrapCubeTexture`: a cube over all six layers and
-  every level, trilinear, and `INVCUBIC_MODE`, from which Babylon's bind
-  derives the wrap as it did for a probe's cube) — never disposed either,
-  since disposing a wrapped view destroys the cube. The default cube stays
-  Babylon's probe 0: it is made before any renderer could draw into it and is
-  only ever bound at a strength of 0.
-- **A face is Babylon's face**: `ReflectionProbe`'s six looks in its layer
-  order with its up, a 90-degree square perspective over the camera's near
-  and far planes in the half-z range (`src/math`'s copies of Babylon's two
-  helpers), drawn upside down as every render target is, cleared to
-  transparent black.
+  chain, `COPY_SRC` so a readback needs no help), never destroyed but with
+  the bake; each is handed out as a `ProbeCube`, and `ReflectionSystem`'s
+  pools (`pools`, by pool and slot) are the one index of them. **Babylon's
+  glazing and water sample a WRAPPED cube view** (`core/wrappedTextures.ts`'
+  `wrapCubeTexture`: a cube over all six layers and every level, trilinear,
+  and `INVCUBIC_MODE`, from which Babylon's bind derives the wrap as it did
+  for a probe's cube) — never disposed either, since disposing a wrapped
+  view destroys the cube. **The DEFAULT cube is a cube of ours that nothing
+  bakes** (`ReflectionSystem`'s constructor, before any map): WebGPU makes a
+  texture zeroed, so it is alpha 0 on every face and level — the sky — and it
+  is only ever bound at a strength of 0, where `mix(sky, city, 0)` is the sky
+  whatever the cube holds. It replaced Babylon's probe 0 at X3.7c, which had
+  been cleared by six empty face renders to the same zeroes.
+- **A face is the face Babylon's probe baked**: `ReflectionProbe`'s six
+  looks in its layer order with its up, a 90-degree square perspective over
+  the camera's near and far planes in the half-z range (`src/math`'s copies
+  of Babylon's two helpers), drawn upside down as every render target is,
+  cleared to transparent black — the cube layout every reader samples.
 - **It is culled as a VIEW of the main pass's tables** (`WorldBlocks.probeView`,
   a slot a face), OPENED when a bake is queued and DESTROYED when it drains,
   so a round holds none. Its pass bit is `PASS_PROBE`: every taken surface and
-  scatter part, and the emissive palette's surfaces. Its two tests are
-  Babylon's list as the CULL asks them (below): the reach to the near side of
-  the SURFACE's sphere (`PROBE_SPHERE_REACH`, where every other view measures
-  the block's box) and the probe's own blocks left out (`PROBE_EXCLUDE`) —
-  a cell of more than 32 blocks left out WHOLE, one rule on the CPU
-  (`exclusionOf` sets every bit) and the GPU (a block past the 32nd has no
-  bit). A scatter INSTANCE is reached by its own sphere, not by the merged
-  block mesh Babylon's list held its copy in, so near the radius one drops
-  alone where Babylon kept or dropped its whole block.
+  scatter part, and the emissive palette's surfaces. Its two tests: the reach
+  to the near side of the SURFACE's sphere (`PROBE_SPHERE_REACH`, where every
+  other view measures the block's box) and the probe's own blocks left out
+  (`PROBE_EXCLUDE`) — a cell of more than 32 blocks left out WHOLE, one rule
+  on the CPU (`exclusionOf` sets every bit) and the GPU (a block past the
+  32nd has no bit). A scatter INSTANCE is reached by its own sphere. Each
+  face is culled against its own frustum, so a face draws only what it can
+  see.
 - **The palette is drawn by a program of ours** (`render/emissiveWorld.ts`,
-  the one body `shaders/wgsl/emissiveWorld.ts` that Babylon's material calls
-  too), its table and fog band a PULL off the factory
-  (`CelMaterialFactory.emissiveRecipe`), its depth bias per material. **No
-  fire is drawn**: there is no flame program on our side until the fire
-  moves (X4.4).
+  the one body `shaders/wgsl/emissiveWorld.ts`), its table and fog band a
+  PULL off the factory (`CelMaterialFactory.emissiveRecipe`), its depth bias
+  per material. **No fire is drawn**: there is no flame program on our side
+  until the fire moves (X4.4).
 - **The eye is PASSED, never borrowed**: the bake's frame is a
   `FrameUniformBuffer` of its own, filled ONCE a recorded frame by
   `CelMaterialFactory.fillBakeFrame` (`fillFrame(out, true)`: the frame's
   values with `opaqueAlpha` 1 and the clouds' shadow held off) — each face's
   camera, its view-projection and its probe's eye, reaching it through a
   staging slot copied in the encoder ahead of its pass. Nothing on any
-  material moves.
+  material moves, which retired the bug class Babylon's bake had (below).
 - **The mips are ours** (`render/cubeMips.ts`): Babylon's
   `generateCubeMipmaps` number for number, each level a box average of the
   one above, recorded after a probe's sixth face.
-- **The budget is PROBES** (`probesPerFrame`, 8 — `ProbeBake.perFrame`, which
-  `ReflectionSystem` asks; ours has a queue of its own, `jobs`), released from
-  the same hook as Babylon's batches once our pipelines are built (`ProbeBake.ready`) and
-  recorded as the next main pass our renderer prepares begins, into the
-  encoder the host submits first and AFTER the world's shadow maps and the
-  lamps' atlas (`Renderer.onFrame`'s `late`), so a face samples them as that
-  frame draws them. `bakePending` counts the queue and
-  the released-not-recorded. Coldharbour's 39 drain in 5 frames of 5-6 ms,
-  ~41 ms of wall clock, on the Windows box. The view of the culls holds
-  9-28 MiB while it stands (Hollowmere 9.0, Sarab 9.6, Greyfen 12.1,
+- **The budget is PROBES** (`probesPerFrame`, 8 — `ProbeBake.perFrame`,
+  which `ReflectionSystem` asks, off its own queue, `jobs`), released from
+  `onBeforeRenderTargetsRenderObservable` once the bake's pipelines are built
+  (`ProbeBake.ready`) and recorded as the next main pass our renderer
+  prepares begins, into the encoder the host submits first and AFTER the
+  world's shadow maps and the lamps' atlas (`Renderer.onFrame`'s `late`), so
+  a face samples them as that frame draws them. `bakePending` counts the
+  queue and the released-not-recorded. Coldharbour's 39 drain in 5 frames of
+  5-6 ms, ~41 ms of wall clock, on the Windows box. The view of the culls
+  holds 9-28 MiB while it stands (Hollowmere 9.0, Sarab 9.6, Greyfen 12.1,
   Harrowmead 12.1, Coldharbour 15.3, Kurenai 16.6, Cinderhaven 27.6: almost
   all of it the second index buffer, as large as the map's).
-- **A loss is the world's failure** (X3.7b): `ProbeBake.lose` reports how
-  many released probes it dropped, and `BlockHandover` fails the round
-  whatever the count. **A failed mips pipeline latches the bake BROKEN for
-  the session**: no world is held again, so every round fails at its install
-  (`BlockHandover.install` asks the bake whether it holds the world).
+- **A world the bake cannot draw is the world's failure** (X3.7b, X3.7c): the
+  handover hands the bake its world WITH the install's failure
+  (`ProbeBake.setWorld(source, failed)`), and the bake tells it whatever it
+  finds it cannot draw — a view of the culls it could not make or that did
+  not build (`open`), or a mips pipeline that failed. That pipeline is asked
+  ONCE, for the session, and every world handed over waits on it, so a
+  failure fails every round after it at its install — the fact being the
+  pipeline's settled promise rather than a latch on the bake. Nothing is
+  dropped or handed back: the world fails and `Game` tears it down after the
+  task in hand.
 
 **The glazing is no longer the only thing that samples a probe.** The water
 takes one per body from a pool of its own, without the parallax correction and
@@ -1489,168 +1492,95 @@ shopfront's is out on the pavement).
 Faces are 128 rather than 256, because the resolution is now a per-probe cost
 (~520 KB each, ~19 MB for Coldharbour) and it buys detail a Fresnel-weighted,
 tinted, hazed reflection cannot show — while WHERE a bake is taken from decides
-whether the building opposite is in it at all. Measured headless: all 37 probes
-(222 faces) come to **2.3 s under SwiftShader**, against a map build already
-costing ~570 ms there; on the Windows box the shipped forty cost ~1.4–2.1 s in
-one frame — Babylon's bake, both; ours is the ~41 ms above. `FINDINGS.md` §10
-is the entry, and the distance cull it refused at 140 m is now taken at 800 —
-see the three ceilings below for why the answer moved and what the radius
-costs.
+whether the building opposite is in it at all. `FINDINGS.md` §10 is the entry,
+and the distance cull it refused at 140 m is now taken at 800 — see the
+ceilings below for why the answer moved and what the radius costs.
 
-**BABYLON'S bake is priced `probes x 6 faces x render list`, and all three terms
-have a ceiling now** — the old path's, all of what follows down to the radius, which no round takes since X3.7b;
-ours is priced in probes, a face being a cull and a pass over its survivors
-whatever the list. None was needed while the biggest map in the tree was 320 m:
-Coldharbour's forty probes over 175 meshes each are 41,934 draws, they all land
-on the frame after the install, and that frame — ~2.3 s — is paid once. At
-1500 m the same rule asks for 770 probes over 2,434 meshes — **11.2 million
-draws in one frame**, and the 900 m proving ground for 1,373,340 — and what
-happens then is not a long frame. The D3D12 device is LOST inside it, on
-`ID3D12Device::CreateDescriptorHeap`, and Babylon's attempt to recreate it
-fails too; at the larger of the two extents `ENGINE_UPGRADE.md` S0 measured, the
-renderer process is replaced outright. **That is a resource ceiling reached
-inside one command submission and not a timeout**, so a slower bake fails
-identically and only a smaller one does not.
+**What Babylon's bake taught, until X3.7c deleted it** — the reasons the bake
+is shaped as it is. It was priced `probes x 6 faces x render list`, a draw a
+mesh a face, and all landed on the frame after the install: Coldharbour's 40
+probes over 175 meshes were 41,934 draws and ~2.3 s in that frame (1.4-2.1 s
+on the Windows box, 2.3 s under SwiftShader), and at 1500 m the same rule
+asked for 11.2 million draws in one frame and the 900 m proving ground for
+1,373,340 — and **the D3D12 device was LOST inside that one command
+submission** (`ID3D12Device::CreateDescriptorHeap`), which is a resource
+ceiling and not a timeout, so a slower bake fails identically and only a
+smaller one does not: the reason ours is SPENT over frames (`probesPerFrame`)
+under the loading card. A cube target has no frustum culling of its own, so a
+probe drew its whole list six times; a per-face cull on Babylon's
+`getCustomRenderList` took a 900 m install from 1,469,484 mesh-draws to
+284,097 without moving a pixel, which is why ours culls each face by its own
+planes. Minting a probe cost the SCENE: each of a cube target's six render
+pass ids walked every mesh of the scene through
+`releaseRenderPassId(undefined)`, 1,298 ms at 900 m and 6,551 at 1500
+(`ENGINE_UPGRADE.md` S5c), cured by hiding `scene.meshes` around the
+construction. On Babylon 9.28 every baked face's draw wrapper held a uniform
+slot and a bind group of its own (PR #18880), and the proving ground's
+~284,000 bake draws lost the device to E_OUTOFMEMORY until each probe gave its
+passes' wrappers back. And the bake BORROWED the shader's eye: every cel
+material was moved to the probe and put back once around the render-target
+block, after a first version that hooked each face put the install frame's
+fog at a point inside the map. Ours mints no wrapper, walks no scene and moves
+no material.
 
-**One term of that product is not paid at all any more, and it is the SIX** (on
-our path the cull's planes are the face's by construction). A
-cube target has no frustum culling of its own — `ObjectRenderer` walks a render
-list and dispatches every mesh in it, because a render list is normally
-something the caller has already chosen — so a probe drew its whole
-neighbourhood once per face whatever each face could see.
-`ReflectionSystem.faceOf`, on Babylon's `getCustomRenderList` hook, hands each
-face the subset inside the frustum that face is about to rasterise with. It is
-`AbstractMesh.isInFrustum` against `scene.frustumPlanes`, which is exactly the
-test `_evaluateActiveMeshes` applies to the main pass and is refreshed per face
-by `ReflectionProbe`'s own `setTransformMatrix` — so **it cannot move a pixel**,
-which is what makes it preferable to every other way of shortening the list:
-the radius drops geometry the face would have drawn, `perCell` drops a building
-out of the middle of a cube, and this drops only what the rasteriser was going
-to clip. Measured over a whole install: **1,469,484 mesh-draws offered and
-284,097 issued at 900/300, and 2,120,976 against 394,604 at 1500/0** — 5.2x and
-5.4x — with all sixteen banked vantages of the four shipped maps identical to
-four decimal places either side. **The queue's budget is deliberately NOT told
-about it**: a probe is still priced at `list.length * 6`, so a bake takes the
-same number of frames it always did and each of them merely issues far fewer
-draws. That is the conservative direction on the one number standing between
-this bake and a lost device.
+Three numbers in `CONFIG.graphics.reflection` bound the rest, and **none of
+them binds on any map that ships**:
 
-The ordering that makes the
-planes the FACE's rather than the main camera's is Babylon's own:
-`ReflectionProbe` writes the face's view and projection through
-`scene.setTransformMatrix` from `onBeforeRenderObservable`, that setter
-refreshes the planes, and `ObjectRenderer.render` fires the observable
-immediately before it calls `_prepareRenderingManager`. A Babylon version that
-moved either line would cull each face against the previous one's planes, and
-the tell is a seam of missing geometry that rotates with the probe.
-
-Three numbers in `CONFIG.graphics.reflection` make the rest smaller, each on a
-different term, and **all three are no-ops on every map that ships**:
-
-- **`drawsPerFrame` (50,000) spends the bake over frames instead of issuing it
-  in one** — Babylon's; ours spends `probesPerFrame` (above), and everything
-  below about the loading card holds for both. A probe is refresh-once, so releasing one is
-  `resetRefreshCounter()` and nothing else; `ReflectionSystem.queue` holds the
-  ones that have a render list and no frame yet, and `releaseBatch` lets a
-  frame's worth go. It rides `onBeforeRenderTargetsRenderObservable` — the hook
-  the eye is already borrowed on — because Babylon asks each custom target
-  whether it `_shouldRender()` immediately after that observable fires, so a
-  probe released there bakes on that frame and one released from `Game.tick`
-  would wait for the next. The budget is just over Coldharbour's whole bake and
-  that is the whole derivation: the largest thing that ships still completes on
-  the frame it always did, so no shipped map's glass moves and the banked
-  reference frames cannot either. The 900 m proving ground spends its 1,373,340
-  draws over **ten frames of ~2.8 s**, settling eight frames after the install.
-  One probe always goes through even when it is over budget on its own, or a
-  queue with a fat probe at its head would never drain — and a frame already
-  committed to re-baking a probe whose meshes were not ready spends that
-  against the budget FIRST. Without that last part a map still compiling its
-  pipelines releases batch after batch on top of the ones already thrashing and
-  arrives at the same enormous frame by the long way round, which is measured:
-  the proving ground re-baked 29 of its first 60 probes and had 116 targets
-  live two frames later, against 88 with the accounting in. **A pane whose probe has not baked yet is not a bug and needs no
-  wait**: an unbaked cube is alpha 0 everywhere, which is the analytic sky a
-  pane shows before any probe has claimed it — the state an editor build leaves
-  every pane in permanently.
-  **Those frames are the LOADING card's, and that is a state-machine fact
-  rather than a rendering one.** `installMap` is one synchronous turn, so no
-  frame can render inside it and the whole queue is outstanding when it
-  returns; before this the frames spending it were the first frames of `deploy`
-  and then of the round — one on every shipped map, and 47 of them over 44.8 s
-  at 1500 m, with the player watching. `Game.bakeWait` holds `loading` — a step
-  where nothing simulates and the scene still renders — until
+- **`probesPerFrame` (8) spends the bake over frames** (above), and **those
+  frames are the LOADING card's, which is a state-machine fact rather than a
+  rendering one.** `installMap` is one synchronous turn, so no frame can render
+  inside it and the whole queue is outstanding when it returns; before the
+  card waited, the frames spending it were the first frames of `deploy` and
+  then of the round — 47 of them over 44.8 s at 1500 m on Babylon's bake, with
+  the player watching. `Game.bakeWait` holds `loading` — a step where nothing
+  simulates and the scene still renders — until
   `ReflectionSystem.bakePending` reaches 0, and hands the building card the
-  progress figure it never had. It moves the cost rather than removing it;
-  `faceOf` above is the half that removes it. **A queue that cannot drain must
-  not hang the card**, so the wait gives up on a stalled probe count or a
-  backstop clock and lets the remainder land in the round exactly as it used
-  to. See [`docs/states.md`](states.md).
+  progress figure it never had. It moves the cost rather than removing it.
+  **A queue that cannot drain must not hang the card**, so the wait gives up
+  on a stalled probe count or a backstop clock and lets the remainder land in
+  the round. **A pane whose probe has not baked yet is not a bug and needs no
+  wait**: a cube born zeroed is alpha 0 everywhere, which is the analytic sky a
+  pane shows before any probe has claimed it — the state an editor build leaves
+  every pane in permanently. See [`docs/states.md`](states.md).
 - **`radius` (800 m) is the only term in the bake priced on the map's SIZE.** A
-  probe's render list is the opaque world within 800 m of it, measured to the
-  NEAR SIDE of each mesh's bounding sphere: `distance - radiusWorld`, which is
-  what keeps a landform in, because the rim, the ridge rock and the terrain
-  patches are single meshes with enormous radii whose centres are nowhere near
-  anything. **Our cull asks the same question of the same mesh** — the
-  SURFACE's sphere, a taken surface being one Babylon mesh — but for the
-  scatter, whose instances keep their own spheres where Babylon's list held
-  the BLOCK they were merged into, so the two differ only at the 800 m edge
-  — past the fog on every map but Cinderhaven, by the argument that follows
-  rather than a reading of its own. On a fogged map of any size everything it drops past `fogEnd` was
-  already drawing as flat fog colour against a sky whose horizon is
-  `fogColor`, and 800 m is past the `fogEnd` of every shipped map but one
-  (Sarab's 560 included, whose 1,273 m diagonal is not). **Cinderhaven is the
-  exception**: 1500 m of play, a 2,121 m diagonal and a `fogEnd` of 1,250, with
-  see-through glazing on it (the shophouses' shopfronts), so it is the one
-  shipped map where a probe can drop something the eye would still see — the
-  horizon hole described below, under some fog. It is the smallest of the three levers wherever it has been
-  measured: on the 900 m proving ground it takes a probe's list from 928 meshes
-  to 864, which is 7%. What it is really for is a map whose PLAY square is
-  1500 m, where the probes are spread over the whole of it rather than over the
-  middle 900. What it costs is §10's objection, which has not gone away: a
-  culled mesh does not fade, it vanishes, the cube's alpha goes to 0 and the
-  shader fills that with sky. On an unfogged map bigger than 800 m that is a
-  hole at the horizon of a picture of a street, and it is the price of the map
-  being larger than the bake can hold.
+  probe draws the world within 800 m of it, measured to the NEAR SIDE of each
+  surface's bounding sphere: `distance - radiusWorld`, which is what keeps a
+  landform in, because the rim, the ridge rock and the terrain patches are
+  single surfaces with enormous radii whose centres are nowhere near anything.
+  A scatter instance keeps its own sphere, where Babylon's list held the BLOCK
+  it was merged into, so the two differed only at the 800 m edge — past the
+  fog on every map but Cinderhaven. On a fogged map of any size everything it
+  drops past `fogEnd` was already drawing as flat fog colour against a sky
+  whose horizon is `fogColor`, and 800 m is past the `fogEnd` of every
+  shipped map but one (Sarab's 560 included, whose 1,273 m diagonal is not).
+  **Cinderhaven is the exception**: 1500 m of play, a 2,121 m diagonal and a
+  `fogEnd` of 1,250, with see-through glazing on it (the shophouses'
+  shopfronts), so it is the one shipped map where a probe can drop something
+  the eye would still see — the horizon hole described below, under some fog.
+  It is the smallest of the levers wherever it has been measured: on the 900 m
+  proving ground it took a probe's list from 928 meshes to 864, which is 7%.
+  What it is really for is a map whose PLAY square is 1500 m, where the probes
+  are spread over the whole of it rather than over the middle 900. What it
+  costs is §10's objection, which has not gone away: a culled surface does not
+  fade, it vanishes, the cube's alpha goes to 0 and the shader fills that with
+  sky. On an unfogged map bigger than 800 m that is a hole at the horizon of a
+  picture of a street, and it is the price of the map being larger than the
+  bake can hold.
 - **`poolBudgetMiB` (160) caps the probe COUNT, and it is stated in memory
   because memory is what it protects.** The count is the map's glazing rather
   than its size, so it has no natural bound: past the budget, glazed blocks are
   grouped in twos, then fours, until the pool fits. A probe is 512 KiB at the
-  shipped face size and the pool is never disposed, so 160 MiB is 320 probes —
-  Coldharbour asks for 40 and the 900 m proving ground for 265 (133 MiB), so
+  shipped face size and the pool is never destroyed, so 160 MiB is 320 probes
+  — Coldharbour asks for 40 and the 900 m proving ground for 265 (133 MiB), so
   **nothing in the tree groups anything today** and this is a bounded worst
   case rather than a live lever. **It stops being one somewhere between 900 m
   and 1500 m**: regenerated at 1500/0 the same ground asks for ~500 glazed
   blocks and comes back at `perCell` **2**, 250 probes, which is the first
-  grouping anything has ever measured (`ENGINE_UPGRADE.md` S5c). What that costs the
-  picture has not been looked at, for the reason the enclosure note below gives. What to know before raising it is the enclosure rule below: a
+  grouping anything has ever measured (`ENGINE_UPGRADE.md` S5c). What that
+  costs the picture has not been looked at, for the reason the enclosure note
+  below gives. What to know before raising it is the enclosure rule below: a
   probe drops every block it SERVES out of its own bake, so a cell of four
   blocks is a probe with 96 m of city missing from the middle of its cube.
-
-**A probe COSTS something to build as well as to bake, and it is not the cube —
-it is the whole scene, six times over.** A cube target is six render passes, so
-its `ObjectRenderer` mints six render pass ids, and Babylon's
-`_createRenderPassId` opens by RELEASING the ids it is about to create over an
-array that is still empty. Each of those six `releaseRenderPassId(undefined)`
-calls walks every mesh and every submesh of every scene on the engine, to clear
-a draw wrapper filed under `undefined` that nothing can ever have written —
-`SubMesh._getDrawWrapper` resolves an undefined pass id to the engine's current
-one before it indexes. It is provably a no-op and it is priced on the MAP, paid
-at the worst moment there is: right after `MapBuilder.build` has put the whole
-world in the scene. Measured, it was **1,298 ms on the 900 m proving ground and
-6,551 at 1500 m**, against 38 and 72 with the fix in.
-
-**The fix is a scoped swap and it lives in `ReflectionSystem.newProbe`**, which
-is the one place either pool mints a probe: `scene.meshes` is handed an empty
-array for the length of the `new ReflectionProbe(...)` call and put back in a
-`finally`. Two facts make that safe and both are written out at the site — no
-frame renders inside `installMap`, and probe construction creates no mesh — and
-the second is enforced rather than trusted, because `Scene.addMesh` pushes into
-whatever `scene.meshes` is at the time and a mesh lost there is one nothing
-ever draws. `ENGINE_UPGRADE.md` S5c has the measurements.
-**Do not move that swap out to wrap the construction LOOP instead**: the water
-pool is minted from a different moment of the same install
-(`WaterSystem.build` → `bakeWater`), and minting through one method is what
-covers both without either being remembered.
 
 **The probe stands at the centre of the glass it serves.** That puts it inside
 the shaft of a tower's wrap-around curtain wall and exactly ON the plane of a
@@ -1660,33 +1590,33 @@ sees out in every direction its own panes face. For the shopfront that is free
 — the office behind it is behind the probe too. For the tower it is what the
 enclosure rule below is for.
 
-Eight things about it are load-bearing:
+Six things about it are load-bearing:
 
 - **A probe's bake leaves out whatever ENCLOSES it, and it asks the BLOCK KEY
-  rather than measuring anything.** A mesh is dropped from a probe's render
-  list when its `metadata.block` is one of the blocks that probe serves —
-  `BlockMerge` and `PaneBlocks` file under the same key, so a glazing group and
-  the world it is glazed onto agree on which building they are for free.
-  Measured across the 37 probes: 2.1 meshes dropped each, and cube coverage
-  falls from 0.84 to 0.57 for a tower and from **0.99 to 0.68 for a parked
-  car**, whose probe sits inside its own bodywork. It used to be a bounding-box
-  containment test with a flat-receiver exemption bolted on, and both halves
-  went at once when the albedo palette took the colour out of the merge key:
-  the smallest thing a box test could then remove was a whole 48 m block, and a
-  box test cannot tell a tower's probe standing in its own shaft from a water
-  probe floating in open marsh inside the same block's extent — which is
-  exactly what put sky in Greyfen's flood where the near treeline should be.
-  The exemption is now kept by construction and needs no test: the terrain
-  patches, the roads and the valley rim are not block-merged, so they carry no
-  key and can never match one. **It takes a SET of keys**, because a probe past
-  the pool budget serves more than one block; on every map in the tree the set
-  holds one. **Our cull asks the same key as NUMBERS** (`PROBE_EXCLUDE`): each
-  cluster record carries its surface's block (`blockKey` of `WorldSurface.block`,
-  `NO_BLOCK` for the landform), the probe its cell, `perCell` and a bit per
-  block it serves — and a scatter INSTANCE carries the block of the REGION the
-  merge filed its copy under (`ScatterSet.blocks`), never its own place, since
-  that is what Babylon's list dropped it with.
-
+  rather than measuring anything** (`ReflectionSystem`'s `exclusionOf`). A
+  surface is dropped from a probe's faces when its block is one of the blocks
+  that probe serves — `BlockMerge` and `PaneBlocks` file under the same key,
+  so a glazing group and the world it is glazed onto agree on which building
+  they are for free. Measured across the 37 probes of Babylon's bake: 2.1
+  meshes dropped each, and cube coverage falls from 0.84 to 0.57 for a tower
+  and from **0.99 to 0.68 for a parked car**, whose probe sits inside its own
+  bodywork. It used to be a bounding-box containment test with a
+  flat-receiver exemption bolted on, and both halves went at once when the
+  albedo palette took the colour out of the merge key: the smallest thing a
+  box test could then remove was a whole 48 m block, and a box test cannot
+  tell a tower's probe standing in its own shaft from a water probe floating
+  in open marsh inside the same block's extent — which is exactly what put
+  sky in Greyfen's flood where the near treeline should be. The exemption is
+  now kept by construction and needs no test: the terrain patches, the roads
+  and the valley rim are not block-merged, so they carry no key and can never
+  match one. **It takes a SET of keys**, because a probe past the pool budget
+  serves more than one block; on every map in the tree the set holds one.
+  **The cull asks the key as NUMBERS** (`PROBE_EXCLUDE`): each cluster record
+  carries its surface's block (`blockKey` of `WorldSurface.block`, `NO_BLOCK`
+  for the landform), the probe its cell, `perCell` and a bit per block it
+  serves — and a scatter INSTANCE carries the block of the REGION the merge
+  filed its copy under (`ScatterSet.blocks`), never its own place, since that
+  is what Babylon's list dropped it with.
 - **The bake draws no sky and no glazing, and the cube's ALPHA is what says
   so.** It clears to a transparent black and every cel variant but the glazing
   writes alpha 1, so a texel is 1 where the bake drew world and 0 where it saw
@@ -1710,67 +1640,23 @@ Eight things about it are load-bearing:
   down as every render target is, and its wrapped view takes the same mode,
   so the one flip serves both. Getting it wrong puts the
   pavement where the sky belongs, which reads as glass that is merely too dark.
-- **Babylon's bake borrows the shader's eye and gives it back once, around the
-  whole render-target block** — ours borrows nothing (the eye is PASSED, in the
-  bake's own frame, above), which retires this whole class of bug on its path. Every cel material fogs and rims against `camPos`, so
-  each probe renders with it moved to that probe — and the restore hangs off
-  `scene.onAfterRenderTargetsRenderObservable` rather than off each probe,
-  because 37 bakes would otherwise be 37 chances to put it back wrong. The
-  first version of this hooked each face and re-read the eye on every one of
-  them: by face 1 the eye already IS the probe, so the whole cache came out of
-  the bake holding it and the main pass of the install frame fogged the map
-  against a point in the middle of it. Both hooks are guarded walks, so on the
-  thousands of frames that bake nothing they are a vector copy and a compare.
-- **Probes are pooled and never disposed**, like the bot rigs: one is six scene
-  uniform buffers and a cube. A map with fewer glazed blocks than the last
-  leaves the spare probes parked with an empty render list. Our cubes the same,
-  each with its wrapped view.
-- **A baked probe gives back the draw wrappers its passes minted**
-  (`ReflectionSystem.forgetPasses`, called as `releaseBatch` sees a probe's
-  refresh counter move past -1) — Babylon's path only, since ours mints no
-  wrapper at all. A probe face is a render pass, so a bake
-  creates a draw wrapper on every submesh it draws, per face — and on Babylon
-  9.28, PR #18880 (`_useOwnerKeyedUniformBufferSlots`, on by default) gives
-  every one of those wrappers' draw contexts a leftover-uniform slot and a bind
-  group of its OWN, freed only when the context is disposed. A refresh-once
-  target never draws with them again, so a bake that kept them all held a GPU
-  buffer per bake draw: the 900 m proving ground's ~284,000 lost the D3D12
-  device on `CreateDescriptorHeap` (E_OUTOFMEMORY) a third of the way through,
-  where 9.19.1 — one pool sized by the busiest frame — baked it clean. Released
-  as each probe finishes, a freed slot is taken by the next probe's draws, and
-  the pool is bounded by `drawsPerFrame` again: on Coldharbour 1,821 live draw
-  wrappers against 20,156 and 502 owned slots against 18,837, the same 27
-  compiled effects. **It releases the WRAPPERS and never the pass IDS** —
-  `AbstractEngine.releaseRenderPassId` would, but it walks every mesh in the
-  scene, which is the walk `newProbe` exists to avoid, and the probe needs its
-  ids for the next install's bake, which simply mints the wrappers again.
-  **It cannot free an effect the main pass is drawing with**: a cel material
-  stores its effect per submesh (see the frozen-materials section), each fresh
-  wrapper took one reference through `createEffect`, `DrawWrapper.dispose`
-  returns exactly one and defers it to the end of the frame, and the main
-  pass's own wrapper holds its own. `clear` drops `inFlight` without calling
-  it, and that is safe: what a probe baked just before a teardown still holds
-  is released with the meshes it was minted on, and a mesh that outlives the
-  map is re-baked under the same ids, so its wrappers are reused rather than
-  added to. **Both calls are Babylon internals** (`Mesh._releaseRenderPassId`,
-  `SubMesh._removeDrawWrapper`), so a Babylon upgrade owes this a look exactly
-  as it owes `core/webgpuLeaks.ts` one.
-- **An EDITOR build parks every probe and bakes nothing**, which is not a
-  saving so much as the feature's own premise being withdrawn. A bake is
-  affordable because it is a BUILD STEP over a static world, and the editor is
-  the one place in the game where a build is not rare — every tier-3 rebuild
-  would buy another. It is also worse there from both ends: `PaneBlocks` keys
-  per PLACEMENT on an editor build, so Coldharbour's 40 glazed blocks become
-  82, and the render list is the unmerged visuals. Measured: 40 probes over 405
-  meshes in a round against 82 over 610 in the editor, which came to one frame
-  of ~300,000 draw calls after every param edit, add, delete or brush stroke,
-  against ~500 with the skip and a steady editor frame of ~420 either way — a
-  parked probe renders nothing, so the steady frame never had a reflection in
-  it to lose. What the editor gives up is the city in its glass: a pane keeps
-  the material `MapBuilder` gave it, which holds the default cube at strength
-  ZERO, so it shows the analytic sky half and no more. That is the state a pane
-  is in before any probe claims it rather than a new one, and it is the right
-  trade in a view that already strips the map's night back to a work light.
+- **Cubes are pooled and never destroyed**, like the bot rigs, each with its
+  wrapped view. A map with fewer glazed blocks than the last leaves the spare
+  cubes holding the last map's picture, which nothing samples.
+- **An EDITOR build bakes nothing**, which is not a saving so much as the
+  feature's own premise being withdrawn. A bake is affordable because it is a
+  BUILD STEP over a static world, and the editor is the one place in the game
+  where a build is not rare — every tier-3 rebuild would buy another — and an
+  editor build is Babylon's whole, which our bake draws none of. Measured on
+  Babylon's bake, which an editor build skipped the same way: 40 probes over
+  405 meshes in a round against 82 over 610 in the editor (`PaneBlocks` keys
+  per PLACEMENT there), which came to one frame of ~300,000 draw calls after
+  every param edit, add, delete or brush stroke. What the editor gives up is
+  the city in its glass: a pane keeps the material `MapBuilder` gave it, which
+  holds the default cube at strength ZERO, so it shows the analytic sky half
+  and no more. That is the state a pane is in before any probe claims it
+  rather than a new one, and it is the right trade in a view that already
+  strips the map's night back to a work light.
 
 The remaining approximation is that a probe serves a whole block: a pane
 returns the right city seen from the middle of its own block rather than from
@@ -1779,9 +1665,9 @@ the pane itself. `graphics.reflection.strength` (0.9) is deliberately short of
 walking along a frontage. The alternatives were a probe per pane (6,139 of
 them) and a screen-space pass, which cannot answer the question the feature
 exists for at all: a pane you are looking at reflects what is behind YOU. A map
-with no glazing bakes nothing; the default cube stays bound to the glazing
-material regardless, because a `samplerCube` with nothing on its unit is
-undefined behaviour rather than a black fetch.
+with no glazing bakes no glazing probe; the default cube stays bound to the
+glazing material regardless, because a `samplerCube` with nothing on its unit
+is undefined behaviour rather than a black fetch.
 
 **The Fresnel is deliberately NOT banded**, alone among the terms in this shader.
 A band edge on a flat sheet is a contour drawn where the view angle crosses a
@@ -2787,17 +2673,17 @@ produces a flat wash that looks exactly like a broken sampler:
   needs no sky colours of its own.
 
 `ReflectionSystem.bakeWater` holds a **separate probe pool** from the glazing's,
-because the two are baked at different moments of one `installMap` and `build`
-parks everything it owns on the way in; it takes the path `build` picked (on
-ours its cubes are keyed apart in `ProbeBake`'s pool). A bake of ours lost
-before it drained fails the world (X3.7b: the menu, no Babylon bake to fall
-back on), so the `rebind` it hands over is called only by `ReflectionSystem`'s
-`toBabylon`, which the harness's `rebake` alone reaches and X3.7c deletes. The site is not the rect's centre — a
+because the two are baked at different moments of one `installMap`: the
+water's sites are known only after `WaterSystem` has baked its beds (its
+cubes are keyed apart in `ProbeBake`'s pool). A body's material is handed its
+cube once, at the build — a bake that cannot draw fails the world (X3.7b), and
+the `rebind` that pointed a body at Babylon's cube went with Babylon's bake at
+X3.7c. The site is not the rect's centre — a
 rect is its extent and not its shore, and Greyfen's flood is one 250 m rect of
 which 11% is wet — so `WaterSystem.bakeDepth` hands over the depth-weighted
-centroid of the WET cells it found on its way past. Editor builds park the
-probes and return strength 0, exactly as the glazing does, which leaves the
-water showing the analytic dome and no more.
+centroid of the WET cells it found on its way past. Editor builds bake
+nothing and return strength 0 on the default cube, exactly as the glazing
+does, which leaves the water showing the analytic dome and no more.
 
 ### The light on the waves: cut hard, in degrees, and asked of the waves
 
@@ -3128,8 +3014,8 @@ meant.
 **Five fetches in the game are the exception, and for them the implicit LOD IS
 the filtering.** The ground albedo and its height map are `DynamicTexture`s
 built with mips and `anisotropicFilteringLevel = 8`, and a reflection probe's
-cube carries a chain — a `ReflectionProbe` generates one unless it is asked
-not to, and our bake's is made by `render/cubeMips.ts` to Babylon's filter. `textureSampleLevel(…, 0.0)`
+cube carries a chain — the bake's, made by `render/cubeMips.ts` to the filter
+Babylon's `ReflectionProbe` used. `textureSampleLevel(…, 0.0)`
 on any of the three would delete that chain — and on the height map it would
 delete an argument as well, because `perturbNormal` relies on two taps a texel
 apart converging with distance and states that as the whole reason it needs no
@@ -3258,11 +3144,12 @@ recorded into (`FrameHost.prepareEncoder`, below). X3.5 added a tenth: the
 group's `_renderAlphaTest`, WRAPPED while the main pass's group 0 renders, so
 a draw can land between its opaque and alpha-tested lists (below). That list
 only shrinks after Phase 3.
-Six older touches in four files (`FrameDepth`, `webgpuLeaks`,
-`ReflectionSystem`, `FrameProfile`) are not the renderer's and stay where
-they are, listed in the seam's header with the step each leaves at; one of
-them patches a Babylon class's prototype, a value this directory may not
-import.
+Four older touches in three files (`FrameDepth`, `webgpuLeaks`,
+`FrameProfile`) are not the renderer's and stay where they are, listed in
+the seam's header with the step each leaves at; one of them patches a
+Babylon class's prototype, a value this directory may not import.
+`ReflectionSystem`'s two (`_releaseRenderPassId`, `_removeDrawWrapper`) went
+with Babylon's bake at X3.7c.
 
 **A draw is QUEUED into Babylon's order, never issued.** Under
 `compatibilityMode = false` Babylon does not draw into the pass as it goes.
@@ -3282,9 +3169,9 @@ follow:
   one left changed is Babylon's next draws drawn with it.
 
 **The main pass is told apart by its TARGET, not by the group.** The glow,
-and every probe face and shadow pass Babylon still draws (the bodies' map,
-and the world's maps, the lamps' atlas and the probes on the path that
-keeps them Babylon's) draw rendering group 0 too, each into its own target. The frame's target is the one bound as
+and every shadow pass Babylon still draws (the bodies' map, and an editor
+build's world maps and lamps' atlas; no probe face since X3.7c) draw
+rendering group 0 too, each into its own target. The frame's target is the one bound as
 `onBeforeDrawPhaseObservable` fires (the post chain binds it just before),
 and a group counts only if it finishes into that same target before the
 draw phase ends (`FrameHost.onMainPass`). **The window alone is not
@@ -3546,8 +3433,14 @@ round's `GameMap.visuals` are the glazing and the fires, the records
 (`SurfaceRecord.visual`), and **THE WORLD DRAWS WHOLE OR THE ROUND DOES NOT
 START** — a surface our side cannot hold is refused at the build, and every
 former handback (a failed pipeline or cull, a cut past the device's limits,
-a refused pass, a loss of any pass of ours) is `Game.worldFailed`: a
-`console.error`, the menu, and a toast that the map could not be drawn.
+a refused pass, a pass of ours that cannot draw the world it was handed) is
+`Game.worldFailed`: a `console.error`, the menu, and a toast that the map
+could not be drawn. **Since X3.7c no pass of ours latches a loss**: the
+handover hands each its world WITH the install's failure (`setCasters`,
+`setWorld`), and the pass tells it whatever it finds it cannot draw, in
+whatever turn it finds it; a pipeline asked once for the session (the lamps'
+proxies, the bake's mips) fails every world handed over after it, through
+its settled promise.
 
 - **`systems/BlockHandover.ts` decides which surfaces are TAKEN.** A
   surface is taken if it is block-merged OR the landform, at identity, never
@@ -3990,14 +3883,17 @@ light's matrix over.
   are the generators'**, as ever. Half a map drawn by each side would be the
   order of two renderers deciding one depth test, and a caster drawn by
   neither a hole.
-- **A LOSS of the casters is the world's failure** (`WorldShadows.lose`, its
-  `onLost` heard by `BlockHandover`, X3.7b): until then it lost the maps to
-  the generators for the rest of the map. It is told after the task in hand
-  (`queueMicrotask`), because a loss can land INSIDE a render whose
-  unsubmitted commands still hold the textures the map's teardown destroys
-  (`WorldShadows.setSize` destroys at once; disposing Babylon's wrapped view
-  of one destroys the `GPUTexture` it wraps too, at the end of Babylon's
-  frame — so a texture of ours is always made afresh under a fresh view).
+- **Casters that cannot be drawn are the world's failure** (X3.7b, X3.7c):
+  the handover hands `WorldShadows` the casters WITH the install's failure
+  (`setCasters(depth, failed)`), and a casters' build that fails is never
+  drawn and tells it — until X3.7b it lost the maps to the generators for the
+  rest of the map, and until X3.7c through a `lose` and a listener. `Game`
+  tears the round down after the task in hand, because a failure can land
+  INSIDE a render whose unsubmitted commands still hold the textures the
+  map's teardown destroys (`WorldShadows.setSize` destroys at once; disposing
+  Babylon's wrapped view of one destroys the `GPUTexture` it wraps too, at the
+  end of Babylon's frame — so a texture of ours is always made afresh under a
+  fresh view).
 - **Babylon's readers sample a WRAPPED view** (`WebGPUEngine.
   wrapWebGPUTexture`, re-pointed at itself so it has a view, nearest and
   clamped as the generator's map was), and our frame binds the texture
@@ -4063,10 +3959,13 @@ over once a frame (`AtlasWork`, `LampAtlas.queue`).
   casters for both and hands them to `WorldShadows` and `LampAtlas` together
   (`setCasters`), at slots of the culls apart — the world's four first, then
   `staticFacesPerFrame` for the atlas — on every rung; an editor build
-  leaves the atlas to `LocalShadows`' render target, as it leaves the maps
-  to the generators, and a loss (or an atlas that will take no casters, its
-  proxies' pipeline failed for the session) fails the world, after the task
-  in hand for the maps' reason. `LocalShadows.setWorld` reads who holds it,
+  leaves the atlas to `LocalShadows`' render target (kept for it alone,
+  X5.3's to delete), as it leaves the maps to the generators, and casters
+  the atlas cannot draw — their build failed, or its proxies' pipeline,
+  asked ONCE for the session, so every world handed over after it fails on
+  it — fail the world through the failure handed over with them
+  (`setCasters(depth, slot, failed)`), torn down after the task in hand for
+  the maps' reason. `LocalShadows.setWorld` reads who holds it,
   after the install, as `ShadowSystem.setCasters` does.
 - **The atlas's casters are its own pass, `PASS_LAMPS`**: every surface not
   `noShadowCaster`, BLENDED OR NOT, because `LocalShadows`' bake drew its
@@ -4134,10 +4033,10 @@ bake" above; what it owes this frame is below.
   inside the main view's count since X3.6d, for the glow's mask, and drawn by
   the main pass too since X3.6e, with the same pipelines a face uses
   (`WorldBlocks.mainPalette`); a fire is left out. The world is handed to
-  `ProbeBake` at the cut, and a failed palette pipeline (the view answering
-  unready) or any other loss of the bake (`ProbeBake.lose`, after the task in
-  hand) fails the world (X3.7b; until then it queued the install again on
-  Babylon's side).
+  `ProbeBake` at the cut, with the install's failure, and a failed palette
+  pipeline (the view answering unready) or anything else the bake cannot
+  draw fails the world (X3.7b; until then it queued the install again on
+  Babylon's bake, which X3.7c deleted).
 - **A face draws through the main pass's own draw code**, parametrised by a
   view (`DrawView`: `drawClusters`, `drawScatter`, `bind`, `drawPalette`) and
   never copied;
@@ -4593,8 +4492,9 @@ all in the counter this finding is named after. Not chased.
   glow: what the depth share replaced", below), and Babylon is made no mesh
   of it. **The mask stays this pass's**: ours draws INTO it, FIRST, as its
   pass opens (`GlowPass.onMaskOpenObservable`, from inside the clear), and
-  the palette's main material and its twin (`EmissiveWorld.ts`) draw only an
-  editor build's (X3.7c's to narrow). **`noGlow` is read PER SURFACE, at the
+  no Babylon draw of the palette is left (X3.7c deleted its stages and its
+  mask twin: an editor build never merges its blocks, so never wore it
+  either). **`noGlow` is read PER SURFACE, at the
   TAKE** (as `noShadowCaster` is): a palette surface marked so is drawn in
   the main pass and kept out of the mask alone, in a palette group of its
   own. **A palette surface the handover cannot hold is REFUSED** (until
@@ -5181,10 +5081,11 @@ reduces to `clamp(emissive)` at alpha 1, then `EmissiveFog`'s `mix`; the WGSL
 does that term for term, the fog pair computed on the CPU as the plugin's is.
 So it writes coverage 1 in the frame and in a probe alike, as that material did
 — a literal, and the one shader where a literal is right, because it is what
-was there. (Its body is `shaders/wgsl/emissiveWorld.ts`, which our renderer's
-bake draws too, through `render/emissiveWorld.ts` against the bake frame's
-`camPos` — the probe, passed — so what follows is Babylon's bake.) **Its EYE
-is the cel materials' `camPos`**, pushed by
+was there. (Its body is `shaders/wgsl/emissiveWorld.ts`, which our renderer
+draws through `render/emissiveWorld.ts` against the frame's `camPos` — in a
+bake the probe, passed — so what follows is the history of Babylon's bake,
+which X3.7c deleted with the material's Babylon stages.) **Its EYE was the
+cel materials' `camPos`**, pushed by
 `CelMaterialFactory.updateCamera`, and never `ShaderMaterial`'s
 `cameraPosition`: Babylon writes that from `scene.activeCamera`, which a
 `ReflectionProbe` does not change — its renderer draws with the player's
@@ -5209,23 +5110,25 @@ added to its list: 1.50% of texels moved at 1.88/255 before, inside the control
 blast in play (a pool, not `map.visuals`); Babylon's bake draws a far fire as a
 few dark texels and the one stood around a probe not at all, a bug of its own,
 and ours draws none (`FINDINGS.md` 51) — so the fire's half is a correctness fix that no
-picture can show until that one is found. It declares a WHITE `emissiveColor`, as the fire declares one, so
-`GlowPass` and `WorldCulling`'s gate still find it by the one property they ask,
-and it brings its own mask twin (`SelfMasking`). `vertexShading` skips it
-(`isEmissiveWorld`). **Since X3.6e the main material and its twin draw only
-an editor build** (the twin since X3.6d): in every round our renderer draws
-the palette in the main pass (`render/WorldBlocks.ts`, the bake's own
-program) and into the mask (`render/WorldGlow.ts`, the same body under
-`GLOW_MASK`, through the main pass's view of the culls), and since X3.7b
-Babylon is made no mesh of it — a palette ours cannot hold, a failed mask
-pipeline (for the session) and a loss mid-map are the world's failure ("The
-palette, ours", under the glow, below).
+picture can show until that one is found. It declares a WHITE `emissiveColor`, as the fire declares one, which is what
+`GlowRules` asks of it (`WorldGlow`, through `emissiveMaterialOf`).
+`vertexShading` skips it (`isEmissiveWorld`). **Since X3.7c it is a material
+OBJECT and no program**: our renderer draws the palette in the main pass
+(`render/WorldBlocks.ts`, the bake's own program), into a probe's faces and
+into the mask (`render/WorldGlow.ts`, the same body under `GLOW_MASK`,
+through the main pass's view of the culls), Babylon is made no mesh of it
+(X3.7b), and an EDITOR build never merges its blocks, so it never wears it
+either — which left Babylon's two stages and the mask twin drawing nothing
+anywhere, and X3.7c deleted them. The object stays (`EmissiveWorldMaterial`
+extends `Material`): the merge keys on it and the factory hangs its recipe off
+it. A palette ours cannot hold and a mask it cannot draw are the world's
+failure ("The palette, ours", under the glow, below).
 
 **The bloom is the one thing that changed, and it changed toward the wall.**
 `GlowRules.colour` fades a bloom by the fog at a mesh's bounding-sphere centre,
 and a palette mesh is every lamp in a block — a centre that is usually BEHIND
 the frontage you are looking at, which would fade the near window as if it
-stood at the far one. So the twin fades each pixel by its own distance on
+stood at the far one. So the mask fades each pixel by its own distance on
 `fogAmountAt`'s curve, and `Game` leaves that material's colour unfaded
 (`fadesOwnBloom`). Measured on Hollowmere at night (the one map where the
 harness's run-to-run floor is near zero): three of twelve poses moved, all of
@@ -5372,8 +5275,9 @@ attribute — `CelShader.ts` states it again where `uv2` is declared:
   first real instance of the moving-state risk `main.ts` warns about, and it
   arrived from a direction that warning does not describe.
 
-**`ReflectionSystem.encloses` had to be rewritten and that is a consequence
-worth generalising.** It was a bounding-box containment test, and it worked
+**The bake's enclosure test (`ReflectionSystem.encloses` then, `exclusionOf`
+since X3.7c) had to be rewritten and that is a consequence worth
+generalising.** It was a bounding-box containment test, and it worked
 only because of a property the palette removes — the merge split per colour, so
 "a colour that appears once appears in a mesh of its own" and the test picked
 out small meshes. With one mesh per block the smallest thing it could remove was
@@ -5622,7 +5526,9 @@ renderer, in the main pass and into the glow's mask, in every round, and
 Babylon is made no mesh of them** (since X3.7b; `render/WorldBlocks.ts` for the
 frame, `render/WorldGlow.ts` for the mask; `BABYLON_EXIT.md` X3.6d, X3.6e), and
 `GlowPass` draws everything else in the mask as before: the bodies, the
-effects, the fire's twin, the viewmodel and the moon. The mask is the depth
+effects, the fire's twin, the viewmodel and the moon. There is no Babylon
+draw of the palette left anywhere since X3.7c — its Babylon stages and mask
+twin, which no round and no editor build drew any more, are deleted. The mask is the depth
 share carried one step further, and it rests on the same tie: a mask draw
 writes no depth and tests LEQUAL against the depth the main pass wrote, so it
 lands exactly where that pass's draw of the same vertex landed — since X3.6e a
@@ -5654,9 +5560,9 @@ draw of OURS, by the same vertex module.
   sorted front to back by bounding-sphere distance and drawn AHEAD of every
   draw of ours. The depth test is LEQUAL with depth written on both sides
   (ours: `PipelineCache`'s `depthWrite ?? true`, `depthCompare ??
-  "less-equal"`; Babylon's `EmissiveWorldMaterial` sets no `depthFunction`,
-  so the engine's LEQUAL, culls back faces, writes depth, is opaque, and its
-  `zOffsetUnits` is the bias), and under LEQUAL at an EXACTLY equal depth the
+  "less-equal"`; Babylon's `EmissiveWorldMaterial` set no `depthFunction`,
+  so the engine's LEQUAL, culled back faces, wrote depth, was opaque, and its
+  `zOffsetUnits` was the bias), and under LEQUAL at an EXACTLY equal depth the
   LATER draw wins ("Our renderer's frame", above). So what a palette
   surface can tie with, and how each tie goes:
 
@@ -5685,8 +5591,8 @@ draw of OURS, by the same vertex module.
   their own. The palette's clusters are cut AHEAD of the held casters, inside
   the count the main view culls (the casters stay its tail), so the main cull
   writes the palette's survivors into its index buffer every frame; the main
-  pass draws them while the palette is its own (`WorldBlocks.setPaletteMain`),
-  and the mask draws them through `WorldBlocks.glowView`. **They are never
+  pass draws them FIRST whenever the map has a palette (`WorldBlocks`'
+  `draw`), and the mask draws them through `WorldBlocks.glowView`. **They are never
   SIZE-GATED** (`LIGHT_SOURCE`, which was `PASS_GLOW` until a `noGlow`
   palette surface became ours at X3.7b), in either pass: Babylon never gated
   an emissive mesh (`WorldCulling`'s `glows`), and a lamp lens a few pixels
@@ -5718,8 +5624,8 @@ draw of OURS, by the same vertex module.
   and `PipelineCache` keys on the spec, so it is THE pipeline a probe's face
   draws with: asked once at the cut (`WorldBlocks.mainPalette`) and reused by
   `probeView`. Its group 0 is the main frame (`camPos` and `fogColor` the
-  factory's, the same values `updateCamera` and `setFog` give Babylon's
-  material). The mask draws with `emissiveWorld(GLOW_TARGETS, true)`: the one
+  factory's, the same values `updateCamera` and `setFog` gave Babylon's
+  material until X3.7c). The mask draws with `emissiveWorld(GLOW_TARGETS, true)`: the one
   body under `GLOW_MASK`, one pipeline a bias, no depth written,
   `less-equal`, back faces culled, no blend. The two vertex modules are one
   text with the same defines, so `PipelineCache.module` hands both the same
@@ -5740,9 +5646,9 @@ draw of OURS, by the same vertex module.
   warm-up covers it. On the kit screen nothing blooms the palette, as before.
 - **There is no going back** (X3.7b). The palette is ours at the TAKE,
   surface by surface (`BlockHandover.onSurface`): held with its slots for
-  every pass of ours, its main pass ours at the install
-  (`WorldBlocks.setPaletteMain`), and the mask handed its world whenever a
-  surface of it glows. **`noGlow` is read PER SURFACE**: a surface marked
+  every pass of ours, its main pass ours whenever there is one (the switch
+  that said so, `setPaletteMain`, was only ever set true and went at X3.7c),
+  and the mask handed its world whenever a surface of it glows. **`noGlow` is read PER SURFACE**: a surface marked
   so keeps `PASS_GLOW` off and is cut into a palette group of its own
   material (`WorldBlocks.paletteGroup`), since the mask draws a group whole
   — it is still a `LIGHT_SOURCE`, which no size gate drops (the cull's bit
@@ -5751,9 +5657,11 @@ draw of OURS, by the same vertex module.
   a bias only a quiet group carries compiles no mask pipeline that could
   fail the world for a pass drawing nothing with it. A
   palette surface the handover cannot hold is REFUSED; a refused main pass,
-  a refused MASK pass (`Renderer.onGlowMaskRefused`), a failed mask pipeline
-  (latched for the session) and a failed MAIN-pass palette pipeline
-  (`WorldBlocks.onPaletteFailed`) each fail the world (`Game.worldFailed`).
+  a refused MASK pass (`Renderer.onGlowMaskRefused`, which `WorldGlow` tells
+  the failure it was handed with its world), a mask view it could not make,
+  a failed mask pipeline and a failed MAIN-pass palette pipeline
+  (`WorldBlocks.onPaletteFailed`) each fail the world (`Game.worldFailed`) —
+  no pass latching anything (X3.7c deleted `lose`, `onLost` and `broken`).
   Until X3.7b each of them handed the palette's main pass and mask back to
   Babylon together (`claimPalette`, `dropPalette`), a single `noGlow` among
   them, and a loss mid-map compiled Babylon's main material and its twin IN
@@ -6087,10 +5995,10 @@ whose shadow they are standing in, because it is the same ray.
   **The shafts take it per march step** (`cloudLitAir`, derivative-free for
   the loop), so a beam stops where the ground under it goes into shade and
   the gaps between two clouds' shadows are where the shafts are.
-- **A reflection bake HOLDS it off** (`ShadowBindings.holdCloudShadow`, on
-  the hooks that move Babylon's bake's eye into a probe and back; ours holds
-  it in the bake's own frame, `fillBakeFrame` through
-  `ShadowBindings.fillFrame(out, true)`): a cube is baked once and
+- **A reflection bake HOLDS it off** (in the bake's own frame,
+  `fillBakeFrame` through `ShadowBindings.fillFrame(out, true)`; Babylon's
+  bake held it on the materials, `holdCloudShadow`, until X3.7c): a cube is
+  baked once and
   the shadow moves, so one caught in a bake would stay painted into every pane
   and pond for the round.
 - **The texture is one more sampler on every cel material, and the bumped

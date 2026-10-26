@@ -21,8 +21,8 @@
  * that palette as the glow's MASK draws it (`glowView`, `PASS_GLOW`): through
  * the MAIN pass's view of the culls, which counts the palette's clusters for
  * it, by the mask twin of the same program. And, since X3.6e, the palette in
- * the MAIN pass, whenever the handover says so (`setPaletteMain`): FIRST in
- * the main draw, off the main view's survivors, by the bake's own pipelines.
+ * the MAIN pass (whenever there is one since X3.7c): FIRST in the main draw,
+ * off the main view's survivors, by the bake's own pipelines.
  * Owns: `WorldBlocks` — the surfaces and the scatter's instanced parts handed
  * to it until the map is cut (`finish`), then each material GROUP's vertex
  * arrays (every instanced part of the group end to end, then every surface of
@@ -32,15 +32,15 @@
  * writes the blocks' indices and the `InstanceCull` that writes the
  * scatter's list, whose tables, transforms and budget the cut's scatter
  * half makes (`scatterCut.ts`); and the one `FrameDraw`, ahead of group 0's
- * alpha-tested meshes (`DrawPoint` `"beforeAlphaTest"`) — the palette while
- * it is the main pass's (`setPaletteMain`), the blocks, the scatter, then
- * the landform — with the `FramePrepare` that culls ahead of it, both on the
+ * alpha-tested meshes (`DrawPoint` `"beforeAlphaTest"`) — the palette, the
+ * blocks, the scatter, then the landform — with the `FramePrepare` that
+ * culls ahead of it, both on the
  * renderer only while a map's culls are built and nobody has `stop`ped it;
  * and the map's `WorldDepth`, when `finish` is asked for one; each palette
  * material's block (laid out for the mask's variant, so it carries the
  * bloom's colour too) and groups, and the palette's main-pass pipelines, one
  * a bias (`mainPalette`, which a probe's face draws with too), and whether
- * one failed for the map (`paletteFailed`); the probes'
+ * one failed for the map (said once, `onPaletteFailed`); the probes'
  * VIEWS of the culls (`probeView`) and the glow's (`glowView`) while their
  * holders keep them, and with the map at the latest.
  * WHY THAT POINT, AND THE LANDFORM LAST: the turf (`GrassSystem`) is a blend
@@ -84,8 +84,8 @@
  * pass draws the palette FIRST and by its own program — the bake's
  * pipelines, one a bias (`mainPalette`), asked once at the cut — and a
  * failed one fails no group: whoever took the palette is told
- * (`onPaletteFailed`), and a probe's view built on them answers unready
- * (its bake lost, as at X3.6c); a
+ * (`onPaletteFailed`, which fails the world), and a probe's view built on
+ * them answers unready; a
  * probe's view culls every cluster and draws what is in `PASS_PROBE` with
  * the main pass's own pipelines and material groups, through the face's
  * frame, each scattered group's twin bound to its own list; the glow's view
@@ -236,9 +236,8 @@ interface Surface {
 
 /**
  * Which layer a group is in: the blocks or the landform — or the emissive
- * PALETTE (`addEmissive`), drawn in the main pass while the handover says so
- * (`setPaletteMain`), and in the probes' bake, the glow's mask and its own
- * shadows — or the HELD casters, drawn in no main pass, for the shadow maps
+ * PALETTE (`addEmissive`), drawn in the main pass, the probes' bake, the
+ * glow's mask and its own shadows — or the HELD casters, drawn in no main pass, for the shadow maps
  * alone (`addCaster`). The palette's groups and the casters' are always cut
  * last, in that order (`cutRank`).
  */
@@ -363,10 +362,8 @@ export class WorldBlocks {
   private mainPalette = new Map<number, BuiltPipeline | null>();
   /** Resolves true once every one of `mainPalette` is built; false if one failed. */
   private mainPaletteReady: Promise<boolean> = Promise.resolve(true);
-  /** One of `mainPalette` failed for this map: see `paletteFailed`. */
+  /** One of `mainPalette` failed for this map: `onPaletteFailed` has been told, once. */
   private mainPaletteFailed = false;
-  /** The palette is drawn in the main pass — the handover's to say (`setPaletteMain`). */
-  private paletteMain = false;
   /** A group's three bind groups for one draw, as `groupsFor` last filled them. */
   private readonly bound: GPUBindGroup[] = [];
   /**
@@ -421,10 +418,10 @@ export class WorldBlocks {
      */
     private readonly onFailed: (surfaces: readonly number[]) => void,
     /**
-     * Told, once a map, that a main-pass palette pipeline FAILED
-     * (`paletteFailed`): no palette group is failed, the shadow maps still
-     * drawing them, so whoever handed the palette's main pass over says so
-     * itself.
+     * Told, once a map, that a main-pass palette pipeline FAILED: no
+     * palette group is failed, the shadow maps still drawing them, so
+     * whoever handed the palette over says so itself (the world's failure,
+     * `BlockHandover`).
      */
     private readonly onPaletteFailed: () => void,
     /** The culls' diagnostics (`ClusterCull`'s `CullDiagnostics`); none but off the URL. */
@@ -444,15 +441,6 @@ export class WorldBlocks {
    */
   get depth(): WorldDepth | null {
     return this.worldDepth;
-  }
-
-  /**
-   * Whether a main-pass palette pipeline (`mainPalette`) failed for this
-   * map: no main pass of ours draws the palette again until the next cut, so
-   * `setPaletteMain(true)` is not asked.
-   */
-  get paletteFailed(): boolean {
-    return this.mainPaletteFailed;
   }
 
   /** What is handed over, and what it was cut into. */
@@ -499,7 +487,7 @@ export class WorldBlocks {
    * Hands over one surface of the emissive PALETTE (its material's `recipe`):
    * its positions and its slots, cut after every drawn group's and AHEAD of
    * the held casters (`cutRank`), so inside the count the main view culls —
-   * drawn in the main pass while `setPaletteMain` says so, and in the passes
+   * drawn in the main pass, and in the passes
    * `passes` names: a probe's faces (`PASS_PROBE`, drawn by
    * `render/emissiveWorld.ts`), the glow's mask (`PASS_GLOW`, drawn through
    * the main view: `glowView`) and any shadow pass it casts in. Its index is
@@ -833,18 +821,7 @@ export class WorldBlocks {
     this.mainPalette = new Map();
     this.mainPaletteReady = Promise.resolve(true);
     this.mainPaletteFailed = false;
-    this.paletteMain = false;
     this.drawnLast = 0;
-  }
-
-  /**
-   * Whether the palette is drawn in the main pass from the next draw — the
-   * handover's decision, made with the glow's mask's (`BlockHandover`, its
-   * only writer), never asked true once `paletteFailed`, and safe inside a
-   * render: the draw reads it as it is queued.
-   */
-  setPaletteMain(on: boolean): void {
-    this.paletteMain = on;
   }
 
   dispose(): void {
@@ -1201,8 +1178,8 @@ export class WorldBlocks {
   };
 
   /**
-   * Ahead of group 0's alpha-tested meshes: the palette FIRST while it is the
-   * main pass's, so every tie with a surface of ours goes the way Babylon's
+   * Ahead of group 0's alpha-tested meshes: the palette FIRST, when the map
+   * has one, so every tie with a surface of ours goes the way Babylon's
    * opaque queue sent it; then the blocks, the scatter, then the landform, so
    * the floor behind what stands on it fails the depth test before it shades
    * (see the header).
@@ -1212,7 +1189,9 @@ export class WorldBlocks {
     const view = this.mainView;
     if (this.culling && view) {
       const frame = ctx.frameGroup;
-      if (this.paletteMain) drawn = this.drawPalette(pass, frame, view, this.mainPalette, 0);
+      if (this.paletteGroups.size > 0 || this.quietPaletteGroups.size > 0) {
+        drawn = this.drawPalette(pass, frame, view, this.mainPalette, 0);
+      }
       drawn += this.drawClusters(pass, frame, view, "blocks", true) + this.drawScatter(pass, frame, view);
       drawn += this.drawClusters(pass, frame, view, "landform", true);
     }
@@ -1302,7 +1281,7 @@ export class WorldBlocks {
    * (`PASS_GLOW`) — with no cull of its own, each palette group one plain draw
    * over its range of the main view's indices, by the mask twin of its program
    * (`emissiveWorld(GLOW_TARGETS, true)`): no depth written, LEQUAL against the
-   * depth the main pass's palette wrote (ours, `setPaletteMain`), at its
+   * depth the main pass's palette wrote (ours, `draw`), at its
    * material's own bias. Null before the map is cut, or with no palette held.
    * Disposed by whoever holds it, and with the map at the latest.
    */

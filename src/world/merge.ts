@@ -21,9 +21,9 @@
  * place a collider is made.
  * Invariants: `BlockMerge.finish` and `PaneBlocks.finish` write the SAME
  * `metadata.block` key off the same block size (`blockOf`), which is what
- * `ReflectionSystem.encloses`, `WorldCulling` and our renderer's probe bake
- * (the key parsed once, `render/wgsl/clusterCull.ts`' `blockCoordsOf`, by
- * `BlockHandover` and `ReflectionSystem`) all rest on (the metadata contract
+ * `WorldCulling` and our renderer's probe bake (the key parsed once,
+ * `render/wgsl/clusterCull.ts`' `blockCoordsOf`, by `BlockHandover` and
+ * `ReflectionSystem`'s `exclusionOf`) all rest on (the metadata contract
  * in `CLAUDE.md`), and a scatter placement's block is its REGION's, on the
  * same lattice (`blockCell`). A merged surface carries the exemptions and the
  * sway mark its group was KEYED on, never ones read back off a member. A
@@ -127,9 +127,9 @@ export class BlockMerge {
     const out: WorldSurface[] = [];
     for (const [key, group] of this.blocks) {
       for (const merged of mergeByMaterial(group, `block${key}`, { palette, mint: this.mint })) {
-        // The key travels ON the surface, because `ReflectionSystem` has to ask
-        // which building a merged mesh IS and the palette took the answer out
-        // of the geometry — see `encloses` there. `PaneBlocks` files glazing
+        // The key travels ON the surface, because the reflection bake has to
+        // ask which building a merged surface IS and the palette took the
+        // answer out of the geometry — see `exclusionOf` in `ReflectionSystem`. `PaneBlocks` files glazing
         // under this same key, which is what lets the two agree on "the same
         // building" without measuring a distance between two centres.
         merged.part.metadata = { ...(merged.part.metadata ?? {}), block: key };
@@ -166,7 +166,8 @@ export class PaneBlocks {
   /**
    * The block's side, in metres. **It must be `BlockMerge`'s**, and it is the
    * same value from `MapBuilder.build` rather than a second reading of the
-   * layout: the whole of `ReflectionSystem.encloses` rests on a glazing group
+   * layout: the whole of the bake's exclusion (`ReflectionSystem`'s
+   * `exclusionOf`) rests on a glazing group
    * and the wall it is glazed onto landing under the same key, and two sizes
    * would break that silently — a probe reflecting its own building, with
    * nothing in the numbers to point at. `mint` as `BlockMerge`'s.

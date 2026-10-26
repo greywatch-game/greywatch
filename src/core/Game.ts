@@ -746,8 +746,7 @@ export class Game {
    * The emissive palette's share of the glow's mask as our renderer draws it:
    * every round's whose palette glows (X3.6d). Public for the
    * reason `glow` is: the smoke scripts that read the mask back ask it
-   * whether it holds a world (`holds`) and is drawing (`drawing`, `drawn`),
-   * and force a `lose`.
+   * whether it is drawing (`drawing`, `drawn`).
    */
   readonly worldGlow: WorldGlow;
   /**
@@ -767,8 +766,8 @@ export class Game {
    */
   private readonly random = new RoundRandom();
   /**
-   * The world as the glazing reflects it — one cube, baked per map install.
-   * The only render target here besides the shadow map.
+   * The world as the glazing and the water reflect it — a cube per glazed
+   * block and per body of water, baked per map install by our renderer.
    */
   private reflections: ReflectionSystem;
   /**
@@ -777,7 +776,7 @@ export class Game {
    *
    * **The bake is spent over FRAMES and this is where those frames are.**
    * `installMap` is one synchronous turn, so no frame can render inside it and
-   * a probe cannot bake there; `ReflectionSystem.releaseBatch` rides a render
+   * a probe cannot bake there; `ReflectionSystem.releaseOurs` rides a render
    * observable and lets a budget's worth go per frame after it. Before this,
    * those frames were the first frames of `deploy` and then of the ROUND — one
    * on every shipped map, and **47 frames over 44.8 seconds on a 1500 m map**
@@ -785,9 +784,10 @@ export class Game {
    * where nothing simulates and the scene still renders, which is exactly the
    * shape of frame this needs, so the card stays up until the queue is empty.
    *
-   * It moves the cost rather than removing it — `ReflectionSystem.faceOf` is
-   * the half that removes it — and what it buys is that a round is a round
-   * when it starts. `ENGINE_UPGRADE.md` S0c.
+   * It moves the cost rather than removing it — Babylon's bake's per-face
+   * cull was the half that removed it, and our bake culls each face too —
+   * and what it buys is that a round is a round when it starts.
+   * `ENGINE_UPGRADE.md` S0c.
    */
   private bakeWait: {
     /** What `bakePending` was when the wait opened, for the card's bar. */
@@ -1793,10 +1793,6 @@ export class Game {
     // this one PUBLISHES to it — the cube the glazing samples, baked from the
     // map itself. Built here so a pane material is born holding the sampler.
     this.reflections = new ReflectionSystem(this.scene, this.mats, this.probeBake);
-    // Whose bake an install's is: ours whenever the handover holds every mesh
-    // a probe draws, which in a round it refuses not to — asked of it here,
-    // at the call, the wiring rule.
-    this.reflections.setOurs((list) => this.handover.probeHolds(list));
     // A cube is baked once per install and keeps the bounce it was baked
     // under, so the bake waits for the volume `installMap` has just cleared —
     // and the shadows it samples, which our renderer draws a frame or more
@@ -3624,8 +3620,8 @@ export class Game {
    * welcome may already have moved to the next one). One from the map still
    * standing under the NEXT round's building card — landing between
    * `startRound` and that round's install, which will tear it down anyway —
-   * is said against its own map and is not the new round's end: a pass
-   * broken for the session fails the new install on its own account.
+   * is said against its own map and is not the new round's end: a pipeline
+   * failed for the session fails the new install on its own account.
    */
   private worldFailed(reason: string, owner: WorldOwner): void {
     if (owner !== this.roundWorld && this.buildPending()) {
@@ -4992,10 +4988,9 @@ export class Game {
     // its floor. The volume restarts unconverged and spends its first sweeps at
     // the warm budget; nothing it does is a draw call.
     this.gi.setMap(map, environment.floorColor);
-    // And the other thing baked off the fresh map's visuals: what its glass
-    // reflects. Same reason as the line above it — last build's meshes are
-    // disposed, and this one holds a render list of them until it is told.
-    // Editor builds park the probes and bake nothing, exactly as the physics
+    // And the other thing baked off the fresh map: what its glass reflects,
+    // off the world the handover handed our bake above — the last build's
+    // queue emptied. Editor builds bake nothing, exactly as the physics
     // world below refuses one: a bake is a build step, and the editor is where
     // a build stops being rare.
     this.reflections.build(map, opts?.editor === true);
@@ -5004,8 +4999,8 @@ export class Game {
     // set of points — handed in as a callback rather than reached for, and
     // called from INSIDE the build because a probe has to stand where the
     // water is and only the bed-depth bake knows where that is.
-    this.water.build(map.water, environment, map.terrain, (sites, rebind) =>
-      this.reflections.bakeWater(sites, map, opts?.editor === true, rebind),
+    this.water.build(map.water, environment, map.terrain, (sites) =>
+      this.reflections.bakeWater(sites, map, opts?.editor === true),
     );
     this.grass.build(
       map.grass,
@@ -5553,8 +5548,9 @@ export class Game {
    * the bake always took, moved from `deploy` to under the card. On the 1500 m
    * proving ground it is 47 frames, and measured either side of this change
    * they went from 44.8 seconds in the ROUND to 10.6 under the card —
-   * `ENGINE_UPGRADE.md` S0c, where the second figure is `faceOf`'s doing and the
-   * change of state is this method's.
+   * `ENGINE_UPGRADE.md` S0c, where the second figure is the per-face cull's
+   * doing and the change of state is this method's. Our renderer's bake
+   * (X3.6c, the only one since X3.7c) drains Coldharbour in five frames.
    */
   private openBakeWait(): void {
     const total = this.reflections.bakePending;

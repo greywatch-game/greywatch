@@ -83,7 +83,7 @@ then the frame loop itself, at which point taking the frame is mostly deletion.
 | **0. Instruments** | nothing — the oracles this plan needs and the "before" | the bank and the benchmark both reproduce |
 | **1. Data off Babylon types** | math, geometry and the merge become plain arrays | `kit:hash` and `merge:hash` identical, no pixel moved |
 | **2. The simulation off the scene** | sweeps, state, the server, Havok, one core in a Worker | `server/` and the simulation import nothing from Babylon (a build gate says so) |
-| **3. The static world** | our renderer draws blocks, scatter and terrain, in every pass | Babylon builds no mesh in a round for anything our renderer draws (glazing and fires stay Babylon's until X4.6 and X4.4) — met at X3.7b; X3.7c narrows the world passes Babylon kept for the fallback |
+| **3. The static world** | our renderer draws blocks, scatter and terrain, in every pass | Babylon builds no mesh in a round for anything our renderer draws (glazing and fires stay Babylon's until X4.6 and X4.4) — met at X3.7b; the world passes Babylon kept for the fallback deleted at X3.7c, but the editor's (X5.3) |
 | **4. Everything else that draws** | bodies, hulls, the viewmodel, effects, sky, water, glass, grass, particles | Babylon's scene draws nothing but the post chain |
 | **5. The frame** | GI compute, the post chain, the editor, the loop | Babylon's engine is not constructed |
 | **6. The cut** | the package, the gates, the docs, then the merge | `develop` carries the exit as one merge commit |
@@ -455,6 +455,13 @@ what each commit found and decided, and what each left behind.
 
 Babylon still owns the frame. Our module draws inside Babylon's passes through
 the seam.
+
+**The end condition reads true** — "Babylon builds no mesh in a round for
+anything our renderer draws" — since X3.7b, and since X3.7c no fallback pass
+of Babylon's is left for a round (the editor's build keeps the generators and
+the lamps' render target, X5.3's). **No phase tag yet**: the phone's
+follow-up reading owed since X3.3c, and the tag itself, are the user's
+(X3.7c, "Owed onward").
 
 ### X3.1 — The shared WGSL (PERF_PLAN B0) — **M** — **LANDED** (ab51aa7)
 
@@ -2877,8 +2884,12 @@ below. Editor builds keep the old path until X5.3. **Since X3.7b** Babylon
 builds no mesh in a round for anything our renderer draws — a round's
 `GameMap.visuals` are the glazing and the fires — `?babylonworld` is gone
 (its last build tagged `exit-babylonworld`), and every former handback is
-`Game.worldFailed`: Phase 3's end condition is met, and X3.7c narrows the
-world passes Babylon still keeps for the editor.
+`Game.worldFailed`: Phase 3's end condition is met. **Since X3.7c** the
+fallback machinery is gone for a round: Babylon's `ReflectionProbe` path (the
+default cube one of ours), the emissive palette's Babylon stages and its glow
+mask twin, and every pass's `lose`/`onLost`/`broken` latch (a pass is handed
+its world WITH the install's failure). The editor keeps `ShadowSystem`'s
+generators and `LocalShadows`' render target (X5.3).
 
 ### X3.7 — Babylon builds no world mesh for a round — **L, as three sub-steps** (decided 2026-10-24)
 
@@ -2943,7 +2954,7 @@ is checked against its parent.
     `createTexture` wrapped, as X3.6a did), `installRound` timed in the page
     and alternated (the bench's install reads a cold dev server), and
     `scene.meshes`/`geometries` a map — before and after.
-- **X3.7c — Babylon's world passes narrowed.** Deleted for a round: the
+- **X3.7c — Babylon's world passes narrowed.** Landed (below). Deleted for a round: the
   `ReflectionProbe` path (the editor's strength-0 default cube replaced by one
   of ours), `GlowPass`'s palette twin and `EmissiveWorld`'s Babylon stages,
   the `lose`/`onLost`/`broken` latches. `ShadowSystem`'s generators and
@@ -3329,6 +3340,152 @@ is checked against its parent.
 - **Owed onward.** X3.7c. The phone's FOLLOW-UP reading, as every step's
   since X3.3c — X3.7b's gain is memory the phone feels most. Pushing the tag
   `exit-babylonworld` (the user's call).
+
+**X3.7c landed** (this commit; 2026-10-25; no picture change).
+- **What it is.** The fallback machinery Babylon kept for the world goes for a
+  round. **Babylon's `ReflectionProbe` path is deleted** (`ReflectionSystem`:
+  the two probe pools, the draw-budgeted queue and `releaseBatch`, `release`,
+  `forgetPasses`, `newProbe` and its scene swap, `faceOf`, `neighbourhood`,
+  `opaqueWorld`, `encloses`, `toBabylon`, `setOurs`/`holds`/`path`, the eye
+  borrowed around the render targets, the water's `rebind`; `CONFIG.graphics
+  .reflection.drawsPerFrame`); the bake is ours, always, and a build our bake
+  holds no world for (an editor's, a round already failed) bakes nothing.
+  **The default cube is one of ours** (`ProbeBake.cube("default")`, wrapped,
+  never baked: WebGPU makes it zeroed, as Babylon's probe 0 was cleared to
+  zero), bound at a strength of 0 as before. **The emissive palette's Babylon
+  stages and its glow-mask twin are deleted** (`EmissiveWorld.ts`: no
+  ShaderStore entries, no `EmissiveWorldMask`, no `SelfMasking`, no
+  palette/fog/eye uniforms); `EmissiveWorldMaterial` is a plain `Material`
+  OBJECT — the merge keys on it, the factory hangs its recipe off it,
+  `GlowRules` reads its white `emissiveColor` (X3.7, Keeps). **The
+  `lose`/`onLost`/`broken` latches are deleted** from `WorldShadows`,
+  `LampAtlas`, `ProbeBake` and `WorldGlow` (`WorldGlow.holds` with them), and
+  so are `WorldBlocks.setPaletteMain` (only ever `true`: the palette is drawn
+  first whenever there is one) and its `paletteFailed` getter,
+  `BlockHandover.probeHolds` and `ProbeHolding`, and the Babylon-bake-only
+  flips the materials carried (`CelMaterialFactory.setOpaqueAlpha` and
+  `readEye`, `FlameMaterial`/`BlastMaterial.setOpaqueAlpha`,
+  `ShadowBindings.holdCloudShadow`).
+- **How a failure still reaches `worldFailed` without the latches.** The
+  handover hands each pass its world WITH the install's failure —
+  `WorldShadows.setCasters(depth, failed)`, `LampAtlas.setCasters(depth, slot,
+  failed)`, `ProbeBake.setWorld(source, failed)`, `WorldGlow.setWorld(source,
+  failed)`, `failed` being `BlockHandover.failFor(owner, …)`, which drops a
+  failure for an install no longer in hand — and the pass TELLS it whatever
+  it finds it cannot draw, in the turn it finds it: casters whose build
+  failed, a bake view not made or not built, a mask view not made, a mask
+  pipeline failed, a refused mask pass. Nothing is dropped or handed back;
+  the handover stops our draws (`WorldBlocks.stop`) and `Game.worldFailed`
+  tears the round down after the task in hand. **A pipeline asked once for
+  the session** (the lamps' proxies, the bake's mips) is no latch either:
+  every world handed over waits on its settled PROMISE, so a failure fails
+  that install and every one after it, each through its own failure. The
+  handover's own doors are unchanged (`WorldBlocks.onFailed`,
+  `onPaletteFailed`, `Renderer.onRefused`, the cull's refusal, a refusal at
+  the take, the DEV node check). The install's checks that asked a pass
+  whether it HELD a world (`lamps.casters`, `probes.holds`, `glow.holds`,
+  `blocks.paletteFailed`) are gone with them: none could be false at the
+  install but through a latch.
+- **What the editor keeps, and why it needed nothing replaced but the
+  cube.** `ShadowSystem`'s generators and `LocalShadows`' render target, as
+  planned (X5.3's). The palette's Babylon stages and twin were drawn by NO
+  build: an editor build never merges its blocks (`MapBuilder.mergeBlocks`,
+  the one pass that paletteises), so its emissives are `getEmissive`'s
+  `StandardMaterial`s, which `GlowPass` blooms as ever (`merge:hash
+  --editor`'s baseline: no `emissive-world` material on any of the eight
+  maps' 28,473 meshes) — the header that said they drew an editor build was
+  wrong. Its glass and water bake nothing and sample the default cube at
+  strength 0, as before.
+- **Deviations.** HELD-caster layer kept: it is live for a casting fire,
+  which no shipped map has (the brief's "legitimate only for a casting fire").
+  `probeCount` counts the slots baked, both pools, and no longer the default
+  cube (Babylon's glazing pool held it as slot 0): one fewer on a map with no
+  glazing (Hollowmere 3 to 2, Greyfen and Harrowmead 2 to 1, Kurenai 4 to 3;
+  `gate.mjs` prints it and asserts nothing of it). A stale comment naming
+  `ReflectionSystem.encloses` stays in `src/world/harrowmead/layout.ts`: the
+  collision bake's staleness guard hashes that file's text, so editing it
+  would re-bake.
+- **Measured.**
+  - **The bank, against a BEFORE at 9f7f0b1 in the worktree** (`--check
+    --keep` both sides): 60 of 61 byte-identical at first, the same 34 stale
+    rows over the bank's tolerance on both sides, no console or page error.
+    The one, Sarab's `ground` (100 pixels, 0.0048%, at most 2/255), was this
+    time the AFTER's first run — X3.7b's known run noise: Sarab re-run on both
+    sides, the two re-runs equal each other on all eleven rows, and equal the
+    BEFORE's first run and X3.7b's AFTER. So **61 of 61 byte-identical**; the
+    default cube moved nothing, as `mix(sky, city, 0)` says it cannot.
+  - **`census --against` the BEFORE**: every row equal (Hollowmere 278,
+    Greyfen 205, Coldharbour 672, Harrowmead 847, Sarab 661, Cinderhaven 186,
+    Kurenai 125). **`gate.mjs`** clean on seven (the probe counts it prints
+    one lower on the four maps with no glazing: above). **`shaders.mjs`**
+    clean on seven, ours 17/17 (21/21 Sarab and Cinderhaven, 23/23
+    Coldharbour, palette biases 0 and -24) — after its discovery was fixed:
+    it read the palette's biases off the ShaderMaterials it compiles, which
+    the palette no longer is, and its first run built neither palette program
+    (15/15, "palette biases []") while passing; it now asks every material on
+    the page (`scene.materials`). Babylon compiles two modules fewer a map
+    (116-132 against 118-134): the palette's stages.
+  - **`merge:hash`** identical to X3.7b's baselines and to X3.7a's on all
+    eight registry maps, shipped (2,939 of 3,828 surfaces meshless, 889
+    meshed equal in arrays and bounds) and `--editor` (28,473 of 28,473).
+    **`kit:hash`** identical (3,722 builds); **`parity`** passes on eight;
+    **`collision`** rewrote nothing; typecheck, build and corecheck pass.
+  - **The forced paths** (a scratch page on Coldharbour, each on the pass's
+    own path, `VERIFYING.md`'s recipe): the main pass refused, a failed
+    group, a failed main-pass palette pipeline, the mask pass refused
+    (`WorldGlow.refused`), two at once, the shadow maps' casters and the
+    lamps' casters not building, the lamps' proxies' pipeline failed for the
+    session — and a SECOND round on that session failing the same way — the
+    bake's mips pipeline failed, its view not made and not built, the mask's
+    view not made, a mask pipeline failed, the cull's refusal, a pipeline
+    failing under the card, a surface filed under no block and a refused
+    surface (its DEV page error) each end in ONE `[world]` error, the menu
+    and the toast naming the map; the OLD install's failure called after a
+    Restart's `startRound` is said against the old map ("already being
+    replaced") and dropped when called again after the new install
+    (`failFor`), the new round deployed with no toast; a clean round after,
+    every pass held, the bake drained. **A shadow rung raised from `off`**
+    mid-round draws ours, byte-identical to a round installed at `high`.
+    **`F2`**: 2,154 meshes, the generators drawing, select (placements 47),
+    a select by ref, a drag, a sculpt stroke and a save (restored by `git
+    checkout`), no error. **The editor's look**, photographed in the editor
+    at Coldharbour's shopfront (see-through glazing, the shop's lamps) and at
+    its curtain wall, frozen, two runs a side: BEFORE against AFTER 0.005-
+    0.014% and 0.020-0.026% of pixels (at most 3 and 17/255), the BEFORE
+    against itself 0.005% and 0.018% (2 and 17/255) — run noise, the glass
+    showing the sky half and the fanlight's bloom the same; one custom
+    render target fewer (Babylon's probe 0).
+  - **What it is worth** (`measure.mjs`, the second install in the page,
+    BEFORE and AFTER alternated twice a side): GPU textures 0.3-0.4 MiB lower
+    on every map (Babylon's probe 0 against the default cube of ours: 236.8
+    to 236.5 Hollowmere, 256.2 to 255.9 Coldharbour, 258.5 to 258.1
+    Cinderhaven), GPU buffers identical (127.0 to 353.0 MiB), the JS heap
+    level within half a MiB (Greyfen 149.1 to 148.8, Cinderhaven 269.6 to
+    269.2), scene meshes and geometries identical, `installRound` level
+    (Greyfen 4.28/4.33 to 4.35/4.31 s, Cinderhaven 5.87/5.57 to 5.59/5.49).
+    The bundle is 9.2 kB smaller (`index` 9,448.94 to 9,439.72 kB, gzip
+    2,344.26 to 2,342.01). X3.7c deleted a path, not a cost a round paid.
+  - **X0.3 on the desktop** (`bench.mjs`, `--max --gpu`, uncapped,
+    3440x1440, the BEFORE at 9f7f0b1 and the AFTER alternated run by run,
+    three a side, on Greyfen, Coldharbour and Cinderhaven; the canonical
+    fight hashes on all 18 runs, none hung): the mean frame new / old
+    0.997-1.001 on the vantages, 0.993-1.000 on the path and 0.996-1.010 in
+    the fights (every spread under 3%); `gpu.frame` 0.990-1.013; draws equal
+    but Greyfen's fight 273 to 272. The bench's install read the main tree's
+    dev server again (Greyfen, each run's first map, 8.7-8.8 s to 11.0-11.5;
+    Coldharbour 8.1-8.5 to 6.0-6.4) — `installRound` timed in the page,
+    above, is level.
+- **Phase 3's end condition** — "Babylon builds no mesh in a round for
+  anything our renderer draws" — **reads true** (since X3.7b), and since
+  X3.7c no Babylon pass of the world is kept for a round: what Babylon draws
+  in one is the bodies and `BodyShadows`, the hulls, the viewmodel, the
+  effects and fires, the sky, clouds and moon, the water, grass, glazing,
+  flags, rings, blobs and particles, and the glow mask's non-world emissives.
+- **Owed onward.** Before a phase gate: the phone's FOLLOW-UP reading, owed
+  since X3.3c and the user's to take, and the post-commit review of this
+  step; then the `exit-phase-3` tag, the user's call (rule: "Moving the
+  branch back to one is the user's call"), as is pushing `exit-babylonworld`.
+  X5.3 deletes what the editor keeps.
 
 ---
 

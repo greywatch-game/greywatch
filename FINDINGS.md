@@ -348,17 +348,16 @@ not to be it.
 
 ## 10. The reflection bake is draw-call bound, and a distance cull halves the list
 
-**Since X3.6c this is the old path's entry, and since X3.7b no round takes
-it.** Our renderer bakes the cubes in every round (`render/ProbeBake.ts`), a
-face being a cull and a pass over its survivors rather than a draw a mesh, so
-no term below prices it: Coldharbour's 39 probes drain in 5 frames of 5-6 ms,
-~41 ms of wall clock, at `probesPerFrame` 8 on the Windows box. Everything
-below — the per-draw cost, the worst frame, `drawsPerFrame` — is Babylon's
-`ReflectionProbe` bake, which `?babylonworld`, a map with a bake surface our
-side cannot draw and a bake lost before it drained took until X3.7b, which
-deleted the switch and made the other two the world's failure; X3.7c deletes
-the path (an editor build bakes nothing on either). The PICTURE questions at the end (the 800 m hole, `perCell`, a
-wider block) bear on both paths, which share the radius and the enclosure.
+**Since X3.6c this is the old path's entry, and since X3.7c the path is
+gone.** Our renderer bakes the cubes (`render/ProbeBake.ts`), a face being a
+cull and a pass over its survivors rather than a draw a mesh, so no term below
+prices it: Coldharbour's 39 probes drain in 5 frames of 5-6 ms, ~41 ms of wall
+clock, at `probesPerFrame` 8 on the Windows box. Everything below — the
+per-draw cost, the worst frame, `drawsPerFrame` — is Babylon's
+`ReflectionProbe` bake, which no round took after X3.7b and X3.7c deleted
+(the tag `exit-babylonworld` has the last build of it); an editor build bakes
+nothing. The PICTURE questions at the end (the 800 m hole, `perCell`, a wider
+block) bear on ours, which keeps the radius and the enclosure.
 
 **Measured, headless (SwiftShader, Coldharbour); superseded on real hardware —
 see the end of this entry.** `ReflectionSystem` bakes 37
@@ -439,9 +438,9 @@ the bake off the device was neither**: spending it over frames at 50,000 draws
 each. A descriptor heap is recycled per SUBMISSION, so the largest single frame
 is what the ceiling is against and the total is not — which is the sentence
 `ENGINE_UPGRADE.md`'s wall 5 had backwards. Coldharbour's forty probes were
-41,934 draws and landed on one frame — **before its re-lay (6e848a1)**, and if
-the re-laid map's draws now pass 50,000 the bake spans two frames. Re-count it.
-Hollowmere's probe count is likewise pre-re-lay (5806a24).
+41,934 draws and landed on one frame — **before its re-lay (6e848a1)**; the
+re-count this asked for is moot since X3.7c deleted that bake (ours drains the
+re-laid map's 39 probes in five frames of eight).
 
 **The bake also waits for the irradiance volume now** (659b58f): releasing is
 held until `GiVolume.converged`, so no cube freezes the volume's first pass —
@@ -449,25 +448,12 @@ held until `GiVolume.converged`, so no cube freezes the volume's first pass —
 
 ### Also open, carried from the bake's closed entries
 
-**A bake draw is ~18.6 us and nobody knows why.** The figure was taken just
-before per-face culling (edc9ccf), and that commit's own figures still work out
-to ~18.7 us per ISSUED draw, so the per-draw cost survives — but "50,000 draws
-at ~928 ms" is a pre-cull number (after it, a frame offering 50,000 issues about
-a fifth of them, at 181-197 ms median). It is three times the ~6.3 us
-`VERIFYING.md` measures for a mesh draw carrying a material switch, and eight
-times the ~2.3 us for an outline shell reusing a bound material. A first bake
-creates a draw wrapper per (mesh, render pass id) and six of those per probe,
-so bind-group creation is the obvious suspect — and on Babylon 9.28 (96fcd19)
-every draw context owns a bind group until it is disposed, which is why
-a1eed52 added `ReflectionSystem.forgetPasses`. **The 18.6 us was taken on 9.19
-and needs re-taking on 9.28 before it is argued from.**
+Two threads that were carried here are CLOSED by X3.7c, which deleted the
+bake they were about: why a draw of Babylon's bake cost ~18.6 us (taken on
+9.19, owed a re-take on 9.28), and its 1,217 ms worst first batch at 1500 m
+(`releaseBatch` letting one fat probe through an empty frame). Ours issues no
+draw a mesh and has no such queue — a frame is `probesPerFrame` probes.
 
-- **The worst frame is still 1,217 ms at 1500 m**, against a 197 ms median. It
-  is the first batch and it is a queue-shaping question rather than a
-  draw-count one: `releaseBatch` lets one probe through however fat it is on an
-  otherwise empty frame, by design, or a queue with a fat head could never
-  drain. A budget that could be spent as "one probe's worth of FACES" rather
-  than one probe would smooth it; nothing has tried.
 - **`perCell` is 2 on the 1500/0 proving ground, the only live grouping in the
   tree** — every shipped map is `perCell` 1 (`ReflectionSystem.ts` ~340) — and
   means a probe there drops 96 m of city out of the middle of its own cube (the
@@ -485,7 +471,7 @@ and needs re-taking on 9.28 before it is argued from.**
   it. On a map with long sightlines and heavy per-pixel work it might not. Four
   shipped maps now state a wider `blockSize` — Sarab 96, Cinderhaven 120,
   Kurenai 120 and Harrowmead 200 — and a probe drops every block it serves from
-  its own bake (`ReflectionSystem`'s `encloses`), so a wider block is also more
+  its own bake (`ReflectionSystem`'s `exclusionOf`), so a wider block is also more
   of the city missing from its own cube. None of that has been judged on
   screen. (`terrainBlock` does not bear on either: it is the floor patch, and
   the terrain carries no `block` metadata.)
@@ -2156,8 +2142,10 @@ DOES draw a fire, but only far off and only as single dark-red texels: taking
 the `-flame-` merges out of Babylon's lists alone moved **6 texels** in
 X3.6c's cube readback (3 on Sarab, 3 on Cinderhaven) and nothing else.
 **Our renderer's bake leaves every fire out by construction**
-(`BlockHandover`: a `FlameMaterial` merge is neither taken nor held for it, and
-`probeHolds` counts it apart) — there is no flame program on our side until
+(`BlockHandover`: a `FlameMaterial` merge is neither taken nor held for it,
+and `strayMesh` lets it stand beside the glazing) — and since X3.7c ours is
+the only bake, so Babylon's half of this entry can no longer be read but at
+the tag `exit-babylonworld`; there is no flame program on our side until
 the fire moves (`BABYLON_EXIT.md` X4.4) — so on our path no probe draws a fire
 at all, and the picture moved by those 6 texels against Babylon's. What is
 still unexplained is the near case below: a fire stood AROUND a probe draws
@@ -2955,8 +2943,9 @@ and the world's shadow maps through its generators — `ours: false` in every
 dump): 5 of 9 runs, all three maps. So the hang is not in anything the
 Babylon exit has drawn, X3.6a or earlier; it is in what Babylon still draws,
 or in the machine. (`?babylonworld` went at X3.7b; that control is a build
-at the tag `exit-babylonworld` now. X3.7b's own X0.3, 3440x1440 uncapped,
-is in `BABYLON_EXIT.md`.)
+at the tag `exit-babylonworld` now. X3.7b's and X3.7c's own X0.3,
+3440x1440 uncapped, are in `BABYLON_EXIT.md`: X3.7c's eighteen runs, three a
+side on Greyfen, Coldharbour and Cinderhaven, completed with none hung.)
 
 ### How to settle it
 - A fresh boot of the machine, then the loop again (the scratch watchdog,

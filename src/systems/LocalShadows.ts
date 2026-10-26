@@ -29,8 +29,9 @@
  *   (`ShadowSystem`): our renderer (`render/LampAtlas.ts`, `BABYLON_EXIT.md`
  *   X3.6b) in every round, the handover handing it the casters on every
  *   rung (`LampAtlas.casters`, set by `BlockHandover`), and this file's
- *   render target for an EDITOR build, which hands ours nothing; a loss of
- *   ours mid-map is the world's failure (`BlockHandover`, X3.7b).
+ *   render target for an EDITOR build, which hands ours nothing (kept for it
+ *   alone, X5.3's to delete); casters ours cannot draw are the world's
+ *   failure (`BlockHandover`, X3.7b).
  *   Everything that DECIDES is the same for both: which lights cast, their
  *   tiles, which faces bake when, and what is published; only the drawing
  *   moves, handed over once a frame as `AtlasWork`.

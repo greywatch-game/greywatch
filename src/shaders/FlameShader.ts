@@ -4,8 +4,9 @@
  * `GlowPass` draws the fire's bloom with.
  * Owns: both WGSL stages, the inks a fire is painted in, and the
  * `FlameMaterial` class. Reads its motion from `CONFIG.graphics.flame`; is
- * fed the world clock, the fog and the frame's opaque alpha by
- * `CelMaterialFactory`, which is the only thing that makes one (`getFlame`).
+ * fed the world clock, the fog and the eye by `CelMaterialFactory`, which is
+ * the only thing that makes one (`getFlame`), and writes the frame's opaque
+ * alpha, 0 (no bake draws a fire, `FINDINGS.md` 51).
  * Invariants: the geometry it draws is `world/flame.ts`'s, whose UV channel is
  * the whole of its per-vertex vocabulary (below) — nothing else may wear it.
  * The mask twin runs the SAME vertex function over the same uniforms, which is
@@ -448,9 +449,10 @@ export class FlameMaterial extends ShaderMaterial implements SelfMasking {
    * The eye the fire fogs against and turns its silhouette from — the cel
    * materials' own (`CelMaterialFactory.updateCamera`), onto this and every
    * mask twin. Never `ShaderMaterial`'s `cameraPosition`: Babylon writes that
-   * from `scene.activeCamera`, which a reflection probe never changes, so a
-   * bake drew every fire it captured as seen from wherever the player stood.
-   * `EmissiveWorld.ts`, "WHY ITS OWN EYE", has the argument and the measure.
+   * from `scene.activeCamera`, which Babylon's reflection probe never
+   * changed, so its bake drew every fire it captured as seen from wherever
+   * the player stood — the reason the palette took the same eye, when
+   * Babylon still drew one.
    */
   setEye(pos: Vector3): void {
     this.eye.copyFrom(pos);
@@ -461,10 +463,6 @@ export class FlameMaterial extends ShaderMaterial implements SelfMasking {
   setFog(color: Color3, start: number, end: number): void {
     this.setColor3("fogColor", color);
     this.setVector2("fogParams", new Vector2(start, end));
-  }
-
-  setOpaqueAlpha(alpha: number): void {
-    this.setFloat("opaqueAlpha", alpha);
   }
 
   /** The motion and the paint, identical on the flame and its mask. */

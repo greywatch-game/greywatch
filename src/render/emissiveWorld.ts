@@ -4,14 +4,16 @@
  * reflection probe's faces (`render/ProbeBake.ts`, `BABYLON_EXIT.md` X3.6c),
  * into the glow's MASK (`render/WorldGlow.ts`, X3.6d) and into the frame's
  * MAIN pass (`render/WorldBlocks.ts`, X3.6e: the bake's own pipelines) —
- * Babylon's `EmissiveWorldMaterial` and its mask twin in the pulled form.
+ * the only draw of the palette there is since X3.7c, whose Babylon stages
+ * and mask twin (`EmissiveWorldMaterial`'s, until then) it was the pulled
+ * form of.
  * Owns: `EMISSIVE_BLOCK` (group 1: the palette, the fog band and, for the
  * mask, the bloom's colour), the geometry it reads (group 2,
  * `EMISSIVE_GEOMETRY`: the positions, the slots in `uv2` and the instances'
  * transforms, which the shared decode names), `EMISSIVE_ATTRIBUTES`,
  * `EmissiveRecipe` (what a palette material is drawn WITH, as plain data) and
  * `emissiveWorld`, the program's two modules for either pass.
- * Invariants: the pixel is `EmissiveWorldMaterial`'s, by its one body
+ * Invariants: the pixel is the palette's one body
  * (`shaders/wgsl/emissiveWorld.ts`) — the slot's colour faded toward the fog
  * by `EmissiveFog`'s curve over the radial distance to the FRAME's `camPos`
  * (a bake's frame holds the probe there), alpha 1 — or, under `GLOW_MASK`,
@@ -20,13 +22,13 @@
  * vertex is its vertex in both, `world` identity as the merge's is, read
  * through the cel stage's own decode (`pulledWorld`) — so the mask's LEQUAL
  * test ties against the depth our main pass's palette wrote, by the same
- * vertex module (on the fallback neither is ours); group 0 is the cel
+ * vertex module; group 0 is the cel
  * FRAGMENT's whole group, so one frame bind group serves the cel pipelines
  * and these; group 1 is laid out for the MASK's variant, `glowColor` LAST, so
  * the bake's program reads a prefix of the same buffer and one bind group
  * serves both (no layout states a `minBindingSize`); the fog band is the
  * material's own pair as the factory computes it (`fogRange`: start and the
- * reciprocal of the band, on the CPU, so it rounds as Babylon's did), and the
+ * reciprocal of the band, on the CPU, so it rounds as Babylon's uniform did), and the
  * palette the factory's table — both a PULL off the factory
  * (`CelMaterialFactory.emissiveRecipe`), never read off a material; back
  * faces are culled and the material's own depth bias is its pipeline's.

@@ -32,7 +32,7 @@
  * (`BlockBox`), which for the landform is one the reach is never short of —
  * or, in a probe's view, to the near side of the surface's own sphere, as
  * Babylon's bake measured a mesh, and a probe's view leaves out the blocks
- * the probe serves (`ReflectionSystem.encloses`);
+ * the probe serves (`ReflectionSystem`'s `exclusionOf`);
  * the work is RECORDED into the encoder the host submits ahead of the
  * frame's draws (`FrameHost.prepareEncoder`), so it reaches the GPU before
  * the draws that read it and inside the frame's GPU timer — the main pass's

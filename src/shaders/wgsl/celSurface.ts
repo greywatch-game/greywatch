@@ -976,8 +976,8 @@ fn celSurface() -> vec4f {
   // colour directly would draw a dark seam around every roofline in the
   // reflection. Same arithmetic, and the same reason, as the composite below.
   //
-  // textureSample and not textureSampleLevel: a ReflectionProbe's cube carries
-  // a mip chain (Babylon generates one unless asked not to), so an implicit LOD
+  // textureSample and not textureSampleLevel: the bake's cube carries a mip
+  // chain (ProbeBake's, as Babylon's ReflectionProbe did), so an implicit LOD
   // is the filtering the GLSL textureCube already had.
   let city = textureSample(reflectionCube, reflectionCubeSampler,
     reflectBoxDir(mirrored, fragmentInputs.vPosW));

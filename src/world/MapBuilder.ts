@@ -846,9 +846,10 @@ export class MapBuilder {
       plain: new WeakMap(),
       pieces: [],
       colliders: [],
-      // One size, handed to both, because `ReflectionSystem.encloses` asks a
-      // glazing group and the wall behind it whether they are the same
-      // building by comparing the two keys. See `PaneBlocks`.
+      // One size, handed to both, because the reflection bake asks a glazing
+      // group and the wall behind it whether they are the same building by
+      // comparing the two keys (`ReflectionSystem`'s `exclusionOf`). See
+      // `PaneBlocks`.
       blocks: new BlockMerge(blockSize, mint),
       paneBlocks: new PaneBlocks(blockSize, mint),
       index:

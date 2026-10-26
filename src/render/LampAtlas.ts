@@ -33,10 +33,12 @@
  * when a wrapped view of it is disposed, so whoever wraps one lets the view
  * go only with the texture it wraps (`LocalShadows.remake`); `ready` is
  * false until the proxies' pipeline and the casters are built, and
- * `LocalShadows` shadows no light until it is true — a pipeline that FAILS
- * loses the casters and takes none again, which fails every world it is
- * handed (`BlockHandover`, X3.7b) rather than drawing it dark; nothing here allocates
- * on a frame but the passes WebGPU makes.
+ * `LocalShadows` shadows no light until it is true — a proxies' pipeline
+ * that FAILS (asked once, for the session) or casters whose build fails are
+ * never drawn, and the failure handed over with the casters is told
+ * (`setCasters`: the world's, `BlockHandover`) — every world handed over
+ * after the pipeline failed is failed on it, rather than drawn dark;
+ * nothing here allocates on a frame but the passes WebGPU makes.
  * Never: imports Babylon; reads a node; decides a face or a tile.
  * Contract: `docs/rendering.md`, "The lamps' shadows" and "Our renderer's
  * frame".
@@ -145,8 +147,12 @@ export class LampAtlas {
 
   /** The proxies' pipeline once built, and their buffers. */
   private proxyPipeline: BuiltPipeline | null = null;
-  /** The proxies' pipeline did not build: the atlas can never be ours, and no caster is taken for it. */
-  private failed = false;
+  /**
+   * Whether the proxies' pipeline built — asked once, for the session, and
+   * settled false if it failed: every world handed over waits on it
+   * (`setCasters`), so one handed over after a failure fails on it too.
+   */
+  private readonly proxies: Promise<boolean>;
   private readonly boxPositions: GPUBuffer;
   private readonly proxyMatrices: GPUBuffer;
   private readonly proxyTiles: GPUBuffer;
@@ -158,8 +164,6 @@ export class LampAtlas {
   private firstSlot = 0;
   /** Bumped by `setCasters`: a build that settles for casters already replaced does nothing. */
   private generation = 0;
-  /** Told when the casters this was handed cannot draw (`lose`, or a failed build). */
-  private lost: (() => void) | null = null;
 
   /** The frame's work, queued and not yet recorded. */
   private work: AtlasWork | null = null;
@@ -241,7 +245,7 @@ export class LampAtlas {
     this.proxyGeometry.refresh(renderer.host, {});
 
     const program = lampProxyDepth();
-    void renderer.pipelines
+    this.proxies = renderer.pipelines
       .get({
         vertex: program.vertex,
         vertexEntry: "main",
@@ -255,18 +259,19 @@ export class LampAtlas {
       .then(
         (built) => {
           this.proxyPipeline = built;
+          return true;
         },
         (err: unknown) => {
-          // No atlas of ours can be drawn this session: every world fails.
+          // No atlas of ours can be drawn this session: every world handed
+          // over fails on it (`setCasters`).
           console.error("lamp atlas: the proxies' pipeline did not build; no atlas of ours can be drawn", err);
-          this.failed = true;
-          this.lose();
+          return false;
         },
       );
     this.unhook = renderer.onFrame(this.prepare);
   }
 
-  /** The casters while the atlas is ours — null while it is Babylon's. */
+  /** The casters handed over — the map's in a round; null with none (the menu, an editor build). */
   get casters(): WorldDepth | null {
     return this.depth;
   }
@@ -288,11 +293,6 @@ export class LampAtlas {
   /** The atlas, or null while it has none — what a Babylon reader is handed a wrapped view of. */
   get texture(): GPUTexture | null {
     return this.colour;
-  }
-
-  /** Who is told when the casters handed over cannot draw: the world's failure (`BlockHandover`, X3.7b). */
-  onLost(lost: () => void): void {
-    this.lost = lost;
   }
 
   /**
@@ -371,12 +371,13 @@ export class LampAtlas {
 
   /**
    * The casters the static faces are drawn from from now on, at the culls'
-   * slots from `firstSlot` (past the world's maps'), or null when the atlas
-   * is not ours. Their build is waited on here; one that fails is LOST
-   * (`onLost`). None are taken once the proxies' pipeline has failed.
+   * slots from `firstSlot` (past the world's maps'), or null when there are
+   * none (the map going, an editor build). Their build and the proxies'
+   * pipeline are waited on here, and either FAILING leaves them undrawn:
+   * `failed` is told why (the world's failure, `BlockHandover`) — unless
+   * other casters have been handed over since.
    */
-  setCasters(depth: WorldDepth | null, firstSlot: number): void {
-    if (this.failed) depth = null;
+  setCasters(depth: WorldDepth | null, firstSlot: number, failed: (reason: string) => void = ignore): void {
     this.generation++;
     this.depth = depth;
     this.built = false;
@@ -387,25 +388,14 @@ export class LampAtlas {
     void depth.ready.then((ok) => {
       if (generation !== this.generation) return;
       if (!ok) {
-        this.lose();
+        failed("our lamps' atlas's casters did not build");
         return;
       }
       this.built = true;
     });
-  }
-
-  /**
-   * The casters can no longer draw — their build or the proxies' pipeline
-   * failed: they are dropped, and whoever asked to be told is, once the task
-   * in hand is done (`onLost`; the world fails, X3.7b).
-   */
-  lose(): void {
-    if (!this.depth) return;
-    this.setCasters(null, 0);
-    // After the task, for `WorldShadows.lose`'s reason: a loss can land inside
-    // a render whose commands, not yet submitted, still hold this texture.
-    const lost = this.lost;
-    if (lost) queueMicrotask(lost);
+    void this.proxies.then((ok) => {
+      if (!ok && generation === this.generation) failed("our lamps' atlas cannot draw: its proxies' pipeline failed");
+    });
   }
 
   /** `work` is this frame's, recorded as the main pass begins; it is read then, not copied now. */
@@ -495,3 +485,6 @@ export class LampAtlas {
     }
   };
 }
+
+/** A `setCasters` with nobody to tell: handing none over, or tearing down. */
+function ignore(): void {}

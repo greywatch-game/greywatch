@@ -82,25 +82,25 @@
  * pass kept. The one difference is that the inked frame is no longer rounded
  * to 8 bits before the bloom lands on it, which is under half a step.
  *
- * THE EMISSIVE PALETTE'S MASK IS OUR RENDERER'S in every round
- * (`render/WorldGlow.ts`, X3.6d, X3.7b): it draws the merged world's lit
- * windows and lenses FIRST in this pass, right after the clear — the palette
- * was in Babylon's opaque queue, ahead of every blended mask draw, and first
- * keeps that order. Its MAIN pass is ours too (X3.6e), and Babylon is made
- * no mesh of it (X3.7b), so the palette's twin below draws an EDITOR build
- * alone (X3.7c's to narrow): a palette surface ours cannot hold, a failed
- * mask pipeline and a loss mid-map are the world's failure, and `noGlow` is
- * read per surface at the take. Everything else in the mask is still drawn
- * here.
+ * THE EMISSIVE PALETTE'S MASK IS OUR RENDERER'S, and nothing of it is drawn
+ * here (`render/WorldGlow.ts`, X3.6d, X3.7b, X3.7c): it draws the merged
+ * world's lit windows and lenses FIRST in this pass, right after the clear —
+ * the palette was in Babylon's opaque queue, ahead of every blended mask
+ * draw, and first keeps that order. Its MAIN pass is ours too (X3.6e), and
+ * Babylon is made no mesh of it in a round or an editor build (an editor's
+ * blocks are never merged), so it has no twin here: a palette surface ours
+ * cannot hold and a mask it cannot draw are the world's failure, and
+ * `noGlow` is read per surface at the take. Everything else in the mask —
+ * the bodies, the effects and fires, the viewmodel, the moon, and an EDITOR
+ * build's every emissive — is still drawn here.
  *
  * A MATERIAL WHOSE VERTICES MOVE BRINGS ITS OWN MASK (`SelfMasking`). The
  * stock variants transform by `world` and `viewProjection` alone, so a surface
  * displaced in its vertex stage — the fire (`FlameShader`) — would draw its
  * rest pose into the mask and fail the LEQUAL tie everywhere it had moved. Such
  * a material hands back a twin that runs its own vertex stage, and is painted
- * through the same `GlowRules.colour` as everything else. So does a material
- * whose COLOUR is per vertex — the map's emissive palette (`EmissiveWorld.ts`),
- * whose `emissiveColor` is a white this pass would otherwise bloom as it is.
+ * through the same `GlowRules.colour` as everything else (the fire, and a
+ * blast's billows, `BlastShader`).
  *
  * MESH INSTANCES ARE NOT SUPPORTED, and nothing glowing uses them: the mask
  * shader has no instance attributes, so an instanced emissive would draw one

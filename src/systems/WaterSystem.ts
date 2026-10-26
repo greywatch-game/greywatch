@@ -15,11 +15,10 @@
  * TerrainField this build was handed, so it is exactly as disposable as the
  * mesh, and a stale one would draw last build's shoreline.
  * `build` calls its `reflect` callback EXACTLY ONCE, on every path including a
- * dry map: it is what parks last build's probes, and it is what binds the cube
- * every material must be born holding.
+ * dry map: it is what queues this build's probes, and it is what binds the
+ * cube every material must be born holding.
  */
 import {
-  type BaseTexture,
   BoundingInfo,
   Color3,
   Constants,
@@ -202,20 +201,20 @@ export class WaterSystem {
    * Rebuilds the water bodies for a round. No-ops to a dry map when the
    * layout has no water rects or the environment has no water palette.
    *
-   * `reflect` is handed one site per body and gives back one `ProbeReflection`
+   * `reflect` is handed one site per body and gives back one `CubeReflection`
    * per site, in order. **It is called on every path, including the dry one**,
-   * because parking last build's probes is its job too.
+   * so a build's every call reaches the bake the same way.
    */
   build(
     rects: WaterRect[],
     env: EnvironmentSpec,
     terrain: TerrainField,
-    reflect: (sites: readonly Vector3[], rebind: (site: number, cube: BaseTexture) => void) => CubeReflection[],
+    reflect: (sites: readonly Vector3[]) => CubeReflection[],
   ): void {
     this.dispose();
     const colors = env.water;
     if (rects.length === 0 || !colors) {
-      reflect([], noRebind);
+      reflect([]);
       return;
     }
 
@@ -231,14 +230,7 @@ export class WaterSystem {
     // have to be known before a single material exists, because the second is
     // where the mirror is baked from.
     const beds = rects.map((r) => this.bakeDepth(r, waterY(r, terrain), terrain));
-    // A body's mirror handed another cube after the build: since X3.7b a
-    // bake of ours lost before it drained fails the world instead, so only
-    // `ReflectionSystem`'s `toBabylon` calls it — reached by the harness's
-    // `rebake` alone, and X3.7c's to delete (`ReflectionSystem.bakeWater`).
-    const mirrors = reflect(
-      beds.map((b) => b.site),
-      (site, cube) => this.bodies[site]?.mat.setTexture("reflectionCube", cube),
-    );
+    const mirrors = reflect(beds.map((b) => b.site));
 
     const w = CONFIG.water;
     const lit = env.lighting;
@@ -595,6 +587,3 @@ export class WaterSystem {
     this.bodies = [];
   }
 }
-
-/** A dry build's: no body to hand a cube. */
-function noRebind(): void {}

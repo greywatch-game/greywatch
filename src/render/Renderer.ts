@@ -34,8 +34,9 @@
  * `FRAME_TARGETS`, checked every frame — a pass that is not draws nothing
  * that frame, with one console error per change, rather than recording a
  * pipeline the pass cannot take (that blacks out the frame under bundles),
- * and every `onRefused` listener is told, on every frame it is refused, so a
- * draw that something else would otherwise draw can be handed back to it;
+ * and every `onRefused` listener is told, on every frame it is refused, so
+ * whoever handed the draw over can say so (the world's failure, since
+ * nothing else would draw it);
  * a GLOW MASK draw is recorded only when the mask's owner says its pass has
  * OPENED (`glowMaskOpened`, wired by `Game` to `GlowPass`, which owns the
  * mask: rule 5 — ours draws INTO Babylon's pass, as it does the main one),

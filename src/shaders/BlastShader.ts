@@ -5,8 +5,9 @@
  * Owns: both WGSL stages, the smoke's ink, and the `BlastMaterial` class and
  * its glow-mask twin. Reads its drawing from `CONFIG.graphics.blast` and the
  * fire's five inks from `FlameShader`; is fed the clock, the fog, the key
- * light, the ambient, the sky fill, the mist and the frame's opaque alpha by
- * `CelMaterialFactory`, which is the only thing that makes one (`getBlast`).
+ * light, the ambient, the sky fill and the mist by `CelMaterialFactory`,
+ * which is the only thing that makes one (`getBlast`), and writes the
+ * frame's opaque alpha, 0 (no bake draws a blast).
  * Invariants: it draws THIN INSTANCES of a unit icosphere and nothing else —
  * each instance's matrix is a translation, a rotation and a scale and never a
  * shear, which is what the normal transform below assumes — and each carries
@@ -457,10 +458,6 @@ export class BlastMaterial extends ShaderMaterial implements SelfMasking {
   setFog(color: Color3, start: number, end: number): void {
     this.setColor3("fogColor", color);
     this.setVector2("fogParams", new Vector2(start, end));
-  }
-
-  setOpaqueAlpha(alpha: number): void {
-    this.setFloat("opaqueAlpha", alpha);
   }
 
   /**

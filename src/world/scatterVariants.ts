@@ -91,7 +91,7 @@ export interface ScatterSet {
    * placement (`bx`, `bz`): its REGION's, which is where `MapBuilder` files a
    * scatter field's merge (`BlockMerge.add` at the region's origin) — never the
    * placement's own place. What a reflection probe leaves out of its own
-   * bake by (`ReflectionSystem.encloses`).
+   * bake by (`ReflectionSystem`'s `exclusionOf`).
    */
   readonly blocks: Int32Array;
 }

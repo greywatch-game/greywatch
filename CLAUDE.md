@@ -586,19 +586,18 @@ be nearer. **Nothing on the floor writing NO depth is OPAQUE**.
 
 **The world is OPAQUE with exactly one exception, and it is glazing.** Glass you
 can see THROUGH is `getGlass` over a cube `ReflectionSystem` bakes **one per
-GLAZED BLOCK** — by OUR renderer (`render/ProbeBake.ts`) in every round, so
-**a new world surface our side cannot draw is REFUSED** (the round does not
-start). Glass you
+GLAZED BLOCK** — by OUR renderer (`render/ProbeBake.ts`), the only bake. Glass you
 cannot is `Build.pane({ backed })`, which writes DEPTH — so **`backed` is a
 claim about the WORLD that nothing throws over**. **No pane of either kind is a
 shadow caster**, and see-through glazing gets no ink.
 
 **THE WORLD DRAWS WHOLE OR THE ROUND DOES NOT START.** Every BLOCK, the
 LANDFORM (the BUILD marks `WorldSurface.landform`) and the emissive PALETTE are
-OUR renderer's in every pass of a round and **Babylon is made NO MESH of them**
-(`BlockHandover`, `worldMeshes`), only of the glazing and the fires, so a
-surface ours cannot hold is REFUSED (a DEV throw `merge:hash` fails on) and
-every loss is **`Game.worldFailed`** — the menu and a toast, never a fallback.
+OUR renderer's in every pass and **Babylon is made NO MESH of them**
+(`BlockHandover`, `worldMeshes`) — only of the glazing and the fires — so a
+surface ours cannot hold is REFUSED (a DEV throw `merge:hash` fails on), and a
+pass of ours that cannot draw its world tells the failure it was HANDED WITH
+it: **`Game.worldFailed`**, the menu and a toast, never a fallback.
 **The frame WALKS the scene, and the scene is the map.** `WorldCulling`
 **replaces `scene.getActiveMeshCandidates` and writes nothing onto any mesh**:
 it never disables, never hides, never unpickles. **A collider is never a
@@ -619,10 +618,9 @@ per mesh every frame** — an emissive colour, no `metadata.noGlow`, and `Game`'
 `GlowRules` — so nothing excludes a mesh by hand. **A map's merged emissives are
 a PALETTE like its albedo** (`shaders/EmissiveWorld.ts`): their colour is a slot
 in `uv2.x` under a WHITE `emissiveColor`, so **a new reader asking a material
-what it emits must ask the vertex for that one**. **The palette is OUR
-renderer's in the main pass and the mask in every round** (the mask itself
-stays `GlowPass`'s), **`noGlow` read PER SURFACE at the take**, and **a palette
-surface it cannot hold is REFUSED**.
+what it emits must ask the vertex for that one**. **The palette has NO Babylon
+draw** (ours in every pass; the mask itself `GlowPass`'s), **`noGlow` is read
+PER SURFACE at the take**, and **a palette surface ours cannot hold is REFUSED**.
 
 **OUR renderer (`src/render/`) draws INSIDE Babylon's frame through ONE seam**
 (`render/babylonSeam.ts`, the only file there that names Babylon, and only as
@@ -642,7 +640,7 @@ lamps' atlas, lightning, the ink's NIB and its coverage channel's two blended
 exceptions, the wind's rigs, the fire, the glazing and reflection bake, the
 grass and turf, the water, the WGSL traps, our renderer's frame and its seam,
 the candidate list and size gate, the glow's three failed attempts and the
-palette in both passes, and the sky and its clouds' depths.
+palette, ours, and the sky and its clouds' depths.
 ### The map is data, not code
 
 `src/world/hollowmere/layout.ts` is the entire level — placements, scatter
@@ -677,7 +675,7 @@ so that a map saying nothing is unaffected:
 | `EnvironmentSpec.bodyDrawDistance` — how far a BODY is worth drawing | its own `fogEnd` | resolved ONCE (`bodyDrawDistanceOf`, clamped to `fogEnd`) and pushed to `NetRoster` and `RagdollSystem` together (`setViewDistance`), which is what keeps where a body stops being drawn and where a corpse is refused one distance; a body it drops POPS. **A map's `fogEnd` is a distance from the EYE and a LANDMARK is a fixed thing in the world**: never shorten the fog for the cull budget — take the saving out of this row |
 | `MapLayout.surfaces` — how deep it stacks | `CONFIG.nav.maxSurfaces`, 3 | only a map that stacks FLOORS raises it; overflow drops candidates silently (see the bots section) |
 | `MapLayout.perTeam` — how many bodies a side | `CONFIG.bots.perTeam`, 8 | it is DENSITY, bounded by `CONFIG.bots.maxPerTeam` (24), and it is spent in RIGS — the core's `BattleSystem.setRoster` resizes the pool and the page's `NetRoster` rebuilds its rigs when it moves (`setFielded`). The squads and the scoreboard follow it; `CONFIG.conquest.tickets` deliberately does not, so a denser map is a shorter round. **It reaches a match too**: the authority's slot table is the ceiling, `setFielded` says how many a round fights, and the SEATS stay at sixteen |
-| `MapLayout.blockSize` — how big a merge block is | `BLOCK_SIZE`, 48 | it is DRAW CALLS and cull granularity and nothing else; `ReflectionSystem.encloses` and `WorldCulling` follow it for free because they read the block KEY rather than a size, and the world layer's unit of LOCALITY (the physics buckets, the pane index) deliberately does **not** |
+| `MapLayout.blockSize` — how big a merge block is | `BLOCK_SIZE`, 48 | it is DRAW CALLS and cull granularity and nothing else; the reflection bake's exclusion and `WorldCulling` follow it for free because they read the block KEY rather than a size, and the world layer's unit of LOCALITY (the physics buckets, the pane index) deliberately does **not** |
 | `MapLayout.terrainBlock` — how big a floor patch is | `BLOCK_SIZE`, 48, **independently of `blockSize`** | a whole number of terrain cells, and the same value in both callers of `terrainPatches` — `buildValley` and the editor's brush — or a stroke re-cuts patches the floor was never cut into |
 | `EnvironmentSpec.lighting.shadowWindow` — how far its shadows reach | `CONFIG.graphics.shadows.frustumSize`, 110 | shadow length is `h / tan(elevation)`, and `shadowVisibility` is FULLY LIT outside the window, the last `edgeFade` of the volume ramping back to it — so an undersized one puts that transition on ground the player can see, and an OVERSIZED one moves it not at all while costing texel density (`ShadowSystem` DEV-warns) |
 
@@ -923,16 +921,13 @@ renderer reading the record. `GameMap.world` keeps it for every surface:
   terrain, the roads and the rim**, which is what keeps the landform out of
   both tests that read it. Written in three places and they must agree:
   `BlockMerge.finish` and `PaneBlocks.finish` for the glazing hung on the same
-  building. **Two readers.** A probe's bake drops its own building, and since
-  the albedo palette took the colour out of the merge key there is no longer
-  any geometry-shaped way to ask which building a surface IS — asked as
-  NUMBERS in our renderer's bake (`blockKey`, off the record's mirror
+  building. **Two readers.** A probe's bake drops its own building — there
+  being no geometry-shaped way to ask which building a surface IS since the
+  albedo palette left the merge key — asked as NUMBERS (`exclusionOf`, off
   `WorldSurface.block`, and for a scatter instance the REGION its copy was
-  merged under, `ScatterSet.blocks`), so those keep the merge's lattice
-  (`ReflectionSystem.encloses` asked it of a MESH for Babylon's bake, which no
-  round takes since X3.7b). And `WorldCulling`, which grows a cull cell from
-  every RECORD carrying one and files Babylon's meshes carrying one into it
-  — see the rendering section.
+  merged under, `ScatterSet.blocks`), so those keep the merge's lattice. And
+  `WorldCulling`, which grows a cull cell from every RECORD carrying one and
+  files Babylon's meshes carrying one into it.
 - `surface: "ground"` — what a round that stops here kicks up. The odd one out:
   it is a **value with a default**, not a flag, and **absent means `"hard"`**.
   `MapBuilder` sets it on exactly one thing — the terrain floor's collider clone

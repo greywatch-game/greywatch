@@ -157,6 +157,8 @@ const HOOK = () => {
  * `WorldBlocks.glowView`'s) — every map's main pass draws its lit windows
  * with the first (`BABYLON_EXIT.md` X3.7a), so a failed one is a failed round
  * once the fallback is gone (X3.7b). A map with no palette builds neither.
+ * The biases are read off EVERY material on the page (`scene.materials`), the
+ * palette's being a plain `Material` with no Babylon program since X3.7c.
  */
 async function oursCheck({ shapes, biased, paletteBiases }) {
   const { celFragment } = await import("/src/render/celFragment.ts");
@@ -348,8 +350,15 @@ for (const id of MAPS) {
     // Each (shape, bias) a material our renderer could draw carries — a recipe
     // with a depth bias (X3.5's roads) — for `oursCheck`'s pipeline states.
     const biased = new Map();
-    // Each depth bias a palette material carries, for its two programs.
+    // Each depth bias a palette material carries, for its two programs —
+    // asked of EVERY material on the page, not the ShaderMaterials above: the
+    // palette's is a plain `Material` since X3.7c (no Babylon program to
+    // compile), so the walk above never meets it.
     const paletteBiases = new Set();
+    for (const mat of g.scene.materials) {
+      const palette = g.mats.emissiveRecipe(mat);
+      if (palette) paletteBiases.add(palette.depthBias);
+    }
     for (const mat of shaders) {
       const effect = mat.getEffect?.();
       const defines = mat._options.defines
@@ -358,8 +367,6 @@ for (const id of MAPS) {
         .sort();
       const isCel = mat.name.startsWith("cel-");
       if (isCel) cel.add(defines.join("+"));
-      const palette = g.mats.emissiveRecipe(mat);
-      if (palette) paletteBiases.add(palette.depthBias);
       const recipe = g.mats.celRecipe(mat);
       if (recipe && recipe.depthBias !== 0) {
         // In the recipe's own order, as `WorldBlocks` assembles it.

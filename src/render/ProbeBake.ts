@@ -4,9 +4,10 @@
  * world our main pass takes — through a second VIEW of the main pass's culls,
  * with the probe's eye PASSED in a frame of the bake's own — and its mip
  * chain after them; Babylon's glazing and water sample a wrapped view of it.
+ * The only bake there is since X3.7c (Babylon's `ReflectionProbe`s are gone).
  * Owns: `ProbeBake` — the cube pool (`cube`: `rgba8unorm`, six layers, a
- * full mip chain, never destroyed, as Babylon's probe pool is never
- * disposed; each handed out as a `ProbeCube`, which whoever asked for it
+ * full mip chain, never destroyed but by `dispose`, the pool outliving
+ * every map; each handed out as a `ProbeCube`, which whoever asked for it
  * indexes — `ReflectionSystem` does — and which a `ProbeJob` carries), the
  * face passes made with each cube and the one `depth32float`
  * attachment they share, the bake's FRAME (its `FrameUniformBuffer`, the
@@ -15,12 +16,12 @@
  * generator (`CubeMips`), the probes released and not yet recorded, and the
  * world's probe VIEW (`ProbeWorld`, `WorldBlocks.probeView`) from the bake
  * being opened (`open`) to its draining (`close`); it HOLDS the world it
- * draws (`ProbeSource`, the map's `WorldBlocks` while every bake surface is
- * ours), which the handover owns; `ProbeCube`, `ProbeJob`, `ProbeExclusion`,
- * `ProbeSource` and `ProbeWorld`.
+ * draws (`ProbeSource`, the map's `WorldBlocks` in a round), which the
+ * handover owns, and the failure handed over with it; `ProbeCube`,
+ * `ProbeJob`, `ProbeExclusion`, `ProbeSource` and `ProbeWorld`.
  * Invariants: it DECIDES NOTHING — which probes there are, where each
  * stands, what it leaves out, how far it reaches, when it is released and
- * which path a map's bake takes are `ReflectionSystem`'s; a released probe
+ * whether a map bakes at all are `ReflectionSystem`'s; a released probe
  * is recorded on the next frame our renderer prepares that can draw every
  * group the bake draws (`ProbeWorld.drawable`), at most `perFrame` a frame,
  * oldest first, into the encoder the host submits ahead of every Babylon
@@ -39,16 +40,16 @@
  * buffer through a staging slot copied in the encoder ahead of its pass,
  * never a second `writeBuffer` to it; a probe's mips follow its sixth face;
  * a cube can be COPIED from (`COPY_SRC`), so a readback needs no help
- * (`VERIFYING.md`); a mips pipeline that FAILS latches the bake BROKEN for
- * the session — no world is held from then on (`holds` false), so every
- * round fails (`BlockHandover`, X3.7b) — and a lost bake reports how many
- * released probes it dropped (`onLost`); the view is
- * built when a bake is opened and destroyed when it drains, so a round
- * holds none; a cube is born zeroed by WebGPU — alpha 0, the sky a pane
- * shows before any probe has claimed it — and is never cleared but by its
- * own faces; a loss (`lose`) drops the view and the released probes and
- * tells whoever asked (`onLost`) after the task in hand, because it may land
- * inside a render whose unsubmitted commands still hold the view; nothing
+ * (`VERIFYING.md`); a world it cannot draw — the mips' pipeline failed
+ * (asked once, for the session, so every world handed over after it fails
+ * on it too), or the view of the culls could not be made or did not build —
+ * is never drawn, and the failure handed over with the world is told
+ * (`setWorld`: the world's, `BlockHandover`, which has nothing to fall back
+ * on), the view and the world kept until the handover takes them back; the
+ * view is built when a bake is opened and destroyed when it drains, so a
+ * round holds none; a cube is born zeroed by WebGPU — alpha 0, the sky a
+ * pane shows before any probe has claimed it — and is never cleared but by
+ * its own faces (the DEFAULT cube, `ReflectionSystem`'s, by none); nothing
  * here allocates on a frame but the passes WebGPU makes.
  * Never: imports Babylon; reads a node; decides a probe, a reach or an
  * exclusion; submits.
@@ -67,7 +68,7 @@ import { FRAME_TARGETS } from "./targets";
 import { PASS_PROBE, PROBE_EXCLUDE, PROBE_SPHERE_REACH } from "./wgsl/clusterCull";
 import { blockLayout } from "./wgsl/layout";
 
-/** Which blocks a probe leaves out of its own bake: those it serves (`ReflectionSystem.encloses`). */
+/** Which blocks a probe leaves out of its own bake: those it serves (`ReflectionSystem`'s `exclusionOf`). */
 export interface ProbeExclusion {
   /** Its cell, as `blockKey` packs a block's coordinates. */
   readonly cell: number;
@@ -121,7 +122,7 @@ export interface ProbeWorld {
   dispose(): void;
 }
 
-/** Babylon's `ReflectionProbe` face looks, in layer order (its `_invertYAxis` false, a left-handed scene). */
+/** The face looks Babylon's `ReflectionProbe` baked with and its cube readers expect, in layer order (`_invertYAxis` false, a left-handed scene). */
 const FACE_LOOKS: readonly (readonly [number, number, number])[] = [
   [1, 0, 0],
   [-1, 0, 0],
@@ -133,6 +134,9 @@ const FACE_LOOKS: readonly (readonly [number, number, number])[] = [
 
 /** A staging slot's stride: a uniform copy's source offset needs no alignment, this keeps a face a slot. */
 const SLOT_BYTES = 256;
+
+/** A `setWorld` with nobody to tell: handing none over, or tearing down. */
+function ignore(): void {}
 
 /** Transparent black: alpha 0 is where the readers put sky. */
 const CLEAR: GPUColor = { r: 0, g: 0, b: 0, a: 0 };
@@ -146,8 +150,6 @@ export class ProbeBake {
   private readonly depthView: GPUTextureView;
   private readonly mips: CubeMips;
   private mipsBuilt = false;
-  /** The mips' pipeline failed: no world is held again this session (`holds`). */
-  private broken = false;
 
   /** The bake's frame: its values, its buffer and its group 0. */
   private readonly frame: FrameUniforms = createFrameUniforms();
@@ -161,8 +163,10 @@ export class ProbeBake {
   private readonly cameraBytes: number;
   private readonly faceCulls: CullInputs[] = [];
 
-  /** The world the faces are drawn from while the bake is ours; null while it is Babylon's. */
+  /** The world the faces are drawn from — the map's in a round; null with none. */
   private source: ProbeSource | null = null;
+  /** Told why, if `source` cannot be drawn: handed over with it (`setWorld`). */
+  private failed: (reason: string) => void = ignore;
   /** Its view, from `open` until the bake drains, and whether it is built. */
   private view: ProbeWorld | null = null;
   private viewBuilt = false;
@@ -170,8 +174,6 @@ export class ProbeBake {
   private generation = 0;
   /** Released, not yet recorded, oldest first. */
   private readonly released: ProbeJob[] = [];
-  /** Told when the world handed over cannot draw — with how many released probes were dropped. */
-  private lost: ((dropped: number) => void) | null = null;
   private readonly unhook: () => void;
 
   /** Scratch for a face's camera. */
@@ -206,10 +208,6 @@ export class ProbeBake {
     this.mips = new CubeMips(device, renderer.pipelines, FRAME_TARGETS.colorFormats[0]);
     void this.mips.ready.then((ok) => {
       this.mipsBuilt = ok;
-      if (ok) return;
-      // No cube of ours can be finished: no world is held for the session.
-      this.broken = true;
-      this.lose();
     });
 
     this.frameBuffer = new FrameUniformBuffer(device, "probe bake");
@@ -248,7 +246,7 @@ export class ProbeBake {
     return this.faceCulls.length;
   }
 
-  /** Whether a world is held — never once the bake is broken: the map's bake may be ours. */
+  /** Whether a world is held: the map has a bake to draw. */
   get holds(): boolean {
     return this.source !== null;
   }
@@ -265,11 +263,6 @@ export class ProbeBake {
   /** Probes released and not yet recorded. */
   get unrecorded(): number {
     return this.released.length;
-  }
-
-  /** Who is told when the world handed over cannot draw: the world's failure (`BlockHandover`, X3.7b). */
-  onLost(lost: (dropped: number) => void): void {
-    this.lost = lost;
   }
 
   /**
@@ -309,12 +302,22 @@ export class ProbeBake {
 
   /**
    * The world the faces are drawn from from now on — the map's — or null:
-   * then nothing is released and the view goes.
+   * then nothing is released and the view goes. `failed` is told why if it
+   * cannot be drawn (`open`, and the mips' pipeline — failed for the
+   * session, every world handed over after it fails too) — unless another
+   * world has been handed over since.
    */
-  setWorld(source: ProbeSource | null): void {
+  setWorld(source: ProbeSource | null, failed: (reason: string) => void = ignore): void {
     this.dropView();
     this.released.length = 0;
-    this.source = this.broken ? null : source;
+    this.source = source;
+    this.failed = source ? failed : ignore;
+    if (!source) return;
+    void this.mips.ready.then((ok) => {
+      if (!ok && this.source === source && this.failed === failed) {
+        failed("our reflection bake cannot finish a cube: its mips' pipeline failed");
+      }
+    });
   }
 
   /** A bake is queued: the view of the world's culls is built for it, if it is not standing. */
@@ -322,7 +325,7 @@ export class ProbeBake {
     if (this.view || !this.source) return;
     const view = this.source.probeView(this.slots);
     if (!view) {
-      this.lose();
+      this.failed("our reflection bake could not make its view of the world's culls");
       return;
     }
     this.view = view;
@@ -331,7 +334,7 @@ export class ProbeBake {
     void view.ready.then((ok) => {
       if (generation !== this.generation) return;
       if (!ok) {
-        this.lose();
+        this.failed("our reflection bake's view of the world's culls did not build");
         return;
       }
       this.viewBuilt = true;
@@ -350,30 +353,6 @@ export class ProbeBake {
    */
   close(): void {
     this.dropView();
-  }
-
-  /**
-   * The world can no longer draw what Babylon's bake would — a pipeline or a
-   * cull failed: the world, the view and every probe released are dropped,
-   * and whoever asked to be told is, once the task in hand is done
-   * (`onLost`) — the handover, which fails the world on it (`BABYLON_EXIT.md`
-   * X3.7b); nobody takes the bake over.
-   */
-  lose(): void {
-    if (!this.source && !this.view) return;
-    this.source = null;
-    const dropped = this.released.length;
-    this.released.length = 0;
-    const view = this.view;
-    this.view = null;
-    this.viewBuilt = false;
-    this.generation++;
-    // After the task: a loss can land INSIDE a render whose commands, not yet
-    // submitted, still hold the view's buffers.
-    queueMicrotask(() => {
-      view?.dispose();
-      this.lost?.(dropped);
-    });
   }
 
   dispose(): void {

@@ -17,10 +17,8 @@
  * casters' meshes (for the DEV node check), the refusal held until the
  * install (`refusal`), whose world the install is (`owner`, latched at the
  * install and handed back with its failure) and the install's failure, once
- * it failed (`failure`), the material epoch last copied, the listeners it
- * registers for a loss of each of our passes (`WorldShadows`, `LampAtlas`,
- * `ProbeBake`, `WorldGlow` — `onLost`), and the build's scatter FIELD until
- * the map is cut (X3.4b).
+ * it failed (`failure`), the material epoch last copied, and the build's
+ * scatter FIELD until the map is cut (X3.4b).
  * Invariants: a surface is OURS — answered `true` to `onSurface`, made no
  * mesh — if our pipeline draws it in every pass exactly as Babylon would:
  * block-merged or the LANDFORM (`WorldSurface.landform`: the floor's
@@ -41,7 +39,8 @@
  * (`WorldBlocks.addCaster`: its positions, at identity, never `updatable`),
  * and one that casts but cannot be held, a palette surface that cannot be
  * held, or a mesh Babylon is made that is neither the glazing nor a fire
- * (`strayMesh`: one a probe's list would hold, a held caster's among them)
+ * (`strayMesh`: one our bake would owe a picture of, a held caster's among
+ * them)
  * is REFUSED — held to the install, which fails the world on it, and then
  * THROWN in a DEV build (so `npm run merge:hash` cannot pass a map that has
  * one, and the page still reaches the menu). **THE WORLD DRAWS WHOLE OR THE
@@ -50,10 +49,14 @@
  * (`WorldBlocks.onFailed`), a surface filed under a block the cull grew no
  * cell for (`WorldCulling.reachBoxOf`), a cut past the device's limits, a
  * main-pass palette pipeline that failed, a main pass our renderer REFUSES
- * (`Renderer.onRefused`), a loss of any of our passes (each one's
- * `onLost`), a pass whose holder will take no world (a pipeline failed for
- * the session), and in DEV a held caster switched off, hidden or faded —
- * each said ONCE an install (`fail`), our draws stopped there and then, and
+ * (`Renderer.onRefused`), a pass of ours that cannot draw the world it was
+ * handed — the shadow maps', the lamps' atlas's, the bake's and the glow
+ * mask's: a build or a view that failed, a pipeline failed for the session,
+ * a refused mask pass, each told through the failure the install hands
+ * over WITH the world (`failFor`, bound to the install's owner, so a pass
+ * holds no latch and keeps no listener) — and in DEV a held caster switched
+ * off, hidden or faded — each said ONCE an install (`fail`), our draws
+ * stopped there and then, and
  * handed to `Game.worldFailed` with the install's OWNER (`WorldOwner`), so a
  * failure names the map it came from and is never another round's, and
  * nothing of an EDITOR build fails (`install`'s `editor`, the build's kind,
@@ -89,14 +92,14 @@
  * (`PASS_PROBE`), the palette with its slots (`WorldBlocks.addEmissive`,
  * `CelMaterialFactory.emissiveRecipe`) whether it casts or not, a FIRE left
  * out as Babylon's bake leaves it (`FINDINGS.md` 51); the palette is a
- * LIGHT SOURCE, which no size gate drops (`LIGHT_SOURCE`), and its main pass
- * is ours whenever it is held (`WorldBlocks.setPaletteMain`), its mask
- * handed to `WorldGlow` whenever a surface of it glows.
+ * LIGHT SOURCE, which no size gate drops (`LIGHT_SOURCE`), its main pass
+ * ours (`WorldBlocks` draws it first), and its mask handed to `WorldGlow`
+ * whenever a surface of it glows.
  * Never: draws, or reads a material's uniforms — a material reaches our side
  * as its recipe; writes a property on a mesh; hands a surface back.
  * Contract: `docs/rendering.md`, "Our renderer's frame";
  * `BABYLON_EXIT.md` X3.3a, X3.3b, X3.3c, X3.4, X3.4b, X3.5, X3.5b, X3.6a,
- * X3.6b, X3.6c, X3.6d, X3.6e, X3.7a, X3.7b.
+ * X3.6b, X3.6c, X3.6d, X3.6e, X3.7a, X3.7b, X3.7c.
  */
 import { type AbstractMesh, Material, type Mesh } from "@babylonjs/core";
 import { CONFIG } from "../config";
@@ -120,7 +123,6 @@ import type { WorldDepth } from "../render/WorldDepth";
 import type { WorldGlow } from "../render/WorldGlow";
 import type { WorldShadows } from "../render/WorldShadows";
 import type { CelMaterialFactory } from "../shaders/CelShader";
-import type { ProbeHolding } from "./ReflectionSystem";
 import { isFlame } from "../shaders/FlameShader";
 import type { ScatterField } from "../world/scatterVariants";
 import type { WorldGeometry, WorldSurface } from "../world/worldGeometry";
@@ -208,17 +210,16 @@ export class BlockHandover {
   private field: ScatterField | null = null;
   private readonly removeFrame: () => void;
   private readonly removeRefused: () => void;
-  private readonly removeLost: () => void;
 
   constructor(
     renderer: Renderer,
     private readonly mats: CelMaterialFactory,
     private readonly culling: WorldCulling,
-    /** Our renderer's shadow maps, handed the casters. */
+    /** Our renderer's shadow maps, handed the casters (and the install's failure). */
     private readonly shadows: WorldShadows,
     /** Our renderer's lamps' atlas, handed the same casters with them. */
     private readonly lamps: LampAtlas,
-    /** Our renderer's reflection bake, handed the world. */
+    /** Our renderer's reflection bake, handed the world (and the install's failure). */
     private readonly probes: ProbeBake,
     /** Our renderer's share of the glow's mask, handed the world when a palette surface glows. */
     private readonly glow: WorldGlow,
@@ -242,12 +243,6 @@ export class BlockHandover {
     );
     this.removeFrame = renderer.onFrame(this.frame);
     this.removeRefused = renderer.onRefused(this.refused);
-    // Every loss of a pass of ours is the world's: there is no Babylon mesh
-    // left to draw it with.
-    shadows.onLost(() => this.fail("our shadow maps lost their casters"));
-    lamps.onLost(() => this.fail("our lamps' atlas lost its casters"));
-    probes.onLost(() => this.fail("our reflection bake lost its world"));
-    this.removeLost = glow.onLost(() => this.fail("our glow mask lost the emissive palette"));
   }
 
   /**
@@ -410,19 +405,22 @@ export class BlockHandover {
    * the cells its records were filed in, the scatter's sets added as
    * instances and its pieces (`world`'s scatter regions) cut out of the
    * blocks that draw them so, and hands every pass of ours its world — the
-   * casters to the shadows on every rung, the world to the bake, the palette
-   * to the main pass and its glowing share to the mask. `owner` is latched
-   * for the install's failure; an EDITOR build (`editor`) is taken from by
+   * casters to the shadows on every rung, the world to the bake and the
+   * palette's glowing share to the mask — each with the install's failure
+   * (`failFor`), which it tells if it cannot draw what it was handed.
+   * `owner` is latched for the install's failure; an EDITOR build
+   * (`editor`) is taken from by
    * nothing and fails nothing — the exemption is the build's kind, never
    * that ours took no surface, so a production refusal on a map ours took
-   * nothing of still fails. A pass that will take none, a refusal held from
-   * the build (thrown after it in a DEV build: `refuse`), a mesh Babylon was
+   * nothing of still fails. A refusal held from the build (thrown after it
+   * in a DEV build: `refuse`), a mesh Babylon was
    * made that is neither the glazing nor a fire (`strayMesh`), a surface
    * filed under a block no cell was grown for, or a cut that fails, fails
    * the world (`fail`).
    */
   install(map: InstalledWorld, owner: WorldOwner, editor: boolean): void {
     this.owner = editor ? null : owner;
+    const failed = (reason: string): void => this.failFor(owner, reason);
     const meshOf = (index: number): Mesh | null => {
       const v = map.world.surfaces[index]?.visual ?? -1;
       return v >= 0 ? (map.visuals[v] ?? null) : null;
@@ -511,36 +509,26 @@ export class BlockHandover {
       this.fail("the casters could not be cut for our shadow maps");
       return;
     }
-    this.handCasters(depth);
-    if (depth && !this.lamps.casters) {
-      this.fail("our lamps' atlas takes no casters (its proxies' pipeline failed)");
-      return;
-    }
-    this.probes.setWorld(this.probing.size > 0 ? this.blocks : null);
-    if (this.probing.size > 0 && !this.probes.holds) {
-      this.fail("our reflection bake takes no world (its pipeline failed)");
-      return;
-    }
-    if (this.palette.size === 0) return;
-    if (this.blocks.paletteFailed) {
-      this.fail("a main-pass pipeline of the emissive palette failed");
-      return;
-    }
-    this.blocks.setPaletteMain(true);
+    // Each pass of ours is handed its world WITH the install's failure, and
+    // tells it of whatever it finds it cannot draw — a build or a view that
+    // failed, a pipeline failed for the session, a refused mask pass — in
+    // whatever turn it finds it: no pass latches anything or keeps a
+    // listener, and a failure told for a world since replaced is dropped.
+    this.handCasters(depth, failed);
+    this.probes.setWorld(this.probing.size > 0 ? this.blocks : null, failed);
+    // The palette's main pass is ours whenever there is a palette: the
+    // blocks draw it first (`WorldBlocks`), and a failed pipeline of it says
+    // so itself (`onPaletteFailed`).
     if (this.glowing.size === 0) return;
-    this.glow.setWorld(this.blocks);
-    if (!this.glow.holds) this.fail("our glow mask takes no palette (its pipeline failed)");
+    this.glow.setWorld(this.blocks, failed);
   }
 
   /**
-   * The first mesh Babylon was made that is neither the glazing (no probe's
-   * list holds a pane) nor a FIRE (which no bake has ever drawn,
-   * `FINDINGS.md` 51), with how many others — a mesh a probe's list would
-   * hold (`ReflectionSystem`'s, the visuals but the panes) that our bake
-   * cannot draw, a held caster's among them; null for none, every shipped
-   * map. Asked at the install, of every map, so the verdict is the take's
-   * and never rests on when or whether `ReflectionSystem.build` asks
-   * `probeHolds`, which only counts.
+   * The first mesh Babylon was made that is neither the glazing (which no
+   * bake draws) nor a FIRE (which no bake has ever drawn, `FINDINGS.md` 51),
+   * with how many others — a mesh the reflection bake would owe a picture of
+   * and cannot draw, our bake reading no mesh, a held caster's among them;
+   * null for none, every shipped map. Asked at the install, of every map.
    */
   private strayMesh(map: InstalledWorld): string | null {
     const panes = new Set(map.paneGroups.map((g) => g.mesh));
@@ -552,37 +540,14 @@ export class BlockHandover {
       else first = mesh;
     }
     return first
-      ? `Babylon was made "${first.name}" and ${others} other meshes a probe's list would hold, which our renderer cannot bake`
+      ? `Babylon was made "${first.name}" and ${others} other meshes the reflection bake would draw, which our renderer cannot bake`
       : null;
   }
 
-  /**
-   * Whether our renderer's bake draws every mesh of `list` — a probe's
-   * render list as Babylon's bake would have it (`ReflectionSystem`): on a
-   * shipped map nothing but the FIRES, which no bake has ever drawn
-   * (`FINDINGS.md` 51), every other mesh of the map's being glazing, which
-   * no list holds — and how many of our surfaces a bake draws, the palette
-   * among them. Any other mesh is one ours cannot bake, which the install
-   * has already refused (`strayMesh`): this only counts.
-   */
-  probeHolds(list: readonly Mesh[]): ProbeHolding {
-    let fires = 0;
-    let other = 0;
-    for (const mesh of list) {
-      if (this.fires.has(mesh)) fires++;
-      else other++;
-    }
-    let palette = 0;
-    for (const at of this.probing) if (this.palette.has(at)) palette++;
-    const taken = this.probing.size - palette;
-    const ours = this.probes.holds && other === 0 && this.failure === null;
-    return { ours, taken, palette, fires, other };
-  }
-
-  /** The casters to every shadow of ours — or none, when the map has none of ours. */
-  private handCasters(depth: WorldDepth | null): void {
-    this.shadows.setCasters(depth);
-    this.lamps.setCasters(depth, this.shadows.slots);
+  /** The casters to every shadow of ours, with the install's failure — or none, when the map has none of ours. */
+  private handCasters(depth: WorldDepth | null, failed?: (reason: string) => void): void {
+    this.shadows.setCasters(depth, failed);
+    this.lamps.setCasters(depth, this.shadows.slots, failed);
   }
 
   /**
@@ -632,7 +597,6 @@ export class BlockHandover {
     this.clear();
     this.removeFrame();
     this.removeRefused();
-    this.removeLost();
     this.blocks.dispose();
   }
 
@@ -642,7 +606,8 @@ export class BlockHandover {
    * `clear`) — and handed to `Game.worldFailed` with the install's owner.
    * Nothing of a world with no owner can fail: an EDITOR build (Babylon's
    * whole, `install`), or none installed (the menu, a build not yet
-   * installed) — every holder drops a loss that lands after its world went.
+   * installed) — and a failure told for a world since replaced is dropped
+   * (`failFor`, and each pass's own generation).
    */
   private fail(reason: string): void {
     const owner = this.owner;
@@ -650,6 +615,16 @@ export class BlockHandover {
     this.failure = reason;
     this.blocks.stop();
     this.worldFailed(reason, owner);
+  }
+
+  /**
+   * The install `owner`'s failure, as a pass of ours tells it (the failure
+   * `install` hands over with each world): `fail`, unless the world in hand
+   * is another install's — a failure that lands for a map already gone is no
+   * failure of the next one.
+   */
+  private failFor(owner: WorldOwner, reason: string): void {
+    if (owner === this.owner) this.fail(reason);
   }
 
   /** `WorldBlocks.onFailed`: surfaces our side will never draw — and Babylon has no mesh of. */

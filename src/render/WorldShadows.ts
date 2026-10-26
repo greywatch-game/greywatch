@@ -10,8 +10,8 @@
  * `OwnTexture` our renderer binds it through and the sampler behind it, which
  * maps are owed a draw and which have not been drawn since their casters
  * or their texture changed; it HOLDS the casters they are drawn from
- * (`WorldDepth`, the map's while its shadows are ours), which `WorldBlocks`
- * owns; `WORLD_SHADOW_MAPS` and `WorldShadowMap`.
+ * (`WorldDepth`, the map's in a round), which `WorldBlocks` owns;
+ * `WORLD_SHADOW_MAPS` and `WorldShadowMap`.
  * Invariants: a map is drawn only when ASKED (`draw`, which `ShadowSystem`
  * calls when a window it places moves, as Babylon's generator re-rendered
  * only when its refresh counter was reset) and is drawn ONCE for the ask, on
@@ -23,6 +23,9 @@
  * behind the building card do), an ask waits; `settled` says whether every
  * map ASKED for since its casters or its texture changed has been drawn once
  * — never whether the latest ask has, which a moving window keeps renewing;
+ * casters whose build FAILS are never drawn and the failure handed over with
+ * them is told (`setCasters`: the world's, `BlockHandover`, which has nothing
+ * to fall back on);
  * its survivors are banded from where the light stands (`draw`'s `eye`) by
  * the camera's bands, which a light ~90 m back mostly lands past, so the
  * order is the scan's and buys the depth test little; a texture is
@@ -112,8 +115,6 @@ export class WorldShadows {
   private generation = 0;
   /** Takes the prepare back off the renderer; null while none is registered. */
   private unhook: (() => void) | null = null;
-  /** Told when the casters this was handed cannot draw (`lose`, or a failed build). */
-  private lost: (() => void) | null = null;
 
   constructor(private readonly renderer: Renderer) {
     this.device = renderer.device;
@@ -156,7 +157,7 @@ export class WorldShadows {
     this.order = WORLD_SHADOW_MAPS.map((name) => this.maps[name]);
   }
 
-  /** The casters while the map's shadows are ours — null while they are Babylon's. */
+  /** The casters handed over — the map's in a round; null with none (the menu, an editor build). */
   get casters(): WorldDepth | null {
     return this.depth;
   }
@@ -189,11 +190,6 @@ export class WorldShadows {
   /** `name` as our renderer binds it: a handle whose view follows the texture. */
   own(name: WorldShadowMap): OwnTexture {
     return this.maps[name].own;
-  }
-
-  /** Who is told when the casters handed over cannot draw: the world's failure (`BlockHandover`, X3.7b). */
-  onLost(lost: () => void): void {
-    this.lost = lost;
   }
 
   /**
@@ -261,11 +257,13 @@ export class WorldShadows {
 
   /**
    * The casters the world's maps are drawn from from now on, or null when
-   * the world's shadows are not ours: then every map is cleared to lit and
-   * nothing more is drawn until casters are handed over again. Their build
-   * is waited on here; one that fails is LOST (`onLost`).
+   * there are none (the map going, an editor build): then every map is
+   * cleared to lit and nothing more is drawn until casters are handed over
+   * again. Their build is waited on here, and one that FAILS is never drawn:
+   * `failed` is told why (the world's failure, `BlockHandover`) — unless
+   * other casters have been handed over since.
    */
-  setCasters(depth: WorldDepth | null): void {
+  setCasters(depth: WorldDepth | null, failed: (reason: string) => void = ignore): void {
     this.generation++;
     this.unhook?.();
     this.unhook = null;
@@ -287,27 +285,12 @@ export class WorldShadows {
     void depth.ready.then((ok) => {
       if (generation !== this.generation) return;
       if (!ok) {
-        this.lose();
+        failed("our shadow maps' casters did not build");
         return;
       }
       this.built = true;
       this.unhook = this.renderer.onFrame(this.prepare);
     });
-  }
-
-  /**
-   * The casters can no longer draw — their build failed: they are dropped,
-   * the maps cleared to lit, and whoever asked to be told is, once the task
-   * in hand is done (`onLost`; the world fails, X3.7b).
-   */
-  lose(): void {
-    if (!this.depth) return;
-    this.setCasters(null);
-    // After the task: a loss can land INSIDE a render, and what follows it
-    // (the map torn down) destroys these textures, which that frame's
-    // commands — not yet submitted — still hold.
-    const lost = this.lost;
-    if (lost) queueMicrotask(lost);
   }
 
   dispose(): void {
@@ -388,6 +371,9 @@ export class WorldShadows {
     }
   };
 }
+
+/** A `setCasters` with nobody to tell: handing none over, or tearing down. */
+function ignore(): void {}
 
 /** What a texel of a shadow map nothing was drawn into reads: depth 1, the far plane, past every receiver. */
 const LIT: GPUColor = { r: 1, g: 1, b: 1, a: 1 };

@@ -102,8 +102,8 @@ export const SHADOW_PASSES = PASS_CASTS | PASS_SOLID | PASS_LAMPS;
  * A probe view's two tests beside the pass mask, in the uniform block's word 9
  * y (`CullInputs.probe`): the reach measured to a cluster's SURFACE sphere's
  * near side rather than its block's box — the test Babylon's bake made of a
- * mesh (`ReflectionSystem.neighbourhood`) — and the probe's own BLOCKS left
- * out (`ReflectionSystem.encloses`). Every other view sets neither.
+ * mesh until X3.7c — and the probe's own BLOCKS left out
+ * (`ReflectionSystem`'s `exclusionOf`). Every other view sets neither.
  */
 export const PROBE_SPHERE_REACH = 1;
 export const PROBE_EXCLUDE = 2;

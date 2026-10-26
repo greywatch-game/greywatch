@@ -393,17 +393,17 @@ you are on before you believe anything else in this section.
 - **Coldharbour's bake is OUR RENDERER's now and drains in five frames**
   (X3.6c, `render/ProbeBake.ts`): 39 probes at `probesPerFrame` 8, frames of
   5-6 ms against an idle 1-3, ~41 ms of wall clock, under the loading card.
-  `g.reflections.path` says which bake an install took. **What follows is
-  BABYLON's bake**, which no round takes since X3.7b (`?babylonworld`, which
-  did, went with it; the tag `exit-babylonworld` has it), and every number in
-  it is that path's.
+  It is the only bake since X3.7c. **What follows is BABYLON's bake**, which
+  no round has taken since X3.7b and X3.7c deleted (the tag
+  `exit-babylonworld` has it), and every number in it is that path's — kept
+  as the record of why the bake is spread over frames.
   Coldharbour's shipped forty-probe bake completes here — all forty, one
   frame, no device loss — and the probes are refresh-once, so it is a build cost
   and never a frame cost. **It is one frame BY BUDGET now rather than by
-  default**: `CONFIG.graphics.reflection.drawsPerFrame` (50,000) is set just
+  default**: its `drawsPerFrame` (50,000, deleted with it) was set just
   over Coldharbour's whole bake (41,934 draws, ~2.3 s), and a map asking for
-  more spends the rest on
-  the frames after (`ReflectionSystem.releaseBatch`). So a bake is no longer
+  more spent the rest on
+  the frames after (its `releaseBatch`). So a bake is no longer
   contractually on the frame after the install on any map — and since S0c it is
   no longer after the install at all: the batches are spent under the LOADING
   card, so `installRound`'s `installMs` covers the whole bake and its
@@ -446,9 +446,9 @@ you are on before you believe anything else in this section.
   additive. The same profiler over the map INSTALL is fine — `parts.ts`'s header,
   `ENGINE_UPGRADE.md` S5b-S5c and `FINDINGS.md` 26 are all taken that way —
   so it is the bake specifically. Anything wanting the per-draw cost broken
-  down needs a GPU capture, or `CONFIG.graphics.reflection.drawsPerFrame`
-  turned down until a frame is
-  samplable and the cost read off the slope.
+  down needed a GPU capture, or its `drawsPerFrame` turned down until a frame
+  was samplable and the cost read off the slope (both went with that bake at
+  X3.7c; ours is `probesPerFrame`).
 - **A round left to itself fires NO ray at all**, so a script measuring rays has
   to force contact. `BattleSystem.acquire` gathers candidates by distance and
   only ray-tests inside `bots.perception.engageRange` (55 m): measured at **zero
@@ -564,15 +564,15 @@ you are on before you believe anything else in this section.
     game. **It is BABYLON's bake**: since X3.6c a round bakes on our renderer
     (five frames of 8 probes on Coldharbour), which nobody has run on this
     machine; the bake described here needs a build at the tag
-    `exit-babylonworld` and `?babylonworld` (deleted at X3.7b), and
-    `probesPerFrame` is the lever on ours. **The stagger it used to describe is IN the game now** — the bake is
-    spent `CONFIG.graphics.reflection.drawsPerFrame` at a time
-    (`ReflectionSystem.releaseBatch`) — but the budget is sized so Coldharbour
-    is one batch, which is the frame this machine cannot finish. So the lever
-    here is that number rather than a wrapper: **drop `drawsPerFrame` to a few
-    thousand before `startRound`** and the same forty probes arrive over ten
-    frames or so, no device loss, and the round then draws at 99% lit with the
-    city in its glass. Two other ways round it, if what you want is a frame
+    `exit-babylonworld` and `?babylonworld` (deleted at X3.7b; the bake
+    itself at X3.7c), and `probesPerFrame` is the lever on ours. **The
+    stagger it used to describe was IN that build** — the bake spent
+    `drawsPerFrame` at a time (`releaseBatch`) — but the budget was sized so
+    Coldharbour is one batch, which is the frame this machine cannot finish.
+    So the lever there was that number rather than a wrapper: **drop
+    `drawsPerFrame` to a few thousand before `startRound`** and the same forty
+    probes arrived over ten frames or so, no device loss, and the round then
+    drew at 99% lit with the city in its glass. Two other ways round it, if what you want is a frame
     rather than the mirrors: `g.reflections.build = () => {}` before
     `startRound` gives a Coldharbour that renders (99% of pixels lit,
     everything but the glazing correct), and truncating `map.paneGroups` inside
@@ -1577,19 +1577,32 @@ is one machine's:
   `copyTextureToBuffer` off `g.renderer.device` between frames reads the last
   frame's mask. `g.worldGlow.drawing` and `.drawn` say whether ours drew the
   palette into it. **There is no Babylon side of the palette to compare
-  against in a round since X3.7b** (Babylon is made no mesh of it): a
-  `g.worldGlow.lose()` FAILS THE WORLD (below), and the old A/B — a forced
-  loss, then `g.handover.takePalette()` to take it back — is gone with the
-  meshes. A frame of Babylon's palette needs a build at the tag
-  `exit-babylonworld`.
+  against** (Babylon is made no mesh of it since X3.7b, and its stages and
+  mask twin went at X3.7c): a mask ours cannot draw FAILS THE WORLD (below),
+  and the old A/B — a forced loss, then `g.handover.takePalette()` to take
+  it back — is gone with the meshes. A frame of Babylon's palette needs a
+  build at the tag `exit-babylonworld`.
 - **Every former handback is now the world's failure, and each can be
-  FORCED in a scratch page** (`BABYLON_EXIT.md` X3.7b). After `installRound`,
-  any one of these — `g.worldShadows.lose()`, `g.lampAtlas.lose()`,
-  `g.probeBake.lose()`, `g.worldGlow.lose()`, `g.handover.refused()` (the
-  main pass refused), `g.handover.failed([0])` (a group's surfaces failed),
-  `g.handover.mainPaletteFailed()` — must end, after the task in hand, in ONE
-  `console.error` beginning `[world] <map>: the map could not be drawn`,
-  `g.state === "menu"`, and a toast naming the map. (The fields are private to
+  FORCED in a scratch page** (`BABYLON_EXIT.md` X3.7b, X3.7c). No pass of ours
+  has a `lose()` any more: each is handed its world WITH the install's
+  failure and tells it what it cannot draw, so a forced failure is forced on
+  the PASS's own path. After `installRound`: `g.handover.refused()` (the main
+  pass refused), `g.handover.failed([0])` (a group's surfaces failed),
+  `g.handover.mainPaletteFailed()`, and `g.worldGlow.refused()` (the glow's
+  mask pass refused — what `Renderer.onGlowMaskRefused` calls). Armed before
+  `g.startRound()`, each landing at the install: the casters' build failing
+  (wrap `g.worldShadows.setCasters` — or `g.lampAtlas.setCasters` — to hand
+  the real one `Object.create(depth, { ready: { value: Promise.resolve(false) }
+  })`), the lamps' proxies' pipeline failed for the session (`g.lampAtlas
+  .proxies = Promise.resolve(false)` — and a SECOND round fails the same
+  way, the session's), the bake's mips pipeline failed for the session
+  (`g.probeBake.mips = Object.create(g.probeBake.mips, { ready: … false })`),
+  the bake's view not made (`g.handover.blocks.probeView = () => null`) or
+  not built (wrap it to return `{ ...view, ready: Promise.resolve(false) }`),
+  and the mask's view the same two ways (`blocks.glowView`). Each must end,
+  after the task in hand, in ONE `console.error` beginning `[world] <map>: the
+  map could not be drawn`, `g.state === "menu"`, and a toast naming the map —
+  and a round after it, restored, installs clean. (The fields are private to
   TypeScript, not to a page script.) Count the console errors, not the
   states: a second failure inside the same turn is the same one
   (`Game.worldFailing`), and a stray second `[world]` line is a bug. **The
@@ -1602,10 +1615,12 @@ is one machine's:
   every crown rung (`--foliage`). Force one by wrapping `g.handover
   .onSurface` before `g.startRound()` to mark the first block surface
   `updatable` (a caster nothing can hold). **A failure of the OLD map under
-  the next round's card** (a loss forced right after a Restart's
+  the next round's card** (the old install's failure, captured by wrapping a
+  pass's `setWorld`/`setCasters` and called right after a Restart's
   `g.startRound()`) is said against the old map — `[world] <map>: … (it was
-  already being replaced…)` — and the new round reaches the deploy screen
-  (`Game.roundWorld`).
+  already being replaced…)` — or, once the handover has a new owner, dropped
+  (`BlockHandover.failFor`), and the new round reaches the deploy screen
+  either way, with no toast (`Game.roundWorld`).
 - **Whether the RECORD still describes the mesh is `npm run merge:hash`'s**
   (`BABYLON_EXIT.md` X3.7a): EVERY surface that has a mesh — on a shipped
   build the glazing and the fires, on an EDITOR build every one, 2,000-odd
@@ -1620,24 +1635,20 @@ is one machine's:
   ours draws, which has no mesh to compare.
 - **What a pane REFLECTS is checkable without a screenshot, and the CUBE is the
   place to check it.** There is one probe per glazed map block —
-  `g.reflections.probes[slot]` against `g.map.paneGroups[slot]`, 40 of each on
-  Coldharbour — and `probe.cubeTexture.readPixels(face)` gives one baked face:
-  alpha over 128 is world, everything else is the sky the shader fills in.
-  **That is Babylon's bake** (`g.reflections.path` reading `"babylon"` — no
-  round since X3.7b; `?babylonworld` had it, at the tag `exit-babylonworld`).
-  **On our renderer's path those probes bake nothing** but the
-  default cube: the cubes are `g.reflections.oursPools.glazing[slot]` (and
-  `.water[slot]`), `.job.cube.texture` a raw `GPUTexture` made with
-  `COPY_SRC`, so a readback is `copyTextureToBuffer` of each face and level off
-  `g.renderer.device` and nothing else — and so is Babylon's, to compare
-  (`probe.cubeTexture.getInternalTexture()._hardwareTexture
-  .underlyingResource`; Babylon makes a render target with `COPY_SRC`).
-  Three standing checks:
+  `g.reflections.pools.glazing[slot]` against `g.map.paneGroups[slot]` (39 on
+  Coldharbour; `.water[slot]` the water's), `.job.cube.texture` a raw
+  `GPUTexture` made with `COPY_SRC`, so a readback is `copyTextureToBuffer`
+  of each face and level off `g.renderer.device` and nothing else: alpha over
+  128 is world, everything else is the sky the shader fills in. The default
+  cube (`g.reflections.defaultCube`) is none of them and reads all zeroes.
+  Babylon's `ReflectionProbe` cubes went at X3.7c (the tag
+  `exit-babylonworld` still has them). Three standing checks:
   - **Coverage says the enclosure rule fired.** Mean coverage over all six faces
-    is 0.711 across the 40 probes as shipped. Put the enclosing meshes back
-    (`probe.cubeTexture.renderList = allOpaque; probe.cubeTexture.render()`) and
-    a tower's goes 0.57 → 0.84 and **a parked car's 0.68 → 0.99** — a probe
-    inside its own bodywork, which is the failure the rule exists for.
+    was 0.711 across the 40 probes of Babylon's bake as shipped; putting the
+    enclosing meshes back took a tower's 0.57 → 0.84 and **a parked car's 0.68
+    → 0.99** — a probe inside its own bodywork, which is the failure the rule
+    exists for. On ours the same test is a probe re-baked with its
+    `job.exclude` set to null.
   - **Face 2 is 100% and face 3 is 0**, and that pair is the Y-flip contract
     rather than a curiosity: face 2 is `POSITIVE_Y` and it holds the DOWNWARD
     view, which is why the shader samples the cube with `-y`. A bake that lost
@@ -1646,15 +1657,12 @@ is one machine's:
     Set(g.map.paneGroups.map(p => p.mesh.material.name)).size` is the probe
     count, while the mesh count is unchanged — that is the whole affordability
     argument, and a regression here shows up as one name for all 37.
-- **The eye is the thing a bake can leak.** `g.mats.camPos` must equal
-  `g.cameraSys.camera.position` on any frame after an install; if it equals one
-  of `g.reflections.probes[i].position` instead, the bake put the eye back
-  wrong and the install frame fogged the whole map from a point inside it. It
-  self-corrects on the next frame, so this is only ever visible as an
-  assertion — read it in the same `evaluate` that starts the round. Babylon's
-  bake only: ours PASSES the eye in a frame of its own and moves nothing, and
-  the check there is a cube baked with the camera at the probe and 600 m off
-  it coming back identical.
+- **The eye was the thing Babylon's bake could leak** — it moved every cel
+  material's `camPos` into the probe and back, and a bake that put it back
+  wrong fogged the install frame from a point inside the map. Ours PASSES the
+  eye in a frame of its own and moves nothing (the only bake since X3.7c), so
+  the check is a cube baked with the camera at the probe and 600 m off it
+  coming back identical.
 - **Whether the glazing is DRAWN at all is a separate question from how it
   looks, it is a number, and it has to be asked at RANGE** — that is where
   glass past ~100 m was found not to be drawn at all
@@ -1874,9 +1882,9 @@ is one machine's:
     seeded in `LightingSystem` now** (`FLICKER_SEED`, re-seeded in `clear`), so
     a script inherits that one and does not have to reach for it; what a script
     still owes is a re-bake AFTER pinning the clocks — `g.reflections.rebake()`
-    then waiting `bakePending` out, which works on either path (before X3.6c,
-    `resetRefreshCounter()` on both probe pools and a few frames, which bakes
-    nothing on our renderer's). That reaches byte-identity across processes.
+    then waiting `bakePending` out (before X3.6c, `resetRefreshCounter()` on
+    both of Babylon's probe pools and a few frames). That reaches byte-identity
+    across processes.
     `plans/webgpu-ref/harness.mjs`'s `freeze` is the worked version and carries
     the whole argument.
 - **The pause lid is a free camera**, and it is raised with `g.raiseLid("paused")`
@@ -1992,10 +2000,9 @@ is one machine's:
   `@babylonjs_core.js` by the url in `performance.getEntriesByType("resource")` or
   you get a second Babylon and a class the materials reject) sweeps a whole
   parameter space in one page session with no rebuild. Two readings that mean
-  something when the water looks wrong: `g.reflections.waterProbes[0].cubeTexture`
-  answers `readPixels(face)` on Babylon's bake (on ours the cube is
-  `g.reflections.oursPools.water[0].job.cube.texture`, read as the glazing section
-  says) — face 2 is the DOWN view and face 3 the sky, because
+  something when the water looks wrong: the body's cube,
+  `g.reflections.pools.water[0].job.cube.texture`, read back as the glazing
+  section says — face 2 is the DOWN view and face 3 the sky, because
   a cube rendered into is stored mirrored about the horizon — and a water surface
   that comes back as one flat colour at every angle is almost always the cube's
   average, i.e. the mip level, rather than a broken bake.

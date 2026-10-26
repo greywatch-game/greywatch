@@ -506,9 +506,9 @@ uniform camPos: vec3f;
 // drawing an edge off — see that file. In a reflection PROBE it is the cube's
 // own coverage mask, which is how the glazing (celSurface) tells the city
 // from the sky above it (city.a), and there it has to be 1 or the bake comes back
-// empty. CelMaterialFactory.setOpaqueAlpha is the flip and
-// ReflectionSystem is its only caller, on the same two hooks that lend the
-// bake the probe's eye.
+// empty. Babylon draws no bake since X3.7c, so every material it draws holds
+// the frame's 0; our renderer's bake writes 1 into its own frame
+// (CelMaterialFactory.fillBakeFrame).
 uniform opaqueAlpha: f32;
 
 // Albedo weathering: cell size (as 1/metres) and peak-to-peak swing. Uniforms
@@ -1043,8 +1043,13 @@ export class CelMaterialFactory {
    * origin needs no walk, because the cache is already there.
    */
   private readonly camPos = Vector3.Zero();
-  /** See `setOpaqueAlpha`. The FRAME's value, which is what a material is born with. */
-  private opaqueAlpha = 0;
+  /**
+   * What an opaque fragment writes into the FRAME's alpha channel (see
+   * `opaqueAlpha` in the fragment source): 0, and nothing flips it — Babylon
+   * draws no reflection bake since X3.7c, and our renderer's bake states its
+   * own 1 (`fillBakeFrame`).
+   */
+  private readonly opaqueAlpha = 0;
 
   /**
    * The wind's clock, in seconds of WORLD time — see `updateWind` for why that
@@ -1085,7 +1090,8 @@ export class CelMaterialFactory {
   >();
   /**
    * The cube a glazing material is BORN holding, before any probe has claimed
-   * it — `ReflectionSystem`'s first probe, published once at construction.
+   * it — `ReflectionSystem`'s default cube, a cube of our renderer's nothing
+   * bakes, published once at construction.
    *
    * It is bound with a strength of 0, so what is in it never reaches a pixel.
    * The binding is not optional even so: a `samplerCube` with nothing on its
@@ -1867,20 +1873,16 @@ export class CelMaterialFactory {
         this.scene,
         overGlass ? "emissive-world-over-glass" : "emissive-world",
         depthUnits,
-        this.emissivePalette,
       );
-      // What our renderer draws it with in a probe's bake: the same table and
-      // fog band, held here and read by reference (`emissiveRecipe`).
+      // What our renderer draws it with in every pass: the table and the fog
+      // band, held here and read by reference (`emissiveRecipe`). The
+      // material holds none of it (`EmissiveWorld.ts`).
       const recipe: EmissiveRecipe = {
         depthBias: depthUnits,
         values: { emissivePalette: this.emissivePalette, fogRange: this.emissiveFogRange },
       };
       this.emissiveRecipes.set(mat, recipe);
       this.emissiveMaterials.set(recipe, mat);
-      mat.setFog(fogState.color, fogState.start, fogState.end);
-      // The cel cache's eye, seeded here for `applyCamera`'s reason: the walk
-      // in `updateCamera` is guarded, and skips a material it has never seen.
-      mat.setEye(this.camPos);
       this.emissiveWorld[i] = mat;
     }
     return mat;
@@ -1893,9 +1895,9 @@ export class CelMaterialFactory {
   private readonly emissiveMaterials = new Map<EmissiveRecipe, EmissiveWorldMaterial>();
 
   /**
-   * The palette's fog band as `EmissiveWorldMaterial.setFog` computes it —
-   * start, and the reciprocal of the band — kept for our renderer's copy of
-   * the pixel, so it rounds as Babylon's uniform does.
+   * The palette's fog band — start, and the reciprocal of the band, on the
+   * CPU, so it rounds as Babylon's uniform for the same pair did — for our
+   * renderer's draw of the palette, which reads it by reference.
    */
   private readonly emissiveFogRange = new Float32Array(2);
 
@@ -1936,7 +1938,6 @@ export class CelMaterialFactory {
       this.emissivePalette[i * 3 + 1] = colors[i].g;
       this.emissivePalette[i * 3 + 2] = colors[i].b;
     }
-    for (const mat of this.emissiveWorld) mat?.setPalette(this.emissivePalette);
     this.materialEpoch++;
   }
 
@@ -1953,7 +1954,6 @@ export class CelMaterialFactory {
       this.flame = new FlameMaterial(this.scene);
       this.flame.setClock(this.windTime);
       this.flame.setFog(fogState.color, fogState.start, fogState.end);
-      this.flame.setOpaqueAlpha(this.opaqueAlpha);
       this.flame.setEye(this.camPos);
     }
     return this.flame;
@@ -1973,7 +1973,6 @@ export class CelMaterialFactory {
       this.blast = new BlastMaterial(this.scene);
       this.blast.setClock(this.windTime);
       this.blast.setFog(fogState.color, fogState.start, fogState.end);
-      this.blast.setOpaqueAlpha(this.opaqueAlpha);
       this.blast.setEye(this.camPos);
       this.pushBlastLight();
     }
@@ -2028,7 +2027,6 @@ export class CelMaterialFactory {
     // And the third pass that never runs the cel shader: the unlit emissive
     // materials behind every window, flame and tracer.
     setEmissiveFog(fogState.color, fogState.start, fogState.end);
-    for (const mat of this.emissiveWorld) mat?.setFog(fogState.color, fogState.start, fogState.end);
     this.emissiveFogRange[0] = fogState.start;
     this.emissiveFogRange[1] = 1 / Math.max(0.001, fogState.end - fogState.start);
     this.materialEpoch++;
@@ -2155,9 +2153,7 @@ export class CelMaterialFactory {
     if (!camPos.equals(this.camPos)) {
       this.camPos.copyFrom(camPos);
       this.cache.forEach((mat) => this.applyCamera(mat));
-      // The three materials outside the cache fog against this same eye, a
-      // probe's included (`EmissiveWorld.ts`, "WHY ITS OWN EYE").
-      for (const mat of this.emissiveWorld) mat?.setEye(this.camPos);
+      // The two materials outside the cache fog against this same eye.
       this.flame?.setEye(this.camPos);
       this.blast?.setEye(this.camPos);
     }
@@ -2228,11 +2224,11 @@ export class CelMaterialFactory {
 
   /**
    * A reflection probe's frame for our renderer's bake (`render/ProbeBake.ts`,
-   * `BABYLON_EXIT.md` X3.6c): `fillFrame`'s, with what a bake changes stated
-   * HERE, where Babylon's bake changes it on the materials — the eye at the
-   * probe (`updateCamera`), the opaque alpha 1 (`setOpaqueAlpha`) and the
-   * clouds' shadow held off (`ShadowBindings.holdCloudShadow`). The eye is
-   * PASSED, never borrowed: nothing the factory holds moves for it.
+   * `BABYLON_EXIT.md` X3.6c), the only bake there is since X3.7c:
+   * `fillFrame`'s, with what a bake changes stated HERE — the eye at the
+   * probe, the opaque alpha 1 and the clouds' shadow held off
+   * (`ShadowBindings.fillFrame`'s `bake`). The eye is PASSED, never
+   * borrowed: nothing the factory holds moves for it.
    */
   fillBakeFrame(out: FrameUniforms, eye: Vector3Like): void {
     this.fillFrame(out, true);
@@ -2260,40 +2256,6 @@ export class CelMaterialFactory {
     out.giVis1 = hostTexture(gi.textures.giVis1);
     out.giVis2 = hostTexture(gi.textures.giVis2);
     out.giVis3 = hostTexture(gi.textures.giVis3);
-  }
-
-  /**
-   * What an OPAQUE cel fragment writes into the alpha channel: 0 for the frame,
-   * 1 for a reflection bake. The argument is on `opaqueAlpha` in the fragment
-   * source; this is only the walk.
-   *
-   * Guarded like `updateCamera` and for the same reason, and it wins by more:
-   * this moves on the frames a probe bakes and on no others, so a round that is
-   * not installing a map never walks the cache for it at all. It is seeded on
-   * create through `applyCamera`, which every one of the six creation paths
-   * already calls — the same thing that pays for the guard there pays for it
-   * here, since skipping a walk is only sound while the cache cannot hold a
-   * material the walk has never visited.
-   */
-  setOpaqueAlpha(alpha: number): void {
-    if (alpha === this.opaqueAlpha) return;
-    this.opaqueAlpha = alpha;
-    this.cache.forEach((mat) => mat.setFloat("opaqueAlpha", alpha));
-    this.flame?.setOpaqueAlpha(alpha);
-    this.blast?.setOpaqueAlpha(alpha);
-  }
-
-  /**
-   * Copies the eye the cache is currently holding into `out`.
-   *
-   * For the one caller that has to BORROW it: `ReflectionSystem` renders the
-   * world from the probe rather than from the player, so every cel material in
-   * that bake has to fog and rim against the probe — and the six faces have to
-   * put back exactly what they found, because the main pass of the same frame
-   * follows them.
-   */
-  readEye(out: Vector3): Vector3 {
-    return out.copyFrom(this.camPos);
   }
 
   /**
@@ -2498,12 +2460,11 @@ export class CelMaterialFactory {
   }
 
   /**
-   * WHOSE PASS this material is about to be drawn for: the eye it fogs and rims
-   * against, and what it writes into that pass's alpha channel. See `camPos`
-   * for why on create, and `opaqueAlpha` in the fragment for why the second one
-   * is not a constant — the two facts move together and both are owned by
-   * `ReflectionSystem`, which is the only thing in the tree that draws the
-   * world from anywhere but the player's head.
+   * The eye a material fogs and rims against, and what it writes into the
+   * frame's alpha channel, seeded on create — see `camPos` for why, and
+   * `opaqueAlpha` in the fragment for the second. Babylon draws the world
+   * from nowhere but the player's head since X3.7c: a probe's eye and its
+   * alpha are our renderer's bake frame's (`fillBakeFrame`).
    */
   private applyCamera(mat: ShaderMaterial): void {
     mat.setVector3("camPos", this.camPos);

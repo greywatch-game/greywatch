@@ -95,8 +95,9 @@ consequences:
   render it is asking about, and all it does is read a queue and take a card
   down.
 - **A queue that cannot drain must not hang the card**, and the state machine
-  has no concept of a step that fails. A probe re-bakes in full until every
-  mesh in its list has a compiled material, so the wait gives up on two
+  has no concept of a step that fails. A released probe waits for a frame on
+  which every group the bake draws can draw (a pipeline that never settles is
+  a queue that never drains), so the wait gives up on two
   different failures — an outstanding count that stops MOVING, which no wall
   clock can tell from a slow machine, and a bake that inches forward forever,
   which no stall counter can catch — and lets the remainder land in the round

@@ -576,7 +576,8 @@ is 256 of them and 128 m is 144, bought with coarser culling and larger merged
 buffers.
 
 Two things key off a block and both follow a map's value for free, because they
-read the KEY the merge wrote rather than a size: `ReflectionSystem.encloses` —
+read the KEY the merge wrote rather than a size: the reflection bake's
+exclusion (`ReflectionSystem`'s `exclusionOf`, told to the cull as numbers) —
 a glazing group and the wall it is glazed onto are the same building because
 `PaneBlocks` and `BlockMerge` filed them under the same string — and
 `WorldCulling`, whose cells are bounded by their MESHES rather than by the
