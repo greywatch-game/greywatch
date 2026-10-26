@@ -176,14 +176,6 @@ export class WorldShadows {
     return true;
   }
 
-  /**
-   * Whether the shadow rung draws any of the four maps, whoever holds them —
-   * stated by `ShadowSystem.setQuality`, which alone knows the rung's sizes
-   * (these textures have none while Babylon's generators hold the maps).
-   * With none, a map's casters would be held for nothing.
-   */
-  rungDraws = true;
-
   /** How many maps one submit may draw: a slot each in the casters' culls. */
   get slots(): number {
     return WORLD_SHADOW_MAPS.length;
@@ -199,7 +191,7 @@ export class WorldShadows {
     return this.maps[name].own;
   }
 
-  /** Who is told when the casters handed over cannot draw, and the world's shadows must be someone else's. */
+  /** Who is told when the casters handed over cannot draw: the world's failure (`BlockHandover`, X3.7b). */
   onLost(lost: () => void): void {
     this.lost = lost;
   }
@@ -304,17 +296,16 @@ export class WorldShadows {
   }
 
   /**
-   * The casters can no longer draw what Babylon would — one went back to
-   * Babylon's main pass, or the main pass was refused: they are dropped, the
-   * maps cleared to lit, and whoever asked to be told takes the world's
-   * shadows over (`onLost`) once the task in hand is done.
+   * The casters can no longer draw — their build failed: they are dropped,
+   * the maps cleared to lit, and whoever asked to be told is, once the task
+   * in hand is done (`onLost`; the world fails, X3.7b).
    */
   lose(): void {
     if (!this.depth) return;
     this.setCasters(null);
-    // After the task: a loss can land INSIDE a render (`Renderer.onRefused`),
-    // and whoever takes the maps over destroys these textures, which that
-    // frame's commands — not yet submitted — still hold.
+    // After the task: a loss can land INSIDE a render, and what follows it
+    // (the map torn down) destroys these textures, which that frame's
+    // commands — not yet submitted — still hold.
     const lost = this.lost;
     if (lost) queueMicrotask(lost);
   }

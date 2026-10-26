@@ -34,9 +34,10 @@
  * surfaces too, minted first. Every merge, and then the vertex bake, runs on
  * those and touches no device; the world becomes meshes once, in `bake`
  * (`worldMeshes`), in birth order, which is the scene order the meshes had
- * when the merge still ran on them — and only the freeze runs on the meshes.
- * What the map keeps of the record is `GameMap.world`: everything but the
- * arrays. collider() is deliberately NOT on that path: a collider is still a
+ * when the merge still ran on them — and only the freeze runs on the meshes;
+ * a surface our renderer draws whole (`BuildOptions.onSurface`) is made none
+ * (`BABYLON_EXIT.md` X3.7b). What the map keeps of the record is
+ * `GameMap.world`: everything but the arrays, a record a surface. collider() is deliberately NOT on that path: a collider is still a
  * real mesh with submeshes, because the editor's centre-screen pick walks
  * them — nothing that moves or shoots does any more (`RayWorld`,
  * `CollisionField`).
@@ -507,12 +508,13 @@ function halfExtentsOf(part: Part): { x: number; y: number; z: number } {
 interface BuildRun {
   layout: MapLayout;
   terrain: TerrainField;
-  /** Becomes `GameMap.visuals`: `surfaces`, once the adapter has made them meshes. */
+  /** Becomes `GameMap.visuals`: the meshes the adapter made of `surfaces` — Babylon's alone. */
   visuals: Mesh[];
   /**
-   * Every surface the world draws, in `visuals` order — the floor's patches,
-   * the rim's runs, then every merged surface — which the vertex bake colours
-   * and `worldMeshes` turns into meshes, in `bake`.
+   * Every surface the world draws, in list order — the floor's patches, the
+   * rim's runs, then every merged surface — which the vertex bake colours
+   * and `worldMeshes` turns into records, and into meshes where Babylon
+   * draws them, in `bake`.
    */
   surfaces: WorldSurface[];
   /** The build's birth counter — see `WorldSurface.born`. */
@@ -1343,22 +1345,26 @@ export class MapBuilder {
     }
 
     // **The one place the world becomes meshes** (`worldMeshes`): every
-    // surface, made in the order Babylon made them when the merge still ran on
-    // meshes — the floor and the rim first, as they were — with each surface's
-    // arrays released as its mesh takes them. The glazing groups are handed
-    // their meshes on the way past, which is the shape `GameMap.paneGroups`
-    // and `GlassFx` read.
-    const { meshes, records } = record("upload", () =>
-      worldMeshes(surfaces, this.scene, plain, onSurface),
-    );
+    // surface Babylon draws, made in the order Babylon made them when the
+    // merge still ran on meshes — the floor and the rim first, as they were —
+    // and none for a surface our renderer draws whole (`onSurface`,
+    // `BABYLON_EXIT.md` X3.7b), with each surface's arrays released once it
+    // is past. The glazing groups are handed their meshes on the way past,
+    // which is the shape `GameMap.paneGroups` and `GlassFx` read: glazing is
+    // always Babylon's, so a group without one is a broken build.
+    const made = record("upload", () => worldMeshes(surfaces, this.scene, plain, onSurface));
     const meshOf = new Map<WorldSurface, Mesh>();
-    surfaces.forEach((surface, i) => meshOf.set(surface, meshes[i]));
-    for (const mesh of meshes) visuals.push(mesh);
-    this.paneGroups = glazing.map((g) => ({
-      mesh: meshOf.get(g.surface)!,
-      panes: g.panes,
-      block: g.block,
-    }));
+    surfaces.forEach((surface, i) => {
+      const mesh = made.meshes[i];
+      if (mesh) meshOf.set(surface, mesh);
+    });
+    for (const mesh of made.visuals) visuals.push(mesh);
+    this.paneGroups = glazing.map((g) => {
+      const mesh = meshOf.get(g.surface);
+      if (!mesh) throw new Error(`MapBuilder: the glazing "${g.surface.part.name}" was made no mesh`);
+      return { mesh, panes: g.panes, block: g.block };
+    });
+    const records = made.records;
 
     record("markVisual", () => {
       for (const m of visuals) this.markVisual(m);

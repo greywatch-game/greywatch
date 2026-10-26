@@ -22,9 +22,9 @@
  * outlives; a dispatch's inputs are numbers only — a view-projection, an
  * eye, the reach and the size gate, the most the wind moves a vertex, a
  * pass mask and a probe view's two tests (`CullInputs`) — so the cull never
- * reads a node; the size gate never drops a cluster in `PASS_GLOW` (the
- * emissive palette, which the glow's mask draws through the main pass's view,
- * X3.6d), as the frame's mesh walk never gates an emissive; the frustum is
+ * reads a node; the size gate never drops a `LIGHT_SOURCE` cluster (the
+ * emissive palette's, glowing or `noGlow`, X3.7b), as the frame's mesh walk
+ * never gates an emissive; the frustum is
  * the view-projection's four side planes and the eye's own plane, normalised
  * here, and a cluster is dropped only when it is not in the view's pass, or
  * its box lies wholly outside one plane, so it drops nothing the frustum did
@@ -67,7 +67,7 @@ import {
   CLUSTER_CULL_WGSL,
   CLUSTER_WORDS,
   CULL_UNIFORM_BYTES,
-  PASS_GLOW,
+  LIGHT_SOURCE,
   RANGE_WORDS,
   SCAN_SIZE,
 } from "./wgsl/clusterCull";
@@ -682,8 +682,8 @@ function clusterReplay(
       const d2b = boxDist2(f, tables.blocks[cu[o + 9]]);
       near[0] = closeness(d2b, f[23]);
       if (d2b > f[23]) return 1;
-      // A light source is never size-gated (`PASS_GLOW`, `visible`).
-      if (u[26] !== 0 && (cu[o + 14] & PASS_GLOW) === 0) {
+      // A light source is never size-gated (`LIGHT_SOURCE`, `visible`).
+      if (u[26] !== 0 && (cu[o + 14] & LIGHT_SOURCE) === 0) {
         const { d2, w2 } = sphere(f, cu[o + 10]);
         if (d2 > 1) {
           near[0] = Math.min(near[0], closeness(w2, f[25] * d2));

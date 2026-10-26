@@ -82,16 +82,18 @@
  * that count, because the main pass (while it is the main pass's) and the
  * glow's mask draw the palette from the main pass's survivors; the main
  * pass draws the palette FIRST and by its own program — the bake's
- * pipelines, one a bias (`mainPalette`), asked once at the cut whoever draws
- * it — and a failed one hands NO group back: whoever took the palette is
- * told (`onPaletteFailed`) and gives back its main pass and its mask, a
- * probe's view built on them answers unready (its bake lost, as at X3.6c),
- * and the shadow maps, whose pipelines these are not, keep drawing it; a
+ * pipelines, one a bias (`mainPalette`), asked once at the cut — and a
+ * failed one fails no group: whoever took the palette is told
+ * (`onPaletteFailed`), and a probe's view built on them answers unready
+ * (its bake lost, as at X3.6c); a
  * probe's view culls every cluster and draws what is in `PASS_PROBE` with
  * the main pass's own pipelines and material groups, through the face's
  * frame, each scattered group's twin bound to its own list; the glow's view
  * is the main view itself, no cull of its own, drawing the palette groups
- * alone with the mask's pipelines, and drawable only while the main view's
+ * that glow alone with the mask's pipelines — a palette surface marked
+ * `noGlow` is cut into a palette group of its own material that does not
+ * (`paletteGroup`), since the mask draws a group whole — and drawable only
+ * while the main view's
  * culls are — the draw code is ONE (`drawClusters`, `drawScatter`, `bind` and
  * `drawPalette` over a `DrawView`, every draw's three groups made by
  * `groupsFor`, and what a view can draw asked by `drawableIn` of its pass
@@ -112,22 +114,20 @@
  * told to CUT (the scatter's regions) are taken out of every surface before
  * it is uploaded, because those triangles are drawn as instances instead —
  * and a group with no surface of its own draws none of its instanced parts,
- * since Babylon draws that recipe whole; a group draws only once its pipeline
- * and the culls are built and every group it binds is whole, so a frame with
- * a pipeline compiling or a texture unpublished draws that group not at all
- * rather than wrongly; a group that will never draw — its pipeline FAILED, an
- * instanced part of it lacks what its variant reads, or its scatter is past
- * what the list can name or a part past the 16-bit source — draws
- * nothing at all and hands every surface of
- * it back, since half of a recipe would be a hole where Babylon draws the
- * other half (and Babylon's blocks still hold the scatter we would have cut);
- * a surface it will never draw — its group failed, or a cull did, or the cut
- * is past the device's limits — is handed to `onFailed` in the turn that
- * failure lands, never held for the map's other compiles, so whoever took it
- * can give it back at once; the map's `WorldDepth` is built only when every
- * group with a shadow pass is still whole at the cut — a map whose casters
- * already went back draws its shadows on Babylon's side, and a depth nobody
- * will use is not built; a material's block is re-copied from its recipe
+ * since no surface of that recipe is ours; a group draws only once its
+ * pipeline and the culls are built and every group it binds is whole, so a
+ * frame with a pipeline compiling or a texture unpublished draws that group
+ * not at all rather than wrongly; a group that will never draw — its
+ * pipeline FAILED, an instanced part of it lacks what its variant reads, or
+ * its scatter is past what the list can name or a part past the 16-bit
+ * source — draws nothing at all, and every surface of it, like any surface
+ * it will never draw — its group failed, or a cull did, or the cut is past
+ * the device's limits — is handed to `onFailed` in the turn that failure
+ * lands, never held for the map's other compiles, so whoever took it can
+ * say so at once (since X3.7b no other side holds a mesh of it, and the
+ * world fails, `BlockHandover`); the map's `WorldDepth` is built only when
+ * every group with a shadow pass is still whole at the cut, a depth nobody
+ * will use not being built; a material's block is re-copied from its recipe
  * only when asked (`writeMaterials`); nothing here allocates on a frame but
  * the culls' compute passes.
  * Never: imports Babylon; reads a node, or decides the reach or the size gate
@@ -265,7 +265,7 @@ interface Group {
   readonly members: number[];
   /** Its instanced parts, in the order added; emptied at `finish`. */
   instanced: InstancedPart[];
-  /** Why it cannot draw its scatter, if an instanced part lacked what its variant reads: it goes back at `finish`. */
+  /** Why it cannot draw its scatter, if an instanced part lacked what its variant reads: it fails at `finish`. */
   withheld: string | null;
   /** Its storage arrays, in the vertex program's attribute order; empty until `finish`. */
   arrays: GPUBuffer[];
@@ -277,7 +277,7 @@ interface Group {
   /** It draws scatter: its run of the instance cull's list, to its own bound. */
   scattered: boolean;
   built: BuiltPipeline | null;
-  /** It draws nothing, and its members went back. */
+  /** It draws nothing, and its members were handed to `onFailed`. */
   failed: boolean;
   /** The passes beside the main one its surfaces, and its instanced parts, are drawn in, together. */
   surfacePasses: number;
@@ -352,8 +352,9 @@ export class WorldBlocks {
   };
   /** The held casters' one group, of no recipe. */
   private heldCasters: Group | null = null;
-  /** The palette's groups, one a palette material. */
+  /** The palette's groups, one a palette material that glows — and one more a material, of its `noGlow` surfaces. */
   private readonly paletteGroups = new Map<EmissiveRecipe, Group>();
+  private readonly quietPaletteGroups = new Map<EmissiveRecipe, Group>();
   /**
    * The palette's main-pass pipelines (`emissiveWorld(FRAME_TARGETS)`), by
    * depth bias, null until each lands — asked once at the cut, and the ones a
@@ -416,15 +417,14 @@ export class WorldBlocks {
     private readonly options: ClusterOptions,
     /**
      * Handed the surfaces (by `add`'s index) this will never draw, as each
-     * failure lands — drawn by NEITHER side unless whoever took them hands
-     * them back.
+     * failure lands — drawn by NO side (`BlockHandover` fails the world).
      */
     private readonly onFailed: (surfaces: readonly number[]) => void,
     /**
      * Told, once a map, that a main-pass palette pipeline FAILED
-     * (`paletteFailed`): no palette group goes back, the shadow maps still
-     * drawing them, so whoever handed the palette's main pass over takes it
-     * back itself.
+     * (`paletteFailed`): no palette group is failed, the shadow maps still
+     * drawing them, so whoever handed the palette's main pass over says so
+     * itself.
      */
     private readonly onPaletteFailed: () => void,
     /** The culls' diagnostics (`ClusterCull`'s `CullDiagnostics`); none but off the URL. */
@@ -513,7 +513,7 @@ export class WorldBlocks {
     passes: number,
     key: number,
   ): number {
-    return this.addTo(this.paletteGroup(recipe), label, geometry, pieces, passes, key);
+    return this.addTo(this.paletteGroup(recipe, (passes & PASS_GLOW) !== 0), label, geometry, pieces, passes, key);
   }
 
   private addTo(
@@ -539,7 +539,7 @@ export class WorldBlocks {
    * `recipe` once per surviving instance, and in the shadow passes `passes`
    * names. Its arrays are READ at `finish`. A part lacking what its variant
    * reads cannot be drawn while its pieces are cut out of the blocks, so its
-   * whole group goes back at `finish`.
+   * whole group fails at `finish`.
    */
   addInstanced(set: number, label: string, geometry: SurfaceArrays, recipe: CelRecipe, passes: number): void {
     const group = this.groupFor(recipe, "blocks");
@@ -552,7 +552,7 @@ export class WorldBlocks {
   }
 
   /**
-   * Cuts the map: what will never draw handed back, every group's arrays
+   * Cuts the map: what will never draw failed, every group's arrays
    * uploaded and its pipeline asked for, every surface cut into clusters —
    * the scatter's pieces cut out of it first, where its group draws them as
    * instances — every instanced part cut into clusters too, and the culls
@@ -561,14 +561,13 @@ export class WorldBlocks {
    * surface is handed (`WorldCulling.reachBoxOf`); surfaces of one box share
    * the object. With `shadowSlots`, the map as that many shadow maps record
    * it in one submit is built too (`depth`), over the same tables — unless a
-   * group with a shadow pass went back before the cut, when the map's
-   * shadows are not ours to draw.
+   * group with a shadow pass failed before the cut.
    */
   finish(blocks: readonly BlockBox[], scatter: ScatterCut | null = null, shadowSlots = 0): void {
     const surfaces = this.surfaces;
     if (blocks.length !== surfaces.length) throw new Error("world blocks: a block for every surface");
-    // Nothing taken (an editor build, a map of loose surfaces): no cull, and
-    // no instance either — Babylon draws every recipe whole.
+    // Nothing taken (an editor build): no cull, and no instance either —
+    // Babylon draws every recipe whole.
     if (surfaces.length === 0) return;
     const device = this.renderer.device;
     const sets = scatter?.sets ?? [];
@@ -578,8 +577,8 @@ export class WorldBlocks {
     // (`drawn` below). A stable sort keeps every other group's order.
     this.groups.sort((a, b) => cutRank(a) - cutRank(b));
 
-    // A recipe Babylon draws whole draws its scatter whole with it: a group
-    // with no surface of ours keeps none of its instanced parts.
+    // A recipe with no surface of ours keeps none of its instanced parts:
+    // they would draw scatter standing on blocks nobody draws.
     for (const group of this.groups) {
       if (group.members.length > 0) continue;
       group.instanced = [];
@@ -594,7 +593,7 @@ export class WorldBlocks {
 
     const size = this.measure(sets);
     if (!size) {
-      console.error("world blocks: the cut is past the device's buffer limits; the blocks go back to Babylon");
+      console.error("world blocks: the cut is past the device's buffer limits; no surface of it can be drawn");
       this.giveUpAll();
       this.release();
       return;
@@ -613,7 +612,7 @@ export class WorldBlocks {
       const start = at.cluster;
       group.indexBase = at.index;
       // The instanced parts first, each cluster carrying where its part
-      // starts. A group handed back keeps its place in both culls' tables,
+      // starts. A failed group keeps its place in both culls' tables,
       // empty — so range `g` of each is group `g`'s.
       const parts = scatterTables.add(group.instanced);
       // It draws scatter only if a record is its, so a group that does has
@@ -693,9 +692,8 @@ export class WorldBlocks {
    * What the cut will make — the cluster cull's indices, the scatter's source
    * and records, each group's vertices — or null when the blocks' indices or a
    * group's widest array (four floats a vertex) are past the device's limits.
-   * A LIST past what an index can name, or past them, hands back only the
-   * groups that draw scatter: a denser forest should cost Babylon the
-   * scatter's recipes, not the map.
+   * A LIST past what an index can name, or past them, fails only the groups
+   * that draw scatter — which since X3.7b fails the world all the same.
    */
   private measure(sets: readonly InstanceSet[]): CutSize | null {
     const limits = this.renderer.device.limits;
@@ -714,12 +712,12 @@ export class WorldBlocks {
     return Math.max(size.indices * 4, widest) > storage ? null : size;
   }
 
-  /** `measure`'s count, over the groups not handed back. */
+  /** `measure`'s count, over the groups not failed. */
   private sizes(sets: readonly InstanceSet[]): CutSize {
     const size: CutSize = { indices: 0, source: 0, records: 0, vertices: [] };
     for (const group of this.groups) {
       let vertices = 0;
-      // A group handed back uploads nothing (and kept no instanced part).
+      // A failed group uploads nothing (and kept no instanced part).
       if (!group.failed) {
         for (const s of group.members) {
           vertices += this.surfaces[s].geometry.positions.length / 3;
@@ -831,6 +829,7 @@ export class WorldBlocks {
     this.groupOf.landform.clear();
     this.heldCasters = null;
     this.paletteGroups.clear();
+    this.quietPaletteGroups.clear();
     this.mainPalette = new Map();
     this.mainPaletteReady = Promise.resolve(true);
     this.mainPaletteFailed = false;
@@ -868,13 +867,19 @@ export class WorldBlocks {
     return group;
   }
 
-  /** The PALETTE group of palette material `recipe`, made on its first surface. */
-  private paletteGroup(recipe: EmissiveRecipe): Group {
+  /**
+   * The PALETTE group of palette material `recipe` whose surfaces glow, or
+   * of those that do not (`noGlow`, X3.7b), made on its first surface: the
+   * glow's mask draws a group whole, so a surface left out of it is in a
+   * group apart.
+   */
+  private paletteGroup(recipe: EmissiveRecipe, glows: boolean): Group {
     this.uncut();
-    let group = this.paletteGroups.get(recipe);
+    const groups = glows ? this.paletteGroups : this.quietPaletteGroups;
+    let group = groups.get(recipe);
     if (!group) {
       group = this.newGroup("palette", null, recipe);
-      this.paletteGroups.set(recipe, group);
+      groups.set(recipe, group);
     }
     return group;
   }
@@ -989,14 +994,14 @@ export class WorldBlocks {
     this.onFailed(Array.from({ length: this.surfaceCount }, (_, s) => s));
   }
 
-  /** `group` will never draw: it draws nothing, and its surfaces go back at once. */
+  /** `group` will never draw: it draws nothing, and its surfaces are handed to `onFailed` at once. */
   private fail(group: Group, why: string, err?: unknown): void {
     if (group.failed) return;
     group.failed = true;
     group.instanced = [];
     console.error(
       `world blocks: ${labelOf(group)} ${why}; ` +
-        `its ${group.members.length} surfaces go back to Babylon`,
+        `its ${group.members.length} surfaces cannot be drawn`,
       ...(err === undefined ? [] : [err]),
     );
     this.onFailed(group.members);
@@ -1048,7 +1053,7 @@ export class WorldBlocks {
     group.geometry.refresh(this.renderer.host, {});
   }
 
-  /** Asks for a group's pipeline; a failure hands every member back, at once. */
+  /** Asks for a group's pipeline; a failure hands every member to `onFailed`, at once. */
   private ask(group: Group): void {
     const recipe = group.material!.recipe;
     const program = group.program!;
@@ -1075,12 +1080,11 @@ export class WorldBlocks {
   /**
    * Asks for the palette's main-pass pipelines (`mainPalette`), one a bias —
    * whether or not the main pass is handed the palette, because a probe's
-   * face draws with the same ones (`probeView`). A failure hands NO group back,
-   * where `ask`'s hands back a cel group: the shadow maps draw the palette with
+   * face draws with the same ones (`probeView`). A failure fails NO group,
+   * where `ask`'s fails a cel group: the shadow maps draw the palette with
    * pipelines of their own, so it costs only what draws with these — the main
-   * pass and with it the mask (`onPaletteFailed`, once a map, which takes back
-   * nothing if the main pass never held the palette), and a probe's bake (its
-   * view's `ready` answers false).
+   * pass (`onPaletteFailed`, once a map) and a probe's bake (its view's
+   * `ready` answers false).
    */
   private askPalette(): void {
     const generation = this.generation;
@@ -1093,7 +1097,7 @@ export class WorldBlocks {
         this.mainPaletteFailed = true;
         console.error(
           `world blocks: the emissive palette's main-pass pipeline [bias ${bias}] did not build; ` +
-            "the palette is Babylon's in the main pass, the glow's mask and the bake for this map",
+            "no main pass or bake of ours can draw the palette this map",
           err,
         );
         this.onPaletteFailed();
@@ -1161,7 +1165,7 @@ export class WorldBlocks {
 
   /**
    * Each group as the shadow maps draw it (`WorldDepth`), in group order: a
-   * group handed back draws in none, its arrays never uploaded.
+   * failed group draws in none, its arrays never uploaded.
    */
   private depthGroups(): DepthGroup[] {
     const out: DepthGroup[] = [];
@@ -1303,7 +1307,9 @@ export class WorldBlocks {
     const main = this.mainView;
     if (!main) return null;
     const palettes: Group[] = [];
-    for (const group of this.groups) if (group.emissive && !group.failed) palettes.push(group);
+    for (const group of this.groups) {
+      if (group.emissive && !group.failed && drawsIn(group, PASS_GLOW)) palettes.push(group);
+    }
     if (palettes.length === 0) return null;
     // The mask's pipeline, by its material's depth bias: at most two.
     const { built, asks } = this.palettePipelines(
@@ -1313,7 +1319,7 @@ export class WorldBlocks {
       // palette wrote at this same bias.
       (bias) => (bias === 0 ? { depthWrite: false } : { depthWrite: false, depthBias: bias }),
       (_bias, err) => {
-        console.error("world blocks: the glow mask's palette pipeline did not build; the palette goes back to Babylon", err);
+        console.error("world blocks: the glow mask's palette pipeline did not build; the mask cannot draw the palette", err);
       },
     );
     const recipes = palettes.map((g) => g.emissive!.recipe);
@@ -1563,7 +1569,7 @@ export class WorldBlocks {
 /**
  * Whether anything of `group` — a surface or an instanced part — is drawn in
  * a pass of `passBits`: the ONE test of a group's passes, for every view
- * (`drawableIn`, `drawPalette`) and for the shadows' handback at the cut.
+ * (`drawableIn`, `drawPalette`, `glowView`) and for the shadows' depth at the cut.
  */
 function drawsIn(group: Group, passBits: number): boolean {
   return ((group.surfacePasses | group.scatterPasses) & passBits) !== 0;

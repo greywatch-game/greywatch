@@ -1363,8 +1363,9 @@ throws, which is what `skyLightColor` beside it already is. The horizon end is
 is the one place that requirement is load-bearing rather than cosmetic.
 
 **The city half is DECIDED by `systems/ReflectionSystem.ts`, and since X3.6c
-it is DRAWN by our renderer** (`render/ProbeBake.ts`), Babylon's
-`ReflectionProbe`s being the fallback. It is affordable for one reason and it
+it is DRAWN by our renderer** (`render/ProbeBake.ts`) — since X3.7b in every
+round, Babylon's `ReflectionProbe`s standing for no round at all (X3.7c
+deletes them). It is affordable for one reason and it
 is the same reason the whole world layer is merged and frozen: the world is
 static, so this is not a pass, it is a build step that happens to run on the
 GPU.
@@ -1372,17 +1373,18 @@ GPU.
 **There are TWO bakes, and `ReflectionSystem` decides everything about both**
 — which probes, where each stands, what it leaves out, how far it reaches,
 when it is released, and which path an install takes. `ProbeBake` decides
-nothing. **The install's bake is OURS whenever the handover holds every mesh
-the bake list holds** (`BlockHandover.probeHolds`, asked once by `build`): a
-surface the main pass takes, the emissive palette with its slots (taken for
-the main pass too since X3.6e, or held for the bake alone), or a FIRE, which
-ours leaves out (`FINDINGS.md` 51). Anything else — an editor
-build (which bakes nothing anyway), `?babylonworld`, a bake surface our side
-cannot draw — and the bake is Babylon's exactly as it always was; and a LOSS
-before ours drained (a surface handed back, a refused main pass, a pipeline
-or a cull that failed — `ProbeBake.lose`) queues the whole install again on
-Babylon's side and points every reader at Babylon's cubes. A bake of ours that
-drained depends on our renderer for nothing: its cubes stand. On our path:
+nothing. **The install's bake is OURS in every round** (`BlockHandover
+.probeHolds`, asked once by `build`): every surface of ours is in it — a
+block, the landform, the emissive palette with its slots — and of Babylon's
+meshes a FIRE alone, which ours leaves out (`FINDINGS.md` 51); the glazing is
+in no list. **Since X3.7b Babylon is made no mesh of what ours draws, so a
+list holding any other mesh is one ours cannot bake and Babylon's bake would
+have** — REFUSED: a DEV build throws, a production one fails the world
+(`Game.worldFailed`, the menu and a toast). An editor build bakes nothing;
+and a LOSS (`ProbeBake.lose`: a pipeline or a cull that failed) fails the
+world too, there being no Babylon mesh to queue the install again on. A bake
+of ours that drained depends on our renderer for nothing: its cubes stand.
+On our path:
 
 - **`ProbeBake` owns the cubes** (`rgba8unorm`, six layers, the full mip
   chain, `COPY_SRC` so a readback needs no help), never destroyed, as
@@ -1440,12 +1442,11 @@ drained depends on our renderer for nothing: its cubes stand. On our path:
   9-28 MiB while it stands (Hollowmere 9.0, Sarab 9.6, Greyfen 12.1,
   Harrowmead 12.1, Coldharbour 15.3, Kurenai 16.6, Cinderhaven 27.6: almost
   all of it the second index buffer, as large as the map's).
-- **A loss after the drain changes nothing** — the frame between the last
-  probe recorded and the view closing included: `ProbeBake.lose` reports how
-  many released probes it dropped, and only outstanding work (queued or
-  dropped) sends the install's bake to Babylon. **A failed mips pipeline
-  latches the bake BROKEN for the session**: no world is held again, so every
-  map's bake is Babylon's.
+- **A loss is the world's failure** (X3.7b): `ProbeBake.lose` reports how
+  many released probes it dropped, and `BlockHandover` fails the round
+  whatever the count. **A failed mips pipeline latches the bake BROKEN for
+  the session**: no world is held again, so every round fails at its install
+  (`BlockHandover.install` asks the bake whether it holds the world).
 
 **The glazing is no longer the only thing that samples a probe.** The water
 takes one per body from a pool of its own, without the parallax correction and
@@ -1495,7 +1496,7 @@ see the three ceilings below for why the answer moved and what the radius
 costs.
 
 **BABYLON'S bake is priced `probes x 6 faces x render list`, and all three terms
-have a ceiling now** — the fallback's, all of what follows down to the radius;
+have a ceiling now** — the old path's, all of what follows down to the radius, which no round takes since X3.7b;
 ours is priced in probes, a face being a cull and a pass over its survivors
 whatever the list. None was needed while the biggest map in the tree was 320 m:
 Coldharbour's forty probes over 175 meshes each are 41,934 draws, they all land
@@ -2270,8 +2271,8 @@ drawn at depth ALWAYS in a pass of its own. The work `update` lays out is
 CONSUMED by `render` — a state that runs no `update` must not re-bake last
 frame's queue every frame.
 
-**All of that is the path that keeps the atlas BABYLON's.** Since X3.6b the
-atlas is OUR renderer's whenever the handover holds every caster
+**All of that is the path that keeps the atlas BABYLON's** — an editor
+build's, since X3.7b. Since X3.6b the atlas is OUR renderer's in every round
 (`render/LampAtlas.ts`), and the same passes are drawn there in the same
 order — a tile cleared by a copy rather than a sheet, a static face over the
 world's casters culled for it rather than a list of meshes picked by bounds,
@@ -3365,7 +3366,7 @@ first. **The turf lands after the blocks too**, as it did when Babylon's
 opaque list drew them: where its sheet floats over a slab laid level with the
 floor, it blends over the slab's edge (Greyfen's `crossing` row, a grave
 ledger). From X3.3c to X3.5 the blocks drew after the turf and hid that; the
-order since puts back Babylon's picture (the row against `?babylonworld`). In
+order since puts back Babylon's picture (the row against `?babylonworld`, a switch X3.7b deleted). In
 the GPU's time the order is the point: `Game`'s front-to-back sort no longer
 reaches the blocks or the landform, so the loose props are shaded before the
 buildings that hide them, but the floor no longer is — measured at X3.5, the
@@ -3407,12 +3408,13 @@ draws, and a pass that differs draws nothing that frame**, with one console
 error per change. The check compares in place (`FrameHost.passIs`), so it
 allocates nothing. This is the bundle trap again: one pipeline whose attachment state
 the pass cannot take poisons the bundle and blacks out the frame. **Drawing
-nothing would be a HOLE wherever ours stands in for Babylon's**, so every
+nothing is a HOLE wherever ours stands in for Babylon's**, so every
 `onRefused` listener is told on the frame it happens: `BlockHandover` stops
-our side for the rest of the map and gives every block back to Babylon's
-walk, which draws them from the next frame. The refused frame is the one
-drawn without them. Nothing ships a pass that differs — `CelInk` is fixed
-first in the chain — so this is a backstop, not a path.
+our side and fails the world (`Game.worldFailed`, after the task in hand),
+since X3.7b there being no Babylon mesh to give a block back to. The refused
+frame is the one drawn without them, and the last of the round. Nothing
+ships a pass that differs — `CelInk` is fixed first in the chain — so this
+is a backstop, not a path.
 
 **The frame's uniforms are ONE block, declared once and filled by a pull.**
 `render/frame.ts`'s `FRAME_BLOCK` is group 0, binding 0 of every program.
@@ -3530,13 +3532,18 @@ build** (`BABYLON_EXIT.md` X3.3a, X3.3b and X3.3c) — **and since X3.5 its
 LANDFORM**: the floor's patches (the borderland's too), the rim's runs and
 the map-wide road merge. X3.3a and X3.3b proved
 them behind a DEV switch, `?ourworld`, against the bank Babylon drew without
-it; X3.3c took the switch out, so Babylon draws a block in the main pass only
-when the handover refused it or handed it back. **Their Babylon meshes STAY**,
-for whichever pass is handed back to Babylon: the world's directional shadow
-maps are our side's since X3.6a, the lamps' atlas since X3.6b, the
-reflection bake since X3.6c and the emissive palette's share of the glow's
-mask since X3.6d (below), each Babylon's again on the path that keeps it
-Babylon's.
+it; X3.3c took the switch out. The world's directional shadow maps are our
+side's since X3.6a, the lamps' atlas since X3.6b, the reflection bake since
+X3.6c and the emissive palette's share of the glow's mask since X3.6d
+(below). **And since X3.7b Babylon is made NO MESH of any of it**
+(`worldMeshes`, `BuildOptions.onSurface` answering for each surface): a
+round's `GameMap.visuals` are the glazing and the fires, the records
+(`GameMap.world`) stay complete and each says who draws it
+(`SurfaceRecord.visual`), and **THE WORLD DRAWS WHOLE OR THE ROUND DOES NOT
+START** — a surface our side cannot hold is refused at the build, and every
+former handback (a failed pipeline or cull, a cut past the device's limits,
+a refused pass, a loss of any pass of ours) is `Game.worldFailed`: a
+`console.error`, the menu, and a toast that the map could not be drawn.
 
 - **`systems/BlockHandover.ts` decides which surfaces are TAKEN.** A
   surface is taken if it is block-merged OR the landform, at identity, never
@@ -3547,12 +3554,17 @@ Babylon's.
   `needAlphaBlendingForMesh` answers for a mesh at full visibility with no
   vertex alpha, which is every world mesh), and rendering group 0 on the
   default layer mask is every world mesh by construction, `worldMeshes`
-  setting neither — a DEV build checks each mesh against that verdict until
-  X3.7b makes none. Its arrays are handed over as the build makes its mesh
-  (`BuildOptions.onSurface`), the one moment they can still be read, and
-  read once more when the map is CUT (`WorldBlocks.finish`, from
-  `installMap` after `WorldCulling.setMap`). `Game.handover` is always
-  built; a map whose surfaces fail the test simply has fewer taken. **The
+  setting neither. Its arrays are handed over BEFORE any mesh is made of it
+  (`BuildOptions.onSurface`, which answers whether one is), the one moment
+  they can still be read, and read once more when the map is CUT
+  (`WorldBlocks.finish`, from `installMap` after `WorldCulling.setMap`).
+  `Game.handover` is always built. **A surface it does not take is
+  Babylon's, and Babylon's may only be the glazing and the fires**: one
+  that casts is held for the shadows (a casting fire's, below), and one that
+  casts but cannot be held, a palette surface that cannot be held, or a
+  mesh in a probe's list that is neither a fire nor ours is REFUSED — thrown
+  in DEV, so `npm run merge:hash` cannot pass a map that has one, at any
+  foliage rung (`--foliage`), and the world's failure in production. **The
   landform is MARKED BY THE BUILD** (`WorldSurface.landform`, set where
   `MapBuilder` makes the floor, the rim and the road merge), never guessed
   from a name or a missing block, and the flag is on the RECORD only — never
@@ -3572,7 +3584,7 @@ Babylon's.
   computes (X3.5b, below).
   **The two layers are ONE cut, one cull, one cluster list and one index
   buffer**, drawn by ONE `FrameDraw` at `"beforeAlphaTest"` — the palette
-  (since X3.6e, while the handover holds it), the blocks, the scatter, then
+  (since X3.6e), the blocks, the scatter, then
   the landform — so nothing of Babylon's comes between them and the blocks
   stay ahead of the landform.
 - **The vertex stage PULLS its attributes** (`render/celVertex.ts`,
@@ -3666,24 +3678,20 @@ Babylon's.
   between them, so the reason the cache's layouts are explicit does not
   arise. They are `PipelineCache`'s (`compute`), keyed on their code, so
   they compile once a SESSION rather than once a map.
-- **A taken mesh is drawn by our side in the MAIN pass only.**
-  `WorldCulling.setTaken` keeps it out of the candidate list — a block filed
-  in its cell (the emissive palette's merges among them since X3.6e, taken
-  with their glow mask), or one of the map's own visuals that carries no
-  block, the landform; never a candidate unless a failed compile hands it
-  back — and every other pass draws from a list of its own. **The handover
-  says which each is** (`setTaken`'s two lists; `reachBoxOf` then answers a
-  filed mesh by its cell, taken or not, and the taken landform by the box of
-  no reach), so a block
-  whose mesh was filed in no cell is refused, never taken as landform. The
-  glow's mask, which reads the main pass's active meshes, keeps only what
-  glows; the one taken mesh that glows, the emissive palette, is drawn into
-  the mask by our side through the main view on the same decision that takes
-  it (X3.6d, X3.6e; "The palette, ours").
-- **A taken mesh is never switched off, hidden or faded after its build.**
-  Nothing in the tree does it to a block, and the cull could not follow: a
-  faded mesh goes to Babylon's blended list and ours would still draw it
-  opaque. A DEV build checks every frame and says so.
+- **What our side draws is NO candidate, because it is no mesh** (X3.7b;
+  until then `WorldCulling.setTaken` kept a taken mesh out of the list).
+  **The cull's cells are grown from the RECORDS** — every record filed
+  under a block, mesh or none — and `reachBoxOf` answers a surface of ours
+  by its BLOCK (its record's `metadata.block`): that block's cell, or, for
+  the landform (no block), the box of no reach. A key no cell was grown for
+  is refused. The glow's mask, which reads the main pass's active meshes,
+  keeps only what glows; the palette, which glows, is drawn into the mask by
+  our side through the main view (X3.6d, X3.6e; "The palette, ours").
+- **A HELD caster is never switched off, hidden or faded after its build**
+  — the one kind of surface Babylon draws and ours casts (a casting fire;
+  no shipped map has one). Nothing in the tree does it, and ours, which
+  reads no node, would cast it still: a DEV build checks every frame and
+  fails the world.
 - **The building card waits for every pipeline of ours, the cull's
   included**, so no frame of the round draws with one still compiling — and
   since Babylon no longer draws the blocks in the main pass, a group of ours
@@ -3694,12 +3702,11 @@ Babylon's.
   rather than a budget. **Our pipelines are not compiled by DRAWING**, as
   Babylon's are: our renderer states every field of one itself and asks for
   it as the map is built, so the warm-up only has to wait. A group whose
-  pipeline fails goes back to Babylon whole in the turn ITS compile settles
-  (`WorldBlocks`'s `onFailed`, which `BlockHandover` answers with a shorter
-  `setTaken`), never held for the map's other compiles — so before the
-  warm-up reads the cache's counts again, and still before the first vantage
-  unless `oursCapMs` ran out first — and Babylon compiles it at a vantage
-  like any other mesh; a cull that fails sends every surface back.
+  pipeline fails FAILS THE INSTALL UNDER THE CARD, in the turn ITS compile
+  settles (`WorldBlocks`'s `onFailed`, which `BlockHandover` answers with
+  `Game.worldFailed`), never held for the map's other compiles; a cull that
+  fails does the same. Until X3.7b each went back to Babylon, which compiled
+  it at a vantage like any other mesh.
 - **`plans/webgpu-ref/census.mjs`** counts it: the main pass's draws fall
   from one a surface to one a recipe (`--fall` against the switch while
   there was one; `--out` and `--against` against a BEFORE taken in a
@@ -3720,25 +3727,24 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
   Greyfen against the variants alone). The fallback, if a frame ever says
   otherwise, is a per-kind bake plus a term or two per INSTANCE, never a
   per-instance bake (`BABYLON_EXIT.md` X3.4).
-- **Babylon's copy of the scatter stays in the blocks**, built from the same
-  variants, because every pass our side draws the scatter in — the
-  reflection bake, the shadow maps and the lamps' atlas — goes back to
-  Babylon's meshes on the path that keeps it Babylon's: the shadows and the
-  probes' cubes are the variants' shapes too. In the MAIN pass the scatter's pieces (its regions) are CUT out of
-  every taken block of a group that draws them as instances
-  (`clusters.ts`'s `withoutPieces`) before the block is uploaded, and **a
-  DEV build checks the trade is one for one**: the indices cut out of a group
-  equal its instanced parts' indices times their sets' instances, or
-  something is drawn twice or not at all. A recipe our side does not take is
-  drawn whole by Babylon, scatter and all, so a group with no surface of its
-  own draws none of its instanced parts.
-- **A group is ours WHOLE or Babylon's whole.** It has ONE pipeline, which
+- **The scatter is drawn ONCE** (since X3.7b: until then Babylon's merged
+  copy stayed in its block meshes for any pass handed back). It stays
+  MERGED into the blocks' ARRAYS, built from the same variants, because
+  their spheres, their cells' boxes and a probe's region key read it
+  (un-merging it moves them, a picture change of its own). Every pass of
+  ours cuts the scatter's pieces (its regions) out of every block of a
+  group that draws them as instances (`clusters.ts`'s `withoutPieces`)
+  before the block is uploaded, and **a DEV build checks the trade is one
+  for one**: the indices cut out of a group equal its instanced parts'
+  indices times their sets' instances, or something is drawn twice or not
+  at all. A recipe with no surface of ours draws none of its instanced
+  parts — which no shipped map has.
+- **A group is ours WHOLE or the world fails.** It has ONE pipeline, which
   draws its blocks and its scatter alike (the pulled stage, above). If it
-  fails, the group draws nothing and every surface of it goes back, since
-  Babylon's surfaces would draw the scatter our side was cutting out — and so
-  does a group whose instanced part lacks an array its variant reads
-  (`WorldBlocks.addInstanced`), which until X3.5b was skipped while its
-  pieces were still cut, a hole.
+  fails, the group draws nothing and every surface of it is handed to
+  `onFailed` — and so is a group whose instanced part lacks an array its
+  variant reads (`WorldBlocks.addInstanced`), which until X3.5b was skipped
+  while its pieces were still cut, a hole.
 - **The instances are culled on the GPU the way the clusters are, over
   their clusters** (`render/InstanceCull.ts`,
   `render/wgsl/instanceCull.ts`; the fold, X3.5b), recorded into the same
@@ -3791,17 +3797,19 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
   vantage fell 161 to 17 on Greyfen and 212 to 14 on Harrowmead, and the
   desktop's fights got 5-13% faster. **The list is sized for every record
   surviving and CLEARED ahead of each dispatch**, 16 bytes a record (1.3 MB
-  on Greyfen, cleared whole); a list past the device's limits hands back
-  the scatter's groups, never the map.
-- **Three URL switches A/B all of this on a device nobody here owns**, in a
+  on Greyfen, cleared whole); a list past the device's limits fails the
+  scatter's groups, and since X3.7b the world with them.
+- **Two URL switches A/B all of this on a device nobody here owns**, in a
   shipped build (`core/urlOverrides.ts`), and a capture names whichever was
-  set in `graphics.forced`. `?babylonworld` takes nothing, so Babylon draws
-  the static world whole, as before X3.3. `?nocull` keeps both culls' every
-  cluster and instance: no frustum, no reach, no size gate. `?nofrustum`
-  turns off the five planes only (`ClusterCull.ts`'s `openTests`). So a
-  picture that is wrong by default and right under `?nocull` is a cull's
-  DECISION, and one still wrong under `?nocull` and right under
-  `?babylonworld` is our DRAW. Diagnostics, never settings.
+  set in `graphics.forced`. `?nocull` keeps both culls' every cluster and
+  instance: no frustum, no reach, no size gate. `?nofrustum` turns off the
+  five planes only (`ClusterCull.ts`'s `openTests`). So a picture that is
+  wrong by default and right under `?nocull` is a cull's DECISION.
+  Diagnostics, never settings. **The third, `?babylonworld`** — Babylon's
+  world whole, so a picture still wrong under `?nocull` and right under it
+  was our DRAW — **went with Babylon's world meshes at X3.7b**: the last
+  build that has it is tagged `exit-babylonworld`, one deploy away for a
+  device A/B.
 - **`?cullcheck` says WHICH decision, on the device** (`render/CullCheck.ts`).
   About once a second each cull copies out the uniform block the GPU read and
   every verdict it made, and the CPU replays the WGSL test over the same
@@ -3927,8 +3935,9 @@ The build hands the sets over once (`BuildOptions.onScatter`), and
   `?cullquiet`, `?cullflags`, `?cullsplit`, `?cullcopy`, `?cullonce`,
   `?drawcheck`, `?directdraw`, `?indirectcpu`, `?skipempty` and
   `?scatterfirst` all stand in the history at 4459cd5, for a device that
-  needs the question asked again. `?cullcheck`, `?nocull`, `?nofrustum` and
-  `?babylonworld` stay. `?scatterlist` (X3.5b), an A/B of the same picture
+  needs the question asked again. `?cullcheck`, `?nocull` and `?nofrustum`
+  stay (`?babylonworld` stayed until X3.7b, and is at the tag
+  `exit-babylonworld`). `?scatterlist` (X3.5b), an A/B of the same picture
   by another draw, is gone too: the list it drew is the only draw now.
   `?scatterindirect` and `?scatterindirect=dispatch`, the scatter's A/B
   (2026-10-24), went the same way once the laptop had answered, and with
@@ -3956,34 +3965,31 @@ the four textures, `render/WorldDepth.ts` draws the casters into them, and
 is redrawn — the lights, the snap, the hold, the strike — and hands the
 light's matrix over.
 
-- **The maps are ours WHOLE or not at all, decided per map install.**
-  `BlockHandover` sees every surface the build makes and asks of each
-  whether Babylon's generator would have drawn it — not `noShadowCaster`,
-  not blended — and, if so, holds it: a surface the main pass takes casts
-  from its own group, the emissive palette from its PALETTE group (held with
-  its slots since X3.6c, and taken for the main pass too since X3.6e when
-  the handover holds it whole), and any other caster it does not take, which
-  keeps no recipe, is held for the shadow maps ALONE
-  (`WorldBlocks.addCaster`: positions only, in the HELD layer cut after
-  every other, the casters' group LAST of all, which the main pass's cull
-  leaves out as a tail and nothing draws in the main pass). Only when EVERY
-  caster is held are the casters handed to `WorldShadows` (`setCasters`);
-  one it cannot hold — not block merged, not at identity, `updatable` —
-  leaves the whole map's shadows to the generators, as an editor build and
-  `?babylonworld` do. Half a map drawn by each side would be the order of
-  two renderers deciding one depth test, and a caster drawn by neither a
-  hole.
-- **A caster handed back LOSES the maps to Babylon for the rest of the map**
-  (`WorldShadows.lose`): a group's or a cull's failure, or a refused main
-  pass. The hand-over runs after the task in hand (`queueMicrotask`),
-  because a refusal lands INSIDE a render whose unsubmitted commands still
-  hold the textures the generators' hand-over destroys (`WorldShadows
-  .setSize` destroys at once; disposing Babylon's wrapped view of one
-  destroys the `GPUTexture` it wraps too, at the end of Babylon's frame — so
-  a texture of ours is always made afresh under a fresh view). **Losing is
-  deliberately WHOLESALE**: a single group's failed main-pass pipeline does
-  not stop our depth drawing it, but the rule is one owner a map, and the
-  path is a backstop no shipped map takes.
+- **The maps are ours WHOLE in every round.** `BlockHandover` sees every
+  surface the build makes and asks of each whether Babylon's generator
+  would have drawn it — not `noShadowCaster`, not blended — and, if so,
+  holds it: a surface the main pass takes casts from its own group, the
+  emissive palette from its PALETTE group (held with its slots since X3.6c,
+  ours in the main pass too since X3.6e), and any caster Babylon keeps for
+  its main pass (a casting fire; no shipped map has one), which keeps no
+  recipe, is held for the shadow maps ALONE (`WorldBlocks.addCaster`:
+  positions only, in the HELD layer cut after every other, the casters'
+  group LAST of all, which the main pass's cull leaves out as a tail and
+  nothing draws in the main pass). The casters are handed to `WorldShadows`
+  (`setCasters`) at every install; a caster it cannot hold — not block
+  merged, not at identity, `updatable` — is REFUSED (since X3.7b: until then
+  it left the whole map's shadows to the generators). **An editor build's
+  are the generators'**, as ever. Half a map drawn by each side would be the
+  order of two renderers deciding one depth test, and a caster drawn by
+  neither a hole.
+- **A LOSS of the casters is the world's failure** (`WorldShadows.lose`, its
+  `onLost` heard by `BlockHandover`, X3.7b): until then it lost the maps to
+  the generators for the rest of the map. It is told after the task in hand
+  (`queueMicrotask`), because a loss can land INSIDE a render whose
+  unsubmitted commands still hold the textures the map's teardown destroys
+  (`WorldShadows.setSize` destroys at once; disposing Babylon's wrapped view
+  of one destroys the `GPUTexture` it wraps too, at the end of Babylon's
+  frame — so a texture of ours is always made afresh under a fresh view).
 - **Babylon's readers sample a WRAPPED view** (`WebGPUEngine.
   wrapWebGPUTexture`, re-pointed at itself so it has a view, nearest and
   clamped as the generator's map was), and our frame binds the texture
@@ -3991,9 +3997,10 @@ light's matrix over.
   both ways. **The format is `r16float`, where Babylon's was `rgba16float`**
   with the depth in red and 1 in the other three, which no reader reads
   (`textureGather` of channel 0, the volumetrics' `.x`): the same numbers in
-  a quarter of the memory. **A rung with every map OFF holds no caster**
-  (`WorldShadows.rungDraws`), so turning the shadows on mid-map draws on the
-  generators until the next map. The depth attachments are `depth32float`, one a
+  a quarter of the memory. **The casters are held on EVERY rung, `off`
+  included** (X3.7b; until then a rung with every map off held none, and
+  turning the shadows on mid-map drew on the generators until the next map):
+  a rung raised mid-map re-makes our textures and draws ours. The depth attachments are `depth32float`, one a
   SIZE in use, shared by the maps that size, which draw one after another.
 - **What is written is Babylon's number**: the clip z of the light's
   orthographic projection under the half-z range (`celDepth.ts`; Babylon's
@@ -4044,15 +4051,15 @@ everything — which lights cast, which tiles each holds, which faces bake on
 which frame, what is published to the slots — and hands the frame's work
 over once a frame (`AtlasWork`, `LampAtlas.queue`).
 
-- **It changes hands WITH the world's maps.** `BlockHandover` holds the same
+- **It is ours WITH the world's maps.** `BlockHandover` holds the same
   casters for both and hands them to `WorldShadows` and `LampAtlas` together
   (`setCasters`), at slots of the culls apart — the world's four first, then
-  `staticFacesPerFrame` for the atlas; a caster it cannot hold, a loss
-  mid-map, an editor build and `?babylonworld` leave the atlas to
-  `LocalShadows`' render target, exactly as they leave the maps to the
-  generators, and a loss hands it back after the task in hand for the
-  maps' reason. `LocalShadows.setWorld` reads who holds it, after the
-  install, as `ShadowSystem.setCasters` does.
+  `staticFacesPerFrame` for the atlas — on every rung; an editor build
+  leaves the atlas to `LocalShadows`' render target, as it leaves the maps
+  to the generators, and a loss (or an atlas that will take no casters, its
+  proxies' pipeline failed for the session) fails the world, after the task
+  in hand for the maps' reason. `LocalShadows.setWorld` reads who holds it,
+  after the install, as `ShadowSystem.setCasters` does.
 - **The atlas's casters are its own pass, `PASS_LAMPS`**: every surface not
   `noShadowCaster`, BLENDED OR NOT, because `LocalShadows`' bake drew its
   visuals whatever their material — where the world's maps skip a blended
@@ -4119,11 +4126,10 @@ bake" above; what it owes this frame is below.
   inside the main view's count since X3.6d, for the glow's mask, and drawn by
   the main pass too since X3.6e, with the same pipelines a face uses
   (`WorldBlocks.mainPalette`); a fire is left out. The world is handed to
-  `ProbeBake` at the cut unless a surface it draws already went back, and one
-  handed back later, a refused main pass, or a failed palette pipeline (the
-  view answering unready) LOSES the bake (`ProbeBake.lose`, after the task in
-  hand) — Babylon's from the next frame, the whole install queued again
-  there.
+  `ProbeBake` at the cut, and a failed palette pipeline (the view answering
+  unready) or any other loss of the bake (`ProbeBake.lose`, after the task in
+  hand) fails the world (X3.7b; until then it queued the install again on
+  Babylon's side).
 - **A face draws through the main pass's own draw code**, parametrised by a
   view (`DrawView`: `drawClusters`, `drawScatter`, `bind`, `drawPalette`) and
   never copied;
@@ -4177,29 +4183,28 @@ disabled mesh is still in the walk, and merely shortens what the walk does with
 it. That is what made the palette measurement's 0.67 us ("The paint palette",
 below) and S0's 1.10 us disagree about the same number.
 
-**Five classes of mesh, and which class a mesh is in is the design.**
+**Four classes of mesh, and which class a mesh is in is the design** — and
+what our renderer draws is in none: since X3.7b it is no mesh at all.
 
 | class | what | offered |
 | --- | --- | --- |
 | hidden | `map.colliders` — invisible by construction | **never**, at any distance |
-| taken | a blocked mesh (the emissive palette's among them since X3.6e), or the landform, OUR renderer draws in the main pass (`setTaken`, "Our renderer's frame" above) | **never** — a block filed in its cell only so the GPU cull can measure the reach to it; the landform measured to a box no reach is short of |
-| blocked | drawn map geometry carrying `metadata.block` | while the camera is within the map's `fogEnd` |
+| blocked | drawn map geometry carrying `metadata.block` — on a shipped build the glazing and the fires; the cell's box is grown from EVERY record filed under its block, ours included | while the camera is within the map's `fogEnd` |
 | pooled | a body's rig, filed under the root the roster switches | while that root is enabled |
-| loose | everything else in the scene — the landform, until our renderer takes it | **always** |
+| loose | everything else in the scene | **always** |
 
-**The taken class is most of the blocked one, in every build** (X3.3c): the
-walk this section exists to shorten no longer sees most of the map's blocks,
-and what is left in the blocked class is the surfaces `BlockHandover`'s test
-refused or a failed compile handed back. Since X3.5 it is the landform too,
-which was loose: a taken loose mesh is left out of the candidates and nothing
-else about the class changes. Since X3.6e it is the emissive palette too,
-taken as blocks with their glow mask. The reach and the size gate still
-decide a taken mesh, as numbers handed to the cull (`reachGate`), so the
-class changes who draws a block and never whether it is drawn — but for the
+**What our renderer draws was most of the blocked class** (X3.3c), then the
+landform too (X3.5) and the emissive palette (X3.6e) — a TAKEN class, never
+offered (`setTaken`) — **and since X3.7b it is no candidate because it is no
+mesh**: the walk this section exists to shorten sees the glazing and the
+fires of the world, and nothing else of it. The reach and the size gate
+still decide ours, as numbers handed to the cull (`reachGate`) with the box
+of its block's cell (`reachBoxOf`, by the block), so who draws a block
+changes and never whether it is drawn — but for the
 reach's HYSTERESIS, which is the candidate walk's alone: a cell stays on
 until `culling.hysteresis` (12 m) past the reach, and the GPU cull tests the
 reach exactly every frame. So a mesh Babylon still draws inside that band
-stands there without the taken walls around it, which ours has already
+stands there without our walls around it, which ours has already
 dropped; X3.6e measured it on two rows of the bank, a lit window drawn
 fog-dark past the reach on Babylon's side where ours drops window and wall
 together.
@@ -4296,17 +4301,23 @@ frame's active meshes were rigs** (`ENGINE_UPGRADE.md` S8) — so what that fiel
 removes is large, and it is removed from the same walk this table governs while
 leaving the table alone.
 
-**A cell's bounds are its MESHES' and not the block's nominal square.** The key
+**A cell's bounds are its SURFACES' and not the block's nominal square.** The key
 is a name, not an alignment claim: terrain patches are cut on the heightfield's
 grid lines rather than on `BLOCK_SIZE` seams, and a merged block's geometry can
 hang over its own seam. Measuring what is there cannot be wrong in the direction
 that matters. **They are read off each surface's RECORD** (`SurfaceRecord.
 bounds`, `boundsOf`, taken off its arrays before they are released — X3.7a),
 which is Babylon's bounding info computed step for step under the part's own
-world matrix, so a cell's BOX needs no mesh to be grown — filing is still per
-mesh, until X3.7b files the records themselves; a DEV build compares every
-filed surface's box and sphere with its mesh's, bit for bit
-(`WorldCulling.stats.boundsMismatched`, and a console error).
+world matrix, so a cell's BOX needs no mesh to be grown — and since X3.7b
+every record filed under a block grows its cell, mesh or none, while only
+Babylon's block-keyed meshes (the glazing and the fires) are filed into it
+as candidates. `npm run merge:hash` compares every visual's record bounds
+with its mesh's bounding info, bit for bit, on every run (`bounds≠mesh`),
+the editor build's transformed path included. **And the cull REFUSES a
+build whose own contract is broken** — a visual no record names, or two do,
+a block-keyed mesh that is no map visual: `setMap` files nothing and hands
+back the reason, which `Game.installMap` spends on `worldFailed` rather than
+an uncaught throw.
 
 **The candidate list is `scene.meshes` MINUS things, in scene ORDER, and the
 order was measured rather than assumed.** A list assembled as loose-then-cells
@@ -4569,17 +4580,18 @@ all in the counter this finding is named after. Not chased.
   hands back a twin compiled from the same WGSL under `GLOW_MASK`, fed the same
   clock, and painted through the same `GlowRules.colour`.
 - **The emissive PALETTE is OUR renderer's, in the main pass and its share of
-  the mask together, whenever the handover holds the whole palette**
-  (`render/WorldBlocks.ts`, `render/WorldGlow.ts`, `BABYLON_EXIT.md` X3.6d,
-  X3.6e; "The palette, ours", under "The glow: what the depth share
-  replaced", below). **The mask stays this pass's**: ours draws INTO it,
-  FIRST, as its pass opens (`GlowPass.onMaskOpenObservable`, from inside the
-  clear), and the palette's main material and its twin (`EmissiveWorld.ts`)
-  are the FALLBACK. **Two ways to send it back that a builder can reach**: a
-  palette surface the handover cannot hold, and a palette surface marked
-  `noGlow` — read at the TAKE, as `noShadowCaster` is, so a flag set after the
-  build is one ours does not see (a DEV check says so). Either leaves the
-  map's WHOLE palette, main pass and mask, to Babylon.
+  the mask, in every round** (`render/WorldBlocks.ts`, `render/WorldGlow.ts`,
+  `BABYLON_EXIT.md` X3.6d, X3.6e, X3.7b; "The palette, ours", under "The
+  glow: what the depth share replaced", below), and Babylon is made no mesh
+  of it. **The mask stays this pass's**: ours draws INTO it, FIRST, as its
+  pass opens (`GlowPass.onMaskOpenObservable`, from inside the clear), and
+  the palette's main material and its twin (`EmissiveWorld.ts`) draw only an
+  editor build's (X3.7c's to narrow). **`noGlow` is read PER SURFACE, at the
+  TAKE** (as `noShadowCaster` is): a palette surface marked so is drawn in
+  the main pass and kept out of the mask alone, in a palette group of its
+  own. **A palette surface the handover cannot hold is REFUSED** (until
+  X3.7b it sent the map's whole palette, main pass and mask, to Babylon, and
+  so did a single `noGlow`).
 - **The blur is off the backing store.** The mask stays full resolution because
   depth sharing needs it and the ink reads it as its emissive mask, but the blur
   starts from a half-resolution downsample: Babylon's own `kernelBlur`, across and
@@ -5192,15 +5204,14 @@ and ours draws none (`FINDINGS.md` 51) — so the fire's half is a correctness f
 picture can show until that one is found. It declares a WHITE `emissiveColor`, as the fire declares one, so
 `GlowPass` and `WorldCulling`'s gate still find it by the one property they ask,
 and it brings its own mask twin (`SelfMasking`). `vertexShading` skips it
-(`isEmissiveWorld`). **Since X3.6e the main material and its twin are both
-the FALLBACK** (the twin since X3.6d): whenever the handover holds the whole
-palette, our renderer draws the palette in the main pass
-(`render/WorldBlocks.ts`, the bake's own program) and into the mask
-(`render/WorldGlow.ts`, the same body under `GLOW_MASK`, through the main
-pass's view of the culls) — both are drawn for an editor build,
-`?babylonworld`, a palette ours cannot hold whole, a failed mask pipeline
-(for the session) and a loss mid-map ("The palette, ours", under the glow,
-below).
+(`isEmissiveWorld`). **Since X3.6e the main material and its twin draw only
+an editor build** (the twin since X3.6d): in every round our renderer draws
+the palette in the main pass (`render/WorldBlocks.ts`, the bake's own
+program) and into the mask (`render/WorldGlow.ts`, the same body under
+`GLOW_MASK`, through the main pass's view of the culls), and since X3.7b
+Babylon is made no mesh of it — a palette ours cannot hold, a failed mask
+pipeline (for the session) and a loss mid-map are the world's failure ("The
+palette, ours", under the glow, below).
 
 **The bloom is the one thing that changed, and it changed toward the wall.**
 `GlowRules.colour` fades a bloom by the fog at a mesh's bounding-sphere centre,
@@ -5599,8 +5610,8 @@ inverted depth tests PARTITION the emissive pixels exactly (926 + 748 against
 ### The palette, ours: the mask (X3.6d) and the main pass (X3.6e)
 
 **The merged world's lit windows, lenses, embers and signs are drawn by OUR
-renderer, in the main pass and into the glow's mask TOGETHER, whenever the
-handover holds the WHOLE emissive palette** (`render/WorldBlocks.ts` for the
+renderer, in the main pass and into the glow's mask, in every round, and
+Babylon is made no mesh of them** (since X3.7b; `render/WorldBlocks.ts` for the
 frame, `render/WorldGlow.ts` for the mask; `BABYLON_EXIT.md` X3.6d, X3.6e), and
 `GlowPass` draws everything else in the mask as before: the bodies, the
 effects, the fire's twin, the viewmodel and the moon. The mask is the depth
@@ -5668,14 +5679,14 @@ draw of OURS, by the same vertex module.
   writes the palette's survivors into its index buffer every frame; the main
   pass draws them while the palette is its own (`WorldBlocks.setPaletteMain`),
   and the mask draws them through `WorldBlocks.glowView`. **They are never
-  SIZE-GATED** (`PASS_GLOW`), in either pass: Babylon never gated an emissive
-  mesh (`WorldCulling`'s `glows`), and a lamp lens a few pixels across is what
-  a bloom is for.
+  SIZE-GATED** (`LIGHT_SOURCE`, which was `PASS_GLOW` until a `noGlow`
+  palette surface became ours at X3.7b), in either pass: Babylon never gated
+  an emissive mesh (`WorldCulling`'s `glows`), and a lamp lens a few pixels
+  across is what a bloom is for.
 - **The reach: the CELL's box, because in the main pass past the fog is the
   SKY.** Every palette surface is cut with its cell's reach box
-  (`WorldCulling.reachBoxOf`, which answers a filed mesh, taken or not) —
-  the box a taken block of that cell gets, and what Babylon's candidate was
-  offered by — whoever draws it, so the cut never waits on who does. X3.6d
+  (`WorldCulling.reachBoxOf`, by its block) — the box every block surface of
+  that cell gets, and what Babylon's candidate was offered by. X3.6d
   held the palette with `NO_REACH` (as every HELD surface), and for the MASK
   that was harmless and still is — a cluster past the reach is past the
   emissive fog band's end, where the mask's pixel is the clear's own
@@ -5719,33 +5730,24 @@ draw of OURS, by the same vertex module.
   ACTIVE and never in `GlowPass`'s list. That is the class of a block group's
   hole in the main pass (a pipeline compiling, a texture unpublished), and the
   warm-up covers it. On the kit screen nothing blooms the palette, as before.
-- **When it goes back: ONE decision for both passes, and every loss returns
-  both.** Per install, `BlockHandover` decides ONCE, after the cut
-  (`claimPalette`: the palette whole, held for the mask, nothing of it back,
-  the mask's world held), else leaves both to Babylon: a surface it cannot
-  hold, or one marked `noGlow` (read AT THE TAKE), leaves the map's whole
-  palette, main pass and mask, to Babylon. Mid-map, a palette surface handed
-  back, a refused main pass, a refused MASK pass
-  (`Renderer.onGlowMaskRefused`) and a failed mask pipeline (latched for the
-  session) each LOSE the mask, and `WorldGlow.onLost` tells the handover in
-  the same call, which drops the palette's main pass with it (`dropPalette`):
-  our draw off, the palette a candidate again from the next tick. So no
-  palette mesh is drawn in one pass by each side, or bloomed by neither. **A
-  failed MAIN-pass palette pipeline costs only what draws with it**: it
-  hands no surface back — the shadow maps draw the palette with pipelines of
-  their own and stay ours — but loses the mask, and with it the main pass
-  (`WorldBlocks.onPaletteFailed`; nothing, on a map whose palette was never
-  ours), and the bake, whose view answers unready; the handover refuses the
-  palette for the rest of the map. The one frame a refused MASK pass is
-  found has no palette bloom from either side: Babylon builds the mask's list
-  before the clear that announces the pass. The editor and `?babylonworld`
-  take nothing. **A loss mid-map compiles Babylon's main material AND its mask
-  twin IN the round**: on our path neither is ever a candidate, so the warm-up
-  never draws them, and the first frame after a loss is a compile — ONE
-  frame's hitch (7.8 ms of CPU on Coldharbour against 3.9 steady), measured
-  with no frame missing its lit windows, because Babylon compiles them inside
-  that frame and draws them in it — the fallback's price, as with X3.6a's
-  generators, paid on a path no shipped map takes.
+- **There is no going back** (X3.7b). The palette is ours at the TAKE,
+  surface by surface (`BlockHandover.onSurface`): held with its slots for
+  every pass of ours, its main pass ours at the install
+  (`WorldBlocks.setPaletteMain`), and the mask handed its world whenever a
+  surface of it glows. **`noGlow` is read PER SURFACE**: a surface marked
+  so keeps `PASS_GLOW` off and is cut into a palette group of its own
+  material (`WorldBlocks.paletteGroup`), since the mask draws a group whole
+  — it is still a `LIGHT_SOURCE`, which no size gate drops (the cull's bit
+  that shared `PASS_GLOW` until the two meanings came apart here). A
+  palette surface the handover cannot hold is REFUSED; a refused main pass,
+  a refused MASK pass (`Renderer.onGlowMaskRefused`), a failed mask pipeline
+  (latched for the session) and a failed MAIN-pass palette pipeline
+  (`WorldBlocks.onPaletteFailed`) each fail the world (`Game.worldFailed`).
+  Until X3.7b each of them handed the palette's main pass and mask back to
+  Babylon together (`claimPalette`, `dropPalette`), a single `noGlow` among
+  them, and a loss mid-map compiled Babylon's main material and its twin IN
+  the round — one frame's hitch (7.8 ms of CPU on Coldharbour against 3.9
+  steady) — on a path no shipped map took. The editor takes nothing.
 - **What it cost and saved** is `BABYLON_EXIT.md` X3.6d's and X3.6e's record.
   The palette is 6,864 + 11,292 triangles at two biases on Coldharbour, 22,378
   on Hollowmere and 10,020 on Cinderhaven, read at the install; ours draws it

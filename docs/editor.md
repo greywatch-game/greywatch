@@ -29,6 +29,16 @@ Things it deliberately does not do:
   Both are too heavy for every frame of a drag, so during one they trace and
   shadow the old footprint. A new system that copies the world at install
   belongs in that callback too.
+- **It takes nothing of OUR renderer's: Babylon draws an editor build
+  WHOLE**, in every pass — `installMap` hands it no `onSurface`, so
+  `worldMeshes` makes every surface a mesh (`BABYLON_EXIT.md` X3.7b, X5.3's
+  to move). Its blocks are unmerged, and the terrain brush rewrites the
+  floor's meshes in place, which a copy of ours cut once could not follow.
+  Since X3.7b a ROUND is no Babylon mesh at all, so this is the one build
+  that still uses Babylon's world passes — the shadow generators, the lamps'
+  render target, the palette's main material and its mask twin — and the
+  reference bank cannot see it: `npm run merge:hash -- --editor` and `F2` by
+  hand (select, drag, sculpt, save) are what watch it.
 - **It does not bake reflections, and it registers no physics world.** Both are
   build steps that are affordable because the world is static, and this is the
   view where it is not: they are refused on the `editor` flag `installMap`

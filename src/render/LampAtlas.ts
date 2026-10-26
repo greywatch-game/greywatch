@@ -34,8 +34,8 @@
  * go only with the texture it wraps (`LocalShadows.remake`); `ready` is
  * false until the proxies' pipeline and the casters are built, and
  * `LocalShadows` shadows no light until it is true — a pipeline that FAILS
- * loses the casters and takes none again, so the atlas goes back to
- * Babylon's render target rather than dark; nothing here allocates
+ * loses the casters and takes none again, which fails every world it is
+ * handed (`BlockHandover`, X3.7b) rather than drawing it dark; nothing here allocates
  * on a frame but the passes WebGPU makes.
  * Never: imports Babylon; reads a node; decides a face or a tile.
  * Contract: `docs/rendering.md`, "The lamps' shadows" and "Our renderer's
@@ -165,13 +165,6 @@ export class LampAtlas {
   private work: AtlasWork | null = null;
   private readonly unhook: () => void;
 
-  /**
-   * Whether the shadow rung draws an atlas at all, whoever holds it — stated
-   * by `LocalShadows.setQuality`, which alone knows the rung. With none,
-   * casters would be held for it for nothing.
-   */
-  rungDraws = true;
-
   constructor(
     renderer: Renderer,
     /** The static faces one frame may bake: a slot each, past the world's maps', in the casters' culls. */
@@ -264,8 +257,8 @@ export class LampAtlas {
           this.proxyPipeline = built;
         },
         (err: unknown) => {
-          // Babylon's render target can still draw every pass: hand it back.
-          console.error("lamp atlas: the proxies' pipeline did not build; the atlas stays Babylon's", err);
+          // No atlas of ours can be drawn this session: every world fails.
+          console.error("lamp atlas: the proxies' pipeline did not build; no atlas of ours can be drawn", err);
           this.failed = true;
           this.lose();
         },
@@ -297,7 +290,7 @@ export class LampAtlas {
     return this.colour;
   }
 
-  /** Who is told when the casters handed over cannot draw, and the atlas must be Babylon's. */
+  /** Who is told when the casters handed over cannot draw: the world's failure (`BlockHandover`, X3.7b). */
   onLost(lost: () => void): void {
     this.lost = lost;
   }
@@ -402,10 +395,9 @@ export class LampAtlas {
   }
 
   /**
-   * The casters can no longer draw what Babylon would — one went back to
-   * Babylon's main pass, or the main pass was refused: they are dropped, and
-   * whoever asked to be told takes the atlas over (`onLost`) once the task in
-   * hand is done.
+   * The casters can no longer draw — their build or the proxies' pipeline
+   * failed: they are dropped, and whoever asked to be told is, once the task
+   * in hand is done (`onLost`; the world fails, X3.7b).
    */
   lose(): void {
     if (!this.depth) return;

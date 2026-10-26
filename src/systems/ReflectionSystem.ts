@@ -9,17 +9,17 @@
  * **There are TWO bakes and this file decides everything about both**
  * (`BABYLON_EXIT.md` X3.6c): which probes there are, where each stands, what
  * it leaves out, how far it reaches, when it is released, and which path an
- * install takes. OUR renderer's (`render/ProbeBake.ts`) whenever the handover
- * holds every mesh a probe's list holds (`setOurs`,
- * `BlockHandover.probeHolds`): its cubes, its faces culled and drawn from the
- * main pass's own world with the probe's eye PASSED, and Babylon's readers
- * handed a wrapped view of each cube (`wrapCubeTexture`). BABYLON's
- * `ReflectionProbe`s otherwise — an editor build (which bakes nothing),
- * `?babylonworld`, a map with a surface our side cannot draw — and for the
- * rest of an install whose bake of ours was LOST before it drained
- * (`oursLost`: everything queued again on Babylon's side, every reader
- * pointed at Babylon's cubes). A bake of ours that drained depends on our
- * renderer for nothing: its cubes stand.
+ * install takes. OUR renderer's (`render/ProbeBake.ts`) in every round —
+ * the handover holding every mesh a probe's list holds (`setOurs`,
+ * `BlockHandover.probeHolds`, which REFUSES a list it cannot: the round
+ * does not start, `BABYLON_EXIT.md` X3.7b): its cubes, its faces culled and
+ * drawn from the main pass's own world with the probe's eye PASSED, and
+ * Babylon's readers handed a wrapped view of each cube (`wrapCubeTexture`).
+ * BABYLON's `ReflectionProbe`s only where ours holds no world — an editor
+ * build bakes nothing, and a round whose bake of ours is LOST fails whole
+ * (`BlockHandover`), so the path stands for a scratch `rebake` and for
+ * X3.7c to delete. A bake of ours that drained depends on our renderer for
+ * nothing: its cubes stand.
  *
  * Invariants:
  * - One probe per glazed BLOCK, standing at the CENTRE of the first glazing
@@ -343,9 +343,6 @@ export class ReflectionSystem {
       // and the shadow moves. See `ShadowBindings.holdCloudShadow`.
       this.mats.shadows.holdCloudShadow(false);
     });
-    // A loss of our renderer's world before its bake drained: the bake is
-    // Babylon's, whole, from the next frame. See `oursLost`.
-    bake.onLost((dropped) => this.oursLost(dropped));
     // Probe 0 exists before any map does, because `MapBuilder` asks for a
     // glazing material during the build and that material has to be born with
     // a cube bound to it — see `CelMaterialFactory.setDefaultReflection`. It
@@ -453,10 +450,10 @@ export class ReflectionSystem {
    * state the feature already ships rather than a new one.
    *
    * **And it picks the install's PATH**: our renderer's bake whenever the
-   * handover holds every mesh the bake draws (`setOurs`), Babylon's
-   * `ReflectionProbe`s otherwise — an editor build, `?babylonworld`, a map
-   * with a surface our side cannot draw. The water's bake (`bakeWater`) takes
-   * the same path a line later.
+   * handover holds every mesh the bake draws (`setOurs`) — every round, a
+   * list it cannot hold being refused — Babylon's `ReflectionProbe`s
+   * otherwise. The water's bake (`bakeWater`) takes the same path a line
+   * later.
    *
    * Called from `Game.installMap` for the reason every line around it is: the
    * meshes this holds are the ones the next build disposes.
@@ -803,30 +800,6 @@ export class ReflectionSystem {
   /** Water body `slot`'s cube on this install's path. */
   private waterCube(slot: number): BaseTexture {
     return this.oursPath ? this.ourCube("water", slot).wrapped : this.waterProbeAt(slot).cubeTexture;
-  }
-
-  /**
-   * Our renderer's bake was LOST (`ProbeBake.lose`: a surface it draws went
-   * back to Babylon, the main pass was refused, a pipeline or a cull failed),
-   * `dropped` of its released probes unrecorded. Before it drained — a probe
-   * still queued or dropped — the whole of this install's bake is queued
-   * again on Babylon's side and every reader pointed at Babylon's cubes. A
-   * loss after the bake drained changes nothing, the frame between its last
-   * probe recorded and its view closing included: the cubes stand, and
-   * nothing reads our renderer again until the next install (a `rebake`
-   * then is Babylon's).
-   */
-  private oursLost(dropped: number): void {
-    const plan = this.plan;
-    if (!this.oursPath || !plan) return;
-    if (this.jobs.length + dropped === 0) {
-      this.oursOpen = false;
-      return;
-    }
-    if (import.meta.env.DEV) {
-      console.warn("[reflection] our renderer's bake was lost before it drained; it is Babylon's from the next frame");
-    }
-    this.toBabylon(plan);
   }
 
   /** The whole of `plan` queued on Babylon's side, and every reader pointed at Babylon's cubes. */

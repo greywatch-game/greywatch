@@ -27,10 +27,10 @@
  *   cleared first, by the clear sheet in a pass of its own (or, ours, a copy).
  * - WHO DRAWS THE ATLAS is decided per map install, as the world's maps are
  *   (`ShadowSystem`): our renderer (`render/LampAtlas.ts`, `BABYLON_EXIT.md`
- *   X3.6b) whenever the handover holds every caster the map has
- *   (`LampAtlas.casters`, set by `BlockHandover`), and this file's render
- *   target otherwise — an editor build, `?babylonworld`, a caster the
- *   handover could not take, or casters LOST mid-map (`LampAtlas.onLost`).
+ *   X3.6b) in every round, the handover handing it the casters on every
+ *   rung (`LampAtlas.casters`, set by `BlockHandover`), and this file's
+ *   render target for an EDITOR build, which hands ours nothing; a loss of
+ *   ours mid-map is the world's failure (`BlockHandover`, X3.7b).
  *   Everything that DECIDES is the same for both: which lights cast, their
  *   tiles, which faces bake when, and what is published; only the drawing
  *   moves, handed over once a frame as `AtlasWork`.
@@ -416,10 +416,6 @@ export class LocalShadows {
       proxies: 0,
       dynamic: false,
     };
-    // Our casters going back to Babylon mid-map: the atlas is this file's
-    // render target again from the next frame.
-    lamps.onLost(() => this.handOver(false));
-
     // Drawn inside the scene's render, before its own targets: nothing is
     // bound yet, and the main pass that samples the atlas comes after.
     this.renderObserver = scene.onBeforeRenderTargetsRenderObservable.add(() =>
@@ -463,7 +459,6 @@ export class LocalShadows {
     const tier = CONFIG.graphics.localShadows.tiers[quality];
     const same = tier.atlas === this.tier.atlas && tier.tile === this.tier.tile && this.standing;
     this.tier = tier;
-    this.lamps.rungDraws = tier.atlas > 0;
     if (same) return;
     this.remake();
   }

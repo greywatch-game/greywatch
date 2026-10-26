@@ -83,7 +83,7 @@ then the frame loop itself, at which point taking the frame is mostly deletion.
 | **0. Instruments** | nothing — the oracles this plan needs and the "before" | the bank and the benchmark both reproduce |
 | **1. Data off Babylon types** | math, geometry and the merge become plain arrays | `kit:hash` and `merge:hash` identical, no pixel moved |
 | **2. The simulation off the scene** | sweeps, state, the server, Havok, one core in a Worker | `server/` and the simulation import nothing from Babylon (a build gate says so) |
-| **3. The static world** | our renderer draws blocks, scatter and terrain, in every pass | Babylon builds no mesh in a round for anything our renderer draws (glazing and fires stay Babylon's until X4.6 and X4.4) |
+| **3. The static world** | our renderer draws blocks, scatter and terrain, in every pass | Babylon builds no mesh in a round for anything our renderer draws (glazing and fires stay Babylon's until X4.6 and X4.4) — met at X3.7b; X3.7c narrows the world passes Babylon kept for the fallback |
 | **4. Everything else that draws** | bodies, hulls, the viewmodel, effects, sky, water, glass, grass, particles | Babylon's scene draws nothing but the post chain |
 | **5. The frame** | GI compute, the post chain, the editor, the loop | Babylon's engine is not constructed |
 | **6. The cut** | the package, the gates, the docs, then the merge | `develop` carries the exit as one merge commit |
@@ -2873,7 +2873,12 @@ longer draws the palette's main pass while the handover holds it. It still
 BUILDS every one of those meshes, as the fallback each pass hands back to (an
 editor build, `?babylonworld`, a surface ours cannot hold, a loss mid-map).
 Phase 3's end condition is met only once the fallbacks are deleted: X3.7,
-below. Editor builds keep the old path until X5.3.
+below. Editor builds keep the old path until X5.3. **Since X3.7b** Babylon
+builds no mesh in a round for anything our renderer draws — a round's
+`GameMap.visuals` are the glazing and the fires — `?babylonworld` is gone
+(its last build tagged `exit-babylonworld`), and every former handback is
+`Game.worldFailed`: Phase 3's end condition is met, and X3.7c narrows the
+world passes Babylon still keeps for the editor.
 
 ### X3.7 — Babylon builds no world mesh for a round — **L, as three sub-steps** (decided 2026-10-24)
 
@@ -2913,7 +2918,7 @@ is checked against its parent.
     a failed one fails the round.
   - Each map's buffer sizes recorded against WebGPU's default limits (128 and
     256 MiB): with no fallback, a device with less headroom gets the error.
-- **X3.7b — the cut.**
+- **X3.7b — the cut.** Landed (below).
   - `worldMeshes` makes no mesh for a surface ours draws; `GameMap.visuals` is
     Babylon's meshes alone (glazing, fires, and an editor build's every
     mesh), and `world.surfaces` stays complete, each saying who draws it.
@@ -3106,6 +3111,159 @@ is checked against its parent.
   for nothing more, so a phone gets the same limits; what can still differ
   there is memory, not a limit. The phone's FOLLOW-UP reading as every
   step's since X3.3c.
+
+**X3.7b landed** (this commit; 2026-10-25; no picture change).
+- **What it is.** Babylon is made no mesh of anything our renderer draws.
+  `worldMeshes` asks `BuildOptions.onSurface` — now `(surface, index) =>
+  boolean` — BEFORE a mesh exists, and makes none of a surface ours draws
+  in every pass; a round's `GameMap.visuals` are the glazing and the fires
+  (Hollowmere 11, Greyfen 3, Coldharbour 80, Harrowmead 2, Sarab 30,
+  Cinderhaven 29, Kurenai none), and `GameMap.world` keeps a record of every
+  surface, each naming its mesh (`SurfaceRecord.visual`, -1 for none).
+  `BlockHandover.onSurface` decides at the take: a block or landform surface
+  on a cel recipe, or the emissive palette with its slots, is OURS; anything
+  else is Babylon's, a caster among them held for the shadows alone; one that
+  casts but cannot be held, a palette surface that cannot be held, or a mesh
+  in a probe's list that is neither a fire nor ours (`probeHolds`) is REFUSED
+  (`refuse`: thrown in a DEV build, held to the install and failed in a
+  production one). The palette's main pass is ours at the install
+  (`setPaletteMain`) and its mask handed to `WorldGlow` whenever a surface
+  of it glows; the casters go to `WorldShadows` and `LampAtlas` on EVERY
+  rung (`rungDraws` deleted). The contract is `docs/rendering.md` ("Our
+  renderer's frame", the shadow maps, the lamps, the bake, "The palette,
+  ours"), `docs/game.md` (`installMap`, `teardownMap`, `worldFailed`),
+  `docs/editor.md`, `docs/world.md` and the headers.
+- **Every former handback is `Game.worldFailed(reason)`**, run after the task
+  in hand (`queueMicrotask`), once a failure (`worldFailing`, and the
+  handover's own once-an-install latch): one `console.error` (`[world] <map>:
+  the map could not be drawn — <reason>`), `enterMenu` (which leaves a
+  server's match through `leaveMatch` as it leaves the page's own) and a
+  toast (`<Map> could not be drawn on this device`), `loadHeights`' move.
+  Its doors: `WorldBlocks.onFailed` (a group's pipeline, a withheld part, a
+  list or a cut past the device's limits, a cull — `fail`, `giveUpAll`),
+  `onPaletteFailed`, `Renderer.onRefused`, the `onLost` of `WorldShadows`,
+  `LampAtlas`, `ProbeBake` and `WorldGlow` (registered by the handover now;
+  `ShadowSystem`, `LocalShadows` and `ReflectionSystem` no longer take the
+  world back, and `ReflectionSystem.oursLost` is deleted), a pass that will
+  take no world at the install (a pipeline latched broken for the session),
+  the DEV node check (now of the held casters alone, the one kind of surface
+  Babylon draws and ours casts), and `WorldCulling.setMap`, whose two
+  invariants hand back their reason instead of throwing (the map filed as
+  none, `installMap` handing nothing over after it). `back`, `handedBack`,
+  `takePalette`, `dropPalette`, `claimPalette`, `wholePalette`,
+  `paletteTaken`, X3.7a's `checkBirth` and its DEV bounds comparison are
+  gone, and `stats.handedBack` with them (report version 20; the viewer
+  still reads an older capture's).
+- **`WorldCulling`** grows a cell from EVERY record filed under its block,
+  mesh or none, files Babylon's block-keyed meshes into it, drops `setTaken`
+  and the taken set, and answers `reachBoxOf(block)` by the BLOCK (null is
+  the landform's `NO_REACH`). `?babylonworld` is deleted (`urlOverrides`'
+  `ourWorld`); its parent is tagged `exit-babylonworld` locally at d795e76 —
+  pushing it is the user's call.
+- **`noGlow` is read per surface, and it needed more than the plan's one
+  line.** The glow's mask draws a palette GROUP whole off the main view's
+  survivors, and `PASS_GLOW` also meant "never size-gated" — so a `noGlow`
+  surface sharing a material with glowing ones would have bloomed, and lost
+  its size-gate exemption. A `noGlow` palette surface is cut into a palette
+  group of its own material (`WorldBlocks.paletteGroup`, the quiet groups),
+  which `glowView` leaves out, and the gate's exemption moved to a bit of its
+  own, `LIGHT_SOURCE` (32), on every palette surface — the cull's WGSL, its
+  CPU mirror (`ClusterCull`'s replay) and `?cullcheck`'s probe test it where
+  they tested `PASS_GLOW`. No shipped map marks a palette surface `noGlow`,
+  so nothing moves; a scratch page marking one on Coldharbour installed it
+  with three palette groups (two glowing, one quiet), the palette's main
+  pass ours, every palette group a light source, no error.
+- **`merge:hash` fingerprints one entry a SURFACE**: a surface with no mesh
+  off its record (name, material, metadata, counts, pieces, bounds, the
+  sink's arrays, `mesh: false`) compared on those fields alone, its arrays
+  against the baseline's (which X3.7a proved equal to its mesh's buffers);
+  a meshed one field for field, its `sceneRank` against the baseline's
+  re-ranked over the surfaces still meshed; pane groups and editor items by
+  surface index. It says how many surfaces of each map have no mesh rather
+  than failing on them, fails any map that does not build (a DEV refusal is
+  a page error out of `buildRound`, watched rather than waited out), and
+  takes `--foliage <rung>`.
+- **Measured.**
+  - **The bank, against a BEFORE at d795e76 in the worktree** (`--check
+    --keep` both sides): 60 of 61 byte-identical at first, the same 34
+    stale rows over the bank's tolerance on both sides, no console or page
+    error. The one, Sarab's `ground` (100 pixels, 0.0048%, at most 2/255 in
+    a disc behind the palm), was the BEFORE's own: Sarab re-run on both
+    sides, the BEFORE's second `ground` equals the AFTER's, twice, and
+    differs from its own first in exactly those 100 pixels. So **61 of 61
+    byte-identical** against the BEFORE's re-run; nothing of the cell boxes,
+    the take, the candidate order or the default cube moved.
+  - **`census --against` the BEFORE**: every row equal (Hollowmere 278,
+    Greyfen 205, Coldharbour 672, Harrowmead 847, Sarab 661, Cinderhaven
+    186, Kurenai 125). **`gate.mjs`** clean on seven; **`shaders.mjs`** clean
+    on seven, ours 17/17 (21/21 Sarab and Cinderhaven, 23/23 Coldharbour).
+  - **`merge:hash`** identical to X3.7a's baseline on all eight registry
+    maps: 2,939 of the 3,828 shipped surfaces have no mesh now (Hollowmere
+    124 of 135, Greyfen 395 of 398, Coldharbour 218 of 298, Harrowmead 124
+    of 126, Sarab 310 of 340, Cinderhaven 376 of 405, Kurenai 255 of 255,
+    the proving ground 1,137 of 1,871) and compared off their records; the
+    889 meshed ones' arrays and bounds equal to their meshes' (628 off
+    identity). **`--editor` identical** to its baseline, 28,473 of 28,473
+    meshes. **At `--foliage low` and `medium`** every map builds with no
+    refusal (the rungs took: Greyfen 253, Kurenai 128, Harrowmead 32 and
+    Coldharbour 20 surfaces' arrays differ from `high`'s).
+  - **`kit:hash`** identical; **`parity`** passes on eight; **`collision`**
+    rewrote nothing; typecheck, build and corecheck pass.
+  - **The forced paths** (a scratch page on Coldharbour): `WorldShadows
+    .lose`, `LampAtlas.lose`, `ProbeBake.lose`, `WorldGlow.lose`, a refused
+    main pass, a failed group, a failed main-pass palette pipeline, two at
+    once, the cull refusing the build, and a pipeline failing under the
+    building card each end in ONE `[world]` error, the menu and the toast;
+    a round installed after all ten is clean, every pass ours. **A shadow
+    rung raised from `off` mid-round** draws ours (four textures of ours,
+    no generator, the lamps' atlas ours) and its frame at the menu vantage
+    is byte-identical to a round installed at `high`. **`F2`**: the editor's
+    build is 2,154 meshes, one a record, aligned, taken by nothing, its
+    shadows the generators'; a click selects (placements 47), a select by
+    ref highlights, a drag moves the item, a sculpt stroke rebuilds, and the
+    save patched `layout.ts` (the one dragged entry) and `heights.ts` —
+    restored by `git checkout` after.
+  - **What the cut is worth** (`measure.mjs` in the scratch record: the
+    heap after two forced GCs, live GPU bytes off `createBuffer` and
+    `createTexture` wrapped from boot with `destroy` subtracted, the scene's
+    counts, read after a SECOND install in the page, BEFORE and AFTER
+    alternated twice a side):
+
+    | map | JS heap MiB | GPU buffers MiB | meshes / geometries | `installRound` 2nd, s |
+    | --- | --- | --- | --- | --- |
+    | Hollowmere | 333 → 144 | 239 → 127 | 2,487 → 2,363 / 2,409 → 2,285 | 3.01, 2.94 → 2.56, 2.42 |
+    | Greyfen | 1,154 → 149 | 652 → 142 | 2,741 → 2,346 / 2,665 → 2,270 | 7.98, 7.98 → 5.62, 5.57 |
+    | Coldharbour | 461 → 170 | 357 → 197 | 3,617 → 3,399 / 3,529 → 3,311 | 4.49, 4.40 → 3.63, 3.76 |
+    | Harrowmead | 853 → 168 | 515 → 143 | 2,864 → 2,740 / 2,788 → 2,664 | 7.00, 7.16 → 5.28, 5.28 |
+    | Sarab | 431 → 238 | 252 → 136 | 6,092 → 5,782 / 6,010 → 5,700 | 4.47, 4.50 → 3.98, 3.93 |
+    | Cinderhaven | 720 → 269 | 625 → 353 | 6,611 → 6,235 / 6,521 → 6,145 | 8.06, 8.08 → 6.68, 6.60 |
+    | Kurenai | 753 → 134 | 528 → 207 | 2,497 → 2,242 / 2,417 → 2,162 | 5.41, 5.51 → 3.84, 3.84 |
+
+    Textures are unchanged on every map (237-259 MiB). The first install in
+    a page fell the same way (Greyfen 11.8 to 9.2 s, Cinderhaven 12.3 to
+    11.0, Kurenai 9.2 to 7.6).
+  - **X0.3 on the desktop** (`bench.mjs`, `--max --gpu`, uncapped,
+    3440x1440, the BEFORE at d795e76 and the AFTER alternated run by run,
+    three a side, on Greyfen, Coldharbour and Cinderhaven; the canonical
+    fight hashes on all 18 runs): the mean frame new / old 0.993-1.005 on
+    the vantages, 1.000-1.001 on the path and 0.992-0.997 in the fights but
+    Coldharbour's, 1.030 (its runs' spread 1.1% and 2.4%: under the 8%
+    floor); `gpu.frame` 0.980-1.021; draws equal but Greyfen's fight 270 to
+    272 and Cinderhaven's 308 to 309. The frame was never the point: what
+    moved is the bench's install, Coldharbour 9.6-9.7 s to 7.0-8.5 and
+    Cinderhaven 13.4-13.6 to 10.4-12.0; Greyfen, each run's first map on a
+    cold dev server, read level (12.6-12.8 to 12.5-13.0), as at X3.7a.
+- **Where the line with X3.7c was drawn.** Taken literally from the X3.7b
+  list: the `lose`/`onLost`/`broken` latches stay (X3.7c deletes them) and
+  their LISTENER changed (the handover's failure); Babylon's
+  `ReflectionProbe` path, `GlowPass`'s palette twin and `EmissiveWorld`'s
+  Babylon stages stay, now used by the editor alone (`rebake`'s `toBabylon`
+  kept for the harness); `WorldBlocks.setPaletteMain` and the HELD layer
+  (`addCaster`, a casting fire's — no shipped map has one) stay; the
+  generators and the lamps' render target are the editor's (X5.3).
+- **Owed onward.** X3.7c. The phone's FOLLOW-UP reading, as every step's
+  since X3.3c — X3.7b's gain is memory the phone feels most. Pushing the tag
+  `exit-babylonworld` (the user's call).
 
 ---
 

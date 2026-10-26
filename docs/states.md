@@ -153,7 +153,11 @@ contract:
   in the round, as all of it used to. The opening wait has a cap of its own,
   `oursCapMs`, and it is long, like the bake's drain: a pipeline of ours past
   it is a HOLE in the frame rather than a hitch, so the cap is a backstop for
-  a compile that never settles, never a budget.
+  a compile that never settles, never a budget. **A pipeline of ours that
+  FAILS ends `loading` in the MENU** (`Game.worldFailed`, `BABYLON_EXIT.md`
+  X3.7b): Babylon is made no mesh of what ours draws, so there is nothing to
+  fall back on, and `enterMenu`'s `go` takes the card and the wait down as it
+  does for a floor the network ate.
 
 **News from the authority that needs a world is HELD across `buildPending`, not
 applied and not dropped**, and there are two of them for the same reason.

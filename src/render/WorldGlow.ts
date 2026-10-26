@@ -32,16 +32,13 @@
  * against the depth OUR main pass's palette wrote, by the same vertex module
  * at the same bias, so it lands where the main pass's palette landed; a bloom
  * colour is written to a palette material's block only when it changed; a
- * LOSS (`lose`) hands the palette back at once — `drawing` false — tells its
- * `onLost` listeners in the same call, so the handover hands the palette's
- * main pass back WITH it (the palette is a candidate again from the next
- * tick, in both of Babylon's passes), and takes the draw, the prepare and the
- * refusal listener off the renderer after the task in hand, because it may
- * land inside a render (a refused pass) — and the one frame a refused MASK
- * pass is found has no palette bloom from either side; a mask pipeline that
- * FAILS latches it BROKEN for the session (no world held again), every
- * map's palette then Babylon's in both passes; nothing here allocates on a
- * frame.
+ * LOSS (`lose`) stops the palette's bloom at once — `drawing` false — tells
+ * its `onLost` listeners in the same call (the handover, which fails the
+ * world: Babylon has no mesh of the palette, X3.7b), and takes the draw, the
+ * prepare and the refusal listener off the renderer after the task in hand,
+ * because it may land inside a render (a refused pass); a mask pipeline that
+ * FAILS latches it BROKEN for the session (no world held again, so every
+ * round with a glowing palette fails); nothing here allocates on a frame.
  * Never: imports Babylon; reads a node, a mesh's metadata or a material — a
  * material reaches it as its `EmissiveRecipe`; owns, clears or binds the
  * mask; draws in the main pass; announces a loss when no world was held (a
@@ -130,10 +127,8 @@ export class WorldGlow {
   }
 
   /**
-   * `listener` told of every LOSS of a held world (`lose`: a palette surface
-   * handed back, a refused main or mask pass, a failed mask or main-pass
-   * palette pipeline), in the call that loses it — so the palette's main
-   * pass goes back with its mask.
+   * `listener` told of every LOSS of a held world (`lose`: a refused mask
+   * pass, a failed mask pipeline), in the call that loses it.
    * Never told of a world dropped for a map going. Returns its remove.
    */
   onLost(listener: () => void): () => void {
@@ -169,7 +164,7 @@ export class WorldGlow {
     void world.ready.then((ok) => {
       if (generation !== this.generation) return;
       if (!ok) {
-        // No mask of ours can be drawn: the palette's mask is Babylon's for the session.
+        // No mask of ours can be drawn: no world is held for the session.
         this.broken = true;
         this.lose();
         return;
@@ -188,13 +183,11 @@ export class WorldGlow {
   }
 
   /**
-   * The world can no longer draw what Babylon's twin would — a palette
-   * surface went back to Babylon, the main pass or the mask's was refused, a
-   * mask pipeline or the main pass's palette pipeline failed: the `onLost`
-   * listeners are told at once (the handover hands the palette's main pass
-   * back, so it is a candidate, and in `GlowPass`'s list, from the next
-   * tick), and the draw, the prepare and the refusal listener come off the
-   * renderer once the task in hand is done.
+   * The world can no longer draw what Babylon's twin would — the mask pass
+   * was refused, or a mask pipeline failed: the `onLost` listeners are told
+   * at once (the handover fails the world), and the draw, the prepare and
+   * the refusal listener come off the renderer once the task in hand is
+   * done.
    */
   lose(): void {
     if (!this.world) return;
@@ -272,7 +265,7 @@ export class WorldGlow {
 
   /** `Renderer.onGlowMaskRefused`: the mask is not what our pipelines were built for. */
   private readonly refused = (): void => {
-    console.error("WorldGlow: the glow's mask pass was refused; the emissive palette's mask goes back to Babylon for this map");
+    console.error("WorldGlow: the glow's mask pass was refused; the emissive palette cannot bloom");
     this.lose();
   };
 }

@@ -3,8 +3,10 @@
  *
  * Owns: nothing but a report and, when asked, one JSON file. Every map in the
  * registry (the shipped seven and the DEV-only proving ground) is built by the
- * real client in a real browser, and every mesh the build hands the world is
- * hashed in list order: `GameMap.visuals`, `colliders` and `terrainColliders`
+ * real client in a real browser, and every surface and mesh the build hands
+ * the world is hashed in list order: the world's SURFACES (`GameMap.world`,
+ * one a record, each with the mesh `GameMap.visuals` holds of it, if any —
+ * see "A surface with no mesh" below), `colliders` and `terrainColliders`
  * — name, material name, metadata, transform, the flags the world layer reads
  * (`isVisible`, `isPickable`, `checkCollisions`, rendering group), vertex,
  * index and submesh counts, `geometry.delayLoadState`, and a hash of every
@@ -12,8 +14,8 @@
  * derives from its parts: `colliderBoxes`, `colliderAlbedo` and `partBoxes`
  * (hashed), and three that say how the merged meshes are WIRED to the rest of
  * the map (kept as data): `panes` (every `WorldPane` field), `paneGroups` (each
- * as `[index in visuals, panes, block]`) and `editorItems` (each layout item's
- * `visuals` as indices into `GameMap.visuals`, `null` on a shipped build) — and
+ * as `[surface index, panes, block]`) and `editorItems` (each layout item's
+ * `visuals` as surface indices, `null` on a shipped build) — and
  * a fourth, `pieces`: `GameMap.world.pieces`, the PIECE table (each layout
  * item a piece id names, as `[list, index]`).
  *
@@ -40,11 +42,30 @@
  * box then sphere, hashed as their f64 bits), which `WorldCulling` grows its
  * cells from. **Every run also checks them against the mesh's own bounding
  * info bit for bit** (`minimumWorld`/`maximumWorld`, `centerWorld`/
- * `radiusWorld`, read where the DEV check in `WorldCulling.setMap` reads them;
- * a failure, named `bounds≠mesh`), over EVERY visual rather than only the
- * filed ones — so `--editor`, whose visuals are placed off identity, puts
+ * `radiusWorld`; a failure, named `bounds≠mesh`), over EVERY surface that has
+ * a mesh — so `--editor`, whose visuals are placed off identity, puts
  * `boundsOf`'s transformed path under test on every run, which the shipped
  * build's (all at identity but the odd loose mesh) does not.
+ *
+ * **A surface with no mesh** (`BABYLON_EXIT.md` X3.7b: our renderer draws it
+ * in every pass, and Babylon is made none — on a shipped build every surface
+ * but the glazing and the fires) is fingerprinted off its RECORD alone: its
+ * name, material, metadata, counts, piece ranges, bounds and the arrays the
+ * sink hashed, and `mesh: false`. Compared with a baseline that holds a mesh
+ * of it (X3.7a's), only those fields are compared — the arrays against the
+ * baseline's, which X3.7a proved equal to its mesh's buffers — and every
+ * mesh field it has no mesh to hold is not a difference; the run says how
+ * many surfaces of each map have no mesh rather than failing on them. A
+ * surface WITH a mesh is compared field for field as before, its
+ * `sceneRank` against the baseline's ranks re-ranked over the surfaces that
+ * still have one.
+ *
+ * **A map that fails to build is a failure on every run** — whatever any
+ * baseline says — and the build is watched for a page error rather than
+ * waited out: a surface our renderer cannot hold THROWS in a DEV build
+ * (`BlockHandover.refuse`), so this is what refuses a map that has one.
+ * `--foliage <rung>` builds at that crown rung (`Settings.foliage`: `low`,
+ * `medium`, `high`), which is how that refusal is asked of every rung.
  *
  * **Four per-mesh fields describe the UPLOAD rather than the geometry**, because
  * a merge that moves onto arrays and uploads at the end can get each wrong
@@ -79,7 +100,7 @@
  * every mesh one layout item's) — the other path out of `mergeByMaterial`,
  * which a shipped build never takes, so it owes a baseline of its own and is
  * never compared with one taken without the flag; `--out file` writes the
- * fingerprint;
+ * fingerprint; `--foliage <rung>` (above);
  * `--against file` compares and exits 1 on any difference, naming the list,
  * the index, the mesh and the fields that moved. A map that fails to build is
  * recorded as its error, so a build broken by the change is a difference too.
@@ -112,6 +133,7 @@ function arg(name) {
 
 const only = arg("--maps")?.split(",");
 const editor = process.argv.includes("--editor");
+const foliage = arg("--foliage");
 const outFile = arg("--out");
 const againstFile = arg("--against");
 const profile = process.argv.includes("--profile");
@@ -247,15 +269,31 @@ function fingerprintMap() {
     const rank = sceneRanks(list);
     return list.map((m, i) => meshRecord(m, rank[i]));
   };
-  // The visuals' piece ranges, off the record `GameMap.world` keeps aligned
-  // with them, and their arrays' hashes, off the sink (`installSink`) — each
-  // absent on a build older than it.
+  // One entry a SURFACE, in list order: its mesh's record where it has one
+  // (`SurfaceRecord.visual`), its own record's fields where it has none —
+  // and every surface's piece ranges, bounds and the arrays' hashes, off the
+  // sink (`installSink`) — each absent on a build older than it. A build
+  // older than X3.7b names no visual: its records are aligned with
+  // `visuals`, one for one.
   const surfaces = map.world?.surfaces;
   const sunk = window.__surfaceHashes;
-  const visuals = records(map.visuals).map((r, i) => {
-    const out = { ...r };
+  const visualOf = (r, i) => (r && typeof r.visual === "number" ? r.visual : i);
+  const meshRecords = records(map.visuals);
+  const visuals = (surfaces ?? map.visuals).map((s, i) => {
+    const v = surfaces ? visualOf(s, i) : i;
+    const out =
+      v >= 0
+        ? { ...meshRecords[v] }
+        : {
+            name: s.name,
+            material: s.material ? s.material.name : null,
+            metadata: JSON.stringify(plain(s.metadata ?? null)),
+            vertices: s.vertexCount,
+            indices: s.indexCount,
+            mesh: false,
+          };
     if (surfaces) {
-      out.pieces = surfaces[i].pieces.map((p) => [
+      out.pieces = s.pieces.map((p) => [
         p.piece, p.vertexStart, p.vertexCount, p.indexStart, p.indexCount,
       ]);
     }
@@ -272,9 +310,11 @@ function fingerprintMap() {
   // ever records the mesh's half): see the header.
   const boundsCheck = { compared: 0, offIdentity: 0, unequal: [] };
   if (surfaces) {
-    map.visuals.forEach((m, i) => {
-      const b = surfaces[i]?.bounds;
-      if (!b) return;
+    surfaces.forEach((s, i) => {
+      const v = visualOf(s, i);
+      const m = v >= 0 ? map.visuals[v] : null;
+      const b = s.bounds;
+      if (!b || !m) return;
       const info = m.getBoundingInfo();
       const box = info.boundingBox;
       const sphere = info.boundingSphere;
@@ -287,12 +327,17 @@ function fingerprintMap() {
       boundsCheck.compared++;
       if (!m.getWorldMatrix().isIdentity()) boundsCheck.offIdentity++;
       const theirs = boundsWords(b);
-      if (!mine.every((v, k) => Object.is(v, theirs[k]))) boundsCheck.unequal.push([i, m.name]);
+      if (!mine.every((x, k) => Object.is(x, theirs[k]))) boundsCheck.unequal.push([i, m.name]);
     });
   }
-  // Indices into `visuals`, by identity: -1 is a mesh the list does not hold.
+  // A mesh's SURFACE index, by identity — the index its entry in `visuals`
+  // above has: -1 is a mesh no surface's record names.
   const visualIndex = new Map();
-  map.visuals.forEach((m, i) => visualIndex.set(m, i));
+  if (surfaces) surfaces.forEach((s, i) => {
+    const v = visualOf(s, i);
+    if (v >= 0) visualIndex.set(map.visuals[v], i);
+  });
+  else map.visuals.forEach((m, i) => visualIndex.set(m, i));
   const indexOfVisual = (m) => visualIndex.get(m) ?? -1;
   const itemVisuals = (items) => items.map((item) => item.visuals.map(indexOfVisual));
 
@@ -336,10 +381,11 @@ function fingerprintMap() {
  * Runs IN THE PAGE before it boots: the DEV sink every surface's arrays pass
  * through as they are released (`SurfaceSink`), hashed there and then — the
  * arrays are not kept — into `window.__surfaceHashes`, by the surface's index
- * in its build's list (`GameMap.visuals` order). The hashing is
+ * in its build's list (`GameMap.world.surfaces` order). The hashing is
  * `fingerprintMap`'s `hashArray`, applied to what the adapter hands Babylon
- * (`world/parts.ts`'s `vertexDataOf`): a `Float32Array` as itself, any other
- * array as the doubles of the plain array Babylon held.
+ * (`world/parts.ts`'s `vertexDataOf`) — or would, for a surface it makes no
+ * mesh of: a `Float32Array` as itself, any other array as the doubles of the
+ * plain array Babylon held.
  */
 function installSink() {
   const hashWords = (words) => {
@@ -391,6 +437,18 @@ async function buildOne(browser, url, id, editor) {
       ([key, value]) => window.localStorage.setItem(key, value),
       [MAP_KEY, id],
     );
+    if (foliage) {
+      await page.addInitScript((rung) => window.localStorage.setItem("greywatch.setting.foliage", rung), foliage);
+    }
+    // A build that throws — a surface our renderer cannot hold, in a DEV
+    // build (`BlockHandover.refuse`) — is a failure at once, not a wait.
+    await page.addInitScript(() => {
+      window.__buildErrors = [];
+      window.addEventListener("error", (e) => window.__buildErrors.push(String(e.message)));
+      window.addEventListener("unhandledrejection", (e) =>
+        window.__buildErrors.push(String(e.reason?.message ?? e.reason)),
+      );
+    });
     await page.addInitScript(installSink);
     await page.goto(url, { waitUntil: "domcontentloaded" });
     await page.waitForFunction(() => Boolean(window.__celshock), null, { timeout: 60_000 });
@@ -401,6 +459,7 @@ async function buildOne(browser, url, id, editor) {
       await new Promise((resolve, reject) => {
         const poll = () => {
           if (g.state === "deploy") return resolve();
+          if (window.__buildErrors.length > 0) return reject(new Error(window.__buildErrors[0]));
           if (performance.now() > until) {
             return reject(new Error(`never reached deploy (state "${g.state}")`));
           }
@@ -438,12 +497,34 @@ async function buildOne(browser, url, id, editor) {
   }
 }
 
-/** The fields of two mesh records that differ, by name. */
+/**
+ * `before`'s scene ranks over the first `n` entries, re-ranked among those
+ * `after` still holds a mesh of (`mesh !== false`), in the same order — or
+ * null when every one still has a mesh. A surface with none ranks -1.
+ */
+function reRanked(before, after, n) {
+  if (!after.some((m) => m.mesh === false)) return null;
+  const kept = [];
+  for (let i = 0; i < n; i++) if (after[i].mesh !== false) kept.push(i);
+  kept.sort((x, y) => before[x].sceneRank - before[y].sceneRank);
+  const out = new Array(n).fill(-1);
+  kept.forEach((i, r) => (out[i] = before[i].sceneRank < 0 ? -1 : r));
+  return out;
+}
+
+/**
+ * The fields of two mesh records that differ, by name. An `after` with no
+ * mesh (`mesh: false`) is compared on the fields it holds alone — its
+ * record's — and its arrays against the baseline's (see the header).
+ */
 function fieldsThatMoved(a, b) {
   const moved = [];
+  const meshless = b.mesh === false;
   for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) {
     // A field an older fingerprint did not record is not a difference.
     if (!(k in a)) continue;
+    // Nor is a mesh field a surface with no mesh cannot hold.
+    if (meshless && !(k in b)) continue;
     if (k === "buffers" || (k === "arrays" && a.arrays && b.arrays)) {
       for (const kind of new Set([...Object.keys(a[k]), ...Object.keys(b[k])])) {
         if (a[k][kind] !== b[k][kind]) moved.push(`${k === "buffers" ? "buffer" : "array"}:${kind}`);
@@ -477,10 +558,14 @@ function compare(before, after) {
         lines.push(`${id}.${list}: ${a[list].length} meshes -> ${b[list].length}`);
       }
       const n = Math.min(a[list].length, b[list].length);
+      // The baseline's scene ranks, re-ranked over the surfaces that still
+      // have a mesh — the ones `b`'s ranks are among (see the header).
+      const ranks = list === "visuals" ? reRanked(a[list], b[list], n) : null;
       let shown = 0;
       let differing = 0;
       for (let i = 0; i < n; i++) {
-        const moved = fieldsThatMoved(a[list][i], b[list][i]);
+        const before = ranks && b[list][i].mesh !== false ? { ...a[list][i], sceneRank: ranks[i] } : a[list][i];
+        const moved = fieldsThatMoved(before, b[list][i]);
         if (moved.length === 0) continue;
         differing++;
         if (shown < 8) {
@@ -530,7 +615,7 @@ try {
     console.log(
       r.error
         ? `${id}: FAILED — ${r.error}`
-        : `${id}: ${r.visuals.length} visuals, ${r.colliders.length} colliders, ` +
+        : `${id}: ${r.visuals.length} surfaces (${r.visuals.filter((m) => m.mesh !== false).length} meshes), ${r.colliders.length} colliders, ` +
             `${r.terrainColliders.length} terrain (${((Date.now() - t0) / 1000).toFixed(1)} s)`,
     );
   }
@@ -539,13 +624,33 @@ try {
   await vite.stop();
 }
 
+// A map that did not build is a failure whatever any baseline says: a
+// surface our renderer cannot hold throws in a DEV build, and this is where
+// that refuses the map (see the header).
+for (const [id, r] of Object.entries(result)) {
+  if (!r.error) continue;
+  console.log(`${id}: REFUSED — the build failed: ${r.error}`);
+  process.exitCode = 1;
+}
+
+// The surfaces each map made no mesh of — our renderer's, whole — said, not
+// failed on.
+for (const [id, r] of Object.entries(result)) {
+  if (r.error) continue;
+  const meshless = r.visuals.filter((m) => m.mesh === false).length;
+  if (meshless > 0) {
+    console.log(`${id}: ${meshless} of ${r.visuals.length} surfaces have no mesh (our renderer's) — compared off their records`);
+  }
+}
+
 // Every mesh handed to the world must be on the device, whatever any baseline
-// says — the one failure the hashes above cannot see.
+// says — the one failure the hashes above cannot see. A surface with no mesh
+// at all is not one: it is our renderer's.
 let stranded = 0;
 for (const [id, r] of Object.entries(result)) {
   if (r.error) continue;
   for (const list of ["visuals", "colliders", "terrainColliders"]) {
-    const parts = r[list].filter((m) => m.vertices > 0 && !m.onDevice);
+    const parts = r[list].filter((m) => m.mesh !== false && m.vertices > 0 && !m.onDevice);
     stranded += parts.length;
     for (const m of parts.slice(0, 5)) {
       console.log(`${id}.${list}: ${m.name} is a PART — it will draw nothing`);
@@ -568,7 +673,9 @@ for (const [id, r] of Object.entries(result)) {
       if (missing <= 5) console.log(`${id}.visuals[${i}] ${m.name}: no arrays reached the sink`);
       return;
     }
-    if (!m.onDevice) return;
+    // A surface with no mesh has no buffers to compare: its arrays are
+    // compared with a baseline's instead (see the header).
+    if (m.mesh === false || !m.onDevice) return;
     compared++;
     const kinds = new Set([...Object.keys(m.arrays), ...Object.keys(m.buffers)]);
     const moved = [...kinds].filter((k) => m.arrays[k] !== m.buffers[k]);

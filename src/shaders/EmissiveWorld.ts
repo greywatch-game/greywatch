@@ -2,16 +2,16 @@
  * EmissiveWorld.ts — The one material every lit window, lamp lens, ember and
  * sign in a map's MERGED world wears, whatever colour it emits: the emissive
  * palette, `getWorldCel`'s twin for the light sources. And the twin of it
- * `GlowPass` draws their bloom with. BOTH are the FALLBACK since X3.6e (the
- * twin since X3.6d): whenever the handover holds the whole palette, our
- * renderer draws it in the main pass (`render/WorldBlocks.ts`) and its mask
- * (`render/WorldGlow.ts`), over the same bodies (`BlockHandover` says what
- * that keeps out of Babylon's lists); both are drawn for an editor build,
- * `?babylonworld`, a map whose palette ours cannot hold whole, a failed mask
- * pipeline (for the session) and after a loss mid-map — and only that last
- * compiles them in the round, the palette being a candidate from the install
- * on every other, which the warm-up draws: ONE frame's hitch, measured, with
- * no frame missing its lit windows (`BABYLON_EXIT.md` X3.6e).
+ * `GlowPass` draws their bloom with. BOTH draw an EDITOR build alone since
+ * X3.7b: in every round our renderer draws the palette in the main pass
+ * (`render/WorldBlocks.ts`) and its mask (`render/WorldGlow.ts`), over the
+ * same bodies, and Babylon is made no mesh of it (`BlockHandover`) — a
+ * palette ours cannot hold, a failed mask pipeline and a loss mid-map being
+ * the world's failure. Until then both were the fallback (X3.6d, X3.6e),
+ * and a loss mid-map compiled them in the round: ONE frame's hitch, with no
+ * frame missing its lit windows (`BABYLON_EXIT.md` X3.6e). The objects are
+ * still made in a round — the merge keys on them and they hold the recipes
+ * (X3.7, Keeps) — and never compiled there.
  * Owns: Babylon's declarations of both WGSL stages (their bodies are
  * `wgsl/emissiveWorld.ts`'s, which our renderer draws in the main pass, the
  * glow's mask and a probe's bake) and `EmissiveWorldMaterial`

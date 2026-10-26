@@ -420,16 +420,16 @@ export interface BenchFacts {
  * (`systems/BlockHandover.ts`, `BABYLON_EXIT.md` X3.3) — read through the
  * reader `Game` pushes, at the capture or the halt and never per frame. `drawn` is the
  * main pass's draws of ours last frame, which `counters.drawCalls` (Babylon's
- * own counter) does not see; `handedBack` is how many taken surfaces went
- * back to Babylon's main pass — a failed compile's, or every one once the
- * main pass was refused.
+ * own counter) does not see. Before report version 20 it carried
+ * `handedBack` too, how many taken surfaces went back to Babylon's main pass;
+ * since X3.7b nothing goes back (a world ours cannot draw is the menu,
+ * `Game.worldFailed`), and the field is gone.
  */
 export interface BlockFacts {
   taken: number;
   clusters: number;
   groups: number;
   drawn: number;
-  handedBack: number;
 }
 
 export interface ProfileGraphics {
@@ -1139,7 +1139,10 @@ export function buildReport(
     // frame — not at the capture. Before it a benchmark saved after its map
     // was torn down read the menu's `taken: 0` (2026-10-21's phone
     // captures). Nothing else changed meaning.
-    version: 19,
+    // 20: `blocks.handedBack` gone (`BABYLON_EXIT.md` X3.7b): nothing of the
+    // world goes back to Babylon any more, which is made no mesh of it, and a
+    // world our renderer cannot draw takes the round to the menu instead.
+    version: 20,
     takenAt: new Date().toISOString(),
     reason,
     map: r.mapId,

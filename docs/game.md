@@ -333,6 +333,30 @@ C5 it was a line here (`SimCore.releaseWorld`, its `burntOut`s drained and
 dropped so the next round's first drain did not draw fires on a map that never
 had them).
 
+**The world's drawing is our renderer's, and a failure of it is the ROUND's**
+(`BABYLON_EXIT.md` X3.7b). `installMap` builds the map with
+`BlockHandover.onSurface`, which answers for each surface whether ours draws
+it in every pass — and Babylon is made no mesh of what it does, a round's
+`map.visuals` being the glazing and the fires, while `map.world` keeps a
+record of every surface, each naming its mesh if it has one — then files it
+(`WorldCulling.setMap`, the cells grown off the records) and hands it over
+(`handover.install`, the cut, and every pass of ours its world). An editor
+build hands nothing over: Babylon draws it whole. **What ours cannot draw is
+never handed back, there being no mesh to hand it to: it is
+`Game.worldFailed(reason)`**, run after the task in hand (a failure can land
+inside a render, or inside `installMap` itself) — a `console.error`,
+`enterMenu` (which leaves the match, a server's as well as the page's own,
+through `leaveMatch`) and a toast that the map could not be drawn:
+`loadHeights`' move, for its reason, there being no honest half-world to play
+in and no fallback engine. Its doors are the handover's — a surface it cannot
+hold (a DEV throw instead, so `merge:hash` refuses the map), a group or a cull
+that fails (under the building card, where a pipeline settles), a cut past
+the device's limits, a refused pass, a loss of any pass of ours — and the
+cull's, which REFUSES a build whose own contract is broken (`setMap` hands
+back the reason rather than throwing, and `installMap` hands nothing over
+after it). `teardownMap` takes our side down first (`handover.clear`), ahead
+of the map's meshes.
+
 **It also lets go of the map's DATA, and that half is proved rather than
 reviewed.** `Player`'s ground, the `rays` eight
 systems and views were handed, `GlassSystem`'s panes and `GlassFx`'s meshes, the deploy

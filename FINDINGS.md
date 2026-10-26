@@ -348,15 +348,16 @@ not to be it.
 
 ## 10. The reflection bake is draw-call bound, and a distance cull halves the list
 
-**Since X3.6c this is the FALLBACK's entry.** Whenever the handover holds every
-surface a bake draws, our renderer bakes the cubes (`render/ProbeBake.ts`), a
+**Since X3.6c this is the old path's entry, and since X3.7b no round takes
+it.** Our renderer bakes the cubes in every round (`render/ProbeBake.ts`), a
 face being a cull and a pass over its survivors rather than a draw a mesh, so
 no term below prices it: Coldharbour's 39 probes drain in 5 frames of 5-6 ms,
 ~41 ms of wall clock, at `probesPerFrame` 8 on the Windows box. Everything
 below — the per-draw cost, the worst frame, `drawsPerFrame` — is Babylon's
-`ReflectionProbe` bake, which is still what `?babylonworld`, a map with a bake
-surface our side cannot draw and a bake lost before it drained take (an editor
-build bakes nothing on either). The PICTURE questions at the end (the 800 m hole, `perCell`, a
+`ReflectionProbe` bake, which `?babylonworld`, a map with a bake surface our
+side cannot draw and a bake lost before it drained took until X3.7b, which
+deleted the switch and made the other two the world's failure; X3.7c deletes
+the path (an editor build bakes nothing on either). The PICTURE questions at the end (the 800 m hole, `perCell`, a
 wider block) bear on both paths, which share the radius and the enclosure.
 
 **Measured, headless (SwiftShader, Coldharbour); superseded on real hardware —
@@ -2858,12 +2859,15 @@ Sarab 0.029 to 0.041 — still not it; since the survivors' list (e07ae7c)
   plain draw to a bound the CPU computes, its tail of zero entries clipped
   before a read, and its `expand` direct (`docs/rendering.md`) — so the
   answer is still owed and still theirs.
-- **On that Intel laptop `?babylonworld` reads a bit FASTER than our path**
+- **On that Intel laptop `?babylonworld` read a bit FASTER than our path**
   (the user, 2026-10-24, by eye: unmeasured). A capture is owed before it
   is a finding of its own — `?bench=<map>&gpu` against
   `?bench=<map>&gpu&babylonworld`, alternated, on Greyfen, Kurenai and
   Cinderhaven, Chrome started with `--enable-unsafe-webgpu` so
-  `gpu.frameMeasurable` is true. The walk above is one suspect there; the
+  `gpu.frameMeasurable` is true. **Since X3.7b the switch is gone with
+  Babylon's world meshes**: the Babylon side of that A/B is a deploy of the
+  tag `exit-babylonworld` (X3.7b's parent), measured against the current
+  build in the same session. The walk above is one suspect there; the
   scatter's non-indexed pulled draw, the culls repeated in every view, and
   the indirect path's validation (which the scatter's plain draw removed: a
   capture of a build before e172f88 prices it) are the others.
@@ -2950,7 +2954,9 @@ same loop at 4fd2e85: nothing taken, Babylon drawing every block, the floor
 and the world's shadow maps through its generators — `ours: false` in every
 dump): 5 of 9 runs, all three maps. So the hang is not in anything the
 Babylon exit has drawn, X3.6a or earlier; it is in what Babylon still draws,
-or in the machine.
+or in the machine. (`?babylonworld` went at X3.7b; that control is a build
+at the tag `exit-babylonworld` now. X3.7b's own X0.3, 3440x1440 uncapped,
+is in `BABYLON_EXIT.md`.)
 
 ### How to settle it
 - A fresh boot of the machine, then the loop again (the scratch watchdog,

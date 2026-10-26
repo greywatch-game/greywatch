@@ -5,9 +5,11 @@
  * seed (`systems/RoundRandom.ts`), for every round of the session — and
  * `?bench=<map>`, which overrides the session itself: the page plays the
  * benchmark on that map instead of offering a menu (`bench/BenchScript.ts`) —
- * and `?babylonworld`, `?nocull` and `?nofrustum`, which take our renderer's
- * static world or its culls out, for an A/B on a device (`BABYLON_EXIT.md`),
- * and `?cullcheck`, which reads those culls back on the device.
+ * and `?nocull` and `?nofrustum`, which take our renderer's culls out, for an
+ * A/B on a device (`BABYLON_EXIT.md`), and `?cullcheck`, which reads those
+ * culls back on the device. (`?babylonworld`, the A/B against Babylon's
+ * world, went with Babylon's world meshes at X3.7b; the last build that has
+ * it is tagged `exit-babylonworld`.)
  * Owns: reading them once, validating each against its own table, the rule
  * that an override BEATS the setting it shadows, and the list of which ones a
  * capture must say were forced. Owns the URL-flag reader `FrameProfile` uses
@@ -101,13 +103,6 @@ export class UrlOverrides {
    */
   readonly bench: string | null;
   /**
-   * `?babylonworld` — our renderer takes no block and no scatter, so Babylon
-   * draws the static world whole, as before X3.3 (`BABYLON_EXIT.md`). A
-   * diagnostic for a device nobody here owns: one reload A/Bs our main pass
-   * against Babylon's. False when the flag is set.
-   */
-  readonly ourWorld: boolean;
-  /**
    * `?nofrustum` — our culls keep everything the reach and the size gate
    * keep, the frustum untested; `?nocull` — they keep EVERYTHING, the reach
    * and the size gate off too (`render/ClusterCull.ts`'s `CullMode`). The
@@ -144,7 +139,6 @@ export class UrlOverrides {
     this.minimap = !urlFlag("nominimap");
     this.seed = parseSeed(urlParam("seed"));
     this.bench = urlParam("bench");
-    this.ourWorld = !urlFlag("babylonworld");
     this.cullMode = urlFlag("nocull") ? "none" : urlFlag("nofrustum") ? "nofrustum" : "full";
     this.cullCheck = urlFlag("cullcheck");
     const forced: string[] = [];
@@ -152,7 +146,6 @@ export class UrlOverrides {
     if (this.shadowsForced) forced.push("shadows");
     if (this.volumetricsForced) forced.push("volumetrics");
     if (!this.minimap) forced.push("minimap");
-    if (!this.ourWorld) forced.push("babylonworld");
     if (this.cullMode !== "full") forced.push(this.cullMode === "none" ? "nocull" : "nofrustum");
     if (this.cullCheck) forced.push("cullcheck");
     this.forced = forced;

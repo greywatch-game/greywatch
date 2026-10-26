@@ -1777,7 +1777,8 @@ floor's block and the floor carries no `metadata.block`, so every patch was a
 `WorldCulling` candidate at every distance: at the default 48 this map's ground
 is 193 meshes. (Since `BABYLON_EXIT.md` X3.5 our renderer draws the floor in
 the main pass, so a patch is no candidate there — it is clusters in one cut,
-one draw a recipe — and the count is what every OTHER pass still walks.)
+one draw a recipe — and since X3.7b it is no mesh at all, in every pass; the
+count is an editor build's alone.)
 Harrowmead states `terrainBlock: 96` and it is 57 — **fewer than the 97 it had
 at 560 m square**, because the play floor's own share falls from 81
 draws to 25. The trade is frustum granularity on the ground you fight over, which
@@ -2060,10 +2061,13 @@ written into the buffer's `uv2`, the metadata written on the part. The floor's
 patches and the rim's runs are surfaces of the same record, minted first; the
 vertex bake runs on the record after the last merge; and nothing touches the
 device until `MapBuilder.bake`, where `worldMeshes` (`parts.ts`) makes every
-surface a mesh at once and releases its arrays. What the map keeps of the
-record is `GameMap.world` — each surface's block, piece ranges, material,
-metadata and counts, aligned with `visuals`, and never the arrays, which the
-device holds. It used to
+surface Babylon draws a mesh at once — and none of one our renderer draws in
+every pass, which on a shipped build is all but the glazing and the fires
+(`BuildOptions.onSurface`, `BABYLON_EXIT.md` X3.7b) — and releases its arrays.
+What the map keeps of the record is `GameMap.world` — each surface's block,
+piece ranges, bounds, material, metadata and counts, mesh or none, each
+naming its mesh in `visuals` if it has one (`SurfaceRecord.visual`) — and
+never the arrays, which the device holds. It used to
 be the other way round: every plank was a Babylon mesh, uploaded the instant it
 existed, read back out of the CPU copies by the merge and disposed — HALF the
 build at 1500 m (161 seconds of a 186-second one), until `parts.ts` stopped

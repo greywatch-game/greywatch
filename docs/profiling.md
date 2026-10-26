@@ -1181,13 +1181,14 @@ details:
 
 **From report version 17 a capture says what OUR renderer took and drew**
 (`blocks`, `BABYLON_EXIT.md` X3.3): the surfaces `BlockHandover` took, the
-clusters and material groups they were cut into, our main-pass draws last
-frame, and how many taken surfaces went back to Babylon. **Our draws are not
-in `counters.drawCalls`**, which is Babylon's own counter, so a main pass's
-draws are that plus `blocks.drawn`. A non-zero `handedBack` is a failed compile
-of ours or a main pass our renderer refused; when it equals `taken`, Babylon
-drew every block (the cull failed, or the pass was refused, and the console
-says which). It is read once, at the capture, through a
+clusters and material groups they were cut into, and our main-pass draws last
+frame. **Our draws are not in `counters.drawCalls`**, which is Babylon's own
+counter, so a main pass's draws are that plus `blocks.drawn`. Until report
+version 20 it also said how many taken surfaces went back to Babylon
+(`handedBack`, a failed compile of ours or a refused main pass); since X3.7b
+nothing goes back — Babylon is made no mesh of what ours draws, and a world
+ours cannot draw ends the round (`Game.worldFailed`) — and the field is gone.
+It is read once, at the capture, through a
 reader `Game` pushes (`FrameProfile.setBlocks`), so it describes the end of
 the window and not every frame in it — **and for a HALTED ring (a
 benchmark's) at the halt, from report version 19**, because a run saved

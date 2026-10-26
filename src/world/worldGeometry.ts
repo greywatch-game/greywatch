@@ -7,8 +7,9 @@
  * editor item it joins),
  * `PaneSurfaceGroup` (a glazing surface and the breakable panes that live in
  * it), `SurfaceRecord` and `WorldGeometry` (what `GameMap.world` keeps of a
- * build once its meshes are made — everything but the arrays, and since
- * X3.7a the world BOUNDS taken off them, `boundsOf`), the DEV `SurfaceSink`
+ * build once its arrays are uploaded — everything but the arrays, since
+ * X3.7a the world BOUNDS taken off them, `boundsOf`, and since X3.7b which
+ * mesh of `GameMap.visuals` it is, if Babylon was given one), the DEV `SurfaceSink`
  * the arrays pass through as they are released, and
  * ADMISSION: the one place a builder's parts enter the merge
  * (`admitStructure`, `admitProp`), each minted a birth and filed under its
@@ -41,7 +42,9 @@
  * minted from ONE counter per build, at the points Babylon used to create a
  * mesh: every admitted part (a structure's `meshes` then its `paneMeshes`, a
  * prop's parts in `flattenParts` order) and every merge of two or more. A
- * merge of ONE keeps its member's birth, because it keeps its member. No two
+ * merge of ONE keeps its member's birth, because it keeps its member — and
+ * a surface our renderer draws whole is minted one all the same, and made no
+ * mesh at its turn (X3.7b). No two
  * surfaces a build hands the adapter share a birth (`worldMeshes` asserts it
  * in DEV). An admitted part's buffer and arrays belong to that part ALONE:
  * the merge bakes a lone part's transform into its own arrays IN PLACE, so a
@@ -78,7 +81,8 @@ export interface PieceRange {
 }
 
 /**
- * One merged world surface: what becomes ONE mesh in `GameMap.visuals`.
+ * One merged world surface: ONE record in `GameMap.world`, and ONE mesh in
+ * `GameMap.visuals` unless our renderer draws it in every pass (X3.7b).
  *
  * `part` carries the geometry, the transform (identity once block-merged; a
  * placement's own on an editor build and on a pane block of one), the
@@ -126,31 +130,41 @@ export interface PaneSurfaceGroup {
 }
 
 /**
- * What the map KEEPS of a surface once its mesh is made (`GameMap.world`):
- * its name, its world bounds, its material, its METADATA (the very object its mesh carries —
- * `block`, the exemptions, `sway`, `editorRef`), its block, its piece ranges,
- * whether its positions are writable, and how many vertices and indices it
- * holds — which is the merge's KEY (block, material, sway, exemptions) and
- * everything a piece range is measured against.
+ * What the map KEEPS of a surface once its arrays are uploaded
+ * (`GameMap.world`): its name, its world bounds, its material, its METADATA
+ * (the very object a mesh made of it carries — `block`, the exemptions,
+ * `sway`, `editorRef`), its block, its piece ranges, whether its positions
+ * are writable, how many vertices and indices it holds — which is the
+ * merge's KEY (block, material, sway, exemptions) and everything a piece
+ * range is measured against — and WHO DRAWS IT (`visual`).
  *
- * **Never the vertex ARRAYS.** Those are the device's, in the arrays Babylon
- * keeps for the mesh; holding them here as well would hold the world's
- * geometry twice on the CPU (Greyfen is ~6 M vertices), and nothing reads
- * them back. `worldMeshes` releases each surface's arrays as it uploads them
- * (`releaseArrays`). A renderer of our own that draws a surface takes its
- * arrays on the way past instead (`BuildOptions.onSurface`, just before the
- * release), so they are never kept here either.
+ * **Never the vertex ARRAYS.** Those are the device's — in the arrays
+ * Babylon keeps for a mesh, or in our renderer's buffers — and holding them
+ * here as well would hold the world's geometry twice on the CPU (Greyfen is
+ * ~6 M vertices), and nothing reads them back. `worldMeshes` releases each
+ * surface's arrays once it is past (`releaseArrays`). A renderer of our own
+ * that draws a surface takes its arrays on the way past instead
+ * (`BuildOptions.onSurface`, just before the release), so they are never
+ * kept here either.
  */
 export interface SurfaceRecord {
   name: string;
   /**
+   * Its mesh's index in `GameMap.visuals`, or -1: OUR renderer draws it in
+   * every pass and Babylon was given no mesh of it (`BuildOptions.onSurface`,
+   * `BABYLON_EXIT.md` X3.7b) — on a shipped build every surface but the
+   * glazing and the fires. Every index of `visuals` is named by exactly one
+   * record (`WorldCulling.setMap` checks), and on an editor build, which our
+   * renderer takes nothing of, record `i` is visual `i`.
+   */
+  visual: number;
+  /**
    * Its WORLD bounds, taken from its arrays before they are released
    * (`boundsOf`): what `WorldCulling` grows a cell's box from and size-gates a
    * filed candidate by, in place of the mesh's bounding info, which is the
-   * same numbers bit for bit (a DEV build checks every filed surface). Filing
-   * is still per MESH; what needs none now is the cell's box, which is the
-   * half of the cull a surface with no mesh will still owe (`BABYLON_EXIT.md`
-   * X3.7b).
+   * same numbers bit for bit (`npm run merge:hash` checks every visual that
+   * has a mesh). A cell is grown from EVERY record filed under its block,
+   * mesh or none (`BABYLON_EXIT.md` X3.7b); only a candidate is a mesh.
    */
   bounds: SurfaceBounds;
   /**
@@ -168,8 +182,9 @@ export interface SurfaceRecord {
 }
 
 /**
- * What a build ends in (`GameMap.world`): a record per surface, ALIGNED with
- * `GameMap.visuals` (the floor's patches, the rim, then every merged surface),
+ * What a build ends in (`GameMap.world`): a record per surface, in list order
+ * (the floor's patches, the rim, then every merged surface) — each naming
+ * its mesh in `GameMap.visuals`, if it has one (`SurfaceRecord.visual`) —
  * and what a piece id names. Empty on the authority, which draws nothing.
  */
 export interface WorldGeometry {
@@ -283,6 +298,8 @@ export function recordOf(surface: WorldSurface, world: Matrix): SurfaceRecord {
   const { part } = surface;
   return {
     name: part.name,
+    // Who draws it is `worldMeshes`' to write, once it knows.
+    visual: -1,
     bounds: boundsOf(part.geometry.positions, world),
     material: part.material,
     metadata: part.metadata,
@@ -303,7 +320,7 @@ const RELEASED = Object.freeze(new GeometryBuffer({ positions: [], indices: [] }
 /**
  * DEV: what an instrument reads a surface's ARRAYS through, at the one
  * moment they still exist — handed the surface's index in its build's list
- * (`GameMap.visuals` order) and its buffer, synchronously, as they are
+ * (`GameMap.world.surfaces` order) and its buffer, synchronously, as they are
  * released. `npm run merge:hash` sets `window.__surfaceSink` before the page
  * boots and hashes them there, so its fingerprint reaches a surface that has
  * no mesh to read back (`BABYLON_EXIT.md` X3.7). It must not KEEP the arrays:

@@ -533,11 +533,13 @@ export class Game {
    */
   readonly renderer: Renderer;
   /**
-   * The map's blocks, drawn in the main pass by `renderer` and never by
-   * Babylon (`BABYLON_EXIT.md` X3.3) — their Babylon meshes stay for every
-   * other pass.
+   * The map's world as `renderer` draws it, in every pass of a round and
+   * never by Babylon, which is made no mesh of it (`BABYLON_EXIT.md` X3.3,
+   * X3.7b) — and what it cannot draw, the world's failure (`worldFailed`).
    */
   readonly handover: BlockHandover;
+  /** A `worldFailed` is waiting for the task in hand to end: a second is the same failure. */
+  private worldFailing = false;
   private input: InputManager;
   private cameraSys: CameraSystem;
   private hud: HUD;
@@ -704,7 +706,7 @@ export class Game {
    */
   private readonly lightning = new LightningStrikes();
   private shadows: ShadowSystem;
-  /** The world's directional maps as our renderer owns them, which `shadows` hands over to or takes back. */
+  /** The world's directional maps as our renderer owns them: every round's (an editor build's are `shadows`' generators). */
   private readonly worldShadows: WorldShadows;
   /**
    * The bodies' own shadow map — soldiers and hulls, and nothing static.
@@ -728,13 +730,13 @@ export class Game {
    * and everything that moves redrawn from proxies (`systems/LocalShadows.ts`).
    */
   private localShadows: LocalShadows;
-  /** The lamps' atlas as our renderer owns it, which `localShadows` hands over to or takes back. */
+  /** The lamps' atlas as our renderer owns it: every round's (an editor build's is `localShadows`' render target). */
   private readonly lampAtlas: LampAtlas;
-  /** The reflection bake as our renderer draws it, whenever the handover holds every surface a bake draws (X3.6c). */
+  /** The reflection bake as our renderer draws it: every round's (X3.6c). */
   private readonly probeBake: ProbeBake;
   /**
-   * The emissive palette's share of the glow's mask as our renderer draws it,
-   * whenever the handover holds the whole palette (X3.6d). Public for the
+   * The emissive palette's share of the glow's mask as our renderer draws it:
+   * every round's whose palette glows (X3.6d). Public for the
    * reason `glow` is: the smoke scripts that read the mask back ask it
    * whether it holds a world (`holds`) and is drawing (`drawing`, `drawn`),
    * and force a `lose`.
@@ -1481,8 +1483,8 @@ export class Game {
       { timePasses: urlFlag("gpu") },
     );
     this.prof.setCullTimer(this.renderer.timer);
-    // The world's four directional maps as our renderer draws them, whenever
-    // the handover holds every caster a map has (`BABYLON_EXIT.md` X3.6a).
+    // The world's four directional maps as our renderer draws them, in every
+    // round (`BABYLON_EXIT.md` X3.6a, X3.7b).
     this.worldShadows = new WorldShadows(this.renderer);
     // Stepped moon shadows + contact blobs. Must exist before any cel
     // material is created so the shadow map binds on creation.
@@ -1496,16 +1498,16 @@ export class Game {
     // The lamps' atlas, for the same rule: `SHADOW_SAMPLER_NAMES` lists it, so
     // it is bound before the first material exists — the lit 1x1 on a rung
     // that has none.
-    // Its atlas is our renderer's whenever the handover holds every caster,
-    // as the world's maps are (`BABYLON_EXIT.md` X3.6b).
+    // Its atlas is our renderer's in every round, as the world's maps are
+    // (`BABYLON_EXIT.md` X3.6b, X3.7b).
     this.lampAtlas = new LampAtlas(
       this.renderer,
       CONFIG.graphics.localShadows.staticFacesPerFrame,
       CONFIG.graphics.localShadows.maxProxies,
     );
     this.localShadows = new LocalShadows(this.scene, this.mats, this.shadowQuality, this.lampAtlas);
-    // The reflection probes' cubes as our renderer bakes them, whenever the
-    // handover holds every surface a bake draws (`BABYLON_EXIT.md` X3.6c):
+    // The reflection probes' cubes as our renderer bakes them, in every round
+    // (`BABYLON_EXIT.md` X3.6c, X3.7b):
     // the probe's eye is PASSED in a frame of the bake's own, which the
     // factory fills, rather than moved onto every material.
     this.probeBake = new ProbeBake(
@@ -1515,8 +1517,8 @@ export class Game {
       CONFIG.graphics.reflection.probesPerFrame,
     );
     // The emissive palette's share of the glow's mask as our renderer draws
-    // it, whenever the handover holds the whole palette (`BABYLON_EXIT.md`
-    // X3.6d) — with its main pass (X3.6e): drawn first in `GlowPass`'s mask,
+    // it, in every round whose palette glows (`BABYLON_EXIT.md` X3.6d,
+    // X3.7b) — with its main pass (X3.6e): drawn first in `GlowPass`'s mask,
     // which stays Babylon's. The rules are the glow's own two (below), asked
     // of the palette's materials.
     this.worldGlow = new WorldGlow(this.renderer, {
@@ -1784,7 +1786,8 @@ export class Game {
     // map itself. Built here so a pane material is born holding the sampler.
     this.reflections = new ReflectionSystem(this.scene, this.mats, this.probeBake);
     // Whose bake an install's is: ours whenever the handover holds every mesh
-    // a probe draws — asked of it here, at the call, the wiring rule.
+    // a probe draws, which in a round it refuses not to — asked of it here,
+    // at the call, the wiring rule.
     this.reflections.setOurs((list) => this.handover.probeHolds(list));
     // A cube is baked once per install and keeps the bounce it was baked
     // under, so the bake waits for the volume `installMap` has just cleared —
@@ -1798,11 +1801,23 @@ export class Game {
     // flag. Nothing it does is visible to a ray, a collision, a shadow caster
     // or a cube probe; see `WorldCulling`, which is the whole argument.
     this.culling = new WorldCulling(this.scene);
-    this.handover = new BlockHandover(this.renderer, this.mats, this.culling, this.worldShadows, this.lampAtlas, this.probeBake, this.worldGlow, {
-      mode: this.overrides.cullMode,
-      // After the HUD, which built `#hud`.
-      report: this.overrides.cullCheck ? new CullCheckPanel().show : null,
-    });
+    // The world our renderer draws, in every pass, with no fallback: what it
+    // cannot draw is the round's end (`worldFailed`).
+    this.handover = new BlockHandover(
+      this.renderer,
+      this.mats,
+      this.culling,
+      this.worldShadows,
+      this.lampAtlas,
+      this.probeBake,
+      this.worldGlow,
+      (reason) => this.worldFailed(reason),
+      {
+        mode: this.overrides.cullMode,
+        // After the HUD, which built `#hud`.
+        report: this.overrides.cullCheck ? new CullCheckPanel().show : null,
+      },
+    );
     // A capture says what our renderer took and drew, which Babylon's own
     // draw counter cannot (`ProfileReport.blocks`).
     this.prof.setBlocks(() => this.handover.stats);
@@ -3579,6 +3594,35 @@ export class Game {
     this.openLobby();
   }
 
+  /**
+   * The world could not be drawn — our renderer, which draws it in every
+   * pass of a round, refused a surface of it or lost a pass of it
+   * (`BlockHandover`, `WorldCulling.setMap`), and Babylon holds no mesh of it
+   * to fall back on, so there is no honest half-world to play in: said on
+   * the console, the round left for the menu (`enterMenu`, which leaves a
+   * server's match — `leaveMatch` — as it leaves the page's own), and a
+   * toast saying the map could not be drawn — `loadHeights`' precedent.
+   * `BABYLON_EXIT.md` X3.7, "What becomes of a failure".
+   *
+   * **Run after the task in hand**, as each pass's loss always was: a
+   * failure can land INSIDE a render (a refused pass), whose commands still
+   * hold the buffers the menu's teardown destroys, or inside `installMap`,
+   * whose caller must finish its turn before the map it built is taken
+   * down. ONE a failure: the handover says each install's once, and a
+   * second arriving before the first is spent is the same round's.
+   */
+  private worldFailed(reason: string): void {
+    if (this.worldFailing) return;
+    this.worldFailing = true;
+    const def = this.mapDef;
+    queueMicrotask(() => {
+      this.worldFailing = false;
+      console.error(`[world] ${def.id}: the map could not be drawn — ${reason}`);
+      this.enterMenu();
+      this.hud.toast(`${def.name} could not be drawn on this device`);
+    });
+  }
+
   private tick(): void {
     // First line and last line: `frame` is the span every other one sits
     // inside, and it is opened here rather than by `begin` so that the table of
@@ -4808,12 +4852,13 @@ export class Game {
     // The bots are steered by the authority off its own world
     // (`BuildOptions.navFields`) — in the page's own match, in its host.
     const navFields = opts?.editor === true || this.remoteRound;
-    // `?babylonworld` takes nothing, and Babylon draws the world whole — and
-    // so does an EDITOR build: its blocks are unmerged, so nothing of them
-    // would be taken anyway, and its brush rewrites the floor's meshes in
-    // place (`editor/terrainBrush.ts`), which our side, holding a copy cut
+    // Our renderer draws the world in every pass, and Babylon is made a mesh
+    // of only what it does not (`BABYLON_EXIT.md` X3.7b) — but for an EDITOR
+    // build, which Babylon draws whole: its blocks are unmerged, so nothing of
+    // them would be taken anyway, and its brush rewrites the floor's meshes
+    // in place (`editor/terrainBrush.ts`), which our side, holding a copy cut
     // once, could not follow.
-    const take = this.overrides.ourWorld && opts?.editor !== true;
+    const take = opts?.editor !== true;
     const map = this.mapBuilder.build(layout, environment, heights, {
       ...opts,
       foliage,
@@ -4887,16 +4932,18 @@ export class Game {
     // vanishes out of a skyline the player is looking at. The fog is what makes
     // the second one exact — past it a structure draws `fogColor` in front of
     // ground that draws `fogColor` — and nothing else does.
-    this.culling.setMap(map, environment.fogEnd);
-    // And which of the fresh map's blocks our renderer draws in the main pass
-    // instead, which the cull has to be told after it has filed them.
-    this.handover.install(map.world);
+    const unfiled = this.culling.setMap(map, environment.fogEnd);
+    // And the fresh map's world to our renderer, cut against the cells the
+    // cull grew — unless the cull found the build's own contract broken, which
+    // is the world failing rather than a map to cut.
+    if (unfiled) this.worldFailed(`the cull refused the build: ${unfiled}`);
+    else this.handover.install(map);
     // How hard the grade is pushed is the map's; whether it runs at all stays
     // the player's (`applySettings`). A vignette that reads as dread over a
     // night village reads as a lens fault over a bright one.
     this.post.setGrade(environment.grade);
-    // AFTER `handover.install`, which hands `WorldShadows` the casters when it
-    // holds every one: who draws this map's shadows is read off that here.
+    // AFTER `handover.install`, which hands `WorldShadows` the casters of a
+    // round: who draws this map's shadows is read off that here.
     this.shadows.setCasters(map.visuals);
     // The lamps' casters: the colliders a MOVING light's proxies are drawn
     // from, and the visuals a fixture's static tile is baked from. Every light

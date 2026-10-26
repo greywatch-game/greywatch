@@ -41,8 +41,8 @@
  * a cube can be COPIED from (`COPY_SRC`), so a readback needs no help
  * (`VERIFYING.md`); a mips pipeline that FAILS latches the bake BROKEN for
  * the session — no world is held from then on (`holds` false), so every
- * map's bake is Babylon's — and a lost bake reports how many released
- * probes it dropped (`onLost`); the view is
+ * round fails (`BlockHandover`, X3.7b) — and a lost bake reports how many
+ * released probes it dropped (`onLost`); the view is
  * built when a bake is opened and destroyed when it drains, so a round
  * holds none; a cube is born zeroed by WebGPU — alpha 0, the sky a pane
  * shows before any probe has claimed it — and is never cleared but by its
@@ -170,7 +170,7 @@ export class ProbeBake {
   private generation = 0;
   /** Released, not yet recorded, oldest first. */
   private readonly released: ProbeJob[] = [];
-  /** Told when the world handed over cannot draw, and the bake must be Babylon's — with how many released probes were dropped. */
+  /** Told when the world handed over cannot draw — with how many released probes were dropped. */
   private lost: ((dropped: number) => void) | null = null;
   private readonly unhook: () => void;
 
@@ -207,7 +207,7 @@ export class ProbeBake {
     void this.mips.ready.then((ok) => {
       this.mipsBuilt = ok;
       if (ok) return;
-      // No cube of ours can be finished: the bake is Babylon's for the session.
+      // No cube of ours can be finished: no world is held for the session.
       this.broken = true;
       this.lose();
     });
@@ -267,7 +267,7 @@ export class ProbeBake {
     return this.released.length;
   }
 
-  /** Who is told when the world handed over cannot draw, and the bake must be Babylon's. */
+  /** Who is told when the world handed over cannot draw: the world's failure (`BlockHandover`, X3.7b). */
   onLost(lost: (dropped: number) => void): void {
     this.lost = lost;
   }
@@ -308,9 +308,8 @@ export class ProbeBake {
   }
 
   /**
-   * The world the faces are drawn from from now on — the map's, when every
-   * surface its bake draws is ours — or null: then nothing is released, the
-   * view goes, and the bake is Babylon's.
+   * The world the faces are drawn from from now on — the map's — or null:
+   * then nothing is released and the view goes.
    */
   setWorld(source: ProbeSource | null): void {
     this.dropView();
@@ -354,8 +353,7 @@ export class ProbeBake {
   }
 
   /**
-   * The world can no longer draw what Babylon's bake would — a surface went
-   * back to Babylon's main pass, the main pass was refused, a pipeline or a
+   * The world can no longer draw what Babylon's bake would — a pipeline or a
    * cull failed: the world, the view and every probe released are dropped,
    * and whoever asked to be told takes the bake over (`onLost`) once the task
    * in hand is done.

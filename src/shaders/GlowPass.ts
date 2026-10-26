@@ -82,15 +82,16 @@
  * pass kept. The one difference is that the inked frame is no longer rounded
  * to 8 bits before the bloom lands on it, which is under half a step.
  *
- * THE EMISSIVE PALETTE'S MASK IS OUR RENDERER'S, whenever the handover holds
- * the whole palette (`render/WorldGlow.ts`, X3.6d): it draws the merged
- * world's lit windows and lenses FIRST in this pass, right after the clear —
- * the palette was in Babylon's opaque queue, ahead of every blended mask
- * draw, and first keeps that order. Its MAIN pass is ours on the same
- * decision (X3.6e); the palette's twin below is the FALLBACK, with its main
- * material: an editor build, `?babylonworld`, a palette surface ours cannot
- * hold or one marked `noGlow`, a failed mask pipeline (for the session) and
- * a loss mid-map. Everything else in the mask is still drawn here.
+ * THE EMISSIVE PALETTE'S MASK IS OUR RENDERER'S in every round
+ * (`render/WorldGlow.ts`, X3.6d, X3.7b): it draws the merged world's lit
+ * windows and lenses FIRST in this pass, right after the clear — the palette
+ * was in Babylon's opaque queue, ahead of every blended mask draw, and first
+ * keeps that order. Its MAIN pass is ours too (X3.6e), and Babylon is made
+ * no mesh of it (X3.7b), so the palette's twin below draws an EDITOR build
+ * alone (X3.7c's to narrow): a palette surface ours cannot hold, a failed
+ * mask pipeline and a loss mid-map are the world's failure, and `noGlow` is
+ * read per surface at the take. Everything else in the mask is still drawn
+ * here.
  *
  * A MATERIAL WHOSE VERTICES MOVE BRINGS ITS OWN MASK (`SelfMasking`). The
  * stock variants transform by `world` and `viewProjection` alone, so a surface

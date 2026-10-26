@@ -209,9 +209,15 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   checked equal to its mesh's buffers every run,
                               #   and its RECORD's bounds, checked bit for bit
                               #   against its mesh's bounding info every run
-                              #   (`--editor` is the off-identity path);
-                              #   the panes, pane groups, editor items (indices
-                              #   into visuals) and the piece table.
+                              #   (`--editor` is the off-identity path). One
+                              #   entry a SURFACE: one our renderer draws whole
+                              #   has no mesh (X3.7b) and is fingerprinted and
+                              #   compared off its record, the run saying how
+                              #   many; a build that fails — a surface ours
+                              #   cannot hold throws in DEV — fails the run,
+                              #   `--foliage <rung>` asking it of a crown rung;
+                              #   the panes, pane groups, editor items (surface
+                              #   indices) and the piece table.
                               #   `--profile` prints the build's phases. Same
                               #   machine and Babylon only. Not a gate
   geometry-check.mjs          # `node scripts/geometry-check.mjs`: builds every
@@ -599,8 +605,9 @@ src/
                         #   URL-flag reader (?profile, ?gpu), and ?seed= — the
                         #   round seed every round of the session plays from —
                         #   and ?bench=, the benchmark's map; the renderer's
-                        #   A/B switches (?babylonworld ?nocull ?nofrustum
-                        #   ?cullcheck). Applies nothing
+                        #   A/B switches (?nocull ?nofrustum ?cullcheck;
+                        #   ?babylonworld went at X3.7b, tag
+                        #   exit-babylonworld). Applies nothing
     shadowWindow.ts     # Where a directional shadow camera STANDS, and the
                         #   texel snap that stops its edges crawling. Both maps
                         #   place themselves with it — ShadowSystem's and
@@ -658,7 +665,9 @@ src/
                         #   our renderer's take, read at the capture — v18
                         #   gpu.cull, our culls' GPU time off PassTimer, and
                         #   viewport, the size every frame was drawn at; v19
-                        #   reads a halted ring's blocks at the halt),
+                        #   reads a halted ring's blocks at the halt; v20
+                        #   drops blocks.handedBack, nothing going back since
+                        #   X3.7b),
                         #   buildReport, buildTrace and
                         #   the stats. Allocates freely and never writes the
                         #   ProfileRing it is lent
@@ -1211,9 +1220,8 @@ src/
                         #   world's casters in two cascades (near + far),
                         #   re-rendered only when the snapped focus moves;
                         #   the four world maps OUR renderer's
-                        #   (render/WorldShadows) whenever the handover holds
-                        #   every caster, its own ShadowGenerators otherwise
-                        #   (the editor, ?babylonworld, a caster lost)
+                        #   (render/WorldShadows) in every round, on every
+                        #   rung, its own ShadowGenerators an editor build's
     BodyShadows.ts      # The BODIES' shadow map: soldiers and hulls and nothing
                         #   static, re-rendered every frame, its own tighter
                         #   window (4.7 cm texels against the world's 5.4).
@@ -1231,9 +1239,9 @@ src/
                         #   colliders are box proxies redrawn each frame in one
                         #   draw. The vertex stage maps each face into its own
                         #   tile, so one pass fills many. Decides everything;
-                        #   draws it only while the atlas is Babylon's — OUR
-                        #   renderer's (render/LampAtlas) whenever the handover
-                        #   holds every caster, handed the frame's AtlasWork
+                        #   draws it only while the atlas is Babylon's (an
+                        #   editor build's) — OUR renderer's (render/LampAtlas)
+                        #   in every round, handed the frame's AtlasWork
     LightningStrikes.ts # When lightning strikes, from where, how bright: a
                         #   seeded SCHEDULE read off a clock (the authority's
                         #   in a match; offline its own, which holds with the
@@ -1249,11 +1257,12 @@ src/
                         #   corrects the mirrored ray against. Decides every
                         #   probe and picks the PATH per install: our renderer's
                         #   bake (render/ProbeBake, its own queue, a budget of
-                        #   PROBES a frame) whenever the handover holds every
-                        #   mesh a probe draws, Babylon's ReflectionProbes (a
-                        #   budget of DRAWS a frame, each face drawing only what
-                        #   it can SEE) otherwise or after a loss before the
-                        #   drain. Either is spent under the loading card
+                        #   PROBES a frame) in every round (a list ours cannot
+                        #   hold refused, a loss the world's failure, X3.7b),
+                        #   Babylon's ReflectionProbes (a budget of DRAWS a
+                        #   frame, each face drawing only what it can SEE)
+                        #   otherwise — no round, until X3.7c deletes them.
+                        #   Either is spent under the loading card
     Atmosphere.ts       # Ash field on the GPU, simulated by a compute shader.
                         #   No CPU fallback — WebGPU is a hard requirement and
                         #   guarantees it
@@ -1277,60 +1286,44 @@ src/
                         #   every sweep unable to tell it ran. A collider
                         #   is never a candidate, a mesh carrying metadata.block
                         #   is one inside the map's fogEnd, everything else
-                        #   always is. A TAKEN block (the emissive palette's
-                        #   among them since X3.6e) or the taken landform
-                        #   (BlockHandover) is never one, in every build;
-                        #   reachGate states the reach and the size gate as
-                        #   numbers for the GPU cull, reachBoxOf the box: a
-                        #   filed block's cell, taken or not, the taken
-                        #   landform's NO_REACH. A cell's box and a filed
-                        #   mesh's size gate read its RECORD's bounds
-                        #   (SurfaceRecord.bounds, X3.7a), checked bit for bit
-                        #   against the mesh's bounding info in DEV
-    BlockHandover.ts    # Which block surfaces, and since X3.5 which landform
-                        #   surfaces (WorldSurface.landform), OUR renderer
-                        #   draws in the main pass, in every build but the
-                        #   editor's (BABYLON_EXIT.md X3.3, X3.5) —
-                        #   taken at the build (BuildOptions.onSurface), on a
-                        #   verdict asked of the surface's RECORD and never its
-                        #   mesh (X3.7a: the part's transform, the material's
-                        #   blend, group 0 and the default mask by
-                        #   construction; a DEV check that the mesh agrees),
-                        #   handed to render/WorldBlocks, kept out of the
-                        #   candidates, cut at install against their cells, a
-                        #   failed compile's surfaces handed back to Babylon as
-                        #   it lands, the whole map on a refused main pass;
-                        #   their meshes stay for Babylon's other passes and
-                        #   its fallbacks. Every CASTER held too (X3.6a,
-                        #   X3.6b) — a taken one in its group, the palette in
-                        #   its own, any other HELD (WorldBlocks.addCaster) —
-                        #   and handed to the world's maps and the lamps'
-                        #   atlas together, or the map's shadows stay
-                        #   Babylon's; one handed back loses them
-                        #   (WorldShadows.lose, LampAtlas.lose). The
-                        #   reflection bake likewise (X3.6c): PASS_PROBE on
-                        #   every taken surface and the emissive palette's
-                        #   surfaces, with their slots, fires left out;
-                        #   probeHolds answers ReflectionSystem, a loss goes
-                        #   to ProbeBake.lose.
-                        #   The glow's mask likewise (X3.6d): PASS_GLOW on the
-                        #   palette unless noGlow (read at the take), the
-                        #   world handed to WorldGlow only when the WHOLE
-                        #   palette is held — and with it (X3.6e) the
-                        #   palette TAKEN for the main pass, so no palette
-                        #   mesh is a candidate, ACTIVE or in GlowPass's list
-                        #   while ours holds it: one decision for both, made
-                        #   once after the cut (claimPalette; the palette is
-                        #   cut by its cells' boxes whoever draws it), and any
-                        #   loss of the mask (WorldGlow.onLost) hands the main
-                        #   pass back too (dropPalette) — a failed main-pass
-                        #   palette pipeline among them, which hands back no
-                        #   surface, so the shadows stay ours; takePalette
-                        #   re-takes both for a scratch script.
-                        #   The scatter's field (BuildOptions.onScatter) added
-                        #   as instances at install, its pieces cut out of the
-                        #   taken blocks (X3.4b). Reads no node per frame (a
-                        #   DEV check that none is switched, hidden or faded)
+                        #   always is; what our renderer draws is no mesh
+                        #   (X3.7b). A cell's box is grown from every RECORD
+                        #   filed under its block, mesh or none
+                        #   (SurfaceRecord.bounds, X3.7a), a filed mesh's size
+                        #   gate reads its record's sphere; reachGate states
+                        #   the reach and the size gate as numbers for the GPU
+                        #   cull, reachBoxOf the box by the BLOCK (the
+                        #   landform's NO_REACH). setMap REFUSES a build whose
+                        #   visuals and records disagree, handing back the
+                        #   reason for Game.worldFailed
+    BlockHandover.ts    # The map's world as OUR renderer draws it, in every
+                        #   pass of every build but the editor's, with NO
+                        #   fallback (BABYLON_EXIT.md X3.3-X3.7b): every block
+                        #   surface, the landform (WorldSurface.landform) and
+                        #   the emissive palette are OURS at the build
+                        #   (BuildOptions.onSurface answers true: Babylon is
+                        #   made no mesh of them), on a verdict asked of the
+                        #   surface's RECORD (X3.7a), handed to
+                        #   render/WorldBlocks and cut at install against the
+                        #   cells by their blocks. Every CASTER held — ours in
+                        #   its group, the palette in its own, a casting fire
+                        #   HELD (WorldBlocks.addCaster) — and handed to the
+                        #   world's maps and the lamps' atlas together on
+                        #   every rung; the world to the bake (PASS_PROBE,
+                        #   fires left out; probeHolds answers
+                        #   ReflectionSystem); the palette's main pass at the
+                        #   install and its mask to WorldGlow, noGlow read PER
+                        #   SURFACE (a group of its own, LIGHT_SOURCE kept).
+                        #   A surface it cannot hold is REFUSED (a DEV throw,
+                        #   else at install), and every former handback — a
+                        #   failed group or cull, a cut past the limits, a
+                        #   refused pass, a loss of any pass of ours (their
+                        #   onLost), a pass that takes no world — fails the
+                        #   world once (Game.worldFailed). The scatter's field
+                        #   (BuildOptions.onScatter) added as instances at
+                        #   install, its pieces cut out of the blocks (X3.4b).
+                        #   Reads no node per frame (a DEV check that no held
+                        #   caster is switched, hidden or faded)
     WaterSystem.ts      # Water surfaces from map WaterRects; bakes their bed depth
                         #   and stands the one wave GRID under the eye (`follow`,
                         #   pushed from `tick` in every state). `setWash` is the
@@ -1441,8 +1434,10 @@ src/
                         #   build() is a list of phases, one method each. The
                         #   floor, the rim and every part are WorldSurfaces;
                         #   the merges and the vertex bake run on those, and
-                        #   bake() makes them meshes once (worldMeshes) and
-                        #   keeps the record as GameMap.world
+                        #   bake() makes the ones Babylon draws meshes once
+                        #   (worldMeshes; none of one our renderer draws
+                        #   whole, X3.7b) and keeps the record of every one
+                        #   as GameMap.world
     mapTypes.ts         # GameMap, WorldBox, WorldPane, PaneGroup, the layout's
                         #   flag/spawn/water/grass shapes and the editor index.
                         #   Types only; MapBuilder re-exports every one
@@ -1467,9 +1462,11 @@ src/
                         #   PaneSurfaceGroup, SurfaceRecord / WorldGeometry
                         #   (GameMap.world: everything kept but the arrays,
                         #   which releaseArrays drops at upload — through the
-                        #   DEV SurfaceSink merge:hash reads them by — and
-                        #   since X3.7a the world BOUNDS, boundsOf, Babylon's
-                        #   bounding info step for step), and admission
+                        #   DEV SurfaceSink merge:hash reads them by — since
+                        #   X3.7a the world BOUNDS, boundsOf, Babylon's
+                        #   bounding info step for step, and since X3.7b
+                        #   `visual`, its mesh in GameMap.visuals or -1 for
+                        #   one our renderer draws whole), and admission
                         #   (admitStructure / admitProp), the one door a part
                         #   enters the merge by, refusing a shared array in DEV.
                         #   The PIECE id (a layout item) and its ranges'
@@ -1521,9 +1518,10 @@ src/
                         #   bakeCurrentTransformIntoVertices, for the models),
                         #   and the adapters into Babylon: drawnMesh for a
                         #   model (uploaded, ready to draw), worldMeshes for
-                        #   the world's surfaces (made in BIRTH order, arrays
-                        #   released, the floor sharing its clone's through
-                        #   the PlainArrays memo), vertexDataOf. Only public
+                        #   the world's surfaces (made in BIRTH order — none
+                        #   of one onSurface says our renderer draws whole,
+                        #   X3.7b — arrays released, the floor sharing its
+                        #   clone's through the PlainArrays memo), vertexDataOf. Only public
                         #   Babylon API. Colliders are NOT parts — a collider
                         #   needs submeshes or it stops nothing
     BuildingKit.ts      # Facade: shared types + BUILDERS registry
@@ -2334,14 +2332,11 @@ src/
                         #   windows, lenses and embers wear, the colour a slot
                         #   in uv2.x (getEmissive + EmissiveFog to the same
                         #   pixel), and a glow-mask twin that fades the bloom
-                        #   per PIXEL — both the FALLBACK since X3.6e (the
-                        #   twin since X3.6d), when our renderer draws the
-                        #   palette in the main pass and its mask: an editor
-                        #   build, ?babylonworld, a palette ours cannot hold
-                        #   whole, a failed mask pipeline (for the session), a
-                        #   loss mid-map (the one that compiles them in the
-                        #   round: one frame's hitch, no frame without its
-                        #   windows). Two per factory, by over-glass offset.
+                        #   per PIXEL — both an editor build's alone since
+                        #   X3.7b (the fallback from X3.6d/X3.6e until then):
+                        #   in a round our renderer draws the palette in the
+                        #   main pass and its mask, and Babylon is made no
+                        #   mesh of it. Two per factory, by over-glass offset.
                         #   WGSL
     Dither.ts           # One LSB of triangular noise, in the three surface
                         #   shaders. Fixes 8-bit banding in the fog. Owns the
@@ -2522,7 +2517,8 @@ src/
                         #   — tiles cleared by a copy, a pass a static face
                         #   off WorldDepth at a cull slot of its own, one
                         #   instanced proxy pass; OwnTexture for our frame, a
-                        #   texture for Babylon to wrap; lose() hands it back
+                        #   texture for Babylon to wrap; lose() tells onLost
+                        #   (the handover fails the world, X3.7b)
     emissiveWorld.ts    # The emissive palette as WE draw it into the main
                         #   pass (X3.6e) and a probe's faces (X3.6c), one
                         #   program, and the glow's mask (X3.6d, the
@@ -2542,9 +2538,9 @@ src/
                         #   probe VIEW of the main pass's culls (PASS_PROBE,
                         #   sphere reach, own blocks left out) — then its mips,
                         #   recorded late in prepareEncoder, perFrame a frame;
-                        #   decides nothing; lose() hands the bake back to
-                        #   Babylon, and a failed mips pipeline latches it
-                        #   broken for the session
+                        #   decides nothing; lose() tells onLost (the
+                        #   handover fails the world, X3.7b), and a failed
+                        #   mips pipeline latches it broken for the session
     WorldGlow.ts        # The emissive palette's share of the glow's MASK as
                         #   OURS (X3.6d): drawn FIRST in GlowPass's mask pass
                         #   (Renderer.addGlowMask), from the main view's culls
@@ -2555,14 +2551,16 @@ src/
                         #   a frame not ours has no palette bloom, never
                         #   Babylon's; the bloom colour written when it moves;
                         #   decides nothing about what blooms, owns no mask;
-                        #   lose() hands the palette back and tells onLost (the
-                        #   handover drops its main pass too), a failed
+                        #   lose() stops the bloom and tells onLost (the
+                        #   handover fails the world, X3.7b), a failed
                         #   mask pipeline latches it broken for the session
     WorldShadows.ts     # The world's four directional maps as OUR textures
                         #   (far, near, foliage, flash): made cleared to lit,
                         #   drawn when ShadowSystem asks, recorded ahead of
                         #   Babylon's passes; OwnTexture for our frame, a
-                        #   texture for Babylon to wrap; lose() hands them back
+                        #   texture for Babylon to wrap; lose() tells onLost
+                        #   (the handover fails the world, X3.7b); held on
+                        #   every rung
     scatterList.ts      # The scatter's draw (X3.5b): a survivor's 16-byte
                         #   ENTRY, an index = top bit + slot * stride +
                         #   corner (listStride: a cluster's most indices),
@@ -2581,7 +2579,7 @@ src/
                         #   drawIndexed a group and ONE plain draw of its
                         #   scatter to the CPU's bound (none at 0), ahead of
                         #   group 0's alpha-tested meshes —
-                        #   the palette (while setPaletteMain), blocks,
+                        #   the palette (setPaletteMain), blocks,
                         #   scatter, landform — the scatter's pieces cut out
                         #   of the blocks; what it will never draw (a failed
                         #   pipeline, a part it cannot draw, past the list's
@@ -2589,9 +2587,10 @@ src/
                         #   whole; stop() for good. The PALETTE layer
                         #   (addEmissive, a group a material: the main pass
                         #   by the bake's pipelines, mainPalette, asked once
-                        #   at the cut, whose failure hands no group back but
+                        #   at the cut, whose failure fails no group but
                         #   tells onPaletteFailed; the probes' bake; the
-                        #   glow's mask),
+                        #   glow's mask, which draws only the groups that
+                        #   glow — a noGlow surface's group apart),
                         #   then the HELD casters for the shadow maps alone
                         #   (addCaster), cut last, the palette inside the
                         #   main view's count and the casters its tail,
@@ -2668,8 +2667,9 @@ src/
                         #   CULL_DECLARATIONS, the uniform as words and the
                         #   records as whole vec4s, both culls' and the probe's;
                         #   writeCluster, the cluster record as both hosts
-                        #   write it; the pass bits (PASS_GLOW never
-                        #   size-gated, in the main pass and the mask);
+                        #   write it; the pass bits and LIGHT_SOURCE (the
+                        #   palette's, never size-gated, in the main pass and
+                        #   the mask; it was PASS_GLOW's until X3.7b);
                         #   blockKey and the ONE
                         #   parse of a "bx,bz" key (blockCoordsOf,
                         #   blockKeyOf) the probe view's exclusion reads

@@ -540,11 +540,11 @@ its collider box**, so moving either moves a shadow, and **the local player
 casts nothing**. **The world's map is two CASCADES of one caster set and
 records BACK faces**, so **every caster must be a CLOSED shape**. **The world's
 four maps (both cascades, the foliage's and the lightning's) are OUR renderer's
-whenever the handover holds EVERY caster** (`render/WorldShadows.ts`),
-`ShadowSystem`'s generators otherwise, so **a new world caster must be one the
-handover can hold (block-merged, at identity, never `updatable`) or the whole
-map's shadows go back to Babylon** — BLENDED OR NOT, since the lamps' atlas
-casts every surface not `noShadowCaster`.
+in every round, on every rung** (`render/WorldShadows.ts`), `ShadowSystem`'s
+generators only an editor build's, so **a new world caster must be one the
+handover can hold (block-merged, at identity, never `updatable`) or the map is
+REFUSED** — BLENDED OR NOT, since the lamps' atlas casts every surface not
+`noShadowCaster`.
 
 **THE LAMPS CAST INTO ONE ATLAS** (`systems/LocalShadows.ts`), **a light casts
 by what it SAYS** (`PointLightData.shadow`), and the bumped ground variant is at
@@ -586,24 +586,26 @@ be nearer. **Nothing on the floor writing NO depth is OPAQUE**.
 
 **The world is OPAQUE with exactly one exception, and it is glazing.** Glass you
 can see THROUGH is `getGlass` over a cube `ReflectionSystem` bakes **one per
-GLAZED BLOCK** — by OUR renderer (`render/ProbeBake.ts`) whenever the handover
-holds every surface it draws, so **a new world surface our side cannot draw
-sends the map's whole BAKE back to Babylon's `ReflectionProbe`s**. Glass you
+GLAZED BLOCK** — by OUR renderer (`render/ProbeBake.ts`) in every round, so
+**a new world surface our side cannot draw is REFUSED** (the round does not
+start). Glass you
 cannot is `Build.pane({ backed })`, which writes DEPTH — so **`backed` is a
 claim about the WORLD that nothing throws over**. **No pane of either kind is a
 shadow caster**, and see-through glazing gets no ink.
 
+**THE WORLD DRAWS WHOLE OR THE ROUND DOES NOT START.** Every BLOCK, the
+LANDFORM (the BUILD marks `WorldSurface.landform`) and the emissive PALETTE are
+OUR renderer's in every pass of a round and **Babylon is made NO MESH of them**
+(`BlockHandover`, `worldMeshes`), only of the glazing and the fires, so a
+surface ours cannot hold is REFUSED (a DEV throw `merge:hash` fails on) and
+every loss is **`Game.worldFailed`** — the menu and a toast, never a fallback.
 **The frame WALKS the scene, and the scene is the map.** `WorldCulling`
 **replaces `scene.getActiveMeshCandidates` and writes nothing onto any mesh**:
 it never disables, never hides, never unpickles. **A collider is never a
-candidate, nor is a BLOCK, the LANDFORM or the emissive PALETTE our renderer
-TAKES** (`BlockHandover`; the BUILD marks `WorldSurface.landform`), and **a
-taken mesh is never switched off, hidden or faded after its build** — ours reads
-no node and would still draw it (a DEV check says so). **The SCATTER is drawn
-twice over and the two must agree**: our main pass draws it as INSTANCES of its
-variants, its colour baked once per kind, and cuts its pieces out of the blocks
-it takes, while Babylon's merged copy stays in those blocks for any pass handed
-back to Babylon (`BuildOptions.onScatter`). **Any other mesh carrying
+candidate**, and a CELL is grown from the RECORDS (`GameMap.world`, whole).
+**The SCATTER is drawn ONCE**, as INSTANCES of its variants, its colour baked
+once per kind, its pieces cut out of the block arrays it stays merged into
+(`BuildOptions.onScatter`). **Any other mesh carrying
 `metadata.block` is one only while the camera is inside the map's `fogEnd`**,
 **a body's RIG only while the root the roster switches is enabled**, and
 **everything else is ELIGIBLE**. **Anything EMISSIVE and anything outside
@@ -618,9 +620,9 @@ per mesh every frame** — an emissive colour, no `metadata.noGlow`, and `Game`'
 a PALETTE like its albedo** (`shaders/EmissiveWorld.ts`): their colour is a slot
 in `uv2.x` under a WHITE `emissiveColor`, so **a new reader asking a material
 what it emits must ask the vertex for that one**. **The palette is OUR
-renderer's in the main pass and the mask TOGETHER whenever the handover holds
-the WHOLE palette** (the mask itself stays `GlowPass`'s) — one decision, so **a
-palette surface it cannot hold, or one marked `noGlow`, sends both back whole**.
+renderer's in the main pass and the mask in every round** (the mask itself
+stays `GlowPass`'s), **`noGlow` read PER SURFACE at the take**, and **a palette
+surface it cannot hold is REFUSED**.
 
 **OUR renderer (`src/render/`) draws INSIDE Babylon's frame through ONE seam**
 (`render/babylonSeam.ts`, the only file there that names Babylon, and only as
@@ -872,8 +874,10 @@ probe's job, and bots never sweep.
 Seven flags and two values, all read elsewhere; new geometry that omits them
 misbehaves silently. **On the world's drawn geometry they are written on the
 RECORD, not the mesh** — the surface's part (`WorldSurface.part.metadata`,
-`world/worldGeometry.ts`) — and the one adapter (`worldMeshes`) hands its mesh
-that same object, unchanged; `GameMap.world` keeps it beside the mesh:
+`world/worldGeometry.ts`) — and the one adapter (`worldMeshes`) hands that same
+object, unchanged, to a mesh WHERE IT MAKES ONE: since X3.7b only for what
+Babylon draws (the glazing, the fires, an editor build's every surface), our
+renderer reading the record. `GameMap.world` keeps it for every surface:
 
 - `solid: true` — collider proxies only. Unmarked geometry is shot through, seen
   through, and walked through.
@@ -904,11 +908,10 @@ that same object, unchanged; `GameMap.world` keeps it beside the mesh:
   it; **it is deliberately absent now from grass, water and both debris pools**,
   which the ink does draw on purpose.
 - `noGlow: true` — out of the bloom. `GlowPass` reads it per mesh every frame,
-  so a mesh built at any time needs only the flag — but the emissive PALETTE's
-  is read at the TAKE (`BlockHandover`), so it must be on the part when the
-  build hands it over, never set on the mesh afterwards (a DEV check says so),
-  and one there sends the whole palette, its main pass and its mask, back to
-  Babylon. A mesh that stays in bloom is faded with distance instead
+  so a mesh built at any time needs only the flag — but the emissive PALETTE,
+  which has no mesh, reads it at the TAKE, PER SURFACE (`BlockHandover`), so
+  it must be on the part when the build hands it over: it keeps that surface
+  out of the mask alone. A mesh that stays in bloom is faded with distance instead
   (`GlowRules.colour` in `Game`), and `infiniteDistance` is that fade's one
   exemption — it is what every sky mesh sets, and the moon is not in the
   valley to be fogged out of.
@@ -920,14 +923,16 @@ that same object, unchanged; `GameMap.world` keeps it beside the mesh:
   terrain, the roads and the rim**, which is what keeps the landform out of
   both tests that read it. Written in three places and they must agree:
   `BlockMerge.finish` and `PaneBlocks.finish` for the glazing hung on the same
-  building. **Two readers.** `ReflectionSystem.encloses`: a probe drops its
-  own building from its bake, and since the albedo palette took the colour out
-  of the merge key there is no longer any geometry-shaped way to ask which
-  building a mesh IS — asked as NUMBERS in our renderer's bake (`blockKey`,
-  off the record's mirror `WorldSurface.block`, and for a scatter instance
-  the REGION its copy was merged under, `ScatterSet.blocks`), so those keep
-  the merge's lattice. And `WorldCulling`, which files every mesh carrying one
-  into a cull cell — see the rendering section.
+  building. **Two readers.** A probe's bake drops its own building, and since
+  the albedo palette took the colour out of the merge key there is no longer
+  any geometry-shaped way to ask which building a surface IS — asked as
+  NUMBERS in our renderer's bake (`blockKey`, off the record's mirror
+  `WorldSurface.block`, and for a scatter instance the REGION its copy was
+  merged under, `ScatterSet.blocks`), so those keep the merge's lattice
+  (`ReflectionSystem.encloses` asked it of a MESH for Babylon's bake, which no
+  round takes since X3.7b). And `WorldCulling`, which grows a cull cell from
+  every RECORD carrying one and files Babylon's meshes carrying one into it
+  — see the rendering section.
 - `surface: "ground"` — what a round that stops here kicks up. The odd one out:
   it is a **value with a default**, not a flag, and **absent means `"hard"`**.
   `MapBuilder` sets it on exactly one thing — the terrain floor's collider clone

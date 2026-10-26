@@ -10,8 +10,9 @@
  * transform at EMIT time), `mergeParts` (`MergeMeshes`' geometry) and
  * `bakePartTransform` (`bakeCurrentTransformIntoVertices`); the adapters —
  * `drawnMesh` for a model, `worldMeshes` for the world's surfaces (the
- * floor, the rim and every merged surface, each surface's arrays released as
- * its mesh takes them), `vertexDataOf` for a bare buffer (through a build's
+ * floor, the rim and every merged surface — a mesh for each Babylon draws,
+ * none for one our renderer draws whole — each surface's arrays released
+ * once it is past), `vertexDataOf` for a bare buffer (through a build's
  * `PlainArrays` memo where two meshes must share one copy).
  * Invariants: a `Part` is plain data — nothing in it has heard of Babylon but
  * the material it carries — and `drawnMesh` is the ONE place one becomes a
@@ -24,7 +25,10 @@
  * `flattenParts` or `detachPart` cuts every link first, and every adapter
  * refuses one that is left. `worldMeshes` makes the world's meshes in BIRTH
  * order (`WorldSurface.born`, `worldGeometry.ts`), which is the scene order
- * they had when the merge ran on meshes, and hands them back in list order.
+ * they had when the merge ran on meshes, and hands them back in list order —
+ * skipping, at its turn, every surface `onSurface` says our renderer draws
+ * whole (`BABYLON_EXIT.md` X3.7b), so the meshes it does make keep that
+ * order among themselves.
  *
  * **Why the geometry is ours and the meshes are still Babylon's.** The kit
  * builds `GeometryBuffer`s through `src/geometry/` (Babylon's generators,
@@ -363,16 +367,22 @@ export function drawnMesh(
  * rim, and every structure, scatter field, road and glazing block a map build
  * merged (`merge.ts`) and baked (`vertexShading.ts`), each through
  * `drawnMesh`, carrying its part's transform, material and metadata object
- * unchanged. A surface the bake gave colours is given `hasVertexAlpha =
- * false`, as the bake gave its mesh: the alpha is a lighting term, and the
- * world is opaque.
+ * unchanged — **but for a surface our renderer draws in every pass**, which
+ * `onSurface` (`BuildOptions.onSurface`, `BlockHandover`) answers `true` for
+ * and which is made no mesh at all (`BABYLON_EXIT.md` X3.7b): on a shipped
+ * build that is every surface but the glazing and the fires, and an editor
+ * build, which hands no `onSurface`, is made a mesh of every one. A surface
+ * the bake gave colours is given `hasVertexAlpha = false`, as the bake gave
+ * its mesh: the alpha is a lighting term, and the world is opaque.
  *
  * **The meshes are CREATED in birth order (`WorldSurface.born`) and RETURNED
  * in list order**, and the two are not the same: a surface's birth is when
  * Babylon made its mesh while the merge still ran on meshes, and that is the
  * order `scene.meshes` holds them in — the order `WorldCulling` offers
  * candidates in, which reaches the glow mask and the transparent tie-breaks.
- * The list order is `GameMap.visuals`'.
+ * The list order is `GameMap.visuals`', which holds the meshes made and
+ * nothing in the place of one not made; each record names its own
+ * (`SurfaceRecord.visual`, -1 for none).
  *
  * A surface whose positions must stay writable (`updatable`, a pane block
  * holding a breakable pane) gets them through `Mesh.setVerticesData(…, true)`,
@@ -383,20 +393,22 @@ export function drawnMesh(
  * **A surface's ARRAYS are released as its mesh is made** (`releaseArrays`):
  * the record the map keeps (`SurfaceRecord`, `GameMap.world`) is everything
  * else, so the CPU holds the world's geometry once — in the arrays Babylon
- * keeps — rather than twice. `plain` is the build's `PlainArrays`, which is
- * how the floor's mesh comes out holding the arrays its collider clone was
- * already made of. `onSurface` (`BuildOptions.onSurface`) is handed each
- * surface and its mesh on the way past, before the release, and the record's
- * BOUNDS are taken off the arrays under the part's own world matrix
- * (`worldMatrixOf`, the mesh's) — Babylon's bounding info, which a DEV build
- * checks against the mesh's (`WorldCulling.setMap`).
+ * keeps, or in our renderer's buffers — rather than twice. `plain` is the
+ * build's `PlainArrays`, which is how the floor's mesh comes out holding the
+ * arrays its collider clone was already made of. `onSurface`
+ * (`BuildOptions.onSurface`) is handed each surface and its index in the
+ * list at its turn, BEFORE any mesh is made of it and before the release,
+ * and answers whether our renderer draws it whole; the record's BOUNDS are
+ * taken off the arrays under the part's own world matrix (`worldMatrixOf`,
+ * the one a mesh made of it has) — Babylon's bounding info, which `npm run
+ * merge:hash` checks against every mesh that is made.
  */
 export function worldMeshes(
   surfaces: readonly WorldSurface[],
   scene: Scene,
   plain: PlainArrays,
-  onSurface?: (surface: WorldSurface, mesh: Mesh) => void,
-): { meshes: Mesh[]; records: SurfaceRecord[] } {
+  onSurface?: (surface: WorldSurface, index: number) => boolean,
+): { visuals: Mesh[]; meshes: (Mesh | null)[]; records: SurfaceRecord[] } {
   const order = surfaces.map((_, i) => i).sort((a, b) => surfaces[a].born - surfaces[b].born);
   if (import.meta.env.DEV) {
     for (let k = 1; k < order.length; k++) {
@@ -408,23 +420,36 @@ export function worldMeshes(
       }
     }
   }
-  const meshes = new Array<Mesh>(surfaces.length);
+  const meshes = new Array<Mesh | null>(surfaces.length).fill(null);
   const records = new Array<SurfaceRecord>(surfaces.length);
   for (const i of order) {
     const surface = surfaces[i];
-    const mesh = drawnMesh(surface.part, scene, plain);
-    if (surface.part.geometry.colors) mesh.hasVertexAlpha = false;
-    if (surface.updatable) {
-      const positions = mesh.getVerticesData(VertexBuffer.PositionKind);
-      if (positions) mesh.setVerticesData(VertexBuffer.PositionKind, positions, true);
-    }
-    meshes[i] = mesh;
     records[i] = recordOf(surface, worldMatrixOf(surface.part, TMP_WORLD));
-    onSurface?.(surface, mesh);
+    // Ours whole, or a mesh for Babylon — asked before a mesh exists, so a
+    // surface our renderer draws is never uploaded twice.
+    const ours = onSurface ? onSurface(surface, i) : false;
+    if (!ours) {
+      const mesh = drawnMesh(surface.part, scene, plain);
+      if (surface.part.geometry.colors) mesh.hasVertexAlpha = false;
+      if (surface.updatable) {
+        const positions = mesh.getVerticesData(VertexBuffer.PositionKind);
+        if (positions) mesh.setVerticesData(VertexBuffer.PositionKind, positions, true);
+      }
+      meshes[i] = mesh;
+    }
     releaseArrays(surface.part, i);
   }
-  surfaces.forEach((surface, i) => surface.owner?.visuals.push(meshes[i]));
-  return { meshes, records };
+  // `GameMap.visuals`: the meshes made, in list order, each record naming
+  // its own.
+  const visuals: Mesh[] = [];
+  surfaces.forEach((surface, i) => {
+    const mesh = meshes[i];
+    if (!mesh) return;
+    records[i].visual = visuals.length;
+    visuals.push(mesh);
+    surface.owner?.visuals.push(mesh);
+  });
+  return { visuals, meshes, records };
 }
 
 /** A part's transform, material and metadata onto the mesh made of it. */

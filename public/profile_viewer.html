@@ -991,8 +991,9 @@ function renderReport(r) {
      `sim` beside the frame, `page` inside it. */
   if (r.simMode) bits.push(["sim", r.simMode]);
   /* Our renderer's take of the map's blocks (report version 17). Its draws are
-     NOT in the draw-call counter, which is Babylon's; anything handed back to
-     Babylon is said, since a refused main pass hands back the whole map. */
+     NOT in the draw-call counter, which is Babylon's. A capture before version
+     20 may say surfaces were handed back to Babylon (a refused main pass
+     handed back the whole map); since then nothing is. */
   const ours = r.blocks;
   if (ours && ours.taken > 0) {
     let line = ours.drawn + " draws, " + ours.taken + " blocks, " + ours.clusters + " clusters";

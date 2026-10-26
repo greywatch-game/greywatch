@@ -354,14 +354,17 @@ export interface BuildOptions {
    */
   navFields?: boolean;
   /**
-   * Handed every surface with the mesh made of it, in the one moment its
-   * ARRAYS can still be read: after the mesh takes them and before they are
-   * released (`worldMeshes`, and `SurfaceRecord` for why they go). For a
+   * Handed every surface and its index in `GameMap.world.surfaces`, in the
+   * one moment its ARRAYS can still be read — before any mesh is made of it
+   * and before they are released (`worldMeshes`, and `SurfaceRecord` for why
+   * they go) — and answering whether OUR renderer draws it in every pass:
+   * `true` and Babylon is made no mesh of it (`BABYLON_EXIT.md` X3.7b). For a
    * renderer of our own that uploads a surface itself
-   * (`systems/BlockHandover.ts`, which the game always passes). Absent is nothing handed
-   * and nothing kept.
+   * (`systems/BlockHandover.ts`, which the game passes on every build but
+   * the editor's). Absent is a mesh of every surface, nothing handed and
+   * nothing kept.
    */
-  onSurface?: (surface: WorldSurface, mesh: Mesh) => void;
+  onSurface?: (surface: WorldSurface, index: number) => boolean;
   /**
    * Handed the scatter as our renderer draws it — every worn variant a set
    * of instances (`world/scatterVariants.ts`, `BABYLON_EXIT.md` X3.4b) — once
@@ -529,15 +532,23 @@ export interface GameMap {
    * authority**, with `terrainColliders`.
    */
   terrainGeometry: TerrainGeometry[];
-  /** Drawn geometry, merged per colour. */
+  /**
+   * The drawn geometry BABYLON holds a mesh of, merged per colour — on a
+   * shipped build the glazing and the fires alone, every other surface being
+   * our renderer's in every pass and made no mesh (`BABYLON_EXIT.md` X3.7b);
+   * on an editor build every surface. In list order; `world` names each
+   * one's record.
+   */
   visuals: Mesh[];
   /**
-   * What the build KEPT of the record `visuals` were made of — one
-   * `SurfaceRecord` per entry, aligned with `visuals`: its world bounds, its
-   * block, its piece ranges, its material and the very metadata object its
-   * mesh carries, whether its positions are writable, and its counts. **Not its vertex
-   * arrays**, which went to the device with the mesh — see `SurfaceRecord`.
-   * Empty on the authority, which draws nothing (`paneGroups`' reason).
+   * What the build KEPT of the world's surfaces — one `SurfaceRecord` per
+   * surface, mesh or none, in list order: its world bounds, its block, its
+   * piece ranges, its material and the very metadata object a mesh of it
+   * carries, whether its positions are writable, its counts, and WHO DRAWS
+   * IT (`SurfaceRecord.visual`: its mesh's index in `visuals`, or -1 for one
+   * our renderer draws whole). **Not its vertex arrays**, which went to the
+   * device — see `SurfaceRecord`. Empty on the authority, which draws nothing
+   * (`paneGroups`' reason).
    */
   world: WorldGeometry;
   /** Walkable-surface graph with one precomputed flow field per objective. */

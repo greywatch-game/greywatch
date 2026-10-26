@@ -9,14 +9,15 @@
  * fragment shader as a hard two-level shadow term.
  *
  * **WHO DRAWS THE WORLD'S MAPS is decided per map install, and since X3.6a it
- * is normally OUR renderer** (`BABYLON_EXIT.md`): when the handover holds
- * every caster the map has (`WorldShadows.casters`, set by `BlockHandover`),
- * the four maps are textures `render/WorldShadows.ts` owns and draws, and
- * Babylon's readers sample a wrapped view of each (rule 5); otherwise — an
- * editor build, `?babylonworld`, a caster the handover could not take, or
- * casters it LOSES mid-map (`WorldShadows.onLost`) — they are this file's
- * `ShadowGenerator`s, as before. Everything else here is the same for both:
- * the lights, the windows, the snap, the hold and when a map is redrawn.
+ * is OUR renderer in every round** (`BABYLON_EXIT.md`): the handover hands
+ * `WorldShadows` the casters on every shadow rung (`WorldShadows.casters`,
+ * set by `BlockHandover`), the four maps are textures
+ * `render/WorldShadows.ts` owns and draws, and Babylon's readers sample a
+ * wrapped view of each (rule 5); an EDITOR build, which hands ours nothing,
+ * draws them with this file's `ShadowGenerator`s, as before, and a loss of
+ * ours mid-map is the world's failure (`BlockHandover`, X3.7b), never theirs
+ * to take over. Everything else here is the same for both: the lights, the
+ * windows, the snap, the hold and when a map is redrawn.
  *
  * Casters are the merged static world meshes, re-registered via setCasters()
  * after every map build (the map is disposed and rebuilt per round).
@@ -333,9 +334,6 @@ export class ShadowSystem {
 
     // The maps are made here, once all four lights exist.
     this.setQuality(quality);
-    // Our casters going back to Babylon mid-map: the world's shadows are the
-    // generators' again from the next frame.
-    world.onLost(() => this.handOver(false));
 
     // Blob shadow: a radial-gradient disc, unlit black, depth-write off so it
     // layers over the ground without z-fighting.
@@ -385,7 +383,6 @@ export class ShadowSystem {
       foliage: tier.foliage,
       flash: Math.min(tier.sun, FLASH_MAP_MAX),
     };
-    this.world.rungDraws = WORLD_SHADOW_MAPS.some((name) => sizes[name] > 0);
     for (const name of WORLD_SHADOW_MAPS) {
       const map = this.maps[name];
       if (sizes[name] === map.size) continue;
@@ -742,21 +739,25 @@ export class ShadowSystem {
   }
 
   /**
-   * Replaces the caster set with the freshly built map's visual meshes.
+   * Replaces the caster set with the freshly built map's visual meshes —
+   * the generators' casters, should they hold the maps (an editor build's).
    * Called after every MapBuilder.build() — the previous round's meshes are
    * disposed, and a stale renderList entry would break the depth pass.
    *
    * **And it is where the maps change hands**: after `BlockHandover.install`,
-   * which hands `WorldShadows` the casters when it holds every one, so the
+   * which hands `WorldShadows` the casters on every map of ours, so the
    * world's shadows are ours from here when it did and the generators'
-   * when it did not. An EMPTY set (`Game.teardownMap`) keeps whoever holds
-   * them — there is nothing to cast either way, and `WorldShadows` has
-   * already cleared ours to lit — so a round does not rebuild four
-   * generators on its way out.
+   * when it did not. An EMPTY set with no casters of ours either
+   * (`Game.teardownMap`) keeps whoever holds them — there is nothing to cast
+   * either way, and `WorldShadows` has already cleared ours to lit — so a
+   * round does not rebuild four generators on its way out. A map Babylon is
+   * given no mesh of at all (Kurenai: no glazing, no fire) hands an empty
+   * set WITH casters of ours, and is handed over like any other.
    */
   setCasters(meshes: readonly Mesh[]): void {
     this.casters = meshes;
-    if (meshes.length > 0) this.handOver(this.world.casters !== null);
+    const handing = meshes.length > 0 || this.world.casters !== null;
+    if (handing) this.handOver(this.world.casters !== null);
     for (const name of WORLD_SHADOW_MAPS) {
       const map = this.maps[name];
       const gen = map.generator;
@@ -767,7 +768,7 @@ export class ShadowSystem {
     }
     // Drawn again for the new casters — the flash per strike and at no other
     // time — by whoever holds them.
-    if (meshes.length > 0) for (const map of [this.maps.far, this.maps.near, this.maps.foliage]) this.redraw(map);
+    if (handing) for (const map of [this.maps.far, this.maps.near, this.maps.foliage]) this.redraw(map);
   }
 
   /**

@@ -394,8 +394,9 @@ you are on before you believe anything else in this section.
   (X3.6c, `render/ProbeBake.ts`): 39 probes at `probesPerFrame` 8, frames of
   5-6 ms against an idle 1-3, ~41 ms of wall clock, under the loading card.
   `g.reflections.path` says which bake an install took. **What follows is
-  BABYLON's bake**, which `?babylonworld` (or a map whose bake surfaces our
-  side cannot draw) still takes, and every number in it is that path's.
+  BABYLON's bake**, which no round takes since X3.7b (`?babylonworld`, which
+  did, went with it; the tag `exit-babylonworld` has it), and every number in
+  it is that path's.
   Coldharbour's shipped forty-probe bake completes here — all forty, one
   frame, no device loss — and the probes are refresh-once, so it is a build cost
   and never a frame cost. **It is one frame BY BUDGET now rather than by
@@ -562,7 +563,8 @@ you are on before you believe anything else in this section.
     what follows is a workaround for this machine and not a property of the
     game. **It is BABYLON's bake**: since X3.6c a round bakes on our renderer
     (five frames of 8 probes on Coldharbour), which nobody has run on this
-    machine, so `?babylonworld` is how to get the bake described here, and
+    machine; the bake described here needs a build at the tag
+    `exit-babylonworld` and `?babylonworld` (deleted at X3.7b), and
     `probesPerFrame` is the lever on ours. **The stagger it used to describe is IN the game now** — the bake is
     spent `CONFIG.graphics.reflection.drawsPerFrame` at a time
     (`ReflectionSystem.releaseBatch`) — but the budget is sized so Coldharbour
@@ -1574,46 +1576,49 @@ is one machine's:
   `rgba8unorm` render target Babylon made with `COPY_SRC`, so a
   `copyTextureToBuffer` off `g.renderer.device` between frames reads the last
   frame's mask. `g.worldGlow.drawing` and `.drawn` say whether ours drew the
-  palette into it. **Since X3.6e the palette's MAIN pass goes with its mask**:
-  `g.worldGlow.lose()` hands BOTH to Babylon (its `onLost` tells the handover,
-  which puts the palette back in the candidate list from the next tick), and
-  `g.handover.takePalette()` takes both back — true if it did, and only on a
-  map that could hold the whole palette (nothing of it, nor the map, handed
-  back since, no palette pipeline failed). **Do not re-take with
-  `g.worldGlow.setWorld(...)`**: that takes the MASK alone while the palette
-  is still Babylon's candidate, and `GlowPass` blooms it a second time.
-  After a loss, settle until Babylon's palette is ready (its main material and
-  mask twin compile in the round: poll `isReady` on the palette meshes in
-  `g.scene.getActiveMeshes()`, filtered on `EmissiveWorldMaterial`, and two
-  consecutive grabs agreeing) before reading Babylon's side. That active list
-  holds no palette mesh while ours holds the palette, and N after a loss. Ours
-  against Babylon's at a frozen bank vantage reads 0 texels in the mask and 0
-  pixels in the frame, but for a palette mesh inside the candidate walk's
-  12 m reach HYSTERESIS, which Babylon still draws and our exact reach drops.
-  To attribute such a pixel, count the palette meshes in Babylon's active
-  list whose cell box lies past the reach: `g.culling.reachBoxOf(mesh)` is
-  the box, `g.culling.reachGate.reach` the reach, measured from the camera
-  (`culling` is private to TypeScript, not to a page script).
-- **Whether the RECORD still describes the mesh is two DEV reads, not a
-  screenshot** (`BABYLON_EXIT.md` X3.7a). `g.culling.stats.boundsChecked` and
-  `.boundsMismatched` are how many filed surfaces `WorldCulling.setMap`
-  compared, `SurfaceRecord.bounds` against the mesh's bounding info bit for
-  bit, and how many differed (a console error names the count); the
-  handover's verdict off the record is checked against each mesh as it is
-  made, and a disagreement is one console error a page. EVERY visual rather
-  than the filed ones — the landform, or an EDITOR build, whose 2,000-odd
-  meshes are almost all off identity and so exercise the transformed path —
-  is `npm run merge:hash`'s on every run (`bounds≠mesh`, and the `record
-  bounds` line counts those off identity; `--editor` for the transformed
-  path). In a scratch page, compare `g.map.world.surfaces[i].bounds` with
-  `g.map.visuals[i].getBoundingInfo()` by `Object.is`, as it does.
+  palette into it. **There is no Babylon side of the palette to compare
+  against in a round since X3.7b** (Babylon is made no mesh of it): a
+  `g.worldGlow.lose()` FAILS THE WORLD (below), and the old A/B — a forced
+  loss, then `g.handover.takePalette()` to take it back — is gone with the
+  meshes. A frame of Babylon's palette needs a build at the tag
+  `exit-babylonworld`.
+- **Every former handback is now the world's failure, and each can be
+  FORCED in a scratch page** (`BABYLON_EXIT.md` X3.7b). After `installRound`,
+  any one of these — `g.worldShadows.lose()`, `g.lampAtlas.lose()`,
+  `g.probeBake.lose()`, `g.worldGlow.lose()`, `g.handover.refused()` (the
+  main pass refused), `g.handover.failed([0])` (a group's surfaces failed),
+  `g.handover.mainPaletteFailed()` — must end, after the task in hand, in ONE
+  `console.error` beginning `[world] <map>: the map could not be drawn`,
+  `g.state === "menu"`, and a toast naming the map. (The fields are private to
+  TypeScript, not to a page script.) Count the console errors, not the
+  states: a second failure inside the same turn is the same one
+  (`Game.worldFailing`), and a stray second `[world]` line is a bug. **The
+  cull's refusal** is forced by `g.culling.setMap = () => "forced"` before
+  `g.startRound()`: the round must reach the menu, not the deploy screen, and
+  not hang the card. **A refused SURFACE throws in a DEV build** (a page error
+  out of `buildRound`, the card left up) — which is what `npm run
+  merge:hash` fails on, at every crown rung (`--foliage`) — and in a
+  production build fails at the install like the rest.
+- **Whether the RECORD still describes the mesh is `npm run merge:hash`'s**
+  (`BABYLON_EXIT.md` X3.7a): EVERY surface that has a mesh — on a shipped
+  build the glazing and the fires, on an EDITOR build every one, 2,000-odd
+  meshes almost all off identity, which exercise the transformed path —
+  record bounds against the mesh's bounding info bit for bit (`bounds≠mesh`,
+  and the `record bounds` line counts those off identity), and its record's
+  arrays against the mesh's buffers (`arrays≠buffers`). The DEV reads X3.7a
+  added (`WorldCulling.stats.boundsChecked`, the handover's birth check) went
+  with the meshes at X3.7b. In a scratch page, compare
+  `g.map.world.surfaces[i].bounds` with `g.map.visuals[s.visual]
+  .getBoundingInfo()` by `Object.is`, as it does — `visual` -1 is a surface
+  ours draws, which has no mesh to compare.
 - **What a pane REFLECTS is checkable without a screenshot, and the CUBE is the
   place to check it.** There is one probe per glazed map block —
   `g.reflections.probes[slot]` against `g.map.paneGroups[slot]`, 40 of each on
   Coldharbour — and `probe.cubeTexture.readPixels(face)` gives one baked face:
   alpha over 128 is world, everything else is the sky the shader fills in.
-  **That is Babylon's bake** (`?babylonworld`, or `g.reflections.path` reading
-  `"babylon"`). **On our renderer's path those probes bake nothing** but the
+  **That is Babylon's bake** (`g.reflections.path` reading `"babylon"` — no
+  round since X3.7b; `?babylonworld` had it, at the tag `exit-babylonworld`).
+  **On our renderer's path those probes bake nothing** but the
   default cube: the cubes are `g.reflections.oursPools.glazing[slot]` (and
   `.water[slot]`), `.job.cube.texture` a raw `GPUTexture` made with
   `COPY_SRC`, so a readback is `copyTextureToBuffer` of each face and level off
