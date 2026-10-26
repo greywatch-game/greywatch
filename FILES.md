@@ -1312,8 +1312,10 @@ src/
                         #   surface's RECORD (X3.7a), handed to
                         #   render/WorldBlocks and cut at install against the
                         #   cells by their blocks. Every CASTER held — ours in
-                        #   its group, the palette in its own, a casting fire
-                        #   HELD (WorldBlocks.addCaster) — and handed to the
+                        #   its group, the palette in its own (the HELD layer,
+                        #   WorldBlocks.addCaster, is unreachable: every fire
+                        #   is noShadowCaster and strayMesh refuses any other
+                        #   held caster; kept for X4.4) — and handed to the
                         #   world's maps and the lamps' atlas together on
                         #   every rung; the world to the bake (PASS_PROBE,
                         #   fires left out); the palette's main pass ours
@@ -1533,7 +1535,9 @@ src/
                         #   model (uploaded, ready to draw), worldMeshes for
                         #   the world's surfaces (made in BIRTH order — none
                         #   of one onSurface says our renderer draws whole,
-                        #   X3.7b — arrays released, the floor sharing its
+                        #   X3.7b, and none of the emissive palette, which DEV
+                        #   refuses in a build handing no onSurface — arrays
+                        #   released, the floor sharing its
                         #   clone's through the PlainArrays memo), vertexDataOf. Only public
                         #   Babylon API. Colliders are NOT parts — a collider
                         #   needs submeshes or it stops nothing
@@ -2349,7 +2353,9 @@ src/
                         #   the factory hangs its recipe off it, GlowRules
                         #   reads its white emissiveColor). Our renderer draws
                         #   the palette in every pass; no Babylon draw of it
-                        #   is left (an editor build never merges blocks).
+                        #   is left (an editor build never merges blocks), and
+                        #   no mesh is made of it (worldMeshes: one would draw
+                        #   nothing and bloom white in GlowPass).
                         #   Two per factory, by over-glass offset
     Dither.ts           # One LSB of triangular noise, in the three surface
                         #   shaders. Fixes 8-bit banding in the fog. Owns the

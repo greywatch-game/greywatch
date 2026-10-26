@@ -1838,7 +1838,7 @@ export const HarrowmeadLayout: MapLayout = {
    * active meshes, 134 m 202 on 360, and 200 m 244 on 301 — against 165 for
    * the hand-laid layout this replaced at 48. There is no see-through glass
    * on this map, so no probe drops its own block from a bake
-   * (\`ReflectionSystem.encloses\`); this is the play square in 2 x 2.
+   * (\`ReflectionSystem\`'s \`exclusionOf\`); this is the play square in 2 x 2.
    */
   blockSize: 200,
   /**

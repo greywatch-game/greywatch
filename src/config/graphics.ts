@@ -1359,16 +1359,20 @@ export const graphics = {
   reflection: {
     /**
      * Face resolution, and it is a PER-PROBE cost now that there is a probe
-     * per glazed block: 6 x 128 x 128 of RGBA8 plus its mip chain is ~520 KB,
-     * so Coldharbour's 37 come to ~19 MB held for the process.
+     * per glazed block: 6 x 128 x 128 of RGBA8 plus its mip chain is 512 KiB
+     * (`ProbeBake.cube`), so Coldharbour's 39 come to ~19.5 MiB held for the
+     * process — the pool is never destroyed.
      *
      * 128 rather than the 256 the single map-wide cube could afford, and the
      * trade is the right way round: a reflection that is Fresnel-weighted,
      * tinted and hazed cannot show the detail 256 buys, while WHERE it is
      * baked from decides whether the building opposite is in it at all.
-     * Resolution is also not what the bake costs — 37 probes are 222 face
-     * renders of ~325 merged meshes, and that is draw calls rather than
-     * pixels.
+     * Resolution is also not what the bake costs: each face is a cull of the
+     * map's clusters on the GPU and one plain draw a material group over its
+     * survivors (`render/ProbeBake.ts`), spent `probesPerFrame` a frame
+     * under the building card — Coldharbour's 39 drain in 5 frames of 5-6 ms
+     * (`docs/rendering.md`). It was draw calls a mesh a face on Babylon's
+     * `ReflectionProbe`s, which X3.7c deleted.
      */
     size: 128,
     /**
@@ -1382,27 +1386,29 @@ export const graphics = {
     strength: 0.9,
     /**
      * How far a probe's bake reaches, in metres, measured to the near side of
-     * a mesh's bounding sphere.
+     * a surface's bounding sphere (`ProbeJob.reach`, tested by the face's
+     * cull: `PROBE_SPHERE_REACH`).
      *
-     * **The bake is `probes x 6 faces x render list`, and this is the only
-     * term that is the MAP's rather than the glazing's.** A probe standing in
-     * a street does not need the far side of a 1500 m map in its cube: what a
-     * pane in a city actually shows is the building opposite, and a merged
-     * block a kilometre away contributes a few pixels of haze at the cost of a
-     * draw call in every one of six faces.
+     * **The bake is `probes x 6 faces x what each face draws`, and this is
+     * the only term that is the MAP's rather than the glazing's.** A probe
+     * standing in a street does not need the far side of a 1500 m map in its
+     * cube: what a pane in a city actually shows is the building opposite,
+     * and a block a kilometre away contributes a few pixels of haze at the
+     * cost of its clusters' triangles in every one of six faces (a draw call
+     * of its own in each, on Babylon's bake, until X3.7c).
      *
      * **800 m is past the play square's diagonal on the five smaller maps**
      * (Harrowmead's 400 m square is 566 m corner to corner), and on Sarab,
      * whose 900 m square is 1,273 m across, it is past that map's `fogEnd` of
      * 560 — so on all six, everything this drops was already being drawn as
      * flat fog colour. **Cinderhaven is the exception**: a 1500 m square,
-     * 2,121 m across, under a `fogEnd` of 1,250, so a mesh between 800 and
+     * 2,121 m across, under a `fogEnd` of 1,250, so a surface between 800 and
      * 1,250 m from a probe is cut out of the bake while it would still have
      * drawn partly through the fog. That is the one shipped map where this
      * radius takes something a player could see out of a reflection.
      *
      * What it costs on a map with no fog is finding 10's objection: a culled
-     * mesh does not fade, it vanishes, and the cube's alpha going to 0 is
+     * surface does not fade, it vanishes, and the cube's alpha going to 0 is
      * where the shader puts sky. At 800 m, on a reflection that is
      * Fresnel-weighted and mixed at 0.9, that hole is at the horizon of a
      * picture of a street. The measurement to beat it with is in
@@ -1410,8 +1416,9 @@ export const graphics = {
      * bake almost linearly.
      *
      * The test is to the near side of the bounding SPHERE and not to the
-     * centre, which is what keeps a landform in: a rim mesh has an enormous
-     * radius and its centre is nowhere near anything.
+     * centre, which is what keeps a landform in: a rim run has an enormous
+     * radius and its centre is nowhere near anything. A scatter instance is
+     * reached by its own sphere.
      */
     radius: 800,
     /**

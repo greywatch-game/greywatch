@@ -87,6 +87,7 @@ import {
 } from "@babylonjs/core";
 import { mergeTransformed, type FloatArray, type GeometryBuffer } from "../geometry/buffer";
 import { Matrix, Quaternion, Vector3 } from "../math";
+import { isEmissiveWorld } from "../shaders/EmissiveWorld";
 import { recordOf, releaseArrays, type SurfaceRecord, type WorldSurface } from "./worldGeometry";
 
 /** A mesh's metadata bag, which is what the merge and the bake read flags off. */
@@ -371,7 +372,10 @@ export function drawnMesh(
  * `onSurface` (`BuildOptions.onSurface`, `BlockHandover`) answers `true` for
  * and which is made no mesh at all (`BABYLON_EXIT.md` X3.7b): on a shipped
  * build that is every surface but the glazing and the fires, and an editor
- * build, which hands no `onSurface`, is made a mesh of every one. A surface
+ * build, which hands no `onSurface`, is made a mesh of every one — but for
+ * a surface wearing the emissive PALETTE, which is made a mesh in NO build
+ * (`EmissiveWorld.ts`; an editor build never merges its blocks, so never
+ * mints one, and a DEV build throws on one handed no `onSurface`). A surface
  * the bake gave colours is given `hasVertexAlpha = false`, as the bake gave
  * its mesh: the alpha is a lighting term, and the world is opaque.
  *
@@ -428,7 +432,25 @@ export function worldMeshes(
     // Ours whole, or a mesh for Babylon — asked before a mesh exists, so a
     // surface our renderer draws is never uploaded twice.
     const ours = onSurface ? onSurface(surface, i) : false;
-    if (!ours) {
+    if (!ours && isEmissiveWorld(surface.part.material)) {
+      // The emissive PALETTE is never made a mesh (`EmissiveWorld.ts`): a
+      // plain `Material` is never ready, so the frame would draw nothing
+      // there, and `GlowPass`, which admits a mesh by its emissive colour,
+      // would bloom its WHITE one over the hole. Handed `onSurface`, the
+      // handover has answered for it already — it takes the palette whole or
+      // refuses it, the refusal failing the world at the install
+      // (`BlockHandover.refuse`) — so it is left meshless with the rest of a
+      // map that is about to be torn down. Handed none, there is no handover
+      // to hold a refusal to, and no such build merges its blocks (an
+      // editor's, the one build that hands none, is DEV-only): a DEV build
+      // says so here.
+      if (import.meta.env.DEV && !onSurface) {
+        throw new Error(
+          `worldMeshes: "${surface.part.name}" wears the emissive palette, which no Babylon mesh may wear ` +
+            "(a build that merges its blocks hands BuildOptions.onSurface — BABYLON_EXIT.md X3.7c)",
+        );
+      }
+    } else if (!ours) {
       const mesh = drawnMesh(surface.part, scene, plain);
       if (surface.part.geometry.colors) mesh.hasVertexAlpha = false;
       if (surface.updatable) {

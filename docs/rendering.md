@@ -71,10 +71,11 @@ granularities, and the difference is forced**:
   **The emissive palette is the exception, and fades its bloom per PIXEL**
   (`shaders/EmissiveWorld.ts`; our renderer's mask program, `WorldGlow`): one
   of its surfaces is every lamp in a 48 m block whatever its colour, so a
-  centre would fade the near window as if it stood at the far one.
-  `GlowRules.colour` leaves that material's colour unfaded (`fadesOwnBloom`)
-  and the mask evaluates `fogAmountAt`'s curve at each pixel instead — see
-  "The emissive palette" below.
+  centre would fade the near window as if it stood at the far one. No
+  per-mesh fade reaches it — Babylon is made no mesh of it (X3.7b), and
+  `WorldGlow`'s rule hands its colour over at a fade of 1 — and the mask
+  evaluates `fogAmountAt`'s curve at each pixel instead — see "The emissive
+  palette" below.
 - **The emissive material fades per PIXEL**, through a `MaterialPluginBase` in
   `src/shaders/EmissiveFog.ts` that injects the same curve at
   `CUSTOM_FRAGMENT_MAIN_END`. A plugin *can* declare real uniforms, so
@@ -3457,7 +3458,8 @@ its settled promise.
   (`WorldBlocks.finish`, from `installMap` after `WorldCulling.setMap`).
   `Game.handover` is always built. **A surface it does not take is
   Babylon's, and Babylon's may only be the glazing and the fires**: one
-  that casts is held for the shadows (a casting fire's, below), and one that
+  that casts is held for the shadows (a casting fire's, below — which none
+  can be: every fire is `noShadowCaster`), and one that
   casts but cannot be held, a palette surface that cannot be held, or a
   mesh in a probe's list that is neither a fire nor ours is REFUSED — thrown
   in DEV, so `npm run merge:hash` cannot pass a map that has one, at any
@@ -3589,8 +3591,11 @@ its settled promise.
   keeps only what glows; the palette, which glows, is drawn into the mask by
   our side through the main view (X3.6d, X3.6e; "The palette, ours").
 - **A HELD caster is never switched off, hidden or faded after its build**
-  — the one kind of surface Babylon draws and ours casts (a casting fire;
-  no shipped map has one). Nothing in the tree does it, and ours, which
+  — the one kind of surface Babylon draws and ours casts (a casting fire,
+  which no build can have: every fire is made `noShadowCaster`, `flame.ts`'s
+  `flamePart` and the fire drum's flame, and `strayMesh` refuses any other
+  held caster's mesh — the layer is kept for X4.4 to use or delete).
+  Nothing in the tree does it, and ours, which
   reads no node, would cast it still: a DEV build checks every frame and
   fails the world.
 - **The building card waits for every pipeline of ours, the cull's
@@ -3872,7 +3877,8 @@ light's matrix over.
   holds it: a surface the main pass takes casts from its own group, the
   emissive palette from its PALETTE group (held with its slots since X3.6c,
   ours in the main pass too since X3.6e), and any caster Babylon keeps for
-  its main pass (a casting fire; no shipped map has one), which keeps no
+  its main pass (a casting fire — unreachable by construction, every fire
+  being made `noShadowCaster`; kept for X4.4), which keeps no
   recipe, is held for the shadow maps ALONE (`WorldBlocks.addCaster`:
   positions only, in the HELD layer cut after every other, the casters'
   group LAST of all, which the main pass's cull leaves out as a tail and
@@ -5129,8 +5135,10 @@ failure ("The palette, ours", under the glow, below).
 and a palette mesh is every lamp in a block — a centre that is usually BEHIND
 the frontage you are looking at, which would fade the near window as if it
 stood at the far one. So the mask fades each pixel by its own distance on
-`fogAmountAt`'s curve, and `Game` leaves that material's colour unfaded
-(`fadesOwnBloom`). Measured on Hollowmere at night (the one map where the
+`fogAmountAt`'s curve, and that material's colour reaches the mask unfaded:
+`WorldGlow`'s rule hands it over at a fade of 1, and no Babylon mesh wears it
+for `GlowRules.colour` to fade (the per-mesh test that skipped it,
+`fadesOwnBloom`, went at X3.7c's review). Measured on Hollowmere at night (the one map where the
 harness's run-to-run floor is near zero): three of twelve poses moved, all of
 them distant windows' halos and none of them a window — the chapel's windows
 at ~60 m from the spawn, 1.3% of pixels, 0.019 mean/255, max 50, the halo

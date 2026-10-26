@@ -477,7 +477,9 @@ export class WorldBlocks {
    * Hands over one surface our side draws in NO main pass — a caster whose
    * material keeps no recipe — so that the shadow passes `passes` names are
    * drawn whole by our side: its positions alone are uploaded, and cut after
-   * every other group's. Its index is the surface's, as `add`'s.
+   * every other group's. Its index is the surface's, as `add`'s. No build
+   * calls it today, nor can one without making a fire cast
+   * (`BlockHandover`'s `held` says why); kept for X4.4.
    */
   addCaster(label: string, geometry: SurfaceArrays, pieces: readonly PieceSpan[], passes: number, key: number = NO_BLOCK): number {
     return this.addTo(this.casterGroup(), label, geometry, pieces, passes, key);
@@ -1189,9 +1191,9 @@ export class WorldBlocks {
     const view = this.mainView;
     if (this.culling && view) {
       const frame = ctx.frameGroup;
-      if (this.paletteGroups.size > 0 || this.quietPaletteGroups.size > 0) {
-        drawn = this.drawPalette(pass, frame, view, this.mainPalette, 0);
-      }
+      // A map with no palette draws none: `drawPalette` skips every group
+      // with no emissive (its index buffer `drawClusters` sets again).
+      drawn = this.drawPalette(pass, frame, view, this.mainPalette, 0);
       drawn += this.drawClusters(pass, frame, view, "blocks", true) + this.drawScatter(pass, frame, view);
       drawn += this.drawClusters(pass, frame, view, "landform", true);
     }

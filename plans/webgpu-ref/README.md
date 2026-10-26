@@ -42,7 +42,9 @@ node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--gpu] [--max] [
 
 - **`gate.mjs`** boots every shipped map, plays a real round on each and fails
   loudly if any is not clean — the engine is WebGPU, the round reaches
-  `playing`, no probe re-renders per frame, and there are no page or console
+  `playing`, the reflection bake has drained by deploy and stays drained
+  over every frame it watches (`ReflectionSystem.bakePending`; until X3.7c,
+  no Babylon probe re-rendering per frame), and there are no page or console
   errors. It exits non-zero, so it can stand in front of a merge.
 - **`bank.mjs`** takes the reference frames into `ref/<map>-<vantage>.png`, and
   refuses to write one that is not reproducible. `--check` re-takes and grades
@@ -105,7 +107,10 @@ node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--gpu] [--max] [
   clusterCull.ts`, X3.3b), each of its three entry points into a pipeline,
   and (since X3.7a) the emissive PALETTE's two programs — the main pass's
   and a probe face's, and the glow mask's twin — at every depth bias a
-  palette material on the page carries.
+  palette material on the page carries, and fails if a palette group our
+  renderer cut carries a bias it found no material for (so a page with a
+  palette cannot pass having built neither program, as X3.7c's first run
+  did).
   Exits non-zero, so it stands in front of a merge beside
   `gate.mjs`. It is also the strongest place the transpiler tripwire is asked,
   because it forces the CACHED materials to compile rather than the drawn ones.

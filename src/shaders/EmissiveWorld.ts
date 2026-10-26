@@ -13,7 +13,7 @@
  * (`BABYLON_EXIT.md`). The object stays (X3.7, Keeps): the merge keys on it
  * and the factory hangs the recipe our renderer draws it with off it
  * (`CelMaterialFactory.emissiveRecipe`).
- * Owns: `EmissiveWorldMaterial`, `isEmissiveWorld` and `fadesOwnBloom`
+ * Owns: `EmissiveWorldMaterial` and `isEmissiveWorld`
  * (`MAX_EMISSIVE_PALETTE` is the bodies' module's).
  * Is made by `CelMaterialFactory` alone (`getEmissiveWorld`), and the palette
  * itself is discovered by `MapBuilder`'s block merge.
@@ -22,8 +22,12 @@
  * factory (`render/emissiveWorld.ts`); its `zOffsetUnits` is that bias,
  * stated for a reader of the material, never read by a draw. Never given a
  * vertex colour buffer (`vertexShading` skips it). Never worn by anything but
- * a merge: every vertex it draws carries a slot. Never on a Babylon mesh: a
- * plain `Material` draws nothing, so one that wore it would be a hole.
+ * a merge: every vertex it draws carries a slot. Never on a Babylon mesh
+ * (`worldMeshes` makes none of it: X3.7c's review): a plain `Material` is
+ * never ready for a draw, so the frame would draw nothing where one stood,
+ * while `GlowPass`, which admits a mesh by its emissive colour and masks it
+ * with a stock mask material, would bloom its WHITE `emissiveColor` there —
+ * a white bloom over a hole.
  *
  * WHY IT EXISTS. `docs/rendering.md`, "The paint palette": the block merge
  * splits once per MATERIAL, and the albedo palette took a matte surface's
@@ -41,9 +45,11 @@
  * of one frontage. Merged across colours, a block's emissives are one mesh up
  * to the whole block across, and a window on its near side would fade as if
  * it stood at the far one. So the mask fades each pixel by its own distance,
- * through the curve `fogAmountAt` is, and `Game`'s rule leaves this material's
- * colour unfaded (`fadesOwnBloom`). It is the one LOOK change the palette
- * makes, and it moves the bloom toward what the wall around it already does.
+ * through the curve `fogAmountAt` is, and `WorldGlow`'s rule (`Game`'s)
+ * hands this material's colour over at a fade of 1 — no per-mesh fade ever
+ * reaches it, Babylon being made no mesh of it. It is the one LOOK change
+ * the palette makes, and it moves the bloom toward what the wall around it
+ * already does.
  *
  * WHY IT DECLARES `emissiveColor`. `GlowRules` asks a material what it emits
  * by that property and nothing else (`WorldGlow` asks it of this one, through
@@ -74,12 +80,4 @@ export class EmissiveWorldMaterial extends Material {
 /** Whether a material is the emissive palette — `vertexShading` asks, to leave it unbaked. */
 export function isEmissiveWorld(material: Material | null): material is EmissiveWorldMaterial {
   return material instanceof EmissiveWorldMaterial;
-}
-
-/**
- * Whether a material fades its own bloom per pixel, so `GlowRules.colour` must
- * not fade it again per mesh — see the header.
- */
-export function fadesOwnBloom(material: Material): boolean {
-  return isEmissiveWorld(material);
 }

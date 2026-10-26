@@ -123,8 +123,9 @@
  * a bloom cannot claim coverage it does not have; an ADDITIVE effect leaves the
  * channel alone and should, since a flare adds light rather than hiding what is
  * behind it; and a REFLECTION PROBE wants the opposite value out of the same
- * line, which is why `opaqueAlpha` is a uniform and `ReflectionSystem` flips it
- * for the length of a bake.
+ * line, which is why `opaqueAlpha` is a uniform: the frame's is 0, and the
+ * bake's own frame (our renderer's, the only bake since X3.7c) states 1
+ * (`CelMaterialFactory.fillBakeFrame`) — nothing flips it on a material.
  *
  * **It inks the terrain, the grass, the water and the debris, none of which the
  * hull touched, and that is KEPT.** Every blade of grass writes depth, so every

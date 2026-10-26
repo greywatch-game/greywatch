@@ -96,6 +96,16 @@ for (const id of targets) {
   const perf = await page.evaluate(
     async ([coldMs, warmupMs, warmMs]) => {
       const g = window.__celshock;
+      // The bake, every frame the gate watches: it drained under the card and
+      // must STAY drained — a bake that re-queues itself is a probe being
+      // re-rendered all round long (what `probesRenderOnce` asked of
+      // Babylon's `ReflectionProbe`s until X3.7c deleted them).
+      let bakeFrames = 0;
+      let bakePendingMax = 0;
+      const bakeWatch = g.scene.onAfterRenderObservable.add(() => {
+        bakeFrames++;
+        bakePendingMax = Math.max(bakePendingMax, g.reflections.bakePending);
+      });
       g.spawnPlayer();
       const window_ = async (ms) => {
         const f0 = g.scene.getFrameId();
@@ -115,10 +125,13 @@ for (const id of targets) {
       });
       const warmFps = await window_(warmMs);
       g.scene.onAfterRenderObservable.remove(o);
+      g.scene.onAfterRenderObservable.remove(bakeWatch);
       times.sort((a, b) => a - b);
       return {
         coldFps,
         warmFps,
+        bakeFrames,
+        bakePendingMax,
         medianMs: +times[Math.floor(times.length / 2)].toFixed(2),
         p95Ms: +times[Math.floor(times.length * 0.95)].toFixed(2),
         state: g.state,
@@ -148,7 +161,17 @@ for (const id of targets) {
   }
   fails.push(...(await assertNoTranspiler(page)));
   if (perf.state !== "playing") fails.push(`state is ${perf.state}, not playing`);
-  if (!build.probesRenderOnce) fails.push("a reflection probe is re-rendering every frame");
+  // The reflection bake (ours, the only one since X3.7c): drained by deploy,
+  // and never re-queued over the frames watched above.
+  if (build.bakePending !== 0) {
+    fails.push(`the reflection bake had not drained at deploy (${build.bakePending} probes pending)`);
+  }
+  if (perf.bakeFrames === 0) fails.push("no frame was watched for the reflection bake");
+  if (perf.bakePendingMax !== 0) {
+    fails.push(
+      `the reflection bake re-queued during the round (${perf.bakePendingMax} probes pending at most over ${perf.bakeFrames} frames)`,
+    );
+  }
   if (pageErrors.length) fails.push(`${pageErrors.length} page errors`);
   if (consoleErrors.length) fails.push(`${consoleErrors.length} console errors`);
   if (perf.warmFps < 20) fails.push(`warm frame rate ${perf.warmFps} fps`);

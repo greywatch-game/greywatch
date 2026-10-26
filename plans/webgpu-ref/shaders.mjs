@@ -359,6 +359,20 @@ for (const id of MAPS) {
       const palette = g.mats.emissiveRecipe(mat);
       if (palette) paletteBiases.add(palette.depthBias);
     }
+    // And each bias the palette our renderer CUT carries (`WorldBlocks`'
+    // palette groups, the glowing and the quiet): what the walk above must
+    // have found, or the page has a palette whose programs this script never
+    // built — and would pass, as X3.7c's first run did. Read off the
+    // handover's own blocks, so it cannot drift from what draws; a renamed
+    // field fails loudly rather than reading as no palette.
+    const blocks = g.handover?.blocks;
+    if (!(blocks?.paletteGroups instanceof Map) || !(blocks?.quietPaletteGroups instanceof Map)) {
+      throw new Error("shaders.mjs: g.handover.blocks has no paletteGroups/quietPaletteGroups to read the cut palette off");
+    }
+    const cutBiases = new Set();
+    for (const groups of [blocks.paletteGroups, blocks.quietPaletteGroups]) {
+      for (const recipe of groups.keys()) cutBiases.add(recipe.depthBias);
+    }
     for (const mat of shaders) {
       const effect = mat.getEffect?.();
       const defines = mat._options.defines
@@ -401,6 +415,7 @@ for (const id of MAPS) {
       cel: [...cel].sort(),
       biased: [...biased.values()],
       paletteBiases: [...paletteBiases].sort((a, b) => a - b),
+      cutBiases: [...cutBiases].sort((a, b) => a - b),
       modules,
       moduleCount: window.__modules.length,
     };
@@ -414,15 +429,27 @@ for (const id of MAPS) {
   });
   const badOurs = ours.filter((o) => o.error);
 
+  // The palette's discovery: every bias the cut palette carries must be one
+  // `oursCheck` built both programs at — none found while the page has
+  // palette groups is the silent pass this exists to refuse.
+  const unbuilt = out.cutBiases.filter((b) => !out.paletteBiases.includes(b));
+  if (unbuilt.length > 0) {
+    failures.push(
+      `${id}: the cut palette carries biases [${out.cutBiases.join(", ")}] but palette programs were built at ` +
+        `[${out.paletteBiases.join(", ")}] — bias ${unbuilt.join(", ")} never compiled`,
+    );
+  }
   const badMats = out.materials.filter((m) => !m.ready || m.error);
   const celCount = out.materials.filter((m) => m.cel).length;
   const status =
-    badMats.length === 0 && out.modules.length === 0 && badOurs.length === 0 ? "ok" : "FAIL";
+    badMats.length === 0 && out.modules.length === 0 && badOurs.length === 0 && unbuilt.length === 0
+      ? "ok"
+      : "FAIL";
   console.log(
     `${id.padEnd(13)} ${String(celCount).padStart(3)} cel materials  ` +
       `${String(out.moduleCount).padStart(3)} modules  ` +
       `${out.cel.length} variants  ${ours.length - badOurs.length}/${ours.length} ours ` +
-      `(palette biases [${out.paletteBiases.join(", ")}])  ${status}`,
+      `(palette biases [${out.paletteBiases.join(", ")}], cut [${out.cutBiases.join(", ")}])  ${status}`,
   );
   for (const o of badOurs) {
     failures.push(`${id}: ours ${o.error}`);

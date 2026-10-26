@@ -1640,7 +1640,10 @@ is one machine's:
   `GPUTexture` made with `COPY_SRC`, so a readback is `copyTextureToBuffer`
   of each face and level off `g.renderer.device` and nothing else: alpha over
   128 is world, everything else is the sky the shader fills in. The default
-  cube (`g.reflections.defaultCube`) is none of them and reads all zeroes.
+  cube is none of them and reads all zeroes: its raw `GPUTexture` is the
+  bake's, `g.probeBake.cubes.find((c) => c.texture.label === "probe bake:
+  default").texture` (`g.reflections.defaultCube` is Babylon's wrapped
+  `BaseTexture` over it, which `copyTextureToBuffer` cannot take).
   Babylon's `ReflectionProbe` cubes went at X3.7c (the tag
   `exit-babylonworld` still has them). Three standing checks:
   - **Coverage says the enclosure rule fired.** Mean coverage over all six faces

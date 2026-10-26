@@ -199,11 +199,13 @@ export function installRound(page) {
     return {
       installMs,
       bakeFrameMs: Math.round(performance.now() - frameStart),
-      // The cubes baked, both pools, on whichever renderer baked them — on
-      // Babylon's path the scene's custom targets, as this always counted
-      // (`ReflectionSystem.probeCount`).
-      probes: g.reflections.probeCount ?? g.scene.customRenderTargets.length,
-      probesRenderOnce: g.scene.customRenderTargets.every((rt) => rt.refreshRate === 0),
+      // The cubes baked, both pools (`ReflectionSystem.probeCount`) — ours,
+      // the only bake since X3.7c.
+      probes: g.reflections.probeCount,
+      // What of the bake is still outstanding at deploy: 0 once it drained
+      // under the card (`ReflectionSystem.bakePending`, which `Game` holds
+      // `loading` on). `gate.mjs` asserts it, and that it STAYS 0.
+      bakePending: g.reflections.bakePending,
       paneGroups: g.map.paneGroups.length,
     };
   });

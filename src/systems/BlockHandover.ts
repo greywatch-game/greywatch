@@ -11,8 +11,8 @@
  * handback.
  * Owns: `BlockHandover` — our renderer's `WorldBlocks`, each surface of
  * ours's reach key (the block its record is filed under), which of them are
- * the emissive PALETTE and which are casters held rather than drawn (a
- * casting FIRE's: Babylon draws its main pass), which of them cast, which a
+ * the emissive PALETTE and which are casters held rather than drawn (the
+ * HELD layer, unreachable by construction: see `held`), which of them cast, which a
  * probe's bake draws and which the glow's mask draws, the fires, the held
  * casters' meshes (for the DEV node check), the refusal held until the
  * install (`refusal`), whose world the install is (`owner`, latched at the
@@ -36,8 +36,9 @@
  * else is BABYLON's, made a mesh — on a shipped map the glazing and the
  * fires alone — and a surface Babylon keeps may need nothing of ours but
  * its shadow: a caster among them is HELD for the shadows alone
- * (`WorldBlocks.addCaster`: its positions, at identity, never `updatable`),
- * and one that casts but cannot be held, a palette surface that cannot be
+ * (`WorldBlocks.addCaster`: its positions, at identity, never `updatable`)
+ * — which no build can reach, its mesh being refused below unless it is a
+ * fire and every fire being `noShadowCaster` (`held`) — and one that casts but cannot be held, a palette surface that cannot be
  * held, or a mesh Babylon is made that is neither the glazing nor a fire
  * (`strayMesh`: one our bake would owe a picture of, a held caster's among
  * them)
@@ -178,6 +179,14 @@ export class BlockHandover {
    * Of those, the casters HELD for the shadows alone (`WorldBlocks.addCaster`),
    * which Babylon draws in the main pass — by index, to the surface's own
    * index in the build, which names its mesh.
+   *
+   * **Always empty, by construction rather than by luck** (X3.7c's review): a
+   * held caster is made a Babylon mesh, and `strayMesh` refuses every mesh
+   * that is neither the glazing nor a fire; the glazing is `noShadowCaster`
+   * (`MapBuilder`), and so is every fire, hard-coded where a fire is made
+   * (`flame.ts`'s `flamePart`, the fire drum's flame) — so no held caster
+   * can exist without making a fire cast. The layer, and the DEV node check
+   * that reads its meshes, are kept for X4.4 (the fires) to use or delete.
    */
   private held = new Map<number, number>();
   /** Of those, the emissive PALETTE (`WorldBlocks.addEmissive`): ours in every pass. */

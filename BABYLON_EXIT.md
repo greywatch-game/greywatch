@@ -3341,7 +3341,8 @@ is checked against its parent.
   since X3.3c — X3.7b's gain is memory the phone feels most. Pushing the tag
   `exit-babylonworld` (the user's call).
 
-**X3.7c landed** (this commit; 2026-10-25; no picture change).
+**X3.7c landed** (f9b2512, the post-commit review's fixes after it;
+2026-10-25; no picture change).
 - **What it is.** The fallback machinery Babylon kept for the world goes for a
   round. **Babylon's `ReflectionProbe` path is deleted** (`ReflectionSystem`:
   the two probe pools, the draw-budgeted queue and `releaseBatch`, `release`,
@@ -3384,8 +3385,12 @@ is checked against its parent.
   `onPaletteFailed`, `Renderer.onRefused`, the cull's refusal, a refusal at
   the take, the DEV node check). The install's checks that asked a pass
   whether it HELD a world (`lamps.casters`, `probes.holds`, `glow.holds`,
-  `blocks.paletteFailed`) are gone with them: none could be false at the
-  install but through a latch.
+  `blocks.paletteFailed`) are gone with them: the first three could be false
+  at the install only through a latch, but for `glow.holds` on a null
+  `glowView()`, which `WorldGlow.setWorld` now tells synchronously, in the
+  install's turn; and `blocks.paletteFailed` was dead — set only in a
+  main-pass palette pipeline's `.then`, after the cut that asks for it, so
+  never true by the install that read it (corrected by the review, below).
 - **What the editor keeps, and why it needed nothing replaced but the
   cube.** `ShadowSystem`'s generators and `LocalShadows`' render target, as
   planned (X5.3's). The palette's Babylon stages and twin were drawn by NO
@@ -3396,8 +3401,15 @@ is checked against its parent.
   maps' 28,473 meshes) — the header that said they drew an editor build was
   wrong. Its glass and water bake nothing and sample the default cube at
   strength 0, as before.
-- **Deviations.** HELD-caster layer kept: it is live for a casting fire,
-  which no shipped map has (the brief's "legitimate only for a casting fire").
+- **Deviations.** HELD-caster layer kept — but not, as this note first
+  said, "live for a casting fire, which no shipped map has": it is
+  unreachable by construction (the review, below). Every fire is made
+  `noShadowCaster` where it is made (`flame.ts`'s `flamePart`, and the fire
+  drum's flame), so no fire is ever held, and a held caster that is not a
+  fire is made a Babylon mesh that `strayMesh` refuses; no held caster can
+  exist without making a fire cast. The layer (`WorldBlocks.addCaster`,
+  `BlockHandover`'s `held`, the DEV node check of its meshes) is kept for
+  X4.4, the fires, to use or delete.
   `probeCount` counts the slots baked, both pools, and no longer the default
   cube (Babylon's glazing pool held it as slot 0): one fewer on a map with no
   glazing (Hollowmere 3 to 2, Greyfen and Harrowmead 2 to 1, Kurenai 4 to 3;
@@ -3481,11 +3493,70 @@ is checked against its parent.
   in one is the bodies and `BodyShadows`, the hulls, the viewmodel, the
   effects and fires, the sky, clouds and moon, the water, grass, glazing,
   flags, rings, blobs and particles, and the glow mask's non-world emissives.
+- **What the post-commit review found** (an independent reader over
+  f9b2512; fixed after it). No defect and nothing architectural. One
+  LATENT path: a block-merged build handed no `onSurface` would make a
+  Babylon mesh wearing the now-plain `EmissiveWorldMaterial`, which a frame
+  never draws (a plain `Material` is never ready) and `GlowPass` would bloom
+  WHITE over the hole (its stock mask admits the white `emissiveColor`) —
+  the header said only "a hole". `worldMeshes` makes a mesh of the palette
+  in NO build now: handed `onSurface`, the handover has taken it or refused
+  it (the refusal failing the world at the install, as X3.7b routes every
+  one), so a refused palette surface is left meshless with the map being
+  torn down; handed none, a DEV build throws (no production build hands
+  none, the editor's being DEV-only and never merged). Two ORACLES that
+  could pass while testing nothing: `gate.mjs`'s "a reflection probe is
+  re-rendering every frame" read `scene.customRenderTargets`, empty in a
+  round since X3.7c — it now asks our bake, `bakePending` 0 at deploy and
+  0 on every frame the gate watches (~2,850 a map); and `shaders.mjs`
+  could pass again having found no palette bias — it now fails when a
+  palette group `WorldBlocks` cut carries a bias it built no program at.
+  Both proved to fail: the bake re-queued every 600 frames by a scratch
+  hack in `ReflectionSystem.releaseOurs` failed Coldharbour's gate ("the
+  reflection bake re-queued during the round (39 probes pending at most
+  over 2851 frames)"), and X3.7c's first-run discovery restored in a
+  scratch `shaders.mjs` failed Coldharbour ("palette biases [], cut [-24,
+  0]", 19/19 ours where the right run builds 23/23) — each reverted. Of
+  SHAPE: the held-caster layer is unreachable by construction, not merely
+  unused (Deviations, corrected), kept for X4.4; `Game`'s per-mesh bloom
+  rule lost its `fadesOwnBloom` branch, no Babylon mesh wearing the palette
+  — and `fadesOwnBloom` itself went, there being no other caller (the
+  review took `WorldGlow` to use it: it never did, its rule passing a fade
+  of 1); `WorldBlocks.draw`'s palette guard went, `drawPalette` skipping
+  every group with no emissive. Docs: this note's line on the install's
+  checks (`blocks.paletteFailed` was dead, a null `glowView()` is told
+  synchronously), `CelInk`'s "ReflectionSystem flips `opaqueAlpha`" (the
+  bake's frame states 1, `fillBakeFrame`), `CONFIG.graphics.reflection`'s
+  `size` and `radius` (Babylon's bake's cost model, stated in the present
+  tense), `generate-harrowmead.mjs`'s stale `ReflectionSystem.encloses`
+  (its `layout.ts` left alone: editing it re-bakes), `VERIFYING.md`'s
+  default-cube readback (the raw `GPUTexture` in `ProbeBake`'s cubes, not
+  Babylon's wrapped `defaultCube`), `docs/rendering.md`, `FILES.md`, the
+  webgpu-ref README, X4.4's list and the headers. Re-checked after the
+  fixes: typecheck, build and corecheck; `gate.mjs` clean on seven, every
+  map's bake drained at deploy and over the frames watched; `shaders.mjs`
+  clean on seven, the cut palette's biases those built (Coldharbour
+  [-24, 0], the rest [0]), ours 17/17 (21/21 Sarab and Cinderhaven, 23/23
+  Coldharbour); `census --against` the BEFORE equal on seven; `merge:hash`
+  identical to X3.7b's baselines on all eight maps, shipped and `--editor`
+  (no `emissive-world` material on the editor's 28,473 meshes); the forced
+  paths on Coldharbour — X3.7c's twenty, among them the main pass refused,
+  the mask pass refused and the mips pipeline failed — each one `[world]`
+  error, the menu and the toast, a clean round after, and no install of
+  the twenty handed a palette mesh (the refused PALETTE surface's
+  included); the DEV assertion fired once under a scratch build handed no
+  `onSurface` (`worldMeshes: "block-1,0-emissive-world-over-glass-noInk"
+  wears the emissive palette…`); the default cube read back all zeroes on
+  six faces through the corrected recipe, a pool cube world; `F2` select,
+  drag, sculpt and save (restored by `git checkout`), no error; the bank 61
+  of 61 byte-identical to the BEFORE at 9f7f0b1 on the first run, the same
+  34 stale rows, no console or page error.
 - **Owed onward.** Before a phase gate: the phone's FOLLOW-UP reading, owed
   since X3.3c and the user's to take, and the post-commit review of this
   step; then the `exit-phase-3` tag, the user's call (rule: "Moving the
   branch back to one is the user's call"), as is pushing `exit-babylonworld`.
-  X5.3 deletes what the editor keeps.
+  X5.3 deletes what the editor keeps. X4.4 uses or deletes the HELD-caster
+  layer, which no build reaches (Deviations).
 
 ---
 
@@ -3548,6 +3619,10 @@ chain, and the frozen cel-material cache and its traps are deleted with
     fires (`FlameMaterial`; their block merges are the one world surface
     besides glazing that X3.7 leaves a Babylon mesh in a round), grenades,
     rockets, mines, shards and debris.
+  - **The HELD-caster layer** (`WorldBlocks.addCaster`, `BlockHandover`'s
+    `held` and its DEV node check), kept by X3.7c for a casting fire and
+    reached by no build (every fire is `noShadowCaster`: X3.7c's note): a
+    fire of ours that casts uses it or has no need of it, and it goes.
   - **The warm-up changes shape**: every pipeline a round can use is created
     from a declared list during loading, so the `warm(on)` poses become a list
     of pipeline keys.
