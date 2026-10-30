@@ -658,8 +658,10 @@ without that subtract turns feedback into a punishment.
 - **The body is the BOT rig**, which is why the retired GLB player body could be
   deleted outright: it hands to the pool with nothing adapted and is already what
   `RAGDOLL_BONES` is measured against. It is built at `startRound`, not at the moment
-  of death — fourteen merged meshes and their GL buffers is not a cost to pay on
-  the frame the player is killed on.
+  of death — a joint tree (and, for the first rig of a side, that side's kit) is not
+  a cost to pay on the frame the player is killed on. It is drawn as every body is,
+  an instance of its side's kit by our renderer (`BABYLON_EXIT.md` X4.1d), and it
+  is no longer stood up under the building card: the body pipelines are asked ahead.
 - **It is the second rig in the game and it is filed with the CULL like the
   roster's.** `buildSoldier` has two callers — `NetSoldier` and this (the offline
   `BotRig` was a third until X2.5c C5) — and this one is not in the roster, so
@@ -670,7 +672,9 @@ without that subtract turns feedback into a punishment.
   the world ORIGIN rather than from the camera four metres away, dropped the small
   parts, and by dropping them made sure their world matrices were never computed
   either. `docs/rendering.md` has the measurement and the general rule under it.
-  **A fourth rig would owe the same line**, and the failure is silent.
+  **A fourth rig would owe the same line** — and since X4.1d the filing is also
+  what DRAWS a body (`Game.drawBodies` draws the filed rigs and no others), so a
+  rig left out is not drawn at all.
 - **It is a stand-in, not the player.** `Player` has no rig and never grows one: it
   is a sweep ellipsoid, a viewmodel and an eye, and owns no mesh at all. The corpse is
   a separate object stood up at `Player.floorY` under `Player.position` (the FEET, not

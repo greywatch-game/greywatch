@@ -33,12 +33,11 @@
  * `setFielded`, and re-addressed together by `setBlockWidth`, the only two
  * things that may write either.
  */
-import { Scene, Vector3 } from "@babylonjs/core";
+import { Vector3 } from "@babylonjs/core";
 import { CONFIG, FOG_WALL } from "../config";
 import { NetSoldier } from "../entities/NetSoldier";
 import type { Team } from "../entities/Combatant";
 import { viewerTeam } from "../core/teamView";
-import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { Hittable } from "../systems/CombatSystem";
 import type { ControlPoint } from "../systems/ConquestSystem";
 import type { PointState, SlotState, Snapshot } from "./protocol";
@@ -156,11 +155,7 @@ export class NetRoster {
    */
   onStep: (soldier: NetSoldier) => void = () => {};
 
-  constructor(
-    private readonly scene: Scene,
-    private readonly mats: CelMaterialFactory,
-    perTeam: number,
-  ) {
+  constructor(perTeam: number) {
     // The map the session is opened for, as `Game` knows it then — the
     // page's own match is opened ON its map, so this is the round's own
     // roster and `buildRound`'s `setFielded` finds nothing to rebuild; a
@@ -211,7 +206,6 @@ export class NetRoster {
       return;
     }
     this.paintedFor = viewerTeam();
-    for (const soldier of this.soldiers) soldier.dispose();
     this.soldiers.length = 0;
     this.bySlot.length = 0;
     this.riding.length = 0;
@@ -291,7 +285,7 @@ export class NetRoster {
     for (let team = 0; team < 2; team++) {
       for (let i = 0; i < perTeam; i++) {
         const slot = team * this.blockWidth + i;
-        const soldier = new NetSoldier(this.scene, this.mats, slot, team as Team);
+        const soldier = new NetSoldier(slot, team as Team);
         // Wired at construction, because a soldier lives exactly as long as
         // the pool it is in — the same lifetime `BattleSystem` gives a bot's
         // own hooks.
@@ -437,7 +431,6 @@ export class NetRoster {
   }
 
   dispose(): void {
-    for (const soldier of this.soldiers) soldier.dispose();
     this.soldiers.length = 0;
     this.bySlot.length = 0;
   }

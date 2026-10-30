@@ -110,6 +110,7 @@ import {
 } from "../shaders/CelShader";
 import { BabylonFrameHost } from "../render/babylonSeam";
 import { Renderer } from "../render/Renderer";
+import { BodyDraw } from "../render/BodyDraw";
 import { BodyShadowMap } from "../render/BodyShadowMap";
 import { LampAtlas } from "../render/LampAtlas";
 import { ProbeBake } from "../render/ProbeBake";
@@ -133,7 +134,15 @@ import { NetSession, type LocalGun, type LocalHull } from "../net/NetSession";
 import { LocalOwner } from "../net/LocalOwner";
 import type { MatchHost } from "../net/matchHost";
 import { NetSoldier } from "../entities/NetSoldier";
-import { drawRig, pooledBody } from "../entities/SoldierModel";
+import {
+  KIT_COLORS,
+  pooledBody,
+  soldierKits,
+  VISOR_COLORS,
+  writeRigCentres,
+  writeRigDrawing,
+  type SoldierRig,
+} from "../entities/SoldierModel";
 import { clearRequestTimings, fetchMatches } from "../net/lobby";
 import { HitCredits } from "../net/HitCredits";
 import { NetShotQueue, type PendingShot } from "../net/NetShotQueue";
@@ -734,6 +743,34 @@ export class Game {
    */
   private readonly bodyShadowMap: BodyShadowMap;
   /**
+   * Every BODY as our renderer draws it (`BABYLON_EXIT.md` X4.1d): each
+   * side's kit on the GPU once, and each frame's bodies as instances of it —
+   * fed by `drawBodies`, drawn while a ROUND's map is installed. Its
+   * pipelines are asked here, once for the session, and one that cannot be
+   * built is the round's failure (`worldFailed`, wired at the install).
+   */
+  private readonly bodyDraw: BodyDraw;
+  /**
+   * The rigs `installBodyPools` filed, in the order `WorldCulling` was handed
+   * them — the index its per-body verdict is read by (`drawsBody`).
+   */
+  private pooledRigs: SoldierRig[] = [];
+  /**
+   * This frame's drawn bodies' segments, in drawing order: each one's
+   * bounding-sphere centre in the world, three doubles a segment — what the
+   * order and the bloom are pulled off inside the render (`bodyPull`).
+   * Sized when `bodyDraw` is built.
+   */
+  private segmentCentres = new Float64Array(0);
+  /** `bodyPull`'s scratch: one body's segment keys, and a visor's centre. */
+  private segmentKeys = new Float64Array(0);
+  /** Which segment of a kit is its visor (`KitDrawing.visor`, the same in each). */
+  private visorSegment = 0;
+  private readonly visorAt = new Vector3();
+  /** Each side's visor as `bloomColour` reads a material: its colour, alpha 1. */
+  private readonly visorMaterials = VISOR_COLORS.map((emissiveColor) => ({ emissiveColor, alpha: 1 }));
+  private readonly visorBloom = new Color4();
+  /**
    * The irradiance volume — bounce light, sky occlusion and point lights that
    * stop at walls (`systems/GiVolume.ts`). Built beside the two shadow maps and
    * for their reason: every cel material declares its seven textures, so it
@@ -822,11 +859,6 @@ export class Game {
    * than a copy per frame.
    */
   private readonly warmPose = { pos: new Vector3(), rot: new Vector3() };
-  /**
-   * The bodies a warm-up frame's shadow passes draw: the death cam's stand-in,
-   * filled once when the warm-up opens (`beginWarmup`).
-   */
-  private readonly warmBodies: ShadowBody[] = [];
   /**
    * The authority put us in the world while there was no world to put us in.
    *
@@ -1513,6 +1545,29 @@ export class Game {
     // X4.1c), and its pipeline is asked here, once for the session.
     this.bodyShadowMap = new BodyShadowMap(this.renderer, BODY_SHADOW_PROXIES);
     this.bodyShadows = new BodyShadows(this.scene, this.mats, this.shadowQuality, this.bodyShadowMap);
+    // Every body, ours in every round (`BABYLON_EXIT.md` X4.1d): each side's
+    // kit built here, once, and its three pipelines asked for the session,
+    // so the building card's warm-up waits for them like any of ours. The
+    // most bodies a frame can hold: a side's ceiling twice and the death
+    // cam's stand-in.
+    this.bodyDraw = new BodyDraw(
+      this.renderer,
+      soldierKits().map((kit) => ({
+        segments: kit.segments.map((seg) => ({
+          positions: seg.geometry.positions,
+          normals: seg.geometry.normals,
+          uvs2: seg.geometry.uvs2,
+          indices: seg.geometry.indices,
+          emissive: seg.emissive,
+        })),
+      })),
+      { cel: this.mats.bodyCelRecipe(KIT_COLORS), visor: this.mats.bodyEmissiveRecipe(VISOR_COLORS) },
+      2 * CONFIG.bots.maxPerTeam + 1,
+      (order, glow, n, glowOn) => this.bodyPull(order, glow, n, glowOn),
+    );
+    this.segmentCentres = new Float64Array(this.bodyDraw.capacity * this.bodyDraw.segments * 3);
+    this.segmentKeys = new Float64Array(this.bodyDraw.segments);
+    this.visorSegment = soldierKits()[0].visor;
     // The lamps' atlas, for the same rule: `SHADOW_SAMPLER_NAMES` lists it, so
     // it is bound before the first material exists — the lit 1x1 on a rung
     // that has none.
@@ -1874,7 +1929,7 @@ export class Game {
     // collider mesh's editor flags when its box leaves the world.
     this.glass.onBroken = (pane) => this.glassFx.collapse(pane);
     this.glass.onCleared = (pane) => this.glassFx.clear(pane);
-    this.deathCam = new DeathCam(this.scene, this.mats);
+    this.deathCam = new DeathCam();
     this.vehicles = new VehicleSystem(this.random);
     this.vehicleViews = new VehicleViews(this.scene, this.mats);
     this.vehicleCam = new VehicleCamera();
@@ -4782,8 +4837,10 @@ export class Game {
     this.reflections.clear();
     this.atmosphere.apply(undefined, 0, 0);
     this.shadows.setCasters([]);
-    // A body map failing for a map that is gone is no news of the next one.
+    // A body map failing for a map that is gone is no news of the next one —
+    // and no body is drawn over the menu or an editor build.
     this.bodyShadowMap.setFailure();
+    this.bodyDraw.uninstall();
     // …and the bodies' blobs, which only a simulating frame places, so each
     // would stay lit on a floor that is no longer there.
     this.shadows.hideBlobs();
@@ -4937,8 +4994,8 @@ export class Game {
     // installed, which is the shipped valleys' number.
     //
     // And it is `fogEnd` only until a map says otherwise. The fog is where the
-    // WORLD stops being worth drawing; a body is fourteen meshes wide and two
-    // pixels tall long before that, and a map with no fog at all had no such
+    // WORLD stops being worth drawing; a body is two pixels tall long before
+    // that, and a map with no fog at all had no such
     // distance to give them. See `EnvironmentSpec.bodyDrawDistance`, which is
     // `ENGINE_UPGRADE.md` S8, and note that the third reader below is
     // deliberately NOT on it.
@@ -4970,6 +5027,16 @@ export class Game {
     const owner: WorldOwner = { id: this.mapDef.id, name: this.mapDef.name };
     const editor = opts?.editor === true;
     if (!editor) this.roundWorld = owner;
+    // The bodies are no part of the world the handover hands over, and have
+    // no fallback either (`BABYLON_EXIT.md` X4.1d): a ROUND's map draws them,
+    // a pipeline of theirs that cannot be built — this install's, and every
+    // one after it, the pipelines being the session's — or a pass of ours
+    // refused under them fails the round as the world's passes do. Installed
+    // BEFORE the world, so they draw ahead of it at the one point both use,
+    // as Babylon's opaque queue drew the rigs ahead of ours. An editor build
+    // draws no body: its world is Babylon's, and its frames ours prepares
+    // nothing in.
+    if (!editor) this.bodyDraw.install((reason) => this.worldFailed(reason, owner));
     if (unfiled && editor) {
       console.error(`[world] ${owner.id}: the cull refused the editor's build — ${unfiled}; nothing is filed`);
     } else if (unfiled) {
@@ -4984,6 +5051,10 @@ export class Game {
     this.bodyShadowMap.setFailure(
       editor ? undefined : (reason) => this.worldFailed(reason, owner),
     );
+    // …and the visors into the glow's mask AFTER the world's palette, which
+    // the handover registered just now: the palette went down first in that
+    // pass while Babylon drew the visors.
+    if (!editor) this.bodyDraw.installMask();
     // How hard the grade is pushed is the map's; whether it runs at all stays
     // the player's (`applySettings`). A vignette that reads as dread over a
     // night village reads as a lens fault over a bright one.
@@ -5508,28 +5579,99 @@ export class Game {
   }
 
   /**
-   * Hands Babylon this frame's matrices for every body it may draw: each
-   * switched-on rig's joints composed and its meshes' world matrices pushed
-   * (`SoldierModel.drawRig`, `BABYLON_EXIT.md` X4.1a). Once a frame, in
-   * EVERY state, after everything that poses or places a body and
-   * immediately before `scene.render` — inside the render span, because
-   * Babylon composed these inside the render until the joints were ours, so
-   * the profiler's attribution does not move. A rig switched off is not drawn
-   * and is not composed; the frame it is switched back on, this is what
-   * hands its meshes the pose before anything draws them.
+   * Hands our renderer this frame's BODIES (`BABYLON_EXIT.md` X4.1d): every
+   * pooled rig `WorldCulling` says is drawn this frame (`drawsBody` — switched
+   * on, and not under the size gate, measured once and dropped whole), its
+   * joints composed and its segments' matrices written as an instance of its
+   * side's kit (`SoldierModel.writeRigDrawing`), and their centres kept for
+   * the order and the bloom the render pulls (`bodyPull`). Once a frame, in EVERY
+   * state, after everything that poses or places a body and after the cull,
+   * immediately before `scene.render` — inside the render span, where
+   * Babylon composed the rigs' meshes until X4.1a, so the profiler's
+   * attribution does not move. A body not drawn is not composed.
    */
   private drawBodies(): void {
-    for (const soldier of this.net?.roster.soldiers ?? NO_SOLDIERS) {
-      if (soldier.rig.enabled) drawRig(soldier.rig);
+    const draw = this.bodyDraw;
+    const rigs = this.pooledRigs;
+    const segments = draw.segments;
+    let n = 0;
+    for (let i = 0; i < rigs.length && n < draw.capacity; i++) {
+      const rig = rigs[i];
+      if (!this.culling.drawsBody(i)) continue;
+      writeRigDrawing(rig, draw.matrices, n * segments * 16);
+      writeRigCentres(rig, draw.matrices, n * segments * 16, this.segmentCentres, n * segments * 3);
+      draw.kits[n] = rig.kit;
+      n++;
     }
-    const corpse = this.deathCam.body;
-    if (corpse?.enabled) drawRig(corpse);
+    // The visors bloom on the glow's rules, as Babylon's mask asked them of a
+    // visor's mesh: group 0's admission (the kit screen holds the world's).
+    draw.commit(n, this.glowAdmits(0), this.mats.materialEpoch);
   }
 
   /**
-   * Hands the round's pooled bodies to `WorldCulling`, which would otherwise
-   * offer every mesh of every rig to the frame's mesh walk whether that body is
-   * in the round or not.
+   * What our renderer PULLS inside the render (`BodyDraw`'s prepare), where
+   * the render has placed the camera — whose `globalPosition` is the
+   * inverted view matrix's translation, which `scene.render` makes, not
+   * `camera.position` — for this frame's `n` drawn bodies (`drawBodies`):
+   *
+   * - each body's segments in the ORDER Babylon's queue drew a rig's meshes:
+   *   group 0's opaque sort (`setRenderingOrder`, nearest first by
+   *   `eyeDistanceSq`, the bounding sphere's centre from that eye) and,
+   *   between two at one distance, the order the meshes were made in, the
+   *   kit's — a stable sort, as `Array.prototype.sort` is. What it decides is
+   *   which of two segments wins an equal depth, the later (LEQUAL): a visor
+   *   against its face at range, an intersection's edge up close. A segment
+   *   switched off goes last, and draws nothing;
+   * - with `glowOn`, each body's visor's bloom — `GlowRules.colour` as
+   *   `GlowPass` asked it of a visor's mesh: its emissive colour faded by the
+   *   fog at its bounding sphere's centre.
+   */
+  private bodyPull(order: Uint32Array, glow: Float32Array, n: number, glowOn: boolean): void {
+    const eye = this.cameraSys.camera.globalPosition;
+    const draw = this.bodyDraw;
+    const segments = draw.segments;
+    const c = this.segmentCentres;
+    const keys = this.segmentKeys;
+    const visor = this.visorSegment;
+    for (let i = 0; i < n; i++) {
+      const o = i * segments;
+      for (let s = 0; s < segments; s++) {
+        const at = (o + s) * 3;
+        const x = c[at];
+        if (Number.isNaN(x)) {
+          keys[s] = Number.POSITIVE_INFINITY;
+        } else {
+          const dx = x - eye.x;
+          const dy = c[at + 1] - eye.y;
+          const dz = c[at + 2] - eye.z;
+          keys[s] = dx * dx + dy * dy + dz * dz;
+        }
+        // A stable insertion sort: a segment moves ahead only of one strictly
+        // farther.
+        let r = s;
+        while (r > 0 && keys[order[o + r - 1]] > keys[s]) {
+          order[o + r] = order[o + r - 1];
+          r--;
+        }
+        order[o + r] = s;
+      }
+      if (!glowOn) continue;
+      const at = (o + visor) * 3;
+      this.visorAt.set(c[at], c[at + 1], c[at + 2]);
+      const fade = 1 - fogAmountAt(Vector3.Distance(this.visorAt, eye));
+      this.bloomColour(this.visorMaterials[draw.kits[i]], fade, this.visorBloom);
+      glow[i * 4] = this.visorBloom.r;
+      glow[i * 4 + 1] = this.visorBloom.g;
+      glow[i * 4 + 2] = this.visorBloom.b;
+      glow[i * 4 + 3] = this.visorBloom.a;
+    }
+  }
+
+  /**
+   * Hands the round's pooled bodies to `WorldCulling`, which measures and
+   * gates each once a frame (`drawsBody`), and keeps their rigs in that order
+   * for `drawBodies`, which draws THESE and no others (`BABYLON_EXIT.md`
+   * X4.1d: no rig is a Babylon mesh, so a rig not filed here is not drawn).
    *
    * **Here rather than in `installMap`, for `setRoster`'s reason**: this is the
    * ROUND's roster, and that method's other caller is the editor, which has no
@@ -5553,18 +5695,19 @@ export class Game {
    * not how to collect it.
    */
   private installBodyPools(): void {
-    const bodies: PooledBody[] = [];
-    for (const soldier of this.net?.roster.soldiers ?? []) {
-      bodies.push(pooledBody(soldier.rig));
-    }
+    const rigs: SoldierRig[] = [];
+    for (const soldier of this.net?.roster.soldiers ?? []) rigs.push(soldier.rig);
     // …and the OTHER rig, which is not in the pool and is the one the player
     // watches from four metres away. `DeathCam` builds its own stand-in,
-    // switches it by the same `root.setEnabled` the roster writes, and is
+    // switches it by the same `rig.enabled` the roster writes, and is
     // idle for all but a few seconds of a round — so it is a
     // pooled body by every test this makes, and was loose only because
     // nothing had handed it over. See `DeathCam.body` for what that cost.
     const corpse = this.deathCam.body;
-    if (corpse) bodies.push(pooledBody(corpse));
+    if (corpse) rigs.push(corpse);
+    // The drawing reads `WorldCulling`'s verdict by this order (`drawBodies`).
+    this.pooledRigs = rigs;
+    const bodies: PooledBody[] = rigs.map((rig) => pooledBody(rig));
     this.culling.setPools(bodies);
   }
 
@@ -5631,11 +5774,10 @@ export class Game {
     const points: Vector3[] = [];
     for (const sp of map.spawns) if (sp.team !== null) points.push(toBabylon(sp.pos));
     for (const cp of map.controlPoints) points.push(toBabylon(cp.pos));
-    this.warmBodies.length = 0;
-    const body = this.deathCam.body;
-    if (body) this.warmBodies.push({ rig: body });
     // Our renderer's pipelines are awaited by the warm-up itself, before its
-    // first vantage (see `PipelineWarmup`).
+    // first vantage (see `PipelineWarmup`) — the bodies' among them, asked
+    // once for the session (`BodyDraw`), so no body is stood up here for a
+    // pipeline to compile on (`BABYLON_EXIT.md` X4.1d).
     wait.warm = new PipelineWarmup(
       points,
       WebGPUCacheRenderPipeline.NumCacheMiss,
@@ -5666,17 +5808,17 @@ export class Game {
     this.shadowFocus.copyFrom(vantage);
     camera.position.copyFrom(vantage);
     // …and what the map does not have standing: the pools a round draws from
-    // the moment it starts — a soldier, a shot and a blast — each of which is
-    // idle and switched off until then, and each of which used to compile on
-    // the frame it was first needed. An idle member of each, posed as it is in
-    // flight, for this frame.
-    this.deathCam.warm(vantage);
+    // the moment it starts — a shot and a blast — each of which is idle and
+    // switched off until then, and each of which used to compile on the frame
+    // it was first needed. An idle member of each, posed as it is in flight,
+    // for this frame. A SOLDIER is no longer one of them: every body is our
+    // renderer's, its pipelines asked ahead (`BABYLON_EXIT.md` X4.1d).
     this.combatFx.warm(true);
     this.grenadeFx.warm(true);
     this.blastDebris.warm(true);
     this.shadows.warmBlob(true, this.player);
     this.player.warmView(true);
-    this.updateSceneForCamera(0, this.shadowFocus, null, NO_SOLDIERS, this.warmBodies);
+    this.updateSceneForCamera(0, this.shadowFocus, null, NO_SOLDIERS, NO_SOLDIERS);
     this.culling.setWarm(true);
     this.scene.skipFrustumClipping = true;
     return true;
@@ -5686,7 +5828,6 @@ export class Game {
   private unstageWarmFrame(): void {
     this.scene.skipFrustumClipping = false;
     this.culling.setWarm(false);
-    this.deathCam.warm(null);
     this.combatFx.warm(false);
     this.grenadeFx.warm(false);
     this.blastDebris.warm(false);
@@ -9529,7 +9670,7 @@ export class Game {
     pushers: readonly Combatant[],
     // The bodies the two shadow passes draw. The roster's, but for the
     // building card's warm-up, which has no roster in the field and hands in
-    // the death cam's stand-in instead — see `stageWarmFrame`.
+    // none — see `stageWarmFrame`.
     bodies: readonly ShadowBody[] = this.mapBodies(),
   ): void {
     this.shadows.update(shadowFocus, this.mats);

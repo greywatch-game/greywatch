@@ -90,9 +90,11 @@
  * Babylon is made no mesh of it in a round or an editor build (an editor's
  * blocks are never merged), so it has no twin here: a palette surface ours
  * cannot hold and a mask it cannot draw are the world's failure, and
- * `noGlow` is read per surface at the take. Everything else in the mask —
- * the bodies, the effects and fires, the viewmodel, the moon, and an EDITOR
- * build's every emissive — is still drawn here.
+ * `noGlow` is read per surface at the take. The BODIES' visors are ours too
+ * (`render/BodyDraw.ts`, X4.1d: no rig is a Babylon mesh), drawn first in
+ * the pass with the palette, each at `GlowRules.colour`'s answer for its
+ * body. Everything else in the mask — the effects and fires, the viewmodel,
+ * the moon, and an EDITOR build's every emissive — is still drawn here.
  *
  * A MATERIAL WHOSE VERTICES MOVE BRINGS ITS OWN MASK (`SelfMasking`). The
  * stock variants transform by `world` and `viewProjection` alone, so a surface

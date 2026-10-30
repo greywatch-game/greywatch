@@ -209,8 +209,10 @@ permanent hitch:
   round.** Death takes a body out of the world — `Bot.shown` in the core, and
   on the wire the `dead` progress a client's `NetSoldier` hides its rig at —
   and respawn puts it back; a rig the ragdoll pool held is handed back in its
-  rest pose (`RagdollSystem.release`, `resetSoldierPose`). A rig is a dozen
-  meshes and their GPU buffers, and Conquest respawns continuously. **The pool
+  rest pose (`RagdollSystem.release`, `resetSoldierPose`). A rig is a joint
+  tree and a slot in the frame's instances (its DRAWING is its side's kit,
+  built once, `BABYLON_EXIT.md` X4.1d), and Conquest respawns continuously.
+  **The pool
   is two halves since BABYLON_EXIT.md X2.2 C7**: `BattleSystem` holds the
   `Bot`s — simulation on `src/math`, no rig, no scene, no camera — and a
   client's `NetRoster` holds one `NetSoldier` per slot the round fields, drawn
@@ -219,18 +221,22 @@ permanent hitch:
   match; until then the offline page held a `BattleView` of `BotRig`s that
   followed the core's bots directly. The authority builds no rig at all (its
   peak RSS on Sarab fell from 471 MB to 426).
-- **Bot rigs are fourteen merged meshes and two materials** (`SoldierModel`) —
-  forty-odd boxes and faceted lofts merged one mesh per SEGMENT, which is one
-  per joint. **What a rig costs is therefore JOINTS, and no longer colours or
-  boxes**: `KIT_PALETTE` moved the albedo into `uv2.x` and every matte part of
-  a segment wears one material, so a pouch, a kneepad, an antenna and the
-  helmet band are all free. It was twenty-one meshes and six materials while a
-  segment still split once per colour in it, and the guidance that a fifth
-  colour on the torso cost ~32 draws across a roster **has inverted** — the
-  only paint that still costs a mesh is a colour missing from `KIT_PALETTE`,
-  or an EMISSIVE, which cannot join a palette any more than gloss can join
-  `MapBuilder`'s. The two forearms are the one split left that paint cannot
-  fix, paid for by the ELBOW, which is what puts both hands on the rifle.
+- **Every body of a side is an INSTANCE of one kit** (`SoldierModel.soldierKits`,
+  drawn by `render/BodyDraw.ts` since `BABYLON_EXIT.md` X4.1d) — forty-odd
+  boxes and faceted lofts merged one SEGMENT per joint, fifteen with the
+  visor, built ONCE a side and never a Babylon mesh. **What a body costs is
+  therefore VERTICES and a joint compose, and no longer draws**: a frame draws
+  the whole roster a RANK at a time (each body's `r`th segment nearest the
+  eye, the order Babylon's queue drew a rig's meshes in), at most twice the
+  segments a body has however many bodies, where a rig was fourteen meshes
+  and fourteen draws apiece (672 on Sarab's 48). `KIT_PALETTE` moved the
+  albedo into `uv2.x` and every matte part wears one material, so a pouch, a
+  kneepad, an antenna and the helmet band are all free; a matte colour
+  missing from `KIT_PALETTE` is REFUSED at the build, and an EMISSIVE cannot
+  join the palette any more than gloss can join `MapBuilder`'s — the visor is
+  a segment of its own, drawn by the emissive palette's program. The two
+  forearms are the one split paint cannot fix, paid for by the ELBOW, which
+  is what puts both hands on the rifle.
 - **AI is staggered at `CONFIG.bots.thinkRate`**, round-robin across frames.
   `acquire()` gathers candidates by distance and ray-tests them in ascending order,
   returning the first visible one — testing all of them fires up to 30 picks per think.

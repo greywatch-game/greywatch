@@ -292,7 +292,7 @@ function play(page, opts) {
         const a = (i / 9) * Math.PI * 2;
         const x = flag.x + Math.cos(a) * 4;
         const z = flag.z + Math.sin(a) * 4;
-        const rig = SM.buildSoldier(g.scene, g.mats, i % 2);
+        const rig = SM.buildSoldier(i % 2);
         const feet = new M.Vector3(x, groundAt(x, z), z);
         rig.root.position.set(feet.x, feet.y, feet.z);
         rig.root.rotation.y = a + Math.PI / 2;

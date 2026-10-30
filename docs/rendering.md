@@ -147,7 +147,9 @@ Six rules about it, and the first is the one everything else rests on:
   buffer after `unbindAllAttributes()`. Alpha therefore defaults to exactly the
   neutral value, so the pooled bot rigs, the viewmodel's meshes, the grenades and
   the death cam's stand-in body are all correct **without carrying a buffer at
-  all** — no define and no branch. RGB defaults to 0, which is
+  all** — no define and no branch (under WebGPU Babylon binds one float 0,
+  which widens to the same `(0, 0, 0, 1)`; our renderer feeds the bodies
+  exactly that since `BABYLON_EXIT.md` X4.1d, "The bodies, ours"). RGB defaults to 0, which is
   not neutral for a multiplier, which is why the green channel is used as a
   *mask* (1 on baked world geometry) rather than as a second multiplier.
 - **The bake runs AFTER every merge, and cannot be moved earlier.**
@@ -4117,6 +4119,97 @@ bake" above; what it owes this frame is below.
   world's maps and the atlas whatever order the two were added in, because a
   face samples both.
 
+## The bodies, ours: every soldier an instance of its kit
+
+**Every body the page draws — a `NetSoldier`'s rig, a corpse, the death cam's
+stand-in — is OUR renderer's since `BABYLON_EXIT.md` X4.1d**
+(`render/BodyDraw.ts`, its programs `render/bodyProgram.ts`), and Babylon is
+made no rig mesh. A rig is its joints (`rigJoints.ts`) and a list of fifteen
+SEGMENTS hung off them; what a segment LOOKS like is its side's KIT
+(`SoldierModel.soldierKits`), built once a side — the first rig of the side
+builds it — and uploaded once, both kits end to end. Each frame
+`Game.drawBodies` writes every drawn body's segment matrices (its own local
+times its joint's world, `writeRigDrawing`: the matrices `drawRig` handed
+Babylon's meshes through `freezeWorldMatrix` from X4.1a to X4.1d, bit for
+bit) and hands them over; the renderer draws them in the main pass at
+`"beforeAlphaTest"`, installed AHEAD of the world's draw, and the visors
+again, first, in the glow's mask.
+
+**Which bodies are drawn is still decided where it was.** The fog-wall gate
+is the roster's (`NetRoster.update` switches a body off past
+`bodyDrawDistance`) and the ragdoll pool's; the size gate's whole-body drop is
+`WorldCulling`'s, measured once a body a frame off its root's capsule
+(`measureRig`) — it files no mesh for a pool any more and answers by index
+(`drawsBody`), which is what `drawBodies` reads. The visor goes with its body
+in every case: it is a segment of the body, not a mesh the emissive exemption
+could keep. (A corpse is still measured at its ROOT, which only sinks while a
+blast throws the torso up to 4 m from it — a body's projected size at the
+gate's ~810 m moves by under 1% for that, and moving the measure would move
+which corpses are drawn, a picture change: owed to X4.1e, whose fade is
+built on the same measure.)
+
+**A draw is a RANK, and the rank is the load-bearing part.** Babylon's group-0
+opaque queue is sorted nearest-first (`Game`'s `setRenderingOrder`, the
+bounding sphere's centre off `camera.globalPosition`), so a rig's fourteen
+meshes went down nearest first — and under LEQUAL the LATER of two equal
+depths wins. At 250 m the depth buffer cannot tell a visor 3 cm proud of the
+face from the face, so the face, drawn after it, won and the visor was not
+drawn; measured, the first cut drew the matte segments in one draw and the
+visors after them, and `sarab/rig-far` moved 73 pixels (max 200/255: a
+visor drawn amber where Babylon drew the face) and `rig-near` two, at a
+visor's edge against the brim. So each frame the render PULLS each body's
+order (`Game.bodyPull`, inside the render, where `globalPosition` — the
+inverted view matrix's translation, never `camera.position` — is this
+frame's): its segments' bounding-sphere centres (`writeRigCentres`, each
+segment's own extent as Babylon's `BoundingSphere` made it) by squared
+distance, a STABLE sort with the kit's order breaking a tie, as
+`Array.prototype.sort` broke it over meshes made in that order; a segment
+switched off (the launcher) last. And each draw is one RANK of every body at
+once: rank `r`'s matte segments in one non-indexed draw, each instance (a
+body) pulling its own `r`th segment's corners out of `indexData` through its
+kit's range table and drawing nothing past them, and rank `r`'s visors in
+another where some body has its visor there. So every body's segments land in
+its own order, and the main pass is at most twice the segment count — 30 —
+however many bodies (Babylon's was fourteen a body: 672 at Sarab's 48). What
+is NOT reproduced is the order ACROSS bodies, and against Babylon's own
+opaque meshes (a hull, a flag's cloth): both matter only where two of them
+meet at one depth, which takes two bodies standing in each other.
+
+**What a rig does not carry reads what Babylon's empty vertex buffer read**:
+ONE float32 0, which WebGPU widens to a vector as (0, 0, 0, 1) — so `uv` is
+(0, 0) and `color` is (0, 0, 0, 1), the baked occlusion UNoccluded. The first
+cut read `color` as zeros and darkened every body (`rig-near` 1.1% of pixels,
+mean 5.7/255 over the body). `CLAUDE.md`'s "neutral values are the GL
+defaults" is this rule.
+
+**The two materials are RECIPES, and the visor is the emissive palette.** The
+matte segments are the cel program with the kit palette in the material's own
+block (`CEL_OWN_PALETTE`: the frame's `celPalette` is declared only without
+it, so every other variant's offsets stand; `CelMaterialFactory
+.bodyCelRecipe`); the visor is the emissive palette's program over a table of
+the two sides' visor colours (`bodyEmissiveRecipe`, its `uv2.x` the side's
+slot, the fog band the factory's), which is what `getEmissive(visor)` and
+`EmissiveFog` drew, number for number. Its bloom is per BODY, as Babylon's mask
+was per mesh: `GlowRules.colour` of the visor's centre, pulled with the order,
+read in the mask through a flat `vBody`. The mask's draws are the visor ranks
+again by the SAME vertex module, so its LEQUAL ties against the depth the main
+pass's visor wrote.
+
+**Eight storage arrays is a CEILING.** `maxStorageBuffersPerShaderStage`
+defaults to 8 and the device asks for nothing more, so the ranges ride the
+head of `indexData` and a body's kit the head of its order; the first cut had
+ten and every round failed with "the number of storage buffers (10) in the
+Vertex stage exceeds the maximum per-stage limit (8)".
+
+**Its pipelines are asked once, at `Game`'s construction**, so the warm-up's
+wait for ours covers them and no body is stood up under the card to compile
+one (the death cam's stand-in was, until X4.1d). **A failure is the round's**,
+X3.7's and X4.1c's routing: a pipeline that fails (that install's and every
+one after it), a refused main pass or mask while installed, tells
+`Game.worldFailed` with the install's owner. It is installed for a ROUND's map
+only: an EDITOR build draws no body, its world being Babylon's and its frames
+ones ours prepares nothing in, and the menu has none.
+
 ## Block visibility: how much of the map the frame walks
 
 `ENGINE_UPGRADE.md` wall 1, and `src/systems/WorldCulling.ts` is all of it.
@@ -4166,7 +4259,7 @@ what our renderer draws is in none: since X3.7b it is no mesh at all.
 | --- | --- | --- |
 | hidden | `map.colliders` — invisible by construction | **never**, at any distance |
 | blocked | drawn map geometry carrying `metadata.block` — on a shipped build the glazing and the fires; the cell's box is grown from EVERY record filed under its block, ours included | while the camera is within the map's `fogEnd` |
-| pooled | a body's rig, filed under the root the roster switches | while that root is enabled |
+| pooled | a body — no mesh since `BABYLON_EXIT.md` X4.1d: our renderer draws it, by this class's verdict (`drawsBody`) | never a candidate; DRAWN while its switch is on and the size gate passes it |
 | loose | everything else in the scene | **always** |
 
 **What our renderer draws was most of the blocked class** (X3.3c), then the
@@ -4230,18 +4323,13 @@ it by the same `setRigEnabled` a roster writes.
 on a change of side, and filing before it would leave the pool pointing at freed
 meshes for the rest of the round.
 
-**It is filed MESH BY MESH and never by ancestry, and that is load-bearing
-rather than incidental.** While the joints were nodes, `RagdollSystem`
+**It was filed MESH BY MESH and never by ancestry, and that was load-bearing
+rather than incidental**: while the joints were nodes, `RagdollSystem`
 reparented a corpse's onto Havok proxy nodes, so a ragdolling body's meshes
-were not descendants of `rig.root` at all; a class that asked "is this mesh
-under an enabled root" would have dropped every corpse in the game the moment
-it started falling. Measured on Sarab over 120 frames of a real death, with
-the joints off the root on every one of them: 20 of 20 rig meshes active and
-20 of 20 offered, identical with the pools filed and with them empty. Since
-`BABYLON_EXIT.md` X4.1a no rig mesh has a Babylon parent at all — its world
-matrix is handed to it (`SoldierModel.drawRig`) — so there is no ancestry to
-ask about, and its own enabled flag is written beside the body's switch
-(`setRigEnabled`).
+were not descendants of `rig.root`, and a class asking "is this mesh under an
+enabled root" would have dropped every falling corpse. Since X4.1d there is
+no mesh to file: a body is gated by its own switch and measure, and drawn by
+our renderer off its joints (above, "The bodies, ours").
 
 Measured on Sarab, 24 a side, the fight held so both arms saw one scene, three
 interleaved blocks each against an A-vs-A control spanning 13.48-13.75 ms:
@@ -4277,7 +4365,8 @@ of one idea. The block cull is EXACT because a structure past the fog draws
 a pixel — a claim that is true of the fog and of nothing shorter. A body dropped
 inside the fog genuinely disappears, and a map states `bodyDrawDistance` having
 decided that a soldier two pixels tall is worth less than fourteen merged meshes
-of draw. Measured on the proving ground with the roster in view, **65% of the
+of draw (the price while Babylon drew rigs; since X4.1d a body is an instance
+of its kit, and what the field saves is its vertices and its compose). Measured on the proving ground with the roster in view, **65% of the
 frame's active meshes were rigs** (`ENGINE_UPGRADE.md` S8) — so what that field
 removes is large, and it is removed from the same walk this table governs while
 leaving the table alone.
@@ -4372,9 +4461,10 @@ because it seemed wise.**
   capsule the rig root was a mesh of until `BABYLON_EXIT.md` X4.1a, now
   composed off the root joint, `rigJoints.measureBody`, and checked bit for
   bit against Babylon's sphere of that capsule) — one question, one answer,
-  read by all fourteen meshes, so the dismemberment cannot occur and the body
-  can still be dropped. This file still does not have to learn what a soldier
-  is.
+  for every segment of the body, so the dismemberment cannot occur and the
+  body can still be dropped. Since `BABYLON_EXIT.md` X4.1d the answer is read
+  by our renderer's drawing rather than by Babylon's walk (`drawsBody`). This
+  file still does not have to learn what a soldier is.
 
   **That makes it a second `bodyDrawDistance` stated in SCREEN space**, which
   is why it needs no per-map number and loosens by itself when a sight goes
@@ -4385,10 +4475,12 @@ because it seemed wise.**
   and after — and takes half the roster out of the list on a phone. 5 px is
   490/180 m and 6 px is 410/150.
 
-  **A body's own EMISSIVE goes with the body**, which is the one place this
-  class and the next one meet. A visor is the only emissive on a rig, and an
+  **A body's own EMISSIVE goes with the body**, which was the one place this
+  class and the next one met. A visor is the only emissive on a rig, and an
   exemption would leave a pair of eyes hanging in the air where the soldier
-  was; `gateOf` files the pool first for exactly that reason.
+  was; `gateOf` filed the pool first for exactly that reason, and since X4.1d
+  the visor is a SEGMENT of the body our renderer draws, so it cannot be
+  anything but the body's.
 
   **The measure is composed FRESH every frame, and without that the drop
   LATCHES** (while the root was a mesh, its world matrix was FORCED before it
@@ -5134,8 +5226,11 @@ below is the tree of that day.
 Albedo per vertex, behind `#define CEL_PALETTE`: a 1-based slot in `uv2.x`
 written per source mesh by `MapBuilder` before the merge, indexed into a
 `celPalette` array on the materials that read one — `getWorldCel`, and since
-then the soldier rigs' `getBodyCel` with a kit palette of its own (the world's
-ink twin that was the second reader at the time is gone with the ink hull).
+then the soldier rigs' `getBodyCel` with a kit palette of its own — since
+`BABYLON_EXIT.md` X4.1d no material at all but our renderer's recipe
+(`bodyCelRecipe`, the table in the material's block under `CEL_OWN_PALETTE`)
+— (the world's ink twin that was the second reader at the time is gone with
+the ink hull).
 Slot 0 is "not paletted", which is what an unwritten attrib gives, so a colour
 past `MAX_PALETTE` (128) keeps its own material and merges the way everything
 did before. Only `BlockMerge` paletteises, which exempts the editor for free.

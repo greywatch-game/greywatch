@@ -3567,7 +3567,7 @@ module from X2.2. When the last one lands, Babylon draws nothing but the post
 chain, and the frozen cel-material cache and its traps are deleted with
 `CelMaterialFactory`'s Babylon half.
 
-### X4.1 — Bodies (PERF_PLAN C6, A4) — **L, as five sub-steps** (split 2026-10-29) — X4.1a **LANDED** (a417bfc, review fixes after it), X4.1b **LANDED** (f554b68, review fixes after it), X4.1c **LANDED** (3a07a68, review fixes after it)
+### X4.1 — Bodies (PERF_PLAN C6, A4) — **L, as five sub-steps** (split 2026-10-29) — X4.1a **LANDED** (a417bfc, review fixes after it), X4.1b **LANDED** (f554b68, review fixes after it), X4.1c **LANDED** (3a07a68, review fixes after it), X4.1d **LANDED** (HASH)
 
 Every body a page draws — `NetSoldier`'s rig, a corpse, the death cam's
 stand-in — comes off Babylon's scene, along with the moon's body shadow map,
@@ -3607,7 +3607,7 @@ reparenting goes and every body is one kind of thing to draw.
   changes where its boxes come from. **Oracle:** the bank; a shadow rung `off`
   to `high` mid-round; the map read back against Babylon's before the
   generator goes.
-- **X4.1d — every body drawn by us (PERF_PLAN C6).** Living bodies, corpses
+- **X4.1d — every body drawn by us (PERF_PLAN C6).** Landed (below). Living bodies, corpses
   and the stand-in as instances fed from the joint arrays: 14 joint meshes ×
   48 bodies becomes 14 instanced draws or fewer, in every pass a body is in.
   The body's measure, the fog-wall gate and the size gate's whole-body drop
@@ -4215,6 +4215,188 @@ read drew a frame behind the hull).
   state (the rung `off`: the lit 1x1, the identity matrix, nothing packed),
   so degrading to it when the pipeline fails is an alternative to failing
   every round; this step followed `LampAtlas`'s precedent (fail).
+
+**X4.1d landed** (HASH; 2026-10-30; no picture change: the bank 61 of 61
+byte-identical against its parent).
+- **What it is.** Every body the page draws — a `NetSoldier`'s rig, a corpse,
+  the death cam's stand-in — is OUR renderer's (`render/BodyDraw.ts`, its
+  programs `render/bodyProgram.ts`), and **Babylon is made no rig mesh**. A
+  rig is its joints and fifteen SEGMENTS hung off them (`RigSegment`: the
+  joint and the segment's local); what a segment looks like is its side's
+  KIT (`SoldierModel.soldierKits`, `KitDrawing`), built ONCE a side — the
+  first rig of the side builds it, as `buildSoldier` built every rig's meshes
+  before, `mergeParts` on the same parts — and uploaded once, both kits end to
+  end. `buildSoldier(team)` takes no scene and no factory now; `drawRig`,
+  `disposeRig`, `NetSoldier.dispose` and `getBodyCel` are gone, and a matte
+  colour off `KIT_PALETTE` is REFUSED at the build (it had a per-hex material
+  to fall back on, and a body has none). `Game.drawBodies` writes each drawn
+  body's segment matrices (`writeRigDrawing`: the segment's local times its
+  joint's world, the same `src/math` product `drawRig` handed Babylon through
+  `freezeWorldMatrix`, read whole — all sixteen floats out of storage, as
+  Babylon's uniform held them, so the compiler can fold nothing Babylon's
+  stage did not) and their bounding-sphere centres (`writeRigCentres`), and
+  commits them; the renderer draws them at `"beforeAlphaTest"`, installed
+  AHEAD of the world's draw (Babylon's opaque queue, the rigs in it, drew
+  ahead of ours), and the visors into the glow's mask after the palette's
+  (`installMask`, asked after the handover's), as Babylon's went.
+- **Which bodies — the gates move with them.** The fog-wall gate is where it
+  was (the roster's distance switch and the ragdoll pool's), and the size
+  gate's whole-body drop is still `WorldCulling`'s, measured once a body off
+  its root's capsule (`measureRig`) — but a pool files NO mesh now (none
+  exists) and answers by index (`drawsBody`: switched on as the list was
+  offered, and not under the gate), which is what `drawBodies` reads, the
+  rigs in `installBodyPools`' order. The visor is a segment of its body, so it
+  drops with it by construction rather than by `gateOf`'s order. **The
+  measure is NOT moved to the torso**, as X4.1b asked us to consider: a corpse
+  is still measured at its root, which only sinks while a blast throws the
+  torso up to 4.2 m — at the gate's 3 px a body drops at ~810 m (1080 tall),
+  where 4 m is under 1% of its projected size — and moving it would move which
+  corpses are drawn, a picture change this step has no business making. It is
+  owed to X4.1e, whose fade is built on the same measure.
+- **A draw is a RANK, and that is what the bank caught.** Babylon's group-0
+  opaque queue is sorted nearest-first (`setRenderingOrder`, each mesh's
+  bounding-sphere centre off `camera.globalPosition`), and under LEQUAL the
+  LATER of two equal depths wins. The first cut drew every body's matte
+  segments in one draw a kit and the visors after them: `sarab/rig-far`
+  moved 73 pixels (max 200/255) — at 250 m the depth buffer cannot tell the
+  visor from the face 3 cm behind it, Babylon drew the face LAST (it is
+  farther) and hid the visor, and ours drew the visor last and showed it — and
+  `rig-near` two, at a visor's edge against the brim. So each frame the render
+  PULLS each body's ORDER (`Game.bodyPull`, inside the render, where
+  `globalPosition` — the inverted view matrix's translation, which
+  `scene.render` makes, never `camera.position` — is this frame's): a stable
+  sort of its segments' centres by squared distance, the kit's order breaking
+  a tie as `Array.prototype.sort` broke one over meshes made in that order,
+  a segment switched off last. And a draw is one RANK of every body: rank
+  `r`'s matte segments in one non-indexed draw — an instance a body, its `r`th
+  segment's corners pulled out of `indexData` through its kit's range table,
+  the corners past them and a segment switched off (a zero matrix, the
+  launcher) drawn as nothing — and rank `r`'s visors in another, only where
+  some body has its visor there. So every body's segments land in its own
+  order; the main pass is at most 2 x 15 draws whatever the roster, and a
+  rank no body draws anything at is no draw (one body: 14, Babylon's 14).
+  What is NOT reproduced is the order ACROSS bodies, or against Babylon's own
+  opaque meshes (a hull, the flags' cloth): those meet at one depth only where
+  two things stand in each other.
+- **What a rig does not carry reads (0, 0, 0, 1)**, also caught by the bank:
+  the first cut read `color` as zeros (`WorldBlocks`' rule, "an absent
+  attribute reads 0") and every body went darker — `rig-near` 1.1% of pixels,
+  mean 5.7/255 over the body — because Babylon binds ONE float32 0
+  (`_emptyVertexBuffer`), which WebGPU widens to (0, 0, 0, 1): the occlusion
+  in alpha UNoccluded, the GL default `CLAUDE.md` already names. A `uv` reads
+  (0, 0) either way. (`WorldBlocks`' rule holds for every world surface
+  because each carries a colour buffer; not re-proven here.)
+- **The materials are RECIPES, and the visor is the emissive palette.** The
+  matte segments are the cel program under `CEL_PALETTE` and a new
+  `CEL_OWN_PALETTE`: the kit's table in the material's own block
+  (`CelMaterialFactory.bodyCelRecipe`, born with `applySpec(null)`'s and
+  `applyTranslucency(null)`'s values), the frame declaring its map palette
+  only without it, so no other variant's offsets move. The visor is the
+  emissive palette's program over a table of the two sides' visor colours
+  (`bodyEmissiveRecipe`, the visor's `uv2.x` its side's slot, the fog band
+  the factory's by reference): `getEmissive(visor)`'s unlit
+  `StandardMaterial` and `EmissiveFog`, number for number. Its BLOOM is per
+  body, as Babylon's mask was per mesh: `GlowRules.colour` at the visor's
+  centre from `globalPosition`, pulled with the order and read in the mask
+  through a flat `vBody` — the visor's vertex stage ONE module for both
+  passes, so the mask's LEQUAL ties against the depth the visor wrote. The
+  assembler gained an instanced vertex `main` (`instance_index`) and a flat
+  varying for it.
+- **Eight storage arrays.** The first boot failed every round — through the
+  failure path below, which so got its first real exercise — on "the number
+  of storage buffers (10) in the Vertex stage exceeds the maximum per-stage
+  limit (8)": WebGPU's default, which the device does not raise. The ranges
+  ride the head of `indexData` and a body's kit the head of its order.
+- **The warm-up stands no body.** The three pipelines (matte, visor, mask)
+  are asked once, at `Game`'s construction, so the warm-up's wait for ours
+  covers them; `DeathCam.warm` and `Game.warmBodies` are deleted, and the
+  shadow passes are handed no bodies under the card (the stand-in's boxes
+  were only ever there to compile Babylon's generator, gone at X4.1c).
+- **What a failure becomes**, X3.7's and X4.1c's routing: a pipeline that
+  fails (that install's, and every one after it, the pipelines being the
+  session's), or a main pass or mask refused while installed, tells
+  `Game.worldFailed` with the install's owner — the menu, a toast. It is
+  installed for a ROUND's map only (`installMap`, taken back by
+  `teardownMap`): **an editor build draws no body** (its world is Babylon's,
+  its frames ones ours prepares nothing in; the editor stops the death cam,
+  and a server round's roster behind it is not drawn), and the menu has
+  none. **The kit screen** draws no rig on its stage; the world behind it is
+  the round's, whose bodies draw as in any state, and its glow rule (group 0
+  admitted only off the kit screen) reaches the visors through
+  `glowAdmits(0)`, as it reached their meshes.
+- **Measured.** The bank against a BEFORE at 85df99b in a worktree
+  (`--check --keep` both sides): **61 of 61 byte-identical** (`comparePngs`,
+  0 pixels), `rig-near` and `rig-far` among them, the same 34 stale rows on
+  both sides, no console or page error — once in one invocation on the code
+  before its last two changes (the mask's order behind the palette, a rank of
+  nothing but switched-off segments skipped), and again on the code as
+  committed, in three invocations: the one-invocation re-take hung twice, the
+  D3D12 device going away mid-map at Hollowmere's `crossing` and Harrowmead's
+  `ground` after a session of hours of uncapped runs (`FINDINGS.md` 64's hang,
+  which predates this step; the first of the two had a `vite build` running
+  beside it, and its `ground` row came back NOT REPRODUCIBLE before the
+  hang). **`census --against`** the BEFORE:
+  every total equal (Hollowmere 278, Greyfen 205, Coldharbour 672, Harrowmead
+  847, Sarab 661, Cinderhaven 186, Kurenai 125); `census.mjs` counts
+  `bodyDraw.stats.drawn` with ours now, and the two rig rows moved 14 draws
+  across — `rig-near` Babylon 26 → 12, ours 14 → 28; `rig-far` 23 → 9, 12 →
+  26. **`gate.mjs`** clean on seven. **`shaders.mjs`** clean on seven, ours
+  17/17 (21/21 Sarab and Cinderhaven, 23/23 Coldharbour) — it builds the
+  world's programs, not the bodies', which are built in the page at boot,
+  where a failure is the world's (above). Typecheck, build
+  (`check-babylon-free`: 15 simulations, no path; `src/render/` walked with
+  the two new files), corecheck and `parity` (eight maps) pass.
+  **`clients.mjs --check`** identical on all three maps (452fc9d44a88e3a6,
+  5504610c69d82176, 4b1f60f31d44f6f3; nodes and every body identical) — its
+  script now calls `buildSoldier(team)`. **`drop.mjs --check --exact`** "bits
+  identical" on all seven maps. **`kit:hash --models`: the two `soldier` rows
+  are RE-BASELINED, by construction** — the script hashed a rig's meshes and
+  plain data, and a rig has no mesh now; it hashes the rig and its side's
+  drawing (`{ rig, drawing }`, every segment's arrays and local):
+  `["soldier",0]` draw 958f3eefeb4baf67 → b679a53ca9bc0e6d (set
+  f2e0d7c36c93125a → 9cbf1be11a5aab14), `["soldier",1]` draw 1633e61a689e545a
+  → e8f88652ba84faa6 (set 3c25ce72c46f03e7 → a667a09024e5bbb2), repeated
+  identical. **A round offline** (a scratch probe, Sarab, 600 frames in
+  play): bodies drawn on every frame, up to 23 at once in up to 27 main-pass
+  draws and 12 mask draws; **a blast throwing a body** — the nearest living
+  body ahead of the camera (21 m) killed through the roster's own door with a
+  blast's damage, its corpse taken by the pool — drawn on all 240 frames of
+  its fall (ragdolling, the torso thrown 2.16 m), no console or page error.
+  **A netplay round** against a local `dist-server` (`?mp=`, Sarab, the
+  authority's round): 600 frames in play with bodies drawn on every one (up
+  to 18 at once, 23 draws, 8 mask draws), and a blast staged the same way on
+  a body off the wire 46 m ahead (torso thrown 2.38 m), drawn on all 240
+  frames of its fall; no console or page error. **The forced paths** (a
+  scratch page, Hollowmere): the pipelines settled false for the session
+  (`bodyDraw.ready`) — one `[world] hollowmere: the map could not be drawn —
+  our bodies cannot draw: a pipeline of theirs failed`, the menu; restored, a
+  clean round to `playing` (7 bodies, 19 draws, 4 mask draws); the editor
+  (`F2`) drew none (0 instances) and gave the round back on leaving; no other
+  console or page error.
+  **X0.3 on the desktop** (`bench.mjs sarab cinderhaven --max --gpu`,
+  uncapped, 3440x1440, 24 a side, the BEFORE in the worktree at 85df99b and
+  the AFTER alternated run by run, three a side; the canonical fight hashes
+  — `986c2e35557fb679`, `2f97c9072ab1762b` — on all 12 runs): **the fights
+  got faster** — mean frame new / old **0.654 on Sarab** (10.44 to 6.83 ms;
+  tick 9.49 to 5.95, render 7.50 to 4.34) and **0.742 on Cinderhaven** (8.17
+  to 6.06; tick 7.38 to 5.08, render 5.54 to 3.75), every spread under 2%;
+  Babylon's draws in the fight 428 to 202 and 308 to 150. The vantages and
+  the path held, 0.999-1.002 (no body is in either). `gpu.frame` held:
+  0.994-0.999 in the fights, 0.993-1.025 elsewhere. The install read
+  8.2-9.9 to 9.6-11.5 s on Sarab and level on Cinderhaven, the bench's cold
+  dev server as at X3.6c/X3.7c, not measured further.
+- **Deviations.** The cross-body order, above (not reproducible without
+  Babylon's queue; a tie needs two bodies in one place). The order is pulled
+  inside the render because only there is `globalPosition` this frame's.
+  `CLAUDE.md` is 1,543 lines (three up): the rendering section stays at its
+  ~135 by trimming the lights' paragraph and the fog sentence.
+  `WorldCulling.stats.pooled` counts bodies (it counted their meshes).
+- **Owed onward.** X4.1e: the fade, and the corpse's measure at its torso
+  with it (above). The phone's FOLLOW-UP reading. X4.1a's compose cost is
+  smaller (`drawBodies` composes a drawn body once and skips an undrawn one;
+  the measure's root chain and both packers' `computeChain`s and `writeRig`s
+  stand, unmeasured). `VERIFYING.md`'s soldier-in-a-picture recipe borrows a
+  roster body now: a rig a script builds is never drawn.
 
 ### X4.2 — Vehicles (PERF_PLAN A3) — **M** (decision)
 

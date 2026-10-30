@@ -125,6 +125,12 @@ export interface Varying {
   readonly name: string;
   readonly type: string;
   readonly when?: Guard;
+  /**
+   * `"flat"`: handed over from the triangle's provoking vertex, never
+   * interpolated — what an integer must be (WGSL), and what a per-INSTANCE
+   * value is, so it reaches the pixel as the number it was.
+   */
+  readonly interpolate?: "flat";
 }
 
 /** A fragment stage, declared: what a shared body is assembled against. */
@@ -205,6 +211,12 @@ export interface VertexProgram {
   readonly entry: string;
   /** Blocks `main` writes before the body runs — see `PrivateBlock`. */
   readonly privates?: readonly PrivateBlock[];
+  /**
+   * `main` also takes `@builtin(instance_index) instanceIndex` — `decode` and
+   * `prelude` may read it — for a stage drawn INSTANCED, whose draw's
+   * instances are its bodies (`render/bodyProgram.ts`).
+   */
+  readonly instanced?: boolean;
   /**
    * Where `main` reads the attributes: it takes `@builtin(vertex_index)
    * vertexIndex` and no vertex buffer, runs `decode` (WGSL statements, which
@@ -296,7 +308,7 @@ export function assembleFragment(
   lines.push("struct FragmentInputs {", "  @builtin(position) position: vec4f,");
   program.varyings
     .filter((v) => holds(v.when))
-    .forEach((v, location) => lines.push(`  @location(${location}) ${v.name}: ${v.type},`));
+    .forEach((v, location) => lines.push(varyingDecl(v, location)));
   lines.push("}", "var<private> fragmentInputs: FragmentInputs;");
 
   const declared = declareGroups(program.groups, variant, tag);
@@ -341,7 +353,7 @@ export function assembleVertex(
   lines.push("struct FragmentInputs {", "  @builtin(position) position: vec4f,");
   program.varyings
     .filter((v) => holds(v.when))
-    .forEach((v, location) => lines.push(`  @location(${location}) ${v.name}: ${v.type},`));
+    .forEach((v, location) => lines.push(varyingDecl(v, location)));
   lines.push("}", "var<private> vertexOutputs: FragmentInputs;");
 
   const declared = declareGroups(program.groups, variant, tag);
@@ -371,7 +383,9 @@ export function assembleVertex(
   const { vertex, decode } = program.pull;
   lines.push(
     "@vertex",
-    "fn main(@builtin(vertex_index) vertexIndex: u32) -> FragmentInputs {",
+    program.instanced
+      ? "fn main(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) instanceIndex: u32) -> FragmentInputs {"
+      : "fn main(@builtin(vertex_index) vertexIndex: u32) -> FragmentInputs {",
     ...(decode ? [decode] : []),
     ...attributes.map((a) => `  vertexInputs.${a.name} = ${pullRead(a, vertex, declared.bindings, tag)};`),
     ...(program.prelude ? [program.prelude] : []),
@@ -383,6 +397,12 @@ export function assembleVertex(
     "}",
   );
   return { label: tag, code: lines.join("\n"), bindings: declared.bindings, attributes };
+}
+
+/** One member of the stage's interface struct: its location, and `flat` where it is. */
+function varyingDecl(v: Varying, location: number): string {
+  const flat = v.interpolate === "flat" ? " @interpolate(flat)" : "";
+  return `  @location(${location})${flat} ${v.name}: ${v.type},`;
 }
 
 /**

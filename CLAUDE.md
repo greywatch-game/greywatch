@@ -280,11 +280,11 @@ reflection bake, the card draws the whole map from each home spawn and flag
 until a frame compiles nothing, because WebGPU compiles a pipeline on the frame
 that first draws it. **It OPENS by waiting for OUR renderer's pipelines**,
 which are asked for ahead and compiled off the frame (`PipelineCache`'s
-counts). What it cannot see it is SHOWN, one frame at a time, by a `warm(on)`
-on whatever owns an idle pool (a shot's effects, a blast, a scorch, a body, a
-blob, the weapon) — **posed as IN FLIGHT**, since a stretched mesh or a
-`visibility` under 1 is a different pipeline from the idle pose. **A new pool
-that idles switched off owes one**, or its first use compiles in the round.
+counts), every BODY's among them. What it cannot see it is SHOWN by a
+`warm(on)` on whatever owns an idle pool of Babylon's (a shot, a blast, a scorch,
+a blob, the weapon) — **posed as IN FLIGHT**, since a stretched mesh or a
+`visibility` under 1 is a different pipeline. **A new pool that idles switched
+off owes one** (or ours, asked ahead), or its first use compiles in the round.
 
 **A LID is a screen laid over a state, which taking it off puts back rather than
 moving the game on — and which state is which, and what each one owes, is
@@ -521,10 +521,9 @@ door into the cache.** **What breaks it is a mesh that GAINS or LOSES a vertex
 COLOUR buffer, bones or morph targets after its first draw** — it keeps the
 effect it compiled first, silently, unless given `resetDrawCache()`.
 
-Cel materials carry their own light as uniforms — key, ambient, sky fill and up
-to `MAX_POINT_LIGHTS` (16) point lights — and `LightingSystem` is the sole owner
-of dynamic light. **Adding a `PointLight` or `HemisphericLight` to the scene
-will not affect any cel-shaded mesh**.
+Cel materials carry their own light as uniforms (key, ambient, sky fill, up to
+16 point lights) and `LightingSystem` is the sole owner of dynamic light: **a
+`PointLight` or `HemisphericLight` added to the scene lights no cel mesh**.
 
 **The indirect light is TRACED in compute against the COLLIDERS**
 (`systems/GiVolume.ts`): **a light whose brightness changes faster than a sweep
@@ -550,9 +549,8 @@ REFUSED** — BLENDED OR NOT, since the lamps' atlas casts every surface not
 by what it SAYS** (`PointLightData.shadow`), and the bumped ground variant is at
 **16 of WebGPU's 16 sampled textures per stage** — a new texture owes a PACKING.
 
-**Nothing drawn outside the cel shader gets fog for free, and everything that
-draws outside it owes the same fade** `CelMaterialFactory.setEnvironment`
-publishes — nothing may describe different weather from the wall in front of it.
+**Nothing drawn outside the cel shader gets fog for free**: it owes the fade
+`CelMaterialFactory.setEnvironment` publishes, or it outlives the wall behind it.
 
 **The world carries a VERTEX COLOUR buffer and its neutral values are the GL
 defaults** — baked occlusion in the **alpha**, a world marker in the **green**,
@@ -599,19 +597,21 @@ surface ours cannot hold is REFUSED (a DEV throw `merge:hash` fails on), and a
 pass of ours that cannot draw its world tells the failure it was HANDED WITH
 it: **`Game.worldFailed`**, the menu and a toast, never a fallback.
 **The frame WALKS the scene, and the scene is the map.** `WorldCulling`
-**replaces `scene.getActiveMeshCandidates` and writes nothing onto any mesh**:
-it never disables, never hides, never unpickles. **A collider is never a
-candidate**, and a CELL is grown from the RECORDS (`GameMap.world`, whole).
-**The SCATTER is drawn ONCE**, as INSTANCES of its variants, its colour baked
-once per kind, its pieces cut out of the block arrays it stays merged into
-(`BuildOptions.onScatter`). **A mesh carrying `metadata.block` (the
-glazing, a fire) is one only while the camera is inside the map's `fogEnd`**,
-**a body's RIG only while the switch the roster writes is on**, and
-**everything else is ELIGIBLE**. **Anything EMISSIVE and anything outside
-rendering group 0 are exempt outright.** **Nothing pooled may ever be
-block-keyed**, and the rigs are **filed mesh by mesh, never by ancestry**:
-a rig's JOINTS are ours (`rigJoints.ts`) and its meshes have no parent,
-`drawRig` handing each its world matrix once a frame (`Game.drawBodies`).
+**replaces `scene.getActiveMeshCandidates` and writes nothing onto any mesh**.
+**A collider is never a candidate**, and a CELL is grown from the RECORDS
+(`GameMap.world`, whole). **The SCATTER is drawn ONCE**, as INSTANCES of its
+variants, its pieces cut out of the block arrays it stays merged into. **A
+mesh carrying `metadata.block` (the glazing, a fire) is one only while the
+camera is inside the map's `fogEnd`**, **everything else is ELIGIBLE**, and
+**anything EMISSIVE or outside rendering group 0 is exempt** from the size
+gate. **Nothing pooled may ever be block-keyed.**
+**EVERY BODY IS OUR RENDERER'S, and Babylon is made NO RIG MESH**
+(`render/BodyDraw.ts`): each an INSTANCE of its side's kit, built once a side
+(`SoldierModel.soldierKits`), drawn while its switch is on and the size gate,
+measured ONCE a body, passes it (`WorldCulling.drawsBody`) — the visor with
+it. **A draw is a RANK of every body**, each body's segments nearest-first off
+`camera.globalPosition` (`Game.bodyPull`), because the later of two equal
+depths wins and Babylon's front-to-back queue decided which.
 
 **The GLOW draws the EMISSIVE meshes and nothing else, its occlusion being the
 FRAME's own depth buffer** (`src/shaders/GlowPass.ts`). **What may bloom is read
@@ -640,7 +640,8 @@ window, back faces and the foliage's third map, the bodies' map, the rungs, the
 lamps' atlas, lightning, the ink's NIB and its coverage channel's two blended
 exceptions, the wind's rigs, the fire, the glazing and reflection bake, the
 grass and turf, the water, the WGSL traps, our renderer's frame and its seam,
-the candidate list and size gate, the glow's three failed attempts and the
+the candidate list and size gate, the bodies (ours: the kit, the rank, the
+order), the glow's three failed attempts and the
 palette, ours, and the sky and its clouds' depths.
 ### The map is data, not code
 
@@ -972,9 +973,9 @@ Babylon, no camera), **and no view names one**: every body a page draws is a
 off the wire and never writing back — so the distance LOD and a ragdoll holding
 a corpse are the view's, and nothing about the camera reaches an outcome. **Three things carry the frame budget and undoing any costs ~10x draw
 calls or a permanent hitch**: the rig pool is built once per roster size and
-never disposed inside a round, a rig is fourteen merged meshes (one per JOINT,
-the albedo in `uv2.x`) and two materials, and AI is staggered round-robin at
-`CONFIG.bots.thinkRate`. **Everything a bot notices without seeing it is
+never disposed inside a round, every body of a side is an INSTANCE of one kit
+(a segment per JOINT, the albedo in `uv2.x`; `render/BodyDraw.ts`), and AI is
+staggered round-robin at `CONFIG.bots.thinkRate`. **Everything a bot notices without seeing it is
 ray-free by construction** — cover is baked, never probed, and skill is one
 scalar drawn **per squad** from a seeded generator.
 
@@ -1028,7 +1029,8 @@ its three clients, never the other way round. **It calls Havok's RAW `HP_*` API*
 (`systems/havok.ts`) — no Babylon plugin, no physics engine on the scene — and
 **a body's pose is seven numbers in an array** (`WorldBody.pose`): a corpse's
 rig JOINTS are posed straight off it (`Joint.pose`, read at every compose, and a
-pose left on a joint is the leak to fear), and each debris VIEW writes it onto
+pose left on a joint is the leak to fear; the corpse is drawn as any body is,
+by our renderer), and each debris VIEW writes it onto
 its mesh (`systems/poseView.ts`) after the step, so **anything new that reads a
 shard's or a chunk's drawing between `physics.update` and the clients'
 `update`s reads last frame's**. `PhysicsWorld` reaches no node, mesh or scene —
@@ -1530,7 +1532,8 @@ built.
   false**, or a field declared without an initializer boxes every number
   stored into it (`docs/profiling.md`). Nothing fails; the game just allocates.
 - `Bot` holds a small FSM; a body is DRAWN by a rig `SoldierModel` builds (our own
-  joints, `rigJoints.ts`, posed by `animateSoldier`). Animation is procedural, so a new
+  joints, `rigJoints.ts`, posed by `animateSoldier`, drawn by our renderer as an
+  instance of its side's kit). Animation is procedural, so a new
   behavior means new FSM states, never new clips.
 
 ## Files not to edit / not part of the build

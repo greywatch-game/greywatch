@@ -688,7 +688,8 @@ src/
                         #   CompileProgress, oursCapMs), then the vantages
                         #   (home spawns and flags), the quiet-frame count off
                         #   both caches, and the cap. Decides WHEN; Game stages
-                        #   each frame (WorldCulling.setWarm, the pools' warm)
+                        #   each frame (WorldCulling.setWarm, the pools' warm;
+                        #   no body since X4.1d, its pipelines ours)
     FrameCap.ts         # The frame-rate cap (Settings.fpsCap): the engine's
                         #   frame REQUESTER, refusing a refresh before the
                         #   next frame is DUE. A deadline, not Babylon's
@@ -973,12 +974,15 @@ src/
     SquadRadio.ts       # One TEAM's board: its squads' contact calls and the
                         #   marks its own deaths leave. Cues, never targets
     BotSkill.ts         # skill scalar -> BotProfile; difficulty tiers
-    SoldierModel.ts     # Merged bot rig + the per-team kit it is painted and
-                        #   shaped in + the poser that writes a solved pose
+    SoldierModel.ts     # The bot rig — joints and fifteen segments — + the
+                        #   per-side KIT it is painted and shaped in, built ONCE
+                        #   a side as segment geometry (soldierKits, never a
+                        #   Babylon mesh) + the poser that writes a solved pose
                         #   onto the joints (arms IK'd onto the rifle), and the
-                        #   RagdollSubject interface. Its meshes have no
-                        #   parent: drawRig hands Babylon each one's world
-                        #   matrix off the joints, once a frame
+                        #   RagdollSubject interface. writeRigDrawing writes a
+                        #   body's segment matrices and writeRigCentres their
+                        #   bounding centres, which our renderer draws it off
+                        #   (render/BodyDraw, BABYLON_EXIT.md X4.1d)
     rigJoints.ts        # A rig's joints as OUR hierarchy, no Babylon: local
                         #   channels, float32 world matrices the rig owns (bit
                         #   for bit the TransformNodes'), a fresh chain, a
@@ -1185,8 +1189,9 @@ src/
                         #   makes that safe here and not in BlastDust, and for
                         #   why the spray's pair is LIT on the way in and the
                         #   dust's is not. Client only
-    DeathCam.ts         # The player's own death; the only occlusion pick
-                        #   outside combat
+    DeathCam.ts         # The player's own death — a stand-in rig, filed and
+                        #   drawn as any body; the only occlusion pick outside
+                        #   combat
     VehicleSystem.ts    # The armour on the field: one hull per hardstanding, the
                         #   wreck clock and the respawn clock (two, so a side can
                         #   never field both), which hull a boarder may get
@@ -1328,7 +1333,9 @@ src/
                         #   landform's NO_REACH, null for a block no cell grew
                         #   for). setMap REFUSES a build whose visuals and
                         #   records disagree, handing back the reason for
-                        #   Game.worldFailed
+                        #   Game.worldFailed. A pooled BODY is no mesh
+                        #   (X4.1d): measured once a frame and answered by
+                        #   index (drawsBody), which the drawing reads
     BlockHandover.ts    # The map's world as OUR renderer draws it, in every
                         #   pass of every build but the editor's, with NO
                         #   fallback (BABYLON_EXIT.md X3.3-X3.7b): every block
@@ -2509,7 +2516,8 @@ src/
                         #   CelMaterialFactory.fillFrame fills; FRAME_TEXTURES,
                         #   the rest of group 0, and FrameTextures
     celMaterial.ts      # A cel material as WE draw one: its own block and
-                        #   textures (group 1), the draw's world (group 2), and
+                        #   textures (group 1; a body's own kit palette under
+                        #   CEL_OWN_PALETTE), the draw's world (group 2), and
                         #   CelRecipe — what the factory kept at its birth
     UniformBlockBuffer.ts # One uniform block's GPU buffer and the copy plan
                         #   from its values by the computed layout
@@ -2555,6 +2563,21 @@ src/
                         #   depth program's own bodies (celDepth) over the
                         #   instances of the unit box, a matrix each as
                         #   Babylon's thin instances laid it out
+    bodyProgram.ts      # The BODIES' programs (X4.1d): the cel stage over a
+                        #   kit's matte segments, the emissive palette's over
+                        #   the visor, the visor's mask twin — a draw one RANK
+                        #   of every body, an instance a body, a vertex pulled
+                        #   through the body's order and its kit's ranges, its
+                        #   world the body's segment matrix read whole
+    BodyDraw.ts         # Every BODY as OUR renderer draws it (X4.1d): the
+                        #   kits on the GPU once, each frame's bodies as
+                        #   instances — a rank's matte segments one draw, its
+                        #   visors another, the visors again into the glow's
+                        #   mask — off what Game.drawBodies commits and the
+                        #   order and bloom the prepare pulls; pipelines asked
+                        #   once a session, a failure (or a refused pass) the
+                        #   round's (Game.worldFailed); installed for a round,
+                        #   never an editor build
     BodyShadowMap.ts    # The moon's BODY map as OUR texture (X4.1c): made
                         #   cleared to lit, drawn whole from the proxies
                         #   BodyShadows hands it each frame it updates
@@ -2722,8 +2745,10 @@ src/
                         #   @group/@binding, uniforms.<name> routed to its
                         #   block, strided arrays read via .el, and Babylon's y
                         #   flip for the kind of pass; a PULLED vertex stage's
-                        #   attribute reads out of storage. firstBindings, the
-                        #   one numbering rule a bind group is built by
+                        #   attribute reads out of storage, its instance index
+                        #   where it is drawn instanced, and a FLAT varying.
+                        #   firstBindings, the one numbering rule a bind group
+                        #   is built by
       layout.ts         # blockLayout: a uniform block's byte offsets and
                         #   strides by WGSL's rules, from the same data; the
                         #   guard rule assemble.ts shares

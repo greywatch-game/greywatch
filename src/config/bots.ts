@@ -30,12 +30,14 @@ export const bots = {
    * The most a map may field a side, and the only thing this number IS is a
    * bound on `MapLayout.perTeam`.
    *
-   * It exists because a roster is spent in RIGS: a bot is fourteen merged
-   * meshes that Babylon's active-mesh pass walks every frame whether the body
-   * is enabled or not (`WorldCulling` — a disabled mesh is skipped cheaply, not
-   * skipped), so the pool is a per-frame cost on every map that carries it and
-   * a map's roster has to be a number somebody chose rather than one a layout
-   * can run away with. 24 is Sarab's, which is what it was raised to.
+   * It exists because a roster is spent in RIGS: a body is a joint tree
+   * composed every frame it is drawn, an instance of its side's kit in every
+   * draw of the bodies (`render/BodyDraw.ts`, whose instance capacity is this
+   * twice and the death cam's stand-in) and, until `BABYLON_EXIT.md` X4.1d,
+   * fourteen meshes Babylon's active-mesh pass walked whether the body was
+   * enabled or not — so the pool is a per-frame cost on every map that carries
+   * it and a map's roster has to be a number somebody chose rather than one a
+   * layout can run away with. 24 is Sarab's, which is what it was raised to.
    *
    * It is NOT a pool size on a CLIENT and nothing there is built to it: the
    * pool is the map's own roster and is rebuilt when that changes

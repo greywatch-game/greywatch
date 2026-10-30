@@ -1,16 +1,16 @@
 /**
  * rigJoints.ts — a soldier rig's joints as OUR hierarchy: each joint's local
  * transform as plain numbers, and its world matrix composed off them into a
- * float32 matrix the rig owns (`Joint.world`), which is what Babylon draws the
- * rig's meshes from and what every reader of a joint reads (`BABYLON_EXIT.md`
- * X4.1a).
+ * float32 matrix the rig owns (`Joint.world`), which is what our renderer
+ * draws the body's segments from (`SoldierModel.writeRigDrawing`,
+ * `BABYLON_EXIT.md` X4.1d) and what every reader of a joint reads (X4.1a).
  * Owns: `Joint`, `JointTree` (the composition, and a fresh chain), and the
  * body's one MEASURE (`measureBody`, the sphere the root's capsule used to
  * answer).
  * Invariants:
  * - **No `@babylonjs/core`.** `src/math` only (`scripts/check-babylon-free.mjs`
- *   holds it as a root), so X4.1d can draw these matrices with no node behind
- *   them.
+ *   holds it as a root): these matrices are drawn with no node behind them
+ *   (X4.1d).
  * - **A world matrix is what `TransformNode.computeWorldMatrix(true)` gave for
  *   the same channels, bit for bit**: the local composed from its Euler through
  *   a yaw-pitch-roll QUATERNION into a float32 `Matrix` (`ComposeToRef`, scale

@@ -6,7 +6,9 @@
  * MAIN pass (`render/WorldBlocks.ts`, X3.6e: the bake's own pipelines) —
  * the only draw of the palette there is since X3.7c, whose Babylon stages
  * and mask twin (`EmissiveWorldMaterial`'s, until then) it was the pulled
- * form of.
+ * form of. Its fragment also draws a body's VISOR in the main pass, over the
+ * visors' own table (`render/bodyProgram.ts`, X4.1d), its vertex stage that
+ * one's own.
  * Owns: `EMISSIVE_BLOCK` (group 1: the palette, the fog band and, for the
  * mask, the bloom's colour), the geometry it reads (group 2,
  * `EMISSIVE_GEOMETRY`: the positions, the slots in `uv2` and the instances'
@@ -90,7 +92,8 @@ export interface EmissiveRecipe {
   readonly values: { readonly emissivePalette: Float32Array; readonly fogRange: Float32Array };
 }
 
-const VARYINGS = [
+/** What the palette's vertex stage hands its pixel — a body's visor's too, which hands one more after them (`bodyProgram.ts`). */
+export const EMISSIVE_VARYINGS = [
   { name: "vPosW", type: "vec3f" },
   { name: "vSlot", type: "f32" },
 ] as const;
@@ -121,7 +124,7 @@ export function emissiveWorld(
           label: "emissive-vertex",
           groups: [[FRAME_BLOCK], [], EMISSIVE_GEOMETRY],
           attributes: EMISSIVE_ATTRIBUTES,
-          varyings: VARYINGS,
+          varyings: EMISSIVE_VARYINGS,
           includes: {},
           body: EMISSIVE_WORLD_VERTEX,
           entry: "emissiveWorldVertex",
@@ -134,7 +137,7 @@ export function emissiveWorld(
         {
           label: glow ? "emissive-glow-fragment" : "emissive-fragment",
           groups: [[FRAME_BLOCK, ...FRAME_TEXTURES], [EMISSIVE_BLOCK]],
-          varyings: VARYINGS,
+          varyings: EMISSIVE_VARYINGS,
           includes: {},
           body: EMISSIVE_WORLD_SURFACE,
           surface: "emissiveWorldSurface",

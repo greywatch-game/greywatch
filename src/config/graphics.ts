@@ -1298,8 +1298,9 @@ export const graphics = {
      * **A BODY is measured once off its rig ROOT and drops WHOLE**, which is
      * what lets this reach a soldier at all — see `WorldCulling.offer`. A
      * per-mesh verdict decapitated one instead of removing him, and a pool was
-     * exempt outright until the root answered the question once for all
-     * fourteen meshes. **Anything EMISSIVE is still exempt**, because bloom
+     * exempt outright until the root answered the question once for the whole
+     * body (`WorldCulling.drawsBody`, which our renderer's drawing of bodies
+     * reads since `BABYLON_EXIT.md` X4.1d). **Anything EMISSIVE is still exempt**, because bloom
      * makes a sub-pixel emitter visible far past its own size and this game
      * has a night map full of lit windows — but a body's own visor is the
      * BODY's and goes with it.

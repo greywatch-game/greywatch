@@ -8,7 +8,9 @@
  * `MaterialUniforms` and `createMaterialUniforms`, and `CelRecipe` — what a
  * material is drawn WITH, as plain data.
  * Invariants: a field or texture here is one a material is BORN with from its
- * own spec, never shared state (that is the frame's, `frame.ts`) — the split
+ * own spec, never shared state (that is the frame's, `frame.ts`) — a body's
+ * kit palette among them (`CEL_OWN_PALETTE`, `bodyCelRecipe`), the one
+ * palette that is a material's own — the split
  * `CelMaterialFactory` already makes, read off the code; a recipe is filled by
  * the factory that made the material (`CelMaterialFactory.celRecipe`), as a
  * PULL off what it kept at birth, and never read off a Babylon material; a
@@ -18,6 +20,7 @@
  * frame's host can resolve.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
  */
+import { MAX_PALETTE } from "../shaders/wgsl/celSurface";
 import type { HostTexture } from "./frameHost";
 import { guardHolds } from "./wgsl/layout";
 import type { Binding, UniformField } from "./wgsl/assemble";
@@ -41,6 +44,12 @@ export const CEL_MATERIAL_FIELDS = [
   { name: "reflectProbe", type: "vec4f", when: ["CEL_GLASS"] },
   { name: "reflectBoxMin", type: "vec3f", when: ["CEL_GLASS"] },
   { name: "reflectBoxMax", type: "vec3f", when: ["CEL_GLASS"] },
+  // A palette of the material's OWN, where the frame's is the map's: the
+  // soldier kit's nine hexes (`CelMaterialFactory.bodyCelRecipe`,
+  // `BABYLON_EXIT.md` X4.1d), which outlive every map and so never ride the
+  // frame — `frame.ts` declares its own only without this define. LAST, so no
+  // other variant's offsets move.
+  { name: "celPalette", type: "vec3f", count: MAX_PALETTE, when: ["CEL_PALETTE", "CEL_OWN_PALETTE"] },
 ] as const satisfies readonly UniformField[];
 
 /** The material block: group 1, binding 0 of the cel program. */
@@ -80,7 +89,7 @@ export function createMaterialUniforms(defines: Iterable<string>): MaterialUnifo
   const out: Partial<Record<CelMaterialField, Float32Array>> = {};
   for (const f of CEL_MATERIAL_FIELDS as readonly UniformField[]) {
     if (!guardHolds(f.when, variant)) continue;
-    out[f.name as CelMaterialField] = new Float32Array(COMPONENTS[f.type]);
+    out[f.name as CelMaterialField] = new Float32Array(COMPONENTS[f.type] * (f.count ?? 1));
   }
   return out;
 }

@@ -82,7 +82,8 @@ export function celGeometry(stride: number | null): readonly Binding[] {
   return stride === null ? CEL_GEOMETRY : [...CEL_GEOMETRY, ...CEL_SCATTER_LIST];
 }
 
-const CEL_ATTRIBUTES: readonly Attribute[] = [
+/** The cel stage's attributes, each out of its group-2 array — the bodies' stage reads the same (`bodyProgram.ts`). */
+export const CEL_ATTRIBUTES: readonly Attribute[] = [
   { name: "position", type: "vec3f", from: "positionData" },
   { name: "normal", type: "vec3f", from: "normalData" },
   { name: "color", type: "vec4f", from: "colorData" },

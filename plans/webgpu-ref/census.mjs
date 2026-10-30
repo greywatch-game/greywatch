@@ -20,7 +20,8 @@
  * phase has not ended — `render/babylonSeam.ts`'s own test for the frame's
  * main pass, so a shadow map, a probe face, the lamps' atlas and the glow's
  * mask (rendered from `onAfterDrawPhaseObservable`) are not counted — plus
- * what our renderer drew in that pass (`Game.handover.stats.drawn`). Read on
+ * what our renderer drew in that pass (`Game.handover.stats.drawn`, and since
+ * X4.1d `Game.bodyDraw.stats.drawn`). Read on
  * a FROZEN frame, after the bank's own settle, so the count is the vantage's
  * and not a frame's: the same frame a `bank.mjs --check` photographs.
  *
@@ -87,9 +88,12 @@ function read(page) {
       });
     });
     // Null before X3.3c unless the switch was on, so a BEFORE taken in a
-    // worktree of then counts Babylon alone.
+    // worktree of then counts Babylon alone. The BODIES are ours since
+    // X4.1d (`BodyDraw`, its main-pass draws), counted with the world's — a
+    // BEFORE older than that counts its rigs' meshes in Babylon's.
     const ours = g.handover ? g.handover.stats : { taken: 0, drawn: 0 };
-    return { babylon: window.__census.babylon, ours: ours.drawn, taken: ours.taken };
+    const bodies = g.bodyDraw ? g.bodyDraw.stats.drawn : 0;
+    return { babylon: window.__census.babylon, ours: ours.drawn + bodies, bodies, taken: ours.taken };
   });
 }
 

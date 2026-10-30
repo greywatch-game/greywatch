@@ -74,17 +74,16 @@
  *   and the fires, the rest of `BlockMerge`'s output being our renderer's
  *   (below); the cell's box is grown from all of it, every STRUCTURE on the
  *   map.
- * - **Pooled** — a body's rig, filed under the body whose switch the roster
- *   already writes (`SoldierRig.enabled`), and offered only while that body is
- *   on. A pool is built once per roster and re-posed forever, so a rig that is
- *   not in the round is fourteen meshes the walk pays full price for and
- *   rejects — and a roster is the one thing on a map that a LAYOUT may triple
- *   (`MapLayout.perTeam`, 24 on Sarab against the shipped 8), which turns 336
- *   of these nodes into **1,008**. See `setPools`. It is also the one class the
- *   size gate measures ONCE, off the body's own measure, dropping the body
- *   whole rather than mesh by mesh — see `gateOf`.
+ * - **Pooled** — what was a body's rig, fourteen meshes the walk paid for
+ *   whether or not the body was in the round. Since `BABYLON_EXIT.md` X4.1d no
+ *   body is a mesh: our renderer draws every one as an instance of its kit
+ *   (`render/BodyDraw.ts`), so a pool files NOTHING into the list. What stays
+ *   here is the body's half of the size gate — measured ONCE, off the body's
+ *   own measure, dropping the body whole (`drawsBody`), which is what this
+ *   class always was the one class to get — handed to the drawing as a
+ *   verdict, as `reachGate` hands the world's numbers to its cull.
  * - **Loose** — everything else in the scene: the terrain, the roads, the rim,
- *   the other pools (tracers, shards, ragdolls, grenades, rubble), the sky, the
+ *   the effect pools (tracers, shards, grenades, rubble), the sky, the
  *   water, the grass, the viewmodel, the hulls, and every visual an EDITOR
  *   build makes, which is keyed per placement and carries no block at all.
  *   Always ELIGIBLE — and `offer` still drops the ones that are
@@ -183,10 +182,11 @@ export interface BodyMeasure {
 }
 
 /**
- * What `setPools` is handed: a body that is switched, the meshes that draw it,
- * and its one measure. `SoldierModel.pooledBody` makes one of a rig, which is
- * why nothing here has heard of a soldier — this file may not learn what a body
- * is any more than it has learned what a building is.
+ * What `setPools` is handed: a body that is switched, and its one measure.
+ * `SoldierModel.pooledBody` makes one of a rig, which is why nothing here has
+ * heard of a soldier — this file may not learn what a body is any more than it
+ * has learned what a building is. It draws no mesh (`BABYLON_EXIT.md` X4.1d):
+ * what this decides of it is read back by index (`drawsBody`).
  */
 export interface PooledBody {
   /**
@@ -194,7 +194,6 @@ export interface PooledBody {
    * the death cam already write, so there is no second answer to that here.
    */
   readonly enabled: boolean;
-  readonly meshes: readonly AbstractMesh[];
   /**
    * The body's world bounding sphere THIS frame, composed fresh — what the
    * rig ROOT's capsule answered under a forced `computeWorldMatrix` until the
@@ -204,23 +203,18 @@ export interface PooledBody {
 }
 
 /**
- * One pooled body: the body the roster switches, and whether what was filed
- * under it is in the candidate list right now.
+ * One pooled body: the body the roster switches, and this frame's two answers
+ * about it.
  */
 interface Pool {
   body: PooledBody;
-  /** Whether what was filed here is in the candidate list right now. */
+  /** Whether the body was switched on as this frame's list was offered. */
   on: boolean;
   /**
    * Whether this body projected under the size gate THIS FRAME — one test
-   * taken off its measure in `offer`, read by every mesh filed under it.
-   *
-   * On the pool rather than in a set of its own because it is per body and
-   * per frame, and the body is the thing that already exists: a set would be
-   * rebuilt every frame for the one bit it carries. It runs on a different
-   * clock from `on` — that one is the ROSTER's and marks the list dirty, this
-   * one is the CAMERA's and never does, because a body going too small to see
-   * changes nothing structural.
+   * taken off its measure in `offer`, the same answer for the whole body.
+   * On the pool because it is per body and per frame, and the body is the
+   * thing that already exists.
    */
   small: boolean;
 }
@@ -272,30 +266,13 @@ export class WorldCulling {
    * not the answer — decided once when the list is built rather than per
    * frame, and ABSENT for the ordinary case.
    *
-   * Two classes, and each was found by looking at what a naive gate removed.
-   *
-   * **A POOLED BODY maps to its `Pool`, and is gated WITH the body.** A rig is
-   * fourteen meshes and a per-mesh verdict takes the head off a soldier at
-   * 300 m while leaving his torso, which is what the exemption this replaced
-   * was for; measuring the BODY instead (`PooledBody.measure`, the sphere
-   * its root's capsule was) asks the question once and answers it
-   * the same way for every mesh of that body, so the failure it guarded
-   * against cannot occur and the body can still be dropped. It is the same
-   * thing `bodyDrawDistanceOf` does, in SCREEN space rather than in metres —
-   * so it needs no per-map number, and it loosens by itself when a sight goes
-   * up and the body gets bigger.
-   *
    * **Anything EMISSIVE maps to `null` and is never gated at all**, because
    * the glow makes a sub-pixel emitter visible well past its own geometry and
    * dropping one puts a lit window out on a night map. The test is exact
    * rather than a guess at a name: only a light source HAS an `emissiveColor`
-   * at all — see `glows`.
-   *
-   * **A body's own emissive is the POOL's and not the exemption's**, which is
-   * the one place the two classes meet and the order below is what decides it.
-   * A visor is the only emissive on a rig; it belongs to a body that is being
-   * dropped whole, and an exemption would leave a pair of eyes hanging in the
-   * air where the soldier was.
+   * at all — see `glows`. (A body's visor is no mesh since `BABYLON_EXIT.md`
+   * X4.1d, so it no longer meets this rule: it is drawn with its body and
+   * drops WITH it — `drawsBody` — never left hanging where the soldier was.)
    *
    * **A mesh filed in a CELL maps to its record's bounds** (`SurfaceRecord.
    * bounds`), and is tested off that sphere rather than its mesh's, because
@@ -306,7 +283,7 @@ export class WorldCulling {
    * other mesh — a loose one, an editor build's, an effect — is absent and
    * tested off its own bounding info, which an editor move rewrites under it.
    */
-  private gateOf = new Map<AbstractMesh, Pool | SurfaceBounds | null>();
+  private gateOf = new Map<AbstractMesh, SurfaceBounds | null>();
 
   /** Every mesh filed in a cell, and the bounds its record holds — see `gateOf`. */
   private filedBounds = new Map<AbstractMesh, SurfaceBounds>();
@@ -320,15 +297,10 @@ export class WorldCulling {
   private cellByKey = new Map<string, Cell>();
 
   /**
-   * Every mesh of every pooled body, and the pool it was filed in.
-   *
-   * A map of its own rather than a second kind of value in `cellOf`, and that
-   * is ownership rather than tidiness: `setMap` clears the cells because last
-   * build's meshes are gone, and it runs on a path the ROSTER does not — the
-   * editor's rebuild — so a pool sharing that map would be silently unfiled by
-   * a tier-3 rebuild and quietly become loose again.
+   * Every pooled body, in the order `setPools` was handed them — the index
+   * `drawsBody` answers by. Kept apart from the cells, which `setMap` clears
+   * on a path the ROSTER does not run (the editor's rebuild).
    */
-  private poolOf = new Map<AbstractMesh, Pool>();
   private pools: Pool[] = [];
 
   /**
@@ -373,6 +345,7 @@ export class WorldCulling {
     scene: 0,
     hidden: 0,
     blocked: 0,
+    /** Pooled BODIES (`setPools`), none of them a mesh since X4.1d. */
     pooled: 0,
     loose: 0,
     cells: 0,
@@ -550,34 +523,28 @@ export class WorldCulling {
 
   /**
    * Files the round's pooled bodies. Called from `Game.installBodyPools` and
-   * from nowhere else, on the same terms `setMap` is called on: whatever was
-   * filed last time has been disposed by now, and a pool still holding one
-   * would hand Babylon a dead mesh.
-   *
-   * Every pooled body is handed over, whether or not this round enables it:
-   * a rig built and never enabled is exactly the case this exists for — a
-   * body of pure walk.
-   *
-   * The body's root is no mesh since X4.1a, so only the drawn meshes are
-   * filed.
+   * from nowhere else. Every pooled body is handed over, whether or not this
+   * round enables it; none is a mesh (`BABYLON_EXIT.md` X4.1d), so nothing is
+   * filed into the list — each is measured once a frame in `offer`, and its
+   * verdict read back by its index here (`drawsBody`).
    */
   setPools(bodies: readonly PooledBody[]): void {
-    this.poolOf = new Map();
     this.pools = [];
-    this.listDirty = true;
-    this.stats.pooled = 0;
-    for (const body of bodies) {
-      const pool: Pool = {
-        body,
-        on: body.enabled,
-        small: false,
-      };
-      this.pools.push(pool);
-      for (const mesh of body.meshes) {
-        this.poolOf.set(mesh, pool);
-        this.stats.pooled++;
-      }
-    }
+    for (const body of bodies) this.pools.push({ body, on: body.enabled, small: false });
+    this.stats.pooled = this.pools.length;
+  }
+
+  /**
+   * Whether pooled body `i` (`setPools`' order) is drawn THIS frame: switched
+   * on as the list was offered, and — under the size gate — not projected
+   * under it, measured once off its own measure and the same answer for the
+   * whole body, its visor with it. What Babylon's mesh walk decided for every
+   * mesh of a rig until our renderer drew bodies (`BABYLON_EXIT.md` X4.1d);
+   * read by `Game.drawBodies` after `update`, the same frame.
+   */
+  drawsBody(i: number): boolean {
+    const pool = this.pools[i];
+    return pool !== undefined && pool.on && !pool.small;
   }
 
   /**
@@ -623,23 +590,19 @@ export class WorldCulling {
     // Unconditional, and it is the roster rather than the camera: a body is
     // switched by DISTANCE from the camera (`NetRoster`'s LOD gate)
     // and by being alive, benched, aside or crewed, so there is no travelled
-    // distance this could hang off. It is one property read per BODY — 48 on
-    // the densest map in the tree, against the 1,008 nodes a rebuild answers
-    // for — and it marks the list dirty only on a transition.
-    for (const pool of this.pools) {
-      const on = pool.body.enabled;
-      if (on === pool.on) continue;
-      pool.on = on;
-      this.listDirty = true;
-    }
+    // distance this could hang off. One property read per BODY — 49 on the
+    // densest roster — and nothing structural: no body is in the list.
+    let poolsOn = 0;
+    for (const pool of this.pools) if ((pool.on = pool.body.enabled)) poolsOn++;
+    this.stats.poolsOn = poolsOn;
     if (this.listDirty) this.rebuildList();
     this.offer(eye);
   }
 
   /**
    * Offers every mesh this file would otherwise hold back, for as long as it is
-   * on: every cell whatever its distance, every pool whether or not its body
-   * is in the round, and no size gate. What is switched OFF is still dropped by
+   * on: every cell whatever its distance, and no size gate — for a body as for
+   * a mesh (`drawsBody`). What is switched OFF is still dropped by
    * `offer`, because Babylon would drop it too; what warm changes for our
    * renderer's surfaces, which are no candidates, is `reachGate` — no reach
    * and no size gate — handed to its cull, which keeps its own frustum.
@@ -713,24 +676,15 @@ export class WorldCulling {
         continue;
       }
       if (this.hidden.has(mesh)) continue;
-      const pool = this.poolOf.get(mesh);
-      if (pool) {
-        if (pool.on || this.warm) data.push(mesh);
-        continue;
-      }
       loose++;
       data.push(mesh);
     }
-    // The pool FIRST, because a rig's visor is both and the body wins — see
-    // `gateOf` — then the emissive exemption, then a filed mesh's record,
-    // which the size gate reads where the cells do (X3.7a).
-    // Everything the gate tests off its own mesh is left out, so that case is
-    // a miss rather than an entry.
+    // The emissive exemption, then a filed mesh's record, which the size gate
+    // reads where the cells do (X3.7a). Everything the gate tests off its own
+    // mesh is left out, so that case is a miss rather than an entry.
     this.gateOf = new Map();
     for (const mesh of data) {
-      const pool = this.poolOf.get(mesh);
-      if (pool) this.gateOf.set(mesh, pool);
-      else if (glows(mesh)) this.gateOf.set(mesh, null);
+      if (glows(mesh)) this.gateOf.set(mesh, null);
       else {
         const bounds = this.filedBounds.get(mesh);
         if (bounds) this.gateOf.set(mesh, bounds);
@@ -739,12 +693,9 @@ export class WorldCulling {
     this.listDirty = false;
     let cellsOn = 0;
     for (const cell of this.cells) if (cell.on) cellsOn++;
-    let poolsOn = 0;
-    for (const pool of this.pools) if (pool.on) poolsOn++;
     this.stats.scene = this.scene.meshes.length;
     this.stats.loose = loose;
     this.stats.cellsOn = cellsOn;
-    this.stats.poolsOn = poolsOn;
     this.stats.candidates = data.length;
   }
 
@@ -773,10 +724,9 @@ export class WorldCulling {
    * It was measured at the WRONG viewport first and very nearly thrown away;
    * `VERIFYING.md` carries that trap.
    *
-   * `isEnabled()` walks ancestors and `isVisible` does not. A rig mesh has no
-   * ancestor since X4.1a: `SoldierModel.setRigEnabled` writes its own flag
-   * beside the body's switch, and `setPools` only files the bodies it is
-   * handed.
+   * `isEnabled()` walks ancestors and `isVisible` does not. No body is a
+   * candidate (`BABYLON_EXIT.md` X4.1d): a pooled body is gated before the
+   * walk, by its own switch and measure (`drawsBody`).
    *
    * The order is a subsequence of `eligible`, which is scene order, so
    * `rebuildList`'s argument about `_activeMeshes` ordering survives intact.
@@ -817,27 +767,24 @@ export class WorldCulling {
     reachGate.sizeGate = gate;
     reachGate.perRad = perRad;
     reachGate.px2 = px2;
-    // **A BODY is measured ONCE, off its own measure, and drops whole.** One test per
-    // body rather than per mesh, taken before the walk so that the walk reads
-    // an answer instead of computing fourteen of them — and, far more
-    // importantly, so that every mesh of a body gets the SAME answer. See
-    // `gateOf` for why a per-mesh verdict cannot be allowed near a rig.
+    // **A BODY is measured ONCE, off its own measure, and drops whole.** One
+    // test per body rather than per mesh — a per-mesh verdict took the head
+    // off a soldier at 300 m while leaving his torso — so every segment of a
+    // body, its visor among them, gets the SAME answer (`drawsBody`, which
+    // our renderer's drawing reads: `BABYLON_EXIT.md` X4.1d). It is the same
+    // thing `bodyDrawDistanceOf` does, in SCREEN space rather than in metres,
+    // so it needs no per-map number and loosens by itself when a sight goes up.
     for (let i = 0; i < this.pools.length; i++) {
       const pool = this.pools[i];
       if (!gate || !pool.on) {
         pool.small = false;
         continue;
       }
-      // **The measure is composed FRESH, and without that the drop LATCHES.**
-      // Babylon computed a world matrix inside `_evaluateActiveMeshes` and
-      // only for CANDIDATES, and that is what refreshed the world bounding
-      // sphere `tooSmall` reads — so a body dropped on stale bounds was never
-      // handed the matrix that would correct them and could never come back,
-      // however close it walked (`docs/rendering.md`). The rig root was a
-      // mesh until X4.1a and needed a FORCED compose here for that reason;
-      // its measure is ours now and composed off the body's joints on every
-      // call, one root compose per body per frame, so it is this frame's by
-      // construction.
+      // **The measure is composed FRESH, and without that the drop LATCHES**
+      // (`docs/rendering.md`): a body dropped on stale bounds was never
+      // handed the matrix that would correct them. It is composed off the
+      // body's joints on every call, one root compose per body per frame, so
+      // it is this frame's by construction.
       pool.body.measure(bodySphere);
       pool.small = tooSmall(bodySphere.x, bodySphere.y, bodySphere.z, bodySphere.radius, eye, perRad, px2);
     }
@@ -863,13 +810,9 @@ export class WorldCulling {
         if (how === undefined) {
           if (tooSmallMesh(mesh, eye, perRad, px2)) continue;
         } else if (how !== null) {
-          // A body's verdict, taken once off its measure; else a filed
-          // surface's record, the same sphere its mesh holds — see `gateOf`.
-          const small =
-            "body" in how
-              ? how.small
-              : tooSmall(how.centerX, how.centerY, how.centerZ, how.radius, eye, perRad, px2);
-          if (small) continue;
+          // A filed surface's record, the same sphere its mesh holds — see
+          // `gateOf`.
+          if (tooSmall(how.centerX, how.centerY, how.centerZ, how.radius, eye, perRad, px2)) continue;
         }
       }
       out[k++] = mesh;

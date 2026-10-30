@@ -735,7 +735,11 @@ async function hashModelJobs(jobs) {
           if (p.wrecked) rig.paint(true);
           data = rig;
         } else if (p.kind === "soldier") {
-          data = SM.buildSoldier(scene, mats, p.team);
+          // The rig is joints and segments since `BABYLON_EXIT.md` X4.1d,
+          // and Babylon is made no mesh of it: the DRAWING is its side's kit,
+          // which our renderer draws every body of that side as instances of.
+          const rig = SM.buildSoldier(p.team);
+          data = { rig, drawing: SM.soldierKits()[rig.kit] };
         } else if (p.kind === "zone") {
           const w = zoneWorld(p.points);
           const zones = new CZ.CaptureZoneSystem(scene, mats);

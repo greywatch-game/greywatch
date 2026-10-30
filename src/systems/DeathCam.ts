@@ -15,8 +15,9 @@
  *   asset in this tree and there must not become one: standing up an imported
  *   body here would pull multiple megabytes into the production bundle for four
  *   seconds of screen time, which is the whole reason the first-person
- *   conversion dropped the one that used to exist. The bot rig is nine merged
- *   meshes, is already what `RAGDOLL_BONES` is measured against, and hands to
+ *   conversion dropped the one that used to exist. The bot rig is a joint tree
+ *   drawn as an instance of its side's kit (`BABYLON_EXIT.md` X4.1d), is
+ *   already what `RAGDOLL_BONES` is measured against, and hands to
  *   `RagdollSystem` with nothing adapted.
  * - **It is a stand-in, not the player.** `Player` has no rig and never grows
  *   one: it is a sweep ellipsoid, a viewmodel and an eye, and owns no mesh. The corpse is a separate
@@ -40,7 +41,7 @@
  *   `Game.updateGameplay` like every other body; this file only says which body
  *   to throw and where to stand to watch it.
  */
-import { Scene, Vector3 } from "@babylonjs/core";
+import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { Team } from "../entities/Combatant";
 import type { Vector3Like } from "../math";
@@ -48,8 +49,6 @@ import type { DamageKind } from "./CombatSystem";
 import {
   animateSoldier,
   buildSoldier,
-  disposeRig,
-  drawRig,
   jointPosition,
   resetSoldierPose,
   setRigEnabled,
@@ -57,7 +56,6 @@ import {
   type SoldierRig,
 } from "../entities/SoldierModel";
 import { REST_POSE } from "../entities/soldierPose";
-import type { CelMaterialFactory } from "../shaders/CelShader";
 import { newRayHit, type RayWorld } from "../world/RayWorld";
 import { stanceCentre } from "../entities/stance";
 
@@ -127,11 +125,6 @@ export class DeathCam {
   private rays: RayWorld | null = null;
   private readonly hit = newRayHit();
 
-  constructor(
-    private scene: Scene,
-    private mats: CelMaterialFactory,
-  ) {}
-
   /** Wired from `Game.installMap`, beside every other system holding a map. */
   setWorld(rays: RayWorld | null): void {
     this.rays = rays;
@@ -154,26 +147,14 @@ export class DeathCam {
 
   /**
    * The stand-in's rig, for `Game.installBodyPools` — which files it with
-   * `WorldCulling` exactly as it files a bot's and a net soldier's, because
-   * this is the third rig in the game and was for a long time the only one the
-   * mesh walk saw LOOSE.
-   *
-   * That mattered for one reason and it is the size gate: `WorldCulling.offer`
-   * drops a candidate whose projected diameter is under
-   * `CONFIG.graphics.culling.minPixels`, and a POOLED body is exempt from it
-   * because a per-mesh test on a rig takes the head off a soldier while leaving
-   * his torso. This rig was not exempt, and the failure was worse than that
-   * threshold suggests: nothing had ever DRAWN it, so its meshes' world
-   * bounding spheres still sat at the world ORIGIN — Babylon computes a world
-   * matrix inside `_evaluateActiveMeshes` and only for candidates, and neither
-   * `start`'s pose nor `RagdollSystem` touches a drawn mesh's matrix (both
-   * compute JOINTS). So the gate measured every part of the corpse from the
-   * middle of the map, dropped the small ones, and by dropping them made sure
-   * their matrices were never computed either — a latch that held for the whole
-   * death cam. The head merges smallest and went first.
-   *
-   * `Game.installBodyPools` files it as any rig is filed
-   * (`SoldierModel.pooledBody`). Null before `prepare` has built one.
+   * `WorldCulling` exactly as it files a net soldier's, and draws it as any
+   * body is drawn (`Game.drawBodies`), because this is the other rig in the
+   * game and was for a long time the only one the mesh walk saw LOOSE: its
+   * meshes measured by the size gate one by one from wherever Babylon last
+   * composed them — the world origin, for a rig never drawn — a latch that
+   * held for the whole death cam (`docs/rendering.md`). A body is measured
+   * once and drawn whole since; its drawing is no mesh at all since
+   * `BABYLON_EXIT.md` X4.1d. Null before `prepare` has built one.
    *
    * **It is only ever read after `prepare`**, because a change of side disposes
    * this rig and builds another — see there, and see `Game.buildRound`, where
@@ -194,44 +175,18 @@ export class DeathCam {
   }
 
   /**
-   * The stand-in body switched on at `at`, or back off for null, for the
-   * frames of the building card's pipeline warm-up (`core/PipelineWarmup.ts`). No body is switched
-   * on while `loading` draws — the bots are not deployed until the round is —
-   * and this one is built from the same kit and painted from the same caches
-   * as every bot's, so the pipelines it compiles are the ones the first
-   * soldier on screen needs. Not while the cam is up, which is the body's own
-   * life.
-   *
-   * It is stood at the warm-up's eye, because two of the passes it has to
-   * reach — the bodies' shadow map and the lamps' atlas — only draw a body
-   * near the eye they are placed around. Both compose its joints themselves;
-   * its meshes are handed theirs here (`drawRig`) as well as by the frame's
-   * own `Game.drawBodies`, so the pose is in them whichever runs first.
-   */
-  warm(at: Vector3 | null): void {
-    if (!this.corpse || this.running) return;
-    const rig = this.corpse.rig;
-    this.corpse.setEnabled(at !== null);
-    if (at) {
-      rig.root.position.set(at.x, at.y, at.z);
-      drawRig(rig);
-    }
-  }
-
-  /**
    * Builds the rig, once, before it is needed. Called from `startRound` rather
    * than lazily at the moment of death for the reason `BattleSystem`'s pool is
-   * built up front: `buildSoldier` allocates nine merged meshes and their GL
-   * buffers, and the frame the player is killed on is the worst one in the
-   * round to spend that on.
+   * built up front: `buildSoldier` allocates a joint tree (and, for the first
+   * rig of a side, that side's drawing), and the frame the player is killed on
+   * is the worst one in the round to spend that on.
    *
    * A change of team is the one thing that rebuilds, and the rebuild has to go
    * through `stop()` first. The standing rig may be held by `RagdollSystem` at
    * that moment, its joints posed off the pool's bodies (`Joint.pose`) while
-   * its meshes are about to be disposed — a slot left
-   * holding a rig whose meshes are freed would go on posing it for the rest of
-   * the corpse's life and, at the release, switch meshes that no longer
-   * exist. Offline nothing reaches it: the player is team 0 every round, so
+   * the rig is about to be dropped — a slot left holding a rig nothing files
+   * or draws any more would go on posing it for the rest of the corpse's life
+   * and, at the release, switch a body that is no longer anybody's. Offline nothing reaches it: the player is team 0 every round, so
    * every call after the first is the early return above. A netplay welcome is
    * what reaches it — the authority can seat this client on team 1, and it can
    * say so with the cam already up, which is the case `stop()` covers. The cam
@@ -242,12 +197,9 @@ export class DeathCam {
   prepare(team: Team): void {
     if (this.builtFor === team && this.corpse) return;
     this.stop();
-    // Meshes only, never the materials: the body is painted from
-    // `CelMaterialFactory`'s shared caches, so disposing them here takes the
-    // paint out from under every bot on the field and the map with them. See
-    // `VehicleView.dispose`.
-    if (this.corpse) disposeRig(this.corpse.rig);
-    const rig = buildSoldier(this.scene, this.mats, team);
+    // Nothing of the old rig to dispose: it is joints, and its drawing is
+    // its kit's (`SoldierModel.soldierKits`), which every body shares.
+    const rig = buildSoldier(team);
     setRigEnabled(rig, false);
     this.corpse = new Corpse(rig);
     this.builtFor = team;
@@ -391,8 +343,6 @@ export class DeathCam {
   }
 
   dispose(): void {
-    // Meshes only — see `prepare`.
-    if (this.corpse) disposeRig(this.corpse.rig);
     this.corpse = null;
     this.builtFor = null;
   }

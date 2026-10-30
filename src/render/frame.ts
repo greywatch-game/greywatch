@@ -114,8 +114,10 @@ export const FRAME_FIELDS = [
   { name: "giExtra", type: "vec4f" },
   { name: "giSlotChannel", type: "f32", count: MAX_POINT_LIGHTS },
   // Guarded, so LAST — see the header. The MAP's palette; a body's own table
-  // is a material's and never rides the frame.
-  { name: "celPalette", type: "vec3f", count: MAX_PALETTE, when: ["CEL_PALETTE"] },
+  // is a material's and never rides the frame (`CEL_OWN_PALETTE`, the soldier
+  // kit's, `celMaterial.ts` — `BABYLON_EXIT.md` X4.1d), so a variant holding
+  // its own declares none here and reads the same offsets as every other.
+  { name: "celPalette", type: "vec3f", count: MAX_PALETTE, when: ["CEL_PALETTE", "!CEL_OWN_PALETTE"] },
 ] as const satisfies readonly UniformField[];
 
 /** The frame block: group 0, binding 0, in every program. */

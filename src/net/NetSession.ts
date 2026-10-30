@@ -300,7 +300,7 @@ export class NetSession {
    */
   constructor(scene: Scene, mats: CelMaterialFactory, local: boolean, perTeam: number) {
     this.local = local;
-    this.roster = new NetRoster(scene, mats, perTeam);
+    this.roster = new NetRoster(perTeam);
     this.grenades = new NetGrenades(scene, mats);
     this.ordnance = new NetOrdnance(scene, mats);
     this.conn.onStateChange = (s) => this.onStateChange(s);

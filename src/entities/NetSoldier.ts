@@ -24,15 +24,13 @@
  * instead would be smoother on a clean connection and would invent motion that
  * never happened on a bad one.
  */
-import { Scene, Vector3 } from "@babylonjs/core";
+import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { Combatant, Team } from "./Combatant";
 import type { DamageKind } from "../systems/CombatSystem";
 import {
   animateSoldier,
   buildSoldier,
-  disposeRig,
   jointPosition,
   resetSoldierPose,
   setLauncher,
@@ -164,15 +162,10 @@ export class NetSoldier implements Combatant, RagdollSubject {
   private hasPosition = false;
   private enabled = false;
 
-  constructor(
-    scene: Scene,
-    mats: CelMaterialFactory,
-    slot: number,
-    team: Team,
-  ) {
+  constructor(slot: number, team: Team) {
     this.slot = slot;
     this.team = team;
-    this.rig = buildSoldier(scene, mats, team);
+    this.rig = buildSoldier(team);
     this.setEnabled(false);
   }
 
@@ -403,10 +396,10 @@ export class NetSoldier implements Combatant, RagdollSubject {
   /**
    * Whether this body carries the slung rocket launcher — the roster's word
    * on the slot (`SlotOccupant.launcher`, `NetSession`'s `roster` arm): the
-   * tube's joint switched, and with it the mesh under it, which `setEnabled`
-   * switches with the rest of the rig but which draws only while its joint is
-   * on (`SoldierModel.setLauncher`). Off on every rig until told, as
-   * `buildSoldier` leaves it.
+   * tube's joint switched, and with it the segment under it, which is drawn
+   * only while its joint is on as well as the rig (`SoldierModel.setLauncher`,
+   * `writeRigDrawing`). Off on every rig until told, as `buildSoldier` leaves
+   * it.
    */
   setLauncher(on: boolean): void {
     setLauncher(this.rig, on);
@@ -460,9 +453,5 @@ export class NetSoldier implements Combatant, RagdollSubject {
     this.ragdolling = false;
     resetSoldierPose(this.rig);
     this.setEnabled(false);
-  }
-
-  dispose(): void {
-    disposeRig(this.rig);
   }
 }

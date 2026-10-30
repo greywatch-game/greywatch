@@ -1,7 +1,7 @@
 /**
  * SoldierModel.ts — The bot rig: ~40 boxes and faceted lofts (`facet.ts` — the
  * body and the rifle; the slung launcher is still boxes) merged down to
- * fourteen meshes and TWO materials, plus
+ * fifteen SEGMENTS a kit — one a joint, and the visor — plus
  * the procedural poser (animateSoldier: a `SoldierPose` — gait in any
  * direction, aim, twist, crouch, the rifle's kick, carry and reload — solved by
  * `soldierPose.ts` and written onto the rig's joints by `poseSoldier`, with
@@ -13,41 +13,41 @@
  * this rig is built from, are `soldierPose.ts`'s — so the simulation can ask
  * where a rifle is without a rig.
  * The geometry is built as `Part`s on `GeometryBuffer`s (`src/geometry/`,
- * `facet.ts`) and is NOT Babylon's until `mergeByColor` makes a segment's
- * mesh through `drawnMesh`; the visor is the one part drawn on its own,
- * through the same door.
- * **The JOINTS are ours** (`rigJoints.ts`, `BABYLON_EXIT.md` X4.1a): a tree of
- * local channels whose float32 world matrices the rig owns, bit for bit what
- * the `TransformNode`s they replaced composed. **Babylon still draws the
- * fourteen meshes, and every one is parented to NOTHING**: `drawRig` hands
- * each its world matrix (its own local times its joint's) once a frame
- * (`Game.drawBodies`) through `freezeWorldMatrix`. The root is a joint and no
- * mesh: the body's one MEASURE (`measureRig`, what `WorldCulling` drops a
- * whole rig by) is the capsule it was, composed off it, and the switch every
- * roster writes is `rig.enabled` (`setRigEnabled`). What is still Babylon's
- * is the meshes and their materials, until X4.1d.
- * Invariants: merging is what keeps 16 bots affordable, and since `KIT_PALETTE`
- * it is per SEGMENT rather than per colour — a segment is one mesh whatever it
- * is painted, so the cost of this rig is JOINTS and no longer colours or boxes.
- * A box is free and a COLOUR is free where the palette carries it and costs its
- * segment a mesh where it does not, which is the one thing to know before
- * painting a new part. Emissive parts
- * (visor) need metadata.noInk and stay outside the palette, which may no more
- * enrol an emissive than `MapBuilder`'s may enrol gloss. Rigs are built once by BattleSystem's pool
- * and re-posed on respawn, never disposed. Posing and drawing allocate
- * nothing: both run for every drawn body every frame. A reader of a joint
- * composes it FRESH (`jointPosition`, `JointTree.computeChain`/`compute`)
- * and never reads a matrix a previous write left behind. Every joint a pose can reach must stay
+ * `facet.ts`) and merged a segment at a time (`mergeParts`), ONCE A KIT — the
+ * side a rig wears (`viewTeam`), never once a rig: every rig of one side is
+ * the same drawing (`soldierKits`), and it is never a Babylon mesh.
+ * **The JOINTS are ours** (`rigJoints.ts`, `BABYLON_EXIT.md` X4.1a) and so,
+ * since X4.1d, is the DRAWING: OUR renderer draws every body as an INSTANCE
+ * of its kit (`render/BodyDraw.ts`) — one draw a kit for the matte segments,
+ * one for the visor — off the matrices `writeRigDrawing` writes once a frame
+ * (`Game.drawBodies`): each segment's own local times its joint's world,
+ * what Babylon composed for the mesh it was. Babylon is made no rig mesh.
+ * The root is a joint and draws nothing: the body's one MEASURE
+ * (`measureRig`, what `WorldCulling` drops a whole rig by) is the capsule it
+ * was, composed off it, and the switch every roster writes is `rig.enabled`
+ * (`setRigEnabled`).
+ * Invariants: merging is what keeps a roster affordable, and since `KIT_PALETTE`
+ * it is per SEGMENT rather than per colour — a segment is one geometry
+ * whatever it is painted, and since X4.1d the whole of a side is one draw
+ * however many segments and bodies it has. A box is free and a COLOUR is free
+ * where the palette carries it — and a matte colour the palette does NOT
+ * carry is REFUSED at the build (`paint`), there being no material of its
+ * own left to give it. The emissive (the visor) stays outside the palette,
+ * a segment of its own drawn by the emissive palette's program with the
+ * visors' own table (`VISOR_COLORS`). Rigs are built by the roster's pool
+ * and re-posed on respawn, never rebuilt inside a round. Posing and writing
+ * the drawing allocate nothing: both run for every drawn body every frame. A
+ * reader of a joint composes it FRESH (`jointPosition`,
+ * `JointTree.computeChain`/`compute`) and never reads a matrix a previous
+ * write left behind. Every joint a pose can reach must stay
  * inside `RAGDOLL_LINKS`, because a body can die at any point of it. `rig.rest` is the hierarchy as built
  * and is the ONLY thing a ragdoll may restore from — see JointRest.
  */
-import { Color3, Matrix as BabylonMatrix, Mesh, Scene } from "@babylonjs/core";
+import { Color3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { clamp } from "../core/math";
-import {
-  writePaletteIndex,
-  type CelMaterialFactory,
-} from "../shaders/CelShader";
+import { writePaletteIndex } from "../shaders/CelShader";
+import type { GeometryBuffer } from "../geometry/buffer";
 import type { Team } from "./Combatant";
 import { viewTeam } from "../core/teamView";
 import { loft, type Ring } from "./facet";
@@ -55,7 +55,7 @@ import { createBox } from "../geometry/primitives";
 import { Matrix, Quaternion, Vector3, type Vector3Like } from "../math";
 import { Joint, JointTree, measureBody, type BodySphere } from "./rigJoints";
 import type { BoneJoint } from "./soldierBones";
-import { drawnMesh, mergeParts, Part } from "../world/parts";
+import { mergeParts, Part, PartNode, worldMatrixOf } from "../world/parts";
 import {
   CENTER_HEIGHT,
   GUN_AT,
@@ -80,27 +80,27 @@ import type { DamageKind } from "../systems/CombatSystem";
  * of at once, and detailed enough to be read as a soldier at the range one is
  * usually shot at.
  *
- * Every limb is built from several boxes and then **merged into one mesh per
- * SEGMENT**, the same trick `RifleModel.buildRifle` uses to collapse ~50 boxes
- * into 3. The joints stay above the merged meshes — our own hierarchy now
+ * Every limb is built from several boxes and then **merged into one geometry
+ * per SEGMENT**, the same trick `RifleModel.buildRifle` uses to collapse ~50
+ * boxes into 3. The joints stay above the merged segments — our own hierarchy
  * (`rigJoints.ts`) — so procedural animation is unaffected; only the leaf
  * geometry is batched.
  *
- * **What that merge means for anyone adding detail: geometry is free and so,
- * now, is PAINT.** Forty-odd parts come out as fourteen meshes — torso, head,
- * the visor, two upper arms, two forearms, two legs of three and the rifle —
- * one per JOINT, because `KIT_PALETTE` moved the albedo into `uv2.x` and every
- * matte part of a segment wears one material. It used to be twenty-one, a
- * segment splitting once per colour in it: a torso was three meshes and a head
- * four, and the guidance here was that a fifth colour on the torso cost ~32
- * draws across a roster. **That is no longer true and the advice has
- * inverted** — a colour in the palette is as free as a box, and the only paint
- * that still costs a mesh is a colour missing from `KIT_PALETTE` or an
- * EMISSIVE, which cannot join it. Pouches, a bedroll, a kneepad, an antenna
- * and the helmet band are now all free. The two forearms are paid for by a
- * JOINT rather than a colour, which is the one axis the palette does not
- * touch: the elbow is what puts both hands on the rifle, and a part hung off
- * its own joint cannot merge with one that is not.
+ * **What that merge means for anyone adding detail: geometry is free and so
+ * is PAINT.** Forty-odd parts come out as fifteen segments — torso, head, the
+ * visor, two upper arms, two forearms, two legs of three, the rifle and the
+ * slung launcher — one per JOINT, because `KIT_PALETTE` moved the albedo into
+ * `uv2.x` and every matte part of a segment wears one material. It used to be
+ * twenty-one meshes, a segment splitting once per colour in it. **Since
+ * `BABYLON_EXIT.md` X4.1d a segment is not even a draw**: our renderer draws
+ * every body of a side as instances of its kit, so a segment costs vertices
+ * and nothing else, and the only paint that is not free is an EMISSIVE, which
+ * cannot join the palette and is a draw of its own a side (the visor) — a
+ * matte colour missing from `KIT_PALETTE` is refused at the build. Pouches, a
+ * bedroll, a kneepad, an antenna and the helmet band are all free. The two
+ * forearms are paid for by a JOINT rather than a colour, which is the one axis
+ * the palette does not touch: the elbow is what puts both hands on the rifle,
+ * and a part hung off its own joint cannot merge with one that is not.
  *
  * The player has no rig at all — the camera is inside the head, and there is no
  * own-body to draw. The one thing that stands a player's body up is the death
@@ -200,57 +200,55 @@ export const OWN_KIT: SoldierKit = KITS[0];
 /**
  * Every MATTE colour a rig is painted in, in slot order — the kit palette.
  *
- * **This is what makes a segment one mesh instead of one per colour.**
- * `mergeByColor` groups by the `Material` INSTANCE, so a torso carrying a
- * shell, webbing and an accent was three meshes and a head was four; with the
- * albedo moved into `uv2.x` and read out of `celPalette` every matte part of a
- * segment wears the one `getBodyCel` material and merges into one mesh. The
- * rig goes from **21 meshes and 11 materials to 14 and 2**, and both halves
- * are worth having — the paint-palette measurement (`docs/rendering.md`) put
- * a draw that reuses a bound material at ~2.3 us against ~6.3 for one that
- * switches. It is exactly the
- * trick that took the village from 416 meshes to 90, which is where the whole
- * argument is written down.
+ * **This is what makes a segment one geometry instead of one per colour.**
+ * A segment merges by MATERIAL, so a torso carrying a shell, webbing and an
+ * accent was three meshes and a head was four; with the albedo moved into
+ * `uv2.x` and read out of `celPalette` every matte part of a segment wears the
+ * one kit material and merges into one. The rig went from **21 meshes and 11
+ * materials to 14 and 2** — the paint-palette measurement
+ * (`docs/rendering.md`) put a draw that reuses a bound material at ~2.3 us
+ * against ~6.3 for one that switches — and since `BABYLON_EXIT.md` X4.1d to
+ * ONE draw a side for every body of it. It is exactly the trick that took the
+ * village from 416 meshes to 90, which is where the whole argument is written
+ * down.
  *
  * It is DECLARED rather than discovered, unlike the map's, because a kit is a
- * fixed handful of hexes and a rig pool is built one body at a time: a palette
- * accumulated as the merge met colours would not be complete until the last
- * rig, and the first would already have been drawn. Declaring it also makes
- * the failure benign — a colour missing from this list is not in `KIT_SLOT`,
- * so that part keeps its own per-hex material and merges exactly as it did
- * before, which is `MAX_PALETTE`'s own overflow rule arriving from the other
- * end. **A new colour on the model therefore belongs here as well as on the
- * part**, or it silently costs its segment a mesh again.
+ * fixed handful of hexes the material is born holding
+ * (`CelMaterialFactory.bodyCelRecipe`). **A new colour on the model belongs
+ * here as well as on the part**, or the build REFUSES it (`paint`): a matte
+ * colour off the palette had its own per-hex material until X4.1d, and a rig
+ * has no material of its own to give it any more.
  *
  * The visor is absent on purpose: it is EMISSIVE, which is shader behaviour
  * rather than a uniform, and the palette may no more enrol it than
- * `MapBuilder`'s may enrol gloss or glazing.
- *
- * **A DEV build says so out loud** (`paint`), because the failure this list
- * has is the quiet kind: the body is the right colour either way and all that
- * moves is the mesh count.
+ * `MapBuilder`'s may enrol gloss or glazing. It has a table of its own
+ * (`VISOR_COLORS`).
  */
 const KIT_PALETTE: readonly string[] = [
   GUN,
   ...KITS.flatMap((kit) => [kit.armor, kit.suit, kit.webbing, kit.accent]),
 ];
 
-/** Hex to its 1-based slot in `KIT_PALETTE`. 0 — absent — means "own material". */
+/** Hex to its 1-based slot in `KIT_PALETTE`. Absent is a colour the build refuses. */
 const KIT_SLOT: ReadonlyMap<string, number> = new Map(
   KIT_PALETTE.map((hex, i) => [hex.toLowerCase(), i + 1]),
 );
 
 /**
- * Hexes a DEV build has already complained about, so the warning below is one
- * line rather than one per part per rig — `buildSoldier` runs for every body
- * in the pool and paints forty-odd parts each time.
+ * `KIT_PALETTE` as the factory takes it (`bodyCelRecipe`). Built once: the
+ * kit never moves.
  */
-const warnedOffPalette = new Set<string>();
-
-/** `KIT_PALETTE` as the factory takes it. Built once: the kit never moves. */
-const KIT_COLORS: readonly Color3[] = KIT_PALETTE.map((hex) =>
+export const KIT_COLORS: readonly Color3[] = KIT_PALETTE.map((hex) =>
   Color3.FromHexString(hex),
 );
+
+/**
+ * Each side's visor colour, by the VIEW (`KITS`' order): the visors' own
+ * emissive table (`bodyEmissiveRecipe`), a kit's visor's `uv2.x` its 1-based
+ * slot here — what `getEmissive(kit.visor)`'s `emissiveColor` held until
+ * `BABYLON_EXIT.md` X4.1d, and what `GlowRules` reads a visor's bloom off.
+ */
+export const VISOR_COLORS: readonly Color3[] = KITS.map((kit) => Color3.FromHexString(kit.visor));
 
 /**
  * Every joint the rig poses, bone or not.
@@ -558,17 +556,41 @@ export interface JointRest {
 }
 
 /**
- * One drawn mesh of a rig and the joint it hangs off — the mesh is parented
- * to NOTHING since X4.1a: its world matrix is `local` times its joint's
- * world, composed by `drawRig` and handed to Babylon (`freezeWorldMatrix`).
+ * One SEGMENT of a rig and the joint it hangs off: what a mesh of it was
+ * until `BABYLON_EXIT.md` X4.1d, its geometry now its KIT's
+ * (`soldierKits`) and drawn by our renderer at `local` times the joint's
+ * world (`writeRigDrawing`).
  */
-interface RigMesh {
-  readonly mesh: Mesh;
+export interface RigSegment {
   readonly joint: Joint;
-  /** The mesh's own transform in its joint's frame, composed once at build. */
+  /** The segment's own transform in its joint's frame — its kit's, composed once. */
   readonly local: Matrix;
-  /** What Babylon is handed — the one object it keeps as the world matrix. */
-  readonly drawn: BabylonMatrix;
+}
+
+/**
+ * One segment of a kit's DRAWING: its geometry in its own frame, its local
+ * transform in its joint's frame, and whether it is the visor (emissive).
+ * Every rig of one side draws these, in this order (`RigSegment`).
+ */
+export interface KitSegment {
+  readonly name: string;
+  readonly geometry: GeometryBuffer;
+  readonly local: Matrix;
+  readonly emissive: boolean;
+}
+
+/**
+ * One side's drawing, built ONCE (`soldierKits`): its segments in a rig's
+ * order, each one's bounding-sphere centre in its own frame — the midpoint of
+ * its vertices' extent, as Babylon's `BoundingSphere` made it of the mesh it
+ * was, which is what a body's segments are ORDERED by (Babylon's
+ * front-to-back queue, `Game.bodyPull`) and a visor's bloom is faded by
+ * (`GlowRules`) — and which segment the visor is.
+ */
+export interface KitDrawing {
+  readonly segments: readonly KitSegment[];
+  readonly centres: readonly Vector3[];
+  readonly visor: number;
 }
 
 export interface SoldierRig {
@@ -626,10 +648,14 @@ export interface SoldierRig {
   launcher: Joint;
   /** Muzzle landmark, for tracer origins. */
   muzzle: Joint;
-  /** Every drawn mesh, for LOD visibility and outline toggling. */
-  meshes: Mesh[];
-  /** `meshes` with the joint each hangs off — see `RigMesh`. */
-  readonly drawn: readonly RigMesh[];
+  /**
+   * The side it was painted for: its KIT, by the VIEW (`viewTeam` at the
+   * build) — which drawing it is an instance of (`soldierKits`). Never moves:
+   * a change of side is a rebuild (`NetRoster.setFielded`, `DeathCam.prepare`).
+   */
+  readonly kit: number;
+  /** Every segment, in its kit's order, with the joint each hangs off — see `RigSegment`. */
+  readonly segments: readonly RigSegment[];
   /**
    * Whether the body is in the world: the one switch every roster, the death
    * cam and the culling read (`setRigEnabled`). It was the root MESH's own
@@ -793,16 +819,22 @@ function faceParts(kit: SoldierKit): SegmentLoft[] {
       ];
 }
 
-/** Builds one soldier in the given team's kit. */
-export function buildSoldier(
-  scene: Scene,
-  mats: CelMaterialFactory,
-  team: Team,
-): SoldierRig {
+/**
+ * Builds one soldier in the given team's kit: its joints, and its segments
+ * hung off them — the DRAWING is its kit's, built once a side
+ * (`soldierKits`), so a rig after the first of its side builds joints and
+ * nothing else.
+ */
+export function buildSoldier(team: Team): SoldierRig {
   // The kit is the VIEWER's read of this side rather than the authority's
   // index for it: the local player's own side wears amber whichever slot a
   // match seated them in. See `core/teamView.ts`.
-  const kit = KITS[viewTeam(team)];
+  return buildRig(viewTeam(team));
+}
+
+/** `buildSoldier` in the kit of `view` — the one `soldierKits` asks a drawing of. */
+function buildRig(view: number): SoldierRig {
+  const kit = KITS[view];
   const centerHeight = CENTER_HEIGHT;
   // The joints are OURS (`rigJoints.ts`, X4.1a): a tree of local channels
   // whose world matrices the rig owns, named as the nodes were. The root is
@@ -811,97 +843,79 @@ export function buildSoldier(
   const tree = new JointTree();
   const root = tree.add("bot", null);
 
-  const meshes: Mesh[] = [];
-  const drawn: RigMesh[] = [];
+  // The side's drawing, if an earlier rig of it built it; else this build
+  // builds it, segment by segment, as it hangs them.
+  const drawing = kitDrawings[view];
+  const building: KitSegment[] | null = drawing ? null : [];
+  const segments: RigSegment[] = [];
   const body = tree.add("bot-body", root);
 
-  // The one material every matte part of this rig wears, whatever colour it is
-  // painted. See `KIT_PALETTE` for what that is worth and why the list is
-  // declared rather than discovered.
-  const kitCel = mats.getBodyCel(KIT_COLORS);
-
   /**
-   * Files a drawn mesh under the joint it hangs off. The mesh is parented to
-   * nothing: its own transform is composed ONCE here, in the joint's frame,
-   * and `drawRig` hands Babylon that times the joint's world every frame.
+   * Hangs the next segment of the kit off `joint`: the kit's own, or — while
+   * this build builds the kit — the one `make` builds, its geometry and its
+   * local transform in the joint's frame, composed once.
    */
-  const hang = (mesh: Mesh, joint: Joint): void => {
-    meshes.push(mesh);
-    drawn.push({ mesh, joint, local: meshLocal(mesh), drawn: new BabylonMatrix() });
+  const hang = (joint: Joint, make: () => KitSegment): void => {
+    const i = segments.length;
+    const seg = building ? make() : drawing!.segments[i];
+    if (building) building.push(seg);
+    segments.push({ joint, local: seg.local });
   };
 
   /**
-   * Paints one part, through the kit palette where the colour is in it.
-   *
-   * The slot goes into `uv2.x` and the part wears the shared material, so
-   * `mergeByColor` — which groups by the material INSTANCE and is otherwise
-   * untouched by any of this — collapses every matte part of a segment into
-   * one mesh. A colour the palette does not carry keeps its own per-hex
-   * material and groups on its own, exactly as everything did before, which
-   * is what makes a missing entry cost a draw rather than a wrong colour.
-   *
-   * **Which is exactly why a DEV build says it out loud.** The part is painted
-   * correctly either way, so nothing on screen reports this and the only
-   * symptom is a segment that splits — one more mesh per body, times the
-   * roster, on the walk `WorldCulling` exists for. Once per hex: this runs for
-   * every part of every rig in the pool.
+   * Paints one part through the kit palette: its slot into `uv2.x`, which the
+   * kit material reads (`celPalette`, its own). **A matte colour the palette
+   * does not carry is REFUSED** — until `BABYLON_EXIT.md` X4.1d such a part
+   * kept a per-hex material of its own and cost its segment a mesh, and our
+   * renderer draws every body with the ONE kit material, so there is nothing
+   * left to give it. It cannot reach a player: the kit is module constants,
+   * so the first rig any build makes throws, in every build.
    */
   const paint = (p: Part, color: string): void => {
     const slot = KIT_SLOT.get(color.toLowerCase());
     if (slot === undefined) {
-      if (import.meta.env.DEV && !warnedOffPalette.has(color.toLowerCase())) {
-        warnedOffPalette.add(color.toLowerCase());
-        console.warn(
-          `[soldier] ${color} is painted on a rig but is not in KIT_PALETTE;` +
-            " that part keeps its own material and costs its segment a mesh." +
-            " Add it to the palette, or leave it if it is meant to be an" +
-            " emissive, which cannot join one.",
-        );
-      }
-      p.material = mats.get(color);
-      return;
+      throw new Error(
+        `[soldier] ${color} is painted on a rig but is not in KIT_PALETTE: add it to the palette ` +
+          "(an emissive cannot join one, and is a segment of its own, as the visor is)",
+      );
     }
     writePaletteIndex(p.geometry, slot);
-    p.material = kitCel;
   };
 
   /**
-   * Builds one limb from a list of boxes, merges it per colour, and parents the
-   * results to a joint. Offsets are relative to the joint, so the merge can
-   * happen at identity and the joint carries the animation.
-   *
-   * The pieces are `Part`s — geometry, a transform in the joint's frame and a
-   * paint — and only what the merge makes of them is a mesh (`mergeByColor`),
-   * which is the one moment a limb reaches Babylon before it is hung off its
-   * live joint.
+   * Builds one limb from a list of boxes, merges it, and hangs it off a joint.
+   * Offsets are relative to the joint, so the merge can happen at identity and
+   * the joint carries the animation. The pieces are `Part`s — geometry, a
+   * transform in the joint's frame and a paint — and what the merge makes of
+   * them is the segment (`mergeSegment`): built only while this build builds
+   * the kit.
    */
   const segment = (
     name: string,
     parent: Joint,
     boxes: SegmentPart[],
   ): void => {
-    const parts: Part[] = [];
-    for (let i = 0; i < boxes.length; i++) {
-      const part = boxes[i];
-      if (!Array.isArray(part)) {
-        const p = loft(`${name}${i}`, part.rings);
-        if (part.at) p.position.set(...part.at);
-        if (part.rot) p.rotation.set(...part.rot);
-        paint(p, part.color);
+    hang(parent, () => {
+      const parts: Part[] = [];
+      for (let i = 0; i < boxes.length; i++) {
+        const part = boxes[i];
+        if (!Array.isArray(part)) {
+          const p = loft(`${name}${i}`, part.rings);
+          if (part.at) p.position.set(...part.at);
+          if (part.rot) p.rotation.set(...part.rot);
+          paint(p, part.color);
+          parts.push(p);
+          continue;
+        }
+        const [w, h, d, x, y, z, color, rotZ = 0] = part;
+        const p = new Part(`${name}${i}`, createBox({ width: w, height: h, depth: d }));
+        p.position.set(x, y, z);
+        p.rotation.z = rotZ;
+        paint(p, color);
         parts.push(p);
-        continue;
       }
-      const [w, h, d, x, y, z, color, rotZ = 0] = part;
-      const p = new Part(`${name}${i}`, createBox({ width: w, height: h, depth: d }));
-      p.position.set(x, y, z);
-      p.rotation.z = rotZ;
-      paint(p, color);
-      parts.push(p);
-    }
-    for (const merged of mergeByColor(parts, name, scene)) {
-      merged.isPickable = false;
-      hang(merged, parent);
-    }
+      return mergeSegment(parts, name);
+    });
   };
 
   // --- torso: plate carrier, webbing, pack, and the team's bandolier ---
@@ -1050,16 +1064,16 @@ export function buildSoldier(
       ],
     },
   ]);
-  // The visor protrudes past the face so the ink cannot swallow it.
-  const visor = drawnMesh(
-    new Part("bot-visor", createBox({ width: 0.15, height: 0.04, depth: 0.05 })),
-    scene,
-  );
-  visor.position.set(0, 0.058, 0.118);
-  visor.material = mats.getEmissive(kit.visor);
-  visor.metadata = { noInk: true };
-  visor.isPickable = false;
-  hang(visor, head);
+  // The visor protrudes past the face so the ink cannot swallow it. EMISSIVE,
+  // so a segment of its own outside the kit palette: its colour is a slot in
+  // the visors' table (`VISOR_COLORS`, by the view), and it carries no ink
+  // by the glow's mask, which it is drawn into (`noInk`'s intent).
+  hang(head, () => {
+    const p = new Part("bot-visor", createBox({ width: 0.15, height: 0.04, depth: 0.05 }));
+    p.position.set(0, 0.058, 0.118);
+    writePaletteIndex(p.geometry, view + 1);
+    return { name: "bot-visor", geometry: p.geometry, local: worldMatrixOf(p, new Matrix()), emissive: true };
+  });
 
   // --- arms: an upper arm under a team pauldron, an elbow, a forearm and a
   // gloved hand, both hands solved onto the rifle ---
@@ -1326,8 +1340,8 @@ export function buildSoldier(
     gun,
     muzzle,
     launcher,
-    meshes,
-    drawn,
+    kit: view,
+    segments,
     // On, as a node is built — every owner switches it at once.
     enabled: true,
     centerHeight,
@@ -1339,6 +1353,7 @@ export function buildSoldier(
     const node = rig[key];
     return { node, position: node.position.clone() };
   });
+  if (building) kitDrawings[view] = kitDrawingOf(building);
   return rig;
 }
 
@@ -1374,20 +1389,18 @@ export function resetSoldierPose(rig: SoldierRig): void {
 }
 
 /**
- * Switches a body in or out of the world: the rig's own switch, and every
- * mesh with it — but for one hung under a joint that is itself switched off
- * (the launcher), which stays off. What `root.setEnabled` and a mesh's
- * inheritance from its parent node did between them.
+ * Switches a body in or out of the world: the rig's own switch, the one every
+ * roster, the death cam, the culling and the drawing read. A segment hung
+ * under a joint that is itself switched off (the launcher) stays undrawn
+ * while it is on (`writeRigDrawing`).
  */
 export function setRigEnabled(rig: SoldierRig, on: boolean): void {
   rig.enabled = on;
-  for (const d of rig.drawn) d.mesh.setEnabled(on && jointOn(d.joint));
 }
 
 /** Whether the rig carries its slung launcher — see `SoldierRig.launcher`. */
 export function setLauncher(rig: SoldierRig, on: boolean): void {
   rig.launcher.enabled = on;
-  setRigEnabled(rig, rig.enabled);
 }
 
 /** Whether every joint from `j` up its tree is switched on. */
@@ -1396,38 +1409,63 @@ function jointOn(j: Joint): boolean {
   return true;
 }
 
-// Scratch for `drawRig`.
+// Scratch for `writeRigDrawing` and `writeRigCentres`.
 const _meshWorld = new Matrix();
 
 /**
- * Composes the rig's joints and hands Babylon every switched-on mesh's world
- * matrix off them — the mesh's own local times its joint's world, what
- * `computeWorldMatrix` made of a mesh hung off a node.
+ * Composes the rig's joints and writes its DRAWING into `out` from `at`: each
+ * segment's world matrix, sixteen floats in its kit's order — the segment's
+ * own local times its joint's world, what Babylon composed for the mesh it
+ * was (`BABYLON_EXIT.md` X4.1d; X4.1a for the arithmetic) — and sixteen
+ * zeros for a segment under a joint switched off (the launcher), which the
+ * drawing draws as nothing.
  *
- * **It is called once a frame, after every write and before the render**
- * (`Game.drawBodies`, inside the render span: Babylon composed these inside
- * `scene.render` before). `DeathCam.warm` calls it too, redundantly but
- * harmlessly: a warm-up frame runs `drawBodies` like any other, and its
- * stand-in is the death cam's body that pass draws. A rig that pass does not
- * know (a script's, `VERIFYING.md`) owes its own call, after its pose and
- * before the render. `freezeWorldMatrix` is how a mesh with no parent is
- * handed a matrix: Babylon keeps the object it is given as the world matrix,
- * marks its bounds for an update, and composes nothing of its own.
+ * **Called once a frame for every body the frame draws, after every write
+ * and before the render** (`Game.drawBodies`, inside the render span, where
+ * Babylon composed these until X4.1a). The rig's own switch is the caller's
+ * to have asked. Allocates nothing.
  */
-export function drawRig(rig: SoldierRig): void {
+export function writeRigDrawing(rig: SoldierRig, out: Float32Array, at: number): void {
   rig.tree.compute();
-  for (const d of rig.drawn) {
-    if (!d.mesh.isEnabled(false)) continue;
-    d.local.multiplyToRef(d.joint.world, _meshWorld);
-    BabylonMatrix.FromArrayToRef(_meshWorld.m, 0, d.drawn);
-    d.mesh.freezeWorldMatrix(d.drawn);
+  const segments = rig.segments;
+  for (let s = 0; s < segments.length; s++) {
+    const seg = segments[s];
+    const o = at + s * 16;
+    if (!jointOn(seg.joint)) {
+      out.fill(0, o, o + 16);
+      continue;
+    }
+    seg.local.multiplyToRef(seg.joint.world, _meshWorld);
+    out.set(_meshWorld.m, o);
   }
 }
 
-/** Disposes the rig's meshes — the whole of what Babylon holds of it. */
-export function disposeRig(rig: SoldierRig): void {
-  for (const mesh of rig.meshes) mesh.dispose();
+/**
+ * Where each of the rig's segments stands, off the drawing `writeRigDrawing`
+ * just wrote at `at`: its bounding sphere's centre in the world, three
+ * doubles a segment into `out` from `outAt` — what Babylon's
+ * `boundingSphere.centerWorld` held for the segment's mesh, which its
+ * front-to-back queue sorted the mesh by and `GlowRules` faded the visor's
+ * bloom by. NaN for a segment switched off (a zero matrix), which nothing
+ * draws.
+ */
+export function writeRigCentres(rig: SoldierRig, drawing: Float32Array, at: number, out: Float64Array, outAt: number): void {
+  const centres = kitDrawings[rig.kit]!.centres;
+  for (let s = 0; s < centres.length; s++) {
+    const o = outAt + s * 3;
+    if (drawing[at + s * 16 + 15] === 0) {
+      out[o] = out[o + 1] = out[o + 2] = Number.NaN;
+      continue;
+    }
+    Matrix.FromArrayToRef(drawing, at + s * 16, _meshWorld);
+    Vector3.TransformCoordinatesToRef(centres[s], _meshWorld, _centre);
+    out[o] = _centre.x;
+    out[o + 1] = _centre.y;
+    out[o + 2] = _centre.z;
+  }
 }
+
+const _centre = new Vector3();
 
 /**
  * A joint's world position, fresh — what `computeWorldMatrix(true)` then
@@ -1454,19 +1492,17 @@ export function measureRig(rig: SoldierRig, out: BodySphere): BodySphere {
 
 /**
  * The rig as `WorldCulling` files a pooled body (its `PooledBody`, met
- * structurally so neither file names the other): the switch, the meshes and
- * the measure. Made once per rig per install, never per frame.
+ * structurally so neither file names the other): the switch and the measure.
+ * Made once per rig per install, never per frame.
  */
 export function pooledBody(rig: SoldierRig): {
   readonly enabled: boolean;
-  readonly meshes: readonly Mesh[];
   measure(out: BodySphere): void;
 } {
   return {
     get enabled() {
       return rig.enabled;
     },
-    meshes: rig.meshes,
     measure: (out) => {
       measureRig(rig, out);
     },
@@ -1474,23 +1510,56 @@ export function pooledBody(rig: SoldierRig): {
 }
 
 /**
- * A mesh's own transform as `computeWorldMatrix` composed it before the
- * parent's: its scaling, its quaternion or else its Euler as yaw-pitch-roll,
- * and its position. Constant: nothing moves a rig mesh in its joint's frame.
+ * Each side's DRAWING, by the view, once a rig of that side has been built —
+ * see `soldierKits`.
  */
-function meshLocal(mesh: Mesh): Matrix {
-  const q = new Quaternion();
-  const rq = mesh.rotationQuaternion;
-  if (rq) q.copyFrom(rq);
-  else Quaternion.RotationYawPitchRollToRef(mesh.rotation.y, mesh.rotation.x, mesh.rotation.z, q);
-  const s = mesh.scaling;
-  const d = mesh.scalingDeterminant;
-  return Matrix.ComposeToRef(
-    new Vector3(s.x * d, s.y * d, s.z * d),
-    q,
-    mesh.position,
-    new Matrix(),
-  );
+const kitDrawings: (KitDrawing | null)[] = KITS.map(() => null);
+
+/**
+ * Every side's drawing, by the VIEW (`KITS`' order): what our renderer draws
+ * every body as an instance of (`render/BodyDraw.ts`). Built here, once, the
+ * first time a side is asked for — building a rig of it — and the same
+ * objects for the life of the page: a kit is module constants.
+ */
+export function soldierKits(): readonly KitDrawing[] {
+  return KITS.map((_, view) => {
+    if (!kitDrawings[view]) buildRig(view);
+    return kitDrawings[view]!;
+  });
+}
+
+/** A segment's drawing out of its merged parts: the merge at identity, or one part in its own frame. */
+function mergeSegment(parts: Part[], name: string): KitSegment {
+  // A group of ONE was never merged — it kept its own transform, as the mesh
+  // `drawnMesh` made of the part did; a merge stands at identity, composed as
+  // a node at rest composes (the same bits `Matrix.Identity` holds).
+  if (parts.length === 1) {
+    return { name, geometry: parts[0].geometry, local: worldMatrixOf(parts[0], new Matrix()), emissive: false };
+  }
+  return { name, geometry: mergeParts(parts), local: worldMatrixOf(new PartNode(name), new Matrix()), emissive: false };
+}
+
+/**
+ * A kit's drawing out of the segments its first rig built: where the visor
+ * is, and its bounding sphere's centre in its own frame — the midpoint of its
+ * vertices' extent, as Babylon's `BoundingSphere` made it of the mesh's.
+ */
+function kitDrawingOf(segments: readonly KitSegment[]): KitDrawing {
+  const visor = segments.findIndex((s) => s.emissive);
+  if (visor < 0) throw new Error("[soldier] a kit with no visor");
+  const centres = segments.map((seg) => {
+    // `extractMinAndMax` over the positions as the mesh was handed them,
+    // then `BoundingSphere.reConstruct`'s `max.addToRef(min).scale(0.5)`.
+    const p = seg.geometry.positions;
+    const min = new Vector3(Number.MAX_VALUE, Number.MAX_VALUE, Number.MAX_VALUE);
+    const max = new Vector3(-Number.MAX_VALUE, -Number.MAX_VALUE, -Number.MAX_VALUE);
+    for (let i = 0; i < p.length; i += 3) {
+      min.minimizeInPlaceFromFloats(p[i], p[i + 1], p[i + 2]);
+      max.maximizeInPlaceFromFloats(p[i], p[i + 1], p[i + 2]);
+    }
+    return max.addToRef(min, new Vector3()).scaleInPlace(0.5);
+  });
+  return { segments, centres, visor };
 }
 
 /**
@@ -1602,43 +1671,4 @@ function poseSoldier(rig: SoldierRig, j: Readonly<SoldierJoints>): void {
   }
   rig.elbowL.rotation.x = solveArm(-SHOULDER_X, _handL, POLE_L, rig.shoulderL.rotation);
   rig.elbowR.rotation.x = solveArm(SHOULDER_X, _handR, POLE_R, rig.shoulderR.rotation);
-}
-
-/**
- * Merges a limb's parts into one mesh per MATERIAL, at identity.
- *
- * It keys on the material instance and always did; what changed under it is
- * how many a limb has. `paint` puts every matte part on the one `getBodyCel`
- * material, so this now yields one mesh per segment where it used to yield
- * one per colour — which is why the palette needed no change here at all. The
- * name is kept because the split it makes is still the one a caller reasons
- * about: two parts merge unless something about their PAINT stops them.
- *
- * **This is where a limb becomes a mesh** (`drawnMesh`), and it makes exactly
- * the mesh `Mesh.MergeMeshes(group, true, true, undefined, false, false)`
- * made: the group's geometry merged under each part's own transform
- * (`mergeParts`), standing at identity, named as the merge named it until the
- * caller's name goes on. A group of ONE was never merged — it kept its own
- * transform, which is what `drawnMesh` of the part carries.
- */
-function mergeByColor(parts: Part[], name: string, scene: Scene): Mesh[] {
-  const groups = new Map<unknown, Part[]>();
-  for (const p of parts) {
-    const key = p.material;
-    const g = groups.get(key);
-    if (g) g.push(p);
-    else groups.set(key, [p]);
-  }
-  const out: Mesh[] = [];
-  for (const group of groups.values()) {
-    const mat = group[0].material;
-    const merged =
-      group.length === 1
-        ? drawnMesh(group[0], scene)
-        : drawnMesh(name, mergeParts(group), scene);
-    merged.name = name;
-    merged.material = mat;
-    out.push(merged);
-  }
-  return out;
 }

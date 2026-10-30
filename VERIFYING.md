@@ -1309,26 +1309,26 @@ is one machine's:
   with `g.playerView.flashRoot.setEnabled(true)` (the flash is `PlayerView`'s;
   `Player` draws nothing).
 - **A soldier is judged in a picture, and the rig can be photographed without
-  fighting a round for it.** `await import("/src/entities/SoldierModel.ts")`
-  inside `page.evaluate` hands back the real module — the same URL Vite already
-  resolved, so it is the same instance the game is using — and
-  `buildSoldier(g.scene, g.mats, team)` builds one of each side to park wherever
-  you like. An `onBeforeRenderObservable` that puts them a few metres along
-  `scene.activeCamera.getDirection(...)` keeps them in shot whatever the camera
-  does, `deploy` is the cheapest state to do it in (the map is up and nothing is
-  shooting), an injected `#hud{display:none}` takes the interface off the glass,
-  `animateSoldier` poses them and writing `rig.root.rotation.y` turns them for a
-  turntable. **Then draw them yourself, in that same observable, after the
-  pose**: `setRigEnabled(rig, true)` (a fresh build leaves the slung launcher's
-  mesh on) and `drawRig(rig)`, both from the same module. Since
-  `BABYLON_EXIT.md` X4.1a the meshes have no parent and only `Game.drawBodies`
-  hands them their matrices — the roster's rigs and the death cam's, not
-  yours — so a rig nobody draws is photographed as its meshes bunched at the
-  origin. Two more traps: there is no `BABYLON` global, so build a vector with
-  `new (cam.position.constructor)(x, y, z)`; and **the team read has to be
-  checked at RANGE, not only in the close-up** — park the same pair 25–30 m out,
-  where a body is ~40 px tall, which is the size at which a kit that only works
-  in a portrait stops telling you anything.
+  fighting a round for it.** Since `BABYLON_EXIT.md` X4.1d a rig is no mesh:
+  our renderer draws the rigs `Game.installBodyPools` filed (the roster's and
+  the death cam's) and NO OTHERS, so a rig a script builds with `buildSoldier`
+  is never photographed. Borrow the roster's, as `placeVantage` does
+  (`plans/webgpu-ref/harness.mjs`): in `deploy`, the cheapest state to do it in
+  (the map is up and nothing is shooting), hold the roster's per-frame update
+  (`g.net.roster.update = () => {}`) and pose `g.net.roster.soldiers[i].rig`
+  yourself — `resetSoldierPose`, then `animateSoldier(rig, {...REST_POSE,
+  ...})` from `/src/entities/SoldierModel.ts` (imported inside `page.evaluate`,
+  the same URL Vite resolved, so the game's own module), `rig.root.position`
+  and `rig.root.rotation.y` for a turntable, and `soldier.setEnabled(true)`.
+  The roster's first half is one side and the second the other (`soldier.team`).
+  Nothing has to be drawn by hand: `Game.drawBodies` composes and hands over
+  every switched-on filed rig each frame. An injected `#hud{display:none}`
+  takes the interface off the glass. Two more traps: there is no `BABYLON`
+  global, so build a vector with `new (cam.position.constructor)(x, y, z)`;
+  and **the team read has to be checked at RANGE, not only in the close-up** —
+  park the same pair 25–30 m out, where a body is ~40 px tall, which is the
+  size at which a kit that only works in a portrait stops telling you
+  anything.
 - **Sight alignment is checkable without a picture**, and should be after anything
   touching the viewmodel or camera — for **every** optic, since each carries its
   own eye reference. Take

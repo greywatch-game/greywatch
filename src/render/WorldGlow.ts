@@ -24,7 +24,7 @@
  * palette bloom (a pipeline compiling or a texture unpublished is the
  * warm-up's to prevent, as a block group's hole in the main pass is);
  * the mask is NOT this module's (rule 5):
- * `GlowPass` owns it and its clear, Babylon's bodies, effects, fire,
+ * `GlowPass` owns it and its clear, Babylon's effects, fire,
  * viewmodel and moon still draw into it, and ours draws FIRST in that pass,
  * right after its clear (`Renderer.addGlowMask`) — no depth written, LEQUAL
  * against the depth OUR main pass's palette wrote, by the same vertex module
