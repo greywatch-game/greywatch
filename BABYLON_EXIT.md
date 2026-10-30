@@ -3567,25 +3567,73 @@ module from X2.2. When the last one lands, Babylon draws nothing but the post
 chain, and the frozen cel-material cache and its traps are deleted with
 `CelMaterialFactory`'s Babylon half.
 
-### X4.1 — Bodies (PERF_PLAN C6, A4) — **L**
+### X4.1 — Bodies (PERF_PLAN C6, A4) — **L, as five sub-steps** (split 2026-10-29)
 
-- **Do:**
-  - Our own joint hierarchy for `SoldierModel`'s rig, which today is a tree of
-    `TransformNode` joints.
-  - Living bodies drawn as instances fed from the simulation's state: 14 joint
-    meshes × 48 bodies becomes 14 instanced draws or fewer.
-  - `BodyShadows` from the proxy boxes (`core/proxyBoxes.ts`) on our side.
-  - `NetSoldier`, the death cam's stand-in body, and corpses posed from
-    X2.4's arrays.
-  - **Build A4's fade here**: a screen-door dither at `bodyDrawDistance` and
-    at the size gate's whole-body drop.
-- **Contracts it keeps:**
+Every body a page draws — `NetSoldier`'s rig, a corpse, the death cam's
+stand-in — comes off Babylon's scene, along with the moon's body shadow map,
+and A4's fade is built on the result. It is split so that the four moves are
+each proven with no picture change, one claim at a time, and the fade, which
+IS a picture change (rule 2), lands alone with the bank's numbers. Each
+sub-step lands on its own and leaves the game shippable.
+
+**This reverses one line of PERF_PLAN C6**, which kept a corpse a Babylon rig
+because `RagdollSystem` reparents its joints onto Havok proxies. Here a corpse
+is posed off X2.4's arrays (`WorldBody.pose`) onto our joints, so the
+reparenting goes and every body is one kind of thing to draw.
+
+- **X4.1a — the joints are ours (no picture change).** `SoldierModel`'s tree
+  of `TransformNode` joints becomes our own hierarchy, its world matrices
+  written into arrays a rig owns. Babylon still draws the 14 meshes, reading
+  those matrices. `NetSoldier`'s pose (`soldierPose.ts`), `proxyBoxes`, the
+  muzzle replay and anything else that reads a joint read the arrays. The
+  root capsule `WorldCulling` measures a body by is taken off the arrays too
+  (X1.3 left it here). **Oracle:** the joint matrices against the nodes',
+  bit for bit, over a recorded round, before the nodes go.
+- **X4.1b — corpses and the stand-in on our joints (no picture change).**
+  `RagdollSystem` writes a corpse's joints from its bodies' pose arrays
+  instead of reparenting nodes onto proxies; the death cam's stand-in the
+  same. `freeze`, the pool's three tiers and eviction of the oldest, and the
+  quaternion leak (`docs/deaths.md`) are re-proven on the new path.
+  **Oracle:** `drop.mjs --check --exact` and `clients.mjs --check` as at X2.4;
+  a blast throwing bodies; a full pool evicting; a respawned bot that does not
+  freeze.
+- **X4.1c — the moon's body map is ours (no picture change).** `BodyShadows`'
+  generator, light and proxy mesh become a pass of our renderer, as
+  `WorldShadows` did at X3.6a, drawing `proxyBoxes`' matrices — soldiers AND
+  hulls, a hull's being its collider box off its own fields (`hullFrame.ts`),
+  never its mesh, so X4.2 owes this map nothing. The rung, the window and the
+  back faces carry over; the lamps' atlas already draws ours (X3.6b) and only
+  changes where its boxes come from. **Oracle:** the bank; a shadow rung `off`
+  to `high` mid-round; the map read back against Babylon's before the
+  generator goes.
+- **X4.1d — every body drawn by us (PERF_PLAN C6).** Living bodies, corpses
+  and the stand-in as instances fed from the joint arrays: 14 joint meshes ×
+  48 bodies becomes 14 instanced draws or fewer, in every pass a body is in.
+  The body's measure, the fog-wall gate and the size gate's whole-body drop
+  move with them, its emissive with it. Babylon builds no rig mesh in a round.
+  Its pipelines are asked ahead through `PipelineCache`, so the warm-up's body
+  pose goes or becomes a key. **Oracle:** the bank's rig vantages 61 of 61
+  byte-identical; census; X0.3 alternated at 24 a side on Sarab and
+  Cinderhaven, `--max --gpu`; a netplay round; a blast throwing bodies.
+- **X4.1e — A4's fade (the picture change).** A screen-door dither at
+  `bodyDrawDistance` AND at the size gate's drop (a fade built for one misses
+  the other), carried as a per-instance value — A4's "first question" is
+  answered by X4.1d's instancing. The dithered pipeline is asked ahead with
+  the rest. **Oracle:** the bank's numbers in the message (only rows with a
+  body at a fade edge may move); a body walked through both edges on a phone
+  and a 32:9 window.
+- **Contracts all five keep:**
   - a body is measured once and drops whole, its emissive with it
-  - a rig's shadow shape is `RAGDOLL_BONES`
+  - a rig's shadow shape is `RAGDOLL_BONES`, a hull's its collider box
   - the local player casts nothing
-  - the side a rig wears is chosen when it is built (`teamView`)
-- **Verify:** the bank's rig vantages; X0.3 at 24 a side on Sarab and
-  Cinderhaven; a netplay round; a blast throwing bodies.
+  - the side a rig wears is chosen when it is built (`teamView`), and is half
+    of a rig pool's identity beside its size
+  - the rig pool is built once per roster size and never disposed inside a
+    round
+  - nothing under Havok feeds navigation, cover or hit detection
+- **Verify, each sub-step:** the bank `--check --keep` against a BEFORE at the
+  parent; `census --against`; `gate`, `shaders`; typecheck, build, corecheck,
+  `parity`; a round offline and a netplay round.
 
 ### X4.2 — Vehicles (PERF_PLAN A3) — **M** (decision)
 
@@ -3790,7 +3838,7 @@ to X0.3 (see "The branch"). It is the user's to start.
 | P0, G1 | X0.4 (G1's GPU cost transfers, since the shaders port) |
 | A1, A2 | landed; X1.4 builds on both |
 | A3 vehicle detail tier | X4.2, built in the new renderer, not in Babylon |
-| A4 body fade | X4.1 |
+| A4 body fade | X4.1e |
 | A5 occlusion culling | optional, after X3.3b, in the compute cull; occluders skip `RayWorld.removed` |
 | A6 snapshot rendering | dropped: it is a Babylon mechanism |
 | B0, B1, B2, B3, B5 | X3.1, X3.3 (a–c), X3.4 and X3.5b, X3.6, X3.5 |
@@ -3799,7 +3847,7 @@ to X0.3 (see "The branch"). It is the user's to start.
 | C2, C3 | X2.1, X2.2 |
 | C4 Worker | X2.5b (decided 2026-10-10), its transport replaced by X2.5c (2026-10-11) |
 | C5 Rust core | not in this plan |
-| C6 dynamic draws | X4.1 |
+| C6 dynamic draws | X4.1a–d (its corpse line reversed at X4.1b) |
 
 ## Contracts this plan rewrites
 
@@ -3811,7 +3859,9 @@ Each is rewritten by the step that breaks it, in the same commit.
 | `CLAUDE.md`: no deep static import, keep `optimizeDeps.exclude`; the two WASMs that never ship | X6.1 |
 | `CLAUDE.md`: every cel material is frozen; `remember`; a vertex colour buffer gained after a first draw | end of Phase 4 (deleted) |
 | `CLAUDE.md`: `shaderLanguage` is load-bearing; a declared sampler must be bound | X3.1, X5.2 (becomes a bind-group-layout rule) |
-| `CLAUDE.md`: the two shadow maps; the lamps' atlas | X3.6a, X3.6b, X3.7, X4.1 |
+| `CLAUDE.md`: the two shadow maps; the lamps' atlas | X3.6a, X3.6b, X3.7, X4.1c |
+| `CLAUDE.md`: the rig pool, fourteen meshes a rig, rigs filed mesh by mesh; `docs/deaths.md`'s reparented corpse | X4.1a, X4.1b, X4.1d |
+| `CLAUDE.md`: the pipeline warm-up's body pose | X4.1d, X4.1e |
 | `CLAUDE.md`: the frame walks the scene (`WorldCulling`) | X3.3c through X4.7 |
 | `CLAUDE.md`: the glow | X3.6d, X3.6e, X3.7, X5.2 |
 | `CLAUDE.md`: visual meshes and collider proxies; exactly three sweeps | X2.1, X2.3 |
@@ -3908,5 +3958,6 @@ Phase 1 actually took.
 | X3.7 | With no fallback, what does a world our renderer cannot draw become? | **Decided** 2026-10-24: back to the menu with a toast and a `console.error` (`Game.worldFailed`), not a hole in the world; a surface the handover cannot hold is refused in DEV and by `merge:hash`, so it cannot ship (X3.7). |
 | X3.7 | Glazing and fires stay Babylon meshes until X4.6 and X4.4: how does Phase 3's end condition read? | **Decided** 2026-10-24: "Babylon builds no mesh in a round for anything our renderer draws" (the shape table). |
 | X3.7 | `?babylonworld` cannot exist without the meshes: delete it? | **Decided** 2026-10-24: yes, in X3.7b, with its parent tagged `exit-babylonworld` and pushed for a device A/B against Babylon's world. |
+| X4.1 | One step or several? | **Decided** 2026-10-29: five sub-steps (X4.1). The fade is a picture change and lands alone (rule 2); corpses come off the reparenting before the draw moves, so the draw moves every body at once. |
 | X4.2 | Which hull parts drop at range (the tank's links and wheels, the MG rings)? | An art call; PERF_PLAN A3 measured +6.5% at 300 m on Cinderhaven. |
 | X6.2 | Is it ready to merge to `develop`? | Only when X6.2's "Before" list passes in full. |
