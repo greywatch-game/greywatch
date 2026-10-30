@@ -76,18 +76,26 @@
  * **And, graded apart from that, the NODES the clients write** (`nodes` in
  * the bank, added at X2.4 C5 and banked against the parent before that
  * commit touched a line of source): a digest at the end of EVERY frame over
- * the raw local transform of each corpse slot's proxies, every shard and
+ * the raw local transform of each corpse slot's bones, every shard and
  * chunk mesh, and the nine stand-ins' rig roots and posed joints — parent,
  * enabled flag, position, Euler, quaternion and scaling, bit for bit. The
  * joints are `rigJoints.ts`'s since `BABYLON_EXIT.md` X4.1a, not nodes, and
- * are digested in the same bytes (a holding proxy's name as the parent, the
- * rig's switch as the root's flag, "noquat"), so the bank taken off the nodes
- * grades them unchanged. C5 took
+ * are digested in the same bytes (the parent's name, the rig's switch as the
+ * root's flag, "noquat"); the corpse bones' proxy nodes went at X4.1b, and
+ * each bone's pose array is digested in the bytes its proxy gave, a posed
+ * joint naming the pose it is drawn off. C5 took
  * the poses off those nodes into plain arrays that a view writes back; this
- * is what says the view writes the SAME nodes the solver's sync used to, on
- * the same frames, the reparenting at a freeze and the sink included. A
- * failure names the first frame whose nodes differ. It reads no matrix, so
- * taking it makes Babylon compute nothing.
+ * is what says the views write the SAME transforms the solver's sync used
+ * to, on the same frames, the freeze and the sink included. A failure names
+ * the first frame whose nodes differ. It reads no matrix, so taking it makes
+ * Babylon compute nothing.
+ *
+ * **All three banks were RE-TAKEN at X4.1b**, on the new path: a corpse's
+ * bones start at the living pose composed once rather than through the
+ * earlier bones' hand-offs, one to four float32 ulps apart, and Havok carries
+ * that into every tumble after. The new path was first graded identical
+ * against the old banks with the old spawn poses injected — `BABYLON_EXIT.md`
+ * X4.1b's note has the run.
  *
  * **It also probes one thing it does not grade** (`probe` in the bank): the
  * chest's angular velocity the instant a corpse is offered, before any step.
@@ -370,23 +378,40 @@ function play(page, opts) {
       const audit = [];
 
       // --- the nodes ---------------------------------------------------------
-      // Every node the three clients WRITE, in a fixed order: each corpse
-      // slot's proxies, every shard's mesh, every chunk's mesh, and each of
-      // the nine stand-ins' rig root and posed joints (`rig.rest`, the
-      // build-time list, so a joint reparented onto a proxy is still found).
-      // Digested at the end of every frame over the raw local transform —
-      // parent, own enabled flag, position, Euler rotation, quaternion and
-      // scaling, bit for bit (a -0 is not a 0) — and nothing that would make
-      // Babylon compute a matrix, so reading it changes nothing it reads.
+      // Everything the three clients' views are drawn off, in a fixed order:
+      // each corpse slot's bone poses, every shard's mesh, every chunk's
+      // mesh, and each of the nine stand-ins' rig root and posed joints
+      // (`rig.rest`, the build-time list). Digested at the end of every frame
+      // over the raw local transform — parent, own enabled flag, position,
+      // Euler rotation, quaternion and scaling, bit for bit (a -0 is not a
+      // 0) — and nothing that would make Babylon compute a matrix, so reading
+      // it changes nothing it reads.
+      //
+      // A corpse's bones were drawn on pool-owned PROXY nodes until
+      // `BABYLON_EXIT.md` X4.1b, which a view wrote each body's pose onto at
+      // the end of every frame; the joints are drawn straight off the pose
+      // arrays since, so each bone's `body.pose` is digested in the bytes its
+      // proxy gave (no parent, enabled, the pose's position, a zero Euler,
+      // the pose's quaternion, unit scale) — the proxies' half of the digest
+      // reads the same either side of that step, and is what the X4.1b note
+      // compares.
       const nodeList = [];
-      for (const slot of g.ragdolls.slots) for (const bone of slot.bones) nodeList.push(bone.proxy);
+      const poseName = new Map();
+      for (const [i, slot] of g.ragdolls.slots.entries()) {
+        for (const bone of slot.bones) {
+          nodeList.push({ pose: bone.body.pose });
+          poseName.set(bone.body.pose, `ragdoll${i}-${bone.joint}`);
+          poseName.set(bone.still, `ragdoll${i}-${bone.joint}.still`);
+        }
+      }
       for (const burst of g.debris.bursts) for (const s of burst.shards) nodeList.push(s.mesh);
       for (const burst of g.blastDebris.bursts) for (const c of burst.chunks) nodeList.push(c.mesh);
       // A rig's joints are not nodes since `BABYLON_EXIT.md` X4.1a: they are
       // `rigJoints.ts`'s, digested below in the bytes a node gave — the
-      // parent's (or the holding proxy's) name, the root's enabled flag as
-      // the rig's switch, a joint's own, and "noquat", which no joint can
-      // hold — so the bank taken off the nodes still grades them.
+      // parent's name (or, while a ragdoll poses the joint, the name of the
+      // pose it is drawn off: a bone's body, or the slot's copy of it once
+      // the corpse has frozen), the root's enabled flag as the rig's switch,
+      // a joint's own, and "noquat", which no joint can hold.
       for (const c of corpses) {
         nodeList.push({ joint: c.rig.root, rig: c.rig });
         for (const r of c.rig.rest) nodeList.push({ joint: r.node, rig: null });
@@ -419,10 +444,19 @@ function play(page, opts) {
       const nodeDigest = () => {
         const { num, str, done } = hasher();
         for (const n of nodeList) {
+          if (n.pose) {
+            const p = n.pose;
+            str("-");
+            num(1);
+            num(p[0]); num(p[1]); num(p[2]);
+            num(0); num(0); num(0);
+            num(p[3]); num(p[4]); num(p[5]); num(p[6]);
+            num(1); num(1); num(1);
+            continue;
+          }
           if (n.joint) {
             const j = n.joint;
-            const parent = j.holder ?? j.parent;
-            str(parent ? parent.name : "-");
+            str(j.pose ? (poseName.get(j.pose) ?? "pose?") : j.parent ? j.parent.name : "-");
             num((n.rig ? n.rig.enabled : j.enabled) ? 1 : 0);
             num(j.position.x); num(j.position.y); num(j.position.z);
             num(j.rotation.x); num(j.rotation.y); num(j.rotation.z);

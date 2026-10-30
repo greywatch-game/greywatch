@@ -1789,15 +1789,14 @@ is one machine's:
   covered fraction. Feed it a hit at the centre AND one a handful of
   centimetres from a corner: the second is the case the reach retry exists
   for.
-- **A THROWN corpse is measured off the PROXY and only until it FREEZES**, and
-  both halves have already cost time. `slot.bones[i].proxy.position` is the
-  corpse while the solver owns it — a root node, so the local position IS the
-  world one and no `computeWorldMatrix` is owed. It is the VIEW of
-  `slot.bones[i].body.pose`, written once a frame in `ragdolls.update`, so
-  step `physics.update` AND `ragdolls.update` before reading it, or read the
-  pose itself, which holds the same numbers once `physics.update` has run.
-  But `freeze` bakes the pose back into the rig and parks the bodies, and a
-  parked proxy sits at the ORIGIN: keep sampling past that and a corpse on
+- **A THROWN corpse is measured off the POSE and only until it FREEZES**, and
+  both halves have already cost time. `slot.bones[i].body.pose` is the corpse
+  while the solver owns it — seven numbers, its world position first — and
+  the rig's joint is drawn off that very array (`Joint.pose`, since
+  `BABYLON_EXIT.md` X4.1b), so it is current as soon as `physics.update` has
+  run. But `freeze` copies the pose into `slot.bones[i].still` and parks the
+  bodies, and a parked pose sits at the ORIGIN (a kilometre down): keep
+  sampling the body past that and a corpse on
   Hollowmere's north spawn reads as having flown 138.62 m, which is exactly
   the distance from that spawn to (0, 0, 0) and is the tell. Break on `slot.subject !== bot || slot.frozen`.
   Two more that look like the throw not working: a body placed by hand needs
@@ -1835,8 +1834,8 @@ is one machine's:
   synchronously off `player.stance`. Then step `g.ragdolls.update(1/60)` in a loop as
   above; the death cam's own clock is not involved. **The reading that means
   something is the knee's fold angle**, and it is an angle between world positions
-  rather than a local rotation — the joints belong to the solver's proxies while it
-  owns them, so `kneeL.rotation.x` is not the pose. Take
+  rather than a local rotation — the joints are posed off the solver's arrays while
+  it owns them, so `kneeL.rotation.x` is not the pose. Take
   `acos(normalise(knee - hip) · normalise(ankle - knee))` with
   each composed (`rig.tree.computeChain`): 2.58 rad is the drawn full crouch, and a
   leg that reads ~0 within a step or two of the throw is a joint limit that does not
@@ -1850,9 +1849,9 @@ is one machine's:
   bearing, `g.deathCam.corpse` is the stand-in body (`.rig`, `.ragdolling`), and
   `g.deathCam.stop()` + `g.state = "playing"` + `g.player.fullReset()` gets back
   out. The corpse rig is built ONCE per process and never rebuilt, so a leak is
-  permanent: assert `holder === null` on every posed joint afterwards (a joint
-  has no quaternion to leak since X4.1a; a proxy left HOLDING it is the leak),
-  plus each one's local position against `rig.rest`. There
+  permanent: assert `pose === null` on every joint afterwards (a joint has no
+  quaternion to leak since X4.1a and no holder since X4.1b; a pose left on it is
+  the leak), plus each one's local position against `rig.rest`. There
   is no fallback path left to reach — the body is at the camera, so the distance
   gate cannot refuse it, and a full pool evicts its oldest corpse instead of
   saying no. **`deathCam.start(feet, yaw, eye, forward, from, damage, kind, crouch)` is

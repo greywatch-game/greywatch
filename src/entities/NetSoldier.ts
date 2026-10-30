@@ -223,14 +223,14 @@ export class NetSoldier implements Combatant, RagdollSubject {
 
     // Taken before the guard below, and deliberately: `alive` is the pool's own
     // self-defence — a slot whose subject has come back to life releases it on
-    // the next step rather than holding a living body's joints on its proxies
+    // the next step rather than posing a living body's joints off its bodies
     // for the rest of the round. Stop maintaining it here and that guard can never
     // fire, because the samples are the only thing that knows.
     this.alive = b.alive;
 
     // While the pool owns this rig it owns the joints AND the root, and it
-    // poses through the proxy nodes its joints hang on (their holders), which
-    // the solver's poses write. Everything below is a second writer on the same
+    // poses them straight off the solver's pose arrays (`Joint.pose`).
+    // Everything below is a second writer on the same
     // joints, so this stands aside while the pool holds it.
     //
     // `hasPosition` goes with it so the frame the rig comes back reports no

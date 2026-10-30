@@ -972,8 +972,8 @@ src/
     rigJoints.ts        # A rig's joints as OUR hierarchy, no Babylon: local
                         #   channels, float32 world matrices the rig owns (bit
                         #   for bit the TransformNodes'), a fresh chain, a
-                        #   ragdoll's hold/release (setParent replayed), and
-                        #   the body's one measure (the root capsule's sphere)
+                        #   joint POSED off a ragdoll's pose array (Joint.pose),
+                        #   and the body's one measure (the root capsule's sphere)
     soldierPose.ts      # What a pose IS, as numbers, no Babylon: SoldierPose
                         #   and REST_POSE (gait any way, aim, twist, crouch,
                         #   the rifle's kick, carry and reload), solveSoldier
@@ -1121,14 +1121,16 @@ src/
                         #   as: the creation read (absolutePose), the sync's
                         #   write (applyPose), placing a body (storePose), a
                         #   debris park (parkPose) and a burst's draw
-                        #   (drawPieces). The three clients' views share it;
+                        #   (drawPieces). The debris views share it (a corpse
+                        #   has no node: its joints are posed off the arrays);
                         #   PhysicsWorld does not import it (a convention — its
                         #   Babylon imports are types, so no gate can tell)
     RagdollSystem.ts    # Corpses under that engine. One refusal left (past the
                         #   fog wall); a full pool evicts its oldest. Cannot
-                        #   tell a dead bot from the player's stand-in. Its view
-                        #   draws each bone's pose onto a pool-owned proxy the
-                        #   rig's joint hangs on (JointTree.hold)
+                        #   tell a dead bot from the player's stand-in. No
+                        #   node: each rig joint is posed off its bone's pose
+                        #   array (Joint.pose), a frozen corpse off the slot's
+                        #   copy, which the sink lowers
     DebrisSystem.ts     # Glass shards under it. A burst is CUT from the pane's
                         #   own face along the cracks a round put in it; refuses
                         #   past its own apparent-size gate, and evicts only a

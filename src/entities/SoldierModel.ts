@@ -670,7 +670,7 @@ export const RAGDOLL_LINKS: Readonly<Partial<Record<BoneJoint, BoneLink>>> = {
  * that impossible to get wrong: the rest pose can never have drifted, because
  * nothing has run yet when it is taken. The PARENT needs no snapshot: a
  * joint's parent is fixed at build (`Joint.parent`), and what a ragdoll moves
- * is its HOLDER, which `resetSoldierPose` clears.
+ * is its POSE (`Joint.pose`), which `resetSoldierPose` clears.
  */
 export interface JointRest {
   node: Joint;
@@ -1465,24 +1465,27 @@ export function buildSoldier(
 /**
  * Puts every joint back to the transform `buildSoldier` gave it.
  *
- * This is the ONLY correct reset after anything that re-parented the rig, and
- * `animateSoldier(rig, REST_POSE)` is not a substitute for it. That call
- * writes Euler channels and the rifle's place in the torso — and nothing
- * else. It never touches a HOLDER, a `scaling`, or the position of any joint
- * but `body` and `gun`. A ragdoll leaves residue in every one of those: it
- * hangs the bones on its proxies (`JointTree.hold`) and hands them back
- * through a decompose, whose scaling is a hair off 1.
+ * This is the ONLY correct reset after anything that took the rig out of its
+ * own hands, and `animateSoldier(rig, REST_POSE)` is not a substitute for it.
+ * That call writes Euler channels and the rifle's place in the torso — and
+ * nothing else. It never touches a POSE, a `scaling`, or the position of any
+ * joint but `body` and `gun`. A ragdoll leaves its residue in the first of
+ * those: it draws the bones off its bodies' poses (`Joint.pose`), and the rest
+ * is restored too because anything that ever wrote them is worth undoing on
+ * the one path every reuse goes through.
  *
- * The holder is the load-bearing line. While one is set the joint takes its
- * world from the proxy and not from the rig, so a holder left behind by a
- * corpse freezes the respawned bot's limbs where the corpse lay for the rest
- * of the round, with its root still updating correctly underneath. (When the
- * joints were nodes this was a leaked `rotationQuaternion`, which Babylon let
- * win over `rotation`; a joint has no quaternion to leak any more.)
+ * The pose is the load-bearing line. While one is set the joint takes its
+ * world from the pose array and not from the rig, so a pose left behind by a
+ * corpse draws the respawned bot's limbs where the corpse lay — or, once the
+ * pool parks that body, a kilometre under the map — for the rest of the
+ * round, with its root still updating correctly underneath. (Until X4.1b it
+ * was a HOLDER, the pool's proxy node the joint hung on, and when the joints
+ * were nodes it was a leaked `rotationQuaternion`, which Babylon let win over
+ * `rotation`; a joint has no quaternion to leak.)
  */
 export function resetSoldierPose(rig: SoldierRig): void {
   for (const { node, position } of rig.rest) {
-    node.holder = null;
+    node.pose = null;
     node.rotation.setAll(0);
     node.position.copyFrom(position);
     node.scaling.setAll(1);

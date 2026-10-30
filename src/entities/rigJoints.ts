@@ -4,9 +4,9 @@
  * float32 matrix the rig owns (`Joint.world`), which is what Babylon draws the
  * rig's meshes from and what every reader of a joint reads (`BABYLON_EXIT.md`
  * X4.1a).
- * Owns: `Joint`, `JointTree` (the composition, a fresh chain, and the two
- * hand-offs to and from a HOLDER), `JointHolder`, and the body's one MEASURE
- * (`measureBody`, the sphere the root's capsule used to answer).
+ * Owns: `Joint`, `JointTree` (the composition, and a fresh chain), and the
+ * body's one MEASURE (`measureBody`, the sphere the root's capsule used to
+ * answer).
  * Invariants:
  * - **No `@babylonjs/core`.** `src/math` only (`scripts/check-babylon-free.mjs`
  *   holds it as a root), so X4.1d can draw these matrices with no node behind
@@ -24,41 +24,29 @@
  *   joint and its ancestors, which is what a forced `computeWorldMatrix(true)`
  *   was. Babylon's render-id cache is not reproduced, and on purpose (the
  *   X4.1a note measures the one place it ever answered stale).
- * - **A HOLDER is the one way a joint leaves its tree**, and it is a RAGDOLL's:
- *   `RagdollSystem` hangs a corpse's bones on its pool's proxies (`hold`) and
- *   takes them back (`release`), each a replay of Babylon's
- *   `TransformNode.setParent` — the world kept, the local re-derived through
- *   an inverse and a `decompose`, Euler written back — operation for
- *   operation, since a corpse's frozen pose is those locals.
- *   `BABYLON_EXIT.md` X4.1b deletes both: a corpse's joints are then written
- *   off its bodies' poses.
+ * - **A POSED joint is the one way a joint leaves its tree, and it is a
+ *   RAGDOLL's** (`BABYLON_EXIT.md` X4.1b): while `Joint.pose` holds a physics
+ *   pose (`WorldBody.pose`'s seven numbers, or the pool's copy of them once a
+ *   corpse has frozen) the joint's world IS that pose, composed at unit scale
+ *   exactly as the pool's proxy node composed it before X4.1b, and its own
+ *   channels and its parent are not read. Its children compose off it as off
+ *   any parent. `RagdollSystem` sets it and `SoldierModel.resetSoldierPose`
+ *   clears it — a pose left on a joint is the leak to fear, a respawned body
+ *   drawn with that limb wherever the pose array says.
  * Never: imports Babylon, allocates per compute, or reads a node's matrix.
  */
-import { Matrix, Quaternion, Vector3, type QuaternionLike, type Vector3Like } from "../math";
-
-/**
- * A pose a joint can be HELD in from outside its tree: a ragdoll bone's proxy
- * (`RagdollSystem`), read exactly as Babylon read an UNPARENTED
- * `TransformNode` — its position, its quaternion (or, absent one, its Euler)
- * and its scaling. A Babylon node satisfies it structurally.
- */
-export interface JointHolder {
-  readonly name: string;
-  readonly position: Vector3Like;
-  readonly rotation: Vector3Like;
-  readonly rotationQuaternion: QuaternionLike | null;
-  readonly scaling: Vector3Like;
-}
+import { Matrix, Quaternion, Vector3 } from "../math";
 
 /** One joint: its local channels, the parent it was built under, and its world. */
 export class Joint {
-  /** Where it hangs, as built. Never changes; a holder stands in for it. */
+  /** Where it hangs, as built. Never changes; a pose stands in for it. */
   readonly parent: Joint | null;
   /**
-   * What holds it instead of `parent` while a ragdoll owns it — see the
-   * header. Null for every living body.
+   * The physics pose it is drawn off instead of `parent` and its own channels
+   * while a ragdoll owns it, `[px, py, pz, qx, qy, qz, qw]` — see the header.
+   * Read at every compose, never copied. Null for every living body.
    */
-  holder: JointHolder | null = null;
+  pose: ArrayLike<number> | null = null;
   /** The local channels, as `TransformNode` kept them: Euler, never a quaternion. */
   readonly position = new Vector3();
   readonly rotation = new Vector3();
@@ -83,13 +71,9 @@ export class Joint {
 // Scratch: the tree composes every drawn body every frame.
 const _q = new Quaternion();
 const _local = new Matrix();
-const _held = new Matrix();
-const _composed = new Matrix();
-const _inverse = new Matrix();
-const _parentWorld = new Matrix();
-const _s = new Vector3();
-const _t = new Vector3();
-const _rq = new Quaternion();
+const _pq = new Quaternion();
+const _pt = new Vector3();
+const UNIT = new Vector3(1, 1, 1);
 
 /** One joint's local matrix, composed as `computeWorldMatrix` composed it. */
 function composeLocal(j: Joint, out: Matrix): Matrix {
@@ -97,19 +81,25 @@ function composeLocal(j: Joint, out: Matrix): Matrix {
   return Matrix.ComposeToRef(j.scaling, _q, j.position, out);
 }
 
-/** A holder's world: an unparented node's, a copy of its own local. */
-function holderWorld(h: JointHolder, out: Matrix): Matrix {
-  const q = h.rotationQuaternion;
-  if (q) _rq.copyFrom(q);
-  else Quaternion.RotationYawPitchRollToRef(h.rotation.y, h.rotation.x, h.rotation.z, _rq);
-  return Matrix.ComposeToRef(h.scaling, _rq, h.position, out);
+/**
+ * A physics pose as a world matrix: the unparented node the pool drew a bone
+ * on until X4.1b, composed — its position and its quaternion as the pose holds
+ * them (unnormalised, as Havok's sync wrote them), at unit scale.
+ */
+function composePose(p: ArrayLike<number>, out: Matrix): Matrix {
+  _pq.set(p[3], p[4], p[5], p[6]);
+  _pt.set(p[0], p[1], p[2]);
+  return Matrix.ComposeToRef(UNIT, _pq, _pt, out);
 }
 
-/** One joint's world off its parent's (or holder's), which must be current. */
+/** One joint's world off its parent's, which must be current — or off its pose. */
 function composeWorld(j: Joint): void {
+  if (j.pose) {
+    composePose(j.pose, j.world);
+    return;
+  }
   composeLocal(j, _local);
-  if (j.holder) _local.multiplyToRef(holderWorld(j.holder, _held), j.world);
-  else if (j.parent) _local.multiplyToRef(j.parent.world, j.world);
+  if (j.parent) _local.multiplyToRef(j.parent.world, j.world);
   else j.world.copyFrom(_local);
 }
 
@@ -132,52 +122,12 @@ export class JointTree {
   /**
    * One joint's world and every ancestor's on its way up, fresh — what
    * `computeWorldMatrix(true)` on the node was, which forced its ancestors
-   * too. A held joint's chain stops at its holder.
+   * too. A posed joint's chain stops at it.
    */
   computeChain(j: Joint): Matrix {
-    if (!j.holder && j.parent) this.computeChain(j.parent);
+    if (!j.pose && j.parent) this.computeChain(j.parent);
     composeWorld(j);
     return j.world;
-  }
-
-  /**
-   * Hangs `j` on `holder`, keeping its world: Babylon's `setParent(holder)`,
-   * replayed.
-   */
-  hold(j: Joint, holder: JointHolder): void {
-    this.reparent(j, holderWorld(holder, _parentWorld));
-    j.holder = holder;
-  }
-
-  /** Hands `j` back to the parent it was built under, keeping its world. */
-  release(j: Joint): void {
-    if (!j.holder) return;
-    const into = j.parent ? _parentWorld.copyFrom(this.computeChain(j.parent)) : null;
-    this.reparent(j, into);
-    j.holder = null;
-  }
-
-  /**
-   * `TransformNode.setParent`'s arithmetic (Babylon 9.28,
-   * `transformNode.pure.js`), with `newParentWorld` the new parent's FRESH
-   * world (null for none): the joint's current world, rebuilt as setParent
-   * rebuilds it — its local composed again, times its current parent's (or
-   * holder's) fresh world, in place — times the inverse of the new parent's,
-   * decomposed, the rotation written back as Euler since a joint never holds
-   * a quaternion.
-   */
-  private reparent(j: Joint, newParentWorld: Matrix | null): void {
-    composeLocal(j, _composed);
-    if (j.holder) _composed.multiplyToRef(holderWorld(j.holder, _held), _composed);
-    else if (j.parent) _composed.multiplyToRef(this.computeChain(j.parent), _composed);
-    if (newParentWorld) {
-      newParentWorld.invertToRef(_inverse);
-      _composed.multiplyToRef(_inverse, _composed);
-    }
-    _composed.decompose(_s, _rq, _t);
-    _rq.toEulerAnglesToRef(j.rotation);
-    j.scaling.copyFrom(_s);
-    j.position.copyFrom(_t);
   }
 }
 

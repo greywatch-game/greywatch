@@ -1026,10 +1026,11 @@ into `RagdollSystem`, `DebrisSystem` and `BlastDebrisSystem` by `Game` — the
 `BattleSystem`←`CombatSystem` precedent — and `Game` steps the engine and *then*
 its three clients, never the other way round. **It calls Havok's RAW `HP_*` API**
 (`systems/havok.ts`) — no Babylon plugin, no physics engine on the scene — and
-**a body's pose is seven numbers in an array** (`WorldBody.pose`), which each
-client's VIEW writes onto what it draws (`systems/poseView.ts`): the ragdoll at
-the top of its `update`, before `freeze` hands joints back, so **anything new
-that reads a corpse's drawing between `physics.update` and the clients'
+**a body's pose is seven numbers in an array** (`WorldBody.pose`): a corpse's
+rig JOINTS are posed straight off it (`Joint.pose`, read at every compose, and a
+pose left on a joint is the leak to fear), and each debris VIEW writes it onto
+its mesh (`systems/poseView.ts`) after the step, so **anything new that reads a
+shard's or a chunk's drawing between `physics.update` and the clients'
 `update`s reads last frame's**. `PhysicsWorld` reaches no node, mesh or scene —
 the floor reaches it as `GameMap.terrainGeometry` — and
 `scripts/check-babylon-free.mjs` holds it there.
@@ -1041,9 +1042,9 @@ you watch — and it costs no time, because `enterDeploy` is opened with
 
 → **[`docs/deaths.md`](docs/deaths.md)** — the boot gate and what the optional
 version cost, Havok called directly (the dialect, the substep, the pose array
-and where each view draws it), the pool's three tiers, the holder (once
-quaternion) leak that freezes a respawned bot, the fog-wall gate shared with
-the LOD, the shard pool, and the death cam's camera hand-off.
+and where each view draws it), the pool's three tiers, the joint-pose leak
+that freezes a respawned bot, the fog-wall gate shared with the LOD, the shard
+pool, and the death cam's camera hand-off.
 
 ### Vehicles: three kinds, one hull, and the exceptions it is
 

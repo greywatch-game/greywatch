@@ -1852,7 +1852,7 @@ export class Game {
     // clients build their pools in their own constructors and nothing below
     // ever has to ask whether physics has arrived yet.
     this.physics = new PhysicsWorld(havok);
-    this.ragdolls = new RagdollSystem(this.scene, this.physics);
+    this.ragdolls = new RagdollSystem(this.physics);
     this.debris = new DebrisSystem(this.scene, this.mats, this.physics);
     this.blastDebris = new BlastDebrisSystem(this.scene, this.mats, this.physics);
     this.glass = new GlassSystem();
@@ -8605,8 +8605,8 @@ export class Game {
    *
    * `RagdollSystem` is in here for a reason sharper than symmetry: `updateNet`
    * is what raises an interpolated death, and a death raised while the pool is
-   * not being stepped is a corpse that takes a rig, parents its joints to
-   * proxies nothing writes, and hangs in the air for the rest of the round.
+   * not being stepped is a corpse that takes a rig, poses its joints off
+   * bodies nothing steps, and hangs in the air for the rest of the round.
    * Stepping the roster without stepping the pool is not half the feature, it
    * is a haunting.
    *

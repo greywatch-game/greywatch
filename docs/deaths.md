@@ -143,7 +143,7 @@ used to leave the node standing:
 
 | client | drawn onto | when |
 | --- | --- | --- |
-| `RagdollSystem` | each bone's pool-owned PROXY, which the rig's joint hangs off (`JointTree.hold`) | at the top of `update` (`drawSlot`), which `Game` runs straight after the step and before `freeze` hands the joints back off the proxies; in `spawn` before the joint is hung off its proxy; in `park` |
+| `RagdollSystem` | nothing: the rig's JOINT is posed off the bone's pose array itself (`Joint.pose`), and at a freeze off the slot's copy of it (`Bone.still`) | never — the pose is read at every compose of the joint, so the drawing cannot lag the step; `freeze` copies it before the park, and the sink lowers the copy |
 | `DebrisSystem` | the shard's mesh | when `burst` places it; last in `update` (`drawLive`), after the step and the sink; in `release` |
 | `BlastDebrisSystem` | the chunk's mesh | the same three places |
 
@@ -167,18 +167,24 @@ drops sixty-four free boxes on every map and hashes where they come to rest —
 the static world. `clients.mjs` plays a fixed script of corpses, bursts and
 rubble through the three real clients and hashes every live body through
 `HP_Body_GetQTransform` — the bodies — and, since the poses left the nodes, a
-digest of every node the three clients WRITE (proxies, shard and chunk meshes,
-the stand-ins' rig roots and joints, raw local transforms bit for bit — the
-joints have been OURS since `BABYLON_EXIT.md` X4.1a, digested in the bytes a
-node gave, so the bank taken off the nodes still grades them) at the end of
-every frame. It also hashes EVERY pooled body every frame, parked ones
+digest of everything the three clients' views are drawn off (each corpse
+bone's pose in the bytes its proxy node gave until `BABYLON_EXIT.md` X4.1b,
+shard and chunk meshes, the stand-ins' rig roots and joints — ours since X4.1a,
+digested in the bytes a node gave, a posed joint naming the pose it is drawn
+off — raw local transforms bit for bit) at the end of every frame. It also hashes EVERY pooled body every frame, parked ones
 included, and fails any parked body that is not exactly at the park — a park
 that rewrote a pose without telling the engine leaves a static box in the
 street and is invisible to a hash of live bodies — and it clears and rebuilds
 the static world twice before the script, requiring the Havok world's own body
 count to be the map's plus the pools' 174 after each. All of it is banked on the
 PRE-PORT tree (fb90b7d's `src/`, which `lib.mjs` still reaches) and graded on
-the port. A change that must move nothing passes both on bits.
+the port. A change that must move nothing passes both on bits. **It was
+re-banked once since, at X4.1b, and the reason is the oracle's to keep**: a
+corpse's bones now start at the living pose composed once rather than through
+the earlier bones' hand-offs, which moved some spawn poses by one to four
+float32 ulps and the tumble after them; with the old spawn poses injected,
+the new path was graded identical on every line first (`BABYLON_EXIT.md`
+X4.1b's note has the numbers).
 
 ## Deaths
 
@@ -209,8 +215,8 @@ and since X2.5c C4 the pool hears of every death the same way, off the wire
 (`NetRoster.onDeath`), offline as in a match.
 
 That tween was exempt from the pose-freeze LOD *because it was five property
-writes*; **a ragdoll needs no such exemption**, because it poses through the proxy
-nodes its joints hang on and its view writes those whatever the LOD says.
+writes*; **a ragdoll needs no such exemption**, because its joints are posed off
+the bodies' own pose arrays (`Joint.pose`), whatever the LOD says.
 Reading those two as one fact is what pinned the ragdoll gate to `lodFreezeDistance`
 (35) and stopped anything dying across the square from falling over at all — a
 marksman rifle's whole range. The two were never the same question, and the
@@ -227,7 +233,7 @@ fixed it either:
 straight legs under lowered hips reach through the floor, and lifting the hips to
 meet them is half a metre of pop on the frame of death. So the leg became three
 bones — thigh, shin and boot, hung off the same hip, knee and ankle the crouch bends
-— and the proxies take whatever pose the rig is already in. Measured on a body
+— and the bodies take whatever pose the rig is already in. Measured on a body
 killed at a full crouch: the knee is thrown holding its drawn 2.58 rad fold, keeps
 it through the first steps rather than being snapped straight, and the corpse settles
 on its side still curled. A standing body is unchanged — every joint within 0.06 m of
@@ -334,29 +340,32 @@ FINDINGS #8's older 1.37 ms for four does not reproduce; see the note there.
   bit-identical body position across 12 rendered frames while paused, corpses
   and shards alike.
 - **Havok never touches a rig joint — it touches no node at all.** A bone's
-  pose is an array, and the ragdoll's VIEW writes it onto a pool-owned,
-  unparented PROXY `TransformNode` that the rig's joint HANGS ON. The proxy is
-  what carries the pose's `rotationQuaternion`; a joint never has one. Since
-  `BABYLON_EXIT.md` X4.1a the joints are not nodes but OUR hierarchy
-  (`entities/rigJoints.ts`): a joint hangs on a proxy as its HOLDER
-  (`JointTree.hold`) and is handed back (`JointTree.release`), each a replay of
-  Babylon's `TransformNode.setParent` operation for operation — the world kept,
-  the local re-derived through the inverse and a `decompose`, Euler written
-  back — so the frozen corpse is the same locals to the bit
-  (`plans/physics-ref/clients.mjs`'s node digest, banked on the nodes, grades
-  them). The leak to fear is a HOLDER left behind: a joint still hung on a
-  proxy takes its world from the proxy, so a bot respawns with its limbs where
-  the corpse lay for the rest of the round, its root still updating
-  underneath. When the joints were nodes the same failure was a leaked
-  quaternion, which Babylon let win over the `rotation` `animateSoldier`
-  writes. X4.1b deletes the holder: a corpse's joints are then written off the
-  poses directly. **The proxy is composed by nothing but this pool** — no
-  Babylon mesh hangs under it any more — so `applyImpulse` forces its
-  `computeWorldMatrix` before reading the chest, as `setParent` did when it
-  hung a node there.
+  pose is an array, and since `BABYLON_EXIT.md` X4.1b the rig's joint — OUR
+  hierarchy (`entities/rigJoints.ts`) since X4.1a — is POSED off it
+  (`Joint.pose`): its world is that pose composed at unit scale, exactly as
+  the unparented proxy node it hung on until then composed, and its own
+  channels and its parent are not read while the pose is set. **There is no
+  view to run and no hand-off either way**: `spawn` decomposes every bone's
+  world off ONE fresh compose of the living rig, writes the poses and points
+  the joints at them; the step moves the arrays and the drawing follows at
+  the next compose. `freeze` copies each pose into the slot (`Bone.still`) and
+  points the joint at the copy before the park overwrites the body's, so a
+  frozen corpse is the pose it was drawn off to the bit; the sink lowers the
+  copies and the root together (the root carries the body's MEASURE and the
+  shadow packers' reach). The chest point a round's impulse lands on is the
+  pose's position rounded to float32 plus the lift — what the proxy answered,
+  composed. **The leak to fear is a POSE left behind**: a joint still posed
+  takes its world from that array, so a bot respawns with that limb where the
+  corpse lay — or, once the pool parks the body, a kilometre under the map —
+  for the rest of the round, its root still updating underneath.
+  `resetSoldierPose` clears it on every release. Until X4.1b it was a HOLDER
+  (the proxy, the joint hung on it through a replay of
+  `TransformNode.setParent` and handed back at the freeze the same way), and
+  when the joints were nodes it was a leaked quaternion, which Babylon let win
+  over the `rotation` `animateSoldier` writes.
 - **`resetSoldierPose` is the authoritative restore, and `animateSoldier(rig,
   REST_POSE)` is not a substitute.** That call writes Euler channels and the rifle's
-  place in the torso, and never a holder, a `scaling` or the
+  place in the torso, and never a pose, a `scaling` or the
   position of any joint but `body` and `gun`. `RagdollSystem.release` calls the
   former on every rig it hands back, and `NetSoldier.reset` on every change of
   a slot's occupant. Until X2.5c C4 the offline page's `BotRig` called it too,
@@ -564,10 +573,11 @@ for the rest of the burst. The cost is a piece lying ~3 cm proud of what it
 landed on, which nothing about a dark plate on a dark road shows.
 
 **A shard is drawn straight onto its MESH, with no proxy node.** A ragdoll
-needs proxies because a pose carries a `rotationQuaternion` and the rig is posed
-through Euler channels; a shard is parented to nothing, posed by nobody and
-handed back to nothing, so the quaternion its view writes from Havok's pose is
-the only thing that ever orients it.
+needed proxies while its joints were Babylon nodes posed through Euler channels
+(they are posed off the pose arrays since `BABYLON_EXIT.md` X4.1b); a shard is
+parented to nothing, posed by nobody and handed back to nothing, so the
+quaternion its view writes from Havok's pose is the only thing that ever
+orients it.
 
 **The outline is in the VERTICES, and the topology is fixed even though the
 outline is not.** The mesh was a unit box with `mesh.scaling` for a size, which
@@ -686,8 +696,8 @@ without that subtract turns feedback into a punishment.
 - **The frame is anchored on the corpse's own chest joint**, smoothed at
   `followRate`, which makes one set of numbers work at both ends of the fall: a
   standing body puts the chest at ~1.1 m and a fallen one at ~0.3 m. The joint is read
-  composed FRESH (`SoldierModel.jointPosition`) — while the ragdoll owns it, it hangs on a
-  proxy node the ragdoll's view moved this frame.
+  composed FRESH (`SoldierModel.jointPosition`) — while the ragdoll owns it, it is
+  posed off the chest body's own pose, as the step last left it.
 - **This body is never refused, and it needs no exception to say so.** It is at the
   camera, so the distance gate — the pool's one remaining refusal — cannot reach it,
   and a full pool evicts its oldest corpse, which for the whole four seconds is never

@@ -1,7 +1,8 @@
 /**
  * RagdollSystem.ts — Physics-driven deaths: a pool of corpses, and the hand-off
  * of a rig's joints to the solver and back.
- * Owns the pool, the bone bodies, the constraints and the proxies. It does NOT
+ * Owns the pool, the bone bodies, the constraints and each frozen corpse's copy
+ * of its poses. It does NOT
  * own the engine — `PhysicsWorld` does, and hands it in — so this file no longer
  * names `@babylonjs/havok`, builds the static map, or steps anything. See that
  * file's header for why the split exists.
@@ -13,33 +14,28 @@
  * below applies to both, which is what stopped the player's corpse needing a
  * second copy of any of it.
  *
- * **Two halves, one file.** The PHYSICS half is
- * the bodies, the constraints, the impulses and every spawn, freeze, park and
- * eviction decision, and it holds a bone's pose as `WorldBody.pose` — seven
- * plain numbers `PhysicsWorld` steps. The VIEW half is the proxies and the
- * rig: it writes those numbers onto each bone's proxy (`drawSlot`,
- * `poseView.applyPose`) at the points something reads the drawing — the top
- * of `update`, which `Game` runs straight after the step and which is where
- * `freeze` hands the joints back off the proxies' poses; the moment `spawn`
- * places a proxy, before the joint is hung on it; and `park` — so
- * `shadowFor`, the render and every hand-off see the nodes the solver's own
- * per-substep sync used to leave (`plans/physics-ref/clients.mjs` hashes
- * those nodes, and the rig's joints, bit for bit).
+ * **Two halves, one file, and no node in either** (`BABYLON_EXIT.md`
+ * X4.1b). The PHYSICS half is the bodies, the constraints, the impulses and
+ * every spawn, freeze, park and eviction decision, and it holds a bone's pose
+ * as `WorldBody.pose` — seven plain numbers `PhysicsWorld` steps. The VIEW
+ * half is one assignment per bone: the rig's joint is POSED off that array
+ * (`Joint.pose`, `rigJoints.ts`), so its world is the pose composed whenever
+ * anything composes it — `shadowFor`, the death cam, the shadow packers and
+ * the render all read the step's latest pose, and there is no frame on which
+ * the drawing lags the bodies. A frozen corpse's bodies are parked, so
+ * `freeze` copies each pose into the slot first and poses the joint off the
+ * copy, which the sink lowers.
  *
  * Invariants, each of which has a way of failing silently:
- * - Havok never touches a rig joint, and touches no node at all: the view
- *   writes POOL-OWNED PROXY nodes, and the rig's joints — our own hierarchy
- *   since `BABYLON_EXIT.md` X4.1a (`rigJoints.ts`) — HANG ON those
- *   (`JointTree.hold`, handed back by `release`), each hand-off a replay of
- *   Babylon's `setParent`, so a frozen corpse is the locals a node's would
- *   have been, to the bit. A proxy is unparented and owns the one
- *   `rotationQuaternion` near the rig. A holder left on a joint is the leak to
- *   fear — a respawned bot whose limbs stay where the corpse lay for the rest
- *   of the round — which is why `resetSoldierPose` clears every one. X4.1b
- *   deletes the hand-off: a corpse's joints then come straight off the poses.
- * - A proxy is composed by NOTHING but this file: no Babylon mesh hangs under
- *   it since the joints left the scene, so a read of its matrix is FORCED
- *   (`applyImpulse`), as `setParent` forced it when a node was hung there.
+ * - Havok never touches a rig joint, and touches no node at all: a bone's pose
+ *   is an array, and the rig's joint — our own hierarchy since
+ *   `BABYLON_EXIT.md` X4.1a — is drawn off it. A posed joint takes its world
+ *   from the pose and not from the rig, so a pose left on a joint is the leak
+ *   to fear — a respawned bot whose limb stays where the corpse lay (or, off a
+ *   parked body, a kilometre under the map) for the rest of the round — which
+ *   is why `resetSoldierPose` clears every one. Until X4.1b the joints hung on
+ *   pool-owned proxy `TransformNode`s through a replay of `setParent` and were
+ *   handed back the same way at the freeze; both went, with the proxies.
  * - Nothing here feeds navigation, cover, or hit detection. A corpse is not in
  *   `NavGrid`, not in `ObstacleField`, not in `hittablesAgainst`. Bots walk
  *   through bodies and rounds pass through them, exactly as they did before
@@ -66,7 +62,7 @@
  *   depends on it — `afterFirstStep` is this file's share of the teleport
  *   read-in, and it is per client precisely because each owns its own bodies.
  */
-import { Quaternion, Scene, TransformNode, Vector3 } from "@babylonjs/core";
+import { Vector3 } from "@babylonjs/core";
 import {
   Quaternion as PoseQuaternion,
   Vector3 as PoseVector3,
@@ -84,22 +80,26 @@ import {
 import { mulberry32 } from "../world/rng";
 import type { AxisLimit, ShapeId } from "./havok";
 import type { PhysicsClient, PhysicsWorld, WorldBody } from "./PhysicsWorld";
-import { absolutePose, applyPose, storePose } from "./poseView";
+import { storePose } from "./poseView";
 
 /** One bone of one pooled corpse. */
 interface Bone {
   joint: BoneJoint;
   /**
-   * The bone as DRAWN: the view writes the body's pose onto it, and the rig's
-   * joint is parented to it while the corpse is live. Unparented, so a pose
-   * is its raw transform (`poseView`).
-   */
-  proxy: TransformNode;
-  /**
    * On Havok's raw API, through `PhysicsWorld`;
-   * where the bone IS is `body.pose`, which the proxy is drawn from.
+   * where the bone IS is `body.pose`, which the rig's joint is drawn off while
+   * the corpse is live (`Joint.pose`).
    */
   body: WorldBody;
+  /**
+   * Where a FROZEN corpse's bone lies: `body.pose` copied at the freeze, since
+   * the body is parked straight after, and the joint drawn off it from then
+   * on. The sink lowers its `y` (`stillY` minus the drop). Owned by the slot
+   * for the life of the process; written only at a freeze and in the sink.
+   */
+  still: Float64Array;
+  /** `still`'s height at the freeze, so the sink's drop is absolute. */
+  stillY: number;
   /**
    * `RAGDOLL_BONES`' own mass, kept because a blast's throw is a SPEED and an
    * impulse is what Havok takes — see `applyImpulse`. Copied rather than read
@@ -120,9 +120,10 @@ interface Slot {
   /** Seconds the whole body has been under `sleepSpeed`. */
   stillT: number;
   /**
-   * True once the pose is baked back into the rig's hierarchy and the bodies
-   * have stopped. A frozen corpse is still a corpse — it lies there costing one
-   * property write — which is why this is NOT the same thing as `sinking`.
+   * True once the pose is copied out of the bodies (`Bone.still`) and the
+   * bodies have stopped. A frozen corpse is still a corpse — it lies there
+   * costing nothing until it sinks — which is why this is NOT the same thing
+   * as `sinking`.
    */
   frozen: boolean;
   /**
@@ -131,7 +132,12 @@ interface Slot {
    * lying still may not.
    */
   sinking: boolean;
-  /** `rig.root.position.y` when the sink started, so the drop is absolute. */
+  /**
+   * `rig.root.position.y` when the sink started, so the drop is absolute. The
+   * root sinks beside the posed bones, because the body's MEASURE
+   * (`measureRig`, what `WorldCulling` drops it by) and the shadow packers'
+   * reach are read off it.
+   */
   sinkFromY: number;
 }
 
@@ -139,7 +145,11 @@ const UP = new Vector3(0, 1, 0);
 
 /** Where a body waits between corpses — see `park`. */
 const PARKED_Y = -1000;
-/** That place as a pose: under the map, unturned (`Quaternion.Identity()`). */
+/**
+ * That place as a pose: under the map, unturned (`Quaternion.Identity()`). Also
+ * where every pooled body is CREATED — the pose the proxy node it was built on
+ * read back as (`absolutePose`), until X4.1b took the proxies.
+ */
 const PARKED_POSE = [0, PARKED_Y, 0, 0, 0, 0, 1];
 
 /**
@@ -175,7 +185,7 @@ export class RagdollSystem implements PhysicsClient {
 
   private slots: Slot[] = [];
 
-  // Scratch — this runs every frame with up to `maxConcurrent` corpses live,
+  // Scratch — the spawn and the impulse run on the frame somebody is killed,
   // and the frame already carries allocation churn (`docs/profiling.md`, "The
   // heap and the collector").
   private readonly v1 = new Vector3();
@@ -194,10 +204,7 @@ export class RagdollSystem implements PhysicsClient {
    * This is the `BattleSystem`←`CombatSystem` precedent: `Game` still owns the
    * wiring, and a system may hold another it was handed.
    */
-  constructor(
-    private scene: Scene,
-    private physics: PhysicsWorld,
-  ) {
+  constructor(private physics: PhysicsWorld) {
     physics.register(this);
     // Built HERE, and it can be because the engine is up before `Game` is
     // constructed. It used to wait for a `physicsStarted` callback that only
@@ -281,7 +288,7 @@ export class RagdollSystem implements PhysicsClient {
     // pose that fixed it — straight legs under lowered hips reach through the
     // floor, and lifting the hips to meet them is half a metre of pop on the
     // frame of death — so the refusal stood in for the missing joints. The
-    // joints exist now (`RAGDOLL_BONES`), the proxies below take whatever pose
+    // joints exist now (`RAGDOLL_BONES`), the bodies below take whatever pose
     // the rig is in, and the one stance a player is most likely to be shot in
     // falls over like every other.
     const slot = this.takeSlot();
@@ -300,24 +307,24 @@ export class RagdollSystem implements PhysicsClient {
     // roster's LOD (`NetRoster`) keeps it on every frame while this pool holds it.
     subject.setEnabled(true);
 
+    // Place every bone exactly where its joint is in the world, so the ragdoll
+    // starts in the pose the bot died in rather than in a T-pose — into the
+    // body's pose, which the next substep teleports from. The whole rig is
+    // composed ONCE, fresh and before any joint is posed, so each bone starts
+    // at the living pose's own world: until X4.1b the bones were hung on their
+    // proxies one at a time and a later bone's chain went through an earlier
+    // one's re-derived local, which is the living world up to a float32
+    // rounding (the X4.1b note measures what that moved).
+    rig.tree.compute();
+    for (const bone of slot.bones) {
+      rig[bone.joint].world.decompose(this.jointScale, this.jointQuat, this.jointAt);
+      storePose(bone.body.pose, this.jointAt, this.jointQuat);
+    }
     const hp = this.physics.havok;
     for (const bone of slot.bones) {
-      const joint = rig[bone.joint];
-      // Place the bone exactly where the joint currently is in the world, so
-      // the ragdoll starts in the pose the bot died in rather than in a T-pose
-      // — into the body's pose, which the next substep teleports from, and
-      // onto the proxy at once, because the joint is hung off it next. The
-      // world is composed FRESH, the bones already hung on this offer
-      // included, as `computeWorldMatrix(true)` composed it off the nodes.
-      rig.tree
-        .computeChain(joint)
-        .decompose(this.jointScale, this.jointQuat, this.jointAt);
-      storePose(bone.body.pose, this.jointAt, this.jointQuat);
-      applyPose(bone.body.pose, bone.proxy);
-      // Hang the joint on the proxy (`JointTree.hold`): its world kept and its
-      // local re-derived exactly as `TransformNode.setParent` did, Euler and
-      // all, so the hand-back is the same arithmetic the other way.
-      rig.tree.hold(joint, bone.proxy);
+      // The joint is drawn off the body from here on (`Joint.pose`): read at
+      // every compose, so it follows the step with nothing written per frame.
+      rig[bone.joint].pose = bone.body.pose;
 
       // The body is pooled and still carries the last corpse's motion.
       hp.setLinearVelocity(bone.body.id, [0, 0, 0]);
@@ -347,17 +354,12 @@ export class RagdollSystem implements PhysicsClient {
   update(dt: number): void {
     const d = CONFIG.bots.death;
 
-    // The view, FIRST: every live corpse's proxies onto where the step just
-    // left its bones, before anything below reads them — `freeze` hands
-    // the joints off the proxies' world matrices.
-    for (const slot of this.slots) if (slot.subject && !slot.frozen) this.drawSlot(slot);
-
     for (const slot of this.slots) {
       if (!slot.subject || !slot.rig) continue;
       // The rig was recycled out from under us. It should not be possible —
       // a corpse is gone at `sinkStart + sinkTime` (6 s) and Conquest wants
       // the rig at `respawnDelay` (8 s) — but the failure if it ever were is
-      // a slot re-parenting a LIVE bot's joints for the rest of the round, so
+      // a slot posing a LIVE bot's joints for the rest of the round, so
       // it is checked here rather than left to that margin holding.
       if (slot.subject.alive) {
         this.release(slot);
@@ -377,7 +379,11 @@ export class RagdollSystem implements PhysicsClient {
       }
       const k = Math.min(1, (slot.t - d.sinkStart) / d.sinkTime);
       // Eased, so the body starts going rather than dropping on one frame.
-      slot.rig.root.position.y = slot.sinkFromY - d.sinkDepth * k * k;
+      // The bones are drawn off their copies and the root carries the
+      // measure, so all of them drop together.
+      const drop = d.sinkDepth * k * k;
+      slot.rig.root.position.y = slot.sinkFromY - drop;
+      for (const bone of slot.bones) bone.still[1] = bone.stillY - drop;
       if (k >= 1) this.release(slot);
     }
   }
@@ -387,10 +393,10 @@ export class RagdollSystem implements PhysicsClient {
    * which is every bot this system is not holding, so an unwired `ShadowSystem`
    * behaves exactly as it did before.
    *
-   * It reads the DRAWN torso, and needs no draw of its own: the view is
-   * written at the top of `update`, which `Game.stepAftermath` runs straight
-   * after the step, so there is no point in a frame at which a body has moved
-   * and its proxy has not.
+   * It reads the DRAWN torso, and needs no draw of its own: the torso joint is
+   * posed off its body's pose (or a frozen corpse's copy of it), composed
+   * fresh here, so there is no point in a frame at which a body has moved and
+   * its drawing has not.
    */
   shadowFor(subject: RagdollSubject, out: Vector3): number {
     const slot = this.slots.find((s) => s.subject === subject);
@@ -477,21 +483,22 @@ export class RagdollSystem implements PhysicsClient {
     for (let i = 0; i < d.maxConcurrent; i++) {
       const shapes = this.buildShapes(i);
       const bones: Bone[] = RAGDOLL_BONES.map((spec) => {
-        const proxy = new TransformNode(`ragdoll${i}-${spec.joint}`, this.scene);
-        // Pre-created so the view (`applyPose`) only ever copies into it — the
-        // one place a quaternion is allowed to exist anywhere near this rig.
-        proxy.rotationQuaternion = Quaternion.Identity();
-        proxy.position.y = PARKED_Y;
-        // Created where the proxy stands, static, then shaped, weighed and
-        // damped: the plugin's calls in its order (`PhysicsWorld.addBody`).
-        // The pool is built before the debris pools, so these are the first
-        // client bodies in the world's table, as they were in the plugin's.
-        const body = this.physics.addBody("static", absolutePose(proxy));
+        // Created at the park, static, then shaped, weighed and damped: the
+        // plugin's calls in its order (`PhysicsWorld.addBody`). The pool is
+        // built before the debris pools, so these are the first client bodies
+        // in the world's table, as they were in the plugin's.
+        const body = this.physics.addBody("static", PARKED_POSE);
         hp.setShape(body.id, shapes.get(spec.joint)!);
         hp.setMass(body.id, spec.mass);
         hp.setLinearDamping(body.id, d.linearDamping);
         hp.setAngularDamping(body.id, d.angularDamping);
-        return { joint: spec.joint, proxy, body, mass: spec.mass };
+        return {
+          joint: spec.joint,
+          body,
+          still: new Float64Array(PARKED_POSE),
+          stillY: PARKED_Y,
+          mass: spec.mass,
+        };
       });
 
       const byJoint = new Map(bones.map((b) => [b.joint, b]));
@@ -653,14 +660,13 @@ export class RagdollSystem implements PhysicsClient {
       for (const bone of slot.bones) {
         this.v2.copyFrom(this.v1).scaleInPlace(speed * bone.mass);
         // At the bone's own origin — the pose `spawn` wrote from the joint's
-        // world matrix a few lines ago, which is the proxy's position, and a
-        // proxy is parented to nothing, so its world position. The shape's
+        // world matrix a few lines ago, its world position. The shape's
         // centre is offset from it by `RAGDOLL_BONES`, so each bone picks up a
         // little turn of its own, which is exactly the free tumble the round's
         // `lift` is asking for by hand.
         //
         // **It lands BEFORE the teleport**: Havok still holds the body parked
-        // at `PARKED_Y`, and the location is the proxy's NEW position, a
+        // at `PARKED_Y`, and the location is the bone's NEW position, a
         // kilometre away (`FINDINGS.md` 57). Reproduced exactly as the plugin
         // made it; fixing it is a change of its own.
         const p = bone.body.pose;
@@ -672,17 +678,19 @@ export class RagdollSystem implements PhysicsClient {
       );
       // Applied ABOVE the centre of mass, so the tumble falls out of the
       // off-centre application instead of needing an authored spin. Measured
-      // off the DRAWN chest, as it always was — `spawn` drew the proxy a few
-      // lines ago, and its world matrix is float32, so this is the pose
-      // rounded to float32 rather than the pose. FORCED: the proxy has no
-      // child in Babylon's scene since the joints left it (X4.1a), so nothing
-      // else composes it, and an unforced read inside one render id hands
-      // back the last corpse's — the compose `setParent` forced here when the
-      // joint was still a node hung on it.
-      chest.proxy.computeWorldMatrix(true);
-      chest.proxy.getAbsolutePosition().addToRef(
-        this.v2.copyFrom(UP).scaleInPlace(imp.lift),
-        this.v2,
+      // off the DRAWN chest, as it always was: the translation row of the
+      // pose's float32 world matrix, which is the pose's position rounded to
+      // float32, the lift added after — what the pool's proxy node answered
+      // (`computeWorldMatrix(true)`, `getAbsolutePosition().addToRef`) until
+      // X4.1b. `spawn` decomposed that position off a float32 row, so the
+      // rounding changes nothing today; it is kept so this reads the chest as
+      // drawn whoever writes the pose.
+      const at = chest.body.pose;
+      this.v2.copyFrom(UP).scaleInPlace(imp.lift);
+      this.v2.set(
+        Math.fround(at[0]) + this.v2.x,
+        Math.fround(at[1]) + this.v2.y,
+        Math.fround(at[2]) + this.v2.z,
       );
       // Before the teleport, as the blast's is — see above.
       hp.applyImpulse(
@@ -739,29 +747,33 @@ export class RagdollSystem implements PhysicsClient {
   }
 
   /**
-   * Bakes the settled pose back into the rig's own hierarchy and stops
-   * simulating.
+   * Copies the settled pose out of the bodies and stops simulating.
    *
-   * The hand-back (`JointTree.release`, `setParent`'s arithmetic) preserves
-   * the world transform, so the corpse keeps the shape it landed in — as an
-   * ordinary Euler-posed hierarchy under `rig.root`, which is what makes the
-   * sink one property write for the whole body.
+   * Each joint is drawn off its bone's copy (`Bone.still`) from here on, so
+   * the corpse keeps the shape it landed in to the bit — the copy IS the pose
+   * it was drawn off a moment ago — and the sink lowers the copies. Until
+   * X4.1b this handed the joints back into the rig's own hierarchy through
+   * `setParent`'s arithmetic instead, a decompose that kept the shape up to a
+   * float32 rounding.
    *
    * A settled corpse therefore stops being collidable, and that is the right
    * end of the trade rather than an omission: the bodies do not follow the
-   * sink (that is the point of baking the pose in), so a corpse left standing
-   * in the world would be a ledge that outlives the body a player can see, and
-   * anything resting on it would hang in mid-air at `sinkStart`. Two bodies
-   * falling at the same time still collide — both are live in the sim.
+   * sink (that is the point of copying the pose out), so a corpse left
+   * standing in the world would be a ledge that outlives the body a player
+   * can see, and anything resting on it would hang in mid-air at `sinkStart`.
+   * Two bodies falling at the same time still collide — both are live in the
+   * sim.
    */
   private freeze(slot: Slot): void {
     if (slot.frozen || !slot.rig) return;
     const rig = slot.rig;
     for (const bone of slot.bones) {
-      // Before the park, and it has to be: the hand-back derives the local
-      // transform from the joint's world, which hangs off the proxy — drawn
-      // from the bone's pose at the top of `update`.
-      rig.tree.release(rig[bone.joint]);
+      // Before the park, and it has to be: the park writes the body's pose
+      // over with `PARKED_POSE`, which the joint would otherwise follow under
+      // the map.
+      bone.still.set(bone.body.pose);
+      bone.stillY = bone.still[1];
+      rig[bone.joint].pose = bone.still;
       this.park(bone);
     }
     slot.frozen = true;
@@ -788,24 +800,13 @@ export class RagdollSystem implements PhysicsClient {
     const hp = this.physics.havok;
     hp.setLinearVelocity(bone.body.id, [0, 0, 0]);
     hp.setAngularVelocity(bone.body.id, [0, 0, 0]);
-    // Under the map, and drawn there at once, as the plugin's node was — the
-    // joint is handed back (by `freeze` before this, by `release`'s
-    // `resetSoldierPose` straight after), so the proxy ends up drawing
-    // nothing, but it is the pool's node and it stands where its body does.
+    // Under the map. No joint is drawn off it by the time anything composes
+    // one: `freeze` moves the joint onto the copy before this, and `release`
+    // clears it (`resetSoldierPose`) straight after.
     bone.body.pose.set(PARKED_POSE);
-    applyPose(bone.body.pose, bone.proxy);
     // A TELEPORT now with any pending one cleared, then the pooled state.
     this.physics.park(bone.body);
     this.physics.setMotion(bone.body, "static");
-  }
-
-  /**
-   * The VIEW: a live corpse's bones drawn where its bodies are — each pose
-   * onto its proxy, which the rig's joint hangs off. See the header for the
-   * points this runs at.
-   */
-  private drawSlot(slot: Slot): void {
-    for (const bone of slot.bones) applyPose(bone.body.pose, bone.proxy);
   }
 
   /**
@@ -841,7 +842,7 @@ export class RagdollSystem implements PhysicsClient {
       if (slot.sinking) rig.root.position.y = slot.sinkFromY;
       subject.setEnabled(false);
     }
-    // The authoritative restore: holders, positions, rotations
+    // The authoritative restore: poses, positions, rotations
     // and scalings, on every posed joint. See its own note for why
     // `animateSoldier(..., 0)` is not a substitute.
     resetSoldierPose(rig);

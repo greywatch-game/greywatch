@@ -3567,7 +3567,7 @@ module from X2.2. When the last one lands, Babylon draws nothing but the post
 chain, and the frozen cel-material cache and its traps are deleted with
 `CelMaterialFactory`'s Babylon half.
 
-### X4.1 — Bodies (PERF_PLAN C6, A4) — **L, as five sub-steps** (split 2026-10-29) — X4.1a **LANDED** (a417bfc, review fixes after it)
+### X4.1 — Bodies (PERF_PLAN C6, A4) — **L, as five sub-steps** (split 2026-10-29) — X4.1a **LANDED** (a417bfc, review fixes after it), X4.1b **LANDED** (HASH)
 
 Every body a page draws — `NetSoldier`'s rig, a corpse, the death cam's
 stand-in — comes off Babylon's scene, along with the moon's body shadow map,
@@ -3590,11 +3590,11 @@ reparenting goes and every body is one kind of thing to draw.
   root capsule `WorldCulling` measures a body by is taken off the arrays too
   (X1.3 left it here). **Oracle:** the joint matrices against the nodes',
   bit for bit, over a recorded round, before the nodes go.
-- **X4.1b — corpses and the stand-in on our joints (no picture change).**
+- **X4.1b — corpses and the stand-in on our joints (no picture change).** Landed (below).
   `RagdollSystem` writes a corpse's joints from its bodies' pose arrays
   instead of reparenting nodes onto proxies; the death cam's stand-in the
   same. `freeze`, the pool's three tiers and eviction of the oldest, and the
-  quaternion leak (`docs/deaths.md`) are re-proven on the new path.
+  joint-pose leak (`docs/deaths.md`) are re-proven on the new path.
   **Oracle:** `drop.mjs --check --exact` and `clients.mjs --check` as at X2.4;
   a blast throwing bodies; a full pool evicting; a respawned bot that does not
   freeze.
@@ -3790,6 +3790,124 @@ reparenting goes and every body is one kind of thing to draw.
   measurement** — a cached compose is how `ProxyBoxes` read 146 stale boxes
   before this step (the oracle, above); X4.1d's instancing is the natural
   place to compose a body once.
+
+**X4.1b landed** (HASH; 2026-10-29; no picture change but one, said here:
+a corpse's tumble starts one to four float32 ulps from where it did, and
+Havok's chaos carries that into where it comes to rest).
+- **What it is.** A corpse's joints are POSED off its bodies' pose arrays:
+  `Joint.pose` (`rigJoints.ts`) holds `WorldBody.pose` itself, and while it
+  is set the joint's world is that pose composed at unit scale — the
+  arithmetic the pool's proxy node composed with — its own channels and its
+  parent unread, its children composing off it as off any parent. **No node,
+  no view, no hand-off**: `spawn` decomposes every bone's world off ONE fresh
+  `compute` of the living rig, writes the poses and points the joints at
+  them, and the step moves the arrays under the drawing; `freeze` copies
+  each pose into the slot (`Bone.still`) and points the joint at the copy
+  before the park overwrites the body's, so a frozen corpse is the pose it
+  was drawn off to the bit; the sink lowers the copies (`stillY` minus the
+  drop) beside `rig.root`, which still sinks because the body's measure and
+  the shadow packers' reach read it. `resetSoldierPose` clears the pose —
+  the leak to fear now. Gone: the twelve proxy `TransformNode`s a slot
+  (`RagdollSystem` takes no scene; `Game` constructs it with the engine
+  alone), `JointHolder`, `JointTree.hold`/`release` and `setParent`'s replay,
+  `drawSlot`, the forced `chest.proxy.computeWorldMatrix(true)` — the chest
+  point is `Math.fround` of the pose's position plus the lift, which is what
+  the forced compose's translation row was — and `absolutePose(proxy)` at
+  the pool's build (a body is created at `PARKED_POSE`, the same seven
+  numbers that read gave). The death cam's stand-in is a `RagdollSubject`
+  like any other and needed nothing of its own.
+- **Why the engine hashes moved, and why that is by construction.** The old
+  `spawn` hung each bone on its proxy before composing the next, so a bone
+  under an earlier one (the head, the shoulders, the elbows, the knees, the
+  ankles) started at a chain through that bone's RE-DERIVED local — the
+  living world up to a float32 rounding. The new one composes the living rig
+  once. Nothing in the new path produces that local, so nothing can
+  reproduce those starts; the torso and the hips (no bone above them) start
+  identically. **Proven, rather than argued, in three runs of `clients.mjs`'s
+  own script** (a scratch copy that records, per map, each offer's twelve
+  spawn poses at the impulse, every stand-in's 17 joint and 15 mesh world
+  matrices each frame, and the pool's and the debris' halves of the node
+  digest apart):
+  - **The new path with the OLD spawn poses injected** (each offer's poses,
+    banked from a run on the parent, written over the new ones before the
+    impulse): `clients.mjs --check` **identical on all three maps** against
+    the bank taken before this step — the engine hash (3e0ee726a4d9da72,
+    9233bb7aa0086e7b, 06868b261f79c406), every pooled body every frame
+    (parked ones at the park), the teardown counts, the snapshots, the
+    rests, the audit. So the spawn poses are the ONLY input to Havok this
+    step moved: the bodies' creation at `PARKED_POSE`, the impulse's chest
+    point, every teleport, park and freeze are the old path's to the bit.
+    The pool's half of the node digest (each bone's pose in the bytes its
+    proxy gave) and the debris' half: identical on every one of 601 frames.
+  - **The spawn poses, natural against the parent's**: 27 offers over three
+    maps, every torso and hip bit-identical; the other bones' poses identical
+    in 3 to 8 offers of 9 and otherwise one to four float32 ulps apart
+    (≤ 3.05e-5 m, a ulp of a coordinate between 256 and 512 m).
+  - **What that moved**: the engine hashes from frame 0 (452fc9d44a88e3a6,
+    5504610c69d82176, 4b1f60f31d44f6f3, reproduced in a second process), and
+    where the corpses lie: rest poses mean 1.9 mm, 1.2 mm and 7.3 mm and worst
+    38.6 cm, 2.9 cm and 17.8 cm (Coldharbour, Cinderhaven, Harrowmead) —
+    against `clients.mjs`'s own in-process repeat floor of 1.1 to 2.5 m, the
+    same chaos reading a different first float. Offers, evictions, the audit
+    of which corpses are held and the park are unchanged; no body off the
+    park.
+  - **The picture, with the physics held equal** (the injected run against
+    the parent, every switched-on stand-in every frame): 2,735 rig-frames a
+    map, 87,520 matrices; rotation entries at most 2.3e-7 apart (two ulps at
+    1), translations at most 15 to 31 µm (one ulp of a map-scale
+    coordinate). Identical where the old re-derived local happened to be
+    exactly the identity (one stand-in of nine, turned a quarter, on every
+    map); otherwise apart by that rounding, in flight and after the freeze
+    alike, because the old drawing carried it and the new one does not.
+  - **`clients.mjs` re-banked** on the new path for that reason, with
+    `--check` then identical in a second process; its node digest reads each
+    bone's pose in its proxy's old bytes and names the pose a posed joint is
+    drawn off. `drop.mjs --check --exact`: "bits identical" on all seven maps (it drops boxes on the static world, which this step does not touch; the pool's bodies are still created first, at the same pose).
+- **The rest of the oracle, live** (a scratch probe, deaths staged through
+  the roster's own alive edge, bullet and blast, near the camera; the death
+  cam's stand-in; a batch of nine into a pool of eight; and, once every slot
+  was sinking, two more): Hollowmere offline 3,000 frames, Sarab offline
+  2,400 (48 bodies), Hollowmere in a netplay round against a local
+  `dist-server` (`?mp=`) 2,400 —
+  - every rig mesh drawn is its local times a FRESH composition of its joint,
+    a posed joint off its pose: 207,553 corpse and 42,713 living meshes on
+    Hollowmere, 152,963 and 377,534 on Sarab, 195,990 and 37,995 in the
+    netplay round, 0 differ;
+  - **the three tiers**: 11 free, 2 sinking and 8 oldest on each run (21
+    offers accepted, 0 refused, never more than 8 held);
+  - **`freeze` keeps the shape to the bit**: every joint's fresh world before
+    and after each freeze, 19, 18 and 20 freezes, 0 moved;
+  - **a blast throws and a round drops**: torso travel to the freeze 0.05 to
+    1.12 m for a round, 1.09 to 4.2 m for a blast (Hollowmere 1.09–2.85,
+    Sarab 1.53–4.2, netplay 0.11–3.93);
+  - **the leak**: no joint of any body the pool is not holding was posed on
+    any frame (0); 19, 17 and 17 corpses released, and each staged slot,
+    handed back to the wire, came back to life — 10, 16 and 10 bodies watched
+    for 120 frames each — with no pose on any joint and every limb within
+    0.98 m of its root (0 frozen-limb frames).
+- **Measured.** The bank against a BEFORE at 2e65dfa in a worktree
+  (`--check --keep` both sides): **61 of 61 byte-identical** (`comparePngs`, max 0), `rig-near` and `rig-far` among them, the same 34 stale rows on both sides, no console or page error — no bank row holds a corpse, which is why the matrices above are the picture's proof. **`census --against`** the BEFORE:
+  every row equal (Hollowmere 278, Greyfen 205, Coldharbour 672, Harrowmead 847, Sarab 661, Cinderhaven 186, Kurenai 125). **`gate.mjs`** clean on seven. **`shaders.mjs`** clean on seven, ours 17/17 (21/21 Sarab and Cinderhaven, 23/23 Coldharbour). Typecheck, build,
+  corecheck and `parity` (eight maps) pass. A round offline (Hollowmere, Sarab) and a
+  netplay round, above; no console or page error.
+  **`kit:hash --models`: the two `soldier` rows are RE-BASELINED again, by
+  construction** — `["soldier",0]` draw 37d7f293a37d85e0 → 958f3eefeb4baf67
+  (set 2b8b8d71b6fb5da2 → f2e0d7c36c93125a), `["soldier",1]` draw
+  57344c42de95f3cf → 1633e61a689e545a (set f7ce60a37248dcfd →
+  3c25ce72c46f03e7). The script hashes the rig's plain data, field names
+  included, and `Joint.holder` is `Joint.pose`: the parent with that one
+  field renamed in a scratch hashes identical to this step on both rows.
+- **Deviations.** The spawn's start, above — the one change of behaviour,
+  cosmetic (nothing under Havok decides anything) and by construction.
+  `CLAUDE.md` is 1,540 lines (one up): its physics paragraph now says what a
+  corpse is drawn off and names the leak. The X4.1b plan bullet's "the
+  quaternion leak" now reads "the joint-pose leak", `docs/deaths.md`'s name
+  for it.
+- **Owed onward.** The phone's FOLLOW-UP reading. X4.1a's unmeasured
+  compose cost stands (a posed joint is one compose instead of two, a
+  corpse's twelve `applyPose` writes a frame are gone — neither measured).
+  `FINDINGS.md` 57 (the impulse lands before the teleport) is untouched and
+  still re-takes `clients.mjs`'s bank when it is fixed.
 
 ### X4.2 — Vehicles (PERF_PLAN A3) — **M** (decision)
 

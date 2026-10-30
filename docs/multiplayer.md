@@ -765,8 +765,8 @@ config rather than a missing call.
 **While the pool owns a rig, `NetSoldier.update` stands aside entirely** — the
 same answer the offline page's own rig gave while it drew bots off a core of
 its own (`BotRig.follow`, gone with that core at X2.5c), and for the same
-reason: the solver writes proxy nodes the joints hang off, and a second writer on
-those nodes is two things posing one body. `alive` is still read from the samples
+reason: the joints are posed off the solver's pose arrays (`Joint.pose`), and a
+second writer on those joints is two things posing one body. `alive` is still read from the samples
 ahead of that guard, because it is the pool's own self-defence — a slot whose
 subject came back to life releases it on the next step, and it can only know that
 from the wire.
@@ -796,7 +796,7 @@ not in `NavGrid`, not in `ObstacleField`, not in `hittablesAgainst`, and the
 authority has already spent the ticket and the kill by the time the news
 arrives. Skipping the physics step does not merely stop bodies falling — it
 stops them *finishing*, so a body the pool did take would hang mid-tumble for
-the rest of the round with its joints parented to proxies nothing is writing.
+the rest of the round with its joints posed off bodies nothing is stepping.
 The rule is the same one the tracer teaches next door: what this client owns
 between frames, this client has to advance.
 

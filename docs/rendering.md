@@ -1934,8 +1934,8 @@ pass costs the same at 8v8 and at 24v24, and what scales is the matrices.
 than convenient.** They are already measured against the drawn geometry ("the
 glove trimmed off the end") and already hang off the joints the pose drives, so
 the shadow follows a crouch, a stance, a turn and a RAGDOLL for free —
-`RagdollSystem` hangs those joints on Havok proxies and the shadow goes with
-the corpse without `BodyShadows` knowing physics exists. Each rig's joints are
+`RagdollSystem` poses those joints off Havok's pose arrays (`Joint.pose`) and
+the shadow goes with the corpse without `BodyShadows` knowing physics exists. Each rig's joints are
 composed FRESH for its boxes (`ProxyBoxes.writeRig`, `JointTree.compute`). A hand-authored
 capsule would have been a pill sliding along the ground under a walking body,
 which is the artefact the blob disc already is.

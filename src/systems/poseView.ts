@@ -2,9 +2,11 @@
  * poseView.ts — Where a physics body's pose meets the Babylon node it is drawn
  * as: the one read that places a new body where its node stands, and the
  * writes that carry a pose between a node's vectors and the body's array.
- * Owns: nothing — five functions, shared by the three physics clients' VIEWS
- * (`RagdollSystem`'s proxies, `DebrisSystem`'s shards, `BlastDebrisSystem`'s
- * chunks). `PhysicsWorld` keeps each body's pose as seven plain numbers
+ * Owns: nothing — five functions, shared by the debris clients' VIEWS
+ * (`DebrisSystem`'s shards, `BlastDebrisSystem`'s chunks) and `RagdollSystem`'s
+ * placing of a bone (`storePose`) — a corpse has no node since
+ * `BABYLON_EXIT.md` X4.1b, its rig's joints being posed straight off the pose
+ * arrays (`Joint.pose`). `PhysicsWorld` keeps each body's pose as seven plain numbers
  * (`WorldBody.pose`) and never sees a node; this is
  * the client side of that line.
  * Invariants:
@@ -13,8 +15,9 @@
  *   a body's teleport off the node's raw `position` and `rotationQuaternion`
  *   and synced back into the same two, unnormalised — so `applyPose` is that
  *   sync's write, number for number, and a node drawn by it is the node the
- *   plugin left. A corpse's bone is drawn on a pool-owned PROXY for exactly
- *   this reason (the rig's joint hangs off it; see `RagdollSystem`).
+ *   plugin left. A corpse's bone was drawn on a pool-owned PROXY node for
+ *   this reason until X4.1b; its rig's joint now composes the same seven
+ *   numbers the same way itself (`rigJoints.ts`).
  * - **`absolutePose` is the plugin's read at a body's CREATION, side effects
  *   and all**: `absolutePosition` computes the node's world matrix (a float32
  *   matrix, so the translation comes back rounded to float32) and

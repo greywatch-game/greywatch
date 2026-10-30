@@ -227,8 +227,8 @@ export class DeathCam {
    *
    * A change of team is the one thing that rebuilds, and the rebuild has to go
    * through `stop()` first. The standing rig may be held by `RagdollSystem` at
-   * that moment, its joints hung on the pool's proxy nodes (their HOLDERS,
-   * `JointTree.hold`) while its meshes are about to be disposed — a slot left
+   * that moment, its joints posed off the pool's bodies (`Joint.pose`) while
+   * its meshes are about to be disposed — a slot left
    * holding a rig whose meshes are freed would go on posing it for the rest of
    * the corpse's life and, at the release, switch meshes that no longer
    * exist. Offline nothing reaches it: the player is team 0 every round, so
@@ -330,7 +330,7 @@ export class DeathCam {
     this.look.copyFrom(this.fromLook);
 
     // Offered AFTER the pose is set, because the pool reads each joint's world
-    // transform to place its proxies. This body is never refused — it is at
+    // transform to place its bodies. This body is never refused — it is at
     // the camera, so the distance gate cannot touch it, and a full pool now
     // evicts its oldest corpse rather than saying no.
     this.onSpawnRagdoll(corpse);
@@ -349,8 +349,8 @@ export class DeathCam {
     this.t += dt;
 
     // The chest, composed fresh off the joints: while the ragdoll owns this
-    // joint it hangs on a proxy node `RagdollSystem`'s view moved to the
-    // solver's pose this frame.
+    // joint it is posed off the chest body's own pose array, as the step last
+    // left it (`Joint.pose`).
     const chest = jointPosition(rig, rig.torso, this.chest);
     chest.subtractToRef(this.anchor, this.dir);
     this.anchor.addInPlace(this.dir.scaleInPlace(Math.min(1, dt * c.followRate)));

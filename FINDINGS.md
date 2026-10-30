@@ -2470,14 +2470,14 @@ every corpse. It is a separate commit, with a re-take of `clients.mjs`'s
 bank that says why.
 
 **Derived from the code:** `RagdollSystem.spawn` writes each bone's POSE
-(`WorldBody.pose`, and its proxy with it) to the joint's world pose and turns
+(`WorldBody.pose`; its proxy with it until `BABYLON_EXIT.md` X4.1b) to the joint's world pose and turns
 the body's `teleport` on, which `HP_Body_SetQTransform`s the body onto that
 pose at the next substep's pre-step — and then calls `applyImpulse`
 immediately, in the same call. (Under Babylon's plugin the same thing was
 spelled `disablePreStep = false` on the proxy; the raw port reproduces it bit
 for bit.) Havok still holds the body where it was parked (`park`:
 `(0, PARKED_Y, 0)`), so `HP_Body_ApplyImpulse(id, point, J)` — `point` being
-the chest proxy's world position plus `lift` for a round, or each bone's pose
+the chest's drawn world position (the pose rounded to float32) plus `lift` for a round, or each bone's pose
 for a blast — takes its lever arm from 1 km below the map's origin. The LINEAR velocity is
 right (an impulse's `J / m` does not depend on the point); the ANGULAR one is
 `r x J` with `|r|` of a kilometre. The teleport that follows changes the
