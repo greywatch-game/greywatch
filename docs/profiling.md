@@ -1203,6 +1203,17 @@ benchmark's) at the halt, from report version 19**, because a run saved
 after its map was torn down read the menu's `taken: 0` instead. The viewer prints it beside `taken` as
 `ours`.
 
+**From report version 21 a capture says what OUR renderer drew of the BODIES**
+(`bodies`, `BABYLON_EXIT.md` X4.1d): the main pass's body draws (a RANK of
+every body each, matte or visor), the glow mask's, and how many bodies. Since
+X4.1d no body is in `counters.drawCalls` — a rig was fourteen of Babylon's
+draws, 672 on Sarab's 48 — so a capture from an X4.1d build at version 20
+shows those draws gone and nothing in their place; the main pass's draws are
+`counters.drawCalls` plus `blocks.drawn` plus `bodies.drawn`. It is read as
+`blocks` is — once, at the capture or the halt, through a reader `Game`
+pushes (`FrameProfile.setBodies`), so it is the LAST frame's and never a
+series. The viewer prints it beside `ours` as `bodies`.
+
 **From report version 18 a capture says the SIZE every frame was drawn at**
 (`viewport`), and **`device.window` and `device.backingStore` are read at SAVE
 and say nothing about the frames.** Three phone captures taken one after

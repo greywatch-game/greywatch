@@ -4170,7 +4170,12 @@ body) pulling its own `r`th segment's corners out of `indexData` through its
 kit's range table and drawing nothing past them, and rank `r`'s visors in
 another where some body has its visor there. So every body's segments land in
 its own order, and the main pass is at most twice the segment count — 30 —
-however many bodies (Babylon's was fourteen a body: 672 at Sarab's 48). What
+however many bodies (Babylon's was fourteen a body: 672 at Sarab's 48). The
+price is VERTEX work: a rank's draw runs to the longest segment any body draws
+there, times the bodies, so a body costs up to ~14.8k vertex invocations
+against its 5,352 corners, the surplus exiting after four storage reads — and
+a new segment is a new rank, a longer one paid at every rank it lands on
+(`SoldierModel`'s header). What
 is NOT reproduced is the order ACROSS bodies, and against Babylon's own
 opaque meshes (a hull, a flag's cloth): both matter only where two of them
 meet at one depth, which takes two bodies standing in each other.
@@ -4307,8 +4312,10 @@ C4) — the whole of that pool on a netplay round, built and never enabled at
 all.
 `Game.installBodyPools` files them and `WorldCulling.update` polls each
 body's switch (`SoldierRig.enabled`, through `SoldierModel.pooledBody`) once a
-frame, marking the list dirty only on a transition — 48 property reads against
-the 1,008 nodes a rebuild answers for.
+frame — 48 property reads against the 1,008 nodes a rebuild answered for —
+and until X4.1d marked the list dirty on a transition; since then a body is
+no candidate at all (no mesh), and the poll only decides what `drawsBody`
+answers, the list never rebuilt for it.
 
 **The roster is not the only rig filed, and the other is the one the player
 looks at.** `buildSoldier` has exactly two callers — `NetSoldier` and
@@ -4319,9 +4326,11 @@ metres from the camera, and what that cost is under the size gate below. It is
 filed on the same terms the roster is (`pooledBody`), and `DeathCam` switches
 it by the same `setRigEnabled` a roster writes.
 **`installBodyPools` therefore runs AFTER `applyPlayerTeam` in
-`buildRound`** — that is the one call that can DISPOSE a rig and build another,
-on a change of side, and filing before it would leave the pool pointing at freed
-meshes for the rest of the round.
+`buildRound`** — that is the one call that can DROP a rig and build another,
+on a change of side, and filing before it would file the old stand-in, which
+nothing switches on again, and never the new one: since X4.1d a rig not filed
+is not drawn, so the player's own death would draw no body for the rest of the
+round.
 
 **It was filed MESH BY MESH and never by ancestry, and that was load-bearing
 rather than incidental**: while the joints were nodes, `RagdollSystem`

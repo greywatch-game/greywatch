@@ -426,7 +426,7 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
       id: "rig-near",
       of: "a soldier mid-stride on the west highway, 6 m off, facing the camera",
       proves:
-        "a RIG (X4.1): fourteen merged meshes, the kit palette in `uv2.x`, the team colour worn, and its shadow in the bodies' map — the half of the cel shader no map view reaches",
+        "a RIG (X4.1): an instance of its side's kit, drawn a rank at a time (X4.1d), the kit palette in `uv2.x`, the team colour worn, and its shadow in the bodies' map — the half of the cel shader no map view reaches",
       pos: [-66, 1.7, 0],
       target: [-66, 1.1, 6],
       rigs: [{ at: [-66, 6], yaw: Math.PI - 0.6, pose: { moving: 1, phase: 1, run: 0.3, stride: 0.35 } }],

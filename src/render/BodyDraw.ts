@@ -11,8 +11,9 @@
  * them into (`kits`, `matrices`; the orders and the bloom, which it PULLS),
  * both materials' blocks and groups, the three pipelines (asked once, for the
  * session), the main-pass draw, the mask draw, the prepare that uploads a
- * frame, the refusal listeners it holds while installed, and what it drew
- * last (`stats`); `BodyKit`, `BodySegment`, `BodyMaterials`, `BodyPull`.
+ * frame, the refusal listeners it holds while installed (and whether it is,
+ * `installed`), and what it drew last (`stats`); `BodyKit`, `BodySegment`,
+ * `BodyMaterials`, `BodyPull`.
  * Invariants: it DECIDES NOTHING — which bodies are drawn, in what pose, in
  * what order, at what bloom and with what material are its caller's
  * (`Game.drawBodies`, off `WorldCulling`'s verdict per body, the rigs' own
@@ -109,7 +110,10 @@ export class BodyDraw {
   readonly kits: Uint32Array<ArrayBuffer>;
   /** Whether every pipeline built — asked once, for the session; false if one failed. */
   readonly ready: Promise<boolean>;
-  /** What the last frame drew: main-pass draws, mask draws, instances. Nothing in the game reads it. */
+  /**
+   * What the last frame drew: main-pass draws, mask draws, instances. Nothing
+   * in the game reads it; a profiler capture does (`ProfileReport.bodies`).
+   */
   readonly stats = { drawn: 0, masked: 0, instances: 0 };
 
   private readonly device: GPUDevice;
@@ -362,6 +366,14 @@ export class BodyDraw {
     if (!this.unhook) return;
     const renderer = this.renderer;
     this.removes.push(renderer.addGlowMask(this.drawMask), renderer.onGlowMaskRefused(this.maskRefused));
+  }
+
+  /**
+   * Whether a round's install stands — false on the menu and in an editor
+   * build, where `commit` takes nothing and the caller need write nothing.
+   */
+  get installed(): boolean {
+    return this.unhook !== null;
   }
 
   /** What `install` and `installMask` registered, which `uninstall` takes back. */

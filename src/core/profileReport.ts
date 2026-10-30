@@ -432,6 +432,22 @@ export interface BlockFacts {
   drawn: number;
 }
 
+/**
+ * Our renderer's BODIES on the last frame before the capture — or, for a
+ * HALTED ring, before the halt (`render/BodyDraw.ts`' `stats`,
+ * `BABYLON_EXIT.md` X4.1d) — read through the reader `Game` pushes, as
+ * `blocks` is and never per frame. `drawn` is the main pass's body draws (a
+ * RANK of every body each, matte or visor), `masked` the glow mask's, and
+ * `instances` the bodies drawn. None of them is in `counters.drawCalls`,
+ * which is Babylon's counter and since X4.1d counts no body: a capture from
+ * before it counted fourteen draws a body there.
+ */
+export interface BodyFacts {
+  drawn: number;
+  masked: number;
+  instances: number;
+}
+
 export interface ProfileGraphics {
   /** `Settings.renderScale` — a share of the panel's native resolution. */
   renderScale: number;
@@ -547,6 +563,11 @@ export interface ProfileReport {
    * pushed a reader. Absent before report version 17.
    */
   blocks: BlockFacts | null;
+  /**
+   * Our renderer's bodies at the capture, or null where nothing pushed a
+   * reader. Absent before report version 21.
+   */
+  bodies: BodyFacts | null;
   /**
    * The ring's labelled stretches, in the order they were reached, and the
    * same rows rolled up by group — null where no row carried a label. Absent
@@ -898,6 +919,7 @@ export interface ProfileRing {
   readonly segments: readonly ProfileSegment[];
   readonly bench: BenchFacts | null;
   readonly blocks: BlockFacts | null;
+  readonly bodies: BodyFacts | null;
   readonly heapMb: Float32Array | null;
   readonly gcAt: Uint8Array;
   readonly loafMs: Float32Array;
@@ -1142,7 +1164,12 @@ export function buildReport(
     // 20: `blocks.handedBack` gone (`BABYLON_EXIT.md` X3.7b): nothing of the
     // world goes back to Babylon any more, which is made no mesh of it, and a
     // world our renderer cannot draw takes the round to the menu instead.
-    version: 20,
+    // 21: `bodies`, our renderer's body draws on the last frame (or the
+    // halt's). Since `BABYLON_EXIT.md` X4.1d no body is in
+    // `counters.drawCalls` (Babylon's), so a v20 capture from an X4.1d
+    // build shows the bodies' draws gone from it and nothing in their place.
+    // Nothing else changed meaning.
+    version: 21,
     takenAt: new Date().toISOString(),
     reason,
     map: r.mapId,
@@ -1163,6 +1190,7 @@ export function buildReport(
       ? { ...r.bench, vantages: [...r.bench.vantages], path: { ...r.bench.path }, fight: { ...r.bench.fight } }
       : null,
     blocks: r.blocks ? { ...r.blocks } : null,
+    bodies: r.bodies ? { ...r.bodies } : null,
     segments: segmentFacts(r, first, n, cap),
     clock: {
       grainMs: round(r.grainMs, 4),

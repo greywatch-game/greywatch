@@ -136,6 +136,7 @@ import {
   buildTrace,
   type BenchFacts,
   type BlockFacts,
+  type BodyFacts,
   type LoafRecord,
   type ProfileGraphics,
   type ProfileReport,
@@ -682,6 +683,13 @@ export class FrameProfile {
    */
   private blocksAtHalt: BlockFacts | null = null;
   /**
+   * Reads our renderer's bodies, pushed by `Game` once and asked only at a
+   * capture or a halt, as `blocksOf` is. See `ProfileReport.bodies`.
+   */
+  private bodiesOf: (() => BodyFacts) | null = null;
+  /** `bodiesOf`'s answer as the ring HALTED — `blocksAtHalt`'s reason. Null while recording. */
+  private bodiesAtHalt: BodyFacts | null = null;
+  /**
    * How many rows the ring holds — `CONFIG.profiling.frames`, or what `arm`
    * was asked for. Fixed between an `arm` and the next.
    */
@@ -734,6 +742,15 @@ export class FrameProfile {
    */
   setBlocks(read: () => BlockFacts): void {
     this.blocksOf = read;
+  }
+
+  /**
+   * How a capture reads our renderer's bodies — asked at the capture, or at
+   * `halt` for a halted ring's, never per frame. Set by `Game` at
+   * construction. The reader hands back a COPY: a halted ring keeps it.
+   */
+  setBodies(read: () => BodyFacts): void {
+    this.bodiesOf = read;
   }
 
   /**
@@ -809,6 +826,7 @@ export class FrameProfile {
     // A HALTED ring is still held, and arming again replaces it.
     if (this.frameAt) this.disarm();
     this.blocksAtHalt = null;
+    this.bodiesAtHalt = null;
     this.cap = Math.max(2, Math.floor(frames));
     const n = this.capacity;
     this.startMs = new Float32Array(n * SLOTS);
@@ -933,8 +951,9 @@ export class FrameProfile {
   halt(): void {
     if (!this.on) return;
     this.on = false;
-    // The run's last frame is the one the blocks are reported at.
+    // The run's last frame is the one the blocks and the bodies are reported at.
     this.blocksAtHalt = this.blocksOf?.() ?? null;
+    this.bodiesAtHalt = this.bodiesOf?.() ?? null;
     for (const off of this.unhook) off();
     this.unhook = [];
     this.inDraw = false;
@@ -1699,6 +1718,7 @@ export class FrameProfile {
       simMode: this.simMode,
       // A halted ring answers for its run, never for what came after it.
       blocks: this.on ? (this.blocksOf?.() ?? null) : this.blocksAtHalt,
+      bodies: this.on ? (this.bodiesOf?.() ?? null) : this.bodiesAtHalt,
       graphics: this.graphics,
       graphicsAt: this.graphicsAt,
       gpuRequested: this.gpuRequested,

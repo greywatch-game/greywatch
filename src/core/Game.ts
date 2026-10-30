@@ -1568,6 +1568,13 @@ export class Game {
     this.segmentCentres = new Float64Array(this.bodyDraw.capacity * this.bodyDraw.segments * 3);
     this.segmentKeys = new Float64Array(this.bodyDraw.segments);
     this.visorSegment = soldierKits()[0].visor;
+    // A capture says what the body draw drew, which Babylon's draw counter
+    // has not counted since X4.1d (`ProfileReport.bodies`) — a COPY, which a
+    // halted ring keeps.
+    this.prof.setBodies(() => {
+      const { drawn, masked, instances } = this.bodyDraw.stats;
+      return { drawn, masked, instances };
+    });
     // The lamps' atlas, for the same rule: `SHADOW_SAMPLER_NAMES` lists it, so
     // it is bound before the first material exists — the lit 1x1 on a rung
     // that has none.
@@ -5559,12 +5566,14 @@ export class Game {
     // see `applyPlayerTeam`, and `setViewerTeam` above for why the value itself
     // was resolved further up.
     this.applyPlayerTeam(team, map);
-    // …and every rig in the round to the mesh walk, which would otherwise pay
-    // for a body that is not in it. AFTER the roster lines above, which decide
-    // how many rigs there ARE, and after `applyPlayerTeam`, which is the one
-    // caller that can DISPOSE a rig and build another — the death cam's, on a
-    // change of side. Filing before it would leave the pool pointing at freed
-    // meshes for the rest of the round, and nothing in between reads the pools.
+    // …and every rig in the round to the cull and the body draw, which gate
+    // and draw THESE and no others (`drawBodies`). AFTER the roster lines
+    // above, which decide how many rigs there ARE, and after
+    // `applyPlayerTeam`, which is the one caller that can DROP a rig and build
+    // another — the death cam's, on a change of side. Filing before it would
+    // file the old stand-in, which nothing switches on again, and never the
+    // new one, so the player's own death would draw no body for the rest of
+    // the round; nothing in between reads the pools.
     this.installBodyPools();
     // …and the glass as the authority left it, for the same "either side of the
     // build" reason: a joiner mid-round has missed every break in it, and the
@@ -5588,10 +5597,14 @@ export class Game {
    * state, after everything that poses or places a body and after the cull,
    * immediately before `scene.render` — inside the render span, where
    * Babylon composed the rigs' meshes until X4.1a, so the profiler's
-   * attribution does not move. A body not drawn is not composed.
+   * attribution does not move. A body not drawn is not composed — and while
+   * the draw is not installed (the menu, an editor build) none is: `commit`
+   * would take nothing, and no other reader depends on these composes, every
+   * one composing a joint FRESH (`SoldierModel`'s header).
    */
   private drawBodies(): void {
     const draw = this.bodyDraw;
+    if (!draw.installed) return;
     const rigs = this.pooledRigs;
     const segments = draw.segments;
     let n = 0;
@@ -5961,8 +5974,9 @@ export class Game {
    */
   private applyPlayerTeam(team: Team, map: GameMap): void {
     this.player.team = team;
-    // Built here, not at the moment of death: nine merged meshes and their GL
-    // buffers is not a cost to pay on the frame the player is killed on. A
+    // Built here, not at the moment of death: a joint tree (and, for a side's
+    // first rig, that side's kit drawing) is not a cost to pay on the frame
+    // the player is killed on. A
     // change of side is the one thing that rebuilds it, and `prepare` is the
     // one that knows how to do that safely — see there.
     this.deathCam.prepare(team);
@@ -7867,16 +7881,19 @@ export class Game {
   private leaveMatch(): void {
     const net = this.net;
     this.net = null;
-    // Its bodies out of the ragdoll pool FIRST: disposing the session disposes
-    // their rigs, and a corpse the pool still held would be released later —
-    // by the next round's `ragdolls.reset` — onto meshes that are gone. Every
-    // local restart comes through here with corpses on the ground.
+    // Its bodies out of the ragdoll pool FIRST, while the roster still lists
+    // them: disposing the session drops its soldiers (no rig is disposed —
+    // a rig is joints, its drawing its side's kit), and a corpse the pool
+    // still held would go on spending a physics slot posing and sinking a
+    // rig nobody files or draws until the next round's `ragdolls.reset`.
+    // Every local restart comes through here with corpses on the ground.
     if (net) for (const soldier of net.roster.soldiers) this.ragdolls.retire(soldier);
     net?.dispose();
-    // …and out of the mesh walk's pools, which were filed off those rigs
-    // (`installBodyPools`): re-filed with no session, so the pools hold the
-    // death cam's body alone rather than freed meshes until the next round
-    // files its own — which an editor session after F2 never does.
+    // …and out of the cull's pools, which were filed off those rigs
+    // (`installBodyPools`): re-filed with no session, so the pools — and
+    // `drawBodies`, which draws what they hold — hold the death cam's body
+    // alone rather than a roster that is nobody's any more, until the next
+    // round files its own — which an editor session after F2 never does.
     if (net) this.installBodyPools();
     if (net?.local) this.localOwner.close();
     // Nothing can claim these now, and dropping them at the boundary is what

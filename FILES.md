@@ -677,7 +677,8 @@ src/
                         #   viewport, the size every frame was drawn at; v19
                         #   reads a halted ring's blocks at the halt; v20
                         #   drops blocks.handedBack, nothing going back since
-                        #   X3.7b),
+                        #   X3.7b; v21 adds bodies, our body draws, which
+                        #   no Babylon counter sees since X4.1d),
                         #   buildReport, buildTrace and
                         #   the stats. Allocates freely and never writes the
                         #   ProfileRing it is lent

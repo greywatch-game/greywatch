@@ -314,11 +314,16 @@ reasonable look call.
 - Two pops, one fade: `bodyDrawDistance` AND the size gate's whole-body drop
   (3 px drops a body at ~290 m on the phone's 384-tall viewport — inside
   Coldharbour's 480 m). A fade built for one misses the other.
-- A rig is fourteen meshes and two materials and must stay that way (CLAUDE.md,
-  "Bots"), and `visibility < 1` is a different, blended pipeline. So the fade
-  is a screen-door DITHER (`shaders/Dither.ts` exists) driven per rig without a
-  material per rig — how (a per-instance value the rig's two materials read, or
-  a vertex-buffer write on the 14 meshes) is the step's first question.
+- Since `BABYLON_EXIT.md` X4.1d a rig is no mesh at all: every body is an
+  INSTANCE of its side's kit, drawn by our renderer a rank at a time (at most
+  two draws a segment for the whole roster, two recipes — the matte cel and
+  the visor), and that must stay so (CLAUDE.md, "Bots"); `visibility < 1` is a
+  different, blended pipeline. So the fade is a screen-door DITHER
+  (`shaders/Dither.ts` exists) driven per INSTANCE — a per-body value the two
+  body programs read beside the matrices. The body programs' vertex stage is
+  at 8 of 8 storage arrays (WebGPU's default per-stage limit, not raised), so
+  that value rides the FRAGMENT stage or is packed into an array already
+  bound (`BABYLON_EXIT.md` X4.1d, Owed onward; the step is X4.1e).
 - The pipeline warm-up owes the dithered pose a `warm` (CLAUDE.md, "loading").
 
 ### A5 — Occlusion culling with the collider boxes (spike, then build) — **S spike, M build**

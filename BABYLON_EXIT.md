@@ -3567,7 +3567,7 @@ module from X2.2. When the last one lands, Babylon draws nothing but the post
 chain, and the frozen cel-material cache and its traps are deleted with
 `CelMaterialFactory`'s Babylon half.
 
-### X4.1 — Bodies (PERF_PLAN C6, A4) — **L, as five sub-steps** (split 2026-10-29) — X4.1a **LANDED** (a417bfc, review fixes after it), X4.1b **LANDED** (f554b68, review fixes after it), X4.1c **LANDED** (3a07a68, review fixes after it), X4.1d **LANDED** (23c6cd9)
+### X4.1 — Bodies (PERF_PLAN C6, A4) — **L, as five sub-steps** (split 2026-10-29) — X4.1a **LANDED** (a417bfc, review fixes after it), X4.1b **LANDED** (f554b68, review fixes after it), X4.1c **LANDED** (3a07a68, review fixes after it), X4.1d **LANDED** (23c6cd9, review fixes after it)
 
 Every body a page draws — `NetSoldier`'s rig, a corpse, the death cam's
 stand-in — comes off Babylon's scene, along with the moon's body shadow map,
@@ -3619,7 +3619,8 @@ reparenting goes and every body is one kind of thing to draw.
 - **X4.1e — A4's fade (the picture change).** A screen-door dither at
   `bodyDrawDistance` AND at the size gate's drop (a fade built for one misses
   the other), carried as a per-instance value — A4's "first question" is
-  answered by X4.1d's instancing. The dithered pipeline is asked ahead with
+  answered by X4.1d's instancing, and the value cannot be a NINTH vertex-stage
+  storage array (X4.1d's Owed onward). The dithered pipeline is asked ahead with
   the rest. **Oracle:** the bank's numbers in the message (only rows with a
   body at a fade edge may move); a body walked through both edges on a phone
   and a 32:9 window.
@@ -4216,8 +4217,9 @@ read drew a frame behind the hull).
   so degrading to it when the pipeline fails is an alternative to failing
   every round; this step followed `LampAtlas`'s precedent (fail).
 
-**X4.1d landed** (23c6cd9; 2026-10-30; no picture change: the bank 61 of 61
-byte-identical against its parent).
+**X4.1d landed** (23c6cd9, the post-commit review's fixes after it;
+2026-10-30; no picture change: the bank 61 of 61 byte-identical against its
+parent).
 - **What it is.** Every body the page draws — a `NetSoldier`'s rig, a corpse,
   the death cam's stand-in — is OUR renderer's (`render/BodyDraw.ts`, its
   programs `render/bodyProgram.ts`), and **Babylon is made no rig mesh**. A
@@ -4391,12 +4393,107 @@ byte-identical against its parent).
   `CLAUDE.md` is 1,543 lines (three up): the rendering section stays at its
   ~135 by trimming the lights' paragraph and the fog sentence.
   `WorldCulling.stats.pooled` counts bodies (it counted their meshes).
+- **What the post-commit review found** (an independent reader over 23c6cd9
+  and 6de245d; fixed after it). **No correctness bug**, and nothing
+  architectural. **Checked and sound**: the order's sort (a stable insertion
+  sort off `globalPosition`, the kit's order breaking a tie, a switched-off
+  segment last on an infinite key); the rank and decode arithmetic (the
+  ranges at the head of `indexData`, matte table then visor table, kit-major;
+  a body's kit at the head of its `segments + 1` words of `bodyOrder`; a
+  rank's span the longest range drawn there, the visor's span its own, the
+  corners past an instance's range and a zero matrix drawn as nothing); the
+  capacity (49: a side's ceiling twice and the stand-in, every staging array
+  and buffer sized off it, `drawBodies` stopping at it); the 8-storage-array
+  ceiling (the vertex stage at exactly 8, `maxStorageBuffersPerShaderStage`
+  not raised); the palette (`CEL_OWN_PALETTE` in the material's block, the
+  frame's declared only without it, no other variant's offsets moved); the
+  visor's bloom (`GlowRules.colour` per body, the mask's LEQUAL against the
+  depth the same vertex module wrote, `glowAdmits(0)` gating it); the absent
+  attributes' (0, 0, 0, 1) and the epoch's block re-copy; a rig's identity
+  (the kit chosen at the build, `viewTeam`'s; a change of side a new rig,
+  the death cam's filed after `applyPlayerTeam`); the install and failure
+  routing (X3.7's and X4.1c's: the session's pipelines, `worldFailed` with
+  the install's owner, the generation guard; installed for a round's map
+  only); and no allocation on a frame (`bodyPull`'s and `drawBodies`'
+  scratch fixed at construction). **Fixed**:
+  - **Contract headers stating the first cut's cost model** — "one draw a
+    kit" — rather than the RANK draws built: `SoldierModel.ts`' header, its
+    merge note and `KIT_PALETTE`'s, and `CelShader.bodyCelRecipe`'s. They
+    now say a segment is a RANK (up to two draws, matte and visor, for the
+    whole roster), so a new joint or segment is up to two more draws every
+    frame; and that a rank's draw runs to the longest segment any body has
+    there TIMES the bodies, so a segment's corners are paid at every rank
+    some body draws it, and growing the longest one (the torso's 1,056
+    corners, of a body's 5,352, counted off `soldierKits()` for this fix)
+    multiplies across the ranks. `docs/rendering.md`'s rank paragraph states
+    that vertex price too.
+  - **Stale words (rule 7)**: `Game.applyPlayerTeam`'s "nine merged meshes
+    and their GL buffers" (a joint tree, and a side's first kit drawing);
+    `buildRound`'s and `docs/rendering.md`'s reason for filing after
+    `applyPlayerTeam` ("freed meshes" — now: it would file the old stand-in,
+    which nothing switches on again, and never the new one, so the player's
+    own death would draw no body); `leaveMatch`'s retire and re-file ("disposes
+    their rigs", "freed meshes" — no rig is disposed; a held corpse would go
+    on posing a rig nobody draws until the next `reset`, and the pools would
+    hold a roster that is nobody's); `docs/rendering.md`'s "marking the list
+    dirty only on a transition" and `WorldCulling.rebuildList`'s "a pooled
+    body being switched in or out" (no body is in the list); `docs/world.md`'s
+    reason the roster pool is rebuilt rather than sized to the ceiling (the
+    rule kept, its reason restated: a body's switch read, and while it is on
+    its measure, composes and share of the rank draws — span × n);
+    `DeathCam.body`'s "disposes this rig"; the `rig-near` vantage's `proves`
+    ("fourteen merged meshes" — a text for a person reading a dirty diff,
+    which neither the bank nor the benchmark reads or hashes); and PERF_PLAN
+    A4's "a rig is fourteen meshes and two materials", rewritten to the
+    instanced reality and the storage-array limit below.
+  - **`drawBodies` composed every switched-on filed rig in states with no
+    draw installed** (the menu, an editor build), then `commit` took nothing:
+    it returns first now (`BodyDraw.installed`). Nothing depended on those
+    composes — every other reader of a joint composes it fresh (the packers'
+    `computeChain`/`compute`, `measureRig`, `jointPosition`, the ragdoll's
+    spawn), as `SoldierModel`'s header requires.
+  - **The profiler was blind to the body draws**: `counters.drawCalls` is
+    Babylon's and `blocks.drawn` the world's, so a capture showed Sarab's
+    ~672 rig draws vanishing and none of the ≤30 replacing them. Report
+    **version 21** adds `bodies` (`drawn`, `masked`, `instances`: the last
+    frame's, or the halt's, read through `FrameProfile.setBodies` as `blocks`
+    is, a copy), the viewer prints it beside `ours`, and
+    `docs/profiling.md` and `FILES.md` say so.
+  Re-checked after the fixes: typecheck, build (`check-babylon-free`: 15
+  simulations, no path), corecheck and `check-babylon-free` alone pass;
+  `gate.mjs` clean on Sarab and Hollowmere; and a scratch page on Hollowmere
+  under `?profile`: the draw not installed on the menu, a round to `playing`
+  (up to 7 bodies, 22 draws), a capture at version 21 carrying `bodies`
+  (21 draws, 6 mask draws, 7 bodies, equal to the live stats), opened in
+  `/profile_viewer.html` with the `bodies` line under `ours`, no page or
+  console error on either page but the viewer's own `/favicon.ico` 404 (it
+  links no icon; not this change). No picture can have moved: nothing drawn
+  on an installed frame changed, and the bank was not re-run.
 - **Owed onward.** X4.1e: the fade, and the corpse's measure at its torso
-  with it (above). The phone's FOLLOW-UP reading. X4.1a's compose cost is
-  smaller (`drawBodies` composes a drawn body once and skips an undrawn one;
-  the measure's root chain and both packers' `computeChain`s and `writeRig`s
-  stand, unmeasured). `VERIFYING.md`'s soldier-in-a-picture recipe borrows a
-  roster body now: a rig a script builds is never drawn.
+  with it (above). **X4.1e cannot add a NINTH vertex-stage storage array**:
+  the body programs' vertex stage is at 8 of 8 (WebGPU's default
+  `maxStorageBuffersPerShaderStage`, which the device does not raise), so
+  the per-instance fade rides the FRAGMENT stage — a group-1 storage array
+  read through a flat body index, as the visor's bloom is read in the mask
+  through `vBody` — or is packed into an array already bound (the kit word at
+  the head of each body's `bodyOrder` has room). **The rank draws spend more
+  vertex invocations than there are corners**: each rank runs to its longest
+  span × n, up to ~14.8k a body (14 matte ranks at the torso's 1,056, the
+  visor's 36) against 5,352 real — ~2.8× — the surplus corners exiting after
+  four storage reads. `gpu.frame` held on the desktop (0.994–0.999 in the
+  fights, above); fold it into the phone's FOLLOW-UP reading, which is owed
+  anyway. Indirect draws, which could size each instance to its own range,
+  are ruled out by the Intel Xe-LPG dropping single indirect draws at random
+  (X3.3b's note; `docs/rendering.md`, "NOTHING OF THE STATIC WORLD IS DRAWN
+  OR DISPATCHED INDIRECT"). **The editor draws no soldier now** (above: an editor build's
+  frames are ones ours prepares nothing in, and the draw is installed for a
+  round's map only) — X5.3 owes the editor the body draw if it is to show
+  one. X4.1a's compose cost is
+  smaller (`drawBodies` composes a drawn body once and skips an undrawn one,
+  and nothing at all with no draw installed; the measure's root chain and
+  both packers' `computeChain`s and `writeRig`s stand, unmeasured).
+  `VERIFYING.md`'s soldier-in-a-picture recipe borrows a roster body now: a
+  rig a script builds is never drawn.
 
 ### X4.2 — Vehicles (PERF_PLAN A3) — **M** (decision)
 

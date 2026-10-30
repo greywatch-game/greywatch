@@ -532,12 +532,19 @@ contact of 5-7 of 16 bots against 10-14 on the levels — and the same harness a
 only 17% of its ticks with nobody engaged.
 
 **What it costs is RIGS, which is why it is BOUNDED and why the pool is rebuilt
-rather than sized to the ceiling.** A bot is fourteen merged meshes, and a mesh
-in the scene is in the frame's own active-mesh walk whether the body is enabled
-or not — `WorldCulling` is explicit that a disabled mesh is skipped CHEAPLY and
-not skipped, which is the whole reason that file exists. So a pool built to
-`CONFIG.bots.maxPerTeam` (24) on every map would put six hundred meshes nobody
-is fighting into a village whose entire frame is under 2 ms.
+rather than sized to the ceiling.** Until `BABYLON_EXIT.md` X4.1d a bot was
+fourteen merged meshes, each in the frame's own active-mesh walk whether the
+body was enabled or not (`WorldCulling` is explicit that a disabled mesh is
+skipped CHEAPLY and not skipped), so a pool built to
+`CONFIG.bots.maxPerTeam` (24) on every map put six hundred meshes nobody was
+fighting into a village whose entire frame is under 2 ms. A body is no mesh
+now — our renderer draws it as an instance of its side's kit — so what a body
+costs a frame is the cull's read of its switch, and, while it is switched
+on, its measure, its joint composes and its share of the rank draws, whose
+vertex work is each rank's longest segment TIMES the bodies drawn. A surplus
+body switched off is down to the read and its rig's memory, and the rule
+stands: the pool is the round's roster, and nothing on the page is sized to
+a ceiling no round on this map fields.
 `BattleSystem.setRoster` therefore builds a new pool when the number MOVES, and
 `NetRoster.setFielded` new rigs for it on the page when the count or the
 viewer's side moved since the session's pool was built — which on a server's

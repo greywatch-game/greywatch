@@ -18,18 +18,23 @@
  * the same drawing (`soldierKits`), and it is never a Babylon mesh.
  * **The JOINTS are ours** (`rigJoints.ts`, `BABYLON_EXIT.md` X4.1a) and so,
  * since X4.1d, is the DRAWING: OUR renderer draws every body as an INSTANCE
- * of its kit (`render/BodyDraw.ts`) — one draw a kit for the matte segments,
- * one for the visor — off the matrices `writeRigDrawing` writes once a frame
- * (`Game.drawBodies`): each segment's own local times its joint's world,
- * what Babylon composed for the mesh it was. Babylon is made no rig mesh.
+ * of its kit (`render/BodyDraw.ts`), a RANK at a time — every body's `r`th
+ * segment nearest the eye, the matte ones in one draw and the visors in
+ * another, so at most two draws a segment for the whole roster — off the
+ * matrices `writeRigDrawing` writes once a frame (`Game.drawBodies`): each
+ * segment's own local times its joint's world, what Babylon composed for the
+ * mesh it was. Babylon is made no rig mesh.
  * The root is a joint and draws nothing: the body's one MEASURE
  * (`measureRig`, what `WorldCulling` drops a whole rig by) is the capsule it
  * was, composed off it, and the switch every roster writes is `rig.enabled`
  * (`setRigEnabled`).
  * Invariants: merging is what keeps a roster affordable, and since `KIT_PALETTE`
  * it is per SEGMENT rather than per colour — a segment is one geometry
- * whatever it is painted, and since X4.1d the whole of a side is one draw
- * however many segments and bodies it has. A box is free and a COLOUR is free
+ * whatever it is painted, and since X4.1d a segment is a RANK: up to two
+ * draws (matte, visor) for every body of both sides, however many bodies —
+ * and each rank's draw runs to the LONGEST segment any body draws at it,
+ * times the bodies, so a long segment is paid at every rank it lands on (see
+ * the merge note below). A box is free and a COLOUR is free
  * where the palette carries it — and a matte colour the palette does NOT
  * carry is REFUSED at the build (`paint`), there being no material of its
  * own left to give it. The emissive (the visor) stays outside the palette,
@@ -92,11 +97,21 @@ import type { DamageKind } from "../systems/CombatSystem";
  * slung launcher — one per JOINT, because `KIT_PALETTE` moved the albedo into
  * `uv2.x` and every matte part of a segment wears one material. It used to be
  * twenty-one meshes, a segment splitting once per colour in it. **Since
- * `BABYLON_EXIT.md` X4.1d a segment is not even a draw**: our renderer draws
- * every body of a side as instances of its kit, so a segment costs vertices
- * and nothing else, and the only paint that is not free is an EMISSIVE, which
- * cannot join the palette and is a draw of its own a side (the visor) — a
- * matte colour missing from `KIT_PALETTE` is refused at the build. Pouches, a
+ * `BABYLON_EXIT.md` X4.1d a segment is a RANK, not a mesh a body**: our
+ * renderer draws the whole roster a rank at a time (each body's segments
+ * sorted nearest the eye, as Babylon's queue drew a rig's meshes; rank `r` is
+ * every body's `r`th), the matte segments of a rank in one draw and the
+ * visors in another — so a frame is at most two draws a segment however many
+ * bodies, and a NEW JOINT or a new segment is a new rank: up to two more draws
+ * every frame. And a rank's draw runs to the longest segment ANY body has at
+ * that rank, times the bodies, the rest of each instance's corners drawn as
+ * nothing — and since every segment can land at every rank, a segment's
+ * corners are paid at every rank some body draws it: GROWING THE LONGEST
+ * segment (the torso's 1,056 corners, against a body's 5,352) multiplies
+ * across the ranks, up to ~14.8k vertex invocations a body where 5,352 are
+ * real. The only paint that is not free is an EMISSIVE, which cannot join the
+ * palette and is a segment of its own (the visor), drawn by its own program —
+ * a matte colour missing from `KIT_PALETTE` is refused at the build. Pouches, a
  * bedroll, a kneepad, an antenna and the helmet band are all free. The two
  * forearms are paid for by a JOINT rather than a colour, which is the one axis
  * the palette does not touch: the elbow is what puts both hands on the rifle,
@@ -208,9 +223,10 @@ export const OWN_KIT: SoldierKit = KITS[0];
  * materials to 14 and 2** — the paint-palette measurement
  * (`docs/rendering.md`) put a draw that reuses a bound material at ~2.3 us
  * against ~6.3 for one that switches — and since `BABYLON_EXIT.md` X4.1d to
- * ONE draw a side for every body of it. It is exactly the trick that took the
- * village from 416 meshes to 90, which is where the whole argument is written
- * down.
+ * draws a RANK for every body of both sides, at most two a segment however
+ * many bodies (the rig's note above has what a segment costs). It is exactly
+ * the trick that took the village from 416 meshes to 90, which is where the
+ * whole argument is written down.
  *
  * It is DECLARED rather than discovered, unlike the map's, because a kit is a
  * fixed handful of hexes the material is born holding

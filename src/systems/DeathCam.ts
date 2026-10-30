@@ -156,7 +156,7 @@ export class DeathCam {
    * once and drawn whole since; its drawing is no mesh at all since
    * `BABYLON_EXIT.md` X4.1d. Null before `prepare` has built one.
    *
-   * **It is only ever read after `prepare`**, because a change of side disposes
+   * **It is only ever read after `prepare`**, because a change of side drops
    * this rig and builds another — see there, and see `Game.buildRound`, where
    * the pools are filed after `applyPlayerTeam` for exactly that reason.
    */

@@ -1350,8 +1350,11 @@ export class CelMaterialFactory {
    *
    * What it buys is the rig's draw COUNT: a segment used to split once per
    * paint colour, so a torso was three meshes and a head four, and since the
-   * kit palette a segment is one — fifteen to a rig, and since X4.1d one draw
-   * a KIT for every body of it (`SoldierModel` has the arithmetic).
+   * kit palette a segment is one — fifteen to a rig, and since X4.1d a RANK:
+   * every body's `r`th segment nearest the eye in one draw, at most two draws
+   * a segment (matte, visor) for the whole roster, each running to the
+   * longest segment any body has at that rank (`SoldierModel` has the
+   * arithmetic, and what a new segment or a longer one costs).
    *
    * **The palette is bound at the FIRST call**, every later one getting that
    * recipe back — which is safe because the only caller hands it a module

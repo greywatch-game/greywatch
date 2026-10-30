@@ -662,8 +662,9 @@ export class WorldCulling {
    * The walk is `O(scene)` and the per-mesh work is one or two `Map.get`s —
    * against `_evaluateActiveMeshes`, which is `O(candidates)` and does an order
    * of magnitude more per mesh, EVERY frame. This runs only when the answer
-   * changes: a cell crossing its threshold, a pooled body being switched in or
-   * out of the round, or a mesh entering or leaving the scene.
+   * changes: a cell crossing its threshold or a mesh entering or leaving the
+   * scene (a pooled body switched in or out was one until X4.1d; no body is
+   * in the list now).
    */
   private rebuildList(): void {
     const data = this.eligible;
