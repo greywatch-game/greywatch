@@ -1336,7 +1336,10 @@ src/
                         #   records disagree, handing back the reason for
                         #   Game.worldFailed. A pooled BODY is no mesh
                         #   (X4.1d): measured once a frame and answered by
-                        #   index (drawsBody), which the drawing reads
+                        #   index (drawsBody), which the drawing reads, and
+                        #   with how much of it is drawn (bodyFade, X4.1e):
+                        #   the lesser of a ramp short of bodyDrawDistance
+                        #   (setBodyDrawDistance) and one above the size gate
     BlockHandover.ts    # The map's world as OUR renderer draws it, in every
                         #   pass of every build but the editor's, with NO
                         #   fallback (BABYLON_EXIT.md X3.3-X3.7b): every block
@@ -2569,13 +2572,18 @@ src/
                         #   the visor, the visor's mask twin — a draw one RANK
                         #   of every body, an instance a body, a vertex pulled
                         #   through the body's order and its kit's ranges, its
-                        #   world the body's segment matrix read whole
+                        #   world the body's segment matrix read whole; and
+                        #   the three again behind a SCREEN DOOR (X4.1e), a
+                        #   4x4 Bayer rank of the pixel against the body's
+                        #   fade, read in the fragment stage (BODY_FADE)
     BodyDraw.ts         # Every BODY as OUR renderer draws it (X4.1d): the
                         #   kits on the GPU once, each frame's bodies as
                         #   instances — a rank's matte segments one draw, its
                         #   visors another, the visors again into the glow's
                         #   mask — off what Game.drawBodies commits and the
-                        #   order and bloom the prepare pulls; pipelines asked
+                        #   order and bloom the prepare pulls; a FADING body
+                        #   (X4.1e) drawn after the whole ones by the faded
+                        #   twin of each program, at its fade; pipelines asked
                         #   once a session, a failure (or a refused pass) the
                         #   round's (Game.worldFailed); installed for a round,
                         #   never an editor build

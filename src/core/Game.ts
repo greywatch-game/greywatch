@@ -1546,8 +1546,9 @@ export class Game {
     this.bodyShadowMap = new BodyShadowMap(this.renderer, BODY_SHADOW_PROXIES);
     this.bodyShadows = new BodyShadows(this.scene, this.mats, this.shadowQuality, this.bodyShadowMap);
     // Every body, ours in every round (`BABYLON_EXIT.md` X4.1d): each side's
-    // kit built here, once, and its three pipelines asked for the session,
-    // so the building card's warm-up waits for them like any of ours. The
+    // kit built here, once, and its six pipelines (three plain, three behind
+    // the fade's screen door) asked for the session, so the building card's
+    // warm-up waits for them like any of ours. The
     // most bodies a frame can hold: a side's ceiling twice and the death
     // cam's stand-in.
     this.bodyDraw = new BodyDraw(
@@ -5009,6 +5010,10 @@ export class Game {
     const bodyDraw = bodyDrawDistanceOf(environment);
     this.ragdolls.setViewDistance(bodyDraw);
     this.net?.roster.setViewDistance(bodyDraw);
+    // …and where a body's distance FADE ends (`BABYLON_EXIT.md` X4.1e): the
+    // cull ramps a body out short of the roster's switch rather than letting
+    // it pop there, off the same number and never a gate of its own.
+    this.culling.setBodyDrawDistance(bodyDraw);
     // And a third reader of the FOG, for the same reason turned inside out:
     // past the fog wall there is nothing to see, so there is nothing to WALK
     // either. `WorldCulling` files the fresh map's meshes and
@@ -5607,18 +5612,30 @@ export class Game {
     if (!draw.installed) return;
     const rigs = this.pooledRigs;
     const segments = draw.segments;
+    const culling = this.culling;
+    // The bodies drawn WHOLE first and the FADING ones after them
+    // (`BABYLON_EXIT.md` X4.1e): the drawing draws the second behind its
+    // screen door, at the fade `WorldCulling` measured them to. With nobody
+    // fading this is the one pass it always was, in the same order.
     let n = 0;
-    for (let i = 0; i < rigs.length && n < draw.capacity; i++) {
-      const rig = rigs[i];
-      if (!this.culling.drawsBody(i)) continue;
-      writeRigDrawing(rig, draw.matrices, n * segments * 16);
-      writeRigCentres(rig, draw.matrices, n * segments * 16, this.segmentCentres, n * segments * 3);
-      draw.kits[n] = rig.kit;
-      n++;
+    let whole = 0;
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 0; i < rigs.length && n < draw.capacity; i++) {
+        if (!culling.drawsBody(i)) continue;
+        const fade = culling.bodyFade(i);
+        if ((fade >= 1) !== (pass === 0)) continue;
+        const rig = rigs[i];
+        writeRigDrawing(rig, draw.matrices, n * segments * 16);
+        writeRigCentres(rig, draw.matrices, n * segments * 16, this.segmentCentres, n * segments * 3);
+        draw.kits[n] = rig.kit;
+        draw.fades[n] = fade;
+        n++;
+      }
+      if (pass === 0) whole = n;
     }
     // The visors bloom on the glow's rules, as Babylon's mask asked them of a
     // visor's mesh: group 0's admission (the kit screen holds the world's).
-    draw.commit(n, this.glowAdmits(0), this.mats.materialEpoch);
+    draw.commit(n, whole, this.glowAdmits(0), this.mats.materialEpoch);
   }
 
   /**

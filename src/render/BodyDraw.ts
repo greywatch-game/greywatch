@@ -3,19 +3,21 @@
  * (`BABYLON_EXIT.md` X4.1d): the soldier kits' geometry on the GPU once, each
  * frame's bodies as INSTANCES of it, drawn into the frame's main pass — the
  * matte segments with the cel program, the visor with the emissive palette's
- * — and the visor again into the glow's mask.
+ * — and the visor again into the glow's mask; a FADING body (X4.1e) the same
+ * way behind a screen door, by the faded twin of each program.
  * Owns: `BodyDraw` — the kits' arrays (every segment of every kit end to end,
  * each kit's segment ranges as the matte program and the visor's draw them,
  * and the indices rebased onto the arrays), the instances' kits, segment orders,
  * matrices and bloom colours on the GPU and the staging arrays a frame writes
- * them into (`kits`, `matrices`; the orders and the bloom, which it PULLS),
- * both materials' blocks and groups, the three pipelines (asked once, for the
- * session), the main-pass draw, the mask draw, the prepare that uploads a
+ * them into (`kits`, `matrices`, `fades`; the orders and the bloom, which it
+ * PULLS), both materials' blocks and groups and the fades' group, the six
+ * pipelines — three plain, three faded (asked once, for the
+ * session) — the main-pass draw, the mask draw, the prepare that uploads a
  * frame, the refusal listeners it holds while installed (and whether it is,
  * `installed`), and what it drew last (`stats`); `BodyKit`, `BodySegment`,
  * `BodyMaterials`, `BodyPull`.
  * Invariants: it DECIDES NOTHING — which bodies are drawn, in what pose, in
- * what order, at what bloom and with what material are its caller's
+ * what order, at what fade, at what bloom and with what material are its caller's
  * (`Game.drawBodies`, off `WorldCulling`'s verdict per body, the rigs' own
  * joints, the eye and `GlowRules`), handed over once a frame (`commit`) and
  * pulled once inside the render (`pull`, in the prepare), and drawn on that
@@ -24,7 +26,11 @@
  * body's segments are drawn in the order it hands over, as Babylon's
  * front-to-back queue drew a rig's meshes: the matte segments of a rank one
  * draw, the visor of a rank another and only where some body has its visor
- * at that rank — at most twice the segments a body has, however many bodies;
+ * at that rank — at most twice the segments a body has, however many bodies,
+ * and twice that on a frame some body is FADING: the bodies drawn whole first,
+ * in one draw a program, the faded ones (the caller's last `n - whole`) after
+ * them in another, so each body is still drawn in its own order and a frame
+ * with nobody fading is the draws it always was;
  * the mask's draws are the visor's ranks again, by the same vertex module; a
  * rank's draw runs to the longest range any body draws at it, the rest of
  * its corners drawn as nothing; the draws go into the main pass at
@@ -50,7 +56,7 @@
  */
 import { CEL_MATERIAL_BLOCK, CEL_MATERIAL_TEXTURES, type CelRecipe } from "./celMaterial";
 import { EMISSIVE_BLOCK, EMISSIVE_BLOCK_DEFINES, type EmissiveRecipe } from "./emissiveWorld";
-import { BODY_CEL_DEFINES, BODY_GEOMETRY, BODY_GLOW, bodyPrograms } from "./bodyProgram";
+import { BODY_CEL_DEFINES, BODY_FADE, BODY_GEOMETRY, BODY_GLOW, bodyPrograms } from "./bodyProgram";
 import type { PassTargets } from "./frameHost";
 import { HostBindGroup } from "./HostBindGroup";
 import type { BuiltPipeline, PipelineState } from "./PipelineCache";
@@ -108,6 +114,12 @@ export class BodyDraw {
   readonly matrices: Float32Array<ArrayBuffer>;
   /** This frame's bodies' kits, by the view (`soldierKits`' order), written before `commit`. */
   readonly kits: Uint32Array<ArrayBuffer>;
+  /**
+   * This frame's bodies' FADES (X4.1e), written before `commit`: read only
+   * for the bodies past `commit`'s `whole`, each the share of its pixels the
+   * screen door keeps, above 0 and below 1.
+   */
+  readonly fades: Float32Array<ArrayBuffer>;
   /** Whether every pipeline built — asked once, for the session; false if one failed. */
   readonly ready: Promise<boolean>;
   /**
@@ -127,15 +139,21 @@ export class BodyDraw {
   private readonly orderBuffer: GPUBuffer;
   private readonly matrixBuffer: GPUBuffer;
   private readonly glowBuffer: GPUBuffer;
+  private readonly fadeBuffer: GPUBuffer;
   private readonly geometry: HostBindGroup;
   private readonly celBlock: UniformBlockBuffer;
   private readonly celGroup: HostBindGroup;
   private readonly visorBlock: UniformBlockBuffer;
   private readonly visorGroup: HostBindGroup;
   private readonly glowGroup: HostBindGroup;
+  /** Group 3 of the three faded pipelines: the fades. */
+  private readonly fadeGroup: HostBindGroup;
   private cel: BuiltPipeline | null = null;
   private visor: BuiltPipeline | null = null;
   private mask: BuiltPipeline | null = null;
+  private celFaded: BuiltPipeline | null = null;
+  private visorFaded: BuiltPipeline | null = null;
+  private maskFaded: BuiltPipeline | null = null;
 
   /** The pulled orders and bloom, a body's `segments` ranks apiece. */
   private readonly order: Uint32Array<ArrayBuffer>;
@@ -148,6 +166,8 @@ export class BodyDraw {
 
   private pending = false;
   private instances = 0;
+  /** How many of this frame's bodies are drawn WHOLE, the first of them; the rest are faded. */
+  private wholeCount = 0;
   private glowOn = false;
   /** The materials' epoch as last copied; NaN is never. */
   private epoch = Number.NaN;
@@ -182,6 +202,7 @@ export class BodyDraw {
     this.capacity = Math.max(1, capacity);
     this.matrices = new Float32Array(this.capacity * segments * MATRIX_FLOATS);
     this.kits = new Uint32Array(this.capacity);
+    this.fades = new Float32Array(this.capacity);
     this.order = new Uint32Array(this.capacity * segments);
     this.upload = new Uint32Array(this.capacity * (segments + 1));
     this.glow = new Float32Array(this.capacity * 4);
@@ -262,6 +283,7 @@ export class BodyDraw {
     this.orderBuffer = frameBuffer("orders", this.upload.byteLength);
     this.matrixBuffer = frameBuffer("matrices", this.matrices.byteLength);
     this.glowBuffer = frameBuffer("bloom", this.glow.byteLength);
+    this.fadeBuffer = frameBuffer("fades", this.fades.byteLength);
     const shared = {
       positionData: storage("positions", positions),
       normalData: storage("normals", normals),
@@ -294,6 +316,8 @@ export class BodyDraw {
     this.visorGroup.refresh(host, {});
     this.glowGroup = new HostBindGroup(device, "bodies: bloom", BODY_GLOW, [], { bodyGlow: this.glowBuffer });
     this.glowGroup.refresh(host, {});
+    this.fadeGroup = new HostBindGroup(device, "bodies: fades", BODY_FADE, [], { bodyFade: this.fadeBuffer });
+    this.fadeGroup.refresh(host, {});
 
     const programs = bodyPrograms(kits.length, segments, celSpan, visorSpan);
     const ask = (
@@ -327,6 +351,12 @@ export class BodyDraw {
       // No depth written: every pixel's depth is the main pass's, which the
       // visor wrote by this same vertex module.
       ask(programs.mask, GLOW_TARGETS, { depthWrite: false }, (b) => (this.mask = b)),
+      // The three behind the screen door, asked with the rest (X4.1e), so
+      // the warm-up's wait for ours covers them and a body's first fade
+      // compiles nothing in the round.
+      ask(programs.faded.cel, FRAME_TARGETS, undefined, (b) => (this.celFaded = b)),
+      ask(programs.faded.visor, FRAME_TARGETS, undefined, (b) => (this.visorFaded = b)),
+      ask(programs.faded.mask, GLOW_TARGETS, { depthWrite: false }, (b) => (this.maskFaded = b)),
     ]).then((oks) => oks.every(Boolean));
   }
 
@@ -396,13 +426,15 @@ export class BodyDraw {
    * This frame's bodies: the first `n`, their matrices and kits already
    * written into `matrices` and `kits` — drawn on the next frame our renderer
    * prepares, their orders (and, with `glowOn`, their visors' bloom) pulled
-   * then (`pull`). `epoch` is the materials' (`CelMaterialFactory
-   * .materialEpoch`): when it moved, both blocks are copied again from their
-   * recipes.
+   * then (`pull`). The first `whole` are drawn whole and the rest FADED
+   * (X4.1e), behind the screen door at their `fades`. `epoch` is the
+   * materials' (`CelMaterialFactory.materialEpoch`): when it moved, both
+   * blocks are copied again from their recipes.
    */
-  commit(n: number, glowOn: boolean, epoch: number): void {
+  commit(n: number, whole: number, glowOn: boolean, epoch: number): void {
     if (!this.unhook) return;
     this.instances = Math.max(0, Math.min(n, this.capacity));
+    this.wholeCount = Math.max(0, Math.min(whole, this.instances));
     this.glowOn = glowOn;
     this.pending = true;
     if (epoch !== this.epoch) {
@@ -431,7 +463,15 @@ export class BodyDraw {
     this.stats.masked = 0;
     this.stats.instances = 0;
     const n = this.instances;
-    this.ours = pending && n > 0 && this.cel !== null && this.visor !== null && this.mask !== null;
+    this.ours =
+      pending &&
+      n > 0 &&
+      this.cel !== null &&
+      this.visor !== null &&
+      this.mask !== null &&
+      this.celFaded !== null &&
+      this.visorFaded !== null &&
+      this.maskFaded !== null;
     if (!this.ours) return;
     const segments = this.segments;
     const order = this.order;
@@ -465,65 +505,118 @@ export class BodyDraw {
     queue.writeBuffer(this.matrixBuffer, 0, this.matrices, 0, n * segments * MATRIX_FLOATS);
     queue.writeBuffer(this.orderBuffer, 0, upload, 0, n * (segments + 1));
     if (this.glowOn) queue.writeBuffer(this.glowBuffer, 0, this.glow, 0, n * 4);
+    if (this.wholeCount < n) queue.writeBuffer(this.fadeBuffer, 0, this.fades, 0, n);
     this.stats.instances = n;
   };
 
   /**
    * The bodies in the main pass, a rank at a time: its matte segments, then
    * its visors where some body has its visor there — so every body's
-   * segments land in its own order.
+   * segments land in its own order. Within a rank the bodies drawn whole go
+   * first, one draw a program, and the FADED ones after them in another,
+   * behind the screen door (X4.1e): a body is one or the other for the
+   * whole frame, so each still lands in its own order.
    */
   private readonly draw = (pass: GPURenderPassEncoder, ctx: FrameContext): void => {
     if (!this.ours) return;
+    const n = this.instances;
+    const whole = this.wholeCount;
+    const fading = n - whole;
     const cel = this.cel!;
     const visor = this.visor!;
-    // Both whole, or no body at all: never a body without its visor.
-    if (!this.whole(cel, this.celGroup, ctx) || !this.whole(visor, this.visorGroup, ctx)) return;
-    const n = this.instances;
+    const celFaded = this.celFaded!;
+    const visorFaded = this.visorFaded!;
+    // All complete, or no body at all: never a body without its visor, and
+    // never a faded body drawn whole.
+    if (
+      (whole > 0 && (!this.complete(cel, this.celGroup, ctx) || !this.complete(visor, this.visorGroup, ctx))) ||
+      (fading > 0 &&
+        (!this.complete(celFaded, this.celGroup, ctx) || !this.complete(visorFaded, this.visorGroup, ctx)))
+    ) {
+      return;
+    }
     let drawn = 0;
     let bound: BuiltPipeline | null = null;
     for (let r = 0; r < this.segments; r++) {
       const span = this.rankSpan[r];
       if (span > 0) {
-        if (bound !== cel) this.bind(pass, (bound = cel), this.celGroup, ctx);
-        pass.draw(span, n, r * this.celSpan, 0);
-        drawn++;
+        if (whole > 0) {
+          if (bound !== cel) this.bind(pass, (bound = cel), this.celGroup, ctx);
+          pass.draw(span, whole, r * this.celSpan, 0);
+          drawn++;
+        }
+        if (fading > 0) {
+          if (bound !== celFaded) this.bind(pass, (bound = celFaded), this.celGroup, ctx);
+          pass.draw(span, fading, r * this.celSpan, whole);
+          drawn++;
+        }
       }
       if (this.rankVisor[r]) {
-        if (bound !== visor) this.bind(pass, (bound = visor), this.visorGroup, ctx);
-        pass.draw(this.visorSpan, n, r * this.visorSpan, 0);
-        drawn++;
+        if (whole > 0) {
+          if (bound !== visor) this.bind(pass, (bound = visor), this.visorGroup, ctx);
+          pass.draw(this.visorSpan, whole, r * this.visorSpan, 0);
+          drawn++;
+        }
+        if (fading > 0) {
+          if (bound !== visorFaded) this.bind(pass, (bound = visorFaded), this.visorGroup, ctx);
+          pass.draw(this.visorSpan, fading, r * this.visorSpan, whole);
+          drawn++;
+        }
       }
     }
     this.stats.drawn = drawn;
   };
 
-  /** The visors' bloom, first in the glow's mask with the palette's: the visor's ranks again. */
+  /**
+   * The visors' bloom, first in the glow's mask with the palette's: the
+   * visor's ranks again — the whole bodies', then the faded ones' behind the
+   * same screen door, so a pixel the main pass's visor dropped never blooms.
+   */
   private readonly drawMask = (pass: GPURenderPassEncoder, ctx: FrameContext): void => {
     if (!this.ours || !this.glowOn) return;
-    const mask = this.mask!;
-    if (!this.whole(mask, this.glowGroup, ctx)) return;
-    this.bind(pass, mask, this.glowGroup, ctx);
     const n = this.instances;
+    const whole = this.wholeCount;
+    const fading = n - whole;
+    const mask = this.mask!;
+    const maskFaded = this.maskFaded!;
+    if (
+      (whole > 0 && !this.complete(mask, this.glowGroup, ctx)) ||
+      (fading > 0 && !this.complete(maskFaded, this.glowGroup, ctx))
+    ) {
+      return;
+    }
     let masked = 0;
+    let bound: BuiltPipeline | null = null;
     for (let r = 0; r < this.segments; r++) {
       if (!this.rankVisor[r]) continue;
-      pass.draw(this.visorSpan, n, r * this.visorSpan, 0);
-      masked++;
+      if (whole > 0) {
+        if (bound !== mask) this.bind(pass, (bound = mask), this.glowGroup, ctx);
+        pass.draw(this.visorSpan, whole, r * this.visorSpan, 0);
+        masked++;
+      }
+      if (fading > 0) {
+        if (bound !== maskFaded) this.bind(pass, (bound = maskFaded), this.glowGroup, ctx);
+        pass.draw(this.visorSpan, fading, r * this.visorSpan, whole);
+        masked++;
+      }
     }
     this.stats.masked = masked;
   };
 
-  /** Whether `built`'s three groups — the frame's, `material`, the geometry — are whole this frame. */
-  private whole(built: BuiltPipeline, material: HostBindGroup, ctx: FrameContext): boolean {
+  /**
+   * Whether `built`'s groups — the frame's, `material`, the geometry and, for
+   * a faded pipeline, the fades — are whole this frame.
+   */
+  private complete(built: BuiltPipeline, material: HostBindGroup, ctx: FrameContext): boolean {
     return (
       ctx.frameGroup(built.groups[0]) !== null &&
       material.get(built.groups[1]) !== null &&
-      this.geometry.get(built.groups[2]) !== null
+      this.geometry.get(built.groups[2]) !== null &&
+      (built.groups.length < 4 || this.fadeGroup.get(built.groups[3]) !== null)
     );
   }
 
-  /** `built` and its three groups (whole: `whole` said so) set on `pass`. */
+  /** `built` and its groups (whole: `complete` said so) set on `pass`. */
   private bind(
     pass: GPURenderPassEncoder,
     built: BuiltPipeline,
@@ -534,6 +627,7 @@ export class BodyDraw {
     pass.setBindGroup(0, ctx.frameGroup(built.groups[0])!);
     pass.setBindGroup(1, material.get(built.groups[1])!);
     pass.setBindGroup(2, this.geometry.get(built.groups[2])!);
+    if (built.groups.length > 3) pass.setBindGroup(3, this.fadeGroup.get(built.groups[3])!);
   }
 
   /** `Renderer.onRefused`: the main pass drew nothing of ours, bodies included. */

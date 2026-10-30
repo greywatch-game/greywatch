@@ -4144,9 +4144,70 @@ is the roster's (`NetRoster.update` switches a body off past
 in every case: it is a segment of the body, not a mesh the emissive exemption
 could keep. (A corpse is still measured at its ROOT, which only sinks while a
 blast throws the torso up to 4 m from it — a body's projected size at the
-gate's ~810 m moves by under 1% for that, and moving the measure would move
-which corpses are drawn, a picture change: owed to X4.1e, whose fade is
-built on the same measure.)
+gate's ~810 m moves by under 1% for that. X4.1e kept it there on purpose: the
+distance fade's zero rests on the measure lying within a radius of the point
+the roster switches the body off by, which a corpse's root does and a thrown
+torso does not — see the next paragraph.)
+
+**A body LEAVES by a FADE, at both edges, and never pops**
+(`BABYLON_EXIT.md` X4.1e, `PERF_PLAN.md` A4). `WorldCulling.offer` answers
+how much of a body is drawn (`bodyFade`, 0 to 1) off the same one measure the
+size gate reads, the lesser of two ramps (`CONFIG.graphics.culling
+.bodyFade`): over the last `distance` share of `bodyDrawDistance` (pushed to
+it with the roster's and the pool's copy, `setBodyDrawDistance`), and between
+`minPixels` and `size` times it in projected pixels. **A fade built for one
+edge misses the other** — on a phone the size gate is the nearer. The
+distance ramp ENDS one measure-radius short of the distance: the roster
+switches a body off by its POSITION (its feet), which lies inside the
+measure's sphere, so from any eye the two distances differ by at most the
+radius and the fade is zero wherever the switch could still be on — no
+second reading of the roster's point, and no pop at its end. The size ramp's
+zero is the gate's own test, so the drop is where it always was. Measured at
+3440x1440: a soldier walked out on Sarab's highway fades from whole at 269 m
+to nothing by 298 (the switch is at 300); a rank of sixteen on the proving
+ground thins from whole at ~720 m to nothing by ~1060 (the gate is at ~1075).
+
+**The fade is a SCREEN DOOR, drawn by a faded twin of each body program**
+(`render/bodyProgram.ts`): a fading body's pixel is kept while its fade is
+above the pixel's rank in a 4x4 Bayer matrix and discarded otherwise, so a
+fade of `f` keeps `round(16 f)` of every 4x4 tile and the kept set only ever
+shrinks as `f` falls. The value rides the FRAGMENT stage — a storage array
+in a group of its own (`BODY_FADE`, group 3, fragment-only), read through the
+flat body index the visor's stage already handed the mask — because the
+vertex stage is at its ceiling of eight storage arrays. `Game.drawBodies`
+writes the whole bodies first and the fading ones after them, and each rank
+draws the whole ones with the plain pipelines and the fading ones with the
+faded twins (`firstInstance` past the whole), so a frame with nobody fading
+is exactly the draws it was and a body still lands in its own order; with
+some body fading a rank is up to four draws. All six pipelines are asked at
+`Game`'s construction, so the warm-up waits for the twins too and a first fade
+compiles nothing. Four consequences are decisions, not accidents:
+
+- **The pattern is keyed on the PIXEL and nothing else** — no clock, no frame
+  count — so a still body under a still camera keeps the same pixels every
+  frame; a moving one slides over a fixed pattern, as any screen door does.
+  At the size edge a body is three to six pixels, which no 4x4 pattern can
+  give sixteen levels: each of its pixels is kept or dropped by where it
+  lands, so the fade there is a fade of HOW MANY bodies' pixels survive (in
+  expectation `f` of them), and a moving one twinkles before it goes. That is
+  the price of a fade on an opaque, depth-writing body (`visibility < 1`
+  would be a different, blended pipeline and a sort), and it is paid only in
+  the band.
+- **The visor drops the same pixels in the main pass and in the glow's mask**:
+  one vertex module for both, both passes full-size, the same Bayer rank — so
+  a discarded pixel never blooms, and a body still drops WHOLE, its emissive
+  with it.
+- **The ink is left alone.** A kept pixel writes depth and is inked like any
+  silhouette pixel; a discarded one shows the scene behind it, unchanged
+  (measured: the body-minus-empty difference is black in the holes at every
+  step). At the distances the edges sit at the ink has mostly faded with the
+  fog anyway.
+- **The shadows do not fade.** The bodies' map and the lamps' atlas cast off
+  the proxy boxes while the body's switch is on (`rig.enabled`), as the size
+  gate never reached them either; the bodies' map gathers within its window's
+  side of a focus 8 m ahead (56 m at most), short of every shipped map's
+  distance fade (70 m at the earliest, the 78 m valleys), and a screen door in
+  a shadow map would be a pattern in its texels, not the screen's.
 
 **A draw is a RANK, and the rank is the load-bearing part.** Babylon's group-0
 opaque queue is sorted nearest-first (`Game`'s `setRenderingOrder`, the
@@ -4170,7 +4231,8 @@ body) pulling its own `r`th segment's corners out of `indexData` through its
 kit's range table and drawing nothing past them, and rank `r`'s visors in
 another where some body has its visor there. So every body's segments land in
 its own order, and the main pass is at most twice the segment count — 30 —
-however many bodies (Babylon's was fourteen a body: 672 at Sarab's 48). The
+however many bodies (Babylon's was fourteen a body: 672 at Sarab's 48), and
+twice that on a frame some body is FADING (below). The
 price is VERTEX work: a rank's draw runs to the longest segment any body draws
 there, times the bodies, so a body costs up to ~14.8k vertex invocations
 against its 5,352 corners, the surplus exiting after four storage reads — and
@@ -4482,7 +4544,10 @@ because it seemed wise.**
   384-tall one**. That map's own body distance is 480 m, so this changes
   **nothing at all on a desktop** — the candidate list hashes identical before
   and after — and takes half the roster out of the list on a phone. 5 px is
-  490/180 m and 6 px is 410/150.
+  490/180 m and 6 px is 410/150. **Since `BABYLON_EXIT.md` X4.1e the drop is
+  the END of a fade** (from `bodyFade.size` times the gate down to it, a
+  screen door — "The bodies, ours"), so on a phone a body thins out over
+  ~190-290 m on Coldharbour rather than popping out in clear air.
 
   **A body's own EMISSIVE goes with the body**, which was the one place this
   class and the next one met. A visor is the only emissive on a rig, and an

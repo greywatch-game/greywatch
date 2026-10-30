@@ -609,9 +609,9 @@ gate. **Nothing pooled may ever be block-keyed.**
 (`render/BodyDraw.ts`): each an INSTANCE of its side's kit, built once a side
 (`SoldierModel.soldierKits`), drawn while its switch is on and the size gate,
 measured ONCE a body, passes it (`WorldCulling.drawsBody`) — the visor with
-it. **A draw is a RANK of every body**, each body's segments nearest-first off
-`camera.globalPosition` (`Game.bodyPull`), because the later of two equal
-depths wins and Babylon's front-to-back queue decided which.
+it. **A body LEAVES by a FADE at both edges, never a pop**: a screen door at
+`WorldCulling.bodyFade`, its visor dropping the same pixels in the glow's mask.
+**A draw is a RANK of every body**, nearest-first (`Game.bodyPull`).
 
 **The GLOW draws the EMISSIVE meshes and nothing else, its occlusion being the
 FRAME's own depth buffer** (`src/shaders/GlowPass.ts`). **What may bloom is read
@@ -674,7 +674,7 @@ so that a map saying nothing is unaffected:
 | --- | --- | --- |
 | `MapLayout.size` — how big it is | `CONFIG.map.size`, 240 | its heightfield's `size * cell` must equal it (asserted in DEV), and the rim's boundary boxes must stay over 200 m so the seven sites keying on `w > 200 \|\| d > 200` still can |
 | `EnvironmentSpec.fogEnd` — how far you can see | `FOG_WALL` | it is the reach `WorldCulling` walks to and the default for the row below; `audio.maxDistance` (70) and `bots.perception.engageRange` (55) did **not** move with it, so a clear map must be laid out knowing that |
-| `EnvironmentSpec.bodyDrawDistance` — how far a BODY is worth drawing | its own `fogEnd` | resolved ONCE (`bodyDrawDistanceOf`, clamped to `fogEnd`) and pushed to `NetRoster` and `RagdollSystem` together (`setViewDistance`), which is what keeps where a body stops being drawn and where a corpse is refused one distance; a body it drops POPS. **A map's `fogEnd` is a distance from the EYE and a LANDMARK is a fixed thing in the world**: never shorten the fog for the cull budget — take the saving out of this row |
+| `EnvironmentSpec.bodyDrawDistance` — how far a BODY is worth drawing | its own `fogEnd` | resolved ONCE (`bodyDrawDistanceOf`, clamped to `fogEnd`) and pushed to `NetRoster` and `RagdollSystem` together (`setViewDistance`), which is what keeps where a body stops being drawn and where a corpse is refused one distance; a body it drops FADES out over its last tenth (`WorldCulling.setBodyDrawDistance`, ending short of it), so a shorter one is a look call rather than a pop. **A map's `fogEnd` is a distance from the EYE and a LANDMARK is a fixed thing in the world**: never shorten the fog for the cull budget — take the saving out of this row |
 | `MapLayout.surfaces` — how deep it stacks | `CONFIG.nav.maxSurfaces`, 3 | only a map that stacks FLOORS raises it; overflow drops candidates silently (see the bots section) |
 | `MapLayout.perTeam` — how many bodies a side | `CONFIG.bots.perTeam`, 8 | it is DENSITY, bounded by `CONFIG.bots.maxPerTeam` (24), and it is spent in RIGS — the core's `BattleSystem.setRoster` resizes the pool and the page's `NetRoster` rebuilds its rigs when it moves (`setFielded`). The squads and the scoreboard follow it; `CONFIG.conquest.tickets` deliberately does not, so a denser map is a shorter round. **It reaches a match too**: the authority's slot table is the ceiling, `setFielded` says how many a round fights, and the SEATS stay at sixteen |
 | `MapLayout.blockSize` — how big a merge block is | `BLOCK_SIZE`, 48 | it is DRAW CALLS and cull granularity and nothing else; the reflection bake's exclusion and `WorldCulling` follow it for free because they read the block KEY rather than a size, and the world layer's unit of LOCALITY (the physics buckets, the pane index) deliberately does **not** |

@@ -3567,7 +3567,7 @@ module from X2.2. When the last one lands, Babylon draws nothing but the post
 chain, and the frozen cel-material cache and its traps are deleted with
 `CelMaterialFactory`'s Babylon half.
 
-### X4.1 — Bodies (PERF_PLAN C6, A4) — **L, as five sub-steps** (split 2026-10-29) — X4.1a **LANDED** (a417bfc, review fixes after it), X4.1b **LANDED** (f554b68, review fixes after it), X4.1c **LANDED** (3a07a68, review fixes after it), X4.1d **LANDED** (23c6cd9, review fixes after it)
+### X4.1 — Bodies (PERF_PLAN C6, A4) — **L, as five sub-steps** (split 2026-10-29) — X4.1a **LANDED** (a417bfc, review fixes after it), X4.1b **LANDED** (f554b68, review fixes after it), X4.1c **LANDED** (3a07a68, review fixes after it), X4.1d **LANDED** (23c6cd9, review fixes after it), X4.1e **LANDED** (HASH) — **all five LANDED**
 
 Every body a page draws — `NetSoldier`'s rig, a corpse, the death cam's
 stand-in — comes off Babylon's scene, along with the moon's body shadow map,
@@ -3616,14 +3616,14 @@ reparenting goes and every body is one kind of thing to draw.
   pose goes or becomes a key. **Oracle:** the bank's rig vantages 61 of 61
   byte-identical; census; X0.3 alternated at 24 a side on Sarab and
   Cinderhaven, `--max --gpu`; a netplay round; a blast throwing bodies.
-- **X4.1e — A4's fade (the picture change).** A screen-door dither at
+- **X4.1e — A4's fade (the picture change).** Landed (below). A screen-door dither at
   `bodyDrawDistance` AND at the size gate's drop (a fade built for one misses
   the other), carried as a per-instance value — A4's "first question" is
   answered by X4.1d's instancing, and the value cannot be a NINTH vertex-stage
   storage array (X4.1d's Owed onward). The dithered pipeline is asked ahead with
   the rest. **Oracle:** the bank's numbers in the message (only rows with a
   body at a fade edge may move); a body walked through both edges on a phone
-  and a 32:9 window.
+  and a 32:9 window (the phone's owed by the user's decision, 2026-10-30).
 - **Contracts all five keep:**
   - a body is measured once and drops whole, its emissive with it
   - a rig's shadow shape is `RAGDOLL_BONES`, a hull's its collider box
@@ -4494,6 +4494,172 @@ parent).
   both packers' `computeChain`s and `writeRig`s stand, unmeasured).
   `VERIFYING.md`'s soldier-in-a-picture recipe borrows a roster body now: a
   rig a script builds is never drawn.
+
+**X4.1e landed** (HASH; 2026-10-30; the picture change, at the two edges
+and nowhere else: no bank row has a body at either, and none moved).
+- **What it is.** A body LEAVES at both gates by a FADE, never a pop
+  (`PERF_PLAN.md` A4; `FINDINGS.md` 30, deleted). `WorldCulling.offer`
+  answers how much of each pooled body is drawn (`bodyFade`, 0 to 1) off the
+  one measure the size gate already read, the lesser of two ramps
+  (`CONFIG.graphics.culling.bodyFade`): over the last `distance` (0.1) of the
+  map's `bodyDrawDistance`, pushed to the cull beside the roster's and the
+  ragdoll pool's copy (`setBodyDrawDistance`, from `installMap`), and between
+  `minPixels` and `size` (1.5) times it in projected pixels. `drawsBody` is
+  now "switched on and fade above 0". The roster's switch and the pool's
+  refusal are untouched, and `bodyDrawDistance` is shortened nowhere.
+- **The distance ramp ends one measure-radius SHORT of the distance**, and
+  that is what makes it a fade rather than a fade and then a pop. The roster
+  switches a body off by its POSITION (its feet) and the cull measures the
+  capsule's sphere; the feet are inside that sphere, so from any eye at any
+  height the two distances differ by at most its radius (1.063 m) — the fade
+  is zero wherever the switch could still be on, with no second reading of
+  the roster's point. A corpse's root stays where it fell (it only sinks), as
+  its position does, so the same holds for a corpse. The size ramp's zero is
+  the gate's own `tooSmall`, so the drop is exactly where it was.
+- **The screen door, and where its value rides** (the user's decision,
+  2026-10-30). A FADED twin of each body program (`bodyProgram.ts`: the matte
+  cel, the visor, the visor's mask) is its plain twin's body and pixel with a
+  door in front: the pixel is kept while `fade * 16 - 0.5` is above its rank
+  in a 4x4 Bayer matrix (computed from `x ^ y` and `y`, no table) and
+  discarded otherwise, so a fade `f` keeps `round(16 f)` of every 4x4 tile
+  and the kept set only shrinks as `f` falls. The fade is a storage array in
+  the FRAGMENT stage, in a group of its own (`BODY_FADE`, group 3,
+  fragment-only — the vertex stage stays at 8 of 8), read through a flat
+  `vBody`: the visor's stage already handed it to the mask, and the faded
+  matte stage hands it as its last varying (after `vPalette`, so the cel
+  inputs keep their locations). One bind group serves all three faded
+  pipelines under one layout. `Game.drawBodies` writes the whole bodies first
+  and the fading ones after (`BodyDraw.commit(n, whole, …)`, `fades`); each
+  rank draws the whole ones by the plain pipelines and the fading ones by the
+  twins (`firstInstance` past the whole), so **a frame with nobody fading is
+  exactly the draws it was** (the same pipelines, the same order — the bank's
+  rig rows prove it) and a body still lands in its own order; with someone
+  fading a rank is up to four draws (two in the mask). The six pipelines are
+  asked at `Game`'s construction, so the warm-up's wait for ours covers the
+  twins and a first fade compiles nothing.
+- **Decided, and why.** *Stable*: keyed on the pixel and nothing else, no
+  clock or frame count, so a still body under a still camera keeps the same
+  pixels; a moving one slides over a fixed pattern. At the size edge a body
+  is three to six pixels, and no 4x4 pattern gives a handful of pixels
+  sixteen levels: each is kept or dropped by where it lands, so the fade there
+  is in HOW MANY pixels survive across bodies and frames (in expectation `f`),
+  and a moving body twinkles before it goes — the price of fading an opaque,
+  depth-writing body without a blended pipeline and a sort, paid only in the
+  band. *The visor and its bloom*: one vertex module for both passes, both
+  full-size, the same rank, so a pixel the main pass's visor dropped is never
+  in the mask, and a body still drops whole, its emissive with it. *The
+  ink*: left alone — a kept pixel writes depth and is inked like any
+  silhouette pixel; a discarded one shows what is behind it, unchanged (the
+  body-minus-empty difference is black in the holes at every step of both
+  walks below). *The shadows*: not faded — the bodies' map and the lamps'
+  atlas cast the proxy boxes while the switch is on, as the size gate never
+  reached them either; the bodies' map gathers within its window's side of
+  a focus 8 m ahead (56 m at most), short of every shipped map's distance
+  fade (70 m at the earliest, the 78 m valleys), and a door in a shadow map
+  would be a pattern in its texels, not the screen's.
+- **The corpse's measure is NOT moved to the torso** (X4.1b and X4.1d asked
+  it be considered here), recorded as owed with its reason: the distance
+  fade's zero rests on the measure lying within a radius of the point the
+  roster switches a body off by, which a corpse's root does and a torso
+  thrown 1-4 m does not — a torso measure would put a thrown corpse's fade
+  up to 4 m / 30 m = 0.13 above zero at the switch on Sarab, a pop back. It
+  owes the roster's switch the same point first. At the size gate the root
+  costs under 1% of projected size at the desktop's ~1,075 m and ~1.4% at a
+  phone's 290 m.
+- **A body walked through both edges, at 3440x1440** (scratch
+  `fadewalk.mjs`; the bank's harness standing roster bodies, a frame with the
+  body and one without at each step, the roster's update held as the bank
+  holds it):
+  - **The distance edge**, Sarab, the `rig-far` camera (10° field), one
+    soldier on the highway: whole to 268 m (the body-minus-empty difference
+    63,876 summed over 917 px), then 271 m fade 0.93 (63,677), 274 0.83
+    (63,182), 277 0.73 (60,310), 280 0.63 (51,462), 283 0.53 (44,152), 286
+    0.43 (39,467), 289 0.33 (27,202), 292 0.23 (22,469), 295 0.13 (14,495),
+    298 m fade 0.03, nothing kept, and 300 m not drawn (the switch is at
+    300). The holes are black in the difference: the scene behind, unchanged.
+  - **The size edge**, the proving ground (fog 2,400 m and no
+    `bodyDrawDistance`, so only the gate bites; at 1440 rows and the hip
+    field the gate is at ~1,075 m), a rank of sixteen soldiers 6.7 m apart
+    seen from 150 m up (one body there is a handful of pixels, and a handful
+    cannot show a share): body pixels differing by more than 40/255, 54 at
+    620 m (whole), 44 at 698 (whole), then 35 (fade 0.91), 34 (0.77), 22
+    (0.63), 14 (0.51), 11 (0.40), 11 (0.30), 4 (0.21), 5 (0.12), 3 (0.06),
+    0 at fade 0.02, and not drawn from 1,077 m.
+  - Frames and contact sheets: `scratchpad/x41e/walk/` (`distance-sheet.png`,
+    `size-sheet.png`, every frame pair).
+- **And in live rounds, nothing pops at an edge** (scratch `livepop.mjs`:
+  every frame, every pooled body's switch, fade, verdict, distance and
+  projected size; a CROSSING is a body alive and switched on both frames —
+  or switched off at the roster's own edge — that moved under a metre, which
+  leaves out deaths, respawns and mounts):
+  - Sarab offline, 3440x1440, 9,000 frames: 10,054 faded body-frames, up to
+    50 main-pass draws and 20 mask draws on a frame with a body fading; **13
+    leaves at the distance edge, every one by the fade, the largest fade the
+    frame before 0.0013**; none by the roster's switch.
+  - Coldharbour offline at the phone's 832x384, where the size gate bites at
+    ~290 m: 34,928 faded body-frames; **53 leaves and 55 arrivals at the size
+    edge, the largest fade the frame before a leave 0.104 and on an arrival
+    0.139** — against 1.0 before this step — and those are frames where the
+    projected size itself moved 6% with the distance fixed (the camera's
+    field moving under it, not investigated); the ramp's input jumped, not
+    the ramp.
+  - A netplay round against a local `dist-server` (`?mp=`, Sarab, the
+    authority's round), 3440x1440, 6,000 frames: 3,379 faded body-frames, up
+    to 52 draws and 22 mask draws; 2 leaves at the distance edge, both by the
+    fade, the largest 0.0014.
+  - No console or page error in any of them.
+- **Measured.** **The bank** `--check --keep` against a BEFORE at dd902aa in
+  a worktree, the run split into several invocations (`FINDINGS.md` 64's
+  device hang stopped the BEFORE twice — Harrowmead's `view-iron-hip` and a
+  census at Cinderhaven — and the hung invocations were re-run alone): **no
+  row moved** — 59 of 61 byte-identical (`comparePngs`, max 0), `rig-near`
+  and `rig-far` among them (`rig-far`'s body at 250 m is whole: its fade
+  starts at 268.9). The other two were diagnosed, not passed: `sarab/ground`
+  (0.0048% of pixels, max 2) differed between the BEFORE's own two runs and
+  the AFTER matches its second; `sarab/shelf` (ONE pixel, (143, 731), by
+  1/255, no body in frame) is the worktree's — the parent commit run in the
+  MAIN tree (`git stash`) draws the AFTER's bytes on all eleven Sarab rows,
+  and bisecting the step's own changes out of the AFTER (no fade at all, no
+  faded pipelines, no fade buffer) left the pixel where it was. The same 34
+  stale rows on both sides, no console or page error. **`census --against`**
+  the BEFORE: every total equal (Hollowmere 278, Greyfen 205, Coldharbour
+  672, Harrowmead 847, Sarab 661, Cinderhaven 186, Kurenai 125), every row
+  `=`. **`gate.mjs`** clean on seven. **`shaders.mjs`** clean on seven, ours
+  17/17 (21/21 Sarab and Cinderhaven, 23/23 Coldharbour) — it builds the
+  world's programs; the bodies' six are built in the page, and every round
+  above drew them. Typecheck, build (`check-babylon-free`: 15 simulations,
+  no path), corecheck and `parity` pass. **`clients.mjs --check`** identical
+  on all three maps (452fc9d44a88e3a6, 5504610c69d82176, 4b1f60f31d44f6f3;
+  nodes and every body identical). **`drop.mjs --check --exact`** "bits
+  identical" on all seven maps.
+  **X0.3 on the desktop** (`bench.mjs sarab cinderhaven --max --gpu`,
+  uncapped, 3440x1440, 24 a side, the BEFORE in the worktree at dd902aa and
+  the AFTER alternated invocation by invocation; the second BEFORE hung in
+  Cinderhaven — `FINDINGS.md` 64 — and was killed and re-run after the
+  third, so three BEFOREs against four AFTERs; the canonical fight hashes,
+  `986c2e35557fb679` and `2f97c9072ab1762b`, on every run): **the dithered
+  pipelines cost nothing material** — mean frame new / old on Sarab 1.006
+  over the vantages, 1.000 on the path, 1.020 in the fight (6.53 to 6.66
+  ms, the AFTER's runs 6.51-6.84 against the BEFORE's 6.43-6.58), and on
+  Cinderhaven 0.995, 1.000 and 0.996; `gpu.frame` in the fights 1.005 and
+  0.999. Nothing near the protocol's ~8%.
+- **Deviations.** The bank rows on `--check` grade the plain pipelines only
+  — no row has a body in a band — so the twins' pixels are proven by the two
+  walks and the live rounds, not the bank. A body in the size band twinkles
+  as it moves (above). `CLAUDE.md` stays 1,543 lines: the rendering section
+  keeps its 135 by dropping the rank's "because" (the argument is in
+  `docs/rendering.md`). The blob disc under a soldier is untouched (it fades
+  with the fog and takes the loose size gate as it did).
+- **Owed onward.** **The phone walk-through — owed by the user's decision**
+  (2026-10-30), beside the phone's FOLLOW-UP reading every step since X3.3c
+  has owed: the size edge is the phone's (190-290 m on Coldharbour), and
+  whether a 3-6 px body twinkling out reads as a fade there is a look call
+  for eyes on that screen. The corpse's measure at its torso, above, with
+  the roster's switch moved to the same point. Whether 300 m on Sarab (and
+  420 on Cinderhaven) are the right distances is now a look call rather
+  than a pop (`FINDINGS.md` 32, open bullet; 39's +21.4% at 300 on
+  Cinderhaven is the saving it could buy). X4.1d's owed items stand (the
+  rank's vertex surplus, the editor's body draw, the compose cost).
 
 ### X4.2 — Vehicles (PERF_PLAN A3) — **M** (decision)
 

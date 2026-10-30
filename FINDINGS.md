@@ -1173,28 +1173,6 @@ part is not a real mesh; what it does not yet do is let one avoid BEING one.
 
 ---
 
-## 30. A body past `bodyDrawDistance` POPS, and no fade has been built
-
-**Status:** the gate landed (`ENGINE_UPGRADE.md` S8, `EnvironmentSpec.bodyDrawDistance`,
-stated by Sarab and Cinderhaven). What is open is how it ends.
-
-- **A fade was not built.** The gate is a hard on/off — `NetRoster`'s
-  `viewDistance` and `RagdollSystem`'s, the one number `bodyDrawDistanceOf`
-  resolves — as the retired `CONFIG.bots.lodDisableDistance` always was, and
-  it was invisible only because it sat where everything was already
-  `fogColor`. If a stated `bodyDrawDistance` reads badly, a short fade
-  band is the obvious next thing and nothing here has costed one.
-- **There is a SECOND hard pop, and on a phone it is the nearer one.**
-  `WorldCulling.offer`'s size gate (`CONFIG.graphics.culling.minPixels`, 3 px)
-  drops a whole body off its rig root by projected size, and its own comment
-  measures where that lands on Coldharbour: **810 m on a 1080-tall viewport
-  but 290 m on a 384-tall one** — past the map's 480 m on a desktop, and well
-  inside it on a phone, where a body pops out in clear air rather than in fog.
-  A fade built for `bodyDrawDistance` alone would not reach it; finding 39
-  argues the gate.
-
----
-
 ## 31. The authority across a rotation: a rebuild in the same process gets slower, and no measured tick has had a person in it
 
 **Status:** open. The tick itself is answered (`ENGINE_UPGRADE.md` S9, and
@@ -1327,11 +1305,13 @@ lever 1, and it is the whole of what was needed.
 
 ### What is open
 
-- **Nobody has watched a body POP at 300 m.** `bodyDrawDistance` is stated for
-  the first time here and finding 30's open thread — what the drop LOOKS
-  like on a map that states one — is still open, because the measurement above
-  is a frame rate and not a pair of eyes. The 300 was chosen so that the pop
-  happens in haze rather than in clear air; that is a hypothesis.
+- **A body no longer POPS at 300 m; it fades** (`BABYLON_EXIT.md` X4.1e: a
+  screen door over the last 30 m, and at the size gate too — photographed on
+  this map's highway, whole at 269 m and gone by 298). What is still open is
+  whether 300 is the right distance to look at, which is now a look call
+  rather than a pop: the 300 was chosen so that the drop happens in haze
+  rather than in clear air, and that is still a hypothesis nobody has judged
+  by eye in a round.
 - **The sand's bump reads as scales at a grazing angle.** Visible down the
   wadi's bank in the shots this map was tuned against — `floorSurface: "sand"`
   is 0.015 of relief over a 5 m tile, and at a few degrees off the surface the

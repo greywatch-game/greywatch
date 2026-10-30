@@ -300,9 +300,14 @@ clamped to `fogEnd` — so this gate is still exactly where the rig stops being
 drawn, whichever of the two numbers decided that. It is `ENGINE_UPGRADE.md` S8,
 and what it is for is a map with no weather: at 480 or 520 m these two gate
 nothing at all, and every rig on the map is drawn at every moment. A map that
-pulls them in is trading a body popping in clear air for the draws — which is a
-map author's call and never this system's, which is why nothing here has a
-number of its own.
+pulls them in trades a body FADING out in clear air for the draws (since
+`BABYLON_EXIT.md` X4.1e the drawing ramps a body out over the last tenth of the
+distance, ending one measure-radius short of it, so neither gate pops — `docs/rendering.md`,
+"The bodies, ours") — which is a map author's call and never this system's,
+which is why nothing here has a number of its own. **A corpse is still MEASURED
+at its root**, which stays where it fell (it only sinks) while a blast throws
+the torso 1-4 m: that is what keeps the fade's zero inside the roster's switch
+for a corpse too, so a torso measure owes the switch the same point.
 
 **A full pool EVICTS rather than refusing, and `takeSlot` is three tiers deep**: a
 free slot, then a sinking one, then the OLDEST corpse. Only the last costs anything,

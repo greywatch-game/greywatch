@@ -81,7 +81,11 @@
  *   here is the body's half of the size gate — measured ONCE, off the body's
  *   own measure, dropping the body whole (`drawsBody`), which is what this
  *   class always was the one class to get — handed to the drawing as a
- *   verdict, as `reachGate` hands the world's numbers to its cull.
+ *   verdict, as `reachGate` hands the world's numbers to its cull. Since
+ *   X4.1e the verdict has a FADE (`bodyFade`): the same measure ramps a body
+ *   out at the size gate and short of `bodyDrawDistance`, and the drawing
+ *   spends it as a screen door, so a body leaves at either edge without a
+ *   pop.
  * - **Loose** — everything else in the scene: the terrain, the roads, the rim,
  *   the effect pools (tracers, shards, grenades, rubble), the sky, the
  *   water, the grass, the viewmodel, the hulls, and every visual an EDITOR
@@ -211,12 +215,14 @@ interface Pool {
   /** Whether the body was switched on as this frame's list was offered. */
   on: boolean;
   /**
-   * Whether this body projected under the size gate THIS FRAME — one test
-   * taken off its measure in `offer`, the same answer for the whole body.
-   * On the pool because it is per body and per frame, and the body is the
-   * thing that already exists.
+   * How much of this body is drawn THIS FRAME, 0 to 1 — the lesser of its
+   * fade at the distance edge and at the size gate, taken off its measure in
+   * `offer` once, the same answer for the whole body (`BABYLON_EXIT.md`
+   * X4.1e). 0 is not drawn: projected under the size gate, or past the end
+   * of the distance fade. On the pool because it is per body and per frame,
+   * and the body is the thing that already exists.
    */
-  small: boolean;
+  fade: number;
 }
 
 /**
@@ -530,22 +536,49 @@ export class WorldCulling {
    */
   setPools(bodies: readonly PooledBody[]): void {
     this.pools = [];
-    for (const body of bodies) this.pools.push({ body, on: body.enabled, small: false });
+    for (const body of bodies) this.pools.push({ body, on: body.enabled, fade: 1 });
     this.stats.pooled = this.pools.length;
   }
 
   /**
    * Whether pooled body `i` (`setPools`' order) is drawn THIS frame: switched
-   * on as the list was offered, and — under the size gate — not projected
-   * under it, measured once off its own measure and the same answer for the
-   * whole body, its visor with it. What Babylon's mesh walk decided for every
-   * mesh of a rig until our renderer drew bodies (`BABYLON_EXIT.md` X4.1d);
-   * read by `Game.drawBodies` after `update`, the same frame.
+   * on as the list was offered, and with some of it left to draw
+   * (`bodyFade` above 0) — not projected under the size gate, nor past the
+   * end of its distance fade — measured once off its own measure and the
+   * same answer for the whole body, its visor with it. What Babylon's mesh
+   * walk decided for every mesh of a rig until our renderer drew bodies
+   * (`BABYLON_EXIT.md` X4.1d); read by `Game.drawBodies` after `update`, the
+   * same frame.
    */
   drawsBody(i: number): boolean {
     const pool = this.pools[i];
-    return pool !== undefined && pool.on && !pool.small;
+    return pool !== undefined && pool.on && pool.fade > 0;
   }
+
+  /**
+   * How much of pooled body `i` is drawn this frame, 0 to 1
+   * (`BABYLON_EXIT.md` X4.1e): 1 is whole, between is the share of its
+   * pixels a screen-door dither keeps (`render/BodyDraw.ts`), 0 is not
+   * drawn (`drawsBody`). One number for the whole body, its visor with it,
+   * read by `Game.drawBodies` after `update`, the same frame. See `offer`.
+   */
+  bodyFade(i: number): number {
+    const pool = this.pools[i];
+    return pool !== undefined && pool.on ? pool.fade : 0;
+  }
+
+  /**
+   * The map's body draw distance (`bodyDrawDistanceOf`), which the roster's
+   * switch and the ragdoll pool's refusal are handed too (`setViewDistance`):
+   * here it is where a body's DISTANCE fade ends (`offer`), never a gate of
+   * this file's own. Infinite — no distance fade — until a map pushes one.
+   */
+  setBodyDrawDistance(metres: number): void {
+    this.bodyDraw = metres;
+  }
+
+  /** See `setBodyDrawDistance`. */
+  private bodyDraw = Number.POSITIVE_INFINITY;
 
   /**
    * The box our renderer's cull measures a surface's reach to, by the BLOCK
@@ -775,10 +808,26 @@ export class WorldCulling {
     // our renderer's drawing reads: `BABYLON_EXIT.md` X4.1d). It is the same
     // thing `bodyDrawDistanceOf` does, in SCREEN space rather than in metres,
     // so it needs no per-map number and loosens by itself when a sight goes up.
+    //
+    // **And it LEAVES by a fade at both edges, never a pop** (X4.1e,
+    // `CONFIG.graphics.culling.bodyFade`): the same measure answers how much
+    // of the body is drawn, the lesser of two ramps, which the drawing spends
+    // as a screen-door dither (`bodyFade`). A fade built for one gate misses
+    // the other — on a phone the size gate is the NEARER one.
+    const fadeBand = CONFIG.graphics.culling.bodyFade;
+    const bodyDraw = this.bodyDraw;
+    const distanceFade = !this.warm && Number.isFinite(bodyDraw);
+    // Whole above `size` times the gate: compared squared, as `tooSmall` is.
+    const wholePx2 = px2 * fadeBand.size * fadeBand.size;
+    const sizeBand = minPx * (fadeBand.size - 1);
     for (let i = 0; i < this.pools.length; i++) {
       const pool = this.pools[i];
-      if (!gate || !pool.on) {
-        pool.small = false;
+      if (!pool.on) {
+        pool.fade = 0;
+        continue;
+      }
+      if (!gate && !distanceFade) {
+        pool.fade = 1;
         continue;
       }
       // **The measure is composed FRESH, and without that the drop LATCHES**
@@ -787,7 +836,40 @@ export class WorldCulling {
       // body's joints on every call, one root compose per body per frame, so
       // it is this frame's by construction.
       pool.body.measure(bodySphere);
-      pool.small = tooSmall(bodySphere.x, bodySphere.y, bodySphere.z, bodySphere.radius, eye, perRad, px2);
+      const dx = bodySphere.x - eye.x;
+      const dy = bodySphere.y - eye.y;
+      const dz = bodySphere.z - eye.z;
+      const d2 = dx * dx + dy * dy + dz * dz;
+      let fade = 1;
+      // THE DISTANCE EDGE. The switch is the roster's (`NetRoster.update`,
+      // past `bodyDrawDistance` off the body's POSITION, its feet), and this
+      // fade must be ZERO wherever that switch could still be on — or the
+      // body pops at the end of its own fade. The measure's centre is not the
+      // feet, but the feet are inside the measure's sphere, so the two
+      // distances from any eye differ by at most its RADIUS (the triangle
+      // inequality): ending the fade one radius short of the distance makes
+      // it zero there from any eye at any height, with no second reading of
+      // the roster's point. (A corpse's root stays where it fell, as its
+      // position does; it only sinks.)
+      if (distanceFade) {
+        const end = bodyDraw - bodySphere.radius;
+        const d = Math.sqrt(d2);
+        fade = Math.min(1, Math.max(0, (end - d) / (bodyDraw * fadeBand.distance)));
+      }
+      // THE SIZE EDGE: the same test as ever for the drop (`tooSmall`, so a
+      // body is dropped exactly where it was), and between the gate and
+      // `size` times it a ramp in projected PIXELS.
+      if (gate && fade > 0) {
+        if (tooSmall(bodySphere.x, bodySphere.y, bodySphere.z, bodySphere.radius, eye, perRad, px2)) {
+          fade = 0;
+        } else {
+          const w = 2 * bodySphere.radius * perRad;
+          if (w * w < wholePx2 * d2) {
+            fade = Math.min(fade, Math.max(0, (w / Math.sqrt(d2) - minPx) / sizeBand));
+          }
+        }
+      }
+      pool.fade = fade;
     }
     let k = 0;
     for (let i = 0; i < n; i++) {

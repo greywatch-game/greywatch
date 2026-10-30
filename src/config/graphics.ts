@@ -1323,6 +1323,32 @@ export const graphics = {
      * 0 disables it.
      */
     minPixels: 3,
+    /**
+     * How a BODY leaves at the two gates that take it off whole — the
+     * distance (`bodyDrawDistance`) and the size gate above — instead of
+     * popping (`BABYLON_EXIT.md` X4.1e, `PERF_PLAN.md` A4): a screen-door
+     * dither, its share of drawn pixels the body's FADE (`WorldCulling
+     * .bodyFade`). A fade built for one gate misses the other, so both ramp
+     * here and a body takes the lesser.
+     */
+    bodyFade: {
+      /**
+       * The share of the map's `bodyDrawDistance` a body fades over, ending
+       * one measure-radius short of it — so the fade is zero wherever the
+       * roster's own switch could still show the body (`WorldCulling.offer`
+       * argues the radius). 0.1 is 30 m on Sarab, 42 on Cinderhaven and
+       * 7.8 on the 78 m valleys.
+       */
+      distance: 0.1,
+      /**
+       * How many times `minPixels` a body's projected diameter must be for it
+       * to be drawn whole; between that and `minPixels` it fades, linearly in
+       * pixels. 1.5 is 3 to 4.5 px: on Coldharbour from ~540 m to the 810 m
+       * drop on a 1080-tall viewport, and from ~190 m to 290 m on a phone's
+       * 384.
+       */
+      size: 1.5,
+    },
   },
   /**
    * How our renderer cuts the blocks it draws (`render/WorldBlocks.ts`,

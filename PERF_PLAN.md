@@ -304,7 +304,13 @@ vehicle draw distance of 420 m +15.4% (and 420 is a body's number — a hull is
 - The draw distance is an `EnvironmentSpec` field defaulting to "unaffected",
   like `bodyDrawDistance`, or a derived multiple of it — decide which in the step.
 
-### A4 — A body fades instead of popping (`FINDINGS.md` 30) — **M**
+### A4 — A body fades instead of popping (`FINDINGS.md` 30) — **M** — **LANDED** as `BABYLON_EXIT.md` X4.1e (HASH)
+
+**Landed:** a screen door at both edges, the value per instance in the
+fragment stage (`BODY_FADE`), drawn by a faded twin of each body program for
+the bodies in a band and the plain ones for the rest — `docs/rendering.md`,
+"The bodies, ours", has the design and `BABYLON_EXIT.md` X4.1e what was
+measured. The plan below is kept as it was written.
 
 Not a saving by itself; it is what makes the saving acceptable. Finding 39
 measured `bodyDrawDistance` 420 → 300 at +21.4% on Cinderhaven and left it as a
