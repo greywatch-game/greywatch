@@ -432,8 +432,11 @@ FINDINGS #8's older 1.37 ms for four does not reproduce; see the note there.
   its materials are shared per COLOUR by `CelMaterialFactory`, so an alpha write would
   dim every bot on the map.
 
-The bone table, pivots and joint limits live in `SoldierModel.ts` with the boxes
-they are measured from; `CONFIG.bots.death` owns the sim (impulse, gravity, damping,
+The pivots and joint limits live in `SoldierModel.ts` with the boxes they are
+measured from, and the bone table (`RAGDOLL_BONES`) beside it in
+`entities/soldierBones.ts` — measured off those same boxes, and moved out of the
+rig only so a shadow's boxes can be had without loading Babylon (`BABYLON_EXIT.md`
+X4.1c's review); `CONFIG.bots.death` owns the sim (impulse, gravity, damping,
 corpse life). The impulse needs no new plumbing: `takeDamage` is already handed the
 shooter's origin (or the blast centre) and what delivered it, so `Bot` captures
 `deathFrom`/`deathDamage`/`deathKind` there, the authority's `kill` event carries
@@ -497,9 +500,9 @@ splash, both anti-tank items and a HULL BREWING UP with somebody inside it
 (`docs/vehicles.md`, "four ways out"), and only `bullet` folds.
 
 **The pool holds `RagdollSubject`s and cannot tell the two kinds apart.** That
-interface lives in `SoldierModel.ts`, beside the rig and bone table it is a fact
-about — not in `RagdollSystem`, because `DeathCam` needs it too and a system may not
-import another one. A `NetSoldier` satisfies it structurally and imports nothing
+interface lives in `SoldierModel.ts`, beside the rig it is a fact about (the bone
+table is `soldierBones.ts`') — not in `RagdollSystem`, because `DeathCam` needs it
+too and a system may not import another one. A `NetSoldier` satisfies it structurally and imports nothing
 of the pool's, which keeps it free of any knowledge that a physics engine exists
 — and the `Bot` itself is not a subject at all, having no rig and, since X2.5c
 C4, no place on the page: `NetRoster.onDeath` hands the pool the slot's

@@ -4047,8 +4047,12 @@ decides everything — where the window stands, the light's matrix
 cast and as what — and hands the frame's proxies over (`BodyShadowMap.draw`).
 
 - **It is ours in EVERY state, and there is no generator behind it.** It
-  needs nothing of the handover — its casters are proxies, never the world —
-  so an editor build draws it too. A pipeline it cannot build (asked ONCE, for
+  needs nothing of the handover — its casters are proxies, never the world.
+  An editor build prepares NO frame of ours, so there the map is only ever
+  CLEARED, at once (`BodyShadowMap`'s `clearNow`, on a second ask with no
+  frame prepared between), and an ask holding proxies would never be drawn —
+  that state is never left holding the last round's bodies, and shows no new
+  ones. A pipeline it cannot build (asked ONCE, for
   the session) is the round's failure: `Game` hands the map each round's
   `worldFailed` at the install (`setFailure`), and every round after a failed
   build fails on it, rather than playing with no body map; an editor build

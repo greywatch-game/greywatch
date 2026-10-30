@@ -132,6 +132,12 @@ const SIMULATIONS = [
   // whose world matrices Babylon only reads — the half a body is drawn from
   // once Babylon draws none of it (X4.1d).
   "src/entities/rigJoints.ts",
+  // Not a simulation, and held as one for the same reason again: what a
+  // soldier and a hull are to a shadow (X4.1c), composed in `src/math` off the
+  // bone table (`soldierBones.ts`) and a hull's own fields, so that both maps'
+  // proxies can be drawn with no node behind them. It reached Babylon through
+  // the rig until X4.1c's review moved the bone table out of `SoldierModel`.
+  "src/core/proxyBoxes.ts",
 ];
 
 /**

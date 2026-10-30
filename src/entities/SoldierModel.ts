@@ -5,8 +5,10 @@
  * the procedural poser (animateSoldier: a `SoldierPose` — gait in any
  * direction, aim, twist, crouch, the rifle's kick, carry and reload — solved by
  * `soldierPose.ts` and written onto the rig's joints by `poseSoldier`, with
- * both arms solved onto the rifle here; never clips), plus the bone table
- * `RagdollSystem` builds a corpse's rigid bodies from. What DRIVES a pose is
+ * both arms solved onto the rifle here; never clips), plus the pins between
+ * the bones `RagdollSystem` builds a corpse's rigid bodies from
+ * (`RAGDOLL_LINKS`; the bones themselves are `soldierBones.ts`', measured
+ * off the box lists here and held Babylon-free there). What DRIVES a pose is
  * `SoldierMotion`'s; what a pose IS, as numbers, and the skeleton's measures
  * this rig is built from, are `soldierPose.ts`'s — so the simulation can ask
  * where a rifle is without a rig.
@@ -52,6 +54,7 @@ import { loft, type Ring } from "./facet";
 import { createBox } from "../geometry/primitives";
 import { Matrix, Quaternion, Vector3, type Vector3Like } from "../math";
 import { Joint, JointTree, measureBody, type BodySphere } from "./rigJoints";
+import type { BoneJoint } from "./soldierBones";
 import { drawnMesh, mergeParts, Part } from "../world/parts";
 import {
   CENTER_HEIGHT,
@@ -142,8 +145,9 @@ const GUN = "#2b2b33";
  * here**, because the friend/foe colour is a rule the deploy map, the flag
  * markers and the killfeed all share: a soldier painted in a fifth colour of
  * its own would be the one body on the field wearing the wrong side's marker.
- * The other three are ART and live here for the reason `RAGDOLL_BONES` does —
- * they belong with the box lists they are painted onto.
+ * The other three are ART and live here — they belong with the box lists they
+ * are painted onto, which `RAGDOLL_BONES` (`soldierBones.ts`) is measured
+ * off.
  */
 export interface SoldierKit {
   /** Plate carrier, helmet and thighs: the hard shell, and most of the body. */
@@ -247,21 +251,6 @@ const warnedOffPalette = new Set<string>();
 const KIT_COLORS: readonly Color3[] = KIT_PALETTE.map((hex) =>
   Color3.FromHexString(hex),
 );
-
-/** Which joint a ragdoll bone hangs off. Keys into `SoldierRig`. */
-export type BoneJoint =
-  | "torso"
-  | "head"
-  | "shoulderL"
-  | "shoulderR"
-  | "elbowL"
-  | "elbowR"
-  | "hipL"
-  | "hipR"
-  | "kneeL"
-  | "kneeR"
-  | "ankleL"
-  | "ankleR";
 
 /**
  * Every joint the rig poses, bone or not.
@@ -403,115 +392,6 @@ function solveArm(
   _q.toEulerAnglesToRef(shoulder);
   return ELBOW_SIGN * Math.acos(clamp(fu, -1, 1));
 }
-
-/**
- * One rigid body's box, in its joint's own frame.
- *
- * These are ART constants and live here rather than in `CONFIG` for the reason
- * the file header gives: they are measured off the box lists below and have to
- * move when those move. A mass is not quite art, but it is meaningless away
- * from the extents it goes with, so the pair stays together — what `CONFIG`
- * owns is the sim (impulse, gravity, corpse life), not the skeleton.
- *
- * The extents are the union of each limb's STRUCTURAL boxes, not a fitted hull:
- * a bot is a stack of blocks and a box per limb is exactly the right fidelity
- * for one. What is left out is kit — a radio antenna, a helmet's peak, a
- * respirator, a shroud, a glove — because a collider fatter than the body makes
- * a corpse hover, which is the same tell `terrainSlab` documents from the other
- * side, and none of those is what a body lands on.
- */
-export interface BoneSpec {
-  joint: BoneJoint;
-  /** Full extents (not half), in the joint's frame. */
-  size: [number, number, number];
-  /** Box centre in the joint's frame — a limb hangs BELOW its joint. */
-  center: [number, number, number];
-  mass: number;
-}
-
-/**
- * The ragdoll's twelve bones, derived from the segment box lists below. Extents
- * are the union of a joint's boxes, trimmed inside the silhouette — see
- * `BoneSpec` for what that leaves out and why.
- *
- * **The legs are three bones apiece — thigh, shin and boot — because a body can
- * die crouched.** They were one rigid 0.72 m segment from hip to sole until
- * they had to be: a folded leg is that shape nowhere, so `RagdollSystem.spawn`
- * refused a body caught mid-crouch outright and the tween took it, which meant
- * the one stance a player holds while being shot at was also the one stance
- * that could not fall over. The three boxes here are the three the leg is
- * DRAWN from, hung off the same hip, knee and ankle the crouch bends, so the
- * collider now agrees with the mesh in every pose the rig can hold rather than
- * only in the standing one. There is still no spine. The arm was one welded
- * bone until it was given an elbow to put both hands on the rifle, and it is
- * two now, upper arm and forearm, hung off the same shoulder and elbow.
- *
- * The three masses split the leg's old 15 where the leg's own weight is
- * (8/5/2), and the arm's old 5 splits 3/2, so the body still totals 80 kg and
- * every number in `CONFIG.bots.death.impulse` means what it did when it was
- * tuned.
- *
- * **The rifle is deliberately NOT a bone.** It stays parented to `torso` and
- * rides that body for free. Giving it one would drop it out of hands that
- * cannot open — a fist has no finger to let go with — so the weapon would fall
- * away while two fists stayed cupped around nothing, which reads as a bug
- * rather than as a dropped weapon. What a corpse does instead is let its arms
- * fall off the rifle, which is what a body does.
- */
-export const RAGDOLL_BONES: readonly BoneSpec[] = [
-  // Chest: the carrier, the pack and the bandolier, y in [-0.03, 0.49]. The
-  // collar reaches 0.54 and the antenna off the pack 0.79; neither is body.
-  { joint: "torso", size: [0.42, 0.52, 0.3], center: [0, 0.23, -0.03], mass: 34 },
-  // Helmet, face and visor, y in [-0.025, 0.245] with the neck trimmed off
-  // below. Neither side's face — a
-  // Valeguard peak, a Redline respirator and shroud — is inside this box.
-  { joint: "head", size: [0.26, 0.26, 0.27], center: [0, 0.105, 0], mass: 6 },
-  // Upper arm: shoulder to elbow, the pauldron trimmed off the top of it.
-  {
-    joint: "shoulderL",
-    size: [0.13, 0.33, 0.13],
-    center: [0, -0.14, 0],
-    mass: 3,
-  },
-  {
-    joint: "shoulderR",
-    size: [0.13, 0.33, 0.13],
-    center: [0, -0.14, 0],
-    mass: 3,
-  },
-  // Forearm and glove, y in [-0.35, 0.035], the fingertips trimmed.
-  {
-    joint: "elbowL",
-    size: [0.1, 0.36, 0.1],
-    center: [0, -0.16, 0],
-    mass: 2,
-  },
-  {
-    joint: "elbowR",
-    size: [0.1, 0.36, 0.1],
-    center: [0, -0.16, 0],
-    mass: 2,
-  },
-  // Thigh: hip to knee, y in [-THIGH, 0].
-  { joint: "hipL", size: [0.17, THIGH, 0.18], center: [0, -THIGH / 2, 0], mass: 8 },
-  { joint: "hipR", size: [0.17, THIGH, 0.18], center: [0, -THIGH / 2, 0], mass: 8 },
-  // Shin: knee to ankle, y in [-SHIN, 0].
-  { joint: "kneeL", size: [0.15, SHIN, 0.15], center: [0, -SHIN / 2, 0], mass: 5 },
-  { joint: "kneeR", size: [0.15, SHIN, 0.15], center: [0, -SHIN / 2, 0], mass: 5 },
-  // Boot: the one bone that is mostly forward of its joint, not below it.
-  {
-    joint: "ankleL",
-    size: [0.17, 0.08, 0.24],
-    center: [0, -0.02, 0.03],
-    mass: 2,
-  },
-  {
-    joint: "ankleR",
-    size: [0.17, 0.08, 0.24],
-    center: [0, -0.02, 0.03],
-    mass: 2,
-  },
-];
 
 /**
  * One bone's pin to the bone it hangs off: which one that is, where it hangs in

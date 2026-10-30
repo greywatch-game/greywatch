@@ -3567,7 +3567,7 @@ module from X2.2. When the last one lands, Babylon draws nothing but the post
 chain, and the frozen cel-material cache and its traps are deleted with
 `CelMaterialFactory`'s Babylon half.
 
-### X4.1 — Bodies (PERF_PLAN C6, A4) — **L, as five sub-steps** (split 2026-10-29) — X4.1a **LANDED** (a417bfc, review fixes after it), X4.1b **LANDED** (f554b68, review fixes after it), X4.1c **LANDED** (3a07a68)
+### X4.1 — Bodies (PERF_PLAN C6, A4) — **L, as five sub-steps** (split 2026-10-29) — X4.1a **LANDED** (a417bfc, review fixes after it), X4.1b **LANDED** (f554b68, review fixes after it), X4.1c **LANDED** (3a07a68, review fixes after it)
 
 Every body a page draws — `NetSoldier`'s rig, a corpse, the death cam's
 stand-in — comes off Babylon's scene, along with the moon's body shadow map,
@@ -3979,7 +3979,8 @@ Havok's chaos carries that into where it comes to rest).
   pose, or a sphere over its twelve), so the fog-wall gate and the size
   gate's whole-body drop judge a thrown body where it lies.
 
-**X4.1c landed** (3a07a68; 2026-10-30; no picture change on any bank row, and
+**X4.1c landed** (3a07a68, the post-commit review's fixes after it;
+2026-10-30; no picture change on any bank row, and
 two by construction off it, said under Deviations: the frame right after a
 rung change re-makes the map, where Babylon's freshly built generator drew no
 proxy and ours draws them, and a moving hull's box, which the deleted mesh
@@ -4022,8 +4023,10 @@ read drew a frame behind the hull).
   `hullPointToRef`'s chain, which now calls it: the body node's compose, unit
   scale, yaw only) and `hullCentreToRef` is that frame's translation row
   (`Math.fround` of `pos`) for the lamps' gather; `proxyBoxes.ts` imports no
-  Babylon now. `VehicleView.spec` (there only for the shadow maps) is gone, and
-  its body box is the rig's parent and nothing else.
+  Babylon directly now — and, since the review's fix below, reaches none
+  (`check-babylon-free` holds it as a root). `VehicleView.spec` (there only
+  for the shadow maps) is gone, and its body box is the rig's parent and
+  nothing else.
 - **What a failure becomes** (decided here): the map has no generator behind
   it, so a pipeline it cannot build — asked ONCE, for the session, at `Game`'s
   construction — is the ROUND's failure, routed as the world's passes' are:
@@ -4034,7 +4037,10 @@ read drew a frame behind the hull).
   rather than a round played with no body map. Not through `BlockHandover`:
   the bodies are not the world it hands over, and the generation guard plus
   `worldFailed`'s owner test do what `failFor` does there. The pass needs
-  nothing else of the handover, so an editor build draws it too.
+  nothing else of the handover — but an editor build prepares NO frame of
+  ours, so there the map is only ever CLEARED, at once (`clearNow`), and an
+  ask holding proxies would never be drawn (`BodyShadowMap.ts`' header; the
+  review's correction below).
 - **The oracle — the map read back against Babylon's, while both existed.**
   For the run only, `BodyShadows` also kept the deleted path verbatim (a
   `DirectionalLight` pinned to the proxy layer, a `ShadowGenerator` with
@@ -4115,8 +4121,10 @@ read drew a frame behind the hull).
   Cinderhaven 186, Kurenai 125). **`gate.mjs`** clean on seven (a round
   offline on each). **`shaders.mjs`** clean on seven, ours 17/17 (21/21 Sarab
   and Cinderhaven, 23/23 Coldharbour). Typecheck, build, corecheck and
-  `parity` (eight maps) pass; `check-babylon-free` walks `proxyBoxes.ts` and
-  `src/render/` with no path to Babylon. A netplay round after the fix (a
+  `parity` (eight maps) pass; `check-babylon-free` walks `src/render/` with
+  no path to Babylon. (This said it walked `proxyBoxes.ts` too; at 3a07a68 it
+  did not — no root, and reaching Babylon through `SoldierModel` — and since
+  the review's fix below it does.) A netplay round after the fix (a
   fresh `dist-server`, Sarab, 48 bodies, six hulls off the wire): 900 and then 600 frames in play, no console or page
   error.
 - **Deviations.** Two changes of picture, both by construction and neither
@@ -4131,17 +4139,82 @@ read drew a frame behind the hull).
   lamps' later read looked fresh only because the probe's forced compose had
   refreshed the cache; who caches it first was not chased — the read is gone.)
   Offline the hulls sat parked over those runs, which is why only the rung
-  frame's one pack a hull showed there. `shaders.mjs` builds no depth program
+  frame's one pack a hull showed there. **So the lamps' atlas very probably
+  stopped trailing too** (the review): its hull boxes were the same
+  `ProxyBoxes.writeHull` over the same unforced `body.getWorldMatrix()`, and
+  its gather read the centre off the same node (`getAbsolutePosition()`,
+  unforced as well), with nothing but the probe's own forced compose
+  refreshing that cache before the read — so with no probe running, a moving
+  hull's box in every lamp's slice was very probably a frame behind it too,
+  and is under it now. Not measured on its own (the probe's compose hid it);
+  the same change by construction, and as cosmetic. `shaders.mjs` builds no depth program
   (none of `celDepth`, `lampDepth` or this one), so the body pipeline is
   proven where the world's depth pipelines are: built in the page at boot,
   where a failure is a console error `gate` counts. The seam's numbered list
   is unchanged (nothing new reached). `FrameProfile`'s `shadowPass` brackets
   NO frame of a round now (no generator in one); `docs/profiling.md` says so.
+- **What the post-commit review found** (an independent reader over
+  3a07a68 and ba77c3a; fixed after it). **No correctness bug**, and nothing
+  architectural. **Its conclusions**: the two picture changes (the rung
+  frame, the moving hull's box) are acceptable BY CONSTRUCTION, and could not
+  have been split off into a step of their own without rebuilding Babylon's
+  defects on our side — a first frame that draws nothing, and a matrix read a
+  frame stale — to remove them later; the failure routing matches X3.7's and
+  `LampAtlas`'s (the pipeline the session's, `worldFailed` with the install's
+  owner, every round after a failed build failing on it); and the clear's
+  timing is correct in every REACHABLE state — a round's frames, the
+  warm-up's empty update after its render, a rung change, a state that
+  prepares nothing. Fixed: **one claim that was false, made true.** The
+  note's Measured said `check-babylon-free` walked `proxyBoxes.ts`, and its
+  header and `FILES.md` said "no Babylon"; it was no root, and it reached
+  Babylon through its value import of `RAGDOLL_BONES` from `SoldierModel`
+  (→ `CelShader`, `world/parts`, `EmissiveFog`). The bone table —
+  `BoneJoint`, `BoneSpec` and `RAGDOLL_BONES`, nothing else — MOVED verbatim
+  into a new `entities/soldierBones.ts` (a contract header, a `FILES.md`
+  line; its prose's "below" now names `SoldierModel`'s box lists, which it is
+  still measured off), `RAGDOLL_LINKS` staying in `SoldierModel` beside the
+  shoulder and arm measures it is written in; `RagdollSystem`,
+  `BodyShadows` and `proxyBoxes` import it from there (`SoldierModel` keeps
+  a type import of `BoneJoint` for the links, and re-exports nothing), and
+  `proxyBoxes.ts` joined `SIMULATIONS`, as `rigJoints.ts` did, and
+  `docs/deaths.md`'s two placings of the bone table in `SoldierModel.ts` now
+  name its file. A pure move: `kit:hash --models --kinds soldier` identical
+  to ba77c3a's (2 of 2), and `check-babylon-free src/core/proxyBoxes.ts`,
+  which failed at ba77c3a, passes.
+  Stale words: `BodyShadows.update`'s "with nobody in the window, cleared
+  now" (the clear is OWED to the next prepared frame, at once only in a
+  state that prepares none); "an editor build draws it too", here and in
+  `docs/rendering.md` — an editor build prepares no frame of ours, so the
+  map is only ever CLEARED there and an ask holding proxies would never be
+  drawn (both now say so, as `BodyShadowMap.ts`' header did);
+  `wrappedTextures.ts`' header naming `wrapShadowTexture`'s callers without
+  `BodyShadows` (rule 7). And Deviations now says the lamps' atlas very
+  probably stopped trailing a moving hull too. Re-checked after the fixes:
+  typecheck, build, corecheck and `check-babylon-free` (as the build runs
+  it, now 15 simulations); and, the move's importers including
+  `RagdollSystem`, `clients.mjs --check` on Coldharbour identical to the
+  bank (452fc9d44a88e3a6; nodes 0cf0191d43ffb252, every body
+  1715d06d091154e8) and `drop.mjs --check --exact` "bits identical" on all
+  seven maps.
 - **Owed onward.** The map's pass is not timed on our side (not in
   `gpu.cull`), as the world's and the atlas's are not — the phone's FOLLOW-UP
   reading is read as `gpu.frame`. X4.1a's unmeasured compose cost stands (the
   packers' `computeChain`s and `writeRig`'s `compute` are unchanged). X4.2:
-  nothing of the shadows — a hull's box no longer reads its picture.
+  nothing of the shadows — a hull's box no longer reads its picture. **The
+  review's nits, none reachable today**: `BodyShadowMap`'s `asks > 1` is an
+  INFERENCE of "a state that prepares no frame of ours" — a renderer-side
+  "frame prepared since" signal would be sturdier than counting asks; a
+  second EMPTY ask after a frame's render but before Babylon's `endFrame`
+  would `clearNow` into the host's prepare encoder while it is still
+  unsubmitted — and that encoder is submitted AHEAD of the render's — so it
+  would clear the frame just rendered (only `finishBakeWait` asks after a
+  render, and once); and `setSize` destroys its textures synchronously while
+  a `clearNow` may sit recorded against them in that same unsubmitted
+  encoder (no rung change follows an empty ask before a submit today). **An
+  open question for the owner**: the body map HAS a supported "nothing"
+  state (the rung `off`: the lit 1x1, the identity matrix, nothing packed),
+  so degrading to it when the pipeline fails is an alternative to failing
+  every round; this step followed `LampAtlas`'s precedent (fail).
 
 ### X4.2 — Vehicles (PERF_PLAN A3) — **M** (decision)
 

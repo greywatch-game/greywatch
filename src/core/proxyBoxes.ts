@@ -10,7 +10,9 @@
  * nothing about how a hull is DRAWN reaches its shadow (`BABYLON_EXIT.md`
  * X4.1c); every matrix is composed FRESH, in `src/math`'s copies of Babylon's
  * arithmetic, the bits Babylon's own composition gave.
- * Never: imports Babylon; reads a node or a mesh.
+ * Never: imports Babylon (`scripts/check-babylon-free.mjs` holds it as a root;
+ * the bone table is `entities/soldierBones.ts`', not the rig's); reads a node
+ * or a mesh.
  *
  * **Two shadow systems draw bodies, and this is the shape they share**:
  * `BodyShadows` for the moon and `LocalShadows` for the lamps. It is in
@@ -24,7 +26,8 @@
  */
 import { CONFIG } from "../config";
 import { hullBodyToRef } from "../entities/hullFrame";
-import { RAGDOLL_BONES, type SoldierRig } from "../entities/SoldierModel";
+import type { SoldierRig } from "../entities/SoldierModel";
+import { RAGDOLL_BONES } from "../entities/soldierBones";
 import type { Joint } from "../entities/rigJoints";
 import { Matrix, Quaternion, Vector3, type Vector3Like, type Vector3Ref } from "../math";
 

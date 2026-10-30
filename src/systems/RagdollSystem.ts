@@ -70,13 +70,12 @@ import {
 import { CONFIG, FOG_WALL } from "../config";
 import {
   jointPosition,
-  RAGDOLL_BONES,
   RAGDOLL_LINKS,
   resetSoldierPose,
-  type BoneJoint,
   type RagdollSubject,
   type SoldierRig,
 } from "../entities/SoldierModel";
+import { RAGDOLL_BONES, type BoneJoint } from "../entities/soldierBones";
 import { mulberry32 } from "../world/rng";
 import type { AxisLimit, ShapeId } from "./havok";
 import type { PhysicsClient, PhysicsWorld, WorldBody } from "./PhysicsWorld";

@@ -2,9 +2,10 @@
  * wrappedTextures.ts — Babylon's wrapped VIEWS of textures OUR renderer owns
  * (`BABYLON_EXIT.md` rule 5: the side that does not own a texture reads a
  * wrapped view of it, never a copy): a shadow texture's
- * (`wrapShadowTexture`, which `ShadowSystem` and `LocalShadows` hand their
- * readers) and a reflection probe's cube (`wrapCubeTexture`, which
- * `ReflectionSystem` hands the glazing and the water).
+ * (`wrapShadowTexture`, which `ShadowSystem`, `BodyShadows` and
+ * `LocalShadows` hand their readers) and a reflection probe's cube
+ * (`wrapCubeTexture`, which `ReflectionSystem` hands the glazing and the
+ * water).
  * Owns nothing: each call makes a view, and its caller holds it.
  * Invariants: a view samples as the Babylon texture it stands in for did —
  * its filter, its wrap, its dimension and its mip chain; a wrapped view is
@@ -13,7 +14,7 @@
  * Never: renders; copies a texture.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
  *
- * In `core/` rather than beside any caller because three systems hand these
+ * In `core/` rather than beside any caller because four systems hand these
  * out, and a system reaching into another is what `Game`'s wiring exists to
  * prevent (`core/shadowWindow.ts`, which held them until X3.6c, is the
  * precedent).
@@ -23,7 +24,8 @@ import { BaseTexture, type Scene, Texture, type WebGPUEngine } from "@babylonjs/
 /**
  * Babylon's view of a shadow texture OUR renderer owns (`BABYLON_EXIT.md`
  * rule 5: the side that does not own a texture reads a wrapped view of it) —
- * a world map's (`ShadowSystem`) or the lamps' atlas (`LocalShadows`) —
+ * a world map's (`ShadowSystem`), the bodies' map (`BodyShadows`, since
+ * X4.1c) or the lamps' atlas (`LocalShadows`) —
  * sampled as Babylon's own shadow textures were: nearest, clamped. A wrapped
  * texture has no view until it is re-pointed, so it is re-pointed at itself.
  *

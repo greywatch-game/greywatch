@@ -104,7 +104,7 @@ import {
 import { wrapShadowTexture } from "../core/wrappedTextures";
 import type { ShadowQuality } from "../core/settings";
 import type { BodyShadowMap } from "../render/BodyShadowMap";
-import { RAGDOLL_BONES } from "../entities/SoldierModel";
+import { RAGDOLL_BONES } from "../entities/soldierBones";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 
 export type { ShadowBody, ShadowHull };
@@ -271,7 +271,10 @@ export class BodyShadows {
     this.packBodies(focus, bodies);
     this.packHulls(hulls);
     // Drawn whole on the next frame our renderer prepares — or, with nobody
-    // in the window, cleared now: the clear and nothing else, as before.
+    // in the window, OWED a clear on that same next frame, the cleared pass
+    // Babylon's generator drew for an empty frame and at its timing; cleared
+    // at once only in a state that prepares no frame of ours (an editor
+    // build: `BodyShadowMap.draw`).
     this.map.draw(this.matrix.m, this.matrices, this.count);
   }
 

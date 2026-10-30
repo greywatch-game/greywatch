@@ -633,7 +633,8 @@ src/
                         #   collider — a hull's off its OWN fields (pos, yaw,
                         #   present; hullBodyToRef), never its mesh — shared by
                         #   BodyShadows and LocalShadows so a body throws one
-                        #   silhouette under every light. No Babylon
+                        #   silhouette under every light. No Babylon (a root
+                        #   of check-babylon-free)
     webgpuLeaks.ts      # What Babylon's WebGPU arm never gives back of a map:
                         #   a released effect's uniform-buffer pools (patched
                         #   onto the engine once, in main.ts) and the bind-group
@@ -983,6 +984,11 @@ src/
                         #   for bit the TransformNodes'), a fresh chain, a
                         #   joint POSED off a ragdoll's pose array (Joint.pose),
                         #   and the body's one measure (the root capsule's sphere)
+    soldierBones.ts     # The ragdoll's bone table, no Babylon: BoneJoint,
+                        #   BoneSpec and RAGDOLL_BONES (each bone's box and
+                        #   mass in its joint's frame), measured off
+                        #   SoldierModel's box lists. RagdollSystem's bodies
+                        #   and proxyBoxes' shadow boxes are read off it
     soldierPose.ts      # What a pose IS, as numbers, no Babylon: SoldierPose
                         #   and REST_POSE (gait any way, aim, twist, crouch,
                         #   the rifle's kick, carry and reload), solveSoldier
