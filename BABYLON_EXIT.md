@@ -3567,7 +3567,7 @@ module from X2.2. When the last one lands, Babylon draws nothing but the post
 chain, and the frozen cel-material cache and its traps are deleted with
 `CelMaterialFactory`'s Babylon half.
 
-### X4.1 — Bodies (PERF_PLAN C6, A4) — **L, as five sub-steps** (split 2026-10-29) — X4.1a **LANDED** (a417bfc, review fixes after it), X4.1b **LANDED** (f554b68, review fixes after it), X4.1c **LANDED** (3a07a68, review fixes after it), X4.1d **LANDED** (HASH)
+### X4.1 — Bodies (PERF_PLAN C6, A4) — **L, as five sub-steps** (split 2026-10-29) — X4.1a **LANDED** (a417bfc, review fixes after it), X4.1b **LANDED** (f554b68, review fixes after it), X4.1c **LANDED** (3a07a68, review fixes after it), X4.1d **LANDED** (23c6cd9)
 
 Every body a page draws — `NetSoldier`'s rig, a corpse, the death cam's
 stand-in — comes off Babylon's scene, along with the moon's body shadow map,
@@ -4216,7 +4216,7 @@ read drew a frame behind the hull).
   so degrading to it when the pipeline fails is an alternative to failing
   every round; this step followed `LampAtlas`'s precedent (fail).
 
-**X4.1d landed** (HASH; 2026-10-30; no picture change: the bank 61 of 61
+**X4.1d landed** (23c6cd9; 2026-10-30; no picture change: the bank 61 of 61
 byte-identical against its parent).
 - **What it is.** Every body the page draws — a `NetSoldier`'s rig, a corpse,
   the death cam's stand-in — is OUR renderer's (`render/BodyDraw.ts`, its
