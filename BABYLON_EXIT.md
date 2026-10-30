@@ -3567,7 +3567,7 @@ module from X2.2. When the last one lands, Babylon draws nothing but the post
 chain, and the frozen cel-material cache and its traps are deleted with
 `CelMaterialFactory`'s Babylon half.
 
-### X4.1 — Bodies (PERF_PLAN C6, A4) — **L, as five sub-steps** (split 2026-10-29) — X4.1a **LANDED** (a417bfc, review fixes after it), X4.1b **LANDED** (HASH)
+### X4.1 — Bodies (PERF_PLAN C6, A4) — **L, as five sub-steps** (split 2026-10-29) — X4.1a **LANDED** (a417bfc, review fixes after it), X4.1b **LANDED** (f554b68)
 
 Every body a page draws — `NetSoldier`'s rig, a corpse, the death cam's
 stand-in — comes off Babylon's scene, along with the moon's body shadow map,
@@ -3791,7 +3791,7 @@ reparenting goes and every body is one kind of thing to draw.
   before this step (the oracle, above); X4.1d's instancing is the natural
   place to compose a body once.
 
-**X4.1b landed** (HASH; 2026-10-29; no picture change but one, said here:
+**X4.1b landed** (f554b68; 2026-10-29; no picture change but one, said here:
 a corpse's tumble starts one to four float32 ulps from where it did, and
 Havok's chaos carries that into where it comes to rest).
 - **What it is.** A corpse's joints are POSED off its bodies' pose arrays:
