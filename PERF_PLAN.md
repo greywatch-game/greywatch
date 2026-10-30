@@ -304,7 +304,7 @@ vehicle draw distance of 420 m +15.4% (and 420 is a body's number — a hull is
 - The draw distance is an `EnvironmentSpec` field defaulting to "unaffected",
   like `bodyDrawDistance`, or a derived multiple of it — decide which in the step.
 
-### A4 — A body fades instead of popping (`FINDINGS.md` 30) — **M** — **LANDED** as `BABYLON_EXIT.md` X4.1e (HASH)
+### A4 — A body fades instead of popping (`FINDINGS.md` 30) — **M** — **LANDED** as `BABYLON_EXIT.md` X4.1e (53dcb34)
 
 **Landed:** a screen door at both edges, the value per instance in the
 fragment stage (`BODY_FADE`), drawn by a faded twin of each body program for

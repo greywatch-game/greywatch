@@ -3567,7 +3567,7 @@ module from X2.2. When the last one lands, Babylon draws nothing but the post
 chain, and the frozen cel-material cache and its traps are deleted with
 `CelMaterialFactory`'s Babylon half.
 
-### X4.1 — Bodies (PERF_PLAN C6, A4) — **L, as five sub-steps** (split 2026-10-29) — X4.1a **LANDED** (a417bfc, review fixes after it), X4.1b **LANDED** (f554b68, review fixes after it), X4.1c **LANDED** (3a07a68, review fixes after it), X4.1d **LANDED** (23c6cd9, review fixes after it), X4.1e **LANDED** (HASH) — **all five LANDED**
+### X4.1 — Bodies (PERF_PLAN C6, A4) — **L, as five sub-steps** (split 2026-10-29) — X4.1a **LANDED** (a417bfc, review fixes after it), X4.1b **LANDED** (f554b68, review fixes after it), X4.1c **LANDED** (3a07a68, review fixes after it), X4.1d **LANDED** (23c6cd9, review fixes after it), X4.1e **LANDED** (53dcb34) — **all five LANDED**
 
 Every body a page draws — `NetSoldier`'s rig, a corpse, the death cam's
 stand-in — comes off Babylon's scene, along with the moon's body shadow map,
@@ -4495,7 +4495,7 @@ parent).
   `VERIFYING.md`'s soldier-in-a-picture recipe borrows a roster body now: a
   rig a script builds is never drawn.
 
-**X4.1e landed** (HASH; 2026-10-30; the picture change, at the two edges
+**X4.1e landed** (53dcb34; 2026-10-30; the picture change, at the two edges
 and nowhere else: no bank row has a body at either, and none moved).
 - **What it is.** A body LEAVES at both gates by a FADE, never a pop
   (`PERF_PLAN.md` A4; `FINDINGS.md` 30, deleted). `WorldCulling.offer`
