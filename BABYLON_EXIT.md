@@ -3567,7 +3567,7 @@ module from X2.2. When the last one lands, Babylon draws nothing but the post
 chain, and the frozen cel-material cache and its traps are deleted with
 `CelMaterialFactory`'s Babylon half.
 
-### X4.1 — Bodies (PERF_PLAN C6, A4) — **L, as five sub-steps** (split 2026-10-29) — X4.1a **LANDED** (a417bfc, review fixes after it), X4.1b **LANDED** (f554b68)
+### X4.1 — Bodies (PERF_PLAN C6, A4) — **L, as five sub-steps** (split 2026-10-29) — X4.1a **LANDED** (a417bfc, review fixes after it), X4.1b **LANDED** (f554b68, review fixes after it)
 
 Every body a page draws — `NetSoldier`'s rig, a corpse, the death cam's
 stand-in — comes off Babylon's scene, along with the moon's body shadow map,
@@ -3791,7 +3791,8 @@ reparenting goes and every body is one kind of thing to draw.
   before this step (the oracle, above); X4.1d's instancing is the natural
   place to compose a body once.
 
-**X4.1b landed** (f554b68; 2026-10-29; no picture change but one, said here:
+**X4.1b landed** (f554b68, the post-commit review's fixes after it;
+2026-10-29; no picture change but one, said here:
 a corpse's tumble starts one to four float32 ulps from where it did, and
 Havok's chaos carries that into where it comes to rest).
 - **What it is.** A corpse's joints are POSED off its bodies' pose arrays:
@@ -3830,8 +3831,10 @@ Havok's chaos carries that into where it comes to rest).
   digest apart):
   - **The new path with the OLD spawn poses injected** (each offer's poses,
     banked from a run on the parent, written over the new ones before the
-    impulse): `clients.mjs --check` **identical on all three maps** against
-    the bank taken before this step — the engine hash (3e0ee726a4d9da72,
+    impulse): `clients.mjs --check` **identical on all three maps on its
+    engine lines** against the bank taken before this step (its node digest's
+    RIG half moved by construction, which the review below says) — the engine
+    hash (3e0ee726a4d9da72,
     9233bb7aa0086e7b, 06868b261f79c406), every pooled body every frame
     (parked ones at the park), the teardown counts, the snapshots, the
     rests, the audit. So the spawn poses are the ONLY input to Havok this
@@ -3859,7 +3862,8 @@ Havok's chaos carries that into where it comes to rest).
     exactly the identity (one stand-in of nine, turned a quarter, on every
     map); otherwise apart by that rounding, in flight and after the freeze
     alike, because the old drawing carried it and the new one does not.
-  - **`clients.mjs` re-banked** on the new path for that reason, with
+  - **`clients.mjs` re-banked** on the new path for that reason (and a
+    second, independent one the review below states), with
     `--check` then identical in a second process; its node digest reads each
     bone's pose in its proxy's old bytes and names the pose a posed joint is
     drawn off. `drop.mjs --check --exact`: "bits identical" on all seven maps (it drops boxes on the static world, which this step does not touch; the pool's bodies are still created first, at the same pose).
@@ -3903,11 +3907,77 @@ Havok's chaos carries that into where it comes to rest).
   corpse is drawn off and names the leak. The X4.1b plan bullet's "the
   quaternion leak" now reads "the joint-pose leak", `docs/deaths.md`'s name
   for it.
+- **What the post-commit review found** (an independent reader over
+  f554b68 and 72844dd; fixed after it). No game-code defect and nothing
+  architectural. **Its conclusions on the change of behaviour**: the spawn
+  pose is the ONLY input to Havok this step moved, confirmed from the code as
+  well as by the injected run — the bodies are created at `PARKED_POSE`, the
+  seven numbers `absolutePose(proxy)` read; the chest point is `Math.fround`
+  of the pose's position plus the lift, the forced compose's translation row;
+  every teleport, park and freeze writes what it wrote. **No outcome reads
+  Havok**: the server, `src/sim/`, `corecheck`, `simulate` and the bench's
+  fight hash (`FightHash`, folded where the match runs) name no physics
+  client (`src/sim/` and `server/` mention `PhysicsWorld` and
+  `RagdollSystem` in comments alone), so the move is cosmetic exactly as
+  Deviations says. **The re-bank is defensible**, and it had a SECOND, independent
+  reason the note did not state: the node digest's RIG half hashes each
+  stand-in joint's own channels, which the old hand-off (`hold`/`release`'s
+  replay of `setParent`) RE-DERIVED and a posed joint leaves alone, and it
+  names a joint's parent — the holding proxy's name while a corpse was live,
+  the rig parent's after the freeze handed it back, where it now names the
+  pose (`ragdoll<i>-<bone>`, and `…still` once frozen). So that half could
+  not have come back identical even with the physics held equal: re-run with
+  the committed option below (Coldharbour, the parent's spawn poses injected
+  against the parent's bank swapped in for the run), the engine hash
+  3e0ee726a4d9da72 and every pooled body 5c3f2b0a82a7b97b came back
+  identical and the node digest moved at FRAME 0 (bcdeeb7b630897cf against
+  f6e8e1187ff4aa3b) — frame 0's two offers, the pool's half having been
+  identical on all 601 frames in the note's run. **The user is told, in
+  passing, that this is the first `clients.mjs` bank not traceable to the
+  pre-port tree**: X2.4 banked on fb90b7d's `src/` and graded the port, and
+  that recipe now holds only for a tree before X4.1b; the header,
+  `docs/deaths.md`, `VERIFYING.md` and `lib.mjs` say the banks are
+  f554b68's. Fixed: **one GUARD** — `freeze` repointed every bone's joint at
+  the slot's copy unconditionally, and now does so only for a joint still
+  posed off THAT bone's body (`joint.pose === bone.body.pose`); unreachable
+  today (every joint of a held rig is), it stops a freeze pinning a living
+  rig's limb that was reset outside the pool. **The proof made
+  reproducible**: the scratch probe that recorded and injected the spawn
+  poses is now `clients.mjs --spawns-out=<file>` (each offer's twelve poses
+  at the door of `applyImpulse`, raw float64 bytes as hex, per map) and
+  `--spawns-in=<file>` (written over them there; `--check` only, it never
+  banks), the header saying how a future re-take uses it; recorded at HEAD
+  it reproduces the scratch probe's own record of the new path byte for
+  byte on all three maps (108 bone poses a map), and injected back it grades
+  Coldharbour identical on every line. Stale words: `clients.mjs`'s
+  "banked on the PRE-PORT tree" recipe and `docs/deaths.md`'s "banked on the
+  PRE-PORT tree … graded on the port"; `BodyShadows`' "`RagdollSystem` hangs
+  them on Havok proxies", `DebrisSystem.buildPool`'s "a ragdoll needs
+  proxies because the view writes a `rotationQuaternion`…" and
+  `BlastDebrisSystem`'s "a ragdoll's bone cannot" — each now says the joints
+  are posed off `WorldBody.pose`. And the corpse's MEASURE for X4.1d (Owed
+  onward). Re-checked after the fixes: typecheck, build and corecheck;
+  `clients.mjs --check` identical to this step's bank on all three maps
+  (452fc9d44a88e3a6, 5504610c69d82176, 4b1f60f31d44f6f3; nodes 0cf0191d43ffb252,
+  8d61ea44c1c74e88, ec2cabec138aba02; every body 1715d06d091154e8,
+  a3ccd86f53b13743, 5734efa16d2af9c5), the guard in; `drop.mjs --check
+  --exact` "bits identical" on all seven maps.
 - **Owed onward.** The phone's FOLLOW-UP reading. X4.1a's unmeasured
   compose cost stands (a posed joint is one compose instead of two, a
   corpse's twelve `applyPose` writes a frame are gone — neither measured).
   `FINDINGS.md` 57 (the impulse lands before the teleport) is untouched and
-  still re-takes `clients.mjs`'s bank when it is fixed.
+  still re-takes `clients.mjs`'s bank when it is fixed — proving first, with
+  `--spawns-out=` on the parent and on the fix (two files byte-identical),
+  that the spawn did not move and the bank's move is the impulse's alone
+  (`clients.mjs`'s header). **For X4.1d, which moves the
+  body's measure**: a corpse is still measured by the capsule's sphere at
+  `rig.root` (`rigJoints.measureBody` off the root's chain), and the root
+  only sinks — it never follows the bodies, while a blast throws a torso 1
+  to 4.2 m from it (the live oracle above). That has been so since before
+  X4.1a, where the capsule was a node under the same root, and nothing here
+  changed it; X4.1d should consider measuring a corpse by its TORSO (its
+  pose, or a sphere over its twelve), so the fog-wall gate and the size
+  gate's whole-body drop judge a thrown body where it lies.
 
 ### X4.2 — Vehicles (PERF_PLAN A3) — **M** (decision)
 

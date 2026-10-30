@@ -51,9 +51,9 @@
  *
  * **Using `RAGDOLL_BONES` is the load-bearing choice, not a convenience.** The
  * shadow follows a crouch, a stance, a turn and a RAGDOLL for free, because
- * those boxes hang off the same joints — `RagdollSystem` hangs them on Havok
- * proxies and the shadow goes with the corpse without this file knowing
- * physics exists. A hand-authored capsule would have been a pill that slid
+ * those boxes hang off the same joints — `RagdollSystem` poses those joints
+ * off Havok's pose arrays (`Joint.pose`, `WorldBody.pose`) and the shadow goes
+ * with the corpse without this file knowing physics exists. A hand-authored capsule would have been a pill that slid
  * along the ground under a walking body, which is the artefact the blob disc
  * already is.
  *

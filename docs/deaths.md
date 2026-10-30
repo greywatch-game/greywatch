@@ -176,15 +176,21 @@ included, and fails any parked body that is not exactly at the park — a park
 that rewrote a pose without telling the engine leaves a static box in the
 street and is invisible to a hash of live bodies — and it clears and rebuilds
 the static world twice before the script, requiring the Havok world's own body
-count to be the map's plus the pools' 174 after each. All of it is banked on the
-PRE-PORT tree (fb90b7d's `src/`, which `lib.mjs` still reaches) and graded on
-the port. A change that must move nothing passes both on bits. **It was
-re-banked once since, at X4.1b, and the reason is the oracle's to keep**: a
-corpse's bones now start at the living pose composed once rather than through
-the earlier bones' hand-offs, which moved some spawn poses by one to four
-float32 ulps and the tumble after them; with the old spawn poses injected,
-the new path was graded identical on every line first (`BABYLON_EXIT.md`
-X4.1b's note has the numbers).
+count to be the map's plus the pools' 174 after each. X2.4 banked all of it on
+the PRE-PORT tree (fb90b7d's `src/`, which `lib.mjs` still reaches) and graded
+the port against that; **the banks are X4.1b's tree (f554b68) now**, and that
+pre-port recipe holds only for a tree before X4.1b. A change that must move
+nothing passes both on bits. **It was re-banked once, at X4.1b, and the
+reason is the oracle's to keep**: a corpse's bones now start at the living
+pose composed once rather than through the earlier bones' hand-offs, which
+moved some spawn poses by one to four float32 ulps and the tumble after them
+— and the node digest's rig half moved by construction besides (it hashes a
+joint's own channels, which the old hand-off re-derived and a posed joint
+leaves alone, and names a frozen joint's parent, now the slot's copy). With
+the old spawn poses injected, the new path was graded identical on the
+engine's every line first (`BABYLON_EXIT.md` X4.1b's note has the numbers),
+and `clients.mjs --spawns-out=`/`--spawns-in=` is that injection, kept for
+the next change that moves a spawn on purpose.
 
 ## Deaths
 

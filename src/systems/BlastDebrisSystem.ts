@@ -527,8 +527,9 @@ export class BlastDebrisSystem implements PhysicsClient {
         // solver cost quadratic in the burst.
         hp.setFilterCollide(shape, WORLD_GROUP);
 
-        // The body is drawn straight onto the MESH with no proxy node, which a
-        // chunk can do and a ragdoll's bone cannot: it is parented to nothing
+        // The body is drawn straight onto the MESH with no proxy node (a
+        // ragdoll's bone needs none either since BABYLON_EXIT.md X4.1b, its
+        // joint posed off the pose array itself): it is parented to nothing
         // and posed by nobody, so the quaternion the view copies off the
         // body's pose is the only thing that ever orients it.
         //

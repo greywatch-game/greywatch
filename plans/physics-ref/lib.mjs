@@ -13,7 +13,9 @@
  * which tree it is in and reaches accordingly, so a strengthened check can be
  * BANKED on the pre-port source (`git checkout fb90b7d -- src`, run, restore)
  * and graded on the port — which is the only way a new check proves anything
- * about the port rather than about itself. A hash read through
+ * about the port rather than about itself. (`clients.mjs`'s banks stopped
+ * being the pre-port tree's at X4.1b, which re-took them on purpose; its
+ * header says how, and how a later re-take proves what moved.) A hash read through
  * `HP_Body_GetQTransform` reads the same floats either side of that move,
  * which is what lets the oracles grade it.
  *

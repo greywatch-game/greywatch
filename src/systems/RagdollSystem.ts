@@ -773,7 +773,12 @@ export class RagdollSystem implements PhysicsClient {
       // the map.
       bone.still.set(bone.body.pose);
       bone.stillY = bone.still[1];
-      rig[bone.joint].pose = bone.still;
+      // Only a joint still drawn off THIS body is moved onto the copy. Every
+      // joint of a held rig is, today; one that is not was reset outside the
+      // pool (`resetSoldierPose`), and pointing it at the copy would pin a
+      // living rig's limb where the corpse lay — the leak, made by the freeze.
+      const joint = rig[bone.joint];
+      if (joint.pose === bone.body.pose) joint.pose = bone.still;
       this.park(bone);
     }
     slot.frozen = true;

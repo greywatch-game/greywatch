@@ -112,7 +112,11 @@ you are on before you believe anything else in this section.
   engine, in the plugin-era tree and the raw one alike — so **a new check is
   banked on the PRE-PORT source** (`git checkout fb90b7d -- src`, run,
   `git checkout HEAD -- src`) **and graded on the port**, or it proves
-  nothing about the port. Two of drop's lessons generalise to any
+  nothing about the port — for `drop.mjs`, and for `clients.mjs` only on a
+  tree before X4.1b: its banks were re-taken there (f554b68), a corpse's
+  spawn moving on purpose, so a clients check is banked on that tree or
+  later, and a change that moves the spawn proves the spawn is all it moved
+  with `--spawns-out=`/`--spawns-in=` (the script's header). Two of drop's lessons generalise to any
   script that steps the engine: **a settled body's VELOCITY is frozen at
   whatever it held when Havok deactivated it**, so "has it stopped" is a
   displacement over the last N substeps and never `getLinearVelocity()`; and

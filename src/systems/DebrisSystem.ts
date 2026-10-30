@@ -678,13 +678,14 @@ export class DebrisSystem implements PhysicsClient {
    * rewrite of vertices the mesh already has, and never a geometry, an index
    * buffer or — once a size has been seen — a shape.
    *
-   * **A shard's body is drawn straight onto the MESH, with no proxy node**,
-   * which is the one way this is simpler than a corpse. A ragdoll needs proxies
-   * because the view writes a `rotationQuaternion` onto whatever it draws a
-   * body on (`applyPose`) and the rig is posed through Euler channels, which a
-   * quaternion would silently override — but a shard is parented to nothing,
-   * is posed by nobody, and is handed back to nothing. The quaternion the view
-   * copies off the body's pose is the only thing that ever orients it.
+   * **A shard's body is drawn straight onto the MESH, with no proxy node.** A
+   * ragdoll needed proxies while its joints were Babylon nodes posed through
+   * Euler channels, which the `rotationQuaternion` the view writes would have
+   * silently overridden; since `BABYLON_EXIT.md` X4.1b its joints are posed
+   * off the bodies' pose arrays themselves (`Joint.pose`, `WorldBody.pose`)
+   * and it needs no node either. A shard is parented to nothing, is posed by
+   * nobody, and is handed back to nothing, so the quaternion the view copies
+   * off the body's pose (`applyPose`) is the only thing that ever orients it.
    */
   private buildPool(): void {
     const g = CONFIG.glass;

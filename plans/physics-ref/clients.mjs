@@ -68,10 +68,14 @@
  * same (measured: rest poses up to 2.5 m apart, against bit-identical runs in
  * two processes).
  *
- * **These checks are banked on the PRE-PORT tree**, or they would prove
- * nothing about the port: `lib.mjs`'s helpers reach the engine in either era,
- * so `git checkout fb90b7d -- src`, a plain run, `git checkout HEAD -- src`,
- * then `--check` on the port — which must come back identical on every line.
+ * **These checks are banked on X4.1b's tree (f554b68)**, not on the pre-port
+ * tree any more: the banks were RE-TAKEN there (below), and this is the first
+ * bank not traceable to fb90b7d. **How X2.4 banked them**, and a recipe that
+ * holds only for a tree BEFORE X4.1b: `lib.mjs`'s helpers reach the engine in
+ * either era, so `git checkout fb90b7d -- src`, a plain run,
+ * `git checkout HEAD -- src`, then `--check` on the port — which came back
+ * identical on every line. Run on a tree past X4.1b, that recipe banks the
+ * old spawn poses and fails the new path from frame 0.
  *
  * **And, graded apart from that, the NODES the clients write** (`nodes` in
  * the bank, added at X2.4 C5 and banked against the parent before that
@@ -90,12 +94,32 @@
  * the first frame whose nodes differ. It reads no matrix, so taking it makes
  * Babylon compute nothing.
  *
- * **All three banks were RE-TAKEN at X4.1b**, on the new path: a corpse's
- * bones start at the living pose composed once rather than through the
- * earlier bones' hand-offs, one to four float32 ulps apart, and Havok carries
- * that into every tumble after. The new path was first graded identical
- * against the old banks with the old spawn poses injected — `BABYLON_EXIT.md`
- * X4.1b's note has the run.
+ * **All three banks were RE-TAKEN at X4.1b**, on the new path, for two
+ * independent reasons. The ENGINE's: a corpse's bones start at the living
+ * pose composed once rather than through the earlier bones' hand-offs, one
+ * to four float32 ulps apart, and Havok carries that into every tumble
+ * after. The NODE digest's RIG half, by construction: it hashes each
+ * stand-in joint's own channels, which the old hand-off (`hold`/`release`)
+ * re-derived and a posed joint leaves alone, and names a frozen joint's
+ * parent, which is now the slot's copy (`…still`) — so that half could not
+ * have stayed even with the physics held equal. The new path was first
+ * graded identical against the old banks' engine half with the old spawn
+ * poses injected — `BABYLON_EXIT.md` X4.1b's note has the run.
+ *
+ * **Recording and injecting the spawn poses** (`--spawns-out=<file>`,
+ * `--spawns-in=<file>`): each offer's twelve bone poses, read at the door of
+ * `RagdollSystem.applyImpulse` before the impulse and the teleport — the
+ * whole of what a living rig hands Havok — written to a file as their raw
+ * float64 bytes, or read back from one and written over the poses there.
+ * `--spawns-in` grades and never banks (it needs `--check`). It is how a
+ * re-take proves what moved before the bank is replaced. A change that moves
+ * the spawn ON PURPOSE (X4.1b's): record on the parent, then
+ * `--check --spawns-in=` on the change against the parent's bank — identical
+ * on the engine and every-body halves says every other input to Havok is the
+ * parent's to the bit. A change that must leave the spawn ALONE and moves the
+ * bank anyway (`FINDINGS.md` 57's fix, which moves the impulse): record on
+ * both sides — two files that are byte-identical say the spawn did not move,
+ * so what moved the bank is the change itself.
  *
  * **It also probes one thing it does not grade** (`probe` in the bank): the
  * chest's angular velocity the instant a corpse is offered, before any step.
@@ -122,6 +146,20 @@ import { pageHelpers, sha } from "./lib.mjs";
 const args = process.argv.slice(2);
 const CHECK = args.includes("--check");
 const named = args.filter((a) => !a.startsWith("--"));
+/**
+ * `--spawns-out=<file>` and `--spawns-in=<file>`: each corpse's spawn poses,
+ * RECORDED or INJECTED (see the header). The file is
+ * `{ "<map>": [offer][bone] }`, each pose its seven float64s as hex, so
+ * nothing JSON would round is lost.
+ */
+const option = (name) => args.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? null;
+const SPAWNS_OUT = option("spawns-out");
+const SPAWNS_IN = option("spawns-in");
+if (SPAWNS_IN && !CHECK) {
+  console.error("--spawns-in grades and never banks: pass --check with it");
+  process.exit(2);
+}
+const injected = SPAWNS_IN ? JSON.parse(readFileSync(SPAWNS_IN, "utf8")) : null;
 /**
  * The two maps with breakable glass — only the city kit's office and
  * shophouse glaze a way through (`PaneSpec.breakable`), and they stand on
@@ -191,7 +229,7 @@ function cycle(page) {
 /** The whole script, in the page. */
 function play(page, opts) {
   return page.evaluate(
-    async ([FRAMES, SNAPSHOTS]) => {
+    async ([FRAMES, SNAPSHOTS, INJECT]) => {
       const g = window.__celshock;
       const ref = window.__physref;
       // The doors back: own properties shadowing the prototypes' methods.
@@ -300,6 +338,38 @@ function play(page, opts) {
           { surface, normal: B3(0, 1, 0) },
           at.clone(),
         );
+      };
+
+      // --- the spawn poses (`--spawns-out`, `--spawns-in`) --------------------
+      // Each offer's twelve bone poses as `spawn` leaves them, read at the
+      // door of `applyImpulse` — before the impulse and the teleport, so
+      // they are the whole of what the living rig hands Havok. Injected, the
+      // recorded poses are written over them there, into the arrays the
+      // joints are already posed off. An own property shadowing the
+      // prototype's method, taken off again at the end.
+      const spawns = [];
+      const toHex = (pose) => {
+        const b = new Uint8Array(Float64Array.from(pose).buffer);
+        let h = "";
+        for (let i = 0; i < b.length; i++) h += b[i].toString(16).padStart(2, "0");
+        return h;
+      };
+      const fromHex = (h) => {
+        const b = new Uint8Array(h.length / 2);
+        for (let i = 0; i < b.length; i++) b[i] = parseInt(h.slice(i * 2, i * 2 + 2), 16);
+        return new Float64Array(b.buffer);
+      };
+      const impulse = Object.getPrototypeOf(g.ragdolls).applyImpulse;
+      g.ragdolls.applyImpulse = function (slot, subject) {
+        if (INJECT) {
+          const rec = INJECT[spawns.length];
+          if (!rec || rec.length !== slot.bones.length) {
+            throw new Error(`no ${slot.bones.length} recorded poses for offer ${spawns.length}`);
+          }
+          slot.bones.forEach((bone, i) => bone.body.pose.set(fromHex(rec[i])));
+        }
+        spawns.push(slot.bones.map((bone) => toHex(bone.body.pose)));
+        return impulse.call(this, slot, subject);
       };
 
       // --- the probe --------------------------------------------------------
@@ -546,6 +616,10 @@ function play(page, opts) {
           });
         }
       }
+      delete g.ragdolls.applyImpulse;
+      if (INJECT && spawns.length !== INJECT.length) {
+        throw new Error(`${INJECT.length} offers recorded, ${spawns.length} made`);
+      }
       delete probe.seen;
       for (const k of Object.keys(probe)) delete probe[k].id;
       return {
@@ -562,15 +636,21 @@ function play(page, opts) {
         shardShapes: g.debris.shapes.size,
         panes: panes.length,
         bodies: bodies.length,
+        spawns,
       };
     },
-    [opts.frames, opts.snapshots],
+    [opts.frames, opts.snapshots, opts.inject ?? null],
   );
 }
 
 const vite = await startDevServer(root);
 const browser = await launchClient();
-console.log(`clients: ${FRAMES} frames @ ${vite.url}${CHECK ? "  (check only)" : ""}\n`);
+console.log(
+  `clients: ${FRAMES} frames @ ${vite.url}${CHECK ? "  (check only)" : ""}` +
+    (SPAWNS_IN ? `  (spawn poses injected from ${SPAWNS_IN})` : "") +
+    (SPAWNS_OUT ? `  (spawn poses recorded to ${SPAWNS_OUT})` : "") +
+    "\n",
+);
 
 const problems = [];
 for (const id of targets) {
@@ -580,13 +660,21 @@ for (const id of targets) {
   await quietRound(page);
   await page.evaluate(pageHelpers);
   const teardown = await cycle(page);
-  const r = await play(page, { frames: FRAMES, snapshots: SNAPSHOTS });
+  const inject = injected ? injected[id] : null;
+  if (injected && !inject) throw new Error(`${SPAWNS_IN} holds no spawn poses for ${id}`);
+  const r = await play(page, { frames: FRAMES, snapshots: SNAPSHOTS, inject });
   // The same script again in the SAME page, after another teardown — the
   // in-process floor `drop.mjs` measures. Reported, never graded: the engine
   // has the first run's history in it.
   const teardown2 = await cycle(page);
-  const r2 = await play(page, { frames: FRAMES, snapshots: SNAPSHOTS });
+  const r2 = await play(page, { frames: FRAMES, snapshots: SNAPSHOTS, inject });
   await page.close();
+  if (SPAWNS_OUT) {
+    // The first run's, merged per map into whatever the file already holds.
+    const all = existsSync(SPAWNS_OUT) ? JSON.parse(readFileSync(SPAWNS_OUT, "utf8")) : {};
+    all[id] = r.spawns;
+    writeFileSync(SPAWNS_OUT, `${JSON.stringify(all)}\n`);
+  }
 
   const snaps = r.snapshots.map((s) => ({
     frame: s.frame,
