@@ -78,7 +78,11 @@
  * commit touched a line of source): a digest at the end of EVERY frame over
  * the raw local transform of each corpse slot's proxies, every shard and
  * chunk mesh, and the nine stand-ins' rig roots and posed joints — parent,
- * enabled flag, position, Euler, quaternion and scaling, bit for bit. C5 took
+ * enabled flag, position, Euler, quaternion and scaling, bit for bit. The
+ * joints are `rigJoints.ts`'s since `BABYLON_EXIT.md` X4.1a, not nodes, and
+ * are digested in the same bytes (a holding proxy's name as the parent, the
+ * rig's switch as the root's flag, "noquat"), so the bank taken off the nodes
+ * grades them unchanged. C5 took
  * the poses off those nodes into plain arrays that a view writes back; this
  * is what says the view writes the SAME nodes the solver's sync used to, on
  * the same frames, the reparenting at a freeze and the sink included. A
@@ -234,7 +238,7 @@ function play(page, opts) {
           this.alive = false;
         }
         setEnabled(on) {
-          this.rig.root.setEnabled(on);
+          SM.setRigEnabled(this.rig, on);
         }
       }
       const corpses = [];
@@ -246,7 +250,7 @@ function play(page, opts) {
         const feet = new M.Vector3(x, groundAt(x, z), z);
         rig.root.position.set(feet.x, feet.y, feet.z);
         rig.root.rotation.y = a + Math.PI / 2;
-        rig.root.setEnabled(false);
+        SM.setRigEnabled(rig, false);
         corpses.push(new Corpse(rig, feet));
       }
       const kill = (i, kind, damage, fx, fy, fz) => {
@@ -378,9 +382,14 @@ function play(page, opts) {
       for (const slot of g.ragdolls.slots) for (const bone of slot.bones) nodeList.push(bone.proxy);
       for (const burst of g.debris.bursts) for (const s of burst.shards) nodeList.push(s.mesh);
       for (const burst of g.blastDebris.bursts) for (const c of burst.chunks) nodeList.push(c.mesh);
+      // A rig's joints are not nodes since `BABYLON_EXIT.md` X4.1a: they are
+      // `rigJoints.ts`'s, digested below in the bytes a node gave — the
+      // parent's (or the holding proxy's) name, the root's enabled flag as
+      // the rig's switch, a joint's own, and "noquat", which no joint can
+      // hold — so the bank taken off the nodes still grades them.
       for (const c of corpses) {
-        nodeList.push(c.rig.root);
-        for (const r of c.rig.rest) nodeList.push(r.node);
+        nodeList.push({ joint: c.rig.root, rig: c.rig });
+        for (const r of c.rig.rest) nodeList.push({ joint: r.node, rig: null });
       }
       const f64 = new Float64Array(1);
       const u8 = new Uint8Array(f64.buffer);
@@ -410,6 +419,17 @@ function play(page, opts) {
       const nodeDigest = () => {
         const { num, str, done } = hasher();
         for (const n of nodeList) {
+          if (n.joint) {
+            const j = n.joint;
+            const parent = j.holder ?? j.parent;
+            str(parent ? parent.name : "-");
+            num((n.rig ? n.rig.enabled : j.enabled) ? 1 : 0);
+            num(j.position.x); num(j.position.y); num(j.position.z);
+            num(j.rotation.x); num(j.rotation.y); num(j.rotation.z);
+            str("noquat");
+            num(j.scaling.x); num(j.scaling.y); num(j.scaling.z);
+            continue;
+          }
           str(n.parent ? n.parent.name : "-");
           num(n.isEnabled(false) ? 1 : 0);
           const p = n.position;

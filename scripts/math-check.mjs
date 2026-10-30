@@ -224,6 +224,11 @@ caseOf(["Matrix#constructor", "Matrix#m", "Matrix#isIdentity", "Matrix#markAsUpd
   "Matrix.TranslationToRef", "Matrix.Compose", "Matrix.ComposeToRef", "Matrix.RotationYawPitchRoll",
   "Matrix.RotationYawPitchRollToRef", "Matrix.RotationAxis", "Matrix.RotationAxisToRef", "Matrix.FromValues",
   "Matrix.FromValuesToRef"], () => { const r = matRecipe(); return [r, (L) => { const m = build(L, r); return [m, m.isIdentity(), L.Matrix.IdentityReadOnly, L.Matrix.IdentityToRef(new L.Matrix()).isIdentity()]; }]; });
+caseOf(["Matrix.FromArrayToRef"], () => {
+  // Over an identity-flagged target as often as not: the copy must clear it.
+  const a = Array.from({ length: 19 }, () => num()), off = Math.floor(rand() * 4), r = matRecipe();
+  return [[a, off, r], (L) => { const m = L.Matrix.FromArrayToRef(a, off, build(L, r)); return [m, m.isIdentity()]; }];
+});
 caseOf(["Matrix#determinant"], () => { const r = matRecipe(); return [r, (L) => build(L, r).determinant()]; });
 caseOf(["Matrix#asArray", "Matrix#copyToArray"], () => { const r = matRecipe(); return [r, (L) => { const o = new Array(18).fill(7); build(L, r).copyToArray(o, 2); return [o, build(L, r).asArray()]; }]; });
 caseOf(["Matrix#invertToRef", "invertMatrixToArray"], () => { const r = matRecipe(); return [r, (L) => { const out = build(L, r).invertToRef(new L.Matrix()); return [out, out.isIdentity()]; }]; });

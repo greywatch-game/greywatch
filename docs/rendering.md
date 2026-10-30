@@ -288,8 +288,9 @@ So the light array, the fog, the eye, the palette and the wind keep flowing
 exactly as before — `updateWind` and `updateCamera` walk this same cache every
 frame and were unaffected. The only other `isFrozen` read on the bind path
 guards morph-target influences and baked vertex animation, and this game has
-neither: the soldier rig is `TransformNode` joints driving separate meshes, not
-GPU skinning.
+neither: the soldier rig is joints driving separate meshes, not GPU skinning
+(our own joints since `BABYLON_EXIT.md` X4.1a, `entities/rigJoints.ts`, each
+mesh handed its world matrix through `freezeWorldMatrix`).
 
 **What it pins is ONE SUBMESH's effect in ONE pass, and what would break that.**
 The defines `isReady` rebuilds are not constant across meshes — they vary on
@@ -1933,8 +1934,9 @@ pass costs the same at 8v8 and at 24v24, and what scales is the matrices.
 than convenient.** They are already measured against the drawn geometry ("the
 glove trimmed off the end") and already hang off the joints the pose drives, so
 the shadow follows a crouch, a stance, a turn and a RAGDOLL for free —
-`RagdollSystem` reparents those joints onto Havok proxies and the shadow goes
-with the corpse without `BodyShadows` knowing physics exists. A hand-authored
+`RagdollSystem` hangs those joints on Havok proxies and the shadow goes with
+the corpse without `BodyShadows` knowing physics exists. Each rig's joints are
+composed FRESH for its boxes (`ProxyBoxes.writeRig`, `JointTree.compute`). A hand-authored
 capsule would have been a pill sliding along the ground under a walking body,
 which is the artefact the blob disc already is.
 
@@ -4150,8 +4152,9 @@ a human, a bot crewing a tank, and — while the offline page still kept a
 C4) — the whole of that pool on a netplay round, built and never enabled at
 all.
 `Game.installBodyPools` files them and `WorldCulling.update` polls each
-rig ROOT once a frame, marking the list dirty only on a transition — 48 property
-reads against the 1,008 nodes a rebuild answers for.
+body's switch (`SoldierRig.enabled`, through `SoldierModel.pooledBody`) once a
+frame, marking the list dirty only on a transition — 48 property reads against
+the 1,008 nodes a rebuild answers for.
 
 **The roster is not the only rig filed, and the other is the one the player
 looks at.** `buildSoldier` has exactly two callers — `NetSoldier` and
@@ -4159,21 +4162,25 @@ looks at.** `buildSoldier` has exactly two callers — `NetSoldier` and
 over (it had a third, the offline page's own rig, until X2.5c C4) — and for a
 long time only the ROSTERS were handed over. The death cam's was loose, four
 metres from the camera, and what that cost is under the size gate below. It is
-filed on the same terms the roster is: `SoldierRig` already IS `PooledBody`,
-and `DeathCam` switches it by the same `root.setEnabled` a roster writes.
+filed on the same terms the roster is (`pooledBody`), and `DeathCam` switches
+it by the same `setRigEnabled` a roster writes.
 **`installBodyPools` therefore runs AFTER `applyPlayerTeam` in
 `buildRound`** — that is the one call that can DISPOSE a rig and build another,
 on a change of side, and filing before it would leave the pool pointing at freed
 meshes for the rest of the round.
 
 **It is filed MESH BY MESH and never by ancestry, and that is load-bearing
-rather than incidental.** `RagdollSystem` reparents a corpse's joints onto Havok
-proxy nodes, so a ragdolling body's meshes are not descendants of `rig.root` at
-all; a class that asked "is this mesh under an enabled root" would drop every
-corpse in the game the moment it started falling. Measured on Sarab over 120
-frames of a real death, with the joints off the root on every one of them: 20 of
-20 rig meshes active and 20 of 20 offered, identical with the pools filed and
-with them empty.
+rather than incidental.** While the joints were nodes, `RagdollSystem`
+reparented a corpse's onto Havok proxy nodes, so a ragdolling body's meshes
+were not descendants of `rig.root` at all; a class that asked "is this mesh
+under an enabled root" would have dropped every corpse in the game the moment
+it started falling. Measured on Sarab over 120 frames of a real death, with
+the joints off the root on every one of them: 20 of 20 rig meshes active and
+20 of 20 offered, identical with the pools filed and with them empty. Since
+`BABYLON_EXIT.md` X4.1a no rig mesh has a Babylon parent at all — its world
+matrix is handed to it (`SoldierModel.drawRig`) — so there is no ancestry to
+ask about, and its own enabled flag is written beside the body's switch
+(`setRigEnabled`).
 
 Measured on Sarab, 24 a side, the fight held so both arms saw one scene, three
 interleaved blocks each against an A-vs-A control spanning 13.48-13.75 ms:
@@ -4300,9 +4307,13 @@ because it seemed wise.**
   `bot-head-m` x16 and `bot-legL` x16 while keeping the torsos. So a pool was
   EXEMPT outright for a milestone, on the grounds that a body is already taken
   off whole by `bodyDrawDistanceOf`. It is now gated instead, once per body,
-  off the rig root `poolOf` already files — one question, one answer, read by
-  all fourteen meshes, so the dismemberment cannot occur and the body can
-  still be dropped. This file still does not have to learn what a soldier is.
+  off the body's own measure (`PooledBody.measure`: the sphere of the 1.8 m
+  capsule the rig root was a mesh of until `BABYLON_EXIT.md` X4.1a, now
+  composed off the root joint, `rigJoints.measureBody`, and checked bit for
+  bit against Babylon's sphere of that capsule) — one question, one answer,
+  read by all fourteen meshes, so the dismemberment cannot occur and the body
+  can still be dropped. This file still does not have to learn what a soldier
+  is.
 
   **That makes it a second `bodyDrawDistance` stated in SCREEN space**, which
   is why it needs no per-map number and loosens by itself when a sight goes
@@ -4318,8 +4329,9 @@ because it seemed wise.**
   exemption would leave a pair of eyes hanging in the air where the soldier
   was; `gateOf` files the pool first for exactly that reason.
 
-  **The root's world matrix is FORCED before it is measured, and without that
-  the drop LATCHES** — this is the paragraph below, met head on rather than
+  **The measure is composed FRESH every frame, and without that the drop
+  LATCHES** (while the root was a mesh, its world matrix was FORCED before it
+  was measured, for this reason) — this is the paragraph below, met head on rather than
   survived. A rig root is invisible, so `offer` has always dropped it on the
   `isVisible` line and the walk has never computed it; it was refreshed only
   incidentally, as the PARENT of a child that was itself a candidate, and

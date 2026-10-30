@@ -966,7 +966,14 @@ src/
     SoldierModel.ts     # Merged bot rig + the per-team kit it is painted and
                         #   shaped in + the poser that writes a solved pose
                         #   onto the joints (arms IK'd onto the rifle), and the
-                        #   RagdollSubject interface
+                        #   RagdollSubject interface. Its meshes have no
+                        #   parent: drawRig hands Babylon each one's world
+                        #   matrix off the joints, once a frame
+    rigJoints.ts        # A rig's joints as OUR hierarchy, no Babylon: local
+                        #   channels, float32 world matrices the rig owns (bit
+                        #   for bit the TransformNodes'), a fresh chain, a
+                        #   ragdoll's hold/release (setParent replayed), and
+                        #   the body's one measure (the root capsule's sphere)
     soldierPose.ts      # What a pose IS, as numbers, no Babylon: SoldierPose
                         #   and REST_POSE (gait any way, aim, twist, crouch,
                         #   the rifle's kick, carry and reload), solveSoldier
@@ -1121,7 +1128,7 @@ src/
                         #   fog wall); a full pool evicts its oldest. Cannot
                         #   tell a dead bot from the player's stand-in. Its view
                         #   draws each bone's pose onto a pool-owned proxy the
-                        #   rig's joint hangs off
+                        #   rig's joint hangs on (JointTree.hold)
     DebrisSystem.ts     # Glass shards under it. A burst is CUT from the pane's
                         #   own face along the cracks a round put in it; refuses
                         #   past its own apparent-size gate, and evicts only a

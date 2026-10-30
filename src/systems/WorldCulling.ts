@@ -74,15 +74,15 @@
  *   and the fires, the rest of `BlockMerge`'s output being our renderer's
  *   (below); the cell's box is grown from all of it, every STRUCTURE on the
  *   map.
- * - **Pooled** — a body's rig, filed under the rig ROOT whose `setEnabled` the
- *   roster already writes, and offered only while that root is enabled. A pool
- *   is built once per roster and re-posed forever, so a rig that is not in the
- *   round is fourteen
- *   meshes and a root the walk pays full price for and rejects — and a roster is the one
- *   thing on a map that a LAYOUT may triple (`MapLayout.perTeam`, 24 on Sarab
- *   against the shipped 8), which turns 336 of these nodes into **1,008**. See
- *   `setPools`. It is also the one class the size gate measures ONCE, off the
- *   root, dropping the body whole rather than mesh by mesh — see `gateOf`.
+ * - **Pooled** — a body's rig, filed under the body whose switch the roster
+ *   already writes (`SoldierRig.enabled`), and offered only while that body is
+ *   on. A pool is built once per roster and re-posed forever, so a rig that is
+ *   not in the round is fourteen meshes the walk pays full price for and
+ *   rejects — and a roster is the one thing on a map that a LAYOUT may triple
+ *   (`MapLayout.perTeam`, 24 on Sarab against the shipped 8), which turns 336
+ *   of these nodes into **1,008**. See `setPools`. It is also the one class the
+ *   size gate measures ONCE, off the body's own measure, dropping the body
+ *   whole rather than mesh by mesh — see `gateOf`.
  * - **Loose** — everything else in the scene: the terrain, the roads, the rim,
  *   the other pools (tracers, shards, ragdolls, grenades, rubble), the sky, the
  *   water, the grass, the viewmodel, the hulls, and every visual an EDITOR
@@ -174,35 +174,46 @@ interface Cell {
   on: boolean;
 }
 
-/**
- * What `setPools` is handed: something with a root that is switched and meshes
- * that hang off it. `SoldierRig` already IS this shape, which is why nothing
- * here has heard of a soldier — this file may not learn what a body is any more
- * than it has learned what a building is.
- */
-export interface PooledBody {
-  root: AbstractMesh;
-  meshes: readonly AbstractMesh[];
+/** A body's world bounding sphere, as `PooledBody.measure` writes it. */
+export interface BodyMeasure {
+  x: number;
+  y: number;
+  z: number;
+  radius: number;
 }
 
 /**
- * One pooled body: the rig root the roster switches, and whether what was filed
+ * What `setPools` is handed: a body that is switched, the meshes that draw it,
+ * and its one measure. `SoldierModel.pooledBody` makes one of a rig, which is
+ * why nothing here has heard of a soldier — this file may not learn what a body
+ * is any more than it has learned what a building is.
+ */
+export interface PooledBody {
+  /**
+   * Whether the body is in the round — the switch `NetSoldier.setEnabled` and
+   * the death cam already write, so there is no second answer to that here.
+   */
+  readonly enabled: boolean;
+  readonly meshes: readonly AbstractMesh[];
+  /**
+   * The body's world bounding sphere THIS frame, composed fresh — what the
+   * rig ROOT's capsule answered under a forced `computeWorldMatrix` until the
+   * root stopped being a mesh (`BABYLON_EXIT.md` X4.1a).
+   */
+  measure(out: BodyMeasure): void;
+}
+
+/**
+ * One pooled body: the body the roster switches, and whether what was filed
  * under it is in the candidate list right now.
- *
- * The root rather than a flag of our own, because it is what
- * `NetSoldier.setEnabled` already writes and there must not be a second
- * answer to "is this body in the round". `isEnabled(false)` — the mesh's OWN
- * flag, no ancestor walk — because a rig root is parented to nothing and both
- * of those callers set it directly; asking for the inherited answer would walk
- * a chain to learn what the first byte already said.
  */
 interface Pool {
-  root: AbstractMesh;
+  body: PooledBody;
   /** Whether what was filed here is in the candidate list right now. */
   on: boolean;
   /**
    * Whether this body projected under the size gate THIS FRAME — one test
-   * taken off the root in `offer`, read by every mesh filed under it.
+   * taken off its measure in `offer`, read by every mesh filed under it.
    *
    * On the pool rather than in a set of its own because it is per body and
    * per frame, and the body is the thing that already exists: a set would be
@@ -266,7 +277,8 @@ export class WorldCulling {
    * **A POOLED BODY maps to its `Pool`, and is gated WITH the body.** A rig is
    * fourteen meshes and a per-mesh verdict takes the head off a soldier at
    * 300 m while leaving his torso, which is what the exemption this replaced
-   * was for; measuring the ROOT instead asks the question once and answers it
+   * was for; measuring the BODY instead (`PooledBody.measure`, the sphere
+   * its root's capsule was) asks the question once and answers it
    * the same way for every mesh of that body, so the failure it guarded
    * against cannot occur and the body can still be dropped. It is the same
    * thing `bodyDrawDistanceOf` does, in SCREEN space rather than in metres —
@@ -546,9 +558,8 @@ export class WorldCulling {
    * a rig built and never enabled is exactly the case this exists for — a
    * body of pure walk.
    *
-   * The ROOT is filed alongside the drawn meshes on purpose: it is an
-   * invisible capsule Babylon rejects late rather than early, and one per body
-   * is one per body.
+   * The body's root is no mesh since X4.1a, so only the drawn meshes are
+   * filed.
    */
   setPools(bodies: readonly PooledBody[]): void {
     this.poolOf = new Map();
@@ -557,13 +568,11 @@ export class WorldCulling {
     this.stats.pooled = 0;
     for (const body of bodies) {
       const pool: Pool = {
-        root: body.root,
-        on: body.root.isEnabled(false),
+        body,
+        on: body.enabled,
         small: false,
       };
       this.pools.push(pool);
-      this.poolOf.set(body.root, pool);
-      this.stats.pooled++;
       for (const mesh of body.meshes) {
         this.poolOf.set(mesh, pool);
         this.stats.pooled++;
@@ -618,7 +627,7 @@ export class WorldCulling {
     // the densest map in the tree, against the 1,008 nodes a rebuild answers
     // for — and it marks the list dirty only on a transition.
     for (const pool of this.pools) {
-      const on = pool.root.isEnabled(false);
+      const on = pool.body.enabled;
       if (on === pool.on) continue;
       pool.on = on;
       this.listDirty = true;
@@ -629,7 +638,7 @@ export class WorldCulling {
 
   /**
    * Offers every mesh this file would otherwise hold back, for as long as it is
-   * on: every cell whatever its distance, every pool whether or not its root
+   * on: every cell whatever its distance, every pool whether or not its body
    * is in the round, and no size gate. What is switched OFF is still dropped by
    * `offer`, because Babylon would drop it too; what warm changes for our
    * renderer's surfaces, which are no candidates, is `reachGate` — no reach
@@ -764,9 +773,10 @@ export class WorldCulling {
    * It was measured at the WRONG viewport first and very nearly thrown away;
    * `VERIFYING.md` carries that trap.
    *
-   * `isEnabled()` walks ancestors and `isVisible` does not, which is the right
-   * way round: a rig part is switched by its ROOT, and `setPools` only files
-   * the bodies it is handed.
+   * `isEnabled()` walks ancestors and `isVisible` does not. A rig mesh has no
+   * ancestor since X4.1a: `SoldierModel.setRigEnabled` writes its own flag
+   * beside the body's switch, and `setPools` only files the bodies it is
+   * handed.
    *
    * The order is a subsequence of `eligible`, which is scene order, so
    * `rebuildList`'s argument about `_activeMeshes` ordering survives intact.
@@ -807,7 +817,7 @@ export class WorldCulling {
     reachGate.sizeGate = gate;
     reachGate.perRad = perRad;
     reachGate.px2 = px2;
-    // **A BODY is measured ONCE, off its root, and drops whole.** One test per
+    // **A BODY is measured ONCE, off its own measure, and drops whole.** One test per
     // body rather than per mesh, taken before the walk so that the walk reads
     // an answer instead of computing fourteen of them — and, far more
     // importantly, so that every mesh of a body gets the SAME answer. See
@@ -818,21 +828,18 @@ export class WorldCulling {
         pool.small = false;
         continue;
       }
-      // **The root's matrix is FORCED, and without this the drop LATCHES.**
-      // Babylon computes a world matrix inside `_evaluateActiveMeshes` and
-      // only for CANDIDATES, and that is what refreshes the world bounding
-      // sphere `tooSmall` reads — so a body dropped on stale bounds is never
-      // handed the matrix that would correct them and can never come back,
-      // however close it walks. A rig ROOT is worse off than the meshes that
-      // failure was first found on (`docs/rendering.md`): it is invisible, so
-      // `offer` has always dropped it on the line above and the walk has
-      // never computed it at all — it was reached only incidentally, as the
-      // parent of a child that WAS a candidate, which is exactly the thread
-      // this gate would cut. One forced compose per body per frame, 48 on the
-      // densest map in the tree, also makes the measurement this frame's
-      // rather than last frame's.
-      pool.root.computeWorldMatrix(true);
-      pool.small = tooSmallMesh(pool.root, eye, perRad, px2);
+      // **The measure is composed FRESH, and without that the drop LATCHES.**
+      // Babylon computed a world matrix inside `_evaluateActiveMeshes` and
+      // only for CANDIDATES, and that is what refreshed the world bounding
+      // sphere `tooSmall` reads — so a body dropped on stale bounds was never
+      // handed the matrix that would correct them and could never come back,
+      // however close it walked (`docs/rendering.md`). The rig root was a
+      // mesh until X4.1a and needed a FORCED compose here for that reason;
+      // its measure is ours now and composed off the body's joints on every
+      // call, one root compose per body per frame, so it is this frame's by
+      // construction.
+      pool.body.measure(bodySphere);
+      pool.small = tooSmall(bodySphere.x, bodySphere.y, bodySphere.z, bodySphere.radius, eye, perRad, px2);
     }
     let k = 0;
     for (let i = 0; i < n; i++) {
@@ -856,10 +863,10 @@ export class WorldCulling {
         if (how === undefined) {
           if (tooSmallMesh(mesh, eye, perRad, px2)) continue;
         } else if (how !== null) {
-          // A body's verdict, taken once off its root; else a filed surface's
-          // record, the same sphere its mesh holds — see `gateOf`.
+          // A body's verdict, taken once off its measure; else a filed
+          // surface's record, the same sphere its mesh holds — see `gateOf`.
           const small =
-            "root" in how
+            "body" in how
               ? how.small
               : tooSmall(how.centerX, how.centerY, how.centerZ, how.radius, eye, perRad, px2);
           if (small) continue;
@@ -876,6 +883,9 @@ export class WorldCulling {
   }
 }
 
+/** `offer`'s scratch for a body's measure. */
+const bodySphere: BodyMeasure = { x: 0, y: 0, z: 0, radius: 0 };
+
 /** `tooSmall` off a mesh's own world bounding sphere. */
 function tooSmallMesh(mesh: AbstractMesh, eye: Vector3, perRad: number, px2: number): boolean {
   const sphere = mesh.getBoundingInfo().boundingSphere;
@@ -888,7 +898,7 @@ function tooSmallMesh(mesh: AbstractMesh, eye: Vector3, perRad: number, px2: num
  * pixels of the frame.
  *
  * The one place a projected size is measured, because `offer` asks the
- * question of three different things — a loose mesh, a body's ROOT and a
+ * question of three different things — a loose mesh, a body's measure and a
  * filed surface's record — and two copies of this arithmetic is two answers
  * that can drift apart.
  *

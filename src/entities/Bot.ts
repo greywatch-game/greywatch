@@ -2051,8 +2051,9 @@ export class Bot implements Combatant {
    * **Replayed off numbers, never read off the rig** (`soldierMuzzleToRef`):
    * the root `syncTransform` last stood (`rx`..`ryaw`) and the pose last filled
    * (`solved`), through the same float32 chain Babylon composes — so it is the
-   * value `rig.muzzle.computeWorldMatrix(true)` would return for a rig posed
-   * from `joints`, bit for bit (proved against the rig over whole rounds on all
+   * value the rig's muzzle joint composes to (`JointTree.computeChain`, once
+   * `rig.muzzle.computeWorldMatrix(true)`) for a rig posed from `joints`, bit
+   * for bit (proved against the rig over whole rounds on all
    * seven maps). It is the CURRENT pose's muzzle at any distance, whoever is
    * looking — a muzzle read off a drawn rig is only as current as the LOD let
    * the rig be posed, and an UNFORCED read off a rig that never renders answers

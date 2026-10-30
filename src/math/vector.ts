@@ -1000,6 +1000,14 @@ export class Matrix {
     return result;
   }
 
+  static FromArrayToRef<T extends Matrix>(array: ArrayLike<number>, offset: number, result: T): T {
+    for (let index = 0; index < 16; index++) {
+      result._m[index] = array[index + offset];
+    }
+    result.markAsUpdated();
+    return result;
+  }
+
   static Compose(scale: Vector3Like, rotation: QuaternionLike, translation: Vector3Like): Matrix {
     const result = new Matrix();
     Matrix.ComposeToRef(scale, rotation, translation, result);

@@ -51,8 +51,8 @@
  *
  * **Using `RAGDOLL_BONES` is the load-bearing choice, not a convenience.** The
  * shadow follows a crouch, a stance, a turn and a RAGDOLL for free, because
- * those boxes hang off the same joints — `RagdollSystem` reparents them onto
- * Havok proxies and the shadow goes with the corpse without this file knowing
+ * those boxes hang off the same joints — `RagdollSystem` hangs them on Havok
+ * proxies and the shadow goes with the corpse without this file knowing
  * physics exists. A hand-authored capsule would have been a pill that slid
  * along the ground under a walking body, which is the artefact the blob disc
  * already is.
@@ -341,14 +341,15 @@ export class BodyShadows {
     for (const body of bodies) {
       const rig = body.rig;
       // Whether the body is DRAWN, which is the only question that matters
-      // here: a pooled rig nobody is wearing is switched off at the root, a
-      // living bot is on, and a corpse under Havok is still on — which is what
-      // makes a ragdoll's shadow follow it without this file knowing it fell.
-      if (!rig.root.isEnabled()) continue;
-      const p = rig.root.absolutePosition;
-      const dx = p.x - focus.x;
-      const dy = p.y - focus.y;
-      const dz = p.z - focus.z;
+      // here: a pooled rig nobody is wearing is switched off, a living bot is
+      // on, and a corpse under Havok is still on — which is what makes a
+      // ragdoll's shadow follow it without this file knowing it fell.
+      if (!rig.enabled) continue;
+      // The root's world position, composed fresh: its float32 translation.
+      const p = rig.tree.computeChain(rig.root).m;
+      const dx = p[12] - focus.x;
+      const dy = p[13] - focus.y;
+      const dz = p[14] - focus.z;
       const d2 = dx * dx + dy * dy + dz * dz;
       if (d2 > reach) continue;
       if (n < c.maxBodies) {

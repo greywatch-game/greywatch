@@ -1811,9 +1811,11 @@ is one machine's:
   the only thing that makes it false is the view distance, since a full pool
   evicts its oldest corpse rather than refusing. (A useful shape for that: offer
   a dozen staged bodies in a row, stepping once between each so none is merely
-  sinking, and assert every one comes back true.) Four traps. **Reading a rig joint's world position needs `computeWorldMatrix(true)`
-  first** — outside the render loop `getAbsolutePosition()` is a stale cache, and a
-  joint that looks pinned while its proxy falls is that, not a broken hand-off. **A
+  sinking, and assert every one comes back true.) Four traps. **Reading a rig joint's world position needs it COMPOSED
+  first** — the joints are not nodes since `BABYLON_EXIT.md` X4.1a, and a joint's
+  `world` is whatever the last compose left: `rig.tree.computeChain(joint).m[12..14]`,
+  or `jointPosition(rig, joint, out)` from `SoldierModel`, and a joint that looks
+  pinned while its proxy falls is a read without that, not a broken hand-off. **A
   bot reused between takes needs `alive = true` and `hp` restored.** **The camera's
   pitch is negative for down** (`forward.y = sin(pitch)`), so placing bodies along
   `cameraSys.forward` while pitched throws them into the air — build a horizontal
@@ -1830,7 +1832,7 @@ is one machine's:
   rather than a local rotation — the joints belong to the solver's proxies while it
   owns them, so `kneeL.rotation.x` is not the pose. Take
   `acos(normalise(knee - hip) · normalise(ankle - knee))` with
-  `computeWorldMatrix(true)` on all three: 2.58 rad is the drawn full crouch, and a
+  each composed (`rig.tree.computeChain`): 2.58 rad is the drawn full crouch, and a
   leg that reads ~0 within a step or two of the throw is a joint limit that does not
   contain its own spawn pose. A standing body settles with every joint inside 0.06 m
   of the floor; a crouched one settles on its side and stays curled, so the
@@ -1842,8 +1844,9 @@ is one machine's:
   bearing, `g.deathCam.corpse` is the stand-in body (`.rig`, `.ragdolling`), and
   `g.deathCam.stop()` + `g.state = "playing"` + `g.player.fullReset()` gets back
   out. The corpse rig is built ONCE per process and never rebuilt, so a leak is
-  permanent: assert `rotationQuaternion === null` on all nine posed joints
-  afterwards, plus each one's parent and local position against `rig.rest`. There
+  permanent: assert `holder === null` on every posed joint afterwards (a joint
+  has no quaternion to leak since X4.1a; a proxy left HOLDING it is the leak),
+  plus each one's local position against `rig.rest`. There
   is no fallback path left to reach — the body is at the camera, so the distance
   gate cannot refuse it, and a full pool evicts its oldest corpse instead of
   saying no. **`deathCam.start(feet, yaw, eye, forward, from, damage, kind, crouch)` is

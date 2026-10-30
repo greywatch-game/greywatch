@@ -32,7 +32,11 @@ import type { DamageKind } from "../systems/CombatSystem";
 import {
   animateSoldier,
   buildSoldier,
+  disposeRig,
+  jointPosition,
   resetSoldierPose,
+  setLauncher,
+  setRigEnabled,
   type RagdollSubject,
   type SoldierRig,
 } from "./SoldierModel";
@@ -154,6 +158,8 @@ export class NetSoldier implements Combatant, RagdollSubject {
   private readonly motion = new SoldierMotion();
   /** The `renderTime` of the last posed frame, or null before the first. */
   private lastRender: number | null = null;
+  /** `muzzleWorld`'s answer, reused. */
+  private readonly muzzleAt = new Vector3();
   /** False until the first sample, so the first frame reports no travel. */
   private hasPosition = false;
   private enabled = false;
@@ -380,33 +386,34 @@ export class NetSoldier implements Combatant, RagdollSubject {
   /**
    * The rifle's muzzle in world space: where a drawn round's streak starts.
    *
-   * Read off the RIG, forced, because this body is a drawing and its streak
-   * leaves the barrel on screen: `computeWorldMatrix(true)` recomputes every
-   * ancestor, while an unforced read is LAST frame's pose — which on a body
-   * that has not been drawn yet this round is the pool's build position at the
-   * origin. `Bot.muzzleWorld` is the same point replayed off numbers
+   * Read off the RIG, composed fresh, because this body is a drawing and its
+   * streak leaves the barrel on screen: the chain from the root down, off the
+   * joints' current channels (`JointTree.computeChain` — what
+   * `computeWorldMatrix(true)` was while the joints were nodes), never a
+   * matrix left from the last frame drawn, which on a body that has not been
+   * drawn yet this round is the pool's build position at the origin.
+   * `Bot.muzzleWorld` is the same point replayed off numbers
    * (`soldierMuzzleToRef`), because there it is an outcome.
    */
   muzzleWorld(): Vector3 {
-    this.rig.muzzle.computeWorldMatrix(true);
-    return this.rig.muzzle.getAbsolutePosition();
+    return jointPosition(this.rig, this.rig.muzzle, this.muzzleAt);
   }
 
   /**
    * Whether this body carries the slung rocket launcher — the roster's word
    * on the slot (`SlotOccupant.launcher`, `NetSession`'s `roster` arm): the
-   * tube's node switched, and with it the mesh under it, which `setEnabled`
-   * switches with the rest of the rig but which draws only while its node is
-   * on. Off on every rig until told, as `buildSoldier` leaves it.
+   * tube's joint switched, and with it the mesh under it, which `setEnabled`
+   * switches with the rest of the rig but which draws only while its joint is
+   * on (`SoldierModel.setLauncher`). Off on every rig until told, as
+   * `buildSoldier` leaves it.
    */
   setLauncher(on: boolean): void {
-    this.rig.launcher.setEnabled(on);
+    setLauncher(this.rig, on);
   }
 
   setEnabled(on: boolean): void {
     this.enabled = on;
-    this.rig.root.setEnabled(on);
-    for (const mesh of this.rig.meshes) mesh.setEnabled(on);
+    setRigEnabled(this.rig, on);
   }
 
   /**
@@ -455,7 +462,6 @@ export class NetSoldier implements Combatant, RagdollSubject {
   }
 
   dispose(): void {
-    this.rig.root.dispose();
-    for (const mesh of this.rig.meshes) mesh.dispose();
+    disposeRig(this.rig);
   }
 }

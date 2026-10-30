@@ -19,6 +19,12 @@
 import { Matrix, Quaternion, Vector3, type Mesh } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { RAGDOLL_BONES, type SoldierRig } from "../entities/SoldierModel";
+import type { Joint } from "../entities/rigJoints";
+import {
+  Matrix as JointMatrix,
+  Quaternion as JointQuaternion,
+  Vector3 as JointVector3,
+} from "../math";
 
 /**
  * What a shadow needs of a soldier: a rig to read joints off. A body off the
@@ -49,35 +55,37 @@ export class ProxyBoxes {
   readonly perBody = RAGDOLL_BONES.length;
   /**
    * `RAGDOLL_BONES` as "unit box -> this bone's box in its joint's frame",
-   * composed once because none of it varies.
+   * composed once because none of it varies — in `src/math`, the rig's
+   * joints' own (Babylon's bits; `rigJoints.ts`).
    */
-  private readonly boneLocal: Matrix[] = RAGDOLL_BONES.map((b) =>
-    Matrix.Compose(
-      new Vector3(b.size[0], b.size[1], b.size[2]),
-      Quaternion.Identity(),
-      new Vector3(b.center[0], b.center[1], b.center[2]),
+  private readonly boneLocal: JointMatrix[] = RAGDOLL_BONES.map((b) =>
+    JointMatrix.Compose(
+      new JointVector3(b.size[0], b.size[1], b.size[2]),
+      JointQuaternion.Identity(),
+      new JointVector3(b.center[0], b.center[1], b.center[2]),
     ),
   );
   /** The joint each entry of `boneLocal` hangs off, by rig field name. */
-  private readonly boneJoint = RAGDOLL_BONES.map((b) => b.joint as keyof SoldierRig);
+  private readonly boneJoint = RAGDOLL_BONES.map((b) => b.joint);
   /** Hull scales, one per kind met, keyed on the spec's own box. */
   private readonly hullLocal = new Map<ShadowHull["spec"]["hull"], Matrix>();
   private readonly scratch = Matrix.Identity();
+  private readonly boneScratch = new JointMatrix();
 
   /**
    * One rig's boxes, each at its joint's current world transform, written at
    * instance `at` of `out`. Returns how many it wrote (`perBody`).
    *
-   * `getWorldMatrix` recomputes when the node's render id is stale, which on
-   * the frame this is called it always is — so these are THIS frame's poses,
-   * including for a body off screen whose meshes the render walk will never
-   * activate.
+   * The rig is composed FRESH first (`JointTree.compute`), so these are THIS
+   * frame's poses, including for a body off screen whose meshes nothing will
+   * draw.
    */
   writeRig(rig: SoldierRig, out: Float32Array, at: number): number {
+    rig.tree.compute();
     for (let i = 0; i < this.boneLocal.length; i++) {
-      const joint = rig[this.boneJoint[i]] as { getWorldMatrix(): Matrix };
-      this.boneLocal[i].multiplyToRef(joint.getWorldMatrix(), this.scratch);
-      this.scratch.copyToArray(out, (at + i) * 16);
+      const joint: Joint = rig[this.boneJoint[i]];
+      this.boneLocal[i].multiplyToRef(joint.world, this.boneScratch);
+      this.boneScratch.copyToArray(out, (at + i) * 16);
     }
     return this.boneLocal.length;
   }

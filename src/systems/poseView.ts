@@ -27,7 +27,8 @@
  *   Babylon imports are types, so `scripts/check-babylon-free.mjs` could not
  *   tell if they did.)
  */
-import type { Quaternion, TransformNode, Vector3 } from "@babylonjs/core";
+import type { TransformNode } from "@babylonjs/core";
+import type { QuaternionLike, Vector3Like } from "../math";
 
 /**
  * The node's ABSOLUTE pose as `[px, py, pz, qx, qy, qz, qw]` — what the
@@ -50,7 +51,7 @@ export function applyPose(pose: ArrayLike<number>, node: TransformNode): void {
 }
 
 /** Places a body: a position and an orientation written into its pose. */
-export function storePose(pose: Float64Array, position: Vector3, rotation: Quaternion): void {
+export function storePose(pose: Float64Array, position: Vector3Like, rotation: QuaternionLike): void {
   pose[0] = position.x;
   pose[1] = position.y;
   pose[2] = position.z;

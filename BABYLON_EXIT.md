@@ -3567,7 +3567,7 @@ module from X2.2. When the last one lands, Babylon draws nothing but the post
 chain, and the frozen cel-material cache and its traps are deleted with
 `CelMaterialFactory`'s Babylon half.
 
-### X4.1 — Bodies (PERF_PLAN C6, A4) — **L, as five sub-steps** (split 2026-10-29)
+### X4.1 — Bodies (PERF_PLAN C6, A4) — **L, as five sub-steps** (split 2026-10-29) — X4.1a **LANDED**
 
 Every body a page draws — `NetSoldier`'s rig, a corpse, the death cam's
 stand-in — comes off Babylon's scene, along with the moon's body shadow map,
@@ -3581,7 +3581,8 @@ because `RagdollSystem` reparents its joints onto Havok proxies. Here a corpse
 is posed off X2.4's arrays (`WorldBody.pose`) onto our joints, so the
 reparenting goes and every body is one kind of thing to draw.
 
-- **X4.1a — the joints are ours (no picture change).** `SoldierModel`'s tree
+- **X4.1a — the joints are ours (no picture change).** Landed (below).
+  `SoldierModel`'s tree
   of `TransformNode` joints becomes our own hierarchy, its world matrices
   written into arrays a rig owns. Babylon still draws the 14 meshes, reading
   those matrices. `NetSoldier`'s pose (`soldierPose.ts`), `proxyBoxes`, the
@@ -3634,6 +3635,105 @@ reparenting goes and every body is one kind of thing to draw.
 - **Verify, each sub-step:** the bank `--check --keep` against a BEFORE at the
   parent; `census --against`; `gate`, `shaders`; typecheck, build, corecheck,
   `parity`; a round offline and a netplay round.
+
+**X4.1a landed** (2026-10-29; no picture change).
+- **What it is.** A soldier rig's joints are OUR hierarchy
+  (`src/entities/rigJoints.ts`, Babylon-free, a root of
+  `check-babylon-free.mjs`): `Joint` holds the local channels a
+  `TransformNode` held (position, Euler, scaling, its own switch) and a
+  float32 world `Matrix` the rig owns; `JointTree.compute` composes every
+  joint parents first and `computeChain` one joint and its ancestors — each
+  answer FRESH, what a forced `computeWorldMatrix(true)` was, in `src/math`'s
+  copies of Babylon's arithmetic (the muzzle replay's, X2.2). **Babylon
+  still draws the fourteen meshes, and none has a parent**: each mesh's own
+  local is composed once at build, and `drawRig` hands Babylon its world
+  matrix (that local times its joint's) through `freezeWorldMatrix` — once a
+  frame from `Game.drawBodies`, in every state, after every write and
+  immediately before `scene.render`, inside the `render` span where Babylon
+  composed them before. **The root capsule is gone**: the root is a joint;
+  `rig.enabled` is the switch every roster, the death cam and the culling
+  read (`setRigEnabled`, which writes each mesh's own flag beside it, the
+  launcher's mesh off while its joint is); and `WorldCulling` measures a
+  body through `PooledBody.measure` (`SoldierModel.pooledBody`, so the cull
+  still names no soldier) — `rigJoints.measureBody`, the capsule's sphere
+  (`BoundingSphere._update` over its exact ±0.4/±0.9 bounds) off a fresh
+  compose of the root. Every reader of a joint reads the arrays:
+  `NetSoldier.muzzleWorld` and the death cam's anchor and chest
+  (`jointPosition`), `ProxyBoxes.writeRig` (a fresh `compute`; the bone
+  boxes composed in `src/math`), both shadow packers' root position,
+  `RagdollSystem.shadowFor` and its spawn (`computeChain(joint).decompose`).
+  The pose math (`solveArm`, the reload's hand keys) moved onto `src/math`
+  with it. `Matrix.FromArrayToRef` joined `src/math`, with its `math-check`
+  case; `storePose` takes `Vector3Like`/`QuaternionLike`.
+- **How it coexists with today's corpse reparenting (X4.1b's to delete).**
+  A corpse still hangs its bones on the pool's proxy `TransformNode`s, but
+  as a joint's HOLDER: `JointTree.hold(joint, proxy)` and `release(joint)`
+  replay `TransformNode.setParent` operation for operation (the current
+  world rebuilt in place off the current parent's or holder's fresh world,
+  times the inverse of the new one's, decomposed, Euler written back), and
+  a held joint composes off the proxy's own position, quaternion and scaling
+  exactly as Babylon composed an unparented node. So a frozen corpse is the
+  same locals to the bit, and `resetSoldierPose` clears every holder — the
+  leak to fear now, as a leaked quaternion was. The proxies stay Babylon
+  nodes with nothing under them, so the one read of one's matrix
+  (`applyImpulse`'s chest point) is FORCED. The first `clients.mjs --check`
+  moved at frame 50 without it: the ninth death's eviction reuses slot 0,
+  whose proxy's unforced `getAbsolutePosition` answered frame 0's position
+  inside the script's one render id, where `setParent` had forced it; the
+  forced compose put the script back to bits. X4.1b writes the poses
+  straight onto the joints, and takes the holder and the proxies with it.
+- **The oracle — the joint matrices against the nodes', bit for bit.**
+  - **On the parent, over live rounds** (a scratch probe on 25331b8): every
+    rig mesh in the active list at `onAfterActiveMeshesEvaluation`, against
+    a fresh `src/math` composition of its node chain's current locals —
+    368,091 on Sarab (2,400 frames, 48 bodies) and 200,173 on Hollowmere
+    (3,000 frames; 176,110 of them corpses: fifteen deaths staged through the
+    roster's own alive edge, bullet and blast, and the death cam's
+    stand-in) — all bit-identical, so what Babylon DREW was always the fresh
+    composition the arrays now make. Both shadow packers'
+    `root.absolutePosition` was fresh on every read (46,314 on Sarab, 15,797
+    on Hollowmere). **The one stale reader**: `ProxyBoxes.writeRig`'s
+    unforced `getWorldMatrix` read 146 of 179,208 body-map boxes and 146 of
+    172,452 lamp boxes, and `shadowFor` 4 of 11,569 corpse chests, out of
+    Babylon's render-id cache on the frames a corpse's joints changed parent
+    (the take and the freeze) — the world under the OLD parent, which
+    `setParent` keeps equal to the new up to float32 rounding. The arrays
+    answer fresh there (`rigJoints.ts`' header): a rounding-sized input to a
+    shadow map on two frames a corpse, which no bank row can see, gone with
+    the hand-off at X4.1b. The capsule's sphere: 26,465 forced measures on
+    Sarab against `measureBody` off the same root, all bit-identical.
+  - **Across the two trees** (one scratch run on the parent's nodes and one
+    on our arrays): 8,000 seeded poses, both kits, the launcher on, a reset
+    every 97th — gait, aim, twist, crouch, ready, carry, kick and reload, the
+    root anywhere in ±600 m and turned anywhere — every joint's world (17)
+    and every mesh's world matrix as Babylon holds it (15): **0 of 8,000
+    differ**. `clients.mjs`'s script with every switched-on stand-in's 17
+    joint and 15 mesh world matrices digested each frame: **601 of 601
+    frames identical on Coldharbour, Cinderhaven and Harrowmead** (310
+    distinct digests a map — the takes, the tumbles, the freezes, the sinks,
+    the eviction and the retire).
+  - **On the step, over live rounds** (the same probe against our arrays):
+    every rig mesh drawn, against its local times a fresh composition of our
+    joints' locals at evaluation — Hollowmere 190,975 (176,690 corpses),
+    Sarab 327,947 (171,316 corpses), all bit-identical: no rig is drawn off a
+    matrix older than its last write.
+  - **`clients.mjs --check`**: identical on all three maps — Havok's bodies,
+    every pooled body every frame, and the node digest, whose rig half reads
+    our joints in the bytes a node gave (the holding proxy's name as the
+    parent, the rig's switch as the root's flag, "noquat"), so the bank
+    taken off the nodes grades them unchanged.
+- **Measured.** The bank against a BEFORE at 25331b8 in a worktree
+  (`--check --keep` both sides): **61 of 61 byte-identical**, `rig-near`
+  and `rig-far` among them, the same 34 stale rows on both sides, no console
+  or page error. **`census --against`** the BEFORE: every row equal (Hollowmere 278, Greyfen 205, Coldharbour 672, Harrowmead 847, Sarab 661, Cinderhaven 186, Kurenai 125). **`gate.mjs`** clean on seven. **`shaders.mjs`** clean on seven, ours 17/17 (21/21 Sarab and Cinderhaven, 23/23 Coldharbour). `math-check` 79 cases;
+  typecheck, build, corecheck and `parity` (eight maps) pass. **A round offline** on Hollowmere and Sarab (the probes above, and `gate`'s seven) and **a netplay round** against a local `dist-server` (`?mp=`, Hollowmere, the authority's round): bodies drawn off the wire, fifteen deaths staged through the roster and the death cam's stand-in, 208,184 rig meshes drawn and every one the fresh composition, no console or page error.
+- **Deviations.** `WorldCulling.stats.pooled` counts the meshes alone (it
+  counted each root too). `DeathCam.warm` hands its meshes their matrices
+  itself as well as through `drawBodies`. The fresh shadow-box and
+  `shadowFor` reads above.
+- **Owed onward.** X4.1b: the holder and the proxies, `freeze`'s hand-back
+  and the forced proxy compose. The phone's FOLLOW-UP reading, as every
+  step's since X3.3c, and the post-commit review of this step.
 
 ### X4.2 — Vehicles (PERF_PLAN A3) — **M** (decision)
 

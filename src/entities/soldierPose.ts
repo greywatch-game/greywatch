@@ -11,7 +11,7 @@
  * - **No `@babylonjs/core`.** It is `src/math` and `CONFIG` only, so the
  *   simulation can ask where a bot's rifle is without a rig, and the server
  *   without a scene. `SoldierModel` is the one place a solved pose becomes a
- *   node transform (`poseSoldier`), and it reads the constants from HERE so the
+ *   joint transform (`poseSoldier`), and it reads the constants from HERE so the
  *   drawing and the arithmetic cannot drift.
  * - **`soldierMuzzleToRef` is the node chain, bit for bit.** It replays exactly
  *   what Babylon's `TransformNode.computeWorldMatrix(true)` does down root →
@@ -21,7 +21,9 @@
  *   copies of those classes (`math/vector.ts`, which compare bits). A float64
  *   trig version of the same geometry is a different number and moves the
  *   fight hash. A joint moved on the muzzle's path, or an offset changed in
- *   `buildSoldier`, is a change HERE, since the rig builds from these.
+ *   `buildSoldier`, is a change HERE, since the rig builds from these. The
+ *   rig's own joints are composed by the same arithmetic since X4.1a
+ *   (`rigJoints.ts`), so the replay and the drawn muzzle are one number.
  * - The ARMS are not here: they are solved onto wherever this put the rifle,
  *   are on no path anything but the picture reads, and stay with the rig.
  * Never: allocates (the solve runs per body per frame), holds state beyond its

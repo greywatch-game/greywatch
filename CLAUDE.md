@@ -606,11 +606,12 @@ candidate**, and a CELL is grown from the RECORDS (`GameMap.world`, whole).
 once per kind, its pieces cut out of the block arrays it stays merged into
 (`BuildOptions.onScatter`). **A mesh carrying `metadata.block` (the
 glazing, a fire) is one only while the camera is inside the map's `fogEnd`**,
-**a body's RIG only while the root the roster switches is enabled**, and
+**a body's RIG only while the switch the roster writes is on**, and
 **everything else is ELIGIBLE**. **Anything EMISSIVE and anything outside
 rendering group 0 are exempt outright.** **Nothing pooled may ever be
-block-keyed**, and the rigs are **filed mesh by mesh, never by ancestry**
-(`RagdollSystem` reparents a corpse's joints).
+block-keyed**, and the rigs are **filed mesh by mesh, never by ancestry**:
+a rig's JOINTS are ours (`rigJoints.ts`) and its meshes have no parent,
+`drawRig` handing each its world matrix once a frame (`Game.drawBodies`).
 
 **The GLOW draws the EMISSIVE meshes and nothing else, its occlusion being the
 FRAME's own depth buffer** (`src/shaders/GlowPass.ts`). **What may bloom is read
@@ -1027,7 +1028,7 @@ its three clients, never the other way round. **It calls Havok's RAW `HP_*` API*
 (`systems/havok.ts`) — no Babylon plugin, no physics engine on the scene — and
 **a body's pose is seven numbers in an array** (`WorldBody.pose`), which each
 client's VIEW writes onto what it draws (`systems/poseView.ts`): the ragdoll at
-the top of its `update`, before `freeze` reparents joints, so **anything new
+the top of its `update`, before `freeze` hands joints back, so **anything new
 that reads a corpse's drawing between `physics.update` and the clients'
 `update`s reads last frame's**. `PhysicsWorld` reaches no node, mesh or scene —
 the floor reaches it as `GameMap.terrainGeometry` — and
@@ -1527,9 +1528,9 @@ built.
   fails on dead variables. **`useDefineForClassFields` is FALSE and must stay
   false**, or a field declared without an initializer boxes every number
   stored into it (`docs/profiling.md`). Nothing fails; the game just allocates.
-- `Bot` holds a small FSM and drives a joint rig built by `SoldierModel` (invisible
-  root + `TransformNode` joints). Animation is procedural, so a new behavior means new
-  FSM states, never new clips.
+- `Bot` holds a small FSM; a body is DRAWN by a rig `SoldierModel` builds (our own
+  joints, `rigJoints.ts`, posed by `animateSoldier`). Animation is procedural, so a new
+  behavior means new FSM states, never new clips.
 
 ## Files not to edit / not part of the build
 

@@ -333,6 +333,8 @@ export class LocalShadows {
   private readonly probe = new Float64Array(6);
   /** Nearest-a-light selection scratch, reused frame to frame. See `packBodies`. */
   private readonly pickedBodies: (ShadowBody | null)[] = [];
+  /** `rootAt`'s answer, reused. */
+  private readonly rootScratch = new Vector3();
   private readonly pickedGap: number[] = [];
   /** Boxes in each packed slot: a soldier's bones, or a hull's one. */
   private readonly bodyBoxCount: number[] = [];
@@ -1089,10 +1091,10 @@ export class LocalShadows {
     const gap = this.pickedGap;
     let m = 0;
     for (const b of bodies) {
-      const root = b.rig.root;
-      if (!root.isEnabled()) continue;
-      // The body box is 1.3 m either way of its root — see `packDynamic`.
-      const g = this.lightGap(root.absolutePosition);
+      if (!b.rig.enabled) continue;
+      // The body box is 1.3 m either way of its root — see `packDynamic`. The
+      // root's world position, composed fresh: its float32 translation.
+      const g = this.lightGap(this.rootAt(b.rig));
       if (g > 1.5) continue;
       if (m < c.maxBodies) {
         picked[m] = b;
@@ -1111,7 +1113,7 @@ export class LocalShadows {
       const rig = picked[i]!.rig;
       this.bodyBoxes.writeRig(rig, this.bodyMatrices, n * per);
       this.bodyBoxCount[n] = per;
-      (this.bodyAt[n] ??= new Vector3()).copyFrom(rig.root.absolutePosition);
+      (this.bodyAt[n] ??= new Vector3()).copyFrom(this.rootAt(rig));
       n++;
       // Dropped so a pooled rig cannot be held alive by this list.
       picked[i] = null;
@@ -1132,6 +1134,16 @@ export class LocalShadows {
       hullsIn++;
     }
     this.bodyCount = n;
+  }
+
+  /**
+   * A rig's root in the world, composed fresh off its joints (the root was a
+   * mesh whose `absolutePosition` this read until `BABYLON_EXIT.md` X4.1a).
+   * Into one scratch vector: read it before asking again.
+   */
+  private rootAt(rig: ShadowBody["rig"]): Vector3 {
+    const m = rig.tree.computeChain(rig.root).m;
+    return this.rootScratch.set(m[12], m[13], m[14]);
   }
 
   /** How far `p` stands outside the nearest chosen light's reach (negative inside). */

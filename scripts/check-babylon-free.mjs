@@ -127,6 +127,11 @@ const SIMULATIONS = [
   // which keeps every body's pose in a plain array and reaches no node
   // Its three clients are views and are not roots.
   "src/systems/PhysicsWorld.ts",
+  // Not a simulation, and held as one for the same reason as the two above:
+  // a soldier rig's joints as our own hierarchy (`BABYLON_EXIT.md` X4.1a),
+  // whose world matrices Babylon only reads — the half a body is drawn from
+  // once Babylon draws none of it (X4.1d).
+  "src/entities/rigJoints.ts",
 ];
 
 /**

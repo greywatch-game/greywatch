@@ -1466,9 +1466,10 @@ about it are open.
   disabled under an enabled root.
 - **`offer` is `O(eligible)` every frame, and it does more per candidate than
   it did.** `isEnabled()` walks ancestors; the size gate adds a bounding-sphere
-  read per candidate; and every body pays a forced `computeWorldMatrix` on its
-  rig root (`WorldCulling.ts`, the "root's matrix is FORCED" comment) — up to
-  48 a frame on the densest map. At 2 px the gate does not repay its own read
+  read per candidate; and every body pays a fresh compose of its root joint
+  and its capsule's sphere (`PooledBody.measure`; a forced `computeWorldMatrix`
+  on the rig root MESH until `BABYLON_EXIT.md` X4.1a) — up to 48 a frame on
+  the densest map. At 2 px the gate does not repay its own read
   on any map measured; it is only worth having because 3 px does on the biggest
   one, and a `sqrt` per candidate measured as a LOSS, so it compares squared.
   A pool that told `WorldCulling` when it went live would cost nothing per

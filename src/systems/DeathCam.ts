@@ -48,7 +48,11 @@ import type { DamageKind } from "./CombatSystem";
 import {
   animateSoldier,
   buildSoldier,
+  disposeRig,
+  drawRig,
+  jointPosition,
   resetSoldierPose,
+  setRigEnabled,
   type RagdollSubject,
   type SoldierRig,
 } from "../entities/SoldierModel";
@@ -77,7 +81,7 @@ class Corpse implements RagdollSubject {
   constructor(readonly rig: SoldierRig) {}
 
   setEnabled(on: boolean): void {
-    this.rig.root.setEnabled(on);
+    setRigEnabled(this.rig, on);
   }
 }
 
@@ -109,6 +113,8 @@ export class DeathCam {
   private readonly fromLook = new Vector3();
   /** The smoothed point on the body the shot is framed on. */
   private readonly anchor = new Vector3();
+  /** The chest, read fresh each frame of the cam. */
+  private readonly chest = new Vector3();
 
   // Scratch. This runs every frame of the cam; nothing below allocates.
   private readonly want = new Vector3();
@@ -166,8 +172,8 @@ export class DeathCam {
    * their matrices were never computed either — a latch that held for the whole
    * death cam. The head merges smallest and went first.
    *
-   * `SoldierRig` already IS `PooledBody` structurally, which is why this is a
-   * getter and not a conversion. Null before `prepare` has built one.
+   * `Game.installBodyPools` files it as any rig is filed
+   * (`SoldierModel.pooledBody`). Null before `prepare` has built one.
    *
    * **It is only ever read after `prepare`**, because a change of side disposes
    * this rig and builds another — see there, and see `Game.buildRound`, where
@@ -198,20 +204,18 @@ export class DeathCam {
    *
    * It is stood at the warm-up's eye, because two of the passes it has to
    * reach — the bodies' shadow map and the lamps' atlas — only draw a body
-   * near the eye they are placed around, and they read its JOINTS, whose
-   * matrices are therefore composed here rather than left to the render.
+   * near the eye they are placed around. Both compose its joints themselves;
+   * its meshes are handed theirs here (`drawRig`) as well as by the frame's
+   * own `Game.drawBodies`, so the pose is in them whichever runs first.
    */
   warm(at: Vector3 | null): void {
     if (!this.corpse || this.running) return;
     const rig = this.corpse.rig;
-    if (at) {
-      rig.root.position.copyFrom(at);
-      rig.root.computeWorldMatrix(true);
-      for (const node of rig.root.getChildTransformNodes(false)) {
-        node.computeWorldMatrix(true);
-      }
-    }
     this.corpse.setEnabled(at !== null);
+    if (at) {
+      rig.root.position.set(at.x, at.y, at.z);
+      drawRig(rig);
+    }
   }
 
   /**
@@ -237,13 +241,13 @@ export class DeathCam {
   prepare(team: Team): void {
     if (this.builtFor === team && this.corpse) return;
     this.stop();
-    // Nodes only, never the materials: the body is painted from
+    // Meshes only, never the materials: the body is painted from
     // `CelMaterialFactory`'s shared caches, so disposing them here takes the
     // paint out from under every bot on the field and the map with them. See
     // `VehicleView.dispose`.
-    this.corpse?.rig.root.dispose(false);
+    if (this.corpse) disposeRig(this.corpse.rig);
     const rig = buildSoldier(this.scene, this.mats, team);
-    rig.root.setEnabled(false);
+    setRigEnabled(rig, false);
     this.corpse = new Corpse(rig);
     this.builtFor = team;
   }
@@ -320,8 +324,7 @@ export class DeathCam {
       .copyFrom(forward)
       .scaleInPlace(CONFIG.player.deathCam.distance)
       .addInPlace(eye);
-    rig.torso.computeWorldMatrix(true);
-    this.anchor.copyFrom(rig.torso.getAbsolutePosition());
+    jointPosition(rig, rig.torso, this.anchor);
     this.eye.copyFrom(this.fromEye);
     this.look.copyFrom(this.fromLook);
 
@@ -344,12 +347,10 @@ export class DeathCam {
     const rig = this.corpse.rig;
     this.t += dt;
 
-    // The chest, computed rather than read: outside the render loop
-    // `getAbsolutePosition` returns a stale cache, and while the ragdoll owns
-    // this joint its parent is a proxy node `RagdollSystem`'s view moved to
-    // the solver's pose this frame.
-    rig.torso.computeWorldMatrix(true);
-    const chest = rig.torso.getAbsolutePosition();
+    // The chest, composed fresh off the joints: while the ragdoll owns this
+    // joint it hangs on a proxy node `RagdollSystem`'s view moved to the
+    // solver's pose this frame.
+    const chest = jointPosition(rig, rig.torso, this.chest);
     chest.subtractToRef(this.anchor, this.dir);
     this.anchor.addInPlace(this.dir.scaleInPlace(Math.min(1, dt * c.followRate)));
 
@@ -389,8 +390,8 @@ export class DeathCam {
   }
 
   dispose(): void {
-    // Nodes only — see `prepare`.
-    this.corpse?.rig.root.dispose(false);
+    // Meshes only — see `prepare`.
+    if (this.corpse) disposeRig(this.corpse.rig);
     this.corpse = null;
     this.builtFor = null;
   }

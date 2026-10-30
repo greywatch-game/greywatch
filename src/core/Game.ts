@@ -132,6 +132,7 @@ import { NetSession, type LocalGun, type LocalHull } from "../net/NetSession";
 import { LocalOwner } from "../net/LocalOwner";
 import type { MatchHost } from "../net/matchHost";
 import { NetSoldier } from "../entities/NetSoldier";
+import { drawRig, pooledBody } from "../entities/SoldierModel";
 import { clearRequestTimings, fetchMatches } from "../net/lobby";
 import { HitCredits } from "../net/HitCredits";
 import { NetShotQueue, type PendingShot } from "../net/NetShotQueue";
@@ -3901,6 +3902,7 @@ export class Game {
     this.pushTouchControls();
     this.pushScoreboard();
     this.prof.begin(P.render);
+    this.drawBodies();
     this.scene.render();
     this.prof.end(P.render);
     if (warming) this.unstageWarmFrame();
@@ -5487,6 +5489,25 @@ export class Game {
   }
 
   /**
+   * Hands Babylon this frame's matrices for every body it may draw: each
+   * switched-on rig's joints composed and its meshes' world matrices pushed
+   * (`SoldierModel.drawRig`, `BABYLON_EXIT.md` X4.1a). Once a frame, in
+   * EVERY state, after everything that poses or places a body and
+   * immediately before `scene.render` — inside the render span, because
+   * Babylon composed these inside the render until the joints were ours, so
+   * the profiler's attribution does not move. A rig switched off is not drawn
+   * and is not composed; the frame it is switched back on, this is what
+   * hands its meshes the pose before anything draws them.
+   */
+  private drawBodies(): void {
+    for (const soldier of this.net?.roster.soldiers ?? NO_SOLDIERS) {
+      if (soldier.rig.enabled) drawRig(soldier.rig);
+    }
+    const corpse = this.deathCam.body;
+    if (corpse?.enabled) drawRig(corpse);
+  }
+
+  /**
    * Hands the round's pooled bodies to `WorldCulling`, which would otherwise
    * offer every mesh of every rig to the frame's mesh walk whether that body is
    * in the round or not.
@@ -5515,7 +5536,7 @@ export class Game {
   private installBodyPools(): void {
     const bodies: PooledBody[] = [];
     for (const soldier of this.net?.roster.soldiers ?? []) {
-      bodies.push(soldier.rig);
+      bodies.push(pooledBody(soldier.rig));
     }
     // …and the OTHER rig, which is not in the pool and is the one the player
     // watches from four metres away. `DeathCam` builds its own stand-in,
@@ -5524,7 +5545,7 @@ export class Game {
     // pooled body by every test this makes, and was loose only because
     // nothing had handed it over. See `DeathCam.body` for what that cost.
     const corpse = this.deathCam.body;
-    if (corpse) bodies.push(corpse);
+    if (corpse) bodies.push(pooledBody(corpse));
     this.culling.setPools(bodies);
   }
 
@@ -9494,7 +9515,7 @@ export class Game {
   ): void {
     this.shadows.update(shadowFocus, this.mats);
     // The bodies' map follows the same focus and is rebuilt from whatever is
-    // DRAWN — `rig.root.isEnabled()` inside, which is true of a living bot, of
+    // DRAWN — `rig.enabled` inside, which is true of a living bot, of
     // a corpse under Havok and of nothing in a pool nobody is wearing. So it is
     // not gated on `player`: that gate means "has a body of its own to shade",
     // which a DRIVER does not (`frameVehicleCamera` passes null) while his
