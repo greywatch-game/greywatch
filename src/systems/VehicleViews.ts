@@ -15,8 +15,9 @@
  *   `spawns[i]` (`VehicleSystem.build` walks `vehicleSpawns` in order), so the
  *   model is looked up by that hardstanding's kind (`vehicleModels.modelOf`) —
  *   a lookup keyed by the kind, never a branch on it.
- * - `views` is what the two shadow maps draw (`ShadowHull`): the BODY box, not
- *   the rig, enabled exactly while its hull is `present`.
+ * - `views` is the fleet's PICTURE and nothing reads it as a hull: the two
+ *   shadow maps are handed the hulls themselves (`ShadowHull`, their collider
+ *   boxes off their own fields, `BABYLON_EXIT.md` X4.1c).
  */
 import type { Scene } from "@babylonjs/core";
 import type { Vehicle } from "../entities/Vehicle";

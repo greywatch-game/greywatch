@@ -5,7 +5,8 @@
  * Owns: `HullFrame` (one per kind, stated by its frame file), `HullPose` (the
  * channels those joints hold, written by `Vehicle` and `HullSprings` behind
  * the guards the node writes had, and copied onto the nodes by the client's
- * `VehicleView`), and `hullPointToRef`.
+ * `VehicleView`), `hullPointToRef`, and `hullBodyToRef` — the collider box's
+ * own frame, which the shadow maps draw a hull as (`core/proxyBoxes.ts`).
  * Invariants:
  * - **No `@babylonjs/core`.** `src/math` only, so the simulation can ask where
  *   a hull's barrel is without a rig and the authority without a scene.
@@ -153,6 +154,20 @@ function link(
 }
 
 /**
+ * The collider box's frame — the box stands at `(x, y, z)`, its centre,
+ * turned `yaw` — into `out`, as the body node a view hangs its rig off
+ * composed it (`TransformNode.computeWorldMatrix`, unit scale, no parent):
+ * the first link of `hullPointToRef`'s chain, and what a shadow map draws a
+ * hull's box off (`core/proxyBoxes.ts`, `BABYLON_EXIT.md` X4.1c), so neither
+ * reads the mesh.
+ */
+export function hullBodyToRef(x: number, y: number, z: number, yaw: number, out: Matrix): Matrix {
+  Quaternion.RotationYawPitchRollToRef(yaw, 0, 0, _q);
+  Matrix.ComposeToRef(ONE, _q, _at.copyFromFloats(x, y, z), out);
+  return out;
+}
+
+/**
  * A point on a hull in world space: the main gun's muzzle (the turret ring on a
  * kind with no gun), the cupola gun's muzzle, or the gunner's sight.
  *
@@ -176,8 +191,7 @@ export function hullPointToRef<T extends Vector3Ref>(
   point: HullPoint,
   out: T,
 ): T {
-  Quaternion.RotationYawPitchRollToRef(yaw, 0, 0, _q);
-  Matrix.ComposeToRef(ONE, _q, _at.copyFromFloats(x, y, z), _body);
+  hullBodyToRef(x, y, z, yaw, _body);
   link(0, 0, 0, 0, drop, 0, _body, _root);
   link(0, pose.hullX, pose.hullZ, 0, 0, 0, _root, _hull);
   link(0, pose.sprungX, pose.sprungZ, 0, pose.sprungY, 0, _hull, _sprung);

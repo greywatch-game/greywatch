@@ -69,8 +69,9 @@
  *   its first frame; ours draws on the next frame our renderer prepares, and
  *   `ready` says when it has.
  * - The light matrix of a map of ours is `getTransformMatrix`'s arithmetic,
- *   in the same order on the same helpers (`lightTransform`), so a reader
- *   samples the texel the generator's matrix named.
+ *   in the same order on the same helpers (`lightTransformToRef`, the one
+ *   copy, which the bodies' map reads too), so a reader samples the texel the
+ *   generator's matrix named.
  * - updateBlobs takes the player's ground height rather than probing for it:
  *   Player.floorY is that number, already found this frame.
  */
@@ -92,6 +93,7 @@ import {
 import { CONFIG } from "../config";
 import {
   depthBias,
+  lightTransformToRef,
   litShadowTexture,
   SHADOW_NEAR,
   ShadowWindow,
@@ -104,8 +106,7 @@ import type { CelMaterialFactory } from "../shaders/CelShader";
 
 /**
  * The layer the foliage light is pinned to, which no mesh carries — so the
- * light defines a shadow frustum and lights nothing. Distinct from
- * `BodyShadows`' proxy layer, which a mesh DOES carry.
+ * light defines a shadow frustum and lights nothing.
  */
 const FOLIAGE_LAYER = 0x20000000;
 
@@ -203,11 +204,6 @@ export class ShadowSystem {
   );
   /** Where a map's light stands, as `WorldShadows.draw` takes it. */
   private readonly lightEye = new Float32Array(3);
-  /** `lightTransform`'s scratch. */
-  private readonly lightView = new Matrix();
-  private readonly lightProjection = new Matrix();
-  private readonly lightDir = new Vector3();
-  private readonly lightTarget = new Vector3();
   private readonly blobMaterial: StandardMaterial;
   private readonly blobs = new Map<Combatant, Mesh>();
   /**
@@ -301,7 +297,7 @@ export class ShadowSystem {
     const lightOf = (name: string, dir: Vector3, side: number, layer: number | null): DirectionalLight => {
       const light = new DirectionalLight(name, dir, scene);
       // Pinned to a layer no mesh carries, so it can never become a lighting
-      // light for a StandardMaterial (BodyShadows' rule) — all but the moon's.
+      // light for a StandardMaterial — all but the moon's.
       if (layer !== null) light.includeOnlyWithLayerMask = layer;
       // Fixed square ortho window; auto-extends against the render list would
       // stretch the window to the whole 240 m map and halve the texel density.
@@ -560,29 +556,19 @@ export class ShadowSystem {
 
   /**
    * `map`'s light view-projection into `map.matrix`, as Babylon's
-   * `ShadowGenerator.getTransformMatrix` computes it for a `DirectionalLight`
-   * with a fixed frustum and no parent — the same helpers in the same order,
-   * so the same float32 numbers: a look-at from the light's position along
-   * its direction, nudged off the vertical, and `OrthoLH` over the frustum's
-   * side and the light's depth range in the engine's half-z range.
+   * `ShadowGenerator.getTransformMatrix` computes it — `core/shadowWindow.ts`'s
+   * `lightTransformToRef`, over the light's frustum side and depth range.
    */
   private lightTransform(map: WorldMap): void {
     const light = map.light;
-    const dir = this.lightDir;
-    Vector3.NormalizeToRef(light.direction, dir);
-    // `UpReadOnly` where Babylon makes a fresh `Up()`: the same numbers, no garbage.
-    if (Math.abs(Vector3.Dot(dir, Vector3.UpReadOnly)) === 1.0) dir.z = 0.0000000000001;
-    light.position.addToRef(dir, this.lightTarget);
-    Matrix.LookAtLHToRef(light.position, this.lightTarget, Vector3.UpReadOnly, this.lightView);
-    Matrix.OrthoLHToRef(
-      light.shadowFrustumSize,
+    lightTransformToRef(
+      light,
       light.shadowFrustumSize,
       light.shadowMinZ,
       light.shadowMaxZ,
-      this.lightProjection,
       this.scene.getEngine().isNDCHalfZRange,
+      map.matrix,
     );
-    this.lightView.multiplyToRef(this.lightProjection, map.matrix);
   }
 
   /** `map`, ours, drawn from where its light stands on the next frame our renderer prepares. */

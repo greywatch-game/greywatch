@@ -111,8 +111,9 @@ import type { WorldBox } from "../world/MapBuilder";
 
 /**
  * The layer the proxy and the clear sheet wear: at or above `0x10000000` no
- * camera draws it, and an explicit render list does not check. `BodyShadows`'
- * header states the mechanism.
+ * camera draws it — `Scene._evaluateActiveMeshes` tests a camera's
+ * `layerMask` — and an explicit render list does not check it
+ * (`ObjectRenderer`), so they are drawn by those lists alone.
  */
 const LAYER = 0x10000000;
 
@@ -329,6 +330,8 @@ export class LocalShadows {
   /** This frame's body matrices, packed once and copied per face. */
   private readonly bodyMatrices: Float32Array;
   private readonly bodyAt: Vector3[] = [];
+  /** Where a hull's box stands, a frame's scratch (`ProxyBoxes.hullCentreToRef`). */
+  private readonly hullAt = new Vector3();
   /** A box for `reaches` whose caller does not already hold one in an array. */
   private readonly probe = new Float64Array(6);
   /** Nearest-a-light selection scratch, reused frame to frame. See `packBodies`. */
@@ -1123,8 +1126,10 @@ export class LocalShadows {
     let hullsIn = 0;
     for (const h of hulls) {
       if (hullsIn >= c.maxHulls) break;
-      if (!h.body.isEnabled()) continue;
-      const at = h.body.getAbsolutePosition();
+      // The hull's own fields, never its mesh (`ShadowHull`): on the field,
+      // and where its box stands as the box's matrix has it.
+      if (!h.present) continue;
+      const at = this.bodyBoxes.hullCentreToRef(h, this.hullAt);
       // A hull's box is 4 m either way.
       if (this.lightGap(at) > 4) continue;
       this.bodyBoxes.writeHull(h, this.bodyMatrices, n * per);

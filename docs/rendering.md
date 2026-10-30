@@ -1830,12 +1830,15 @@ nothing: the dither was never in the grade, and the fix is at the source. The sk
 needing it (233 runs against 229): stars, the galactic band and the halo are
 painted over the whole ramp, and the clouds stand in front of it.
 
-The exceptions are the THREE `DirectionalLight`s, which no material reads: each
-exists only to define a shadow camera — for its `ShadowGenerator`, or for the
-map our renderer draws in its place since X3.6a ("Our renderer's frame").
-`ShadowSystem`'s is the world's and it owns a second, the foliage's (see below);
-`BodyShadows`'s is the bodies'. The last two are pinned to layers no world mesh
-carries (`includeOnlyWithLayerMask`), so neither can reach a `StandardMaterial`. The cel fragment shader samples
+The exceptions are `ShadowSystem`'s `DirectionalLight`s, which no material
+reads: each exists only to define a shadow camera — for its `ShadowGenerator`
+(an editor build's), or for the map our renderer draws in its place since
+X3.6a ("Our renderer's frame"). The moon's is the world's, and the near
+cascade's, the foliage's (see below) and the lightning's are pinned to layers
+no world mesh carries (`includeOnlyWithLayerMask`), so none can reach a
+`StandardMaterial`. **The bodies' map has no Babylon light at all since
+X4.1c**: `BodyShadows` holds where its light points and stands as a plain pair
+(`ShadowLight`), there being no generator for one to frame. The cel fragment shader samples
 both depth maps as one hard two-level term gating the key light. The world's
 window follows the player (texel-snapped, re-rendered only when the snapped
 focus moves), casters are the map's merged static meshes re-registered every
@@ -1919,16 +1922,22 @@ re-renders only when its texel-snapped focus MOVES, which is the whole reason
 ~150 static casters are affordable; one animated caster in its list turns it
 into a per-frame redraw of the village. So the bodies got a second map
 (`systems/BodyShadows.ts`), re-rendered every frame, carrying soldiers and hulls
-and nothing static.
+and nothing static. **Since `BABYLON_EXIT.md` X4.1c it is OUR renderer's in
+every state** (`render/BodyShadowMap.ts`, "Our renderer's frame" below):
+`BodyShadows` decides everything and draws nothing.
 
 **It buys two things beside the shadows.** Its window is sized to the BODIES
 rather than to the map — 48 m over 1024 texels is **4.7 cm** against the world
 map's 5.4 at a quarter of the area, so a body's shadow is drawn finer than the
 wall it falls on. And it can cull front faces without the world having to.
 
-**ONE DRAW CALL carries every body in the game**, because every proxy is a thin
+**ONE DRAW CALL carries every body in the game**, because every proxy is an
 instance of one unit box: a soldier is twelve instances and a hull is one. So the
 pass costs the same at 8v8 and at 24v24, and what scales is the matrices.
+**A hull's instance is its collider box off the HULL's own fields** — `pos`,
+`yaw` and `present`, composed as the body node composed them (`hullFrame.ts`'s
+`hullBodyToRef`) — never its mesh, under the moon and the lamps alike
+(`core/proxyBoxes.ts`), so how a hull is DRAWN never reaches its shadow.
 
 **A soldier's twelve boxes are `RAGDOLL_BONES`, and that is load-bearing rather
 than convenient.** They are already measured against the drawn geometry ("the
@@ -1940,8 +1949,8 @@ composed FRESH for its boxes (`ProxyBoxes.writeRig`, `JointTree.compute`). A han
 capsule would have been a pill sliding along the ground under a walking body,
 which is the artefact the blob disc already is.
 
-**BACK FACES ONLY (`forceBackFacesOnly`), and without it every soldier and every
-hull is a black cut-out.** A proxy box ENCLOSES what it stands for, so a body's
+**BACK FACES ONLY (Babylon's `forceBackFacesOnly`; our pipeline culls the faces
+that dropped), and without it every soldier and every hull is a black cut-out.** A proxy box ENCLOSES what it stands for, so a body's
 own visible surfaces are inside their own caster: recording front faces puts
 every one of them behind the depth it is compared against. Recording the far
 side instead makes a surface inside the box test LIT and the ground behind the
@@ -3172,8 +3181,8 @@ follow:
   one left changed is Babylon's next draws drawn with it.
 
 **The main pass is told apart by its TARGET, not by the group.** The glow,
-and every shadow pass Babylon still draws (the bodies' map, and an editor
-build's world maps and lamps' atlas; no probe face since X3.7c) draw
+and every shadow pass Babylon still draws (an editor build's world maps and
+lamps' atlas; no probe face since X3.7c, no bodies' map since X4.1c) draw
 rendering group 0 too, each into its own target. The frame's target is the one bound as
 `onBeforeDrawPhaseObservable` fires (the post chain binds it just before),
 and a group counts only if it finishes into that same target before the
@@ -3953,7 +3962,8 @@ light's matrix over.
   about 120, against 10-28 MiB for the culls' second view.
 - **Not timed on our side**: the shadow maps' culls are not in `gpu.cull`,
   and `shadowPass` (`FrameProfile`) brackets only Babylon's generators, which
-  a round no longer has for the world's maps — only the bodies'.
+  a round no longer has at all — the world's maps since X3.6a, the bodies'
+  since X4.1c (an editor build's are the generators' still).
 
 **The lamps' ATLAS is drawn by our side too, into a texture it owns**
 (`BABYLON_EXIT.md` X3.6b): every pass of it, static and dynamic.
@@ -3985,8 +3995,8 @@ over once a frame (`AtlasWork`, `LampAtlas.queue`).
   and the bodies are drawn as moved with the bakes: one instanced unit box
   (the kit's `createBox`, Babylon's `CreateBox` number for number, unrolled
   into 36 corners), its matrix and tile an instance's, one draw for every
-  dynamic tile — what X4.1 leaves to do for the atlas is where a body's
-  boxes come from.
+  dynamic tile — whose boxes are `core/proxyBoxes.ts`' as the moon's are, a
+  hull's off its own fields since X4.1c.
 - **A frame's passes keep Babylon's order**: every tile flagged CLEARED first
   — a copy of a tile of the far value (`copyBufferToTexture`), where Babylon
   drew a clear sheet in a pass of its own — then a pass a static face, each
@@ -4028,6 +4038,53 @@ over once a frame (`AtlasWork`, `LampAtlas.queue`).
   `LampAtlas.ready` (the proxies' pipeline and the casters built) stands
   where Babylon's compiled-effect check stood: until it holds, no light is
   shadowed.
+
+**The bodies' map is drawn by our side too, into a texture it owns**
+(`BABYLON_EXIT.md` X4.1c): `render/BodyShadowMap.ts` owns the texture and
+draws it, `render/bodyDepth.ts` is the program, and `BodyShadows` still
+decides everything — where the window stands, the light's matrix
+(`lightTransformToRef`, the one copy the world's maps read too), which bodies
+cast and as what — and hands the frame's proxies over (`BodyShadowMap.draw`).
+
+- **It is ours in EVERY state, and there is no generator behind it.** It
+  needs nothing of the handover — its casters are proxies, never the world —
+  so an editor build draws it too. A pipeline it cannot build (asked ONCE, for
+  the session) is the round's failure: `Game` hands the map each round's
+  `worldFailed` at the install (`setFailure`), and every round after a failed
+  build fails on it, rather than playing with no body map; an editor build
+  fails nothing.
+- **What is written is Babylon's number**, through the directional depth
+  program's own bodies (`celDepth.ts`'s): the clip z of the light's
+  orthographic projection under the half-z range, from each instance's matrix
+  as Babylon laid it out — the proxy's own world was the identity, so a thin
+  instance's product was its matrix exactly — over the kit's unit box
+  unrolled (`proxyBoxPositions`, the lamps' proxies'), the back faces kept,
+  into `r16float` beside a `depth32float` attachment of its own.
+- **Drawn whole on every frame it is UPDATED**, on the next frame our
+  renderer prepares, into the encoder Babylon submits ahead of every pass of
+  its own: cleared to lit, then every instance, as the generator re-rendered
+  every frame from the proxy's thin instances. **An update holding no proxy
+  OWES a clear**, if it holds any, on that same next frame — Babylon's empty
+  frame, and never sooner: an empty update made AFTER a frame's render (the
+  warm-up's last, `finishBakeWait`) must leave that frame's map alone, and a
+  first cut that cleared at once, by a submit of its own, landed the clear
+  BEFORE the frame's recorded draw (the host's encoder is submitted at the
+  frame's end) and left the death cam's stand-in in the map for the rest of
+  the bank. Only a SECOND update with no frame prepared between — a state our
+  renderer prepares nothing in, an editor build's — clears at once, into the
+  host's prepare encoder, behind anything already recorded there.
+  A rung change re-makes the texture AFRESH (the old wrapped view, disposed,
+  destroys the one it wraps) and draws the proxies last packed from where the
+  light stands, as a fresh generator rendered its first frame; a new light
+  direction re-states the map the same way.
+- **Babylon's readers sample a WRAPPED view** (`wrapShadowTexture`) and our
+  frame binds the texture itself (`ShadowBindings`' `own.bodyShadowMap`) —
+  rule 5 both ways, as the world's maps.
+- **Measured against the generator** (X4.1c): a temporary twin of the old
+  generator, fed the same instances and the same light in one page, read back
+  texel for texel over live rounds on all seven maps with the window walked
+  over bodies and hulls, and through a rung walk — the numbers are in
+  `BABYLON_EXIT.md`'s X4.1c note.
 
 **The reflection bake is drawn by our side too, into cubes it owns**
 (`BABYLON_EXIT.md` X3.6c, `render/ProbeBake.ts`): what a face is and what

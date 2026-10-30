@@ -616,17 +616,24 @@ src/
                         #   BodyShadows' — which is the point: two copies would
                         #   be two windows off one focus. One instance each,
                         #   never shared, since the snap is in ITS map's texels.
-                        #   Also the 1x1 LIT texture a shadow map switched OFF
-                        #   is bound as (a declared sampler must be bound)
+                        #   Also the light's view-projection as Babylon's
+                        #   generator composed it (lightTransformToRef, the one
+                        #   copy both read; ShadowLight, what a light is to
+                        #   both), and the 1x1 LIT texture a shadow map
+                        #   switched OFF is bound as (a declared sampler must
+                        #   be bound)
     wrappedTextures.ts  # Babylon's wrapped VIEWS of textures OUR renderer
                         #   owns: a shadow texture's (wrapShadowTexture, for
-                        #   ShadowSystem and LocalShadows) and a probe's cube
+                        #   ShadowSystem, BodyShadows and LocalShadows) and a
+                        #   probe's cube
                         #   (wrapCubeTexture, for ReflectionSystem); disposing
                         #   one destroys the texture it wraps
     proxyBoxes.ts       # What a soldier and a hull ARE to a shadow: boxes,
-                        #   packed as thin-instance matrices. RAGDOLL_BONES and
-                        #   the collider, shared by BodyShadows and LocalShadows
-                        #   so a body throws one silhouette under every light
+                        #   packed as instance matrices. RAGDOLL_BONES and the
+                        #   collider — a hull's off its OWN fields (pos, yaw,
+                        #   present; hullBodyToRef), never its mesh — shared by
+                        #   BodyShadows and LocalShadows so a body throws one
+                        #   silhouette under every light. No Babylon
     webgpuLeaks.ts      # What Babylon's WebGPU arm never gives back of a map:
                         #   a released effect's uniform-buffer pools (patched
                         #   onto the engine once, in main.ts) and the bind-group
@@ -845,8 +852,8 @@ src/
                         #   through one `HullPicture` the five things a picture
                         #   cannot poll. Knows nothing about a player
     VehicleView.ts      # One hull's PICTURE: the invisible body box (the
-                        #   rig's parent and the shadow maps' box; never
-                        #   pickable), the rig its kind's model builds, the
+                        #   rig's parent; never pickable, and not what a
+                        #   shadow draws), the rig its kind's model builds, the
                         #   belts' run, the whips and the paint. Copies
                         #   `Vehicle.pose` onto the joints, follows `present`
                         #   and chars on the `wrecked` it is told; reads its
@@ -858,7 +865,9 @@ src/
                         #   places its nodes from),
                         #   `HullPose` (what those joints hold AS DRAWN) and
                         #   `hullPointToRef`, the float32 node chain replayed
-                        #   bit for bit
+                        #   bit for bit; and `hullBodyToRef`, its first link —
+                        #   the collider box's frame, which both shadow maps
+                        #   draw a hull's box off
     hullSeats.ts        # The two chairs in a hull (`CrewSeat`: `DRIVER`,
                         #   `GUNNER`), the order they fill in (`SEATS`), and
                         #   `chooseSeat` (which one a person gets — the
@@ -1237,12 +1246,15 @@ src/
     BodyShadows.ts      # The BODIES' shadow map: soldiers and hulls and nothing
                         #   static, re-rendered every frame, its own tighter
                         #   window (4.7 cm texels against the world's 5.4).
-                        #   Every proxy is a thin instance of ONE unit box — a
+                        #   Every proxy is an instance of ONE unit box — a
                         #   soldier is RAGDOLL_BONES, a hull is its collider —
                         #   so the pass is one draw whatever the roster. Back
                         #   faces only, or a body is drawn inside its own
                         #   caster. Read by celShadow and by the volumetric
-                        #   march, which is what makes a soldier cut a beam
+                        #   march, which is what makes a soldier cut a beam.
+                        #   Decides everything and draws nothing: the map is
+                        #   OUR renderer's in every state (render/BodyShadowMap,
+                        #   X4.1c), no Babylon light, generator or mesh
     LocalShadows.ts     # The LAMPS' shadows: one depth atlas, six cube-face
                         #   tiles per point light and one per spot, reached by
                         #   every cel/grass/water material through ONE binding.
@@ -2523,7 +2535,8 @@ src/
     celDepth.ts         # The world's DEPTH program (X3.6a): Babylon's
                         #   shadowMap shader as this game's generators compile
                         #   it — the light's clip z, no sway — pulled as the
-                        #   cel stage is (pulledWorld), and its scatter twin
+                        #   cel stage is (pulledWorld), and its scatter twin;
+                        #   its bodies are the bodies' map's too (bodyDepth)
     WorldDepth.ts       # The static world as a shadow pass records it: a
                         #   second VIEW of each of the map's culls (a slot a
                         #   pass a submit, a pass mask), the depth pipelines
@@ -2532,6 +2545,20 @@ src/
                         #   draws into the caller's pass (draw) — a plain
                         #   draw a group, and a plain draw its scatter to the
                         #   shadow view's bound (InstanceCull.drawRange)
+    bodyDepth.ts        # The bodies' DEPTH program (X4.1c): the directional
+                        #   depth program's own bodies (celDepth) over the
+                        #   instances of the unit box, a matrix each as
+                        #   Babylon's thin instances laid it out
+    BodyShadowMap.ts    # The moon's BODY map as OUR texture (X4.1c): made
+                        #   cleared to lit, drawn whole from the proxies
+                        #   BodyShadows hands it each frame it updates
+                        #   (recorded ahead of Babylon's passes), cleared on
+                        #   the same next frame by an update holding none (at
+                        #   once, into the host's encoder, in a state that
+                        #   prepares nothing); OwnTexture for our
+                        #   frame, a texture for Babylon to wrap; its pipeline
+                        #   asked once a session, a failure told to the
+                        #   round's failure (Game.worldFailed)
     lampDepth.ts        # The lamps' DEPTH program (X3.6b): LocalShadows'
                         #   localShadowDepth — a face's perspective offset
                         #   into its tile, the radial distance, the off-face

@@ -6,7 +6,10 @@
  * Owns: `DEPTH_BLOCK` (the light's view-projection, group 0), the geometry it
  * reads (group 1, `depthGeometry`: the positions, the instances' transforms,
  * and the scatter's list and source for its scatter twin), and `celDepth`,
- * the program's two modules for the plain stage or the scatter twin.
+ * the program's two modules for the plain stage or the scatter twin; and the
+ * program's own bodies and varyings (`DEPTH_VERTEX_BODY`, `DEPTH_VARYINGS`,
+ * `depthFragment`), which the bodies' proxies are drawn with too
+ * (`render/bodyDepth.ts`, X4.1c).
  * Invariants: it writes what Babylon's wrote, number for number — the clip z
  * of the light's orthographic projection, `(z_view - near) / (far - near)`
  * under WebGPU's half-z range, as the varying Babylon's `vDepthMetricSM` is
@@ -49,10 +52,11 @@ export function depthGeometry(stride: number | null): readonly Binding[] {
   return stride === null ? DEPTH_GEOMETRY : [...DEPTH_GEOMETRY, ...CEL_SCATTER_LIST];
 }
 
-const DEPTH_VARYINGS = [{ name: "vDepthMetricSM", type: "f32" }] as const;
+/** The depth program's one varying: Babylon's metric. */
+export const DEPTH_VARYINGS = [{ name: "vDepthMetricSM", type: "f32" }] as const;
 
 /** Babylon's `shadowMap.vertex` with its metric (`shadowMapVertexMetric`), as this game's generators compile it. */
-const DEPTH_VERTEX_BODY = `
+export const DEPTH_VERTEX_BODY = `
 fn depthVertex() {
   let worldPos = uniforms.world * vec4f(vertexInputs.position, 1.0);
   vertexOutputs.position = uniforms.lightViewProjection * worldPos;
@@ -84,6 +88,25 @@ function depthProgram(stride: number | null): VertexProgram {
 /** Each stride's two modules, assembled once. */
 const programs = new Map<string, { vertex: AssembledVertex; fragment: AssembledModule }>();
 
+/** The fragment stage every directional depth program shares, assembled once. */
+let fragment: AssembledModule | null = null;
+
+/** Babylon's `shadowMap.fragment` for a directional map's pass (`SHADOW_TARGETS`): the metric into red. */
+export function depthFragment(): AssembledModule {
+  return (fragment ??= assembleFragment(
+    {
+      label: "depth-fragment",
+      groups: [],
+      varyings: DEPTH_VARYINGS,
+      includes: {},
+      body: DEPTH_FRAGMENT_BODY,
+      surface: "depthSurface",
+    },
+    [],
+    SHADOW_TARGETS,
+  ));
+}
+
 /**
  * The depth program for a world shadow map's pass (`SHADOW_TARGETS`, which
  * every shadow pass is): the plain stage, or the scatter twin for `stride`.
@@ -94,18 +117,7 @@ export function celDepth(stride: number | null): { vertex: AssembledVertex; frag
   if (!program) {
     program = {
       vertex: assembleVertex(depthProgram(stride), [], SHADOW_TARGETS),
-      fragment: assembleFragment(
-        {
-          label: "depth-fragment",
-          groups: [],
-          varyings: DEPTH_VARYINGS,
-          includes: {},
-          body: DEPTH_FRAGMENT_BODY,
-          surface: "depthSurface",
-        },
-        [],
-        SHADOW_TARGETS,
-      ),
+      fragment: depthFragment(),
     };
     programs.set(key, program);
   }

@@ -44,19 +44,28 @@ import { MAX_POINT_LIGHTS } from "./wgsl/celSurface";
 
 export class ShadowBindings {
   /**
-   * The world's four maps and the lamps' atlas as OUR renderer binds them,
-   * while it owns them (`render/WorldShadows.ts`, `render/LampAtlas.ts`,
-   * `BABYLON_EXIT.md` X3.6a and X3.6b): the textures the fields below are
-   * Babylon's wrapped views of, handed to our frame as themselves rather
-   * than through those views. Null while a map is Babylon's own, or off.
+   * The world's four maps, the bodies' and the lamps' atlas as OUR renderer
+   * binds them, while it owns them (`render/WorldShadows.ts`,
+   * `render/BodyShadowMap.ts`, `render/LampAtlas.ts`, `BABYLON_EXIT.md`
+   * X3.6a, X4.1c and X3.6b): the textures the fields below are Babylon's
+   * wrapped views of, handed to our frame as themselves rather than through
+   * those views. Null while a map is Babylon's own, or off.
    */
   private readonly own: {
     shadowMap: OwnTexture | null;
     nearShadowMap: OwnTexture | null;
+    bodyShadowMap: OwnTexture | null;
     flashMap: OwnTexture | null;
     foliageMap: OwnTexture | null;
     localAtlasMap: OwnTexture | null;
-  } = { shadowMap: null, nearShadowMap: null, flashMap: null, foliageMap: null, localAtlasMap: null };
+  } = {
+    shadowMap: null,
+    nearShadowMap: null,
+    bodyShadowMap: null,
+    flashMap: null,
+    foliageMap: null,
+    localAtlasMap: null,
+  };
   // Shadow-map state, pushed onto every cel material as it is created.
   private shadowMap: BaseTexture | null = null;
   private shadowMatrix = Matrix.Identity();
@@ -185,7 +194,7 @@ export class ShadowBindings {
     const own = this.own;
     out.shadowMap = own.shadowMap ?? (this.shadowMap && hostTexture(this.shadowMap));
     out.nearShadowMap = own.nearShadowMap ?? (this.nearShadowMap && hostTexture(this.nearShadowMap));
-    out.bodyShadowMap = this.bodyShadowMap && hostTexture(this.bodyShadowMap);
+    out.bodyShadowMap = own.bodyShadowMap ?? (this.bodyShadowMap && hostTexture(this.bodyShadowMap));
     out.localAtlasMap = own.localAtlasMap ?? (this.localAtlasMap && hostTexture(this.localAtlasMap));
     out.flashMap = own.flashMap ?? (this.flashMap && hostTexture(this.flashMap));
     out.cloudShadowMap = hostTexture(this.cloudShadowMap);
@@ -312,16 +321,19 @@ export class ShadowBindings {
   }
 
   /**
-   * The BODIES' map, bound once at startup for the same reason the world's is:
-   * the texture object is stable while its contents re-render.
+   * The BODIES' map, bound once a rung for the same reason the world's is:
+   * the texture object is stable while its contents re-render. `own` is the
+   * same texture as our renderer holds it (`render/BodyShadowMap.ts`, ours
+   * since X4.1c), null on a rung that has none.
    *
    * Unlike the world's it re-renders EVERY frame, and nothing here has to know
    * that — a texture is a texture. What does change is that this one can never
    * be skipped: it is in `SHADOW_SAMPLER_NAMES`, so a material that lists it and
    * never receives it loses every draw.
    */
-  setBodyShadowMap(map: BaseTexture): void {
+  setBodyShadowMap(map: BaseTexture, own: OwnTexture | null = null): void {
     this.bodyShadowMap = map;
+    this.own.bodyShadowMap = own;
     this.eachShadowReader((mat) => mat.setTexture("bodyShadowMap", map));
   }
 

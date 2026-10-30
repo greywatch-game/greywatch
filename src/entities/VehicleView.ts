@@ -21,8 +21,9 @@
  *   the rockets step: nothing after the fleet moves a hull, but any of the
  *   three can wreck one, and a poll would paint that a frame late.
  * - **The body box follows the hull**: at `pos`, turned `yaw`, enabled
- *   exactly while `present`. It is the node the rig hangs off and the box the
- *   two shadow maps draw (`core/proxyBoxes.ts`), and nothing else: never
+ *   exactly while `present`. It is the node the rig hangs off and nothing
+ *   else — the two shadow maps draw the HULL's box off its own fields
+ *   (`core/proxyBoxes.ts`, `BABYLON_EXIT.md` X4.1c), never this: never
  *   pickable and never `metadata.solid`, because the one mesh pick left in the
  *   game is the editor's (`world/solid.ts`) and the editor builds no hulls. No
  *   ray and no sweep in the game reads it: a hull is answered by
@@ -101,11 +102,6 @@ export class VehicleView implements HullPicture {
     this.placed();
     if (!hull.alive) this.wrecked();
     this.update();
-  }
-
-  /** The hull's numbers, for the shadow maps' box (`ShadowHull`). */
-  get spec(): Vehicle["spec"] {
-    return this.hull.spec;
   }
 
   // --- HullPicture ---------------------------------------------------------

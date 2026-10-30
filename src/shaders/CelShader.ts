@@ -275,9 +275,10 @@ export const SHADOW_UNIFORM_NAMES = [
  * **Both must be BOUND on every material that lists them, always** — a declared
  * sampler with nothing behind it is a bind group that fails to build and every
  * draw using it silently lost, which is the whole reason these two lists exist
- * as exported constants. `BodyShadows` therefore creates its map in its
- * constructor and hands it over there, before `MapBuilder` has asked for a
- * single material: there is no state in which this one is absent.
+ * as exported constants. `BodyShadows` therefore publishes its map in its
+ * constructor (our renderer's texture, wrapped, or the lit 1x1 on a rung
+ * without one), before `MapBuilder` has asked for a single material: there
+ * is no state in which this one is absent.
  */
 export const SHADOW_SAMPLER_NAMES = [
   "shadowMap",

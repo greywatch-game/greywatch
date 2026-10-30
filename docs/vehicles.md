@@ -1090,10 +1090,13 @@ scene and no material factory. **What a hull looks like is a `VehicleView`**,
 one per hull, which only a client builds (`VehicleViews`, from `installMap`
 right after `VehicleSystem.build`, by hardstanding index, each with its kind's
 model off `vehicleModels.modelOf`; torn down by `teardownMap` before the fleet).
-A view owns the body box (invisible: the rig's parent, the shadow maps' box —
-`ShadowHull` is the view; never pickable and never `solid`, since the editor
-builds no hulls), the rig, the belts' run, the whips (`HullWhips`) and the
-paint.
+A view owns the body box (invisible: the rig's parent; never pickable and
+never `solid`, since the editor builds no hulls), the rig, the belts' run, the
+whips (`HullWhips`) and the paint. **It is not what a shadow draws**: since
+`BABYLON_EXIT.md` X4.1c `ShadowHull` is the HULL — its collider box composed
+off `pos`, `yaw` and `present` (`hullFrame.ts`' `hullBodyToRef`, the matrix
+the body node composed, bit for bit), in both shadow maps — so nothing about
+how a hull is drawn reaches its shadow, and X4.2 owes the shadows nothing.
 
 **A view READS its hull and never writes it.** Everything that is STATE is
 read in `VehicleView.update`, which runs right after `VehicleSystem.update`
@@ -3983,7 +3986,8 @@ ray happened to find, which can be a street away.
   shadow — and that is still why it is not. What answered it is
   `systems/BodyShadows.ts`, re-rendered every frame and carrying soldiers and
   hulls and nothing static, where a hull is one instance of the proxy box: its
-  collider box, so moving that box moves the shadow. See "The bodies' map" in
+  collider box, off the hull's own fields (never its mesh, since X4.1c), so
+  moving the hull moves the shadow. See "The bodies' map" in
   `docs/rendering.md`.
 - **~~No third kind, and in particular nothing that FLIES or FLOATS.~~ Three,
   and the third one flies** — see "Flying, and what `standOnGround` turned out

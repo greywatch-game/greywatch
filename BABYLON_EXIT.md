@@ -3567,7 +3567,7 @@ module from X2.2. When the last one lands, Babylon draws nothing but the post
 chain, and the frozen cel-material cache and its traps are deleted with
 `CelMaterialFactory`'s Babylon half.
 
-### X4.1 — Bodies (PERF_PLAN C6, A4) — **L, as five sub-steps** (split 2026-10-29) — X4.1a **LANDED** (a417bfc, review fixes after it), X4.1b **LANDED** (f554b68, review fixes after it)
+### X4.1 — Bodies (PERF_PLAN C6, A4) — **L, as five sub-steps** (split 2026-10-29) — X4.1a **LANDED** (a417bfc, review fixes after it), X4.1b **LANDED** (f554b68, review fixes after it), X4.1c **LANDED** (HASH)
 
 Every body a page draws — `NetSoldier`'s rig, a corpse, the death cam's
 stand-in — comes off Babylon's scene, along with the moon's body shadow map,
@@ -3598,7 +3598,7 @@ reparenting goes and every body is one kind of thing to draw.
   **Oracle:** `drop.mjs --check --exact` and `clients.mjs --check` as at X2.4;
   a blast throwing bodies; a full pool evicting; a respawned bot that does not
   freeze.
-- **X4.1c — the moon's body map is ours (no picture change).** `BodyShadows`'
+- **X4.1c — the moon's body map is ours (no picture change).** Landed (below). `BodyShadows`'
   generator, light and proxy mesh become a pass of our renderer, as
   `WorldShadows` did at X3.6a, drawing `proxyBoxes`' matrices — soldiers AND
   hulls, a hull's being its collider box off its own fields (`hullFrame.ts`),
@@ -3978,6 +3978,170 @@ Havok's chaos carries that into where it comes to rest).
   changed it; X4.1d should consider measuring a corpse by its TORSO (its
   pose, or a sphere over its twelve), so the fog-wall gate and the size
   gate's whole-body drop judge a thrown body where it lies.
+
+**X4.1c landed** (HASH; 2026-10-30; no picture change on any bank row, and
+two by construction off it, said under Deviations: the frame right after a
+rung change re-makes the map, where Babylon's freshly built generator drew no
+proxy and ours draws them, and a moving hull's box, which the deleted mesh
+read drew a frame behind the hull).
+- **What it is.** The moon's body map is a texture our renderer OWNS and draws
+  (`render/BodyShadowMap.ts`, `r16float` beside a `depth32float` attachment of
+  its own), with the program in `render/bodyDepth.ts` — the directional depth
+  program's own bodies (`celDepth.ts`'s `DEPTH_VERTEX_BODY` and the shared
+  `depthFragment`) over the instances of the kit's unit box
+  (`proxyBoxPositions`, the lamps' proxies'), each instance's matrix as
+  Babylon laid it out; the back faces kept (`cullMode: "front"` off the
+  flipped pass, `WorldDepth`'s rule). `BodyShadows` keeps everything it
+  decided — the window and its snap, the light's matrix, which bodies cast and
+  as what, the budgets — and hands each frame's proxies over
+  (`BodyShadowMap.draw`), drawn whole, cleared to lit then every instance, on
+  the next frame our renderer prepares, into the encoder Babylon submits ahead
+  of its passes; an update holding none OWES a clear, if the map holds any,
+  recorded on that same next frame (Babylon's empty frame) — and at once,
+  into the host's prepare encoder, only when a second update arrives with no
+  frame prepared between, which is a state our renderer prepares nothing in
+  (an editor build's), so that state never keeps the last round's bodies.
+  Babylon's readers (the cel materials, grass, water, the volumetric march)
+  sample a wrapped view (`wrapShadowTexture`); our frame binds the
+  texture itself (`ShadowBindings`' `own.bodyShadowMap`) — rule 5 both ways.
+  **Gone**: `BodyShadows`' `DirectionalLight`, `ShadowGenerator` and proxy mesh
+  (and `PROXY_LAYER`): its light is a plain pair (`ShadowLight`,
+  `core/shadowWindow.ts`, which `ShadowWindow.place` now takes), and the matrix
+  is `lightTransformToRef` — `ShadowSystem.lightTransform`'s arithmetic MOVED
+  there, the one copy both systems read, `ShadowSystem` calling it with its
+  lights' fields. A rung change re-makes the texture AFRESH under a fresh view
+  (disposing the old view destroys the texture it wraps) and draws the proxies
+  last packed from where the light stands, as a fresh generator rendered on its
+  first frame; `setLightDirection` re-states the map the same way (a generator
+  read its light at every render). `BODY_SHADOW_PROXIES` sizes both sides.
+- **A hull is its collider box off its OWN fields** (X4.2 owes this map
+  nothing). `ShadowHull` is now `pos`, `yaw`, `present` and the spec's box —
+  `Vehicle` satisfies it, and `Game` hands both shadow systems
+  `vehicles.hulls`, never `vehicleViews.views`. `ProxyBoxes.writeHull` composes
+  the box's frame with `hullFrame.ts`' new `hullBodyToRef` (the first link of
+  `hullPointToRef`'s chain, which now calls it: the body node's compose, unit
+  scale, yaw only) and `hullCentreToRef` is that frame's translation row
+  (`Math.fround` of `pos`) for the lamps' gather; `proxyBoxes.ts` imports no
+  Babylon now. `VehicleView.spec` (there only for the shadow maps) is gone, and
+  its body box is the rig's parent and nothing else.
+- **What a failure becomes** (decided here): the map has no generator behind
+  it, so a pipeline it cannot build — asked ONCE, for the session, at `Game`'s
+  construction — is the ROUND's failure, routed as the world's passes' are:
+  `installMap` hands the map `worldFailed` with the install's owner
+  (`BodyShadowMap.setFailure`, after `handover.install`; an editor build hands
+  none, `teardownMap` takes it back), and a pipeline settled false tells it —
+  that install and every one after it, the pipeline being the session's,
+  rather than a round played with no body map. Not through `BlockHandover`:
+  the bodies are not the world it hands over, and the generation guard plus
+  `worldFailed`'s owner test do what `failFor` does there. The pass needs
+  nothing else of the handover, so an editor build draws it too.
+- **The oracle — the map read back against Babylon's, while both existed.**
+  For the run only, `BodyShadows` also kept the deleted path verbatim (a
+  `DirectionalLight` pinned to the proxy layer, a `ShadowGenerator` with
+  `bias` 0 and `forceBackFacesOnly`, the box mesh thin-instanced off the SAME
+  matrices array), its light copied from ours each update; a scratch probe
+  read both textures back after each frame (`copyTextureToBuffer` after the
+  engine's flush; ours with `COPY_SRC` added in an init script) and compared
+  ours' red half against the generator's red half bit for bit, with the window
+  re-placed inside the render over each enabled body and each hull in turn
+  (30 frames each) and the round live:
+  - **Offline, all seven maps, 1,200 frames each** (600 in play, then a rung
+    walk `off`, `high`, `low`, `medium`, `high`), up to 222 proxies a frame
+    (Sarab), 234 (Cinderhaven): the light's matrix identical on every frame
+    compared, and the textures **identical on every frame but three a map** —
+    each the frame right after a rung change RE-MADE the map (off→high,
+    high→low, low→medium; medium→high re-makes nothing): there EVERY differing
+    texel is shadowed in ours and lit in Babylon's (Sarab 55,601 texels over
+    the three, exactly ours' shadowed count minus Babylon's; Coldharbour 34,801,
+    Harrowmead 16,394, Cinderhaven 8,097, Kurenai 5,026, Greyfen 4,668,
+    Hollowmere 2,060) — Babylon's fresh generator drew no proxy on its first
+    frame (its depth effect not yet ready) and ours, asked off the cache's
+    pipeline built at boot, drew them. So the old picture had one frame with no
+    body shadows after a rung change; the new one does not. No other frame of
+    any map moved by a texel.
+  - **A netplay round** against a local `dist-server` (`?mp=`), the
+    authority's round: Hollowmere 900 frames and Coldharbour 900 frames
+    (two hulls off the wire), every frame identical, the matrices identical.
+  - **The hull box**, every pack of both systems over those rounds, ours
+    against the old read (`hullBox × body.getWorldMatrix()`, unforced, as the
+    deleted code read it) and against a forced compose of the body mesh:
+    against the FORCED compose identical on every pack (15,006 Sarab, 14,954
+    Cinderhaven, 4,954 Coldharbour, 5,347 Harrowmead offline; 4,089
+    Coldharbour in the netplay round); `present` equal to the mesh's
+    `isEnabled()` on every pack; the lamps' gather centre equal to
+    `getAbsolutePosition()` on every read (7,206 / 7,206 / 2,402 / 2,402;
+    1,802). **The one stale reader**: the old unforced read returned a stale
+    world matrix for one pack per hull a map (6, 6, 2, 2 packs, up to 0.28 m),
+    every one on the frame the rung walk turned the map back ON (off→high) —
+    the frame on which, above, Babylon's fresh generator drew nothing at all,
+    so no picture carried it. Ours reads the fields fresh.
+- **The paths no instrument covers** (a scratch page, Coldharbour; run
+  before the clear's fix below and again after it, the same verdicts): the pipeline forced failed for the session (`g.bodyShadowMap.ready =
+  Promise.resolve(false)` before `startRound`) — one `[world] coldharbour: the
+  map could not be drawn — our bodies' shadow map cannot draw: its pipeline
+  failed`, the menu, the toast, and a SECOND round the same; restored, a clean
+  round to `playing` (15,982 shadowed texels, 86 proxies, the window on a
+  body); a rung walk `off` (no texture, no view) → `high` → `low` (512) →
+  `high`, each re-made, wrapped and redrawn; and the editor (`F2`): no proxy,
+  the map cleared (0 shadowed, `holds` false). No page or console error but
+  the two forced lines.
+- **The bank caught what the readback could not, and it is fixed here.** The
+  first AFTER (`--check --keep`, every row graded against the BEFORE's) was
+  byte-identical on Cinderhaven, Coldharbour, Harrowmead and Sarab — `rig-near`,
+  `rig-far`, `tank`, `truck` and `heli` among them — and moved EVERY row of
+  Greyfen, Hollowmere and Kurenai a little (Kurenai `menu` 5.8% of pixels,
+  mean 0.065/255; Hollowmere `lanterns` 1.2%, a strip of cobbles along a
+  shadow edge), deterministically: each side re-run reproduced itself byte for
+  byte. Every world map, the atlas and both matrices dumped at Hollowmere's
+  `lanterns` were identical across the trees; the body map was not — ours held
+  333 shadowed texels where Babylon's was lit. A trace named them: the
+  building card's warm-up hands the death cam's stand-in to the map, and its
+  LAST update (`finishBakeWait`, AFTER that frame's render) packs no one; the
+  first cut cleared at once by a submit of its own, which reached the queue
+  BEFORE the frame's prepare encoder (submitted at the frame's end) holding the
+  stand-in's draw, so the stand-in stayed in the map until the next body —
+  never, in a bank boot. (Why only three maps: where the stand-in's boxes
+  fall against the window and the vantages, not a property of the maps.) Fixed
+  as above: the clear is OWED to the next prepare, Babylon's own timing, and
+  recorded at once only into the host's encoder, behind anything recorded
+  there. The readback runs above all held bodies, so no empty update was in
+  them.
+- **Measured** (after the fix). **The bank against a BEFORE at b15a5be in a
+  worktree** (`--check --keep` both sides): **61 of 61 byte-identical**
+  (`comparePngs`, 0 pixels), `rig-near`, `rig-far`, `tank`, `truck` and `heli`
+  among them, the same 34 stale rows over the bank's tolerance on both sides,
+  no console or page error. **`census --against`** the BEFORE: every row equal
+  (Hollowmere 278, Greyfen 205, Coldharbour 672, Harrowmead 847, Sarab 661,
+  Cinderhaven 186, Kurenai 125). **`gate.mjs`** clean on seven (a round
+  offline on each). **`shaders.mjs`** clean on seven, ours 17/17 (21/21 Sarab
+  and Cinderhaven, 23/23 Coldharbour). Typecheck, build, corecheck and
+  `parity` (eight maps) pass; `check-babylon-free` walks `proxyBoxes.ts` and
+  `src/render/` with no path to Babylon. A netplay round after the fix (a
+  fresh `dist-server`, Sarab, 48 bodies, six hulls off the wire): 900 and then 600 frames in play, no console or page
+  error.
+- **Deviations.** Two changes of picture, both by construction and neither
+  on any bank row. The rung-change frame above. And **a MOVING hull's box no
+  longer lags it**: in that Sarab netplay round the deleted read
+  (`hull.body.getWorldMatrix()`, unforced) answered a matrix cached EARLIER in
+  the frame, before `VehicleView.update` moved the mesh, on every frame for
+  each hull that moved — 4,500 of 10,800 packs, then 3,000 of 7,200 (five
+  hulls, 600 frames each), up to 0.57 m — where ours equals the mesh's FORCED
+  compose on every pack, so the old body map drew a moving remote hull's
+  shadow a frame behind the hull it drew and ours draws it under it. (The
+  lamps' later read looked fresh only because the probe's forced compose had
+  refreshed the cache; who caches it first was not chased — the read is gone.)
+  Offline the hulls sat parked over those runs, which is why only the rung
+  frame's one pack a hull showed there. `shaders.mjs` builds no depth program
+  (none of `celDepth`, `lampDepth` or this one), so the body pipeline is
+  proven where the world's depth pipelines are: built in the page at boot,
+  where a failure is a console error `gate` counts. The seam's numbered list
+  is unchanged (nothing new reached). `FrameProfile`'s `shadowPass` brackets
+  NO frame of a round now (no generator in one); `docs/profiling.md` says so.
+- **Owed onward.** The map's pass is not timed on our side (not in
+  `gpu.cull`), as the world's and the atlas's are not — the phone's FOLLOW-UP
+  reading is read as `gpu.frame`. X4.1a's unmeasured compose cost stands (the
+  packers' `computeChain`s and `writeRig`'s `compute` are unchanged). X4.2:
+  nothing of the shadows — a hull's box no longer reads its picture.
 
 ### X4.2 — Vehicles (PERF_PLAN A3) — **M** (decision)
 

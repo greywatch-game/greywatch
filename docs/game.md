@@ -359,7 +359,11 @@ pass latches a loss, and a pipeline failed for the session fails every
 install after it through its settled promise) — and the cull's, which REFUSES a build
 whose own contract is broken (`setMap` hands back the reason rather than
 throwing, `reachBoxOf` a null, and `installMap` hands nothing over after
-it). **A failure belongs to the INSTALL it came from**: the handover latches
+it). **One door is not the handover's**: the bodies' shadow map (X4.1c) is no
+part of the world but has no fallback either, so `installMap` hands it the
+install's failure after the handover's (`BodyShadowMap.setFailure`, none for
+an editor build, taken back by `teardownMap`), and its pipeline, asked once
+for the session, fails every round after a failed build. **A failure belongs to the INSTALL it came from**: the handover latches
 a fresh `WorldOwner` at each install and hands it back with the failure, so
 the console line and the toast name the map that failed, and one of the OLD
 map still standing under the next round's building card (between

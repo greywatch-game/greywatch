@@ -1,30 +1,33 @@
 /**
  * BodyShadows.ts — the SECOND shadow map: soldiers and hulls, and nothing else.
- * Owns its own directional light, its own generator, its own texel-snapped
- * window and the one proxy mesh every body in the game is drawn as. Owns no
- * combatant, no rig and no vehicle — it is handed what to draw and reads
- * transforms off it.
+ * Decides everything about it — where its window stands (its own light's
+ * direction and position, texel-snapped), the light's matrix, which bodies
+ * cast and as what — and hands each frame's proxies to OUR renderer, which
+ * owns the map and draws it (`render/BodyShadowMap.ts`, `BABYLON_EXIT.md`
+ * X4.1c). Owns no combatant, no rig and no vehicle — it is handed what to
+ * draw and reads transforms off it — and no Babylon light, generator or mesh
+ * any more.
  * Invariants:
- * - The MAIN PASS never sees the proxy: it carries `PROXY_LAYER`, which no
- *   camera's `layerMask` includes, and an explicit render list is the only
- *   thing that draws it (`ObjectRenderer` does not check `layerMask` against a
- *   custom list, where `Scene._evaluateActiveMeshes` does — those two facts
- *   together are the whole mechanism).
- * - The proxy must stay `isVisible` to be drawn at all, for the same reason:
- *   a custom render list still drops `!isVisible`. It is switched off by
- *   `thinInstanceCount === 0` instead, which is a frame with nothing to cast.
- * - Its light is never a lighting light. `includeOnlyWithLayerMask` pins it to
- *   the proxy layer, so no `StandardMaterial` in the tree gains a term and no
- *   cel material could read it anyway.
- * - The generator renders BACK FACES ONLY. See `forceBackFacesOnly` below.
- * - The map may be OFF (`CONFIG.graphics.shadowTiers`): the generator is
- *   disposed, the lit 1x1 is bound in its place and the proxy is drawn by
- *   nothing. A rung also sets the map's SIZE and its WINDOW, so the texel
+ * - The map is OUR renderer's in every state and on every rung that has one:
+ *   Babylon's readers (the cel materials, the grass, the water, the
+ *   volumetric march) sample a wrapped view of its texture
+ *   (`wrapShadowTexture`), our frame binds the texture itself (rule 5), and
+ *   there is no generator to fall back to — a map ours cannot draw is the
+ *   round's failure (`BodyShadowMap.setFailure`, wired by `Game`).
+ * - It is drawn every frame it is UPDATED, whole, from the proxies packed
+ *   that frame, as Babylon's generator re-rendered every frame from the
+ *   proxy's thin instances; a frame that packs none clears it.
+ * - The light matrix is `getTransformMatrix`'s arithmetic
+ *   (`lightTransformToRef`, the one copy the world's maps read too), rewritten
+ *   in place in one `Matrix` the materials hold by reference, and recomputed
+ *   whenever what it is made of moves: the window, the direction, the rung.
+ * - The map records BACK FACES ONLY. See "Why back faces" below.
+ * - The map may be OFF (`CONFIG.graphics.shadowTiers`): no texture, the lit
+ *   1x1 is bound in its place, the matrix is the identity and nothing is
+ *   packed. A rung also sets the map's SIZE and its WINDOW, so the texel
  *   budget moves as a pair and not only the resolution.
- * - The proxy mesh's own world matrix stays IDENTITY. Thin instance matrices
- *   are absolute, and Babylon's shadow path multiplies by the mesh's world
- *   under `THIN_INSTANCES` and not under plain `INSTANCES` — identity is what
- *   makes those two the same answer.
+ * - A hull is its collider box off its OWN fields (`core/proxyBoxes.ts`,
+ *   `hullBodyToRef`), never its mesh.
  * Contract: `docs/rendering.md`.
  *
  * ## WHY A SECOND MAP RATHER THAN MORE CASTERS IN THE FIRST ONE
@@ -43,7 +46,7 @@
  *
  * ## ONE DRAW CALL, WHATEVER THE ROSTER
  *
- * Every proxy is a thin instance of ONE unit box. A soldier is twelve instances —
+ * Every proxy is an instance of ONE unit box. A soldier is twelve instances —
  * `RAGDOLL_BONES`, which is the shape of a body already measured against the
  * drawn boxes and already driven by the joints the pose drives — and a hull is
  * one, its own collider box. So the pass is one draw at 8v8 and one draw at
@@ -63,7 +66,8 @@
  * surfaces are inside their own caster. Recording front faces puts every one of
  * them behind the depth they are compared against, and a soldier comes out
  * uniformly in shadow — which reads as a black cut-out rather than as a bug.
- * `forceBackFacesOnly` records the FAR side of each box instead: a surface
+ * The map records the FAR side of each box instead (Babylon's generator was
+ * told `forceBackFacesOnly`; ours culls the faces it dropped): a surface
  * inside the box is nearer than that and tests lit, and the ground behind the
  * body is further and tests shadowed. The boxes are closed and convex, so there
  * is no case where this is approximate — the one thing it gives up is the few
@@ -86,59 +90,55 @@
  * shadow 150 m along a low sun, and no window a client can afford contains
  * that. It casts when it is low, which is when a player is under it.
  */
-import {
-  type BaseTexture,
-  DirectionalLight,
-  Matrix,
-  Mesh,
-  MeshBuilder,
-  ShadowGenerator,
-  type Scene,
-  Vector3,
-} from "@babylonjs/core";
+import { type BaseTexture, Matrix, type Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { ProxyBoxes, type ShadowBody, type ShadowHull } from "../core/proxyBoxes";
 import {
   depthBias,
+  lightTransformToRef,
   litShadowTexture,
   SHADOW_NEAR,
+  type ShadowLight,
   ShadowWindow,
 } from "../core/shadowWindow";
+import { wrapShadowTexture } from "../core/wrappedTextures";
 import type { ShadowQuality } from "../core/settings";
+import type { BodyShadowMap } from "../render/BodyShadowMap";
+import { RAGDOLL_BONES } from "../entities/SoldierModel";
 import type { CelMaterialFactory } from "../shaders/CelShader";
-
-/**
- * The layer bit the proxy wears, and the whole of how it stays out of the
- * frame.
- *
- * A camera's default `layerMask` is `0x0FFFFFFF`, so anything at or above
- * `0x10000000` is invisible to every camera in the tree without one of them
- * having to be told. `Scene._evaluateActiveMeshes` tests it, `ObjectRenderer`
- * does NOT when it is given an explicit render list, and those two facts
- * together are the mechanism: never drawn in the world, always drawn in this
- * map.
- *
- * It is not `isVisible = false`, which would have been the obvious move and is
- * the one thing that cannot work here — a custom render list still drops an
- * invisible mesh.
- */
-const PROXY_LAYER = 0x10000000;
-
 
 export type { ShadowBody, ShadowHull };
 
+/**
+ * The most proxies one frame packs — the bodies' budget in boxes and the
+ * hulls' — which our renderer's map is sized for (`BodyShadowMap`).
+ */
+export const BODY_SHADOW_PROXIES =
+  CONFIG.graphics.bodyShadows.maxBodies * RAGDOLL_BONES.length + CONFIG.graphics.bodyShadows.maxHulls;
+
 export class BodyShadows {
-  private readonly light: DirectionalLight;
-  /** Null while the rung has the bodies' map OFF. */
-  private generator: ShadowGenerator | null = null;
+  /**
+   * Where the map's light points and stands — the window's to place
+   * (`ShadowWindow.place`) and the matrix's to read. It is a pair and not a
+   * Babylon `DirectionalLight`: the light only ever defined a generator's
+   * frustum, and there is no generator. It starts where a `DirectionalLight`
+   * does, at minus its direction.
+   */
+  private readonly light: ShadowLight;
   /** The rung's resolution (0 is off, -1 not yet set) and its window's side. */
   private mapSize = -1;
   private window: number = CONFIG.graphics.bodyShadows.window;
   private readonly offMatrix = Matrix.Identity();
-  /** The one mesh every proxy in the game is an instance of. */
-  private readonly proxy: Mesh;
-  /** Thin instance matrices, packed. Never reallocated. */
-  private readonly matrices: Float32Array;
+  /**
+   * The light's view-projection, rewritten IN PLACE whenever the window, the
+   * direction or the rung moves it — the one object every reader is handed
+   * (`setBodyShadowMatrix`), as the generator's was.
+   */
+  private readonly matrix = new Matrix();
+  /** Babylon's view of our texture, while the map has one. */
+  private wrapped: BaseTexture | null = null;
+  /** Instance matrices, packed. Never reallocated. */
+  private readonly matrices: Float32Array<ArrayBuffer>;
   /** How many of `matrices` are live this frame. */
   private count = 0;
   /**
@@ -159,99 +159,63 @@ export class BodyShadows {
   private readonly picked: (ShadowBody | null)[] = [];
   private readonly pickedDist: number[] = [];
 
-  /** The bodies' depth map, for `ShadowBindings` and `Volumetrics`. */
-  get depthMap(): BaseTexture | null {
-    return this.generator?.getShadowMap() ?? litShadowTexture(this.scene);
+  /** The bodies' depth map, for `ShadowBindings` and `Volumetrics`: our texture's wrapped view, or the lit 1x1. */
+  get depthMap(): BaseTexture {
+    return this.wrapped ?? litShadowTexture(this.scene);
   }
 
   /**
-   * The light's view*projection. Babylon MUTATES this in place, so a caller
-   * holding it tracks the window whether it asks again or not — the same
-   * caveat `ShadowSystem.lightMatrix` carries, and the same advice: re-read.
+   * The light's view*projection — the identity while the map is off. It is
+   * MUTATED IN PLACE, so a caller holding it tracks the window whether it asks
+   * again or not — the same caveat `ShadowSystem.lightMatrix` carries, and the
+   * same advice: re-read.
    */
   get lightMatrix(): Matrix {
-    return this.generator?.getTransformMatrix() ?? this.offMatrix;
+    return this.mapSize > 0 ? this.matrix : this.offMatrix;
   }
 
   constructor(
     private readonly scene: Scene,
     private readonly mats: CelMaterialFactory,
     quality: ShadowQuality,
+    /** Our renderer's map: what every proxy packed here is drawn into. */
+    private readonly map: BodyShadowMap,
   ) {
-    const c = CONFIG.graphics.bodyShadows;
-    this.light = new DirectionalLight(
-      "bodyShadow",
-      new Vector3(-0.3, -0.85, 0.42).normalize(),
-      scene,
-    );
-    // The one line that keeps a second Babylon light from being a second
-    // Babylon LIGHT. No mesh in the world carries PROXY_LAYER, so
-    // `Light.canAffectMesh` is false for all of them and no StandardMaterial in
-    // the tree gains a term or a recompile. Cel materials could not read it
-    // either way — they carry their own light as uniforms — but the shadow
-    // generator needs a light to define a frustum, and this is the cheapest
-    // honest way to have one that shades nothing.
-    this.light.includeOnlyWithLayerMask = PROXY_LAYER;
-    this.light.shadowFrustumSize = this.window;
-    this.light.shadowMinZ = SHADOW_NEAR;
-    this.light.shadowMaxZ = c.depthRange;
-    this.light.autoUpdateExtends = false;
-
-    this.proxy = MeshBuilder.CreateBox("bodyShadowProxy", { size: 1 }, scene);
-    this.proxy.layerMask = PROXY_LAYER;
-    this.proxy.isPickable = false;
-    // Neither flag can be reached through the layer mask — the ink is a
-    // screen-space pass over depth this never writes, and the glow layer
-    // accumulates over `_activeMeshes`, which this is never in. They are here
-    // because a mesh in this scene that says nothing about either is a mesh
-    // somebody has to work out the answer for.
-    this.proxy.metadata = { noInk: true, noGlow: true, noShadowCaster: true };
-    this.proxy.isVisible = true;
-
-
-    const slots = c.maxBodies * this.boxes.perBody + c.maxHulls;
-    this.matrices = new Float32Array(slots * 16);
-    // Established once with the buffer this will keep writing into;
-    // `thinInstanceBufferUpdated` is what re-uploads it. `staticBuffer` false
-    // because it changes every frame.
-    this.proxy.thinInstanceSetBuffer("matrix", this.matrices, 16, false);
-    this.proxy.thinInstanceCount = 0;
-
+    const direction = new Vector3(-0.3, -0.85, 0.42).normalize();
+    this.light = { direction, position: direction.scale(-1) };
+    this.matrices = new Float32Array(BODY_SHADOW_PROXIES * 16);
     this.setQuality(quality);
   }
 
   /**
    * Stands the map up at a rung's size and window, or takes it down.
    *
-   * The generator is rebuilt rather than resized — a `ShadowGenerator`'s size
-   * is fixed at construction — and the proxy goes back into the new one's
-   * list. The window is invalidated because its texel snap is in texels of
-   * the size and side that just changed.
+   * The texture is re-made rather than resized, AFRESH whatever its size:
+   * disposing Babylon's view of the old one destroys the texture it wraps
+   * (at the end of Babylon's frame), so nothing is kept under a view that is
+   * going. The fresh map is drawn from the proxies last packed, from where
+   * the light stands now — what a fresh generator rendered on its first
+   * frame — and the window is invalidated because its texel snap is in
+   * texels of the size and side that just changed.
    */
   setQuality(quality: ShadowQuality): void {
     const c = CONFIG.graphics.bodyShadows;
     const tier = CONFIG.graphics.shadowTiers[quality];
     if (tier.bodies === this.mapSize && tier.bodyWindow === this.window) return;
-    this.generator?.dispose();
-    this.generator = null;
+    this.wrapped?.dispose();
+    this.wrapped = null;
+    this.map.setSize(0);
     this.mapSize = tier.bodies;
     this.window = tier.bodyWindow;
-    this.light.shadowFrustumSize = this.window;
     this.win.invalidate();
     if (tier.bodies > 0) {
-      const gen = new ShadowGenerator(tier.bodies, this.light);
-      // Bias is consumer-side, as it is for the world map: the receiver knows
-      // its own facet normal and this pass does not.
-      gen.bias = 0;
-      // See the header. Without it every soldier and every hull is drawn
-      // inside its own caster and comes out black.
-      gen.forceBackFacesOnly = true;
-      gen.addShadowCaster(this.proxy, false);
-      this.generator = gen;
+      this.map.setSize(tier.bodies);
+      this.wrapped = wrapShadowTexture(this.scene, this.map.texture!, "bodyShadow");
+      this.restate();
+    } else {
+      this.count = 0;
     }
-    this.mats.shadows.setBodyShadowMap(
-      this.generator?.getShadowMap() ?? litShadowTexture(this.scene),
-    );
+    this.mats.shadows.setBodyShadowMap(this.depthMap, this.wrapped ? this.map.own : null);
     this.mats.shadows.setBodyShadowParams(depthBias(c.bias, c.depthRange));
     this.mats.shadows.setBodyShadowMatrix(this.lightMatrix);
   }
@@ -265,12 +229,11 @@ export class BodyShadows {
    * a direction that was not forwarded.
    */
   setLightDirection(direction: readonly [number, number, number]): void {
-    this.light.direction = new Vector3(
-      direction[0],
-      direction[1],
-      direction[2],
-    ).normalize();
+    this.light.direction.set(direction[0], direction[1], direction[2]).normalize();
     this.win.invalidate();
+    // A generator read its light at every render: until the next update
+    // places the window, the map stands where it was, lit from here.
+    if (this.mapSize > 0) this.restate();
   }
 
   /**
@@ -294,26 +257,40 @@ export class BodyShadows {
     hulls: readonly ShadowHull[],
   ): void {
     const c = CONFIG.graphics.bodyShadows;
-    const gen = this.generator;
-    if (!gen) {
-      // Off: nothing draws the proxy, so nothing is worth packing into it.
-      this.proxy.thinInstanceCount = 0;
+    if (this.mapSize <= 0) {
+      // Off: nothing draws the proxies, so nothing is worth packing.
+      this.count = 0;
       return;
     }
     if (this.win.place(this.light, focus, this.window, this.mapSize, c.distance)) {
-      mats.shadows.setBodyShadowMatrix(gen.getTransformMatrix());
+      this.transform();
+      mats.shadows.setBodyShadowMatrix(this.matrix);
     }
 
     this.count = 0;
     this.packBodies(focus, bodies);
     this.packHulls(hulls);
-    this.proxy.thinInstanceCount = this.count;
-    // Switched off rather than drawn empty. A render list still drops
-    // `!isVisible`, so this is how a frame with nobody in the window costs the
-    // clear and nothing else — and it is the one place the invariant in the
-    // header is deliberately used the other way round.
-    this.proxy.isVisible = this.count > 0;
-    if (this.count > 0) this.proxy.thinInstanceBufferUpdated("matrix");
+    // Drawn whole on the next frame our renderer prepares — or, with nobody
+    // in the window, cleared now: the clear and nothing else, as before.
+    this.map.draw(this.matrix.m, this.matrices, this.count);
+  }
+
+  /** `matrix` off where the light stands now, over the window and the volume. */
+  private transform(): void {
+    lightTransformToRef(
+      this.light,
+      this.window,
+      SHADOW_NEAR,
+      CONFIG.graphics.bodyShadows.depthRange,
+      this.scene.getEngine().isNDCHalfZRange,
+      this.matrix,
+    );
+  }
+
+  /** The matrix re-made and the proxies last packed drawn again with it: the map re-stated where it stands. */
+  private restate(): void {
+    this.transform();
+    this.map.draw(this.matrix.m, this.matrices, this.count);
   }
 
   /**
@@ -375,13 +352,14 @@ export class BodyShadows {
     this.count += this.boxes.writeRig(rig, this.matrices, this.count);
   }
 
-  /** One box per hull, off the collider the rest of the game already uses. */
+  /**
+   * One box per hull ON THE FIELD, off the collider the rest of the game
+   * already uses — the hull's own fields, never its mesh.
+   */
   private packHulls(hulls: readonly ShadowHull[]): void {
-    const c = CONFIG.graphics.bodyShadows;
-    const cap = c.maxBodies * this.boxes.perBody + c.maxHulls;
     for (const hull of hulls) {
-      if (this.count >= cap) return;
-      if (!hull.body.isEnabled()) continue;
+      if (this.count >= BODY_SHADOW_PROXIES) return;
+      if (!hull.present) continue;
       this.boxes.writeHull(hull, this.matrices, this.count);
       this.count++;
     }

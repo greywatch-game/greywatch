@@ -426,7 +426,9 @@ frame                       the whole tick, wall to wall
 │                           three compute passes (their GPU time is gpu.frame's)
 ├─ audio                    pushHullEngines
 └─ render                   scene.render()
-   ├─ shadowPass            the depth map, on the frames that re-render it
+   ├─ shadowPass            a Babylon generator's depth map, on the frames
+   │                        that re-render it — an editor build's alone since
+   │                        X4.1c: a round has none, every shadow map ours
    ├─ glow                  GlowPass: its mask and four blurs at the end of
    │                        the draw phase (the compose is inside the ink)
    ├─ drawWorld             rendering group 0 — the map and the bodies
@@ -623,7 +625,11 @@ re-renders only when the texel-snapped light window moves — 3 frames in 969 on
 that run. **Read `PhaseStat.frames` before `mean` on any phase like this**: the
 mean is over the frames that ENTERED it, so a phase costing 0.73 ms on three
 frames and a phase costing 0.73 ms on all of them have the same `mean` and the
-same `share`, and only `frames` tells them apart.
+same `share`, and only `frames` tells them apart. **Since `BABYLON_EXIT.md`
+X4.1c it reads on NO frame of a round**: the world's maps have been our
+renderer's since X3.6a and the bodies' since X4.1c, and none of ours is
+bracketed (their culls are not in `gpu.cull` either) — only an editor build's
+generators still enter it. The reading above is from before both.
 
 **What they measure is CPU.** Under `compatibilityMode = false` that is the
 recording of a render BUNDLE and not the work the GPU then does — still the

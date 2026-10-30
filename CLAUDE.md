@@ -535,13 +535,13 @@ is registered `fast`**, or its bounce freezes into the probes, and
 RATE RATHER THAN BY WHAT THEY ARE.** The world's re-renders only when its
 texel-snapped focus MOVES, so **nothing that ANIMATES may be registered with
 `shadows.setCasters`**. Soldiers and hulls have a map of their own
-(`systems/BodyShadows.ts`): **a rig's shape is `RAGDOLL_BONES` and a hull's is
-its collider box**, so moving either moves a shadow, and **the local player
-casts nothing**. **The world's map is two CASCADES of one caster set and
-records BACK faces**, so **every caster must be a CLOSED shape**. **The world's
-four maps (both cascades, the foliage's and the lightning's) are OUR renderer's
-in every round, on every rung** (`render/WorldShadows.ts`), `ShadowSystem`'s
-generators only an editor build's, so **a new world caster must be one the
+(`systems/BodyShadows.ts`, drawn by `render/BodyShadowMap.ts`): **a rig's shape
+is `RAGDOLL_BONES` and a hull's is its collider box, off its OWN fields and
+never its mesh**, and **the local player casts nothing**. **The world's map is
+two CASCADES of one caster set and records BACK faces**, so **every caster must
+be a CLOSED shape**. **Every map is OUR renderer's in every round, on every
+rung** (`render/WorldShadows.ts`; `ShadowSystem`'s generators an editor build's
+alone; the bodies' has none), so **a new world caster must be one the
 handover can hold (block-merged, at identity, never `updatable`) or the map is
 REFUSED** — BLENDED OR NOT, since the lamps' atlas casts every surface not
 `noShadowCaster`.

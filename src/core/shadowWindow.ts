@@ -1,21 +1,26 @@
 /**
  * shadowWindow.ts — where a directional shadow camera STANDS, and the texel
- * snap that stops its edges crawling — and the LIT texture a map switched
- * off reads (`litShadowTexture`), the one Babylon texture every shadow reader
- * may be bound to that nothing renders. (Babylon's wrapped views of OUR
- * renderer's textures are `core/wrappedTextures.ts`'.) Owns the light's own
- * cross-axis basis and the last snapped focus; owns no light, no generator
- * and no render target, and never renders anything.
+ * snap that stops its edges crawling; the light's view-projection as
+ * Babylon's `ShadowGenerator` composed it (`lightTransformToRef`); and the LIT
+ * texture a map switched off reads (`litShadowTexture`), the one Babylon
+ * texture every shadow reader may be bound to that nothing renders.
+ * (Babylon's wrapped views of OUR renderer's textures are
+ * `core/wrappedTextures.ts`'.) Owns the light's own cross-axis basis and the
+ * last snapped focus, and `ShadowLight`, what a light is to both; owns no
+ * light, no generator and no render target, and never renders anything.
  * Invariants: `place` writes `light.position` and nothing else on the light —
  * the frustum side, the depth range and the refresh schedule all belong to
- * whoever owns the generator. Contract: `docs/rendering.md`.
+ * whoever owns the map; `lightTransformToRef` is `getTransformMatrix`'s
+ * arithmetic for a parentless `DirectionalLight` with a fixed frustum, the
+ * same helpers in the same order, so the same float32 numbers.
+ * Contract: `docs/rendering.md`.
  *
  * **There are THREE shadow maps in this game and this is the arithmetic they
  * share**, which is the whole reason it is a module rather than a method (the
  * third is the foliage's, `ShadowSystem`'s own second window).
  * `ShadowSystem` carries the static world and re-renders only when this says
  * the window moved; `BodyShadows` carries soldiers and hulls and re-renders
- * every frame regardless. They disagree about the refresh, the casters, the map
+ * every frame it is updated. They disagree about the refresh, the casters, the map
  * size and the window's side — and agree about exactly this: where the ortho
  * volume is centred, and that it is centred on a whole number of ITS OWN
  * texels. Two copies of that drifting is two maps looking at two places off one
@@ -34,7 +39,7 @@
  * because an unsnapped slide along the light shifts receiver depths against
  * caster depths and the hard edges crawl just the same.
  */
-import { type BaseTexture, type DirectionalLight, RawTexture, type Scene, Vector3 } from "@babylonjs/core";
+import { type BaseTexture, Matrix, RawTexture, type Scene, Vector3 } from "@babylonjs/core";
 
 /**
  * A 1x1 texture that every shadow lookup in the game reads as FULLY LIT — what
@@ -92,6 +97,53 @@ export function depthBias(metres: number, depthRange: number): number {
 }
 
 /**
+ * What a window places and a transform reads of a directional light: where it
+ * points and where it stands. A Babylon `DirectionalLight` is one (the world's
+ * maps keep theirs, for an editor build's generators); the bodies' map holds
+ * the pair alone (`BodyShadows`), its map being our renderer's.
+ */
+export interface ShadowLight {
+  readonly direction: Vector3;
+  readonly position: Vector3;
+}
+
+/** `lightTransformToRef`'s scratch: no garbage on the frames a window moves. */
+const transformDir = new Vector3();
+const transformTarget = new Vector3();
+const transformView = new Matrix();
+const transformProjection = new Matrix();
+
+/**
+ * `light`'s view-projection into `out`, as Babylon's
+ * `ShadowGenerator.getTransformMatrix` computes it for a `DirectionalLight`
+ * with a fixed frustum (`autoUpdateExtends` off, `shadowFrustumSize` `side`)
+ * and no parent — the same helpers in the same order, so the same float32
+ * numbers: a look-at from the light's position along its direction, nudged
+ * off the vertical, and `OrthoLH` over the side and the depth range
+ * (`minZ`, `maxZ`) in the engine's half-z range (`halfZ`). The ONE copy: the
+ * world's maps (`ShadowSystem`) and the bodies' (`BodyShadows`) both read it,
+ * and a reader samples the texel the generator's matrix named.
+ */
+export function lightTransformToRef(
+  light: ShadowLight,
+  side: number,
+  minZ: number,
+  maxZ: number,
+  halfZ: boolean,
+  out: Matrix,
+): Matrix {
+  const dir = transformDir;
+  Vector3.NormalizeToRef(light.direction, dir);
+  // `UpReadOnly` where Babylon makes a fresh `Up()`: the same numbers, no garbage.
+  if (Math.abs(Vector3.Dot(dir, Vector3.UpReadOnly)) === 1.0) dir.z = 0.0000000000001;
+  light.position.addToRef(dir, transformTarget);
+  Matrix.LookAtLHToRef(light.position, transformTarget, Vector3.UpReadOnly, transformView);
+  Matrix.OrthoLHToRef(side, side, minZ, maxZ, transformProjection, halfZ);
+  transformView.multiplyToRef(transformProjection, out);
+  return out;
+}
+
+/**
  * The basis and the snapped focus for one shadow window.
  *
  * One instance per map — they are not interchangeable and must not be shared:
@@ -140,7 +192,7 @@ export class ShadowWindow {
    * light the camera stands from the focus.
    */
   place(
-    light: DirectionalLight,
+    light: ShadowLight,
     focus: Vector3,
     metres: number,
     mapSize: number,

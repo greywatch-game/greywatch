@@ -1580,6 +1580,17 @@ is one machine's:
   `g.shadows.generator.getShadowMap().renderList` (40 pane meshes against 316
   casters on Coldharbour). A pane that gains either is drawn as a dark plate or
   lays a hard shadow through clear glass.
+- **The bodies' map reads back the same way** (`BABYLON_EXIT.md` X4.1c):
+  `g.bodyShadowMap.colour` is our `r16float` texture, made WITHOUT
+  `COPY_SRC`, so a readback adds it in an init script (wrap
+  `GPUDevice.prototype.createTexture`, label `"body shadows"`) before the
+  page boots, and copies after the engine's flush
+  (`g.engine.onEndFrameObservable`) to read the frame just drawn. It holds
+  bodies only where the window is: re-place it inside the render
+  (`scene.onBeforeRenderObservable`, `g.bodyShadows.update(focus, g.mats,
+  g.mapBodies(), g.vehicles.hulls)`) on a body or a hull, or it reads lit.
+  There is no Babylon side left to compare against; X4.1c's comparison kept
+  the deleted generator as a temporary twin fed the same matrices array.
 - **The glow's MASK reads back the same way, and it is the place to check who
   drew the palette's bloom** (`BABYLON_EXIT.md` X3.6d, X3.6e): `g.glow.mask
   .getInternalTexture()._hardwareTexture.underlyingResource` is an
@@ -1609,7 +1620,11 @@ is one machine's:
   (`g.probeBake.mips = Object.create(g.probeBake.mips, { ready: … false })`),
   the bake's view not made (`g.handover.blocks.probeView = () => null`) or
   not built (wrap it to return `{ ...view, ready: Promise.resolve(false) }`),
-  and the mask's view the same two ways (`blocks.glowView`). Each must end,
+  and the mask's view the same two ways (`blocks.glowView`) — and the
+  bodies' map's pipeline failed for the session (`g.bodyShadowMap.ready =
+  Promise.resolve(false)`; `BABYLON_EXIT.md` X4.1c: not the world, but no
+  fallback either, so the round's failure, a second round failing the same
+  way). Each must end,
   after the task in hand, in ONE `console.error` beginning `[world] <map>: the
   map could not be drawn`, `g.state === "menu"`, and a toast naming the map —
   and a round after it, restored, installs clean. (The fields are private to

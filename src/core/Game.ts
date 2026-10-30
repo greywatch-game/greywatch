@@ -110,6 +110,7 @@ import {
 } from "../shaders/CelShader";
 import { BabylonFrameHost } from "../render/babylonSeam";
 import { Renderer } from "../render/Renderer";
+import { BodyShadowMap } from "../render/BodyShadowMap";
 import { LampAtlas } from "../render/LampAtlas";
 import { ProbeBake } from "../render/ProbeBake";
 import { WorldGlow } from "../render/WorldGlow";
@@ -212,7 +213,7 @@ import { RotorWash } from "../systems/RotorWash";
 import { RoundRandom, STREAM, freshSeed } from "../systems/RoundRandom";
 import { LightingSystem, type RoomLight } from "../systems/LightingSystem";
 import { AmbienceSystem } from "../systems/AmbienceSystem";
-import { BodyShadows, type ShadowBody } from "../systems/BodyShadows";
+import { BODY_SHADOW_PROXIES, BodyShadows, type ShadowBody } from "../systems/BodyShadows";
 import { GiVolume } from "../systems/GiVolume";
 import { LocalShadows } from "../systems/LocalShadows";
 import { ShadowSystem } from "../systems/ShadowSystem";
@@ -721,11 +722,17 @@ export class Game {
    *
    * A system of its own rather than a third thing inside `ShadowSystem`, and the
    * reason is the refresh rate: that one re-renders when its window moves and
-   * this one re-renders every frame, so they are two render targets with two
-   * schedules that happen to share a direction. What keeps them in step is that
+   * this one re-renders every frame, so they are two maps with two schedules
+   * that happen to share a direction. What keeps them in step is that
    * `applyEnvironment` pushes that direction to both from one line.
    */
   private bodyShadows: BodyShadows;
+  /**
+   * The bodies' map as our renderer owns it, in every state (`BABYLON_EXIT.md`
+   * X4.1c): no generator is kept for it, so one it cannot draw is the round's
+   * failure (`worldFailed`, wired at the install).
+   */
+  private readonly bodyShadowMap: BodyShadowMap;
   /**
    * The irradiance volume — bounce light, sky occlusion and point lights that
    * stop at walls (`systems/GiVolume.ts`). Built beside the two shadow maps and
@@ -1501,8 +1508,11 @@ export class Game {
     // DECLARES: `SHADOW_SAMPLER_NAMES` lists `bodyShadowMap`, and a declared
     // sampler with nothing behind it is a bind group that fails to build and
     // every draw using it silently lost. So this exists before the first
-    // material does, and there is no state in which it does not.
-    this.bodyShadows = new BodyShadows(this.scene, this.mats, this.shadowQuality);
+    // material does, and there is no state in which it does not. Its map is
+    // our renderer's in every state, a pass of its own (`BABYLON_EXIT.md`
+    // X4.1c), and its pipeline is asked here, once for the session.
+    this.bodyShadowMap = new BodyShadowMap(this.renderer, BODY_SHADOW_PROXIES);
+    this.bodyShadows = new BodyShadows(this.scene, this.mats, this.shadowQuality, this.bodyShadowMap);
     // The lamps' atlas, for the same rule: `SHADOW_SAMPLER_NAMES` lists it, so
     // it is bound before the first material exists — the lit 1x1 on a rung
     // that has none.
@@ -4772,6 +4782,8 @@ export class Game {
     this.reflections.clear();
     this.atmosphere.apply(undefined, 0, 0);
     this.shadows.setCasters([]);
+    // A body map failing for a map that is gone is no news of the next one.
+    this.bodyShadowMap.setFailure();
     // …and the bodies' blobs, which only a simulating frame places, so each
     // would stay lit on a floor that is no longer there.
     this.shadows.hideBlobs();
@@ -4965,6 +4977,13 @@ export class Game {
     } else {
       this.handover.install(map, owner, editor);
     }
+    // The bodies' map is no part of the world the handover hands over, but it
+    // has no fallback either: a pipeline of it that cannot be built fails the
+    // round as the world's passes do — this install's, and every one after
+    // it, the pipeline being the session's. An editor build fails nothing.
+    this.bodyShadowMap.setFailure(
+      editor ? undefined : (reason) => this.worldFailed(reason, owner),
+    );
     // How hard the grade is pushed is the map's; whether it runs at all stays
     // the player's (`applySettings`). A vignette that reads as dread over a
     // night village reads as a lens fault over a bright one.
@@ -9520,11 +9539,13 @@ export class Game {
     // not gated on `player`: that gate means "has a body of its own to shade",
     // which a DRIVER does not (`frameVehicleCamera` passes null) while his
     // squad outside the hull still throws shadows.
+    // The hulls are handed as THEMSELVES — the collider's own fields, never
+    // their pictures (`ShadowHull`).
     this.bodyShadows.update(
       shadowFocus,
       this.mats,
       bodies,
-      this.vehicleViews.views,
+      this.vehicles.hulls,
     );
     if (player) {
       this.shadows.updateBlobs(
@@ -9569,7 +9590,7 @@ export class Game {
       this.lighting.activeLights,
       this.cameraSys.camera.position,
       bodies,
-      this.vehicleViews.views,
+      this.vehicles.hulls,
     );
     this.prof.end(P.localShadows);
     // Water reads the same camera and the same winning light set, so it
