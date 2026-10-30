@@ -3567,7 +3567,7 @@ module from X2.2. When the last one lands, Babylon draws nothing but the post
 chain, and the frozen cel-material cache and its traps are deleted with
 `CelMaterialFactory`'s Babylon half.
 
-### X4.1 — Bodies (PERF_PLAN C6, A4) — **L, as five sub-steps** (split 2026-10-29) — X4.1a **LANDED** (a417bfc)
+### X4.1 — Bodies (PERF_PLAN C6, A4) — **L, as five sub-steps** (split 2026-10-29) — X4.1a **LANDED** (a417bfc, review fixes after it)
 
 Every body a page draws — `NetSoldier`'s rig, a corpse, the death cam's
 stand-in — comes off Babylon's scene, along with the moon's body shadow map,
@@ -3636,7 +3636,8 @@ reparenting goes and every body is one kind of thing to draw.
   parent; `census --against`; `gate`, `shaders`; typecheck, build, corecheck,
   `parity`; a round offline and a netplay round.
 
-**X4.1a landed** (a417bfc, 2026-10-29; no picture change).
+**X4.1a landed** (a417bfc, the post-commit review's fixes after it;
+2026-10-29; no picture change).
 - **What it is.** A soldier rig's joints are OUR hierarchy
   (`src/entities/rigJoints.ts`, Babylon-free, a root of
   `check-babylon-free.mjs`): `Joint` holds the local channels a
@@ -3727,13 +3728,68 @@ reparenting goes and every body is one kind of thing to draw.
   and `rig-far` among them, the same 34 stale rows on both sides, no console
   or page error. **`census --against`** the BEFORE: every row equal (Hollowmere 278, Greyfen 205, Coldharbour 672, Harrowmead 847, Sarab 661, Cinderhaven 186, Kurenai 125). **`gate.mjs`** clean on seven. **`shaders.mjs`** clean on seven, ours 17/17 (21/21 Sarab and Cinderhaven, 23/23 Coldharbour). `math-check` 79 cases;
   typecheck, build, corecheck and `parity` (eight maps) pass. **A round offline** on Hollowmere and Sarab (the probes above, and `gate`'s seven) and **a netplay round** against a local `dist-server` (`?mp=`, Hollowmere, the authority's round): bodies drawn off the wire, fifteen deaths staged through the roster and the death cam's stand-in, 208,184 rig meshes drawn and every one the fresh composition, no console or page error.
+  **`kit:hash --models`: the two `soldier` rows are RE-BASELINED here, by
+  construction** — `["soldier",0]` draw 9bd8b11fd2b30505 → 37d7f293a37d85e0
+  (set 3aab2fe91440b7a7 → 2b8b8d71b6fb5da2), `["soldier",1]` draw
+  fb60ea13d72eda54 → 57344c42de95f3cf (set a839d7e8d283267b →
+  f7ce60a37248dcfd), taken at 25331b8 and at HEAD by the review. The script
+  hashes every transform node left in the scene, each mesh's parent and
+  transform, and the builder's plain data (the rig), and this step took the
+  joint nodes and the root capsule out of the scene, left every mesh
+  unparented, and made the rig's joints a
+  `JointTree` — so both rows had to move, and they cannot say whether a
+  drawn body did; the bank and the oracle above are that proof. **A later `--against` a
+  baseline older than a417bfc reports these two as "content changed", and
+  that is this step, not a regression** — take a fresh baseline past it.
 - **Deviations.** `WorldCulling.stats.pooled` counts the meshes alone (it
   counted each root too). `DeathCam.warm` hands its meshes their matrices
-  itself as well as through `drawBodies`. The fresh shadow-box and
+  itself as well as through `drawBodies` — redundant, a warm-up frame running
+  `drawBodies` like any other, and harmless. The fresh shadow-box and
   `shadowFor` reads above.
+- **What the post-commit review found** (an independent reader over a417bfc
+  and 8bf4e21; fixed after it). No game-code defect and nothing
+  architectural; every fix is a document or a comment. One RECIPE that
+  stopped working: `VERIFYING.md`'s "a soldier is judged in a picture" built
+  a rig with `buildSoldier` and posed it in an `onBeforeRenderObservable`,
+  but since this step only `Game.drawBodies` hands a rig's meshes their
+  matrices, and only the roster's and the death cam's — so a script
+  following it photographed unparented meshes bunched at the origin. It now
+  calls `setRigEnabled(rig, true)` (a fresh build leaves the slung
+  launcher's mesh on) and `drawRig(rig)` in that observable, after the pose,
+  and `drawRig`'s doc names a rig that pass does not know as owing its own
+  call. One ORACLE row that moved by construction and was not said: the
+  `kit:hash --models` soldier rows (Measured, above). Stale words:
+  `CLAUDE.md`'s deaths pointer promised "the quaternion leak" where
+  `docs/deaths.md` now tells the HOLDER leak (reworded, its line count
+  kept); `DeathCam.prepare` called the proxies "the PARENTS of the joints
+  about to be disposed" (the joints are disposed of nothing now: the hazard
+  is a slot holding a rig whose meshes are freed); `NetSoldier`'s "proxy
+  nodes … the same nodes", "re-parenting a living body's joints" and "the
+  body node"; `drawRig`'s doc calling `DeathCam.warm` "a frame of its own"
+  (a warm-up frame gets `drawBodies` too; the call is redundant but
+  harmless, Deviations). `SoldierRig.root` now says its own `enabled` is not
+  the body's switch — `rig.enabled` through `setRigEnabled` is. One
+  UNMEASURED cost, recorded below rather than fixed. Re-checked after the
+  fixes: typecheck and build; `kit:hash --models --kinds soldier` at HEAD
+  (the two rows above).
 - **Owed onward.** X4.1b: the holder and the proxies, `freeze`'s hand-back
-  and the forced proxy compose. The phone's FOLLOW-UP reading, as every
-  step's since X3.3c, and the post-commit review of this step.
+  and the forced proxy compose — which, the review notes, need not survive
+  even as long as the proxies: `applyImpulse`'s forced
+  `chest.proxy.computeWorldMatrix(true)` is there only for its translation
+  row, so the proxy's own position rounded to float32 (`Math.fround` on each
+  axis) answers the same point without a compose. The phone's FOLLOW-UP
+  reading, as every step's since X3.3c. **And a cost the review saw and
+  nobody has measured**: every enabled body is now composed SEVERAL times a
+  frame — `drawRig`'s `compute`, up to two `ProxyBoxes.writeRig` computes
+  (the body map's and the lamps' atlas's), and root chains for the measure
+  and both packers — where Babylon composed each node once per render id
+  and cached it; the reviewer's estimate is ~800 extra joint composes a
+  frame at 24 a side. That phone reading, or an X0.3 at 24 a side on Sarab
+  and Cinderhaven, is what reads it. **The fresh-compose invariant
+  (`rigJoints.ts`' header) must not be undone to buy it back without a
+  measurement** — a cached compose is how `ProxyBoxes` read 146 stale boxes
+  before this step (the oracle, above); X4.1d's instancing is the natural
+  place to compose a body once.
 
 ### X4.2 — Vehicles (PERF_PLAN A3) — **M** (decision)
 

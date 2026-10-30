@@ -700,7 +700,8 @@ export interface SoldierRig {
   tree: JointTree;
   /**
    * The joint the rig hangs from: the body centre. Positioned and turned by
-   * whoever places the body (`NetSoldier`, `DeathCam`); never drawn.
+   * whoever places the body (`NetSoldier`, `DeathCam`); never drawn. Its own
+   * `enabled` is NOT the body's switch: `rig.enabled` (`setRigEnabled`) is.
    */
   root: Joint;
   body: Joint;
@@ -1522,8 +1523,11 @@ const _meshWorld = new Matrix();
  *
  * **It is called once a frame, after every write and before the render**
  * (`Game.drawBodies`, inside the render span: Babylon composed these inside
- * `scene.render` before), and by anything that draws a body in a frame of its
- * own (`DeathCam.warm`). `freezeWorldMatrix` is how a mesh with no parent is
+ * `scene.render` before). `DeathCam.warm` calls it too, redundantly but
+ * harmlessly: a warm-up frame runs `drawBodies` like any other, and its
+ * stand-in is the death cam's body that pass draws. A rig that pass does not
+ * know (a script's, `VERIFYING.md`) owes its own call, after its pose and
+ * before the render. `freezeWorldMatrix` is how a mesh with no parent is
  * handed a matrix: Babylon keeps the object it is given as the world matrix,
  * marks its bounds for an update, and composes nothing of its own.
  */

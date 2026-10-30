@@ -1041,9 +1041,9 @@ you watch — and it costs no time, because `enterDeploy` is opened with
 
 → **[`docs/deaths.md`](docs/deaths.md)** — the boot gate and what the optional
 version cost, Havok called directly (the dialect, the substep, the pose array
-and where each view draws it), the pool's three tiers, the quaternion leak that
-freezes a respawned bot, the fog-wall gate shared with the LOD, the shard pool,
-and the death cam's camera hand-off.
+and where each view draws it), the pool's three tiers, the holder (once
+quaternion) leak that freezes a respawned bot, the fog-wall gate shared with
+the LOD, the shard pool, and the death cam's camera hand-off.
 
 ### Vehicles: three kinds, one hull, and the exceptions it is
 

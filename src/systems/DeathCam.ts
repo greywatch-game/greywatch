@@ -227,10 +227,11 @@ export class DeathCam {
    *
    * A change of team is the one thing that rebuilds, and the rebuild has to go
    * through `stop()` first. The standing rig may be held by `RagdollSystem` at
-   * that moment, whose proxy nodes are the PARENTS of the joints about to be
-   * disposed — a slot left pointing at freed nodes would go on writing them for
-   * the rest of the corpse's life and hand back a hierarchy that no longer
-   * exists. Offline nothing reaches it: the player is team 0 every round, so
+   * that moment, its joints hung on the pool's proxy nodes (their HOLDERS,
+   * `JointTree.hold`) while its meshes are about to be disposed — a slot left
+   * holding a rig whose meshes are freed would go on posing it for the rest of
+   * the corpse's life and, at the release, switch meshes that no longer
+   * exist. Offline nothing reaches it: the player is team 0 every round, so
    * every call after the first is the early return above. A netplay welcome is
    * what reaches it — the authority can seat this client on team 1, and it can
    * say so with the cam already up, which is the case `stop()` covers. The cam

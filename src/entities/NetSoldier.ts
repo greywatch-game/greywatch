@@ -223,14 +223,15 @@ export class NetSoldier implements Combatant, RagdollSubject {
 
     // Taken before the guard below, and deliberately: `alive` is the pool's own
     // self-defence — a slot whose subject has come back to life releases it on
-    // the next step rather than re-parenting a living body's joints for the
-    // rest of the round. Stop maintaining it here and that guard can never
+    // the next step rather than holding a living body's joints on its proxies
+    // for the rest of the round. Stop maintaining it here and that guard can never
     // fire, because the samples are the only thing that knows.
     this.alive = b.alive;
 
     // While the pool owns this rig it owns the joints AND the root, and it
-    // poses through proxy nodes the solver writes. Everything below is a second
-    // writer on the same nodes, so this stands aside while the pool holds it.
+    // poses through the proxy nodes its joints hang on (their holders), which
+    // the solver's poses write. Everything below is a second writer on the same
+    // joints, so this stands aside while the pool holds it.
     //
     // `hasPosition` goes with it so the frame the rig comes back reports no
     // travel: `position` froze where the body died and the respawn is somewhere
@@ -306,7 +307,7 @@ export class NetSoldier implements Combatant, RagdollSubject {
     // `eyeHeight` exactly as it always has.
     //
     // The ROOT does not move. The crouch lives inside the rig — `animateSoldier`
-    // drops the body node and folds the legs under it — so the rig still hangs
+    // drops the body joint and folds the legs under it — so the rig still hangs
     // from the standing body centre and the boots stay on the ground.
     const c = this.rig.centerHeight;
     this.rig.root.position.set(x, y + c, z);

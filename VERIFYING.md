@@ -1314,7 +1314,13 @@ is one machine's:
   does, `deploy` is the cheapest state to do it in (the map is up and nothing is
   shooting), an injected `#hud{display:none}` takes the interface off the glass,
   `animateSoldier` poses them and writing `rig.root.rotation.y` turns them for a
-  turntable. Two traps: there is no `BABYLON` global, so build a vector with
+  turntable. **Then draw them yourself, in that same observable, after the
+  pose**: `setRigEnabled(rig, true)` (a fresh build leaves the slung launcher's
+  mesh on) and `drawRig(rig)`, both from the same module. Since
+  `BABYLON_EXIT.md` X4.1a the meshes have no parent and only `Game.drawBodies`
+  hands them their matrices — the roster's rigs and the death cam's, not
+  yours — so a rig nobody draws is photographed as its meshes bunched at the
+  origin. Two more traps: there is no `BABYLON` global, so build a vector with
   `new (cam.position.constructor)(x, y, z)`; and **the team read has to be
   checked at RANGE, not only in the close-up** — park the same pair 25–30 m out,
   where a body is ~40 px tall, which is the size at which a kit that only works
