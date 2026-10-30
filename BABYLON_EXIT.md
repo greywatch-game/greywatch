@@ -3567,7 +3567,7 @@ module from X2.2. When the last one lands, Babylon draws nothing but the post
 chain, and the frozen cel-material cache and its traps are deleted with
 `CelMaterialFactory`'s Babylon half.
 
-### X4.1 — Bodies (PERF_PLAN C6, A4) — **L, as five sub-steps** (split 2026-10-29) — X4.1a **LANDED** (a417bfc, review fixes after it), X4.1b **LANDED** (f554b68, review fixes after it), X4.1c **LANDED** (HASH)
+### X4.1 — Bodies (PERF_PLAN C6, A4) — **L, as five sub-steps** (split 2026-10-29) — X4.1a **LANDED** (a417bfc, review fixes after it), X4.1b **LANDED** (f554b68, review fixes after it), X4.1c **LANDED** (3a07a68)
 
 Every body a page draws — `NetSoldier`'s rig, a corpse, the death cam's
 stand-in — comes off Babylon's scene, along with the moon's body shadow map,
@@ -3979,7 +3979,7 @@ Havok's chaos carries that into where it comes to rest).
   pose, or a sphere over its twelve), so the fog-wall gate and the size
   gate's whole-body drop judge a thrown body where it lies.
 
-**X4.1c landed** (HASH; 2026-10-30; no picture change on any bank row, and
+**X4.1c landed** (3a07a68; 2026-10-30; no picture change on any bank row, and
 two by construction off it, said under Deviations: the frame right after a
 rung change re-makes the map, where Babylon's freshly built generator drew no
 proxy and ours draws them, and a moving hull's box, which the deleted mesh
