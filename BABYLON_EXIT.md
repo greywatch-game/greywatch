@@ -3567,7 +3567,7 @@ module from X2.2. When the last one lands, Babylon draws nothing but the post
 chain, and the frozen cel-material cache and its traps are deleted with
 `CelMaterialFactory`'s Babylon half.
 
-### X4.1 — Bodies (PERF_PLAN C6, A4) — **L, as five sub-steps** (split 2026-10-29) — X4.1a **LANDED**
+### X4.1 — Bodies (PERF_PLAN C6, A4) — **L, as five sub-steps** (split 2026-10-29) — X4.1a **LANDED** (a417bfc)
 
 Every body a page draws — `NetSoldier`'s rig, a corpse, the death cam's
 stand-in — comes off Babylon's scene, along with the moon's body shadow map,
@@ -3636,7 +3636,7 @@ reparenting goes and every body is one kind of thing to draw.
   parent; `census --against`; `gate`, `shaders`; typecheck, build, corecheck,
   `parity`; a round offline and a netplay round.
 
-**X4.1a landed** (2026-10-29; no picture change).
+**X4.1a landed** (a417bfc, 2026-10-29; no picture change).
 - **What it is.** A soldier rig's joints are OUR hierarchy
   (`src/entities/rigJoints.ts`, Babylon-free, a root of
   `check-babylon-free.mjs`): `Joint` holds the local channels a
