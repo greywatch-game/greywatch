@@ -4935,7 +4935,9 @@ draft named a `HullFlex`; no such module exists — the hull's own motion is
   parent; `census --against`; `gate`, `shaders`; typecheck, build, corecheck,
   `parity`; a round offline with each kind driven and a netplay round.
 
-**X4.2a landed** (fde5be7; 2026-10-31; no picture change).
+**X4.2a landed** (fde5be7, the post-commit review's fixes after it;
+2026-10-31; no picture change but ONE, found by that review: a latent bug of
+the parent's size gate, fixed by the step — Deviations).
 - **What it is.** A hull's joints are OUR hierarchy: `VehicleRig.tree`, a
   `JointTree` (`rigJoints.ts`, X4.1a's), whose first joint is the collider
   box's own frame (`rig.body`, `hull-body`) and whose second the model's
@@ -5047,14 +5049,82 @@ draft named a `HullFlex`; no such module exists — the hull's own motion is
   paint, the hide (`present`) and the respawn's `placed`, kind-blind code
   the tank and the truck exercised; the helicopter's own joints were driven
   through flight, its rotors and its chin gun's whole laying.
+  **One picture change, undisclosed when the step landed: a latent bug of
+  the parent's, fixed** (found by the post-commit review below; confirmed
+  from Babylon 9.28's code and LIVE). In the parent every hull mesh was a
+  LOOSE candidate, size-gated by `WorldCulling.offer` off its own
+  `getBoundingInfo()` (`tooSmallMesh`). Babylon rebuilds a mesh's bounds only
+  after it recomputes the world matrix (`_afterComputeWorldMatrix` is what
+  dirties them), and recomputes it only for the candidates `WorldCulling`
+  hands it (`scene._evaluateActiveMeshes`); nothing else in the parent
+  composed a hull mesh. So a part the gate dropped kept the bounds of where
+  it was last drawn, and stayed dropped for as long as that old sphere
+  projected under the gate from the eye — however near the hull itself came.
+  At 832x384 and `fovHip` 0.95 (404 px a radian) `tank-mg-ring` (a sphere of
+  0.396 m radius, measured — not the review's ~0.54, which put the drop at
+  ~73 m) drops past ~107 m, so a tank last drawn further off than that which
+  then drove up to the player arrived without its ring; and a hull wrecked
+  far off and placed again at a hardstanding came back without its small
+  parts. `drawHullRig` freezes a fresh matrix onto every enabled mesh every
+  frame, and a freeze dirties the bounds, so the gate now reads where the
+  hull is — one frame behind, as it always was for a mesh drawn the frame
+  before. The oracle could not see it (it digests only DRAWN meshes, and the
+  parent's were all fresh), nor the bank (its vantages pose parked hulls).
+  **Measured** with a scratch probe wrapping `offer` — every enabled hull
+  mesh every frame, the bounds `offer` reads against the node or joint chain
+  composed fresh, the player standing at his spawn, 832x384: the parent
+  (6dad2d9, in its worktree) dropped a mesh a fresh bound would have kept on
+  409,427 of 4,288,968 mesh-frames on Sarab (240 s), 331,524 of 1,795,625 on
+  Coldharbour and 141,505 of 1,706,775 on Harrowmead (300 s each), held
+  centres as far as 526 m from the hull. The worst, on Coldharbour: a tank
+  at 72-75 m and on screen drawn without its sprocket (13.2 px), its cupola
+  gun (10.8 px), both whips and its MG ring (4.3 px), every one held where
+  it had been last drawn, ~386 m off. The step on Sarab (240 s): 41 of
+  4,198,445, each a single frame — 37 at the gate's own edge (3.000-3.001
+  px, at most 0.16 m of one frame's travel) and the frame after a wrecked
+  tank was placed again (its cupola gun at 146 px for that one frame). So
+  "no picture change" holds for every frame both trees draw a hull mesh;
+  what moved is a part the parent wrongly kept dropped, now drawn.
+- **What the post-commit review found** (an independent reader over fde5be7
+  and e5a4d95; fixed after it, comments and docs only — nothing drawn or
+  simulated moved). **No correctness bug in the step's code.** **Found**:
+  the picture change above, undisclosed (rule 2) — the reviewer's reading
+  of the code, verified against Babylon 9.28 and live before it was
+  recorded (Deviations); and its cost, the review's estimate (Owed
+  onward). **Fixed** (rule 7): present-tense node
+  wording about the hull, now joints — `Vehicle.leanHull`'s and
+  `HullSprings.lean`'s guard, still justified by a `TransformNode` rotation
+  write (it stays for what it decides: the muzzle's path and the bits the
+  view copies, `VehicleView`'s header); `HullSprings.flexHeave` ("reaches one
+  `TransformNode`'s Y", now docs/vehicles.md's wording); `VehicleViews`'
+  header; `vehicleRig.ts`' `hull`, `sprung` and `turret` docs; `HullWhips`'
+  "the drawn node"; and, grepping the files X4.2a touched, `hullFrame.ts`
+  (the header's per-joint replay, `HullPose`, `hullBodyToRef`),
+  `HeliModel.ts`, `TankModel.ts` (and the wheel paint's doc, which put the
+  road wheels on a node of their own: they are a segment on `hull`, the
+  sprocket on its own joint), `TruckModel.ts` and `Game.ts`' "before
+  anything reads a node" at `vehicleViews.update`.
 - **Owed onward.** X4.2b: the meshes into a kit our renderer draws, every
   hull an instance, the joints a segment's matrix — the `HullMesh` list
-  (`local`, `joint`) is that segment table already. The phone's FOLLOW-UP
-  reading, as every step's since X3.3c. **A cost nobody has measured**: each
-  present hull composes its whole tree every frame (at most 21 joints and 26
-  `freezeWorldMatrix` calls, each updating the mesh's bounds) where Babylon
-  re-composed only a node that moved; six hulls a map makes it small, and
-  X4.2b's instancing is where a hull is composed once.
+  (`local`, `joint`) is that segment table already. **X4.2b's whole-hull
+  measure must keep the fixed behaviour** (Deviations): measured where the
+  hull IS every frame it is offered — off its own fields or its composed
+  joints — and never off a bound cached at the last frame it was drawn, or a
+  hull the size gate dropped stays dropped wherever it drives. The phone's
+  FOLLOW-UP reading, as every step's since X3.3c. **A cost nobody has
+  measured** (the review's estimate, not a reading): each present hull
+  composes its whole tree every frame (at most 21 joints and 26
+  `freezeWorldMatrix` calls) where Babylon re-composed only a node that
+  moved, and each freeze also DIRTIES the mesh's bounds, which
+  `WorldCulling.offer` then rebuilds — it reads `getBoundingInfo()` on every
+  enabled loose mesh (`tooSmallMesh`) — so every hull mesh rebuilds its
+  bounds every frame, parked or off-screen: about 150 bounds updates and 126
+  composes on a six-hull map, estimated at tens of µs on desktop and ~0.2-0.4
+  ms on the phone. X4.2b removes it (a hull measured once, composed once, no
+  Babylon mesh). **The mitigation if a phone reading shows it before then**:
+  skip a mesh's freeze when the 16 composed floats are bit-equal to what that
+  mesh was handed the last time. Not done here; it would keep the fix, since
+  a freeze skipped is a bound left where the mesh still is.
 
 ### X4.3 — The viewmodel and the kit bay — **M–L**
 

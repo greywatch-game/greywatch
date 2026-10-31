@@ -82,7 +82,7 @@
  * scrolling strip of links. A truck's is four discs, which CAN be one mesh
  * each — and a disc rotating about its own axis is famously indistinguishable
  * from a disc at rest, which is the argument that got the tank's road wheels
- * no nodes at all. So the tyre alone would be a wasted mesh, and what earns it
+ * no joints at all. So the tyre alone would be a wasted mesh, and what earns it
  * is what is drawn ON it: **two staggered rows of tread blocks standing proud
  * of the carcass, and a pale rim inside a dark beadlock ring with a circle of
  * bolts on it and eight studs round the hub**, which is a pattern with an
@@ -93,7 +93,7 @@
  * the frame's for exactly that reason: a third colour would be a third mesh.
  *
  * The second half is the STEER, and it is the one thing this model does that
- * the tank's cannot: the front pair are hung under a yaw node each and turned
+ * the tank's cannot: the front pair are hung under a yaw joint each and turned
  * with the stick. A tank's steer is already visible as its two tracks running
  * opposite ways; a truck that cornered at 65 km/h with its wheels pointing
  * dead ahead is a vehicle sliding sideways. That is why `VehicleRig.setRun`
@@ -341,10 +341,10 @@ const ANTENNA_FEET = [[-(BODY_HW - 0.06), POST_Z], [BODY_HW - 0.06, -2.22]] as c
 const ANTENNA_FOOT_Y = ROOF_Y;
 
 /**
- * One wheel: the yaw node that STEERS it (front only) and the node that SPINS.
+ * One wheel: the yaw joint that STEERS it (front only) and the joint that SPINS.
  *
- * Two nodes and not one, because the two rotations are about different axes in
- * different frames — a wheel that steered and rolled on one node would roll
+ * Two joints and not one, because the two rotations are about different axes in
+ * different frames — a wheel that steered and rolled on one joint would roll
  * about an axis that had been turned by the steering, which is a tyre screwing
  * itself into the road.
  */
@@ -419,7 +419,7 @@ export function buildTruck(
       parent = steer;
     }
     const spin = tree.add(`truck-wheel${i}`, parent);
-    // A steered wheel hangs at its steering node's own origin; an unsteered
+    // A steered wheel hangs at its steering joint's own origin; an unsteered
     // one carries the position itself.
     spin.position.set(steers ? 0 : x, steers ? 0 : HUB_Y, steers ? 0 : z);
     const sign = x < 0 ? -1 : 1;
@@ -897,7 +897,7 @@ export function buildTruck(
   //
   // **`VehicleRig.turret` is here and is deliberately inert.** `Vehicle` keeps
   // `turretYaw` equal to the hull's own yaw on a gunless kind, so the local
-  // angle written on this node is always zero — which is exactly what a ring
+  // angle written on this joint is always zero — which is exactly what a ring
   // BOLTED to a roof should do. It exists so that the mount below has the same
   // parent it has on a tank and `aimMg` needs no branch.
   const f = TRUCK_FRAME;
@@ -910,7 +910,7 @@ export function buildTruck(
     [RING_R * 2 + 0.16, 0.06, 0, ROOF_Y + 0.02, RING_Z, kit.frame, "y"],
   ]);
 
-  // Two nodes, the same pair the tank's cupola gun gets and for the same
+  // Two joints, the same pair the tank's cupola gun gets and for the same
   // reason: they move differently from everything around them. The mount
   // TRAVERSES on the ring and the gun ELEVATES in it.
   //
@@ -1001,7 +1001,7 @@ export function buildTruck(
   // On `mgGun` rather than on the mount (`VehicleRig.mgSight` says why), and
   // the head is on the gun too, so the eye and the lens it stands at elevate
   // together. **The `z` is the clearance that matters**: the lens bezels stand
-  // out to 0.32 on this node, and 0.4 puts the eye 8 cm clear of them, past
+  // out to 0.32 on this joint, and 0.4 puts the eye 8 cm clear of them, past
   // the near plane at every lay.
   const mgSight = tree.add("truck-mg-sight", mgGun);
   mgSight.position.set(f.mgSightAt[0], f.mgSightAt[1], f.mgSightAt[2]);

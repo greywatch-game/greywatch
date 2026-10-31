@@ -192,7 +192,7 @@ export class HullWhips {
     const lim = this.spec.suspension.accelLimit;
     const bound = (v: number, l: number) => Math.max(-l, Math.min(l, v));
     // Into the turret's own frame: its world yaw is `turretYaw`, so the local
-    // one is what the drawn node carries — the pose's `turretY`, handed in.
+    // one is what the drawn joint carries — the pose's `turretY`, handed in.
     const phi = turretY;
     const cs = Math.cos(phi);
     const sn = Math.sin(phi);

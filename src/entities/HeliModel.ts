@@ -154,11 +154,11 @@
  * thing here bought for MOVING. `ord` is the one colour on this aircraft a
  * player is meant to find, and it is spent on the rocket pods alone.
  *
- * **The inert `turret` node draws nothing at all.** `spec.gun` is null, so
- * `Vehicle` holds `turretYaw` equal to the hull's own yaw and that node is a
+ * **The inert `turret` joint draws nothing at all.** `spec.gun` is null, so
+ * `Vehicle` holds `turretYaw` equal to the hull's own yaw and that joint is a
  * permanent local zero; the barbette the chin turret turns in is therefore
  * welded to the airframe, and a part that cannot move belongs in the body
- * segment where it is free. The node still exists because `mgMount` must have
+ * segment where it is free. The joint still exists because `mgMount` must have
  * the same parent it has on a tank — see `VehicleRig.turret`.
  *
  * ## Four clearances this drawing owes
@@ -680,7 +680,7 @@ export function buildHeli(
     [0.4, 0.05, 0.08, 0, 1.51, 5.6, kit.frame],
   );
   // The BARBETTE the chin turret turns in. Welded to the airframe, so it is
-  // drawn here rather than on the inert `turret` node — where it would have
+  // drawn here rather than on the inert `turret` joint — where it would have
   // cost a mesh of its own to do nothing.
   bodyCyls.push([0.5, 0.3, 0, 0.86, MG_Z, kit.frame, "y"]);
 
@@ -1040,9 +1040,9 @@ export function buildHeli(
 
   // --- the two discs --------------------------------------------------------
   //
-  // Everything on the head is built about the node's own origin and turned into
+  // Everything on the head is built about the joint's own origin and turned into
   // place by where its blade points, so the closure has one number to write.
-  // Blade `i` runs out along `(sin a, cos a)`, and a positive turn of the node
+  // Blade `i` runs out along `(sin a, cos a)`, and a positive turn of the joint
   // carries it toward `(cos a, -sin a)` — which is where each blade's LEADING
   // edge is drawn.
   const mainRotor = tree.add("heli-rotor", sprung);
@@ -1124,7 +1124,7 @@ export function buildHeli(
   // `Vehicle` holds `turretYaw` equal to the hull's own yaw and the local angle
   // written here is a permanent zero; the barbette this turns in is therefore
   // welded to the airframe and is drawn in the body segment, where it is free.
-  // The node exists so that `mgMount` has the same parent it has on a tank and
+  // The joint exists so that `mgMount` has the same parent it has on a tank and
   // `aimMg` needs no branch of its own.
   const f = HELI_FRAME;
   const turret = tree.add("heli-ring", sprung);
@@ -1172,7 +1172,7 @@ export function buildHeli(
       [0.16, 0.05, 0, 0, 0.62, kit.frame, "z"],
       // **THREE barrels in a cluster**, which is the one detail that says this
       // is a gunship's cannon rather than a machine gun bolted under a nose.
-      // The gun does not spin: there is no node for it, and a rotary that
+      // The gun does not spin: there is no joint for it, and a rotary that
       // turned would be a mesh bought for a thing seen from behind at fourteen
       // metres.
       [0.05, 0.46, 0, 0.048, 0.43, kit.metal, "z"],

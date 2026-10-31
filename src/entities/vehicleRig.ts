@@ -230,7 +230,7 @@ export interface VehicleRig {
    * The RUNNING GEAR hangs off this and not off `sprung`: a track (or a tyre)
    * lies on the ground its contacts found, and the body is what moves against
    * it. **That is why the SUSPENSION's lean is not written here** — a
-   * weight-transfer pitch on this node rotates the running gear with it and
+   * weight-transfer pitch on this joint rotates the running gear with it and
    * drives one end of the vehicle under the road. See `sprung`.
    */
   hull: Joint;
@@ -238,7 +238,7 @@ export interface VehicleRig {
    * The sprung mass — everything the springs carry, and therefore everything
    * the springs may move: `HullSprings.flexHeave` holds its Y and
    * `HullSprings.flexSuspension` its pitch and roll, all three in the frame
-   * of the `hull` node it hangs off, so a compressing body compresses along its
+   * of the `hull` joint it hangs off, so a compressing body compresses along its
    * OWN up axis rather than the world's.
    *
    * Splitting it off the running gear is the whole of what makes the travel
@@ -249,7 +249,7 @@ export interface VehicleRig {
   /**
    * Traverses. Local yaw, relative to the hull.
    *
-   * **On a vehicle with no main gun this node never moves**, and that is a
+   * **On a vehicle with no main gun this joint never moves**, and that is a
    * consequence rather than a special case: `Vehicle` keeps `turretYaw` equal
    * to the hull's own yaw on a gunless hull, so the difference written here is
    * always zero and the machine gun bolted above it is left riding a fixed

@@ -113,9 +113,13 @@ export class HullSprings {
    * The write is guarded rather than unconditional, and the guard is on the
    * muzzle's path: it was there because two of these are parked on
    * hardstandings doing nothing for most of a round, and an assignment to a
-   * `TransformNode`'s rotation is a world matrix to recompute whether or not
-   * the number changed — and a muzzle has always been read off the node AS
-   * DRAWN, so the record keeps the guard the node had.
+   * `TransformNode`'s rotation was a world matrix to recompute whether or not
+   * the number changed — and a muzzle has always been read off the joint AS
+   * DRAWN, so the record keeps the guard the node had. Since
+   * `BABYLON_EXIT.md` X4.2a the joints are ours and cost nothing to write;
+   * the guard stays for what it decides — the muzzle's path, and the bits the
+   * view copies (`VehicleView`'s header: an unguarded `-0` written over a `0`
+   * is a different bit in the drawn matrix).
    */
   lean(dt: number, accel: number, lateral: number, load: number): void {
     this.flexSuspension(dt, accel, lateral, load);
@@ -225,7 +229,7 @@ export class HullSprings {
    * ground kinds.
    *
    * **What bounds the answer is a TRAVEL and not an angle, and that is the
-   * second half of the fix the node split is the first half of.** A real
+   * second half of the fix the `hull`/`sprung` split is the first half of.** A real
    * tracked suspension runs out where a road-wheel arm meets its bump stop, so
    * how far the body may tilt is how much travel is left at the outermost
    * station divided by how far out that station is — and the heave draws on
@@ -250,7 +254,7 @@ export class HullSprings {
    * Stepped semi-implicit Euler rather than in closed form. `CLAUDE.md`'s rule
    * is that anything that moves where bullets go or reads as recoil is stepped
    * exactly; this moves neither — the gun sits on the turret, which hangs off
-   * this node and is aimed in WORLD angles, so a leaning hull does not carry
+   * this joint and is aimed in WORLD angles, so a leaning hull does not carry
    * the gun off the aim — and at ~1 Hz Euler holds it comfortably. Same
    * treatment as the camera's landing absorb, and for the same reason.
    */
@@ -369,10 +373,10 @@ export class HullSprings {
    * spring pushes back out, which is what bottoming out is, and a hull that
    * has reached one has no dive left in it either.
    *
-   * Cosmetic in `flexSuspension`'s strict sense — this reaches one
-   * `TransformNode`'s Y and nothing else. The collider does not move, the gun
-   * is aimed in world angles off a turret that rides on this node, and the
-   * reticle still cannot lie.
+   * Cosmetic in `flexSuspension`'s strict sense — this reaches one joint's Y
+   * (a `TransformNode`'s until `BABYLON_EXIT.md` X4.2a) and nothing else. The
+   * collider does not move, the gun is aimed in world angles off a turret that
+   * rides on this joint, and the reticle still cannot lie.
    */
   flexHeave(dt: number, jolt: number): void {
     const s = this.spec.suspension;

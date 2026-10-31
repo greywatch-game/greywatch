@@ -14,12 +14,12 @@
  *
  * Invariants, all three inherited from `SoldierModel` and all three for its
  * reasons:
- * - **Merged per colour per NODE.** A mesh is a draw call, so this model's
+ * - **Merged per colour per JOINT.** A mesh is a draw call, so this model's
  *   cost is COLOURS PER MOVING PART and not boxes: six hundred parts come out as
  *   twenty-five meshes, and a wheel that costs sixty triangles instead of
  *   twelve costs nothing at all — see `Cyl`. That is why the whole sprung hull
  *   is ONE segment and the whole turret another: split into several segments
- *   on one node, a colour pays once per segment it appears in. **Twelve of the
+ *   on one joint, a colour pays once per segment it appears in. **Twelve of the
  *   twenty-five are there because a mesh that MOVES differently cannot merge
  *   with anything**, which is the one thing that buys a mesh here: six for the
  *   tracks, four for the two antennae, two for the commander's gun on its own
@@ -145,8 +145,9 @@ interface TankKit {
    * Road wheels, drive sprocket and idler — in the HULL's paint, as a real
    * one's are, and therefore well lighter than the track they run in; that
    * contrast is load-bearing rather than decorative. It is its own field and
-   * not `armor` read twice because the wheels are a mesh of their own on a
-   * node of their own either way. See the running gear in `buildTank`.
+   * not `armor` read twice because the wheels are meshes of their own either
+   * way (the road wheels a segment on `hull`, the sprocket one on its own
+   * joint). See the running gear in `buildTank`.
    */
   wheel: string;
   /**
@@ -422,7 +423,7 @@ export function buildTank(
     upper.position.set(x, LOOP - BELT / 2, 0);
     segment("tank-link-hi", upper, links);
 
-    // The sprocket, at the back and built about its own axle so the node can
+    // The sprocket, at the back and built about its own axle so the joint can
     // simply turn. Two toothed rings with the track's guide horns running
     // between them, a hub, and five raised SPOKES on its face — the teeth say
     // it is turning where they show under the skirt, and the spokes say so in
@@ -898,11 +899,11 @@ export function buildTank(
 
   // --- the commander's gun: a ring on the cupola, laid by the SECOND man ----
   //
-  // Three more nodes and two more meshes, and they buy the only thing on this
+  // Three more joints and two more meshes, and they buy the only thing on this
   // vehicle that can be pointed somewhere the main gun is not. The mount YAWS
   // on the cupola ring and the gun ELEVATES in its trunnion, exactly as the
   // turret and the barrel do one scale up — and for the same reason they are
-  // nodes rather than boxes in the stow merge: a part that moves differently
+  // joints rather than boxes in the stow merge: a part that moves differently
   // from the thing it is bolted to cannot share a mesh with it.
   //
   // **The pivot is the CUPOLA's own axis and not where the gun is drawn.** A
@@ -950,7 +951,7 @@ export function buildTank(
   // a powered mount, drawn so that the eye can find where the gun is looking —
   // and a pintle gun with spade grips has no such thing on it, because the man
   // holding it is the sight. There is no man to draw, so nothing is added here
-  // either: the node stands where his head would be and no mesh comes with it.
+  // either: the joint stands where his head would be and no mesh comes with it.
   //
   // On the bore's own vertical plane rather than off to one side, which is what
   // the other two cannot have and this can: with no head to sit behind, the

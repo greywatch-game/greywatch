@@ -5,7 +5,7 @@
  * Owns: the view list, and which hull each one is the picture of
  * (`Vehicle.picture`, set here and cleared here).
  * Reads `VehicleSystem`'s hulls and NEVER writes their state — a view decides
- * where a node stands and what it is painted, and the hull is told nothing
+ * where a joint stands and what it is painted, and the hull is told nothing
  * back. `Game` builds both and wires them: `build` from `installMap` right
  * after `VehicleSystem.build`, `update` right after every `VehicleSystem.update`,
  * `draw` once a frame immediately before the render (the hulls' joints are

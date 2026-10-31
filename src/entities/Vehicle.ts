@@ -3381,12 +3381,17 @@ export class Vehicle implements Combatant, RayHull {
    * here can move where a round goes, where a body may stand or what a
    * sightline breaks on. A driver reads it and nothing else does.
    *
-   * The write is guarded rather than unconditional because two of these are
-   * parked on hardstandings doing nothing for most of a round, and an
-   * assignment to a `TransformNode`'s rotation is a world matrix to recompute
-   * whether or not the number changed — and the guard is on the muzzle's
-   * path, so the pose keeps it now that a view does the node write. Same rule
-   * as the belts' skip and `needsGround`'s.
+   * The write is guarded rather than unconditional. It began as a saving, the
+   * rule of the belts' skip and `needsGround`'s — two of these are parked
+   * doing nothing for most of a round, and an assignment to a
+   * `TransformNode`'s rotation recomputed a world matrix whether or not the
+   * number changed — but since `BABYLON_EXIT.md` X4.2a there is no node: the
+   * view copies this record onto joints that cost nothing to write. It stays
+   * for what it DECIDES: the muzzles are replayed off the record, so the 1e-5
+   * by which it trails the ground is on the muzzle's path (changing it moves
+   * the fight hash), and the record is what the view's own guards copy bit
+   * for bit, a zero's sign included (`VehicleView`'s header: an unguarded
+   * `-0` written over a `0` is a different bit in the drawn matrix).
    */
   private leanHull(dt: number, accel: number, lateral: number): void {
     this.leanToGround(dt);

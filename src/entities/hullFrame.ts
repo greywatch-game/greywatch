@@ -15,22 +15,22 @@
  *   `BABYLON_EXIT.md` X4.2a what the rig's own `JointTree` composes, the same
  *   arithmetic, with no node left to agree with — down body → root →
  *   hull → sprung → turret → gun → muzzle (or → mgMount → mgGun → mgMuzzle /
- *   mgSight) — per node, `Quaternion.RotationYawPitchRoll` of its Euler
+ *   mgSight) — per joint, `Quaternion.RotationYawPitchRoll` of its Euler
  *   (`rotation.y, .x, .z`), `Matrix.ComposeToRef` with unit scale into a
  *   float32 matrix, then `local.multiplyToRef(parentWorld)` — with
  *   `src/math`'s copies of those classes. A float64 trig version of the same
  *   geometry is a different number and moves the fight hash.
- * - **A `HullPose` is what the NODES hold, not what the springs want.** The
+ * - **A `HullPose` is what the JOINTS hold, not what the springs want.** The
  *   lean, the heave and the suspension's tilt were written to their nodes
  *   behind a 1e-5 guard, so a drawn joint trails its spring by up to that
  *   much — and the muzzle was always read off the drawn joint. So the record
  *   keeps the guards, and it is the record that is written and the view
- *   that copies it: the node is what the record
+ *   that copies it: the joint is what the record
  *   says, never the other way round.
  * - **A frame is the DRAWING's**: each kind states its own in a Babylon-free
  *   frame file (`TANK_FRAME` in `tankFrame.ts`, `TRUCK_FRAME`, `HELI_FRAME`),
  *   and its model IMPORTS those numbers and places its joints FROM them, so the
- *   arithmetic and the picture cannot drift. No node on the path has a pivot,
+ *   arithmetic and the picture cannot drift. No joint on the path has a pivot,
  *   a billboard, a quaternion or a scale; the channels no pose writes are the
  *   zeros the builders leave.
  * Never: allocates (a muzzle is read per shot and the marker per frame), holds
@@ -69,7 +69,7 @@ export interface HullFrame {
 }
 
 /**
- * The channels the moving joints on a muzzle's path hold, by node — the drawn
+ * The channels the moving joints on a muzzle's path hold, by joint — the drawn
  * values, which is what a muzzle is read off (see the header).
  */
 export interface HullPose {
@@ -157,8 +157,9 @@ function link(
 
 /**
  * The collider box's frame — the box stands at `(x, y, z)`, its centre,
- * turned `yaw` — into `out`, as the body node a view hangs its rig off
- * composed it (`TransformNode.computeWorldMatrix`, unit scale, no parent):
+ * turned `yaw` — into `out`, as the body joint a view hangs its rig off is
+ * composed (`JointTree`, unit scale, no parent; the body node's
+ * `TransformNode.computeWorldMatrix` until `BABYLON_EXIT.md` X4.2a):
  * the first link of `hullPointToRef`'s chain, and what a shadow map draws a
  * hull's box off (`core/proxyBoxes.ts`, `BABYLON_EXIT.md` X4.1c), so neither
  * reads the mesh.

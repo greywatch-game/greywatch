@@ -8849,7 +8849,8 @@ export class Game {
       this.prof.begin(P.vehicles);
       this.syncNetVehicles();
       this.vehicles.update(dt, this.vehicleOrders);
-      // The drawing follows the hulls before anything reads a node.
+      // The drawing follows the hulls: the joints written here, and composed
+      // once a frame before the render (`vehicleViews.draw`).
       this.vehicleViews.update();
       this.prof.end(P.vehicles);
       // Posing a hull off the wire is still stepping it, and an engine heard
