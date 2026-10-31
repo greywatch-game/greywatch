@@ -8,10 +8,11 @@
  * where a joint stands and what it is painted, and the hull is told nothing
  * back. `Game` builds both and wires them: `build` from `installMap` right
  * after `VehicleSystem.build`, `update` right after every `VehicleSystem.update`,
- * `draw` once a frame immediately before the render (the hulls' joints are
- * ours since `BABYLON_EXIT.md` X4.2a, and Babylon composes none of them),
  * `dispose` from `teardownMap` — anything `installMap` hands a map to owes
- * `teardownMap` a line, and this is that line for the fleet's drawing.
+ * `teardownMap` a line, and this is that line for the fleet's drawing. What
+ * the views look like is drawn by our renderer off `views`, once a frame
+ * immediately before the render (`Game.drawHulls`, `BABYLON_EXIT.md` X4.2b):
+ * Babylon has no node and no mesh of a hull.
  * Invariants:
  * - **One view per hull, by INDEX**: `hulls[i]` was built for
  *   `spawns[i]` (`VehicleSystem.build` walks `vehicleSpawns` in order), so the
@@ -21,22 +22,15 @@
  *   shadow maps are handed the hulls themselves (`ShadowHull`, their collider
  *   boxes off their own fields, `BABYLON_EXIT.md` X4.1c).
  */
-import type { Scene } from "@babylonjs/core";
 import type { Vehicle } from "../entities/Vehicle";
 import { modelOf } from "../entities/vehicleModels";
 import { VehicleView } from "../entities/VehicleView";
-import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { VehicleSpawnDef } from "../world/MapBuilder";
 
 export class VehicleViews {
   private readonly list: VehicleView[] = [];
 
-  constructor(
-    private readonly scene: Scene,
-    private readonly mats: CelMaterialFactory,
-  ) {}
-
-  /** Every hull's picture, in hardstanding order. Empty with no armour. */
+  /** Every hull's picture, in hardstanding order — the order `Game.drawHulls` draws them in. Empty with no armour. */
   get views(): readonly VehicleView[] {
     return this.list;
   }
@@ -49,7 +43,7 @@ export class VehicleViews {
     this.dispose();
     for (let i = 0; i < hulls.length; i++) {
       const hull = hulls[i];
-      const view = new VehicleView(this.scene, this.mats, hull, modelOf(spawns[i].kind));
+      const view = new VehicleView(hull, modelOf(spawns[i].kind));
       hull.picture = view;
       this.list.push(view);
     }
@@ -61,20 +55,12 @@ export class VehicleViews {
   }
 
   /**
-   * Every hull's joints composed and its meshes handed their matrices
-   * (`VehicleView.draw`) — once a frame from `Game`, in every state, beside
-   * the bodies and immediately before `scene.render`, after everything that
-   * writes a joint (`BABYLON_EXIT.md` X4.2a). Empty with no armour.
+   * Takes every hull's drawing out of the world, and the hulls' pictures with
+   * it. Nothing of a view is freed: its drawing is its kit's (X4.2b).
    */
-  draw(): void {
-    for (const view of this.list) view.draw();
-  }
-
-  /** Takes every hull's drawing out of the world, and the hulls' pictures with it. */
   dispose(): void {
     for (const view of this.list) {
       if (view.hull.picture === view) view.hull.picture = null;
-      view.dispose();
     }
     this.list.length = 0;
   }

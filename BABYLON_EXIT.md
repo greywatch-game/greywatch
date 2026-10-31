@@ -4846,7 +4846,7 @@ and nowhere else: no bank row has a body at either, and none moved).
   Cinderhaven is the saving it could buy). X4.1d's owed items stand (the
   rank's vertex surplus, the editor's body draw, the compose cost).
 
-### X4.2 — Vehicles (PERF_PLAN A3) — **M–L, as four sub-steps** (split 2026-10-31) — X4.2a **LANDED** (fde5be7)
+### X4.2 — Vehicles (PERF_PLAN A3) — **M–L, as four sub-steps** (split 2026-10-31) — X4.2a **LANDED** (fde5be7), X4.2b **LANDED** (HASH)
 
 Every hull a page draws — the tank, the truck and the helicopter, live or
 wrecked — comes off Babylon's scene, and A3's detail tier and draw distance
@@ -4874,7 +4874,7 @@ draft named a `HullFlex`; no such module exists — the hull's own motion is
   wrecked, before the nodes go; the muzzles unchanged (`hullPointToRef`
   against the drawn joint, as at X2.2); `kit:hash --models`'s `vehicle:`
   rows explained or unmoved.
-- **X4.2b — every hull drawn by us (no picture change).** A kind's merged
+- **X4.2b — every hull drawn by us (no picture change).** Landed (below). A kind's merged
   segments become a kit our renderer draws (X4.1d's shape: built once a kind
   and side, every hull an instance, its joints a segment's matrix), in every
   pass a hull is in, with what each closure does to them: the belts' run,
@@ -5126,6 +5126,158 @@ the parent's size gate, fixed by the step — Deviations).
   mesh was handed the last time. Not done here; it would keep the fix, since
   a freeze skipped is a bound left where the mesh still is.
 
+**X4.2b landed** (HASH; 2026-10-31; no picture change: the bank 61 of 61
+byte-identical against its parent, every hull row among them).
+- **What it is.** Every hull the page draws — the tank, the truck and the
+  helicopter, in its livery or wrecked — is OUR renderer's
+  (`render/HullDraw.ts`, its program `render/hullProgram.ts`), and **Babylon
+  is made no hull mesh**: X4.1d's shape for a thing with no emissive and no
+  fade. A rig is its joints (X4.2a) and its SEGMENTS (`HullSegment`: the joint
+  and the segment's local); what a segment looks like is its kind's KIT in its
+  side's colours (`HullKit`), built ONCE a model and a view — the first rig of
+  the pair makes and merges the parts (`segmentOf`, the same `mergeParts` and
+  per-colour grouping as before, in the order the scene received the meshes:
+  lone parts at their part's moment, the merges after them), every later one
+  hangs the kit's segments without making a part, checked call by call
+  against the kit's segment names. All six kits (three kinds, two views) are
+  built at `Game`'s construction (`vehicleModels.hullKits`, through
+  `teamView.teamOfView`) and uploaded once, end to end: 94,220 vertices,
+  180,288 corners, ~6 MB; a narrower kind is the widest (the truck's 26
+  segments; the tank 25, the helicopter 20) with its missing segments empty.
+  `buildTank`/`buildTruck`/`buildHeli(team)` take no scene and no factory;
+  `drawHullRig`, `disposeHullRig`, `HullMesh`, `VehicleView.draw`/`dispose`
+  and `VehicleViews.draw` are gone. Each frame `Game.drawHulls` (beside
+  `drawBodies`, inside the render span, immediately before `scene.render`)
+  composes every present hull's tree and writes each segment's world
+  (`vehicleRig.writeHullDrawing`: its local times its joint's world, the
+  float32 product X4.2a handed Babylon through `freezeWorldMatrix`) and its
+  world bounding sphere (`BoundingSphere._update`, operation for operation, off
+  the kit's local sphere), with a kit WORD — the kit and a `HULL_CHARRED` bit —
+  and commits them; the renderer draws them at `"beforeAlphaTest"`, installed
+  AHEAD of the bodies' draw and the world's, where Babylon's opaque queue drew
+  the hulls.
+- **A draw is a RANK**, for the bodies' reason: the render pulls each hull's
+  order (`Game.hullPull`, `bodyPull`'s stable sort off `globalPosition`, the
+  kit's order — the scene order — breaking a tie), and rank `r` is one
+  non-indexed draw of every hull's `r`th segment. The main pass is at most 26
+  hull draws whatever the fleet, where Babylon drew one a mesh (142 on Sarab's
+  six). **The FRUSTUM moved with it**: the pull switches off (zeroes) every
+  segment whose sphere is outside `scene.frustumPlanes` — Babylon's
+  `BoundingSphere.isInFrustum`, the default sphere-only strategy, none while
+  the warm-up skips the frustum. The first cut had none and drew all six of
+  Sarab's hulls at every vantage: the census found it, +25 draws on every row
+  of an armour map that frames no hull.
+- **The paint is a flag, the material one recipe.** Babylon drew a hull with
+  one `get(hex)` material a colour and repainted a wreck by swapping every
+  mesh's for the charred one. Ours is the cel program under `CEL_OWN_PALETTE`
+  (`CelMaterialFactory.hullCelRecipe`, sharing `ownPaletteRecipe` with
+  `bodyCelRecipe`): one table of the 28 colours the kits are painted in plus
+  the charred one (`vehicleRig.hullPalette`, slot 29), each segment's vertices
+  carrying its colour's 1-based slot in `uv2.x` (`writePaletteIndex`), read
+  out as the same float32 triple the `baseColor` uniform held, and the program
+  substituting the charred slot on every corner of a hull whose word carries
+  the bit. `paint` writes `VehicleRig.charred`, `reset` clears it; the run, the
+  whips and the reset's pose were joints already and are unchanged. A hull has
+  no emissive (`vehicleRig.ts`' rule), so nothing of it is in the glow's mask,
+  and no colour or uv buffer: it reads the bodies' (0, 0, 0, 1) and (0, 0).
+- **The size gate stays PER SEGMENT — a deviation from the entry's wording,
+  for its "no picture change"** (Deviations). `WorldCulling.keepsSphere` is
+  `offer`'s `tooSmall`, from the eye and at the scale `offer` last used, asked
+  of each segment's sphere composed this frame; a dropped segment is a zero
+  matrix. The fog-wall gate had no hull half to move (a hull was a loose mesh,
+  never reach-gated), and a hull's switch is `VehicleRig.enabled`, which the
+  view follows `Vehicle.present` with.
+- **The warm-up** waits for the one pipeline, asked at `Game`'s construction;
+  a hull stands at its hardstanding in the views the warm-up draws, so it poses
+  none. **A failure is the round's** (the bodies' routing: the pipeline, or a
+  refused main pass while installed, tells `Game.worldFailed`); installed for a
+  round's map only — an editor build has no fleet and draws no hull. **The
+  profiler** gained `hulls` (`drawn`, `instances`; report **version 22**,
+  `FrameProfile.setHulls`, the viewer's `hulls` line), Babylon's counter
+  counting no hull now; `census.mjs` counts `hullDraw.stats.drawn` with ours.
+- **Measured.** The bank against a BEFORE at 1a674cd in a worktree
+  (`--check --keep` both sides): **61 of 61 byte-identical** (pixels),
+  `sarab-tank`, `sarab-truck` and `sarab-heli` among them, the same 34 stale
+  rows on both sides, no console or page error — on the code as committed; the
+  run before the frustum cull was added read 58 of 58, one row's two grabs
+  having disagreed (a `menu` row NOT REPRODUCIBLE, so nothing written). A scratch
+  shooter (Sarab, deploy, frozen, both trees): each kind at the bank's three
+  vantages in its livery, CHARRED and POSED (turret, gun, cupola gun, sprung
+  body, belts, wheels, rotor and whips written onto the joints), and the west
+  tank from 30 to 600 m at 1920x1080 (fov 30 and the default) and from 40 to
+  360 m at 832x384 — the size gate dropping parts — livery and charred: **28
+  of 28 byte-identical**. A scratch geometry dump (Node): every kit segment's
+  name, colour, float32 positions and normals, indices, local, joint and local
+  bounding sphere equals the parent's mesh at the same place in scene order,
+  on all six kits (25, 26, 20 segments). **`census --against`** the BEFORE:
+  every row with no hull in frame equal, and the totals of Hollowmere 278,
+  Greyfen 205, Coldharbour 672, Harrowmead 847 and Kurenai 125 equal; Sarab
+  661 → 481 and Cinderhaven 186 → 150, all of it on the rows that frame hulls
+  (`tank` 67 → 41, `heli` 61 → 41, `alley` 89 → 52, `shelf` 83 → 57, `wadi` 96
+  → 60, `ground` 92 → 57, Cinderhaven `crossing` 85 → 49; `truck` 41 = 41, one
+  truck being 26 meshes and 26 ranks). **`gate.mjs`** clean on seven;
+  **`shaders.mjs`** clean on seven, ours 17/17 (21/21 Sarab and Cinderhaven,
+  23/23 Coldharbour). Typecheck, build (`check-babylon-free`: 15 simulations,
+  no path, `src/render/` walked with the two new files), corecheck and
+  `parity` (eight maps) pass. **`kit:hash --models`: the twelve `vehicle:`
+  rows move BY CONSTRUCTION** (232 identical): a rig has no mesh now, and the
+  script hashes the rig, its kit and its charred flag. **X0.3** (`bench.mjs
+  sarab cinderhaven --max --gpu`, uncapped, 3440x1440, BEFORE and AFTER
+  alternated run by run, three a side; the canonical fight hashes
+  `986c2e35557fb679` and `2f97c9072ab1762b` on all 12 runs), medians new/old:
+  **Sarab's fight 6.67 → 4.64 ms (0.696)**, tick 5.83 → 3.74, Babylon's draws
+  209 → 114, `gpu.frame` 4.10 → 4.04 (0.986); Cinderhaven's fight 6.08 → 6.04
+  (0.993), tick 4.98 → 3.96, draws 161 → 75, `gpu.frame` 0.994; the vantages
+  and path 0.998-1.015 (ticks down 4-16%, draws about halved), `gpu.frame`
+  0.977-1.042, every spread under 4%. **A round offline** (a scratch probe,
+  Sarab, 240 s, 30,234 frames, checking after every render one instance per
+  present hull in hardstanding order, each kit word against its rig, every
+  drawn segment's matrix bit-equal to a fresh compose, every zero segment
+  padded, culled by the frustum or refused by the gate): 0 failures; all three
+  kinds driven, the helicopter flown to 33.5 m, a tank WRECKED, drawn charred
+  for 2,003 frames, hidden and placed again. **A netplay round** against a
+  local `dist-server` (`?mp=`, Sarab, 300 s, 37,780 frames), the server's hulls
+  made FRAGILE by a scratch loader that bends `CONFIG.vehicles.*.maxHealth`
+  before the server imports it (`VERIFYING.md`'s round-end loader, applied to
+  the fleet): the same checks, 0 failures, every kind driven and the
+  helicopter flown, a tank and a truck wrecked off the wire, drawn charred,
+  hidden and placed again; no console or page error in either round. The rank
+  draws spent 3.0x the drawn corners in vertex invocations (13.0e9 against
+  4.25e9 offline, 18.2e9 against 6.13e9 in the match): X4.1d's surplus, for
+  hulls, the helicopter body's 10,788 corners the span.
+- **Deviations.** **The size gate is per SEGMENT, not a whole-hull drop.**
+  The entry asks for "a hull measured once and dropping whole as a body does"
+  and for no picture change, and the two disagree: a hull's meshes were loose
+  candidates gated one by one, so a whole-hull drop would draw at range every
+  small part the gate drops there today — at 3 px on a 1080-tall view a tank's
+  MG ring (0.396 m) goes at ~300 m and the hull kilometres further. Kept per
+  segment, exactly as before, so no pixel moves; a whole-hull measure, and
+  what it changes, are X4.2c's to make with the detail tier (the picture
+  change) and X4.2d's fade. **The gate reads THIS frame's sphere**, where
+  Babylon's read the bounds of the previous frame's freeze (X4.2a's fix,
+  "one frame behind"): the two differ only on the frame a moving part crosses
+  the gate's edge, and on the frame a hull is placed again (X4.2a's lone
+  cupola-gun frame now draws it). **The frustum** is a hull's own (above),
+  which the entry did not name. **The order across hulls**, and against
+  Babylon's remaining opaque meshes (a flag's cloth), is not reproduced, as
+  X4.1d's across bodies is not; a hull and a body now meet in our order —
+  hulls first — which is the order Babylon's queue gave them. Building a kit
+  makes the first rig's parts; a later rig still builds its SHAPES (they are
+  arguments its model computes before `segment` runs) and discards them.
+  `CLAUDE.md` is 1,544 lines (one up).
+- **X4.2a's owed cost is gone with the meshes**: no hull mesh is frozen or
+  has its bounds rebuilt any more; a present hull still composes its tree once
+  a frame (`drawHulls`) and writes its segments' matrices and spheres.
+- **Owed onward.** X4.2c: the detail tier on a whole-hull measure, with the
+  per-segment gate it replaces (above) — the picture change for every small
+  part the tier keeps. X4.2d: the fade, in faded twins of the hull program.
+  **The rank surplus** (3.0x) is unmeasured on the phone; `gpu.frame` held on
+  the desktop. The phone's FOLLOW-UP reading, as every step's since X3.3c.
+  **The editor draws no hull** (it builds no fleet), X5.3's as its bodies are.
+  No helicopter was WRECKED in either round (a tank twice, a truck once): the
+  charred bit is kind-blind, and the helicopter's livery, charred and posed
+  pictures were shot byte-identical above.
+
 ### X4.3 — The viewmodel and the kit bay — **M–L**
 
 - **Do:** `ViewModel` in its own ordered draw, with its pose stack unchanged:
@@ -5342,8 +5494,8 @@ Each is rewritten by the step that breaks it, in the same commit.
 | `CLAUDE.md`: `shaderLanguage` is load-bearing; a declared sampler must be bound | X3.1, X5.2 (becomes a bind-group-layout rule) |
 | `CLAUDE.md`: the two shadow maps; the lamps' atlas | X3.6a, X3.6b, X3.7, X4.1c |
 | `CLAUDE.md`: the rig pool, fourteen meshes a rig, rigs filed mesh by mesh; `docs/deaths.md`'s reparented corpse | X4.1a, X4.1b, X4.1d |
-| `CLAUDE.md`: the pipeline warm-up's body pose | X4.1d, X4.1e |
-| `CLAUDE.md`: a vehicle's picture (`VehicleView`, the rig's meshes) | X4.2a, X4.2b |
+| `CLAUDE.md`: the pipeline warm-up's body pose (and, since X4.2b, the hulls' pipeline among those it waits for) | X4.1d, X4.1e, X4.2b |
+| `CLAUDE.md`: a vehicle's picture (`VehicleView`, the rig's meshes; since X4.2b every hull an instance of its kind's kit, gated per segment, `docs/rendering.md`'s "The hulls, ours") | X4.2a, X4.2b |
 | `CLAUDE.md`: the map's overrides table (a ninth, `hullDrawDistance`); `docs/world.md`'s section on them | X4.2d |
 | `CLAUDE.md`: the frame walks the scene (`WorldCulling`) | X3.3c through X4.7 |
 | `CLAUDE.md`: the glow | X3.6d, X3.6e, X3.7, X5.2 |

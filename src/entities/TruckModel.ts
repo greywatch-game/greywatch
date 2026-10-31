@@ -126,9 +126,7 @@
  * posts, 1.7 m and more from the ring, which a mast bent as far as its spring
  * can reach still clears. See `ANTENNA_FEET`.
  */
-import type { Scene } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { Team } from "./Combatant";
 import { viewTeam } from "../core/teamView";
 import {
@@ -362,15 +360,12 @@ interface Wheel {
  * `buildTank` follows and for its reason. `VehicleRig.reset` is what a fresh
  * one goes through instead.
  */
-export function buildTruck(
-  scene: Scene,
-  mats: CelMaterialFactory,
-  team: Team,
-): VehicleRig {
+export function buildTruck(team: Team): VehicleRig {
   // The kit is the VIEWER's read of this side rather than the authority's
   // index for it: the local player's own side wears amber whichever slot a
   // match seated them in. See `core/teamView.ts`.
-  const kit = KITS[viewTeam(team)];
+  const view = viewTeam(team);
+  const kit = KITS[view];
 
   const { tree, body: hullBody, root } = rigTree("truck");
   const hull = tree.add("truck-hull", root);
@@ -378,7 +373,9 @@ export function buildTruck(
   // the arms they hang on. See `VehicleRig.sprung`.
   const sprung = tree.add("truck-sprung", hull);
 
-  const { meshes, livery, drawn, segment } = segmentOf(scene, mats);
+  // The drawing is this model's KIT in this view's colours, built by the
+  // first rig of the pair and hung by every later one (`segmentOf`).
+  const { segments, segment, kit: drawingOf } = segmentOf("truck", view);
 
   /** A round member from `a` to `b` — an arm, a spring, a wiper, a strap, a chute. */
   const rod = (a: Point3, b: Point3, d: number, color: string, tess = 6, dTop = d): Shape => [
@@ -1053,12 +1050,13 @@ export function buildTruck(
     mgMuzzle,
     mgSight,
     antennae,
-    meshes,
-    livery,
-    drawn,
+    segments,
+    kit: drawingOf(),
+    enabled: true,
+    charred: false,
     setRun: (left, right, steer, _rotor) => setWheelRun(wheels, left, right, steer),
-    reset: () => resetRigPose(rig, mats, CONFIG.vehicles.truck),
-    paint: (wrecked) => paintRig(meshes, livery, mats, wrecked),
+    reset: () => resetRigPose(rig, CONFIG.vehicles.truck),
+    paint: (wrecked) => paintRig(rig, wrecked),
   };
   return rig;
 }

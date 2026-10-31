@@ -23,7 +23,14 @@
  *   twenty-five are there because a mesh that MOVES differently cannot merge
  *   with anything**, which is the one thing that buys a mesh here: six for the
  *   tracks, four for the two antennae, two for the commander's gun on its own
- *   ring, and nothing else in the model has earned one.
+ *   ring, and nothing else in the model has earned one. **Since
+ *   `BABYLON_EXIT.md` X4.2b a merged piece is a SEGMENT of this kind's KIT**,
+ *   built once a side and drawn by our renderer with every tank an instance
+ *   of it, and a segment is a RANK — at most one draw a frame for the whole
+ *   fleet, its vertex work the longest segment at that rank times the hulls
+ *   (`render/HullDraw.ts`) — so the rule holds in that unit: a new colour on a
+ *   joint is one more rank, and a longer segment is paid at every rank it
+ *   lands on.
  * - **The joints are JOINTS above the merged meshes** — ours, a `JointTree`
  *   (`vehicleRig.ts`, `BABYLON_EXIT.md` X4.2a), `TransformNode`s before — so
  *   the turret traversing, the gun elevating and the tracks running are
@@ -83,9 +90,7 @@
  * authority can replay a muzzle without importing a drawing. This file IMPORTS
  * them and places its joints from them, so the two cannot drift.
  */
-import type { Scene } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { Team } from "./Combatant";
 import { viewTeam } from "../core/teamView";
 import {
@@ -268,11 +273,14 @@ interface TrackSide {
 }
 
 /**
- * Builds one tank in a team's colours.
+ * Builds one tank in a team's colours: its joints, and its segments hung off
+ * them — the parts made and merged into this kind's KIT for that side only by
+ * the first build of the pair (`segmentOf`, `BABYLON_EXIT.md` X4.2b), every
+ * later one hanging the kit's segments without making a part.
  *
  * Built once per hardstanding and never disposed inside a round — the same rule
- * the bot rig pool follows, and for the same reason: this is ~600 parts and
- * their merges, which is not a cost to pay on the frame a hull respawns.
+ * the bot rig pool follows, and for the same reason: the first is ~600 parts
+ * and their merges, which is not a cost to pay on the frame a hull respawns.
  * `resetRigPose` is what a fresh one goes through instead.
  *
  * **What it is drawn AS is a Leopard 2A6**, and everything below follows from
@@ -284,15 +292,12 @@ interface TrackSide {
  * No insignia and no national detail: it is a real type's CONSTRUCTION, worn by
  * both sides, which is the read the kit colours rest on.
  */
-export function buildTank(
-  scene: Scene,
-  mats: CelMaterialFactory,
-  team: Team,
-): VehicleRig {
+export function buildTank(team: Team): VehicleRig {
   // The kit is the VIEWER's read of this side rather than the authority's
   // index for it: the local player's own side wears amber whichever slot a
   // match seated them in. See `core/teamView.ts`.
-  const kit = KITS[viewTeam(team)];
+  const view = viewTeam(team);
+  const kit = KITS[view];
   const t = CONFIG.vehicles.tank;
   // The drawn hull is built to the collider's own extents rather than to
   // numbers of its own, so the shape a round stops on and the shape a player
@@ -307,7 +312,9 @@ export function buildTank(
   // See `VehicleRig.sprung`.
   const sprung = tree.add("tank-sprung", hull);
 
-  const { meshes, livery, drawn, segment } = segmentOf(scene, mats);
+  // The drawing is this model's KIT in this view's colours, built by the
+  // first rig of the pair and hung by every later one (`segmentOf`).
+  const { segments, segment, kit: drawingOf } = segmentOf("tank", view);
 
   /**
    * A round member from `a` to `b` — a rail, a cable, a discharger tube, a
@@ -1041,10 +1048,10 @@ export function buildTank(
   const rig: VehicleRig = {
     tree, body: hullBody, root, hull, sprung, turret, gun, muzzle,
     mgMount, mgGun, mgMuzzle, mgSight,
-    antennae, meshes, livery, drawn,
+    antennae, segments, kit: drawingOf(), enabled: true, charred: false,
     setRun: (left, right, _steer, _rotor) => setTrackRun(tracks, left, right),
-    reset: () => resetRigPose(rig, mats, CONFIG.vehicles.tank),
-    paint: (wrecked) => paintRig(meshes, livery, mats, wrecked),
+    reset: () => resetRigPose(rig, CONFIG.vehicles.tank),
+    paint: (wrecked) => paintRig(rig, wrecked),
   };
   return rig;
 }

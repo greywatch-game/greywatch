@@ -1007,6 +1007,12 @@ function renderReport(r) {
   if (bodies && bodies.instances > 0) {
     bits.push(["bodies", bodies.drawn + " draws, " + bodies.masked + " mask draws, " + bodies.instances + " bodies"]);
   }
+  /* Our renderer's hulls on the last frame (report version 22). Not in the
+     draw-call counter: since BABYLON_EXIT.md X4.2b no hull is. */
+  const hulls = r.hulls;
+  if (hulls && hulls.instances > 0) {
+    bits.push(["hulls", hulls.drawn + " draws, " + hulls.instances + " hulls"]);
+  }
   for (const [k, v] of bits) {
     const d = el("div");
     if (k) d.appendChild(el("b", null, k + " "));

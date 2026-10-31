@@ -678,7 +678,8 @@ src/
                         #   reads a halted ring's blocks at the halt; v20
                         #   drops blocks.handedBack, nothing going back since
                         #   X3.7b; v21 adds bodies, our body draws, which
-                        #   no Babylon counter sees since X4.1d),
+                        #   no Babylon counter sees since X4.1d; v22 hulls,
+                        #   our hull draws, the same since X4.2b),
                         #   buildReport, buildTrace and
                         #   the stats. Allocates freely and never writes the
                         #   ProfileRing it is lent
@@ -859,10 +860,10 @@ src/
                         #   stands; not what a shadow draws), the belts' run,
                         #   the whips and the paint. Copies `Vehicle.pose`
                         #   onto the joints, follows `present`, chars on the
-                        #   `wrecked` it is told, and `draw`s once a frame
-                        #   before the render (the joints composed, each mesh
-                        #   handed its matrix); reads its hull and never
-                        #   writes it. Client only
+                        #   `wrecked` it is told (a flag the drawing reads);
+                        #   Game.drawHulls draws it once a frame before the
+                        #   render, an instance of its kind's kit (X4.2b);
+                        #   reads its hull and never writes it. Client only
     hullFrame.ts        # Where a hull's guns and sight ARE, no Babylon:
                         #   `HullFrame` (a kind's joint offsets and the three
                         #   extents the drive reads off the drawing, stated by
@@ -906,7 +907,9 @@ src/
     vehicleModels.ts    # What each kind LOOKS like: `Record<VehicleKind,
                         #   VehicleModel>`, the client's twin of `VEHICLE_KINDS`
                         #   keyed by the same union, so a kind cannot have a
-                        #   row in one and not the other. Client only
+                        #   row in one and not the other; and `hullKits`,
+                        #   every kind's drawing in both views' colours, which
+                        #   our renderer draws hulls as (X4.2b). Client only
     tankFrame.ts        # The tank's joints and running-gear extents as
                         #   numbers (`TANK_FRAME` and the constants it is
                         #   derived from) — no Babylon; `TankModel` imports them
@@ -915,7 +918,7 @@ src/
                         #   the roof station's joints. `tankFrame.ts`'s rule
     heliFrame.ts        # The helicopter's (`HELI_FRAME`): the skids' extents
                         #   and the chin gun's joints. `tankFrame.ts`'s rule
-    vehicleRig.ts       # What every vehicle's MESH is: the joints a hull's view
+    vehicleRig.ts       # What every vehicle's DRAWING is: the joints a hull's view
                         #   writes and the three CLOSURES a model hands back — `setRun`,
                         #   `reset`, `paint`. `setRun`'s FOURTH argument is the
                         #   rotor, for the reason its third is the steer: a
@@ -925,13 +928,17 @@ src/
                         #   model draws with, the one whip builder (`whip`)
                         #   and the one `reset` (`resetRigPose`) all three
                         #   kinds share. A hull is `Part`s until `segment`
-                        #   merges it (`mergeParts`) and `drawnMesh` makes the
-                        #   meshes, in the scene order the old meshes had. The
-                        #   joints are OURS (a `JointTree`, its first joint the
-                        #   collider box's frame; BABYLON_EXIT.md X4.2a) and
-                        #   the meshes unparented, handed their matrices once a
-                        #   frame (`drawHullRig`) and switched as one
-                        #   (`setHullRigEnabled`). No geometry and no numbers
+                        #   merges it (`mergeParts`) into SEGMENTS, one a
+                        #   colour a call, in the scene order the old meshes
+                        #   had — its kind's KIT, built once a model and a view
+                        #   (`segmentOf`; X4.2b: Babylon is made no hull mesh)
+                        #   — and one palette over every kit (`hullPalette`).
+                        #   The joints are OURS (a `JointTree`, its first joint
+                        #   the collider box's frame; BABYLON_EXIT.md X4.2a),
+                        #   the drawing written for our renderer once a frame
+                        #   (`writeHullDrawing`, each segment size-gated),
+                        #   switched as one (`setHullRigEnabled`) and painted
+                        #   charred by a flag (`paintRig`). No numbers
     TankModel.ts        # ~180 boxes and cylinders merged to twenty-five, with
                         #   a SPRUNG body over running gear that is not, a
                         #   turret and a gun that turn, a CUPOLA gun on a ring
@@ -1043,9 +1050,9 @@ src/
     VehicleViews.ts     # The fleet's PICTURE: one VehicleView per hull, by
                         #   hardstanding, each with its kind's model; built by
                         #   `installMap`, stepped after every
-                        #   `VehicleSystem.update`, drawn once a frame before
-                        #   the render, taken down by `teardownMap`. Client
-                        #   only
+                        #   `VehicleSystem.update`, drawn by Game.drawHulls
+                        #   once a frame before the render (X4.2b), taken down
+                        #   by `teardownMap`. Client only
     ConquestSystem.ts   # Flags, meters, tickets, bleed, spawns, planSquads,
                         #   what a bot's flag means to it (`zoneFor`), and
                         #   `scatterSpawn` — the core asks all three.
@@ -1346,7 +1353,9 @@ src/
                         #   index (drawsBody), which the drawing reads, and
                         #   with how much of it is drawn (bodyFade, X4.1e):
                         #   the lesser of a ramp short of bodyDrawDistance
-                        #   (setBodyDrawDistance) and one above the size gate
+                        #   (setBodyDrawDistance) and one above the size gate.
+                        #   A HULL's segment (X4.2b) is asked the size gate
+                        #   alone, one by one (keepsSphere)
     BlockHandover.ts    # The map's world as OUR renderer draws it, in every
                         #   pass of every build but the editor's, with NO
                         #   fallback (BABYLON_EXIT.md X3.3-X3.7b): every block
@@ -2594,6 +2603,23 @@ src/
                         #   once a session, a failure (or a refused pass) the
                         #   round's (Game.worldFailed); installed for a round,
                         #   never an editor build
+    hullProgram.ts      # The HULLS' program (X4.2b): the cel stage over every
+                        #   segment of a kind's kit, the kit palette its own —
+                        #   X4.1d's body decode (a draw one RANK of every hull,
+                        #   an instance a hull) with no visor and no fade, and
+                        #   a CHARRED bit in the hull's kit word that reads the
+                        #   charred slot in place of every segment's own
+    HullDraw.ts         # Every HULL as OUR renderer draws it (X4.2b): the
+                        #   kits on the GPU once (a narrower kind padded to
+                        #   the widest), each frame's hulls as instances, a
+                        #   rank one draw, off what Game.drawHulls commits and
+                        #   the order (and the segments the frustum culls) the
+                        #   prepare pulls (Game.hullPull);
+                        #   installed AHEAD of the bodies, as Babylon's queue
+                        #   drew the hulls; its pipeline asked once a session,
+                        #   a failure (or a refused pass) the round's
+                        #   (Game.worldFailed); installed for a round, never an
+                        #   editor build
     BodyShadowMap.ts    # The moon's BODY map as OUR texture (X4.1c): made
                         #   cleared to lit, drawn whole from the proxies
                         #   BodyShadows hands it each frame it updates

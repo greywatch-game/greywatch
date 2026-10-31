@@ -88,8 +88,12 @@
  *   pop.
  * - **Loose** — everything else in the scene: the terrain, the roads, the rim,
  *   the effect pools (tracers, shards, grenades, rubble), the sky, the
- *   water, the grass, the viewmodel, the hulls, and every visual an EDITOR
- *   build makes, which is keyed per placement and carries no block at all.
+ *   water, the grass, the viewmodel, and every visual an EDITOR build makes,
+ *   which is keyed per placement and carries no block at all. The HULLS were
+ *   loose until `BABYLON_EXIT.md` X4.2b and are no mesh now: our renderer
+ *   draws each as an instance of its kind's kit, and the size gate reaches
+ *   its segments one by one through `keepsSphere` — the test a loose mesh
+ *   gets, asked of a sphere its caller composed this frame.
  *   Always ELIGIBLE — and `offer` still drops the ones that are
  *   switched off, which is what reaches the effect pools: they are built once
  *   and idled with `isVisible = false`, and were most of a candidate list the
@@ -581,6 +585,27 @@ export class WorldCulling {
   private bodyDraw = Number.POSITIVE_INFINITY;
 
   /**
+   * Whether the size gate KEEPS a world sphere this frame — a HULL's segment
+   * (`BABYLON_EXIT.md` X4.2b), which our renderer draws and which is no
+   * candidate: the test `offer` asks of a loose mesh (`tooSmall`, from the
+   * eye and at the scale it was last handed, and true while the gate is off
+   * — the warm-up, a gate of 0 px, no camera), asked of the sphere its caller
+   * composed. A hull is gated PER SEGMENT, as its meshes were gated while
+   * they were loose: dropping a hull whole would draw at range every part this
+   * gate drops there now. The sphere is the caller's, composed this frame, so
+   * the drop cannot latch on stale bounds (`docs/rendering.md`); read by
+   * `Game.drawHulls` after `update`, the same frame.
+   */
+  keepsSphere(x: number, y: number, z: number, radius: number): boolean {
+    const g = this.reachGate;
+    if (!g.sizeGate) return true;
+    return !tooSmall(x, y, z, radius, this.gateEye, g.perRad, g.px2);
+  }
+
+  /** The eye `offer` gated from last, copied: what `keepsSphere` measures from. */
+  private readonly gateEye = { x: 0, y: 0, z: 0 };
+
+  /**
    * The box our renderer's cull measures a surface's reach to, by the BLOCK
    * its record is filed under (`metadata.block`): that block's cell — the
    * bounds of every surface of it, glazing included, what a candidate of it
@@ -801,6 +826,12 @@ export class WorldCulling {
     reachGate.sizeGate = gate;
     reachGate.perRad = perRad;
     reachGate.px2 = px2;
+    // The eye a hull's segment is gated from later this frame (`keepsSphere`):
+    // this one, as a loose mesh's was.
+    const gateEye = this.gateEye;
+    gateEye.x = eye.x;
+    gateEye.y = eye.y;
+    gateEye.z = eye.z;
     // **A BODY is measured ONCE, off its own measure, and drops whole.** One
     // test per body rather than per mesh — a per-mesh verdict took the head
     // off a soldier at 300 m while leaving his torso — so every segment of a
@@ -937,8 +968,8 @@ function tooSmallMesh(mesh: AbstractMesh, eye: Vector3, perRad: number, px2: num
  *
  * The one place a projected size is measured, because `offer` asks the
  * question of three different things — a loose mesh, a body's measure and a
- * filed surface's record — and two copies of this arithmetic is two answers
- * that can drift apart.
+ * filed surface's record — and `keepsSphere` a fourth, a hull's segment, and
+ * two copies of this arithmetic is two answers that can drift apart.
  *
  * `d2 > 1` is the guard on standing inside a thing: the projection diverges
  * at zero distance and a metre is nearer than anything this should be
@@ -949,7 +980,7 @@ function tooSmall(
   cy: number,
   cz: number,
   radius: number,
-  eye: Vector3,
+  eye: { readonly x: number; readonly y: number; readonly z: number },
   perRad: number,
   px2: number,
 ): boolean {

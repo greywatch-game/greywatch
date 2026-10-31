@@ -797,10 +797,12 @@ is one machine's:
   view of a hull is `g.vehicleViews.views.find((v) => v.hull === tank)`.
   **Since X4.2a the joints are OURS** (`view.rig.tree`, a `JointTree`), and a
   joint's `world` is only what the last compose left: read one through
-  `view.rig.tree.computeChain(joint)` (fresh), and a mesh is handed its matrix
-  only by `g.vehicleViews.draw()`, which the frame calls just before the
-  render — call it yourself after a direct write before reading a mesh's
-  `getWorldMatrix()` or its bounds.
+  `view.rig.tree.computeChain(joint)` (fresh). **Since X4.2b there is no mesh
+  of a hull at all**: our renderer draws it as an instance of its kind's kit
+  (`g.hullDraw`, fed by `g.drawHulls()` just before the render), so a script
+  reads a segment's world as `seg.local` times `seg.joint.world` after a
+  compose (`view.rig.segments`), and what the last frame drew as
+  `g.hullDraw.matrices` (the size gate's drops are zeros there).
   **The signature takes a LOOKUP rather than a hull and a stick**, because a bot
   crew can be driving one hull while the player drives another — and on the
   page the bot crew is the wire's (`remoteFor`), there being no crew here.
@@ -877,11 +879,11 @@ is one machine's:
   VIEW's (`view.rig.body`, a joint since X4.2a and a mesh before), a
   FOLLOWER `VehicleView.update` overwrites from `pos` after every fleet step
   — a write to it moves nothing and is undone. A joint's world is only what
-  the last compose left, and a mesh's is only what the last
-  `g.vehicleViews.draw()` handed it, which the frame calls just before the
-  render. **Call `g.vehicleViews.update()` and then read a joint through
-  `view.rig.tree.computeChain(joint)`, or `g.vehicleViews.draw()` before a
-  mesh's matrix, after a position write.** (Under Babylon a node's
+  the last compose left, and a hull's drawing only what the last
+  `g.drawHulls()` wrote, which the frame calls just before the render (X4.2b:
+  no mesh of a hull exists). **Call `g.vehicleViews.update()` and then read a
+  joint through `view.rig.tree.computeChain(joint)` after a position
+  write.** (Under Babylon a node's
   `computeWorldMatrix()` early-out on the render id was the trap here, and
   it was the SWEEP's start too,
   and it cost an afternoon: a harness reported the walk colliding with a

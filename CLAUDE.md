@@ -280,7 +280,7 @@ reflection bake, the card draws the whole map from each home spawn and flag
 until a frame compiles nothing, because WebGPU compiles a pipeline on the frame
 that first draws it. **It OPENS by waiting for OUR renderer's pipelines**,
 which are asked for ahead and compiled off the frame (`PipelineCache`'s
-counts), every BODY's among them. What it cannot see it is SHOWN by a
+counts), every BODY's and HULL's among them. What it cannot see it is SHOWN by a
 `warm(on)` on whatever owns an idle pool of Babylon's (a shot, a blast, a scorch,
 a blob, the weapon) — **posed as IN FLIGHT**, since a stretched mesh or a
 `visibility` under 1 is a different pipeline. **A new pool that idles switched
@@ -605,13 +605,13 @@ mesh carrying `metadata.block` (the glazing, a fire) is one only while the
 camera is inside the map's `fogEnd`**, **everything else is ELIGIBLE**, and
 **anything EMISSIVE or outside rendering group 0 is exempt** from the size
 gate. **Nothing pooled may ever be block-keyed.**
-**EVERY BODY IS OUR RENDERER'S, and Babylon is made NO RIG MESH**
-(`render/BodyDraw.ts`): each an INSTANCE of its side's kit, built once a side
-(`SoldierModel.soldierKits`), drawn while its switch is on and the size gate,
-measured ONCE a body, passes it (`WorldCulling.drawsBody`) — the visor with
-it. **A body LEAVES by a FADE at both edges, never a pop**: a screen door at
-`WorldCulling.bodyFade`, its visor dropping the same pixels in the glow's mask.
-**A draw is a RANK of every body**, nearest-first (`Game.bodyPull`).
+**EVERY BODY AND HULL IS OUR RENDERER'S, and Babylon is made NO RIG OR HULL
+MESH** (`render/BodyDraw.ts`, `HullDraw.ts`): each an INSTANCE of its kit, built
+once a side (a hull's a kind and side), drawn while its switch is on and the
+size gate passes it — a body measured ONCE (`drawsBody`), the visor with it, a
+hull PER SEGMENT (`keepsSphere`). **A body LEAVES by a FADE at both edges,
+never a pop**: a screen door at `WorldCulling.bodyFade`, its visor dropping the
+same pixels in the glow's mask. **A draw is a RANK of every body or hull.**
 
 **The GLOW draws the EMISSIVE meshes and nothing else, its occlusion being the
 FRAME's own depth buffer** (`src/shaders/GlowPass.ts`). **What may bloom is read
@@ -1073,9 +1073,10 @@ they reach and neither ever moves a PERSON**. **A driver's frame is not a
 body's**: `Player.update` is not called, so the hull's ground REPLACES the
 probe.
 
-**`Vehicle` is the simulation and a `VehicleView` its picture** (on OUR joints),
-TOLD through one `HullPicture` only what it cannot poll; **no simulation reads a
-joint** — the muzzles are replayed off fields (`docs/vehicles.md`).
+**`Vehicle` is the simulation and a `VehicleView` its picture** (on OUR joints,
+drawn by OUR renderer as its kind's kit), TOLD through one `HullPicture` only
+what it cannot poll; **no simulation reads a joint** — the muzzles are
+replayed off fields (`docs/vehicles.md`).
 
 **A hull is the one MOVING solid thing in the game**: every ray and every SWEEP
 meets it through `rays.hulls` and `rayBox()`, behind one gate

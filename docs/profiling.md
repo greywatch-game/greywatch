@@ -613,7 +613,7 @@ mask's groups were being added to `drawWorld` too.
 evaluation (the `Mesh walk` counter, which is the same number in other units),
 `Game.drawBodies` (every drawn rig's joints composed and handed to its meshes,
 `BABYLON_EXIT.md` X4.1a — the composition Babylon did inside the walk until
-then), `VehicleViews.draw` (the hulls' joints the same, X4.2a), the post chain, a frame's share of a reflection bake, and the present. Measured
+then), `Game.drawHulls` (the hulls' joints the same, X4.2a, and their drawing written for ours, X4.2b), the post chain, a frame's share of a reflection bake, and the present. Measured
 on Hollowmere headless, 969 frames at 101 fps: `render` 4.86 ms, of which
 `drawWorld` 2.15, `glow` 1.04, `drawOverlay` 0.25 and `shadowPass` 0.73 — 86%
 of the bar attributed, and the glow's share of the whole frame **10.5%**, which
@@ -1215,6 +1215,14 @@ shows those draws gone and nothing in their place; the main pass's draws are
 `blocks` is — once, at the capture or the halt, through a reader `Game`
 pushes (`FrameProfile.setBodies`), so it is the LAST frame's and never a
 series. The viewer prints it beside `ours` as `bodies`.
+
+**From report version 22 it says the same of the HULLS** (`hulls`,
+`BABYLON_EXIT.md` X4.2b): the main pass's hull draws (a RANK of every hull
+each) and how many hulls, read as `bodies` is (`FrameProfile.setHulls`).
+Since X4.2b no hull is in `counters.drawCalls` either — a hull was a draw a
+mesh there, 25 a tank, 26 a truck and 20 a helicopter, the size gate's drops
+aside — so the main pass's draws are `counters.drawCalls` plus `blocks.drawn`
+plus `bodies.drawn` plus `hulls.drawn`. The viewer prints it as `hulls`.
 
 **From report version 18 a capture says the SIZE every frame was drawn at**
 (`viewport`), and **`device.window` and `device.backingStore` are read at SAVE

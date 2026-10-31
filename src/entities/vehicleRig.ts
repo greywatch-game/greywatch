@@ -1,25 +1,32 @@
 /**
- * vehicleRig.ts — What every vehicle's MESH is, whatever kind it is, and the
- * helpers every model is drawn with.
- * Owns: the `VehicleRig` contract — the joints a hull's VIEW writes and the
- * three closures it calls — plus `Box`/`Cyl`/`Shape`, the per-colour merge and
- * the outline pass every model owes, the one way a whip antenna is built
- * (`whip`), the one pose a rig is reset to (`resetRigPose`), and the one way a
- * rig's meshes are handed their matrices (`drawHullRig`), switched
- * (`setHullRigEnabled`) and freed (`disposeHullRig`).
- * Owns NO geometry and no numbers. `TankModel.ts`, `TruckModel.ts` and
- * `HeliModel.ts` are the ART, one file per kind; this is the shape they all
- * come out in, and the one thing `entities/VehicleView.ts` draws. CLIENT-only:
- * `entities/Vehicle.ts` has never heard of it — the simulation reads a
- * `HullFrame` and writes a `HullPose`, and the view copies the pose onto these
- * joints.
+ * vehicleRig.ts — What every vehicle's DRAWING is, whatever kind it is, and
+ * the helpers every model is drawn with.
+ * Owns: the `VehicleRig` contract — the joints a hull's VIEW writes, the
+ * segments hung off them and the three closures it calls — plus
+ * `Box`/`Cyl`/`Shape`, the per-colour merge every model owes, the KITS (one
+ * drawing a model and a view, built by the first rig of it: `HullKit`,
+ * `segmentOf`) and their one palette (`hullPalette`), the one way a whip
+ * antenna is built (`whip`), the one pose a rig is reset to
+ * (`resetRigPose`), and the one way a rig's drawing is written
+ * (`writeHullDrawing`), switched (`setHullRigEnabled`) and painted
+ * (`paintRig`).
+ * Owns NO numbers. `TankModel.ts`, `TruckModel.ts` and `HeliModel.ts` are the
+ * ART, one file per kind; this is the shape they all come out in, and the one
+ * thing `entities/VehicleView.ts` poses. CLIENT-only: `entities/Vehicle.ts`
+ * has never heard of it — the simulation reads a `HullFrame` and writes a
+ * `HullPose`, and the view copies the pose onto these joints.
  *
  * **A hull's geometry is PARTS until `segment` merges it**: a box or a cylinder
  * is a `Part` on `src/geometry/`'s generators, a `Shape` is a `Part` from
- * `facet.ts`, `mergeParts` is the per-colour merge, and `drawnMesh` is the one
- * place any of it becomes a Babylon mesh. The meshes are MADE in the order the
- * scene used to receive them, which `mergeByColor` explains; `kit:hash
- * --models` hashes that order.
+ * `facet.ts`, and `mergeParts` is the per-colour merge — one SEGMENT a colour
+ * a call, which is what a Babylon mesh of it was until `BABYLON_EXIT.md`
+ * X4.2b. **Babylon is made NO mesh of a hull**: what a segment LOOKS like is
+ * its KIT's, built once a model and a view — the first rig of that pair
+ * merges it, every later one hangs the kit's segments without making a part
+ * — and our renderer draws every hull as an instance of its kit
+ * (`render/HullDraw.ts`). The segments are in the order the scene used to
+ * receive the meshes, which `mergeByColor` explains and the front-to-back
+ * sort breaks a tie by; `kit:hash --models` hashes that order.
  *
  * **The JOINTS are OURS** (`BABYLON_EXIT.md` X4.2a, X4.1a's shape): a
  * `JointTree` (`rigJoints.ts`) whose first joint is the collider box's own
@@ -27,13 +34,12 @@
  * and whose second is the model's `root`, each joint's world a float32 matrix
  * the rig owns, composed FRESH off the channels in `src/math`'s copies of
  * Babylon's arithmetic — what `TransformNode.computeWorldMatrix(true)` gave
- * for the same channels, bit for bit. **Babylon still draws the merged
- * meshes, and none has a parent**: each mesh's own local is composed once at
- * build (`HullMesh.local`), and `drawHullRig` hands Babylon its world (that
- * local times its joint's) through `freezeWorldMatrix`, once a frame from
- * `Game` (`VehicleViews.draw`), after every write and immediately before
+ * for the same channels, bit for bit. Each segment's own local is composed
+ * once at build (`HullSegment.local`), and `writeHullDrawing` writes its
+ * world (that local times its joint's) for the drawing, once a frame from
+ * `Game` (`drawHulls`), after every write and immediately before
  * `scene.render`. No node of a hull is in the scene. The muzzles and the
- * sight are joints with no mesh, which nothing in the game reads: the
+ * sight are joints with no segment, which nothing in the game reads: the
  * simulation replays them off the record (`hullFrame.ts`' `hullPointToRef`),
  * the same chain these compose.
  *
@@ -69,23 +75,24 @@
  *
  * - **Nothing emissive.** Written when the glow's `noGlow` exclusion was a
  *   one-shot scan at construction, which a hull built per round could never
- *   join. The bloom reads `noGlow` every frame now (`GlowPass`), so a glowing
- *   part is possible — it is still a look nobody has chosen.
- * - **Nothing pickable.** No mesh of a hull is pickable, and nothing in the
- *   game picks one: what a hull is to a body and to a round is
- *   `Vehicle.rayBox`, off its own fields. A pickable visual would put the
- *   hitscan's wall ray, the bots' LOS and the ground probe on sixty triangles
- *   of track link.
+ *   join. Since `BABYLON_EXIT.md` X4.2b a hull is drawn by the matte cel
+ *   program alone (`render/hullProgram.ts`), with no emissive program and
+ *   nothing in the glow's mask, so a glowing part is a program and a mask
+ *   draw nobody has built — still a look nobody has chosen.
+ * - **Nothing pickable.** Nothing of a hull is pickable — there is no mesh of
+ *   one to pick — and nothing in the game picks one: what a hull is to a body
+ *   and to a round is `Vehicle.rayBox`, off its own fields. A pickable visual
+ *   would put the hitscan's wall ray, the bots' LOS and the ground probe on
+ *   sixty triangles of track link.
  *
  * `segmentOf` enforces both by construction, which is why no model may build
- * a mesh any other way — a model hands it parts, never meshes.
+ * a segment any other way — a model hands it parts, never meshes.
  */
-import { type Material, Matrix as BabylonMatrix, type Mesh, type Scene } from "@babylonjs/core";
 import type { VehicleSpec } from "../config/vehicles";
+import type { GeometryBuffer } from "../geometry/buffer";
 import { createBox, createCylinder } from "../geometry/primitives";
-import { Matrix, Quaternion, Vector3 } from "../math";
-import { type CelMaterialFactory } from "../shaders/CelShader";
-import { drawnMesh, mergeParts, Part } from "../world/parts";
+import { Matrix, Vector3 } from "../math";
+import { mergeParts, Part, PartNode, worldMatrixOf } from "../world/parts";
 import { type Joint, JointTree } from "./rigJoints";
 
 /**
@@ -119,7 +126,7 @@ export type Box = [
  * "tracked vehicle" is a row of DISCS, and a square wheel reads as a hatch in
  * the side of the track. A twelve-sided cylinder is forty-odd triangles
  * against a box's twelve, and both are free — a vehicle's cost is the colours
- * it merges to, and a round wheel merges into the same mesh a square one did.
+ * it merges to, and a round wheel merges into the same segment a square one did.
  */
 export type Cyl = [
   number,
@@ -139,7 +146,8 @@ export type Cyl = [
  * segment's own frame, may carry a position and rotation of its own, has no
  * parent, and is merged exactly as a box is — which is why it must carry
  * positions, normals AND uvs, the three attributes every box has. It is a
- * `Part` and not a mesh: nothing on a hull becomes a mesh before `segment`.
+ * `Part` and not a mesh: nothing on a hull is anything but parts before
+ * `segment`, and no Babylon mesh after it (`BABYLON_EXIT.md` X4.2b).
  */
 export type Shape = readonly [Part, string];
 
@@ -159,7 +167,7 @@ const CHARRED = "#221f1c";
  *
  * The lower link turns at the mast foot and the upper hangs off its top, so the
  * pair describe a CURVE rather than a lever — which is the whole read, and the
- * reason meshes were spent on the only parts of a vehicle that are not rigid.
+ * reason segments were spent on the only parts of a vehicle that are not rigid.
  * `HullWhips` owns how far each is bent and `setAntennaBend` is what that
  * looks like, exactly the split the view's run and `setRun` have.
  */
@@ -187,29 +195,64 @@ export interface Whip {
 }
 
 /**
- * One drawn mesh of a hull and the joint it hangs off — parented to NOTHING
- * since `BABYLON_EXIT.md` X4.2a: its world is `local` times its joint's,
- * composed by `drawHullRig` and handed to Babylon (`freezeWorldMatrix`).
+ * One SEGMENT of a hull and the joint it hangs off: what a Babylon mesh of
+ * it was until `BABYLON_EXIT.md` X4.2b, its geometry now its KIT's
+ * (`HullKit`) and drawn by our renderer at `local` times the joint's world
+ * (`writeHullDrawing`).
  */
-export interface HullMesh {
-  readonly mesh: Mesh;
+export interface HullSegment {
   readonly joint: Joint;
-  /** The mesh's own transform in its joint's frame, composed once at build. */
+  /** The segment's own transform in its joint's frame — its kit's, composed once. */
   readonly local: Matrix;
-  /** What Babylon is handed — the one object it keeps as the world matrix. */
-  readonly drawn: BabylonMatrix;
 }
 
 /**
- * A built vehicle: the joints that move, the meshes that draw, the three
+ * One segment of a kit's DRAWING: its geometry in its own frame, its local
+ * transform in its joint's frame, the ONE colour it is painted (a hull is
+ * merged per colour per joint, so a segment is one colour by construction),
+ * and its bounding sphere in its own frame — the midpoint of its vertices'
+ * extent and half that extent's diagonal, as Babylon's `BoundingSphere` made
+ * them of the mesh it was: what a hull's segments are ORDERED by (Babylon's
+ * front-to-back queue, `Game.hullPull`) and SIZE-GATED by
+ * (`WorldCulling.keepsSphere`).
+ */
+export interface HullKitSegment {
+  readonly name: string;
+  readonly geometry: GeometryBuffer;
+  readonly local: Matrix;
+  /** The hex it is painted in its livery, as the model wrote it. */
+  readonly color: string;
+  readonly centre: Vector3;
+  readonly radius: number;
+}
+
+/**
+ * One kind's drawing in one side's colours, built ONCE (`segmentOf`'s first
+ * build of that kind and view): its segments in the order Babylon's scene
+ * received the meshes they were (`mergeByColor`'s MADE order), which is the
+ * order a rig's `segments` are in and the tie-break of the front-to-back
+ * sort, and how many segments each of the builder's `segment` calls made,
+ * which is how a later build of the same kind hangs the kit's segments
+ * without building them.
+ */
+export interface HullKit {
+  /** `${model}|${view}`, the registry's key. */
+  readonly key: string;
+  readonly segments: readonly HullKitSegment[];
+  readonly calls: readonly number[];
+}
+
+/**
+ * A built vehicle: the joints that move, the segments that draw, the three
  * extents the physics needs off the drawing, and what to do to all of it when
  * the hull respawns or burns.
  */
 export interface VehicleRig {
   /**
    * Every joint below, parents first: OUR hierarchy (`rigJoints.ts`), each
-   * world a float32 matrix the rig owns. Babylon draws the meshes off them and
-   * has no node of this rig (`BABYLON_EXIT.md` X4.2a).
+   * world a float32 matrix the rig owns (`BABYLON_EXIT.md` X4.2a). Our
+   * renderer draws the segments off them (X4.2b), and Babylon has no node and
+   * no mesh of this rig.
    */
   tree: JointTree;
   /**
@@ -307,12 +350,25 @@ export interface VehicleRig {
   mgSight: Joint;
   /** The masts, longest first — the order `rate` is measured against. May be empty. */
   antennae: readonly Whip[];
-  /** Every drawn mesh, for the repaint and for whoever needs the list. */
-  meshes: Mesh[];
-  /** What each of `meshes` was painted with when it was built. */
-  livery: Material[];
-  /** Each of `meshes`, in that order, with the joint it hangs off. See `HullMesh`. */
-  drawn: readonly HullMesh[];
+  /**
+   * Every segment drawn, in its kit's order, with the joint it hangs off.
+   * See `HullSegment`. Babylon is made no mesh of any of it
+   * (`BABYLON_EXIT.md` X4.2b): our renderer draws the hull as an instance of
+   * its `kit`.
+   */
+  segments: readonly HullSegment[];
+  /** What every segment LOOKS like: its kind's drawing in its side's colours, shared by every hull of both. */
+  kit: HullKit;
+  /**
+   * Whether the hull is drawn at all — the one switch, which the view follows
+   * `Vehicle.present` with (`setHullRigEnabled`) and the drawing reads.
+   */
+  enabled: boolean;
+  /**
+   * Whether it is drawn in the CHARRED paint (`paint`) rather than its
+   * livery: one colour for every segment, the drawing's to substitute.
+   */
+  charred: boolean;
   /**
    * The running gear, given how far each side has covered in metres, how hard
    * the stick is over (-1..1), and how far the ROTOR has turned in radians.
@@ -388,7 +444,7 @@ export function setAntennaBend(
  * a whip is BUILT out of them is the same on every hull and lives in `whip`.
  */
 export interface WhipDrawing {
-  /** The joints are `name` and `name-tip`, the meshes `name-lo` and `name-hi`. */
+  /** The joints are `name` and `name-tip`, the segments `name-lo` and `name-hi`. */
   name: string;
   /** What the foot is bolted to — a turret, or the sprung body. */
   parent: Joint;
@@ -443,18 +499,14 @@ export function whip(
 
 /**
  * Puts a rig back to how it was built — every joint at rest, the running gear
- * back at the start of its run, the masts straight and the paint back on. What
+ * back at the start of its run, the masts straight and the livery back on. What
  * `VehicleRig.reset` is on every kind, given the kind's own spec for the one
  * number it needs (how the masts share a bend).
  *
  * `gun` is the only joint a kind may lack, which is why it is the only one
  * written through `?.`.
  */
-export function resetRigPose(
-  rig: VehicleRig,
-  mats: CelMaterialFactory,
-  spec: VehicleSpec,
-): void {
+export function resetRigPose(rig: VehicleRig, spec: VehicleSpec): void {
   rig.hull.rotation.set(0, 0, 0);
   rig.sprung.position.y = 0;
   rig.sprung.rotation.set(0, 0, 0);
@@ -465,7 +517,17 @@ export function resetRigPose(
   rig.setRun(0, 0, 0, 0);
   const share = spec.antenna.baseShare;
   for (const w of rig.antennae) setAntennaBend(w, share, 0, 0, 0, 0);
-  paintRig(rig.meshes, rig.livery, mats, false);
+  paintRig(rig, false);
+}
+
+/**
+ * Charred, or back in its livery: one flag the drawing reads
+ * (`BABYLON_EXIT.md` X4.2b), which substitutes `CHARRED`'s slot for every
+ * segment's own — what swapping every mesh's material for the charred one
+ * did while Babylon drew the hull. What `VehicleRig.paint` is on every kind.
+ */
+export function paintRig(rig: VehicleRig, wrecked: boolean): void {
+  rig.charred = wrecked;
 }
 
 /**
@@ -480,26 +542,26 @@ export function rigTree(root: string): { tree: JointTree; body: Joint; root: Joi
 }
 
 /**
- * The lists a model draws into and the one function that turns parts into
- * meshes, handed back together so a builder holds one thing.
+ * The list a model hangs its segments into and the one function that turns
+ * parts into them, handed back together so a builder holds one thing, and the
+ * kit they are drawn as.
  *
- * Every model calls `segment` and none may build a mesh any other way: this
- * is where the per-colour merge, the pickability rule and the mesh/livery/
- * joint bookkeeping are enforced, and a mesh built past it is one that is
- * picked, unmerged, never repainted when the hull burns and never handed a
- * matrix.
+ * Every model calls `segment` and none may make a segment any other way: this
+ * is where the per-colour merge, the kit's bookkeeping and the joint each
+ * segment hangs off are kept in step, and a segment made past it is one the
+ * drawing has no geometry for.
  */
 export interface Segments {
-  meshes: Mesh[];
-  livery: Material[];
-  drawn: HullMesh[];
+  segments: HullSegment[];
   /**
    * Builds a list of parts, merges them per colour, and hangs the result off
-   * `parent` — which is to say files each mesh under that joint, the mesh
-   * itself parented to nothing (`HullMesh`).
+   * `parent` — one segment a colour, filed under that joint with its own local
+   * (`HullSegment`). While this build is building its kit (the first of its
+   * model and view) the parts are made and merged into it; after that the
+   * kit's segments are hung as they are, and no part is made.
    *
    * The two lists are one segment: a cylinder in a colour the boxes beside it
-   * already carry merges into their mesh and costs nothing, which is why a
+   * already carry merges into their segment and costs nothing, which is why a
    * wheel's hub caps sit in the wheel segment and a barrel sits with the
    * mantlet. `shapes` are the same bargain for a part built beforehand.
    */
@@ -510,12 +572,36 @@ export interface Segments {
     cyls?: Cyl[],
     shapes?: readonly Shape[],
   ): void;
+  /**
+   * The kit this build drew from — or built, which is filed for every later
+   * build of the same model and view. Called once, after the model has hung
+   * every segment; a build that made a different number of segment calls
+   * than the kit's builder did throws.
+   */
+  kit(): HullKit;
 }
 
-export function segmentOf(scene: Scene, mats: CelMaterialFactory): Segments {
-  const meshes: Mesh[] = [];
-  const livery: Material[] = [];
-  const drawn: HullMesh[] = [];
+/**
+ * Every kit built, by `HullKit.key`: a model's drawing in a view's colours,
+ * built by its first rig and the same object for the life of the page — a kit
+ * is module constants (the models' `KITS`, their parts), so nothing can make
+ * two builds of one key differ.
+ */
+const kits = new Map<string, HullKit>();
+
+/**
+ * A model's `Segments`, for a rig of `model` (the kind's model name) in
+ * `view`'s colours: building the kit if no rig of that key has, and hanging
+ * the built one's otherwise.
+ */
+export function segmentOf(model: string, view: number): Segments {
+  const key = `${model}|${view}`;
+  const existing = kits.get(key) ?? null;
+  const built: HullKitSegment[] = [];
+  const calls: number[] = [];
+  const segments: HullSegment[] = [];
+  let call = 0;
+  let at = 0;
   const segment = (
     name: string,
     parent: Joint,
@@ -523,15 +609,26 @@ export function segmentOf(scene: Scene, mats: CelMaterialFactory): Segments {
     cyls: Cyl[] = [],
     shapes: readonly Shape[] = [],
   ): void => {
+    if (existing) {
+      const n = existing.calls[call++];
+      if (n === undefined) throw new Error(`[hull] ${key}: a build made more segment calls than its kit's`);
+      for (let k = 0; k < n; k++) {
+        const seg = existing.segments[at++];
+        if (seg.name !== name) throw new Error(`[hull] ${key}: segment "${name}" where the kit has "${seg.name}"`);
+        segments.push({ joint: parent, local: seg.local });
+      }
+      return;
+    }
     const parts: Part[] = [];
+    const colors: string[] = [];
     for (let i = 0; i < boxes.length; i++) {
       const [w, h, d, x, y, z, color, rotX = 0, rotY = 0] = boxes[i];
       const p = new Part(`${name}${i}`, createBox({ width: w, height: h, depth: d }));
       p.position.set(x, y, z);
       p.rotation.x = rotX;
       p.rotation.y = rotY;
-      p.material = mats.get(color);
       parts.push(p);
+      colors.push(color);
     }
     for (let i = 0; i < cyls.length; i++) {
       const [dia, len, x, y, z, color, axis, diaTop = dia] = cyls[i];
@@ -553,153 +650,213 @@ export function segmentOf(scene: Scene, mats: CelMaterialFactory): Segments {
       if (axis === "x") p.rotation.z = Math.PI / 2;
       else if (axis === "z") p.rotation.x = Math.PI / 2;
       p.position.set(x, y, z);
-      p.material = mats.get(color);
       parts.push(p);
+      colors.push(color);
     }
     for (const [p, color] of shapes) {
-      p.material = mats.get(color);
       parts.push(p);
+      colors.push(color);
     }
-    for (const merged of mergeByColor(scene, parts, name, shapes.length)) {
-      // No mesh of a hull is pickable — what a hull is to a round is
-      // `Vehicle.rayBox`. A pickable visual would put the hitscan's wall ray,
-      // the bots' LOS and the ground probe on sixty triangles of track link.
-      merged.isPickable = false;
-      merged.checkCollisions = false;
-      meshes.push(merged);
-      livery.push(merged.material!);
-      drawn.push({ mesh: merged, joint: parent, local: meshLocal(merged), drawn: new BabylonMatrix() });
+    const made = mergeByColor(parts, colors, name, shapes.length);
+    for (const seg of made) {
+      built.push(seg);
+      segments.push({ joint: parent, local: seg.local });
     }
+    calls.push(made.length);
   };
-  return { meshes, livery, drawn, segment };
+  const kit = (): HullKit => {
+    if (existing) {
+      if (call !== existing.calls.length) throw new Error(`[hull] ${key}: a build made fewer segment calls than its kit's`);
+      return existing;
+    }
+    const made: HullKit = { key, segments: built, calls };
+    kits.set(key, made);
+    return made;
+  };
+  return { segments, segment, kit };
 }
 
 /**
- * A mesh's own transform as `computeWorldMatrix` composed it before the
- * parent's: its scaling, its quaternion or else its Euler as yaw-pitch-roll,
- * and its position. Constant: nothing moves a hull's mesh in its joint's
- * frame (a lone part keeps its own frame on its mesh, `mergeByColor`).
- */
-function meshLocal(mesh: Mesh): Matrix {
-  const q = new Quaternion();
-  const rq = mesh.rotationQuaternion;
-  if (rq) q.copyFrom(rq);
-  else Quaternion.RotationYawPitchRollToRef(mesh.rotation.y, mesh.rotation.x, mesh.rotation.z, q);
-  const s = mesh.scaling;
-  const d = mesh.scalingDeterminant;
-  return Matrix.ComposeToRef(new Vector3(s.x * d, s.y * d, s.z * d), q, mesh.position, new Matrix());
-}
-
-// Scratch for `drawHullRig`.
-const _meshWorld = new Matrix();
-
-/**
- * Composes the rig's joints and hands Babylon every switched-on mesh's world
- * matrix off them — the mesh's own local times its joint's world, what
- * `computeWorldMatrix` made of a mesh hung off a node.
+ * Merges a segment's parts into one SEGMENT per colour, at identity, and
+ * hands them back in the order Babylon's scene received the meshes they were
+ * until `BABYLON_EXIT.md` X4.2b — which is not the colour order, and is the
+ * order a rig's segments are in and what the front-to-back sort breaks a tie
+ * by (`Game.hullPull`), as `Array.prototype.sort` broke one over meshes in
+ * scene order.
  *
- * **Called once a frame, after every write and before the render**
- * (`VehicleViews.draw`, from `Game` beside the bodies, inside the render
- * span: Babylon composed these inside `scene.render` before X4.2a).
- * `freezeWorldMatrix` is how a mesh with no parent is handed a matrix:
- * Babylon keeps the object it is given as the world matrix, updates its
- * bounds, and composes nothing of its own.
+ * **A colour with ONE part is drawn as that part, transform and all**, rather
+ * than merged into a segment at identity: a merge of one is a copy, and the
+ * part keeps its own frame as the segment's local, exactly as the lone mesh
+ * `MergeMeshes` was never asked about kept its own.
+ *
+ * **The segments are in the order their meshes were MADE.** When the parts
+ * were meshes, a shape was built before its segment was called and a box or a
+ * cylinder inside it, so a lone part's mesh stood in the scene at its PART's
+ * moment — shapes first, then boxes, then cylinders — and every merge was
+ * minted after all of them, in colour order (a colour's first appearance
+ * among the boxes, then the cylinders, then the shapes). A colour is a
+ * material's identity here because the factory kept one material a hex
+ * (`CelMaterialFactory.get`), so the groups are the ones that merge made.
  */
-export function drawHullRig(rig: VehicleRig): void {
+function mergeByColor(
+  parts: readonly Part[],
+  colors: readonly string[],
+  name: string,
+  shapeCount: number,
+): HullKitSegment[] {
+  const groups = new Map<string, number[]>();
+  for (let i = 0; i < parts.length; i++) {
+    const g = groups.get(colors[i]);
+    if (g) g.push(i);
+    else groups.set(colors[i], [i]);
+  }
+  const list = [...groups.entries()];
+  // Where each part's mesh used to be made: the shapes (the last
+  // `shapeCount` parts) before the boxes and cylinders, which keep their order.
+  const first = parts.length - shapeCount;
+  const made = (i: number): number => (i >= first ? i - first : shapeCount + i);
+  const when = list.map(([, g], k) => (g.length === 1 ? made(g[0]) : parts.length + k));
+  const order = list.map((_, k) => k).sort((a, b) => when[a] - when[b]);
+  return order.map((k) => {
+    const [color, group] = list[k];
+    if (group.length === 1) {
+      const part = parts[group[0]];
+      // A lone part's frame is its own; a part still hung off another would
+      // be composed with it, which no model does.
+      if (part.parent) throw new Error(`[hull] "${part.name}" still has a parent — detach or bake it first`);
+      return kitSegment(name, part.geometry, worldMatrixOf(part, new Matrix()), color);
+    }
+    return kitSegment(
+      name,
+      mergeParts(group.map((i) => parts[i])),
+      worldMatrixOf(new PartNode(name), new Matrix()),
+      color,
+    );
+  });
+}
+
+/**
+ * A kit segment of `geometry`, with its bounding sphere in its own frame: the
+ * extent of its positions as the mesh was handed them (`extractMinAndMax`),
+ * then `BoundingSphere.reConstruct`'s centre and radius.
+ */
+function kitSegment(name: string, geometry: GeometryBuffer, local: Matrix, color: string): HullKitSegment {
+  const p = geometry.positions;
+  const min = new Vector3(Number.MAX_VALUE, Number.MAX_VALUE, Number.MAX_VALUE);
+  const max = new Vector3(-Number.MAX_VALUE, -Number.MAX_VALUE, -Number.MAX_VALUE);
+  for (let i = 0; i < p.length; i += 3) {
+    min.minimizeInPlaceFromFloats(p[i], p[i + 1], p[i + 2]);
+    max.maximizeInPlaceFromFloats(p[i], p[i + 1], p[i + 2]);
+  }
+  const radius = Vector3.Distance(min, max) * 0.5;
+  const centre = max.addToRef(min, new Vector3()).scaleInPlace(0.5);
+  return { name, geometry, local, color, centre, radius };
+}
+
+/**
+ * Every hull kit's colours as one palette, and the charred paint's slot in
+ * it: what the hulls' material holds (`CelMaterialFactory.hullCelRecipe`)
+ * and their segments' `uv2.x` indexes, 1-based — 0 is "not paletted"
+ * (`writePaletteIndex`). A hex is one slot however it is cased: the same
+ * colour either way.
+ */
+export function hullPalette(all: readonly HullKit[]): {
+  readonly colors: readonly string[];
+  slotOf(hex: string): number;
+  readonly charred: number;
+} {
+  const slots = new Map<string, number>();
+  const colors: string[] = [];
+  const add = (hex: string): number => {
+    const k = hex.toLowerCase();
+    let slot = slots.get(k);
+    if (slot === undefined) {
+      colors.push(hex);
+      slot = colors.length;
+      slots.set(k, slot);
+    }
+    return slot;
+  };
+  for (const kit of all) for (const seg of kit.segments) add(seg.color);
+  const charred = add(CHARRED);
+  return {
+    colors,
+    slotOf: (hex) => {
+      const slot = slots.get(hex.toLowerCase());
+      if (slot === undefined) throw new Error(`[hull] ${hex} is in no kit's palette`);
+      return slot;
+    },
+    charred,
+  };
+}
+
+/** Whether a segment is kept by the size gate, off its world sphere this frame (`WorldCulling.keepsSphere`). */
+export type SphereGate = (x: number, y: number, z: number, radius: number) => boolean;
+
+// Scratch for `writeHullDrawing`.
+const _meshWorld = new Matrix();
+const _centre = new Vector3();
+const _scale = new Vector3();
+
+/**
+ * Composes the rig's joints and writes its DRAWING into `out` from `at`:
+ * each segment's world matrix, sixteen floats in its kit's order — the
+ * segment's own local times its joint's world, what `drawHullRig` handed
+ * Babylon's mesh through `freezeWorldMatrix` until `BABYLON_EXIT.md` X4.2b —
+ * and that segment's world bounding sphere into `spheres` from `spheresAt`,
+ * four doubles a segment (centre, radius): `BoundingSphere._update`,
+ * operation for operation, which is what Babylon's front-to-back queue sorted
+ * the mesh by and its frustum test culled it by. `stride` segments are
+ * written; past the kit's own (a kind with fewer segments than the drawing's
+ * widest) and for a segment `keeps` drops — the size gate, asked of the same
+ * world sphere `WorldCulling` asked of the mesh's bounds — sixteen zeros and
+ * a NaN sphere, which nothing draws.
+ *
+ * **Called once a frame for every present hull, after every write and before
+ * the render** (`Game.drawHulls`, inside the render span). The rig's switch
+ * is the caller's to have asked. Allocates nothing.
+ */
+export function writeHullDrawing(
+  rig: VehicleRig,
+  out: Float32Array,
+  at: number,
+  stride: number,
+  keeps: SphereGate,
+  spheres: Float64Array,
+  spheresAt: number,
+): void {
   rig.tree.compute();
-  for (const d of rig.drawn) {
-    if (!d.mesh.isEnabled(false)) continue;
-    d.local.multiplyToRef(d.joint.world, _meshWorld);
-    BabylonMatrix.FromArrayToRef(_meshWorld.m, 0, d.drawn);
-    d.mesh.freezeWorldMatrix(d.drawn);
+  const segments = rig.segments;
+  const kit = rig.kit.segments;
+  for (let s = 0; s < stride; s++) {
+    const o = at + s * 16;
+    const c = spheresAt + s * 4;
+    if (s < segments.length) {
+      const seg = segments[s];
+      seg.local.multiplyToRef(seg.joint.world, _meshWorld);
+      const drawing = kit[s];
+      Vector3.TransformCoordinatesToRef(drawing.centre, _meshWorld, _centre);
+      Vector3.TransformNormalFromFloatsToRef(1.0, 1.0, 1.0, _meshWorld, _scale);
+      const radius = Math.max(Math.abs(_scale.x), Math.abs(_scale.y), Math.abs(_scale.z)) * drawing.radius;
+      if (keeps(_centre.x, _centre.y, _centre.z, radius)) {
+        out.set(_meshWorld.m, o);
+        spheres[c] = _centre.x;
+        spheres[c + 1] = _centre.y;
+        spheres[c + 2] = _centre.z;
+        spheres[c + 3] = radius;
+        continue;
+      }
+    }
+    out.fill(0, o, o + 16);
+    spheres[c] = spheres[c + 1] = spheres[c + 2] = spheres[c + 3] = Number.NaN;
   }
 }
 
 /**
- * The whole hull on or off — every mesh's own flag, which is what the body
- * box's switch reached through the parent chain before X4.2a. Nothing on a
+ * The whole hull on or off — the rig's one switch (`VehicleRig.enabled`),
+ * which every mesh's own flag was until `BABYLON_EXIT.md` X4.2b. Nothing on a
  * hull is switched separately, so the rig has the one switch.
  */
 export function setHullRigEnabled(rig: VehicleRig, on: boolean): void {
-  for (const mesh of rig.meshes) mesh.setEnabled(on);
-}
-
-/**
- * Disposes the rig's meshes — the whole of what Babylon holds of it. The
- * meshes only: the paint is the factory's shared cache (`VehicleView.dispose`
- * says why that must never go with them).
- */
-export function disposeHullRig(rig: VehicleRig): void {
-  for (const mesh of rig.meshes) mesh.dispose(false, false);
-}
-
-/**
- * Merges a segment's parts into one mesh per colour, at identity, and hands
- * the meshes back in COLOUR order — the order a colour first appears among
- * the boxes, then the cylinders, then the shapes, which is the order
- * `VehicleRig.meshes` and `livery` are in.
- *
- * **A colour with ONE part is drawn as that part, transform and all**, rather
- * than merged into a mesh at identity: a merge of one is a copy, and the part
- * keeps its own frame on the mesh exactly as the lone mesh `MergeMeshes` was
- * never asked about kept its own.
- *
- * **The meshes are MADE in the order the scene used to receive them**, which
- * is not the colour order. When the parts were meshes, a shape was built
- * before its segment was called and a box or a cylinder inside it, so a lone
- * part's mesh stood in the scene at its PART's moment — shapes first, then
- * boxes, then cylinders — and every merge was minted after all of them. So the
- * lone colours are drawn first, in that order, and the merged ones after, in
- * colour order; `kit:hash --models` hashes scene order, and a reordered scene
- * is a reordered draw list.
- */
-function mergeByColor(
-  scene: Scene,
-  parts: readonly Part[],
-  name: string,
-  shapeCount: number,
-): Mesh[] {
-  const groups = new Map<unknown, Part[]>();
-  for (const p of parts) {
-    const key = p.material;
-    const g = groups.get(key);
-    if (g) g.push(p);
-    else groups.set(key, [p]);
-  }
-  const list = [...groups.values()];
-  // Where each part's mesh used to be made: the shapes (the last
-  // `shapeCount` parts) before the boxes and cylinders, which keep their order.
-  const made = (p: Part): number => {
-    const i = parts.indexOf(p);
-    const first = parts.length - shapeCount;
-    return i >= first ? i - first : shapeCount + i;
-  };
-  const when = list.map((g, k) => (g.length === 1 ? made(g[0]) : parts.length + k));
-  const order = list.map((_, k) => k).sort((a, b) => when[a] - when[b]);
-  const out: Mesh[] = new Array(list.length);
-  for (const k of order) {
-    const group = list[k];
-    const mat = group[0].material;
-    const merged =
-      group.length === 1
-        ? drawnMesh(group[0], scene)
-        : drawnMesh(name, mergeParts(group), scene);
-    merged.name = name;
-    merged.material = mat;
-    out[k] = merged;
-  }
-  return out;
-}
-
-/** Swaps the whole vehicle to the charred palette, or back to its livery. */
-export function paintRig(
-  meshes: readonly Mesh[],
-  livery: readonly Material[],
-  mats: CelMaterialFactory,
-  wrecked: boolean,
-): void {
-  const charred = wrecked ? mats.get(CHARRED) : null;
-  for (let i = 0; i < meshes.length; i++) {
-    meshes[i].material = charred ?? livery[i];
-  }
+  rig.enabled = on;
 }

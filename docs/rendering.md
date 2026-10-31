@@ -4246,8 +4246,10 @@ against its 5,352 corners, the surplus exiting after four storage reads — and
 a new segment is a new rank, a longer one paid at every rank it lands on
 (`SoldierModel`'s header). What
 is NOT reproduced is the order ACROSS bodies, and against Babylon's own
-opaque meshes (a hull, a flag's cloth): both matter only where two of them
-meet at one depth, which takes two bodies standing in each other.
+opaque meshes (a flag's cloth): both matter only where two of them meet at one
+depth, which takes two bodies standing in each other. (A hull was one of
+those meshes until X4.2b; it is ours now and drawn AHEAD of every body, where
+Babylon's queue drew it — "The hulls, ours".)
 
 **What a rig does not carry reads what Babylon's empty vertex buffer read**:
 ONE float32 0, which WebGPU widens to a vector as (0, 0, 0, 1) — so `uv` is
@@ -4283,6 +4285,84 @@ one after it), a refused main pass or mask while installed, tells
 `Game.worldFailed` with the install's owner. It is installed for a ROUND's map
 only: an EDITOR build draws no body, its world being Babylon's and its frames
 ones ours prepares nothing in, and the menu has none.
+
+## The hulls, ours: every vehicle an instance of its kind's kit
+
+**Every hull the page draws — a tank, a truck, a helicopter, in its livery or
+wrecked — is OUR renderer's since `BABYLON_EXIT.md` X4.2b**
+(`render/HullDraw.ts`, its program `render/hullProgram.ts`), and Babylon is
+made no hull mesh: X4.1d's shape for a thing with no emissive and no fade. A
+rig is its joints (X4.2a) and its SEGMENTS (`vehicleRig.HullSegment`: the
+joint and the segment's local); what a segment looks like is its kind's KIT
+in its side's colours (`HullKit`), built ONCE a kind and a side — the first
+rig of the pair merges it (`segmentOf`), every later one hangs the kit's
+segments without making a part — and all six (three kinds, two views) are
+built at `Game`'s construction (`vehicleModels.hullKits`) and uploaded once,
+end to end. A kind narrower than the widest is the widest with its missing
+segments empty. Each frame `Game.drawHulls` writes every present hull's
+segment matrices (`writeHullDrawing`: its local times its joint's world,
+what `drawHullRig` handed Babylon's meshes through `freezeWorldMatrix` from
+X4.2a, bit for bit) with a kit WORD — the kit, and a bit for the charred
+paint — and hands them over; the renderer draws them in the main pass at
+`"beforeAlphaTest"`, installed AHEAD of the bodies' draw and the world's, as
+Babylon's opaque queue, the hulls' meshes in it, drew ahead of both.
+
+**A draw is a RANK, for the bodies' reason** ("The bodies, ours"): each frame
+the render pulls each hull's order (`Game.hullPull`, `bodyPull`'s sort — the
+segments' bounding-sphere centres off `globalPosition`, stable, the kit's
+order breaking a tie), and the kit's order IS the order the scene received the
+meshes in (`vehicleRig.mergeByColor`, lone parts at their part's moment and
+the merges after them), which is what `Array.prototype.sort` broke a tie by.
+So the main pass draws at most one rank a segment of the widest kit — the
+truck's 26 — whatever the fleet, where Babylon drew one a mesh (up to 142 on
+Sarab's six). The price is vertex work, as for bodies: a rank runs to the
+longest segment any hull draws there, times the hulls.
+
+**The paint is a FLAG, and the material one recipe.** Babylon drew a hull's
+meshes with one `get(hex)` material a colour and repainted a wreck by
+swapping every mesh's for the charred one. Ours draws every segment with the
+cel program under `CEL_OWN_PALETTE` (`CelMaterialFactory.hullCelRecipe`): one
+table of every colour any hull kit is painted in plus the charred one
+(`vehicleRig.hullPalette`), each segment's vertices carrying its colour's
+1-based slot in `uv2.x`, read out of the table as the same three floats the
+`baseColor` uniform held — and a hull whose kit word carries `HULL_CHARRED`
+reads the charred slot instead (`hullProgram.ts`' prelude), every corner of
+it. `paint` writes the flag (`VehicleRig.charred`), `reset` clears it.
+**What a hull does not carry reads what a body's does** — `color` (0, 0, 0, 1)
+and `uv` (0, 0) — and no hull part has ever been emissive, so nothing of a
+hull is in the glow's mask (the rule in `vehicleRig.ts`' header).
+
+**Which hulls, and which of their segments, is decided where it was.** A hull
+is drawn while it is on the field (`Vehicle.present`, which the view turns
+into the rig's one switch, `VehicleRig.enabled`), and the size gate is asked
+PER SEGMENT, as it was of the meshes while they were loose candidates:
+`WorldCulling.keepsSphere`, the same `tooSmall` from the same eye and scale
+`offer` used, of each segment's world bounding sphere composed THIS frame
+(`BoundingSphere._update`, operation for operation, off the kit's local
+sphere), a dropped segment written as a zero matrix the program draws as
+nothing. **It is deliberately not a whole-hull drop**: dropping a hull whole
+would draw at range every small part — a whip, a cupola gun, a gun ring — the
+gate drops there today, which is a picture change and A3's detail tier's to
+make (X4.2c). And because the sphere is the frame's own, the drop cannot latch
+on stale bounds (X4.2a's fix holds by construction); where Babylon's gate read
+the bounds of the PREVIOUS frame's freeze, ours reads this frame's, which
+differs only on the frame a moving part crosses the gate's edge. **The
+FRUSTUM is the render's to answer**, as it was Babylon's for a mesh: the pull
+switches off every segment whose world sphere is outside the camera's planes
+(`Game.hullPull`, `BoundingSphere.isInFrustum` — the default sphere-only
+strategy — against `scene.frustumPlanes`, none while the warm-up skips the
+frustum), so a hull out of frame costs no draw and no vertex: without it the
+first cut drew all six of Sarab's hulls at every vantage, +25 draws on every
+census row of an armour map that frames none.
+
+**Its pipeline is asked once, at `Game`'s construction**, so the warm-up's wait
+for ours covers it; a hull stands at its hardstanding in the views the warm-up
+draws, so it poses none. **A failure is the round's**, the bodies' routing:
+the pipeline failing, or a refused main pass while installed, tells
+`Game.worldFailed`. It is installed for a ROUND's map only — an editor build
+builds no fleet and draws no hull (X5.3 owes it one if it ever shows one), and
+the menu has none. A capture says what it drew (`ProfileReport.hulls`, report
+version 22), since Babylon's counter counts no hull.
 
 ## Block visibility: how much of the map the frame walks
 
@@ -4421,8 +4501,10 @@ staged A/B/A with half the roster in frame came back inside its own control
 (27-34/255 worst against a 33/255 control, mean 0.001-0.003).
 
 **Everything else pooled is still loose** — tracers, shards, ragdoll debris,
-grenades, rubble, the viewmodel, the hulls — and their idle meshes are kept
-out of the list by `offer` instead (the size gate, below).
+grenades, rubble, the viewmodel — and their idle meshes are kept out of the
+list by `offer` instead (the size gate, below). The hulls were loose too until
+`BABYLON_EXIT.md` X4.2b; they are no mesh now, and the size gate reaches their
+segments through `keepsSphere` ("The hulls, ours").
 
 **Nothing pooled may ever be block-keyed.** They are loose or pooled because
 they MOVE, and this is precisely why `scene.freezeActiveMeshes()` is a bug in
@@ -4524,7 +4606,9 @@ four big populations on a 1500 m map are already governed: a body by
 frustum. A VEHICLE is governed by nothing — every hull draws every part at any
 range, and on Cinderhaven that means a 16 cm helicopter antenna and a 14 cm gun
 ring at 1.4 km. Shipped at 3 px it is worth **-0.51 ms a frame** there, and
-close to nothing on the small maps, which is the honest shape of it.
+close to nothing on the small maps, which is the honest shape of it. (Since
+`BABYLON_EXIT.md` X4.2b a hull's parts are SEGMENTS our renderer draws, gated
+one by one through `WorldCulling.keepsSphere` exactly as their meshes were.)
 
 **A BODY is measured once and drops WHOLE; two classes are exempt outright,
 and each of the three is what it is because a picture said so rather than

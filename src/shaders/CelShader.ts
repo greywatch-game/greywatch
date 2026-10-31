@@ -1361,30 +1361,64 @@ export class CelMaterialFactory {
    * constant.
    */
   bodyCelRecipe(colors: readonly Color3[]): CelRecipe {
-    if (!this.bodyCel) {
-      const defines = ["CEL_PALETTE", "CEL_OWN_PALETTE"];
-      const values = createMaterialUniforms(defines) as Record<CelMaterialField, Float32Array>;
-      // The kit's own table, sized like the map's so the two are the same
-      // uniform to the shader; a kit spends nine of the hundred and
-      // twenty-eight and the rest stay black, which nothing indexes.
-      const table = values.celPalette;
-      const n = Math.min(colors.length, MAX_PALETTE);
-      for (let i = 0; i < n; i++) {
-        table[i * 3] = colors[i].r;
-        table[i * 3 + 1] = colors[i].g;
-        table[i * 3 + 2] = colors[i].b;
-      }
-      // `applySpec(null)` and `applyTranslucency(null)`'s values, which the
-      // material this replaced was born with: matte, opaque. `baseColor`
-      // stays zero, as it was never set.
-      values.specShininess[0] = 1;
-      this.bodyCel = { defines, depthBias: 0, values, textures: {} };
-      this.materialEpoch++;
-    }
+    if (!this.bodyCel) this.bodyCel = this.ownPaletteRecipe(colors);
     return this.bodyCel;
   }
 
   private bodyCel: CelRecipe | null = null;
+
+  /**
+   * What every HULL is drawn with — `bodyCelRecipe`'s twin, and since
+   * `BABYLON_EXIT.md` X4.2b no material either: our renderer draws every hull
+   * (`render/HullDraw.ts`) and Babylon is made no hull mesh, so this is the
+   * RECIPE alone, its palette every colour a hull kit is painted in and the
+   * charred paint (`vehicleRig.hullPalette`). What it replaces is one
+   * `get(hex)` material a colour, each born with that hex's `baseColor` and
+   * `applySpec(null)` and `applyTranslucency(null)`'s values: a segment is one
+   * colour, so the slot its vertices carry reads the same three floats out of
+   * this table that the `baseColor` uniform held — `Color3.FromHexString` of
+   * the same hex, in float32 — and every other value is the one those
+   * materials were born with.
+   *
+   * **The palette is bound at the FIRST call**, for `bodyCelRecipe`'s reason:
+   * the only caller hands it the kits' colours, which are module constants. A
+   * table longer than `MAX_PALETTE` is REFUSED rather than cut, since a slot
+   * past it would read black.
+   */
+  hullCelRecipe(colors: readonly Color3[]): CelRecipe {
+    if (colors.length > MAX_PALETTE) {
+      throw new Error(`hullCelRecipe: ${colors.length} hull colours, past the palette's ${MAX_PALETTE}`);
+    }
+    if (!this.hullCel) this.hullCel = this.ownPaletteRecipe(colors);
+    return this.hullCel;
+  }
+
+  private hullCel: CelRecipe | null = null;
+
+  /**
+   * A recipe of the cel program under `CEL_OWN_PALETTE` with `colors` its own
+   * table — the bodies' and the hulls' (`bodyCelRecipe`, `hullCelRecipe`).
+   */
+  private ownPaletteRecipe(colors: readonly Color3[]): CelRecipe {
+    const defines = ["CEL_PALETTE", "CEL_OWN_PALETTE"];
+    const values = createMaterialUniforms(defines) as Record<CelMaterialField, Float32Array>;
+    // The kit's own table, sized like the map's so the two are the same
+    // uniform to the shader; a kit spends a few of the hundred and
+    // twenty-eight and the rest stay black, which nothing indexes.
+    const table = values.celPalette;
+    const n = Math.min(colors.length, MAX_PALETTE);
+    for (let i = 0; i < n; i++) {
+      table[i * 3] = colors[i].r;
+      table[i * 3 + 1] = colors[i].g;
+      table[i * 3 + 2] = colors[i].b;
+    }
+    // `applySpec(null)` and `applyTranslucency(null)`'s values, which the
+    // materials these replaced were born with: matte, opaque. `baseColor`
+    // stays zero: a palette slot is read in its place.
+    values.specShininess[0] = 1;
+    this.materialEpoch++;
+    return { defines, depthBias: 0, values, textures: {} };
+  }
 
   /**
    * What every soldier's VISOR is drawn with — the emissive palette's

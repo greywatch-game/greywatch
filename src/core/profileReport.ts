@@ -448,6 +448,20 @@ export interface BodyFacts {
   instances: number;
 }
 
+/**
+ * Our renderer's HULLS on the last frame before the capture — or, for a
+ * HALTED ring, before the halt (`render/HullDraw.ts`' `stats`,
+ * `BABYLON_EXIT.md` X4.2b) — read as `bodies` is. `drawn` is the main pass's
+ * hull draws (a RANK of every hull each) and `instances` the hulls drawn.
+ * Neither is in `counters.drawCalls`, which since X4.2b counts no hull: a
+ * capture from before it counted a draw a hull mesh there (25 a tank, 26 a
+ * truck, 20 a helicopter, the size gate's drops aside).
+ */
+export interface HullFacts {
+  drawn: number;
+  instances: number;
+}
+
 export interface ProfileGraphics {
   /** `Settings.renderScale` — a share of the panel's native resolution. */
   renderScale: number;
@@ -568,6 +582,11 @@ export interface ProfileReport {
    * reader. Absent before report version 21.
    */
   bodies: BodyFacts | null;
+  /**
+   * Our renderer's hulls at the capture, or null where nothing pushed a
+   * reader. Absent before report version 22.
+   */
+  hulls: HullFacts | null;
   /**
    * The ring's labelled stretches, in the order they were reached, and the
    * same rows rolled up by group — null where no row carried a label. Absent
@@ -920,6 +939,7 @@ export interface ProfileRing {
   readonly bench: BenchFacts | null;
   readonly blocks: BlockFacts | null;
   readonly bodies: BodyFacts | null;
+  readonly hulls: HullFacts | null;
   readonly heapMb: Float32Array | null;
   readonly gcAt: Uint8Array;
   readonly loafMs: Float32Array;
@@ -1169,7 +1189,10 @@ export function buildReport(
     // `counters.drawCalls` (Babylon's), so a v20 capture from an X4.1d
     // build shows the bodies' draws gone from it and nothing in their place.
     // Nothing else changed meaning.
-    version: 21,
+    // 22: `hulls`, our renderer's hull draws on the last frame (or the
+    // halt's). Since `BABYLON_EXIT.md` X4.2b no hull is in
+    // `counters.drawCalls` either. Nothing else changed meaning.
+    version: 22,
     takenAt: new Date().toISOString(),
     reason,
     map: r.mapId,
@@ -1191,6 +1214,7 @@ export function buildReport(
       : null,
     blocks: r.blocks ? { ...r.blocks } : null,
     bodies: r.bodies ? { ...r.bodies } : null,
+    hulls: r.hulls ? { ...r.hulls } : null,
     segments: segmentFacts(r, first, n, cap),
     clock: {
       grainMs: round(r.grainMs, 4),

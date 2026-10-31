@@ -137,6 +137,7 @@ import {
   type BenchFacts,
   type BlockFacts,
   type BodyFacts,
+  type HullFacts,
   type LoafRecord,
   type ProfileGraphics,
   type ProfileReport,
@@ -689,6 +690,10 @@ export class FrameProfile {
   private bodiesOf: (() => BodyFacts) | null = null;
   /** `bodiesOf`'s answer as the ring HALTED — `blocksAtHalt`'s reason. Null while recording. */
   private bodiesAtHalt: BodyFacts | null = null;
+  /** Reads our renderer's hulls, as `bodiesOf` reads its bodies. See `ProfileReport.hulls`. */
+  private hullsOf: (() => HullFacts) | null = null;
+  /** `hullsOf`'s answer as the ring HALTED. Null while recording. */
+  private hullsAtHalt: HullFacts | null = null;
   /**
    * How many rows the ring holds — `CONFIG.profiling.frames`, or what `arm`
    * was asked for. Fixed between an `arm` and the next.
@@ -751,6 +756,11 @@ export class FrameProfile {
    */
   setBodies(read: () => BodyFacts): void {
     this.bodiesOf = read;
+  }
+
+  /** How a capture reads our renderer's hulls — `setBodies`' terms. */
+  setHulls(read: () => HullFacts): void {
+    this.hullsOf = read;
   }
 
   /**
@@ -827,6 +837,7 @@ export class FrameProfile {
     if (this.frameAt) this.disarm();
     this.blocksAtHalt = null;
     this.bodiesAtHalt = null;
+    this.hullsAtHalt = null;
     this.cap = Math.max(2, Math.floor(frames));
     const n = this.capacity;
     this.startMs = new Float32Array(n * SLOTS);
@@ -951,9 +962,10 @@ export class FrameProfile {
   halt(): void {
     if (!this.on) return;
     this.on = false;
-    // The run's last frame is the one the blocks and the bodies are reported at.
+    // The run's last frame is the one the blocks, the bodies and the hulls are reported at.
     this.blocksAtHalt = this.blocksOf?.() ?? null;
     this.bodiesAtHalt = this.bodiesOf?.() ?? null;
+    this.hullsAtHalt = this.hullsOf?.() ?? null;
     for (const off of this.unhook) off();
     this.unhook = [];
     this.inDraw = false;
@@ -1719,6 +1731,7 @@ export class FrameProfile {
       // A halted ring answers for its run, never for what came after it.
       blocks: this.on ? (this.blocksOf?.() ?? null) : this.blocksAtHalt,
       bodies: this.on ? (this.bodiesOf?.() ?? null) : this.bodiesAtHalt,
+      hulls: this.on ? (this.hullsOf?.() ?? null) : this.hullsAtHalt,
       graphics: this.graphics,
       graphicsAt: this.graphicsAt,
       gpuRequested: this.gpuRequested,

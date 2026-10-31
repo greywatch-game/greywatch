@@ -730,8 +730,12 @@ async function hashModelJobs(jobs) {
           data = MINE.buildMineBody(scene, mats, "mine0");
         } else if (p.kind.startsWith("vehicle:")) {
           // The client's table (`vehicleModels.ts`), keyed by the same kind
-          // `vehicleKinds.ts` pairs with its spec.
-          const rig = VK.modelOf(p.kind.slice("vehicle:".length))(scene, mats, p.team);
+          // `vehicleKinds.ts` pairs with its spec. The rig is joints and
+          // segments since `BABYLON_EXIT.md` X4.2b, and Babylon is made no
+          // mesh of it: the DRAWING is its kind's kit in its side's colours
+          // (`rig.kit`, hashed with the rig), which our renderer draws every
+          // hull of that pair as instances of; the wreck is a flag on it.
+          const rig = VK.modelOf(p.kind.slice("vehicle:".length))(p.team);
           if (p.wrecked) rig.paint(true);
           data = rig;
         } else if (p.kind === "soldier") {

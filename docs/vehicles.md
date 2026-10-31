@@ -40,13 +40,14 @@ PICTURE (only a client builds it); see "The hull and its picture" below:
 | `config/vehicles.ts` | `VehicleSpec` — the shape of one kind — and the three kinds: the TANK, the gun TRUCK and the HELICOPTER |
 | `entities/vehicleKinds.ts` | the ONE place a kind becomes a name, a spec and a frame (no Babylon — the authority reads it), and the one place the default (a tank) is written down (`resolveKind`) |
 | `entities/tankFrame.ts`, `truckFrame.ts`, `heliFrame.ts` | each kind's `HullFrame` — the three extents the physics needs off the drawing and the offset of every joint between the collider box and a muzzle — and the drawing constants they are derived from, which the model files IMPORT |
-| `entities/vehicleModels.ts` | the client's twin of `VEHICLE_KINDS`: kind to the model that draws it, a `Record` over the same union |
-| `entities/vehicleRig.ts` | what every vehicle's mesh IS: the joints a hull's view writes (OUR `JointTree`, `rigJoints.ts`, since `BABYLON_EXIT.md` X4.2a), the three closures a model hands back, and the one way its meshes are handed their matrices (`drawHullRig`) |
+| `entities/vehicleModels.ts` | the client's twin of `VEHICLE_KINDS`: kind to the model that draws it, a `Record` over the same union, and every kind's drawing in both views' colours (`hullKits`) |
+| `entities/vehicleRig.ts` | what every vehicle's drawing IS: the joints a hull's view writes (OUR `JointTree`, `rigJoints.ts`, since `BABYLON_EXIT.md` X4.2a), the segments hung off them and the KIT they are drawn as (one a model and a view, `segmentOf`, X4.2b), the three closures a model hands back, and the one way its drawing is written for our renderer (`writeHullDrawing`) |
+| `render/HullDraw.ts`, `render/hullProgram.ts` | every hull as OUR renderer draws it (X4.2b): the kits on the GPU once, each frame's hulls as instances, a draw a RANK of every hull |
 | `entities/TankModel.ts`, `entities/TruckModel.ts`, `entities/HeliModel.ts` | the ART, one file per kind — the boxes, the running gear, the whips and the guns as JOINTS over them, and the charred repaint a wreck takes |
 | `entities/hullSeats.ts` | the two chairs (`CrewSeat`: `DRIVER`, `GUNNER`), the order they fill in (`SEATS`), and `chooseSeat`, the one boarding rule — no vehicle, no import, so the authority's roster can name a seat without pulling in a hull |
 | `entities/Vehicle.ts` | one hull of any kind: its collider, its drive, its turret, its two guns' clocks and angles, which of its two seats are filled, its health, the ground half of its lean, and the `HullPose` its joints are drawn at — the SIMULATION, no mesh |
 | `entities/HullSprings.ts` | what the hull's own mass does to its sprung body: three springs on one travel budget, on the muzzle's path, so simulated |
-| `entities/VehicleView.ts` | one hull's PICTURE: the rig (its body joint standing where the collider box stands), the belts' run, the whips and the paint, copied and followed off the hull, and drawn once a frame before the render |
+| `entities/VehicleView.ts` | one hull's PICTURE: the rig (its body joint standing where the collider box stands), the belts' run, the whips and the paint, copied and followed off the hull; drawn once a frame before the render by our renderer, as an instance of its kind's kit (`Game.drawHulls`, X4.2b) |
 | `entities/HullWhips.ts` | the two antennae bending — the picture's one simulation of its own |
 | `entities/FlightModel.ts` | the rotor, on a kind that states `flight`: the spool, the disc's attitude, the cyclic, thrust and collective, and the attitude a hull on the wire is drawn at |
 | `systems/VehicleSystem.ts` | the fleet: build, the respawn clock, the wreck clock, which seat a boarder gets, and where a dismount lands |
@@ -225,6 +226,18 @@ Geometry is not what a mesh costs: the rework took a hull from 7.2 k vertices
 to 23.6 k with the mesh count unchanged, and Coldharbour's frame rate at the
 hardstanding did not move outside the run-to-run spread.
 
+**Since `BABYLON_EXIT.md` X4.2b a mesh is a SEGMENT of its kind's KIT, and
+what it costs moved with it.** Babylon is made no mesh of a hull: every hull is
+an instance of its kind's kit in its side's colours (`render/HullDraw.ts`),
+and a draw is one RANK of every hull — each hull's `r`th segment nearest the
+eye — so a segment is at most ONE draw a frame for the whole fleet rather than
+one a hull, and the draw count is capped by the widest kit (the truck's 26)
+whatever the fleet. The price is vertex work: a rank's draw runs to the
+longest segment any hull draws there, times the hulls, the surplus corners
+exiting early. So the rule above stands in a new unit — a segment is still a
+colour per moving part, and a new colour on the hull is one more rank — and a
+LONGER segment is paid at every rank it lands on.
+
 **A mesh is bought here for exactly one reason and it is never a colour:
 something that MOVES differently from everything around it cannot merge with any
 of it.** Twelve of the twenty-five are that — six for the tracks, four for the
@@ -266,11 +279,13 @@ Four things the model may not do, each of which has already been done once:
 - **Nothing emissive.** Written when the glow's `noGlow` exclusion was a
   one-shot scan at construction, which a tank built per round could never join.
   The bloom reads `noGlow` every frame now (`GlowPass`), so that reason is gone;
-  a glowing part on a hull is still a look nobody has chosen. The headlights are
-  boxes.
+  since `BABYLON_EXIT.md` X4.2b a hull is drawn by the matte cel program alone,
+  so a glowing part would be a program and a mask draw nobody has built — and
+  a look nobody has chosen. The headlights are boxes.
 - **Nothing pickable.** Not even the collider box's mesh, since the X2.2
-  review: a hull is answered by `rayBox` off its fields, and the editor — the
-  one mesh pick left — builds no hulls. A pickable visual would put the hitscan's wall ray, the bots' LOS and the
+  review, and since X4.2b there is no mesh of a hull at all: a hull is
+  answered by `rayBox` off its fields, and the editor — the one mesh pick left
+  — builds no hulls. A pickable visual would put the hitscan's wall ray, the bots' LOS and the
   ground probe on sixty triangles of track link.
 - **Nothing above the deck inside the turret's sweep.** The ring is at the deck
   and the turret's underside is 11 cm above it, so a raised engine deck, a
@@ -874,8 +889,9 @@ What the hull's collider box is:
 
 - A box to both questions, and neither `porous` nor `rayOnly` (no mesh of a
   hull carries `metadata.solid` or is pickable — since `BABYLON_EXIT.md`
-  X4.2a there is no body MESH at all, only the rig's body joint — and the
-  editor builds no hulls, and nothing else picks a mesh). Those two describe a fence — a thing that is a wall to a body and mostly air to a bullet, or the
+  X4.2a there is no body MESH at all, only the rig's body joint, and since
+  X4.2b no mesh of a hull at all — and the editor builds no hulls, and
+  nothing else picks a mesh). Those two describe a fence — a thing that is a wall to a body and mostly air to a bullet, or the
   reverse. A tank is both to both, which is the plain case. So it answers both
   of `RayWorld`'s questions: a round stops on it and a sightline breaks on it.
   It reaches those queries as `RayWorld.hulls` — a list `VehicleSystem` keeps
@@ -1099,11 +1115,22 @@ A view owns the rig, the belts' run, the whips (`HullWhips`) and the paint.
 X4.1a's `JointTree`): the tree's first joint is the collider box's frame
 (`rig.body`, what an invisible body box MESH was, the rig its child), each
 world a float32 matrix composed fresh in `src/math`'s copies of Babylon's
-arithmetic, and Babylon draws the merged meshes UNPARENTED off them — handed
-each frame through `freezeWorldMatrix` by `VehicleView.draw` (`VehicleViews.
-draw`, from `Game` beside `drawBodies`, immediately before `scene.render`). No
-node of a hull is in the scene, no mesh of one is pickable, and nothing in the
-game reads a joint but the drawing. **It is not what a shadow draws**: since
+arithmetic. **And since X4.2b the hull is OURS to draw**: Babylon is made no
+mesh of it. A rig is its joints and its SEGMENTS (`HullSegment`: the joint and
+the segment's local); what a segment looks like is its kind's KIT in its
+side's colours (`HullKit`), built ONCE a kind and a side — the first rig of
+the pair merges it, every later one hangs it without making a part
+(`segmentOf`) — and every hull is drawn as an instance of it
+(`render/HullDraw.ts`, `docs/rendering.md`'s "The hulls, ours"): `Game.
+drawHulls`, beside `drawBodies` immediately before `scene.render`, composes
+each present hull's tree and writes each segment's world (its local times its
+joint's, what Babylon was handed through `freezeWorldMatrix` from X4.2a to
+X4.2b, bit for bit). No node and no mesh of a hull is in the scene, and nothing
+in the game reads a joint but the drawing. **The closures are what they were**
+— the run and the whips are joints, `reset` a pose — **but `paint`**, which
+swapped every mesh's material for the charred one, **is a flag the drawing
+reads** (`VehicleRig.charred`): it substitutes the charred slot of the hulls'
+one palette for every segment's own. **It is not what a shadow draws**: since
 `BABYLON_EXIT.md` X4.1c `ShadowHull` is the HULL — its collider box composed
 off `pos`, `yaw` and `present` (`hullFrame.ts`' `hullBodyToRef`, the matrix
 the body node composed, bit for bit), in both shadow maps — so nothing about
@@ -1113,8 +1140,8 @@ how a hull is drawn reaches its shadow, and X4.2 owes the shadows nothing.
 read in `VehicleView.update`, which runs right after `VehicleSystem.update`
 (one call site, the page's, offline and in a match alike — the authority builds
 no view) before anything draws: the body joint at `pos` turned `yaw`, the
-hull drawn exactly while `present` (`setHullRigEnabled`, every mesh's own
-flag), and each joint copied off `Vehicle.pose` where it differs — the hull
+hull drawn exactly while `present` (`setHullRigEnabled`, the rig's one
+switch, which every mesh's own flag was until X4.2b), and each joint copied off `Vehicle.pose` where it differs — the hull
 wrote the record behind the guards the node writes had, so a joint is exactly
 what the record says. The guards stay on joints that cost nothing to write,
 because an unguarded write of a `-0` over a `0` is a different bit drawn.

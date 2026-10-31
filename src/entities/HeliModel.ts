@@ -145,7 +145,7 @@
  *
  * ## The budget
  *
- * **Twenty meshes, twelve of which move** — counted off `rig.meshes` in the
+ * **Twenty meshes, twelve of which move** — counted off `rig.segments` in the
  * browser, not off the segments below. Cost is COLOURS PER SEGMENT and a part
  * in a colour its segment already carries is free, so the lofts, the wings,
  * the pylons, the nacelles, the suppressors, the sensor ball, the canopy
@@ -235,9 +235,7 @@
  *   windscreens and the blast barrier, the sills and the roof edges, all in
  *   the frame colour and standing proud of the glass so the ink finds them.
  */
-import type { Scene } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { Team } from "./Combatant";
 import { viewTeam } from "../core/teamView";
 import {
@@ -489,15 +487,12 @@ function aerofoil(c: number, t: number): [number, number][] {
  * other models follow and for their reason. `VehicleRig.reset` is what a fresh
  * one goes through instead.
  */
-export function buildHeli(
-  scene: Scene,
-  mats: CelMaterialFactory,
-  team: Team,
-): VehicleRig {
+export function buildHeli(team: Team): VehicleRig {
   // The kit is the VIEWER's read of this side rather than the authority's
   // index for it: the local player's own side wears amber whichever slot a
   // match seated them in. See `core/teamView.ts`.
-  const kit = KITS[viewTeam(team)];
+  const view = viewTeam(team);
+  const kit = KITS[view];
   const t = CONFIG.vehicles.heli;
   // **The span is the collider's plus a stated overhang**, read off it rather
   // than written down. See the stub-wing note in the header: the outer
@@ -509,7 +504,9 @@ export function buildHeli(
   // Everything the springs carry, which here is everything except the skids.
   const sprung = tree.add("heli-sprung", hull);
 
-  const { meshes, livery, drawn, segment } = segmentOf(scene, mats);
+  // The drawing is this model's KIT in this view's colours, built by the
+  // first rig of the pair and hung by every later one (`segmentOf`).
+  const { segments, segment, kit: drawingOf } = segmentOf("heli", view);
 
   /** A round member from `a` to `b`; `d` at `a` and `dTop` at `b`. */
   const rod = (a: Point3, b: Point3, d: number, color: string, tess = 8, dTop = d): Shape => [
@@ -1259,13 +1256,14 @@ export function buildHeli(
     mgMuzzle,
     mgSight,
     antennae,
-    meshes,
-    livery,
-    drawn,
+    segments,
+    kit: drawingOf(),
+    enabled: true,
+    charred: false,
     setRun: (_left, _right, _steer, rotor) =>
       setRotorRun(mainRotor, tailRotor, rotor),
-    reset: () => resetRigPose(rig, mats, CONFIG.vehicles.heli),
-    paint: (wrecked) => paintRig(meshes, livery, mats, wrecked),
+    reset: () => resetRigPose(rig, CONFIG.vehicles.heli),
+    paint: (wrecked) => paintRig(rig, wrecked),
   };
   return rig;
 }

@@ -93,6 +93,7 @@ import {
   Color4,
   DefaultRenderingPipeline,
   Matrix,
+  type Plane,
   type PostProcess,
   Scene,
   type SubMesh,
@@ -107,10 +108,13 @@ import { toBabylon } from "../math/babylon";
 import {
   CelMaterialFactory,
   fogAmountAt,
+  writePaletteIndex,
 } from "../shaders/CelShader";
 import { BabylonFrameHost } from "../render/babylonSeam";
 import { Renderer } from "../render/Renderer";
 import { BodyDraw } from "../render/BodyDraw";
+import { HullDraw } from "../render/HullDraw";
+import { HULL_CHARRED } from "../render/hullProgram";
 import { BodyShadowMap } from "../render/BodyShadowMap";
 import { LampAtlas } from "../render/LampAtlas";
 import { ProbeBake } from "../render/ProbeBake";
@@ -198,6 +202,8 @@ import {
   type VehicleOrders,
 } from "../systems/VehicleSystem";
 import { VehicleViews } from "../systems/VehicleViews";
+import { hullKits } from "../entities/vehicleModels";
+import { hullPalette, writeHullDrawing, type HullKit, type SphereGate } from "../entities/vehicleRig";
 import { GrassSystem } from "../systems/GrassSystem";
 import { BlastDebrisSystem, type DebrisGround } from "../systems/BlastDebrisSystem";
 import { DebrisSystem } from "../systems/DebrisSystem";
@@ -435,6 +441,15 @@ interface Seat {
 const MINE_LIFT = 0.04;
 
 /**
+ * The most hulls one frame draws (`hullDraw`, `BABYLON_EXIT.md` X4.2b): what
+ * its staging arrays and buffers are sized to, not a rule about a map. The
+ * densest shipped fleet is six (Sarab, Cinderhaven); a map past this draws
+ * its first sixteen hardstandings' hulls and says so on the console at the
+ * install (`installMap`).
+ */
+const HULL_DRAW_CAPACITY = 16;
+
+/**
  * The key a burning molotov's held-open sound is filed under in `Sfx`.
  *
  * NEGATIVE, and that is the whole of it: `Sfx.ambience` keys a voice on a
@@ -464,6 +479,20 @@ function eyeDistanceSq(sub: SubMesh, eye: Vector3): number {
   const dy = c.y - eye.y;
   const dz = c.z - eye.z;
   return dx * dx + dy * dy + dz * dz;
+}
+
+/**
+ * Babylon's frustum test of a mesh under its default culling strategy
+ * (`CULLINGSTRATEGY_BOUNDINGSPHERE_ONLY`): its world bounding sphere against
+ * the six planes, `BoundingSphere.isInFrustum` operation for operation — out
+ * where any plane has the centre at or more than a radius behind it.
+ */
+function inFrustum(x: number, y: number, z: number, radius: number, planes: readonly Plane[]): boolean {
+  for (let i = 0; i < 6; i++) {
+    const p = planes[i];
+    if (p.normal.x * x + p.normal.y * y + p.normal.z * z + p.d <= -radius) return false;
+  }
+  return true;
 }
 
 /**
@@ -772,6 +801,28 @@ export class Game {
   /** Each side's visor as `bloomColour` reads a material: its colour, alpha 1. */
   private readonly visorMaterials = VISOR_COLORS.map((emissiveColor) => ({ emissiveColor, alpha: 1 }));
   private readonly visorBloom = new Color4();
+  /**
+   * Every HULL as our renderer draws it (`BABYLON_EXIT.md` X4.2b): every
+   * kind's kit in both views' colours on the GPU once, and each frame's
+   * hulls as instances of it — fed by `drawHulls`, drawn while a ROUND's map
+   * is installed. Its pipeline is asked here, once for the session, and one
+   * that cannot be built is the round's failure (`worldFailed`, wired at the
+   * install).
+   */
+  private readonly hullDraw: HullDraw;
+  /** Each kit's index in the order `hullDraw` was handed them — a hull's kit word (`drawHulls`). */
+  private readonly hullKitIndex: Map<HullKit, number>;
+  /**
+   * This frame's drawn hulls' segments, in drawing order: each one's world
+   * bounding sphere, four doubles a segment (centre, radius; NaN for one not
+   * drawn) — what the order and the frustum are pulled off inside the render
+   * (`hullPull`). Sized when `hullDraw` is built.
+   */
+  private hullSpheres = new Float64Array(0);
+  /** `hullPull`'s scratch: one hull's segment keys. */
+  private hullKeys = new Float64Array(0);
+  /** The size gate a hull's segment is drawn under: `WorldCulling`'s, this frame (`drawHulls`). */
+  private readonly keepsHullSegment: SphereGate = (x, y, z, radius) => this.culling.keepsSphere(x, y, z, radius);
   /**
    * The irradiance volume — bounce light, sky occlusion and point lights that
    * stop at walls (`systems/GiVolume.ts`). Built beside the two shadow maps and
@@ -1571,6 +1622,43 @@ export class Game {
     this.segmentCentres = new Float64Array(this.bodyDraw.capacity * this.bodyDraw.segments * 3);
     this.segmentKeys = new Float64Array(this.bodyDraw.segments);
     this.visorSegment = soldierKits()[0].visor;
+    // Every hull, ours in every round (`BABYLON_EXIT.md` X4.2b), on the
+    // bodies' terms: every kind's kit in both views' colours built here,
+    // once — a segment's vertices carrying its colour's slot in the hulls'
+    // one palette, which the charred paint is a slot of too — and its
+    // pipeline asked for the session, so the building card's warm-up waits
+    // for it like any of ours. A hull stands at its hardstanding in the
+    // views the warm-up draws, so it poses none of its own.
+    const kits = hullKits();
+    const palette = hullPalette(kits);
+    this.hullKitIndex = new Map(kits.map((kit, i) => [kit, i]));
+    this.hullDraw = new HullDraw(
+      this.renderer,
+      kits.map((kit) => ({
+        segments: kit.segments.map((seg) => {
+          writePaletteIndex(seg.geometry, palette.slotOf(seg.color));
+          return {
+            positions: seg.geometry.positions,
+            normals: seg.geometry.normals,
+            uvs2: seg.geometry.uvs2!,
+            indices: seg.geometry.indices,
+          };
+        }),
+      })),
+      this.mats.hullCelRecipe(palette.colors.map((hex) => Color3.FromHexString(hex))),
+      palette.charred,
+      HULL_DRAW_CAPACITY,
+      (order, matrices, n) => this.hullPull(order, matrices, n),
+    );
+    this.hullSpheres = new Float64Array(this.hullDraw.capacity * this.hullDraw.segments * 4);
+    this.hullKeys = new Float64Array(this.hullDraw.segments);
+    // …and what it drew, for the same reason as the bodies' below
+    // (`ProfileReport.hulls`): Babylon's counter has counted no hull since
+    // X4.2b.
+    this.prof.setHulls(() => {
+      const { drawn, instances } = this.hullDraw.stats;
+      return { drawn, instances };
+    });
     // A capture says what the body draw drew, which Babylon's draw counter
     // has not counted since X4.1d (`ProfileReport.bodies`) — a COPY, which a
     // halted ring keeps.
@@ -1941,7 +2029,7 @@ export class Game {
     this.glass.onCleared = (pane) => this.glassFx.clear(pane);
     this.deathCam = new DeathCam();
     this.vehicles = new VehicleSystem(this.random);
-    this.vehicleViews = new VehicleViews(this.scene, this.mats);
+    this.vehicleViews = new VehicleViews();
     this.vehicleCam = new VehicleCamera();
     // The anti-tank kit in the world. It owns the flight and the trigger and
     // nothing else: what a detonation is WORTH is `ordnanceEffect`'s and
@@ -3978,10 +4066,10 @@ export class Game {
     this.pushScoreboard();
     this.prof.begin(P.render);
     this.drawBodies();
-    // The hulls' joints are ours too (`BABYLON_EXIT.md` X4.2a): composed and
-    // handed to their meshes here, after every write, where Babylon composed
-    // their nodes inside the render before.
-    this.vehicleViews.draw();
+    // The hulls are ours too (`BABYLON_EXIT.md` X4.2b): their joints composed
+    // here, after every write, and their drawing handed to our renderer —
+    // where Babylon composed their nodes inside the render until X4.2a.
+    this.drawHulls();
     this.scene.render();
     this.prof.end(P.render);
     if (warming) this.unstageWarmFrame();
@@ -4854,6 +4942,7 @@ export class Game {
     // A body map failing for a map that is gone is no news of the next one —
     // and no body is drawn over the menu or an editor build.
     this.bodyShadowMap.setFailure();
+    this.hullDraw.uninstall();
     this.bodyDraw.uninstall();
     // …and the bodies' blobs, which only a simulating frame places, so each
     // would stay lit on a floor that is no longer there.
@@ -5054,6 +5143,11 @@ export class Game {
     // as Babylon's opaque queue drew the rigs ahead of ours. An editor build
     // draws no body: its world is Babylon's, and its frames ours prepares
     // nothing in.
+    // The hulls on the bodies' terms, and installed AHEAD of them (X4.2b):
+    // Babylon's opaque queue, the hulls' meshes in it, drew before the
+    // bodies' draw of ours, so a hull goes down first at the one point both
+    // use. An editor build has no fleet to draw.
+    if (!editor) this.hullDraw.install((reason) => this.worldFailed(reason, owner));
     if (!editor) this.bodyDraw.install((reason) => this.worldFailed(reason, owner));
     if (unfiled && editor) {
       console.error(`[world] ${owner.id}: the cull refused the editor's build — ${unfiled}; nothing is filed`);
@@ -5226,6 +5320,11 @@ export class Game {
     // …and what it looks like: one view per hull, by hardstanding, each with
     // its kind's model (`VehicleViews`). The editor's empty fleet draws none.
     this.vehicleViews.build(this.vehicles.hulls, map.vehicleSpawns);
+    if (this.vehicles.hulls.length > this.hullDraw.capacity) {
+      console.error(
+        `[hulls] ${this.mapDef.id}: ${this.vehicles.hulls.length} hulls, past the ${this.hullDraw.capacity} a frame draws; the rest are not drawn`,
+      );
+    }
     // There is no crew on this page: the bots that drive are the authority's,
     // whoever hosts the match, and a local `VehicleCrew` would
     // be a second brain steering a hull that is being posed from elsewhere.
@@ -5703,6 +5802,90 @@ export class Game {
       glow[i * 4 + 1] = this.visorBloom.g;
       glow[i * 4 + 2] = this.visorBloom.b;
       glow[i * 4 + 3] = this.visorBloom.a;
+    }
+  }
+
+  /**
+   * Hands our renderer this frame's HULLS (`BABYLON_EXIT.md` X4.2b): every
+   * view whose hull is present (`VehicleRig.enabled`, which `VehicleView`
+   * follows `Vehicle.present` with), in hardstanding order, its joints
+   * composed and each segment's matrix written as an instance of its kind's
+   * kit (`vehicleRig.writeHullDrawing`) — a segment the size gate drops
+   * (`WorldCulling.keepsSphere`, asked of that segment's world sphere this
+   * frame, as `offer` asked it of the mesh the segment was) written as
+   * nothing — with its kit word, the charred paint a bit of it, and the
+   * segments' centres kept for the order the render pulls (`hullPull`).
+   * Once a frame, in EVERY state, after everything that writes a joint and
+   * after the cull, immediately before `scene.render` — inside the render
+   * span, where Babylon composed the hulls' nodes until X4.2a. A hull not
+   * present is not composed, and while the draw is not installed (the menu,
+   * an editor build) none is: nothing else reads a hull's joints.
+   */
+  private drawHulls(): void {
+    const draw = this.hullDraw;
+    if (!draw.installed) return;
+    const views = this.vehicleViews.views;
+    const stride = draw.segments;
+    let n = 0;
+    for (let i = 0; i < views.length && n < draw.capacity; i++) {
+      const rig = views[i].rig;
+      if (!rig.enabled) continue;
+      writeHullDrawing(rig, draw.matrices, n * stride * 16, stride, this.keepsHullSegment, this.hullSpheres, n * stride * 4);
+      draw.words[n] = (this.hullKitIndex.get(rig.kit) ?? 0) | (rig.charred ? HULL_CHARRED : 0);
+      n++;
+    }
+    draw.commit(n, this.mats.materialEpoch);
+  }
+
+  /**
+   * What our renderer PULLS inside the render (`HullDraw`'s prepare), for
+   * this frame's `n` drawn hulls (`drawHulls`), where the render has placed
+   * the camera:
+   *
+   * - each segment outside the camera's FRUSTUM switched off for the frame —
+   *   its matrix zeroed in `matrices` — by Babylon's own test of a mesh
+   *   (`BoundingSphere.isInFrustum`, the default sphere-only strategy) against
+   *   the planes this render computed (`scene.frustumPlanes`), and none while
+   *   the warm-up skips the frustum (`skipFrustumClipping`), as Babylon skipped
+   *   it for a mesh;
+   * - each hull's segments in the ORDER Babylon's queue drew a hull's meshes —
+   *   `bodyPull`'s sort, off `globalPosition`, for `bodyPull`'s reason: group
+   *   0's opaque sort, nearest first by `eyeDistanceSq` and, between two at one
+   *   distance, the order the meshes were made in, the kit's, stable. A
+   *   segment not drawn (culled, dropped by the size gate, or past a narrower
+   *   kind's own) goes last.
+   */
+  private hullPull(order: Uint32Array, matrices: Float32Array, n: number): void {
+    const eye = this.cameraSys.camera.globalPosition;
+    const planes = this.scene.skipFrustumClipping ? null : this.scene.frustumPlanes;
+    const segments = this.hullDraw.segments;
+    const c = this.hullSpheres;
+    const keys = this.hullKeys;
+    for (let i = 0; i < n; i++) {
+      const o = i * segments;
+      for (let s = 0; s < segments; s++) {
+        const at = (o + s) * 4;
+        const x = c[at];
+        if (Number.isNaN(x)) {
+          keys[s] = Number.POSITIVE_INFINITY;
+        } else if (planes && !inFrustum(x, c[at + 1], c[at + 2], c[at + 3], planes)) {
+          keys[s] = Number.POSITIVE_INFINITY;
+          matrices.fill(0, (o + s) * 16, (o + s) * 16 + 16);
+        } else {
+          const dx = x - eye.x;
+          const dy = c[at + 1] - eye.y;
+          const dz = c[at + 2] - eye.z;
+          keys[s] = dx * dx + dy * dy + dz * dz;
+        }
+        // A stable insertion sort: a segment moves ahead only of one strictly
+        // farther.
+        let r = s;
+        while (r > 0 && keys[order[o + r - 1]] > keys[s]) {
+          order[o + r] = order[o + r - 1];
+          r--;
+        }
+        order[o + r] = s;
+      }
     }
   }
 
