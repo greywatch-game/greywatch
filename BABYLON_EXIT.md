@@ -4846,15 +4846,94 @@ and nowhere else: no bank row has a body at either, and none moved).
   Cinderhaven is the saving it could buy). X4.1d's owed items stand (the
   rank's vertex surplus, the editor's body draw, the compose cost).
 
-### X4.2 — Vehicles (PERF_PLAN A3) — **M** (decision)
+### X4.2 — Vehicles (PERF_PLAN A3) — **M–L, as four sub-steps** (split 2026-10-31)
 
-- **Do:** hull segments (`vehicleRig`) as our meshes, `HullFlex`, the rotor
-  and turret pictures. **Build A3's detail tier and draw distance here**; the
-  detail set is the decision.
-- **Contracts it keeps:**
+Every hull a page draws — the tank, the truck and the helicopter, live or
+wrecked — comes off Babylon's scene, and A3's detail tier and draw distance
+are built on the result, the distance with X4.1e's fade. It is split as X4.1
+was: the two moves are each proven with no picture change, and the two
+picture changes (rule 2) land alone, each with the bank's numbers. Each
+sub-step lands on its own and leaves the game shippable. **The moon's map
+and the lamps' atlas are done**: X4.1c draws a hull's box off its own fields
+(`hullBodyToRef`), so nothing here touches a shadow. (This entry's first
+draft named a `HullFlex`; no such module exists — the hull's own motion is
+`HullSprings`, simulated on both sides and written into `Vehicle.pose`, and
+`HullWhips`, the picture's.)
+
+- **X4.2a — the hull's joints are ours (no picture change).** `vehicleRig`'s
+  `TransformNode` joints become a `JointTree` (`rigJoints.ts`, X4.1a's), its
+  world matrices in arrays the hull's rig owns. `VehicleView` writes
+  `Vehicle.pose` onto them as it writes the nodes now — the sprung body,
+  the turret, the gun, the cupola and roof stations, the running gear and the
+  rotors (`setRun`'s four arguments), the whips (`HullWhips`) — and Babylon
+  still draws the merged segments, unparented and frozen, reading those
+  matrices (X4.1a's shape). `hullPointToRef`, the muzzles' float32 replay
+  of the node chain, stays the simulation's and stops having a node to
+  agree with. **Oracle:** each joint's matrix against the node's, bit for
+  bit, over a recorded round with all three kinds driven, firing, flying and
+  wrecked, before the nodes go; the muzzles unchanged (`hullPointToRef`
+  against the drawn joint, as at X2.2); `kit:hash --models`'s `vehicle:`
+  rows explained or unmoved.
+- **X4.2b — every hull drawn by us (no picture change).** A kind's merged
+  segments become a kit our renderer draws (X4.1d's shape: built once a kind
+  and side, every hull an instance, its joints a segment's matrix), in every
+  pass a hull is in, with what each closure does to them: the belts' run,
+  the paint and the wreck's charred repaint (`paint`), `reset`, and the
+  hull's emissives with it. The hull's measure, the fog-wall gate and the
+  size gate's whole-hull drop move with them, a hull measured once and
+  dropping whole as a body does. Babylon builds no hull mesh in a round.
+  The pipelines are asked ahead through `PipelineCache`, so the warm-up
+  waits for them as it waits for the bodies' (it poses no hull of its own
+  today: a hull stands at its hardstanding in the views it draws). The editor's hulls are
+  X5.3's, as its bodies are (X4.1d). **Oracle:** the bank's hull vantages
+  (`sarab-tank`, `sarab-truck`, `sarab-heli`) and every other row
+  byte-identical; census; X0.3 alternated on Sarab and Cinderhaven, `--max
+  --gpu`; a netplay round with each kind driven and one wrecked.
+- **X4.2c — A3's detail tier (the picture change).** **The detail set is
+  decided** (2026-10-31, the user, PERF_PLAN A3's suggestion): the tank's
+  links (`tank-link-hi`, `tank-link-lo`) and road wheels (`tank-wheel`) and
+  both machine-gun rings (`tank-mg-ring`, `truck-mg-ring`) drop at range;
+  every other segment, the helicopter's all, is kept. Each kind's kit gains
+  a reduced set without those segments, swapped by projected size computed
+  as `WorldCulling`'s size gate computes it, off the hull's one measure; the
+  swap's size is the step's to state and the bank's to show. **The full set
+  is the one the warm-up shows** (`docs/game.md`). **Oracle:** the bank's
+  numbers in the message (only rows with a hull past the swap may move);
+  a hull walked through the swap at 832x384 and at 3440x1440, photographed
+  either side of it; X0.3 on Cinderhaven at 300 m against A3's +6.5%.
+- **X4.2d — the hull's draw distance and its fade (the picture change).**
+  **Decided** (2026-10-31, the user): a map field, and a FADE at both edges,
+  not a pop. `EnvironmentSpec.hullDrawDistance`, defaulting to
+  "unaffected" (its own `fogEnd`, clamped to it, as `bodyDrawDistance` is),
+  resolved once at the install and pushed to the cull — **a NINTH override in
+  `CLAUDE.md`'s table of the map's** and `docs/world.md`'s section, with
+  what a map raising it owes. The fade is X4.1e's screen door, in faded
+  twins of the hull programs, at that distance AND at the size gate's
+  whole-hull drop (a fade built for one misses the other), its value per
+  hull in the fragment stage as `BODY_FADE` is; the twins are asked ahead
+  with the rest. **No shipped map sets the field in this step** — A3's
+  +15.4% at 420 m on Cinderhaven is a look call per map, taken after. **A
+  hull is a GUN as well as a picture**, where a body past
+  `bodyDrawDistance` is past every bot's engagement range: the step states
+  what a map may set this to against the reach of a hull's guns and of the
+  bots that fire them, so that no setting buys an unseen shooter. **Oracle:**
+  the bank's numbers in the message (only rows with a hull at a fade edge
+  may move); a hull driven through both edges at 832x384 and at 3440x1440;
+  X0.3 on Cinderhaven with the field set to 420 on a scratch layout, against
+  A3's +15.4%.
+- **Contracts all four keep:**
   - the collider never tilts, and nothing on a hull that moves is pickable
-  - a hull's shadow shape is its collider box
-- **Verify:** the bank's hull vantages; X0.3 on Cinderhaven at 300 m.
+  - a hull's shadow shape is its collider box, off its own fields
+  - no simulation reads a node: the muzzles are replayed off fields
+    (`hullFrame.ts`), never off the drawing
+  - no `if` on a kind: a kind is its rows in `VEHICLE_KINDS` and
+    `vehicleModels.ts`, and a reader needing numbers narrows on its spec block
+  - a hull follows `Vehicle.present`, which `hide` ends
+  - a colour gradient on a hull's particle system is still Babylon's rule
+    until X4.7: the dust, spray and ripple are not this step's
+- **Verify, each sub-step:** the bank `--check --keep` against a BEFORE at the
+  parent; `census --against`; `gate`, `shaders`; typecheck, build, corecheck,
+  `parity`; a round offline with each kind driven and a netplay round.
 
 ### X4.3 — The viewmodel and the kit bay — **M–L**
 
@@ -5048,7 +5127,7 @@ to X0.3 (see "The branch"). It is the user's to start.
 | --- | --- |
 | P0, G1 | X0.4 (G1's GPU cost transfers, since the shaders port) |
 | A1, A2 | landed; X1.4 builds on both |
-| A3 vehicle detail tier | X4.2, built in the new renderer, not in Babylon |
+| A3 vehicle detail tier and draw distance | X4.2c (the tier), X4.2d (the distance, with X4.1e's fade), built in the new renderer, not in Babylon |
 | A4 body fade | X4.1e |
 | A5 occlusion culling | optional, after X3.3b, in the compute cull; occluders skip `RayWorld.removed` |
 | A6 snapshot rendering | dropped: it is a Babylon mechanism |
@@ -5073,6 +5152,8 @@ Each is rewritten by the step that breaks it, in the same commit.
 | `CLAUDE.md`: the two shadow maps; the lamps' atlas | X3.6a, X3.6b, X3.7, X4.1c |
 | `CLAUDE.md`: the rig pool, fourteen meshes a rig, rigs filed mesh by mesh; `docs/deaths.md`'s reparented corpse | X4.1a, X4.1b, X4.1d |
 | `CLAUDE.md`: the pipeline warm-up's body pose | X4.1d, X4.1e |
+| `CLAUDE.md`: a vehicle's picture (`VehicleView`, the rig's meshes) | X4.2a, X4.2b |
+| `CLAUDE.md`: the map's overrides table (a ninth, `hullDrawDistance`); `docs/world.md`'s section on them | X4.2d |
 | `CLAUDE.md`: the frame walks the scene (`WorldCulling`) | X3.3c through X4.7 |
 | `CLAUDE.md`: the glow | X3.6d, X3.6e, X3.7, X5.2 |
 | `CLAUDE.md`: visual meshes and collider proxies; exactly three sweeps | X2.1, X2.3 |
@@ -5170,5 +5251,7 @@ Phase 1 actually took.
 | X3.7 | Glazing and fires stay Babylon meshes until X4.6 and X4.4: how does Phase 3's end condition read? | **Decided** 2026-10-24: "Babylon builds no mesh in a round for anything our renderer draws" (the shape table). |
 | X3.7 | `?babylonworld` cannot exist without the meshes: delete it? | **Decided** 2026-10-24: yes, in X3.7b, with its parent tagged `exit-babylonworld` and pushed for a device A/B against Babylon's world. |
 | X4.1 | One step or several? | **Decided** 2026-10-29: five sub-steps (X4.1). The fade is a picture change and lands alone (rule 2); corpses come off the reparenting before the draw moves, so the draw moves every body at once. |
-| X4.2 | Which hull parts drop at range (the tank's links and wheels, the MG rings)? | An art call; PERF_PLAN A3 measured +6.5% at 300 m on Cinderhaven. |
+| X4.2 | One step or several? | **Decided** 2026-10-31: four sub-steps (X4.2). The joints and the draw move with no picture change; the detail tier and the draw distance are picture changes and land alone (rule 2). |
+| X4.2 | Which hull parts drop at range (the tank's links and wheels, the MG rings)? | **Decided** 2026-10-31: PERF_PLAN A3's suggestion — `tank-link-hi`, `tank-link-lo`, `tank-wheel`, `tank-mg-ring`, `truck-mg-ring`; PERF_PLAN A3 measured +6.5% at 300 m on Cinderhaven (X4.2c). |
+| X4.2 | The hull's draw distance: a map field, or a multiple of `bodyDrawDistance`? And a pop or a fade at it? | **Decided** 2026-10-31: a map field, `EnvironmentSpec.hullDrawDistance`, defaulting to unaffected; and a fade at both edges, X4.1e's screen door (X4.2d). |
 | X6.2 | Is it ready to merge to `develop`? | Only when X6.2's "Before" list passes in full. |
