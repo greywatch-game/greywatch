@@ -334,11 +334,14 @@ export function vertexDataOf(buffer: GeometryBuffer, plain?: PlainArrays): Verte
 
 /**
  * The one place a MODEL's surface becomes a Babylon mesh — a weapon's, an
- * optic's, a hull's, a soldier's, a thrown thing's: an ordinary mesh with its
+ * optic's, a thrown thing's: an ordinary mesh with its
  * buffers on the device, ready to draw, hang off a live joint and move. It is
  * what `MeshBuilder` and `Mesh.MergeMeshes` handed the models when they built
  * meshes themselves — `applyToMesh` on a fresh mesh, with the arrays in the
- * types Babylon held.
+ * types Babylon held. A soldier's surfaces and a hull's never come here: they
+ * are SEGMENTS of a kit our renderer draws (`SoldierModel.soldierKits` since
+ * `BABYLON_EXIT.md` X4.1d, `vehicleRig.segmentOf` since X4.2b), and no
+ * Babylon mesh is made of either.
  *
  * Given a `Part`, it carries the part's transform, material and metadata too,
  * and refuses one that still has a parent: a model's live joints are

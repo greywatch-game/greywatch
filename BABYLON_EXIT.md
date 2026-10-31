@@ -5126,8 +5126,9 @@ the parent's size gate, fixed by the step — Deviations).
   mesh was handed the last time. Not done here; it would keep the fix, since
   a freeze skipped is a bound left where the mesh still is.
 
-**X4.2b landed** (d4f41ef; 2026-10-31; no picture change: the bank 61 of 61
-byte-identical against its parent, every hull row among them).
+**X4.2b landed** (d4f41ef, the post-commit review's fixes after it;
+2026-10-31; no picture change: the bank 61 of 61 byte-identical against its
+parent, every hull row among them).
 - **What it is.** Every hull the page draws — the tank, the truck and the
   helicopter, in its livery or wrecked — is OUR renderer's
   (`render/HullDraw.ts`, its program `render/hullProgram.ts`), and **Babylon
@@ -5268,6 +5269,79 @@ byte-identical against its parent, every hull row among them).
 - **X4.2a's owed cost is gone with the meshes**: no hull mesh is frozen or
   has its bounds rebuilt any more; a present hull still composes its tree once
   a frame (`drawHulls`) and writes its segments' matrices and spheres.
+- **What the post-commit review found** (an independent reader over d4f41ef
+  and 87cf009; fixed after it, comments and docs only — nothing drawn or
+  simulated moved). **No correctness bug.** **Checked and sound**: (i) the
+  gate's TIMING — `keepsSphere` asks `offer`'s `tooSmall` from this frame's
+  eye, at this frame's scale and field of view (an optic's FOV included:
+  `offer` has run on the frame's camera before `drawHulls`), and the frustum
+  planes `hullPull` tests are the main camera's, as the render computed them
+  at the prepare; (ii) the arithmetic — each segment's matrix (local times
+  joint world, in float32) and sphere (`BoundingSphere._update` operation for
+  operation), the kit word (the kit's index and `HULL_CHARRED`), and the
+  insertion sort's stability (a segment moves ahead only of one strictly
+  farther, so the kit's order breaks a tie as the scene order did); (iii)
+  that the parent drew hulls in the MAIN pass only — a hull was in no
+  reflection probe and no glow mask, and its shadow is its collider box
+  (X4.1c) — so ours drawing in the main pass alone is the parent's
+  coverage; (iv) the palette (28 colours and the charred slot, each
+  segment's 1-based slot read back as the float32 triple the uniform held),
+  the install and uninstall's symmetry (the draw, the prepare and the refusal
+  listener on and off together, the generation guarding a late pipeline
+  verdict), and the failure routing (a failed pipeline or a refused main pass
+  told through `Game.worldFailed`, never inside the render's commands); (v)
+  the capacity, 16, against at most six hulls on a shipped map; (vi) no
+  allocation on a frame (`drawHulls`, `hullPull`, `writeHullDrawing` and the
+  prepare write into arrays sized at construction), and the contracts
+  holding (no simulation reads a node, the collider never tilts, no `if` on a
+  kind, a hull follows `present`). **The step's deviations, judged
+  correct**: (b) the FRUSTUM cull, the hull's own, which the entry did not
+  name and Babylon gave a mesh for free; (c) the gate reading THIS frame's
+  sphere where Babylon's read the previous frame's freeze; (d) the order
+  ACROSS hulls, and against Babylon's remaining opaque meshes, not
+  reproduced, as X4.1d's across bodies is not; (e) the census's drops on the
+  armour maps' hull rows (Sarab 661 → 481, Cinderhaven 186 → 150), the ranks
+  folding one draw a mesh into one draw a segment with every hull still
+  drawn. **Raised to the project owner, not decided here**: (a) the size gate
+  kept PER SEGMENT where the entry asks for a hull measured once and dropping
+  whole — an architectural question about the shape of X4.2c and X4.2d, not
+  a bug in this step. The forward bullets will be amended once the owner
+  decides; nothing here changes how the gate works. **Found**: an unrecorded
+  BOOT cost — the six kits built and uploaded at `Game`'s construction on
+  every map, the three with no armour included — measured after the review
+  (Owed onward). **Fixed** (rule 7, and one comment that did not say what
+  the code does):
+  - `Game.ts`' fleet step named `vehicleViews.draw` (gone): it names
+    `drawHulls`.
+  - `HULL_DRAW_CAPACITY`'s doc said a map past 16 draws its first sixteen
+    HARDSTANDINGS' hulls; `drawHulls` takes the first sixteen PRESENT hulls in
+    hardstanding order, so which go undrawn moves as hulls are hidden and
+    placed again. The doc says so; the behaviour is unchanged (no shipped map
+    has more than six).
+  - `CelShader.ts`' header pointed its cache-disposal warning at
+    `VehicleView.dispose` (gone): it states the failure itself (a disposed
+    `ShaderMaterial` never reports ready, and Babylon skips a mesh whose
+    material is not), names a hull's old rig as where it was met, and says a
+    mesh painted from the cache is freed with `dispose(false, false)`.
+  - `parts.drawnMesh`'s doc listed a hull's and a soldier's surfaces among
+    those that become a Babylon mesh there: neither does (kit segments since
+    X4.2b and X4.1d), and it says so. `facet.ts`' header said its parts
+    become a mesh at `drawnMesh`: a weapon's do, a soldier's and the three
+    hull models' become kit segments.
+  - `VERIFYING.md`'s hull paragraph said `g.hullDraw.matrices` holds zeros
+    for the size gate's drops: after the render's prepare it holds the
+    FRUSTUM's zeros too (`hullPull` zeroes into the same array), so a script
+    reading it after a render cannot count gated segments off the zeros. It
+    says when to read it and how to tell the two apart (`g.hullSpheres`, NaN
+    for a gated or padded segment, left standing for a culled one).
+  - Grepping the files X4.2b touched: `docs/vehicles.md`'s `present`
+    paragraph still had a body MESH following it (a joint since X4.2a and no
+    hull mesh since X4.2b; `VehicleRig.enabled` follows it now);
+    `TruckModel.ts`' and `HeliModel.ts`' budget sections counted "meshes"
+    with no word that a mesh is a kit segment now (a parenthesis pointing at
+    `TankModel.ts`' header, which says it); and `TruckModel.ts`' door-flash
+    comment named `inkRig`, long gone (the ink is one screen-space pass), in
+    the present tense.
 - **Owed onward.** X4.2c: the detail tier on a whole-hull measure, with the
   per-segment gate it replaces (above) — the picture change for every small
   part the tier keeps. X4.2d: the fade, in faded twins of the hull program.
@@ -5277,6 +5351,29 @@ byte-identical against its parent, every hull row among them).
   No helicopter was WRECKED in either round (a tank twice, a truck once): the
   charred bit is kind-blind, and the helicopter's livery, charred and posed
   pictures were shot byte-identical above.
+  **The boot cost** (found by the post-commit review and MEASURED after it:
+  a scratch page on the dev server on the Windows box, the served `Game.ts`
+  rewritten in flight — never the tree — to bracket the build with
+  `performance.now()`, five cold boots in fresh contexts after one warm-up,
+  medians and ranges): `hullKits()`, all six kits built and merged (the
+  tank's ~600 parts a view), **28.7 ms** (28.0-30.5); the palette, the slots
+  and `HullDraw`'s construction (the arrays end to end, the eight buffers
+  created, mapped and filled; the pipeline asked, not waited for) **8.4 ms**
+  (8.2-8.8) — **~37 ms of `Game`'s construction on every boot**, before the
+  menu, whatever map is played. Under Chromium's 4x CPU throttle, an
+  ESTIMATE of a slower CPU and not a phone reading: 125.5 ms (124.8-128.5)
+  and 34.7 ms (33.1-36.6), ~160 ms. **Resident on every map, the three with
+  no armour included** (measured): **6,027,072 bytes of GPU buffers**, the
+  sum of `HullDraw`'s eight — positions and normals 1,130,640 each, the
+  absent colour 1,507,520, the absent uv and the palette slots 753,760 each,
+  ranges and indices 722,400, the matrices 26,624, the orders 1,728; 56 bytes
+  a vertex, 2.26 MB of it the two absent buffers, which carry constants —
+  and **7,504,992 bytes of the kits' own geometry on the JS heap** (the sum
+  of their typed arrays' `byteLength`, the positions and normals doubles),
+  kept for the page's life as module constants. Not changed here. If a phone
+  reading wants the boot or the memory back, the obvious lever is building
+  and uploading the kits at the first install of a map with armour rather
+  than at construction; unmeasured on the phone.
 
 ### X4.3 — The viewmodel and the kit bay — **M–L**
 

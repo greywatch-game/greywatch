@@ -802,7 +802,14 @@ is one machine's:
   (`g.hullDraw`, fed by `g.drawHulls()` just before the render), so a script
   reads a segment's world as `seg.local` times `seg.joint.world` after a
   compose (`view.rig.segments`), and what the last frame drew as
-  `g.hullDraw.matrices` (the size gate's drops are zeros there).
+  `g.hullDraw.matrices`. **A zero there is one of two things**: the size
+  gate's drop, written by `g.drawHulls()`, and — once the render's prepare
+  has run — the FRUSTUM's, zeroed in the same array by `g.hullPull`. So a
+  script reading it after a render cannot count gated segments off the
+  zeros: read it straight after `g.drawHulls()` (before the render), or tell
+  the two apart by the segment's sphere in `g.hullSpheres` (four doubles a
+  segment, in the same order), which is NaN for a gated or padded segment
+  and left standing for a frustum-culled one.
   **The signature takes a LOOKUP rather than a hull and a stick**, because a bot
   crew can be driving one hull while the player drives another — and on the
   page the bot crew is the wire's (`remoteFor`), there being no crew here.

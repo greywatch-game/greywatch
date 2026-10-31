@@ -1043,7 +1043,9 @@ write. It used to be `body.isEnabled() && body.isPickable`, the terms
 mesh merely follows it (enabled exactly while present) — since C9 the body
 mesh is the VIEW's (`VehicleView.update`), and since the X2.2 review it is
 neither pickable nor `solid`, the editor (the predicate's one caller) building
-no hulls at all. **The bug that found the pickable term was the ground probe's**, back
+no hulls at all. (Since X4.2a that body is a joint and no mesh, and since
+X4.2b no mesh of a hull exists: the rig's switch, `VehicleRig.enabled`, is
+what follows `present` now.) **The bug that found the pickable term was the ground probe's**, back
 when the ground was a ray: it started INSIDE the box it was meant to ignore,
 found the hull's own underside, pinned `floorY` to whatever height the tracks
 already had, and a hull lifted by anything — Babylon's own collision response

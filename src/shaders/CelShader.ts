@@ -24,7 +24,11 @@
  * to the mesh, so `dispose(false, true)` on any rig built through here disposes
  * the world's own materials with it. Nothing removes the dead entry from the
  * cache, and the released effect is shared, so what follows is most of the map
- * silently not drawn (see VehicleView.dispose). A new material reaches the cache
+ * silently not drawn: a disposed `ShaderMaterial` never reports ready, and
+ * Babylon skips a mesh whose material is not (what a hull's rig did to a map
+ * with armour on its second round while its meshes were Babylon's, before
+ * `BABYLON_EXIT.md` X4.2b). A mesh painted from here is freed with
+ * `dispose(false, false)`. A new material reaches the cache
  * only through `remember`, which files it FROZEN: `ShaderMaterial.isReady`
  * otherwise rebuilds the whole define set for every submesh of every pass and
  * throws it away, a fifth of everything the game allocates, and `isFrozen`

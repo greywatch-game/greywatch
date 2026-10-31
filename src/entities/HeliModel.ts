@@ -152,7 +152,9 @@
  * frames and the stabiliser are all free; the two meshes the Viper cost over
  * the eighteen before it are the second whip's two links, which is the one
  * thing here bought for MOVING. `ord` is the one colour on this aircraft a
- * player is meant to find, and it is spent on the rocket pods alone.
+ * player is meant to find, and it is spent on the rocket pods alone. (A
+ * "mesh" here is a SEGMENT of this kind's kit since `BABYLON_EXIT.md` X4.2b,
+ * drawn by our renderer as a rank — `TankModel.ts`' header.)
  *
  * **The inert `turret` joint draws nothing at all.** `spec.gun` is null, so
  * `Vehicle` holds `turretYaw` equal to the hull's own yaw and that joint is a

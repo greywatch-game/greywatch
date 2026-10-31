@@ -74,7 +74,10 @@
  * colours, so every detail above that is in a colour the body already pays for
  * is free, and the suspension is two (its frame and its springs). It was 22
  * as an estate; the four more are the second whip's two and a colour each on
- * the suspension (the springs) and the station (the sensor head).
+ * the suspension (the springs) and the station (the sensor head). (A "mesh"
+ * here is a SEGMENT of this kind's kit since `BABYLON_EXIT.md` X4.2b, drawn by
+ * our renderer as a rank — the unit `TankModel.ts`' header restates the rule
+ * in.)
  *
  * ## The wheels are the whole difference, and there are two halves to it
  *
@@ -872,9 +875,11 @@ export function buildTruck(team: Team): VehicleRig {
   // on a thing that is mostly seen coming or going.
   //
   // **The door pair have to clear the door plate's INK and not merely its
-  // face.** `inkRig` gives every mesh a 2 cm outline hull, so a flash standing
-  // 2 cm off a plate is a flash drawn entirely inside that plate's own ink and
-  // the vehicle has no flank marking at all — measured on a photograph of the
+  // face.** `inkRig` gave every mesh a 2 cm outline hull (the ink was an
+  // inverted hull then; it is one screen-space pass over depth now,
+  // `shaders/CelInk.ts`), so a flash standing 2 cm off a plate was a flash
+  // drawn entirely inside that plate's own ink and the vehicle had no flank
+  // marking at all — measured on a photograph of the
   // first closed version, where the door read as a dark rectangle. They stand
   // 4 cm proud instead (1.205 to 1.245 against the plate's 1.18 to 1.205),
   // inside the collider's 1.25 and the ink's width twice over.

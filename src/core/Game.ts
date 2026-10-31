@@ -443,9 +443,11 @@ const MINE_LIFT = 0.04;
 /**
  * The most hulls one frame draws (`hullDraw`, `BABYLON_EXIT.md` X4.2b): what
  * its staging arrays and buffers are sized to, not a rule about a map. The
- * densest shipped fleet is six (Sarab, Cinderhaven); a map past this draws
- * its first sixteen hardstandings' hulls and says so on the console at the
- * install (`installMap`).
+ * densest shipped fleet is six (Sarab, Cinderhaven); a map past this draws,
+ * each frame, the first sixteen hulls that are PRESENT, in hardstanding order
+ * (`drawHulls` skips a hidden one before it counts), so which hulls go
+ * undrawn moves as hulls are hidden and placed again — and says so on the
+ * console at the install (`installMap`).
  */
 const HULL_DRAW_CAPACITY = 16;
 
@@ -9033,7 +9035,7 @@ export class Game {
       this.syncNetVehicles();
       this.vehicles.update(dt, this.vehicleOrders);
       // The drawing follows the hulls: the joints written here, and composed
-      // once a frame before the render (`vehicleViews.draw`).
+      // once a frame before the render (`drawHulls`).
       this.vehicleViews.update();
       this.prof.end(P.vehicles);
       // Posing a hull off the wire is still stepping it, and an engine heard
