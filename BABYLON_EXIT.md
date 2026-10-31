@@ -949,7 +949,7 @@ lamps' atlas were already done (X4.1c).
 
 The full record is in [the archive](plans/done/babylon_exit_landed.md).
 
-### X4.3 — The viewmodel and the kit bay — **M–L, as four sub-steps** (split 2026-10-31, decided the same day) — X4.3a **LANDED** (3e48d98, review fixes after it)
+### X4.3 — The viewmodel and the kit bay — **M–L, as four sub-steps** (split 2026-10-31, decided the same day) — X4.3a **LANDED** (3e48d98, review fixes after it), X4.3b **LANDED** (fa58735)
 
 The player's own weapon — whichever of the nine carried rigs is up, its
 optic, both gloved arms, the throwing fist with its grenade or bottle, the
@@ -1037,48 +1037,34 @@ read the same cache for the picture.
   --against` the BEFORE (at 3e48d98): all 62 old rows equal, Harrowmead's
   total moving only by the new rows; typecheck, build, corecheck pass.
   Every new or re-banked row looked at.
-- **X4.3b — the viewmodel's joints are ours (no picture change, no outcome
-  change).** The tree becomes a `JointTree` (`rigJoints.ts`, X4.1a's), its
-  joint list the node list in the order the nodes were made, and `Joint`
-  gains exactly what the viewmodel needs and the rigs never did: a PIVOT
-  (Babylon's pivot path, `transformNode.pure.js`' `computeWorldMatrix`: pivot ×
-  scale × rotation × pivot⁻¹, the translation added after), a ROTATION
-  QUATERNION that overrides the Euler while set, and a ROOT held off an
-  outside matrix (the camera's world, copied as the render will use it).
-  Whatever of that `src/math` lacks (`Matrix.ScalingToRef`,
-  `addTranslationFromFloats`) joins it with its `math-check` case, and the
-  pose math moves onto `src/math` with it (`ViewModel`'s scratch,
-  `ReloadGesture`, `turnAboutHand`), as `solveArm` did at X4.1a. The weapon
-  builders hang JOINTS, not nodes, from the root (`WeaponParts.magazine`,
-  `warhead`, `bolt`, `slide`, `SightAssembly.root` and `sightCenter`).
-  **Babylon still draws every mesh, and none has a parent**: each mesh's own
-  local composed once, and `drawView` — beside `drawBodies` and `drawHulls`,
-  once a frame in every state, after every write, immediately before
-  `scene.render` (`Game.ts:4100-4106`) — hands each switched-on mesh its local
-  times its joint's world through `freezeWorldMatrix`; the flash's petals the
-  same off the muzzle joint. **The readers keep Babylon's answers, not fresh
-  ones**: `muzzleWorld`, `throwHandWorld`, the eye port and the root's inverse
-  read the world `drawView` last composed where Babylon's cache would have
-  answered the last render's, and compose fresh only where it would have (a
-  joint not drawn in the last render whose channels moved since) — because
-  two of the four are command inputs, and `rigJoints.ts`' "every answer is
-  FRESH" here would move where a grenade leaves the hand on the first frame
-  of a throw. **Find out first** whether `scene.render`'s camera update can
-  move the view after `drawView` (a `FreeCamera` with its inputs cleared,
-  `CameraSystem.ts:375-378`, should not): if it can, the root is taken off
-  the matrix the render makes. **Oracle:** each mesh's world matrix against
-  its node chain's, bit for bit, at `onAfterActiveMeshesEvaluation` on the
-  parent, then against our arrays on the step (X4.1a's probe), over seeded
-  `ViewModelParams` sequences through every rig in every sight — hip, aimed,
-  sprint, swap, both reloads, the bolt, the load, both throws, the turntable
-  turned — and both trees digested frame by frame; the four readers' answers
-  as float64 bits over a recorded offline round that fires, launches a
-  rocket and throws both throwables, identical on both sides, and the
-  `GrenadeCommand.origin` / `OrdnanceCommand.origin` it submits with them;
-  `kit:hash --models`' `weapon:*`, `viewmodel` and `player` rows unmoved; the
-  bank byte-identical; a netplay round with a grenade and a rocket (the
-  authority's start points unchanged); "the reticle cannot lie" — fired at a
-  wall at range with each optic.
+- **X4.3b — the viewmodel's joints are ours LANDED** (fa58735; 2026-10-31;
+  no picture change, no outcome change). The viewmodel is a tree of JOINTS
+  (`ViewModel.tree`, `entities/viewTree.ts`; every `TransformNode` it made a
+  joint made at the same moment, every mesh a joint of its own and none
+  parented), and Babylon is handed each switched-on, visible mesh's world once a
+  frame (`drawView`, immediately before the render; each mesh's own switch
+  synced before the cull, `syncSwitches`). `Joint` gained a PIVOT, an
+  overriding QUATERNION, an OUTSIDE root (the camera) and a fixed local; and
+  the readers answer out of `RenderCache` (`rigJoints.ts`), Babylon's
+  render-id cache reproduced and stamped by the render's own evaluation, so
+  `muzzleWorld`, `throwHandWorld`, the eject port and the reload's gravity
+  are Babylon's answers to the bit. **Found first:** the render's camera
+  update never moves the view after the hand-over (0 of 1,562 frames, the
+  camera's world at `drawBodies` against at evaluation), and the render id
+  a frame's update reads is the id the last evaluation ran at (1,561 of
+  1,561). **Oracle:** a live offline round recorded on the parent (fire,
+  ADS, sprint, a tactical reload, frag, molotov, pistol, a rocket and its
+  load) and replayed on both trees, and a seeded sequence through all nine
+  rigs in all seven sights (both reloads, a cancelled one, the bolt, the
+  load, both throws, the turntable): **5,544 frames and 85,893 drawn meshes
+  identical, 2,589 reader answers identical as float64 bits**, and the three
+  submitted origins recomputed bit for bit; every drawn mesh the fresh
+  composition of its node chain on the parent (110,514) and of its joints on
+  the step (113,573, an offline and a netplay round among them). The bank 84 of 84 byte-equal to the BEFORE
+  (`view-pistol-reload`'s two-pixel 1/255 outcome is the main tree's own: the
+  parent there draws it too); `kit:hash --models` 244 of 244 identical (the
+  script now hashes the joints in the nodes' bytes); `census` equal;
+  sight alignment identical on both trees in all 45 combinations.
 - **X4.3c — the weapon drawn by us: every opaque part (no picture change).**
   The viewmodel's cel and emissive meshes — every rig's colour groups,
   magazine and spent magazine, bolt, slide and warhead, every optic's housing

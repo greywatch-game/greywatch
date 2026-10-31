@@ -4,7 +4,7 @@
 > [`BABYLON_EXIT.md`](../../BABYLON_EXIT.md), which keeps every landed step's
 > heading with a short summary: its commits, what it measured, any picture
 > change or decision, and what it still owes. Below is the full text of
-> Phase 3 (X3.1 to X3.7c) and of Phase 4's landed steps (X4.1a to X4.3a),
+> Phase 3 (X3.1 to X3.7c) and of Phase 4's landed steps (X4.1a to X4.3b),
 > moved here word for word: each step's brief, what it found, what it
 > measured, what its post-commit review found and what it decided. Phases 0
 > to 2 are in [`babylon_exit_phases_0-2.md`](babylon_exit_phases_0-2.md).
@@ -5570,10 +5570,10 @@ rows that frame a hull inside it move).
   hull's tracers and a shell's blast past its distance are accepted, not
   owed (the owner's decision above).
 
-### X4.3 — The viewmodel and the kit bay — **M–L, as four sub-steps** (split 2026-10-31, decided the same day) — X4.3a **LANDED** (3e48d98, review fixes after it)
+### X4.3 — The viewmodel and the kit bay — **M–L, as four sub-steps** (split 2026-10-31, decided the same day) — X4.3a **LANDED** (3e48d98, review fixes after it), X4.3b **LANDED** (fa58735)
 
 X4.3's intro, "Read first", "Contracts all four keep", "Verify" and the
-briefs of X4.3b-d are in the live plan until all four land. X4.3a's brief,
+briefs of X4.3c-d are in the live plan until all four land. X4.3a's brief,
 word for word:
 
 - **X4.3a — the bank sees the viewmodel (no change to the game).** Landed (below). The bank's
@@ -5810,3 +5810,233 @@ bank, its harness and its table only).
     byte-equal to them, and all 22 banked rows are byte-equal to the check's
     frames. Typecheck, build and corecheck pass. Every new or re-banked row
     looked at and its `proves` written against its frame.
+
+X4.3b's brief, word for word:
+
+- **X4.3b — the viewmodel's joints are ours (no picture change, no outcome
+  change).** Landed (below). The tree becomes a `JointTree` (`rigJoints.ts`, X4.1a's), its
+  joint list the node list in the order the nodes were made, and `Joint`
+  gains exactly what the viewmodel needs and the rigs never did: a PIVOT
+  (Babylon's pivot path, `transformNode.pure.js`' `computeWorldMatrix`: pivot ×
+  scale × rotation × pivot⁻¹, the translation added after), a ROTATION
+  QUATERNION that overrides the Euler while set, and a ROOT held off an
+  outside matrix (the camera's world, copied as the render will use it).
+  Whatever of that `src/math` lacks (`Matrix.ScalingToRef`,
+  `addTranslationFromFloats`) joins it with its `math-check` case, and the
+  pose math moves onto `src/math` with it (`ViewModel`'s scratch,
+  `ReloadGesture`, `turnAboutHand`), as `solveArm` did at X4.1a. The weapon
+  builders hang JOINTS, not nodes, from the root (`WeaponParts.magazine`,
+  `warhead`, `bolt`, `slide`, `SightAssembly.root` and `sightCenter`).
+  **Babylon still draws every mesh, and none has a parent**: each mesh's own
+  local composed once, and `drawView` — beside `drawBodies` and `drawHulls`,
+  once a frame in every state, after every write, immediately before
+  `scene.render` (`Game.ts:4100-4106`) — hands each switched-on mesh its local
+  times its joint's world through `freezeWorldMatrix`; the flash's petals the
+  same off the muzzle joint. **The readers keep Babylon's answers, not fresh
+  ones**: `muzzleWorld`, `throwHandWorld`, the eye port and the root's inverse
+  read the world `drawView` last composed where Babylon's cache would have
+  answered the last render's, and compose fresh only where it would have (a
+  joint not drawn in the last render whose channels moved since) — because
+  two of the four are command inputs, and `rigJoints.ts`' "every answer is
+  FRESH" here would move where a grenade leaves the hand on the first frame
+  of a throw. **Find out first** whether `scene.render`'s camera update can
+  move the view after `drawView` (a `FreeCamera` with its inputs cleared,
+  `CameraSystem.ts:375-378`, should not): if it can, the root is taken off
+  the matrix the render makes. **Oracle:** each mesh's world matrix against
+  its node chain's, bit for bit, at `onAfterActiveMeshesEvaluation` on the
+  parent, then against our arrays on the step (X4.1a's probe), over seeded
+  `ViewModelParams` sequences through every rig in every sight — hip, aimed,
+  sprint, swap, both reloads, the bolt, the load, both throws, the turntable
+  turned — and both trees digested frame by frame; the four readers' answers
+  as float64 bits over a recorded offline round that fires, launches a
+  rocket and throws both throwables, identical on both sides, and the
+  `GrenadeCommand.origin` / `OrdnanceCommand.origin` it submits with them;
+  `kit:hash --models`' `weapon:*`, `viewmodel` and `player` rows unmoved; the
+  bank byte-identical; a netplay round with a grenade and a rocket (the
+  authority's start points unchanged); "the reticle cannot lie" — fired at a
+  wall at range with each optic.
+
+**X4.3b landed** (fa58735; 2026-10-31; no picture change, no outcome change).
+- **What it is.** The viewmodel is a tree of JOINTS, `ViewModel.tree` — a
+  `ViewTree` (`src/entities/viewTree.ts`, new) over a `JointTree`
+  (`rigJoints.ts`) whose root stands for the camera. **The joint list is the
+  node list**: every `TransformNode` `ViewModel`, the nine builders,
+  `optics.ts` and `PlayerView` made is a joint made at the same moment,
+  under the same name and parent (`ViewTree.joint`, `WeaponBuild.joint`),
+  and the builders hang JOINTS from the root — `WeaponParts.root`,
+  `magazine`, `warhead`, `bolt`, `slide` and every `SightAssembly`'s `root`
+  and `sightCenter` (`WeaponBuilder` takes the tree and the parent joint).
+  **Every mesh is a joint too, and none has a parent** (`ViewTree.hang`): a
+  leaf whose local is the mesh's own, composed ONCE at `seal` (the end of
+  `ViewModel`'s constructor, and the flash's); a mesh other meshes hang off
+  (the fist's frag, `MolotovModel`'s bottle and neck and cloth, unparented
+  by `hang`) or whose own transform moves (the kit card, which `updateInspect`
+  writes) is a joint whose channels the mesh's were copied into. Mesh lists
+  that were `getChildMeshes` walks are the tree's (`meshesOn`, in the order
+  the children were hung). **Babylon still draws every mesh**: `drawView`,
+  once a frame in every state beside `drawBodies` and `drawHulls`,
+  immediately before `scene.render`, hands each switched-on, visible mesh
+  its joint's world through `freezeWorldMatrix` — exactly the set
+  `_evaluateActiveMeshes` took off `WorldCulling`'s list — and each mesh's
+  OWN enabled flag is its joint chain's, written by `syncSwitches` straight
+  after `stageWarmFrame`, before the cull asks `isEnabled()` (an unparented
+  mesh sees no ancestor), and again by `drawView`. The flash's root is a
+  joint under the muzzle joint, its petals meshes hung from it.
+- **What `Joint` gained** (declared without initializers, so a rig's joint
+  never carries them and its shape — and `kit:hash`'s soldier and vehicle
+  rows — are unmoved): a PIVOT (`setPivotPoint`: `Translation(-p)` kept,
+  used only when not the identity, its inverse post-multiplied — composed by
+  Babylon's pivot path, pivot × scale × rotation × pivot⁻¹ with the
+  translation added after); a QUATERNION that overrides the Euler while set
+  (both arms always, the weapon on the turntable); an OUTSIDE root (the
+  camera's world, re-read on every compose of the root); a FIXED local (a
+  mesh's own); and `memo`, the render cache's bookkeeping. `src/math` gained
+  `Matrix.ScalingToRef` (flagged identity at a scale of one, as Babylon's)
+  and `Matrix#addTranslationFromFloats`, each with its `math-check` case (81
+  cases). The pose math moved onto `src/math` with it: `ViewModel`'s
+  scratch, `turnAboutHand`, `ReloadGesture` (its import alone),
+  `reloadRig`'s measures, `buildArm`'s frame.
+- **The readers keep Babylon's answers** (decided: bit for bit).
+  `RenderCache` (`rigJoints.ts`) reproduces `TransformNode.computeWorldMatrix`
+  unforced (`read`, what `getAbsolutePosition` did) and `Node.getWorldMatrix`
+  (`world`): a joint composed at the CURRENT render id answers that
+  composition however it has moved since, unless a setter dirtied it (the
+  turntable's quaternion handed or taken, `markDirty`); one composed at an
+  older id answers its cached world when it and every ancestor are
+  SYNCHRONIZED — no channel written (`ViewModel.wrote`, which every write to
+  a joint's position, rotation, scaling or quaternion goes through, with the
+  channels as last composed beside it so a write nobody reported is still
+  seen), no ancestor recomposed since (`childUpdate`/`parentUpdate`) — and
+  is recomposed off its parent's `getWorldMatrix` otherwise; both branches
+  stamp it and only a recompose touches the parent. The render id is
+  BABYLON's (`scene.getRenderId()`, public). `drawView` runs the render's own
+  evaluation through the same rule at a provisional id between two integers,
+  and the joints it stamped are handed the id the render really took from
+  inside the render (`onAfterActiveMeshesEvaluationObservable`), so the next
+  frame's readers meet the stamps Babylon's evaluation left. `muzzleWorld`
+  and `throwHandWorld` read through it (each still a Babylon vector),
+  `ejectPortWorld` replaces `PlayerView`'s two node reads, and
+  `evaluateReload`'s gravity takes `world` of the weapon's root. **The one
+  approximation** is the camera's synchronization: the root is synchronized
+  while its world is unchanged, where Babylon's camera also counts a change
+  of projection; a synchronized answer is always the number a recompose
+  would give, so it can move only which ancestors a read stamps — and the
+  oracle found it moved nothing.
+- **Found first: the render's camera update cannot move the view after the
+  hand-over**, so the root is not taken off the render's matrix. The
+  `FreeCamera`'s inputs are cleared (`CameraSystem`), nothing writes its
+  `cameraDirection` or `cameraRotation` and no observer before the render
+  moves it; measured on the parent over a live round, the camera's world at
+  `drawBodies` against at `onAfterActiveMeshesEvaluation`: **0 of 1,562
+  frames differ** (and 0 in the four replays below, 11,509 frames on the two
+  trees). And **the render id a frame's update reads IS the id the last
+  evaluation ran at** (1,561 of 1,561 frames; no Babylon render target in a
+  round increments it after the evaluation), which is what makes a node
+  drawn in the last render answer that render's composition — "one frame
+  stale".
+- **The oracle.**
+  - **On the parent, over a live round** (a scratch probe, `x43b/probe.mjs
+    record`, Harrowmead offline, 1,562 frames: hip and aimed fire, sprint, a
+    tactical reload, a frag, the pistol, the launcher and a rocket with its
+    load, the rifle back, a molotov): every viewmodel mesh in the active list
+    at `onAfterActiveMeshesEvaluation`, against a fresh composition of its
+    node chain in Babylon's own arithmetic (the pivot path included) —
+    **24,621 meshes, 0 differ**, so what Babylon drew was always the fresh
+    composition.
+  - **The recorded round, replayed on both trees.** The probe logged every
+    call into `ViewModel` and `PlayerView` (3,190: `update` with its
+    parameters, the loadout calls, the flash, the brass, the readers) with
+    the camera at each and at the render; `probe.mjs replay` re-issues them
+    frame for frame in `deploy` (the world held), the camera put back at
+    each, the flash's and the brass's `Math.random` seeded. On the parent
+    the replay reproduces the live round exactly (every frame's drawn-mesh
+    digest, the flash's petals aside, and all 303 reader answers) — the
+    harness is faithful. **On the step: 1,563 frames' digests of every drawn
+    viewmodel mesh's world matrix identical to the parent's replay (24,651
+    meshes), and all 303 reader answers identical as float64 bits** —
+    29 `muzzleWorld`, 2 `throwHandWorld`, 28 eject ports (the case's
+    position and its seeded velocity), 244 reload gravities — and identical
+    to the live recording. **The three origins the live page submitted** (a
+    frag's and a molotov's `GrenadeCommand.origin`, a rocket's
+    `OrdnanceCommand.origin`, the last floored at `launchAhead`), recomputed
+    from the step's replayed answers by `Game`'s own floor: bit-identical.
+  - **A seeded sequence through every rig in every sight** (`x43b/gen.mjs`):
+    all nine rigs, each in all seven sights hip and aimed with a flash, the
+    swap's triangle, a sprint, a dry and a tactical reload eased out, a
+    reload cancelled halfway, the bolt cycle (half of it aimed), the
+    launcher's load, a frag's and a molotov's throw with the hand read every
+    frame, and the turntable turned through both banked bays, the camera
+    drifting every frame — 3,979 frames, 9,589 calls. Replayed on both trees:
+    **3,981 frames' digests identical (61,242 meshes) and 2,286 reader answers
+    identical** (722 muzzle, 702 hand, 99 eject port, 763 gravity); on the
+    parent all 61,242 the fresh node-chain composition.
+  - **On the step, over live rounds**: every drawn viewmodel mesh against its
+    local times a fresh composition of its joints' channels — 24,651 and
+    61,242 in the two replays, **13,833 in an offline round and 13,847 in a
+    netplay round** (below): 0 differ, so no mesh is drawn off a matrix older
+    than its joint's last write.
+  - **`kit:hash --models` against the parent: 244 of 244 identical**, the 64
+    `viewmodel`, 153 `weapon:*` and the `player` rows among them. The script
+    hashes every node in the scene and each mesh's parent and transform, and
+    the step took the nodes out of the scene and every mesh's parent away —
+    so it now hashes a `ViewTree` IN THE BYTES THE NODES GAVE (each node
+    joint a node record after the scene's own, in the order made; each mesh's
+    parent the node or mesh its joint hangs from; a joint or a `src/math`
+    value in the builder's data spelled as the node or the Babylon value it
+    replaced), and every byte of every row matched: the tree's names,
+    parents, switches, channels, quaternions and pivots are the nodes'.
+- **Measured.** **The bank** against a BEFORE at 85ed303 in a worktree
+  (`--check --keep` both sides): **83 of 84 byte-identical** at the first
+  run; the 84th, `view-pistol-reload`, two WORLD pixels ((351,390) on the
+  trees and (964,428) at the mill's waterline) by 1/255. That is the main
+  tree's own outcome and not the step: the parent run in the main tree (the
+  step stashed) draws exactly those bytes, as X4.2a found for `sarab/shelf`;
+  a second run of Harrowmead on the step is 37 of 37 byte-equal to the
+  BEFORE, a third draws the main tree's two pixels again, and the BEFORE's
+  two runs and a third with a 2 ms per-frame stall all draw the bank's bytes
+  — the row X4.3a's own note found a first take of one pixel off. The same
+  34 stale rows on both sides, no console or page error. **`census
+  --against`** the BEFORE: every row and every total equal (278, 205, 672,
+  2,314, 472, 213, 125). **The reticle cannot lie**: `VERIFYING.md`'s
+  sight-alignment check on both trees, the six rail weapons in all seven
+  sights and the pistol, the launcher and the mine in their own, aimed and
+  settled, each worn `sightCenter` in the camera's frame — **45 of 45
+  identical across the trees**, the worst cross-axis offset 0.0013 µm and
+  the stand-off within 0.32 µm of `eyeRelief × zoomComp`. **The kit screen**
+  raised from the menu (no map) and from `deploy` on both trees with its DOM
+  up, a weapon and a sight changed on it and turned, lowered with the
+  quaternion null, and a round entered after: no error, the weapon on the
+  card in both. **A round offline and a netplay round** (`x43b/net.mjs`,
+  Harrowmead, the second against a local `dist-server` built from the step):
+  a frag, a rocket and a molotov each, every submitted origin the reader's
+  answer through `Game`'s floor, **no `refused`**, the authority's blasts
+  arriving. `gate.mjs` clean on seven; `shaders.mjs` clean on seven, ours 17/17 (21/21 Sarab and Cinderhaven, 23/23 Coldharbour); typecheck,
+  build (`check-babylon-free` clean), corecheck, `math-check` (81 cases) and
+  `parity` (eight maps) pass.
+- **Deviations.** **Every mesh is a joint**, not a mesh "with its local
+  composed once" beside its node's joint: Babylon cached each MESH's world
+  by render id too, and the cache had to be reproduced per mesh to stamp
+  ancestors exactly as the render did — a leaf's local is still composed
+  once (`fixedLocal`). **`syncSwitches` before the cull** as well as
+  `drawView` before the render: the cull's `offer` asks `isEnabled()`, which
+  walked ancestors when the meshes had parents, and a mesh switched on in a
+  frame would otherwise miss that frame. **The card's NONUNIFORMSCALING
+  define** is chosen once at build off a stand-in scale
+  (`computeWorldMatrix(true)`, put straight back): Babylon chose it off the
+  card's own non-uniform scale every frame, and a frozen matrix never
+  chooses it, so without this the card would compile a second effect.
+  **`kit:hash` was taught the tree** rather than re-baselined (the brief
+  asked for the rows unmoved). **The stale "depth cleared" claims** were
+  corrected where this step rewrote the text (`docs/weapons.md`'s
+  `VIEWMODEL_GROUP` bullet, `ViewModel`'s header and the group's comment,
+  `PlayerView`): group 1's depth has not been cleared since the moon left it.
+  **The reticle check is the numeric one** `VERIFYING.md` gives (the worn
+  sight's centre on the camera axis at its stand-off, which is where every
+  round goes), not shots at a wall.
+- **Owed onward.** X4.3c draws the opaque parts off these joints (the
+  segments' matrices are `ViewMesh.joint.world`); X4.4's brass reads the
+  eject port through `ejectPortWorld`. The cache is a debt with an end:
+  once the readers stop being Babylon's answers (`FINDINGS.md` 55 settled)
+  the tree can compose fresh, as a rig's does, and `RenderCache` goes. The
+  compose costs are unmeasured (a frame composes the carried rig's ~20 joints
+  and its ~15 meshes, against Babylon's own walk of the same nodes before).
