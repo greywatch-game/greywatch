@@ -618,7 +618,9 @@ export interface Segments {
    * in `root`'s frame (`HullMeasure`). Called once, after the model has hung
    * every segment and before anything poses a joint; a build that made a
    * different number of segment calls than the kit's builder did throws, and
-   * so does a kit's build whose `detail` names a call the model never made.
+   * so does a kit's build whose `detail` names a call the model never made,
+   * or a call that made no segment (it hung no part) — each with its own
+   * message.
    */
   kit(tree: JointTree, root: Joint): HullKit;
 }
@@ -645,6 +647,8 @@ export function segmentOf(model: string, view: number, detail: readonly string[]
   const built: HullKitSegment[] = [];
   const calls: number[] = [];
   const segments: HullSegment[] = [];
+  /** Every call's name, made a segment or not: what `detail` is checked against. */
+  const called = new Set<string>();
   let call = 0;
   let at = 0;
   const segment = (
@@ -664,6 +668,7 @@ export function segmentOf(model: string, view: number, detail: readonly string[]
       }
       return;
     }
+    called.add(name);
     const parts: Part[] = [];
     const colors: string[] = [];
     for (let i = 0; i < boxes.length; i++) {
@@ -714,8 +719,12 @@ export function segmentOf(model: string, view: number, detail: readonly string[]
       if (call !== existing.calls.length) throw new Error(`[hull] ${key}: a build made fewer segment calls than its kit's`);
       return existing;
     }
+    // Two faults, told apart: a name no `segment` call carries (a misspelling,
+    // or a call renamed under the list), and a named call that hung no part
+    // and so made no segment to drop.
     for (const name of detail) {
-      if (!built.some((seg) => seg.name === name)) throw new Error(`[hull] ${key}: its detail names "${name}", which the model never made`);
+      if (!called.has(name)) throw new Error(`[hull] ${key}: its detail names "${name}", but no segment call of the model has that name`);
+      if (!built.some((seg) => seg.name === name)) throw new Error(`[hull] ${key}: its detail names "${name}", a segment call that made no segment (it hung no part)`);
     }
     const made: HullKit = { key, segments: built, calls, measure: restMeasure(built, segments, tree, root) };
     kits.set(key, made);

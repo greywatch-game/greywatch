@@ -5132,8 +5132,12 @@ the parent's size gate, fixed by the step — Deviations).
   enabled loose mesh (`tooSmallMesh`) — so every hull mesh rebuilds its
   bounds every frame, parked or off-screen: about 150 bounds updates and 126
   composes on a six-hull map, estimated at tens of µs on desktop and ~0.2-0.4
-  ms on the phone. X4.2b removes it (a hull measured once, composed once, no
-  Babylon mesh). **The mitigation if a phone reading shows it before then**:
+  ms on the phone. X4.2b removed it by removing the meshes — no hull mesh is
+  frozen or has its bounds rebuilt — and NOT by a whole-hull measure, which
+  it never built: a present hull is still composed once a frame
+  (`drawHulls`) and its size gate still asked of each segment's sphere
+  (X4.2b's note; the whole-hull measure is X4.2c's, for its swap alone).
+  **The mitigation if a phone reading shows it before then**:
   skip a mesh's freeze when the 16 composed floats are bit-equal to what that
   mesh was handed the last time. Not done here; it would keep the fix, since
   a freeze skipped is a bound left where the mesh still is.
@@ -5395,9 +5399,9 @@ parent, every hull row among them).
   and uploading the kits at the first install of a map with armour rather
   than at construction; unmeasured on the phone.
 
-**X4.2c landed** (f302403; 2026-10-31; the picture change, for a hull past the
-swap and nowhere else: the bank 61 of 61 byte-identical against its parent,
-the census down 9 draws on Sarab and 1 on Cinderhaven on the rows that frame
+**X4.2c landed** (f302403, the post-commit review's fixes after it;
+2026-10-31; the picture change, for a hull past the swap and nowhere else:
+the bank 61 of 61 byte-identical against its parent, the census down 9 draws on Sarab and 1 on Cinderhaven on the rows that frame
 far hulls).
 - **What it is.** A far hull draws its REDUCED set — A3's detail tier
   (`PERF_PLAN.md`), in our renderer. **The set is data on the MODEL**: each
@@ -5456,8 +5460,16 @@ far hulls).
     and up to 124-129 on the phone's (nearer, so less fog over it);
   - the truck: 0-5 / 1 at 24-32 px, 23 / 23 at 40, 38 / 34 at 48 — the
     station's yoke, a 3x2 px hump on the roof.
-  So 32 is the largest size at which the swap is a handful of pixels on both
-  viewports; 40 already doubles it and 48 is the step change. In the world:
+  So 32 is the largest size at which the swap is a handful of pixels, and
+  **the evidence for that is the PHONE's viewport, not the big one** (the
+  post-commit review's correction): at 3440x1440 the swap is at ~527 m,
+  where Sarab's linear fog (150 → 560 m) is ~92% complete, so that column
+  mostly measures fog. The unfogged phone walk is the reading — 33-48 pixels
+  of a tank at up to 98-139/255 across 24-32 px, with no knee, and no step
+  at the swap that reads in the photographs — and a desktop player on
+  Cinderhaven (fog 80 → 1,250 m) meets the swap at ~395-527 m under only
+  27-38% fog, so it looks like the phone's photographs, not the 3440 ones.
+  40 already doubles the change and 48 is the step change. In the world:
   a tank at ~527 m and a truck at ~348 m on a 1440-tall view at the hip
   field, ~395 and ~260 m at 1080, ~141 and ~93 m on a phone's 384 — nearer
   exactly where a pixel is bigger, as the size gate is. The MG rings are
@@ -5510,7 +5522,14 @@ far hulls).
   saves now is vertex work on the GPU — a far tank's 42% — and a rank's draw
   only when every hull drawn at it dropped that segment, inside the noise on
   this desktop. The phone, where the swap is ~141 m and its GPU the bound, is
-  the reading that could show it (owed below).
+  the reading that could show it (owed below). **And the null result is not
+  shown to have exercised the tier**: `bench.mjs`'s output carries no hull
+  statistics — a capture's `hulls` is `hullDraw.stats` (ranks drawn,
+  instances) read once, at the halt, and counts no reduced hull — so the
+  run does not show that the tier fired in each group, the `hullDetail` 56
+  build's included. That is owed the next time this is measured; reading it
+  per group would need the profiler to keep a hull count per frame (a report
+  change, not a behaviour-free addition), so it is not added here.
   **A round offline** (scratch `hullprobe.mjs`, X4.2b's, extended: after
   every render, one instance per present hull in hardstanding order, each kit
   word against its rig, every drawn segment's matrix bit-equal to a fresh
@@ -5542,6 +5561,79 @@ far hulls).
   the hulls stand in compounds there — and was thrown away; the photographs
   above stand each hull in the open. `CLAUDE.md` is unchanged (no rule of it
   moved; the tier is `docs/rendering.md`'s, "The hulls, ours").
+- **What the post-commit review found** (an independent reader over f302403
+  and a6050b4; fixed after it, comments, docs, one error message and one
+  reference-bank row — nothing drawn or simulated moved). **No correctness
+  bug.** **Checked and sound**: (i) `measureHull`'s radius, scaled by the
+  matrix's own scale and not `BoundingSphere._update`'s largest component
+  (√2 on a turned matrix); (ii) its centre hung on the ROOT joint's world,
+  the untilted root, composed this frame, so no cached bound; (iii)
+  `keepsDetail` sharing the size gate's eye, its pixels a radian and its
+  field of view (an optic's included), all set by the same `offer`; (iv) the
+  tier OFF during the warm-up (the full set the one it shows), with no
+  camera and at a threshold of 0; (v) the zeros, the ranks and the padding
+  together — a refused hull's detail segments written as sixteen zeros and a
+  NaN sphere, filed last by `hullPull`, a rank no draw only once every hull
+  drawn there dropped its segment; (vi) the `DETAIL` lists as data on the
+  models, a named call dropping whole (every colour it made), no `if` on a
+  kind; (vii) no allocation on a frame and no contract broken. **The swap
+  was judged not to read as a pop** in the photographs either side of it.
+  **Two decisions by the project owner** (2026-10-31): (a) **the bank gains
+  a row that SEES the tier** — it passed 61 of 61 because no row framed a
+  hull past the swap (below); (b) **no hysteresis band at the swap,
+  accepted**: a phone player strafing ~4 m around 141 m from a parked tank
+  toggles the reduced set on each crossing, a ~48 px twinkle at the nose,
+  and the per-segment gate has no band either. Recorded in
+  `CONFIG.graphics.culling.hullDetail`'s doc, `WorldCulling.keepsDetail`'s
+  and `docs/rendering.md` ("The hulls, ours"); the behaviour is unchanged.
+  **Fixed**:
+  - **The bank row `cinderhaven-tank-far`** (`src/bench/vantages.ts`,
+    appended at the end of Cinderhaven's list and banked alone with
+    `--rows=tank-far`, so every row before it carries the state it was
+    banked with): the west yard's tank (its measure centred at -473.0, 8.5,
+    473.0) from `pos` [-581, 15, 73] (15 m over the floor, ~28 m absolute),
+    looking at [-473, 8.5, 473] over the town's roofs at night, at the hip
+    field: 414.8 m off, the measure ~30.5 px across on the bank's 1920x1080,
+    under ~29% of Cinderhaven's fog, so the tank draws its REDUCED set
+    (`keepsDetail` false, read back in a scratch probe). Chosen by a scratch
+    search (`scratchpad/x42cr/find.mjs`: every bearing and eye height with
+    a clear `rays.blocked` line to the near-side running gear, shot full
+    against reduced): at the hip field Cinderhaven's best changes ~50
+    pixels, and Sarab's daylight ~60 under ~66% fog; Cinderhaven was kept
+    for the fog, the night costing it about a sixth. **Proof that it sees
+    the tier**: the row checked with the shipped tree and again with
+    `hullDetail: 0` written into `config/graphics.ts` (put back after),
+    each `--check --rows=tank-far --keep`: **55 pixels differ, worst 61/255**
+    (a run along the bottom of the track at y 542), against 0 between the
+    shipped check and the banked frame across processes. **`--check`'s own
+    grade does NOT see it** — 0.0027% of pixels, a mean of 0.0002/255
+    against `CHECK_TOLERANCE`'s 0.02, "within floor" — so the row covers
+    the tier only in a pixel comparison of two `--keep` directories, which
+    is how X4.2b and X4.2c were graded (the README's table, the row's
+    `proves` and `VERIFYING.md` say so). **X4.2d's fade** reaches the same
+    row when a scratch layout sets `hullDrawDistance` within its last tenth
+    of 415 m (~415-460 m), so the row serves X4.2d too. **The bank**:
+    `--check --keep` here against a BEFORE at a6050b4 in a worktree, **61 of
+    61 pre-existing rows byte-identical** (pixels), the new row within
+    floor, the same 34 stale rows on both sides, no console or page error.
+    **The benchmark stands at the row too** (`BenchScript` reads the table),
+    so Cinderhaven's `vantages` group gains a stop from this commit and is
+    not comparable across it (its median draws 43 → 45, this run at the
+    default settings; the path's 41 and the fight's 75 as before); the
+    fight is unmoved (`bench.mjs cinderhaven --runs 1`: `2f97c9072ab1762b`).
+  - "The swap's size" said 32 was a handful of pixels on both viewports;
+    the 3440x1440 column mostly measures fog, and the phone's walk is the
+    evidence (said there now, and in `hullDetail`'s doc and
+    `docs/rendering.md`, which made the same claim).
+  - The X0.3 null result did not say the bench reads no hull statistics,
+    so nothing shows the tier fired in each group: said, and owed (below).
+  - `Game.hullPull`'s doc listed what goes last without the tier's drop.
+  - X4.2a's note said X4.2b would remove its owed cost with "a hull measured
+    once": X4.2b removed the meshes and kept the gate per segment.
+  - `segmentOf` threw "which the model never made" for a named `DETAIL`
+    call that ran but made no segment: two checks now, with their own
+    messages, the throw for a name no call carries kept (no shipped model
+    reaches either).
 - **Owed onward.** **The phone's reading**, as every step's since X3.3c —
   for this step specifically, whether the tier's vertex saving shows in
   `gpu.frame` on Cinderhaven at 832x384-class viewports, where the swap is
@@ -5550,7 +5642,9 @@ far hulls).
   distance and its fade at `hullDrawDistance` only (the 2026-10-31 decision).
   X4.2b's owed items stand (the rank surplus — 3.35x offline here, the
   detail segments' corners gone and the spans left to the hulls drawn in full
-  — the boot cost, the editor's hulls).
+  — the boot cost, the editor's hulls). **X0.3's hull reading** (the
+  post-commit review): the next bench of the tier owes a per-group count of
+  reduced hulls, which the capture does not carry today.
 
 ### X4.3 — The viewmodel and the kit bay — **M–L**
 

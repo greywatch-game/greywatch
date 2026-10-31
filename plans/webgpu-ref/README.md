@@ -316,7 +316,7 @@ for each step of the exit:
 | X3 the static world | every map's menu and map views |
 | X3.5 terrain and roads | every map's `ground` (the eye 35 cm off the floor, a turf edge in frame) and `crossing` (two road ranks meeting), banked by `--rows` before X3.5 so they are Babylon's floor |
 | X4.1 bodies | `sarab-rig-near`, `sarab-rig-far` (250 m, inside `bodyDrawDistance`) |
-| X4.2 vehicles | `sarab-tank`, `sarab-truck`, `sarab-heli` |
+| X4.2 vehicles | `sarab-tank`, `sarab-truck`, `sarab-heli`; `cinderhaven-tank-far` (X4.2c's detail tier: a tank ~30.5 px across, just past its 32 px swap, so it draws its REDUCED set — ~55 pixels of the frame, seen by a pixel comparison of two `--keep` directories and never by `--check`'s mean tolerance; appended by `--rows`) |
 | X4.3 the viewmodel | `harrowmead-view-<optic>-hip` / `-aim`, one weapon per optic |
 | X4.4 effect pools | `coldharbour-blast` |
 | X4.5 sky and clouds | every row; `hollowmere-lanterns` and `cinderhaven-town` at night |

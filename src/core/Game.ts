@@ -5867,8 +5867,9 @@ export class Game {
    *   `bodyPull`'s sort, off `globalPosition`, for `bodyPull`'s reason: group
    *   0's opaque sort, nearest first by `eyeDistanceSq` and, between two at one
    *   distance, the order the meshes were made in, the kit's, stable. A
-   *   segment not drawn (culled, dropped by the size gate, or past a narrower
-   *   kind's own) goes last.
+   *   segment not drawn (culled, dropped by the size gate, a DETAIL segment of
+   *   a hull the detail tier refuses — `WorldCulling.keepsDetail`, X4.2c — or
+   *   past a narrower kind's own) goes last.
    */
   private hullPull(order: Uint32Array, matrices: Float32Array, n: number): void {
     const eye = this.cameraSys.camera.globalPosition;

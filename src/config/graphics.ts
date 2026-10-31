@@ -1365,14 +1365,27 @@ export const graphics = {
      * px a tank's measure (11.1 m across) puts its idler, the biggest disc in
      * the set (0.72 m), at ~2 px and a road wheel's hub (0.56 m) at ~1.6;
      * the links are sub-pixel from far nearer. Photographed full against
-     * reduced on Sarab's open ground (X4.2c): 21-48 pixels of a tank change
-     * at 32, at both 3440x1440 and 832x384 — a light hub pixel or two at the
-     * nose, a darker run along the bottom — and the truck's 1-5; by 48 the
-     * tank's change is 100-110 and by 64 the road wheels are a row of dots
-     * that visibly go. Where that falls: a tank at ~527 m and a truck at
-     * ~348 m on a 1440-tall viewport at the hip field, ~395 and ~260 m at
-     * 1080, ~141 and ~93 m on a phone's 384 — the swap comes NEARER exactly
-     * where a pixel is bigger, as the gate above does.
+     * reduced on Sarab's open ground (X4.2c) — a light hub pixel or two at
+     * the nose, a darker run along the bottom, and the truck's 1-5 pixels; by
+     * 48 the tank's change is 100-110 and by 64 the road wheels are a row of
+     * dots that visibly go. **The evidence for 32 is the PHONE's viewport**,
+     * where the swap (~141 m) is nearly unfogged: 33-48 pixels of a tank at
+     * up to 98-139/255 across 24-32 px, no knee, and no visible step in the
+     * walk through it. The 3440x1440 figures (21-25 pixels at 32) mostly
+     * measure FOG — the swap is ~527 m there, where Sarab's linear fog
+     * (150-560 m) is ~92% complete — and are not that evidence. A desktop
+     * player on Cinderhaven (fog 80-1,250 m) meets the swap at ~395-527 m
+     * under only 27-38% fog, so it looks like the phone's photographs, not
+     * the 3440 ones. Where it falls: a tank at ~527 m and a truck at ~348 m
+     * on a 1440-tall viewport at the hip field, ~395 and ~260 m at 1080, ~141
+     * and ~93 m on a phone's 384 — the swap comes NEARER exactly where a
+     * pixel is bigger, as the gate above does.
+     *
+     * **There is no hysteresis band at the swap, accepted** (the project
+     * owner, 2026-10-31): a hull sitting at its swap distance toggles its
+     * reduced set on every crossing — a phone player strafing ~4 m around
+     * 141 m from a parked tank sees a ~48 px twinkle at its nose — as the
+     * per-segment gate above toggles a part, which has no band either.
      *
      * 0 disables it (the full set always).
      */

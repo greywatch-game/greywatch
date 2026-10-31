@@ -131,7 +131,10 @@ you are on before you believe anything else in this section.
   POSES one — exactly the things a culling change touches. A gate that deleted
   the player's own VIEWMODEL passed `bank.mjs --check` byte-identical on all
   21 vantages (`FINDINGS.md` 39); since X0.1 the bank has rows that pose a
-  rig, each hull kind and the viewmodel and would catch THAT, but still none
+  rig, each hull kind and the viewmodel and would catch THAT (and since
+  X4.2c one, `cinderhaven-tank-far`, with a tank past the hull detail
+  tier's swap — a change of ~55 pixels a byte comparison of two `--keep`
+  directories sees and `--check`'s mean tolerance does not), but still none
   where bodies move or a world is culled while it is walked. What catches it is a screenshot pair taken in a LIVE
   round at one frozen camera, and **the pair needs a CONTROL** — two shots under
   the SAME condition — because `freeze` does not quite still everything and the

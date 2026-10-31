@@ -4383,15 +4383,28 @@ stands (`setWarm`), so the full set is the one the building card shows — one
 pipeline either way. **Why 32**: at 32 px a tank's measure (11.1 m) puts the
 largest detail part, the idler's 0.72 m disc, at ~2 px and a road wheel's hub
 at ~1.6, so what goes is a part that has already stopped reading as one;
-photographed full against reduced on open ground, 21-48 pixels of a tank and
-1-5 of a truck change at 32 on both a 3440x1440 and an 832x384 view, ~100 of
-a tank at 48, and by 64 the wheels are a row of dots that visibly go
-(X4.2c's note). In the world that is a tank at ~527 m and a truck at ~348 m
-at 1440 rows and the hip field, ~141 and ~93 m on a phone's 384 — nearer
-exactly where a pixel is bigger. What it saves is the detail segments' vertex
-work for every hull past it, and a rank's draw when every hull drawn there
-has dropped its segment at that rank: our renderer had already folded a
-hull's CPU cost into its ranks (X4.2b), where A3's +6.5% was measured as
+photographed full against reduced on open ground at an 832x384 view, where
+the swap is nearly unfogged, 33-48 pixels of a tank change at up to
+98-139/255 across 24-32 px with no knee and no visible step in a walk
+through it, and 1-5 of a truck; ~100 of a tank at 48, and by 64 the wheels
+are a row of dots that visibly go (X4.2c's note). The 3440x1440 photographs
+read smaller only because Sarab's fog is ~92% complete at that view's swap;
+a desktop player on Cinderhaven meets it under 27-38% fog, as the phone's
+photographs show it. In the world that is a tank at ~527 m and a truck at
+~348 m at 1440 rows and the hip field, ~395 and ~260 m at 1080, ~141 and ~93
+m on a phone's 384 — nearer exactly where a pixel is bigger. **There is no
+hysteresis band at the swap, and that is accepted** (the project owner,
+2026-10-31): a hull held at its swap distance toggles its reduced set on
+every crossing — a phone player strafing ~4 m around 141 m from a parked
+tank sees a ~48 px twinkle at its nose — exactly as the per-segment gate,
+which has no band either, toggles a part. **The bank's `cinderhaven-tank-far`
+row frames a tank just past the swap**, the one row that sees the tier, and
+it sees it only in a pixel comparison of two `--keep` directories (the tier
+is ~55 pixels of the frame, far under `--check`'s mean tolerance). What it
+saves is the detail segments' vertex work for every hull past it, and a
+rank's draw when every hull drawn there has dropped its segment at that
+rank: our renderer had already folded a hull's CPU cost into its ranks
+(X4.2b), where A3's +6.5% was measured as
 Babylon's per-mesh cost.
 
 **Its pipeline is asked once, at `Game`'s construction**, so the warm-up's wait

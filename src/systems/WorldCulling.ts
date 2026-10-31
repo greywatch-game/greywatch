@@ -620,7 +620,10 @@ export class WorldCulling {
    * one it shows), a threshold of 0, no camera. It is a SWAP and nothing
    * else: no hull is dropped by it, and the per-segment gate
    * (`keepsSphere`) still answers for every segment drawn, the detail ones
-   * of a hull drawn in full among them (decided 2026-10-31). Read by
+   * of a hull drawn in full among them (decided 2026-10-31). It has NO
+   * hysteresis band, as `keepsSphere` has none, and that is accepted (the
+   * project owner, 2026-10-31): a hull held at its swap distance toggles its
+   * reduced set on every crossing (`hullDetail`'s doc). Read by
    * `Game.drawHulls` after `update`, the same frame.
    */
   keepsDetail(x: number, y: number, z: number, radius: number): boolean {
