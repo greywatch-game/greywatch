@@ -949,7 +949,7 @@ lamps' atlas were already done (X4.1c).
 
 The full record is in [the archive](plans/done/babylon_exit_landed.md).
 
-### X4.3 — The viewmodel and the kit bay — **M–L, as four sub-steps** (split 2026-10-31, decided the same day) — X4.3a **LANDED** (3e48d98)
+### X4.3 — The viewmodel and the kit bay — **M–L, as four sub-steps** (split 2026-10-31, decided the same day) — X4.3a **LANDED** (3e48d98, review fixes after it)
 
 The player's own weapon — whichever of the nine carried rigs is up, its
 optic, both gloved arms, the throwing fist with its grenade or bottle, the
@@ -1009,9 +1009,10 @@ fresh compose where the node was not drawn in it — "one frame stale", as
 `evaluateReload`'s `parts.root.getWorldMatrix()` (the magazine's fall, :1922)
 read the same cache for the picture.
 
-- **X4.3a — the bank sees the viewmodel LANDED** (3e48d98; 2026-10-31; no
-  change to the game). Nineteen rows appended at the end of Harrowmead's
-  list (`bench/vantages.ts`' `viewmodelRows`, `kitRows`) and banked with
+- **X4.3a — the bank sees the viewmodel LANDED** (3e48d98, review fixes
+  after it; 2026-10-31; no change to the game). Twenty-two rows appended at
+  the end of Harrowmead's list (`bench/vantages.ts`' `viewmodelRows`,
+  `kitRows`, `reviewRows`) and banked with
   `--rows`: `view-greendot-hip`/`-aim` and `view-longscope-hip`/`-aim` (the
   DMR), `view-pistol-aim`, `view-rpg-aim`, `view-mine-hip`,
   `view-finish-satin`/`-glint`/`-mirror` (the ladder's three rungs above
@@ -1021,15 +1022,21 @@ read the same cache for the picture.
   `view-load`, `view-throw-frag`, `view-throw-molotov`, `view-flash` (a
   seeded strobe), and `kit-desktop`/`kit-phone` (the real lid over
   `deploy`, the bay `stageBay` measures at 1920x1080 and at 832x384 stated,
-  both shot at the bank's frame). `view` takes `params` (a partial
+  both shot at the bank's frame), and the review's three after them:
+  `view-pistol-reload` (the slide locked back), `view-bolt-aim` (the cycle
+  aimed, the reticle on the axis), `view-reload-tactical` (the spent
+  magazine stripped into the hand). A held reload is posed off ITS OWN
+  previous frame (its gravity reads Babylon's render cache: one frame
+  rendered with the pose up, then posed again). `view` takes `params` (a partial
   `ViewModelParams` over the player's own), `finish`, `throwable` and
   `flash`; `kit` is new; the freeze holds the light clock against the kit
-  lid's per-frame update. **Measured:** `--check --keep` twice back to back,
-  the 19 new rows 0 pixels from the bank both times and all 81 frames
-  byte-equal between the runs; the 62 old rows byte-equal to a BEFORE at
-  05eb7d9 (the same 34 stale rows); `census --against` the BEFORE: all 62
-  old rows equal, Harrowmead's total moving only by the new rows; typecheck,
-  build, corecheck pass. Every new row looked at.
+  lid's per-frame update. **Measured** (after the review's fixes):
+  `--check --keep` twice back to back, all 84 frames byte-equal between the
+  runs and the 22 new rows byte-equal to the bank; the 62 old rows
+  byte-equal to a BEFORE at 05eb7d9 (the same 34 stale rows); `census
+  --against` the BEFORE (at 3e48d98): all 62 old rows equal, Harrowmead's
+  total moving only by the new rows; typecheck, build, corecheck pass.
+  Every new or re-banked row looked at.
 - **X4.3b — the viewmodel's joints are ours (no picture change, no outcome
   change).** The tree becomes a `JointTree` (`rigJoints.ts`, X4.1a's), its
   joint list the node list in the order the nodes were made, and `Joint`

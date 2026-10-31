@@ -5570,7 +5570,7 @@ rows that frame a hull inside it move).
   hull's tracers and a shell's blast past its distance are accepted, not
   owed (the owner's decision above).
 
-### X4.3 — The viewmodel and the kit bay — **M–L, as four sub-steps** (split 2026-10-31, decided the same day) — X4.3a **LANDED** (3e48d98)
+### X4.3 — The viewmodel and the kit bay — **M–L, as four sub-steps** (split 2026-10-31, decided the same day) — X4.3a **LANDED** (3e48d98, review fixes after it)
 
 X4.3's intro, "Read first", "Contracts all four keep", "Verify" and the
 briefs of X4.3b-d are in the live plan until all four land. X4.3a's brief,
@@ -5600,12 +5600,14 @@ word for word:
   byte-identical to itself; every old row unmoved against a BEFORE at the
   parent; each new row LOOKED at and its `proves` true of it.
 
-**X4.3a landed** (3e48d98; 2026-10-31; no change to the game — the reference
+**X4.3a landed** (3e48d98, the post-commit review's fixes after it;
+2026-10-31; no change to the game — the reference
 bank, its harness and its table only).
 - **What it is.** Nineteen rows appended at the END of Harrowmead's list in
   `src/bench/vantages.ts` (`viewmodelRows`, `kitRows`, after `crossing`),
   every one at the ten `view-*` rows' millpond pose, banked with
-  `bank.mjs harrowmead --rows=<the nineteen>`:
+  `bank.mjs harrowmead --rows=<the nineteen>` (and three more after the
+  kit rows, by the post-commit review, below):
   - **the two optics the ten leave out** — `view-greendot-hip`/`-aim` (the
     rifle) and `view-longscope-hip`/`-aim` (the DMR, the one primary the ten
     leave out; the long scope aimed is the highest magnification in the kit
@@ -5682,12 +5684,13 @@ bank, its harness and its table only).
   `Game.setWeapon`/`setSight`/`setFinish`: the game's own kit (`g.weapon`,
   the prefs) is untouched, so the hidden DOM's caption says the boot's rifle
   while the bench holds the row's weapon — nothing reads that DOM. **The
-  head's turn is applied after the pose**, where a round turns the camera
-  the frame before: the reload's gravity (`evaluateReload`'s
-  `parts.root.getWorldMatrix()`, Babylon's render-id cache) reads the camera
-  before the turn, so the spent magazine's fall is some 9° off what a round
-  in steady state would give — deterministic, and exactly the cache X4.3b
-  has to reproduce. **Seen and written into the rows' text**: the bolt
+  reload's gravity** (`evaluateReload`'s `parts.root.getWorldMatrix()`,
+  Babylon's render-id cache) was first read off the PREVIOUS row's frame —
+  no render falls between the row before and the pose — and this note said
+  it read "the camera before the turn, some 9° off"; it read the row
+  before's weapon and camera outright. Corrected by the post-commit review
+  (below): a held reload is now posed off its own previous frame.
+  **Seen and written into the rows' text**: the bolt
   row's trigger hand is below the frame at the hip (the bolt and the roll
   are what is in it); `view-rpg-aim` frames the prism, not the seated
   warhead; `view-load` was chosen at 0.6 after looking at 0.45 (the nose
@@ -5733,7 +5736,77 @@ bank, its harness and its table only).
   bench lamps, the phone's right of centre with its pool of light following
   it. Each row's `proves` was written (and four rewritten) against what its
   frame shows.
-- **Owed onward.** X4.3b-d's BEFOREs now hold the nineteen; a `census
+- **Owed onward.** X4.3b-d's BEFOREs now hold the twenty-two; a `census
   --against` across this commit fails Harrowmead's total by construction
   (the new rows), so X4.3b-d's are taken at this commit or later. The
   bank's README table names them.
+- **What the post-commit review found** (an independent reader over
+  3e48d98; fixed after it — the bank, its harness and its table, one comment
+  in `CameraSystem.ts`; nothing in the game moved). **No game-behaviour bug.**
+  **Fixed**:
+  - **`view-reload-drop` read the PREVIOUS row's frame.** `evaluateReload`
+    takes the gesture's gravity through `rig.parts.root.getWorldMatrix()`,
+    which Babylon 9.28 answers from its cache while the node's
+    `_currentRenderId` is the scene's; no render falls between the row
+    before (`view-finish-mirror`) and the 240 steps, so `inp.fall` was that
+    row's: the rifle at the hip, the camera un-turned, no reload cant.
+    **Decided** (the coordinator, for the owner): the row reads ITS OWN
+    frame, which is what a reload held in a round reads every frame.
+    `placeVantage` now poses a held reload (`params.reloading`, or a
+    `reloadBlend` over 0 — the only path that reads the cache), turns the
+    head, renders ONE frame with the pose up, and poses and turns again; the
+    weapon's pose does not depend on the gravity, so one frame is the fixed
+    point. The rule is written on `reloadParams` and in `viewmodelRows`.
+    Re-banked: `view-reload-drop` (1.54% of pixels, worst 45/255, all in the
+    falling spent magazine, now a little left and higher) and
+    `view-reload-seat`, which moved only in the WORLD (0.149%, worst 71, the
+    mill's walls; its spent magazine is below the frame, so the gravity
+    itself shows nothing there) — the extra frame advances some state of the
+    world's lighting that a frozen frame still carries. That same carried
+    state moved two LATER rows a little, both in the world and neither on the
+    gun: `view-load` (0.56%, worst 48, round the mill) and
+    `view-throw-molotov` (0.005%, worst 18), re-banked too. So of the
+    nineteen first banked, fifteen are byte-unmoved and four re-banked.
+  - **No row moved the pistol's SLIDE** (`WeaponParts.slide`, which X4.3b
+    re-hangs; it moves only in the pistol's dry reload, back on its stop
+    until `reload.bolt` 0.8): `view-pistol-reload` appended — the pistol dry
+    at 0.6 over its own 1.05 s, the slide locked back with the barrel bare
+    ahead of it and the fresh magazine going up into the grip (0.7 looked at
+    and set aside: the magazine already seated). It holds a reload, so it is
+    posed off its own frame.
+  - **`view-bolt-aim`** appended: the sniper rifle with its scope, aimed, at
+    `cyclePhase` 0.42. The bolt is behind the eyepiece at this
+    magnification; what the frame shows is the cycle's aimed half — nothing
+    rolled, the reticle's lines in the same pixels as at rest (checked
+    against a `cyclePhase` 1 control shot in the same boot shape: the
+    vertical line y 536-866 and the horizontal x 633-1286 in both, the two
+    frames differing by 1.2% inside the tube only, worst 59). A reflex on the
+    same rifle was tried and set aside: the brief names the scope, and what
+    the reflex framed at the lower right was not clearly the bolt.
+  - **`view-reload-tactical`** appended: the rifle's tactical reload at 0.22,
+    the spent magazine stripped out of the well into the support hand
+    (`ReloadGesture.strippedAt`); 0.28 looked at and set aside (the hand
+    gone below the frame). Posed off its own frame.
+  - **The roll's put-away was dead, and its comment false**:
+    `TargetCamera.setTarget` writes `rotation.z = 0` in 9.28, so the
+    `__refRoll` stash and restore went; `placeVantage` says so, and the same
+    false claim in `CameraSystem.ts`' comment over the roll ("never touches
+    z") is corrected, comment only.
+  - **The row fields are typed** as the real id unions (`CarriedId`,
+    `SightId`, `FinishId`, `ThrowableId`, and `PrimaryWeaponId` for the kit),
+    `import type` only; `plans/webgpu-ref/vantages.mjs` still loads under
+    Node's type stripping.
+  - "Each of these four" in `placeVantage`'s put-away said four; it is five
+    (the lid, the bay, the flash, the finishes, the throwable), and the roll
+    needs none.
+  - **Measured.** The new and re-posed rows banked by `--rows`; then
+    `bank.mjs --check --keep` twice back to back: **all 84 kept frames
+    byte-equal between the two runs**, no console or page error, the same 34
+    stale rows failing as before; the 62 old rows **byte-equal** to the
+    BEFORE at 05eb7d9; against the first check of 3e48d98, 77 of 81 frames
+    byte-equal and the four above moved as described. The first `--rows`
+    take of `view-pistol-reload` came back one pixel (1/255) off the two
+    checks, which agreed with each other; re-taken with the other two it is
+    byte-equal to them, and all 22 banked rows are byte-equal to the check's
+    frames. Typecheck, build and corecheck pass. Every new or re-banked row
+    looked at and its `proves` written against its frame.

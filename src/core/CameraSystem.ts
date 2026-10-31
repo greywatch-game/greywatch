@@ -1240,8 +1240,10 @@ export class CameraSystem {
       this.camera.setTarget(this.eye.add(dir));
     }
     // Roll goes on AFTER the target: `setTarget` writes yaw and pitch out of
-    // the direction and never touches z, so this is the one axis the camera
-    // keeps of its own. It is still the only place anything writes it — two
+    // the direction and ZEROES z (Babylon 9.28's `TargetCamera.setTarget`),
+    // so a roll written before it would be lost — this is the one axis the
+    // camera keeps of its own, re-stated every frame. It is still the only
+    // place anything writes it — two
     // contributors now, but one assignment, because a second write site is how
     // a roll ends up being whichever of them ran last.
     // Two opposite-signed beats: the gun twisting under the charge, and the

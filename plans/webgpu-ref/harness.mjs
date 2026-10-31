@@ -275,9 +275,11 @@ export function placeVantage(page, vantage) {
     // before it in the same boot.
     // The kit screen first, because putting it away hands the weapon back to
     // the carried pose and shows it again (`Game.stowKit`), which the
-    // viewmodel's own put-away below then hides. Each of these four is done
-    // only after a row that raised it, so the rows banked before them run
-    // exactly the calls they were banked with.
+    // viewmodel's own put-away below then hides. Each of these five (the lid,
+    // the bay, the flash, the finishes, the throwable) is done only after a
+    // row that raised it, so the rows banked before them run exactly the
+    // calls they were banked with. A reload row's ROLL needs no put-away:
+    // `setTarget` below writes the camera's `rotation.z` to 0 itself.
     if (g.state === "loadout") g.closeLoadout();
     if (window.__refBay) {
       delete g.loadoutScreen.stageBay;
@@ -329,12 +331,6 @@ export function placeVantage(page, vantage) {
 
     const cam = g.cameraSys.camera;
     const Vec3 = cam.position.constructor;
-    // A reload row turned the camera's ROLL, which `setTarget` below never
-    // writes — so it is put back to what it was before that row.
-    if (window.__refRoll !== undefined) {
-      cam.rotation.z = window.__refRoll;
-      window.__refRoll = undefined;
-    }
     const [x, above, z] = v.pos;
     cam.position.set(x, g.map.terrain.surfaceAt(x, z, true) + above, z);
     const target = new Vec3(...v.target);
@@ -418,29 +414,51 @@ export function placeVantage(page, vantage) {
       view.reset();
       view.setVisible(true);
       const p = { ...g.player.viewParams, adsBlend: v.view.aimed ? 1 : 0, ...(v.view.params ?? {}) };
-      for (let i = 0; i < 240; i++) view.update(1 / 60, p);
+      const pose = () => {
+        for (let i = 0; i < 240; i++) view.update(1 / 60, p);
+        // **A reload is drawn with the HEAD looking down at it**: `Player`
+        // pushes the gesture's look and lean to the camera after the pose
+        // (`CameraSystem.setReloadHead`), and the viewmodel's body node takes
+        // the same turn back, so the weapon stays in the hands while the
+        // world tips. The rendered camera is composed as `CameraSystem`
+        // composes it — the look added to the pitch, the lean as the roll
+        // (written after `setTarget`, which zeroes it) — and the passes are
+        // placed again at the turned eye.
+        const headPitch = view.reloadHeadPitch;
+        const headRoll = view.reloadHeadRoll;
+        if (headPitch !== 0 || headRoll !== 0) {
+          const d = target.subtract(cam.position);
+          const yaw = Math.atan2(d.x, d.z);
+          const pitch = Math.atan2(d.y, Math.hypot(d.x, d.z)) + headPitch;
+          const cp = Math.cos(pitch);
+          const look = new Vec3(cp * Math.sin(yaw), Math.sin(pitch), cp * Math.cos(yaw));
+          cam.setTarget(cam.position.add(look));
+          cam.rotation.z = headRoll;
+          g.cameraSys.yaw = cam.rotation.y;
+          g.cameraSys.pitch = cam.rotation.x;
+          g.updateSceneForCamera(0, look.scaleInPlace(8).addInPlace(cam.position), null, []);
+        }
+      };
+      pose();
       if (v.view.aimed) cam.fov = view.sight.fovAds;
-      // **A reload is drawn with the HEAD looking down at it**: `Player`
-      // pushes the gesture's look and lean to the camera after the pose
-      // (`CameraSystem.setReloadHead`), and the viewmodel's body node takes
-      // the same turn back, so the weapon stays in the hands while the world
-      // tips. The rendered camera is composed as `CameraSystem` composes it —
-      // the look added to the pitch, the lean as the roll — and the passes
-      // are placed again at the turned eye.
-      const headPitch = view.reloadHeadPitch;
-      const headRoll = view.reloadHeadRoll;
-      if (headPitch !== 0 || headRoll !== 0) {
-        const d = target.subtract(cam.position);
-        const yaw = Math.atan2(d.x, d.z);
-        const pitch = Math.atan2(d.y, Math.hypot(d.x, d.z)) + headPitch;
-        const cp = Math.cos(pitch);
-        const look = new Vec3(cp * Math.sin(yaw), Math.sin(pitch), cp * Math.cos(yaw));
-        cam.setTarget(cam.position.add(look));
-        window.__refRoll ??= cam.rotation.z;
-        cam.rotation.z = headRoll;
-        g.cameraSys.yaw = cam.rotation.y;
-        g.cameraSys.pitch = cam.rotation.x;
-        g.updateSceneForCamera(0, look.scaleInPlace(8).addInPlace(cam.position), null, []);
+      // **A held reload is posed off ITS OWN previous frame.** Its gravity is
+      // the world's down through the weapon's world matrix
+      // (`ViewModel.evaluateReload`), which Babylon answers from its render
+      // cache — the matrix the LAST render composed, which straight after the
+      // row before is that row's weapon. So one frame is rendered with this
+      // pose up (the head turned) and the pose is run again, reading this
+      // row's own frame, as a reload held in a round does every frame. The
+      // weapon's pose does not depend on the gravity, so one frame is the
+      // fixed point. Only a reload reads the cache (`evaluateReload` returns
+      // before it otherwise), so no other row renders the extra frame.
+      if (p.reloading || p.reloadBlend > 0.001) {
+        await new Promise((res) => {
+          const o = g.scene.onAfterRenderObservable.add(() => {
+            g.scene.onAfterRenderObservable.remove(o);
+            res();
+          });
+        });
+        pose();
       }
       // One round fired: the flash's roll and scale are drawn at random, so
       // they are drawn from a seed. It burns down only in a stepped frame,

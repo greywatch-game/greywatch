@@ -95,7 +95,11 @@
  */
 
 // Type-only, so erased: Node loads this file by type stripping (the header).
+import type { FinishId } from "../entities/finishes";
+import type { SightId } from "../entities/sights";
+import type { ThrowableId } from "../entities/throwables";
 import type { StageBay, ViewModelParams } from "../entities/ViewModel";
+import type { CarriedId, PrimaryWeaponId } from "../entities/weapons";
 
 /** A pose: `[x, metres ABOVE THE SURFACE, z]` to look at an absolute point. */
 type Pos = readonly [x: number, above: number, z: number];
@@ -121,15 +125,15 @@ export interface Vantage {
   }[];
   blast?: { at: readonly [x: number, z: number]; age?: number; power?: number };
   view?: {
-    weapon: string;
-    sight: string;
+    weapon: CarriedId;
+    sight: SightId;
     aimed: boolean;
     params?: Readonly<Partial<ViewModelParams>>;
-    finish?: string;
-    throwable?: string;
+    finish?: FinishId;
+    throwable?: ThrowableId;
     flash?: boolean;
   };
-  kit?: { weapon: string; sight: string; finish?: string; bay: Readonly<StageBay> };
+  kit?: { weapon: PrimaryWeaponId; sight: SightId; finish?: FinishId; bay: Readonly<StageBay> };
   zones?: boolean;
   settings?: Readonly<Record<string, string | boolean | number>>;
   turn?: number;
@@ -401,6 +405,8 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
     // with (`bank.mjs --rows`).
     ...viewmodelRows(),
     ...kitRows(),
+    // Appended for X4.3a's review, after the kit rows for the same reason.
+    ...reviewRows(),
   ],
   sarab: [
     {
@@ -554,7 +560,7 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
  * with water, foliage and a lit building in one direction.
  */
 function viewRows(): Vantage[] {
-  const fits: [sight: string, weapon: string][] = [
+  const fits: [sight: SightId, weapon: CarriedId][] = [
     ["reflex", "smg"],
     ["iron", "rifle"],
     ["holo", "carbine"],
@@ -584,6 +590,33 @@ function millpond(): Pick<Vantage, "pos" | "target"> {
   return { pos: [-160, 1.6, 102], target: [-108, 3, 70] };
 }
 
+/** A viewmodel row at the millpond. */
+function viewRow(
+  id: string,
+  of: string,
+  proves: string,
+  view: NonNullable<Vantage["view"]>,
+): Vantage {
+  return { id: `view-${id}`, of, proves, ...millpond(), view };
+}
+
+/**
+ * A reload held at `reloadPhase`: live, the gate full, over the weapon's own
+ * `reloadTime` (`seconds`), dry or tactical.
+ *
+ * **A row holding a reload is posed off ITS OWN previous frame** (`harness.mjs`'
+ * `placeVantage`): the gesture's gravity is the world's down put through the
+ * weapon's world matrix (`ViewModel.evaluateReload`), which Babylon answers
+ * from its render cache — the matrix the LAST RENDER composed. Posed straight
+ * after the row before it, that would be the previous row's weapon; so the
+ * pose is run, one frame is rendered with it up, and the pose is run again,
+ * which is what a reload held in a round reads every frame (the weapon's pose
+ * does not depend on the gravity, so one frame reaches the fixed point).
+ */
+function reloadParams(reloadPhase: number, seconds: number, dry: boolean): Partial<ViewModelParams> {
+  return { reloading: true, reloadBlend: 1, reloadPhase, reloadTime: seconds, reloadDry: dry };
+}
+
 /**
  * What the ten rows above cannot see and `BABYLON_EXIT.md` X4.3b-d move: the
  * two optics they leave out, the three rigs with a sight of their own (the
@@ -594,21 +627,12 @@ function millpond(): Pick<Vantage, "pos" | "target"> {
  * none of them is shot after a state it was not banked with.
  */
 function viewmodelRows(): Vantage[] {
-  const row = (
-    id: string,
-    of: string,
-    proves: string,
-    view: NonNullable<Vantage["view"]>,
-  ): Vantage => ({ id: `view-${id}`, of, proves, ...millpond(), view });
-  // A dry reload of the rifle, `reloadTime` its own (1.4 s): live, the gate
-  // full, the phase held.
-  const dry = (reloadPhase: number) => ({
-    reloading: true,
-    reloadBlend: 1,
-    reloadPhase,
-    reloadTime: 1.4,
-    reloadDry: true,
-  });
+  const row = viewRow;
+  // A dry reload of the rifle, `reloadTime` its own (1.4 s). Posed off its
+  // OWN previous frame, never the row before's: its gravity reads the weapon's
+  // world matrix out of Babylon's render cache (`reloadParams` has the rule,
+  // and `placeVantage` renders the frame).
+  const dry = (reloadPhase: number) => reloadParams(reloadPhase, 1.4, true);
   return [
     row(
       "greendot-hip",
@@ -742,5 +766,34 @@ function kitRows(): Vantage[] {
       finish: "bullion",
       bay: { x: 0.324, y: -0.0083, width: 0.608, height: 0.4761 },
     }),
+  ];
+}
+
+/**
+ * What X4.3a's review found the rows above still could not see: the pistol's
+ * SLIDE, which moves only in its dry reload; the bolt cycle AIMED, where the
+ * bolt moves and the reticle must not; and a TACTICAL reload, whose spent
+ * magazine is stripped out into the hand rather than dropped.
+ */
+function reviewRows(): Vantage[] {
+  return [
+    viewRow(
+      "pistol-reload",
+      "the pistol's dry reload held as the fresh magazine goes up into the grip, the slide locked back",
+      "the pistol's SLIDE node locked back on its stop, the barrel bare ahead of it (`WeaponParts.slide`, which moves in no other gesture), the pistol turned in about the firing hand, and the fresh magazine going up into the grip in the support hand (X4.3)",
+      { weapon: "pistol", sight: "iron", aimed: false, params: reloadParams(0.6, 1.05, true) },
+    ),
+    viewRow(
+      "bolt-aim",
+      "the sniper rifle's bolt cycle held aimed, the bolt drawn back, the scope on the eye",
+      "the bolt cycle AIMED, the one gesture that keeps the sight picture: nothing rolled and the reticle on the axis, in the same pixels as at rest, while the bolt is drawn — the bolt itself is behind the eyepiece at this magnification, and the cycle's wobble on the aim is `CameraSystem`'s and not posed (X4.3)",
+      { weapon: "sniper", sight: "scope", aimed: true, params: { cyclePhase: 0.42 } },
+    ),
+    viewRow(
+      "reload-tactical",
+      "the rifle's tactical reload held as the spent magazine is stripped out of the well into the support hand",
+      "the TACTICAL reload's spent magazine (the clone) stripped down the well in the support hand (`ReloadGesture.strippedAt`) rather than dropped, on its pivot, the head looking down (X4.3)",
+      { weapon: "rifle", sight: "iron", aimed: false, params: reloadParams(0.22, 1.4, false) },
+    ),
   ];
 }
