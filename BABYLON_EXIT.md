@@ -949,7 +949,7 @@ lamps' atlas were already done (X4.1c).
 
 The full record is in [the archive](plans/done/babylon_exit_landed.md).
 
-### X4.3 — The viewmodel and the kit bay — **M–L, as four sub-steps** (split 2026-10-31, decided the same day)
+### X4.3 — The viewmodel and the kit bay — **M–L, as four sub-steps** (split 2026-10-31, decided the same day) — X4.3a **LANDED** (HASH)
 
 The player's own weapon — whichever of the nine carried rigs is up, its
 optic, both gloved arms, the throwing fist with its grenade or bottle, the
@@ -1009,29 +1009,27 @@ fresh compose where the node was not drawn in it — "one frame stale", as
 `evaluateReload`'s `parts.root.getWorldMatrix()` (the magazine's fall, :1922)
 read the same cache for the picture.
 
-- **X4.3a — the bank sees the viewmodel (no change to the game).** The bank's
-  ten `view-*` rows (`bench/vantages.ts:518-543`, Harrowmead by day) hold
-  five of the seven optics (no `greenDot`, no `longScope`) on five of the
-  nine rigs (no DMR, no pistol — the one FIXED sight, at its own eye relief —
-  no launcher, no mine), every one at rest, matte, and none on the kit
-  screen. Rows are added for what X4.3b-d move and the ten cannot see:
-  `greenDot` and `longScope` hip and aimed; the pistol, the launcher (its own
-  prism, `RpgModel.ts:293`) and the mine; one finish on each rung of the
-  gloss ladder above matte, the mirror rung (`spec.rifleChrome`) among them;
-  the gestures held mid-phase — a dry reload (both magazines, both pivots,
-  the body's counter-turn), the bolt cycle, the launcher's load, a frag and a
-  molotov mid-throw, a shot's flash on a seeded strobe; and the kit screen, by
-  raising the REAL lid over `deploy` (the card, the bench lamps, the glow's
-  stage rule) with the DOM's bay replaced by a stated one, at a desktop's
-  bay and a phone's. The existing `view` field takes a `params` override
-  (`ViewModelParams` as stated) and a `finish`; a `kit` field is new
-  (`harness.mjs`' `placeVantage`, :369-378, and its put-away). **Appended at
-  the END of Harrowmead's sequence**, because a row's frame depends on the
-  rows shot before it (`plans/webgpu-ref/README.md`), and banked with
-  `--rows`. It lands before X4.3b so every later sub-step's BEFORE has them.
-  **Oracle:** `bank.mjs --check` twice back to back, every new row
-  byte-identical to itself; every old row unmoved against a BEFORE at the
-  parent; each new row LOOKED at and its `proves` true of it.
+- **X4.3a — the bank sees the viewmodel LANDED** (HASH; 2026-10-31; no
+  change to the game). Nineteen rows appended at the end of Harrowmead's
+  list (`bench/vantages.ts`' `viewmodelRows`, `kitRows`) and banked with
+  `--rows`: `view-greendot-hip`/`-aim` and `view-longscope-hip`/`-aim` (the
+  DMR), `view-pistol-aim`, `view-rpg-aim`, `view-mine-hip`,
+  `view-finish-satin`/`-glint`/`-mirror` (the ladder's three rungs above
+  matte), `view-reload-drop` and `view-reload-seat` (a dry reload, two rows
+  because the two magazines are never in frame together; the camera turned
+  by the head's look and lean as `CameraSystem` turns it), `view-bolt`,
+  `view-load`, `view-throw-frag`, `view-throw-molotov`, `view-flash` (a
+  seeded strobe), and `kit-desktop`/`kit-phone` (the real lid over
+  `deploy`, the bay `stageBay` measures at 1920x1080 and at 832x384 stated,
+  both shot at the bank's frame). `view` takes `params` (a partial
+  `ViewModelParams` over the player's own), `finish`, `throwable` and
+  `flash`; `kit` is new; the freeze holds the light clock against the kit
+  lid's per-frame update. **Measured:** `--check --keep` twice back to back,
+  the 19 new rows 0 pixels from the bank both times and all 81 frames
+  byte-equal between the runs; the 62 old rows byte-equal to a BEFORE at
+  05eb7d9 (the same 34 stale rows); `census --against` the BEFORE: all 62
+  old rows equal, Harrowmead's total moving only by the new rows; typecheck,
+  build, corecheck pass. Every new row looked at.
 - **X4.3b — the viewmodel's joints are ours (no picture change, no outcome
   change).** The tree becomes a `JointTree` (`rigJoints.ts`, X4.1a's), its
   joint list the node list in the order the nodes were made, and `Joint`

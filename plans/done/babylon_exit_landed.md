@@ -4,7 +4,7 @@
 > [`BABYLON_EXIT.md`](../../BABYLON_EXIT.md), which keeps every landed step's
 > heading with a short summary: its commits, what it measured, any picture
 > change or decision, and what it still owes. Below is the full text of
-> Phase 3 (X3.1 to X3.7c) and of Phase 4's landed steps (X4.1a to X4.2d),
+> Phase 3 (X3.1 to X3.7c) and of Phase 4's landed steps (X4.1a to X4.3a),
 > moved here word for word: each step's brief, what it found, what it
 > measured, what its post-commit review found and what it decided. Phases 0
 > to 2 are in [`babylon_exit_phases_0-2.md`](babylon_exit_phases_0-2.md).
@@ -14,7 +14,9 @@
 > paragraph opening "**X3.6c landed**", "**X4.1d landed**" and so on, here.
 > Pointers inside this text to "below" or "above" mean the original file;
 > "Decisions that are yours", "The branch", "Rules every step obeys" and
-> the steps not yet landed (X4.3 onward) are in the live plan.
+> the steps not yet landed (X4.3b onward) are in the live plan, and so is
+> X4.3's own brief (its intro, "Read first", the contracts all four keep
+> and "Verify") until all four of its sub-steps have landed.
 
 ---
 
@@ -5567,3 +5569,171 @@ rows that frame a hull inside it move).
   items stand (the rank surplus, the boot cost, the editor's hulls). A
   hull's tracers and a shell's blast past its distance are accepted, not
   owed (the owner's decision above).
+
+### X4.3 — The viewmodel and the kit bay — **M–L, as four sub-steps** (split 2026-10-31, decided the same day) — X4.3a **LANDED** (HASH)
+
+X4.3's intro, "Read first", "Contracts all four keep", "Verify" and the
+briefs of X4.3b-d are in the live plan until all four land. X4.3a's brief,
+word for word:
+
+- **X4.3a — the bank sees the viewmodel (no change to the game).** Landed (below). The bank's
+  ten `view-*` rows (`bench/vantages.ts:518-543`, Harrowmead by day) hold
+  five of the seven optics (no `greenDot`, no `longScope`) on five of the
+  nine rigs (no DMR, no pistol — the one FIXED sight, at its own eye relief —
+  no launcher, no mine), every one at rest, matte, and none on the kit
+  screen. Rows are added for what X4.3b-d move and the ten cannot see:
+  `greenDot` and `longScope` hip and aimed; the pistol, the launcher (its own
+  prism, `RpgModel.ts:293`) and the mine; one finish on each rung of the
+  gloss ladder above matte, the mirror rung (`spec.rifleChrome`) among them;
+  the gestures held mid-phase — a dry reload (both magazines, both pivots,
+  the body's counter-turn), the bolt cycle, the launcher's load, a frag and a
+  molotov mid-throw, a shot's flash on a seeded strobe; and the kit screen, by
+  raising the REAL lid over `deploy` (the card, the bench lamps, the glow's
+  stage rule) with the DOM's bay replaced by a stated one, at a desktop's
+  bay and a phone's. The existing `view` field takes a `params` override
+  (`ViewModelParams` as stated) and a `finish`; a `kit` field is new
+  (`harness.mjs`' `placeVantage`, :369-378, and its put-away). **Appended at
+  the END of Harrowmead's sequence**, because a row's frame depends on the
+  rows shot before it (`plans/webgpu-ref/README.md`), and banked with
+  `--rows`. It lands before X4.3b so every later sub-step's BEFORE has them.
+  **Oracle:** `bank.mjs --check` twice back to back, every new row
+  byte-identical to itself; every old row unmoved against a BEFORE at the
+  parent; each new row LOOKED at and its `proves` true of it.
+
+**X4.3a landed** (HASH; 2026-10-31; no change to the game — the reference
+bank, its harness and its table only).
+- **What it is.** Nineteen rows appended at the END of Harrowmead's list in
+  `src/bench/vantages.ts` (`viewmodelRows`, `kitRows`, after `crossing`),
+  every one at the ten `view-*` rows' millpond pose, banked with
+  `bank.mjs harrowmead --rows=<the nineteen>`:
+  - **the two optics the ten leave out** — `view-greendot-hip`/`-aim` (the
+    rifle) and `view-longscope-hip`/`-aim` (the DMR, the one primary the ten
+    leave out; the long scope aimed is the highest magnification in the kit
+    and the longest eye relief, clear of the near plane);
+  - **the three rigs with a sight of their own** — `view-pistol-aim` (the
+    notch and blade at the pistol's OWN eye relief), `view-rpg-aim` (the
+    launcher's fixed prism, its chevron on the axis), `view-mine-hip`;
+  - **one finish on each rung of the gloss ladder above matte**, the rifle
+    with the irons at the hip — `view-finish-satin` (Oxblood, body and
+    fittings `spec.rifleSatin`), `view-finish-glint` (Signal, the fittings
+    `spec.rifle` under a repainted body and furniture), `view-finish-mirror`
+    (Quicksilver, `spec.rifleChrome`);
+  - **the gestures held mid-phase** — `view-reload-drop` (a dry reload of
+    the rifle at 0.26: the spent clone falling, the support arm gone to the
+    pouch) and `view-reload-seat` (0.5: the fresh magazine, the weapon's own
+    node, offered to the well in the support hand, the weapon canted about
+    the firing hand and the wrist's quaternion taking some of it back);
+    `view-bolt` (the sniper rifle at `cyclePhase` 0.42: rolled out of the
+    carry, the bolt turned up and drawn to its stop); `view-load` (the
+    launcher at `loadPhase` 0.6: the rocket turned onto the bore and going
+    back down it, the hand behind it, the tube off the shoulder);
+    `view-throw-frag` and `view-throw-molotov` (`throwTime` 0.14, cocked: the
+    throwing arm, the fist and the frag with its pip, the bottle with its
+    wick; the support arm off, the rifle's give); `view-flash` (the rifle at
+    the hip, the flash's three petals on the muzzle node after one
+    `PlayerView.fired` under a seeded `Math.random`);
+  - **the kit screen** — `kit-desktop` (the carbine with the holo) and
+    `kit-phone` (the SMG with the reflex in Bullion, right of centre): the
+    REAL lid raised over `deploy` (`Game.openLoadout` — the card, the bench
+    lamps, the glow's stage rule, the turntable at its authored angles,
+    posed every frame by `updateKitStage`), with `LoadoutScreen.stageBay`
+    answered by the row's bay, because the bank hides `#hud` and there is no
+    DOM bay to measure. The bays are the real DOM's, measured by a scratch
+    script with the lid raised over `deploy` on Harrowmead: 1920x1080
+    `{x: -0.0104, y: -0.0617, width: 0.4549, height: 0.5346}`, 832x384
+    `{x: 0.324, y: -0.0083, width: 0.608, height: 0.4761}` (3440x1440 read
+    `{-0.0078, -0.0613, 0.5845, 0.5355}`, not banked). Both are shot at the
+    bank's 1920x1080 frame, not at a phone's viewport: a resize inside the
+    boot would carry into every later row, and the phone's bay at the bank's
+    aspect still moves the weapon, its fit and the card's pool of light.
+- **The fields.** `Vantage.view` gains `params` (a `Partial<ViewModelParams>`
+  laid over the player's own for every one of the 240 steps — each gesture
+  is a function of its phase, so a held phase is the same frame every run),
+  `finish` (`ViewModel.setFinish`), `throwable` (`ViewModel.setThrowable`)
+  and `flash`; `kit: { weapon, sight, finish?, bay }` is new. The two types
+  are imported type-only (erased under Node's type stripping, which the
+  file's header requires). `placeVantage` (`plans/webgpu-ref/harness.mjs`)
+  puts each away before the next row — the lid lowered (`closeLoadout`),
+  `stageBay` restored, the flash `cleared()`, each painted weapon back to
+  `standard`, the throwable back to what the boot carried, the camera's
+  roll back — **each only after a row that raised it**, so the 62 rows
+  before run exactly the calls they were banked with. The blast's seeded
+  `Math.random` became a `seeded(seed, fn)` helper the flash shares (the
+  same generator and seed: the blast row is byte-equal). **The head**: a
+  reload drawn in a round turns the RENDERED camera by the gesture's look
+  and lean (`CameraSystem.setReloadHead`) while the body node takes it back;
+  a row whose pose leaves a head turn composes the camera as `CameraSystem`
+  does (the look added to the pitch, the lean as the roll) and re-places
+  the camera-dependent passes at the turned eye (`updateSceneForCamera` at
+  dt 0). **The freeze** now HOLDS the light clock as well as pinning it:
+  no frame of `deploy` updates the lights, but the kit lid does every frame
+  (`updateKitStage`, which is how the bench lamps take their slots), so while
+  frozen `lighting.update` is handed a dt of 0 (stashed and put back by
+  `thaw` like the other updaters); in `deploy` nothing calls it, so the old
+  rows are untouched by it.
+- **Deviations from the brief.** **Nineteen rows, not about seventeen**:
+  the dry reload is two rows because the spent and the fresh magazine are
+  never on screen together — by design the two trade at the pouch, out of
+  frame (`reload.fresh.fetch`) — and "both magazines" needs both. The
+  pistol and the launcher are banked AIMED only (their fixed sights' eye
+  relief is the aimed question; their hip poses are hip offsets the ten
+  already exercise), the mine at the hip only. **The kit's weapon is put on
+  the viewmodel directly**, as the `view` rows put theirs, not through
+  `Game.setWeapon`/`setSight`/`setFinish`: the game's own kit (`g.weapon`,
+  the prefs) is untouched, so the hidden DOM's caption says the boot's rifle
+  while the bench holds the row's weapon — nothing reads that DOM. **The
+  head's turn is applied after the pose**, where a round turns the camera
+  the frame before: the reload's gravity (`evaluateReload`'s
+  `parts.root.getWorldMatrix()`, Babylon's render-id cache) reads the camera
+  before the turn, so the spent magazine's fall is some 9° off what a round
+  in steady state would give — deterministic, and exactly the cache X4.3b
+  has to reproduce. **Seen and written into the rows' text**: the bolt
+  row's trigger hand is below the frame at the hip (the bolt and the roll
+  are what is in it); `view-rpg-aim` frames the prism, not the seated
+  warhead; `view-load` was chosen at 0.6 after looking at 0.45 (the nose
+  just rising into frame) and 0.68; both kit rows see the weapon side-on at
+  the authored yaw, so a lens on the bench is a sliver (the aimed `holo`
+  and `reflex` rows are X4.3d's glass). The ten rows' shared `proves` said
+  "its depth clear" — group 1's depth is NOT cleared (`Game.ts`, the comment
+  over `setRenderingAutoClearDepthStencil`): corrected; no frame depends on
+  that text. `BenchScript`'s note on the millpond rows reworded; the
+  benchmark itself is unmoved, since it takes one stop per POSITION and
+  every new row stands on the millpond.
+- **Measured.** **Banked**: `bank.mjs harrowmead --rows=...` wrote all 19,
+  each from two consecutive grabs byte-identical. **Twice back to back**:
+  `bank.mjs --check --keep` run twice in a row on this tree — all 19 new
+  rows "within floor" at 0 pixels against the bank in both runs, and all 81
+  kept frames BYTE-EQUAL between the two runs; no console or page error.
+  **Old rows**: against a BEFORE taken the same way at 05eb7d9 in the
+  worktree, **62 of 62 byte-equal**, and the same 34 stale rows failing the
+  stale bank on both sides with identical numbers. **`census --against`**
+  the BEFORE (`census.mjs --out` in the worktree): every one of the 62 old
+  rows equal, the six other maps' totals equal (278, 205, 672, 472, 213,
+  125), Harrowmead's 847 -> 2,123 by the new rows alone — 74 and 53 (green
+  dot), 74 and 54 (long scope), 53 (pistol), 53 (launcher), 67 (mine), 70 a
+  finish, 66 and 66 (the reloads), 75 (bolt), 74 (load), 72 and 74 (the
+  throws), 73 (flash), and 70 and 68 on the kit screen, where the world is
+  still drawn under the card (36 of ours). Typecheck, build
+  (`check-babylon-free` and `check-proving` clean) and corecheck (all
+  passed) pass. Not run: `gate`, `shaders`, `parity`, `kit:hash --models`
+  and the rounds — nothing in the game moved (the one `src/` file the game
+  loads, through `?bench` only, is the table; `BenchScript` gained a
+  reworded comment).
+- **Looked at, every one**: the green dot hip and aimed (the dot on the
+  axis inside the ring), the long scope hip and aimed (the red crosshair,
+  the tube filling the frame), the pistol's three red dots over the slide,
+  the launcher's chevron in its prism, the mine in both hands with its lamp
+  blooming, the three finishes (oxblood, orange furniture under graphite,
+  chrome-white), the drop (the spent magazine below the well, the horizon
+  tipped up and leaning), the seat (the fresh magazine in the support hand
+  at the well), the bolt handle up and back on a rolled rifle, the rocket on
+  the bore with the hand behind it, the frag with its glowing pip and the
+  bottle with its wick cocked over the shoulder, the flash's petals edge-on
+  at the muzzle, and both kit screens — the dark card, the weapon lit by the
+  bench lamps, the phone's right of centre with its pool of light following
+  it. Each row's `proves` was written (and four rewritten) against what its
+  frame shows.
+- **Owed onward.** X4.3b-d's BEFOREs now hold the nineteen; a `census
+  --against` across this commit fails Harrowmead's total by construction
+  (the new rows), so X4.3b-d's are taken at this commit or later. The
+  bank's README table names them.

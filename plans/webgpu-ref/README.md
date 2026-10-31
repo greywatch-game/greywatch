@@ -305,9 +305,10 @@ silently replaces the thing that would have caught the shader change.
 **Since `BABYLON_EXIT.md` X0.1 the bank is the look oracle for a renderer
 being replaced piece by piece**, and a table of map views holds none of the
 pieces after the static world. So a row may ask for a SUBJECT — soldiers, a
-blast in the air, the viewmodel, the capture rings and flags, a setting
-changed, the motion blur in flight — each posed by the game's own code from a
-fixed state through fixed steps (`src/bench/vantages.ts`'s header lists them, and
+blast in the air, the viewmodel (fitted, painted, or held mid-gesture), the
+kit screen, the capture rings and flags, a setting changed, the motion blur in
+flight — each posed by the game's own code from a fixed state through fixed
+steps (`src/bench/vantages.ts`'s header lists them, and
 `placeVantage` puts every one away before the next row). What the table holds
 for each step of the exit:
 
@@ -317,7 +318,7 @@ for each step of the exit:
 | X3.5 terrain and roads | every map's `ground` (the eye 35 cm off the floor, a turf edge in frame) and `crossing` (two road ranks meeting), banked by `--rows` before X3.5 so they are Babylon's floor |
 | X4.1 bodies | `sarab-rig-near`, `sarab-rig-far` (250 m, inside `bodyDrawDistance`) |
 | X4.2 vehicles | `sarab-tank`, `sarab-truck`, `sarab-heli`; `cinderhaven-tank-far` (X4.2c's detail tier: a tank ~30.5 px across, just past its 32 px swap, so it draws its REDUCED set — ~55 pixels of the frame, seen by a pixel comparison of two `--keep` directories and never by `--check`'s mean tolerance; appended by `--rows`) |
-| X4.3 the viewmodel | `harrowmead-view-<optic>-hip` / `-aim`, one weapon per optic |
+| X4.3 the viewmodel | `harrowmead-view-<optic>-hip` / `-aim`, one weapon per optic; and X4.3a's nineteen, appended at the end of Harrowmead's list by `--rows`: the two optics those leave out (`view-greendot-*`, `view-longscope-*` on the DMR), the three rigs with a sight of their own (`view-pistol-aim`, `view-rpg-aim`, `view-mine-hip`), one finish on each rung of the gloss ladder above matte (`view-finish-satin`, `-glint`, `-mirror`), every gesture held mid-phase (`view-reload-drop` and `-seat` — a dry reload, the camera turned by the head's look — `view-bolt`, `view-load`, `view-throw-frag`, `-molotov`, and `view-flash` on a seeded strobe), and the kit screen (`kit-desktop`, `kit-phone`: the real lid raised over `deploy`, the card, the bench lamps and the glow's stage rule, at the bay `stageBay` measures on a desktop and on an 832x384 phone, stated because the bank hides the interface) |
 | X4.4 effect pools | `coldharbour-blast` |
 | X4.5 sky and clouds | every row; `hollowmere-lanterns` and `cinderhaven-town` at night |
 | X4.6 water, glazing, rings | `greyfen-marsh`, `harrowmead-millpond`, `coldharbour-shopfront` (see-through), `coldharbour-curtain2/40/90` (backed), `hollowmere-ring` |

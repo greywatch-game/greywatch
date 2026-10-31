@@ -63,9 +63,26 @@
  * - `blast: { at: [x, z], age, power }` — the real `BlastFx`, raised on the
  *   floor at `at` and aged `age` seconds in 1/60 s steps, its layout drawn
  *   under a seeded `Math.random`.
- * - `view: { weapon, sight, aimed }` — the player's viewmodel, fitted and
- *   posed by `ViewModel.update` until it settles; aimed takes the optic's own
- *   field too.
+ * - `view: { weapon, sight, aimed, params?, finish?, throwable?, flash? }` —
+ *   the player's viewmodel, fitted and posed by `ViewModel.update` until it
+ *   settles; aimed takes the optic's own field too. `params` is laid over the
+ *   player's own `ViewModelParams` for every step of the pose, which is how a
+ *   GESTURE is held mid-phase (a reload's `reloadPhase`, the bolt's
+ *   `cyclePhase`, the launcher's `loadPhase`, a throw's `throwTime`): each is a
+ *   function of its phase, so a phase held for the settle is the same frame
+ *   every run. A reload held there turns the CAMERA by the head's look and
+ *   lean as `CameraSystem` would (the body node takes it back), and the
+ *   passes are re-placed at the turned eye. `finish` paints the weapon
+ *   (`ViewModel.setFinish`), `throwable` puts the frag or the bottle in the
+ *   throwing fist, and `flash` fires the muzzle flash once (`PlayerView.fired`)
+ *   under a seeded `Math.random`, so its roll and scale are the same strobe
+ *   every run. All four are put back before the next row.
+ * - `kit: { weapon, sight, finish?, bay }` — the KIT screen: the real lid
+ *   raised over `deploy` (`Game.openLoadout` — the card, the bench lamps and
+ *   the glow's stage rule, the weapon on the turntable at its authored
+ *   angles), with the bay the DOM would measure replaced by the stated one
+ *   (`LoadoutScreen.stageBay`; the bank hides the interface, so there is no
+ *   DOM bay to measure). The lid comes down again before the next row.
  * - `zones: true` — the capture rings and their flags, which every other row
  *   hides. Built at the start of a round, so the flag is at the foot of its
  *   pole and the cloth at rest.
@@ -76,6 +93,9 @@
  *
  * Positions read like `pos`: `[x, z]` on the floor as drawn.
  */
+
+// Type-only, so erased: Node loads this file by type stripping (the header).
+import type { StageBay, ViewModelParams } from "../entities/ViewModel";
 
 /** A pose: `[x, metres ABOVE THE SURFACE, z]` to look at an absolute point. */
 type Pos = readonly [x: number, above: number, z: number];
@@ -100,7 +120,16 @@ export interface Vantage {
     pose?: Readonly<Record<string, number>>;
   }[];
   blast?: { at: readonly [x: number, z: number]; age?: number; power?: number };
-  view?: { weapon: string; sight: string; aimed: boolean };
+  view?: {
+    weapon: string;
+    sight: string;
+    aimed: boolean;
+    params?: Readonly<Partial<ViewModelParams>>;
+    finish?: string;
+    throwable?: string;
+    flash?: boolean;
+  };
+  kit?: { weapon: string; sight: string; finish?: string; bay: Readonly<StageBay> };
   zones?: boolean;
   settings?: Readonly<Record<string, string | boolean | number>>;
   turn?: number;
@@ -368,6 +397,10 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
       pos: [0.5, 9, -29],
       target: [0, 0.8, -16],
     },
+    // Appended for X4.3a, so every row above carries the state it was banked
+    // with (`bank.mjs --rows`).
+    ...viewmodelRows(),
+    ...kitRows(),
   ],
   sarab: [
     {
@@ -534,10 +567,180 @@ function viewRows(): Vantage[] {
       of: `the ${weapon} with the ${sight} sight, ${aimed ? "aimed" : "at the hip"}, over the millpond`,
       proves: aimed
         ? "the aimed pose `applyFit` derives (the sight centred on the axis) and the optic's own field — the picture the reticle cannot lie in (X4.3)"
-        : "the viewmodel's rendering group, its depth clear and its ink band, the weapon model and the sight (X4.3)",
+        : "the viewmodel's rendering group — drawn into the world's depth, which is not cleared for it — its ink band, the weapon model and the sight (X4.3)",
       pos: [-160, 1.6, 102],
       target: [-108, 3, 70],
       view: { weapon, sight, aimed },
     })),
   );
+}
+
+/**
+ * Where every viewmodel row stands: `viewRows`' millpond. A function rather
+ * than a constant, because `DIFF_VANTAGES` above is built when the module
+ * loads and a `const` down here is not yet initialised then.
+ */
+function millpond(): Pick<Vantage, "pos" | "target"> {
+  return { pos: [-160, 1.6, 102], target: [-108, 3, 70] };
+}
+
+/**
+ * What the ten rows above cannot see and `BABYLON_EXIT.md` X4.3b-d move: the
+ * two optics they leave out, the three rigs with a sight of their own (the
+ * pistol's notch at its own eye relief, the launcher's prism, the mine), one
+ * finish on each rung of the gloss ladder above matte, and every gesture held
+ * mid-phase — each a function of its phase (`Vantage.view`), so the frame is
+ * the same every run. Appended after the ten rather than among them, so that
+ * none of them is shot after a state it was not banked with.
+ */
+function viewmodelRows(): Vantage[] {
+  const row = (
+    id: string,
+    of: string,
+    proves: string,
+    view: NonNullable<Vantage["view"]>,
+  ): Vantage => ({ id: `view-${id}`, of, proves, ...millpond(), view });
+  // A dry reload of the rifle, `reloadTime` its own (1.4 s): live, the gate
+  // full, the phase held.
+  const dry = (reloadPhase: number) => ({
+    reloading: true,
+    reloadBlend: 1,
+    reloadPhase,
+    reloadTime: 1.4,
+    reloadDry: true,
+  });
+  return [
+    row(
+      "greendot-hip",
+      "the rifle with the green dot, at the hip, over the millpond",
+      "the GREEN DOT optic's housing and dot on a rail weapon — one of the two optics the ten rows above leave out (X4.3)",
+      { weapon: "rifle", sight: "greenDot", aimed: false },
+    ),
+    row(
+      "greendot-aim",
+      "the rifle with the green dot, aimed",
+      "the green dot's aimed pose derived by `applyFit` and its own field — the dot on the axis (X4.3)",
+      { weapon: "rifle", sight: "greenDot", aimed: true },
+    ),
+    row(
+      "longscope-hip",
+      "the DMR with the long scope, at the hip",
+      "the DMR's model, which the ten rows above leave out, and the LONG SCOPE's housing (X4.3)",
+      { weapon: "dmr", sight: "longScope", aimed: false },
+    ),
+    row(
+      "longscope-aim",
+      "the DMR with the long scope, aimed",
+      "the long scope aimed — the highest magnification in the kit, its eye relief the longest in the table, held clear of the near plane (X4.3)",
+      { weapon: "dmr", sight: "longScope", aimed: true },
+    ),
+    row(
+      "pistol-aim",
+      "the pistol, aimed down its own sights",
+      "the one FIXED sight a weapon is held at by its OWN eye relief (`WeaponSights.eyeRelief`, not the iron's) — the notch and blade on the slide, the aimed pose derived off them (X4.3)",
+      { weapon: "pistol", sight: "iron", aimed: true },
+    ),
+    row(
+      "rpg-aim",
+      "the launcher on the shoulder, aimed through its own prism",
+      "the launcher's model and its fixed prism (`RpgModel`) aimed through — the chevron on the axis — the one rig whose optic is part of the weapon rather than on a rail (X4.3)",
+      { weapon: "rpg", sight: "iron", aimed: true },
+    ),
+    row(
+      "mine-hip",
+      "the mine in the hands, at the hip",
+      "the mine's model, the fourth rig the ten rows above leave out (X4.3)",
+      { weapon: "mine", sight: "iron", aimed: false },
+    ),
+    row(
+      "finish-satin",
+      "the rifle with the iron sights in Oxblood, at the hip",
+      "the gloss ladder's SATIN rung on the body and the fittings (`spec.rifleSatin`) — a finish is a material write on the weapon's colour groups and nothing else (X4.3)",
+      { weapon: "rifle", sight: "iron", aimed: false, finish: "oxblood" },
+    ),
+    row(
+      "finish-glint",
+      "the rifle with the iron sights in Signal, at the hip",
+      "the gloss ladder's middle rung (`spec.rifle`) on the fittings, under a repainted body and furniture (X4.3)",
+      { weapon: "rifle", sight: "iron", aimed: false, finish: "signal" },
+    ),
+    row(
+      "finish-mirror",
+      "the rifle with the iron sights in Quicksilver, at the hip",
+      "the gloss ladder's MIRROR rung (`spec.rifleChrome`), the top one, which reflects the room rather than adding a highlight (X4.3)",
+      { weapon: "rifle", sight: "iron", aimed: false, finish: "quicksilver" },
+    ),
+    row(
+      "reload-drop",
+      "the rifle's dry reload held just after the magazine left the well: the spent magazine falling below it, the support hand gone to the pouch, the head looking down and leaning",
+      "the SPENT magazine (the clone) falling on its pivot, the support arm off the handguard, and the body node turned against the head's look — the camera tipped and leaning as `CameraSystem` turns it, the weapon left in the hands (X4.3)",
+      { weapon: "rifle", sight: "iron", aimed: false, params: dry(0.26) },
+    ),
+    row(
+      "reload-seat",
+      "the same reload held as the fresh magazine is offered to the well",
+      "the FRESH magazine (the weapon's own node) on its pivot in the support hand at the well, both arms on their pivots, the weapon canted to meet it about the firing hand and the firing wrist's quaternion taking some of the turn back (X4.3)",
+      { weapon: "rifle", sight: "iron", aimed: false, params: dry(0.5) },
+    ),
+    row(
+      "bolt",
+      "the sniper rifle's bolt cycle held with the bolt drawn back",
+      "the bolt cycle at the hip: the rifle rolled out of the carry, the BOLT node turned up and drawn to its stop, and the trigger arm gone off the grip to work it (below the frame here) (X4.3)",
+      { weapon: "sniper", sight: "scope", aimed: false, params: { cyclePhase: 0.42 } },
+    ),
+    row(
+      "load",
+      "the launcher's load held as the fresh rocket goes back down the bore, the hand behind it",
+      "the WARHEAD node off its seat and turned onto the bore on its pivot, the support arm riding it, and the tube come down off the shoulder (X4.3)",
+      { weapon: "rpg", sight: "iron", aimed: false, params: { loadPhase: 0.6 } },
+    ),
+    row(
+      "throw-frag",
+      "the rifle in the firing hand while the other hand cocks a frag back",
+      "the THROWING arm, the fist and its frag with the pip on it (a mesh parenting a mesh), the support arm switched off for it and the weapon's give (X4.3)",
+      { weapon: "rifle", sight: "iron", aimed: false, throwable: "frag", params: { throwTime: 0.14 } },
+    ),
+    row(
+      "throw-molotov",
+      "the same throw with the bottle in the fist",
+      "the molotov in the fist — the bottle and its neck, cloth and wick hung off it, the wick emissive (X4.3)",
+      { weapon: "rifle", sight: "iron", aimed: false, throwable: "molotov", params: { throwTime: 0.14 } },
+    ),
+    row(
+      "flash",
+      "the rifle at the hip on the frame it fires, the muzzle flash on the muzzle",
+      "the muzzle FLASH's three emissive petals on the viewmodel's muzzle node, on a seeded strobe, and their bloom (X4.3)",
+      { weapon: "rifle", sight: "iron", aimed: false, flash: true },
+    ),
+  ];
+}
+
+/**
+ * The kit screen, at the bay `LoadoutScreen.stageBay` measures over the
+ * bank's own 1920x1080 frame and at the one it measures on an 832x384 phone,
+ * both shot at the bank's size — the second puts the weapon right of centre
+ * and the card's pool of light with it (`paintKitPool`).
+ */
+function kitRows(): Vantage[] {
+  const row = (id: string, of: string, kit: NonNullable<Vantage["kit"]>): Vantage => ({
+    id: `kit-${id}`,
+    of,
+    proves:
+      "the KIT SCREEN's stage: the card (blended, depth `always` and written, last of group 0), the weapon on the turntable in front of it with no arms, the bench lamps, and the glow's stage rule — only the weapon may bloom (X4.3)",
+    ...millpond(),
+    kit,
+  });
+  return [
+    row("desktop", "the kit screen over the millpond at a desktop's bay: the carbine with the holo on the turntable", {
+      weapon: "carbine",
+      sight: "holo",
+      bay: { x: -0.0104, y: -0.0617, width: 0.4549, height: 0.5346 },
+    }),
+    row("phone", "the kit screen at a phone's bay: the SMG with the reflex in Bullion on the turntable, right of centre", {
+      weapon: "smg",
+      sight: "reflex",
+      finish: "bullion",
+      bay: { x: 0.324, y: -0.0083, width: 0.608, height: 0.4761 },
+    }),
+  ];
 }

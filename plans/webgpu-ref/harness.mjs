@@ -251,9 +251,50 @@ export function waitUntilDrawn(page, timeoutMs = 120_000) {
 export function placeVantage(page, vantage) {
   return page.evaluate(async (v) => {
     const g = window.__celshock;
+    // A seeded `Math.random` for the length of `fn` and put back — how a
+    // subject whose LAYOUT is drawn at random (a blast, a muzzle flash) is
+    // the same picture every run, without touching the game's own draw.
+    const seeded = (seed, fn) => {
+      const keep = Math.random;
+      let s = seed >>> 0;
+      Math.random = () => {
+        s = (s + 0x6d2b79f5) >>> 0;
+        let t = s;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+      try {
+        fn();
+      } finally {
+        Math.random = keep;
+      }
+    };
     // **Every subject a row can ask for is put away first, every time**, so a
     // vantage's frame is a function of its own row and never of the one shot
     // before it in the same boot.
+    // The kit screen first, because putting it away hands the weapon back to
+    // the carried pose and shows it again (`Game.stowKit`), which the
+    // viewmodel's own put-away below then hides. Each of these four is done
+    // only after a row that raised it, so the rows banked before them run
+    // exactly the calls they were banked with.
+    if (g.state === "loadout") g.closeLoadout();
+    if (window.__refBay) {
+      delete g.loadoutScreen.stageBay;
+      window.__refBay = false;
+    }
+    if (window.__refFlash) {
+      g.playerView.cleared();
+      window.__refFlash = false;
+    }
+    if (window.__refFinished) {
+      for (const id of window.__refFinished) g.player.view.setFinish(id, "standard");
+      window.__refFinished = null;
+    }
+    if (window.__refThrowable) {
+      g.player.view.setThrowable(window.__refThrowable);
+      window.__refThrowable = null;
+    }
     // The place, not the fight: no bodies, no rings, no beacons. The bodies
     // are the round's session's (`g.net.roster` — a client's, offline too),
     // and the roster poses and re-shows every living one off the wire each
@@ -288,6 +329,12 @@ export function placeVantage(page, vantage) {
 
     const cam = g.cameraSys.camera;
     const Vec3 = cam.position.constructor;
+    // A reload row turned the camera's ROLL, which `setTarget` below never
+    // writes — so it is put back to what it was before that row.
+    if (window.__refRoll !== undefined) {
+      cam.rotation.z = window.__refRoll;
+      window.__refRoll = undefined;
+    }
     const [x, above, z] = v.pos;
     cam.position.set(x, g.map.terrain.surfaceAt(x, z, true) + above, z);
     const target = new Vec3(...v.target);
@@ -343,38 +390,87 @@ export function placeVantage(page, vantage) {
       const fx = g.grenadeFx.fx;
       const [bx, bz] = v.blast.at;
       const at = new Vec3(bx, g.map.terrain.surfaceAt(bx, bz, true), bz);
-      const keep = Math.random;
-      let s = 0x5eed1 >>> 0;
-      Math.random = () => {
-        s = (s + 0x6d2b79f5) >>> 0;
-        let t = s;
-        t = Math.imul(t ^ (t >>> 15), t | 1);
-        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-      };
-      try {
+      seeded(0x5eed1, () => {
         fx.blast(at, v.blast.power ?? 1, g.grenades.probeGround(at));
         const steps = Math.round((v.blast.age ?? 0.5) * 60);
         for (let i = 0; i < steps; i++) fx.update(1 / 60);
-      } finally {
-        Math.random = keep;
-      }
+      });
     }
 
     // The player's own weapon, on the camera as it is in a round: fitted,
     // shown, and posed by `ViewModel.update` from rest through enough fixed
     // steps for every spring in it to settle, hip or aimed. An aimed frame
     // takes the optic's own field as well, which is the picture the sight is
-    // FOR.
+    // FOR. `params` is laid over the player's own for every step, which is how
+    // a gesture is held mid-phase — each is a function of its phase.
     if (v.view) {
       const view = g.player.view;
       view.setWeapon(v.view.weapon);
       view.setSight(v.view.sight);
+      if (v.view.finish) {
+        view.setFinish(v.view.weapon, v.view.finish);
+        (window.__refFinished ??= []).push(v.view.weapon);
+      }
+      if (v.view.throwable) {
+        window.__refThrowable ??= view.throwKind;
+        view.setThrowable(v.view.throwable);
+      }
       view.reset();
       view.setVisible(true);
-      const p = { ...g.player.viewParams, adsBlend: v.view.aimed ? 1 : 0 };
+      const p = { ...g.player.viewParams, adsBlend: v.view.aimed ? 1 : 0, ...(v.view.params ?? {}) };
       for (let i = 0; i < 240; i++) view.update(1 / 60, p);
       if (v.view.aimed) cam.fov = view.sight.fovAds;
+      // **A reload is drawn with the HEAD looking down at it**: `Player`
+      // pushes the gesture's look and lean to the camera after the pose
+      // (`CameraSystem.setReloadHead`), and the viewmodel's body node takes
+      // the same turn back, so the weapon stays in the hands while the world
+      // tips. The rendered camera is composed as `CameraSystem` composes it —
+      // the look added to the pitch, the lean as the roll — and the passes
+      // are placed again at the turned eye.
+      const headPitch = view.reloadHeadPitch;
+      const headRoll = view.reloadHeadRoll;
+      if (headPitch !== 0 || headRoll !== 0) {
+        const d = target.subtract(cam.position);
+        const yaw = Math.atan2(d.x, d.z);
+        const pitch = Math.atan2(d.y, Math.hypot(d.x, d.z)) + headPitch;
+        const cp = Math.cos(pitch);
+        const look = new Vec3(cp * Math.sin(yaw), Math.sin(pitch), cp * Math.cos(yaw));
+        cam.setTarget(cam.position.add(look));
+        window.__refRoll ??= cam.rotation.z;
+        cam.rotation.z = headRoll;
+        g.cameraSys.yaw = cam.rotation.y;
+        g.cameraSys.pitch = cam.rotation.x;
+        g.updateSceneForCamera(0, look.scaleInPlace(8).addInPlace(cam.position), null, []);
+      }
+      // One round fired: the flash's roll and scale are drawn at random, so
+      // they are drawn from a seed. It burns down only in a stepped frame,
+      // which a bank never runs, so it holds until the next row puts it away.
+      if (v.view.flash) {
+        seeded(0xf1a5, () => g.playerView.fired());
+        window.__refFlash = true;
+      }
+    }
+
+    // The kit screen, raised for real over `deploy`: the card, the bench lamps
+    // and the glow's stage rule are the lid's, and the weapon is on the
+    // turntable at its authored angles, posed every frame by the lid itself
+    // (`Game.updateKitStage`). The one thing stated is the BAY, which the DOM
+    // measures and this boot has hidden — so `stageBay` is answered with the
+    // row's.
+    if (v.kit) {
+      const view = g.player.view;
+      view.setWeapon(v.kit.weapon);
+      view.setSight(v.kit.sight);
+      if (v.kit.finish) {
+        view.setFinish(v.kit.weapon, v.kit.finish);
+        (window.__refFinished ??= []).push(v.kit.weapon);
+      }
+      view.reset();
+      const bay = { ...v.kit.bay };
+      g.loadoutScreen.stageBay = () => bay;
+      window.__refBay = true;
+      g.openLoadout();
+      if (g.state !== "loadout") throw new Error(`the kit screen would not go up over ${g.state}`);
     }
   }, vantage);
 }
@@ -428,6 +524,7 @@ export function freeze(page, set = FREEZE_SET, { windTime = 0, turn = 0 } = {}) 
       post: g.post.update,
       sky: g.sky.update,
       lightning: g.lightning.step,
+      lighting: g.lighting.update,
       gi: g.gi.update,
       // The shafts are `Volumetrics` now and the field is NULL when the player
       // has them off, so this records the instance beside the method: the pass
@@ -529,6 +626,12 @@ export function freeze(page, set = FREEZE_SET, { windTime = 0, turn = 0 } = {}) 
       g.lighting.transient.length = 0;
       // Pushed at dt = 0 so the clock stays where it was just put.
       g.lighting.update(0, g.cameraSys.camera.position, g.mats);
+      // …and HELD there. No frame of `deploy` updates the lights, but the kit
+      // screen does, every frame (`Game.updateKitStage`, which is how its
+      // bench lamps get their slots), and each of those would step the flame
+      // clock on by `dt`. So while frozen every update is handed a dt of 0:
+      // the slots are still dealt, and the clock does not move.
+      g.lighting.update = (dt, eye, mats) => window.__refThaw.lighting.call(g.lighting, 0, eye, mats);
     }
     if (f.includes("lightning")) {
       // A storm's clock runs in `deploy` — `worldHeld` is false there offline,
@@ -626,6 +729,7 @@ export function thaw(page) {
     g.post.update = s.post;
     g.sky.update = s.sky;
     g.lightning.step = s.lightning;
+    g.lighting.update = s.lighting;
     g.gi.update = s.gi;
     // Only onto the instance it was taken from — see the stash.
     if (s.shafts && g.volumetrics === s.shafts.on) {
