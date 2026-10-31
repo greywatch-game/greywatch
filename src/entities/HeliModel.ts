@@ -287,6 +287,14 @@ interface HeliKit {
 }
 
 /**
+ * The segments that drop at RANGE (`BABYLON_EXIT.md` X4.2c, the user's set):
+ * none. Every segment of the helicopter is kept at every range, its whips,
+ * gun ring and skids among them — so its measure (`HullKit.measure`) is taken
+ * and asked as every hull's is, and changes nothing it draws.
+ */
+const DETAIL: readonly string[] = [];
+
+/**
  * The two liveries.
  *
  * Told apart the three ways `CLAUDE.md` requires — hue, accent and silhouette —
@@ -508,7 +516,7 @@ export function buildHeli(team: Team): VehicleRig {
 
   // The drawing is this model's KIT in this view's colours, built by the
   // first rig of the pair and hung by every later one (`segmentOf`).
-  const { segments, segment, kit: drawingOf } = segmentOf("heli", view);
+  const { segments, segment, kit: drawingOf } = segmentOf("heli", view, DETAIL);
 
   /** A round member from `a` to `b`; `d` at `a` and `dTop` at `b`. */
   const rod = (a: Point3, b: Point3, d: number, color: string, tess = 8, dTop = d): Shape => [
@@ -1259,7 +1267,7 @@ export function buildHeli(team: Team): VehicleRig {
     mgSight,
     antennae,
     segments,
-    kit: drawingOf(),
+    kit: drawingOf(tree, root),
     enabled: true,
     charred: false,
     setRun: (_left, _right, _steer, rotor) =>

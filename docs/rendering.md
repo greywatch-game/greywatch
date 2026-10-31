@@ -4361,6 +4361,39 @@ frustum), so a hull out of frame costs no draw and no vertex: without it the
 first cut drew all six of Sarab's hulls at every vantage, +25 draws on every
 census row of an armour map that frames none.
 
+**A far hull draws its REDUCED set: the detail tier** (`BABYLON_EXIT.md`
+X4.2c, `PERF_PLAN.md` A3). Each model names the `segment` calls that drop at
+range — its `DETAIL` list: the tank's four link strips, its road wheels and
+idlers and its cupola gun's ring, the truck's weapon-station yoke, nothing of
+the helicopter's (the user's set, 2026-10-31) — and `segmentOf` flags every
+segment those calls make (`HullKitSegment.detail`). The question is asked
+ONCE a hull, of a whole-hull MEASURE this step added for it and nothing else:
+one sphere a kit, the bounding sphere of its every vertex at rest in the root
+joint's frame (`HullMeasure`, taken at the kit's build), hung on the root's
+world this frame (`measureHull` — scaled by the matrix's own scale, never
+`BoundingSphere._update`'s largest-component radius, which a turned matrix
+inflates by up to √2 and would put the swap up to 41% further out as a hull
+turned). `WorldCulling.keepsDetail` asks it with `tooSmall`, from the size
+gate's eye and pixels a radian, against `CONFIG.graphics.culling.hullDetail`
+(32 px); under it, `writeHullDrawing` writes every detail segment as nothing.
+**It is a swap on top of the per-segment gate, never in place of it**: no hull
+leaves by it, a hull drawn in full has its detail segments gated one by one as
+ever, and no segment but a detail one is touched. It is off while the warm-up
+stands (`setWarm`), so the full set is the one the building card shows — one
+pipeline either way. **Why 32**: at 32 px a tank's measure (11.1 m) puts the
+largest detail part, the idler's 0.72 m disc, at ~2 px and a road wheel's hub
+at ~1.6, so what goes is a part that has already stopped reading as one;
+photographed full against reduced on open ground, 21-48 pixels of a tank and
+1-5 of a truck change at 32 on both a 3440x1440 and an 832x384 view, ~100 of
+a tank at 48, and by 64 the wheels are a row of dots that visibly go
+(X4.2c's note). In the world that is a tank at ~527 m and a truck at ~348 m
+at 1440 rows and the hip field, ~141 and ~93 m on a phone's 384 — nearer
+exactly where a pixel is bigger. What it saves is the detail segments' vertex
+work for every hull past it, and a rank's draw when every hull drawn there
+has dropped its segment at that rank: our renderer had already folded a
+hull's CPU cost into its ranks (X4.2b), where A3's +6.5% was measured as
+Babylon's per-mesh cost.
+
 **Its pipeline is asked once, at `Game`'s construction**, so the warm-up's wait
 for ours covers it; a hull stands at its hardstanding in the views the warm-up
 draws, so it poses none. **A failure is the round's**, the bodies' routing:
@@ -4614,7 +4647,10 @@ range, and on Cinderhaven that means a 16 cm helicopter antenna and a 14 cm gun
 ring at 1.4 km. Shipped at 3 px it is worth **-0.51 ms a frame** there, and
 close to nothing on the small maps, which is the honest shape of it. (Since
 `BABYLON_EXIT.md` X4.2b a hull's parts are SEGMENTS our renderer draws, gated
-one by one through `WorldCulling.keepsSphere` exactly as their meshes were.)
+one by one through `WorldCulling.keepsSphere` exactly as their meshes were,
+and since X4.2c a far hull draws without its model's DETAIL segments — a tier
+asked of the whole hull's measure on this arithmetic at its own threshold,
+`hullDetail`, on top of the per-segment gate: "The hulls, ours".)
 
 **A BODY is measured once and drops WHOLE; two classes are exempt outright,
 and each of the three is what it is because a picture said so rather than

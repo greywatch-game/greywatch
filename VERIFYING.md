@@ -802,14 +802,22 @@ is one machine's:
   (`g.hullDraw`, fed by `g.drawHulls()` just before the render), so a script
   reads a segment's world as `seg.local` times `seg.joint.world` after a
   compose (`view.rig.segments`), and what the last frame drew as
-  `g.hullDraw.matrices`. **A zero there is one of two things**: the size
-  gate's drop, written by `g.drawHulls()`, and — once the render's prepare
-  has run — the FRUSTUM's, zeroed in the same array by `g.hullPull`. So a
-  script reading it after a render cannot count gated segments off the
-  zeros: read it straight after `g.drawHulls()` (before the render), or tell
-  the two apart by the segment's sphere in `g.hullSpheres` (four doubles a
-  segment, in the same order), which is NaN for a gated or padded segment
-  and left standing for a frustum-culled one.
+  `g.hullDraw.matrices`. **A zero there is one of three things**: the size
+  gate's drop and the DETAIL tier's (X4.2c: every segment its kit flags
+  `detail` on a hull whose whole measure projects under
+  `CONFIG.graphics.culling.hullDetail`), both written by `g.drawHulls()`,
+  and — once the render's prepare has run — the FRUSTUM's, zeroed in the
+  same array by `g.hullPull`. So a script reading it after a render cannot
+  count gated segments off the zeros: read it straight after
+  `g.drawHulls()` (before the render), or tell them apart by the segment's
+  sphere in `g.hullSpheres` (four doubles a segment, in the same order),
+  which is NaN for a gated, detail-dropped or padded segment and left
+  standing for a frustum-culled one — and the gate from the tier by asking
+  `g.culling.keepsDetail` of the hull's measure (`vehicleRig.measureHull`,
+  after a compose). **To photograph either set by force**, write
+  `CONFIG.graphics.culling.hullDetail` in the page (import
+  `/src/config/index.ts`, the module the game holds): 0 is always the full
+  set, a huge number always the reduced one.
   **The signature takes a LOOKUP rather than a hull and a stick**, because a bot
   crew can be driving one hull while the player drives another — and on the
   page the bot crew is the wire's (`remoteFor`), there being no crew here.

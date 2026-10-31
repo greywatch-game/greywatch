@@ -825,6 +825,8 @@ export class Game {
   private hullKeys = new Float64Array(0);
   /** The size gate a hull's segment is drawn under: `WorldCulling`'s, this frame (`drawHulls`). */
   private readonly keepsHullSegment: SphereGate = (x, y, z, radius) => this.culling.keepsSphere(x, y, z, radius);
+  /** The detail tier a hull's whole measure is asked, this frame: `WorldCulling`'s (`drawHulls`, X4.2c). */
+  private readonly keepsHullDetail: SphereGate = (x, y, z, radius) => this.culling.keepsDetail(x, y, z, radius);
   /**
    * The irradiance volume — bounce light, sky occlusion and point lights that
    * stop at walls (`systems/GiVolume.ts`). Built beside the two shadow maps and
@@ -5815,7 +5817,9 @@ export class Game {
    * kit (`vehicleRig.writeHullDrawing`) — a segment the size gate drops
    * (`WorldCulling.keepsSphere`, asked of that segment's world sphere this
    * frame, as `offer` asked it of the mesh the segment was) written as
-   * nothing — with its kit word, the charred paint a bit of it, and the
+   * nothing, and so is every DETAIL segment of a hull whose whole measure
+   * the detail tier refuses (`WorldCulling.keepsDetail`, `BABYLON_EXIT.md`
+   * X4.2c) — with its kit word, the charred paint a bit of it, and the
    * segments' centres kept for the order the render pulls (`hullPull`).
    * Once a frame, in EVERY state, after everything that writes a joint and
    * after the cull, immediately before `scene.render` — inside the render
@@ -5832,7 +5836,16 @@ export class Game {
     for (let i = 0; i < views.length && n < draw.capacity; i++) {
       const rig = views[i].rig;
       if (!rig.enabled) continue;
-      writeHullDrawing(rig, draw.matrices, n * stride * 16, stride, this.keepsHullSegment, this.hullSpheres, n * stride * 4);
+      writeHullDrawing(
+        rig,
+        draw.matrices,
+        n * stride * 16,
+        stride,
+        this.keepsHullSegment,
+        this.keepsHullDetail,
+        this.hullSpheres,
+        n * stride * 4,
+      );
       draw.words[n] = (this.hullKitIndex.get(rig.kit) ?? 0) | (rig.charred ? HULL_CHARRED : 0);
       n++;
     }

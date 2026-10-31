@@ -238,6 +238,19 @@ exiting early. So the rule above stands in a new unit — a segment is still a
 colour per moving part, and a new colour on the hull is one more rank — and a
 LONGER segment is paid at every rank it lands on.
 
+**Since X4.2c a model names its DETAIL segments, and a far hull draws without
+them** (`docs/rendering.md`, "The hulls, ours"; `PERF_PLAN.md` A3). Each model
+file states a `DETAIL` list of its `segment` calls — the tank's four link
+strips, its road wheels and its cupola gun's ring, the truck's weapon-station
+yoke, nothing of the helicopter's (the user's set, 2026-10-31) — and a hull
+whose whole MEASURE (one sphere a kit, `vehicleRig.HullMeasure`) projects
+under `CONFIG.graphics.culling.hullDetail` draws its REDUCED set. So a part
+that only reads up close belongs in a detail call of its own, never merged
+into a silhouette segment's colour: a detail segment is chosen by its CALL,
+and a call that mixes the silhouette with fittings cannot be swapped without
+the silhouette going too. The list is DATA on the model, never a branch on
+the kind, and `segmentOf` refuses a name no call made.
+
 **A mesh is bought here for exactly one reason and it is never a colour:
 something that MOVES differently from everything around it cannot merge with any
 of it.** Twelve of the twenty-five are that — six for the tracks, four for the

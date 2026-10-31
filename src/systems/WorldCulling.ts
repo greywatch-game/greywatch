@@ -93,7 +93,11 @@
  *   loose until `BABYLON_EXIT.md` X4.2b and are no mesh now: our renderer
  *   draws each as an instance of its kind's kit, and the size gate reaches
  *   its segments one by one through `keepsSphere` — the test a loose mesh
- *   gets, asked of a sphere its caller composed this frame.
+ *   gets, asked of a sphere its caller composed this frame. Since X4.2c the
+ *   hull's DETAIL tier asks one more question of the same arithmetic, once a
+ *   hull, of its whole MEASURE (`keepsDetail`): whether its detail segments
+ *   are drawn at all — a swap on top of the per-segment gate, never a drop
+ *   of the hull.
  *   Always ELIGIBLE — and `offer` still drops the ones that are
  *   switched off, which is what reaches the effect pools: they are built once
  *   and idled with `isVisible = false`, and were most of a candidate list the
@@ -602,8 +606,32 @@ export class WorldCulling {
     return !tooSmall(x, y, z, radius, this.gateEye, g.perRad, g.px2);
   }
 
-  /** The eye `offer` gated from last, copied: what `keepsSphere` measures from. */
+  /** The eye `offer` gated from last, copied: what `keepsSphere` and `keepsDetail` measure from. */
   private readonly gateEye = { x: 0, y: 0, z: 0 };
+
+  /**
+   * Whether a HULL draws its FULL set this frame — its DETAIL segments
+   * with the rest (`BABYLON_EXIT.md` X4.2c, A3's detail tier) — asked of the
+   * hull's whole MEASURE as its caller composed it this frame
+   * (`vehicleRig.measureHull`): `tooSmall`, the size gate's own arithmetic,
+   * from the same eye and at the same pixels a radian, against
+   * `CONFIG.graphics.culling.hullDetail` instead of `minPixels`. True — the
+   * full set — while the tier is off: the warm-up (so the full set is the
+   * one it shows), a threshold of 0, no camera. It is a SWAP and nothing
+   * else: no hull is dropped by it, and the per-segment gate
+   * (`keepsSphere`) still answers for every segment drawn, the detail ones
+   * of a hull drawn in full among them (decided 2026-10-31). Read by
+   * `Game.drawHulls` after `update`, the same frame.
+   */
+  keepsDetail(x: number, y: number, z: number, radius: number): boolean {
+    if (this.detailPerRad === 0) return true;
+    return !tooSmall(x, y, z, radius, this.gateEye, this.detailPerRad, this.detailPx2);
+  }
+
+  /** The detail tier's pixels a radian this frame (`offer`); 0 while the tier is off. */
+  private detailPerRad = 0;
+  /** `CONFIG.graphics.culling.hullDetail`, squared, as `tooSmall` compares. */
+  private detailPx2 = 0;
 
   /**
    * The box our renderer's cull measures a surface's reach to, by the BLOCK
@@ -816,10 +844,16 @@ export class WorldCulling {
     const minPx = CONFIG.graphics.culling.minPixels;
     const gate = !this.warm && minPx > 0 && cam !== null;
     const engine = this.scene.getEngine();
-    const perRad = gate
+    const pixelsPerRad = cam !== null
       ? (engine.getRenderHeight() * engine.getHardwareScalingLevel()) /
-        (cam!.fov || 1)
+        (cam.fov || 1)
       : 0;
+    const perRad = gate ? pixelsPerRad : 0;
+    // The hulls' detail tier (`keepsDetail`) on the same pixels a radian, and
+    // with its own switch: off while warm, so the warm-up shows the full set.
+    const detailPx = CONFIG.graphics.culling.hullDetail;
+    this.detailPerRad = !this.warm && detailPx > 0 ? pixelsPerRad : 0;
+    this.detailPx2 = detailPx * detailPx;
     const px2 = minPx * minPx;
     const reachGate = this.reachGate;
     reachGate.reach = this.warm ? Number.POSITIVE_INFINITY : this.on;
@@ -968,8 +1002,10 @@ function tooSmallMesh(mesh: AbstractMesh, eye: Vector3, perRad: number, px2: num
  *
  * The one place a projected size is measured, because `offer` asks the
  * question of three different things — a loose mesh, a body's measure and a
- * filed surface's record — and `keepsSphere` a fourth, a hull's segment, and
- * two copies of this arithmetic is two answers that can drift apart.
+ * filed surface's record — `keepsSphere` a fourth, a hull's segment, and
+ * `keepsDetail` a fifth, a hull's whole measure against the detail tier's
+ * own threshold; two copies of this arithmetic is two answers that can drift
+ * apart.
  *
  * `d2 > 1` is the guard on standing inside a thing: the projection diverges
  * at zero distance and a metre is nearer than anything this should be

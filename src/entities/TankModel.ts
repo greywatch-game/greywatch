@@ -172,6 +172,17 @@ interface TankKit {
 }
 
 /**
+ * The segments that drop at RANGE (`BABYLON_EXIT.md` X4.2c, the user's set,
+ * `PERF_PLAN.md` A3): the four link strips, the road wheels and idlers, and
+ * the cupola gun's ring — drawn only while the whole tank's measure projects
+ * at or above `CONFIG.graphics.culling.hullDetail` (`vehicleRig.ts`'
+ * `HullKitSegment.detail`). What is left is the silhouette: the belt and its
+ * tyres, the hull, the skirts, the turret, the guns, the sprockets and the
+ * whips. Each name is a `segment` call below, every colour it makes.
+ */
+const DETAIL: readonly string[] = ["tank-link-lo", "tank-link-hi", "tank-wheel", "tank-mg-ring"];
+
+/**
  * One kit per SIDE, indexed by the VIEW and not by `Team` — see
  * `core/teamView.ts`, and `SoldierModel`'s `KITS`. Warm against cold, as the
  * soldiers are.
@@ -314,7 +325,7 @@ export function buildTank(team: Team): VehicleRig {
 
   // The drawing is this model's KIT in this view's colours, built by the
   // first rig of the pair and hung by every later one (`segmentOf`).
-  const { segments, segment, kit: drawingOf } = segmentOf("tank", view);
+  const { segments, segment, kit: drawingOf } = segmentOf("tank", view, DETAIL);
 
   /**
    * A round member from `a` to `b` — a rail, a cable, a discharger tube, a
@@ -1048,7 +1059,7 @@ export function buildTank(team: Team): VehicleRig {
   const rig: VehicleRig = {
     tree, body: hullBody, root, hull, sprung, turret, gun, muzzle,
     mgMount, mgGun, mgMuzzle, mgSight,
-    antennae, segments, kit: drawingOf(), enabled: true, charred: false,
+    antennae, segments, kit: drawingOf(tree, root), enabled: true, charred: false,
     setRun: (left, right, _steer, _rotor) => setTrackRun(tracks, left, right),
     reset: () => resetRigPose(rig, CONFIG.vehicles.tank),
     paint: (wrecked) => paintRig(rig, wrecked),

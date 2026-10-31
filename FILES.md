@@ -938,7 +938,12 @@ src/
                         #   the drawing written for our renderer once a frame
                         #   (`writeHullDrawing`, each segment size-gated),
                         #   switched as one (`setHullRigEnabled`) and painted
-                        #   charred by a flag (`paintRig`). No numbers
+                        #   charred by a flag (`paintRig`). A kit carries the
+                        #   hull's one whole-hull MEASURE (`HullMeasure`,
+                        #   `measureHull`) and flags the segments its model's
+                        #   DETAIL list names, which a far hull draws without
+                        #   (X4.2c, the detail tier; the size gate stays per
+                        #   segment under it). No numbers
     TankModel.ts        # ~180 boxes and cylinders merged to twenty-five, with
                         #   a SPRUNG body over running gear that is not, a
                         #   turret and a gun that turn, a CUPOLA gun on a ring
@@ -947,7 +952,9 @@ src/
                         #   antennae that BOW, and the charred repaint a wreck
                         #   takes.
                         #   Art only — the extents that are RULES are CONFIG's,
-                        #   and the joints the simulation reads `tankFrame.ts`'s
+                        #   and the joints the simulation reads `tankFrame.ts`'s.
+                        #   Its DETAIL list (X4.2c): the link strips, the road
+                        #   wheels and the cupola gun's ring drop at range
     TruckModel.ts       # The gun truck: a CLOSED armoured 4x4 drawn off the
                         #   Oshkosh JLTV — arches cut out of an extruded body,
                         #   a clamshell hood, a V belly over four independent
@@ -961,7 +968,9 @@ src/
                         #   station's sweep; the muzzle clears it by 6.7 cm at
                         #   full depression.
                         #   NO main gun — `VehicleRig.gun`/`muzzle` are null,
-                        #   which is what `Vehicle.armed` reads. Art only
+                        #   which is what `Vehicle.armed` reads. Its DETAIL
+                        #   list (X4.2c): the weapon station's yoke drops at
+                        #   range. Art only
     HeliModel.ts        # The helicopter: a tandem attack helicopter on skids
                         #   drawn off the AH-1Z Viper — a lofted fuselage, a
                         #   framed stepped canopy, the nose sensor ball, the
@@ -976,7 +985,9 @@ src/
                         #   gear ratio lives here because it is a drawing
                         #   decision. No tip-path ring: `inkRig` makes anything
                         #   that thin nearly all ink, and a hoop round a parked
-                        #   aircraft reads as a cage. Art only
+                        #   aircraft reads as a cage. Its DETAIL list (X4.2c)
+                        #   is empty: every part is kept at every range. Art
+                        #   only
     callsigns.ts        # What to call an AI on the scoreboard: roster index ->
                         #   phonetic name, derived on both sides, never sent
     Bot.ts              # Bot FSM (advance/hunt/engage/takeCover/suppressed/
@@ -1355,7 +1366,9 @@ src/
                         #   the lesser of a ramp short of bodyDrawDistance
                         #   (setBodyDrawDistance) and one above the size gate.
                         #   A HULL's segment (X4.2b) is asked the size gate
-                        #   alone, one by one (keepsSphere)
+                        #   alone, one by one (keepsSphere), and a hull's whole
+                        #   measure the detail tier's swap (keepsDetail,
+                        #   X4.2c), off for the warm-up
     BlockHandover.ts    # The map's world as OUR renderer draws it, in every
                         #   pass of every build but the editor's, with NO
                         #   fallback (BABYLON_EXIT.md X3.3-X3.7b): every block
@@ -2612,7 +2625,8 @@ src/
     HullDraw.ts         # Every HULL as OUR renderer draws it (X4.2b): the
                         #   kits on the GPU once (a narrower kind padded to
                         #   the widest), each frame's hulls as instances, a
-                        #   rank one draw, off what Game.drawHulls commits and
+                        #   rank one draw (a size-gated or detail-dropped
+                        #   segment a zero matrix), off what Game.drawHulls commits and
                         #   the order (and the segments the frustum culls) the
                         #   prepare pulls (Game.hullPull);
                         #   installed AHEAD of the bodies, as Babylon's queue

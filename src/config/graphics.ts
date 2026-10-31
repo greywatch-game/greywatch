@@ -1350,6 +1350,33 @@ export const graphics = {
        */
       size: 1.5,
     },
+    /**
+     * A HULL's detail tier (`BABYLON_EXIT.md` X4.2c, `PERF_PLAN.md` A3): the
+     * projected DIAMETER, in CSS pixels as `minPixels` is, of a hull's whole
+     * MEASURE (`vehicleRig.HullMeasure`, one sphere a hull) under which it
+     * draws its REDUCED set — every segment its model's `DETAIL` list names
+     * left out (the tank's links, road wheels and cupola ring, the truck's
+     * weapon-station yoke; nothing of the helicopter's). A SWAP, never a
+     * drop: the hull stays, and the size gate above still answers per
+     * segment for whatever is drawn (decided 2026-10-31). Off while the
+     * warm-up stands, so the full set is the one it shows.
+     *
+     * **32 is where the largest detail part stops reading as a part.** At 32
+     * px a tank's measure (11.1 m across) puts its idler, the biggest disc in
+     * the set (0.72 m), at ~2 px and a road wheel's hub (0.56 m) at ~1.6;
+     * the links are sub-pixel from far nearer. Photographed full against
+     * reduced on Sarab's open ground (X4.2c): 21-48 pixels of a tank change
+     * at 32, at both 3440x1440 and 832x384 — a light hub pixel or two at the
+     * nose, a darker run along the bottom — and the truck's 1-5; by 48 the
+     * tank's change is 100-110 and by 64 the road wheels are a row of dots
+     * that visibly go. Where that falls: a tank at ~527 m and a truck at
+     * ~348 m on a 1440-tall viewport at the hip field, ~395 and ~260 m at
+     * 1080, ~141 and ~93 m on a phone's 384 — the swap comes NEARER exactly
+     * where a pixel is bigger, as the gate above does.
+     *
+     * 0 disables it (the full set always).
+     */
+    hullDetail: 32,
   },
   /**
    * How our renderer cuts the blocks it draws (`render/WorldBlocks.ts`,

@@ -16,7 +16,8 @@
  * Invariants: it DECIDES NOTHING — which hulls are drawn, in what pose, in
  * what order, which of their segments, in what paint and with what material
  * are its caller's (`Game.drawHulls`, off each hull's switch, `WorldCulling`'s
- * size gate per segment, the rigs' own joints and the eye), handed over once
+ * size gate per segment and the detail tier per hull (X4.2c), the rigs' own
+ * joints and the eye), handed over once
  * a frame (`commit`) and pulled once inside the render (`pull`, in the
  * prepare: the order, and the segments outside the frustum switched off),
  * and drawn on that frame, nothing else; a draw is one RANK of

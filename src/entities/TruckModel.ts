@@ -208,6 +208,16 @@ interface TruckKit {
 }
 
 /**
+ * The segments that drop at RANGE (`BABYLON_EXIT.md` X4.2c, the user's set,
+ * `PERF_PLAN.md` A3): the weapon station's turntable and yoke, every colour of
+ * it — drawn only while the whole truck's measure projects at or above
+ * `CONFIG.graphics.culling.hullDetail` (`vehicleRig.ts`'
+ * `HullKitSegment.detail`). The gun on it, the ring it turns on and every
+ * wheel stay.
+ */
+const DETAIL: readonly string[] = ["truck-mg-ring"];
+
+/**
  * One kit per SIDE, indexed by the VIEW and not by `Team` — see
  * `core/teamView.ts`, and `SoldierModel`'s `KITS`. Warm against cold, as the
  * tanks are.
@@ -378,7 +388,7 @@ export function buildTruck(team: Team): VehicleRig {
 
   // The drawing is this model's KIT in this view's colours, built by the
   // first rig of the pair and hung by every later one (`segmentOf`).
-  const { segments, segment, kit: drawingOf } = segmentOf("truck", view);
+  const { segments, segment, kit: drawingOf } = segmentOf("truck", view, DETAIL);
 
   /** A round member from `a` to `b` — an arm, a spring, a wiper, a strap, a chute. */
   const rod = (a: Point3, b: Point3, d: number, color: string, tess = 6, dTop = d): Shape => [
@@ -1056,7 +1066,7 @@ export function buildTruck(team: Team): VehicleRig {
     mgSight,
     antennae,
     segments,
-    kit: drawingOf(),
+    kit: drawingOf(tree, root),
     enabled: true,
     charred: false,
     setRun: (left, right, steer, _rotor) => setWheelRun(wheels, left, right, steer),

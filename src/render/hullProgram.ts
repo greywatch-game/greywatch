@@ -20,7 +20,8 @@
  * quotient by the SPAN (the longest range drawn, which each draw's
  * `firstVertex` steps by), the corner its remainder, and a corner past its
  * segment's range — or of a segment whose matrix is ZERO, past a narrower
- * kind's own segments or dropped by the size gate — is drawn as nothing, put
+ * kind's own segments, dropped by the size gate, or a DETAIL segment of a hull
+ * the detail tier draws reduced (X4.2c) — is drawn as nothing, put
  * outside the clip volume before an attribute is read; `world` is that hull's
  * matrix for the segment — what Babylon's `freezeWorldMatrix` handed the
  * segment's mesh until X4.2b — read WHOLE, all sixteen floats out of storage

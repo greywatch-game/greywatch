@@ -4846,7 +4846,7 @@ and nowhere else: no bank row has a body at either, and none moved).
   Cinderhaven is the saving it could buy). X4.1d's owed items stand (the
   rank's vertex surplus, the editor's body draw, the compose cost).
 
-### X4.2 — Vehicles (PERF_PLAN A3) — **M–L, as four sub-steps** (split 2026-10-31) — X4.2a **LANDED** (fde5be7), X4.2b **LANDED** (d4f41ef)
+### X4.2 — Vehicles (PERF_PLAN A3) — **M–L, as four sub-steps** (split 2026-10-31) — X4.2a **LANDED** (fde5be7), X4.2b **LANDED** (d4f41ef), X4.2c **LANDED** (HASH)
 
 Every hull a page draws — the tank, the truck and the helicopter, live or
 wrecked — comes off Babylon's scene, and A3's detail tier and draw distance
@@ -4891,7 +4891,7 @@ draft named a `HullFlex`; no such module exists — the hull's own motion is
   (`sarab-tank`, `sarab-truck`, `sarab-heli`) and every other row
   byte-identical; census; X0.3 alternated on Sarab and Cinderhaven, `--max
   --gpu`; a netplay round with each kind driven and one wrecked.
-- **X4.2c — A3's detail tier (the picture change).** **The detail set is
+- **X4.2c — A3's detail tier (the picture change).** Landed (below). **The detail set is
   decided** (2026-10-31, the user, PERF_PLAN A3's suggestion): the tank's
   links (`tank-link-hi`, `tank-link-lo`) and road wheels (`tank-wheel`) and
   both machine-gun rings (`tank-mg-ring`, `truck-mg-ring`) drop at range;
@@ -5394,6 +5394,163 @@ parent, every hull row among them).
   reading wants the boot or the memory back, the obvious lever is building
   and uploading the kits at the first install of a map with armour rather
   than at construction; unmeasured on the phone.
+
+**X4.2c landed** (HASH; 2026-10-31; the picture change, for a hull past the
+swap and nowhere else: the bank 61 of 61 byte-identical against its parent,
+the census down 9 draws on Sarab and 1 on Cinderhaven on the rows that frame
+far hulls).
+- **What it is.** A far hull draws its REDUCED set — A3's detail tier
+  (`PERF_PLAN.md`), in our renderer. **The set is data on the MODEL**: each
+  model file states a `DETAIL` list of its `segment` calls, handed to
+  `segmentOf`, which flags every segment those calls make
+  (`HullKitSegment.detail`) and refuses a name no call made — the tank's
+  `tank-link-lo`, `tank-link-hi` (both sides), `tank-wheel` (its two colours:
+  the road wheels, the idler and the return rollers, and their hubs) and
+  `tank-mg-ring`, seven of its 25 segments and 42% of its corners (18,792 of
+  44,784); the truck's `truck-mg-ring` (both colours), two of 26 and 1.6%
+  (348 of 22,272); the helicopter's list empty. No `if` on a kind anywhere.
+  **The swap is asked of a WHOLE-HULL MEASURE this step introduces and uses
+  for nothing else** (the 2026-10-31 decision): one sphere a kit
+  (`HullKit.measure`, `HullMeasure`) — the bounding sphere of every vertex of
+  the kit at rest, carried into the ROOT joint's frame at the kit's build
+  (`restMeasure`; centre and half the diagonal, as `kitSegment` takes a
+  segment's): the tank's 5.565 m, the truck's 3.674, the helicopter's 8.026.
+  Each frame `writeHullDrawing` composes the tree, hangs the measure on the
+  root's world (`measureHull`) and asks `full` once — `WorldCulling
+  .keepsDetail`, which is `tooSmall` from the size gate's own eye and pixels a
+  radian against `CONFIG.graphics.culling.hullDetail` — and a hull refused
+  writes every detail segment as nothing (sixteen zeros and a NaN sphere, as
+  a gated segment; `hullPull` files it last). **The per-segment gate stays
+  exactly as it was, under the tier**: a hull drawn in full has its detail
+  segments gated one by one, and the tier never touches a segment that is
+  not detail and never drops a hull. **The measure is composed where the hull
+  IS this frame** (X4.2a's fix holds by construction: no cached bound).
+  **The full set is the one the warm-up shows**: `keepsDetail` answers full
+  while `WorldCulling` is warm (`offer` sets the tier's pixels a radian to 0),
+  with a threshold of 0 and with no camera; the hulls' pipeline is the one
+  pipeline either way, so the warm-up waits for nothing new.
+- **The measure's radius is NOT `BoundingSphere._update`'s**, which every
+  segment's sphere copies for the order Babylon's queue sorted by: that
+  scales the radius by the largest component of (1, 1, 1) carried through the
+  matrix, which for a matrix that only TURNS is up to √2. The first cut used
+  it and photographed a tank's measure at 7.87 m at a yaw of 0.6 rad where
+  its own is 5.565 — a swap that would have come 41% further out as a hull
+  turned. `measureHull` scales by the matrix's own scale (its x axis's
+  length; 1 to a rounding, nothing on a hull scales).
+- **The swap's size: 32 px**, the whole measure's projected diameter in CSS
+  pixels (`hullDetail`), chosen by photographs, and why: at 32 px the
+  largest detail part, the idler's 0.72 m disc, is ~2 px and a road wheel's
+  hub (0.56 m) ~1.6 — a part that has stopped reading as a part — where at 64
+  the road wheels are a row of dots that visibly goes. Photographed on
+  Sarab's open ground (scratch `swapshots.mjs`: the hull stood in the open
+  with the page's poses held, the camera 3 m over the floor on a bearing
+  with a clear line to the running gear at every distance, the same frame
+  shot FULL, REDUCED and FULL again — `hullDetail` 0 and 1e9 written in the
+  page — the control byte-identical on every row but a run's first, still
+  settling, and two of 7-9 px at 24 px on the phone's view), pixels changed
+  full against reduced, at 3440x1440 / 832x384:
+  - the tank, from 35° and from 63° off its broadside: 13-17 / 28-36 at 24 px, 21-25 / 40-48 at
+    32, 32-43 / 61-64 at 40, 99 / 111 at 48, 169 / 187 at 64, 371 / 397 at
+    96 (48-96 from one bearing) — mostly a light hub pixel or two at the nose and a darker run along
+    the bottom of the track, worst channel 21-29/255 at 32 on the big view
+    and up to 124-129 on the phone's (nearer, so less fog over it);
+  - the truck: 0-5 / 1 at 24-32 px, 23 / 23 at 40, 38 / 34 at 48 — the
+    station's yoke, a 3x2 px hump on the roof.
+  So 32 is the largest size at which the swap is a handful of pixels on both
+  viewports; 40 already doubles it and 48 is the step change. In the world:
+  a tank at ~527 m and a truck at ~348 m on a 1440-tall view at the hip
+  field, ~395 and ~260 m at 1080, ~141 and ~93 m on a phone's 384 — nearer
+  exactly where a pixel is bigger, as the size gate is. The MG rings are
+  mostly gone by the per-segment gate before the tier reaches them (the
+  tank's at a measure of ~60 px, the truck's at ~20).
+- **A hull walked through the swap, at the SHIPPED value** (scratch
+  `walk.mjs`; the tank and the truck stood in the open, frames at a projected
+  40, 36, 34, 33, 32.5 | 31.5, 31, 30, 28 px, each with the page's own verdict
+  — `keepsDetail` of `measureHull` — read back): full at 32.5 and every size
+  above it and reduced at 31.5 and every size below, on both kinds at both
+  832x384 (the tank 138.4 → 142.8 m, the truck 91.4 → 94.3) and 3440x1440
+  (519.1 → 535.6 m, 342.7 → 353.6); no step at the swap reads larger than a
+  step of plain distance beside it. Either side of it:
+  `scratchpad/x42c/walk/walk-{tank,truck}-{832x384,3440x1440}-P{32.5,31.5}.png`
+  (every frame, and `walk-sheet.png`, the contact sheet).
+- **Measured.** **The bank** `--check --keep` against a BEFORE at 55af511 in
+  a worktree: **61 of 61 byte-identical** (pixels), `sarab-tank`,
+  `sarab-truck` and `sarab-heli` among them — the bank is shot at 1920x1080,
+  where a hull past the swap is past ~395 m (a tank) and drawn a few hazed
+  pixels, and no row's pixels moved; the same 34 stale rows on both sides, no
+  console or page error. **`census --against`** the BEFORE: every row with
+  no hull past the swap equal, the totals of Hollowmere 278, Greyfen 205,
+  Coldharbour 672, Harrowmead 847 and Kurenai 125 equal; **Sarab 481 → 472
+  and Cinderhaven 150 → 149**, all on rows that frame a far hull (`shelf` 57
+  → 51, `alley`, `wadi` and `ground` one each, Cinderhaven `crossing` 49 →
+  48): a rank is no draw once every hull drawn at it has dropped its segment
+  there. **`gate.mjs`** clean on seven; **`shaders.mjs`** clean on seven,
+  ours 17/17 (21/21 Sarab and Cinderhaven, 23/23 Coldharbour). Typecheck,
+  build (`check-babylon-free`: 15 simulations, no path), corecheck and
+  `parity` (eight maps) pass. **`kit:hash --models`: the twelve `vehicle:`
+  rows move BY CONSTRUCTION** (232 identical): the script hashes the rig and
+  its kit, which carry the detail flags and the measure now, and the first
+  build of each kit composes its tree to take the measure.
+  **X0.3 on Cinderhaven against A3's +6.5% at 300 m** (`bench.mjs
+  cinderhaven --runs 1 --max --gpu`, uncapped, 3440x1440, three static builds
+  served side by side — the BEFORE at 55af511, the step as shipped, and the
+  step built with `hullDetail` 56, which puts a tank's swap at ~300 m at
+  this viewport and the hip field — run one invocation each, alternated,
+  three rounds, so three runs a side; the canonical fight hash
+  `2f97c9072ab1762b` on all nine; installs 8.04-8.20 s on every run, so the
+  runs compare), medians, new / old: **as shipped** — vantages 5.673 →
+  5.673 ms (1.0000), path 6.226 → 6.231 (1.0008), fight 6.033 → 6.047
+  (1.0023); **at 300 m** — vantages 5.672 (0.9998), path 6.229 (1.0005),
+  fight 6.035 (1.0003); every run within 0.7% of
+  its side's median, `gpu.frame` 0.96-1.02 on 10-39 samples a group, Babylon's
+  draws 43 / 41 / 75 on every side. **A3's +6.5% does not reappear, and was
+  not expected to**: it was measured as Babylon's per-MESH cost, a hull's
+  every part a candidate, a walk entry and a draw; X4.2b folded the fleet
+  into at most 26 rank draws (Cinderhaven's fight 161 → 75), so what the tier
+  saves now is vertex work on the GPU — a far tank's 42% — and a rank's draw
+  only when every hull drawn at it dropped that segment, inside the noise on
+  this desktop. The phone, where the swap is ~141 m and its GPU the bound, is
+  the reading that could show it (owed below).
+  **A round offline** (scratch `hullprobe.mjs`, X4.2b's, extended: after
+  every render, one instance per present hull in hardstanding order, each kit
+  word against its rig, every drawn segment's matrix bit-equal to a fresh
+  compose, every zero segment padded, culled by the frustum, refused by the
+  gate or a detail segment of a hull `keepsDetail` refuses — asked of a fresh
+  `measureHull` — and no detail segment of such a hull drawn; Sarab, 240 s,
+  30,233 frames, 1920x1080): **0 failures**; every kind driven by its bot
+  crew, the helicopter flown to 29.2 m; the tank reduced on 29,942 of its
+  60,466 drawn frames, the truck on 54,157, the helicopter (no detail) on
+  3,670; 316,483 detail segments dropped by the tier against 595,149 by the
+  gate. **A netplay round** against a local `dist-server` (`?mp=`, Sarab,
+  the authority's round, 300 s, 37,797 frames, the server's hulls made
+  FRAGILE by X4.2b's scratch loader): the same checks, **0 failures**, every
+  kind driven and the helicopter flown to 33.8 m, a tank WRECKED twice and a
+  truck once off the wire — drawn charred (4,027 and 2,014 frames), hidden
+  and placed again — the tank reduced on 46,400 of its 73,575 drawn frames
+  and the truck on 73,123 of 74,580; no console or page error in either
+  round.
+- **Deviations.** **The measure's radius** (above) is not Babylon's
+  arithmetic, on purpose. **The set's names are CALLS, so a call's every
+  colour goes**: `tank-wheel` takes the hubs' stowage colour with the
+  wheels, and `truck-mg-ring` its trunnion axle with the yoke; a part meant
+  to stay belongs in a call of its own (`docs/vehicles.md` says so). The
+  MG gun itself (`tank-mg-m`, `truck-mg-m`) stays and is left standing over
+  no ring at range, sub-pixel there. **No helicopter was wrecked** in either
+  round, nor a tank or truck in the offline one (the netplay round wrecked a tank twice and a truck once); the tier is
+  kind-blind and paint-blind (the charred bit is the kit word's, untouched).
+  The first walk was shot on Sarab's hardstandings and photographed walls —
+  the hulls stand in compounds there — and was thrown away; the photographs
+  above stand each hull in the open. `CLAUDE.md` is unchanged (no rule of it
+  moved; the tier is `docs/rendering.md`'s, "The hulls, ours").
+- **Owed onward.** **The phone's reading**, as every step's since X3.3c —
+  for this step specifically, whether the tier's vertex saving shows in
+  `gpu.frame` on Cinderhaven at 832x384-class viewports, where the swap is
+  ~141 m. **The look on a phone**: the walk at 832x384 is a desktop
+  rendering of a phone's viewport, not eyes on that screen. X4.2d: the draw
+  distance and its fade at `hullDrawDistance` only (the 2026-10-31 decision).
+  X4.2b's owed items stand (the rank surplus — 3.35x offline here, the
+  detail segments' corners gone and the spans left to the hulls drawn in full
+  — the boot cost, the editor's hulls).
 
 ### X4.3 — The viewmodel and the kit bay — **M–L**
 

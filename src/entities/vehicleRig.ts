@@ -7,9 +7,11 @@
  * drawing a model and a view, built by the first rig of it: `HullKit`,
  * `segmentOf`) and their one palette (`hullPalette`), the one way a whip
  * antenna is built (`whip`), the one pose a rig is reset to
- * (`resetRigPose`), and the one way a rig's drawing is written
+ * (`resetRigPose`), the one way a rig's drawing is written
  * (`writeHullDrawing`), switched (`setHullRigEnabled`) and painted
- * (`paintRig`).
+ * (`paintRig`), and the hull's one whole-hull MEASURE (`HullMeasure`,
+ * `measureHull`) with the DETAIL flag on a kit's segments that the detail
+ * tier swaps by (`BABYLON_EXIT.md` X4.2c).
  * Owns NO numbers. `TankModel.ts`, `TruckModel.ts` and `HeliModel.ts` are the
  * ART, one file per kind; this is the shape they all come out in, and the one
  * thing `entities/VehicleView.ts` poses. CLIENT-only: `entities/Vehicle.ts`
@@ -27,6 +29,18 @@
  * (`render/HullDraw.ts`). The segments are in the order the scene used to
  * receive the meshes, which `mergeByColor` explains and the front-to-back
  * sort breaks a tie by; `kit:hash --models` hashes that order.
+ *
+ * **A hull has a DETAIL TIER, and it is data on the MODEL** (`BABYLON_EXIT.md`
+ * X4.2c, `PERF_PLAN.md` A3): each model names the `segment` calls that drop
+ * at range (its `DETAIL` list, handed to `segmentOf`), every segment those
+ * calls make is flagged (`HullKitSegment.detail`), and a hull whose whole
+ * MEASURE projects under `CONFIG.graphics.culling.hullDetail` this frame
+ * (`WorldCulling.keepsDetail`) draws without them — its REDUCED set, the
+ * same kit with those segments written as nothing (`writeHullDrawing`). The
+ * measure is the kit's, one sphere a hull (`HullMeasure`); it decides the
+ * swap and nothing else. **The size gate stays PER SEGMENT under it**
+ * (decided 2026-10-31): a segment of a hull drawn in full is still gated one
+ * by one, as it always was, and no hull is dropped whole by either.
  *
  * **The JOINTS are OURS** (`BABYLON_EXIT.md` X4.2a, X4.1a's shape): a
  * `JointTree` (`rigJoints.ts`) whose first joint is the collider box's own
@@ -224,6 +238,30 @@ export interface HullKitSegment {
   readonly color: string;
   readonly centre: Vector3;
   readonly radius: number;
+  /**
+   * Whether it is DETAIL — made by one of the `segment` calls its model names
+   * as dropping at range (`BABYLON_EXIT.md` X4.2c, the model's `DETAIL`
+   * list): drawn only while the whole hull's MEASURE (`HullKit.measure`)
+   * projects at or above `CONFIG.graphics.culling.hullDetail`, and while it
+   * is, under the size gate per segment like any other.
+   */
+  readonly detail: boolean;
+}
+
+/**
+ * A hull's whole-hull MEASURE in its ROOT joint's frame (`VehicleRig.root`:
+ * upright, under the collider box's frame, the bottom of the running gear at
+ * y = 0): the bounding sphere of its kit's every vertex as the model built
+ * them, the joints at rest — the midpoint of that extent and half its
+ * diagonal, as Babylon's `BoundingSphere.reConstruct` made a mesh's
+ * (`BABYLON_EXIT.md` X4.2c). A SIZE, not a bound: a turret turned or a gun
+ * laid does not move it, and nothing culls by it. What the detail tier's swap
+ * is asked of, and nothing else — the size gate stays per segment (decided
+ * 2026-10-31).
+ */
+export interface HullMeasure {
+  readonly centre: Vector3;
+  readonly radius: number;
 }
 
 /**
@@ -240,6 +278,8 @@ export interface HullKit {
   readonly key: string;
   readonly segments: readonly HullKitSegment[];
   readonly calls: readonly number[];
+  /** The whole hull's one measure (`HullMeasure`), which the detail tier swaps by. */
+  readonly measure: HullMeasure;
 }
 
 /**
@@ -574,11 +614,13 @@ export interface Segments {
   ): void;
   /**
    * The kit this build drew from — or built, which is filed for every later
-   * build of the same model and view. Called once, after the model has hung
-   * every segment; a build that made a different number of segment calls
-   * than the kit's builder did throws.
+   * build of the same model and view, its MEASURE taken off `tree` at rest
+   * in `root`'s frame (`HullMeasure`). Called once, after the model has hung
+   * every segment and before anything poses a joint; a build that made a
+   * different number of segment calls than the kit's builder did throws, and
+   * so does a kit's build whose `detail` names a call the model never made.
    */
-  kit(): HullKit;
+  kit(tree: JointTree, root: Joint): HullKit;
 }
 
 /**
@@ -592,9 +634,12 @@ const kits = new Map<string, HullKit>();
 /**
  * A model's `Segments`, for a rig of `model` (the kind's model name) in
  * `view`'s colours: building the kit if no rig of that key has, and hanging
- * the built one's otherwise.
+ * the built one's otherwise. `detail` is the model's DETAIL list — the names
+ * of the `segment` calls that drop at range (`HullKitSegment.detail`), data
+ * on the model rather than a branch on its kind; every segment a named call
+ * makes (one a colour) is detail.
  */
-export function segmentOf(model: string, view: number): Segments {
+export function segmentOf(model: string, view: number, detail: readonly string[]): Segments {
   const key = `${model}|${view}`;
   const existing = kits.get(key) ?? null;
   const built: HullKitSegment[] = [];
@@ -657,19 +702,22 @@ export function segmentOf(model: string, view: number): Segments {
       parts.push(p);
       colors.push(color);
     }
-    const made = mergeByColor(parts, colors, name, shapes.length);
+    const made = mergeByColor(parts, colors, name, shapes.length, detail.includes(name));
     for (const seg of made) {
       built.push(seg);
       segments.push({ joint: parent, local: seg.local });
     }
     calls.push(made.length);
   };
-  const kit = (): HullKit => {
+  const kit = (tree: JointTree, root: Joint): HullKit => {
     if (existing) {
       if (call !== existing.calls.length) throw new Error(`[hull] ${key}: a build made fewer segment calls than its kit's`);
       return existing;
     }
-    const made: HullKit = { key, segments: built, calls };
+    for (const name of detail) {
+      if (!built.some((seg) => seg.name === name)) throw new Error(`[hull] ${key}: its detail names "${name}", which the model never made`);
+    }
+    const made: HullKit = { key, segments: built, calls, measure: restMeasure(built, segments, tree, root) };
     kits.set(key, made);
     return made;
   };
@@ -703,6 +751,7 @@ function mergeByColor(
   colors: readonly string[],
   name: string,
   shapeCount: number,
+  detail: boolean,
 ): HullKitSegment[] {
   const groups = new Map<string, number[]>();
   for (let i = 0; i < parts.length; i++) {
@@ -724,13 +773,14 @@ function mergeByColor(
       // A lone part's frame is its own; a part still hung off another would
       // be composed with it, which no model does.
       if (part.parent) throw new Error(`[hull] "${part.name}" still has a parent — detach or bake it first`);
-      return kitSegment(name, part.geometry, worldMatrixOf(part, new Matrix()), color);
+      return kitSegment(name, part.geometry, worldMatrixOf(part, new Matrix()), color, detail);
     }
     return kitSegment(
       name,
       mergeParts(group.map((i) => parts[i])),
       worldMatrixOf(new PartNode(name), new Matrix()),
       color,
+      detail,
     );
   });
 }
@@ -740,7 +790,7 @@ function mergeByColor(
  * extent of its positions as the mesh was handed them (`extractMinAndMax`),
  * then `BoundingSphere.reConstruct`'s centre and radius.
  */
-function kitSegment(name: string, geometry: GeometryBuffer, local: Matrix, color: string): HullKitSegment {
+function kitSegment(name: string, geometry: GeometryBuffer, local: Matrix, color: string, detail: boolean): HullKitSegment {
   const p = geometry.positions;
   const min = new Vector3(Number.MAX_VALUE, Number.MAX_VALUE, Number.MAX_VALUE);
   const max = new Vector3(-Number.MAX_VALUE, -Number.MAX_VALUE, -Number.MAX_VALUE);
@@ -750,7 +800,41 @@ function kitSegment(name: string, geometry: GeometryBuffer, local: Matrix, color
   }
   const radius = Vector3.Distance(min, max) * 0.5;
   const centre = max.addToRef(min, new Vector3()).scaleInPlace(0.5);
-  return { name, geometry, local, color, centre, radius };
+  return { name, geometry, local, color, centre, radius, detail };
+}
+
+/**
+ * A kit's MEASURE (`HullMeasure`), off the build that made it: `tree`
+ * composed at rest, every vertex of every segment carried through its local
+ * and its joint's world into `root`'s frame, and the sphere of their extent —
+ * the midpoint and half the diagonal, as `kitSegment` takes a segment's. Once
+ * a kit, at its build; never on a frame.
+ */
+function restMeasure(
+  kit: readonly HullKitSegment[],
+  segments: readonly HullSegment[],
+  tree: JointTree,
+  root: Joint,
+): HullMeasure {
+  tree.compute();
+  const toRoot = root.world.invertToRef(new Matrix());
+  const world = new Matrix();
+  const m = new Matrix();
+  const v = new Vector3();
+  const min = new Vector3(Number.MAX_VALUE, Number.MAX_VALUE, Number.MAX_VALUE);
+  const max = new Vector3(-Number.MAX_VALUE, -Number.MAX_VALUE, -Number.MAX_VALUE);
+  for (let s = 0; s < kit.length; s++) {
+    segments[s].local.multiplyToRef(segments[s].joint.world, world);
+    world.multiplyToRef(toRoot, m);
+    const p = kit[s].geometry.positions;
+    for (let i = 0; i < p.length; i += 3) {
+      Vector3.TransformCoordinatesFromFloatsToRef(p[i], p[i + 1], p[i + 2], m, v);
+      min.minimizeInPlace(v);
+      max.maximizeInPlace(v);
+    }
+  }
+  const centre = max.addToRef(min, new Vector3()).scaleInPlace(0.5);
+  return { centre, radius: Vector3.Distance(min, max) * 0.5 };
 }
 
 /**
@@ -790,13 +874,42 @@ export function hullPalette(all: readonly HullKit[]): {
   };
 }
 
-/** Whether a segment is kept by the size gate, off its world sphere this frame (`WorldCulling.keepsSphere`). */
+/**
+ * A question asked of a world sphere this frame: whether the size gate keeps
+ * a segment (`WorldCulling.keepsSphere`), or whether a hull's MEASURE keeps
+ * its full set (`WorldCulling.keepsDetail`).
+ */
 export type SphereGate = (x: number, y: number, z: number, radius: number) => boolean;
 
-// Scratch for `writeHullDrawing`.
+// Scratch for `writeHullDrawing` and `measureHull`.
 const _meshWorld = new Matrix();
 const _centre = new Vector3();
 const _scale = new Vector3();
+const _measure = { x: 0, y: 0, z: 0, radius: 0 };
+
+/**
+ * A hull's whole-hull MEASURE in the world, this frame: its kit's
+ * `HullMeasure` centre carried by the root joint's world, and its radius
+ * scaled by that matrix's own scale (the length of its x axis; a hull's
+ * joints scale nothing, so it is 1 to a rounding). **Deliberately NOT
+ * `BoundingSphere._update`'s radius**, which a segment's sphere copies for
+ * the order Babylon's queue sorted by: that scales by the largest component
+ * of (1, 1, 1) carried through the matrix, so a matrix that only TURNS
+ * inflates it by up to the square root of two with the hull's heading — a
+ * swap that came 41% further out as a tank turned would be a swap decided
+ * by its yaw. The root's world must be current — composed this frame —
+ * which `writeHullDrawing` sees to; a script reading it owes a compose
+ * first.
+ */
+export function measureHull(rig: VehicleRig, out: { x: number; y: number; z: number; radius: number }): void {
+  const w = rig.root.world;
+  Vector3.TransformCoordinatesToRef(rig.kit.measure.centre, w, _centre);
+  const m = w.m;
+  out.x = _centre.x;
+  out.y = _centre.y;
+  out.z = _centre.z;
+  out.radius = Math.hypot(m[0], m[1], m[2]) * rig.kit.measure.radius;
+}
 
 /**
  * Composes the rig's joints and writes its DRAWING into `out` from `at`:
@@ -808,9 +921,14 @@ const _scale = new Vector3();
  * operation for operation, which is what Babylon's front-to-back queue sorted
  * the mesh by and its frustum test culled it by. `stride` segments are
  * written; past the kit's own (a kind with fewer segments than the drawing's
- * widest) and for a segment `keeps` drops — the size gate, asked of the same
- * world sphere `WorldCulling` asked of the mesh's bounds — sixteen zeros and
- * a NaN sphere, which nothing draws.
+ * widest), for a segment `keeps` drops — the size gate, asked of the same
+ * world sphere `WorldCulling` asked of the mesh's bounds — and for a DETAIL
+ * segment (`HullKitSegment.detail`) of a hull whose whole MEASURE `full`
+ * refuses this frame (`measureHull`, the detail tier, `BABYLON_EXIT.md`
+ * X4.2c), sixteen zeros and a NaN sphere, which nothing draws. The tier is ON
+ * TOP of the size gate: a detail segment of a hull drawn in full is still
+ * gated as any segment is, and no segment but a detail one ever leaves by
+ * the tier.
  *
  * **Called once a frame for every present hull, after every write and before
  * the render** (`Game.drawHulls`, inside the render span). The rig's switch
@@ -822,16 +940,19 @@ export function writeHullDrawing(
   at: number,
   stride: number,
   keeps: SphereGate,
+  full: SphereGate,
   spheres: Float64Array,
   spheresAt: number,
 ): void {
   rig.tree.compute();
+  measureHull(rig, _measure);
+  const whole = full(_measure.x, _measure.y, _measure.z, _measure.radius);
   const segments = rig.segments;
   const kit = rig.kit.segments;
   for (let s = 0; s < stride; s++) {
     const o = at + s * 16;
     const c = spheresAt + s * 4;
-    if (s < segments.length) {
+    if (s < segments.length && (whole || !kit[s].detail)) {
       const seg = segments[s];
       seg.local.multiplyToRef(seg.joint.world, _meshWorld);
       const drawing = kit[s];
