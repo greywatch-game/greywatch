@@ -5570,7 +5570,7 @@ rows that frame a hull inside it move).
   hull's tracers and a shell's blast past its distance are accepted, not
   owed (the owner's decision above).
 
-### X4.3 — The viewmodel and the kit bay — **M–L, as four sub-steps** (split 2026-10-31, decided the same day) — X4.3a **LANDED** (HASH)
+### X4.3 — The viewmodel and the kit bay — **M–L, as four sub-steps** (split 2026-10-31, decided the same day) — X4.3a **LANDED** (3e48d98)
 
 X4.3's intro, "Read first", "Contracts all four keep", "Verify" and the
 briefs of X4.3b-d are in the live plan until all four land. X4.3a's brief,
@@ -5600,7 +5600,7 @@ word for word:
   byte-identical to itself; every old row unmoved against a BEFORE at the
   parent; each new row LOOKED at and its `proves` true of it.
 
-**X4.3a landed** (HASH; 2026-10-31; no change to the game — the reference
+**X4.3a landed** (3e48d98; 2026-10-31; no change to the game — the reference
 bank, its harness and its table only).
 - **What it is.** Nineteen rows appended at the END of Harrowmead's list in
   `src/bench/vantages.ts` (`viewmodelRows`, `kitRows`, after `crossing`),

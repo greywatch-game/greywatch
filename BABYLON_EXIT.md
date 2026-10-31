@@ -949,7 +949,7 @@ lamps' atlas were already done (X4.1c).
 
 The full record is in [the archive](plans/done/babylon_exit_landed.md).
 
-### X4.3 — The viewmodel and the kit bay — **M–L, as four sub-steps** (split 2026-10-31, decided the same day) — X4.3a **LANDED** (HASH)
+### X4.3 — The viewmodel and the kit bay — **M–L, as four sub-steps** (split 2026-10-31, decided the same day) — X4.3a **LANDED** (3e48d98)
 
 The player's own weapon — whichever of the nine carried rigs is up, its
 optic, both gloved arms, the throwing fist with its grenade or bottle, the
@@ -1009,7 +1009,7 @@ fresh compose where the node was not drawn in it — "one frame stale", as
 `evaluateReload`'s `parts.root.getWorldMatrix()` (the magazine's fall, :1922)
 read the same cache for the picture.
 
-- **X4.3a — the bank sees the viewmodel LANDED** (HASH; 2026-10-31; no
+- **X4.3a — the bank sees the viewmodel LANDED** (3e48d98; 2026-10-31; no
   change to the game). Nineteen rows appended at the end of Harrowmead's
   list (`bench/vantages.ts`' `viewmodelRows`, `kitRows`) and banked with
   `--rows`: `view-greendot-hip`/`-aim` and `view-longscope-hip`/`-aim` (the
