@@ -40,10 +40,13 @@
  *   900 m sight line: 65% of the frame's active meshes were soldiers and the
  *   frame went 9.2 ms to 6.6. This map HAS 900 m sight lines — down the two
  *   highways, and from the Martyrs' shelf across the whole town — so it is the
- *   map that pays for the rigs, and 300 m is a little over half its own fog. A
- *   body still POPS where it is dropped, which is the whole of the cost, and
- *   300 was chosen so that popping happens in haze thick enough to hide it
- *   rather than in clear air.
+ *   map that pays for the rigs, and 300 m is a little over half its own fog.
+ *   300 was chosen when a body POPPED where it was dropped, so that the pop
+ *   happened in haze thick enough to hide it rather than in clear air. Since
+ *   `BABYLON_EXIT.md` X4.1e a body FADES out instead, over the last tenth of
+ *   the distance (~269 to ~299 m, the ramp ending one measure-radius short of
+ *   300: `WorldCulling.setBodyDrawDistance`), so whether 300 is right is a
+ *   look call rather than a pop (`FINDINGS.md` 32).
  * - **No lamps at all** (`lampIntensity: 0`), the rule Greyfen set and
  *   Harrowmead kept. A carried flame under a midday sun is a torch at noon, and
  *   it is not merely redundant: a carried light always wins one of the sixteen

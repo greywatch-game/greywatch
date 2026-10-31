@@ -414,14 +414,18 @@ export interface EnvironmentSpec {
    * all times; at 1500 m that is the largest bucket in the frame.
    * `ENGINE_UPGRADE.md` S8 is this field.
    *
-   * **A body still POPS where it is dropped**, which is the whole of the cost
-   * and the reason this defaults to the fog rather than to a number: past
-   * `fogEnd` a body is `fogColor` in front of `fogColor` and dropping it cannot
-   * move a pixel, and inside it a body vanishing is a thing a player can see.
-   * So a map states this only when it has decided that a soldier a few pixels
-   * tall is worth less than the draws — and it is capped at `fogEnd`
-   * (`bodyDrawDistanceOf`), because a body drawn past the fog is a body drawn
-   * as fog.
+   * **A body no longer POPS where it is dropped; it FADES** (`BABYLON_EXIT.md`
+   * X4.1e): a screen door over the last tenth of this distance, the ramp
+   * ending one measure-radius short of it (`WorldCulling.setBodyDrawDistance`,
+   * `CONFIG.graphics.culling.bodyFade`), so the body is gone before the
+   * roster's switch takes it. A stated distance is therefore a LOOK call — a
+   * soldier thinning out of a view the player can see — rather than a pop,
+   * and it still defaults to the fog rather than to a number: past `fogEnd` a
+   * body is `fogColor` in front of `fogColor` and dropping it cannot move a
+   * pixel. So a map states this only when it has decided that a soldier a few
+   * pixels tall is worth less than what drawing him costs — and it is capped at
+   * `fogEnd` (`bodyDrawDistanceOf`), because a body drawn past the fog is a
+   * body drawn as fog.
    *
    * **The two riders stay pinned to each other**, which is what
    * `config/fogWall.ts` exists to say: the roster's draw gate and the

@@ -4510,10 +4510,12 @@ and nowhere else: no bank row has a body at either, and none moved).
 - **The distance ramp ends one measure-radius SHORT of the distance**, and
   that is what makes it a fade rather than a fade and then a pop. The roster
   switches a body off by its POSITION (its feet) and the cull measures the
-  capsule's sphere; the feet are inside that sphere, so from any eye at any
+  capsule's sphere; the feet are inside that sphere, so from one eye at any
   height the two distances differ by at most its radius (1.063 m) — the fade
-  is zero wherever the switch could still be on, with no second reading of
-  the roster's point. A corpse's root stays where it fell (it only sinks), as
+  reaches zero before the switch can turn the body off (a fade above 0 only
+  ever on a body whose switch is on), with no second reading of the roster's
+  point; up to one frame of eye lag (the review, below). A corpse's root
+  stays where it fell (it only sinks), as
   its position does, so the same holds for a corpse. The size ramp's zero is
   the gate's own `tooSmall`, so the drop is exactly where it was.
 - **The screen door, and where its value rides** (the user's decision,
@@ -4650,11 +4652,64 @@ and nowhere else: no bank row has a body at either, and none moved).
   keeps its 135 by dropping the rank's "because" (the argument is in
   `docs/rendering.md`). The blob disc under a soldier is untouched (it fades
   with the fog and takes the loose size gate as it did).
+- **What the post-commit review found** (an independent reader over 53dcb34
+  and ed049a5; fixed after it, comments and docs only — no behaviour or
+  picture moved). **No correctness bug.** **Checked and sound**: (a) a frame
+  with nobody fading issues the same GPU work it did before — the faded
+  pipelines' groups 0-2 are the plain ones' layouts (`PipelineCache` dedupes
+  a bind-group layout by its entries), so the same bind groups serve both;
+  the fades are uploaded only when some body is past `whole`
+  (`BodyDraw.commit`'s guard); and each rank's plain draws are the ones it
+  always drew — so the two Sarab rows that moved in the bank are the run
+  noise diagnosed above, not this step. (b) The distance fade's zero before
+  the roster's switch holds, up to ONE FRAME OF EYE LAG the first cut did
+  not state: the roster reads the camera inside `updateWorld`
+  (`NetSession.update`'s `cameraPos`), before the frame's camera update moves
+  it, and the cull reads it after (`followEye`), so at the switch the fade
+  can be above zero by one frame of the eye's travel over the band — at 60
+  fps ~0.004 sprinting on Sarab, ~0.014 on the 78 m maps, ~0.02 in the
+  helicopter at its 32 m/s and twice that at 30 fps; measured 0.0013 at most
+  (above). The screen door keeps no pixel below a fade of 1/32, so only the
+  helicopter's worst can leave one pixel of a 4x4 tile. The ramp is not
+  changed. (c) A body drops whole with its emissive: the main pass's visor
+  and the mask's read the same fade through the same `vBody` against the
+  same Bayer rank, and the mask is drawn at the main pass's size on every
+  rung, so a pixel is dropped in both or neither. **Fixed**:
+  - **Rule 7 misses**: `EnvironmentSpec.bodyDrawDistance`'s doc
+    (`world/environment.ts`, "A body still POPS where it is dropped, which is
+    the whole of the cost") and Sarab's header (`sarab/environment.ts`, "300
+    was chosen so that popping happens in haze") now say a body fades out
+    over the last tenth of the distance, the ramp ending one measure-radius
+    short (`WorldCulling.setBodyDrawDistance`), so a stated distance is a
+    look call rather than a pop. Neither file is hashed by the bake's
+    staleness guard (`collision-hash.mjs` hashes `layout.ts` and
+    `heights.ts`), so nothing re-bakes.
+  - **The eye lag** in (b), stated where the argument is made:
+    `WorldCulling.offer`'s distance-edge comment, `docs/rendering.md` and
+    the paragraph above.
+  - **Inverted wording**: "the fade is zero wherever the switch could still
+    be on" said the opposite of what was meant — the fade reaches zero
+    BEFORE the roster's switch can turn the body off, so a fade above 0
+    implies the switch is on. Corrected in `WorldCulling.offer`,
+    `bodyFade.distance`'s doc (`config/graphics.ts`), `docs/rendering.md` and
+    the paragraph above; the commit message of 53dcb34 keeps the old words
+    and is not amended.
+  - **`Game.drawBodies`' doc** still read `drawsBody` as "switched on, and
+    not under the size gate": it names the distance fade's end, the fade it
+    writes, and the whole-then-faded order.
+  - **`ENGINE_UPGRADE.md`**'s "the fade band that has not been built" is
+    history and kept, with a bracketed note that it was built here.
+  - **Owed onward** gains the size band's width (below).
 - **Owed onward.** **The phone walk-through — owed by the user's decision**
   (2026-10-30), beside the phone's FOLLOW-UP reading every step since X3.3c
   has owed: the size edge is the phone's (190-290 m on Coldharbour), and
   whether a 3-6 px body twinkling out reads as a fade there is a look call
-  for eyes on that screen. The corpse's measure at its torso, above, with
+  for eyes on that screen. Fold into that walk-through the size band's
+  width: it is 1.5× the gate (3 to 4.5 px), so a change of field of view —
+  a sprint, a sight going up — can sweep a body across much of the ramp in
+  one frame; the Coldharbour 832x384 run's 0.104 and 0.139 one-frame jumps
+  (above) were frames where the projected size moved ~6% at an unchanged
+  distance, not investigated. The corpse's measure at its torso, above, with
   the roster's switch moved to the same point. Whether 300 m on Sarab (and
   420 on Cinderhaven) are the right distances is now a look call rather
   than a pop (`FINDINGS.md` 32, open bullet; 39's +21.4% at 300 on

@@ -2107,7 +2107,8 @@ right and none of them trips it: Harrowmead states 185 against 183.8, Coldharbou
 
 **What is still owed:** what the ~19 us per rig mesh is made of (the saving is
 three times a draw and nobody has broken it down), what a body popping at 550 m
-LOOKS like on a map that states one, and the fade band that has not been built.
+LOOKS like on a map that states one, and the fade band that has not been built
+[since built: `BABYLON_EXIT.md` X4.1e, 53dcb34].
 The pop is `FINDINGS.md` 32's open bullet and the fade was `FINDINGS.md` 30 (built at `BABYLON_EXIT.md` X4.1e, and the entry deleted).
 
 What follows is the step as it was written, and its first half is still the

@@ -1334,10 +1334,11 @@ export const graphics = {
     bodyFade: {
       /**
        * The share of the map's `bodyDrawDistance` a body fades over, ending
-       * one measure-radius short of it — so the fade is zero wherever the
-       * roster's own switch could still show the body (`WorldCulling.offer`
-       * argues the radius). 0.1 is 30 m on Sarab, 42 on Cinderhaven and
-       * 7.8 on the 78 m valleys.
+       * one measure-radius short of it — so the fade reaches zero before the
+       * roster's own switch can take the body off, and a fade above 0 is
+       * only ever on a body that switch still shows (`WorldCulling.offer`
+       * argues the radius, and the one frame of eye lag it holds up to).
+       * 0.1 is 30 m on Sarab, 42 on Cinderhaven and 7.8 on the 78 m valleys.
        */
       distance: 0.1,
       /**

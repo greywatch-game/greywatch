@@ -5595,9 +5595,12 @@ export class Game {
   /**
    * Hands our renderer this frame's BODIES (`BABYLON_EXIT.md` X4.1d): every
    * pooled rig `WorldCulling` says is drawn this frame (`drawsBody` — switched
-   * on, and not under the size gate, measured once and dropped whole), its
+   * on, and with some of it left to draw: not under the size gate nor past
+   * the end of its distance fade, measured once and dropped whole), its
    * joints composed and its segments' matrices written as an instance of its
-   * side's kit (`SoldierModel.writeRigDrawing`), and their centres kept for
+   * side's kit (`SoldierModel.writeRigDrawing`) at its FADE (`bodyFade`,
+   * X4.1e) — the bodies drawn whole first and the fading ones after them,
+   * which the drawing draws behind its screen door — and their centres kept for
    * the order and the bloom the render pulls (`bodyPull`). Once a frame, in EVERY
    * state, after everything that poses or places a body and after the cull,
    * immediately before `scene.render` — inside the render span, where

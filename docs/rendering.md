@@ -4159,9 +4159,16 @@ it with the roster's and the pool's copy, `setBodyDrawDistance`), and between
 edge misses the other** — on a phone the size gate is the nearer. The
 distance ramp ENDS one measure-radius short of the distance: the roster
 switches a body off by its POSITION (its feet), which lies inside the
-measure's sphere, so from any eye the two distances differ by at most the
-radius and the fade is zero wherever the switch could still be on — no
-second reading of the roster's point, and no pop at its end. The size ramp's
+measure's sphere, so from one eye the two distances differ by at most the
+radius and the fade reaches zero before the switch can turn the body off — a
+fade above 0 only ever on a body whose switch is on, no second reading of the
+roster's point, and no pop at its end. **It is one eye only up to a frame**:
+the roster reads the camera in `updateWorld`, before the frame's camera
+update moves it, and the cull after (`followEye`), so at the switch the fade
+can be above zero by one frame of the eye's travel over the band — at 60 fps
+~0.004 sprinting on Sarab, ~0.014 on the 78 m maps, ~0.02 in the helicopter
+(twice that at 30 fps); measured 0.0013 at most. Below 1/32 the screen door
+keeps no pixel at all. The size ramp's
 zero is the gate's own test, so the drop is where it always was. Measured at
 3440x1440: a soldier walked out on Sarab's highway fades from whole at 269 m
 to nothing by 298 (the switch is at 300); a rank of sixteen on the proving

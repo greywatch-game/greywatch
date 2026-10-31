@@ -843,14 +843,26 @@ export class WorldCulling {
       let fade = 1;
       // THE DISTANCE EDGE. The switch is the roster's (`NetRoster.update`,
       // past `bodyDrawDistance` off the body's POSITION, its feet), and this
-      // fade must be ZERO wherever that switch could still be on — or the
-      // body pops at the end of its own fade. The measure's centre is not the
+      // fade must reach ZERO before that switch can turn the body off — a
+      // fade above 0 only ever on a body whose switch is on — or the body
+      // pops at the end of its own fade. The measure's centre is not the
       // feet, but the feet are inside the measure's sphere, so the two
-      // distances from any eye differ by at most its RADIUS (the triangle
+      // distances from one eye differ by at most its RADIUS (the triangle
       // inequality): ending the fade one radius short of the distance makes
-      // it zero there from any eye at any height, with no second reading of
-      // the roster's point. (A corpse's root stays where it fell, as its
-      // position does; it only sinks.)
+      // it zero wherever the switch could already be off, from an eye at any
+      // height, with no second reading of the roster's point. (A corpse's
+      // root stays where it fell, as its position does; it only sinks.)
+      //
+      // **It is ONE eye only up to a frame.** The roster reads the camera
+      // inside `updateWorld`, before the frame's camera update moves it
+      // (`NetSession.update`'s `cameraPos`), and this reads it after
+      // (`Game.followEye`) — so at the frame the switch goes off, the fade
+      // can be above zero by one frame of the eye's travel over the band: at
+      // 60 fps ~0.004 sprinting on Sarab (6.9 m/s over its 30 m), ~0.014 on
+      // the 78 m maps, ~0.02 in the helicopter at its 32 m/s and twice that
+      // at 30 fps (measured, `BABYLON_EXIT.md` X4.1e: 0.0013 at most). The
+      // screen door keeps no pixel at all below 1/32 (`bodyProgram.ts`), so
+      // only the helicopter's worst can leave one pixel in a 4x4 tile.
       if (distanceFade) {
         const end = bodyDraw - bodySphere.radius;
         const d = Math.sqrt(d2);
