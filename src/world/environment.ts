@@ -6,6 +6,8 @@
  */
 import { Color3, Color4, Scene, Vector3 } from "@babylonjs/core";
 import type { CelMaterialFactory, SpecSpec } from "../shaders/CelShader";
+import { CONFIG } from "../config";
+import { HULL_REACH } from "../entities/vehicleKinds";
 import type { FloorSurfaceId } from "./floorSurfaces";
 
 /** A dynamic point light carried by a prop, registered when the prop is placed. */
@@ -438,6 +440,45 @@ export interface EnvironmentSpec {
    * is still being drawn.
    */
   bodyDrawDistance?: number;
+  /**
+   * How far a HULL is worth drawing, in metres (`BABYLON_EXIT.md` X4.2d,
+   * `PERF_PLAN.md` A3): past it no tank, truck or helicopter is drawn, and
+   * over its last tenth one FADES out — the bodies' screen door, measured
+   * to the hull's whole measure (`WorldCulling.hullFade`,
+   * `CONFIG.graphics.culling.hullFade`) — so a stated distance is a look
+   * call rather than a pop. Clamped to `fogEnd` as `bodyDrawDistance` is,
+   * but ABSENT is no distance at all (`hullDrawDistanceOf`, which argues
+   * why "unaffected" cannot be the fog for a hull): every hull drawn at any
+   * range, which is what every shipped map states by saying nothing. It is
+   * the CULL's alone: the
+   * authority never reads it, nothing a hull does in the round depends on
+   * it, and a hull's shadow stays its collider box whatever this says.
+   *
+   * **A hull is a GUN as well as a picture, and that is what floors this.**
+   * A body past `bodyDrawDistance` is past every bot's engagement range
+   * (55 m, `bots.perception.engageRange`); a hull is not: its crew may be a
+   * PERSON, and a tank's shell carries 340 m and splashes 7 m past where it
+   * stops (`vehicles.tank.gun`), the truck's and the helicopter's guns 210,
+   * the tank's cupola gun 190. A hull faded out while its gun still reaches
+   * the player looking for it is an unseen shooter, and no setting may buy
+   * one: so a stated distance is RAISED to `hullDrawFloor()` — the fade
+   * starts no nearer than the farthest a hull's fire can land
+   * (`HULL_REACH.fire`), plus how far a viewer's eye stands from what of
+   * him it can hit (`HULL_REACH.eye`, a helicopter's chase camera at worst)
+   * and how far a muzzle stands from its hull's measure centre
+   * (`hullFade.muzzle`) — ~419 m on today's numbers. The bots' own reach
+   * is far inside that (a crew engages at 95 m, its gunner at 70,
+   * `vehicles.crew`), as is the launcher's that hunts a hull (a rocket's
+   * ~157 m, a bot's 75); the binding number is the gun's, because a person
+   * can sit behind it. On a map whose `fogEnd` is short of the floor the
+   * field can shorten nothing (it resolves to no distance), which is the
+   * fog already hiding the shooter rather than this.
+   *
+   * **No shipped map states it** (X4.2d): A3's measured +15.4% at 420 m on
+   * Cinderhaven was Babylon's per-mesh cost, and what it buys under our
+   * renderer is a look call per map, taken after.
+   */
+  hullDrawDistance?: number;
   mistColor: string;
   mistHeight: number;
   mistStrength: number;
@@ -597,6 +638,83 @@ export function bodyDrawDistanceOf(env: EnvironmentSpec): number {
     );
   }
   return Math.max(0, Math.min(stated, env.fogEnd));
+}
+
+/**
+ * The nearest a map may set `EnvironmentSpec.hullDrawDistance` to, in metres
+ * — the floor under it that keeps a hull WHOLE wherever its guns can reach
+ * the player looking for it (`BABYLON_EXIT.md` X4.2d). The fade starts at
+ * `1 - hullFade.distance` of the distance, measured from the eye to the
+ * hull's measure centre, so the distance must be at least the farthest from
+ * that centre to the eye of anybody its fire can hurt — the fire's reach
+ * from a muzzle (`HULL_REACH.fire`), the viewer's eye from what of him it
+ * can hit (`HULL_REACH.eye`) and the muzzle from the measure's centre
+ * (`hullFade.muzzle`), end to end, which the triangle inequality makes a
+ * bound — over that share. Derived from the kinds' own numbers, so a longer
+ * gun raises it by itself: ~419 m today, the tank's shell and the
+ * helicopter's chase camera.
+ */
+export function hullDrawFloor(): number {
+  const fade = CONFIG.graphics.culling.hullFade;
+  return (HULL_REACH.fire + HULL_REACH.eye + fade.muzzle) / (1 - fade.distance);
+}
+
+/**
+ * How far a hull is worth drawing on this map, resolved — the one place
+ * `EnvironmentSpec.hullDrawDistance` is read, handed to the cull once by
+ * `installMap` (`WorldCulling.setHullDrawDistance`). **`Infinity` is
+ * UNAFFECTED** — no fade and no cut, every hull drawn at any range as it
+ * always was — and it is the answer for a map that states nothing.
+ *
+ * **Absent is `Infinity` rather than `fogEnd`, deliberately, and that is
+ * what "unaffected" costs.** A body's default is its `fogEnd` because the
+ * roster switches a body off there anyway; nothing ever cut a HULL, so a
+ * default at the fog would fade every far hull over the last tenth of it —
+ * Sarab's 504-560 m and Cinderhaven's 1,125-1,250 are 86-100% and 89-100%
+ * fog, not none — and drop one standing out of the SKY past it, whose
+ * horizon colour is only required to sit close to the fog (the landform's
+ * argument, `WorldCulling`'s header): a picture change on every armour map
+ * that set nothing.
+ *
+ * **Capped at `fogEnd`** when a map does state one past it, for
+ * `bodyDrawDistanceOf`'s reason (a hull past the fog is drawn as fog), and
+ * **RAISED to `hullDrawFloor()`** when it states one inside a hull's gun
+ * reach, so that no setting buys an unseen shooter (the field's doc). **A
+ * map whose fog closes INSIDE the floor gets `Infinity`**: there the fog
+ * already hides the shooter, and a cut at the fog would put the fade inside
+ * the reach the floor exists to keep whole. Every case is enforced in every
+ * build, the floor being a fairness rule rather than a look, and SAID in a
+ * dev one: a stated number that is not the one a round gets is one its
+ * author should see.
+ */
+export function hullDrawDistanceOf(env: EnvironmentSpec): number {
+  const stated = env.hullDrawDistance;
+  if (stated === undefined) return Number.POSITIVE_INFINITY;
+  const floor = hullDrawFloor();
+  const fog = env.fogEnd;
+  if (floor > fog) {
+    if (import.meta.env.DEV) {
+      console.warn(
+        `[environment] hullDrawDistance ${stated}: this map's fogEnd ${fog} closes inside a hull's gun reach` +
+          ` (hullDrawFloor ${floor.toFixed(1)} m), so it can shorten nothing; no hull draw distance.`,
+      );
+    }
+    return Number.POSITIVE_INFINITY;
+  }
+  if (import.meta.env.DEV) {
+    if (stated > fog) {
+      console.warn(
+        `[environment] hullDrawDistance ${stated} is past fogEnd ${fog};` +
+          " a hull out there is already drawn as fog. Clamping to fogEnd.",
+      );
+    } else if (stated < floor) {
+      console.warn(
+        `[environment] hullDrawDistance ${stated} is inside a hull's gun reach;` +
+          ` raised to ${floor.toFixed(1)} m (hullDrawFloor), or a hull could fire unseen.`,
+      );
+    }
+  }
+  return Math.min(fog, Math.max(stated, floor));
 }
 
 /**

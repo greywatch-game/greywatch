@@ -4,9 +4,11 @@
  * its segments, the kit palette its own — declared for our renderer.
  * X4.1d's body program, the decode its own: a hull has no visor and nothing
  * in the glow's mask, and is painted CHARRED by a flag rather than by a
- * second kit.
+ * second kit — and the same program again behind the bodies' SCREEN DOOR for
+ * a hull fading out at its map's draw distance (X4.2d).
  * Owns: `HULL_CHARRED` (the kit word's bit that says so), `HULL_CEL_DEFINES`,
- * and `hullPrograms`, the program's modules for kits of `segments` segments.
+ * and `hullPrograms`, the two programs' modules (plain and faded) for kits
+ * of `segments` segments.
  * Invariants: the vertex and pixel BODIES are the cel material's own
  * (`celVertex`, `celFragment`), never restated, and the bind groups are the
  * bodies' (`BODY_GEOMETRY`, eight storage arrays, WebGPU's default per-stage
@@ -28,13 +30,18 @@
  * as Babylon's uniform held them; and a hull whose kit word carries
  * `HULL_CHARRED` reads the charred slot in `uv2.x` in place of its segment's
  * own, every corner of it — what a mesh repainted in the one charred material
- * drew.
- * Never: imports Babylon; restates a body; decides what a hull is, its order,
- * its paint, or which draw.
+ * drew. The FADED program is the plain one's vertex stage handing the pixel
+ * its instance (`vBody`, flat, last) and the one faded cel pixel bodies are
+ * drawn with too (`bodyProgram.fadedCelFragment`: the cel pixel behind the
+ * screen door, the fade read in the fragment's group 3, `BODY_FADE`) — so
+ * the vertex stage gains no storage array (eight is the ceiling), the door
+ * is the bodies' to the bit, and nothing of the pixel is restated.
+ * Never: imports Babylon; restates a body, the cel pixel or the door;
+ * decides what a hull is, its order, its paint, its fade, or which draw.
  * Contract: `docs/rendering.md`, "The hulls, ours" and "Hand-written WGSL".
  */
 import { WGSL_CHUNKS } from "../shaders/wgsl/chunks";
-import { BODY_CEL_DEFINES, BODY_GEOMETRY } from "./bodyProgram";
+import { BODY_CEL_DEFINES, BODY_GEOMETRY, CEL_FADED_VARYINGS, fadedCelFragment } from "./bodyProgram";
 import { CEL_VARYINGS, celFragment } from "./celFragment";
 import { CEL_ATTRIBUTES } from "./celVertex";
 import { FRAME_BLOCK } from "./frame";
@@ -88,10 +95,16 @@ function prelude(charredSlot: number): string {
 /** The private block both stages' `uniforms.world` is routed to. */
 const WORLD_PRIVATE = { var: "instance", struct: "HullInstance", fields: [{ name: "world", type: "mat4x4f" }] } as const;
 
-/** The program, ready for `PipelineCache`. */
+/** The programs — plain and faded — ready for `PipelineCache`. */
 export interface HullPrograms {
   /** Every segment, in the main pass. */
   readonly cel: { readonly vertex: AssembledVertex; readonly fragment: AssembledModule };
+  /**
+   * The same for a FADING hull (X4.2d): the plain vertex stage handing the
+   * pixel its instance (`vBody`), and the cel pixel behind the bodies' screen
+   * door, its fade read in group 3 (`BODY_FADE`).
+   */
+  readonly faded: { readonly vertex: AssembledVertex; readonly fragment: AssembledModule };
 }
 
 /** Programs by their shape, assembled once a shape. */
@@ -125,6 +138,22 @@ export function hullPrograms(segments: number, span: number, charredSlot: number
     cel: {
       vertex: assembleVertex(cel, HULL_CEL_DEFINES, FRAME_TARGETS),
       fragment: celFragment(HULL_CEL_DEFINES, FRAME_TARGETS),
+    },
+    faded: {
+      vertex: assembleVertex(
+        {
+          ...cel,
+          label: "hull-cel-faded-vertex",
+          varyings: CEL_FADED_VARYINGS,
+          // The pixel's instance, for the fade: as a fading body's stage hands it.
+          prelude: `${prelude(charredSlot)}
+  vertexOutputs.vBody = instanceIndex;`,
+        },
+        HULL_CEL_DEFINES,
+        FRAME_TARGETS,
+      ),
+      // `HULL_CEL_DEFINES` is `BODY_CEL_DEFINES`, the one shape that pixel is.
+      fragment: fadedCelFragment(),
     },
   };
   built.set(key, programs);

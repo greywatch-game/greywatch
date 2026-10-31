@@ -10,8 +10,10 @@
  * `BODY_GLOW` (the mask's group 1: each instance's bloom
  * colour), `BODY_FADE` (the faded programs' group 3, their fragment stage's
  * alone: each instance's fade), the screen door, `BODY_CEL_DEFINES`,
- * `BODY_VISOR_DEFINES`, and `bodyPrograms`, the six programs' modules for
- * kits of `segments` segments.
+ * `BODY_VISOR_DEFINES`, `bodyPrograms`, the six programs' modules for
+ * kits of `segments` segments, and the faded cel PIXEL a fading hull is
+ * drawn with too (`fadedCelFragment`, `CEL_FADED_VARYINGS`; `hullProgram.ts`,
+ * `BABYLON_EXIT.md` X4.2d).
  * Invariants: the vertex BODIES are the cel material's and the emissive
  * palette's own (`celVertex`, `EMISSIVE_WORLD_VERTEX`), never restated — what
  * is a body's here is the DECODE. An instance is a BODY; a draw is one RANK
@@ -109,9 +111,10 @@ const VISOR_VARYINGS = [...EMISSIVE_VARYINGS, { name: "vBody", type: "u32", inte
 /**
  * What a FADING body's matte stage hands its pixel: the cel material's, then
  * the body (X4.1e) — last, after the guarded `vPalette`, which every body
- * variant has, so the cel inputs keep their locations.
+ * variant has, so the cel inputs keep their locations. A fading HULL's stage
+ * hands the same (`hullProgram.ts`, X4.2d), its instance in `vBody`.
  */
-const CEL_FADED_VARYINGS = [...CEL_VARYINGS, { name: "vBody", type: "u32", interpolate: "flat" }] as const;
+export const CEL_FADED_VARYINGS = [...CEL_VARYINGS, { name: "vBody", type: "u32", interpolate: "flat" }] as const;
 
 /** The mask's pixel: that body's bloom, as `GlowPass`'s mask material wrote a mesh's `glowColor`. */
 const BODY_GLOW_SURFACE = /* wgsl */ `
@@ -151,6 +154,45 @@ fn ${name}Doored() -> vec4f {
   return ${name}();
 }
 `;
+}
+
+/**
+ * The faded programs' groups: `fragmentGroups`, an empty group up to 2 (the
+ * geometry is the vertex stage's), and the fades in group 3 (`BODY_FADE`).
+ */
+function fadedGroups(fragmentGroups: readonly (readonly Binding[])[]): readonly (readonly Binding[])[] {
+  const groups: (readonly Binding[])[] = [...fragmentGroups];
+  while (groups.length < 3) groups.push([]);
+  groups.push(BODY_FADE);
+  return groups;
+}
+
+/** See `fadedCelFragment`. */
+let celFaded: AssembledModule | null = null;
+
+/**
+ * The cel material's pixel behind the screen door, under the kit palette
+ * (`BODY_CEL_DEFINES`), its instance's fade read through `vBody` in group 3
+ * (`BODY_FADE`) — assembled once, and the ONE module both a fading body's
+ * matte segments (X4.1e) and a fading hull (X4.2d, `hullProgram.ts`) are
+ * drawn with: neither restates the cel pixel or the door. It reads no
+ * geometry, so no kit's shape is in it.
+ */
+export function fadedCelFragment(): AssembledModule {
+  celFaded ??= assembleFragment(
+    {
+      ...CEL_FRAGMENT,
+      label: "body-cel-faded",
+      groups: fadedGroups(CEL_FRAGMENT.groups),
+      varyings: CEL_FADED_VARYINGS,
+      body: `${CEL_FRAGMENT.body}
+${doored(CEL_FRAGMENT.surface)}`,
+      surface: `${CEL_FRAGMENT.surface}Doored`,
+    },
+    BODY_CEL_DEFINES,
+    FRAME_TARGETS,
+  );
+  return celFaded;
 }
 
 /**
@@ -252,14 +294,8 @@ export function bodyPrograms(kits: number, segments: number, celSpan: number, vi
     prelude: VISOR_PRELUDE,
   };
   const visorVertex = assembleVertex(visor, BODY_VISOR_DEFINES, FRAME_TARGETS);
-  // The faded programs: a fragment group 3 of their own, an empty group 2
-  // in the fragment (the geometry is the vertex stage's), and the door.
-  const fadedGroups = (fragmentGroups: readonly (readonly Binding[])[]): readonly (readonly Binding[])[] => {
-    const groups: (readonly Binding[])[] = [...fragmentGroups];
-    while (groups.length < 3) groups.push([]);
-    groups.push(BODY_FADE);
-    return groups;
-  };
+  // The faded programs: a fragment group 3 of their own (`fadedGroups`) and
+  // the door.
   const glowGroups = [[FRAME_BLOCK, ...FRAME_TEXTURES], BODY_GLOW] as const;
   programs = {
     cel: {
@@ -296,19 +332,7 @@ export function bodyPrograms(kits: number, segments: number, celSpan: number, vi
           BODY_CEL_DEFINES,
           FRAME_TARGETS,
         ),
-        fragment: assembleFragment(
-          {
-            ...CEL_FRAGMENT,
-            label: "body-cel-faded",
-            groups: fadedGroups(CEL_FRAGMENT.groups),
-            varyings: CEL_FADED_VARYINGS,
-            body: `${CEL_FRAGMENT.body}
-${doored(CEL_FRAGMENT.surface)}`,
-            surface: `${CEL_FRAGMENT.surface}Doored`,
-          },
-          BODY_CEL_DEFINES,
-          FRAME_TARGETS,
-        ),
+        fragment: fadedCelFragment(),
       },
       visor: {
         vertex: visorVertex,

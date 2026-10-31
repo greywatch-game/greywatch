@@ -1390,6 +1390,43 @@ export const graphics = {
      * 0 disables it (the full set always).
      */
     hullDetail: 32,
+    /**
+     * How a HULL leaves at its map's draw distance (`EnvironmentSpec
+     * .hullDrawDistance`, `BABYLON_EXIT.md` X4.2d) instead of popping: the
+     * bodies' screen door (`bodyFade`), its share of drawn pixels the hull's
+     * FADE (`WorldCulling.hullFade`), measured off the hull's whole MEASURE
+     * (`vehicleRig.measureHull`). At the distance ONLY — there is no
+     * whole-hull size edge (decided 2026-10-31: a hull's parts keep leaving
+     * at the per-segment gate above, one by one, as they always have). Off
+     * while the warm-up stands, and on a map that states no distance, which
+     * is every shipped map.
+     */
+    hullFade: {
+      /**
+       * The share of the map's `hullDrawDistance` a hull fades over, ending AT
+       * it — a hull has no switch at range for the fade to beat, as the
+       * roster's is for a body (`bodyFade.distance`), so the ramp ends where
+       * the distance does, measured to the measure's centre. The bodies'
+       * tenth, for the bodies' reason: long enough to read as a thinning
+       * rather than a pop — 42 m at 420, where a tank on the road (~15 m/s)
+       * takes ~3 s to cross it and the helicopter at its 32 m/s ~1.3 s — and
+       * one number a player meets for both.
+       */
+      distance: 0.1,
+      /**
+       * Metres of SLACK in the gun-reach floor (`hullDrawFloor`,
+       * `world/environment.ts`): how far a hull's MUZZLE can stand from its
+       * own measure's centre, which is what the fade is measured to. Measured
+       * (`BABYLON_EXIT.md` X4.2d, every turret and cupola swept through its
+       * whole traverse): the tank's main gun 7.68 m with its turret turned to
+       * the rear, its cupola gun 3.54, the helicopter's chin gun 5.98 and the
+       * truck's station 2.37 — the farthest is the tank's, and 8 carries it. The floor's other term —
+       * how far a VIEWER's eye stands from what of him a round can hit, the
+       * chase camera at its worst — is derived from the kinds' own numbers,
+       * not stated here.
+       */
+      muzzle: 8,
+    },
   },
   /**
    * How our renderer cuts the blocks it draws (`render/WorldBlocks.ts`,

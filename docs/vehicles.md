@@ -3233,6 +3233,22 @@ entries are emitted in matters as well: an entry's INDEX is a hull's identity on
 the wire (`VehicleState.i`), so a hand-authored list that regenerates in a
 different order is two builds that disagree about which hull is which.
 
+**A map that shortens how far a hull is DRAWN owes it the guns' reach**
+(`EnvironmentSpec.hullDrawDistance`, `BABYLON_EXIT.md` X4.2d; `docs/world.md`'s
+overrides have the whole argument). A hull is a gun as well as a picture, and
+one faded out while its shell can still land on the player looking for it is
+an unseen shooter — so the field is floored, at the resolve and in every build,
+at `hullDrawFloor()`: the farthest a kind's fire lands from its muzzle
+(`HULL_REACH.fire`, the tank shell's 340 m plus its 7 m blast), plus the
+farthest a viewer's eye stands from what of him it can hit (`HULL_REACH.eye`,
+the helicopter's chase camera to its hull's far corner, 22.4 m) and a muzzle
+from its hull's measure centre (8 m), over the 0.9 of the distance the fade
+starts at — ~419.4 m today. Both reach terms are read off this file's specs,
+so **a longer gun, a bigger blast or a further chase camera raises the floor
+by itself**, and a kind added with a longer reach than the tank's moves every
+map that states a distance. The crews' own reach is far inside it (95 m, the
+gunner's 70), which is not what binds: a person can sit in the seat.
+
 ## Bots drive, and the road graph turned out not to be the blocker
 
 This entry used to be in the list below, and the reason it gave was: *"an AI

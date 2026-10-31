@@ -203,7 +203,7 @@ import {
 } from "../systems/VehicleSystem";
 import { VehicleViews } from "../systems/VehicleViews";
 import { hullKits } from "../entities/vehicleModels";
-import { hullPalette, writeHullDrawing, type HullKit, type SphereGate } from "../entities/vehicleRig";
+import { composeHull, hullPalette, writeHullDrawing, type HullKit, type SphereGate } from "../entities/vehicleRig";
 import { GrassSystem } from "../systems/GrassSystem";
 import { BlastDebrisSystem, type DebrisGround } from "../systems/BlastDebrisSystem";
 import { DebrisSystem } from "../systems/DebrisSystem";
@@ -240,6 +240,7 @@ import { BlockHandover, type WorldOwner } from "../systems/BlockHandover";
 import {
   applyEnvironment,
   bodyDrawDistanceOf,
+  hullDrawDistanceOf,
   type EnvironmentSpec,
 } from "../world/environment";
 import { Leash, LEASH_KILLER } from "../world/leash";
@@ -444,9 +445,11 @@ const MINE_LIFT = 0.04;
  * The most hulls one frame draws (`hullDraw`, `BABYLON_EXIT.md` X4.2b): what
  * its staging arrays and buffers are sized to, not a rule about a map. The
  * densest shipped fleet is six (Sarab, Cinderhaven); a map past this draws,
- * each frame, the first sixteen hulls that are PRESENT, in hardstanding order
- * (`drawHulls` skips a hidden one before it counts), so which hulls go
- * undrawn moves as hulls are hidden and placed again — and says so on the
+ * each frame, the first sixteen hulls that are PRESENT and not faded out by
+ * the map's draw distance, those drawn whole first and the fading ones after
+ * them, each in hardstanding order (`drawHulls` skips a hidden or faded-out
+ * one before it counts, X4.2d), so which hulls go undrawn moves as hulls are
+ * hidden, placed again and driven through the fade — and says so on the
  * console at the install (`installMap`).
  */
 const HULL_DRAW_CAPACITY = 16;
@@ -823,6 +826,14 @@ export class Game {
   private hullSpheres = new Float64Array(0);
   /** `hullPull`'s scratch: one hull's segment keys. */
   private hullKeys = new Float64Array(0);
+  /**
+   * `drawHulls`' scratch: each view's FADE this frame (`WorldCulling.hullFade`,
+   * `BABYLON_EXIT.md` X4.2d), by the view's index — 0 for one not present or
+   * faded out. Grown to the fleet's size, never per frame.
+   */
+  private hullFades = new Float64Array(0);
+  /** `drawHulls`' scratch: a hull's whole measure, composed this frame (`composeHull`). */
+  private readonly hullMeasure = { x: 0, y: 0, z: 0, radius: 0 };
   /** The size gate a hull's segment is drawn under: `WorldCulling`'s, this frame (`drawHulls`). */
   private readonly keepsHullSegment: SphereGate = (x, y, z, radius) => this.culling.keepsSphere(x, y, z, radius);
   /** The detail tier a hull's whole measure is asked, this frame: `WorldCulling`'s (`drawHulls`, X4.2c). */
@@ -5113,6 +5124,11 @@ export class Game {
     // cull ramps a body out short of the roster's switch rather than letting
     // it pop there, off the same number and never a gate of its own.
     this.culling.setBodyDrawDistance(bodyDraw);
+    // And where a HULL's fade ends (`BABYLON_EXIT.md` X4.2d): the map's own
+    // `hullDrawDistance`, capped at the fog and floored at a hull's gun reach
+    // — infinite, every hull drawn at any range, on a map that states none.
+    // The cull's alone: nothing the authority or a hull decides reads it.
+    this.culling.setHullDrawDistance(hullDrawDistanceOf(environment));
     // And a third reader of the FOG, for the same reason turned inside out:
     // past the fog wall there is nothing to see, so there is nothing to WALK
     // either. `WorldCulling` files the fresh map's meshes and
@@ -5821,6 +5837,17 @@ export class Game {
    * the detail tier refuses (`WorldCulling.keepsDetail`, `BABYLON_EXIT.md`
    * X4.2c) — with its kit word, the charred paint a bit of it, and the
    * segments' centres kept for the order the render pulls (`hullPull`).
+   *
+   * **And at the FADE its map's draw distance gives it** (`BABYLON_EXIT.md`
+   * X4.2d): each present hull is composed once (`composeHull`) and its whole
+   * measure asked `WorldCulling.hullFade` — a hull faded out entirely is not
+   * drawn, and is no instance — and the hulls drawn WHOLE are handed over
+   * first, in hardstanding order, the FADING ones after them, which the
+   * drawing draws behind its screen door. With no hull fading this is the
+   * one pass it always was, in the same order. So the capacity takes the
+   * first sixteen present hulls drawn whole, then fading ones, in
+   * hardstanding order.
+   *
    * Once a frame, in EVERY state, after everything that writes a joint and
    * after the cull, immediately before `scene.render` — inside the render
    * span, where Babylon composed the hulls' nodes until X4.2a. A hull not
@@ -5832,24 +5859,42 @@ export class Game {
     if (!draw.installed) return;
     const views = this.vehicleViews.views;
     const stride = draw.segments;
-    let n = 0;
-    for (let i = 0; i < views.length && n < draw.capacity; i++) {
+    if (this.hullFades.length < views.length) this.hullFades = new Float64Array(views.length);
+    const fades = this.hullFades;
+    const m = this.hullMeasure;
+    for (let i = 0; i < views.length; i++) {
       const rig = views[i].rig;
-      if (!rig.enabled) continue;
-      writeHullDrawing(
-        rig,
-        draw.matrices,
-        n * stride * 16,
-        stride,
-        this.keepsHullSegment,
-        this.keepsHullDetail,
-        this.hullSpheres,
-        n * stride * 4,
-      );
-      draw.words[n] = (this.hullKitIndex.get(rig.kit) ?? 0) | (rig.charred ? HULL_CHARRED : 0);
-      n++;
+      if (!rig.enabled) {
+        fades[i] = 0;
+        continue;
+      }
+      composeHull(rig, m);
+      fades[i] = this.culling.hullFade(m.x, m.y, m.z);
     }
-    draw.commit(n, this.mats.materialEpoch);
+    let n = 0;
+    let whole = 0;
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 0; i < views.length && n < draw.capacity; i++) {
+        const fade = fades[i];
+        if (fade <= 0 || (fade >= 1) !== (pass === 0)) continue;
+        const rig = views[i].rig;
+        writeHullDrawing(
+          rig,
+          draw.matrices,
+          n * stride * 16,
+          stride,
+          this.keepsHullSegment,
+          this.keepsHullDetail,
+          this.hullSpheres,
+          n * stride * 4,
+        );
+        draw.words[n] = (this.hullKitIndex.get(rig.kit) ?? 0) | (rig.charred ? HULL_CHARRED : 0);
+        draw.fades[n] = fade;
+        n++;
+      }
+      if (pass === 0) whole = n;
+    }
+    draw.commit(n, whole, this.mats.materialEpoch);
   }
 
   /**

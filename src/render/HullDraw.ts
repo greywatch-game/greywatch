@@ -3,28 +3,35 @@
  * (`BABYLON_EXIT.md` X4.2b): the vehicle kits' geometry on the GPU once,
  * each frame's hulls as INSTANCES of it, drawn into the frame's main pass
  * with the cel program — X4.1d's shape (`BodyDraw`) for a thing with no
- * emissive and no fade.
+ * emissive — and a hull FADING out at its map's draw distance (X4.2d) the
+ * same way behind the bodies' screen door, by the program's faded twin.
  * Owns: `HullDraw` — the kits' arrays (every segment of every kit end to end,
  * each kit's segment ranges, and the indices rebased onto the arrays), the
- * instances' kit words, segment orders and matrices on the GPU and the
- * staging arrays a frame writes them into (`words`, `matrices`; the orders,
- * which it PULLS), the material's block and group, the one pipeline (asked
- * once, for the session), the main-pass draw, the prepare that uploads a
+ * instances' kit words, segment orders, matrices and fades on the GPU and
+ * the staging arrays a frame writes them into (`words`, `matrices`, `fades`;
+ * the orders, which it PULLS), the material's block and group and the fades'
+ * group, the two pipelines — plain and faded (asked once, for the session)
+ * — the main-pass draw, the prepare that uploads a
  * frame, the refusal listener it holds while installed (and whether it is,
  * `installed`), and what it drew last (`stats`); `HullDrawKit`,
  * `HullDrawSegment`, `HullPull`.
  * Invariants: it DECIDES NOTHING — which hulls are drawn, in what pose, in
- * what order, which of their segments, in what paint and with what material
- * are its caller's (`Game.drawHulls`, off each hull's switch, `WorldCulling`'s
- * size gate per segment and the detail tier per hull (X4.2c), the rigs' own
- * joints and the eye), handed over once
+ * what order, which of their segments, in what paint, at what fade and with
+ * what material are its caller's (`Game.drawHulls`, off each hull's switch,
+ * `WorldCulling`'s size gate per segment, the detail tier per hull (X4.2c)
+ * and the draw distance's fade per hull (X4.2d), the rigs' own joints and
+ * the eye), handed over once
  * a frame (`commit`) and pulled once inside the render (`pull`, in the
  * prepare: the order, and the segments outside the frustum switched off),
  * and drawn on that frame, nothing else; a draw is one RANK of
  * every hull at once — each hull's `r`th segment in its own order
  * (`hullProgram.ts`) — the ranks in order, so a hull's segments are drawn in
  * the order it hands over, as Babylon's front-to-back queue drew a hull's
- * meshes: at most one draw a segment of the widest kit, however many hulls;
+ * meshes: at most one draw a segment of the widest kit, however many hulls,
+ * and two on a frame some hull is FADING — the hulls drawn whole first, by
+ * the plain pipeline, the faded ones (the caller's last `n - whole`) after
+ * them by the twin, so each hull is still drawn in its own order and a frame
+ * with no hull fading is the draws it always was, its fades not uploaded;
  * a rank's draw runs to the longest range any hull draws at it, the rest of
  * its corners drawn as nothing; a kit narrower than the widest is the widest
  * with its missing segments empty; the draws go into the main pass at
@@ -47,13 +54,14 @@
  * Contract: `docs/rendering.md`, "The hulls, ours".
  */
 import { CEL_MATERIAL_BLOCK, CEL_MATERIAL_TEXTURES, type CelRecipe } from "./celMaterial";
-import { BODY_GEOMETRY } from "./bodyProgram";
+import { BODY_FADE, BODY_GEOMETRY } from "./bodyProgram";
 import { HULL_CEL_DEFINES, hullPrograms } from "./hullProgram";
 import { HostBindGroup } from "./HostBindGroup";
 import type { BuiltPipeline } from "./PipelineCache";
 import type { FrameContext, Renderer } from "./Renderer";
 import { FRAME_TARGETS } from "./targets";
 import { UniformBlockBuffer } from "./UniformBlockBuffer";
+import type { AssembledModule, AssembledVertex } from "./wgsl/assemble";
 
 /** One segment of a kit: one mesh of the hull it was until X4.2b, in its own frame. */
 export interface HullDrawSegment {
@@ -99,7 +107,13 @@ export class HullDraw {
    * paint.
    */
   readonly words: Uint32Array<ArrayBuffer>;
-  /** Whether the pipeline built — asked once, for the session; false if it failed. */
+  /**
+   * This frame's hulls' FADES (X4.2d), written before `commit`: read only for
+   * the hulls past `commit`'s `whole`, each the share of its pixels the
+   * screen door keeps, above 0 and below 1.
+   */
+  readonly fades: Float32Array<ArrayBuffer>;
+  /** Whether both pipelines built — asked once, for the session; false if one failed. */
   readonly ready: Promise<boolean>;
   /**
    * What the last frame drew: main-pass draws, instances. Nothing in the
@@ -115,10 +129,14 @@ export class HullDraw {
   private readonly owned: GPUBuffer[] = [];
   private readonly orderBuffer: GPUBuffer;
   private readonly matrixBuffer: GPUBuffer;
+  private readonly fadeBuffer: GPUBuffer;
   private readonly geometry: HostBindGroup;
   private readonly celBlock: UniformBlockBuffer;
   private readonly celGroup: HostBindGroup;
+  /** Group 3 of the faded pipeline: the fades. */
+  private readonly fadeGroup: HostBindGroup;
   private cel: BuiltPipeline | null = null;
+  private celFaded: BuiltPipeline | null = null;
 
   /** The pulled orders, a hull's `segments` ranks apiece. */
   private readonly order: Uint32Array<ArrayBuffer>;
@@ -129,6 +147,8 @@ export class HullDraw {
 
   private pending = false;
   private instances = 0;
+  /** How many of this frame's hulls are drawn WHOLE, the first of them; the rest are faded. */
+  private wholeCount = 0;
   /** The material's epoch as last copied; NaN is never. */
   private epoch = Number.NaN;
   /** This frame's verdict: committed, built, uploaded. */
@@ -156,6 +176,7 @@ export class HullDraw {
     this.capacity = Math.max(1, capacity);
     this.matrices = new Float32Array(this.capacity * segments * MATRIX_FLOATS);
     this.words = new Uint32Array(this.capacity);
+    this.fades = new Float32Array(this.capacity);
     this.order = new Uint32Array(this.capacity * segments);
     this.upload = new Uint32Array(this.capacity * (segments + 1));
     this.rankSpan = new Uint32Array(segments);
@@ -232,6 +253,7 @@ export class HullDraw {
     for (let i = 3; i < absentColour.length; i += 4) absentColour[i] = 1;
     this.orderBuffer = frameBuffer("orders", this.upload.byteLength);
     this.matrixBuffer = frameBuffer("matrices", this.matrices.byteLength);
+    this.fadeBuffer = frameBuffer("fades", this.fades.byteLength);
     const shared = {
       positionData: storage("positions", positions),
       normalData: storage("normals", normals),
@@ -257,26 +279,39 @@ export class HullDraw {
     );
     // The variant binds no texture of its own.
     this.celGroup.refresh(host, {});
+    this.fadeGroup = new HostBindGroup(device, "hulls: fades", BODY_FADE, [], { bodyFade: this.fadeBuffer });
+    this.fadeGroup.refresh(host, {});
 
-    const program = hullPrograms(segments, this.span, charredSlot).cel;
-    this.ready = renderer.pipelines
-      .get({
-        vertex: program.vertex,
-        vertexEntry: "main",
-        fragment: program.fragment,
-        fragmentEntry: "main",
-        targets: FRAME_TARGETS,
-      })
-      .then(
-        (built) => {
-          this.cel = built;
-          return true;
-        },
-        (err: unknown) => {
-          console.error(`hulls: the ${program.vertex.label} pipeline did not build; no hull of ours can be drawn`, err);
-          return false;
-        },
-      );
+    const programs = hullPrograms(segments, this.span, charredSlot);
+    const ask = (
+      program: { readonly vertex: AssembledVertex; readonly fragment: AssembledModule },
+      set: (built: BuiltPipeline) => void,
+    ): Promise<boolean> =>
+      renderer.pipelines
+        .get({
+          vertex: program.vertex,
+          vertexEntry: "main",
+          fragment: program.fragment,
+          fragmentEntry: "main",
+          targets: FRAME_TARGETS,
+        })
+        .then(
+          (built) => {
+            set(built);
+            return true;
+          },
+          (err: unknown) => {
+            console.error(`hulls: the ${program.vertex.label} pipeline did not build; no hull of ours can be drawn`, err);
+            return false;
+          },
+        );
+    this.ready = Promise.all([
+      ask(programs.cel, (b) => (this.cel = b)),
+      // The twin behind the screen door, asked with the plain one (X4.2d), so
+      // the warm-up's wait for ours covers it and a hull's first fade
+      // compiles nothing in the round.
+      ask(programs.faded, (b) => (this.celFaded = b)),
+    ]).then((oks) => oks.every(Boolean));
   }
 
   /**
@@ -290,7 +325,7 @@ export class HullDraw {
     this.failed = failed;
     const generation = ++this.generation;
     void this.ready.then((ok) => {
-      if (!ok && generation === this.generation) failed("our hulls cannot draw: their pipeline failed");
+      if (!ok && generation === this.generation) failed("our hulls cannot draw: a pipeline of theirs failed");
     });
     const renderer = this.renderer;
     const removes = [
@@ -327,13 +362,16 @@ export class HullDraw {
   /**
    * This frame's hulls: the first `n`, their matrices and kit words already
    * written into `matrices` and `words` — drawn on the next frame our
-   * renderer prepares, their orders pulled then (`pull`). `epoch` is the
-   * materials' (`CelMaterialFactory.materialEpoch`): when it moved, the block
-   * is copied again from its recipe.
+   * renderer prepares, their orders pulled then (`pull`). The first `whole`
+   * are drawn whole and the rest FADED (X4.2d), behind the screen door at
+   * their `fades`. `epoch` is the materials'
+   * (`CelMaterialFactory.materialEpoch`): when it moved, the block is copied
+   * again from its recipe.
    */
-  commit(n: number, epoch: number): void {
+  commit(n: number, whole: number, epoch: number): void {
     if (!this.unhook) return;
     this.instances = Math.max(0, Math.min(n, this.capacity));
+    this.wholeCount = Math.max(0, Math.min(whole, this.instances));
     this.pending = true;
     if (epoch !== this.epoch) {
       this.epoch = epoch;
@@ -358,7 +396,7 @@ export class HullDraw {
     this.stats.drawn = 0;
     this.stats.instances = 0;
     const n = this.instances;
-    this.ours = pending && n > 0 && this.cel !== null;
+    this.ours = pending && n > 0 && this.cel !== null && this.celFaded !== null;
     if (!this.ours) return;
     const segments = this.segments;
     const order = this.order;
@@ -387,35 +425,66 @@ export class HullDraw {
     const queue = this.device.queue;
     queue.writeBuffer(this.matrixBuffer, 0, this.matrices, 0, n * segments * MATRIX_FLOATS);
     queue.writeBuffer(this.orderBuffer, 0, upload, 0, n * (segments + 1));
+    if (this.wholeCount < n) queue.writeBuffer(this.fadeBuffer, 0, this.fades, 0, n);
     this.stats.instances = n;
   };
 
-  /** The hulls in the main pass, a rank at a time — so every hull's segments land in its own order. */
+  /**
+   * The hulls in the main pass, a rank at a time — so every hull's segments
+   * land in its own order. Within a rank the hulls drawn whole go first, one
+   * draw, and the FADED ones after them in another by the twin, behind the
+   * screen door (X4.2d): a hull is one or the other for the whole frame, so
+   * each still lands in its own order.
+   */
   private readonly draw = (pass: GPURenderPassEncoder, ctx: FrameContext): void => {
     if (!this.ours) return;
-    const cel = this.cel!;
-    const frame = ctx.frameGroup(cel.groups[0]);
-    const material = this.celGroup.get(cel.groups[1]);
-    const geometry = this.geometry.get(cel.groups[2]);
-    if (!frame || !material || !geometry) return;
     const n = this.instances;
+    const whole = this.wholeCount;
+    const fading = n - whole;
+    const cel = this.cel!;
+    const celFaded = this.celFaded!;
+    // All complete, or no hull at all: never a faded hull drawn whole.
+    if ((whole > 0 && !this.complete(cel, ctx)) || (fading > 0 && !this.complete(celFaded, ctx))) return;
     let drawn = 0;
-    let bound = false;
+    let bound: BuiltPipeline | null = null;
     for (let r = 0; r < this.segments; r++) {
       const span = this.rankSpan[r];
       if (span === 0) continue;
-      if (!bound) {
-        pass.setPipeline(cel.pipeline);
-        pass.setBindGroup(0, frame);
-        pass.setBindGroup(1, material);
-        pass.setBindGroup(2, geometry);
-        bound = true;
+      if (whole > 0) {
+        if (bound !== cel) this.bind(pass, (bound = cel), ctx);
+        pass.draw(span, whole, r * this.span, 0);
+        drawn++;
       }
-      pass.draw(span, n, r * this.span, 0);
-      drawn++;
+      if (fading > 0) {
+        if (bound !== celFaded) this.bind(pass, (bound = celFaded), ctx);
+        pass.draw(span, fading, r * this.span, whole);
+        drawn++;
+      }
     }
     this.stats.drawn = drawn;
   };
+
+  /**
+   * Whether `built`'s groups — the frame's, the material, the geometry and,
+   * for the faded pipeline, the fades — are whole this frame.
+   */
+  private complete(built: BuiltPipeline, ctx: FrameContext): boolean {
+    return (
+      ctx.frameGroup(built.groups[0]) !== null &&
+      this.celGroup.get(built.groups[1]) !== null &&
+      this.geometry.get(built.groups[2]) !== null &&
+      (built.groups.length < 4 || this.fadeGroup.get(built.groups[3]) !== null)
+    );
+  }
+
+  /** `built` and its groups (whole: `complete` said so) set on `pass`. */
+  private bind(pass: GPURenderPassEncoder, built: BuiltPipeline, ctx: FrameContext): void {
+    pass.setPipeline(built.pipeline);
+    pass.setBindGroup(0, ctx.frameGroup(built.groups[0])!);
+    pass.setBindGroup(1, this.celGroup.get(built.groups[1])!);
+    pass.setBindGroup(2, this.geometry.get(built.groups[2])!);
+    if (built.groups.length > 3) pass.setBindGroup(3, this.fadeGroup.get(built.groups[3])!);
+  }
 
   /** `Renderer.onRefused`: the main pass drew nothing of ours, hulls included. */
   private readonly refused = (): void => {

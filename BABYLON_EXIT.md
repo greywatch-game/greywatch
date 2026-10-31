@@ -4846,7 +4846,7 @@ and nowhere else: no bank row has a body at either, and none moved).
   Cinderhaven is the saving it could buy). X4.1d's owed items stand (the
   rank's vertex surplus, the editor's body draw, the compose cost).
 
-### X4.2 — Vehicles (PERF_PLAN A3) — **M–L, as four sub-steps** (split 2026-10-31) — X4.2a **LANDED** (fde5be7), X4.2b **LANDED** (d4f41ef), X4.2c **LANDED** (f302403)
+### X4.2 — Vehicles (PERF_PLAN A3) — **M–L, as four sub-steps** (split 2026-10-31) — X4.2a **LANDED** (fde5be7), X4.2b **LANDED** (d4f41ef), X4.2c **LANDED** (f302403), X4.2d **LANDED** (HASH) — **all four LANDED**
 
 Every hull a page draws — the tank, the truck and the helicopter, live or
 wrecked — comes off Babylon's scene, and A3's detail tier and draw distance
@@ -4908,7 +4908,7 @@ draft named a `HullFlex`; no such module exists — the hull's own motion is
   a hull walked through the swap at 832x384 and at 3440x1440, photographed
   either side of it; X0.3 on Cinderhaven at 300 m against A3's +6.5%.
 - **X4.2d — the hull's draw distance and its fade (the picture change).**
-  **Decided** (2026-10-31, the user): a map field, and a FADE at it, not a
+  Landed (below). **Decided** (2026-10-31, the user): a map field, and a FADE at it, not a
   pop. `EnvironmentSpec.hullDrawDistance`, defaulting to
   "unaffected" (its own `fogEnd`, clamped to it, as `bodyDrawDistance` is),
   resolved once at the install and pushed to the cull — **a NINTH override in
@@ -5646,6 +5646,207 @@ far hulls).
   post-commit review): the next bench of the tier owes a per-group count of
   reduced hulls, which the capture does not carry today.
 
+**X4.2d landed** (HASH; 2026-10-31; the picture change, where a map states a
+hull draw distance and nowhere else — no shipped map does, and the bank is
+62 of 62 byte-identical against its parent; with a scratch distance, only the
+rows that frame a hull inside it move).
+- **What it is.** `EnvironmentSpec.hullDrawDistance`, the NINTH of the map's
+  overrides (`CLAUDE.md`'s table, `docs/world.md`): resolved once
+  (`hullDrawDistanceOf`) and pushed by `installMap` to the cull alone
+  (`WorldCulling.setHullDrawDistance`). Past it no hull is drawn; over its
+  last tenth (`CONFIG.graphics.culling.hullFade.distance`, 0.1) a hull FADES
+  out by X4.1e's screen door — `WorldCulling.hullFade`, once a hull, off the
+  distance from the size gate's eye to the hull's whole MEASURE's centre
+  (X4.2c's `measureHull`, composed this frame), ending AT the distance — a
+  hull has no switch at range for it to beat, as the roster's is for a body.
+  At the distance ONLY (the 2026-10-31 decision): the per-segment size gate
+  answers for every segment of a fading hull as ever, and no hull is dropped
+  by its size. 1 while the warm-up stands. `Game.drawHulls` now composes each
+  present hull first (`vehicleRig.composeHull`, split out of
+  `writeHullDrawing`, still one compose a hull a frame), asks its fade, drops
+  a faded-out one (no instance), and hands the WHOLE hulls over first and the
+  FADING ones after, each in hardstanding order (`HullDraw.commit(n, whole,
+  …)`, `fades`) — the capacity's sixteen counted in that order.
+- **The faded twin** (`hullProgram.ts`' `faded`): the plain vertex stage
+  handing the pixel its instance (`vBody`, flat, last — `CEL_FADED_VARYINGS`,
+  now exported) and the ONE faded cel pixel bodies are drawn with
+  (`bodyProgram.fadedCelFragment`, assembled once and now shared: the cel
+  pixel behind the 4x4 Bayer door, the fade read in the fragment stage's
+  group 3, `BODY_FADE`) — so the vertex stage stays at eight storage arrays,
+  and the door is the bodies' to the bit, restated nowhere. Each rank draws
+  the whole hulls by the plain pipeline and the fading ones by the twin
+  (`firstInstance` past the whole); the fades are uploaded only when some hull
+  is past `whole`. **A frame with no hull fading issues exactly the GPU work
+  it did** — the same pipeline, binds, draws and order (`bind` sets groups 0-2
+  as the old draw did; `PipelineCache` dedupes the layouts) — which the bank
+  and census below prove. Both pipelines are asked at `Game`'s construction
+  (`HullDraw.ready` is both), so the warm-up waits for the twin and a hull's
+  first fade compiles nothing; a failed twin is the round's failure, as the
+  plain one's.
+- **"Unaffected" is NO distance, not `fogEnd` — a deviation from the bullet's
+  parenthesis, for its "unaffected".** Absent resolves to `Infinity`: every
+  hull at any range, as before. The bullet's "its own fogEnd, clamped to it,
+  as `bodyDrawDistance` is" would NOT have been unaffected: nothing ever cut a
+  hull (a body defaults to the fog because the roster switches it off there
+  anyway), so a default at the fog would fade every far hull over the fog's
+  last tenth — Sarab's 504-560 m is 86-100% fog, Cinderhaven's 1,125-1,250
+  m 89-100%, neither of them none — and drop one standing out of the SKY past
+  it, whose horizon colour is only required to sit close to the fog: a
+  picture change on every armour map that set nothing. A STATED distance past
+  the fog is capped at `fogEnd`, as a body's is.
+- **The gun-reach bound, and how it is enforced.** A hull is a gun as well as
+  a picture, and a person can crew it, so a hull faded out while its fire can
+  still land on the player looking for it is an unseen shooter. The reaches
+  (the real numbers): the tank's shell **340 m** (`vehicles.tank.gun.range`)
+  and its blast **7 m** past where the round stops, a miss at full range
+  included (`blastRadius`); the truck's station and the helicopter's chin gun
+  **210 m**, the tank's cupola gun **190**; the bots behind them far shorter
+  — a crew's driver engages at **95 m**, its gunner at **70**
+  (`vehicles.crew`), infantry at 55 — and the launcher that hunts a hull, a
+  rocket's ~157 m flight (`life` 3.5 s at 45 m/s; the HUD's 150), a bot's 75 m
+  band. The binding one is the gun's, because a person can sit behind it.
+  **`hullDrawFloor()`** keeps a hull WHOLE wherever its fire can land on
+  anybody looking for it: the fire's reach from a muzzle (`HULL_REACH.fire`,
+  347 m), plus the viewer's eye from the farthest point of what of him it can
+  hit (`HULL_REACH.eye`, 22.44 m — the helicopter's chase camera, 2.4 m up and
+  14 m back, to the far corner of its 11.4 x 2.6 x 3.0 m hull), plus a muzzle
+  from its own hull's measure centre (`hullFade.muzzle`, 8 m — MEASURED by a
+  scratch sweep of every turret, gun and cupola through its whole traverse on
+  the rig's joints, `scratchpad/x42d/muzzle.mjs`: the tank's main gun 7.683 m
+  turned to the rear, its cupola gun 3.535, the helicopter's chin gun 5.981,
+  the truck's station 2.374), end to end (the triangle inequality makes it a
+  bound), over the 0.9 of the distance the fade starts at: **419.37 m** today
+  (read back in the page). The two reach terms are read over the kinds' own
+  specs (`entities/vehicleKinds.ts`' `HULL_REACH`, no kind named), so a longer
+  gun, a bigger blast or a further chase camera raises the floor by itself.
+  **Enforced as a CLAMP at the resolve, in every build** (`hullDrawDistanceOf`
+  raises a stated number to the floor), with a DEV `console.warn` saying so —
+  the plan's style is `bodyDrawDistanceOf`'s (clamp, and say it in a dev
+  build), and a fairness rule must hold in the shipped build, which a DEV
+  assert would not. **A map whose `fogEnd` closes inside the floor gets no
+  distance at all** (`Infinity`, DEV-warned): the fog hides the shooter
+  already, and a cut at the fog would put the fade inside the reach. All four
+  armour maps leave room above it — Coldharbour's fog 480, Harrowmead's 520,
+  Sarab's 560, Cinderhaven's 1,250 — so a useful setting exists on each, and
+  A3's 420 on Cinderhaven is just legal. Nothing the authority holds reads
+  any of it: `server/` and `src/sim/` name none of these (grep), and the
+  server bundle (`dist-server`) carries the field only as an unread key of a
+  map's environment data and the config's comments — no resolver, no reach.
+- **The fade's length: the last tenth**, the bodies' share, ending at the
+  distance: 42 m at 420, where a tank on a road (~15 m/s) takes ~3 s to cross
+  it and the helicopter at its 32 m/s ~1.3 s; long enough to read as a
+  thinning rather than a pop (the walk below), and one number a player meets
+  for bodies and hulls alike.
+- **Measured.** **The bank** `--check --keep` against a BEFORE at b7997a2 in
+  the worktree (the new `cinderhaven-tank-far` row copied into its bank):
+  **62 of 62 byte-identical** (pixels), no shipped map stating the field; the
+  same 34 stale rows on both sides, no console or page error. **With the
+  field set** — `hullDrawDistance: 440` written into Cinderhaven's
+  `environment.ts` (removed after), `bank.mjs cinderhaven --check --keep`
+  against the AFTER's Cinderhaven rows: **`tank-far` moves, 247 pixels, worst
+  109/255** (the tank at 414.8 m, fade 0.573, and the yard's truck at 412.9 m,
+  fade 0.617, behind the door; the yard's helicopter at 452.5 m, past the
+  distance, gone), and **`crossing` moves, 15 pixels, worst 13/255** — it
+  frames that same helicopter at 421.4 m inside the band (fade 0.424, at the
+  diff's (684,147), the helicopter's projected (685,152)): a row with a hull
+  in the fade; `town`, `ground` and `menu` byte-identical. (`--check`'s own
+  grade sees neither, as X4.2c said of the row.) **`census --against`** the
+  BEFORE: every row equal, every total equal (Hollowmere 278, Greyfen 205,
+  Coldharbour 672, Harrowmead 847, Sarab 472, Cinderhaven 213, Kurenai 125).
+  **`gate.mjs`** clean on seven; **`shaders.mjs`** clean on seven, ours
+  17/17 (21/21 Sarab and Cinderhaven, 23/23 Coldharbour) — it builds the
+  world's programs; the hulls' two are built in the page, which every round
+  below drew. Typecheck, build (`check-babylon-free`: 15 simulations, 202
+  modules, no path), corecheck (all passed) and `parity` (server and client agree on every
+  map) pass.
+- **A hull driven through the fade edge** (scratch `fadewalk.mjs`; Sarab,
+  deploy, the cull's distance set to 420 in the page — what `installMap`
+  pushes — each kind stood alone in the open, the others put under the floor,
+  the camera 3 m over the floor on a bearing with a clear line, the hull's
+  measure from 357 m to 424 m, each frame shot with the distance and with
+  none, A-B-A so the control spans it): the page's own fade read back as
+  1, 1, 0.900, 0.700, 0.500, 0.300, 0.100, 0 at 357, 374, 382, 391, 399,
+  407, 416, 424 m, and the instance gone at 424; the hull-minus-whole
+  difference summed — at 3440x1440, the tank 0, 0, 5,420, 8,690, 13,193,
+  14,844, 18,248, 20,843 (the last its whole silhouette), the truck 0, 0,
+  2,761 … 8,886, the helicopter 0, 0, 4,618 … 19,410; at 832x384 the tank 0,
+  0, 288, 488, 864, 1,170, 1,228, 1,237 (the truck's and the helicopter's
+  20-44 pixels a frame are too few to be monotonic) — every control 0 but
+  the run's first frame, still settling. The holes are ink-edged (the ink
+  reads the door's depth steps, as on a fading body), the last steps a few
+  scattered dots, and nothing is left to pop: a thinning, not a step.
+  Frames: `scratchpad/x42d/walk/` (every frame, its whole twin and both
+  crops; `walk-sheet.png`, a row a kind and size, a column a step).
+- **X0.3 on Cinderhaven with the field at 420, against A3's +15.4%**
+  (`bench.mjs cinderhaven --runs 1 --max --gpu`, uncapped, 3440x1440, three
+  static builds served side by side — the BEFORE at b7997a2, the step as
+  shipped, and the step built with `hullDrawDistance: 420` in Cinderhaven's
+  `environment.ts` — one invocation each, alternated, three rounds, so
+  three runs a side; the canonical fight hash `2f97c9072ab1762b` on all nine;
+  installs 8,065-8,253 ms on every run, so the runs compare), medians of the
+  mean frame, new / old: **at 420** — vantages 5.65 / 5.64 ms (1.002), path
+  6.21 / 6.22 (0.998), fight 6.04 / 6.03 (1.002); **as shipped** — 5.65
+  (1.002), 6.22 (1.000), 5.98 (0.992); the fight's tick 3.92 at 420 against
+  4.07 (0.963) and 4.03 shipped; `gpu.frame` 0.98-1.04 on 15-40 samples a
+  group, Babylon's draws 45 / 41 / 75 on every side. **A3's +15.4% does not
+  reappear, and was not expected to**: it was Babylon's per-MESH cost of a
+  hull's every part (X4.2b folded the fleet into at most 26 rank draws), so
+  what a far hull costs now is its compose and its vertex share of each
+  rank, inside the noise on this desktop. **And the fade is shown to have
+  FIRED in each group** (X4.2c's owed count, scratch `benchhulls.mjs`: the
+  same `?bench=cinderhaven` at 3440x1440 with the drawing's handover tallied
+  every frame by group, off the 420 build and the shipped one): at 420, of 6
+  present hulls a frame, drawn 1.40 (whole 0.40, fading 1.00) in the
+  vantages, 3.00 (2.46, 0.54) on the path, 2.72 (2.58, 0.14) in the fight —
+  faded out 4.60, 3.00 and 3.28, a hull fading on 864 of 1,440, 425 of 1,440
+  and 375 of 2,700 frames; as shipped, 6 of 6 whole on every frame of every
+  group.
+- **A round offline** (scratch `hullprobe.mjs`, X4.2c's, extended: each
+  present hull's fade asked fresh; the instances checked as the WHOLE hulls
+  in hardstanding order then the FADING ones, a faded-out one none;
+  `wholeCount` and every fading hull's `fades` entry checked; every LEAVE and
+  ARRIVAL at the edge — drawn one frame and not the next, present, having
+  moved under 2 m — logged with its fade; Cinderhaven with `hullDrawDistance:
+  420` in its `environment.ts`, the install's own push read back as 420, 240
+  s, 30,244 frames, 1920x1080): **0 failures**; 10,065 fading hull-frames,
+  up to 2 at once, up to 50 hull draws a frame; **5 leaves at the edge, the
+  largest fade the frame before 0.0017, and 2 arrivals, the largest fade on
+  arrival 0.0018** (the other "leaves" in the log are the deploy's eye
+  jumping hundreds of metres, not a hull moving); every kind driven by its
+  crew, the helicopter flown to 48.5 m. **A netplay round** against a local
+  `dist-server` (`?mp=`, Sarab then Cinderhaven on the match's rotation, the
+  server's hulls made FRAGILE by X4.2b's scratch loader, the distance set to
+  420 in the page): the same checks, 300 s, 37,043 frames, **0 failures**;
+  5,230 fading hull-frames, **8 leaves at the edge, largest fade the frame
+  before 0.0021, and 7 arrivals, largest 0.0009**. A first netplay run (a
+  tank WRECKED, hidden and placed again during it) logged 1,919 frames of
+  "hulls committed but no draw", every one from frame 35,858 to its end; the
+  probe's check was the fault — a frame whose every drawn hull is wholly
+  outside the frustum issues no draw by design (X4.2b), which the distance
+  now makes common (a single near hull behind the camera), and the re-run,
+  which tells the two apart, counted 4,069 such frames and 0 failures. No
+  console or page error in any round.
+- **Deviations.** Absent is no distance, not `fogEnd` (above). The fade ends
+  AT the distance and is measured to the measure's centre, not one radius
+  short (no switch to beat). `writeHullDrawing` no longer composes — its
+  caller composes first (`composeHull`) — so a script calling it owes a
+  compose. A hull faded out is composed and not written. The capacity takes
+  whole hulls before fading ones. The shadows are not faded (a hull's is its
+  collider box, cast in the bodies' map only within 56 m of the eye and in
+  the lamps' atlas only inside a lamp the eye chose — `docs/rendering.md`).
+  `CLAUDE.md` stays 1,545 lines (one row, and the bodies' fade sentence
+  names the hull's; the rendering section reflowed to keep its 135).
+  `kit:hash` was not run: no kit, segment or model moved (the twin draws the
+  same kits).
+- **Owed onward.** **Whether any map states a distance** — the look call
+  A3 left, now without a measurable desktop saving behind it on Cinderhaven;
+  a phone, where hulls are a larger share of a GPU-bound frame, is the
+  reading that could change that. **The phone's look at the door** on a hull
+  (the walk at 832x384 is a desktop rendering of a phone's viewport), and the
+  phone's FOLLOW-UP reading as every step's since X3.3c. **The bench carries
+  no hull counts** still (`benchhulls.mjs` is a scratch tally). X4.2b's owed
+  items stand (the rank surplus, the boot cost, the editor's hulls).
+
 ### X4.3 — The viewmodel and the kit bay — **M–L**
 
 - **Do:** `ViewModel` in its own ordered draw, with its pose stack unchanged:
@@ -5838,7 +6039,7 @@ to X0.3 (see "The branch"). It is the user's to start.
 | --- | --- |
 | P0, G1 | X0.4 (G1's GPU cost transfers, since the shaders port) |
 | A1, A2 | landed; X1.4 builds on both |
-| A3 vehicle detail tier and draw distance | X4.2c (the tier), X4.2d (the distance, with X4.1e's fade), built in the new renderer, not in Babylon |
+| A3 vehicle detail tier and draw distance | X4.2c (the tier), X4.2d (the distance, with X4.1e's fade), built in the new renderer, not in Babylon — both landed |
 | A4 body fade | X4.1e |
 | A5 occlusion culling | optional, after X3.3b, in the compute cull; occluders skip `RayWorld.removed` |
 | A6 snapshot rendering | dropped: it is a Babylon mechanism |
@@ -5864,7 +6065,7 @@ Each is rewritten by the step that breaks it, in the same commit.
 | `CLAUDE.md`: the rig pool, fourteen meshes a rig, rigs filed mesh by mesh; `docs/deaths.md`'s reparented corpse | X4.1a, X4.1b, X4.1d |
 | `CLAUDE.md`: the pipeline warm-up's body pose (and, since X4.2b, the hulls' pipeline among those it waits for) | X4.1d, X4.1e, X4.2b |
 | `CLAUDE.md`: a vehicle's picture (`VehicleView`, the rig's meshes; since X4.2b every hull an instance of its kind's kit, gated per segment, `docs/rendering.md`'s "The hulls, ours") | X4.2a, X4.2b |
-| `CLAUDE.md`: the map's overrides table (a ninth, `hullDrawDistance`); `docs/world.md`'s section on them | X4.2d |
+| `CLAUDE.md`: the map's overrides table (a ninth, `hullDrawDistance`, landed: absent is no distance, a stated one floored at a hull's gun reach); `docs/world.md`'s section on them; the bodies-and-hulls paragraph's fade (a hull at its draw distance only) | X4.2d |
 | `CLAUDE.md`: the frame walks the scene (`WorldCulling`) | X3.3c through X4.7 |
 | `CLAUDE.md`: the glow | X3.6d, X3.6e, X3.7, X5.2 |
 | `CLAUDE.md`: visual meshes and collider proxies; exactly three sweeps | X2.1, X2.3 |

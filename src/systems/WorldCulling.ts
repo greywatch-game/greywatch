@@ -97,7 +97,10 @@
  *   hull's DETAIL tier asks one more question of the same arithmetic, once a
  *   hull, of its whole MEASURE (`keepsDetail`): whether its detail segments
  *   are drawn at all — a swap on top of the per-segment gate, never a drop
- *   of the hull.
+ *   of the hull. Since X4.2d the same measure is asked how much of the hull
+ *   is drawn at all (`hullFade`): a ramp over the last tenth of the map's
+ *   `hullDrawDistance`, which the drawing spends as the bodies' screen door
+ *   — the DISTANCE only, no hull ever dropped by its size.
  *   Always ELIGIBLE — and `offer` still drops the ones that are
  *   switched off, which is what reaches the effect pools: they are built once
  *   and idled with `isVisible = false`, and were most of a candidate list the
@@ -630,6 +633,48 @@ export class WorldCulling {
     if (this.detailPerRad === 0) return true;
     return !tooSmall(x, y, z, radius, this.gateEye, this.detailPerRad, this.detailPx2);
   }
+
+  /**
+   * How much of a HULL is drawn this frame, 0 to 1 (`BABYLON_EXIT.md`
+   * X4.2d): 1 is whole, between is the share of its pixels the screen door
+   * keeps (`render/HullDraw.ts`), 0 is not drawn — asked once a hull, of
+   * its whole MEASURE as its caller composed it this frame
+   * (`vehicleRig.measureHull`), from the eye `offer` gated from. A ramp
+   * over the last `CONFIG.graphics.culling.hullFade.distance` of the map's
+   * `hullDrawDistance` (`setHullDrawDistance`), off the distance from that
+   * eye to the measure's centre, ending AT the distance: a hull has no
+   * switch at range for the fade to beat, as a body's roster switch is
+   * (`offer`'s distance edge). The DISTANCE only — there is no whole-hull
+   * size edge (decided 2026-10-31: the per-segment gate, `keepsSphere`,
+   * still answers for every segment drawn, faded or not). 1 while the
+   * warm-up stands, so the warm-up shows every hull whole, and on a map
+   * that states no distance (`Infinity`, every shipped map). Read by
+   * `Game.drawHulls` after `update`, the same frame.
+   */
+  hullFade(x: number, y: number, z: number): number {
+    const far = this.hullDraw;
+    if (this.warm || !Number.isFinite(far)) return 1;
+    const e = this.gateEye;
+    const dx = x - e.x;
+    const dy = y - e.y;
+    const dz = z - e.z;
+    const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    return Math.min(1, Math.max(0, (far - d) / (far * CONFIG.graphics.culling.hullFade.distance)));
+  }
+
+  /**
+   * The map's HULL draw distance (`hullDrawDistanceOf`: capped at the fog,
+   * floored at a hull's gun reach, and infinite on a map that states none),
+   * where a hull's fade ends (`hullFade`). Infinite — no fade and no cut,
+   * every hull drawn whole at any range — until a map pushes one, and pushed
+   * by every install (`Game.installMap`), so a map stating none puts it back.
+   */
+  setHullDrawDistance(metres: number): void {
+    this.hullDraw = metres;
+  }
+
+  /** See `setHullDrawDistance`. */
+  private hullDraw = Number.POSITIVE_INFINITY;
 
   /** The detail tier's pixels a radian this frame (`offer`); 0 while the tier is off. */
   private detailPerRad = 0;

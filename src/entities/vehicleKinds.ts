@@ -1,8 +1,10 @@
 /**
  * vehicleKinds.ts — The list of vehicles that exist, and the ONE place a kind
  * is turned into what a hull is made of.
- * Owns: the `VehicleKind` union, the default kind (`resolveKind`), and the
- * table pairing each kind's name with its `VehicleSpec` and its `HullFrame`.
+ * Owns: the `VehicleKind` union, the default kind (`resolveKind`), the
+ * table pairing each kind's name with its `VehicleSpec` and its `HullFrame`,
+ * and the two figures read over the whole table (`HULL_REACH`: how far a
+ * hull's fire reaches, how far a viewer's eye stands from what it can hit).
  * Owns NO behaviour and NO drawing: **no `@babylonjs/core`**, because the
  * authority builds its fleet from this table and has no scene to build a rig
  * in. What a kind LOOKS like is the client's own table,
@@ -111,3 +113,46 @@ export function resolveKind(kind: VehicleKind | undefined): VehicleKind {
 export function kindOf(kind: VehicleKind | undefined): VehicleType {
   return VEHICLE_KINDS[resolveKind(kind)];
 }
+
+/**
+ * How far a hull's fire REACHES, and how far a viewer's eye stands from what
+ * of him it can hit — the two figures every kind's own numbers state, read
+ * over the whole table (`BABYLON_EXIT.md` X4.2d), so a longer gun or a
+ * further chase camera moves them by itself. What a map's
+ * `EnvironmentSpec.hullDrawDistance` is floored by (`world/environment.ts`'
+ * `hullDrawFloor`), so that no setting fades out a hull whose guns can still
+ * reach the player looking for it.
+ */
+export interface HullReach {
+  /**
+   * Metres from a MUZZLE to the farthest point its fire can hurt: the main
+   * gun's `range` plus its blast's `blastRadius` (the splash goes off where
+   * the round stopped, a miss at full range included), or the machine gun's
+   * `range` — the farthest of every kind's guns. The tank's shell today:
+   * 340 + 7 m.
+   */
+  readonly fire: number;
+  /**
+   * Metres from a VIEWER's eye to the farthest point of what a round can hit
+   * of him: a person on foot is his own body, and one in a hull is that
+   * hull's whole box seen from its chase camera — `camera.anchorHeight` over
+   * the centre, `camera.distance` back from that, and half the box's
+   * diagonal to its far corner — the farthest of every kind's. The
+   * helicopter's today: 2.4 + 14 + 6.0 m.
+   */
+  readonly eye: number;
+}
+
+/** See `HullReach`. Computed once; no kind is asked which it is. */
+export const HULL_REACH: HullReach = (() => {
+  let fire = 0;
+  let eye = 0;
+  for (const { spec } of Object.values(VEHICLE_KINDS)) {
+    const gun = spec.gun;
+    fire = Math.max(fire, spec.mg.range, gun ? gun.range + gun.blastRadius : 0);
+    const h = spec.hull;
+    const corner = 0.5 * Math.hypot(h.length, h.width, h.height);
+    eye = Math.max(eye, spec.camera.anchorHeight + spec.camera.distance + corner);
+  }
+  return { fire, eye };
+})();

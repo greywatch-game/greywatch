@@ -4291,7 +4291,7 @@ ones ours prepares nothing in, and the menu has none.
 **Every hull the page draws — a tank, a truck, a helicopter, in its livery or
 wrecked — is OUR renderer's since `BABYLON_EXIT.md` X4.2b**
 (`render/HullDraw.ts`, its program `render/hullProgram.ts`), and Babylon is
-made no hull mesh: X4.1d's shape for a thing with no emissive and no fade. A
+made no hull mesh: X4.1d's shape for a thing with no emissive. A
 rig is its joints (X4.2a) and its SEGMENTS (`vehicleRig.HullSegment`: the
 joint and the segment's local); what a segment looks like is its kind's KIT
 in its side's colours (`HullKit`), built ONCE a kind and a side — the first
@@ -4347,8 +4347,8 @@ a cupola gun, a gun ring — the gate drops there today, and the hull itself
 would only go past the fog on most viewports (~1.5 km at 1080p, ~540 m at
 832x384), so a hull's small parts keep leaving one by one, here. A3's detail
 tier (X4.2c) stands on a whole-hull measure of its own, used for its swap and
-nothing else, ON TOP of this gate; and the hull's draw distance (X4.2d) fades
-at that distance only, there being no whole-hull size edge to fade at. And
+nothing else, ON TOP of this gate; and the hull's draw distance (X4.2d, below)
+fades at that distance only, there being no whole-hull size edge to fade at. And
 because the sphere is the frame's own, the drop cannot latch
 on stale bounds (X4.2a's fix holds by construction); where Babylon's gate read
 the bounds of the PREVIOUS frame's freeze, ours reads this frame's, which
@@ -4407,11 +4407,45 @@ rank: our renderer had already folded a hull's CPU cost into its ranks
 (X4.2b), where A3's +6.5% was measured as
 Babylon's per-mesh cost.
 
-**Its pipeline is asked once, at `Game`'s construction**, so the warm-up's wait
-for ours covers it; a hull stands at its hardstanding in the views the warm-up
-draws, so it poses none. **A failure is the round's**, the bodies' routing:
-the pipeline failing, or a refused main pass while installed, tells
-`Game.worldFailed`. It is installed for a ROUND's map only — an editor build
+**A hull FADES OUT at its map's draw distance, never pops** (`BABYLON_EXIT.md`
+X4.2d, `PERF_PLAN.md` A3's distance): `EnvironmentSpec.hullDrawDistance`
+(`docs/world.md`'s overrides — absent is NO distance, every hull at any range,
+and a stated one is floored at a hull's gun reach so no setting buys an unseen
+shooter) is pushed to the cull, and `WorldCulling.hullFade` answers how much of
+each hull is drawn, once a hull, off its whole MEASURE composed this frame
+(`composeHull`): a ramp over the last tenth (`CONFIG.graphics.culling
+.hullFade.distance`), the distance from the eye to the measure's centre,
+ending AT the distance — a hull has no switch at range for it to beat, as the
+roster's is for a body. At the distance ONLY: the per-segment size gate still
+answers for every segment of a fading hull, and no hull is ever dropped by
+its size. **It is the bodies' screen door to the bit**: a faded TWIN of the
+hull program (`hullProgram.ts`' `faded`) is the plain vertex stage handing
+the pixel its instance (`vBody`, flat, last) and the ONE faded cel pixel a
+body's matte segments are drawn with too (`bodyProgram.fadedCelFragment`),
+the fade read in the fragment stage's group 3 (`BODY_FADE`) — the vertex
+stage stays at its eight storage arrays. `Game.drawHulls` composes every
+present hull, asks its fade, drops one faded to nothing (no instance), and
+hands the hulls drawn WHOLE over first and the FADING ones after
+(`HullDraw.commit(n, whole, …)`, `fades`); each rank draws the whole ones by
+the plain pipeline and the fading ones by the twin (`firstInstance` past the
+whole), so **a frame with no hull fading is exactly the draws it was** — the
+same pipeline, the same order, no fade uploaded — and a hull still lands in
+its own order. The shadows are not faded, as a body's are not: a hull's is
+its collider box off its own fields, cast into the bodies' map only within
+its window (56 m at most, far short of a floor that is ~419 m at its least)
+and into the lamps' atlas only inside the reach of a lamp the eye chose —
+the few ranked nearest it — so a hull past its distance casting there would
+need a shadowed lamp chosen 400 m off; not seen, and not prevented. Off
+while the warm-up stands (a hull is whole in the views it draws). A frame with
+a hull fading is up to two draws a rank — at most 52 hull draws for the
+widest kit's 26 ranks, whatever the fleet.
+
+**Its two pipelines — plain and faded — are asked once, at `Game`'s
+construction**, so the warm-up's wait for ours covers both and a hull's first
+fade compiles nothing in the round; a hull stands at its hardstanding in the
+views the warm-up draws, so it poses none. **A failure is the round's**, the
+bodies' routing: either pipeline failing, or a refused main pass while
+installed, tells `Game.worldFailed`. It is installed for a ROUND's map only — an editor build
 builds no fleet and draws no hull (X5.3 owes it one if it ever shows one), and
 the menu has none. A capture says what it drew (`ProfileReport.hulls`, report
 version 22), since Babylon's counter counts no hull.

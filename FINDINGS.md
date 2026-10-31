@@ -1581,14 +1581,19 @@ Both are larger than what landed, and both change what a player sees:
 - **A vehicle draw distance at 420 m: +15.4% fps.** Hulls would vanish where
   bodies do. By SIZE that is the wrong number — a hull is ~4x a body, which
   puts it past `fogEnd` — so a hull's distance is its own question and nobody
-  has answered it.
+  has answered it. **Built since** as `BABYLON_EXIT.md` X4.2d, a map field
+  (`EnvironmentSpec.hullDrawDistance`) with a fade, FLOORED at a hull's gun
+  reach (~419.4 m), and set by no shipped map: under our renderer 420 m on
+  Cinderhaven bought nothing measurable on this desktop (X4.2d's note), the
+  +15.4% having been Babylon's per-mesh cost. Whether a map states one is the
+  look call left open.
 
 ### What is open
 
 - ~~A vehicle DETAIL tier~~ — **landed** as `BABYLON_EXIT.md` X4.2c (the
   user's set, swapped at 32 projected px of a whole-hull measure in our
   renderer; what it bought against this entry's +6.5% / -0.55 ms at 300 m is
-  in that step's note). The draw distance, above, is X4.2d's.
+  in that step's note). ~~The draw distance~~ — **landed** as X4.2d (above).
 - **The gate's own per-frame cost** is finding 38's.
 
 ---

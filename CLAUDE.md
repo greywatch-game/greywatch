@@ -513,8 +513,7 @@ as a phone.
 **Every shader in the tree is hand-written WGSL** (`shaderLanguage` is
 load-bearing; the default is GLSL), and **a sampler a material DECLARES must be
 BOUND, used or not**, or the draw is silently lost. **A shared body declares
-NOTHING** (`wgsl/chunks.ts`): `src/render/` includes it too, so both sides
-declare.
+NOTHING** (`wgsl/chunks.ts`): `src/render/` includes it, so both sides declare.
 
 **Every cel material is FROZEN, and `CelMaterialFactory.remember` is the one
 door into the cache.** **What breaks it is a mesh that GAINS or LOSES a vertex
@@ -609,9 +608,10 @@ gate. **Nothing pooled may ever be block-keyed.**
 MESH** (`render/BodyDraw.ts`, `HullDraw.ts`): each an INSTANCE of its kit, built
 once a side (a hull's a kind and side), drawn while its switch is on and the
 size gate passes it — a body measured ONCE (`drawsBody`), the visor with it, a
-hull PER SEGMENT (`keepsSphere`). **A body LEAVES by a FADE at both edges,
-never a pop**: a screen door at `WorldCulling.bodyFade`, its visor dropping the
-same pixels in the glow's mask. **A draw is a RANK of every body or hull.**
+hull PER SEGMENT (`keepsSphere`). **A body LEAVES by a FADE at both edges, a
+hull at its map's draw distance only — never a pop**: a screen door
+(`WorldCulling.bodyFade`, `hullFade`), a visor dropping the same pixels in the
+glow's mask. **A draw is a RANK of every body or hull.**
 
 **The GLOW draws the EMISSIVE meshes and nothing else, its occlusion being the
 FRAME's own depth buffer** (`src/shaders/GlowPass.ts`). **What may bloom is read
@@ -667,7 +667,7 @@ editor writes through `map.terrain.field`, which is that same object. `size *
 cell` must still equal the map's extent and nothing typed can see the pair any
 more, so `build` asserts it in a DEV build.
 
-**Eight things that read like global constants are the MAP's**, each defaulting
+**Nine things that read like global constants are the MAP's**, each defaulting
 so that a map saying nothing is unaffected:
 
 | the map's | default | what a map that raises it owes |
@@ -675,6 +675,7 @@ so that a map saying nothing is unaffected:
 | `MapLayout.size` — how big it is | `CONFIG.map.size`, 240 | its heightfield's `size * cell` must equal it (asserted in DEV), and the rim's boundary boxes must stay over 200 m so the seven sites keying on `w > 200 \|\| d > 200` still can |
 | `EnvironmentSpec.fogEnd` — how far you can see | `FOG_WALL` | it is the reach `WorldCulling` walks to and the default for the row below; `audio.maxDistance` (70) and `bots.perception.engageRange` (55) did **not** move with it, so a clear map must be laid out knowing that |
 | `EnvironmentSpec.bodyDrawDistance` — how far a BODY is worth drawing | its own `fogEnd` | resolved ONCE (`bodyDrawDistanceOf`, clamped to `fogEnd`) and pushed to `NetRoster` and `RagdollSystem` together (`setViewDistance`), which is what keeps where a body stops being drawn and where a corpse is refused one distance; a body it drops FADES out over its last tenth (`WorldCulling.setBodyDrawDistance`, ending short of it), so a shorter one is a look call rather than a pop. **A map's `fogEnd` is a distance from the EYE and a LANDMARK is a fixed thing in the world**: never shorten the fog for the cull budget — take the saving out of this row |
+| `EnvironmentSpec.hullDrawDistance` — how far a HULL is worth drawing | none: every hull at any range (`hullDrawDistanceOf` resolves an absent one to `Infinity`, never to `fogEnd`, whose last tenth is not all fog) | resolved ONCE and pushed to the cull alone (`WorldCulling.setHullDrawDistance`); a hull FADES out over its last tenth (`hullFade`, the bodies' screen door), and nothing the authority decides reads it. **A hull is a GUN as well as a picture**: a stated one is RAISED to `hullDrawFloor()` (~419 m: the tank shell's 347 m reach, a chase camera's eye, a muzzle's offset, over the fade's 0.9) so no setting buys an unseen shooter, and capped at `fogEnd` — a map lowering it owes nothing more; a longer gun or chase camera raises the floor by itself |
 | `MapLayout.surfaces` — how deep it stacks | `CONFIG.nav.maxSurfaces`, 3 | only a map that stacks FLOORS raises it; overflow drops candidates silently (see the bots section) |
 | `MapLayout.perTeam` — how many bodies a side | `CONFIG.bots.perTeam`, 8 | it is DENSITY, bounded by `CONFIG.bots.maxPerTeam` (24), and it is spent in RIGS — the core's `BattleSystem.setRoster` resizes the pool and the page's `NetRoster` rebuilds its rigs when it moves (`setFielded`). The squads and the scoreboard follow it; `CONFIG.conquest.tickets` deliberately does not, so a denser map is a shorter round. **It reaches a match too**: the authority's slot table is the ceiling, `setFielded` says how many a round fights, and the SEATS stay at sixteen |
 | `MapLayout.blockSize` — how big a merge block is | `BLOCK_SIZE`, 48 | it is DRAW CALLS and cull granularity and nothing else; the reflection bake's exclusion and `WorldCulling` follow it for free because they read the block KEY rather than a size, and the world layer's unit of LOCALITY (the physics buckets, the pane index) deliberately does **not** |

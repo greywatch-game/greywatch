@@ -489,7 +489,7 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
       id: "tank-far",
       of: "the west yard's tank from 415 m south-south-west, over the town's roofs at night, at the hip field — its whole measure ~30.5 px across on the bank's 1080 rows",
       proves:
-        "the hull DETAIL TIER (X4.2c): the tank just past its 32 px swap (`CONFIG.graphics.culling.hullDetail`), drawn as its REDUCED set — no links, road wheels or cupola ring — under 30% of Cinderhaven's fog. The tier is ~55 pixels of this frame, far under `CHECK_TOLERANCE`'s mean, so only a PIXEL comparison of two `--keep` directories sees it, never `--check`'s grade. X4.2d's fade at `hullDrawDistance` reaches this row when a scratch layout sets the distance within ~10% past 415 m",
+        "the hull DETAIL TIER (X4.2c): the tank just past its 32 px swap (`CONFIG.graphics.culling.hullDetail`), drawn as its REDUCED set — no links, road wheels or cupola ring — under 30% of Cinderhaven's fog. The tier is ~55 pixels of this frame, far under `CHECK_TOLERANCE`'s mean, so only a PIXEL comparison of two `--keep` directories sees it, never `--check`'s grade. X4.2d's fade at `hullDrawDistance` reaches this row when a scratch layout sets the distance between its floor (`hullDrawFloor`, ~419.4 m) and ~460 m — the fade measured to the measure's centre and ending AT the distance, so the tank fades over 415-461 m (X4.2d's own check set 440: fade 0.57)",
       pos: [-581, 15, 73],
       target: [-473, 8.5, 473],
     },

@@ -418,7 +418,7 @@ mountain valley as the maples turn, built against a reference frame,
 `reference-media/new-map.jpg`; infantry only, and cut down from 750 m because
 the same kit over three times the side read as sparse and cost 88 fps where it
 now runs 154). **Sarab is the map that SPENDS the levers**, stating six of the
-eight rows below, and the first to state a `ParticleSpec.volume` — the mote
+nine rows below, and the first to state a `ParticleSpec.volume` — the mote
 field emitted around the EYE, without which `count` is a density that scales
 with a map's AREA.
 
@@ -436,7 +436,7 @@ and reached through `npm run simulate:dev`.
 
 No two maps share a module in any direction.
 
-## Eight things that look global and are the map's
+## Nine things that look global and are the map's
 
 Everything below defaults to what the two valleys are, so a map that states
 nothing is bit-identical to before any of them existed. Each was a genuine
@@ -514,6 +514,66 @@ its own diagonal — and this field is only for the bodies standing in it.
 the world** — a fog wall chosen for the cull budget put Cinderhaven's volcano in
 flat `fogColor` from everywhere anybody played, and the fix was to buy the fog
 back and take the saving out of this row.
+
+**`EnvironmentSpec.hullDrawDistance` — how far a HULL is worth drawing**
+(`BABYLON_EXIT.md` X4.2d, `PERF_PLAN.md` A3), resolved in exactly one place
+(`hullDrawDistanceOf`) and pushed by `installMap` to the cull and nothing
+else (`WorldCulling.setHullDrawDistance`): past it no tank, truck or
+helicopter is drawn, and over its last tenth one FADES out — the bodies'
+screen door, measured from the eye to the hull's whole measure's centre and
+ending AT the distance (`WorldCulling.hullFade`,
+`CONFIG.graphics.culling.hullFade`), so a stated distance is a look call
+rather than a pop. It is the cull's alone: neither the authority nor
+`server/validate.ts` reads it, nothing a hull does in the round depends on
+it, and a hull's shadow stays its collider box whatever it says.
+
+**Its default is NO distance, not `fogEnd`, and that is the one way it is not
+`bodyDrawDistance`.** A body defaults to the fog because the roster switches
+it off there anyway; nothing ever cut a hull, so a default at the fog would
+fade every far hull over the fog's last tenth — Sarab's 504-560 m is 86-100%
+fog, Cinderhaven's 1,125-1,250 m 89-100%, neither of them none — and drop one
+standing out of the SKY past it, whose horizon colour is only required to sit
+close to the fog: a picture change on every armour map that set nothing. So
+absent is `Infinity`, every hull drawn at any range as before; a stated one is
+capped at `fogEnd` as a body's is.
+
+**A hull is a GUN as well as a picture, and that is what floors it.** A body
+past `bodyDrawDistance` is past every bot's engagement range (55 m,
+`bots.perception.engageRange`); a hull is not, because a PERSON can crew it,
+and a hull faded out while its guns still reach the player looking for it is
+an unseen shooter. The reaches, today: the tank's shell 340 m and its blast 7
+m past where it stops (`vehicles.tank.gun`), the truck's station and the
+helicopter's chin gun 210 m, the tank's cupola gun 190; the bots behind them
+far shorter — a crew engages at 95 m and its gunner at 70 (`vehicles.crew`) —
+and the launcher that hunts a hull shorter again (a rocket's ~157 m flight, a
+bot's 75 m band). So a stated distance is RAISED to `hullDrawFloor()`, which
+keeps a hull WHOLE wherever its fire can land on anybody looking for it: the
+fire's reach from a muzzle (`HULL_REACH.fire`, 347 m), the viewer's eye from
+the farthest point of what of him it can hit (`HULL_REACH.eye`, 22.4 m — a
+helicopter's chase camera 2.4 m up and 14 m back, to the far corner of its
+11.4 m hull) and a muzzle from its hull's measure centre (`hullFade.muzzle`,
+8 m over the tank's measured 7.68 with its turret to the rear), end to end,
+over the 0.9 of the distance the fade starts at — **~419.4 m**. The two reach
+terms are read off every kind's own numbers (`entities/vehicleKinds.ts`), so a
+longer gun or a further chase camera raises the floor by itself. It is a
+CLAMP at the resolve, in every build, and a dev build says so on the console:
+a fairness rule rather than a look, which no build may ship without, and a
+stated number that is not the round's is one its author should see. **A map
+whose fog closes inside the floor gets no distance at all**: there the fog
+hides the shooter already, and a cut at the fog would put the fade inside the
+reach the floor keeps whole. Of the four armour maps, Coldharbour (480),
+Harrowmead (520), Sarab (560) and Cinderhaven (1,250) all leave room above the
+floor.
+
+**What a map stating it owes**: nothing a layout must agree with — no bake, no
+parity, nothing the server holds — only the look call, which is the fade
+landing on ground the player can see, and the floor above; and since it is a
+LANDMARK's argument turned round (a hull is a thing in the world, the fade a
+distance from the eye), the same caution `fogEnd` takes: a hull vanishing out
+of a skyline is louder than a soldier thinning out of a street. **No shipped
+map states one yet** (X4.2d): A3's measured +15.4% at 420 m on Cinderhaven was
+Babylon's per-mesh cost, and what it buys under our renderer is a per-map
+look call, taken after.
 
 **`MapLayout.surfaces` — how deep the nav graph stacks** (`CONFIG.nav.maxSurfaces`,
 3). See `docs/bots.md`: a map raises it only because it stacks FLOORS, and the

@@ -903,7 +903,10 @@ src/
                         #   the authority builds from it. A map's
                         #   `VehicleSpawnDef.kind` is resolved here
                         #   (`resolveKind`), and the default (a tank) is written
-                        #   down once
+                        #   down once. Plus `HULL_REACH` (X4.2d), read over the
+                        #   whole table: how far a hull's fire lands from a
+                        #   muzzle and how far a viewer's eye stands from what
+                        #   of him it can hit — the hull draw distance's floor
     vehicleModels.ts    # What each kind LOOKS like: `Record<VehicleKind,
                         #   VehicleModel>`, the client's twin of `VEHICLE_KINDS`
                         #   keyed by the same union, so a kind cannot have a
@@ -935,15 +938,17 @@ src/
                         #   — and one palette over every kit (`hullPalette`).
                         #   The joints are OURS (a `JointTree`, its first joint
                         #   the collider box's frame; BABYLON_EXIT.md X4.2a),
-                        #   the drawing written for our renderer once a frame
-                        #   (`writeHullDrawing`, each segment size-gated),
+                        #   the drawing composed and written for our renderer
+                        #   once a frame (`composeHull`, `writeHullDrawing`,
+                        #   each segment size-gated),
                         #   switched as one (`setHullRigEnabled`) and painted
                         #   charred by a flag (`paintRig`). A kit carries the
                         #   hull's one whole-hull MEASURE (`HullMeasure`,
                         #   `measureHull`) and flags the segments its model's
                         #   DETAIL list names, which a far hull draws without
                         #   (X4.2c, the detail tier; the size gate stays per
-                        #   segment under it). No numbers
+                        #   segment under it) — the measure the draw
+                        #   distance's fade is asked of too (X4.2d). No numbers
     TankModel.ts        # ~180 boxes and cylinders merged to twenty-five, with
                         #   a SPRUNG body over running gear that is not, a
                         #   turret and a gun that turn, a CUPOLA gun on a ring
@@ -1368,7 +1373,10 @@ src/
                         #   A HULL's segment (X4.2b) is asked the size gate
                         #   alone, one by one (keepsSphere), and a hull's whole
                         #   measure the detail tier's swap (keepsDetail,
-                        #   X4.2c), off for the warm-up
+                        #   X4.2c) and how much of it is drawn (hullFade,
+                        #   X4.2d: a ramp over the last tenth of the map's
+                        #   hullDrawDistance, setHullDrawDistance), all off for
+                        #   the warm-up
     BlockHandover.ts    # The map's world as OUR renderer draws it, in every
                         #   pass of every build but the editor's, with NO
                         #   fallback (BABYLON_EXIT.md X3.3-X3.7b): every block
@@ -1838,7 +1846,11 @@ src/
                         #   and the ONE place a floor material is built
     environment.ts      # EnvironmentSpec + applyEnvironment, and
                         #   bodyDrawDistanceOf — the one reader of a map's body
-                        #   draw distance, capped at its own fogEnd
+                        #   draw distance, capped at its own fogEnd — and
+                        #   hullDrawDistanceOf, the hull's (X4.2d): absent is
+                        #   NO distance, a stated one capped at fogEnd and
+                        #   RAISED to hullDrawFloor (a hull's gun reach, so no
+                        #   setting buys an unseen shooter)
     maps.ts             # MapDef + the MAPS registry. The only EXISTING file a
                         #   new map has to touch (plus vite.config's WRITABLE).
                         #   `MAPS` is an `import.meta.env.DEV` ternary and must
@@ -2604,7 +2616,9 @@ src/
                         #   world the body's segment matrix read whole; and
                         #   the three again behind a SCREEN DOOR (X4.1e), a
                         #   4x4 Bayer rank of the pixel against the body's
-                        #   fade, read in the fragment stage (BODY_FADE)
+                        #   fade, read in the fragment stage (BODY_FADE) — that
+                        #   faded cel pixel the one a fading hull is drawn with
+                        #   too (fadedCelFragment, X4.2d)
     BodyDraw.ts         # Every BODY as OUR renderer draws it (X4.1d): the
                         #   kits on the GPU once, each frame's bodies as
                         #   instances — a rank's matte segments one draw, its
@@ -2619,18 +2633,23 @@ src/
     hullProgram.ts      # The HULLS' program (X4.2b): the cel stage over every
                         #   segment of a kind's kit, the kit palette its own —
                         #   X4.1d's body decode (a draw one RANK of every hull,
-                        #   an instance a hull) with no visor and no fade, and
-                        #   a CHARRED bit in the hull's kit word that reads the
-                        #   charred slot in place of every segment's own
+                        #   an instance a hull) with no visor, and a CHARRED
+                        #   bit in the hull's kit word that reads the charred
+                        #   slot in place of every segment's own; and its faded
+                        #   TWIN (X4.2d), the vertex stage handing the pixel its
+                        #   instance and the bodies' faded cel pixel behind the
+                        #   screen door
     HullDraw.ts         # Every HULL as OUR renderer draws it (X4.2b): the
                         #   kits on the GPU once (a narrower kind padded to
                         #   the widest), each frame's hulls as instances, a
                         #   rank one draw (a size-gated or detail-dropped
                         #   segment a zero matrix), off what Game.drawHulls commits and
                         #   the order (and the segments the frustum culls) the
-                        #   prepare pulls (Game.hullPull);
+                        #   prepare pulls (Game.hullPull); a FADING hull
+                        #   (X4.2d) drawn after the whole ones by the twin, at
+                        #   its fade, a frame with none fading the draws it was;
                         #   installed AHEAD of the bodies, as Babylon's queue
-                        #   drew the hulls; its pipeline asked once a session,
+                        #   drew the hulls; its two pipelines asked once a session,
                         #   a failure (or a refused pass) the round's
                         #   (Game.worldFailed); installed for a round, never an
                         #   editor build

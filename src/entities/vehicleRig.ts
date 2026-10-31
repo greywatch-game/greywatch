@@ -7,11 +7,12 @@
  * drawing a model and a view, built by the first rig of it: `HullKit`,
  * `segmentOf`) and their one palette (`hullPalette`), the one way a whip
  * antenna is built (`whip`), the one pose a rig is reset to
- * (`resetRigPose`), the one way a rig's drawing is written
- * (`writeHullDrawing`), switched (`setHullRigEnabled`) and painted
- * (`paintRig`), and the hull's one whole-hull MEASURE (`HullMeasure`,
- * `measureHull`) with the DETAIL flag on a kit's segments that the detail
- * tier swaps by (`BABYLON_EXIT.md` X4.2c).
+ * (`resetRigPose`), the one way a rig is composed (`composeHull`) and its
+ * drawing written (`writeHullDrawing`), switched (`setHullRigEnabled`) and
+ * painted (`paintRig`), and the hull's one whole-hull MEASURE
+ * (`HullMeasure`, `measureHull`) with the DETAIL flag on a kit's segments
+ * that the detail tier swaps by (`BABYLON_EXIT.md` X4.2c) — the measure
+ * also what the draw distance's fade is asked of (X4.2d).
  * Owns NO numbers. `TankModel.ts`, `TruckModel.ts` and `HeliModel.ts` are the
  * ART, one file per kind; this is the shape they all come out in, and the one
  * thing `entities/VehicleView.ts` poses. CLIENT-only: `entities/Vehicle.ts`
@@ -38,9 +39,11 @@
  * (`WorldCulling.keepsDetail`) draws without them — its REDUCED set, the
  * same kit with those segments written as nothing (`writeHullDrawing`). The
  * measure is the kit's, one sphere a hull (`HullMeasure`); it decides the
- * swap and nothing else. **The size gate stays PER SEGMENT under it**
- * (decided 2026-10-31): a segment of a hull drawn in full is still gated one
- * by one, as it always was, and no hull is dropped whole by either.
+ * swap, and since X4.2d the draw distance's FADE is measured to its centre
+ * (`WorldCulling.hullFade`) — never a drop by SIZE. **The size gate stays
+ * PER SEGMENT under both** (decided 2026-10-31): a segment of a hull drawn
+ * in full, or fading, is still gated one by one, as it always was, and no
+ * hull is dropped whole by its size.
  *
  * **The JOINTS are OURS** (`BABYLON_EXIT.md` X4.2a, X4.1a's shape): a
  * `JointTree` (`rigJoints.ts`) whose first joint is the collider box's own
@@ -49,9 +52,10 @@
  * the rig owns, composed FRESH off the channels in `src/math`'s copies of
  * Babylon's arithmetic — what `TransformNode.computeWorldMatrix(true)` gave
  * for the same channels, bit for bit. Each segment's own local is composed
- * once at build (`HullSegment.local`), and `writeHullDrawing` writes its
- * world (that local times its joint's) for the drawing, once a frame from
- * `Game` (`drawHulls`), after every write and immediately before
+ * once at build (`HullSegment.local`); `composeHull` composes the tree and
+ * `writeHullDrawing` writes each segment's world (that local times its
+ * joint's) for the drawing, once a frame from `Game` (`drawHulls`), after
+ * every write and immediately before
  * `scene.render`. No node of a hull is in the scene. The muzzles and the
  * sight are joints with no segment, which nothing in the game reads: the
  * simulation replays them off the record (`hullFrame.ts`' `hullPointToRef`),
@@ -256,8 +260,8 @@ export interface HullKitSegment {
  * diagonal, as Babylon's `BoundingSphere.reConstruct` made a mesh's
  * (`BABYLON_EXIT.md` X4.2c). A SIZE, not a bound: a turret turned or a gun
  * laid does not move it, and nothing culls by it. What the detail tier's swap
- * is asked of, and nothing else — the size gate stays per segment (decided
- * 2026-10-31).
+ * is asked of, and the draw distance's fade measured to (X4.2d) — never a
+ * drop by size: the size gate stays per segment (decided 2026-10-31).
  */
 export interface HullMeasure {
   readonly centre: Vector3;
@@ -907,8 +911,7 @@ const _measure = { x: 0, y: 0, z: 0, radius: 0 };
  * inflates it by up to the square root of two with the hull's heading — a
  * swap that came 41% further out as a tank turned would be a swap decided
  * by its yaw. The root's world must be current — composed this frame —
- * which `writeHullDrawing` sees to; a script reading it owes a compose
- * first.
+ * which `composeHull` sees to; a script reading it owes a compose first.
  */
 export function measureHull(rig: VehicleRig, out: { x: number; y: number; z: number; radius: number }): void {
   const w = rig.root.world;
@@ -921,7 +924,22 @@ export function measureHull(rig: VehicleRig, out: { x: number; y: number; z: num
 }
 
 /**
- * Composes the rig's joints and writes its DRAWING into `out` from `at`:
+ * Composes the rig's joints, FRESH, and writes its whole-hull MEASURE in
+ * the world this frame into `measure` (`measureHull`) — the one compose a
+ * present hull gets a frame (`Game.drawHulls`, `BABYLON_EXIT.md` X4.2d),
+ * after every write to its joints and before anything reads them: the
+ * measure is what the draw distance's FADE is asked of
+ * (`WorldCulling.hullFade`), and `writeHullDrawing` writes the drawing off
+ * the same composed joints after it. Allocates nothing.
+ */
+export function composeHull(rig: VehicleRig, measure: { x: number; y: number; z: number; radius: number }): void {
+  rig.tree.compute();
+  measureHull(rig, measure);
+}
+
+/**
+ * Writes the rig's DRAWING into `out` from `at`, off joints `composeHull`
+ * composed THIS frame:
  * each segment's world matrix, sixteen floats in its kit's order — the
  * segment's own local times its joint's world, what `drawHullRig` handed
  * Babylon's mesh through `freezeWorldMatrix` until `BABYLON_EXIT.md` X4.2b —
@@ -939,9 +957,11 @@ export function measureHull(rig: VehicleRig, out: { x: number; y: number; z: num
  * gated as any segment is, and no segment but a detail one ever leaves by
  * the tier.
  *
- * **Called once a frame for every present hull, after every write and before
- * the render** (`Game.drawHulls`, inside the render span). The rig's switch
- * is the caller's to have asked. Allocates nothing.
+ * **Called once a frame for every present hull that is drawn, after its
+ * `composeHull` and before the render** (`Game.drawHulls`, inside the render
+ * span) — a hull its draw distance has faded out entirely is composed and
+ * not written. The rig's switch is the caller's to have asked. Allocates
+ * nothing.
  */
 export function writeHullDrawing(
   rig: VehicleRig,
@@ -953,7 +973,6 @@ export function writeHullDrawing(
   spheres: Float64Array,
   spheresAt: number,
 ): void {
-  rig.tree.compute();
   measureHull(rig, _measure);
   const whole = full(_measure.x, _measure.y, _measure.z, _measure.radius);
   const segments = rig.segments;

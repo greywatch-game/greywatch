@@ -288,13 +288,20 @@ and the mask), ~2.6 ms of a 20.1 ms phone frame.
 **Verify:** frozen-frame diffs at the banked vantages on Coldharbour and
 Hollowmere at night; the census from P0; the phone's `glow` and `drawWorld`.
 
-### A3 — Vehicles get a detail tier and a draw distance (`FINDINGS.md` 39) — **S-M** — the tier **LANDED** as `BABYLON_EXIT.md` X4.2c; the distance is X4.2d's
+### A3 — Vehicles get a detail tier and a draw distance (`FINDINGS.md` 39) — **S-M** — **LANDED**: the tier as `BABYLON_EXIT.md` X4.2c, the distance as X4.2d
 
 **The tier landed** in our renderer (`docs/rendering.md`, "The hulls, ours"):
 the user's set, swapped off a whole-hull measure at 32 projected px
 (`CONFIG.graphics.culling.hullDetail`), the size gate kept per segment under
-it; `BABYLON_EXIT.md` X4.2c has what it measured against the +6.5% below. The
-plan below is kept as it was written.
+it; `BABYLON_EXIT.md` X4.2c has what it measured against the +6.5% below.
+**The distance landed** as X4.2d: a map field, `EnvironmentSpec.hullDrawDistance`
+(`docs/world.md`'s overrides), absent being NO distance (every hull at any
+range, not the fog), a hull FADING out over its last tenth by the bodies'
+screen door rather than popping, and a stated one FLOORED at a hull's gun
+reach (`hullDrawFloor`, ~419.4 m today) so no setting buys an unseen shooter —
+which makes this plan's "420 is a body's number" moot: 420 is just above the
+floor. No shipped map states one; X4.2d has what 420 buys on Cinderhaven
+against the +15.4% below. The plan below is kept as it was written.
 
 Every hull draws every part at any range. Measured: a detail tier (silhouette
 kept, running gear and fittings dropped) +6.5% at 300 m on Cinderhaven; a
