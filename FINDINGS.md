@@ -196,7 +196,11 @@ as a share**, since that frame was ~21 ms and Coldharbour now runs at 122 fps
 the desktop, and on a phone at 0.5 and 0.75 (below). **At 0.5** the passes
 were priced on a phone and are not the lever — finding 13: on Greyfen, taking
 motion blur and the grain off moved `gpu.frame` by nothing measurable, and the
-dropped frames there do not follow the GPU. **At 0.75 they have not been
+dropped frames there do not follow the GPU. FXAA is priced there now too:
+FXAA on with shadows `medium` read level with both off on the look parts of
+Greyfen, Harrowmead and Sarab, `gpu.frame` within 2% (2026-10-30 against
+10-31, one build, one run a side across two sessions — `BABYLON_EXIT.md`
+X3.7c's FOLLOW-UP reading). **At 0.75 they have not been
 priced**, and there the GPU is the wall (below).
 
 - **Five full-screen passes at the render resolution at defaults**, in the order
@@ -2963,3 +2967,59 @@ probe baked.
 Count toward the stall only the frames on which the gate is OPEN, leaving
 `drainCapMs` (90 s) as the backstop for a gate that never opens; then the
 same timeline on a cold first install of each map with water or glazing.
+
+---
+
+## 66. On the phone the forest maps read heavier at the end of Phase 3 and Sarab does not
+
+**Open, measured 2026-10-30 and 2026-10-31** — `BABYLON_EXIT.md` X3.7c's
+FOLLOW-UP reading has the tables, the settings and the sessions. On the
+deployed X3.7c build (c4d3021), one `?bench=<map>&gpu` run a map, Harrowmead
+reads heavier on both the CPU and the GPU than at either earlier protocol
+reading on the same phone, Greyfen likewise, and Sarab level with both. Tick
+/ `gpu.frame` in ms, the segment groups' means:
+
+| map | part | 2026-10-21 (3b9be6c) | 2026-10-23 (d763327, list) | 2026-10-31 (c4d3021) |
+| --- | --- | --- | --- | --- |
+| Harrowmead | vantages | 5.61 / 14.6 | 4.46 / 12.0 | 6.78 / 17.3 |
+| Harrowmead | path | 6.47 / 18.0 | 4.39 / 11.9 | 7.02 / 19.6 |
+| Harrowmead | fight | 11.13 / 20.4 | 9.88 / 15.0 | 12.30 / 20.1 |
+| Sarab | vantages | 6.28 / 11.3 | 5.79 / 10.8 | 6.01 / 11.1 |
+| Sarab | path | 6.22 / 11.1 | 5.06 / 11.2 | 5.89 / 11.5 |
+| Sarab | fight | 18.34 / 15.6 | 16.80 / 11.1 | 18.36 / 13.1 |
+
+Greyfen's vantages: 4.71 / 13.2, 4.04 / 12.0, then 5.46 / 14.7 on 2026-10-30
+(the 10-31 run's canvas was stale; the 10-30 run's settings, shadows `medium`
+and FXAA on, read level with the protocol's on every look part).
+
+### What is measured, and what is not
+
+- **The size is not priced.** The phone moved 11-25% under unchanged code
+  between 2026-10-21 and 10-22 (`BABYLON_EXIT.md`, the work list's note), so
+  Harrowmead's +8-21% against 10-21 could be the phone alone, and its
+  +24-65% against 10-23 measures from the session that ran lowest.
+- **The PATTERN is the reading.** Sarab ran last in all three sessions and
+  reads level in all three, while both forest maps read heavier — a device
+  state moves every map. Two sessions (10-30 and 10-31) agree on
+  Harrowmead's vantages to 2%.
+- **The forest maps are the ones with the scatter**: 83,846 records on
+  Greyfen, 59,995 on Harrowmead, 9,638 on Sarab (X3.5b's note). Most of the
+  changes between the readings touch it — the list's landing (e07ae7c), the world's
+  cascades and the foliage's map ours (X3.6a), the lamps' atlas (X3.6b), the
+  scatter drawn plain with a CPU-computed bound per dispatch (e172f88: 25-35
+  us of desktop CPU a dispatch, and each draw spending its whole bound,
+  1.004-1.20 of the survivors, where the indirect draw spent the count), and
+  X3.7's cut. **Derived, not measured**: none of these was read on the phone
+  alone, and the desktop read e172f88 level (`gpu.frame` 0.984-1.035).
+- **Also between the readings**: Chrome 155 to 156.
+
+### How to settle it
+
+One session, alternated, two runs a side, Harrowmead and Sarab: the X3.7c
+build against d763327 (or e07ae7c, the list as it shipped). If Harrowmead
+moves and Sarab does not, it is code; then halve — X3.6a (4fd2e85), and
+071a95e, which still carries `?scatterindirect` (the scatter indirect
+exactly as before e172f88) for an A/B inside one build. If e172f88 is it, the
+fix is per device, since the Intel Xe-LPG laptop needs the plain draw
+(`docs/rendering.md`, "NOTHING OF THE STATIC WORLD IS DRAWN OR DISPATCHED
+INDIRECT").

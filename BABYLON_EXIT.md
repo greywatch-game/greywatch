@@ -3551,10 +3551,81 @@ is checked against its parent.
   drag, sculpt and save (restored by `git checkout`), no error; the bank 61
   of 61 byte-identical to the BEFORE at 9f7f0b1 on the first run, the same
   34 stale rows, no console or page error.
-- **Owed onward.** Before a phase gate: the phone's FOLLOW-UP reading, owed
-  since X3.3c and the user's to take, and the post-commit review of this
-  step; then the `exit-phase-3` tag, the user's call (rule: "Moving the
-  branch back to one is the user's call"), as is pushing `exit-babylonworld`.
+- **The phone's FOLLOW-UP reading, taken 2026-10-30 and 2026-10-31** on
+  the deployed X3.7c build (report version 20 with the bodies still in
+  Babylon's draw counter — X4.1d is what moves both), the same phone as
+  every reading above but on Chrome 156 where all of them were 155. Two
+  sessions, one `?bench=<map>&gpu` run a map in the BEFORE's order
+  (Greyfen, Harrowmead, Sarab), the canonical fight hashes on all six;
+  whether a warm-up run went first is not recorded. **The second session
+  is the protocol's settings** (X3.5b's BEFORE: render scale 0.5, cap 60,
+  shadows, grass, Trees and glow `low`, FXAA, blur, grain, volumetrics, GI
+  and ground relief off, the minimap on), saved 2026-10-31 01:31-01:43 UTC.
+  The first, saved 2026-10-30 03:16-03:26 UTC, differed in two: shadows
+  `medium` and FXAA on. Every frame one matched 1170x540 **but the second
+  session's Greyfen, drawn at 1170x618 in the same 832x384 window** (the
+  stale canvas again, 14% more rows), so that row compares with nothing.
+  The second session, the segment groups' means:
+
+  | map | part | mean | p95 | 1% low | tick | render | draws | GPU | cull |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | Greyfen (1170x618) | vantages | 19.4 | 42.1 | 68.8 | 5.52 | 3.68 | 28 | 14.5 | 0.44 |
+  | Greyfen (1170x618) | path | 22.7 | 59.0 | 78.2 | 6.26 | 4.00 | 27 | 17.9 | 0.45 |
+  | Greyfen (1170x618) | fight | 26.1 | 61.7 | 94.7 | 13.53 | 9.94 | 220 | 19.9 | 0.54 |
+  | Harrowmead | vantages | 22.6 | 57.9 | 90.7 | 6.78 | 4.39 | 43 | 17.3 | 0.56 |
+  | Harrowmead | path | 24.9 | 67.9 | 86.7 | 7.02 | 4.42 | 42 | 19.6 | 0.55 |
+  | Harrowmead | fight | 25.7 | 59.9 | 85.8 | 12.30 | 8.12 | 154 | 20.1 | 0.61 |
+  | Sarab | vantages | 16.7 | 17.5 | 28.7 | 6.01 | 4.24 | 51 | 11.1 | 0.50 |
+  | Sarab | path | 16.7 | 17.8 | 23.9 | 5.89 | 3.96 | 44 | 11.5 | 0.45 |
+  | Sarab | fight | 20.8 | 24.8 | 41.0 | 18.36 | 14.22 | 327 | 13.1 | 0.57 |
+
+  - **Shadows `medium` and FXAA on cost this phone nothing measurable at
+    0.5**, on the same code: the look parts' `gpu.frame` 14.7 / 17.5 / 11.0
+    ms in the first session against 14.5 / 17.3 / 11.1 in the second
+    (Greyfen's despite its taller canvas), the ticks within 5%. The paths
+    and fights moved more (Sarab's path GPU 14.6 to 11.5, its fight's tick
+    20.16 to 18.36), but the tick moved with them, which a GPU setting
+    cannot do: that is the phone's state, the first session's last eighths
+    running hotter (Sarab's GPU by eighths 10.8-17.0 against 10.8-14.3).
+    Cross-session and one run a side, so "nothing" means under ~8%.
+  - **Against both earlier protocol readings the forest maps read heavier
+    and Sarab level**, tick / GPU in ms — X3.5b's BEFORE (2026-10-21,
+    3b9be6c) and the A/B of 2026-10-23 (d763327, the list arm that
+    shipped; the stream arm in brackets):
+
+    | map | part | 2026-10-21 | 2026-10-23 | 2026-10-31 |
+    | --- | --- | --- | --- | --- |
+    | Harrowmead | vantages | 5.61 / 14.6 | 4.46 / 12.0 (5.14 / 12.6) | 6.78 / 17.3 |
+    | Harrowmead | path | 6.47 / 18.0 | 4.39 / 11.9 (4.83 / 13.3) | 7.02 / 19.6 |
+    | Harrowmead | fight | 11.13 / 20.4 | 9.88 / 15.0 (10.59 / 15.5) | 12.30 / 20.1 |
+    | Sarab | vantages | 6.28 / 11.3 | 5.79 / 10.8 (4.88 / 10.6) | 6.01 / 11.1 |
+    | Sarab | path | 6.22 / 11.1 | 5.06 / 11.2 (4.90 / 10.8) | 5.89 / 11.5 |
+    | Sarab | fight | 18.34 / 15.6 | 16.80 / 11.1 (13.84 / 10.2) | 18.36 / 13.1 |
+
+    **The size is not priced; the pattern is the reading.** The phone
+    moved 11-25% under unchanged code between 10-21 and 10-22 (the work
+    list's note, above), and Harrowmead's rise is 8-21% against 10-21 (its
+    fight's GPU level) and 24-65% against 10-23. What
+    holds against both is that Sarab, run last in all three sessions,
+    reads level while the forest maps read heavier — a device state would
+    move all three. Harrowmead's first session agrees (vantages 6.83 /
+    17.5); Greyfen's, matched and at settings that move nothing on the look
+    parts, reads vantages 5.46 / 14.7 against 4.71 / 13.2 and 4.04 / 12.0.
+    Between the builds lie the list's landing (e07ae7c), X3.6a-e, the
+    scatter's plain draw (e172f88) and X3.7a-c — and Chrome 155 to 156.
+    Open as `FINDINGS.md` 66.
+  - **Sarab's fight read p95 24.8 ms, at X0.4's target of 25**, in one run
+    and not the protocol's two warm ones; the first session read 29.3 on the
+    same code, so it sits ON the target rather than under it. It is still
+    the CPU (an 18.36 ms tick against 13.1 of GPU, `render` 14.22 recording
+    327 Babylon draws, the bodies among them) — X4.1's phone BEFORE (X4.1's
+    note).
+  - **Our culls are 0.44-0.61 ms** of `gpu.cull` on every part, against
+    0.36-0.53 on 10-23's list arm.
+- **Owed onward.** Before a phase gate: the `exit-phase-3` tag, the user's
+  call (rule: "Moving the branch back to one is the user's call"), as is
+  pushing `exit-babylonworld`. The forest maps' rise on the phone (above)
+  is open as `FINDINGS.md` 66.
   X5.3 deletes what the editor keeps. X4.4 uses or deletes the HELD-caster
   layer, which no build reaches (Deviations).
 
@@ -3636,6 +3707,65 @@ reparenting goes and every body is one kind of thing to draw.
 - **Verify, each sub-step:** the bank `--check --keep` against a BEFORE at the
   parent; `census --against`; `gate`, `shaders`; typecheck, build, corecheck,
   `parity`; a round offline and a netplay round.
+- **The phone's BEFORE** is X3.7c's FOLLOW-UP reading (2026-10-31, the
+  protocol's settings; its Harrowmead and Sarab rows, Greyfen's canvas having
+  been stale). What X4.1 should move is Sarab's fight, the phone's one part
+  bound by the CPU: tick 18.36 ms, `render` 14.22 recording 327 Babylon
+  draws, `gpu.frame` 13.1, p95 24.8 (29.3 the session before, on the same
+  code). Greyfen's and Harrowmead's fights are the GPU (19.9-20.1 ms against
+  a 12-14 ms tick), so X4.1 is not expected to move their frames. **The
+  AFTER** repeats those settings and that order on a build whose capture
+  reads report version 21 (dd902aa) — a version-20 capture is not X4.1's
+  build. Babylon's counter falls by the bodies, and v21's `bodies` counts
+  the draws ours took. One run a map reads a difference only past ~8%
+  (X3.5b's note), and the phone's state moved Sarab's fight tick 9% between
+  the two sessions on one build, so Sarab's `tick` and `render` are the
+  reading only at the size X4.1d moved the desktop (the fight's frame down
+  a third, X4.1d's note) — and the rank's vertex surplus (X4.1d's Owed onward) is
+  read in its `gpu.frame`.
+- **The phone's AFTER, taken 2026-10-31** on the deployed f7534f2 (report
+  version 21), saved 02:04-02:13 UTC — twenty minutes after the BEFORE in
+  the same session, so on a phone no cooler than the BEFORE's — at its
+  settings and in its order, every frame one matched 1170x540, the canonical
+  fight hashes on all three. BEFORE → AFTER, the segment groups' means:
+
+  | map | part | mean | p95 | tick | render | draws | GPU |
+  | --- | --- | --- | --- | --- | --- | --- | --- |
+  | Greyfen | fight | 26.1 → 24.1 | 61.7 → 64.1 | 13.53 → 8.38 | 9.94 → 4.92 | 220 → 65 | 19.9 → 18.6 |
+  | Harrowmead | fight | 25.7 → 25.3 | 59.9 → 66.6 | 12.30 → 9.16 | 8.12 → 5.06 | 154 → 63 | 20.1 → 19.8 |
+  | Sarab | fight | 20.8 → 17.5 | 24.8 → 28.1 | 18.36 → 10.99 | 14.22 → 7.22 | 327 → 109 | 13.1 → 13.2 |
+
+  (Greyfen's BEFORE was drawn at 1170x618, so its row is indicative only.)
+  `draws` is Babylon's counter, which counts no body now; at the save, ours
+  drew Sarab's 35 bodies in 48 main-pass draws and 18 glow-mask draws
+  (`bodies`), where Babylon drew fourteen a body.
+  - **Sarab's fight is no longer bound by the CPU.** Its tick fell 40% (p95
+    21.4 to 13.0 ms), `render` by half, and the frames over 16.7 ms of tick
+    from 76% to 1%. Its median frame went 20.8 to 16.6 ms: 84% of its
+    frames are under 18 ms, against 15%.
+  - **Its p95 ROSE, 24.8 to 28.1, and that is the GPU's tail, not a
+    regression.** The BEFORE's frames sat unquantized at 18-28 ms behind the
+    tick; the AFTER's either make the vsync or miss it, and the 5% that miss
+    (28-52 ms) carry `gpu.frame` 15.2 against a 13.1 median (p90 15.0, p99
+    17.4) and a 10.9 ms tick. So **X0.4's "p95 at or under 25 ms" no longer
+    measures what it was set for**: it was chosen when the fight was CPU
+    in the render, and a p95 over a frame that holds 60 on 95% of its
+    frames reads ~17 ms, and one that misses on 5% reads ~33. How X6.2
+    reads that target is the user's call.
+  - **The forest maps' fights were already the GPU**, and their frames
+    barely moved (means -8% and -2%) while their ticks fell 26-38% and the
+    frames under 18 ms rose 49 to 66% (Greyfen) and 52 to 63% (Harrowmead).
+    Greyfen's fight p95 64.1 is under X0.4's floor of 69.
+  - **The rank's vertex surplus is not visible on the phone**: the fights'
+    `gpu.frame` 13.1 → 13.2, 20.1 → 19.8, 19.9 → 18.6 — within one run's
+    noise, ~2.8× the vertex invocations notwithstanding (X4.1d's Owed
+    onward). Nor is X4.1a's compose cost separable: it is inside a tick
+    that fell 3-7 ms.
+  - **The look parts are level on Harrowmead and Sarab** (ticks -3 to -5%,
+    `gpu.frame` within 2%). Greyfen's read 2.2 ms more GPU on less canvas
+    (16.7 against 14.5 on the vantages), the run that opened the session;
+    the same build read level on the other two maps' look parts, so it is
+    not attributed to X4.1.
 
 **X4.1a landed** (a417bfc, the post-commit review's fixes after it;
 2026-10-29; no picture change).
@@ -4481,8 +4611,8 @@ parent).
   span × n, up to ~14.8k a body (14 matte ranks at the torso's 1,056, the
   visor's 36) against 5,352 real — ~2.8× — the surplus corners exiting after
   four storage reads. `gpu.frame` held on the desktop (0.994–0.999 in the
-  fights, above); fold it into the phone's FOLLOW-UP reading, which is owed
-  anyway. Indirect draws, which could size each instance to its own range,
+  fights, above), and on the phone (X4.1's AFTER, above: within one run's
+  noise on all three fights). Indirect draws, which could size each instance to its own range,
   are ruled out by the Intel Xe-LPG dropping single indirect draws at random
   (X3.3b's note; `docs/rendering.md`, "NOTHING OF THE STATIC WORLD IS DRAWN
   OR DISPATCHED INDIRECT"). **The editor draws no soldier now** (above: an editor build's
@@ -4701,8 +4831,8 @@ and nowhere else: no bank row has a body at either, and none moved).
     history and kept, with a bracketed note that it was built here.
   - **Owed onward** gains the size band's width (below).
 - **Owed onward.** **The phone walk-through — owed by the user's decision**
-  (2026-10-30), beside the phone's FOLLOW-UP reading every step since X3.3c
-  has owed: the size edge is the phone's (190-290 m on Coldharbour), and
+  (2026-10-30); the phone's numbers are taken (X4.1's AFTER, above), the
+  look is not: the size edge is the phone's (190-290 m on Coldharbour), and
   whether a 3-6 px body twinkling out reads as a fade there is a look call
   for eyes on that screen. Fold into that walk-through the size band's
   width: it is 1.5× the gate (3 to 4.5 px), so a change of field of view —
