@@ -1006,9 +1006,9 @@ export class WorldCulling {
       // any.** Everything above it is drawn against the EYE rather than
       // standing in the map — the viewmodel — and
       // their world bounding info is not what this reads: the viewmodel hangs
-      // off the camera and Babylon bakes its matrix inside the render, so at
-      // this point in the frame the gun's bounds are still sitting at the
-      // ORIGIN. Asked for its size, it answered "1.8 px at 726 m" — the
+      // off the camera and is handed its matrices after this, just before the
+      // render (`ViewModel.drawView`), so at this point in the frame the gun's
+      // bounds are the last frame's — once, before any draw, the ORIGIN. Asked for its size, it answered "1.8 px at 726 m" — the
       // distance from the origin to the player — and the gate deleted the
       // weapon out of the player's hands. `infiniteDistance` is the same
       // argument for the sky, which is nowhere at all.

@@ -4036,6 +4036,10 @@ export class Game {
     // cull, the water and the grass; put back straight after the render, so
     // nothing of it reaches the next frame. See `stageWarmFrame`.
     const warming = this.stageWarmFrame();
+    // The viewmodel's meshes have no parent (`BABYLON_EXIT.md` X4.3b), so each
+    // one's own enabled flag is written to its joints' switches here, after
+    // every write and before the cull asks `isEnabled()` of it.
+    this.playerView.model.syncSwitches();
     this.prof.begin(P.culling);
     this.followEye(fleetStepped);
     this.prof.end(P.culling);
@@ -4103,6 +4107,9 @@ export class Game {
     // here, after every write, and their drawing handed to our renderer —
     // where Babylon composed their nodes inside the render until X4.2a.
     this.drawHulls();
+    // …and the player's own weapon (X4.3b): its joints evaluated as the render
+    // evaluated its nodes, and each switched-on mesh handed its world.
+    this.playerView.model.drawView();
     this.scene.render();
     this.prof.end(P.render);
     if (warming) this.unstageWarmFrame();

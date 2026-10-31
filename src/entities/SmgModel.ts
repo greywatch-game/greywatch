@@ -9,7 +9,7 @@
  * The optics are `optics.ts`'s, and land correctly on this weapon's lower rail
  * without a number being re-tuned because they are built against `MOUNT`.
  */
-import { Scene, TransformNode, Vector3 } from "@babylonjs/core";
+import { Scene, Vector3 } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { buildOptics, type OpticMount } from "./optics";
 import {
@@ -22,6 +22,8 @@ import {
   WeaponBuild,
   type WeaponParts,
 } from "./weaponKit";
+import type { Joint } from "./rigJoints";
+import type { ViewTree } from "./viewTree";
 
 /**
  * The magazine's rake, which is also the line it drops out along. NEGATIVE for
@@ -95,9 +97,11 @@ export function buildSmg(
   scene: Scene,
   mats: CelMaterialFactory,
   prefix: string,
+  view: ViewTree,
+  parent: Joint | null,
 ): WeaponParts {
-  const root = new TransformNode(`${prefix}_smg`, scene);
-  const b = new WeaponBuild(scene, mats, prefix, root);
+  const root = view.joint(`${prefix}_smg`, parent);
+  const b = new WeaponBuild(scene, mats, prefix, view, root);
 
   // --- upper receiver: an AR flat-top, and the rail over it and the
   // handguard in one unbroken run ---
@@ -379,9 +383,8 @@ export function buildSmg(
   const meshes = b.merge("smg", root);
 
   // The magazine: a slim 9mm stick, gently curving forward, merged into a
-  // node of its own so the reload can pull it out (see `WeaponParts.magazine`).
-  const magazine = new TransformNode(`${prefix}_magazine`, scene);
-  magazine.parent = root;
+  // joint of its own so the reload can pull it out (see `WeaponParts.magazine`).
+  const magazine = b.joint(`${prefix}_magazine`, root);
   const magPivot = b.pivot("magPivot", 0, -0.085, 0.045, MAG_RAKE);
   const magRing = (y: number, w: number, d: number, k = 0.2) => ({ y, w, d, z: 0.35 * y * y, k });
   b.upright("mag", POLYMER, [

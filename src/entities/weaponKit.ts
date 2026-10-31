@@ -13,12 +13,14 @@
  * `createCylinder`, `facet`'s lofts and slabs — and hangs it from a `PartNode`:
  * the build's `frame`, which stands in for the weapon's live root, or a raking
  * `pivot` under it. Nothing is in the scene until `merge` hands one buffer per
- * colour group to `drawnMesh` and parents that mesh to the LIVE node it was
- * given (the root, the magazine, the bolt, a sight). So the pivots are
- * build-time frames that are never meshes and never nodes, and there is nothing
- * to dispose once the build is done. A reticle or a bead is drawn on its own,
- * and `lit` is where it becomes a mesh; an optic's glass, which wears a
- * material of its own, is made one in `optics.ts`.
+ * colour group to `drawnMesh` and hangs that mesh from the LIVE JOINT it was
+ * given (the root, the magazine, the bolt, a sight) in the viewmodel's
+ * `ViewTree` (`BABYLON_EXIT.md` X4.3b: the weapon's posable parts are joints,
+ * not nodes, and no mesh has a parent). So the pivots are build-time frames
+ * that are never meshes and never joints, and there is nothing to dispose
+ * once the build is done. A reticle or a bead is drawn on its own, and `lit`
+ * is where it becomes a mesh; an optic's glass, which wears a material of its
+ * own, is made one in `optics.ts` and hung with `hang`.
  *
  * Invariants:
  * - A builder assembles at the ORIGIN with its root at identity and merges
@@ -46,17 +48,12 @@
  *   group they would take that group's cel material, and an outline shell
  *   around a glowing dot is a black smudge where the aim point should be.
  *
- * The landmarks a builder returns are POSITIONS, not nodes, because two
- * weapons are built at once and only one is enabled: the muzzle flash and the
+ * The landmarks a builder returns are POSITIONS, not joints, because every
+ * weapon is built at once and only one is enabled: the muzzle flash and the
  * ejection port have to hang off something that survives a loadout change, so
- * `ViewModel` owns those nodes and moves them to whichever weapon is fitted.
+ * `ViewModel` owns those joints and moves them to whichever weapon is fitted.
  */
-import {
-  Mesh,
-  Scene,
-  TransformNode,
-  Vector3,
-} from "@babylonjs/core";
+import { Mesh, Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { createBox, createCylinder } from "../geometry/primitives";
 import type { CelMaterialFactory } from "../shaders/CelShader";
@@ -69,7 +66,9 @@ import {
   Part,
   PartNode,
 } from "../world/parts";
+import type { Joint } from "./rigJoints";
 import type { SightId } from "./sights";
+import type { ViewTree } from "./viewTree";
 
 export const BODY = "#2b2b33"; // aluminium upper receiver, barrel, hinge block
 export const POLYMER = "#1d232c"; // lower receiver, grip, magazine, handguard, stock
@@ -127,17 +126,17 @@ export interface FinishPart {
 export const FACETS = 14;
 
 /**
- * One fittable optic: everything it adds to the weapon, under a node that is
+ * One fittable optic: everything it adds to the weapon, under a joint that is
  * switched off while a different sight is fitted.
  */
 export interface SightAssembly {
-  root: TransformNode;
+  root: Joint;
   /**
    * The optic's eye reference — the rear aperture, the holo window, the
    * scope's ocular. ADS puts THIS point on the camera axis, so it is what
    * makes the reticle the point of impact.
    */
-  sightCenter: TransformNode;
+  sightCenter: Joint;
   meshes: Mesh[];
 }
 
@@ -274,7 +273,7 @@ export interface ReloadSpec {
 /** Handles into a built weapon: the pose root plus alignment landmarks. */
 export interface WeaponParts {
   /** The whole weapon, at identity. Enabled only while this one is carried. */
-  root: TransformNode;
+  root: Joint;
   /** Barrel tip, weapon-local — tracer and muzzle-flash origin. */
   muzzle: Vector3;
   /** Ejection port, weapon-local — where the brass leaves. */
@@ -293,13 +292,13 @@ export interface WeaponParts {
    */
   magHand?: Vector3;
   /**
-   * The magazine, under a node of its own so a reload can pull it OUT — the
+   * The magazine, under a joint of its own so a reload can pull it OUT — the
    * one part of a weapon that is not welded to the rest of it. Merged by a
    * second `merge` call, exactly as an optic is, and for the same reason:
    * anything that has to move independently cannot be inside the weapon's own
    * colour groups.
    *
-   * The node sits at identity, so the merged geometry is where it was built
+   * The joint sits at identity, so the merged geometry is where it was built
    * and `position`/`rotation` are pure offsets from seated. `ViewModel` is the
    * only thing that may write them, and it always leaves the magazine seated
    * when no reload is in flight.
@@ -308,7 +307,7 @@ export interface WeaponParts {
    * does today, the belt-fed one included, but a fixed-magazine weapon would
    * simply not set it and reload with the weapon pose alone.
    */
-  magazine?: TransformNode;
+  magazine?: Joint;
   /**
    * The direction a dropped magazine leaves along, weapon-local and unit
    * length. Defaults to straight down, which is right for anything standing
@@ -319,7 +318,7 @@ export interface WeaponParts {
   magDrop?: Vector3;
   /**
    * The loaded ROUND on a weapon that is loaded through the muzzle, under a
-   * node of its own so the load gesture can take it out and put a fresh one
+   * joint of its own so the load gesture can take it out and put a fresh one
    * back — the launcher's warhead, and the second part of a weapon that is
    * not welded to the rest of it.
    *
@@ -333,23 +332,23 @@ export interface WeaponParts {
    * Optional for the reason `magazine` is: a weapon that sets neither simply
    * has nothing that comes out, which is what the mine does.
    */
-  warhead?: TransformNode;
+  warhead?: Joint;
   /**
-   * The BOLT, on a weapon whose action is worked by hand — under a node of its
+   * The BOLT, on a weapon whose action is worked by hand — under a joint of its
    * own so the cycle can lift it, draw it, push it home and turn it down.
    *
-   * The third of these nodes and the only one that never leaves the weapon: a
+   * The third of these joints and the only one that never leaves the weapon: a
    * magazine is thrown away and a warhead flies off, and this travels a
    * centimetre and comes back. So it is the one whose REST state is the only
    * state anything but `ViewModel` may see, and the one that is not exclusive
    * with the other two — a bolt gun has a magazine as well.
    *
    * **Its geometry must be built about the BORE**, because the cycle rotates
-   * this node about its own z to lift the handle, and `ViewModel` zeroes its
-   * transform to put the part home. So the node's ORIGIN must be on the bore:
+   * this joint about its own z to lift the handle, and `ViewModel` zeroes its
+   * transform to put the part home. So the joint's ORIGIN must be on the bore:
    * a weapon whose bore is not on y = 0 builds the parts on the axis and hangs
-   * this node from a fixed parent at the bore's height (`SniperModel`'s
-   * `boltSeat`), since an offset written on the node itself would be wiped.
+   * this joint from a fixed parent at the bore's height (`SniperModel`'s
+   * `boltSeat`), since an offset written on the joint itself would be wiped.
    * That is not a constraint the animation imposes on the model, it is
    * how a bolt actually is: the bolt is in line with the barrel, and a model
    * that puts the raceway somewhere else is wrong before it is animated.
@@ -359,18 +358,18 @@ export interface WeaponParts {
    * gesture — the pose, the aim break and the two impulses are the weapon's
    * and not the part's — it simply has nothing visible sliding in it.
    */
-  bolt?: TransformNode;
+  bolt?: Joint;
   /**
-   * The SLIDE, on a weapon whose top half recoils as one piece — under a node
+   * The SLIDE, on a weapon whose top half recoils as one piece — under a joint
    * of its own so a reload that ran it dry can show it locked back and drop
-   * it home. The fourth of these nodes, and the bolt's rule holds for it: it
+   * it home. The fourth of these joints, and the bolt's rule holds for it: it
    * never leaves the weapon, its rest is the only state anything but
    * `ViewModel` may see, and it sits at identity so `position.z` is a pure
    * offset from battery. Whatever is machined INTO the slide — a pistol's
    * notch and blade — hangs off it and travels with it, which is what a slide
    * is.
    */
-  slide?: TransformNode;
+  slide?: Joint;
   /**
    * How this weapon is reloaded. Absent is a rifle's: held in the `rifle`
    * pose, with nothing done to the action — which is right for nothing in the
@@ -389,11 +388,17 @@ export interface WeaponParts {
   meshes: Mesh[];
 }
 
-/** What a weapon model builder is: geometry at the origin, landmarks out. */
+/**
+ * What a weapon model builder is: geometry at the origin, landmarks out. Its
+ * root is a joint in `view`, hung from `parent` (the viewmodel's per-weapon
+ * joint, or null for a weapon built alone, as `kit:hash` builds one).
+ */
 export type WeaponBuilder = (
   scene: Scene,
   mats: CelMaterialFactory,
   prefix: string,
+  view: ViewTree,
+  parent: Joint | null,
 ) => WeaponParts;
 
 /**
@@ -415,7 +420,7 @@ export class WeaponBuild {
    * reaches the scene but the meshes `merge` and `lit` make.
    *
    * A builder passes it where it names the root as a PART's parent, and
-   * passes `root` where it hangs a LIVE node (a magazine, a sight) from the
+   * passes `root` where it hangs a LIVE joint (a magazine, a sight) from the
    * weapon.
    */
   readonly frame: PartNode;
@@ -431,9 +436,26 @@ export class WeaponBuild {
     readonly scene: Scene,
     private readonly mats: CelMaterialFactory,
     private readonly prefix: string,
-    readonly root: TransformNode,
+    /** The viewmodel's tree: every mesh made here is hung in it, and every live part is a joint of it. */
+    readonly view: ViewTree,
+    readonly root: Joint,
   ) {
     this.frame = new PartNode(root.name);
+  }
+
+  /** A live part of the weapon — a joint where a `TransformNode` was made — hung from `parent`. */
+  joint(name: string, parent: Joint): Joint {
+    return this.view.joint(name, parent);
+  }
+
+  /** A mesh made outside the helpers (an optic's glass), hung from `parent`. */
+  hang(mesh: Mesh, parent: Joint): void {
+    this.view.hang(mesh, parent);
+  }
+
+  /** The meshes hung under `j`, as `getChildMeshes` walked them (`ViewTree.meshesOn`). */
+  meshesOn(j: Joint, deep = false): Mesh[] {
+    return this.view.meshesOn(j, deep);
   }
 
   private collect(color: string, p: Part): Part {
@@ -704,14 +726,14 @@ export class WeaponBuild {
    * underneath it, and what lets the magazine leave the weapon at all.
    *
    * Everything is still at identity under `frame` here, so the bake leaves the
-   * geometry exactly where it was built. `parent` is the LIVE node a group
-   * hangs from: the root the frame stands in for, or a node at identity
+   * geometry exactly where it was built. `parent` is the LIVE joint a group
+   * hangs from: the root the frame stands in for, or a joint at identity
    * under it (the magazine, the round, the bolt, a sight).
    *
    * This is where a weapon's surface first reaches the scene: each group's
    * mesh is made here by `drawnMesh`, and nowhere else but `lit`.
    */
-  merge(suffix: string, parent: TransformNode): Mesh[] {
+  merge(suffix: string, parent: Joint): Mesh[] {
     const groups = this.target;
     this.target = new Map();
     const out: Mesh[] = [];
@@ -739,7 +761,7 @@ export class WeaponBuild {
         merged.material = parts[0].material;
       }
       merged.name = meshName;
-      merged.parent = parent;
+      this.view.hang(merged, parent);
       merged.isPickable = false;
       if (finished) this.finish.push({ mesh: merged, group: name as FinishGroup });
       out.push(merged);
@@ -772,9 +794,9 @@ export class WeaponBuild {
    * it was when it was a `MeshBuilder` sphere; a merged reticle arrives as the
    * mesh `drawnMesh` already made of its bars.
    */
-  lit(part: Mesh | Part, parent: TransformNode, colour: string = RETICLE): Mesh {
+  lit(part: Mesh | Part, parent: Joint, colour: string = RETICLE): Mesh {
     const m = part instanceof Part ? drawnMesh(part, this.scene) : part;
-    m.parent = parent;
+    this.view.hang(m, parent);
     m.material = this.mats.getEmissive(colour);
     m.metadata = { noInk: true };
     m.isPickable = false;

@@ -230,7 +230,7 @@ grenade. It is now a timeline (`CONFIG.viewmodel.throw`) owned as a clock by
 `Player`, counting up from the button:
 
 - The **off hand comes into frame holding the frag** — the throwing arm is
-  `ViewModel`'s, one rig shared by every weapon, parented to the camera (the weapon
+  `ViewModel`'s, one rig shared by every weapon, hung from the camera (the weapon
   is tipping out of the way at the time) and disabled whenever no throw is in flight.
   Seeing what is about to be thrown is the whole job of the wind-up.
 - The **support hand goes with it** — it is the same hand, so leaving it on the

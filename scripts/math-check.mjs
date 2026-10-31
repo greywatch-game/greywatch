@@ -256,6 +256,10 @@ caseOf(["Matrix.PerspectiveFovLHToRef", "NDC_TO_HALF_Z_RANGE"], () => {
   const fixed = rand() < 0.8, half = rand() < 0.8, tilt = rand() < 0.8 ? 0 : angle(), rev = rand() < 0.2;
   return [[fov, aspect, n, f, fixed, half, tilt, rev], (L) => { const m = L.Matrix.PerspectiveFovLHToRef(fov, aspect, n, f, new L.Matrix(), fixed, half, tilt, rev); return [m, m.isIdentity()]; }];
 });
+// The pivot path's two (`rigJoints.ts`): a scale of one is flagged identity,
+// which the next product's shortcut reads, so each is multiplied after.
+caseOf(["Matrix.ScalingToRef"], () => { const s = rand() < 0.3 ? [1, 1, 1] : v3(), r = matRecipe(); return [[s, r], (L) => { const m = L.Matrix.ScalingToRef(...s, new L.Matrix()); return [m, m.multiply(build(L, r)), build(L, r).multiply(m), m.isIdentity()]; }]; });
+caseOf(["Matrix#addTranslationFromFloats"], () => { const r = matRecipe(), t = rand() < 0.2 ? [0, 0, 0] : v3(), r2 = matRecipe(); return [[r, t, r2], (L) => { const m = build(L, r).addTranslationFromFloats(...t); return [m, m.multiply(build(L, r2)), m.isIdentity()]; }]; });
 caseOf(["Matrix.FromXYZAxesToRef"], () => { const a = v3(), b = v3(), c = v3(); return [[a, b, c], (L) => L.Matrix.FromXYZAxesToRef(V(L, a), V(L, b), V(L, c), new L.Matrix())]; });
 
 // Color3 / Color4

@@ -1360,14 +1360,18 @@ is one machine's:
   anything.
 - **Sight alignment is checkable without a picture**, and should be after anything
   touching the viewmodel or camera — for **every** optic, since each carries its
-  own eye reference. Take
-  `scene.getTransformNodeByName("view_<weapon>_<sight>_sightCenter")
-  .getAbsolutePosition()` (all twenty-five of
-  `rifle`/`carbine`/`smg`/`dmr`/`lmg` × `reflex`/`iron`/`holo`/`prism`/`scope`, since
-  a weapon change moves the optic too, plus `view_pistol_iron_sightCenter`) and put it
-  in the CAMERA's frame — `computeWorldMatrix(true)` on both, then transform the
-  point by `cameraSys.camera.getWorldMatrix().clone().invert()` (the camera is the
-  CameraSystem's, not a field on `Game`). At `adsBlend === 1` the answer is
+  own eye reference. Take the worn sight's `sightCenter` — since
+  `BABYLON_EXIT.md` X4.3b a JOINT of the viewmodel's tree, not a node in the
+  scene: `view.rigs[<weapon>].parts.sights`, its `assemblies[<sight>]` on a rail
+  or its `assembly` on a fixed sight — for every weapon in every sight it can
+  wear (a weapon change moves the optic too), read its world as the game reads
+  it, `view.tree.read(joint)` (the render cache: exact on a weapon settled three
+  rendered frames past the fit), take the translation row and put it in the
+  CAMERA's frame by `cameraSys.camera.getWorldMatrix().clone().invert()` (the
+  camera is the CameraSystem's, not a field on `Game`). X4.3b's oracle took it
+  for all forty-five combinations, the six rail weapons in all seven sights and
+  the pistol, the launcher and the mine in their own, by a fresh composition
+  of the joints in `src/math` instead, which needs no frame at all. At `adsBlend === 1` the answer is
   `(0, 0, eyeRelief × zoomComp)` for that sight; measured across all
   twenty-five, the worst cross-axis component is **6 µm**, so anything above a
   few thousandths of a millimetre is real. Prefer this to projecting the
@@ -1403,7 +1407,7 @@ is one machine's:
     Measured wrong this way, twenty-three of twenty-five optics come back 1–22 mm
     low or high, in a pattern that correlates neatly with the sight and looks
     exactly like a real geometry bug; measured right, all twenty-five are zero.
-  - **The kick's NEAR-PLANE clearance is a second reading off the same node,
+  - **The kick's NEAR-PLANE clearance is a second reading off the same joint,
     and it needs the two magnified optics specifically.** The per-shot kick
     travels the weapon toward the eye, so on the prism and the scope it can
     drive the sight through `camera.minZ`. Freeze the spring
@@ -1411,7 +1415,7 @@ is one machine's:
     stacked-burst worst case, plus `kickDrift` pinned so the roll is in it too),
     force ADS, and read the same `sightCenter` z: it must exceed `minZ` for
     every weapon on both optics. **Do not derive this instead of measuring it.**
-    The bound in `ViewModel` is computed on the weapon NODE's travel while what
+    The bound in `ViewModel` is computed on the weapon JOINT's travel while what
     has to clear the plane is the SIGHT, which the kick's pitch and roll swing
     by another ~4 mm — derived, the DMR with the prism reads 6.2 cm and
     measures 3.8.
@@ -1421,8 +1425,11 @@ is one machine's:
   `ironSightFloor` keeps geometry out of the aperture; what proves it is a grid
   of rays down the sight's own cone, and that needs no round and no map at all —
   every weapon and every optic is built in `Game`'s constructor, so the rigs are
-  in the scene while the MENU is up. Take the weapon's root
-  (`view_<weapon>_<weapon>`) and its `sightCenter`, put the eye on the sight
+  in the scene while the MENU is up. Take the weapon's root joint
+  (`view.rigs[<weapon>].parts.root`, worlds through `view.tree.world`) and its
+  `sightCenter` — and note the meshes have no parent since X4.3b: each holds the
+  world `drawView` last handed it, so a rig that has not been DRAWN (not carried,
+  or the viewmodel hidden) holds none; carry it, show it and wait a frame — put the eye on the sight
   axis at `eyeRelief / viewmodel.scale` behind the centre IN THE WEAPON'S OWN
   FRAME, and fire a disc of rays at the cone's rim plane one unit ahead —
   `scene.pickWithRay(ray, m => own.includes(m))`, whose custom predicate is what
@@ -2049,7 +2056,8 @@ is one machine's:
   Greyfen one rect covers the map and only 11% of it is wet, so scan for cells where
   `surfaceAt(x, z) < surfaceY` and aim along the longest wet run from one. Three
   things will otherwise fill the frame with something that is not water and does not
-  look like a mistake — the viewmodel (`player.view.weapon.setEnabled(false)`), the
+  look like a mistake — the viewmodel (`player.view.weapon.enabled = false`, a
+  joint's switch, seen from the next frame), the
   capture skirt, which you are always inside of near a flag (`g.zones.dispose()`),
   and the **fog**: Greyfen's `fogEnd` is 78 m, so a look down a long reach is a
   uniform wall of fog colour that reads exactly like being stuck inside a mesh. Put
@@ -2068,7 +2076,7 @@ is one machine's:
 - The kit turntable needs no clicking: `g.openLoadout()` reaches it from `menu` or
   `deploy` (assign `g.state = "deploy"` first from a live round). The pose is
   readable (`player.view.inspectYaw`/`inspectPitch`), and
-  `view.weapon.rotationQuaternion` must be **null** again after the screen closes
+  `view.weapon.quaternion` (a joint's, since X4.3b) must be **null** again after the screen closes
   or the carried pose never comes back — re-run the sight-alignment check after a
   session on it, since a leaked quaternion or scale shows up there and nowhere
   else.

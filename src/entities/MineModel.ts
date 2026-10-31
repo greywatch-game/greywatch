@@ -24,7 +24,7 @@
  * closer to the eye and does nothing else, which is exactly what looking hard
  * at a thing in your hands does.
  */
-import { Mesh, Scene, TransformNode, Vector3 } from "@babylonjs/core";
+import { Mesh, Scene, Vector3 } from "@babylonjs/core";
 import { createCylinder, createSphere } from "../geometry/primitives";
 import { type CelMaterialFactory } from "../shaders/CelShader";
 import { drawnMesh, Part } from "../world/parts";
@@ -37,6 +37,8 @@ import {
   type SightAssembly,
   type WeaponParts,
 } from "./weaponKit";
+import type { Joint } from "./rigJoints";
+import type { ViewTree } from "./viewTree";
 
 /** The plate's outside diameter, in weapon units (~1.4 per metre). */
 const PLATE_DIA = 0.42;
@@ -62,9 +64,11 @@ export function buildMine(
   scene: Scene,
   mats: CelMaterialFactory,
   prefix: string,
+  view: ViewTree,
+  parent: Joint | null,
 ): WeaponParts {
-  const root = new TransformNode(`${prefix}_mine`, scene);
-  const b = new WeaponBuild(scene, mats, prefix, root);
+  const root = view.joint(`${prefix}_mine`, parent);
+  const b = new WeaponBuild(scene, mats, prefix, view, root);
 
   // The plate itself, lying flat: a squat cylinder standing on its own axis,
   // so it is built with `pin` on the Y axis rather than with `tube`.
@@ -111,7 +115,7 @@ export function buildMine(
     support: { hand: SUPPORT_HAND, elbow: SUPPORT_ELBOW },
     sights: { kind: "fixed", sight: "iron", assembly: sight },
     finish,
-    meshes: root.getChildMeshes(false) as Mesh[],
+    meshes: b.meshesOn(root, true),
   };
 }
 
@@ -127,11 +131,10 @@ export function buildMine(
  */
 function buildMineTell(
   b: WeaponBuild,
-  parent: TransformNode,
+  parent: Joint,
   prefix: string,
 ): SightAssembly {
-  const node = new TransformNode(`${prefix}_mine_tell`, b.scene);
-  node.parent = parent;
+  const node = b.joint(`${prefix}_mine_tell`, parent);
 
   const lamp = b.lit(
     new Part(`${prefix}_mineLamp`, createSphere({ diameter: 0.03, segments: 6 })),
@@ -141,10 +144,9 @@ function buildMineTell(
   // follows.
   lamp.position.set(0, 0.028, 0);
 
-  const sightCenter = new TransformNode(`${prefix}_mine_sightCenter`, b.scene);
-  sightCenter.parent = node;
-  sightCenter.position = new Vector3(0, 0.14, 0.02);
-  return { root: node, sightCenter, meshes: node.getChildMeshes(true) as Mesh[] };
+  const sightCenter = b.joint(`${prefix}_mine_sightCenter`, node);
+  sightCenter.position.set(0, 0.14, 0.02);
+  return { root: node, sightCenter, meshes: b.meshesOn(node) };
 }
 
 /** One laid mine's meshes. The lamp is parented to the body and moves with it. */

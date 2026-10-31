@@ -21,23 +21,27 @@
  *   is thrown into the WORLD and stays in the ordinary group, occluded like
  *   anything else. Both are built as `Part`s on `src/geometry/` buffers and
  *   made meshes by `drawnMesh`.
+ * - **The flash is part of the viewmodel's TREE** (`BABYLON_EXIT.md` X4.3b):
+ *   its root is a joint hung from the muzzle joint (`ViewModel.tree`), its
+ *   petals meshes hung from that with no parent of their own, drawn as the
+ *   weapon is (`ViewModel.drawView`). Its switch and its per-shot roll and
+ *   scale are written on the joint, the roll and scale reported to the
+ *   tree's cache (`touch`). The brass is thrown off the ejection port as the
+ *   render cache answers it (`ViewModel.ejectPortWorld`), never a fresh
+ *   compose.
  * Never: write anything on `Player` — it reads nothing back from the picture
  * but the model's own answers (`carriedSight`, `reloadAction`, the reload's
  * head pose), which are the drawing's to give.
  */
-import {
-  Mesh,
-  type Node,
-  Scene,
-  TransformNode,
-  Vector3,
-} from "@babylonjs/core";
+import { Matrix, Mesh, Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { createBox, createPlane, DOUBLESIDE } from "../geometry/primitives";
 import { drawnMesh, Part } from "../world/parts";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { PlayerPicture } from "./Player";
+import type { Joint } from "./rigJoints";
 import { ViewModel, VIEWMODEL_GROUP } from "./ViewModel";
+import type { ViewCamera } from "./viewTree";
 
 /** One live brass case: world-space ballistic, despawned on `t` expiry. */
 interface Casing {
@@ -53,20 +57,26 @@ const _casingDir = new Vector3();
 export class PlayerView implements PlayerPicture {
   /** The rifle and hands on screen, hanging off the camera. */
   readonly model: ViewModel;
-  /** Muzzle flash star: shown for `gunfeel.flashTime` after each shot. */
-  private readonly flashRoot: TransformNode;
+  /**
+   * Muzzle flash star: shown for `gunfeel.flashTime` after each shot. A joint
+   * of the viewmodel's tree (`ViewModel.tree`), its petals meshes hung from
+   * it and drawn off it like every other part of the weapon.
+   */
+  private readonly flashRoot: Joint;
   private flashT = 0;
   /** Ejected brass pool; a case is live while its `t > 0`. */
   private readonly casings: Casing[] = [];
   /** Scratch for casing integration — no per-frame allocation. */
   private readonly casingStep = new Vector3();
+  /** The ejection port's world, read once a case (`ViewModel.ejectPortWorld`). */
+  private readonly portWorld = new Matrix();
   /**
    * Whether the weapon is put away — `Player`'s `bodyHidden`, as `stowed`
    * last said it. A case thrown while it is set is thrown unseen.
    */
   private hidden = true;
 
-  constructor(scene: Scene, mats: CelMaterialFactory, camera: Node) {
+  constructor(scene: Scene, mats: CelMaterialFactory, camera: ViewCamera) {
     // The weapon hangs off the camera: in first person the rifle you see is a
     // viewmodel, posed in camera space.
     this.model = new ViewModel(scene, mats, camera);
@@ -74,11 +84,11 @@ export class PlayerView implements PlayerPicture {
     // --- gunfeel dressing: muzzle flash star + brass pool (player only) ---
     // The flash is three crossed emissive petals at the muzzle; per shot it
     // gets a random roll and scale so no two shots strobe identically.
-    this.flashRoot = new TransformNode("player_muzzleFlash", scene);
-    // The viewmodel's own muzzle node, not the carried model's: the model can
+    // The viewmodel's own muzzle joint, not the carried model's: the model can
     // be switched off under a loadout change and the flash must not go with it.
-    this.flashRoot.parent = this.model.muzzle;
-    this.flashRoot.setEnabled(false);
+    const tree = this.model.tree;
+    this.flashRoot = tree.joint("player_muzzleFlash", this.model.muzzle);
+    this.flashRoot.enabled = false;
     const flashMat = mats.getEmissive("#ffd9a0");
     for (let i = 0; i < 3; i++) {
       const petal = drawnMesh(
@@ -88,7 +98,7 @@ export class PlayerView implements PlayerPicture {
         ),
         scene,
       );
-      petal.parent = this.flashRoot;
+      tree.hang(petal, this.flashRoot);
       petal.rotation.y = Math.PI / 2; // length runs along the barrel
       petal.rotation.z = (i * Math.PI) / 3;
       petal.position.z = 0.14;
@@ -96,11 +106,13 @@ export class PlayerView implements PlayerPicture {
       petal.metadata = { noInk: true };
       petal.isPickable = false;
       // The flash lives on the viewmodel, so it has to be drawn in the same
-      // depth-cleared pass — left in the world group it would be hidden
-      // behind the very barrel it sits on.
+      // group — left in the world's it would be ordered with the world rather
+      // than with the barrel it sits on.
       petal.renderingGroupId = VIEWMODEL_GROUP;
       petal.alwaysSelectAsActiveMesh = true;
     }
+    // The petals' own transforms, taken into their joints now they are set.
+    tree.seal();
 
     const casingMat = mats.get("#b99b4e");
     for (let i = 0; i < CONFIG.gunfeel.casingPool; i++) {
@@ -124,7 +136,8 @@ export class PlayerView implements PlayerPicture {
    */
   fired(): void {
     this.flashT = CONFIG.gunfeel.flashTime;
-    this.flashRoot.setEnabled(true);
+    this.flashRoot.enabled = true;
+    this.model.tree.cache.touch(this.flashRoot);
     this.flashRoot.rotation.z = Math.random() * Math.PI;
     this.flashRoot.scaling.setAll(0.85 + Math.random() * 0.4);
     this.ejectCasing();
@@ -140,15 +153,13 @@ export class PlayerView implements PlayerPicture {
     const g = CONFIG.gunfeel;
     // The port is on the viewmodel, so this is a camera-space frame resolved
     // to world: the brass leaves the gun you can see and then falls in the
-    // world, which is exactly where it should end up. The node is the
-    // viewmodel's rather than the model's, so it follows a weapon swap.
-    const port = this.model.ejectPort;
-    c.mesh.position.copyFrom(port.getAbsolutePosition());
-    Vector3.TransformNormalToRef(
-      _casingDir.set(1, 0, -0.2),
-      port.getWorldMatrix(),
-      c.vel,
-    );
+    // world, which is exactly where it should end up. The joint is the
+    // viewmodel's rather than the model's, so it follows a weapon swap — and
+    // it is read as Babylon read the node, out of the render cache.
+    const port = this.model.ejectPortWorld(this.portWorld);
+    const m = port.m;
+    c.mesh.position.set(m[12], m[13], m[14]);
+    Vector3.TransformNormalToRef(_casingDir.set(1, 0, -0.2), port, c.vel);
     c.vel.normalize().scaleInPlace(g.casingEject * (0.8 + Math.random() * 0.4));
     c.vel.y += g.casingUp * (0.7 + Math.random() * 0.6);
     c.spin = (Math.random() * 2 - 1) * 25;
@@ -165,7 +176,7 @@ export class PlayerView implements PlayerPicture {
   stepped(dt: number, feetY: number): void {
     if (this.flashT > 0) {
       this.flashT -= dt;
-      if (this.flashT <= 0) this.flashRoot.setEnabled(false);
+      if (this.flashT <= 0) this.flashRoot.enabled = false;
     }
     const g = CONFIG.gunfeel;
     const restY = feetY + 0.02;
@@ -196,7 +207,7 @@ export class PlayerView implements PlayerPicture {
   /** A fresh body: no strobe and no brass left over from the last life. */
   cleared(): void {
     this.flashT = 0;
-    this.flashRoot.setEnabled(false);
+    this.flashRoot.enabled = false;
     for (const c of this.casings) {
       c.t = 0;
       c.mesh.isVisible = false;
@@ -212,17 +223,17 @@ export class PlayerView implements PlayerPicture {
    * so `model.setVisible` does not reach it, and the strobe that would switch
    * it off is `stepped` — which stops being called the moment the body is put
    * away. A death taken inside the 50 ms of a shot's flash would otherwise
-   * freeze the star mid-strobe and, because it draws in the viewmodel's
-   * depth-cleared group, hang it over the middle of the screen for the whole
-   * death cam. It never *starts* while the weapon is stowed, which is what
-   * made this look self-managing; being stowed part-way through one is the
-   * case that was missing.
+   * freeze the star mid-strobe and, because it draws in the viewmodel's group,
+   * hang it over the middle of the screen for the whole death cam. It never
+   * *starts* while the weapon is stowed, which is what made this look
+   * self-managing; being stowed part-way through one is the case that was
+   * missing.
    */
   stowed(hidden: boolean): void {
     this.hidden = hidden;
     if (hidden) {
       this.flashT = 0;
-      this.flashRoot.setEnabled(false);
+      this.flashRoot.enabled = false;
     }
     for (const c of this.casings) {
       c.mesh.isVisible = c.t > 0 && !hidden;

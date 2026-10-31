@@ -8,7 +8,7 @@
  * before it is moved — `weaponKit.ts` owns that contract and the primitives.
  * The optics are `optics.ts`'s, built against `MOUNT` rather than re-tuned.
  */
-import { Scene, TransformNode, Vector3 } from "@babylonjs/core";
+import { Scene, Vector3 } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { buildOptics, type OpticMount } from "./optics";
 import {
@@ -21,6 +21,8 @@ import {
   spanRing,
   type WeaponParts,
 } from "./weaponKit";
+import type { Joint } from "./rigJoints";
+import type { ViewTree } from "./viewTree";
 
 /**
  * Top face of the rail, and on this weapon the rail is on top of the CARRY
@@ -123,9 +125,11 @@ export function buildCarbine(
   scene: Scene,
   mats: CelMaterialFactory,
   prefix: string,
+  view: ViewTree,
+  parent: Joint | null,
 ): WeaponParts {
-  const root = new TransformNode(`${prefix}_carbine`, scene);
-  const b = new WeaponBuild(scene, mats, prefix, root);
+  const root = view.joint(`${prefix}_carbine`, parent);
+  const b = new WeaponBuild(scene, mats, prefix, view, root);
 
   // --- the carry handle, with the rail on its top face ---
   // One profile: rear post up off the action, the bar forward, the front post
@@ -386,11 +390,10 @@ export function buildCarbine(
   const meshes = b.merge("carbine", root);
 
   // The magazine: the F1's straight box, fluted down each flank, merged into a
-  // node of its own so the reload can pull it out of the well (see
+  // joint of its own so the reload can pull it out of the well (see
   // `WeaponParts.magazine`). Built on its own raking pivot, so `magDrop` below
   // has to read `MAG_RAKE`.
-  const magazine = new TransformNode(`${prefix}_magazine`, scene);
-  magazine.parent = root;
+  const magazine = b.joint(`${prefix}_magazine`, root);
   const magPivot = b.pivot("magPivot", 0, -0.078, MAG_Z, MAG_RAKE);
   b.upright("mag", POLYMER, [
     { y: -0.138, w: 0.046, d: 0.07, k: 0.18 },

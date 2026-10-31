@@ -8,7 +8,7 @@
  * along with the primitives this is written in. The optics are `optics.ts`'s,
  * shared with the SMG rather than duplicated here.
  */
-import { Scene, TransformNode, Vector3 } from "@babylonjs/core";
+import { Scene, Vector3 } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { buildOptics, ironSightFloor, type OpticMount } from "./optics";
 import {
@@ -21,6 +21,8 @@ import {
   WeaponBuild,
   type WeaponParts,
 } from "./weaponKit";
+import type { Joint } from "./rigJoints";
+import type { ViewTree } from "./viewTree";
 
 /**
  * Height of the bore above the origin: the middle of the upper receiver.
@@ -133,9 +135,11 @@ export function buildRifle(
   scene: Scene,
   mats: CelMaterialFactory,
   prefix: string,
+  view: ViewTree,
+  parent: Joint | null,
 ): WeaponParts {
-  const root = new TransformNode(`${prefix}_rifle`, scene);
-  const b = new WeaponBuild(scene, mats, prefix, root);
+  const root = view.joint(`${prefix}_rifle`, parent);
+  const b = new WeaponBuild(scene, mats, prefix, view, root);
 
   // --- upper receiver: the SCAR's spine. One long, deep aluminium extrusion
   // from the stock hinge to the gas block, with the lower hung under its rear
@@ -574,10 +578,9 @@ export function buildRifle(
 
   // The SCAR-H's 20-round 7.62 magazine: STRAIGHT, deep and plain, standing
   // at a slight forward rake. Built AFTER the weapon's own merge and merged
-  // into a node of its own, so the reload can drop it out of the well — see
+  // into a joint of its own, so the reload can drop it out of the well — see
   // `WeaponParts.magazine`.
-  const magazine = new TransformNode(`${prefix}_magazine`, scene);
-  magazine.parent = root;
+  const magazine = b.joint(`${prefix}_magazine`, root);
   const magPivot = b.pivot("magPivot", 0, -0.12, 0.066, MAG_RAKE);
   const magRing = (y: number, w: number, d: number, k = 0.18) => ({ y, w, d, k });
   b.upright("magBody", POLYMER, [

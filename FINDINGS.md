@@ -2365,7 +2365,7 @@ body on foot) for the same ordering while there.
 
 ---
 
-## 55. Offline, where the player's grenade and rocket LEAVE FROM is read off the viewmodel's nodes
+## 55. Offline, where the player's grenade and rocket LEAVE FROM is read off the viewmodel's joints
 
 **Status:** BOUNDARY SETTLED at `BABYLON_EXIT.md` X2.5a C4a; the analytic
 start point is still open. Offline the round is the simulation core's now, and
@@ -2375,7 +2375,12 @@ mine's `standableAt` point) are command INPUTS (`GrenadeCommand.origin`,
 offline, and the same field a match already gates as a claim. What is left
 below is whether to state them analytically instead, which is now a change to
 what the page submits and nothing else. Found during X2.2, which took every
-other node read out of the simulation.
+other node read out of the simulation. **Since X4.3b the viewmodel is JOINTS**
+(`ViewModel.tree`), and the two points are read out of `RenderCache`
+(`rigJoints.ts`), Babylon's render-id cache reproduced, so what the page
+submits did not move (X4.3b's oracle: the readers' answers and both origins
+bit-identical to the node build over a recorded round) — the owner's decision
+that they stay Babylon's answers until this finding settles them.
 
 **A third drawing deciding an outcome was found beside it, and C4a fixed it
 (D8):** offline, bots HEARD the player's rifle at the viewmodel's MUZZLE

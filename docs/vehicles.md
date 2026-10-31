@@ -2105,7 +2105,7 @@ really got out:
 
 | on mount | why |
 | --- | --- |
-| `setBodyHidden(true)` | there is no rifle in a driver's hands, and the viewmodel is parented to a camera that is now twelve metres behind a tank |
+| `setBodyHidden(true)` | there is no rifle in a driver's hands, and the viewmodel hangs off a camera that is now twelve metres behind a tank |
 | `player.invulnerable = true` | the HULL is what is being shot at. This stops rounds LANDING |
 | `battle.removeHuman(player)` | …and this stops bots AIMING. Both are needed: a bot that could still acquire an unkillable target would stand there firing at it for the rest of the round |
 | `vehicleCam.take(tank)` | the view opens down the hull's own heading |

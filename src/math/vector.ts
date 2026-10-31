@@ -906,6 +906,18 @@ export class Matrix {
     return this;
   }
 
+  /**
+   * Adds to the translation row in place — the last step of a PIVOTED local
+   * (`TransformNode.computeWorldMatrix`'s pivot path, `rigJoints.ts`).
+   */
+  addTranslationFromFloats(x: number, y: number, z: number): this {
+    this._m[12] += x;
+    this._m[13] += y;
+    this._m[14] += z;
+    this.markAsUpdated();
+    return this;
+  }
+
   /** Babylon's, without the scaling-node argument nothing here passes. */
   decompose(scale?: Vector3, rotation?: Quaternion, translation?: Vector3): boolean {
     if (this._isIdentity) {
@@ -1005,6 +1017,13 @@ export class Matrix {
       result._m[index] = array[index + offset];
     }
     result.markAsUpdated();
+    return result;
+  }
+
+  /** A scaling matrix — flagged identity at a scale of one, as Babylon's is (the pivot path reads it). */
+  static ScalingToRef<T extends Matrix>(x: number, y: number, z: number, result: T): T {
+    Matrix.FromValuesToRef(x, 0.0, 0.0, 0.0, 0.0, y, 0.0, 0.0, 0.0, 0.0, z, 0.0, 0.0, 0.0, 0.0, 1.0, result);
+    result._updateIdentityStatus(x === 1 && y === 1 && z === 1);
     return result;
   }
 

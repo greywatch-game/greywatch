@@ -343,6 +343,11 @@ like is a field stating only what is DIFFERENT**, as `recoilMult` and
 every number 1** — a shooter with no weapon of its own needs no default
 anywhere.
 
+**The weapon is JOINTS hung from the camera, read as Babylon read its nodes**
+(`ViewModel.tree`, `BABYLON_EXIT.md` X4.3b): a grenade's release point and a
+rocket's start are command inputs, so a reader asks the tree's render cache
+(`ViewTree.read`/`world`) and never composes a viewmodel joint itself.
+
 **Everything about an aimed weapon is arranged so that the reticle cannot lie.**
 The aimed pose is DERIVED and never authored — `applyFit` cancels the fitted
 sight's own `sightCenter` onto the axis `CombatSystem` sends bullets down — and

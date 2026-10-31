@@ -770,7 +770,7 @@ Translation is depth-dependent and is therefore simply absent — strafing past 
 wall does not smear it.
 
 **THE WEAPON IS THE ONE PLACE THAT BREAKS DOWN, AND IT IS NOT A CORNER CASE —
-IT IS A THIRD OF THE FRAME.** The viewmodel is parented to the camera, so a
+IT IS A THIRD OF THE FRAME.** The viewmodel hangs off the camera, so a
 rotation moves every world pixel and moves the gun by exactly nothing; the
 shift the pass computes is right for everything except the object filling the
 bottom of the screen, and a smeared gun reads as a dirty lens rather than as
@@ -4798,8 +4798,11 @@ because it seemed wise.**
   — so the rifle's world bounding sphere is still sitting at the ORIGIN when
   this reads it. Asked how big it was, the gun answered **1.8 px at 726 m**,
   which is the distance from the world origin to the player, and the gate
-  deleted the weapon out of his hands. Group 0 is where the world is; everything
-  above it is drawn against the eye and has no business being distance-gated.
+  deleted the weapon out of his hands. (Since `BABYLON_EXIT.md` X4.3b the
+  viewmodel's matrices are handed over by `ViewModel.drawView`, also AFTER the
+  cull, so what `offer` reads is the last frame's bounds — still not a size
+  worth gating.) Group 0 is where the world is; everything above it is drawn
+  against the eye and has no business being distance-gated.
 
 **A WRONG DROP LATCHES, which is why both of the failures above were total
 rather than intermittent.** Babylon computes a mesh's world matrix inside

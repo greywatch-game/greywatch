@@ -49,7 +49,11 @@ keys are exempt**: Shift and Ctrl are a live ask, so a Ctrl held through a sprin
 still crouches you when the sprint ends.
 
 `src/entities/ViewModel.ts` owns the weapon: the carried gun plus two gloved arms,
-parented to the camera and posed in camera space. **The arms are the player's own
+hung from the camera and posed in camera space — as JOINTS, not nodes, since
+`BABYLON_EXIT.md` X4.3b (`ViewModel.tree`, `src/entities/viewTree.ts`): every
+`TransformNode` the weapon used to make is a joint made at the same moment, no
+mesh has a parent, and `drawView` hands each switched-on mesh its joint's world
+once a frame, immediately before the render. **The arms are the player's own
 and are cut like a squadmate's**: `facet.loft` sections in `SoldierModel`'s
 `OWN_KIT` — the rig's `suit` on the sleeve, and the kit's `webbing` on the glove
 rather than the rig's `suit`, because at the lens a glove the colour of its sleeve
@@ -57,8 +61,8 @@ on a near-black weapon has no wrist in it (`buildArm` carries the argument). Sti
 two meshes an arm, one per colour.
 
 - **The aimed pose is derived, not authored.** `adsPos` cancels the FITTED sight's
-  own `sightCenter` offset (times `viewmodel.scale` — the node's position is in the
-  camera's frame while the sight's offset is in the weapon's) so that sight's
+  own `sightCenter` offset (times `viewmodel.scale` — the weapon joint's position is
+  in the camera's frame while the sight's offset is in the weapon's) so that sight's
   reticle lands on the camera axis at its own `CONFIG.sights[id].eyeRelief`,
   projecting to the exact centre of the screen, where `CombatSystem` sends the
   bullets. Hand-tuning it — or forgetting the scale factor, which puts the sight a
@@ -66,9 +70,22 @@ two meshes an arm, one per colour.
   high. `applyFit` is the only thing allowed to write it and owes a re-derivation on
   every loadout change, **including a change of weapon**, because the same optic
   sits at a different height on each one.
-- **The viewmodel renders in `VIEWMODEL_GROUP` (1).** Babylon clears depth between
-  rendering groups, so the weapon draws over the world instead of being sliced open
-  by the wall the player stands against. Anything attached joins that group —
+- **The weapon's joints are READ as Babylon read its nodes, never fresh.** Two of
+  its readers are command inputs — `throwHandWorld` (where a grenade leaves) and
+  `muzzleWorld` (where a rocket starts, `FINDINGS.md` 55) — and Babylon answered
+  both, the eject port and the reload's gravity out of its RENDER-ID CACHE: the
+  world the last render composed for a node drawn in it, however it has moved
+  since, and a compose off its ancestors' cached worlds only for one that was
+  not. `RenderCache` (`rigJoints.ts`) reproduces that rule, stamped by the
+  render's own evaluation, so the answers are Babylon's to the bit (X4.3b's
+  oracle, and the owner's decision that they stay so). **A new reader asks the
+  tree (`ViewTree.read` / `world`) and never composes a joint itself**, and every
+  write to a joint's channels goes through `ViewModel.wrote`, which is the dirty
+  flag each Babylon vector kept.
+- **The viewmodel renders in `VIEWMODEL_GROUP` (1), and that group's depth is NOT
+  cleared** (`Game.ts`, `setRenderingAutoClearDepthStencil`): the frame keeps one
+  depth image of the world and the gun, which the ink, the blur, the paper and the
+  glow's occlusion all name the gun by. Anything attached joins that group —
   `PlayerView`'s muzzle flash does; the ejected brass deliberately does **not**, because it
   is thrown into the world and should be occluded like anything else.
 - **Scale and stand-off are a framing decision, not realism.** A 54° vertical FOV
@@ -415,7 +432,7 @@ unrelated things happening at once.
   weapon where the hands are, tucked in toward the chest a few centimetres
   higher than the carry (`work`), and looks down at it: `reload.head` tips the
   rendered camera down 9° through the work, and the weapon hangs off a BODY
-  node (`ViewModel.body`) that takes the inverse of the head's look, so the
+  joint (`ViewModel.body`) that takes the inverse of the head's look, so the
   rifle stays put in the hands while the world climbs the frame. That is how
   looking down at something you are holding looks, and it is the only reason
   the work is in shot. The look is the one exception to the held-trigger rule
@@ -435,7 +452,8 @@ unrelated things happening at once.
   lens until it filled the frame. A share of the turn is undone on that arm,
   about its own hand, and the hand turning a little inside the grip is the
   price — a closed fist hides it. Both arms pivot at their hands for this
-  (`setPivotPoint`), so a pivot is load-bearing: a turn written about the
+  (`Joint.setPivotPoint`, Babylon's pivot path reproduced), so a pivot is
+  load-bearing: a turn written about the
   arm's origin swings the whole forearm round the receiver.
 - **A reload BREAKS THE AIM (`reload.aimBreak`, 0.8), and that is geometry
   as much as realism.** Nobody changes a magazine through their optic, and an
@@ -2125,12 +2143,12 @@ swap keeps it (a trigger held across one still needs releasing) while the burst,
 which belongs to the weapon, goes with the weapon.
 
 - **Every weapon and every optic is built once; all but one of each is
-  `setEnabled(false)`.** A loadout change is a handful of boolean writes and a
+  switched off (`Joint.enabled`).** A loadout change is a handful of boolean writes and a
   re-derived `adsPos` — never a rebuild, which would happen inside a deploy screen
   and drop `PlayerView`'s muzzle flash on the floor.
-- **The muzzle and the ejection port are the VIEWMODEL's nodes, not the model's.**
-  A model's landmarks are `Vector3`s and `ViewModel` moves its own two nodes to
-  whichever weapon is carried; `PlayerView`'s flash is parented to one and its brass thrown
+- **The muzzle and the ejection port are the VIEWMODEL's joints, not the model's.**
+  A model's landmarks are `Vector3`s and `ViewModel` moves its own two joints to
+  whichever weapon is carried; `PlayerView`'s flash hangs from one and its brass is thrown
   from the other, and neither may hang off a rig that can be switched off underneath.
 - **The flash hangs off the viewmodel but is not one of its meshes, so putting the
   weapon away has to END it rather than hide it.** `ViewModel.setVisible` walks
@@ -2140,7 +2158,7 @@ which belongs to the weapon, goes with the weapon.
   stops the instant `updateGameplay` does. Nothing may fire while the weapon is
   stowed, which made this look self-managing; being stowed *part-way through* a
   flash is the case that was missing, and dying inside the 50 ms of one hung the
-  star — in the viewmodel's depth-cleared group, so over everything — in the middle
+  star — in the viewmodel's group, so over nearly everything — in the middle
   of the screen for the whole death cam. `Player.applyVisibility` tells the picture
   `stowed`, which zeroes `flashT` and disables the root whenever the body is hidden
   — the one funnel every caller already goes through. Anything else transient that

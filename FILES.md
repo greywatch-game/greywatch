@@ -751,13 +751,19 @@ src/
                         #   bob, and
                         #   the kit turntable with the dark card behind it,
                         #   fitted to the BAY the kit screen reports.
-                        #   Builds every weapon, enables one
+                        #   Builds every weapon, enables one. Its tree is
+                        #   joints (viewTree.ts), read as Babylon read nodes
+    viewTree.ts         # The viewmodel as JOINTS (X4.3b): the JointTree whose
+                        #   root is the camera's stand-in, every mesh and the
+                        #   joint it is drawn at (no mesh has a parent), the
+                        #   per-frame hand-over (syncSwitches, draw) and the
+                        #   readers, out of rigJoints' RenderCache
     ReloadGesture.ts    # The reload decided, not drawn: a pure function of
                         #   phase, seconds and dry/tactical giving the weapon's
                         #   curve and its impact rings, both hands, both
                         #   magazines (the spent one a clone), the bolt or
                         #   slide, and the head looking down at the work.
-                        #   ViewModel draws it on a BODY node that takes
+                        #   ViewModel draws it on a BODY joint that takes
                         #   the inverse of that look
     weaponKit.ts        # The build accumulator every weapon model is written
                         #   in + WeaponParts and WeaponSights (rail, or fixed),
@@ -768,7 +774,9 @@ src/
                         #   primitives: box, slab, upright, picatinny, shell,
                         #   built as Parts on src/geometry/ buffers under a
                         #   build-time frame; `merge` (and `lit`, for a
-                        #   reticle) is where they become meshes
+                        #   reticle) is where they become meshes, hung from
+                        #   the viewmodel's joints (a weapon's live parts are
+                        #   joints of its ViewTree)
     RifleModel.ts       # Low-poly SCAR-H battle rifle — the first
                         #   weapon SCULPTED rather than stacked: bevelled
                         #   profile slabs and contoured lofts, the design
@@ -793,7 +801,7 @@ src/
                         #   AXMC drawn from photos in the rifle's design
                         #   language — an action wrapped around the BORE, a
                         #   drilled forend, a triangulated folding stock, and
-                        #   the BOLT in a node of its own so the cycle works it
+                        #   the BOLT in a joint of its own so the cycle works it
     LmgModel.ts         # Belt-fed light machine gun, an FN M249 / Minimi
                         #   drawn from photos in the rifle's design language —
                         #   stamped riveted receiver, feed cover and split
@@ -803,7 +811,7 @@ src/
                         #   photos in the rifle's design language — the one
                         #   weapon that does not call optics.ts: its notch and
                         #   blade are its own and are all it ever wears, on a
-                        #   slide that is a node of its own so a dry reload
+                        #   slide that is a joint of its own so a dry reload
                         #   can hold it back on the stop
     optics.ts           # Every optic assembly, built onto whichever weapon's
                         #   OpticMount asked for them. Past ~4x the cone is
@@ -1017,11 +1025,15 @@ src/
                         #   bounding centres, which our renderer draws it off
                         #   (render/BodyDraw, BABYLON_EXIT.md X4.1d)
     rigJoints.ts        # A rig's joints as OUR hierarchy, no Babylon — a
-                        #   soldier's and (X4.2a) a hull's: local channels,
-                        #   float32 world matrices the rig owns (bit for bit
-                        #   the TransformNodes'), a fresh chain, a joint POSED
-                        #   off a ragdoll's pose array (Joint.pose), and the
-                        #   body's one measure (the root capsule's sphere)
+                        #   soldier's, (X4.2a) a hull's and (X4.3b) the
+                        #   viewmodel's: local channels (and the viewmodel's
+                        #   quaternion, pivot and camera root), float32 world
+                        #   matrices the rig owns (bit for bit the
+                        #   TransformNodes'), a fresh chain, a joint POSED off a
+                        #   ragdoll's pose array (Joint.pose), the body's one
+                        #   measure (the root capsule's sphere), and
+                        #   RenderCache, Babylon's render-id cache reproduced
+                        #   for the viewmodel's readers
     soldierBones.ts     # The ragdoll's bone table, no Babylon: BoneJoint,
                         #   BoneSpec and RAGDOLL_BONES (each bone's box and
                         #   mass in its joint's frame), measured off

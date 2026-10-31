@@ -8,7 +8,7 @@
  * before it is moved — `weaponKit.ts` owns that contract and the primitives.
  * The optics are `optics.ts`'s, built against `MOUNT` rather than re-tuned.
  */
-import { Scene, TransformNode, Vector3 } from "@babylonjs/core";
+import { Scene, Vector3 } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { buildOptics, ironSightFloor, type OpticMount } from "./optics";
 import {
@@ -22,6 +22,8 @@ import {
   WeaponBuild,
   type WeaponParts,
 } from "./weaponKit";
+import type { Joint } from "./rigJoints";
+import type { ViewTree } from "./viewTree";
 
 /**
  * The magazine's rake, which is also the line it drops out along. NEGATIVE for
@@ -123,9 +125,11 @@ export function buildDmr(
   scene: Scene,
   mats: CelMaterialFactory,
   prefix: string,
+  view: ViewTree,
+  parent: Joint | null,
 ): WeaponParts {
-  const root = new TransformNode(`${prefix}_dmr`, scene);
-  const b = new WeaponBuild(scene, mats, prefix, root);
+  const root = view.joint(`${prefix}_dmr`, parent);
+  const b = new WeaponBuild(scene, mats, prefix, view, root);
 
   // --- upper receiver: the HK417 upper, one size up from an AR's ---
   b.slab("upper", BODY, [
@@ -383,9 +387,8 @@ export function buildDmr(
   // Straight rather than curved, and it is the read: the rifle's banana under
   // the same receiver would say "same cartridge, longer barrel". Its window
   // shows the brass stacked inside, which is what HK's is for. Merged into a
-  // node of its own so the reload can drop it (see `WeaponParts.magazine`).
-  const magazine = new TransformNode(`${prefix}_magazine`, scene);
-  magazine.parent = root;
+  // joint of its own so the reload can drop it (see `WeaponParts.magazine`).
+  const magazine = b.joint(`${prefix}_magazine`, root);
   const magPivot = b.pivot("magPivot", 0, -0.125, 0.05, MAG_RAKE);
   b.upright("mag", POLYMER, [
     { y: -0.2, w: 0.05, d: 0.1, k: 0.15 },

@@ -82,6 +82,17 @@
  * - the `PlayerView` (`player`): its flash petals and casing pool, over a
  *   `ViewModel` of its own, as the `Player` it is handed to leaves it.
  *   `Player` itself draws nothing and owns no mesh;
+ *
+ *   **Since `BABYLON_EXIT.md` X4.3b the viewmodel's nodes are JOINTS** (its
+ *   `ViewTree`, `src/entities/viewTree.ts`) and its meshes have no parent. So
+ *   these three kinds hash the tree IN THE BYTES THE NODES GAVE: each joint
+ *   that stands where a `TransformNode` was made is a node record (class,
+ *   name, parent, own switch, channels, quaternion, pivot), after the scene's
+ *   own nodes and in the order the joints were made, which is the order the
+ *   nodes were; each mesh's parent is the joint it hangs from, named as the
+ *   node or mesh it stands for; and a joint, or a `src/math` value, in the
+ *   builder's data is spelled as the node or the Babylon value it replaced.
+ *   A row that moves here moved in the build, not in the bookkeeping;
  * - the four pooled bodies that fly or lie (`grenade`, `molotov`, `rocket`
  *   with its flame, `mine`, the laid one);
  * - every vehicle kind (`vehicle:<kind>`: the `CONFIG.vehicles` blocks
@@ -472,12 +483,17 @@ const f64 = (a) => Buffer.from(Float64Array.from(a).buffer);
  * numbers, and a number JSON cannot spell (`Infinity`, `NaN`, `-0`) is spelled
  * as a string so it is not silently `null` or `0`.
  */
-function plainOf(mats) {
+function plainOf(mats, tree = null) {
   return function (_k, v) {
     if (v === mats) return "mats";
     if (typeof v === "number") return Number.isFinite(v) && !Object.is(v, -0) ? v : String(Object.is(v, -0) ? "-0" : v);
     if (!v || typeof v !== "object") return v;
     if (isGraph(v)) return `${v.getClassName()}:${v.name}`;
+    // A viewmodel joint is named as the node (or mesh) it stands for, and a
+    // `src/math` value is spelled as the Babylon one it replaced (X4.3b).
+    if (tree && isJoint(v)) return labelOf(tree, v);
+    const ours = tree ? mathValue(v) : null;
+    if (ours) return ours;
     if (ArrayBuffer.isView(v)) return [v.constructor.name, ...Array.from(v)];
     if (typeof v.getClassName === "function" && typeof v.asArray === "function") {
       return [v.getClassName(), ...Array.from(v.asArray())];
@@ -499,16 +515,69 @@ function plainOf(mats) {
 const isGraph = (v) =>
   typeof v.getClassName === "function" && (typeof v.uniqueId === "number" || v.getClassName() === "Scene");
 
+/** A `rigJoints.ts` joint, by shape (the module this script loads is not the game's instance either). */
+const isJoint = (v) => v.constructor?.name === "Joint" && "world" in v && "scaling" in v;
+
+/**
+ * A `src/math` vector, quaternion or matrix spelled as Babylon's of the same
+ * name and numbers — `[class, ...asArray()]` — or null for anything else. By
+ * shape and class name, never by `instanceof` (see `isGraph`).
+ */
+function mathValue(v) {
+  if (typeof v.getClassName === "function") return null;
+  const name = v.constructor?.name;
+  if (name === "Vector3" && "x" in v && "z" in v) return ["Vector3", v.x, v.y, v.z];
+  if (name === "Quaternion" && "w" in v) return ["Quaternion", v.x, v.y, v.z, v.w];
+  if (name === "Matrix" && typeof v.asArray === "function") return ["Matrix", ...Array.from(v.asArray())];
+  return null;
+}
+
+/**
+ * What a joint of a viewmodel `ViewTree` was in the scene: the camera node at
+ * its root, the mesh a mesh's joint stands for, or the `TransformNode` made
+ * where it is — `class:name`, as `isGraph`'s values are spelled.
+ */
+function labelOf(tree, j) {
+  if (j === tree.root) return `${tree.camera.getClassName()}:${tree.camera.name}`;
+  const mesh = tree.meshFor(j);
+  return mesh ? `${mesh.getClassName()}:${mesh.name}` : `TransformNode:${j.name}`;
+}
+
+/** The identity a `TransformNode` with no pivot reports as its pivot matrix. */
+const IDENTITY16 = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+
+/**
+ * A joint's record, in the bytes `nodeRecord` made of the `TransformNode` it
+ * replaced: its class, name and parent, its own switch, its channels, its
+ * quaternion, its pivot, and the two flags no viewmodel node ever set.
+ */
+function jointRecord(tree, j, plain) {
+  const head = [
+    "TransformNode",
+    j.name,
+    j.parent ? labelOf(tree, j.parent) : null,
+    j.enabled,
+    [j.position.x, j.position.y, j.position.z],
+    [j.rotation.x, j.rotation.y, j.rotation.z],
+    [j.scaling.x, j.scaling.y, j.scaling.z],
+    j.quaternion ? [j.quaternion.x, j.quaternion.y, j.quaternion.z, j.quaternion.w] : null,
+    j.pivot ? Array.from(j.pivot.m) : IDENTITY16,
+    false,
+    0,
+  ];
+  return Buffer.from(JSON.stringify(head, plain));
+}
+
 /**
  * One node's whole record — everything the hash can see of it, in one buffer.
  * Its NAME and its PARENT'S are in it, so a part hung off a different joint is
  * a different record and not merely a reordering.
  */
-function nodeRecord(n, plain) {
+function nodeRecord(n, plain, parentLabel) {
   const head = [
     n.getClassName(),
     n.name,
-    n.parent ? `${n.parent.getClassName()}:${n.parent.name}` : null,
+    parentLabel !== undefined ? parentLabel : n.parent ? `${n.parent.getClassName()}:${n.parent.name}` : null,
     n.isEnabled(false),
     n.position.asArray(),
     n.rotation.asArray(),
@@ -567,15 +636,32 @@ function nodeRecord(n, plain) {
  * `set` and differs on `draw`. That is the difference `--against` reports as
  * "scene order differs", apart from "content changed".
  */
-function hashScene(scene, data, plain) {
+function hashScene(scene, data, plain, tree = null) {
   const draw = createHash("sha256");
   const each = [];
-  for (const list of [scene.meshes, scene.transformNodes]) {
-    draw.update(`|${list === scene.meshes ? "meshes" : "nodes"}|${list.length}|`);
-    for (const n of list) {
-      const rec = nodeRecord(n, plain);
+  // A viewmodel tree's meshes are unparented: each is named as hanging from
+  // the node its joint hangs from. Its node joints follow the scene's own
+  // nodes, in the order they were made (see the header).
+  const parentOf = new Map();
+  const jointNodes = [];
+  if (tree) {
+    for (const v of tree.meshes) parentOf.set(v.mesh, v.joint.parent ? labelOf(tree, v.joint.parent) : null);
+    for (const j of tree.joints.joints) if (j !== tree.root && !tree.meshFor(j)) jointNodes.push(j);
+  }
+  const lists = [
+    ["meshes", "m", scene.meshes.map((n) => () => nodeRecord(n, plain, parentOf.get(n)))],
+    [
+      "nodes",
+      "n",
+      [...scene.transformNodes.map((n) => () => nodeRecord(n, plain)), ...jointNodes.map((j) => () => jointRecord(tree, j, plain))],
+    ],
+  ];
+  for (const [label, tag, list] of lists) {
+    draw.update(`|${label}|${list.length}|`);
+    for (const record of list) {
+      const rec = record();
       draw.update(createHash("sha256").update(rec).digest());
-      each.push((list === scene.meshes ? "m" : "n") + createHash("sha256").update(rec).digest("hex"));
+      each.push(tag + createHash("sha256").update(rec).digest("hex"));
     }
   }
   const tail = JSON.stringify(data ?? null, plain);
@@ -659,7 +745,7 @@ async function hashModelJobs(jobs) {
     const B = await server.ssrLoadModule("@babylonjs/core");
     B.Logger.LogLevels = B.Logger.NoneLogLevel;
     const load = (p) => server.ssrLoadModule(p);
-    const [W, VM, PL, PV, GR, MO, RPG, MINE, VK, SM, CZ, FIN, TV] = await Promise.all(
+    const [W, VM, PL, PV, GR, MO, RPG, MINE, VK, SM, CZ, FIN, TV, VT] = await Promise.all(
       [
         "/src/entities/weapons.ts",
         "/src/entities/ViewModel.ts",
@@ -674,6 +760,7 @@ async function hashModelJobs(jobs) {
         "/src/systems/CaptureZoneSystem.ts",
         "/src/entities/finishes.ts",
         "/src/core/teamView.ts",
+        "/src/entities/viewTree.ts",
       ].map(load),
     );
     const weaponBuilders = await modelWeaponBuilders(load);
@@ -681,7 +768,6 @@ async function hashModelJobs(jobs) {
     let scene = new B.Scene(engine);
     const cache = new Map();
     const mats = stubMats(B, cache, () => scene);
-    const plain = plainOf(mats);
     for (const [key, p] of jobs) {
       scene.dispose();
       scene = new B.Scene(engine);
@@ -690,14 +776,20 @@ async function hashModelJobs(jobs) {
       Math.random = mulberry32(0x6d0de15);
       try {
         let data = null;
+        // The viewmodel's tree, for the three kinds built on one (X4.3b).
+        let tree = null;
         if (p.kind.startsWith("weapon:")) {
           const id = p.kind.slice("weapon:".length);
-          const parts = weaponBuilders[id](scene, mats, `view_${id}`);
+          // Built alone, as before: a tree with no camera, the weapon's root
+          // at its top level.
+          tree = new VT.ViewTree(scene, null);
+          const parts = weaponBuilders[id](scene, mats, `view_${id}`, tree, null);
           if (p.finish) FIN.applyFinish(mats, parts.finish, p.finish);
           data = parts;
         } else if (p.kind === "viewmodel") {
           const camera = new B.TransformNode("camera", scene);
           const vm = new VM.ViewModel(scene, mats, camera);
+          tree = vm.tree;
           if (p.weapon) vm.setWeapon(p.weapon);
           if (p.sight) vm.setSight(p.sight);
           // What the fit derived from the geometry — the aimed pose off the
@@ -719,7 +811,9 @@ async function hashModelJobs(jobs) {
           const camera = new B.TransformNode("camera", scene);
           // As `Game` builds the pair: the picture, then the player that
           // puts it away (`applyVisibility`) — which is part of the record.
-          new PL.Player(new PV.PlayerView(scene, mats, camera));
+          const view = new PV.PlayerView(scene, mats, camera);
+          new PL.Player(view);
+          tree = view.model.tree;
         } else if (p.kind === "grenade") {
           data = GR.buildGrenade(scene, mats, "grenade0");
         } else if (p.kind === "molotov") {
@@ -750,7 +844,7 @@ async function hashModelJobs(jobs) {
           zones.build(p.points, w.terrain, w.obstacles, w.roads, w.rays, w.env);
           data = zones.zones.map((z) => ({ x: z.x, z: z.z, meshes: z.meshes }));
         } else throw new Error(`no model "${p.kind}"`);
-        out[key] = hashScene(scene, data, plain);
+        out[key] = hashScene(scene, data, plainOf(mats, tree), tree);
       } catch (e) {
         out[key] = { error: String(e?.message ?? e) };
       }

@@ -27,7 +27,7 @@
  * reticle is still the point of impact: the derivation never cared which way
  * the sight sat, only where its centre is.
  */
-import { Mesh, Scene, TransformNode, Vector3 } from "@babylonjs/core";
+import { Mesh, Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { createBox, createCylinder } from "../geometry/primitives";
 import { type CelMaterialFactory } from "../shaders/CelShader";
@@ -43,6 +43,8 @@ import {
   type SightAssembly,
   type WeaponParts,
 } from "./weaponKit";
+import type { Joint } from "./rigJoints";
+import type { ViewTree } from "./viewTree";
 
 /** Outside of the launch tube. Everything else on the weapon hangs off it. */
 const TUBE_BORE = 0.105;
@@ -147,7 +149,7 @@ const SUPPORT_ELBOW = new Vector3(-0.28, -0.516, 0.497);
  * weapon that visibly LEAVES when it is fired.
  *
  * ~90 parts, merged to one mesh per colour like every other weapon here —
- * twice over, because the loaded ROUND is a node of its own so the load
+ * twice over, because the loaded ROUND is a joint of its own so the load
  * gesture can take it out of the tube and slide a fresh one back in. It
  * is 1.39 long against the rifle's 1.27 — the longest thing in the kit and
  * deliberately only just, because the hip pose frames a weapon from a fixed
@@ -159,9 +161,11 @@ export function buildRpg(
   scene: Scene,
   mats: CelMaterialFactory,
   prefix: string,
+  view: ViewTree,
+  parent: Joint | null,
 ): WeaponParts {
-  const root = new TransformNode(`${prefix}_rpg`, scene);
-  const b = new WeaponBuild(scene, mats, prefix, root);
+  const root = view.joint(`${prefix}_rpg`, parent);
+  const b = new WeaponBuild(scene, mats, prefix, view, root);
 
   // --- the tube: one run from the shoulder to the muzzle, in three diameters
   // so it reads as pressed steel rather than as a length of pipe ---
@@ -230,7 +234,7 @@ export function buildRpg(
   //
   // It is the loaded rocket, so it is drawn as one — and it is the one part of
   // this weapon that visibly LEAVES when it is fired, which is what makes it a
-  // node of its own rather than more launcher. See `WeaponParts.warhead`.
+  // joint of its own rather than more launcher. See `WeaponParts.warhead`.
   //
   // **The sustainer is the half of the round that makes the load READ**, and
   // it is invisible for as long as nothing is happening to it: seated, all
@@ -244,8 +248,7 @@ export function buildRpg(
   // incapable of intruding on the optic's picture whatever the load is doing.
   // (The bore clearance measured for `buildRpgSight` is unaffected by this
   // file's ROUND for exactly that reason.)
-  const warhead = new TransformNode(`${prefix}_warhead`, scene);
-  warhead.parent = root;
+  const warhead = b.joint(`${prefix}_warhead`, root);
   b.tube("sustainer", BODY, 0.062, 0.058, 0.33, 0, 0, 0.605);
   b.tube("sustainerCap", METAL, 0.05, 0.036, 0.026, 0, 0, 0.427);
   b.tube("boom", METAL, 0.05, 0.05, 0.12, 0, 0, 0.83);
@@ -258,13 +261,13 @@ export function buildRpg(
   b.tube("headBand", METAL, 0.12, 0.12, 0.016, 0, 0, 0.95);
   b.merge("rpgRound", warhead);
   // **The round turns about the ROUND, and it takes a pivot point to say so.**
-  // The node is at the weapon's own origin, which is the venturi — half a metre
-  // BEHIND the rocket — so a tilt of the node is a tilt of a half-metre lever
+  // The joint is at the weapon's own origin, which is the venturi — half a metre
+  // BEHIND the rocket — so a tilt of the joint is a tilt of a half-metre lever
   // and the round swings through an arc rather than turning in a hand.
   // Measured before this line: the offer tilt alone moved the warhead's nose
   // 220 px, which put a round that is supposed to be out of frame in the middle
-  // of it. `setPivotPoint` leaves `position` a translation in the parent's
-  // frame and leaves the node at identity when nothing is set, so `stow()` and
+  // of it. `Joint.setPivotPoint` leaves `position` a translation in the parent's
+  // frame and leaves the joint at identity when nothing is set, so `stow()` and
   // `WeaponParts.warhead`'s "position is a pure offset from seated" both still
   // hold; only the centre of rotation moves. It is on the bore, so the index
   // roll about z is unaffected either way — this is for the two axes that are
@@ -292,7 +295,7 @@ export function buildRpg(
     warhead,
     sights: { kind: "fixed", sight: "prism", assembly: sight },
     finish,
-    meshes: root.getChildMeshes(false) as Mesh[],
+    meshes: b.meshesOn(root, true),
   };
 }
 
@@ -311,11 +314,10 @@ export function buildRpg(
  */
 function buildRpgSight(
   b: WeaponBuild,
-  parent: TransformNode,
+  parent: Joint,
   prefix: string,
 ): SightAssembly {
-  const node = new TransformNode(`${prefix}_sight_rpg`, b.scene);
-  node.parent = parent;
+  const node = b.joint(`${prefix}_sight_rpg`, parent);
 
   /**
    * A ring on the SIGHT's axis rather than the bore's — `shell`'s `x`, which
@@ -386,10 +388,9 @@ function buildRpgSight(
     );
   }
 
-  const sightCenter = new TransformNode(`${prefix}_rpg_sightCenter`, b.scene);
-  sightCenter.parent = node;
-  sightCenter.position = new Vector3(SIGHT_X, SIGHT_Y, SIGHT_Z);
-  return { root: node, sightCenter, meshes: node.getChildMeshes(true) as Mesh[] };
+  const sightCenter = b.joint(`${prefix}_rpg_sightCenter`, node);
+  sightCenter.position.set(SIGHT_X, SIGHT_Y, SIGHT_Z);
+  return { root: node, sightCenter, meshes: b.meshesOn(node) };
 }
 
 /** One rocket's meshes. The flame is parented to the body and moves with it. */

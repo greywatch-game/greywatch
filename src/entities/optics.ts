@@ -28,9 +28,10 @@
  * is (`weaponKit.ts`): a housing becomes meshes at `build.merge`, a bead or
  * a reticle at `build.lit` (a reticle's bars merged by `mergeParts` first),
  * and the glass, the one surface drawn with a material of its own, at
- * `drawnMesh` here.
+ * `drawnMesh` here — each hung from its sight's JOINT (`WeaponBuild.hang`;
+ * `BABYLON_EXIT.md` X4.3b), which is the switch a loadout change throws.
  */
-import { Mesh, Color3, StandardMaterial, TransformNode, Vector3 } from "@babylonjs/core";
+import { Mesh, Color3, StandardMaterial, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import {
   createBox,
@@ -41,6 +42,7 @@ import {
   DOUBLESIDE,
 } from "../geometry/primitives";
 import { drawnMesh, mergeParts, Part, type PartNode } from "../world/parts";
+import type { Joint } from "./rigJoints";
 import { SIGHT_IDS, type SightId } from "./sights";
 import {
   FACETS,
@@ -648,7 +650,7 @@ export function buildOptics(
    * sight centre goes — so aiming lines all three up at once and the picture
    * is right by construction.
    */
-  const buildIron = (node: TransformNode): Vector3 => {
+  const buildIron = (node: Joint): Vector3 => {
     // Both bases stand from the rail to the BORE's floor, never into it. The
     // bore's lower edge is only a few millimetres above the receiver from the
     // eye's point of view, so a base sized by hand blocks the bottom of the
@@ -728,7 +730,7 @@ export function buildOptics(
    * for a fight already inside a room, where what you can see PAST the sight
    * is worth more than what you can see through it.
    */
-  const buildReflex = (node: TransformNode): Vector3 => {
+  const buildReflex = (node: Joint): Vector3 => {
     // The rear leaf only. The window is lower than the holo's and its cone is
     // wider, so a standing front leaf sits about a millimetre inside the
     // bottom of the picture — the same call the scope makes, one size down.
@@ -824,7 +826,7 @@ export function buildOptics(
       ),
       b.scene,
     );
-    glass.parent = node;
+    b.hang(glass, node);
     glass.position.set(0, reflexY, winZ);
     // The cant is small enough to stay inside the frame's own depth: any more
     // and the glass corners poke out through the posts.
@@ -848,7 +850,7 @@ export function buildOptics(
    * The mount's top face meets the housing's underside exactly, so the two
    * read as one assembly rather than a sight balanced on a block.
    */
-  const buildHolo = (node: TransformNode): Vector3 => {
+  const buildHolo = (node: Joint): Vector3 => {
     foldedIrons(true);
     // Turrets and battery cap, standing off the housing's outer radius.
     const rOut = BORE / 2 + WALL;
@@ -922,7 +924,7 @@ export function buildOptics(
       ),
       b.scene,
     );
-    glass.parent = node;
+    b.hang(glass, node);
     glass.position.set(0, winY, winZ + 0.009 * k);
     glass.material = glassMat;
     // noGlow: the bloom would turn the faint tint into a cyan haze that
@@ -950,7 +952,7 @@ export function buildOptics(
    * a line ETCHED in the glass, and it does not bloom.
    */
   const postReticle = (
-    node: TransformNode,
+    node: Joint,
     name: string,
     y0: number,
     retZ: number,
@@ -1007,7 +1009,7 @@ export function buildOptics(
    * rather than turrets — because the tube itself is as small as the picture
    * allows, and the bulk is where a 2x stops reading as a dot sight.
    */
-  const buildGreenDot = (node: TransformNode): Vector3 => {
+  const buildGreenDot = (node: Joint): Vector3 => {
     foldedIrons(false);
     const ocularZ = winZ + DOT2_OCULAR_DZ;
     const objectiveZ = winZ + DOT2_OBJECTIVE_DZ;
@@ -1206,7 +1208,7 @@ export function buildOptics(
    * OUTSIDE the cone at its own far end, so nothing on the body can reach into
    * the picture.
    */
-  const buildPrism = (node: TransformNode): Vector3 => {
+  const buildPrism = (node: Joint): Vector3 => {
     // No front leaf, for the scope's reason: this cone is wider still.
     foldedIrons(false);
     const y = prismY;
@@ -1433,7 +1435,7 @@ export function buildOptics(
    * a glance. The narrow rib along its crown is the fibre housing that feeds
    * the reticle's illumination, standing forward of the elevation cap.
    */
-  const buildScope = (node: TransformNode): Vector3 => {
+  const buildScope = (node: Joint): Vector3 => {
     foldedIrons(false);
     const ocularZ = winZ + SCOPE_OCULAR_DZ;
     const objectiveZ = winZ + SCOPE_OBJECTIVE_DZ;
@@ -1591,7 +1593,7 @@ export function buildOptics(
    * than capped and forgotten. Both are sized OUTWARD from their own section's
    * outer radius, so neither can reach into the picture.
    */
-  const buildLongScope = (node: TransformNode): Vector3 => {
+  const buildLongScope = (node: Joint): Vector3 => {
     // The rear leaf only, exactly as the scope and the prism do: at this rise a
     // standing front leaf would be a pillar in the middle of the one sight
     // picture in the game that has no field to spare.
@@ -1752,7 +1754,7 @@ export function buildOptics(
     return new Vector3(0, longY, ocularZ);
   };
 
-  const BUILDERS: Record<SightId, (node: TransformNode) => Vector3> = {
+  const BUILDERS: Record<SightId, (node: Joint) => Vector3> = {
     reflex: buildReflex,
     iron: buildIron,
     holo: buildHolo,
@@ -1765,16 +1767,14 @@ export function buildOptics(
   const sights = {} as Record<SightId, SightAssembly>;
   const meshes: Mesh[] = [];
   for (const id of SIGHT_IDS) {
-    const node = new TransformNode(`${prefix}_sight_${id}`, b.scene);
-    node.parent = b.root;
+    const node = b.joint(`${prefix}_sight_${id}`, b.root);
     const centre = BUILDERS[id](node);
-    const sightCenter = new TransformNode(`${prefix}_${id}_sightCenter`, b.scene);
-    sightCenter.parent = node;
-    sightCenter.position = centre;
-    // The builder has already parented its merged colour groups and its
-    // reticle to `node`, so the node itself is the list — no bookkeeping to
-    // keep in step with it.
-    const own = node.getChildMeshes(true) as Mesh[];
+    const sightCenter = b.joint(`${prefix}_${id}_sightCenter`, node);
+    sightCenter.position.copyFrom(centre);
+    // The builder has already hung its merged colour groups and its reticle
+    // from `node`, so the joint itself is the list — no bookkeeping to keep in
+    // step with it.
+    const own = b.meshesOn(node);
     meshes.push(...own);
     sights[id] = { root: node, sightCenter, meshes: own };
   }
