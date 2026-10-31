@@ -2522,7 +2522,7 @@ src/
     MotionBlur.ts       # Camera-rotation smear, reprojected from the aim
                         #   angles. The viewmodel is held out of it by DEPTH —
                         #   masked shift AND weighted taps — because a gun
-                        #   parented to the camera never moves in screen space.
+                        #   hung from the camera never moves in screen space.
                         #   WGSL
     PaperGrain.ts       # Vignette / aberration / damage flash, and a PAPER
                         #   grain pinned to the world through the frame's

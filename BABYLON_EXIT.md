@@ -949,7 +949,7 @@ lamps' atlas were already done (X4.1c).
 
 The full record is in [the archive](plans/done/babylon_exit_landed.md).
 
-### X4.3 — The viewmodel and the kit bay — **M–L, as four sub-steps** (split 2026-10-31, decided the same day) — X4.3a **LANDED** (3e48d98, review fixes after it), X4.3b **LANDED** (fa58735)
+### X4.3 — The viewmodel and the kit bay — **M–L, as four sub-steps** (split 2026-10-31, decided the same day) — X4.3a **LANDED** (3e48d98, review fixes after it), X4.3b **LANDED** (fa58735, review fixes after it)
 
 The player's own weapon — whichever of the nine carried rigs is up, its
 optic, both gloved arms, the throwing fist with its grenade or bottle, the
@@ -1064,7 +1064,16 @@ read the same cache for the picture.
   (`view-pistol-reload`'s two-pixel 1/255 outcome is the main tree's own: the
   parent there draws it too); `kit:hash --models` 244 of 244 identical (the
   script now hashes the joints in the nodes' bytes); `census` equal;
-  sight alignment identical on both trees in all 45 combinations.
+  sight alignment identical on both trees in all 45 combinations. **The
+  post-commit review** found no outcome bug; its fixes (the archive has
+  them): one shape for every viewmodel joint (`viewJoint`), the tree's
+  `JointTree` made private and the `VERIFYING.md` recipe composing into
+  scratch, a parent mesh refrozen whenever its joint was recomposed, a
+  provisional id that cannot repeat, every mesh's NONUNIFORMSCALING chosen
+  at `seal` (the bottle's wick had lost it), a switch walk that skips
+  switched-off subtrees, wording, and a constraint written into X4.3c's
+  brief. The replay oracle re-run: identical again on every frame and every
+  answer.
 - **X4.3c — the weapon drawn by us: every opaque part (no picture change).**
   The viewmodel's cel and emissive meshes — every rig's colour groups,
   magazine and spent magazine, bolt, slide and warhead, every optic's housing
@@ -1096,7 +1105,19 @@ read the same cache for the picture.
   .merge`/`lit`, `buildArm`, `optics.ts`), `WeaponParts.meshes` and
   `FinishPart.mesh` become them, and `kit:hash --models` hashes the same
   arrays off them. The viewmodel leaves `WorldCulling`'s candidate list. The
-  pipelines are asked ahead through `PipelineCache`. **Oracle:** the bank's
+  pipelines are asked ahead through `PipelineCache`. **A constraint X4.3b
+  left (its post-commit review):** the readers keep Babylon's answers only
+  while the tree's render cache is stamped as Babylon's evaluation stamped
+  it, so once Babylon stops drawing the opaque parts and they leave the
+  cull's list, `ViewTree.draw()` must go on EVALUATING exactly the set
+  Babylon evaluated — every viewmodel mesh switched on (its joint chain) and
+  `isVisible`, drawn or not, by us or by Babylon — and the cache must go on
+  being SETTLED at the render's evaluation id, at the point it is now
+  (`onAfterActiveMeshesEvaluationObservable`, or wherever that id is then
+  read). Narrowing the set to what our renderer draws, or stamping at a
+  different id, moves the next frame's `muzzleWorld` and `throwHandWorld` —
+  two command inputs — and the replay oracle (X4.3b's) is what proves it did
+  not. **Oracle:** the bank's
   `view-*` rows and X4.3a's byte-identical, every other row too; the glow's
   mask read back against the parent's at the aimed rows (the reticles), as
   X3.6d's was; `census --against` (Babylon's draws fall by the gun's, ours

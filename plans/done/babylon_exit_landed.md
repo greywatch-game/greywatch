@@ -5570,7 +5570,7 @@ rows that frame a hull inside it move).
   hull's tracers and a shell's blast past its distance are accepted, not
   owed (the owner's decision above).
 
-### X4.3 — The viewmodel and the kit bay — **M–L, as four sub-steps** (split 2026-10-31, decided the same day) — X4.3a **LANDED** (3e48d98, review fixes after it), X4.3b **LANDED** (fa58735)
+### X4.3 — The viewmodel and the kit bay — **M–L, as four sub-steps** (split 2026-10-31, decided the same day) — X4.3a **LANDED** (3e48d98, review fixes after it), X4.3b **LANDED** (fa58735, review fixes after it)
 
 X4.3's intro, "Read first", "Contracts all four keep", "Verify" and the
 briefs of X4.3c-d are in the live plan until all four land. X4.3a's brief,
@@ -6040,3 +6040,65 @@ X4.3b's brief, word for word:
   the tree can compose fresh, as a rig's does, and `RenderCache` goes. The
   compose costs are unmeasured (a frame composes the carried rig's ~20 joints
   and its ~15 meshes, against Babylon's own walk of the same nodes before).
+- **What the post-commit review found** (an independent reader over fa58735
+  and 1d6accf; fixed after it). **No outcome bug.** Fixed:
+  - **A megamorphic compose.** Viewmodel joints gained `outside`, `pivot`,
+    `quaternion`, `fixedLocal` and `memo` lazily and in different orders
+    (the weapon its quaternion at runtime, on the turntable), so six or more
+    hidden classes reached the `composeLocal` every rig and hull runs each
+    frame. Every viewmodel joint is now handed all six, null, in one order
+    the moment the tree makes it (`rigJoints.viewJoint`); a rig's joint is
+    untouched (`kit:hash`'s soldier and vehicle rows unmoved). Measured on
+    Sarab in a live round, three alternated runs a side of 1,500 frames each
+    on a 100 us clock, fa58735 against the fix: `drawBodies` 0.049-0.067 ms a
+    frame against 0.067-0.076, `fadeHulls` 0.018-0.022 against 0.018-0.020,
+    the viewmodel's hand-over 0.030-0.035 against 0.023-0.026 — **not
+    measurable**: the bodies' spread inside one side is as large as the gap,
+    and every figure is under the clock's grain.
+  - **Two silent breaks of the guarantee.** The tree's `JointTree` was public,
+    and its `compute`/`computeChain` rewrite `world` without telling the
+    cache: it is private to `ViewTree` now (a digest reads `jointList`); and
+    `VERIFYING.md`'s sight-alignment recipe called `view.tree.read` from a
+    live page, which re-stamps the cache: it composes into scratch now, and
+    says why.
+  - **A latent stale draw.** A parent mesh skipped (the fist's frag, the
+    bottle's neck or cloth) while a child of it was evaluated is recomposed
+    through the child, and its own frozen copy was never refreshed: each
+    `ViewMesh` keeps the `childUpdate` it was last handed over at
+    (`handed`), and is refrozen whenever it differs.
+  - **The provisional id could repeat** (`renderId + 0.5` with no render
+    between two draws): a counter going down from -2 now, never repeated.
+  - **The viewmodel's wick lost its NONUNIFORMSCALING define** (`MolotovModel`
+    scales it on y; a frozen matrix never chose the define, so it compiled
+    the uniform variant): `seal` composes each mesh's OWN world once,
+    unparented, which chooses the define as the parented build did; the
+    card's stand-in is chosen after `seal`, which would otherwise have set
+    it back. A scratch page read the meshes carrying the flag once drawn:
+    the wick on both trees, the card on both while the turntable is up.
+  - **A per-frame walk** of every mesh of all nine rigs and every optic, an
+    ancestor walk each, twice a frame: `syncSwitches` walks the tree from the
+    root and never enters a switched-off subtree, a mesh on after the last
+    pass and not reached this one switched off; `draw` evaluates the meshes
+    that walk found on.
+  - **Words**: the four things `Joint` gained (the header said three), the
+    outside root as the one matrix read from outside, `RenderCache`'s
+    approximation stated with its real condition, `seal` as what composes at
+    build, the card "the one non-uniform scale" no longer, and the
+    "parented to the camera" left in `ViewModel`, `Game`, `docs/ui.md` and
+    `FILES.md`.
+  - **A constraint written into X4.3c's brief**: `ViewTree.draw()` must go on
+    evaluating exactly the set Babylon evaluated (switched on and
+    `isVisible`) and settling at the render's evaluation id, once the opaque
+    parts leave Babylon's draw and the cull's list, or the next frame's
+    readers move.
+  - **Re-checked after the fixes**: the replay oracle on the recorded round
+    and on the seeded sequence, **1,563 and 3,981 frames identical (24,651 and
+    61,242 meshes), 303 and 2,286 reader answers identical as float64 bits**,
+    the three origins bit for bit, every drawn mesh its joints' fresh
+    composition; the bank **84 of 84 byte-equal** to the BEFORE at
+    85ed303 (`view-pistol-reload` among them, this run), the same 34 stale
+    rows; `kit:hash --models` 244 of 244 identical;
+    typecheck, build, corecheck, `math-check` (81 cases) and `parity` pass.
+    (A first re-run found the walk drawing nothing — the camera's root had
+    not been made a top-level child of the walk — which is what the replay
+    oracle is for; fixed, and a timing taken on it discarded.)

@@ -203,8 +203,8 @@ const WEAPON_BUILDERS: Record<CarriedId, WeaponBuilder> = {
 };
 
 /**
- * The card the kit screen's turntable stands against: one camera-parented
- * quad, dark, and up only while a weapon is being looked at.
+ * The card the kit screen's turntable stands against: one quad hung from the
+ * camera's joint, dark, and up only while a weapon is being looked at.
  *
  * **Its rendering slot is the whole trick, and there is exactly one that
  * works.** The card has to cover the world and then be covered by the weapon,
@@ -292,8 +292,8 @@ function buildKitBackdrop(scene: Scene): { card: Mesh; tex: DynamicTexture } {
   // paints its pane of light straight back over the bench.
   card.alphaIndex = Number.POSITIVE_INFINITY;
   card.isPickable = false;
-  // Camera-parented, so its bounds are recomputed against a moving frustum —
-  // the same reason the weapon's own meshes skip the cull test.
+  // Hung from the camera, so its bounds follow a moving frustum — the same
+  // reason the weapon's own meshes skip the cull test.
   card.alwaysSelectAsActiveMesh = true;
   // Read by the Game constructor's scan; it is up before that runs. A flat
   // painted with an emissive texture is exactly what the glow layer would
@@ -841,14 +841,6 @@ export class ViewModel {
     // Its own transform is the one that moves (`updateInspect`), so it is a
     // joint that is written rather than a fixed local.
     this.backdrop = tree.hang(kit.card, eye, true);
-    // Babylon chose the card's NONUNIFORMSCALING define off its own scale —
-    // the one non-uniform scale in the viewmodel, always set before the card
-    // is first drawn — and a frozen world matrix never chooses it again, so it
-    // is chosen here, once, off a stand-in scale put straight back (`seal`
-    // takes the card's own transform after this, at one).
-    kit.card.scaling.set(2, 1, 1);
-    kit.card.computeWorldMatrix(true);
-    kit.card.scaling.set(1, 1, 1);
 
     // Every weapon is built up front. The cost is a set of merged colour
     // groups per weapon sitting disabled — against a rebuild in the middle of
@@ -991,8 +983,8 @@ export class ViewModel {
       // `CONFIG.graphics.ink.near`, which scales the ink down over the first
       // couple of metres. See `shaders/CelInk.ts`.
       m.renderingGroupId = VIEWMODEL_GROUP;
-      // Bounds of a camera-parented mesh are recomputed from a matrix that
-      // moves with the frustum; skip the cull test rather than race it.
+      // Bounds of a mesh hung from the camera follow a matrix that moves with
+      // the frustum; skip the cull test rather than race it.
       m.alwaysSelectAsActiveMesh = true;
     }
 
@@ -1001,8 +993,19 @@ export class ViewModel {
     this.weapon.rotation.copyFrom(this.hipRot);
     // Every mesh's own transform is taken into its joint now the builds are
     // done — the card's position and scale with the rest, before
-    // `updateInspect` first writes them.
+    // `updateInspect` first writes them — and each mesh's NONUNIFORMSCALING
+    // define chosen off its own scale, as its parented build chose it
+    // (`ViewTree.seal`).
     tree.seal();
+    // The card is the one mesh whose scale is written AFTER the build
+    // (`updateInspect`, to the frustum), and Babylon chose its define off that
+    // scale, non-uniform, before it was ever drawn; a frozen world matrix
+    // never chooses it again, so it is chosen here, after `seal` chose it at
+    // one, off a stand-in scale put straight back (its joint already holds the
+    // card's own transform).
+    kit.card.scaling.set(2, 1, 1);
+    kit.card.computeWorldMatrix(true);
+    kit.card.scaling.set(1, 1, 1);
   }
 
   /**
@@ -1753,7 +1756,7 @@ export class ViewModel {
 
     // --- landing absorb: the hands take the impact after the eye does ---
     // The camera owns the spring and this reads it, the same arrangement as
-    // the bob phase. The weapon is parented to the camera, so it already
+    // the bob phase. The weapon hangs from the camera, so it already
     // travels with the dip; what these two add is the part that SHOWS — a
     // share of the sink again on top of it, and the muzzle dropping (rot.x
     // positive is nose-down, the way the per-shot kick is nose-up) as the

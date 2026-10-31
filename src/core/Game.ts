@@ -2061,7 +2061,8 @@ export class Game {
     this.aimAssist = new AimAssistSystem();
     this.conquest = new ConquestSystem(this.random);
     this.zones = new CaptureZoneSystem(this.scene, this.mats);
-    // The weapon is parented to the camera, so the camera has to exist first.
+    // The weapon hangs from the camera (its tree's root reads the camera's
+    // world, `ViewModel.tree`), so the camera has to exist first.
     this.playerView = new PlayerView(this.scene, this.mats, this.cameraSys.camera);
     this.player = new Player(this.playerView);
     this.player.shotRand = this.random.stream(STREAM.player);
@@ -7544,8 +7545,8 @@ export class Game {
     this.driving = tank;
     this.drivingSeat = seat;
     this.vehicles.setOccupied(tank, seat, true);
-    // The viewmodel goes away: there is no rifle in a driver's hands, and it is
-    // parented to the camera that is now twelve metres behind a tank.
+    // The viewmodel goes away: there is no rifle in a driver's hands, and it
+    // hangs from the camera that is now twelve metres behind a tank.
     this.player.setBodyHidden(true);
     // Nothing may hurt the body — the HULL is what is being shot at. On this
     // page that is a flag on a body nothing here shoots: what stops rounds
@@ -10587,7 +10588,7 @@ export class Game {
       this.enterDeploy(respawnIn);
       return;
     }
-    // The weapon is parented to the camera, so it would ride the cam out of
+    // The weapon hangs from the camera, so it would ride the cam out of
     // the head and hang in front of the body — the same reason `enterDeploy`
     // puts it away, arriving one state earlier.
     this.player.setBodyHidden(true);

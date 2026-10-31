@@ -646,7 +646,7 @@ function hashScene(scene, data, plain, tree = null) {
   const jointNodes = [];
   if (tree) {
     for (const v of tree.meshes) parentOf.set(v.mesh, v.joint.parent ? labelOf(tree, v.joint.parent) : null);
-    for (const j of tree.joints.joints) if (j !== tree.root && !tree.meshFor(j)) jointNodes.push(j);
+    for (const j of tree.jointList) if (j !== tree.root && !tree.meshFor(j)) jointNodes.push(j);
   }
   const lists = [
     ["meshes", "m", scene.meshes.map((n) => () => nodeRecord(n, plain, parentOf.get(n)))],

@@ -20,13 +20,14 @@
  *   yaw-pitch-roll QUATERNION into a float32 `Matrix` (`ComposeToRef`, scale
  *   and translation as stored), then `local.multiplyToRef(parentWorld)` — or a
  *   copy of the local for the root — with `src/math`'s copies of those classes
- *   (`math/vector.ts`, which compare bits). **Three things only the viewmodel
+ *   (`math/vector.ts`, which compare bits). **Four things only the viewmodel
  *   has are modelled, and no rig sets them** (X4.3b): a QUATERNION that
  *   overrides the Euler while it is set (`rotationQuaternion`), a PIVOT
  *   (`setPivotPoint`, composed by Babylon's pivot path: pivot x scale x
- *   rotation x inverse pivot, the translation added after), and an OUTSIDE
- *   root (the camera's world, read whenever the root is composed). A
- *   billboard and a scaling determinant are not modelled: no joint has one.
+ *   rotation x inverse pivot, the translation added after), an OUTSIDE root
+ *   (the camera's world, read whenever the root is composed), and a FIXED
+ *   local (a mesh's own transform, composed once). A billboard and a scaling
+ *   determinant are not modelled: no joint has one.
  *   `soldierPose.ts`'s muzzle replay is the same arithmetic.
  * - **Every answer is FRESH, for a rig.** Nothing is cached between a write
  *   and a read: `compute` recomposes every joint, parents first, and
@@ -47,7 +48,15 @@
  *   any parent. `RagdollSystem` sets it and `SoldierModel.resetSoldierPose`
  *   clears it — a pose left on a joint is the leak to fear, a respawned body
  *   drawn with that limb wherever the pose array says.
- * Never: imports Babylon, allocates per compute, or reads a node's matrix.
+ * - **A viewmodel joint has ONE shape** (`viewJoint`): those four fields and
+ *   the cache's `memo` are written, null, in one fixed order the moment
+ *   `viewTree.ts` makes the joint, so the compose that every rig and hull
+ *   also runs each frame meets two hidden classes, never one per order the
+ *   fields happened to arrive in. A rig's joint never carries them (its shape
+ *   is what `kit:hash` reads).
+ * Never: imports Babylon, allocates per compute, or reads a node's matrix —
+ * the one matrix it reads from outside is the camera's world, handed in as a
+ * function by the viewmodel's root (`Joint.outside`), never fetched here.
  */
 import { Matrix, Quaternion, Vector3, type MatrixLike, type Vector3Like } from "../math";
 
@@ -98,9 +107,10 @@ export class Joint {
    */
   outside?: (() => MatrixLike) | null;
   /**
-   * `RenderCache`'s bookkeeping for this joint, absent outside one. These five
+   * `RenderCache`'s bookkeeping for this joint, absent outside one. These six
    * are declared without initializers on purpose: a rig's joint never carries
-   * them, so its shape — and what `kit:hash` reads off it — is unchanged.
+   * them, so its shape — and what `kit:hash` reads off it — is unchanged; a
+   * viewmodel joint is handed all six at once by `viewJoint`.
    */
   memo?: JointMemo | null;
 
@@ -193,6 +203,21 @@ function composeWorld(j: Joint): void {
 export function fixLocal(j: Joint): void {
   j.fixedLocal = null;
   j.fixedLocal = composeLocal(j, new Matrix());
+}
+
+/**
+ * Gives `j` the viewmodel's fields, all null, in one fixed order — the one
+ * shape every viewmodel joint has (see the header). `viewTree.ts` calls it on
+ * every joint it makes, before anything else is written to it.
+ */
+export function viewJoint(j: Joint): Joint {
+  j.quaternion = null;
+  j.pivot = null;
+  j.pivotInverse = null;
+  j.fixedLocal = null;
+  j.outside = null;
+  j.memo = null;
+  return j;
 }
 
 /** A rig's joints, parents before children, as built. */
@@ -314,21 +339,31 @@ function unmoved(j: Joint, s: Float64Array): boolean {
  *
  * **The render's own evaluation is the other half**: `evaluate` is what
  * `_evaluateActiveMeshes` did to each mesh it took, run by `viewTree.ts`
- * before the render at a PROVISIONAL id (between two integers, so nothing can
- * answer to it), and `settle` hands every joint it stamped the real id from
+ * before the render at a PROVISIONAL id (negative and never repeated, so
+ * nothing can answer to it), and `settle` hands every joint it stamped the real id from
  * inside the render, once Babylon has incremented it — so the next frame's
  * readers meet exactly the stamps Babylon's own evaluation left.
  *
  * Synchronization is the one approximation, and it is on the camera alone:
  * an outside root is synchronized while its matrix is unchanged, where
  * Babylon's camera also counts a change of PROJECTION. A synchronized answer
- * is always the answer a recompose would give, so what that can move is only
- * which ancestors a read stamps, never a number read that frame.
+ * is always the answer a recompose would give, so all it can change is which
+ * ANCESTORS a read stamps — and a stamp changes a later number only when, in
+ * the same render id, the camera's projection has changed but not its world,
+ * a chain the last render did not stamp is read, an ancestor on it is then
+ * written, and a joint under that ancestor is read again. X4.3b's oracle met
+ * none.
  */
 export class RenderCache {
   /** The joints the current evaluation stamped provisionally. */
   private readonly pending: Joint[] = [];
   private provisional = Number.NaN;
+  /**
+   * The provisional ids, counting DOWN from -2 (a never-composed joint holds
+   * -1, a real render id is never negative): one per evaluation, never
+   * repeated, whether or not a render took the last one.
+   */
+  private seq = -1;
 
   constructor(private readonly renderId: () => number) {}
 
@@ -355,7 +390,7 @@ export class RenderCache {
   /** Opens an evaluation: the render about to run, at a provisional id. */
   beginEvaluation(): void {
     this.pending.length = 0;
-    this.provisional = this.renderId() + 0.5;
+    this.provisional = --this.seq;
   }
 
   /**

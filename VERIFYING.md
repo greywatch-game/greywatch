@@ -1364,14 +1364,23 @@ is one machine's:
   `BABYLON_EXIT.md` X4.3b a JOINT of the viewmodel's tree, not a node in the
   scene: `view.rigs[<weapon>].parts.sights`, its `assemblies[<sight>]` on a rail
   or its `assembly` on a fixed sight — for every weapon in every sight it can
-  wear (a weapon change moves the optic too), read its world as the game reads
-  it, `view.tree.read(joint)` (the render cache: exact on a weapon settled three
-  rendered frames past the fit), take the translation row and put it in the
-  CAMERA's frame by `cameraSys.camera.getWorldMatrix().clone().invert()` (the
-  camera is the CameraSystem's, not a field on `Game`). X4.3b's oracle took it
-  for all forty-five combinations, the six rail weapons in all seven sights and
-  the pistol, the launcher and the mine in their own, by a fresh composition
-  of the joints in `src/math` instead, which needs no frame at all. At `adsBlend === 1` the answer is
+  wear (a weapon change moves the optic too), and COMPOSE ITS WORLD INTO A
+  SCRATCH MATRIX of your own: import `/src/math/index.ts` and walk the joint up
+  to the root, each step `local × parent` with the local composed as
+  `rigJoints.ts`' `composeLocal` does it (`fixedLocal` if set; else the
+  quaternion or the Euler through `Quaternion.RotationYawPitchRoll`, then
+  `Matrix.ComposeToRef`, or for a pivoted joint `pivot × Scaling × rotation ×
+  pivotInverse` plus the translation), and the root's world
+  `Matrix.FromArrayToRef(root.outside().m, 0, …)`. **Never `view.tree.read`
+  or `world` from a script**: those are the game's readers, and a call from
+  outside the frame re-stamps the render cache, so the next frame's grenade or
+  rocket would start from a different answer than it would have. Take the
+  translation row and put it in the CAMERA's frame by
+  `cameraSys.camera.getWorldMatrix().clone().invert()` (the camera is the
+  CameraSystem's, not a field on `Game`). X4.3b's oracle took all forty-five
+  combinations this way, the six rail weapons in all seven sights and the
+  pistol, the launcher and the mine in their own; wait three rendered frames
+  past the fit all the same (below). At `adsBlend === 1` the answer is
   `(0, 0, eyeRelief × zoomComp)` for that sight; measured across all
   twenty-five, the worst cross-axis component is **6 µm**, so anything above a
   few thousandths of a millimetre is real. Prefer this to projecting the
@@ -1426,7 +1435,8 @@ is one machine's:
   of rays down the sight's own cone, and that needs no round and no map at all —
   every weapon and every optic is built in `Game`'s constructor, so the rigs are
   in the scene while the MENU is up. Take the weapon's root joint
-  (`view.rigs[<weapon>].parts.root`, worlds through `view.tree.world`) and its
+  (`view.rigs[<weapon>].parts.root`, its world composed into scratch as
+  above, never through the tree's readers) and its
   `sightCenter` — and note the meshes have no parent since X4.3b: each holds the
   world `drawView` last handed it, so a rig that has not been DRAWN (not carried,
   or the viewmodel hidden) holds none; carry it, show it and wait a frame — put the eye on the sight
