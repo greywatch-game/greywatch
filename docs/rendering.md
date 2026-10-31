@@ -4340,10 +4340,16 @@ PER SEGMENT, as it was of the meshes while they were loose candidates:
 `offer` used, of each segment's world bounding sphere composed THIS frame
 (`BoundingSphere._update`, operation for operation, off the kit's local
 sphere), a dropped segment written as a zero matrix the program draws as
-nothing. **It is deliberately not a whole-hull drop**: dropping a hull whole
-would draw at range every small part — a whip, a cupola gun, a gun ring — the
-gate drops there today, which is a picture change and A3's detail tier's to
-make (X4.2c). And because the sphere is the frame's own, the drop cannot latch
+nothing. **It is deliberately not a whole-hull drop, and it stays so** (the
+project owner's decision, 2026-10-31, `BABYLON_EXIT.md`'s "Decisions that are
+yours"): dropping a hull whole would draw at range every small part — a whip,
+a cupola gun, a gun ring — the gate drops there today, and the hull itself
+would only go past the fog on most viewports (~1.5 km at 1080p, ~540 m at
+832x384), so a hull's small parts keep leaving one by one, here. A3's detail
+tier (X4.2c) stands on a whole-hull measure of its own, used for its swap and
+nothing else, ON TOP of this gate; and the hull's draw distance (X4.2d) fades
+at that distance only, there being no whole-hull size edge to fade at. And
+because the sphere is the frame's own, the drop cannot latch
 on stale bounds (X4.2a's fix holds by construction); where Babylon's gate read
 the bounds of the PREVIOUS frame's freeze, ours reads this frame's, which
 differs only on the frame a moving part crosses the gate's edge. **The

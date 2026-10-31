@@ -4879,9 +4879,11 @@ draft named a `HullFlex`; no such module exists — the hull's own motion is
   and side, every hull an instance, its joints a segment's matrix), in every
   pass a hull is in, with what each closure does to them: the belts' run,
   the paint and the wreck's charred repaint (`paint`), `reset`, and the
-  hull's emissives with it. The hull's measure, the fog-wall gate and the
-  size gate's whole-hull drop move with them, a hull measured once and
-  dropping whole as a body does. Babylon builds no hull mesh in a round.
+  hull's emissives with it. The size gate moves with them as it was, PER
+  SEGMENT — asked of each segment's world sphere composed this frame, as it
+  was asked of each mesh — a hull never having had a whole-hull drop (and the
+  fog-wall gate no hull half), and kept so for good (decided 2026-10-31,
+  "Decisions that are yours"). Babylon builds no hull mesh in a round.
   The pipelines are asked ahead through `PipelineCache`, so the warm-up
   waits for them as it waits for the bodies' (it poses no hull of its own
   today: a hull stands at its hardstanding in the views it draws). The editor's hulls are
@@ -4895,30 +4897,38 @@ draft named a `HullFlex`; no such module exists — the hull's own motion is
   both machine-gun rings (`tank-mg-ring`, `truck-mg-ring`) drop at range;
   every other segment, the helicopter's all, is kept. Each kind's kit gains
   a reduced set without those segments, swapped by projected size computed
-  as `WorldCulling`'s size gate computes it, off the hull's one measure; the
-  swap's size is the step's to state and the bank's to show. **The full set
+  as `WorldCulling`'s size gate computes it, off a WHOLE-HULL measure this
+  step introduces — one sphere a hull, composed where the hull is this frame
+  (X4.2a's fix: never a bound cached at the last frame it was drawn) — used
+  for the swap and for NOTHING else: the per-segment size gate stays exactly
+  as it is, under the tier (decided 2026-10-31); the swap's size is the
+  step's to state and the bank's to show. **The full set
   is the one the warm-up shows** (`docs/game.md`). **Oracle:** the bank's
   numbers in the message (only rows with a hull past the swap may move);
   a hull walked through the swap at 832x384 and at 3440x1440, photographed
   either side of it; X0.3 on Cinderhaven at 300 m against A3's +6.5%.
 - **X4.2d — the hull's draw distance and its fade (the picture change).**
-  **Decided** (2026-10-31, the user): a map field, and a FADE at both edges,
-  not a pop. `EnvironmentSpec.hullDrawDistance`, defaulting to
+  **Decided** (2026-10-31, the user): a map field, and a FADE at it, not a
+  pop. `EnvironmentSpec.hullDrawDistance`, defaulting to
   "unaffected" (its own `fogEnd`, clamped to it, as `bodyDrawDistance` is),
   resolved once at the install and pushed to the cull — **a NINTH override in
   `CLAUDE.md`'s table of the map's** and `docs/world.md`'s section, with
   what a map raising it owes. The fade is X4.1e's screen door, in faded
-  twins of the hull programs, at that distance AND at the size gate's
-  whole-hull drop (a fade built for one misses the other), its value per
-  hull in the fragment stage as `BODY_FADE` is; the twins are asked ahead
+  twins of the hull programs, at that distance ONLY — there is no
+  whole-hull size drop to fade at (decided 2026-10-31: the per-segment gate
+  is kept for good, a whole-hull size edge would fall past the fog on most
+  viewports, ~1.5 km at 1080p and ~540 m at 832x384, and a hull's small
+  parts keep dropping at the per-segment gate one by one as they always
+  have) — its value per hull in the fragment stage as `BODY_FADE` is; the
+  twins are asked ahead
   with the rest. **No shipped map sets the field in this step** — A3's
   +15.4% at 420 m on Cinderhaven is a look call per map, taken after. **A
   hull is a GUN as well as a picture**, where a body past
   `bodyDrawDistance` is past every bot's engagement range: the step states
   what a map may set this to against the reach of a hull's guns and of the
   bots that fire them, so that no setting buys an unseen shooter. **Oracle:**
-  the bank's numbers in the message (only rows with a hull at a fade edge
-  may move); a hull driven through both edges at 832x384 and at 3440x1440;
+  the bank's numbers in the message (only rows with a hull in the fade may
+  move); a hull driven through the fade at 832x384 and at 3440x1440;
   X0.3 on Cinderhaven with the field set to 420 on a scratch layout, against
   A3's +15.4%.
 - **Contracts all four keep:**
@@ -5107,7 +5117,9 @@ the parent's size gate, fixed by the step — Deviations).
 - **Owed onward.** X4.2b: the meshes into a kit our renderer draws, every
   hull an instance, the joints a segment's matrix — the `HullMesh` list
   (`local`, `joint`) is that segment table already. **X4.2b's whole-hull
-  measure must keep the fixed behaviour** (Deviations): measured where the
+  measure must keep the fixed behaviour** (Deviations; X4.2b kept the gate
+  per segment, and since the 2026-10-31 decision the whole-hull measure is
+  X4.2c's, for its detail tier's swap alone): measured where the
   hull IS every frame it is offered — off its own fields or its composed
   joints — and never off a bound cached at the last frame it was drawn, or a
   hull the size gate dropped stays dropped wherever it drives. The phone's
@@ -5254,7 +5266,9 @@ parent, every hull row among them).
   MG ring (0.396 m) goes at ~300 m and the hull kilometres further. Kept per
   segment, exactly as before, so no pixel moves; a whole-hull measure, and
   what it changes, are X4.2c's to make with the detail tier (the picture
-  change) and X4.2d's fade. **The gate reads THIS frame's sphere**, where
+  change) and X4.2d's fade. (Decided 2026-10-31, after the review below: the
+  per-segment gate is kept for good, X4.2c's whole-hull measure serves its
+  swap alone, and X4.2d fades at `hullDrawDistance` only.) **The gate reads THIS frame's sphere**, where
   Babylon's read the bounds of the previous frame's freeze (X4.2a's fix,
   "one frame behind"): the two differ only on the frame a moving part crosses
   the gate's edge, and on the frame a hull is placed again (X4.2a's lone
@@ -5305,8 +5319,14 @@ parent, every hull row among them).
   drawn. **Raised to the project owner, not decided here**: (a) the size gate
   kept PER SEGMENT where the entry asks for a hull measured once and dropping
   whole — an architectural question about the shape of X4.2c and X4.2d, not
-  a bug in this step. The forward bullets will be amended once the owner
-  decides; nothing here changes how the gate works. **Found**: an unrecorded
+  a bug in this step. **The owner decided it on 2026-10-31** ("Decisions that
+  are yours"): the per-segment gate is KEPT, permanently; X4.2c adds a
+  whole-hull measure used only for its detail tier's swap, and X4.2d fades
+  only at `hullDrawDistance`, with no size-edge fade — a whole-hull size edge
+  would fall past the fog on most viewports (~1.5 km at 1080p, ~540 m at
+  832x384), and a hull's small parts keep dropping at the per-segment gate
+  as they always have. The X4.2b, X4.2c and X4.2d bullets above say so now;
+  nothing here changes how the gate works. **Found**: an unrecorded
   BOOT cost — the six kits built and uploaded at `Game`'s construction on
   every map, the three with no armour included — measured after the review
   (Owed onward). **Fixed** (rule 7, and one comment that did not say what
@@ -5343,8 +5363,8 @@ parent, every hull row among them).
     comment named `inkRig`, long gone (the ink is one screen-space pass), in
     the present tense.
 - **Owed onward.** X4.2c: the detail tier on a whole-hull measure, with the
-  per-segment gate it replaces (above) — the picture change for every small
-  part the tier keeps. X4.2d: the fade, in faded twins of the hull program.
+  per-segment gate kept under it (the 2026-10-31 decision, above). X4.2d:
+  the fade at `hullDrawDistance`, in faded twins of the hull program.
   **The rank surplus** (3.0x) is unmeasured on the phone; `gpu.frame` held on
   the desktop. The phone's FOLLOW-UP reading, as every step's since X3.3c.
   **The editor draws no hull** (it builds no fleet), X5.3's as its bodies are.
@@ -5693,5 +5713,6 @@ Phase 1 actually took.
 | X4.1 | One step or several? | **Decided** 2026-10-29: five sub-steps (X4.1). The fade is a picture change and lands alone (rule 2); corpses come off the reparenting before the draw moves, so the draw moves every body at once. |
 | X4.2 | One step or several? | **Decided** 2026-10-31: four sub-steps (X4.2). The joints and the draw move with no picture change; the detail tier and the draw distance are picture changes and land alone (rule 2). |
 | X4.2 | Which hull parts drop at range (the tank's links and wheels, the MG rings)? | **Decided** 2026-10-31: PERF_PLAN A3's suggestion — `tank-link-hi`, `tank-link-lo`, `tank-wheel`, `tank-mg-ring`, `truck-mg-ring`; PERF_PLAN A3 measured +6.5% at 300 m on Cinderhaven (X4.2c). |
-| X4.2 | The hull's draw distance: a map field, or a multiple of `bodyDrawDistance`? And a pop or a fade at it? | **Decided** 2026-10-31: a map field, `EnvironmentSpec.hullDrawDistance`, defaulting to unaffected; and a fade at both edges, X4.1e's screen door (X4.2d). |
+| X4.2 | The hull's draw distance: a map field, or a multiple of `bodyDrawDistance`? And a pop or a fade at it? | **Decided** 2026-10-31: a map field, `EnvironmentSpec.hullDrawDistance`, defaulting to unaffected; and a fade at both edges, X4.1e's screen door (X4.2d) — the size edge withdrawn the same day (the next row): a fade at the distance only. |
+| X4.2b | The hull's size gate: kept PER SEGMENT (X4.2b's deviation, no picture change), or made a whole-hull drop as a body's? | **Decided** 2026-10-31: per segment, permanently. X4.2c adds a whole-hull measure used ONLY for its detail tier's swap; X4.2d fades ONLY at `hullDrawDistance`, with no size-edge fade — a whole-hull size edge falls past the fog on most viewports (~1.5 km at 1080p, ~540 m at 832x384), and a hull's small parts keep dropping at the per-segment gate as they always have (X4.2b's note, X4.2c, X4.2d). |
 | X6.2 | Is it ready to merge to `develop`? | Only when X6.2's "Before" list passes in full. |
