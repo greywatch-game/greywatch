@@ -4846,7 +4846,7 @@ and nowhere else: no bank row has a body at either, and none moved).
   Cinderhaven is the saving it could buy). X4.1d's owed items stand (the
   rank's vertex surplus, the editor's body draw, the compose cost).
 
-### X4.2 — Vehicles (PERF_PLAN A3) — **M–L, as four sub-steps** (split 2026-10-31) — X4.2a **LANDED** (fde5be7), X4.2b **LANDED** (d4f41ef), X4.2c **LANDED** (HASH)
+### X4.2 — Vehicles (PERF_PLAN A3) — **M–L, as four sub-steps** (split 2026-10-31) — X4.2a **LANDED** (fde5be7), X4.2b **LANDED** (d4f41ef), X4.2c **LANDED** (f302403)
 
 Every hull a page draws — the tank, the truck and the helicopter, live or
 wrecked — comes off Babylon's scene, and A3's detail tier and draw distance
@@ -5395,7 +5395,7 @@ parent, every hull row among them).
   and uploading the kits at the first install of a map with armour rather
   than at construction; unmeasured on the phone.
 
-**X4.2c landed** (HASH; 2026-10-31; the picture change, for a hull past the
+**X4.2c landed** (f302403; 2026-10-31; the picture change, for a hull past the
 swap and nowhere else: the bank 61 of 61 byte-identical against its parent,
 the census down 9 draws on Sarab and 1 on Cinderhaven on the rows that frame
 far hulls).
