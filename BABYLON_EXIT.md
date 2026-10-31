@@ -4846,7 +4846,7 @@ and nowhere else: no bank row has a body at either, and none moved).
   Cinderhaven is the saving it could buy). X4.1d's owed items stand (the
   rank's vertex surplus, the editor's body draw, the compose cost).
 
-### X4.2 — Vehicles (PERF_PLAN A3) — **M–L, as four sub-steps** (split 2026-10-31) — X4.2a **LANDED** (fde5be7), X4.2b **LANDED** (HASH)
+### X4.2 — Vehicles (PERF_PLAN A3) — **M–L, as four sub-steps** (split 2026-10-31) — X4.2a **LANDED** (fde5be7), X4.2b **LANDED** (d4f41ef)
 
 Every hull a page draws — the tank, the truck and the helicopter, live or
 wrecked — comes off Babylon's scene, and A3's detail tier and draw distance
@@ -5126,7 +5126,7 @@ the parent's size gate, fixed by the step — Deviations).
   mesh was handed the last time. Not done here; it would keep the fix, since
   a freeze skipped is a bound left where the mesh still is.
 
-**X4.2b landed** (HASH; 2026-10-31; no picture change: the bank 61 of 61
+**X4.2b landed** (d4f41ef; 2026-10-31; no picture change: the bank 61 of 61
 byte-identical against its parent, every hull row among them).
 - **What it is.** Every hull the page draws — the tank, the truck and the
   helicopter, in its livery or wrecked — is OUR renderer's
