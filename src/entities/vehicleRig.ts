@@ -54,9 +54,9 @@
  * for the same channels, bit for bit. Each segment's own local is composed
  * once at build (`HullSegment.local`); `composeHull` composes the tree and
  * `writeHullDrawing` writes each segment's world (that local times its
- * joint's) for the drawing, once a frame from `Game` (`drawHulls`), after
- * every write and immediately before
- * `scene.render`. No node of a hull is in the scene. The muzzles and the
+ * joint's) for the drawing, once a frame from `Game` — the compose in
+ * `fadeHulls` (the cull span), the write in `drawHulls` — after every write
+ * and before `scene.render`. No node of a hull is in the scene. The muzzles and the
  * sight are joints with no segment, which nothing in the game reads: the
  * simulation replays them off the record (`hullFrame.ts`' `hullPointToRef`),
  * the same chain these compose.
@@ -926,7 +926,8 @@ export function measureHull(rig: VehicleRig, out: { x: number; y: number; z: num
 /**
  * Composes the rig's joints, FRESH, and writes its whole-hull MEASURE in
  * the world this frame into `measure` (`measureHull`) — the one compose a
- * present hull gets a frame (`Game.drawHulls`, `BABYLON_EXIT.md` X4.2d),
+ * present hull gets a frame (`Game.fadeHulls`, `BABYLON_EXIT.md` X4.2d, in
+ * the cull span since its post-commit review),
  * after every write to its joints and before anything reads them: the
  * measure is what the draw distance's FADE is asked of
  * (`WorldCulling.hullFade`), and `writeHullDrawing` writes the drawing off
@@ -959,7 +960,7 @@ export function composeHull(rig: VehicleRig, measure: { x: number; y: number; z:
  *
  * **Called once a frame for every present hull that is drawn, after its
  * `composeHull` and before the render** (`Game.drawHulls`, inside the render
- * span) — a hull its draw distance has faded out entirely is composed and
+ * span; the compose `Game.fadeHulls`', earlier in the frame) — a hull its draw distance has faded out entirely is composed and
  * not written. The rig's switch is the caller's to have asked. Allocates
  * nothing.
  */

@@ -530,12 +530,17 @@ it, and a hull's shadow stays its collider box whatever it says.
 **Its default is NO distance, not `fogEnd`, and that is the one way it is not
 `bodyDrawDistance`.** A body defaults to the fog because the roster switches
 it off there anyway; nothing ever cut a hull, so a default at the fog would
-fade every far hull over the fog's last tenth — Sarab's 504-560 m is 86-100%
-fog, Cinderhaven's 1,125-1,250 m 89-100%, neither of them none — and drop one
-standing out of the SKY past it, whose horizon colour is only required to sit
-close to the fog: a picture change on every armour map that set nothing. So
-absent is `Infinity`, every hull drawn at any range as before; a stated one is
-capped at `fogEnd` as a body's is.
+fade every far hull over the fog's last tenth — Sarab's 504-560 m is 74.5-100%
+fog, Cinderhaven's 1,125-1,250 m 79.8-100% (the cel shader mixes in the SQUARE
+of its linear ramp, `celSurface.ts`), neither of them all of it — and drop one
+standing out of the SKY past it: a hull past `fogEnd` is drawn in pure
+`fogColor`, which is still a silhouette against a sky whose horizon colour is
+only required to sit close to the fog. A picture change on every armour map
+that set nothing. So absent is `Infinity`, every hull drawn at any range as
+before; a stated one is capped at `fogEnd` as a body's is, for the same fact
+read the other way: past the fog what is left of a hull is that flat
+silhouette, nothing a player can read, so a map that has chosen to cut hulls
+at all ends the fade where the fog ends.
 
 **A hull is a GUN as well as a picture, and that is what floors it.** A body
 past `bodyDrawDistance` is past every bot's engagement range (55 m,
@@ -553,15 +558,23 @@ the farthest point of what of him it can hit (`HULL_REACH.eye`, 22.4 m — a
 helicopter's chase camera 2.4 m up and 14 m back, to the far corner of its
 11.4 m hull) and a muzzle from its hull's measure centre (`hullFade.muzzle`,
 8 m over the tank's measured 7.68 with its turret to the rear), end to end,
-over the 0.9 of the distance the fade starts at — **~419.4 m**. The two reach
-terms are read off every kind's own numbers (`entities/vehicleKinds.ts`), so a
-longer gun or a further chase camera raises the floor by itself. It is a
+over the 0.9 of the distance the fade starts at — **~419.4 m**. **Two terms
+follow the kinds by themselves and one is guarded**: the fire and the eye are
+read off every kind's own numbers (`entities/vehicleKinds.ts`' `HULL_REACH`:
+a gun's `range` and `blastRadius`, a chase camera's height and distance, the
+hull's box), so a longer range, a bigger blast, a further camera or a fourth
+kind moves the floor with no edit; the muzzle's offset is the DRAWING's — a
+barrel's length, a turret's place — which no spec states, so it is a measured
+number in the config, and a dev build sweeps every kind's muzzles and gunner's
+sight through their whole traverse whenever the hull kits are built and throws
+if one reaches past it (`vehicleModels.ts`' `checkMuzzleReach`). A longer
+barrel or a fourth kind's gun owes that term a raise, and is told. It is a
 CLAMP at the resolve, in every build, and a dev build says so on the console:
 a fairness rule rather than a look, which no build may ship without, and a
 stated number that is not the round's is one its author should see. **A map
-whose fog closes inside the floor gets no distance at all**: there the fog
-hides the shooter already, and a cut at the fog would put the fade inside the
-reach the floor keeps whole. Of the four armour maps, Coldharbour (480),
+whose fog closes inside the floor gets no distance at all**: no cut there is
+both at or inside the fog and past the reach, and the floor is the fairness
+rule — a cut at the fog would put the fade inside the reach it keeps whole. Of the four armour maps, Coldharbour (480),
 Harrowmead (520), Sarab (560) and Cinderhaven (1,250) all leave room above the
 floor.
 
@@ -570,7 +583,20 @@ parity, nothing the server holds — only the look call, which is the fade
 landing on ground the player can see, and the floor above; and since it is a
 LANDMARK's argument turned round (a hull is a thing in the world, the fade a
 distance from the eye), the same caution `fogEnd` takes: a hull vanishing out
-of a skyline is louder than a soldier thinning out of a street. **No shipped
+of a skyline is louder than a soldier thinning out of a street. **The look
+call includes what a hull leaves BEHIND it** (`BABYLON_EXIT.md` X4.2d's
+post-commit review, the project owner's decision): the rotor wash FOLLOWS the
+fade — its dust and spray rings' rate and the water's ripple site scaled by
+the hull's fade (`Game.fadeHulls` hands `RotorWash.update` each hull's), so
+a helicopter faded out takes its downwash with it, what is already aloft
+drifting out on its own life; but a hull's TRACERS (`CombatFx`, off the
+muzzle) and a shell's BLAST and its dust are NOT faded and are accepted as
+they are — a round and an impact are the fight, drawn wherever they land, so
+a hull past its distance can still be seen firing by its streaks and its
+hits. And the screen door's holes are INKED: the ink reads each hole's depth
+step, so on a big viewport (3440x1440) a fading tank reads as a field of
+small cross-hatched "x" marks rather than a smooth thinning — as a fading
+body does at the same distance edge. **No shipped
 map states one yet** (X4.2d): A3's measured +15.4% at 420 m on Cinderhaven was
 Babylon's per-mesh cost, and what it buys under our renderer is a per-map
 look call, taken after.

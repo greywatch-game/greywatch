@@ -32,8 +32,11 @@
  * the plain pipeline, the faded ones (the caller's last `n - whole`) after
  * them by the twin, so each hull is still drawn in its own order and a frame
  * with no hull fading is the draws it always was, its fades not uploaded;
- * a rank's draw runs to the longest range any hull draws at it, the rest of
- * its corners drawn as nothing; a kit narrower than the widest is the widest
+ * a rank's draw runs to the longest range any hull OF ITS GROUP — the whole
+ * or the fading — draws at it, the rest of its corners drawn as nothing, and
+ * a group with nothing live at a rank issues no draw there (X4.2d's
+ * post-commit review: on a frame with no hull fading the whole group is
+ * every hull, so its spans are the ones a single group always had); a kit narrower than the widest is the widest
  * with its missing segments empty; the draws go into the main pass at
  * `"beforeAlphaTest"`, where Babylon's opaque queue — the hulls' meshes among
  * it until X4.2b — had already drawn, AHEAD of the bodies' draw and the
@@ -142,8 +145,10 @@ export class HullDraw {
   private readonly order: Uint32Array<ArrayBuffer>;
   /** What `bodyOrder` is uploaded from: a hull's kit word, then its order — `segments + 1` apiece. */
   private readonly upload: Uint32Array<ArrayBuffer>;
-  /** This frame's draw a rank: its span (0, none). */
+  /** This frame's draw a rank for the hulls drawn WHOLE: its span (0, none). */
   private readonly rankSpan: Uint32Array;
+  /** This frame's draw a rank for the FADING hulls (X4.2d): its span (0, none) — all 0 on a frame with none. */
+  private readonly rankSpanFaded: Uint32Array;
 
   private pending = false;
   private instances = 0;
@@ -180,6 +185,7 @@ export class HullDraw {
     this.order = new Uint32Array(this.capacity * segments);
     this.upload = new Uint32Array(this.capacity * (segments + 1));
     this.rankSpan = new Uint32Array(segments);
+    this.rankSpanFaded = new Uint32Array(segments);
 
     // The kits' arrays, end to end, and `indexData`: each kit's ranges —
     // (first, count) a segment, kit-major, a kit narrower than the widest
@@ -401,19 +407,25 @@ export class HullDraw {
     const segments = this.segments;
     const order = this.order;
     this.pull(order, this.matrices, n);
-    // A rank's span: the longest range any hull draws there — a segment
+    // A rank's span, a GROUP apiece — the hulls drawn whole and the fading
+    // ones: the longest range any hull of that group draws there — a segment
     // switched off (a zero matrix) asking for none, so a rank of nothing but
-    // dropped, culled or padded segments is no draw.
+    // dropped, culled or padded segments is no draw for that group. With no
+    // hull fading every hull is in the first group, so its spans are the
+    // single group's they always were and the second's are all 0.
     const words = this.words;
     const counts = this.counts;
     const matrices = this.matrices;
+    const whole = this.wholeCount;
     this.rankSpan.fill(0);
+    this.rankSpanFaded.fill(0);
     for (let i = 0; i < n; i++) {
       const base = (words[i] & KIT_MASK) * segments;
+      const spans = i < whole ? this.rankSpan : this.rankSpanFaded;
       for (let r = 0; r < segments; r++) {
         const s = order[i * segments + r];
         if (matrices[(i * segments + s) * MATRIX_FLOATS + 15] === 0) continue;
-        if (counts[base + s] > this.rankSpan[r]) this.rankSpan[r] = counts[base + s];
+        if (counts[base + s] > spans[r]) spans[r] = counts[base + s];
       }
     }
     const upload = this.upload;
@@ -434,7 +446,8 @@ export class HullDraw {
    * land in its own order. Within a rank the hulls drawn whole go first, one
    * draw, and the FADED ones after them in another by the twin, behind the
    * screen door (X4.2d): a hull is one or the other for the whole frame, so
-   * each still lands in its own order.
+   * each still lands in its own order. Each group's draw runs to its OWN
+   * span, and a group with none at a rank is no draw there.
    */
   private readonly draw = (pass: GPURenderPassEncoder, ctx: FrameContext): void => {
     if (!this.ours) return;
@@ -449,15 +462,15 @@ export class HullDraw {
     let bound: BuiltPipeline | null = null;
     for (let r = 0; r < this.segments; r++) {
       const span = this.rankSpan[r];
-      if (span === 0) continue;
-      if (whole > 0) {
+      if (whole > 0 && span > 0) {
         if (bound !== cel) this.bind(pass, (bound = cel), ctx);
         pass.draw(span, whole, r * this.span, 0);
         drawn++;
       }
-      if (fading > 0) {
+      const spanFaded = this.rankSpanFaded[r];
+      if (fading > 0 && spanFaded > 0) {
         if (bound !== celFaded) this.bind(pass, (bound = celFaded), ctx);
-        pass.draw(span, fading, r * this.span, whole);
+        pass.draw(spanFaded, fading, r * this.span, whole);
         drawn++;
       }
     }

@@ -421,7 +421,7 @@ frame                       the whole tick, wall to wall
 │  └─ hud                   what a gameplay frame pushes at the chrome
 ├─ hudDraw                  HUD.update — every state owes it
 ├─ post                     the post chain, the sky, the shafts
-├─ culling                  the cull cells, the motes, the rotors' dust, the shader's eye
+├─ culling                  the cull cells, the hulls' compose and fade, the motes, the rotors' dust, the shader's eye
 ├─ gi                       GiVolume.update: the lights, the params, recording
 │                           three compute passes (their GPU time is gpu.frame's)
 ├─ audio                    pushHullEngines
@@ -613,7 +613,7 @@ mask's groups were being added to `drawWorld` too.
 evaluation (the `Mesh walk` counter, which is the same number in other units),
 `Game.drawBodies` (every drawn rig's joints composed and handed to its meshes,
 `BABYLON_EXIT.md` X4.1a — the composition Babylon did inside the walk until
-then), `Game.drawHulls` (the hulls' joints the same, X4.2a, and their drawing written for ours, X4.2b), the post chain, a frame's share of a reflection bake, and the present. Measured
+then), `Game.drawHulls` (the hulls' drawing written for ours, X4.2b — their joints composed inside `render` from X4.2a until X4.2d's post-commit review moved the compose into `culling`, `Game.fadeHulls`, so the rotor wash is handed the same fade), the post chain, a frame's share of a reflection bake, and the present. Measured
 on Hollowmere headless, 969 frames at 101 fps: `render` 4.86 ms, of which
 `drawWorld` 2.15, `glow` 1.04, `drawOverlay` 0.25 and `shadowPass` 0.73 — 86%
 of the bar attributed, and the glow's share of the whole frame **10.5%**, which

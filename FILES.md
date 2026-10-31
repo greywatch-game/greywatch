@@ -912,7 +912,10 @@ src/
                         #   keyed by the same union, so a kind cannot have a
                         #   row in one and not the other; and `hullKits`,
                         #   every kind's drawing in both views' colours, which
-                        #   our renderer draws hulls as (X4.2b). Client only
+                        #   our renderer draws hulls as (X4.2b) — in a DEV build
+                        #   with every kind's muzzles and sight swept against
+                        #   the gun-reach floor's measured term, a throw past it
+                        #   (`checkMuzzleReach`, X4.2d's review). Client only
     tankFrame.ts        # The tank's joints and running-gear extents as
                         #   numbers (`TANK_FRAME` and the constants it is
                         #   derived from) — no Babylon; `TankModel` imports them
@@ -939,7 +942,8 @@ src/
                         #   The joints are OURS (a `JointTree`, its first joint
                         #   the collider box's frame; BABYLON_EXIT.md X4.2a),
                         #   the drawing composed and written for our renderer
-                        #   once a frame (`composeHull`, `writeHullDrawing`,
+                        #   once a frame (`composeHull` from Game.fadeHulls,
+                        #   `writeHullDrawing` from Game.drawHulls,
                         #   each segment size-gated),
                         #   switched as one (`setHullRigEnabled`) and painted
                         #   charred by a flag (`paintRig`). A kit carries the
@@ -1219,7 +1223,11 @@ src/
                         #   `paint` for the before-the-first-render rule that
                         #   makes that safe here and not in BlastDust, and for
                         #   why the spray's pair is LIT on the way in and the
-                        #   dust's is not. Client only
+                        #   dust's is not. FADES with its hull at a map's hull
+                        #   draw distance: handed each hull's fade by Game
+                        #   (`fadeHulls`), spent on the rate and the ripple,
+                        #   1 — unchanged — where a map states none (X4.2d's
+                        #   review). Client only
     DeathCam.ts         # The player's own death — a stand-in rig, filed and
                         #   drawn as any body; the only occlusion pick outside
                         #   combat
@@ -2647,7 +2655,9 @@ src/
                         #   the order (and the segments the frustum culls) the
                         #   prepare pulls (Game.hullPull); a FADING hull
                         #   (X4.2d) drawn after the whole ones by the twin, at
-                        #   its fade, a frame with none fading the draws it was;
+                        #   its fade, each group's draw a rank its own span and
+                        #   none where it has nothing, a frame with none fading
+                        #   the draws it was;
                         #   installed AHEAD of the bodies, as Babylon's queue
                         #   drew the hulls; its two pipelines asked once a session,
                         #   a failure (or a refused pass) the round's

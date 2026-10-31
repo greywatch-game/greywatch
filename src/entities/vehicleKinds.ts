@@ -117,11 +117,16 @@ export function kindOf(kind: VehicleKind | undefined): VehicleType {
 /**
  * How far a hull's fire REACHES, and how far a viewer's eye stands from what
  * of him it can hit — the two figures every kind's own numbers state, read
- * over the whole table (`BABYLON_EXIT.md` X4.2d), so a longer gun or a
- * further chase camera moves them by itself. What a map's
- * `EnvironmentSpec.hullDrawDistance` is floored by (`world/environment.ts`'
+ * over the whole table (`BABYLON_EXIT.md` X4.2d), so a longer range, a bigger
+ * blast, a further chase camera or a fourth kind moves them by itself. What a
+ * map's `EnvironmentSpec.hullDrawDistance` is floored by (`world/environment.ts`'
  * `hullDrawFloor`), so that no setting fades out a hull whose guns can still
- * reach the player looking for it.
+ * reach the player looking for it. **The floor's THIRD term is not here**:
+ * how far a muzzle stands from its hull's measure centre is the DRAWING's (a
+ * barrel's length, a turret's place), which no spec states — measured into
+ * `CONFIG.graphics.culling.hullFade.muzzle` and GUARDED by a dev-build throw
+ * whenever the hull kits are built (`vehicleModels.ts`' `checkMuzzleReach`),
+ * so a longer barrel or a fourth kind's gun is caught there, not here.
  */
 export interface HullReach {
   /**

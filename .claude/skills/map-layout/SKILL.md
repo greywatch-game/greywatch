@@ -17,7 +17,7 @@ Read before touching anything:
 - CLAUDE.md's "The map is data, not code", "Visual meshes and collider
   proxies" and "Mesh metadata" sections — the world layer's two rules that
   cannot bend;
-- `docs/world.md` — the eight per-map overrides, the heightfield, roads and
+- `docs/world.md` — the nine per-map overrides, the heightfield, roads and
   paths, the borderland and the rim, and each seeded map's lessons;
 - the map's own `layout.ts` header (it says what each flag is FOR) and, if it
   is seeded, its generator's header in `scripts/generate-<map>.mjs`.

@@ -471,8 +471,8 @@ export interface EnvironmentSpec {
    * `vehicles.crew`), as is the launcher's that hunts a hull (a rocket's
    * ~157 m, a bot's 75); the binding number is the gun's, because a person
    * can sit behind it. On a map whose `fogEnd` is short of the floor the
-   * field can shorten nothing (it resolves to no distance), which is the
-   * fog already hiding the shooter rather than this.
+   * field can shorten nothing (it resolves to no distance): no cut there is
+   * both inside the fog and past the reach.
    *
    * **No shipped map states it** (X4.2d): A3's measured +15.4% at 420 m on
    * Cinderhaven was Babylon's per-mesh cost, and what it buys under our
@@ -650,9 +650,19 @@ export function bodyDrawDistanceOf(env: EnvironmentSpec): number {
  * from a muzzle (`HULL_REACH.fire`), the viewer's eye from what of him it
  * can hit (`HULL_REACH.eye`) and the muzzle from the measure's centre
  * (`hullFade.muzzle`), end to end, which the triangle inequality makes a
- * bound — over that share. Derived from the kinds' own numbers, so a longer
- * gun raises it by itself: ~419 m today, the tank's shell and the
- * helicopter's chase camera.
+ * bound — over that share: ~419 m today, the tank's shell and the
+ * helicopter's chase camera. **Two of the three terms follow the kinds by
+ * themselves and one is GUARDED**: the fire (a gun's `range`, its
+ * `blastRadius`) and the eye (a chase camera's `anchorHeight` and
+ * `distance`, the hull's box) are read off every kind's spec
+ * (`HULL_REACH`), so a longer gun, a bigger blast, a further camera or a
+ * fourth kind moves the floor with no edit here; the muzzle's offset is a
+ * fact about the DRAWING — a barrel's length, a turret's place on the hull —
+ * which no spec states, so it is a measured number in the config, and a DEV
+ * build checks every kind's muzzles and gunner's sight against it through
+ * their whole traverse whenever the hull kits are built, and throws if one
+ * reaches past it (`vehicleModels.ts`' `checkMuzzleReach`). A longer barrel
+ * or a fourth kind's gun therefore owes that term a raise, and is told so.
  */
 export function hullDrawFloor(): number {
   const fade = CONFIG.graphics.culling.hullFade;
@@ -670,19 +680,26 @@ export function hullDrawFloor(): number {
  * what "unaffected" costs.** A body's default is its `fogEnd` because the
  * roster switches a body off there anyway; nothing ever cut a HULL, so a
  * default at the fog would fade every far hull over the last tenth of it —
- * Sarab's 504-560 m and Cinderhaven's 1,125-1,250 are 86-100% and 89-100%
- * fog, not none — and drop one standing out of the SKY past it, whose
- * horizon colour is only required to sit close to the fog (the landform's
- * argument, `WorldCulling`'s header): a picture change on every armour map
- * that set nothing.
+ * Sarab's 504-560 m and Cinderhaven's 1,125-1,250 are 74.5-100% and
+ * 79.8-100% fog (the shader mixes in the SQUARE of the linear ramp,
+ * `celSurface.ts`), not all of it — and drop one standing out of the SKY
+ * past it: a hull past `fogEnd` is drawn in pure `fogColor`, and that is
+ * still a silhouette against a sky whose horizon colour is only required to
+ * sit close to the fog (the landform's argument, `WorldCulling`'s header). A
+ * picture change on every armour map that set nothing.
  *
- * **Capped at `fogEnd`** when a map does state one past it, for
- * `bodyDrawDistanceOf`'s reason (a hull past the fog is drawn as fog), and
- * **RAISED to `hullDrawFloor()`** when it states one inside a hull's gun
- * reach, so that no setting buys an unseen shooter (the field's doc). **A
- * map whose fog closes INSIDE the floor gets `Infinity`**: there the fog
- * already hides the shooter, and a cut at the fog would put the fade inside
- * the reach the floor exists to keep whole. Every case is enforced in every
+ * **Capped at `fogEnd`** when a map does state one past it, as a body's is:
+ * past the fog a hull is no longer a hull a player can read — a flat
+ * `fogColor` silhouette, no detail, no paint, no side — so a map that has
+ * chosen to cut hulls at all has nothing left out there worth the drawing,
+ * and the fade ends where the fog does, under 75-100% fog on Sarab's numbers.
+ * And **RAISED to `hullDrawFloor()`** when it states one inside a hull's
+ * gun reach, so that no setting buys an unseen shooter (the field's doc).
+ * **A map whose fog closes INSIDE the floor gets `Infinity`**: no distance
+ * there is both at or inside the fog (the cap) and past the gun reach (the
+ * floor), and of the two the floor is the fairness rule — a cut at the fog
+ * would put the fade inside the reach the floor exists to keep whole — so
+ * such a map's hulls are drawn as they always were, fog and all. Every case is enforced in every
  * build, the floor being a fairness rule rather than a look, and SAID in a
  * dev one: a stated number that is not the one a round gets is one its
  * author should see.
@@ -705,7 +722,7 @@ export function hullDrawDistanceOf(env: EnvironmentSpec): number {
     if (stated > fog) {
       console.warn(
         `[environment] hullDrawDistance ${stated} is past fogEnd ${fog};` +
-          " a hull out there is already drawn as fog. Clamping to fogEnd.",
+          " a hull out there is only a fogColor silhouette against the sky. Clamping to fogEnd.",
       );
     } else if (stated < floor) {
       console.warn(

@@ -648,8 +648,10 @@ export class WorldCulling {
    * size edge (decided 2026-10-31: the per-segment gate, `keepsSphere`,
    * still answers for every segment drawn, faded or not). 1 while the
    * warm-up stands, so the warm-up shows every hull whole, and on a map
-   * that states no distance (`Infinity`, every shipped map). Read by
-   * `Game.drawHulls` after `update`, the same frame.
+   * that states no distance (`Infinity`, every shipped map) — the literal 1,
+   * so a reader multiplying by it changes nothing. Read by `Game.fadeHulls`
+   * straight after `update`, the same frame, for the drawing and the rotor
+   * wash both.
    */
   hullFade(x: number, y: number, z: number): number {
     const far = this.hullDraw;

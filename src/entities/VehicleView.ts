@@ -18,10 +18,10 @@
  *   write of a `-0` over a `0` is a different bit in the drawn matrix.
  * - **The joints are OURS and Babylon has no node and no mesh of a hull**
  *   (`BABYLON_EXIT.md` X4.2a, X4.2b, `vehicleRig.ts`' header): `Game`
- *   composes them and writes the rig's drawing for our renderer
- *   (`drawHulls`, `vehicleRig.composeHull` and `writeHullDrawing`), once a
- *   frame after every write and before the render, and nothing in the game
- *   reads a joint but the drawing.
+ *   composes them (`fadeHulls`, `vehicleRig.composeHull`, in the cull span)
+ *   and writes the rig's drawing for our renderer (`drawHulls`,
+ *   `writeHullDrawing`), once a frame after every write and before the
+ *   render, and nothing in the game reads a joint but the drawing.
  * - **Five things it is TOLD, as `Vehicle`'s `HullPicture`**: a placing (the
  *   rig back to rest), a shot (the masts crack), a wreck (the charred paint),
  *   each step of the running gear and each step of the hull's mass — because a

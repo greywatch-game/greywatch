@@ -1372,10 +1372,11 @@ export const graphics = {
      * where the swap (~141 m) is nearly unfogged: 33-48 pixels of a tank at
      * up to 98-139/255 across 24-32 px, no knee, and no visible step in the
      * walk through it. The 3440x1440 figures (21-25 pixels at 32) mostly
-     * measure FOG — the swap is ~527 m there, where Sarab's linear fog
-     * (150-560 m) is ~92% complete — and are not that evidence. A desktop
+     * measure FOG — the swap is ~527 m there, where Sarab's fog ramp
+     * (150-560 m) is ~92% along, ~85% fog on screen (the cel shader mixes in
+     * the ramp's square) — and are not that evidence. A desktop
      * player on Cinderhaven (fog 80-1,250 m) meets the swap at ~395-527 m
-     * under only 27-38% fog, so it looks like the phone's photographs, not
+     * under only 7-15% fog, so it looks like the phone's photographs, not
      * the 3440 ones. Where it falls: a tank at ~527 m and a truck at ~348 m
      * on a 1440-tall viewport at the hip field, ~395 and ~260 m at 1080, ~141
      * and ~93 m on a phone's 384 — the swap comes NEARER exactly where a
@@ -1423,7 +1424,13 @@ export const graphics = {
        * truck's station 2.37 — the farthest is the tank's, and 8 carries it. The floor's other term —
        * how far a VIEWER's eye stands from what of him a round can hit, the
        * chase camera at its worst — is derived from the kinds' own numbers,
-       * not stated here.
+       * not stated here. **This one is not derived, so it is GUARDED**: a dev
+       * build sweeps every kind's muzzles and gunner's sight through their
+       * whole traverse whenever the hull kits are built and THROWS if one
+       * reaches past this (`entities/vehicleModels.ts`' `checkMuzzleReach`,
+       * X4.2d's post-commit review; today's worst 7.683 m, 7.729 bounded
+       * between samples) — so a longer barrel or a fourth kind's gun owes it
+       * a raise, and the first dev boot says so.
        */
       muzzle: 8,
     },

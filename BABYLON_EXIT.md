@@ -4910,7 +4910,15 @@ draft named a `HullFlex`; no such module exists — the hull's own motion is
 - **X4.2d — the hull's draw distance and its fade (the picture change).**
   Landed (below). **Decided** (2026-10-31, the user): a map field, and a FADE at it, not a
   pop. `EnvironmentSpec.hullDrawDistance`, defaulting to
-  "unaffected" (its own `fogEnd`, clamped to it, as `bodyDrawDistance` is),
+  "unaffected" — as landed (a156355, amended after its post-commit review):
+  ABSENT is no distance (`Infinity`, every hull at any range, as before),
+  and a STATED one is capped at `fogEnd` and floored at a hull's gun reach
+  (`hullDrawFloor`, ~419.4 m). This bullet's first draft said "its own
+  `fogEnd`, clamped to it, as `bodyDrawDistance` is", which would not have
+  been unaffected: nothing ever cut a hull, so a default at the fog would
+  fade every far hull over its last tenth (74.5-100% fog on Sarab) and cut a
+  `fogColor` silhouette out of the sky past it on every armour map that set
+  nothing — the owner's "unaffected" kept, the parenthesis corrected. It is
   resolved once at the install and pushed to the cull — **a NINTH override in
   `CLAUDE.md`'s table of the map's** and `docs/world.md`'s section, with
   what a map raising it owes. The fade is X4.1e's screen door, in faded
@@ -5463,12 +5471,15 @@ far hulls).
   So 32 is the largest size at which the swap is a handful of pixels, and
   **the evidence for that is the PHONE's viewport, not the big one** (the
   post-commit review's correction): at 3440x1440 the swap is at ~527 m,
-  where Sarab's linear fog (150 → 560 m) is ~92% complete, so that column
-  mostly measures fog. The unfogged phone walk is the reading — 33-48 pixels
+  where Sarab's linear fog ramp (150 → 560 m) is ~92% along — ~85% fog on
+  screen, the shader mixing in the ramp's square (X4.2d's post-commit
+  review) — so that column mostly measures fog. The unfogged phone walk is the reading — 33-48 pixels
   of a tank at up to 98-139/255 across 24-32 px, with no knee, and no step
   at the swap that reads in the photographs — and a desktop player on
   Cinderhaven (fog 80 → 1,250 m) meets the swap at ~395-527 m under only
-  27-38% fog, so it looks like the phone's photographs, not the 3440 ones.
+  7-15% fog (27-38% along the ramp; corrected by X4.2d's post-commit review,
+  which found the fog applied squared), so it looks like the phone's
+  photographs, not the 3440 ones.
   40 already doubles the change and 48 is the step change. In the world:
   a tank at ~527 m and a truck at ~348 m on a 1440-tall view at the hip
   field, ~395 and ~260 m at 1080, ~141 and ~93 m on a phone's 384 — nearer
@@ -5594,12 +5605,14 @@ far hulls).
     473.0) from `pos` [-581, 15, 73] (15 m over the floor, ~28 m absolute),
     looking at [-473, 8.5, 473] over the town's roofs at night, at the hip
     field: 414.8 m off, the measure ~30.5 px across on the bank's 1920x1080,
-    under ~29% of Cinderhaven's fog, so the tank draws its REDUCED set
+    under ~8% of Cinderhaven's fog (29% along its ramp, the shader mixing
+    in the square — X4.2d's post-commit review), so the tank draws its REDUCED set
     (`keepsDetail` false, read back in a scratch probe). Chosen by a scratch
     search (`scratchpad/x42cr/find.mjs`: every bearing and eye height with
     a clear `rays.blocked` line to the near-side running gear, shot full
     against reduced): at the hip field Cinderhaven's best changes ~50
-    pixels, and Sarab's daylight ~60 under ~66% fog; Cinderhaven was kept
+    pixels, and Sarab's daylight ~60 under ~44% fog (66% along its ramp);
+    Cinderhaven was kept
     for the fog, the night costing it about a sixth. **Proof that it sees
     the tier**: the row checked with the shipped tree and again with
     `hullDetail: 0` written into `config/graphics.ts` (put back after),
@@ -5663,7 +5676,9 @@ rows that frame a hull inside it move).
   answers for every segment of a fading hull as ever, and no hull is dropped
   by its size. 1 while the warm-up stands. `Game.drawHulls` now composes each
   present hull first (`vehicleRig.composeHull`, split out of
-  `writeHullDrawing`, still one compose a hull a frame), asks its fade, drops
+  `writeHullDrawing`, still one compose a hull a frame; moved by the
+  post-commit review into `Game.fadeHulls`, in the cull span, so the rotor
+  wash is handed the same fade — below), asks its fade, drops
   a faded-out one (no instance), and hands the WHOLE hulls over first and the
   FADING ones after, each in hardstanding order (`HullDraw.commit(n, whole,
   …)`, `fades`) — the capacity's sixteen counted in that order.
@@ -5689,11 +5704,16 @@ rows that frame a hull inside it move).
   as `bodyDrawDistance` is" would NOT have been unaffected: nothing ever cut a
   hull (a body defaults to the fog because the roster switches it off there
   anyway), so a default at the fog would fade every far hull over the fog's
-  last tenth — Sarab's 504-560 m is 86-100% fog, Cinderhaven's 1,125-1,250
-  m 89-100%, neither of them none — and drop one standing out of the SKY past
-  it, whose horizon colour is only required to sit close to the fog: a
-  picture change on every armour map that set nothing. A STATED distance past
-  the fog is capped at `fogEnd`, as a body's is.
+  last tenth — Sarab's 504-560 m is 74.5-100% fog, Cinderhaven's 1,125-1,250
+  m 79.8-100% (the shader mixes in the SQUARE of its linear ramp; this note
+  said 86-100% and 89-100%, the ramp's own figures, corrected by the
+  post-commit review), neither of them all of it — and drop one standing out
+  of the SKY past it: past `fogEnd` a hull draws pure `fogColor`, a
+  silhouette against a sky whose horizon colour is only required to sit
+  close to the fog. A picture change on every armour map that set nothing.
+  A STATED distance past the fog is capped at `fogEnd`, as a body's is: what
+  is left of a hull out there is that flat silhouette, nothing a player can
+  read, so a map that has chosen to cut hulls ends the fade with the fog.
 - **The gun-reach bound, and how it is enforced.** A hull is a gun as well as
   a picture, and a person can crew it, so a hull faded out while its fire can
   still land on the player looking for it is an unseen shooter. The reaches
@@ -5718,14 +5738,17 @@ rows that frame a hull inside it move).
   bound), over the 0.9 of the distance the fade starts at: **419.37 m** today
   (read back in the page). The two reach terms are read over the kinds' own
   specs (`entities/vehicleKinds.ts`' `HULL_REACH`, no kind named), so a longer
-  gun, a bigger blast or a further chase camera raises the floor by itself.
+  range, a bigger blast, a further chase camera or a fourth kind raises the
+  floor by itself; the muzzle term is MEASURED off the drawing, which no spec
+  states, and since the post-commit review a DEV build GUARDS it (below).
   **Enforced as a CLAMP at the resolve, in every build** (`hullDrawDistanceOf`
   raises a stated number to the floor), with a DEV `console.warn` saying so —
   the plan's style is `bodyDrawDistanceOf`'s (clamp, and say it in a dev
   build), and a fairness rule must hold in the shipped build, which a DEV
   assert would not. **A map whose `fogEnd` closes inside the floor gets no
-  distance at all** (`Infinity`, DEV-warned): the fog hides the shooter
-  already, and a cut at the fog would put the fade inside the reach. All four
+  distance at all** (`Infinity`, DEV-warned): no cut there is both at or
+  inside the fog and past the reach, and of the two the floor is the
+  fairness rule — a cut at the fog would put the fade inside the reach. All four
   armour maps leave room above it — Coldharbour's fog 480, Harrowmead's 520,
   Sarab's 560, Cinderhaven's 1,250 — so a useful setting exists on each, and
   A3's 420 on Cinderhaven is just legal. Nothing the authority holds reads
@@ -5838,14 +5861,145 @@ rows that frame a hull inside it move).
   names the hull's; the rendering section reflowed to keep its 135).
   `kit:hash` was not run: no kit, segment or model moved (the twin draws the
   same kits).
+- **What the post-commit review found** (an independent reader over a156355
+  and c7f130c; fixed after it: one owner-decided picture change where a map
+  states a distance and nowhere else — the rotor wash — a DEV-only guard,
+  one draw skipped on a fading frame, and comments and docs; nothing drawn or
+  simulated moved on any shipped map). **No correctness bug.** **Checked and
+  sound**: (i) the default's deviation — absent is `Infinity`, not `fogEnd` —
+  judged within the owner's "unaffected" (the bullet's parenthesis would have
+  faded and cut far hulls on every armour map; corrected below); (ii) the
+  gun-reach floor, verified term by term: `HULL_REACH.fire` 347 (the shell's
+  340 + its 7 m blast, over the guns' 210 and 190), `HULL_REACH.eye` 22.436
+  (2.4 + 14 + the helicopter's half-diagonal), `hullFade.muzzle` 8 against a
+  measured 7.683, over the 0.9 the fade starts at — 419.37 m, so the fade
+  STARTS past the reach; the bots' reaches (95, 70, a rocket's ~157) and the
+  infantry's (55) far inside it, and every viewer safe, on foot or in any
+  seat, the eye term being the farthest chase camera; (iii) `hullFade`'s eye
+  (`offer`'s `gateEye`, this frame's, set before any reader) and its warm-up
+  handling (1 while warm, and 1 on `Infinity`, a literal); (iv) a frame with
+  nothing fading issues identical GPU work — the same pipeline, groups 0-2,
+  draws and order, the fades not uploaded; (v) `vBody` flat and last, and
+  `firstInstance` past the whole hulls addressing the fading ones' fades;
+  (vi) the faded twin's group-3 buffers not colliding with the vertex stage's
+  eight storage arrays; (vii) `fadedCelFragment` byte-identical for the
+  bodies, now shared; (viii) the install on every map — `installMap` pushes
+  `hullDrawDistanceOf` on every install, so a map rotation, or a map stating
+  none, puts it back to `Infinity`; (ix) the authority untouched (`server/`
+  and `src/sim/` read none of it); (x) `HULL_REACH` data over the kinds'
+  table, no kind named; (xi) no allocation on a frame. **The project owner's
+  decision on EFFECTS** (2026-10-31): when a map states a distance a hull's
+  effects outlived it — the rotor wash's dust and spray rings and the
+  water's ripple sites kept drawing under a hull faded out — so **the wash
+  now FADES with its hull**, and **the rest is accepted and documented**: a
+  hull's tracers (`CombatFx`, off the muzzle) and a shell's blast are not
+  faded (a round and an impact are the fight, drawn wherever they land), and
+  the screen door's holes are INKED, so at 3440x1440 a fading tank (or body)
+  reads as cross-hatched "x" marks rather than a smooth thinning. **Fixed**:
+  - **The wash fades with its hull.** `Game.fadeHulls` (new): every present
+    hull composed (`composeHull`, still its one compose a frame) and asked
+    `WorldCulling.hullFade` into `Game.hullFades` by fleet index — split out
+    of `drawHulls` and moved into the cull span (`followEye`), straight after
+    `culling.update` (whose `offer` sets the eye and the warm-up) and before
+    its two readers: `RotorWash.update(stepped, fades)`, and `drawHulls`,
+    which draws off the same compose and fades. `RotorWash` keeps each wash's
+    hull's fleet index (`Wash.slot`) and spends the fade on each ring's
+    `emitRate` (`rate * strength * fade`, multiplied in LAST) and the ripple
+    site's strength (`wet * fade`) — the amount, never the throw — and a hull
+    faded out is silenced and publishes no site; it imports nothing new and
+    asks no cull: `Game` hands the numbers in (the wiring rule). A hull not
+    present, and every hull with no draw installed, reads 1. **Unchanged at
+    a fade of 1 by construction** — `hullFade` returns the literal 1 on
+    `Infinity` and `x * 1` is `x` — and **checked bit for bit** (scratch
+    `x42dr/wash.mjs`: Cinderhaven, the helicopter pinned hovering 3 m over
+    dry ground and over the bay, the camera at 0.3-1.02 of the distance from
+    its measure centre, `followEye` told the fleet stepped since the deploy
+    card holds the page's own world; after every render the rings'
+    `emitRate` and the site compared with `Object.is` against the parent's
+    formula, `rate * strength` and `wet`): with no field, 240 frames, every
+    one equal. **With the field** — `hullDrawDistance: 420` written into
+    Cinderhaven's `environment.ts` (removed after; the cull's distance read
+    back as 420) — 540 frames, every rate and site equal to `rate * strength
+    * fade`: the dust ring 55.561 at a fade of 1 (126, 357, 378 m), 44.449 at
+    386.4 m (0.8), 33.337 (0.6), 22.224 (0.4), 11.112 (0.2), and 0 at 420 and
+    428.4 m, where the hull has no instance; the spray 134.672 → 107.738,
+    80.803, 53.869, 26.934, 0; the ripple's strength 0.9619 → 0.7696,
+    0.5772, 0.3848, 0.1924, and no site. `docs/vehicles.md`, `docs/world.md`'s
+    "What a map stating it owes" (with the tracers, the blast and the ink),
+    `docs/game.md`'s table, the profiler's `culling` phase (it now holds the
+    compose; `docs/profiling.md`) and the headers say so.
+  - **The muzzle term is GUARDED.** `hullFade.muzzle` is measured off the
+    drawing, and the docs said "a longer gun raises the floor by itself",
+    true of range, blast and the chase camera and not of a barrel or a fourth
+    kind's gun. A DEV check was chosen over deriving the term, which would
+    put a rig build in front of the resolver, on a path `world/environment.ts`
+    shares with the authority's data: `vehicleModels.ts`' `checkMuzzleReach`,
+    run by `hullKits` on one rig a kind — every muzzle and the gunner's sight
+    swept over the turret's and the cupola mount's whole circle (36 steps
+    each) and every gun's pitch limit either way (5), each joint's distance
+    to the measure centre off `measureHull`, the sampled worst divided by
+    `cos(h/4)` once a nested sweep (along a rotation a point's distance from
+    a fixed centre is `sqrt(A + B cos θ)` with `A >= B`, so that bounds it
+    between samples) — THROWING past the term, naming the kind and the
+    joint. Read back: the tank's main gun 7.683 m (7.729 bounded),
+    `muzzle.mjs`'s figure; with the term lowered at run time to 7.7, 7.6, 7,
+    6 and 3.6 it throws each time; `hullKits` takes ~36-44 ms on a dev boot
+    with it; folded out of `dist` (no trace of it). The lean is not swept
+    (the term's 0.32 m margin carries it). `vehicleKinds.ts`' `HULL_REACH`,
+    `environment.ts`' `hullDrawFloor`, `config/graphics.ts`,
+    `docs/vehicles.md`, `docs/world.md`, `CLAUDE.md`'s row and this note now
+    say which terms are automatic and how the muzzle is guarded.
+  - **The fog figures were the RAMP's, not the fog's**: the cel shader mixes
+    in `fog * fog` (`celSurface.ts`), so Sarab's 504-560 m is 74.5-100% fog
+    (not 86-100%) and Cinderhaven's 1,125-1,250 m 79.8-100% (not 89-100%) —
+    fixed in `hullDrawDistanceOf`'s doc, `docs/world.md` and this note; and
+    the same slip in X4.2c's figures: the swap at ~527 m on Sarab is ~85%
+    fog (92% along), Cinderhaven's ~395-527 m 7-15% (27-38% along), the bank
+    row `tank-far` ~8% (29% along) and the search's Sarab view ~44% (66%
+    along) — in X4.2c's note, `config/graphics.ts`, `docs/rendering.md` and
+    the row's `proves` (`src/bench/vantages.ts`; text only, the bank's pixels
+    unmoved).
+  - **Two rationales contradicted each other**: the cap's warning said "a
+    hull out there is already drawn as fog" where the default's argument is
+    that a hull past the fog still reads against the sky. Both now say what
+    is true — past `fogEnd` a hull draws pure `fogColor`, a silhouette
+    against a sky not exactly that colour: the default keeps it (unaffected),
+    and a map that chose to cut hulls ends the fade with the fog, since
+    nothing past it is a hull a player can read (the warning, the resolver's
+    doc, `docs/world.md`). The "fog closes inside the floor" case said "the
+    fog hides the shooter already", the same slip: it now says no cut there
+    is both inside the fog and past the reach, and the floor wins.
+  - **The X4.2d bullet** still carried "(its own `fogEnd`, clamped to it, as
+    `bodyDrawDistance` is)": amended to what landed, with the reason, as
+    55af511 amended the size-gate text; the decisions table's X4.2 row notes
+    the default's form, the owner's "unaffected" kept.
+  - **`CLAUDE.md:741`** said "the eight overrides in full": nine, and
+    `.claude/skills/map-layout/SKILL.md`'s "eight per-map overrides" with it
+    (rule 7); no other count of the map's table in the tree.
+  - **The shared span** (optional, done): a fading frame's whole and fading
+    groups shared one span a rank, so a rank live in one group still drew
+    the other with every corner clipped. Each group now has its own span a
+    rank (`HullDraw`'s `rankSpan`, `rankSpanFaded`) and a group with none
+    there issues no draw. With nothing fading every hull is the whole group,
+    so its spans are the ones the single group had and the faded ones are 0
+    — the same draws, binds and order.
+  - **Measured.** The bank `--check --keep` against a BEFORE at c7f130c (the
+    worktree moved there): **62 of 62 byte-identical** (pixels), the same 34
+    stale rows on both sides, no console or page error — the dev boot under
+    it running the new guard. Typecheck, build (`check-babylon-free`: 15
+    simulations, 202 modules, no path), corecheck (all passed) and `parity`
+    (server and client agree on every map) pass.
 - **Owed onward.** **Whether any map states a distance** — the look call
   A3 left, now without a measurable desktop saving behind it on Cinderhaven;
   a phone, where hulls are a larger share of a GPU-bound frame, is the
   reading that could change that. **The phone's look at the door** on a hull
   (the walk at 832x384 is a desktop rendering of a phone's viewport), and the
-  phone's FOLLOW-UP reading as every step's since X3.3c. **The bench carries
+  phone's FOLLOW-UP reading as every step's since X3.3c — the ink's "x"
+  marks on the door among it (the post-commit review). **The bench carries
   no hull counts** still (`benchhulls.mjs` is a scratch tally). X4.2b's owed
-  items stand (the rank surplus, the boot cost, the editor's hulls).
+  items stand (the rank surplus, the boot cost, the editor's hulls). A
+  hull's tracers and a shell's blast past its distance are accepted, not
+  owed (the owner's decision above).
 
 ### X4.3 — The viewmodel and the kit bay — **M–L**
 
@@ -6165,6 +6319,6 @@ Phase 1 actually took.
 | X4.1 | One step or several? | **Decided** 2026-10-29: five sub-steps (X4.1). The fade is a picture change and lands alone (rule 2); corpses come off the reparenting before the draw moves, so the draw moves every body at once. |
 | X4.2 | One step or several? | **Decided** 2026-10-31: four sub-steps (X4.2). The joints and the draw move with no picture change; the detail tier and the draw distance are picture changes and land alone (rule 2). |
 | X4.2 | Which hull parts drop at range (the tank's links and wheels, the MG rings)? | **Decided** 2026-10-31: PERF_PLAN A3's suggestion — `tank-link-hi`, `tank-link-lo`, `tank-wheel`, `tank-mg-ring`, `truck-mg-ring`; PERF_PLAN A3 measured +6.5% at 300 m on Cinderhaven (X4.2c). |
-| X4.2 | The hull's draw distance: a map field, or a multiple of `bodyDrawDistance`? And a pop or a fade at it? | **Decided** 2026-10-31: a map field, `EnvironmentSpec.hullDrawDistance`, defaulting to unaffected; and a fade at both edges, X4.1e's screen door (X4.2d) — the size edge withdrawn the same day (the next row): a fade at the distance only. |
+| X4.2 | The hull's draw distance: a map field, or a multiple of `bodyDrawDistance`? And a pop or a fade at it? | **Decided** 2026-10-31: a map field, `EnvironmentSpec.hullDrawDistance`, defaulting to unaffected; and a fade at both edges, X4.1e's screen door (X4.2d) — the size edge withdrawn the same day (the next row): a fade at the distance only. The default's form, as landed: absent is NO distance (`Infinity`), not the fog — the first draft's "its own `fogEnd`, as `bodyDrawDistance` is" would have faded and cut far hulls on every armour map — and a stated one is capped at `fogEnd` and floored at a hull's gun reach (X4.2d's note). The wash fades with the hull; tracers and blasts do not, accepted (X4.2d's post-commit review, 2026-10-31). |
 | X4.2b | The hull's size gate: kept PER SEGMENT (X4.2b's deviation, no picture change), or made a whole-hull drop as a body's? | **Decided** 2026-10-31: per segment, permanently. X4.2c adds a whole-hull measure used ONLY for its detail tier's swap; X4.2d fades ONLY at `hullDrawDistance`, with no size-edge fade — a whole-hull size edge falls past the fog on most viewports (~1.5 km at 1080p, ~540 m at 832x384), and a hull's small parts keep dropping at the per-segment gate as they always have (X4.2b's note, X4.2c, X4.2d). |
 | X6.2 | Is it ready to merge to `develop`? | Only when X6.2's "Before" list passes in full. |

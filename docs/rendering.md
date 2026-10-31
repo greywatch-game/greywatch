@@ -4388,8 +4388,9 @@ the swap is nearly unfogged, 33-48 pixels of a tank change at up to
 98-139/255 across 24-32 px with no knee and no visible step in a walk
 through it, and 1-5 of a truck; ~100 of a tank at 48, and by 64 the wheels
 are a row of dots that visibly go (X4.2c's note). The 3440x1440 photographs
-read smaller only because Sarab's fog is ~92% complete at that view's swap;
-a desktop player on Cinderhaven meets it under 27-38% fog, as the phone's
+read smaller only because Sarab's fog is ~85% at that view's swap (its
+linear ramp 92% along; the shader mixes in the ramp's square); a desktop
+player on Cinderhaven meets it under 7-15% fog (27-38% along), as the phone's
 photographs show it. In the world that is a tank at ~527 m and a truck at
 ~348 m at 1440 rows and the hip field, ~395 and ~260 m at 1080, ~141 and ~93
 m on a phone's 384 — nearer exactly where a pixel is bigger. **There is no
@@ -4423,9 +4424,11 @@ hull program (`hullProgram.ts`' `faded`) is the plain vertex stage handing
 the pixel its instance (`vBody`, flat, last) and the ONE faded cel pixel a
 body's matte segments are drawn with too (`bodyProgram.fadedCelFragment`),
 the fade read in the fragment stage's group 3 (`BODY_FADE`) — the vertex
-stage stays at its eight storage arrays. `Game.drawHulls` composes every
-present hull, asks its fade, drops one faded to nothing (no instance), and
-hands the hulls drawn WHOLE over first and the FADING ones after
+stage stays at its eight storage arrays. `Game.fadeHulls` composes every
+present hull and asks its fade, in the cull span straight after the cull
+(since X4.2d's post-commit review, so the rotor wash is handed the same fade:
+`docs/vehicles.md`), and `Game.drawHulls` drops one faded to nothing (no
+instance) and hands the hulls drawn WHOLE over first and the FADING ones after
 (`HullDraw.commit(n, whole, …)`, `fades`); each rank draws the whole ones by
 the plain pipeline and the fading ones by the twin (`firstInstance` past the
 whole), so **a frame with no hull fading is exactly the draws it was** — the
@@ -4438,7 +4441,14 @@ the few ranked nearest it — so a hull past its distance casting there would
 need a shadowed lamp chosen 400 m off; not seen, and not prevented. Off
 while the warm-up stands (a hull is whole in the views it draws). A frame with
 a hull fading is up to two draws a rank — at most 52 hull draws for the
-widest kit's 26 ranks, whatever the fleet.
+widest kit's 26 ranks, whatever the fleet — each GROUP's draw running to its
+own longest range at that rank, and a group with nothing live there issuing
+none (X4.2d's post-commit review; with no hull fading the whole group is every
+hull, so the spans and draws are the ones a single group always had).
+**The screen door's holes are INKED**, as a fading body's are: the ink reads
+each hole's depth step, so at 3440x1440 a fading tank reads as a field of
+small cross-hatched "x" marks rather than a smooth thinning — accepted with
+the look (`docs/world.md`'s "What a map stating it owes").
 
 **Its two pipelines — plain and faded — are asked once, at `Game`'s
 construction**, so the warm-up's wait for ours covers both and a hull's first

@@ -99,7 +99,7 @@ export const PHASES = [
   "hudDraw",
   /** The post chain, the sky and the shafts. */
   "post",
-  /** The cull cells, the mote field, the rotors' dust and the shader's eye. */
+  /** The cull cells, the hulls' compose and fade (`fadeHulls`), the mote field, the rotors' dust and the shader's eye. */
   "culling",
   /**
    * `LocalShadows.update` — which lamps cast and packing their proxies. CPU

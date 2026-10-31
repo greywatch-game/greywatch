@@ -1137,8 +1137,10 @@ side's colours (`HullKit`), built ONCE a kind and a side — the first rig of
 the pair merges it, every later one hangs it without making a part
 (`segmentOf`) — and every hull is drawn as an instance of it
 (`render/HullDraw.ts`, `docs/rendering.md`'s "The hulls, ours"): `Game.
-drawHulls`, beside `drawBodies` immediately before `scene.render`, composes
-each present hull's tree and writes each segment's world (its local times its
+drawHulls`, beside `drawBodies` immediately before `scene.render`, writes
+each present hull's drawing off the tree `Game.fadeHulls` composed earlier in
+the frame (in the cull span, since X4.2d's post-commit review, so the rotor
+wash can be handed the same fade) — each segment's world (its local times its
 joint's, what Babylon was handed through `freezeWorldMatrix` from X4.2a to
 X4.2b, bit for bit). No node and no mesh of a hull is in the scene, and nothing
 in the game reads a joint but the drawing. **The closures are what they were**
@@ -3034,6 +3036,17 @@ surface already has. `RotorWash` publishes the SITES (x, z, the ring's radius,
 needs, and `Game` hands them to `WaterSystem.setWash` on the line under
 `rotorWash.update`.
 
+**Both halves FADE with the hull** on a map that states a hull draw distance
+(`EnvironmentSpec.hullDrawDistance`, `BABYLON_EXIT.md` X4.2d's post-commit
+review, the project owner's decision): `Game.fadeHulls` asks each hull its
+fade off the cull's eye just before `rotorWash.update`, which is handed the
+fades by fleet index and spends them on each ring's `emitRate` and each
+site's strength — the AMOUNT of wash, never its throw — so a helicopter
+fading out at range thins its dust, its spray and its hole with it, and one
+faded out entirely is silenced and publishes no site. On every map that
+states no distance the fade is exactly 1, and a number times 1 is that
+number.
+
 **That push is from `tick` and not from the camera tail beside `water.update`,
 and both halves of the reason are about WHERE each one runs.** The tail is only
 reached by the states that simulate, and the wash is worked out after the world
@@ -3244,10 +3257,19 @@ farthest a viewer's eye stands from what of him it can hit (`HULL_REACH.eye`,
 the helicopter's chase camera to its hull's far corner, 22.4 m) and a muzzle
 from its hull's measure centre (8 m), over the 0.9 of the distance the fade
 starts at — ~419.4 m today. Both reach terms are read off this file's specs,
-so **a longer gun, a bigger blast or a further chase camera raises the floor
-by itself**, and a kind added with a longer reach than the tank's moves every
-map that states a distance. The crews' own reach is far inside it (95 m, the
-gunner's 70), which is not what binds: a person can sit in the seat.
+so **a longer range, a bigger blast, a further chase camera or a fourth kind
+raises the floor by itself**, and a kind added with a longer reach than the
+tank's moves every map that states a distance. **The third term is not
+read, it is MEASURED and GUARDED**: how far a muzzle stands from its hull's
+measure centre is a fact about the model — a barrel's length, a turret's
+place — so it is `CONFIG.graphics.culling.hullFade.muzzle` (8 m against the
+tank main gun's 7.68 turned to the rear), and a dev build sweeps every kind's
+muzzles and gunner's sight through their whole traverse when the hull kits
+are built and throws if one reaches past it (`vehicleModels.ts`'
+`checkMuzzleReach`): a longer barrel or a fourth kind owes that number a
+raise, and the first dev boot says so. The crews' own reach is far inside
+it (95 m, the gunner's 70), which is not what binds: a person can sit in the
+seat.
 
 ## Bots drive, and the road graph turned out not to be the blocker
 

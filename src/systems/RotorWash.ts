@@ -11,6 +11,26 @@
  * Invariants: fixed capacity per emitter, allocated on a map install and never
  * inside a round; nothing per frame but two numbers and a position.
  *
+ * ## It FADES with its hull, and is told the fade rather than working it out
+ *
+ * A map that states a hull draw distance (`EnvironmentSpec.hullDrawDistance`,
+ * `BABYLON_EXIT.md` X4.2d) fades a hull out over its last tenth, and a ring
+ * of dust boiling under a machine that is no longer drawn is a wash with
+ * nothing making it (the post-commit review's owner decision). So `update`
+ * is HANDED each hull's fade — `Game.fadeHulls`' answer off
+ * `WorldCulling.hullFade`, by the hull's index in the fleet, which `build`
+ * keeps (`Wash.slot`) — and spends it on the two things a wash is the
+ * AMOUNT of: each ring's `emitRate` and the strength of the water's ripple
+ * site. The throw (`minEmitPower`/`maxEmitPower`) is left at the unfaded
+ * strength, so a fading ring is the same ring thinner, as the screen door
+ * is the same hull thinner; a hull faded out entirely is silenced and
+ * publishes no site, and what is already aloft drifts and fades on the GPU's
+ * clock as it does under a hull that has climbed away. **On a map that
+ * states no distance every fade is exactly 1** (`hullFade`'s literal), and
+ * a number times 1 is that number: the rate and the site are bit for bit
+ * what they were. This file asks no cull and reaches no system — `Game`
+ * hands the numbers in.
+ *
  * ## It is a FOUNTAIN, and that is the whole difference from the blast's dust
  *
  * `GrenadeSystem`'s `BlastDust` is the same idea spent the other way: a pool of
@@ -113,6 +133,11 @@ interface Wash {
   spray: GPUParticleSystem | null;
   /** Null for a slot the current map has no machine for. */
   hull: Vehicle | null;
+  /**
+   * `hull`'s index in the fleet `build` was handed — the index its fade is
+   * read at in `update`'s `fades` (`Game.hullFades`, the view's index too).
+   */
+  slot: number;
   /**
    * The ring's radius: the disc's own, and the same number the water's ripple
    * is handed, so the rim of the hole and the ring of particles standing on it
@@ -236,7 +261,8 @@ export class RotorWash {
     }
 
     let i = 0;
-    for (const hull of hulls) {
+    for (let slot = 0; slot < hulls.length; slot++) {
+      const hull = hulls[slot];
       // **`flies` and not a wash-shaped flag of its own.** A rotor is what
       // holds a flying hull up and what moves the air under it, so the
       // capability the rest of the game already asks about is exactly the one
@@ -248,11 +274,13 @@ export class RotorWash {
           dust: this.buildRing(i, false),
           spray: palette.spray ? this.buildRing(i, true) : null,
           hull: null,
+          slot: 0,
           radius: 0,
         });
       }
       const wash = this.washes[i++];
       wash.hull = hull;
+      wash.slot = slot;
       // The ring is the DISC, which is the number the world already reads off
       // this drawing (`drive.collideRadius`, and see its note). `spread` is how
       // far past the edge of it the dust is by the time it is lit.
@@ -284,14 +312,21 @@ export class RotorWash {
    * frame — see `BlastDust.burst`, which rests on exactly that: the puffs
    * already in the air were sized and thrown when they were born and are not
    * re-thrown under a machine that has since climbed away.
+   *
+   * `fades` is each hull's draw-distance fade this frame, by its index in the
+   * fleet (`Game.hullFades`, written by `Game.fadeHulls` just before this):
+   * the share of the ring's rate and the ripple's strength that is spent (the
+   * header's "It FADES with its hull"). 1 — every hull, on a map that states
+   * no distance — changes nothing; 0 silences the wash as a climb does.
    */
-  update(stepped: boolean): void {
+  update(stepped: boolean, fades: ArrayLike<number>): void {
     const w = CONFIG.vehicles.wash;
     let sites = 0;
     for (const wash of this.washes) {
       const hull = wash.hull;
       const strength = stepped && hull ? hull.washTo(this.at) : 0;
-      if (!hull || strength <= 0) {
+      const fade = fades[wash.slot] ?? 1;
+      if (!hull || strength <= 0 || fade <= 0) {
         this.silence(wash);
         continue;
       }
@@ -302,7 +337,7 @@ export class RotorWash {
       const surface = this.surfaceOver();
       if (Number.isNaN(surface) || !wash.spray) {
         this.silence(wash);
-        this.drive(wash.dust, strength, w.rate, w.speed);
+        this.drive(wash.dust, strength, fade, w.rate, w.speed);
         continue;
       }
       // Asked a SECOND time with the water's own height as the floor, which
@@ -311,7 +346,7 @@ export class RotorWash {
       const wet = hull.washTo(this.at, surface);
       this.silence(wash);
       if (wet <= 0) continue;
-      this.drive(wash.spray, wet, w.spray.rate, w.spray.speed);
+      this.drive(wash.spray, wet, fade, w.spray.rate, w.spray.speed);
       // And the surface's own half of it. The list is filled from the front
       // and bounded by the shader's array: on every shipped map that is two
       // machines against four slots, and a map that fielded more would drop
@@ -321,7 +356,9 @@ export class RotorWash {
         this.washSites[at] = this.at.x;
         this.washSites[at + 1] = this.at.z;
         this.washSites[at + 2] = wash.radius;
-        this.washSites[at + 3] = wet;
+        // The ripple's strength faded with the hull, as the ring's rate is:
+        // `wet * 1` is `wet` on a map that states no distance.
+        this.washSites[at + 3] = wet * fade;
         sites++;
       }
     }
@@ -345,16 +382,21 @@ export class RotorWash {
    * Harder down, harder out. The ring a machine settling onto its skids throws
    * is not the one a hover-taxi drags along the street, and the rate alone says
    * only that there is more of it.
+   *
+   * `fade` is the hull's draw-distance fade (`update`'s `fades`), spent on the
+   * RATE alone — how much of the ring there is, never how hard it is thrown —
+   * and multiplied in last, so at 1 the rate is `rate * strength`, bit for bit.
    */
   private drive(
     system: GPUParticleSystem,
     strength: number,
+    fade: number,
     rate: number,
     speed: number,
   ): void {
     (system.emitter as Vector3).copyFrom(this.at).y +=
       CONFIG.vehicles.wash.lift;
-    system.emitRate = rate * strength;
+    system.emitRate = rate * strength * fade;
     const out = speed * (0.35 + 0.65 * strength);
     system.minEmitPower = out * 0.45;
     system.maxEmitPower = out;

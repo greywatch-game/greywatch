@@ -827,12 +827,18 @@ export class Game {
   /** `hullPull`'s scratch: one hull's segment keys. */
   private hullKeys = new Float64Array(0);
   /**
-   * `drawHulls`' scratch: each view's FADE this frame (`WorldCulling.hullFade`,
-   * `BABYLON_EXIT.md` X4.2d), by the view's index — 0 for one not present or
-   * faded out. Grown to the fleet's size, never per frame.
+   * Each hull's draw-distance FADE this frame (`WorldCulling.hullFade`,
+   * `BABYLON_EXIT.md` X4.2d), by its index in the fleet — the view's and the
+   * hull's, `VehicleViews`' invariant — written by `fadeHulls` in the cull
+   * span and read twice after it: by `RotorWash.update` (the wash fades with
+   * its hull, the post-commit review's owner decision) and by `drawHulls`.
+   * 1 for a hull not composed this frame — not present, or no draw
+   * installed — and for every hull on a map that states no distance, so a
+   * reader multiplying by it changes nothing there. Grown to the fleet's
+   * size, never per frame.
    */
   private hullFades = new Float64Array(0);
-  /** `drawHulls`' scratch: a hull's whole measure, composed this frame (`composeHull`). */
+  /** `fadeHulls`' scratch: a hull's whole measure, composed this frame (`composeHull`). */
   private readonly hullMeasure = { x: 0, y: 0, z: 0, radius: 0 };
   /** The size gate a hull's segment is drawn under: `WorldCulling`'s, this frame (`drawHulls`). */
   private readonly keepsHullSegment: SphereGate = (x, y, z, radius) => this.culling.keepsSphere(x, y, z, radius);
@@ -3263,9 +3269,11 @@ export class Game {
    * Everything stood around the EYE rather than over the map, pushed in EVERY
    * state because every state renders and only some of them simulate: the
    * shader's eye, the water's grid, the grass patches, the cull's
-   * neighbourhood and the mote field — and the rotor wash, on the fleet's
-   * terms rather than the eye's. Once a frame, from `tick`, inside the cull
-   * span; the order below is load-bearing and each line says why.
+   * neighbourhood and the mote field — and, off the cull's eye, every hull's
+   * compose and draw-distance fade (`fadeHulls`), then the rotor wash, on the
+   * fleet's terms rather than the eye's and faded with its hull. Once a
+   * frame, from `tick`, inside the cull span; the order below is
+   * load-bearing and each line says why.
    */
   private followEye(fleetStepped: boolean): void {
     // The eye the cel shader fogs and rims against, last of all and in EVERY
@@ -3313,13 +3321,23 @@ export class Game {
     // the eye rather than over the whole square (`ParticleSpec.volume`). A
     // no-op for every map that states none, which is all of them but one.
     this.atmosphere.update(this.cameraSys.camera.position);
+    // Every hull composed, once, and asked its draw-distance FADE: after the
+    // cull, whose `offer` just set the eye and the warm-up the fade is asked
+    // from, and BEFORE the wash below, which fades with its hull — the drawing
+    // reads the same fades inside the render (`drawHulls`). Nothing writes a
+    // hull's joints after this in the frame: `VehicleViews.update` ran in the
+    // world step.
+    this.fadeHulls();
     // The dust under the rotors, on the fleet's terms rather than the eye's: a
     // held world is a machine frozen over a street, and one still boiling that
     // street is the droning-engine lie with a picture instead of a sound. In
     // the cull span rather than a span of its own because that is what it is —
     // a per-frame push at a standing GPU emitter, the mote field's own shape,
-    // and at most one question per machine on the field.
-    this.rotorWash.update(fleetStepped);
+    // and at most one question per machine on the field. Handed each hull's
+    // fade, so a hull faded out at its map's draw distance takes its dust,
+    // its spray and its ripple with it (X4.2d's post-commit review): 1 on a
+    // map that states none, which changes nothing.
+    this.rotorWash.update(fleetStepped, this.hullFades);
     // …and the WATER's half of the same wash, straight off the sites that call
     // just worked out. It is here rather than beside `water.update` in the
     // camera tail for two reasons that both come out of WHERE each one runs.
@@ -5829,7 +5847,7 @@ export class Game {
    * Hands our renderer this frame's HULLS (`BABYLON_EXIT.md` X4.2b): every
    * view whose hull is present (`VehicleRig.enabled`, which `VehicleView`
    * follows `Vehicle.present` with), in hardstanding order, its joints
-   * composed and each segment's matrix written as an instance of its kind's
+   * composed this frame (`fadeHulls`) and each segment's matrix written as an instance of its kind's
    * kit (`vehicleRig.writeHullDrawing`) — a segment the size gate drops
    * (`WorldCulling.keepsSphere`, asked of that segment's world sphere this
    * frame, as `offer` asked it of the mesh the segment was) written as
@@ -5839,45 +5857,35 @@ export class Game {
    * segments' centres kept for the order the render pulls (`hullPull`).
    *
    * **And at the FADE its map's draw distance gives it** (`BABYLON_EXIT.md`
-   * X4.2d): each present hull is composed once (`composeHull`) and its whole
-   * measure asked `WorldCulling.hullFade` — a hull faded out entirely is not
-   * drawn, and is no instance — and the hulls drawn WHOLE are handed over
-   * first, in hardstanding order, the FADING ones after them, which the
-   * drawing draws behind its screen door. With no hull fading this is the
-   * one pass it always was, in the same order. So the capacity takes the
-   * first sixteen present hulls drawn whole, then fading ones, in
-   * hardstanding order.
+   * X4.2d), which `fadeHulls` composed every present hull for and asked,
+   * earlier in the frame — a hull faded out entirely is not drawn, and is no
+   * instance — and the hulls drawn WHOLE are handed over first, in
+   * hardstanding order, the FADING ones after them, which the drawing draws
+   * behind its screen door. With no hull fading this is the one pass it
+   * always was, in the same order. So the capacity takes the first sixteen
+   * present hulls drawn whole, then fading ones, in hardstanding order.
    *
    * Once a frame, in EVERY state, after everything that writes a joint and
    * after the cull, immediately before `scene.render` — inside the render
-   * span, where Babylon composed the hulls' nodes until X4.2a. A hull not
-   * present is not composed, and while the draw is not installed (the menu,
-   * an editor build) none is: nothing else reads a hull's joints.
+   * span, where Babylon composed the hulls' nodes until X4.2a (the compose
+   * itself is `fadeHulls`', in the cull span, since X4.2d's post-commit
+   * review). A hull not present is not drawn, and while the draw is not
+   * installed (the menu, an editor build) none is.
    */
   private drawHulls(): void {
     const draw = this.hullDraw;
     if (!draw.installed) return;
     const views = this.vehicleViews.views;
     const stride = draw.segments;
-    if (this.hullFades.length < views.length) this.hullFades = new Float64Array(views.length);
     const fades = this.hullFades;
-    const m = this.hullMeasure;
-    for (let i = 0; i < views.length; i++) {
-      const rig = views[i].rig;
-      if (!rig.enabled) {
-        fades[i] = 0;
-        continue;
-      }
-      composeHull(rig, m);
-      fades[i] = this.culling.hullFade(m.x, m.y, m.z);
-    }
     let n = 0;
     let whole = 0;
     for (let pass = 0; pass < 2; pass++) {
       for (let i = 0; i < views.length && n < draw.capacity; i++) {
+        const rig = views[i].rig;
+        if (!rig.enabled) continue;
         const fade = fades[i];
         if (fade <= 0 || (fade >= 1) !== (pass === 0)) continue;
-        const rig = views[i].rig;
         writeHullDrawing(
           rig,
           draw.matrices,
@@ -5895,6 +5903,37 @@ export class Game {
       if (pass === 0) whole = n;
     }
     draw.commit(n, whole, this.mats.materialEpoch);
+  }
+
+  /**
+   * Every present hull composed — its joints, FRESH (`vehicleRig.composeHull`,
+   * the one compose a hull gets a frame) — and its whole measure asked its
+   * draw-distance FADE (`WorldCulling.hullFade`, `BABYLON_EXIT.md` X4.2d),
+   * into `hullFades` by its index in the fleet. Called once a frame, in every
+   * state, from `followEye` straight after the cull (the eye and the warm-up
+   * the fade is asked from are `offer`'s, this frame) and before the two
+   * readers: `RotorWash.update`, which scales its emitters' rate and its
+   * ripple by the fade (the post-commit review's owner decision: a hull's
+   * wash fades with it), and `drawHulls`, which draws off the same compose.
+   * A hull not present, and every hull while the draw is not installed (the
+   * menu, an editor build), is not composed and reads 1 — so the wash under
+   * it is what it always was, and nothing else reads its joints.
+   */
+  private fadeHulls(): void {
+    const views = this.vehicleViews.views;
+    if (this.hullFades.length < views.length) this.hullFades = new Float64Array(views.length);
+    const fades = this.hullFades;
+    const installed = this.hullDraw.installed;
+    const m = this.hullMeasure;
+    for (let i = 0; i < views.length; i++) {
+      const rig = views[i].rig;
+      if (!installed || !rig.enabled) {
+        fades[i] = 1;
+        continue;
+      }
+      composeHull(rig, m);
+      fades[i] = this.culling.hullFade(m.x, m.y, m.z);
+    }
   }
 
   /**
