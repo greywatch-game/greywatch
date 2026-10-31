@@ -8,6 +8,8 @@
  * where a node stands and what it is painted, and the hull is told nothing
  * back. `Game` builds both and wires them: `build` from `installMap` right
  * after `VehicleSystem.build`, `update` right after every `VehicleSystem.update`,
+ * `draw` once a frame immediately before the render (the hulls' joints are
+ * ours since `BABYLON_EXIT.md` X4.2a, and Babylon composes none of them),
  * `dispose` from `teardownMap` — anything `installMap` hands a map to owes
  * `teardownMap` a line, and this is that line for the fleet's drawing.
  * Invariants:
@@ -56,6 +58,16 @@ export class VehicleViews {
   /** Every view off its hull's state. See `VehicleView.update`. */
   update(): void {
     for (const view of this.list) view.update();
+  }
+
+  /**
+   * Every hull's joints composed and its meshes handed their matrices
+   * (`VehicleView.draw`) — once a frame from `Game`, in every state, beside
+   * the bodies and immediately before `scene.render`, after everything that
+   * writes a joint (`BABYLON_EXIT.md` X4.2a). Empty with no armour.
+   */
+  draw(): void {
+    for (const view of this.list) view.draw();
   }
 
   /** Takes every hull's drawing out of the world, and the hulls' pictures with it. */

@@ -1073,9 +1073,9 @@ they reach and neither ever moves a PERSON**. **A driver's frame is not a
 body's**: `Player.update` is not called, so the hull's ground REPLACES the
 probe.
 
-**`Vehicle` is the simulation and a `VehicleView` its picture**, TOLD through
-one `HullPicture` only what it cannot poll; **no simulation reads a node** —
-the muzzles are replayed off fields (`docs/vehicles.md`).
+**`Vehicle` is the simulation and a `VehicleView` its picture** (on OUR joints),
+TOLD through one `HullPicture` only what it cannot poll; **no simulation reads a
+joint** — the muzzles are replayed off fields (`docs/vehicles.md`).
 
 **A hull is the one MOVING solid thing in the game**: every ray and every SWEEP
 meets it through `rays.hulls` and `rayBox()`, behind one gate

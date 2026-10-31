@@ -41,12 +41,12 @@ PICTURE (only a client builds it); see "The hull and its picture" below:
 | `entities/vehicleKinds.ts` | the ONE place a kind becomes a name, a spec and a frame (no Babylon — the authority reads it), and the one place the default (a tank) is written down (`resolveKind`) |
 | `entities/tankFrame.ts`, `truckFrame.ts`, `heliFrame.ts` | each kind's `HullFrame` — the three extents the physics needs off the drawing and the offset of every joint between the collider box and a muzzle — and the drawing constants they are derived from, which the model files IMPORT |
 | `entities/vehicleModels.ts` | the client's twin of `VEHICLE_KINDS`: kind to the model that draws it, a `Record` over the same union |
-| `entities/vehicleRig.ts` | what every vehicle's mesh IS: the joints a hull's view writes and the three closures a model hands back |
+| `entities/vehicleRig.ts` | what every vehicle's mesh IS: the joints a hull's view writes (OUR `JointTree`, `rigJoints.ts`, since `BABYLON_EXIT.md` X4.2a), the three closures a model hands back, and the one way its meshes are handed their matrices (`drawHullRig`) |
 | `entities/TankModel.ts`, `entities/TruckModel.ts`, `entities/HeliModel.ts` | the ART, one file per kind — the boxes, the running gear, the whips and the guns as JOINTS over them, and the charred repaint a wreck takes |
 | `entities/hullSeats.ts` | the two chairs (`CrewSeat`: `DRIVER`, `GUNNER`), the order they fill in (`SEATS`), and `chooseSeat`, the one boarding rule — no vehicle, no import, so the authority's roster can name a seat without pulling in a hull |
 | `entities/Vehicle.ts` | one hull of any kind: its collider, its drive, its turret, its two guns' clocks and angles, which of its two seats are filled, its health, the ground half of its lean, and the `HullPose` its joints are drawn at — the SIMULATION, no mesh |
 | `entities/HullSprings.ts` | what the hull's own mass does to its sprung body: three springs on one travel budget, on the muzzle's path, so simulated |
-| `entities/VehicleView.ts` | one hull's PICTURE: the body box, the rig, the belts' run, the whips and the paint, copied and followed off the hull |
+| `entities/VehicleView.ts` | one hull's PICTURE: the rig (its body joint standing where the collider box stands), the belts' run, the whips and the paint, copied and followed off the hull, and drawn once a frame before the render |
 | `entities/HullWhips.ts` | the two antennae bending — the picture's one simulation of its own |
 | `entities/FlightModel.ts` | the rotor, on a kind that states `flight`: the spool, the disc's attitude, the cyclic, thrust and collective, and the attitude a hull on the wire is drawn at |
 | `systems/VehicleSystem.ts` | the fleet: build, the respawn clock, the wreck clock, which seat a boarder gets, and where a dismount lands |
@@ -770,8 +770,8 @@ across all of it**, because that is the failure this section exists to prevent:
 the worst case over hard driving on Coldharbour leaves 14 cm of the belly's 34
 still clear, and crossing Harrowmead leaves 31.
 
-**None of it moves anything either.** This block reaches one `TransformNode`'s
-Y. The collider does not travel with it, the gun is aimed in world angles off a
+**None of it moves anything either.** This block reaches one joint's Y (a
+`TransformNode`'s until `BABYLON_EXIT.md` X4.2a). The collider does not travel with it, the gun is aimed in world angles off a
 turret that rides on it, and the reticle still cannot lie.
 
 ## The antennae bow, and there is no Havok in them
@@ -872,9 +872,10 @@ established: things that MOVE cannot be in structures that are BAKED.
 
 What the hull's collider box is:
 
-- A box to both questions, and neither `porous` nor `rayOnly` (the body MESH
-  carries no `metadata.solid` and is not pickable: the editor builds no hulls,
-  and nothing else picks a mesh). Those two describe a fence — a thing that is a wall to a body and mostly air to a bullet, or the
+- A box to both questions, and neither `porous` nor `rayOnly` (no mesh of a
+  hull carries `metadata.solid` or is pickable — since `BABYLON_EXIT.md`
+  X4.2a there is no body MESH at all, only the rig's body joint — and the
+  editor builds no hulls, and nothing else picks a mesh). Those two describe a fence — a thing that is a wall to a body and mostly air to a bullet, or the
   reverse. A tank is both to both, which is the plain case. So it answers both
   of `RayWorld`'s questions: a round stops on it and a sightline breaks on it.
   It reaches those queries as `RayWorld.hulls` — a list `VehicleSystem` keeps
@@ -1041,7 +1042,7 @@ to read one off.** A hull's three muzzles (`entities/hullFrame.ts`) and a bot's
 (`soldierPose.ts`) are the float32 node chains REPLAYED off fields, bit for
 bit. A hull's are read off its joints AS DRAWN, so the 1e-5 guards on the lean
 and the springs sit on a muzzle's path and are simulated on both sides: they
-live in the pose record (`HullPose`), which the view copies onto the nodes and
+live in the pose record (`HullPose`), which the view copies onto the joints and
 never the reverse. The one node an outcome still reads is offline, the
 player's throw hand and launcher muzzle (`FINDINGS.md` 55).
 
@@ -1069,7 +1070,10 @@ and the muzzle was always read off the drawn joint. So `HullPose` keeps those
 guards (and is zeroed by `placeAt`, as the rig is reset on the same placing),
 and the guards are on the muzzle's path: changing one moves the fight hash.
 Since C9 it is the RECORD that is written and the view that copies it onto the
-nodes, never the other way (see "The hull and its picture").
+joints, never the other way (see "The hull and its picture") — and since
+`BABYLON_EXIT.md` X4.2a the joints are ours, so `hullPointToRef` has no node
+left to agree with: it and the drawn joints are the same chain composed twice,
+the oracle there measuring them equal.
 Measured: on a seed-777 Sarab round 15,090 of 27,707 reads were taken while
 the drawn lean was behind the ground's. **The lean and the springs are
 therefore SIMULATED on the authority** — a picture to everything that aims,
@@ -1090,9 +1094,16 @@ scene and no material factory. **What a hull looks like is a `VehicleView`**,
 one per hull, which only a client builds (`VehicleViews`, from `installMap`
 right after `VehicleSystem.build`, by hardstanding index, each with its kind's
 model off `vehicleModels.modelOf`; torn down by `teardownMap` before the fleet).
-A view owns the body box (invisible: the rig's parent; never pickable and
-never `solid`, since the editor builds no hulls), the rig, the belts' run, the
-whips (`HullWhips`) and the paint. **It is not what a shadow draws**: since
+A view owns the rig, the belts' run, the whips (`HullWhips`) and the paint.
+**The rig's joints are OURS since `BABYLON_EXIT.md` X4.2a** (`vehicleRig.ts`,
+X4.1a's `JointTree`): the tree's first joint is the collider box's frame
+(`rig.body`, what an invisible body box MESH was, the rig its child), each
+world a float32 matrix composed fresh in `src/math`'s copies of Babylon's
+arithmetic, and Babylon draws the merged meshes UNPARENTED off them — handed
+each frame through `freezeWorldMatrix` by `VehicleView.draw` (`VehicleViews.
+draw`, from `Game` beside `drawBodies`, immediately before `scene.render`). No
+node of a hull is in the scene, no mesh of one is pickable, and nothing in the
+game reads a joint but the drawing. **It is not what a shadow draws**: since
 `BABYLON_EXIT.md` X4.1c `ShadowHull` is the HULL — its collider box composed
 off `pos`, `yaw` and `present` (`hullFrame.ts`' `hullBodyToRef`, the matrix
 the body node composed, bit for bit), in both shadow maps — so nothing about
@@ -1101,10 +1112,12 @@ how a hull is drawn reaches its shadow, and X4.2 owes the shadows nothing.
 **A view READS its hull and never writes it.** Everything that is STATE is
 read in `VehicleView.update`, which runs right after `VehicleSystem.update`
 (one call site, the page's, offline and in a match alike — the authority builds
-no view) before anything reads a node: the body at `pos` turned `yaw`, enabled exactly while
-`present`, and each joint copied
-off `Vehicle.pose` where it differs — the hull wrote the record behind the
-guards the node writes had, so a node is exactly what the record says.
+no view) before anything draws: the body joint at `pos` turned `yaw`, the
+hull drawn exactly while `present` (`setHullRigEnabled`, every mesh's own
+flag), and each joint copied off `Vehicle.pose` where it differs — the hull
+wrote the record behind the guards the node writes had, so a joint is exactly
+what the record says. The guards stay on joints that cost nothing to write,
+because an unguarded write of a `-0` over a `0` is a different bit drawn.
 
 **Five things it is TOLD, and only these, through `Vehicle.picture`
 (`HullPicture`)**, because polling would get each wrong:

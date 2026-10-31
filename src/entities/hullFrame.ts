@@ -1,17 +1,19 @@
 /**
  * hullFrame.ts — Where a hull's guns and its sight ARE, as numbers: the offsets
  * of every joint on the path from the collider box to a muzzle, the three
- * extents the drive reads off the drawing, and the replay of that node chain.
+ * extents the drive reads off the drawing, and the replay of that joint chain.
  * Owns: `HullFrame` (one per kind, stated by its frame file), `HullPose` (the
  * channels those joints hold, written by `Vehicle` and `HullSprings` behind
- * the guards the node writes had, and copied onto the nodes by the client's
+ * the guards the node writes had, and copied onto the joints by the client's
  * `VehicleView`), `hullPointToRef`, and `hullBodyToRef` — the collider box's
  * own frame, which the shadow maps draw a hull as (`core/proxyBoxes.ts`).
  * Invariants:
  * - **No `@babylonjs/core`.** `src/math` only, so the simulation can ask where
  *   a hull's barrel is without a rig and the authority without a scene.
- * - **`hullPointToRef` is the node chain, bit for bit.** It replays what
- *   Babylon's `TransformNode.computeWorldMatrix(true)` did down body → root →
+ * - **`hullPointToRef` is the joint chain, bit for bit.** It replays what
+ *   Babylon's `TransformNode.computeWorldMatrix(true)` did — and since
+ *   `BABYLON_EXIT.md` X4.2a what the rig's own `JointTree` composes, the same
+ *   arithmetic, with no node left to agree with — down body → root →
  *   hull → sprung → turret → gun → muzzle (or → mgMount → mgGun → mgMuzzle /
  *   mgSight) — per node, `Quaternion.RotationYawPitchRoll` of its Euler
  *   (`rotation.y, .x, .z`), `Matrix.ComposeToRef` with unit scale into a
@@ -27,7 +29,7 @@
  *   says, never the other way round.
  * - **A frame is the DRAWING's**: each kind states its own in a Babylon-free
  *   frame file (`TANK_FRAME` in `tankFrame.ts`, `TRUCK_FRAME`, `HELI_FRAME`),
- *   and its model IMPORTS those numbers and places its nodes FROM them, so the
+ *   and its model IMPORTS those numbers and places its joints FROM them, so the
  *   arithmetic and the picture cannot drift. No node on the path has a pivot,
  *   a billboard, a quaternion or a scale; the channels no pose writes are the
  *   zeros the builders leave.

@@ -4846,7 +4846,7 @@ and nowhere else: no bank row has a body at either, and none moved).
   Cinderhaven is the saving it could buy). X4.1d's owed items stand (the
   rank's vertex surplus, the editor's body draw, the compose cost).
 
-### X4.2 — Vehicles (PERF_PLAN A3) — **M–L, as four sub-steps** (split 2026-10-31)
+### X4.2 — Vehicles (PERF_PLAN A3) — **M–L, as four sub-steps** (split 2026-10-31) — X4.2a **LANDED** (HASH)
 
 Every hull a page draws — the tank, the truck and the helicopter, live or
 wrecked — comes off Babylon's scene, and A3's detail tier and draw distance
@@ -4860,7 +4860,7 @@ draft named a `HullFlex`; no such module exists — the hull's own motion is
 `HullSprings`, simulated on both sides and written into `Vehicle.pose`, and
 `HullWhips`, the picture's.)
 
-- **X4.2a — the hull's joints are ours (no picture change).** `vehicleRig`'s
+- **X4.2a — the hull's joints are ours (no picture change).** Landed (below). `vehicleRig`'s
   `TransformNode` joints become a `JointTree` (`rigJoints.ts`, X4.1a's), its
   world matrices in arrays the hull's rig owns. `VehicleView` writes
   `Vehicle.pose` onto them as it writes the nodes now — the sprung body,
@@ -4934,6 +4934,127 @@ draft named a `HullFlex`; no such module exists — the hull's own motion is
 - **Verify, each sub-step:** the bank `--check --keep` against a BEFORE at the
   parent; `census --against`; `gate`, `shaders`; typecheck, build, corecheck,
   `parity`; a round offline with each kind driven and a netplay round.
+
+**X4.2a landed** (HASH; 2026-10-31; no picture change).
+- **What it is.** A hull's joints are OUR hierarchy: `VehicleRig.tree`, a
+  `JointTree` (`rigJoints.ts`, X4.1a's), whose first joint is the collider
+  box's own frame (`rig.body`, `hull-body`) and whose second the model's
+  root (`vehicleRig.rigTree`). Every `TransformNode` the three models made is
+  a `tree.add` in the order the node was made, so the tree is parents first
+  by construction and its joint list IS the node list, name for name (21
+  joints a tank, 19 a truck, 15 a helicopter, the body counted; only the
+  body's name moved, from `hull-body-<team>`). **Babylon still draws the
+  merged meshes, and none has a parent**: `segment` files each mesh under its
+  joint with its own local composed once (`HullMesh`; a lone part keeps its
+  frame on its mesh), and `drawHullRig` composes the tree and hands every
+  switched-on mesh its local times its joint's world through
+  `freezeWorldMatrix` — from `VehicleView.draw` (`VehicleViews.draw`), once a
+  frame in every state, beside `drawBodies`, immediately before
+  `scene.render`, inside the `render` span where Babylon composed the nodes
+  before. **The body box MESH is gone** (X4.1a's root capsule is the
+  precedent): it was the rig's invisible, unpickable parent and nothing else,
+  and it is the body joint now, stood at `pos` turned `yaw` by `update` as the
+  mesh was; `present` switches every mesh's own flag (`setHullRigEnabled`),
+  which the mesh's switch reached through the parent chain, and a hull that is
+  not present is not composed. `VehicleView` writes `Vehicle.pose`, the run
+  and the whips onto the joints exactly as it wrote the nodes, behind the same
+  guards — kept although a joint costs nothing to write, since an unguarded
+  `-0` written over a `0` is a different bit drawn. `hullPointToRef` is
+  unchanged and stays the simulation's, with no node left to agree with.
+  `dispose` frees the meshes (`disposeHullRig`), never their shared paint.
+- **The oracle — each joint's matrix against the node's, bit for bit.** A
+  scratch recorder (Playwright, the dev server) logs every `HullPicture` call
+  and every `update`'s hull state per view, as float64 bits, and at every
+  `onAfterActiveMeshesEvaluation` a digest of every switched-on hull mesh's
+  world matrix as Babylon holds it to draw; a replay feeds the log through a
+  tree's real `VehicleView` and models, in Chromium or in Node (NullEngine).
+  - **The parent's round** (6dad2d9 in a worktree; Sarab, 300 s, 37,849
+    frames, six hulls): the tanks driven 1.3-1.5 km and firing 22 main-gun
+    rounds, a tank and a truck WRECKED, hidden for their respawn and placed
+    again, a helicopter flying 2.5 km up to 33.6 m with its chin gun laid to
+    0.85 rad, every cupola gun traversed through ±π. Every drawn mesh
+    (5,181,416) was the fresh composition of its node chain. **Replayed
+    through the step's joints in Chromium: 227,082 of 227,082 per-hull
+    digests equal what the parent's Babylon drew.** Replayed in Node through
+    both trees: every joint's world, the mesh-less muzzles and sight among
+    them, every frame — 4,163,170 matrices, 268 MB of float32 — identical to
+    the nodes' (`cmp`), and the 227,082 digests equal again.
+  - **The step's round** (Cinderhaven, 300 s, 37,851 frames): everything
+    driven, both helicopters flying (to 75.8 m), the tanks firing. Every
+    drawn mesh (5,368,452) was its local times a fresh compose of its joints
+    at evaluation: no hull is drawn off a matrix older than its last write.
+    **Replayed through the PARENT's nodes in Chromium: 227,094 of 227,094
+    digests equal what the step drew.** In Node the two trees again agree
+    joint for joint (4,163,390), but 33 of the 227,094 digests — one truck,
+    frames 23,472 onwards — differ from Chromium's drawing, identically on
+    BOTH trees: Node 24.19's arithmetic and Chromium 149's differ in a float64
+    last bit somewhere in the picture's own sums (the whips' springs, the
+    running gear), which a float32 rounding shows on those frames. The
+    Chromium replay is the one that matches, on either tree, so it is the
+    instrument, not the step.
+  - **The step's second round** (Sarab, 600 s, 75,690 frames): a tank
+    WRECKED, hidden and placed again on the step, a helicopter flying 4.5 km,
+    the tanks firing 11 rounds. Every drawn mesh (10,642,973) fresh as above;
+    replayed through the parent's nodes in Chromium, **454,128 of 454,128
+    digests equal**.
+  - **The muzzles unchanged**: `hullPointToRef` against the drawn muzzle,
+    cupola-muzzle and sight joints, live — 680,508 and 1,349,727 on the
+    step's two offline rounds and 338,958 in the netplay round — and in the
+    Node replays on both trees
+    (659,376 Sarab, 681,282 Cinderhaven, against nodes and joints alike): 0
+    differ.
+  - **`kit:hash --models`: the twelve `vehicle:` rows move BY CONSTRUCTION,
+    and nothing else does** (232 identical). The script hashes every transform
+    node left in the scene (a hull leaves none now), each mesh's parent and
+    transform (no parent now) and the builder's plain data (now a `JointTree`
+    and its `HullMesh` list), so the rows cannot say whether a hull draws the
+    same. Draw hashes, 6dad2d9 → HEAD: tank 0 livery d3b613a3fe76f7fa →
+    389a841f7b70ce8c, wrecked c62b84f83f687fe6 → 971042ad1991ec1a; tank 1
+    ae9ceb52f74cfacf → 24aebe62dcada12b, 7fc22ea2e86dcc25 → f9cdb63681b1c88a;
+    truck 0 1d70c381f981830c → e87aaf8f3ed6168a, 970a4e7c0349e1e2 →
+    7de835fdc0dff7a8; truck 1 1398fc608f7d0110 → 90ff9c72096bed09,
+    b30dd3027fe2162d → 6941286129223125; heli 0 6594c60801c7c6c7 →
+    ac604c6b689d6cc9, e4c74a87fb65a66b → 96fb8de860650da5; heli 1
+    b7db01e49cdd4a67 → dfd8f6296beacfff, d5ebd5abd4180cf9 → 6505350ca6a8cd3d.
+    **What they cannot see is unmoved**: a scratch hash of each mesh's
+    geometry, material, flags, world matrix and world bounds, at a placed
+    hull, is identical across the two trees on all twelve builds. A later
+    `--against` a baseline older than this step reports these twelve as
+    "content changed", and that is this step — take a fresh baseline past it.
+- **Measured.** The bank against a BEFORE at 6dad2d9 in a worktree
+  (`--check --keep` both sides): **60 of 61 byte-identical**, `sarab-tank`,
+  `sarab-truck` and `sarab-heli` among them. `sarab/shelf` differs by ONE
+  pixel, (143,731), by 1/255 — X4.1e's worktree pixel: the parent run in the
+  main tree (the step stashed) draws the AFTER's bytes on all eleven Sarab
+  rows. The same 34 stale rows on both sides, no console or page error.
+  **`census --against`** the BEFORE: every total equal (Hollowmere 278,
+  Greyfen 205, Coldharbour 672, Harrowmead 847, Sarab 661, Cinderhaven 186,
+  Kurenai 125). **`gate.mjs`** clean on seven; **`shaders.mjs`** clean on
+  seven, ours 17/17 (21/21 Sarab and Cinderhaven, 23/23 Coldharbour).
+  Typecheck, build, corecheck and `parity` (eight maps) pass. **A round
+  offline**: the recorded rounds above. **A netplay round** against a local
+  `dist-server` (`?mp=`, Sarab, the authority's round, 150 s): all six hulls
+  posed off the wire, the tanks firing 16 rounds, a helicopter flying to
+  33.8 m; 2,674,002 drawn hull meshes, every one the fresh composition; no
+  console or page error.
+- **Deviations.** The body mesh, gone (above). A hull that is not present is
+  not composed (nothing reads its joints). FIRING on a truck and a
+  helicopter is the cupola gun, which tells the picture nothing (`kicked` is
+  the main gun's), so it is covered as its laying. **No HELICOPTER was
+  wrecked** in any of the four rounds (a tank twice and a truck once were):
+  the bots did not bring one down in 22 minutes of play, and a page
+  script cannot, the damage being the authority's. A wreck is the charred
+  paint, the hide (`present`) and the respawn's `placed`, kind-blind code
+  the tank and the truck exercised; the helicopter's own joints were driven
+  through flight, its rotors and its chin gun's whole laying.
+- **Owed onward.** X4.2b: the meshes into a kit our renderer draws, every
+  hull an instance, the joints a segment's matrix — the `HullMesh` list
+  (`local`, `joint`) is that segment table already. The phone's FOLLOW-UP
+  reading, as every step's since X3.3c. **A cost nobody has measured**: each
+  present hull composes its whole tree every frame (at most 21 joints and 26
+  `freezeWorldMatrix` calls, each updating the mesh's bounds) where Babylon
+  re-composed only a node that moved; six hulls a map makes it small, and
+  X4.2b's instancing is where a hull is composed once.
 
 ### X4.3 — The viewmodel and the kit bay — **M–L**
 

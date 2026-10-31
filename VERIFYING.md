@@ -795,6 +795,12 @@ is one machine's:
   the simulation and its rig is its view's, so follow it with
   `g.vehicleViews.update()` before reading a joint or photographing — the
   view of a hull is `g.vehicleViews.views.find((v) => v.hull === tank)`.
+  **Since X4.2a the joints are OURS** (`view.rig.tree`, a `JointTree`), and a
+  joint's `world` is only what the last compose left: read one through
+  `view.rig.tree.computeChain(joint)` (fresh), and a mesh is handed its matrix
+  only by `g.vehicleViews.draw()`, which the frame calls just before the
+  render — call it yourself after a direct write before reading a mesh's
+  `getWorldMatrix()` or its bounds.
   **The signature takes a LOOKUP rather than a hull and a stick**, because a bot
   crew can be driving one hull while the player drives another — and on the
   page the bot crew is the wire's (`remoteFor`), there being no crew here.
@@ -810,9 +816,11 @@ is one machine's:
   player's head every frame and points your carefully aimed shot at the rim.
   Photograph a vehicle from `deploy`, exactly as `capture-map-shots.mjs` does.
 - **The TRACKS are read off the rig, not off a screenshot.** At 2 fps two
-  photographs of a moving strip prove nothing about which way it went;
-  `view.rig.tracks[i]` (the hull's VIEW — the hull has no rig since X2.2 C9) is
-  `{lower, upper, sprocket}` per side, and the three
+  photographs of a moving strip prove nothing about which way it went. The
+  rig is the hull's VIEW's (the hull has no rig since X2.2 C9) and it names
+  no track: the three joints a side are in `view.rig.tree.joints` by name
+  (`tank-link-lo`, `tank-link-hi`, `tank-sprocket`, the left side's first —
+  joints since X4.2a), and the three
   numbers that settle it are `lower.position.z` (in `(-LINK_PITCH, 0]`),
   `upper.position.z` (its mirror) and `sprocket.rotation.x`. Drive a straight
   run and the two sprockets step together; drive `steer: 1` at `throttle: 0`
@@ -861,20 +869,21 @@ is one machine's:
   still the right instrument for a per-call figure (the clock is clamped, so
   only a sum over hundreds of calls means anything); it just has to be run
   somewhere a body is actually colliding.
-- **Teleport a hull through `tank.pos`, never `tank.body.position`, and a
-  world-matrix read still does not follow it.** Since X2.2 C8 the hull's
+- **Teleport a hull through `tank.pos`, never through its drawing, and a
+  drawn matrix still does not follow it.** Since X2.2 C8 the hull's
   position IS `pos` (`placeAt`/`correctTo` write it too): the sweep starts
   from it, every other hull meets it at its `rayBox()`, and the three muzzles
-  are replayed off it, so none of those involve a matrix. The body mesh is the
-  VIEW's (`VehicleView.body`), a FOLLOWER `VehicleView.update` overwrites from
-  `pos` after every fleet step — a write to it moves nothing and is undone. Anything that still asks
-  `getAbsolutePosition()` (a rig joint's world position) reads the world
-  matrix, and
-  `computeWorldMatrix()` early-outs while `_currentRenderId` equals
-  `scene.getRenderId()` — which never advances inside one synchronous
-  `page.evaluate`. **Call `g.vehicleViews.update()` and then
-  `view.body.computeWorldMatrix(true)` after a position write before any such
-  read.** (Under Babylon this was the SWEEP's start too,
+  are replayed off it, so none of those involve a matrix. The body is the
+  VIEW's (`view.rig.body`, a joint since X4.2a and a mesh before), a
+  FOLLOWER `VehicleView.update` overwrites from `pos` after every fleet step
+  — a write to it moves nothing and is undone. A joint's world is only what
+  the last compose left, and a mesh's is only what the last
+  `g.vehicleViews.draw()` handed it, which the frame calls just before the
+  render. **Call `g.vehicleViews.update()` and then read a joint through
+  `view.rig.tree.computeChain(joint)`, or `g.vehicleViews.draw()` before a
+  mesh's matrix, after a position write.** (Under Babylon a node's
+  `computeWorldMatrix()` early-out on the render id was the trap here, and
+  it was the SWEEP's start too,
   and it cost an afternoon: a harness reported the walk colliding with a
   `compoundWall-col` 600 m from where the test had put the body.)
 - **A scripted DRIVE is not a test of anything a hull hits.** Measured over

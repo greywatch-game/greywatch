@@ -1,17 +1,26 @@
 /**
- * VehicleView.ts — What one hull LOOKS like: its invisible body box, the rig
- * its kind's model builds, the belts' run, the two whips and the paint.
- * Owns: the body mesh, the `VehicleRig`, a `HullWhips`, the run each side's
- * running gear has covered and the stick and disc it was last drawn at, and
- * which paint is on. Only the client builds one (`systems/VehicleViews.ts`,
- * one per hardstanding); the authority runs `Vehicle` alone and draws nothing.
- * Reads its `Vehicle` and NEVER writes it: everything it decides is where a
- * node stands, how it is turned, whether it is drawn and what it is painted.
+ * VehicleView.ts — What one hull LOOKS like: the rig its kind's model builds,
+ * stood where the hull's collider box stands, the belts' run, the two whips
+ * and the paint.
+ * Owns: the `VehicleRig` (its joints and its meshes), a `HullWhips`, the run
+ * each side's running gear has covered and the stick and disc it was last
+ * drawn at, and which paint is on. Only the client builds one
+ * (`systems/VehicleViews.ts`, one per hardstanding); the authority runs
+ * `Vehicle` alone and draws nothing. Reads its `Vehicle` and NEVER writes it:
+ * everything it decides is where a joint stands, how it is turned, whether
+ * the hull is drawn and what it is painted.
  * Invariants:
- * - **The nodes are COPIES of the hull's `pose`**, written only where they
+ * - **The joints are COPIES of the hull's `pose`**, written only where they
  *   differ — the hull wrote the record behind the guards the node writes had,
- *   so a node is exactly what the record says and the muzzles the simulation
+ *   so a joint is exactly what the record says and the muzzles the simulation
  *   replays off the record are the muzzles drawn here (`entities/hullFrame.ts`).
+ *   The guards stay although a joint costs nothing to write: an unguarded
+ *   write of a `-0` over a `0` is a different bit in the drawn matrix.
+ * - **The joints are OURS and Babylon has no node of a hull**
+ *   (`BABYLON_EXIT.md` X4.2a, `vehicleRig.ts`' header): `draw` composes them
+ *   and hands every mesh its matrix, once a frame after every write and
+ *   before the render (`VehicleViews.draw`), and nothing in the game reads a
+ *   joint but the drawing.
  * - **Five things it is TOLD, as `Vehicle`'s `HullPicture`**: a placing (the
  *   rig back to rest), a shot (the masts crack), a wreck (the charred paint),
  *   each step of the running gear and each step of the hull's mass — because a
@@ -20,30 +29,23 @@
  *   right after `VehicleSystem.update` and BEFORE the battle, the grenades and
  *   the rockets step: nothing after the fleet moves a hull, but any of the
  *   three can wreck one, and a poll would paint that a frame late.
- * - **The body box follows the hull**: at `pos`, turned `yaw`, enabled
- *   exactly while `present`. It is the node the rig hangs off and nothing
- *   else — the two shadow maps draw the HULL's box off its own fields
- *   (`core/proxyBoxes.ts`, `BABYLON_EXIT.md` X4.1c), never this: never
- *   pickable and never `metadata.solid`, because the one mesh pick left in the
- *   game is the editor's (`world/solid.ts`) and the editor builds no hulls. No
- *   ray and no sweep in the game reads it: a hull is answered by
- *   `Vehicle.rayBox`.
- * Never: `dispose(false, true)` — see `dispose`.
+ * - **The body joint follows the hull** (`rig.body`): at `pos`, turned `yaw`
+ *   — the collider box's own frame and the joint the rig's root hangs off,
+ *   which an invisible body box MESH was until X4.2a (the rig its child). The
+ *   hull is drawn exactly while `present` (`setHullRigEnabled`). The two
+ *   shadow maps draw the HULL's box off its own fields (`core/proxyBoxes.ts`,
+ *   `BABYLON_EXIT.md` X4.1c), and no ray and no sweep in the game reads the
+ *   drawing: a hull is answered by `Vehicle.rayBox`.
+ * Never: disposes a material — see `dispose`.
  */
-import { MeshBuilder, type Mesh, type Scene } from "@babylonjs/core";
+import type { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { HullWhips } from "./HullWhips";
 import type { HullPicture, Vehicle } from "./Vehicle";
 import type { VehicleModel } from "./vehicleModels";
-import type { VehicleRig } from "./vehicleRig";
+import { disposeHullRig, drawHullRig, setHullRigEnabled, type VehicleRig } from "./vehicleRig";
 
 export class VehicleView implements HullPicture {
-  /**
-   * The collider box's MESH, invisible, and a FOLLOWER of the hull — see the
-   * header for its two readers. Built before the rig, in the order the scene
-   * always received the two.
-   */
-  readonly body: Mesh;
   readonly rig: VehicleRig;
   /** The masts. See `HullWhips`. */
   private readonly whips: HullWhips;
@@ -79,21 +81,10 @@ export class VehicleView implements HullPicture {
     model: VehicleModel,
   ) {
     const t = hull.spec;
-    this.body = MeshBuilder.CreateBox(
-      `hull-body-${hull.team}`,
-      { width: t.hull.width, height: t.hull.height, depth: t.hull.length },
-      scene,
-    );
-    this.body.isVisible = false;
-    // Out of every pick: what a hull is to a body and to a round — both, to
-    // both; neither `porous` nor `rayOnly`, which describe a fence — is
-    // `Vehicle.rayBox`, and it reads no mesh.
-    this.body.isPickable = false;
     this.rig = model(scene, mats, hull.team);
-    this.rig.root.parent = this.body;
     // The rig is drawn with `y = 0` at the bottom of the tracks and the
     // collider box is centred on the hull, so the model hangs half a hull
-    // below the box's own origin — `hullPointToRef`'s `drop`.
+    // below the box's own origin (`rig.body`) — `hullPointToRef`'s `drop`.
     this.rig.root.position.y = -t.hull.height / 2;
     this.whips = new HullWhips(this.rig.antennae, t);
     // The hull was placed before there was a picture to tell, so the rig goes
@@ -129,8 +120,9 @@ export class VehicleView implements HullPicture {
    * The belts, off the drive the hull has just decided. Skipped outright for a
    * hull that neither moved nor turned and whose linkage and disc are where
    * they were last drawn — two of these are parked doing nothing for most of a
-   * round, and writing six transforms a frame to put them back exactly where
-   * they were is six world matrices to recompute. A yaw to the RIGHT (which is
+   * round, and a still hull's belts are where they were (the run is a sum, so
+   * the skip is part of what the picture is, not only a saving). A yaw to the
+   * RIGHT (which is
    * a positive one — forward is `(sin yaw, cos yaw)`, so +90 degrees points at
    * +x) is the LEFT track running long.
    */
@@ -171,29 +163,28 @@ export class VehicleView implements HullPicture {
   // --- the frame -------------------------------------------------------------
 
   /**
-   * Everything that is STATE, read off the hull and written onto the nodes:
+   * Everything that is STATE, read off the hull and written onto the joints:
    * where the body stands, whether it is drawn, and the joints from the pose.
    * Run right after the fleet has been stepped (`Game.updateWorld`) and
    * before the rest of the fight, which can wreck a hull but never move one —
    * which is why the wreck's paint is told (`wrecked`) rather than read here.
    *
-   * A joint is written only where it differs from the pose: an assignment to
-   * a `TransformNode`'s rotation is a world matrix to recompute whether the
-   * number moved or not, and two of these are parked doing nothing for most
-   * of a round.
+   * A joint is written only where it differs from the pose — the guards the
+   * node writes had, kept because the record was written behind them and
+   * they decide a zero's sign (the header).
    */
   update(): void {
     const hull = this.hull;
+    const r = this.rig;
     const present = hull.present;
     if (present !== this.shownPresent) {
       this.shownPresent = present;
-      this.body.setEnabled(present);
+      setHullRigEnabled(r, present);
     }
     const p = hull.pos;
-    this.body.position.set(p.x, p.y, p.z);
-    this.body.rotation.y = hull.yaw;
+    r.body.position.set(p.x, p.y, p.z);
+    r.body.rotation.y = hull.yaw;
     const s = hull.pose;
-    const r = this.rig;
     const lean = r.hull.rotation;
     if (lean.x !== s.hullX) lean.x = s.hullX;
     if (lean.z !== s.hullZ) lean.z = s.hullZ;
@@ -208,10 +199,21 @@ export class VehicleView implements HullPicture {
   }
 
   /**
+   * The joints composed and every drawn mesh handed its matrix
+   * (`drawHullRig`) — once a frame, after `update` and everything that tells
+   * the picture anything, immediately before the render (`VehicleViews.draw`
+   * from `Game`, in every state). A hull that is not present is not drawn and
+   * not composed: nothing reads its joints.
+   */
+  draw(): void {
+    if (this.shownPresent) drawHullRig(this.rig);
+  }
+
+  /**
    * Takes the hull's drawing out of the world. Called only by
    * `VehicleViews`, which is to say once per map install.
    *
-   * **Never `dispose(false, true)`.** Every material on this rig came out of
+   * **Never `dispose(false, true)` on a mesh.** Every material on this rig came out of
    * `CelMaterialFactory`'s shared per-colour cache (`mats.get`), which is the
    * same cache the WORLD is painted from — so the second flag disposes paint
    * that the map's own meshes are holding, and the factory hands the dead
@@ -223,7 +225,6 @@ export class VehicleView implements HullPicture {
    * hull's; the paint on them is everybody's.
    */
   dispose(): void {
-    this.rig.root.dispose(false);
-    this.body.dispose();
+    disposeHullRig(this.rig);
   }
 }

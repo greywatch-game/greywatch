@@ -613,7 +613,7 @@ mask's groups were being added to `drawWorld` too.
 evaluation (the `Mesh walk` counter, which is the same number in other units),
 `Game.drawBodies` (every drawn rig's joints composed and handed to its meshes,
 `BABYLON_EXIT.md` X4.1a — the composition Babylon did inside the walk until
-then), the post chain, a frame's share of a reflection bake, and the present. Measured
+then), `VehicleViews.draw` (the hulls' joints the same, X4.2a), the post chain, a frame's share of a reflection bake, and the present. Measured
 on Hollowmere headless, 969 frames at 101 fps: `render` 4.86 ms, of which
 `drawWorld` 2.15, `glow` 1.04, `drawOverlay` 0.25 and `shadowPass` 0.73 — 86%
 of the bar attributed, and the glow's share of the whole frame **10.5%**, which

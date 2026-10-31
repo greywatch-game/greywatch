@@ -4,7 +4,9 @@
  * Owns: the `VehicleRig` contract — the joints a hull's VIEW writes and the
  * three closures it calls — plus `Box`/`Cyl`/`Shape`, the per-colour merge and
  * the outline pass every model owes, the one way a whip antenna is built
- * (`whip`) and the one pose a rig is reset to (`resetRigPose`).
+ * (`whip`), the one pose a rig is reset to (`resetRigPose`), and the one way a
+ * rig's meshes are handed their matrices (`drawHullRig`), switched
+ * (`setHullRigEnabled`) and freed (`disposeHullRig`).
  * Owns NO geometry and no numbers. `TankModel.ts`, `TruckModel.ts` and
  * `HeliModel.ts` are the ART, one file per kind; this is the shape they all
  * come out in, and the one thing `entities/VehicleView.ts` draws. CLIENT-only:
@@ -15,11 +17,25 @@
  * **A hull's geometry is PARTS until `segment` merges it**: a box or a cylinder
  * is a `Part` on `src/geometry/`'s generators, a `Shape` is a `Part` from
  * `facet.ts`, `mergeParts` is the per-colour merge, and `drawnMesh` is the one
- * place any of it becomes a Babylon mesh — the mesh then hung off a live joint.
- * The JOINTS are still Babylon `TransformNode`s (the rig is X4's), and so is
- * the body box `VehicleView` builds, which is a follower of the hull's collider
- * and not a drawing. The meshes are MADE in the order the scene used to receive
- * them, which `mergeByColor` explains; `kit:hash --models` hashes that order.
+ * place any of it becomes a Babylon mesh. The meshes are MADE in the order the
+ * scene used to receive them, which `mergeByColor` explains; `kit:hash
+ * --models` hashes that order.
+ *
+ * **The JOINTS are OURS** (`BABYLON_EXIT.md` X4.2a, X4.1a's shape): a
+ * `JointTree` (`rigJoints.ts`) whose first joint is the collider box's own
+ * frame (`body`, which the view stands at the hull's `pos` and turns `yaw`)
+ * and whose second is the model's `root`, each joint's world a float32 matrix
+ * the rig owns, composed FRESH off the channels in `src/math`'s copies of
+ * Babylon's arithmetic — what `TransformNode.computeWorldMatrix(true)` gave
+ * for the same channels, bit for bit. **Babylon still draws the merged
+ * meshes, and none has a parent**: each mesh's own local is composed once at
+ * build (`HullMesh.local`), and `drawHullRig` hands Babylon its world (that
+ * local times its joint's) through `freezeWorldMatrix`, once a frame from
+ * `Game` (`VehicleViews.draw`), after every write and immediately before
+ * `scene.render`. No node of a hull is in the scene. The muzzles and the
+ * sight are joints with no mesh, which nothing in the game reads: the
+ * simulation replays them off the record (`hullFrame.ts`' `hullPointToRef`),
+ * the same chain these compose.
  *
  * ## The rig is CLOSED over its own model, which is what buys the second kind
  *
@@ -43,10 +59,10 @@
  * A `HullFrame` (`entities/hullFrame.ts`): the three extents the drive cannot
  * do without — `gauge`, `contactReach`, `wheelReach`, all DRAWING decisions —
  * and the offsets of every joint between the collider box and a muzzle, which
- * the simulation replays as numbers rather than reading off these nodes. Each
+ * the simulation replays as numbers rather than reading off these joints. Each
  * kind's lives in a Babylon-free frame file of its own (`tankFrame.ts`,
  * `truckFrame.ts`, `heliFrame.ts`) that its model IMPORTS and places its
- * nodes FROM, and `entities/vehicleKinds.ts` hands it to the hull beside the
+ * joints FROM, and `entities/vehicleKinds.ts` hands it to the hull beside the
  * spec, so neither `Vehicle` nor the authority imports a model file.
  *
  * ## Two rules every model owes, both inherited and both already broken once
@@ -55,18 +71,22 @@
  *   one-shot scan at construction, which a hull built per round could never
  *   join. The bloom reads `noGlow` every frame now (`GlowPass`), so a glowing
  *   part is possible — it is still a look nobody has chosen.
- * - **Nothing pickable.** The body box is the only pickable thing a vehicle
- *   has, and only for the editor — see `VehicleView`. A pickable visual would put the hitscan's wall ray,
- *   the bots' LOS and the ground probe on sixty triangles of track link.
+ * - **Nothing pickable.** No mesh of a hull is pickable, and nothing in the
+ *   game picks one: what a hull is to a body and to a round is
+ *   `Vehicle.rayBox`, off its own fields. A pickable visual would put the
+ *   hitscan's wall ray, the bots' LOS and the ground probe on sixty triangles
+ *   of track link.
  *
  * `segmentOf` enforces both by construction, which is why no model may build
  * a mesh any other way — a model hands it parts, never meshes.
  */
-import { type Material, type Mesh, type Scene, TransformNode } from "@babylonjs/core";
+import { type Material, Matrix as BabylonMatrix, type Mesh, type Scene } from "@babylonjs/core";
 import type { VehicleSpec } from "../config/vehicles";
 import { createBox, createCylinder } from "../geometry/primitives";
+import { Matrix, Quaternion, Vector3 } from "../math";
 import { type CelMaterialFactory } from "../shaders/CelShader";
 import { drawnMesh, mergeParts, Part } from "../world/parts";
+import { type Joint, JointTree } from "./rigJoints";
 
 /**
  * `[width, height, depth, x, y, z, colour, rotX?, rotY?]`, as `SoldierModel`'s
@@ -145,9 +165,9 @@ const CHARRED = "#221f1c";
  */
 export interface Whip {
   /** Turns at the mast foot. Takes `antenna.baseShare` of the bend. */
-  base: TransformNode;
+  base: Joint;
   /** Hangs off the base's top and finishes the bow, LAGGING behind it. */
-  tip: TransformNode;
+  tip: Joint;
   /**
    * How much faster this mast answers than the model's LONGEST.
    *
@@ -167,13 +187,40 @@ export interface Whip {
 }
 
 /**
- * A built vehicle: the nodes that move, the meshes that draw, the three
+ * One drawn mesh of a hull and the joint it hangs off — parented to NOTHING
+ * since `BABYLON_EXIT.md` X4.2a: its world is `local` times its joint's,
+ * composed by `drawHullRig` and handed to Babylon (`freezeWorldMatrix`).
+ */
+export interface HullMesh {
+  readonly mesh: Mesh;
+  readonly joint: Joint;
+  /** The mesh's own transform in its joint's frame, composed once at build. */
+  readonly local: Matrix;
+  /** What Babylon is handed — the one object it keeps as the world matrix. */
+  readonly drawn: BabylonMatrix;
+}
+
+/**
+ * A built vehicle: the joints that move, the meshes that draw, the three
  * extents the physics needs off the drawing, and what to do to all of it when
  * the hull respawns or burns.
  */
 export interface VehicleRig {
-  /** Hung off the view's body box, which is positioned and yawed off the hull. */
-  root: TransformNode;
+  /**
+   * Every joint below, parents first: OUR hierarchy (`rigJoints.ts`), each
+   * world a float32 matrix the rig owns. Babylon draws the meshes off them and
+   * has no node of this rig (`BABYLON_EXIT.md` X4.2a).
+   */
+  tree: JointTree;
+  /**
+   * The collider box's own frame — what the view's invisible body box was
+   * until X4.2a: stood at the hull's `pos` (the box's centre) and turned
+   * `yaw`, by the view and nothing else. The tree's first joint; `root` hangs
+   * off it.
+   */
+  body: Joint;
+  /** Hung half a hull below `body` (`hullPointToRef`'s `drop`), by the view. */
+  root: Joint;
   /**
    * The lean onto the GROUND, and nothing else. Separate from `root` because
    * the pitch and roll are a picture and the yaw is a rule: the collider box
@@ -186,7 +233,7 @@ export interface VehicleRig {
    * weight-transfer pitch on this node rotates the running gear with it and
    * drives one end of the vehicle under the road. See `sprung`.
    */
-  hull: TransformNode;
+  hull: Joint;
   /**
    * The sprung mass — everything the springs carry, and therefore everything
    * the springs may move: `HullSprings.flexHeave` holds its Y and
@@ -198,7 +245,7 @@ export interface VehicleRig {
    * visible: a body that took its wheels down with it would drive them through
    * the road on every landing and bury its nose on every stop.
    */
-  sprung: TransformNode;
+  sprung: Joint;
   /**
    * Traverses. Local yaw, relative to the hull.
    *
@@ -208,20 +255,20 @@ export interface VehicleRig {
    * always zero and the machine gun bolted above it is left riding a fixed
    * ring on the body. See `Vehicle.armed`.
    */
-  turret: TransformNode;
+  turret: Joint;
   /**
    * Elevates. Local pitch, relative to the turret — and **null on a vehicle
    * that has no main gun**, which is the one place in the rig where a kind is
    * visible at all.
    *
-   * Nullable rather than a dummy node, because a dummy is a thing the next
+   * Nullable rather than a dummy joint, because a dummy is a thing the next
    * reader has to discover is never used: every caller of `gunDirToRef`,
    * `muzzleToRef` and `fireGun` is already behind `Vehicle.armed`, and the
    * type is what says so.
    */
-  gun: TransformNode | null;
+  gun: Joint | null;
   /** The barrel's tip: where a shell leaves and where its flash is lit. Null with `gun`. */
-  muzzle: TransformNode | null;
+  muzzle: Joint | null;
   /**
    * The commander's gun on its ring: the mount TRAVERSES (local yaw, relative
    * to the turret it is bolted to) and the gun ELEVATES on it.
@@ -232,10 +279,10 @@ export interface VehicleRig {
    * DIFFERENCE here — so a turret traversing under a gunner who is not
    * touching anything leaves his gun laid where he laid it.
    */
-  mgMount: TransformNode;
-  mgGun: TransformNode;
+  mgMount: Joint;
+  mgGun: Joint;
   /** Where a machine-gun round leaves, and where its flash is lit. */
-  mgMuzzle: TransformNode;
+  mgMuzzle: Joint;
   /**
    * Where the GUNNER's eye goes when he puts the sight up: the optic head this
    * model already draws, at its outer face.
@@ -257,13 +304,15 @@ export interface VehicleRig {
    * gun looks steeply DOWN it must still be over the pad with the machine
    * sitting on it — the same ground the muzzle is measured against.
    */
-  mgSight: TransformNode;
+  mgSight: Joint;
   /** The masts, longest first — the order `rate` is measured against. May be empty. */
   antennae: readonly Whip[];
   /** Every drawn mesh, for the repaint and for whoever needs the list. */
   meshes: Mesh[];
   /** What each of `meshes` was painted with when it was built. */
   livery: Material[];
+  /** Each of `meshes`, in that order, with the joint it hangs off. See `HullMesh`. */
+  drawn: readonly HullMesh[];
   /**
    * The running gear, given how far each side has covered in metres, how hard
    * the stick is over (-1..1), and how far the ROTOR has turned in radians.
@@ -306,15 +355,16 @@ export interface VehicleRig {
  * The two links are given the bend the way a cantilever takes one. `base` gets
  * the share nearest the root, where a real mast's curvature is greatest, and
  * the tip link is handed **what is left over** — `tip` minus what the base has
- * already contributed, because these are nested nodes and a child's rotation is
+ * already contributed, because these are nested joints and a child's rotation is
  * relative to its parent's. That subtraction is the whole trick: `Vehicle` hands
  * in a tip angle that LAGS the base's, so while the whip is moving the leftover
  * is negative and the upper link bends back against the lower one into an S,
  * and when it settles the two agree and it reads as one smooth bow.
  *
- * Both angles are small and Babylon composes euler rotations in YXZ, so the two
- * axes cross-couple slightly at the extremes. That is a picture on a picture:
- * nothing aims, walks or is picked against a mast.
+ * Both angles are small and a joint composes its euler rotation in YXZ, as
+ * Babylon's node did, so the two axes cross-couple slightly at the extremes.
+ * That is a picture on a picture: nothing aims, walks or is picked against a
+ * mast.
  */
 export function setAntennaBend(
   w: Whip,
@@ -338,10 +388,10 @@ export function setAntennaBend(
  * a whip is BUILT out of them is the same on every hull and lives in `whip`.
  */
 export interface WhipDrawing {
-  /** The nodes are `name` and `name-tip`, the meshes `name-lo` and `name-hi`. */
+  /** The joints are `name` and `name-tip`, the meshes `name-lo` and `name-hi`. */
   name: string;
   /** What the foot is bolted to — a turret, or the sprung body. */
-  parent: TransformNode;
+  parent: Joint;
   /**
    * The pivot, in `parent`'s frame. Put it INSIDE the spring foot the model
    * draws, so the pivot is inside the foot at every bend the springs can reach.
@@ -360,9 +410,9 @@ export interface WhipDrawing {
 }
 
 /**
- * Builds one whip: two nodes, one link drawn on each.
+ * Builds one whip: two joints in `tree`, one link drawn on each.
  *
- * Each link is drawn from its own node's origin UP, and each tapers into the
+ * Each link is drawn from its own joint's origin UP, and each tapers into the
  * next: a whip is thinner at the top, and the taper is what stops two straight
  * rods reading as one straight rod with a joint in it. A `cap` is the ball a
  * real whip ends in, so it is not an eye-poker.
@@ -372,17 +422,15 @@ export interface WhipDrawing {
  * tuned separately — see `Whip.rate`.
  */
 export function whip(
-  scene: Scene,
+  tree: JointTree,
   segment: Segments["segment"],
   d: WhipDrawing,
 ): Whip {
   const half = d.length / 2;
   const [foot, joint, top] = d.taper;
-  const base = new TransformNode(d.name, scene);
-  base.parent = d.parent;
+  const base = tree.add(d.name, d.parent);
   base.position.set(d.foot[0], d.foot[1], d.foot[2]);
-  const tip = new TransformNode(`${d.name}-tip`, scene);
-  tip.parent = base;
+  const tip = tree.add(`${d.name}-tip`, base);
   tip.position.set(0, half, 0);
   segment(`${d.name}-lo`, base, [], [
     [foot, half, 0, half / 2, 0, d.color, "y", joint],
@@ -421,19 +469,34 @@ export function resetRigPose(
 }
 
 /**
- * The two lists a model draws into and the one function that turns parts into
+ * A hull's joint tree, begun: the collider box's frame (`VehicleRig.body`)
+ * and the model's root under it, named `root` — the two joints every model's
+ * own hang off, made first so the tree is parents first by construction.
+ */
+export function rigTree(root: string): { tree: JointTree; body: Joint; root: Joint } {
+  const tree = new JointTree();
+  const body = tree.add("hull-body", null);
+  return { tree, body, root: tree.add(root, body) };
+}
+
+/**
+ * The lists a model draws into and the one function that turns parts into
  * meshes, handed back together so a builder holds one thing.
  *
  * Every model calls `segment` and none may build a mesh any other way: this
- * is where the per-colour merge, the pickability rule and the mesh/livery
- * bookkeeping are enforced, and a mesh built past it is one that is picked,
- * unmerged and never repainted when the hull burns.
+ * is where the per-colour merge, the pickability rule and the mesh/livery/
+ * joint bookkeeping are enforced, and a mesh built past it is one that is
+ * picked, unmerged, never repainted when the hull burns and never handed a
+ * matrix.
  */
 export interface Segments {
   meshes: Mesh[];
   livery: Material[];
+  drawn: HullMesh[];
   /**
-   * Builds a list of parts, merges them per colour, and parents the result.
+   * Builds a list of parts, merges them per colour, and hangs the result off
+   * `parent` — which is to say files each mesh under that joint, the mesh
+   * itself parented to nothing (`HullMesh`).
    *
    * The two lists are one segment: a cylinder in a colour the boxes beside it
    * already carry merges into their mesh and costs nothing, which is why a
@@ -442,7 +505,7 @@ export interface Segments {
    */
   segment(
     name: string,
-    parent: TransformNode,
+    parent: Joint,
     boxes: Box[],
     cyls?: Cyl[],
     shapes?: readonly Shape[],
@@ -452,9 +515,10 @@ export interface Segments {
 export function segmentOf(scene: Scene, mats: CelMaterialFactory): Segments {
   const meshes: Mesh[] = [];
   const livery: Material[] = [];
+  const drawn: HullMesh[] = [];
   const segment = (
     name: string,
-    parent: TransformNode,
+    parent: Joint,
     boxes: Box[],
     cyls: Cyl[] = [],
     shapes: readonly Shape[] = [],
@@ -497,17 +561,76 @@ export function segmentOf(scene: Scene, mats: CelMaterialFactory): Segments {
       parts.push(p);
     }
     for (const merged of mergeByColor(scene, parts, name, shapes.length)) {
-      merged.parent = parent;
-      // The collider box is the only pickable thing a vehicle has — see
-      // `Vehicle`. A pickable visual would put the hitscan's wall ray, the
-      // bots' LOS and the ground probe on sixty triangles of track link.
+      // No mesh of a hull is pickable — what a hull is to a round is
+      // `Vehicle.rayBox`. A pickable visual would put the hitscan's wall ray,
+      // the bots' LOS and the ground probe on sixty triangles of track link.
       merged.isPickable = false;
       merged.checkCollisions = false;
       meshes.push(merged);
       livery.push(merged.material!);
+      drawn.push({ mesh: merged, joint: parent, local: meshLocal(merged), drawn: new BabylonMatrix() });
     }
   };
-  return { meshes, livery, segment };
+  return { meshes, livery, drawn, segment };
+}
+
+/**
+ * A mesh's own transform as `computeWorldMatrix` composed it before the
+ * parent's: its scaling, its quaternion or else its Euler as yaw-pitch-roll,
+ * and its position. Constant: nothing moves a hull's mesh in its joint's
+ * frame (a lone part keeps its own frame on its mesh, `mergeByColor`).
+ */
+function meshLocal(mesh: Mesh): Matrix {
+  const q = new Quaternion();
+  const rq = mesh.rotationQuaternion;
+  if (rq) q.copyFrom(rq);
+  else Quaternion.RotationYawPitchRollToRef(mesh.rotation.y, mesh.rotation.x, mesh.rotation.z, q);
+  const s = mesh.scaling;
+  const d = mesh.scalingDeterminant;
+  return Matrix.ComposeToRef(new Vector3(s.x * d, s.y * d, s.z * d), q, mesh.position, new Matrix());
+}
+
+// Scratch for `drawHullRig`.
+const _meshWorld = new Matrix();
+
+/**
+ * Composes the rig's joints and hands Babylon every switched-on mesh's world
+ * matrix off them — the mesh's own local times its joint's world, what
+ * `computeWorldMatrix` made of a mesh hung off a node.
+ *
+ * **Called once a frame, after every write and before the render**
+ * (`VehicleViews.draw`, from `Game` beside the bodies, inside the render
+ * span: Babylon composed these inside `scene.render` before X4.2a).
+ * `freezeWorldMatrix` is how a mesh with no parent is handed a matrix:
+ * Babylon keeps the object it is given as the world matrix, updates its
+ * bounds, and composes nothing of its own.
+ */
+export function drawHullRig(rig: VehicleRig): void {
+  rig.tree.compute();
+  for (const d of rig.drawn) {
+    if (!d.mesh.isEnabled(false)) continue;
+    d.local.multiplyToRef(d.joint.world, _meshWorld);
+    BabylonMatrix.FromArrayToRef(_meshWorld.m, 0, d.drawn);
+    d.mesh.freezeWorldMatrix(d.drawn);
+  }
+}
+
+/**
+ * The whole hull on or off — every mesh's own flag, which is what the body
+ * box's switch reached through the parent chain before X4.2a. Nothing on a
+ * hull is switched separately, so the rig has the one switch.
+ */
+export function setHullRigEnabled(rig: VehicleRig, on: boolean): void {
+  for (const mesh of rig.meshes) mesh.setEnabled(on);
+}
+
+/**
+ * Disposes the rig's meshes — the whole of what Babylon holds of it. The
+ * meshes only: the paint is the factory's shared cache (`VehicleView.dispose`
+ * says why that must never go with them).
+ */
+export function disposeHullRig(rig: VehicleRig): void {
+  for (const mesh of rig.meshes) mesh.dispose(false, false);
 }
 
 /**

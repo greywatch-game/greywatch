@@ -235,7 +235,7 @@
  *   windscreens and the blast barrier, the sills and the roof edges, all in
  *   the frame colour and standing proud of the glass so the ink finds them.
  */
-import { Scene, TransformNode } from "@babylonjs/core";
+import type { Scene } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { Team } from "./Combatant";
@@ -261,12 +261,14 @@ import {
   type Cyl,
   paintRig,
   resetRigPose,
+  rigTree,
   segmentOf,
   type Shape,
   type VehicleRig,
   whip,
   type Whip,
 } from "./vehicleRig";
+import type { Joint } from "./rigJoints";
 
 /**
  * One team's palette.
@@ -502,14 +504,12 @@ export function buildHeli(
   // `WING_OVERHANG` of each wing is mass a round passes through, by decision.
   const WING_TIP_X = t.hull.width / 2 + WING_OVERHANG;
 
-  const root = new TransformNode("heli", scene);
-  const hull = new TransformNode("heli-hull", scene);
-  hull.parent = root;
+  const { tree, body: hullBody, root } = rigTree("heli");
+  const hull = tree.add("heli-hull", root);
   // Everything the springs carry, which here is everything except the skids.
-  const sprung = new TransformNode("heli-sprung", scene);
-  sprung.parent = hull;
+  const sprung = tree.add("heli-sprung", hull);
 
-  const { meshes, livery, segment } = segmentOf(scene, mats);
+  const { meshes, livery, drawn, segment } = segmentOf(scene, mats);
 
   /** A round member from `a` to `b`; `d` at `a` and `dTop` at `b`. */
   const rod = (a: Point3, b: Point3, d: number, color: string, tess = 8, dTop = d): Shape => [
@@ -1045,8 +1045,7 @@ export function buildHeli(
   // Blade `i` runs out along `(sin a, cos a)`, and a positive turn of the node
   // carries it toward `(cos a, -sin a)` — which is where each blade's LEADING
   // edge is drawn.
-  const mainRotor = new TransformNode("heli-rotor", scene);
-  mainRotor.parent = sprung;
+  const mainRotor = tree.add("heli-rotor", sprung);
   mainRotor.position.set(0, HUB_Y, HUB_Z);
   const rotorBoxes: Box[] = [];
   const rotorShapes: Shape[] = [];
@@ -1097,8 +1096,7 @@ export function buildHeli(
     rotorShapes,
   );
 
-  const tailRotor = new TransformNode("heli-tail-rotor", scene);
-  tailRotor.parent = sprung;
+  const tailRotor = tree.add("heli-tail-rotor", sprung);
   tailRotor.position.set(TAIL_X, TAIL_Y, TAIL_Z);
   const tailBoxes: Box[] = [];
   for (let i = 0; i < 4; i++) {
@@ -1129,12 +1127,10 @@ export function buildHeli(
   // The node exists so that `mgMount` has the same parent it has on a tank and
   // `aimMg` needs no branch of its own.
   const f = HELI_FRAME;
-  const turret = new TransformNode("heli-ring", scene);
-  turret.parent = sprung;
+  const turret = tree.add("heli-ring", sprung);
   turret.position.set(f.turretAt[0], f.turretAt[1], f.turretAt[2]);
 
-  const mgMount = new TransformNode("heli-mg-mount", scene);
-  mgMount.parent = turret;
+  const mgMount = tree.add("heli-mg-mount", turret);
   mgMount.position.set(f.mgMountAt[0], f.mgMountAt[1], f.mgMountAt[2]);
   segment(
     "heli-mg-ring",
@@ -1159,8 +1155,7 @@ export function buildHeli(
     ],
   );
 
-  const mgGun = new TransformNode("heli-mg-gun", scene);
-  mgGun.parent = mgMount;
+  const mgGun = tree.add("heli-mg-gun", mgMount);
   mgGun.position.set(f.mgGunAt[0], f.mgGunAt[1], f.mgGunAt[2]);
   segment(
     "heli-mg",
@@ -1186,8 +1181,7 @@ export function buildHeli(
     ],
   );
 
-  const mgMuzzle = new TransformNode("heli-mg-muzzle", scene);
-  mgMuzzle.parent = mgGun;
+  const mgMuzzle = tree.add("heli-mg-muzzle", mgGun);
   // Just past the clamp, so a flash lit here is outside the barrels and a round
   // fired from here starts outside the vehicle's own collider box.
   //
@@ -1220,8 +1214,7 @@ export function buildHeli(
   //   this stands 0.460 over a pad the skids put at 0, where the muzzle beside
   //   it stands 0.074. Re-measure both if `MG_Y`, `MG_Z` or either pitch limit
   //   moves.
-  const mgSight = new TransformNode("heli-mg-sight", scene);
-  mgSight.parent = mgGun;
+  const mgSight = tree.add("heli-mg-sight", mgGun);
   mgSight.position.set(f.mgSightAt[0], f.mgSightAt[1], f.mgSightAt[2]);
 
   // --- the aerials ------------------------------------------------------------
@@ -1232,7 +1225,7 @@ export function buildHeli(
   // stood 1.15 m of mast here and put its tip six centimetres through the blade
   // path. See the first clearance.
   const mast = (i: number, foot: Point3, length: number, phase: number): Whip =>
-    whip(scene, segment, {
+    whip(tree, segment, {
       name: `heli-whip${i}`,
       parent: sprung,
       foot,
@@ -1249,6 +1242,8 @@ export function buildHeli(
   ];
 
   const rig: VehicleRig = {
+    tree,
+    body: hullBody,
     root,
     hull,
     sprung,
@@ -1266,6 +1261,7 @@ export function buildHeli(
     antennae,
     meshes,
     livery,
+    drawn,
     setRun: (_left, _right, _steer, rotor) =>
       setRotorRun(mainRotor, tailRotor, rotor),
     reset: () => resetRigPose(rig, mats, CONFIG.vehicles.heli),
@@ -1289,8 +1285,8 @@ export function buildHeli(
  * reason — `%` keeps the sign of its left operand in JS.
  */
 function setRotorRun(
-  main: TransformNode,
-  tail: TransformNode,
+  main: Joint,
+  tail: Joint,
   rotor: number,
 ): void {
   const two = Math.PI * 2;

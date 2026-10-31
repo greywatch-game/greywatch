@@ -854,20 +854,22 @@ src/
                         #   scene; what it looks like is `VehicleView`, told
                         #   through one `HullPicture` the five things a picture
                         #   cannot poll. Knows nothing about a player
-    VehicleView.ts      # One hull's PICTURE: the invisible body box (the
-                        #   rig's parent; never pickable, and not what a
-                        #   shadow draws), the rig its kind's model builds, the
-                        #   belts' run, the whips and the paint. Copies
-                        #   `Vehicle.pose` onto the joints, follows `present`
-                        #   and chars on the `wrecked` it is told; reads its
-                        #   hull and never writes it. Client only
+    VehicleView.ts      # One hull's PICTURE: the rig its kind's model builds
+                        #   (its body joint stood where the collider box
+                        #   stands; not what a shadow draws), the belts' run,
+                        #   the whips and the paint. Copies `Vehicle.pose`
+                        #   onto the joints, follows `present`, chars on the
+                        #   `wrecked` it is told, and `draw`s once a frame
+                        #   before the render (the joints composed, each mesh
+                        #   handed its matrix); reads its hull and never
+                        #   writes it. Client only
     hullFrame.ts        # Where a hull's guns and sight ARE, no Babylon:
                         #   `HullFrame` (a kind's joint offsets and the three
                         #   extents the drive reads off the drawing, stated by
                         #   each kind's frame file, which its model imports and
-                        #   places its nodes from),
+                        #   places its joints from),
                         #   `HullPose` (what those joints hold AS DRAWN) and
-                        #   `hullPointToRef`, the float32 node chain replayed
+                        #   `hullPointToRef`, the float32 joint chain replayed
                         #   bit for bit; and `hullBodyToRef`, its first link —
                         #   the collider box's frame, which both shadow maps
                         #   draw a hull's box off
@@ -924,9 +926,12 @@ src/
                         #   and the one `reset` (`resetRigPose`) all three
                         #   kinds share. A hull is `Part`s until `segment`
                         #   merges it (`mergeParts`) and `drawnMesh` makes the
-                        #   meshes, in the scene order the old meshes had; the
-                        #   joints stay `TransformNode`s. No geometry and no
-                        #   numbers
+                        #   meshes, in the scene order the old meshes had. The
+                        #   joints are OURS (a `JointTree`, its first joint the
+                        #   collider box's frame; BABYLON_EXIT.md X4.2a) and
+                        #   the meshes unparented, handed their matrices once a
+                        #   frame (`drawHullRig`) and switched as one
+                        #   (`setHullRigEnabled`). No geometry and no numbers
     TankModel.ts        # ~180 boxes and cylinders merged to twenty-five, with
                         #   a SPRUNG body over running gear that is not, a
                         #   turret and a gun that turn, a CUPOLA gun on a ring
@@ -958,7 +963,7 @@ src/
                         #   a CHIN turret rather than a door gun (the truck's
                         #   rule — nothing may promise a body standing at it).
                         #   Two whips on the boom are its one non-rigid part.
-                        #   `gun`/`muzzle` null and `turret` an INERT node,
+                        #   `gun`/`muzzle` null and `turret` an INERT joint,
                         #   so `aimMg` needs no branch. Both discs turn off
                         #   `setRun`'s FOURTH argument, and the transmission's
                         #   gear ratio lives here because it is a drawing
@@ -984,11 +989,12 @@ src/
                         #   body's segment matrices and writeRigCentres their
                         #   bounding centres, which our renderer draws it off
                         #   (render/BodyDraw, BABYLON_EXIT.md X4.1d)
-    rigJoints.ts        # A rig's joints as OUR hierarchy, no Babylon: local
-                        #   channels, float32 world matrices the rig owns (bit
-                        #   for bit the TransformNodes'), a fresh chain, a
-                        #   joint POSED off a ragdoll's pose array (Joint.pose),
-                        #   and the body's one measure (the root capsule's sphere)
+    rigJoints.ts        # A rig's joints as OUR hierarchy, no Babylon — a
+                        #   soldier's and (X4.2a) a hull's: local channels,
+                        #   float32 world matrices the rig owns (bit for bit
+                        #   the TransformNodes'), a fresh chain, a joint POSED
+                        #   off a ragdoll's pose array (Joint.pose), and the
+                        #   body's one measure (the root capsule's sphere)
     soldierBones.ts     # The ragdoll's bone table, no Babylon: BoneJoint,
                         #   BoneSpec and RAGDOLL_BONES (each bone's box and
                         #   mass in its joint's frame), measured off
@@ -1037,8 +1043,9 @@ src/
     VehicleViews.ts     # The fleet's PICTURE: one VehicleView per hull, by
                         #   hardstanding, each with its kind's model; built by
                         #   `installMap`, stepped after every
-                        #   `VehicleSystem.update`, taken down by
-                        #   `teardownMap`. Client only
+                        #   `VehicleSystem.update`, drawn once a frame before
+                        #   the render, taken down by `teardownMap`. Client
+                        #   only
     ConquestSystem.ts   # Flags, meters, tickets, bleed, spawns, planSquads,
                         #   what a bot's flag means to it (`zoneFor`), and
                         #   `scatterSpawn` — the core asks all three.

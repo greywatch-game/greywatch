@@ -10,7 +10,7 @@
  * off the springs AS DRAWN, guard and all (`entities/hullFrame.ts`). So the
  * springs are SIMULATION — stepped on the authority too — the pose record is
  * written exactly where and when the node used to be, a view copies the record
- * onto the node and never the other way (`entities/VehicleView.ts`), and a
+ * onto the joint and never the other way (`entities/VehicleView.ts`), and a
  * change to either guard moves the fight hash. It reads the spec and the frame
  * it was built with and the numbers `Vehicle` hands it each frame, and it never
  * asks what KIND of hull it is: a hull whose rotor is carrying it is handed a

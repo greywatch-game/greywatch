@@ -111,7 +111,7 @@
  * own tyre is 0.94 m across and this one is 0.92, which is part of why it was
  * the vehicle to draw. They live in `truckFrame.ts` with the station's joints
  * — the numbers the simulation reads, Babylon-free — and this file imports
- * them and places its nodes from them.
+ * them and places its joints from them.
  *
  * ## What the model may not do
  *
@@ -126,7 +126,7 @@
  * posts, 1.7 m and more from the ring, which a mast bent as far as its spring
  * can reach still clears. See `ANTENNA_FEET`.
  */
-import { Scene, TransformNode } from "@babylonjs/core";
+import type { Scene } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { Team } from "./Combatant";
@@ -155,12 +155,14 @@ import {
   type Cyl,
   paintRig,
   resetRigPose,
+  rigTree,
   segmentOf,
   type Shape,
   type VehicleRig,
   whip,
   type Whip,
 } from "./vehicleRig";
+import type { Joint } from "./rigJoints";
 
 /**
  * What one side's truck is PAINTED in — the tank kit's three-way read with
@@ -348,9 +350,9 @@ const ANTENNA_FOOT_Y = ROOF_Y;
  */
 interface Wheel {
   /** Turns with the stick. Null on the rear pair, which do not steer. */
-  steer: TransformNode | null;
+  steer: Joint | null;
   /** Turns at `run / WHEEL_R`. */
-  spin: TransformNode;
+  spin: Joint;
 }
 
 /**
@@ -370,15 +372,13 @@ export function buildTruck(
   // match seated them in. See `core/teamView.ts`.
   const kit = KITS[viewTeam(team)];
 
-  const root = new TransformNode("truck", scene);
-  const hull = new TransformNode("truck-hull", scene);
-  hull.parent = root;
+  const { tree, body: hullBody, root } = rigTree("truck");
+  const hull = tree.add("truck-hull", root);
   // Everything the springs carry, which is everything except the wheels and
   // the arms they hang on. See `VehicleRig.sprung`.
-  const sprung = new TransformNode("truck-sprung", scene);
-  sprung.parent = hull;
+  const sprung = tree.add("truck-sprung", hull);
 
-  const { meshes, livery, segment } = segmentOf(scene, mats);
+  const { meshes, livery, drawn, segment } = segmentOf(scene, mats);
 
   /** A round member from `a` to `b` — an arm, a spring, a wiper, a strap, a chute. */
   const rod = (a: Point3, b: Point3, d: number, color: string, tess = 6, dTop = d): Shape => [
@@ -411,16 +411,14 @@ export function buildTruck(
   // on why the tank's road wheels get none of this.
   const wheels: Wheel[] = [];
   const wheel = (i: number, x: number, z: number, steers: boolean): Wheel => {
-    let steer: TransformNode | null = null;
+    let steer: Joint | null = null;
     let parent = hull;
     if (steers) {
-      steer = new TransformNode(`truck-steer${i}`, scene);
-      steer.parent = hull;
+      steer = tree.add(`truck-steer${i}`, hull);
       steer.position.set(x, HUB_Y, z);
       parent = steer;
     }
-    const spin = new TransformNode(`truck-wheel${i}`, scene);
-    spin.parent = parent;
+    const spin = tree.add(`truck-wheel${i}`, parent);
     // A steered wheel hangs at its steering node's own origin; an unsteered
     // one carries the position itself.
     spin.position.set(steers ? 0 : x, steers ? 0 : HUB_Y, steers ? 0 : z);
@@ -903,8 +901,7 @@ export function buildTruck(
   // BOLTED to a roof should do. It exists so that the mount below has the same
   // parent it has on a tank and `aimMg` needs no branch.
   const f = TRUCK_FRAME;
-  const turret = new TransformNode("truck-ring", scene);
-  turret.parent = sprung;
+  const turret = tree.add("truck-ring", sprung);
   turret.position.set(f.turretAt[0], f.turretAt[1], f.turretAt[2]);
   segment("truck-ring-m", turret, [], [
     // The ring itself, and the armoured collar it is let into — which is what
@@ -923,8 +920,7 @@ export function buildTruck(
   // turntable, a yoke, and on the GUN's side of the trunnion a sensor head
   // with two lenses in it and an ammunition chute arching over into the feed —
   // which between them say that the thing aiming this gun is downstairs.
-  const mgMount = new TransformNode("truck-mg", scene);
-  mgMount.parent = turret;
+  const mgMount = tree.add("truck-mg", turret);
   mgMount.position.set(f.mgMountAt[0], f.mgMountAt[1], f.mgMountAt[2]);
   segment("truck-mg-ring", mgMount, [
     // The yoke arm on the right, the drive housing outboard of it, and the
@@ -940,8 +936,7 @@ export function buildTruck(
     [0.66, 0.12, 0, 0, 0, kit.frame, "y"],
     [0.07, 0.62, 0.06, 0.18, 0.06, kit.metal, "x"],
   ]);
-  const mgGun = new TransformNode("truck-mg-gun", scene);
-  mgGun.parent = mgMount;
+  const mgGun = tree.add("truck-mg-gun", mgMount);
   mgGun.position.set(f.mgGunAt[0], f.mgGunAt[1], f.mgGunAt[2]);
   segment("truck-mg-m", mgGun, [
     // The receiver, the buffer behind it, the charging handle and the feed
@@ -983,8 +978,7 @@ export function buildTruck(
     rod([0.15, 0.27, -0.08], [0.05, 0.22, -0.06], 0.06, kit.frame, 6),
     rod([0.05, 0.22, -0.06], [0.02, 0.14, -0.04], 0.06, kit.frame, 6),
   ]);
-  const mgMuzzle = new TransformNode("truck-mg-muzzle", scene);
-  mgMuzzle.parent = mgGun;
+  const mgMuzzle = tree.add("truck-mg-muzzle", mgGun);
   // Just past the brake, so a flash lit here is outside the barrel and a round
   // fired from here starts outside the vehicle's own collider box.
   //
@@ -1009,8 +1003,7 @@ export function buildTruck(
   // together. **The `z` is the clearance that matters**: the lens bezels stand
   // out to 0.32 on this node, and 0.4 puts the eye 8 cm clear of them, past
   // the near plane at every lay.
-  const mgSight = new TransformNode("truck-mg-sight", scene);
-  mgSight.parent = mgGun;
+  const mgSight = tree.add("truck-mg-sight", mgGun);
   mgSight.position.set(f.mgSightAt[0], f.mgSightAt[1], f.mgSightAt[2]);
 
   // ==========================================================================
@@ -1029,7 +1022,7 @@ export function buildTruck(
   // phases are arbitrary and exist so the one gust does not stir both in step.
   const mast = (i: number): Whip => {
     const [x, z] = ANTENNA_FEET[i];
-    return whip(scene, segment, {
+    return whip(tree, segment, {
       name: `truck-whip${i}`,
       parent: sprung,
       foot: [x, ANTENNA_FOOT_Y + 0.1, z],
@@ -1044,6 +1037,8 @@ export function buildTruck(
   const antennae: readonly [Whip, Whip] = [mast(0), mast(1)];
 
   const rig: VehicleRig = {
+    tree,
+    body: hullBody,
     root,
     hull,
     sprung,
@@ -1060,6 +1055,7 @@ export function buildTruck(
     antennae,
     meshes,
     livery,
+    drawn,
     setRun: (left, right, steer, _rotor) => setWheelRun(wheels, left, right, steer),
     reset: () => resetRigPose(rig, mats, CONFIG.vehicles.truck),
     paint: (wrecked) => paintRig(meshes, livery, mats, wrecked),

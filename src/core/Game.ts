@@ -694,7 +694,9 @@ export class Game {
   /**
    * What the fleet LOOKS like — one `VehicleView` per hull, built over
    * `vehicles` by `installMap` and torn down by `teardownMap`, stepped right
-   * after every `vehicles.update`. The authority has no such thing.
+   * after every `vehicles.update` and drawn (its joints composed) once a
+   * frame beside the bodies, before the render. The authority has no such
+   * thing.
    */
   private vehicleViews: VehicleViews;
   /** The view from outside the hull you are driving. `DeathCam`'s shape. */
@@ -3976,6 +3978,10 @@ export class Game {
     this.pushScoreboard();
     this.prof.begin(P.render);
     this.drawBodies();
+    // The hulls' joints are ours too (`BABYLON_EXIT.md` X4.2a): composed and
+    // handed to their meshes here, after every write, where Babylon composed
+    // their nodes inside the render before.
+    this.vehicleViews.draw();
     this.scene.render();
     this.prof.end(P.render);
     if (warming) this.unstageWarmFrame();

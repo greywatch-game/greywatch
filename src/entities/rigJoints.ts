@@ -1,9 +1,11 @@
 /**
- * rigJoints.ts — a soldier rig's joints as OUR hierarchy: each joint's local
+ * rigJoints.ts — a rig's joints as OUR hierarchy: each joint's local
  * transform as plain numbers, and its world matrix composed off them into a
  * float32 matrix the rig owns (`Joint.world`), which is what our renderer
- * draws the body's segments from (`SoldierModel.writeRigDrawing`,
- * `BABYLON_EXIT.md` X4.1d) and what every reader of a joint reads (X4.1a).
+ * draws a body's segments from (`SoldierModel.writeRigDrawing`,
+ * `BABYLON_EXIT.md` X4.1d) and what every reader of a joint reads (X4.1a) —
+ * a soldier's, and since X4.2a a hull's (`vehicleRig.ts`, whose merged meshes
+ * Babylon still draws, unparented, off these matrices).
  * Owns: `Joint`, `JointTree` (the composition, and a fresh chain), and the
  * body's one MEASURE (`measureBody`, the sphere the root's capsule used to
  * answer).

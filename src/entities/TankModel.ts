@@ -24,9 +24,10 @@
  *   with anything**, which is the one thing that buys a mesh here: six for the
  *   tracks, four for the two antennae, two for the commander's gun on its own
  *   ring, and nothing else in the model has earned one.
- * - **The joints are `TransformNode`s above the merged meshes**, so the turret
- *   traversing, the gun elevating and the tracks running are transforms and
- *   never a re-merge.
+ * - **The joints are JOINTS above the merged meshes** — ours, a `JointTree`
+ *   (`vehicleRig.ts`, `BABYLON_EXIT.md` X4.2a), `TransformNode`s before — so
+ *   the turret traversing, the gun elevating and the tracks running are
+ *   transforms and never a re-merge.
  * - **Nothing here is emissive.** The rule was written when the glow's `noGlow`
  *   exclusion was a one-shot scan at construction and a tank, built per round,
  *   could never be excluded; the bloom reads `noGlow` per mesh every frame now
@@ -80,9 +81,9 @@
  * turret ring, the trunnion, the barrel's end, the cupola gun's mount — and the
  * running gear's three extents are `tankFrame.ts`'s, Babylon-free, so the
  * authority can replay a muzzle without importing a drawing. This file IMPORTS
- * them and places its nodes from them, so the two cannot drift.
+ * them and places its joints from them, so the two cannot drift.
  */
-import { Scene, TransformNode } from "@babylonjs/core";
+import type { Scene } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { Team } from "./Combatant";
@@ -103,6 +104,7 @@ import { extrude, rodBetween, solidBetween, type Point3, type ProfilePoint } fro
 import {
   paintRig,
   resetRigPose,
+  rigTree,
   segmentOf,
   whip,
   type Box,
@@ -111,6 +113,7 @@ import {
   type VehicleRig,
   type Whip,
 } from "./vehicleRig";
+import type { Joint } from "./rigJoints";
 
 /**
  * What one side's armour is PAINTED in — the same three-way read the soldier
@@ -256,11 +259,11 @@ export const ANTENNA_LENGTHS = [1.5, 1.2] as const;
 /** One side's moving parts: the two link strips and the toothed sprocket. */
 interface TrackSide {
   /** The ground run's links. Slides backwards under a hull driving forwards. */
-  lower: TransformNode;
+  lower: Joint;
   /** The return run's links, which go the other way. */
-  upper: TransformNode;
+  upper: Joint;
   /** Turns at `run / END_R`. The one wheel whose rotation can be seen. */
-  sprocket: TransformNode;
+  sprocket: Joint;
 }
 
 /**
@@ -297,15 +300,13 @@ export function buildTank(
   const W = t.hull.width;
   const H = t.hull.height;
 
-  const root = new TransformNode("tank", scene);
-  const hull = new TransformNode("tank-hull", scene);
-  hull.parent = root;
+  const { tree, body: hullBody, root } = rigTree("tank");
+  const hull = tree.add("tank-hull", root);
   // Everything the springs carry, which is everything except the running gear.
   // See `VehicleRig.sprung`.
-  const sprung = new TransformNode("tank-sprung", scene);
-  sprung.parent = hull;
+  const sprung = tree.add("tank-sprung", hull);
 
-  const { meshes, livery, segment } = segmentOf(scene, mats);
+  const { meshes, livery, drawn, segment } = segmentOf(scene, mats);
 
   /**
    * A round member from `a` to `b` — a rail, a cable, a discharger tube, a
@@ -413,13 +414,11 @@ export function buildTank(
         links.push([0.07, BELT + 0.1, 0.075, e * (TRACK_W / 2 - 0.005), 0, z - LINK_PITCH / 2, kit.link]);
       }
     }
-    const lower = new TransformNode("tank-link-lo", scene);
-    lower.parent = hull;
+    const lower = tree.add("tank-link-lo", hull);
     lower.position.set(x, BELT / 2, 0);
     segment("tank-link-lo", lower, links);
 
-    const upper = new TransformNode("tank-link-hi", scene);
-    upper.parent = hull;
+    const upper = tree.add("tank-link-hi", hull);
     upper.position.set(x, LOOP - BELT / 2, 0);
     segment("tank-link-hi", upper, links);
 
@@ -428,8 +427,7 @@ export function buildTank(
     // between them, a hub, and five raised SPOKES on its face — the teeth say
     // it is turning where they show under the skirt, and the spokes say so in
     // the one place a skirt never covers.
-    const sprocket = new TransformNode("tank-sprocket", scene);
-    sprocket.parent = hull;
+    const sprocket = tree.add("tank-sprocket", hull);
     sprocket.position.set(x, HUB_Y, -END_Z);
     const teeth: Box[] = [];
     for (const ring of [-0.2, 0.2]) {
@@ -702,8 +700,7 @@ export function buildTank(
   // ==========================================================================
   // THE TURRET — traverses on the deck, a little behind centre.
   // ==========================================================================
-  const turret = new TransformNode("tank-turret", scene);
-  turret.parent = sprung;
+  const turret = tree.add("tank-turret", sprung);
   const f = TANK_FRAME;
   turret.position.set(f.turretAt[0], f.turretAt[1], f.turretAt[2]);
   /** Where the commander stands, in the turret's own frame. */
@@ -917,8 +914,7 @@ export function buildTank(
   // from this axis, level with the roof items' tops, which is why the
   // commander's sight stands at the far corner of the roof rather than in
   // front of his hatch where the real one does.
-  const mgMount = new TransformNode("tank-mg", scene);
-  mgMount.parent = turret;
+  const mgMount = tree.add("tank-mg", turret);
   mgMount.position.set(f.mgMountAt[0], f.mgMountAt[1], f.mgMountAt[2]);
   segment("tank-mg-ring", mgMount, [
     // The ring itself and the pintle standing out of its front. Both turn with
@@ -928,8 +924,7 @@ export function buildTank(
     [0.34, 0.08, 0.34, 0, -0.06, 0, kit.track],
     [0.1, 0.18, 0.1, 0, 0.04, 0.16, kit.track],
   ]);
-  const mgGun = new TransformNode("tank-mg-gun", scene);
-  mgGun.parent = mgMount;
+  const mgGun = tree.add("tank-mg-gun", mgMount);
   mgGun.position.set(f.mgGunAt[0], f.mgGunAt[1], f.mgGunAt[2]);
   segment("tank-mg-m", mgGun, [
     // The receiver, its box magazine and the spade grips behind it — the three
@@ -944,8 +939,7 @@ export function buildTank(
     [0.13, 0.26, 0, 0.02, 0.38, kit.track, "z"],
     [0.08, 0.62, 0, 0.02, 0.72, kit.track, "z", 0.07],
   ]);
-  const mgMuzzle = new TransformNode("tank-mg-muzzle", scene);
-  mgMuzzle.parent = mgGun;
+  const mgMuzzle = tree.add("tank-mg-muzzle", mgGun);
   // Just past the barrel, so a flash lit here is outside it and a round fired
   // from here starts outside the turret's own geometry.
   mgMuzzle.position.set(f.mgMuzzleAt[0], f.mgMuzzleAt[1], f.mgMuzzleAt[2]);
@@ -964,8 +958,7 @@ export function buildTank(
   // no lateral parallax to explain. 0.20 over the bore puts the barrel's far
   // end 15.3 deg below the sight line at 2.2x — the very bottom edge of the
   // picture, so the weapon frames the shot without standing in it.
-  const mgSight = new TransformNode("tank-mg-sight", scene);
-  mgSight.parent = mgGun;
+  const mgSight = tree.add("tank-mg-sight", mgGun);
   mgSight.position.set(f.mgSightAt[0], f.mgSightAt[1], f.mgSightAt[2]);
 
   // --- the antennae: the only parts of this vehicle that BEND ---------------
@@ -986,7 +979,7 @@ export function buildTank(
   // and exist for the same reason, one layer down: the gust is one gust.
   const mast = (i: number): Whip => {
     const [x, z] = ANTENNA_FEET[i];
-    return whip(scene, segment, {
+    return whip(tree, segment, {
       name: `tank-whip${i}`,
       parent: turret,
       // The spring foot on the roof is 16 cm tall and this is inside it.
@@ -1004,8 +997,7 @@ export function buildTank(
   const antennae: readonly [Whip, Whip] = [mast(0), mast(1)];
 
   // --- the gun: elevates in the mantlet, in the slot between the wedges -----
-  const gun = new TransformNode("tank-gun", scene);
-  gun.parent = turret;
+  const gun = tree.add("tank-gun", turret);
   const g = TANK_GUN;
   gun.position.set(g.at[0], g.at[1], g.at[2]);
 
@@ -1040,16 +1032,15 @@ export function buildTank(
     slab([[-0.05, -0.3], [0.22, -0.3], [0.3, -0.2], [0.3, 0.2], [0.22, 0.3], [-0.05, 0.3]], 0.8, 0.02, 0, kit.armor),
   ]);
 
-  const muzzle = new TransformNode("tank-muzzle", scene);
-  muzzle.parent = gun;
+  const muzzle = tree.add("tank-muzzle", gun);
   // Just past the barrel, so a flash lit here is outside it and a shell fired
   // from here starts outside the hull's own collider box.
   muzzle.position.set(g.muzzleAt[0], g.muzzleAt[1], g.muzzleAt[2]);
 
   const rig: VehicleRig = {
-    root, hull, sprung, turret, gun, muzzle,
+    tree, body: hullBody, root, hull, sprung, turret, gun, muzzle,
     mgMount, mgGun, mgMuzzle, mgSight,
-    antennae, meshes, livery,
+    antennae, meshes, livery, drawn,
     setRun: (left, right, _steer, _rotor) => setTrackRun(tracks, left, right),
     reset: () => resetRigPose(rig, mats, CONFIG.vehicles.tank),
     paint: (wrecked) => paintRig(meshes, livery, mats, wrecked),
