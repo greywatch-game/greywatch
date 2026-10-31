@@ -407,9 +407,11 @@ export interface EnvironmentSpec {
    * world goes to `fogColor`, so it is exactly right for the WALK
    * (`WorldCulling`, whose reach stays `fogEnd` and must — a structure dropped
    * inside the fog does not fade, it vanishes). A body is the other case: it
-   * is nineteen merged meshes and it is two pixels tall at four hundred
-   * metres, and a frame that is DRAW-CALL bound (`docs/rendering.md`) pays the
-   * whole nineteen for those two pixels. Coldharbour and Harrowmead already
+   * is two pixels tall at four hundred metres, and when this field was made it
+   * was nineteen merged meshes a DRAW-CALL bound frame (`docs/rendering.md`)
+   * paid in full for those two pixels; since X4.1d it is an instance in every
+   * rank's draw, and what it still costs is its composes, its share of each
+   * rank's span and its pixels. Coldharbour and Harrowmead already
    * see past their own diagonals, so both of them draw every rig on the map at
    * all times; at 1500 m that is the largest bucket in the frame.
    * `ENGINE_UPGRADE.md` S8 is this field.
