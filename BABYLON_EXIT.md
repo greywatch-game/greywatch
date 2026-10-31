@@ -4846,7 +4846,7 @@ and nowhere else: no bank row has a body at either, and none moved).
   Cinderhaven is the saving it could buy). X4.1d's owed items stand (the
   rank's vertex surplus, the editor's body draw, the compose cost).
 
-### X4.2 — Vehicles (PERF_PLAN A3) — **M–L, as four sub-steps** (split 2026-10-31) — X4.2a **LANDED** (HASH)
+### X4.2 — Vehicles (PERF_PLAN A3) — **M–L, as four sub-steps** (split 2026-10-31) — X4.2a **LANDED** (fde5be7)
 
 Every hull a page draws — the tank, the truck and the helicopter, live or
 wrecked — comes off Babylon's scene, and A3's detail tier and draw distance
@@ -4935,7 +4935,7 @@ draft named a `HullFlex`; no such module exists — the hull's own motion is
   parent; `census --against`; `gate`, `shaders`; typecheck, build, corecheck,
   `parity`; a round offline with each kind driven and a netplay round.
 
-**X4.2a landed** (HASH; 2026-10-31; no picture change).
+**X4.2a landed** (fde5be7; 2026-10-31; no picture change).
 - **What it is.** A hull's joints are OUR hierarchy: `VehicleRig.tree`, a
   `JointTree` (`rigJoints.ts`, X4.1a's), whose first joint is the collider
   box's own frame (`rig.body`, `hull-body`) and whose second the model's
