@@ -1020,38 +1020,147 @@ card behind it are off Babylon's scene, and no sub-step changed the picture.
 
 The full record is in [the archive](plans/done/babylon_exit_landed.md).
 
-### X4.4 — The effect pools, and pipelines compiled at load — **M**
+### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day)
 
-- **Do:**
-  - The pools on our side: tracers, sparks, impact discs, bullet marks (a cel
-    material in `WorldCulling`'s size gate today), `BlastFx`'s billows, the
-    fires (`FlameMaterial`; their block merges are the one world surface
-    besides glazing that X3.7 leaves a Babylon mesh in a round), grenades,
-    rockets, mines, shards and debris, and the BRASS (`PlayerView`'s casing pool,
-    cel boxes thrown into the world; it reads X4.3b's eye-port joint; decided
-    2026-10-31).
-  - **The HELD-caster layer** (`WorldBlocks.addCaster`, `BlockHandover`'s
-    `held` and its DEV node check), kept by X3.7c for a casting fire and
-    reached by no build (every fire is `noShadowCaster`: X3.7c's note): a
-    fire of ours that casts uses it or has no need of it, and it goes.
-  - **The warm-up changes shape**: every pipeline a round can use is created
-    from a declared list during loading, so the `warm(on)` poses become a list
-    of pipeline keys.
-  - **The empty-group seam** (decided 2026-10-31, X4.3c's review): every
-    draw of ours hangs on rendering group 0's three points, and Babylon
-    visits no empty group — so a frame on which group 0 dispatches no mesh
-    of Babylon's runs NONE of ours, silently (a DEV build warns once per
-    change, `Renderer`). This step takes meshes out of group 0; whichever of
-    X4.4, X4.5 and X4.6 leaves it able to be empty in some state (the kit
-    screen over the menu holds the sky alone since X4.3d) owes the seam a
-    fix — our draws must not depend on group 0 being non-empty (a point of
-    ours that does not ride Babylon's group, or a mesh kept in it on
-    purpose, stated as such).
-- **Verify:** `plans/webgpu-ref/pipelines.mjs` reports zero pipeline creations
-  during a round; the bank's blast vantage; a round with every weapon, both
-  throwables and both AT items used.
-- **Rewrites:** `CLAUDE.md`, "loading ends in a PIPELINE WARM-UP";
-  `docs/game.md`.
+Every pooled effect Babylon still draws comes off its scene, and the
+warm-up's `warm(on)` poses become a declared list of pipelines. Nothing here
+is a PERF_PLAN item and **no sub-step is meant to change the picture**: each
+is proven byte-identical against the bank and lands on its own, leaving the
+game shippable. If one cannot be (a blended effect that now sorts
+differently against the glazing, a ported material that rounds
+differently), that difference goes in a commit of its own with the bank's
+numbers (rule 2), never absorbed. It was rated **M** as one step. It is
+split because it is about ten picture modules (~4,300 lines in
+`src/systems/` alone) drawn four different ways, plus three jobs that are
+not pools, and because the bank holds ONE effect row today (`blast`, half a
+second in). So the instrument comes first (X4.3a's shape), the pools then
+move grouped by how they are drawn, and the warm-up, whose list is whole
+only once every pool has moved, goes last.
+
+**What the pools are today** (a survey, not a close read; each sub-step
+confirms its own before it moves anything):
+- **Plain meshes, one per slot.** `CombatFx` (606 lines): the tracer (a
+  cylinder), the impact spark (a sphere) and the dust disc, all
+  `getEmissive`, faded by `visibility` (a blended pipeline under 1).
+  `BulletMarks` (279): decal quads on a CEL material at their own depth bias
+  (`MARK_DEPTH_UNITS`), one mesh a mark, NOT size-exempt, so `WorldCulling`'s
+  size gate drops them at range. `GrenadeFx`'s `GrenadeBody` (a cel body and
+  an emissive fuse pip, `entities/GrenadeModel.ts`) and `AntiTankFx`'s
+  `RocketBody` and `MineBody` (cel, with an emissive motor flame and fuze
+  lamp, `entities/RpgModel.ts`, `MineModel.ts`); `net/NetGrenades.ts` and
+  `NetOrdnance.ts` draw the SAME three bodies off the wire, so they move with
+  them. `PlayerView`'s brass: cel boxes thrown into the world off X4.3b's
+  eye-port joint (decided 2026-10-31).
+- **The blast** (`BlastFx`, 899 lines): one thin-instanced icosphere per
+  blast slot, plus a shared small one for the sparks and the trails, on
+  `BlastShader`'s own WGSL, no depth write, its bounding box set by hand each
+  frame, and 39 `Math.random` draws (pictures, never a round stream).
+  `BlastDebrisSystem` (806): the rubble chunks (cel, two materials, posed off
+  Havok through `poseView`) and `ScorchMarks`, a **`StandardMaterial`** faded
+  by `visibility` — the one material in the pools that is Babylon's own
+  rather than a shader of ours.
+- **Physics-posed shards** (`DebrisSystem`, 793): cel slivers cut from the
+  pane, posed off Havok through `poseView` like the rubble.
+- **The fires**, all on `FlameMaterial` (no depth write): the world's
+  (`world/flame.ts` parts merged into blocks, the one world surface besides
+  glazing that X3.7 leaves a Babylon mesh in a round, filed by
+  `metadata.block` in `WorldCulling`), and the molotov's (`GrenadeFx` clones
+  one source mesh per flame, on `getFlame()`).
+- **Out of scope**: `Atmosphere`'s ash and `RotorWash` (`GPUParticleSystem`)
+  are X4.6's; `GlassFx`'s collapse writes the glazing, which stays Babylon's
+  until X4.6.
+
+**Find out first, before X4.4b moves anything blended**: where Babylon's
+transparent sort puts each fading effect against the glazing and the fires
+(both blended, and both Babylon's until X4.4d and X4.6). Our draws hang on
+group 0's points, so a fading spark drawn at the end of the group lands
+after a pane it used to be behind. X4.3c met this exact case (a blended
+fading spark: 0/8 frames matched before the order was restored, 8/8 after).
+The answer decides whether a blended pool of ours draws inside Babylon's
+sort, at a point before it, or takes a recorded picture change.
+
+- **X4.4a — the bank sees every pool (no change to the game).** Rows are
+  added, seeded through the harness's `seeded()` (X4.3a), for what X4.4b-e
+  move and the one `blast` row cannot see: a tracer in flight; a spark and a
+  dust disc mid-fade at an impact on hard ground and on soil; a wall of
+  marks, near and at the size gate's edge; a grenade in flight with its pip
+  lit, and one at rest; a rocket in flight with its motor; a laid mine with
+  its lamp; brass in the air; the blast at several ages (the fireball, the
+  billows, the late smoke) on `ground` and on `hard`; scorch at full and
+  mid-fade; rubble chunks in the air and at rest; shards falling from a
+  broken pane; a burning molotov and a world fire; and at least one fading
+  effect seen through glazing (the sort question above). **Appended at the
+  END of a map's sequence**, because a row's frame depends on the rows shot
+  before it, and banked with `--rows`. Also recorded: `pipelines.mjs`'
+  creations during a scripted round that fires every weapon and uses both
+  throwables and both AT items — the count X4.4e must take to zero.
+  **Oracle:** `bank.mjs --check` twice back to back, every new row
+  byte-identical to itself; every old row unmoved.
+- **X4.4b — the plain mesh pools are ours (no picture change).** The tracer,
+  spark, disc and mark pools, the grenade, rocket and mine bodies (both the
+  simulation's views and the wire's), and the brass, drawn by our renderer
+  as instances of their kits (`BodyDraw`'s and `HullDraw`'s shape), into the
+  glow's mask where emissive, with the fades in a blended pipeline placed by
+  the find-out-first answer. A mark keeps its depth bias and drops out at
+  range by our own size test (it was the size gate's); every pool stays
+  fixed-size and allocates nothing per shot. Babylon is made no mesh of any
+  of them. **Oracle:** the bank byte-identical; a round firing every weapon
+  at walls, soil and glass, with a frag, a molotov, a rocket and a mine; a
+  netplay round where the other side throws and fires (the wire's bodies).
+- **X4.4c — the blast and the posed pieces are ours (no picture change).**
+  `BlastFx`'s billows and its sparks-and-trails mesh become instanced draws
+  of ours on `BlastShader`'s WGSL (the bounds it sets by hand become the
+  cull's input, and the glow's distance fade reads the same centre); the
+  rubble chunks and the glass shards are drawn off their `pose` arrays
+  straight after the physics step, as a corpse's joints are (X4.1); the
+  scorch becomes a decal of ours that reproduces `StandardMaterial`'s output,
+  or a recorded picture change if it cannot be made exact. **Oracle:** the
+  bank's blast rows at every age byte-identical; `kit:hash` unmoved; a round
+  with blasts on both surfaces and panes broken.
+- **X4.4d — the fires are ours, and the held-caster layer goes (no picture
+  change).** The world's fires come out of the block merges Babylon keeps
+  and are drawn by our renderer on `FlameMaterial`'s WGSL, filed by block as
+  the rest of the world is; the molotov's flames the same, off their pool.
+  After it the only world surface Babylon is made a mesh of is the glazing.
+  **No bake draws a fire, and that stays so here** (`BlockHandover`: "a fire
+  is left out of our bake as Babylon's left it out of its own",
+  `FINDINGS.md` 51): X3.6c's "the fire, when it moves, owes the bake a
+  program" is the fire ENTERING the bake, a picture change of its own, not
+  part of this sub-step.
+  **The HELD-caster layer** (`WorldBlocks.addCaster`, `BlockHandover`'s
+  `held` and its DEV node check), kept by X3.7c for a casting fire and
+  reached by no build (every fire is `noShadowCaster`: X3.7c's note): a fire
+  of ours that casts uses it or has no need of it, and it goes. **Oracle:**
+  the bank byte-identical (the world-fire and molotov rows); `merge:hash`
+  showing only the fire surfaces moved from Babylon's side to ours; every
+  map installs (no refusal).
+- **X4.4e — pipelines compiled at load, and the seam checked (no picture
+  change).** **The warm-up changes shape**: every pipeline a round can use is
+  created from a declared list during loading, so the `warm(on)` poses become
+  a list of pipeline keys and `warm(on)` is deleted from every pool
+  (`CombatFx`, `GrenadeFx`, `BlastFx`, `BlastDebrisSystem`, `BulletMarks`).
+  **The empty-group seam** (decided 2026-10-31, X4.3c's review): every draw
+  of ours hangs on rendering group 0's three points, and Babylon visits no
+  empty group — so a frame on which group 0 dispatches no mesh of Babylon's
+  runs NONE of ours, silently (a DEV build warns once per change,
+  `Renderer`). X4.4b-d take meshes out of group 0; this sub-step states
+  whether any state can now leave it empty (the sky still holds it in a round
+  and over the menu, so X4.5 is expected to owe the fix) and fixes the seam
+  if X4.4 made it reachable — our draws must not depend on group 0 being
+  non-empty (a point of ours that does not ride Babylon's group, or a mesh
+  kept in it on purpose, stated as such). **Oracle:** `pipelines.mjs`
+  reports zero pipeline creations during a round, against X4.4a's count; the
+  building card takes no longer than before.
+
+- **Verify (the step as a whole):** `plans/webgpu-ref/pipelines.mjs` reports
+  zero pipeline creations during a round; the bank's blast vantage and every
+  X4.4a row; a round with every weapon, both throwables and both AT items
+  used.
+- **Rewrites:** `CLAUDE.md`, "loading ends in a PIPELINE WARM-UP" and the
+  "EVERY BODY, HULL AND WEAPON IS OUR RENDERER'S" paragraph (the pools join
+  it); `docs/game.md`; `docs/grenades.md` and `docs/antitank.md` where they
+  say what draws a pool; `docs/rendering.md`'s size gate (the marks leave
+  it).
 
 ### X4.5 — Sky and clouds — **M**
 
@@ -1375,4 +1484,5 @@ Phase 1 actually took.
 | X4.3b | The grenade's release point and the rocket's start are read off the viewmodel's joints through Babylon's render-id cache (the last render's world, or fresh where a node was not drawn). Keep those answers bit for bit, or take one rule? | **Decided** 2026-10-31: bit for bit. A different answer changes what the page submits (`GrenadeCommand.origin`, `OrdnanceCommand.origin`) and would be its own commit; stating the points analytically stays `FINDINGS.md` 55's, after the exit. |
 | X5.4 | X4.3b's readers copy Babylon's render-id cache, keyed on `scene.getRenderId()` and settled from a Babylon observable, both of which X5.4 removes (raised by X4.3b's review). Land `FINDINGS.md` 55 before X5.4, or port the cache? | **Decided** 2026-10-31: port it — the cache gets a frame id of our own with Babylon's meaning, so the two command origins stay bit for bit; `FINDINGS.md` 55 stays after the exit. Written into X5.4's Do. |
 | X4.3c | One draw a segment, as Babylon drew it, or a palette fold like the bodies' kit? | **Decided** 2026-10-31: one draw a segment. It is one instance, the finishes differ per group in spec and mirror as well as colour, and a fold re-orders equal-depth ties for an unmeasured gain; a fold is a later, measured step if a capture ever names the gun. |
+| X4.4 | One step or several? | **Decided** 2026-11-01: five sub-steps (X4.4). X4.4a widens the bank first (a row for every pool, the one `blast` row being all it held) and records the round's pipeline creations; the pools then move grouped by how they are drawn — the plain mesh pools and the brass (X4.4b), the blast and the Havok-posed pieces (X4.4c), the fires with the held-caster layer's deletion (X4.4d) — and the declared pipeline list and the empty-group seam's check go last (X4.4e), once every pool has moved. None is meant to change the picture; any that does lands alone (rule 2). |
 | X6.2 | Is it ready to merge to `develop`? | Only when X6.2's "Before" list passes in full. |
