@@ -1022,7 +1022,8 @@ The full record is in [the archive](plans/done/babylon_exit_landed.md).
 
 ### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (63a338a, review fixes after it)
 
-Every pooled effect Babylon still draws comes off its scene, and the
+Every pooled effect Babylon still draws comes off its scene but the three
+that blend among the panes (decided 2026-11-01: they wait for X4.6), and the
 warm-up's `warm(on)` poses become a declared list of pipelines. Nothing here
 is a PERF_PLAN item and **no sub-step is meant to change the picture**: each
 is proven byte-identical against the bank and lands on its own, leaving the
@@ -1070,8 +1071,9 @@ confirms its own before it moves anything):
   `metadata.block` in `WorldCulling`), and the molotov's (`GrenadeFx` clones
   one source mesh per flame, on `getFlame()`).
 - **Out of scope**: `Atmosphere`'s ash and `RotorWash` (`GPUParticleSystem`)
-  are X4.6's; `GlassFx`'s collapse writes the glazing, which stays Babylon's
-  until X4.6.
+  are X4.7's; `GlassFx`'s collapse writes the glazing, which stays Babylon's
+  until X4.6 — and so, decided after X4.4a's review, do the three blended
+  pools (the sparks, the dust discs and the scorch: "Find out first" below).
 
 **Find out first, before X4.4b moves anything blended**: where Babylon's
 transparent sort puts each fading effect against the glazing and the fires
@@ -1091,6 +1093,13 @@ the see-through glazing (a pane block sorted by its centre). So neither
 point of ours reproduces it: a blended pool drawn at `afterOpaque` lands
 before every pane, at `afterGroup` after every pane, and either is wrong for
 some fade — X4.4b draws inside the sort or records the change.
+**Decided** (2026-11-01, the owner, on X4.4a's review): **neither — the
+three blended pools WAIT for the glazing.** `CombatFx`'s sparks and dust
+discs and `BlastDebrisSystem`'s scorch stay Babylon meshes, warm poses and
+all, until X4.6 takes the see-through glazing, and X4.6 moves them with it
+so ONE sort of ours orders every blended surface together. No picture
+change, no new reach into Babylon's queue (rule 4), and no stand-in mesh.
+Everything else in X4.4 moves as briefed; `fx-glass-sort` is X4.6's BEFORE.
 
 - **X4.4a — the bank sees every pool LANDED** (63a338a, the post-commit
   review's fixes after it; 2026-11-01; no change to the game). Twenty-one
@@ -1144,15 +1153,18 @@ some fade — X4.4b draws inside the sort or records the change.
   --keep` twice back to back, all 25 `fx` rows 0 pixels from the bank and
   109 of 109 frames byte-equal between the runs; the 84 old rows byte-equal
   to X4.4a's own kept frames; typecheck, build, corecheck pass.
-- **X4.4b — the plain mesh pools are ours (no picture change).** The tracer,
-  spark, disc and mark pools, the grenade, rocket and mine bodies (both the
-  simulation's views and the wire's), and the brass, drawn by our renderer
-  as instances of their kits (`BodyDraw`'s and `HullDraw`'s shape), into the
-  glow's mask where emissive, with the fades in a blended pipeline placed by
-  the find-out-first answer. A mark keeps its depth bias and drops out at
-  range by our own size test (it was the size gate's); every pool stays
-  fixed-size and allocates nothing per shot. Babylon is made no mesh of any
-  of them. **Oracle:** the bank byte-identical; a round firing every weapon
+- **X4.4b — the plain mesh pools are ours (no picture change).** The tracer
+  and mark pools, the grenade, rocket and mine bodies (both the simulation's
+  views and the wire's), and the brass, drawn by our renderer as instances
+  of their kits (`BodyDraw`'s and `HullDraw`'s shape), into the glow's mask
+  where emissive. **The spark and dust-disc pools stay Babylon's** (decided
+  2026-11-01, "Find out first" above): they fade in Babylon's transparent
+  sort among the panes, and move with the glazing at X4.6 — whole, the
+  frames a spark is still opaque included, so a pool is never split across
+  two renderers. A mark keeps its depth bias and drops out at range by our
+  own size test (it was the size gate's); every pool stays fixed-size and
+  allocates nothing per shot. Babylon is made no mesh of any pool this
+  sub-step moves. **Oracle:** the bank byte-identical; a round firing every weapon
   at walls, soil and glass, with a frag, a molotov, a rocket and a mine; a
   netplay round where the other side throws and fires (the wire's bodies).
 - **X4.4c — the blast and the posed pieces are ours (no picture change).**
@@ -1160,15 +1172,17 @@ some fade — X4.4b draws inside the sort or records the change.
   of ours on `BlastShader`'s WGSL (the bounds it sets by hand become the
   cull's input, and the glow's distance fade reads the same centre); the
   rubble chunks and the glass shards are drawn off their `pose` arrays
-  straight after the physics step, as a corpse's joints are (X4.1); the
-  scorch becomes a decal of ours that reproduces `StandardMaterial`'s output,
-  or a recorded picture change if it cannot be made exact. **The scorch on
-  the FLOOR draws** — X4.4a's first note said it drew nothing, and its
-  review measured otherwise (each mark hidden and shown in the banked
-  frames): a black decal at 0.4 is a proportional darkening, faint on a dark
-  or fire-lit floor, whole under `fx-molotov`'s flames, and mostly behind the
-  book stall in the ground blasts' rows; nothing for this sub-step to
-  answer but the picture. **Oracle:** the
+  straight after the physics step, as a corpse's joints are (X4.1). **The
+  scorch stays Babylon's** (decided 2026-11-01, "Find out first" above): it
+  is blended in Babylon's transparent sort among the panes, so it moves with
+  the glazing at X4.6 — and its decal of ours reproducing
+  `StandardMaterial`'s output (or a recorded picture change if that cannot
+  be made exact) is X4.6's. **The scorch on the FLOOR draws** — X4.4a's
+  first note said it drew nothing, and its review measured otherwise (each
+  mark hidden and shown in the banked frames): a black decal at 0.4 is a
+  proportional darkening, faint on a dark or fire-lit floor, whole under
+  `fx-molotov`'s flames, and mostly behind the book stall in the ground
+  blasts' rows. **Oracle:** the
   bank's blast rows at every age byte-identical; `kit:hash` unmoved; a round
   with blasts on both surfaces and panes broken.
 - **X4.4d — the fires are ours, and the held-caster layer goes (no picture
@@ -1191,8 +1205,12 @@ some fade — X4.4b draws inside the sort or records the change.
 - **X4.4e — pipelines compiled at load, and the seam checked (no picture
   change).** **The warm-up changes shape**: every pipeline a round can use is
   created from a declared list during loading, so the `warm(on)` poses become
-  a list of pipeline keys and `warm(on)` is deleted from every pool
-  (`CombatFx`, `GrenadeFx`, `BlastFx`, `BlastDebrisSystem`, `BulletMarks`).
+  a list of pipeline keys and `warm(on)` is deleted from every pool that is
+  ours (`GrenadeFx`, `BlastFx`, `BulletMarks`, and `CombatFx`'s tracer).
+  **The three blended pools still Babylon's keep their poses** until X4.6
+  moves them (decided 2026-11-01): `CombatFx`'s sparks and dust discs and
+  `BlastDebrisSystem`'s scorch, so `warm(on)` survives on those two classes
+  for those pools alone, stated as such.
   **The list covers the pools with NO warm pose today too** (X4.4a's
   review): the glass shards (`DebrisSystem`), the rubble chunks
   (`BlastDebrisSystem`'s, only its scorch is posed), the thrown and laid
@@ -1255,6 +1273,15 @@ The dome, stars, moon and cloud ring (`Sky`, `cloudMasses`, `CloudShader`).
   - `GrassSystem`'s field around the eye (thin instances, its own frustum
     test).
   - `FlagCloth`, and `CaptureZoneSystem`'s rings.
+  - **The three blended pools X4.4 left Babylon's** (decided 2026-11-01,
+    X4.4's "Find out first"): `CombatFx`'s sparks and dust discs and
+    `BlastDebrisSystem`'s scorch (a `StandardMaterial` decal, ported or
+    taken as a recorded picture change). Babylon draws them back to front
+    by bounding-sphere centre, INTERLEAVED with the see-through pane blocks;
+    with the glazing ours, one sort of ours orders all of them, and
+    `fx-glass-sort` (a fade squarely behind and squarely in front of a pane)
+    plus `fx-glass`, the impact rows and the scorch rows are the BEFORE.
+    Their `warm(on)` poses go into X4.4e's declared list then.
   - **The empty-group seam** (decided 2026-10-31, X4.3c's review): every
     draw of ours hangs on rendering group 0's three points, and Babylon
     visits no empty group — so a frame on which group 0 dispatches no mesh
@@ -1546,4 +1573,5 @@ Phase 1 actually took.
 | X5.4 | X4.3b's readers copy Babylon's render-id cache, keyed on `scene.getRenderId()` and settled from a Babylon observable, both of which X5.4 removes (raised by X4.3b's review). Land `FINDINGS.md` 55 before X5.4, or port the cache? | **Decided** 2026-10-31: port it — the cache gets a frame id of our own with Babylon's meaning, so the two command origins stay bit for bit; `FINDINGS.md` 55 stays after the exit. Written into X5.4's Do. |
 | X4.3c | One draw a segment, as Babylon drew it, or a palette fold like the bodies' kit? | **Decided** 2026-10-31: one draw a segment. It is one instance, the finishes differ per group in spec and mirror as well as colour, and a fold re-orders equal-depth ties for an unmeasured gain; a fold is a later, measured step if a capture ever names the gun. |
 | X4.4 | One step or several? | **Decided** 2026-11-01: five sub-steps (X4.4). X4.4a widens the bank first (a row for every pool, the one `blast` row being all it held) and records the round's pipeline creations; the pools then move grouped by how they are drawn — the plain mesh pools and the brass (X4.4b), the blast and the Havok-posed pieces (X4.4c), the fires with the held-caster layer's deletion (X4.4d) — and the declared pipeline list and the empty-group seam's check go last (X4.4e), once every pool has moved. None is meant to change the picture; any that does lands alone (rule 2). |
+| X4.4b | The fading sparks, dust discs and scorch sort among the see-through panes in Babylon's transparent list, and no draw point of ours reproduces that: hook the panes, take a recorded picture change, or wait? | **Decided** 2026-11-01: wait. The three pools stay Babylon meshes (their warm poses with them) until X4.6 takes the glazing, and move with it so one sort of ours orders every blended surface. No picture change, no new reach into Babylon's queue, no stand-in mesh; `fx-glass-sort` is X4.6's BEFORE. |
 | X6.2 | Is it ready to merge to `develop`? | Only when X6.2's "Before" list passes in full. |
