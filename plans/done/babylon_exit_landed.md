@@ -7262,7 +7262,11 @@ X4.4b's brief, word for word:
   bank cannot see (`fx-brass` stands ~20 m from the origin). Kept, recorded
   as `FINDINGS.md` 67 with the one-line fix, the owner's call (stop
   condition 2's reading: not this step's to decide). The frustum is not asked:
-  a piece or mark outside it is handed over and clipped.
+  a piece or mark outside it is handed over and clipped. **(Fixed after, the
+  owner's decision of 2026-11-01, in its own commit: every cel part gated on
+  this frame's sphere, the gate sphere deleted, `FINDINGS.md` 67 deleted;
+  `fx-brass-far`, `fx-mine-far` and `fx-rocket-far` bank it — the numbers
+  are in `BABYLON_EXIT.md`'s X4.4b note.)**
 - **What stays.** `CombatFx.warm` and `BulletMarks.warm` still pose a tracer
   and a mark for the warm-up (drawn through ours; the mark in the hard
   paint, as the material swap did), until X4.4e; our four pipelines are

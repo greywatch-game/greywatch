@@ -21,18 +21,15 @@
  * - **A segment is drawn while its node is `visible` and its piece is
  *   `enabled`** — `isVisible` and the subtree's `setEnabled`, which every
  *   pool already wrote — and a CEL segment only while the size gate keeps
- *   its GATE sphere (`WorldCulling.keepsSphere`). An UNLIT segment is
- *   exempt, as an emissive mesh was (`WorldCulling`'s `glows`).
- * - **The gate sphere is the one Babylon's gate READ, kept as Babylon kept
- *   it** (`docs/rendering.md`, "A WRONG DROP LATCHES"): the world sphere as
- *   of the last frame the mesh's world was COMPUTED — which Babylon did only
- *   for a candidate the gate let through, and for its ancestors (a child's
- *   compose asks its parent's world) — and the LOCAL sphere for one never
- *   computed, its world the identity. So a moving cel part is gated on last
- *   frame's sphere, and a case first thrown far from the origin is dropped
- *   on its never-computed one and never recomputed — the latch,
- *   `FINDINGS.md` 67, kept here as Babylon drew it and the owner's to undo.
- *   The DRAWN world and sphere are always this frame's.
+ *   its world sphere composed THIS frame (`WorldCulling.keepsSphere`), the
+ *   hulls' rule (X4.2b). An UNLIT segment is exempt, as an emissive mesh was
+ *   (`WorldCulling`'s `glows`).
+ * - **The gate reads the sphere it draws, so no drop can latch.** Babylon's
+ *   gate read a mesh's sphere as of the last frame it COMPUTED that mesh's
+ *   world, so a case first thrown far from the origin was dropped on its
+ *   never-computed sphere and never drawn; X4.4b kept that, and the owner's
+ *   decision of 2026-11-01 dropped it on purpose (`docs/rendering.md`, "The
+ *   pools, ours").
  * - **A world sphere is `BoundingSphere._update`'s, operation for
  *   operation**: the local centre carried by the world, the radius scaled by
  *   the largest absolute component of the world's (1, 1, 1) normal — and
@@ -153,12 +150,7 @@ export class PieceNode {
   visible = false;
   /** Its world, as `composePiece` last left it. */
   readonly world = new Matrix();
-  /**
-   * The world sphere the size gate reads — as of the last frame its world was
-   * COMPUTED, or its segment's local sphere until then (see the header).
-   */
-  readonly gate = { x: 0, y: 0, z: 0, radius: 0 };
-  /** This frame's world sphere (`writePieceDrawing`'s scratch). */
+  /** This frame's world sphere, which the size gate reads and the draw keeps (`writePieceDrawing`'s scratch). */
   readonly sphere = { x: 0, y: 0, z: 0, radius: 0 };
 
   constructor(readonly parent: PieceNode | null) {}
@@ -179,11 +171,6 @@ export class Piece {
       n.rotation.copyFrom(s.rotation);
       n.scaling.copyFrom(s.scaling);
       if (s.quaternion) n.quaternion = new Quaternion(s.quaternion.x, s.quaternion.y, s.quaternion.z, s.quaternion.w);
-      // Never computed: the world the identity, the bounds the local ones.
-      n.gate.x = s.centre.x;
-      n.gate.y = s.centre.y;
-      n.gate.z = s.centre.z;
-      n.gate.radius = s.radius;
       nodes.push(n);
     }
     this.nodes = nodes;
@@ -235,22 +222,11 @@ function worldSphere(seg: PieceSegment, world: Matrix, out: { x: number; y: numb
   out.radius = Math.max(Math.abs(_scale.x), Math.abs(_scale.y), Math.abs(_scale.z)) * seg.radius;
 }
 
-/** A node COMPUTED this frame, and every ancestor with it: their gate spheres become this frame's. */
-function computed(n: PieceNode): void {
-  for (let m: PieceNode | null = n; m !== null; m = m.parent) {
-    m.gate.x = m.sphere.x;
-    m.gate.y = m.sphere.y;
-    m.gate.z = m.sphere.z;
-    m.gate.radius = m.sphere.radius;
-  }
-}
-
 /**
  * One piece's drawing, written as an instance of its kit: composed fresh,
- * each segment's world sphere measured, each segment the gate lets through
- * (a switched-on unlit one, or a switched-on cel one whose GATE sphere it
- * keeps) COMPUTED — its gate sphere and its ancestors' made this frame's, as
- * Babylon's walk computed a candidate — then each drawn segment's world into
+ * each segment's world sphere measured, and each segment the gate lets
+ * through (a switched-on unlit one, or a switched-on cel one whose world
+ * sphere, this frame's, it keeps) drawn — its world into
  * `out` at `at + s * 16`, all zero for one not drawn (or a pad past a
  * narrower kit's last, up to `stride`), and its world sphere into `spheres`
  * at `spheresAt + s * 4` (x, y, z, radius; NaN for one not drawn), which the
@@ -274,10 +250,9 @@ export function writePieceDrawing(
   for (let s = 0; s < kit.length; s++) {
     const n = nodes[s];
     if (!p.enabled || !n.visible) continue;
-    if (kit[s].unlit === null && !keeps(n.gate.x, n.gate.y, n.gate.z, n.gate.radius)) continue;
+    if (kit[s].unlit === null && !keeps(n.sphere.x, n.sphere.y, n.sphere.z, n.sphere.radius)) continue;
     drawn |= 1 << s;
   }
-  for (let s = 0; s < kit.length; s++) if (drawn & (1 << s)) computed(nodes[s]);
   for (let s = 0; s < stride; s++) {
     const o = at + s * 16;
     const c = spheresAt + s * 4;

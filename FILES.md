@@ -745,8 +745,8 @@ src/
                         #   the transform its mesh was dressed with, its
                         #   parent), a piece a node a segment composed as the
                         #   mesh was, bit for bit, and writePieceDrawing — the
-                        #   cel parts gated on the STALE sphere Babylon read
-                        #   (FINDINGS 67). No Babylon
+                        #   cel parts gated on THIS frame's sphere, as a
+                        #   hull's segments are. No Babylon
     HealthRegen.ts      # A person's regen: the lock after a hit and the curve
                         #   back to full. One held by Player (predicting) and
                         #   one by src/sim/SimPlayer (authoritative), so the two

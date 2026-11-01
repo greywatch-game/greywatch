@@ -1204,6 +1204,31 @@ Everything else in X4.4 moves as briefed; `fx-glass-sort` is X4.6's BEFORE.
   made reachable: the sky still holds group 0 in a round and over the menu,
   and the DEV warning never fired in either round. The full record is in
   [the archive](plans/done/babylon_exit_landed.md).
+  **The latch, fixed after** (the owner's decision of 2026-11-01, its own
+  commit, a picture change): a cel part of a piece is gated on the world
+  sphere composed THIS frame, the one it is drawn with — the hulls' rule —
+  and the gate sphere and its bookkeeping are gone (`FINDINGS.md` 67
+  deleted). **Measured:** the bank `--check --keep` at the parent's code and
+  at the fix, **109 of 109 old rows pixel-equal** (`fx-brass`, `fx-mine`,
+  `fx-rocket` and `fx-wire` stand near enough the origin that the latch never
+  bit; one non-pool frame, `sarab-ground`, 100 px at 2/255, differed in the
+  parent's run alone and both codes reproduce the fix's frame twice more —
+  cross-process residue), the same 34 stale rows failing; three rows
+  appended by `--rows`, each against the parent's code: `fx-brass-far`
+  (Coldharbour's `avenue` eye, ~152 m out) **15,450 px**, worst 203/255 —
+  three cases in the air where there were none; `fx-mine-far` (Cinderhaven's
+  `fx-fire` eye, ~300 m out) **697 px**, worst 59 — the armed mine's plate
+  and the whole arming mine; `fx-rocket-far` **8,009 px**, worst 206 — the
+  tail between the head and the motor; re-banked, two consecutive checks of
+  both maps 42 of 42 byte-equal. The order probe against the parent's
+  Babylon recording: no segment lost, **51 segment-frames added** (46 of
+  brass — eight cases on the quay ~58 m out; the finding's earlier count was
+  22 — and 5 of a bottle's parts a frame early, the same latch a frame deep),
+  mark order 182 of 182 and piece order 905 of 905 equal. `pipelines.mjs
+  coldharbour --round` zero in play; an offline round, six lives, 0 errors,
+  brass in every life (657-2,607 piece-frames; 0 on the parent's code) and
+  the player's own laid mines (275-278; 0 on the parent's); typecheck,
+  build, corecheck pass.
 - **X4.4c — the blast and the posed pieces are ours (no picture change).**
   `BlastFx`'s billows and its sparks-and-trails mesh become instanced draws
   of ours on `BlastShader`'s WGSL (the bounds it sets by hand become the
@@ -1615,4 +1640,5 @@ Phase 1 actually took.
 | X4.3c | One draw a segment, as Babylon drew it, or a palette fold like the bodies' kit? | **Decided** 2026-10-31: one draw a segment. It is one instance, the finishes differ per group in spec and mirror as well as colour, and a fold re-orders equal-depth ties for an unmeasured gain; a fold is a later, measured step if a capture ever names the gun. |
 | X4.4 | One step or several? | **Decided** 2026-11-01: five sub-steps (X4.4). X4.4a widens the bank first (a row for every pool, the one `blast` row being all it held) and records the round's pipeline creations; the pools then move grouped by how they are drawn — the plain mesh pools and the brass (X4.4b), the blast and the Havok-posed pieces (X4.4c), the fires with the held-caster layer's deletion (X4.4d) — and the declared pipeline list and the empty-group seam's check go last (X4.4e), once every pool has moved. None is meant to change the picture; any that does lands alone (rule 2). |
 | X4.4b | The fading sparks, dust discs and scorch sort among the see-through panes in Babylon's transparent list, and no draw point of ours reproduces that: hook the panes, take a recorded picture change, or wait? | **Decided** 2026-11-01: wait. The three pools stay Babylon meshes (their warm poses with them) until X4.6 takes the glazing, and move with it so one sort of ours orders every blended surface. No picture change, no new reach into Babylon's queue, no stand-in mesh; `fx-glass-sort` is X4.6's BEFORE. |
+| X4.4b | `FINDINGS.md` 67: X4.4b kept Babylon's stale-sphere latch, under which a spent case first thrown far from the world origin (and a mine's plate, an arming mine, a rocket's tail) is never drawn. Fix it, and when? | **Decided** 2026-11-01: fix it now, as its own commit — a deliberate picture change (rule 2): every cel part of a piece gated on its world sphere composed THIS frame, the hulls' rule (X4.2b), the latch dropped on purpose. Landed the same day (X4.4b's note). |
 | X6.2 | Is it ready to merge to `develop`? | Only when X6.2's "Before" list passes in full. |

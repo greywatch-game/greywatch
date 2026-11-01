@@ -4692,20 +4692,23 @@ opaque draws through the depth buffer differ only where two depths tie.
   colour faded by the fog at its sphere's centre (`piecePull`). A kit has one
   unlit segment at most, so the bloom is one colour a piece.
 
-**The size gate reaches them as it reached the meshes, and keeps Babylon's
-STALE sphere on purpose.** An unlit segment is exempt, as an emissive mesh
-was; a cel segment is asked `WorldCulling.keepsSphere` of its GATE sphere —
-the world sphere as of the last frame Babylon would have COMPUTED its world,
-which it did only for a candidate the gate let through and for that
-candidate's ancestors, and the LOCAL sphere for a mesh never computed (its
-world the identity). So a moving cel part is gated on last frame's sphere,
-and a brass case first thrown farther from the world origin than its 5 cm
-projects to the gate's 3 px (a few tens of metres at 1080p) is dropped on its
-never-computed sphere and never recomputed — the
-latch below ("A WRONG DROP LATCHES"), kept exactly as Babylon drew it, since
-dropping it would be a picture change in a live round however the bank reads
-(`FINDINGS.md` 67 has the measurement and the one-line fix). A mark is frozen
-where it is stood, so its sphere is always the frame's. The FRUSTUM is not
+**The size gate reaches them as it reached the meshes, on THIS frame's
+sphere** — the hulls' rule ("The hulls, ours"), so the drop cannot latch.
+An unlit segment is exempt, as an emissive mesh was; a cel segment is asked
+`WorldCulling.keepsSphere` of the world sphere `writePieceDrawing` composed
+for it this frame, the one it is drawn with. **Babylon's gate read a STALE
+sphere and that is dropped on purpose, by the owner's decision of
+2026-11-01** (`BABYLON_EXIT.md`, "Decisions that are yours"): it read the
+sphere as of the last frame it COMPUTED the mesh's world — only for a
+candidate the gate let through and that candidate's ancestors, the LOCAL
+sphere before — so a brass case first thrown farther from the world origin
+than its 5 cm projects to the gate's 3 px (a few tens of metres at 1080p)
+was dropped on its never-computed sphere and never drawn again from that
+slot ("A WRONG DROP LATCHES" below), a mine's plate and a rocket's fins
+likewise, and a thrown bottle's parts drew a frame late. X4.4b kept that
+latch byte for byte; the commit after it took it out, its own picture
+change (`fx-brass-far`, `fx-mine-far` and `fx-rocket-far` bank it). A mark
+is frozen where it is stood, so its sphere is always the frame's. The FRUSTUM is not
 asked: a piece outside it is clipped by the GPU and costs its vertex work, as
 the drawn sets of a scripted probe show (X4.4b's archive note).
 
@@ -4716,7 +4719,10 @@ under a moving camera, bodies in flight, the wire's, the brass, and a phase
 against what ours was handed — every drawn set equal (330 of 330), every mark
 order (182 frames, 4,782 marks) and every piece's segment order (905 pieces);
 and `kit:hash --models` identical, each kit hashed IN THE BYTES ITS MESHES
-GAVE (the script's header). **Its pipelines are asked once, at `Game`'s
+GAVE (the script's header). Since the latch came out, the same probe finds
+51 segment-frames Babylon never drew and none it drew that ours does not —
+46 of brass, 5 of a thrown bottle's parts a frame early — every order still
+equal. **Its pipelines are asked once, at `Game`'s
 construction**, so the building card's warm-up waits for them; a failure is
 the round's (`Game.worldFailed`); it is installed for a ROUND's map only. The
 `warm(on)` poses of the tracer and the mark still stand, drawing through ours,
@@ -4979,8 +4985,8 @@ mark is cel, so never exempt, and our renderer's drawing asks `keepsSphere`
 of each standing mark's frozen sphere — the sphere `freezeWorldMatrix` left
 on its mesh, so exactly the marks the gate dropped are dropped
 (`fx-marks-far` banks the edge: 14 of 30 under it) — and of every cel part
-of a thrown or laid body and of the brass, on the stale sphere Babylon read
-("The pools, ours").
+of a thrown or laid body and of the brass, on its sphere composed this
+frame ("The pools, ours").
 
 **A BODY is measured once and drops WHOLE; two classes are exempt outright,
 and each of the three is what it is because a picture said so rather than
@@ -5097,7 +5103,9 @@ disposes the zones, so the banked vantages hold no BODY — none of what the
 latch above touches — and the broken version came back byte-identical on all
 21. (Since `BABYLON_EXIT.md` X4.4a the bank does hold the size gate's edge on
 one pool, `fx-marks-far`'s bullet marks, raised fresh every row; a stale
-bound that latches is still invisible to it.) The test
+bound that latches is still invisible to it — but the pools' latch was
+taken out rather than banked, and `fx-brass-far` and its two siblings bank
+pieces far enough from the origin that it would have dropped them.) The test
 that works is a screenshot pair in a live round at one frozen camera, with a
 CONTROL pair under the same condition so the noise floor is measured: fixed, the
 lever reads mean **0.066/255** against a control of 0.037. See `VERIFYING.md`

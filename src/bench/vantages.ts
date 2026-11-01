@@ -591,6 +591,9 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
     },
     // Appended for X4.4a, after `tank-far` for the reason that row gives.
     ...fireRows(),
+    // Appended by the commit after X4.4b that took the pieces' stale-sphere
+    // latch out, after every row above (`farPieceRows`).
+    ...farPieceRows(),
   ],
   kurenai: [
     {
@@ -1215,6 +1218,18 @@ function effectRows(): Vantage[] {
         ],
       },
     },
+    // Appended by the commit after X4.4b that took the pieces' stale-sphere
+    // latch out (`docs/rendering.md`, "The pools, ours"), after every row above.
+    {
+      id: "fx-brass-far",
+      of: "the rifle at the hip 12 m over the avenue's west end, ~152 m from the world origin, firing: brass in the air off the ejection port",
+      proves:
+        "the BRASS gated on THIS frame's sphere (`pieces.writePieceDrawing`): Babylon's gate read a case's never-computed sphere at the world ORIGIN, under 3 px from this eye, so until the fix no case was drawn here at all (`fx-brass` stands ~20 m from the origin, where that stale sphere still passed)",
+      pos: avenue,
+      target: [-100, 8, -26],
+      view: { weapon: "rifle", sight: "iron", aimed: false },
+      fx: { seconds: 0.38, events: [0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35].map((at) => ({ at, brass: true as const })) },
+    },
   ];
 }
 
@@ -1255,6 +1270,48 @@ function fireRows(): Vantage[] {
           { at: 0.38, round: { from: [-130, 6.8, 248], to: [-124.2, 5.6, 242.3] } },
         ],
       },
+    },
+  ];
+}
+
+/**
+ * A laid mine and a rocket in flight ~300 m from the world origin, at
+ * `fx-fire`'s eye on Cinderhaven (so no new benchmark stop) and at the game's
+ * own hip field: far enough that the sphere Babylon's gate read for a part it
+ * had never COMPUTED — its local sphere, at the origin — projects under the
+ * gate's 3 px, so until the commit after X4.4b a mine's pressure plate (and
+ * the whole of an unarmed mine) and a rocket's tail were never drawn here.
+ * Both are now gated on the sphere they are drawn with (`docs/rendering.md`,
+ * "The pools, ours"). A narrowed `fov` would defeat the row: it raises the
+ * stale sphere over the gate as well.
+ */
+function farPieceRows(): Vantage[] {
+  const pos: Pos = [-150, 6, 262];
+  return [
+    {
+      id: "fx-mine-far",
+      of: "two mines laid on the cobbles ~11 m below and ahead of the fire drum's eye, one armed and one still arming, ~300 m from the world origin",
+      proves:
+        "the MINE gated on THIS frame's sphere (`pieces.writePieceDrawing`): the armed mine's pressure plate and the whole of the arming one, each of which Babylon's gate measured at the world origin and dropped from this eye — laid as the wire lays them (`NetOrdnance.applyMines`)",
+      pos,
+      target: [-142.5, 8.4, 256.2],
+      fx: {
+        seconds: 0,
+        events: [],
+        mines: [
+          { at: [-143, 8.448, 256.5], armed: true },
+          { at: [-142.1, 8.402, 255.85], armed: false },
+        ],
+      },
+    },
+    {
+      id: "fx-rocket-far",
+      of: "a rocket a quarter of a second out of the tube crossing ~11 m in front of the fire drum's eye, ~300 m from the world origin",
+      proves:
+        "the ROCKET gated on THIS frame's sphere (`pieces.writePieceDrawing`): its tail (the boom and the fins), which hangs from the head and which Babylon's gate measured at the world origin and dropped from this eye, while the unlit motor refreshed only the head",
+      pos,
+      target: [-142.1, 10.5, 255.85],
+      fx: { seconds: 0.25, events: [{ at: 0, rocket: { from: [-145.54, 10.6, 251.43], to: [-129.8, 10.3, 271.65] } }] },
     },
   ];
 }
