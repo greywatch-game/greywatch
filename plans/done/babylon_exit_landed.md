@@ -6390,3 +6390,66 @@ X4.3c's brief, word for word:
     read back at every Harrowmead row **37 of 37 identical**; `kit:hash
     --models` **244 of 244 identical**; `gate.mjs` and `shaders.mjs` clean on seven;
     typecheck, build, corecheck and `parity` pass. No console or page error.
+- **Three decisions the owner made on 2026-10-31** on what the review raised,
+  landed after it (nothing in the picture or the readers moved):
+  - **A. The weapon draws LAST in the glow's mask again, as Babylon drew it.**
+    A late mask point of ours, no Babylon internal: `GlowPass` raises
+    `onMaskCloseObservable` from the mask target's after-render, which Babylon
+    calls inside its unbind before it ends the pass (`unBindFramebuffer`'s
+    callback), and `Renderer.glowMaskClosing` queues the late draws
+    (`addGlowMaskLate`) there on the verdict its open made of the same pass
+    (Babylon no longer names it as the bound target by then). `ViewDraw`'s
+    mask hangs there — after the palette and the visors, which stay first,
+    and after every mesh of Babylon's, blended ones included — and X4.3d's
+    glasses inherit the point. **The review's example was wrong and the case
+    is real**: a molotov's fire does not show it — the flame's own material
+    is opaque and writes depth (only its mask twin does not), so in front of
+    the weapon it hides it in the frame and the mask alike, whatever the
+    order — and a BLENDED emissive that writes none does: a spark at
+    visibility 0.5. Measured (a scratch: the flame, then a spark, stood
+    between the eye and the flash's petals at the hip and the holo's reticle
+    aimed, at several depths and sizes, the mask read back on and off, each
+    grabbed twice): the fire **10 of 10** masks identical to the parent, as
+    they were under the first order too (10 of 10 at bd1aed3); the spark
+    **8 of 8 identical to the parent**, where bd1aed3's weapon-first order
+    matched **0 of 8** (the spark washing up to 8,376 lit texels of the
+    weapon). The mask read back at every Harrowmead row 37 of 37 identical.
+    bd1aed3's "current behaviour" words in `docs/rendering.md`, `GlowPass.ts`,
+    `WorldGlow.ts` and `BodyDraw.ts` give way to the restored order.
+  - **B. `Renderer.begin` does nothing on a frame with nothing of ours
+    committed.** Each draw may state whether it has anything this frame
+    (`Active`; the weapon's while a segment is committed, its mask's while a
+    committed segment glows), and `begin` skips the fill, the
+    view-projection, the upload, the textures, the bind-group refresh and the
+    prepares (and their encoder) when none has; the next frame that has
+    something does all of it afresh, so nothing binds a value a skipped frame
+    left stale. `ViewDraw` zeroes its stats at each commit, since a skipped
+    frame runs neither its prepare nor its draw. Measured (a scratch counting
+    the frame block's uploads and the prepare encoder's asks, 60 frames a
+    state): the menu 0, the kit screen over the menu 61 of 61 (the gun drawn
+    on every one, 10 draws), the menu again 0, `deploy` 60 of 60, the kit
+    screen over deploy 60 of 60, a round after the menu 60 of 60 (the gun
+    drawn on every frame); no error. The kit stays built at boot.
+  - **C. The empty-group seam is guarded and written down.** Every draw of
+    ours hangs on group 0's points and Babylon visits no empty group, so a
+    frame on which group 0 dispatches no mesh of Babylon's runs none of them,
+    silently. A DEV build now warns once per change (`Renderer`: draws were
+    waiting at the points and the group never rendered). Forced (a scratch:
+    every group-0 mesh hidden under the kit screen over the menu): ONE warning
+    over 60 frames, the weapon undrawn while it lasted, drawn again (10) once
+    the group was back, a second warning only when it went again. The briefs
+    of X4.4, X4.5 and X4.6 now say whichever step drains group 0 owes the
+    seam a fix; `docs/rendering.md`'s draw points say it too.
+  - **Re-checked after them**: the bank `--check --keep` against the BEFORE at
+    edccb4f **83 of 84 byte-identical** (`sarab/shelf`'s worktree pixel, the
+    parent's own bytes in the main tree); the glow's mask read back at every
+    Harrowmead row **37 of 37 identical**; the draw order against the
+    parent's own group-1 queue every frame equal again (3,982 and 1,564
+    frames) and the readers bit for bit (2,286 and 303 answers; 3,981 and
+    1,563 frames' digests identical); `census --against` every total equal
+    (278, 205, 672, 2,314, 472, 213, 125); `kit:hash --models` **244 of
+    244**; `gate.mjs` and `shaders.mjs` clean on seven; typecheck, build,
+    corecheck and `parity` pass. No console or page error.
+  - **Owed onward, added**: build the ~14 MB kit LAZILY, at its first use (the
+    kit screen or a round), rather than at boot — a later lever, to be
+    measured (boot time and resident memory on the phone) before it is taken.

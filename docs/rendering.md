@@ -3254,6 +3254,20 @@ pass is not restarted between them, and in this order every frame:
   opaque queue drew it, after everything of group 0 and ahead of the optics'
   glasses, which group 1 still holds ("The weapon, ours").
 
+**All three points ride rendering group 0, and Babylon visits no EMPTY
+group**: a frame on which group 0 dispatches no mesh of Babylon's runs none of
+ours, with no error (the seam). A DEV build warns once per change when a frame
+that had draws of ours at those points never reached the group (`Renderer`'s
+`seamWarned`). Today the world, the sky and, over the menu, the kit card keep
+the group non-empty; whichever step drains it (X4.4-X4.6) owes the seam a fix
+(the owner's decision, 2026-10-31). **And a frame with nothing of ours
+COMMITTED does no work at all**: each draw states whether it has anything
+(`Renderer.add`'s `Active`; the weapon's while a segment is committed), and
+`begin` skips the fill, the view-projection, the upload, the textures, the
+bind groups and the prepares when none has — the menu with no kit screen up —
+while the next frame that has something does all of it afresh, so nothing
+binds a value a skipped frame left stale.
+
 Every opaque draw of Babylon's in the group lands BEFORE an opaque draw of
 ours. **Between two draws that both WRITE depth** that changes only which of
 two surfaces at EXACTLY the same depth wins under `less-equal` — in the
@@ -4519,17 +4533,22 @@ meshes, the blended draws whose slot is load-bearing (X4.3d moves them).
   by the fog at its distance from the eye, pulled INSIDE the render where
   `globalPosition` is this frame's — by the main pass's own vertex module so
   the LEQUAL tie holds, on `glowAdmits(VIEWMODEL_GROUP)` (the stage, which
-  the kit screen keeps). **Its place in the mask is not Babylon's**: the
-  draw is registered once, at construction (`Renderer.addGlowMask`), so it
-  goes FIRST in that pass — ahead of the palette and the visors, which a
-  round registers after it — where Babylon drew the weapon's emissives LAST,
-  in group 1. The order decides any pixel two mask draws both pass: an exact
+  the kit screen keeps). **LAST in that pass, as Babylon drew it**
+  (`Renderer.addGlowMaskLate`, told by `GlowPass.onMaskCloseObservable` —
+  the mask target's after-render, raised inside its unbind before the pass
+  ends): after the palette and the visors (first) and after every mesh of
+  Babylon's, blended ones included, which is where group 1 drew the weapon's
+  emissives. The order decides any pixel two mask draws both pass — an exact
   depth tie between depth-writing draws (a tracer lying along a petal), and,
-  without any tie, a BLENDED emissive that writes no depth in front of a lit
-  weapon part — a molotov's fire (`FlameMaterial`, self-masking) between the
-  eye and the reticle now lands over the weapon's colour in the mask, where
-  the weapon's used to land over it. No banked row holds either (the mask read
-  back identical at every Harrowmead row).
+  with no tie, a BLENDED emissive that writes no depth in front of a lit
+  weapon part — an impact's spark fading (an emissive under `visibility` 1,
+  the mask's blend variant) between the eye and the reticle lands UNDER the
+  weapon's colour, as it did. (A molotov's fire is NOT such a case: the
+  flame's own material is opaque and writes depth — only its mask twin does
+  not — so in front of the weapon it hides it in the frame and the mask
+  alike, whatever the order.) The landed step drew the weapon first, ahead of
+  even the palette; X4.3c's review raised it, and the owner decided on
+  2026-10-31 to restore Babylon's order.
 - **Installed for the SESSION, not the round**: the kit screen covers `menu`,
   where no map stands and `BodyDraw`/`HullDraw` are not installed, so the draw
   and its prepare are hooked at construction and every frame texture the cel

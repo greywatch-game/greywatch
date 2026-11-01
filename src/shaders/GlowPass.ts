@@ -84,8 +84,7 @@
  *
  * THE EMISSIVE PALETTE'S MASK IS OUR RENDERER'S, and nothing of it is drawn
  * here (`render/WorldGlow.ts`, X3.6d, X3.7b, X3.7c): it draws the merged
- * world's lit windows and lenses FIRST in this pass, right after the clear
- * (behind only the weapon's lit parts, X4.3c, below) —
+ * world's lit windows and lenses FIRST in this pass, right after the clear —
  * the palette was in Babylon's opaque queue, ahead of every blended mask
  * draw, and first keeps that order. Its MAIN pass is ours too (X3.6e), and
  * Babylon is made no mesh of it in a round or an editor build (an editor's
@@ -95,15 +94,13 @@
  * (`render/BodyDraw.ts`, X4.1d: no rig is a Babylon mesh), drawn first in
  * the pass with the palette, each at `GlowRules.colour`'s answer for its
  * body. So are the WEAPON's lit parts (`render/ViewDraw.ts`, X4.3c: no
- * opaque viewmodel part is a Babylon mesh) — registered for the session at
- * construction, so FIRST of all in the pass, ahead of the palette and the
- * visors a round registers after it, where Babylon drew them LAST, in group
- * 1: the order decides an exact depth tie between depth-writing draws, and,
- * with no tie, a blended self-masking emissive that writes no depth (a
- * molotov's fire) in front of a lit weapon part, which now lands over the
- * weapon's colour (`docs/rendering.md`, "The weapon, ours"). Everything else
- * in the mask — the effects and fires, the moon, and an EDITOR build's every
- * emissive — is still drawn here.
+ * opaque viewmodel part is a Babylon mesh), drawn LAST in the pass — after
+ * every mesh of Babylon's, blended ones included — as Babylon's group 1 drew
+ * them, told by `onMaskCloseObservable` (X4.3c's review, the owner's
+ * decision): so a blended emissive that writes no depth (an impact's spark
+ * fading) in front of a lit weapon part lands UNDER the weapon's colour, as
+ * it did. Everything else in the mask — the effects and fires,
+ * the moon, and an EDITOR build's every emissive — is still drawn here.
  *
  * A MATERIAL WHOSE VERTICES MOVE BRINGS ITS OWN MASK (`SelfMasking`). The
  * stock variants transform by `world` and `viewProjection` alone, so a surface
@@ -404,6 +401,17 @@ export class GlowPass {
   readonly onMaskOpenObservable = new Observable<void>();
 
   /**
+   * Fired as the MASK's pass is about to CLOSE: every mesh of Babylon's
+   * queued in it and the pass not yet ended — the target's after-render,
+   * which Babylon raises inside its unbind, before it ends the pass
+   * (`unBindFramebuffer`'s callback). What `Game` hands our renderer, which
+   * draws the WEAPON's lit parts there LAST (`Renderer.glowMaskClosing`,
+   * `BABYLON_EXIT.md` X4.3c's review), where Babylon's group 1 drew them.
+   * Public API alone: the observable is the target's own.
+   */
+  readonly onMaskCloseObservable = new Observable<void>();
+
+  /**
    * The mask box-filtered to quarter resolution, which the `low` rung blurs
    * from (see the header). 1x1 on `high`, which never reads it.
    */
@@ -468,6 +476,11 @@ export class GlowPass {
       e.clear(NEUTRAL, true, false, false);
       this.onMaskOpenObservable.notifyObservers();
     });
+    // …and the target's after-render is where one that must come LAST is told
+    // (`onMaskCloseObservable`): past every draw of Babylon's, blended ones
+    // included, and raised inside the unbind before the pass ends, so a draw
+    // queued there still lands in it.
+    this.mask.onAfterRenderObservable.add(() => this.onMaskCloseObservable.notifyObservers());
     // NULL, not the empty array a target is born with: with no list of its own
     // the target hands `getCustomRenderList` the frame's ACTIVE meshes — the
     // culling already done — and with an empty one it hands it nothing, which

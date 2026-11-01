@@ -1111,11 +1111,10 @@ read the same cache for the picture.
   3440x1440; offline rounds with every primary, the pistol, both throwables
   and both AT items, and a netplay round: the weapon drawn on every frame,
   every reader-backed origin bit for bit, no refusal, no error; `gate`, `shaders`, typecheck, build, corecheck, `math-check` and `parity` pass.
-  **Deviations** (the archive has them): the profiler's `view`; the mask's
-  order (the weapon's registered first, ahead of even the palette and the
-  visors, where Babylon drew it last — an exact tie, or a blended fire in
-  front of a lit part, can tell; none banked); a new finish material draws at
-  once where Babylon waited for its compile. **The post-commit review**
+  **Deviations** (the archive has them): the profiler's `view`; a new finish
+  material draws at once where Babylon waited for its compile. (The mask's
+  order, first where Babylon drew it last, was restored by the owner's
+  decision below.) **The post-commit review**
   found one real fault: the draw order's TIE-BREAK was the joints' walk, not
   the order made (4 of 14 draws on the rifle, 4 of 13 on the SMG, 6 of 17 on
   the pistol; the landed "order matches" check sorted the same list it
@@ -1125,6 +1124,16 @@ read the same cache for the picture.
   it a refusal told once per change, a late pipeline failure routed, DEV
   asserts, the mask-order and profiler-span words corrected; the bank,
   mask, readers, `kit:hash` and every gate unmoved (the archive has it).
+  **Three decisions the owner made on 2026-10-31**, landed after it: the
+  weapon draws LAST in the glow's mask again, as Babylon drew it (a late
+  point of ours, `GlowPass.onMaskCloseObservable` →
+  `Renderer.addGlowMaskLate`, which X4.3d's glasses inherit); `Renderer.begin`
+  does nothing on a frame with nothing of ours committed (the menu with no
+  kit screen); and a DEV warning, once per change, when group 0 renders no
+  mesh of Babylon's under draws of ours hung on its points — a seam X4.4-X4.6
+  owe a fix (their briefs say so). The bank, the mask (and a blended spark in
+  front of a lit part, now matching the parent where the first order did
+  not), the readers, `kit:hash` and every gate unmoved.
 - **X4.3d — the lens glass and the kit card (no picture change), and group 1
   goes.** The two glasses (the holo's disc and the reflex's canted pane, one
   pair a rail weapon) as a BLENDED draw of ours after the gun's opaque
@@ -1227,6 +1236,16 @@ read the same cache for the picture.
   - **The warm-up changes shape**: every pipeline a round can use is created
     from a declared list during loading, so the `warm(on)` poses become a list
     of pipeline keys.
+  - **The empty-group seam** (decided 2026-10-31, X4.3c's review): every
+    draw of ours hangs on rendering group 0's three points, and Babylon
+    visits no empty group — so a frame on which group 0 dispatches no mesh
+    of Babylon's runs NONE of ours, silently (a DEV build warns once per
+    change, `Renderer`). This step takes meshes out of group 0; whichever of
+    X4.4, X4.5 and X4.6 leaves it able to be empty in some state (the kit
+    screen over the menu holds the card and the sky today) owes the seam a
+    fix — our draws must not depend on group 0 being non-empty (a point of
+    ours that does not ride Babylon's group, or a mesh kept in it on
+    purpose, stated as such).
 - **Verify:** `plans/webgpu-ref/pipelines.mjs` reports zero pipeline creations
   during a round; the bank's blast vantage; a round with every weapon, both
   throwables and both AT items used.
@@ -1237,6 +1256,17 @@ read the same cache for the picture.
 
 The dome, stars, moon and cloud ring (`Sky`, `cloudMasses`, `CloudShader`).
 
+- **Do:**
+  - **The empty-group seam** (decided 2026-10-31, X4.3c's review): every
+    draw of ours hangs on rendering group 0's three points, and Babylon
+    visits no empty group — so a frame on which group 0 dispatches no mesh
+    of Babylon's runs NONE of ours, silently (a DEV build warns once per
+    change, `Renderer`). This step takes meshes out of group 0; whichever of
+    X4.4, X4.5 and X4.6 leaves it able to be empty in some state (the kit
+    screen over the menu holds the card and the sky today) owes the seam a
+    fix — our draws must not depend on group 0 being non-empty (a point of
+    ours that does not ride Babylon's group, or a mesh kept in it on
+    purpose, stated as such).
 - **Contracts it keeps:**
   - the clouds write the depth of a point 7 km out
   - they draw after every opaque surface and before everything blended
@@ -1254,6 +1284,16 @@ The dome, stars, moon and cloud ring (`Sky`, `cloudMasses`, `CloudShader`).
   - `GrassSystem`'s field around the eye (thin instances, its own frustum
     test).
   - `FlagCloth`, and `CaptureZoneSystem`'s rings.
+  - **The empty-group seam** (decided 2026-10-31, X4.3c's review): every
+    draw of ours hangs on rendering group 0's three points, and Babylon
+    visits no empty group — so a frame on which group 0 dispatches no mesh
+    of Babylon's runs NONE of ours, silently (a DEV build warns once per
+    change, `Renderer`). This step takes meshes out of group 0; whichever of
+    X4.4, X4.5 and X4.6 leaves it able to be empty in some state (the kit
+    screen over the menu holds the card and the sky today) owes the seam a
+    fix — our draws must not depend on group 0 being non-empty (a point of
+    ours that does not ride Babylon's group, or a mesh kept in it on
+    purpose, stated as such).
 - **Contracts it keeps:**
   - no pane of either kind casts a shadow
   - see-through glazing writes no depth

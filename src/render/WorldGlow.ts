@@ -2,8 +2,7 @@
  * render/WorldGlow.ts — The emissive palette's share of the glow's MASK as
  * OUR renderer draws it (`BABYLON_EXIT.md` X3.6d): the lit windows, lamp
  * lenses, embers and signs of a map's merged world, drawn FIRST into the mask
- * pass Babylon's `GlowPass` opens (after only the weapon's lit parts, whose
- * draw is registered for the session ahead of any world's — X4.3c), from the main pass's own view of the culls
+ * pass Babylon's `GlowPass` opens, from the main pass's own view of the culls
  * (`WorldBlocks.glowView`). The palette's MAIN pass is ours too (X3.6e), and
  * since X3.7b Babylon is made no mesh of it, so no Babylon draw of the
  * palette's bloom is left anywhere (X3.7c deleted its twin).
@@ -27,8 +26,8 @@
  * the mask is NOT this module's (rule 5):
  * `GlowPass` owns it and its clear, Babylon's effects, fire,
  * the viewmodel's glass and the moon still draw into it, and ours draws
- * FIRST in that pass of the world's, right after its clear and the weapon's
- * lit parts (`Renderer.addGlowMask`, in the order registered) — no depth written, LEQUAL
+ * FIRST in that pass, right after its clear (`Renderer.addGlowMask`; the
+ * weapon's lit parts go LAST, `addGlowMaskLate`) — no depth written, LEQUAL
  * against the depth OUR main pass's palette wrote, by the same vertex module
  * at the same bias, so it lands where the main pass's palette landed; a bloom
  * colour is written to a palette material's block only when it changed; a

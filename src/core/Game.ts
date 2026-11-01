@@ -1861,6 +1861,10 @@ export class Game {
     // The mask's pass has opened: our renderer's palette goes in FIRST, ahead
     // of everything `GlowPass` draws there (`Renderer.glowMaskOpened`).
     glow.onMaskOpenObservable.add(() => this.renderer.glowMaskOpened());
+    // …and closing: the weapon's lit parts go in LAST, after everything of
+    // Babylon's, where its group 1 drew them (`Renderer.glowMaskClosing`,
+    // BABYLON_EXIT.md X4.3c's review, the owner's decision).
+    glow.onMaskCloseObservable.add(() => this.renderer.glowMaskClosing());
     // THE INK GOES ON FIRST, and the ordering is the whole of why it is
     // constructed here rather than beside the other three passes. A
     // `PostProcess` given a camera attaches itself, and `attachPostProcess`

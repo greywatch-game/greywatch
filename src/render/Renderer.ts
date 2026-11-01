@@ -7,9 +7,11 @@
  * its `FrameTextures` and the bind group they make with the buffer (group 0
  * of every program, `FrameContext.frameGroup`, handed to a prepare as to a
  * draw), the `PipelineCache`, the `FrameDraw`s at each of the three
- * points they may be drawn at and those drawn in the glow's mask
- * (`addGlowMask`), the `FramePrepare`s run as the pass begins, whoever is
- * told of a refused pass (`onRefused`, and the mask's `onGlowMaskRefused`),
+ * points they may be drawn at and those drawn in the glow's mask — first
+ * (`addGlowMask`) or last (`addGlowMaskLate`) — each with the predicate that
+ * says whether it has anything to draw this frame (`Active`), the
+ * `FramePrepare`s run as the pass begins, whoever is told of a refused pass
+ * (`onRefused`, and the mask's `onGlowMaskRefused`),
  * the hook into the host's main pass, and the `PassTimer` that times the
  * prepares' passes under `?gpu` (`timer`); `FrameDraw`, `FramePrepare`,
  * `DrawPoint`, `FrameContext` and `RendererOptions`.
@@ -20,8 +22,14 @@
  * host's camera, and its textures by `fillTextures`
  * (`CelMaterialFactory.fillFrameTextures`) resolved through the host, once
  * per frame as the main pass begins, and uploaded only when something will
- * draw — with nothing added it costs one empty branch a
- * frame; every `FramePrepare` runs right after that fill, on the same frames,
+ * draw — a draw is counted only while its predicate says it has something
+ * (none: always), so a frame with nothing of ours committed (the menu with no
+ * kit screen up) fills nothing, uploads nothing, refreshes no bind group and
+ * runs no prepare: one walk of the predicates; the next frame that DOES draw
+ * fills, uploads and refreshes in full before anything binds (`begin`), so no
+ * draw ever binds a frame or a texture a skipped frame left stale (X4.3c's
+ * review, the owner's decision); every `FramePrepare` runs right after that
+ * fill, on the same frames,
  * so what it hands the GPU is this frame's, and records into the host's
  * encoder rather than submitting one of its own, so the frame's GPU timer
  * sees it, the LATE ones after the rest (`onFrame`'s `late`) — and, with a
@@ -43,6 +51,17 @@
  * on a frame whose `begin` filled the frame, FIRST in that pass, right after
  * its clear, and only if the open pass is exactly `GLOW_TARGETS` — with the
  * main pass's refusal rule and listeners of its own (`onGlowMaskRefused`);
+ * a LATE mask draw (`addGlowMaskLate`) is recorded when the owner says the
+ * same pass is CLOSING (`glowMaskClosing`: every mesh of Babylon's queued in
+ * it, the pass not yet ended), LAST in it, on that open's verdict — the pass
+ * is the one the open checked, and Babylon no longer names it as the bound
+ * target by then, so it is never asked again;
+ * **every draw hung on group 0's three points depends on group 0 RENDERING**:
+ * Babylon visits no empty group, so a frame on which group 0 dispatched no
+ * mesh of Babylon's runs none of them — silently; a DEV build warns once per
+ * change when a frame that had such draws to run never reached the group
+ * (`seamWarned`), and whichever step drains group 0 owes the seam a fix
+ * (`BABYLON_EXIT.md` X4.4-X4.6);
  * it reads the MAIN pass's frame — the same camera, in the same submit — so
  * it binds the same group 0; nothing here allocates on a frame.
  * Never: imports Babylon — it is handed a `FrameHost`; draws into any of the
@@ -74,7 +93,8 @@
  *   over them, and one drawn after a particle in front of it paints over
  *   the particle.
  * - `"afterGroup"`: after the group has been queued whole, and before the
- *   next group (the viewmodel's, which holds the optics' glass). The player's
+ *   next group (the viewmodel's, which holds the optics' glass) — reached
+ *   only on a frame group 0 renders at all (the seam above). The player's
  *   WEAPON is drawn here (`ViewDraw`, `BABYLON_EXIT.md` X4.3c): after group 0's
  *   blended queue — the kit card last of it — where group 1's opaque queue
  *   drew it, so the card covers the world, the weapon covers the card and
@@ -159,6 +179,21 @@ export interface RendererOptions {
 /** Where in the main pass a `FrameDraw` is drawn — see the header. */
 export type DrawPoint = "beforeAlphaTest" | "opaque" | "afterGroup";
 
+/**
+ * Whether a draw has anything to draw this frame — asked once a frame as the
+ * pass begins, before anything is filled. Absent: always.
+ */
+export type Active = () => boolean;
+
+/** Whether anything in `list` is active: a draw with no predicate always is. */
+function anyActive(list: readonly FrameDraw[], active: readonly (Active | null)[]): boolean {
+  for (let i = 0; i < list.length; i++) {
+    const a = active[i];
+    if (!a || a()) return true;
+  }
+  return false;
+}
+
 export class Renderer {
   readonly device: GPUDevice;
   readonly host: FrameHost;
@@ -176,11 +211,28 @@ export class Renderer {
   private readonly beforeAlpha: FrameDraw[] = [];
   private readonly opaque: FrameDraw[] = [];
   private readonly after: FrameDraw[] = [];
+  /** Each list's predicates, index for index (null: always active). */
+  private readonly beforeAlphaActive: (Active | null)[] = [];
+  private readonly opaqueActive: (Active | null)[] = [];
+  private readonly afterActive: (Active | null)[] = [];
   private readonly prepares: FramePrepare[] = [];
   private readonly latePrepares: FramePrepare[] = [];
   private readonly refusals: (() => void)[] = [];
   /** Drawn first in the glow's mask, in the order added (`addGlowMask`). */
   private readonly maskDraws: FrameDraw[] = [];
+  private readonly maskActive: (Active | null)[] = [];
+  /** Drawn LAST in the glow's mask, in the order added (`addGlowMaskLate`). */
+  private readonly maskLateDraws: FrameDraw[] = [];
+  private readonly maskLateActive: (Active | null)[] = [];
+  /** The open's verdict on this frame's mask pass, which its close spends (`glowMaskClosing`). */
+  private maskOpenOk = false;
+  /**
+   * Whether this frame had draws to run at group 0's points, not yet reached
+   * — still set at the next `begin` means group 0 never rendered (the seam,
+   * in the header); and whether that was said already (DEV, once per change).
+   */
+  private pointsPending = false;
+  private seamWarned = false;
   private readonly maskRefusals: (() => void)[] = [];
   /** What every draw and prepare is handed: the frame block's buffer and its group 0. */
   private readonly ctx: FrameContext;
@@ -237,14 +289,12 @@ export class Renderer {
    * Draws `draw` at `at` in every main pass from the next one on, until the
    * returned function is called.
    */
-  add(draw: FrameDraw, at: DrawPoint = "afterGroup"): () => void {
+  add(draw: FrameDraw, at: DrawPoint = "afterGroup", active?: Active): () => void {
     const list =
       at === "beforeAlphaTest" ? this.beforeAlpha : at === "opaque" ? this.opaque : this.after;
-    list.push(draw);
-    return () => {
-      const i = list.indexOf(draw);
-      if (i >= 0) list.splice(i, 1);
-    };
+    const actives =
+      at === "beforeAlphaTest" ? this.beforeAlphaActive : at === "opaque" ? this.opaqueActive : this.afterActive;
+    return hang(list, actives, draw, active);
   }
 
   /**
@@ -288,12 +338,20 @@ export class Renderer {
    * (`FrameContext`): the mask is drawn from the same camera in the same
    * submit.
    */
-  addGlowMask(draw: FrameDraw): () => void {
-    this.maskDraws.push(draw);
-    return () => {
-      const i = this.maskDraws.indexOf(draw);
-      if (i >= 0) this.maskDraws.splice(i, 1);
-    };
+  addGlowMask(draw: FrameDraw, active?: Active): () => void {
+    return hang(this.maskDraws, this.maskActive, draw, active);
+  }
+
+  /**
+   * Draws `draw` LAST in the glow's MASK pass from the next frame on, until
+   * the returned function is called: after every mesh Babylon draws into it
+   * and every `addGlowMask` draw, on every frame the mask's owner says its
+   * pass is closing (`glowMaskClosing`) — where Babylon's group 1 drew the
+   * viewmodel's emissives (`BABYLON_EXIT.md` X4.3c's review). The same
+   * pipelines and frame as `addGlowMask`'s.
+   */
+  addGlowMaskLate(draw: FrameDraw, active?: Active): () => void {
+    return hang(this.maskLateDraws, this.maskLateActive, draw, active);
   }
 
   /**
@@ -323,7 +381,8 @@ export class Renderer {
   glowMaskOpened(): void {
     const filled = this.maskFilled;
     this.maskFilled = false;
-    if (!filled || this.maskDraws.length === 0) return;
+    this.maskOpenOk = false;
+    if (!filled || this.maskDraws.length + this.maskLateDraws.length === 0) return;
     if (!this.host.passIs(GLOW_TARGETS)) {
       if (!this.maskRefused) {
         console.error(
@@ -337,7 +396,21 @@ export class Renderer {
       return;
     }
     this.maskRefused = false;
-    this.host.queue(this.runMask);
+    this.maskOpenOk = true;
+    if (this.maskDraws.length > 0) this.host.queue(this.runMask);
+  }
+
+  /**
+   * The glow's mask pass is CLOSING: its owner calls this once every mesh of
+   * Babylon's is queued in it and before the pass ends
+   * (`GlowPass.onMaskCloseObservable`). Queues the LATE mask draws there, on
+   * the verdict the open made of the same pass — Babylon no longer names it
+   * as the bound target by now, so it is not asked again.
+   */
+  glowMaskClosing(): void {
+    const ok = this.maskOpenOk;
+    this.maskOpenOk = false;
+    if (ok && this.maskLateDraws.length > 0) this.host.queue(this.runMaskLate);
   }
 
   dispose(): void {
@@ -349,6 +422,12 @@ export class Renderer {
     this.latePrepares.length = 0;
     this.refusals.length = 0;
     this.maskDraws.length = 0;
+    this.maskActive.length = 0;
+    this.maskLateDraws.length = 0;
+    this.maskLateActive.length = 0;
+    this.beforeAlphaActive.length = 0;
+    this.opaqueActive.length = 0;
+    this.afterActive.length = 0;
     this.maskRefusals.length = 0;
     this.frameBuffer.destroy();
     this.timer?.dispose();
@@ -358,10 +437,28 @@ export class Renderer {
     const timer = this.timer;
     // Last frame's reading, if one was recorded: its submit is past now.
     timer?.settle();
-    this.filled = this.beforeAlpha.length + this.opaque.length + this.after.length > 0;
+    // The seam (the header): draws were waiting at group 0's points last
+    // frame and the group never rendered to run them.
+    if (import.meta.env.DEV) {
+      if (this.pointsPending && !this.seamWarned) {
+        console.warn(
+          "render: rendering group 0 drew no mesh of Babylon's, so nothing of ours hung on its points ran this frame",
+        );
+      }
+      this.seamWarned = this.pointsPending;
+    }
+    // Only a draw with something to draw counts (`Active`): a frame with
+    // nothing of ours committed skips everything below, and the next frame
+    // that has something fills, uploads and refreshes in full.
+    this.filled =
+      anyActive(this.beforeAlpha, this.beforeAlphaActive) ||
+      anyActive(this.opaque, this.opaqueActive) ||
+      anyActive(this.after, this.afterActive);
+    this.pointsPending = this.filled;
     // The glow's mask opens after the main pass, and draws from the frame
     // filled here.
-    this.maskFilled = this.maskDraws.length > 0;
+    this.maskFilled =
+      anyActive(this.maskDraws, this.maskActive) || anyActive(this.maskLateDraws, this.maskLateActive);
     if (!this.filled && !this.maskFilled) return;
     this.fill(this.frame);
     this.host.viewProjection(this.frame.viewProjection);
@@ -379,6 +476,7 @@ export class Renderer {
   };
 
   private readonly beforeAlphaTest = (): void => {
+    this.pointsPending = false;
     if (this.filled && this.beforeAlpha.length > 0 && this.passOk()) this.host.queue(this.runBeforeAlpha);
   };
 
@@ -387,6 +485,7 @@ export class Renderer {
   };
 
   private readonly afterGroup = (): void => {
+    this.pointsPending = false;
     const filled = this.filled;
     this.filled = false;
     if (filled && this.after.length > 0 && this.passOk()) this.host.queue(this.runAfter);
@@ -428,5 +527,23 @@ export class Renderer {
   private readonly runMask = (pass: GPURenderPassEncoder): void => {
     const draws = this.maskDraws;
     for (let i = 0; i < draws.length; i++) draws[i](pass, this.ctx);
+  };
+
+  private readonly runMaskLate = (pass: GPURenderPassEncoder): void => {
+    const draws = this.maskLateDraws;
+    for (let i = 0; i < draws.length; i++) draws[i](pass, this.ctx);
+  };
+}
+
+/** `draw` (and its predicate) onto a list, and the function that takes both back off. */
+function hang(list: FrameDraw[], actives: (Active | null)[], draw: FrameDraw, active?: Active): () => void {
+  list.push(draw);
+  actives.push(active ?? null);
+  return () => {
+    const i = list.indexOf(draw);
+    if (i >= 0) {
+      list.splice(i, 1);
+      actives.splice(i, 1);
+    }
   };
 }

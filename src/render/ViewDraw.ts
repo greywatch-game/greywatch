@@ -27,9 +27,10 @@
  * Babylon's queue settled it; the draws go into the main pass at
  * `"afterGroup"` — after rendering group 0, its blended queue and the kit
  * card last of it, and before group 1, which holds the two glasses — where
- * Babylon drew the weapon as group 1's opaque queue, and the mask's ahead of
- * everything of Babylon's in that pass (`Renderer.addGlowMask`), no depth
- * written, LEQUAL against the depth the main pass's draw wrote by the same
+ * Babylon drew the weapon as group 1's opaque queue, and the mask's LAST in
+ * that pass, after everything of Babylon's and the palette's and the visors'
+ * (`Renderer.addGlowMaskLate`, as the pass closes), where group 1 drew them
+ * (X4.3c's review, the owner's decision), no depth written, LEQUAL against the depth the main pass's draw wrote by the same
  * vertex module; the arrays are uploaded as Babylon uploaded a mesh's
  * (float32; a `color` or `uv` a segment does not carry reading what
  * Babylon's one-float empty vertex buffer read, widened: (0, 0, 0, 1) and
@@ -278,9 +279,13 @@ export class ViewDraw {
 
     const removes = [
       renderer.onFrame(this.prepare),
-      renderer.add(this.draw, "afterGroup"),
+      // Counted only on a frame something was committed (`Renderer.begin`
+      // skips a frame with nothing of ours: the menu with no kit screen).
+      renderer.add(this.draw, "afterGroup", () => this.pending && this.instances > 0),
       renderer.onRefused(this.refused),
-      renderer.addGlowMask(this.drawMask),
+      // LAST in the mask, after everything of Babylon's, where its group 1
+      // drew the weapon's emissives (X4.3c's review, the owner's decision).
+      renderer.addGlowMaskLate(this.drawMask, () => this.pending && this.glowOn && this.anyMasked),
       renderer.onGlowMaskRefused(this.maskRefused),
     ];
     this.unhook = () => {
@@ -309,6 +314,10 @@ export class ViewDraw {
   commit(n: number, glowOn: boolean, epoch: number): void {
     const count = Math.max(0, Math.min(n, this.capacity));
     this.instances = count;
+    // This frame's, from here: a frame `Renderer.begin` skips (nothing
+    // committed) runs neither the prepare nor the draw that would reset them.
+    this.stats.drawn = 0;
+    this.stats.masked = 0;
     this.glowOn = glowOn;
     this.pending = true;
     let anyMasked = false;
