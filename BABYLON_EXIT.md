@@ -1339,6 +1339,17 @@ It stays behind its one dynamic `import()` in a DEV branch.
     uses timestamp queries.
   - `PipelineWarmup` becomes waiting for X4.4's list.
   - Delete `webgpuLeaks.ts`.
+  - **The viewmodel's readers keep Babylon's answers on a frame id of our
+    own** (decided 2026-10-31): X4.3b's `RenderCache` (`rigJoints.ts`) is
+    keyed on `scene.getRenderId()` and settled from
+    `onAfterActiveMeshesEvaluationObservable`, both of which go with the
+    frame. It is given a frame counter of our own with the same meaning —
+    advanced where Babylon's render id advanced, settled at our evaluation of
+    the "switched on and `isVisible`" set — so `muzzleWorld`,
+    `throwHandWorld`, the eye port and the reload's gravity, and with them
+    `GrenadeCommand.origin` and `OrdnanceCommand.origin`, stay bit for bit
+    through the exit. `FINDINGS.md` 55 (the points stated analytically)
+    stays after it.
 - **Verify:** X0.3 against X0.4's "before" on every device; `gate.mjs`; a
   phone install from the home screen, offline.
 - **Rewrites:** `CLAUDE.md`: the `compatibilityMode = false` rule (deleted),
@@ -1521,5 +1532,6 @@ Phase 1 actually took.
 | X4.3 | One step or several? | **Decided** 2026-10-31: four sub-steps (X4.3). X4.3a widens the bank first (about seventeen rows: the two missing optics, the pistol, the launcher and the mine, the gloss rungs, five gestures held mid-phase, the kit screen at two bays, and a harness that raises the kit lid) so every later sub-step has a BEFORE; then the joints, the opaque draw, and the glass and the card. None is a picture change. |
 | X4.3 | The muzzle flash and the brass: X4.3's or X4.4's? Neither entry named them. | **Decided** 2026-10-31: the flash is X4.3's (X4.3c), hung off the muzzle joint and drawn in the gun's order like a reticle; the brass is X4.4's, a pool of cel boxes in the world group needing only X4.3b's eye-port joint. |
 | X4.3b | The grenade's release point and the rocket's start are read off the viewmodel's joints through Babylon's render-id cache (the last render's world, or fresh where a node was not drawn). Keep those answers bit for bit, or take one rule? | **Decided** 2026-10-31: bit for bit. A different answer changes what the page submits (`GrenadeCommand.origin`, `OrdnanceCommand.origin`) and would be its own commit; stating the points analytically stays `FINDINGS.md` 55's, after the exit. |
+| X5.4 | X4.3b's readers copy Babylon's render-id cache, keyed on `scene.getRenderId()` and settled from a Babylon observable, both of which X5.4 removes (raised by X4.3b's review). Land `FINDINGS.md` 55 before X5.4, or port the cache? | **Decided** 2026-10-31: port it — the cache gets a frame id of our own with Babylon's meaning, so the two command origins stay bit for bit; `FINDINGS.md` 55 stays after the exit. Written into X5.4's Do. |
 | X4.3c | One draw a segment, as Babylon drew it, or a palette fold like the bodies' kit? | **Decided** 2026-10-31: one draw a segment. It is one instance, the finishes differ per group in spec and mirror as well as colour, and a fold re-orders equal-depth ties for an unmeasured gain; a fold is a later, measured step if a capture ever names the gun. |
 | X6.2 | Is it ready to merge to `develop`? | Only when X6.2's "Before" list passes in full. |
