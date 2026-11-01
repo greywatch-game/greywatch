@@ -36,7 +36,7 @@ node plans/webgpu-ref/census.mjs [map...] [--query=<flags>] [--out f.json] [--ag
 node plans/webgpu-ref/shaders.mjs [map...] [--headed] [--list]
 node plans/webgpu-ref/depth.mjs glass|zoffset [--headed]
 node plans/webgpu-ref/diff.mjs a.png b.png [--tiles]
-node plans/webgpu-ref/pipelines.mjs [map] [--seconds N]
+node plans/webgpu-ref/pipelines.mjs [map] [--seconds N] [--round]
 node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--gpu] [--max] [--size WxH] [--out f.json] [--against f.json]
 ```
 
@@ -148,6 +148,13 @@ node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--gpu] [--max] [
   frame clock. This is the replacement for the WebGL2 `shaderSource` hook —
   `GPUDevice.prototype.createShaderModule` in an `addInitScript`, whose
   `getCompilationInfo()` reports against source you are already holding.
+  It counts our renderer's pipelines too (`createRenderPipelineAsync` and
+  `createComputePipelineAsync`, built off the frame) beside Babylon's.
+  **`--round`** plays a scripted round on an armoured map instead of standing
+  still — two lives, every weapon fired, a frag, a molotov, the launcher and a
+  mine, one pane broken — and files every creation under the action that
+  caused it, the installs left out: the count `BABYLON_EXIT.md` X4.4e must
+  take to zero (X4.4a's note has the first reading).
 
 `cold-stagger.mjs` is **gone and is not coming back**. It existed to bake
 Coldharbour's forty cube probes four a frame because doing all forty at once
@@ -305,7 +312,7 @@ silently replaces the thing that would have caught the shader change.
 **Since `BABYLON_EXIT.md` X0.1 the bank is the look oracle for a renderer
 being replaced piece by piece**, and a table of map views holds none of the
 pieces after the static world. So a row may ask for a SUBJECT — soldiers, a
-blast in the air, the viewmodel (fitted, painted, or held mid-gesture), the
+blast in the air, the effect pools on a stated clock (`fx`: rounds, throws, rockets, mines, blasts, fires, shards, brass), the viewmodel (fitted, painted, or held mid-gesture), the
 kit screen, the capture rings and flags, a setting changed, the motion blur in
 flight — each posed by the game's own code from a fixed state through fixed
 steps (`src/bench/vantages.ts`'s header lists them, and
@@ -319,7 +326,7 @@ for each step of the exit:
 | X4.1 bodies | `sarab-rig-near`, `sarab-rig-far` (250 m, inside `bodyDrawDistance`) |
 | X4.2 vehicles | `sarab-tank`, `sarab-truck`, `sarab-heli`; `cinderhaven-tank-far` (X4.2c's detail tier: a tank ~30.5 px across, just past its 32 px swap, so it draws its REDUCED set — ~55 pixels of the frame, seen by a pixel comparison of two `--keep` directories and never by `--check`'s mean tolerance; appended by `--rows`) |
 | X4.3 the viewmodel | `harrowmead-view-<optic>-hip` / `-aim`, one weapon per optic; and X4.3a's twenty-two, appended at the end of Harrowmead's list by `--rows`: the two optics those leave out (`view-greendot-*`, `view-longscope-*` on the DMR), the three rigs with a sight of their own (`view-pistol-aim`, `view-rpg-aim`, `view-mine-hip`), one finish on each rung of the gloss ladder above matte (`view-finish-satin`, `-glint`, `-mirror`), every gesture held mid-phase (`view-reload-drop` and `-seat` — a dry reload, the camera turned by the head's look, each posed off its OWN previous frame because the reload's gravity reads Babylon's render cache — `view-bolt`, `view-load`, `view-throw-frag`, `-molotov`, and `view-flash` on a seeded strobe), and the kit screen (`kit-desktop`, `kit-phone`: the real lid raised over `deploy`, the card, the bench lamps and the glow's stage rule, at the bay `stageBay` measures on a desktop and on an 832x384 phone, stated because the bank hides the interface), and after them the review's three (`view-pistol-reload`, the pistol's slide locked back in its dry reload; `view-bolt-aim`, the bolt cycle aimed with the reticle on the axis; `view-reload-tactical`, the spent magazine stripped into the hand) |
-| X4.4 effect pools | `coldharbour-blast` |
+| X4.4 effect pools | `coldharbour-blast`; and X4.4a's twenty-one, appended by `--rows` at the end of Coldharbour's list and Cinderhaven's (`fx` rows, every one standing at a position the map's rows already stand at, so the benchmark gains no stop): a tracer in flight (`fx-tracer`), impacts mid-fade on `hard` and `ground` (`fx-impact-hard`, `-ground`), a wall of marks near and at the size gate's edge (`fx-marks-near`, `-far`), a frag in flight and at rest with a bottle (`fx-grenade`), a rocket (`fx-rocket`), two mines lit and dark (`fx-mine`), brass (`fx-brass`), the blast at three ages on each surface with its rubble and scorch (`fx-blast-{hard,ground}-{fireball,billows,smoke}`), two scorches full and fading (`fx-scorch`), a molotov (`fx-molotov`), a pane's shards (`fx-shards`), fading effects behind and in front of see-through glazing (`fx-glass`), and on Cinderhaven a world fire alone and with fading effects round it (`fx-fire`, `fx-fire-fade`) |
 | X4.5 sky and clouds | every row; `hollowmere-lanterns` and `cinderhaven-town` at night |
 | X4.6 water, glazing, rings | `greyfen-marsh`, `harrowmead-millpond`, `coldharbour-shopfront` (see-through), `coldharbour-curtain2/40/90` (backed), `hollowmere-ring` |
 | X5.2 the post chain | `hollowmere-post-*`, each one setting off against `lanterns` |

@@ -297,6 +297,26 @@ export function placeVantage(page, vantage) {
       g.player.view.setThrowable(window.__refThrowable);
       window.__refThrowable = null;
     }
+    // The effect pools an `fx` row raised (X4.4a), each put away by its own
+    // module's door: the rounds and the marks, every flight and fire (a fire
+    // goes out through `Game.fireOut`, its flames, light and voice with it),
+    // the wire's mines, the shards and the rubble parked and their streams
+    // re-seeded, the scorch, and the brass — the weapon's stowed state put
+    // back as the boot left it. Only after a row that raised them, for the
+    // reason above.
+    if (window.__refFx) {
+      g.combatFx.clearTransient();
+      g.grenades.reset();
+      g.grenadeFx.reset();
+      g.antiTank.reset();
+      g.antiTankFx.reset();
+      g.net?.ordnance?.reset();
+      g.debris.reset();
+      g.blastDebris.reset();
+      g.playerView.cleared();
+      g.playerView.stowed(window.__refFx.stowed);
+      window.__refFx = null;
+    }
     // The place, not the fight: no bodies, no rings, no beacons. The bodies
     // are the round's session's (`g.net.roster` — a client's, offline too),
     // and the roster poses and re-shows every living one off the wire each
@@ -466,6 +486,139 @@ export function placeVantage(page, vantage) {
       if (v.view.flash) {
         seeded(0xf1a5, () => g.playerView.fired());
         window.__refFlash = true;
+      }
+    }
+
+    // The effect pools (X4.4a): what `fx.events` raises, each through the
+    // door the game raises it by, on ONE clock of fixed 1/60 s steps, and
+    // every pool stepped in the order a frame steps them (`Game.stepShots`,
+    // then `stepAftermath`, then the brass as `Player.update` steps it). The
+    // frame is the last step: an event at `at` is `seconds - at` old in it.
+    // Nothing else runs between the steps, and no frame is rendered among
+    // them, so the pose is a function of the row alone.
+    //
+    // **Every random a pool draws is a picture's `Math.random`**, seeded
+    // here for the whole timeline. The SOUND draws from it too, and gates
+    // what it draws on the audio clock and its voice count, which no two
+    // runs share — so each `Sfx` call made inside the timeline is handed
+    // the real `Math.random` for its length, and the pictures' stream does
+    // not move with it. The sound still plays; nothing it does reaches a
+    // pixel. The rubble and the shards draw from their own seeded streams
+    // (`BlastDebrisSystem.rand`, `DebrisSystem`'s), which the put-away above
+    // re-seeds, and their bodies are stepped by Havok at the game's own
+    // fixed substep, which carries no remainder from a lull.
+    if (v.fx) {
+      const fx = v.fx;
+      window.__refFx = { stowed: g.playerView.hidden };
+      const M = await import("/src/math/index.ts");
+      const ROUND_RANGE = (await import("/src/config/index.ts")).CONFIG.weapons.rifle.range;
+      const floorAt = (x, z) => g.map.terrain.surfaceAt(x, z, true);
+      const feet = floorAt(x, z);
+      // The brass leaves the port as the render cache answers it
+      // (`ViewModel.ejectPortWorld`) — the matrix the LAST render composed —
+      // so a row that throws brass renders one frame with its pose up
+      // first, the held reload's reason.
+      if (fx.events.some((e) => e.brass)) {
+        g.playerView.stowed(false);
+        await new Promise((res) => {
+          const o = g.scene.onAfterRenderObservable.add(() => {
+            g.scene.onAfterRenderObservable.remove(o);
+            res();
+          });
+        });
+      }
+      const B = (p) => new Vec3(p[0], p[1], p[2]);
+      const raise = (e) => {
+        if (e.round) {
+          // `drawRounds` — the picture of a round with its own wall query,
+          // so it stops where a resolved one would and the impact is the
+          // surface it stopped on, the mark only on the static world. `to`
+          // is what it is AIMED at; it flies on past it to the first thing
+          // in its way, out to a rifle's range.
+          const from = B(e.round.from);
+          const d = B(e.round.to).subtract(from).normalize();
+          g.combatFx.drawRounds(from, d, from, ROUND_RANGE, 1, 0);
+        } else if (e.throw) {
+          const t = e.throw;
+          if (!g.grenades.throwAt(new M.Vector3(...t.from), new M.Vector3(...t.to), 0, null, t.kind)) {
+            throw new Error("the grenade pool refused a throw");
+          }
+        } else if (e.rocket) {
+          const r = e.rocket;
+          if (!g.antiTank.launchToward(new M.Vector3(...r.from), new M.Vector3(...r.to), 0, null)) {
+            throw new Error("the rocket pool refused a launch");
+          }
+        } else if (e.explode) {
+          // The wire's `explode` arm: the six drawn layers, the light, the
+          // noise, the rubble and the scorch (`Game.onExplosion`).
+          g.onNetEvent({ e: "explode", at: [...e.explode.at], power: e.explode.power ?? 1 });
+        } else if (e.blaze) {
+          // The wire's `blaze` arm: the flames, the ignition, and through
+          // `Game.fireLit` the light, the noise and the mark.
+          g.onNetEvent({ e: "blaze", at: [...e.blaze.at] });
+        } else if (e.shards) {
+          // A pane's burst as `GlassSystem.onBreak` hands it over — the
+          // sheet left standing, since a broken pane never mends in a round.
+          const pane = g.map.panes[e.shards.pane];
+          if (!pane) throw new Error(`no pane ${e.shards.pane}`);
+          const dir = B(e.shards.dir).normalize();
+          if (!g.debris.burst(pane, B(e.shards.at), dir, cam.position)) {
+            throw new Error("the pane's burst was refused (past its gate, or the pool full)");
+          }
+        } else if (e.brass) {
+          g.playerView.fired();
+        }
+      };
+      const sfx = g.sfx;
+      const native = Math.random;
+      g.sfx = new Proxy(sfx, {
+        get(target, key) {
+          const f = target[key];
+          if (typeof f !== "function") return f;
+          return (...a) => {
+            const pictures = Math.random;
+            Math.random = native;
+            try {
+              return f.apply(target, a);
+            } finally {
+              Math.random = pictures;
+            }
+          };
+        },
+      });
+      try {
+        seeded(0x44a, () => {
+          const steps = Math.round(fx.seconds * 60);
+          const due = fx.events.map((e) => Math.round(e.at * 60));
+          const dt = 1 / 60;
+          for (let i = 0; i < steps; i++) {
+            fx.events.forEach((e, k) => {
+              if (due[k] === i) raise(e);
+            });
+            g.combatFx.update(dt);
+            g.grenades.update(dt);
+            g.grenadeFx.update(dt);
+            g.pushFires();
+            g.antiTank.update(dt);
+            g.antiTankFx.update();
+            g.physics.update(dt);
+            g.ragdolls.update(dt);
+            g.debris.update(dt);
+            g.blastDebris.update(dt);
+            g.playerView.stepped(dt, feet);
+          }
+        });
+      } finally {
+        g.sfx = sfx;
+      }
+      // A mine is the WIRE's in every round (the page never predicts one),
+      // so a laid plate is put down as a `mines` message lays it, its lamp
+      // lit or dark as the message says (`NetOrdnance.applyMines`).
+      if (fx.mines) {
+        g.net.ordnance.applyMines({
+          t: "mines",
+          mines: fx.mines.map((m, i) => ({ i, p: [...m.at], team: 0, by: -1, armed: m.armed })),
+        });
       }
     }
 

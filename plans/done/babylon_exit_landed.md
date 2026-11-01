@@ -6825,3 +6825,189 @@ X4.3d's brief, word for word:
     byte-equal to the landed walk and the rest within the parent's own
     run-to-run noise (1-3/255); `gate.mjs` and `shaders.mjs` clean on
     seven; typecheck, build, corecheck and `parity` pass.
+
+### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (HASH)
+
+X4.4a's brief, word for word:
+
+- **X4.4a — the bank sees every pool (no change to the game).** Rows are
+  added, seeded through the harness's `seeded()` (X4.3a), for what X4.4b-e
+  move and the one `blast` row cannot see: a tracer in flight; a spark and a
+  dust disc mid-fade at an impact on hard ground and on soil; a wall of
+  marks, near and at the size gate's edge; a grenade in flight with its pip
+  lit, and one at rest; a rocket in flight with its motor; a laid mine with
+  its lamp; brass in the air; the blast at several ages (the fireball, the
+  billows, the late smoke) on `ground` and on `hard`; scorch at full and
+  mid-fade; rubble chunks in the air and at rest; shards falling from a
+  broken pane; a burning molotov and a world fire; and at least one fading
+  effect seen through glazing (the sort question above). **Appended at the
+  END of a map's sequence**, because a row's frame depends on the rows shot
+  before it, and banked with `--rows`. Also recorded: `pipelines.mjs`'
+  creations during a scripted round that fires every weapon and uses both
+  throwables and both AT items — the count X4.4e must take to zero.
+  **Oracle:** `bank.mjs --check` twice back to back, every new row
+  byte-identical to itself; every old row unmoved.
+
+**X4.4a landed** (HASH; 2026-11-01; no change to the game — the reference
+bank, its harness, its table and `pipelines.mjs` only).
+- **What it is.** Twenty-one rows, every one raised through the door the
+  game raises its effect by and posed on a stated clock: nineteen appended at
+  the END of Coldharbour's list (`bench/vantages.ts`' `effectRows`, after
+  `crossing`) and two at the end of Cinderhaven's (`fireRows`, after
+  `tank-far`), banked with `bank.mjs coldharbour cinderhaven --rows=<the
+  twenty-one>`:
+  - `fx-tracer` — three tracers in flight crossing in front of the quay's
+    harbour wall;
+  - `fx-impact-hard` — five rounds on the quay's stone deck (`hard`) at
+    ages 0.04-0.3 s: sparks and discs at `visibility` 0.07-0.91, the chips;
+  - `fx-impact-ground` — five on the road beside the promenade (`ground`, the
+    floor): discs only, the divots;
+  - `fx-marks-near` — 28 marks on the quay's harbour face through a 30°
+    field, the spark and dust long gone;
+  - `fx-marks-far` — 40 rounds at the west face of a brick block 58 m down
+    the avenue through a 47° field: 30 land on it, and of those 14 project
+    under `minPixels` (3) and are not drawn — their projected diameters run
+    2.2-4.1 px, so the gate's edge falls in the middle of the wall;
+  - `fx-grenade` — a frag at rest on the deck, a second in flight, a bottle
+    in flight: both pips lit, the wick lit;
+  - `fx-rocket` — a rocket 0.25 s out, broadside, its motor;
+  - `fx-mine` — two plates on the deck, the lamp lit on the armed one and
+    dark on the other, laid as the wire lays them (`NetOrdnance.applyMines`:
+    the page never predicts a mine, so a mine on screen is always the wire's);
+  - `fx-brass` — the rifle at the hip on the square firing eight rounds 0.05 s
+    apart, three cases in frame mid-arc and the flash on the muzzle;
+  - `fx-blast-{hard,ground}-{fireball,billows,smoke}` — a frag's blast at
+    0.08, 0.6 and 1.8 s on the quay's deck and on the floor at the road's edge
+    by the promenade, raised as the wire's `explode` arm raises one
+    (`Game.onNetEvent` → `drawBlast` and `onExplosion`: the six drawn layers,
+    the rubble, the scorch, the light — which the freeze clears with every
+    transient): the flash and fireball, the billows with the trails and the
+    rubble in the air, the column dissolving with the rubble at rest;
+  - `fx-scorch` — two molotovs' scorches on the deck, 9 s old at full and
+    11.5 s old fading (0.4 and 0.28);
+  - `fx-molotov` — a molotov 1.5 s after it went up, raised by the wire's
+    `blaze` arm (`Game.fireLit`: the flames, the ignition's billows, the
+    scorch, the light);
+  - `fx-shards` — pane 0 (the square's west shopfront) bursting outward,
+    0.3 s on (`DebrisSystem.burst`, as `GlassSystem.onBreak` hands it over;
+    the sheet left standing, since a broken pane never mends in a round and
+    the put-away could not mend it);
+  - `fx-glass` — the same shopfront: two rounds through the window into the
+    shop's side wall 3-4 m behind the pane, two on the pier beside it, all
+    mid-fade;
+  - `fx-fire`, `fx-fire-fade` — Cinderhaven's fire drum on the bay road at
+    night through a 9° field, then the same with a spark, a disc and a tracer
+    on the careened boat's hull behind its flames and two dust discs on the
+    cobbles in front.
+- **Where, and why there.** Coldharbour has the three things in one boot:
+  see-through glazing (`map.panes`, the square's shopfronts), both ground
+  kinds side by side (the quay's deck and walls answer `hard`, the road and
+  floor beside them `ground`), and armour, so the third slot is in its kit.
+  Its only fires are a tavern's hearths and a chapel's candles, indoors, so
+  the world fire is Cinderhaven's drum. **Every row stands at a position an
+  earlier row of its map already stands at** (`curtain90`, `crossing`,
+  `blast`, `avenue`; Cinderhaven's `crossing`) and only turns or narrows the
+  camera, because the benchmark takes one stop per POSITION: its stops are
+  unchanged (checked by script, the dedupe `BenchScript` runs, positions and
+  first targets identical before and after), and `BenchScript` is untouched.
+- **The field.** `Vantage.fx: { seconds, events, mines? }`, events a union
+  (`FxEvent`) of `round` (`CombatFx.drawRounds`, the wall query its own: the
+  round is aimed at `to` and flies on to the first thing in its way, out to
+  the rifle's range), `throw` (`GrenadeSystem.throwAt`), `rocket`
+  (`AntiTankSystem.launchToward`), `explode`, `blaze` (the wire's arms),
+  `shards` (`DebrisSystem.burst`) and `brass` (`PlayerView.fired`).
+  `placeVantage` raises each `at` seconds into a clock of fixed 1/60 s steps
+  and steps every pool in the frame's order (`stepShots`, `stepAftermath`,
+  then the brass as `Player.update` steps it); the frame is the clock's end,
+  no frame rendered among the steps. A row that throws brass renders one
+  frame with its pose up first, because the port is read out of the render
+  cache (the held reload's reason). **The put-away** (each door's own:
+  `clearTransient`, both throwables' `reset`s — a fire out through
+  `Game.fireOut`, its light and voice with it — `antiTank`/`antiTankFx`,
+  the wire's `ordnance.reset`, `debris`/`blastDebris.reset`, the brass
+  `cleared` and the weapon's stowed state put back) runs only after a row
+  that raised one, so the 84 rows before run exactly the calls they were
+  banked with.
+- **Determinism, per kind.** Every random in the pools is a picture's
+  `Math.random` (the blast's 39, the tumble, the marks' roll and size, the
+  brass, the flash, the ignition), seeded by `seeded()` for the whole
+  clock. **The sound draws from `Math.random` too, and gates what it draws
+  on the audio clock and its voice count** (`Sfx.impact`'s rate limit reads
+  `ctx.currentTime`), which no two runs share, so every `Sfx` call inside the
+  clock is handed the real `Math.random` for its length (a proxy on `g.sfx`
+  for the clock, put back after): the sound still plays and its draws do not
+  move the pictures' stream. **The Havok-posed pieces needed nothing new**:
+  the rubble and the shards draw from their own xorshift streams
+  (`BlastDebrisSystem.rand`, `DebrisSystem`'s), re-seeded by the put-away,
+  and `PhysicsWorld` steps at the fixed `death.substep` (1/60) carrying no
+  remainder across a lull — so a 1/60 step is exactly one substep — and the
+  rows run in the same order every run; `bank.mjs` refusing a row whose two
+  grabs differ, and the two checks below, are the proof. No stop condition
+  was met. The marks' ring restarts at slot 0 (`BulletMarks.clear`), the
+  flights' and fires' ids are monotonic and only key a fresh tumble.
+- **Measured.** **Banked**: all 21 written, each from two consecutive grabs
+  byte-identical. **Twice back to back**: `bank.mjs --check --keep` run
+  twice in a row on this tree — all 21 new rows "within floor" at 0 pixels
+  against the bank in both runs, 104 of 105 kept frames byte-equal between
+  the runs, the 105th `view-pistol-reload` one pixel by 1/255 in the second
+  run (the known main-tree flake); no console or page error. **Old rows**:
+  against a BEFORE taken the same way at bb05074 in the worktree, 84 of 84
+  byte-equal in the first run and 83 of 84 in the second (the same pistol
+  pixel), and the same 34 stale rows failing the stale bank with identical
+  numbers on both sides. Typecheck, build (`check-babylon-free`,
+  `check-proving` clean) and corecheck (all passed) pass. Not run: `gate`,
+  `census`, `parity`, `kit:hash` — nothing in the game moved.
+- **The pipeline count** (`pipelines.mjs coldharbour --round`, new: see its
+  header). Two lives on Coldharbour, each deployed with its kit through the
+  real deploy (rifle, frag, launcher; carbine, molotov, mine); every primary
+  and the pistol fired through the real trigger for two seconds each round
+  the compass and at the floor (187 rounds, 187 flashes and cases), a frag
+  thrown (its blast, rubble and scorch), two rockets (their blasts), a
+  molotov (its fire), two mines laid (the wire's tables), and one pane
+  broken by a round's path through it (`GlassSystem.shoot`, predicted; its
+  shards). The script holds `g.input`'s trigger, throw and pointer lock and
+  writes the kit, and nothing else of the game. **In play, Babylon created
+  ZERO render pipelines and our renderer zero, in six of eight runs**; two
+  runs created 5 and 2 Babylon pipelines (and twice that in shader
+  modules), both inside the same 2 s window at the end of the first life
+  (the pane phase), before the probe filed each creation under the mesh
+  being drawn — the five runs since it was added read zero, so the two are
+  unattributed. At the installs (left out) 39 of Babylon's and 39 of ours,
+  and the second install creates none. **So the warm-up (`FINDINGS.md` 16)
+  already holds a scripted round at zero most of the time**: what X4.4e
+  owes is the declared list replacing the `warm(on)` poses at the same
+  zero, and the intermittent 2-5 attributed (`--round` names the mesh now).
+- **The transparent sort, measured** (a scratch probe wrapping `Mesh.render`
+  in group 0 of the main pass, the seam's `afterOpaque` and `afterGroup`
+  marked, over two frames: the `fx-glass` shopfront with a molotov and a
+  0.6 s blast added, and the `fx-fire-fade` drum with the same). **Babylon
+  draws the blast's billows (`blast` slots and `blastSmall`), the molotov's
+  flames, the world's fires (`block-*-flame`), the tracers, the marks and
+  the rubble in its OPAQUE list** — front to back by bounding-sphere centre,
+  among the opaque world, before `afterOpaque` — none of them blended (the
+  backed panes, `cel-glass-…-on-…`, are there too). **The fading sparks and
+  discs (`visibility` under 1) and the scorch are in its TRANSPARENT list**,
+  after `afterOpaque` and before `afterGroup`, sorted back to front by
+  bounding-sphere centre distance (every `alphaIndex` at its default) **and
+  interleaved with the see-through glazing**, one mesh a pane block sorted by
+  the block's centre: at the shopfront the interior sparks and discs (13.3-
+  13.7 m) and the pier's (8.4 m) drew before the pane block (8.35 m), the
+  nearest spark (8.27 m) and both scorches (4.6, 6.1 m) after it. **So for
+  X4.4b neither of our points reproduces Babylon's order for a blended
+  pool**: at `afterOpaque` every fade lands before every pane (wrong for one
+  nearer than a block's centre), at `afterGroup` after every pane (wrong for
+  one behind) — a blended pool of ours has to draw inside Babylon's sort
+  (an item queued in the transparent list's order), or the difference is a
+  recorded picture change. The billows and the flames raise no such question
+  against the glazing: they are opaque-list draws.
+- **Looked at, every one**, each `proves` written against its frame; the
+  marks' gate read off the meshes' own bounding spheres (`fx-marks-far`), the
+  impacts', casings' and scorches' live states read off their pools.
+  **Found and recorded rather than moved:** a scorch laid on the FLOOR does
+  not show — the ground blasts' marks at the road's edge, and a trial pair
+  laid on the promenade's floor at 0.2 and 0.4 (`ScorchMarks` live, visible,
+  at full scale), drew nothing, where the same marks on the quay's deck (a
+  block) draw (`fx-scorch`); not investigated, and X4.4c, which makes the
+  scorch ours, inherits the question. Coldharbour's `ground` impacts land on
+  the asphalt (the floor's road), where the dust disc reads; on the
+  promenade's cobbled floor it is near invisible — the same picture a round draws there.

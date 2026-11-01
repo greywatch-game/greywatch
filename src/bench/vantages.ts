@@ -83,6 +83,18 @@
  *   angles), with the bay the DOM would measure replaced by the stated one
  *   (`LoadoutScreen.stageBay`; the bank hides the interface, so there is no
  *   DOM bay to measure). The lid comes down again before the next row.
+ * - `fx: { seconds, events, mines? }` — the EFFECT POOLS (X4.4a): each event
+ *   raised `at` seconds into a clock of fixed 1/60 s steps through the door
+ *   the game raises it by — a round by `CombatFx.drawRounds`, a throw by
+ *   `GrenadeSystem.throwAt`, a rocket by `AntiTankSystem.launchToward`, a
+ *   blast and a molotov by the wire's `explode` and `blaze` arms
+ *   (`Game.onNetEvent`), a pane's shards by `DebrisSystem.burst`, a case of
+ *   brass by `PlayerView.fired` — and every pool stepped in the frame's own
+ *   order to the clock's end, which is the frame. Pictures' randoms are
+ *   seeded for the clock (the sound's are not, and do not reach them), the
+ *   rubble and the shards run on their own seeded streams under Havok's fixed
+ *   step, and `mines` are laid as the wire lays them
+ *   (`NetOrdnance.applyMines`). All of it is put away before the next row.
  * - `zones: true` — the capture rings and their flags, which every other row
  *   hides. Built at the start of a round, so the flag is at the foot of its
  *   pole and the cloth at rest.
@@ -104,6 +116,21 @@ import type { CarriedId, PrimaryWeaponId } from "../entities/weapons";
 /** A pose: `[x, metres ABOVE THE SURFACE, z]` to look at an absolute point. */
 type Pos = readonly [x: number, above: number, z: number];
 type Point = readonly [x: number, y: number, z: number];
+
+/**
+ * One effect an `fx` row raises, `at` seconds into its clock, through the
+ * door the game raises it by (`placeVantage` names each). Every point is
+ * ABSOLUTE, unlike `pos`: an effect stands on whatever it was raised on — a
+ * quay, a plinth, a sill — and the floor under it is not that.
+ */
+export type FxEvent =
+  | { at: number; round: { from: Point; to: Point } }
+  | { at: number; throw: { from: Point; to: Point; kind: ThrowableId } }
+  | { at: number; rocket: { from: Point; to: Point } }
+  | { at: number; explode: { at: Point; power?: number } }
+  | { at: number; blaze: { at: Point } }
+  | { at: number; shards: { pane: number; at: Point; dir: Point } }
+  | { at: number; brass: true };
 
 /**
  * One row. `of` and `proves` are for a person reading a dirty diff; the rest
@@ -134,6 +161,11 @@ export interface Vantage {
     flash?: boolean;
   };
   kit?: { weapon: PrimaryWeaponId; sight: SightId; finish?: FinishId; bay: Readonly<StageBay> };
+  fx?: {
+    seconds: number;
+    events: readonly FxEvent[];
+    mines?: readonly { at: Point; armed: boolean }[];
+  };
   zones?: boolean;
   settings?: Readonly<Record<string, string | boolean | number>>;
   turn?: number;
@@ -366,6 +398,9 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
       pos: [-41, 6, -41],
       target: [-51, 0.02, -51],
     },
+    // Appended for X4.4a, so every row above carries the state it was banked
+    // with (`bank.mjs --rows`).
+    ...effectRows(),
   ],
   harrowmead: [
     {
@@ -532,6 +567,8 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
       pos: [-581, 15, 73],
       target: [-473, 8.5, 473],
     },
+    // Appended for X4.4a, after `tank-far` for the reason that row gives.
+    ...fireRows(),
   ],
   kurenai: [
     {
@@ -795,5 +832,329 @@ function reviewRows(): Vantage[] {
       "the TACTICAL reload's spent magazine (the clone) stripped down the well in the support hand (`ReloadGesture.strippedAt`) rather than dropped, on its pivot, the head looking down (X4.3)",
       { weapon: "rifle", sight: "iron", aimed: false, params: reloadParams(0.22, 1.4, false) },
     ),
+  ];
+}
+
+/**
+ * The effect pools `BABYLON_EXIT.md` X4.4b-d take off Babylon's scene, each
+ * raised through the door the game raises it by and posed on a stated clock
+ * (`Vantage.fx`): a round's tracer, spark, dust disc and mark; the thrown and
+ * laid bodies (a frag, a bottle, a rocket, a mine); the brass; the blast at
+ * three ages on both surfaces, with its rubble and its scorch; a scorch
+ * fading; a molotov burning; a pane's shards; and fading effects behind and
+ * in front of see-through glazing. Coldharbour, because it has three things
+ * these need in one boot: see-through glazing (`map.panes`, the square's
+ * shopfronts), both ground kinds side by side (the quay's deck and walls
+ * answer `hard`, the floor beside them `ground`), and armour, so the third
+ * slot is in its kit. What it lacks is a world fire in the open, which
+ * `fireRows` takes on Cinderhaven.
+ *
+ * **Every row stands where an earlier row of its map already stands**
+ * (`curtain90`, `crossing`, `blast`, `avenue`) and only turns or narrows the
+ * camera there: the benchmark takes one stop per POSITION (`BenchScript`), so
+ * these add no stop to it and change nothing it plays. `fov` is what brings a
+ * small thing up to size from a stop chosen for something else.
+ */
+function effectRows(): Vantage[] {
+  /** `curtain90`'s eye: 8 m over the harbour, facing the quay's wall. */
+  const harbour: Pos = [-16, 8, -47];
+  /** `crossing`'s eye: 6 m over the junction at the quay's west end. */
+  const quay: Pos = [-41, 6, -41];
+  /** `blast`'s eye: on the square's lawn, by the shopfronts. */
+  const square: Pos = [-16, 1.7, -12];
+  /** `avenue`'s eye: 12 m over the town's west edge. */
+  const avenue: Pos = [-150, 12, -26];
+  const S = 1 / 60;
+  /** Rounds from one shooter, each landing `age` seconds before the end of a `seconds`-long clock (less its flight). */
+  const rounds = (seconds: number, from: Point, hits: readonly (readonly [to: Point, age: number])[]): FxEvent[] =>
+    hits.map(([to, age]) => ({ at: seconds - age, round: { from, to } }));
+  /** A frag's blast `age` seconds old, raised as the wire's `explode` raises one. */
+  const blast = (id: string, on: "hard" | "ground", age: number, of: string, proves: string): Vantage => {
+    const at: Point = on === "hard" ? [-16, 0.05, -37.6] : [-16, 0.06, -31];
+    return {
+      id: `fx-blast-${on}-${id}`,
+      of,
+      proves,
+      pos: harbour,
+      target: [at[0], 1.5, at[2]],
+      fx: { seconds: age, events: [{ at: 0, explode: { at } }] },
+    };
+  };
+  // A wall of marks: a jittered grid on the quay's harbour face, and on the
+  // west face of a brick block 58 m down the avenue. The jitter is a fixed
+  // table, not a random — the rows are data.
+  const jitter = [0.11, -0.17, 0.05, 0.19, -0.08, -0.2, 0.14, -0.03, 0.08, -0.13, 0.17, -0.06];
+  const near: (readonly [Point, number])[] = [];
+  for (let i = 0; i < 7; i++) {
+    for (let j = 0; j < 4; j++) {
+      const k = i * 4 + j;
+      near.push([[-17.8 + i * 0.6 + jitter[k % 12], -1.9 + j * 0.55 + jitter[(k + 5) % 12], -40.5], 1.2 - k * 0.012]);
+    }
+  }
+  const far: (readonly [Point, number])[] = [];
+  for (let i = 0; i < 8; i++) {
+    for (let j = 0; j < 5; j++) {
+      const k = i * 5 + j;
+      far.push([[-91, 8.2 + j * 0.5 + jitter[k % 12], -21.6 + i * 0.5 + jitter[(k + 7) % 12]], 1.2 - k * 0.012]);
+    }
+  }
+  return [
+    {
+      id: "fx-tracer",
+      of: "three rounds crossing in front of the quay's harbour wall from either side, their tracers in flight",
+      proves:
+        "TRACERS IN FLIGHT (`CombatFx`, X4.4b): the emissive streak stretched along its flight — a non-uniform scale — at three points of it, flown by `CombatFx.update` off `drawRounds`",
+      pos: harbour,
+      target: [-16, 0, -38],
+      fx: {
+        seconds: 0.2,
+        events: [
+          { at: 0.2 - 2 * S, round: { from: [-26, 3, -46], to: [-10, -0.5, -40.5] } },
+          { at: 0.2 - S, round: { from: [-26, 3.5, -46], to: [-8, 0, -40.5] } },
+          { at: 0.2 - 3 * S, round: { from: [-6, 3.2, -46], to: [-22, -1, -40.5] } },
+        ],
+      },
+    },
+    {
+      id: "fx-impact-hard",
+      of: "rounds landing on the quay's stone deck from the promenade, seen from above, the impacts at five ages",
+      proves:
+        "a HARD impact mid-fade (`CombatFx`, X4.4b): the spark and the dust disc at several `visibility`s under 1 — the BLENDED pipeline beside the opaque one — and the chips they leave (`BulletMarks`)",
+      pos: quay,
+      target: [-29.5, 0, -38],
+      fov: 25,
+      fx: {
+        seconds: 0.5,
+        events: rounds(0.5, [-36, 1.6, -33], [
+          [[-31, 0, -37.4], 0.04],
+          [[-29.6, 0, -38.6], 0.09],
+          [[-28.2, 0, -37.6], 0.14],
+          [[-30.4, 0, -38.9], 0.19],
+          [[-27.8, 0, -38.8], 0.3],
+        ]),
+      },
+    },
+    {
+      id: "fx-impact-ground",
+      of: "rounds landing on the road beside the promenade (the floor, `ground`), seen from above, at five ages",
+      proves:
+        "a GROUND impact mid-fade (`CombatFx`, X4.4b): no spark, the brown dust disc opening and fading under 1 (blended), and the divots (`BulletMarks`) in the ground's own colour",
+      pos: quay,
+      target: [-29.5, 0, -30],
+      fov: 25,
+      fx: {
+        seconds: 0.5,
+        events: rounds(0.5, [-36, 1.6, -26], [
+          [[-31, 0, -29.3], 0.04],
+          [[-29.4, 0, -30.2], 0.09],
+          [[-28, 0, -29], 0.14],
+          [[-30.4, 0, -30.6], 0.19],
+          [[-28.4, 0, -30.8], 0.3],
+        ]),
+      },
+    },
+    {
+      id: "fx-marks-near",
+      of: "a wall of bullet marks on the quay's harbour face, close, the rounds that made them long gone",
+      proves:
+        "the MARK pool near (`BulletMarks`, X4.4b): cel decals on their own depth bias (`MARK_DEPTH_UNITS`), each its own roll and size, standing on the static world after the spark and the dust have gone",
+      pos: harbour,
+      target: [-16, -1, -40.16],
+      fov: 30,
+      fx: { seconds: 1.2, events: rounds(1.2, [-16, 4.6, -46], near) },
+    },
+    {
+      id: "fx-marks-far",
+      of: "a wall of bullet marks on the west face of a brick block 58 m down the avenue, through a 47° field",
+      proves:
+        "the marks at the SIZE GATE's edge (`WorldCulling`'s `minPixels`, which X4.4b replaces with a size test of its own): about half of them project under 3 px and are not drawn, the rest a few pixels across",
+      pos: avenue,
+      target: [-91, 9.2, -19.9],
+      fov: 47,
+      fx: { seconds: 1.2, events: rounds(1.2, [-150, 13, -26], far) },
+    },
+    {
+      id: "fx-grenade",
+      of: "a frag at rest on the quay's deck, a second in flight over it, and a bottle in flight beside that",
+      proves:
+        "the THROWN bodies (`GrenadeFx`'s `GrenadeBody`, X4.4b): the frag's cel body and its emissive fuse pip, lit in flight and at rest, and the bottle with its lit wick — tumbled by `GrenadeFx.update` off `GrenadeSystem.throwAt`",
+      pos: quay,
+      target: [-29, 0.3, -37.8],
+      fov: 25,
+      fx: {
+        seconds: 1.6,
+        events: [
+          { at: 0, throw: { from: [-36, 1.2, -38], to: [-31, 0.1, -38], kind: "frag" } },
+          { at: 1.3, throw: { from: [-24, 1.5, -31], to: [-29, 0.1, -38.5], kind: "frag" } },
+          { at: 1.4, throw: { from: [-23.5, 1.2, -35], to: [-33, 0.1, -39], kind: "molotov" } },
+        ],
+      },
+    },
+    {
+      id: "fx-rocket",
+      of: "a rocket a quarter of a second out of the tube, crossing the promenade toward the harbour",
+      proves:
+        "the ROCKET body (`AntiTankFx`'s `RocketBody`, X4.4b): cel, pointed down its flight, with its emissive motor guttering off the distance flown",
+      pos: quay,
+      target: [-28, 1.2, -36],
+      fov: 35,
+      fx: { seconds: 0.25, events: [{ at: 0, rocket: { from: [-28, 1.4, -24], to: [-28, 1.2, -48] } }] },
+    },
+    {
+      id: "fx-mine",
+      of: "two mines laid on the quay's deck, one armed and one still arming",
+      proves:
+        "the MINE body (`MineBody`, X4.4b): the cel plate, and its fuze lamp lit on the armed one and dark on the other — put down as the wire lays one (`NetOrdnance.applyMines`), the only way a mine is drawn in a round",
+      pos: quay,
+      target: [-30, 0, -37.8],
+      fov: 18,
+      fx: {
+        seconds: 0,
+        events: [],
+        mines: [
+          { at: [-31, 0, -37.6], armed: true },
+          { at: [-29, 0, -38.2], armed: false },
+        ],
+      },
+    },
+    {
+      id: "fx-brass",
+      of: "the rifle at the hip on the square, firing: brass in the air off the ejection port, the flash on the muzzle",
+      proves:
+        "the BRASS (`PlayerView`'s casing pool, X4.4b): cel cases thrown into the world off the ejection port as the render cache answers it (the row renders one frame with its pose up first), tumbling at several points of their arc",
+      pos: square,
+      target: [-16, 0.5, -40],
+      view: { weapon: "rifle", sight: "iron", aimed: false },
+      fx: { seconds: 0.38, events: [0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35].map((at) => ({ at, brass: true as const })) },
+    },
+    blast(
+      "fireball",
+      "hard",
+      0.08,
+      "a frag's blast on the quay's stone deck 0.08 s after it went off: the flash and the fireball",
+      "the BLAST at its first age on HARD (`BlastFx`/`BlastShader`, X4.4c): the flash and the fireball's lobes at their hottest, the sparks leaving, the chunks born (`BlastDebrisSystem`) and the scorch laid at full",
+    ),
+    blast(
+      "billows",
+      "hard",
+      0.6,
+      "the same blast at 0.6 s: the billows cooling, the streamers out and the surge rolled over the deck",
+      "the BLAST's billows on HARD (X4.4c): the lit billows hot and cooling, the burning fragments' trails, the surge flat to the deck, and the rubble — fewer, bigger, paler pieces — in the air",
+    ),
+    blast(
+      "smoke",
+      "hard",
+      1.8,
+      "the same blast at 1.8 s: the column of smoke dissolving, the rubble down",
+      "the BLAST's late smoke on HARD (X4.4c): the column's dissolve, and the rubble at rest on the deck beside its scorch",
+    ),
+    blast(
+      "fireball",
+      "ground",
+      0.08,
+      "a frag's blast on the floor at the road's edge by the promenade (`ground`) 0.08 s after it went off",
+      "the BLAST at its first age on GROUND (X4.4c): the flash and the fireball, and the ground's own rubble born. Its scorch is laid (`ScorchMarks.mark`, visible and at full) but does not SHOW over the floor here — the road's edge and the floor beside it — where the same mark on the quay's deck, a block, does (`fx-scorch`). Not investigated: what the game draws today, recorded rather than moved",
+    ),
+    blast(
+      "billows",
+      "ground",
+      0.6,
+      "the same blast at 0.6 s, its dust the map's floor colour",
+      "the BLAST's billows on GROUND (X4.4c): the surge's dust in the floor's colour, and the ground's rubble — more, smaller, earth-coloured pieces — in the air",
+    ),
+    blast(
+      "smoke",
+      "ground",
+      1.8,
+      "the same blast at 1.8 s: the column dissolving, the rubble down",
+      "the BLAST's late smoke on GROUND (X4.4c): the column's dissolve, and the earth rubble at rest",
+    ),
+    {
+      id: "fx-scorch",
+      of: "two molotovs' scorch marks on the quay's deck, the fires long out: one 9 s old at full (right), one 11.5 s old and fading (left)",
+      proves:
+        "the SCORCH (`ScorchMarks`, a `StandardMaterial` decal, X4.4c): black, alpha-blended, no depth write, on its polygon offset, at full opacity and part-way down its fade (`visibility`)",
+      pos: quay,
+      target: [-29.5, 0, -37.8],
+      fov: 32,
+      fx: { seconds: 11.5, events: [{ at: 0, blaze: { at: [-31.5, 0, -37.8] } }, { at: 2.5, blaze: { at: [-26.5, 0, -37.8] } }] },
+    },
+    {
+      id: "fx-molotov",
+      of: "a molotov burning on the promenade 1.5 s after it went up, its ignition's smoke rising",
+      proves:
+        "the molotov's FLAMES (`GrenadeFx`'s clones on `getFlame()`, X4.4d) at full height, each stood on its own floor, with the ignition's billows (`BlastFx`), its scorch and its light",
+      pos: quay,
+      target: [-30, 0.8, -31],
+      fov: 35,
+      fx: { seconds: 1.5, events: [{ at: 0, blaze: { at: [-30, 0.02, -31] } }] },
+    },
+    {
+      id: "fx-shards",
+      of: "a shopfront's pane on the square bursting outward, its shards falling 0.3 s after",
+      proves:
+        "the GLASS SHARDS (`DebrisSystem`, X4.4c): cel slivers cut from the pane and posed off Havok's step (`poseView`), falling — the sheet itself left standing, since a broken pane never mends in a round",
+      pos: square,
+      target: [-23.8, 2, -7.5],
+      fx: { seconds: 0.3, events: [{ at: 0, shards: { pane: 0, at: [-23.8, 2, -6], dir: [1, -0.1, 0] } }] },
+    },
+    {
+      id: "fx-glass",
+      of: "the same shopfront: rounds through its window into the shop's side wall, and two on the pier beside it, the impacts mid-fade",
+      proves:
+        "a FADING effect seen THROUGH see-through glazing (X4.4b's sort question): sparks and discs under 1 behind the pane and in front of it, blended against the glazing's own blend",
+      pos: square,
+      target: [-23.8, 2, -6.65],
+      fx: {
+        seconds: 0.5,
+        events: rounds(0.5, [-17, 2, -11], [
+          [[-27, 2, -4.2], 0.09],
+          [[-26.5, 1.4, -4.2], 0.14],
+          [[-23.6, 1.75, -8.79], 0.04],
+          [[-23.91, 1.47, -9.3], 0.1],
+        ]),
+      },
+    },
+  ];
+}
+
+/**
+ * A world fire in the open, and fading effects in front of and behind it:
+ * Cinderhaven's fire drum on the bay road, at night, through a 9° field from
+ * `crossing`'s eye 40 m off (so, like `effectRows`, no new benchmark stop).
+ * Coldharbour's only fires are a tavern's hearths and a chapel's candles,
+ * indoors.
+ */
+function fireRows(): Vantage[] {
+  const pos: Pos = [-150, 6, 262];
+  const target: Point = [-121.1, 5.4, 239.5];
+  return [
+    {
+      id: "fx-fire",
+      of: "the fire drum on the bay road at night, by the careened boat, through a 9° field",
+      proves:
+        "a WORLD FIRE (`world/flame.ts` merged into its block on `FlameMaterial`, X4.4d): the tongues, the core and the embers, filed by `metadata.block`, at the bank's pinned clock",
+      pos,
+      target,
+      fov: 9,
+    },
+    {
+      id: "fx-fire-fade",
+      of: "the same drum with rounds landing on the boat's hull behind its flames and on the cobbles in front of it, mid-fade",
+      proves:
+        "FADING effects against a world fire (X4.4b's sort question): a spark and a disc under 1 behind the flames and dust discs in front of them, sorted against the fire's draw",
+      pos,
+      target,
+      fov: 9,
+      fx: {
+        seconds: 0.5,
+        events: [
+          { at: 0.45, round: { from: [-128, 9.5, 246], to: [-115.21, 3.7, 234.92] } },
+          { at: 0.4, round: { from: [-128, 9.5, 246], to: [-115.22, 4.1, 234.91] } },
+          { at: 0.46, round: { from: [-130, 6.8, 248], to: [-123, 5.3, 241.3] } },
+          { at: 0.38, round: { from: [-130, 6.8, 248], to: [-124.2, 5.6, 242.3] } },
+        ],
+      },
+    },
   ];
 }

@@ -1020,7 +1020,7 @@ card behind it are off Babylon's scene, and no sub-step changed the picture.
 
 The full record is in [the archive](plans/done/babylon_exit_landed.md).
 
-### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day)
+### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (HASH)
 
 Every pooled effect Babylon still draws comes off its scene, and the
 warm-up's `warm(on)` poses become a declared list of pipelines. Nothing here
@@ -1078,24 +1078,41 @@ after a pane it used to be behind. X4.3c met this exact case (a blended
 fading spark: 0/8 frames matched before the order was restored, 8/8 after).
 The answer decides whether a blended pool of ours draws inside Babylon's
 sort, at a point before it, or takes a recorded picture change.
+**Answered by X4.4a** (measured; its note in the archive has the frames):
+the blast's billows, both kinds of flame, the tracers, the marks and the
+rubble are in Babylon's OPAQUE list, front to back, before `afterOpaque` —
+none is blended. The fading sparks and discs (`visibility` under 1) and the
+scorch are in its TRANSPARENT list, after `afterOpaque` and before
+`afterGroup`, back to front by bounding-sphere centre and INTERLEAVED with
+the see-through glazing (a pane block sorted by its centre). So neither
+point of ours reproduces it: a blended pool drawn at `afterOpaque` lands
+before every pane, at `afterGroup` after every pane, and either is wrong for
+some fade — X4.4b draws inside the sort or records the change.
 
-- **X4.4a — the bank sees every pool (no change to the game).** Rows are
-  added, seeded through the harness's `seeded()` (X4.3a), for what X4.4b-e
-  move and the one `blast` row cannot see: a tracer in flight; a spark and a
-  dust disc mid-fade at an impact on hard ground and on soil; a wall of
-  marks, near and at the size gate's edge; a grenade in flight with its pip
-  lit, and one at rest; a rocket in flight with its motor; a laid mine with
-  its lamp; brass in the air; the blast at several ages (the fireball, the
-  billows, the late smoke) on `ground` and on `hard`; scorch at full and
-  mid-fade; rubble chunks in the air and at rest; shards falling from a
-  broken pane; a burning molotov and a world fire; and at least one fading
-  effect seen through glazing (the sort question above). **Appended at the
-  END of a map's sequence**, because a row's frame depends on the rows shot
-  before it, and banked with `--rows`. Also recorded: `pipelines.mjs`'
-  creations during a scripted round that fires every weapon and uses both
-  throwables and both AT items — the count X4.4e must take to zero.
-  **Oracle:** `bank.mjs --check` twice back to back, every new row
-  byte-identical to itself; every old row unmoved.
+- **X4.4a — the bank sees every pool LANDED** (HASH; 2026-11-01; no
+  change to the game). Twenty-one rows, each effect raised through the door
+  the game raises it by on a stated clock (`Vantage.fx`): nineteen at the end
+  of Coldharbour's list (see-through glazing, `hard` and `ground` side by
+  side, armour) and two at the end of Cinderhaven's (a world fire in the
+  open), every one at a position its map's rows already stand at, so the
+  benchmark gains no stop: `fx-tracer`, `fx-impact-hard`/`-ground`,
+  `fx-marks-near`/`-far` (14 of 30 under the size gate), `fx-grenade`,
+  `fx-rocket`, `fx-mine` (laid as the wire lays one), `fx-brass`,
+  `fx-blast-{hard,ground}-{fireball,billows,smoke}` (0.08, 0.6, 1.8 s, the
+  rubble and scorch with them), `fx-scorch`, `fx-molotov`, `fx-shards`,
+  `fx-glass`, `fx-fire`, `fx-fire-fade`. The pictures' randoms seeded for the
+  clock and the sound's kept off that stream; the rubble and shards on their
+  own seeded streams under Havok's fixed step. **Measured:** `--check --keep`
+  twice back to back, the 21 new rows 0 pixels from the bank both times and
+  104 of 105 frames byte-equal between the runs (the 105th the known pistol
+  pixel); the 84 old rows byte-equal to a BEFORE at bb05074; typecheck,
+  build, corecheck pass. **The round's pipeline creations**
+  (`pipelines.mjs coldharbour --round`, new): zero of Babylon's and zero of
+  ours in play in six of eight runs, 5 and 2 of Babylon's in the other two
+  (one window, unattributed) — what X4.4e takes to zero. **The sort**:
+  answered above. Every row looked at; a scorch on the floor draws nothing
+  (recorded, X4.4c's). The full record is in
+  [the archive](plans/done/babylon_exit_landed.md).
 - **X4.4b — the plain mesh pools are ours (no picture change).** The tracer,
   spark, disc and mark pools, the grenade, rocket and mine bodies (both the
   simulation's views and the wire's), and the brass, drawn by our renderer
