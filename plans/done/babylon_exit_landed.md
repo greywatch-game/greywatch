@@ -6826,7 +6826,7 @@ X4.3d's brief, word for word:
     run-to-run noise (1-3/255); `gate.mjs` and `shaders.mjs` clean on
     seven; typecheck, build, corecheck and `parity` pass.
 
-### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (63a338a, review fixes after it), X4.4b **LANDED** (9470686), X4.4c **LANDED** (HASH)
+### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (63a338a, review fixes after it), X4.4b **LANDED** (9470686), X4.4c **LANDED** (d82f311)
 
 X4.4a's brief, word for word:
 
@@ -7353,7 +7353,7 @@ X4.4c's brief, word for word:
   bank's blast rows at every age byte-identical; `kit:hash` unmoved; a round
   with blasts on both surfaces and panes broken.
 
-**X4.4c landed** (HASH; 2026-11-01; no picture change).
+**X4.4c landed** (d82f311; 2026-11-01; no picture change).
 - **What moved.** Every blast billow — each batch `BlastFx` poses, one per
   blast slot and one the sparks and the burning fragments' trails share — is
   drawn by our renderer (`render/BlastDraw.ts`), and every glass shard

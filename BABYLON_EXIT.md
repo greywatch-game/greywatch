@@ -1020,7 +1020,7 @@ card behind it are off Babylon's scene, and no sub-step changed the picture.
 
 The full record is in [the archive](plans/done/babylon_exit_landed.md).
 
-### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (63a338a, review fixes after it), X4.4b **LANDED** (9470686), X4.4c **LANDED** (HASH)
+### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (63a338a, review fixes after it), X4.4b **LANDED** (9470686), X4.4c **LANDED** (d82f311)
 
 Every pooled effect Babylon still draws comes off its scene but the three
 that blend among the panes (decided 2026-11-01: they wait for X4.6), and the
@@ -1229,7 +1229,7 @@ Everything else in X4.4 moves as briefed; `fx-glass-sort` is X4.6's BEFORE.
   brass in every life (657-2,607 piece-frames; 0 on the parent's code) and
   the player's own laid mines (275-278; 0 on the parent's); typecheck,
   build, corecheck pass.
-- **X4.4c — the blast and the posed pieces are ours LANDED** (HASH;
+- **X4.4c — the blast and the posed pieces are ours LANDED** (d82f311;
   2026-11-01; no picture change). Every blast billow (`BlastFx`'s batches: a
   slot each and the sparks' and trails') is our renderer's
   (`render/BlastDraw.ts`, `render/blastProgram.ts`, the WGSL
