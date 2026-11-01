@@ -6,7 +6,7 @@ The contract for [`src/core/FrameProfile.ts`](../src/core/FrameProfile.ts)
 says), [`src/core/profilePhases.ts`](../src/core/profilePhases.ts) (the phase
 list both read), [`src/ui/ProfileChip.ts`](../src/ui/ProfileChip.ts) and
 [`src/config/profiling.ts`](../src/config/profiling.ts), and for the ~22 pairs
-of brackets in `Game.ts` that feed them, plus the four inside `render` that
+of brackets in `Game.ts` that feed them, plus the three inside `render` that
 `FrameProfile` hangs off the scene itself and the simulation core's timing of
 its own step (`SimCore.timeSteps`, carried back over the page's own local
 match's owner channel and filed as `sim`) — and for the BENCHMARK that rides
@@ -391,7 +391,7 @@ vantage's hold moved 23% between runs.
 
 `PHASES` in `profilePhases.ts` is the list, and **an index into it is a slot id**,
 which is what keeps the recording loop free of strings. The brackets are in
-`Game.ts` and nowhere else **except the four inside `render`, `present` after
+`Game.ts` and nowhere else **except the three inside `render`, `present` after
 it, and the simulation core's own timing of its step, which the local match
 carries back and `Game` files**: `tick`,
 `updateGameplay`, `updateNetWorld` and `updateWorld` are where the frame's
@@ -592,7 +592,7 @@ Report **version 5**. `series.loafMs` is the per-row series and reads best laid
 against `frameMs`: where the two rise together the main thread was busy, and
 where `frameMs` rises alone it was not.
 
-**The last four are not brackets in `Game.ts` and cannot be**, because the
+**The last three are not brackets in `Game.ts` and cannot be**, because the
 boundaries they want are inside `scene.render()`. `FrameProfile.hookRender`
 hangs them off the scene's own observables at `arm` and takes them off again at
 `disarm`, finding the shadow map through `scene.lights` and taking the glow

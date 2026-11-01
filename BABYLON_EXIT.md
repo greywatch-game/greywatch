@@ -982,7 +982,20 @@ card behind it are off Babylon's scene, and no sub-step changed the picture.
   24) are gone, and the glow's stage rule is stated by the weapon's draw.
   The bank 83 of 84 byte-identical (the 84th the main tree's known pixel),
   the mask 37 of 37, the replay's frames, draw order and 2,589 reader
-  answers identical, a first ADS through either glass creating nothing.
+  answers identical, a first ADS through either glass creating nothing. **The post-commit review** (an independent reader over 4070427 and
+  da0a996) found no bug, and confirmed the glass's back-face culling (the
+  brief's "both faces" was wrong: the arrays are `DOUBLESIDE`). Fixed after
+  it, in one commit: the stale "four spans" (three since `drawOverlay`
+  retired) and group-1 words in `CLAUDE.md`, `docs/profiling.md`,
+  `FrameProfile.ts`, `config/graphics.ts`, `PlayerView.ts` and the viewer; a
+  DEV warning in `WorldCulling.offer` for a Babylon mesh outside rendering
+  group 0 (one would bring back a per-group depth clear and split the one
+  depth image, and the size gate no longer exempts it); the card's size
+  stated once (the texture made at the first paint off the canvas's own
+  size, its copy's descriptors kept); why the glass culls, written where it
+  is drawn; `ViewMesh.on` and `seen` (written, never read) dropped and
+  `ViewTree.syncSwitches` made private. The bank, the readers and every
+  gate unmoved (the archive has the numbers).
 
 **Owed onward:**
 - **The render cache's frame id** (X5.4, decided): `RenderCache` is keyed
@@ -997,6 +1010,9 @@ card behind it are off Babylon's scene, and no sub-step changed the picture.
   first use, is a lever to measure first (boot time and resident memory).
 - **The kit's memory** the X4.3c review left: a colour, a uv and a slot
   uploaded for every vertex, and each spent magazine's arrays uploaded twice.
+- **The tree's compose costs are unmeasured** (X4.3b): a frame composes the
+  carried rig's ~20 joints and its ~15 surfaces through the render cache,
+  against Babylon's own walk of the same nodes before.
 - **The brass** and the thrown and laid pools are X4.4's.
 
 The full record is in [the archive](plans/done/babylon_exit_landed.md).

@@ -42,13 +42,19 @@
  * GLASS is blended as Babylon's `ALPHA_COMBINE` blends — colour (SRC_ALPHA,
  * ONE_MINUS_SRC_ALPHA), alpha (ONE, ONE), so the coverage channel takes its
  * alpha and the ink behind a lens is attenuated by it — writes no depth,
- * tests LEQUAL and culls back faces (its arrays carry both, `DOUBLESIDE`); the
+ * tests LEQUAL and culls BACK FACES, which is required rather than a
+ * default kept: its arrays are `DOUBLESIDE` — every triangle and a coincident
+ * copy wound the other way (`geometry/primitives.ts`) — so drawn with no
+ * culling a lens would blend BOTH copies, the holo's 0.12 landing as ~0.226,
+ * and culling the back one is what Babylon's default `backFaceCulling` did; the
  * CARD is blended as `ALPHA_REPLACE_COLOR` blends — colour (ONE, ZERO), alpha
  * (ONE, ONE_MINUS_SRC_ALPHA) at a pixel alpha of 0, the coverage channel
  * untouched — tests `always`, WRITES depth and culls nothing; the card's
  * canvas is uploaded as `DynamicTexture.update` uploaded it
  * (`copyExternalImageToTexture`, flipped in y, not premultiplied, into an
- * `rgba8unorm` 256 square with one mip) once per paint and no more, and
+ * `rgba8unorm` texture of the canvas's own size with one mip, made at the
+ * first paint — the size is the canvas's, stated once, in `ViewModel`) once
+ * per paint and no more, and
  * sampled as Babylon's sampler for it did (linear, no mips — a LOD clamped to
  * 0 — clamped in u and v); a card never uploaded is not drawn; the arrays are
  * uploaded as Babylon uploaded a mesh's (float32; a `color` or `uv` a segment
@@ -63,7 +69,8 @@
  * change, not every refused frame — is told to `onFailed`'s listener, never
  * inside the render's commands (the caller defers it, `Game.worldFailed`);
  * nothing here allocates on a frame but the first sight of a recipe (a
- * finish's new material).
+ * finish's new material) and the card's texture at its first paint (a
+ * paint's copy reuses its descriptors).
  * Never: imports Babylon; reads a node, a joint, a mesh or a material.
  * Contract: `docs/rendering.md`, "The weapon, ours".
  */
@@ -120,9 +127,6 @@ export type ViewPull = (glow: Float32Array, n: number) => void;
 
 /** Floats in one draw's matrix. */
 const MATRIX_FLOATS = 16;
-
-/** The card's canvas, square — `ViewModel`'s `KIT_CARD_SIZE`. */
-const CARD_SIZE = 256;
 
 /** `ALPHA_COMBINE`'s factors (Babylon's `alphaCullingState`, mode 2): what an optic's glass blends by. */
 const GLASS_BLEND: GPUBlendState = {
@@ -183,8 +187,12 @@ export class ViewDraw {
   private readonly glowGroup: HostBindGroup;
   private readonly glassGroup: HostBindGroup;
   /** The card's texture, as its group binds it, and the group. */
-  private readonly cardTexture: GPUTexture;
+  private cardTexture: GPUTexture | null = null;
   private readonly cardHandle = new OwnTexture();
+  /** A paint's copy: its three descriptors, made with the texture and kept, so a later upload allocates nothing. */
+  private cardSource: GPUCopyExternalImageSourceInfo | null = null;
+  private cardDestination: GPUCopyExternalImageDestInfo | null = null;
+  private readonly cardExtent = [0, 0, 1];
   private readonly cardGroup: HostBindGroup;
   /** The canvas paint last uploaded (`ViewModel.kitCard.painted`): 0 is never. */
   private cardUploaded = 0;
@@ -337,19 +345,10 @@ export class ViewDraw {
       viewGlass: storage("glass", glassTable),
     });
     this.glassGroup.refresh(host, {});
-    // The card's texture: what Babylon's `DynamicTexture` made of its 256
-    // square — `rgba8unorm`, one mip (no mips were asked for) — and the
-    // sampler Babylon's WebGPU cache made of a trilinear sampling mode with
-    // no mips: linear both ways, the LOD clamped to 0, clamped in u and v
-    // (w at its default, which a 2D lookup never reads), no anisotropy.
-    this.cardTexture = device.createTexture({
-      label: "view: kit card",
-      size: [CARD_SIZE, CARD_SIZE, 1],
-      format: "rgba8unorm",
-      mipLevelCount: 1,
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
-    });
-    this.cardHandle.view = this.cardTexture.createView();
+    // The card's sampler: what Babylon's WebGPU cache made of a trilinear
+    // sampling mode with no mips — linear both ways, the LOD clamped to 0,
+    // clamped in u and v (w at its default, which a 2D lookup never reads),
+    // no anisotropy. Its texture is made at the first paint (`cardPicture`).
     this.cardHandle.sampler = device.createSampler({
       label: "view: kit card",
       magFilter: "linear",
@@ -427,11 +426,29 @@ export class ViewDraw {
    */
   cardPicture(canvas: HTMLCanvasElement | null, painted: number): void {
     if (!canvas || painted === this.cardUploaded) return;
-    this.device.queue.copyExternalImageToTexture(
-      { source: canvas, flipY: true },
-      { texture: this.cardTexture, premultipliedAlpha: false },
-      [CARD_SIZE, CARD_SIZE, 1],
-    );
+    const w = canvas.width;
+    const h = canvas.height;
+    let texture = this.cardTexture;
+    if (!texture || texture.width !== w || texture.height !== h) {
+      // What Babylon's `DynamicTexture` made of its canvas: `rgba8unorm`, the
+      // canvas's size, one mip (no mips were asked for).
+      texture?.destroy();
+      texture = this.device.createTexture({
+        label: "view: kit card",
+        size: [w, h, 1],
+        format: "rgba8unorm",
+        mipLevelCount: 1,
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+      });
+      this.cardTexture = texture;
+      this.cardHandle.view = texture.createView();
+      this.cardGroup.refresh(this.renderer.host, { viewCard: this.cardHandle });
+      this.cardDestination = { texture, premultipliedAlpha: false };
+      this.cardExtent[0] = w;
+      this.cardExtent[1] = h;
+    }
+    if (this.cardSource?.source !== canvas) this.cardSource = { source: canvas, flipY: true };
+    this.device.queue.copyExternalImageToTexture(this.cardSource, this.cardDestination!, this.cardExtent);
     this.cardUploaded = painted;
   }
 
@@ -475,7 +492,7 @@ export class ViewDraw {
     for (const buffer of this.owned) buffer.destroy();
     this.emissiveBlock.destroy();
     for (const slot of this.materials.values()) slot.block.destroy();
-    this.cardTexture.destroy();
+    this.cardTexture?.destroy();
   }
 
   /** `recipe`'s block and group, made and filled the first time it is drawn, and its pipeline asked if no recipe of its shape was. */

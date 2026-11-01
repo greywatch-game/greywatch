@@ -6573,7 +6573,11 @@ X4.3d's brief, word for word:
   pair a rail weapon) as a BLENDED draw of ours after the gun's opaque
   parts: colour `SRC_ALPHA`/`ONE_MINUS_SRC_ALPHA` and alpha (ONE, ONE) —
   `ALPHA_COMBINE`, so ink behind a lens is attenuated by its alpha as now —
-  no depth written, both faces, back to front, `StandardMaterial`'s unlit
+  no depth written, both faces [archive note, X4.3d's review: wrong — the
+  glasses' arrays are `DOUBLESIDE`, a coincident reversed copy of every
+  triangle, so drawing both faces would blend both copies (0.12 landing as
+  ~0.226); the step culls back faces, as Babylon's default did, and must],
+  back to front, `StandardMaterial`'s unlit
   emissive at its alpha reproduced as `EmissiveWorld.ts` reproduced
   `getEmissive`'s, never in the mask (`noGlow`). The card as a draw of ours
   at the head of the same point, before the gun: its 256² canvas uploaded as
@@ -6755,4 +6759,46 @@ X4.3d's brief, word for word:
   construction cost and its ~14 MB (now with the card's 256 KB texture) on a
   phone, and building it lazily, stay X4.3c's open levers. **The empty-group
   seam is X4.5's** where it takes the sky: the kit screen over the menu holds
-  nothing else of Babylon's in group 0.
+  nothing else of Babylon's in group 0. The tree's compose costs stay
+  unmeasured (X4.3b's note).
+- **What the post-commit review found** (an independent reader over 4070427
+  and da0a996; fixed after it, in one commit). **No bug.** It confirmed the
+  glass's back-face culling: the brief's "both faces" was wrong (noted
+  inline in the brief above) — the arrays are `DOUBLESIDE`, and with no
+  culling a lens would blend both copies. Fixed:
+  - **Stale counts and words** (rule 7): `render`'s spans are THREE since
+    `drawOverlay` retired — `CLAUDE.md`, `docs/profiling.md` (three places)
+    and `FrameProfile.ts` (two) said four; `config/graphics.ts`' header
+    gotcha named "rendering group 1"; `PlayerView.ts` said the flash "draws
+    in the viewmodel's group"; the viewer's comment on `view` said only the
+    opaque parts were out of Babylon's counter (none of the weapon is since
+    v24).
+  - **A guard**: `WorldCulling.offer` warns (DEV, once per mesh) of a Babylon
+    mesh outside rendering group 0 — one there would bring Babylon's
+    per-group depth clear back between it and the world, splitting the one
+    depth image the ink, the blur and the glow read, and the size gate no
+    longer exempts it.
+  - **The card's size stated once**: `ViewDraw` held a `CARD_SIZE` beside
+    `ViewModel`'s `KIT_CARD_SIZE`; its texture is now made at the first paint
+    off the canvas's own width and height, and a paint's copy reuses its
+    three descriptors, so `ViewDraw`'s "nothing allocates on a frame" line is
+    true again (the texture at the first paint aside).
+  - **Why the glass culls**, written in `ViewDraw`'s header and
+    `docs/rendering.md`'s glass bullet.
+  - **Dead state**: `ViewMesh.on` and `seen` were written and never read once
+    no Babylon mesh's switch was written from them; both dropped, and
+    `ViewTree.syncSwitches` (its one caller `draw`) made private — the walk,
+    and so `evaluated`'s order, unchanged.
+  - **The live plan's "Owed onward"** gained X4.3b's unmeasured compose
+    costs.
+  - **Re-checked after the fixes**: the bank `--check --keep` against the BEFORE at 595e35d
+    **83 of 84 byte-identical**, all 84 byte-equal to the landed step's
+    (`view-pistol-reload`'s one pixel the main tree's own again); X4.3b's
+    replay **1,564 and 3,982 frames identical, the whole draw order equal on
+    every frame, 303 and 2,286 reader answers identical as float64 bits**;
+    `kit:hash --models` **244 of 244**; the kit screen walked again at
+    832x384 and 3840x1080 — the card painted 5 times a walk, drawn on every
+    frame, group 0 never empty, the new guard silent, 41 of 56 shots
+    byte-equal to the landed walk and the rest within the parent's own
+    run-to-run noise (1-3/255); `gate.mjs` and `shaders.mjs` clean on
+    seven; typecheck, build, corecheck and `parity` pass.

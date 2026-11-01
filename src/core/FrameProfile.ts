@@ -931,7 +931,7 @@ export class FrameProfile {
     // clouds a blast raises and the mote field Sarab emits around the eye are
     // the only particles in the game, and nothing else prices either.
     this.instr.captureParticlesRenderTime = true;
-    // …and the four spans inside `render`, which are observers rather than
+    // …and the three spans inside `render`, which are observers rather than
     // brackets. Registered before `on`, which costs nothing: every one of them
     // goes through `begin`/`endAdd` and returns on the same first line as the
     // rest of this class.
@@ -1191,7 +1191,7 @@ export class FrameProfile {
    * Hangs `present` off the ENGINE's end-of-frame notification.
    *
    * **The second place a bracket lives outside `Game.ts`, and for the opposite
-   * reason to `hookRender`'s.** Those four are boundaries INSIDE
+   * reason to `hookRender`'s.** Those three are boundaries INSIDE
    * `scene.render()`; this one is a boundary `Game` never sees at all, because
    * `endFrame` is called by Babylon's render loop after `tick` has returned.
    * There is no line in `Game.ts` that could hold it.

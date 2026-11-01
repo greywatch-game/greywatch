@@ -223,7 +223,8 @@ export class PlayerView implements PlayerPicture {
    * so `model.setVisible` does not reach it, and the strobe that would switch
    * it off is `stepped` — which stops being called the moment the body is put
    * away. A death taken inside the 50 ms of a shot's flash would otherwise
-   * freeze the star mid-strobe and, because it draws in the viewmodel's group,
+   * freeze the star mid-strobe and, because it draws with the weapon (in its
+   * order, against the eye, our renderer's since `BABYLON_EXIT.md` X4.3c),
    * hang it over the middle of the screen for the whole death cam. It never
    * *starts* while the weapon is stowed, which is what made this look
    * self-managing; being stowed part-way through one is the case that was

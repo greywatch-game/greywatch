@@ -1004,6 +1004,12 @@ export class WorldCulling {
     for (let i = 0; i < n; i++) {
       const mesh = src[i];
       if (!mesh.isVisible || !mesh.isEnabled()) continue;
+      // **Every Babylon mesh is in rendering group 0** (`BABYLON_EXIT.md`
+      // X4.3d): one in a group above it would bring Babylon's per-group
+      // depth clear back between it and the world — splitting the frame's one
+      // depth image, which the ink, the blur and the glow read — and would no
+      // longer be exempt from the size gate below. Said once per mesh.
+      if (import.meta.env.DEV && mesh.renderingGroupId !== 0) warnGroup(mesh);
       // **The gate is about WORLD geometry.** What is drawn against the EYE
       // rather than standing in the map is no candidate: the viewmodel, which
       // had a rendering group of its own that this test exempted until it
@@ -1038,6 +1044,18 @@ export class WorldCulling {
     this.candidates.length = k;
     this.stats.offered = k;
   }
+}
+
+/** The meshes `warnGroup` has spoken of (DEV). */
+const groupWarned = new WeakSet<AbstractMesh>();
+
+/** DEV: a candidate outside rendering group 0, said once per mesh (`offer`). */
+function warnGroup(mesh: AbstractMesh): void {
+  if (groupWarned.has(mesh)) return;
+  groupWarned.add(mesh);
+  console.warn(
+    `culling: "${mesh.name}" is in rendering group ${mesh.renderingGroupId} — every Babylon mesh belongs in group 0 (one depth image for the frame, BABYLON_EXIT.md X4.3d)`,
+  );
 }
 
 /** `offer`'s scratch for a body's measure. */

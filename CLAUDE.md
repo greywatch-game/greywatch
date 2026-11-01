@@ -1264,7 +1264,7 @@ INSIDE the render, one AFTER it and one inside the core.** `tick`,
 is already declared, so **the phase list IS that order** and no system had to be
 taught the profiler exists. A phase is a name in `PHASES`, a parent in
 `PARENT_OF` and a `begin`/`end` pair, and **the spans NEST and do not
-partition** — read a report as an attribution. `render`'s four spans hang off
+partition** — read a report as an attribution. `render`'s three spans hang off
 the SCENE's own observables (`hookRender`); **`present` is NOT inside `frame`**,
 hung off the engine's end of frame (`hookEngine`); and **`sim` is the core
 TIMING ITSELF** with a clock its host injects (`SimCoreOptions.timing`), **never

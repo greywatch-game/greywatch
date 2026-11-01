@@ -4545,7 +4545,11 @@ the frame that are load-bearing.
   (SRC_ALPHA, ONE_MINUS_SRC_ALPHA), alpha (ONE, ONE), so ink behind a lens is
   attenuated by its alpha as it was — writes no depth, tests LEQUAL, and culls
   back faces over arrays that carry both (`DOUBLESIDE`), as the material's
-  default `backFaceCulling` did. Back to front, by the distance from the eye
+  default `backFaceCulling` did. **The culling is required, not a default
+  kept**: a `DOUBLESIDE` buffer is every triangle plus a coincident copy wound
+  the other way (`geometry/primitives.ts`), so with `cullMode: "none"` a lens
+  would blend BOTH copies, the holo's 0.12 landing as ~0.226 (1 - 0.88²).
+  Back to front, by the distance from the eye
   to each one's bounding-sphere centre, a tie to the one made first
   (`defaultTransparentSortCompare`, every glass at one `alphaIndex`) — an
   order only ever STATED, since one carried weapon wears one optic. Never in

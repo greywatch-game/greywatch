@@ -3,7 +3,7 @@
  * Owns: glow, outlines, shadows, fog, block visibility and the post chain,
  * plus tracer/spark pool sizes. Contract: `docs/rendering.md`.
  * Gotcha: several values here look like bugs if you 'fix' them — image
- * processing off, rendering group 1, the shadow window. Read the contract.
+ * processing off, the shadow window. Read the contract.
  */
 
 export const graphics = {

@@ -11,9 +11,9 @@
  * rewrite worlds the cache does not know were rewritten), whose root stands
  * for the CAMERA; every viewmodel surface and the joint it is drawn at
  * (`ViewMesh`); the order each joint's children were hung in (what
- * `getChildMeshes` walked); and the per-frame evaluation (`syncSwitches`,
- * `draw`) — the surfaces it found handed to our renderer (`evaluated`, read
- * by `Game.drawView`).
+ * `getChildMeshes` walked); and the per-frame evaluation (`draw`, its walk
+ * of the switches private) — the surfaces it found handed to our renderer
+ * (`evaluated`, read by `Game.drawView`).
  * Invariants:
  * - **The joint list is the node list, in the order the nodes were made**:
  *   every `TransformNode` the viewmodel used to make is a joint made at the
@@ -151,10 +151,6 @@ export interface ViewMesh {
   readonly joint: Joint;
   /** Whether its transform moves after the build (its joint is written) or is fixed at `seal`. */
   readonly moves: boolean;
-  /** Its own enabled flag, as last written. */
-  on: boolean;
-  /** The `syncSwitches` pass that last found it on. */
-  seen: number;
   /** Its place in the kit our renderer draws (`Game` numbers them); -1 until then. */
   slot: number;
 }
@@ -194,9 +190,6 @@ export class ViewTree {
   /** The surfaces on after the last `syncSwitches`, and the list it swaps with. */
   private onList: ViewMesh[] = [];
   private spare: ViewMesh[] = [];
-  /** False until a pass has looked at every surface: the first one walks all of them. */
-  private primed = false;
-  private pass = 0;
 
   constructor(
     scene: Scene,
@@ -244,19 +237,15 @@ export class ViewTree {
     this.meshOf.set(j, segment);
     // A segment switched off by its builder (the kit card) is switched by its
     // joint from now on.
-    const enabled = segment.enabled;
-    j.enabled = enabled;
+    j.enabled = segment.enabled;
     const v: ViewMesh = {
       segment,
       joint: j,
       moves: moves || children.length > 0,
-      on: enabled,
-      seen: 0,
       slot: -1,
     };
     this.meshes.push(v);
     this.entryOf.set(j, v);
-    this.primed = false;
     segment.parent = null;
     for (const c of children) {
       c.parent = null;
@@ -309,33 +298,25 @@ export class ViewTree {
   }
 
   /**
-   * Each surface's own enabled flag, written to its joint chain's. A walk
-   * from the root that never enters a switched-off subtree: every surface it
-   * reaches is on, and one on after the last pass that it did not reach is
-   * switched off.
+   * The surfaces whose joint chain is switched on, in the walk's order (`draw`'s
+   * one caller): a walk from the root that never enters a switched-off
+   * subtree, into the spare list, which then swaps with the last one — so a
+   * frame allocates nothing.
    */
-  syncSwitches(): void {
-    const prev = this.primed ? this.onList : this.meshes;
+  private syncSwitches(): void {
     const next = this.spare;
     next.length = 0;
-    const pass = ++this.pass;
     const tops = this.kids.get(null);
-    if (tops) for (const j of tops) if (j.enabled) this.walkOn(j, next, pass);
-    for (const v of prev) if (v.seen !== pass) v.on = false;
-    this.spare = this.primed ? prev : [];
+    if (tops) for (const j of tops) if (j.enabled) this.walkOn(j, next);
+    this.spare = this.onList;
     this.onList = next;
-    this.primed = true;
   }
 
-  private walkOn(j: Joint, next: ViewMesh[], pass: number): void {
+  private walkOn(j: Joint, next: ViewMesh[]): void {
     const v = this.entryOf.get(j);
-    if (v) {
-      v.seen = pass;
-      v.on = true;
-      next.push(v);
-    }
+    if (v) next.push(v);
     const kids = this.kids.get(j);
-    if (kids) for (const c of kids) if (c.enabled) this.walkOn(c, next, pass);
+    if (kids) for (const c of kids) if (c.enabled) this.walkOn(c, next);
   }
 
   /**
