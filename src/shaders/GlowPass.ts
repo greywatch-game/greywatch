@@ -93,7 +93,11 @@
  * `noGlow` is read per surface at the take. The BODIES' visors are ours too
  * (`render/BodyDraw.ts`, X4.1d: no rig is a Babylon mesh), drawn first in
  * the pass with the palette, each at `GlowRules.colour`'s answer for its
- * body. Everything else in the mask — the effects and fires, the viewmodel,
+ * body. So are the WEAPON's lit parts (`render/ViewDraw.ts`, X4.3c: no
+ * opaque viewmodel part is a Babylon mesh), drawn first in the pass with
+ * them where Babylon drew them last, in group 1 — a difference only where
+ * two mask draws pass at one pixel. Everything else in the mask — the
+ * effects and fires,
  * the moon, and an EDITOR build's every emissive — is still drawn here.
  *
  * A MATERIAL WHOSE VERTICES MOVE BRINGS ITS OWN MASK (`SelfMasking`). The

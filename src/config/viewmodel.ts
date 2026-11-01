@@ -1047,9 +1047,11 @@ export const viewmodel = {
     backdrop: {
       /**
        * Metres ahead of the lens. Free to be anything past the weapon: the
-       * card never writes depth and is drawn before the viewmodel's rendering
-       * group, so the weapon is in front of it whatever the number says — the
-       * distance only decides how much scaling "the whole frustum" takes.
+       * card tests no depth and is drawn before the weapon (the last of
+       * rendering group 0, our renderer's weapon draw after it —
+       * `BABYLON_EXIT.md` X4.3c), so the weapon is in front of it whatever the
+       * number says — the distance only decides how much scaling "the whole
+       * frustum" takes.
        */
       dist: 8,
       /** Slop past the frustum's corners, so no edge can creep into shot. */

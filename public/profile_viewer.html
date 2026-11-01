@@ -1013,6 +1013,12 @@ function renderReport(r) {
   if (hulls && hulls.instances > 0) {
     bits.push(["hulls", hulls.drawn + " draws, " + hulls.instances + " hulls"]);
   }
+  /* Our renderer's weapon on the last frame (report version 23). Not in the
+     draw-call counter: since BABYLON_EXIT.md X4.3c no opaque part of it is. */
+  const view = r.view;
+  if (view && view.drawn > 0) {
+    bits.push(["weapon", view.drawn + " draws, " + view.masked + " mask draws"]);
+  }
   for (const [k, v] of bits) {
     const d = el("div");
     if (k) d.appendChild(el("b", null, k + " "));

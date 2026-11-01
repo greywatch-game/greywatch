@@ -9,7 +9,9 @@
  * `flattenParts` (a prop's parent links resolved into each part's own
  * transform at EMIT time), `mergeParts` (`MergeMeshes`' geometry) and
  * `bakePartTransform` (`bakeCurrentTransformIntoVertices`); the adapters —
- * `drawnMesh` for a model, `worldMeshes` for the world's surfaces (the
+ * `drawnMesh` for a model Babylon draws (a thrown thing, an optic's glass —
+ * and, in `kit:hash` alone, a viewmodel segment hashed as the mesh it was),
+ * `worldMeshes` for the world's surfaces (the
  * floor, the rim and every merged surface — a mesh for each Babylon draws,
  * none for one our renderer draws whole — each surface's arrays released
  * once it is past), `vertexDataOf` for a bare buffer (through a build's
@@ -333,15 +335,18 @@ export function vertexDataOf(buffer: GeometryBuffer, plain?: PlainArrays): Verte
 }
 
 /**
- * The one place a MODEL's surface becomes a Babylon mesh — a weapon's, an
- * optic's, a thrown thing's: an ordinary mesh with its
+ * The one place a MODEL's surface becomes a Babylon mesh — a thrown thing's,
+ * a laid thing's, an optic's glass: an ordinary mesh with its
  * buffers on the device, ready to draw, hang off a live joint and move. It is
  * what `MeshBuilder` and `Mesh.MergeMeshes` handed the models when they built
  * meshes themselves — `applyToMesh` on a fresh mesh, with the arrays in the
- * types Babylon held. A soldier's surfaces and a hull's never come here: they
- * are SEGMENTS of a kit our renderer draws (`SoldierModel.soldierKits` since
- * `BABYLON_EXIT.md` X4.1d, `vehicleRig.segmentOf` since X4.2b), and no
- * Babylon mesh is made of either.
+ * types Babylon held. A soldier's surfaces, a hull's and the weapon's opaque
+ * ones never come here in the game: they are SEGMENTS our renderer draws
+ * (`SoldierModel.soldierKits` since `BABYLON_EXIT.md` X4.1d,
+ * `vehicleRig.segmentOf` since X4.2b, `viewTree.toSegment` since X4.3c — a
+ * viewmodel segment is a `Part` this would take, which is how `kit:hash
+ * --models` hashes one in the mesh's bytes), and no Babylon mesh is made of
+ * any.
  *
  * Given a `Part`, it carries the part's transform, material and metadata too,
  * and refuses one that still has a parent: a model's live joints are

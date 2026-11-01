@@ -25,13 +25,15 @@
  * weapon's, which is what lets one be swapped for another without rebuilding
  * the gun under it. Emissive parts go through `build.lit`, never `collect`.
  * Everything is built as `Part`s on `src/geometry/` buffers, as the weapon
- * is (`weaponKit.ts`): a housing becomes meshes at `build.merge`, a bead or
- * a reticle at `build.lit` (a reticle's bars merged by `mergeParts` first),
- * and the glass, the one surface drawn with a material of its own, at
- * `drawnMesh` here — each hung from its sight's JOINT (`WeaponBuild.hang`;
- * `BABYLON_EXIT.md` X4.3b), which is the switch a loadout change throws.
+ * is (`weaponKit.ts`): a housing becomes SEGMENTS our renderer draws at
+ * `build.merge`, a bead or a reticle at `build.lit` (a reticle's bars merged by
+ * `mergeParts` and made one by `segmentOf` first; `BABYLON_EXIT.md` X4.3c), and
+ * the glass, the one surface drawn with a material of its own — blended, and
+ * still Babylon's until X4.3d — a mesh at `drawnMesh` here; each hung from its
+ * sight's JOINT (`WeaponBuild.hang`; X4.3b), which is the switch a loadout
+ * change throws.
  */
-import { Mesh, Color3, StandardMaterial, Vector3 } from "@babylonjs/core";
+import { Color3, StandardMaterial, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import {
   createBox,
@@ -43,6 +45,7 @@ import {
 } from "../geometry/primitives";
 import { drawnMesh, mergeParts, Part, type PartNode } from "../world/parts";
 import type { Joint } from "./rigJoints";
+import { segmentOf, type ViewSurface } from "./viewTree";
 import { SIGHT_IDS, type SightId } from "./sights";
 import {
   FACETS,
@@ -610,7 +613,7 @@ export function buildOptics(
   build: WeaponBuild,
   mount: OpticMount,
   prefix: string,
-): { sights: Record<SightId, SightAssembly>; meshes: Mesh[] } {
+): { sights: Record<SightId, SightAssembly>; meshes: ViewSurface[] } {
   const b = build;
   const black = b.paint("black", OPTIC_BLACK);
   const silver = b.paint("silver", OPTIC_SILVER, true);
@@ -993,7 +996,7 @@ export function buildOptics(
       dot.position.set(0, y0, retZ);
       bars.push(dot);
     }
-    b.lit(drawnMesh(`${prefix}_${name}`, mergeParts(bars), b.scene), node, POSTS);
+    b.lit(segmentOf(`${prefix}_${name}`, mergeParts(bars)), node, POSTS);
   };
 
   /**
@@ -1411,7 +1414,7 @@ export function buildOptics(
       );
       bars.push(arm);
     }
-    b.lit(drawnMesh(`${prefix}_prismReticle`, mergeParts(bars), b.scene), node);
+    b.lit(segmentOf(`${prefix}_prismReticle`, mergeParts(bars)), node);
 
     // The eye reference is the ocular rim, exactly as the scope's is: the eye
     // goes behind the glass it looks through, not behind the middle of a body.
@@ -1746,7 +1749,7 @@ export function buildOptics(
     const centre = new Part(`${prefix}_longRetDot`, createSphere({ diameter: LONG_RET_DOT, segments: 6 }));
     centre.position.set(0, longY, retZ);
     bars.push(centre);
-    b.lit(drawnMesh(`${prefix}_longReticle`, mergeParts(bars), b.scene), node);
+    b.lit(segmentOf(`${prefix}_longReticle`, mergeParts(bars)), node);
 
     // The ocular rim, as on the scope: a sight's eye relief is measured to the
     // glass the eye goes behind, and here it is the number the camera's near
@@ -1765,7 +1768,7 @@ export function buildOptics(
   };
 
   const sights = {} as Record<SightId, SightAssembly>;
-  const meshes: Mesh[] = [];
+  const meshes: ViewSurface[] = [];
   for (const id of SIGHT_IDS) {
     const node = b.joint(`${prefix}_sight_${id}`, b.root);
     const centre = BUILDERS[id](node);

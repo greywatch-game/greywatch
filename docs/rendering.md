@@ -3249,7 +3249,10 @@ pass is not restarted between them, and in this order every frame:
   particles come before it, so a wall drawn there paints over every particle
   in front of it.
 - **`"afterGroup"`**: after the group has been queued whole, blended meshes
-  and all.
+  and all — the kit card last of them — and before group 1. **The player's
+  WEAPON is drawn here** (X4.3c, the first draw at this point): where group 1's
+  opaque queue drew it, after everything of group 0 and ahead of the optics'
+  glasses, which group 1 still holds ("The weapon, ours").
 
 Every opaque draw of Babylon's in the group lands BEFORE an opaque draw of
 ours. **Between two draws that both WRITE depth** that changes only which of
@@ -4460,6 +4463,84 @@ builds no fleet and draws no hull (X5.3 owes it one if it ever shows one), and
 the menu has none. A capture says what it drew (`ProfileReport.hulls`, report
 version 22), since Babylon's counter counts no hull.
 
+## The weapon, ours: every opaque part a segment of one kit
+
+**Since `BABYLON_EXIT.md` X4.3c the player's own weapon is our renderer's, and
+Babylon is made no opaque viewmodel mesh** (`render/ViewDraw.ts`, its programs
+`render/viewProgram.ts`). Every rig's colour groups, magazines, spent
+magazines, bolt, slide and warhead, every optic's housing and reticle, both
+arms, the throwing fist with its frag and pip or its bottle and wick, and the
+muzzle flash's petals are SEGMENTS (`ViewSegment`, `entities/viewTree.ts`:
+the `Part` a builder made — `drawnMesh`'s inputs — with the mesh's `isVisible`
+and its own switch), hung from the viewmodel's joints, and uploaded ONCE, end
+to end, at `Game`'s construction: all nine rigs and every optic, built up front
+as the meshes were. The optics' two GLASSES and the kit CARD stay Babylon
+meshes, the blended draws whose slot is load-bearing (X4.3d moves them).
+
+- **One draw a segment, one instance** — decided against a fold (`BABYLON_EXIT.md`'s
+  "Decisions"): the finishes differ per group in spec and mirror as well as
+  colour, and a fold re-orders equal-depth ties for an unmeasured gain. A draw
+  is non-indexed over the segment's corners (`firstVertex` its first index in
+  `indexData`), its instance the draw's place in the frame (`firstInstance`),
+  whose matrix — the segment's joint's world as the tree's evaluation left it,
+  read whole — is what `freezeWorldMatrix` handed the mesh. A cel segment is
+  drawn with its material's recipe (`celRecipe`; matte, glossy and the mirror
+  rung are one variant, `PLAIN`, differing only in values), an unlit one — a
+  reticle, a bead, a post (emissive BLACK), the pip, the wick, a petal — by the
+  emissive palette's program over the weapon's own table
+  (`CelMaterialFactory.viewEmissiveRecipe`: one slot a `getEmissive` colour,
+  the fog band by reference, alpha 1), as the visor is (X4.1d).
+- **In Babylon's group-1 ORDER, because that order settles an equal depth.**
+  Group 1's opaque queue sorted by `PainterSortCompare` — the material's
+  `uniqueId` — over the order the meshes were dispatched, which was the order
+  the cull offered them, which was the order they were MADE; V8's sort is
+  stable. `Game.drawView` reproduces it every frame: the tree's evaluated
+  segments in the order they were hung (the order made, `ViewTree.meshes`),
+  stably insertion-sorted by their material's `uniqueId`. So a FINISH, which
+  swaps a colour group's material for one the factory may have minted later,
+  re-orders the draws exactly as it re-ordered the queue; the materials are
+  the factory's, still made, so their ids keep their relative order.
+- **At group 0's `"afterGroup"`**, the one draw at that point: after the kit
+  card (the last of group 0's blended queue) and before group 1, so the card
+  covers the world and the weapon covers the card, and the glasses still draw
+  over the weapon. Into the world's depth with no clear, so the ink, the blur,
+  the paper and the glow's occlusion name the gun by depth as they did; the
+  cel parts write `opaqueAlpha`, the emissives 1.
+- **The glow's mask**: the lit segments whose colour is above black and which
+  carry no `noGlow` (`GlowPass.buildList`'s tests of a mesh's own), each at the
+  bloom `GlowRules.colour` gave its mesh — its bounding sphere's centre off the
+  segment's own bounds (`segmentBounds`, Babylon's `extractMinAndMax`), faded
+  by the fog at its distance from the eye, pulled INSIDE the render where
+  `globalPosition` is this frame's — drawn FIRST in that pass with the
+  palette and the visors (`Renderer.addGlowMask`), by the main pass's own
+  vertex module so the LEQUAL tie holds, on `glowAdmits(VIEWMODEL_GROUP)` (the
+  stage, which the kit screen keeps). Babylon drew them LAST, in group 1; the
+  order matters only where two mask draws pass at one pixel, which for a
+  depth-writing draw is an exact depth tie with a world emissive (a tracer
+  lying along a petal is the one plausible one, unbanked — X4.3c's note).
+- **Installed for the SESSION, not the round**: the kit screen covers `menu`,
+  where no map stands and `BodyDraw`/`HullDraw` are not installed, so the draw
+  and its prepare are hooked at construction and every frame texture the cel
+  pixel binds is published there (the gun on a kit screen raised off the title
+  is the proof). A failed pipeline, or a refused pass while the weapon draws, is
+  the round's failure while one stands (`Game.worldFailed`, through
+  `ViewDraw.onFailed` at the install) and the console's otherwise.
+- **What it must keep EVALUATING is not what it draws.** `ViewTree.draw`
+  evaluates every surface switched on and visible — a segment or a glass,
+  whoever draws it — through the `RenderCache`, settled at the render's
+  evaluation id from inside the render, exactly as Babylon's
+  `_evaluateActiveMeshes` stamped the nodes; narrowing it to what our renderer
+  draws would move the next frame's `muzzleWorld` and `throwHandWorld`, two
+  command inputs (X4.3b's review, and X4.3c's replay oracle, which proved it
+  did not).
+- **No longer a candidate**: the weapon leaves `WorldCulling`'s list, and so
+  the size gate, the frustum and `isReady()` — a segment draws the frame its
+  material's recipe exists, where a mesh whose new finish material was still
+  compiling went undrawn for that frame.
+- **`kit:hash --models`** hashes a segment IN THE BYTES ITS MESH GAVE: made a
+  throwaway mesh by the same `drawnMesh` on the same arrays and dressed with the
+  flags the mesh carried (the script's header).
+
 ## Block visibility: how much of the map the frame walks
 
 `ENGINE_UPGRADE.md` wall 1, and `src/systems/WorldCulling.ts` is all of it.
@@ -4792,7 +4873,10 @@ because it seemed wise.**
   draw through the main view (`PASS_GLOW`, X3.6d, X3.6e): a cluster carrying
   that bit is never size-gated, and `?cullcheck`'s probe and replay skip it
   the same way.
-- **Anything outside rendering group 0**, plus `infiniteDistance`. This is the
+- **Anything outside rendering group 0**, plus `infiniteDistance` — today the
+  optics' glass and nothing else: the weapon's opaque parts are no candidate
+  at all since `BABYLON_EXIT.md` X4.3c (no Babylon mesh is made of them, "The
+  weapon, ours"), and are drawn at every size. This is the
   one that was found the expensive way. `offer` runs inside `Game.tick`, BEFORE
   `scene.render()` bakes world matrices, and the viewmodel hangs off the camera
   — so the rifle's world bounding sphere is still sitting at the ORIGIN when
@@ -5056,9 +5140,12 @@ all in the counter this finding is named after. Not chased.
   against haze very nearly its own colour. The tilt gate stays and is not redundant —
   it is what keeps a rig's top faces and a hull's deck out, and it is what has to hold
   if the world is ever given its rim back.
-- Rendering group **1 is the viewmodel's, and nothing else is in it.** Its depth
-  clear is OFF (`Game`'s constructor), so the frame keeps one depth image holding
-  the world and the gun that `FrameDepth` and `GlowPass` both read. **The moon
+- Rendering group **1 is the viewmodel's, and since `BABYLON_EXIT.md` X4.3c it
+  holds the two optics' GLASSES alone** (X4.3d moves them): the weapon's opaque
+  parts are our renderer's, drawn at the END of group 0 ("The weapon, ours",
+  below), where group 1's opaque queue drew them. Its depth clear is OFF
+  (`Game`'s constructor), so the frame keeps one depth image holding the world
+  and the gun that `FrameDepth` and `GlowPass` both read. **The moon
   disc used to share the group and does not any more**: it drew after every
   blended mesh in group 0, none of which write depth, so it painted over a
   capture beacon or a tracer standing in front of it. It is a blended mesh in
@@ -5070,14 +5157,17 @@ all in the counter this finding is named after. Not chased.
   front of the disc and saturates it back to white — on Cinderhaven the frame is
   byte-identical in either group with the glow on, and differs over the disc with
   it off. `infiniteDistance` stays the glow's fog
-  exemption; the kit screen's test is the group alone.
+  exemption; the kit screen's test is the group alone (`Game.glowAdmits`, asked
+  for the weapon's own emissives by the draw, `glowAdmits(VIEWMODEL_GROUP)`).
 - **The kit screen's backdrop is the one blended mesh in the game whose DRAW
   ORDER is load-bearing** (`buildKitBackdrop` in `ViewModel.ts`). It has to cover
   the world and be covered by the weapon, and the only slot that does both is a
   blended mesh in group **0** with `alphaIndex` at `Infinity` — Babylon draws a
   group's blended meshes last, and its default `alphaIndex` is already
   `Number.MAX_VALUE`, so any ordinary large number sorts the card in front of the
-  capture skirt instead of behind it. `depthFunction: ALWAYS` keeps a near wall
+  capture skirt instead of behind it. **The weapon our renderer draws after it**
+  (X4.3c): at group 0's `"afterGroup"`, which comes after the card, the last of
+  the group's blended queue — the slot group 1's opaque queue had. `depthFunction: ALWAYS` keeps a near wall
   from cutting it, `forceDepthWrite` makes the card the surface every depth reader
   sees (it also once kept the moon, then in group 1, from drawing over it), and the **bloom is composited over the finished frame and so cannot
   be covered at all** — `Game`'s `GlowRules.admits` drops everything off the stage

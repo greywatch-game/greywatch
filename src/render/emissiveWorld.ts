@@ -7,8 +7,9 @@
  * the only draw of the palette there is since X3.7c, whose Babylon stages
  * and mask twin (`EmissiveWorldMaterial`'s, until then) it was the pulled
  * form of. Its fragment also draws a body's VISOR in the main pass, over the
- * visors' own table (`render/bodyProgram.ts`, X4.1d), its vertex stage that
- * one's own.
+ * visors' own table (`render/bodyProgram.ts`, X4.1d), and the WEAPON's unlit
+ * parts over the weapon's (`render/viewProgram.ts`, X4.3c), each one's vertex
+ * stage its own.
  * Owns: `EMISSIVE_BLOCK` (group 1: the palette, the fog band and, for the
  * mask, the bloom's colour), the geometry it reads (group 2,
  * `EMISSIVE_GEOMETRY`: the positions, the slots in `uv2` and the instances'

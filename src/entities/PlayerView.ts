@@ -17,14 +17,17 @@
  * - **The flash and the brass are player-only pictures** (bots get neither —
  *   see `CONFIG.gunfeel`), and their randomness stays on `Math.random`:
  *   nothing about them reaches where a round goes.
- * - The flash joins `VIEWMODEL_GROUP` with the rifle it hangs off; the brass
- *   is thrown into the WORLD and stays in the ordinary group, occluded like
- *   anything else. Both are built as `Part`s on `src/geometry/` buffers and
- *   made meshes by `drawnMesh`.
+ * - The flash is drawn in the weapon's order with the rifle it hangs off; the
+ *   brass is thrown into the WORLD and stays in the ordinary group, occluded
+ *   like anything else. Both are built as `Part`s on `src/geometry/`
+ *   buffers: the petals made SEGMENTS our renderer draws (`toSegment`,
+ *   `BABYLON_EXIT.md` X4.3c), the cases meshes by `drawnMesh` (a pool X4.4
+ *   takes).
  * - **The flash is part of the viewmodel's TREE** (`BABYLON_EXIT.md` X4.3b):
  *   its root is a joint hung from the muzzle joint (`ViewModel.tree`), its
- *   petals meshes hung from that with no parent of their own, drawn as the
- *   weapon is (`ViewModel.drawView`). Its switch and its per-shot roll and
+ *   petals segments hung from that with no parent of their own, drawn as the
+ *   weapon is (`render/ViewDraw.ts`, by the emissive program, and into the
+ *   glow's mask). Its switch and its per-shot roll and
  *   scale are written on the joint, the roll and scale reported to the
  *   tree's cache (`touch`). The brass is thrown off the ejection port as the
  *   render cache answers it (`ViewModel.ejectPortWorld`), never a fresh
@@ -40,8 +43,8 @@ import { drawnMesh, Part } from "../world/parts";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { PlayerPicture } from "./Player";
 import type { Joint } from "./rigJoints";
-import { ViewModel, VIEWMODEL_GROUP } from "./ViewModel";
-import type { ViewCamera } from "./viewTree";
+import { ViewModel } from "./ViewModel";
+import { toSegment, type ViewCamera } from "./viewTree";
 
 /** One live brass case: world-space ballistic, despawned on `t` expiry. */
 interface Casing {
@@ -91,12 +94,14 @@ export class PlayerView implements PlayerPicture {
     this.flashRoot.enabled = false;
     const flashMat = mats.getEmissive("#ffd9a0");
     for (let i = 0; i < 3; i++) {
-      const petal = drawnMesh(
+      // A SEGMENT of the weapon our renderer draws (`BABYLON_EXIT.md` X4.3c),
+      // in the weapon's own order — left a mesh in the world's group it would
+      // be ordered with the world rather than with the barrel it sits on.
+      const petal = toSegment(
         new Part(
           `player_flashPetal${i}`,
           createPlane({ width: 0.34, height: 0.15, sideOrientation: DOUBLESIDE }),
         ),
-        scene,
       );
       tree.hang(petal, this.flashRoot);
       petal.rotation.y = Math.PI / 2; // length runs along the barrel
@@ -104,12 +109,6 @@ export class PlayerView implements PlayerPicture {
       petal.position.z = 0.14;
       petal.material = flashMat;
       petal.metadata = { noInk: true };
-      petal.isPickable = false;
-      // The flash lives on the viewmodel, so it has to be drawn in the same
-      // group — left in the world's it would be ordered with the world rather
-      // than with the barrel it sits on.
-      petal.renderingGroupId = VIEWMODEL_GROUP;
-      petal.alwaysSelectAsActiveMesh = true;
     }
     // The petals' own transforms, taken into their joints now they are set.
     tree.seal();
@@ -219,7 +218,7 @@ export class PlayerView implements PlayerPicture {
    * thrown into the world, and the world is not what the kit screen shows).
    *
    * The flash has to be ENDED here rather than left to retire itself. It hangs
-   * off the viewmodel's muzzle node but is not one of the viewmodel's meshes,
+   * off the viewmodel's muzzle joint but is not one of the viewmodel's meshes,
    * so `model.setVisible` does not reach it, and the strobe that would switch
    * it off is `stepped` — which stops being called the moment the body is put
    * away. A death taken inside the 50 ms of a shot's flash would otherwise

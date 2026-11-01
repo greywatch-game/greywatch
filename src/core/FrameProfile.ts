@@ -138,6 +138,7 @@ import {
   type BlockFacts,
   type BodyFacts,
   type HullFacts,
+  type ViewFacts,
   type LoafRecord,
   type ProfileGraphics,
   type ProfileReport,
@@ -694,6 +695,10 @@ export class FrameProfile {
   private hullsOf: (() => HullFacts) | null = null;
   /** `hullsOf`'s answer as the ring HALTED. Null while recording. */
   private hullsAtHalt: HullFacts | null = null;
+  /** Reads our renderer's weapon, as `bodiesOf` reads its bodies. See `ProfileReport.view`. */
+  private viewOf: (() => ViewFacts) | null = null;
+  /** `viewOf`'s answer as the ring HALTED. Null while recording. */
+  private viewAtHalt: ViewFacts | null = null;
   /**
    * How many rows the ring holds — `CONFIG.profiling.frames`, or what `arm`
    * was asked for. Fixed between an `arm` and the next.
@@ -761,6 +766,11 @@ export class FrameProfile {
   /** How a capture reads our renderer's hulls — `setBodies`' terms. */
   setHulls(read: () => HullFacts): void {
     this.hullsOf = read;
+  }
+
+  /** How a capture reads our renderer's weapon — `setBodies`' terms. */
+  setView(read: () => ViewFacts): void {
+    this.viewOf = read;
   }
 
   /**
@@ -838,6 +848,7 @@ export class FrameProfile {
     this.blocksAtHalt = null;
     this.bodiesAtHalt = null;
     this.hullsAtHalt = null;
+    this.viewAtHalt = null;
     this.cap = Math.max(2, Math.floor(frames));
     const n = this.capacity;
     this.startMs = new Float32Array(n * SLOTS);
@@ -962,10 +973,12 @@ export class FrameProfile {
   halt(): void {
     if (!this.on) return;
     this.on = false;
-    // The run's last frame is the one the blocks, the bodies and the hulls are reported at.
+    // The run's last frame is the one the blocks, the bodies, the hulls and
+    // the weapon are reported at.
     this.blocksAtHalt = this.blocksOf?.() ?? null;
     this.bodiesAtHalt = this.bodiesOf?.() ?? null;
     this.hullsAtHalt = this.hullsOf?.() ?? null;
+    this.viewAtHalt = this.viewOf?.() ?? null;
     for (const off of this.unhook) off();
     this.unhook = [];
     this.inDraw = false;
@@ -1342,7 +1355,10 @@ export class FrameProfile {
    * lost, and the mask's groups are not counted twice.
    *
    * **Group 0 is the world and everything above it is `drawOverlay`**, which
-   * today is the viewmodel (`VIEWMODEL_GROUP`) alone — the sky draws in group 0.
+   * today is the optics' glass alone (`VIEWMODEL_GROUP`) — the sky draws in
+   * group 0, and the weapon's opaque parts are our renderer's since
+   * `BABYLON_EXIT.md` X4.3c, recorded at the END of group 0 and so inside
+   * `drawWorld`.
    * Split that way rather than one slot per id because the question worth
    * asking is what the MAP costs against what the gun costs, and a third group
    * added to the game should join the overlay rather than go unrecorded.
@@ -1732,6 +1748,7 @@ export class FrameProfile {
       blocks: this.on ? (this.blocksOf?.() ?? null) : this.blocksAtHalt,
       bodies: this.on ? (this.bodiesOf?.() ?? null) : this.bodiesAtHalt,
       hulls: this.on ? (this.hullsOf?.() ?? null) : this.hullsAtHalt,
+      view: this.on ? (this.viewOf?.() ?? null) : this.viewAtHalt,
       graphics: this.graphics,
       graphicsAt: this.graphicsAt,
       gpuRequested: this.gpuRequested,

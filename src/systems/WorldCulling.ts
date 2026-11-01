@@ -88,7 +88,9 @@
  *   pop.
  * - **Loose** — everything else in the scene: the terrain, the roads, the rim,
  *   the effect pools (tracers, shards, grenades, rubble), the sky, the
- *   water, the grass, the viewmodel, and every visual an EDITOR build makes,
+ *   water, the grass, the optics' glass and the kit card (the weapon's
+ *   opaque parts are our renderer's since `BABYLON_EXIT.md` X4.3c, and no
+ *   candidate), and every visual an EDITOR build makes,
  *   which is keyed per placement and carries no block at all. The HULLS were
  *   loose until `BABYLON_EXIT.md` X4.2b and are no mesh now: our renderer
  *   draws each as an instance of its kind's kit, and the size gate reaches
@@ -1004,7 +1006,8 @@ export class WorldCulling {
       if (!mesh.isVisible || !mesh.isEnabled()) continue;
       // **The gate is about WORLD geometry and only rendering group 0 holds
       // any.** Everything above it is drawn against the EYE rather than
-      // standing in the map — the viewmodel — and
+      // standing in the map — the viewmodel's glass, the rest of the weapon
+      // being our renderer's and no candidate since X4.3c — and
       // their world bounding info is not what this reads: the viewmodel hangs
       // off the camera and is handed its matrices after this, just before the
       // render (`ViewModel.drawView`), so at this point in the frame the gun's

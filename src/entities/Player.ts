@@ -2493,9 +2493,11 @@ export class Player implements Combatant {
 
   /**
    * The put-away weapon shown, or put away again, for the frames of the
-   * building card's pipeline warm-up (`core/PipelineWarmup.ts`) — the
-   * viewmodel draws in a rendering group of its own and an optic's glass in a
-   * material nothing in the world wears, so the spawn frame was compiling them.
+   * building card's pipeline warm-up (`core/PipelineWarmup.ts`) — an optic's
+   * glass draws in a material nothing in the world wears, so the spawn frame
+   * was compiling it. The weapon's opaque parts are our renderer's since
+   * `BABYLON_EXIT.md` X4.3c, their pipelines asked ahead, so the glass is
+   * what this is left for (X4.3d retires it).
    * Only the VIEW: no flash, no brass, and nothing about `bodyHidden` changes,
    * so `off` is exactly `applyVisibility`'s answer again.
    */

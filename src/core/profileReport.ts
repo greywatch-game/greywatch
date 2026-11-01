@@ -462,6 +462,20 @@ export interface HullFacts {
   instances: number;
 }
 
+/**
+ * Our renderer's WEAPON on the last frame before the capture — or, for a
+ * HALTED ring, before the halt (`render/ViewDraw.ts`' `stats`,
+ * `BABYLON_EXIT.md` X4.3c) — read as `bodies` is. `drawn` is the main pass's
+ * draws of the viewmodel's opaque segments (one a segment, as Babylon drew one
+ * a mesh) and `masked` the glow mask's. Neither is in `counters.drawCalls`,
+ * which since X4.3c counts no opaque part of the weapon: a capture from before
+ * it counted the same draws there (an optic's glass still is, until X4.3d).
+ */
+export interface ViewFacts {
+  drawn: number;
+  masked: number;
+}
+
 export interface ProfileGraphics {
   /** `Settings.renderScale` — a share of the panel's native resolution. */
   renderScale: number;
@@ -587,6 +601,11 @@ export interface ProfileReport {
    * reader. Absent before report version 22.
    */
   hulls: HullFacts | null;
+  /**
+   * Our renderer's weapon at the capture, or null where nothing pushed a
+   * reader. Absent before report version 23.
+   */
+  view: ViewFacts | null;
   /**
    * The ring's labelled stretches, in the order they were reached, and the
    * same rows rolled up by group — null where no row carried a label. Absent
@@ -940,6 +959,7 @@ export interface ProfileRing {
   readonly blocks: BlockFacts | null;
   readonly bodies: BodyFacts | null;
   readonly hulls: HullFacts | null;
+  readonly view: ViewFacts | null;
   readonly heapMb: Float32Array | null;
   readonly gcAt: Uint8Array;
   readonly loafMs: Float32Array;
@@ -1192,7 +1212,13 @@ export function buildReport(
     // 22: `hulls`, our renderer's hull draws on the last frame (or the
     // halt's). Since `BABYLON_EXIT.md` X4.2b no hull is in
     // `counters.drawCalls` either. Nothing else changed meaning.
-    version: 22,
+    // 23: `view`, our renderer's draws of the weapon's opaque parts on the
+    // last frame (or the halt's), and its glow-mask draws. Since
+    // `BABYLON_EXIT.md` X4.3c none of them is in `counters.drawCalls`; the
+    // `drawOverlay` span holds the optics' glass alone, the weapon's own draws
+    // recorded at the end of group 0, inside `drawWorld`. Nothing else
+    // changed meaning.
+    version: 23,
     takenAt: new Date().toISOString(),
     reason,
     map: r.mapId,
@@ -1215,6 +1241,7 @@ export function buildReport(
     blocks: r.blocks ? { ...r.blocks } : null,
     bodies: r.bodies ? { ...r.bodies } : null,
     hulls: r.hulls ? { ...r.hulls } : null,
+    view: r.view ? { ...r.view } : null,
     segments: segmentFacts(r, first, n, cap),
     clock: {
       grainMs: round(r.grainMs, 4),

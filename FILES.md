@@ -734,8 +734,9 @@ src/
                         #   a SweepBody; draws nothing and imports no Babylon,
                         #   telling its PlayerPicture what happened
     PlayerView.ts       # The player's PICTURE: the ViewModel on the camera,
-                        #   the muzzle flash star and the brass pool. Client
-                        #   only; told by Player (fired/stepped/cleared/stowed)
+                        #   the muzzle flash star (segments of the weapon's
+                        #   tree, X4.3c) and the brass pool. Client only;
+                        #   told by Player (fired/stepped/cleared/stowed)
     HealthRegen.ts      # A person's regen: the lock after a hit and the curve
                         #   back to full. One held by Player (predicting) and
                         #   one by src/sim/SimPlayer (authoritative), so the two
@@ -752,12 +753,19 @@ src/
                         #   the kit turntable with the dark card behind it,
                         #   fitted to the BAY the kit screen reports.
                         #   Builds every weapon, enables one. Its tree is
-                        #   joints (viewTree.ts), read as Babylon read nodes
+                        #   joints (viewTree.ts), read as Babylon read nodes,
+                        #   and every opaque part a segment our renderer
+                        #   draws (X4.3c)
     viewTree.ts         # The viewmodel as JOINTS (X4.3b): the JointTree whose
-                        #   root is the camera's stand-in, every mesh and the
-                        #   joint it is drawn at (no mesh has a parent), the
-                        #   per-frame hand-over (syncSwitches, draw) and the
-                        #   readers, out of rigJoints' RenderCache
+                        #   root is the camera's stand-in, every SURFACE and
+                        #   the joint it is drawn at — a ViewSegment our
+                        #   renderer draws (X4.3c: a Part and the mesh's two
+                        #   flags; toSegment, segmentOf, segmentBounds) or a
+                        #   glass/the card Babylon does, none parented — the
+                        #   per-frame evaluation (syncSwitches, draw: every
+                        #   surface on and visible, the segments it found
+                        #   handed out) and the readers, out of rigJoints'
+                        #   RenderCache
     ReloadGesture.ts    # The reload decided, not drawn: a pure function of
                         #   phase, seconds and dry/tactical giving the weapon's
                         #   curve and its impact rings, both hands, both
@@ -774,9 +782,10 @@ src/
                         #   primitives: box, slab, upright, picatinny, shell,
                         #   built as Parts on src/geometry/ buffers under a
                         #   build-time frame; `merge` (and `lit`, for a
-                        #   reticle) is where they become meshes, hung from
-                        #   the viewmodel's joints (a weapon's live parts are
-                        #   joints of its ViewTree)
+                        #   reticle) is where they become SEGMENTS our
+                        #   renderer draws (X4.3c), hung from the viewmodel's
+                        #   joints (a weapon's live parts are joints of its
+                        #   ViewTree)
     RifleModel.ts       # Low-poly SCAR-H battle rifle — the first
                         #   weapon SCULPTED rather than stacked: bevelled
                         #   profile slabs and contoured lofts, the design
@@ -814,9 +823,10 @@ src/
                         #   slide that is a joint of its own so a dry reload
                         #   can hold it back on the stop
     optics.ts           # Every optic assembly, built onto whichever weapon's
-                        #   OpticMount asked for them. Past ~4x the cone is
-                        #   bounded by the SCREEN rather than by the rail, which
-                        #   inverts how a new one is solved
+                        #   OpticMount asked for them — segments, and the two
+                        #   glasses Babylon still draws (X4.3d). Past ~4x the
+                        #   cone is bounded by the SCREEN rather than by the
+                        #   rail, which inverts how a new one is solved
     weapons.ts          # WeaponId + WeaponSetup + FireMode (the fire selector
                         #   resolved), + SIDEARM/PRIMARY_WEAPON_IDS
     sights.ts           # SightId + magnification -> FOV, sensitivity, zoomComp
@@ -1066,9 +1076,10 @@ src/
                         #   blink that reads the fuse. Built by GrenadeFx's
                         #   `GrenadeBody`, which the wire's ghosts reuse
     MolotovModel.ts     # What a molotov looks like — bottle, neck, and the lit
-                        #   rag that is its tell. Built twice: GrenadeFx's
-                        #   `GrenadeBody` (the pool's and the wire's ghosts') and
-                        #   the viewmodel's fist
+                        #   rag that is its tell. One statement of the parts,
+                        #   made twice: meshes for GrenadeFx's `GrenadeBody`
+                        #   (the pool's and the wire's ghosts) and segments for
+                        #   the viewmodel's fist (X4.3c)
     RpgModel.ts         # The launcher on the shoulder and the rocket that
                         #   leaves it. Built from its VENTURI, not its middle,
                         #   the one weapon with a `hipYaw` of its own, and the
@@ -2675,6 +2686,21 @@ src/
                         #   a failure (or a refused pass) the round's
                         #   (Game.worldFailed); installed for a round, never an
                         #   editor build
+    viewProgram.ts      # The WEAPON's programs (X4.3c): the cel stage and the
+                        #   emissive palette's over a viewmodel segment — a
+                        #   draw ONE segment, an instance the draw, its matrix
+                        #   read whole — and the emissive stage's twin in the
+                        #   glow's mask, one vertex module for both
+    ViewDraw.ts         # The player's own WEAPON as OUR renderer draws it
+                        #   (X4.3c): every opaque viewmodel segment on the GPU
+                        #   once, a draw a segment in the order Game.drawView
+                        #   hands over (Babylon's group-1 sort), at group 0's
+                        #   "afterGroup" (after the kit card, before the
+                        #   glasses); a block and group a cel recipe, the
+                        #   weapon's emissive table, the lit ones into the
+                        #   glow's mask at the bloom the prepare pulls;
+                        #   installed for the SESSION (the kit screen covers
+                        #   the menu), a failure the round's while one stands
     BodyShadowMap.ts    # The moon's BODY map as OUR texture (X4.1c): made
                         #   cleared to lit, drawn whole from the proxies
                         #   BodyShadows hands it each frame it updates

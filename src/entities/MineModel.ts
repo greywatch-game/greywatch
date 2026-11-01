@@ -9,8 +9,9 @@
  * and the primitives. The laid mine is DRESSING: no `solid` flag, no
  * `WorldBox`, not pickable. A tank drives THROUGH it and the trigger is a
  * distance test, never a collision. Both are built as `Part`s on
- * `src/geometry/` buffers, and `drawnMesh` is where they become meshes
- * (`WeaponBuild.merge` and `lit` for the carried one).
+ * `src/geometry/` buffers: the carried one's become SEGMENTS our renderer
+ * draws (`WeaponBuild.merge` and `lit`, `BABYLON_EXIT.md` X4.3c), and
+ * `drawnMesh` is where the laid one's become meshes, here.
  *
  * Two builders in one file for the reason `RpgModel` is one: the plate a
  * player is holding and the plate lying in the road are the same object, and

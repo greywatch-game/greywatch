@@ -92,6 +92,16 @@
  *   nodes were; each mesh's parent is the joint it hangs from, named as the
  *   node or mesh it stands for; and a joint, or a `src/math` value, in the
  *   builder's data is spelled as the node or the Babylon value it replaced.
+ *   **Since X4.3c every OPAQUE surface of the viewmodel is a SEGMENT our
+ *   renderer draws** (`ViewSegment`, `viewTree.ts`) and Babylon is made no
+ *   mesh of it, so a segment is hashed IN THE BYTES ITS MESH GAVE: made a
+ *   throwaway mesh by the game's own `drawnMesh` — the call that made it
+ *   before, on the same arrays — dressed with the flags the mesh carried (its
+ *   own switch and `isVisible`, never pickable, and in a tree hung from a
+ *   camera the viewmodel's group and always-active), recorded and disposed,
+ *   at its place among the scene's meshes (a tree's surfaces in the order
+ *   they were made, which was the scene's order, then every other mesh); a
+ *   segment in the builder's data, or as a parent, is spelled `Mesh:<name>`.
  *   A row that moves here moved in the build, not in the bookkeeping;
  * - the four pooled bodies that fly or lie (`grenade`, `molotov`, `rocket`
  *   with its flame, `mine`, the laid one);
@@ -489,6 +499,8 @@ function plainOf(mats, tree = null) {
     if (typeof v === "number") return Number.isFinite(v) && !Object.is(v, -0) ? v : String(Object.is(v, -0) ? "-0" : v);
     if (!v || typeof v !== "object") return v;
     if (isGraph(v)) return `${v.getClassName()}:${v.name}`;
+    // A segment is spelled as the mesh it was (X4.3c).
+    if (isSegment(v)) return `Mesh:${v.name}`;
     // A viewmodel joint is named as the node (or mesh) it stands for, and a
     // `src/math` value is spelled as the Babylon one it replaced (X4.3b).
     if (tree && isJoint(v)) return labelOf(tree, v);
@@ -515,6 +527,9 @@ function plainOf(mats, tree = null) {
 const isGraph = (v) =>
   typeof v.getClassName === "function" && (typeof v.uniqueId === "number" || v.getClassName() === "Scene");
 
+/** A viewmodel `ViewSegment` (`viewTree.ts`), by class name, for `isGraph`'s reason. */
+const isSegment = (v) => v?.constructor?.name === "ViewSegment";
+
 /** A `rigJoints.ts` joint, by shape (the module this script loads is not the game's instance either). */
 const isJoint = (v) => v.constructor?.name === "Joint" && "world" in v && "scaling" in v;
 
@@ -540,6 +555,7 @@ function mathValue(v) {
 function labelOf(tree, j) {
   if (j === tree.root) return `${tree.camera.getClassName()}:${tree.camera.name}`;
   const mesh = tree.meshFor(j);
+  if (mesh && isSegment(mesh)) return `Mesh:${mesh.name}`;
   return mesh ? `${mesh.getClassName()}:${mesh.name}` : `TransformNode:${j.name}`;
 }
 
@@ -636,20 +652,50 @@ function nodeRecord(n, plain, parentLabel) {
  * `set` and differs on `draw`. That is the difference `--against` reports as
  * "scene order differs", apart from "content changed".
  */
-function hashScene(scene, data, plain, tree = null) {
+function hashScene(scene, data, plain, tree = null, meshOfSegment = null) {
   const draw = createHash("sha256");
   const each = [];
-  // A viewmodel tree's meshes are unparented: each is named as hanging from
+  // A viewmodel tree's surfaces are unparented: each is named as hanging from
   // the node its joint hangs from. Its node joints follow the scene's own
   // nodes, in the order they were made (see the header).
   const parentOf = new Map();
   const jointNodes = [];
+  let meshRecords = scene.meshes.map((n) => () => nodeRecord(n, plain, parentOf.get(n)));
   if (tree) {
-    for (const v of tree.meshes) parentOf.set(v.mesh, v.joint.parent ? labelOf(tree, v.joint.parent) : null);
+    for (const v of tree.meshes) parentOf.set(v.surface, v.joint.parent ? labelOf(tree, v.joint.parent) : null);
     for (const j of tree.jointList) if (j !== tree.root && !tree.meshFor(j)) jointNodes.push(j);
+    // A tree's surfaces in the order they were made — the scene's order for
+    // the meshes they were (asserted for the ones that still are) — then
+    // every other mesh in the scene (X4.3c, the header).
+    const inTree = new Set(tree.meshes.map((v) => v.surface));
+    const treeMeshes = tree.meshes.filter((v) => v.mesh).map((v) => v.mesh);
+    const sceneOrder = scene.meshes.filter((m) => inTree.has(m));
+    if (sceneOrder.length !== treeMeshes.length || sceneOrder.some((m, i) => m !== treeMeshes[i])) {
+      throw new Error("the tree's meshes are not in the scene's order");
+    }
+    const others = scene.meshes.filter((m) => !inTree.has(m));
+    if (others.some((m) => scene.meshes.indexOf(m) < scene.meshes.indexOf(treeMeshes[treeMeshes.length - 1] ?? m))) {
+      throw new Error("a mesh outside the tree was made among the tree's");
+    }
+    const inViewmodel = tree.camera !== null;
+    meshRecords = [
+      ...tree.meshes.map((v) =>
+        v.mesh
+          ? () => nodeRecord(v.mesh, plain, parentOf.get(v.mesh))
+          : () => {
+              const mesh = meshOfSegment(v.segment, inViewmodel);
+              try {
+                return nodeRecord(mesh, plain, parentOf.get(v.segment));
+              } finally {
+                mesh.dispose(false, false);
+              }
+            },
+      ),
+      ...others.map((n) => () => nodeRecord(n, plain, parentOf.get(n))),
+    ];
   }
   const lists = [
-    ["meshes", "m", scene.meshes.map((n) => () => nodeRecord(n, plain, parentOf.get(n)))],
+    ["meshes", "m", meshRecords],
     [
       "nodes",
       "n",
@@ -745,7 +791,7 @@ async function hashModelJobs(jobs) {
     const B = await server.ssrLoadModule("@babylonjs/core");
     B.Logger.LogLevels = B.Logger.NoneLogLevel;
     const load = (p) => server.ssrLoadModule(p);
-    const [W, VM, PL, PV, GR, MO, RPG, MINE, VK, SM, CZ, FIN, TV, VT] = await Promise.all(
+    const [W, VM, PL, PV, GR, MO, RPG, MINE, VK, SM, CZ, FIN, TV, VT, PA] = await Promise.all(
       [
         "/src/entities/weapons.ts",
         "/src/entities/ViewModel.ts",
@@ -761,6 +807,7 @@ async function hashModelJobs(jobs) {
         "/src/entities/finishes.ts",
         "/src/core/teamView.ts",
         "/src/entities/viewTree.ts",
+        "/src/world/parts.ts",
       ].map(load),
     );
     const weaponBuilders = await modelWeaponBuilders(load);
@@ -844,7 +891,21 @@ async function hashModelJobs(jobs) {
           zones.build(p.points, w.terrain, w.obstacles, w.roads, w.rays, w.env);
           data = zones.zones.map((z) => ({ x: z.x, z: z.z, meshes: z.meshes }));
         } else throw new Error(`no model "${p.kind}"`);
-        out[key] = hashScene(scene, data, plainOf(mats, tree), tree);
+        // A segment as the mesh it was (X4.3c): the game's `drawnMesh`, dressed
+        // with the flags the mesh carried, recorded and disposed — made after
+        // the record lists were taken, so it is in none of them.
+        const meshOfSegment = (seg, inViewmodel) => {
+          const mesh = PA.drawnMesh(seg, scene);
+          mesh.isVisible = seg.isVisible;
+          mesh.isPickable = false;
+          mesh.setEnabled(seg.enabled);
+          if (inViewmodel) {
+            mesh.renderingGroupId = 1;
+            mesh.alwaysSelectAsActiveMesh = true;
+          }
+          return mesh;
+        };
+        out[key] = hashScene(scene, data, plainOf(mats, tree), tree, meshOfSegment);
       } catch (e) {
         out[key] = { error: String(e?.message ?? e) };
       }

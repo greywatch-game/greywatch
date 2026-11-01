@@ -22,7 +22,7 @@ import {
   type WeaponParts,
 } from "./weaponKit";
 import type { Joint } from "./rigJoints";
-import type { ViewTree } from "./viewTree";
+import type { ViewSurface, ViewTree } from "./viewTree";
 
 /**
  * Height of the bore above the origin: the middle of the upper receiver.
@@ -574,7 +574,7 @@ export function buildRifle(
 
   // The rifle itself is finished. Merge it before any optic is built, so a
   // sight's parts can never end up inside the weapon's colour groups.
-  const meshes = b.merge("rifle", root);
+  const meshes: ViewSurface[] = b.merge("rifle", root);
 
   // The SCAR-H's 20-round 7.62 magazine: STRAIGHT, deep and plain, standing
   // at a slight forward rake. Built AFTER the weapon's own merge and merged

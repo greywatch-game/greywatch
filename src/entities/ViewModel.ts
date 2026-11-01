@@ -12,10 +12,14 @@
  *   and the builders made is a joint made at the same moment (the order is
  *   what `kit:hash --models` digests); a pivot and an overriding quaternion are
  *   the joint's (`Joint.setPivotPoint`, `Joint.quaternion`); the camera is the
- *   tree's root, held off its world. Babylon still draws every mesh, each
- *   handed its joint's world once a frame by `drawView` (`Game.tick`,
- *   immediately before the render), and each mesh's own enabled flag is its
- *   joint chain's (`syncSwitches`, before the cull). Every write to a joint's
+ *   tree's root, held off its world. **Every opaque part is a SEGMENT our
+ *   renderer draws** (`ViewSegment`, `render/ViewDraw.ts`, `BABYLON_EXIT.md`
+ *   X4.3c) and Babylon is made no mesh of one; the optics' two glasses and the
+ *   kit card are still Babylon meshes, each handed its joint's world once a
+ *   frame (`drawView`, `Game.tick`, immediately before the render) and each
+ *   one's own enabled flag its joint chain's (`syncSwitches`, before the
+ *   cull). `drawView` evaluates every surface on and visible, whoever draws
+ *   it — what the readers below are stamped by. Every write to a joint's
  *   position, rotation, scaling or quaternion goes through `wrote`, and the
  *   quaternion handed or taken through `markDirty` too — the dirty flags
  *   Babylon's render cache read.
@@ -96,18 +100,22 @@
  *   plus the pitch are damped by `recoil.kick.adsMult` while the z travel is
  *   not: the weapon carries the sight, so anything that rotates or laterally
  *   shifts it while aimed takes the reticle off the axis the rounds fly down.
- * - Meshes render in VIEWMODEL_GROUP, whose depth is NOT cleared (`Game.ts`,
- *   over `setRenderingAutoClearDepthStencil`): the frame keeps one depth image
- *   of the world and the gun, which the ink, the blur, the paper and the
- *   glow's occlusion name the gun by. Anything else attached to it (Player's
- *   muzzle flash) must join that group or it is drawn in the world's.
+ * - The weapon draws AFTER the world, into its depth with no clear — our
+ *   renderer's draw at the end of rendering group 0, in the order Babylon's
+ *   `VIEWMODEL_GROUP` queue drew the meshes (`Game.drawView`), and the glasses
+ *   still in that group, whose depth is NOT cleared (`Game.ts`, over
+ *   `setRenderingAutoClearDepthStencil`): the frame keeps one depth image of
+ *   the world and the gun, which the ink, the blur, the paper and the glow's
+ *   occlusion name the gun by. Anything else attached to it (Player's muzzle
+ *   flash) is a segment of the same tree or it is drawn in the world's.
  * - Arms are built at the origin and merged per colour before being hung, the
  *   same rule as BuildingKit and the weapon models: `mergeParts` bakes world
  *   matrices, as MergeMeshes did, so the merge is only correct at identity.
  *   Like the weapons, they are built as `Part`s (`world/parts.ts`) on
- *   `src/geometry/` buffers, and `drawnMesh` is where each colour group, the
- *   throwing fist's grenade and the kit card become meshes, each then hung
- *   from a joint of the tree; the poses are written on the joints.
+ *   `src/geometry/` buffers: each colour group, the throwing fist's grenade
+ *   and pip and the bottle become SEGMENTS (`toSegment`, `segmentOf`), the kit
+ *   card a mesh (`drawnMesh`), each then hung from a joint of the tree; the
+ *   poses are written on the joints.
  * - The loadout screen's turntable (`beginInspect`/`updateInspect`) is the one
  *   pose that is not the carried one, and it is the only thing here that may
  *   set the weapon joint's `quaternion`. While one is set the joint ignores
@@ -133,7 +141,7 @@ import type { CelMaterialFactory } from "../shaders/CelShader";
 import { buildCarbine } from "./CarbineModel";
 import { buildDmr } from "./DmrModel";
 import { buildLmg } from "./LmgModel";
-import { buildMolotov } from "./MolotovModel";
+import { molotovSegments } from "./MolotovModel";
 import type { ThrowableId } from "./throwables";
 import { buildPistol } from "./PistolModel";
 import { buildRifle } from "./RifleModel";
@@ -162,7 +170,15 @@ import {
 } from "../world/parts";
 import { ReloadGesture, type ReloadInput, type ReloadPose, type ReloadRig } from "./ReloadGesture";
 import type { Joint } from "./rigJoints";
-import { ViewTree, type ViewCamera } from "./viewTree";
+import {
+  segmentBounds,
+  segmentOf,
+  toSegment,
+  ViewSegment,
+  ViewTree,
+  type ViewCamera,
+  type ViewSurface,
+} from "./viewTree";
 import { OWN_KIT } from "./SoldierModel";
 import {
   CARRIED_IDS,
@@ -174,10 +190,13 @@ import {
 } from "./weapons";
 
 /**
- * Rendering group for everything that hangs off the camera. Its depth is NOT
- * cleared before it draws (`Game.ts`, over `setRenderingAutoClearDepthStencil`),
- * so the frame keeps one depth image of the world and the gun; what keeps a
- * wall out of the weapon is the near plane and the player's own radius.
+ * Rendering group for what hangs off the camera and Babylon still draws — the
+ * optics' two glasses since `BABYLON_EXIT.md` X4.3c (X4.3d moves them); the
+ * weapon's opaque parts are our renderer's, drawn where this group's opaque
+ * queue drew them. Its depth is NOT cleared before it draws (`Game.ts`, over
+ * `setRenderingAutoClearDepthStencil`), so the frame keeps one depth image of
+ * the world and the gun; what keeps a wall out of the weapon is the near plane
+ * and the player's own radius.
  */
 export const VIEWMODEL_GROUP = 1;
 
@@ -613,20 +632,24 @@ interface WeaponRig {
 export class ViewModel {
   /**
    * The whole viewmodel as JOINTS, the camera's stand-in at its root, and
-   * every mesh Babylon draws off it (`BABYLON_EXIT.md` X4.3b). Nothing here
-   * is a `TransformNode` and no mesh has a parent: `drawView` hands each its
-   * joint's world, and every reader answers out of the tree's render cache.
+   * every surface drawn off it (`BABYLON_EXIT.md` X4.3b, X4.3c): segments our
+   * renderer draws and the glasses and card Babylon does. Nothing here is a
+   * `TransformNode` and nothing has a parent: `drawView` evaluates each, and
+   * every reader answers out of the tree's render cache.
    */
   readonly tree: ViewTree;
-  /** Every visible part, for the one visibility switch Player owns. */
-  readonly meshes: Mesh[] = [];
+  /**
+   * Every visible part, for the one visibility switch Player owns: the
+   * segments our renderer draws, and the optics' glasses Babylon still does.
+   */
+  readonly meshes: ViewSurface[] = [];
   /**
    * The gloved arms, of every weapon — the subset that lets go while the
    * weapon is on the turntable. A forearm cut off at the elbow is a fact of
    * first person that reads fine when the weapon is being carried and reads as
    * a severed arm when it is being turned over on a bench.
    */
-  private readonly arms: Mesh[] = [];
+  private readonly arms: ViewSegment[] = [];
   /** Whether the on-screen weapon is visible at all (Player's switch). */
   private shown = false;
   private inspecting = false;
@@ -855,8 +878,8 @@ export class ViewModel {
       // a hand is drawn exactly as it was before they existed.
       const triggerArm = tree.joint(`viewmodel_${id}_triggerArm`, root);
       const arms = [
-        ...buildArm(scene, mats, tree, `${id}_trigger`, parts.grip, triggerArm),
-        ...buildArm(scene, mats, tree, `${id}_support`, parts.support, supportArm),
+        ...buildArm(mats, tree, `${id}_trigger`, parts.grip, triggerArm),
+        ...buildArm(mats, tree, `${id}_support`, parts.support, supportArm),
       ];
       // Both arms TURN about their own hands — a wrist, not a shoulder — so a
       // hand closed on a magazine tilts with it instead of swinging it round
@@ -904,24 +927,20 @@ export class ViewModel {
     this.throwHand.scaling.setAll(v.scale);
     this.throwHand.enabled = false;
     const throwArm = buildArm(
-      scene,
       mats,
       tree,
       "throwHand",
       { hand: Vector3.Zero(), elbow: THROW_ELBOW },
       this.throwHand,
     );
-    const ball = drawnMesh(
+    const ball = toSegment(
       new Part("view_throwGrenade", createSphere({ diameter: THROW_BALL * 2, segments: 6 })),
-      scene,
     );
     this.throwBall = tree.hang(ball, this.throwHand);
     ball.position.set(0, 0.04, 0.06);
     ball.material = mats.get("#3f4a33");
-    ball.isPickable = false;
-    const pip = drawnMesh(
+    const pip = toSegment(
       new Part("view_throwGrenadePip", createSphere({ diameter: THROW_BALL * 0.62, segments: 4 })),
-      scene,
     );
     tree.hang(pip, this.throwBall);
     // Proud of the body's ink shell, the same rule the thrown grenade's pip and
@@ -929,7 +948,6 @@ export class ViewModel {
     pip.position.y = THROW_BALL;
     pip.material = mats.getEmissive("#ff5a4f");
     pip.metadata = { noInk: true };
-    pip.isPickable = false;
     this.meshes.push(...throwArm, ball, pip);
     this.arms.push(...throwArm);
     // The bottle, held by its body with the lit rag up and leaning back over
@@ -939,12 +957,20 @@ export class ViewModel {
     this.throwBottle.position.set(0, 0.05, 0.07);
     this.throwBottle.rotation.set(-0.5, 0, 0.35);
     this.throwBottle.scaling.setAll(THROW_BOTTLE);
-    // The bottle is `MolotovModel`'s, shared with the thrown pool, and hands
-    // back a mesh with meshes under it: `hang` makes each a joint of its own,
-    // unparented, in the order `getChildMeshes` walked them.
-    const bottle = buildMolotov(scene, mats, "view_throwMolotov");
-    const bottleParts = [bottle.mesh, ...bottle.mesh.getChildMeshes<Mesh>(false)];
-    tree.hang(bottle.mesh, this.throwBottle);
+    // The bottle is `MolotovModel`'s, the thrown pool's own shape, handed back
+    // as segments with the neck, the cloth and the wick under the body: `hang`
+    // makes each a joint of its own, unparented, in the order they were hung.
+    const bottle = molotovSegments(mats, "view_throwMolotov");
+    const bottleParts: ViewSegment[] = [bottle];
+    const walk = (s: ViewSegment): void => {
+      for (const c of s.children) {
+        if (!(c instanceof ViewSegment)) continue;
+        bottleParts.push(c);
+        walk(c);
+      }
+    };
+    walk(bottle);
+    tree.hang(bottle, this.throwBottle);
     for (const m of bottleParts) m.isVisible = true;
     this.meshes.push(...bottleParts);
     this.throwBottle.enabled = false;
@@ -973,6 +999,10 @@ export class ViewModel {
     this.applyFit();
 
     for (const m of this.meshes) {
+      // Our renderer draws every segment — in Babylon's group-1 order, after
+      // group 0 and before the glasses (`render/ViewDraw.ts`) — and Babylon is
+      // made no mesh of one, so the two flags below are the GLASSES' alone.
+      if (m instanceof ViewSegment) continue;
       // **NO OUTLINE HULL, and this was the LAST one in the game.** The weapon
       // used to set `renderOutline` by hand — never through `addOutline`, which
       // is why it outlived the sweep that took the outline pass out — at
@@ -1020,39 +1050,40 @@ export class ViewModel {
   }
 
   /**
-   * Each mesh's own enabled flag, written to its joint chain's. Called by
-   * `Game.tick` before the cull reads them — an unparented mesh's
-   * `isEnabled()` sees no ancestor — and again by `drawView`.
+   * Each surface's own enabled flag, written to its joint chain's. Called by
+   * `Game.tick` before the cull reads a glass's or the card's — an unparented
+   * mesh's `isEnabled()` sees no ancestor — and again by `drawView`.
    */
   syncSwitches(): void {
     this.tree.syncSwitches();
   }
 
   /**
-   * The frame's hand-over (`ViewTree.draw`): every switched-on, visible mesh
-   * handed its joint's world through `freezeWorldMatrix`. Called by
-   * `Game.tick` once a frame in every state, after every write and
-   * immediately before `scene.render`, beside `drawBodies` and `drawHulls`.
+   * The frame's evaluation (`ViewTree.draw`): every switched-on, visible
+   * surface evaluated as the render evaluated it — each glass and the card
+   * handed its joint's world through `freezeWorldMatrix`, each segment listed
+   * for our renderer (`ViewTree.evaluated`, which `Game.drawView` hands over).
+   * Called by `Game.drawView` once a frame in every state, after every write
+   * and immediately before `scene.render`, beside `drawBodies` and `drawHulls`.
    */
   drawView(): void {
     this.tree.draw();
   }
 
   /**
-   * The spent magazine: the weapon's own magazine joint, cloned. Clones share
-   * the geometry and the materials, so it costs a joint and a few meshes that
-   * are switched off unless a magazine is in the air. Its colour groups join
+   * The spent magazine: the weapon's own magazine joint, cloned. Its segments
+   * share the arrays and the materials, so it costs a joint and a few segments
+   * that are switched off unless a magazine is in the air. Its colour groups join
    * the weapon's FINISH list beside the originals', so a repaint reaches both
    * and the magazine that falls out is the colour of the one that went in.
    */
   private cloneMagazine(magazine: Joint, parts: WeaponParts): Joint {
     const spent = this.tree.joint(`${magazine.name}_spent`, magazine.parent);
     for (const m of this.tree.meshesOn(magazine)) {
-      const copy = m.clone(`${m.name}_spent`, null);
-      if (!copy) continue;
+      if (!(m instanceof ViewSegment)) continue;
+      const copy = cloneSegment(m, `${m.name}_spent`);
       this.tree.hang(copy, spent);
       copy.metadata = m.metadata;
-      copy.isPickable = false;
       this.meshes.push(copy);
       const group = parts.finish.find((f) => f.mesh === m)?.group;
       if (group) parts.finish.push({ mesh: copy, group });
@@ -1072,9 +1103,11 @@ export class ViewModel {
     const min = new Vector3(Infinity, Infinity, Infinity);
     const max = new Vector3(-Infinity, -Infinity, -Infinity);
     for (const m of this.tree.meshesOn(magazine)) {
-      // The joint and its meshes sit at identity under the weapon's root, so a
-      // mesh's local box IS the root-local box.
-      const box = m.getBoundingInfo().boundingBox;
+      if (!(m instanceof ViewSegment)) continue;
+      // The joint and its segments sit at identity under the weapon's root, so
+      // a segment's local box IS the root-local box — measured as Babylon
+      // measured the mesh it was (`segmentBounds`).
+      const box = segmentBounds(m);
       min.minimizeInPlace(box.minimum);
       max.maximizeInPlace(box.maximum);
     }
@@ -2374,17 +2407,17 @@ function addScaled(
  *
  * The frame is a `PartNode`, a build-time frame that is never in the scene
  * (a `TransformNode` used to be made here and disposed). The parts are
- * `facet` lofts, and each colour group becomes a mesh at the merge
- * (`drawnMesh`), hung from the live joint (`parent`) the caller gives.
+ * `facet` lofts, and each colour group becomes a SEGMENT at the merge
+ * (`toSegment`/`segmentOf`; `BABYLON_EXIT.md` X4.3c), hung from the live
+ * joint (`parent`) the caller gives.
  */
 function buildArm(
-  scene: Scene,
   mats: CelMaterialFactory,
   tree: ViewTree,
   name: string,
   grip: { readonly hand: Vector3Like; readonly elbow: Vector3Like },
   parent: Joint,
-): Mesh[] {
+): ViewSegment[] {
   const parts = new Map<string, Part[]>();
   const frame = new PartNode(`view_${name}Frame`);
   const collect = (color: string, part: string, rings: Ring[]) => {
@@ -2452,19 +2485,37 @@ function buildArm(
     { y: len, w: 0.13, d: 0.122, k: 0.4 },
   ]);
 
-  const merged: Mesh[] = [];
+  const merged: ViewSegment[] = [];
   for (const [color, group] of parts) {
     for (const p of group) detachPart(p);
     const meshName = `view_${name}_${color.slice(1)}`;
     const m =
       group.length === 1
-        ? drawnMesh(bakePartTransform(group[0]), scene)
-        : drawnMesh(meshName, mergeParts(group), scene);
+        ? toSegment(bakePartTransform(group[0]))
+        : segmentOf(meshName, mergeParts(group));
     m.name = meshName;
     m.material = mats.get(color);
     tree.hang(m, parent);
-    m.isPickable = false;
     merged.push(m);
   }
   return merged;
+}
+
+/**
+ * A segment's twin — what `Mesh.clone(name, null)` made of the mesh it was:
+ * the same arrays (shared, as a clone shared its geometry), the same
+ * transform, material, metadata and flags, under a new name.
+ */
+function cloneSegment(m: ViewSegment, name: string): ViewSegment {
+  const copy = segmentOf(name, m.geometry);
+  copy.position.copyFrom(m.position);
+  copy.rotation.copyFrom(m.rotation);
+  copy.scaling.copyFrom(m.scaling);
+  const q = m.rotationQuaternion;
+  if (q) copy.rotationQuaternion = new Quaternion(q.x, q.y, q.z, q.w);
+  copy.material = m.material;
+  copy.metadata = m.metadata;
+  copy.isVisible = m.isVisible;
+  copy.enabled = m.enabled;
+  return copy;
 }

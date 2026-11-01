@@ -8,9 +8,9 @@
  * identity and merged before it is moved — `weaponKit.ts` owns that contract
  * and the primitives. The rocket is DRESSING: no `solid` flag, no `WorldBox`,
  * not pickable, exactly as a grenade is. Both are built as `Part`s on
- * `src/geometry/` buffers, and `drawnMesh` is where they become meshes
- * (`WeaponBuild.merge` and `lit` for the launcher; the rocket's head, merged
- * tail and flame here).
+ * `src/geometry/` buffers: the launcher's become SEGMENTS our renderer draws
+ * (`WeaponBuild.merge` and `lit`, `BABYLON_EXIT.md` X4.3c), and `drawnMesh`
+ * is where the rocket's head, merged tail and flame become meshes, here.
  *
  * Two builders in one file for the reason `GrenadeModel` is one file: what a
  * rocket looks like and what threw it are the same object seen twice, and the

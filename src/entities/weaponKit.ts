@@ -8,19 +8,22 @@
  * and `optics.ts`
  * is the seventh.
  *
- * **It builds `Part`s, and `merge` is where they become meshes.** Every helper
- * makes a `Part` (`world/parts.ts`) on a `src/geometry/` buffer — `createBox`,
- * `createCylinder`, `facet`'s lofts and slabs — and hangs it from a `PartNode`:
- * the build's `frame`, which stands in for the weapon's live root, or a raking
- * `pivot` under it. Nothing is in the scene until `merge` hands one buffer per
- * colour group to `drawnMesh` and hangs that mesh from the LIVE JOINT it was
- * given (the root, the magazine, the bolt, a sight) in the viewmodel's
- * `ViewTree` (`BABYLON_EXIT.md` X4.3b: the weapon's posable parts are joints,
- * not nodes, and no mesh has a parent). So the pivots are build-time frames
- * that are never meshes and never joints, and there is nothing to dispose
- * once the build is done. A reticle or a bead is drawn on its own, and `lit`
- * is where it becomes a mesh; an optic's glass, which wears a material of its
- * own, is made one in `optics.ts` and hung with `hang`.
+ * **It builds `Part`s, and `merge` is where they become SEGMENTS.** Every
+ * helper makes a `Part` (`world/parts.ts`) on a `src/geometry/` buffer —
+ * `createBox`, `createCylinder`, `facet`'s lofts and slabs — and hangs it from
+ * a `PartNode`: the build's `frame`, which stands in for the weapon's live
+ * root, or a raking `pivot` under it. Nothing is drawn until `merge` makes one
+ * buffer per colour group a `ViewSegment` (`viewTree.ts`'s `toSegment` and
+ * `segmentOf`: what `drawnMesh` was handed, with no Babylon mesh made of it —
+ * our renderer draws every opaque part of the weapon, `BABYLON_EXIT.md`
+ * X4.3c) and hangs it from the LIVE JOINT it was given (the root, the
+ * magazine, the bolt, a sight) in the viewmodel's `ViewTree` (X4.3b: the
+ * weapon's posable parts are joints, not nodes). So the pivots are build-time
+ * frames that are never segments and never joints, and there is nothing to
+ * dispose once the build is done. A reticle or a bead is drawn on its own,
+ * and `lit` is where it becomes a segment; an optic's glass, which wears a
+ * blended material of its own and is still Babylon's (X4.3d), is made a mesh
+ * in `optics.ts` and hung with `hang`.
  *
  * Invariants:
  * - A builder assembles at the ORIGIN with its root at identity and merges
@@ -61,14 +64,13 @@ import { extrude, loft, type ProfilePoint, type Ring } from "./facet";
 import {
   bakePartTransform,
   detachPart,
-  drawnMesh,
   mergeParts,
   Part,
   PartNode,
 } from "../world/parts";
 import type { Joint } from "./rigJoints";
 import type { SightId } from "./sights";
-import type { ViewTree } from "./viewTree";
+import { segmentOf, toSegment, ViewSegment, type ViewSurface, type ViewTree } from "./viewTree";
 
 export const BODY = "#2b2b33"; // aluminium upper receiver, barrel, hinge block
 export const POLYMER = "#1d232c"; // lower receiver, grip, magazine, handguard, stock
@@ -112,13 +114,15 @@ const SECTIONS: ReadonlyArray<readonly [FinishGroup, string]> = [
  * to repaint a built weapon without knowing anything about how it was built.
  *
  * The pair exists because the merge is the ONLY place the two facts are ever
- * in the same scope: after it, a colour group is an anonymous mesh whose
+ * in the same scope: after it, a colour group is an anonymous segment whose
  * material happens to hold the colour it was assembled under. Recovering the
- * group from the merged mesh's NAME would work today and is exactly the kind
- * of thing that stops working the first time a suffix is renamed.
+ * group from the merged segment's NAME would work today and is exactly the
+ * kind of thing that stops working the first time a suffix is renamed.
+ * `mesh` keeps the name it had while the group was a Babylon mesh: it is a
+ * `ViewSegment` our renderer draws (`BABYLON_EXIT.md` X4.3c).
  */
 export interface FinishPart {
-  mesh: Mesh;
+  mesh: ViewSegment;
   group: FinishGroup;
 }
 
@@ -137,7 +141,8 @@ export interface SightAssembly {
    * makes the reticle the point of impact.
    */
   sightCenter: Joint;
-  meshes: Mesh[];
+  /** Its surfaces: segments, and an optic's glass (a Babylon mesh until X4.3d). */
+  meshes: ViewSurface[];
 }
 
 /**
@@ -384,8 +389,8 @@ export interface WeaponParts {
    * and says which side of the seam each part falls.
    */
   finish: FinishPart[];
-  /** Every visible mesh, every optic's included. */
-  meshes: Mesh[];
+  /** Every visible surface, every optic's included — segments, and the optics' glasses. */
+  meshes: ViewSurface[];
 }
 
 /**
@@ -448,13 +453,13 @@ export class WeaponBuild {
     return this.view.joint(name, parent);
   }
 
-  /** A mesh made outside the helpers (an optic's glass), hung from `parent`. */
+  /** A mesh made outside the helpers (an optic's glass, still Babylon's), hung from `parent`. */
   hang(mesh: Mesh, parent: Joint): void {
     this.view.hang(mesh, parent);
   }
 
-  /** The meshes hung under `j`, as `getChildMeshes` walked them (`ViewTree.meshesOn`). */
-  meshesOn(j: Joint, deep = false): Mesh[] {
+  /** The surfaces hung under `j`, as `getChildMeshes` walked them (`ViewTree.meshesOn`). */
+  meshesOn(j: Joint, deep = false): ViewSurface[] {
     return this.view.meshesOn(j, deep);
   }
 
@@ -730,13 +735,14 @@ export class WeaponBuild {
    * hangs from: the root the frame stands in for, or a joint at identity
    * under it (the magazine, the round, the bolt, a sight).
    *
-   * This is where a weapon's surface first reaches the scene: each group's
-   * mesh is made here by `drawnMesh`, and nowhere else but `lit`.
+   * This is where a weapon's surface first becomes something drawn: each
+   * group's SEGMENT is made here (`toSegment`/`segmentOf` — `drawnMesh`'s
+   * inputs, and no mesh), and nowhere else but `lit`.
    */
-  merge(suffix: string, parent: Joint): Mesh[] {
+  merge(suffix: string, parent: Joint): ViewSegment[] {
     const groups = this.target;
     this.target = new Map();
-    const out: Mesh[] = [];
+    const out: ViewSegment[] = [];
     const painted = [...this.paints].map(([color, p]) => [p.name, color, false] as const);
     const all = [...SECTIONS.map(([name, color]) => [name, color, true] as const), ...painted];
     for (const [name, color, finished] of all) {
@@ -752,17 +758,16 @@ export class WeaponBuild {
       // `mergeParts`. Same rule, and same reason, as ViewModel's arms and
       // mergeByMaterial (world/merge.ts).
       const meshName = `${this.prefix}_${suffix}_${name}`;
-      let merged: Mesh;
+      let merged: ViewSegment;
       if (parts.length === 1) {
         detachPart(parts[0]);
-        merged = drawnMesh(bakePartTransform(parts[0]), this.scene);
+        merged = toSegment(bakePartTransform(parts[0]));
       } else {
-        merged = drawnMesh(meshName, mergeParts(parts), this.scene);
+        merged = segmentOf(meshName, mergeParts(parts));
         merged.material = parts[0].material;
       }
       merged.name = meshName;
       this.view.hang(merged, parent);
-      merged.isPickable = false;
       if (finished) this.finish.push({ mesh: merged, group: name as FinishGroup });
       out.push(merged);
     }
@@ -789,17 +794,16 @@ export class WeaponBuild {
 
   /**
    * Dresses a reticle or a tritium bead: unlit, un-outlined, and deliberately
-   * NOT run through `collect` — see the header. A `Part` is made a mesh here
-   * (`drawnMesh`), so a bead is in the scene from the line that built it, as
-   * it was when it was a `MeshBuilder` sphere; a merged reticle arrives as the
-   * mesh `drawnMesh` already made of its bars.
+   * NOT run through `collect` — see the header. A `Part` is made a segment
+   * here (`toSegment`), at the line that built it, as it was made a mesh when
+   * it was a `MeshBuilder` sphere; a merged reticle arrives as the segment
+   * `segmentOf` already made of its bars.
    */
-  lit(part: Mesh | Part, parent: Joint, colour: string = RETICLE): Mesh {
-    const m = part instanceof Part ? drawnMesh(part, this.scene) : part;
+  lit(part: Part, parent: Joint, colour: string = RETICLE): ViewSegment {
+    const m = part instanceof ViewSegment ? part : toSegment(part);
     this.view.hang(m, parent);
     m.material = this.mats.getEmissive(colour);
     m.metadata = { noInk: true };
-    m.isPickable = false;
     return m;
   }
 

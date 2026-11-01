@@ -43,7 +43,7 @@ import {
   type WeaponParts,
 } from "./weaponKit";
 import type { Joint } from "./rigJoints";
-import type { ViewTree } from "./viewTree";
+import type { ViewSurface, ViewTree } from "./viewTree";
 
 /**
  * The magazine's rake — NEGATIVE for the reason every other box magazine here
@@ -521,7 +521,7 @@ export function buildSniper(
 
   // Merged before the magazine, the bolt and any optic, so none of their parts
   // can end up inside the weapon's own colour groups.
-  const meshes = b.merge("sniper", root);
+  const meshes: ViewSurface[] = b.merge("sniper", root);
 
   // --- magazine: AI's short, deep ten-round box ---
   // Straight and square, and short: it hangs little further under the well

@@ -7,9 +7,10 @@
  * parts of a model that a box makes read as a toy.
  * Owns: no mesh and no scene. Each builder returns a `Part` (`world/parts.ts`)
  * on a `GeometryBuffer` (`src/geometry/`) — the model that asked for it decides
- * what it becomes: a mesh for a weapon (`drawnMesh` is where it does), and
- * for a soldier and the three hull models a SEGMENT of a kit our renderer
- * draws, no mesh made (`BABYLON_EXIT.md` X4.1d and X4.2b) — and this file
+ * what it becomes: for a soldier, the three hull models and (X4.3c) the
+ * weapon a SEGMENT our renderer draws, no mesh made (`BABYLON_EXIT.md` X4.1d,
+ * X4.2b and X4.3c), and a mesh for a thrown or laid thing (`drawnMesh`) — and
+ * this file
  * imports nothing from `@babylonjs/core`: its vectors are `src/math/`'s, which
  * are Babylon's bit for bit (`scripts/math-check.mjs`).
  * Invariants: every face carries its own normal and its own vertices, so the

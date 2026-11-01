@@ -4,8 +4,11 @@
  * viewmodel's merged colour groups take.
  * Owns: the finish table and `applyFinish`, the one place a built weapon's
  * materials are rewritten. Holds no state and no geometry — which weapon is
- * carried is Game's, which finish is on it is Game's, and the meshes are the
- * model builders'.
+ * carried is Game's, which finish is on it is Game's, and the segments are
+ * the model builders' (`ViewSegment`s our renderer draws, `BABYLON_EXIT.md`
+ * X4.3c, which reads each one's material's recipe as it draws it — so a
+ * repaint is still a material write and nothing else, and re-orders the
+ * draws exactly as it re-ordered Babylon's queue).
  *
  * The third sibling of `weapons.ts` and `sights.ts`, and split from both for
  * the reason they are split from each other: a weapon decides what the round

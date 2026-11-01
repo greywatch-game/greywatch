@@ -1451,6 +1451,36 @@ export class CelMaterialFactory {
   private bodyVisor: EmissiveRecipe | null = null;
 
   /**
+   * What every unlit part of the player's own WEAPON is drawn with — a
+   * reticle, a bead, a post, the fist's pip, the bottle's wick, the muzzle
+   * flash: `bodyEmissiveRecipe`'s twin over the viewmodel's own table, one
+   * slot a colour (`colors`, the `getEmissive` colours its parts wear), the
+   * factory's fog band by reference — what each part's unlit
+   * `StandardMaterial` and `EmissiveFog` drew until `BABYLON_EXIT.md` X4.3c,
+   * number for number (`render/ViewDraw.ts`). Bound at the first call, for
+   * `bodyCelRecipe`'s reason; a table longer than `MAX_EMISSIVE_PALETTE` is
+   * REFUSED rather than cut, since a slot past it would read black.
+   */
+  viewEmissiveRecipe(colors: readonly Color3[]): EmissiveRecipe {
+    if (!this.viewEmissive) {
+      if (colors.length > MAX_EMISSIVE_PALETTE) {
+        throw new Error(`viewEmissiveRecipe: ${colors.length} weapon emissives, past the palette's ${MAX_EMISSIVE_PALETTE}`);
+      }
+      const table = new Float32Array(MAX_EMISSIVE_PALETTE * 3);
+      for (let i = 0; i < colors.length; i++) {
+        table[i * 3] = colors[i].r;
+        table[i * 3 + 1] = colors[i].g;
+        table[i * 3 + 2] = colors[i].b;
+      }
+      this.viewEmissive = { depthBias: 0, values: { emissivePalette: table, fogRange: this.emissiveFogRange } };
+      this.materialEpoch++;
+    }
+    return this.viewEmissive;
+  }
+
+  private viewEmissive: EmissiveRecipe | null = null;
+
+  /**
    * Returns the shared cel material for a hex color, creating it on demand.
    *
    * `depthUnits` biases the depth TEST toward the eye in polygon-offset units,

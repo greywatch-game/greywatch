@@ -82,12 +82,23 @@ two meshes an arm, one per colour.
   tree (`ViewTree.read` / `world`) and never composes a joint itself**, and every
   write to a joint's channels goes through `ViewModel.wrote`, which is the dirty
   flag each Babylon vector kept.
-- **The viewmodel renders in `VIEWMODEL_GROUP` (1), and that group's depth is NOT
-  cleared** (`Game.ts`, `setRenderingAutoClearDepthStencil`): the frame keeps one
-  depth image of the world and the gun, which the ink, the blur, the paper and the
-  glow's occlusion all name the gun by. Anything attached joins that group —
-  `PlayerView`'s muzzle flash does; the ejected brass deliberately does **not**, because it
-  is thrown into the world and should be occluded like anything else.
+- **The weapon is drawn by OUR renderer, after the world and into the world's
+  depth with no clear** (`render/ViewDraw.ts`, `BABYLON_EXIT.md` X4.3c): every
+  opaque part — each rig's colour groups, magazines, bolt, slide and warhead,
+  each optic's housing and reticle, the arms, the fist with its frag or bottle,
+  and the muzzle flash — is a SEGMENT of one kit (`ViewSegment`, `viewTree.ts`)
+  and Babylon is made no mesh of it. One draw a segment, at the end of
+  rendering group 0 (after the kit card), in the order Babylon's `VIEWMODEL_GROUP`
+  (1) queue drew the meshes: the material's `uniqueId`, then the order they were
+  made, which is what settles an equal depth — so a finish, which swaps a colour
+  group's material, re-orders it. Group 1 now holds the two optics' GLASSES
+  alone (X4.3d moves them), and its depth is still NOT cleared (`Game.ts`,
+  `setRenderingAutoClearDepthStencil`): the frame keeps one depth image of the
+  world and the gun, which the ink, the blur, the paper and the glow's
+  occlusion all name the gun by. Anything attached is a segment of the same
+  tree — `PlayerView`'s muzzle flash is; the ejected brass deliberately is
+  **not**, because it is thrown into the world and should be occluded like
+  anything else.
 - **Scale and stand-off are a framing decision, not realism.** A 54° vertical FOV
   against a real eye's ~130° means a rifle framed where a rifle actually sits fills
   the screen; `viewmodel.scale` shrinks it and `hipPos.z` pushes it out. That pose is

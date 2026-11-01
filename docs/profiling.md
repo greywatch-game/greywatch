@@ -431,8 +431,11 @@ frame                       the whole tick, wall to wall
    │                        X4.1c: a round has none, every shadow map ours
    ├─ glow                  GlowPass: its mask and four blurs at the end of
    │                        the draw phase (the compose is inside the ink)
-   ├─ drawWorld             rendering group 0 — the map and the bodies
-   └─ drawOverlay           groups above it — the gun
+   ├─ drawWorld             rendering group 0 — the map, the bodies, and
+   │                        since X4.3c the gun's own draws, recorded at
+   │                        the group's end
+   └─ drawOverlay           groups above it — the optics' glass alone
+                            since X4.3c
 
 present                     the engine's endFrame AFTER tick returns: the
                             render pass closed and queue.submit. A ROOT, not a
@@ -1223,6 +1226,17 @@ Since X4.2b no hull is in `counters.drawCalls` either — a hull was a draw a
 mesh there, 25 a tank, 26 a truck and 20 a helicopter, the size gate's drops
 aside — so the main pass's draws are `counters.drawCalls` plus `blocks.drawn`
 plus `bodies.drawn` plus `hulls.drawn`. The viewer prints it as `hulls`.
+
+**From report version 23 it says the same of the WEAPON** (`view`,
+`BABYLON_EXIT.md` X4.3c): the main pass's draws of the viewmodel's opaque
+segments — one a segment, as Babylon drew one a mesh — and the glow mask's
+(`FrameProfile.setView`). Since X4.3c no opaque part of the weapon is in
+`counters.drawCalls` (the optics' glass still is, until X4.3d), so the main
+pass's draws are `counters.drawCalls` plus `blocks.drawn`, `bodies.drawn`,
+`hulls.drawn` and `view.drawn`. Their CPU cost moved spans with them: the
+weapon is recorded at the END of rendering group 0 (`"afterGroup"`), inside
+`drawWorld`, and `drawOverlay` holds the glass alone. The viewer prints it as
+`weapon`.
 
 **From report version 18 a capture says the SIZE every frame was drawn at**
 (`viewport`), and **`device.window` and `device.backingStore` are read at SAVE

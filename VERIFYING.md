@@ -1214,6 +1214,10 @@ is one machine's:
   Then twin every cel material, swap, and diff. All four maps came back at 0% of
   pixels with 65-279 bufferless meshes in frame.
 - **Skip `renderingGroupId !== 0` in that swap, and the reason is the TEST's.**
+  (Since `BABYLON_EXIT.md` X4.3c the weapon is no mesh at all — a walk of the
+  scene's meshes does not reach it — but `Game.drawView` orders its segments
+  by their MATERIAL'S ID exactly as the group did, so a swap of
+  `ViewSegment.material` meets the same trap.)
   `Game` sets its front-to-back comparator on group 0 only, so the VIEWMODEL
   group keeps Babylon's `PainterSortCompare`, which orders by MATERIAL ID —
   hand the weapon 54 freshly minted materials and it re-decides a handful of
@@ -1335,7 +1339,9 @@ is one machine's:
   minutes, which is exactly long enough to be tempted. Finish the run, or copy
   the tree.
 - The muzzle flash is unhittable at 2 fps (`gunfeel.flashTime` 0.05 s); force it
-  with `g.playerView.flashRoot.setEnabled(true)` (the flash is `PlayerView`'s;
+  with `g.playerView.flashRoot.enabled = true` (a JOINT's switch since
+  `BABYLON_EXIT.md` X4.3b, seen from the next frame; the flash is
+  `PlayerView`'s, its petals segments our renderer draws since X4.3c;
   `Player` draws nothing).
 - **A soldier is judged in a picture, and the rig can be photographed without
   fighting a round for it.** Since `BABYLON_EXIT.md` X4.1d a rig is no mesh:

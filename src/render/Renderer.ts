@@ -74,7 +74,11 @@
  *   over them, and one drawn after a particle in front of it paints over
  *   the particle.
  * - `"afterGroup"`: after the group has been queued whole, and before the
- *   next group (the viewmodel's).
+ *   next group (the viewmodel's, which holds the optics' glass). The player's
+ *   WEAPON is drawn here (`ViewDraw`, `BABYLON_EXIT.md` X4.3c): after group 0's
+ *   blended queue — the kit card last of it — where group 1's opaque queue
+ *   drew it, so the card covers the world, the weapon covers the card and
+ *   the glasses still draw over the weapon.
  */
 import {
   createFrameTextures,
