@@ -389,8 +389,10 @@ export class BodyDraw {
   /**
    * The visors' bloom into the glow's mask from the next frame on, for the
    * install standing — asked AFTER the world's own mask draw is, so the
-   * palette goes down first in that pass as it did when Babylon drew the
-   * visors behind it (`Renderer.addGlowMask` keeps the order added).
+   * palette goes down before the visors in that pass as it did when Babylon
+   * drew the visors behind it (`Renderer.addGlowMask` keeps the order added;
+   * the weapon's, registered for the session at construction, goes ahead of
+   * both — `render/ViewDraw.ts`, X4.3c).
    */
   installMask(): void {
     if (!this.unhook) return;

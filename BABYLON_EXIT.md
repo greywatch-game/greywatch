@@ -1106,15 +1106,25 @@ read the same cache for the picture.
   the turntable **96 of 96 byte-identical**; X4.3b's replay oracle on both
   trees **1,563 and 3,981 frames identical, 303 and 2,286 reader answers
   identical as float64 bits**, every drawn segment its joints' fresh
-  composition and the draw order Babylon's sort on every frame; the kit
+  composition; the kit
   screen from the menu (no map: the gun drawn) and from deploy at 832x384 and
   3440x1440; offline rounds with every primary, the pistol, both throwables
   and both AT items, and a netplay round: the weapon drawn on every frame,
   every reader-backed origin bit for bit, no refusal, no error; `gate`, `shaders`, typecheck, build, corecheck, `math-check` and `parity` pass.
   **Deviations** (the archive has them): the profiler's `view`; the mask's
-  order (ours first, Babylon's group 1 last — only an exact tie could tell,
-  none banked); a new finish material draws at once where Babylon waited for
-  its compile.
+  order (the weapon's registered first, ahead of even the palette and the
+  visors, where Babylon drew it last — an exact tie, or a blended fire in
+  front of a lit part, can tell; none banked); a new finish material draws at
+  once where Babylon waited for its compile. **The post-commit review**
+  found one real fault: the draw order's TIE-BREAK was the joints' walk, not
+  the order made (4 of 14 draws on the rifle, 4 of 13 on the SMG, 6 of 17 on
+  the pistol; the landed "order matches" check sorted the same list it
+  tested). Fixed after it — ties go to the segment made first (`slot`) — and
+  checked against the PARENT's own group-1 queue as it rendered: every frame
+  of both replays equal (the landed commit differed on 1,418 of 1,564); with
+  it a refusal told once per change, a late pipeline failure routed, DEV
+  asserts, the mask-order and profiler-span words corrected; the bank,
+  mask, readers, `kit:hash` and every gate unmoved (the archive has it).
 - **X4.3d — the lens glass and the kit card (no picture change), and group 1
   goes.** The two glasses (the holo's disc and the reflex's canted pane, one
   pair a rail weapon) as a BLENDED draw of ours after the gun's opaque

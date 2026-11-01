@@ -431,9 +431,9 @@ frame                       the whole tick, wall to wall
    │                        X4.1c: a round has none, every shadow map ours
    ├─ glow                  GlowPass: its mask and four blurs at the end of
    │                        the draw phase (the compose is inside the ink)
-   ├─ drawWorld             rendering group 0 — the map, the bodies, and
-   │                        since X4.3c the gun's own draws, recorded at
-   │                        the group's end
+   ├─ drawWorld             rendering group 0 — the map; our draws (the
+   │                        bodies, hulls and since X4.3c the gun) only
+   │                        QUEUED here — see `view` below
    └─ drawOverlay           groups above it — the optics' glass alone
                             since X4.3c
 
@@ -1233,10 +1233,13 @@ segments — one a segment, as Babylon drew one a mesh — and the glow mask's
 (`FrameProfile.setView`). Since X4.3c no opaque part of the weapon is in
 `counters.drawCalls` (the optics' glass still is, until X4.3d), so the main
 pass's draws are `counters.drawCalls` plus `blocks.drawn`, `bodies.drawn`,
-`hulls.drawn` and `view.drawn`. Their CPU cost moved spans with them: the
-weapon is recorded at the END of rendering group 0 (`"afterGroup"`), inside
-`drawWorld`, and `drawOverlay` holds the glass alone. The viewer prints it as
-`weapon`.
+`hulls.drawn` and `view.drawn`. Their CPU cost moved spans with them, and
+not to where they are queued: the weapon's draws are QUEUED at the end of
+rendering group 0 (`"afterGroup"`, inside `drawWorld`), but Babylon RUNS the
+queue — our recording — when it ends the main pass (`_endCurrentRenderPass`),
+so that cost lands in whichever span is open then, as the bodies' and the
+hulls' does (not confirmed by a capture). `drawOverlay` holds the glass alone.
+The viewer prints it as `weapon`.
 
 **From report version 18 a capture says the SIZE every frame was drawn at**
 (`viewport`), and **`device.window` and `device.backingStore` are read at SAVE

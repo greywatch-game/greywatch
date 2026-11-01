@@ -6285,7 +6285,9 @@ X4.3c's brief, word for word:
     in all seven sights **3,981 frames identical (61,242) and 2,286 reader
     answers identical**. On the step every drawn segment's matrix is its
     joints' fresh composition (84,368, 0 differ) and the draw order is
-    Babylon's group-1 sort on every frame.
+    Babylon's group-1 sort on every frame — a claim the post-commit review
+    found TAUTOLOGICAL (it sorted the very list it tested) and false in its
+    tie-break (below).
   - **The kit screen** raised from the MENU (no map) and from `deploy`, its
     DOM up, at 832x384 and 3440x1440, a weapon and a sight changed on it and
     turned, then a round entered: the gun drawn from the title (10 draws, 2
@@ -6324,4 +6326,67 @@ X4.3c's brief, word for word:
   (`ViewDraw` asks `glowAdmits(VIEWMODEL_GROUP)` until then), and the
   profiler's `drawOverlay`. X5.4: the render cache's frame id (decided).
   The construction cost of the kit (built and uploaded on every boot, the
-  menu included) is unmeasured on the phone.
+  menu included) is unmeasured on the phone. **Memory the review flagged and left** (to be
+  taken when a phone reading asks): the kit uploads a colour, a uv and a slot
+  for EVERY vertex (most segments carry none of the three, read as constants),
+  and each rig's spent magazine uploads its arrays a second time though it
+  shares them with the magazine.
+- **What the post-commit review found** (an independent reader over 58ab5ed
+  and 007ee49; fixed after it — the draw's tie-break, one listener, a late
+  failure, DEV asserts and words; nothing in the picture or the readers
+  moved). **One real fault**:
+  - **The draw order's TIE-BREAK was not Babylon's.** `Game.drawView`
+    stable-sorted `ViewTree.evaluated` by material `uniqueId`, and
+    `evaluated` is built by `syncSwitches`' depth-first walk of the JOINTS —
+    hang order by joint, not the order the surfaces were MADE, which was
+    Babylon's dispatch order (the scene's, which the cull walked). The two
+    differ where one arm's joint is made before the other arm's segments: the
+    reviewer's NullEngine check found 4 of 14 positions differ on the rifle,
+    4 of 13 on the SMG and 6 of 17 on the pistol. The landed note's "the draw
+    order is Babylon's sort on every frame" sorted the very list it tested.
+    No banked frame told — a tie shows only where two tied segments meet at
+    one depth — and the bank, the mask and the readers were identical
+    throughout. **Fixed**: a tie goes to the segment made first
+    (`ViewMesh.slot`, the kit numbered in `ViewTree.meshes`' order, the order
+    made — the scene's, which `kit:hash` asserts). **Checked against the
+    PARENT's own queue as it rendered** (a scratch probe wrapping
+    `SubMesh.render` while the main pass's group 1 rendered, opaque only,
+    mapped by tree index, against the step's handed-over order, both trees
+    replaying X4.3b's logs): **every frame equal** — the seeded sequence
+    through all nine rigs in all seven sights, 3,982 frames and 60,829 draws,
+    and the recorded round, 1,564 frames and 23,539 draws — where the landed
+    commit, replayed the same way, differed on 1,418 of the round's 1,564.
+    The readers bit for bit again (303 and 2,286 answers as float64 bits;
+    1,563 and 3,981 frames' digests identical). The `viewTree.ts` header, the
+    `drawView` comment, `docs/weapons.md` and `docs/rendering.md` say so.
+  **Fixed besides**:
+  - **The glow mask's order, stated as it is**: the weapon's mask draw is
+    registered once at construction, so it goes FIRST in the pass — ahead of
+    the palette and the visors a round registers after it — where Babylon
+    drew the weapon's emissives LAST, in group 1; and it decides more than an
+    exact tie: a blended self-masking emissive that writes no depth (a
+    molotov's fire, `FlameMaterial`) between the eye and a lit weapon part now
+    lands over the weapon's colour in the mask. `docs/rendering.md`,
+    `GlowPass.ts`, `WorldGlow.ts` and `BodyDraw.ts` ("palette first") now
+    say what the code does; whether that order should change is the owner's.
+  - **The profiler span**: the weapon's draws are only QUEUED at the end of
+    group 0 (inside `drawWorld`); Babylon runs the queue — our recording — at
+    `_endCurrentRenderPass`, so that cost lands in whichever span is open then
+    (`docs/profiling.md`, reworded; not confirmed by a capture).
+  - **A refused pass was told every refused frame**, up to three times a
+    frame — with the console listener (the kit screen over the menu) a
+    `console.error` a frame: `ViewDraw` now tells a refusal of the main pass,
+    and of the mask, once per change.
+  - **A recipe's late pipeline** (`adopt`, a shape not asked at
+    construction) only logged when it failed: it is told to `onFailed` as the
+    construction asks are.
+  - **DEV asserts**: a segment whose material has neither a cel recipe nor an
+    emissive colour, an unlit material at a non-zero `zOffsetUnits` (the
+    weapon's emissive draw carries no bias), and a segment hung after the kit
+    was built (no slot), all in `Game.buildViewDraw`/`drawView`.
+  - **Re-checked after the fixes**: the bank `--check --keep` against the
+    BEFORE at edccb4f **83 of 84 byte-identical** (`sarab/shelf`'s worktree
+    pixel, the same bytes the parent draws in the main tree); the glow's mask
+    read back at every Harrowmead row **37 of 37 identical**; `kit:hash
+    --models` **244 of 244 identical**; `gate.mjs` and `shaders.mjs` clean on seven;
+    typecheck, build, corecheck and `parity` pass. No console or page error.

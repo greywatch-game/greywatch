@@ -5918,6 +5918,18 @@ export class Game {
       const recipe = this.mats.celRecipe(seg.material);
       if (recipe) cels.add(recipe);
       const emissive = recipe ? null : (seg.material as { emissiveColor?: Color3 } | null)?.emissiveColor ?? null;
+      if (import.meta.env.DEV) {
+        // A material our renderer cannot read would draw nothing, silently.
+        if (!recipe && !emissive) {
+          throw new Error(`buildViewDraw: "${seg.name}" wears a material with neither a cel recipe nor an emissive colour`);
+        }
+        // The weapon's emissive table carries no depth bias: an unlit part
+        // biased off its surface would lose it here.
+        const units = (seg.material as { zOffsetUnits?: number } | null)?.zOffsetUnits ?? 0;
+        if (emissive && units !== 0) {
+          throw new Error(`buildViewDraw: "${seg.name}" is unlit at a depth bias of ${units}, which the weapon's emissive draw does not carry`);
+        }
+      }
       const slot = emissive ? slotOf(emissive) : 0;
       // `GlowPass.buildList`'s two tests of a mesh's own: a colour above
       // black, and no `noGlow`.
@@ -5965,8 +5977,11 @@ export class Game {
    * written as one draw — its joint's world, its place in the kit, its
    * material's recipe — in BABYLON'S GROUP-1 ORDER: the opaque queue sorted by
    * `PainterSortCompare` (the material's `uniqueId`) over the order the
-   * meshes were dispatched, which was the order they were made (the tree's), a
-   * STABLE sort as V8's is. That order is what settles an equal depth, so a
+   * meshes were dispatched, which was the order they were MADE, a STABLE sort
+   * as V8's is — so a tie goes to the segment made first (`ViewMesh.slot`),
+   * never to the order the evaluation walked the joints in, which differs
+   * where an arm's joint was made before the other arm's segments (X4.3c's
+   * review, checked against the parent's own queue). That order is what settles an equal depth, so a
    * finish, which swaps a colour group's material, re-orders the draws exactly
    * as it re-ordered the queue. Allocates nothing.
    */
@@ -5980,13 +5995,21 @@ export class Game {
     const order = this.viewOrder;
     const keys = this.viewKeys;
     for (let i = 0; i < n; i++) {
-      const material = list[i].segment!.material;
+      const v = list[i];
+      const material = v.segment!.material;
+      if (import.meta.env.DEV && v.slot < 0) {
+        throw new Error(`drawView: "${v.segment!.name}" was hung after the weapon's kit was built — it has no slot`);
+      }
       keys[i] = material ? material.uniqueId : Number.POSITIVE_INFINITY;
-      // A stable insertion sort: a segment moves ahead only of one whose
-      // material is strictly younger.
+      // An insertion sort by the material's id, a tie going to the segment
+      // MADE first (its slot: the kit is numbered in the order made) — the
+      // order Babylon dispatched the meshes in, not the order the evaluation
+      // walked them, which follows the joints (X4.3c's review).
       let r = i;
-      while (r > 0 && keys[order[r - 1]] > keys[i]) {
-        order[r] = order[r - 1];
+      while (r > 0) {
+        const o = order[r - 1];
+        if (keys[o] < keys[i] || (keys[o] === keys[i] && list[o].slot < v.slot)) break;
+        order[r] = o;
         r--;
       }
       order[r] = i;

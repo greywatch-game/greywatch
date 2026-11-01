@@ -90,7 +90,8 @@ two meshes an arm, one per colour.
   and Babylon is made no mesh of it. One draw a segment, at the end of
   rendering group 0 (after the kit card), in the order Babylon's `VIEWMODEL_GROUP`
   (1) queue drew the meshes: the material's `uniqueId`, then the order they were
-  made, which is what settles an equal depth — so a finish, which swaps a colour
+  made (never the order the evaluation walks the joints — X4.3c's review),
+  which is what settles an equal depth — so a finish, which swaps a colour
   group's material, re-orders it. Group 1 now holds the two optics' GLASSES
   alone (X4.3d moves them), and its depth is still NOT cleared (`Game.ts`,
   `setRenderingAutoClearDepthStencil`): the frame keeps one depth image of the

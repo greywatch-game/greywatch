@@ -84,7 +84,8 @@
  *
  * THE EMISSIVE PALETTE'S MASK IS OUR RENDERER'S, and nothing of it is drawn
  * here (`render/WorldGlow.ts`, X3.6d, X3.7b, X3.7c): it draws the merged
- * world's lit windows and lenses FIRST in this pass, right after the clear —
+ * world's lit windows and lenses FIRST in this pass, right after the clear
+ * (behind only the weapon's lit parts, X4.3c, below) —
  * the palette was in Babylon's opaque queue, ahead of every blended mask
  * draw, and first keeps that order. Its MAIN pass is ours too (X3.6e), and
  * Babylon is made no mesh of it in a round or an editor build (an editor's
@@ -94,11 +95,15 @@
  * (`render/BodyDraw.ts`, X4.1d: no rig is a Babylon mesh), drawn first in
  * the pass with the palette, each at `GlowRules.colour`'s answer for its
  * body. So are the WEAPON's lit parts (`render/ViewDraw.ts`, X4.3c: no
- * opaque viewmodel part is a Babylon mesh), drawn first in the pass with
- * them where Babylon drew them last, in group 1 — a difference only where
- * two mask draws pass at one pixel. Everything else in the mask — the
- * effects and fires,
- * the moon, and an EDITOR build's every emissive — is still drawn here.
+ * opaque viewmodel part is a Babylon mesh) — registered for the session at
+ * construction, so FIRST of all in the pass, ahead of the palette and the
+ * visors a round registers after it, where Babylon drew them LAST, in group
+ * 1: the order decides an exact depth tie between depth-writing draws, and,
+ * with no tie, a blended self-masking emissive that writes no depth (a
+ * molotov's fire) in front of a lit weapon part, which now lands over the
+ * weapon's colour (`docs/rendering.md`, "The weapon, ours"). Everything else
+ * in the mask — the effects and fires, the moon, and an EDITOR build's every
+ * emissive — is still drawn here.
  *
  * A MATERIAL WHOSE VERTICES MOVE BRINGS ITS OWN MASK (`SelfMasking`). The
  * stock variants transform by `world` and `viewProjection` alone, so a surface

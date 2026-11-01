@@ -26,7 +26,11 @@
  *   `seal` and which is written from then on. **The surfaces are listed in the
  *   order they were MADE** (`meshes`), which is the order Babylon's scene held
  *   the meshes they were — and so the order its cull offered them and its
- *   queue dispatched them, which `Game.drawView` sorts on.
+ *   queue dispatched them: a segment's place in it is its `slot` (numbered by
+ *   `Game`), the tie-break `Game.drawView` sorts on. **`evaluated` is NOT in
+ *   that order** — it follows the walk of the joints (`syncSwitches`), which
+ *   differs where an arm's joint was made before the other arm's segments
+ *   (X4.3c's review) — so nothing may take its order for Babylon's.
  * - **Every viewmodel joint has one shape** (`viewJoint`, the moment it is
  *   made), so the compose that a rig and a hull also run meets two hidden
  *   classes, not one per order the fields arrived in.

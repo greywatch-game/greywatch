@@ -37,11 +37,12 @@
  * caller's epoch moves; a frame with a texture unpublished draws nothing, and
  * a draw whose pipeline is unbuilt is skipped, as a Babylon material not
  * ready drew nothing; it is INSTALLED FOR THE SESSION, not the round — the kit
- * screen covers `menu`, where no map stands — and a pipeline that FAILS, or a
- * refused pass while something of it would draw, is told to `onFailed`'s
- * listener, never inside the render's commands (the caller defers it,
- * `Game.worldFailed`); nothing here allocates on a frame but the first sight
- * of a recipe (a finish's new material).
+ * screen covers `menu`, where no map stands — and a pipeline that FAILS (asked
+ * at construction or at a recipe's first draw), or a refused pass while
+ * something of it would draw — told ONCE per change, not every refused frame
+ * — is told to `onFailed`'s listener, never inside the render's commands (the
+ * caller defers it, `Game.worldFailed`); nothing here allocates on a frame but
+ * the first sight of a recipe (a finish's new material).
  * Never: imports Babylon; reads a node, a joint, a mesh or a material.
  * Contract: `docs/rendering.md`, "The weapon, ours".
  */
@@ -144,6 +145,13 @@ export class ViewDraw {
   private ours = false;
   private failed: (reason: string) => void;
   private failedPipelines = false;
+  /**
+   * Whether a refusal of the main pass, or of the mask, has been told since
+   * the last frame that drew there — so a refused pass is told ONCE per
+   * change, not up to three times a frame (`Renderer.onRefused`).
+   */
+  private refusalTold = false;
+  private maskRefusalTold = false;
   private readonly unhook: () => void;
 
   constructor(
@@ -334,7 +342,10 @@ export class ViewDraw {
       if (import.meta.env.DEV) {
         console.warn(`view: a cel material of a shape not asked at construction (${key}) — compiled now, in the round`);
       }
-      void this.askCel(recipe, key);
+      // A pipeline that fails here is told as a construction ask's is.
+      void this.askCel(recipe, key).then((ok) => {
+        if (!ok) this.failed("our weapon cannot draw: a pipeline of its failed");
+      });
     }
     const block = new UniformBlockBuffer(this.device, CEL_MATERIAL_BLOCK, recipe.defines, "view: material");
     const group = new HostBindGroup(
@@ -407,6 +418,8 @@ export class ViewDraw {
 
   /** The weapon in the main pass, one draw a segment in the order handed over. */
   private readonly draw = (pass: GPURenderPassEncoder, ctx: FrameContext): void => {
+    // Reached only through a pass that is not refused.
+    this.refusalTold = false;
     if (!this.ours) return;
     const n = this.instances;
     let drawn = 0;
@@ -452,6 +465,7 @@ export class ViewDraw {
 
   /** The lit segments' bloom, first in the glow's mask: the same draws, by the same vertex module. */
   private readonly drawMask = (pass: GPURenderPassEncoder, ctx: FrameContext): void => {
+    this.maskRefusalTold = false;
     if (!this.ours || !this.glowOn || !this.anyMasked) return;
     const mask = this.mask;
     if (!mask) return;
@@ -476,12 +490,16 @@ export class ViewDraw {
 
   /** `Renderer.onRefused`: the main pass drew nothing of ours, the weapon included. */
   private readonly refused = (): void => {
-    if (this.ours) this.failed("the main pass was refused, so the weapon cannot be drawn");
+    if (!this.ours || this.refusalTold) return;
+    this.refusalTold = true;
+    this.failed("the main pass was refused, so the weapon cannot be drawn");
   };
 
   /** `Renderer.onGlowMaskRefused`: the mask drew nothing of ours, the reticles' bloom included. */
   private readonly maskRefused = (): void => {
-    if (this.ours && this.glowOn && this.anyMasked) this.failed("the glow's mask pass was refused, so no reticle of ours can bloom");
+    if (!this.ours || !this.glowOn || !this.anyMasked || this.maskRefusalTold) return;
+    this.maskRefusalTold = true;
+    this.failed("the glow's mask pass was refused, so no reticle of ours can bloom");
   };
 }
 

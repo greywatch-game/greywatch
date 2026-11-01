@@ -4495,8 +4495,14 @@ meshes, the blended draws whose slot is load-bearing (X4.3d moves them).
   `uniqueId` — over the order the meshes were dispatched, which was the order
   the cull offered them, which was the order they were MADE; V8's sort is
   stable. `Game.drawView` reproduces it every frame: the tree's evaluated
-  segments in the order they were hung (the order made, `ViewTree.meshes`),
-  stably insertion-sorted by their material's `uniqueId`. So a FINISH, which
+  segments insertion-sorted by their material's `uniqueId`, a tie going to
+  the segment MADE first (`ViewMesh.slot`, the kit numbered in the order
+  made). **Not the order the evaluation hands them over in**, which is the
+  joints' walk (`ViewTree.syncSwitches`) and differs from the order made where
+  an arm's joint was made before the other arm's segments — 4 of 14 draws on
+  the rifle (X4.3c's review: the landed step had it, and no banked frame
+  told — a tie only shows where two tied segments meet at one depth). Checked
+  against the PARENT's own queue as it rendered. So a FINISH, which
   swaps a colour group's material for one the factory may have minted later,
   re-orders the draws exactly as it re-ordered the queue; the materials are
   the factory's, still made, so their ids keep their relative order.
@@ -4511,13 +4517,19 @@ meshes, the blended draws whose slot is load-bearing (X4.3d moves them).
   bloom `GlowRules.colour` gave its mesh — its bounding sphere's centre off the
   segment's own bounds (`segmentBounds`, Babylon's `extractMinAndMax`), faded
   by the fog at its distance from the eye, pulled INSIDE the render where
-  `globalPosition` is this frame's — drawn FIRST in that pass with the
-  palette and the visors (`Renderer.addGlowMask`), by the main pass's own
-  vertex module so the LEQUAL tie holds, on `glowAdmits(VIEWMODEL_GROUP)` (the
-  stage, which the kit screen keeps). Babylon drew them LAST, in group 1; the
-  order matters only where two mask draws pass at one pixel, which for a
-  depth-writing draw is an exact depth tie with a world emissive (a tracer
-  lying along a petal is the one plausible one, unbanked — X4.3c's note).
+  `globalPosition` is this frame's — by the main pass's own vertex module so
+  the LEQUAL tie holds, on `glowAdmits(VIEWMODEL_GROUP)` (the stage, which
+  the kit screen keeps). **Its place in the mask is not Babylon's**: the
+  draw is registered once, at construction (`Renderer.addGlowMask`), so it
+  goes FIRST in that pass — ahead of the palette and the visors, which a
+  round registers after it — where Babylon drew the weapon's emissives LAST,
+  in group 1. The order decides any pixel two mask draws both pass: an exact
+  depth tie between depth-writing draws (a tracer lying along a petal), and,
+  without any tie, a BLENDED emissive that writes no depth in front of a lit
+  weapon part — a molotov's fire (`FlameMaterial`, self-masking) between the
+  eye and the reticle now lands over the weapon's colour in the mask, where
+  the weapon's used to land over it. No banked row holds either (the mask read
+  back identical at every Harrowmead row).
 - **Installed for the SESSION, not the round**: the kit screen covers `menu`,
   where no map stands and `BodyDraw`/`HullDraw` are not installed, so the draw
   and its prepare are hooked at construction and every frame texture the cel
