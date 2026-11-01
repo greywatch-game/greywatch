@@ -994,8 +994,11 @@ card behind it are off Babylon's scene, and no sub-step changed the picture.
   stated once (the texture made at the first paint off the canvas's own
   size, its copy's descriptors kept); why the glass culls, written where it
   is drawn; `ViewMesh.on` and `seen` (written, never read) dropped and
-  `ViewTree.syncSwitches` made private. The bank, the readers and every
-  gate unmoved (the archive has the numbers).
+  `ViewTree.syncSwitches` made private. **Decided** (the owner, 2026-11-01):
+  the twelve glass `StandardMaterial`s, unbound since the step, become plain
+  data on the segment (`ViewSegment.glass`: the emissive colour and the
+  alpha), so no Babylon material is made for a glass. The bank, the readers
+  and every gate unmoved (the archive has the numbers).
 
 **Owed onward:**
 - **The render cache's frame id** (X5.4, decided): `RenderCache` is keyed

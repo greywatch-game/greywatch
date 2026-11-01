@@ -104,8 +104,10 @@
  *   segment in the builder's data, or as a parent, is spelled `Mesh:<name>`.
  *   **Since X4.3d the optics' glasses and the kit card are segments too**
  *   (`ViewSegment.role`), and no viewmodel surface is a Babylon mesh: a glass
- *   is dressed as the opaque ones are (its own `StandardMaterial` is still
- *   the segment's, unbound, so its record names it as before), and the CARD
+ *   is dressed as the opaque ones are, under a stand-in material of the name
+ *   its own `StandardMaterial` had (the segment's own name), since its look is
+ *   plain data on the segment (`ViewSegment.glass`, the owner's decision of
+ *   2026-11-01); and the CARD
  *   as the mesh it was — rendering group 0 (it was never in the viewmodel's),
  *   always-active, `alphaIndex` infinite, under a stand-in material of the
  *   name its `StandardMaterial` had (`kitBackdrop`), which a record spells by
@@ -894,15 +896,20 @@ async function hashModelJobs(jobs) {
           mesh.isVisible = seg.isVisible;
           mesh.isPickable = false;
           mesh.setEnabled(seg.enabled);
-          if (seg.role === "card") {
-            mesh.material = new B.StandardMaterial("kitBackdrop", scene);
-            mesh.alphaIndex = Number.POSITIVE_INFINITY;
-            mesh.alwaysSelectAsActiveMesh = true;
+          // A stand-in carries no values: a record spells a material by its
+          // class and name alone.
+          const standIn = seg.role === "card" ? "kitBackdrop" : seg.role === "glass" ? seg.name : null;
+          if (standIn) {
+            mesh.material = new B.StandardMaterial(standIn, scene);
             const dispose = mesh.dispose.bind(mesh);
             mesh.dispose = (...a) => {
               mesh.material?.dispose();
               return dispose(...a);
             };
+          }
+          if (seg.role === "card") {
+            mesh.alphaIndex = Number.POSITIVE_INFINITY;
+            mesh.alwaysSelectAsActiveMesh = true;
           } else if (inViewmodel) {
             mesh.renderingGroupId = 1;
             mesh.alwaysSelectAsActiveMesh = true;

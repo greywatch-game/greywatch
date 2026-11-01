@@ -113,7 +113,7 @@ export interface ViewDrawSegment {
   readonly slot: number;
   /** Whether it is drawn into the glow's mask: unlit, a colour above black, and not `noGlow`. */
   readonly glows: boolean;
-  /** A GLASS's colour and alpha (rgba, its material's `emissiveColor` and `alpha`); null for any other. */
+  /** A GLASS's colour and alpha (rgba, its `ViewSegment.glass` — what its `StandardMaterial` held until 2026-11-01); null for any other. */
   readonly tint: readonly number[] | null;
   readonly indices: ArrayLike<number>;
 }

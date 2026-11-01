@@ -6791,6 +6791,29 @@ X4.3d's brief, word for word:
     and so `evaluated`'s order, unchanged.
   - **The live plan's "Owed onward"** gained X4.3b's unmeasured compose
     costs.
+  - **Decided** (the owner, 2026-11-01, raised by the review): **the
+    glasses' looks are PLAIN DATA.** The twelve `StandardMaterial`s
+    `optics.ts` made for the glasses (one holo and one reflex a rail weapon),
+    bound to no mesh since the step and read for four numbers, are gone: a
+    glass segment carries `ViewSegment.glass` (`ViewGlass`: its emissive
+    colour, each channel the hex byte over 255 exactly as
+    `Color3.FromHexString` read it, and its alpha — `glassLook` in
+    `optics.ts`), `Game.buildViewDraw` reads it off the segment, and no
+    Babylon material is made for a glass (none in `scene.materials`).
+    `kit:hash` spells a glass under a stand-in material of the name its own
+    had (the segment's name), as it does the card. Nothing else read those
+    materials: the finishes never reach an optic, `census` reads
+    `viewDraw.stats`, the warm-up poses nothing of the weapon, and the editor
+    never touches the viewmodel. Measured after it: the bank `--check --keep` against the BEFORE at
+    595e35d **83 of 84 byte-identical** (the aimed holo and reflex rows and
+    both kit rows among them; `view-pistol-reload`'s main-tree pixel), all 84
+    byte-equal to 4070427's; a first view and first ADS through the holo and
+    the reflex **0 creations**, and **0** glass materials in
+    `scene.materials`; X4.3b's replay **1,564 and 3,982 frames identical, the
+    draw order equal on every frame, 303 and 2,286 reader answers identical
+    as float64 bits**; `kit:hash --models` **244 of 244**; `gate.mjs` and
+    `shaders.mjs` clean on seven; typecheck, build, corecheck and `parity`
+    pass.
   - **Re-checked after the fixes**: the bank `--check --keep` against the BEFORE at 595e35d
     **83 of 84 byte-identical**, all 84 byte-equal to the landed step's
     (`view-pistol-reload`'s one pixel the main tree's own again); X4.3b's

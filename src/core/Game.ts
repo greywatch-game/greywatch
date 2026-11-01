@@ -5900,7 +5900,7 @@ export class Game {
    * tree holds (`ViewTree.segments`, the order they were made), numbered into
    * its kit; each one's material read once — an opaque part's cel recipe, or
    * an unlit one's colour as a slot in the weapon's emissive table; a GLASS's
-   * colour and alpha (its own `StandardMaterial`, which nothing else reads);
+   * colour and alpha (plain data on the segment, `ViewSegment.glass`);
    * the CARD needing none — and each lit part's and each glass's local
    * bounding-sphere centre kept, for the bloom and the back-to-front order.
    * Hooked for the session.
@@ -5935,13 +5935,11 @@ export class Game {
       };
       if (seg.role === "card") return { kind: "card", slot: 0, glows: false, tint: null, ...arrays };
       if (seg.role === "glass") {
-        const material = seg.material as { emissiveColor?: Color3; alpha?: number } | null;
-        const c = material?.emissiveColor;
-        if (!c || material?.alpha === undefined) {
-          throw new Error(`buildViewDraw: the glass "${seg.name}" wears no material with a colour and an alpha`);
-        }
+        const look = seg.glass;
+        if (!look) throw new Error(`buildViewDraw: the glass "${seg.name}" carries no look (ViewSegment.glass)`);
         keepCentre(seg, i);
-        return { kind: "glass", slot: 0, glows: false, tint: [c.r, c.g, c.b, material.alpha], ...arrays };
+        const c = look.emissive;
+        return { kind: "glass", slot: 0, glows: false, tint: [c.r, c.g, c.b, look.alpha], ...arrays };
       }
       const recipe = this.mats.celRecipe(seg.material);
       if (recipe) cels.add(recipe);

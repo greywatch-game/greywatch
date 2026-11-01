@@ -32,7 +32,8 @@
  * (rgb the colour, a the material's alpha), never faded here; the GLASS's
  * pixel is what Babylon's unlit `StandardMaterial` wrote with no fog plugin
  * on it — `clamp(emissive)` at the material's own alpha, its colour a slot of
- * the glass table in `uv2.x` — over the same vertex module; the CARD's
+ * the glass table in `uv2.x` (the segment's `ViewGlass`, plain data since
+ * 2026-11-01) — over the same vertex module; the CARD's
  * vertex is that stage's arithmetic (the world, then the view-projection, as
  * Babylon's default vertex did) handing the pixel its `uv`, and its pixel the
  * texture's colour, clamped, at an alpha of 0 — Babylon's unlit

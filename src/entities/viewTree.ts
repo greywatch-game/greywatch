@@ -5,7 +5,9 @@
  * X4.3d — and the render cache its readers answer from.
  * Owns: `ViewSegment` (a viewmodel surface as plain data: a `Part` with the
  * two flags a mesh carried that the frame reads, and its ROLE — opaque, an
- * optic's glass, or the kit card) and the adapters that make one
+ * optic's glass, or the kit card), `ViewGlass` (a glass's look as plain data:
+ * its emissive colour and its alpha, where a `StandardMaterial` of its own
+ * stood until the owner's decision of 2026-11-01) and the adapters that make one
  * (`toSegment`, `segmentOf`) and measure one (`segmentBounds`); `ViewTree` —
  * the `JointTree` (`rigJoints.ts`; PRIVATE, because its `compute` would
  * rewrite worlds the cache does not know were rewritten), whose root stands
@@ -40,7 +42,10 @@
  *   transform, the material and the metadata the mesh was made of —
  *   `drawnMesh`'s inputs, which `kit:hash --models` still makes a mesh of to
  *   hash it in the mesh's bytes — and the two flags the frame reads,
- *   `isVisible` and its builder's own switch.
+ *   `isVisible` and its builder's own switch. A glass and the card carry NO
+ *   material: the glass's look is `ViewSegment.glass` (`ViewGlass`), the
+ *   card's is its canvas (`ViewModel.kitCard`), so no Babylon material is
+ *   made for either.
  * - **`draw` EVALUATES exactly the set Babylon's render evaluated** — every
  *   surface whose joint chain is switched on and whose own `isVisible` is set,
  *   whatever its role — through the `RenderCache` as `_evaluateActiveMeshes`
@@ -78,6 +83,19 @@ import { fixLocal, Joint, JointTree, RenderCache, viewJoint } from "./rigJoints"
 export type ViewRole = "opaque" | "glass" | "card";
 
 /**
+ * An optic's GLASS as our renderer draws it: what its unlit
+ * `StandardMaterial` held — the emissive colour (as `Color3.FromHexString`
+ * computed it, each channel the hex byte over 255) and the alpha — and nothing
+ * else, since nothing else of that material reached the pixel. Plain data,
+ * since the owner's decision of 2026-11-01: no Babylon material is made for a
+ * glass.
+ */
+export interface ViewGlass {
+  readonly emissive: { readonly r: number; readonly g: number; readonly b: number };
+  readonly alpha: number;
+}
+
+/**
  * One surface of the viewmodel, drawn by OUR renderer (`render/ViewDraw.ts`,
  * `BABYLON_EXIT.md` X4.3c, X4.3d) — what a Babylon mesh was until then: a
  * `Part` (its arrays, its transform, its material, its metadata — exactly
@@ -87,6 +105,8 @@ export type ViewRole = "opaque" | "glass" | "card";
 export class ViewSegment extends Part {
   /** How it is drawn — see `ViewRole`. Set by its builder, before the kit is built. */
   role: ViewRole = "opaque";
+  /** A glass's look (role `"glass"`), set with the role; null for any other. */
+  glass: ViewGlass | null = null;
   /** The mesh's `isVisible`: `ViewModel.applyMeshVisibility`'s, read by the evaluation. */
   isVisible = true;
   /**

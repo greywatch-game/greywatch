@@ -4514,7 +4514,8 @@ the frame that are load-bearing.
   drawn by that program's vertex module under a pixel of its own: what its
   unlit `StandardMaterial` (no fog plugin on it) wrote, `clamp(emissive)` at
   the material's alpha (0.12 the holo's disc, 0.07 the reflex's pane), out of
-  a glass table its slot in `uv2.x` names. The CARD by a stage of its own:
+  a glass table its slot in `uv2.x` names — the colour and alpha now plain
+  data on the segment (`ViewSegment.glass`), no material made at all. The CARD by a stage of its own:
   the vertex arithmetic Babylon's default vertex did, and the texel of its
   canvas, clamped, at an alpha of 0.
 - **In Babylon's group-1 ORDER, because that order settles an equal depth.**
@@ -4549,7 +4550,12 @@ the frame that are load-bearing.
   kept**: a `DOUBLESIDE` buffer is every triangle plus a coincident copy wound
   the other way (`geometry/primitives.ts`), so with `cullMode: "none"` a lens
   would blend BOTH copies, the holo's 0.12 landing as ~0.226 (1 - 0.88²).
-  Back to front, by the distance from the eye
+  **A glass's look is PLAIN DATA** — `ViewSegment.glass`, its emissive colour
+  (each channel the hex byte over 255, as `Color3.FromHexString` read it)
+  and its alpha — and no Babylon material is made for one (the owner's
+  decision of 2026-11-01: the twelve `StandardMaterial`s the glasses wore
+  until then were bound to no mesh after X4.3d and read for those four
+  numbers alone). Back to front, by the distance from the eye
   to each one's bounding-sphere centre, a tie to the one made first
   (`defaultTransparentSortCompare`, every glass at one `alphaIndex`) — an
   order only ever STATED, since one carried weapon wears one optic. Never in

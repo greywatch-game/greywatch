@@ -28,13 +28,14 @@
  * is (`weaponKit.ts`): a housing becomes SEGMENTS our renderer draws at
  * `build.merge`, a bead or a reticle at `build.lit` (a reticle's bars merged by
  * `mergeParts` and made one by `segmentOf` first; `BABYLON_EXIT.md` X4.3c), and
- * the glass, the one surface drawn with a material of its own — BLENDED, a
+ * the glass, the one surface drawn with a look of its own — BLENDED, a
  * segment of role `"glass"` our renderer draws after the opaque parts (X4.3d),
- * its `StandardMaterial` the statement of its colour and alpha, never bound to
- * a mesh — at `toSegment` here; each hung from its sight's JOINT
- * (`WeaponBuild.hang`; X4.3b), which is the switch a loadout change throws.
+ * its colour and alpha plain data on the segment (`ViewSegment.glass`, the
+ * owner's decision of 2026-11-01: no Babylon material is made for a glass) —
+ * at `toSegment` here; each hung from its sight's JOINT (`WeaponBuild.hang`;
+ * X4.3b), which is the switch a loadout change throws.
  */
-import { Color3, StandardMaterial, Vector3 } from "@babylonjs/core";
+import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import {
   createBox,
@@ -46,7 +47,7 @@ import {
 } from "../geometry/primitives";
 import { mergeParts, Part, type PartNode } from "../world/parts";
 import type { Joint } from "./rigJoints";
-import { segmentOf, toSegment, type ViewSegment } from "./viewTree";
+import { segmentOf, toSegment, type ViewGlass, type ViewSegment } from "./viewTree";
 import { SIGHT_IDS, type SightId } from "./sights";
 import {
   FACETS,
@@ -56,6 +57,22 @@ import {
   type SightAssembly,
   type WeaponBuild,
 } from "./weaponKit";
+
+/**
+ * A glass's look: `hex` as `Color3.FromHexString` read it (each channel the
+ * byte over 255, the same doubles) and its alpha — what the glass's own
+ * unlit `StandardMaterial` held until the owner's decision of 2026-11-01.
+ */
+function glassLook(hex: string, alpha: number): ViewGlass {
+  return {
+    emissive: {
+      r: parseInt(hex.substring(1, 3), 16) / 255,
+      g: parseInt(hex.substring(3, 5), 16) / 255,
+      b: parseInt(hex.substring(5, 7), 16) / 255,
+    },
+    alpha,
+  };
+}
 
 /**
  * Where a weapon offers its rail, and where along it a sight sits. Everything
@@ -807,18 +824,13 @@ export function buildOptics(
     dot.position.set(0, reflexY, winZ);
 
     // The lens, canted back the way a reflex's is — it is a mirror for the
-    // emitter under it, not a window. Its own material, for the same reason
-    // the holo's glass has one: an alpha leaked into the shared emissive cache
-    // would take every tracer and reticle in the game with it.
-    const glassMat = new StandardMaterial(`${prefix}_reflexGlass`, b.scene);
-    glassMat.emissiveColor = Color3.FromHexString("#3af0d6");
-    glassMat.diffuseColor = Color3.Black();
-    glassMat.specularColor = Color3.Black();
-    glassMat.disableLighting = true;
-    // Fainter than the holo's for the same reading: this window is twice the
-    // area, and a tint that sits politely in a 0.072 bore is a green filter
-    // across the whole picture at this size.
-    glassMat.alpha = 0.07;
+    // emitter under it, not a window. A look of its own, for the same reason
+    // the holo's glass has one: it is the one blended, part-alpha surface of
+    // the weapon, never a slot of the shared emissive table every reticle
+    // reads. Fainter than the holo's for the same reading: this window is
+    // twice the area, and a tint that sits politely in a 0.072 bore is a
+    // green filter across the whole picture at this size.
+    const look = glassLook("#3af0d6", 0.07);
     const glass = toSegment(
       new Part(
         `${prefix}_reflexGlass`,
@@ -837,7 +849,7 @@ export function buildOptics(
     glass.rotation.x = -0.12;
     // Not optional: our renderer reads the glass's colour and alpha off it
     // (`Game.buildViewDraw`), and a glass with none cannot be drawn.
-    glass.material = glassMat;
+    glass.glass = look;
     // noGlow for the holo's reason — bloom on a full-window tint is a haze
     // over the one thing the sight exists to keep clear.
     glass.metadata = { noInk: true, noGlow: true };
@@ -910,15 +922,10 @@ export function buildOptics(
     );
     dot.position.set(0, winY, winZ - 0.003 * k);
 
-    // Faint holo glass filling the bore (own material — alpha must not leak
-    // into the shared emissive cache). A disc, not a quad: the corners of a
-    // square lens would poke through a round housing.
-    const glassMat = new StandardMaterial(`${prefix}_holoGlass`, b.scene);
-    glassMat.emissiveColor = Color3.FromHexString("#35f0ff");
-    glassMat.diffuseColor = Color3.Black();
-    glassMat.specularColor = Color3.Black();
-    glassMat.disableLighting = true;
-    glassMat.alpha = 0.12;
+    // Faint holo glass filling the bore (a look of its own — its alpha is
+    // never a slot of the shared emissive table). A disc, not a quad: the
+    // corners of a square lens would poke through a round housing.
+    const look = glassLook("#35f0ff", 0.12);
     const glass = toSegment(
       new Part(
         `${prefix}_holoGlass`,
@@ -928,7 +935,7 @@ export function buildOptics(
     glass.role = "glass";
     b.hang(glass, node);
     glass.position.set(0, winY, winZ + 0.009 * k);
-    glass.material = glassMat;
+    glass.glass = look;
     // noGlow: the bloom would turn the faint tint into a cyan haze that
     // obscures the sight picture.
     glass.metadata = { noInk: true, noGlow: true };

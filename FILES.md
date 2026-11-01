@@ -829,8 +829,8 @@ src/
     optics.ts           # Every optic assembly, built onto whichever weapon's
                         #   OpticMount asked for them — segments our renderer
                         #   draws, the two glasses among them (X4.3d: role
-                        #   "glass", their StandardMaterial the statement of
-                        #   colour and alpha, never bound). Past ~4x the
+                        #   "glass", their colour and alpha plain data on the
+                        #   segment, no material made). Past ~4x the
                         #   cone is bounded by the SCREEN rather than by the
                         #   rail, which inverts how a new one is solved
     weapons.ts          # WeaponId + WeaponSetup + FireMode (the fire selector
