@@ -2,15 +2,17 @@
  * RpgModel.ts — What the rocket launcher looks like, at both ends of a shot:
  * the tube on the player's shoulder and the rocket that leaves it.
  * Returns `WeaponParts` exactly as the six guns do, so `ViewModel` carries it
- * with nothing re-tuned, plus `buildRocket` for the body `AntiTankSystem`
+ * with nothing re-tuned, plus `rocketParts` for the body `AntiTankSystem`
  * flies and `AntiTankFx` draws.
  * Invariants: the launcher is assembled at the origin with the root at
  * identity and merged before it is moved — `weaponKit.ts` owns that contract
  * and the primitives. The rocket is DRESSING: no `solid` flag, no `WorldBox`,
  * not pickable, exactly as a grenade is. Both are built as `Part`s on
  * `src/geometry/` buffers: the launcher's become SEGMENTS our renderer draws
- * (`WeaponBuild.merge` and `lit`, `BABYLON_EXIT.md` X4.3c), and `drawnMesh`
- * is where the rocket's head, merged tail and flame become meshes, here.
+ * (`WeaponBuild.merge` and `lit`, `BABYLON_EXIT.md` X4.3c), and the rocket's
+ * head, merged tail and flame the KIT our renderer draws every rocket in
+ * flight as an instance of (`entities/pieces.ts`, X4.4b) — Babylon is made
+ * no mesh of either.
  *
  * Two builders in one file for the reason `GrenadeModel` is one file: what a
  * rocket looks like and what threw it are the same object seen twice, and the
@@ -27,11 +29,11 @@
  * reticle is still the point of impact: the derivation never cared which way
  * the sight sat, only where its centre is.
  */
-import { Mesh, Scene, Vector3 } from "@babylonjs/core";
+import { Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { createBox, createCylinder } from "../geometry/primitives";
 import { type CelMaterialFactory } from "../shaders/CelShader";
-import { bakePartTransform, drawnMesh, mergeParts, Part } from "../world/parts";
+import { bakePartTransform, mergeParts, Part } from "../world/parts";
 import { eyeDistance, PRISM_CONE, PRISM_WALL } from "./optics";
 import {
   BODY,
@@ -43,6 +45,7 @@ import {
   type SightAssembly,
   type WeaponParts,
 } from "./weaponKit";
+import type { PiecePart } from "./pieces";
 import type { Joint } from "./rigJoints";
 import type { ViewTree } from "./viewTree";
 
@@ -393,21 +396,22 @@ function buildRpgSight(
   return { root: node, sightCenter, meshes: b.meshesOn(node) };
 }
 
-/** One rocket's meshes. The flame is parented to the body and moves with it. */
-export interface RocketMeshes {
-  mesh: Mesh;
-  flame: Mesh;
-}
+/** The head's paint, the tail's, and the motor's (unlit). */
+const ROCKET_HEAD = "#4b4f42";
+const ROCKET_TAIL = "#2f3229";
+const ROCKET_FLAME = "#ffb046";
 
 /**
- * Builds one rocket in flight, hidden, at WORLD scale — everything above this
- * function is in the viewmodel's units and none of those numbers may be
- * carried down here.
+ * One rocket in flight, at WORLD scale — everything above this function is in
+ * the viewmodel's units and none of those numbers may be carried down here —
+ * as the three parts of its kit (`pieceKit`): the head, the merged tail hung
+ * from it, and the flame hung from it, each painted and placed as its mesh
+ * was until `BABYLON_EXIT.md` X4.4b.
  *
  * It is the same over-calibre head standing on the same thin boom, at the size
  * it actually is: a third of a metre, which is small enough that the thing a
  * player tracks across a street is the FLAME rather than the body. That is why
- * the flame is a separate mesh and emissive — it is the tell, the way the
+ * the flame is a separate part and unlit — it is the tell, the way the
  * grenade's pip is, and it has to be readable against a night village and an
  * afternoon one alike.
  *
@@ -416,23 +420,18 @@ export interface RocketMeshes {
  * one, and the only thing that stops one is the step ray `AntiTankSystem`
  * casts along its own flight.
  */
-export function buildRocket(
-  scene: Scene,
-  mats: CelMaterialFactory,
-  name: string,
-): RocketMeshes {
+export function rocketParts(mats: CelMaterialFactory, name: string): PiecePart[] {
   const r = CONFIG.equipment.rpg.rocket.radius;
   const headPart = new Part(
     name,
     createCylinder({ height: r * 2.4, diameterTop: r * 0.4, diameterBottom: r * 2, tessellation: 8 }),
   );
   headPart.rotation.x = Math.PI / 2;
-  const head = drawnMesh(bakePartTransform(headPart), scene);
-  head.material = mats.get("#4b4f42");
-  head.isPickable = false;
+  const head = bakePartTransform(headPart);
+  head.material = mats.get(ROCKET_HEAD);
 
   // The boom and its fins, behind the head. Merged in rather than parented, so
-  // a pooled rocket is one mesh and one draw.
+  // a rocket's tail is one part and one draw.
   const boom = new Part(`${name}Boom`, createCylinder({ height: r * 3, diameter: r * 0.7, tessellation: 6 }));
   boom.rotation.x = Math.PI / 2;
   boom.position.z = -r * 2.6;
@@ -444,19 +443,13 @@ export function buildRocket(
     fins.push(fin);
   }
   // `MergeMeshes`' mesh, name and all: the boom's name and `_merged`.
-  const tail = drawnMesh(`${boom.name}_merged`, mergeParts(fins), scene);
-  tail.parent = head;
-  tail.material = mats.get("#2f3229");
-  tail.isPickable = false;
+  const tail = new Part(`${boom.name}_merged`, mergeParts(fins));
+  tail.material = mats.get(ROCKET_TAIL);
 
-  // **A parked rocket is DISABLED, not invisible**, and that is the one
-  // Babylon fact this pool turns on: `isVisible` hides the mesh it is set on
-  // and nothing under it, so a pool of eight hidden rockets would leave eight
-  // sets of fins and eight motors standing at the world origin. `setEnabled`
-  // takes the whole subtree, which is what a body made of three meshes needs.
-  // `GrenadeModel` gets away with `isVisible` only because it toggles its pip
-  // by hand, for a different reason.
-  head.setEnabled(false);
+  // **A parked rocket is switched off WHOLE** (`Piece.enabled`): the head,
+  // the tail and the motor are one piece, which is what a body made of three
+  // parts needs — the root's `setEnabled` took the subtree when they were
+  // meshes.
 
   // The motor. Unlit, un-outlined and deliberately a stubby cone rather than a
   // sphere: it is what says which way the thing is pointing at the range a
@@ -466,15 +459,17 @@ export function buildRocket(
     createCylinder({ height: r * 4, diameterTop: r * 1.5, diameterBottom: r * 0.2, tessellation: 6 }),
   );
   flamePart.rotation.x = -Math.PI / 2;
-  const flame = drawnMesh(bakePartTransform(flamePart), scene);
-  flame.parent = head;
+  const flame = bakePartTransform(flamePart);
   flame.position.z = -r * 6;
-  flame.material = mats.getEmissive("#ffb046");
+  flame.material = mats.getEmissive(ROCKET_FLAME);
   flame.metadata = { noInk: true };
-  flame.isPickable = false;
 
   // Ink, or a dark warhead crossing a dark street is a hole in the picture
   // rather than a thing arriving — the same argument the grenade's outline
   // makes, against a body moving forty times faster.
-  return { mesh: head, flame };
+  return [
+    { part: head, cel: ROCKET_HEAD, unlit: null, parent: -1 },
+    { part: tail, cel: ROCKET_TAIL, unlit: null, parent: 0 },
+    { part: flame, cel: null, unlit: ROCKET_FLAME, parent: 0 },
+  ];
 }

@@ -616,7 +616,7 @@ mask's groups were being added to `drawWorld` too.
 evaluation (the `Mesh walk` counter, which is the same number in other units),
 `Game.drawBodies` (every drawn rig's joints composed and handed to its meshes,
 `BABYLON_EXIT.md` X4.1a — the composition Babylon did inside the walk until
-then), `Game.drawHulls` (the hulls' drawing written for ours, X4.2b — their joints composed inside `render` from X4.2a until X4.2d's post-commit review moved the compose into `culling`, `Game.fadeHulls`, so the rotor wash is handed the same fade), `ViewModel.drawView` (the player's own weapon's joints evaluated and handed to its meshes, X4.3b — Babylon composed its nodes inside the walk until then — and since X4.3c and X4.3d every surface of it handed to our renderer), the post chain, a frame's share of a reflection bake, and the present. Measured
+then), `Game.drawHulls` (the hulls' drawing written for ours, X4.2b — their joints composed inside `render` from X4.2a until X4.2d's post-commit review moved the compose into `culling`, `Game.fadeHulls`, so the rotor wash is handed the same fade), `ViewModel.drawView` (the player's own weapon's joints evaluated and handed to its meshes, X4.3b — Babylon composed its nodes inside the walk until then — and since X4.3c and X4.3d every surface of it handed to our renderer), `Game.drawPieces` and `Game.drawMarks` (the effect pools' pieces composed and the bullet marks gathered for ours, X4.4b — Babylon composed their meshes inside the walk until then), the post chain, a frame's share of a reflection bake, and the present. Measured
 on Hollowmere headless, 969 frames at 101 fps: `render` 4.86 ms, of which
 `drawWorld` 2.15, `glow` 1.04, `drawOverlay` (then the viewmodel's group, retired
 since) 0.25 and `shadowPass` 0.73 — 86% of the bar attributed, and the glow's share of the whole frame **10.5%**, which
@@ -1248,6 +1248,17 @@ rendering group 0 (`"afterGroup"`, inside `drawWorld`), but Babylon RUNS the
 queue — our recording — when it ends the main pass (`_endCurrentRenderPass`),
 so that cost lands in whichever span is open then, as the bodies' and the
 hulls' does (not confirmed by a capture). The viewer prints it as `weapon`.
+
+**From report version 26 it says the same of the effect POOLS** (`pools`,
+`BABYLON_EXIT.md` X4.4b): the main pass's draws of the pools' pieces (a RANK
+of every piece each — a tracer, a spent case, a thrown or laid body, a
+rocket — its cel and unlit segments apart) and of the bullet marks (one draw
+for every mark), the glow mask's, and how many pieces and marks
+(`FrameProfile.setPools`). Since X4.4b none of those is in
+`counters.drawCalls` — the sparks and the dust discs still are, being
+Babylon's until X4.6 — so the main pass's draws are `counters.drawCalls`
+plus `blocks.drawn`, `bodies.drawn`, `hulls.drawn`, `view.drawn` and
+`pools.drawn`. The viewer prints it as `pools`.
 
 **Report version 24 RETIRED `drawOverlay`** (`BABYLON_EXIT.md` X4.3d): it was
 the rendering groups above 0, which by X4.3c held the optics' glass alone and

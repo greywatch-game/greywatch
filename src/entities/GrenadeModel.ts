@@ -1,74 +1,64 @@
 /**
  * GrenadeModel.ts — What a grenade looks like: the body, the fuse pip, and the
  * blink that reads the fuse.
- * Owns: the two meshes and the tell. Owns NO behaviour — nothing here flies,
+ * Owns: the two parts and the tell. Owns NO behaviour — nothing here flies,
  * bounces, times out or goes off.
  * Invariants: a grenade is DRESSING WITH A TIMER, never a collider. It carries
  * no `solid` flag and no `WorldBox`, so nothing shoots it, walks into it or
  * treats it as cover, and it must stay that way on both sides of the wire.
- * Both meshes are `Part`s on `src/geometry/` spheres made meshes by
- * `drawnMesh`.
+ * Both parts are `Part`s on `src/geometry/` spheres, the KIT our renderer
+ * draws every grenade as an instance of (`entities/pieces.ts`,
+ * `BABYLON_EXIT.md` X4.4b) — Babylon is made no mesh of either.
  *
  * It is a file of its own for the reason `SoldierModel` is one: two things
- * build a grenade now, both through `GrenadeFx`'s `GrenadeBody`: `GrenadeFx`
- * builds the pool the local SIMULATION is drawn in, and `net/NetGrenades`
- * builds the ones a client is only DRAWING, from positions the authority
+ * draw a grenade, both through `GrenadeFx`'s `GrenadeBody`: `GrenadeFx`
+ * draws the pool the local SIMULATION is drawn in, and `net/NetGrenades`
+ * draws the ones a client is only DRAWING, from positions the authority
  * sent. A grenade somebody else threw has to be the same object
  * on screen as the one you threw yourself — same size, same ink, same pip
  * blinking at the same rate — and the way that stays true is one description
- * of it rather than two that agree on the day they were written.
+ * of it (one kit) rather than two that agree on the day they were written.
  */
-import { Mesh, Scene } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { createSphere } from "../geometry/primitives";
 import { type CelMaterialFactory } from "../shaders/CelShader";
-import { drawnMesh, Part } from "../world/parts";
+import { Part } from "../world/parts";
+import type { PiecePart } from "./pieces";
 
-/** One grenade's meshes. The pip is parented to the body and moves with it. */
-export interface GrenadeMeshes {
-  mesh: Mesh;
-  pip: Mesh;
-}
+/** The body's paint. */
+const BODY = "#3f4a33";
+/** The pip's: unlit, so it reads at night. */
+const PIP = "#ff5a4f";
 
 /**
- * Builds one grenade, hidden. Both materials come out of the factory's cache,
- * so a pool of twenty costs two materials and not forty.
+ * One grenade's two parts — the body, and the pip hung from it — as the kit
+ * `pieceKit` makes of them: each painted as its mesh was (the material out of
+ * the factory's cache, and its hex beside it for our renderer), placed where
+ * the mesh stood in the body's frame.
  */
-export function buildGrenade(
-  scene: Scene,
-  mats: CelMaterialFactory,
-  name: string,
-): GrenadeMeshes {
+export function grenadeParts(mats: CelMaterialFactory, name: string): PiecePart[] {
   const g = CONFIG.grenade;
-  const mesh = drawnMesh(
-    new Part(name, createSphere({ diameter: g.radius * 2, segments: 6 })),
-    scene,
-  );
-  mesh.material = mats.get("#3f4a33");
-  mesh.isVisible = false;
+  const body = new Part(name, createSphere({ diameter: g.radius * 2, segments: 6 }));
+  body.material = mats.get(BODY);
   // A grenade is a thing in the world, not a collider: it carries no `solid`
   // flag and no WorldBox, so nothing shoots it, walks into it or treats it as
   // cover — it is dressing with a timer.
-  mesh.isPickable = false;
 
-  const pip = drawnMesh(
-    new Part(`${name}Pip`, createSphere({ diameter: g.radius * 0.62, segments: 4 })),
-    scene,
-  );
-  pip.parent = mesh;
+  const pip = new Part(`${name}Pip`, createSphere({ diameter: g.radius * 0.62, segments: 4 }));
   // The pip has to stand proud of the body's outline shell or the ink
   // swallows it — the same rule the player's visor slit follows. At this size
   // that is a fine line, hence the deliberately thin outline below.
   pip.position.y = g.radius;
-  pip.material = mats.getEmissive("#ff5a4f");
+  pip.material = mats.getEmissive(PIP);
   pip.metadata = { noInk: true };
-  pip.isPickable = false;
-  pip.isVisible = false;
 
   // Ink, or a dark green sphere in a night game is invisible against the
   // ground it is rolling across — which for the one object the player has to
   // notice arriving is the whole ball game.
-  return { mesh, pip };
+  return [
+    { part: body, cel: BODY, unlit: null, parent: -1 },
+    { part: pip, cel: null, unlit: PIP, parent: 0 },
+  ];
 }
 
 /**

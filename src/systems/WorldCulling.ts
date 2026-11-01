@@ -87,8 +87,11 @@
  *   spends it as a screen door, so a body leaves at either edge without a
  *   pop.
  * - **Loose** — everything else in the scene: the terrain, the roads, the rim,
- *   the effect pools (tracers, shards, grenades, rubble), the sky, the
- *   water, the grass (the viewmodel is our renderer's whole since
+ *   the effect pools Babylon still draws (sparks, dust discs, shards,
+ *   rubble, the blast — the tracers, the marks, the brass and the thrown and
+ *   laid bodies are our renderer's and no mesh since `BABYLON_EXIT.md`
+ *   X4.4b, the size gate reaching their cel parts through `keepsSphere`),
+ *   the sky, the water, the grass (the viewmodel is our renderer's whole since
  *   `BABYLON_EXIT.md` X4.3d — the optics' glass and the kit card the last of
  *   it — and no candidate), and every visual an EDITOR build makes,
  *   which is keyed per placement and carries no block at all. The HULLS were
@@ -595,8 +598,9 @@ export class WorldCulling {
 
   /**
    * Whether the size gate KEEPS a world sphere this frame — a HULL's segment
-   * (`BABYLON_EXIT.md` X4.2b), which our renderer draws and which is no
-   * candidate: the test `offer` asks of a loose mesh (`tooSmall`, from the
+   * (`BABYLON_EXIT.md` X4.2b), and since X4.4b a pool's cel part and a bullet
+   * mark (`Game.drawPieces`, `Game.drawMarks`), which our renderer draws and
+   * which are no candidate: the test `offer` asks of a loose mesh (`tooSmall`, from the
    * eye and at the scale it was last handed, and true while the gate is off
    * — the warm-up, a gate of 0 px, no camera), asked of the sphere its caller
    * composed. A hull is gated PER SEGMENT, as its meshes were gated while
@@ -1074,7 +1078,7 @@ function tooSmallMesh(mesh: AbstractMesh, eye: Vector3, perRad: number, px2: num
  *
  * The one place a projected size is measured, because `offer` asks the
  * question of three different things — a loose mesh, a body's measure and a
- * filed surface's record — `keepsSphere` a fourth, a hull's segment, and
+ * filed surface's record — `keepsSphere` a fourth, a hull's segment (and a pool's piece or mark), and
  * `keepsDetail` a fifth, a hull's whole measure against the detail tier's
  * own threshold; two copies of this arithmetic is two answers that can drift
  * apart.

@@ -10,9 +10,10 @@
  * `CONFIG.net.interpDelay` behind the newest snapshot.
  * Invariants: both pools are built once, never resized, and are exactly the
  * authority's own sizes (`ROCKET_POOL`, `MINE_POOL`), so a client can never be
- * told about an object it has no mesh for. Every rocket and every plate is
- * `AntiTankFx`'s own `RocketBody`/`MineBody`, so a remote warhead and a local
- * one are posed by one move.
+ * told about an object it has no body for. Every rocket and every plate is
+ * `AntiTankFx`'s own `RocketBody`/`MineBody` — a piece of `AntiTankFx`'s
+ * kits, which our renderer draws (`Game.drawPieces`, `BABYLON_EXIT.md`
+ * X4.4b) — so a remote warhead and a local one are posed by one move.
  *
  * **The two halves arrive differently, and the difference is what they ARE.**
  * A rocket is on the snapshot and interpolated, because it crosses a street in
@@ -29,9 +30,8 @@
  * never moves, so the round trip is invisible and a predicted copy would be a
  * second plate to reconcile.
  */
-import type { Scene } from "@babylonjs/core";
+import type { PieceKits } from "../entities/pieces";
 import { Vector3 } from "../math";
-import type { CelMaterialFactory } from "../shaders/CelShader";
 import { MineBody, RocketBody } from "../systems/AntiTankFx";
 import { MINE_POOL, ROCKET_POOL } from "../systems/AntiTankSystem";
 import type { MinesMessage, Snapshot } from "./protocol";
@@ -47,7 +47,7 @@ interface Sample {
 /** How many samples to keep — `NetGrenades.BUFFER`'s reasoning exactly. */
 const BUFFER = 8;
 
-/** One pool entry: the meshes, and the flight it is drawing. */
+/** One pool entry: the body, and the flight it is drawing. */
 interface Ghost {
   /** The body and its motor — `AntiTankFx`'s own `RocketBody`. */
   readonly body: RocketBody;
@@ -97,7 +97,9 @@ export class NetOrdnance {
    * by showing the slots it names and hiding the ones it does not. Each is
    * `AntiTankFx`'s own `MineBody`, the plate a local mine is drawn as.
    */
-  private readonly mines: MineBody[] = [];
+  readonly mines: MineBody[] = [];
+  /** Every rocket ghost's body, by slot: what `Game.drawPieces` hands our renderer (the mines are `mines`). */
+  readonly rocketBodies: RocketBody[] = [];
 
   /**
    * How many mines each roster slot has on the field, as the last table said.
@@ -109,10 +111,13 @@ export class NetOrdnance {
    */
   private readonly laid = new Map<number, number>();
 
-  constructor(scene: Scene, mats: CelMaterialFactory) {
+  /** `kits`: the rocket's and the mine's, `AntiTankFx`'s own (`AntiTankFx.kits`). */
+  constructor(kits: Pick<PieceKits, "rocket" | "mine">) {
     for (let i = 0; i < ROCKET_POOL; i++) {
+      const body = new RocketBody(kits);
+      this.rocketBodies.push(body);
       this.rockets.push({
-        body: new RocketBody(scene, mats, `netRocket${i}`),
+        body,
         id: -1,
         samples: [],
         dir: new Vector3(0, 0, 1),
@@ -120,7 +125,7 @@ export class NetOrdnance {
       });
     }
     for (let i = 0; i < MINE_POOL; i++) {
-      this.mines.push(new MineBody(scene, mats, `netMine${i}`));
+      this.mines.push(new MineBody(kits));
     }
   }
 
@@ -224,9 +229,10 @@ export class NetOrdnance {
   }
 
   dispose(): void {
-    for (const ghost of this.rockets) ghost.body.dispose();
-    for (const m of this.mines) m.dispose();
+    for (const ghost of this.rockets) ghost.body.show(false);
+    for (const m of this.mines) m.hide();
     this.rockets.length = 0;
+    this.rocketBodies.length = 0;
     this.mines.length = 0;
     this.live.clear();
   }

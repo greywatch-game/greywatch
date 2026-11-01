@@ -3029,3 +3029,44 @@ exactly as before e172f88) for an A/B inside one build. If e172f88 is it, the
 fix is per device, since the Intel Xe-LPG laptop needs the plain draw
 (`docs/rendering.md`, "NOTHING OF THE STATIC WORLD IS DRAWN OR DISPATCHED
 INDIRECT").
+
+## 67. A spent case first thrown far from the world origin is never drawn — Babylon's latch, kept at X4.4b
+
+**Open, measured 2026-11-01** — `BABYLON_EXIT.md` X4.4b's note. The size gate
+read a loose mesh's world bounding sphere as Babylon last COMPUTED it, and
+Babylon computes a mesh's world only for a candidate the gate let through
+(and for that candidate's ancestors) — `docs/rendering.md`'s "A WRONG DROP
+LATCHES". A brass case (`PlayerView`'s pool) is one mesh with no parent and no
+unlit part, born at the identity, so the first time a slot's case is thrown
+the gate measures it at the WORLD ORIGIN: a 5 cm box farther than a few tens of
+metres away is under the 3 px gate, dropped, never computed, and dropped again
+on every later throw from that slot. X4.4b moved the pool to our renderer and
+kept this exactly (the pieces' GATE sphere, `entities/pieces.ts`), because
+fixing it is a picture change in a live round that the bank does not see.
+
+### What is measured
+
+- **The X4.4b order probe** (scratchpad `x44b/order.mjs`: 200 scripted
+  frames on Coldharbour, 1920x1080; eight rounds' brass thrown on the quay
+  with the camera ~58 m from the origin): on the parent (ece59b1) Babylon drew
+  **no case in any frame**; our renderer gated on THIS frame's sphere (the
+  hulls' rule, X4.2b) drew **22 case-frames** of the eight cases, and the
+  step as committed
+  (Babylon's stale sphere kept) draws none, its drawn sets equal to the
+  parent's on all 200 frames.
+- **The bank's `fx-brass` passes only because its square stands ~20 m from
+  the origin**, inside the distance where a never-computed case still passes
+  the gate.
+- **The one-frame lag is the same mechanism, smaller**: a thrown bottle's
+  body, neck and cloth drew a frame late on the parent (three bottles, five
+  segment-frames in the probe), gated on the sphere of where the pool slot
+  last stood.
+
+### How to settle it
+
+The owner's call: it changes what a player sees in a live round (brass in the
+air where there was none) and nothing in the bank. The fix is one line —
+`writePieceDrawing` gating a cel segment on its node's `sphere` (this frame's)
+instead of its `gate` — which also removes the gate sphere's bookkeeping, and
+is the hulls' rule already ("The hulls, ours": "the drop cannot latch on stale
+bounds"). Its own commit, with the probe's drawn sets as the numbers (rule 2).

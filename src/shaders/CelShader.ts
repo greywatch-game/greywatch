@@ -1481,6 +1481,49 @@ export class CelMaterialFactory {
   private viewEmissive: EmissiveRecipe | null = null;
 
   /**
+   * What one of the effect POOLS' draws paints its CEL segments with
+   * (`BABYLON_EXIT.md` X4.4b, `render/PoolDraw.ts`) — `hullCelRecipe`'s twin,
+   * a recipe with no material: its palette `colors`, every colour a `get(hex)`
+   * material held as its `baseColor` until the pool's meshes went, and every
+   * other value the one those materials were born with — and `depthBias`
+   * their `zOffsetUnits`, which is pipeline state (the marks' `get(hex,
+   * MARK_DEPTH_UNITS)`). A fresh recipe a call: each caller asks once, at
+   * construction, for a draw it keeps for the session. A table longer than
+   * `MAX_PALETTE` is REFUSED rather than cut, since a slot past it would read
+   * black.
+   */
+  poolCelRecipe(colors: readonly Color3[], depthBias = 0): CelRecipe {
+    if (colors.length > MAX_PALETTE) {
+      throw new Error(`poolCelRecipe: ${colors.length} colours, past the palette's ${MAX_PALETTE}`);
+    }
+    const recipe = this.ownPaletteRecipe(colors);
+    return depthBias === 0 ? recipe : { ...recipe, depthBias };
+  }
+
+  /**
+   * What one of the effect POOLS' draws paints its UNLIT segments with — a
+   * tracer, a pip, a wick, a motor, a fuze lamp (`BABYLON_EXIT.md` X4.4b):
+   * `viewEmissiveRecipe`'s twin over the pool's own table, one slot a colour
+   * (`colors`, the `getEmissive` colours its meshes wore), the factory's fog
+   * band by reference — what each unlit `StandardMaterial` and `EmissiveFog`
+   * drew, number for number. A fresh recipe a call, for `poolCelRecipe`'s
+   * reason; a table longer than `MAX_EMISSIVE_PALETTE` is REFUSED.
+   */
+  poolEmissiveRecipe(colors: readonly Color3[]): EmissiveRecipe {
+    if (colors.length > MAX_EMISSIVE_PALETTE) {
+      throw new Error(`poolEmissiveRecipe: ${colors.length} colours, past the palette's ${MAX_EMISSIVE_PALETTE}`);
+    }
+    const table = new Float32Array(MAX_EMISSIVE_PALETTE * 3);
+    for (let i = 0; i < colors.length; i++) {
+      table[i * 3] = colors[i].r;
+      table[i * 3 + 1] = colors[i].g;
+      table[i * 3 + 2] = colors[i].b;
+    }
+    this.materialEpoch++;
+    return { depthBias: 0, values: { emissivePalette: table, fogRange: this.emissiveFogRange } };
+  }
+
+  /**
    * Returns the shared cel material for a hex color, creating it on demand.
    *
    * `depthUnits` biases the depth TEST toward the eye in polygon-offset units,

@@ -6826,7 +6826,7 @@ X4.3d's brief, word for word:
     run-to-run noise (1-3/255); `gate.mjs` and `shaders.mjs` clean on
     seven; typecheck, build, corecheck and `parity` pass.
 
-### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (63a338a, review fixes after it)
+### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (63a338a, review fixes after it), X4.4b **LANDED** (HASH)
 
 X4.4a's brief, word for word:
 
@@ -7150,3 +7150,180 @@ bank, its harness, its table and `pipelines.mjs` only).
     console or page error. Typecheck, build and corecheck pass.
     Every new and changed row looked at, its `proves` written against its
     frame.
+
+X4.4b's brief, word for word:
+
+- **X4.4b — the plain mesh pools are ours (no picture change).** The tracer
+  and mark pools, the grenade, rocket and mine bodies (both the simulation's
+  views and the wire's), and the brass, drawn by our renderer as instances
+  of their kits (`BodyDraw`'s and `HullDraw`'s shape), into the glow's mask
+  where emissive. **The spark and dust-disc pools stay Babylon's** (decided
+  2026-11-01, "Find out first" above): they fade in Babylon's transparent
+  sort among the panes, and move with the glazing at X4.6 — whole, the
+  frames a spark is still opaque included, so a pool is never split across
+  two renderers. A mark keeps its depth bias and drops out at range by our
+  own size test (it was the size gate's); every pool stays fixed-size and
+  allocates nothing per shot. Babylon is made no mesh of any pool this
+  sub-step moves. **Oracle:** the bank byte-identical; a round firing every weapon
+  at walls, soil and glass, with a frag, a molotov, a rocket and a mine; a
+  netplay round where the other side throws and fires (the wire's bodies).
+
+**X4.4b landed** (HASH; 2026-11-01; no picture change).
+- **What moved.** Every tracer (`CombatFx`), spent case (`PlayerView`),
+  thrown frag and bottle (`GrenadeFx`'s `GrenadeBody`, and the wire's in
+  `net/NetGrenades`), rocket in flight and laid mine (`AntiTankFx`'s
+  `RocketBody` and `MineBody`, and the wire's in `net/NetOrdnance`) and
+  bullet mark (`BulletMarks`) is drawn by our renderer; Babylon is made no
+  mesh of any. The sparks and the dust discs stay Babylon meshes, whole, warm
+  poses and all (the owner's decision of 2026-11-01).
+- **The pieces as data** (`entities/pieces.ts`, new). A `PieceKit` is a kind:
+  its segments, each the mesh it was — the arrays (the builder's `Part`
+  geometry, never mutated: no palette slot is written into it, so `kit:hash`
+  can make the old mesh of it), a cel paint or an unlit one, the local
+  bounding sphere (`extractMinAndMax`, `reConstruct`), the transform the mesh
+  was dressed with and the segment it hung from. Six kits — tracer, casing,
+  frag, bottle, rocket, mine — each built ONCE by the view that made the
+  first of its meshes (`CombatFx.tracerKit`, `PlayerView.casingKit`,
+  `GrenadeFx.kits`, `AntiTankFx.kits`), so each `mats.get`/`getEmissive` is
+  asked at the point in the factory's order it always was (a material's
+  `uniqueId` is what the glow mask's and the weapon's sorts tie on), and
+  passed to each session's wire pools (`NetSession(kits, …)`, which built
+  meshes per session until now). The model files hand over parts:
+  `grenadeParts`, `molotovPieceParts` (the bottle's four, off the same
+  `molotovParts` the fist's segments are), `rocketParts`, `minePieceParts`,
+  `tracerParts` (`CombatFx`), `casingParts` (`PlayerView`). A `Piece` is a
+  `PieceNode` a segment — the mesh's channels (an Euler, or the quaternion
+  that overrides it while set), `visible` for `isVisible`, the piece's
+  `enabled` for the root's `setEnabled` — composed as `computeWorldMatrix`
+  composed the mesh (`ComposeToRef`, times the parent's world, `src/math`).
+  The pools move the nodes exactly as they moved the meshes, every
+  `Math.random` draw kept in count and order (the bank's seeded clocks
+  depend on it): `GrenadeBody.begin`, `RocketBody.place` (`lookAt` in local
+  space and `setDirection` with no corrections, operation for operation:
+  `(x + dx) - x`, `pitch + 0`), the brass's throw in `src/math`
+  (`TransformNormalToRef` off the port's Babylon matrix, read through `.m`).
+  `BulletMarks` imports no Babylon now: a slot holds its shape, paint, world
+  and sphere, composed once at `place` as `freezeWorldMatrix` composed the
+  mesh; a slot never stood stands at the identity, its sphere the shape's.
+- **The draw** (`render/PoolDraw.ts`, new): `BodyDraw` without the fade —
+  kits of any width padded to the widest, the cel and unlit segments at any
+  index per kit (the bodies' decode does not care which), the cel pipeline
+  at the recipe's `depthBias`, the emissive one and its mask twin asked only
+  for a draw with an unlit segment — on `bodyPrograms`' plain three
+  (`bodyPrograms` takes a `name` for the labels, `pool`; a label is no part
+  of the code, so the bodies' pipelines are the ones they were). Two
+  instances: `pieceDraw` (six kits, the bottle's four segments the widest;
+  a cel palette of eight colours, `CelMaterialFactory.poolCelRecipe`, and an
+  emissive table of five, `poolEmissiveRecipe` — `get(hex)`'s and
+  `getEmissive`+`EmissiveFog`'s numbers, as the bodies' and the visors' are)
+  and `markDraw` (eight kits, a shape in each paint since the paint is a
+  vertex slot; `MARK_DEPTH_UNITS` its pipeline's `depthBias`). Each piece's
+  colours, uvs and uv2 are uploaded as Babylon uploaded the mesh's (none of
+  these meshes carries a colour buffer, so `color` reads (0, 0, 0, 1)).
+- **Where it sits, and why.** Both at `"beforeAlphaTest"`, installed AHEAD
+  of the hulls, the bodies and the world: X4.4a measured the pools' meshes
+  in Babylon's OPAQUE queue, which runs before that point, and opaque draws
+  through the depth buffer differ only where two depths tie — so the marks
+  still go down before the walls they are biased off, and the order among
+  ours is the queue's. **Within the pools the order is Babylon's where a tie
+  can occur**: a piece's segments in `bodyPull`'s stable sort off
+  `globalPosition` (`Game.piecePull`, inside the render), and the MARKS'
+  instances themselves sorted the same way (`Game.markPull`, slot order
+  breaking a tie), since two overlapping marks on one wall are coplanar at
+  one bias and the later wins an equal depth (LEQUAL). Across two pieces the
+  draw is rank-major, which differs from the queue's interleaving only where
+  two different pieces tie (the bodies' and the hulls' accepted price). Not
+  reproduced: Babylon's remaining opaque meshes (the sky, the backed panes,
+  the flames, the blast, the rubble, the shards, a spark at `visibility` 1)
+  now draw before every piece rather than among them — ties only.
+- **The glow.** The unlit parts (tracer, pip, wick, motor, lamp) go into the
+  mask after the palette and the visors (`installMask` after
+  `BodyDraw.installMask`), where Babylon's mask drew them after both, by the
+  main pass's vertex module (the LEQUAL tie); each piece's bloom is
+  `GlowRules.colour` as `GlowPass` asked it of the mesh — its `getEmissive`
+  colour (`Color3.FromHexString`, alpha 1) faded by the fog at the unlit
+  segment's sphere centre (`piecePull`); a kit has one unlit segment at most.
+- **The size gate, and the latch kept.** An unlit segment is exempt (an
+  emissive mesh was). A mark asks `keepsSphere` of its frozen sphere — what
+  the gate read off the mesh — so exactly the same marks drop. A CEL part of
+  a piece asks it of a GATE sphere that reproduces what Babylon's gate read:
+  the world sphere as of the last frame its mesh would have been COMPUTED
+  (`_evaluateActiveMeshes` computes only a candidate the gate let through;
+  a child's compute asks its parent's world, so a candidate's ancestors too)
+  and the local sphere before (a never-computed mesh's world is the
+  identity). The first probe gated on THIS frame's sphere (the hulls' rule,
+  X4.2b) and found 27 segment-frames Babylon never drew — 22 of brass and
+  five of a bottle's parts a frame before Babylon drew them — because a
+  case is one mesh with no unlit child to refresh it: the first time a slot
+  is thrown its never-computed sphere stands at the world ORIGIN, under 3 px
+  from a few tens of metres, and is never recomputed. The hulls' rule
+  differed only a frame at the gate's edge (X4.2a forced their compose);
+  here it would draw brass a live round never showed, a picture change the
+  bank cannot see (`fx-brass` stands ~20 m from the origin). Kept, recorded
+  as `FINDINGS.md` 67 with the one-line fix, the owner's call (stop
+  condition 2's reading: not this step's to decide). The frustum is not asked:
+  a piece or mark outside it is handed over and clipped.
+- **What stays.** `CombatFx.warm` and `BulletMarks.warm` still pose a tracer
+  and a mark for the warm-up (drawn through ours; the mark in the hard
+  paint, as the material swap did), until X4.4e; our four pipelines are
+  asked at construction, so the warm-up waits for them.
+- **The empty-group seam** (X4.4e's to fix if reachable): not made
+  reachable — the sky holds group 0 in a round and over the menu, as X4.3d
+  measured, and the pools were never the only thing in it; neither round
+  below raised the DEV warning.
+- **Measured.**
+  - **The bank**: `--check --keep` at ece59b1 (the worktree, its `ref/` the
+    main tree's) and at the step; **109 of 109 kept frames byte-equal**
+    (`comparePngs`, max 0), the 25 `fx` rows 0 pixels from the bank in both,
+    the same 34 stale rows failing the stale bank with the same means.
+  - **The order probe** (`x44b/order.mjs`, `ordcmp.mjs`): Coldharbour, 330
+    frames on a fixed script — 40 rounds at the avenue's brick face with
+    the camera walking in from 59 m (marks crossing the gate), a frag, a
+    bottle and a rocket there; 24 rounds on the quay's deck (overlapping
+    marks), frags, a bottle, a rocket, the wire's mines (one arming), the
+    wire's rocket and grenades, eight rounds' brass, the camera orbiting;
+    then ~150 m from the origin the wire's mines arming by the camera, a
+    rocket past it and brass. Parent: `Mesh.render` in group 0 of the main
+    pass; step: what `piecePull`/`markPull` handed over. **Drawn sets equal
+    on 330 of 330 frames** (8,986 entries outside the frustum excluded, all
+    ours), **mark order equal on 182 of 182 frames with marks** (4,782),
+    **segment order equal for 905 of 905 pieces** with two or more drawn;
+    no pool mesh was in Babylon's blended list on any frame.
+  - **`pipelines.mjs coldharbour --round`**: zero of Babylon's, zero of ours
+    and zero modules in play in **five of five** runs (92-93 rounds, 2
+    throws, 4 blasts, a fire, 2 rockets, 4 mine tables, pane 21 broken at
+    31.5-44.7 m, 6,012-8,964 shard draws); the first install 26 of Babylon's
+    (28 at X4.4a's review: the tracer's and the mark's Babylon pipelines gone),
+    23 of ours, 53 modules; the second nothing.
+  - **`kit:hash --models --against`** the BEFORE: **244 of 244 identical** —
+    `grenade`, `molotov`, `rocket`, `mine` and `player` hashed as the meshes
+    the parts make by `drawnMesh` (the script's header).
+    **`kit:hash`** (the kit half) against a BEFORE at ece59b1: **3,722 of
+    3,722 builds identical**, drawing and colliders (no kit builder moved).
+  - **`census --against`** the BEFORE: every row with no piece or mark in
+    frame equal; Hollowmere 278, Greyfen 205, Harrowmead 2314, Sarab 472 and
+    Kurenai 125 equal; Coldharbour 2567 → 2502 and Cinderhaven 264 → 261, all
+    on `fx` rows (`fx-marks-near` 49 → 22, `fx-marks-far` 143 → 126,
+    `fx-impact-hard` and `-ground` -4 each, `fx-glass` -3, `fx-wire` -3, `fx-grenade` -3,
+    `fx-brass` -2, `fx-tracer` -1, `fx-mine` -1, `fx-fire-fade` -3; `fx-rocket`
+    75 = 75).
+  - **`gate`** all seven maps clean; **`shaders`** every shader clean on
+    seven; **`parity`** every map agrees; typecheck, build
+    (`check-babylon-free`, `check-proving`) and corecheck pass.
+  - **An offline round** on Coldharbour (`x44b/round.mjs`): six lives, every
+    primary, the pistol, frags and molotovs alternating, the launcher and
+    the mine alternating, firing at walls, the floor and the square's glass
+    on a compass sweep: tracers, frags, bottles and rockets drawn by ours
+    (e.g. 244 tracer, 328 frag and 16 rocket piece-frames in the first
+    life), up to 17 marks a frame; the authority's `fire` 98, `explode` 6,
+    `blaze` 3; no error; the empty-group warning never fired.
+  - **A server's round** (`npm run server`, `x44b/net2.mjs`): two clients on
+    Coldharbour, B on the other side throwing two frags, firing two rockets
+    and its rifle; on A our renderer was handed the wire's frags (423
+    piece-frames), the wire's rockets (440) and 1,236 tracer piece-frames;
+    no error on either page. (A one-client server round, `round.mjs --ws`,
+    the same: tracers, the client's own frag and rockets, no error, no
+    seam warning.)
+  - **A profiler capture** (`?profile`, a live round): report version 26,
+    `pools: { drawn: 3, masked: 1, instances: 2, marks: 19 }`, `build`
+    filled.

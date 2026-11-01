@@ -479,6 +479,26 @@ export interface ViewFacts {
   masked: number;
 }
 
+/**
+ * Our renderer's effect POOLS on the last frame before the capture — or, for
+ * a HALTED ring, before the halt (`render/PoolDraw.ts`' `stats`, both draws,
+ * `BABYLON_EXIT.md` X4.4b) — read as `bodies` is. `drawn` is the main pass's
+ * draws of the pieces (a RANK of every piece each, its cel segments and its
+ * unlit ones apart) and of the bullet marks (one draw for every mark),
+ * `masked` the glow mask's, `instances` the pieces drawn — tracers, cases,
+ * thrown and laid bodies, rockets — and `marks` the marks. None is in
+ * `counters.drawCalls`, which since X4.4b counts no tracer, mark, case,
+ * thrown or laid body: a capture from before it counted a draw a mesh there.
+ * The sparks and the dust discs are still Babylon's, and still counted
+ * there.
+ */
+export interface PoolFacts {
+  drawn: number;
+  masked: number;
+  instances: number;
+  marks: number;
+}
+
 export interface ProfileGraphics {
   /** `Settings.renderScale` — a share of the panel's native resolution. */
   renderScale: number;
@@ -612,6 +632,11 @@ export interface ProfileReport {
    * reader. Absent before report version 22.
    */
   hulls: HullFacts | null;
+  /**
+   * Our renderer's effect pools at the capture, or null where nothing pushed
+   * a reader (report version 26).
+   */
+  pools: PoolFacts | null;
   /**
    * Our renderer's weapon at the capture, or null where nothing pushed a
    * reader. Absent before report version 23.
@@ -970,6 +995,7 @@ export interface ProfileRing {
   readonly blocks: BlockFacts | null;
   readonly bodies: BodyFacts | null;
   readonly hulls: HullFacts | null;
+  readonly pools: PoolFacts | null;
   readonly view: ViewFacts | null;
   readonly heapMb: Float32Array | null;
   readonly gcAt: Uint8Array;
@@ -1239,7 +1265,13 @@ export function buildReport(
     // 25: `build`, the commit and day the page was stamped with. Before it a
     // capture said nothing of which code drew it, and a phone's had to be
     // matched to a deploy by its `takenAt`. Nothing else changed meaning.
-    version: 25,
+    // 26: `pools`, our renderer's draws of the effect pools' pieces and the
+    // bullet marks on the last frame (or the halt's). Since
+    // `BABYLON_EXIT.md` X4.4b no tracer, mark, spent case, thrown or laid
+    // body is in `counters.drawCalls` (Babylon's), so a v25 capture from an
+    // X4.4b build shows their draws gone from it and nothing in their place.
+    // Nothing else changed meaning.
+    version: 26,
     build: buildStamp(),
     takenAt: new Date().toISOString(),
     reason,
@@ -1263,6 +1295,7 @@ export function buildReport(
     blocks: r.blocks ? { ...r.blocks } : null,
     bodies: r.bodies ? { ...r.bodies } : null,
     hulls: r.hulls ? { ...r.hulls } : null,
+    pools: r.pools ? { ...r.pools } : null,
     view: r.view ? { ...r.view } : null,
     segments: segmentFacts(r, first, n, cap),
     clock: {

@@ -2,9 +2,11 @@
  * GrenadeFx.ts — The PICTURE of the grenade pool: every flight's body
  * tumbling through the air, the fuse pip blinking, a fire's flames, and the
  * six billowed layers of a blast (`BlastFx`).
- * Owns: one `GrenadeBody` per simulation slot, one set of flames per fire
- * slot, the `BlastFx` a blast and an ignition are drawn in, and its own floor
- * probe for the flames. All FIXED SIZE and built once.
+ * Owns: one `GrenadeBody` per simulation slot (`bodies`, two pieces of the
+ * kits our renderer draws — `entities/pieces.ts`, `BABYLON_EXIT.md` X4.4b —
+ * which `Game.drawPieces` hands it), one set of flames per fire slot, the
+ * `BlastFx` a blast and an ignition are drawn in, and its own floor probe for
+ * the flames. All FIXED SIZE and built once.
  * Invariants: it READS `GrenadeSystem` and never writes it — the pools through
  * `flights` and `fireSlots` (read-only by type), everything else as a call
  * `Game` makes from the simulation's events (`blast` on `onBlast`, `ignite` on
@@ -43,12 +45,9 @@
  */
 import { Mesh, Scene } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import { buildGrenade, pipLit } from "../entities/GrenadeModel";
-import {
-  buildMolotov,
-  showMolotov,
-  type MolotovMeshes,
-} from "../entities/MolotovModel";
+import { grenadeParts, pipLit } from "../entities/GrenadeModel";
+import { molotovPieceParts } from "../entities/MolotovModel";
+import { Piece, pieceKit, type PieceKits, type PieceNode } from "../entities/pieces";
 import type { ThrowableId } from "../entities/throwables";
 import { Vector3, type Vector3Like } from "../math";
 import type { CelMaterialFactory } from "../shaders/CelShader";
@@ -67,8 +66,10 @@ import {
 
 /**
  * One grenade on screen — a frag with its pip, and a bottle — and the moves a
- * flight makes on it. Both bodies are built into every one and `kind` says
- * which is out, for the reason the simulation's slot serves both.
+ * flight makes on it. Both are built into every one and `kind` says which is
+ * out, for the reason the simulation's slot serves both. Each is a PIECE of
+ * its kit (`entities/pieces.ts`): our renderer draws it, and Babylon is made
+ * no mesh of either (`BABYLON_EXIT.md` X4.4b).
  *
  * Exported because two pools draw a grenade: this file's, from the local
  * simulation, and `net/NetGrenades`', from the wire. They have to be the same
@@ -76,24 +77,21 @@ import {
  * one set of moves rather than two that agree on the day they were written.
  */
 export class GrenadeBody {
-  private readonly mesh: Mesh;
-  /** The fuse tell — blinks faster as the fuse runs out. */
-  private readonly pip: Mesh;
-  /** The bottle, when this flight is a molotov. Hidden otherwise. */
-  private readonly bottle: MolotovMeshes;
+  /** The frag: its body, and the fuse pip hung from it — the tell, which blinks faster as the fuse runs out. */
+  readonly frag: Piece;
+  /** The bottle, when this flight is a molotov: its body, neck, cloth and lit wick. Hidden otherwise. */
+  readonly bottle: Piece;
   /** Which of the two is on screen, or null while hidden. */
   private shown: ThrowableId | null = null;
 
-  constructor(scene: Scene, mats: CelMaterialFactory, name: string, bottleName: string) {
-    const { mesh, pip } = buildGrenade(scene, mats, name);
-    this.mesh = mesh;
-    this.pip = pip;
-    this.bottle = buildMolotov(scene, mats, bottleName);
+  constructor(kits: Pick<PieceKits, "frag" | "bottle">) {
+    this.frag = new Piece(kits.frag);
+    this.bottle = new Piece(kits.bottle);
   }
 
-  /** The mesh a `kind`'s position lives on. */
-  private body(kind: ThrowableId): Mesh {
-    return kind === "molotov" ? this.bottle.mesh : this.mesh;
+  /** The node a `kind`'s position lives on: its root. */
+  private body(kind: ThrowableId): PieceNode {
+    return kind === "molotov" ? this.bottle.root : this.frag.root;
   }
 
   /**
@@ -103,12 +101,9 @@ export class GrenadeBody {
    * has to reproduce it.
    */
   begin(): void {
-    this.mesh.rotation.set(
-      Math.random() * 3,
-      Math.random() * 3,
-      Math.random() * 3,
-    );
-    this.bottle.mesh.rotation.copyFrom(this.mesh.rotation);
+    const r = this.frag.root.rotation;
+    r.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
+    this.bottle.root.rotation.copyFrom(r);
   }
 
   /** Puts `kind`'s body on screen, and takes the other one off if it was. */
@@ -116,12 +111,10 @@ export class GrenadeBody {
     if (this.shown === kind) return;
     this.hide();
     this.shown = kind;
-    if (kind === "molotov") {
-      showMolotov(this.bottle, true);
-    } else {
-      this.mesh.isVisible = true;
-      this.pip.isVisible = true;
-    }
+    // Every part of it: a switch is not inherited, so a bottle that only
+    // showed its body would leave the rag behind.
+    const nodes = (kind === "molotov" ? this.bottle : this.frag).nodes;
+    for (let i = 0; i < nodes.length; i++) nodes[i].visible = true;
   }
 
   /** Where the flight is. */
@@ -146,22 +139,14 @@ export class GrenadeBody {
    * bottle has no fuse to tell; its lit rag is the tell and it is always lit.
    */
   fuse(kind: ThrowableId, left: number): void {
-    if (kind !== "molotov") this.pip.isVisible = pipLit(left);
+    if (kind !== "molotov") this.frag.nodes[1].visible = pipLit(left);
   }
 
   hide(): void {
     if (this.shown === null) return;
     this.shown = null;
-    this.mesh.isVisible = false;
-    this.pip.isVisible = false;
-    showMolotov(this.bottle, false);
-  }
-
-  dispose(): void {
-    this.pip.dispose();
-    this.mesh.dispose();
-    // The neck, the cloth and the wick are its children and go with it.
-    this.bottle.mesh.dispose();
+    for (const n of this.frag.nodes) n.visible = false;
+    for (const n of this.bottle.nodes) n.visible = false;
   }
 }
 
@@ -193,7 +178,8 @@ const _lifted = new Vector3();
 const _floor = new Vector3();
 
 export class GrenadeFx {
-  private readonly bodies: GrenadeBody[] = [];
+  /** One body a simulation slot, by slot: what `Game.drawPieces` hands our renderer. */
+  readonly bodies: GrenadeBody[] = [];
   /** The flight each body is drawing — its slot's `id` — or -1 while hidden. */
   private readonly drawing: number[] = [];
   private readonly fires: FlameSet[] = [];
@@ -204,14 +190,27 @@ export class GrenadeFx {
   private terrain: TerrainField = new TerrainField();
   private readonly hit = newRayHit();
 
+  /**
+   * The frag's kit and the bottle's, built here once — where the first
+   * grenade's meshes were made until `BABYLON_EXIT.md` X4.4b, so their
+   * materials are asked of the factory at the same point in its order — and
+   * shared with the wire's pool (`net/NetGrenades`), whose grenades are the
+   * same objects.
+   */
+  readonly kits: Pick<PieceKits, "frag" | "bottle">;
+
   constructor(
     scene: Scene,
     mats: CelMaterialFactory,
     private readonly sim: GrenadeReader,
   ) {
     this.fx = new BlastFx(scene, mats);
+    this.kits = {
+      frag: pieceKit("frag", grenadeParts(mats, "grenade0")),
+      bottle: pieceKit("bottle", molotovPieceParts(mats, "molotov0")),
+    };
     for (let i = 0; i < CONFIG.grenade.poolSize; i++) {
-      this.bodies.push(new GrenadeBody(scene, mats, `grenade${i}`, `molotov${i}`));
+      this.bodies.push(new GrenadeBody(this.kits));
       this.drawing.push(-1);
     }
 

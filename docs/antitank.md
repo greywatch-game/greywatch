@@ -20,7 +20,7 @@ The kit is six things and one line of map data:
 | `entities/equipment.ts` | the derivation from that table to a `WeaponSetup` the carry path can hold, and to the `OrdnanceEffect` a detonation is spent through |
 | `entities/RpgModel.ts` / `MineModel.ts` | what each looks like at both ends: the thing in the hands and the thing in the world |
 | `systems/AntiTankSystem.ts` | the rocket pool, the mine pool, the arm clocks and the trigger test — a SIMULATION: a rocket's and a mine's position is its own `src/math` `pos` field, nothing here is a mesh, and the authority runs it whole |
-| `systems/AntiTankFx.ts` | the PICTURE of both pools: a `RocketBody` per rocket slot (faced down its velocity, the motor guttering off metres flown) and a `MineBody` per mine (the lamp off the arm clock), posed off `rocketSlots`/`mineSlots` after every `update` and never writing them. Client only; `net/NetOrdnance` draws the wire's copies through the same two bodies |
+| `systems/AntiTankFx.ts` | the PICTURE of both pools: a `RocketBody` per rocket slot (faced down its velocity, the motor guttering off metres flown) and a `MineBody` per mine (the lamp off the arm clock), posed off `rocketSlots`/`mineSlots` after every `update` and never writing them — each a PIECE of the rocket's or the mine's kit, both built here once, which OUR renderer draws since `BABYLON_EXIT.md` X4.4b (`docs/rendering.md`, "The pools, ours"; Babylon is made no mesh of either). Client only; `net/NetOrdnance` draws the wire's copies through the same two bodies and the same kits |
 
 They meet where every other system does: the simulation's half in `SimCore`,
 the page's in `Game`. `Game` holds the pick (`Game.equipment`), decides whether
@@ -209,7 +209,7 @@ inside it.
 
 It is a position, a clock and a distance test, and it costs one comparison per
 live mine per frame against one callback answer. **Nothing about it is a
-collider**: a hull drives THROUGH the mesh, and what sets it off is `hullNear`.
+collider**: a hull drives THROUGH the plate, and what sets it off is `hullNear`.
 
 **Only a hull sets one off.** That is the name of the weapon and it is the only
 rule a player has to be told, because it is what makes a mine safe to lay across
@@ -495,12 +495,15 @@ Four things are load-bearing:
   line of sight and collapses it further; inboard opens it. Only the hip pose
   takes it. The AIMED pose is derived from the sight, and a yaw baked into that
   would swing the reticle off the axis the rockets fly down.
-- **A parked rocket or mine is DISABLED, not invisible.** Babylon's `isVisible`
-  hides the mesh it is set on and nothing under it, so a pool of eight hidden
-  rockets leaves eight sets of fins and eight motors standing at the world
-  origin. `setEnabled` takes the subtree — `RocketBody.show` and
-  `MineBody.hide`, the one door each for both pools that draw one. (`GrenadeModel` gets away with
-  `isVisible` only because it toggles its pip by hand.)
+- **A parked rocket or mine is switched off WHOLE, not hidden part by
+  part.** While they were Babylon meshes, `isVisible` hid the mesh it was set
+  on and nothing under it, so a pool of eight hidden rockets would have left
+  eight sets of fins and eight motors standing at the world origin, and
+  `setEnabled` took the subtree; since `BABYLON_EXIT.md` X4.4b each is a PIECE
+  our renderer draws and the switch is the piece's (`Piece.enabled`) —
+  `RocketBody.show` and `MineBody.hide`, the one door each for both pools that
+  draw one. The mine's lamp keeps a switch of its own on top of it
+  (`PieceNode.visible`), as the frag's pip does.
 
 The launcher takes `prism`'s entry in `CONFIG.sights` rather than declaring one
 of its own — 2x is what a launcher's optic is for — and the mine's "sight" is a

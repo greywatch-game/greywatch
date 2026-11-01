@@ -115,6 +115,7 @@ import { Renderer } from "../render/Renderer";
 import { BodyDraw } from "../render/BodyDraw";
 import { HullDraw } from "../render/HullDraw";
 import { ViewDraw, type ViewDrawSegment } from "../render/ViewDraw";
+import { PoolDraw, type PoolKit } from "../render/PoolDraw";
 import { HULL_CHARRED } from "../render/hullProgram";
 import { BodyShadowMap } from "../render/BodyShadowMap";
 import { LampAtlas } from "../render/LampAtlas";
@@ -205,13 +206,15 @@ import {
 import { VehicleViews } from "../systems/VehicleViews";
 import { hullKits } from "../entities/vehicleModels";
 import { composeHull, hullPalette, writeHullDrawing, type HullKit, type SphereGate } from "../entities/vehicleRig";
+import { writePieceDrawing, type Piece, type PieceGate, type PieceKit, type PieceKits } from "../entities/pieces";
+import { MARK_DEPTH_UNITS, MARK_PAINTS, MARK_SHAPES } from "../systems/BulletMarks";
 import { GrassSystem } from "../systems/GrassSystem";
 import { BlastDebrisSystem, type DebrisGround } from "../systems/BlastDebrisSystem";
 import { DebrisSystem } from "../systems/DebrisSystem";
 import { GlassSystem } from "../systems/GlassSystem";
 import { GlassFx } from "../systems/GlassFx";
 import { AntiTankFx } from "../systems/AntiTankFx";
-import { AntiTankSystem } from "../systems/AntiTankSystem";
+import { AntiTankSystem, MINE_POOL, ROCKET_POOL } from "../systems/AntiTankSystem";
 import {
   fireHullGun,
   fireHullMg,
@@ -868,6 +871,45 @@ export class Game {
   private readonly keepsHullSegment: SphereGate = (x, y, z, radius) => this.culling.keepsSphere(x, y, z, radius);
   /** The detail tier a hull's whole measure is asked, this frame: `WorldCulling`'s (`drawHulls`, X4.2c). */
   private readonly keepsHullDetail: SphereGate = (x, y, z, radius) => this.culling.keepsDetail(x, y, z, radius);
+  /**
+   * The effect POOLS' pieces as our renderer draws them (`BABYLON_EXIT.md`
+   * X4.4b): every kit a pool puts in the world — the tracer, the spent case,
+   * the frag and the bottle, the rocket and the mine — on the GPU once, and
+   * each frame's drawn pieces as instances of them, fed by `drawPieces`; and
+   * the bullet marks' (`markDraw`, fed by `drawMarks`) — both drawn while a
+   * ROUND's map is installed, their pipelines asked here once for the
+   * session, and one that cannot be built is the round's failure
+   * (`worldFailed`, wired at the install). The sparks and the dust discs are
+   * no part of either: they stay Babylon meshes, fading among the panes in its
+   * transparent sort, until X4.6 (the owner's decision of 2026-11-01).
+   */
+  private readonly pieceDraw: PoolDraw;
+  private readonly markDraw: PoolDraw;
+  /** Each piece kit's index in the order `pieceDraw` was handed them — a piece's kit word (`drawPieces`). */
+  private readonly pieceKitIndex: Map<PieceKit, number>;
+  /** Each piece kit's UNLIT segment (one at most), or -1 — what a piece's bloom is measured off (`piecePull`). */
+  private pieceUnlit = new Int32Array(0);
+  /** Each piece kit's unlit segment as `bloomColour` reads a material: its `getEmissive` colour, alpha 1. */
+  private pieceBloomOf: ({ readonly emissiveColor: Color3; readonly alpha: number } | null)[] = [];
+  private readonly pieceBloom = new Color4();
+  /**
+   * This frame's drawn pieces' segments, in drawing order: each one's world
+   * bounding sphere, four doubles a segment (NaN for one not drawn) — what
+   * the order and the bloom are pulled off inside the render (`piecePull`).
+   * Sized when `pieceDraw` is built.
+   */
+  private pieceSpheres = new Float64Array(0);
+  /** `piecePull`'s scratch: one piece's segment keys. */
+  private pieceKeys = new Float64Array(0);
+  /** The size gate a piece's CEL segment is drawn under: `WorldCulling`'s, this frame (`drawPieces`). */
+  private readonly keepsPieceSegment: PieceGate = (x, y, z, radius) => this.culling.keepsSphere(x, y, z, radius);
+  /**
+   * This frame's drawn marks, by slot in `BulletMarks.slots` — in slot order
+   * as `drawMarks` gathers them, and front to back once `markPull` has sorted
+   * them inside the render; and the sort's keys.
+   */
+  private markDrawn = new Int32Array(0);
+  private markKeys = new Float64Array(0);
   /**
    * The irradiance volume — bounce light, sky occlusion and point lights that
    * stop at walls (`systems/GiVolume.ts`). Built beside the two shadow maps and
@@ -2085,7 +2127,7 @@ export class Game {
     // spending it is `resolveOrdnance`'s, through the same `blastAt` the tank
     // shell already goes through.
     this.antiTank = new AntiTankSystem();
-    this.antiTankFx = new AntiTankFx(this.scene, this.mats, this.antiTank);
+    this.antiTankFx = new AntiTankFx(this.mats, this.antiTank);
     this.aimAssist = new AimAssistSystem();
     this.conquest = new ConquestSystem(this.random);
     this.zones = new CaptureZoneSystem(this.scene, this.mats);
@@ -2102,6 +2144,103 @@ export class Game {
       const { drawn, masked } = this.viewDraw.stats;
       return { drawn, masked };
     });
+    // The effect pools' pieces and the bullet marks, ours in every round
+    // (`BABYLON_EXIT.md` X4.4b), on the bodies' terms: every kit built by the
+    // view that made the first of its meshes (above, so each material was
+    // asked of the factory where it always was), uploaded here once, and the
+    // draws' pipelines asked for the session — so the building card's warm-up
+    // waits for them like any of ours.
+    const pieceKits = this.pieceKits;
+    const pieceKitList = [pieceKits.tracer, pieceKits.casing, pieceKits.frag, pieceKits.bottle, pieceKits.rocket, pieceKits.mine];
+    this.pieceKitIndex = new Map(pieceKitList.map((kit, i) => [kit, i]));
+    const celPaints: string[] = [];
+    const unlitPaints: string[] = [];
+    const slotIn = (list: string[], hex: string): number => {
+      const k = hex.toLowerCase();
+      let i = list.findIndex((h) => h.toLowerCase() === k);
+      if (i < 0) i = list.push(hex) - 1;
+      return i + 1;
+    };
+    const pieceDrawKits: PoolKit[] = pieceKitList.map((kit) => ({
+      segments: kit.segments.map((seg) => ({
+        positions: seg.geometry.positions,
+        normals: seg.geometry.normals,
+        colors: seg.geometry.colors,
+        uvs: seg.geometry.uvs,
+        indices: seg.geometry.indices,
+        slot: seg.unlit !== null ? slotIn(unlitPaints, seg.unlit) : slotIn(celPaints, seg.cel!),
+        unlit: seg.unlit !== null,
+      })),
+    }));
+    this.pieceUnlit = Int32Array.from(pieceKitList, (kit) => kit.segments.findIndex((s) => s.unlit !== null));
+    this.pieceBloomOf = pieceKitList.map((kit) => {
+      const lit = kit.segments.find((s) => s.unlit !== null);
+      return lit ? { emissiveColor: Color3.FromHexString(lit.unlit!), alpha: 1 } : null;
+    });
+    // Every piece a frame can hold: each pool's slots, a grenade's two
+    // bodies apiece, the simulation's and the wire's.
+    const pieceCapacity =
+      CONFIG.effects.tracerPoolSize +
+      CONFIG.gunfeel.casingPool +
+      2 * 2 * CONFIG.grenade.poolSize +
+      2 * ROCKET_POOL +
+      2 * MINE_POOL;
+    this.pieceDraw = new PoolDraw(
+      this.renderer,
+      "pieces",
+      pieceDrawKits,
+      {
+        cel: this.mats.poolCelRecipe(celPaints.map((hex) => Color3.FromHexString(hex))),
+        unlit: this.mats.poolEmissiveRecipe(unlitPaints.map((hex) => Color3.FromHexString(hex))),
+      },
+      pieceCapacity,
+      (order, glow, n, glowOn) => this.piecePull(order, glow, n, glowOn),
+    );
+    this.pieceSpheres = new Float64Array(this.pieceDraw.capacity * this.pieceDraw.segments * 4);
+    this.pieceKeys = new Float64Array(this.pieceDraw.segments);
+    // The marks: a kit a SHAPE in each PAINT (the paint is a slot in the
+    // vertices, so a shape painted twice is two kits), shape-major — a mark's
+    // kit word is `shape * paints + paint` — at the marks' own depth bias.
+    const paints = MARK_PAINTS.length;
+    const markKits: PoolKit[] = [];
+    for (const shape of MARK_SHAPES) {
+      for (let p = 0; p < paints; p++) {
+        markKits.push({
+          segments: [
+            {
+              positions: shape.positions,
+              normals: shape.normals,
+              colors: null,
+              uvs: null,
+              indices: shape.indices,
+              slot: p + 1,
+              unlit: false,
+            },
+          ],
+        });
+      }
+    }
+    this.markDraw = new PoolDraw(
+      this.renderer,
+      "marks",
+      markKits,
+      {
+        cel: this.mats.poolCelRecipe(MARK_PAINTS.map((hex) => Color3.FromHexString(hex)), MARK_DEPTH_UNITS),
+        unlit: null,
+      },
+      CONFIG.effects.markPoolSize,
+      (order, _glow, n) => this.markPull(order, n),
+    );
+    this.markDrawn = new Int32Array(this.markDraw.capacity);
+    this.markKeys = new Float64Array(this.markDraw.capacity);
+    // …and what both drew (`ProfileReport.pools`): Babylon's counter has
+    // counted no tracer, mark, thrown or laid body, nor any case, since X4.4b.
+    this.prof.setPools(() => ({
+      drawn: this.pieceDraw.stats.drawn + this.markDraw.stats.drawn,
+      masked: this.pieceDraw.stats.masked,
+      instances: this.pieceDraw.stats.instances,
+      marks: this.markDraw.stats.instances,
+    }));
     // The sky hangs behind every state (menu included), so it is dressed
     // once here and re-applied per round alongside the environment.
     this.sky = new Sky(this.scene);
@@ -4147,6 +4286,10 @@ export class Game {
     // card, the opaque parts in Babylon's group-1 order, the glasses back to
     // front.
     this.drawView();
+    // …and the effect pools' pieces and the bullet marks (X4.4b): posed
+    // where every pool already put them this frame, handed to our renderer.
+    this.drawPieces();
+    this.drawMarks();
     this.scene.render();
     this.prof.end(P.render);
     if (warming) this.unstageWarmFrame();
@@ -5021,6 +5164,8 @@ export class Game {
     this.bodyShadowMap.setFailure();
     this.hullDraw.uninstall();
     this.bodyDraw.uninstall();
+    this.pieceDraw.uninstall();
+    this.markDraw.uninstall();
     // The weapon stays drawn — the kit screen covers the menu — but a failure
     // of it with no round standing is the console's (X4.3c).
     this.viewDraw.onFailed((reason) => console.error(`[view] the weapon cannot be drawn — ${reason}`));
@@ -5232,6 +5377,13 @@ export class Game {
     // Babylon's opaque queue, the hulls' meshes in it, drew before the
     // bodies' draw of ours, so a hull goes down first at the one point both
     // use. An editor build has no fleet to draw.
+    // The pools' pieces and the marks on the bodies' terms, installed AHEAD
+    // of the hulls, the bodies and the world (X4.4b): the pools' meshes were
+    // in Babylon's opaque queue, which drew before every draw of ours at the
+    // one point all of them use — so a mark still goes down before the wall
+    // it is biased off. An editor build fires nothing.
+    if (!editor) this.pieceDraw.install((reason) => this.worldFailed(reason, owner));
+    if (!editor) this.markDraw.install((reason) => this.worldFailed(reason, owner));
     if (!editor) this.hullDraw.install((reason) => this.worldFailed(reason, owner));
     if (!editor) this.bodyDraw.install((reason) => this.worldFailed(reason, owner));
     // The weapon is drawn for the SESSION (X4.3c), so this hands it only whom
@@ -5256,6 +5408,9 @@ export class Game {
     // the handover registered just now: the palette went down first in that
     // pass while Babylon drew the visors.
     if (!editor) this.bodyDraw.installMask();
+    // …and the pieces' unlit parts after the visors, where Babylon's mask
+    // drew the pools' meshes: after everything first in that pass.
+    if (!editor) this.pieceDraw.installMask();
     // How hard the grade is pushed is the map's; whether it runs at all stays
     // the player's (`applySettings`). A vignette that reads as dread over a
     // night village reads as a lens fault over a bright one.
@@ -6123,6 +6278,223 @@ export class Game {
       glow[k * 4 + 1] = this.viewBloom.g;
       glow[k * 4 + 2] = this.viewBloom.b;
       glow[k * 4 + 3] = this.viewBloom.a;
+    }
+  }
+
+  /**
+   * Every kit a pool draws in the world (`BABYLON_EXIT.md` X4.4b), from the
+   * views that built them: the tracer's, the case's, the frag's and the
+   * bottle's, the rocket's and the mine's — what `pieceDraw` was handed, and
+   * what each session's wire pools (`NetSession`) make their pieces of.
+   */
+  private get pieceKits(): PieceKits {
+    return {
+      tracer: this.combatFx.tracerKit,
+      casing: this.playerView.casingKit,
+      frag: this.grenadeFx.kits.frag,
+      bottle: this.grenadeFx.kits.bottle,
+      rocket: this.antiTankFx.kits.rocket,
+      mine: this.antiTankFx.kits.mine,
+    };
+  }
+
+  /**
+   * Hands our renderer this frame's PIECES (`BABYLON_EXIT.md` X4.4b): every
+   * piece a pool has switched on — the tracers in flight, the brass, the
+   * simulation's thrown bodies and the wire's, the rockets and the mines of
+   * both — composed fresh and written as an instance of its kit
+   * (`pieces.writePieceDrawing`): an unlit segment always, a CEL segment only
+   * where the size gate keeps its world sphere this frame
+   * (`WorldCulling.keepsSphere`, as `offer` asked it of the mesh the segment
+   * was), and each drawn segment's sphere kept for the order and the bloom
+   * the render pulls (`piecePull`). A piece with nothing drawn is no
+   * instance.
+   *
+   * Once a frame, in EVERY state, after everything that moves a piece (the
+   * pools' own steps, `NetSession.update`, `PlayerView.stepped`) and after
+   * the cull, immediately before `scene.render` — inside the render span,
+   * where Babylon composed the pools' meshes until X4.4b. While the draw is
+   * not installed (the menu, an editor build) none is composed.
+   */
+  private drawPieces(): void {
+    const draw = this.pieceDraw;
+    if (!draw.installed) return;
+    let n = 0;
+    n = this.writePieces(this.combatFx.tracerPieces, n);
+    n = this.writePieces(this.playerView.casingPieces, n);
+    const bodies = this.grenadeFx.bodies;
+    for (let i = 0; i < bodies.length; i++) {
+      n = this.writePiece(bodies[i].frag, n);
+      n = this.writePiece(bodies[i].bottle, n);
+    }
+    const rockets = this.antiTankFx.rockets;
+    for (let i = 0; i < rockets.length; i++) n = this.writePiece(rockets[i].piece, n);
+    const mines = this.antiTankFx.mines;
+    for (let i = 0; i < mines.length; i++) n = this.writePiece(mines[i].piece, n);
+    const net = this.net;
+    if (net) {
+      const ghosts = net.grenades.bodies;
+      for (let i = 0; i < ghosts.length; i++) {
+        n = this.writePiece(ghosts[i].frag, n);
+        n = this.writePiece(ghosts[i].bottle, n);
+      }
+      const wireRockets = net.ordnance.rocketBodies;
+      for (let i = 0; i < wireRockets.length; i++) n = this.writePiece(wireRockets[i].piece, n);
+      const wireMines = net.ordnance.mines;
+      for (let i = 0; i < wireMines.length; i++) n = this.writePiece(wireMines[i].piece, n);
+    }
+    // The unlit parts bloom on the glow's rules, as Babylon's mask asked them
+    // of each mesh: group 0's admission (the kit screen holds the world's).
+    draw.commit(n, this.glowAdmits(), this.mats.materialEpoch);
+  }
+
+  /** `writePiece` over a list. */
+  private writePieces(pieces: readonly Piece[], n: number): number {
+    for (let i = 0; i < pieces.length; i++) n = this.writePiece(pieces[i], n);
+    return n;
+  }
+
+  /** One piece written as instance `n` if any of it is drawn; the next instance's index. */
+  private writePiece(p: Piece, n: number): number {
+    const draw = this.pieceDraw;
+    if (n >= draw.capacity || !p.enabled) return n;
+    let any = false;
+    const nodes = p.nodes;
+    for (let i = 0; i < nodes.length; i++) any ||= nodes[i].visible;
+    if (!any) return n;
+    const S = draw.segments;
+    if (!writePieceDrawing(p, draw.matrices, n * S * 16, S, this.keepsPieceSegment, this.pieceSpheres, n * S * 4)) {
+      return n;
+    }
+    draw.kits[n] = this.pieceKitIndex.get(p.kit) ?? 0;
+    return n + 1;
+  }
+
+  /**
+   * What our renderer PULLS inside the render (`PoolDraw`'s prepare), for
+   * this frame's `n` drawn pieces (`drawPieces`), where the render has placed
+   * the camera:
+   *
+   * - each piece's segments in the ORDER Babylon's queue drew a pool's
+   *   meshes — `bodyPull`'s sort, off `globalPosition`, for its reason:
+   *   group 0's opaque sort, nearest first by `eyeDistanceSq` and, between
+   *   two at one distance, the order the meshes were made in, the kit's,
+   *   stable. A segment not drawn goes last;
+   * - with `glowOn`, each piece's unlit segment's bloom — `GlowRules.colour`
+   *   as `GlowPass` asked it of that mesh: its `getEmissive` colour faded by
+   *   the fog at its bounding sphere's centre.
+   */
+  private piecePull(order: Uint32Array, glow: Float32Array, n: number, glowOn: boolean): void {
+    const eye = this.cameraSys.camera.globalPosition;
+    const draw = this.pieceDraw;
+    const segments = draw.segments;
+    const c = this.pieceSpheres;
+    const keys = this.pieceKeys;
+    for (let i = 0; i < n; i++) {
+      const o = i * segments;
+      for (let s = 0; s < segments; s++) {
+        const at = (o + s) * 4;
+        const x = c[at];
+        if (Number.isNaN(x)) {
+          keys[s] = Number.POSITIVE_INFINITY;
+        } else {
+          const dx = x - eye.x;
+          const dy = c[at + 1] - eye.y;
+          const dz = c[at + 2] - eye.z;
+          keys[s] = dx * dx + dy * dy + dz * dz;
+        }
+        // A stable insertion sort: a segment moves ahead only of one strictly
+        // farther.
+        let r = s;
+        while (r > 0 && keys[order[o + r - 1]] > keys[s]) {
+          order[o + r] = order[o + r - 1];
+          r--;
+        }
+        order[o + r] = s;
+      }
+      if (!glowOn) continue;
+      const kit = draw.kits[i];
+      const lit = this.pieceUnlit[kit];
+      const material = this.pieceBloomOf[kit];
+      if (lit < 0 || !material) continue;
+      const at = (o + lit) * 4;
+      if (Number.isNaN(c[at])) continue;
+      this.pieceAt.set(c[at], c[at + 1], c[at + 2]);
+      const fade = 1 - fogAmountAt(Vector3.Distance(this.pieceAt, eye));
+      this.bloomColour(material, fade, this.pieceBloom);
+      glow[i * 4] = this.pieceBloom.r;
+      glow[i * 4 + 1] = this.pieceBloom.g;
+      glow[i * 4 + 2] = this.pieceBloom.b;
+      glow[i * 4 + 3] = this.pieceBloom.a;
+    }
+  }
+
+  /** `piecePull`'s scratch: an unlit segment's centre. */
+  private readonly pieceAt = new Vector3();
+
+  /**
+   * Hands our renderer this frame's bullet MARKS (`BABYLON_EXIT.md` X4.4b):
+   * every standing slot of `BulletMarks` the size gate keeps — its frozen
+   * world sphere asked of `WorldCulling.keepsSphere`, as `offer` asked it of
+   * the mesh the slot was, a mark being cel and so never exempt — in slot
+   * order, which `markPull` sorts inside the render. Once a frame, beside
+   * `drawPieces`.
+   */
+  private drawMarks(): void {
+    const draw = this.markDraw;
+    if (!draw.installed) return;
+    const slots = this.combatFx.marks.slots;
+    const culling = this.culling;
+    let n = 0;
+    for (let i = 0; i < slots.length && n < draw.capacity; i++) {
+      const slot = slots[i];
+      if (!slot.visible) continue;
+      if (!culling.keepsSphere(slot.centre.x, slot.centre.y, slot.centre.z, slot.radius)) continue;
+      this.markDrawn[n++] = i;
+    }
+    draw.commit(n, false, this.mats.materialEpoch);
+  }
+
+  /**
+   * What our renderer PULLS inside the render for this frame's `n` drawn
+   * marks (`drawMarks`), where the render has placed the camera: the marks
+   * THEMSELVES in the order Babylon's queue drew their meshes — group 0's
+   * opaque sort, nearest first by `eyeDistanceSq` off `globalPosition`, the
+   * slot order (the order the meshes were made in) breaking a tie, stable —
+   * each one's frozen world and kit word written in that order, since two
+   * marks overlapping on one wall are coplanar at one bias and the later
+   * wins an equal depth (LEQUAL). Every mark is one segment, drawn at rank 0.
+   */
+  private markPull(order: Uint32Array, n: number): void {
+    const eye = this.cameraSys.camera.globalPosition;
+    const draw = this.markDraw;
+    const slots = this.combatFx.marks.slots;
+    const drawn = this.markDrawn;
+    const keys = this.markKeys;
+    for (let k = 0; k < n; k++) {
+      const slotIndex = drawn[k];
+      const c = slots[slotIndex].centre;
+      const dx = c.x - eye.x;
+      const dy = c.y - eye.y;
+      const dz = c.z - eye.z;
+      const key = dx * dx + dy * dy + dz * dz;
+      // A stable insertion sort: a mark moves ahead only of one strictly
+      // farther.
+      let r = k;
+      while (r > 0 && keys[r - 1] > key) {
+        keys[r] = keys[r - 1];
+        drawn[r] = drawn[r - 1];
+        r--;
+      }
+      keys[r] = key;
+      drawn[r] = slotIndex;
+    }
+    const paints = MARK_PAINTS.length;
+    for (let k = 0; k < n; k++) {
+      const slot = slots[drawn[k]];
+      draw.matrices.set(slot.world.m, k * 16);
+      draw.kits[k] = slot.shape * paints + slot.paint;
+      order[k] = 0;
     }
   }
 
@@ -8109,7 +8481,7 @@ export class Game {
     const region = this.regionBook.resolve(opts.regionId);
     // Its rigs built to the map the join expects, which the welcome may yet
     // move (`applyMatchMap`), and `buildRound`'s `setFielded` with it.
-    const net = new NetSession(this.scene, this.mats, false, perTeamOf(this.mapDef.layout));
+    const net = new NetSession(this.pieceKits, false, perTeamOf(this.mapDef.layout));
     this.net = net;
 
     this.wireNet(net);
@@ -8178,7 +8550,7 @@ export class Game {
     const host = this.localOwner.match;
     // Its rigs built to this round's own roster, so `buildRound`'s
     // `setFielded` has nothing to rebuild unless the viewer's side moved.
-    const net = new NetSession(this.scene, this.mats, true, perTeamOf(this.mapDef.layout));
+    const net = new NetSession(this.pieceKits, true, perTeamOf(this.mapDef.layout));
     this.net = net;
     this.wireNet(net);
     this.localOwner.reset();

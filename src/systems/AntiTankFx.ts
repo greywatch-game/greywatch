@@ -3,7 +3,10 @@
  * body pointed down its flight with its motor guttering, and a mine's plate
  * with its fuze lamp.
  * Owns: one `RocketBody` per rocket slot and one `MineBody` per mine slot,
- * built once at the authority's own pool sizes (`ROCKET_POOL`, `MINE_POOL`).
+ * built once at the authority's own pool sizes (`ROCKET_POOL`, `MINE_POOL`),
+ * each a PIECE of a kit our renderer draws (`entities/pieces.ts`,
+ * `BABYLON_EXIT.md` X4.4b; `Game.drawPieces` hands them over), and the two
+ * kits.
  * Invariants: it READS `AntiTankSystem` (`rocketSlots`, `mineSlots`, read-only
  * by type) and never writes it — nothing here flies, arms, triggers or
  * detonates. `update` runs straight after `AntiTankSystem.update` every frame
@@ -18,40 +21,48 @@
  * `net/NetOrdnance` draws the same two objects off the wire, and a remote
  * warhead and a local one have to point the same way by the same move.
  */
-import { Mesh, Scene, Vector3 } from "@babylonjs/core";
-import { buildMineBody } from "../entities/MineModel";
-import { buildRocket } from "../entities/RpgModel";
+import { minePieceParts } from "../entities/MineModel";
+import { Piece, pieceKit, type PieceKits } from "../entities/pieces";
+import { rocketParts } from "../entities/RpgModel";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { MINE_POOL, ROCKET_POOL, type AntiTankSystem } from "./AntiTankSystem";
 
-/** Scratch for the point a rocket is faced at. Never allocated per frame. */
-const _ahead = new Vector3();
-
-/** One rocket on screen: the body, and the motor parented to it. */
+/**
+ * One rocket on screen: a piece of the rocket's kit — the body, and the motor
+ * hung from it — which our renderer draws (`entities/pieces.ts`,
+ * `BABYLON_EXIT.md` X4.4b).
+ */
 export class RocketBody {
-  private readonly mesh: Mesh;
-  /** The motor — the tell a driver actually reads. */
-  private readonly flame: Mesh;
-  private shown = false;
+  readonly piece: Piece;
 
-  constructor(scene: Scene, mats: CelMaterialFactory, name: string) {
-    const { mesh, flame } = buildRocket(scene, mats, name);
-    this.mesh = mesh;
-    this.flame = flame;
-    mesh.setEnabled(false);
+  constructor(kits: Pick<PieceKits, "rocket">) {
+    this.piece = new Piece(kits.rocket);
+    // Every part shown, the piece switched off WHOLE until it flies.
+    for (const n of this.piece.nodes) n.visible = true;
+    this.piece.enabled = false;
   }
 
   /**
    * At `(x, y, z)`, pointed along `(dx, dy, dz)` — a velocity or a direction,
-   * either will do. `lookAt` rather than an angle pair because the body has a
-   * roll nobody cares about and two angles that would have to be kept in
-   * step: what a rocket owes the picture is that the warhead is at the front,
-   * and the up vector it picks for the rest is free.
+   * either will do. `lookAt`'s arithmetic rather than an angle pair because
+   * the body has a roll nobody cares about and two angles that would have to
+   * be kept in step: what a rocket owes the picture is that the warhead is at
+   * the front, and the up vector it picks for the rest is free. Operation for
+   * operation `TransformNode.lookAt` in local space (the point ahead less the
+   * position) and `setDirection` with no corrections, as the mesh was turned.
    */
   place(x: number, y: number, z: number, dx: number, dy: number, dz: number): void {
-    this.mesh.position.set(x, y, z);
-    _ahead.set(x + dx, y + dy, z + dz);
-    this.mesh.lookAt(_ahead);
+    const root = this.piece.root;
+    root.position.set(x, y, z);
+    const ax = x + dx - x;
+    const ay = y + dy - y;
+    const az = z + dz - z;
+    const yaw = -Math.atan2(az, ax) + Math.PI / 2;
+    const len = Math.sqrt(ax * ax + az * az);
+    const pitch = -Math.atan2(ay, len);
+    root.rotation.x = pitch + 0;
+    root.rotation.y = yaw + 0;
+    root.rotation.z = 0;
   }
 
   /**
@@ -62,36 +73,27 @@ export class RocketBody {
    */
   flicker(flown: number): void {
     const flick = 0.78 + 0.22 * Math.sin(flown * 37);
-    this.flame.scaling.set(flick, flick, 0.75 + 0.5 * flick);
+    this.piece.nodes[2].scaling.set(flick, flick, 0.75 + 0.5 * flick);
   }
 
-  /**
-   * On or off — the whole body, motor and fins included, which is why this is
-   * `setEnabled` and not `isVisible` (see `buildRocket`).
-   */
+  /** On or off — the whole body, motor and fins included (`Piece.enabled`). */
   show(on: boolean): void {
-    if (this.shown === on) return;
-    this.shown = on;
-    this.mesh.setEnabled(on);
-  }
-
-  dispose(): void {
-    this.mesh.dispose();
+    this.piece.enabled = on;
   }
 }
 
-/** One laid mine on screen: the plate, and the fuze lamp parented to it. */
+/** One laid mine on screen: a piece of the mine's kit — the plate, and the fuze lamp hung from it. */
 export class MineBody {
-  private readonly mesh: Mesh;
-  /** The fuze lamp: dark while arming, lit once live. */
-  private readonly lamp: Mesh;
+  readonly piece: Piece;
 
-  constructor(scene: Scene, mats: CelMaterialFactory, name: string) {
-    const { mesh, lamp } = buildMineBody(scene, mats, name);
-    this.mesh = mesh;
-    this.lamp = lamp;
-    mesh.setEnabled(false);
-    lamp.isVisible = false;
+  constructor(kits: Pick<PieceKits, "mine">) {
+    this.piece = new Piece(kits.mine);
+    // The plate and the pressure plate always shown; the lamp is the tell,
+    // switched on its own (`show`), and the piece switched off WHOLE until
+    // it is laid.
+    this.piece.nodes[0].visible = true;
+    this.piece.nodes[1].visible = true;
+    this.piece.enabled = false;
   }
 
   /**
@@ -100,18 +102,14 @@ export class MineBody {
    * go off.
    */
   show(x: number, y: number, z: number, armed: boolean): void {
-    this.mesh.position.set(x, y, z);
-    if (!this.mesh.isEnabled()) this.mesh.setEnabled(true);
-    this.lamp.isVisible = armed;
+    this.piece.root.position.set(x, y, z);
+    this.piece.enabled = true;
+    this.piece.nodes[2].visible = armed;
   }
 
   hide(): void {
-    if (this.mesh.isEnabled()) this.mesh.setEnabled(false);
-    this.lamp.isVisible = false;
-  }
-
-  dispose(): void {
-    this.mesh.dispose();
+    this.piece.enabled = false;
+    this.piece.nodes[2].visible = false;
   }
 }
 
@@ -119,20 +117,28 @@ export class MineBody {
 type AntiTankReader = Pick<AntiTankSystem, "rocketSlots" | "mineSlots">;
 
 export class AntiTankFx {
-  private readonly rockets: RocketBody[] = [];
-  private readonly mines: MineBody[] = [];
+  /** One body a rocket slot, by slot: what `Game.drawPieces` hands our renderer. */
+  readonly rockets: RocketBody[] = [];
+  /** One body a mine slot, by slot. */
+  readonly mines: MineBody[] = [];
+  /**
+   * The rocket's kit and the mine's, built here once — where the first of
+   * each one's meshes were made until `BABYLON_EXIT.md` X4.4b, so their
+   * materials are asked of the factory at the same point in its order — and
+   * shared with the wire's pool (`net/NetOrdnance`).
+   */
+  readonly kits: Pick<PieceKits, "rocket" | "mine">;
 
   constructor(
-    scene: Scene,
     mats: CelMaterialFactory,
     private readonly sim: AntiTankReader,
   ) {
-    for (let i = 0; i < ROCKET_POOL; i++) {
-      this.rockets.push(new RocketBody(scene, mats, `rocket${i}`));
-    }
-    for (let i = 0; i < MINE_POOL; i++) {
-      this.mines.push(new MineBody(scene, mats, `mine${i}`));
-    }
+    this.kits = {
+      rocket: pieceKit("rocket", rocketParts(mats, "rocket0")),
+      mine: pieceKit("mine", minePieceParts(mats, "mine0")),
+    };
+    for (let i = 0; i < ROCKET_POOL; i++) this.rockets.push(new RocketBody(this.kits));
+    for (let i = 0; i < MINE_POOL; i++) this.mines.push(new MineBody(this.kits));
   }
 
   /** Poses every rocket and every mine off the simulation's pools. */

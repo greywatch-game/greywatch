@@ -737,8 +737,16 @@ src/
                         #   telling its PlayerPicture what happened
     PlayerView.ts       # The player's PICTURE: the ViewModel on the camera,
                         #   the muzzle flash star (segments of the weapon's
-                        #   tree, X4.3c) and the brass pool. Client only;
-                        #   told by Player (fired/stepped/cleared/stowed)
+                        #   tree, X4.3c) and the brass pool (pieces of the
+                        #   casing's kit, which it builds — X4.4b). Client
+                        #   only; told by Player (fired/stepped/cleared/stowed)
+    pieces.ts           # The effect pools' PIECES as data (X4.4b): a kit a
+                        #   kind (its segments — arrays, paint, local sphere,
+                        #   the transform its mesh was dressed with, its
+                        #   parent), a piece a node a segment composed as the
+                        #   mesh was, bit for bit, and writePieceDrawing — the
+                        #   cel parts gated on the STALE sphere Babylon read
+                        #   (FINDINGS 67). No Babylon
     HealthRegen.ts      # A person's regen: the lock after a hit and the curve
                         #   back to full. One held by Player (predicting) and
                         #   one by src/sim/SimPlayer (authoritative), so the two
@@ -1079,18 +1087,21 @@ src/
                         #   are heard off, the slung launcher the roster says
                         #   it carries (`setLauncher`), no behaviour at all
     GrenadeModel.ts     # What a grenade looks like — body, fuse pip, and the
-                        #   blink that reads the fuse. Built by GrenadeFx's
-                        #   `GrenadeBody`, which the wire's ghosts reuse
+                        #   blink that reads the fuse. The frag's kit's parts
+                        #   (`grenadeParts`), built once by GrenadeFx, whose
+                        #   `GrenadeBody` the wire's ghosts reuse
     MolotovModel.ts     # What a molotov looks like — bottle, neck, and the lit
                         #   rag that is its tell. One statement of the parts,
-                        #   made twice: meshes for GrenadeFx's `GrenadeBody`
-                        #   (the pool's and the wire's ghosts) and segments for
-                        #   the viewmodel's fist (X4.3c)
+                        #   made twice: the bottle's kit for GrenadeFx's
+                        #   `GrenadeBody` (the pool's and the wire's ghosts,
+                        #   X4.4b) and segments for the viewmodel's fist (X4.3c)
     RpgModel.ts         # The launcher on the shoulder and the rocket that
-                        #   leaves it. Built from its VENTURI, not its middle,
-                        #   the one weapon with a `hipYaw` of its own, and the
-                        #   one whose loaded ROUND is a node that comes out
-    MineModel.ts        # The mine in the hands and the plate in the road. The
+                        #   leaves it (`rocketParts`, the rocket's kit, X4.4b).
+                        #   Built from its VENTURI, not its middle, the one
+                        #   weapon with a `hipYaw` of its own, and the one
+                        #   whose loaded ROUND is a node that comes out
+    MineModel.ts        # The mine in the hands and the plate in the road
+                        #   (`minePieceParts`, the laid mine's kit, X4.4b). The
                         #   one thing in the kit that is not a weapon at all
   systems/
     BattleSystem.ts     # Bot pool, AI scheduling, LOS, squads, the bench.
@@ -1133,14 +1144,19 @@ src/
                         #   second only for a match client's PREDICTED round
     CaptureZoneSystem.ts# Flags drawn in the world: ring, skirt, flag on its pole
     FlagCloth.ts        # One flag: the pole and a Verlet cloth flown in the wind
-    BulletMarks.ts      # The holes a round leaves behind: a ring of pooled decal
-                        #   quads, cel-lit so a mark belongs to the wall on
-                        #   every map, and stood on the STATIC world only
-                        #   (`CombatFx`'s fourth pool)
+    BulletMarks.ts      # The holes a round leaves behind: a ring of pooled
+                        #   SLOTS, each a frozen world and sphere, cel-lit so a
+                        #   mark belongs to the wall on every map, and stood
+                        #   on the STATIC world only (`CombatFx`'s fourth
+                        #   pool); its shapes, paints and depth bias, drawn by
+                        #   our renderer (Game.drawMarks, X4.4b). No Babylon
     CombatFx.ts         # A round's PICTURE: pooled tracers, sparks, dust discs
                         #   and the marks, fed by `CombatSystem.onRound` and
                         #   `drawRounds`; the impact (and its sound) on the
-                        #   tracer's arrival clock. Client only
+                        #   tracer's arrival clock. The tracers (pieces of the
+                        #   kit it builds) and the marks are our renderer's
+                        #   (X4.4b); the sparks and discs Babylon meshes until
+                        #   X4.6. Client only
     CombatSystem.ts     # Hitscan, fall-off, the head zone, the cone; raises
                         #   `onNearMiss`, `onRound`, `onShotPath`. Babylon-free
     GrenadeSystem.ts    # The one thing that isn't hitscan: the flight, the
@@ -1150,9 +1166,12 @@ src/
                         #   (it raises `onBlast`). Babylon-free; positions are
                         #   plain `pos`/`at` fields
     GrenadeFx.ts        # The grenades' PICTURE: a `GrenadeBody` per slot
-                        #   (tumble, pip), a fire's flames on their own floor
-                        #   probe, and the BlastFx. Reads `flights`/`fireSlots`,
-                        #   fed `onBlast`/`onIgnited`/`onBurntOut`. Client only
+                        #   (tumble, pip — two pieces of the frag's and the
+                        #   bottle's kits, which it builds, drawn by our
+                        #   renderer, X4.4b), a fire's flames on their own
+                        #   floor probe, and the BlastFx. Reads
+                        #   `flights`/`fireSlots`, fed
+                        #   `onBlast`/`onIgnited`/`onBurntOut`. Client only
     BlastFx.ts          # Six of a blast's eight layers, DRAWN: flash,
                         #   fireball, surge, sparks, burning trails and column,
                         #   every one a billow in BlastShader. One thin-instanced
@@ -1167,8 +1186,9 @@ src/
     AntiTankFx.ts       # The AT kit's PICTURE: a `RocketBody` per rocket slot
                         #   (faced down its flight, motor guttering off metres
                         #   flown) and a `MineBody` per mine (lamp off the arm
-                        #   clock), posed off `rocketSlots`/`mineSlots`. Client
-                        #   only
+                        #   clock), posed off `rocketSlots`/`mineSlots` — each a
+                        #   piece of the kits it builds, drawn by our renderer
+                        #   (X4.4b). Client only
     GlassSystem.ts      # Breakable panes: the segment sweep and the break —
                         #   the box out of the queries and the push-out, and
                         #   the nav graph with the fields over it, all on the
@@ -2349,8 +2369,9 @@ src/
                       #   off the welcome), re-addressing, never rebuilding
     NetGrenades.ts    #   Everybody else's grenades in the air, interpolated on
                       #   the same clock as the bodies, drawn by GrenadeFx's
-                      #   own `GrenadeBody`. The thrower's own is skipped —
-                      #   they are watching their local copy
+                      #   own `GrenadeBody` off its kits (X4.4b). The
+                      #   thrower's own is skipped — they are watching their
+                      #   local copy
     NetVehicles.ts    #   Somebody else's armour: one interpolation buffer per
                       #   HARDSTANDING, feeding Vehicle.updateRemote. Owns no hull
                       #   — the fleet is VehicleSystem's on both sides — and the
@@ -2359,7 +2380,8 @@ src/
     NetOrdnance.ts    #   The AT kit off the wire: rockets interpolated like
                       #   grenades, mines applied whole from the versioned
                       #   `mines` table, drawn by AntiTankFx's `RocketBody` and
-                      #   `MineBody`. The shooter's own rocket is skipped;
+                      #   `MineBody` off its kits (X4.4b). The shooter's own
+                      #   rocket is skipped;
                       #   their own mine is NOT, because it is never predicted
     lobby.ts          #   GET /matches for ONE region. The only part of
                       #   multiplayer that is not the WebSocket. Times its own
@@ -2655,7 +2677,8 @@ src/
                         #   4x4 Bayer rank of the pixel against the body's
                         #   fade, read in the fragment stage (BODY_FADE) — that
                         #   faded cel pixel the one a fading hull is drawn with
-                        #   too (fadedCelFragment, X4.2d)
+                        #   too (fadedCelFragment, X4.2d). The effect pools'
+                        #   draws run its plain three, labelled `pool` (X4.4b)
     BodyDraw.ts         # Every BODY as OUR renderer draws it (X4.1d): the
                         #   kits on the GPU once, each frame's bodies as
                         #   instances — a rank's matte segments one draw, its
@@ -2692,6 +2715,22 @@ src/
                         #   a failure (or a refused pass) the round's
                         #   (Game.worldFailed); installed for a round, never an
                         #   editor build
+    PoolDraw.ts         # The effect POOLS' pieces as OUR renderer draws them
+                        #   (X4.4b), one draw-set of these for the tracers,
+                        #   brass and thrown and laid bodies and one for the
+                        #   bullet marks: the kits on the GPU once (padded to
+                        #   the widest), each frame's pieces as instances by
+                        #   the bodies' plain programs — a rank's cel segments
+                        #   one draw, its unlit ones another, those again into
+                        #   the glow's mask after the visors — off what
+                        #   Game.drawPieces/drawMarks commit and the order and
+                        #   bloom the prepare pulls (the marks' instances
+                        #   themselves sorted, Game.markPull); the cel
+                        #   pipeline at the recipe's depth bias (the marks');
+                        #   installed AHEAD of the hulls, as Babylon's queue
+                        #   drew the pools; pipelines asked once a session, a
+                        #   failure the round's; installed for a round, never
+                        #   an editor build
     viewProgram.ts      # The WEAPON's programs (X4.3c): the cel stage and the
                         #   emissive palette's over a viewmodel segment — a
                         #   draw ONE segment, an instance the draw, its matrix

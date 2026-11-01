@@ -257,10 +257,19 @@ const built = new Map<string, BodyPrograms>();
  * The six programs (three plain, three faded) for `kits` kits of `segments`
  * segments, the matte draw's
  * corners `celSpan` a rank and the visor's `visorSpan` (each the longest
- * range that program draws).
+ * range that program draws). `name` labels the modules — `"body"`, or
+ * `"pool"` for the effect pools' pieces and marks, which are drawn by these
+ * same programs (`render/PoolDraw.ts`, `BABYLON_EXIT.md` X4.4b): a label is
+ * no part of a module's code, so it moves nothing a body is drawn with.
  */
-export function bodyPrograms(kits: number, segments: number, celSpan: number, visorSpan: number): BodyPrograms {
-  const key = `${kits}|${segments}|${celSpan}|${visorSpan}`;
+export function bodyPrograms(
+  kits: number,
+  segments: number,
+  celSpan: number,
+  visorSpan: number,
+  name = "body",
+): BodyPrograms {
+  const key = `${kits}|${segments}|${celSpan}|${visorSpan}|${name}`;
   let programs = built.get(key);
   if (programs) return programs;
   if (FRAME_TARGETS.flipY !== GLOW_TARGETS.flipY) {
@@ -268,7 +277,7 @@ export function bodyPrograms(kits: number, segments: number, celSpan: number, vi
     throw new Error("bodyPrograms: the main pass and the glow's mask flip differently; one visor stage cannot serve both");
   }
   const cel: VertexProgram = {
-    label: "body-cel-vertex",
+    label: `${name}-cel-vertex`,
     groups: [[FRAME_BLOCK], [], BODY_GEOMETRY],
     attributes: CEL_ATTRIBUTES,
     varyings: CEL_VARYINGS,
@@ -281,7 +290,7 @@ export function bodyPrograms(kits: number, segments: number, celSpan: number, vi
     prelude: WORLD_PRELUDE,
   };
   const visor: VertexProgram = {
-    label: "body-visor-vertex",
+    label: `${name}-visor-vertex`,
     groups: [[FRAME_BLOCK], [], BODY_GEOMETRY],
     attributes: EMISSIVE_ATTRIBUTES,
     varyings: VISOR_VARYINGS,
@@ -307,7 +316,7 @@ export function bodyPrograms(kits: number, segments: number, celSpan: number, vi
       vertex: visorVertex,
       fragment: assembleFragment(
         {
-          label: "body-glow-fragment",
+          label: `${name}-glow-fragment`,
           // Group 0 is the cel fragment's whole group, unread, so the frame's
           // one bind group serves this pipeline as it serves the main pass's.
           groups: glowGroups,
@@ -325,7 +334,7 @@ export function bodyPrograms(kits: number, segments: number, celSpan: number, vi
         vertex: assembleVertex(
           {
             ...cel,
-            label: "body-cel-faded-vertex",
+            label: `${name}-cel-faded-vertex`,
             varyings: CEL_FADED_VARYINGS,
             prelude: VISOR_PRELUDE,
           },
@@ -340,7 +349,7 @@ export function bodyPrograms(kits: number, segments: number, celSpan: number, vi
           {
             // The palette's main-pass fragment (`emissiveWorld`), declared
             // again only to bind the fade and read the body.
-            label: "body-visor-faded",
+            label: `${name}-visor-faded`,
             groups: fadedGroups([[FRAME_BLOCK, ...FRAME_TEXTURES], [EMISSIVE_BLOCK]]),
             varyings: VISOR_VARYINGS,
             includes: {},
@@ -356,7 +365,7 @@ ${doored("emissiveWorldSurface")}`,
         vertex: visorVertex,
         fragment: assembleFragment(
           {
-            label: "body-glow-faded",
+            label: `${name}-glow-faded`,
             groups: fadedGroups(glowGroups),
             varyings: VISOR_VARYINGS,
             includes: {},

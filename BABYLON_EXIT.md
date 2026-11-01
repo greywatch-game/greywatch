@@ -1020,7 +1020,7 @@ card behind it are off Babylon's scene, and no sub-step changed the picture.
 
 The full record is in [the archive](plans/done/babylon_exit_landed.md).
 
-### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (63a338a, review fixes after it)
+### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (63a338a, review fixes after it), X4.4b **LANDED** (HASH)
 
 Every pooled effect Babylon still draws comes off its scene but the three
 that blend among the panes (decided 2026-11-01: they wait for X4.6), and the
@@ -1153,20 +1153,57 @@ Everything else in X4.4 moves as briefed; `fx-glass-sort` is X4.6's BEFORE.
   --keep` twice back to back, all 25 `fx` rows 0 pixels from the bank and
   109 of 109 frames byte-equal between the runs; the 84 old rows byte-equal
   to X4.4a's own kept frames; typecheck, build, corecheck pass.
-- **X4.4b — the plain mesh pools are ours (no picture change).** The tracer
-  and mark pools, the grenade, rocket and mine bodies (both the simulation's
-  views and the wire's), and the brass, drawn by our renderer as instances
-  of their kits (`BodyDraw`'s and `HullDraw`'s shape), into the glow's mask
-  where emissive. **The spark and dust-disc pools stay Babylon's** (decided
-  2026-11-01, "Find out first" above): they fade in Babylon's transparent
-  sort among the panes, and move with the glazing at X4.6 — whole, the
-  frames a spark is still opaque included, so a pool is never split across
-  two renderers. A mark keeps its depth bias and drops out at range by our
-  own size test (it was the size gate's); every pool stays fixed-size and
-  allocates nothing per shot. Babylon is made no mesh of any pool this
-  sub-step moves. **Oracle:** the bank byte-identical; a round firing every weapon
-  at walls, soil and glass, with a frag, a molotov, a rocket and a mine; a
-  netplay round where the other side throws and fires (the wire's bodies).
+- **X4.4b — the plain mesh pools are ours LANDED** (HASH; 2026-11-01; no
+  picture change). Every tracer, spent case, thrown frag and bottle (the
+  simulation's and the wire's), rocket in flight (both), laid mine and bullet
+  mark is our renderer's (`render/PoolDraw.ts`, two draws, by the bodies'
+  plain programs labelled `pool`), and Babylon is made no mesh of any; the
+  sparks and the dust discs stay Babylon's whole, as decided. A piece is its
+  meshes as data (`entities/pieces.ts`: a KIT a kind, built once by the view
+  that made its first mesh so every material is asked of the factory where
+  it always was, shared with the wire's pools; a node a segment composed as
+  `computeWorldMatrix` composed the mesh); a mark is a slot of
+  `BulletMarks` holding what `freezeWorldMatrix` left. Both draws sit at
+  `"beforeAlphaTest"` installed AHEAD of the hulls, the bodies and the world
+  (the pools' meshes were in Babylon's opaque queue, X4.4a), the unlit parts
+  into the glow's mask after the visors; the pieces drawn by RANK (each
+  piece's segments in `bodyPull`'s order, pulled inside the render), the
+  marks one draw with the INSTANCES themselves sorted front to back off
+  `globalPosition` (`Game.markPull`) — two overlapping marks are coplanar at
+  one bias, where the later wins — at `MARK_DEPTH_UNITS` as pipeline state.
+  **The size gate keeps Babylon's STALE sphere for a cel part**: the sphere
+  as of the last frame Babylon would have computed the mesh (a candidate, or
+  a candidate's ancestor), the local one before — so the step reproduces
+  Babylon's latch (`docs/rendering.md`), under which a case first thrown far
+  from the world origin is never drawn: `FINDINGS.md` 67, the owner's call.
+  Four pipelines asked at `Game`'s construction; report version 26
+  (`pools`). **Measured:** the bank `--check --keep` against a BEFORE at
+  ece59b1, **109 of 109 frames byte-equal** (`comparePngs`), the 25 `fx` rows 0
+  pixels from the bank; a probe over **330 scripted frames** (marks at the
+  gate's edge under a moving camera, bodies in flight, the wire's, brass,
+  and a phase ~150 m from the origin) reading Babylon's own render calls on
+  the parent against what ours was handed: **every drawn set equal on all
+  330** (ours also hands over what the frustum culls, clipped on the GPU),
+  **every mark order equal** (182 frames, 4,782 marks) and **every piece's
+  segment order equal** (905 pieces of two segments or more); the same
+  probe with THIS frame's sphere gating found 27 segment-frames Babylon did
+  not draw (22 of brass, latched; 5 of a bottle a frame early), which is why
+  the stale sphere is kept. `pipelines.mjs coldharbour --round` **zero in play
+  in five of five runs**, the first install making 26 of Babylon's (28 at
+  X4.4a's review) and 23 of ours; `kit:hash --models` **244 of 244
+  identical**, each pool's kit hashed in its meshes' bytes, and the kit
+  half 3,722 of 3,722; `census
+  --against` every row without a piece or a mark equal, Coldharbour 2567 →
+  2502 and Cinderhaven 264 → 261 on the `fx` rows alone; `gate`, `shaders`,
+  `parity`, typecheck, build, corecheck pass; an offline round on Coldharbour
+  with every primary, the pistol, both throwables and both AT items (rockets
+  and frags drawn, 0 errors, the empty-group warning never raised); a
+  server's round with a second client on the other side throwing and firing
+  (the wire's frags and rockets drawn on the first, 0 errors); a profiler
+  capture at version 26 with `pools` filled. **The empty-group seam** is not
+  made reachable: the sky still holds group 0 in a round and over the menu,
+  and the DEV warning never fired in either round. The full record is in
+  [the archive](plans/done/babylon_exit_landed.md).
 - **X4.4c — the blast and the posed pieces are ours (no picture change).**
   `BlastFx`'s billows and its sparks-and-trails mesh become instanced draws
   of ours on `BlastShader`'s WGSL (the bounds it sets by hand become the
@@ -1217,7 +1254,11 @@ Everything else in X4.4 moves as briefed; `fx-glass-sort` is X4.6's BEFORE.
   bodies (`GrenadeBody`, `RocketBody`, `MineBody`, and the wire's copies in
   `NetGrenades`/`NetOrdnance`) and the brass (`PlayerView`). A scripted
   round compiles nothing for them in play only because each shares a
-  pipeline something else made first — not by construction.
+  pipeline something else made first — not by construction. (Since X4.4b
+  the thrown and laid bodies, the brass, the tracer and the marks are
+  ours, their four pipelines asked at `Game`'s construction, which the
+  warm-up already waits for — by construction now; of the pools with no
+  pose that leaves the shards and the rubble, X4.4c's.)
   **The empty-group seam** (decided 2026-10-31, X4.3c's review): every draw
   of ours hangs on rendering group 0's three points, and Babylon visits no
   empty group — so a frame on which group 0 dispatches no mesh of Babylon's

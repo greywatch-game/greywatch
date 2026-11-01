@@ -14,7 +14,10 @@ X2.2 C3, the `CombatSystem`/`CombatFx` split one system over).
 lives there — the authority runs it whole and builds nothing else.
 `GrenadeFx` is everything a GPU is needed for — a `GrenadeBody` per slot, a
 fire's flames, the `BlastFx` — and it READS the simulation and never writes
-it: the pools through `flights` and `fireSlots` (read-only by type) after each
+it (a `GrenadeBody` is two PIECES of the frag's and the bottle's kits, which
+OUR renderer draws since `BABYLON_EXIT.md` X4.4b — `docs/rendering.md`,
+"The pools, ours" — and Babylon is made no mesh of either; the flames and the
+billows are still Babylon's, until X4.4d and X4.4c): the pools through `flights` and `fireSlots` (read-only by type) after each
 `update`, and the rest as calls `Game` makes from the events — `onBlast` (the
 billows), `onIgnited` (the flames and the ignition, ahead of the light and the
 noise, where they always were) and `onBurntOut`. A new flight in a slot is
@@ -292,18 +295,20 @@ before that (the hitmarker and rumble stay with the weapon's own `hit`, being ab
 the shot that landed rather than the body).
 
 **What a grenade LOOKS like is `entities/GrenadeModel.ts` and not this system**,
-for the reason the bot rig is `SoldierModel`: two things build one now, both
+for the reason the bot rig is `SoldierModel`: two things draw one, both
 through `GrenadeFx`'s `GrenadeBody` (the moves — show, place, tumble, the pip —
-as well as the meshes). `GrenadeFx` builds the pool the local simulation is
+as well as the pieces). `GrenadeFx` builds the pool the local simulation is
 drawn in, and `net/NetGrenades` builds the ones a client only draws, from
-positions the multiplayer authority sent. Both the
-meshes and the pip's blink live there — the blink because it is the only warning
+positions the multiplayer authority sent — both off ONE kit, built once by
+`GrenadeFx` (`grenadeParts`, `GrenadeFx.kits`) and drawn by our renderer
+(`Game.drawPieces`, `BABYLON_EXIT.md` X4.4b). Both the
+parts and the pip's blink live there — the blink because it is the only warning
 a grenade gives and it must read the same whoever threw it, so both sides run
 `pipLit` over the same remaining fraction rather than each describing the
-pattern. Three things about the meshes are load-bearing and stay in that file:
+pattern. Three things about the parts are load-bearing and stay in that file:
 the pip must stand proud of the body's outline shell or the ink swallows it, the
 body is inked at all because a dark green sphere at night is invisible against
-the ground it is rolling across, and neither mesh is a collider — no `solid`, no
+the ground it is rolling across, and neither part is a collider — no `solid`, no
 `WorldBox`, not pickable. A grenade is dressing with a timer.
 
 **A grenade in the air is replicated as STATE in a networked round**, on the

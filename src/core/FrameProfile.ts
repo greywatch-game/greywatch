@@ -140,6 +140,7 @@ import {
   type BlockFacts,
   type BodyFacts,
   type HullFacts,
+  type PoolFacts,
   type ViewFacts,
   type LoafRecord,
   type ProfileGraphics,
@@ -701,6 +702,10 @@ export class FrameProfile {
   private viewOf: (() => ViewFacts) | null = null;
   /** `viewOf`'s answer as the ring HALTED. Null while recording. */
   private viewAtHalt: ViewFacts | null = null;
+  /** Reads our renderer's effect pools, as `bodiesOf` reads its bodies. See `ProfileReport.pools`. */
+  private poolsOf: (() => PoolFacts) | null = null;
+  /** `poolsOf`'s answer as the ring HALTED. Null while recording. */
+  private poolsAtHalt: PoolFacts | null = null;
   /**
    * How many rows the ring holds — `CONFIG.profiling.frames`, or what `arm`
    * was asked for. Fixed between an `arm` and the next.
@@ -773,6 +778,11 @@ export class FrameProfile {
   /** How a capture reads our renderer's weapon — `setBodies`' terms. */
   setView(read: () => ViewFacts): void {
     this.viewOf = read;
+  }
+
+  /** How a capture reads our renderer's effect pools (`BABYLON_EXIT.md` X4.4b) — `setBodies`' terms. */
+  setPools(read: () => PoolFacts): void {
+    this.poolsOf = read;
   }
 
   /**
@@ -851,6 +861,7 @@ export class FrameProfile {
     this.bodiesAtHalt = null;
     this.hullsAtHalt = null;
     this.viewAtHalt = null;
+    this.poolsAtHalt = null;
     this.cap = Math.max(2, Math.floor(frames));
     const n = this.capacity;
     this.startMs = new Float32Array(n * SLOTS);
@@ -975,12 +986,13 @@ export class FrameProfile {
   halt(): void {
     if (!this.on) return;
     this.on = false;
-    // The run's last frame is the one the blocks, the bodies, the hulls and
-    // the weapon are reported at.
+    // The run's last frame is the one the blocks, the bodies, the hulls, the
+    // weapon and the pools are reported at.
     this.blocksAtHalt = this.blocksOf?.() ?? null;
     this.bodiesAtHalt = this.bodiesOf?.() ?? null;
     this.hullsAtHalt = this.hullsOf?.() ?? null;
     this.viewAtHalt = this.viewOf?.() ?? null;
+    this.poolsAtHalt = this.poolsOf?.() ?? null;
     for (const off of this.unhook) off();
     this.unhook = [];
     this.inDraw = false;
@@ -1751,6 +1763,7 @@ export class FrameProfile {
       bodies: this.on ? (this.bodiesOf?.() ?? null) : this.bodiesAtHalt,
       hulls: this.on ? (this.hullsOf?.() ?? null) : this.hullsAtHalt,
       view: this.on ? (this.viewOf?.() ?? null) : this.viewAtHalt,
+      pools: this.on ? (this.poolsOf?.() ?? null) : this.poolsAtHalt,
       graphics: this.graphics,
       graphicsAt: this.graphicsAt,
       gpuRequested: this.gpuRequested,

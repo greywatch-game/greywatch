@@ -622,7 +622,14 @@ SEGMENT of one kit, every part** — the optics' glasses and the kit card
 included — drawn at the END of group 0 for the SESSION: the card first, the
 opaque parts in Babylon's group-1 order (what settles an equal depth), the
 glasses BLENDED last; no group above 0 holds anything, and its tree EVALUATES
-every surface on and visible, whatever its role.
+every surface on and visible, whatever its role. **So are the effect pools'
+PIECES and the bullet MARKS** (`render/PoolDraw.ts`, `entities/pieces.ts`):
+a tracer, a case, a thrown or laid body is an instance of its kit, built once
+by the view that made its first mesh, and the marks one draw sorted as
+Babylon's queue sorted them, both ahead of the hulls at `"beforeAlphaTest"`
+— **but the sparks and the dust discs stay Babylon meshes until the glazing
+moves (X4.6)**, because they fade in its transparent sort among the panes, and
+a pool is never split across two renderers.
 
 **The GLOW draws the EMISSIVE meshes and nothing else, its occlusion being the
 FRAME's own depth buffer** (`src/shaders/GlowPass.ts`). **What may bloom is read

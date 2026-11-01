@@ -6,12 +6,13 @@
  * `GrenadeSystem`'s, drawn by `GrenadeFx` in the world's one fire material.
  * Invariants: DRESSING, never a collider — no `solid`, no `WorldBox`, not
  * pickable — on every side of the wire, for `GrenadeModel`'s reason. Built at
- * the origin with the bottle's middle there, so a tumble about the mesh's own
+ * the origin with the bottle's middle there, so a tumble about the piece's own
  * origin is a bottle turning end over end rather than swinging round its base.
- * Each surface is a `Part` on a `src/geometry/` buffer, made a mesh by
- * `drawnMesh` for the world's bottle and a `ViewSegment` for the fist's
- * (`molotovSegments`, `BABYLON_EXIT.md` X4.3c: our renderer draws the
- * viewmodel, and Babylon is made no mesh of it).
+ * Each surface is a `Part` on a `src/geometry/` buffer: the world's bottle
+ * a KIT our renderer draws every thrown bottle as an instance of
+ * (`molotovPieceParts`, `entities/pieces.ts`, `BABYLON_EXIT.md` X4.4b) and
+ * the fist's a `ViewSegment` (`molotovSegments`, X4.3c) — Babylon is made no
+ * mesh of either.
  *
  * A file of its own for `GrenadeModel`'s reason, and there are THREE builders
  * of it rather than two: `GrenadeFx`'s pool, `net/NetGrenades`' drawn
@@ -20,18 +21,11 @@
  * is what the RAG is for: a lit wick is the one detail that says "this will be
  * on fire" from across a street and from inside your own hand.
  */
-import { Mesh, Scene } from "@babylonjs/core";
 import { createCylinder, createSphere } from "../geometry/primitives";
 import type { CelMaterialFactory } from "../shaders/CelShader";
-import { drawnMesh, Part } from "../world/parts";
+import { Part } from "../world/parts";
+import type { PiecePart } from "./pieces";
 import { toSegment, type ViewSegment } from "./viewTree";
-
-/** One bottle's meshes. The neck and the rag are parented to the body. */
-export interface MolotovMeshes {
-  mesh: Mesh;
-  /** The lit rag — emissive, so it glows at night the way the pip does. */
-  wick: Mesh;
-}
 
 /** Bottle glass: a dark green that still reads as glass once the ink is on it. */
 const GLASS = "#3f5a32";
@@ -59,7 +53,7 @@ interface MolotovParts {
  * it, the cloth round the neck's mouth, the wick in the cloth — each part's
  * transform stated in the one it hangs off, and no part parented, so the
  * caller makes its own tree of them. One statement of the bottle for both of
- * its makers (`buildMolotov`, `molotovSegments`). Every material comes out of
+ * its makers (`molotovPieceParts`, `molotovSegments`). Every material comes out of
  * the factory's cache, asked in the order the meshes were.
  */
 function molotovParts(mats: CelMaterialFactory, name: string): MolotovParts {
@@ -98,36 +92,19 @@ function molotovParts(mats: CelMaterialFactory, name: string): MolotovParts {
 }
 
 /**
- * Builds one molotov, hidden — the WORLD's bottle (`GrenadeFx`'s pool), four
- * Babylon meshes, the neck, the cloth and the wick each parented to the one
- * before it.
+ * The WORLD's bottle (`GrenadeFx`'s pool and the wire's): its four parts as
+ * the kit `pieceKit` makes of them — the neck hung from the body, the cloth
+ * from the neck and the wick from the cloth, as the four meshes were — each
+ * with its paint (`BABYLON_EXIT.md` X4.4b).
  */
-export function buildMolotov(
-  scene: Scene,
-  mats: CelMaterialFactory,
-  name: string,
-): MolotovMeshes {
+export function molotovPieceParts(mats: CelMaterialFactory, name: string): PiecePart[] {
   const p = molotovParts(mats, name);
-  const mesh = drawnMesh(p.body, scene);
-  mesh.isVisible = false;
-  mesh.isPickable = false;
-
-  const neck = drawnMesh(p.neck, scene);
-  neck.parent = mesh;
-  neck.isPickable = false;
-  neck.isVisible = false;
-
-  const cloth = drawnMesh(p.cloth, scene);
-  cloth.parent = neck;
-  cloth.isPickable = false;
-  cloth.isVisible = false;
-
-  const wick = drawnMesh(p.wick, scene);
-  wick.parent = cloth;
-  wick.isPickable = false;
-  wick.isVisible = false;
-
-  return { mesh, wick };
+  return [
+    { part: p.body, cel: GLASS, unlit: null, parent: -1 },
+    { part: p.neck, cel: GLASS, unlit: null, parent: 0 },
+    { part: p.cloth, cel: CLOTH, unlit: null, parent: 1 },
+    { part: p.wick, cel: null, unlit: FLAME, parent: 2 },
+  ];
 }
 
 /**
@@ -135,7 +112,7 @@ export function buildMolotov(
  * four SEGMENTS our renderer draws, no Babylon mesh made of any — the body,
  * with the neck, the cloth and the wick hung under it as part-tree children,
  * which `ViewTree.hang` makes a joint apiece, unparented, as it did the four
- * meshes. Hidden, as `buildMolotov`'s are.
+ * meshes. Hidden, as a pooled bottle is.
  */
 export function molotovSegments(mats: CelMaterialFactory, name: string): ViewSegment {
   const p = molotovParts(mats, name);
@@ -148,14 +125,4 @@ export function molotovSegments(mats: CelMaterialFactory, name: string): ViewSeg
   wick.parent = cloth;
   for (const s of [body, neck, cloth, wick]) s.isVisible = false;
   return body;
-}
-
-/**
- * Shows or hides a whole bottle. The body, the neck, the cloth and the wick are
- * four meshes, and `isVisible` is not inherited — so a pooled bottle that only
- * hid its body would leave a burning rag hanging in the air.
- */
-export function showMolotov(m: MolotovMeshes, on: boolean): void {
-  m.mesh.isVisible = on;
-  for (const child of m.mesh.getChildMeshes(false)) child.isVisible = on;
 }

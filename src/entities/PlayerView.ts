@@ -18,12 +18,12 @@
  *   see `CONFIG.gunfeel`), and their randomness stays on `Math.random`:
  *   nothing about them reaches where a round goes.
  * - The flash is drawn in the weapon's order with the rifle it hangs off; the
- *   brass is thrown into the WORLD, a mesh of rendering group 0 occluded like
- *   anything else (the weapon is no Babylon mesh at all since
- *   `BABYLON_EXIT.md` X4.3d, and no group but 0 holds anything). Both are built as `Part`s on `src/geometry/`
- *   buffers: the petals made SEGMENTS our renderer draws (`toSegment`,
- *   `BABYLON_EXIT.md` X4.3c), the cases meshes by `drawnMesh` (a pool X4.4
- *   takes).
+ *   brass is thrown into the WORLD, occluded like anything else in it. Both
+ *   are built as `Part`s on `src/geometry/` buffers and our renderer draws
+ *   both — the petals SEGMENTS of the weapon (`toSegment`, `BABYLON_EXIT.md`
+ *   X4.3c), each case a PIECE of the casing's kit (`casingKit`,
+ *   `entities/pieces.ts`, X4.4b; `Game.drawPieces` hands the pool over) —
+ *   and Babylon is made no mesh of either.
  * - **The flash is part of the viewmodel's TREE** (`BABYLON_EXIT.md` X4.3b):
  *   its root is a joint hung from the muzzle joint (`ViewModel.tree`), its
  *   petals segments hung from that with no parent of their own, drawn as the
@@ -37,11 +37,13 @@
  * but the model's own answers (`carriedSight`, `reloadAction`, the reload's
  * head pose), which are the drawing's to give.
  */
-import { Matrix, Mesh, Scene, Vector3 } from "@babylonjs/core";
+import { Matrix, Scene } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { createBox, createPlane, DOUBLESIDE } from "../geometry/primitives";
-import { drawnMesh, Part } from "../world/parts";
+import { Vector3 } from "../math";
+import { Part } from "../world/parts";
 import type { CelMaterialFactory } from "../shaders/CelShader";
+import { Piece, pieceKit, type PieceKit, type PiecePart } from "./pieces";
 import type { PlayerPicture } from "./Player";
 import type { Joint } from "./rigJoints";
 import { ViewModel } from "./ViewModel";
@@ -49,7 +51,8 @@ import { toSegment, type ViewCamera } from "./viewTree";
 
 /** One live brass case: world-space ballistic, despawned on `t` expiry. */
 interface Casing {
-  mesh: Mesh;
+  /** The case on screen: a piece of the casing's kit, which our renderer draws. */
+  piece: Piece;
   vel: Vector3;
   spin: number;
   t: number;
@@ -57,6 +60,20 @@ interface Casing {
 
 /** Scratch for the eject direction — no allocation per shot. */
 const _casingDir = new Vector3();
+
+/** The brass's paint. */
+const BRASS = "#b99b4e";
+
+/**
+ * One spent case's part — a small box, its long axis on Z — as its kit
+ * makes it (`pieceKit`): what `drawnMesh` made a mesh of, one a case, until
+ * `BABYLON_EXIT.md` X4.4b.
+ */
+export function casingParts(mats: CelMaterialFactory, name: string): PiecePart[] {
+  const part = new Part(name, createBox({ width: 0.016, height: 0.016, depth: 0.05 }));
+  part.material = mats.get(BRASS);
+  return [{ part, cel: BRASS, unlit: null, parent: -1 }];
+}
 
 export class PlayerView implements PlayerPicture {
   /** The rifle and hands on screen, hanging off the camera. */
@@ -70,6 +87,14 @@ export class PlayerView implements PlayerPicture {
   private flashT = 0;
   /** Ejected brass pool; a case is live while its `t > 0`. */
   private readonly casings: Casing[] = [];
+  /**
+   * The casing's kit, built here once — where the first case's mesh was made
+   * until `BABYLON_EXIT.md` X4.4b, so its material is asked of the factory at
+   * the same point in its order — and every case's piece, by slot: what
+   * `Game.drawPieces` hands our renderer.
+   */
+  readonly casingKit: PieceKit;
+  readonly casingPieces: Piece[] = [];
   /** Scratch for casing integration — no per-frame allocation. */
   private readonly casingStep = new Vector3();
   /** The ejection port's world, read once a case (`ViewModel.ejectPortWorld`). */
@@ -114,19 +139,14 @@ export class PlayerView implements PlayerPicture {
     // The petals' own transforms, taken into their joints now they are set.
     tree.seal();
 
-    const casingMat = mats.get("#b99b4e");
+    this.casingKit = pieceKit("casing", casingParts(mats, "player_casing0"));
     for (let i = 0; i < CONFIG.gunfeel.casingPool; i++) {
-      const m = drawnMesh(
-        new Part(`player_casing${i}`, createBox({ width: 0.016, height: 0.016, depth: 0.05 })),
-        scene,
-      );
-      m.material = casingMat;
-      m.isPickable = false;
-      m.isVisible = false;
-      this.casings.push({ mesh: m, vel: new Vector3(), spin: 0, t: 0 });
+      const piece = new Piece(this.casingKit);
+      this.casingPieces.push(piece);
+      this.casings.push({ piece, vel: new Vector3(), spin: 0, t: 0 });
     }
-    // Brass is thrown into the WORLD, not onto the camera, so it stays in the
-    // ordinary rendering group and is occluded by geometry like anything else.
+    // Brass is thrown into the WORLD, not onto the camera, so it is drawn with
+    // the world's pieces and occluded by geometry like anything else.
   }
 
   /**
@@ -158,14 +178,15 @@ export class PlayerView implements PlayerPicture {
     // it is read as Babylon read the node, out of the render cache.
     const port = this.model.ejectPortWorld(this.portWorld);
     const m = port.m;
-    c.mesh.position.set(m[12], m[13], m[14]);
+    const node = c.piece.root;
+    node.position.set(m[12], m[13], m[14]);
     Vector3.TransformNormalToRef(_casingDir.set(1, 0, -0.2), port, c.vel);
     c.vel.normalize().scaleInPlace(g.casingEject * (0.8 + Math.random() * 0.4));
     c.vel.y += g.casingUp * (0.7 + Math.random() * 0.6);
     c.spin = (Math.random() * 2 - 1) * 25;
-    c.mesh.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
+    node.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
     c.t = g.casingLife;
-    c.mesh.isVisible = !this.hidden;
+    node.visible = !this.hidden;
   }
 
   /**
@@ -182,23 +203,24 @@ export class PlayerView implements PlayerPicture {
     const restY = feetY + 0.02;
     for (const c of this.casings) {
       if (c.t <= 0) continue;
+      const node = c.piece.root;
       c.t -= dt;
       if (c.t <= 0) {
-        c.mesh.isVisible = false;
+        node.visible = false;
         continue;
       }
-      if (c.vel.y !== 0 || c.mesh.position.y > restY) {
+      if (c.vel.y !== 0 || node.position.y > restY) {
         c.vel.y -= g.casingGravity * dt;
-        c.mesh.position.addInPlace(
+        node.position.addInPlace(
           this.casingStep.copyFrom(c.vel).scaleInPlace(dt),
         );
-        if (c.mesh.position.y <= restY && c.vel.y < 0) {
-          c.mesh.position.y = restY;
+        if (node.position.y <= restY && c.vel.y < 0) {
+          node.position.y = restY;
           c.vel.setAll(0); // bounced to rest; tumble stops with it
           c.spin = 0;
         } else {
-          c.mesh.rotation.x += c.spin * dt;
-          c.mesh.rotation.z += c.spin * 0.7 * dt;
+          node.rotation.x += c.spin * dt;
+          node.rotation.z += c.spin * 0.7 * dt;
         }
       }
     }
@@ -210,7 +232,7 @@ export class PlayerView implements PlayerPicture {
     this.flashRoot.enabled = false;
     for (const c of this.casings) {
       c.t = 0;
-      c.mesh.isVisible = false;
+      c.piece.root.visible = false;
     }
   }
 
@@ -237,7 +259,7 @@ export class PlayerView implements PlayerPicture {
       this.flashRoot.enabled = false;
     }
     for (const c of this.casings) {
-      c.mesh.isVisible = c.t > 0 && !hidden;
+      c.piece.root.visible = c.t > 0 && !hidden;
     }
   }
 }

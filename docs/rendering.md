@@ -4625,6 +4625,104 @@ the frame that are load-bearing.
   flags the mesh carried — the card as the group-0 mesh it was (the script's
   header).
 
+## The pools, ours: every piece an instance of its kit, every mark one draw
+
+**Every tracer, spent case, thrown frag and bottle, rocket in flight, laid
+mine and bullet mark the page draws is OUR renderer's since `BABYLON_EXIT.md`
+X4.4b** (`render/PoolDraw.ts`, drawn by the BODIES' programs,
+`bodyProgram.ts`, labelled `pool`), and Babylon is made no mesh of any —
+X4.1d's shape for things that never fade. **The sparks and the dust discs are
+not among them, and that is the owner's decision (2026-11-01) rather than a
+gap**: they fade by `visibility` in Babylon's TRANSPARENT sort, interleaved
+with the see-through glazing, which no draw point of ours reproduces, so both
+pools stay Babylon meshes — whole, the frames a spark is still opaque
+included, so a pool is never split across two renderers — until X4.6 moves
+them with the glazing. `fx-glass-sort` is that step's BEFORE.
+
+**A piece is the meshes it was, as plain data** (`entities/pieces.ts`): a
+KIT a kind — its segments, each a mesh until X4.4b: the arrays, a cel paint or
+an unlit one, the local bounding sphere, the transform it was dressed with
+and the segment it hung from — built ONCE by the view that made the first of
+its meshes (`CombatFx.tracerKit`, `PlayerView.casingKit`, `GrenadeFx.kits`,
+`AntiTankFx.kits`), so each material is still asked of the factory at the
+point in its order it always was (a material's `uniqueId` is what more than
+one Babylon sort ties on), and shared with the wire's pools (`NetGrenades`,
+`NetOrdnance`, through `NetSession`). A PIECE is a node a segment — the mesh's
+channels (`rotation`, or a `quaternion` while set), its `visible`, the
+piece's `enabled` for the root's `setEnabled` — composed as
+`computeWorldMatrix` composed the mesh (`composePiece`, `src/math`, bit for
+bit). The pools move them exactly as they moved the meshes, with the same
+`Math.random` draws in the same order (the bank's seeded clocks depend on it):
+`GrenadeBody.begin`'s tumble, `RocketBody.place` — `lookAt` in local space and
+`setDirection` with no corrections, operation for operation — the brass's
+throw. A MARK is a slot of `BulletMarks` holding the world matrix and sphere
+`freezeWorldMatrix` left on its mesh, composed once where it is stood.
+
+**Two draws, both at `"beforeAlphaTest"` and installed AHEAD of the hulls,
+the bodies and the world**: the pools' meshes were in Babylon's OPAQUE queue
+(X4.4a measured it — none blended), which drew before every draw of ours at
+that point, so a mark still goes down before the wall it is biased off, and
+opaque draws through the depth buffer differ only where two depths tie.
+
+- **The pieces: a draw is a RANK, for the bodies' reason.** Six kits — the
+  tracer, the case, the frag, the bottle, the rocket, the mine — padded to the
+  widest (the bottle's four); each frame `Game.drawPieces` writes every
+  switched-on piece's segment matrices (`writePieceDrawing`) with its kit, and
+  the render pulls each piece's segment ORDER (`Game.piecePull`: `bodyPull`'s
+  stable sort off `globalPosition`, the kit's order — the order the meshes
+  were made in — breaking a tie). Cel segments draw by the cel program under
+  the kit palette (`CelMaterialFactory.poolCelRecipe`, `get(hex)`'s values
+  with each colour a slot), unlit ones by the emissive palette's
+  (`poolEmissiveRecipe`, `getEmissive` and `EmissiveFog` number for number,
+  as a visor is). At most eight draws whatever the pools hold.
+- **The marks: ONE draw, its instances SORTED.** A mark is one segment, so
+  every mark is rank 0 and the GPU draws the instances in order — and two
+  marks overlapping on one wall are coplanar at one bias, where the LATER
+  wins an equal depth (LEQUAL). So `Game.markPull` orders the marks
+  themselves inside the render, as Babylon's queue did: nearest first by
+  `eyeDistanceSq` off `globalPosition`, the slot order (the meshes' order)
+  breaking a tie, stable. A kit is a shape in a paint (`MARK_SHAPES` times
+  `MARK_PAINTS`), the paint being a slot in the vertices; the pipeline carries
+  `MARK_DEPTH_UNITS` as its `depthBias`, as the material's `zOffsetUnits` was.
+- **The unlit parts bloom** — the tracer, the pip, the wick, the motor, the
+  lamp — into the glow's mask after the palette's and the visors'
+  (`PoolDraw.installMask`, asked after `BodyDraw.installMask`), by the same
+  vertex module as the main pass (the LEQUAL tie), each piece's colour
+  `GlowRules.colour` as `GlowPass` asked it of the mesh: its `getEmissive`
+  colour faded by the fog at its sphere's centre (`piecePull`). A kit has one
+  unlit segment at most, so the bloom is one colour a piece.
+
+**The size gate reaches them as it reached the meshes, and keeps Babylon's
+STALE sphere on purpose.** An unlit segment is exempt, as an emissive mesh
+was; a cel segment is asked `WorldCulling.keepsSphere` of its GATE sphere —
+the world sphere as of the last frame Babylon would have COMPUTED its world,
+which it did only for a candidate the gate let through and for that
+candidate's ancestors, and the LOCAL sphere for a mesh never computed (its
+world the identity). So a moving cel part is gated on last frame's sphere,
+and a brass case first thrown farther from the world origin than its 5 cm
+projects to the gate's 3 px (a few tens of metres at 1080p) is dropped on its
+never-computed sphere and never recomputed — the
+latch below ("A WRONG DROP LATCHES"), kept exactly as Babylon drew it, since
+dropping it would be a picture change in a live round however the bank reads
+(`FINDINGS.md` 67 has the measurement and the one-line fix). A mark is frozen
+where it is stood, so its sphere is always the frame's. The FRUSTUM is not
+asked: a piece outside it is clipped by the GPU and costs its vertex work, as
+the drawn sets of a scripted probe show (X4.4b's archive note).
+
+**What X4.4b's oracles hold it to**: the bank byte-identical, its 25 `fx`
+rows among the 109; a probe over 200 scripted frames (marks at the gate's edge
+under a moving camera, bodies in flight, the wire's, the brass) reading
+Babylon's own render calls on the parent against what ours was handed —
+every drawn set equal, every mark order and every piece's segment order equal;
+and `kit:hash --models` identical, each kit hashed IN THE BYTES ITS MESHES
+GAVE (the script's header). **Its pipelines are asked once, at `Game`'s
+construction**, so the building card's warm-up waits for them; a failure is
+the round's (`Game.worldFailed`); it is installed for a ROUND's map only. The
+`warm(on)` poses of the tracer and the mark still stand, drawing through ours,
+until X4.4e makes the warm-up a declared list. A capture says what both drew
+(`ProfileReport.pools`, report version 26), since Babylon's counter counts
+none of it.
+
 ## Block visibility: how much of the map the frame walks
 
 `ENGINE_UPGRADE.md` wall 1, and `src/systems/WorldCulling.ts` is all of it.
@@ -4761,11 +4859,13 @@ never the draw, because a disabled mesh was going to be rejected anyway — and 
 staged A/B/A with half the roster in frame came back inside its own control
 (27-34/255 worst against a 33/255 control, mean 0.001-0.003).
 
-**Everything else pooled is still loose** — tracers, shards, ragdoll debris,
-grenades, rubble, the viewmodel — and their idle meshes are kept out of the
+**Everything else pooled is still loose** — sparks, dust discs, shards,
+ragdoll debris, rubble, the blast — and their idle meshes are kept out of the
 list by `offer` instead (the size gate, below). The hulls were loose too until
-`BABYLON_EXIT.md` X4.2b; they are no mesh now, and the size gate reaches their
-segments through `keepsSphere` ("The hulls, ours").
+`BABYLON_EXIT.md` X4.2b, and the tracers, the marks, the brass and the thrown
+and laid bodies until X4.4b; they are no mesh now, and the size gate reaches
+their segments through `keepsSphere` ("The hulls, ours", "The pools,
+ours").
 
 **Nothing pooled may ever be block-keyed.** They are loose or pooled because
 they MOVE, and this is precisely why `scene.freezeActiveMeshes()` is a bug in
@@ -4872,7 +4972,14 @@ close to nothing on the small maps, which is the honest shape of it. (Since
 one by one through `WorldCulling.keepsSphere` exactly as their meshes were,
 and since X4.2c a far hull draws without its model's DETAIL segments — a tier
 asked of the whole hull's measure on this arithmetic at its own threshold,
-`hullDetail`, on top of the per-segment gate: "The hulls, ours".)
+`hullDetail`, on top of the per-segment gate: "The hulls, ours".) **The
+bullet marks LEFT the gate's candidate list at X4.4b and kept its verdict**: a
+mark is cel, so never exempt, and our renderer's drawing asks `keepsSphere`
+of each standing mark's frozen sphere — the sphere `freezeWorldMatrix` left
+on its mesh, so exactly the marks the gate dropped are dropped
+(`fx-marks-far` banks the edge: 14 of 30 under it) — and of every cel part
+of a thrown or laid body and of the brass, on the stale sphere Babylon read
+("The pools, ours").
 
 **A BODY is measured once and drops WHOLE; two classes are exempt outright,
 and each of the three is what it is because a picture said so rather than
@@ -6306,7 +6413,9 @@ draw of OURS, by the same vertex module.
 
 ## Impacts: the one pooled effect that reads the world
 
-`CombatFx` throws three pools — tracers, sparks, and the **impact disc**,
+`CombatFx` throws three pools — tracers, sparks, and the **impact disc** (the
+tracers our renderer's since `BABYLON_EXIT.md` X4.4b, the other two Babylon
+meshes until X4.6: "The pools, ours"),
 which is the half a sphere could never do. A spark has no orientation; a disc
 lies on the face the round was thrown from, using the surface normal the wall
 pick already computed and used to discard.
@@ -6322,8 +6431,9 @@ pass that would introduce it.
 Three constraints hold it together, and undoing any of them is silent:
 
 - **`DOUBLESIDE` is geometry, never `backFaceCulling`.** `getEmissive` caches
-  one material per colour and this pool shares those materials with the tracers
-  and the sparks, so a flag flipped here flips for every effect in the game.
+  one material per colour and this pool shares those materials with the sparks
+  (and, while they were meshes, the tracers), so a flag flipped here flips for
+  every effect in the game.
 - **The pool is `noGlow`**, which the glow reads per mesh every frame — without
   it every dust disc blooms like a lamp. It once held only because `CombatSystem`
   was built before a one-shot exclusion scan; there is no scan any more.

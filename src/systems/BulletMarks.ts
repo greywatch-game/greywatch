@@ -1,45 +1,52 @@
 /**
  * BulletMarks.ts — The holes a round leaves BEHIND, as a fixed pool of decal
  * quads owned by `CombatFx`.
- * Owns: the mark geometry, the ring of pooled meshes and where each one is
- * stood. Nothing else in the game knows it exists — it is reached only from
- * `CombatFx.spawnImpact`, on the frame the tracer's head arrives, so the
- * mark and the spark and the dust are one event.
+ * Owns: the mark geometry (`MARK_SHAPES`, the kits our renderer draws a mark
+ * as an instance of), the ring of pooled SLOTS — each one's shape, paint,
+ * world matrix and world bounding sphere, stood once and frozen — and the
+ * paints and depth bias every mark is drawn with (`MARK_PAINTS`,
+ * `MARK_DEPTH_UNITS`). Nothing else in the game raises one — it is reached
+ * only from `CombatFx.spawnImpact`, on the frame the tracer's head arrives,
+ * so the mark and the spark and the dust are one event — and our renderer
+ * reads the slots (`Game.drawMarks`, `BABYLON_EXIT.md` X4.4b): Babylon is
+ * made no mesh of any.
  * Invariants: it is a POOL and never allocates per shot (the `CombatFx`
  * rule, and this pool's slots are long-lived where the others' are not); it
- * marks the STATIC world only; it holds no clock at all.
- * Contract: this header. `docs/rendering.md` for the depth bias it borrows.
+ * marks the STATIC world only; it holds no clock at all; a slot's matrix and
+ * sphere are what `freezeWorldMatrix` left on the mesh it was until X4.4b —
+ * `TransformNode.computeWorldMatrix` and `BoundingSphere._update`, operation
+ * for operation in `src/math` — and it imports no Babylon.
+ * Contract: this header. `docs/rendering.md` for the depth bias it borrows
+ * and "The pools, ours" for how a mark is drawn.
  *
- * WHY THE MARK IS A CEL MATERIAL AND THE DUST DISC IS NOT. Every other effect
- * in `CombatFx` is `getEmissive` — unlit, because a spark and a puff of
- * dust are their own light and are gone in a fifth of a second. A mark is
+ * WHY THE MARK IS CEL-LIT AND THE DUST DISC IS NOT. Every other effect in
+ * `CombatFx` is unlit (`getEmissive`'s colour) — because a spark and a puff
+ * of dust are their own light and are gone in a fifth of a second. A mark is
  * neither: it is a bit of the WALL, it is still there a minute later, and an
  * unlit one is a sticker. Hollowmere is a night village and Sarab is a desert
  * at noon; a fixed grey that reads as chipped render on one of them GLOWS on
  * the other, because unlit means full value whatever the map's key light is
- * doing. Wearing `CelMaterialFactory.get` instead puts the mark in the same
- * banded key, ambient, point-light, shadow and fog terms as the surface it
- * was shot off, and nothing here has to be told what map it is on.
+ * doing. Drawn by the CEL program instead — the cel material
+ * `CelMaterialFactory.get(hex, MARK_DEPTH_UNITS)` was until X4.4b, now its
+ * palette twin (`CelMaterialFactory.poolCelRecipe`, `MARK_PAINTS` its table)
+ * — the mark takes the same banded key, ambient, point-light, shadow and fog
+ * terms as the surface it was shot off, and nothing here has to be told what
+ * map it is on.
  *
- * WHAT THAT COSTS, AND WHY IT IS THE CHEAP WAY ROUND. A cel material cannot be
- * thin-instanced — the cel vertex shader declares no `world0..3`, and an
- * attribute that struct does not declare is a WGSL compile error that takes
- * the whole frame black (`CelShader`'s note) — so this is one mesh per mark
- * rather than one draw for all of them. It is affordable because a mark is
- * SMALL and `WorldCulling`'s size gate is exactly the thing that drops small:
- * a cel material has no `emissiveColor`, so a mark is NOT size-exempt the way
- * every other effect mesh in this system is, and at `culling.minPixels` a
- * 10 cm decal leaves the candidate list somewhere around 20-30 m — the gate is
- * a size on the SCREEN, so the distance moves with the resolution and the
- * field of view and there is no one number for it. The pool's whole draw cost
- * is therefore the marks in the room you are standing in.
+ * WHAT IT COSTS, AND THE SIZE GATE. Every standing mark is an INSTANCE of its
+ * shape in one draw of our renderer's (`Game.drawMarks`, `render/PoolDraw.ts`)
+ * — where Babylon drew one mesh a mark, a cel material having no thin
+ * instances. A mark is SMALL, and the size gate is exactly the thing that
+ * drops small: it is cel, so it is NOT size-exempt the way every unlit effect
+ * is, and the drawing asks the gate of each mark's frozen sphere
+ * (`WorldCulling.keepsSphere`) as the gate asked it of the mesh's — at
+ * `culling.minPixels` a 10 cm decal drops somewhere around 20-30 m, the gate
+ * being a size on the SCREEN, so the distance moves with the resolution and
+ * the field of view and there is no one number for it.
  *
- * THESE TWO MATERIALS ARE THIS POOL'S ALONE. `get(hex, units)` keys on the
- * pair, and `MARK_DEPTH_UNITS` is a value no other caller asks for (the only
- * other one is a road's -8), so by construction rather than by inspection.
- * That is not what keeps a mark drawn right beside a mesh that carries a
- * colour buffer when it has none — a frozen material stores its effect per
- * submesh, so each compiles its own (CelShader's `remember`).
+ * THE DEPTH BIAS IS PIPELINE STATE, and the marks' pipeline is theirs alone:
+ * no other draw asks for `MARK_DEPTH_UNITS` (the only other biased cel
+ * surface is a road's -8).
  *
  * WHY THERE IS NO TIMER. A mark does not fade, does not shrink and is not
  * aged: it stands until the ring comes round to its slot and takes it, which
@@ -49,16 +56,8 @@
  * and costs a per-frame walk over the pool that this way does not exist at
  * all. `update` is not a method here.
  */
-import {
-  Matrix,
-  Mesh,
-  Quaternion,
-  Scene,
-  Vector3,
-  VertexData,
-} from "@babylonjs/core";
 import { CONFIG } from "../config";
-import type { CelMaterialFactory } from "../shaders/CelShader";
+import { Matrix, Quaternion, Vector3, type Vector3Like } from "../math";
 import { mulberry32 } from "../world/rng";
 
 /**
@@ -72,10 +71,18 @@ import { mulberry32 } from "../world/rng";
  * and a mark is looked at from anywhere, including nearly edge-on, where the
  * same geometric clearance projects to nothing.
  *
- * It is also, deliberately, the half of the material cache key that makes
- * these two materials unshareable — see the header.
+ * It is pipeline state, so the marks' cel pipeline is theirs alone — see
+ * the header.
  */
-const MARK_DEPTH_UNITS = -14;
+export const MARK_DEPTH_UNITS = -14;
+
+/**
+ * Every colour a mark is painted in — each impact kind's `IMPACTS.mark.hex`
+ * in `CombatFx`, the two kinds that mark — in the order our renderer's
+ * palette holds them. A slot names its paint by its index here; a hex
+ * `place` is handed that is not in it is refused rather than drawn black.
+ */
+export const MARK_PAINTS = ["#2b2723", "#4b3a26"] as const;
 
 /**
  * How many distinct silhouettes the pool draws from, cycled across the slots.
@@ -97,6 +104,11 @@ const BX = new Vector3();
 const BY = new Vector3();
 const TMP = new Vector3();
 const MTX = new Matrix();
+/** A slot's channels while it is stood, and the scale `_update` reads its radius off. */
+const POS = new Vector3();
+const ROT = new Quaternion();
+const SCALE = new Vector3();
+const NORMAL = new Vector3();
 /** The seed axis, swapped where the normal is the one it is parallel to. */
 const AXIS_Y = new Vector3(0, 1, 0);
 const AXIS_X = new Vector3(1, 0, 0);
@@ -123,7 +135,17 @@ const AXIS_X = new Vector3(1, 0, 0);
  * out at ambient — measured on Sarab as a pure black hole in sunlit sand that
  * did not move when its albedo was doubled, which is the tell.
  */
-function chipData(rand: () => number): VertexData {
+/** One silhouette's arrays, as the mesh was handed them (`number[]`, doubles). */
+export interface MarkShape {
+  readonly positions: readonly number[];
+  readonly normals: readonly number[];
+  readonly indices: readonly number[];
+  /** Its local bounding sphere (`extractMinAndMax`, `BoundingSphere.reConstruct`). */
+  readonly centre: Vector3;
+  readonly radius: number;
+}
+
+function chipData(rand: () => number): MarkShape {
   const positions: number[] = [0, 0, 0];
   const normals: number[] = [0, 0, 1];
   const indices: number[] = [];
@@ -150,11 +172,48 @@ function chipData(rand: () => number): VertexData {
     indices.push(0, a, b);
     indices.push(back, back + b, back + a);
   }
-  const data = new VertexData();
-  data.positions = positions;
-  data.normals = normals;
-  data.indices = indices;
-  return data;
+  const min = new Vector3(Number.MAX_VALUE, Number.MAX_VALUE, Number.MAX_VALUE);
+  const max = new Vector3(-Number.MAX_VALUE, -Number.MAX_VALUE, -Number.MAX_VALUE);
+  for (let i = 0; i < positions.length; i += 3) {
+    min.minimizeInPlaceFromFloats(positions[i], positions[i + 1], positions[i + 2]);
+    max.maximizeInPlaceFromFloats(positions[i], positions[i + 1], positions[i + 2]);
+  }
+  return {
+    positions,
+    normals,
+    indices,
+    centre: max.add(min).scaleInPlace(0.5),
+    radius: Vector3.Distance(min, max) * 0.5,
+  };
+}
+
+/**
+ * The pool's silhouettes, built once off a fixed seed — so a shape is a fact
+ * about the build rather than about the session. Nothing downstream depends
+ * on it — this is not world-building and no nav graph can hear it — but a
+ * silhouette that changes on every page load is one a screenshot cannot be
+ * compared against. Slot `i` wears shape `i % SHAPES`, as its mesh did.
+ */
+export const MARK_SHAPES: readonly MarkShape[] = (() => {
+  const rand = mulberry32(0x4d41524b);
+  const shapes: MarkShape[] = [];
+  for (let i = 0; i < SHAPES; i++) shapes.push(chipData(rand));
+  return shapes;
+})();
+
+/** One mark slot: its shape, its paint and, once stood, its frozen world and world sphere. */
+export interface MarkSlot {
+  /** Its index in `MARK_SHAPES`. */
+  readonly shape: number;
+  /** Its index in `MARK_PAINTS`. */
+  paint: number;
+  /** Standing in the world (`isVisible`). */
+  visible: boolean;
+  /** Its world matrix, frozen when it was stood. */
+  readonly world: Matrix;
+  /** Its world bounding sphere, measured off that matrix. */
+  readonly centre: Vector3;
+  radius: number;
 }
 
 /**
@@ -166,32 +225,29 @@ function chipData(rand: () => number): VertexData {
  * tracer, spark and disc pools are.
  */
 export class BulletMarks {
-  private pool: Mesh[] = [];
+  /**
+   * Every slot, by index — what `Game.drawMarks` hands our renderer. A slot
+   * never stood stands at the identity, its sphere the shape's own, as the
+   * mesh it was did. The world layer's rule, and it is the whole of what
+   * keeps a decal out of the game: a mark is VISUAL, so it is in neither ray
+   * query, neither sweep, nor the shadow map's caster list — it has no
+   * collider and casts nothing.
+   */
+  readonly slots: MarkSlot[] = [];
   /** The ring cursor: the slot the next mark takes, whatever is in it. */
   private next = 0;
 
-  constructor(
-    scene: Scene,
-    private mats: CelMaterialFactory,
-  ) {
-    // Seeded, so a shape is a fact about the build rather than about the
-    // session. Nothing downstream depends on it — this is not world-building
-    // and no nav graph can hear it — but a silhouette that changes on every
-    // page load is one a screenshot cannot be compared against.
-    const rand = mulberry32(0x4d41524b);
-    const shapes: VertexData[] = [];
-    for (let i = 0; i < SHAPES; i++) shapes.push(chipData(rand));
+  constructor() {
     for (let i = 0; i < CONFIG.effects.markPoolSize; i++) {
-      const mesh = new Mesh(`mark${i}`, scene);
-      shapes[i % SHAPES].applyToMesh(mesh);
-      mesh.rotationQuaternion = Quaternion.Identity();
-      mesh.isVisible = false;
-      // The world layer's rule, and it is the whole of what keeps a decal out
-      // of the game: a mark is VISUAL, so it is in neither ray query, neither
-      // sweep, nor the shadow map's caster list.
-      mesh.isPickable = false;
-      mesh.checkCollisions = false;
-      this.pool.push(mesh);
+      const shape = MARK_SHAPES[i % SHAPES];
+      this.slots.push({
+        shape: i % SHAPES,
+        paint: 0,
+        visible: false,
+        world: Matrix.Identity(),
+        centre: shape.centre.clone(),
+        radius: shape.radius,
+      });
     }
   }
 
@@ -206,17 +262,18 @@ export class BulletMarks {
    * what it takes out of render are different sizes and different colours and
    * there is nothing else in the difference.
    */
-  place(pos: Vector3, normal: Vector3, hex: string, radius: number): void {
-    const mesh = this.pool[this.next];
-    this.next = (this.next + 1) % this.pool.length;
+  place(pos: Vector3Like, normal: Vector3Like, hex: string, radius: number): void {
+    const slot = this.slots[this.next];
+    this.next = (this.next + 1) % this.slots.length;
+    NORMAL.copyFrom(normal);
 
     // A basis on the face. The seed axis is swapped where the normal is the
     // one it is parallel to — a floor or a ceiling — or the cross product is
     // the zero vector and the mark has no orientation at all.
-    const seed = Math.abs(normal.y) > 0.95 ? AXIS_X : AXIS_Y;
-    Vector3.CrossToRef(seed, normal, AX);
+    const seed = Math.abs(NORMAL.y) > 0.95 ? AXIS_X : AXIS_Y;
+    Vector3.CrossToRef(seed, NORMAL, AX);
     AX.normalize();
-    Vector3.CrossToRef(normal, AX, AY);
+    Vector3.CrossToRef(NORMAL, AX, AY);
 
     // Rolled about the normal, so the shared silhouette is not a stamp. The
     // roll is spent on the BASIS rather than composed as a second quaternion:
@@ -231,41 +288,60 @@ export class BulletMarks {
     BY.copyFrom(AY).scaleInPlace(c);
     TMP.copyFrom(AX).scaleInPlace(-s);
     BY.addInPlace(TMP);
-    Matrix.FromXYZAxesToRef(BX, BY, normal, MTX);
+    Matrix.FromXYZAxesToRef(BX, BY, NORMAL, MTX);
 
-    // A frozen world matrix, so seventy-odd standing decals are not recomputed
-    // every frame for a transform that will not move again until the ring
-    // comes back for this slot. It also puts the bounding info in world space
-    // NOW: `WorldCulling.offer` runs before the render bakes matrices, so a
-    // mark left to the render would be size-tested at wherever it last stood
-    // for one frame.
-    mesh.unfreezeWorldMatrix();
-    Quaternion.FromRotationMatrixToRef(MTX, mesh.rotationQuaternion!);
-    normal.scaleToRef(CONFIG.effects.markLift, TMP);
-    mesh.position.copyFrom(pos).addInPlace(TMP);
-    mesh.scaling.setAll(radius * (0.82 + Math.random() * 0.4));
-    mesh.material = this.mats.get(hex, MARK_DEPTH_UNITS);
-    mesh.isVisible = true;
-    mesh.freezeWorldMatrix();
+    // A FROZEN world matrix, so seventy-odd standing decals are not
+    // recomposed every frame for a transform that will not move again until
+    // the ring comes back for this slot — composed here as `computeWorldMatrix`
+    // composed the mesh's (`ComposeToRef` of its scale, its quaternion and its
+    // position; no parent), and its bounding sphere measured off it NOW, as
+    // `freezeWorldMatrix` measured the mesh's, so the size gate the drawing
+    // asks (`Game.drawMarks`) reads where it stands.
+    Quaternion.FromRotationMatrixToRef(MTX, ROT);
+    NORMAL.scaleToRef(CONFIG.effects.markLift, TMP);
+    POS.copyFrom(pos).addInPlace(TMP);
+    SCALE.setAll(radius * (0.82 + Math.random() * 0.4));
+    const paint = MARK_PAINTS.indexOf(hex as (typeof MARK_PAINTS)[number]);
+    if (paint < 0) throw new Error(`BulletMarks: "${hex}" is no mark paint (MARK_PAINTS)`);
+    slot.paint = paint;
+    Matrix.ComposeToRef(SCALE, ROT, POS, slot.world);
+    this.measure(slot);
+    slot.visible = true;
+  }
+
+  /** `BoundingSphere._update` off the slot's world, from its shape's local sphere. */
+  private measure(slot: MarkSlot): void {
+    const shape = MARK_SHAPES[slot.shape];
+    const world = slot.world;
+    if (world.isIdentity()) {
+      slot.centre.copyFrom(shape.centre);
+      slot.radius = shape.radius;
+      return;
+    }
+    Vector3.TransformCoordinatesToRef(shape.centre, world, slot.centre);
+    Vector3.TransformNormalFromFloatsToRef(1.0, 1.0, 1.0, world, TMP);
+    slot.radius = Math.max(Math.abs(TMP.x), Math.abs(TMP.y), Math.abs(TMP.z)) * shape.radius;
   }
 
   /**
-   * Shows one idle mark, in `hex`, for the frames of the building card's
-   * pipeline warm-up (`core/PipelineWarmup.ts`), or takes it back off. A mark
-   * is drawn at `MARK_DEPTH_UNITS` and the depth bias is part of the pipeline,
-   * which is why this cannot be left to any other cel surface to compile.
-   * Only a slot that is not already standing is used, and only that one is
-   * hidden again, so a mark in the world is never touched.
+   * Shows one idle mark for the frames of the building card's pipeline
+   * warm-up (`core/PipelineWarmup.ts`), or takes it back off — where it last
+   * stood, in `hex`, as the mesh was shown. Our renderer draws a
+   * mark (`BABYLON_EXIT.md` X4.4b) and its pipeline, depth bias and all, is
+   * asked ahead for the session, so this compiles nothing any more; it stays
+   * until X4.4e makes the warm-up a declared list. Only a slot that is not
+   * already standing is used, and only that one is hidden again, so a mark
+   * in the world is never touched.
    */
   warm(on: boolean, hex: string): void {
-    const mesh = this.pool[this.pool.length - 1];
+    const slot = this.slots[this.slots.length - 1];
     if (on) {
-      if (mesh.isVisible) return;
-      mesh.material = this.mats.get(hex, MARK_DEPTH_UNITS);
-      mesh.isVisible = true;
+      if (slot.visible) return;
+      slot.paint = Math.max(0, MARK_PAINTS.indexOf(hex as (typeof MARK_PAINTS)[number]));
+      slot.visible = true;
       this.warmed = true;
     } else if (this.warmed) {
-      mesh.isVisible = false;
+      slot.visible = false;
       this.warmed = false;
     }
   }
@@ -273,7 +349,7 @@ export class BulletMarks {
 
   /** Takes every mark off the world. Called when a map is torn down. */
   clear(): void {
-    for (const mesh of this.pool) mesh.isVisible = false;
+    for (const slot of this.slots) slot.visible = false;
     this.next = 0;
   }
 }

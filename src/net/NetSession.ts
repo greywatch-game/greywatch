@@ -29,11 +29,11 @@
  * only thing that ever moves the local body from outside. See
  * `docs/multiplayer.md`.
  */
-import { Scene, Vector3 } from "@babylonjs/core";
+import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { Team } from "../entities/Combatant";
 import type { Vector3Like } from "../math";
-import type { CelMaterialFactory } from "../shaders/CelShader";
+import type { PieceKits } from "../entities/pieces";
 import type { ControlPoint } from "../systems/ConquestSystem";
 import { Connection, type ConnectionState, type JoinOptions } from "./Connection";
 import { NetGrenades } from "./NetGrenades";
@@ -298,11 +298,11 @@ export class NetSession {
    * `perTeam` is the roster the session's rigs are first built to — the map
    * it is opened for (`NetRoster`'s constructor); `setFielded` moves it.
    */
-  constructor(scene: Scene, mats: CelMaterialFactory, local: boolean, perTeam: number) {
+  constructor(kits: PieceKits, local: boolean, perTeam: number) {
     this.local = local;
     this.roster = new NetRoster(perTeam);
-    this.grenades = new NetGrenades(scene, mats);
-    this.ordnance = new NetOrdnance(scene, mats);
+    this.grenades = new NetGrenades(kits);
+    this.ordnance = new NetOrdnance(kits);
     this.conn.onStateChange = (s) => this.onStateChange(s);
     this.conn.onMessage = (msg) => this.receive(msg);
   }

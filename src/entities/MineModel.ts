@@ -2,7 +2,7 @@
  * MineModel.ts — What an anti-tank mine looks like, in the hands and on the
  * ground.
  * Returns `WeaponParts` exactly as the six guns do, so `ViewModel` carries it
- * with nothing re-tuned, plus `buildMineBody` for the one `AntiTankSystem`
+ * with nothing re-tuned, plus `minePieceParts` for the one `AntiTankSystem`
  * lays and `AntiTankFx` draws.
  * Invariants: the carried mine is assembled at the origin with the root at
  * identity and merged before it is moved — `weaponKit.ts` owns that contract
@@ -10,8 +10,9 @@
  * `WorldBox`, not pickable. A tank drives THROUGH it and the trigger is a
  * distance test, never a collision. Both are built as `Part`s on
  * `src/geometry/` buffers: the carried one's become SEGMENTS our renderer
- * draws (`WeaponBuild.merge` and `lit`, `BABYLON_EXIT.md` X4.3c), and
- * `drawnMesh` is where the laid one's become meshes, here.
+ * draws (`WeaponBuild.merge` and `lit`, `BABYLON_EXIT.md` X4.3c), and the
+ * laid one's the KIT our renderer draws every laid mine as an instance of
+ * (`entities/pieces.ts`, X4.4b) — Babylon is made no mesh of either.
  *
  * Two builders in one file for the reason `RpgModel` is one: the plate a
  * player is holding and the plate lying in the road are the same object, and
@@ -25,10 +26,11 @@
  * closer to the eye and does nothing else, which is exactly what looking hard
  * at a thing in your hands does.
  */
-import { Mesh, Scene, Vector3 } from "@babylonjs/core";
+import { Scene, Vector3 } from "@babylonjs/core";
 import { createCylinder, createSphere } from "../geometry/primitives";
 import { type CelMaterialFactory } from "../shaders/CelShader";
-import { drawnMesh, Part } from "../world/parts";
+import { Part } from "../world/parts";
+import type { PiecePart } from "./pieces";
 import {
   BODY,
   METAL,
@@ -150,16 +152,17 @@ function buildMineTell(
   return { root: node, sightCenter, meshes: b.meshesOn(node) };
 }
 
-/** One laid mine's meshes. The lamp is parented to the body and moves with it. */
-export interface MineMeshes {
-  mesh: Mesh;
-  lamp: Mesh;
-}
+/** The plate's paint, the pressure plate's, and the fuze lamp's (unlit). */
+const MINE_BODY = "#3a3f34";
+const MINE_PLATE = "#22261f";
+const MINE_LAMP = "#ff4a3a";
 
 /**
- * Builds one laid mine, hidden, at WORLD scale — everything above this
- * function is in the viewmodel's units and none of those numbers may be
- * carried down here.
+ * One laid mine at WORLD scale — everything above this function is in the
+ * viewmodel's units and none of those numbers may be carried down here — as
+ * the three parts of its kit (`pieceKit`): the plate, the pressure plate hung
+ * from it and the fuze lamp hung from it, each painted and placed as its mesh
+ * was until `BABYLON_EXIT.md` X4.4b.
  *
  * A third of a metre across and eight centimetres proud of the road, which is
  * what a real one is and small enough that the thing a driver has to spot is
@@ -170,55 +173,36 @@ export interface MineMeshes {
  * you could still drive over.
  *
  * A mine is dressing with a fuze on it: no `solid` flag, no `WorldBox`, not
- * pickable. A tank drives THROUGH the mesh, and what sets it off is
+ * pickable. A tank drives THROUGH the piece, and what sets it off is
  * `AntiTankSystem`'s distance test against the hull's centre.
  */
-export function buildMineBody(
-  scene: Scene,
-  mats: CelMaterialFactory,
-  name: string,
-): MineMeshes {
+export function minePieceParts(mats: CelMaterialFactory, name: string): PiecePart[] {
   // Nothing here is derived from `CONFIG.equipment.mine`: the trigger radius
   // is four metres of ground a hull has to be over, and a plate drawn that
   // size would be a manhole cover. What the mine LOOKS like is a mine.
-  const mesh = drawnMesh(
-    new Part(name, createCylinder({ height: 0.08, diameter: 0.34, tessellation: 10 })),
-    scene,
-  );
-  mesh.material = mats.get("#3a3f34");
-  mesh.isPickable = false;
+  const body = new Part(name, createCylinder({ height: 0.08, diameter: 0.34, tessellation: 10 }));
+  body.material = mats.get(MINE_BODY);
 
-  const plate = drawnMesh(
-    new Part(`${name}Plate`, createCylinder({ height: 0.04, diameter: 0.22, tessellation: 10 })),
-    scene,
-  );
-  plate.parent = mesh;
+  const plate = new Part(`${name}Plate`, createCylinder({ height: 0.04, diameter: 0.22, tessellation: 10 }));
   plate.position.y = 0.055;
-  plate.material = mats.get("#22261f");
-  plate.isPickable = false;
+  plate.material = mats.get(MINE_PLATE);
 
-  const lamp = drawnMesh(
-    new Part(`${name}Lamp`, createSphere({ diameter: 0.07, segments: 6 })),
-    scene,
-  );
-  lamp.parent = mesh;
+  const lamp = new Part(`${name}Lamp`, createSphere({ diameter: 0.07, segments: 6 }));
   // Standing proud of the plate's ink shell — the grenade pip's rule, and for
   // the same reason: it is the only warning the thing gives.
   lamp.position.y = 0.095;
-  lamp.material = mats.getEmissive("#ff4a3a");
+  lamp.material = mats.getEmissive(MINE_LAMP);
   lamp.metadata = { noInk: true };
-  lamp.isPickable = false;
-  // The lamp is toggled INSIDE an enabled mine — dark while it arms, lit once
-  // it is live — so it keeps its own `isVisible` on top of the subtree switch
-  // below.
-  lamp.isVisible = false;
+  // The lamp is switched INSIDE a laid mine — dark while it arms, lit once
+  // it is live — so it keeps its own switch (`PieceNode.visible`) on top of
+  // the piece's (`Piece.enabled`).
 
   // Ink, or a dark plate on a dark road is invisible from the one direction it
   // matters from — which for the object a driver is meant to notice in time is
   // the whole ball game.
-  // Disabled rather than invisible, for the reason `buildRocket` gives at
-  // length: `isVisible` does not reach a child, and a pool of sixteen hidden
-  // mines would leave sixteen pressure plates lying at the world origin.
-  mesh.setEnabled(false);
-  return { mesh, lamp };
+  return [
+    { part: body, cel: MINE_BODY, unlit: null, parent: -1 },
+    { part: plate, cel: MINE_PLATE, unlit: null, parent: 0 },
+    { part: lamp, cel: null, unlit: MINE_LAMP, parent: 0 },
+  ];
 }

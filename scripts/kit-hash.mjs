@@ -114,7 +114,17 @@
  *   class and name alone.
  *   A row that moves here moved in the build, not in the bookkeeping;
  * - the four pooled bodies that fly or lie (`grenade`, `molotov`, `rocket`
- *   with its flame, `mine`, the laid one);
+ *   with its flame, `mine`, the laid one). **Since `BABYLON_EXIT.md` X4.4b
+ *   each is a KIT our renderer draws** (`entities/pieces.ts`) and Babylon is
+ *   made no mesh of any, so each is hashed IN THE BYTES ITS MESHES GAVE: the
+ *   builder's parts (`grenadeParts`, `molotovPieceParts`, `rocketParts`,
+ *   `minePieceParts`) made throwaway meshes by the game's own `drawnMesh`, in
+ *   the order the builder made them, each hung from the part it names and
+ *   dressed with the flags its mesh carried (never pickable; hidden or
+ *   switched off as the builder left it), and the builder's data spelled as
+ *   it was (`{ mesh, pip }`, `{ mesh, wick }`, `{ mesh, flame }`,
+ *   `{ mesh, lamp }`). The `player`'s casing pool the same since X4.4b: each
+ *   case's part (`casingParts`) made a mesh, hidden, after the tree;
  * - every vehicle kind (`vehicle:<kind>`: the `CONFIG.vehicles` blocks
  *   `kindOf` pairs with a spec, each built by `vehicleModels.modelOf`), for
  *   both sides, in its livery and wrecked;
@@ -786,7 +796,7 @@ async function hashModelJobs(jobs) {
     const B = await server.ssrLoadModule("@babylonjs/core");
     B.Logger.LogLevels = B.Logger.NoneLogLevel;
     const load = (p) => server.ssrLoadModule(p);
-    const [W, VM, PL, PV, GR, MO, RPG, MINE, VK, SM, CZ, FIN, TV, VT, PA] = await Promise.all(
+    const [W, VM, PL, PV, GR, MO, RPG, MINE, VK, SM, CZ, FIN, TV, VT, PA, CFG] = await Promise.all(
       [
         "/src/entities/weapons.ts",
         "/src/entities/ViewModel.ts",
@@ -803,8 +813,25 @@ async function hashModelJobs(jobs) {
         "/src/core/teamView.ts",
         "/src/entities/viewTree.ts",
         "/src/world/parts.ts",
+        "/src/config/index.ts",
       ].map(load),
     );
+    // A pool's piece parts as the meshes they were until X4.4b (the header):
+    // made in order by the game's `drawnMesh`, each hung from the part it
+    // names, never pickable, hidden where the old builder hid it — and the
+    // root switched off where it was. Returns the meshes, in order.
+    const meshesOfParts = (parts, { hidden, rootOff = false, shown = [] }) => {
+      const meshes = [];
+      parts.forEach((pp, i) => {
+        const mesh = PA.drawnMesh(pp.part, scene);
+        if (pp.parent >= 0) mesh.parent = meshes[pp.parent];
+        mesh.isPickable = false;
+        if (hidden && !shown.includes(i)) mesh.isVisible = false;
+        meshes.push(mesh);
+      });
+      if (rootOff) meshes[0].setEnabled(false);
+      return meshes;
+    };
     const weaponBuilders = await modelWeaponBuilders(load);
     const engine = new B.NullEngine();
     let scene = new B.Scene(engine);
@@ -856,14 +883,28 @@ async function hashModelJobs(jobs) {
           const view = new PV.PlayerView(scene, mats, camera);
           new PL.Player(view);
           tree = view.model.tree;
+          // The casing pool, as the meshes it was (X4.4b): one a case, made
+          // after the tree's surfaces, hidden, never pickable.
+          for (let i = 0; i < CFG.CONFIG.gunfeel.casingPool; i++) {
+            meshesOfParts(PV.casingParts(mats, `player_casing${i}`), { hidden: true });
+          }
         } else if (p.kind === "grenade") {
-          data = GR.buildGrenade(scene, mats, "grenade0");
+          // The body and the pip, both hidden.
+          const [mesh, pip] = meshesOfParts(GR.grenadeParts(mats, "grenade0"), { hidden: true });
+          data = { mesh, pip };
         } else if (p.kind === "molotov") {
-          data = MO.buildMolotov(scene, mats, "molotov0");
+          // The body, the neck, the cloth and the wick, all hidden.
+          const m = meshesOfParts(MO.molotovPieceParts(mats, "molotov0"), { hidden: true });
+          data = { mesh: m[0], wick: m[3] };
         } else if (p.kind === "rocket") {
-          data = RPG.buildRocket(scene, mats, "rocket0");
+          // The head, the tail and the flame, shown, the head switched off.
+          const m = meshesOfParts(RPG.rocketParts(mats, "rocket0"), { hidden: false, rootOff: true });
+          data = { mesh: m[0], flame: m[2] };
         } else if (p.kind === "mine") {
-          data = MINE.buildMineBody(scene, mats, "mine0");
+          // The plate and the pressure plate shown, the lamp hidden, the plate
+          // switched off.
+          const m = meshesOfParts(MINE.minePieceParts(mats, "mine0"), { hidden: true, rootOff: true, shown: [0, 1] });
+          data = { mesh: m[0], lamp: m[2] };
         } else if (p.kind.startsWith("vehicle:")) {
           // The client's table (`vehicleModels.ts`), keyed by the same kind
           // `vehicleKinds.ts` pairs with its spec. The rig is joints and

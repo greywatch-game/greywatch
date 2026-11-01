@@ -2,8 +2,15 @@
  * CombatFx.ts — The PICTURE of a round: the tracer streak, the impact spark,
  * the dust disc and the bullet mark, as fixed-size pools.
  * Owns: the four pools, the `IMPACTS` look table, the tracer's flight and the
- * impact it spawns on arrival, and the wall query `drawRounds` makes for a
- * round this client did not resolve.
+ * impact it spawns on arrival, the tracer's KIT, and the wall query
+ * `drawRounds` makes for a round this client did not resolve.
+ * **Two renderers draw these four pools, a pool never split between them**
+ * (`BABYLON_EXIT.md` X4.4b, the owner's decision of 2026-11-01): each
+ * tracer is a PIECE of its kit (`entities/pieces.ts`) and each mark a slot of
+ * `BulletMarks`, both drawn by OUR renderer (`Game.drawPieces`,
+ * `Game.drawMarks`) with no Babylon mesh made of either; the sparks and the
+ * dust discs stay Babylon meshes, because they FADE among the see-through
+ * panes in Babylon's transparent sort, and move with the glazing at X4.6.
  * Invariants: it READS the simulation and never writes it — what it draws
  * reaches it as `CombatSystem.onRound` (wired by `Game`) or as a `drawRounds`
  * call, and nothing here deals damage, raises a near miss or breaks glass.
@@ -47,8 +54,11 @@ import {
   Vector3,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import type { Vector3Like } from "../math";
+import { Piece, pieceKit, type PieceKit, type PieceNode, type PiecePart } from "../entities/pieces";
+import { createCylinder } from "../geometry/primitives";
+import { Quaternion as MathQuaternion, Vector3 as MathVector3, type Vector3Like } from "../math";
 import type { CelMaterialFactory } from "../shaders/CelShader";
+import { Part } from "../world/parts";
 import { newRayHit, type RayHull, type RayWorld } from "../world/RayWorld";
 import { BulletMarks } from "./BulletMarks";
 import type { ImpactKind } from "./CombatSystem";
@@ -108,7 +118,12 @@ const IMPACTS: Record<
 };
 
 interface Tracer {
-  mesh: Mesh;
+  /**
+   * The streak on screen: a piece of the tracer's kit, which our renderer
+   * draws (`BABYLON_EXIT.md` X4.4b) — its node's quaternion, position and
+   * length (`scaling.y`) the mesh's were.
+   */
+  piece: Piece;
   /** Muzzle, and the unit direction to the impact point. */
   from: Vector3;
   dir: Vector3;
@@ -157,6 +172,22 @@ interface Spark {
   t: number;
 }
 
+/** The tracer's paint: unlit, so a streak at night is its own light. */
+const TRACER = "#ffe680";
+
+/**
+ * The tracer's one part — a unit-tall thin cylinder on Y, stretched along its
+ * flight — as its kit makes it (`pieceKit`): what `MeshBuilder.CreateCylinder`
+ * made a mesh of until `BABYLON_EXIT.md` X4.4b, born at the identity
+ * quaternion as that mesh was given one.
+ */
+export function tracerParts(mats: CelMaterialFactory): PiecePart[] {
+  const part = new Part("tracer0", createCylinder({ height: 1, diameter: 0.055, tessellation: 5 }));
+  part.material = mats.getEmissive(TRACER);
+  part.rotationQuaternion = MathQuaternion.Identity();
+  return [{ part, cel: null, unlit: TRACER, parent: -1 }];
+}
+
 /** Reused by the tracer update so a live streak costs no allocation. */
 const SCRATCH = new Vector3();
 /** Where a drawn round stopped, handed to `spawnTracer`, which copies it. */
@@ -170,15 +201,24 @@ const FORWARD = Vector3.Forward();
  */
 export class CombatFx {
   private tracers: Tracer[] = [];
+  /**
+   * The tracer's kit, built here once (where the first streak's mesh was made
+   * until `BABYLON_EXIT.md` X4.4b, so its material is asked of the factory at
+   * the same point in its order), and every streak's piece, by slot: what
+   * `Game.drawPieces` hands our renderer.
+   */
+  readonly tracerKit: PieceKit;
+  readonly tracerPieces: Piece[] = [];
   private sparks: Spark[] = [];
   private discs: Disc[] = [];
   /**
    * The fourth pool, and the only one whose slots outlive the shot — see
    * `BulletMarks`. Built here rather than wired by `Game` for the reason the
    * other three are: it is this file's own picture of a round arriving, and
-   * nothing outside ever raises one.
+   * nothing outside ever raises one. Read (never written) by `Game.drawMarks`,
+   * which hands its standing slots to our renderer (`BABYLON_EXIT.md` X4.4b).
    */
-  private marks: BulletMarks;
+  readonly marks: BulletMarks;
 
   /**
    * Wired by Game: a round ARRIVED somewhere, at the moment its streak got
@@ -209,18 +249,12 @@ export class CombatFx {
     private mats: CelMaterialFactory,
   ) {
     const fx = CONFIG.effects;
+    this.tracerKit = pieceKit("tracer", tracerParts(mats));
     for (let i = 0; i < fx.tracerPoolSize; i++) {
-      const mesh = MeshBuilder.CreateCylinder(
-        `tracer${i}`,
-        { height: 1, diameter: 0.055, tessellation: 5 },
-        scene,
-      );
-      mesh.material = mats.getEmissive("#ffe680");
-      mesh.rotationQuaternion = Quaternion.Identity();
-      mesh.isVisible = false;
-      mesh.isPickable = false;
+      const piece = new Piece(this.tracerKit);
+      this.tracerPieces.push(piece);
       this.tracers.push({
-        mesh,
+        piece,
         from: Vector3.Zero(),
         dir: Vector3.Forward(),
         dist: 0,
@@ -262,7 +296,7 @@ export class CombatFx {
       mesh.metadata = { noGlow: true };
       this.discs.push({ mesh, t: 0, from: 0, to: 1 });
     }
-    this.marks = new BulletMarks(scene, mats);
+    this.marks = new BulletMarks();
   }
 
   /**
@@ -357,7 +391,8 @@ export class CombatFx {
       // which is the point: a queued round that lost its slot to the next
       // shot would be one that never left.
       if (tr.head < 0) continue;
-      tr.mesh.isVisible = true;
+      const node = tr.piece.root;
+      node.visible = true;
       if (tr.impactKind !== null && tr.head >= tr.dist) {
         this.spawnImpact(tr.impact, tr.impactNormal, tr.impactKind, tr.impactMark);
         // Nulled so it fires once, and it is also what makes the sound and
@@ -367,15 +402,16 @@ export class CombatFx {
       const tail = tr.head - fx.tracerLength;
       if (tail >= tr.dist) {
         tr.alive = false;
-        tr.mesh.isVisible = false;
+        node.visible = false;
         continue;
       }
       const back = Math.max(tail, 0);
       const len = Math.max(Math.min(tr.head, tr.dist) - back, 0.01);
-      // Pooled effect: no per-frame allocation.
+      // Pooled effect: no per-frame allocation. The sum is Babylon's
+      // `copyFrom(from).addInPlace(scaled)`, component for component.
       tr.dir.scaleToRef(back + len / 2, SCRATCH);
-      tr.mesh.position.copyFrom(tr.from).addInPlace(SCRATCH);
-      tr.mesh.scaling.set(1, len, 1);
+      node.position.set(tr.from.x + SCRATCH.x, tr.from.y + SCRATCH.y, tr.from.z + SCRATCH.z);
+      node.scaling.set(1, len, 1);
     }
 
     // Sparks: quick scale-out pops.
@@ -432,11 +468,26 @@ export class CombatFx {
         w.mesh = null;
       }
       this.warmedCount = 0;
+      const warmed = this.warmedTracer;
+      if (warmed) {
+        warmed.visible = false;
+        warmed.scaling.copyFrom(this.warmedScale);
+        this.warmedTracer = null;
+      }
       this.marks.warm(false, look.mark!.hex);
       return;
     }
+    // The tracer and the mark are our renderer's (`BABYLON_EXIT.md` X4.4b),
+    // their pipelines asked ahead for the session; still posed in flight here
+    // as they always were, until X4.4e makes the warm-up a declared list.
     const tracer = this.tracers[this.tracers.length - 1];
-    if (!tracer.alive) this.warmOne(tracer.mesh, 1, 3);
+    const node = tracer.piece.root;
+    if (!tracer.alive && !node.visible) {
+      this.warmedTracer = node;
+      this.warmedScale.copyFrom(node.scaling);
+      node.scaling.set(1, 3, 1);
+      node.visible = true;
+    }
     for (let i = 0; i < 2; i++) {
       const spark = this.sparks[this.sparks.length - 1 - i];
       if (spark.t > 0) continue;
@@ -463,12 +514,16 @@ export class CombatFx {
     mesh.scaling.set(1, stretch, 1);
     mesh.isVisible = true;
   }
+  /** The streak `warm` switched on, and its length before, to put back. */
+  private warmedTracer: PieceNode | null = null;
+  private readonly warmedScale = new MathVector3();
+
   /**
    * What `warm` switched on, and what to put back when it switches off: one
-   * record per mesh it can show (a tracer, two sparks, two discs), held so a
-   * warm frame allocates nothing.
+   * record per mesh it can show (two sparks, two discs), held so a warm frame
+   * allocates nothing.
    */
-  private readonly warmed = Array.from({ length: 5 }, () => ({
+  private readonly warmed = Array.from({ length: 4 }, () => ({
     mesh: null as Mesh | null,
     visibility: 1,
     scaling: new Vector3(),
@@ -480,7 +535,7 @@ export class CombatFx {
     for (const tr of this.tracers) {
       tr.alive = false;
       tr.impactKind = null;
-      tr.mesh.isVisible = false;
+      tr.piece.root.visible = false;
     }
     for (const s of this.sparks) {
       s.t = 0;
@@ -537,10 +592,11 @@ export class CombatFx {
     else tr.impactNormal.set(0, 1, 0);
     // The direction is fixed for the whole flight, so this is set once here and
     // only `update` moves the streak along it.
-    Quaternion.FromUnitVectorsToRef(UP, delta, tr.mesh.rotationQuaternion!);
-    tr.mesh.position.copyFrom(tr.from);
-    tr.mesh.scaling.set(1, 0.01, 1);
-    tr.mesh.isVisible = tr.head >= 0;
+    const node = tr.piece.root;
+    MathQuaternion.FromUnitVectorsToRef(UP, delta, node.quaternion!);
+    node.position.copyFrom(tr.from);
+    node.scaling.set(1, 0.01, 1);
+    node.visible = tr.head >= 0;
   }
 
   /**
