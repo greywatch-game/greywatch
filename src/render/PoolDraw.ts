@@ -16,13 +16,16 @@
  * the cel one at the cel recipe's depth bias, and the emissive one and its
  * mask twin only for a draw with an unlit segment (asked once, for the
  * session) — the main-pass draw, the mask draw, the prepare that uploads a
- * frame, the refusal listeners it holds while installed (and whether it is,
- * `installed`), and what it drew last (`stats`); `PoolSegment`, `PoolKit`,
- * `PoolMaterials`, `PoolPull`.
+ * frame, a DYNAMIC draw's rewrite of a kit's vertices (`rewrite`: the glass
+ * shards, each cut afresh, `BABYLON_EXIT.md` X4.4c), the refusal listeners
+ * it holds while installed (and whether it is, `installed`), and what it drew
+ * last (`stats`); `PoolSegment`, `PoolKit`, `PoolMaterials`, `PoolPull`.
+ * Three draws are built of it: the pieces', the marks' (X4.4b) and the
+ * DEBRIS's — every glass shard and rubble chunk (X4.4c).
  * Invariants: it DECIDES NOTHING — which pieces are drawn, in what pose, in
  * what order, which of their segments, at what bloom and with what material
- * are its caller's (`Game.drawPieces` and `Game.drawMarks`, off the pools'
- * own switches, `WorldCulling`'s size gate per cel segment, the eye and
+ * are its caller's (`Game.drawPieces`, `Game.drawMarks` and
+ * `Game.drawDebris`, off the pools' own switches, `WorldCulling`'s size gate per cel segment, the eye and
  * `GlowRules`), handed over once a frame (`commit`) and pulled once inside
  * the render (`pull`, in the prepare: the order and the bloom, off the camera
  * the render placed — and, for a pull that orders the INSTANCES themselves,
@@ -47,7 +50,9 @@
  * the order added); the arrays are uploaded as Babylon uploaded a mesh's
  * (float32 — `Float32Array.set` rounds a double to nearest; a `color` or
  * `uv` a segment does not carry reading what Babylon's one-float empty
- * vertex buffer read, widened: (0, 0, 0, 1) and (0, 0)); a material's block
+ * vertex buffer read, widened: (0, 0, 0, 1) and (0, 0)) — and a rewrite as
+ * Babylon's `updateVerticesData` wrote a mesh's, the indices untouched; a
+ * material's block
  * is re-copied from its recipe only when the caller's epoch moves; a frame
  * with a pipeline unbuilt or a texture unpublished draws no piece, as a
  * Babylon material not ready drew none; a pipeline that FAILS is the round's
@@ -142,6 +147,13 @@ export class PoolDraw {
   private readonly unlit: Uint8Array;
   /** Each kit's index count a segment, kit-major: what a rank's span is the longest of. */
   private readonly counts: Uint32Array;
+  /** Each kit's segments' first vertex in the arrays and their vertex counts, kit-major: what `rewrite` writes over. */
+  private readonly firstVertex: Uint32Array;
+  private readonly vertexCount: Uint32Array;
+  private readonly positionBuffer: GPUBuffer;
+  private readonly normalBuffer: GPUBuffer;
+  /** Whether `rewrite` may write the arrays (the constructor's `dynamic`). */
+  private readonly dynamic: boolean;
   private readonly celSpan: number;
   private readonly unlitSpan: number;
   private readonly owned: GPUBuffer[] = [];
@@ -193,6 +205,12 @@ export class PoolDraw {
     private readonly materials: PoolMaterials,
     capacity: number,
     private readonly pull: PoolPull,
+    /**
+     * Whether a kit's positions and normals may be REWRITTEN after the
+     * upload (`rewrite`) — the glass shards, each cut afresh from its pane
+     * (`BABYLON_EXIT.md` X4.4c).
+     */
+    dynamic = false,
   ) {
     const device = renderer.device;
     this.device = device;
@@ -210,6 +228,8 @@ export class PoolDraw {
     const S = this.segments;
     this.unlit = new Uint8Array(kits.length * S);
     this.counts = new Uint32Array(kits.length * S);
+    this.firstVertex = new Uint32Array(kits.length * S);
+    this.vertexCount = new Uint32Array(kits.length * S);
 
     // The kits' arrays, end to end, and `indexData`: each kit's ranges —
     // (first, count) a segment, kit-major, a kit narrower than the widest
@@ -243,6 +263,8 @@ export class PoolDraw {
     kits.forEach((kit, k) => {
       kit.segments.forEach((s, i) => {
         const n = s.positions.length / 3;
+        this.firstVertex[k * S + i] = v;
+        this.vertexCount[k * S + i] = n;
         positions.set(s.positions, v * 3);
         if (s.normals) normals.set(s.normals, v * 3);
         if (s.colors) colors.set(s.colors, v * 4);
@@ -274,11 +296,11 @@ export class PoolDraw {
     this.hasUnlit = hasUnlit;
     if (hasUnlit && !materials.unlit) throw new Error(`PoolDraw ${name}: a kit has an unlit segment and no emissive recipe was handed`);
 
-    const storage = (label: string, data: ArrayBufferView<ArrayBuffer>): GPUBuffer => {
+    const storage = (label: string, data: ArrayBufferView<ArrayBuffer>, writable = false): GPUBuffer => {
       const buffer = device.createBuffer({
         label: `${name}: ${label}`,
         size: Math.max(16, Math.ceil(data.byteLength / 4) * 4),
-        usage: GPUBufferUsage.STORAGE,
+        usage: writable ? GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST : GPUBufferUsage.STORAGE,
         mappedAtCreation: true,
       });
       new Uint8Array(buffer.getMappedRange()).set(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
@@ -299,9 +321,12 @@ export class PoolDraw {
     this.matrixBuffer = frameBuffer("matrices", this.matrices.byteLength);
     this.glowBuffer = frameBuffer("bloom", this.glow.byteLength);
     const host = renderer.host;
+    this.positionBuffer = storage("positions", positions, dynamic);
+    this.normalBuffer = storage("normals", normals, dynamic);
+    this.dynamic = dynamic;
     this.geometry = new HostBindGroup(device, `${name}: geometry`, BODY_GEOMETRY, [], {
-      positionData: storage("positions", positions),
-      normalData: storage("normals", normals),
+      positionData: this.positionBuffer,
+      normalData: this.normalBuffer,
       colorData: storage("colours", colors),
       uvData: storage("uvs", uvs),
       uv2Data: storage("slots", uvs2),
@@ -460,6 +485,25 @@ export class PoolDraw {
       this.celBlock.write(this.materials.cel.values);
       if (this.unlitBlock && this.materials.unlit) this.unlitBlock.write(this.materials.unlit.values);
     }
+  }
+
+  /**
+   * Writes a segment's positions and normals over what was uploaded — as
+   * Babylon's `updateVerticesData` wrote a mesh's: the same counts, as
+   * float32 (`positions` and `normals` ARE float32, so nothing rounds), the
+   * indices untouched. Lands before the next submit, so the next frame drawn
+   * draws it. Only for a draw built `dynamic`.
+   */
+  rewrite(kit: number, segment: number, positions: Float32Array<ArrayBuffer>, normals: Float32Array<ArrayBuffer>): void {
+    if (!this.dynamic) throw new Error(`PoolDraw ${this.name}: rewrite on a draw not built dynamic`);
+    const k = kit * this.segments + segment;
+    const n = this.vertexCount[k];
+    if (positions.length !== n * 3 || normals.length !== n * 3) {
+      throw new Error(`PoolDraw ${this.name}: kit ${kit} segment ${segment} holds ${n} vertices, rewritten with ${positions.length / 3}`);
+    }
+    const queue = this.device.queue;
+    queue.writeBuffer(this.positionBuffer, this.firstVertex[k] * 12, positions);
+    queue.writeBuffer(this.normalBuffer, this.firstVertex[k] * 12, normals);
   }
 
   dispose(): void {

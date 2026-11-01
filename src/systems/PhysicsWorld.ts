@@ -31,8 +31,9 @@
  * Invariants, each of which has a way of failing silently:
  * - **Babylon-free** (`scripts/check-babylon-free.mjs` holds it, beside
  *   `havok.ts`). It reaches no node, no mesh and no scene: a body's pose is a
- *   plain array (`WorldBody.pose`) that a client's VIEW writes onto whatever
- *   it draws, and the floor arrives as the
+ *   plain array (`WorldBody.pose`) that a client's drawing is composed from
+ *   (a rig's joint, a shard, a chunk — none of them a node since
+ *   `BABYLON_EXIT.md` X4.4c), and the floor arrives as the
  *   collider clones' own vertex arrays (`GameMap.terrainGeometry`), not as
  *   the meshes.
  * - Stepping is `update()`'s job and it is only ever called from a gameplay
@@ -181,9 +182,8 @@ export interface PhysicsClient {
  * into the same two, neither normalised — so this array is those seven
  * numbers, read and written the same way. Whatever a client draws the body as
  * (a rig's joint, posed off this very array since `BABYLON_EXIT.md` X4.1b; a
- * shard's mesh, a chunk's, written FROM it by `poseView.ts` at the points
- * something reads the drawing) is the client's VIEW of it; nothing here ever
- * writes one.
+ * shard or a chunk, composed off it by `poseView.ts` as our renderer draws it
+ * since X4.4c) is the client's VIEW of it; nothing here ever writes one.
  */
 export interface WorldBody {
   readonly id: BodyId;
@@ -287,9 +287,9 @@ export class PhysicsWorld {
    * false)`, call for call, and never asleep. `at` is `[px, py, pz, qx, qy,
    * qz, qw]` and it is the pose the plugin read off the node it was built on,
    * which was the node's ABSOLUTE pose (its world matrix computed, then
-   * decomposed) — so a client building one on a node hands in that read
-   * (`poseView.absolutePose`; the corpse pool, which has no node since X4.1b,
-   * hands in the park that read gave), and the body's `pose` starts as it. The shape,
+   * decomposed) — and no client has a node any more: each hands in the park
+   * that read gave (the corpse pool since X4.1b; the shards and the chunks,
+   * `poseView.parkedPose`, since X4.4c), and the body's `pose` starts as it. The shape,
    * the mass and the dampings are the client's, through `havok`, in the order
    * it always made them.
    */

@@ -131,25 +131,36 @@ number is a `-0` made `0`), every triangle reversed for Babylon's left-handed
 winding, and the bucket keyed off the bounding box's centre computed as Babylon
 computed it, because a 48 m patch's centre can land exactly on a block edge.
 
-**What a body is DRAWN as is its client's VIEW, written from the pose.**
-`src/systems/poseView.ts` is the one place the two meet: `absolutePose` is the
-plugin's read when a body is created on a node (its world matrix computed, so
-float32, then decomposed), `applyPose` is the plugin's sync write onto a node's
-raw `position` and `rotationQuaternion`, and `storePose`, `parkPose` and
-`drawPieces` are the placing, parking and per-burst drawing the clients would
-otherwise each spell out. Each client draws at the points
-something READS the drawing, which are the points the solver's per-substep sync
-used to leave the node standing:
+**What a body is DRAWN as is its client's VIEW, composed from the pose — and
+since `BABYLON_EXIT.md` X4.4c no client writes it onto anything.**
+`src/systems/poseView.ts` is where the two meet: `parkedPose` is the plugin's
+read when a body was created on a node standing parked (its world matrix
+computed, so float32, then decomposed — `[0, y, 0, 0, 0, 0, 1]` exactly, and
+every pooled body is created at it), `PosedPiece` and `writePosedDrawing` are a
+debris piece's drawing composed off its pose (`computeWorldMatrix`'s arithmetic
+on the pose's position and quaternion and the piece's scale, `src/math`, bit
+for bit), and `storePose` and `parkPose` are the placing and parking the
+clients would otherwise each spell out. Nothing lags the step, because the
+drawing reads the pose itself when the frame is drawn:
 
-| client | drawn onto | when |
+| client | drawn as | when the drawing reads the pose |
 | --- | --- | --- |
-| `RagdollSystem` | nothing: the rig's JOINT is posed off the bone's pose array itself (`Joint.pose`), and at a freeze off the slot's copy of it (`Bone.still`) | never — the pose is read at every compose of the joint, so the drawing cannot lag the step; `freeze` copies it before the park, and the sink lowers the copy |
-| `DebrisSystem` | the shard's mesh | when `burst` places it; last in `update` (`drawLive`), after the step and the sink; in `release` |
-| `BlastDebrisSystem` | the chunk's mesh | the same three places |
+| `RagdollSystem` | the rig's JOINT, posed off the bone's pose array itself (`Joint.pose`), and at a freeze off the slot's copy of it (`Bone.still`) | at every compose of the joint; `freeze` copies it before the park, and the sink lowers the copy |
+| `DebrisSystem` | a shard: an instance of its own kit in our renderer's debris draw (`render/PoolDraw.ts`), its vertices rewritten on every cut (`onCut`, `PoolDraw.rewrite`) | once a frame, as `Game.drawDebris` composes it after the cull |
+| `BlastDebrisSystem` | a chunk: an instance of its box's kit in the same draw, in its surface's paint | the same |
+
+Until X4.4c the two debris views wrote the pose onto a MESH — the plugin's sync
+write onto an unparented node's raw `position` and `rotationQuaternion`, when a
+burst placed a piece, last in the client's `update` and at a release — and
+Babylon drew that; every one of those writes followed whatever had moved the
+pose, so the pose as the frame is drawn IS what the mesh held
+(`plans/physics-ref/clients.mjs` digests each piece in the bytes its mesh gave,
+and its banks hold either side of the step).
 
 **Three readers outside a client read the drawing, and the order is what keeps
 them right**: `shadowFor` reads the corpse's torso joint, the death cam anchors
-on its chest joint, and the render draws all of it. All three come after
+on its chest joint, and the render draws all of it (the debris through
+`Game.drawDebris`). All three come after
 `Game.stepAftermath` (the engine, then its three clients' `update`s, with
 nothing between), so there is no point in a frame where a body has moved and
 its drawing has not. A new reader that runs between `physics.update` and the
@@ -158,9 +169,10 @@ faithfully and are wrong anyway**, both older than the port and both left
 alone by it: blast rubble is never on screen at all, and a glass shard far from
 the map's origin often is not (`FINDINGS.md` 58 — stale bounding spheres, a
 chunk's at the park and a shard's at the origin, where `cut` rebuilds them,
-that `WorldCulling` latches on), and a shard or a chunk does not
-actually sink — the sink lowers a pose that the next substep writes back over
-(`FINDINGS.md` 59).
+that Babylon's size gate latched on and our renderer's drawing keeps byte for
+byte since X4.4c, as each piece's GATE sphere, `poseView`), and a shard or a
+chunk does not actually sink — the sink lowers a pose that the next substep
+writes back over (`FINDINGS.md` 59).
 
 **`plans/physics-ref/` is the oracle and it grades two things.** `drop.mjs`
 drops sixty-four free boxes on every map and hashes where they come to rest —
@@ -169,7 +181,7 @@ rubble through the three real clients and hashes every live body through
 `HP_Body_GetQTransform` — the bodies — and, since the poses left the nodes, a
 digest of everything the three clients' views are drawn off (each corpse
 bone's pose in the bytes its proxy node gave until `BABYLON_EXIT.md` X4.1b,
-shard and chunk meshes, the stand-ins' rig roots and joints — ours since X4.1a,
+shard and chunk meshes — their pieces, in the bytes a mesh gave, since X4.4c — the stand-ins' rig roots and joints — ours since X4.1a,
 digested in the bytes a node gave, a posed joint naming the pose it is drawn
 off — raw local transforms bit for bit) at the end of every frame. It also hashes EVERY pooled body every frame, parked ones
 included, and fails any parked body that is not exactly at the park — a park
@@ -586,25 +598,27 @@ one or two pieces of every twelve landed, slid, and then sank through the road
 for the rest of the burst. The cost is a piece lying ~3 cm proud of what it
 landed on, which nothing about a dark plate on a dark road shows.
 
-**A shard is drawn straight onto its MESH, with no proxy node.** A ragdoll
-needed proxies while its joints were Babylon nodes posed through Euler channels
-(they are posed off the pose arrays since `BABYLON_EXIT.md` X4.1b); a shard is
-parented to nothing, posed by nobody and handed back to nothing, so the
-quaternion its view writes from Havok's pose is the only thing that ever
-orients it.
+**A shard is drawn straight off its body's POSE, with no node at all**
+(`BABYLON_EXIT.md` X4.4c; until then onto its own mesh, with no proxy). A
+ragdoll needed proxies while its joints were Babylon nodes posed through Euler
+channels (they are posed off the pose arrays since X4.1b); a shard is parented
+to nothing and posed by nobody, so the quaternion in Havok's pose is the only
+thing that ever orients it.
 
 **The outline is in the VERTICES, and the topology is fixed even though the
-outline is not.** The mesh was a unit box with `mesh.scaling` for a size, which
-the view makes safe — it writes position and orientation onto an unparented
-node and leaves scaling alone — but a scaling cannot express a
-polygon. So every shard mesh is an eight-cornered prism built once (the bound is
+outline is not.** The mesh was once a unit box with `mesh.scaling` for a size,
+which the view made safe — it wrote position and orientation onto an
+unparented node and left scaling alone, as the drawing composes a shard at a
+scale of 1 now — but a scaling cannot express a
+polygon. So every shard is an eight-cornered prism built once (the bound is
 exact: a convex quad clipped against four half-planes gains at most one corner
-per plane), and a burst rewrites its 48 vertices in a buffer the mesh already
-owns. A piece with fewer corners repeats its last one, which leaves the spare
+per plane), and a burst rewrites its 48 vertices in arrays the shard already
+owns, which our renderer's copy is rewritten from (`PoolDraw.rewrite`, as
+`updateVerticesData` wrote the mesh it was until X4.4c). A piece with fewer
+corners repeats its last one, which leaves the spare
 triangles degenerate — the same trick `GlassFx.collapse` takes a broken pane
 off the screen with. Each shard owns its own position and normal arrays rather
-than sharing a scratch pair, because Babylon keeps the array it was handed as
-the mesh's CPU-side copy. The body is still sized by its SHAPE, cached by
+than sharing a scratch pair, so each keeps the piece it was cut into. The body is still sized by its SHAPE, cached by
 rounded extents, and the step is 0.1 m: a cut makes every piece a different size
 where the grid made twelve of one, so the rounding is coarse on purpose against
 a cache that would otherwise grow all round.
@@ -635,13 +649,14 @@ Raise either and raise the other knowingly.
 constructor and `attachBodies` hung rigid bodies on them from a `physicsStarted`
 callback, so a window broken before the WASM landed still threw shards on a
 scripted ballistic arc with the terrain as a floor. The engine is up before this
-system is constructed now, so `buildPool` makes the mesh and its body together
+system is constructed now, so `buildPool` makes the shard and its body together
 and a shard has never existed without one. It is still not built on the frame a
-window breaks: 48 meshes, their GL buffers and their shapes are not a cost to pay
-on the frame somebody pulled a trigger, which is `DeathCam`'s reason for
-building its stand-in rig at `startRound`. What a burst DOES pay for on that
-frame is a `cut` per piece — a rewrite of vertices the mesh already has, and
-never a geometry, an index buffer or, once a size has been seen, a shape.
+window breaks: 48 shards' arrays, our renderer's copy of them and their shapes
+are not a cost to pay on the frame somebody pulled a trigger, which is
+`DeathCam`'s reason for building its stand-in rig at `startRound`. What a burst
+DOES pay for on that frame is a `cut` per piece — a rewrite of vertices the
+shard already has, and never a geometry, an index buffer or, once a size has
+been seen, a shape.
 
 ## The death cam
 

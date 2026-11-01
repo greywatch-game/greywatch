@@ -2505,7 +2505,7 @@ same commit.
 
 ---
 
-## 58. Blast rubble is never drawn, and a glass shard far from the map's origin often is not: each pool's world bounds are left where Babylon last computed them, so `WorldCulling` drops the pieces for good
+## 58. Blast rubble is never drawn, and a glass shard far from the map's origin often is not: each pool's world bounds are left where Babylon last computed them, so the size gate drops the pieces for good
 
 **Status:** open, and pre-existing — both pools throw, simulate and park their
 pieces correctly; the size gate then measures them from the wrong place. Found
@@ -2514,9 +2514,30 @@ identically on the commit before X2.4 started (fb90b7d); deliberately not fixed
 during X2.4, whose bar was that nothing on screen moves. C5 took the poses off
 the meshes into arrays and its view writes exactly the nodes the solver's sync
 used to (`plans/physics-ref/clients.mjs`'s node digest), so it left this as it
-found it.
+found it. **X4.4c moved both pools onto our renderer and KEPT it, byte for
+byte** (its bar too was that nothing moves): there is no mesh any more, and
+each piece carries the sphere Babylon's gate would have read as its GATE
+sphere (`systems/poseView.ts`' `PosedPiece`) — a chunk's built at its park,
+a shard's rebuilt under the identity at every cut, refreshed to the frame's
+world only when the gate keeps it — which `Game.drawDebris` asks
+`WorldCulling.keepsSphere` of. X4.4c's order probe (420 scripted frames,
+`BABYLON_EXIT.md` has the note) found the same pieces drawn on every frame as
+Babylon drew, no chunk on either side. **The bank's `fx-blast-*` rows DO show
+rubble, and always did, and that is the harness and not the game**:
+`waitUntilDrawn` asks `scene.isReady()`, and `Mesh.isReady(true)` COMPUTES
+every mesh's world, a chunk's included, which refreshed its bounds and let it
+through the gate — nothing in the game asks the scene if it is ready (measured
+at X4.4c: the chunks' only world compute in a bank row came from there). Since
+X4.4c the harness makes the same refresh of every debris piece's gate sphere
+itself, so those rows stay what they were banked as; the fix below would make
+a live round match them. **The fix is now one line in
+`writePosedDrawing`**: gate on `p.sphere` (this frame's) instead of `p.gate`
+— the pieces' rule since the owner's decision of 2026-11-01 on finding 67 —
+and delete the gate sphere; it is a picture change of its own (every rubble
+burst and, on Cinderhaven, half the glass start drawing), the owner's call.
 
-**The mechanism is one, arriving at the two pools from two directions.**
+**The mechanism is one, arriving at the two pools from two directions** (as
+Babylon had it, which the gate sphere now restates).
 `WorldCulling.offer`'s size gate reads a mesh's WORLD bounding sphere, which
 Babylon refreshes only when it computes that mesh's world matrix — inside the
 active-mesh pass, for CANDIDATES. A piece the gate drops is never a candidate,
@@ -2567,19 +2588,14 @@ nothing else, as the plugin's sync did.
   drops beyond ~216 m): 12 of 12 — which is why C5's glass burst there drew in
   full, and why this first read as a rubble-only bug.
 
-**What would settle it:** decide how a pooled mesh that teleports owes its
-bounds, once, for BOTH pools — a `computeWorldMatrix(true)` on each piece after
-the burst places it (`DebrisSystem.burst`, after `cut` and `applyPose`;
-`BlastDebrisSystem.burst`, after `applyPose`) is the smallest fix, enough for
-the shards; the rubble, born a kilometre off, may want it in `drawLive` too, or
-a chunk that falls under the gate at its new distance latches there. Filing
-the pools with `WorldCulling` the way a body's rig is (measured once, off a
-root, forced) is the general one. Either makes debris DRAW — every rubble burst
-and, on Cinderhaven, half the glass — which is a change to the picture: re-take
-`bank.mjs`'s `blast` row if it moves and say why, and look at a frag and a shell
-on earth and on stone and at a Cinderhaven shopfront going in, since the
-rubble's look — `RUBBLE`, the sizes, the 1.6x cap — has never been seen in a
-round.
+**What would settle it:** since X4.4c, the one-line fix above (every piece
+gated on the sphere it is drawn with, this frame's). It makes debris DRAW —
+every rubble burst and, on Cinderhaven, half the glass — which is a change to
+the picture: re-take `bank.mjs`'s `blast` and `fx-blast-*` rows (they bank
+rubble in the air and at rest that is drawn nowhere today) and say why, and
+look at a frag and a shell on earth and on stone and at a Cinderhaven
+shopfront going in, since the rubble's look — `RUBBLE`, the sizes, the 1.6x
+cap — has never been seen in a round.
 
 ---
 

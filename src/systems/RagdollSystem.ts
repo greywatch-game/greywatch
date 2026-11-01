@@ -147,7 +147,9 @@ const PARKED_Y = -1000;
 /**
  * That place as a pose: under the map, unturned (`Quaternion.Identity()`). Also
  * where every pooled body is CREATED — the pose the proxy node it was built on
- * read back as (`absolutePose`), until X4.1b took the proxies.
+ * read back as (`absolutePose`, gone since X4.4c), until X4.1b took the
+ * proxies — the same park the shards and the chunks are created at
+ * (`poseView.parkedPose`).
  */
 const PARKED_POSE = [0, PARKED_Y, 0, 0, 0, 0, 1];
 

@@ -6826,7 +6826,7 @@ X4.3d's brief, word for word:
     run-to-run noise (1-3/255); `gate.mjs` and `shaders.mjs` clean on
     seven; typecheck, build, corecheck and `parity` pass.
 
-### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (63a338a, review fixes after it), X4.4b **LANDED** (9470686)
+### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (63a338a, review fixes after it), X4.4b **LANDED** (9470686), X4.4c **LANDED** (HASH)
 
 X4.4a's brief, word for word:
 
@@ -7331,3 +7331,150 @@ X4.4b's brief, word for word:
   - **A profiler capture** (`?profile`, a live round): report version 26,
     `pools: { drawn: 3, masked: 1, instances: 2, marks: 19 }`, `build`
     filled.
+
+X4.4c's brief, word for word:
+
+- **X4.4c — the blast and the posed pieces are ours (no picture change).**
+  `BlastFx`'s billows and its sparks-and-trails mesh become instanced draws
+  of ours on `BlastShader`'s WGSL (the bounds it sets by hand become the
+  cull's input, and the glow's distance fade reads the same centre); the
+  rubble chunks and the glass shards are drawn off their `pose` arrays
+  straight after the physics step, as a corpse's joints are (X4.1). **The
+  scorch stays Babylon's** (decided 2026-11-01, "Find out first" above): it
+  is blended in Babylon's transparent sort among the panes, so it moves with
+  the glazing at X4.6 — and its decal of ours reproducing
+  `StandardMaterial`'s output (or a recorded picture change if that cannot
+  be made exact) is X4.6's. **The scorch on the FLOOR draws** — X4.4a's
+  first note said it drew nothing, and its review measured otherwise (each
+  mark hidden and shown in the banked frames): a black decal at 0.4 is a
+  proportional darkening, faint on a dark or fire-lit floor, whole under
+  `fx-molotov`'s flames, and mostly behind the book stall in the ground
+  blasts' rows. **Oracle:** the
+  bank's blast rows at every age byte-identical; `kit:hash` unmoved; a round
+  with blasts on both surfaces and panes broken.
+
+**X4.4c landed** (HASH; 2026-11-01; no picture change).
+- **What moved.** Every blast billow — each batch `BlastFx` poses, one per
+  blast slot and one the sparks and the burning fragments' trails share — is
+  drawn by our renderer (`render/BlastDraw.ts`), and every glass shard
+  (`DebrisSystem`) and rubble chunk (`BlastDebrisSystem`) too, straight off
+  its body's pose (`systems/poseView.ts`, a third `PoolDraw`, the DEBRIS).
+  Babylon is made no blast mesh, no `ShaderMaterial` and no mask twin for it,
+  and no shard or chunk mesh; `poseView`'s `absolutePose`, `applyPose` and
+  `drawPieces` (the writes onto meshes) are gone. The scorch stays a Babylon
+  mesh, as decided (2026-11-01), until X4.6 — a pool of its own, so the
+  rubble leaving while it stays splits no pool.
+- **Found first, on the parent** (`x44c/order.mjs`: Coldharbour, 420 frames
+  on a fixed script — two blasts on the quay's deck and on the floor, a
+  power-2, a molotov's ignition, two more; pane 0 and pane 1 bursting by the
+  square with a blast in the street; then ~150 m out two blasts, a power-2
+  and pane 21, the farthest from the origin at 171.7 m, bursting twice; the
+  camera moving throughout — each frame Babylon's `Mesh.render` calls in
+  group 0 of the main pass and in the glow's mask):
+  - the billows (`blast0..3`, `blastSmall`) and the shards are in group 0's
+    OPAQUE list, sorted front to back with everything else in it (the scene's
+    `setRenderingOrder`: `eyeDistanceSq` off the bounding sphere's centre),
+    never blended; the billows again in the mask, in the ACTIVE list's order
+    (slot 0..3, then the small batch — the mask's queue sorts by material and
+    they wear one);
+  - a billow is EMISSIVE, so `WorldCulling`'s size gate never dropped one,
+    and Babylon's frustum test of a batch is the mesh's
+    `CULLINGSTRATEGY_BOUNDINGSPHERE_ONLY` on the sphere `BillowBatch` set by
+    hand (`reConstruct` of the billows' extent);
+  - **no rubble chunk was drawn on any frame** and a shard far from the
+    origin is gated on a stale sphere — `FINDINGS.md` 58, as stated: a
+    chunk's bounds were computed once at its park, a kilometre under the map;
+    a shard's rebuilt under the identity at every cut, so measured from the
+    origin once a burst.
+- **The billows** (`render/blastProgram.ts`, `shaders/wgsl/blast.ts`). The
+  material's two WGSL stages as plain bodies, statement for statement, an
+  instance's matrix, `billow` and `warmth` read through a private block its
+  prelude fills from storage (the thin instance's `world0..3` and two
+  attributes until now), times the block's `world`, the identity the mesh was
+  frozen at, kept so the product is the one Babylon's stage made; the bloom
+  per instance through a flat `vGlow` (the mask material's `glowColor`). The
+  light, eye, fog and opaque alpha are the FRAME's (`render/frame.ts`) — the
+  very fields `CelMaterialFactory` pushed onto the material — and the rest
+  is `BlastPaint`'s block (`BlastShader.ts`, no material now: the drawing,
+  the five inks, the soot, the dust, the clock), copied every frame drawn.
+  The two icospheres (8 and 4 subdivisions) are uploaded once off
+  `CreateIcoSphereVertexData` with the options `CreateIcoSphere` used. A
+  batch is ONE draw (`pass.draw(shape's index count, its count, shape's first
+  index, its first instance)`), so its instances go down in push order, as
+  the thin-instanced mesh's did. `Game.blastPull` (inside the render) takes
+  each visible batch through Babylon's sphere frustum test (`inFrustum`, this
+  render's planes), orders the draws as the queue did (nearest centre first,
+  the batches' own order breaking a tie, stable), the mask's in the active
+  list's order, each batch's bloom `GlowRules.colour` at its centre (the
+  fire's body, alpha 1). The draws hang at `"beforeAlphaTest"` AHEAD of the
+  pieces, the mask after the pieces'. The one vertex module serves both
+  passes (the LEQUAL tie).
+- **The debris.** A shard is a kit of its own, its 48 vertices REWRITTEN on
+  every cut (`DebrisSystem.onCut` → `PoolDraw.rewrite`, the draw built
+  `dynamic`), a chunk its box (`CreateBoxVertexData`, the sizes still drawn
+  off the seeded stream at construction) in each of two paints, the stone
+  and the map's earth — the palette of the three `get` materials they wore,
+  the earth painted per map (`CelMaterialFactory.repaintPool`); the
+  materials are still asked of the factory where the meshes asked them, so
+  its order is unmoved. `Game.drawDebris` composes every switched-on piece's
+  world off its pose and scale (`computeWorldMatrix`'s arithmetic in
+  `src/math`) — the pose the meshes were written from, every write having
+  followed whatever moved it — and gates it on the piece's GATE sphere: the
+  world bounds as of the last frame Babylon would have COMPUTED the mesh
+  (only as a candidate the gate let through), its creation park before that,
+  the identity after a cut. Kept byte for byte: the latch is the owner's to
+  undo (`FINDINGS.md` 58 says how, one line; a decisions row asks). The
+  render pulls the instances front to back by this frame's sphere, the
+  meshes' order breaking a tie (`Game.debrisPull`). Every pooled body is
+  created at `poseView.parkedPose` — `[0, -1000, 0, 0, 0, 0, 1]`, what the
+  creation read returned (measured on the parent) — so Havok is handed what
+  it was.
+- **The bank's rubble is the HARNESS's.** The first check of the step had
+  six `fx-blast-*` rows short of one chunk each (0.06-0.76% of pixels): the
+  parent DRAWS rubble in those rows. Hooked on the parent, the chunks' only
+  world compute in a row came from `waitUntilDrawn`'s `scene.isReady()` —
+  `Mesh.isReady(true)` computes every mesh's world, which refreshed their
+  bounds and let them through the gate. Nothing in the game asks the scene if
+  it is ready, which is why a live round never draws one. `waitUntilDrawn`
+  now makes the same refresh of every debris piece's gate sphere before it
+  asks (`plans/webgpu-ref/README.md`), and the rows are what they were
+  banked as.
+- **The oracles' tools.** `pipelines.mjs` counts a shard as our renderer
+  is handed it (its "shard draws" are instances now, not Babylon's
+  `Mesh.render`s); the harness reaches `GrenadeFx.blasts` (`fx` before);
+  `plans/physics-ref/clients.mjs` digests each shard and chunk in the bytes
+  its mesh gave (switch, pose, a zero Euler, the pose's quaternion, scale).
+- **Pipelines.** Three asked at `Game`'s construction — the billow and its
+  mask, the debris cel — so the building card's warm-up waits for them.
+  `BlastFx.warm` still poses its billows, drawn through ours, until X4.4e;
+  every pool with no warm pose is ours now, by construction.
+- **Profiler.** Report version 27: `pools.billows`, `pools.debris`, the
+  blast's and the debris's draws in `pools.drawn`/`masked`; the viewer prints
+  them.
+- **The empty-group seam**: not made reachable — the sky holds group 0;
+  neither round raised the DEV warning.
+- **Measured.**
+  - **The bank**: `--check --keep` at 558dbdf (the worktree, its `ref/` the
+    main tree's) and at the step: **112 of 112 kept frames byte-equal**
+    (`comparePngs`), every `fx` row within floor (78 rows in all), the same 34 stale rows
+    failing with the same means.
+  - **The order probe** (`x44c/order.mjs`, `ordcmp.mjs`): main-pass batch
+    draws (name, count, order) equal on **420 of 420 frames** (358 with a
+    batch), the mask's on 420 of 420, the debris order on 420 of 420 (295
+    with a piece; 2,771 handed over outside the frustum, excluded, all
+    ours), no piece lost or added, no chunk on either side.
+  - **`pipelines.mjs coldharbour --round`**: zero of Babylon's, zero of ours
+    and zero modules in play in **five of five** (83-91 rounds, 2 throws,
+    4-5 blasts, a fire, 2 rockets, 4 mine tables, pane 21 broken at
+    27.3-43.5 m, 6,516-9,336 shard instances handed over); the first install
+    24 of Babylon's (26 at X4.4b), 23 of ours, 49 modules; the second none.
+  - **`kit:hash`** 3,722 of 3,722 builds identical; **`--models`** 244 of
+    244.
+  - `census --against` the BEFORE: every row with no billow, shard or chunk in frame equal on all seven maps, Coldharbour 2639 → 2561 on those rows alone (`fx-blast-*` -8 to -12, `fx-shards` -12, `blast` and the power-2 row -2, `fx-molotov` -1).
+  - `plans/physics-ref/clients.mjs --check` passes at the parent and at the step on all three of its maps — the engine's hash, the NODE digest (318 nodes × 601 frames, each shard and chunk now digested in the bytes its mesh gave) and every pooled body, identical.
+  - **`gate`** all seven maps clean; **`shaders`** every shader clean on
+    seven; **`parity`** every map agrees; typecheck, build
+    (`check-babylon-free`, `check-proving`) and corecheck pass.
+  - An offline round on Coldharbour (`x44c/round.mjs`: X4.4b's script with the AT item's presses spread over its draw and load — the launcher never fired under the old two 4-frame presses — and two panes broken a life): six lives, every primary, frags and molotovs, the launcher and the mine; the authority's `explode` 10 and `blaze` 6; billows drawn on 131-293 frames a life (up to 409 a frame, 4 draws and 4 mask draws), rockets in flight in every launcher life (8-14 piece-frames), 1,680-1,704 shard instance-frames a life and no chunk; 0 errors, the seam warning never raised.
+  - A server's round (`x44c/net2.mjs`, `PORT=8097`): B threw two frags and fired two rockets; on A the authority's `explode` 4, billows drawn on 758 frames (up to 192, 3 draws, 3 mask draws), the wire's frags and rockets drawn (203 and 418 piece-frames); 0 errors on either page.
+  - A profiler capture at report version 27 with a blast and a burst live: `pools: { drawn: 6, masked: 3, instances: 7, marks: 9, billows: 42, debris: 12 }`.

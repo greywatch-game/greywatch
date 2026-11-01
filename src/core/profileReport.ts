@@ -486,17 +486,25 @@ export interface ViewFacts {
  * draws of the pieces (a RANK of every piece each, its cel segments and its
  * unlit ones apart) and of the bullet marks (one draw for all the marks),
  * `masked` the glow mask's, `instances` the pieces drawn — tracers, cases,
- * thrown and laid bodies, rockets — and `marks` the marks. None is in
+ * thrown and laid bodies, rockets — and `marks` the marks. Since report
+ * version 27 (`BABYLON_EXIT.md` X4.4c) `drawn` and `masked` also count the
+ * blast's draws (a batch of billows each, `render/BlastDraw.ts`) and the
+ * debris's (one rank: every glass shard and rubble chunk drawn), `billows`
+ * the billows drawn and `debris` the shards and chunks. None is in
  * `counters.drawCalls`, which since X4.4b counts no tracer, mark, case,
- * thrown or laid body: a capture from before it counted a draw a mesh there.
- * The sparks and the dust discs are still Babylon's, and still counted
- * there.
+ * thrown or laid body, and since X4.4c no billow, shard or chunk: a capture
+ * from before either counted a draw a mesh there. The sparks, the dust discs
+ * and the scorch are still Babylon's, and still counted there.
  */
 export interface PoolFacts {
   drawn: number;
   masked: number;
   instances: number;
   marks: number;
+  /** Absent before report version 27. */
+  billows?: number;
+  /** Absent before report version 27. */
+  debris?: number;
 }
 
 export interface ProfileGraphics {
@@ -1271,7 +1279,11 @@ export function buildReport(
     // body is in `counters.drawCalls` (Babylon's), so a v25 capture from an
     // X4.4b build shows their draws gone from it and nothing in their place.
     // Nothing else changed meaning.
-    version: 26,
+    // 27: `pools.billows` and `pools.debris`, and the blast's and the
+    // debris's draws in `pools.drawn` and `pools.masked`: since
+    // `BABYLON_EXIT.md` X4.4c no billow, glass shard or rubble chunk is in
+    // `counters.drawCalls`. Nothing else changed meaning.
+    version: 27,
     build: buildStamp(),
     takenAt: new Date().toISOString(),
     reason,

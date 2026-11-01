@@ -116,6 +116,8 @@ import { BodyDraw } from "../render/BodyDraw";
 import { HullDraw } from "../render/HullDraw";
 import { ViewDraw, type ViewDrawSegment } from "../render/ViewDraw";
 import { PoolDraw, type PoolKit } from "../render/PoolDraw";
+import { BlastDraw } from "../render/BlastDraw";
+import type { CelRecipe } from "../render/celMaterial";
 import { HULL_CHARRED } from "../render/hullProgram";
 import { BodyShadowMap } from "../render/BodyShadowMap";
 import { LampAtlas } from "../render/LampAtlas";
@@ -209,8 +211,9 @@ import { composeHull, hullPalette, writeHullDrawing, type HullKit, type SphereGa
 import { writePieceDrawing, type Piece, type PieceGate, type PieceKit, type PieceKits } from "../entities/pieces";
 import { MARK_DEPTH_UNITS, MARK_PAINTS, MARK_SHAPES } from "../systems/BulletMarks";
 import { GrassSystem } from "../systems/GrassSystem";
-import { BlastDebrisSystem, type DebrisGround } from "../systems/BlastDebrisSystem";
-import { DebrisSystem } from "../systems/DebrisSystem";
+import { BlastDebrisSystem, HARD_TINT, type DebrisGround } from "../systems/BlastDebrisSystem";
+import { DebrisSystem, SHARD_COLOR } from "../systems/DebrisSystem";
+import { writePosedDrawing, type PosedPiece } from "../systems/poseView";
 import { GlassSystem } from "../systems/GlassSystem";
 import { GlassFx } from "../systems/GlassFx";
 import { AntiTankFx } from "../systems/AntiTankFx";
@@ -910,6 +913,40 @@ export class Game {
    */
   private markDrawn = new Int32Array(0);
   private markKeys = new Float64Array(0);
+  /**
+   * The blast's BILLOWS as our renderer draws them (`BABYLON_EXIT.md` X4.4c):
+   * every batch `BlastFx` poses — a slot each, and the sparks' and trails'
+   * — one draw, its billows instances of one of two icospheres, into the main
+   * pass and the glow's mask, fed by `drawBlasts` and pulled inside the
+   * render (`blastPull`); and the DEBRIS pools' (`debrisDraw`, fed by
+   * `drawDebris`, pulled by `debrisPull`): every glass shard and rubble
+   * chunk, posed straight off its body's pose. Both drawn while a ROUND's map
+   * is installed, their pipelines asked here once for the session, and one
+   * that cannot be built is the round's failure, as the pieces' are. The
+   * SCORCH is no part of either: it stays a Babylon mesh, fading among the
+   * panes, until X4.6 (the owner's decision of 2026-11-01).
+   */
+  private readonly blastDraw: BlastDraw;
+  private readonly debrisDraw: PoolDraw;
+  /** What `bloomColour` reads as a batch of billows' material: the fire's body, alpha 1. */
+  private blastBloomOf: { readonly emissiveColor: Color3; readonly alpha: number } | null = null;
+  private readonly blastBloom = new Color4();
+  /** `blastPull`'s scratch: the drawn batches (indices into `BlastFx.batches`) and their sort keys. */
+  private blastDrawn = new Int32Array(0);
+  private blastKeys = new Float64Array(0);
+  /** The debris draw's cel recipe, whose third slot is the map's EARTH, painted per map (`installMap`). */
+  private debrisRecipe: CelRecipe | null = null;
+  /**
+   * This frame's drawn debris, in drawing order: each one's piece (shards
+   * first, then chunks, by index in `debrisPieces`), and the sort's keys —
+   * front to back once `debrisPull` has sorted them inside the render.
+   */
+  private debrisDrawn = new Int32Array(0);
+  private debrisKeys = new Float64Array(0);
+  /** Every debris piece our renderer may draw — the shards, then the chunks — with each one's kit word (a chunk's is its paint's, by burst). */
+  private debrisPieces: readonly PosedPiece[] = [];
+  /** The size gate a piece of debris is drawn under: `WorldCulling`'s, this frame (`drawDebris`). */
+  private readonly keepsDebris: PieceGate = (x, y, z, radius) => this.culling.keepsSphere(x, y, z, radius);
   /**
    * The irradiance volume — bounce light, sky occlusion and point lights that
    * stop at walls (`systems/GiVolume.ts`). Built beside the two shadow maps and
@@ -2107,7 +2144,7 @@ export class Game {
     // ever has to ask whether physics has arrived yet.
     this.physics = new PhysicsWorld(havok);
     this.ragdolls = new RagdollSystem(this.physics);
-    this.debris = new DebrisSystem(this.scene, this.mats, this.physics);
+    this.debris = new DebrisSystem(this.mats, this.physics);
     this.blastDebris = new BlastDebrisSystem(this.scene, this.mats, this.physics);
     this.glass = new GlassSystem();
     this.glassFx = new GlassFx();
@@ -2243,13 +2280,76 @@ export class Game {
     );
     this.markDrawn = new Int32Array(this.markDraw.capacity);
     this.markKeys = new Float64Array(this.markDraw.capacity);
-    // …and what both drew (`ProfileReport.pools`): Babylon's counter has
-    // counted no tracer, mark, thrown or laid body, nor any case, since X4.4b.
+    // The blast's billows (`BABYLON_EXIT.md` X4.4c): the two icospheres
+    // uploaded once, every batch `BlastFx` holds a draw, its paint the
+    // factory's (`getBlast`).
+    const blasts = this.grenadeFx.blasts;
+    const blastPaint = this.mats.getBlast();
+    this.blastBloomOf = { emissiveColor: blastPaint.emissiveColor, alpha: blastPaint.alpha };
+    this.blastDraw = new BlastDraw(
+      this.renderer,
+      blasts.shapes,
+      blastPaint,
+      blasts.batches.reduce((n, b) => n + b.cap, 0),
+      blasts.batches.length,
+      (into, glowOn) => this.blastPull(into, glowOn),
+    );
+    this.blastDrawn = new Int32Array(blasts.batches.length);
+    this.blastKeys = new Float64Array(blasts.batches.length);
+    // The debris (X4.4c): a kit a SHARD (its vertices rewritten on every cut,
+    // so the draw is built dynamic) and a kit a CHUNK in each of its two
+    // paints — the stone and the map's earth, a slot written per map
+    // (`installMap`) — at the cel palette of the three `get` materials they
+    // wore. A shard's kit word is its index; a chunk's is
+    // `shards + chunk * 2 + (earth ? 1 : 0)`.
+    const shardKits: PoolKit[] = this.debris.pieces.map(() => ({
+      segments: [
+        {
+          positions: new Float32Array(this.debris.shardVertices * 3),
+          normals: new Float32Array(this.debris.shardVertices * 3),
+          colors: null,
+          uvs: null,
+          indices: this.debris.shardIndices,
+          slot: 1,
+          unlit: false,
+        },
+      ],
+    }));
+    const chunkKits: PoolKit[] = [];
+    for (const box of this.blastDebris.chunkBoxes) {
+      for (const slot of [2, 3]) {
+        chunkKits.push({
+          segments: [{ positions: box.positions, normals: box.normals, colors: null, uvs: box.uvs, indices: box.indices, slot, unlit: false }],
+        });
+      }
+    }
+    const debrisCel = this.mats.poolCelRecipe([Color3.FromHexString(SHARD_COLOR), Color3.FromHexString(HARD_TINT), Color3.Black()]);
+    this.debrisRecipe = debrisCel;
+    this.debrisPieces = [...this.debris.pieces, ...this.blastDebris.pieces];
+    this.debrisDraw = new PoolDraw(
+      this.renderer,
+      "debris",
+      [...shardKits, ...chunkKits],
+      { cel: debrisCel, unlit: null },
+      this.debrisPieces.length,
+      (order, _glow, n) => this.debrisPull(order, n),
+      true,
+    );
+    // A cut writes its shard's vertices over our copy, as it wrote them onto
+    // the mesh it was (`updateVerticesData`).
+    this.debris.onCut = (shard, positions, normals) => this.debrisDraw.rewrite(shard, 0, positions, normals);
+    this.debrisDrawn = new Int32Array(this.debrisDraw.capacity);
+    this.debrisKeys = new Float64Array(this.debrisDraw.capacity);
+    // …and what all four drew (`ProfileReport.pools`): Babylon's counter has
+    // counted no tracer, mark, thrown or laid body, nor any case, since X4.4b,
+    // nor any billow, shard or chunk since X4.4c.
     this.prof.setPools(() => ({
-      drawn: this.pieceDraw.stats.drawn + this.markDraw.stats.drawn,
-      masked: this.pieceDraw.stats.masked,
+      drawn: this.pieceDraw.stats.drawn + this.markDraw.stats.drawn + this.blastDraw.stats.drawn + this.debrisDraw.stats.drawn,
+      masked: this.pieceDraw.stats.masked + this.blastDraw.stats.masked,
       instances: this.pieceDraw.stats.instances,
       marks: this.markDraw.stats.instances,
+      billows: this.blastDraw.stats.instances,
+      debris: this.debrisDraw.stats.instances,
     }));
     // The sky hangs behind every state (menu included), so it is dressed
     // once here and re-applied per round alongside the environment.
@@ -4300,6 +4400,10 @@ export class Game {
     // where every pool already put them this frame, handed to our renderer.
     this.drawPieces();
     this.drawMarks();
+    // …and the blast's billows and the debris (X4.4c): the batches `BlastFx`
+    // posed, and every shard and chunk off its body's pose.
+    this.drawBlasts();
+    this.drawDebris();
     this.scene.render();
     this.prof.end(P.render);
     if (warming) this.unstageWarmFrame();
@@ -5176,6 +5280,8 @@ export class Game {
     this.bodyDraw.uninstall();
     this.pieceDraw.uninstall();
     this.markDraw.uninstall();
+    this.blastDraw.uninstall();
+    this.debrisDraw.uninstall();
     // The weapon stays drawn — the kit screen covers the menu — but a failure
     // of it with no round standing is the console's (X4.3c).
     this.viewDraw.onFailed((reason) => console.error(`[view] the weapon cannot be drawn — ${reason}`));
@@ -5392,8 +5498,15 @@ export class Game {
     // in Babylon's opaque queue, which drew before every draw of ours at the
     // one point all of them use — so a mark still goes down before the wall
     // it is biased off. An editor build fires nothing.
+    // The blast's billows and the debris on the same terms (X4.4c), the
+    // billows first: every one of them was in that queue too, so each goes
+    // down ahead of everything else of ours at that point — the order among
+    // the four differing from the queue's front-to-back interleave only
+    // where two of them tie, the bodies' accepted price.
+    if (!editor) this.blastDraw.install((reason) => this.worldFailed(reason, owner));
     if (!editor) this.pieceDraw.install((reason) => this.worldFailed(reason, owner));
     if (!editor) this.markDraw.install((reason) => this.worldFailed(reason, owner));
+    if (!editor) this.debrisDraw.install((reason) => this.worldFailed(reason, owner));
     if (!editor) this.hullDraw.install((reason) => this.worldFailed(reason, owner));
     if (!editor) this.bodyDraw.install((reason) => this.worldFailed(reason, owner));
     // The weapon is drawn for the SESSION (X4.3c), so this hands it only whom
@@ -5421,6 +5534,10 @@ export class Game {
     // …and the pieces' unlit parts after the visors, where Babylon's mask
     // drew the pools' meshes: after everything first in that pass.
     if (!editor) this.pieceDraw.installMask();
+    // …and the billows' bloom after the pieces' (X4.4c): Babylon's mask drew
+    // their meshes after every draw of ours there. (No shard or chunk is
+    // emissive: the debris has no mask.)
+    if (!editor) this.blastDraw.installMask();
     // How hard the grade is pushed is the map's; whether it runs at all stays
     // the player's (`applySettings`). A vignette that reads as dread over a
     // night village reads as a lens fault over a bright one.
@@ -5528,6 +5645,11 @@ export class Game {
     // district turn up different ground. (The scorch needs no telling — it
     // multiplies the floor rather than painting a colour on it.)
     this.blastDebris.setEnvironment(environment);
+    // …and our renderer's copy of that earth (X4.4c): the debris palette's
+    // third slot, as the `get` material the chunks wore held it.
+    if (this.debrisRecipe && this.blastDebris.earth) {
+      this.mats.repaintPool(this.debrisRecipe, 3, Color3.FromHexString(this.blastDebris.earth));
+    }
     // The static world corpses and shards land on. Same reason the grenades are
     // cleared above: a physics world still holding shapes built from the map
     // that was just disposed is geometry that no longer exists, and in the
@@ -6510,6 +6632,188 @@ export class Game {
       const slot = slots[drawn[k]];
       draw.matrices.set(slot.world.m, k * 16);
       draw.kits[k] = slot.shape * paints + slot.paint;
+      order[k] = 0;
+    }
+  }
+
+  /**
+   * Hands our renderer this frame's blast BILLOWS (`BABYLON_EXIT.md` X4.4c):
+   * whether any batch `BlastFx` posed holds one — a batch is drawn exactly
+   * while its mesh was visible — and whether the glow may draw them, which
+   * `GlowRules.admits` asked of every mesh (`glowAdmits`; a billow is never
+   * `noGlow`). The batches themselves are read inside the render
+   * (`blastPull`), where the camera and the frustum are this frame's. Once a
+   * frame, beside `drawPieces`.
+   */
+  private drawBlasts(): void {
+    const draw = this.blastDraw;
+    if (!draw.installed) return;
+    const batches = this.grenadeFx.blasts.batches;
+    for (let i = 0; i < batches.length; i++) {
+      if (batches[i].visible) {
+        draw.commit(this.glowAdmits());
+        return;
+      }
+    }
+  }
+
+  /**
+   * What our renderer PULLS inside the render for this frame's billows
+   * (`drawBlasts`), where the render has placed the camera — what Babylon
+   * did with each batch's mesh, step for step: a batch is drawn when it is
+   * visible and its sphere (`BillowBatch.centre`/`radius`, the bounds it set
+   * by hand) passes the frustum test of the mesh's culling strategy, the
+   * sphere alone (`inFrustum`, off this render's planes, none while the
+   * scene skips clipping) — a billow is emissive, so the size gate never
+   * dropped one; the main pass's draws in group 0's opaque order, nearest
+   * first by `eyeDistanceSq` off `globalPosition`, the batches' own order
+   * (their meshes', the active list's) breaking a tie, stable; each draw its
+   * batch's instances in the order they were pushed; and, with `glowOn`, the
+   * mask's draws in the active list's order (the mask's queue sorted them by
+   * material, and they wore one) — each batch's bloom `GlowRules.colour` as
+   * `GlowPass` asked it of the mesh: the fire's body faded by the fog at its
+   * sphere's centre.
+   */
+  private blastPull(into: BlastDraw, glowOn: boolean): void {
+    const eye = this.cameraSys.camera.globalPosition;
+    const planes = this.scene.skipFrustumClipping ? null : this.scene.frustumPlanes;
+    const batches = this.grenadeFx.blasts.batches;
+    const drawn = this.blastDrawn;
+    const keys = this.blastKeys;
+    // The active list: every visible batch in the frustum, in order.
+    let n = 0;
+    for (let i = 0; i < batches.length; i++) {
+      const b = batches[i];
+      if (!b.visible || b.count === 0) continue;
+      const c = b.centre;
+      if (planes && !inFrustum(c.x, c.y, c.z, b.radius, planes)) continue;
+      into.maskOrder[n] = i;
+      const dx = c.x - eye.x;
+      const dy = c.y - eye.y;
+      const dz = c.z - eye.z;
+      const key = dx * dx + dy * dy + dz * dz;
+      // A stable insertion sort: a batch moves ahead only of one strictly
+      // farther.
+      let r = n;
+      while (r > 0 && keys[r - 1] > key) {
+        keys[r] = keys[r - 1];
+        drawn[r] = drawn[r - 1];
+        r--;
+      }
+      keys[r] = key;
+      drawn[r] = i;
+      n++;
+    }
+    let at = 0;
+    const material = this.blastBloomOf;
+    for (let d = 0; d < n; d++) {
+      const b = batches[drawn[d]];
+      const count = Math.min(b.count, into.capacity - at);
+      into.matrices.set(b.matrices.subarray(0, count * 16), at * 16);
+      into.billows.set(b.shapes.subarray(0, count * 4), at * 4);
+      into.warmth.set(b.warmth.subarray(0, count), at);
+      if (glowOn && material) {
+        this.blastAt.set(b.centre.x, b.centre.y, b.centre.z);
+        const fade = 1 - fogAmountAt(Vector3.Distance(this.blastAt, eye));
+        this.bloomColour(material, fade, this.blastBloom);
+        const g = into.glow;
+        for (let k = at; k < at + count; k++) {
+          g[k * 4] = this.blastBloom.r;
+          g[k * 4 + 1] = this.blastBloom.g;
+          g[k * 4 + 2] = this.blastBloom.b;
+          g[k * 4 + 3] = this.blastBloom.a;
+        }
+      }
+      into.drawShape[d] = b.shape;
+      into.drawFirst[d] = at;
+      into.drawCount[d] = count;
+      at += count;
+    }
+    // The mask's draws, in the active list's order: each batch's draw.
+    if (glowOn) {
+      for (let k = 0; k < n; k++) {
+        const batch = into.maskOrder[k];
+        let d = 0;
+        while (drawn[d] !== batch) d++;
+        into.maskOrder[k] = d;
+      }
+      into.masks = n;
+    }
+    into.draws = n;
+    into.instances = at;
+  }
+
+  /** `blastPull`'s scratch: a batch's centre. */
+  private readonly blastAt = new Vector3();
+
+  /**
+   * Hands our renderer this frame's DEBRIS (`BABYLON_EXIT.md` X4.4c): every
+   * glass shard and rubble chunk switched on, its world composed off its
+   * body's pose as it stands (`poseView.writePosedDrawing`) and kept by the
+   * size gate on its GATE sphere — the bounds Babylon's gate read off the
+   * mesh it was, latch and all (`FINDINGS.md` 58: no chunk ever passes, and a
+   * shard is measured from the map's origin once a burst) — the shards first,
+   * then the chunks, each in its pool's order, a chunk's kit its paint's.
+   * Once a frame, after the cull (the gate's eye) and beside `drawPieces`.
+   */
+  private drawDebris(): void {
+    const draw = this.debrisDraw;
+    if (!draw.installed) return;
+    const pieces = this.debrisPieces;
+    let n = 0;
+    for (let i = 0; i < pieces.length && n < draw.capacity; i++) {
+      if (!writePosedDrawing(pieces[i], draw.matrices, n * 16, this.keepsDebris)) continue;
+      draw.kits[n] = this.debrisKit(i);
+      this.debrisDrawn[n++] = i;
+    }
+    draw.commit(n, false, this.mats.materialEpoch);
+  }
+
+  /** Piece `i`'s kit word in `debrisDraw`: a shard's index, or a chunk's box in the paint of the surface it was thrown off. */
+  private debrisKit(i: number): number {
+    const shards = this.debris.pieces.length;
+    if (i < shards) return i;
+    const c = i - shards;
+    return shards + c * 2 + (this.blastDebris.surfaceOf(c) === "ground" ? 1 : 0);
+  }
+
+  /**
+   * What our renderer PULLS inside the render for this frame's `n` drawn
+   * pieces of debris (`drawDebris`), where the render has placed the camera:
+   * the pieces THEMSELVES in the order Babylon's queue drew their meshes —
+   * group 0's opaque sort, nearest first by `eyeDistanceSq` off
+   * `globalPosition` and this frame's world sphere (the bounds a candidate's
+   * compute refreshed), the meshes' order — the shards', then the chunks'
+   * — breaking a tie, stable — each one's world and kit word written in that
+   * order. Every piece is one segment, drawn at rank 0.
+   */
+  private debrisPull(order: Uint32Array, n: number): void {
+    const eye = this.cameraSys.camera.globalPosition;
+    const draw = this.debrisDraw;
+    const pieces = this.debrisPieces;
+    const drawn = this.debrisDrawn;
+    const keys = this.debrisKeys;
+    for (let k = 0; k < n; k++) {
+      const index = drawn[k];
+      const c = pieces[index].sphere;
+      const dx = c.x - eye.x;
+      const dy = c.y - eye.y;
+      const dz = c.z - eye.z;
+      const key = dx * dx + dy * dy + dz * dz;
+      // A stable insertion sort: a piece moves ahead only of one strictly
+      // farther.
+      let r = k;
+      while (r > 0 && keys[r - 1] > key) {
+        keys[r] = keys[r - 1];
+        drawn[r] = drawn[r - 1];
+        r--;
+      }
+      keys[r] = key;
+      drawn[r] = index;
+    }
+    for (let k = 0; k < n; k++) {
+      draw.matrices.set(pieces[drawn[k]].world.m, k * 16);
+      draw.kits[k] = this.debrisKit(drawn[k]);
       order[k] = 0;
     }
   }

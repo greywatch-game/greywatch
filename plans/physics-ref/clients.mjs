@@ -87,7 +87,9 @@
  * are digested in the same bytes (the parent's name, the rig's switch as the
  * root's flag, "noquat"); the corpse bones' proxy nodes went at X4.1b, and
  * each bone's pose array is digested in the bytes its proxy gave, a posed
- * joint naming the pose it is drawn off. C5 took
+ * joint naming the pose it is drawn off; the shard and chunk meshes went at
+ * X4.4c, and each piece is digested in the bytes its mesh gave (its switch,
+ * its pose, its scale). C5 took
  * the poses off those nodes into plain arrays that a view writes back; this
  * is what says the views write the SAME transforms the solver's sync used
  * to, on the same frames, the freeze and the sink included. A failure names
@@ -474,8 +476,15 @@ function play(page, opts) {
           poseName.set(bone.still, `ragdoll${i}-${bone.joint}.still`);
         }
       }
-      for (const burst of g.debris.bursts) for (const s of burst.shards) nodeList.push(s.mesh);
-      for (const burst of g.blastDebris.bursts) for (const c of burst.chunks) nodeList.push(c.mesh);
+      // A shard and a chunk were MESHES the views wrote each body's pose onto
+      // until `BABYLON_EXIT.md` X4.4c; our renderer draws them straight off
+      // the pose since (`poseView.PosedPiece`), so each is digested in the
+      // bytes its mesh gave — no parent, its switch, the pose's position, a
+      // zero Euler, the pose's quaternion, its scale on all three axes — the
+      // same either side of that step, every write onto the mesh having
+      // followed whatever moved the pose.
+      for (const burst of g.debris.bursts) for (const s of burst.shards) nodeList.push(s.mesh ?? { posed: s.piece });
+      for (const burst of g.blastDebris.bursts) for (const c of burst.chunks) nodeList.push(c.mesh ?? { posed: c.piece });
       // A rig's joints are not nodes since `BABYLON_EXIT.md` X4.1a: they are
       // `rigJoints.ts`'s, digested below in the bytes a node gave — the
       // parent's name (or, while a ragdoll poses the joint, the name of the
@@ -514,6 +523,17 @@ function play(page, opts) {
       const nodeDigest = () => {
         const { num, str, done } = hasher();
         for (const n of nodeList) {
+          if (n.posed) {
+            const piece = n.posed;
+            const p = piece.body.pose;
+            str("-");
+            num(piece.enabled ? 1 : 0);
+            num(p[0]); num(p[1]); num(p[2]);
+            num(0); num(0); num(0);
+            num(p[3]); num(p[4]); num(p[5]); num(p[6]);
+            num(piece.scale); num(piece.scale); num(piece.scale);
+            continue;
+          }
           if (n.pose) {
             const p = n.pose;
             str("-");

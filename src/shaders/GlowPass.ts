@@ -107,8 +107,9 @@
  * displaced in its vertex stage — the fire (`FlameShader`) — would draw its
  * rest pose into the mask and fail the LEQUAL tie everywhere it had moved. Such
  * a material hands back a twin that runs its own vertex stage, and is painted
- * through the same `GlowRules.colour` as everything else (the fire, and a
- * blast's billows, `BlastShader`).
+ * through the same `GlowRules.colour` as everything else (the fire; a blast's
+ * billows were the other until `BABYLON_EXIT.md` X4.4c, when our renderer
+ * took them and their mask, `render/BlastDraw.ts`).
  *
  * MESH INSTANCES ARE NOT SUPPORTED, and nothing glowing uses them: the mask
  * shader has no instance attributes, so an instanced emissive would draw one

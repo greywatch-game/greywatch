@@ -8,7 +8,8 @@
  * LOCAL bounding sphere, its transform as built and the segment it hung
  * from), `PiecePart` (what a model's builder hands over to make one),
  * `pieceKit`, `PieceNode` (one segment's live channels, switch and world),
- * `Piece`, `composePiece` and `writePieceDrawing`.
+ * `Piece`, `composePiece`, `worldSphere` (shared with the posed pieces,
+ * `systems/poseView.ts`) and `writePieceDrawing`.
  * Invariants:
  * - **A piece's node is the MESH it replaced, channel for channel**: its
  *   local composed from its Euler through a yaw-pitch-roll quaternion — or
@@ -205,21 +206,30 @@ export function composePiece(p: Piece): void {
 /** Whether the size gate keeps a world sphere this frame (`WorldCulling.keepsSphere`). */
 export type PieceGate = (x: number, y: number, z: number, radius: number) => boolean;
 
-/** `BoundingSphere._update`: a segment's local sphere carried by its node's world, into `out`. */
-function worldSphere(seg: PieceSegment, world: Matrix, out: { x: number; y: number; z: number; radius: number }): void {
+/**
+ * `BoundingSphere._update`: a local sphere (`centre`, `radius`) carried by
+ * `world`, into `out` — a kit segment's here, a posed piece's in
+ * `systems/poseView.ts`.
+ */
+export function worldSphere(
+  centre: Vector3,
+  radius: number,
+  world: Matrix,
+  out: { x: number; y: number; z: number; radius: number },
+): void {
   if (world.isIdentity()) {
-    out.x = seg.centre.x;
-    out.y = seg.centre.y;
-    out.z = seg.centre.z;
-    out.radius = seg.radius;
+    out.x = centre.x;
+    out.y = centre.y;
+    out.z = centre.z;
+    out.radius = radius;
     return;
   }
-  Vector3.TransformCoordinatesToRef(seg.centre, world, _centre);
+  Vector3.TransformCoordinatesToRef(centre, world, _centre);
   Vector3.TransformNormalFromFloatsToRef(1.0, 1.0, 1.0, world, _scale);
   out.x = _centre.x;
   out.y = _centre.y;
   out.z = _centre.z;
-  out.radius = Math.max(Math.abs(_scale.x), Math.abs(_scale.y), Math.abs(_scale.z)) * seg.radius;
+  out.radius = Math.max(Math.abs(_scale.x), Math.abs(_scale.y), Math.abs(_scale.z)) * radius;
 }
 
 /**
@@ -245,7 +255,7 @@ export function writePieceDrawing(
   composePiece(p);
   const kit = p.kit.segments;
   const nodes = p.nodes;
-  for (let s = 0; s < kit.length; s++) worldSphere(kit[s], nodes[s].world, nodes[s].sphere);
+  for (let s = 0; s < kit.length; s++) worldSphere(kit[s].centre, kit[s].radius, nodes[s].world, nodes[s].sphere);
   let drawn = 0;
   for (let s = 0; s < kit.length; s++) {
     const n = nodes[s];

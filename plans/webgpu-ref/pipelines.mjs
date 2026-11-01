@@ -244,6 +244,15 @@ async function playRound(page) {
     const meshProto = Object.getPrototypeOf(g.combatFx.sparks[0].mesh);
     const render = meshProto.render;
     let shardDraws = 0;
+    // Since BABYLON_EXIT.md X4.4c a shard is our renderer's (`debrisDraw`):
+    // each one handed over inside the render counts, as a mesh drawn did.
+    if (g.debrisPull) {
+      const pull = g.debrisPull;
+      g.debrisPull = function (order, n) {
+        pull.call(this, order, n);
+        for (let k = 0; k < n; k++) if (this.debrisDrawn[k] < this.debris.pieces.length) shardDraws++;
+      };
+    }
     meshProto.render = function (...a) {
       if (this.name.startsWith("shard")) shardDraws++;
       window.__gpuMesh = this.name;

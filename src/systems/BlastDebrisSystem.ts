@@ -2,15 +2,22 @@
  * BlastDebrisSystem.ts — What a blast tears out of the ground and throws, and
  * the mark it leaves where it happened: two of `CONFIG.grenade`'s eight blast
  * layers, and the two that outlive the fire.
- * Owns: the chunk pool and its bodies, the per-surface rubble colours, and
- * `ScorchMarks`. The other six layers are `GrenadeFx`'s (`BlastFx`).
+ * Owns: the chunk pool — its bodies, each chunk's box and its drawing
+ * (`PosedPiece`) — the per-surface rubble colours, and `ScorchMarks`. The
+ * other six layers are `GrenadeFx`'s (`BlastFx`).
  * Invariants: it is the THIRD `PhysicsClient` and owns no engine — see
  * `PhysicsWorld`. Nothing here feeds navigation, cover or hit detection: a
  * chunk is dressing exactly as a corpse and a glass shard are, and rounds and
- * bodies pass through it. A chunk's place is its body's `pose`,
- * drawn onto its mesh by the VIEW (`drawLive`,
- * `poseView.applyPose`) exactly where `DebrisSystem` draws a shard: when a
- * burst places it, at the end of `update`, and when a release parks it.
+ * bodies pass through it. A chunk's place is its body's `pose`, drawn by
+ * our renderer straight off it since `BABYLON_EXIT.md` X4.4c, exactly as
+ * `DebrisSystem`'s shards are (`Game.drawDebris`,
+ * `poseView.writePosedDrawing`): Babylon is made no chunk mesh, a chunk's box
+ * is its own arrays (`chunkBoxes`), and its switch, its scale and its bounds
+ * are its `PosedPiece`'s. **The SCORCH is still Babylon's** (decided
+ * 2026-11-01): it fades by `visibility` in Babylon's transparent sort among
+ * the see-through panes, so it moves with the glazing at `BABYLON_EXIT.md`
+ * X4.6 — the scorch is a pool of its own, so the rubble leaving while it
+ * stays splits no pool across two renderers.
  *
  * ## What makes this worth having is that it knows what it went off ON
  *
@@ -58,6 +65,7 @@
  */
 import {
   Color3,
+  CreateBoxVertexData,
   DynamicTexture,
   Mesh,
   MeshBuilder,
@@ -79,7 +87,7 @@ import {
   type PhysicsWorld,
   type WorldBody,
 } from "./PhysicsWorld";
-import { absolutePose, applyPose, drawPieces, parkPose, storePose } from "./poseView";
+import { parkPose, parkedPose, PosedPiece, storePose } from "./poseView";
 
 /**
  * What a blast went off on, as THIS system reads it: `GrenadeSystem`'s
@@ -116,6 +124,9 @@ const RUBBLE: Record<
   hard: { tint: "#8d8781", count: 0.7, size: 1.25 },
 };
 
+/** The stone the `hard` rubble is painted in, every map — `RUBBLE.hard.tint`, for our renderer's palette. */
+export const HARD_TINT = RUBBLE.hard.tint!;
+
 /**
  * What a crater turns up, and how much of it is the map's rather than this.
  *
@@ -140,13 +151,29 @@ const EARTH_DARKEN = 0.85;
 /** Where a body waits between bursts, well under any map. `DebrisSystem`'s. */
 const PARKED_Y = -1000;
 
-/** One chunk: its mesh, the body that moves it, and its size. */
+/**
+ * One chunk's box, as `CreateBox` made its mesh's arrays until
+ * `BABYLON_EXIT.md` X4.4c — what our renderer uploads once, a kit for each
+ * of the two paints (`Game`).
+ */
+export interface ChunkBox {
+  readonly positions: ArrayLike<number>;
+  readonly normals: ArrayLike<number>;
+  readonly uvs: ArrayLike<number>;
+  readonly indices: ArrayLike<number>;
+}
+
+/** One chunk: its drawing, the body that moves it, and its size. */
 interface Chunk {
   /** The chunk as drawn, from `body.pose` — see the header. */
-  mesh: Mesh;
+  readonly piece: PosedPiece;
+  /** What it was last thrown off: which of the two paints it is drawn in. */
+  surface: BlastGround["surface"];
+  /** Its box: what the drawing is an instance of. */
+  readonly box: ChunkBox;
   /** On Havok's raw API, through `PhysicsWorld` — see `buildPool`. */
   body: WorldBody;
-  /** Half-extents (m). The mesh, the shape and the mass all come off these. */
+  /** Half-extents (m). The box, the shape and the mass all come off these. */
   hx: number;
   hy: number;
   hz: number;
@@ -174,6 +201,22 @@ export class BlastDebrisSystem implements PhysicsClient {
   private bursts: Burst[] = [];
   private readonly scorch: ScorchMarks;
   /**
+   * Every chunk's drawing, burst-major — the order their meshes were made in
+   * until `BABYLON_EXIT.md` X4.4c, which is the tie-break of the order our
+   * renderer draws them in (`Game.debrisPull`) — and what `Game.drawDebris`
+   * hands it, beside each one's box (`chunkBoxes`) and the surface it was
+   * last thrown off (`surfaceOf`).
+   */
+  readonly pieces: readonly PosedPiece[];
+  /** Every chunk's box, in `pieces`' order — sizes drawn at construction, off the seeded stream. */
+  readonly chunkBoxes: readonly ChunkBox[];
+  /**
+   * The EARTH this map's rubble is painted in (`setEnvironment`), as the hex
+   * its `get` material is keyed on, or null before a map. The stone is
+   * `HARD_TINT`, every map.
+   */
+  earth: string | null = null;
+  /**
    * The two rubble materials, rebuilt per map by `setEnvironment`. Null until
    * one has been installed, which is the state a burst before the first
    * `installMap` would be in — there is no such state in the game, and the
@@ -193,13 +236,25 @@ export class BlastDebrisSystem implements PhysicsClient {
   private seed = 0x5bd1;
 
   constructor(
-    private scene: Scene,
+    scene: Scene,
     private factory: CelMaterialFactory,
     private physics: PhysicsWorld,
   ) {
     physics.register(this);
     this.scorch = new ScorchMarks(scene);
     this.buildPool();
+    const chunks = this.bursts.flatMap((b) => b.chunks);
+    this.pieces = chunks.map((c) => c.piece);
+    this.chunkBoxes = chunks.map((c) => c.box);
+    this.chunkList = chunks;
+  }
+
+  /** What `surfaceOf` reads: every chunk, in `pieces`' order. */
+  private readonly chunkList: readonly Chunk[];
+
+  /** The surface chunk `i` (in `pieces`' order) was last thrown off — which paint it is drawn in. */
+  surfaceOf(i: number): BlastGround["surface"] {
+    return this.chunkList[i].surface;
   }
 
   /** How many bursts are live. Test hook, exactly as `DebrisSystem`'s is. */
@@ -245,9 +300,14 @@ export class BlastDebrisSystem implements PhysicsClient {
       Color3.FromHexString(SUBSOIL),
       EARTH_MIX,
     ).scale(EARTH_DARKEN);
+    // Each paint's material still asked of the factory, where the chunks that
+    // wore them were dressed from until X4.4c, so its order is unmoved; what
+    // our renderer reads is the hex (`earth`, `HARD_TINT`), a slot of the
+    // debris draw's palette.
+    this.earth = earth.toHexString();
     this.mats = {
-      ground: this.factory.get(earth.toHexString()),
-      hard: this.factory.get(RUBBLE.hard.tint!),
+      ground: this.factory.get(this.earth),
+      hard: this.factory.get(HARD_TINT),
     };
   }
 
@@ -291,7 +351,6 @@ export class BlastDebrisSystem implements PhysicsClient {
     const slot = this.take();
     if (!slot) return false;
 
-    const material = this.mats[ground.surface];
     // Scaled by the surface AND by the blast: a shell in a field throws
     // everything the pool has, a grenade on flagstones throws seven pieces.
     const wanted = Math.min(
@@ -314,7 +373,7 @@ export class BlastDebrisSystem implements PhysicsClient {
 
     for (let i = 0; i < wanted; i++) {
       const chunk = slot.chunks[i];
-      chunk.mesh.material = material;
+      chunk.surface = ground.surface;
 
       // Born spread across the crater rather than all at the centre, and lifted
       // clear of the surface by its own longest half-extent: thirty boxes born
@@ -338,18 +397,16 @@ export class BlastDebrisSystem implements PhysicsClient {
       // Into the body's pose, which the next substep teleports from, and drawn
       // there now — see `DebrisSystem.burst`.
       storePose(chunk.body.pose, _place, _turn);
-      applyPose(chunk.body.pose, chunk.mesh);
-      // The surface's own size multiplier, and the ONE place the mesh and its
-      // collision box are allowed to disagree: the view writes a body's
-      // position and orientation onto the mesh (`applyPose`, the two writes
-      // the plugin's sync made) and leaves scaling alone, while the box is cut
-      // to the unscaled size — so a chunk drawn at 1.25 rests up to 3 cm
-      // inside the road it landed on. That is under the ground's own vertex
-      // noise, against a piece of dressing that is gone in seven seconds; the
-      // alternative is a second shape per size, which is a WASM allocation for
-      // a shadow-thin gain.
-      chunk.mesh.scaling.setAll(look.size);
-      chunk.mesh.setEnabled(true);
+      // The surface's own size multiplier, and the ONE place the drawing and
+      // its collision box are allowed to disagree: the drawing composes a
+      // body's position and orientation (the two writes the plugin's sync
+      // made) with this scale, while the box is cut to the unscaled size — so
+      // a chunk drawn at 1.25 rests up to 3 cm inside the road it landed on.
+      // That is under the ground's own vertex noise, against a piece of
+      // dressing that is gone in seven seconds; the alternative is a second
+      // shape per size, which is a WASM allocation for a shadow-thin gain.
+      chunk.piece.scale = look.size;
+      chunk.piece.enabled = true;
 
       // Out along the ground and up off it, mixed by `lift`. The lift is high
       // and has to be — see `CONFIG.grenade.debris`. A chunk lighter than the
@@ -422,17 +479,6 @@ export class BlastDebrisSystem implements PhysicsClient {
       }
       if (burst.t > d.life + d.sink) this.release(burst);
     }
-    this.drawLive();
-  }
-
-  /**
-   * The VIEW: every live chunk drawn where its body is, last in `update` —
-   * `DebrisSystem.drawLive`'s rule.
-   */
-  private drawLive(): void {
-    for (const burst of this.bursts) {
-      if (burst.t >= 0) drawPieces(burst.chunks, burst.live);
-    }
   }
 
   /**
@@ -459,7 +505,7 @@ export class BlastDebrisSystem implements PhysicsClient {
     burst.live = 0;
     const hp = this.physics.havok;
     for (const c of burst.chunks) {
-      c.mesh.setEnabled(false);
+      c.piece.enabled = false;
       hp.setLinearVelocity(c.body.id, [0, 0, 0]);
       hp.setAngularVelocity(c.body.id, [0, 0, 0]);
       this.physics.setMotion(c.body, "static");
@@ -468,8 +514,7 @@ export class BlastDebrisSystem implements PhysicsClient {
       // where it stopped — an invisible box lying in the street that rounds and
       // bodies stop on. `RagdollSystem.park` carries the measurement. Only the
       // position is reset; the orientation is whatever the chunk last wore.
-      // Drawn there at once, as `DebrisSystem.release` draws a shard.
-      parkPose(c.body.pose, c.mesh, PARKED_Y);
+      parkPose(c.body.pose, PARKED_Y);
       this.physics.park(c.body);
     }
   }
@@ -502,22 +547,15 @@ export class BlastDebrisSystem implements PhysicsClient {
         const hx = base * (0.7 + 0.6 * this.rand());
         const hy = base * (0.55 + 0.5 * this.rand());
         const hz = base * (0.7 + 0.6 * this.rand());
-        const mesh = MeshBuilder.CreateBox(
-          `blastChunk${i}-${j}`,
-          { width: hx * 2, height: hy * 2, depth: hz * 2 },
-          this.scene,
-        );
-        mesh.position.y = PARKED_Y;
-        mesh.rotationQuaternion = Quaternion.Identity();
-        mesh.isPickable = false;
-        mesh.checkCollisions = false;
-        mesh.setEnabled(false);
-        // No ink and no bloom. An outline shell around a 15 cm box is most of
-        // the pixels it covers and doubles a draw that is on screen for six
-        // seconds; `noGlow` is not inert, because this system is built before
-        // `Game`'s construction-time glow-exclusion scan runs — the same
-        // ordering `DebrisSystem`'s pool relies on.
-        mesh.metadata = { noGlow: true };
+        // Its box, as `CreateBox` built the mesh it was until X4.4c.
+        const data = CreateBoxVertexData({ width: hx * 2, height: hy * 2, depth: hz * 2 });
+        const box: ChunkBox = {
+          positions: data.positions!,
+          normals: data.normals!,
+          uvs: data.uvs!,
+          indices: data.indices!,
+        };
+        // No bloom: a chunk is matte cel.
 
         const shape = hp.box([0, 0, 0], [0, 0, 0, 1], [hx * 2, hy * 2, hz * 2]);
         hp.setMaterial(shape, death.friction, 0.2);
@@ -527,21 +565,25 @@ export class BlastDebrisSystem implements PhysicsClient {
         // solver cost quadratic in the burst.
         hp.setFilterCollide(shape, WORLD_GROUP);
 
-        // The body is drawn straight onto the MESH with no proxy node (a
-        // ragdoll's bone needs none either since BABYLON_EXIT.md X4.1b, its
-        // joint posed off the pose array itself): it is parented to nothing
-        // and posed by nobody, so the quaternion the view copies off the
-        // body's pose is the only thing that ever orients it.
+        // The body is drawn straight off its pose with no node at all
+        // (`poseView`), as a corpse's joints are since BABYLON_EXIT.md X4.1b,
+        // so the quaternion in the pose is the only thing that ever orients
+        // it.
         //
-        // Created where the mesh stands, static, then shaped, weighed and
-        // damped: the plugin's calls in its order (`PhysicsWorld.addBody`).
-        const body = this.physics.addBody("static", absolutePose(mesh));
+        // Created parked, static, then shaped, weighed and damped: the
+        // plugin's calls in its order (`PhysicsWorld.addBody`).
+        const at = parkedPose(PARKED_Y);
+        const body = this.physics.addBody("static", at);
+        const piece = new PosedPiece(body);
+        // The bounds a mesh of this box held, computed at that park
+        // (`poseView`: the gate sphere a chunk is measured by, for good).
+        piece.build(box.positions, at);
         hp.setShape(body.id, shape);
         hp.setMass(body.id, (d.mass * (hx * hy * hz)) / (d.sizeMax ** 3));
         hp.setLinearDamping(body.id, death.linearDamping);
         hp.setAngularDamping(body.id, death.angularDamping);
 
-        chunks.push({ mesh, body, hx, hy, hz });
+        chunks.push({ piece, surface: "hard", box, body, hx, hy, hz });
       }
       this.bursts.push({ chunks, t: -1, live: 0 });
     }

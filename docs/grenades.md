@@ -151,8 +151,12 @@ wrong first:
 ### The blast is DRAWN: billows in one material
 
 **Every shape a detonation puts in the air is a BILLOW** — a unit icosphere,
-lumped in its vertex stage, in `BlastShader` — and a billow is fire while it is
-hot and smoke once it is not. It replaced five flat emissive spheres stepping a
+lumped in its vertex stage, painted as `BlastShader` states it — and a billow is
+fire while it is hot and smoke once it is not. **Our renderer draws every one**
+(`render/BlastDraw.ts`, its program `render/blastProgram.ts`, its WGSL
+`shaders/wgsl/blast.ts`) since `BABYLON_EXIT.md` X4.4c, and Babylon is made no
+blast mesh and no blast material: what it drew through a `ShaderMaterial` and a
+mask twin until then, over the same arithmetic, statement for statement. It replaced five flat emissive spheres stepping a
 four-rung colour ladder, a glowing torus, and two pools of soft gradient
 sprites: a photograph's smoke in a frame of flat fills and ink, the mismatch
 the water was once reworked for. `systems/BlastFx.ts` owns the six layers and
@@ -162,7 +166,8 @@ points and normals are `Vector3Like` and read through their fields.
 
 - **A billow is four numbers the shader reads** — heat, dissolve, a seed, and
   how much of it is dust rather than soot — plus the WARMTH of the fire under
-  it, as two thin-instance attributes. **The HEAT of a pixel** is the billow's,
+  it, two per-instance values beside its matrix (a thin instance's two
+  attributes until X4.4c). **The HEAT of a pixel** is the billow's,
   weighted up where the surface faces the eye and down at its outline, broken
   by a climbing noise field: at full heat a billow is fire to its rim with a
   white heart, and as it cools the smoke closes over it FROM THE OUTLINE
@@ -175,9 +180,10 @@ points and normals are `Vector3Like` and read through their fields.
   caster.
 - **It is LIT, which is why it works where the flame's soot plume did not.**
   That plume was opaque and unlit, and read as floating leather; a billow of
-  smoke takes the map's own key, ambient, sky fill and mist, pushed by
-  `CelMaterialFactory` beside the cel materials' own, in two tones and a thin
-  third — so its top catches the moon, its underside is dark, and while the fire
+  smoke takes the map's own key, ambient, sky fill and mist — the FRAME's
+  (`render/frame.ts`), the very fields `CelMaterialFactory` pushed onto the
+  billow's material beside the cel materials' own until X4.4c — in two tones
+  and a thin third — so its top catches the moon, its underside is dark, and while the fire
   is still under it that underside glows (`warmth`). **The terminator is taken
   off a normal part way between the round billow and its lumps**: shaded off
   the lumps alone, every lump cast its own blotch and a cloud was mottled like
@@ -200,14 +206,21 @@ points and normals are `Vector3Like` and read through their fields.
   exactly as the ground under it is, so a night map's dust is as dark as its
   street without being told. Smoke is soot on every map.
 
-**A slot is ONE MESH** — the icosphere thin-instanced once per billow, so a
-blast is one draw call (and one glow-mask draw) however many billows it holds,
-where the old slot was seven meshes and each ember one more. It has to be one
-mesh PER BLAST rather than one for all of them, because the glow fades a mesh's
-bloom with the distance to its bounding sphere's centre (`GlowRules.colour`);
-the bounds are therefore set by hand each frame from the billows drawn
-(`doNotSyncBoundingInfo`). The sparks and the trails share one more mesh across
-every blast. **A slot is claimed by AGE and never refused**, and **a new blast
+**A slot is ONE BATCH, and one draw** — its billows instances of the icosphere
+(`BillowBatch`), so a blast is one draw call (and one glow-mask draw) however
+many billows it holds, where the old slot was seven meshes and each ember one
+more. It has to be one batch PER BLAST rather than one for all of them, because
+the glow fades a batch's bloom with the distance to its bounding sphere's centre
+(`GlowRules.colour`); the bounds are therefore set by hand each frame from the
+billows drawn — the sphere `BoundingInfo.reConstruct` made of them for the
+batch's mesh until X4.4c — and that one sphere is everything our renderer asks
+of a batch (`Game.blastPull`): Babylon's frustum test under the mesh's culling
+strategy (the sphere alone), group 0's front-to-back order (nearest centre
+first, the batches' own order breaking a tie), and the bloom's fade. A billow
+is EMISSIVE, so the size gate never dropped one and does not now; the mask
+draws the batches in their own order, as the active list held their meshes.
+The sparks and the trails share one more batch across every blast, on a
+coarser icosphere (4 subdivisions to the slots' 8). **A slot is claimed by AGE and never refused**, and **a new blast
 is posed on the frame it is raised** — a reused slot left alone holds whatever
 its last blast ended on.
 

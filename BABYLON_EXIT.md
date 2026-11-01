@@ -1020,7 +1020,7 @@ card behind it are off Babylon's scene, and no sub-step changed the picture.
 
 The full record is in [the archive](plans/done/babylon_exit_landed.md).
 
-### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (63a338a, review fixes after it), X4.4b **LANDED** (9470686)
+### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (63a338a, review fixes after it), X4.4b **LANDED** (9470686), X4.4c **LANDED** (HASH)
 
 Every pooled effect Babylon still draws comes off its scene but the three
 that blend among the panes (decided 2026-11-01: they wait for X4.6), and the
@@ -1229,24 +1229,72 @@ Everything else in X4.4 moves as briefed; `fx-glass-sort` is X4.6's BEFORE.
   brass in every life (657-2,607 piece-frames; 0 on the parent's code) and
   the player's own laid mines (275-278; 0 on the parent's); typecheck,
   build, corecheck pass.
-- **X4.4c — the blast and the posed pieces are ours (no picture change).**
-  `BlastFx`'s billows and its sparks-and-trails mesh become instanced draws
-  of ours on `BlastShader`'s WGSL (the bounds it sets by hand become the
-  cull's input, and the glow's distance fade reads the same centre); the
-  rubble chunks and the glass shards are drawn off their `pose` arrays
-  straight after the physics step, as a corpse's joints are (X4.1). **The
-  scorch stays Babylon's** (decided 2026-11-01, "Find out first" above): it
-  is blended in Babylon's transparent sort among the panes, so it moves with
-  the glazing at X4.6 — and its decal of ours reproducing
-  `StandardMaterial`'s output (or a recorded picture change if that cannot
-  be made exact) is X4.6's. **The scorch on the FLOOR draws** — X4.4a's
-  first note said it drew nothing, and its review measured otherwise (each
-  mark hidden and shown in the banked frames): a black decal at 0.4 is a
-  proportional darkening, faint on a dark or fire-lit floor, whole under
-  `fx-molotov`'s flames, and mostly behind the book stall in the ground
-  blasts' rows. **Oracle:** the
-  bank's blast rows at every age byte-identical; `kit:hash` unmoved; a round
-  with blasts on both surfaces and panes broken.
+- **X4.4c — the blast and the posed pieces are ours LANDED** (HASH;
+  2026-11-01; no picture change). Every blast billow (`BlastFx`'s batches: a
+  slot each and the sparks' and trails') is our renderer's
+  (`render/BlastDraw.ts`, `render/blastProgram.ts`, the WGSL
+  `shaders/wgsl/blast.ts` — `BlastShader`'s arithmetic statement for
+  statement; `BlastShader.ts` is the paint now, `BlastPaint`), and so is every
+  glass shard and rubble chunk, drawn straight off its body's pose
+  (`poseView.PosedPiece`/`writePosedDrawing`, a third `PoolDraw`, the DEBRIS,
+  built dynamic so a cut rewrites a shard's kit); Babylon is made no blast
+  mesh, no blast material and no shard or chunk mesh, and `poseView`'s writes
+  onto meshes are gone. **The scorch stays Babylon's**, as decided — a pool of
+  its own, so the rubble leaving splits none. **Found first** (a probe over
+  420 scripted frames reading Babylon's own render calls on the parent): the
+  billows (slots and small) and the shards are in group 0's OPAQUE list, front
+  to back, never blended, and the billows again in the glow's mask in the
+  active list's order (one material); a billow is emissive, so never
+  size-gated; the frustum test is the mesh's
+  `CULLINGSTRATEGY_BOUNDINGSPHERE_ONLY` on the sphere `BillowBatch` sets by
+  hand; **no rubble chunk is EVER drawn in a live round** and a far shard
+  latches (`FINDINGS.md` 58: the size gate read stale world bounds — a chunk's
+  at its park a kilometre under the map, a shard's at the origin after every
+  cut). All of it reproduced byte for byte: each batch one draw at
+  `"beforeAlphaTest"` AHEAD of the pieces, sorted as the queue sorted them
+  (`Game.blastPull`, with Babylon's sphere frustum test), its mask after the
+  pieces' in the batches' own order with `GlowRules.colour` at its centre; the
+  debris one draw after the marks, its instances front to back
+  (`Game.debrisPull`), each gated on a GATE sphere that keeps the latch (the
+  owner's to fix, a decisions row below). **The bank's `fx-blast-*` rows DO
+  show rubble, and always did: the harness's readiness check
+  (`scene.isReady()`) computed every mesh's world**, so `waitUntilDrawn` now
+  makes the same refresh of each piece's gate sphere (`plans/webgpu-ref/
+  README.md`). Three pipelines asked at `Game`'s construction; report version
+  27 (`pools.billows`, `pools.debris`). **Measured:** the bank `--check
+  --keep` against a BEFORE at 558dbdf, **112 of 112 frames byte-equal** (every
+  `fx-blast` row at every age, the power-2 row, `fx-shards`, `fx-glass`,
+  `fx-scorch`, `fx-molotov` and the three `*-far` rows among them), the same
+  34 stale rows; the order probe **420 of 420 frames equal** in the main
+  pass's batch draws (order and counts), the mask's, and the debris order, no
+  chunk on either side; `pipelines.mjs coldharbour --round` **zero in play in
+  five of five**, the first install 24 of Babylon's (26 at X4.4b: the billow
+  and its mask gone), 23 of ours, 49 modules; `kit:hash` 3,722 of 3,722 and
+  `--models` 244 of 244 identical; `census --against` the BEFORE: every row
+  with no billow, shard or chunk in frame equal on all seven maps, Coldharbour
+  2639 → 2561 on those rows alone (`fx-blast-*` -8 to -12, `fx-shards` -12,
+  `blast` and the power-2 row -2, `fx-molotov` -1);
+  `plans/physics-ref/clients.mjs --check` passes at the parent and at the step
+  on all three of its maps — the engine's hash, the NODE digest (318 nodes ×
+  601 frames, each shard and chunk now digested in the bytes its mesh gave)
+  and every pooled body, identical; `gate`, `shaders` (seven maps clean),
+  `parity`, typecheck, build and corecheck pass; an offline round on
+  Coldharbour (`x44c/round.mjs`: X4.4b's script with the AT item's presses
+  spread over its draw and load — the launcher never fired under the old two
+  4-frame presses — and two panes broken a life): six lives, every primary,
+  frags and molotovs, the launcher and the mine; the authority's `explode` 10
+  and `blaze` 6; billows drawn on 131-293 frames a life (up to 409 a frame, 4
+  draws and 4 mask draws), rockets in flight in every launcher life (8-14
+  piece-frames), 1,680-1,704 shard instance-frames a life and no chunk; 0
+  errors, the seam warning never raised; a server's round (`x44c/net2.mjs`,
+  `PORT=8097`): B threw two frags and fired two rockets; on A the authority's
+  `explode` 4, billows drawn on 758 frames (up to 192, 3 draws, 3 mask draws),
+  the wire's frags and rockets drawn (203 and 418 piece-frames); 0 errors on
+  either page; a profiler capture at report version 27 with a blast and a
+  burst live: `pools: { drawn: 6, masked: 3, instances: 7, marks: 9, billows:
+  42, debris: 12 }`. **The empty-group seam** is not made reachable: the sky
+  still holds group 0, and neither round raised the DEV warning. The full
+  record is in [the archive](plans/done/babylon_exit_landed.md).
 - **X4.4d — the fires are ours, and the held-caster layer goes (no picture
   change).** The world's fires come out of the block merges Babylon keeps
   and are drawn by our renderer on `FlameMaterial`'s WGSL, filed by block as
@@ -1283,7 +1331,12 @@ Everything else in X4.4 moves as briefed; `fx-glass-sort` is X4.6's BEFORE.
   the thrown and laid bodies, the brass, the tracer and the marks are
   ours, their four pipelines asked at `Game`'s construction, which the
   warm-up already waits for — by construction now; of the pools with no
-  pose that leaves the shards and the rubble, X4.4c's.)
+  pose that leaves the shards and the rubble, X4.4c's. Since X4.4c those
+  are ours too — the debris draw's pipeline and the blast's two asked at
+  construction — so every pool with no pose is covered by construction;
+  `BlastFx.warm` still poses its billows, drawn through ours, and goes with
+  the rest here. The three Babylon pools left — the sparks, the dust discs
+  and the scorch — keep their poses until X4.6.)
   **The empty-group seam** (decided 2026-10-31, X4.3c's review): every draw
   of ours hangs on rendering group 0's three points, and Babylon visits no
   empty group — so a frame on which group 0 dispatches no mesh of Babylon's
@@ -1640,5 +1693,6 @@ Phase 1 actually took.
 | X4.3c | One draw a segment, as Babylon drew it, or a palette fold like the bodies' kit? | **Decided** 2026-10-31: one draw a segment. It is one instance, the finishes differ per group in spec and mirror as well as colour, and a fold re-orders equal-depth ties for an unmeasured gain; a fold is a later, measured step if a capture ever names the gun. |
 | X4.4 | One step or several? | **Decided** 2026-11-01: five sub-steps (X4.4). X4.4a widens the bank first (a row for every pool, the one `blast` row being all it held) and records the round's pipeline creations; the pools then move grouped by how they are drawn — the plain mesh pools and the brass (X4.4b), the blast and the Havok-posed pieces (X4.4c), the fires with the held-caster layer's deletion (X4.4d) — and the declared pipeline list and the empty-group seam's check go last (X4.4e), once every pool has moved. None is meant to change the picture; any that does lands alone (rule 2). |
 | X4.4b | The fading sparks, dust discs and scorch sort among the see-through panes in Babylon's transparent list, and no draw point of ours reproduces that: hook the panes, take a recorded picture change, or wait? | **Decided** 2026-11-01: wait. The three pools stay Babylon meshes (their warm poses with them) until X4.6 takes the glazing, and move with it so one sort of ours orders every blended surface. No picture change, no new reach into Babylon's queue, no stand-in mesh; `fx-glass-sort` is X4.6's BEFORE. |
+| X4.4c | `FINDINGS.md` 58: X4.4c kept Babylon's stale-bounds latch for the debris, byte for byte — no rubble chunk is ever drawn in a live round (its bounds were computed once at its park, a kilometre under the map), and a glass shard is measured from the map's ORIGIN once a burst, so a far pane's smaller pieces never draw (Cinderhaven). The bank's `fx-blast-*` rows show rubble only because the harness's `scene.isReady()` computed the meshes' worlds, which `waitUntilDrawn` now restates. Fix it (gate every piece on its sphere composed this frame, the pieces' rule since finding 67 — one line in `poseView.writePosedDrawing`), and when? | **Open** (raised 2026-11-01). A fix is a picture change of its own (rule 2): every rubble burst draws in a live round for the first time, and half of Cinderhaven's glass; the `fx-blast-*` rows would not move (they already draw it). |
 | X4.4b | `FINDINGS.md` 67: X4.4b kept Babylon's stale-sphere latch, under which a spent case first thrown far from the world origin (and a mine's plate, an arming mine, a rocket's tail) is never drawn. Fix it, and when? | **Decided** 2026-11-01: fix it now, as its own commit — a deliberate picture change (rule 2): every cel part of a piece gated on its world sphere composed THIS frame, the hulls' rule (X4.2b), the latch dropped on purpose. Landed the same day (X4.4b's note). |
 | X6.2 | Is it ready to merge to `develop`? | Only when X6.2's "Before" list passes in full. |

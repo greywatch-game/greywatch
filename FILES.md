@@ -746,7 +746,8 @@ src/
                         #   parent), a piece a node a segment composed as the
                         #   mesh was, bit for bit, and writePieceDrawing — the
                         #   cel parts gated on THIS frame's sphere, as a
-                        #   hull's segments are. No Babylon
+                        #   hull's segments are; worldSphere, shared with the
+                        #   posed debris (poseView). No Babylon
     HealthRegen.ts      # A person's regen: the lock after a hit and the curve
                         #   back to full. One held by Player (predicting) and
                         #   one by src/sim/SimPlayer (authoritative), so the two
@@ -1174,8 +1175,11 @@ src/
                         #   `onBlast`/`onIgnited`/`onBurntOut`. Client only
     BlastFx.ts          # Six of a blast's eight layers, DRAWN: flash,
                         #   fireball, surge, sparks, burning trails and column,
-                        #   every one a billow in BlastShader. One thin-instanced
-                        #   mesh per blast, motion in closed form. Client only
+                        #   every one a billow in BlastShader. One BATCH per
+                        #   blast (and one for sparks and trails), its sphere
+                        #   set by hand; motion in closed form; no mesh —
+                        #   render/BlastDraw.ts draws the batches (X4.4c).
+                        #   Client only
     AntiTankSystem.ts   # The AT kit in the world: the rocket pool (the SECOND
                         #   thing that isn't hitscan), the mine pool, the arm
                         #   clocks and the hull trigger. Owns no blast and has
@@ -1220,14 +1224,14 @@ src/
                         #   spelled it (reads and 6-DoF constraints included),
                         #   so the port off the plugin is bit-for-bit.
                         #   Babylon-free; imports @babylonjs/havok as a type only
-    poseView.ts         # Where a body's pose array meets the node it is drawn
-                        #   as: the creation read (absolutePose), the sync's
-                        #   write (applyPose), placing a body (storePose), a
-                        #   debris park (parkPose) and a burst's draw
-                        #   (drawPieces). The debris views share it (a corpse
-                        #   has no node: its joints are posed off the arrays);
-                        #   PhysicsWorld does not import it (a convention — its
-                        #   Babylon imports are types, so no gate can tell)
+    poseView.ts         # Where a body's pose array meets what it is DRAWN as
+                        #   (X4.4c: no node any more): PosedPiece and
+                        #   writePosedDrawing (a shard's or chunk's world
+                        #   composed off its pose, gated on the stale GATE
+                        #   sphere Babylon latched on, FINDINGS 58), the
+                        #   creation park (parkedPose), placing a body
+                        #   (storePose) and a debris park (parkPose).
+                        #   Babylon-free
     RagdollSystem.ts    # Corpses under that engine. One refusal left (past the
                         #   fog wall); a full pool evicts its oldest. Cannot
                         #   tell a dead bot from the player's stand-in. No
@@ -1237,7 +1241,9 @@ src/
     DebrisSystem.ts     # Glass shards under it. A burst is CUT from the pane's
                         #   own face along the cracks a round put in it; refuses
                         #   past its own apparent-size gate, and evicts only a
-                        #   burst that has already landed
+                        #   burst that has already landed. No mesh: each shard
+                        #   a PosedPiece our renderer draws, its vertices
+                        #   handed over on every cut (onCut, X4.4c)
     BlastDebrisSystem.ts# The two blast layers that outlive the fire, and the
                         #   THIRD Havok client: the rubble a detonation throws —
                         #   keyed on what it went off ON, so a crater turns up
@@ -1245,7 +1251,9 @@ src/
                         #   scorch it leaves, a decal that MULTIPLIES the ground
                         #   rather than painting a colour onto it. A chunk's
                         #   size and shape are decided at construction, so a
-                        #   burst never touches the WASM heap
+                        #   burst never touches the WASM heap. No chunk mesh
+                        #   (a PosedPiece our renderer draws, X4.4c); the
+                        #   scorch is still Babylon's, until X4.6
     glassFracture.ts    # The crack pattern itself: radials out of the hole,
                         #   concentrics across them, clipped to the frame. Pure
                         #   arithmetic — no Babylon, no state
@@ -2514,6 +2522,11 @@ src/
                         #   transform, the wind's ramp and rigged layers, the
                         #   varyings. Babylon-free; shared verbatim with
                         #   src/render/; no y flip (each side's main owns it)
+      blast.ts          # The blast's BILLOW as plain strings (X4.4c): the
+                        #   noise, the lumped vertex stage and the pixel — fire,
+                        #   lit smoke, dissolve — and its bloom under GLOW_MASK,
+                        #   one vertex text for both. Babylon-free:
+                        #   render/blastProgram.ts declares them
       emissiveWorld.ts  # The emissive palette's two BODIES (its vertex, its
                         #   pixel and the glow mask's) and MAX_EMISSIVE_PALETTE,
                         #   Babylon-free: render/emissiveWorld.ts declares
@@ -2545,11 +2558,12 @@ src/
                         #   that boil on twos in hard bands, embers on the
                         #   smooth clock, and the glow-mask TWIN that runs the
                         #   same vertex stage so the bloom ties its depth. WGSL
-    BlastShader.ts      # A BLAST's billow: lumpy (billow noise) sphere that is
-                        #   fire in the flame's inks while hot, eaten from its
-                        #   rim by LIT smoke as it cools, dissolved into wisps
-                        #   at the end. Opaque, so the ink draws between
-                        #   billows; thin-instanced; own glow-mask twin. WGSL
+    BlastShader.ts      # A BLAST's billow, what it is drawn WITH: BlastPaint,
+                        #   the drawing, the flame's inks, the soot and the
+                        #   dust, and the clock (no material since X4.4c: our
+                        #   renderer draws every billow, render/BlastDraw.ts;
+                        #   the WGSL is shaders/wgsl/blast.ts). Opaque, so the
+                        #   ink draws between billows
     Volumetrics.ts      # Light shafts: raymarched through the shadow volume,
                         #   capped at the light's colour and SCREENED onto the
                         #   frame so a thick map's glare stays gold. WGSL
@@ -2715,10 +2729,28 @@ src/
                         #   a failure (or a refused pass) the round's
                         #   (Game.worldFailed); installed for a round, never an
                         #   editor build
+    BlastDraw.ts        # The blast's BILLOWS as OUR renderer draws them
+                        #   (X4.4c): the two icospheres on the GPU once, each
+                        #   frame's billows as instances, a batch one draw in
+                        #   the order Game.blastPull hands (Babylon's frustum
+                        #   test of its hand-set sphere, group 0's front to
+                        #   back) and again into the glow's mask after the
+                        #   pieces'; installed AHEAD of the pieces; its two
+                        #   pipelines asked once a session, a failure the
+                        #   round's; installed for a round, never an editor
+                        #   build
+    blastProgram.ts     # The billow's program (X4.4c): its block, its
+                        #   geometry (icosphere arrays, each instance's
+                        #   matrix, billow, warmth and bloom), BlastRecipe, and
+                        #   the main pass's and the mask's modules — one vertex
+                        #   module for both (the LEQUAL tie); the frame's
+                        #   light, eye and fog, the rest the block's
     PoolDraw.ts         # The effect POOLS' pieces as OUR renderer draws them
                         #   (X4.4b), one draw-set of these for the tracers,
-                        #   brass and thrown and laid bodies and one for the
-                        #   bullet marks: the kits on the GPU once (padded to
+                        #   brass and thrown and laid bodies, one for the
+                        #   bullet marks, and (X4.4c) one for the DEBRIS —
+                        #   every glass shard (its kit's vertices rewritten on
+                        #   every cut, `rewrite`) and rubble chunk: the kits on the GPU once (padded to
                         #   the widest), each frame's pieces as instances by
                         #   the bodies' plain programs — a rank's cel segments
                         #   one draw, its unlit ones another, those again into

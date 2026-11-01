@@ -88,7 +88,7 @@ import { attachEmissiveFog, setEmissiveFog } from "./EmissiveFog";
 import { EmissiveWorldMaterial } from "./EmissiveWorld";
 import { MAX_EMISSIVE_PALETTE } from "./wgsl/emissiveWorld";
 import { FlameMaterial } from "./FlameShader";
-import { BlastMaterial } from "./BlastShader";
+import { BlastPaint } from "./BlastShader";
 import type { Vector3Like } from "../math";
 import type { EmissiveRecipe } from "../render/emissiveWorld";
 import type { FrameTextures, FrameUniforms } from "../render/frame";
@@ -1501,6 +1501,23 @@ export class CelMaterialFactory {
   }
 
   /**
+   * One slot of a pool's cel palette (`poolCelRecipe`) painted `color`
+   * afresh — the debris draw's EARTH, which is the map's (`BABYLON_EXIT.md`
+   * X4.4c: `BlastDebrisSystem.setEnvironment`'s `get(earth)` held it as its
+   * `baseColor`) — and `materialEpoch` moved, so the draw copies it again.
+   * `slot` is 1-based, as a vertex names it.
+   */
+  repaintPool(recipe: CelRecipe, slot: number, color: Color3): void {
+    if (slot < 1 || slot > MAX_PALETTE) throw new Error(`repaintPool: slot ${slot} is outside the palette`);
+    const table = recipe.values.celPalette;
+    if (!table) throw new Error("repaintPool: the recipe has no palette of its own");
+    table[(slot - 1) * 3] = color.r;
+    table[(slot - 1) * 3 + 1] = color.g;
+    table[(slot - 1) * 3 + 2] = color.b;
+    this.materialEpoch++;
+  }
+
+  /**
    * What one of the effect POOLS' draws paints its UNLIT segments with — a
    * tracer, a pip, a wick, a motor, a fuze lamp (`BABYLON_EXIT.md` X4.4b):
    * `viewEmissiveRecipe`'s twin over the pool's own table, one slot a colour
@@ -2060,34 +2077,23 @@ export class CelMaterialFactory {
   private flame: FlameMaterial | null = null;
 
   /**
-   * The one material every blast's billows wear (`BlastShader`), created on
-   * first ask and held outside `cache` for the flame's reason. It shares more
-   * with the cel materials than the flame does — it is LIT, by the same key,
-   * ambient, sky fill and mist — so `setEnvironment` hands it those too, off
-   * the very objects it has just written.
+   * What every blast's billows are drawn with (`BlastShader`'s `BlastPaint`),
+   * made on first ask and held outside `cache`: no material since
+   * `BABYLON_EXIT.md` X4.4c — our renderer draws every billow
+   * (`render/BlastDraw.ts`) — but the values one held, the world clock
+   * pushed onto them beside the cel materials'. The light, the eye and the
+   * fog it is drawn under are the frame's (`fillFrame`), which this factory
+   * pushed onto the billow's material, off these same fields, until then.
    */
-  getBlast(): BlastMaterial {
+  getBlast(): BlastPaint {
     if (!this.blast) {
-      this.blast = new BlastMaterial(this.scene);
+      this.blast = new BlastPaint();
       this.blast.setClock(this.windTime);
-      this.blast.setFog(fogState.color, fogState.start, fogState.end);
-      this.blast.setEye(this.camPos);
-      this.pushBlastLight();
     }
     return this.blast;
   }
 
-  private blast: BlastMaterial | null = null;
-
-  private pushBlastLight(): void {
-    this.blast?.setLight({
-      lightDir: this.lightDir,
-      lightColor: this.lightColor,
-      ambientColor: this.ambientColor,
-      skyLightColor: this.skyLightColor,
-      mistColor: this.mistColor,
-    });
-  }
+  private blast: BlastPaint | null = null;
 
   /** Applies a theme's lighting/atmosphere to every cel material. */
   setEnvironment(env: {
@@ -2129,13 +2135,11 @@ export class CelMaterialFactory {
     this.emissiveFogRange[1] = 1 / Math.max(0.001, fogState.end - fogState.start);
     this.materialEpoch++;
     this.flame?.setFog(fogState.color, fogState.start, fogState.end);
-    this.blast?.setFog(fogState.color, fogState.start, fogState.end);
     this.mistColor = env.mistColor;
     this.mistParams.set(env.mistHeight, env.mistStrength);
     this.wearColor = env.wearColor;
     this.wearAmount = env.wearAmount;
     this.cache.forEach((mat) => this.applyEnvironment(mat));
-    this.pushBlastLight();
   }
 
   /**
@@ -2251,9 +2255,9 @@ export class CelMaterialFactory {
     if (!camPos.equals(this.camPos)) {
       this.camPos.copyFrom(camPos);
       this.cache.forEach((mat) => this.applyCamera(mat));
-      // The two materials outside the cache fog against this same eye.
+      // The material outside the cache fogs against this same eye (the
+      // blast's billows read the frame's, `fillFrame`).
       this.flame?.setEye(this.camPos);
-      this.blast?.setEye(this.camPos);
     }
   }
 

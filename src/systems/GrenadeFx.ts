@@ -183,8 +183,12 @@ export class GrenadeFx {
   /** The flight each body is drawing — its slot's `id` — or -1 while hidden. */
   private readonly drawing: number[] = [];
   private readonly fires: FlameSet[] = [];
-  /** The blast's picture — six of its eight layers. */
-  private readonly fx: BlastFx;
+  /**
+   * The blast's picture — six of its eight layers — whose batches and
+   * icospheres `Game.drawBlasts` hands our renderer (`BABYLON_EXIT.md`
+   * X4.4c).
+   */
+  readonly blasts: BlastFx;
   /** What a flame stands on: the same pair the flight lands on, read with this file's own buffer. */
   private rays: RayWorld | null = null;
   private terrain: TerrainField = new TerrainField();
@@ -204,7 +208,7 @@ export class GrenadeFx {
     mats: CelMaterialFactory,
     private readonly sim: GrenadeReader,
   ) {
-    this.fx = new BlastFx(scene, mats);
+    this.blasts = new BlastFx(mats);
     this.kits = {
       frag: pieceKit("frag", grenadeParts(mats, "grenade0")),
       bottle: pieceKit("bottle", molotovPieceParts(mats, "molotov0")),
@@ -267,7 +271,7 @@ export class GrenadeFx {
    * against.
    */
   setEnvironment(env: EnvironmentSpec): void {
-    this.fx.setEnvironment(env);
+    this.blasts.setEnvironment(env);
   }
 
   /**
@@ -309,12 +313,12 @@ export class GrenadeFx {
       if (f.t >= 0 && set.id === f.id) this.poseFire(set, fireStrength(f.t));
     }
 
-    this.fx.update(dt);
+    this.blasts.update(dt);
   }
 
   /** A blast — the six billowed layers, on `GrenadeSystem.onBlast`. */
   blast(at: Vector3Like, power: number, ground: BlastGround): void {
-    this.fx.blast(at, power, ground);
+    this.blasts.blast(at, power, ground);
   }
 
   /**
@@ -347,7 +351,7 @@ export class GrenadeFx {
       break;
     }
     const m = CONFIG.molotov;
-    this.fx.ignite(at, m.ignition, m.smoke);
+    this.blasts.ignite(at, m.ignition, m.smoke);
   }
 
   /** The fire `ignite` named is out — on `GrenadeSystem.onBurntOut`. */
@@ -387,7 +391,7 @@ export class GrenadeFx {
    * fire slot, used only while that slot is free, at a fire's own stretch.
    */
   warm(on: boolean): void {
-    this.fx.warm(on);
+    this.blasts.warm(on);
     const set = this.fires[this.fires.length - 1];
     const flame = set?.flames[0];
     if (!flame || set.id >= 0) return;
@@ -409,6 +413,6 @@ export class GrenadeFx {
       set.id = -1;
       for (const fl of set.flames) fl.mesh.isVisible = false;
     }
-    this.fx.reset();
+    this.blasts.reset();
   }
 }

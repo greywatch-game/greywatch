@@ -269,6 +269,13 @@ lamp or a reflection. See the floor, below.
   a 2 fps box because it was three seconds there, and it photographs a blank
   canvas here. This had already cost two committed backdrops before it was
   found (see `scripts/capture-map-shots.mjs`).
+  **It is not a pure read**: `Mesh.isReady(true)` COMPUTES every mesh's world,
+  which refreshes the bounds the size gate reads — so on a tree before
+  `BABYLON_EXIT.md` X4.4c it is what made the `fx-blast-*` rows' rubble
+  drawable, a chunk a round never draws (`FINDINGS.md` 58). Since X4.4c those
+  pieces are our renderer's and carry that latch as a GATE sphere, and
+  `waitUntilDrawn` makes the same refresh of each one before it asks, so the
+  rows stay what they were banked as.
 
 ## One process per MAP, and the pause lid never comes off
 

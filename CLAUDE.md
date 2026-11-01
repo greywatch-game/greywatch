@@ -280,7 +280,8 @@ reflection bake, the card draws the whole map from each home spawn and flag
 until a frame compiles nothing, because WebGPU compiles a pipeline on the frame
 that first draws it. **It OPENS by waiting for OUR renderer's pipelines**,
 which are asked for ahead and compiled off the frame (`PipelineCache`'s
-counts) — every BODY's, HULL's, the WEAPON's, the pools' PIECES' and MARKS'.
+counts) — every BODY's, HULL's, the WEAPON's, the pools' PIECES', MARKS',
+BILLOWS' and DEBRIS'.
 What it cannot see it is SHOWN by a `warm(on)` on whatever owns an idle pool of
 Babylon's (a shot, a blast, a scorch, a blob) — **posed as IN FLIGHT**, since a
 stretched mesh or a `visibility` under 1 is a different pipeline. **A new pool
@@ -428,7 +429,8 @@ never TIME**. **What a blast throws is keyed on what it went off ON** (the same
 `metadata.surface` a bullet's impact reads), and `drawBlast` is the one place a
 blast is DRAWN (it raises `onBlast`, the only event the picture starts on).
 **The drawn layers are opaque, lit billows** (`systems/BlastFx.ts`), one draw
-call per blast, never built on the authority.
+call of OUR renderer's per blast (`render/BlastDraw.ts`), never built on the
+authority.
 **Both flying things are a SIMULATION and a PICTURE**: `GrenadeSystem` and
 `AntiTankSystem` hold their positions as plain `src/math` fields and import no
 Babylon, and `GrenadeFx`/`AntiTankFx` read their pools after each `update` and
@@ -627,10 +629,15 @@ every surface on and visible, whatever its role. **So are the effect pools'
 PIECES and the bullet MARKS** (`render/PoolDraw.ts`, `entities/pieces.ts`):
 a tracer, a case, a thrown or laid body is an instance of its kit, built once
 by the view that made its first mesh, and the marks one draw sorted as
-Babylon's queue sorted them, both ahead of the hulls at `"beforeAlphaTest"`
-— **but the sparks and the dust discs stay Babylon meshes until the glazing
-moves (X4.6)**, because they fade in its transparent sort among the panes, and
-a pool is never split across two renderers.
+Babylon's queue sorted them, both ahead of the hulls at `"beforeAlphaTest"`;
+**so is every blast BILLOW** (`render/BlastDraw.ts`: a batch a draw, its one
+hand-set sphere what the frustum, the order and the bloom read) **and every
+glass SHARD and rubble CHUNK**, drawn straight off its body's pose
+(`systems/poseView.ts`), the size gate on the stale sphere Babylon latched
+on (`FINDINGS.md` 58) — **but the sparks, the dust discs and the scorch stay
+Babylon meshes until the glazing moves (X4.6)**, because they fade in its
+transparent sort among the panes, and a pool is never split across two
+renderers.
 
 **The GLOW draws the EMISSIVE meshes and nothing else, its occlusion being the
 FRAME's own depth buffer** (`src/shaders/GlowPass.ts`). **What may bloom is read
@@ -1052,10 +1059,10 @@ its three clients, never the other way round. **It calls Havok's RAW `HP_*` API*
 **a body's pose is seven numbers in an array** (`WorldBody.pose`): a corpse's
 rig JOINTS are posed straight off it (`Joint.pose`, read at every compose, and a
 pose left on a joint is the leak to fear; the corpse is drawn as any body is,
-by our renderer), and each debris VIEW writes it onto
-its mesh (`systems/poseView.ts`) after the step, so **anything new that reads a
-shard's or a chunk's drawing between `physics.update` and the clients'
-`update`s reads last frame's**. `PhysicsWorld` reaches no node, mesh or scene —
+by our renderer), and a shard's or a chunk's drawing is COMPOSED off it
+once a frame after the cull (`systems/poseView.ts`, our renderer's debris
+draw), no write onto anything — so **anything new that reads a pose between
+`physics.update` and the clients' `update`s reads it unsunk**. `PhysicsWorld` reaches no node, mesh or scene —
 the floor reaches it as `GameMap.terrainGeometry` — and
 `scripts/check-babylon-free.mjs` holds it there.
 

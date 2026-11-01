@@ -4630,14 +4630,18 @@ the frame that are load-bearing.
 **Every tracer, spent case, thrown frag and bottle, rocket in flight, laid
 mine and bullet mark the page draws is OUR renderer's since `BABYLON_EXIT.md`
 X4.4b** (`render/PoolDraw.ts`, drawn by the BODIES' programs,
-`bodyProgram.ts`, labelled `pool`), and Babylon is made no mesh of any —
-X4.1d's shape for things that never fade. **The sparks and the dust discs are
-not among them, and that is the owner's decision (2026-11-01) rather than a
-gap**: they fade by `visibility` in Babylon's TRANSPARENT sort, interleaved
-with the see-through glazing, which no draw point of ours reproduces, so both
-pools stay Babylon meshes — whole, the frames a spark is still opaque
-included, so a pool is never split across two renderers — until X4.6 moves
-them with the glazing. `fx-glass-sort` is that step's BEFORE.
+`bodyProgram.ts`, labelled `pool`), **and every blast billow, glass shard and
+rubble chunk since X4.4c** (the billows `render/BlastDraw.ts`, on the billow's
+own program; the shards and chunks a third `PoolDraw`, the DEBRIS) — and
+Babylon is made no mesh of any: X4.1d's shape for things that never fade.
+**The sparks, the dust discs and the blast's SCORCH are not among them, and
+that is the owner's decision (2026-11-01) rather than a gap**: they fade by
+`visibility` in Babylon's TRANSPARENT sort, interleaved with the see-through
+glazing, which no draw point of ours reproduces, so all three pools stay
+Babylon meshes — whole, the frames a spark is still opaque included, so a pool
+is never split across two renderers (the scorch is a pool of its own, so the
+rubble leaving while it stays splits none) — until X4.6 moves them with the
+glazing. `fx-glass-sort` is that step's BEFORE.
 
 **A piece is the meshes it was, as plain data** (`entities/pieces.ts`): a
 KIT a kind — its segments, each a mesh until X4.4b: the arrays, a cel paint or
@@ -4712,6 +4716,64 @@ is frozen where it is stood, so its sphere is always the frame's. The FRUSTUM is
 asked: a piece outside it is clipped by the GPU and costs its vertex work, as
 the drawn sets of a scripted probe show (X4.4b's archive note).
 
+**The blast's billows (X4.4c): a BATCH a draw, on the billow's own program.**
+Every batch `BlastFx` poses — one per blast slot, and one the sparks and the
+burning fragments' trails share — was a thin-instanced icosphere on
+`BlastShader`'s material, and is now one draw of ours, its billows instances
+of one of the two icospheres (8 subdivisions for a slot, 4 for the small
+batch), uploaded once off `CreateIcoSphereVertexData` (`render/BlastDraw.ts`,
+`render/blastProgram.ts`, the WGSL `shaders/wgsl/blast.ts` — the material's
+arithmetic statement for statement, an instance's matrix, `billow`, `warmth`
+and bloom read where its thin instance's attributes and the mask's `glowColor`
+were). The light, eye, fog and opaque alpha are the FRAME's, the very fields
+`CelMaterialFactory` pushed onto the material; the rest is `BlastPaint`'s
+block. **Everything Babylon asked of a batch is asked of the one sphere the
+batch sets by hand** (`BillowBatch.centre`/`radius`, what `reConstruct` made
+of its billows' extent for the mesh): the frustum test under the mesh's
+culling strategy (`CULLINGSTRATEGY_BOUNDINGSPHERE_ONLY`, the sphere alone,
+off this render's planes); group 0's opaque order (nearest centre first, the
+batches' own order breaking a tie, stable); and the bloom's distance fade.
+A billow is EMISSIVE, so the size gate never dropped one. **The draws hang
+at `"beforeAlphaTest"` AHEAD of the pieces** (the billows' meshes were in
+Babylon's opaque queue), and **the mask's after the pieces'**, in the batches'
+own order — the active list's, which the mask's queue kept (one material) —
+each instance's bloom `GlowRules.colour` as `GlowPass` asked it of the mesh,
+by the same vertex module, no depth written, LEQUAL.
+
+**The debris (X4.4c): every glass shard and rubble chunk, straight off its
+body's POSE.** A shard is a kit of its own (its eight-cornered prism's
+vertices rewritten on every cut, `PoolDraw.rewrite`, as `updateVerticesData`
+wrote its mesh's) and a chunk is its box in each of two paints — the stone
+and the map's EARTH, a slot of the draw's palette painted per map
+(`CelMaterialFactory.repaintPool`), at the palette of the three `get`
+materials they wore. Each frame `Game.drawDebris` composes every switched-on
+piece's world off its body's pose as it stands and its scale
+(`poseView.writePosedDrawing`: `computeWorldMatrix`'s arithmetic, `src/math`)
+— the pose the meshes were written from until X4.4c, every write having
+followed whatever moved it — and the render pulls them FRONT TO BACK by this
+frame's world sphere, the meshes' order breaking a tie (`Game.debrisPull`).
+**The size gate reads each piece's GATE sphere, and it LATCHES as Babylon's
+did** (`FINDINGS.md` 58, kept byte for byte and the owner's to undo): the
+world bounds as of the last frame the mesh's world was COMPUTED — only for a
+candidate the gate let through — so a CHUNK, whose bounds were computed once
+at its park a kilometre under the map, is never drawn at all, and a SHARD,
+whose bounds every cut rebuilt under the identity, is measured from the map's
+ORIGIN once a burst and dropped for good if that sphere is under the gate
+(far panes on Cinderhaven). A piece the gate keeps is drawn with this frame's
+world and its gate sphere becomes this frame's. (The bank's `fx-blast-*` rows
+show rubble, as they always did, and that is the harness: its readiness check,
+`scene.isReady()`, computed every mesh's world, and `waitUntilDrawn` now
+refreshes each piece's gate sphere the same way — `plans/webgpu-ref/README.md`.) One draw (a piece is one
+segment), installed after the marks, no mask (nothing in it glows).
+
+**What X4.4c's oracles hold it to**: the bank byte-identical — every `fx-blast`
+row at every age, `fx-blast-hard-power2-billows`, `fx-shards`, `fx-glass`,
+`fx-scorch`, `fx-molotov`; and a probe over 420 scripted frames (blasts on both
+surfaces, a power-2, a molotov, three panes bursting, one 172 m from the
+origin) reading Babylon's own render calls on the parent against what ours was
+handed — every batch's draw, count and order equal in the main pass and the
+mask, every debris order equal, no chunk drawn on either side.
+
 **What X4.4b's oracles hold it to**: the bank byte-identical, its 25 `fx`
 rows among the 109; a probe over 330 scripted frames (marks at the gate's edge
 under a moving camera, bodies in flight, the wire's, the brass, and a phase
@@ -4725,10 +4787,12 @@ GAVE (the script's header). Since the latch came out, the same probe finds
 equal. **Its pipelines are asked once, at `Game`'s
 construction**, so the building card's warm-up waits for them; a failure is
 the round's (`Game.worldFailed`); it is installed for a ROUND's map only. The
-`warm(on)` poses of the tracer and the mark still stand, drawing through ours,
-until X4.4e makes the warm-up a declared list. A capture says what both drew
-(`ProfileReport.pools`, report version 26), since Babylon's counter counts
-none of it.
+`warm(on)` poses of the tracer, the mark and the blast's billows still stand,
+drawing through ours, until X4.4e makes the warm-up a declared list (the
+billows', the debris's and the pieces' pipelines are asked at `Game`'s
+construction, so the warm-up waits for them by construction). A capture says
+what all four drew (`ProfileReport.pools`, report version 26; the billows and
+the debris since 27), since Babylon's counter counts none of it.
 
 ## Block visibility: how much of the map the frame walks
 
@@ -4866,13 +4930,13 @@ never the draw, because a disabled mesh was going to be rejected anyway — and 
 staged A/B/A with half the roster in frame came back inside its own control
 (27-34/255 worst against a 33/255 control, mean 0.001-0.003).
 
-**Everything else pooled is still loose** — sparks, dust discs, shards,
-ragdoll debris, rubble, the blast — and their idle meshes are kept out of the
-list by `offer` instead (the size gate, below). The hulls were loose too until
-`BABYLON_EXIT.md` X4.2b, and the tracers, the marks, the brass and the thrown
-and laid bodies until X4.4b; they are no mesh now, and the size gate reaches
-their segments through `keepsSphere` ("The hulls, ours", "The pools,
-ours").
+**Everything else pooled is still loose** — sparks, dust discs, the scorch —
+and their idle meshes are kept out of the list by `offer` instead (the size
+gate, below). The hulls were loose too until `BABYLON_EXIT.md` X4.2b, the
+tracers, the marks, the brass and the thrown and laid bodies until X4.4b, and
+the blast's billows, the shards and the rubble until X4.4c; they are no mesh
+now, and the size gate reaches their segments through `keepsSphere` ("The
+hulls, ours", "The pools, ours").
 
 **Nothing pooled may ever be block-keyed.** They are loose or pooled because
 they MOVE, and this is precisely why `scene.freezeActiveMeshes()` is a bug in
@@ -4986,7 +5050,11 @@ of each standing mark's frozen sphere — the sphere `freezeWorldMatrix` left
 on its mesh, so exactly the marks the gate dropped are dropped
 (`fx-marks-far` banks the edge: 14 of 30 under it) — and of every cel part
 of a thrown or laid body and of the brass, on its sphere composed this
-frame ("The pools, ours").
+frame ("The pools, ours"). **The shards and the rubble left it at X4.4c and
+kept its verdict, latch and all**: each is asked `keepsSphere` of the GATE
+sphere its mesh's bounds were (`poseView`), so no chunk is ever drawn and a
+shard is measured from the origin once a burst (`FINDINGS.md` 58). A billow
+was emissive, and exempt, and is still never gated.
 
 **A BODY is measured once and drops WHOLE; two classes are exempt outright,
 and each of the three is what it is because a picture said so rather than
@@ -5849,8 +5917,9 @@ one, 1.36% of the cube — at 1.74/255 mean, against a same-place control of
 0.16% and 0.03-0.05; with `camPos`, 0.08% and 0.024, inside its controls'
 0.06-0.08% and 0.015-0.030. That control is not zero on either build, and it
 does not depend on the eye. **The fire and the blast read the same eye for the
-same reason** (`FlameMaterial.setEye`, `BlastMaterial.setEye`), and so do
-their mask twins: both had declared `cameraPosition` and the fire's comment
+same reason** (`FlameMaterial.setEye`, and `BlastMaterial.setEye` until
+`BABYLON_EXIT.md` X4.4c, since when the billows are ours and read the frame's
+`camPos`), and so did their mask twins: both had declared `cameraPosition` and the fire's comment
 claimed the active camera was the probe. A blast stood 12 m off a probe and
 added to its list: 1.50% of texels moved at 1.88/255 before, inside the control
 (0.12% and 0.037 against 0.09-0.13% and 0.024-0.038) after. No probe draws a

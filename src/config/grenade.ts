@@ -178,10 +178,10 @@ export const grenade = {
    */
 
   /**
-   * Concurrent blasts drawn at once. A slot is ONE mesh — a unit sphere
-   * thin-instanced once per billow — so a blast is one draw call however many
-   * billows it holds, and a slot's life is its longest billow's, about four
-   * seconds.
+   * Concurrent blasts drawn at once. A slot is ONE batch — every billow an
+   * instance of a unit sphere — so a blast is one draw call however many
+   * billows it holds (`render/BlastDraw.ts`), and a slot's life is its
+   * longest billow's, about four seconds.
    */
   blastSlots: 4,
   /**
