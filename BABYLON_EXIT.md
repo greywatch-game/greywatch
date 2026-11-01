@@ -949,275 +949,57 @@ lamps' atlas were already done (X4.1c).
 
 The full record is in [the archive](plans/done/babylon_exit_landed.md).
 
-### X4.3 — The viewmodel and the kit bay — **M–L, as four sub-steps** (split 2026-10-31, decided the same day) — X4.3a **LANDED** (3e48d98, review fixes after it), X4.3b **LANDED** (fa58735, review fixes after it), X4.3c **LANDED** (58ab5ed)
+### X4.3 — The viewmodel and the kit bay — **M–L, as four sub-steps** (split 2026-10-31, decided the same day) — X4.3a **LANDED** (3e48d98, review fixes after it), X4.3b **LANDED** (fa58735, review fixes after it), X4.3c **LANDED** (58ab5ed), X4.3d **LANDED** (4070427) — **all four LANDED**
 
 The player's own weapon — whichever of the nine carried rigs is up, its
-optic, both gloved arms, the throwing fist with its grenade or bottle, the
-spent magazine and the muzzle flash hung off it — comes off Babylon's scene,
-and so does the kit screen's card behind it. Nothing here is a PERF_PLAN
-item and **no sub-step changes the picture**: unlike X4.1 and X4.2 there is no
-fade or tier to build on the result, so all four are proven byte-identical
-and each lands on its own leaving the game shippable. If one cannot be — an
-equal-depth tie the new order loses, a canvas upload that rounds differently
-— that difference is broken out into a commit of its own with the bank's
-numbers (rule 2), never absorbed. It is split so the instrument comes first,
-the hierarchy moves before the draw (X4.1a's and X4.2a's shape), and the two
-BLENDED surfaces — the lens glass and the kit card, the riskiest draws in the
-step and the only ones whose slot is load-bearing — move last and alone.
-
-**What the viewmodel is today** (`entities/ViewModel.ts`): a tree of
-`TransformNode`s parented to the CAMERA (`body` → `weapon` → one root per
-carried id → the model's `parts.root`, the two arms, the magazine and its
-spent clone, the bolt, the slide, the warhead, one `SightAssembly` root and
-`sightCenter` per optic; `throwHand` → the fist, the pip, the bottle; `muzzle`,
-`ejectPort`; the card), every weapon and every optic BUILT up front and all
-but the carried ones switched off (`applyFit`, :1135). The pose stack is
-additive layers into `pos`/`off`/`rot` written onto `weapon` once a frame
-(`update`, :1403; `applyPose`, :1778). Four things in it are outside what
-`rigJoints.ts`' `Joint` models (its header: "No joint here has a pivot … a
-quaternion of its own"): **pivots** (`setPivotPoint` on both arms, the
-magazine and its spent clone, :836-852, and the launcher's warhead,
-`RpgModel.ts:272`); **a quaternion that overrides the Euler** (both arms
-always, `weapon` on the turntable, :838-839, :1272/1290); **the camera as the
-root** (its world is the inverse of its view, which Babylon makes); and
-**meshes that parent meshes** (the fist's `ball` → `pip`; `buildMolotov`'s
-bottle → neck, cloth, wick). Its surfaces are four kinds of material: cel
-matte and glossy (`mats.get` / `getGlossy`, the finish ladder's mirror rung
-included), `getEmissive`'s unlit `StandardMaterial` (every reticle, bead and
-post — the posts are emissive BLACK, `optics.ts:553` — the pip, the wick,
-the flash), the two lens glasses (a `StandardMaterial` of their own per
-weapon, alpha 0.12 and 0.07, blended, `optics.ts:807-839`, `:912-931`), and
-the card (`StandardMaterial` over a 256² `DynamicTexture`,
-`ALPHA_REPLACE_COLOR` at alpha 0, depth `ALWAYS` with `forceDepthWrite`,
-`ViewModel.ts:231-299`). Every viewmodel mesh and the flash's petals are in
-`VIEWMODEL_GROUP` (1) (`ViewModel.ts:956`, `PlayerView.ts:101`); **the card
-is NOT** — it is the last blended mesh of group 0 (`alphaIndex` `Infinity`),
-which is the slot that makes it cover the world and be covered by the gun.
-**Group 1's depth is NOT cleared** (`Game.ts:1775-1782`): the frame keeps one
-depth image of the world and the gun, which `FrameDepth` hands to the ink
-(`ink.near`), the motion blur (`nearSharp`/`nearFull`) and the paper
-(`heldWithin`), and against which `GlowPass` occludes — all of which name
-the gun by DEPTH alone, so a draw that writes the same depth keeps them.
-
-**Two of its reads decide an OUTCOME** (`FINDINGS.md` 55): the grenade's
-release point is `throwHandWorld()` (`Game.releaseGrenade`, `Game.ts:9881`)
-and the rocket's start is `muzzleWorld()` (`Game.launchRocket`, :7093), each
-submitted as a command's `origin`. Both read Babylon's render-id cache
-(`getAbsolutePosition`, unforced): the world the LAST render composed, or a
-fresh compose where the node was not drawn in it — "one frame stale", as
-`throwHandWorld`'s own comment says. `ejectPort` (the brass) and
-`evaluateReload`'s `parts.root.getWorldMatrix()` (the magazine's fall, :1922)
-read the same cache for the picture.
-
+optic and the optic's glass, both gloved arms, the throwing fist with its
+grenade or bottle, both magazines and the muzzle flash — and the kit screen's
+card behind it are off Babylon's scene, and no sub-step changed the picture.
 - **X4.3a — the bank sees the viewmodel LANDED** (3e48d98, review fixes
-  after it; 2026-10-31; no change to the game). Twenty-two rows appended at
-  the end of Harrowmead's list (`bench/vantages.ts`' `viewmodelRows`,
-  `kitRows`, `reviewRows`) and banked with
-  `--rows`: `view-greendot-hip`/`-aim` and `view-longscope-hip`/`-aim` (the
-  DMR), `view-pistol-aim`, `view-rpg-aim`, `view-mine-hip`,
-  `view-finish-satin`/`-glint`/`-mirror` (the ladder's three rungs above
-  matte), `view-reload-drop` and `view-reload-seat` (a dry reload, two rows
-  because the two magazines are never in frame together; the camera turned
-  by the head's look and lean as `CameraSystem` turns it), `view-bolt`,
-  `view-load`, `view-throw-frag`, `view-throw-molotov`, `view-flash` (a
-  seeded strobe), and `kit-desktop`/`kit-phone` (the real lid over
-  `deploy`, the bay `stageBay` measures at 1920x1080 and at 832x384 stated,
-  both shot at the bank's frame), and the review's three after them:
-  `view-pistol-reload` (the slide locked back), `view-bolt-aim` (the cycle
-  aimed, the reticle on the axis), `view-reload-tactical` (the spent
-  magazine stripped into the hand). A held reload is posed off ITS OWN
-  previous frame (its gravity reads Babylon's render cache: one frame
-  rendered with the pose up, then posed again). `view` takes `params` (a partial
-  `ViewModelParams` over the player's own), `finish`, `throwable` and
-  `flash`; `kit` is new; the freeze holds the light clock against the kit
-  lid's per-frame update. **Measured** (after the review's fixes):
-  `--check --keep` twice back to back, all 84 frames byte-equal between the
-  runs and the 22 new rows byte-equal to the bank; the 62 old rows
-  byte-equal to a BEFORE at 05eb7d9 (the same 34 stale rows); `census
-  --against` the BEFORE (at 3e48d98): all 62 old rows equal, Harrowmead's
-  total moving only by the new rows; typecheck, build, corecheck pass.
-  Every new or re-banked row looked at.
-- **X4.3b — the viewmodel's joints are ours LANDED** (fa58735; 2026-10-31;
-  no picture change, no outcome change). The viewmodel is a tree of JOINTS
-  (`ViewModel.tree`, `entities/viewTree.ts`; every `TransformNode` it made a
-  joint made at the same moment, every mesh a joint of its own and none
-  parented), and Babylon is handed each switched-on, visible mesh's world once a
-  frame (`drawView`, immediately before the render; each mesh's own switch
-  synced before the cull, `syncSwitches`). `Joint` gained a PIVOT, an
-  overriding QUATERNION, an OUTSIDE root (the camera) and a fixed local; and
-  the readers answer out of `RenderCache` (`rigJoints.ts`), Babylon's
-  render-id cache reproduced and stamped by the render's own evaluation, so
-  `muzzleWorld`, `throwHandWorld`, the eject port and the reload's gravity
-  are Babylon's answers to the bit. **Found first:** the render's camera
-  update never moves the view after the hand-over (0 of 1,562 frames, the
-  camera's world at `drawBodies` against at evaluation), and the render id
-  a frame's update reads is the id the last evaluation ran at (1,561 of
-  1,561). **Oracle:** a live offline round recorded on the parent (fire,
-  ADS, sprint, a tactical reload, frag, molotov, pistol, a rocket and its
-  load) and replayed on both trees, and a seeded sequence through all nine
-  rigs in all seven sights (both reloads, a cancelled one, the bolt, the
-  load, both throws, the turntable): **5,544 frames and 85,893 drawn meshes
-  identical, 2,589 reader answers identical as float64 bits**, and the three
-  submitted origins recomputed bit for bit; every drawn mesh the fresh
-  composition of its node chain on the parent (110,514) and of its joints on
-  the step (113,573, an offline and a netplay round among them). The bank 84 of 84 byte-equal to the BEFORE
-  (`view-pistol-reload`'s two-pixel 1/255 outcome is the main tree's own: the
-  parent there draws it too); `kit:hash --models` 244 of 244 identical (the
-  script now hashes the joints in the nodes' bytes); `census` equal;
-  sight alignment identical on both trees in all 45 combinations. **The
-  post-commit review** found no outcome bug; its fixes (the archive has
-  them): one shape for every viewmodel joint (`viewJoint`), the tree's
-  `JointTree` made private and the `VERIFYING.md` recipe composing into
-  scratch, a parent mesh refrozen whenever its joint was recomposed, a
-  provisional id that cannot repeat, every mesh's NONUNIFORMSCALING chosen
-  at `seal` (the bottle's wick had lost it), a switch walk that skips
-  switched-off subtrees, wording, and a constraint written into X4.3c's
-  brief. The replay oracle re-run: identical again on every frame and every
-  answer.
-- **X4.3c — the weapon drawn by us: every opaque part LANDED** (58ab5ed;
-  2026-10-31; no picture change). Every opaque surface of the viewmodel —
-  each rig's colour groups, magazines, bolt, slide and warhead, each optic's
-  housing and reticle, the arms, the fist with its frag or bottle, and the
-  muzzle flash — is a SEGMENT our renderer draws (`render/ViewDraw.ts`,
-  `render/viewProgram.ts`; `ViewSegment`, `entities/viewTree.ts`: the `Part`
-  a builder made with the mesh's `isVisible` and own switch), and **Babylon
-  is made no opaque viewmodel mesh**: the builders hand back segments
-  (`WeaponBuild.merge`/`lit`, `buildArm`, `optics.ts`, `molotovSegments`,
-  the flash), the optics' two glasses and the kit card staying Babylon's
-  (X4.3d). The kit is uploaded once at construction; **one draw a segment,
-  one instance**, the cel ones by their material's recipe (the `PLAIN`
-  variant), the unlit ones by the emissive palette's program over the
-  weapon's own table (`viewEmissiveRecipe`), the lit ones into the glow's
-  mask first in that pass at `GlowRules`' bloom pulled inside the render; at
-  group 0's `"afterGroup"` (after the card, before the glasses) in
-  **Babylon's group-1 order** — `Game.drawView`'s stable sort of the order
-  made by material `uniqueId`, so a finish re-orders it as it did; installed
-  for the SESSION (the kit screen covers `menu`). `ViewTree.draw` still
-  evaluates every surface on and visible, segment or glass, settled at the
-  render's id (X4.3b's review's constraint). `kit:hash --models` hashes a
-  segment in its mesh's bytes; `census` counts it; profiler report version
-  23 adds `view`. **Measured**: the bank against a BEFORE at edccb4f **83 of
-  84 byte-identical**, every Harrowmead row (the 22 view and kit rows) among
-  them — `sarab/shelf`'s one pixel by 1/255 the worktree's own (the parent in
-  the main tree draws the step's bytes); the glow's mask read back at every
-  Harrowmead row **37 of 37 identical**; `census --against` every total equal,
-  Babylon's draws falling by the gun's (8-19 a view row) and ours rising by
-  them; `kit:hash --models` **244 of 244**; every finish on every primary on
-  the turntable **96 of 96 byte-identical**; X4.3b's replay oracle on both
-  trees **1,563 and 3,981 frames identical, 303 and 2,286 reader answers
-  identical as float64 bits**, every drawn segment its joints' fresh
-  composition; the kit
-  screen from the menu (no map: the gun drawn) and from deploy at 832x384 and
-  3440x1440; offline rounds with every primary, the pistol, both throwables
-  and both AT items, and a netplay round: the weapon drawn on every frame,
-  every reader-backed origin bit for bit, no refusal, no error; `gate`, `shaders`, typecheck, build, corecheck, `math-check` and `parity` pass.
-  **Deviations** (the archive has them): the profiler's `view`; a new finish
-  material draws at once where Babylon waited for its compile. (The mask's
-  order, first where Babylon drew it last, was restored by the owner's
-  decision below.) **The post-commit review**
-  found one real fault: the draw order's TIE-BREAK was the joints' walk, not
-  the order made (4 of 14 draws on the rifle, 4 of 13 on the SMG, 6 of 17 on
-  the pistol; the landed "order matches" check sorted the same list it
-  tested). Fixed after it — ties go to the segment made first (`slot`) — and
-  checked against the PARENT's own group-1 queue as it rendered: every frame
-  of both replays equal (the landed commit differed on 1,418 of 1,564); with
-  it a refusal told once per change, a late pipeline failure routed, DEV
-  asserts, the mask-order and profiler-span words corrected; the bank,
-  mask, readers, `kit:hash` and every gate unmoved (the archive has it).
-  **Three decisions the owner made on 2026-10-31**, landed after it: the
-  weapon draws LAST in the glow's mask again, as Babylon drew it (a late
-  point of ours, `GlowPass.onMaskCloseObservable` →
-  `Renderer.addGlowMaskLate`, which X4.3d's glasses inherit); `Renderer.begin`
-  does nothing on a frame with nothing of ours committed (the menu with no
-  kit screen); and a DEV warning, once per change, when group 0 renders no
-  mesh of Babylon's under draws of ours hung on its points — a seam X4.4-X4.6
-  owe a fix (their briefs say so). The bank, the mask (and a blended spark in
-  front of a lit part, now matching the parent where the first order did
-  not), the readers, `kit:hash` and every gate unmoved.
-- **X4.3d — the lens glass and the kit card (no picture change), and group 1
-  goes.** The two glasses (the holo's disc and the reflex's canted pane, one
-  pair a rail weapon) as a BLENDED draw of ours after the gun's opaque
-  parts: colour `SRC_ALPHA`/`ONE_MINUS_SRC_ALPHA` and alpha (ONE, ONE) —
-  `ALPHA_COMBINE`, so ink behind a lens is attenuated by its alpha as now —
-  no depth written, both faces, back to front, `StandardMaterial`'s unlit
-  emissive at its alpha reproduced as `EmissiveWorld.ts` reproduced
-  `getEmissive`'s, never in the mask (`noGlow`). The card as a draw of ours
-  at the head of the same point, before the gun: its 256² canvas uploaded as
-  a texture of ours as `DynamicTexture.update` uploads it (its flip, its
-  format, no mips — none were asked for — and Babylon's sampler) and
-  repainted only when the bay moves (`updateInspect`, :1376-1380);
-  `ALPHA_REPLACE_COLOR`'s factors — colour (ONE, ZERO), alpha (ONE,
-  ONE_MINUS_SRC_ALPHA) at a fragment alpha of 0, the coverage channel
-  untouched — depth `always` and written, no culling; up
-  only between `beginInspect` and `endInspect`. With group 1 empty,
-  `setRenderingAutoClearDepthStencil(VIEWMODEL_GROUP, false)` and
-  `VIEWMODEL_GROUP` go, the glow's stage rule is stated by the draw itself
-  rather than by a group id (`Game.glowAdmits`, :2156-2158), `Player
-  .warmView` goes (the glass was the last viewmodel pipeline it compiled,
-  `Player.ts:2494-2505`), and `FINDINGS.md` 16's "only the weapon and optic
-  WORN are warmed" is settled. The profiler's `drawOverlay` was group 1
-  (`FrameProfile.ts:1365-1374`) and records nothing once it is empty: it is
-  retired with a report version, or re-hung on our draw. **Oracle:** the
-  bank's aimed `holo` and `reflex` rows and X4.3a's kit rows byte-identical,
-  every other row too; the kit screen walked through a resize, a rotation
-  into portrait and the AT row arriving (the pool repainting) on a phone and
-  a 32:9 window; `pipelines.mjs` creating nothing on a first ADS through
-  either glass; a capture's phase tree.
-- **Read first:** `docs/weapons.md` from the top to the end of the
-  viewmodel's bullets (its `VIEWMODEL_GROUP` bullet is out of date: below),
-  the "reticle cannot lie" and eye-relief sections; `docs/rendering.md`'s
-  ink (the near band, the coverage channel), "The smear", "Our renderer's
-  frame" (the three draw points, the bundle trap), the palette's mask, the
-  two bullets on group 1 and the kit card, and "The bodies, ours";
-  `ViewModel.ts`' header and `buildKitBackdrop`; the comment over
-  `setRenderingAutoClearDepthStencil` in `Game.ts`; `rigJoints.ts`;
-  `BodyDraw.ts`' header; `FINDINGS.md` 55 and 16; X4.1a's note (the stale
-  reader, the oracle's shape).
-- **Contracts all four keep:**
-  - the reticle cannot lie: the aimed pose is DERIVED by `applyFit` alone off
-    the worn sight's `sightCenter`, re-derived on every loadout change, a
-    change of weapon included, and `zoomComp` scales `adsPos` and the
-    weapon's scaling together
-  - the viewmodel reads the camera and never writes it, and decides nothing
-    but the two command inputs it is read for, whose answers stay bit for bit
-  - one depth image for the frame: the gun draws into the world's depth with
-    no clear, so the ink, the blur, the paper and the glow's occlusion name
-    it by depth as they do now
-  - the coverage channel: the cel parts write `opaqueAlpha`, the emissives 1,
-    the lens glass its alpha accumulated, the card nothing
-  - the card covers the world and is covered by the gun, up only while the
-    turntable is; on the kit screen only the stage blooms, and no lens and
-    no card ever does
-  - the bay is the DOM's (`LoadoutScreen.stageBay`) and the scene follows:
-    nothing here changes `updateInspect`'s fit or the bay's column
-  - every rig built once and all but the carried one switched off: a
-    loadout change is switches and a re-derivation, never a rebuild; the
-    muzzle and the eject port outlive a swap
-  - a finish is a material write and nothing else, out of the optic's and
-    the brass group's reach, `standard` the built state
-  - the local player casts nothing
-  - the near plane (`CameraSystem`'s `minZ` 0.05) and everything bound by it
-    (`kick.adsClearance`, eye relief rising with magnification) are the
-    camera's: the projection is pulled off it, never restated
-- **Verify, each sub-step:** the bank `--check --keep` against a BEFORE at
-  the parent; `census --against`; `gate`, `shaders`; typecheck, build,
-  corecheck, `parity`; `kit:hash --models`; a round offline and a netplay
-  round; the kit screen from the menu and from deploy.
-- **Rewrites:** `docs/weapons.md` (the `VIEWMODEL_GROUP` bullet, which says
-  the depth is cleared); `docs/rendering.md` (group 1's bullet, the kit
-  card's two, the draw points, "anything outside rendering group 0" in the
-  size gate's exemptions); `docs/ui.md` ("The kit screen": "drawn in
-  `VIEWMODEL_GROUP`"); `docs/profiling.md` (`drawOverlay`); `docs/game.md`
-  (the warm-up's poses); `CLAUDE.md` (the size gate's group exemption, the
-  glow's stage rule; "Every BODY AND HULL IS OUR RENDERER'S" gains the
-  weapon); the contract headers of `ViewModel.ts`, `PlayerView.ts`,
-  `weaponKit.ts`, `optics.ts`, `finishes.ts`, `rigJoints.ts` and
-  `world/parts.ts`; `FILES.md`.
-- **Not this step's: the brass** (`PlayerView`'s casing pool, cel boxes
-  thrown into the WORLD in group 0, `PlayerView.ts:105-117`) is X4.4's, as a
-  pool; it reads the eye port's joint from X4.3b on. The thrown grenade and
-  bottle, the flying rocket and the laid mine are X4.4's too; the ones in
-  the hand are this step's.
+  after it; 2026-10-31). Twenty-two rows appended to Harrowmead's list (the
+  two missing optics, the pistol, the launcher and the mine, the gloss rungs,
+  the gestures held mid-phase, the kit screen at two bays, the review's
+  three), so every later sub-step had a BEFORE.
+- **X4.3b — the viewmodel's joints are ours LANDED** (fa58735, review fixes
+  after it; 2026-10-31). The viewmodel is a tree of joints (`ViewTree`),
+  `Joint` gaining a pivot, an overriding quaternion, an outside root and a
+  fixed local; the readers answer out of `RenderCache`, Babylon's render-id
+  cache reproduced, so the grenade's release and the rocket's start stay
+  Babylon's to the bit (**decided**).
+- **X4.3c — the weapon drawn by us: every opaque part LANDED** (58ab5ed,
+  review fixes bd1aed3 and the owner's decisions 595e35d; 2026-10-31). One
+  draw a segment (**decided**: no fold) in Babylon's group-1 order, a tie to
+  the segment made first; the mask LAST in its pass (**decided**);
+  `Renderer.begin` idle with nothing of ours committed (**decided**); the
+  empty-group seam guarded (**decided**).
+- **X4.3d — the lens glass and the kit card, and group 1 goes LANDED**
+  (4070427; 2026-11-01). The glasses and the card are segments (`role`),
+  drawn at the same point — the card first with `ALPHA_REPLACE_COLOR`'s
+  factors, depth `always` and written, its canvas uploaded once per paint;
+  the glasses last with `ALPHA_COMBINE`'s, no depth, back to front — and
+  Babylon is made no viewmodel mesh. Group 1 is empty: the group, its depth
+  rule, `Player.warmView` and the profiler's `drawOverlay` (report version
+  24) are gone, and the glow's stage rule is stated by the weapon's draw.
+  The bank 83 of 84 byte-identical (the 84th the main tree's known pixel),
+  the mask 37 of 37, the replay's frames, draw order and 2,589 reader
+  answers identical, a first ADS through either glass creating nothing.
+
+**Owed onward:**
+- **The render cache's frame id** (X5.4, decided): `RenderCache` is keyed
+  on `scene.getRenderId()` and settled from a Babylon observable, both of
+  which go with the frame. `FINDINGS.md` 55 stays after the exit.
+- **The empty-group seam is X4.5's**: over the menu, with the kit screen up
+  and no map, the sky is the only thing of Babylon's left in group 0 (X4.3d
+  measured it never empty); whichever of X4.4-X4.6 drains the group owes the
+  fix.
+- **The kit's cost on a phone**: it is built and uploaded on every boot
+  (~14 MB of GPU buffers, the menu included); building it lazily, at its
+  first use, is a lever to measure first (boot time and resident memory).
+- **The kit's memory** the X4.3c review left: a colour, a uv and a slot
+  uploaded for every vertex, and each spent magazine's arrays uploaded twice.
+- **The brass** and the thrown and laid pools are X4.4's.
+
+The full record is in [the archive](plans/done/babylon_exit_landed.md).
 
 ### X4.4 — The effect pools, and pipelines compiled at load — **M**
 
@@ -1242,7 +1024,7 @@ read the same cache for the picture.
     of Babylon's runs NONE of ours, silently (a DEV build warns once per
     change, `Renderer`). This step takes meshes out of group 0; whichever of
     X4.4, X4.5 and X4.6 leaves it able to be empty in some state (the kit
-    screen over the menu holds the card and the sky today) owes the seam a
+    screen over the menu holds the sky alone since X4.3d) owes the seam a
     fix — our draws must not depend on group 0 being non-empty (a point of
     ours that does not ride Babylon's group, or a mesh kept in it on
     purpose, stated as such).
@@ -1263,7 +1045,7 @@ The dome, stars, moon and cloud ring (`Sky`, `cloudMasses`, `CloudShader`).
     of Babylon's runs NONE of ours, silently (a DEV build warns once per
     change, `Renderer`). This step takes meshes out of group 0; whichever of
     X4.4, X4.5 and X4.6 leaves it able to be empty in some state (the kit
-    screen over the menu holds the card and the sky today) owes the seam a
+    screen over the menu holds the sky alone since X4.3d) owes the seam a
     fix — our draws must not depend on group 0 being non-empty (a point of
     ours that does not ride Babylon's group, or a mesh kept in it on
     purpose, stated as such).
@@ -1290,7 +1072,7 @@ The dome, stars, moon and cloud ring (`Sky`, `cloudMasses`, `CloudShader`).
     of Babylon's runs NONE of ours, silently (a DEV build warns once per
     change, `Renderer`). This step takes meshes out of group 0; whichever of
     X4.4, X4.5 and X4.6 leaves it able to be empty in some state (the kit
-    screen over the menu holds the card and the sky today) owes the seam a
+    screen over the menu holds the sky alone since X4.3d) owes the seam a
     fix — our draws must not depend on group 0 being non-empty (a point of
     ours that does not ride Babylon's group, or a mesh kept in it on
     purpose, stated as such).
