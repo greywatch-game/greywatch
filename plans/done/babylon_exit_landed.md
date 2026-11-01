@@ -6826,7 +6826,7 @@ X4.3d's brief, word for word:
     run-to-run noise (1-3/255); `gate.mjs` and `shaders.mjs` clean on
     seven; typecheck, build, corecheck and `parity` pass.
 
-### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (HASH)
+### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (63a338a)
 
 X4.4a's brief, word for word:
 
@@ -6848,7 +6848,7 @@ X4.4a's brief, word for word:
   **Oracle:** `bank.mjs --check` twice back to back, every new row
   byte-identical to itself; every old row unmoved.
 
-**X4.4a landed** (HASH; 2026-11-01; no change to the game — the reference
+**X4.4a landed** (63a338a; 2026-11-01; no change to the game — the reference
 bank, its harness, its table and `pipelines.mjs` only).
 - **What it is.** Twenty-one rows, every one raised through the door the
   game raises its effect by and posed on a stated clock: nineteen appended at

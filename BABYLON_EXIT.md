@@ -1020,7 +1020,7 @@ card behind it are off Babylon's scene, and no sub-step changed the picture.
 
 The full record is in [the archive](plans/done/babylon_exit_landed.md).
 
-### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (HASH)
+### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (63a338a)
 
 Every pooled effect Babylon still draws comes off its scene, and the
 warm-up's `warm(on)` poses become a declared list of pipelines. Nothing here
@@ -1089,7 +1089,7 @@ point of ours reproduces it: a blended pool drawn at `afterOpaque` lands
 before every pane, at `afterGroup` after every pane, and either is wrong for
 some fade — X4.4b draws inside the sort or records the change.
 
-- **X4.4a — the bank sees every pool LANDED** (HASH; 2026-11-01; no
+- **X4.4a — the bank sees every pool LANDED** (63a338a; 2026-11-01; no
   change to the game). Twenty-one rows, each effect raised through the door
   the game raises it by on a stated clock (`Vantage.fx`): nineteen at the end
   of Coldharbour's list (see-through glazing, `hard` and `ground` side by
