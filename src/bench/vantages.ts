@@ -94,7 +94,14 @@
  *   seeded for the clock (the sound's are not, and do not reach them), the
  *   rubble and the shards run on their own seeded streams under Havok's fixed
  *   step, and `mines` are laid as the wire lays them
- *   (`NetOrdnance.applyMines`). All of it is put away before the next row.
+ *   (`NetOrdnance.applyMines`). `drawn` is a round's PICTURE handed over as
+ *   `CombatSystem.onRound` hands it (`CombatFx.drawRound`: no wall query, the
+ *   impact at `to` of the stated kind and normal, no mark) — the door the
+ *   flesh and glass kinds, and an impact off the static world, come through.
+ *   `wire` feeds the wire's flights (`WireFlights`) to the session's
+ *   `NetGrenades` and `NetOrdnance` after the clock, then poses both at each
+ *   of `poses` in turn (render times, milliseconds). All of it is put away
+ *   before the next row.
  * - `zones: true` — the capture rings and their flags, which every other row
  *   hides. Built at the start of a round, so the flag is at the foot of its
  *   pole and the cloth at rest.
@@ -112,6 +119,7 @@ import type { SightId } from "../entities/sights";
 import type { ThrowableId } from "../entities/throwables";
 import type { StageBay, ViewModelParams } from "../entities/ViewModel";
 import type { CarriedId, PrimaryWeaponId } from "../entities/weapons";
+import type { ImpactKind } from "../systems/CombatSystem";
 
 /** A pose: `[x, metres ABOVE THE SURFACE, z]` to look at an absolute point. */
 type Pos = readonly [x: number, above: number, z: number];
@@ -130,7 +138,20 @@ export type FxEvent =
   | { at: number; explode: { at: Point; power?: number } }
   | { at: number; blaze: { at: Point } }
   | { at: number; shards: { pane: number; at: Point; dir: Point } }
-  | { at: number; brass: true };
+  | { at: number; brass: true }
+  | { at: number; drawn: { from: Point; to: Point; kind: ImpactKind; normal?: Point } };
+
+/**
+ * One snapshot's worth of the WIRE's flights, as `NetGrenades.applySnapshot`
+ * and `NetOrdnance.applySnapshot` take them: `now` is the server time it
+ * describes (milliseconds, the connection's clock), and every flight is
+ * somebody else's (`placeVantage` hands both a local slot no flight names).
+ */
+export interface WireFlights {
+  now: number;
+  grenades?: readonly { i: number; p: Point; fuse: number; k?: ThrowableId }[];
+  rockets?: readonly { i: number; p: Point; dir: Point }[];
+}
 
 /**
  * One row. `of` and `proves` are for a person reading a dirty diff; the rest
@@ -165,6 +186,7 @@ export interface Vantage {
     seconds: number;
     events: readonly FxEvent[];
     mines?: readonly { at: Point; armed: boolean }[];
+    wire?: { snapshots: readonly WireFlights[]; poses: readonly number[] };
   };
   zones?: boolean;
   settings?: Readonly<Record<string, string | boolean | number>>;
@@ -842,7 +864,9 @@ function reviewRows(): Vantage[] {
  * laid bodies (a frag, a bottle, a rocket, a mine); the brass; the blast at
  * three ages on both surfaces, with its rubble and its scorch; a scorch
  * fading; a molotov burning; a pane's shards; and fading effects behind and
- * in front of see-through glazing. Coldharbour, because it has three things
+ * in front of see-through glazing — and, appended by X4.4a's review, a blast
+ * at power 2, the wire's flying bodies, the flesh and glass sparks, and a
+ * fade squarely behind a pane and one squarely in front of it. Coldharbour, because it has three things
  * these need in one boot: see-through glazing (`map.panes`, the square's
  * shopfronts), both ground kinds side by side (the quay's deck and walls
  * answer `hard`, the floor beside them `ground`), and armour, so the third
@@ -868,8 +892,8 @@ function effectRows(): Vantage[] {
   /** Rounds from one shooter, each landing `age` seconds before the end of a `seconds`-long clock (less its flight). */
   const rounds = (seconds: number, from: Point, hits: readonly (readonly [to: Point, age: number])[]): FxEvent[] =>
     hits.map(([to, age]) => ({ at: seconds - age, round: { from, to } }));
-  /** A frag's blast `age` seconds old, raised as the wire's `explode` raises one. */
-  const blast = (id: string, on: "hard" | "ground", age: number, of: string, proves: string): Vantage => {
+  /** A blast `age` seconds old, raised as the wire's `explode` raises one — a frag's unless `power` says otherwise. */
+  const blast = (id: string, on: "hard" | "ground", age: number, of: string, proves: string, power?: number): Vantage => {
     const at: Point = on === "hard" ? [-16, 0.05, -37.6] : [-16, 0.06, -31];
     return {
       id: `fx-blast-${on}-${id}`,
@@ -877,7 +901,7 @@ function effectRows(): Vantage[] {
       proves,
       pos: harbour,
       target: [at[0], 1.5, at[2]],
-      fx: { seconds: age, events: [{ at: 0, explode: { at } }] },
+      fx: { seconds: age, events: [{ at: 0, explode: power === undefined ? { at } : { at, power } }] },
     };
   };
   // A wall of marks: a jittered grid on the quay's harbour face, and on the
@@ -1053,7 +1077,7 @@ function effectRows(): Vantage[] {
       "ground",
       0.08,
       "a frag's blast on the floor at the road's edge by the promenade (`ground`) 0.08 s after it went off",
-      "the BLAST at its first age on GROUND (X4.4c): the flash and the fireball, and the ground's own rubble born. Its scorch is laid (`ScorchMarks.mark`, visible and at full) but does not SHOW over the floor here — the road's edge and the floor beside it — where the same mark on the quay's deck, a block, does (`fx-scorch`). Not investigated: what the game draws today, recorded rather than moved",
+      "the BLAST at its first age on GROUND (X4.4c): the flash and the fireball, and the ground's own rubble born. Its scorch is laid at full (`ScorchMarks.mark`) and drawn, but the book stall and the fireball stand between this eye and the mark, so only a sliver of it reaches the frame (measured with the mark hidden and shown) — a whole scorch on the floor is `fx-molotov`'s",
     ),
     blast(
       "billows",
@@ -1083,7 +1107,7 @@ function effectRows(): Vantage[] {
       id: "fx-molotov",
       of: "a molotov burning on the promenade 1.5 s after it went up, its ignition's smoke rising",
       proves:
-        "the molotov's FLAMES (`GrenadeFx`'s clones on `getFlame()`, X4.4d) at full height, each stood on its own floor, with the ignition's billows (`BlastFx`), its scorch and its light",
+        "the molotov's FLAMES (`GrenadeFx`'s clones on `getFlame()`, X4.4d) at full height, each stood on its own floor, with the ignition's billows (`BlastFx`), its light, and its scorch on the FLOOR (`ScorchMarks`, X4.4c) — drawn whole under the flames and faint, as it is meant to be: a black decal at 0.4 is a proportional darkening, and the floor under it is fire-lit (measured with the mark hidden and shown: the whole disc moves)",
       pos: quay,
       target: [-30, 0.8, -31],
       fov: 35,
@@ -1093,7 +1117,7 @@ function effectRows(): Vantage[] {
       id: "fx-shards",
       of: "a shopfront's pane on the square bursting outward, its shards falling 0.3 s after",
       proves:
-        "the GLASS SHARDS (`DebrisSystem`, X4.4c): cel slivers cut from the pane and posed off Havok's step (`poseView`), falling — the sheet itself left standing, since a broken pane never mends in a round",
+        "the SHARD POOL (`DebrisSystem`, X4.4c) and NOT a real break's picture: cel slivers cut from pane 0 and posed off Havok's step (`poseView`), falling — in front of a sheet left STANDING, a state the game never draws (a real break takes the glazing out through `GlassFx`, and a broken pane never mends in a round, so the put-away could not undo one)",
       pos: square,
       target: [-23.8, 2, -7.5],
       fx: { seconds: 0.3, events: [{ at: 0, shards: { pane: 0, at: [-23.8, 2, -6], dir: [1, -0.1, 0] } }] },
@@ -1113,6 +1137,82 @@ function effectRows(): Vantage[] {
           [[-23.6, 1.75, -8.79], 0.04],
           [[-23.91, 1.47, -9.3], 0.1],
         ]),
+      },
+    },
+    // Appended by X4.4a's post-commit review, after every row above.
+    blast(
+      "power2-billows",
+      "hard",
+      0.6,
+      "a blast of power 2 (a mine's) on the quay's stone deck at 0.6 s, from the same eye as the frag's",
+      "the BLAST at a POWER other than 1 (X4.4c): `power` scales the billows' size and count, the rubble and the scorch, never the time — beside `fx-blast-hard-billows`, the same age at power 1",
+      2,
+    ),
+    {
+      id: "fx-wire",
+      of: "somebody else's rocket crossing the promenade, and their frag and bottle in flight over the quay's deck, drawn off the wire",
+      proves:
+        "the WIRE's flying bodies (`NetOrdnance`'s and `NetGrenades`' pools, X4.4b): the same `RocketBody` and `GrenadeBody` kits fed two snapshots and posed at a render time between them — the rocket pointed down the direction the wire sent, its motor at its built size (the wire's rocket never gutters: `NetOrdnance.update` calls no `flicker`), the frag's pip off the wire's fuse, the bottle's wick lit, both tumbled off the ground covered between two poses",
+      pos: quay,
+      target: [-29, 1.2, -33],
+      fov: 30,
+      fx: {
+        seconds: 0,
+        events: [],
+        wire: {
+          snapshots: [
+            {
+              now: 100000,
+              rockets: [{ i: 3, p: [-28, 1.35, -29], dir: [0, -0.02, -1] }],
+              grenades: [
+                { i: 7, p: [-31, 1.6, -33], fuse: 2 },
+                { i: 8, p: [-26.5, 1.4, -35.5], fuse: 3, k: "molotov" },
+              ],
+            },
+            {
+              now: 100050,
+              rockets: [{ i: 3, p: [-28, 1.3, -32], dir: [0, -0.02, -1] }],
+              grenades: [
+                { i: 7, p: [-30.6, 1.5, -33.3], fuse: 1.95 },
+                { i: 8, p: [-26.9, 1.3, -35.7], fuse: 2.95, k: "molotov" },
+              ],
+            },
+          ],
+          poses: [100020, 100030],
+        },
+      },
+    },
+    {
+      id: "fx-impact-kinds",
+      of: "rounds striking bodies and glass over the quay's deck: the flesh and the glass sparks, at two ages each, standing in the air where the body or the pane was",
+      proves:
+        "the two impact kinds with NO dust (`IMPACTS.flesh` and `.glass`, `CombatFx`, X4.4b): the warm flesh spark and the cold glass spark mid-fade (blended), handed over as `onRound` hands them (`drawRound`) — flesh is every round on a body; NO caller raises `glass` today (`CombatSystem` names flesh, `hard` or `ground`; a pane's break is a sound and shards), so its row is the table's colour and nothing the game draws",
+      pos: quay,
+      target: [-29.5, 1, -38],
+      fov: 25,
+      fx: {
+        seconds: 0.3,
+        events: [
+          { at: 0.25, drawn: { from: [-36, 1.6, -33], to: [-31, 1.2, -37.6], kind: "flesh" } },
+          { at: 0.2, drawn: { from: [-36, 1.6, -33], to: [-29.6, 1, -38.4], kind: "flesh" } },
+          { at: 0.24, drawn: { from: [-36, 1.6, -33], to: [-28.2, 1.3, -37.8], kind: "glass" } },
+          { at: 0.18, drawn: { from: [-36, 1.6, -33], to: [-30.3, 1.4, -38.8], kind: "glass" } },
+        ],
+      },
+    },
+    {
+      id: "fx-glass-sort",
+      of: "the square's west shopfront, pane 0: one impact on the shop's side wall seen squarely THROUGH the glass, and one standing squarely IN FRONT of it, both mid-fade",
+      proves:
+        "X4.4b's sort question with an unambiguous BEFORE: a `hard` spark and dust disc BEHIND pane 0 (a round through the window onto the shop's side wall, `drawRounds`, ~12.5 m from the eye) and a `hard` spark and disc IN FRONT of it (`drawRound`, as `onRound` hands a round stopped on a HULL: hard, no mark — no hull drawn, the impact standing 1.5 m short of the glass, ~7.2 m from the eye, its disc facing the eye), each projecting wholly onto the glass (projected in the X4.4a fix record). Nothing on this map stands in front of that glass for a round to strike: a pavement impact projects below the pane, and the piers beside it project onto its edge (`fx-glass`)",
+      pos: square,
+      target: [-23.8, 2, -6.65],
+      fx: {
+        seconds: 0.3,
+        events: [
+          { at: 0.2, round: { from: [-17, 2, -11], to: [-25.769, 3.051, -4.11] } },
+          { at: 0.23, drawn: { from: [-17, 2, -11], to: [-22.24, 1.66, -8.48], kind: "hard", normal: [7.8, 0.8, -4.4] } },
+        ],
       },
     },
   ];

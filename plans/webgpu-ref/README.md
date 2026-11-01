@@ -79,7 +79,13 @@ node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--gpu] [--max] [
   `--check`, grades) only the named rows, leaving every other PNG and
   `ref/mode.json` alone — so a row appended for a later step is Babylon's
   picture taken beside a bank it does not disturb. Append new rows at the END
-  of a map's list, or every row after them carries a different state.
+  of a map's list, or every row after them carries a different state. **The
+  `fx` rows (X4.4a) are no exception**: the put-away after one puts its
+  pools back and re-seeds the streams a row draws from (the rubble's, the
+  shards', the fire lights' flicker), but Havok's world keeps every body
+  the pools made, the lamps' shadow atlas keeps its allocation and caches,
+  and the flights' ids run on — so an `fx` row is its banked frame only shot
+  in its map's sequence, which is how `bank.mjs` shoots it.
 - **`census.mjs`** counts the MAIN pass's draws at every bank vantage —
   Babylon's into the frame's own target plus our renderer's — on the same
   frozen frame the bank grades, each row split into Babylon's and ours. With
@@ -153,8 +159,13 @@ node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--gpu] [--max] [
   **`--round`** plays a scripted round on an armoured map instead of standing
   still — two lives, every weapon fired, a frag, a molotov, the launcher and a
   mine, one pane broken — and files every creation under the action that
-  caused it, the installs left out: the count `BABYLON_EXIT.md` X4.4e must
-  take to zero (X4.4a's note has the first reading).
+  caused it (the spawn, deploy to playing, is a phase of its own) and under
+  the Babylon mesh being drawn when it was made, each install reported apart
+  and left out: the count `BABYLON_EXIT.md` X4.4e must take to zero (X4.4a's
+  note has the readings). The camera's path is a function of FRAMES and it is
+  turned onto the pane before the pane breaks, so what is on screen when an
+  effect is first drawn does not ride the machine's frame rate; the pane
+  phase says how many shard draws the main pass made.
 
 `cold-stagger.mjs` is **gone and is not coming back**. It existed to bake
 Coldharbour's forty cube probes four a frame because doing all forty at once

@@ -6826,7 +6826,7 @@ X4.3d's brief, word for word:
     run-to-run noise (1-3/255); `gate.mjs` and `shaders.mjs` clean on
     seven; typecheck, build, corecheck and `parity` pass.
 
-### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (63a338a)
+### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (63a338a, review fixes after it)
 
 X4.4a's brief, word for word:
 
@@ -6848,7 +6848,8 @@ X4.4a's brief, word for word:
   **Oracle:** `bank.mjs --check` twice back to back, every new row
   byte-identical to itself; every old row unmoved.
 
-**X4.4a landed** (63a338a; 2026-11-01; no change to the game — the reference
+**X4.4a landed** (63a338a, the post-commit review's fixes after it;
+2026-11-01; no change to the game — the reference
 bank, its harness, its table and `pipelines.mjs` only).
 - **What it is.** Twenty-one rows, every one raised through the door the
   game raises its effect by and posed on a stated clock: nineteen appended at
@@ -7011,3 +7012,141 @@ bank, its harness, its table and `pipelines.mjs` only).
   scorch ours, inherits the question. Coldharbour's `ground` impacts land on
   the asphalt (the floor's road), where the dust disc reads; on the
   promenade's cobbled floor it is near invisible — the same picture a round draws there.
+- **What the post-commit review found** (an independent reader over
+  63a338a and 1f16c67; fixed after it — the bank, its harness, its table,
+  `pipelines.mjs` and docs; nothing in the game moved, the shipped
+  `?bench=` included: its stops are identical, checked by the dedupe
+  `BenchScript` runs). **No game-behaviour bug.** Each claim was checked
+  before it was fixed:
+  - **`--round` left the spawn out, and filed the second install under the
+    pane.** `__gpuPhase` stayed `"install"` through `spawnPlayer`, the wait
+    for `playing` and the 30 frames after, so those creations fell in no
+    phase; worse, `phase(null)` closed a life's last phase but the next
+    `phase()` call re-opened it, overwriting the pane phase's counts with
+    everything from the end of life 1 to life 2's first weapon — the second
+    install and spawn. A run of the old script showed it (`life 1: a pane …
+    mineTables 1`, the new round's mine table, and the pane's own shards
+    missing from it), which is where X4.4a's "5 and 2 in the pane window,
+    unattributed" most likely came from: made while the label read
+    `install`, so the mesh probe's in-play list never named them. **Fixed**:
+    `life N: spawn` is a phase opened before `spawnPlayer`, a closed phase
+    stays closed (the gap between lives is the install's), and each install
+    is reported as its OWN creations (startRound to deploy) rather than a
+    running total.
+  - **The pane's reading depended on the camera.** The sweep turned the
+    camera 0.02 rad a frame inside loops bounded by wall clock, so where it
+    faced when the pane broke rode the frame rate, and a shard only
+    compiles if it is drawn. **Fixed**: the sweep is a count of FRAMES (320
+    a primary, 160 the pistol — about one turn of the compass), the camera
+    is turned onto the chosen pane (yaw and pitch at its centre from the
+    eye) ten frames before the round that breaks it, and the pane phase
+    reports the main pass's shard draws. **Five runs**, each two lives with
+    every weapon (42-100 rounds; fewer than X4.4a's 185, the sweeps being
+    frames now on an uncapped clock), a frag, two rockets, a molotov, two
+    mines and pane 21 broken at 30.4-44.5 m: **zero of Babylon's pipelines
+    and zero of ours created in play in five of five**, every phase
+    including both spawns, the shards drawn 4,848-7,692 times each run; the
+    first install made 28 of Babylon's, 23 of ours and 55 modules (boot
+    excluded), the second none. **The pools with NO warm pose in
+    `stageWarmFrame`** (which poses `CombatFx`, `GrenadeFx` — its blast
+    billows and one molotov flame — `BlastDebrisSystem`'s scorch, and the
+    blob shadow): the glass shards (`DebrisSystem`, positions and normals
+    only), the rubble chunks, the thrown and laid bodies (`GrenadeBody`,
+    `RocketBody`, `MineBody`, and the wire's copies in
+    `NetGrenades`/`NetOrdnance`) and the brass. They compile nothing in play
+    only because their pipelines already exist before it — not by
+    construction — so X4.4e's declared list must name them (its brief says
+    so now). The warm-up itself is X4.4e's and was not touched.
+  - **Every banked blast was power 1.** `fx-blast-hard-power2-billows`
+    appended: a blast of power 2 (a mine's) on the quay's deck at 0.6 s,
+    beside `fx-blast-hard-billows` — the billows bigger and more of them,
+    filling the frame from the same eye.
+  - **The wire's flying bodies were never banked** (only its mine).
+    `fx-wire` appended, and `Vantage.fx.wire` with it: two snapshots
+    (`WireFlights`, 50 ms apart) fed to `NetGrenades.applySnapshot` and
+    `NetOrdnance.applySnapshot` with a local slot no flight names, then both
+    posed at render times 100,020 and 100,030 ms — the rocket down the
+    direction the wire sent with its motor at its built size (the wire's
+    rocket never calls `flicker`), the frag with its pip lit off the wire's
+    fuse, the bottle with its wick, both tumbled off the ground covered
+    between the two poses. An offline bank boot never runs the session's
+    per-frame update (it is held under the deploy card), so the pose
+    stands. The put-away now takes the wire's grenades in
+    (`net.grenades.reset()`). The first bank of it was NOT reproducible in
+    the next check (0.61% of pixels, worst 217): a claimed wire grenade
+    rolls its attitude off `Math.random` (`GrenadeBody.begin`), outside the
+    seeded clock — the block is seeded now (`0x44b`) and the row re-banked.
+  - **`fx-glass`'s in-front fade barely overlapped the glass** — confirmed
+    by projecting every live spark's silhouette and disc rim through the
+    frame's own transform: the pier impact is 0.15 m in front of the glass
+    (8.27 m from the eye against the pane's 8.42 m on its ray), its spark
+    15 px and its disc 24 px outside the pane's projected edge at their
+    worst; the other pier impact is wholly beside the glass. Nothing on the
+    map stands in front of pane 0 for a round to strike: a pavement impact
+    projects BELOW a vertical pane from any eye above it, there is no sill
+    collider (the pane runs 0.8-3.7 m with nothing under it), and the piers
+    project onto its edge. So `fx-glass-sort` appended, with
+    `FxEvent.drawn` (`CombatFx.drawRound`, the picture as `onRound` hands
+    it over: no wall query, the stated kind and normal, no mark): BEHIND, a
+    round through the window onto the shop's side wall (`drawRounds`, its
+    own wall query) at (-25.77, 3.05, -4.11), 12.58 m from the eye, the
+    pane plane 9.97 m along that ray; IN FRONT, a `hard` impact as `onRound`
+    hands a round stopped on a HULL (no mark; no hull drawn) at (-22.24,
+    1.66, -8.48), 7.19 m from the eye, the pane 8.92 m along its ray, its
+    disc facing the eye. **Projected** at the row's frame: the behind spark
+    73 px and disc 64 px inside the pane's quad at their nearest point, the
+    front spark 64 px and disc 49 px — every silhouette point inside. Both
+    mid-fade (spark `visibility` 0.63 and 0.72, discs 0.49 and 0.60).
+  - **"A scorch on the floor draws nothing" was a misreading, neither game
+    behaviour nor a harness artefact.** Probed by hiding and showing each
+    live mark in the banked frames: on Coldharbour's floor the whole disc
+    changes pixels wherever it is in view — under `fx-molotov`'s flames, and
+    in a probe on the asphalt and the promenade's cobbles (darkening up to
+    35/255 in luminance, against 45 on the quay's lit deck). It is faint by
+    design: a black decal at opacity 0.4 is a proportional darkening (the
+    material's own comment), so on dark asphalt or a fire-lit floor it
+    barely reads. In the ground blasts' rows the book stall (and at 0.08 s
+    the fireball) stands between the harbour eye and the mark, so only a
+    sliver of it reaches the frame — what the first note read as nothing.
+    The marks are in the active list, and the 8.75 cm lift (the row's `at`
+    at 0.06 m plus the mark's 0.035 over a floor at 0.0075) is harmless.
+    **No `FINDINGS.md` entry**, since nothing is wrong; X4.4c's brief says
+    the floor scorch draws, and `fx-blast-ground-fireball`'s `proves`
+    (which said it did not show) and `fx-molotov`'s now say what each frame
+    holds.
+  - **Rows depended on each other's order.** Fire lights take their flicker
+    phases from `LightingSystem`'s stream, which only a map build re-seeds.
+    **Fixed** where it is cheap: the put-away re-seeds it
+    (`mulberry32(0x44a)`), which moved `fx-molotov` alone (its light's phase,
+    54% of pixels at a mean of 1.2/255; re-banked) and no old row (the
+    put-away runs only after an `fx` row, and every `fx` row is after every
+    old one). **Documented** where it is not: Havok's world keeps every
+    pooled body, the lamps' atlas its allocation and caches, and the
+    flights' ids run on (the harness's put-away comment and the README).
+  - **The flesh and glass sparks were never banked.** `fx-impact-kinds`
+    appended: two of each over the quay's deck through `drawRound`. Flesh is
+    every round on a body; **no caller raises `glass` today** —
+    `CombatSystem` names `flesh`, `hard` or `ground`, and a pane's break is a
+    sound and shards — so its spark is the table's colour and nothing the
+    game draws, which the row says.
+  - **Docs**: the X4.4 survey said `BlastShader`'s and `FlameMaterial`'s
+    draws write no depth; only their glow-mask twins (`blastGlowMask`,
+    `flameGlowMask`) set `disableDepthWrite`, the main materials write it
+    (corrected). `docs/rendering.md` said the banked vantages hold none of
+    what a culling change touches; `fx-marks-far` banks the size gate's
+    edge on a pool now (corrected: the bank still holds no body, which is
+    what that latch is about). `fx-shards`' `proves` says plainly that it
+    checks the SHARD POOL in front of a sheet left standing, a state the
+    game never draws; a real break as a last row was set aside — every row
+    a later step appends would stand behind a broken pane.
+  - **Measured.** New rows banked with `bank.mjs coldharbour --rows=…`,
+    each from two byte-identical grabs, `fx-molotov` and `fx-wire`
+    re-banked the same way. `--check --keep` twice back to back: all 25 `fx` rows "within
+    floor" at 0 pixels against the bank in both runs, and all 109 kept
+    frames byte-equal between the runs (the pistol pixel did not flake);
+    against X4.4a's own kept frames (its second run) the 84 old rows and 20
+    of its 21 `fx` rows byte-equal, the 21st `fx-molotov` (re-banked, above);
+    the same 34 stale rows failing the stale bank as X4.4a's runs did; no
+    console or page error. Typecheck, build and corecheck pass.
+    Every new and changed row looked at, its `proves` written against its
+    frame.

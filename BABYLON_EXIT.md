@@ -1020,7 +1020,7 @@ card behind it are off Babylon's scene, and no sub-step changed the picture.
 
 The full record is in [the archive](plans/done/babylon_exit_landed.md).
 
-### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (63a338a)
+### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (63a338a, review fixes after it)
 
 Every pooled effect Babylon still draws comes off its scene, and the
 warm-up's `warm(on)` poses become a declared list of pipelines. Nothing here
@@ -1053,15 +1053,18 @@ confirms its own before it moves anything):
   eye-port joint (decided 2026-10-31).
 - **The blast** (`BlastFx`, 899 lines): one thin-instanced icosphere per
   blast slot, plus a shared small one for the sparks and the trails, on
-  `BlastShader`'s own WGSL, no depth write, its bounding box set by hand each
-  frame, and 39 `Math.random` draws (pictures, never a round stream).
+  `BlastShader`'s own WGSL — which WRITES depth (an opaque-list draw, X4.4a's
+  sort measurement; only its glow-mask twin, `blastGlowMask`, sets
+  `disableDepthWrite`) — its bounding box set by hand each frame, and 39
+  `Math.random` draws (pictures, never a round stream).
   `BlastDebrisSystem` (806): the rubble chunks (cel, two materials, posed off
   Havok through `poseView`) and `ScorchMarks`, a **`StandardMaterial`** faded
   by `visibility` — the one material in the pools that is Babylon's own
   rather than a shader of ours.
 - **Physics-posed shards** (`DebrisSystem`, 793): cel slivers cut from the
   pane, posed off Havok through `poseView` like the rubble.
-- **The fires**, all on `FlameMaterial` (no depth write): the world's
+- **The fires**, all on `FlameMaterial` (which writes depth, like the
+  blast's: only its glow-mask twin, `flameGlowMask`, does not): the world's
   (`world/flame.ts` parts merged into blocks, the one world surface besides
   glazing that X3.7 leaves a Babylon mesh in a round, filed by
   `metadata.block` in `WorldCulling`), and the molotov's (`GrenadeFx` clones
@@ -1089,8 +1092,9 @@ point of ours reproduces it: a blended pool drawn at `afterOpaque` lands
 before every pane, at `afterGroup` after every pane, and either is wrong for
 some fade — X4.4b draws inside the sort or records the change.
 
-- **X4.4a — the bank sees every pool LANDED** (63a338a; 2026-11-01; no
-  change to the game). Twenty-one rows, each effect raised through the door
+- **X4.4a — the bank sees every pool LANDED** (63a338a, the post-commit
+  review's fixes after it; 2026-11-01; no change to the game). Twenty-one
+  rows (twenty-five since the review, below), each effect raised through the door
   the game raises it by on a stated clock (`Vantage.fx`): nineteen at the end
   of Coldharbour's list (see-through glazing, `hard` and `ground` side by
   side, armour) and two at the end of Cinderhaven's (a world fire in the
@@ -1108,11 +1112,38 @@ some fade — X4.4b draws inside the sort or records the change.
   pixel); the 84 old rows byte-equal to a BEFORE at bb05074; typecheck,
   build, corecheck pass. **The round's pipeline creations**
   (`pipelines.mjs coldharbour --round`, new): zero of Babylon's and zero of
-  ours in play in six of eight runs, 5 and 2 of Babylon's in the other two
-  (one window, unattributed) — what X4.4e takes to zero. **The sort**:
-  answered above. Every row looked at; a scorch on the floor draws nothing
-  (recorded, X4.4c's). The full record is in
+  ours in play in six of eight runs, 5 and 2 of Babylon's in the other two —
+  which the review traced to the script's own bookkeeping (a closed phase
+  re-opened, so whatever the second install and spawn made was filed under
+  the pane) — what X4.4e takes to zero. **The sort**: answered above. Every
+  row looked at. The full record is in
   [the archive](plans/done/babylon_exit_landed.md).
+  **The post-commit review's fixes** (the bank, its harness, its table,
+  `pipelines.mjs` and docs; nothing in the game moved): four rows appended
+  at the end of Coldharbour's list — `fx-blast-hard-power2-billows` (a
+  power-2 blast), `fx-wire` (the wire's rocket and grenades, posed off two
+  snapshots), `fx-impact-kinds` (the flesh and glass sparks) and
+  `fx-glass-sort` (a spark and disc squarely BEHIND pane 0 and squarely IN
+  FRONT of it, each wholly inside the glass on screen, 49-73 px clear of its
+  edge — the BEFORE for X4.4b's sort; `fx-glass`'s pier impact sits 0.15 m
+  in front of the glass and straddles its edge); the put-away re-seeds the
+  fire lights' flicker stream and takes the wire's grenades in (`fx-molotov`
+  re-banked: its light's phase only), and the order dependency left (Havok,
+  the lamp atlas, the ids) is documented. **`--round`** now counts the
+  spawn as play, closes a phase for good, reports each install apart (28
+  of Babylon's, 23 of ours the first, nothing the second), steps the camera
+  by frames and turns it onto the pane before it breaks: **zero of
+  Babylon's and zero of ours in play in five of five runs**, the shards
+  drawn every time (4,848-7,692 shard draws). The pools with NO warm pose
+  — the shards, the rubble, the thrown and laid bodies (both sides of the
+  wire) and the brass — compile nothing in play only because their
+  pipelines already exist (X4.4e's brief names them). **The floor scorch
+  DRAWS**: "draws nothing" was a misreading — faint on a dark or fire-lit
+  floor, whole under `fx-molotov`'s flames, and behind the book stall in the
+  ground blasts' rows (each mark hidden and shown). **Measured:** `--check
+  --keep` twice back to back, all 25 `fx` rows 0 pixels from the bank and
+  109 of 109 frames byte-equal between the runs; the 84 old rows byte-equal
+  to X4.4a's own kept frames; typecheck, build, corecheck pass.
 - **X4.4b — the plain mesh pools are ours (no picture change).** The tracer,
   spark, disc and mark pools, the grenade, rocket and mine bodies (both the
   simulation's views and the wire's), and the brass, drawn by our renderer
@@ -1131,7 +1162,13 @@ some fade — X4.4b draws inside the sort or records the change.
   rubble chunks and the glass shards are drawn off their `pose` arrays
   straight after the physics step, as a corpse's joints are (X4.1); the
   scorch becomes a decal of ours that reproduces `StandardMaterial`'s output,
-  or a recorded picture change if it cannot be made exact. **Oracle:** the
+  or a recorded picture change if it cannot be made exact. **The scorch on
+  the FLOOR draws** — X4.4a's first note said it drew nothing, and its
+  review measured otherwise (each mark hidden and shown in the banked
+  frames): a black decal at 0.4 is a proportional darkening, faint on a dark
+  or fire-lit floor, whole under `fx-molotov`'s flames, and mostly behind the
+  book stall in the ground blasts' rows; nothing for this sub-step to
+  answer but the picture. **Oracle:** the
   bank's blast rows at every age byte-identical; `kit:hash` unmoved; a round
   with blasts on both surfaces and panes broken.
 - **X4.4d — the fires are ours, and the held-caster layer goes (no picture
@@ -1156,6 +1193,13 @@ some fade — X4.4b draws inside the sort or records the change.
   created from a declared list during loading, so the `warm(on)` poses become
   a list of pipeline keys and `warm(on)` is deleted from every pool
   (`CombatFx`, `GrenadeFx`, `BlastFx`, `BlastDebrisSystem`, `BulletMarks`).
+  **The list covers the pools with NO warm pose today too** (X4.4a's
+  review): the glass shards (`DebrisSystem`), the rubble chunks
+  (`BlastDebrisSystem`'s, only its scorch is posed), the thrown and laid
+  bodies (`GrenadeBody`, `RocketBody`, `MineBody`, and the wire's copies in
+  `NetGrenades`/`NetOrdnance`) and the brass (`PlayerView`). A scripted
+  round compiles nothing for them in play only because each shares a
+  pipeline something else made first — not by construction.
   **The empty-group seam** (decided 2026-10-31, X4.3c's review): every draw
   of ours hangs on rendering group 0's three points, and Babylon visits no
   empty group — so a frame on which group 0 dispatches no mesh of Babylon's

@@ -300,10 +300,21 @@ export function placeVantage(page, vantage) {
     // The effect pools an `fx` row raised (X4.4a), each put away by its own
     // module's door: the rounds and the marks, every flight and fire (a fire
     // goes out through `Game.fireOut`, its flames, light and voice with it),
-    // the wire's mines, the shards and the rubble parked and their streams
-    // re-seeded, the scorch, and the brass — the weapon's stowed state put
-    // back as the boot left it. Only after a row that raised them, for the
+    // the wire's mines, rockets and grenades, the shards and the rubble parked
+    // and their streams re-seeded, the scorch, the brass — the weapon's
+    // stowed state put back as the boot left it — and the fire lights'
+    // flicker stream re-seeded. Only after a row that raised them, for the
     // reason above.
+    //
+    // **What this does NOT put back, so an `fx` row still depends on the
+    // `fx` rows shot before it in its boot** (which is why a new one is
+    // appended at the END, like every row): Havok's world keeps every body
+    // the pools ever made, parked rather than removed, and the order and
+    // history of them is the engine's; the lamps' shadow atlas (`LocalShadows`)
+    // keeps its tile allocation and its per-fixture caches; and the flights' and fires' ids run on. None
+    // moved a pixel between two runs of the same sequence (`bank.mjs`
+    // refuses a row whose two grabs differ, and `--check` twice is the
+    // proof), but a row shot alone or out of order is not its banked frame.
     if (window.__refFx) {
       g.combatFx.clearTransient();
       g.grenades.reset();
@@ -311,10 +322,16 @@ export function placeVantage(page, vantage) {
       g.antiTank.reset();
       g.antiTankFx.reset();
       g.net?.ordnance?.reset();
+      g.net?.grenades?.reset();
       g.debris.reset();
       g.blastDebris.reset();
       g.playerView.cleared();
       g.playerView.stowed(window.__refFx.stowed);
+      // The fire lights' flicker phases are drawn from `LightingSystem`'s
+      // own stream as each light is added, and nothing in a round re-seeds
+      // it but a map build — so it is re-seeded here, and a row's fire is
+      // not flickering at a phase the rows before it chose.
+      g.lighting.rand = (await import("/src/world/rng.ts")).mulberry32(0x44a);
       window.__refFx = null;
     }
     // The place, not the fight: no bodies, no rings, no beacons. The bodies
@@ -567,6 +584,11 @@ export function placeVantage(page, vantage) {
           }
         } else if (e.brass) {
           g.playerView.fired();
+        } else if (e.drawn) {
+          // A round's picture as `CombatSystem.onRound` hands it over: no
+          // wall query, the impact at `to` of the stated kind, and no mark.
+          const d = e.drawn;
+          g.combatFx.drawRound(B(d.from), B(d.to), d.kind, d.normal ? B(d.normal).normalize() : null, false);
         }
       };
       const sfx = g.sfx;
@@ -620,6 +642,31 @@ export function placeVantage(page, vantage) {
           mines: fx.mines.map((m, i) => ({ i, p: [...m.at], team: 0, by: -1, armed: m.armed })),
         });
       }
+      // The wire's flights (somebody else's grenades and rockets), fed as
+      // snapshots carry them and posed at the stated render times — the two
+      // calls `NetSession` makes, the first on a snapshot's arrival and the
+      // second every frame (which an offline bank boot never runs: the
+      // session is held under the deploy card). `-2` is a local slot no
+      // flight names, so nothing is skipped as this client's own.
+      // Seeded like the clock, for the reason the clock is: a wire grenade
+      // claimed by a fresh flight rolls its starting attitude off
+      // `Math.random` (`GrenadeBody.begin`), a picture's draw.
+      if (fx.wire) seeded(0x44b, () => {
+        for (const w of fx.wire.snapshots) {
+          const snap = {
+            t: "snap",
+            now: w.now,
+            grenades: (w.grenades ?? []).map((q) => ({ i: q.i, p: [...q.p], by: -1, fuse: q.fuse, ...(q.k ? { k: q.k } : {}) })),
+            rockets: (w.rockets ?? []).map((r) => ({ i: r.i, p: [...r.p], dir: [...r.dir], by: -1 })),
+          };
+          g.net.grenades.applySnapshot(snap, -2);
+          g.net.ordnance.applySnapshot(snap, -2);
+        }
+        for (const t of fx.wire.poses) {
+          g.net.grenades.update(t);
+          g.net.ordnance.update(t);
+        }
+      });
     }
 
     // The kit screen, raised for real over `deploy`: the card, the bench lamps

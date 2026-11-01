@@ -4985,8 +4985,11 @@ LAST FRAME's at best and as never-computed at worst**, and exempt anything whose
 bounds this pass could be the first to need.
 
 **`bank.mjs` cannot see any of this.** `placeVantage` disables the bots and
-disposes the zones, so the banked vantages hold none of what a culling change
-touches — the broken version above came back byte-identical on all 21. The test
+disposes the zones, so the banked vantages hold no BODY — none of what the
+latch above touches — and the broken version came back byte-identical on all
+21. (Since `BABYLON_EXIT.md` X4.4a the bank does hold the size gate's edge on
+one pool, `fx-marks-far`'s bullet marks, raised fresh every row; a stale
+bound that latches is still invisible to it.) The test
 that works is a screenshot pair in a live round at one frozen camera, with a
 CONTROL pair under the same condition so the noise floor is measured: fixed, the
 lever reads mean **0.066/255** against a control of 0.037. See `VERIFYING.md`

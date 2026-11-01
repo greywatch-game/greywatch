@@ -36,8 +36,17 @@
  * input (`g.input`'s trigger and throw are held by the script, which is all
  * of the game it writes but the kit) — and one pane broken by a round's path
  * through it (`GlassSystem.shoot`, the predicted door a shot takes). It
- * counts what is created between each spawn and the end of that life, the
- * second round's install left out, and names each action's share. Our
+ * counts what is created from each spawn — the deploy-to-playing step is a
+ * phase of its own, `life N: spawn` — to the end of that life, both installs
+ * left out (each reported apart), names each action's share, and files every
+ * creation in play under the Babylon mesh being drawn when it was made. The
+ * camera's path is a function of FRAMES, not of wall clock, and it is turned
+ * onto the pane before the pane breaks, so what is in the frustum when an
+ * effect is first drawn does not depend on the machine's frame rate; the
+ * pane phase says how many shard draws the main pass made (zero means its
+ * shards were never on screen — past `glass.shardDistance` or the size gate —
+ * and so compiled nothing either way). The spawn itself is the round seed's
+ * (a fresh draw), so which pane is nearest varies from run to run. Our
  * renderer's pipelines (`createRenderPipelineAsync`,
  * `createComputePipelineAsync`, off the frame) are counted beside Babylon's
  * synchronous ones, in both modes. That total is what X4.4e's declared list
@@ -180,7 +189,10 @@ async function playRound(page) {
         });
       });
     // Waits in SECONDS of wall clock rather than frames: the frame rate is
-    // the machine's, and a frag's fuse is not.
+    // the machine's, and a frag's fuse is not. Nothing moves the camera
+    // during one of these; where the camera points is a function of FRAMES
+    // (`sweep`), so what is in the frustum when something is first drawn does
+    // not depend on how fast this machine ran.
     const seconds = async (t) => {
       const end = performance.now() + t * 1000;
       while (performance.now() < end) await frames(1);
@@ -226,9 +238,14 @@ async function playRound(page) {
     }
     // The Babylon mesh being drawn when a pipeline is made is the one that
     // needed it (`VERIFYING.md`): each creation in play is filed with its name.
+    // The pane's shards are counted as they are DRAWN as well (frames with a
+    // shard in the main pass), so a pane phase that created nothing can be
+    // told from one whose shards were never on screen to compile anything.
     const meshProto = Object.getPrototypeOf(g.combatFx.sparks[0].mesh);
     const render = meshProto.render;
+    let shardDraws = 0;
     meshProto.render = function (...a) {
+      if (this.name.startsWith("shard")) shardDraws++;
       window.__gpuMesh = this.name;
       try {
         return render.apply(this, a);
@@ -239,9 +256,14 @@ async function playRound(page) {
     const count = () => ({ babylon: L.pipelines.length, ours: L.ours.length, modules: L.modules.length, did: { ...did } });
     const phases = [];
     let mark = count();
+    // Closes the open phase (its counts are what was created since it
+    // opened) and opens `name`, or none for `null` — and a closed phase is
+    // never re-opened: what happens between two lives (the second install)
+    // is the installs' and is counted there, not added to the last phase.
+    let open = false;
     const phase = (name) => {
       const now = count();
-      if (phases.length) {
+      if (open) {
         const p = phases[phases.length - 1];
         p.babylon = now.babylon - mark.babylon;
         p.ours = now.ours - mark.ours;
@@ -253,15 +275,17 @@ async function playRound(page) {
           .join(", ");
       }
       mark = now;
+      open = Boolean(name);
       if (name) phases.push({ name });
-      window.__gpuPhase = name ?? "after";
+      window.__gpuPhase = name ?? "between lives";
     };
     let yaw = 0;
-    // Seconds of the trigger worked on and off, turning round the compass
-    // and dipping to the floor between bursts.
-    const sweep = async (t, pitches) => {
-      const end = performance.now() + t * 1000;
-      for (let i = 0; performance.now() < end; i++) {
+    // `n` frames of the trigger worked on and off, turning round the compass
+    // and dipping to the floor between bursts. FRAMES, not seconds: the
+    // camera's path is then the same on every run and every machine (the
+    // rounds fired per frame are not — a weapon's rate is its clock's).
+    const sweep = async (n, pitches) => {
+      for (let i = 0; i < n; i++) {
         yaw += 0.02;
         g.cameraSys.yaw = yaw;
         g.cameraSys.pitch = pitches[Math.floor(i / 20) % pitches.length];
@@ -286,6 +310,10 @@ async function playRound(page) {
       g.player.setThrowable(kit.throwable);
       g.player.setEquipment(kit.equipment);
       g.player.setWeapon(kit.weapon);
+      // The spawn is PLAY: whatever the deploy -> playing step, the first
+      // frames of a life and the kit's first draw create is the round's.
+      phase(`life ${n}: spawn`);
+      yaw = 0;
       g.spawnPlayer();
       await until(() => g.state === "playing" && g.player.alive, "the spawn");
       await frames(30);
@@ -295,12 +323,12 @@ async function playRound(page) {
         phase(`life ${n}: ${id}`);
         g.player.setWeapon(id);
         await frames(2);
-        await sweep(2, [-0.35, 0.02, -0.12]);
+        await sweep(320, [-0.35, 0.02, -0.12]);
       }
       g.player.setWeapon(kit.weapon);
       phase(`life ${n}: pistol`);
       await draw(1);
-      await sweep(1.5, [-0.3, 0.0]);
+      await sweep(160, [-0.3, 0.0]);
       await draw(0);
       phase(`life ${n}: ${kit.throwable}`);
       g.cameraSys.pitch = 0.15;
@@ -320,7 +348,9 @@ async function playRound(page) {
       await draw(0);
       if (n === 1) {
         // One pane, broken by a round's path through it: the nearest
-        // breakable pane, crossed along its own normal from either side.
+        // breakable pane, crossed along its own normal from either side —
+        // with the camera turned onto it first, so its shards are in the
+        // frustum on every run rather than wherever the sweep left the view.
         phase(`life ${n}: a pane`);
         const V = g.player.position.constructor;
         const p = g.player.position;
@@ -334,6 +364,11 @@ async function playRound(page) {
           }
         });
         const q = g.map.panes[best];
+        const eye = g.cameraSys.camera.position;
+        g.cameraSys.yaw = Math.atan2(q.cx - eye.x, q.cz - eye.z);
+        g.cameraSys.pitch = Math.atan2(q.cy - eye.y, Math.hypot(q.cx - eye.x, q.cz - eye.z));
+        await frames(10);
+        const drawnBefore = shardDraws;
         const alongX = q.w >= q.d;
         const nx = alongX ? Math.sin(q.rotY) : Math.cos(q.rotY);
         const nz = alongX ? Math.cos(q.rotY) : -Math.sin(q.rotY);
@@ -343,35 +378,37 @@ async function playRound(page) {
           broke.push(...g.glass.shoot(o, new V(-nx * s, 0, -nz * s), 4, false));
           if (broke.length) break;
         }
-        phases[phases.length - 1].pane = { index: best, metres: +bd.toFixed(1), broke: broke.length };
         await seconds(2);
+        phases[phases.length - 1].pane = { index: best, metres: +bd.toFixed(1), broke: broke.length, shardDraws: shardDraws - drawnBefore };
       }
       phase(null);
     };
-    window.__gpuPhase = "install";
-    g.startRound();
-    await until(() => g.state === "deploy", "deploy", 100000);
-    const installs = [count()];
-    delete installs[0].did;
+    // Each install's OWN creations (startRound to deploy), left out of play.
+    const installs = [];
+    const install = async () => {
+      const before = count();
+      window.__gpuPhase = "install";
+      g.startRound();
+      await until(() => g.state === "deploy", "deploy", 100000);
+      const after = count();
+      installs.push({ babylon: after.babylon - before.babylon, ours: after.ours - before.ours, modules: after.modules - before.modules });
+    };
+    await install();
     await life(1, { weapon: "rifle", equipment: "rpg", throwable: "frag" });
-    window.__gpuPhase = "install";
-    g.startRound();
-    await until(() => g.state === "deploy", "deploy", 100000);
-    installs.push(count());
-    delete installs[1].did;
+    await install();
     await life(2, { weapon: "carbine", equipment: "mine", throwable: "molotov" });
     const sum = (k) => phases.reduce((a, p) => a + p[k], 0);
     const made = L.pipelines.filter((x) => x.phase.startsWith("life")).map((x) => `${x.phase}: ${x.mesh ?? "(no Babylon mesh drawing)"}`);
     return { made, phases, installs, did, total: { babylon: sum("babylon"), ours: sum("ours"), modules: sum("modules") } };
   });
   console.log(`map ${MAP} --round`);
-  console.log(`  counted at the two installs (left out): ${JSON.stringify(out.installs)}`);
+  console.log(`  created by each install (left out): ${JSON.stringify(out.installs)}`);
   console.log("\n  phase                         babylon  ours  modules");
   for (const p of out.phases) {
     console.log(
       `  ${p.name.padEnd(28)} ${String(p.babylon).padStart(7)} ${String(p.ours).padStart(5)} ${String(p.modules).padStart(8)}` +
         `   ${p.did || "nothing happened"}` +
-        (p.pane ? `; pane ${p.pane.index} at ${p.pane.metres} m, ${p.pane.broke} broken` : ""),
+        (p.pane ? `; pane ${p.pane.index} at ${p.pane.metres} m, ${p.pane.broke} broken, ${p.pane.shardDraws} shard draws` : ""),
     );
   }
   console.log(`\n  in play, both lives: ${JSON.stringify(out.total)}`);
