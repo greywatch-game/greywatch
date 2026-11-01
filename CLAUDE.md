@@ -282,7 +282,7 @@ that first draws it. **It OPENS by waiting for OUR renderer's pipelines**,
 which are asked for ahead and compiled off the frame (`PipelineCache`'s
 counts), every BODY's, HULL's and the WEAPON's among them. What it cannot see it
 is SHOWN by a `warm(on)` on whatever owns an idle pool of Babylon's (a shot, a
-blast, a scorch, a blob, the optics' glass) — **posed as IN FLIGHT**, since a stretched mesh or a
+blast, a scorch, a blob) — **posed as IN FLIGHT**, since a stretched mesh or a
 `visibility` under 1 is a different pipeline. **A new pool that idles switched
 off owes one** (or ours, asked ahead), or its first use compiles in the round.
 
@@ -607,25 +607,29 @@ it: **`Game.worldFailed`**, the menu and a toast, never a fallback.
 variants, its pieces cut out of the block arrays it stays merged into. **A
 mesh carrying `metadata.block` (the glazing, a fire) is one only while the
 camera is inside the map's `fogEnd`**, **everything else is ELIGIBLE**, and
-**anything EMISSIVE or outside rendering group 0 (the optics' glass) is
-exempt** from the size gate. **Nothing pooled may ever be block-keyed.**
-**EVERY BODY AND HULL IS OUR RENDERER'S, and Babylon is made NO RIG OR HULL
-MESH** (`render/BodyDraw.ts`, `HullDraw.ts`): each an INSTANCE of its kit, built
-once a side (a hull's a kind and side), drawn while its switch is on and the
+**anything EMISSIVE or `infiniteDistance` is exempt** from the size gate.
+**Nothing pooled may ever be block-keyed.**
+**EVERY BODY, HULL AND WEAPON IS OUR RENDERER'S, and Babylon is made NO RIG,
+HULL OR VIEWMODEL MESH** (`render/BodyDraw.ts`, `HullDraw.ts`, `ViewDraw.ts`):
+a body or a hull is an INSTANCE of its kit, built once a side (a hull's a kind
+and side), drawn while its switch is on and the
 size gate passes it — a body measured ONCE (`drawsBody`), the visor with it, a
 hull PER SEGMENT (`keepsSphere`). **A body LEAVES by a FADE at both edges, a
 hull at its map's draw distance only — never a pop**: a screen door
 (`WorldCulling.bodyFade`, `hullFade`), a visor dropping the same pixels in the
-glow's mask. **A draw is a RANK of every body or hull.** **The WEAPON's every
-opaque part is ours too, a SEGMENT of one kit** (`render/ViewDraw.ts`): a draw a
-segment in Babylon's group-1 order (what settles an equal depth), for the
-SESSION; its tree EVALUATES every surface on and visible, whoever draws it.
+glow's mask. **A draw is a RANK of every body or hull.** **The WEAPON is a
+SEGMENT of one kit, every part** — the optics' glasses and the kit card
+included — drawn at the END of group 0 for the SESSION: the card first, the
+opaque parts in Babylon's group-1 order (what settles an equal depth), the
+glasses BLENDED last; no group above 0 holds anything, and its tree EVALUATES
+every surface on and visible, whatever its role.
 
 **The GLOW draws the EMISSIVE meshes and nothing else, its occlusion being the
 FRAME's own depth buffer** (`src/shaders/GlowPass.ts`). **What may bloom is read
 per mesh every frame** — an emissive colour, no `metadata.noGlow`, and `Game`'s
 `GlowRules` — so nothing excludes a mesh by hand; **on the kit screen only the
-STAGE blooms** (`Game.glowAdmits`). **A map's merged emissives are
+STAGE blooms** — `Game.glowAdmits` refuses the WORLD, and the weapon's draw
+masks its own lit parts in every state, the rule stated by the draw. **A map's merged emissives are
 a PALETTE like its albedo** (`shaders/EmissiveWorld.ts`): their colour is a slot
 in `uv2.x` under a WHITE `emissiveColor`, so **a new reader asking a material
 what it emits must ask the vertex for that one**. **The palette has NO Babylon

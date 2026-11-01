@@ -40,7 +40,7 @@ import {
   type WeaponParts,
 } from "./weaponKit";
 import type { Joint } from "./rigJoints";
-import type { ViewSurface, ViewTree } from "./viewTree";
+import type { ViewSegment, ViewTree } from "./viewTree";
 
 /**
  * The grip's rake — the 1911's signature ~18° off vertical, measured off the
@@ -289,7 +289,7 @@ export function buildPistol(
   // The frame is finished. Merged before the slide is built, so nothing on the
   // slide can land in the frame's colour groups — the slide is the one half of
   // this weapon that moves.
-  const meshes: ViewSurface[] = b.merge("pistol", root);
+  const meshes: ViewSegment[] = b.merge("pistol", root);
 
   // --- slide: flat-topped, its nose dropping over the recoil spring ---
   // A joint of its own (`WeaponParts.slide`), at identity, so a reload that ran

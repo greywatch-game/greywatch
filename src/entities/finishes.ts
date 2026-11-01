@@ -8,7 +8,9 @@
  * the model builders' (`ViewSegment`s our renderer draws, `BABYLON_EXIT.md`
  * X4.3c, which reads each one's material's recipe as it draws it — so a
  * repaint is still a material write and nothing else, and re-orders the
- * draws exactly as it re-ordered Babylon's queue).
+ * draws exactly as it re-ordered Babylon's queue). An optic's glass is a
+ * segment too (X4.3d) and, like the rest of the optic, out of a finish's
+ * reach: its material is its own, read once for its colour and alpha.
  *
  * The third sibling of `weapons.ts` and `sights.ts`, and split from both for
  * the reason they are split from each other: a weapon decides what the round

@@ -83,23 +83,24 @@ two meshes an arm, one per colour.
   write to a joint's channels goes through `ViewModel.wrote`, which is the dirty
   flag each Babylon vector kept.
 - **The weapon is drawn by OUR renderer, after the world and into the world's
-  depth with no clear** (`render/ViewDraw.ts`, `BABYLON_EXIT.md` X4.3c): every
-  opaque part — each rig's colour groups, magazines, bolt, slide and warhead,
-  each optic's housing and reticle, the arms, the fist with its frag or bottle,
-  and the muzzle flash — is a SEGMENT of one kit (`ViewSegment`, `viewTree.ts`)
-  and Babylon is made no mesh of it. One draw a segment, at the end of
-  rendering group 0 (after the kit card), in the order Babylon's `VIEWMODEL_GROUP`
-  (1) queue drew the meshes: the material's `uniqueId`, then the order they were
-  made (never the order the evaluation walks the joints — X4.3c's review),
-  which is what settles an equal depth — so a finish, which swaps a colour
-  group's material, re-orders it. Group 1 now holds the two optics' GLASSES
-  alone (X4.3d moves them), and its depth is still NOT cleared (`Game.ts`,
-  `setRenderingAutoClearDepthStencil`): the frame keeps one depth image of the
-  world and the gun, which the ink, the blur, the paper and the glow's
-  occlusion all name the gun by. Anything attached is a segment of the same
-  tree — `PlayerView`'s muzzle flash is; the ejected brass deliberately is
-  **not**, because it is thrown into the world and should be occluded like
-  anything else.
+  depth with no clear** (`render/ViewDraw.ts`, `BABYLON_EXIT.md` X4.3c, X4.3d):
+  every part — each rig's colour groups, magazines, bolt, slide and warhead,
+  each optic's housing, reticle and GLASS, the arms, the fist with its frag or
+  bottle, the muzzle flash, and the kit screen's CARD — is a SEGMENT of one kit
+  (`ViewSegment`, `viewTree.ts`, its `role` saying how it is drawn) and Babylon
+  is made no mesh of it. One draw a segment, at the end of rendering group 0:
+  the card first (it covers the world), then the opaque parts in the order
+  Babylon's old viewmodel group (1) queued the meshes — the material's
+  `uniqueId`, then the order they were made (never the order the evaluation
+  walks the joints — X4.3c's review), which is what settles an equal depth, so
+  a finish, which swaps a colour group's material, re-orders it — then the
+  glasses, BLENDED over them back to front and writing no depth (at most one
+  is on in any frame). No group but 0 holds anything, so nothing clears
+  between the world and the gun: the frame keeps one depth image of the two,
+  which the ink, the blur, the paper and the glow's occlusion all name the gun
+  by. Anything attached is a segment of the same tree — `PlayerView`'s muzzle
+  flash is; the ejected brass deliberately is **not**, because it is thrown
+  into the world and should be occluded like anything else.
 - **Scale and stand-off are a framing decision, not realism.** A 54° vertical FOV
   against a real eye's ~130° means a rifle framed where a rifle actually sits fills
   the screen; `viewmodel.scale` shrinks it and `hipPos.z` pushes it out. That pose is
@@ -2489,7 +2490,9 @@ which is what refuses the raise. Every pick applies immediately through `Game.ap
 persists to `localStorage` like the difficulty tier, so confirm just closes.
 
 - **The weapon on the stage is read against a CARD, and the card is in the scene**
-  (`CONFIG.viewmodel.inspect.backdrop`, built by `buildKitBackdrop`). What used to
+  (`CONFIG.viewmodel.inspect.backdrop`, built by `buildKitBackdrop` — a segment
+  of the viewmodel our renderer draws, painted from a canvas, `BABYLON_EXIT.md`
+  X4.3d). What used to
   fill the stage was the live map: off the menu that is empty sky and reads as a
   bench, off the deploy screen it is a lit village at the exact tone of a grey
   receiver. It cannot be fixed in the stylesheet — the bay is a hole precisely

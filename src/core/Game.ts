@@ -114,7 +114,7 @@ import { BabylonFrameHost } from "../render/babylonSeam";
 import { Renderer } from "../render/Renderer";
 import { BodyDraw } from "../render/BodyDraw";
 import { HullDraw } from "../render/HullDraw";
-import { ViewDraw } from "../render/ViewDraw";
+import { ViewDraw, type ViewDrawSegment } from "../render/ViewDraw";
 import { HULL_CHARRED } from "../render/hullProgram";
 import { BodyShadowMap } from "../render/BodyShadowMap";
 import { LampAtlas } from "../render/LampAtlas";
@@ -178,8 +178,7 @@ import {
   throwableShort,
   type ThrowableId,
 } from "../entities/throwables";
-import { VIEWMODEL_GROUP } from "../entities/ViewModel";
-import { segmentBounds, type ViewMesh } from "../entities/viewTree";
+import { segmentBounds, type ViewMesh, type ViewSegment } from "../entities/viewTree";
 import {
   carriedSetup,
   isWeaponId,
@@ -819,9 +818,11 @@ export class Game {
   private readonly hullDraw: HullDraw;
   /**
    * The player's own WEAPON as our renderer draws it (`BABYLON_EXIT.md`
-   * X4.3c): every opaque segment of the viewmodel on the GPU once, and each
-   * frame's drawn segments one draw apiece in Babylon's group-1 order — fed
-   * by `drawView`, drawn in EVERY state (the kit screen covers `menu`, where
+   * X4.3c, X4.3d): every segment of the viewmodel on the GPU once — the
+   * opaque parts, the optics' glasses and the kit card — and each frame's
+   * drawn segments one draw apiece, the card first, the opaque parts in
+   * Babylon's group-1 order, the glasses back to front — fed by `drawView`,
+   * drawn in EVERY state (the kit screen covers `menu`, where
    * no map stands), so it is built and hooked here for the session. Its
    * pipelines are asked here, and one that cannot be built is the round's
    * failure while one stands (`worldFailed`, wired at the install), the
@@ -831,8 +832,10 @@ export class Game {
   /** `drawView`'s scratch: this frame's evaluated segments in drawing order, and the sort's keys. */
   private readonly viewDrawn: ViewMesh[] = [];
   private viewOrder = new Int32Array(0);
+  /** `drawView`'s scratch: this frame's evaluated glasses, back to front, by their place in the evaluation. */
+  private readonly viewGlasses: number[] = [];
   private viewKeys = new Float64Array(0);
-  /** Each segment's LOCAL bounding-sphere centre, three doubles a slot — what the bloom's fade is measured from (`viewPull`). */
+  /** Each lit segment's and each glass's LOCAL bounding-sphere centre, three doubles a slot — what the bloom's fade (`viewPull`) and a glass's distance (`drawView`) are measured from. */
   private viewCentres = new Float64Array(0);
   private readonly viewCentre = new MathVector3();
   private readonly viewBloom = new Color4();
@@ -1735,7 +1738,7 @@ export class Game {
     // which stays Babylon's. The rules are the glow's own two (below), asked
     // of the palette's materials.
     this.worldGlow = new WorldGlow(this.renderer, {
-      admits: () => this.glowAdmits(0),
+      admits: () => this.glowAdmits(),
       colour: (recipe, out) => {
         const material = this.mats.emissiveMaterialOf(recipe);
         const c = this.paletteBloom;
@@ -1793,16 +1796,14 @@ export class Game {
       if (!eye) return 0;
       return eyeDistanceSq(a, eye) - eyeDistanceSq(b, eye);
     });
-    // **The viewmodel's group does NOT clear depth before it draws**, where
-    // Babylon's default for every group above 0 is to clear. It lived in `Sky`
-    // while the moon shared that group; the moon is in group 0 now and what the
-    // line still holds up is ONE depth image for the frame — the world and the
-    // gun together — which `FrameDepth` hands to the ink and the blur, and which
-    // `GlowPass` occludes the bloom against. Clear it and all three readers
-    // see a buffer holding the glass alone. (The weapon's opaque parts are
-    // our renderer's since `BABYLON_EXIT.md` X4.3c, drawn at the END of group
-    // 0 into the same depth; the group holds the two glasses, X4.3d's.)
-    this.scene.setRenderingAutoClearDepthStencil(VIEWMODEL_GROUP, false);
+    // **ONE depth image for the frame** — the world and the gun together —
+    // which `FrameDepth` hands to the ink and the blur, and which `GlowPass`
+    // occludes the bloom against. The viewmodel had a rendering group of its
+    // own until `BABYLON_EXIT.md` X4.3d, whose depth clear (Babylon's default
+    // for every group above 0) was switched off here so the three readers saw
+    // more than the gun; every surface of it is our renderer's now, drawn at
+    // the END of group 0 into the same depth (`ViewDraw`), and no group above
+    // 0 holds anything.
 
     // Post-processing: FXAA smooths the hard cel/outline edges. Glow comes
     // from an emissive MASK rather than threshold bloom — it keys off material
@@ -1834,7 +1835,7 @@ export class Game {
     // is not in the valley, and its bounding sphere is a dome radius away, so
     // any distance fade would delete it outright.
     const glow = new GlowPass(this.scene, this.cameraSys.camera, {
-      admits: (mesh) => this.glowAdmits(mesh.renderingGroupId),
+      admits: () => this.glowAdmits(),
       colour: (mesh, material, out) => {
         let fade = 1;
         if (!mesh.infiniteDistance) {
@@ -2173,12 +2174,9 @@ export class Game {
   }
 
   /**
-   * Whether an emissive mesh in rendering group `groupId` may bloom this
-   * frame — `GlowRules.admits` for Babylon's meshes, and for the emissive
-   * palette our renderer draws into the mask (group 0, `WorldGlow`), the
-   * visors (`BodyDraw`) and the weapon's lit parts (`ViewDraw`, which asks
-   * for `VIEWMODEL_GROUP`: the group its meshes were in, `BABYLON_EXIT.md`
-   * X4.3c).
+   * Whether the WORLD's emissives may bloom this frame — `GlowRules.admits`
+   * for every Babylon mesh, and for the emissive palette our renderer draws
+   * into the mask (`WorldGlow`) and the visors (`BodyDraw`).
    *
    * The kit screen hangs a dark card behind the weapon (see
    * `inspect.backdrop`), and the one thing in the game that card cannot
@@ -2186,14 +2184,16 @@ export class Game {
    * the bench is standing in front of blooms straight through it. Only what
    * is on the stage may bloom while the stage is up, which still leaves the
    * reticle and the hot parts of the weapon itself glowing — exactly what
-   * the screen is for. "On the stage" is the viewmodel's rendering group —
-   * its glasses, and the weapon our renderer draws in its place — and
-   * nothing else is in it: the moon, which shared it once and needed an
-   * `infiniteDistance` test to be picked back out, draws in group 0 now
-   * (see `Sky.apply`).
+   * the screen is for. "On the stage" is the viewmodel, and the rule is
+   * stated by its DRAW (`BABYLON_EXIT.md` X4.3d): `ViewDraw` masks the
+   * weapon's lit parts in every state and never asks — where until then
+   * this asked of a rendering group, the viewmodel's having been one. Every
+   * Babylon mesh left is the world's: the moon, which shared that group once
+   * and needed an `infiniteDistance` test to be picked back out, draws in
+   * group 0 (see `Sky.apply`).
    */
-  private glowAdmits(groupId: number): boolean {
-    return this.state !== "loadout" || groupId === VIEWMODEL_GROUP;
+  private glowAdmits(): boolean {
+    return this.state !== "loadout";
   }
 
   /**
@@ -4075,11 +4075,6 @@ export class Game {
     // cull, the water and the grass; put back straight after the render, so
     // nothing of it reaches the next frame. See `stageWarmFrame`.
     const warming = this.stageWarmFrame();
-    // The viewmodel's surfaces have no parent (`BABYLON_EXIT.md` X4.3b), so
-    // each one's own enabled flag is written to its joints' switches here,
-    // after every write and before the cull asks `isEnabled()` of a glass or
-    // the card (the segments are our renderer's, X4.3c, and no candidate).
-    this.playerView.model.syncSwitches();
     this.prof.begin(P.culling);
     this.followEye(fleetStepped);
     this.prof.end(P.culling);
@@ -4147,9 +4142,10 @@ export class Game {
     // here, after every write, and their drawing handed to our renderer —
     // where Babylon composed their nodes inside the render until X4.2a.
     this.drawHulls();
-    // …and the player's own weapon (X4.3b, X4.3c): its joints evaluated as the
-    // render evaluated its nodes, each segment handed to our renderer in
-    // Babylon's group-1 order and each glass handed its world.
+    // …and the player's own weapon (X4.3b-d): its joints evaluated as the
+    // render evaluated its nodes, every surface handed to our renderer — the
+    // card, the opaque parts in Babylon's group-1 order, the glasses back to
+    // front.
     this.drawView();
     this.scene.render();
     this.prof.end(P.render);
@@ -5836,7 +5832,7 @@ export class Game {
     }
     // The visors bloom on the glow's rules, as Babylon's mask asked them of a
     // visor's mesh: group 0's admission (the kit screen holds the world's).
-    draw.commit(n, whole, this.glowAdmits(0), this.mats.materialEpoch);
+    draw.commit(n, whole, this.glowAdmits(), this.mats.materialEpoch);
   }
 
   /**
@@ -5900,11 +5896,14 @@ export class Game {
 
   /**
    * The player's own weapon as our renderer draws it (`BABYLON_EXIT.md`
-   * X4.3c), built once at construction: every SEGMENT the viewmodel's tree
-   * holds (`ViewTree.segments`, the order they were made), numbered into its
-   * kit; each one's material read once — a cel material's recipe, or an unlit
-   * one's colour as a slot in the weapon's emissive table — and each lit one's
-   * local bounding-sphere centre kept for the bloom. Hooked for the session.
+   * X4.3c, X4.3d), built once at construction: every SEGMENT the viewmodel's
+   * tree holds (`ViewTree.segments`, the order they were made), numbered into
+   * its kit; each one's material read once — an opaque part's cel recipe, or
+   * an unlit one's colour as a slot in the weapon's emissive table; a GLASS's
+   * colour and alpha (its own `StandardMaterial`, which nothing else reads);
+   * the CARD needing none — and each lit part's and each glass's local
+   * bounding-sphere centre kept, for the bloom and the back-to-front order.
+   * Hooked for the session.
    */
   private buildViewDraw(): ViewDraw {
     const segments = this.playerView.model.tree.segments();
@@ -5916,9 +5915,34 @@ export class Game {
     };
     const cels = new Set<ReturnType<CelMaterialFactory["celRecipe"]>>();
     this.viewCentres = new Float64Array(segments.length * 3);
-    const drawn = segments.map((v, i) => {
+    // `BoundingSphere.reConstruct`'s centre, off the bounds Babylon held.
+    const keepCentre = (seg: ViewSegment, i: number): void => {
+      const b = segmentBounds(seg);
+      this.viewCentres[i * 3] = (b.maximum.x + b.minimum.x) * 0.5;
+      this.viewCentres[i * 3 + 1] = (b.maximum.y + b.minimum.y) * 0.5;
+      this.viewCentres[i * 3 + 2] = (b.maximum.z + b.minimum.z) * 0.5;
+    };
+    const drawn = segments.map((v, i): ViewDrawSegment => {
       v.slot = i;
-      const seg = v.segment!;
+      const seg = v.segment;
+      const g = seg.geometry;
+      const arrays = {
+        positions: g.positions,
+        normals: g.normals ?? null,
+        colors: g.colors ?? null,
+        uvs: g.uvs ?? null,
+        indices: g.indices,
+      };
+      if (seg.role === "card") return { kind: "card", slot: 0, glows: false, tint: null, ...arrays };
+      if (seg.role === "glass") {
+        const material = seg.material as { emissiveColor?: Color3; alpha?: number } | null;
+        const c = material?.emissiveColor;
+        if (!c || material?.alpha === undefined) {
+          throw new Error(`buildViewDraw: the glass "${seg.name}" wears no material with a colour and an alpha`);
+        }
+        keepCentre(seg, i);
+        return { kind: "glass", slot: 0, glows: false, tint: [c.r, c.g, c.b, material.alpha], ...arrays };
+      }
       const recipe = this.mats.celRecipe(seg.material);
       if (recipe) cels.add(recipe);
       const emissive = recipe ? null : (seg.material as { emissiveColor?: Color3 } | null)?.emissiveColor ?? null;
@@ -5941,27 +5965,13 @@ export class Game {
         emissive !== null &&
         (emissive.r > 0 || emissive.g > 0 || emissive.b > 0) &&
         seg.metadata?.noGlow !== true;
-      if (glows) {
-        // `BoundingSphere.reConstruct`'s centre, off the bounds Babylon held.
-        const b = segmentBounds(seg);
-        this.viewCentres[i * 3] = (b.maximum.x + b.minimum.x) * 0.5;
-        this.viewCentres[i * 3 + 1] = (b.maximum.y + b.minimum.y) * 0.5;
-        this.viewCentres[i * 3 + 2] = (b.maximum.z + b.minimum.z) * 0.5;
-      }
-      const g = seg.geometry;
-      return {
-        positions: g.positions,
-        normals: g.normals ?? null,
-        colors: g.colors ?? null,
-        uvs: g.uvs ?? null,
-        slot,
-        glows,
-        indices: g.indices,
-      };
+      if (glows) keepCentre(seg, i);
+      return { kind: emissive ? "unlit" : "cel", slot, glows, tint: null, ...arrays };
     });
     this.viewOrder = new Int32Array(segments.length);
     this.viewKeys = new Float64Array(segments.length);
     this.viewDrawn.length = segments.length;
+    this.viewGlasses.length = segments.length;
     return new ViewDraw(
       this.renderer,
       drawn,
@@ -5974,20 +5984,31 @@ export class Game {
   }
 
   /**
-   * Hands our renderer this frame's WEAPON (`BABYLON_EXIT.md` X4.3c): the
-   * viewmodel's tree evaluated as the render evaluated it (`ViewModel.drawView`
-   * — every surface switched on and visible, whoever draws it, the cache
-   * settled inside the render as before), and each segment it found
-   * written as one draw — its joint's world, its place in the kit, its
-   * material's recipe — in BABYLON'S GROUP-1 ORDER: the opaque queue sorted by
-   * `PainterSortCompare` (the material's `uniqueId`) over the order the
-   * meshes were dispatched, which was the order they were MADE, a STABLE sort
-   * as V8's is — so a tie goes to the segment made first (`ViewMesh.slot`),
-   * never to the order the evaluation walked the joints in, which differs
-   * where an arm's joint was made before the other arm's segments (X4.3c's
-   * review, checked against the parent's own queue). That order is what settles an equal depth, so a
-   * finish, which swaps a colour group's material, re-orders the draws exactly
-   * as it re-ordered the queue. Allocates nothing.
+   * Hands our renderer this frame's WEAPON (`BABYLON_EXIT.md` X4.3c, X4.3d):
+   * the viewmodel's tree evaluated as the render evaluated it
+   * (`ViewModel.drawView` — every surface switched on and visible, whatever
+   * its role, the cache settled inside the render as before), and each
+   * surface it found written as one draw — its joint's world, its place in
+   * the kit, an opaque part's material's recipe — in the order the frame drew
+   * them while they were Babylon's meshes:
+   * - the kit CARD first, the last of group 0's blended queue it was, its
+   *   canvas uploaded first if it was painted since (`ViewDraw.cardPicture`);
+   * - the OPAQUE parts in BABYLON'S GROUP-1 ORDER: the opaque queue sorted by
+   *   `PainterSortCompare` (the material's `uniqueId`) over the order the
+   *   meshes were dispatched, which was the order they were MADE, a STABLE
+   *   sort as V8's is — so a tie goes to the segment made first
+   *   (`ViewMesh.slot`), never to the order the evaluation walked the joints
+   *   in, which differs where an arm's joint was made before the other arm's
+   *   segments (X4.3c's review, checked against the parent's own queue). That
+   *   order is what settles an equal depth, so a finish, which swaps a colour
+   *   group's material, re-orders the draws exactly as it re-ordered the
+   *   queue;
+   * - the GLASSES last, as group 1's blended queue drew them: back to front by
+   *   the distance from the eye to each one's bounding-sphere centre
+   *   (`defaultTransparentSortCompare`; every glass at the same `alphaIndex`),
+   *   a tie to the one made first. At most one glass is on in any frame — one
+   *   carried weapon, one worn optic — so the order is only ever stated.
+   * Allocates nothing.
    */
   private drawView(): void {
     const model = this.playerView.model;
@@ -5998,18 +6019,50 @@ export class Game {
     const n = Math.min(tree.evaluatedCount, draw.capacity);
     const order = this.viewOrder;
     const keys = this.viewKeys;
+    const glasses = this.viewGlasses;
+    const eye = this.cameraSys.camera.globalPosition;
+    const c = this.viewCentres;
+    const at = this.viewCentre;
+    let card: ViewMesh | null = null;
+    let opaque = 0;
+    let glass = 0;
     for (let i = 0; i < n; i++) {
       const v = list[i];
-      const material = v.segment!.material;
+      const segment = v.segment;
       if (import.meta.env.DEV && v.slot < 0) {
-        throw new Error(`drawView: "${v.segment!.name}" was hung after the weapon's kit was built — it has no slot`);
+        throw new Error(`drawView: "${segment.name}" was hung after the weapon's kit was built — it has no slot`);
       }
+      if (segment.role === "card") {
+        if (import.meta.env.DEV && card) throw new Error("drawView: two kit cards evaluated in one frame");
+        card = v;
+        continue;
+      }
+      if (segment.role === "glass") {
+        // Its distance, as `_RenderSorted` measured a transparent submesh's:
+        // its bounding sphere's centre in the world, to the eye.
+        const s = v.slot * 3;
+        MathVector3.TransformCoordinatesFromFloatsToRef(c[s], c[s + 1], c[s + 2], v.joint.world, at);
+        keys[i] = MathVector3.Distance(at, eye);
+        // Back to front: farthest first, a tie to the one made first.
+        let r = glass;
+        while (r > 0) {
+          const o = glasses[r - 1];
+          const ko = keys[o];
+          if (ko > keys[i] || (ko === keys[i] && list[o].slot < v.slot)) break;
+          glasses[r] = o;
+          r--;
+        }
+        glasses[r] = i;
+        glass++;
+        continue;
+      }
+      const material = segment.material;
       keys[i] = material ? material.uniqueId : Number.POSITIVE_INFINITY;
       // An insertion sort by the material's id, a tie going to the segment
       // MADE first (its slot: the kit is numbered in the order made) — the
       // order Babylon dispatched the meshes in, not the order the evaluation
       // walked them, which follows the joints (X4.3c's review).
-      let r = i;
+      let r = opaque;
       while (r > 0) {
         const o = order[r - 1];
         if (keys[o] < keys[i] || (keys[o] === keys[i] && list[o].slot < v.slot)) break;
@@ -6017,16 +6070,35 @@ export class Game {
         r--;
       }
       order[r] = i;
+      opaque++;
     }
     const drawn = this.viewDrawn;
-    for (let k = 0; k < n; k++) {
-      const v = list[order[k]];
+    let k = 0;
+    if (card) {
+      drawn[k] = card;
+      draw.matrices.set(card.joint.world.m, k * 16);
+      draw.segment[k] = card.slot;
+      draw.recipes[k] = null;
+      k++;
+      const picture = model.kitCard;
+      draw.cardPicture(picture.canvas, picture.painted);
+    }
+    for (let j = 0; j < opaque; j++, k++) {
+      const v = list[order[j]];
       drawn[k] = v;
       draw.matrices.set(v.joint.world.m, k * 16);
       draw.segment[k] = v.slot;
-      draw.recipes[k] = this.mats.celRecipe(v.segment!.material);
+      draw.recipes[k] = this.mats.celRecipe(v.segment.material);
     }
-    draw.commit(n, this.glowAdmits(VIEWMODEL_GROUP), this.mats.materialEpoch);
+    const glassFrom = k;
+    for (let j = 0; j < glass; j++, k++) {
+      const v = list[glasses[j]];
+      drawn[k] = v;
+      draw.matrices.set(v.joint.world.m, k * 16);
+      draw.segment[k] = v.slot;
+      draw.recipes[k] = null;
+    }
+    draw.commit(k, card ? 1 : 0, glassFrom, this.mats.materialEpoch);
   }
 
   /**
@@ -6034,6 +6106,7 @@ export class Game {
    * where `globalPosition` is this frame's: `GlowRules.colour` for the mesh
    * the segment was — its bounding sphere's centre in the world, faded by the
    * fog at its distance from the eye, and the material's colour times that.
+   * Only an opaque part's: a glass and the card are never in the mask.
    */
   private viewPull(glow: Float32Array, n: number): void {
     const eye = this.cameraSys.camera.globalPosition;
@@ -6041,7 +6114,8 @@ export class Game {
     const at = this.viewCentre;
     for (let k = 0; k < n; k++) {
       const v = this.viewDrawn[k];
-      const material = v.segment!.material as { emissiveColor?: Color3; alpha: number } | null;
+      if (v.segment.role !== "opaque") continue;
+      const material = v.segment.material as { emissiveColor?: Color3; alpha: number } | null;
       if (!material?.emissiveColor) continue;
       const s = v.slot * 3;
       MathVector3.TransformCoordinatesFromFloatsToRef(c[s], c[s + 1], c[s + 2], v.joint.world, at);
@@ -6350,7 +6424,6 @@ export class Game {
     this.grenadeFx.warm(true);
     this.blastDebris.warm(true);
     this.shadows.warmBlob(true, this.player);
-    this.player.warmView(true);
     this.updateSceneForCamera(0, this.shadowFocus, null, NO_SOLDIERS, NO_SOLDIERS);
     this.culling.setWarm(true);
     this.scene.skipFrustumClipping = true;
@@ -6365,7 +6438,6 @@ export class Game {
     this.grenadeFx.warm(false);
     this.blastDebris.warm(false);
     this.shadows.warmBlob(false, this.player);
-    this.player.warmView(false);
     // Position and rotation outright rather than through `place`, whose
     // `setTarget` would re-derive the rotation from a target the camera may
     // never have been pointed at.

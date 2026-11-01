@@ -94,7 +94,7 @@
  * (`render/BodyDraw.ts`, X4.1d: no rig is a Babylon mesh), drawn first in
  * the pass with the palette, each at `GlowRules.colour`'s answer for its
  * body. So are the WEAPON's lit parts (`render/ViewDraw.ts`, X4.3c: no
- * opaque viewmodel part is a Babylon mesh), drawn LAST in the pass — after
+ * viewmodel part is a Babylon mesh since X4.3d), drawn LAST in the pass — after
  * every mesh of Babylon's, blended ones included — as Babylon's group 1 drew
  * them, told by `onMaskCloseObservable` (X4.3c's review, the owner's
  * decision): so a blended emissive that writes no depth (an impact's spark

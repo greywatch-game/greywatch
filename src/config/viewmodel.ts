@@ -1047,9 +1047,9 @@ export const viewmodel = {
     backdrop: {
       /**
        * Metres ahead of the lens. Free to be anything past the weapon: the
-       * card tests no depth and is drawn before the weapon (the last of
-       * rendering group 0, our renderer's weapon draw after it —
-       * `BABYLON_EXIT.md` X4.3c), so the weapon is in front of it whatever the
+       * card tests no depth and is drawn before the weapon (the first of the
+       * viewmodel's draws at the end of rendering group 0, our renderer's —
+       * `BABYLON_EXIT.md` X4.3d), so the weapon is in front of it whatever the
        * number says — the distance only decides how much scaling "the whole
        * frustum" takes.
        */
@@ -1058,19 +1058,20 @@ export const viewmodel = {
       margin: 1.04,
       /**
        * **There is deliberately no `alpha` here any more, and the absence is
-       * the rule rather than a tidy-up.** The card is BLENDED — a blended mesh
-       * is drawn in its rendering group's last pass, which is the only slot in
-       * the frame that comes after the world and before the weapon, and an
-       * opaque one would be sorted in among the village — but its blending is
-       * a sorting device and not a claim of translucency. The frame's alpha
-       * channel is TRANSLUCENT COVERAGE and `CelInk` takes its stroke off by
-       * `1 - a`, so the 0.985 that used to live here stamped 0.985 of coverage
-       * over every pixel of the kit screen and took the ink off the weapon it
-       * was standing behind. `buildKitBackdrop` writes 0 and replaces the
-       * colour outright instead; the argument is on the material, and the one
-       * thing to know here is that the value it needs is not a tunable — 0 is
-       * what puts the card in the blended queue AND what keeps it out of the
-       * coverage channel, and nothing else is either.
+       * the rule rather than a tidy-up.** The card is BLENDED — while it was a
+       * Babylon mesh a blended one was drawn in its rendering group's last
+       * pass, the only slot in the frame that came after the world and before
+       * the weapon, and since `BABYLON_EXIT.md` X4.3d our renderer draws it
+       * there by stating the slot — but its blending is not a claim of
+       * translucency. The frame's alpha channel is TRANSLUCENT COVERAGE and
+       * `CelInk` takes its stroke off by `1 - a`, so the 0.985 that used to
+       * live here stamped 0.985 of coverage over every pixel of the kit screen
+       * and took the ink off the weapon it was standing behind. The card
+       * writes 0 and replaces the colour outright instead (`buildKitBackdrop`
+       * has the argument, `render/ViewDraw.ts` the blend); the one thing to
+       * know here is that the value it needs is not a tunable — 0 is what
+       * keeps it out of the coverage channel (and was, while it was Babylon's,
+       * what put it in the blended queue too), and nothing else is.
        */
       /**
        * The pool of light behind the weapon and the dark it falls off to,

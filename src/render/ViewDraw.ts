@@ -1,21 +1,23 @@
 /**
  * render/ViewDraw.ts — The player's own WEAPON as OUR renderer draws it
- * (`BABYLON_EXIT.md` X4.3c): every opaque surface of the viewmodel — each
+ * (`BABYLON_EXIT.md` X4.3c, X4.3d): every surface of the viewmodel — each
  * rig's colour groups, magazines, bolt, slide and warhead, each optic's
- * housing and reticle, the arms, the fist, its frag and pip, the bottle and
- * its wick, and the muzzle flash — as SEGMENTS of one kit on the GPU once,
- * each frame's drawn segments one draw apiece into the frame's main pass (the
- * cel program, or the emissive palette's for an unlit part), and the lit ones
+ * housing, reticle and GLASS, the arms, the fist, its frag and pip, the
+ * bottle and its wick, the muzzle flash, and the kit screen's CARD — as
+ * SEGMENTS of one kit on the GPU once, each frame's drawn segments one draw
+ * apiece into the frame's main pass (the card's program, the cel program or
+ * the emissive palette's for an unlit part, the glass's), and the lit ones
  * again into the glow's mask.
  * Owns: `ViewDraw` — the kit's arrays (every segment end to end, and the
  * indices rebased onto them), each draw's matrix and bloom on the GPU and the
  * staging arrays a frame writes them into (`matrices`, `segment`, `recipes`;
  * the bloom, which it PULLS), a material block and group per cel recipe it has
- * been handed and the emissive table's, the pipelines (asked once, for the
- * session), the main-pass draw, the mask draw, the prepare that uploads a
- * frame, the refusal listeners, whoever is told of a failure
- * (`onFailed`), and what it drew last (`stats`); `ViewDrawSegment`,
- * `ViewPull`.
+ * been handed and the emissive table's, the glass table (each glass's colour
+ * and alpha), the card's texture, its sampler and how far its canvas has been
+ * uploaded, the pipelines (asked once, for the session), the main-pass draw,
+ * the mask draw, the prepare that uploads a frame, the refusal listeners,
+ * whoever is told of a failure (`onFailed`), and what it drew last (`stats`);
+ * `ViewDrawSegment`, `ViewDrawKind`, `ViewPull`.
  * Invariants: it DECIDES NOTHING — which segments are drawn, in what order,
  * at what matrix, with what material and at what bloom are its caller's
  * (`Game.drawView`, off the tree's own evaluation and Babylon's group-1 sort,
@@ -24,41 +26,75 @@
  * and drawn on that frame, nothing else; a draw is ONE segment, one instance,
  * as Babylon drew one mesh (`viewProgram.ts`), the draws in the order handed
  * over — which is what settles an equal depth, the later winning, as
- * Babylon's queue settled it; the draws go into the main pass at
- * `"afterGroup"` — after rendering group 0, its blended queue and the kit
- * card last of it, and before group 1, which holds the two glasses — where
- * Babylon drew the weapon as group 1's opaque queue, and the mask's LAST in
- * that pass, after everything of Babylon's and the palette's and the visors'
- * (`Renderer.addGlowMaskLate`, as the pass closes), where group 1 drew them
- * (X4.3c's review, the owner's decision), no depth written, LEQUAL against the depth the main pass's draw wrote by the same
- * vertex module; the arrays are uploaded as Babylon uploaded a mesh's
- * (float32; a `color` or `uv` a segment does not carry reading what
- * Babylon's one-float empty vertex buffer read, widened: (0, 0, 0, 1) and
- * (0, 0)); a material's block is re-copied from its recipe only when the
- * caller's epoch moves; a frame with a texture unpublished draws nothing, and
- * a draw whose pipeline is unbuilt is skipped, as a Babylon material not
- * ready drew nothing; it is INSTALLED FOR THE SESSION, not the round — the kit
- * screen covers `menu`, where no map stands — and a pipeline that FAILS (asked
- * at construction or at a recipe's first draw), or a refused pass while
- * something of it would draw — told ONCE per change, not every refused frame
- * — is told to `onFailed`'s listener, never inside the render's commands (the
- * caller defers it, `Game.worldFailed`); nothing here allocates on a frame but
- * the first sight of a recipe (a finish's new material).
+ * Babylon's queue settled it — and laid out as the frame draws them: the
+ * CARD first (at most one), then the OPAQUE parts, then the GLASSES; the
+ * draws go into the main pass at `"afterGroup"` — after rendering group 0 and
+ * its blended queue, the slot the card held as the last of that queue and the
+ * weapon as group 1's opaque queue and the glasses as its blended one — and
+ * the mask's LAST in that pass, after everything of Babylon's and the
+ * palette's and the visors' (`Renderer.addGlowMaskLate`, as the pass closes),
+ * where group 1 drew them (X4.3c's review, the owner's decision), no depth
+ * written, LEQUAL against the depth the main pass's draw wrote by the same
+ * vertex module — and only the opaque, unlit, glowing parts: the weapon IS
+ * the stage, so its mask is drawn in every state, the kit screen's included,
+ * which is the glow's stage rule stated by the draw (a glass and the card are
+ * never in it: `noGlow`); the opaque parts write depth and blend nothing; a
+ * GLASS is blended as Babylon's `ALPHA_COMBINE` blends — colour (SRC_ALPHA,
+ * ONE_MINUS_SRC_ALPHA), alpha (ONE, ONE), so the coverage channel takes its
+ * alpha and the ink behind a lens is attenuated by it — writes no depth,
+ * tests LEQUAL and culls back faces (its arrays carry both, `DOUBLESIDE`); the
+ * CARD is blended as `ALPHA_REPLACE_COLOR` blends — colour (ONE, ZERO), alpha
+ * (ONE, ONE_MINUS_SRC_ALPHA) at a pixel alpha of 0, the coverage channel
+ * untouched — tests `always`, WRITES depth and culls nothing; the card's
+ * canvas is uploaded as `DynamicTexture.update` uploaded it
+ * (`copyExternalImageToTexture`, flipped in y, not premultiplied, into an
+ * `rgba8unorm` 256 square with one mip) once per paint and no more, and
+ * sampled as Babylon's sampler for it did (linear, no mips — a LOD clamped to
+ * 0 — clamped in u and v); a card never uploaded is not drawn; the arrays are
+ * uploaded as Babylon uploaded a mesh's (float32; a `color` or `uv` a segment
+ * does not carry reading what Babylon's one-float empty vertex buffer read,
+ * widened: (0, 0, 0, 1) and (0, 0)); a material's block is re-copied from its
+ * recipe only when the caller's epoch moves; a frame with a texture
+ * unpublished draws nothing, and a draw whose pipeline is unbuilt is skipped,
+ * as a Babylon material not ready drew nothing; it is INSTALLED FOR THE
+ * SESSION, not the round — the kit screen covers `menu`, where no map stands —
+ * and a pipeline that FAILS (asked at construction or at a recipe's first
+ * draw), or a refused pass while something of it would draw — told ONCE per
+ * change, not every refused frame — is told to `onFailed`'s listener, never
+ * inside the render's commands (the caller defers it, `Game.worldFailed`);
+ * nothing here allocates on a frame but the first sight of a recipe (a
+ * finish's new material).
  * Never: imports Babylon; reads a node, a joint, a mesh or a material.
  * Contract: `docs/rendering.md`, "The weapon, ours".
  */
 import { CEL_MATERIAL_BLOCK, CEL_MATERIAL_TEXTURES, type CelRecipe } from "./celMaterial";
 import { EMISSIVE_BLOCK, EMISSIVE_BLOCK_DEFINES, type EmissiveRecipe } from "./emissiveWorld";
 import type { PassTargets } from "./frameHost";
-import { HostBindGroup } from "./HostBindGroup";
+import { HostBindGroup, OwnTexture } from "./HostBindGroup";
 import type { BuiltPipeline, PipelineState } from "./PipelineCache";
 import type { FrameContext, Renderer } from "./Renderer";
 import { FRAME_TARGETS, GLOW_TARGETS } from "./targets";
 import { UniformBlockBuffer } from "./UniformBlockBuffer";
-import { VIEW_GEOMETRY, VIEW_GLOW, viewCelProgram, viewEmissivePrograms, type ViewProgram } from "./viewProgram";
+import {
+  VIEW_CARD,
+  VIEW_GEOMETRY,
+  VIEW_GLASS,
+  VIEW_GLOW,
+  viewBlendedPrograms,
+  viewCelProgram,
+  viewEmissivePrograms,
+  type ViewProgram,
+} from "./viewProgram";
 
-/** One segment of the kit: one mesh of the viewmodel it was until X4.3c, in its own frame. */
+/**
+ * How a segment is drawn: by its cel material's recipe, by the emissive
+ * palette's program (an unlit part), as an optic's glass, or as the kit card.
+ */
+export type ViewDrawKind = "cel" | "unlit" | "glass" | "card";
+
+/** One segment of the kit: one mesh of the viewmodel it was until X4.3c and X4.3d, in its own frame. */
 export interface ViewDrawSegment {
+  readonly kind: ViewDrawKind;
   /** xyz a vertex. */
   readonly positions: ArrayLike<number>;
   readonly normals: ArrayLike<number> | null;
@@ -66,10 +102,12 @@ export interface ViewDrawSegment {
   readonly colors: ArrayLike<number> | null;
   /** uv a vertex, or null. */
   readonly uvs: ArrayLike<number> | null;
-  /** The emissive table's 1-based slot for an UNLIT segment; 0 for a cel one. */
+  /** The emissive table's 1-based slot for an UNLIT segment; 0 for any other. */
   readonly slot: number;
   /** Whether it is drawn into the glow's mask: unlit, a colour above black, and not `noGlow`. */
   readonly glows: boolean;
+  /** A GLASS's colour and alpha (rgba, its material's `emissiveColor` and `alpha`); null for any other. */
+  readonly tint: readonly number[] | null;
   readonly indices: ArrayLike<number>;
 }
 
@@ -82,6 +120,21 @@ export type ViewPull = (glow: Float32Array, n: number) => void;
 
 /** Floats in one draw's matrix. */
 const MATRIX_FLOATS = 16;
+
+/** The card's canvas, square — `ViewModel`'s `KIT_CARD_SIZE`. */
+const CARD_SIZE = 256;
+
+/** `ALPHA_COMBINE`'s factors (Babylon's `alphaCullingState`, mode 2): what an optic's glass blends by. */
+const GLASS_BLEND: GPUBlendState = {
+  color: { srcFactor: "src-alpha", dstFactor: "one-minus-src-alpha", operation: "add" },
+  alpha: { srcFactor: "one", dstFactor: "one", operation: "add" },
+};
+
+/** `ALPHA_REPLACE_COLOR`'s factors (mode 21): what the kit card blends by. */
+const CARD_BLEND: GPUBlendState = {
+  color: { srcFactor: "one", dstFactor: "zero", operation: "add" },
+  alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" },
+};
 
 /** A material's own block and its group, made the first time its recipe is drawn. */
 interface MaterialSlot {
@@ -103,14 +156,14 @@ export class ViewDraw {
   readonly matrices: Float32Array<ArrayBuffer>;
   /** This frame's draws' segments, by their place in the kit, written before `commit`. */
   readonly segment: Uint32Array<ArrayBuffer>;
-  /** This frame's draws' cel recipes, written before `commit`: null for an unlit segment. */
+  /** This frame's draws' cel recipes, written before `commit`: null for any segment not cel. */
   readonly recipes: (CelRecipe | null)[];
   /** Whether the pipelines asked at construction built; false if one failed. */
   readonly ready: Promise<boolean>;
   /**
-   * What the last frame drew: main-pass draws, mask draws. Nothing in the
-   * game reads it; a profiler capture does (`ProfileReport.view`) and the
-   * census.
+   * What the last frame drew: main-pass draws (the card and the glasses
+   * among them), mask draws. Nothing in the game reads it; a profiler
+   * capture does (`ProfileReport.view`) and the census.
    */
   readonly stats = { drawn: 0, masked: 0 };
 
@@ -128,8 +181,17 @@ export class ViewDraw {
   private readonly emissiveBlock: UniformBlockBuffer;
   private readonly emissiveGroup: HostBindGroup;
   private readonly glowGroup: HostBindGroup;
+  private readonly glassGroup: HostBindGroup;
+  /** The card's texture, as its group binds it, and the group. */
+  private readonly cardTexture: GPUTexture;
+  private readonly cardHandle = new OwnTexture();
+  private readonly cardGroup: HostBindGroup;
+  /** The canvas paint last uploaded (`ViewModel.kitCard.painted`): 0 is never. */
+  private cardUploaded = 0;
   private emissive: BuiltPipeline | null = null;
   private mask: BuiltPipeline | null = null;
+  private glass: BuiltPipeline | null = null;
+  private card: BuiltPipeline | null = null;
   /** Every cel pipeline asked, by `celKey`. */
   private readonly cels = new Map<string, CelPipeline>();
   /** Every recipe drawn so far. */
@@ -137,7 +199,9 @@ export class ViewDraw {
 
   private pending = false;
   private instances = 0;
-  private glowOn = false;
+  /** This frame's layout: draws `[0, cards)` the card, `[cards, glassFrom)` the opaque parts, `[glassFrom, instances)` the glasses. */
+  private cards = 0;
+  private glassFrom = 0;
   /** This frame's draws include one for the mask. */
   private anyMasked = false;
   /** The materials' epoch as last copied; NaN is never. */
@@ -182,9 +246,11 @@ export class ViewDraw {
     // rebased onto them, each segment's run its own.
     let vertices = 0;
     let indexTotal = 0;
+    let glasses = 0;
     for (const s of segments) {
       vertices += s.positions.length / 3;
       indexTotal += s.indices.length;
+      if (s.kind === "glass") glasses++;
     }
     const positions = new Float32Array(vertices * 3);
     const normals = new Float32Array(vertices * 3);
@@ -195,6 +261,9 @@ export class ViewDraw {
     const uvs = new Float32Array(vertices * 2);
     const uvs2 = new Float32Array(vertices * 2);
     const indices = new Uint32Array(Math.max(1, indexTotal));
+    // Each glass's colour and alpha, by its 1-based slot in `uv2.x`.
+    const glassTable = new Float32Array(Math.max(1, glasses) * 4);
+    let glassSlot = 0;
     let v = 0;
     let at = 0;
     segments.forEach((s, i) => {
@@ -206,11 +275,18 @@ export class ViewDraw {
       if (s.colors) colors.set(s.colors, v * 4);
       else for (let c = 0; c < count; c++) colors[(v + c) * 4 + 3] = 1;
       if (s.uvs) uvs.set(s.uvs, v * 2);
-      if (s.slot > 0) for (let c = 0; c < count; c++) uvs2[(v + c) * 2] = s.slot;
+      let slot = s.kind === "unlit" ? s.slot : 0;
+      if (s.kind === "glass") {
+        // The material's colour and alpha as Babylon's uniforms held them:
+        // float32, rounded once.
+        glassTable.set(s.tint!, glassSlot * 4);
+        slot = ++glassSlot;
+      }
+      if (slot > 0) for (let c = 0; c < count; c++) uvs2[(v + c) * 2] = slot;
       this.first[i] = at;
       this.count[i] = s.indices.length;
-      this.unlit[i] = s.slot > 0 ? 1 : 0;
-      this.glows[i] = s.slot > 0 && s.glows ? 1 : 0;
+      this.unlit[i] = s.kind === "unlit" ? 1 : 0;
+      this.glows[i] = s.kind === "unlit" && s.glows ? 1 : 0;
       for (let j = 0; j < s.indices.length; j++) indices[at++] = s.indices[j] + v;
       v += count;
     });
@@ -257,13 +333,52 @@ export class ViewDraw {
     this.emissiveGroup.refresh(host, {});
     this.glowGroup = new HostBindGroup(device, "view: bloom", VIEW_GLOW, [], { viewGlow: this.glowBuffer });
     this.glowGroup.refresh(host, {});
+    this.glassGroup = new HostBindGroup(device, "view: glass", VIEW_GLASS, [], {
+      viewGlass: storage("glass", glassTable),
+    });
+    this.glassGroup.refresh(host, {});
+    // The card's texture: what Babylon's `DynamicTexture` made of its 256
+    // square — `rgba8unorm`, one mip (no mips were asked for) — and the
+    // sampler Babylon's WebGPU cache made of a trilinear sampling mode with
+    // no mips: linear both ways, the LOD clamped to 0, clamped in u and v
+    // (w at its default, which a 2D lookup never reads), no anisotropy.
+    this.cardTexture = device.createTexture({
+      label: "view: kit card",
+      size: [CARD_SIZE, CARD_SIZE, 1],
+      format: "rgba8unorm",
+      mipLevelCount: 1,
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+    this.cardHandle.view = this.cardTexture.createView();
+    this.cardHandle.sampler = device.createSampler({
+      label: "view: kit card",
+      magFilter: "linear",
+      minFilter: "linear",
+      mipmapFilter: "nearest",
+      lodMinClamp: 0,
+      lodMaxClamp: 0,
+      addressModeU: "clamp-to-edge",
+      addressModeV: "clamp-to-edge",
+      addressModeW: "repeat",
+      maxAnisotropy: 1,
+    });
+    this.cardGroup = new HostBindGroup(device, "view: kit card", VIEW_CARD, [], {});
+    this.cardGroup.refresh(host, { viewCard: this.cardHandle });
 
     const emissive = viewEmissivePrograms();
+    const blended = viewBlendedPrograms();
     const asks: Promise<boolean>[] = [
       this.ask(emissive.main, FRAME_TARGETS, undefined, (b) => (this.emissive = b)),
       // No depth written: every pixel's depth is the main pass's, which the
       // same vertex module wrote.
       this.ask(emissive.mask, GLOW_TARGETS, { depthWrite: false }, (b) => (this.mask = b)),
+      this.ask(blended.glass, FRAME_TARGETS, { depthWrite: false, blend: GLASS_BLEND }, (b) => (this.glass = b)),
+      this.ask(
+        blended.card,
+        FRAME_TARGETS,
+        { cullMode: "none", depthWrite: true, depthCompare: "always", blend: CARD_BLEND },
+        (b) => (this.card = b),
+      ),
     ];
     for (const recipe of celRecipes) {
       const key = celKey(recipe);
@@ -285,7 +400,7 @@ export class ViewDraw {
       renderer.onRefused(this.refused),
       // LAST in the mask, after everything of Babylon's, where its group 1
       // drew the weapon's emissives (X4.3c's review, the owner's decision).
-      renderer.addGlowMaskLate(this.drawMask, () => this.pending && this.glowOn && this.anyMasked),
+      renderer.addGlowMaskLate(this.drawMask, () => this.pending && this.anyMasked),
       renderer.onGlowMaskRefused(this.maskRefused),
     ];
     this.unhook = () => {
@@ -305,23 +420,41 @@ export class ViewDraw {
   }
 
   /**
-   * This frame's draws: the first `n`, their matrices, segments and recipes
-   * already written — drawn on the next frame our renderer prepares, the
-   * bloom pulled then when `glowOn`. `epoch` is the materials'
-   * (`CelMaterialFactory.materialEpoch`): when it moved, every block is copied
-   * again from its recipe.
+   * The kit card's picture, before this frame's `commit`: its canvas and how
+   * often it has been painted (`ViewModel.kitCard`). A paint not yet uploaded
+   * is uploaded now, as `DynamicTexture.update` uploaded it in the frame's
+   * update; one already uploaded costs nothing.
    */
-  commit(n: number, glowOn: boolean, epoch: number): void {
+  cardPicture(canvas: HTMLCanvasElement | null, painted: number): void {
+    if (!canvas || painted === this.cardUploaded) return;
+    this.device.queue.copyExternalImageToTexture(
+      { source: canvas, flipY: true },
+      { texture: this.cardTexture, premultipliedAlpha: false },
+      [CARD_SIZE, CARD_SIZE, 1],
+    );
+    this.cardUploaded = painted;
+  }
+
+  /**
+   * This frame's draws: the first `n`, their matrices, segments and recipes
+   * already written — the card first (`cards` of them, none or one), the
+   * opaque parts up to `glassFrom`, the glasses after — drawn on the next
+   * frame our renderer prepares, the bloom pulled then. `epoch` is the
+   * materials' (`CelMaterialFactory.materialEpoch`): when it moved, every
+   * block is copied again from its recipe.
+   */
+  commit(n: number, cards: number, glassFrom: number, epoch: number): void {
     const count = Math.max(0, Math.min(n, this.capacity));
     this.instances = count;
+    this.cards = Math.min(cards, count);
+    this.glassFrom = Math.max(this.cards, Math.min(glassFrom, count));
     // This frame's, from here: a frame `Renderer.begin` skips (nothing
     // committed) runs neither the prepare nor the draw that would reset them.
     this.stats.drawn = 0;
     this.stats.masked = 0;
-    this.glowOn = glowOn;
     this.pending = true;
     let anyMasked = false;
-    for (let k = 0; k < count; k++) {
+    for (let k = this.cards; k < this.glassFrom; k++) {
       const recipe = this.recipes[k];
       if (recipe && !this.materials.has(recipe)) this.adopt(recipe);
       if (this.glows[this.segment[k]]) anyMasked = true;
@@ -342,6 +475,7 @@ export class ViewDraw {
     for (const buffer of this.owned) buffer.destroy();
     this.emissiveBlock.destroy();
     for (const slot of this.materials.values()) slot.block.destroy();
+    this.cardTexture.destroy();
   }
 
   /** `recipe`'s block and group, made and filled the first time it is drawn, and its pipeline asked if no recipe of its shape was. */
@@ -398,7 +532,10 @@ export class ViewDraw {
           return true;
         },
         (err: unknown) => {
-          console.error(`view: the ${program.vertex.label} pipeline did not build; the weapon cannot be drawn`, err);
+          console.error(
+            `view: the ${program.vertex.label} / ${program.fragment.label} pipeline did not build; the weapon cannot be drawn`,
+            err,
+          );
           return false;
         },
       );
@@ -419,22 +556,29 @@ export class ViewDraw {
     if (!this.ours) return;
     const queue = this.device.queue;
     queue.writeBuffer(this.matrixBuffer, 0, this.matrices, 0, n * MATRIX_FLOATS);
-    if (this.glowOn && this.anyMasked) {
+    if (this.anyMasked) {
       this.pull(this.glow, n);
       queue.writeBuffer(this.glowBuffer, 0, this.glow, 0, n * 4);
     }
   };
 
-  /** The weapon in the main pass, one draw a segment in the order handed over. */
+  /**
+   * The weapon in the main pass, one draw a segment in the order handed over:
+   * the card, the opaque parts, the glasses.
+   */
   private readonly draw = (pass: GPURenderPassEncoder, ctx: FrameContext): void => {
     // Reached only through a pass that is not refused.
     this.refusalTold = false;
     if (!this.ours) return;
-    const n = this.instances;
     let drawn = 0;
+    // The card, first: a canvas never uploaded has nothing to show.
+    if (this.cards > 0 && this.cardUploaded > 0) {
+      drawn += this.drawWith(pass, ctx, this.card, this.cardGroup, 0, this.cards);
+    }
+    const end = this.glassFrom;
     let bound: BuiltPipeline | null = null;
     let material: HostBindGroup | null = null;
-    for (let k = 0; k < n; k++) {
+    for (let k = this.cards; k < end; k++) {
       const s = this.segment[k];
       const recipe = this.recipes[k];
       let built: BuiltPipeline | null;
@@ -469,13 +613,40 @@ export class ViewDraw {
       pass.draw(this.count[s], 1, this.first[s], k);
       drawn++;
     }
+    // The glasses, last, over everything opaque.
+    if (this.instances > end) drawn += this.drawWith(pass, ctx, this.glass, this.glassGroup, end, this.instances);
     this.stats.drawn = drawn;
   };
 
-  /** The lit segments' bloom, first in the glow's mask: the same draws, by the same vertex module. */
+  /** Draws `[from, to)` with one pipeline and its group 1; how many it drew. */
+  private drawWith(
+    pass: GPURenderPassEncoder,
+    ctx: FrameContext,
+    built: BuiltPipeline | null,
+    own: HostBindGroup,
+    from: number,
+    to: number,
+  ): number {
+    if (!built) return 0;
+    const frame = ctx.frameGroup(built.groups[0]);
+    const group = own.get(built.groups[1]);
+    const geometry = this.geometry.get(built.groups[2]);
+    if (!frame || !group || !geometry) return 0;
+    pass.setPipeline(built.pipeline);
+    pass.setBindGroup(0, frame);
+    pass.setBindGroup(1, group);
+    pass.setBindGroup(2, geometry);
+    for (let k = from; k < to; k++) {
+      const s = this.segment[k];
+      pass.draw(this.count[s], 1, this.first[s], k);
+    }
+    return to - from;
+  }
+
+  /** The lit segments' bloom, last in the glow's mask: the same draws, by the same vertex module. */
   private readonly drawMask = (pass: GPURenderPassEncoder, ctx: FrameContext): void => {
     this.maskRefusalTold = false;
-    if (!this.ours || !this.glowOn || !this.anyMasked) return;
+    if (!this.ours || !this.anyMasked) return;
     const mask = this.mask;
     if (!mask) return;
     const frame = ctx.frameGroup(mask.groups[0]);
@@ -487,8 +658,8 @@ export class ViewDraw {
     pass.setBindGroup(1, own);
     pass.setBindGroup(2, geometry);
     let masked = 0;
-    const n = this.instances;
-    for (let k = 0; k < n; k++) {
+    const end = this.glassFrom;
+    for (let k = this.cards; k < end; k++) {
       const s = this.segment[k];
       if (this.recipes[k] !== null || !this.glows[s]) continue;
       pass.draw(this.count[s], 1, this.first[s], k);
@@ -506,7 +677,7 @@ export class ViewDraw {
 
   /** `Renderer.onGlowMaskRefused`: the mask drew nothing of ours, the reticles' bloom included. */
   private readonly maskRefused = (): void => {
-    if (!this.ours || !this.glowOn || !this.anyMasked || this.maskRefusalTold) return;
+    if (!this.ours || !this.anyMasked || this.maskRefusalTold) return;
     this.maskRefusalTold = true;
     this.failed("the glow's mask pass was refused, so no reticle of ours can bloom");
   };

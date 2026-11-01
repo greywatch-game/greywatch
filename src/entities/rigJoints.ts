@@ -5,9 +5,9 @@
  * draws a body's segments from (`SoldierModel.writeRigDrawing`,
  * `BABYLON_EXIT.md` X4.1d) and what every reader of a joint reads (X4.1a) —
  * a soldier's, since X4.2a a hull's (`vehicleRig.ts`), and since X4.3b the
- * player's own VIEWMODEL (`viewTree.ts`, whose opaque segments our renderer
- * draws off these matrices since X4.3c, and whose two glasses and kit card
- * Babylon still draws, unparented, off them).
+ * player's own VIEWMODEL (`viewTree.ts`, whose every segment our renderer
+ * draws off these matrices: the opaque parts since X4.3c, the two glasses and
+ * the kit card since X4.3d).
  * Owns: `Joint`, `JointTree` (the composition, and a fresh chain), the body's
  * one MEASURE (`measureBody`, the sphere the root's capsule used to answer),
  * and `RenderCache` — Babylon's render-id cache, reproduced for the one tree

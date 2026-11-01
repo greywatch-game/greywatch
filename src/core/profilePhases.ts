@@ -116,14 +116,15 @@ export const PHASES = [
   /** `scene.render()`. The big one, and see `FrameProfile`'s header on why. */
   "render",
   /**
-   * The four spans INSIDE `render`, and the only ones in this list that
+   * The three spans INSIDE `render`, and the only ones in this list that
    * `Game` does not bracket — see `FrameProfile.hookRender`, which is also
    * where the argument that they cannot overlap each other is written down.
+   * (`drawOverlay`, the rendering groups above 0, was the fourth until
+   * `BABYLON_EXIT.md` X4.3d emptied them: report version 24.)
    */
   "shadowPass",
   "glow",
   "drawWorld",
-  "drawOverlay",
   /**
    * The engine's own END of the frame: everything `endFrame` does after `tick`
    * has returned, which on WebGPU is closing the render pass and
@@ -226,7 +227,6 @@ export const PARENT_OF: Readonly<
   shadowPass: "render",
   glow: "render",
   drawWorld: "render",
-  drawOverlay: "render",
 };
 
 /**

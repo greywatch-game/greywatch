@@ -22,7 +22,7 @@ import {
   type WeaponParts,
 } from "./weaponKit";
 import type { Joint } from "./rigJoints";
-import type { ViewSurface, ViewTree } from "./viewTree";
+import type { ViewSegment, ViewTree } from "./viewTree";
 
 /**
  * Top face of the rail, and on this weapon the rail is on top of the CARRY
@@ -387,7 +387,7 @@ export function buildCarbine(
 
   // The carbine itself is finished. Merge it before any optic is built, so a
   // sight's parts can never end up inside the weapon's colour groups.
-  const meshes: ViewSurface[] = b.merge("carbine", root);
+  const meshes: ViewSegment[] = b.merge("carbine", root);
 
   // The magazine: the F1's straight box, fluted down each flank, merged into a
   // joint of its own so the reload can pull it out of the well (see

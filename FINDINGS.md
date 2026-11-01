@@ -863,8 +863,11 @@ the next one by the economy — two grenades a life, a 3.6 s tank reload.
 ## 16. The round's pipelines are compiled under the building card now — what the warm-up does not reach, and the phone
 
 **Status:** the warm-up LANDED (`core/PipelineWarmup.ts`, `docs/states.md`,
-"a SECOND phase"); what is open is the phone, and four things it does not
-reach.
+"a SECOND phase"); what is open is the phone, and three things it does not
+reach. (A fourth — a weapon or optic the card never drew, whose glass compiled
+on its first draw — was settled by `BABYLON_EXIT.md` X4.3d: every pipeline of
+the weapon, its glass and the kit card among them, is our renderer's and asked
+at construction, and a first ADS through either glass creates nothing.)
 
 WebGPU builds a render pipeline on the first draw that needs one, and that
 draw's frame pays — Dawn compiles behind the create call, so the stall lands on
@@ -905,15 +908,6 @@ keyed on the pose, not on the mesh.
   would reach it.
 - **The rotor wash** on Sarab and Cinderhaven is a GPU particle system, not a
   mesh, and compiles on the first frame a helicopter raises dust.
-- **Only the weapon and optic WORN are warmed.** Changing kit on the deploy
-  screen and spawning with a weapon the card never drew compiles its glass and
-  any material only it wears — the kit screen's turntable draws it first, so
-  the cost lands there rather than in the round, but it is not measured.
-  **Since `BABYLON_EXIT.md` X4.3c only the GLASS is left of that**: every
-  opaque part of every weapon is our renderer's (`render/ViewDraw.ts`), its
-  pipelines asked at construction — one cel variant for every material and
-  finish, and the emissive pair — so a weapon the card never drew compiles
-  nothing of ours. The glass is X4.3d's, which settles this entry.
 
 **And a separate stall the counting found, which is NOT a compile**: the deploy
 screen's first second runs 974 and 613 ms frames on Hollowmere and 480 on

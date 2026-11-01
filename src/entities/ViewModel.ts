@@ -12,14 +12,13 @@
  *   and the builders made is a joint made at the same moment (the order is
  *   what `kit:hash --models` digests); a pivot and an overriding quaternion are
  *   the joint's (`Joint.setPivotPoint`, `Joint.quaternion`); the camera is the
- *   tree's root, held off its world. **Every opaque part is a SEGMENT our
+ *   tree's root, held off its world. **Every surface is a SEGMENT our
  *   renderer draws** (`ViewSegment`, `render/ViewDraw.ts`, `BABYLON_EXIT.md`
- *   X4.3c) and Babylon is made no mesh of one; the optics' two glasses and the
- *   kit card are still Babylon meshes, each handed its joint's world once a
- *   frame (`drawView`, `Game.tick`, immediately before the render) and each
- *   one's own enabled flag its joint chain's (`syncSwitches`, before the
- *   cull). `drawView` evaluates every surface on and visible, whoever draws
- *   it — what the readers below are stamped by. Every write to a joint's
+ *   X4.3c the opaque parts, X4.3d the optics' two glasses and the kit card)
+ *   and Babylon is made no mesh of one: `drawView` (`Game.tick`, immediately
+ *   before the render) evaluates every surface on and visible, whatever its
+ *   role — what the readers below are stamped by — and our renderer is handed
+ *   each one's matrix. Every write to a joint's
  *   position, rotation, scaling or quaternion goes through `wrote`, and the
  *   quaternion handed or taken through `markDirty` too — the dirty flags
  *   Babylon's render cache read.
@@ -101,21 +100,21 @@
  *   not: the weapon carries the sight, so anything that rotates or laterally
  *   shifts it while aimed takes the reticle off the axis the rounds fly down.
  * - The weapon draws AFTER the world, into its depth with no clear — our
- *   renderer's draw at the end of rendering group 0, in the order Babylon's
- *   `VIEWMODEL_GROUP` queue drew the meshes (`Game.drawView`), and the glasses
- *   still in that group, whose depth is NOT cleared (`Game.ts`, over
- *   `setRenderingAutoClearDepthStencil`): the frame keeps one depth image of
- *   the world and the gun, which the ink, the blur, the paper and the glow's
- *   occlusion name the gun by. Anything else attached to it (Player's muzzle
- *   flash) is a segment of the same tree or it is drawn in the world's.
+ *   renderer's draw at the end of rendering group 0 (`render/ViewDraw.ts`):
+ *   the kit card first, then the opaque parts in the order Babylon's group-1
+ *   queue drew the meshes (`Game.drawView`), then the glasses, blended, back
+ *   to front — so the frame keeps one depth image of the world and the gun,
+ *   which the ink, the blur, the paper and the glow's occlusion name the gun
+ *   by. Anything else attached to it (Player's muzzle flash) is a segment of
+ *   the same tree or it is drawn in the world's.
  * - Arms are built at the origin and merged per colour before being hung, the
  *   same rule as BuildingKit and the weapon models: `mergeParts` bakes world
  *   matrices, as MergeMeshes did, so the merge is only correct at identity.
  *   Like the weapons, they are built as `Part`s (`world/parts.ts`) on
  *   `src/geometry/` buffers: each colour group, the throwing fist's grenade
- *   and pip and the bottle become SEGMENTS (`toSegment`, `segmentOf`), the kit
- *   card a mesh (`drawnMesh`), each then hung from a joint of the tree; the
- *   poses are written on the joints.
+ *   and pip and the bottle become SEGMENTS (`toSegment`, `segmentOf`), and so
+ *   does the kit card, each then hung from a joint of the tree; the poses are
+ *   written on the joints.
  * - The loadout screen's turntable (`beginInspect`/`updateInspect`) is the one
  *   pose that is not the carried one, and it is the only thing here that may
  *   set the weapon joint's `quaternion`. While one is set the joint ignores
@@ -125,16 +124,7 @@
  *   allowed to be drawn — and it goes up and down with the pose, which is
  *   what keeps it out of every other state in the game.
  */
-import {
-  Color3,
-  Constants,
-  DynamicTexture,
-  Matrix as BabylonMatrix,
-  Mesh,
-  Scene,
-  StandardMaterial,
-  Vector3 as BabylonVector3,
-} from "@babylonjs/core";
+import { Matrix as BabylonMatrix, Scene, Vector3 as BabylonVector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { clamp, hermite, impulse } from "../core/math";
 import type { CelMaterialFactory } from "../shaders/CelShader";
@@ -163,7 +153,6 @@ import { Matrix, Quaternion, Vector3, type Vector3Like } from "../math";
 import {
   bakePartTransform,
   detachPart,
-  drawnMesh,
   mergeParts,
   Part,
   PartNode,
@@ -177,7 +166,6 @@ import {
   ViewSegment,
   ViewTree,
   type ViewCamera,
-  type ViewSurface,
 } from "./viewTree";
 import { OWN_KIT } from "./SoldierModel";
 import {
@@ -188,17 +176,6 @@ import {
   type PrimaryWeaponId,
   type WeaponSetup,
 } from "./weapons";
-
-/**
- * Rendering group for what hangs off the camera and Babylon still draws — the
- * optics' two glasses since `BABYLON_EXIT.md` X4.3c (X4.3d moves them); the
- * weapon's opaque parts are our renderer's, drawn where this group's opaque
- * queue drew them. Its depth is NOT cleared before it draws (`Game.ts`, over
- * `setRenderingAutoClearDepthStencil`), so the frame keeps one depth image of
- * the world and the gun; what keeps a wall out of the weapon is the near plane
- * and the player's own radius.
- */
-export const VIEWMODEL_GROUP = 1;
 
 /**
  * The model builder for each weapon. The one place the ids in
@@ -223,121 +200,88 @@ const WEAPON_BUILDERS: Record<CarriedId, WeaponBuilder> = {
 
 /**
  * The card the kit screen's turntable stands against: one quad hung from the
- * camera's joint, dark, and up only while a weapon is being looked at.
+ * camera's joint, dark, and up only while a weapon is being looked at — a
+ * SEGMENT of role `"card"` our renderer draws (`render/ViewDraw.ts`,
+ * `BABYLON_EXIT.md` X4.3d), painted from a canvas of this file's
+ * (`KitCardPicture`).
  *
- * **Its rendering slot is the whole trick, and there is exactly one that
- * works.** The card has to cover the world and then be covered by the weapon,
- * and the two are in different rendering groups — the world in 0, everything
- * on the camera in `VIEWMODEL_GROUP`. Babylon draws a group's opaque meshes
- * first and its BLENDED ones last, so a blended mesh in group 0 with the
- * highest `alphaIndex` in the scene is the last thing drawn before the
- * viewmodel and the first thing the viewmodel draws over. That is why the card
- * is BLENDED rather than flatly opaque: opaque, it would be sorted in among
- * the village.
+ * **Its slot in the frame is the whole trick, and there is exactly one that
+ * works.** The card has to cover the world and then be covered by the weapon.
+ * It is the FIRST of the viewmodel's draws, at the end of rendering group 0 —
+ * after everything of the world's, its blended surfaces included — and the
+ * weapon's opaque parts and the glasses draw over it. Until X4.3d it was a
+ * Babylon mesh in group 0's BLENDED queue with the highest `alphaIndex` in
+ * the scene, which is how Babylon could be made to draw it last before the
+ * weapon (the weapon was in a rendering group of its own then); our draw
+ * states that slot rather than sorting into it, and keeps the mesh's blend.
  *
- * **BLENDED IS A SORTING DEVICE HERE AND NOT A CLAIM OF TRANSLUCENCY, and the
- * frame's alpha channel is where the difference is paid for.** That channel is
- * TRANSLUCENT COVERAGE — "how much got between the pass and the depth this
- * pixel records" — and `CelInk` scales its stroke by `1 - a`, so a plume takes
- * the line work of what is behind it away. Every alpha-blended draw
- * accumulates into it for free, because `ALPHA_COMBINE` blends alpha as
- * (ONE, ONE), and this card is the one blended mesh in the game that must not:
- * it WRITES DEPTH, so it is not in front of the surface this pixel records, it
- * IS that surface, and it covered the whole frustum. Shipped on `ALPHA_COMBINE`
- * at 0.985 it stamped 0.985 of coverage over every pixel of the kit screen and
- * took the ink off the frame — the world's, which is under the card and no
- * loss, and the WEAPON'S OUTLINE with it, which is the one thing the screen
- * exists to show. (The weapon's own pixels write `opaqueAlpha` and were never
- * the problem; a contour straddles the silhouette, and the half of every
- * stroke lying on the card was erased.)
+ * **ITS BLEND IS NOT A CLAIM OF TRANSLUCENCY, and the frame's alpha channel
+ * is where the difference is paid for.** That channel is TRANSLUCENT COVERAGE
+ * — "how much got between the pass and the depth this pixel records" — and
+ * `CelInk` scales its stroke by `1 - a`, so a plume takes the line work of
+ * what is behind it away. Every alpha-blended draw accumulates into it for
+ * free, because `ALPHA_COMBINE` blends alpha as (ONE, ONE), and this card is
+ * the one blended surface in the game that must not: it WRITES DEPTH, so it is
+ * not in front of the surface this pixel records, it IS that surface, and it
+ * covers the whole frustum. Shipped on `ALPHA_COMBINE` at 0.985 it stamped
+ * 0.985 of coverage over every pixel of the kit screen and took the ink off
+ * the frame — the world's, which is under the card and no loss, and the
+ * WEAPON'S OUTLINE with it, which is the one thing the screen exists to show.
+ * (The weapon's own pixels write `opaqueAlpha` and were never the problem; a
+ * contour straddles the silhouette, and the half of every stroke lying on the
+ * card was erased.)
  *
- * **`ALPHA_REPLACE_COLOR` with a fragment alpha of 0 is the pair that says
- * both things at once**, and it is the only blend mode in Babylon's table that
- * can: colour is `SRC` with the destination factor at ZERO — the card replaces
- * the world outright, which is what 0.985 was approximating — while alpha is
+ * **Babylon's `ALPHA_REPLACE_COLOR` with a fragment alpha of 0 is the pair
+ * that says both things at once**, and our draw keeps its factors: colour is
+ * `SRC` with the destination factor at ZERO — the card replaces the world
+ * outright, which is what 0.985 was approximating — while alpha is
  * `srcA + (1 - srcA) * dstA`, which at `srcA = 0` is the destination alpha
- * untouched. So the card leaves the coverage channel exactly as the opaque
- * world wrote it, and the ink reads the stage as what it is: a painted flat
- * with a rifle in front of it. The 0 is doing a second job at the same time —
- * `needAlphaBlending()` is `alpha < 1`, so it is also what keeps the card in
- * the blended queue the slot above depends on. Neither job wants any other
- * value, which is why it is stated here beside the two depth writes rather
- * than offered as a tunable.
+ * untouched. So the card leaves the coverage channel exactly as the world
+ * wrote it, and the ink reads the stage as what it is: a painted flat with a
+ * rifle in front of it. (The 0 did a second job while the card was
+ * Babylon's — `needAlphaBlending()` is `alpha < 1`, which kept it in the
+ * blended queue its slot depended on; our draw needs no such device.)
+ *
+ * Depth is bent both ways, and both are load-bearing. Tested `always`, so a
+ * wall the deploy camera is standing against cannot cut a hole in the bench;
+ * WRITTEN, so the card is the SURFACE every depth reader sees — the ink, the
+ * blur's weapon mask, the glow's occlusion. The weapon, a half-metre from the
+ * lens, still sails through an 8 m stamp.
  *
  * The card is a painted flat, not geometry: nothing may collide with it, pick
- * it, shadow it or bloom it. The one thing it cannot cover is the GLOW LAYER,
- * which is composited over the finished frame rather than drawn into it —
- * `Game`'s emissive selector is where that is dealt with.
+ * it, shadow it or bloom it, and it is drawn unlit — a painted value, where a
+ * lit one would take the bench lamps that are there to light the weapon. The
+ * one thing it cannot cover is the GLOW LAYER, which is composited over the
+ * finished frame rather than drawn into it — `Game.glowAdmits` is where that
+ * is dealt with.
  */
-function buildKitBackdrop(scene: Scene): { card: Mesh; tex: DynamicTexture } {
-  // Square, because the quad is scaled to the frustum every frame and the
-  // gradient is a soft pool that reads the same however it is stretched.
-  const tex = new DynamicTexture("kitBackdrop", { width: 256, height: 256 }, scene);
-
-  const mat = new StandardMaterial("kitBackdrop", scene);
-  // Unlit: the card is a painted value, and a lit one would take the bench
-  // lamps that are there to light the weapon.
-  mat.disableLighting = true;
-  mat.diffuseColor = Color3.Black();
-  mat.specularColor = Color3.Black();
-  mat.emissiveTexture = tex;
-  // Blended for the draw slot, and contributing NOTHING to the frame's
-  // coverage channel. See the header: the mode makes the colour a straight
-  // replace and the 0 keeps the alpha channel the world's, which is what gives
-  // the weapon on the stage the same ink it wears in a round.
-  mat.alphaMode = Constants.ALPHA_REPLACE_COLOR;
-  mat.alpha = 0;
-  // Depth is then bent both ways, and both are load-bearing. `ALWAYS` is what
-  // lets the card ignore the world's depth, so a wall the deploy camera is
-  // standing against cannot cut a hole in the bench. Writing depth makes the
-  // card the SURFACE every depth reader sees — the ink, the blur's weapon mask,
-  // the glow's occlusion — and it is what first covered the moon, while the
-  // disc drew in the viewmodel's group after this one whatever the sorting
-  // said. The disc is a blended mesh in group 0 now and sorts under the card;
-  // the weapon, a half-metre from the lens, still sails through an 8 m stamp.
-  //
-  // `forceDepthWrite`, not the absence of `disableDepthWrite`: setting a blend
-  // mode turns depth writing OFF in the engine, so a blended mesh has to ask.
-  mat.forceDepthWrite = true;
-  mat.depthFunction = Constants.ALWAYS;
-  mat.backFaceCulling = false;
-
-  const card = drawnMesh(new Part("viewmodel_kitBackdrop", createPlane({ size: 1 })), scene);
-  card.material = mat;
-  // Last of every blended mesh in the scene, and INFINITY is what that takes:
-  // Babylon's default `alphaIndex` is already `Number.MAX_VALUE`, so any
-  // ordinary large number sorts the card in FRONT of the untouched ones and
-  // the capture skirt — a 28 m cylinder the deploy camera is usually inside —
-  // paints its pane of light straight back over the bench.
-  card.alphaIndex = Number.POSITIVE_INFINITY;
-  card.isPickable = false;
-  // Hung from the camera, so its bounds follow a moving frustum — the same
-  // reason the weapon's own meshes skip the cull test.
-  card.alwaysSelectAsActiveMesh = true;
-  // Read by the Game constructor's scan; it is up before that runs. A flat
-  // painted with an emissive texture is exactly what the glow layer would
+function buildKitBackdrop(): ViewSegment {
+  const card = toSegment(new Part("viewmodel_kitBackdrop", createPlane({ size: 1 })));
+  card.role = "card";
+  // A flat painted from a canvas is exactly what the glow layer would
   // otherwise bloom, and a bloomed backdrop is a bright wash over the weapon.
   card.metadata = { noGlow: true, noInk: true, noShadowCaster: true };
-  card.setEnabled(false);
-
-  // **Painted once HERE, and it is not for the look — the pool this lays down
-  // is never seen.** `updateInspect` repaints from the measured bay before the
-  // card is ever enabled (`poolX`/`poolY` open at a sentinel outside NDC, so
-  // the first kit frame always repaints), and outside that screen nothing
-  // draws this at all. What the upload buys is READINESS: a `DynamicTexture`
-  // is not ready until something calls `update()` on it, so an emissive map
-  // that has never been uploaded makes `StandardMaterial.isReadyForSubMesh`
-  // return false before it builds an effect — and a scene holding one mesh
-  // like that answers `scene.isReady()` FALSE for the life of the process.
-  //
-  // Nothing in `src/` asks, which is why this went unnoticed: what it broke
-  // was `npm run shots`, whose whole gate is that question and which failed on
-  // every map for two minutes at a time saying only "scene never became
-  // ready". Every other `DynamicTexture` in the tree is already uploaded where
-  // it is built; this is that convention, and `VERIFYING.md` has the hunt.
-  paintKitPool(tex, 0, 0);
-  return { card, tex };
+  card.enabled = false;
+  return card;
 }
+
+/**
+ * The card's PICTURE: the canvas its pool of light is painted on, and how
+ * many times it has been painted — what our renderer uploads it by
+ * (`render/ViewDraw.ts`, `BABYLON_EXIT.md` X4.3d: once per paint, as
+ * `DynamicTexture.update` uploaded it). The canvas is made at the FIRST paint
+ * — the first frame of a kit screen — so a build that never raises one (a
+ * round's, `kit:hash`'s) makes none.
+ */
+export interface KitCardPicture {
+  /** 256 square, a `document` canvas as Babylon's `DynamicTexture` made one; null until the first paint. */
+  canvas: HTMLCanvasElement | null;
+  /** Paints so far: 0 is never. */
+  painted: number;
+}
+
+/** The card's canvas, square, because the quad is scaled to the frustum every frame and the gradient is a soft pool that reads the same however it is stretched. */
+const KIT_CARD_SIZE = 256;
 
 /**
  * Moves the card's pool of light to wherever the weapon is standing.
@@ -350,21 +294,27 @@ function buildKitBackdrop(scene: Scene): { card: Mesh; tex: DynamicTexture } {
  * 256-square canvas fill, and the caller only asks when the bay has actually
  * moved.
  */
-function paintKitPool(tex: DynamicTexture, x: number, y: number): void {
+function paintKitPool(picture: KitCardPicture, x: number, y: number): void {
   const b = CONFIG.viewmodel.inspect.backdrop;
-  const ctx = tex.getContext();
+  if (!picture.canvas) {
+    const canvas = document.createElement("canvas");
+    canvas.width = KIT_CARD_SIZE;
+    canvas.height = KIT_CARD_SIZE;
+    picture.canvas = canvas;
+  }
+  const ctx = picture.canvas.getContext("2d")!;
   // The bay's centre is in NDC and the canvas is y-down, which is the one
   // place those two disagree.
-  const cx = ((x + 1) / 2) * 256;
-  const cy = ((1 - y) / 2) * 256;
-  const pool = ctx.createRadialGradient(cx, cy, 0, cx, cy, 256 * b.poolRadius);
+  const cx = ((x + 1) / 2) * KIT_CARD_SIZE;
+  const cy = ((1 - y) / 2) * KIT_CARD_SIZE;
+  const pool = ctx.createRadialGradient(cx, cy, 0, cx, cy, KIT_CARD_SIZE * b.poolRadius);
   pool.addColorStop(0, b.near);
   pool.addColorStop(1, b.far);
   ctx.fillStyle = b.far;
-  ctx.fillRect(0, 0, 256, 256);
+  ctx.fillRect(0, 0, KIT_CARD_SIZE, KIT_CARD_SIZE);
   ctx.fillStyle = pool;
-  ctx.fillRect(0, 0, 256, 256);
-  tex.update();
+  ctx.fillRect(0, 0, KIT_CARD_SIZE, KIT_CARD_SIZE);
+  picture.painted++;
 }
 
 /** What the weapon needs to know about the player, per frame. */
@@ -632,17 +582,18 @@ interface WeaponRig {
 export class ViewModel {
   /**
    * The whole viewmodel as JOINTS, the camera's stand-in at its root, and
-   * every surface drawn off it (`BABYLON_EXIT.md` X4.3b, X4.3c): segments our
-   * renderer draws and the glasses and card Babylon does. Nothing here is a
+   * every surface drawn off it (`BABYLON_EXIT.md` X4.3b-d): segments our
+   * renderer draws, the glasses and the card among them. Nothing here is a
    * `TransformNode` and nothing has a parent: `drawView` evaluates each, and
    * every reader answers out of the tree's render cache.
    */
   readonly tree: ViewTree;
   /**
    * Every visible part, for the one visibility switch Player owns: the
-   * segments our renderer draws, and the optics' glasses Babylon still does.
+   * weapon's segments, the optics' glasses among them (the card is switched
+   * by its joint alone).
    */
-  readonly meshes: ViewSurface[] = [];
+  readonly meshes: ViewSegment[] = [];
   /**
    * The gloved arms, of every weapon — the subset that lets go while the
    * weapon is on the turntable. A forearm cut off at the elbow is a fact of
@@ -687,12 +638,13 @@ export class ViewModel {
    */
   private readonly backdrop: Joint;
   /**
-   * The card's own texture, and the bay centre its pool was last painted at.
-   * A sentinel that is outside NDC on both axes, so the first frame of a kit
-   * screen always paints — there is no anchor to inherit from a build any
-   * more.
+   * The card's picture — its canvas and how often it was painted, which our
+   * renderer uploads it by (`Game.drawView`) — and the bay centre its pool was
+   * last painted at. A sentinel that is outside NDC on both axes, so the first
+   * frame of a kit screen always paints — there is no anchor to inherit from a
+   * build any more.
    */
-  private readonly backdropTex: DynamicTexture;
+  readonly kitCard: KitCardPicture = { canvas: null, painted: 0 };
   private poolX = 9;
   private poolY = 9;
   private readonly rigs = {} as Record<CarriedId, WeaponRig>;
@@ -859,11 +811,9 @@ export class ViewModel {
     this.weapon = tree.joint("viewmodel", this.body);
     this.weapon.scaling.setAll(v.scale);
 
-    const kit = buildKitBackdrop(scene);
-    this.backdropTex = kit.tex;
     // Its own transform is the one that moves (`updateInspect`), so it is a
     // joint that is written rather than a fixed local.
-    this.backdrop = tree.hang(kit.card, eye, true);
+    this.backdrop = tree.hang(buildKitBackdrop(), eye, true);
 
     // Every weapon is built up front. The cost is a set of merged colour
     // groups per weapon sitting disabled — against a rebuild in the middle of
@@ -998,44 +948,23 @@ export class ViewModel {
     this.ejectPort = tree.joint("viewmodel_ejectPort", this.weapon);
     this.applyFit();
 
-    for (const m of this.meshes) {
-      // Our renderer draws every segment — in Babylon's group-1 order, after
-      // group 0 and before the glasses (`render/ViewDraw.ts`) — and Babylon is
-      // made no mesh of one, so the two flags below are the GLASSES' alone.
-      if (m instanceof ViewSegment) continue;
-      // **NO OUTLINE HULL, and this was the LAST one in the game.** The weapon
-      // used to set `renderOutline` by hand — never through `addOutline`, which
-      // is why it outlived the sweep that took the outline pass out — at
-      // 0.004 m, an order of magnitude finer than the world's, because a
-      // body-width line on parts this small swallows the whole weapon in black.
-      // The ink is a screen-space pass now and inks the gun off the same depth
-      // buffer as everything else; what stands in for the fine width is
-      // `CONFIG.graphics.ink.near`, which scales the ink down over the first
-      // couple of metres. See `shaders/CelInk.ts`.
-      m.renderingGroupId = VIEWMODEL_GROUP;
-      // Bounds of a mesh hung from the camera follow a matrix that moves with
-      // the frustum; skip the cull test rather than race it.
-      m.alwaysSelectAsActiveMesh = true;
-    }
+    // **NO OUTLINE HULL, and this was the LAST one in the game.** The weapon
+    // used to set `renderOutline` by hand — never through `addOutline`, which
+    // is why it outlived the sweep that took the outline pass out — at
+    // 0.004 m, an order of magnitude finer than the world's, because a
+    // body-width line on parts this small swallows the whole weapon in black.
+    // The ink is a screen-space pass now and inks the gun off the same depth
+    // buffer as everything else; what stands in for the fine width is
+    // `CONFIG.graphics.ink.near`, which scales the ink down over the first
+    // couple of metres. See `shaders/CelInk.ts`.
 
     // Start in the hip pose so the first rendered frame is already right.
     this.weapon.position.copyFrom(this.hipPos);
     this.weapon.rotation.copyFrom(this.hipRot);
-    // Every mesh's own transform is taken into its joint now the builds are
-    // done — the card's position and scale with the rest, before
-    // `updateInspect` first writes them — and each mesh's NONUNIFORMSCALING
-    // define chosen off its own scale, as its parented build chose it
-    // (`ViewTree.seal`).
+    // Every surface's own transform is taken into its joint now the builds
+    // are done — the card's position and scale with the rest, before
+    // `updateInspect` first writes them (`ViewTree.seal`).
     tree.seal();
-    // The card is the one mesh whose scale is written AFTER the build
-    // (`updateInspect`, to the frustum), and Babylon chose its define off that
-    // scale, non-uniform, before it was ever drawn; a frozen world matrix
-    // never chooses it again, so it is chosen here, after `seal` chose it at
-    // one, off a stand-in scale put straight back (its joint already holds the
-    // card's own transform).
-    kit.card.scaling.set(2, 1, 1);
-    kit.card.computeWorldMatrix(true);
-    kit.card.scaling.set(1, 1, 1);
   }
 
   /**
@@ -1050,19 +979,10 @@ export class ViewModel {
   }
 
   /**
-   * Each surface's own enabled flag, written to its joint chain's. Called by
-   * `Game.tick` before the cull reads a glass's or the card's — an unparented
-   * mesh's `isEnabled()` sees no ancestor — and again by `drawView`.
-   */
-  syncSwitches(): void {
-    this.tree.syncSwitches();
-  }
-
-  /**
    * The frame's evaluation (`ViewTree.draw`): every switched-on, visible
-   * surface evaluated as the render evaluated it — each glass and the card
-   * handed its joint's world through `freezeWorldMatrix`, each segment listed
-   * for our renderer (`ViewTree.evaluated`, which `Game.drawView` hands over).
+   * surface evaluated as the render evaluated it, whatever its role, and
+   * listed for our renderer (`ViewTree.evaluated`, which `Game.drawView`
+   * hands over).
    * Called by `Game.drawView` once a frame in every state, after every write
    * and immediately before `scene.render`, beside `drawBodies` and `drawHulls`.
    */
@@ -1080,7 +1000,6 @@ export class ViewModel {
   private cloneMagazine(magazine: Joint, parts: WeaponParts): Joint {
     const spent = this.tree.joint(`${magazine.name}_spent`, magazine.parent);
     for (const m of this.tree.meshesOn(magazine)) {
-      if (!(m instanceof ViewSegment)) continue;
       const copy = cloneSegment(m, `${m.name}_spent`);
       this.tree.hang(copy, spent);
       copy.metadata = m.metadata;
@@ -1103,7 +1022,6 @@ export class ViewModel {
     const min = new Vector3(Infinity, Infinity, Infinity);
     const max = new Vector3(-Infinity, -Infinity, -Infinity);
     for (const m of this.tree.meshesOn(magazine)) {
-      if (!(m instanceof ViewSegment)) continue;
       // The joint and its segments sit at identity under the weapon's root, so
       // a segment's local box IS the root-local box — measured as Babylon
       // measured the mesh it was (`segmentBounds`).
@@ -1503,7 +1421,7 @@ export class ViewModel {
     if (Math.abs(bay.x - this.poolX) > 0.005 || Math.abs(bay.y - this.poolY) > 0.005) {
       this.poolX = bay.x;
       this.poolY = bay.y;
-      paintKitPool(this.backdropTex, bay.x, bay.y);
+      paintKitPool(this.kitCard, bay.x, bay.y);
     }
 
     this.wrote(this.weapon).position.copyFrom(this.pos);

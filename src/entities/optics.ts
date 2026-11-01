@@ -28,10 +28,11 @@
  * is (`weaponKit.ts`): a housing becomes SEGMENTS our renderer draws at
  * `build.merge`, a bead or a reticle at `build.lit` (a reticle's bars merged by
  * `mergeParts` and made one by `segmentOf` first; `BABYLON_EXIT.md` X4.3c), and
- * the glass, the one surface drawn with a material of its own — blended, and
- * still Babylon's until X4.3d — a mesh at `drawnMesh` here; each hung from its
- * sight's JOINT (`WeaponBuild.hang`; X4.3b), which is the switch a loadout
- * change throws.
+ * the glass, the one surface drawn with a material of its own — BLENDED, a
+ * segment of role `"glass"` our renderer draws after the opaque parts (X4.3d),
+ * its `StandardMaterial` the statement of its colour and alpha, never bound to
+ * a mesh — at `toSegment` here; each hung from its sight's JOINT
+ * (`WeaponBuild.hang`; X4.3b), which is the switch a loadout change throws.
  */
 import { Color3, StandardMaterial, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
@@ -43,9 +44,9 @@ import {
   createTorus,
   DOUBLESIDE,
 } from "../geometry/primitives";
-import { drawnMesh, mergeParts, Part, type PartNode } from "../world/parts";
+import { mergeParts, Part, type PartNode } from "../world/parts";
 import type { Joint } from "./rigJoints";
-import { segmentOf, type ViewSurface } from "./viewTree";
+import { segmentOf, toSegment, type ViewSegment } from "./viewTree";
 import { SIGHT_IDS, type SightId } from "./sights";
 import {
   FACETS,
@@ -613,7 +614,7 @@ export function buildOptics(
   build: WeaponBuild,
   mount: OpticMount,
   prefix: string,
-): { sights: Record<SightId, SightAssembly>; meshes: ViewSurface[] } {
+): { sights: Record<SightId, SightAssembly>; meshes: ViewSegment[] } {
   const b = build;
   const black = b.paint("black", OPTIC_BLACK);
   const silver = b.paint("silver", OPTIC_SILVER, true);
@@ -818,7 +819,7 @@ export function buildOptics(
     // area, and a tint that sits politely in a 0.072 bore is a green filter
     // across the whole picture at this size.
     glassMat.alpha = 0.07;
-    const glass = drawnMesh(
+    const glass = toSegment(
       new Part(
         `${prefix}_reflexGlass`,
         createPlane({
@@ -827,21 +828,19 @@ export function buildOptics(
           sideOrientation: DOUBLESIDE,
         }),
       ),
-      b.scene,
     );
+    glass.role = "glass";
     b.hang(glass, node);
     glass.position.set(0, reflexY, winZ);
     // The cant is small enough to stay inside the frame's own depth: any more
     // and the glass corners poke out through the posts.
     glass.rotation.x = -0.12;
-    // Not optional, and the failure is not subtle: this scene has no Babylon
-    // lights at all, so a mesh left on the default material renders BLACK —
-    // which on a sight is an opaque window, not a missing tint.
+    // Not optional: our renderer reads the glass's colour and alpha off it
+    // (`Game.buildViewDraw`), and a glass with none cannot be drawn.
     glass.material = glassMat;
     // noGlow for the holo's reason — bloom on a full-window tint is a haze
     // over the one thing the sight exists to keep clear.
     glass.metadata = { noInk: true, noGlow: true };
-    glass.isPickable = false;
 
     return new Vector3(0, reflexY, winZ);
   };
@@ -920,20 +919,19 @@ export function buildOptics(
     glassMat.specularColor = Color3.Black();
     glassMat.disableLighting = true;
     glassMat.alpha = 0.12;
-    const glass = drawnMesh(
+    const glass = toSegment(
       new Part(
         `${prefix}_holoGlass`,
         createDisc({ radius: BORE / 2, tessellation: FACETS, sideOrientation: DOUBLESIDE }),
       ),
-      b.scene,
     );
+    glass.role = "glass";
     b.hang(glass, node);
     glass.position.set(0, winY, winZ + 0.009 * k);
     glass.material = glassMat;
     // noGlow: the bloom would turn the faint tint into a cyan haze that
     // obscures the sight picture.
     glass.metadata = { noInk: true, noGlow: true };
-    glass.isPickable = false;
 
     return new Vector3(0, winY, winZ);
   };
@@ -1768,7 +1766,7 @@ export function buildOptics(
   };
 
   const sights = {} as Record<SightId, SightAssembly>;
-  const meshes: ViewSurface[] = [];
+  const meshes: ViewSegment[] = [];
   for (const id of SIGHT_IDS) {
     const node = b.joint(`${prefix}_sight_${id}`, b.root);
     const centre = BUILDERS[id](node);

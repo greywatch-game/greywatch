@@ -102,6 +102,14 @@
  *   at its place among the scene's meshes (a tree's surfaces in the order
  *   they were made, which was the scene's order, then every other mesh); a
  *   segment in the builder's data, or as a parent, is spelled `Mesh:<name>`.
+ *   **Since X4.3d the optics' glasses and the kit card are segments too**
+ *   (`ViewSegment.role`), and no viewmodel surface is a Babylon mesh: a glass
+ *   is dressed as the opaque ones are (its own `StandardMaterial` is still
+ *   the segment's, unbound, so its record names it as before), and the CARD
+ *   as the mesh it was — rendering group 0 (it was never in the viewmodel's),
+ *   always-active, `alphaIndex` infinite, under a stand-in material of the
+ *   name its `StandardMaterial` had (`kitBackdrop`), which a record spells by
+ *   class and name alone.
  *   A row that moves here moved in the build, not in the bookkeeping;
  * - the four pooled bodies that fly or lie (`grenade`, `molotov`, `rocket`
  *   with its flame, `mine`, the laid one);
@@ -555,8 +563,7 @@ function mathValue(v) {
 function labelOf(tree, j) {
   if (j === tree.root) return `${tree.camera.getClassName()}:${tree.camera.name}`;
   const mesh = tree.meshFor(j);
-  if (mesh && isSegment(mesh)) return `Mesh:${mesh.name}`;
-  return mesh ? `${mesh.getClassName()}:${mesh.name}` : `TransformNode:${j.name}`;
+  return mesh ? `Mesh:${mesh.name}` : `TransformNode:${j.name}`;
 }
 
 /** The identity a `TransformNode` with no pivot reports as its pivot matrix. */
@@ -662,36 +669,22 @@ function hashScene(scene, data, plain, tree = null, meshOfSegment = null) {
   const jointNodes = [];
   let meshRecords = scene.meshes.map((n) => () => nodeRecord(n, plain, parentOf.get(n)));
   if (tree) {
-    for (const v of tree.meshes) parentOf.set(v.surface, v.joint.parent ? labelOf(tree, v.joint.parent) : null);
+    for (const v of tree.meshes) parentOf.set(v.segment, v.joint.parent ? labelOf(tree, v.joint.parent) : null);
     for (const j of tree.jointList) if (j !== tree.root && !tree.meshFor(j)) jointNodes.push(j);
     // A tree's surfaces in the order they were made — the scene's order for
-    // the meshes they were (asserted for the ones that still are) — then
-    // every other mesh in the scene (X4.3c, the header).
-    const inTree = new Set(tree.meshes.map((v) => v.surface));
-    const treeMeshes = tree.meshes.filter((v) => v.mesh).map((v) => v.mesh);
-    const sceneOrder = scene.meshes.filter((m) => inTree.has(m));
-    if (sceneOrder.length !== treeMeshes.length || sceneOrder.some((m, i) => m !== treeMeshes[i])) {
-      throw new Error("the tree's meshes are not in the scene's order");
-    }
-    const others = scene.meshes.filter((m) => !inTree.has(m));
-    if (others.some((m) => scene.meshes.indexOf(m) < scene.meshes.indexOf(treeMeshes[treeMeshes.length - 1] ?? m))) {
-      throw new Error("a mesh outside the tree was made among the tree's");
-    }
+    // the meshes they were — then every other mesh in the scene (X4.3c, the
+    // header). Since X4.3d no surface of a tree is a mesh of the scene's.
     const inViewmodel = tree.camera !== null;
     meshRecords = [
-      ...tree.meshes.map((v) =>
-        v.mesh
-          ? () => nodeRecord(v.mesh, plain, parentOf.get(v.mesh))
-          : () => {
-              const mesh = meshOfSegment(v.segment, inViewmodel);
-              try {
-                return nodeRecord(mesh, plain, parentOf.get(v.segment));
-              } finally {
-                mesh.dispose(false, false);
-              }
-            },
-      ),
-      ...others.map((n) => () => nodeRecord(n, plain, parentOf.get(n))),
+      ...tree.meshes.map((v) => () => {
+        const mesh = meshOfSegment(v.segment, inViewmodel);
+        try {
+          return nodeRecord(mesh, plain, parentOf.get(v.segment));
+        } finally {
+          mesh.dispose(false, false);
+        }
+      }),
+      ...scene.meshes.map((n) => () => nodeRecord(n, plain, parentOf.get(n))),
     ];
   }
   const lists = [
@@ -893,13 +886,24 @@ async function hashModelJobs(jobs) {
         } else throw new Error(`no model "${p.kind}"`);
         // A segment as the mesh it was (X4.3c): the game's `drawnMesh`, dressed
         // with the flags the mesh carried, recorded and disposed — made after
-        // the record lists were taken, so it is in none of them.
+        // the record lists were taken, so it is in none of them. The kit card
+        // (X4.3d) as ITS mesh was: group 0, always-active, last of the
+        // blended queue, under a material of its name (the header).
         const meshOfSegment = (seg, inViewmodel) => {
           const mesh = PA.drawnMesh(seg, scene);
           mesh.isVisible = seg.isVisible;
           mesh.isPickable = false;
           mesh.setEnabled(seg.enabled);
-          if (inViewmodel) {
+          if (seg.role === "card") {
+            mesh.material = new B.StandardMaterial("kitBackdrop", scene);
+            mesh.alphaIndex = Number.POSITIVE_INFINITY;
+            mesh.alwaysSelectAsActiveMesh = true;
+            const dispose = mesh.dispose.bind(mesh);
+            mesh.dispose = (...a) => {
+              mesh.material?.dispose();
+              return dispose(...a);
+            };
+          } else if (inViewmodel) {
             mesh.renderingGroupId = 1;
             mesh.alwaysSelectAsActiveMesh = true;
           }

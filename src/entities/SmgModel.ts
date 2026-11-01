@@ -23,7 +23,7 @@ import {
   type WeaponParts,
 } from "./weaponKit";
 import type { Joint } from "./rigJoints";
-import type { ViewSurface, ViewTree } from "./viewTree";
+import type { ViewSegment, ViewTree } from "./viewTree";
 
 /**
  * The magazine's rake, which is also the line it drops out along. NEGATIVE for
@@ -380,7 +380,7 @@ export function buildSmg(
   b.shell("mzProng", BODY, 0.02, 0.006, 0.05, f, 0.474, 3, 0, 0.55);
   b.shell("mzProngRoot", BODY, 0.02, 0.006, 0.012, f, 0.455, 6);
 
-  const meshes: ViewSurface[] = b.merge("smg", root);
+  const meshes: ViewSegment[] = b.merge("smg", root);
 
   // The magazine: a slim 9mm stick, gently curving forward, merged into a
   // joint of its own so the reload can pull it out (see `WeaponParts.magazine`).

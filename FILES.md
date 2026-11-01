@@ -679,7 +679,9 @@ src/
                         #   drops blocks.handedBack, nothing going back since
                         #   X3.7b; v21 adds bodies, our body draws, which
                         #   no Babylon counter sees since X4.1d; v22 hulls,
-                        #   our hull draws, the same since X4.2b),
+                        #   our hull draws, the same since X4.2b; v23 view,
+                        #   the weapon's, since X4.3c; v24 retires
+                        #   drawOverlay, its groups empty since X4.3d),
                         #   buildReport, buildTrace and
                         #   the stats. Allocates freely and never writes the
                         #   ProfileRing it is lent
@@ -754,14 +756,16 @@ src/
                         #   fitted to the BAY the kit screen reports.
                         #   Builds every weapon, enables one. Its tree is
                         #   joints (viewTree.ts), read as Babylon read nodes,
-                        #   and every opaque part a segment our renderer
-                        #   draws (X4.3c)
+                        #   and every part a segment our renderer draws
+                        #   (X4.3c; the glasses and the card, painted from a
+                        #   canvas of its own, X4.3d)
     viewTree.ts         # The viewmodel as JOINTS (X4.3b): the JointTree whose
                         #   root is the camera's stand-in, every SURFACE and
                         #   the joint it is drawn at — a ViewSegment our
-                        #   renderer draws (X4.3c: a Part and the mesh's two
-                        #   flags; toSegment, segmentOf, segmentBounds) or a
-                        #   glass/the card Babylon does, none parented — the
+                        #   renderer draws (X4.3c: a Part, the mesh's two
+                        #   flags and its role — opaque, glass or the kit
+                        #   card, X4.3d; toSegment, segmentOf, segmentBounds),
+                        #   none parented and none a Babylon mesh — the
                         #   per-frame evaluation (syncSwitches, draw: every
                         #   surface on and visible, the segments it found
                         #   handed out) and the readers, out of rigJoints'
@@ -823,8 +827,10 @@ src/
                         #   slide that is a joint of its own so a dry reload
                         #   can hold it back on the stop
     optics.ts           # Every optic assembly, built onto whichever weapon's
-                        #   OpticMount asked for them — segments, and the two
-                        #   glasses Babylon still draws (X4.3d). Past ~4x the
+                        #   OpticMount asked for them — segments our renderer
+                        #   draws, the two glasses among them (X4.3d: role
+                        #   "glass", their StandardMaterial the statement of
+                        #   colour and alpha, never bound). Past ~4x the
                         #   cone is bounded by the SCREEN rather than by the
                         #   rail, which inverts how a new one is solved
     weapons.ts          # WeaponId + WeaponSetup + FireMode (the fire selector
@@ -2689,18 +2695,25 @@ src/
     viewProgram.ts      # The WEAPON's programs (X4.3c): the cel stage and the
                         #   emissive palette's over a viewmodel segment — a
                         #   draw ONE segment, an instance the draw, its matrix
-                        #   read whole — and the emissive stage's twin in the
-                        #   glow's mask, one vertex module for both
+                        #   read whole — the emissive stage's twin in the
+                        #   glow's mask, one vertex module for both, and the
+                        #   two blended ones (X4.3d): the glass's pixel over
+                        #   that vertex module, and the kit card's stage over
+                        #   its texture
     ViewDraw.ts         # The player's own WEAPON as OUR renderer draws it
-                        #   (X4.3c): every opaque viewmodel segment on the GPU
+                        #   (X4.3c, X4.3d): every viewmodel segment on the GPU
                         #   once, a draw a segment in the order Game.drawView
-                        #   hands over (Babylon's group-1 sort), at group 0's
-                        #   "afterGroup" (after the kit card, before the
-                        #   glasses); a block and group a cel recipe, the
-                        #   weapon's emissive table, the lit ones into the
-                        #   glow's mask at the bloom the prepare pulls;
-                        #   installed for the SESSION (the kit screen covers
-                        #   the menu), a failure the round's while one stands
+                        #   hands over, at group 0's "afterGroup": the kit
+                        #   card first (ALPHA_REPLACE_COLOR's factors, depth
+                        #   always and written, its canvas uploaded once a
+                        #   paint), the opaque parts in Babylon's group-1 sort,
+                        #   the glasses last (ALPHA_COMBINE, no depth written,
+                        #   back to front); a block and group a cel recipe, the
+                        #   weapon's emissive table, the glass table, the lit
+                        #   ones into the glow's mask at the bloom the prepare
+                        #   pulls; installed for the SESSION (the kit screen
+                        #   covers the menu), a failure the round's while one
+                        #   stands
     BodyShadowMap.ts    # The moon's BODY map as OUR texture (X4.1c): made
                         #   cleared to lit, drawn whole from the proxies
                         #   BodyShadows hands it each frame it updates

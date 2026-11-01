@@ -3249,17 +3249,22 @@ pass is not restarted between them, and in this order every frame:
   particles come before it, so a wall drawn there paints over every particle
   in front of it.
 - **`"afterGroup"`**: after the group has been queued whole, blended meshes
-  and all — the kit card last of them — and before group 1. **The player's
-  WEAPON is drawn here** (X4.3c, the first draw at this point): where group 1's
-  opaque queue drew it, after everything of group 0 and ahead of the optics'
-  glasses, which group 1 still holds ("The weapon, ours").
+  and all, and before any group above it — none holds anything since X4.3d.
+  **The player's whole WEAPON is drawn here** (X4.3c, X4.3d — the one draw at
+  this point): the kit card first, where it was the last of group 0's blended
+  queue, then the opaque parts, where the viewmodel's old group 1 queued them,
+  then the optics' glasses, where that group's blended queue drew them ("The
+  weapon, ours").
 
 **All three points ride rendering group 0, and Babylon visits no EMPTY
 group**: a frame on which group 0 dispatches no mesh of Babylon's runs none of
 ours, with no error (the seam). A DEV build warns once per change when a frame
 that had draws of ours at those points never reached the group (`Renderer`'s
-`seamWarned`). Today the world, the sky and, over the menu, the kit card keep
-the group non-empty; whichever step drains it (X4.4-X4.6) owes the seam a fix
+`seamWarned`). Today the world and the sky keep the group non-empty — over the
+menu, with the kit screen up and no map standing, the SKY alone (its dome, the
+stars and the cloud ring are group-0 meshes in every state; measured at X4.3d:
+no frame of the kit screen walked over the menu rendered group 0 empty) — and
+whichever step drains it (X4.4-X4.6; X4.5 takes the sky) owes the seam a fix
 (the owner's decision, 2026-10-31). **And a frame with nothing of ours
 COMMITTED does no work at all**: each draw states whether it has anything
 (`Renderer.add`'s `Active`; the weapon's while a segment is committed), and
@@ -4477,19 +4482,21 @@ builds no fleet and draws no hull (X5.3 owes it one if it ever shows one), and
 the menu has none. A capture says what it drew (`ProfileReport.hulls`, report
 version 22), since Babylon's counter counts no hull.
 
-## The weapon, ours: every opaque part a segment of one kit
+## The weapon, ours: every surface a segment of one kit
 
 **Since `BABYLON_EXIT.md` X4.3c the player's own weapon is our renderer's, and
-Babylon is made no opaque viewmodel mesh** (`render/ViewDraw.ts`, its programs
-`render/viewProgram.ts`). Every rig's colour groups, magazines, spent
-magazines, bolt, slide and warhead, every optic's housing and reticle, both
-arms, the throwing fist with its frag and pip or its bottle and wick, and the
-muzzle flash's petals are SEGMENTS (`ViewSegment`, `entities/viewTree.ts`:
-the `Part` a builder made — `drawnMesh`'s inputs — with the mesh's `isVisible`
-and its own switch), hung from the viewmodel's joints, and uploaded ONCE, end
-to end, at `Game`'s construction: all nine rigs and every optic, built up front
-as the meshes were. The optics' two GLASSES and the kit CARD stay Babylon
-meshes, the blended draws whose slot is load-bearing (X4.3d moves them).
+since X4.3d Babylon is made no viewmodel mesh at all** (`render/ViewDraw.ts`,
+its programs `render/viewProgram.ts`). Every rig's colour groups, magazines,
+spent magazines, bolt, slide and warhead, every optic's housing, reticle and
+GLASS, both arms, the throwing fist with its frag and pip or its bottle and
+wick, the muzzle flash's petals and the kit screen's CARD are SEGMENTS
+(`ViewSegment`, `entities/viewTree.ts`: the `Part` a builder made —
+`drawnMesh`'s inputs — with the mesh's `isVisible`, its own switch, and its
+`role`: opaque, glass or card), hung from the viewmodel's joints, and uploaded
+ONCE, end to end, at `Game`'s construction: all nine rigs and every optic,
+built up front as the meshes were. The two BLENDED surfaces, the glass and
+the card, were the last to move, alone, because theirs are the only slots in
+the frame that are load-bearing.
 
 - **One draw a segment, one instance** — decided against a fold (`BABYLON_EXIT.md`'s
   "Decisions"): the finishes differ per group in spec and mirror as well as
@@ -4503,7 +4510,13 @@ meshes, the blended draws whose slot is load-bearing (X4.3d moves them).
   reticle, a bead, a post (emissive BLACK), the pip, the wick, a petal — by the
   emissive palette's program over the weapon's own table
   (`CelMaterialFactory.viewEmissiveRecipe`: one slot a `getEmissive` colour,
-  the fog band by reference, alpha 1), as the visor is (X4.1d).
+  the fog band by reference, alpha 1), as the visor is (X4.1d). A GLASS is
+  drawn by that program's vertex module under a pixel of its own: what its
+  unlit `StandardMaterial` (no fog plugin on it) wrote, `clamp(emissive)` at
+  the material's alpha (0.12 the holo's disc, 0.07 the reflex's pane), out of
+  a glass table its slot in `uv2.x` names. The CARD by a stage of its own:
+  the vertex arithmetic Babylon's default vertex did, and the texel of its
+  canvas, clamped, at an alpha of 0.
 - **In Babylon's group-1 ORDER, because that order settles an equal depth.**
   Group 1's opaque queue sorted by `PainterSortCompare` — the material's
   `uniqueId` — over the order the meshes were dispatched, which was the order
@@ -4520,20 +4533,44 @@ meshes, the blended draws whose slot is load-bearing (X4.3d moves them).
   swaps a colour group's material for one the factory may have minted later,
   re-orders the draws exactly as it re-ordered the queue; the materials are
   the factory's, still made, so their ids keep their relative order.
-- **At group 0's `"afterGroup"`**, the one draw at that point: after the kit
-  card (the last of group 0's blended queue) and before group 1, so the card
-  covers the world and the weapon covers the card, and the glasses still draw
-  over the weapon. Into the world's depth with no clear, so the ink, the blur,
-  the paper and the glow's occlusion name the gun by depth as they did; the
-  cel parts write `opaqueAlpha`, the emissives 1.
+- **At group 0's `"afterGroup"`**, the one draw at that point, in three runs:
+  the CARD first (the last of group 0's blended queue it was), then the OPAQUE
+  parts (group 1's opaque queue), then the GLASSES (its blended queue) — so the
+  card covers the world, the weapon covers the card, and the glasses draw over
+  the weapon. Into the world's depth with no clear, so the ink, the blur, the
+  paper and the glow's occlusion name the gun by depth as they did; the cel
+  parts write `opaqueAlpha`, the emissives 1, a glass its alpha accumulated,
+  the card nothing.
+- **A GLASS is blended exactly as `ALPHA_COMBINE` blends** — colour
+  (SRC_ALPHA, ONE_MINUS_SRC_ALPHA), alpha (ONE, ONE), so ink behind a lens is
+  attenuated by its alpha as it was — writes no depth, tests LEQUAL, and culls
+  back faces over arrays that carry both (`DOUBLESIDE`), as the material's
+  default `backFaceCulling` did. Back to front, by the distance from the eye
+  to each one's bounding-sphere centre, a tie to the one made first
+  (`defaultTransparentSortCompare`, every glass at one `alphaIndex`) — an
+  order only ever STATED, since one carried weapon wears one optic. Never in
+  the glow's mask (`noGlow`), so a lens never blooms.
+- **The CARD keeps `ALPHA_REPLACE_COLOR`'s factors** — colour (ONE, ZERO),
+  alpha (ONE, ONE_MINUS_SRC_ALPHA) at a pixel alpha of 0, so the coverage
+  channel is untouched (the card's two bullets below) — tests `always`,
+  writes depth, and culls nothing; up only between `beginInspect` and
+  `endInspect` (its joint's switch). Its 256-square canvas
+  (`ViewModel.kitCard`, made at the first paint) is uploaded as
+  `DynamicTexture.update` uploaded it — `copyExternalImageToTexture`, flipped
+  in y, not premultiplied, into an `rgba8unorm` texture with one mip (none
+  were asked for) — ONCE PER PAINT, which is once per move of the bay
+  (`updateInspect`), and sampled by the sampler Babylon's WebGPU cache made of
+  that texture: linear both ways, mips `nearest` with the LOD clamped to 0,
+  clamped in u and v. A card never uploaded is not drawn.
 - **The glow's mask**: the lit segments whose colour is above black and which
   carry no `noGlow` (`GlowPass.buildList`'s tests of a mesh's own), each at the
   bloom `GlowRules.colour` gave its mesh — its bounding sphere's centre off the
   segment's own bounds (`segmentBounds`, Babylon's `extractMinAndMax`), faded
   by the fog at its distance from the eye, pulled INSIDE the render where
   `globalPosition` is this frame's — by the main pass's own vertex module so
-  the LEQUAL tie holds, on `glowAdmits(VIEWMODEL_GROUP)` (the stage, which
-  the kit screen keeps). **LAST in that pass, as Babylon drew it**
+  the LEQUAL tie holds, in EVERY state: the weapon is the stage, which the
+  kit screen keeps blooming, and the draw says so itself (`Game.glowAdmits`
+  answers for the world alone). **LAST in that pass, as Babylon drew it**
   (`Renderer.addGlowMaskLate`, told by `GlowPass.onMaskCloseObservable` —
   the mask target's after-render, raised inside its unbind before the pass
   ends): after the palette and the visors (first) and after every mesh of
@@ -4556,21 +4593,27 @@ meshes, the blended draws whose slot is load-bearing (X4.3d moves them).
   is the proof). A failed pipeline, or a refused pass while the weapon draws, is
   the round's failure while one stands (`Game.worldFailed`, through
   `ViewDraw.onFailed` at the install) and the console's otherwise.
-- **What it must keep EVALUATING is not what it draws.** `ViewTree.draw`
-  evaluates every surface switched on and visible — a segment or a glass,
-  whoever draws it — through the `RenderCache`, settled at the render's
+- **What it must keep EVALUATING is exactly what it evaluated.**
+  `ViewTree.draw` evaluates every surface switched on and visible — whatever
+  its role, the glasses and the card included — through the `RenderCache`,
+  settled at the render's
   evaluation id from inside the render, exactly as Babylon's
-  `_evaluateActiveMeshes` stamped the nodes; narrowing it to what our renderer
-  draws would move the next frame's `muzzleWorld` and `throwHandWorld`, two
-  command inputs (X4.3b's review, and X4.3c's replay oracle, which proved it
-  did not).
+  `_evaluateActiveMeshes` stamped the nodes; narrowing it (to one role, say)
+  would move the next frame's `muzzleWorld` and `throwHandWorld`, two command
+  inputs (X4.3b's review, and X4.3c's and X4.3d's replay oracle, which proved
+  it did not).
 - **No longer a candidate**: the weapon leaves `WorldCulling`'s list, and so
   the size gate, the frustum and `isReady()` — a segment draws the frame its
   material's recipe exists, where a mesh whose new finish material was still
-  compiling went undrawn for that frame.
+  compiling went undrawn for that frame. Every pipeline of it — the card's and
+  the glass's among them — is asked at construction, so the building card's
+  warm-up waits for all of them and poses nothing of the weapon
+  (`Player.warmView`, which posed the put-away weapon for the glass's sake,
+  went with X4.3d).
 - **`kit:hash --models`** hashes a segment IN THE BYTES ITS MESH GAVE: made a
   throwaway mesh by the same `drawnMesh` on the same arrays and dressed with the
-  flags the mesh carried (the script's header).
+  flags the mesh carried — the card as the group-0 mesh it was (the script's
+  header).
 
 ## Block visibility: how much of the map the frame walks
 
@@ -4904,10 +4947,11 @@ because it seemed wise.**
   draw through the main view (`PASS_GLOW`, X3.6d, X3.6e): a cluster carrying
   that bit is never size-gated, and `?cullcheck`'s probe and replay skip it
   the same way.
-- **Anything outside rendering group 0**, plus `infiniteDistance` — today the
-  optics' glass and nothing else: the weapon's opaque parts are no candidate
-  at all since `BABYLON_EXIT.md` X4.3c (no Babylon mesh is made of them, "The
-  weapon, ours"), and are drawn at every size. This is the
+- **`infiniteDistance`, and the viewmodel by being no candidate at all** —
+  the weapon's opaque parts since `BABYLON_EXIT.md` X4.3c and its glass and
+  card since X4.3d (no Babylon mesh is made of any, "The weapon, ours"), all
+  drawn at every size; until X4.3d the test exempted anything outside
+  rendering group 0, which by then held the glass alone. This is the
   one that was found the expensive way. `offer` runs inside `Game.tick`, BEFORE
   `scene.render()` bakes world matrices, and the viewmodel hangs off the camera
   — so the rifle's world bounding sphere is still sitting at the ORIGIN when
@@ -5171,12 +5215,15 @@ all in the counter this finding is named after. Not chased.
   against haze very nearly its own colour. The tilt gate stays and is not redundant —
   it is what keeps a rig's top faces and a hull's deck out, and it is what has to hold
   if the world is ever given its rim back.
-- Rendering group **1 is the viewmodel's, and since `BABYLON_EXIT.md` X4.3c it
-  holds the two optics' GLASSES alone** (X4.3d moves them): the weapon's opaque
-  parts are our renderer's, drawn at the END of group 0 ("The weapon, ours",
-  below), where group 1's opaque queue drew them. Its depth clear is OFF
-  (`Game`'s constructor), so the frame keeps one depth image holding the world
-  and the gun that `FrameDepth` and `GlowPass` both read. **The moon
+- Rendering group **1 was the viewmodel's, and since `BABYLON_EXIT.md` X4.3d it
+  is EMPTY** — no group above 0 holds anything: the weapon (X4.3c), the
+  optics' glasses and the kit card (X4.3d) are our renderer's, drawn at the
+  END of group 0 ("The weapon, ours", below), where group 1's queues and the
+  card's slot were. Its depth clear was switched OFF while it held anything,
+  so the frame kept one depth image holding the world and the gun that
+  `FrameDepth` and `GlowPass` both read; drawn at the end of group 0, the gun
+  is in that image by construction, and the line that switched the clear off
+  went with the group. **The moon
   disc used to share the group and does not any more**: it drew after every
   blended mesh in group 0, none of which write depth, so it painted over a
   capture beacon or a tracer standing in front of it. It is a blended mesh in
@@ -5188,23 +5235,28 @@ all in the counter this finding is named after. Not chased.
   front of the disc and saturates it back to white — on Cinderhaven the frame is
   byte-identical in either group with the glow on, and differs over the disc with
   it off. `infiniteDistance` stays the glow's fog
-  exemption; the kit screen's test is the group alone (`Game.glowAdmits`, asked
-  for the weapon's own emissives by the draw, `glowAdmits(VIEWMODEL_GROUP)`).
-- **The kit screen's backdrop is the one blended mesh in the game whose DRAW
+  exemption; the kit screen's test is stated by the weapon's DRAW, which masks
+  its lit parts in every state, while `Game.glowAdmits` answers for the world
+  (every Babylon mesh, the palette, the visors) — it asked of a rendering group
+  until X4.3d.
+- **The kit screen's backdrop is the one blended surface in the game whose DRAW
   ORDER is load-bearing** (`buildKitBackdrop` in `ViewModel.ts`). It has to cover
-  the world and be covered by the weapon, and the only slot that does both is a
-  blended mesh in group **0** with `alphaIndex` at `Infinity` — Babylon draws a
-  group's blended meshes last, and its default `alphaIndex` is already
-  `Number.MAX_VALUE`, so any ordinary large number sorts the card in front of the
-  capture skirt instead of behind it. **The weapon our renderer draws after it**
-  (X4.3c): at group 0's `"afterGroup"`, which comes after the card, the last of
-  the group's blended queue — the slot group 1's opaque queue had. `depthFunction: ALWAYS` keeps a near wall
-  from cutting it, `forceDepthWrite` makes the card the surface every depth reader
-  sees (it also once kept the moon, then in group 1, from drawing over it), and the **bloom is composited over the finished frame and so cannot
-  be covered at all** — `Game`'s `GlowRules.admits` drops everything off the stage
+  the world and be covered by the weapon. While it was a Babylon mesh the only
+  slot that did both was a blended mesh in group **0** with `alphaIndex` at
+  `Infinity` — Babylon draws a group's blended meshes last, and its default
+  `alphaIndex` is already `Number.MAX_VALUE`, so any ordinary large number
+  sorted the card in front of the capture skirt instead of behind it. **Since
+  `BABYLON_EXIT.md` X4.3d it is our renderer's, and the slot is STATED rather
+  than sorted into**: the first of the viewmodel's draws at group 0's
+  `"afterGroup"`, after everything of group 0's, before the weapon ("The
+  weapon, ours"). Its depth test is `always`, which keeps a near wall from
+  cutting it; it WRITES depth, which makes the card the surface every depth
+  reader sees (it also once kept the moon, then in group 1, from drawing over
+  it); and the **bloom is composited over the finished frame and so cannot be
+  covered at all** — `Game`'s `GlowRules.admits` drops everything off the stage
   while the kit is up.
-- **…and it is therefore the one blended mesh that must write NO COVERAGE, which
-  is the alpha-channel rule read the other way round.** Every alpha-blended draw
+- **…and it is therefore the one blended surface that must write NO COVERAGE,
+  which is the alpha-channel rule read the other way round.** Every alpha-blended draw
   accumulates into the frame's alpha for free and every one of them wants to —
   except this card, which WRITES DEPTH. It is not in front of the surface a pixel
   records, it IS that surface, and it covers the whole frustum: on `ALPHA_COMBINE`
@@ -5216,14 +5268,15 @@ all in the counter this finding is named after. Not chased.
   contour straddles the silhouette it draws, so the half of every stroke lying on
   the card was erased and what was left read as an unshaded low-poly gun.
   `ALPHA_REPLACE_COLOR` with a fragment alpha of **0** is the pair that says both
-  things at once, and it is the only mode in Babylon's table that can: colour is
-  `SRC` against a destination factor of ZERO (a straight replace — which is what
-  0.985 was approximating), alpha is `srcA + (1 - srcA) * dstA`, which at
-  `srcA = 0` is the destination untouched. The 0 is also `needAlphaBlending()`'s
-  `alpha < 1` and therefore what keeps the card in the blended queue the slot
-  above depends on, so neither job wants any other value and there is no
-  `backdrop.alpha` in `CONFIG` any more. **A second full-frustum flat would owe
-  the same pair.**
+  things at once, and it was the only mode in Babylon's table that could: colour
+  is `SRC` against a destination factor of ZERO (a straight replace — which is
+  what 0.985 was approximating), alpha is `srcA + (1 - srcA) * dstA`, which at
+  `srcA = 0` is the destination untouched. Our draw keeps those factors and that
+  0 (X4.3d). While the card was Babylon's the 0 was also `needAlphaBlending()`'s
+  `alpha < 1` and therefore what kept it in the blended queue its slot depended
+  on; our draw states the slot, and the 0 is the coverage rule's alone — there
+  is no `backdrop.alpha` in `CONFIG` either way. **A second full-frustum flat
+  would owe the same pair.**
 - **The post-process chain has an order, and a display setting that switches an
   effect off REMOVES its pass** rather than zeroing its uniforms — an attached but idle
   pass still reads and writes the whole frame. The order is FXAA, shafts (`Volumetrics`),

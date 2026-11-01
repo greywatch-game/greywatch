@@ -62,9 +62,9 @@ which over ~22 pairs is **~5 us a frame**, or 0.06% of a 7.8 ms one. The rest is
 `SceneInstrumentation`'s observers and the `getActiveMeshes()` read in
 `endFrame`. If the cost ever has to come down, that is the end to look at.
 
-**The four spans inside `render` add about four more pairs a frame** — the two
-rendering groups and the glow's mask and blur, with the shadow map's on
-the handful of frames that re-render it — which is ~0.9 us against the 5 above
+**The four spans inside `render` added about four more pairs a frame** (three
+since X4.3d retired `drawOverlay`) — the rendering groups and the glow's mask
+and blur, with the shadow map's on the handful of frames that re-render it — which is ~0.9 us against the 5 above
 and well inside the run-to-run spread the paired runs already showed. It is
 arithmetic on the same probe rather than a new measurement, and the reason it
 did not get one is that a difference that size cannot be resolved here: see the
@@ -431,11 +431,11 @@ frame                       the whole tick, wall to wall
    │                        X4.1c: a round has none, every shadow map ours
    ├─ glow                  GlowPass: its mask and four blurs at the end of
    │                        the draw phase (the compose is inside the ink)
-   ├─ drawWorld             rendering group 0 — the map; our draws (the
-   │                        bodies, hulls and since X4.3c the gun) only
-   │                        QUEUED here — see `view` below
-   └─ drawOverlay           groups above it — the optics' glass alone
-                            since X4.3c
+   └─ drawWorld             every rendering group, which since X4.3d is
+                            group 0 alone — the map; our draws (the bodies,
+                            the hulls and the whole gun) only QUEUED here —
+                            see `view` below. (`drawOverlay`, the groups
+                            above 0, was retired with report version 24.)
 
 present                     the engine's endFrame AFTER tick returns: the
                             render pass closed and queue.submit. A ROOT, not a
@@ -603,7 +603,7 @@ them either.
 the assertion: `Scene._renderForCamera` runs the render targets (the shadow
 map) *before* it opens the draw phase, the camera's own pass *inside* it with
 the glow's mask and blur at its very end, and the post chain — the ink, with
-the glow's compose as its last line — *after* it closes. The group spans are
+the glow's compose as its last line — *after* it closes. The group span is
 gated on being in that draw phase, because `onBeforeRenderingGroupObservable`
 is the SCENE's and a render target's
 own rendering manager fires it too — without the gate the shadow map's groups
@@ -616,10 +616,10 @@ mask's groups were being added to `drawWorld` too.
 evaluation (the `Mesh walk` counter, which is the same number in other units),
 `Game.drawBodies` (every drawn rig's joints composed and handed to its meshes,
 `BABYLON_EXIT.md` X4.1a — the composition Babylon did inside the walk until
-then), `Game.drawHulls` (the hulls' drawing written for ours, X4.2b — their joints composed inside `render` from X4.2a until X4.2d's post-commit review moved the compose into `culling`, `Game.fadeHulls`, so the rotor wash is handed the same fade), `ViewModel.drawView` (the player's own weapon's joints evaluated and handed to its meshes, X4.3b — Babylon composed its nodes inside the walk until then; its switches are synced before the cull, outside `render`), the post chain, a frame's share of a reflection bake, and the present. Measured
+then), `Game.drawHulls` (the hulls' drawing written for ours, X4.2b — their joints composed inside `render` from X4.2a until X4.2d's post-commit review moved the compose into `culling`, `Game.fadeHulls`, so the rotor wash is handed the same fade), `ViewModel.drawView` (the player's own weapon's joints evaluated and handed to its meshes, X4.3b — Babylon composed its nodes inside the walk until then — and since X4.3c and X4.3d every surface of it handed to our renderer), the post chain, a frame's share of a reflection bake, and the present. Measured
 on Hollowmere headless, 969 frames at 101 fps: `render` 4.86 ms, of which
-`drawWorld` 2.15, `glow` 1.04, `drawOverlay` 0.25 and `shadowPass` 0.73 — 86%
-of the bar attributed, and the glow's share of the whole frame **10.5%**, which
+`drawWorld` 2.15, `glow` 1.04, `drawOverlay` (then the viewmodel's group, retired
+since) 0.25 and `shadowPass` 0.73 — 86% of the bar attributed, and the glow's share of the whole frame **10.5%**, which
 is the first continuous reading of a figure `CLAUDE.md` had only from an A/B.
 
 **`shadowPass` reads on a HANDFUL of frames and that is the finding, not a
@@ -1228,18 +1228,26 @@ aside — so the main pass's draws are `counters.drawCalls` plus `blocks.drawn`
 plus `bodies.drawn` plus `hulls.drawn`. The viewer prints it as `hulls`.
 
 **From report version 23 it says the same of the WEAPON** (`view`,
-`BABYLON_EXIT.md` X4.3c): the main pass's draws of the viewmodel's opaque
-segments — one a segment, as Babylon drew one a mesh — and the glow mask's
-(`FrameProfile.setView`). Since X4.3c no opaque part of the weapon is in
-`counters.drawCalls` (the optics' glass still is, until X4.3d), so the main
-pass's draws are `counters.drawCalls` plus `blocks.drawn`, `bodies.drawn`,
+`BABYLON_EXIT.md` X4.3c): the main pass's draws of the viewmodel's
+segments — one a segment, as Babylon drew one a mesh: the opaque parts, and
+from version 24 the kit card and an optic's glass (X4.3d) — and the glow
+mask's (`FrameProfile.setView`). Since X4.3d nothing of the weapon is in
+`counters.drawCalls` (its opaque parts left at X4.3c), so the main pass's
+draws are `counters.drawCalls` plus `blocks.drawn`, `bodies.drawn`,
 `hulls.drawn` and `view.drawn`. Their CPU cost moved spans with them, and
 not to where they are queued: the weapon's draws are QUEUED at the end of
 rendering group 0 (`"afterGroup"`, inside `drawWorld`), but Babylon RUNS the
 queue — our recording — when it ends the main pass (`_endCurrentRenderPass`),
 so that cost lands in whichever span is open then, as the bodies' and the
-hulls' does (not confirmed by a capture). `drawOverlay` holds the glass alone.
-The viewer prints it as `weapon`.
+hulls' does (not confirmed by a capture). The viewer prints it as `weapon`.
+
+**Report version 24 RETIRED `drawOverlay`** (`BABYLON_EXIT.md` X4.3d): it was
+the rendering groups above 0, which by X4.3c held the optics' glass alone and
+since X4.3d hold nothing, so it recorded nothing. `drawWorld` is every group's
+now (which is group 0's), and a group added to the game joins it rather than
+going unrecorded. A v23 capture's `drawOverlay` is the glass, and nothing on
+a frame with no optic up; the viewer reads each capture's own tree, so an old
+capture still shows it.
 
 **From report version 18 a capture says the SIZE every frame was drawn at**
 (`viewport`), and **`device.window` and `device.backingStore` are read at SAVE

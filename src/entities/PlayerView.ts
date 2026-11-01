@@ -18,8 +18,9 @@
  *   see `CONFIG.gunfeel`), and their randomness stays on `Math.random`:
  *   nothing about them reaches where a round goes.
  * - The flash is drawn in the weapon's order with the rifle it hangs off; the
- *   brass is thrown into the WORLD and stays in the ordinary group, occluded
- *   like anything else. Both are built as `Part`s on `src/geometry/`
+ *   brass is thrown into the WORLD, a mesh of rendering group 0 occluded like
+ *   anything else (the weapon is no Babylon mesh at all since
+ *   `BABYLON_EXIT.md` X4.3d, and no group but 0 holds anything). Both are built as `Part`s on `src/geometry/`
  *   buffers: the petals made SEGMENTS our renderer draws (`toSegment`,
  *   `BABYLON_EXIT.md` X4.3c), the cases meshes by `drawnMesh` (a pool X4.4
  *   takes).

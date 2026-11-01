@@ -1,19 +1,19 @@
 /**
  * viewTree.ts — the player's own viewmodel as JOINTS (`BABYLON_EXIT.md`
- * X4.3b): the tree every rig, optic, arm, fist and flash hangs from, the
- * surfaces drawn off it — SEGMENTS our renderer draws (X4.3c) and the two
- * kinds of mesh Babylon still does — and the render cache its readers answer
- * from.
- * Owns: `ViewSegment` (an opaque viewmodel surface as plain data: a `Part`
- * with the two flags a mesh carried that the frame reads) and the adapters
- * that make one (`toSegment`, `segmentOf`) and measure one (`segmentBounds`);
- * `ViewTree` — the `JointTree` (`rigJoints.ts`; PRIVATE, because its
- * `compute` would rewrite worlds the cache does not know were rewritten),
- * whose root stands for the CAMERA; every viewmodel surface and the joint it
- * is drawn at (`ViewMesh`); the order each joint's children were hung in
- * (what `getChildMeshes` walked); and the per-frame evaluation
- * (`syncSwitches`, `draw`) — the segments it found on handed to our renderer
- * (`evaluated`, read by `Game.drawView`), the meshes handed to Babylon.
+ * X4.3b): the tree every rig, optic, arm, fist, flash and the kit card hangs
+ * from, the SEGMENTS drawn off it — every one of them our renderer's since
+ * X4.3d — and the render cache its readers answer from.
+ * Owns: `ViewSegment` (a viewmodel surface as plain data: a `Part` with the
+ * two flags a mesh carried that the frame reads, and its ROLE — opaque, an
+ * optic's glass, or the kit card) and the adapters that make one
+ * (`toSegment`, `segmentOf`) and measure one (`segmentBounds`); `ViewTree` —
+ * the `JointTree` (`rigJoints.ts`; PRIVATE, because its `compute` would
+ * rewrite worlds the cache does not know were rewritten), whose root stands
+ * for the CAMERA; every viewmodel surface and the joint it is drawn at
+ * (`ViewMesh`); the order each joint's children were hung in (what
+ * `getChildMeshes` walked); and the per-frame evaluation (`syncSwitches`,
+ * `draw`) — the surfaces it found handed to our renderer (`evaluated`, read
+ * by `Game.drawView`).
  * Invariants:
  * - **The joint list is the node list, in the order the nodes were made**:
  *   every `TransformNode` the viewmodel used to make is a joint made at the
@@ -34,58 +34,59 @@
  * - **Every viewmodel joint has one shape** (`viewJoint`, the moment it is
  *   made), so the compose that a rig and a hull also run meets two hidden
  *   classes, not one per order the fields arrived in.
- * - **Our renderer draws every opaque surface and Babylon is made no mesh of
- *   one** (X4.3c): a `ViewSegment` is the arrays, the transform, the material
- *   and the metadata the mesh was made of — `drawnMesh`'s inputs, which
- *   `kit:hash --models` still makes a mesh of to hash it in the mesh's bytes
- *   — and the two flags the frame reads, `isVisible` and its builder's own
- *   switch. **The two that stay Babylon's** — an optic's glass and the kit
- *   card, the blended ones (X4.3d) — have no parent: `draw` hands each its
- *   joint's world through `freezeWorldMatrix`, and each one's own enabled flag
- *   is its joint chain's, written by `syncSwitches` before the CULL reads it
- *   (an unparented mesh's `isEnabled()` sees no ancestor) and again by `draw`.
+ * - **Our renderer draws every surface and Babylon is made no mesh of one**
+ *   (X4.3c the opaque ones; X4.3d the two BLENDED ones, an optic's glass and
+ *   the kit card — `ViewSegment.role`): a `ViewSegment` is the arrays, the
+ *   transform, the material and the metadata the mesh was made of —
+ *   `drawnMesh`'s inputs, which `kit:hash --models` still makes a mesh of to
+ *   hash it in the mesh's bytes — and the two flags the frame reads,
+ *   `isVisible` and its builder's own switch.
  * - **`draw` EVALUATES exactly the set Babylon's render evaluated** — every
  *   surface whose joint chain is switched on and whose own `isVisible` is set,
- *   a segment or a mesh, drawn by either renderer — through the `RenderCache`
- *   as `_evaluateActiveMeshes` computed it, at the provisional id the cache
- *   SETTLES at the render's evaluation id from inside the render
+ *   whatever its role — through the `RenderCache` as `_evaluateActiveMeshes`
+ *   computed it, at the provisional id the cache SETTLES at the render's
+ *   evaluation id from inside the render
  *   (`onAfterActiveMeshesEvaluationObservable`): so the stamps Babylon's own
  *   evaluation left are the ones the next frame's readers meet, and narrowing
- *   the set to what one renderer draws, or settling at another id, would move
- *   the next frame's `muzzleWorld` and `throwHandWorld` — two command inputs
- *   (X4.3b's review). A mesh is frozen again whenever its joint was
- *   recomposed since it was last handed over (`ViewMesh.handed`), by its own
- *   evaluation, a child's or a reader's; a segment's matrix is its joint's
- *   world as the evaluation left it, read by `Game.drawView` straight after.
- *   The walk from the root never enters a switched-off subtree.
+ *   the set (to one role, say), or settling at another id, would move the
+ *   next frame's `muzzleWorld` and `throwHandWorld` — two command inputs
+ *   (X4.3b's review). A segment's matrix is its joint's world as the
+ *   evaluation left it, read by `Game.drawView` straight after. The walk from
+ *   the root never enters a switched-off subtree.
  * - **The readers answer Babylon's answers** (`read`, `world`): the render-id
  *   cache, never a fresh compose — two of them are command inputs. See
  *   `RenderCache`. A script that wants a joint's world composes its own copy
  *   (`VERIFYING.md`): `read` from outside the frame re-stamps the cache.
- * - What `seal` composes at build is each fixed surface's local, and each
- *   MESH's own world once (`computeWorldMatrix(true)`, unparented): that is
- *   what chooses its NONUNIFORMSCALING define, as its node-parented build did
- *   each frame, and a frozen matrix never chooses it again. Nothing else:
- *   until the first `draw` every surface's own flags and channels are what
- *   its builder left, which is what `kit:hash` records.
- * Never: parent a mesh, compose a joint outside the cache, hand Babylon a
- * world it did not compose, make a Babylon mesh of a segment, or read a
+ * - What `seal` composes at build is each fixed surface's local. Nothing
+ *   else: until the first `draw` every surface's own flags and channels are
+ *   what its builder left, which is what `kit:hash` records.
+ * Never: make or parent a mesh, compose a joint outside the cache, or read a
  * node's matrix (the camera's world is read through the root).
  */
-import { Matrix as BabylonMatrix, type Mesh, type Scene } from "@babylonjs/core";
+import type { Scene } from "@babylonjs/core";
 import type { GeometryBuffer } from "../geometry/buffer";
 import { Quaternion, Vector3 } from "../math";
 import { Part } from "../world/parts";
 import { fixLocal, Joint, JointTree, RenderCache, viewJoint } from "./rigJoints";
 
 /**
- * One opaque surface of the viewmodel, drawn by OUR renderer
- * (`render/ViewDraw.ts`, `BABYLON_EXIT.md` X4.3c) — what a Babylon mesh was
- * until then: a `Part` (its arrays, its transform, its material, its
- * metadata — exactly `drawnMesh`'s inputs), with no parent once it is hung,
- * and the two flags of the mesh the frame reads.
+ * How a segment is drawn (`render/ViewDraw.ts`): `"opaque"`, the weapon's cel
+ * and unlit parts in Babylon's group-1 order (X4.3c); `"glass"`, an optic's
+ * lens, BLENDED over them, back to front, in a material of its own (X4.3d);
+ * `"card"`, the kit screen's backdrop, first of all three (X4.3d).
+ */
+export type ViewRole = "opaque" | "glass" | "card";
+
+/**
+ * One surface of the viewmodel, drawn by OUR renderer (`render/ViewDraw.ts`,
+ * `BABYLON_EXIT.md` X4.3c, X4.3d) — what a Babylon mesh was until then: a
+ * `Part` (its arrays, its transform, its material, its metadata — exactly
+ * `drawnMesh`'s inputs), with no parent once it is hung, the two flags of the
+ * mesh the frame reads, and how it is drawn.
  */
 export class ViewSegment extends Part {
+  /** How it is drawn — see `ViewRole`. Set by its builder, before the kit is built. */
+  role: ViewRole = "opaque";
   /** The mesh's `isVisible`: `ViewModel.applyMeshVisibility`'s, read by the evaluation. */
   isVisible = true;
   /**
@@ -94,9 +95,6 @@ export class ViewSegment extends Part {
    */
   enabled = true;
 }
-
-/** A surface of the viewmodel: a segment our renderer draws, or a mesh Babylon draws (a glass, the card). */
-export type ViewSurface = Mesh | ViewSegment;
 
 /**
  * A part as the segment `drawnMesh` would have made a mesh of: its arrays,
@@ -125,8 +123,8 @@ export function segmentOf(name: string, buffer: GeometryBuffer): ViewSegment {
  * A segment's LOCAL bounds as Babylon's mesh held them
  * (`extractMinAndMax` over the positions it was handed, comparison for
  * comparison from `Number.MAX_VALUE`) — what `getBoundingInfo().boundingBox`
- * answered of the mesh, which the reload's magazine pivots and the bloom's
- * fade are measured off.
+ * answered of the mesh, which the reload's magazine pivots, the bloom's fade
+ * and a glass's place in the back-to-front order are measured off.
  */
 export function segmentBounds(s: ViewSegment): { minimum: Vector3; maximum: Vector3 } {
   const p = s.geometry.positions;
@@ -148,26 +146,16 @@ export function segmentBounds(s: ViewSegment): { minimum: Vector3; maximum: Vect
 
 /** One surface the viewmodel draws, and the joint whose world it is drawn at. */
 export interface ViewMesh {
-  readonly surface: ViewSurface;
-  /** Babylon's mesh, for a surface Babylon draws; null for a segment. */
-  readonly mesh: Mesh | null;
-  /** The segment, for a surface our renderer draws; null for a mesh. */
-  readonly segment: ViewSegment | null;
+  readonly segment: ViewSegment;
   /** The surface's OWN joint — see the header. */
   readonly joint: Joint;
   /** Whether its transform moves after the build (its joint is written) or is fixed at `seal`. */
   readonly moves: boolean;
-  /** The Babylon matrix a mesh is frozen at, written in place; null for a segment. */
-  readonly drawn: BabylonMatrix | null;
   /** Its own enabled flag, as last written. */
   on: boolean;
-  /** Whether Babylon has been handed a matrix for it yet. */
-  frozen: boolean;
-  /** Its joint's `childUpdate` when it was last handed over: a recompose since means a fresh freeze. */
-  handed: number;
   /** The `syncSwitches` pass that last found it on. */
   seen: number;
-  /** A segment's place in the kit our renderer draws (`Game` numbers them); -1 for a mesh. */
+  /** Its place in the kit our renderer draws (`Game` numbers them); -1 until then. */
   slot: number;
 }
 
@@ -175,10 +163,6 @@ export interface ViewMesh {
 export interface ViewCamera {
   readonly name: string;
   getWorldMatrix(): { readonly m: ArrayLike<number> };
-}
-
-function isSegment(s: ViewSurface): s is ViewSegment {
-  return s instanceof ViewSegment;
 }
 
 export class ViewTree {
@@ -194,17 +178,18 @@ export class ViewTree {
   /** Every surface, in the order it was hung — the order it was made. */
   readonly meshes: ViewMesh[] = [];
   /** The joints that stand for a surface, keyed back to it. */
-  readonly meshOf = new Map<Joint, ViewSurface>();
+  readonly meshOf = new Map<Joint, ViewSegment>();
   /**
-   * The segments the last `draw` evaluated, in tree order — `evaluatedCount`
-   * of them; the array is reused, so read it before the next `draw`.
+   * The surfaces the last `draw` evaluated, in tree order — `evaluatedCount`
+   * of them, of every role; the array is reused, so read it before the next
+   * `draw`.
    */
   readonly evaluated: ViewMesh[] = [];
   evaluatedCount = 0;
-  /** Each surface's entry, by its joint. */
-  private readonly entryOf = new Map<Joint, ViewMesh>();
   /** Each joint's children, in the order they were hung from it (null: the top level). */
   private readonly kids = new Map<Joint | null, Joint[]>();
+  /** Each surface's entry, by its joint. */
+  private readonly entryOf = new Map<Joint, ViewMesh>();
   private sealed = 0;
   /** The surfaces on after the last `syncSwitches`, and the list it swaps with. */
   private onList: ViewMesh[] = [];
@@ -228,7 +213,7 @@ export class ViewTree {
       this.root = null;
     }
     // Inside the render, once Babylon has moved the id it evaluated at —
-    // whatever Babylon itself draws of the viewmodel, or nothing.
+    // whether or not Babylon draws anything at all.
     scene.onAfterActiveMeshesEvaluationObservable.add(() => {
       this.cache.settle(scene.getRenderId());
     });
@@ -247,42 +232,32 @@ export class ViewTree {
   }
 
   /**
-   * Hangs a surface from `on` and returns its own joint. A surface with
-   * surfaces of its own — a segment whose part tree has children (the bottle,
-   * `MolotovModel`), or a mesh with child meshes — becomes a joint they hang
+   * Hangs a segment from `on` and returns its own joint. A segment whose part
+   * tree has children (the bottle, `MolotovModel`) becomes a joint they hang
    * under, each unparented, in the order they were parented; `moves` says the
-   * surface's own transform is written after the build.
+   * segment's own transform is written after the build.
    */
-  hang(surface: ViewSurface, on: Joint, moves = false): Joint {
-    const children: ViewSurface[] = isSegment(surface)
-      ? surface.children.filter((c): c is ViewSegment => c instanceof ViewSegment)
-      : (surface.getChildMeshes(true) as Mesh[]);
-    const j = this.add(surface.name, on);
+  hang(segment: ViewSegment, on: Joint, moves = false): Joint {
+    const children = segment.children.filter((c): c is ViewSegment => c instanceof ViewSegment);
+    const j = this.add(segment.name, on);
     this.childOf(on, j);
-    this.meshOf.set(j, surface);
-    const segment = isSegment(surface) ? surface : null;
-    const mesh = segment ? null : (surface as Mesh);
-    // A surface switched off by its builder (the kit card) is switched by its
+    this.meshOf.set(j, segment);
+    // A segment switched off by its builder (the kit card) is switched by its
     // joint from now on.
-    const enabled = segment ? segment.enabled : mesh!.isEnabled(false);
+    const enabled = segment.enabled;
     j.enabled = enabled;
     const v: ViewMesh = {
-      surface,
-      mesh,
       segment,
       joint: j,
       moves: moves || children.length > 0,
-      drawn: mesh ? new BabylonMatrix() : null,
       on: enabled,
-      frozen: false,
-      handed: -1,
       seen: 0,
       slot: -1,
     };
     this.meshes.push(v);
     this.entryOf.set(j, v);
     this.primed = false;
-    surface.parent = null;
+    segment.parent = null;
     for (const c of children) {
       c.parent = null;
       this.hang(c, j);
@@ -295,7 +270,7 @@ export class ViewTree {
    * in the order they were hung, and with `deep`, each one's descendants after
    * it.
    */
-  meshesOn(j: Joint | null, deep = false, out: ViewSurface[] = []): ViewSurface[] {
+  meshesOn(j: Joint | null, deep = false, out: ViewSegment[] = []): ViewSegment[] {
     for (const c of this.kids.get(j) ?? []) {
       const surface = this.meshOf.get(c);
       if (surface) out.push(surface);
@@ -305,41 +280,39 @@ export class ViewTree {
   }
 
   /** The surface `j` stands for, or null for a node's joint. */
-  meshFor(j: Joint): ViewSurface | null {
+  meshFor(j: Joint): ViewSegment | null {
     return this.meshOf.get(j) ?? null;
   }
 
-  /** Every segment, in the order hung — the kit our renderer draws, `ViewMesh.slot` its index. */
+  /** Every surface, in the order hung — the kit our renderer draws, `ViewMesh.slot` its index. */
   segments(): ViewMesh[] {
-    return this.meshes.filter((v) => v.segment !== null);
+    return this.meshes.slice();
   }
 
   /**
    * Takes every surface hung since the last call off its builder's hands: its
-   * channels copied into its joint, a fixed one's local composed once, and a
-   * mesh's own world composed once (the header: NONUNIFORMSCALING). Run when
-   * the builds are done — `ViewModel`'s constructor, and the flash's.
+   * channels copied into its joint, and a fixed one's local composed once.
+   * Run when the builds are done — `ViewModel`'s constructor, and the flash's.
    */
   seal(): void {
     for (; this.sealed < this.meshes.length; this.sealed++) {
       const v = this.meshes[this.sealed];
       const j = v.joint;
-      const m = v.surface;
+      const m = v.segment;
       j.position.copyFrom(m.position);
       j.rotation.copyFrom(m.rotation);
       j.scaling.copyFrom(m.scaling);
       const q = m.rotationQuaternion;
       if (q) j.quaternion = new Quaternion(q.x, q.y, q.z, q.w);
       if (!v.moves) fixLocal(j);
-      v.mesh?.computeWorldMatrix(true);
     }
   }
 
   /**
-   * Each surface's own enabled flag, written to its joint chain's — before
-   * the cull reads a mesh's. A walk from the root that never enters a
-   * switched-off subtree: every surface it reaches is on, and one on after
-   * the last pass that it did not reach is switched off.
+   * Each surface's own enabled flag, written to its joint chain's. A walk
+   * from the root that never enters a switched-off subtree: every surface it
+   * reaches is on, and one on after the last pass that it did not reach is
+   * switched off.
    */
   syncSwitches(): void {
     const prev = this.primed ? this.onList : this.meshes;
@@ -348,12 +321,7 @@ export class ViewTree {
     const pass = ++this.pass;
     const tops = this.kids.get(null);
     if (tops) for (const j of tops) if (j.enabled) this.walkOn(j, next, pass);
-    for (const v of prev) {
-      if (v.seen !== pass && v.on) {
-        v.on = false;
-        v.mesh?.setEnabled(false);
-      }
-    }
+    for (const v of prev) if (v.seen !== pass) v.on = false;
     this.spare = this.primed ? prev : [];
     this.onList = next;
     this.primed = true;
@@ -363,11 +331,8 @@ export class ViewTree {
     const v = this.entryOf.get(j);
     if (v) {
       v.seen = pass;
+      v.on = true;
       next.push(v);
-      if (!v.on) {
-        v.on = true;
-        v.mesh?.setEnabled(true);
-      }
     }
     const kids = this.kids.get(j);
     if (kids) for (const c of kids) if (c.enabled) this.walkOn(c, next, pass);
@@ -375,9 +340,8 @@ export class ViewTree {
 
   /**
    * The frame's evaluation, immediately before `scene.render`: every surface
-   * the render took — on and visible — evaluated as Babylon evaluated it; a
-   * mesh handed its joint's world whenever that was recomposed since it was
-   * last handed over, and a segment listed in `evaluated` for our renderer.
+   * the render took — on and visible — evaluated as Babylon evaluated it, and
+   * listed in `evaluated` for our renderer, whatever its role.
    */
   draw(): void {
     this.syncSwitches();
@@ -385,20 +349,9 @@ export class ViewTree {
     const out = this.evaluated;
     let n = 0;
     for (const v of this.onList) {
-      if (!v.surface.isVisible) continue;
+      if (!v.segment.isVisible) continue;
       this.cache.evaluate(v.joint);
-      const mesh = v.mesh;
-      if (mesh) {
-        const update = v.joint.memo!.childUpdate;
-        if (update !== v.handed || !v.frozen) {
-          BabylonMatrix.FromArrayToRef(v.joint.world.m, 0, v.drawn!);
-          mesh.freezeWorldMatrix(v.drawn!);
-          v.handed = update;
-          v.frozen = true;
-        }
-      } else {
-        out[n++] = v;
-      }
+      out[n++] = v;
     }
     this.evaluatedCount = n;
   }

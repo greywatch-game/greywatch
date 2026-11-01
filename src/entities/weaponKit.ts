@@ -22,8 +22,8 @@
  * frames that are never segments and never joints, and there is nothing to
  * dispose once the build is done. A reticle or a bead is drawn on its own,
  * and `lit` is where it becomes a segment; an optic's glass, which wears a
- * blended material of its own and is still Babylon's (X4.3d), is made a mesh
- * in `optics.ts` and hung with `hang`.
+ * blended material of its own (drawn by our renderer too since X4.3d, after
+ * the opaque parts), is made a segment in `optics.ts` and hung with `hang`.
  *
  * Invariants:
  * - A builder assembles at the ORIGIN with its root at identity and merges
@@ -56,7 +56,7 @@
  * ejection port have to hang off something that survives a loadout change, so
  * `ViewModel` owns those joints and moves them to whichever weapon is fitted.
  */
-import { Mesh, Scene, Vector3 } from "@babylonjs/core";
+import { Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { createBox, createCylinder } from "../geometry/primitives";
 import type { CelMaterialFactory } from "../shaders/CelShader";
@@ -70,7 +70,7 @@ import {
 } from "../world/parts";
 import type { Joint } from "./rigJoints";
 import type { SightId } from "./sights";
-import { segmentOf, toSegment, ViewSegment, type ViewSurface, type ViewTree } from "./viewTree";
+import { segmentOf, toSegment, ViewSegment, type ViewTree } from "./viewTree";
 
 export const BODY = "#2b2b33"; // aluminium upper receiver, barrel, hinge block
 export const POLYMER = "#1d232c"; // lower receiver, grip, magazine, handguard, stock
@@ -141,8 +141,8 @@ export interface SightAssembly {
    * makes the reticle the point of impact.
    */
   sightCenter: Joint;
-  /** Its surfaces: segments, and an optic's glass (a Babylon mesh until X4.3d). */
-  meshes: ViewSurface[];
+  /** Its surfaces: segments, an optic's glass among them (`role` "glass"). */
+  meshes: ViewSegment[];
 }
 
 /**
@@ -389,8 +389,8 @@ export interface WeaponParts {
    * and says which side of the seam each part falls.
    */
   finish: FinishPart[];
-  /** Every visible surface, every optic's included — segments, and the optics' glasses. */
-  meshes: ViewSurface[];
+  /** Every visible surface, every optic's included, the optics' glasses among them. */
+  meshes: ViewSegment[];
 }
 
 /**
@@ -421,8 +421,8 @@ export class WeaponBuild {
    * and pivot hangs from by default, standing where `root` stands while the
    * weapon is assembled — at identity, and unmoved until the builder has
    * returned (see the header). The parts were once hung from `root` itself;
-   * a merge under this is the same arithmetic, and nothing built here
-   * reaches the scene but the meshes `merge` and `lit` make.
+   * a merge under this is the same arithmetic, and nothing built here is
+   * drawn but the segments `merge` and `lit` make and an optic's glass.
    *
    * A builder passes it where it names the root as a PART's parent, and
    * passes `root` where it hangs a LIVE joint (a magazine, a sight) from the
@@ -453,13 +453,13 @@ export class WeaponBuild {
     return this.view.joint(name, parent);
   }
 
-  /** A mesh made outside the helpers (an optic's glass, still Babylon's), hung from `parent`. */
-  hang(mesh: Mesh, parent: Joint): void {
-    this.view.hang(mesh, parent);
+  /** A segment made outside the helpers (an optic's glass, a material of its own), hung from `parent`. */
+  hang(segment: ViewSegment, parent: Joint): void {
+    this.view.hang(segment, parent);
   }
 
   /** The surfaces hung under `j`, as `getChildMeshes` walked them (`ViewTree.meshesOn`). */
-  meshesOn(j: Joint, deep = false): ViewSurface[] {
+  meshesOn(j: Joint, deep = false): ViewSegment[] {
     return this.view.meshesOn(j, deep);
   }
 

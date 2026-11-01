@@ -82,8 +82,10 @@
  *    that was never the problem and `render` is the enormous bar.
  *    `SceneInstrumentation`'s counters are carried beside them for that
  *    reason — the mesh walk, the render-target time, the particle time and
- *    the draw count are what the big bar is made of — and **four spans open
- *    INSIDE it now**: `shadowPass`, `glow`, `drawWorld` and `drawOverlay`.
+ *    the draw count are what the big bar is made of — and **three spans open
+ *    INSIDE it now**: `shadowPass`, `glow` and `drawWorld` (a fourth,
+ *    `drawOverlay`, held the rendering groups above 0 until `BABYLON_EXIT.md`
+ *    X4.3d emptied them, and was retired with report version 24).
  *    They are the one part of this file `Game` does not bracket, because the
  *    boundaries they want are inside a Babylon call and there is nowhere in
  *    `Game.ts` to put them — `hookRender` hangs them off the scene's own
@@ -1317,18 +1319,18 @@ export class FrameProfile {
   }
 
   /**
-   * Hangs the four spans inside `render` off Babylon's own observables.
+   * Hangs the three spans inside `render` off Babylon's own observables.
    *
    * **This is the one place this file's own arrangement bends, and the reason
    * is that there is nowhere in `Game.ts` to put these brackets.** Every other
    * phase is a pair of lines in a method whose order `Game` already declares;
-   * these four are boundaries INSIDE `scene.render()`, and the alternative to
+   * these three are boundaries INSIDE `scene.render()`, and the alternative to
    * an observer is no measurement at all. Nothing here reaches for a system —
    * the shadow map is found through the SCENE (`scene.lights`) and the glow is
    * handed in as two observables (`GlowSpans`), so `ShadowSystem` and
    * `GlowPass` still have not heard of this file and do not have to.
    *
-   * **THE FOUR CANNOT OVERLAP, and that is a fact about where Babylon runs
+   * **THE THREE CANNOT OVERLAP, and that is a fact about where Babylon runs
    * them rather than a hope.** `Scene._renderForCamera` is one order:
    *
    *  1. the render targets — the shadow map among them — all of it before
@@ -1338,12 +1340,12 @@ export class FrameProfile {
    *     the glow draws its mask and blurs it, after every group has drawn;
    *  3. the post chain, where the ink runs the glow's compose as its last line.
    *
-   * So the shadow map is in (1), the two group spans and then the glow's mask
-   * are in (2), and the glow's compose is in (3), unnamed. What is left inside
+   * So the shadow map is in (1), the group span and then the glow's mask are
+   * in (2), and the glow's compose is in (3), unnamed. What is left inside
    * `render` and named by nothing is the active-mesh evaluation, the post
    * chain, a frame's share of a reflection bake, and the present.
    *
-   * **The group spans are gated on `inDraw` and would double-count without
+   * **The group span is gated on `inDraw` and would double-count without
    * it.** `onBeforeRenderingGroupObservable` is the SCENE's, and every
    * `RenderingManager` in the process notifies it — including the one inside a
    * render target — so the shadow map's own groups and the glow's would be
@@ -1354,14 +1356,14 @@ export class FrameProfile {
    * every group of the camera's own pass has drawn by then, so nothing is
    * lost, and the mask's groups are not counted twice.
    *
-   * **Group 0 is the world and everything above it is `drawOverlay`**, which
-   * today is the optics' glass alone (`VIEWMODEL_GROUP`) — the sky draws in
-   * group 0, and the weapon's opaque parts are our renderer's since
-   * `BABYLON_EXIT.md` X4.3c, recorded at the END of group 0 and so inside
-   * `drawWorld`.
-   * Split that way rather than one slot per id because the question worth
-   * asking is what the MAP costs against what the gun costs, and a third group
-   * added to the game should join the overlay rather than go unrecorded.
+   * **Every rendering group is `drawWorld`**, which since `BABYLON_EXIT.md`
+   * X4.3d is group 0 alone: the sky draws in it, and the whole weapon — the
+   * kit card and the optics' glasses with the opaque parts — is our
+   * renderer's, QUEUED at the end of group 0 and so inside it (recorded where
+   * Babylon runs the queue: `docs/profiling.md`). Group 1 was `drawOverlay`
+   * until then, the gun's share against the map's; it held nothing after
+   * X4.3d and was retired (report version 24), and a group added to the game
+   * joins `drawWorld` rather than going unrecorded.
    *
    * **A render target is bracketed BIND to UNBIND.** The glow is not bracketed
    * as a target at all: it notifies around its mask AND its blur together.
@@ -1378,15 +1380,15 @@ export class FrameProfile {
     });
     off.push(() => scene.onAfterDrawPhaseObservable.remove(drawOff));
 
-    const groupIn = scene.onBeforeRenderingGroupObservable.add((info) => {
+    const groupIn = scene.onBeforeRenderingGroupObservable.add(() => {
       if (this.inDraw) {
-        this.begin(info.renderingGroupId === 0 ? P.drawWorld : P.drawOverlay);
+        this.begin(P.drawWorld);
       }
     });
     off.push(() => scene.onBeforeRenderingGroupObservable.remove(groupIn));
-    const groupOut = scene.onAfterRenderingGroupObservable.add((info) => {
+    const groupOut = scene.onAfterRenderingGroupObservable.add(() => {
       if (this.inDraw) {
-        this.endAdd(info.renderingGroupId === 0 ? P.drawWorld : P.drawOverlay);
+        this.endAdd(P.drawWorld);
       }
     });
     off.push(() => scene.onAfterRenderingGroupObservable.remove(groupOut));

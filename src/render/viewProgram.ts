@@ -2,13 +2,18 @@
  * render/viewProgram.ts — The VIEWMODEL's programs: the player's own weapon,
  * arms, fist and muzzle flash drawn by our renderer (`BABYLON_EXIT.md`
  * X4.3c) — the cel stage over a segment's corners, the emissive palette's
- * stage over a reticle's, and that one's twin in the glow's mask — declared
- * for our renderer.
- * Owns: `VIEW_GEOMETRY` (group 2 of all three: every attribute's array, the
+ * stage over a reticle's, and that one's twin in the glow's mask — and its
+ * two BLENDED surfaces (X4.3d): an optic's glass, the emissive stage under a
+ * pixel of its own, and the kit card, a stage of its own over a texture —
+ * declared for our renderer.
+ * Owns: `VIEW_GEOMETRY` (group 2 of all five: every attribute's array, the
  * segments' indices, and each draw's matrix — seven storage arrays, under
  * WebGPU's default ceiling of eight), `VIEW_GLOW` (the mask's group 1: each
- * draw's bloom colour), `VIEW_EMISSIVE_DEFINES` and `viewPrograms`, the
- * modules for a cel variant and the two emissive ones.
+ * draw's bloom colour), `VIEW_GLASS` (the glass's group 1: each glass's
+ * colour and alpha), `VIEW_CARD` (the card's group 1: its texture),
+ * `VIEW_EMISSIVE_DEFINES` and the modules: a cel variant's
+ * (`viewCelProgram`), the two emissive ones (`viewEmissivePrograms`) and the
+ * two blended ones (`viewBlendedPrograms`).
  * Invariants: the vertex and pixel BODIES are the cel material's and the
  * emissive palette's own (`celVertex`, `celFragment`, `EMISSIVE_WORLD_VERTEX`,
  * `EMISSIVE_WORLD_SURFACE`), never restated — what is the viewmodel's here is
@@ -24,9 +29,16 @@
  * main pass and the mask, which is what the mask's LEQUAL tie rests on, and
  * it hands each pixel its draw (`vBody`, flat) for the mask to read that
  * draw's bloom off — the colour `GlowRules` gave the mesh, written as it was
- * (rgb the colour, a the material's alpha), never faded here.
+ * (rgb the colour, a the material's alpha), never faded here; the GLASS's
+ * pixel is what Babylon's unlit `StandardMaterial` wrote with no fog plugin
+ * on it — `clamp(emissive)` at the material's own alpha, its colour a slot of
+ * the glass table in `uv2.x` — over the same vertex module; the CARD's
+ * vertex is that stage's arithmetic (the world, then the view-projection, as
+ * Babylon's default vertex did) handing the pixel its `uv`, and its pixel the
+ * texture's colour, clamped, at an alpha of 0 — Babylon's unlit
+ * `StandardMaterial` over an emissive texture at `alpha` 0.
  * Never: imports Babylon; restates a body; decides what a segment is, its
- * order, its material or which draw.
+ * order, its material, which draw, or a pipeline's blend (`ViewDraw`'s).
  * Contract: `docs/rendering.md`, "The weapon, ours" and "Hand-written WGSL".
  */
 import { WGSL_CHUNKS } from "../shaders/wgsl/chunks";
@@ -66,6 +78,12 @@ export const VIEW_GEOMETRY = [
 /** The mask's group 1: each draw's bloom colour, rgb the colour and a the alpha. */
 export const VIEW_GLOW = [{ kind: "storage", name: "viewGlow", type: "array<vec4f>" }] as const satisfies readonly Binding[];
 
+/** The glass's group 1: each glass's colour (rgb) and the material's alpha (a), by its 1-based slot in `uv2.x`. */
+export const VIEW_GLASS = [{ kind: "storage", name: "viewGlass", type: "array<vec4f>" }] as const satisfies readonly Binding[];
+
+/** The card's group 1: the texture its canvas is uploaded into, and its sampler. */
+export const VIEW_CARD = [{ kind: "sampled", name: "viewCard", type: "texture_2d<f32>" }] as const satisfies readonly Binding[];
+
 /** The emissive stage's variant: the palette declared, so group 0 is laid out as every cel program's is. */
 export const VIEW_EMISSIVE_DEFINES = ["CEL_PALETTE"] as const;
 
@@ -78,6 +96,49 @@ fn viewGlowSurface() -> vec4f {
   return viewGlow[fragmentInputs.vBody];
 }
 `;
+
+/**
+ * The glass's pixel: what an unlit `StandardMaterial` with no fog plugin wrote
+ * — its emissive colour clamped (no light, no ambient, no texture) at its own
+ * alpha — the colour and the alpha the glass table's slot holds.
+ */
+const VIEW_GLASS_SURFACE = /* wgsl */ `
+fn viewGlassSurface() -> vec4f {
+  let g = viewGlass[u32(fragmentInputs.vSlot + 0.5) - 1u];
+  return vec4f(clamp(g.rgb, vec3f(0.0), vec3f(1.0)), g.a);
+}
+`;
+
+/** The card's vertex stage: the emissive stage's arithmetic, world then view-projection, handing the pixel its `uv`. */
+const VIEW_CARD_VERTEX = /* wgsl */ `
+fn viewCardVertex() {
+  let worldPos = uniforms.world * vec4f(vertexInputs.position, 1.0);
+  vertexOutputs.position = uniforms.viewProjection * worldPos;
+  vertexOutputs.vUV = vertexInputs.uv;
+}
+`;
+
+/**
+ * The card's pixel: what an unlit `StandardMaterial` wrote over an emissive
+ * texture at `alpha` 0 — the texel's colour, clamped (no light, no ambient, a
+ * `level` of 1), and the material's alpha, which the draw's blend leaves out
+ * of the coverage channel.
+ */
+const VIEW_CARD_SURFACE = /* wgsl */ `
+fn viewCardSurface() -> vec4f {
+  let c = textureSample(viewCard, viewCardSampler, fragmentInputs.vUV);
+  return vec4f(clamp(c.rgb, vec3f(0.0), vec3f(1.0)), 0.0);
+}
+`;
+
+/** What the card's vertex stage hands its pixel. */
+const CARD_VARYINGS = [{ name: "vUV", type: "vec2f" }] as const;
+
+/** What the card reads: its corner's position and uv. */
+const CARD_ATTRIBUTES = [
+  { name: "position", type: "vec3f", from: "positionData" },
+  { name: "uv", type: "vec2f", from: "uvData" },
+] as const;
 
 /** `main`'s decode: the vertex the corner names, and where the draw's matrix is. */
 const DECODE = ["  let vertex = indexData[vertexIndex];", "  let at = instanceIndex * 4u;"].join("\n");
@@ -104,8 +165,15 @@ export interface ViewEmissivePrograms {
   readonly mask: ViewProgram;
 }
 
+/** The two blended programs: an optic's glass and the kit card. */
+export interface ViewBlendedPrograms {
+  readonly glass: ViewProgram;
+  readonly card: ViewProgram;
+}
+
 const celBuilt = new Map<string, ViewProgram>();
 let emissiveBuilt: ViewEmissivePrograms | null = null;
+let blendedBuilt: ViewBlendedPrograms | null = null;
 
 /** The cel program for a material's variant (`CelRecipe.defines`), assembled once a variant. */
 export function viewCelProgram(defines: readonly string[]): ViewProgram {
@@ -182,4 +250,67 @@ export function viewEmissivePrograms(): ViewEmissivePrograms {
     },
   };
   return emissiveBuilt;
+}
+
+/**
+ * The blended programs (`BABYLON_EXIT.md` X4.3d): an optic's GLASS — the
+ * emissive stage's own vertex module, so its depth test meets the depth the
+ * opaque parts wrote by the arithmetic Babylon's stage used — and the kit
+ * CARD.
+ */
+export function viewBlendedPrograms(): ViewBlendedPrograms {
+  if (blendedBuilt) return blendedBuilt;
+  const emissive = viewEmissivePrograms();
+  const frameGroup = [FRAME_BLOCK, ...FRAME_TEXTURES];
+  blendedBuilt = {
+    glass: {
+      vertex: emissive.main.vertex,
+      fragment: assembleFragment(
+        {
+          label: "view-glass-fragment",
+          // Group 0 is the cel fragment's whole group, unread, so the frame's
+          // one bind group serves this pipeline as it serves the main pass's.
+          groups: [frameGroup, VIEW_GLASS],
+          varyings: EMISSIVE_DRAW_VARYINGS,
+          includes: {},
+          body: VIEW_GLASS_SURFACE,
+          surface: "viewGlassSurface",
+        },
+        VIEW_EMISSIVE_DEFINES,
+        FRAME_TARGETS,
+      ),
+    },
+    card: {
+      vertex: assembleVertex(
+        {
+          label: "view-card-vertex",
+          groups: [[FRAME_BLOCK], [], VIEW_GEOMETRY],
+          attributes: CARD_ATTRIBUTES,
+          varyings: CARD_VARYINGS,
+          includes: {},
+          body: VIEW_CARD_VERTEX,
+          entry: "viewCardVertex",
+          privates: [WORLD_PRIVATE],
+          instanced: true,
+          pull: { vertex: "vertex", decode: DECODE },
+          prelude: WORLD_PRELUDE,
+        },
+        VIEW_EMISSIVE_DEFINES,
+        FRAME_TARGETS,
+      ),
+      fragment: assembleFragment(
+        {
+          label: "view-card-fragment",
+          groups: [frameGroup, VIEW_CARD],
+          varyings: CARD_VARYINGS,
+          includes: {},
+          body: VIEW_CARD_SURFACE,
+          surface: "viewCardSurface",
+        },
+        VIEW_EMISSIVE_DEFINES,
+        FRAME_TARGETS,
+      ),
+    },
+  };
+  return blendedBuilt;
 }

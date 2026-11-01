@@ -1565,10 +1565,11 @@ devices — the card's largest word was its own name, which is what a form says.
 is not a second model, not a render target and not a second camera: `ViewModel`
 simply has a pose that is not the carried one (`beginInspect` / `spinInspect` /
 `updateInspect` / `endInspect`), and the weapon already hangs from the camera
-(its joints, `BABYLON_EXIT.md` X4.3b) and is drawn by our renderer after the
-card, where `VIEWMODEL_GROUP` drew it (X4.3c; `docs/rendering.md`, "The
-weapon, ours") — in every state the screen covers, `menu` among them, so a kit
-screen raised off the title has the gun on it with no map standing.
+(its joints, `BABYLON_EXIT.md` X4.3b) and is drawn by our renderer, card and
+all — the card first, then the weapon, then an optic's glass (X4.3c, X4.3d;
+`docs/rendering.md`, "The weapon, ours") — in every state the screen covers,
+`menu` among them, so a kit screen raised off the title has the gun and its
+card on it with no map standing.
 
 - **THE BAY IS MEASURED, and that one change is what the rest of this section is
   downstream of.** The weapon is placed by back-projecting a SCREEN position, and

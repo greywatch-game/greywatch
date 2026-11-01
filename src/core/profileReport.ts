@@ -465,11 +465,13 @@ export interface HullFacts {
 /**
  * Our renderer's WEAPON on the last frame before the capture — or, for a
  * HALTED ring, before the halt (`render/ViewDraw.ts`' `stats`,
- * `BABYLON_EXIT.md` X4.3c) — read as `bodies` is. `drawn` is the main pass's
- * draws of the viewmodel's opaque segments (one a segment, as Babylon drew one
- * a mesh) and `masked` the glow mask's. Neither is in `counters.drawCalls`,
- * which since X4.3c counts no opaque part of the weapon: a capture from before
- * it counted the same draws there (an optic's glass still is, until X4.3d).
+ * `BABYLON_EXIT.md` X4.3c, X4.3d) — read as `bodies` is. `drawn` is the main
+ * pass's draws of the viewmodel's segments (one a segment, as Babylon drew one
+ * a mesh: the opaque parts, and since report version 24 the kit card and an
+ * optic's glass) and `masked` the glow mask's. Neither is in
+ * `counters.drawCalls`, which since X4.3c counts no opaque part of the weapon
+ * and since X4.3d nothing of it at all: a capture from before either counted
+ * the same draws there.
  */
 export interface ViewFacts {
   drawn: number;
@@ -1218,7 +1220,14 @@ export function buildReport(
     // `drawOverlay` span holds the optics' glass alone, the weapon's own draws
     // recorded at the end of group 0, inside `drawWorld`. Nothing else
     // changed meaning.
-    version: 23,
+    // 24: `drawOverlay` RETIRED (`BABYLON_EXIT.md` X4.3d): the optics' glass
+    // and the kit card are our renderer's too, so no rendering group above 0
+    // holds anything, and the span recorded nothing; `drawWorld` is every
+    // group's, which is group 0's. `view` counts the card and the glasses
+    // beside the opaque parts, none of them in `counters.drawCalls`. A v23
+    // capture's `drawOverlay` was the glass (and nothing on a kit screen
+    // with no optic); nothing else changed meaning.
+    version: 24,
     takenAt: new Date().toISOString(),
     reason,
     map: r.mapId,

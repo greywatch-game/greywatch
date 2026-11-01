@@ -23,7 +23,7 @@ import {
   type WeaponParts,
 } from "./weaponKit";
 import type { Joint } from "./rigJoints";
-import type { ViewSurface, ViewTree } from "./viewTree";
+import type { ViewSegment, ViewTree } from "./viewTree";
 
 /**
  * The magazine's rake, which is also the line it drops out along. NEGATIVE for
@@ -381,7 +381,7 @@ export function buildDmr(
 
   // Merged before any optic is built, so a sight's parts can never end up
   // inside the weapon's colour groups.
-  const meshes: ViewSurface[] = b.merge("dmr", root);
+  const meshes: ViewSegment[] = b.merge("dmr", root);
 
   // --- magazine: HK's straight twenty-round box ---
   // Straight rather than curved, and it is the read: the rifle's banana under

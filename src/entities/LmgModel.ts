@@ -26,7 +26,7 @@ import {
   type WeaponParts,
 } from "./weaponKit";
 import type { Joint } from "./rigJoints";
-import type { ViewSurface, ViewTree } from "./viewTree";
+import type { ViewSegment, ViewTree } from "./viewTree";
 
 /**
  * Top face of the rail, and the highest in the kit. A belt-fed receiver is
@@ -529,7 +529,7 @@ export function buildLmg(
 
   // The LMG itself is finished. Merge it before any optic is built, so a
   // sight's parts can never end up inside the weapon's colour groups.
-  const meshes: ViewSurface[] = b.merge("lmg", root);
+  const meshes: ViewSegment[] = b.merge("lmg", root);
 
   // --- the box and its belt: a container, not a magazine ---
   // The M249's 200-round box: taller at the back than the front, the lid

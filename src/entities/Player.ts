@@ -2491,21 +2491,6 @@ export class Player implements Combatant {
     this.view.updateInspect({ fovY, aspect, bay });
   }
 
-  /**
-   * The put-away weapon shown, or put away again, for the frames of the
-   * building card's pipeline warm-up (`core/PipelineWarmup.ts`) — an optic's
-   * glass draws in a material nothing in the world wears, so the spawn frame
-   * was compiling it. The weapon's opaque parts are our renderer's since
-   * `BABYLON_EXIT.md` X4.3c, their pipelines asked ahead, so the glass is
-   * what this is left for (X4.3d retires it).
-   * Only the VIEW: no flash, no brass, and nothing about `bodyHidden` changes,
-   * so `off` is exactly `applyVisibility`'s answer again.
-   */
-  warmView(on: boolean): void {
-    if (!this.bodyHidden || this.inspecting) return;
-    this.view.setVisible(on);
-  }
-
   private applyVisibility(): void {
     this.view.setVisible(!this.bodyHidden || this.inspecting);
     // The flash and the brass go with the weapon — but not into an

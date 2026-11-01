@@ -368,6 +368,9 @@ you are on before you believe anything else in this section.
   asks. Fixed by painting once where the card is built (every other
   `DynamicTexture` in the tree already does); `npm run shots -- harrowmead`
   went from failing after 120 s to a picture in 2.8 s, and Sarab in 5.9 s.
+  (Since `BABYLON_EXIT.md` X4.3d the card is no mesh and has no
+  `DynamicTexture`: it is a segment our renderer draws, its canvas made and
+  uploaded at its first paint, so it cannot hold the scene unready.)
   **What generalises is the diagnosis**: when `scene.isReady()` will not flip,
   list the meshes where `!mesh.isReady(true)` — it is usually ONE, and it is
   usually a texture rather than a shader. Material-less meshes (colliders, the
@@ -1215,9 +1218,10 @@ is one machine's:
   pixels with 65-279 bufferless meshes in frame.
 - **Skip `renderingGroupId !== 0` in that swap, and the reason is the TEST's.**
   (Since `BABYLON_EXIT.md` X4.3c the weapon is no mesh at all — a walk of the
-  scene's meshes does not reach it — but `Game.drawView` orders its segments
-  by their MATERIAL'S ID exactly as the group did, so a swap of
-  `ViewSegment.material` meets the same trap.)
+  scene's meshes does not reach it, and since X4.3d no mesh is outside group 0
+  — but `Game.drawView` orders its opaque segments by their MATERIAL'S ID
+  exactly as the group did, so a swap of `ViewSegment.material` meets the same
+  trap.)
   `Game` sets its front-to-back comparator on group 0 only, so the VIEWMODEL
   group keeps Babylon's `PainterSortCompare`, which orders by MATERIAL ID —
   hand the weapon 54 freshly minted materials and it re-decides a handful of

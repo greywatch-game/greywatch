@@ -92,13 +92,15 @@
  *   opaque wall drawn after the glazing or the water in front of it paints
  *   over them, and one drawn after a particle in front of it paints over
  *   the particle.
- * - `"afterGroup"`: after the group has been queued whole, and before the
- *   next group (the viewmodel's, which holds the optics' glass) — reached
- *   only on a frame group 0 renders at all (the seam above). The player's
- *   WEAPON is drawn here (`ViewDraw`, `BABYLON_EXIT.md` X4.3c): after group 0's
- *   blended queue — the kit card last of it — where group 1's opaque queue
- *   drew it, so the card covers the world, the weapon covers the card and
- *   the glasses still draw over the weapon.
+ * - `"afterGroup"`: after the group has been queued whole — its blended
+ *   queue included — and before any group above it (none holds anything
+ *   since `BABYLON_EXIT.md` X4.3d) — reached only on a frame group 0 renders
+ *   at all (the seam above). The player's whole WEAPON is drawn here
+ *   (`ViewDraw`, X4.3c and X4.3d): the kit card first, where it was the last
+ *   of group 0's blended queue, then the opaque parts, where group 1's opaque
+ *   queue drew them, then the optics' glasses, where its blended queue did —
+ *   so the card covers the world, the weapon covers the card and the glasses
+ *   draw over the weapon.
  */
 import {
   createFrameTextures,
