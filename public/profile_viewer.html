@@ -984,6 +984,9 @@ function renderReport(r) {
     ["window", fmt(r.window.seconds, 2) + " s"],
     ["taken", (r.takenAt || "").replace("T", " ").replace(/\..*$/, "")],
   ];
+  /* Which build took it (report version 25): the commit and the day, `+` for
+     a working tree with changes, `dev` for the dev server. */
+  if (r.build) bits.push(["build", r.build]);
   /* The round's seed (report version 12), which `?seed=` takes to play the
      round again. Null in a match and before a first round — nothing to say. */
   if (r.seed != null) bits.push(["seed", String(r.seed)]);

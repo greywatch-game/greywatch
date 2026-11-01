@@ -24,6 +24,7 @@
  *    graphics and the context rows were pushed by `Game` into the ring.
  */
 import { CONFIG } from "../config";
+import { buildStamp } from "../ui/buildStamp";
 import { onePercentLow } from "./frameStats";
 import { P, PARENT_OF, PHASES, ROOTS, SLOTS, type Phase } from "./profilePhases";
 
@@ -530,6 +531,14 @@ export interface ProfileGraphics {
 /** What a capture hands back. JSON by construction — this is the artefact. */
 export interface ProfileReport {
   version: number;
+  /**
+   * Which build took the capture — the commit and the day, as `index.html`
+   * was stamped (`ui/buildStamp.ts`), so `+` on a commit is a working tree
+   * with changes and `dev` the dev server. Read off the document, which is
+   * the build the service worker actually served. Absent before report
+   * version 25.
+   */
+  build: string;
   takenAt: string;
   reason: string;
   /** The map the ring was recorded on, pushed by `Game`. */
@@ -1227,7 +1236,11 @@ export function buildReport(
     // beside the opaque parts, none of them in `counters.drawCalls`. A v23
     // capture's `drawOverlay` was the glass (and nothing on a kit screen
     // with no optic); nothing else changed meaning.
-    version: 24,
+    // 25: `build`, the commit and day the page was stamped with. Before it a
+    // capture said nothing of which code drew it, and a phone's had to be
+    // matched to a deploy by its `takenAt`. Nothing else changed meaning.
+    version: 25,
+    build: buildStamp(),
     takenAt: new Date().toISOString(),
     reason,
     map: r.mapId,

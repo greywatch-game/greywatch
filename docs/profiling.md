@@ -1161,6 +1161,14 @@ That block above predates both fields — it was taken before the memory reading
 existed, and the numbers in it have not been re-taken, because a capture
 re-printed from a later run is a capture of something else.
 
+**From report version 25 a capture says which BUILD took it** (`build`): the
+stamp `index.html` carries (`vite.config.ts`'s `buildStamp`, the same string
+the settings screen prints), the commit and the day, `+` on a commit for a
+working tree with changes and `dev` for the dev server. It is read off the
+DOCUMENT, so it names the build the service worker served rather than the
+newest one deployed — the answer a stale tab on a phone could not otherwise
+give. Before it a capture had to be matched to a deploy by its `takenAt`.
+
 **From report version 10 a capture states the GRAPHICS it was drawn with**
 (`graphics`), and **`device.coarsePointer`**, the test that picks every
 per-machine default in `settings.ts`. Before it, two tablet captures on Sarab
