@@ -1020,7 +1020,7 @@ card behind it are off Babylon's scene, and no sub-step changed the picture.
 
 The full record is in [the archive](plans/done/babylon_exit_landed.md).
 
-### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (63a338a, review fixes after it), X4.4b **LANDED** (HASH)
+### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (63a338a, review fixes after it), X4.4b **LANDED** (9470686)
 
 Every pooled effect Babylon still draws comes off its scene but the three
 that blend among the panes (decided 2026-11-01: they wait for X4.6), and the
@@ -1153,7 +1153,7 @@ Everything else in X4.4 moves as briefed; `fx-glass-sort` is X4.6's BEFORE.
   --keep` twice back to back, all 25 `fx` rows 0 pixels from the bank and
   109 of 109 frames byte-equal between the runs; the 84 old rows byte-equal
   to X4.4a's own kept frames; typecheck, build, corecheck pass.
-- **X4.4b — the plain mesh pools are ours LANDED** (HASH; 2026-11-01; no
+- **X4.4b — the plain mesh pools are ours LANDED** (9470686; 2026-11-01; no
   picture change). Every tracer, spent case, thrown frag and bottle (the
   simulation's and the wire's), rocket in flight (both), laid mine and bullet
   mark is our renderer's (`render/PoolDraw.ts`, two draws, by the bodies'

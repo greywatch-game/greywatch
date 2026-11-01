@@ -6826,7 +6826,7 @@ X4.3d's brief, word for word:
     run-to-run noise (1-3/255); `gate.mjs` and `shaders.mjs` clean on
     seven; typecheck, build, corecheck and `parity` pass.
 
-### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (63a338a, review fixes after it), X4.4b **LANDED** (HASH)
+### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (63a338a, review fixes after it), X4.4b **LANDED** (9470686)
 
 X4.4a's brief, word for word:
 
@@ -7168,7 +7168,7 @@ X4.4b's brief, word for word:
   at walls, soil and glass, with a frag, a molotov, a rocket and a mine; a
   netplay round where the other side throws and fires (the wire's bodies).
 
-**X4.4b landed** (HASH; 2026-11-01; no picture change).
+**X4.4b landed** (9470686; 2026-11-01; no picture change).
 - **What moved.** Every tracer (`CombatFx`), spent case (`PlayerView`),
   thrown frag and bottle (`GrenadeFx`'s `GrenadeBody`, and the wire's in
   `net/NetGrenades`), rocket in flight and laid mine (`AntiTankFx`'s
