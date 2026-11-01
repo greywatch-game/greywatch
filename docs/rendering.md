@@ -4625,7 +4625,7 @@ the frame that are load-bearing.
   flags the mesh carried — the card as the group-0 mesh it was (the script's
   header).
 
-## The pools, ours: every piece an instance of its kit, every mark one draw
+## The pools, ours: every piece an instance of its kit, all the marks one draw
 
 **Every tracer, spent case, thrown frag and bottle, rocket in flight, laid
 mine and bullet mark the page draws is OUR renderer's since `BABYLON_EXIT.md`
@@ -4710,10 +4710,11 @@ asked: a piece outside it is clipped by the GPU and costs its vertex work, as
 the drawn sets of a scripted probe show (X4.4b's archive note).
 
 **What X4.4b's oracles hold it to**: the bank byte-identical, its 25 `fx`
-rows among the 109; a probe over 200 scripted frames (marks at the gate's edge
-under a moving camera, bodies in flight, the wire's, the brass) reading
-Babylon's own render calls on the parent against what ours was handed —
-every drawn set equal, every mark order and every piece's segment order equal;
+rows among the 109; a probe over 330 scripted frames (marks at the gate's edge
+under a moving camera, bodies in flight, the wire's, the brass, and a phase
+~150 m from the origin) reading Babylon's own render calls on the parent
+against what ours was handed — every drawn set equal (330 of 330), every mark
+order (182 frames, 4,782 marks) and every piece's segment order (905 pieces);
 and `kit:hash --models` identical, each kit hashed IN THE BYTES ITS MESHES
 GAVE (the script's header). **Its pipelines are asked once, at `Game`'s
 construction**, so the building card's warm-up waits for them; a failure is
@@ -5149,12 +5150,15 @@ all in the counter this finding is named after. Not chased.
   placed so some of it faces every direction), and **silhouette** (a helmet
   shape per side, which is what is left when there is no colour at all).
 - **The bullet mark pool is the one whose slots outlive the shot**
-  (`systems/BulletMarks.ts`): it is the one effect wearing a CEL material rather
-  than `getEmissive`, because a hole still there a minute later has to be lit by
-  the same map the wall is — which also puts it inside `WorldCulling`'s size
-  gate — and it is stood on the STATIC world only, a hull answering "hard" like
-  any other box while being the one solid thing in the game that drives away
-  from where it was shot.
+  (`systems/BulletMarks.ts`): it is the one impact effect that is CEL-LIT
+  rather than `getEmissive` — since X4.4b by no material at all but OUR cel
+  program, under a palette recipe of the marks' own
+  (`CelMaterialFactory.poolCelRecipe` over `MARK_PAINTS`, at
+  `MARK_DEPTH_UNITS`) — because a hole still there a minute later has to be lit
+  by the same map the wall is, which also puts it inside `WorldCulling`'s size
+  gate (its frozen sphere, `Game.drawMarks`); and it is stood on the STATIC
+  world only, a hull answering "hard" like any other box while being the one
+  solid thing in the game that drives away from where it was shot.
 - Glow is an emissive MASK blurred and added to the frame (`src/shaders/GlowPass.ts`),
   keyed off emissive colour and deliberately not threshold bloom —
   bright-but-not-emissive surfaces must stay crisp.

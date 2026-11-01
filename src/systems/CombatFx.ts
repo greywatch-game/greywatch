@@ -60,7 +60,7 @@ import { Quaternion as MathQuaternion, Vector3 as MathVector3, type Vector3Like 
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { Part } from "../world/parts";
 import { newRayHit, type RayHull, type RayWorld } from "../world/RayWorld";
-import { BulletMarks } from "./BulletMarks";
+import { BulletMarks, type MarkPaint } from "./BulletMarks";
 import type { ImpactKind } from "./CombatSystem";
 
 /**
@@ -82,7 +82,7 @@ const IMPACTS: Record<
     disc: string | null;
     from: number;
     to: number;
-    mark: { hex: string; radius: number } | null;
+    mark: { hex: MarkPaint; radius: number } | null;
   }
 > = {
   // A hit on a body gets the spark and NO disc. Flesh does not throw dust on

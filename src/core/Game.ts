@@ -440,8 +440,8 @@ interface Seat {
  * Half the plate's own height, so the thing rests ON the road rather than
  * half-buried in it — an art constant and therefore here rather than in
  * `CONFIG.equipment`, which is where the numbers a designer tunes live. It has
- * to agree with `buildMineBody`'s cylinder, which is the one other place the
- * plate's size is written.
+ * to agree with the body cylinder in `minePieceParts` (`entities/MineModel.ts`),
+ * which is the one other place the plate's size is written.
  */
 const MINE_LIFT = 0.04;
 
@@ -887,7 +887,7 @@ export class Game {
   private readonly markDraw: PoolDraw;
   /** Each piece kit's index in the order `pieceDraw` was handed them — a piece's kit word (`drawPieces`). */
   private readonly pieceKitIndex: Map<PieceKit, number>;
-  /** Each piece kit's UNLIT segment (one at most), or -1 — what a piece's bloom is measured off (`piecePull`). */
+  /** Each piece kit's UNLIT segment (one at most, DEV-checked where the kits are taken), or -1 — what a piece's bloom is measured off (`piecePull`). */
   private pieceUnlit = new Int32Array(0);
   /** Each piece kit's unlit segment as `bloomColour` reads a material: its `getEmissive` colour, alpha 1. */
   private pieceBloomOf: ({ readonly emissiveColor: Color3; readonly alpha: number } | null)[] = [];
@@ -2172,6 +2172,16 @@ export class Game {
         unlit: seg.unlit !== null,
       })),
     }));
+    // A piece blooms in ONE colour, measured off ONE segment's sphere
+    // (`piecePull`), so a kit with a second unlit segment would draw it with
+    // the first one's bloom, silently — refused where the kits are taken.
+    if (import.meta.env.DEV) {
+      for (const kit of pieceKitList) {
+        if (kit.segments.filter((s) => s.unlit !== null).length > 1) {
+          throw new Error(`Game: piece kit "${kit.name}" has more than one unlit segment, and a piece blooms in one colour`);
+        }
+      }
+    }
     this.pieceUnlit = Int32Array.from(pieceKitList, (kit) => kit.segments.findIndex((s) => s.unlit !== null));
     this.pieceBloomOf = pieceKitList.map((kit) => {
       const lit = kit.segments.find((s) => s.unlit !== null);
@@ -6366,7 +6376,13 @@ export class Game {
     if (!writePieceDrawing(p, draw.matrices, n * S * 16, S, this.keepsPieceSegment, this.pieceSpheres, n * S * 4)) {
       return n;
     }
-    draw.kits[n] = this.pieceKitIndex.get(p.kit) ?? 0;
+    // A kit `pieceDraw` was never handed has no word, and would be drawn in
+    // the tracer's: refused in a dev build rather than dressed as a streak.
+    const kit = this.pieceKitIndex.get(p.kit);
+    if (import.meta.env.DEV && kit === undefined) {
+      throw new Error(`Game.writePiece: piece kit "${p.kit.name}" was never handed to the pieces' draw`);
+    }
+    draw.kits[n] = kit ?? 0;
     return n + 1;
   }
 

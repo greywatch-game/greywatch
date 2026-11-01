@@ -3046,14 +3046,14 @@ fixing it is a picture change in a live round that the bank does not see.
 
 ### What is measured
 
-- **The X4.4b order probe** (scratchpad `x44b/order.mjs`: 200 scripted
-  frames on Coldharbour, 1920x1080; eight rounds' brass thrown on the quay
-  with the camera ~58 m from the origin): on the parent (ece59b1) Babylon drew
-  **no case in any frame**; our renderer gated on THIS frame's sphere (the
-  hulls' rule, X4.2b) drew **22 case-frames** of the eight cases, and the
-  step as committed
-  (Babylon's stale sphere kept) draws none, its drawn sets equal to the
-  parent's on all 200 frames.
+- **The X4.4b order probe** (scratchpad `x44b/order.mjs`, its final run:
+  330 scripted frames on Coldharbour, 1920x1080, ending in a phase ~150 m
+  from the origin; eight rounds' brass thrown on the quay with the camera
+  ~58 m from the origin): on the parent (ece59b1) Babylon drew **no case in
+  any frame**; our renderer gated on THIS frame's sphere (the hulls' rule,
+  X4.2b) drew **22 case-frames** of the eight cases, and the step as
+  committed (Babylon's stale sphere kept) draws none, its drawn sets equal to
+  the parent's on all 330 frames.
 - **The bank's `fx-brass` passes only because its square stands ~20 m from
   the origin**, inside the distance where a never-computed case still passes
   the gate.

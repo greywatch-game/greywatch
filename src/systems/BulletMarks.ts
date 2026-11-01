@@ -79,10 +79,15 @@ export const MARK_DEPTH_UNITS = -14;
 /**
  * Every colour a mark is painted in — each impact kind's `IMPACTS.mark.hex`
  * in `CombatFx`, the two kinds that mark — in the order our renderer's
- * palette holds them. A slot names its paint by its index here; a hex
- * `place` is handed that is not in it is refused rather than drawn black.
+ * palette holds them. A slot names its paint by its index here. **A paint
+ * not in it does not compile** — `IMPACTS.mark.hex` is a `MarkPaint`, so a
+ * new one is added HERE first — and a hex `place` is handed that is not in it
+ * anyway is refused rather than drawn black.
  */
 export const MARK_PAINTS = ["#2b2723", "#4b3a26"] as const;
+
+/** One of `MARK_PAINTS`: the only colour a mark may be asked to wear. */
+export type MarkPaint = (typeof MARK_PAINTS)[number];
 
 /**
  * How many distinct silhouettes the pool draws from, cycled across the slots.
@@ -262,7 +267,7 @@ export class BulletMarks {
    * what it takes out of render are different sizes and different colours and
    * there is nothing else in the difference.
    */
-  place(pos: Vector3Like, normal: Vector3Like, hex: string, radius: number): void {
+  place(pos: Vector3Like, normal: Vector3Like, hex: MarkPaint, radius: number): void {
     const slot = this.slots[this.next];
     this.next = (this.next + 1) % this.slots.length;
     NORMAL.copyFrom(normal);
@@ -301,7 +306,7 @@ export class BulletMarks {
     NORMAL.scaleToRef(CONFIG.effects.markLift, TMP);
     POS.copyFrom(pos).addInPlace(TMP);
     SCALE.setAll(radius * (0.82 + Math.random() * 0.4));
-    const paint = MARK_PAINTS.indexOf(hex as (typeof MARK_PAINTS)[number]);
+    const paint = MARK_PAINTS.indexOf(hex);
     if (paint < 0) throw new Error(`BulletMarks: "${hex}" is no mark paint (MARK_PAINTS)`);
     slot.paint = paint;
     Matrix.ComposeToRef(SCALE, ROT, POS, slot.world);
@@ -333,11 +338,11 @@ export class BulletMarks {
    * already standing is used, and only that one is hidden again, so a mark
    * in the world is never touched.
    */
-  warm(on: boolean, hex: string): void {
+  warm(on: boolean, hex: MarkPaint): void {
     const slot = this.slots[this.slots.length - 1];
     if (on) {
       if (slot.visible) return;
-      slot.paint = Math.max(0, MARK_PAINTS.indexOf(hex as (typeof MARK_PAINTS)[number]));
+      slot.paint = Math.max(0, MARK_PAINTS.indexOf(hex));
       slot.visible = true;
       this.warmed = true;
     } else if (this.warmed) {

@@ -484,7 +484,7 @@ export interface ViewFacts {
  * a HALTED ring, before the halt (`render/PoolDraw.ts`' `stats`, both draws,
  * `BABYLON_EXIT.md` X4.4b) — read as `bodies` is. `drawn` is the main pass's
  * draws of the pieces (a RANK of every piece each, its cel segments and its
- * unlit ones apart) and of the bullet marks (one draw for every mark),
+ * unlit ones apart) and of the bullet marks (one draw for all the marks),
  * `masked` the glow mask's, `instances` the pieces drawn — tracers, cases,
  * thrown and laid bodies, rockets — and `marks` the marks. None is in
  * `counters.drawCalls`, which since X4.4b counts no tracer, mark, case,
@@ -634,7 +634,7 @@ export interface ProfileReport {
   hulls: HullFacts | null;
   /**
    * Our renderer's effect pools at the capture, or null where nothing pushed
-   * a reader (report version 26).
+   * a reader. Absent before report version 26.
    */
   pools: PoolFacts | null;
   /**
