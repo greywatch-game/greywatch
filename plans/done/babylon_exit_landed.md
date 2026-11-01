@@ -4,7 +4,7 @@
 > [`BABYLON_EXIT.md`](../../BABYLON_EXIT.md), which keeps every landed step's
 > heading with a short summary: its commits, what it measured, any picture
 > change or decision, and what it still owes. Below is the full text of
-> Phase 3 (X3.1 to X3.7c) and of Phase 4's landed steps (X4.1a to X4.3b),
+> Phase 3 (X3.1 to X3.7c) and of Phase 4's landed steps (X4.1a to X4.3c),
 > moved here word for word: each step's brief, what it found, what it
 > measured, what its post-commit review found and what it decided. Phases 0
 > to 2 are in [`babylon_exit_phases_0-2.md`](babylon_exit_phases_0-2.md).
@@ -14,7 +14,7 @@
 > paragraph opening "**X3.6c landed**", "**X4.1d landed**" and so on, here.
 > Pointers inside this text to "below" or "above" mean the original file;
 > "Decisions that are yours", "The branch", "Rules every step obeys" and
-> the steps not yet landed (X4.3b onward) are in the live plan, and so is
+> the steps not yet landed (X4.3d onward) are in the live plan, and so is
 > X4.3's own brief (its intro, "Read first", the contracts all four keep
 > and "Verify") until all four of its sub-steps have landed.
 
@@ -5570,10 +5570,10 @@ rows that frame a hull inside it move).
   hull's tracers and a shell's blast past its distance are accepted, not
   owed (the owner's decision above).
 
-### X4.3 — The viewmodel and the kit bay — **M–L, as four sub-steps** (split 2026-10-31, decided the same day) — X4.3a **LANDED** (3e48d98, review fixes after it), X4.3b **LANDED** (fa58735, review fixes after it)
+### X4.3 — The viewmodel and the kit bay — **M–L, as four sub-steps** (split 2026-10-31, decided the same day) — X4.3a **LANDED** (3e48d98, review fixes after it), X4.3b **LANDED** (fa58735, review fixes after it), X4.3c **LANDED** (58ab5ed)
 
 X4.3's intro, "Read first", "Contracts all four keep", "Verify" and the
-briefs of X4.3c-d are in the live plan until all four land. X4.3a's brief,
+brief of X4.3d are in the live plan until all four land. X4.3a's brief,
 word for word:
 
 - **X4.3a — the bank sees the viewmodel (no change to the game).** Landed (below). The bank's
@@ -6102,3 +6102,226 @@ X4.3b's brief, word for word:
     (A first re-run found the walk drawing nothing — the camera's root had
     not been made a top-level child of the walk — which is what the replay
     oracle is for; fixed, and a timing taken on it discarded.)
+
+X4.3c's brief, word for word:
+
+- **X4.3c — the weapon drawn by us: every opaque part (no picture change).** Landed (below).
+  The viewmodel's cel and emissive meshes — every rig's colour groups,
+  magazine and spent magazine, bolt, slide and warhead, every optic's housing
+  and reticle, both arms, the fist and its pip, the bottle and its wick —
+  and the muzzle flash become a KIT our renderer draws (`render/`, beside
+  `BodyDraw` and `HullDraw`): the arrays on the GPU once, at construction,
+  for all nine rigs and every optic, a segment's matrix its joint's world
+  times its own local, drawn while its joint chain is switched on. **One
+  draw a segment, one instance**, the cel ones each with its material's
+  recipe (`celRecipe`, the PLAIN variant — matte, glossy and the mirror rung
+  differ only in values) and the emissive ones by the emissive program (the
+  visor's, X4.1d: alpha 1, the fog toward the map's), and those with a
+  non-black colour into the glow's mask (`Renderer.addGlowMask`) on
+  `glowAdmits(VIEWMODEL_GROUP)` — the stage, which the kit screen keeps. **In
+  Babylon's group-1 ORDER**: its opaque queue is `PainterSortCompare`
+  (material `uniqueId`, then the order the meshes were dispatched;
+  `renderingGroup.js`), which decides who wins an equal depth, so a finish,
+  which swaps a group's material, re-orders it. **Where:** our draws at group
+  0's `"afterGroup"` (`Renderer.ts:76-77`; no draw has used that point yet),
+  which is after the card — the last of group 0's blended queue — and before
+  group 1, which is left holding the two glasses. A finish becomes a recipe
+  swap (`applyFinish`, `finishes.ts:401-414`) and the epoch moves. **The draw
+  is installed for the SESSION, not the round**: the kit screen covers
+  `menu` (`ScreenStack.ts:234-239`), where no map is installed and
+  `BodyDraw`/`HullDraw` are not (`Game.ts:4978-4979`) — so every frame
+  texture must be published there, or the gun is missing from a kit screen
+  raised off the title (verify, `FrameTextures`' null rule). Babylon builds
+  no opaque viewmodel mesh: the builders hand back segments (`WeaponBuild
+  .merge`/`lit`, `buildArm`, `optics.ts`), `WeaponParts.meshes` and
+  `FinishPart.mesh` become them, and `kit:hash --models` hashes the same
+  arrays off them. The viewmodel leaves `WorldCulling`'s candidate list. The
+  pipelines are asked ahead through `PipelineCache`. **A constraint X4.3b
+  left (its post-commit review):** the readers keep Babylon's answers only
+  while the tree's render cache is stamped as Babylon's evaluation stamped
+  it, so once Babylon stops drawing the opaque parts and they leave the
+  cull's list, `ViewTree.draw()` must go on EVALUATING exactly the set
+  Babylon evaluated — every viewmodel mesh switched on (its joint chain) and
+  `isVisible`, drawn or not, by us or by Babylon — and the cache must go on
+  being SETTLED at the render's evaluation id, at the point it is now
+  (`onAfterActiveMeshesEvaluationObservable`, or wherever that id is then
+  read). Narrowing the set to what our renderer draws, or stamping at a
+  different id, moves the next frame's `muzzleWorld` and `throwHandWorld` —
+  two command inputs — and the replay oracle (X4.3b's) is what proves it did
+  not. **Oracle:** the bank's
+  `view-*` rows and X4.3a's byte-identical, every other row too; the glow's
+  mask read back against the parent's at the aimed rows (the reticles), as
+  X3.6d's was; `census --against` (Babylon's draws fall by the gun's, ours
+  counted); `kit:hash --models` unmoved; every finish on every primary,
+  photographed against the parent on the turntable; the kit screen raised
+  from the menu and from deploy at 832x384 and 3440x1440; a round with
+  every weapon, both throwables and both AT items; a netplay round.
+
+**X4.3c landed** (58ab5ed; 2026-10-31; no picture change).
+- **What it is.** Every opaque surface of the viewmodel is a SEGMENT our
+  renderer draws (`render/ViewDraw.ts`, its programs `render/viewProgram.ts`),
+  and **Babylon is made no opaque viewmodel mesh**: each rig's colour groups,
+  magazines and spent magazines, bolt, slide and warhead, each optic's housing
+  and reticle, both arms, the throwing fist with its frag and pip or its
+  bottle and wick, and the muzzle flash's three petals. A segment is a
+  `ViewSegment` (`entities/viewTree.ts`): the `Part` a builder made —
+  `drawnMesh`'s inputs, its arrays, transform, material and metadata — with
+  the two flags of the mesh the frame reads (`isVisible`, and its builder's
+  own switch), made by `toSegment` (`drawnMesh(part)`'s `dress`) or
+  `segmentOf` (a bare buffer at identity). `WeaponBuild.merge` and `lit`,
+  `buildArm`, `optics.ts`' reticles (`segmentOf` of the merged bars), the
+  throw's ball and pip and `PlayerView`'s petals hand back segments;
+  `WeaponParts.meshes` and `SightAssembly.meshes` hold `ViewSurface`s (a
+  segment, or an optic's glass) and `FinishPart.mesh` a segment;
+  `MolotovModel` states the bottle's four parts once (`molotovParts`) and
+  makes them meshes for the world's pool (`buildMolotov`, unchanged in its
+  bytes) and segments for the fist (`molotovSegments`, a part tree `hang`
+  walks as it walked the child meshes); the spent magazine is a segment's
+  twin (`cloneSegment`, what `Mesh.clone` copied); the reload's magazine
+  pivots are measured off `segmentBounds` (Babylon's `extractMinAndMax`,
+  comparison for comparison). The optics' two GLASSES and the kit CARD stay
+  Babylon meshes, hung in the same tree (X4.3d's).
+- **The kit**: every segment the tree holds, in the order hung — the order
+  made — uploaded ONCE at `Game`'s construction (`Game.buildViewDraw`, right
+  after `PlayerView`), all nine rigs and every optic as the meshes were built:
+  313 segments (of the tree's 326 surfaces; 65 unlit, 53 of those into the mask), 222,369 vertices, 402,876 corners, 18 materials as built and one cel pipeline, ~14.1 MB of GPU buffers resident on every boot (positions, normals, colours, uvs and slots each a vertex, the indices) — against the same meshes' buffers Babylon held for the nine rigs built up front before. A segment's arrays as Babylon uploaded a mesh's (float32; a
+  `color` or `uv` it does not carry reading Babylon's empty buffer widened,
+  (0, 0, 0, 1) and (0, 0)), its indices rebased into one `indexData`.
+- **One draw a segment, one instance** (decided: no fold): non-indexed over the
+  segment's corners (`firstVertex` its first index), its instance the draw's
+  place in the frame (`firstInstance`), whose matrix — the segment's joint's
+  world as the evaluation left it, read whole out of storage — is what
+  `freezeWorldMatrix` handed the mesh. A cel segment is drawn by the cel
+  program with its material's recipe (`celRecipe`: matte, glossy and the
+  mirror rung are all the `PLAIN` variant, one pipeline, a block and group a
+  recipe made the first time the recipe is drawn, re-copied when the epoch
+  moves); an unlit one — a reticle, a bead, a post (emissive BLACK), the pip,
+  the wick, a petal — by the emissive palette's program over the weapon's
+  own table (`CelMaterialFactory.viewEmissiveRecipe`: one slot a
+  `getEmissive` colour, the fog band by reference, alpha 1), the visor's
+  arrangement (X4.1d). Seven storage arrays in the vertex stage.
+- **In Babylon's group-1 ORDER.** Group 1's opaque queue was
+  `PainterSortCompare` (the material's `uniqueId`) over the dispatch order —
+  the cull's candidate order, which was the order the meshes were made — and
+  V8's sort is stable; `Game.drawView` reproduces it every frame: the tree's
+  evaluated segments in the order hung, stably insertion-sorted by
+  `material.uniqueId`. The materials are still the factory's (`get`,
+  `getGlossy`, `getEmissive`), made in the order they were, so their ids keep
+  their relative order, and a FINISH — a material write — re-orders the draws
+  exactly as it re-ordered the queue.
+- **Where**: group 0's `"afterGroup"` (`Renderer.add`; the first draw at that
+  point) — after the kit card, the last of group 0's blended queue, and before
+  group 1, which keeps the two glasses. Into the world's depth with no clear,
+  so the ink, the blur, the paper and the glow's occlusion name the gun by
+  depth as before; the cel parts write `opaqueAlpha`, the emissives 1.
+- **The glow's mask**: the lit segments whose colour is above black and which
+  carry no `noGlow` (`GlowPass.buildList`'s tests of a mesh's own) — each at
+  the bloom `GlowRules.colour` gave its mesh: the bounding sphere's centre off
+  `segmentBounds` through the draw's matrix, faded by the fog at its distance
+  from `globalPosition`, PULLED inside the render (`Game.viewPull`, in the
+  prepare), as the visors' is — drawn first in that pass by the main pass's
+  own vertex module (`Renderer.addGlowMask`), on
+  `glowAdmits(VIEWMODEL_GROUP)` (the stage, which the kit screen keeps).
+- **Installed for the SESSION**: the draw, its prepare, its mask and both
+  refusal listeners are hooked at construction, because the kit screen covers
+  `menu`, where no map stands — and every frame texture the cel pixel binds is
+  published there (the gun drawn on a kit screen raised off the title is the
+  proof, below). A failure — a pipeline that did not build, or a refused pass
+  while the weapon draws — is told to `ViewDraw.onFailed`'s listener: the
+  round's `worldFailed` while one stands (set at `installMap`, and told at once
+  if the pipelines had already failed), the console's otherwise (reset at
+  `teardownMap`). Its pipelines (the cel variant every material the kit is born
+  wearing shares, and the emissive pair) are asked at construction, so the
+  warm-up's wait for ours covers them; a recipe of a shape not asked then would
+  be asked at its first draw, DEV-warned.
+- **The evaluation is kept whole**, as X4.3b's review asked: `ViewTree.draw`
+  evaluates every surface switched on and visible — a segment or a glass,
+  whoever draws it — through the `RenderCache`, settled at the render's
+  evaluation id from inside the render as before, and lists the segments it
+  found (`evaluated`) for `Game.drawView`; a glass and the card are frozen as
+  before. The weapon leaves `WorldCulling`'s candidate list (no mesh is made of
+  it), and so the size gate, the frustum and `isReady()`.
+- **The instruments taught the segments.** `kit:hash --models` hashes a segment
+  IN THE BYTES ITS MESH GAVE: made a throwaway mesh by the game's own
+  `drawnMesh` on the same arrays, dressed with the flags the mesh carried (its
+  own switch and `isVisible`, never pickable, and in a tree hung from a camera
+  the viewmodel's group and always-active), recorded and disposed, at its
+  place in the scene's order (a tree's surfaces in the order made — asserted
+  equal to the scene's for the meshes that remain — then every other mesh); a
+  segment in the builder's data is spelled `Mesh:<name>`. `census.mjs` counts
+  `viewDraw.stats.drawn` with ours. The profiler's report **version 23** adds
+  `view` (`drawn`, `masked`; `FrameProfile.setView`), the viewer prints it as
+  `weapon`.
+- **Measured.**
+  - **The bank** against a BEFORE at edccb4f in the worktree (`--check --keep`
+    both sides): **83 of 84 byte-identical** (`comparePngs`), every Harrowmead
+    row among them — the 22 `view-*` and `kit-*` rows and `view-pistol-reload`,
+    whose flake did not come up — on the first run of the step. The 84th,
+    `sarab/shelf`, differs by one pixel by 1/255, the worktree's own: the
+    parent run in the MAIN tree (`git stash`) draws the step's bytes on all
+    eleven Sarab rows (X4.1e's and X4.2a's pixel). The same 34 stale rows on
+    both sides, no console or page error.
+  - **The glow's mask read back** (a scratch readback of `GlowPass.mask` at
+    every Harrowmead row in the bank's sequence, on both trees): **37 of 37
+    identical**, the aimed rows' reticles among them (lit texels: holo 1,294,
+    prism 2,778, green dot 648, long scope 13,333, pistol 711, launcher 2,056,
+    the flash 8,467); our mask drew 1-4 segments on 28 of the rows.
+  - **`census --against`** the BEFORE: every row and every total equal (278,
+    205, 672, 2,314, 472, 213, 125); on Harrowmead's view and kit rows
+    Babylon's draws fell by the gun's — 8 to 19 a row (`view-holo-aim`
+    37 → 23, the glass still Babylon's; `view-pistol-reload` 41 → 22) — and
+    ours rose by the same.
+  - **`kit:hash --models`** against the parent: **244 of 244 identical** (the
+    64 `viewmodel`, 153 `weapon:*`, `player` and `molotov` rows among them).
+  - **Every finish on every primary** on the turntable (the real kit lid over
+    `deploy` through the bank's kit-row machinery, the desktop bay, the irons,
+    six primaries times sixteen finishes): **96 of 96 byte-identical** to the
+    parent.
+  - **X4.3b's replay oracle**, re-run on both trees with the digest taken by
+    TREE INDEX (the parent's meshes and the step's segments compare
+    directly): the recorded round **1,563 frames identical (24,651 drawn
+    surfaces) and 303 reader answers identical as float64 bits**, and the same
+    303 against the live recording; the seeded sequence through all nine rigs
+    in all seven sights **3,981 frames identical (61,242) and 2,286 reader
+    answers identical**. On the step every drawn segment's matrix is its
+    joints' fresh composition (84,368, 0 differ) and the draw order is
+    Babylon's group-1 sort on every frame.
+  - **The kit screen** raised from the MENU (no map) and from `deploy`, its
+    DOM up, at 832x384 and 3440x1440, a weapon and a sight changed on it and
+    turned, then a round entered: the gun drawn from the title (10 draws, 2
+    mask draws, no map standing), no page or console error; each shot taken
+    twice, and the cross-tree difference within the live screen's own A-vs-B
+    noise.
+  - **Rounds** (a scratch probe): offline, six lives on Harrowmead, every
+    primary with a sight each, the pistol drawn and fired, both throwables and
+    both AT items (a rocket fired, a mine laid) — the weapon drawn on every one
+    of 6,012 frames with the body up (9-21 draws), 87,808 drawn segments each
+    its joints' fresh composition, the six grenade and three rocket origins
+    the readers' answers through `Game`'s floor bit for bit (the three mine
+    lays read no viewmodel), no `refused`, no error; and a netplay round
+    against a local `dist-server` built from the step (1,002 frames, 14,576
+    segments fresh, a frag's and a rocket's origins bit for bit, no
+    `refused`, no error).
+  - **`gate.mjs`** clean on seven; **`shaders.mjs`** clean on seven, ours 17/17 (21/21 Sarab and Cinderhaven, 23/23 Coldharbour — it builds the world's programs; the weapon's are built at boot, where a failure is the console's or the round's). Typecheck, build (`check-babylon-free` clean, `src/render/` walked with the two new files), corecheck (all passed), `math-check` (81 cases) and `parity` (every map) pass.
+- **Deviations.** **The profiler's `view`** (report version 23), which the
+  brief did not name: X4.1d's review found the profiler blind to the bodies'
+  draws and this is the same hole for the weapon. **The mask order**: Babylon
+  drew the weapon's emissives LAST in the mask, in group 1, and ours go FIRST
+  with the palette's and the visors'; the order matters only where two mask
+  draws pass at one pixel, which for depth-writing draws is an exact tie —
+  plausibly a tracer lying along a flash petal on a shot's first frame — and
+  no banked row has one (the readback above is identical). **A new finish
+  material draws at once**: Babylon skipped a mesh whose freshly minted
+  ShaderMaterial was still compiling, for a frame or two after a repaint; a
+  segment draws off the recipe, whose pipeline is shared. Neither is in the
+  bank. **The instruments** (`kit:hash`, `census`) were taught the segments
+  rather than re-baselined. `FINDINGS.md` 16's "only the weapon and optic
+  WORN are warmed" is narrowed to the glass (X4.3d settles it), and
+  `VERIFYING.md`'s flash recipe (`flashRoot` a joint since X4.3b) and its
+  material-swap trap are corrected. `CLAUDE.md` is 1,554 lines (four up).
+- **Owed onward.** X4.3d: the two glasses and the card as draws of ours, the
+  group and `Player.warmView` gone, the glow's stage rule stated by the draw
+  (`ViewDraw` asks `glowAdmits(VIEWMODEL_GROUP)` until then), and the
+  profiler's `drawOverlay`. X5.4: the render cache's frame id (decided).
+  The construction cost of the kit (built and uploaded on every boot, the
+  menu included) is unmeasured on the phone.
