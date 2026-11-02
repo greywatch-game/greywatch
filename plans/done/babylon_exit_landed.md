@@ -6826,7 +6826,7 @@ X4.3d's brief, word for word:
     run-to-run noise (1-3/255); `gate.mjs` and `shaders.mjs` clean on
     seven; typecheck, build, corecheck and `parity` pass.
 
-### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (63a338a, review fixes after it), X4.4b **LANDED** (9470686), X4.4c **LANDED** (d82f311), X4.4d **LANDED** (HASH)
+### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (63a338a, review fixes after it), X4.4b **LANDED** (9470686), X4.4c **LANDED** (d82f311), X4.4d **LANDED** (9d81875)
 
 X4.4a's brief, word for word:
 
@@ -7482,7 +7482,7 @@ X4.4c's brief, word for word:
   - A server's round (`x44c/net2.mjs`, `PORT=8097`): B threw two frags and fired two rockets; on A the authority's `explode` 4, billows drawn on 758 frames (up to 192, 3 draws, 3 mask draws), the wire's frags and rockets drawn (203 and 418 piece-frames); 0 errors on either page.
   - A profiler capture at report version 27 with a blast and a burst live: `pools: { drawn: 6, masked: 3, instances: 7, marks: 9, billows: 42, debris: 12 }`.
 
-**X4.4d landed** (HASH; 2026-11-01; no picture change).
+**X4.4d landed** (9d81875; 2026-11-01; no picture change).
 - **What moved.** Every world fire — a block's merge of `world/flame.ts`
   surfaces (35 on the seven maps: Hollowmere 11, Greyfen 3, Coldharbour 2,
   Harrowmead 2, Sarab 2, Cinderhaven 15, Kurenai none), the fire drums'

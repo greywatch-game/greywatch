@@ -1020,7 +1020,7 @@ card behind it are off Babylon's scene, and no sub-step changed the picture.
 
 The full record is in [the archive](plans/done/babylon_exit_landed.md).
 
-### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (63a338a, review fixes after it), X4.4b **LANDED** (9470686), X4.4c **LANDED** (d82f311), X4.4d **LANDED** (HASH)
+### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (63a338a, review fixes after it), X4.4b **LANDED** (9470686), X4.4c **LANDED** (d82f311), X4.4d **LANDED** (9d81875)
 
 Every pooled effect Babylon still draws comes off its scene but the three
 that blend among the panes (decided 2026-11-01: they wait for X4.6), and the
@@ -1334,7 +1334,7 @@ Everything else in X4.4 moves as briefed; `fx-glass-sort` is X4.6's BEFORE.
   after a build counted three of the install's 24 late, under the spawn);
   typecheck, build, corecheck pass.
 - **X4.4d — the fires are ours, and the held-caster layer goes LANDED**
-  (HASH; 2026-11-01; no picture change). Every world fire — a block's merge
+  (9d81875; 2026-11-01; no picture change). Every world fire — a block's merge
   of `world/flame.ts` surfaces, the fire drums, hearths and candles among
   them — and every flame of a burning molotov is our renderer's
   (`render/FlameDraw.ts`, `render/flameProgram.ts`, the WGSL
