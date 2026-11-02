@@ -428,25 +428,6 @@ export class GrenadeFx {
   }
 
   /**
-   * The blast's billows and one molotov flame shown, or taken back off, for
-   * the frames of the building card's pipeline warm-up — see `BlastFx.warm`. A
-   * map with no fire of its own standing had never drawn the flame's
-   * material, so a round's first molotov compiled it. The flame is the first
-   * of the LAST fire slot, used only while that slot is free, at a fire's own
-   * stretch — drawn by our renderer since `BABYLON_EXIT.md` X4.4d, whose
-   * pipelines are asked at `Game`'s construction, so the pose is redundant
-   * and goes with the rest at X4.4e.
-   */
-  warm(on: boolean): void {
-    this.blasts.warm(on);
-    const set = this.fires[this.fires.length - 1];
-    const flame = set?.flames[0];
-    if (!flame || set.id >= 0) return;
-    if (on) flame.node.scaling.set(1, 1.5, 1);
-    flame.node.visible = on;
-  }
-
-  /**
    * Everything off the screen — every body, every flame and every cloud —
    * beside `GrenadeSystem.reset`, wherever the map under it is thrown away. A
    * cloud left up would hang in the middle of an editor rebuild.

@@ -137,7 +137,7 @@ import { callsign } from "../entities/callsigns";
 import { OTHER_TEAM, type Combatant, type Team } from "../entities/Combatant";
 import { FrameCap } from "./FrameCap";
 import { FrameProfile } from "./FrameProfile";
-import { PipelineWarmup } from "./PipelineWarmup";
+import { type DeclaredPipelines, PipelineWarmup } from "./PipelineWarmup";
 import { P } from "./profilePhases";
 import { NetSession, type LocalGun, type LocalHull } from "../net/NetSession";
 import { LocalOwner } from "../net/LocalOwner";
@@ -952,6 +952,24 @@ export class Game {
    * pieces' are. An editor build's fires are Babylon's meshes.
    */
   private readonly flameDraw: FlameDraw;
+  /**
+   * THE ROUND'S DECLARED PIPELINES (`BABYLON_EXIT.md` X4.4e): every draw of
+   * ours a round can use whatever its map, each of whose pipelines is asked
+   * ONCE, here at construction, for the session — the bodies, the hulls,
+   * the weapon, the bodies' shadow map and every effect pool of ours (the
+   * pieces: the tracers, the brass, the thrown and laid bodies of both
+   * sides of the wire; the marks; the billows; the shards and the rubble;
+   * the fires). The building card's warm-up waits on this list by name
+   * before its first vantage (`core/PipelineWarmup.ts`), beside the map's
+   * own pipelines, which its install asked; and our cache is SEALED once
+   * the card is down (`PipelineCache.seal`), so a compile in play is a
+   * DEV warning naming what this list missed. **This is what the
+   * `warm(on)` poses of the pools that are ours became**: nothing of ours
+   * is posed at a vantage. A new draw of ours joins it, or its first use
+   * compiles in the round. The pools still Babylon's keep their poses
+   * (`stageWarmFrame`).
+   */
+  private readonly roundPipelines: readonly DeclaredPipelines[];
   /**
    * `flamePull`'s scratch, sized to the draw's capacity at each install:
    * this frame's drawn fires — a molotov flame by its index in
@@ -2420,6 +2438,19 @@ export class Game {
       debris: this.debrisDraw.stats.instances,
       fires: this.flameDraw.stats.drawn,
     }));
+    // The list itself — see the field. Every entry's asks were made by its
+    // constructor, above; this states them, in one place.
+    this.roundPipelines = [
+      { name: "bodies", ready: this.bodyDraw.ready },
+      { name: "the bodies' shadow map", ready: this.bodyShadowMap.ready },
+      { name: "hulls", ready: this.hullDraw.ready },
+      { name: "the weapon", ready: this.viewDraw.ready },
+      { name: "pieces", ready: this.pieceDraw.ready },
+      { name: "marks", ready: this.markDraw.ready },
+      { name: "billows", ready: this.blastDraw.ready },
+      { name: "debris", ready: this.debrisDraw.ready },
+      { name: "fires", ready: this.flameDraw.ready },
+    ];
     // The sky hangs behind every state (menu included), so it is dressed
     // once here and re-applied per round alongside the environment.
     this.sky = new Sky(this.scene);
@@ -3094,6 +3125,18 @@ export class Game {
     // environment is one map's own module constant, so the same spec object
     // never stands over two sizes of map.
     this.sky.apply(env, this.mapDef.layout.size ?? CONFIG.map.size);
+    // **The sky is what holds rendering group 0 in every state** — over the
+    // menu with no map, the ONLY mesh of Babylon's in it (`BABYLON_EXIT.md`
+    // X4.4e measured every state) — and every draw of ours hangs on that
+    // group's points, which Babylon never visits empty (`Renderer`'s seam,
+    // X4.5's to fix). Every shipped map states a sky; one that does not
+    // builds none, and the kit screen over the menu would draw no weapon.
+    if (import.meta.env.DEV && !env.sky) {
+      console.warn(
+        `[sky] ${this.mapDef.id} states no sky: over the menu rendering group 0 may hold no mesh, ` +
+          `and nothing of our renderer's hung on it runs (BABYLON_EXIT.md X4.5, the empty-group seam)`,
+      );
+    }
     // Nothing for the shafts here. Their colour, their air, their reach and the
     // light they are shafts OF are pushed together by `seedVolumetrics` off the
     // ENVIRONMENT — which is not the same trigger as this one: the sky is
@@ -5301,6 +5344,9 @@ export class Game {
     this.sfx.ambienceAllOff();
     // Our renderer's copies of the blocks go with the meshes they stand for.
     this.handover.clear();
+    // …and the round's seal on our pipeline cache (`finishBakeWait`): the
+    // next map's install asks pipelines of its own, before its card is down.
+    this.renderer.pipelines.seal(false);
     this.map?.dispose();
     this.map = null;
     this.combatFx.clearTransient();
@@ -7327,13 +7373,15 @@ export class Game {
     for (const sp of map.spawns) if (sp.team !== null) points.push(toBabylon(sp.pos));
     for (const cp of map.controlPoints) points.push(toBabylon(cp.pos));
     // Our renderer's pipelines are awaited by the warm-up itself, before its
-    // first vantage (see `PipelineWarmup`) — the bodies' among them, asked
-    // once for the session (`BodyDraw`), so no body is stood up here for a
-    // pipeline to compile on (`BABYLON_EXIT.md` X4.1d).
+    // first vantage (see `PipelineWarmup`): the round's declared list, asked
+    // once for the session — so no body, hull, weapon or pool of ours is
+    // stood up here for a pipeline to compile on (`BABYLON_EXIT.md` X4.1d,
+    // X4.4e) — and the map's own, asked by its install.
     wait.warm = new PipelineWarmup(
       points,
       WebGPUCacheRenderPipeline.NumCacheMiss,
       this.renderer.pipelines,
+      this.roundPipelines,
     );
   }
 
@@ -7360,13 +7408,16 @@ export class Game {
     this.shadowFocus.copyFrom(vantage);
     camera.position.copyFrom(vantage);
     // …and what the map does not have standing: the pools a round draws from
-    // the moment it starts — a shot and a blast — each of which is idle and
-    // switched off until then, and each of which used to compile on the frame
-    // it was first needed. An idle member of each, posed as it is in flight,
-    // for this frame. A SOLDIER is no longer one of them: every body is our
-    // renderer's, its pipelines asked ahead (`BABYLON_EXIT.md` X4.1d).
+    // the moment it starts that are still BABYLON'S — a shot's sparks and
+    // dust discs and a blast's scorch, each idle and switched off until then,
+    // each of which used to compile on the frame it was first needed — an
+    // idle member of each, posed as it is in flight, for this frame, and the
+    // player's blob shadow. Those alone, until they move with the glazing
+    // (`BABYLON_EXIT.md` X4.6): every pool that is OURS — a tracer, a mark, a
+    // case, a thrown or laid body, a billow, a shard, a chunk, a flame — is on
+    // the round's declared list instead (`roundPipelines`, X4.4e), as every
+    // body, hull and weapon is (X4.1d-X4.3d), and is posed by nothing.
     this.combatFx.warm(true);
-    this.grenadeFx.warm(true);
     this.blastDebris.warm(true);
     this.shadows.warmBlob(true, this.player);
     this.updateSceneForCamera(0, this.shadowFocus, null, NO_SOLDIERS, NO_SOLDIERS);
@@ -7380,7 +7431,6 @@ export class Game {
     this.scene.skipFrustumClipping = false;
     this.culling.setWarm(false);
     this.combatFx.warm(false);
-    this.grenadeFx.warm(false);
     this.blastDebris.warm(false);
     this.shadows.warmBlob(false, this.player);
     // Position and rotation outright rather than through `place`, whose
@@ -7477,6 +7527,10 @@ export class Game {
     if (warmed) {
       this.shadowFocus.copyFrom(this.cameraSys.camera.position);
       this.updateSceneForCamera(0, this.shadowFocus, null, NO_SOLDIERS);
+      // Every pipeline of ours the round can use is built by now — the
+      // declared list and the map's — so a compile from here to the map's
+      // teardown is one nothing asked: sealed, which a DEV build reports.
+      this.renderer.pipelines.seal(true);
     }
     // Read and cleared BEFORE the two calls below, neither of which may find
     // it still standing: `spawnPlayer` is the answer to it, and `enterDeploy`

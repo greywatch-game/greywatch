@@ -3,8 +3,9 @@
  * pipeline our renderer draws or computes with, built once and keyed on what
  * makes one different from another, and how many of them are compiling.
  * Owns: the four caches, the rule that turns an assembled binding list into
- * a `GPUBindGroupLayout` (`layoutEntry`), and the compile counts the building
- * card's warm-up reads (`CompileProgress`).
+ * a `GPUBindGroupLayout` (`layoutEntry`), the compile counts the building
+ * card's warm-up reads (`CompileProgress`), and the SEAL a round is played
+ * under (`seal`).
  * Invariants: a pipeline is keyed on its shader VARIANT (both modules'
  * CODE, which a label is not trusted to stand for), its TARGETS
  * (`targetsKey`) and its fixed-function state, and nothing else distinguishes
@@ -15,7 +16,11 @@
  * frame that first uses it, which is what the warm-up exists to move); a
  * compile that FAILS is not cached, so asking again retries it; every compile
  * this cache starts is COUNTED, in flight and once settled, so the warm-up
- * can wait on it (`core/PipelineWarmup.ts`); every RENDER pipeline's layout
+ * can wait on it (`core/PipelineWarmup.ts`); a compile started while the
+ * cache is SEALED — from the building card's end to the map's teardown — is
+ * one the round's declared list missed, a hitch in play, and a DEV build says
+ * which (`BABYLON_EXIT.md` X4.4e: every pipeline a round can use is asked
+ * before the card comes down); every RENDER pipeline's layout
  * is EXPLICIT, built from the bindings the modules were assembled with,
  * never `"auto"`, and layouts are shared by their entries — so a bind group
  * made for one pipeline binds into any other whose group has the same
@@ -93,6 +98,8 @@ export class PipelineCache implements CompileProgress {
   private readonly computes = new Map<string, Promise<GPUComputePipeline>>();
   private inFlight = 0;
   private done = 0;
+  /** Whether a round is being played, so a compile now is a miss — see `seal`. */
+  private sealed = false;
 
   constructor(private readonly device: GPUDevice) {}
 
@@ -104,9 +111,24 @@ export class PipelineCache implements CompileProgress {
     return this.done;
   }
 
+  /**
+   * Sealed from the moment the building card comes down until the map is
+   * torn down or rebuilt (`Game.finishBakeWait`, `Game.teardownMap`): a
+   * compile started in between is a pipeline the round's declared list
+   * (`Game.roundPipelines`) and the map's install did not ask, compiled in
+   * play — a DEV build warns, naming it. It changes nothing else: the compile
+   * is made and counted as any other.
+   */
+  seal(on: boolean): void {
+    this.sealed = on;
+  }
+
   /** The pipeline for `spec`, compiled once; every later ask shares the same promise. */
   get(spec: PipelineSpec): Promise<BuiltPipeline> {
-    return this.cached(this.pipelines, pipelineKey(spec), (key) => this.build(spec, key));
+    return this.cached(this.pipelines, pipelineKey(spec), (key) => {
+      this.missed(`${spec.vertex.label} / ${spec.fragment.label}`);
+      return this.build(spec, key);
+    });
   }
 
   /**
@@ -115,13 +137,21 @@ export class PipelineCache implements CompileProgress {
    * shares the same promise.
    */
   compute(label: string, code: string, entry: string): Promise<GPUComputePipeline> {
-    return this.cached(this.computes, `${label}:${entry}:${code}`, async () =>
-      this.device.createComputePipelineAsync({
+    return this.cached(this.computes, `${label}:${entry}:${code}`, async () => {
+      this.missed(`${label}: ${entry}`);
+      return this.device.createComputePipelineAsync({
         label: `${label}: ${entry}`,
         layout: "auto",
         compute: { module: this.module({ label, code, bindings: [] }), entryPoint: entry },
-      }),
-    );
+      });
+    });
+  }
+
+  /** A compile is starting: under the seal, a DEV build says which. */
+  private missed(name: string): void {
+    if (import.meta.env.DEV && this.sealed) {
+      console.warn(`[pipelines] "${name}" compiled in play — asked by nothing before the building card came down`);
+    }
   }
 
   /** `key`'s compile out of `cache`, started and counted on a miss; a failure is forgotten. */

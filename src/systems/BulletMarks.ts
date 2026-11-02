@@ -328,30 +328,6 @@ export class BulletMarks {
     slot.radius = Math.max(Math.abs(TMP.x), Math.abs(TMP.y), Math.abs(TMP.z)) * shape.radius;
   }
 
-  /**
-   * Shows one idle mark for the frames of the building card's pipeline
-   * warm-up (`core/PipelineWarmup.ts`), or takes it back off — where it last
-   * stood, in `hex`, as the mesh was shown. Our renderer draws a
-   * mark (`BABYLON_EXIT.md` X4.4b) and its pipeline, depth bias and all, is
-   * asked ahead for the session, so this compiles nothing any more; it stays
-   * until X4.4e makes the warm-up a declared list. Only a slot that is not
-   * already standing is used, and only that one is hidden again, so a mark
-   * in the world is never touched.
-   */
-  warm(on: boolean, hex: MarkPaint): void {
-    const slot = this.slots[this.slots.length - 1];
-    if (on) {
-      if (slot.visible) return;
-      slot.paint = Math.max(0, MARK_PAINTS.indexOf(hex));
-      slot.visible = true;
-      this.warmed = true;
-    } else if (this.warmed) {
-      slot.visible = false;
-      this.warmed = false;
-    }
-  }
-  private warmed = false;
-
   /** Takes every mark off the world. Called when a map is torn down. */
   clear(): void {
     for (const slot of this.slots) slot.visible = false;

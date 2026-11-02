@@ -278,15 +278,14 @@ there that takes it back.
 **`loading` ends in a PIPELINE WARM-UP** (`core/PipelineWarmup.ts`): after the
 reflection bake, the card draws the whole map from each home spawn and flag
 until a frame compiles nothing, because WebGPU compiles a pipeline on the frame
-that first draws it. **It OPENS by waiting for OUR renderer's pipelines**,
-which are asked for ahead and compiled off the frame (`PipelineCache`'s
-counts) — every BODY's, HULL's, the WEAPON's, the pools' PIECES', MARKS',
-BILLOWS' and DEBRIS'.
-What it cannot see it is SHOWN by a `warm(on)` on whatever owns an idle pool of
-Babylon's (a shot, a blast, a scorch, a blob) — **posed as IN FLIGHT**, since a
-stretched mesh or a `visibility` under 1 is a different pipeline. **A new pool
-that idles switched off owes one** (or ours, asked ahead), or its first use
-compiles in the round.
+that first draws it. **It OPENS by waiting for OUR renderer's pipelines** — the
+round's DECLARED list (`Game.roundPipelines`: bodies, hulls, weapon and every
+pool of ours, asked once at construction) and the map's, which its install
+asks — and our cache is SEALED once the card is down (a compile in play is a
+DEV warning). **A new draw of ours joins that list.** The vantages are for
+BABYLON's meshes, and an idle pool of its own is SHOWN by a `warm(on)` —
+**only the sparks, the dust discs and the scorch** (Babylon's until X4.6) and
+the blob — **posed as IN FLIGHT**: a `visibility` under 1 is another pipeline.
 
 **A LID is a screen laid over a state, which taking it off puts back rather than
 moving the game on — and which state is which, and what each one owes, is

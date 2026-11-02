@@ -124,20 +124,32 @@ turn (`core/PipelineWarmup.ts`), until a frame compiles nothing. It is a phase
 of the same wait rather than a wait of its own, on purpose: `go` and
 `buildPending` already answer for that one, so nothing had to be taught it
 exists. **It OPENS with no vantage at all, waiting for OUR renderer's
-pipelines** (`render/PipelineCache.ts`, handed in as `CompileProgress`):
-those were asked for as the map was built and compile off the frame, so
-drawing does not hurry them, but a group of ours still compiling draws
-NOTHING and Babylon no longer draws the blocks in the main pass — so the
-vantages are drawn with ours built. Three rules hold it to `loading`'s
+pipelines** (`render/PipelineCache.ts`, handed in as `CompileProgress`): the
+round's DECLARED list (`Game.roundPipelines` — the bodies, the hulls, the
+weapon, the bodies' shadow map and every effect pool of ours, each asked once
+at `Game`'s construction, waited on by name) and the map's own, asked as its
+install built them. They compile off the frame, so drawing does not hurry
+them, but a group of ours still compiling draws NOTHING and Babylon no longer
+draws the blocks in the main pass — so the vantages are drawn with ours
+built, and nothing of ours is POSED at one (`BABYLON_EXIT.md` X4.4e: the
+`warm(on)` poses of the pools that are ours became that list). **The
+vantages are for Babylon's own meshes** — the sky, the grass and its turf,
+the water, the glazing, the flags and the capture rings, the particles, and
+the three blended pools still Babylon's until X4.6, which are the only poses
+left. **When the wait ends, our cache is SEALED** (`PipelineCache.seal`)
+until the map is torn down: a pipeline of ours compiled in play is a DEV
+warning naming it — what the list missed. Three rules hold it to `loading`'s
 contract:
 
 - **Nothing a warm frame changes outlives that frame.** `Game.stageWarmFrame`
   stands the camera at the vantage, offers every mesh but the blocks our
   renderer draws, whose cull is handed an unbounded reach and no size gate
   instead (`WorldCulling.setWarm`), turns Babylon's frustum test off
-  (`skipFrustumClipping`) and shows an idle member of each pool, posed as it
-  is in flight — our cull keeps its frustum, which costs nothing, since our
-  pipelines are not compiled by drawing;
+  (`skipFrustumClipping`) and shows an idle member of each pool still
+  Babylon's — `CombatFx`'s sparks and dust discs, `BlastDebrisSystem`'s scorch
+  — and the player's blob, posed as it is in flight — our cull keeps its
+  frustum, which costs nothing, since our pipelines are not compiled by
+  drawing;
   `unstageWarmFrame` puts every one of those back straight after the render. A
   wait abandoned between two frames therefore leaves no map drawn unculled and
   no camera parked at a flag.

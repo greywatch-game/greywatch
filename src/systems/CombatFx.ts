@@ -10,7 +10,9 @@
  * `BulletMarks`, both drawn by OUR renderer (`Game.drawPieces`,
  * `Game.drawMarks`) with no Babylon mesh made of either; the sparks and the
  * dust discs stay Babylon meshes, because they FADE among the see-through
- * panes in Babylon's transparent sort, and move with the glazing at X4.6.
+ * panes in Babylon's transparent sort, and move with the glazing at X4.6 —
+ * so they alone keep a `warm(on)` pose for the building card's warm-up, the
+ * tracer and the mark being on the round's declared list (X4.4e).
  * Invariants: it READS the simulation and never writes it — what it draws
  * reaches it as `CombatSystem.onRound` (wired by `Game`) or as a `drawRounds`
  * call, and nothing here deals damage, raises a near miss or breaks glass.
@@ -54,9 +56,9 @@ import {
   Vector3,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import { Piece, pieceKit, type PieceKit, type PieceNode, type PiecePart } from "../entities/pieces";
+import { Piece, pieceKit, type PieceKit, type PiecePart } from "../entities/pieces";
 import { createCylinder } from "../geometry/primitives";
-import { Quaternion as MathQuaternion, Vector3 as MathVector3, type Vector3Like } from "../math";
+import { Quaternion as MathQuaternion, type Vector3Like } from "../math";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { Part } from "../world/parts";
 import { newRayHit, type RayHull, type RayWorld } from "../world/RayWorld";
@@ -442,20 +444,22 @@ export class CombatFx {
   }
 
   /**
-   * Shows idle members of the effect pools for the frames of the building
-   * card's pipeline warm-up (`core/PipelineWarmup.ts`), or takes them back
-   * off — so the first shot of a round draws through pipelines already
-   * compiled rather than paying for four of them on the frame the trigger is
-   * pulled.
+   * Shows idle members of the two pools here that are still BABYLON'S — the
+   * sparks and the dust discs — for the frames of the building card's
+   * pipeline warm-up (`core/PipelineWarmup.ts`), or takes them back off, so
+   * the first shot of a round draws them through pipelines already compiled
+   * rather than paying for them on the frame the trigger is pulled. **Those
+   * two alone, until they move with the glazing** (`BABYLON_EXIT.md` X4.6):
+   * the tracer and the mark are our renderer's, their pipelines on the
+   * round's declared list (`Game.roundPipelines`, X4.4e), and posed by
+   * nothing.
    *
    * **Each is posed as it is IN FLIGHT, because that is what decides the
-   * pipeline, and an idle pose compiles the wrong one.** A tracer is stretched
-   * along its length, and a non-uniform scale is a different effect
-   * (`NONUNIFORMSCALING`); a spark and a disc fade by `visibility`, and under 1
-   * that is a BLENDED pipeline beside the opaque one their first frame uses —
-   * so the two of those are shown twice, once at each. Only idle slots are
-   * used, from the end of each pool, and every property touched is put back
-   * exactly as it was.
+   * pipeline, and an idle pose compiles the wrong one.** A spark and a disc
+   * fade by `visibility`, and under 1 that is a BLENDED pipeline beside the
+   * opaque one their first frame uses — so each is shown twice, once at
+   * each. Only idle slots are used, from the end of each pool, and every
+   * property touched is put back exactly as it was.
    */
   warm(on: boolean): void {
     const look = IMPACTS.hard;
@@ -468,55 +472,33 @@ export class CombatFx {
         w.mesh = null;
       }
       this.warmedCount = 0;
-      const warmed = this.warmedTracer;
-      if (warmed) {
-        warmed.visible = false;
-        warmed.scaling.copyFrom(this.warmedScale);
-        this.warmedTracer = null;
-      }
-      this.marks.warm(false, look.mark!.hex);
       return;
-    }
-    // The tracer and the mark are our renderer's (`BABYLON_EXIT.md` X4.4b),
-    // their pipelines asked ahead for the session; still posed in flight here
-    // as they always were, until X4.4e makes the warm-up a declared list.
-    const tracer = this.tracers[this.tracers.length - 1];
-    const node = tracer.piece.root;
-    if (!tracer.alive && !node.visible) {
-      this.warmedTracer = node;
-      this.warmedScale.copyFrom(node.scaling);
-      node.scaling.set(1, 3, 1);
-      node.visible = true;
     }
     for (let i = 0; i < 2; i++) {
       const spark = this.sparks[this.sparks.length - 1 - i];
       if (spark.t > 0) continue;
       spark.mesh.material = this.mats.getEmissive(look.spark!);
-      this.warmOne(spark.mesh, i === 0 ? 1 : 0.5, 1);
+      this.warmOne(spark.mesh, i === 0 ? 1 : 0.5);
     }
     for (let i = 0; i < 2; i++) {
       const disc = this.discs[this.discs.length - 1 - i];
       if (disc.t > 0) continue;
       disc.mesh.material = this.mats.getEmissive(look.disc!);
-      this.warmOne(disc.mesh, i === 0 ? 1 : 0.5, 1);
+      this.warmOne(disc.mesh, i === 0 ? 1 : 0.5);
     }
-    this.marks.warm(true, look.mark!.hex);
   }
 
   /** One pooled mesh shown for `warm`, its old visibility and scale kept. */
-  private warmOne(mesh: Mesh, visibility: number, stretch: number): void {
+  private warmOne(mesh: Mesh, visibility: number): void {
     if (mesh.isVisible) return;
     const w = this.warmed[this.warmedCount++];
     w.mesh = mesh;
     w.visibility = mesh.visibility;
     w.scaling.copyFrom(mesh.scaling);
     mesh.visibility = visibility;
-    mesh.scaling.set(1, stretch, 1);
+    mesh.scaling.set(1, 1, 1);
     mesh.isVisible = true;
   }
-  /** The streak `warm` switched on, and its length before, to put back. */
-  private warmedTracer: PieceNode | null = null;
-  private readonly warmedScale = new MathVector3();
 
   /**
    * What `warm` switched on, and what to put back when it switches off: one

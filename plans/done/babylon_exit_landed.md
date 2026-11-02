@@ -6826,7 +6826,7 @@ X4.3d's brief, word for word:
     run-to-run noise (1-3/255); `gate.mjs` and `shaders.mjs` clean on
     seven; typecheck, build, corecheck and `parity` pass.
 
-### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (63a338a, review fixes after it), X4.4b **LANDED** (9470686), X4.4c **LANDED** (d82f311), X4.4d **LANDED** (9d81875)
+### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (63a338a, review fixes after it), X4.4b **LANDED** (9470686), X4.4c **LANDED** (d82f311), X4.4d **LANDED** (9d81875), X4.4e **LANDED** (HASH) — **all five LANDED** (63a338a..HASH)
 
 X4.4a's brief, word for word:
 
@@ -7645,3 +7645,177 @@ X4.4c's brief, word for word:
   - A profiler capture at report version 28 with a molotov burning and a
     pane's burst live: `pools: { drawn: 17, masked: 14, instances: 5,
     marks: 9, billows: 24, debris: 12, fires: 12 }`.
+
+X4.4e's brief, word for word:
+
+- **X4.4e — pipelines compiled at load, and the seam checked (no picture
+  change).** **The warm-up changes shape**: every pipeline a round can use is
+  created from a declared list during loading, so the `warm(on)` poses become
+  a list of pipeline keys and `warm(on)` is deleted from every pool that is
+  ours (`GrenadeFx`, `BlastFx`, `BulletMarks`, and `CombatFx`'s tracer).
+  **The three blended pools still Babylon's keep their poses** until X4.6
+  moves them (decided 2026-11-01): `CombatFx`'s sparks and dust discs and
+  `BlastDebrisSystem`'s scorch, so `warm(on)` survives on those two classes
+  for those pools alone, stated as such.
+  **The list covers the pools with NO warm pose today too** (X4.4a's
+  review): the glass shards (`DebrisSystem`), the rubble chunks
+  (`BlastDebrisSystem`'s, only its scorch is posed), the thrown and laid
+  bodies (`GrenadeBody`, `RocketBody`, `MineBody`, and the wire's copies in
+  `NetGrenades`/`NetOrdnance`) and the brass (`PlayerView`). A scripted
+  round compiles nothing for them in play only because each shares a
+  pipeline something else made first — not by construction. (Since X4.4b
+  the thrown and laid bodies, the brass, the tracer and the marks are
+  ours, their four pipelines asked at `Game`'s construction, which the
+  warm-up already waits for — by construction now; of the pools with no
+  pose that leaves the shards and the rubble, X4.4c's. Since X4.4c those
+  are ours too — the debris draw's pipeline and the blast's two asked at
+  construction — so every pool with no pose is covered by construction;
+  `BlastFx.warm` still poses its billows, drawn through ours, and goes with
+  the rest here. Since X4.4d the fires are ours as well — their two
+  pipelines asked at construction — and `GrenadeFx.warm`'s molotov flame
+  pose, drawn through ours, is redundant and goes here too. The three
+  Babylon pools left — the sparks, the dust discs and the scorch — keep
+  their poses until X4.6.)
+  **The empty-group seam** (decided 2026-10-31, X4.3c's review): every draw
+  of ours hangs on rendering group 0's three points, and Babylon visits no
+  empty group — so a frame on which group 0 dispatches no mesh of Babylon's
+  runs NONE of ours, silently (a DEV build warns once per change,
+  `Renderer`). X4.4b-d take meshes out of group 0 (after X4.4d what Babylon
+  still queues there in a round is the sky's dome and clouds, the grass and
+  its turf, the capture zones, the water, the glazing, and the three blended
+  pools — measured by its order probe); this sub-step states
+  whether any state can now leave it empty (the sky still holds it in a round
+  and over the menu, so X4.5 is expected to owe the fix) and fixes the seam
+  if X4.4 made it reachable — our draws must not depend on group 0 being
+  non-empty (a point of ours that does not ride Babylon's group, or a mesh
+  kept in it on purpose, stated as such). **Oracle:** `pipelines.mjs`
+  reports zero pipeline creations during a round, against X4.4a's count; the
+  building card takes no longer than before.
+
+**X4.4e landed** (HASH; 2026-11-01; no picture change).
+- **The declared list.** `Game.roundPipelines` (a field, filled once at the
+  end of the pools' construction) names every draw of ours a round can use
+  whatever its map, by the promise its constructor's asks settle:
+  `bodies` (`BodyDraw`), `the bodies' shadow map` (`BodyShadowMap`),
+  `hulls` (`HullDraw`), `the weapon` (`ViewDraw`), `pieces` (the tracers,
+  the brass, the thrown and laid bodies of both sides of the wire),
+  `marks`, `billows` (`BlastDraw`), `debris` (the shards and the rubble)
+  and `fires` (`FlameDraw`). No ask moved: each draw's constructor still
+  states its own pipelines (its programs, targets and state are its own),
+  and the list states WHICH draws a round has. `PipelineWarmup` takes it
+  (`DeclaredPipelines`: a name and a `ready`), counts its entries settled
+  off the promises (no per-frame work), and opens on BOTH — every entry
+  settled and nothing of ours compiling (the map's: the world's groups, its
+  depth passes, the lamps' atlas, the probes' bake, the palette's mask,
+  asked by its install) — under `oursCapMs`, its DEV line naming how many
+  entries were unsettled if the cap is ever reached. The map's are not on
+  the list because they are not the session's: they are asked as the
+  install builds the map, before the warm-up, and the cache's count covers
+  them.
+- **The seal.** `PipelineCache.seal(on)`: sealed in `finishBakeWait` when the
+  warm-up stood (a map), unsealed in `teardownMap` (so also at every
+  `installMap`, an editor rebuild included). A `get` or `compute` that
+  MISSES while sealed is a DEV warning naming the variant (`[pipelines]
+  "…" compiled in play — asked by nothing before the building card came
+  down`); the compile is made and counted as before. **Proved**
+  (`x44e/sealtest.mjs`): unsealed over the menu, sealed at deploy and in
+  play, a compute asked in play named, unsealed again after `enterMenu`.
+  Never raised in the offline round, the server's round, the seam walks
+  (Coldharbour, Sarab) or their bench runs.
+- **The poses.** Deleted: `GrenadeFx.warm` (which posed the billows through
+  `BlastFx.warm` and one molotov flame), `BlastFx.warm` and its
+  `warmBillow`, `BulletMarks.warm`, and `CombatFx.warm`'s tracer (its
+  `warmedTracer`/`warmedScale` and the always-1 stretch argument). Kept,
+  stated as the pools still Babylon's until X4.6: `CombatFx.warm` (two
+  sparks and two discs, at `visibility` 1 and 0.5 — the opaque and the
+  blended pipeline) and `BlastDebrisSystem.warm` (`ScorchMarks.warm`, one
+  mark at its standing opacity), beside `ShadowSystem.warmBlob`. Every pose
+  of ours had compiled nothing since X4.4b-d (its pipelines asked at
+  construction), so deleting them moved no count — the install figures
+  below are the parent's.
+- **What the vantages are still for**: Babylon's own meshes — the sky's
+  dome and clouds, the grass and its turf, the water, the glazing (both
+  kinds), the flags and the capture rings, the blob shadows, the particles,
+  and the three blended pools — and the camera-dependent passes the eye
+  places (the shadow window, the bodies' map, the lamps' tiles).
+- **The empty-group seam: not reachable.** `x44e/seam.mjs` counted, after
+  every render, the meshes in rendering group 0 of Babylon's ACTIVE list —
+  what the main pass's group 0 is queued from — through a walk of every
+  state: menu (173 frames), the kit screen over it (180), settings over it
+  (31), `startRound`'s loading frames, the bake (53) and the warm-up (31),
+  deploy (70) and the kit over it, play (150), the pause (30), the death
+  cam (`enterDying`, 96), the editor (94), back to the menu (`enterMenu`,
+  no map) and the kit over that, then a fresh page's `?bench=` (its
+  loading, warm-up and 600 bench frames). Coldharbour: no frame empty in
+  any state, the minimum 2 — `sky-dome` and `sky-clouds`, alone over the
+  menu, the kit screen and the settings — and 26-2,244 with a map up.
+  Sarab: the same (2 over the menu; 7-3,168 with the map). So X4.4 did not
+  make it reachable; X4.5's brief now says it owes the fix. `Sky.apply`
+  builds nothing for an environment with no `sky` spec
+  (`EnvironmentSpec.sky` is optional); every shipped map, the proving
+  ground included, states one; `Game.applySky` now warns in a DEV build
+  when one does not. The `Renderer` warning is kept as it was.
+- **Measured.**
+  - **The bank**: `--check --keep` at b06595a (the worktree, its `ref/` the
+    main tree's) and at the step: **111 of 113 kept frames byte-equal**,
+    the other two `sarab-ground` (100 px, 2/255) and `sarab-shelf` (1 px,
+    1/255); Sarab alone re-checked twice at each code, **11 of 11 frames
+    byte-equal across the four runs** — cross-process residue, as at X4.4c
+    and X4.4d. The same 34 stale rows failing at both.
+  - **`pipelines.mjs coldharbour --round`**: zero of Babylon's, zero of ours
+    and zero modules in play in **five of five** runs at the step and three
+    of three at the parent (pane 21 broken at 31.8-44.1 m, 4,848-6,744
+    shard draws); the first install 22 of Babylon's, 23 of ours, 45
+    modules at both; the second none.
+  - **`pipelines.mjs cinderhaven --round`**: zero of ours in play in five
+    of five (and three of three at the parent); **two of Babylon's in every
+    run at both codes**, in the DMR's phase of the first life, filed under
+    "no Babylon mesh drawing" — `x44e/stack.mjs` took their stacks:
+    `ComputeShaderParticleSystem.updateParticleBuffer` and
+    `GPUParticleSystem._render`, the rotor wash (a helicopter lifting), which
+    `FINDINGS.md` 16 lists and X4.7 owns; X4.7's brief now says so. The
+    install 22 of Babylon's, 21 of ours, 48 modules; the second install one
+    of Babylon's and two modules — both codes alike. Its pane (pane 0, 444 m
+    off) is never on screen (0 shard draws).
+  - **The building card** (`x44e/loadtime.mjs`: `startRound` to `deploy` —
+    the build, the bake's drain and the warm-up — in a fresh browser each
+    run, the two dev servers warmed by a discarded run, the sides
+    alternating, six a side). Coldharbour first install: before 5,609,
+    5,231, 5,400, 5,228, 5,465, 5,313 ms (median 5,400); after 5,566,
+    5,459, 5,228, 5,500, 5,766, 5,433 (median 5,500); a second install
+    2,858 → 2,813. Cinderhaven: before 7,973, 7,713, 8,003, 7,775, 8,109,
+    7,830 (median 7,973); after 7,758, 7,753, 7,732, 7,776, 7,776, 7,645
+    (median 7,758); a second install 5,299 → 5,393. Every difference within
+    ±3% — under the protocol's 8%, so no slower. The warm-up alone (its DEV
+    line): Coldharbour 8 pipelines from 11 vantages in 299-366 ms before
+    and 306-369 after, 3-9 ms waiting for ours; Cinderhaven 10 in 387-493
+    and 401-438, 2-41 ms waiting.
+  - **`census --against`** the BEFORE: every one of 113 rows equal.
+  - **`kit:hash --against`** 3,722 of 3,722 builds identical; **`--models`**
+    244 of 244.
+  - **`gate`** all seven maps clean; **`shaders`** every shader clean on
+    seven; **`parity`** every map agrees; typecheck, build
+    (`check-babylon-free`, `check-proving`) and corecheck pass.
+  - **An offline round** on Coldharbour (`x44e/round.mjs`, X4.4d's with the
+    seal's warning watched and the seal read at each life's end): six lives,
+    every primary, frags and molotovs, the launcher and the mine; the
+    authority's `fire` 82, `explode` 6, `blaze` 3; tracers (64-291
+    piece-frames a life), brass (780-2,730), frags (374), bottles
+    (129-155), rockets (18-19), the player's laid mines (701-706), marks on
+    826-872 frames, billows on 263-280 frames in the frag lives (up to 315),
+    shards 1,680-1,728 a life, rubble 5,440-5,460 in the frag lives, the
+    world's two fires on 593-629 frames; the seal on in every life, 0
+    errors, neither warning raised. That run's three molotov fires put few
+    flames in frame (12 flame-frames in one life, none in two) — **and the
+    parent's code under the same script the same** (`blaze` 3; 12, 0, 0);
+    a molotov thrown before the eye (`x44e/molotov.mjs`) draws its ten
+    flames on 273 frames at the step and 272 at the parent.
+  - **A server's round** (`x44e/net2.mjs`, `PORT=8097`): B threw two
+    molotovs and fired two rockets; on A the authority's `blaze` 2 drawn
+    through `drawFire` — flames on 792 frames, 13,941 flame-draws, up to 19
+    at once (21 mask draws with the hearths) — the wire's bottles (288
+    piece-frames) and rockets (474), tracers (660); 0 errors and no
+    warning on either page.
+  - **A profiler capture** at report version 28 (no field added) with a
+    molotov burning and a pane's burst live: `pools: { drawn: 17, masked:
+    14, instances: 8, marks: 9, billows: 11, debris: 12, fires: 12 }`.

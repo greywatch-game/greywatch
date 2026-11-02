@@ -282,13 +282,6 @@ export class BillowBatch {
   }
 }
 
-/** A batch holding one upright, hot, metre-wide billow — see `BlastFx.warm`. */
-function warmBillow(batch: BillowBatch): void {
-  batch.begin();
-  batch.push(0, 0, 0, 1, 1, 0, 1, 0, 1, 0, 0, 0, 1);
-  batch.end();
-}
-
 function newBillow(): Billow {
   return {
     on: false,
@@ -526,41 +519,6 @@ export class BlastFx {
     if (any) this.small.end();
     else this.small.hide();
   }
-
-  /**
-   * One hot billow in an idle slot's batch and in the small batch, for the
-   * frames of the building card's pipeline warm-up (`core/PipelineWarmup.ts`),
-   * or both taken back off. On WebGPU a pipeline waits for a real draw — the
-   * first blast of a round was that draw, and on a phone it cost 403 ms
-   * (`FINDINGS.md` 16). Hot, so the glow's mask draws it too. Since
-   * `BABYLON_EXIT.md` X4.4c the billows' pipelines are our renderer's, asked
-   * at `Game`'s construction (`render/BlastDraw.ts`), which the warm-up
-   * already waits for, so this pose compiles nothing any more: it is drawn
-   * through ours like any blast, until X4.4e makes the warm-up a declared
-   * list and deletes it.
-   */
-  warm(on: boolean): void {
-    const slot = this.slots[this.slots.length - 1];
-    if (!on) {
-      if (this.warmedSlot) slot.batch.hide();
-      if (this.warmedSmall) this.small.hide();
-      this.warmedSlot = false;
-      this.warmedSmall = false;
-      return;
-    }
-    if (slot.t < 0) {
-      warmBillow(slot.batch);
-      this.warmedSlot = true;
-    }
-    let smallBusy = false;
-    for (const b of this.smallBillows) if (b.on) smallBusy = true;
-    if (!smallBusy) {
-      warmBillow(this.small);
-      this.warmedSmall = true;
-    }
-  }
-  private warmedSlot = false;
-  private warmedSmall = false;
 
   /** Takes every blast out of the air — a map is going away under it. */
   reset(): void {

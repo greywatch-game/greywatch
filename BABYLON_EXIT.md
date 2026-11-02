@@ -1020,7 +1020,7 @@ card behind it are off Babylon's scene, and no sub-step changed the picture.
 
 The full record is in [the archive](plans/done/babylon_exit_landed.md).
 
-### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (63a338a, review fixes after it), X4.4b **LANDED** (9470686), X4.4c **LANDED** (d82f311), X4.4d **LANDED** (9d81875)
+### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (63a338a, review fixes after it), X4.4b **LANDED** (9470686), X4.4c **LANDED** (d82f311), X4.4d **LANDED** (9d81875), X4.4e **LANDED** (HASH) — **all five LANDED** (63a338a..HASH)
 
 Every pooled effect Babylon still draws comes off its scene but the three
 that blend among the panes (decided 2026-11-01: they wait for X4.6), and the
@@ -1413,54 +1413,90 @@ Everything else in X4.4 moves as briefed; `fx-glass-sort` is X4.6's BEFORE.
   profiler capture at report version 28 with a molotov burning: `pools: {
   drawn: 17, masked: 14, …, fires: 12 }`. The full record is in
   [the archive](plans/done/babylon_exit_landed.md).
-- **X4.4e — pipelines compiled at load, and the seam checked (no picture
-  change).** **The warm-up changes shape**: every pipeline a round can use is
-  created from a declared list during loading, so the `warm(on)` poses become
-  a list of pipeline keys and `warm(on)` is deleted from every pool that is
-  ours (`GrenadeFx`, `BlastFx`, `BulletMarks`, and `CombatFx`'s tracer).
-  **The three blended pools still Babylon's keep their poses** until X4.6
-  moves them (decided 2026-11-01): `CombatFx`'s sparks and dust discs and
-  `BlastDebrisSystem`'s scorch, so `warm(on)` survives on those two classes
-  for those pools alone, stated as such.
-  **The list covers the pools with NO warm pose today too** (X4.4a's
-  review): the glass shards (`DebrisSystem`), the rubble chunks
-  (`BlastDebrisSystem`'s, only its scorch is posed), the thrown and laid
-  bodies (`GrenadeBody`, `RocketBody`, `MineBody`, and the wire's copies in
-  `NetGrenades`/`NetOrdnance`) and the brass (`PlayerView`). A scripted
-  round compiles nothing for them in play only because each shares a
-  pipeline something else made first — not by construction. (Since X4.4b
-  the thrown and laid bodies, the brass, the tracer and the marks are
-  ours, their four pipelines asked at `Game`'s construction, which the
-  warm-up already waits for — by construction now; of the pools with no
-  pose that leaves the shards and the rubble, X4.4c's. Since X4.4c those
-  are ours too — the debris draw's pipeline and the blast's two asked at
-  construction — so every pool with no pose is covered by construction;
-  `BlastFx.warm` still poses its billows, drawn through ours, and goes with
-  the rest here. Since X4.4d the fires are ours as well — their two
-  pipelines asked at construction — and `GrenadeFx.warm`'s molotov flame
-  pose, drawn through ours, is redundant and goes here too. The three
-  Babylon pools left — the sparks, the dust discs and the scorch — keep
-  their poses until X4.6.)
-  **The empty-group seam** (decided 2026-10-31, X4.3c's review): every draw
-  of ours hangs on rendering group 0's three points, and Babylon visits no
-  empty group — so a frame on which group 0 dispatches no mesh of Babylon's
-  runs NONE of ours, silently (a DEV build warns once per change,
-  `Renderer`). X4.4b-d take meshes out of group 0 (after X4.4d what Babylon
-  still queues there in a round is the sky's dome and clouds, the grass and
-  its turf, the capture zones, the water, the glazing, and the three blended
-  pools — measured by its order probe); this sub-step states
-  whether any state can now leave it empty (the sky still holds it in a round
-  and over the menu, so X4.5 is expected to owe the fix) and fixes the seam
-  if X4.4 made it reachable — our draws must not depend on group 0 being
-  non-empty (a point of ours that does not ride Babylon's group, or a mesh
-  kept in it on purpose, stated as such). **Oracle:** `pipelines.mjs`
-  reports zero pipeline creations during a round, against X4.4a's count; the
-  building card takes no longer than before.
+- **X4.4e — pipelines compiled at load, and the seam checked LANDED**
+  (HASH; 2026-11-01; no picture change). **The pools' poses became a
+  DECLARED list**: `Game.roundPipelines`, one place, names every draw of
+  ours a round can use whatever its map — the bodies, the bodies' shadow
+  map, the hulls, the weapon, the pieces (tracers, brass, the thrown and
+  laid bodies of both sides of the wire), the marks, the billows, the debris
+  (shards and rubble) and the fires — each of whose pipelines its
+  constructor asks once, at `Game`'s construction. The warm-up waits on it
+  by name before its first vantage (`PipelineWarmup`'s `DeclaredPipelines`),
+  beside the map's own pipelines, which its install asks; and our cache is
+  SEALED from the card coming down (`finishBakeWait`) to the map's teardown
+  (`PipelineCache.seal`): a compile of ours in play is a DEV warning naming
+  it (proved by a compute asked in play: named; sealed at deploy and in
+  play, unsealed over the menu). `warm(on)` is deleted from `GrenadeFx` (the
+  billows and the molotov flame), `BlastFx` and `BulletMarks`, and
+  `CombatFx.warm` no longer poses the tracer: **it survives on `CombatFx`
+  (the sparks and the dust discs) and `BlastDebrisSystem` (the scorch) for
+  those three blended pools alone**, stated as such, until X4.6 (decided
+  2026-11-01). The pools that never had a pose — the shards, the rubble, the
+  thrown and laid bodies of both sides, the brass — are covered by
+  construction, on the list. **What the vantages still draw for** is
+  Babylon's own meshes: the sky, the grass and turf, the water, the glazing,
+  the flags and capture rings, the blob shadows, the particles and those
+  three pools. **The empty-group seam is NOT reachable**: a probe of
+  Babylon's active list each frame (`x44e/seam.mjs`) found the sky's dome
+  and cloud ring in group 0 on every frame of the menu, the kit screen and
+  the settings over it, the loading card's bake and warm-up, the deploy
+  screen and the kit over it, play, the pause, the death cam, the editor,
+  the menu again with no map and the kit over it, and a `?bench` run, on
+  Coldharbour and on Sarab — no frame empty, the menu's two meshes the
+  dome and the clouds alone — so **X4.5 owes the fix** (its brief says so).
+  One way to empty it exists and no shipped map takes it: an
+  `EnvironmentSpec` stating no `sky` builds none, which a DEV build now
+  warns of (`Game.applySky`); `Renderer`'s warning stays.
+  **Measured:** the bank `--check --keep` against a BEFORE at b06595a,
+  **111 of 113 frames byte-equal**, the other two Sarab's `ground` (100 px,
+  2/255) and `shelf` (1 px, 1/255), and Sarab re-checked twice at each code
+  **11 of 11 byte-equal across all four runs** (the residue X4.4c and
+  X4.4d met); the same 34 stale rows. `pipelines.mjs coldharbour --round`
+  **zero of Babylon's, zero of ours, zero modules in play in five of five**
+  (three of three at the parent), the first install 22 of Babylon's, 23 of
+  ours, 45 modules, as at the parent — the poses of ours compiled nothing
+  since X4.4b-d, so removing them moved no count; **`cinderhaven --round`
+  zero of ours in play in five of five**, and two of Babylon's in every run
+  at both codes — the rotor wash's `GPUParticleSystem`, its compute and
+  render pipelines (stacks taken; `FINDINGS.md` 16, X4.7's) — the install
+  22 of Babylon's, 21 of ours, 48 modules, the second install one of
+  Babylon's and two modules, both codes alike. **The building card**
+  (`startRound` to `deploy`, a fresh browser a run, alternating sides, six
+  a side, medians): Coldharbour **5,400 → 5,500 ms** (ranges 5,228-5,609
+  and 5,228-5,766; a second install 2,858 → 2,813), Cinderhaven **7,973 →
+  7,758** (7,713-8,109 and 7,645-7,776; second 5,299 → 5,393) — within
+  ±3%, under the protocol's 8%: no slower. The warm-up itself (its DEV
+  line): 8 pipelines from 11 vantages in 299-366 → 306-369 ms on
+  Coldharbour, 10 in 387-493 → 401-438 on Cinderhaven. `census --against`
+  every one of 113 rows equal; `kit:hash` 3,722 of 3,722 and `--models` 244
+  of 244 identical; `gate`, `shaders`, `parity`, typecheck, build and
+  corecheck pass. An offline round on Coldharbour (`x44e/round.mjs`, X4.4d's
+  with the seal's warning watched): six lives, every primary, frags and
+  molotovs, the launcher and the mine — tracers, brass, frags, bottles,
+  rockets, the laid mines, marks, billows, shards (1,680-1,728 a life) and
+  rubble (5,440-5,460 in the frag lives) drawn — the seal on in every life,
+  0 errors, neither the seam's nor the seal's warning raised (the molotovs
+  of that run lit three fires, few flames in frame, the parent's the same;
+  a molotov thrown before the eye draws its ten flames on 272-273 frames at
+  both codes). A server's round (`x44e/net2.mjs`, `PORT=8097`): B threw two
+  molotovs and fired two rockets; on A the authority's `blaze` 2, flames on
+  792 frames (13,941 flame-draws, up to 19), the wire's bottles (288
+  piece-frames) and rockets (474); 0 errors and no warning on either page.
+  A profiler capture at report version 28 (no field added): `pools: {
+  drawn: 17, masked: 14, instances: 8, marks: 9, billows: 11, debris: 12,
+  fires: 12 }`. The full record is in
+  [the archive](plans/done/babylon_exit_landed.md).
 
 - **Verify (the step as a whole):** `plans/webgpu-ref/pipelines.mjs` reports
   zero pipeline creations during a round; the bank's blast vantage and every
   X4.4a row; a round with every weapon, both throwables and both AT items
   used.
+  **Met** at X4.4e: zero of ours in play on Coldharbour and Cinderhaven,
+  zero of Babylon's on Coldharbour (Cinderhaven's two are the rotor wash's
+  particles, X4.7's); the bank's blast vantage and every `fx` row byte-equal
+  through all five sub-steps (every picture change in a commit of its own:
+  the two latch fixes, 558dbdf and bac02b7); such a round, offline and in a
+  server's match.
 - **Rewrites:** `CLAUDE.md`, "loading ends in a PIPELINE WARM-UP" and the
   "EVERY BODY, HULL AND WEAPON IS OUR RENDERER'S" paragraph (the pools join
   it); `docs/game.md`; `docs/grenades.md` and `docs/antitank.md` where they
@@ -1481,7 +1517,14 @@ The dome, stars, moon and cloud ring (`Sky`, `cloudMasses`, `CloudShader`).
     screen over the menu holds the sky alone since X4.3d) owes the seam a
     fix — our draws must not depend on group 0 being non-empty (a point of
     ours that does not ride Babylon's group, or a mesh kept in it on
-    purpose, stated as such).
+    purpose, stated as such). **It is THIS step's** (X4.4e measured it):
+    X4.4 left the seam unreachable, and what holds group 0 in every state
+    is the sky's dome and cloud ring — over the menu with the kit screen up,
+    nothing else — so the step that takes them owes the fix. A seam-safe
+    shape is a question for the owner if it needs a NEW Babylon internal on
+    `babylonSeam.ts`'s list (rule 4), and stops there. Today a map stating
+    no `sky` empties the group over the menu already, which a DEV build
+    warns of (`Game.applySky`); no shipped map does.
 - **Contracts it keeps:**
   - the clouds write the depth of a point 7 km out
   - they draw after every opaque surface and before everything blended
@@ -1533,7 +1576,13 @@ The dome, stars, moon and cloud ring (`Sky`, `cloudMasses`, `CloudShader`).
 The rule that a colour gradient can only be added before a system's first
 render goes away with Babylon's particle system.
 
-- **Verify:** the bank with ash; a helicopter landing on sand and on water.
+- **The rotor wash compiles in play today** (X4.4e measured it:
+  `pipelines.mjs cinderhaven --round`, two of Babylon's pipelines in every
+  run — the wash's compute and render, on the first frame a helicopter
+  raises dust; `FINDINGS.md` 16). Ours, its pipelines join the round's
+  declared list (`Game.roundPipelines`), and the count goes to zero.
+- **Verify:** the bank with ash; a helicopter landing on sand and on water;
+  `pipelines.mjs cinderhaven --round` zero in play.
 
 **Gate after Phase 4:** Babylon's scene draws only the post chain. Read
 `babylonSeam.ts`'s list against PERF_PLAN B4's criterion. If the count of

@@ -210,7 +210,9 @@ you are on before you believe anything else in this section.
   pipeline each on the other three. The rule
   still stands for a frame rate, because the first seconds also hold the GI
   converging and the deploy screen's own first-second stall, and for anything
-  the warm-up does not reach — the entry lists them. To find what compiles and
+  the warm-up does not reach — the entry lists them. A compile of OUR
+  renderer's in play is named by a DEV build itself (`[pipelines] … compiled
+  in play`, the cache's seal, `BABYLON_EXIT.md` X4.4e). To find what compiles and
   WHO, wrap `GPUDevice.prototype.createRenderPipeline` in an init script and
   `_processRendering` on a mesh's prototype in the page; the mesh being drawn
   when the pipeline is created is the answer, and the profiler names the

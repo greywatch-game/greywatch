@@ -49,8 +49,10 @@
  * (a fresh draw), so which pane is nearest varies from run to run. Our
  * renderer's pipelines (`createRenderPipelineAsync`,
  * `createComputePipelineAsync`, off the frame) are counted beside Babylon's
- * synchronous ones, in both modes. That total is what X4.4e's declared list
- * must take to zero.
+ * synchronous ones, in both modes. That total is X4.4e's oracle: zero in play,
+ * every pipeline of ours asked before the card comes down (the round's
+ * declared list, `Game.roundPipelines`, and the map's install) — and a DEV
+ * build names any compile of ours in play itself (`PipelineCache.seal`).
  */
 import {
   bootMap,

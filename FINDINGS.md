@@ -869,7 +869,10 @@ the next one by the economy — two grenades a life, a 3.6 s tank reload.
 reach. (A fourth — a weapon or optic the card never drew, whose glass compiled
 on its first draw — was settled by `BABYLON_EXIT.md` X4.3d: every pipeline of
 the weapon, its glass and the kit card among them, is our renderer's and asked
-at construction, and a first ADS through either glass creates nothing.)
+at construction, and a first ADS through either glass creates nothing. And the
+pool poses described below are only Babylon's now: since X4.4e every pool of
+ours is on the round's declared list, its pipelines asked at construction and
+none posed; the sparks, the dust discs and the scorch keep theirs until X4.6.)
 
 WebGPU builds a render pipeline on the first draw that needs one, and that
 draw's frame pays — Dawn compiles behind the create call, so the stall lands on

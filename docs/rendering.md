@@ -3266,12 +3266,19 @@ pass is not restarted between them, and in this order every frame:
 group**: a frame on which group 0 dispatches no mesh of Babylon's runs none of
 ours, with no error (the seam). A DEV build warns once per change when a frame
 that had draws of ours at those points never reached the group (`Renderer`'s
-`seamWarned`). Today the world and the sky keep the group non-empty — over the
-menu, with the kit screen up and no map standing, the SKY alone (its dome, the
-stars and the cloud ring are group-0 meshes in every state; measured at X4.3d:
-no frame of the kit screen walked over the menu rendered group 0 empty) — and
-whichever step drains it (X4.4-X4.6; X4.5 takes the sky) owes the seam a fix
-(the owner's decision, 2026-10-31). **And a frame with nothing of ours
+`seamWarned`). **What keeps the group non-empty is the SKY**: its dome and
+its cloud ring are group-0 meshes in every state, and over the menu, with the
+kit screen up and no map standing, they are ALL of it (measured at X4.3d, and
+again at X4.4e once every pool of ours had left the group — every frame of
+the menu, the kit screen and the settings over it, the loading card's bake
+and warm-up frames, the deploy screen and the kit over it, play, the pause,
+the death cam, the editor and a `?bench` run held the dome and the clouds;
+no frame in any state rendered the group empty). So X4.4 did not make the
+seam reachable, and **X4.5, which takes the sky, owes it the fix** (the
+owner's decision, 2026-10-31): our draws must not depend on group 0 being
+non-empty. One way to empty it already exists and nothing ships it: a map
+whose `EnvironmentSpec` states no `sky` builds none (`Sky.apply`), which a
+DEV build warns of where the sky is applied (`Game.applySky`). **And a frame with nothing of ours
 COMMITTED does no work at all**: each draw states whether it has anything
 (`Renderer.add`'s `Active`; the weapon's while a segment is committed), and
 `begin` skips the fill, the view-projection, the upload, the textures, the
@@ -3443,7 +3450,12 @@ the fixed-function state. So a compile never stalls a frame,
 and a caller asks ahead. The same cache builds the COMPUTE pipelines
 (`compute`, `createComputePipelineAsync`), and it COUNTS every compile it
 starts, in flight and settled (`CompileProgress`), which is what the
-building card's warm-up waits on.
+building card's warm-up waits on — beside the round's DECLARED list
+(`Game.roundPipelines`: every draw of ours a round can use whatever its map,
+asked once at `Game`'s construction, waited on by name; `BABYLON_EXIT.md`
+X4.4e). **Once the card is down the cache is SEALED** (`seal`, from
+`finishBakeWait` to `teardownMap`): a compile it starts then is one nothing
+asked before the round, a hitch in play, and a DEV build warns, naming it.
 
 **Every RENDER pipeline's layout is EXPLICIT**, built from the bindings the
 assembly reports, never `"auto"`. Layouts are shared by their entries, so a bind group made for
@@ -4647,7 +4659,14 @@ glazing, which no draw point of ours reproduces, so all three pools stay
 Babylon meshes — whole, the frames a spark is still opaque included, so a pool
 is never split across two renderers (the scorch is a pool of its own, so the
 rubble leaving while it stays splits none) — until X4.6 moves them with the
-glazing. `fx-glass-sort` is that step's BEFORE.
+glazing. `fx-glass-sort` is that step's BEFORE. They are also the only pools
+still POSED by the building card's warm-up (`CombatFx.warm`,
+`BlastDebrisSystem.warm`, a `visibility` under 1 being a pipeline of its own):
+every pool of ours is on the round's DECLARED list (`Game.roundPipelines`,
+X4.4e), each of its pipelines asked once at `Game`'s construction, so its
+first use in a round compiles nothing BY CONSTRUCTION — the pools that never
+had a pose (the shards, the rubble, the thrown and laid bodies of both sides
+of the wire, the brass) as much as the ones that did — and none is posed.
 
 **A piece is the meshes it was, as plain data** (`entities/pieces.ts`): a
 KIT a kind — its segments, each a mesh until X4.4b: the arrays, a cel paint or
@@ -4837,14 +4856,10 @@ GAVE (the script's header). Since the latch came out, the same probe finds
 51 segment-frames Babylon never drew and none it drew that ours does not —
 46 of brass, 5 of a thrown bottle's parts a frame early — every order still
 equal. **Its pipelines are asked once, at `Game`'s
-construction**, so the building card's warm-up waits for them; a failure is
-the round's (`Game.worldFailed`); it is installed for a ROUND's map only. The
-`warm(on)` poses of the tracer, the mark and the blast's billows still stand,
-drawing through ours, until X4.4e makes the warm-up a declared list (the
-billows', the debris's and the pieces' pipelines are asked at `Game`'s
-construction, so the warm-up waits for them by construction) — the
-molotov's flame pose too, though the fires' pipelines are asked there since
-X4.4d. A capture says what all five drew (`ProfileReport.pools`, report
+construction**, so the building card's warm-up waits for them — they are
+the round's declared list's pools (`Game.roundPipelines`, X4.4e), posed by
+nothing; a failure is the round's (`Game.worldFailed`); it is installed for a
+ROUND's map only. A capture says what all five drew (`ProfileReport.pools`, report
 version 26; the billows and the debris since 27, the fires since 28), since
 Babylon's counter counts none of it.
 

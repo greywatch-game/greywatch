@@ -688,12 +688,16 @@ src/
     PipelineWarmup.ts   # Where the building card stands the camera while the
                         #   round's render pipelines are compiled, and when it
                         #   may stop: first a wait at no vantage for OUR
-                        #   renderer's pipelines (PipelineCache's
-                        #   CompileProgress, oursCapMs), then the vantages
-                        #   (home spawns and flags), the quiet-frame count off
-                        #   both caches, and the cap. Decides WHEN; Game stages
-                        #   each frame (WorldCulling.setWarm, the pools' warm;
-                        #   no body since X4.1d, its pipelines ours)
+                        #   renderer's pipelines — the round's DECLARED list
+                        #   (DeclaredPipelines, Game.roundPipelines: bodies,
+                        #   hulls, weapon, every pool of ours) by name, and
+                        #   the map's (PipelineCache's CompileProgress) —
+                        #   under oursCapMs, then the vantages (home spawns
+                        #   and flags) for Babylon's meshes, the quiet-frame
+                        #   count off both caches, and the cap. Decides WHEN;
+                        #   Game stages each frame (WorldCulling.setWarm; the
+                        #   warm(on) poses of the three pools still Babylon's,
+                        #   sparks, discs, scorch, until X4.6)
     FrameCap.ts         # The frame-rate cap (Settings.fpsCap): the engine's
                         #   frame REQUESTER, refusing a refresh before the
                         #   next frame is DUE. A deadline, not Babylon's
@@ -1158,7 +1162,8 @@ src/
                         #   tracer's arrival clock. The tracers (pieces of the
                         #   kit it builds) and the marks are our renderer's
                         #   (X4.4b); the sparks and discs Babylon meshes until
-                        #   X4.6. Client only
+                        #   X4.6, and the warm-up's pose (warm) theirs alone.
+                        #   Client only
     CombatSystem.ts     # Hitscan, fall-off, the head zone, the cone; raises
                         #   `onNearMiss`, `onRound`, `onShotPath`. Babylon-free
     GrenadeSystem.ts    # The one thing that isn't hitscan: the flight, the
@@ -1256,7 +1261,8 @@ src/
                         #   size and shape are decided at construction, so a
                         #   burst never touches the WASM heap. No chunk mesh
                         #   (a PosedPiece our renderer draws, X4.4c); the
-                        #   scorch is still Babylon's, until X4.6
+                        #   scorch is still Babylon's, and posed for the
+                        #   warm-up (warm), until X4.6
     glassFracture.ts    # The crack pattern itself: radials out of the hole,
                         #   concentrics across them, clipped to the frame. Pure
                         #   arithmetic — no Babylon, no state
@@ -2665,8 +2671,10 @@ src/
                         #   createRenderPipelineAsync pipelines, keyed on
                         #   variant, vertex layout, targets and state; the
                         #   front face by Babylon's rule; compute pipelines on
-                        #   "auto" layouts, cached across maps; and the compile
-                        #   counts the warm-up waits on (CompileProgress)
+                        #   "auto" layouts, cached across maps; the compile
+                        #   counts the warm-up waits on (CompileProgress); and
+                        #   the SEAL a round is played under (a compile in
+                        #   play is a DEV warning naming it)
     celFragment.ts      # The cel fragment as WE declare it: frame (group 0)
                         #   and material (group 1) uniforms and textures, the
                         #   inputs (CEL_VARYINGS), over the shared celSurface

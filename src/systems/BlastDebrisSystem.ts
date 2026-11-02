@@ -334,7 +334,10 @@ export class BlastDebrisSystem implements PhysicsClient {
   /**
    * One scorch mark shown, or taken back off, for the frames of the building
    * card's pipeline warm-up (`core/PipelineWarmup.ts`) — see
-   * `ScorchMarks.warm`.
+   * `ScorchMarks.warm`. The SCORCH alone: the rubble is our renderer's, its
+   * pipeline on the round's declared list (`Game.roundPipelines`,
+   * `BABYLON_EXIT.md` X4.4e), and posed by nothing; the scorch is Babylon's
+   * until it moves with the glazing (X4.6), and keeps this pose until then.
    */
   warm(on: boolean): void {
     this.scorch.warm(on);
@@ -708,6 +711,8 @@ class ScorchMarks {
    * again — so the first blast of a round draws its scorch through a pipeline
    * the building card already compiled. The opacity is part of it: a mark
    * fades by `visibility`, which is what puts it on the blended pipeline.
+   * One of the three poses left (`BABYLON_EXIT.md` X4.4e), because the
+   * scorch is still a Babylon mesh: it goes with the pool at X4.6.
    */
   warm(on: boolean): void {
     const slot = this.marks[this.marks.length - 1];
