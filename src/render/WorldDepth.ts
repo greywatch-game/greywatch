@@ -1,7 +1,8 @@
 /**
  * render/WorldDepth.ts — The static world as a shadow pass records it: the
- * casters our renderer draws in the main pass, and the ones it holds only for
- * this (`WorldBlocks.addCaster`), culled for a light and drawn depth-only into
+ * casters our renderer draws in the main pass (the layer that held casters
+ * for this alone went at `BABYLON_EXIT.md` X4.4d, reached by no build),
+ * culled for a light and drawn depth-only into
  * a pass its caller opens — a directional map `WorldShadows` draws
  * (`BABYLON_EXIT.md` X3.6a), or a static face of the lamps' atlas `LampAtlas`
  * draws (X3.6b). The same groups as the main pass, the same fold — a group's
@@ -101,7 +102,7 @@ export class WorldDepth {
     groups: readonly DepthGroup[],
     /** The instances' transforms, which every group binds. */
     transforms: GPUBuffer,
-    /** Every cluster of the map — the casters held for this alone included. */
+    /** Every cluster of the map. */
     clusterCount: number,
     /** The corners a scatter survivor's run takes (`listStride`). */
     stride: number,

@@ -117,6 +117,7 @@ import { HullDraw } from "../render/HullDraw";
 import { ViewDraw, type ViewDrawSegment } from "../render/ViewDraw";
 import { PoolDraw, type PoolKit } from "../render/PoolDraw";
 import { BlastDraw } from "../render/BlastDraw";
+import { FlameDraw } from "../render/FlameDraw";
 import type { CelRecipe } from "../render/celMaterial";
 import { HULL_CHARRED } from "../render/hullProgram";
 import { BodyShadowMap } from "../render/BodyShadowMap";
@@ -208,7 +209,7 @@ import {
 import { VehicleViews } from "../systems/VehicleViews";
 import { hullKits } from "../entities/vehicleModels";
 import { composeHull, hullPalette, writeHullDrawing, type HullKit, type SphereGate } from "../entities/vehicleRig";
-import { writePieceDrawing, type Piece, type PieceGate, type PieceKit, type PieceKits } from "../entities/pieces";
+import { composeNode, worldSphere, writePieceDrawing, type Piece, type PieceGate, type PieceKit, type PieceKits } from "../entities/pieces";
 import { MARK_DEPTH_UNITS, MARK_PAINTS, MARK_SHAPES } from "../systems/BulletMarks";
 import { GrassSystem } from "../systems/GrassSystem";
 import { BlastDebrisSystem, HARD_TINT, type DebrisGround } from "../systems/BlastDebrisSystem";
@@ -506,6 +507,12 @@ function inFrustum(x: number, y: number, z: number, radius: number, planes: read
   }
   return true;
 }
+
+/**
+ * A world fire's world matrix, as its frozen mesh held it: the identity, in
+ * the float32 its `world` uniform was uploaded as (`flamePull`).
+ */
+const IDENTITY_16 = Float32Array.of(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1);
 
 /**
  * The carried-light id for one of the kit screen's bench lamps. A function so
@@ -934,6 +941,28 @@ export class Game {
   /** `blastPull`'s scratch: the drawn batches (indices into `BlastFx.batches`) and their sort keys. */
   private blastDrawn = new Int32Array(0);
   private blastKeys = new Float64Array(0);
+  /**
+   * The FIRES as our renderer draws them (`BABYLON_EXIT.md` X4.4d): every
+   * world fire the handover took — a block's merge of flame surfaces — and
+   * every flame of a burning molotov (`GrenadeFx.flames`), each one draw of
+   * its surface under its matrix, into the main pass and the glow's mask,
+   * fed by `drawFires` and pulled inside the render (`flamePull`). Drawn
+   * while a ROUND's map is installed, its pipelines asked here once for the
+   * session; one that cannot be built is the round's failure, as the
+   * pieces' are. An editor build's fires are Babylon's meshes.
+   */
+  private readonly flameDraw: FlameDraw;
+  /**
+   * `flamePull`'s scratch, sized to the draw's capacity at each install:
+   * this frame's drawn fires — a molotov flame by its index in
+   * `GrenadeFx.flames`, a world fire `k` as `flames + k` — front to back
+   * once sorted, and the sort's keys.
+   */
+  private flameDrawn = new Int32Array(0);
+  private flameKeys = new Float64Array(0);
+  /** What `bloomColour` reads as a fire's material: the world's one `FlameMaterial`. */
+  private flameBloomOf: { readonly emissiveColor: Color3; readonly alpha: number } | null = null;
+  private readonly flameBloom = new Color4();
   /** The debris draw's cel recipe, whose third slot is the map's EARTH, painted per map (`installMap`). */
   private debrisRecipe: CelRecipe | null = null;
   /**
@@ -2102,6 +2131,12 @@ export class Game {
       this.lampAtlas,
       this.probeBake,
       this.worldGlow,
+      // The fire draw, built below with the molotov's pool it shares; the
+      // handover only hands it a map's fires at an install, long after.
+      {
+        setWorld: (fires) => this.flameDraw.setWorld(fires),
+        clearWorld: () => this.flameDraw.clearWorld(),
+      },
       (reason, owner) => this.worldFailed(reason, owner),
       {
         mode: this.overrides.cullMode,
@@ -2130,7 +2165,7 @@ export class Game {
     this.grenades = new GrenadeSystem();
     // The grenades' picture reads this page's own pool — its prediction of
     // its own throw, and the fires the authority lit (`drawFire`).
-    this.grenadeFx = new GrenadeFx(this.scene, this.mats, this.grenades);
+    this.grenadeFx = new GrenadeFx(this.mats, this.grenades);
     // The one event a blast's picture needs, wired here beside `onRound` for
     // that line's reason: the simulation probes the ground and draws nothing,
     // the view puts the six billowed layers up. Raised by every resolved
@@ -2280,6 +2315,18 @@ export class Game {
     );
     this.markDrawn = new Int32Array(this.markDraw.capacity);
     this.markKeys = new Float64Array(this.markDraw.capacity);
+    // The fires (`BABYLON_EXIT.md` X4.4d): the molotov's one flame uploaded
+    // with each map's world fires (the handover's, at its install), a draw a
+    // fire, on the world's one fire material (`GrenadeFx.flameMaterial`).
+    const flameMaterial = this.grenadeFx.flameMaterial;
+    this.flameBloomOf = { emissiveColor: flameMaterial.emissiveColor, alpha: flameMaterial.alpha };
+    this.flameDraw = new FlameDraw(
+      this.renderer,
+      this.grenadeFx.flameShape,
+      this.grenadeFx.flames.length,
+      flameMaterial,
+      (into, glowOn) => this.flamePull(into, glowOn),
+    );
     // The blast's billows (`BABYLON_EXIT.md` X4.4c): the two icospheres
     // uploaded once, every batch `BlastFx` holds a draw, its paint the
     // factory's (`getBlast`).
@@ -2345,16 +2392,22 @@ export class Game {
     }
     this.debrisDrawn = new Int32Array(this.debrisDraw.capacity);
     this.debrisKeys = new Float64Array(this.debrisDraw.capacity);
-    // …and what all four drew (`ProfileReport.pools`): Babylon's counter has
+    // …and what all five drew (`ProfileReport.pools`): Babylon's counter has
     // counted no tracer, mark, thrown or laid body, nor any case, since X4.4b,
-    // nor any billow, shard or chunk since X4.4c.
+    // nor any billow, shard or chunk since X4.4c, nor any fire since X4.4d.
     this.prof.setPools(() => ({
-      drawn: this.pieceDraw.stats.drawn + this.markDraw.stats.drawn + this.blastDraw.stats.drawn + this.debrisDraw.stats.drawn,
-      masked: this.pieceDraw.stats.masked + this.blastDraw.stats.masked,
+      drawn:
+        this.pieceDraw.stats.drawn +
+        this.markDraw.stats.drawn +
+        this.blastDraw.stats.drawn +
+        this.debrisDraw.stats.drawn +
+        this.flameDraw.stats.drawn,
+      masked: this.pieceDraw.stats.masked + this.blastDraw.stats.masked + this.flameDraw.stats.masked,
       instances: this.pieceDraw.stats.instances,
       marks: this.markDraw.stats.instances,
       billows: this.blastDraw.stats.instances,
       debris: this.debrisDraw.stats.instances,
+      fires: this.flameDraw.stats.drawn,
     }));
     // The sky hangs behind every state (menu included), so it is dressed
     // once here and re-applied per round alongside the environment.
@@ -4409,6 +4462,9 @@ export class Game {
     // posed, and every shard and chunk off its body's pose.
     this.drawBlasts();
     this.drawDebris();
+    // …and the fires (X4.4d): the world's, and the molotov's flames where
+    // `GrenadeFx` stood them.
+    this.drawFires();
     this.scene.render();
     this.prof.end(P.render);
     if (warming) this.unstageWarmFrame();
@@ -5287,6 +5343,7 @@ export class Game {
     this.markDraw.uninstall();
     this.blastDraw.uninstall();
     this.debrisDraw.uninstall();
+    this.flameDraw.uninstall();
     // The weapon stays drawn — the kit screen covers the menu — but a failure
     // of it with no round standing is the console's (X4.3c).
     this.viewDraw.onFailed((reason) => console.error(`[view] the weapon cannot be drawn — ${reason}`));
@@ -5508,6 +5565,11 @@ export class Game {
     // down ahead of everything else of ours at that point — the order among
     // the four differing from the queue's front-to-back interleave only
     // where two of them tie, the bodies' accepted price.
+    // The FIRES on the same terms (X4.4d), and FIRST of all: they were in
+    // that queue until X4.4d, ahead of the billows' draw of ours, front to
+    // back among themselves as they still are. An editor build's fires are
+    // Babylon's meshes, drawn by its `FlameMaterial`.
+    if (!editor) this.flameDraw.install((reason) => this.worldFailed(reason, owner));
     if (!editor) this.blastDraw.install((reason) => this.worldFailed(reason, owner));
     if (!editor) this.pieceDraw.install((reason) => this.worldFailed(reason, owner));
     if (!editor) this.markDraw.install((reason) => this.worldFailed(reason, owner));
@@ -5543,6 +5605,12 @@ export class Game {
     // their meshes after every draw of ours there. (No shard or chunk is
     // emissive: the debris has no mask.)
     if (!editor) this.blastDraw.installMask();
+    // …and the fires' after the billows' (X4.4d): Babylon's mask drew their
+    // meshes after every draw of ours, the billows' last among them.
+    if (!editor) this.flameDraw.installMask();
+    // The fires' pull is sized to what the handover handed over just now.
+    this.flameDrawn = new Int32Array(this.flameDraw.capacity);
+    this.flameKeys = new Float64Array(this.flameDraw.capacity);
     // How hard the grade is pushed is the map's; whether it runs at all stays
     // the player's (`applySettings`). A vignette that reads as dread over a
     // night village reads as a lens fault over a bright one.
@@ -6758,6 +6826,161 @@ export class Game {
 
   /** `blastPull`'s scratch: a batch's centre. */
   private readonly blastAt = new Vector3();
+
+  /**
+   * Hands our renderer this frame's FIRES (`BABYLON_EXIT.md` X4.4d): whether
+   * any may be drawn — a world fire on the map the handover installed, or a
+   * molotov flame switched on (`visible`, its mesh's `isVisible` until
+   * X4.4d) — and whether the glow may draw them, which `GlowRules.admits`
+   * asked of every mesh (`glowAdmits`). The fires themselves are read inside
+   * the render (`flamePull`), where the camera and the frustum are this
+   * frame's. Once a frame, after the cull (`offersBlock` is its answer this
+   * frame) and beside `drawBlasts`.
+   */
+  private drawFires(): void {
+    const draw = this.flameDraw;
+    if (!draw.installed) return;
+    if (this.handover.fires.length > 0) {
+      draw.commit(this.glowAdmits());
+      return;
+    }
+    const flames = this.grenadeFx.flames;
+    for (let i = 0; i < flames.length; i++) {
+      if (flames[i].visible) {
+        draw.commit(this.glowAdmits());
+        return;
+      }
+    }
+  }
+
+  /**
+   * What our renderer PULLS inside the render for this frame's fires
+   * (`drawFires`), where the render has placed the camera — what Babylon did
+   * with each fire's mesh, step for step. The active list, in SCENE order:
+   * the molotov's flames first (their meshes were made at this game's
+   * construction, ahead of any map's), each switched on (`visible`) and
+   * composed as `computeWorldMatrix` composed its mesh this frame
+   * (`composeNode`), its sphere carried from the flame's local one
+   * (`worldSphere`); then the world's fires, in birth order (the order their
+   * meshes were made in, `BlockHandover.fires`), each while its block's cell
+   * is offered (`WorldCulling.offersBlock`, what its mesh was a candidate
+   * by) at identity, its sphere its record's — each kept if its sphere passes
+   * the frustum test of the mesh's culling strategy, the sphere alone
+   * (`inFrustum`, off this render's planes, none while the scene skips
+   * clipping). A fire is emissive, so the size gate never dropped one. The
+   * main pass's draws in group 0's opaque order, nearest first by
+   * `eyeDistanceSq` off `globalPosition`, the active list's order breaking a
+   * tie, stable; and, with `glowOn`, the mask's draws in the active list's
+   * order (the mask's queue sorted them by material, and they wore one), a
+   * `noGlow` world fire left out — each one's bloom `GlowRules.colour` as
+   * `GlowPass` asked it of the mesh: the fire's body faded by the fog at its
+   * sphere's centre.
+   */
+  private flamePull(into: FlameDraw, glowOn: boolean): void {
+    const eye = this.cameraSys.camera.globalPosition;
+    const planes = this.scene.skipFrustumClipping ? null : this.scene.frustumPlanes;
+    const flames = this.grenadeFx.flames;
+    const shape = this.grenadeFx.flameShape;
+    const fires = this.handover.fires;
+    const drawn = this.flameDrawn;
+    const keys = this.flameKeys;
+    const cap = Math.min(into.capacity, drawn.length);
+    // The active list, in order, each into the sort as it is met.
+    let n = 0;
+    const total = flames.length + fires.length;
+    for (let i = 0; i < total && n < cap; i++) {
+      let x: number;
+      let y: number;
+      let z: number;
+      let r: number;
+      if (i < flames.length) {
+        const node = flames[i];
+        if (!node.visible) continue;
+        composeNode(node);
+        worldSphere(shape.centre, shape.radius, node.world, node.sphere);
+        x = node.sphere.x;
+        y = node.sphere.y;
+        z = node.sphere.z;
+        r = node.sphere.radius;
+      } else {
+        const f = fires[i - flames.length];
+        if (!this.culling.offersBlock(f.block)) continue;
+        x = f.x;
+        y = f.y;
+        z = f.z;
+        r = f.radius;
+      }
+      if (planes && !inFrustum(x, y, z, r, planes)) continue;
+      if (glowOn) into.maskOrder[n] = i;
+      const dx = x - eye.x;
+      const dy = y - eye.y;
+      const dz = z - eye.z;
+      const key = dx * dx + dy * dy + dz * dz;
+      // A stable insertion sort: a fire moves ahead only of one strictly
+      // farther.
+      let k = n;
+      while (k > 0 && keys[k - 1] > key) {
+        keys[k] = keys[k - 1];
+        drawn[k] = drawn[k - 1];
+        k--;
+      }
+      keys[k] = key;
+      drawn[k] = i;
+      n++;
+    }
+    const material = this.flameBloomOf;
+    const m = into.matrices;
+    for (let d = 0; d < n; d++) {
+      const i = drawn[d];
+      let cx: number;
+      let cy: number;
+      let cz: number;
+      if (i < flames.length) {
+        const node = flames[i];
+        m.set(node.world.m, d * 16);
+        into.drawShape[d] = 0;
+        cx = node.sphere.x;
+        cy = node.sphere.y;
+        cz = node.sphere.z;
+      } else {
+        const k = i - flames.length;
+        const f = fires[k];
+        // At identity, as its frozen mesh's world was.
+        m.set(IDENTITY_16, d * 16);
+        into.drawShape[d] = 1 + k;
+        cx = f.x;
+        cy = f.y;
+        cz = f.z;
+      }
+      if (glowOn && material) {
+        this.flameAt.set(cx, cy, cz);
+        const fade = 1 - fogAmountAt(Vector3.Distance(this.flameAt, eye));
+        this.bloomColour(material, fade, this.flameBloom);
+        const g = into.glow;
+        g[d * 4] = this.flameBloom.r;
+        g[d * 4 + 1] = this.flameBloom.g;
+        g[d * 4 + 2] = this.flameBloom.b;
+        g[d * 4 + 3] = this.flameBloom.a;
+      }
+    }
+    // The mask's draws, in the active list's order: each fire's draw — but a
+    // world fire marked `noGlow`, which `GlowPass` left out of its list.
+    let masks = 0;
+    if (glowOn) {
+      for (let k = 0; k < n; k++) {
+        const fire = into.maskOrder[k];
+        if (fire >= flames.length && !fires[fire - flames.length].glows) continue;
+        let d = 0;
+        while (drawn[d] !== fire) d++;
+        into.maskOrder[masks++] = d;
+      }
+    }
+    into.masks = masks;
+    into.draws = n;
+  }
+
+  /** `flamePull`'s scratch: a fire's centre. */
+  private readonly flameAt = new Vector3();
 
   /**
    * Hands our renderer this frame's DEBRIS (`BABYLON_EXIT.md` X4.4c): every

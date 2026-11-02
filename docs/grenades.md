@@ -432,9 +432,14 @@ burn-out take the new fire's light away.
 ### What it looks like, sounds like and lights
 
 - **The flames are the world's one fire material** (`FlameMaterial` over
-  `world/flame.ts`), `CONFIG.molotov.flames` of them per fire, cloned off one
-  geometry and spread over the disc on the golden angle at construction, keyed
-  on the fire SLOT, so a slot's fire is the same shape every time. They grow
+  `world/flame.ts`), `CONFIG.molotov.flames` of them per fire, instances of
+  one geometry spread over the disc on the golden angle at construction, keyed
+  on the fire SLOT, so a slot's fire is the same shape every time. **Each is a
+  NODE (`GrenadeFx.flames`, a `PieceNode`: the mesh it was until
+  `BABYLON_EXIT.md` X4.4d, channel for channel) and our renderer draws it**
+  (`render/FlameDraw.ts`, a draw a flame, beside the world's fires, front to
+  back as Babylon's queue drew them, `docs/rendering.md`'s "The fires") —
+  Babylon is made no mesh of any. They grow
   out of the ground
   wider-first and sink back into it (`fireStrength`, one curve that the flames,
   the light and the sound all ride), because the material is hard-banded and

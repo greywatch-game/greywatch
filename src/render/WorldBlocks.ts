@@ -13,8 +13,9 @@
  * (`scatterList.ts`). And, since X3.6a, the same map as the world's shadow
  * maps record it (`WorldDepth`, which it builds at the cut over the same
  * tables): every surface and instanced part carries the shadow passes it is
- * drawn in, and the CASTERS no main pass of ours draws are held here for the
- * shadow maps alone (`addCaster`). And, since X3.6c, the map as a reflection
+ * drawn in (a layer that held CASTERS no main pass of ours drew, for the
+ * shadow maps alone, was reached by no build and went at X4.4d). And,
+ * since X3.6c, the map as a reflection
  * probe's faces draw it (`probeView`): every taken surface and part in
  * `PASS_PROBE`, and the emissive PALETTE with its slots (`addEmissive`),
  * drawn by its own program (`render/emissiveWorld.ts`). And, since X3.6d,
@@ -73,14 +74,11 @@
  * an instanced part belongs to exactly one: a landform surface to its
  * recipe's landform group, a block surface and every instanced part to its
  * recipe's block group, so a rim wearing the pines' material never shares
- * their group or their scatter; the PALETTE layer, cut after the drawn
- * layers, is one group a palette material (positions and slots), and the
- * HELD layer, drawn in no main pass and cut LAST, the CASTERS' one group of
- * no recipe (its arrays the positions alone), each found by its own lookup —
- * the casters cut after everything so the main pass's cull leaves their
- * clusters out as a tail (`count`), and the palette ahead of them, INSIDE
- * that count, because the main pass (while it is the main pass's) and the
- * glow's mask draw the palette from the main pass's survivors; the main
+ * their group or their scatter; the PALETTE layer, cut LAST, after the
+ * drawn layers, is one group a palette material (positions and slots),
+ * found by its own lookup — inside the count the main pass's cull counts,
+ * because the main pass and the glow's mask draw the palette from the main
+ * pass's survivors; the main
  * pass draws the palette FIRST and by its own program — the bake's
  * pipelines, one a bias (`mainPalette`), asked once at the cut — and a
  * failed one fails no group: whoever took the palette is told
@@ -237,28 +235,23 @@ interface Surface {
 /**
  * Which layer a group is in: the blocks or the landform — or the emissive
  * PALETTE (`addEmissive`), drawn in the main pass, the probes' bake, the
- * glow's mask and its own shadows — or the HELD casters, drawn in no main pass, for the shadow maps
- * alone (`addCaster`). The palette's groups and the casters' are always cut
- * last, in that order (`cutRank`).
+ * glow's mask and its own shadows, and always cut last (`cutRank`).
  */
-type WorldLayer = "blocks" | "landform" | "palette" | "held";
-
-/** What a caster held for the shadow maps alone reads: its positions. */
-const CASTER_ATTRIBUTES: readonly AssembledAttribute[] = [{ name: "position", type: "vec3f", from: "positionData" }];
+type WorldLayer = "blocks" | "landform" | "palette";
 
 /** One material's draws in one layer: its instanced parts' arrays end to end, its surfaces' after them. */
 interface Group {
   readonly layer: WorldLayer;
-  /** Its recipe's GPU half; null for the palette's groups and the casters', which no cel pipeline draws. */
+  /** Its recipe's GPU half; null for the palette's groups, which no cel pipeline draws. */
   readonly material: MaterialSlot | null;
   /** A palette group's material, which the main pass, a probe's face and the glow's mask draw it with; null for every other group. */
   readonly emissive: EmissiveSlot | null;
   /**
    * Its variant: chosen when the group is made, and its scatter twin chosen
-   * at `finish` for a group drawing scatter; null for the casters.
+   * at `finish` for a group drawing scatter; null for the palette's groups.
    */
   program: Program | null;
-  /** What its arrays hold: its vertex stage's attributes, a caster's positions alone, or a palette surface's positions and slots. */
+  /** What its arrays hold: its vertex stage's attributes, or a palette surface's positions and slots. */
   readonly attributes: readonly AssembledAttribute[];
   /** Indices into `surfaces`, in the order added. */
   readonly members: number[];
@@ -349,8 +342,6 @@ export class WorldBlocks {
     blocks: new Map(),
     landform: new Map(),
   };
-  /** The held casters' one group, of no recipe. */
-  private heldCasters: Group | null = null;
   /** The palette's groups, one a palette material that glows — and one more a material, of its `noGlow` surfaces. */
   private readonly paletteGroups = new Map<EmissiveRecipe, Group>();
   private readonly quietPaletteGroups = new Map<EmissiveRecipe, Group>();
@@ -474,21 +465,9 @@ export class WorldBlocks {
   }
 
   /**
-   * Hands over one surface our side draws in NO main pass — a caster whose
-   * material keeps no recipe — so that the shadow passes `passes` names are
-   * drawn whole by our side: its positions alone are uploaded, and cut after
-   * every other group's. Its index is the surface's, as `add`'s. No build
-   * calls it today, nor can one without making a fire cast
-   * (`BlockHandover`'s `held` says why); kept for X4.4.
-   */
-  addCaster(label: string, geometry: SurfaceArrays, pieces: readonly PieceSpan[], passes: number, key: number = NO_BLOCK): number {
-    return this.addTo(this.casterGroup(), label, geometry, pieces, passes, key);
-  }
-
-  /**
    * Hands over one surface of the emissive PALETTE (its material's `recipe`):
-   * its positions and its slots, cut after every drawn group's and AHEAD of
-   * the held casters (`cutRank`), so inside the count the main view culls —
+   * its positions and its slots, cut after every drawn group's (`cutRank`),
+   * inside the count the main view culls —
    * drawn in the main pass, and in the passes
    * `passes` names: a probe's faces (`PASS_PROBE`, drawn by
    * `render/emissiveWorld.ts`), the glow's mask (`PASS_GLOW`, drawn through
@@ -561,10 +540,9 @@ export class WorldBlocks {
     if (surfaces.length === 0) return;
     const device = this.renderer.device;
     const sets = scatter?.sets ?? [];
-    // The palette's groups and the casters' last, in that order, so the main
-    // pass's cull can leave the casters' clusters out as a tail and count the
-    // palette's, which the main pass and the glow's mask draw through it
-    // (`drawn` below). A stable sort keeps every other group's order.
+    // The palette's groups last, which the main pass and the glow's mask
+    // draw through the main pass's cull. A stable sort keeps every other
+    // group's order.
     this.groups.sort((a, b) => cutRank(a) - cutRank(b));
 
     // A recipe with no surface of ours keeps none of its instanced parts:
@@ -595,9 +573,8 @@ export class WorldBlocks {
     const ranges: ScanRange[] = [];
     const scatterTables = new ScatterTables(sets, size.source, this.options.triangles);
     const at: CutCursor = { index: 0, cluster: 0 };
-    // The clusters the main pass culls: every group's but the casters' — the
-    // palette's among them, for its own draw and the glow's mask (`glowView`).
-    let drawn = 0;
+    // The main pass culls every cluster — the palette's among them, for its
+    // own draw and the glow's mask (`glowView`).
     this.groups.forEach((group, g) => {
       const start = at.cluster;
       group.indexBase = at.index;
@@ -612,7 +589,6 @@ export class WorldBlocks {
       if (!group.failed) this.cutGroup(group, g, parts.vertices, size.vertices[g], indices, at, cut);
       ranges.push({ start, end: at.cluster, base: group.indexBase });
       group.indexCount = at.index - group.indexBase;
-      if (cutRank(group) < CASTERS) drawn = at.cluster;
     });
 
     const clusterCount = at.cluster;
@@ -625,7 +601,7 @@ export class WorldBlocks {
       device,
       this.renderer.pipelines,
       { clusters: clusterWords(cut, blocks, boxes), clusterCount, blocks: boxes, spheres, groups: ranges, indices, bands2 },
-      { ...main, count: drawn },
+      { ...main, count: clusterCount },
       this.diagnostics,
     );
     const ready: Promise<boolean>[] = [this.cull.ready];
@@ -637,8 +613,7 @@ export class WorldBlocks {
       ready.push(this.instances.ready);
     }
     // Group 2 and the pipelines last, once the list a group's scatter reads
-    // exists. The casters have neither: no main pass draws them. A palette
-    // group's group 2 serves the main pass, the probes' bake and the glow's
+    // exists. A palette group's group 2 serves the main pass, the probes' bake and the glow's
     // mask; its main-pass pipelines are asked once, below, and the mask's by
     // its view (`glowView`).
     for (const group of this.groups) {
@@ -817,7 +792,6 @@ export class WorldBlocks {
     this.groups.length = 0;
     this.groupOf.blocks.clear();
     this.groupOf.landform.clear();
-    this.heldCasters = null;
     this.paletteGroups.clear();
     this.quietPaletteGroups.clear();
     this.mainPalette = new Map();
@@ -863,15 +837,9 @@ export class WorldBlocks {
     return group;
   }
 
-  /** The held casters' one group, made on its first surface. */
-  private casterGroup(): Group {
-    this.uncut();
-    return (this.heldCasters ??= this.newGroup("held", null, null));
-  }
-
   /**
-   * Every surface and part goes through `groupFor`, `paletteGroup` or
-   * `casterGroup`, so this is asked of every add, not only of the one that
+   * Every surface and part goes through `groupFor` or `paletteGroup`, so
+   * this is asked of every add, not only of the one that
    * makes a group: a surface filed after the cut would be held and never
    * drawn.
    */
@@ -879,7 +847,7 @@ export class WorldBlocks {
     if (this.cull) throw new Error("world blocks: a surface added after the map was cut");
   }
 
-  /** A new group in `layer`, of a cel recipe, a palette material, or neither (the casters). */
+  /** A new group in `layer`, of a cel recipe or a palette material. */
   private newGroup(layer: WorldLayer, cel: CelRecipe | null, palette: EmissiveRecipe | null): Group {
     const emissive = palette ? this.emissiveOf(palette) : null;
     const program = cel ? this.programOf(cel.defines) : null;
@@ -888,7 +856,7 @@ export class WorldBlocks {
       material: cel ? this.materialOf(cel) : null,
       emissive,
       program,
-      attributes: program ? program.vertex.attributes : emissive ? EMISSIVE_ATTRIBUTES : CASTER_ATTRIBUTES,
+      attributes: program ? program.vertex.attributes : EMISSIVE_ATTRIBUTES,
       members: [],
       instanced: [],
       withheld: null,
@@ -1566,24 +1534,19 @@ function drawsIn(group: Group, passBits: number): boolean {
   return ((group.surfacePasses | group.scatterPasses) & passBits) !== 0;
 }
 
-/** `cutRank` of the held casters' group: the tail no main view counts. */
-const CASTERS = 2;
-
 /**
  * Where a group is cut: the blocks and the landform first (0, in the order
  * added), then the palette (1), which the main view counts for its own draw
- * and the glow's mask, then the held casters (`CASTERS`), which it leaves out
- * as a tail.
+ * and the glow's mask.
  */
 function cutRank(group: Group): number {
-  if (group.layer === "palette") return 1;
-  return group.layer === "held" ? CASTERS : 0;
+  return group.layer === "palette" ? 1 : 0;
 }
 
-/** How a group is named in a label or a message: its recipe's defines, a palette material, or the held casters. */
+/** How a group is named in a label or a message: its recipe's defines, or a palette material. */
 function labelOf(group: Group): string {
   if (group.material) return `[${group.material.recipe.defines.join("+")}]`;
-  return group.emissive ? `[emissive, bias ${group.emissive.recipe.depthBias}]` : "[casters]";
+  return `[emissive, bias ${group.emissive?.recipe.depthBias}]`;
 }
 
 /** The first attribute `group`'s variant reads that `geometry` lacks, or null; an absent `uv` reads 0. */

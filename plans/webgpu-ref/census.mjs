@@ -23,7 +23,9 @@
  * what our renderer drew in that pass (`Game.handover.stats.drawn`, since
  * X4.1d `Game.bodyDraw.stats.drawn`, since X4.2b `Game.hullDraw.stats
  * .drawn`, since X4.3c `Game.viewDraw.stats.drawn`, the weapon, and since
- * X4.4b `Game.pieceDraw` and `Game.markDraw`'s, the effect pools). Read on
+ * X4.4b `Game.pieceDraw` and `Game.markDraw`'s, the effect pools, and
+ * since X4.4d `Game.flameDraw`'s, the fires — the blast's billows and the
+ * debris, ours since X4.4c, are not counted). Read on
  * a FROZEN frame, after the bank's own settle, so the count is the vantage's
  * and not a frame's: the same frame a `bank.mjs --check` photographs.
  *
@@ -103,11 +105,17 @@ function read(page) {
     // rank of every piece a draw, every mark one draw), counted the same
     // way; a BEFORE older than that counts them in Babylon's, one a mesh, so
     // a row with pieces or marks in it FALLS.
+    // The FIRES are ours since X4.4d (`FlameDraw`, a draw a fire, as Babylon
+    // drew a mesh), counted the same way; a BEFORE older than that counts
+    // the same draws in Babylon's, so a row's total holds.
     const ours = g.handover ? g.handover.stats : { taken: 0, drawn: 0 };
     const bodies = g.bodyDraw ? g.bodyDraw.stats.drawn : 0;
     const hulls = g.hullDraw ? g.hullDraw.stats.drawn : 0;
     const view = g.viewDraw ? g.viewDraw.stats.drawn : 0;
-    const pools = (g.pieceDraw ? g.pieceDraw.stats.drawn : 0) + (g.markDraw ? g.markDraw.stats.drawn : 0);
+    const pools =
+      (g.pieceDraw ? g.pieceDraw.stats.drawn : 0) +
+      (g.markDraw ? g.markDraw.stats.drawn : 0) +
+      (g.flameDraw ? g.flameDraw.stats.drawn : 0);
     return { babylon: window.__census.babylon, ours: ours.drawn + bodies + hulls + view + pools, bodies, hulls, view, pools, taken: ours.taken };
   });
 }

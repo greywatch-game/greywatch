@@ -782,7 +782,7 @@ fires (X4.4), the Material objects (Phase 4), device-loss recovery (X5.4).
 - X5.3 deletes what the editor keeps;
 - X4.4 uses or deletes the HELD-caster layer (`WorldBlocks.addCaster`,
   `BlockHandover`'s `held`), which no build reaches: every fire is made
-  `noShadowCaster`;
+  `noShadowCaster` (deleted at X4.4d);
 - a stale comment naming `ReflectionSystem.encloses` stays in
   `src/world/harrowmead/layout.ts`, because the collision bake's staleness
   guard hashes that file's text and editing it would re-bake.
@@ -1020,7 +1020,7 @@ card behind it are off Babylon's scene, and no sub-step changed the picture.
 
 The full record is in [the archive](plans/done/babylon_exit_landed.md).
 
-### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (63a338a, review fixes after it), X4.4b **LANDED** (9470686), X4.4c **LANDED** (d82f311)
+### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (63a338a, review fixes after it), X4.4b **LANDED** (9470686), X4.4c **LANDED** (d82f311), X4.4d **LANDED** (HASH)
 
 Every pooled effect Babylon still draws comes off its scene but the three
 that blend among the panes (decided 2026-11-01: they wait for X4.6), and the
@@ -1333,23 +1333,81 @@ Everything else in X4.4 moves as briefed; `fx-glass-sort` is X4.6's BEFORE.
   Babylon's at the install, 23 of ours, 49 modules; a first run straight
   after a build counted three of the install's 24 late, under the spawn);
   typecheck, build, corecheck pass.
-- **X4.4d — the fires are ours, and the held-caster layer goes (no picture
-  change).** The world's fires come out of the block merges Babylon keeps
-  and are drawn by our renderer on `FlameMaterial`'s WGSL, filed by block as
-  the rest of the world is; the molotov's flames the same, off their pool.
-  After it the only world surface Babylon is made a mesh of is the glazing.
-  **No bake draws a fire, and that stays so here** (`BlockHandover`: "a fire
-  is left out of our bake as Babylon's left it out of its own",
-  `FINDINGS.md` 51): X3.6c's "the fire, when it moves, owes the bake a
-  program" is the fire ENTERING the bake, a picture change of its own, not
-  part of this sub-step.
-  **The HELD-caster layer** (`WorldBlocks.addCaster`, `BlockHandover`'s
-  `held` and its DEV node check), kept by X3.7c for a casting fire and
-  reached by no build (every fire is `noShadowCaster`: X3.7c's note): a fire
-  of ours that casts uses it or has no need of it, and it goes. **Oracle:**
-  the bank byte-identical (the world-fire and molotov rows); `merge:hash`
-  showing only the fire surfaces moved from Babylon's side to ours; every
-  map installs (no refusal).
+- **X4.4d — the fires are ours, and the held-caster layer goes LANDED**
+  (HASH; 2026-11-01; no picture change). Every world fire — a block's merge
+  of `world/flame.ts` surfaces, the fire drums, hearths and candles among
+  them — and every flame of a burning molotov is our renderer's
+  (`render/FlameDraw.ts`, `render/flameProgram.ts`, the WGSL
+  `shaders/wgsl/flame.ts` — `FlameShader.ts`'s two stages as plain bodies,
+  statement for statement, which the `ShaderMaterial` now assembles too, for
+  an EDITOR build's fires, the one place Babylon still draws one), a draw
+  each: one instance of its surface under its matrix, off the material's
+  own values (`FlameMaterial.values`), the eye, wind, fog and opaque alpha
+  being the frame's. Babylon is made no fire mesh in a round (the handover
+  TAKES a fire, `takeFire`: block-merged at identity, never `updatable`,
+  casting nothing, or REFUSED) and no molotov flame mesh at all
+  (`GrenadeFx.flames`, a `PieceNode` each); the only world surface Babylon
+  is made a mesh of is the glazing. **No bake draws a fire, and none does
+  here** (`FINDINGS.md` 51). **The HELD-caster layer is deleted**
+  (`WorldBlocks.addCaster`, its group, layer and cut rank; `BlockHandover`'s
+  `held`, `heldMeshes` and DEV node check): no build reached it.
+  **Found first** (`x44d/fireorder.mjs`, on the parent: Babylon's own render
+  calls in group 0 of the main pass and in the glow's mask, with our
+  draws' queue points marked as the bundle list holds them, over a scripted
+  640 frames a map): every fire, world and molotov alike, is in group 0's
+  OPAQUE list, sorted front to back with the sky dome before them and the
+  grass, the capture zones, the backed panes and the water interleaved —
+  every one of which writes depth — all before our `"beforeAlphaTest"`
+  point; in the mask, after every draw of ours, in the active list's order
+  (one material) — the molotov's flames first (their meshes were made at
+  `Game`'s construction), then the world's in birth order. A fire is
+  EMISSIVE, so the size gate never dropped one — **no latch** to keep or
+  report — and Babylon's frustum test read bounds composed that frame
+  (`computeWorldMatrix` before `isInFrustum`). Reproduced: the draws at
+  `"beforeAlphaTest"` FIRST of all ours, ordered as the queue ordered them
+  (`Game.flamePull`: scene order, a world fire while its block's cell is
+  OFFERED — `WorldCulling.offersBlock`, snapshotted where the candidate list
+  is built — the sphere frustum test, nearest centre first, stable), the
+  mask after the billows'. Two pipelines asked at `Game`'s construction;
+  report version 28 (`pools.fires`). `GrenadeFx.warm` still poses its
+  molotov flame, drawn through ours, until X4.4e. **Group 0 cannot go
+  empty**: the sky dome is in it on every frame of the probes.
+  **Measured:** the bank `--check --keep` against a BEFORE at bac02b7,
+  **111 of 113 frames byte-equal** — among them the 68 rows with a fire
+  drawn (the census moves their fire draws from Babylon's count to ours),
+  `fx-fire`, `fx-fire-fade` and `fx-molotov` 0 px from the bank — the
+  other two Sarab's `ground` (100 px, 2/255) and `shelf` (1 px, 1/255), and
+  Sarab alone re-checked twice at each code is **11 of 11 byte-equal across
+  all four runs** (cross-process residue, as at X4.4c); the same 34 stale
+  rows. The order probe **640 of 640 frames equal** on each of Coldharbour
+  and Cinderhaven in the main pass's fire order and the mask's (10,752 and
+  13,593 draws; molotovs overlapping and spreading, the hearths and drums
+  close, a camera walked out past the reach and back — Coldharbour's first
+  fire's cell switched off on 96 frames — and every one of ours at
+  `"beforeAlphaTest"`). `merge:hash` against the parent: **exactly the 35
+  world fires' `mesh` moved** (Hollowmere 11, Greyfen 3, Coldharbour 2,
+  Harrowmead 2, Sarab 2, Cinderhaven 15; Kurenai and the proving ground
+  none) and nothing else, 854 of 854 meshed visuals' records equal; `--editor`
+  identical on all eight; every map installs. `pipelines.mjs coldharbour
+  --round` **zero in play** in five of five (the first install 22 of
+  Babylon's — 24 at X4.4c, the flame and its mask gone — 23 of ours, 45
+  modules). `kit:hash` 3,722 of 3,722 and `--models` 244 of 244 identical;
+  `census --against` the BEFORE **every one of 113 rows equal** (the fires'
+  draws now counted as ours, `census.mjs`); `gate`, `shaders`, `parity`,
+  typecheck, build, corecheck pass (`shaders`' first run lost its page to a
+  navigation mid-install on Kurenai; re-run, clean on seven). An EDITOR
+  build's fires (`buildEditorMap`, Cinderhaven): compiled, drawn and in the
+  mask, **4 of 4 photographs byte-equal** to the parent's. An offline round
+  on Coldharbour (`x44d/round.mjs`): six lives, 0 errors, the seam warning
+  never raised; the molotov lives' flames drawn 1,398-1,737 flame-frames (up
+  to 20 fire draws, 18 flames and the two hearths, all 20 in the mask), the
+  world's two fires on 582-631 frames a life; the authority's `blaze` 6. A
+  server's round (`x44d/net2.mjs`, `PORT=8097`): B threw two molotovs; on A
+  the authority's `blaze` 2 drawn through `drawFire` — flames on 598 frames,
+  8,100 flame-draws, up to 17 at once — and 0 errors on either page. A
+  profiler capture at report version 28 with a molotov burning: `pools: {
+  drawn: 17, masked: 14, …, fires: 12 }`. The full record is in
+  [the archive](plans/done/babylon_exit_landed.md).
 - **X4.4e — pipelines compiled at load, and the seam checked (no picture
   change).** **The warm-up changes shape**: every pipeline a round can use is
   created from a declared list during loading, so the `warm(on)` poses become
@@ -1373,13 +1431,19 @@ Everything else in X4.4 moves as briefed; `fx-glass-sort` is X4.6's BEFORE.
   are ours too — the debris draw's pipeline and the blast's two asked at
   construction — so every pool with no pose is covered by construction;
   `BlastFx.warm` still poses its billows, drawn through ours, and goes with
-  the rest here. The three Babylon pools left — the sparks, the dust discs
-  and the scorch — keep their poses until X4.6.)
+  the rest here. Since X4.4d the fires are ours as well — their two
+  pipelines asked at construction — and `GrenadeFx.warm`'s molotov flame
+  pose, drawn through ours, is redundant and goes here too. The three
+  Babylon pools left — the sparks, the dust discs and the scorch — keep
+  their poses until X4.6.)
   **The empty-group seam** (decided 2026-10-31, X4.3c's review): every draw
   of ours hangs on rendering group 0's three points, and Babylon visits no
   empty group — so a frame on which group 0 dispatches no mesh of Babylon's
   runs NONE of ours, silently (a DEV build warns once per change,
-  `Renderer`). X4.4b-d take meshes out of group 0; this sub-step states
+  `Renderer`). X4.4b-d take meshes out of group 0 (after X4.4d what Babylon
+  still queues there in a round is the sky's dome and clouds, the grass and
+  its turf, the capture zones, the water, the glazing, and the three blended
+  pools — measured by its order probe); this sub-step states
   whether any state can now leave it empty (the sky still holds it in a round
   and over the menu, so X4.5 is expected to owe the fix) and fixes the seam
   if X4.4 made it reachable — our draws must not depend on group 0 being

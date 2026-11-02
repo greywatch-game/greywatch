@@ -8,17 +8,19 @@
  * surfaces are ours, and so made no Babylon mesh at all; their arrays handed
  * over on the way past the build; the map cut once it is filed; and the
  * refusal, a failure being the world's (`Game.worldFailed`) rather than a
- * handback.
+ * handback — and since X4.4d the map's FIRES, taken from the build as the
+ * blocks are and handed to our renderer's fire draw (`render/FlameDraw.ts`),
+ * so a round makes Babylon no mesh of any surface but the glazing.
  * Owns: `BlockHandover` — our renderer's `WorldBlocks`, each surface of
  * ours's reach key (the block its record is filed under), which of them are
- * the emissive PALETTE and which are casters held rather than drawn (the
- * HELD layer, unreachable by construction: see `held`), which of them cast, which a
- * probe's bake draws and which the glow's mask draws, the fires, the held
- * casters' meshes (for the DEV node check), the refusal held until the
- * install (`refusal`), whose world the install is (`owner`, latched at the
- * install and handed back with its failure) and the install's failure, once
- * it failed (`failure`), the material epoch last copied, and the build's
- * scatter FIELD until the map is cut (X3.4b).
+ * the emissive PALETTE, which of them cast, which a probe's bake draws and
+ * which the glow's mask draws, the FIRES taken until the install hands them
+ * to the fire draw and, after it, what the pull reads of each (`fires`: its
+ * name, its block, its sphere and whether it glows, in birth order), the
+ * refusal held until the install (`refusal`), whose world the install is
+ * (`owner`, latched at the install and handed back with its failure) and
+ * the install's failure, once it failed (`failure`), the material epoch
+ * last copied, and the build's scatter FIELD until the map is cut (X3.4b).
  * Invariants: a surface is OURS — answered `true` to `onSurface`, made no
  * mesh — if our pipeline draws it in every pass exactly as Babylon would:
  * block-merged or the LANDFORM (`WorldSurface.landform`: the floor's
@@ -28,20 +30,19 @@
  * keeps a recipe (`CelMaterialFactory.celRecipe`: no glazing, no cloth, no
  * emissive) — or the emissive PALETTE, block-merged at identity with its
  * slots, ours in its main pass, its bake, its shadows and — unless it is
- * `noGlow`, read PER SURFACE at the take — its glow mask; and that test is
+ * `noGlow`, read PER SURFACE at the take — its glow mask — or a FIRE
+ * (`isFlame`: a `FlameMaterial` merge), block-merged at identity, never
+ * `updatable`, never a caster, with its normals and uvs, ours in the main
+ * pass and — unless it is `noGlow` — the glow's mask, and in no bake and no
+ * shadow (`FINDINGS.md` 51: no bake has ever drawn a fire); and that test is
  * asked of the surface's RECORD, never of a mesh (X3.7a: the identity off
  * the part's own transform, the blend off the material, `blends`, and
  * rendering group 0 on the layer mask every camera sees by construction,
  * those being what `worldMeshes` makes every world mesh with). Everything
- * else is BABYLON's, made a mesh — on a shipped map the glazing and the
- * fires alone — and a surface Babylon keeps may need nothing of ours but
- * its shadow: a caster among them is HELD for the shadows alone
- * (`WorldBlocks.addCaster`: its positions, at identity, never `updatable`)
- * — which no build can reach, its mesh being refused below unless it is a
- * fire and every fire being `noShadowCaster` (`held`) — and one that casts but cannot be held, a palette surface that cannot be
- * held, or a mesh Babylon is made that is neither the glazing nor a fire
- * (`strayMesh`: one our bake would owe a picture of, a held caster's among
- * them)
+ * else is BABYLON's, made a mesh — on a shipped map the glazing alone, which
+ * casts nothing — and a surface Babylon keeps that casts, a palette surface
+ * or a fire our renderer cannot hold, or a mesh Babylon is made that is not
+ * the glazing (`strayMesh`: one our bake would owe a picture of)
  * is REFUSED — held to the install, which fails the world on it, and then
  * THROWN in a DEV build (so `npm run merge:hash` cannot pass a map that has
  * one, and the page still reaches the menu). **THE WORLD DRAWS WHOLE OR THE
@@ -55,8 +56,7 @@
  * mask's: a build or a view that failed, a pipeline failed for the session,
  * a refused mask pass, each told through the failure the install hands
  * over WITH the world (`failFor`, bound to the install's owner, so a pass
- * holds no latch and keeps no listener) — and in DEV a held caster switched
- * off, hidden or faded — each said ONCE an install (`fail`), our draws
+ * holds no latch and keeps no listener) — each said ONCE an install (`fail`), our draws
  * stopped there and then, and
  * handed to `Game.worldFailed` with the install's OWNER (`WorldOwner`), so a
  * failure names the map it came from and is never another round's, and
@@ -95,16 +95,22 @@
  * out as Babylon's bake leaves it (`FINDINGS.md` 51); the palette is a
  * LIGHT SOURCE, which no size gate drops (`LIGHT_SOURCE`), its main pass
  * ours (`WorldBlocks` draws it first), and its mask handed to `WorldGlow`
- * whenever a surface of it glows.
+ * whenever a surface of it glows; the fires go to the fire draw at the
+ * install (`FlameDraw.setWorld`), in BIRTH order — the order `worldMeshes`
+ * made their meshes in, which was Babylon's candidate order and so its
+ * active list's — their arrays read there and let go, each one's reach the
+ * cell of its block (`WorldCulling.offersBlock`, which `Game`'s pull asks a
+ * frame), and a fire, too, is a light source no size gate ever dropped.
  * Never: draws, or reads a material's uniforms — a material reaches our side
  * as its recipe; writes a property on a mesh; hands a surface back.
  * Contract: `docs/rendering.md`, "Our renderer's frame";
  * `BABYLON_EXIT.md` X3.3a, X3.3b, X3.3c, X3.4, X3.4b, X3.5, X3.5b, X3.6a,
- * X3.6b, X3.6c, X3.6d, X3.6e, X3.7a, X3.7b, X3.7c.
+ * X3.6b, X3.6c, X3.6d, X3.6e, X3.7a, X3.7b, X3.7c, X4.4d.
  */
-import { type AbstractMesh, Material, type Mesh } from "@babylonjs/core";
+import { Material, type Mesh } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { type BlockBox, type CullDiagnostics, NO_DIAGNOSTICS } from "../render/ClusterCull";
+import type { FlameDraw, FlameShapeArrays } from "../render/FlameDraw";
 import type { Renderer } from "../render/Renderer";
 import type { LampAtlas } from "../render/LampAtlas";
 import type { ProbeBake } from "../render/ProbeBake";
@@ -127,7 +133,7 @@ import type { CelMaterialFactory } from "../shaders/CelShader";
 import { isFlame } from "../shaders/FlameShader";
 import type { ScatterField } from "../world/scatterVariants";
 import type { WorldGeometry, WorldSurface } from "../world/worldGeometry";
-import { blockOf, NO_REACH, type WorldCulling } from "./WorldCulling";
+import { blockOf, type WorldCulling } from "./WorldCulling";
 
 /**
  * Whether `material` draws BLENDED, as `Material.needAlphaBlendingForMesh`
@@ -166,6 +172,35 @@ export interface WorldOwner {
   readonly name: string;
 }
 
+/**
+ * One world FIRE as `Game`'s pull reads it (`BlockHandover.fires`): the
+ * surface the fire draw holds as `1 + ` its index — its name, the block its
+ * record is filed under, whose cell the cull offers or holds back
+ * (`WorldCulling.offersBlock`), its world bounding sphere (its record's: the
+ * numbers its mesh's bounding info held, at identity), and whether it
+ * blooms (`noGlow` read per surface, as `GlowPass` read it per mesh).
+ */
+export interface WorldFire {
+  readonly name: string;
+  readonly block: string;
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  readonly radius: number;
+  readonly glows: boolean;
+}
+
+/** A fire taken from the build, held until the install hands it over. */
+interface TakenFire {
+  /** Its index in the build — what names its record. */
+  readonly index: number;
+  /** When `worldMeshes` would have made its mesh: the order the install hands the fires over in. */
+  readonly born: number;
+  readonly block: string;
+  readonly glows: boolean;
+  readonly arrays: FlameShapeArrays;
+}
+
 export class BlockHandover {
   private readonly blocks: WorldBlocks;
   /**
@@ -175,20 +210,6 @@ export class BlockHandover {
    * it.
    */
   private reach: (string | null)[] = [];
-  /**
-   * Of those, the casters HELD for the shadows alone (`WorldBlocks.addCaster`),
-   * which Babylon draws in the main pass — by index, to the surface's own
-   * index in the build, which names its mesh.
-   *
-   * **Always empty, by construction rather than by luck** (X3.7c's review): a
-   * held caster is made a Babylon mesh, and `strayMesh` refuses every mesh
-   * that is neither the glazing nor a fire; the glazing is `noShadowCaster`
-   * (`MapBuilder`), and so is every fire, hard-coded where a fire is made
-   * (`flame.ts`'s `flamePart`, the fire drum's flame) — so no held caster
-   * can exist without making a fire cast. The layer, and the DEV node check
-   * that reads its meshes, are kept for X4.4 (the fires) to use or delete.
-   */
-  private held = new Map<number, number>();
   /** Of those, the emissive PALETTE (`WorldBlocks.addEmissive`): ours in every pass. */
   private palette = new Set<number>();
   /** The surfaces that cast, by index. */
@@ -197,12 +218,10 @@ export class BlockHandover {
   private probing = new Set<number>();
   /** The surfaces the glow's mask draws (`PASS_GLOW`), by index: the palette's, but for one marked `noGlow`. */
   private glowing = new Set<number>();
-  /** The fires (`FlameMaterial` merges), by the surface's index in the build: Babylon's, and in no bake (`FINDINGS.md` 51). */
-  private fireSurfaces: number[] = [];
-  /** Their meshes, found at `install`. */
-  private fires = new Set<Mesh>();
-  /** The held casters' meshes, found at `install`: what the DEV node check reads. */
-  private heldMeshes: Mesh[] = [];
+  /** The fires (`FlameMaterial` merges) taken from the build, until the install hands them to the fire draw. */
+  private taken: TakenFire[] = [];
+  /** The installed map's fires, in birth order — fire `k` is the fire draw's surface `1 + k`. */
+  private worldFires: WorldFire[] = [];
   /** A surface this build could not hold: the install fails on it (`refuse`). */
   private refusal: string | null = null;
   /**
@@ -232,6 +251,8 @@ export class BlockHandover {
     private readonly probes: ProbeBake,
     /** Our renderer's share of the glow's mask, handed the world when a palette surface glows. */
     private readonly glow: WorldGlow,
+    /** Our renderer's fire draw, handed the map's fires at the install and let go of them at a `clear`. */
+    private readonly flames: Pick<FlameDraw, "setWorld" | "clearWorld">,
     /**
      * Told, once an install, that the world cannot be drawn, why, and whose
      * install it was — after our draws have stopped. `Game.worldFailed`,
@@ -257,8 +278,8 @@ export class BlockHandover {
   /**
    * The build's `BuildOptions.onSurface`: whether our side draws `surface`
    * — see the header for the test — handing its arrays over while they can
-   * still be read; `true` and the build makes no mesh of it. A surface
-   * Babylon keeps that casts is held for the shadows; one that cannot be
+   * still be read; `true` and the build makes no mesh of it. A FIRE is taken
+   * for the fire draw (`takeFire`). A surface Babylon would keep that casts
    * is refused (`refuse`).
    */
   readonly onSurface = (surface: WorldSurface, index: number): boolean => {
@@ -275,37 +296,70 @@ export class BlockHandover {
       r.x === 0 && r.y === 0 && r.z === 0 &&
       k.x === 1 && k.y === 1 && k.z === 1 &&
       part.rotationQuaternion === null;
+    if (isFlame(part.material)) return this.takeFire(surface, index, atIdentity, passes);
     // Every surface the main pass takes is in a probe's bake too: Babylon's
     // drew the map's visuals whole but for the glazing, which is never ours.
     let at = this.takeForMainPass(surface, atIdentity, passes | PASS_PROBE, key);
     let drawn = passes | PASS_PROBE;
     if (at === null) {
-      drawn = this.heldPasses(surface, atIdentity, passes);
-      const held = this.hold(surface, atIdentity, drawn, key);
+      drawn = this.palettePasses(surface, atIdentity, passes);
+      at = this.holdPalette(surface, atIdentity, drawn, key);
       // The palette is ours whole or the map is refused.
-      if (this.mats.emissiveRecipe(part.material) !== null && !held?.palette) {
+      if (this.mats.emissiveRecipe(part.material) !== null && at === null) {
         return this.refuse(`"${part.name}" wears the emissive palette but is not block-merged at identity with its slots`);
       }
-      // A fire is left out of our bake as Babylon's left it out of its own.
-      if (isFlame(part.material)) this.fireSurfaces.push(index);
-      if (held === null) {
+      if (at === null) {
         if ((passes & SHADOW_PASSES) !== 0) {
           return this.refuse(`"${part.name}" casts a shadow but our renderer can hold it in no way`);
         }
-        // Babylon's alone, in every pass: the glazing, a fire.
+        // Babylon's alone, in every pass: the glazing.
         return false;
       }
-      at = held.at;
-      if (held.palette) this.palette.add(at);
-      else this.held.set(at, index);
+      this.palette.add(at);
     }
     this.reach[at] = surface.landform ? null : (blockOf(part.metadata) ?? "");
     if ((drawn & SHADOW_PASSES) !== 0) this.casting.add(at);
     if ((drawn & PASS_PROBE) !== 0) this.probing.add(at);
     if ((drawn & PASS_GLOW) !== 0) this.glowing.add(at);
-    // A held caster is still Babylon's in the main pass.
-    return !this.held.has(at);
+    return true;
   };
+
+  /**
+   * A FIRE (`isFlame`), taken for our renderer's fire draw — `true`, and the
+   * build makes no mesh of it — if our fire program draws it exactly as
+   * Babylon would: block-merged at identity, never `updatable` (its
+   * positions are world positions nothing rewrites, drawn under an identity
+   * matrix as its frozen mesh was), casting nothing (no shadow pass of ours
+   * draws a fire, and since X4.4d no layer holds a caster Babylon keeps), and
+   * with the normals and uvs its vertex stage reads; else REFUSED. It is in
+   * no bake, as Babylon's bake left it out of its own (`FINDINGS.md` 51), and
+   * in the glow's mask unless it is `noGlow`, read here per surface as
+   * `GlowPass` read it per mesh. Its arrays are kept until the install
+   * uploads them.
+   */
+  private takeFire(surface: WorldSurface, index: number, atIdentity: boolean, passes: number): boolean {
+    const { part } = surface;
+    const block = blockOf(part.metadata);
+    const g = part.geometry;
+    if (block === null || surface.block === null || surface.landform || surface.updatable || !atIdentity) {
+      return this.refuse(`the fire "${part.name}" is not block-merged at identity, which is all our fire draw can hold`);
+    }
+    if ((passes & SHADOW_PASSES) !== 0) {
+      return this.refuse(`the fire "${part.name}" casts a shadow, which our renderer draws no fire in`);
+    }
+    if (!g.normals || !g.uvs) {
+      return this.refuse(`the fire "${part.name}" has no ${g.normals ? "uvs" : "normals"}, which its vertex stage reads`);
+    }
+    const glows = (part.metadata as { noGlow?: boolean } | null | undefined)?.noGlow !== true;
+    this.taken.push({
+      index,
+      born: surface.born,
+      block,
+      glows,
+      arrays: { positions: g.positions, normals: g.normals, uvs: g.uvs, indices: g.indices },
+    });
+    return true;
+  }
 
   /**
    * `surface` added to the main pass's blocks if our pipeline draws it exactly
@@ -327,8 +381,8 @@ export class BlockHandover {
   }
 
   /**
-   * The passes a surface the main pass does not take is held for: its
-   * shadow passes, and if it is the emissive PALETTE
+   * The passes a surface the main pass does not take is drawn in by our
+   * side: its shadow passes, and if it is the emissive PALETTE
    * (`CelMaterialFactory.emissiveRecipe`) with its slots — drawn as Babylon
    * draws it, at identity, and in rendering group 0 on every camera's layer
    * mask as every world mesh is (see the header) — a probe's bake
@@ -337,7 +391,7 @@ export class BlockHandover {
    * unless this surface is `noGlow` — read here, per surface, as `GlowPass`
    * read it per mesh.
    */
-  private heldPasses(surface: WorldSurface, atIdentity: boolean, passes: number): number {
+  private palettePasses(surface: WorldSurface, atIdentity: boolean, passes: number): number {
     const { part } = surface;
     if (!atIdentity || !this.mats.emissiveRecipe(part.material) || !part.geometry.uvs2) return passes;
     const glows = (part.metadata as { noGlow?: boolean } | null | undefined)?.noGlow !== true;
@@ -345,28 +399,20 @@ export class BlockHandover {
   }
 
   /**
-   * `surface`, which the main pass does not take, held for the passes
-   * `passes` names if its positions are world positions and nothing rewrites
-   * them — a block merge, at identity, never `updatable`: the palette with its
-   * slots for every pass of ours, a caster's positions alone for the shadows
-   * — its index, and which of the two it was made; else null.
+   * `surface`, which the main pass does not take, handed over as the
+   * emissive PALETTE with its slots for every pass `passes` names, if it is
+   * one and its positions are world positions nothing rewrites — a block
+   * merge, at identity, never `updatable` — and its index; else null. (A
+   * caster Babylon kept was held here for the shadows alone until X4.4d, a
+   * layer no build reached: the one surface Babylon keeps in a round is the
+   * glazing, which casts nothing.)
    */
-  private hold(
-    surface: WorldSurface,
-    atIdentity: boolean,
-    passes: number,
-    key: number,
-  ): { at: number; palette: boolean } | null {
+  private holdPalette(surface: WorldSurface, atIdentity: boolean, passes: number, key: number): number | null {
     if (passes === 0 || surface.block === null || surface.updatable || !atIdentity) return null;
     const { part } = surface;
     const palette = (passes & PASS_PROBE) !== 0 ? this.mats.emissiveRecipe(part.material) : null;
-    if (palette) {
-      const at = this.blocks.addEmissive(part.name, part.geometry, surface.pieces, palette, passes, key);
-      return { at, palette: true };
-    }
-    if ((passes & SHADOW_PASSES) === 0) return null;
-    const at = this.blocks.addCaster(part.name, part.geometry, surface.pieces, passes, key);
-    return { at, palette: false };
+    if (!palette) return null;
+    return this.blocks.addEmissive(part.name, part.geometry, surface.pieces, palette, passes, key);
   }
 
   /**
@@ -423,19 +469,14 @@ export class BlockHandover {
    * that ours took no surface, so a production refusal on a map ours took
    * nothing of still fails. A refusal held from the build (thrown after it
    * in a DEV build: `refuse`), a mesh Babylon was
-   * made that is neither the glazing nor a fire (`strayMesh`), a surface
-   * filed under a block no cell was grown for, or a cut that fails, fails
-   * the world (`fail`).
+   * made that is not the glazing (`strayMesh`), a surface or a fire filed
+   * under a block no cell was grown for, or a cut that fails, fails the
+   * world (`fail`). The fires go to the fire draw first, in birth order
+   * (`handFires`).
    */
   install(map: InstalledWorld, owner: WorldOwner, editor: boolean): void {
     this.owner = editor ? null : owner;
     const failed = (reason: string): void => this.failFor(owner, reason);
-    const meshOf = (index: number): Mesh | null => {
-      const v = map.world.surfaces[index]?.visual ?? -1;
-      return v >= 0 ? (map.visuals[v] ?? null) : null;
-    };
-    this.fires = new Set(this.fireSurfaces.map(meshOf).filter((m): m is Mesh => m !== null));
-    this.heldMeshes = [...this.held.values()].map(meshOf).filter((m): m is Mesh => m !== null);
     this.epoch = -1;
     const field = this.field;
     this.field = null;
@@ -449,6 +490,7 @@ export class BlockHandover {
       if (import.meta.env.DEV) throw new Error(this.refusal);
       return;
     }
+    if (!this.handFires(map)) return;
     if (field) {
       field.sets.forEach((set, s) => {
         for (const part of set.parts) {
@@ -465,12 +507,8 @@ export class BlockHandover {
         }
       });
     }
-    // A caster held for the shadows alone is never reach-culled: no main pass
-    // of ours draws it, the world's maps cull by no reach, and a lamp face
-    // (which reaches only its light's range) draws one past it, which the
-    // face's far plane clips or stores as a distance over 1 — lit, as no
-    // caster at all would read. Every other surface is measured to the box
-    // the cull grew for its block — the PALETTE's too: past the reach a lit
+    // Every block surface is measured to the box the cull grew for its block
+    // (the landform to one no reach is short of) — the PALETTE's too: past the reach a lit
     // window is `fogColor` written over the SKY. Every other view reads that
     // box to the same picture — the mask (past the reach its pixel is the
     // clear's own), the lamps' atlas (the box holds the surface, so a light's
@@ -479,7 +517,7 @@ export class BlockHandover {
     const boxes: BlockBox[] = [];
     for (let at = 0; at < this.reach.length; at++) {
       const block = this.reach[at];
-      const box = this.held.has(at) ? NO_REACH : this.culling.reachBoxOf(block);
+      const box = this.culling.reachBoxOf(block);
       // The build's contract broken — a surface filed under a block no
       // record grew a cell for — refused as `setMap` refuses its own.
       if (!box) {
@@ -533,24 +571,60 @@ export class BlockHandover {
   }
 
   /**
-   * The first mesh Babylon was made that is neither the glazing (which no
-   * bake draws) nor a FIRE (which no bake has ever drawn, `FINDINGS.md` 51),
-   * with how many others — a mesh the reflection bake would owe a picture of
-   * and cannot draw, our bake reading no mesh, a held caster's among them;
-   * null for none, every shipped map. Asked at the install, of every map.
+   * The first mesh Babylon was made that is not the glazing (which no bake
+   * draws), with how many others — a mesh the reflection bake would owe a
+   * picture of and cannot draw, our bake reading no mesh (a fire is no mesh
+   * since X4.4d: `takeFire` takes it or refuses it); null for none, every
+   * shipped map. Asked at the install, of every map.
    */
   private strayMesh(map: InstalledWorld): string | null {
     const panes = new Set(map.paneGroups.map((g) => g.mesh));
     let first: Mesh | null = null;
     let others = 0;
     for (const mesh of map.visuals) {
-      if (panes.has(mesh) || this.fires.has(mesh)) continue;
+      if (panes.has(mesh)) continue;
       if (first) others++;
       else first = mesh;
     }
     return first
       ? `Babylon was made "${first.name}" and ${others} other meshes the reflection bake would draw, which our renderer cannot bake`
       : null;
+  }
+
+  /**
+   * The fires taken from the build, handed to the fire draw in BIRTH order —
+   * the order `worldMeshes` made their meshes in, which was the order of
+   * Babylon's candidates and so of its active list: the glow mask's order
+   * and the opaque sort's tie-break — each with what the pull reads of it
+   * off its RECORD (`fires`); their arrays are read there and let go. False,
+   * the world failed, if one is filed under a block no cell was grown for:
+   * the build's contract broken, as `setMap` refuses its own.
+   */
+  private handFires(map: InstalledWorld): boolean {
+    const taken = this.taken.sort((a, b) => a.born - b.born);
+    this.taken = [];
+    const fires: WorldFire[] = [];
+    for (const t of taken) {
+      const record = map.world.surfaces[t.index];
+      if (!record || !this.culling.reachBoxOf(t.block)) {
+        this.fail(`the cull grew no cell for block "${t.block}", which the fire "${record?.name ?? t.index}" is filed under`);
+        return false;
+      }
+      const b = record.bounds;
+      fires.push({ name: record.name, block: t.block, x: b.centerX, y: b.centerY, z: b.centerZ, radius: b.radius, glows: t.glows });
+    }
+    this.worldFires = fires;
+    this.flames.setWorld(taken.map((t) => t.arrays));
+    return true;
+  }
+
+  /**
+   * The installed map's FIRES, in birth order — fire `k` the fire draw's
+   * surface `1 + k` — for `Game`'s pull; empty on the menu, for an editor
+   * build (whose fires are Babylon's meshes) and from a `clear`.
+   */
+  get fires(): readonly WorldFire[] {
+    return this.worldFires;
   }
 
   /** The casters to every shadow of ours, with the install's failure — or none, when the map has none of ours. */
@@ -571,32 +645,30 @@ export class BlockHandover {
     drawn: number;
   } {
     const { surfaces, clusters, groups } = this.blocks.count;
-    // The main pass's: a caster held for the shadows alone is not drawn in it.
     return {
-      taken: surfaces - this.held.size,
+      taken: surfaces,
       clusters,
       groups,
       drawn: this.blocks.drawn,
     };
   }
 
-  /** The map is going: every surface, buffer and material of ours with it, and the shadows' casters first. */
+  /** The map is going: every surface, buffer and material of ours with it — its fires too — and the shadows' casters first. */
   clear(): void {
     this.handCasters(null);
+    this.flames.clearWorld();
     // Ahead of the blocks, whose culls the bake's view and the mask's read.
     this.probes.setWorld(null);
     this.glow.setWorld(null);
     this.blocks.clear();
     this.field = null;
     this.reach = [];
-    this.held = new Map();
     this.palette = new Set();
     this.casting = new Set();
     this.probing = new Set();
     this.glowing = new Set();
-    this.fireSurfaces = [];
-    this.fires = new Set();
-    this.heldMeshes = [];
+    this.taken = [];
+    this.worldFires = [];
     this.refusal = null;
     this.owner = null;
     this.failure = null;
@@ -651,26 +723,11 @@ export class BlockHandover {
     this.fail("the main pass was refused, so nothing of ours can draw in it");
   };
 
-  /**
-   * Once a frame as the main pass begins: a material rewritten by its owner
-   * is copied again, and a DEV build checks that no held caster — the one
-   * kind of surface Babylon draws and ours casts — has been switched,
-   * hidden or faded: Babylon would stop drawing it and ours, which reads no
-   * node, would cast it still.
-   */
+  /** Once a frame as the main pass begins: a material rewritten by its owner is copied again. */
   private readonly frame = (): void => {
     if (this.mats.materialEpoch !== this.epoch) {
       this.epoch = this.mats.materialEpoch;
       this.blocks.writeMaterials();
     }
-    if (import.meta.env.DEV && this.failure === null) this.check(this.heldMeshes);
   };
-
-  private check(meshes: readonly AbstractMesh[]): void {
-    for (const mesh of meshes) {
-      if (mesh.isVisible && mesh.visibility === 1 && mesh.isEnabled()) continue;
-      this.fail(`"${mesh.name}" was switched off, hidden or faded after its shadow was taken; our renderer still casts it`);
-      return;
-    }
-  }
 }

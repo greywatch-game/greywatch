@@ -1142,7 +1142,11 @@ is its cube SAMPLER, which a bind group cannot make conditional.
 Every open fire — the fire drums, the watchtower's signal brazier, a lit
 fireplace — wears ONE material, `FlameMaterial` (`shaders/FlameShader.ts`), over
 geometry from `world/flame.ts`, and a building says `b.flame(...)` beside its
-`b.light` and `b.sound`. It replaced a static emissive cone. The rules that
+`b.light` and `b.sound`. It replaced a static emissive cone. **Every fire of a
+ROUND is our renderer's since `BABYLON_EXIT.md` X4.4d** — the world's and the
+molotov's, drawn on the material's VALUES by its program ("The pools, ours":
+"The fires") — and the `ShaderMaterial` draws an EDITOR build's fires alone;
+both read the one copy of its bodies (`shaders/wgsl/flame.ts`). The rules that
 reach outside it:
 
 - **It is merged like any other part, so everything it needs per vertex is in
@@ -1173,7 +1177,9 @@ reach outside it:
   with being opaque because they are LIT and their silhouette is a cauliflower
   rather than a slab — see `docs/grenades.md`.
 - **It is never a shadow caster** (`noShadowCaster`), for the world shadow
-  map's rule: an animated caster is a per-frame redraw of the map.
+  map's rule: an animated caster is a per-frame redraw of the map — and since
+  X4.4d a fire that casts is REFUSED (`BlockHandover.takeFire`): no shadow
+  pass of ours draws a fire.
 - **It takes no vertex colour buffer** — `vertexShading` skips it by
   `isFlame`, because it is a `ShaderMaterial` and the bake would otherwise
   hand it an attribute it does not declare.
@@ -3464,7 +3470,7 @@ side's since X3.6a, the lamps' atlas since X3.6b, the reflection bake since
 X3.6c and the emissive palette's share of the glow's mask since X3.6d
 (below). **And since X3.7b Babylon is made NO MESH of any of it**
 (`worldMeshes`, `BuildOptions.onSurface` answering for each surface): a
-round's `GameMap.visuals` are the glazing and the fires, the records
+round's `GameMap.visuals` are the glazing (and until X4.4d the fires), the records
 (`GameMap.world`) stay complete and each says who draws it
 (`SurfaceRecord.visual`), and **THE WORLD DRAWS WHOLE OR THE ROUND DOES NOT
 START** — a surface our side cannot hold is refused at the build, and every
@@ -3491,12 +3497,13 @@ its settled promise.
   (`BuildOptions.onSurface`, which answers whether one is), the one moment
   they can still be read, and read once more when the map is CUT
   (`WorldBlocks.finish`, from `installMap` after `WorldCulling.setMap`).
-  `Game.handover` is always built. **A surface it does not take is
-  Babylon's, and Babylon's may only be the glazing and the fires**: one
-  that casts is held for the shadows (a casting fire's, below — which none
-  can be: every fire is `noShadowCaster`), and one that
-  casts but cannot be held, a palette surface that cannot be held, or a
-  mesh in a probe's list that is neither a fire nor ours is REFUSED — thrown
+  `Game.handover` is always built. **A FIRE is taken for the fire draw**
+  (`takeFire`, X4.4d: block-merged at identity, never `updatable`, casting
+  nothing, with its normals and uvs) **and a surface it does not take is
+  Babylon's, and Babylon's may only be the glazing**: one that casts (the
+  layer that held a caster Babylon kept, for the shadows alone, was reached
+  by no build and went at X4.4d), a palette surface or a fire that cannot be
+  held, or a mesh Babylon is made that is not the glazing is REFUSED — thrown
   in DEV, so `npm run merge:hash` cannot pass a map that has one, at any
   foliage rung (`--foliage`), and the world's failure in production. **The
   landform is MARKED BY THE BUILD** (`WorldSurface.landform`, set where
@@ -3625,14 +3632,14 @@ its settled promise.
   (`Game.worldFailed`), never an uncaught throw. The glow's mask, which reads the main pass's active meshes,
   keeps only what glows; the palette, which glows, is drawn into the mask by
   our side through the main view (X3.6d, X3.6e; "The palette, ours").
-- **A HELD caster is never switched off, hidden or faded after its build**
-  — the one kind of surface Babylon draws and ours casts (a casting fire,
-  which no build can have: every fire is made `noShadowCaster`, `flame.ts`'s
-  `flamePart` and the fire drum's flame, and `strayMesh` refuses any other
-  held caster's mesh — the layer is kept for X4.4 to use or delete).
-  Nothing in the tree does it, and ours, which
-  reads no node, would cast it still: a DEV build checks every frame and
-  fails the world.
+- **The world's FIRES are handed to the fire draw at the install, in BIRTH
+  order** (`BlockHandover.handFires`, X4.4d) — the order `worldMeshes` made
+  their meshes in, which was Babylon's candidate order, so its active list's,
+  its opaque sort's tie-break and the glow mask's order — each with its
+  record's block and sphere, and a block no cell was grown for fails the
+  world as a surface's does. A fire is drawn while its block's cell is
+  OFFERED (`WorldCulling.offersBlock`, snapshotted where the candidate list
+  is built, so exactly when its mesh was a candidate) and in no bake.
 - **The building card waits for every pipeline of ours, the cull's
   included**, so no frame of the round draws with one still compiling — and
   since Babylon no longer draws the blocks in the main pass, a group of ours
@@ -3911,13 +3918,10 @@ light's matrix over.
   would have drawn it — not `noShadowCaster`, not blended — and, if so,
   holds it: a surface the main pass takes casts from its own group, the
   emissive palette from its PALETTE group (held with its slots since X3.6c,
-  ours in the main pass too since X3.6e), and any caster Babylon keeps for
-  its main pass (a casting fire — unreachable by construction, every fire
-  being made `noShadowCaster`; kept for X4.4), which keeps no
-  recipe, is held for the shadow maps ALONE (`WorldBlocks.addCaster`:
-  positions only, in the HELD layer cut after every other, the casters'
-  group LAST of all, which the main pass's cull leaves out as a tail and
-  nothing draws in the main pass). The casters are handed to `WorldShadows`
+  ours in the main pass too since X3.6e) — and a caster Babylon kept for its
+  main pass was held for the shadow maps alone in a HELD layer until X4.4d,
+  which deleted it: no build reached it (the one surface Babylon keeps is
+  the glazing, which casts nothing, and a fire that casts is refused). The casters are handed to `WorldShadows`
   (`setCasters`) at every install; a caster it cannot hold — not block
   merged, not at identity, `updatable` — is REFUSED (since X3.7b: until then
   it left the whole map's shadows to the generators). **An editor build's
@@ -4632,8 +4636,10 @@ mine and bullet mark the page draws is OUR renderer's since `BABYLON_EXIT.md`
 X4.4b** (`render/PoolDraw.ts`, drawn by the BODIES' programs,
 `bodyProgram.ts`, labelled `pool`), **and every blast billow, glass shard and
 rubble chunk since X4.4c** (the billows `render/BlastDraw.ts`, on the billow's
-own program; the shards and chunks a third `PoolDraw`, the DEBRIS) — and
-Babylon is made no mesh of any: X4.1d's shape for things that never fade.
+own program; the shards and chunks a third `PoolDraw`, the DEBRIS), **and
+every FIRE since X4.4d** (`render/FlameDraw.ts`, on the fire's program: the
+molotov's flames and, beside them, the world's) — and Babylon is made no
+mesh of any: X4.1d's shape for things that never fade.
 **The sparks, the dust discs and the blast's SCORCH are not among them, and
 that is the owner's decision (2026-11-01) rather than a gap**: they fade by
 `visibility` in Babylon's TRANSPARENT sort, interleaved with the see-through
@@ -4770,6 +4776,44 @@ pieces' spheres before its readiness check, which had restated
 burst). One draw (a piece is one segment), installed after the marks, no
 mask (nothing in it glows).
 
+**The fires (X4.4d): a FIRE a draw, on the fire's own program.** Every world
+fire — a block's merge of `world/flame.ts` surfaces, taken from the build as
+the blocks are (`BlockHandover.takeFire`) — and every flame of a burning
+molotov (`GrenadeFx.flames`, a NODE each, the mesh it was channel for
+channel, of one flame surface) is one draw of ours: one instance of its
+surface under its matrix (a world fire's the identity its frozen mesh had, a
+flame's `composeNode`'s), off the material's own values (`FlameMaterial
+.values`, `render/flameProgram.ts`, the bodies `shaders/wgsl/flame.ts` that
+the editor's `ShaderMaterial` assembles too), the eye, the wind's bearing,
+the fog and the opaque alpha being the FRAME's. **What Babylon asked of a
+fire's mesh is asked of its sphere** (`Game.flamePull`): in SCENE order — the
+molotov's flames, made at the game's construction, then the world's fires in
+birth order — a flame while it is switched on (its world composed this frame,
+its sphere `worldSphere`'s), a world fire while its block's cell is OFFERED
+(`WorldCulling.offersBlock`: the cell, the reach and the hysteresis a filed
+mesh was a candidate by, the warm-up's every cell included); the frustum
+test under the mesh's culling strategy (the sphere alone); group 0's opaque
+order (nearest centre first, that order breaking a tie, stable); and the
+bloom's distance fade, a `noGlow` world fire left out of the mask. A fire is
+EMISSIVE, so the size gate never dropped one, and no gate of ours reads it:
+there is no latch to keep. **The draws hang at `"beforeAlphaTest"` FIRST of
+all ours** — the fires' meshes were in Babylon's opaque queue, which drew
+before every draw of ours at that point, and the order among the fires is
+the queue's own — and **the mask's after the billows'** (Babylon's mask drew
+the fires after every draw of ours), by the same vertex module, no depth
+written, LEQUAL. What moved is only the fires' interleave with the meshes
+Babylon still draws in that queue — the grass, the capture zones, the backed
+panes, the water — every one of which writes depth, so it is an exact tie
+or nothing. **No bake draws a fire, and still none does** (`FINDINGS.md` 51:
+the fire ENTERING the bake is a picture change of its own). **What X4.4d's
+oracles hold it to**: the bank byte-identical (the 68 of its 113 rows with a
+fire drawn among them); a probe over 640 scripted frames on each of
+Coldharbour and Cinderhaven reading Babylon's own render calls on the parent
+against what ours was handed — every fire's order equal in the main pass and
+the mask on every frame, a cell walked past the reach and back included;
+`merge:hash` the 35 world fires' meshes gone and nothing else; and an editor
+build's fires, still Babylon's, photographed byte-equal.
+
 **What X4.4c's oracles hold it to**: the bank byte-identical — every `fx-blast`
 row at every age, `fx-blast-hard-power2-billows`, `fx-shards`, `fx-glass`,
 `fx-scorch`, `fx-molotov`; and a probe over 420 scripted frames (blasts on both
@@ -4794,9 +4838,11 @@ the round's (`Game.worldFailed`); it is installed for a ROUND's map only. The
 `warm(on)` poses of the tracer, the mark and the blast's billows still stand,
 drawing through ours, until X4.4e makes the warm-up a declared list (the
 billows', the debris's and the pieces' pipelines are asked at `Game`'s
-construction, so the warm-up waits for them by construction). A capture says
-what all four drew (`ProfileReport.pools`, report version 26; the billows and
-the debris since 27), since Babylon's counter counts none of it.
+construction, so the warm-up waits for them by construction) — the
+molotov's flame pose too, though the fires' pipelines are asked there since
+X4.4d. A capture says what all five drew (`ProfileReport.pools`, report
+version 26; the billows and the debris since 27, the fires since 28), since
+Babylon's counter counts none of it.
 
 ## Block visibility: how much of the map the frame walks
 
@@ -4846,7 +4892,7 @@ what our renderer draws is in none: since X3.7b it is no mesh at all.
 | class | what | offered |
 | --- | --- | --- |
 | hidden | `map.colliders` — invisible by construction | **never**, at any distance |
-| blocked | drawn map geometry carrying `metadata.block` — on a shipped build the glazing and the fires; the cell's box is grown from EVERY record filed under its block, ours included | while the camera is within the map's `fogEnd` |
+| blocked | drawn map geometry carrying `metadata.block` — on a shipped build the glazing (a world fire, no mesh since X4.4d, is drawn by our renderer while its cell is offered: `offersBlock`); the cell's box is grown from EVERY record filed under its block, ours included | while the camera is within the map's `fogEnd` |
 | pooled | a body — no mesh since `BABYLON_EXIT.md` X4.1d: our renderer draws it, by this class's verdict (`drawsBody`) | never a candidate; DRAWN while its switch is on and the size gate passes it |
 | loose | everything else in the scene | **always** |
 
@@ -4976,7 +5022,7 @@ bounds`, `boundsOf`, taken off its arrays before they are released — X3.7a),
 which is Babylon's bounding info computed step for step under the part's own
 world matrix, so a cell's BOX needs no mesh to be grown — and since X3.7b
 every record filed under a block grows its cell, mesh or none, while only
-Babylon's block-keyed meshes (the glazing and the fires) are filed into it
+Babylon's block-keyed meshes (the glazing, and until X4.4d the fires) are filed into it
 as candidates. `npm run merge:hash` compares every visual's record bounds
 with its mesh's bounding info, bit for bit, on every run (`bounds≠mesh`),
 the editor build's transformed path included. **And the cull REFUSES a
@@ -5137,7 +5183,8 @@ because it seemed wise.**
   exact rather than a guess at a name: only a light source carries an
   `emissiveColor` — `CelMaterialFactory.getEmissive`'s unlit `StandardMaterial`,
   or the fire's `FlameMaterial`, which declares one for exactly this test and the
-  glow's — and every lit surface wears a plain `ShaderMaterial`, which has no
+  glow's (worn by an editor build's fires alone since X4.4d; a round's are our
+  renderer's, which no size gate drops either) — and every lit surface wears a plain `ShaderMaterial`, which has no
   such property to read at all. **Our GPU cull keeps the same exemption** for
   the one emissive it culls, the palette the main pass and the glow's mask
   draw through the main view (`PASS_GLOW`, X3.6d, X3.6e): a cluster carrying
@@ -5287,7 +5334,9 @@ all in the counter this finding is named after. Not chased.
   surface would draw its REST pose into the mask and lose the LEQUAL tie wherever
   it had moved. The fire is the one such material: `FlameMaterial.glowMask`
   hands back a twin compiled from the same WGSL under `GLOW_MASK`, fed the same
-  clock, and painted through the same `GlowRules.colour`.
+  clock, and painted through the same `GlowRules.colour` — an EDITOR build's
+  fires since X4.4d; a round's fires draw their mask by OUR program's twin
+  (`render/FlameDraw.ts`), after the billows', each one's colour the same rule's.
 - **The emissive PALETTE is OUR renderer's, in the main pass and its share of
   the mask, in every round** (`render/WorldBlocks.ts`, `render/WorldGlow.ts`,
   `BABYLON_EXIT.md` X3.6d, X3.6e, X3.7b; "The palette, ours", under "The
@@ -6411,8 +6460,8 @@ draw of OURS, by the same vertex module.
   palette surface by construction, and palette against palette across two
   blocks — moved no pixel of the bank (`BABYLON_EXIT.md` X3.6e).
 - **What: the MAIN pass's own view of the culls, for both passes**, no cull of
-  their own. The palette's clusters are cut AHEAD of the held casters, inside
-  the count the main view culls (the casters stay its tail), so the main cull
+  their own. The palette's clusters are cut LAST, inside the count the main
+  view culls (the held casters' tail behind them went at X4.4d), so the main cull
   writes the palette's survivors into its index buffer every frame; the main
   pass draws them FIRST whenever the map has a palette (`WorldBlocks`'
   `draw`), and the mask draws them through `WorldBlocks.glowView`. **They are never

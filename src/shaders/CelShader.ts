@@ -2062,7 +2062,10 @@ export class CelMaterialFactory {
    * none of the uniforms that cache's walks write; what it does share with it
    * — the world clock, the fog and the frame's opaque alpha — is pushed to it
    * by the same three methods, beside their walks, so a fire can never keep
-   * different time or weather from the wall behind it.
+   * different time or weather from the wall behind it. Since
+   * `BABYLON_EXIT.md` X4.4d our renderer draws every fire of a round off its
+   * `values` (the clock among them) and the frame's eye and fog, and the
+   * `ShaderMaterial` draws an editor build's fires alone.
    */
   getFlame(): FlameMaterial {
     if (!this.flame) {

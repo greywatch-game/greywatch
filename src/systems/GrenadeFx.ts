@@ -4,9 +4,14 @@
  * six billowed layers of a blast (`BlastFx`).
  * Owns: one `GrenadeBody` per simulation slot (`bodies`, two pieces of the
  * kits our renderer draws — `entities/pieces.ts`, `BABYLON_EXIT.md` X4.4b —
- * which `Game.drawPieces` hands it), one set of flames per fire slot, the
- * `BlastFx` a blast and an ignition are drawn in, and its own floor probe for
- * the flames. All FIXED SIZE and built once.
+ * which `Game.drawPieces` hands it), one set of flames per fire slot — each
+ * flame a NODE (`flames`: a `PieceNode`, the mesh it was until X4.4d,
+ * channel for channel) of the one flame surface our renderer draws them as
+ * instances of (`flameShape`, with its local bounding sphere, and the
+ * world's one fire material, `flameMaterial`, whose values it is drawn
+ * with: `Game.drawFires`, `render/FlameDraw.ts`) — the `BlastFx` a blast
+ * and an ignition are drawn in, and its own floor probe for the flames. All
+ * FIXED SIZE and built once; Babylon is made no mesh of any of it.
  * Invariants: it READS `GrenadeSystem` and never writes it — the pools through
  * `flights` and `fireSlots` (read-only by type), everything else as a call
  * `Game` makes from the simulation's events (`blast` on `onBlast`, `ignite` on
@@ -43,17 +48,17 @@
  *   not through a wall, which is also where the burn's own line of sight
  *   stops.
  */
-import { Mesh, Scene } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { grenadeParts, pipLit } from "../entities/GrenadeModel";
 import { molotovPieceParts } from "../entities/MolotovModel";
-import { Piece, pieceKit, type PieceKits, type PieceNode } from "../entities/pieces";
+import { Piece, pieceKit, type PieceKits, PieceNode } from "../entities/pieces";
 import type { ThrowableId } from "../entities/throwables";
 import { Vector3, type Vector3Like } from "../math";
+import type { FlameShapeArrays } from "../render/FlameDraw";
 import type { CelMaterialFactory } from "../shaders/CelShader";
+import type { FlameMaterial } from "../shaders/FlameShader";
 import type { EnvironmentSpec } from "../world/environment";
 import { flameData } from "../world/flame";
-import { vertexDataOf } from "../world/parts";
 import { newRayHit, type RayWorld } from "../world/RayWorld";
 import { TerrainField } from "../world/TerrainField";
 import { BlastFx } from "./BlastFx";
@@ -152,7 +157,8 @@ export class GrenadeBody {
 
 /** One flame in a fire: where it stands off the fire's middle, and how big it is. */
 interface Flame {
-  mesh: Mesh;
+  /** Its node: `position`, `scaling` and `visible` as its mesh's were, and its world as the pull composes it. */
+  node: PieceNode;
   /** Offset on the ground from the fire's middle, metres. */
   dx: number;
   dz: number;
@@ -171,6 +177,17 @@ interface FlameSet {
 /** What this view reads of the simulation — the pools, and nothing it could write. */
 type GrenadeReader = Pick<GrenadeSystem, "flights" | "fireSlots">;
 
+/**
+ * The flame every flame of every fire is an instance of: its arrays, as its
+ * mesh was handed them, and its LOCAL bounding sphere — `BoundingSphere
+ * .reConstruct`'s off the extent of those positions (`extractMinAndMax`),
+ * which its world sphere is carried from (`worldSphere`).
+ */
+export interface FlameShape extends FlameShapeArrays {
+  readonly centre: Vector3;
+  readonly radius: number;
+}
+
 /** The flames' own probe scratch — never the simulation's (see the header). */
 const _middle = new Vector3();
 const _probe = new Vector3();
@@ -183,6 +200,22 @@ export class GrenadeFx {
   /** The flight each body is drawing — its slot's `id` — or -1 while hidden. */
   private readonly drawing: number[] = [];
   private readonly fires: FlameSet[] = [];
+  /**
+   * Every flame's node, fire slot by fire slot and flame by flame — the order
+   * their meshes were made in until `BABYLON_EXIT.md` X4.4d, which was the
+   * order Babylon offered and activated them in: what `Game.flamePull`
+   * walks, its tie-break and the glow mask's order.
+   */
+  readonly flames: readonly PieceNode[];
+  /** The one flame surface every node is drawn as (`render/FlameDraw.ts`'s surface 0). */
+  readonly flameShape: FlameShape;
+  /**
+   * The world's one fire material (`CelMaterialFactory.getFlame`), asked
+   * here where the flames' source mesh wore it until X4.4d: its `values` are
+   * what our renderer draws every fire with, and its `emissiveColor` what the
+   * glow reads.
+   */
+  readonly flameMaterial: FlameMaterial;
   /**
    * The blast's picture — six of its eight layers — whose batches and
    * icospheres `Game.drawBlasts` hands our renderer (`BABYLON_EXIT.md`
@@ -204,7 +237,6 @@ export class GrenadeFx {
   readonly kits: Pick<PieceKits, "frag" | "bottle">;
 
   constructor(
-    scene: Scene,
     mats: CelMaterialFactory,
     private readonly sim: GrenadeReader,
   ) {
@@ -218,24 +250,35 @@ export class GrenadeFx {
       this.drawing.push(-1);
     }
 
-    // The flames. One geometry, cloned: every flame in every fire is the same
-    // vertex data at its own scale, and the shader phases each one off its
-    // WORLD position, so no two in a street move together however many share
-    // the buffer.
+    // The flames. One geometry, instanced: every flame in every fire is the
+    // same vertex data at its own scale, and the shader phases each one off
+    // its WORLD position, so no two in a street move together however many
+    // share the buffer. Never a shadow caster, never inked (`flame.ts`): our
+    // renderer's fire draw has no pass for either.
     const m = CONFIG.molotov;
-    const source = new Mesh("molotovFlameSource", scene);
-    vertexDataOf(flameData({ radius: m.flameRadius, height: m.flameHeight })).applyToMesh(source);
-    source.material = mats.getFlame();
-    source.metadata = { noInk: true, noShadowCaster: true };
-    source.isPickable = false;
-    source.isVisible = false;
+    const g = flameData({ radius: m.flameRadius, height: m.flameHeight });
+    const pos = g.positions;
+    const min = new Vector3(Number.MAX_VALUE, Number.MAX_VALUE, Number.MAX_VALUE);
+    const max = new Vector3(-Number.MAX_VALUE, -Number.MAX_VALUE, -Number.MAX_VALUE);
+    for (let k = 0; k < pos.length; k += 3) {
+      min.minimizeInPlaceFromFloats(pos[k], pos[k + 1], pos[k + 2]);
+      max.maximizeInPlaceFromFloats(pos[k], pos[k + 1], pos[k + 2]);
+    }
+    this.flameShape = {
+      positions: pos,
+      normals: g.normals!,
+      uvs: g.uvs!,
+      indices: g.indices,
+      centre: max.add(min).scaleInPlace(0.5),
+      radius: Vector3.Distance(min, max) * 0.5,
+    };
+    this.flameMaterial = mats.getFlame();
+    const nodes: PieceNode[] = [];
     for (let i = 0; i < m.fires; i++) {
       const flames: Flame[] = [];
       for (let j = 0; j < m.flames; j++) {
-        const mesh = source.clone(`molotovFlame${i}-${j}`);
-        mesh.metadata = { noInk: true, noShadowCaster: true };
-        mesh.isPickable = false;
-        mesh.isVisible = false;
+        const node = new PieceNode(null);
+        nodes.push(node);
         // The first flame stands in the middle and the rest walk out on the
         // golden angle to most of the radius, so the disc reads as burning to
         // its edge rather than as one fire with a halo. Keyed on the fire
@@ -244,7 +287,7 @@ export class GrenadeFx {
           j === 0 ? 0 : m.fire.radius * (0.3 + 0.55 * Math.sqrt(j / (m.flames - 1)));
         const a = j * 2.399963 + i * 0.7;
         flames.push({
-          mesh,
+          node,
           dx: Math.cos(a) * r,
           dz: Math.sin(a) * r,
           size: j === 0 ? 1.25 : 0.7 + 0.35 * (((j * 5) % 4) / 3),
@@ -253,6 +296,7 @@ export class GrenadeFx {
       }
       this.fires.push({ id: -1, flames });
     }
+    this.flames = nodes;
   }
 
   /** The floor a flame stands on, as a backstop under the colliders. */
@@ -345,7 +389,7 @@ export class GrenadeFx {
         if (!fl.on) continue;
         _probe.y = at.y + 1.2;
         const floor = floorUnder(this.rays, this.terrain, this.hit, _lifted, _probe, 2.4, _floor);
-        fl.mesh.position.set(floor.x, floor.y, floor.z);
+        fl.node.position.set(floor.x, floor.y, floor.z);
       }
       this.poseFire(set, fireStrength(0));
       break;
@@ -359,7 +403,7 @@ export class GrenadeFx {
     for (const set of this.fires) {
       if (set.id !== id) continue;
       set.id = -1;
-      for (const fl of set.flames) fl.mesh.isVisible = false;
+      for (const fl of set.flames) fl.node.visible = false;
     }
   }
 
@@ -373,30 +417,33 @@ export class GrenadeFx {
     for (const fl of set.flames) {
       const s = fl.size * k;
       if (!fl.on || s < 0.02) {
-        fl.mesh.isVisible = false;
+        fl.node.visible = false;
         continue;
       }
       // Width grows faster than height, so a fire starting is a spreading
       // pool first and a wall of flame a moment later — the whoosh.
-      fl.mesh.scaling.set(fl.size * Math.sqrt(k), s, fl.size * Math.sqrt(k));
-      fl.mesh.isVisible = true;
+      fl.node.scaling.set(fl.size * Math.sqrt(k), s, fl.size * Math.sqrt(k));
+      fl.node.visible = true;
     }
   }
 
   /**
    * The blast's billows and one molotov flame shown, or taken back off, for
    * the frames of the building card's pipeline warm-up — see `BlastFx.warm`. A
-   * map with no fire of its own standing has never drawn the flame's material,
-   * so a round's first molotov compiled it. The flame is the first of the LAST
-   * fire slot, used only while that slot is free, at a fire's own stretch.
+   * map with no fire of its own standing had never drawn the flame's
+   * material, so a round's first molotov compiled it. The flame is the first
+   * of the LAST fire slot, used only while that slot is free, at a fire's own
+   * stretch — drawn by our renderer since `BABYLON_EXIT.md` X4.4d, whose
+   * pipelines are asked at `Game`'s construction, so the pose is redundant
+   * and goes with the rest at X4.4e.
    */
   warm(on: boolean): void {
     this.blasts.warm(on);
     const set = this.fires[this.fires.length - 1];
     const flame = set?.flames[0];
     if (!flame || set.id >= 0) return;
-    if (on) flame.mesh.scaling.set(1, 1.5, 1);
-    flame.mesh.isVisible = on;
+    if (on) flame.node.scaling.set(1, 1.5, 1);
+    flame.node.visible = on;
   }
 
   /**
@@ -411,7 +458,7 @@ export class GrenadeFx {
     }
     for (const set of this.fires) {
       set.id = -1;
-      for (const fl of set.flames) fl.mesh.isVisible = false;
+      for (const fl of set.flames) fl.node.visible = false;
     }
     this.blasts.reset();
   }

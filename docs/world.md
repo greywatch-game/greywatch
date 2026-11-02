@@ -2156,8 +2156,9 @@ patches and the rim's runs are surfaces of the same record, minted first; the
 vertex bake runs on the record after the last merge; and nothing touches the
 device until `MapBuilder.bake`, where `worldMeshes` (`parts.ts`) makes every
 surface Babylon draws a mesh at once — and none of one our renderer draws in
-every pass, which on a shipped build is all but the glazing and the fires
-(`BuildOptions.onSurface`, `BABYLON_EXIT.md` X3.7b) — and releases its arrays.
+every pass, which on a shipped build is all but the glazing
+(`BuildOptions.onSurface`, `BABYLON_EXIT.md` X3.7b; the fires since X4.4d) —
+and releases its arrays.
 What the map keeps of the record is `GameMap.world` — each surface's block,
 piece ranges, bounds, material, metadata and counts, mesh or none, each
 naming its mesh in `visuals` if it has one (`SurfaceRecord.visual`) — and

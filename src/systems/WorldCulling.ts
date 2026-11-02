@@ -7,7 +7,9 @@
  * block-keyed meshes filed into them; the list handed back to Babylon each
  * frame; and the reach and the size gate this file decides, handed to our
  * renderer's GPU cull as numbers (`reachGate`) with the box each of its
- * surfaces is measured to (`reachBoxOf`, by the BLOCK).
+ * surfaces is measured to (`reachBoxOf`, by the BLOCK) — and, since
+ * `BABYLON_EXIT.md` X4.4d, whether a cell's block-keyed surfaces are offered
+ * this frame (`offersBlock`), which our renderer's FIRES are drawn by.
  * There are TWO lists and they run on different clocks: `eligible` is the
  * structural answer, rebuilt only when a cell, a pool or the scene's
  * membership moves, and `candidates` is that list minus whatever is switched
@@ -70,10 +72,14 @@
  * - **Blocked** — drawn map geometry carrying `metadata.block`, filed one cull
  *   cell per map block — 48 m on every shipped map, `MapLayout.blockSize` where
  *   one states otherwise — and offered only while the camera is inside `reach`
- *   of that cell's own bounds. On a shipped build that is the merged glazing
- *   and the fires, the rest of `BlockMerge`'s output being our renderer's
- *   (below); the cell's box is grown from all of it, every STRUCTURE on the
- *   map.
+ *   of that cell's own bounds. On a shipped build that is the merged glazing,
+ *   the rest of `BlockMerge`'s output being our renderer's (below); the
+ *   cell's box is grown from all of it, every STRUCTURE on the map. The
+ *   world's FIRES were filed here too until X4.4d, and are no mesh now: our
+ *   renderer draws each (`render/FlameDraw.ts`) while its block's cell is
+ *   offered, read back by the block (`offersBlock`) — the same cell, the same
+ *   reach and the same hysteresis a filed mesh is offered by, and, a fire
+ *   being a light source, no size gate.
  * - **Pooled** — what was a body's rig, fourteen meshes the walk paid for
  *   whether or not the body was in the round. Since `BABYLON_EXIT.md` X4.1d no
  *   body is a mesh: our renderer draws every one as an instance of its kit
@@ -153,9 +159,7 @@ import type { SurfaceBounds, SurfaceRecord } from "../world/worldGeometry";
  * to the size gate and the frustum, exactly as `rebuildList` keeps a loose
  * mesh. **The sky is behind the landform** — see "The landform is
  * deliberately loose" in the header — so a reach cut into it would be a hole
- * onto a gradient rather than onto `fogColor`. Its one other user is
- * `BlockHandover`: a caster held for the shadow maps alone, which no main
- * pass draws, is cut with it too. FINITE, near the largest `f32`
+ * onto a gradient rather than onto `fogColor`. FINITE, near the largest `f32`
  * (`F32_MAX`, 3e38), never Infinity: the cull's arithmetic may assume there
  * is none, and a box from minus to plus the largest float leaves every
  * distance to it 0.
@@ -194,6 +198,14 @@ interface Cell {
   maxZ: number;
   /** Whether what was filed here is in the candidate list right now. */
   on: boolean;
+  /**
+   * Whether what is filed here was OFFERED by the list as last built — `on`,
+   * or every cell under the warm-up — snapshotted where `rebuildList` builds
+   * that list, so it changes exactly when a filed mesh's candidacy does
+   * (`offersBlock`). False until the first list after `setMap`, as a filed
+   * mesh is no candidate until then.
+   */
+  offered: boolean;
 }
 
 /** A body's world bounding sphere, as `PooledBody.measure` writes it. */
@@ -251,8 +263,11 @@ interface Pool {
  * Exact rather than a name test: a material carrying an `emissiveColor` is a
  * light source — `CelMaterialFactory.getEmissive`'s unlit `StandardMaterial`,
  * or the fire (`FlameMaterial`), which declares one for this test and the
- * glow's (the map's emissive palette, `EmissiveWorldMaterial`, declares one
- * too, and is worn by no mesh: our renderer draws it).
+ * glow's, and is worn by an EDITOR build's fires alone (a round's are our
+ * renderer's since `BABYLON_EXIT.md` X4.4d, and no size gate drops one there
+ * either: `offersBlock` reads the reach alone) — the map's emissive palette,
+ * `EmissiveWorldMaterial`, declares one too, and is worn by no mesh: our
+ * renderer draws it.
  * Every lit surface wears a plain `ShaderMaterial`, which has no such property
  * to read.
  */
@@ -512,14 +527,15 @@ export class WorldCulling {
           maxY: b.maxY,
           maxZ: b.maxZ,
           on: true,
+          offered: false,
         };
         this.cellByKey.set(key, cell);
         this.cells.push(cell);
       }
     }
-    // Babylon's block-keyed meshes, each into its cell: the glazing and the
-    // fires on a shipped build, and on an editor's none (it carries no
-    // block). The glazing is filed under the same key its block is, which is
+    // Babylon's block-keyed meshes, each into its cell: the glazing on a
+    // shipped build (the fires are no mesh since X4.4d: `offersBlock`), and
+    // on an editor's none (it carries no block). The glazing is filed under the same key its block is, which is
     // the key `PaneBlocks` writes it under — a curtain wall and the shaft
     // behind it go out of the frame together, or the tower is a sheet of
     // glass hanging in the fog with nothing behind it.
@@ -710,6 +726,21 @@ export class WorldCulling {
   }
 
   /**
+   * Whether the block-keyed surfaces of `block`'s cell are offered THIS
+   * frame — what a mesh filed in that cell was a candidate by, as the list
+   * was last built (`rebuildList`): its cell within reach, with its
+   * hysteresis, or every cell under the warm-up; false for a block no cell
+   * was grown for, and from `setMap` until the first list after it. Read by
+   * `Game.flamePull` for each world fire (`BABYLON_EXIT.md` X4.4d), after
+   * `update`, the same frame — so a fire is offered exactly when its mesh
+   * was. No size gate: a fire is a light source, which the gate never
+   * dropped (`glows`).
+   */
+  offersBlock(block: string): boolean {
+    return this.cellByKey.get(block)?.offered ?? false;
+  }
+
+  /**
    * Picks this frame's candidate list. Called from `Game.tick` in EVERY state,
    * beside `CelMaterialFactory.updateCamera` and for the same reason: every
    * state renders and only some of them simulate, so a menu or a deploy screen
@@ -814,6 +845,9 @@ export class WorldCulling {
   private rebuildList(): void {
     const data = this.eligible;
     data.length = 0;
+    // What a filed mesh of each cell is a candidate by, from now until the
+    // next build of the list — read back by the block (`offersBlock`).
+    for (const cell of this.cells) cell.offered = cell.on || this.warm;
     let loose = 0;
     for (const mesh of this.scene.meshes) {
       const cell = this.cellOf.get(mesh);

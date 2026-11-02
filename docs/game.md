@@ -337,7 +337,9 @@ had them).
 (`BABYLON_EXIT.md` X3.7b). `installMap` builds the map with
 `BlockHandover.onSurface`, which answers for each surface whether ours draws
 it in every pass — and Babylon is made no mesh of what it does, a round's
-`map.visuals` being the glazing and the fires, while `map.world` keeps a
+`map.visuals` being the glazing alone (the FIRES are taken for our fire draw
+since `BABYLON_EXIT.md` X4.4d, `render/FlameDraw.ts`, handed it at the
+install and drawn while their block's cell is offered), while `map.world` keeps a
 record of every surface, each naming its mesh if it has one — then files it
 (`WorldCulling.setMap`, the cells grown off the records) and hands it over
 (`handover.install`, the cut, and every pass of ours its world). An editor

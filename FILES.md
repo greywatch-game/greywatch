@@ -747,7 +747,8 @@ src/
                         #   mesh was, bit for bit, and writePieceDrawing — the
                         #   cel parts gated on THIS frame's sphere, as a
                         #   hull's segments are; worldSphere, shared with the
-                        #   posed debris (poseView). No Babylon
+                        #   posed debris (poseView), and composeNode, with the
+                        #   molotov's flames (X4.4d). No Babylon
     HealthRegen.ts      # A person's regen: the lock after a hit and the curve
                         #   back to full. One held by Player (predicting) and
                         #   one by src/sim/SimPlayer (authoritative), so the two
@@ -1170,7 +1171,9 @@ src/
                         #   (tumble, pip — two pieces of the frag's and the
                         #   bottle's kits, which it builds, drawn by our
                         #   renderer, X4.4b), a fire's flames on their own
-                        #   floor probe, and the BlastFx. Reads
+                        #   floor probe (a PieceNode each of one flame shape,
+                        #   drawn by render/FlameDraw.ts, X4.4d — no mesh),
+                        #   and the BlastFx. Reads
                         #   `flights`/`fireSlots`, fed
                         #   `onBlast`/`onIgnited`/`onBurntOut`. Client only
     BlastFx.ts          # Six of a blast's eight layers, DRAWN: flash,
@@ -1420,7 +1423,9 @@ src/
                         #   is never a candidate, a mesh carrying metadata.block
                         #   is one inside the map's fogEnd, everything else
                         #   always is; what our renderer draws is no mesh
-                        #   (X3.7b). A cell's box is grown from every RECORD
+                        #   (X3.7b), and a world FIRE is drawn while its
+                        #   block's cell is offered (offersBlock, snapshotted
+                        #   where the list is built, X4.4d). A cell's box is grown from every RECORD
                         #   filed under its block, mesh or none
                         #   (SurfaceRecord.bounds, X3.7a), a filed mesh's size
                         #   gate reads its record's sphere; reachGate states
@@ -1451,12 +1456,14 @@ src/
                         #   made no mesh of them), on a verdict asked of the
                         #   surface's RECORD (X3.7a), handed to
                         #   render/WorldBlocks and cut at install against the
-                        #   cells by their blocks. Every CASTER held — ours in
-                        #   its group, the palette in its own (the HELD layer,
-                        #   WorldBlocks.addCaster, is unreachable: every fire
-                        #   is noShadowCaster and strayMesh refuses any other
-                        #   held caster; kept for X4.4) — and handed to the
-                        #   world's maps and the lamps' atlas together on
+                        #   cells by their blocks; every FIRE (X4.4d) taken
+                        #   for render/FlameDraw.ts, refused if not block
+                        #   merged at identity or if it casts, handed over at
+                        #   install in birth order with its record's block and
+                        #   sphere (fires). Every CASTER held — ours in its
+                        #   group, the palette in its own (the held-caster
+                        #   layer went at X4.4d, reached by no build) — and
+                        #   handed to the world's maps and the lamps' atlas together on
                         #   every rung; the world to the bake (PASS_PROBE,
                         #   fires left out); the palette's main pass ours
                         #   whenever there is one and its mask to WorldGlow,
@@ -1466,7 +1473,7 @@ src/
                         #   tells of whatever it cannot draw — no pass latches
                         #   a loss (X3.7c).
                         #   A surface it cannot hold, or a Babylon mesh not
-                        #   glazing nor a fire (strayMesh), is REFUSED at the
+                        #   glazing (strayMesh), is REFUSED at the
                         #   install (and thrown after it in DEV), and every
                         #   former handback — a block no cell grew for, a
                         #   failed group or cull, a cut past the limits, a
@@ -1477,9 +1484,7 @@ src/
                         #   ignored; an editor build fails nothing). The
                         #   scatter's field (BuildOptions.onScatter) added as
                         #   instances at install, its pieces cut out of the
-                        #   blocks (X3.4b).
-                        #   Reads no node per frame (a DEV check that no held
-                        #   caster is switched, hidden or faded)
+                        #   blocks (X3.4b). Reads no node per frame
     WaterSystem.ts      # Water surfaces from map WaterRects; bakes their bed depth
                         #   and stands the one wave GRID under the eye (`follow`,
                         #   pushed from `tick` in every state). `setWash` is the
@@ -2522,6 +2527,13 @@ src/
                         #   transform, the wind's ramp and rigged layers, the
                         #   varyings. Babylon-free; shared verbatim with
                         #   src/render/; no y flip (each side's main owns it)
+      flame.ts          # The FIRE as plain strings both renderers assemble
+                        #   (X4.4d): the noise and drawn clock, the vertex
+                        #   stage (tongue, ember, bounds marker) and the
+                        #   banded pixel, its bloom under GLOW_MASK (off the
+                        #   instance under FLAME_INSTANCED). Babylon-free:
+                        #   FlameShader.ts (an editor build) and
+                        #   render/flameProgram.ts declare them
       blast.ts          # The blast's BILLOW as plain strings (X4.4c): the
                         #   noise, the lumped vertex stage and the pixel — fire,
                         #   lit smoke, dissolve — and its bloom under GLOW_MASK,
@@ -2557,7 +2569,11 @@ src/
     FlameShader.ts      # THE FIRE: every open flame's one material. Tongues
                         #   that boil on twos in hard bands, embers on the
                         #   smooth clock, and the glow-mask TWIN that runs the
-                        #   same vertex stage so the bloom ties its depth. WGSL
+                        #   same vertex stage so the bloom ties its depth —
+                        #   Babylon's stages an EDITOR build's alone since
+                        #   X4.4d; its `values` are what our renderer draws a
+                        #   round's fires with (render/FlameDraw.ts), the
+                        #   bodies shaders/wgsl/flame.ts. WGSL
     BlastShader.ts      # A BLAST's billow, what it is drawn WITH: BlastPaint,
                         #   the drawing, the flame's inks, the soot and the
                         #   dust, and the clock (no material since X4.4c: our
@@ -2739,6 +2755,23 @@ src/
                         #   pipelines asked once a session, a failure the
                         #   round's; installed for a round, never an editor
                         #   build
+    FlameDraw.ts        # The FIRES as OUR renderer draws them (X4.4d): the
+                        #   molotov's one flame and each map's world fires
+                        #   on the GPU (setWorld/clearWorld), a fire one draw
+                        #   of one instance in the order Game.flamePull hands
+                        #   (the cell offered, Babylon's sphere frustum test,
+                        #   group 0's front to back, scene order the
+                        #   tie-break) and again into the glow's mask after
+                        #   the billows'; installed FIRST of all ours at
+                        #   beforeAlphaTest; its two pipelines asked once a
+                        #   session, a failure the round's; installed for a
+                        #   round, never an editor build; in no bake
+    flameProgram.ts     # The fire's program (X4.4d): its block, its geometry
+                        #   (every fire surface's arrays, each draw's matrix
+                        #   and bloom), FlameRecipe, and the main pass's and
+                        #   the mask's modules — one vertex module for both
+                        #   (the LEQUAL tie); the frame's eye, wind, fog and
+                        #   opaque alpha, the rest the block's
     blastProgram.ts     # The billow's program (X4.4c): its block, its
                         #   geometry (icosphere arrays, each instance's
                         #   matrix, billow, warmth and bloom), BlastRecipe, and
@@ -2886,11 +2919,9 @@ src/
                         #   tells onPaletteFailed; the probes' bake; the
                         #   glow's mask, which draws only the groups that
                         #   glow — a noGlow surface's group apart),
-                        #   then the HELD casters for the shadow maps alone
-                        #   (addCaster), cut last, the palette inside the
-                        #   main view's count and the casters its tail,
-                        #   drawn in no main pass; each surface and part
-                        #   carries its passes
+                        #   cut last, inside the main view's count (the HELD
+                        #   casters' layer went at X4.4d, reached by no
+                        #   build); each surface and part carries its passes
                         #   (and its block), finish builds the map's
                         #   WorldDepth when asked, probeView a probe bake's
                         #   view of the culls and glowView the glow mask's

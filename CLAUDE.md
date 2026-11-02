@@ -412,8 +412,8 @@ kit row on every map, riding the join and the deploy like the weapon). **A
 molotov is the same pool, the same arc and the same ray** — thrown on the frag's
 `throwSpeed`/`throwLift`/`gravity`, which the bots' measured band depends on —
 and it BREAKS on first contact into a FIRE: a second pool in `GrenadeSystem`
-that burns the thrower's target list on a tick, skips hulls, and is drawn (by
-`GrenadeFx`) in the world's one `FlameMaterial`. Three rules reach outside it.
+that burns the thrower's target list on a tick, skips hulls, and is drawn by our
+`FlameDraw` on the world's one `FlameMaterial`. Three rules reach outside it.
 **A burn is `DamageKind` `"fire"`, which DROPS a body** — `RagdollSystem`'s test
 is "not a bullet or a burn". **A fire's held-open sound is keyed NEGATIVE**
 (`Game.fireSoundKey`), because `AmbienceSystem` spends 0 and up and an emitter's
@@ -599,8 +599,9 @@ shadow caster**, and see-through glazing gets no ink.
 **THE WORLD DRAWS WHOLE OR THE ROUND DOES NOT START.** Every BLOCK, the
 LANDFORM (the BUILD marks `WorldSurface.landform`) and the emissive PALETTE are
 OUR renderer's in every pass and **Babylon is made NO MESH of them**
-(`BlockHandover`, `worldMeshes`) — only of the glazing and the fires — so a
-surface ours cannot hold is REFUSED (a DEV throw `merge:hash` fails on), and a
+(`BlockHandover`, `worldMeshes`) — only of the glazing, the FIRES being ours
+(`FlameDraw`, no bake) — so a surface ours cannot hold is REFUSED (a DEV throw
+`merge:hash` fails on), and a
 pass of ours that cannot draw its world tells the failure it was HANDED WITH
 it: **`Game.worldFailed`**, the menu and a toast, never a fallback.
 **The frame WALKS the scene, and the scene is the map.** `WorldCulling`
@@ -608,8 +609,9 @@ it: **`Game.worldFailed`**, the menu and a toast, never a fallback.
 **A collider is never a candidate**, and a CELL is grown from the RECORDS
 (`GameMap.world`, whole). **The SCATTER is drawn ONCE**, as INSTANCES of its
 variants, its pieces cut out of the block arrays it stays merged into. **A
-mesh carrying `metadata.block` (the glazing, a fire) is one only while the
-camera is inside the map's `fogEnd`**, **everything else is ELIGIBLE**, and
+mesh carrying `metadata.block` (the glazing) is one only while the camera is
+inside the map's `fogEnd`** (a world fire drawn while its cell is: `offersBlock`),
+**everything else is ELIGIBLE**, and
 **anything EMISSIVE or `infiniteDistance` is exempt** from the size gate.
 **Nothing pooled may ever be block-keyed.**
 **EVERY BODY, HULL AND WEAPON IS OUR RENDERER'S, and Babylon is made NO RIG,
@@ -633,7 +635,8 @@ Babylon's queue sorted them, both ahead of the hulls at `"beforeAlphaTest"`;
 **so is every blast BILLOW** (`render/BlastDraw.ts`: a batch a draw, its one
 hand-set sphere what the frustum, the order and the bloom read) **and every
 glass SHARD and rubble CHUNK**, drawn straight off its body's pose
-(`systems/poseView.ts`), the size gate on this frame's sphere — **but the
+(`systems/poseView.ts`), the size gate on this frame's sphere, and every FIRE,
+the world's and the molotov's, a draw each, first of all ours — **but the
 sparks, the dust discs and the scorch stay Babylon meshes until the glazing
 moves (X4.6)**, because they fade in its transparent sort among the panes, and
 a pool is never split across two renderers.
@@ -904,7 +907,7 @@ misbehaves silently. **On the world's drawn geometry they are written on the
 RECORD, not the mesh** — the surface's part (`WorldSurface.part.metadata`,
 `world/worldGeometry.ts`) — and the one adapter (`worldMeshes`) hands that same
 object, unchanged, to a mesh WHERE IT MAKES ONE: since X3.7b only for what
-Babylon draws (the glazing, the fires, an editor build's every surface), our
+Babylon draws (the glazing, an editor build's every surface), our
 renderer reading the record. `GameMap.world` keeps it for every surface:
 
 - `solid: true` — collider proxies only. Unmarked geometry is shot through, seen
@@ -956,8 +959,8 @@ renderer reading the record. `GameMap.world` keeps it for every surface:
   albedo palette left the merge key — asked as NUMBERS (`exclusionOf`, off
   `WorldSurface.block`, and for a scatter instance the REGION its copy was
   merged under, `ScatterSet.blocks`), so those keep the merge's lattice. And
-  `WorldCulling`, which grows a cull cell from every RECORD carrying one and
-  files Babylon's meshes carrying one into it.
+  `WorldCulling`, which grows a cull cell from every RECORD carrying one, files
+  Babylon's meshes carrying one into it, and answers a fire by it (`offersBlock`).
 - `surface: "ground"` — what a round that stops here kicks up. The odd one out:
   it is a **value with a default**, not a flag, and **absent means `"hard"`**.
   `MapBuilder` sets it on exactly one thing — the terrain floor's collider clone

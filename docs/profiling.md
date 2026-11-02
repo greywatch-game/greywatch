@@ -1264,6 +1264,11 @@ blast's draws (a batch of billows each, `render/BlastDraw.ts`) and the
 debris's (one: every glass shard and rubble chunk handed over), and
 `pools.billows` and `pools.debris` say how many of each were — none of them
 in `counters.drawCalls` any more, the scorch still being Babylon's until X4.6.
+**From report version 28** (`BABYLON_EXIT.md` X4.4d) they count the FIRES'
+draws too — every world fire and every molotov flame drawn, a draw each in
+the main pass and one in the mask for each that blooms
+(`render/FlameDraw.ts`) — and `pools.fires` says how many were drawn, none of
+them in `counters.drawCalls` any more.
 
 **Report version 24 RETIRED `drawOverlay`** (`BABYLON_EXIT.md` X4.3d): it was
 the rendering groups above 0, which by X4.3c held the optics' glass alone and

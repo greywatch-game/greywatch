@@ -1030,11 +1030,15 @@ function renderReport(r) {
      rubble, their draws in the same two counts. Not in the draw-call
      counter: since BABYLON_EXIT.md X4.4b none of them is, nor since X4.4c
      a billow, shard or chunk (the sparks, the dust discs and the scorch
-     still are). A v26 capture has no billows or debris to show. */
+     still are). A v26 capture has no billows or debris to show. Since
+     version 28 the fires too — every world fire and molotov flame drawn,
+     a draw each, none in the draw-call counter since X4.4d; a v27 capture
+     has no fires to show. */
   const pools = r.pools;
-  if (pools && pools.instances + pools.marks + (pools.billows || 0) + (pools.debris || 0) > 0) {
+  if (pools && pools.instances + pools.marks + (pools.billows || 0) + (pools.debris || 0) + (pools.fires || 0) > 0) {
     let line = pools.drawn + " draws, " + pools.masked + " mask draws, " + pools.instances + " pieces, " + pools.marks + " marks";
     if (pools.billows !== undefined) line += ", " + pools.billows + " billows, " + pools.debris + " debris";
+    if (pools.fires !== undefined) line += ", " + pools.fires + " fires";
     bits.push(["pools", line]);
   }
   for (const [k, v] of bits) {

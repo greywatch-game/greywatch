@@ -2130,12 +2130,14 @@ DOES draw a fire, but only far off and only as single dark-red texels: taking
 the `-flame-` merges out of Babylon's lists alone moved **6 texels** in
 X3.6c's cube readback (3 on Sarab, 3 on Cinderhaven) and nothing else.
 **Our renderer's bake leaves every fire out by construction**
-(`BlockHandover`: a `FlameMaterial` merge is neither taken nor held for it,
-and `strayMesh` lets it stand beside the glazing) — and since X3.7c ours is
+(`BlockHandover`: a `FlameMaterial` merge is in no pass of the bake's — since
+`BABYLON_EXIT.md` X4.4d taken for the fire draw alone, `takeFire`) — and since X3.7c ours is
 the only bake, so Babylon's half of this entry can no longer be read but at
-the tag `exit-babylonworld`; there is no flame program on our side until
-the fire moves (`BABYLON_EXIT.md` X4.4) — so on our path no probe draws a fire
-at all, and the picture moved by those 6 texels against Babylon's. What is
+the tag `exit-babylonworld`; our renderer has drawn every fire of a round
+since `BABYLON_EXIT.md` X4.4d (`render/FlameDraw.ts`), in the main pass and
+the glow's mask and in NO bake, as the brief kept it — so on our path no
+probe draws a fire at all, and the picture moved by those 6 texels against
+Babylon's. What is
 still unexplained is the near case below: a fire stood AROUND a probe draws
 nothing.
 
@@ -2163,9 +2165,10 @@ draw: its `normal` and `uv` attributes, the vertex stage's displacement, and
 how a frozen `FlameMaterial` builds its effect for a render pass it has not
 drawn in before — and now that a far fire does reach a cube, what differs up
 close: the probe inside the fire's sphere, and the tongues built inside out
-(`docs/rendering.md`, the fire). On our renderer the answer is owed when the
-fire gets a program of ours (X4.4), which is when a fire could first enter
-our bake.
+(`docs/rendering.md`, the fire). On our renderer the fire has had a program
+of its own since X4.4d (`render/flameProgram.ts`), so a fire could now
+enter our bake — the bake drawing it is that picture change, owed this
+answer, and no step has taken it.
 
 ## 52. The exit's "before": Greyfen and Sarab, the desktop at max and the phone at minimum — **the phone's fight on Sarab is CPU in the render, and its look frames on Greyfen are not**
 

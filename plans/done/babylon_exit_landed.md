@@ -6826,7 +6826,7 @@ X4.3d's brief, word for word:
     run-to-run noise (1-3/255); `gate.mjs` and `shaders.mjs` clean on
     seven; typecheck, build, corecheck and `parity` pass.
 
-### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (63a338a, review fixes after it), X4.4b **LANDED** (9470686), X4.4c **LANDED** (d82f311)
+### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (63a338a, review fixes after it), X4.4b **LANDED** (9470686), X4.4c **LANDED** (d82f311), X4.4d **LANDED** (HASH)
 
 X4.4a's brief, word for word:
 
@@ -7481,3 +7481,163 @@ X4.4c's brief, word for word:
   - An offline round on Coldharbour (`x44c/round.mjs`: X4.4b's script with the AT item's presses spread over its draw and load — the launcher never fired under the old two 4-frame presses — and two panes broken a life): six lives, every primary, frags and molotovs, the launcher and the mine; the authority's `explode` 10 and `blaze` 6; billows drawn on 131-293 frames a life (up to 409 a frame, 4 draws and 4 mask draws), rockets in flight in every launcher life (8-14 piece-frames), 1,680-1,704 shard instance-frames a life and no chunk; 0 errors, the seam warning never raised.
   - A server's round (`x44c/net2.mjs`, `PORT=8097`): B threw two frags and fired two rockets; on A the authority's `explode` 4, billows drawn on 758 frames (up to 192, 3 draws, 3 mask draws), the wire's frags and rockets drawn (203 and 418 piece-frames); 0 errors on either page.
   - A profiler capture at report version 27 with a blast and a burst live: `pools: { drawn: 6, masked: 3, instances: 7, marks: 9, billows: 42, debris: 12 }`.
+
+**X4.4d landed** (HASH; 2026-11-01; no picture change).
+- **What moved.** Every world fire — a block's merge of `world/flame.ts`
+  surfaces (35 on the seven maps: Hollowmere 11, Greyfen 3, Coldharbour 2,
+  Harrowmead 2, Sarab 2, Cinderhaven 15, Kurenai none), the fire drums'
+  flames among them (a scatter prop's flame stays in its block's merge: no
+  cel recipe, so never an instanced part) — and every flame of a burning
+  molotov is drawn by our renderer (`render/FlameDraw.ts`), a draw each.
+  Babylon is made no fire mesh in a round and no molotov flame mesh at all:
+  the handover TAKES a fire (`BlockHandover.takeFire`: block-merged at
+  identity, never `updatable`, casting nothing, its normals and uvs present,
+  or the map is REFUSED) and `GrenadeFx`'s 61 meshes (the source and its 60
+  clones) are `PieceNode`s of one flame shape (`GrenadeFx.flames`,
+  `flameShape`, its local sphere `reConstruct`'s off the positions). The
+  only world surface Babylon is made a mesh of in a round is the glazing.
+  An EDITOR build is untouched: its fires are Babylon meshes on
+  `FlameMaterial`, whose two stages are now assembled from the same bodies.
+- **Found first, on the parent** (`x44d/fireorder.mjs`: Coldharbour and
+  Cinderhaven, 640 frames each on a fixed script — molotovs lit through the
+  `blaze` door, overlapping and spreading on the quay or round the drum; the
+  camera round each world fire in turn; on Cinderhaven out to ~1,200 m and
+  back; on both, the first world fire's cell walked out past the cull's
+  reach and back, the camera on it — each frame Babylon's `Mesh.render`
+  calls in group 0 of the main pass and in the glow's mask, and our draws'
+  points as the BUNDLE LIST holds them: `host.queue` hooked at queue time,
+  since an item runs only when the list does, at the pass's end — which is
+  why a marker draw of ours at those points reads out of order):
+  - every fire, world and molotov, is in group 0's OPAQUE list, sorted
+    front to back with everything else in it (`setRenderingOrder`,
+    `eyeDistanceSq` off the bounding sphere's centre), never blended; ahead
+    of them only the sky dome (which writes no depth), interleaved with them
+    the grass, the capture zones' poles, flags, paint and stones, the backed
+    panes and the water (`waterFar` too) — every one writing depth — and all
+    of it before our `"beforeAlphaTest"` point (the clouds and the turf,
+    after it, are the alpha-tested list);
+  - in the glow's mask, after every draw of ours (`@MASK` queued first), in
+    the ACTIVE list's order — the molotov's flames first, slot by slot and
+    flame by flame (their meshes were made at `Game`'s construction, ahead of
+    any map's), then the world's fires in BIRTH order (the order
+    `worldMeshes` made their meshes, `scene.meshes`') — the mask's queue
+    sorting by material, which they share;
+  - a fire is EMISSIVE (`FlameMaterial.emissiveColor`), so `WorldCulling`'s
+    size gate never dropped one (`gateOf` null) — **no stale-bounds latch to
+    keep or report** — and the frustum test is the mesh's
+    `CULLINGSTRATEGY_BOUNDINGSPHERE_ONLY` on bounds `_evaluateActiveMeshes`
+    composed that frame (`computeWorldMatrix` before `isInFrustum`); a world
+    fire's mesh was a candidate exactly while its block's cell was offered.
+- **The fire's program** (`render/flameProgram.ts`, `shaders/wgsl/flame.ts`).
+  `FlameShader.ts`'s stages as three bodies — the shared hash, noise and
+  drawn clock, `flameVertex`, `flameSurface` — statement for statement, which
+  BOTH sides assemble: Babylon's `ShaderStore` strings are its declarations
+  around them and a `main` that calls them (the editor's), ours the assembler
+  (`assembleVertex`/`assembleFragment`). The two names a body reads two ways:
+  `uniforms.world` (a uniform for Babylon, a private block its prelude fills
+  from the draw's matrix for ours) and the bloom (`uniforms.glowColor`, or
+  under `FLAME_INSTANCED` the instance's flat `vGlow`). The eye, the wind's
+  bearing, the fog and the opaque alpha are the FRAME's — the very numbers
+  the factory pushed onto the material (`windBearing` is `configure`'s
+  `normalize` of the same numbers) — and the rest is `FlameMaterial.values`
+  (the motion, the curl, the embers, the boil, the five inks and the clock),
+  written in place off the same Babylon objects the material is handed, so
+  each float is the one its uniform buffer held.
+- **The draw** (`render/FlameDraw.ts`). The molotov's flame (surface 0, the
+  session's) and each map's world fires (`setWorld`, at the handover's
+  install; `clearWorld` at its `clear`) uploaded end to end, a draw ONE
+  instance of ONE surface (`pass.draw(its index count, 1, its first index,
+  the draw's index)`), its matrix and bloom per draw. `Game.flamePull`
+  (inside the render) walks the active list in scene order: a molotov flame
+  while `visible`, composed as `computeWorldMatrix` composed its mesh
+  (`pieces.composeNode`) with its sphere carried (`worldSphere`); a world
+  fire while `WorldCulling.offersBlock` says its cell is offered (snapshotted
+  in `rebuildList`, where a filed mesh's candidacy was decided, the warm-up's
+  every cell included), at the identity its frozen mesh had, its sphere its
+  record's (`merge:hash` holds a record's bounds to its mesh's bit for bit);
+  each through Babylon's sphere frustum test (none while the scene skips
+  clipping), into a stable insertion sort by squared eye distance; the mask's
+  draws in the active list's order, a `noGlow` world fire (none ships) left
+  out, each one's bloom `GlowRules.colour` at its centre. The main draw at
+  `"beforeAlphaTest"` installed FIRST of all ours (ahead of the billows),
+  the mask after the billows'. What moved is only the fires' interleave with
+  the meshes Babylon still has in that queue, all depth-writing, so an exact
+  tie or nothing.
+- **The held-caster layer, deleted.** `WorldBlocks.addCaster`,
+  `casterGroup`, `heldCasters`, the `"held"` layer, `CASTER_ATTRIBUTES` and
+  the `CASTERS` cut rank (the palette is cut last, inside the count the
+  main view culls — `count: clusterCount`, what `drawn` always was with no
+  caster held); `BlockHandover`'s `held`, `heldMeshes`, `hold`'s caster arm
+  (`holdPalette` now), the DEV node check in `frame` and the `NO_REACH` a
+  held caster was cut against; `WorldCulling.NO_REACH`'s note of it. No
+  build reached it (X3.7c's review): the one surface Babylon keeps in a
+  round is the glazing, which casts nothing, and a fire that casts is now
+  refused.
+- **The oracles' tools.** `census.mjs` counts the fires' draws with ours
+  (`Game.flameDraw.stats.drawn`), so a row's total holds; `x44d/fireorder.mjs`
+  and `ordcmp.mjs` are the probe.
+- **Pipelines.** Two asked at `Game`'s construction — the fire and its mask
+  — so the building card's warm-up waits for them. `GrenadeFx.warm` still
+  poses its molotov flame, drawn through ours, until X4.4e. Babylon's flame
+  material is compiled by no round (its install count 24 → 22, modules
+  49 → 45).
+- **Profiler.** Report version 28: `pools.fires`, the fires' draws in
+  `pools.drawn`/`masked`; the viewer prints them.
+- **The empty-group seam**: not reachable — the sky dome is in group 0 on
+  every frame of both probes; what Babylon still queues there in a round is
+  the sky's dome and clouds, the grass and its turf, the capture zones, the
+  water, the glazing, the moon and the three blended pools.
+- **Measured.**
+  - **The bank**: `--check --keep` at bac02b7 (the worktree, its `ref/` the
+    main tree's) and at the step: **111 of 113 kept frames byte-equal**
+    (`comparePngs`) — among them the 68 rows with a fire drawn (the census
+    moves each one's fire draws from Babylon's count to ours), `fx-fire`,
+    `fx-fire-fade` and `fx-molotov` 0 px from the bank — the other two
+    `sarab-ground` (100 px, 2/255) and `sarab-shelf` (1 px, 1/255); Sarab's
+    eleven rows re-checked alone twice at each code are byte-equal across
+    all four runs, each full run's odd frame differing from them alone
+    (cross-process residue, as at X4.4c). The same 34 stale rows failing
+    with the same means.
+  - **The order probe** (`x44d/fireorder.mjs`, `ordcmp.mjs`): the main
+    pass's fire order equal on **640 of 640 frames** on Coldharbour (595 with
+    a fire; 10,752 draws — 10,140 of molotov flames, 612 of world fires) and
+    **640 of 640** on Cinderhaven (13,593 — 9,659 and 3,934), the mask's on
+    640 of 640 on each; Coldharbour's first fire's cell OFF on 96 frames of
+    the reach walk on both codes; every fire of ours at `"beforeAlphaTest"`;
+    no fire in Babylon's lists on the step.
+  - **`merge:hash`** against the parent: the 35 world fires' `mesh` moved
+    and nothing else (`record arrays` and `record bounds` 854 of 854 meshed
+    visuals, 889 before); `--editor` identical on all eight; every map
+    installs.
+  - **`pipelines.mjs coldharbour --round`**: zero of Babylon's, zero of ours
+    and zero modules in play in **five of five**; the first install 22 of
+    Babylon's, 23 of ours (the construction's asks are not an install's),
+    45 modules; the second none.
+  - **`kit:hash`** 3,722 of 3,722 builds identical; **`--models`** 244 of 244.
+  - **`census --against`** the BEFORE: every one of 113 rows equal.
+  - **`gate`** all seven maps clean; **`shaders`** every shader clean on
+    seven (its first run lost its page to a navigation mid-install on
+    Kurenai — "Execution context was destroyed" in `installRound` — and the
+    re-run was clean); **`parity`** every map agrees; typecheck, build
+    (`check-babylon-free`, `check-proving`) and corecheck pass.
+  - **An EDITOR build** (`x44d/editorfire.mjs`: Cinderhaven, the round
+    installed, then `buildEditorMap`, the clocks frozen, the camera at each of
+    the first four fires): every fire mesh ready, its mask twin made and ready,
+    0 errors — and the **four photographs byte-equal** to the parent's.
+  - An offline round on Coldharbour (`x44d/round.mjs`, X4.4c's script
+    counting the fires our renderer was handed): six lives, every primary,
+    frags and molotovs, the launcher and the mine; the authority's `explode`
+    11 and `blaze` 6; the molotov lives' flames 1,737, 1,398 and 1,719
+    flame-frames (up to 20 fire draws a frame — 18 flames and the two
+    hearths — and 20 mask draws), the two hearths on 582-631 frames a life;
+    billows, pieces, shards (1,680 a life) and rubble (12,470-12,870 in the
+    frag lives) as at X4.4c; 0 errors, the seam warning never raised.
+  - A server's round (`x44d/net2.mjs`, `PORT=8097`): B threw two MOLOTOVS
+    (and fired two rockets); on A, the camera turned onto each fire as the
+    authority's `blaze` landed, `blaze` 2 drawn through `drawFire` — flames
+    on 598 frames, 8,100 flame-draws, up to 17 at once and 19 mask draws
+    with the hearths — the wire's bottles (156 piece-frames) and rockets
+    (418); 0 errors on either page.
+  - A profiler capture at report version 28 with a molotov burning and a
+    pane's burst live: `pools: { drawn: 17, masked: 14, instances: 5,
+    marks: 9, billows: 24, debris: 12, fires: 12 }`.

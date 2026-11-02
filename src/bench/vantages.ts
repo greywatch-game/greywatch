@@ -1113,7 +1113,7 @@ function effectRows(): Vantage[] {
       id: "fx-molotov",
       of: "a molotov burning on the promenade 1.5 s after it went up, its ignition's smoke rising",
       proves:
-        "the molotov's FLAMES (`GrenadeFx`'s clones on `getFlame()`, X4.4d) at full height, each stood on its own floor, with the ignition's billows (`BlastFx`), its light, and its scorch on the FLOOR (`ScorchMarks`, X4.4c) — drawn whole under the flames and faint, as it is meant to be: a black decal at 0.4 is a proportional darkening, and the floor under it is fire-lit (measured with the mark hidden and shown: the whole disc moves)",
+        "the molotov's FLAMES (`GrenadeFx`'s flames, our renderer's since X4.4d: `FlameDraw` on `FlameMaterial`'s values) at full height, each stood on its own floor, with the ignition's billows (`BlastFx`), its light, and its scorch on the FLOOR (`ScorchMarks`, X4.4c) — drawn whole under the flames and faint, as it is meant to be: a black decal at 0.4 is a proportional darkening, and the floor under it is fire-lit (measured with the mark hidden and shown: the whole disc moves)",
       pos: quay,
       target: [-30, 0.8, -31],
       fov: 35,
@@ -1251,7 +1251,7 @@ function fireRows(): Vantage[] {
       id: "fx-fire",
       of: "the fire drum on the bay road at night, by the careened boat, through a 9° field",
       proves:
-        "a WORLD FIRE (`world/flame.ts` merged into its block on `FlameMaterial`, X4.4d): the tongues, the core and the embers, filed by `metadata.block`, at the bank's pinned clock",
+        "a WORLD FIRE (`world/flame.ts` merged into its block on `FlameMaterial`, our renderer's since X4.4d: `FlameDraw`): the tongues, the core and the embers, drawn while its block's cell is offered, at the bank's pinned clock",
       pos,
       target,
       fov: 9,

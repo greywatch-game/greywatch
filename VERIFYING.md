@@ -1704,7 +1704,7 @@ is one machine's:
   either way, with no toast (`Game.roundWorld`).
 - **Whether the RECORD still describes the mesh is `npm run merge:hash`'s**
   (`BABYLON_EXIT.md` X3.7a): EVERY surface that has a mesh — on a shipped
-  build the glazing and the fires, on an EDITOR build every one, 2,000-odd
+  build the glazing (and the fires until X4.4d), on an EDITOR build every one, 2,000-odd
   meshes almost all off identity, which exercise the transformed path —
   record bounds against the mesh's bounding info bit for bit (`bounds≠mesh`,
   and the `record bounds` line counts those off identity), and its record's

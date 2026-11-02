@@ -8,8 +8,10 @@
  * LOCAL bounding sphere, its transform as built and the segment it hung
  * from), `PiecePart` (what a model's builder hands over to make one),
  * `pieceKit`, `PieceNode` (one segment's live channels, switch and world),
- * `Piece`, `composePiece`, `worldSphere` (shared with the posed pieces,
- * `systems/poseView.ts`) and `writePieceDrawing`.
+ * `Piece`, `composePiece`, `composeNode` (one parentless node's — a
+ * molotov's flame, `systems/GrenadeFx.ts`, X4.4d), `worldSphere` (shared
+ * with the posed pieces, `systems/poseView.ts`, and the flames) and
+ * `writePieceDrawing`.
  * Invariants:
  * - **A piece's node is the MESH it replaced, channel for channel**: its
  *   local composed from its Euler through a yaw-pitch-roll quaternion — or
@@ -190,7 +192,7 @@ const _centre = new Vector3();
 const _scale = new Vector3();
 
 /** One node's world off its parent's, which must be current: `computeWorldMatrix`'s arithmetic. */
-function composeNode(n: PieceNode): void {
+export function composeNode(n: PieceNode): void {
   const q = n.quaternion ?? Quaternion.RotationYawPitchRollToRef(n.rotation.y, n.rotation.x, n.rotation.z, _q);
   Matrix.ComposeToRef(n.scaling, q, n.position, _local);
   if (n.parent) _local.multiplyToRef(n.parent.world, n.world);
