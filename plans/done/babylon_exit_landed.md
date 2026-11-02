@@ -6826,7 +6826,7 @@ X4.3d's brief, word for word:
     run-to-run noise (1-3/255); `gate.mjs` and `shaders.mjs` clean on
     seven; typecheck, build, corecheck and `parity` pass.
 
-### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (63a338a, review fixes after it), X4.4b **LANDED** (9470686), X4.4c **LANDED** (d82f311), X4.4d **LANDED** (9d81875), X4.4e **LANDED** (HASH) — **all five LANDED** (63a338a..HASH)
+### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (63a338a, review fixes after it), X4.4b **LANDED** (9470686), X4.4c **LANDED** (d82f311), X4.4d **LANDED** (9d81875), X4.4e **LANDED** (e3d5276) — **all five LANDED** (63a338a..e3d5276)
 
 X4.4a's brief, word for word:
 
@@ -7692,7 +7692,7 @@ X4.4e's brief, word for word:
   reports zero pipeline creations during a round, against X4.4a's count; the
   building card takes no longer than before.
 
-**X4.4e landed** (HASH; 2026-11-01; no picture change).
+**X4.4e landed** (e3d5276; 2026-11-01; no picture change).
 - **The declared list.** `Game.roundPipelines` (a field, filled once at the
   end of the pools' construction) names every draw of ours a round can use
   whatever its map, by the promise its constructor's asks settle:

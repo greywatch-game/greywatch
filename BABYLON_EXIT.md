@@ -1020,7 +1020,7 @@ card behind it are off Babylon's scene, and no sub-step changed the picture.
 
 The full record is in [the archive](plans/done/babylon_exit_landed.md).
 
-### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (63a338a, review fixes after it), X4.4b **LANDED** (9470686), X4.4c **LANDED** (d82f311), X4.4d **LANDED** (9d81875), X4.4e **LANDED** (HASH) — **all five LANDED** (63a338a..HASH)
+### X4.4 — The effect pools, and pipelines compiled at load — **M–L, as five sub-steps** (split 2026-11-01, decided the same day) — X4.4a **LANDED** (63a338a, review fixes after it), X4.4b **LANDED** (9470686), X4.4c **LANDED** (d82f311), X4.4d **LANDED** (9d81875), X4.4e **LANDED** (e3d5276) — **all five LANDED** (63a338a..e3d5276)
 
 Every pooled effect Babylon still draws comes off its scene but the three
 that blend among the panes (decided 2026-11-01: they wait for X4.6), and the
@@ -1414,7 +1414,7 @@ Everything else in X4.4 moves as briefed; `fx-glass-sort` is X4.6's BEFORE.
   drawn: 17, masked: 14, …, fires: 12 }`. The full record is in
   [the archive](plans/done/babylon_exit_landed.md).
 - **X4.4e — pipelines compiled at load, and the seam checked LANDED**
-  (HASH; 2026-11-01; no picture change). **The pools' poses became a
+  (e3d5276; 2026-11-01; no picture change). **The pools' poses became a
   DECLARED list**: `Game.roundPipelines`, one place, names every draw of
   ours a round can use whatever its map — the bodies, the bodies' shadow
   map, the hulls, the weapon, the pieces (tracers, brass, the thrown and
