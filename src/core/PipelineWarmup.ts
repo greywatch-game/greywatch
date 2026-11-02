@@ -3,8 +3,8 @@
  * round's render pipelines are compiled, and when it may stop.
  * Owns: `DeclaredPipelines`, the shape of one entry of the round's DECLARED
  * list; the list of vantages, which one is being drawn from, how many frames
- * have been spent there and how many of them compiled nothing, how many of
- * the declared entries have settled, and the two wall clocks it is capped by.
+ * have been spent there and how many of them compiled nothing, which of the
+ * declared entries have settled, and the two wall clocks it is capped by.
  * Owns no camera, no mesh, no draw and no system: `Game` declares the list
  * (`Game.roundPipelines`), places the camera at `vantage`, draws the frame,
  * and reports back through `afterFrame` how many pipelines Babylon's cache had
@@ -16,22 +16,23 @@
  * settle must not hang the card any more than the reflection drain may. It
  * OPENS by waiting, with no vantage, for OUR renderer's pipelines
  * (`CONFIG.graphics.warmup.oursCapMs`): every entry of the declared list
- * settled — the bodies, the hulls, the weapon, the bodies' shadow map and
- * every effect pool of ours, each asked once at `Game`'s construction — and
- * nothing of ours left compiling, which is the map's own (the world's groups,
- * its depth passes, the lamps' atlas, the probes' bake, the palette's mask,
- * asked as its install built them). They compile off the frame, so drawing
- * does not hurry them, but a group of ours still compiling draws NOTHING and
- * Babylon no longer draws the blocks in the main pass — so the vantages are
- * drawn with ours built; a compile of ours that FAILS fails the world under
- * the card (`BABYLON_EXIT.md` X3.7b: `Game.worldFailed`), Babylon holding no
- * mesh of it to compile at a vantage instead. A vantage is then held until it
- * has drawn `CONFIG.graphics.warmup.quietFrames` in a row that created
- * nothing in either cache and left nothing of ours compiling, because a mesh
- * whose effect is still compiling is SKIPPED by a frame rather than compiled
- * by it and turns up on the next one. "Ours" is the whole of our renderer's
- * cache, so a compile a torn-down map left in flight holds the wait too — at
- * worst a slower card, since a later map reuses what it built.
+ * settled — the bodies, the hulls, the weapon, the bodies' shadow map, the
+ * lamps' proxies and every effect pool of ours, each asked once at `Game`'s
+ * construction — and nothing of ours left compiling, which is the map's own
+ * (the world's groups, its depth passes — the lamps' atlas's casters among
+ * them — the probes' bake, the palette's mask, asked as its install built
+ * them); a cap reached names the entries still unsettled. They compile off the
+ * frame, so drawing does not hurry them, but a group of ours still compiling
+ * draws NOTHING and Babylon no longer draws the blocks in the main pass — so
+ * the vantages are drawn with ours built; a compile of ours that FAILS fails
+ * the world under the card (`BABYLON_EXIT.md` X3.7b: `Game.worldFailed`),
+ * Babylon holding no mesh of it to compile at a vantage instead. A vantage is
+ * then held until it has drawn `CONFIG.graphics.warmup.quietFrames` in a row
+ * that created nothing in either cache and left nothing of ours compiling,
+ * because a mesh whose effect is still compiling is SKIPPED by a frame rather
+ * than compiled by it and turns up on the next one. "Ours" is the whole of our
+ * renderer's cache, so a compile a torn-down map left in flight holds the wait
+ * too — at worst a slower card, since a later map reuses what it built.
  * Never: reads the scene, touches the GPU, or allocates per frame.
  *
  * **Why Babylon's pipelines are DRAWN rather than pre-built.** Babylon 9.28 has
@@ -86,7 +87,8 @@ export class PipelineWarmup {
   private drawingSince = 0;
   /** Pipelines this warm-up has seen built, for the DEV line at the end. */
   private built = 0;
-  /** Of the declared entries, how many have not settled yet. */
+  /** Of the declared entries, which have settled (by index, made once a warm-up) and how many have not. */
+  private readonly declaredSettled: boolean[];
   private declaredPending: number;
 
   /**
@@ -109,11 +111,15 @@ export class PipelineWarmup {
       (p) => new Vector3(p.x, p.y + EYE_HEIGHT, p.z),
     );
     this.lastCount = createdSoFar + ours.settled;
+    this.declaredSettled = declared.map(() => false);
     this.declaredPending = declared.length;
-    const settle = (): void => {
-      this.declaredPending--;
-    };
-    for (const entry of declared) void entry.ready.then(settle, settle);
+    declared.forEach((entry, i) => {
+      const settle = (): void => {
+        this.declaredSettled[i] = true;
+        this.declaredPending--;
+      };
+      void entry.ready.then(settle, settle);
+    });
   }
 
   /** Where this frame's eye stands, or null while there is none: ours awaited, or done. */
@@ -140,10 +146,13 @@ export class PipelineWarmup {
       const waiting = compiling > 0 || this.declaredPending > 0;
       if (waiting && now - this.since < cfg.oursCapMs) return false;
       if (waiting && import.meta.env.DEV) {
+        // Once, at the cap: the names of what is still out.
+        const unsettled = this.declared.filter((_, i) => !this.declaredSettled[i]).map((e) => e.name);
         console.warn(
           `[warmup] ${compiling} of our renderer's pipeline(s) still compiling, ` +
-            `${this.declaredPending} of ${this.declared.length} declared draw(s) unsettled, after ` +
-            `${cfg.oursCapMs} ms — what they draw is missing from the frame until they land`,
+            `${this.declaredPending} of ${this.declared.length} declared draw(s) unsettled` +
+            (unsettled.length > 0 ? ` (${unsettled.join(", ")})` : "") +
+            `, after ${cfg.oursCapMs} ms — what they draw is missing from the frame until they land`,
         );
       }
       this.index = 0;

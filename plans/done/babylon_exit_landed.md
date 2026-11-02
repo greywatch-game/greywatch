@@ -7706,12 +7706,22 @@ X4.4e's brief, word for word:
   (`DeclaredPipelines`: a name and a `ready`), counts its entries settled
   off the promises (no per-frame work), and opens on BOTH — every entry
   settled and nothing of ours compiling (the map's: the world's groups, its
-  depth passes, the lamps' atlas, the probes' bake, the palette's mask,
+  depth passes, the lamps' atlas's casters, the probes' bake, the palette's mask,
   asked by its install) — under `oursCapMs`, its DEV line naming how many
   entries were unsettled if the cap is ever reached. The map's are not on
   the list because they are not the session's: they are asked as the
   install builds the map, before the warm-up, and the cache's count covers
-  them.
+  them. **It departs from the brief**: the list is each draw's `ready`
+  promise, asked at construction, not pipeline keys created during loading,
+  and its wait is functionally redundant with the cache's in-flight count
+  (an entry settles in the same microtask checkpoint as the compiles it
+  waits on) — its value is the one place every draw of ours is stated, and
+  the seal's tripwire. (Review fixes after it: the cap's DEV line names
+  the entries unsettled, and the lamps' proxies — the atlas's moving
+  casters, a session draw of ours asked at `LampAtlas`'s construction since
+  X3.6b, where its casters are the map's — joined the list as `the lamps'
+  proxies`; the cache's sealed test moved to its call sites, so a
+  production build makes no label.)
 - **The seal.** `PipelineCache.seal(on)`: sealed in `finishBakeWait` when the
   warm-up stood (a map), unsealed in `teardownMap` (so also at every
   `installMap`, an editor rebuild included). A `get` or `compute` that

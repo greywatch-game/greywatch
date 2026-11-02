@@ -865,11 +865,16 @@ the next one by the economy — two grenades a life, a 3.6 s tank reload.
 ## 16. The round's pipelines are compiled under the building card now — what the warm-up does not reach, and the phone
 
 **Status:** the warm-up LANDED (`core/PipelineWarmup.ts`, `docs/states.md`,
-"a SECOND phase"); what is open is the phone, and three things it does not
-reach. (A fourth — a weapon or optic the card never drew, whose glass compiled
-on its first draw — was settled by `BABYLON_EXIT.md` X4.3d: every pipeline of
-the weapon, its glass and the kit card among them, is our renderer's and asked
-at construction, and a first ADS through either glass creates nothing. And the
+"a SECOND phase"); what is open is the phone, and two things it does not
+reach. (Two more are settled. A lamp's PROXY variant compiled in play on
+Kurenai, a body drawn into a lamp's tile only when a casting lamp stood near
+it: since X3.6b the atlas is our renderer's, its one proxies' pipeline asked at
+`LampAtlas`'s construction and on the round's declared list — an offline
+Kurenai round with proxies drawn on 3,730 frames created nothing in play,
+ours or Babylon's, 2026-11-01. And a weapon or optic the card never drew,
+whose glass compiled on its first draw, was settled by `BABYLON_EXIT.md` X4.3d:
+every pipeline of the weapon, its glass and the kit card among them, is our
+renderer's and asked at construction, and a first ADS through either glass creates nothing. And the
 pool poses described below are only Babylon's now: since X4.4e every pool of
 ours is on the round's declared list, its pipelines asked at construction and
 none posed; the sparks, the dust discs and the scorch keep theirs until X4.6.)
@@ -891,7 +896,7 @@ fire — counting creations per phase (2026-10-07):
 | Harrowmead | — | 0 | 17 in 1,328 ms |
 | Sarab | — | 1 (the rotor wash, below) | 21 in 990 ms |
 | Cinderhaven | — | 1 (the rotor wash, below) | 19 in 916 ms |
-| Kurenai | — | 1 (a lamp's proxy, below) | 18 in 701 ms |
+| Kurenai | — | 1 (a lamp's proxy: since X3.6b ours, asked at construction — 0) | 18 in 701 ms |
 
 Render pipelines only; the "before" column is the same script on the tree
 before this landed. A second round on the same page warms in ~360 ms, the pipelines being cached.
@@ -907,10 +912,6 @@ keyed on the pose, not on the mesh.
   was 1,268 ms with 34 creations near it and its first blast 403 ms (finding
   13's session, Greyfen, 2026-10-05); a capture there owes `createdNear` on the
   spawn and first-blast frames, and the card's extra time on that device.
-- **The lamps' atlas PROXY variant** still compiles in play on Kurenai: a body
-  is only drawn into a lamp's tile when a SHADOW-CASTING lamp stands near it,
-  and no vantage there has one. Standing the stand-in body under a casting lamp
-  would reach it.
 - **The rotor wash** on Sarab and Cinderhaven is a GPU particle system, not a
   mesh, and compiles on the first frame a helicopter raises dust.
 

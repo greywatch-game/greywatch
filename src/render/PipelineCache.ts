@@ -126,7 +126,8 @@ export class PipelineCache implements CompileProgress {
   /** The pipeline for `spec`, compiled once; every later ask shares the same promise. */
   get(spec: PipelineSpec): Promise<BuiltPipeline> {
     return this.cached(this.pipelines, pipelineKey(spec), (key) => {
-      this.missed(`${spec.vertex.label} / ${spec.fragment.label}`);
+      // Gated here, so a production build makes no label.
+      if (import.meta.env.DEV && this.sealed) this.missed(`${spec.vertex.label} / ${spec.fragment.label}`);
       return this.build(spec, key);
     });
   }
@@ -138,7 +139,7 @@ export class PipelineCache implements CompileProgress {
    */
   compute(label: string, code: string, entry: string): Promise<GPUComputePipeline> {
     return this.cached(this.computes, `${label}:${entry}:${code}`, async () => {
-      this.missed(`${label}: ${entry}`);
+      if (import.meta.env.DEV && this.sealed) this.missed(`${label}: ${entry}`);
       return this.device.createComputePipelineAsync({
         label: `${label}: ${entry}`,
         layout: "auto",
@@ -147,11 +148,12 @@ export class PipelineCache implements CompileProgress {
     });
   }
 
-  /** A compile is starting: under the seal, a DEV build says which. */
+  /**
+   * A compile is starting under the seal, in a DEV build: says which. Its
+   * callers test both, so the name is never built where nothing is said.
+   */
   private missed(name: string): void {
-    if (import.meta.env.DEV && this.sealed) {
-      console.warn(`[pipelines] "${name}" compiled in play — asked by nothing before the building card came down`);
-    }
+    console.warn(`[pipelines] "${name}" compiled in play — asked by nothing before the building card came down`);
   }
 
   /** `key`'s compile out of `cache`, started and counted on a miss; a failure is forgotten. */

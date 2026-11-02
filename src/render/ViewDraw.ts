@@ -499,6 +499,8 @@ export class ViewDraw {
   private adopt(recipe: CelRecipe): void {
     const key = celKey(recipe);
     if (!this.cels.has(key)) {
+      // In a round the seal warns as well (`PipelineCache.seal`), naming the
+      // pipeline; this names the recipe's shape, and speaks over the menu too.
       if (import.meta.env.DEV) {
         console.warn(`view: a cel material of a shape not asked at construction (${key}) — compiled now, in the round`);
       }

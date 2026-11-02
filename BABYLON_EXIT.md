@@ -1422,7 +1422,14 @@ Everything else in X4.4 moves as briefed; `fx-glass-sort` is X4.6's BEFORE.
   (shards and rubble) and the fires — each of whose pipelines its
   constructor asks once, at `Game`'s construction. The warm-up waits on it
   by name before its first vantage (`PipelineWarmup`'s `DeclaredPipelines`),
-  beside the map's own pipelines, which its install asks; and our cache is
+  beside the map's own pipelines, which its install asks. **It departs from
+  the brief**: the list is each draw's `ready` promise, asked at
+  construction, not pipeline keys created during loading, and its wait is
+  functionally redundant with the cache's in-flight count (an entry settles
+  in the same microtask checkpoint as the compiles it waits on) — its value
+  is the one place every draw of ours is stated, and the seal's tripwire
+  (review fixes after it: the cap's warning names the entries unsettled,
+  and the lamps' proxies, a session draw, joined the list). And our cache is
   SEALED from the card coming down (`finishBakeWait`) to the map's teardown
   (`PipelineCache.seal`): a compile of ours in play is a DEV warning naming
   it (proved by a compute asked in play: named; sealed at deploy and in

@@ -126,9 +126,10 @@ of the same wait rather than a wait of its own, on purpose: `go` and
 exists. **It OPENS with no vantage at all, waiting for OUR renderer's
 pipelines** (`render/PipelineCache.ts`, handed in as `CompileProgress`): the
 round's DECLARED list (`Game.roundPipelines` — the bodies, the hulls, the
-weapon, the bodies' shadow map and every effect pool of ours, each asked once
-at `Game`'s construction, waited on by name) and the map's own, asked as its
-install built them. They compile off the frame, so drawing does not hurry
+weapon, the bodies' shadow map, the lamps' proxies and every effect pool of
+ours, each asked once at `Game`'s construction, waited on by name: a cap
+reached names those unsettled) and the map's own, asked as its install built
+them (the lamps' atlas's CASTERS among them). They compile off the frame, so drawing does not hurry
 them, but a group of ours still compiling draws NOTHING and Babylon no longer
 draws the blocks in the main pass — so the vantages are drawn with ours
 built, and nothing of ours is POSED at one (`BABYLON_EXIT.md` X4.4e: the

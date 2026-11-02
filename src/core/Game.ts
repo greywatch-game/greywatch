@@ -956,10 +956,12 @@ export class Game {
    * THE ROUND'S DECLARED PIPELINES (`BABYLON_EXIT.md` X4.4e): every draw of
    * ours a round can use whatever its map, each of whose pipelines is asked
    * ONCE, here at construction, for the session — the bodies, the hulls,
-   * the weapon, the bodies' shadow map and every effect pool of ours (the
-   * pieces: the tracers, the brass, the thrown and laid bodies of both
-   * sides of the wire; the marks; the billows; the shards and the rubble;
-   * the fires). The building card's warm-up waits on this list by name
+   * the weapon, the bodies' shadow map, the lamps' proxies (the atlas's
+   * moving casters; its static ones are the map's, asked at its install)
+   * and every effect pool of ours (the pieces: the tracers, the brass, the
+   * thrown and laid bodies of both sides of the wire; the marks; the
+   * billows; the shards and the rubble; the fires). The building card's
+   * warm-up waits on this list by name
    * before its first vantage (`core/PipelineWarmup.ts`), beside the map's
    * own pipelines, which its install asked; and our cache is SEALED once
    * the card is down (`PipelineCache.seal`), so a compile in play is a
@@ -2443,6 +2445,7 @@ export class Game {
     this.roundPipelines = [
       { name: "bodies", ready: this.bodyDraw.ready },
       { name: "the bodies' shadow map", ready: this.bodyShadowMap.ready },
+      { name: "the lamps' proxies", ready: this.lampAtlas.proxiesReady },
       { name: "hulls", ready: this.hullDraw.ready },
       { name: "the weapon", ready: this.viewDraw.ready },
       { name: "pieces", ready: this.pieceDraw.ready },

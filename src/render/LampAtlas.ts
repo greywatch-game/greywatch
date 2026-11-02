@@ -32,8 +32,9 @@
  * re-sized or this is disposed — and by Babylon, at the end of its frame,
  * when a wrapped view of it is disposed, so whoever wraps one lets the view
  * go only with the texture it wraps (`LocalShadows.remake`); `ready` is
- * false until the proxies' pipeline and the casters are built, and
- * `LocalShadows` shadows no light until it is true — a proxies' pipeline
+ * false until the proxies' pipeline (`proxiesReady`, on the round's declared
+ * list) and the casters are built, and `LocalShadows` shadows no light until
+ * it is true — a proxies' pipeline
  * that FAILS (asked once, for the session) or casters whose build fails are
  * never drawn, and the failure handed over with the casters is told
  * (`setCasters`: the world's, `BlockHandover`) — every world handed over
@@ -150,9 +151,11 @@ export class LampAtlas {
   /**
    * Whether the proxies' pipeline built — asked once, for the session, and
    * settled false if it failed: every world handed over waits on it
-   * (`setCasters`), so one handed over after a failure fails on it too.
+   * (`setCasters`), so one handed over after a failure fails on it too. A
+   * session draw of ours, so it is an entry on the round's declared list
+   * (`Game.roundPipelines`), which the building card's warm-up waits on.
    */
-  private readonly proxies: Promise<boolean>;
+  readonly proxiesReady: Promise<boolean>;
   private readonly boxPositions: GPUBuffer;
   private readonly proxyMatrices: GPUBuffer;
   private readonly proxyTiles: GPUBuffer;
@@ -245,7 +248,7 @@ export class LampAtlas {
     this.proxyGeometry.refresh(renderer.host, {});
 
     const program = lampProxyDepth();
-    this.proxies = renderer.pipelines
+    this.proxiesReady = renderer.pipelines
       .get({
         vertex: program.vertex,
         vertexEntry: "main",
@@ -393,7 +396,7 @@ export class LampAtlas {
       }
       this.built = true;
     });
-    void this.proxies.then((ok) => {
+    void this.proxiesReady.then((ok) => {
       if (!ok && generation === this.generation) failed("our lamps' atlas cannot draw: its proxies' pipeline failed");
     });
   }
