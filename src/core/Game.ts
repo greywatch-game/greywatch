@@ -960,7 +960,18 @@ export class Game {
    */
   private flameDrawn = new Int32Array(0);
   private flameKeys = new Float64Array(0);
-  /** What `bloomColour` reads as a fire's material: the world's one `FlameMaterial`. */
+  /**
+   * `flamePull`'s reverse index, kept through the sort: each drawn fire's
+   * place in the ACTIVE list (`flameRank`, beside `flameDrawn`), and where
+   * the fire at each place in the active list was sorted to (`flameWhere`),
+   * so the mask's remap is a lookup rather than a search.
+   */
+  private flameRank = new Int32Array(0);
+  private flameWhere = new Int32Array(0);
+  /**
+   * What `bloomColour` reads as a fire's material: the world's one
+   * `FlameMaterial` itself, so its alpha is read live, as `GlowPass` read it.
+   */
   private flameBloomOf: { readonly emissiveColor: Color3; readonly alpha: number } | null = null;
   private readonly flameBloom = new Color4();
   /** The debris draw's cel recipe, whose third slot is the map's EARTH, painted per map (`installMap`). */
@@ -2319,7 +2330,7 @@ export class Game {
     // with each map's world fires (the handover's, at its install), a draw a
     // fire, on the world's one fire material (`GrenadeFx.flameMaterial`).
     const flameMaterial = this.grenadeFx.flameMaterial;
-    this.flameBloomOf = { emissiveColor: flameMaterial.emissiveColor, alpha: flameMaterial.alpha };
+    this.flameBloomOf = flameMaterial;
     this.flameDraw = new FlameDraw(
       this.renderer,
       this.grenadeFx.flameShape,
@@ -5611,6 +5622,8 @@ export class Game {
     // The fires' pull is sized to what the handover handed over just now.
     this.flameDrawn = new Int32Array(this.flameDraw.capacity);
     this.flameKeys = new Float64Array(this.flameDraw.capacity);
+    this.flameRank = new Int32Array(this.flameDraw.capacity);
+    this.flameWhere = new Int32Array(this.flameDraw.capacity);
     // How hard the grade is pushed is the map's; whether it runs at all stays
     // the player's (`applySettings`). A vignette that reads as dread over a
     // night village reads as a lens fault over a bright one.
@@ -6884,6 +6897,8 @@ export class Game {
     const fires = this.handover.fires;
     const drawn = this.flameDrawn;
     const keys = this.flameKeys;
+    const rank = this.flameRank;
+    const where = this.flameWhere;
     const cap = Math.min(into.capacity, drawn.length);
     // The active list, in order, each into the sort as it is met.
     let n = 0;
@@ -6911,21 +6926,25 @@ export class Game {
         r = f.radius;
       }
       if (planes && !inFrustum(x, y, z, r, planes)) continue;
-      if (glowOn) into.maskOrder[n] = i;
       const dx = x - eye.x;
       const dy = y - eye.y;
       const dz = z - eye.z;
       const key = dx * dx + dy * dy + dz * dz;
       // A stable insertion sort: a fire moves ahead only of one strictly
-      // farther.
+      // farther. The reverse index follows every fire it moves: `n` is this
+      // fire's place in the active list.
       let k = n;
       while (k > 0 && keys[k - 1] > key) {
         keys[k] = keys[k - 1];
         drawn[k] = drawn[k - 1];
+        rank[k] = rank[k - 1];
+        where[rank[k]] = k;
         k--;
       }
       keys[k] = key;
       drawn[k] = i;
+      rank[k] = n;
+      where[n] = k;
       n++;
     }
     const material = this.flameBloomOf;
@@ -6964,14 +6983,14 @@ export class Game {
       }
     }
     // The mask's draws, in the active list's order: each fire's draw — but a
-    // world fire marked `noGlow`, which `GlowPass` left out of its list.
+    // world fire marked `noGlow`, which `GlowPass` left out of its list —
+    // found through the reverse index the sort kept.
     let masks = 0;
     if (glowOn) {
       for (let k = 0; k < n; k++) {
-        const fire = into.maskOrder[k];
+        const d = where[k];
+        const fire = drawn[d];
         if (fire >= flames.length && !fires[fire - flames.length].glows) continue;
-        let d = 0;
-        while (drawn[d] !== fire) d++;
         into.maskOrder[masks++] = d;
       }
     }

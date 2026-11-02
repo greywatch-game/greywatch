@@ -4804,7 +4804,11 @@ the fires after every draw of ours), by the same vertex module, no depth
 written, LEQUAL. What moved is only the fires' interleave with the meshes
 Babylon still draws in that queue — the grass, the capture zones, the backed
 panes, the water — every one of which writes depth, so it is an exact tie
-or nothing. **No bake draws a fire, and still none does** (`FINDINGS.md` 51:
+or nothing. In the mask the fires now go down with ours at its open, AHEAD of
+every mesh Babylon's mask still draws (the sparks, the dust discs, the moon),
+where its queue drew them among those — no depth written and LEQUAL against
+the frame's, so again only an exact tie could differ, and the blended sparks
+and discs drew after the opaque fires before X4.4d and since. **No bake draws a fire, and still none does** (`FINDINGS.md` 51:
 the fire ENTERING the bake is a picture change of its own). **What X4.4d's
 oracles hold it to**: the bank byte-identical (the 68 of its 113 rows with a
 fire drawn among them); a probe over 640 scripted frames on each of

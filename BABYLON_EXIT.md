@@ -1368,7 +1368,12 @@ Everything else in X4.4 moves as briefed; `fx-glass-sort` is X4.6's BEFORE.
   (`Game.flamePull`: scene order, a world fire while its block's cell is
   OFFERED — `WorldCulling.offersBlock`, snapshotted where the candidate list
   is built — the sphere frustum test, nearest centre first, stable), the
-  mask after the billows'. Two pipelines asked at `Game`'s construction;
+  mask after the billows' — which puts the fires, with ours at the mask's
+  open, ahead of every mesh Babylon's mask still draws (the sparks, the dust
+  discs, the moon) where its queue drew them among those: no depth written,
+  LEQUAL against the frame's, so only an exact tie could differ, and the
+  blended sparks and discs drew after the opaque fires before and since.
+  Two pipelines asked at `Game`'s construction;
   report version 28 (`pools.fires`). `GrenadeFx.warm` still poses its
   molotov flame, drawn through ours, until X4.4e. **Group 0 cannot go
   empty**: the sky dome is in it on every frame of the probes.

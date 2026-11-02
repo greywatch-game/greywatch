@@ -546,11 +546,9 @@ is `RAGDOLL_BONES` and a hull's is its collider box, off its OWN fields and
 never its mesh**, and **the local player casts nothing**. **The world's map is
 two CASCADES of one caster set and records BACK faces**, so **every caster must
 be a CLOSED shape**. **Every map is OUR renderer's in every round, on every
-rung** (`render/WorldShadows.ts`; `ShadowSystem`'s generators an editor build's
-alone; the bodies' has none), so **a new world caster must be one the
+rung** (`render/WorldShadows.ts`), so **a new world caster must be one the
 handover can hold (block-merged, at identity, never `updatable`) or the map is
-REFUSED** — BLENDED OR NOT, since the lamps' atlas casts every surface not
-`noShadowCaster`.
+REFUSED**, BLENDED OR NOT.
 
 **THE LAMPS CAST INTO ONE ATLAS** (`systems/LocalShadows.ts`), **a light casts
 by what it SAYS** (`PointLightData.shadow`), and the bumped ground variant is at
@@ -567,23 +565,20 @@ bake (`world/vertexShading.ts`) runs **after every merge, before the upload**.
 
 **A map's GRIME is the MAP's and its ramp is not** (`EnvironmentSpec.wear`
 against `CONFIG.wear`); absent is CLEAN. **It is only on the OUTSIDE, and the
-BAKE decides that** — a vertex steps `wear.shelterProbe` along its NORMAL and is
-clean under a collider — so **a structure that overhangs further than a jettied
-townhouse owes that step a look**.
+BAKE decides that** (`wear.shelterProbe`), so **a structure that overhangs
+further than a jettied townhouse owes that step a look**.
 
 **There is ONE wind and everything that leans in it leans the same way**
 (`CONFIG.wind`). **Anything a collider stands in for may never sway.** **A sway
 layer is RAMPED or RIGGED**: a ramp is the red channel's height weight, and a
-rigged layer (a palm's `frond`, an ash's `bough`) writes each vertex's place on
-its frond or bough into `uv` BEFORE the merge and is told apart by a NEGATIVE
-red — so every cel material binds `uv`, and a mesh marked with a rigged layer
-owes one on every vertex.
+rigged layer writes each vertex's place on its frond or bough into `uv` BEFORE
+the merge and is told apart by a NEGATIVE red — so every cel material binds
+`uv`, and a mesh marked with a rigged layer owes one on every vertex.
 
 **The frame's ALPHA CHANNEL is TRANSLUCENT COVERAGE, and every shader in the
-tree owes it.** Everything opaque writes **0** (`CelShader`'s `opaqueAlpha`, a
-literal 0 in the grass and the water, the clear in `applyEnvironment`), every
-alpha-blended draw accumulates into it (`ALPHA_COMBINE`), and `CelInk` scales
-its edge by `1 - a`. **A REFLECTION PROBE inverts it** (`opaqueAlpha` is 1 for a
+tree owes it.** Everything opaque writes **0** (`CelShader`'s `opaqueAlpha`),
+every alpha-blended draw accumulates into it (`ALPHA_COMBINE`), and `CelInk`
+scales its edge by `1 - a`. **A REFLECTION PROBE inverts it** (`opaqueAlpha` is 1 for a
 bake), so **a shader that hardcodes either value breaks a pass silently** — the
 EMISSIVE palette's **1** is deliberate: do not "fix" it onto `opaqueAlpha`.
 **The sky's CLOUDS write the depth of a point 7 km out**, so every surface must
@@ -591,77 +586,60 @@ be nearer. **Nothing on the floor writing NO depth is OPAQUE**.
 
 **The world is OPAQUE with exactly one exception, and it is glazing.** Glass you
 can see THROUGH is `getGlass` over a cube `ReflectionSystem` bakes **one per
-GLAZED BLOCK** — by OUR renderer (`render/ProbeBake.ts`), the only bake. Glass you
-cannot is `Build.pane({ backed })`, which writes DEPTH — so **`backed` is a
-claim about the WORLD that nothing throws over**. **No pane of either kind is a
-shadow caster**, and see-through glazing gets no ink.
+GLAZED BLOCK** (`render/ProbeBake.ts`). Glass you cannot is
+`Build.pane({ backed })`, which writes DEPTH — so **`backed` is a claim about
+the WORLD that nothing throws over**. **No pane of either kind is a shadow
+caster**, and see-through glazing gets no ink.
 
 **THE WORLD DRAWS WHOLE OR THE ROUND DOES NOT START.** Every BLOCK, the
 LANDFORM (the BUILD marks `WorldSurface.landform`) and the emissive PALETTE are
 OUR renderer's in every pass and **Babylon is made NO MESH of them**
-(`BlockHandover`, `worldMeshes`) — only of the glazing, the FIRES being ours
-(`FlameDraw`, no bake) — so a surface ours cannot hold is REFUSED (a DEV throw
-`merge:hash` fails on), and a
-pass of ours that cannot draw its world tells the failure it was HANDED WITH
-it: **`Game.worldFailed`**, the menu and a toast, never a fallback.
+(`BlockHandover`, `worldMeshes`) — only of the glazing — so a surface ours
+cannot hold is REFUSED (a DEV throw `merge:hash` fails on), and a pass of ours
+that cannot draw its world tells the failure it was HANDED WITH it:
+**`Game.worldFailed`**, the menu and a toast, never a fallback.
 **The frame WALKS the scene, and the scene is the map.** `WorldCulling`
 **replaces `scene.getActiveMeshCandidates` and writes nothing onto any mesh**.
 **A collider is never a candidate**, and a CELL is grown from the RECORDS
 (`GameMap.world`, whole). **The SCATTER is drawn ONCE**, as INSTANCES of its
-variants, its pieces cut out of the block arrays it stays merged into. **A
-mesh carrying `metadata.block` (the glazing) is one only while the camera is
-inside the map's `fogEnd`** (a world fire drawn while its cell is: `offersBlock`),
-**everything else is ELIGIBLE**, and
-**anything EMISSIVE or `infiniteDistance` is exempt** from the size gate.
+variants. **A mesh carrying `metadata.block` (the glazing) is one only while
+the camera is inside the map's `fogEnd`**, **everything else is ELIGIBLE**,
+and **anything EMISSIVE or `infiniteDistance` is exempt** from the size gate.
 **Nothing pooled may ever be block-keyed.**
 **EVERY BODY, HULL AND WEAPON IS OUR RENDERER'S, and Babylon is made NO RIG,
 HULL OR VIEWMODEL MESH** (`render/BodyDraw.ts`, `HullDraw.ts`, `ViewDraw.ts`):
-a body or a hull is an INSTANCE of its kit, built once a side (a hull's a kind
-and side), drawn while its switch is on and the
-size gate passes it — a body measured ONCE (`drawsBody`), the visor with it, a
-hull PER SEGMENT (`keepsSphere`). **A body LEAVES by a FADE at both edges, a
-hull at its map's draw distance only — never a pop**: a screen door
-(`WorldCulling.bodyFade`, `hullFade`), a visor dropping the same pixels in the
-glow's mask. **A draw is a RANK of every body or hull.** **The WEAPON is a
-SEGMENT of one kit, every part** — the optics' glasses and the kit card
-included — drawn at the END of group 0 for the SESSION: the card first, the
-opaque parts in Babylon's group-1 order (what settles an equal depth), the
-glasses BLENDED last; no group above 0 holds anything, and its tree EVALUATES
-every surface on and visible, whatever its role. **So are the effect pools'
-PIECES and the bullet MARKS** (`render/PoolDraw.ts`, `entities/pieces.ts`):
-a tracer, a case, a thrown or laid body is an instance of its kit, built once
-by the view that made its first mesh, and the marks one draw sorted as
-Babylon's queue sorted them, both ahead of the hulls at `"beforeAlphaTest"`;
-**so is every blast BILLOW** (`render/BlastDraw.ts`: a batch a draw, its one
-hand-set sphere what the frustum, the order and the bloom read) **and every
-glass SHARD and rubble CHUNK**, drawn straight off its body's pose
-(`systems/poseView.ts`), the size gate on this frame's sphere, and every FIRE,
-the world's and the molotov's, a draw each, first of all ours — **but the
-sparks, the dust discs and the scorch stay Babylon meshes until the glazing
-moves (X4.6)**, because they fade in its transparent sort among the panes, and
-a pool is never split across two renderers.
+a body or a hull is an INSTANCE of its kit, drawn while its switch is on and
+the size gate passes it. **A body LEAVES by a FADE at both edges, a hull at its
+map's draw distance only — never a pop** (`WorldCulling.bodyFade`,
+`hullFade`). **A draw is a RANK of every body or hull.** **The WEAPON is a
+SEGMENT of one kit, every part**, drawn at the END of group 0 for the SESSION,
+and no group above 0 holds anything. **So are the effect pools' PIECES and the
+bullet MARKS** (`render/PoolDraw.ts`, `entities/pieces.ts`); **so is every
+blast BILLOW** (`render/BlastDraw.ts`) **and every glass SHARD and rubble
+CHUNK** (`systems/poseView.ts`), and every FIRE (`FlameDraw`, in no bake) —
+**but the sparks, the dust discs and the scorch stay Babylon meshes until the
+glazing moves (X4.6)**, because they fade in its transparent sort among the
+panes, and a pool is never split across two renderers.
 
 **The GLOW draws the EMISSIVE meshes and nothing else, its occlusion being the
 FRAME's own depth buffer** (`src/shaders/GlowPass.ts`). **What may bloom is read
 per mesh every frame** — an emissive colour, no `metadata.noGlow`, and `Game`'s
 `GlowRules` — so nothing excludes a mesh by hand; **on the kit screen only the
-STAGE blooms** — `Game.glowAdmits` refuses the WORLD, and the weapon's draw
-masks its own lit parts in every state, the rule stated by the draw. **A map's merged emissives are
-a PALETTE like its albedo** (`shaders/EmissiveWorld.ts`): their colour is a slot
-in `uv2.x` under a WHITE `emissiveColor`, so **a new reader asking a material
-what it emits must ask the vertex for that one**. **The palette has NO Babylon
-draw** (ours in every pass; the mask itself `GlowPass`'s), **`noGlow` is read
-PER SURFACE at the take**, and **a palette surface ours cannot hold is REFUSED**.
+STAGE blooms** (`Game.glowAdmits`). **A map's merged emissives are a PALETTE
+like its albedo** (`shaders/EmissiveWorld.ts`): their colour is a slot in
+`uv2.x` under a WHITE `emissiveColor`, so **a new reader asking a material what
+it emits must ask the vertex for that one**. **The palette has NO Babylon
+draw**, **`noGlow` is read PER SURFACE at the take** (a world fire's too), and
+**a palette surface ours cannot hold is REFUSED**.
 
 **OUR renderer (`src/render/`) draws INSIDE Babylon's frame through ONE seam**
 (`render/babylonSeam.ts`, the only file there that names Babylon, and only as
 types). The frame's uniforms are PULLED off the factory's fields
 (`CelMaterialFactory.fillFrame`), so **a new value every cel material holds owes
-`render/frame.ts` a field and `fillFrame` a line**, or our draws shade without
-it — a shared TEXTURE the same, in `FRAME_TEXTURES` and `fillFrameTextures`. **A
-material's OWN value is set through the factory's `own`**, which keeps it in the
-recipe our renderer draws that material with (`render/celMaterial.ts`); a
-`setFloat` beside it is a value Babylon's draw has and ours does not.
+`render/frame.ts` a field and `fillFrame` a line** — a shared TEXTURE the same,
+in `FRAME_TEXTURES` and `fillFrameTextures`. **A material's OWN value is set
+through the factory's `own`**, which keeps it in the recipe our renderer draws
+that material with (`render/celMaterial.ts`).
 
 → **[`docs/rendering.md`](docs/rendering.md)** — the frozen define set, the
 irradiance volume (why not Lumen, why the blend is 1), the four light terms and
@@ -670,8 +648,8 @@ window, back faces and the foliage's third map, the bodies' map, the rungs, the
 lamps' atlas, lightning, the ink's NIB and its coverage channel's two blended
 exceptions, the wind's rigs, the fire, the glazing and reflection bake, the
 grass and turf, the water, the WGSL traps, our renderer's frame and its seam,
-the candidate list and size gate, the bodies (ours: the kit, the rank, the
-order), the glow's three failed attempts and the
+the candidate list and size gate, the bodies, hulls, weapon and pools (ours:
+the kit, the rank, the order), the glow's three failed attempts and the
 palette, ours, and the sky and its clouds' depths.
 ### The map is data, not code
 
@@ -939,10 +917,10 @@ renderer reading the record. `GameMap.world` keeps it for every surface:
   it; **it is deliberately absent now from grass, water and both debris pools**,
   which the ink does draw on purpose.
 - `noGlow: true` — out of the bloom. `GlowPass` reads it per mesh every frame,
-  so a mesh built at any time needs only the flag — but the emissive PALETTE,
-  which has no mesh, reads it at the TAKE, PER SURFACE (`BlockHandover`), so
-  it must be on the part when the build hands it over: it keeps that surface
-  out of the mask alone. A mesh that stays in bloom is faded with distance instead
+  so a mesh built at any time needs only the flag — but the emissive PALETTE
+  and a world FIRE, neither of which has a mesh, read it at the TAKE, PER
+  SURFACE (`BlockHandover`, `takeFire` for a fire), so it must be on the part
+  when the build hands it over: it keeps that surface out of the mask alone. A mesh that stays in bloom is faded with distance instead
   (`GlowRules.colour` in `Game`), and `infiniteDistance` is that fade's one
   exemption — it is what every sky mesh sets, and the moon is not in the
   valley to be fogged out of.

@@ -37,7 +37,11 @@
  * the visors', the pieces' and the billows' (`installMask`, asked after
  * theirs), as Babylon's mask drew the fires after all of ours — by the same
  * vertex module, no depth written, LEQUAL against the depth the main pass
- * wrote; the arrays are uploaded as Babylon uploaded a mesh's (float32, a
+ * wrote — which puts them, with ours at the mask's open, AHEAD of every mesh
+ * Babylon's mask still draws (the sparks, the dust discs, the moon), where
+ * its queue drew them among those: with no depth written and LEQUAL against
+ * the frame's, only an exact tie could differ, and the blended sparks and
+ * discs went down after the opaque fires before X4.4d and since; the arrays are uploaded as Babylon uploaded a mesh's (float32, a
  * double rounded as Babylon's `Float32Array` of it is); a frame with a
  * pipeline unbuilt, a frame texture unpublished or no world set draws no fire,
  * as a Babylon material not ready drew none; a pipeline that FAILS is the
@@ -299,7 +303,12 @@ export class FlameDraw {
    * The fires' bloom into the glow's mask from the next frame on, for the
    * install standing — asked AFTER the billows' (`BlastDraw.installMask`),
    * so everything else of ours goes down before these in that pass, as it
-   * did while Babylon drew the fires' meshes after it.
+   * did while Babylon drew the fires' meshes after it. Being ours, they go
+   * down AHEAD of every mesh Babylon's mask still draws (the sparks, the
+   * dust discs, the moon), where its queue drew them among those — no depth
+   * written and LEQUAL against the frame's, so only an exact tie could
+   * differ, and the blended sparks and discs drew after the opaque fires
+   * before X4.4d and since.
    */
   installMask(): void {
     if (!this.isInstalled) return;

@@ -7562,7 +7562,11 @@ X4.4c's brief, word for word:
   `"beforeAlphaTest"` installed FIRST of all ours (ahead of the billows),
   the mask after the billows'. What moved is only the fires' interleave with
   the meshes Babylon still has in that queue, all depth-writing, so an exact
-  tie or nothing.
+  tie or nothing. In the mask the fires go down with ours at its open, ahead
+  of every mesh Babylon's mask still draws (the sparks, the dust discs, the
+  moon), where its queue drew them among those — no depth written and LEQUAL
+  against the frame's, so again only an exact tie could differ, and the
+  blended sparks and discs drew after the opaque fires before and since.
 - **The held-caster layer, deleted.** `WorldBlocks.addCaster`,
   `casterGroup`, `heldCasters`, the `"held"` layer, `CASTER_ATTRIBUTES` and
   the `CASTERS` cut rank (the palette is cut last, inside the count the

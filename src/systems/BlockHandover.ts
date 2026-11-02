@@ -341,7 +341,13 @@ export class BlockHandover {
     const { part } = surface;
     const block = blockOf(part.metadata);
     const g = part.geometry;
-    if (block === null || surface.block === null || surface.landform || surface.updatable || !atIdentity) {
+    if (surface.landform) {
+      return this.refuse(`the fire "${part.name}" is marked the landform, which is no block's merge, and our fire draw holds only a block's`);
+    }
+    if (surface.updatable) {
+      return this.refuse(`the fire "${part.name}" is updatable, and our fire draw uploads its positions once, at the install`);
+    }
+    if (block === null || surface.block === null || !atIdentity) {
       return this.refuse(`the fire "${part.name}" is not block-merged at identity, which is all our fire draw can hold`);
     }
     if ((passes & SHADOW_PASSES) !== 0) {

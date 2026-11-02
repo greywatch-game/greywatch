@@ -23,9 +23,9 @@
  * what our renderer drew in that pass (`Game.handover.stats.drawn`, since
  * X4.1d `Game.bodyDraw.stats.drawn`, since X4.2b `Game.hullDraw.stats
  * .drawn`, since X4.3c `Game.viewDraw.stats.drawn`, the weapon, and since
- * X4.4b `Game.pieceDraw` and `Game.markDraw`'s, the effect pools, and
- * since X4.4d `Game.flameDraw`'s, the fires — the blast's billows and the
- * debris, ours since X4.4c, are not counted). Read on
+ * X4.4b `Game.pieceDraw` and `Game.markDraw`'s, the effect pools, since
+ * X4.4c `Game.blastDraw` and `Game.debrisDraw`'s, the blast's billows and
+ * the debris, and since X4.4d `Game.flameDraw`'s, the fires). Read on
  * a FROZEN frame, after the bank's own settle, so the count is the vantage's
  * and not a frame's: the same frame a `bank.mjs --check` photographs.
  *
@@ -105,6 +105,12 @@ function read(page) {
     // rank of every piece a draw, every mark one draw), counted the same
     // way; a BEFORE older than that counts them in Babylon's, one a mesh, so
     // a row with pieces or marks in it FALLS.
+    // The BILLOWS and the DEBRIS are ours since X4.4c (`BlastDraw`, a draw a
+    // batch; `PoolDraw`, a rank of every shard and chunk a draw), counted the
+    // same way since X4.4d's review — a row counted before that left them
+    // out of `ours`, so a row with a blast or debris in it now counts MORE
+    // than a ref taken then, which is the count being whole, not a draw
+    // gained.
     // The FIRES are ours since X4.4d (`FlameDraw`, a draw a fire, as Babylon
     // drew a mesh), counted the same way; a BEFORE older than that counts
     // the same draws in Babylon's, so a row's total holds.
@@ -115,6 +121,8 @@ function read(page) {
     const pools =
       (g.pieceDraw ? g.pieceDraw.stats.drawn : 0) +
       (g.markDraw ? g.markDraw.stats.drawn : 0) +
+      (g.blastDraw ? g.blastDraw.stats.drawn : 0) +
+      (g.debrisDraw ? g.debrisDraw.stats.drawn : 0) +
       (g.flameDraw ? g.flameDraw.stats.drawn : 0);
     return { babylon: window.__census.babylon, ours: ours.drawn + bodies + hulls + view + pools, bodies, hulls, view, pools, taken: ours.taken };
   });
