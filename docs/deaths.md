@@ -164,15 +164,16 @@ on its chest joint, and the render draws all of it (the debris through
 `Game.stepAftermath` (the engine, then its three clients' `update`s, with
 nothing between), so there is no point in a frame where a body has moved and
 its drawing has not. A new reader that runs between `physics.update` and the
-clients' `update`s would see last frame's picture. **Two things the views draw
-faithfully and are wrong anyway**, both older than the port and both left
-alone by it: blast rubble is never on screen at all, and a glass shard far from
-the map's origin often is not (`FINDINGS.md` 58 — stale bounding spheres, a
-chunk's at the park and a shard's at the origin, where `cut` rebuilds them,
-that Babylon's size gate latched on and our renderer's drawing keeps byte for
-byte since X4.4c, as each piece's GATE sphere, `poseView`), and a shard or a
-chunk does not actually sink — the sink lowers a pose that the next substep
-writes back over (`FINDINGS.md` 59).
+clients' `update`s would see last frame's picture. **Each piece is size-gated
+on the sphere it is drawn with, composed this frame** (`poseView`): Babylon's
+gate read stale bounding spheres — a chunk's at the park, a shard's at the
+origin where `cut` rebuilt them — and latched on them, so no rubble was ever on
+screen in a round and a glass shard far from the map's origin often was not.
+X4.4c kept that byte for byte; the owner's decision of 2026-11-01 dropped it on
+purpose, in its own commit. **One thing the views draw faithfully and is wrong
+anyway**, older than the port and left alone by it: a shard or a chunk does
+not actually sink — the sink lowers a pose that the next substep writes back
+over (`FINDINGS.md` 59).
 
 **`plans/physics-ref/` is the oracle and it grades two things.** `drop.mjs`
 drops sixty-four free boxes on every map and hashes where they come to rest —

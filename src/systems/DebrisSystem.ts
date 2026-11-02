@@ -598,10 +598,7 @@ export class DebrisSystem implements PhysicsClient {
     VertexData.ComputeNormals(pos, this.shardIndices as number[], shard.nrm);
     // The bounds come off the new vertices, as `updateVerticesData(…, true)`
     // rebuilt a mesh's: a shard that kept the last piece's would be measured
-    // by the outline of a piece that is no longer there. They are rebuilt
-    // under NO world matrix, though — the world sphere lands on the map's
-    // origin, which is what the size gate then measures (`FINDINGS.md` 58,
-    // `poseView`'s gate sphere).
+    // by the outline of a piece that is no longer there.
     shard.piece.setLocal(pos);
     this.onCut?.(shard.index, pos, shard.nrm);
 
@@ -713,8 +710,8 @@ export class DebrisSystem implements PhysicsClient {
         const at = parkedPose(PARKED_Y);
         const body = this.physics.addBody("static", at);
         const piece = new PosedPiece(body);
-        // The bounds a mesh of nothing held at that park (`poseView`).
-        piece.build(pos, at);
+        // The bounds of nothing, until its first cut (`poseView`).
+        piece.setLocal(pos);
         const mass = massFor(w0 * w0);
         hp.setShape(body.id, shape);
         hp.setMass(body.id, mass);

@@ -7438,7 +7438,10 @@ X4.4c's brief, word for word:
   it is ready, which is why a live round never draws one. `waitUntilDrawn`
   now makes the same refresh of every debris piece's gate sphere before it
   asks (`plans/webgpu-ref/README.md`), and the rows are what they were
-  banked as.
+  banked as. **(Fixed after, the owner's decision of 2026-11-01, in its own
+  commit: every piece gated on this frame's sphere, the gate sphere and the
+  harness's refresh deleted, `FINDINGS.md` 58 deleted; `fx-shards-far`
+  banks it — the numbers are in `BABYLON_EXIT.md`'s X4.4c note.)**
 - **The oracles' tools.** `pipelines.mjs` counts a shard as our renderer
   is handed it (its "shard draws" are instances now, not Babylon's
   `Mesh.render`s); the harness reaches `GrenadeFx.blasts` (`fx` before);

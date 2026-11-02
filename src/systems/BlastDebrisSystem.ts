@@ -575,9 +575,8 @@ export class BlastDebrisSystem implements PhysicsClient {
         const at = parkedPose(PARKED_Y);
         const body = this.physics.addBody("static", at);
         const piece = new PosedPiece(body);
-        // The bounds a mesh of this box held, computed at that park
-        // (`poseView`: the gate sphere a chunk is measured by, for good).
-        piece.build(box.positions, at);
+        // Its bounds, in its own frame (`poseView`).
+        piece.setLocal(box.positions);
         hp.setShape(body.id, shape);
         hp.setMass(body.id, (d.mass * (hx * hy * hz)) / (d.sizeMax ** 3));
         hp.setLinearDamping(body.id, death.linearDamping);

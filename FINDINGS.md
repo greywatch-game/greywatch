@@ -2507,100 +2507,6 @@ same commit.
 
 ---
 
-## 58. Blast rubble is never drawn, and a glass shard far from the map's origin often is not: each pool's world bounds are left where Babylon last computed them, so the size gate drops the pieces for good
-
-**Status:** open, and pre-existing — both pools throw, simulate and park their
-pieces correctly; the size gate then measures them from the wrong place. Found
-at `BABYLON_EXIT.md` X2.4 C2 (rubble) and at its review (shards), reproduced
-identically on the commit before X2.4 started (fb90b7d); deliberately not fixed
-during X2.4, whose bar was that nothing on screen moves. C5 took the poses off
-the meshes into arrays and its view writes exactly the nodes the solver's sync
-used to (`plans/physics-ref/clients.mjs`'s node digest), so it left this as it
-found it. **X4.4c moved both pools onto our renderer and KEPT it, byte for
-byte** (its bar too was that nothing moves): there is no mesh any more, and
-each piece carries the sphere Babylon's gate would have read as its GATE
-sphere (`systems/poseView.ts`' `PosedPiece`) — a chunk's built at its park,
-a shard's rebuilt under the identity at every cut, refreshed to the frame's
-world only when the gate keeps it — which `Game.drawDebris` asks
-`WorldCulling.keepsSphere` of. X4.4c's order probe (420 scripted frames,
-`BABYLON_EXIT.md` has the note) found the same pieces drawn on every frame as
-Babylon drew, no chunk on either side. **The bank's `fx-blast-*` rows DO show
-rubble, and always did, and that is the harness and not the game**:
-`waitUntilDrawn` asks `scene.isReady()`, and `Mesh.isReady(true)` COMPUTES
-every mesh's world, a chunk's included, which refreshed its bounds and let it
-through the gate — nothing in the game asks the scene if it is ready (measured
-at X4.4c: the chunks' only world compute in a bank row came from there). Since
-X4.4c the harness makes the same refresh of every debris piece's gate sphere
-itself, so those rows stay what they were banked as; the fix below would make
-a live round match them. **The fix is now one line in
-`writePosedDrawing`**: gate on `p.sphere` (this frame's) instead of `p.gate`
-— the pieces' rule since the owner's decision of 2026-11-01 on finding 67 —
-and delete the gate sphere; it is a picture change of its own (every rubble
-burst and, on Cinderhaven, half the glass start drawing), the owner's call.
-
-**The mechanism is one, arriving at the two pools from two directions** (as
-Babylon had it, which the gate sphere now restates).
-`WorldCulling.offer`'s size gate reads a mesh's WORLD bounding sphere, which
-Babylon refreshes only when it computes that mesh's world matrix — inside the
-active-mesh pass, for CANDIDATES. A piece the gate drops is never a candidate,
-so its matrix is never computed and its sphere never corrected: this is
-`docs/rendering.md`'s "a WRONG DROP LATCHES", from a fourth and a fifth
-direction. Nothing in either pool computes a piece's matrix after placing it —
-the view (`poseView.applyPose`) writes `position` and `rotationQuaternion` and
-nothing else, as the plugin's sync did.
-- **A RUBBLE chunk's** sphere was last computed when the pool was built, at
-  `PARKED_Y` (the creation read, `poseView.absolutePose`, computes the world
-  matrix there), and nothing touches its bounds again. So the gate measures a
-  15 cm box from a kilometre under the map, finds it under a pixel, and never
-  offers it. Every chunk, every burst, every map.
-- **A glass SHARD's** sphere is rebuilt on every burst, at the ORIGIN.
-  `DebrisSystem.cut` writes the piece into the mesh with
-  `updateVerticesData(PositionKind, pos, true)`, and `true` (update extents)
-  runs `Geometry._updateBoundingInfo`, which calls
-  `mesh.getBoundingInfo().reConstruct(min, max)` with NO world matrix — so
-  `BoundingSphere.reConstruct` and `BoundingBox.reConstruct` fall back to
-  `Matrix.IdentityReadOnly` (Babylon 9.28's `Meshes/geometry.js`,
-  `Culling/boundingSphere.js`, `Culling/boundingBox.js`). A piece is cut in
-  its own local frame round its own centre, so its world sphere lands on
-  (0, 0, 0) — and `cut` runs before the burst places the shard (`applyPose`),
-  so nothing moves it off. The gate therefore measures each piece's true
-  RADIUS from the EYE TO THE MAP'S ORIGIN, once per burst, and latches: a
-  piece is dropped when that distance exceeds `2 r * perRad / minPixels`, with
-  `perRad` the render height in CSS pixels over the FOV — about `758 r` metres
-  at a 1080-pixel-high view, `fovHip` 0.95 and `minPixels` 3. A 0.12 m piece
-  (`shardMin`, sphere radius ~0.085 m) is lost beyond ~64 m from the origin
-  and a 0.3 m one (~0.21 m) beyond ~160 m; a piece that passes is offered,
-  computed, and right from then on.
-
-**Measured**, live rounds with the render loop running, a 1080-pixel view:
-- Rubble, Coldharbour at C5 (a frag thrown along the view onto open ground):
-  all ten chunks of the burst enabled, their poses climbing as high as 15 m
-  and falling back exactly as Havok holds them, and **0 of the 10 in
-  `scene.getActiveMeshes()`** on frame 6 and on frame 46. At C2, forcing
-  `computeWorldMatrix(true)` on the chunks each frame made them render.
-- Shards, at the review (each pane broken through `debris.burst` from 5 m off
-  its face; every shard's sphere read back at exactly (0, 0, 0) before the
-  first frame). **Cinderhaven**, whose four breakable panes stand 298-364 m
-  from the origin and cut into pieces of sphere radius 0.285-1.08 m: **8 of
-  12** shards in the active meshes for the nearest pane and **6 of 12** for
-  the farthest, unchanged from frame 1 to frame 30, the dropped ones' spheres
-  still at the origin. One `computeWorldMatrix(true)` per shard straight after
-  the burst: **12 of 12**, every sphere on its shard. **Coldharbour**, whose
-  panes stand 24-172 m from the origin with the same piece sizes (the smallest
-  drops beyond ~216 m): 12 of 12 — which is why C5's glass burst there drew in
-  full, and why this first read as a rubble-only bug.
-
-**What would settle it:** since X4.4c, the one-line fix above (every piece
-gated on the sphere it is drawn with, this frame's). It makes debris DRAW —
-every rubble burst and, on Cinderhaven, half the glass — which is a change to
-the picture: re-take `bank.mjs`'s `blast` and `fx-blast-*` rows (they bank
-rubble in the air and at rest that is drawn nowhere today) and say why, and
-look at a frag and a shell on earth and on stone and at a Cinderhaven
-shopfront going in, since the rubble's look — `RUBBLE`, the sizes, the 1.6x
-cap — has never been seen in a round.
-
----
-
 ## 59. A glass shard and a rubble chunk do not sink: the sink lowers a pose the next substep writes back over
 
 **Status:** open, pre-existing and small. Found while porting the two pools'
@@ -2635,8 +2541,9 @@ from where it was lying.
 **What would settle it:** make the sink accumulate — take the bodies out of the
 simulation when the sink starts (static, as a frozen corpse is) and lower the
 pose from there, or keep an offset beside the pose that the view adds — and
-watch a burst expire, which is the first time anybody will have seen the sink.
-Rubble needs finding 58 first.
+watch a burst expire, which is the first time anybody will have seen the sink
+(rubble is drawn in a round only since the commit after `BABYLON_EXIT.md`
+X4.4c, which took its size gate's latch out).
 
 ## 60. A helicopter a PERSON flies takes no crash damage — in a match always, and offline since the hull was predicted
 

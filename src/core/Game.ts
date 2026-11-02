@@ -6763,10 +6763,10 @@ export class Game {
    * Hands our renderer this frame's DEBRIS (`BABYLON_EXIT.md` X4.4c): every
    * glass shard and rubble chunk switched on, its world composed off its
    * body's pose as it stands (`poseView.writePosedDrawing`) and kept by the
-   * size gate on its GATE sphere — the bounds Babylon's gate read off the
-   * mesh it was, latch and all (`FINDINGS.md` 58: no chunk ever passes, and a
-   * shard is measured from the map's origin once a burst) — the shards first,
-   * then the chunks, each in its pool's order — recorded by index alone:
+   * size gate on the world sphere it is drawn with this frame (Babylon's
+   * latch on stale bounds dropped on purpose, the owner's decision of
+   * 2026-11-01) — the shards first, then the chunks, each in its pool's
+   * order — recorded by index alone:
    * their worlds and kits are written into the draw by `debrisPull`, once it
    * has ordered them. Once a frame, after the cull (the gate's eye) and
    * beside `drawPieces`.

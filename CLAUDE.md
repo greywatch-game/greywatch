@@ -633,11 +633,10 @@ Babylon's queue sorted them, both ahead of the hulls at `"beforeAlphaTest"`;
 **so is every blast BILLOW** (`render/BlastDraw.ts`: a batch a draw, its one
 hand-set sphere what the frustum, the order and the bloom read) **and every
 glass SHARD and rubble CHUNK**, drawn straight off its body's pose
-(`systems/poseView.ts`), the size gate on the stale sphere Babylon latched
-on (`FINDINGS.md` 58) — **but the sparks, the dust discs and the scorch stay
-Babylon meshes until the glazing moves (X4.6)**, because they fade in its
-transparent sort among the panes, and a pool is never split across two
-renderers.
+(`systems/poseView.ts`), the size gate on this frame's sphere — **but the
+sparks, the dust discs and the scorch stay Babylon meshes until the glazing
+moves (X4.6)**, because they fade in its transparent sort among the panes, and
+a pool is never split across two renderers.
 
 **The GLOW draws the EMISSIVE meshes and nothing else, its occlusion being the
 FRAME's own depth buffer** (`src/shaders/GlowPass.ts`). **What may bloom is read

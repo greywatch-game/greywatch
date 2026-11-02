@@ -231,23 +231,6 @@ export function waitUntilDrawn(page, timeoutMs = 120_000) {
         });
       });
       frames++;
-      // `scene.isReady()` COMPUTES every mesh's world (`Mesh.isReady(true)`),
-      // which until BABYLON_EXIT.md X4.4c included every glass shard's and
-      // rubble chunk's — refreshing the bounds Babylon's size gate then read
-      // off them, so a row raising a blast drew rubble the game never draws
-      // in a round (`FINDINGS.md` 58: nothing in the game asks the scene if
-      // it is ready). Those pieces have no mesh since; their drawing keeps
-      // the same latch as a GATE sphere (`poseView.PosedPiece`), so the same
-      // refresh is made here, piece for piece — or the banked `fx-blast-*`
-      // rows would lose what this readiness check alone made drawable.
-      for (const piece of g.debrisPieces ?? []) {
-        piece.compose(piece.body.pose);
-        piece.measure();
-        piece.gate.x = piece.sphere.x;
-        piece.gate.y = piece.sphere.y;
-        piece.gate.z = piece.sphere.z;
-        piece.gate.radius = piece.sphere.radius;
-      }
       if (g.scene.isReady()) return { drawnOnFrame: frames };
       if (performance.now() > deadline) throw new Error("scene never became ready");
     }

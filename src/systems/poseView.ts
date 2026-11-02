@@ -6,7 +6,7 @@
  * a corpse's joints have been posed off them since X4.1b — and the writes
  * that carry a pose into a body's array.
  * Owns: `PosedPiece` (a body, the scale it is drawn at, its switch, its local
- * bounding sphere, and the GATE sphere the size gate reads — see below),
+ * bounding sphere, and this frame's world and world sphere),
  * `writePosedDrawing`, `parkedPose`, `storePose` (shared with
  * `RagdollSystem`'s placing of a bone) and `parkPose`. `PhysicsWorld` keeps
  * each body's pose as seven plain numbers (`WorldBody.pose`) and never sees
@@ -21,18 +21,13 @@
  *   for bit) off the pose as it stands when the frame is drawn — which is
  *   where the mesh was left, every write having followed the step that moved
  *   it, the sink that lowered it or the burst that placed it.
- * - **The size gate reads the GATE sphere, and it LATCHES as Babylon's did**
- *   (`docs/rendering.md`, "A WRONG DROP LATCHES"; `FINDINGS.md` 58, kept
- *   here byte for byte and the owner's to undo): the world bounding sphere as
- *   of the last frame the mesh's world was COMPUTED — which Babylon did only
- *   for a candidate the gate let through — and before that what its bounds
- *   were built at: a chunk's local sphere carried by the PARKED world its
- *   creation read computed (a kilometre under the map, where the gate drops a
- *   15 cm box at any range, so no chunk is ever drawn), and a shard's local
- *   sphere under the IDENTITY after every cut (`setLocal`: `updateVerticesData`
- *   rebuilt the bounds with no world matrix), so a shard is gated once per
- *   burst from the eye to the MAP'S ORIGIN. A piece the gate keeps is drawn
- *   with THIS frame's world, and its gate sphere becomes this frame's.
+ * - **The size gate reads THIS frame's world sphere** — the one the piece is
+ *   drawn with, composed off its pose as it stands (the hulls' rule and the
+ *   pieces', `docs/rendering.md`). Babylon's gate read the bounds as of the
+ *   last frame a mesh's world was COMPUTED, which latched (no rubble chunk
+ *   was ever drawn in a round, and a shard far from the map's origin often
+ *   was not); X4.4c kept that latch byte for byte and the owner's decision of
+ *   2026-11-01 dropped it on purpose, so nothing here restates it.
  * - **`parkedPose` is the plugin's creation read of a mesh standing parked**:
  *   an unparented node at `(0, y, 0)` with an identity quaternion and unit
  *   scale, whose world matrix's translation and decomposed rotation are
@@ -63,9 +58,7 @@ export class PosedPiece {
   /** Its bounds as last built, in its own frame: the centre and the radius (`BoundingSphere.reConstruct`). */
   private readonly centre = new Vector3();
   private radius = 0;
-  /** The world sphere the size gate reads — see the header. */
-  readonly gate: Sphere = { x: 0, y: 0, z: 0, radius: 0 };
-  /** This frame's world, and the world sphere it carries the bounds to (`writePosedDrawing`'s). */
+  /** This frame's world, and the world sphere it carries the bounds to — what the size gate reads (`writePosedDrawing`'s). */
   readonly world = new Matrix();
   readonly sphere: Sphere = { x: 0, y: 0, z: 0, radius: 0 };
 
@@ -73,9 +66,8 @@ export class PosedPiece {
 
   /**
    * Its bounds built off the extent of its positions (`extractMinAndMax`,
-   * then `BoundingSphere.reConstruct`), under the IDENTITY — a mesh's
-   * `updateVerticesData(…, true)`, which a shard's cut is — so the gate
-   * sphere is the local one.
+   * then `BoundingSphere.reConstruct`), in its own frame: at its creation,
+   * and again at every cut of a shard.
    */
   setLocal(positions: ArrayLike<number>): void {
     const min = _min.setAll(Number.MAX_VALUE);
@@ -86,22 +78,6 @@ export class PosedPiece {
     }
     this.radius = Vector3.Distance(min, max) * 0.5;
     max.addToRef(min, this.centre).scaleInPlace(0.5);
-    this.gate.x = this.centre.x;
-    this.gate.y = this.centre.y;
-    this.gate.z = this.centre.z;
-    this.gate.radius = this.radius;
-  }
-
-  /**
-   * Its bounds built off its positions, and COMPUTED once at its creation
-   * pose — what a mesh built with them, parked and read for its body
-   * (`parkedPose`), held: the gate sphere the local one carried by that
-   * world.
-   */
-  build(positions: ArrayLike<number>, at: ArrayLike<number>): void {
-    this.setLocal(positions);
-    this.compose(at);
-    worldSphere(this.centre, this.radius, this.world, this.gate);
   }
 
   /** Its world off `pose` (position, quaternion) and its scale: `computeWorldMatrix`'s arithmetic. */
@@ -128,23 +104,17 @@ const _turn = new Quaternion();
 /**
  * One piece's drawing, if it has one this frame: switched on, its world
  * (`p.world`) composed off its body's pose as it stands and its world sphere
- * (`p.sphere`) measured, then asked of the size gate on its GATE sphere —
- * kept, its gate sphere becomes this frame's (the mesh COMPUTED as a
- * candidate). Returns whether it is drawn; `p.world` and `p.sphere` are
- * this frame's either way, and the caller writes the world into its draw
- * once it has ordered the pieces (`Game.debrisPull`).
+ * (`p.sphere`) measured, then that sphere asked of the size gate. Returns
+ * whether it is drawn; `p.world` and `p.sphere` are this frame's either way,
+ * and the caller writes the world into its draw once it has ordered the
+ * pieces (`Game.debrisPull`).
  */
 export function writePosedDrawing(p: PosedPiece, keeps: PieceGate): boolean {
   if (!p.enabled) return false;
   p.compose(p.body.pose);
   p.measure();
-  const g = p.gate;
-  if (!keeps(g.x, g.y, g.z, g.radius)) return false;
-  g.x = p.sphere.x;
-  g.y = p.sphere.y;
-  g.z = p.sphere.z;
-  g.radius = p.sphere.radius;
-  return true;
+  const c = p.sphere;
+  return keeps(c.x, c.y, c.z, c.radius);
 }
 
 /**

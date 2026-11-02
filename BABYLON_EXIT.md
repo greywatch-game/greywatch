@@ -1295,6 +1295,44 @@ Everything else in X4.4 moves as briefed; `fx-glass-sort` is X4.6's BEFORE.
   42, debris: 12 }`. **The empty-group seam** is not made reachable: the sky
   still holds group 0, and neither round raised the DEV warning. The full
   record is in [the archive](plans/done/babylon_exit_landed.md).
+  **The latch, fixed after** (the owner's decision of 2026-11-01, its own
+  commit, a picture change): every shard and chunk is gated on the world
+  sphere composed THIS frame, the one it is drawn with — the hulls' and the
+  pieces' rule — and the gate sphere, `PosedPiece.build` and the harness's
+  refresh of the spheres before `scene.isReady()` are gone (`FINDINGS.md` 58
+  deleted). **Measured:** the bank `--check --keep` on Coldharbour and
+  Cinderhaven at the fix, without the refresh, **42 of 42 frames byte-equal**
+  to the parent's with it — the game now draws the rubble the rows always
+  showed; the parent's code without the refresh shows what the latch hid,
+  six rows and no other: `fx-blast-hard-fireball` 2,400 px (worst 184/255),
+  `-hard-billows` 15,824 (188), `-hard-smoke` 1,197 (185),
+  `-ground-fireball` 9,806 (218), `-ground-billows` 7,924 (172),
+  `-ground-smoke` 1,828 (143). The full check at the fix: 110 of 112 old
+  frames byte-equal to X4.4c's own `--keep`, the other two `sarab-ground`
+  (100 px, 2/255) and `sarab-shelf` (1 px, 1/255) — the parent's code
+  reproduces the fix's Sarab frames 11 of 11, so they are residue in that
+  keep — and the same 34 stale rows failing. One row appended by `--rows`,
+  graded against the parent's code without the refresh:
+  **`fx-shards-far`** (Cinderhaven's `town` eye, a pane ~42 m off and ~313 m
+  from the origin) **250 px**, worst 27/255 — the smaller half of the
+  burst, six of twelve shards; re-banked, two consecutive checks of both
+  maps 43 of 43 byte-equal and every `fx` row within floor. A live probe
+  (`x44c-fix/probe.mjs`: the render loop running, the pools stepped at 1/60,
+  what our renderer was handed after its pull), parent against fix:
+  Coldharbour's quay, three blasts on stone and two on earth, **0 → 2,746
+  stone and 1,700 earth chunk instance-frames** (1,583 and 1,606 in the
+  frustum); the avenue ~140 m out, **0 → 2,335 stone and 2,930 earth**;
+  Cinderhaven round the `town` eye, **0 → 1,176 stone and 3,180 earth**;
+  three shopfront panes from that eye, **708 → 1,416, 1,428 → 2,856 and
+  1,704 → 3,408 shard instance-frames** — every burst exactly half dropped
+  before. An offline Coldharbour round (`x44c/round.mjs`): six lives, 0
+  errors, rubble in every frag life (**12,460-12,900 chunk instance-frames;
+  0 on the parent's code**), shards 1,680 a life. `plans/physics-ref/
+  clients.mjs --check` identical on all three maps; `pipelines.mjs
+  coldharbour --round` zero in play in two consecutive runs (24 of
+  Babylon's at the install, 23 of ours, 49 modules; a first run straight
+  after a build counted three of the install's 24 late, under the spawn);
+  typecheck, build, corecheck pass.
 - **X4.4d — the fires are ours, and the held-caster layer goes (no picture
   change).** The world's fires come out of the block merges Babylon keeps
   and are drawn by our renderer on `FlameMaterial`'s WGSL, filed by block as
@@ -1693,6 +1731,6 @@ Phase 1 actually took.
 | X4.3c | One draw a segment, as Babylon drew it, or a palette fold like the bodies' kit? | **Decided** 2026-10-31: one draw a segment. It is one instance, the finishes differ per group in spec and mirror as well as colour, and a fold re-orders equal-depth ties for an unmeasured gain; a fold is a later, measured step if a capture ever names the gun. |
 | X4.4 | One step or several? | **Decided** 2026-11-01: five sub-steps (X4.4). X4.4a widens the bank first (a row for every pool, the one `blast` row being all it held) and records the round's pipeline creations; the pools then move grouped by how they are drawn — the plain mesh pools and the brass (X4.4b), the blast and the Havok-posed pieces (X4.4c), the fires with the held-caster layer's deletion (X4.4d) — and the declared pipeline list and the empty-group seam's check go last (X4.4e), once every pool has moved. None is meant to change the picture; any that does lands alone (rule 2). |
 | X4.4b | The fading sparks, dust discs and scorch sort among the see-through panes in Babylon's transparent list, and no draw point of ours reproduces that: hook the panes, take a recorded picture change, or wait? | **Decided** 2026-11-01: wait. The three pools stay Babylon meshes (their warm poses with them) until X4.6 takes the glazing, and move with it so one sort of ours orders every blended surface. No picture change, no new reach into Babylon's queue, no stand-in mesh; `fx-glass-sort` is X4.6's BEFORE. |
-| X4.4c | `FINDINGS.md` 58: X4.4c kept Babylon's stale-bounds latch for the debris, byte for byte — no rubble chunk is ever drawn in a live round (its bounds were computed once at its park, a kilometre under the map), and a glass shard is measured from the map's ORIGIN once a burst, so a far pane's smaller pieces never draw (Cinderhaven). The bank's `fx-blast-*` rows show rubble only because the harness's `scene.isReady()` computed the meshes' worlds, which `waitUntilDrawn` now restates. Fix it (gate every piece on its sphere composed this frame, the pieces' rule since finding 67 — one line in `poseView.writePosedDrawing`), and when? | **Open** (raised 2026-11-01). A fix is a picture change of its own (rule 2): every rubble burst draws in a live round for the first time, and half of Cinderhaven's glass; the `fx-blast-*` rows would not move (they already draw it). |
+| X4.4c | `FINDINGS.md` 58: X4.4c kept Babylon's stale-bounds latch for the debris, byte for byte — no rubble chunk is ever drawn in a live round (its bounds were computed once at its park, a kilometre under the map), and a glass shard is measured from the map's ORIGIN once a burst, so a far pane's smaller pieces never draw (Cinderhaven). The bank's `fx-blast-*` rows show rubble only because the harness's `scene.isReady()` computed the meshes' worlds, which `waitUntilDrawn` now restates. Fix it (gate every piece on its sphere composed this frame, the pieces' rule since finding 67 — one line in `poseView.writePosedDrawing`), and when? | **Decided** 2026-11-01: fix it now, as its own commit — a deliberate picture change (rule 2): every shard and chunk gated on its world sphere composed THIS frame (the hulls' and the pieces' rule), the gate sphere and the harness's refresh deleted, Babylon's latch dropped on purpose. Landed the same day (X4.4c's note); every rubble burst now draws in a round, and the half of a far Cinderhaven pane the latch dropped. |
 | X4.4b | `FINDINGS.md` 67: X4.4b kept Babylon's stale-sphere latch, under which a spent case first thrown far from the world origin (and a mine's plate, an arming mine, a rocket's tail) is never drawn. Fix it, and when? | **Decided** 2026-11-01: fix it now, as its own commit — a deliberate picture change (rule 2): every cel part of a piece gated on its world sphere composed THIS frame, the hulls' rule (X4.2b), the latch dropped on purpose. Landed the same day (X4.4b's note). |
 | X6.2 | Is it ready to merge to `develop`? | Only when X6.2's "Before" list passes in full. |

@@ -4752,19 +4752,23 @@ piece's world off its body's pose as it stands and its scale
 — the pose the meshes were written from until X4.4c, every write having
 followed whatever moved it — and the render pulls them FRONT TO BACK by this
 frame's world sphere, the meshes' order breaking a tie (`Game.debrisPull`).
-**The size gate reads each piece's GATE sphere, and it LATCHES as Babylon's
-did** (`FINDINGS.md` 58, kept byte for byte and the owner's to undo): the
-world bounds as of the last frame the mesh's world was COMPUTED — only for a
-candidate the gate let through — so a CHUNK, whose bounds were computed once
-at its park a kilometre under the map, is never drawn at all, and a SHARD,
-whose bounds every cut rebuilt under the identity, is measured from the map's
-ORIGIN once a burst and dropped for good if that sphere is under the gate
-(far panes on Cinderhaven). A piece the gate keeps is drawn with this frame's
-world and its gate sphere becomes this frame's. (The bank's `fx-blast-*` rows
-show rubble, as they always did, and that is the harness: its readiness check,
-`scene.isReady()`, computed every mesh's world, and `waitUntilDrawn` now
-refreshes each piece's gate sphere the same way — `plans/webgpu-ref/README.md`.) One draw (a piece is one
-segment), installed after the marks, no mask (nothing in it glows).
+**The size gate reads THIS frame's world sphere, the one the piece is drawn
+with** — the hulls' rule and the pieces', so the drop cannot latch.
+**Babylon's gate read a STALE sphere and that is dropped on purpose, by the
+owner's decision of 2026-11-01** (`BABYLON_EXIT.md`, "Decisions that are
+yours"): it read the world bounds as of the last frame the mesh's world was
+COMPUTED — only for a candidate the gate let through — so a CHUNK, whose
+bounds were computed once at its park a kilometre under the map, was never
+drawn in a round at all, and a SHARD, whose bounds every cut rebuilt under
+the identity, was measured from the map's ORIGIN once a burst and dropped
+for good if that sphere was under the gate (about half of every Cinderhaven
+pane). X4.4c kept that latch byte for byte; the commit after it took it out,
+its own picture change, and with it the bank harness's refresh of the
+pieces' spheres before its readiness check, which had restated
+`scene.isReady()`'s world computes and so was the only reason the
+`fx-blast-*` rows ever showed rubble (`fx-shards-far` banks a far pane's
+burst). One draw (a piece is one segment), installed after the marks, no
+mask (nothing in it glows).
 
 **What X4.4c's oracles hold it to**: the bank byte-identical — every `fx-blast`
 row at every age, `fx-blast-hard-power2-billows`, `fx-shards`, `fx-glass`,
@@ -5050,11 +5054,11 @@ of each standing mark's frozen sphere — the sphere `freezeWorldMatrix` left
 on its mesh, so exactly the marks the gate dropped are dropped
 (`fx-marks-far` banks the edge: 14 of 30 under it) — and of every cel part
 of a thrown or laid body and of the brass, on its sphere composed this
-frame ("The pools, ours"). **The shards and the rubble left it at X4.4c and
-kept its verdict, latch and all**: each is asked `keepsSphere` of the GATE
-sphere its mesh's bounds were (`poseView`), so no chunk is ever drawn and a
-shard is measured from the origin once a burst (`FINDINGS.md` 58). A billow
-was emissive, and exempt, and is still never gated.
+frame ("The pools, ours"). **The shards and the rubble left it at X4.4c**,
+and since the commit after it each is asked `keepsSphere` of its sphere
+composed this frame (`poseView`) — Babylon's latch on their stale bounds
+dropped on purpose (the owner's decision of 2026-11-01). A billow was
+emissive, and exempt, and is still never gated.
 
 **A BODY is measured once and drops WHOLE; two classes are exempt outright,
 and each of the three is what it is because a picture said so rather than
@@ -5172,8 +5176,9 @@ latch above touches — and the broken version came back byte-identical on all
 21. (Since `BABYLON_EXIT.md` X4.4a the bank does hold the size gate's edge on
 one pool, `fx-marks-far`'s bullet marks, raised fresh every row; a stale
 bound that latches is still invisible to it — but the pools' latch was
-taken out rather than banked, and `fx-brass-far` and its two siblings bank
-pieces far enough from the origin that it would have dropped them.) The test
+taken out rather than banked, and `fx-brass-far` and its two siblings, and
+`fx-shards-far` for the debris, bank pieces far enough from the origin that
+it would have dropped them.) The test
 that works is a screenshot pair in a live round at one frozen camera, with a
 CONTROL pair under the same condition so the noise floor is measured: fixed, the
 lever reads mean **0.066/255** against a control of 0.037. See `VERIFYING.md`

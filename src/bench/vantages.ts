@@ -594,6 +594,9 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
     // Appended by the commit after X4.4b that took the pieces' stale-sphere
     // latch out, after every row above (`farPieceRows`).
     ...farPieceRows(),
+    // Appended by the commit after X4.4c that took the debris's latch out,
+    // after every row above (`farShardRows`).
+    ...farShardRows(),
   ],
   kurenai: [
     {
@@ -1312,6 +1315,33 @@ function farPieceRows(): Vantage[] {
       pos,
       target: [-142.1, 10.5, 255.85],
       fx: { seconds: 0.25, events: [{ at: 0, rocket: { from: [-145.54, 10.6, 251.43], to: [-129.8, 10.3, 271.65] } }] },
+    },
+  ];
+}
+
+/**
+ * A shopfront's pane south-west of the town square bursting ~42 m from
+ * `town`'s eye on Cinderhaven (so no new benchmark stop), ~313 m from the
+ * world origin, at the game's own hip field. Until the commit after X4.4c a
+ * glass shard was size-gated on a sphere every cut rebuilt under the
+ * IDENTITY — at the world ORIGIN — and never moved until the gate let it
+ * through, so from this eye every piece whose radius is under ~0.41 m (the
+ * gate's 3 px at ~313 m) was dropped for the whole burst: six of this pane's
+ * twelve shards. Now every piece is gated on the sphere it is drawn with
+ * (`poseView.writePosedDrawing`, `docs/rendering.md`, "The pools, ours"). A
+ * narrowed `fov` would defeat the row: it raises the stale sphere over the
+ * gate as well.
+ */
+function farShardRows(): Vantage[] {
+  return [
+    {
+      id: "fx-shards-far",
+      of: "a shopfront south-west of the town square, ~42 m off and ~313 m from the world origin, its pane bursting outward into the street, the shards 0.3 s out",
+      proves:
+        "the SHARDS gated on THIS frame's sphere (`poseView.writePosedDrawing`): the smaller half of a pane this far from the origin, which Babylon's gate measured from the eye to the world origin once a burst and dropped for good (X4.4c kept that latch; `fx-shards`' pane, ~25 m from the origin, is too near for it to bite) — in front of a sheet left STANDING, as `fx-shards` is",
+      pos: [-90, 1.7, 300],
+      target: [-124.55, 9.37, 276.98],
+      fx: { seconds: 0.3, events: [{ at: 0, shards: { pane: 1, at: [-124.55, 9.37, 276.98], dir: [0.7, -0.1, -0.7] } }] },
     },
   ];
 }

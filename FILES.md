@@ -1227,8 +1227,8 @@ src/
     poseView.ts         # Where a body's pose array meets what it is DRAWN as
                         #   (X4.4c: no node any more): PosedPiece and
                         #   writePosedDrawing (a shard's or chunk's world
-                        #   composed off its pose, gated on the stale GATE
-                        #   sphere Babylon latched on, FINDINGS 58), the
+                        #   composed off its pose, gated on this frame's
+                        #   sphere — Babylon's latch dropped), the
                         #   creation park (parkedPose), placing a body
                         #   (storePose) and a debris park (parkPose).
                         #   Babylon-free

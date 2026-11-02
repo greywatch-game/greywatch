@@ -92,8 +92,8 @@
  *   renderer's and no mesh since `BABYLON_EXIT.md` X4.4b, the size gate
  *   reaching their cel parts through `keepsSphere`; the blast's billows, the
  *   shards and the rubble since X4.4c, a billow emissive and so never gated,
- *   a shard and a chunk asked `keepsSphere` of the stale GATE sphere their
- *   meshes' bounds were, `poseView`),
+ *   a shard and a chunk asked `keepsSphere` of the sphere it is drawn with
+ *   this frame, `poseView`),
  *   the sky, the water, the grass (the viewmodel is our renderer's whole since
  *   `BABYLON_EXIT.md` X4.3d — the optics' glass and the kit card the last of
  *   it — and no candidate), and every visual an EDITOR build makes,
