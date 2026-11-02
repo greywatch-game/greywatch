@@ -97,11 +97,10 @@ export const BLAST_VARYINGS = [
 /**
  * What the billow is drawn with, as the factory states it (`BlastPaint`):
  * each field of `BLAST_BLOCK` a `Float32Array` written in place, so a reader
- * holding it sees every later write; `epoch` moves when one is.
+ * holding it sees every later write.
  */
 export interface BlastRecipe {
   readonly values: Readonly<Record<BlastField, Float32Array>>;
-  readonly epoch: number;
 }
 
 /** The frame's palette is declared, so group 0 is laid out as every cel program's is. */

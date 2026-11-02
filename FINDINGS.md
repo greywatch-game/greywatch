@@ -823,13 +823,15 @@ this map to Coldharbour.)
 **Status: measured once on the desktop GPU (64559ce / 2da8d33); open on
 Coldharbour, on a phone, and as a lever nobody can reach from the settings.**
 
-**A blast is lit, opaque, thin-instanced BILLOWS now** (`src/systems/BlastFx.ts`,
-`BlastShader.ts`), and no blast particle system remains. What it holds, all
-built once: `CONFIG.grenade.blastSlots` (4) slots of one thin-instanced batch
-of `blastBillows` (64) at icosphere subdivision 8, a shared small batch
-(`SMALL_CAP` 320 at subdivision 4) and 32 streamers. What did not change: the
-Havok chunks are 3 bursts of 10 (`debris`), the scorch is `marks: 8`, and the
-chunk burst is refused past `debris.distance` (80 m) scaled by power.
+**A blast is lit, opaque, instanced BILLOWS now** (`src/systems/BlastFx.ts`,
+drawn by our renderer since `BABYLON_EXIT.md` X4.4c: `render/BlastDraw.ts`,
+one instanced draw and one glow-mask draw a batch), and no blast particle
+system remains. What it holds, all built once: `CONFIG.grenade.blastSlots`
+(4) slots of one batch of `blastBillows` (64) at icosphere subdivision 8, a
+shared small batch (`SMALL_CAP` 320 at subdivision 4) and 32 streamers. What
+did not change: the Havok chunks are 3 bursts of 10 (`debris`), the scorch is
+`marks: 8`, and the chunk burst is refused past `debris.distance` (80 m)
+scaled by power.
 
 **What it costs, measured**: on the Windows box, Hollowmere, uncapped, a
 1.85-power blast every 0.6 s so all four slots stay live, run order controlled

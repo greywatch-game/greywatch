@@ -2338,6 +2338,11 @@ export class Game {
     // A cut writes its shard's vertices over our copy, as it wrote them onto
     // the mesh it was (`updateVerticesData`).
     this.debris.onCut = (shard, positions, normals) => this.debrisDraw.rewrite(shard, 0, positions, normals);
+    // `debrisPull` writes a piece's world at `k * 16`: every debris kit is
+    // ONE segment, which that stride rests on.
+    if (import.meta.env.DEV && this.debrisDraw.segments !== 1) {
+      throw new Error(`Game: the debris kits are ${this.debrisDraw.segments} segments wide, not 1`);
+    }
     this.debrisDrawn = new Int32Array(this.debrisDraw.capacity);
     this.debrisKeys = new Float64Array(this.debrisDraw.capacity);
     // …and what all four drew (`ProfileReport.pools`): Babylon's counter has
@@ -6709,9 +6714,17 @@ export class Game {
     for (let d = 0; d < n; d++) {
       const b = batches[drawn[d]];
       const count = Math.min(b.count, into.capacity - at);
-      into.matrices.set(b.matrices.subarray(0, count * 16), at * 16);
-      into.billows.set(b.shapes.subarray(0, count * 4), at * 4);
-      into.warmth.set(b.warmth.subarray(0, count), at);
+      // Copied float for float: a `subarray` view a batch a frame would
+      // allocate.
+      const m = into.matrices;
+      const bm = b.matrices;
+      for (let k = 0, o = at * 16; k < count * 16; k++) m[o + k] = bm[k];
+      const sh = into.billows;
+      const bs = b.shapes;
+      for (let k = 0, o = at * 4; k < count * 4; k++) sh[o + k] = bs[k];
+      const w = into.warmth;
+      const bw = b.warmth;
+      for (let k = 0; k < count; k++) w[at + k] = bw[k];
       if (glowOn && material) {
         this.blastAt.set(b.centre.x, b.centre.y, b.centre.z);
         const fade = 1 - fogAmountAt(Vector3.Distance(this.blastAt, eye));
@@ -6753,8 +6766,10 @@ export class Game {
    * size gate on its GATE sphere — the bounds Babylon's gate read off the
    * mesh it was, latch and all (`FINDINGS.md` 58: no chunk ever passes, and a
    * shard is measured from the map's origin once a burst) — the shards first,
-   * then the chunks, each in its pool's order, a chunk's kit its paint's.
-   * Once a frame, after the cull (the gate's eye) and beside `drawPieces`.
+   * then the chunks, each in its pool's order — recorded by index alone:
+   * their worlds and kits are written into the draw by `debrisPull`, once it
+   * has ordered them. Once a frame, after the cull (the gate's eye) and
+   * beside `drawPieces`.
    */
   private drawDebris(): void {
     const draw = this.debrisDraw;
@@ -6762,9 +6777,7 @@ export class Game {
     const pieces = this.debrisPieces;
     let n = 0;
     for (let i = 0; i < pieces.length && n < draw.capacity; i++) {
-      if (!writePosedDrawing(pieces[i], draw.matrices, n * 16, this.keepsDebris)) continue;
-      draw.kits[n] = this.debrisKit(i);
-      this.debrisDrawn[n++] = i;
+      if (writePosedDrawing(pieces[i], this.keepsDebris)) this.debrisDrawn[n++] = i;
     }
     draw.commit(n, false, this.mats.materialEpoch);
   }

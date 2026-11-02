@@ -127,13 +127,14 @@ const _turn = new Quaternion();
 
 /**
  * One piece's drawing, if it has one this frame: switched on, its world
- * composed off its body's pose as it stands and its world sphere measured,
- * then asked of the size gate on its GATE sphere — kept, its gate sphere
- * becomes this frame's (the mesh COMPUTED as a candidate) and its world is
- * written into `out` at `at` (`Matrix.m`'s layout). Returns whether it is
- * drawn; `p.sphere` is this frame's either way.
+ * (`p.world`) composed off its body's pose as it stands and its world sphere
+ * (`p.sphere`) measured, then asked of the size gate on its GATE sphere —
+ * kept, its gate sphere becomes this frame's (the mesh COMPUTED as a
+ * candidate). Returns whether it is drawn; `p.world` and `p.sphere` are
+ * this frame's either way, and the caller writes the world into its draw
+ * once it has ordered the pieces (`Game.debrisPull`).
  */
-export function writePosedDrawing(p: PosedPiece, out: Float32Array, at: number, keeps: PieceGate): boolean {
+export function writePosedDrawing(p: PosedPiece, keeps: PieceGate): boolean {
   if (!p.enabled) return false;
   p.compose(p.body.pose);
   p.measure();
@@ -143,7 +144,6 @@ export function writePosedDrawing(p: PosedPiece, out: Float32Array, at: number, 
   g.y = p.sphere.y;
   g.z = p.sphere.z;
   g.radius = p.sphere.radius;
-  out.set(p.world.m, at);
   return true;
 }
 

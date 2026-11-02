@@ -87,8 +87,6 @@ export class BlastPaint implements BlastRecipe {
   readonly emissiveColor = Color3.FromHexString(GLOW);
   readonly alpha = 1;
   readonly values: Record<BlastField, Float32Array>;
-  /** Moves when a value other than the clock is written. */
-  epoch = 0;
 
   constructor() {
     const b = CONFIG.graphics.blast;
@@ -128,6 +126,5 @@ export class BlastPaint implements BlastRecipe {
     d[0] = color.r;
     d[1] = color.g;
     d[2] = color.b;
-    this.epoch++;
   }
 }
