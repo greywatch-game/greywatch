@@ -714,7 +714,8 @@ derived from the bodies behind a plume was painted over the plume at full
 strength and read as ink floating in FRONT of the effect. The channel nothing
 was using carries the answer. Everything opaque writes **0** into it —
 `CelShader`'s `opaqueAlpha` uniform, and a literal 0 in `GrassShader` and
-`WaterShader` — `applyEnvironment` clears to 0, and every alpha-blended draw
+`WaterShader` — a pixel of sky holds **1** (the dome's literal, and the clear on a
+frame with no map, `applyClearColor`), and every alpha-blended draw
 accumulates into it with no help at all, because Babylon's `ALPHA_COMBINE`
 blends the alpha channel as (ONE, ONE). The pass then does `edge *= 1 -
 saturate(a)` and writes 1 back out. **So it costs no pass, no target and not
@@ -3302,10 +3303,8 @@ warning went with the fault. **And a frame with nothing of ours
 COMMITTED does no work at all**: each draw states whether it has anything
 (`Renderer.add`'s `Active`; the weapon's while a segment is committed), and
 `begin` skips the fill, the view-projection, the upload, the textures, the
-bind groups and the prepares when none has — the menu with no kit screen up, and
-**for one step, X4.5b to X4.5c, only over a map whose sky states no ring**: the
-clouds draw over the menu until their `Active` asks whether a map stands, which
-lands with the dome's (see "The sky") —
+bind groups and the prepares when none has — the menu with no kit screen up, the
+sky's draws asking whether a map stands (see "The sky") —
 while the next frame that has something does all of it afresh, so nothing
 binds a value a skipped frame left stale.
 
@@ -6722,19 +6721,16 @@ dome, and the two are not in any bake.
 - **A failure of the draw is the map's while a sky stands**, the clouds' rule
   (`SkyDraw.onFailed`).
 
-**The sky owes a state with no map NOTHING, and need not be drawn under the
-photograph at all** (decided by the owner at `BABYLON_EXIT.md` X4.5a;
-`docs/states.md`, "The menu sits over no view at all", has the measurement and
-the windows it shows in). It is still drawn there today. **It leaves ALL AT ONCE, at X4.5c: each sky draw's
-`Active` asks whether a map is standing**, so the menu goes back to doing no work
-of ours, and the picture in those windows moves once, in one commit; a ring taken
-off at X4.5b alone would leave a dome with no cloud on it for one step, with the
-ring's draw the only work of ours it saved. (The owner decided that the sky goes,
-at X4.5b/c; that the ring waits for X4.5c is the implementer's call, stated in
-X4.5b's note and not yet ruled on.) `Sky.update` and the
-painted textures stay as they are, the turn being a clock and the paint 5 to 50
-ms. What shows through then is `scene.clearColor`, set at the boot from the boot
-map's `skyColor` (`applyClearColor`) and after a round the last map's.
+**The sky owes a state with no map NOTHING, and is not drawn under the photograph
+at all** (decided by the owner at `BABYLON_EXIT.md` X4.5a; `docs/states.md`, "The
+menu sits over no view at all", has the windows it shows in). **Each sky draw's
+`Active` asks whether a map is standing** (`Sky.setStanding`, from `Game.installMap`
+and `teardownMap`), so the menu does no work of ours. `Sky.update` and the painted
+textures stay as they are, the turn being a clock and the paint 5 to 50 ms, so the
+ring's order still reaches the GPU when the turn has moved enough: one `writeBuffer`
+of what moved, the one thing left of it over a menu. What shows through is
+`scene.clearColor`, set at the boot from the boot map's `skyColor`
+(`applyClearColor`) and after a round the last map's.
 
 ### The clouds are geometry
 

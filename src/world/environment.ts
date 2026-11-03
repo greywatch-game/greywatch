@@ -744,13 +744,17 @@ export function hullDrawDistanceOf(env: EnvironmentSpec): number {
  */
 export function applyClearColor(scene: Scene, env: EnvironmentSpec): void {
   const sky = Color3.FromHexString(env.skyColor);
-  // Alpha 0, and it is the frame's alpha channel rather than the canvas's: that
-  // channel is TRANSLUCENT COVERAGE for `CelInk`, everything opaque writes 0
-  // into it and every alpha-blended draw accumulates into it, so the clear is
-  // where "nothing has covered this pixel yet" is stated. Nothing downstream
-  // sees it — the ink consumes it and writes 1, and the grade at the end of the
-  // chain writes 1 again.
-  scene.clearColor = new Color4(sky.r, sky.g, sky.b, 0);
+  // Alpha 1, and it is the frame's alpha channel rather than the canvas's: that
+  // channel is TRANSLUCENT COVERAGE for `CelInk`, which scales its stroke by
+  // `1 - a`. A pixel of sky carries 1, the dome's literal, on every map; this
+  // clear stands in for the dome on a frame with no map, and nowhere else, every
+  // shipped map stating one. **The kit screen is what that is for**: the card
+  // leaves the coverage under it as it found it, so over a clear of 0 the half of
+  // the weapon's outline lying on the card is inked and over a 1 it is not, and
+  // the kit screen over the menu is held to its picture (`BABYLON_EXIT.md` X4.5c).
+  // Nothing downstream sees it — the ink consumes it and writes 1, and the grade at
+  // the end of the chain writes 1 again.
+  scene.clearColor = new Color4(sky.r, sky.g, sky.b, 1);
 }
 
 /**

@@ -2483,16 +2483,17 @@ export class Game {
       { name: "the clouds", ready: this.cloudDraw.ready },
       { name: "the sky", ready: this.skyDraw.ready },
     ];
-    // The sky hangs behind every state (menu included), so it is dressed
-    // once here and re-applied per round alongside the environment.
+    // The sky is painted once here, the boot map's, and re-applied per round
+    // alongside the environment; it is DRAWN only while a map stands
+    // (`Sky.setStanding`, from `installMap` and `teardownMap`).
     this.sky = new Sky(this.scene, this.cloudDraw, this.skyDraw);
     // The clouds' shadow field, bound once: `Sky` keeps one texture for the
     // life of the process and rewrites it as the ring drifts. Until now every
     // material held `ShadowBindings`' own "no cloud" texel.
     this.mats.shadows.setCloudShadowMap(this.sky.cloudShadowMap);
-    // The frame under the boot's fade, once the sky is undrawn with no map
+    // The frame under the boot's fade, the sky being undrawn with no map
     // standing (`BABYLON_EXIT.md` X4.5c). Nothing has applied an environment
-    // yet, and the menu's photograph is of this same map. Today's dome covers it.
+    // yet, and the menu's photograph is of this same map.
     applyClearColor(this.scene, this.mapDef.environment);
     this.applySky();
 
@@ -5372,6 +5373,7 @@ export class Game {
     this.renderer.pipelines.seal(false);
     this.map?.dispose();
     this.map = null;
+    this.sky.setStanding(false);
     this.combatFx.clearTransient();
     // A grenade whose fuse outlived the map it was thrown across would go off
     // over terrain that no longer exists — and, in the editor, in the middle
@@ -5539,6 +5541,7 @@ export class Game {
       onScatter: take ? this.handover.onScatter : undefined,
     });
     this.map = map;
+    this.sky.setStanding(true);
     // What the profiler reports is the rung this map was built WITH.
     this.foliageBuilt = this.settings.foliage;
     this.pushProfileGraphics();

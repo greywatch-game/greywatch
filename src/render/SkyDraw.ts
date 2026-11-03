@@ -18,8 +18,10 @@
  * list**, where it was the first of that list by distance, so it paints over ash
  * and rotor wash and everything blended that writes no depth draws over it; both
  * test LEQUAL and write no depth, the dome opaque, the moon blended
- * (`SKY_BLEND`); the moon's bloom draws in the glow's mask behind every other draw
- * of ours that opens it and ahead of every mesh of Babylon's
+ * (`SKY_BLEND`); all three draw only while a map stands (`setStanding`,
+ * `BABYLON_EXIT.md` X4.5c), so over the menu they count for nothing and the frame
+ * does no work of ours for them; the moon's bloom draws in the glow's mask behind
+ * every other draw of ours that opens it and ahead of every mesh of Babylon's
  * (`Renderer.addGlowMaskBlended`), where it was the first of Babylon's blended
  * mask list; it stands at 9 km, behind the depth a cloud writes, so a cloud or any
  * surface rejects it and its bloom alike; a piece's world, and whether the disc is
@@ -95,7 +97,9 @@ export class SkyDraw {
   private moon: Standing | null = null;
   /** Asked as the main pass begins: stands the pieces for the frame, and says whether the disc is in view. */
   private stand: (() => boolean) | null = null;
-  /** This frame's verdicts: the piece stands, its pipeline built, its block uploaded. */
+  /** Whether a map stands: with none the sky is undrawn, its pieces kept for the next round's sake. */
+  private standing = false;
+  /** This frame's verdicts: the piece and a map stand, its pipeline built, its block uploaded. */
   private domeOurs = false;
   private moonOurs = false;
   private maskOurs = false;
@@ -146,13 +150,13 @@ export class SkyDraw {
       if (this.dome) this.failed(PIPELINE_FAILED);
     });
 
-    // For the session, as the clouds' draw is. Counted only on a frame a sky stands.
+    // For the session, as the clouds' draw is. Counted only on a frame a sky and a map stand.
     renderer.onFrame(this.prepare);
-    renderer.add(this.drawDome, "first", () => this.dome !== null);
-    renderer.add(this.drawMoon, "beforeBlended", () => this.moon !== null);
+    renderer.add(this.drawDome, "first", () => this.standing && this.dome !== null);
+    renderer.add(this.drawMoon, "beforeBlended", () => this.standing && this.moon !== null);
     renderer.addGlowMaskBlended(
       this.drawMask,
-      () => this.moon !== null && blooms(this.moon.recipe.values.skyGlow) && this.admits(),
+      () => this.standing && this.moon !== null && blooms(this.moon.recipe.values.skyGlow) && this.admits(),
     );
     renderer.onRefused(this.refused);
     renderer.onGlowMaskRefused(this.maskRefused);
@@ -184,6 +188,21 @@ export class SkyDraw {
     this.dome = this.upload("dome", dome);
     this.moon = moon && this.upload("moon", moon);
     this.stand = stand;
+  }
+
+  /**
+   * Whether a map stands (`Sky.setStanding`). With none, nothing is drawn or
+   * counted, and a frame with nothing else of ours skips `prepare`, so what it
+   * drew last is put back here.
+   */
+  setStanding(on: boolean): void {
+    this.standing = on;
+    if (on) return;
+    this.domeOurs = false;
+    this.moonOurs = false;
+    this.maskOurs = false;
+    this.stats.drawn = 0;
+    this.stats.masked = 0;
   }
 
   /** No sky stands: nothing is drawn or counted until the next `setSky`. */
@@ -243,8 +262,8 @@ export class SkyDraw {
   private readonly prepare = (): void => {
     this.stats.drawn = 0;
     this.stats.masked = 0;
-    const dome = this.dome;
-    const moon = this.moon;
+    const dome = this.standing ? this.dome : null;
+    const moon = this.standing ? this.moon : null;
     if (!dome && !moon) {
       this.domeOurs = false;
       this.moonOurs = false;

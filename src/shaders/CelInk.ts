@@ -113,7 +113,8 @@
  * plume was painted over the plume at full strength. The channel nothing was
  * using carries the answer: everything opaque writes 0 into it
  * (`CelShader`'s `opaqueAlpha`, and a literal 0 in `GrassShader` and
- * `WaterShader`), `applyEnvironment` clears to 0, and every alpha-blended draw
+ * `WaterShader`), the dome and a frame with no map say 1 where there is only sky
+ * (`wgsl/sky.ts`, `applyClearColor`), and every alpha-blended draw
  * accumulates into it with no help at all, because Babylon's ALPHA_COMBINE
  * blends alpha as (ONE, ONE). **So it costs no pass, no target and no texture
  * read** — it is the fourth channel of the sample this shader already took —
@@ -381,7 +382,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   // effect at full strength, which reads as ink floating in front of it. The
   // frame's alpha channel carries how much got in the way: everything opaque
   // writes 0 (opaqueAlpha in CelShader, and the same 0 in the grass and the
-  // water), the clear is 0, and every alpha-blended draw accumulates into it
+  // water), a pixel of sky is 1, and every alpha-blended draw accumulates into it
   // for free, because Babylon's ALPHA_COMBINE blends the alpha channel (ONE,
   // ONE). So this costs no pass, no target and not even a texture read — it is
   // the channel of the sample the first line already took.

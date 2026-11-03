@@ -55,39 +55,39 @@ standing as a live backdrop, from before the menu had photographs, and the cost
 was a city rendered every frame under a picture of another one with its fires
 and its shore still playing.
 
-**What is left behind the title card is the SKY, and it owes the menu nothing**
-(decided by the owner 2026-11-02, `BABYLON_EXIT.md` X4.5a, and not yet acted on:
-it is still drawn under every state, all of it by us since X4.5c). Measured on Coldharbour: with the
-card off, the frame with the sky and the frame with a sky stated away are
-byte-equal under the photograph, and so are the kit screen, the settings and the
-lobby over the menu. It shows in five windows: the boot's fade (the photograph
-is fully opaque ~480 ms after the boot screen comes off, a figure off a local dev
-server: a phone's cold fetch is unmeasured); a rejected `img.decode()` with no
-picture already up (`MenuBackdrop.show`, `.then(raise, () => {})`), which leaves
-the window open as long as the menu stands; a building card whose photograph has
-not decoded (`MenuBackdrop.showNamed`); a lobby row on a map this client has
-never heard of; and the DEV proving ground, which has no shot.
+**Nothing is left behind the title card, the SKY included: it owes the menu
+nothing** (decided by the owner 2026-11-02, `BABYLON_EXIT.md` X4.5a; acted on at
+X4.5c, whose picture-change commit has the before and after). **The sky is drawn
+only while a map stands** (each draw's `Active`, `Sky.setStanding` from
+`Game.installMap` and `teardownMap`), so the menu's frame does no work of ours
+(`Renderer`'s header). Under the photograph, the settings and the lobby over the menu
+that is byte-equal to the frame with the sky, and under the kit screen too, but where
+a cloud stood behind the weapon: the ring's coverage of 0 let the ink draw there, the
+dome's 1 does not (Sarab and Kurenai under the menu's camera, about 250 px on the
+sight, a thing a ring turning would have moved anyway). It shows in five windows: the boot's fade (the photograph is fully opaque ~480 ms after the boot
+screen comes off, a figure off a local dev server: a phone's cold fetch is
+unmeasured); a rejected `img.decode()` with no picture already up
+(`MenuBackdrop.show`, `.then(raise, () => {})`), which leaves the window open as long
+as the menu stands; a building card whose photograph has not decoded
+(`MenuBackdrop.showNamed`); a lobby row on a map this client has never heard of; and
+the DEV proving ground, which has no shot.
 
-**X4.5c draws the sky only while a map stands** (each draw's `Active`, the clouds'
-with the dome's and the disc's, so the sky leaves whole and the picture moves
-once: the owner decided that it goes, and leaving it all to X4.5c is the
-implementer's call, not yet ruled on), which puts the menu's frame back to doing no work of ours (`Renderer`'s
-header; the clouds cost it the frame's fill and upload for that one step), so
-those windows will show `scene.clearColor` through the post chain. **At the boot
+**Those windows show `scene.clearColor` through the post chain.** **At the boot
 that is the boot map's `skyColor`** (`applyClearColor`, from `Game`'s
 constructor, the one write, which `applyEnvironment` goes through too):
 `Game.mapDef` is `readMap()`, `applySky` paints that map and `showMenu`
 photographs it, so until the player steps the reel the boot's fade is the RIGHT
-map's, as its sky today and as its colour from X4.5c. The colour is flat and the
-frame is not quite: the grain, the vignette and the shafts seeded at the boot
-still lie over it (a bright column on Harrowmead and Kurenai under the menu's
-camera). **Neither the reel nor a teardown writes it**, so after a step along the
-reel it is still the boot map's, and **after a round it is the last map's**,
-under whatever the menu then names. A building card's window takes the map being
-built's from `buildRound`'s `applyEnvironment`, two frames after the card goes
-up. Today's dome covers the colour, so setting it moved no pixel. **Taking the
-sky off is a picture change in those five windows, none of which the bank
-holds**, so it lands with X4.5c in a commit of its own that says so (rule 2).
+map's colour. **Its alpha is 1**, what the dome wrote over the same pixels: the
+frame's alpha is `CelInk`'s coverage, the kit card leaves it as it found it, and a
+clear of 0 would ink the half of the weapon's outline that lies on the card, a
+change to the kit screen over the menu that none of these windows is. The colour is flat and the frame is not quite: the
+grain, the vignette and the shafts seeded at the boot still lie over it (a bright
+column on Harrowmead and Kurenai under the menu's camera, a thing of the windows
+and stated rather than fixed). **Neither the reel nor a teardown writes it**, so
+after a step along the reel it is still the boot map's, and **after a round it is
+the last map's**, under whatever the menu then names. A building card's window takes
+the map being built's from `buildRound`'s `applyEnvironment`, two frames after the
+card goes up.
 
 **`loading` is the map being built, and the split that creates it is the whole
 feature.** Building one is the better part of a second of synchronous work —

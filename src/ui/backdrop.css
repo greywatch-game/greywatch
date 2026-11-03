@@ -20,8 +20,9 @@
   position: absolute;
   inset: 0;
   /* Under `#overlay` (10) and over the canvas. No background of its own: while
-     a shot is still decoding, what shows is the live scene the menu has always
-     stood over, not a black hole where a picture is about to be. */
+     a shot is still decoding, what shows is the frame with no map and no sky on
+     it (`docs/states.md`): the clear colour through the post chain, not a black
+     hole where a picture is about to be. */
   z-index: 9;
   opacity: 0;
   transition: opacity 0.4s ease;

@@ -25,8 +25,7 @@
  * per frame as the main pass begins, and uploaded only when something will
  * draw — a draw is counted only while its predicate says it has something
  * (none: always), so a frame with nothing of ours committed (the menu with no
- * kit screen up, and until `BABYLON_EXIT.md` X4.5c only over a sky stating no
- * cloud ring) fills nothing, uploads nothing, refreshes no bind group and
+ * kit screen up) fills nothing, uploads nothing, refreshes no bind group and
  * runs no prepare: one walk of the predicates; the next frame that DOES draw
  * fills, uploads and refreshes in full before anything binds (`begin`), so no
  * draw ever binds a frame or a texture a skipped frame left stale (X4.3c's

@@ -15,9 +15,10 @@
  * alpha-tested list, the turf, as Babylon's alpha-test list drew the mesh ahead
  * of the turf (by material id, `RenderingGroup.PainterSortCompare`: the sky was
  * applied before the map's grass was built); front faces only, LEQUAL, depth
- * written; the draw is hung for the SESSION as the weapon's is, so it draws in
- * every state while a ring stands, the menu included (`BABYLON_EXIT.md` X4.5c
- * owes that an `Active` of a map standing); a frame with its pipeline unbuilt
+ * written; the draw is hung for the SESSION as the weapon's is, and draws in
+ * every state while a ring stands AND a map does (`setStanding`,
+ * `BABYLON_EXIT.md` X4.5c): over the menu it counts for nothing, so the frame does
+ * no work of ours for it; a frame with its pipeline unbuilt
  * draws no cloud, as a Babylon material not ready drew none, and so does one with
  * a frame texture unpublished, a dependency that material did not have (it read
  * none) and harmless, every frame texture being published from construction; a
@@ -64,7 +65,9 @@ export class CloudDraw {
   private geometry: HostBindGroup | null = null;
   private recipe: CloudRecipe | null = null;
   private count = 0;
-  /** This frame's verdict: a ring stands, the pipeline built, the block uploaded. */
+  /** Whether a map stands: with none the sky is undrawn, the ring kept for the next round's sake. */
+  private standing = false;
+  /** This frame's verdict: a ring and a map stand, the pipeline built, the block uploaded. */
   private ours = false;
 
   private failed: (reason: string) => void;
@@ -106,9 +109,9 @@ export class CloudDraw {
           return false;
         },
       );
-    // For the session (the header). Counted only on a frame a ring stands.
+    // For the session (the header). Counted only on a frame a ring and a map stand.
     renderer.onFrame(this.prepare);
-    renderer.add(this.draw, "afterSurfaces", () => this.recipe !== null);
+    renderer.add(this.draw, "afterSurfaces", () => this.standing && this.recipe !== null);
     renderer.onRefused(this.refused);
   }
 
@@ -161,6 +164,18 @@ export class CloudDraw {
     this.recipe = recipe;
   }
 
+  /**
+   * Whether a map stands (`Sky.setStanding`). With none, nothing is drawn or
+   * counted, and a frame with nothing else of ours skips `prepare`, so what it
+   * drew last is put back here.
+   */
+  setStanding(on: boolean): void {
+    this.standing = on;
+    if (on) return;
+    this.ours = false;
+    this.stats.drawn = 0;
+  }
+
   /** No ring stands: nothing is drawn or counted until the next `setRing`. */
   clearRing(): void {
     for (const buffer of this.owned) buffer.destroy();
@@ -182,7 +197,7 @@ export class CloudDraw {
   private readonly prepare = (): void => {
     this.stats.drawn = 0;
     const recipe = this.recipe;
-    this.ours = recipe !== null && this.pipeline !== null;
+    this.ours = recipe !== null && this.standing && this.pipeline !== null;
     if (recipe && this.ours) this.block.write(recipe.values);
   };
 

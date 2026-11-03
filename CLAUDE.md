@@ -270,8 +270,8 @@ scene renders in every state** — in the page's own match over a HELD world,
 advanced only through `updateWorld` (`playing`, `dying`, `bench`) — and
 `loading` and `dying` are **STEPS, not lids**: `updateWorld` runs in full under
 the death cam, and nothing may simulate under the building card. **The
-menu has NO map behind it**: it stands on a photograph, so leaving a round goes
-through `Game.teardownMap` — `installMap`'s other half, and the one place a map
+menu has NO map behind it, and no sky**: it stands on a photograph, so leaving a
+round goes through `Game.teardownMap` — `installMap`'s other half, and the one place a map
 is torn down — and anything new that `installMap` hands a map to owes a line
 there that takes it back.
 

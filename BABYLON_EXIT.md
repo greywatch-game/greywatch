@@ -1510,7 +1510,7 @@ Everything else in X4.4 moves as briefed; `fx-glass-sort` is X4.6's BEFORE.
   say what draws a pool; `docs/rendering.md`'s size gate (the marks leave
   it).
 
-### X4.5 — Sky and clouds — **M, as three sub-steps** (split 2026-11-02, decided the same day) — X4.5a **LANDED** (4118b5b), X4.5b **LANDED** (8d3b6fc)
+### X4.5 — Sky and clouds — **M, as three sub-steps** (split 2026-11-02, decided the same day) — X4.5a **LANDED** (4118b5b), X4.5b **LANDED** (8d3b6fc), X4.5c **LANDED** (PORTHASH, its picture change PICTUREHASH) — **all three LANDED**
 
 The dome, stars, moon and cloud ring (`Sky`, `cloudMasses`, `CloudShader`)
 come off Babylon's scene, and our draws stop depending on it having anything
@@ -1811,6 +1811,69 @@ moved; **all of this is past since X4.5c**: no sky piece is a Babylon mesh):
     behind the clouds' depth, so it is rejected and un-bloomed through one; the dome
     writes no depth; the map with no disc draws no disc, its halo still painted;
     `setFlash` lifts the dome (`sky-flash`); `sky-motes`: the moon paints over its ash.
+
+  **The menu: the sky undrawn with no map standing, in a commit of its own**
+  (PICTUREHASH; the owner's decision at X4.5a, the clouds' half left here by X4.5b's
+  implementer and not ruled on). `Sky.setStanding`, from `Game.installMap` and
+  `teardownMap`, is what all three draws' `Active` ask, so **the boot's menu fills
+  nothing of ours again**: 0 of 30 frames filled, 0 queues, `Renderer`'s and
+  `docs/rendering.md`'s exception gone; a re-sort of the ring is the one thing left, a
+  `writeBuffer` of what moved. **A picture change the bank cannot see**: every map
+  stands in every row. **Windows, before (a3773c9, byte-equal to the parent) and after**
+  (`x45c/win-port/<map>/` and `x45c/win-after/<map>/`, clocks pinned, held and shot on
+  the seven maps): the boot's fade at half (`fade50`, 94.6 to 100% of pixels moved, up
+  to 107/255; with the card, `fade50card`, 57.7 to 81.7%, up to 100), the bare canvas
+  (99.2 to 100%, up to 213), a rejected decode (`decode`, 67.6 to 84.4%, up to 199), a
+  building card over an undecoded photograph (`building`, 75.9 to 95.5%, up to 199), a
+  lobby row on no map (`lobby`, as the decode) and the proving ground (`proving`, 80.8%,
+  up to 24). What is there now is the map's flat colour through the post
+  chain, Coldharbour's centre (205,188,157), corner (114,108,97): no dome, no cloud, no
+  stars. After a round it is the last map's (`afterRound`, moved as `decode`, with the
+  round's last motes over it). `bare`, the sky stated away by hand, is byte-equal before
+  and after, so it is no control of the sky any more (`boot.mjs`'s went stale at X4.5b;
+  `x45c/windows.mjs` clears the ring as well).
+
+  **The clear's ALPHA was the one thing it could not leave as it was.** It was 0, and
+  no window can tell, the depth buffer holding nothing to ink; but the kit screen can.
+  The card leaves the coverage under it as it found it, so with the dome gone a clear of
+  0 inks the half of the weapon's outline lying on the card, which the dome's 1 had been
+  erasing: **0.5% of the frame, up to 56/255, on all seven maps** (`x45c/kitprobe/alpha0.png`).
+  The owner's decision took the sky off the kit screen as moving no pixel, so
+  `applyClearColor` now writes 1, the dome's own literal; with it the kit screen is
+  byte-equal on five maps (`CelInk`'s comments follow it). Nothing a map stands behind
+  reads it, every shipped map stating a dome: `sky-ring` and the rest are byte-equal.
+  **The whole stroke is arguably the better picture and is what the kit screen gets
+  over a wall in a round; it is a recorded change for the owner to ask for, not taken
+  here.** **What remains on the kit screen, explained and kept**: Sarab 247 px and
+  Kurenai 274 px, up to 40/255, the outline of the sight. A cloud stands behind it under
+  the menu's camera, and a cloud's coverage is 0. The parent with the ring cleared by hand
+  and the dome left moves exactly those pixels and is **byte-equal to this commit's frame
+  on both** (`x45c/kit2.mjs`). X4.5a's "byte-equal under the kit screen" was measured on
+  Coldharbour; this is what it did not see, and a ring turning moves it anyway.
+
+  **Still to look at, stated rather than fixed:** Harrowmead's and Kurenai's frame has the
+  bright column `docs/states.md` names, shafts seeded at the boot over the clear colour
+  (`x45c/win-after/harrowmead/canvas.png`, `x45c/win-after/kurenai/canvas.png`).
+  **Measured** at this commit: the bank `--check --keep` against the same BEFORE, **121 of
+  121 byte-equal**, the same 34 stale rows red; `census --against` every row equal;
+  `pipelines.mjs --round` as the port's; an offline round (`fire` 101, `explode` 6,
+  `blaze` 3) and a server's (`blaze` 2, `explode` 1), 0 errors, no warning
+  from the seal; `gate`, `shaders`, `parity`, typecheck, build and corecheck pass; 0 sky
+  meshes and materials over the menu, the kit screen, a round, the editor and back.
+- **Verify (the step as a whole):** the bank on every map, the night map included; zero
+  sky meshes in `scene.meshes` over the menu, in a round and in the editor; `pipelines.mjs`
+  and the sealed cache quiet in a round.
+  **Met** at X4.5c: every row byte-equal to a BEFORE through all three sub-steps but the
+  known flake, the sky rows and `hollowmere-lanterns` and `cinderhaven-town` among them, and
+  every picture change in a commit of its own (the menu's windows, PICTUREHASH); 0 sky
+  meshes and 0 sky materials in all of those states and back; zero in play on Coldharbour
+  and zero of ours on Cinderhaven (its two are the rotor wash's, X4.7's), no warning from
+  the seal. **Owes onward**: X4.6's blended list and X4.7's particles take the seam's
+  item 6 from under `"beforeBlended"`, and X4.7 owes `sky-motes` and the wash a check that
+  the moon still paints over them, or the owner's word that it should not; `drawWorld`
+  reads less as Babylon's group empties (X4.7); the phone's reading of the sky's three
+  pipelines (no draw count moves); X5.2 takes `GlowPass`, whose texture variants have no
+  caller now.
 - **Rewrites:** `CLAUDE.md`'s rendering section (the sky has no Babylon mesh;
   the group-0 rule), under its cap; `docs/rendering.md`'s sky, clouds and
   seam; `docs/game.md` if the menu's answer touches it; `Game`'s "the sky hangs

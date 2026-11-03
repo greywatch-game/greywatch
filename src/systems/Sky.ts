@@ -7,7 +7,9 @@
  * (Babylon's `DynamicTexture`s, read through the seam) and stays the owner of
  * where the pieces stand, the turn, the matched clock, the painter's order, the
  * flash and the cloud shadow, pushing every value of the ring every frame in
- * every state.
+ * every state. **It is DRAWN only while a map stands** (`setStanding`): it owes a
+ * state with no map nothing, so the menu's frame does no work of ours for it, and
+ * what shows there is the clear colour (`docs/states.md`).
  * Invariants: moonDir is negated to align with the shader's light direction;
  * the dome and the disc ride with the camera, composed as Babylon composed a
  * node's, as this frame's main pass begins (`standSky`); the moon is BLENDED and
@@ -225,6 +227,17 @@ export class Sky {
       // clouds, lightning or none.
       paint.setTones(this.cloudShade.addToRef(f, this.shadeOut), this.cloudLit.addToRef(f, this.litOut));
     }
+  }
+
+  /**
+   * Whether a map stands, which is whether the sky is drawn (`Game.installMap`,
+   * `Game.teardownMap`). The paint, the turn, the order and the shadow go on either
+   * way (`update`), the turn being a clock and a re-paint 5 to 50 ms: this is a
+   * question about the DRAWS.
+   */
+  setStanding(on: boolean): void {
+    this.skyDraw.setStanding(on);
+    this.cloudDraw.setStanding(on);
   }
 
   /**
