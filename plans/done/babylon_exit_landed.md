@@ -7830,12 +7830,12 @@ X4.4e's brief, word for word:
     molotov burning and a pane's burst live: `pools: { drawn: 17, masked:
     14, instances: 8, marks: 9, billows: 11, debris: 12, fires: 12 }`.
 
-### X4.5 — Sky and clouds — **M, as three sub-steps** (split 2026-11-02, decided the same day) — X4.5a **LANDED** (HASH)
+### X4.5 — Sky and clouds — **M, as three sub-steps** (split 2026-11-02, decided the same day) — X4.5a **LANDED** (4118b5b)
 
 The plan's `BABYLON_EXIT.md` holds what the sky is today and the two sub-steps
 to come. What X4.5a was asked for and what it measured:
 
-- **X4.5a — our draws stop needing group 0 LANDED** (HASH; 2026-11-02; no
+- **X4.5a — our draws stop needing group 0 LANDED** (4118b5b; 2026-11-02; no
   picture change; no sky mesh moved).
   - **The brief.** The empty-group seam (decided 2026-10-31, X4.3c's review;
     X4.4e measured it unreachable until this step); a new first draw point

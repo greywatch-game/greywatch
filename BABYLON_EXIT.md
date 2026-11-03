@@ -1509,7 +1509,7 @@ Everything else in X4.4 moves as briefed; `fx-glass-sort` is X4.6's BEFORE.
   say what draws a pool; `docs/rendering.md`'s size gate (the marks leave
   it).
 
-### X4.5 — Sky and clouds — **M, as three sub-steps** (split 2026-11-02, decided the same day) — X4.5a **LANDED** (HASH)
+### X4.5 — Sky and clouds — **M, as three sub-steps** (split 2026-11-02, decided the same day) — X4.5a **LANDED** (4118b5b)
 
 The dome, stars, moon and cloud ring (`Sky`, `cloudMasses`, `CloudShader`)
 come off Babylon's scene, and our draws stop depending on it having anything
@@ -1547,7 +1547,7 @@ sub-step confirms its own before it moves anything):
   uniforms every frame in every state. `CloudShadowRaster` and the
   `cloudShadowMap` the cel materials read are not drawn by any of this.
 
-- **X4.5a — our draws stop needing group 0 LANDED** (HASH; 2026-11-02; no
+- **X4.5a — our draws stop needing group 0 LANDED** (4118b5b; 2026-11-02; no
   picture change; no sky mesh moved). **The seam**: `onMainPass` hooks the
   draw phase's two observables as it did, and the end-of-phase one (inserted
   first, so ahead of the glow's mask and `FrameDepth`) now asks whether group 0
