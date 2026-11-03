@@ -493,11 +493,14 @@ export interface ViewFacts {
  * the billows drawn and `debris` the shards and chunks. Since report
  * version 28 (`BABYLON_EXIT.md` X4.4d) they count the FIRES' draws too —
  * every world fire and molotov flame drawn, one draw each and one mask draw
- * each that glows (`render/FlameDraw.ts`) — and `fires` says how many. None
+ * each that glows (`render/FlameDraw.ts`) — and `fires` says how many. Since
+ * report version 29 (`BABYLON_EXIT.md` X4.5b) `drawn` counts the cloud ring's
+ * one draw too (`render/CloudDraw.ts`), no pool but the last draw of ours with
+ * no count of its own, and `clouds` says whether it was. None
  * is in `counters.drawCalls`, which since X4.4b counts no tracer, mark,
- * case, thrown or laid body, since X4.4c no billow, shard or chunk, and
- * since X4.4d no fire: a capture from before any of them counted a draw a
- * mesh there. The sparks, the dust discs and the scorch are still Babylon's,
+ * case, thrown or laid body, since X4.4c no billow, shard or chunk,
+ * since X4.4d no fire, and since X4.5b no ring: a capture from before any of
+ * them counted a draw a mesh there. The sparks, the dust discs and the scorch are still Babylon's,
  * and still counted there.
  */
 export interface PoolFacts {
@@ -511,6 +514,8 @@ export interface PoolFacts {
   debris?: number;
   /** Absent before report version 28. */
   fires?: number;
+  /** Absent before report version 29. */
+  clouds?: number;
 }
 
 export interface ProfileGraphics {
@@ -1292,7 +1297,10 @@ export function buildReport(
     // 28: `pools.fires`, and the fires' draws in `pools.drawn` and
     // `pools.masked`: since `BABYLON_EXIT.md` X4.4d no world fire and no
     // molotov flame is in `counters.drawCalls`. Nothing else changed meaning.
-    version: 28,
+    // 29: `pools.clouds`, and the cloud ring's one draw in `pools.drawn`:
+    // since `BABYLON_EXIT.md` X4.5b it is not in `counters.drawCalls`. Nothing
+    // else changed meaning.
+    version: 29,
     build: buildStamp(),
     takenAt: new Date().toISOString(),
     reason,

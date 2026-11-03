@@ -149,6 +149,13 @@ export interface FragmentProgram {
   readonly body: string;
   /** The body's function that returns the pixel's colour, called by `main`. */
   readonly surface: string;
+  /**
+   * The fragment writes its own DEPTH: `surface` still returns the colour,
+   * and sets `fragmentOutputs.fragDepth` as it goes (the cloud ring,
+   * `render/cloudProgram.ts`). Absent, the module is what it was without this
+   * field, and a body naming `fragmentOutputs` does not compile.
+   */
+  readonly writesDepth?: boolean;
 }
 
 /**
@@ -320,14 +327,32 @@ export function assembleFragment(
     declared.strided,
     tag,
   );
+  if (program.writesDepth) {
+    lines.push(
+      "struct FragmentOutputs {",
+      "  @location(0) color: vec4f,",
+      "  @builtin(frag_depth) fragDepth: f32,",
+      "}",
+      "var<private> fragmentOutputs: FragmentOutputs;",
+    );
+  }
   // Into a texture, Babylon's processor leaves the fragment as written.
   lines.push(body);
 
   lines.push(
     "@fragment",
-    "fn main(input: FragmentInputs) -> @location(0) vec4f {",
-    "  fragmentInputs = input;",
-    `  return ${program.surface}();`,
+    ...(program.writesDepth
+      ? [
+          "fn main(input: FragmentInputs) -> FragmentOutputs {",
+          "  fragmentInputs = input;",
+          `  fragmentOutputs.color = ${program.surface}();`,
+          "  return fragmentOutputs;",
+        ]
+      : [
+          "fn main(input: FragmentInputs) -> @location(0) vec4f {",
+          "  fragmentInputs = input;",
+          `  return ${program.surface}();`,
+        ]),
     "}",
   );
   return { label: tag, code: lines.join("\n"), bindings: declared.bindings };

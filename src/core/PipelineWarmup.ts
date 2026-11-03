@@ -17,8 +17,8 @@
  * OPENS by waiting, with no vantage, for OUR renderer's pipelines
  * (`CONFIG.graphics.warmup.oursCapMs`): every entry of the declared list
  * settled — the bodies, the hulls, the weapon, the bodies' shadow map, the
- * lamps' proxies and every effect pool of ours, each asked once at `Game`'s
- * construction — and nothing of ours left compiling, which is the map's own
+ * lamps' proxies, every effect pool of ours and the clouds, each asked once at
+ * `Game`'s construction — and nothing of ours left compiling, which is the map's own
  * (the world's groups, its depth passes — the lamps' atlas's casters among
  * them — the probes' bake, the palette's mask, asked as its install built
  * them); a cap reached names the entries still unsettled. They compile off the

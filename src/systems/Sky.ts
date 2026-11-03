@@ -1,9 +1,12 @@
 /**
  * Sky.ts — Procedural sky: baked dome texture (gradient/galactic band/stars/
  * moon halo), a textured moon disc, and a ring of faceted cloud MASSES lit per
- * facet off the key light. The dome and disc are unlit emissive meshes; the
- * clouds are one cel-banded ShaderMaterial draw. Everything infiniteDistance,
- * unpickable; moon bloom via `GlowPass`.
+ * facet off the key light. The dome and disc are unlit emissive meshes of
+ * Babylon's (until `BABYLON_EXIT.md` X4.5c); the clouds are one draw of OUR
+ * renderer's (`render/CloudDraw.ts`, X4.5b), and `Sky` is made no mesh of them
+ * but stays the owner of the turn, the matched clock, the painter's order and
+ * the cloud shadow, pushing every value of the ring every frame in every state.
+ * Dome and disc are infiniteDistance, unpickable; moon bloom via `GlowPass`.
  * Invariants: moonDir is negated to align with the shader's light direction;
  * the moon is BLENDED in rendering group 0, so it draws after the opaque dome
  * and before any nearer blended mesh; the clouds sit inside the moon's
@@ -18,19 +21,18 @@ import {
   Mesh,
   MeshBuilder,
   Matrix,
+  Quaternion,
   RawTexture,
   Scene,
-  type ShaderMaterial,
   StandardMaterial,
   Texture,
-  Vector2,
   Vector3,
   Vector4,
-  VertexBuffer,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { clamp } from "../core/math";
-import { createCloudMaterial } from "../shaders/CloudShader";
+import type { CloudDraw } from "../render/CloudDraw";
+import { CloudPaint } from "../shaders/CloudShader";
 import { mulberry32 } from "../world/rng";
 import type { EnvironmentSpec, SkySpec } from "../world/environment";
 import { buildCloudRing, type CloudGeometry } from "./cloudMasses";
@@ -45,12 +47,12 @@ import { type CloudShadowArea, CloudShadowRaster, LOBE_STRIDE } from "./cloudSha
  * disc are unlit emissive by construction and the clouds ask the map's KEY
  * light for themselves, as uniforms, exactly as the cel materials do.
  *
- * Every sky mesh uses `infiniteDistance` (it rides with the camera, so the
- * horizon never gets closer and the clouds are always overhead) and stays
- * outside the pick/collide contract: no `solid` metadata, `isPickable =
- * false`, `noInk`. The pieces that must NOT bloom (dome, clouds — a
- * full-screen gradient would haze the frame) carry `noGlow`, which the bloom
- * reads every frame. The moon keeps its bloom on purpose.
+ * The dome and the disc use `infiniteDistance` (each rides with the camera, so
+ * the horizon never gets closer) and stay outside the pick/collide contract: no
+ * `solid` metadata, `isPickable = false`, `noInk`. The dome must NOT bloom (a
+ * full-screen gradient would haze the frame), so it carries `noGlow`, which the
+ * bloom reads every frame; the clouds are in no mask at all, having no mesh. The
+ * moon keeps its bloom on purpose.
  *
  * The moon sits opposite the key light's direction (`lighting.direction`),
  * so the disc always agrees with the shadows the cel shader paints. Its
@@ -75,22 +77,21 @@ import { type CloudShadowArea, CloudShadowRaster, LOBE_STRIDE } from "./cloudSha
  * per-vertex mask, because a texture has no facets to turn toward a light. A
  * pile of lumps does, so the key is asked of each facet and banded like every
  * wall in the village. `cloudMasses.ts` carries the shape's argument and
- * `CloudShader.ts` the light's.
+ * `shaders/wgsl/cloud.ts` the light's.
  */
 export class Sky {
   private disposables: { dispose(): void }[] = [];
-  /** The cloud ring, which `update` turns; null on a sky with no cover. */
-  private clouds: Mesh | null = null;
   /**
-   * How far the ring has turned, in radians. Kept here rather than on the
-   * mesh because the mesh is rebuilt with every map and the TURN is not the
+   * How far the ring has turned, in radians. Kept here rather than with the
+   * ring because the ring is rebuilt with every map and the TURN is not the
    * map's: in a match it is a function of the authority's clock (`update`),
    * so a ring built mid-match must be stood where every other client's is.
    */
   private turn = 0;
-  private cloudMat: ShaderMaterial | null = null;
+  /** The ring's values, which `update` writes; null on a sky with no cover. */
+  private cloudPaint: CloudPaint | null = null;
   private cloudGeo: CloudGeometry | null = null;
-  /** The index buffer the ring is drawn from, rewritten back to front. */
+  /** The order the ring is drawn in, rewritten back to front; the GPU's copy is `CloudDraw`'s. */
   private cloudIndices = new Uint32Array(0);
   /**
    * Lump ids in the order last written, the scratch the next order is sorted
@@ -104,9 +105,10 @@ export class Sky {
   private readonly sortedEye = new Vector3(Infinity, Infinity, Infinity);
   private sortedTurn = Infinity;
   private readonly localEye = new Vector3();
-  private readonly depthRay = new Vector4();
-  private readonly depthLine = new Vector2();
   private readonly toLocal = new Matrix();
+  /** The ring's world matrix at the turn, and what it is composed of — see `standRing`. */
+  private readonly ringWorld = new Matrix();
+  private readonly ringTurn = new Quaternion();
 
   /**
    * The clouds' shadow on the ground (`cloudShadow.ts`, read by `celCloud`):
@@ -154,7 +156,11 @@ export class Sky {
   /** What the two tones are set to this frame — written into, never minted. */
   private readonly shadeOut = new Color3();
   private readonly litOut = new Color3();
-  constructor(private scene: Scene) {
+  constructor(
+    private scene: Scene,
+    /** The ring's draw, for the session: `Sky` hands it each ring and writes it each order. */
+    private readonly cloudDraw: CloudDraw,
+  ) {
     const n = CONFIG.sky.clouds.shadow.size;
     // One texture for the life of the process, so the materials are bound to
     // it once: what changes is its contents and the vectors that place it.
@@ -186,14 +192,13 @@ export class Sky {
     if (this.domeMat) {
       this.domeMat.emissiveColor.copyFrom(color).scaleInPlace(amount * 0.35);
     }
-    const mat = this.cloudMat;
-    if (mat) {
+    const paint = this.cloudPaint;
+    if (paint) {
       const f = this.flashScratch;
       f.copyFrom(color).scaleInPlace(amount * 0.6);
       // Into scratches: this runs every frame in every state on every map with
       // clouds, lightning or none.
-      mat.setColor3("shadeColor", this.cloudShade.addToRef(f, this.shadeOut));
-      mat.setColor3("litColor", this.cloudLit.addToRef(f, this.litOut));
+      paint.setTones(this.cloudShade.addToRef(f, this.shadeOut), this.cloudLit.addToRef(f, this.litOut));
     }
   }
 
@@ -329,13 +334,14 @@ export class Sky {
     // million radians, far inside a double's exact range, and a wrap would be
     // a jump the shadow's crossfade has to re-prime across.
     this.turn = clock !== null ? rate * clock : this.turn + rate * dt;
-    const clouds = this.clouds;
-    if (!clouds || !this.cloudMat) return;
-    clouds.rotation.y = this.turn;
-    if (this.shadowOn) this.stepCloudShadow(clouds.rotation.y);
-    this.cloudMat.setVector3("camPos", eye);
+    const paint = this.cloudPaint;
+    if (!paint) return;
+    const turn = this.turn;
+    this.standRing(paint, turn);
+    if (this.shadowOn) this.stepCloudShadow(turn);
+    paint.setEye(eye);
     // What the fragment needs to write the depth of a point `depthMetres` out
-    // ALONG ITS OWN PIXEL'S RAY (see `CloudShader`'s fragment for why along the
+    // ALONG ITS OWN PIXEL'S RAY (see `wgsl/cloud.ts`' fragment for why along the
     // ray and never down the axis). For a ray whose view-space direction is
     // (x, y, 1), that point's z is D / |ray|, and WebGPU's depth — 0..1, nothing
     // here reverses it — is a * (1 - n / z) with a = f / (f - n): so
@@ -351,31 +357,41 @@ export class Sky {
       const horizontal = cam.fovMode === Camera.FOVMODE_HORIZONTAL_FIXED;
       const tanX = horizontal ? half : (half * w) / h;
       const tanY = horizontal ? (half * h) / w : half;
-      this.cloudMat.setVector4("depthRay", this.depthRay.set(tanX, tanY, 2 / w, 2 / h));
       const n = cam.minZ;
       const f = cam.maxZ;
       const a = f / (f - n);
-      this.cloudMat.setVector2("depthLine", this.depthLine.set(a, (a * n) / c.depthMetres));
+      paint.setDepth(tanX, tanY, 2 / w, 2 / h, a, (a * n) / c.depthMetres);
     }
     // The ORDER only changes when the eye crosses the plane between two lumps'
     // centres, and at these distances that takes metres of walking or tenths
     // of a degree of drift — so the sort is spent on those, not on frames.
     if (
       Vector3.DistanceSquared(eye, this.sortedEye) < c.resortMetres * c.resortMetres &&
-      Math.abs(clouds.rotation.y - this.sortedTurn) < c.resortTurn
+      Math.abs(turn - this.sortedTurn) < c.resortTurn
     ) {
       return;
     }
     this.sortedEye.copyFrom(eye);
-    this.sortedTurn = clouds.rotation.y;
-    this.sortClouds(clouds, eye);
+    this.sortedTurn = turn;
+    this.sortClouds(eye);
+  }
+
+  /**
+   * The ring's world matrix at `turn`, into `ringWorld` and the paint: a turn
+   * about y and nothing else, composed as Babylon composes a node's so the
+   * numbers are the ones its mesh was drawn with.
+   */
+  private standRing(paint: CloudPaint, turn: number): void {
+    Quaternion.RotationYawPitchRollToRef(turn, 0, 0, this.ringTurn);
+    Matrix.ComposeToRef(RING_SCALE, this.ringTurn, RING_ORIGIN, this.ringWorld);
+    paint.setWorld(this.ringWorld.m);
   }
 
   private clear(): void {
     for (const d of this.disposables) d.dispose();
     this.disposables.length = 0;
-    this.clouds = null;
-    this.cloudMat = null;
+    this.cloudDraw.clearRing();
+    this.cloudPaint = null;
     this.domeMat = null;
     this.cloudGeo = null;
     this.sortedEye.set(Infinity, Infinity, Infinity);
@@ -408,7 +424,7 @@ export class Sky {
     const geo = this.cloudGeo;
     const cfg = CONFIG.sky.clouds;
     const minUp = Math.sin((cfg.shadow.minElevation * Math.PI) / 180);
-    if (!geo || !this.clouds || toLight.y < minUp || cfg.shadow.lit >= 1) return;
+    if (!geo || !this.cloudPaint || toLight.y < minUp || cfg.shadow.lit >= 1) return;
     this.shadowToLight.copyFrom(toLight);
     const half = mapSize / 2 + Math.min(cfg.shadow.reach, fogEnd);
     this.shadowArea = { originX: -half, originZ: -half, extent: half * 2 };
@@ -504,8 +520,8 @@ export class Sky {
 
   /**
    * Hands `field` every lobe as it will stand with the ring turned to `turn`,
-   * and writes it whole if `now`. The lobes are the mesh's own frame turned
-   * by the same matrix the mesh wears, so the shadow cannot disagree with the
+   * and writes it whole if `now`. The lobes are the ring's own frame turned
+   * by the same turn the ring wears, so the shadow cannot disagree with the
    * cloud about which way the ring went.
    */
   private writeField(field: CloudShadowRaster, turn: number, now: boolean): void {
@@ -569,14 +585,14 @@ export class Sky {
    * nearer is drawn whole over the farther — and between two facets of one
    * cloud's colour that is not a visible error.
    *
-   * The eye is taken into the mesh's own frame rather than every lump out of
+   * The eye is taken into the ring's own frame rather than every lump out of
    * it: the ring's world matrix is a turn about Y and nothing else, so one
    * inverse serves every distance.
    */
-  private sortClouds(clouds: Mesh, eye: Vector3): void {
+  private sortClouds(eye: Vector3): void {
     const geo = this.cloudGeo;
     if (!geo) return;
-    clouds.computeWorldMatrix(true).invertToRef(this.toLocal);
+    this.ringWorld.invertToRef(this.toLocal);
     Vector3.TransformCoordinatesToRef(eye, this.toLocal, this.localEye);
     const e = this.localEye;
     const n = geo.lumpFirst.length;
@@ -620,17 +636,11 @@ export class Sky {
     // the ring at once, so the first and the last are nearly always near the
     // two ends.
     //
-    // **Straight to the engine, and never through `Mesh.updateIndices`.** That
-    // takes no span — its `offset` is a BYTE offset at which it writes the
-    // WHOLE array — and it keeps a CPU copy by `slice()`ing the whole array
-    // first: 600 kB allocated per re-sort, three times a second while the
-    // player runs. The geometry holds `idx` itself by reference (it was handed
-    // it by `setIndices`), so its CPU side is already this array and only the
-    // GPU needs telling.
-    const buffer = clouds.geometry?.getIndexBuffer();
-    if (!buffer) return;
-    const engine = this.scene.getEngine();
-    const bytes = buffer.is32Bits ? 4 : 2;
+    // A run goes straight to `CloudDraw.writeIndices`, one `writeBuffer` over a
+    // span of this array: no view of it and no copy of the whole, which was
+    // 600 kB allocated per re-sort, three times a second while the player ran,
+    // when this array was a Babylon mesh's (`Mesh.updateIndices`).
+    const draw = this.cloudDraw;
     const idx = this.cloudIndices;
     let kOld = 0;
     let kNew = 0;
@@ -641,7 +651,7 @@ export class Sky {
       const count = geo.lumpCount[lump];
       if (lump === prev[i] && kOld === kNew) {
         if (runStart >= 0) {
-          engine.updateDynamicIndexBuffer(buffer, idx.subarray(runStart, kNew), runStart * bytes);
+          draw.writeIndices(idx, runStart, kNew - runStart);
           runStart = -1;
         }
       } else {
@@ -653,18 +663,16 @@ export class Sky {
       kOld += geo.lumpCount[prev[i]];
       kNew += count;
     }
-    if (runStart >= 0) {
-      engine.updateDynamicIndexBuffer(buffer, idx.subarray(runStart, kNew), runStart * bytes);
-    }
+    if (runStart >= 0) draw.writeIndices(idx, runStart, kNew - runStart);
     if (!changed) return;
     this.cloudOrder = order;
     this.cloudNext = prev;
   }
 
   /**
-   * The cloud masses: the ring `buildCloudRing` piles, as ONE flat-shaded mesh
-   * with one material, so the whole sky's cloud is a single draw on a frame
-   * that is draw-call bound.
+   * The cloud masses: the ring `buildCloudRing` piles, as ONE flat-shaded soup
+   * our renderer draws (`render/CloudDraw.ts`), so the whole sky's cloud is a
+   * single draw on a frame that is draw-call bound.
    *
    * **The clouds are IN THE WORLD, over the map, and that is the point.** They
    * rode at `infiniteDistance` first, like the dome, and a player walking
@@ -681,7 +689,7 @@ export class Sky {
    * its real distance draws it over a mountain. So every cloud fragment writes
    * ONE depth per pixel instead — that of a point `CONFIG.sky.clouds
    * .depthMetres` (7 km) out along that pixel's ray, never down the view axis
-   * (`CloudShader`'s fragment has the bug that was), behind every surface any
+   * (`wgsl/cloud.ts`' fragment has the bug that was), behind every surface any
    * map has and in front of the sun's disc,
    * which `moonDepthDistance` stands behind it. Every surface in the world then
    * hides a cloud, a cloud hides the disc, and — the reason it cannot simply
@@ -693,7 +701,7 @@ export class Sky {
    * so the order does, and a later tie wins. At 7 km the ink's fade has taken
    * every line off on every map's fog band, so they need no mask from it.
    *
-   * **A drift is a turn of the mesh, never of what it is lit by.** The light
+   * **A drift is a turn of the ring, never of what it is lit by.** The light
    * is asked of the WORLD normal in the shader, so the ring can turn and a
    * cloud coming round into the sun lights on its sun side, where a baked
    * colour would have carried its lit face away with it.
@@ -730,24 +738,19 @@ export class Sky {
       proxyShare: c.proxyShare,
     });
 
-    const mesh = new Mesh("sky-clouds", this.scene);
     // A soup: every triangle owns its three corners, which is what gives each
     // facet its own normal. The positions never change; the INDICES are
     // rewritten whenever the painter's order does, so only they are updatable.
-    mesh.setVerticesData(VertexBuffer.PositionKind, ring.positions, false);
-    mesh.setVerticesData(VertexBuffer.NormalKind, ring.normals, false);
-    mesh.setVerticesData("smoothNormal", ring.smoothNormals, false, 3);
     const lumps = ring.lumpFirst.length;
     this.cloudIndices = new Uint32Array(ring.positions.length / 3);
     for (let i = 0; i < this.cloudIndices.length; i++) this.cloudIndices[i] = i;
-    mesh.setIndices(this.cloudIndices, null, true);
     this.cloudOrder = new Uint32Array(lumps);
     for (let i = 0; i < lumps; i++) this.cloudOrder[i] = i;
     this.cloudNext = new Uint32Array(lumps);
     this.cloudDist = new Float32Array(lumps);
     this.cloudGeo = ring;
 
-    const mat = createCloudMaterial(this.scene, {
+    const paint = new CloudPaint({
       sunDir: lightFrom,
       shade: Color3.FromHexString(spec.cloudColor),
       lit: Color3.FromHexString(spec.cloudLitColor),
@@ -767,37 +770,33 @@ export class Sky {
       skyFill: c.skyFill,
       litAir: c.litAir,
     });
-    mesh.material = mat;
-    // **Group 0, on its ALPHA-TEST list** (`createCloudMaterial` sets that):
-    // after every opaque surface and before everything that writes no depth.
-    // It had a group of its own, drawn after the whole world, and every capture
-    // marker, tracer and plume standing against the sky was painted over — the
-    // cloud's far depth passes wherever a blended draw wrote none. The disc
-    // needs no ORDER from it: it stands at `moonDepthDistance`, behind the
-    // depth a cloud writes, so it is rejected wherever one has been drawn.
-    // The ring spans kilometres around the map and the eye is always inside
-    // it, so it is always in the frustum; saying so spares the bounding test.
-    mesh.alwaysSelectAsActiveMesh = true;
+    // **After every opaque surface and before everything that writes no depth**
+    // (`"afterSurfaces"`, `CloudDraw`). It had a group of its own, drawn after
+    // the whole world, and every capture marker, tracer and plume standing
+    // against the sky was painted over — the cloud's far depth passes wherever a
+    // blended draw wrote none. The disc needs no ORDER from it: it stands at
+    // `moonDepthDistance`, behind the depth a cloud writes, so it is rejected
+    // wherever one has been drawn. The ring spans kilometres around the map and
+    // the eye is always inside it, so it is always in the frustum: it has no
+    // bounding test to spare.
+    //
     // Stood at the turn the ring has already reached, so the shadow is primed
     // where the next `update` will find it rather than at zero.
-    mesh.rotation.y = this.turn;
-    this.prepare(mesh, true, false);
-    this.disposables.push(mat);
-    this.clouds = mesh;
-    this.cloudMat = mat;
+    this.standRing(paint, this.turn);
+    this.cloudDraw.setRing(ring, this.cloudIndices, paint);
+    this.cloudPaint = paint;
     this.cloudShade = Color3.FromHexString(spec.cloudColor);
     this.cloudLit = Color3.FromHexString(spec.cloudLitColor);
   }
 
   /**
-   * Tags a sky mesh out of every scene contract and, unless told otherwise,
-   * parks it at infinite distance. `excludeGlow` is for the pieces whose
-   * emissive fill must not bloom (dome, clouds); the moon passes false so the
-   * bloom haloes it. The clouds pass `riding` false: they stand in the
-   * world (see `buildClouds`).
+   * Tags a sky mesh out of every scene contract and parks it at infinite
+   * distance. `excludeGlow` is for the piece whose emissive fill must not bloom
+   * (the dome); the moon passes false so the bloom haloes it. The clouds are no
+   * mesh: they stand in the world (see `buildClouds`).
    */
-  private prepare(mesh: Mesh, excludeGlow: boolean, riding = true): void {
-    mesh.infiniteDistance = riding;
+  private prepare(mesh: Mesh, excludeGlow: boolean): void {
+    mesh.infiniteDistance = true;
     mesh.isPickable = false;
     // noGlow only where true — the moon keeps its bloom, so it must not
     // claim the flag (the contract reads it as "excluded from the bloom").
@@ -1091,6 +1090,10 @@ export class Sky {
     this.cloudShadowMap.dispose();
   }
 }
+
+/** The ring's scale and place: a turn about y and nothing else (`Sky.standRing`). */
+const RING_SCALE = new Vector3(1, 1, 1);
+const RING_ORIGIN = new Vector3(0, 0, 0);
 
 /**
  * A DynamicTexture's context, typed as the DOM one it actually is. Babylon's

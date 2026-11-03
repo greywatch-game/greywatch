@@ -796,7 +796,7 @@ export function createGrassMaterial(scene: Scene, name: string): ShaderMaterial 
  * them because the mode it compares against is DISABLE again.
  *
  * Two more things follow from blending. It draws on group 0's ALPHA-TEST list
- * (as the clouds do, and for their reason: that list is the ORDER, after
+ * (as the clouds did until X4.5b, and for their reason: that list is the ORDER, after
  * Babylon's opaque surfaces), because a blend has to land on the floor it lies
  * over and the opaque list has no order in which the terrain comes first. The
  * floor and the roads are OUR renderer's since `BABYLON_EXIT.md` X3.5, and it

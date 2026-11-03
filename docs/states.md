@@ -57,7 +57,8 @@ and its shore still playing.
 
 **What is left behind the title card is the SKY, and it owes the menu nothing**
 (decided by the owner 2026-11-02, `BABYLON_EXIT.md` X4.5a, and not yet acted on:
-Babylon still draws it, under every state). Measured on Coldharbour: with the
+it is still drawn under every state, the dome and the disc by Babylon and the
+clouds by us since X4.5b). Measured on Coldharbour: with the
 card off, the frame with the sky and the frame with a sky stated away are
 byte-equal under the photograph, and so are the kit screen, the settings and the
 lobby over the menu. It shows in five windows: the boot's fade (the photograph
@@ -68,8 +69,10 @@ the window open as long as the menu stands; a building card whose photograph has
 not decoded (`MenuBackdrop.showNamed`); a lobby row on a map this client has
 never heard of; and the DEV proving ground, which has no shot.
 
-**X4.5b and X4.5c draw the sky only while a map stands** (each draw's `Active`),
-which keeps the menu's frame doing no work of ours (`Renderer`'s header), so
+**X4.5c draws the sky only while a map stands** (each draw's `Active`, the clouds'
+with the dome's and the disc's, so the sky leaves whole and the picture moves
+once), which puts the menu's frame back to doing no work of ours (`Renderer`'s
+header; the clouds cost it the frame's fill and upload for that one step), so
 those windows will show `scene.clearColor` through the post chain. **At the boot
 that is the boot map's `skyColor`** (`applyClearColor`, from `Game`'s
 constructor, the one write, which `applyEnvironment` goes through too):
@@ -84,8 +87,7 @@ under whatever the menu then names. A building card's window takes the map being
 built's from `buildRound`'s `applyEnvironment`, two frames after the card goes
 up. Today's dome covers the colour, so setting it moved no pixel. **Taking the
 sky off is a picture change in those five windows, none of which the bank
-holds**, so it lands with X4.5b and X4.5c in a commit of its own that says so
-(rule 2).
+holds**, so it lands with X4.5c in a commit of its own that says so (rule 2).
 
 **`loading` is the map being built, and the split that creates it is the whole
 feature.** Building one is the better part of a second of synchronous work —
@@ -158,15 +160,15 @@ of the same wait rather than a wait of its own, on purpose: `go` and
 exists. **It OPENS with no vantage at all, waiting for OUR renderer's
 pipelines** (`render/PipelineCache.ts`, handed in as `CompileProgress`): the
 round's DECLARED list (`Game.roundPipelines` — the bodies, the hulls, the
-weapon, the bodies' shadow map, the lamps' proxies and every effect pool of
-ours, each asked once at `Game`'s construction, waited on by name: a cap
+weapon, the bodies' shadow map, the lamps' proxies, every effect pool of
+ours and the clouds, each asked once at `Game`'s construction, waited on by name: a cap
 reached names those unsettled) and the map's own, asked as its install built
 them (the lamps' atlas's CASTERS among them). They compile off the frame, so drawing does not hurry
 them, but a group of ours still compiling draws NOTHING and Babylon no longer
 draws the blocks in the main pass — so the vantages are drawn with ours
 built, and nothing of ours is POSED at one (`BABYLON_EXIT.md` X4.4e: the
 `warm(on)` poses of the pools that are ours became that list). **The
-vantages are for Babylon's own meshes** — the sky, the grass and its turf,
+vantages are for Babylon's own meshes** — the dome and the disc, the grass and its turf,
 the water, the glazing, the flags and the capture rings, the particles, and
 the three blended pools still Babylon's until X4.6, which are the only poses
 left. **When the wait ends, our cache is SEALED** (`PipelineCache.seal`)

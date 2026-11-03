@@ -581,7 +581,9 @@ scales its edge by `1 - a`. **A REFLECTION PROBE inverts it** (`opaqueAlpha` is 
 bake), so **a shader that hardcodes either value breaks a pass silently** — the
 EMISSIVE palette's **1** is deliberate: do not "fix" it onto `opaqueAlpha`.
 **The sky's CLOUDS write the depth of a point 7 km out**, so every surface must
-be nearer. **Nothing on the floor writing NO depth is OPAQUE**.
+be nearer: OUR draw, no mesh (`render/CloudDraw.ts`, `"afterSurfaces"`: after
+every opaque surface, ahead of everything blended). **Nothing on the floor
+writing NO depth is OPAQUE**.
 
 **The world is OPAQUE with exactly one exception, and it is glazing.** Glass you
 can see THROUGH is `getGlass` over a cube `ReflectionSystem` bakes **one per

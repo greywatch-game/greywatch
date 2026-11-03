@@ -2423,9 +2423,9 @@ and sets the mode back to disabled on UNBIND; the WebGPU pipeline cache reads
 that state's arrays at draw time, and resetting the MODE is what makes the next
 `setAlphaMode(COMBINE)` rewrite them rather than early-out on a mode it thinks
 is already set. Two more things follow. It draws on group 0's **ALPHA-TEST
-list**, the clouds' trick for the clouds' reason — that list is the ORDER, and a
-blend has to land after the floor it lies over, which the opaque list does not
-promise. **Since `BABYLON_EXIT.md` X3.5 the floor and the roads are OUR
+list**, the clouds' trick for the clouds' reason until they became ours — that
+list is the ORDER, and a blend has to land after the floor it lies over, which
+the opaque list does not promise. **Since `BABYLON_EXIT.md` X3.5 the floor and the roads are OUR
 renderer's, and they keep this contract by a draw point of their own**:
 `"beforeAlphaTest"`, after Babylon's opaque list and before this one ("Our
 renderer's frame", below). Drawn where the blocks are, at the end of this list,
@@ -3218,7 +3218,7 @@ mask's too. `begin` fills the frame when either pass has a draw, and a
 `FramePrepare` is handed the `FrameContext` (its fourth argument) to ask
 whether a draw can bind this frame (`WorldGlow`'s verdict).
 
-**A draw lands at one of FOUR points of the main pass** (`DrawPoint`), three of
+**A draw lands at one of FIVE points of the main pass** (`DrawPoint`), four of
 them about rendering group 0, and in this order every frame:
 
 - **`"first"`: as the pass starts, ahead of everything of Babylon's** (X4.5a).
@@ -3252,6 +3252,14 @@ them about rendering group 0, and in this order every frame:
   ahead of every surface of ours, and first among ours keeps every
   equal-depth tie with its own wall going the way it went ("The palette,
   ours", under the glow).
+- **`"afterSurfaces"`: right behind the whole of `"beforeAlphaTest"`, in the same
+  slot of the host's**, whatever order anything was added in, and still ahead of
+  the alpha-tested list (X4.5b). It is the one place after EVERY opaque surface,
+  Babylon's and ours, and before everything blended, the turf included. **The
+  cloud ring is the one draw here** ("The clouds are geometry"): it is where the
+  mesh was, at the head of Babylon's alpha-tested list. A list of its own rather
+  than the last of `"beforeAlphaTest"`'s, because that list is in the order it
+  was installed and a world's install comes after the session's constructor.
 - **`"opaque"`: where the group's opaque and alpha-tested meshes end**, before
   anything blended in it. **No opaque draw of ours goes later**, because
   the blended surfaces write no depth: an opaque wall drawn after the
@@ -3293,7 +3301,10 @@ warning went with the fault. **And a frame with nothing of ours
 COMMITTED does no work at all**: each draw states whether it has anything
 (`Renderer.add`'s `Active`; the weapon's while a segment is committed), and
 `begin` skips the fill, the view-projection, the upload, the textures, the
-bind groups and the prepares when none has — the menu with no kit screen up —
+bind groups and the prepares when none has — the menu with no kit screen up, and
+**for one step, X4.5b to X4.5c, only over a map whose sky states no ring**: the
+clouds draw over the menu until their `Active` asks whether a map stands, which
+lands with the dome's (see "The sky") —
 while the next frame that has something does all of it afresh, so nothing
 binds a value a skipped frame left stale.
 
@@ -3305,15 +3316,14 @@ PICTURE (the palette's ties are tabled in "The palette, ours", under the glow).
 later surface painting over it, so whatever Babylon draws OPAQUE without
 writing depth is drawn over by every surface of ours behind it. Since X3.5
 that includes the FLOOR. **So a mesh that lies on the floor and
-writes no depth must be BLENDED or on group 0's ALPHA-TEST list (the turf, the
-clouds), never on the opaque list**, or the floor paints over it every frame —
+writes no depth must be BLENDED or on group 0's ALPHA-TEST list (the turf),
+never on the opaque list**, or the floor paints over it every frame —
 a rule anyone adding a decal, a mark or a sheet on the ground can break
 without touching the renderer (`CLAUDE.md` states it). The sky dome is the one
 deliberate case: it writes no depth, draws first, and is MEANT to be painted
-over by everything, ours included. The clouds, on the alpha-tested list,
-land after our blocks and our landform, which their 7 km depth makes
-harmless: a surface nearer than that wins the depth test whichever draws
-first. **The turf lands after the blocks too**, as it did when Babylon's
+over by everything, ours included. The clouds, at `"afterSurfaces"`,
+land after our blocks and our landform, and write a depth nearer than nothing
+in the world. **The turf lands after the blocks too**, as it did when Babylon's
 opaque list drew them: where its sheet floats over a slab laid level with the
 floor, it blends over the slab's edge (Greyfen's `crossing` row, a grave
 ledger). From X3.3c to X3.5 the blocks drew after the turf and hid that; the
@@ -6670,9 +6680,12 @@ unchanged sky is pure cost.
 **The sky owes a state with no map NOTHING, and need not be drawn under the
 photograph at all** (decided by the owner at `BABYLON_EXIT.md` X4.5a;
 `docs/states.md`, "The menu sits over no view at all", has the measurement and
-the windows it shows in). It is still drawn there today, by Babylon, in group 0.
-**When a piece of it becomes ours its draw's `Active` asks whether a map is
-standing**, so the menu goes on doing no work of ours; `Sky.update` and the
+the windows it shows in). It is still drawn there today, the dome and the disc by
+Babylon and the clouds by us. **It leaves ALL AT ONCE, at X4.5c: each sky draw's
+`Active` asks whether a map is standing**, so the menu goes back to doing no work
+of ours, and the picture in those windows moves once, in one commit; a ring taken
+off at X4.5b alone would leave a dome with no cloud on it for one step, with the
+ring's draw the only work of ours it saved. `Sky.update` and the
 painted textures stay as they are, the turn being a clock and the paint 5 to 50
 ms. What shows through then is `scene.clearColor`, set at the boot from the boot
 map's `skyColor` (`applyClearColor`) and after a round the last map's.
@@ -6687,9 +6700,15 @@ second additive shell with a per-vertex mask, because a texture has no facets to
 turn toward a light. A pile of lumps has facets, so the key is asked of each one and
 banded like every wall in the village, and the silhouette is an edge the geometry
 draws. `systems/cloudMasses.ts` is the shape (pure arithmetic, `glassFracture`'s
-shape) and `shaders/CloudShader.ts` is the light.
+shape), `shaders/wgsl/cloud.ts` the light with `shaders/CloudShader.ts` its values,
+and **`render/CloudDraw.ts` draws it (`BABYLON_EXIT.md` X4.5b): Babylon is made no
+`sky-clouds` mesh and no material**, and `Sky` keeps the turn, the matched clock,
+the painter's order and the shadow, and pushes every value of the ring every frame
+in every state. The ring's own `cloudEye` is what `Sky.update` was handed and not
+the frame's `camPos`, and its `world` is composed as Babylon composes a node's
+(`Sky.standRing`), so its numbers are the mesh's.
 
-- **One mesh, one material, one draw.** The whole ring is a flat-shaded triangle
+- **One soup, one draw.** The whole ring is a flat-shaded triangle
   soup — every triangle owns its three corners, which is what gives each facet its
   own normal — merged once when the sky is applied. Measured: 46k triangles on
   Harrowmead (`cloudCover` 0.55) and 50k on Coldharbour (0.62), 52k on
@@ -6769,10 +6788,11 @@ shape) and `shaders/CloudShader.ts` is the light.
   farthest lump first whenever the eye has walked `resortMetres` or the ring has
   turned `resortTurn`, and the test is LEQUAL so a later tie wins. **The re-sort
   is an insertion sort of the last order with `resortSlack` (6 m) of tolerance,
-  and only the RUNS of the index buffer that moved are uploaded** — straight to
-  the engine's dynamic index buffer, never through `Mesh.updateIndices`, which
-  writes the whole array at a BYTE offset and `slice()`s a 600 kB CPU copy first.
-  An exact sort reshuffled every near-tie between lobes of one cloud on every
+  and only the RUNS of the index buffer that moved are uploaded**, each one
+  `writeBuffer` over a span of the array (`CloudDraw.writeIndices`), where
+  `Mesh.updateIndices` wrote the whole array at a BYTE offset and `slice()`d a
+  600 kB CPU copy first. The "index buffer" is a storage array the vertex stage
+  reads (`indexData`), as every program of ours pulls. An exact sort reshuffled every near-tie between lobes of one cloud on every
   re-sort, so even uploading only what moved sent 68% of the buffer; with the
   slack it is 30-40%, and on a CPU throttled 6x as a phone stand-in a sprint's
   re-sorts went from 1.4 ms each (4.8 ms a second) to 0.2-0.4 ms (0.8-1.2 ms a
@@ -6783,17 +6803,22 @@ shape) and `shaders/CloudShader.ts` is the light.
   culling makes each closed lump right on its own. The depth is written per PIXEL
   rather than interpolated because a per-vertex z/w in float32 near 1
   wobbles by about one 24-bit LSB, which would speckle every overlap.
-- **The clouds draw in group 0, on its ALPHA-TEST list** (`needAlphaTesting` on
-  the material, which tests nothing) — after every opaque surface and before the
-  group's particles and blended meshes. Both halves are load-bearing. After the
+- **The clouds draw at `"afterSurfaces"`** ("Our renderer's frame") — after every
+  opaque surface and before everything blended, the turf and the group's particles
+  and blended meshes among it. Both halves are load-bearing. After the
   opaque list, because the dome is depth-TESTED at `domeRadius` (600 m) and paints
   over any cloud drawn before it. Before the blended draws, because those write
   no depth, so a cloud drawn after them passes its test wherever they stand
   against the sky: the clouds had rendering group 2 to themselves once, and every
-  capture ring, beacon, tracer and plume against the sky was drawn over. The disc
+  capture ring, beacon, tracer and plume against the sky was drawn over. **The turf
+  is one of those**, which is why the point is ahead of the alpha-tested list and
+  not `"opaque"`, behind it: the ring was on that list until X4.5b
+  (`needAlphaTesting`, which tested nothing), and it and the turf were all the list
+  held, ordered by material id (`RenderingGroup.PainterSortCompare`), the ring's
+  first, because the sky is applied ahead of the map's grass. The disc
   (group 0's blended pass, after them) needs no order from them — it stands behind
   the depth a cloud writes and is rejected by it.
-- **The drift is a TURN of the mesh about the map's centre and never of what lights
+- **The drift is a TURN of the ring about the map's centre and never of what lights
   it.** The key is asked of the world normal in the shader, so a cloud coming round
   into the sun lights on its sun side. A baked colour would carry its lit face away
   with it, which is the trap the old second shell existed to dodge.

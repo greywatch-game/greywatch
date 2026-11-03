@@ -1272,7 +1272,10 @@ in `counters.drawCalls` any more, the scorch still being Babylon's until X4.6.
 draws too — every world fire and every molotov flame drawn, a draw each in
 the main pass and one in the mask for each that blooms
 (`render/FlameDraw.ts`) — and `pools.fires` says how many were drawn, none of
-them in `counters.drawCalls` any more.
+them in `counters.drawCalls` any more. **From report version 29**
+(`BABYLON_EXIT.md` X4.5b) `pools.drawn` counts the cloud ring's one draw too
+(`render/CloudDraw.ts`), no pool but owed to that sum, and `pools.clouds` says
+whether it was drawn.
 
 **Report version 24 RETIRED `drawOverlay`** (`BABYLON_EXIT.md` X4.3d): it was
 the rendering groups above 0, which by X4.3c held the optics' glass alone and

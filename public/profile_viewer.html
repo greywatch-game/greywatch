@@ -1033,7 +1033,8 @@ function renderReport(r) {
      still are). A v26 capture has no billows or debris to show. Since
      version 28 the fires too — every world fire and molotov flame drawn,
      a draw each, none in the draw-call counter since X4.4d; a v27 capture
-     has no fires to show. */
+     has no fires to show. Since version 29 the draws count the cloud ring's
+     one as well (X4.5b), which alone raises no line. */
   const pools = r.pools;
   if (pools && pools.instances + pools.marks + (pools.billows || 0) + (pools.debris || 0) + (pools.fires || 0) > 0) {
     let line = pools.drawn + " draws, " + pools.masked + " mask draws, " + pools.instances + " pieces, " + pools.marks + " marks";

@@ -117,6 +117,7 @@ import { HullDraw } from "../render/HullDraw";
 import { ViewDraw, type ViewDrawSegment } from "../render/ViewDraw";
 import { PoolDraw, type PoolKit } from "../render/PoolDraw";
 import { BlastDraw } from "../render/BlastDraw";
+import { CloudDraw } from "../render/CloudDraw";
 import { FlameDraw } from "../render/FlameDraw";
 import type { CelRecipe } from "../render/celMaterial";
 import { HULL_CHARRED } from "../render/hullProgram";
@@ -571,6 +572,11 @@ const FIRST_VOLUMETRIC_RUNG = Object.keys(
 )[0] as VolumetricRung;
 
 /** A 32-bit FNV-1a of a map id — the storm's seed. */
+/** A failure of the clouds with no round standing is the console's (`CloudDraw.onFailed`). */
+function cloudsFailedOverMenu(reason: string): void {
+  console.error(`[sky] the clouds cannot be drawn — ${reason}`);
+}
+
 function hashId(id: string): number {
   let h = 0x811c9dc5;
   for (let i = 0; i < id.length; i++) {
@@ -843,6 +849,12 @@ export class Game {
    * console's otherwise.
    */
   private readonly viewDraw: ViewDraw;
+  /**
+   * The cloud ring's draw, OUR renderer's for the SESSION (`BABYLON_EXIT.md`
+   * X4.5b), as the weapon's is: `Sky` stands each ring on it and writes it each
+   * order. Whoever hears of a failure is `onFailed`'s, as the weapon's.
+   */
+  private readonly cloudDraw: CloudDraw;
   /** `drawView`'s scratch: this frame's evaluated segments in drawing order, and the sort's keys. */
   private readonly viewDrawn: ViewMesh[] = [];
   private viewOrder = new Int32Array(0);
@@ -2426,21 +2438,26 @@ export class Game {
     this.debrisKeys = new Float64Array(this.debrisDraw.capacity);
     // …and what all five drew (`ProfileReport.pools`): Babylon's counter has
     // counted no tracer, mark, thrown or laid body, nor any case, since X4.4b,
-    // nor any billow, shard or chunk since X4.4c, nor any fire since X4.4d.
+    // nor any billow, shard or chunk since X4.4c, nor any fire since X4.4d,
+    // nor the cloud ring since X4.5b (no pool, but its draw owes the sum).
     this.prof.setPools(() => ({
       drawn:
         this.pieceDraw.stats.drawn +
         this.markDraw.stats.drawn +
         this.blastDraw.stats.drawn +
         this.debrisDraw.stats.drawn +
-        this.flameDraw.stats.drawn,
+        this.flameDraw.stats.drawn +
+        this.cloudDraw.stats.drawn,
       masked: this.pieceDraw.stats.masked + this.blastDraw.stats.masked + this.flameDraw.stats.masked,
       instances: this.pieceDraw.stats.instances,
       marks: this.markDraw.stats.instances,
       billows: this.blastDraw.stats.instances,
       debris: this.debrisDraw.stats.instances,
       fires: this.flameDraw.stats.drawn,
+      clouds: this.cloudDraw.stats.drawn,
     }));
+    // The sky's ring is OUR renderer's (X4.5b) and `Sky` is handed it below.
+    this.cloudDraw = new CloudDraw(this.renderer, cloudsFailedOverMenu);
     // The list itself — see the field. Every entry's asks were made by its
     // constructor, above; this states them, in one place.
     this.roundPipelines = [
@@ -2454,10 +2471,11 @@ export class Game {
       { name: "billows", ready: this.blastDraw.ready },
       { name: "debris", ready: this.debrisDraw.ready },
       { name: "fires", ready: this.flameDraw.ready },
+      { name: "the clouds", ready: this.cloudDraw.ready },
     ];
     // The sky hangs behind every state (menu included), so it is dressed
     // once here and re-applied per round alongside the environment.
-    this.sky = new Sky(this.scene);
+    this.sky = new Sky(this.scene, this.cloudDraw);
     // The clouds' shadow field, bound once: `Sky` keeps one texture for the
     // life of the process and rewrites it as the ring drifts. Until now every
     // material held `ShadowBindings`' own "no cloud" texel.
@@ -5400,6 +5418,7 @@ export class Game {
     // The weapon stays drawn — the kit screen covers the menu — but a failure
     // of it with no round standing is the console's (X4.3c).
     this.viewDraw.onFailed((reason) => console.error(`[view] the weapon cannot be drawn — ${reason}`));
+    this.cloudDraw.onFailed(cloudsFailedOverMenu);
     // …and the bodies' blobs, which only a simulating frame places, so each
     // would stay lit on a floor that is no longer there.
     this.shadows.hideBlobs();
@@ -5633,6 +5652,9 @@ export class Game {
     // to tell: the round, while one stands — told at once if its pipelines
     // failed already, as every round after one that failed is.
     if (!editor) this.viewDraw.onFailed((reason) => this.worldFailed(reason, owner));
+    // …and the clouds, on the same terms: `Sky` stands the ring, so this hands
+    // the draw only whom to tell (X4.5b).
+    if (!editor) this.cloudDraw.onFailed((reason) => this.worldFailed(reason, owner));
     if (unfiled && editor) {
       console.error(`[world] ${owner.id}: the cull refused the editor's build — ${unfiled}; nothing is filed`);
     } else if (unfiled) {

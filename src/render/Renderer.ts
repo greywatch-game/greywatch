@@ -6,7 +6,7 @@
  * Owns: `Renderer` — the frame's `FrameUniforms` and `FrameUniformBuffer`,
  * its `FrameTextures` and the bind group they make with the buffer (group 0
  * of every program, `FrameContext.frameGroup`, handed to a prepare as to a
- * draw), the `PipelineCache`, the `FrameDraw`s at each of the four
+ * draw), the `PipelineCache`, the `FrameDraw`s at each of the five
  * points they may be drawn at and those drawn in the glow's mask — first
  * (`addGlowMask`) or last (`addGlowMaskLate`) — each with the predicate that
  * says whether it has anything to draw this frame (`Active`), the
@@ -24,7 +24,8 @@
  * per frame as the main pass begins, and uploaded only when something will
  * draw — a draw is counted only while its predicate says it has something
  * (none: always), so a frame with nothing of ours committed (the menu with no
- * kit screen up) fills nothing, uploads nothing, refreshes no bind group and
+ * kit screen up, and until `BABYLON_EXIT.md` X4.5c only over a sky stating no
+ * cloud ring) fills nothing, uploads nothing, refreshes no bind group and
  * runs no prepare: one walk of the predicates; the next frame that DOES draw
  * fills, uploads and refreshes in full before anything binds (`begin`), so no
  * draw ever binds a frame or a texture a skipped frame left stale (X4.3c's
@@ -67,11 +68,11 @@
  * material; finds the glow's mask by testing a pass's targets — it is TOLD.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
  *
- * WHERE A DRAW LANDS, in the host's own order, at one of four points of the
- * main pass, three of them about rendering group `groupId` (0: the world)
+ * WHERE A DRAW LANDS, in the host's own order, at one of five points of the
+ * main pass, four of them about rendering group `groupId` (0: the world)
  * (`DrawPoint`), which come in this order in every frame, whatever the group
- * holds (Babylon having nothing in it, its three are told together at the end
- * of the phase, in this order):
+ * holds (Babylon having nothing in it, its are told together at the end of
+ * the phase, in this order):
  * - `"first"`: as the pass starts, ahead of everything of the host's — group
  *   0's opaque list, where the sky dome is today, first among it. A draw that
  *   writes no depth and is MEANT to be painted over belongs here, and nothing
@@ -84,7 +85,7 @@
  *   ALPHA-TESTED ones — or, in a frame with none of those, immediately ahead
  *   of `"opaque"`. An opaque draw that something on the alpha-tested list
  *   is laid OVER goes here: that list is where a blend that must land after
- *   the surface under it is put (the turf, `GrassSystem`; the clouds), and
+ *   the surface under it is put (the turf, `GrassSystem`), and
  *   the turf writes no depth of its own — so the FLOOR it lies on must be in
  *   the depth buffer, and in the picture, before it draws. The world's other
  *   opaque draws go here too, AHEAD of the floor (`WorldBlocks`): the point
@@ -93,6 +94,13 @@
  *   palette goes FIRST in that one draw, where Babylon's opaque queue had
  *   it ahead of every surface of ours, so an equal-depth tie with its own
  *   wall goes the way it went.
+ * - `"afterSurfaces"`: right behind the whole of `"beforeAlphaTest"`, whatever
+ *   order anything was added in, and still ahead of the alpha-tested list: the
+ *   one place that is after EVERY opaque surface, the host's and ours, and
+ *   before everything blended, the turf included. It is the clouds'
+ *   (`CloudDraw`, `BABYLON_EXIT.md` X4.5b), who write a far depth: drawn before
+ *   a surface they pass where it has not written yet, and drawn after the turf,
+ *   which writes no depth, they paint over any of it against the sky.
  * - `"opaque"`: after the group's opaque and alpha-tested meshes and before
  *   anything blended in it — its particles and its transparent meshes. No
  *   OPAQUE draw goes later, because the blended surfaces write no depth: an
@@ -185,7 +193,7 @@ export interface RendererOptions {
 }
 
 /** Where in the main pass a `FrameDraw` is drawn — see the header. */
-export type DrawPoint = "first" | "beforeAlphaTest" | "opaque" | "afterGroup";
+export type DrawPoint = "first" | "beforeAlphaTest" | "afterSurfaces" | "opaque" | "afterGroup";
 
 /**
  * Whether a draw has anything to draw this frame — asked once a frame as the
@@ -218,11 +226,13 @@ export class Renderer {
   /** In the order added, one list per point. Arrays, so a frame's walk allocates no iterator. */
   private readonly firstDraws: FrameDraw[] = [];
   private readonly beforeAlpha: FrameDraw[] = [];
+  private readonly surfaced: FrameDraw[] = [];
   private readonly opaque: FrameDraw[] = [];
   private readonly after: FrameDraw[] = [];
   /** Each list's predicates, index for index (null: always active). */
   private readonly firstActive: (Active | null)[] = [];
   private readonly beforeAlphaActive: (Active | null)[] = [];
+  private readonly surfacedActive: (Active | null)[] = [];
   private readonly opaqueActive: (Active | null)[] = [];
   private readonly afterActive: (Active | null)[] = [];
   private readonly prepares: FramePrepare[] = [];
@@ -299,6 +309,8 @@ export class Renderer {
         return hang(this.firstDraws, this.firstActive, draw, active);
       case "beforeAlphaTest":
         return hang(this.beforeAlpha, this.beforeAlphaActive, draw, active);
+      case "afterSurfaces":
+        return hang(this.surfaced, this.surfacedActive, draw, active);
       case "opaque":
         return hang(this.opaque, this.opaqueActive, draw, active);
       case "afterGroup":
@@ -426,6 +438,7 @@ export class Renderer {
     this.hook.dispose();
     this.firstDraws.length = 0;
     this.beforeAlpha.length = 0;
+    this.surfaced.length = 0;
     this.opaque.length = 0;
     this.after.length = 0;
     this.prepares.length = 0;
@@ -437,6 +450,7 @@ export class Renderer {
     this.maskLateActive.length = 0;
     this.firstActive.length = 0;
     this.beforeAlphaActive.length = 0;
+    this.surfacedActive.length = 0;
     this.opaqueActive.length = 0;
     this.afterActive.length = 0;
     this.maskRefusals.length = 0;
@@ -454,6 +468,7 @@ export class Renderer {
     this.filled =
       anyActive(this.firstDraws, this.firstActive) ||
       anyActive(this.beforeAlpha, this.beforeAlphaActive) ||
+      anyActive(this.surfaced, this.surfacedActive) ||
       anyActive(this.opaque, this.opaqueActive) ||
       anyActive(this.after, this.afterActive);
     // The glow's mask opens after the main pass, and draws from the frame
@@ -481,7 +496,9 @@ export class Renderer {
   };
 
   private readonly beforeAlphaTest = (): void => {
-    if (this.filled && this.beforeAlpha.length > 0 && this.passOk()) this.host.queue(this.runBeforeAlpha);
+    if (this.filled && this.beforeAlpha.length + this.surfaced.length > 0 && this.passOk()) {
+      this.host.queue(this.runBeforeAlpha);
+    }
   };
 
   private readonly afterOpaque = (): void => {
@@ -517,9 +534,12 @@ export class Renderer {
     for (let i = 0; i < draws.length; i++) draws[i](pass, this.ctx);
   };
 
+  /** `"beforeAlphaTest"`'s list and then `"afterSurfaces"`'s: one slot of the host's. */
   private readonly runBeforeAlpha = (pass: GPURenderPassEncoder): void => {
     const draws = this.beforeAlpha;
     for (let i = 0; i < draws.length; i++) draws[i](pass, this.ctx);
+    const last = this.surfaced;
+    for (let i = 0; i < last.length; i++) last[i](pass, this.ctx);
   };
 
   private readonly runOpaque = (pass: GPURenderPassEncoder): void => {

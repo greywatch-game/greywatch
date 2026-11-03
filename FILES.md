@@ -1409,9 +1409,11 @@ src/
                         #   No CPU fallback — WebGPU is a hard requirement and
                         #   guarantees it
     Sky.ts              # Generated dome, textured moon, and the cloud RING —
-                        #   one merged mesh of faceted masses standing in the
+                        #   one soup of faceted masses standing in the
                         #   world over the map, drawn back to front at one
-                        #   shared depth 7 km out (the disc stands at 9 km)
+                        #   shared depth 7 km out (the disc stands at 9 km). The
+                        #   ring's turn, clock, order and shadow are here, and
+                        #   render/CloudDraw.ts draws it (X4.5b): no mesh
     cloudMasses.ts      # The cloud ring's SHAPE: cumulus heaps, banks and
                         #   puffs of round lobes on flat bellies, buried facets
                         #   dropped, as one triangle soup carrying the facet
@@ -2546,6 +2548,14 @@ src/
                         #   lit smoke, dissolve — and its bloom under GLOW_MASK,
                         #   one vertex text for both. Babylon-free:
                         #   render/blastProgram.ts declares them
+      cloud.ts          # The cloud masses as plain strings (X4.5b): the vertex
+                        #   stage pinned short of the far plane and the pixel in
+                        #   cel TONES — lit mostly off the lump's smooth normal so
+                        #   a terminator is one cut line, shade pulled toward the
+                        #   dome's gradient behind it, a highlight cut, a belly, a
+                        #   rim-only lining, the dome's haze — writing the depth
+                        #   of a point 7 km out along its own ray. Babylon-free:
+                        #   render/cloudProgram.ts declares them
       emissiveWorld.ts  # The emissive palette's two BODIES (its vertex, its
                         #   pixel and the glow mask's) and MAX_EMISSIVE_PALETTE,
                         #   Babylon-free: render/emissiveWorld.ts declares
@@ -2590,11 +2600,11 @@ src/
     Volumetrics.ts      # Light shafts: raymarched through the shadow volume,
                         #   capped at the light's colour and SCREENED onto the
                         #   frame so a thick map's glare stays gold. WGSL
-    CloudShader.ts      # The cloud masses in cel TONES: lit mostly off the
-                        #   lump's smooth normal so a terminator is one cut
-                        #   line, shade pulled toward the dome's gradient behind
-                        #   it, a highlight cut, a belly, a rim-only lining and
-                        #   the dome's haze. WGSL
+    CloudShader.ts      # What the cloud masses are drawn WITH, as plain data
+                        #   since X4.5b (CloudLook, CloudPaint): the map's look,
+                        #   and the world, eye, depth line and flash Sky writes
+                        #   into it every frame. The argument for the cel TONES;
+                        #   the WGSL is shaders/wgsl/cloud.ts
     MotionBlur.ts       # Camera-rotation smear, reprojected from the aim
                         #   angles. The viewmodel is held out of it by DEPTH —
                         #   masked shift AND weighted taps — because a gun
@@ -2790,6 +2800,16 @@ src/
                         #   the main pass's and the mask's modules — one vertex
                         #   module for both (the LEQUAL tie); the frame's
                         #   light, eye and fog, the rest the block's
+    CloudDraw.ts        # The sky's cloud RING as OUR renderer draws it (X4.5b):
+                        #   the session's pipeline and block, a ring's soup and
+                        #   index on the GPU from setRing to clearRing, the
+                        #   sort's partial rewrite (writeIndices), one draw at
+                        #   "afterSurfaces", every value Sky's; a failure (or a
+                        #   refused pass) the round's (Game.worldFailed)
+    cloudProgram.ts     # The ring's program (X4.5b): its block, its geometry
+                        #   (the soup and the index it pulls through), CloudRecipe,
+                        #   and both modules; the frame's camera, the rest the
+                        #   block's; a fragment that writes its own depth
     PoolDraw.ts         # The effect POOLS' pieces as OUR renderer draws them
                         #   (X4.4b), one draw-set of these for the tracers,
                         #   brass and thrown and laid bodies, one for the

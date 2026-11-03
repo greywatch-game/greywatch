@@ -114,6 +114,9 @@ function read(page) {
     // The FIRES are ours since X4.4d (`FlameDraw`, a draw a fire, as Babylon
     // drew a mesh), counted the same way; a BEFORE older than that counts
     // the same draws in Babylon's, so a row's total holds.
+    // The CLOUDS are ours since X4.5b (`CloudDraw`, one draw, as Babylon drew
+    // the mesh), counted the same way; a BEFORE older than that counts the
+    // same draw in Babylon's, so a row's total holds.
     const ours = g.handover ? g.handover.stats : { taken: 0, drawn: 0 };
     const bodies = g.bodyDraw ? g.bodyDraw.stats.drawn : 0;
     const hulls = g.hullDraw ? g.hullDraw.stats.drawn : 0;
@@ -123,7 +126,8 @@ function read(page) {
       (g.markDraw ? g.markDraw.stats.drawn : 0) +
       (g.blastDraw ? g.blastDraw.stats.drawn : 0) +
       (g.debrisDraw ? g.debrisDraw.stats.drawn : 0) +
-      (g.flameDraw ? g.flameDraw.stats.drawn : 0);
+      (g.flameDraw ? g.flameDraw.stats.drawn : 0) +
+      (g.cloudDraw ? g.cloudDraw.stats.drawn : 0);
     return { babylon: window.__census.babylon, ours: ours.drawn + bodies + hulls + view + pools, bodies, hulls, view, pools, taken: ours.taken };
   });
 }
