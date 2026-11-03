@@ -92,7 +92,7 @@ export const sky = {
   milkyWayStars: 900,
   /**
    * The cloud MASSES: a ring of faceted, flat-bottomed cloud piles
-   * (`systems/cloudMasses.ts`), lit per facet by `shaders/CloudShader.ts`. They
+   * (`systems/cloudMasses.ts`), lit per facet by `shaders/wgsl/cloud.ts`. They
    * replaced two fBm shells whose soft alpha contour was the one continuous-tone
    * smear left in a frame drawn in hard bands. Every angle here is in DEGREES;
    * the map's `SkySpec` carries the palette and `cloudCover`.
@@ -275,7 +275,8 @@ export const sky = {
      */
     depthMetres: 7000,
     /**
-     * The shading constants `CloudShader` reads: how far the key WRAPS round a
+     * The shading constants of the light (`shaders/wgsl/cloud.ts`, handed them
+     * through `CloudPaint`): how far the key WRAPS round a
      * lump (a volume, not a wall), how much of the dome's horizon colour the
      * lowest clouds take, and the strength of the silver lining on silhouette
      * facets looking toward the light.

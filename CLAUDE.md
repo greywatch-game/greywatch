@@ -581,9 +581,8 @@ scales its edge by `1 - a`. **A REFLECTION PROBE inverts it** (`opaqueAlpha` is 
 bake), so **a shader that hardcodes either value breaks a pass silently** — the
 EMISSIVE palette's **1** is deliberate: do not "fix" it onto `opaqueAlpha`.
 **The sky's CLOUDS write the depth of a point 7 km out**, so every surface must
-be nearer: OUR draw, no mesh (`render/CloudDraw.ts`, `"afterSurfaces"`: after
-every opaque surface, ahead of everything blended). **Nothing on the floor
-writing NO depth is OPAQUE**.
+be nearer: OUR draw (`render/CloudDraw.ts`), after every opaque surface and ahead
+of everything blended. **Nothing on the floor writing NO depth is OPAQUE**.
 
 **The world is OPAQUE with exactly one exception, and it is glazing.** Glass you
 can see THROUGH is `getGlass` over a cube `ReflectionSystem` bakes **one per
@@ -619,8 +618,7 @@ bullet MARKS** (`render/PoolDraw.ts`, `entities/pieces.ts`); **so is every
 blast BILLOW** (`render/BlastDraw.ts`) **and every glass SHARD and rubble
 CHUNK** (`systems/poseView.ts`), and every FIRE (`FlameDraw`, in no bake) —
 **but the sparks, the dust discs and the scorch stay Babylon meshes until the
-glazing moves (X4.6)**, because they fade in its transparent sort among the
-panes, and a pool is never split across two renderers.
+glazing moves (X4.6)**, and a pool is never split across two renderers.
 
 **The GLOW draws the EMISSIVE meshes and nothing else, its occlusion being the
 FRAME's own depth buffer** (`src/shaders/GlowPass.ts`). **What may bloom is read

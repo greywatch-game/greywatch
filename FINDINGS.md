@@ -914,6 +914,10 @@ keyed on the pose, not on the mesh.
   spawn and first-blast frames, and the card's extra time on that device.
 - **The rotor wash** on Sarab and Cinderhaven is a GPU particle system, not a
   mesh, and compiles on the first frame a helicopter raises dust.
+- **Hollowmere standing still.** Plain `pipelines.mjs hollowmere` (no `--round`,
+  which needs armour) creates 5 of Babylon's pipelines and 1 module in its second
+  second after the spawn, on every run: X4.5a's tree, 89879c6 and f035cc6 alike,
+  so no sky step's. Not the clouds, since that map has no ring. Unattributed.
 
 **And a separate stall the counting found, which is NOT a compile**: the deploy
 screen's first second runs 974 and 613 ms frames on Hollowmere and 480 on

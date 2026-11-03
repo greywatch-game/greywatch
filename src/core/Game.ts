@@ -571,12 +571,12 @@ const FIRST_VOLUMETRIC_RUNG = Object.keys(
   CONFIG.graphics.volumetrics.rungs,
 )[0] as VolumetricRung;
 
-/** A 32-bit FNV-1a of a map id — the storm's seed. */
 /** A failure of the clouds with no round standing is the console's (`CloudDraw.onFailed`). */
 function cloudsFailedOverMenu(reason: string): void {
   console.error(`[sky] the clouds cannot be drawn — ${reason}`);
 }
 
+/** A 32-bit FNV-1a of a map id — the storm's seed. */
 function hashId(id: string): number {
   let h = 0x811c9dc5;
   for (let i = 0; i < id.length; i++) {
@@ -852,7 +852,8 @@ export class Game {
   /**
    * The cloud ring's draw, OUR renderer's for the SESSION (`BABYLON_EXIT.md`
    * X4.5b), as the weapon's is: `Sky` stands each ring on it and writes it each
-   * order. Whoever hears of a failure is `onFailed`'s, as the weapon's.
+   * order. Whoever hears of a failure is `onFailed`'s, as the weapon's, but only
+   * while a ring stands: a map stating none has no draw to refuse it for.
    */
   private readonly cloudDraw: CloudDraw;
   /** `drawView`'s scratch: this frame's evaluated segments in drawing order, and the sort's keys. */
@@ -5652,8 +5653,10 @@ export class Game {
     // to tell: the round, while one stands — told at once if its pipelines
     // failed already, as every round after one that failed is.
     if (!editor) this.viewDraw.onFailed((reason) => this.worldFailed(reason, owner));
-    // …and the clouds, on the same terms: `Sky` stands the ring, so this hands
-    // the draw only whom to tell (X4.5b).
+    // …and the clouds, on the same terms but for one: a failed pipeline is told
+    // only if a ring stands. `startRound` has stood this map's by this line
+    // (`applySky`, ahead of this install), so a ring that came after the failure
+    // refuses its round here, and a map stating none plays on (X4.5b).
     if (!editor) this.cloudDraw.onFailed((reason) => this.worldFailed(reason, owner));
     if (unfiled && editor) {
       console.error(`[world] ${owner.id}: the cull refused the editor's build — ${unfiled}; nothing is filed`);

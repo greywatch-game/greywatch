@@ -6685,7 +6685,9 @@ Babylon and the clouds by us. **It leaves ALL AT ONCE, at X4.5c: each sky draw's
 `Active` asks whether a map is standing**, so the menu goes back to doing no work
 of ours, and the picture in those windows moves once, in one commit; a ring taken
 off at X4.5b alone would leave a dome with no cloud on it for one step, with the
-ring's draw the only work of ours it saved. `Sky.update` and the
+ring's draw the only work of ours it saved. (The owner decided that the sky goes,
+at X4.5b/c; that the ring waits for X4.5c is the implementer's call, stated in
+X4.5b's note and not yet ruled on.) `Sky.update` and the
 painted textures stay as they are, the turn being a clock and the paint 5 to 50
 ms. What shows through then is `scene.clearColor`, set at the boot from the boot
 map's `skyColor` (`applyClearColor`) and after a round the last map's.
@@ -6704,7 +6706,11 @@ shape), `shaders/wgsl/cloud.ts` the light with `shaders/CloudShader.ts` its valu
 and **`render/CloudDraw.ts` draws it (`BABYLON_EXIT.md` X4.5b): Babylon is made no
 `sky-clouds` mesh and no material**, and `Sky` keeps the turn, the matched clock,
 the painter's order and the shadow, and pushes every value of the ring every frame
-in every state. The ring's own `cloudEye` is what `Sky.update` was handed and not
+in every state. **A failure of the draw is a RING's**: a pipeline that fails and a
+refused pass reach `onFailed`'s listener only while a ring stands, so a map stating
+none plays on, and the ring stands before the install hands that listener over
+(`applySky`, then `installMap`), so a ring coming after the failure refuses its
+round. The ring's own `cloudEye` is what `Sky.update` was handed and not
 the frame's `camPos`, and its `world` is composed as Babylon composes a node's
 (`Sky.standRing`), so its numbers are the mesh's.
 

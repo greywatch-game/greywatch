@@ -1524,7 +1524,8 @@ shader and no material, and because the bank's rows are not aimed at the sky
 clouds are nobody's subject), so the instrument comes first.
 
 **What the sky is today** (a read of the code, not a measurement; each
-sub-step confirms its own before it moves anything):
+sub-step confirms its own before it moves anything; the dome and the moon are
+still Babylon's, and the clouds' bullet is what X4.5b moved):
 - **The dome**: a `StandardMaterial` sphere, its emissive texture a painted
   `DynamicTexture`, at `domeRadius` 600 m riding with the eye, writing no
   depth and depth-tested. `setFlash` lifts it through `emissiveColor` for
@@ -1541,8 +1542,9 @@ sub-step confirms its own before it moves anything):
   piece in the glow, through `GlowPass`'s Babylon mesh walk, exempt from the
   bloom's fog fade by `mesh.infiniteDistance` (`Game`'s `GlowRules`; the size
   gate asks the same field in `WorldCulling`).
-- **The clouds**: one merged soup on `CloudShader`'s own WGSL, in the
-  alpha-test list for its ORDER only, writing the depth of a point 7 km out
+- **The clouds** (**MOVED at X4.5b**: ours, no mesh and no material, at
+  `"afterSurfaces"`; this is what they were until then): one merged soup on
+  `CloudShader`'s own WGSL, in the alpha-test list for its ORDER only, writing the depth of a point 7 km out
   along each pixel's ray, its index buffer rewritten back to front when the
   eye or the turn has moved enough (`sortClouds`). `Sky.update` pushes the
   uniforms every frame in every state. `CloudShadowRaster` and the
@@ -1664,8 +1666,11 @@ sub-step confirms its own before it moves anything):
   nothing of Babylon's lies between that call and the fall-through's trigger, and the
   sky rows, which hold no turf, are byte-equal.
 
-  **The clouds' `Active` waits for X4.5c, with the dome's**, by the brief's
-  allowance. Their draw here asks only whether a ring stands, so it draws over the
+  **The clouds' `Active` waits for X4.5c, with the dome's.** No line of this plan
+  allows that: the owner's decision is that the sky goes undrawn while no map stands,
+  at X4.5b/c, and it is the hand-off prompt for this step that left the clouds' half
+  to the implementer. So the split is the implementer's, and **the owner has not
+  ruled on it yet**. Their draw here asks only whether a ring stands, so it draws over the
   menu as Babylon's mesh did and the windows `docs/states.md` names do not move.
   Landed here it would have left a dome with no cloud on it in those windows for one
   step, on two before-and-afters for one outcome, to save work the same step measures
@@ -1700,6 +1705,17 @@ sub-step confirms its own before it moves anything):
   warning from the sealed cache, 0 errors. `gate`, `shaders`, `parity`, typecheck,
   build and corecheck pass.
 
+  **What its review changed** (no picture change). A failed clouds pipeline refused
+  every round, Hollowmere's among them, which draws no cloud: it is told now only while
+  a ring stands (`CloudDraw.onFailed`, the rejection too), and the ring stands before
+  the install hands the listener over, so a ring coming after the failure still refuses
+  its round. A refused pass over the menu logged every frame: `refusalTold` resets in
+  `draw`, as `ViewDraw`'s, and at a new listener, who has been told nothing. Forced
+  (`x45b-fix/refuse.mjs`): at f035cc6 Hollowmere's round is refused and 60 refused
+  frames log 60 lines; here it reaches `playing`, Coldharbour's round after it is
+  refused, and the 60 frames log 1 (2 after the pass recovers and is refused again). A
+  failure landing under a standing round ends Coldharbour's and leaves Hollowmere's.
+
   **Owes X4.5c:** the clouds' `Active` beside the dome's and the disc's, asking
   whether a map stands (`CloudDraw`'s `renderer.add`), so the sky leaves the menu whole
   in one commit of its own with one before and after of the five windows, and
@@ -1730,9 +1746,11 @@ sub-step confirms its own before it moves anything):
   - **`infiniteDistance`**: the bloom's fog-fade exemption and the size gate's
     each lose their reason with the last sky mesh; each is deleted once
     nothing else sets the field, and its comment goes with it.
-  - **The menu** (X4.5b's owing, the owner's decision): every sky draw's `Active`
-    asks whether a map stands, the clouds' with them, and taking the sky off the
-    five windows goes in a commit of its own with its before and after.
+  - **The menu** (the owner's decision; that all of it lands here, the clouds'
+    with the rest, is X4.5b's implementer's split, not yet ruled on): every sky
+    draw's `Active` asks whether a map stands, the clouds' with them, and taking
+    the sky off the five windows goes in a commit of its own with its before and
+    after.
   - **Contracts it keeps:** the moon is exempt from the bloom's fog fade; it
     stands behind the clouds' depth, so it is rejected and un-bloomed through
     one; the dome writes no depth; the map with no disc draws no disc, its
@@ -2063,5 +2081,5 @@ Phase 1 actually took.
 | X4.4c | `FINDINGS.md` 58: X4.4c kept Babylon's stale-bounds latch for the debris, byte for byte — no rubble chunk is ever drawn in a live round (its bounds were computed once at its park, a kilometre under the map), and a glass shard is measured from the map's ORIGIN once a burst, so a far pane's smaller pieces never draw (Cinderhaven). The bank's `fx-blast-*` rows show rubble only because the harness's `scene.isReady()` computed the meshes' worlds, which `waitUntilDrawn` now restates. Fix it (gate every piece on its sphere composed this frame, the pieces' rule since finding 67 — one line in `poseView.writePosedDrawing`), and when? | **Decided** 2026-11-01: fix it now, as its own commit — a deliberate picture change (rule 2): every shard and chunk gated on its world sphere composed THIS frame (the hulls' and the pieces' rule), the gate sphere and the harness's refresh deleted, Babylon's latch dropped on purpose. Landed the same day (X4.4c's note); every rubble burst now draws in a round, and the half of a far Cinderhaven pane the latch dropped. |
 | X4.4b | `FINDINGS.md` 67: X4.4b kept Babylon's stale-sphere latch, under which a spent case first thrown far from the world origin (and a mine's plate, an arming mine, a rocket's tail) is never drawn. Fix it, and when? | **Decided** 2026-11-01: fix it now, as its own commit — a deliberate picture change (rule 2): every cel part of a piece gated on its world sphere composed THIS frame, the hulls' rule (X4.2b), the latch dropped on purpose. Landed the same day (X4.4b's note). |
 | X4.5 | One step or several? | **Decided** 2026-11-02: three sub-steps (X4.5). X4.5a fixes the empty-group seam, adds a draw point ahead of group 0's opaque list and widens the bank to the sky before any sky mesh moves; X4.5b moves the clouds; X4.5c moves the dome and the moon, which empties Babylon of the sky. |
-| X4.5a | What does the sky owe a state with no map, and must it be drawn under the photograph? | **Decided** 2026-11-02 by the owner, overruling part of what X4.5a settled: nothing, and no. Under the photograph, the kit screen, the settings and the lobby the frame is byte-equal with the sky stated away. It shows in five windows (the boot's fade, ~480 ms on a local dev server and unmeasured on a phone's cold fetch; a rejected `img.decode()`, open as long as the menu stands; a building card's undecoded photograph; a lobby row on an unknown map; the DEV proving ground). Each sky draw's `Active` asks whether a map stands, so the menu's frame keeps doing no work of ours (X4.3c's review). **What X4.5a got wrong**: the boot's fade is the RIGHT map's sky until the player steps the reel, not the wrong one, and what would replace it was no meaningful colour (`scene.clearColor` had one writer, reached only from the editor and `startRound`: Babylon's default slate at the boot). So the colour is set at the boot from the boot map's `skyColor` (`applyClearColor`, landed at this review and moving no pixel under today's dome), and the fade shows the right map's colour through the post chain. It is not extended to the reel or a teardown: after a round it is the last map's. Taking the sky off those windows is a picture change, in a commit of its own at X4.5b and X4.5c (X4.5b left its half to X4.5c, by its brief: X4.5b's note says why, so it is one commit there). |
+| X4.5a | What does the sky owe a state with no map, and must it be drawn under the photograph? | **Decided** 2026-11-02 by the owner, overruling part of what X4.5a settled: nothing, and no. Under the photograph, the kit screen, the settings and the lobby the frame is byte-equal with the sky stated away. It shows in five windows (the boot's fade, ~480 ms on a local dev server and unmeasured on a phone's cold fetch; a rejected `img.decode()`, open as long as the menu stands; a building card's undecoded photograph; a lobby row on an unknown map; the DEV proving ground). Each sky draw's `Active` asks whether a map stands, so the menu's frame keeps doing no work of ours (X4.3c's review). **What X4.5a got wrong**: the boot's fade is the RIGHT map's sky until the player steps the reel, not the wrong one, and what would replace it was no meaningful colour (`scene.clearColor` had one writer, reached only from the editor and `startRound`: Babylon's default slate at the boot). So the colour is set at the boot from the boot map's `skyColor` (`applyClearColor`, landed at this review and moving no pixel under today's dome), and the fade shows the right map's colour through the post chain. It is not extended to the reel or a teardown: after a round it is the last map's. Taking the sky off those windows is a picture change, in a commit of its own at X4.5b and X4.5c. How that divides between the two is the implementer's and no part of this decision: X4.5b left its half to X4.5c, so it is one commit there (X4.5b's note says why, and the owner has not ruled on that split). |
 | X6.2 | Is it ready to merge to `develop`? | Only when X6.2's "Before" list passes in full. |

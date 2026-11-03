@@ -71,7 +71,8 @@ never heard of; and the DEV proving ground, which has no shot.
 
 **X4.5c draws the sky only while a map stands** (each draw's `Active`, the clouds'
 with the dome's and the disc's, so the sky leaves whole and the picture moves
-once), which puts the menu's frame back to doing no work of ours (`Renderer`'s
+once: the owner decided that it goes, and leaving it all to X4.5c is the
+implementer's call, not yet ruled on), which puts the menu's frame back to doing no work of ours (`Renderer`'s
 header; the clouds cost it the frame's fill and upload for that one step), so
 those windows will show `scene.clearColor` through the post chain. **At the boot
 that is the boot map's `skyColor`** (`applyClearColor`, from `Game`'s

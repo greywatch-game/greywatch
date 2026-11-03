@@ -71,8 +71,8 @@
  * WHERE A DRAW LANDS, in the host's own order, at one of five points of the
  * main pass, four of them about rendering group `groupId` (0: the world)
  * (`DrawPoint`), which come in this order in every frame, whatever the group
- * holds (Babylon having nothing in it, its are told together at the end of
- * the phase, in this order):
+ * holds (on a frame Babylon does not visit the group, all of them are told
+ * together at the end of the phase, in this order):
  * - `"first"`: as the pass starts, ahead of everything of the host's — group
  *   0's opaque list, where the sky dome is today, first among it. A draw that
  *   writes no depth and is MEANT to be painted over belongs here, and nothing

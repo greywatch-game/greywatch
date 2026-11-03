@@ -194,7 +194,7 @@ export interface SkySpec {
    */
   air?: { density?: number; intensity?: number };
   /**
-   * The cloud masses (`systems/cloudMasses.ts`, lit by `CloudShader`): the
+   * The cloud masses (`systems/cloudMasses.ts`, lit by `shaders/wgsl/cloud.ts`): the
    * colour a facet turned AWAY from the key light takes. Wants to sit between
    * the sky behind it and the ground under it — a cloud's shadow side is lit by
    * both — and to be clearly darker than `horizonColor`, or a low cloud has no

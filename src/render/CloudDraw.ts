@@ -17,11 +17,15 @@
  * applied before the map's grass is built); front faces only, LEQUAL, depth
  * written; the draw is hung for the SESSION as the weapon's is, so it draws in
  * every state while a ring stands, the menu included (`BABYLON_EXIT.md` X4.5c
- * owes that an `Active` of a map standing); a frame with its pipeline unbuilt or
- * a frame texture unpublished draws no cloud, as a Babylon material not ready
- * drew none; a pipeline that fails, and a refused main pass while a ring stands,
- * is told to `onFailed`'s listener, never inside the render's commands; nothing
- * here allocates on a frame, `writeIndices` included.
+ * owes that an `Active` of a map standing); a frame with its pipeline unbuilt
+ * draws no cloud, as a Babylon material not ready drew none, and so does one with
+ * a frame texture unpublished, a dependency that material did not have (it read
+ * none) and harmless, every frame texture being published from construction; a
+ * pipeline that fails and a refused main pass are told to `onFailed`'s listener
+ * only while a ring stands, a map stating none having no draw to refuse it for,
+ * the refusal once per change rather than every refused frame, and neither
+ * inside the render's commands; nothing here allocates on a frame,
+ * `writeIndices` included.
  * Never: imports Babylon; reads a node or a material; sorts anything.
  * Contract: `docs/rendering.md`, "The sky".
  */
@@ -65,7 +69,7 @@ export class CloudDraw {
 
   private failed: (reason: string) => void;
   private failedPipeline = false;
-  /** One refusal, told once per frame rather than up to four times (`Renderer.onRefused`). */
+  /** A refusal already told: once per change and listener, not every refused frame (`Renderer.onRefused`). */
   private refusalTold = false;
 
   constructor(
@@ -98,7 +102,7 @@ export class CloudDraw {
         (err: unknown) => {
           console.error("clouds: the pipeline did not build; no cloud of ours can be drawn", err);
           this.failedPipeline = true;
-          this.failed(PIPELINE_FAILED);
+          if (this.recipe) this.failed(PIPELINE_FAILED);
           return false;
         },
       );
@@ -111,11 +115,17 @@ export class CloudDraw {
   /**
    * Whom a failure is told: the round, while one stands, the console otherwise
    * (`Game.installMap`, `Game.teardownMap`) — told at once if the pipeline has
-   * failed already, as every round after one that failed is.
+   * failed already and a ring stands. A failure with none standing is held here
+   * and told by nothing else, so **the ring must stand BEFORE this hand-over**,
+   * as it does (`Game.startRound`: `applySky`, then `installMap`): that is how a
+   * ring that comes after the failure still refuses its round. `setRing` does
+   * not tell, because the listener it would reach is the map's being replaced.
+   * A new listener has been told of no refusal yet.
    */
   onFailed(failed: (reason: string) => void): void {
     this.failed = failed;
-    if (this.failedPipeline) failed(PIPELINE_FAILED);
+    this.refusalTold = false;
+    if (this.failedPipeline && this.recipe) failed(PIPELINE_FAILED);
   }
 
   /**
@@ -171,7 +181,6 @@ export class CloudDraw {
   /** As the main pass begins: the frame's block, off the recipe its owner wrote. */
   private readonly prepare = (): void => {
     this.stats.drawn = 0;
-    this.refusalTold = false;
     const recipe = this.recipe;
     this.ours = recipe !== null && this.pipeline !== null;
     if (recipe && this.ours) this.block.write(recipe.values);
@@ -179,6 +188,8 @@ export class CloudDraw {
 
   /** The ring: one draw, whose vertex stage reads the order out of `indexData`. */
   private readonly draw = (pass: GPURenderPassEncoder, ctx: FrameContext): void => {
+    // Reached only through a pass that is not refused.
+    this.refusalTold = false;
     if (!this.ours) return;
     const built = this.pipeline!;
     const frame = ctx.frameGroup(built.groups[0]);

@@ -309,7 +309,7 @@ export class Sky {
       this.disposables.push(moonMat, moonTex);
     }
 
-    // --- cloud masses: one merged mesh, one draw, the whole ring ---
+    // --- cloud masses: one soup, one draw of ours (`CloudDraw`), the whole ring ---
     this.buildClouds(spec, moonDir, rand, mapSize);
     this.startCloudShadow(moonDir, env.fogEnd, mapSize);
   }
