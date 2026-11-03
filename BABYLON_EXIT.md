@@ -1510,7 +1510,7 @@ Everything else in X4.4 moves as briefed; `fx-glass-sort` is X4.6's BEFORE.
   say what draws a pool; `docs/rendering.md`'s size gate (the marks leave
   it).
 
-### X4.5 — Sky and clouds — **M, as three sub-steps** (split 2026-11-02, decided the same day) — X4.5a **LANDED** (4118b5b), X4.5b **LANDED** (X45B_HASH)
+### X4.5 — Sky and clouds — **M, as three sub-steps** (split 2026-11-02, decided the same day) — X4.5a **LANDED** (4118b5b), X4.5b **LANDED** (8d3b6fc)
 
 The dome, stars, moon and cloud ring (`Sky`, `cloudMasses`, `CloudShader`)
 come off Babylon's scene, and our draws stop depending on it having anything
@@ -1632,7 +1632,7 @@ sub-step confirms its own before it moves anything):
   colour, a window after a round the last map's); `sky-motes` is the moon's order, and its
   harness rebuild reads `Atmosphere` until X4.7; the moon's two pipelines are
   a main-pass draw and a mask draw of ours, on `Game.roundPipelines`.
-- **X4.5b — the clouds are ours LANDED** (X45B_HASH; 2026-11-03; no picture
+- **X4.5b — the clouds are ours LANDED** (8d3b6fc; 2026-11-03; no picture
   change anywhere, the menu's windows included). `shaders/wgsl/cloud.ts` holds
   the two bodies, statement for statement; `render/cloudProgram.ts` declares
   them and `render/CloudDraw.ts` draws them, one draw; `CloudShader.ts` is plain
