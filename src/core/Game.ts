@@ -3128,18 +3128,6 @@ export class Game {
     // environment is one map's own module constant, so the same spec object
     // never stands over two sizes of map.
     this.sky.apply(env, this.mapDef.layout.size ?? CONFIG.map.size);
-    // **The sky is what holds rendering group 0 in every state** — over the
-    // menu with no map, the ONLY mesh of Babylon's in it (`BABYLON_EXIT.md`
-    // X4.4e measured every state) — and every draw of ours hangs on that
-    // group's points, which Babylon never visits empty (`Renderer`'s seam,
-    // X4.5's to fix). Every shipped map states a sky; one that does not
-    // builds none, and the kit screen over the menu would draw no weapon.
-    if (import.meta.env.DEV && !env.sky) {
-      console.warn(
-        `[sky] ${this.mapDef.id} states no sky: over the menu rendering group 0 may hold no mesh, ` +
-          `and nothing of our renderer's hung on it runs (BABYLON_EXIT.md X4.5, the empty-group seam)`,
-      );
-    }
     // Nothing for the shafts here. Their colour, their air, their reach and the
     // light they are shafts OF are pushed together by `seedVolumetrics` off the
     // ENVIRONMENT — which is not the same trigger as this one: the sky is

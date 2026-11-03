@@ -2623,12 +2623,15 @@ src/
     frameHost.ts        # FrameHost (what the renderer needs from whoever owns
                         #   the frame: the device, the queue — into the main
                         #   pass, or the glow's mask when its owner says it
-                        #   opened — the four main-pass hooks, the encoder it
+                        #   opened — the five main-pass hooks, told on every
+                        #   main pass whatever group 0 holds, the encoder it
                         #   submits ahead of the draws, a texture's view and
                         #   sampler NOW), PassTargets, HostTexture
     Renderer.ts         # Renderer: the frame's uniforms, textures and their
                         #   group 0, the pipeline cache, the FrameDraws it
-                        #   queues at three points of group 0 in the MAIN pass —
+                        #   queues at four points of the MAIN pass — first,
+                        #   ahead of everything of Babylon's (X4.5a, nothing on
+                        #   it yet), and of group 0, needing nothing in it:
                         #   before its alpha-tested meshes (the palette FIRST
                         #   in that draw, X3.6e), where its opaque and
                         #   alpha-tested meshes end, and after it — and the

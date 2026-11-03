@@ -238,7 +238,7 @@ for (const id of targets) {
     // the freeze pins are unaffected by how long this takes, which is the
     // point of pinning them. See `freeze`.
     await settle(page, CONVERGE_FRAMES);
-    await freeze(page, undefined, { windTime: v.wind ?? 0, turn: v.turn ?? 0 });
+    await freeze(page, undefined, { windTime: v.wind ?? 0, turn: v.turn ?? 0, strike: v.strike ?? null });
     await settle(page, SETTLE_FRAMES);
 
     const a = await page.screenshot({ type: "png", timeout: 120_000 });

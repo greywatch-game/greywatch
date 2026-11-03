@@ -55,6 +55,25 @@ standing as a live backdrop, from before the menu had photographs, and the cost
 was a city rendered every frame under a picture of another one with its fires
 and its shore still playing.
 
+**What is left behind the title card is the SKY, and it owes the menu nothing**
+(settled at `BABYLON_EXIT.md` X4.5a, and not yet acted on: Babylon still draws
+it, under every state). Measured on Coldharbour: with the card off, the frame
+with the sky and the frame with a sky stated away are byte-equal under the
+photograph, and so are the kit screen, the settings and the lobby over the menu.
+It shows in exactly four windows: the boot's fade (the photograph is fully
+opaque ~480 ms after the boot screen comes off), a building card whose
+photograph has not decoded (`MenuBackdrop.showNamed`), a lobby row on a map this
+client has never heard of, and the DEV proving ground, which has no shot. **In
+every one of them it is the wrong sky**: `applySky` runs at the boot and at a
+round's build, never on a step along the reel, so what shows is the boot's map
+or the last round's under another map's name, which is the "caption's worth of
+lie" `MenuBackdrop` takes a picture down to avoid. Under the scrim, the frame
+with no sky is the clear colour through the post chain. So **X4.5b and X4.5c
+draw the sky only while a map stands** (each draw's `Active`), which keeps the
+menu's frame doing no work of ours (`Renderer`'s header). **That is a picture
+change in those four windows, none of which the bank holds**, so it lands in a
+commit of its own that says so (rule 2).
+
 **`loading` is the map being built, and the split that creates it is the whole
 feature.** Building one is the better part of a second of synchronous work —
 merges, the occlusion bake, the nav grid — and a browser paints between TASKS,

@@ -7,8 +7,9 @@
  * Babylon's own draw order (`queue`), the encoder submitted ahead of the
  * frame's draws (`prepareEncoder`), the camera's matrix, the frame's main
  * pass told apart from every render target that also draws rendering group
- * 0 — and the two points inside it where that group's alpha-tested meshes
- * begin and where its opaque and alpha-tested meshes end — and a
+ * 0 — its start, and the two points inside it where that group's alpha-tested
+ * meshes begin and where its opaque and alpha-tested meshes end, all told
+ * whether Babylon has anything in the group or not — and a
  * Babylon texture's own view and sampler (`bind`); and `hostTexture`, the one
  * crossing that turns a Babylon texture into the handle the renderer holds.
  * Items 2 to 5 are reached in a second pass of Babylon's too, the glow's MASK
@@ -288,6 +289,21 @@ export class BabylonFrameHost implements FrameHost {
    * whether its group 0 lands inside the window depends on which observer
    * was added first. The target does not.
    *
+   * WHERE IT BEGINS is the draw phase's own observable, which fires whatever
+   * the group holds: `first` is told there, right after `begin`, ahead of
+   * everything Babylon queues in the pass.
+   *
+   * **THE GROUP'S THREE POINTS ARE TOLD ON A FRAME IT DOES NOT RENDER TOO.**
+   * Babylon visits no empty group (`RenderingManager.render` skips a group
+   * whose `_empty` is set, and it raises no observable for one), so with
+   * nothing of Babylon's in it none of the group's hooks below would run. So
+   * the phase's end asks whether the group was visited, and if it was not,
+   * tells all three in their order, there: no internal beyond the public
+   * observables, and it is ahead of the glow's mask, which renders from the
+   * same observer list, because this one is inserted FIRST. No group above
+   * `groupId` holds anything (`BABYLON_EXIT.md` X4.3d), so nothing of Babylon's
+   * is drawn between where the group would have been and that point.
+   *
    * WHERE THE ALPHA-TESTED MESHES BEGIN is the call item 10 wraps, made with
    * the group's alpha-tested list — after its depth-only and opaque lists.
    * Babylon skips the call for a list empty that frame (and for a group
@@ -307,6 +323,8 @@ export class BabylonFrameHost implements FrameHost {
     const scene = this.scene;
     const e = this.e;
     let frame: RenderTargetInternals | null | undefined;
+    /** Whether group `groupId` of the main pass was visited this draw phase. */
+    let visited = false;
     /**
      * Inside group `groupId` of the main pass, and whether its alpha-tested
      * meshes have begun and its opaque meshes ended.
@@ -344,10 +362,18 @@ export class BabylonFrameHost implements FrameHost {
     };
     const before: Observer<Scene> = scene.onBeforeDrawPhaseObservable.add(() => {
       frame = e._currentRenderTarget;
+      visited = false;
       hooks.begin();
+      hooks.first();
     });
     const after: Observer<Scene> = scene.onAfterDrawPhaseObservable.add(
       () => {
+        // The group held nothing of Babylon's this frame (the method's doc).
+        if (!visited && inMainPass()) {
+          hooks.beforeAlphaTest();
+          hooks.afterOpaque();
+          hooks.afterGroup();
+        }
         frame = undefined;
         inGroup = false;
         unwrap();
@@ -358,6 +384,7 @@ export class BabylonFrameHost implements FrameHost {
     const groupStart: Observer<RenderingGroupInfo> = scene.onBeforeRenderingGroupObservable.add(
       (info) => {
         if (info.renderingGroupId !== groupId || !inMainPass()) return;
+        visited = true;
         inGroup = true;
         alphaBegun = false;
         opaqueDone = false;

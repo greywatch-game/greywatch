@@ -7829,3 +7829,81 @@ X4.4e's brief, word for word:
   - **A profiler capture** at report version 28 (no field added) with a
     molotov burning and a pane's burst live: `pools: { drawn: 17, masked:
     14, instances: 8, marks: 9, billows: 11, debris: 12, fires: 12 }`.
+
+### X4.5 — Sky and clouds — **M, as three sub-steps** (split 2026-11-02, decided the same day) — X4.5a **LANDED** (HASH)
+
+The plan's `BABYLON_EXIT.md` holds what the sky is today and the two sub-steps
+to come. What X4.5a was asked for and what it measured:
+
+- **X4.5a — our draws stop needing group 0 LANDED** (HASH; 2026-11-02; no
+  picture change; no sky mesh moved).
+  - **The brief.** The empty-group seam (decided 2026-10-31, X4.3c's review;
+    X4.4e measured it unreachable until this step); a new first draw point
+    ahead of group 0's opaque list, with nothing on it but a proof; rows for
+    the sky, appended and banked with `--rows`, and `pipelines.mjs`' creations
+    recorded with the sky Babylon's; the menu settled; and for its oracle
+    `bank.mjs --check` twice back to back and a map stating no `sky` over the
+    menu with the kit screen up, its weapon drawn. No new Babylon internal, or
+    it stops (rule 4).
+  - **The seam (`render/babylonSeam.ts`, `onMainPass`).** A `visited` flag, set
+    where the group's own start is seen in the main pass and cleared as the
+    phase begins; the end-of-phase observer, inserted first so it is ahead of
+    `GlowPass.render` and `FrameDepth`, tells the three group points in order
+    when the flag is down. Only `scene.onBeforeDrawPhaseObservable` and
+    `onAfterDrawPhaseObservable`, both already on the seam's public list. The
+    alternative of hanging our draws off the phase outright cannot keep the
+    picture while Babylon has meshes in the group: the palette, blocks and
+    landform must land between its opaque and alpha-tested lists and the weapon
+    after its blended queue. So the group's hooks remain the path while it
+    holds anything and the end of the phase is the path once it does not, which
+    from X4.7 is every frame.
+  - **What the group's emptiness leaves out.** Babylon's viewport item, which a
+    draw of its own would have queued first: the pass's default viewport is the
+    whole attachment, the same rectangle, and the byte-equal frames below are
+    the proof. No group above 0 holds anything (X4.3d), so the fallback's place
+    after every group is the group's place.
+  - **The first point.** `Renderer`'s `"first"`, a list, a predicate list and a
+    hook. `begin` counts it among the draws that fill the frame. An empty list
+    never reaches `passOk`, so it never starts Babylon's delayed pass early.
+  - **The rows.** `hollowmere-sky-moon` ([52, 0.35, 62], `ground`'s eye, the barn
+    roof against the sky), `hollowmere-sky-motes` (the same, 24°),
+    `coldharbour-sky-disc` and `-sky-ring` ([-150, 12, -26], `avenue`'s),
+    `cinderhaven-sky-cloud-moon` ([-581, 15, 73], `tank-far`'s, 30°),
+    `-sky-ring` and `-sky-flash` ([250, 0.35, 404], `ground`'s), `-sky-far`
+    ([-90, 1.7, 300], `town`'s; the terrain's horizon 680 to 740 m off along its
+    frame, marched off `surfaceAt`). `sky-flash` is last on its list: it reads
+    the storm's schedule at 28.484 s, a flash of 1.336, and any row after it
+    would step on from there. **`strike`**, in `freeze`: the schedule read once
+    through the real `step`, the strike's map drawn at the eye because
+    `pushLightning` would see a strike already up, and the step held.
+    **`motes`**, in `placeVantage`: particles off, the field rebuilt under a
+    seed, its emit box gathered on the eye, waited ready, 200 hand steps of 0.1 s
+    inside one frame under a seed (Babylon's own pre-warm calls), and a clock of
+    zero; put away by rebuilding it as the map states it. **`fx`-style caution**:
+    none of these rows moves an old row, each being last in its map's sequence.
+  - **The numbers.** Everything in `BABYLON_EXIT.md`'s entry, and:
+    - **Bank**: `after-keep1` against `after-keep2` 121 of 121 byte-equal;
+      `before-keep` (de2a07e) against `after-keep1` 113 of 113; the new rows at
+      the parent's renderer (the four instrument files copied over it) against
+      `after-keep1` 8 of 8. 87 within floor and 34 red, the same 34 as the
+      parent's run, in each.
+    - **Census**: 121 rows, `--against` a BEFORE with the new rows, all equal;
+      the new rows from 14 draws (`sky-motes`, Babylon 6, ours 8) to 120
+      (`coldharbour-sky-ring`, Babylon 75, ours 45).
+    - **Group 0 across every state** (`x45a/seam.mjs`, X4.4e's, Coldharbour):
+      menu 173 frames, kit 180, settings 31, loading 4 + 53 + 31, deploy 70,
+      playing 150, paused 30, dying 96, editor 93, none empty: **the sky still
+      holds the group in every shipped state**, so on a shipped map the fallback
+      runs only if something else empties it.
+    - **Bank frames at the parent versus the fix over the menu**: `kit-sky`
+      across the two trees byte-equal.
+    - **`Sky.apply`**: 5-6 ms on Hollowmere (no clouds), 19-49 ms on every other
+      map, with the DEV server and a bank run sharing the machine. The paint is
+      not worth moving off the boot.
+  - **The menu, measured** (`x45a/menu.mjs`, `x45a/seamfix.mjs`, Coldharbour at
+    1920x1080). With the card off and the photograph up, the sky on and stated
+    away: byte-equal. Kit, settings and lobby over the menu, the same: byte-equal.
+    The boot's window, three boots: the photograph fully opaque 477-764 ms after
+    the boot screen comes off (the first boot's Vite cost in it). Not measured:
+    the sky's GPU time under the menu, and the other three windows' lengths,
+    which are a decode's and a screen's. `docs/states.md` has the argument.

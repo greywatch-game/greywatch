@@ -6,7 +6,7 @@
  * Owns: `Renderer` — the frame's `FrameUniforms` and `FrameUniformBuffer`,
  * its `FrameTextures` and the bind group they make with the buffer (group 0
  * of every program, `FrameContext.frameGroup`, handed to a prepare as to a
- * draw), the `PipelineCache`, the `FrameDraw`s at each of the three
+ * draw), the `PipelineCache`, the `FrameDraw`s at each of the four
  * points they may be drawn at and those drawn in the glow's mask — first
  * (`addGlowMask`) or last (`addGlowMaskLate`) — each with the predicate that
  * says whether it has anything to draw this frame (`Active`), the
@@ -56,12 +56,9 @@
  * it, the pass not yet ended), LAST in it, on that open's verdict — the pass
  * is the one the open checked, and Babylon no longer names it as the bound
  * target by then, so it is never asked again;
- * **every draw hung on group 0's three points depends on group 0 RENDERING**:
- * Babylon visits no empty group, so a frame on which group 0 dispatched no
- * mesh of Babylon's runs none of them — silently; a DEV build warns once per
- * change when a frame that had such draws to run never reached the group
- * (`seamWarned`), and whichever step drains group 0 owes the seam a fix
- * (`BABYLON_EXIT.md` X4.4-X4.6);
+ * **no draw here needs anything of Babylon's in group 0**: the host tells all
+ * of the points on every main pass, a frame on which Babylon visits no group
+ * included (`MainPassHooks`, `BABYLON_EXIT.md` X4.5a);
  * it reads the MAIN pass's frame — the same camera, in the same submit — so
  * it binds the same group 0; nothing here allocates on a frame.
  * Never: imports Babylon — it is handed a `FrameHost`; draws into any of the
@@ -70,9 +67,19 @@
  * material; finds the glow's mask by testing a pass's targets — it is TOLD.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
  *
- * WHERE A DRAW LANDS, in the host's own order, at one of three points of
- * rendering group `groupId` (0: the world) in the main pass (`DrawPoint`),
- * which come in this order in every frame the group is drawn:
+ * WHERE A DRAW LANDS, in the host's own order, at one of four points of the
+ * main pass, three of them about rendering group `groupId` (0: the world)
+ * (`DrawPoint`), which come in this order in every frame, whatever the group
+ * holds (Babylon having nothing in it, its three are told together at the end
+ * of the phase, in this order):
+ * - `"first"`: as the pass starts, ahead of everything of the host's — group
+ *   0's opaque list, where the sky dome is today, first among it. A draw that
+ *   writes no depth and is MEANT to be painted over belongs here, and nothing
+ *   else: anything drawn after a depthless sky must be nearer than it or the
+ *   sky paints over it, and anything before it spends shading the sky covers.
+ *   Nothing hangs on it yet (`BABYLON_EXIT.md` X4.5a, for X4.5c's dome), and
+ *   with nothing on it the frame is exactly the frame without the point: an
+ *   empty list asks nothing of the pass.
  * - `"beforeAlphaTest"`: after the group's opaque meshes and before its
  *   ALPHA-TESTED ones — or, in a frame with none of those, immediately ahead
  *   of `"opaque"`. An opaque draw that something on the alpha-tested list
@@ -94,8 +101,7 @@
  *   the particle.
  * - `"afterGroup"`: after the group has been queued whole — its blended
  *   queue included — and before any group above it (none holds anything
- *   since `BABYLON_EXIT.md` X4.3d) — reached only on a frame group 0 renders
- *   at all (the seam above). The player's whole WEAPON is drawn here
+ *   since `BABYLON_EXIT.md` X4.3d). The player's whole WEAPON is drawn here
  *   (`ViewDraw`, X4.3c and X4.3d): the kit card first, where it was the last
  *   of group 0's blended queue, then the opaque parts, where group 1's opaque
  *   queue drew them, then the optics' glasses, where its blended queue did —
@@ -179,7 +185,7 @@ export interface RendererOptions {
 }
 
 /** Where in the main pass a `FrameDraw` is drawn — see the header. */
-export type DrawPoint = "beforeAlphaTest" | "opaque" | "afterGroup";
+export type DrawPoint = "first" | "beforeAlphaTest" | "opaque" | "afterGroup";
 
 /**
  * Whether a draw has anything to draw this frame — asked once a frame as the
@@ -210,10 +216,12 @@ export class Renderer {
   private readonly frameBindings: HostBindGroup;
 
   /** In the order added, one list per point. Arrays, so a frame's walk allocates no iterator. */
+  private readonly firstDraws: FrameDraw[] = [];
   private readonly beforeAlpha: FrameDraw[] = [];
   private readonly opaque: FrameDraw[] = [];
   private readonly after: FrameDraw[] = [];
   /** Each list's predicates, index for index (null: always active). */
+  private readonly firstActive: (Active | null)[] = [];
   private readonly beforeAlphaActive: (Active | null)[] = [];
   private readonly opaqueActive: (Active | null)[] = [];
   private readonly afterActive: (Active | null)[] = [];
@@ -228,13 +236,6 @@ export class Renderer {
   private readonly maskLateActive: (Active | null)[] = [];
   /** The open's verdict on this frame's mask pass, which its close spends (`glowMaskClosing`). */
   private maskOpenOk = false;
-  /**
-   * Whether this frame had draws to run at group 0's points, not yet reached
-   * — still set at the next `begin` means group 0 never rendered (the seam,
-   * in the header); and whether that was said already (DEV, once per change).
-   */
-  private pointsPending = false;
-  private seamWarned = false;
   private readonly maskRefusals: (() => void)[] = [];
   /** What every draw and prepare is handed: the frame block's buffer and its group 0. */
   private readonly ctx: FrameContext;
@@ -281,6 +282,7 @@ export class Renderer {
     };
     this.hook = host.onMainPass(options.groupId ?? 0, {
       begin: this.begin,
+      first: this.first,
       beforeAlphaTest: this.beforeAlphaTest,
       afterOpaque: this.afterOpaque,
       afterGroup: this.afterGroup,
@@ -292,11 +294,16 @@ export class Renderer {
    * returned function is called.
    */
   add(draw: FrameDraw, at: DrawPoint = "afterGroup", active?: Active): () => void {
-    const list =
-      at === "beforeAlphaTest" ? this.beforeAlpha : at === "opaque" ? this.opaque : this.after;
-    const actives =
-      at === "beforeAlphaTest" ? this.beforeAlphaActive : at === "opaque" ? this.opaqueActive : this.afterActive;
-    return hang(list, actives, draw, active);
+    switch (at) {
+      case "first":
+        return hang(this.firstDraws, this.firstActive, draw, active);
+      case "beforeAlphaTest":
+        return hang(this.beforeAlpha, this.beforeAlphaActive, draw, active);
+      case "opaque":
+        return hang(this.opaque, this.opaqueActive, draw, active);
+      case "afterGroup":
+        return hang(this.after, this.afterActive, draw, active);
+    }
   }
 
   /**
@@ -318,7 +325,7 @@ export class Renderer {
   /**
    * Calls `refused` on every frame whose main pass is not `FRAME_TARGETS` and
    * something was to draw, until the returned function is called — at each
-   * point with something to draw, so up to three times a frame, which a
+   * point with something to draw, so up to four times a frame, which a
    * listener must take as one refusal. It runs INSIDE the render, after this
    * frame's prepares were recorded, so it may take draws and prepares off
    * this renderer but must free nothing this frame's commands hold.
@@ -417,6 +424,7 @@ export class Renderer {
 
   dispose(): void {
     this.hook.dispose();
+    this.firstDraws.length = 0;
     this.beforeAlpha.length = 0;
     this.opaque.length = 0;
     this.after.length = 0;
@@ -427,6 +435,7 @@ export class Renderer {
     this.maskActive.length = 0;
     this.maskLateDraws.length = 0;
     this.maskLateActive.length = 0;
+    this.firstActive.length = 0;
     this.beforeAlphaActive.length = 0;
     this.opaqueActive.length = 0;
     this.afterActive.length = 0;
@@ -439,24 +448,14 @@ export class Renderer {
     const timer = this.timer;
     // Last frame's reading, if one was recorded: its submit is past now.
     timer?.settle();
-    // The seam (the header): draws were waiting at group 0's points last
-    // frame and the group never rendered to run them.
-    if (import.meta.env.DEV) {
-      if (this.pointsPending && !this.seamWarned) {
-        console.warn(
-          "render: rendering group 0 drew no mesh of Babylon's, so nothing of ours hung on its points ran this frame",
-        );
-      }
-      this.seamWarned = this.pointsPending;
-    }
     // Only a draw with something to draw counts (`Active`): a frame with
     // nothing of ours committed skips everything below, and the next frame
     // that has something fills, uploads and refreshes in full.
     this.filled =
+      anyActive(this.firstDraws, this.firstActive) ||
       anyActive(this.beforeAlpha, this.beforeAlphaActive) ||
       anyActive(this.opaque, this.opaqueActive) ||
       anyActive(this.after, this.afterActive);
-    this.pointsPending = this.filled;
     // The glow's mask opens after the main pass, and draws from the frame
     // filled here.
     this.maskFilled =
@@ -477,8 +476,11 @@ export class Renderer {
     if (timing) timing.close(encoder);
   };
 
+  private readonly first = (): void => {
+    if (this.filled && this.firstDraws.length > 0 && this.passOk()) this.host.queue(this.runFirst);
+  };
+
   private readonly beforeAlphaTest = (): void => {
-    this.pointsPending = false;
     if (this.filled && this.beforeAlpha.length > 0 && this.passOk()) this.host.queue(this.runBeforeAlpha);
   };
 
@@ -487,7 +489,6 @@ export class Renderer {
   };
 
   private readonly afterGroup = (): void => {
-    this.pointsPending = false;
     const filled = this.filled;
     this.filled = false;
     if (filled && this.after.length > 0 && this.passOk()) this.host.queue(this.runAfter);
@@ -510,6 +511,11 @@ export class Renderer {
     this.refused = false;
     return true;
   }
+
+  private readonly runFirst = (pass: GPURenderPassEncoder): void => {
+    const draws = this.firstDraws;
+    for (let i = 0; i < draws.length; i++) draws[i](pass, this.ctx);
+  };
 
   private readonly runBeforeAlpha = (pass: GPURenderPassEncoder): void => {
     const draws = this.beforeAlpha;

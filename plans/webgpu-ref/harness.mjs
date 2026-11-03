@@ -334,6 +334,15 @@ export function placeVantage(page, vantage) {
       g.lighting.rand = (await import("/src/world/rng.ts")).mulberry32(0x44a);
       window.__refFx = null;
     }
+    // The mote field a `motes` row posed (X4.5a): rebuilt as the map states it,
+    // its clock and its emit box with it. Every other row is shot with it
+    // switched off, so the only thing a later row could see is that it is
+    // there; only after a row that raised it, for the reason above.
+    if (window.__refMotes) {
+      g.atmosphere.capacity = 0;
+      g.atmosphere.apply(g.mapDef.environment.particles, g.map.size, g.map.size);
+      window.__refMotes = false;
+    }
     // The place, not the fight: no bodies, no rings, no beacons. The bodies
     // are the round's session's (`g.net.roster` — a client's, offline too),
     // and the roster poses and re-shows every living one off the wire each
@@ -671,6 +680,64 @@ export function placeVantage(page, vantage) {
       });
     }
 
+    // The MOTE FIELD in the air, which every other row switches off because it
+    // runs on the wall clock (`freeze`). Three things make it a fixed picture:
+    // the field is rebuilt under a seeded `Math.random`, which is where its
+    // random textures come from (`Atmosphere.fit`, `GPUParticleSystem`'s
+    // constructor) and, on its first step, its starting buffers; it is stepped
+    // by hand through a fixed number of fixed steps inside a frame, Babylon's
+    // own pre-warm (`animate(true)`, `render(true, true)`), so nothing reads
+    // `getAnimationRatio`; and it is then HELD by a clock of zero, which moves
+    // every mote by nothing and emits nothing, so each later frame draws the
+    // same buffer. No frame may render it before those steps (a frame would
+    // make its first step, unseeded, on the wall clock), so the particles are
+    // off from the rebuild until they are done.
+    if (v.motes) {
+      const spec = g.mapDef.environment.particles;
+      if (!spec) throw new Error(`${g.mapDef.id} states no particles`);
+      g.scene.particlesEnabled = false;
+      const air = g.atmosphere;
+      air.capacity = 0;
+      seeded(0xa5, () => air.apply(spec, g.map.size, g.map.size));
+      air.update(cam.position);
+      const ps = air.system;
+      // The field gathered into a box on the eye, at the map's own motes and
+      // rate: the disc is a few degrees across and the field a valley, so the
+      // map's own density puts about a tenth of a mote in front of it.
+      const half = v.motes.box / 2;
+      ps.emitter = cam.position.clone();
+      ps.emitter.y = 0;
+      ps.minEmitBox.x = ps.minEmitBox.z = -half;
+      ps.maxEmitBox.x = ps.maxEmitBox.z = half;
+      ps.preWarmStepOffset = 1;
+      window.__refMotes = true;
+      for (let frames = 0; !ps.isReady(); frames++) {
+        if (frames > 1200) throw new Error("the mote field never became ready");
+        await new Promise((res) => {
+          const o = g.scene.onAfterRenderObservable.add(() => {
+            g.scene.onAfterRenderObservable.remove(o);
+            res();
+          });
+        });
+      }
+      // The step's length is a mote's seconds, and it is stated here rather
+      // than in `Atmosphere`: nothing but this row wants the field off its rate.
+      ps.updateSpeed = v.motes.step;
+      await new Promise((res) => {
+        g.scene.onBeforeRenderObservable.addOnce(() => {
+          seeded(0xa6, () => {
+            for (let i = 0; i < v.motes.steps; i++) {
+              ps.animate(true);
+              ps.render(true, true);
+            }
+          });
+          ps.updateSpeed = 0;
+          g.scene.particlesEnabled = true;
+          res();
+        });
+      });
+    }
+
     // The kit screen, raised for real over `deploy`: the card, the bench lamps
     // and the glow's stage rule are the lid's, and the weapon is on the
     // turntable at its authored angles, posed every frame by the lid itself
@@ -736,8 +803,8 @@ export function placeVantage(page, vantage) {
  * safe and re-stashes nothing: the first stash is the one kept, so a second
  * freeze cannot record its own no-ops as the real methods.
  */
-export function freeze(page, set = FREEZE_SET, { windTime = 0, turn = 0 } = {}) {
-  return page.evaluate(async ([f, wind, blurTurn, sweeps]) => {
+export function freeze(page, set = FREEZE_SET, { windTime = 0, turn = 0, strike = null } = {}) {
+  return page.evaluate(async ([f, wind, blurTurn, sweeps, strikeAt]) => {
     const g = window.__celshock;
     // The real updaters, recorded ONCE. See `thaw`.
     window.__refThaw ??= {
@@ -829,7 +896,8 @@ export function freeze(page, set = FREEZE_SET, { windTime = 0, turn = 0 } = {}) 
         g.water.update = () => {};
       }
     }
-    if (f.includes("particles")) g.scene.particlesEnabled = false;
+    // A row asking for the motes has them posed and held by now (`placeVantage`).
+    if (f.includes("particles")) g.scene.particlesEnabled = Boolean(window.__refMotes);
     if (f.includes("lights")) {
       // A lantern's flame is a clock like any other and is pinned like one.
       // **What is deliberately NOT touched here is the flicker PHASE.** It
@@ -861,6 +929,17 @@ export function freeze(page, set = FREEZE_SET, { windTime = 0, turn = 0 } = {}) 
       // sixtieth of a second nobody else can reproduce at a different phase.
       g.lightning.active = false;
       g.lightning.flash = 0;
+      // A row may ask for a strike IN THE AIR (`strike`): the map's own
+      // schedule read once at that clock, which is a pure function of the map's
+      // seed and the clock, and held there. Its map is drawn here because
+      // `pushLightning` draws it on the frame a strike starts, and the frames
+      // that follow this one see a strike already up. Asked of the eye so the
+      // map falls where the row looks rather than where the install stood.
+      if (strikeAt !== null) {
+        window.__refThaw.lightning.call(g.lightning, 0, false, strikeAt);
+        if (!g.lightning.active) throw new Error(`no strike is in the air at ${strikeAt}`);
+        g.shadows.flash(g.lightning.direction, g.cameraSys.camera.position);
+      }
       g.lightning.step = () => {};
     }
     if (f.includes("gi") && g.gi.tier) {
@@ -930,7 +1009,7 @@ export function freeze(page, set = FREEZE_SET, { windTime = 0, turn = 0 } = {}) 
         for (const p of r.waterProbes ?? []) p.cubeTexture.resetRefreshCounter();
       }
     }
-  }, [set, windTime, turn, GI_SWEEPS]);
+  }, [set, windTime, turn, GI_SWEEPS, strike]);
 }
 
 /**

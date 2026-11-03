@@ -139,7 +139,7 @@ async function census(id, query) {
     await placeVantage(page, v);
     await waitUntilDrawn(page);
     await settle(page, CONVERGE_FRAMES);
-    await freeze(page, undefined, { windTime: v.wind ?? 0, turn: v.turn ?? 0 });
+    await freeze(page, undefined, { windTime: v.wind ?? 0, turn: v.turn ?? 0, strike: v.strike ?? null });
     await settle(page, SETTLE_FRAMES);
     rows.push({ id: v.id, ...(await read(page)) });
   }

@@ -109,6 +109,15 @@
  *   how a post setting is photographed OFF beside the row that has it on.
  * - `turn` — radians: the motion blur held mid-turn rather than at rest (see
  *   `freeze`), since a still camera leaves the pass inert.
+ * - `strike` — seconds: a lightning strike in the air, the map's own seeded
+ *   schedule read once at that clock (`LightningStrikes.step`), which `freeze`
+ *   otherwise holds with nothing up.
+ * - `motes: { step, steps, box }` — the map's mote field, which every other
+ *   row switches off because it runs on the wall clock: rebuilt under a seed,
+ *   gathered into a box `box` metres across on the eye (its own motes at its
+ *   own rate, so denser, or the disc would have a tenth of a mote in front of
+ *   it), run `steps` fixed steps of `step` seconds and held by a clock of zero.
+ *   It is here for the ORDER of the disc against what is in front of it.
  *
  * Positions read like `pos`: `[x, z]` on the floor as drawn.
  */
@@ -191,6 +200,8 @@ export interface Vantage {
   zones?: boolean;
   settings?: Readonly<Record<string, string | boolean | number>>;
   turn?: number;
+  strike?: number;
+  motes?: { step: number; steps: number; box: number };
 }
 
 /**
@@ -306,6 +317,27 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
         "a cobble road's junction patch and its kerb against a DIRT road — `ROAD_RANK` 1 against 0 — and both against the floor beside them: the road depth bias (`ROAD_DEPTH_UNITS`, -8) and the rank ladder that X3.5 moves into our renderer",
       pos: [61, 6.5, -7],
       target: [64, 1.01, 7],
+    },
+    // Appended for X4.5a, so every row above carries the state it was banked
+    // with (`bank.mjs --rows`), and at the `ground` row's eye, so the benchmark
+    // gains no stop.
+    {
+      id: "sky-moon",
+      of: "the full moon straight overhead of the frame's middle from the farm lane, its halo and the stars round it, the farmstead's roof against the bottom of the sky — the one disc in the set with no cloud on the map to cross it",
+      proves:
+        "the MOON (X4.5c): the blended disc on its painted emissive and opacity texture and its boost, the dome's painted halo at the matching uv, and the disc's BLOOM through the glow (exempt from the fog fade by `infiniteDistance`) against a roof's depth, at a `fogEnd` of 78 where any fade would delete it",
+      pos: [52, 0.35, 62],
+      target: [98, 62.35, -2],
+    },
+    {
+      id: "sky-motes",
+      of: "the same moon closed up, ash in the air all round and in front of it (the map's mote field gathered into 24 m on the eye and held)",
+      proves:
+        "the moon's ORDER against the particles (X4.5c): Babylon draws a group's particles BEFORE its blended meshes, so a mote in front of the disc is painted over by it and one beside it is not — the order X4.5c must keep from a point after the particles, or take as a recorded change",
+      pos: [52, 0.35, 62],
+      target: [98, 62.35, -2],
+      fov: 24,
+      motes: { step: 0.1, steps: 200, box: 24 },
     },
   ],
   greyfen: [
@@ -423,6 +455,24 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
     // Appended for X4.4a, so every row above carries the state it was banked
     // with (`bank.mjs --rows`).
     ...effectRows(),
+    // Appended for X4.5a, after every row above, at the `avenue` row's eye so
+    // the benchmark gains no stop.
+    {
+      id: "sky-disc",
+      of: "the low sun over the sea from twelve metres above the town's west edge, its halo and bloom in a bright sky, clouds beside it and the wooded headland under it",
+      proves:
+        "the disc and its bloom on a DAY map (X4.5c), where the dome is bright and the disc's boost is what still reads against it, and the ring's lit undersides beside it (X4.5b)",
+      pos: [-150, 12, -26],
+      target: [-214.6, 52.7, -90.6],
+    },
+    {
+      id: "sky-ring",
+      of: "the cloud ring over the town from the same eye, looking east along the avenue, banks standing on the horizon behind the roofs and the harbour cranes",
+      proves:
+        "the CLOUDS on a day map (X4.5b): lit and shaded facets against the dome down to the horizon, every roof in front of them by the 7 km depth they write, and their order against the opaque world",
+      pos: [-150, 12, -26],
+      target: [150, 50, -26],
+    },
   ],
   harrowmead: [
     {
@@ -597,6 +647,44 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
     // Appended by the commit after X4.4c that took the debris's latch out,
     // after every row above (`farShardRows`).
     ...farShardRows(),
+    // Appended for X4.5a, after every row above, at eyes the rows above stand
+    // at, so the benchmark gains no stop. `sky-flash` LAST: it reads the storm's
+    // schedule at a clock of its own, and any row after it would step on from
+    // there.
+    {
+      id: "sky-cloud-moon",
+      of: "the crater's disc going behind a cumulus over the sea at night, from the west shore with the field closed to 30°, its bloom cut along the cloud's top",
+      proves:
+        "a cloud crossing the disc (X4.5b, X4.5c): the disc stands at 9 km behind the 7 km depth a cloud writes, so it is rejected through one and un-bloomed through one, the bloom being occluded by depth alone. It needs no turn of the ring: at the freeze's 0 this eye lines them up",
+      pos: [-581, 15, 73],
+      target: [-649, 49, 8],
+      fov: 30,
+    },
+    {
+      id: "sky-ring",
+      of: "the cloud ring at night from 35 cm off the floor north-east of the town: lit heaps on the horizon behind the lighthouse and the island's far ridge, the disc clear above them",
+      proves:
+        "the CLOUDS on the night map (X4.5b): the crater's light on one side of every heap against a violet dome, standing on a horizon ~1 km off",
+      pos: [250, 0.35, 404],
+      target: [-200, 60, -100],
+    },
+    {
+      id: "sky-far",
+      of: "the mountain's ridge from the town's quay, 680 to 740 m off, its top against the dome behind a crane and a boathouse",
+      proves:
+        "something past 600 m against the sky (X4.5c): the dome stands at `domeRadius` 600 m with the eye and writes no depth, so it is right only because it is drawn BEFORE this ridge — drawn after it, the dome passes the depth test and paints over it",
+      pos: [-90, 1.7, 300],
+      target: [-160, 40, -300],
+    },
+    {
+      id: "sky-flash",
+      of: "the same horizon as `sky-ring` under a lightning flash near its peak, the dome and the clouds lifted, every ridge and lighthouse black against them",
+      proves:
+        "the flash on the dome (X4.5c: `Sky.setFlash` through the dome's `emissiveColor`, which a `StandardMaterial` adds over its texture) and through the clouds' two lit tones (X4.5b) — the map's own seeded strike, read off its schedule at a clock of 28.484 s",
+      pos: [250, 0.35, 404],
+      target: [-200, 60, -100],
+      strike: 28.484,
+    },
   ],
   kurenai: [
     {

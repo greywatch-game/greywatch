@@ -47,14 +47,21 @@ export interface BoundTexture {
 }
 
 /**
- * The four points of the frame's main pass a renderer is told of, in the
- * order they come: `begin` as the pass starts, then — in every frame rendering
- * group `groupId` is drawn, whatever it holds — `beforeAlphaTest`,
- * `afterOpaque` and `afterGroup`, once each.
+ * The five points of the frame's main pass a renderer is told of, in the
+ * order they come, once each in EVERY main pass: `begin` and `first` as the
+ * pass starts, then `beforeAlphaTest`, `afterOpaque` and `afterGroup`. **A
+ * frame on which rendering group `groupId` holds nothing still gets all five**:
+ * the group's three are told together where it would have been drawn, the
+ * host having nothing of its own to order them against.
  */
 export interface MainPassHooks {
   /** Once, as the main pass's drawing starts. */
   begin(): void;
+  /**
+   * Once, right after `begin`, ahead of everything the host draws in the
+   * pass — rendering group `groupId`'s opaque meshes first among them.
+   */
+  first(): void;
   /**
    * Once, after rendering group `groupId`'s OPAQUE meshes have been queued
    * and before its ALPHA-TESTED meshes are. In a frame whose group has no

@@ -3218,10 +3218,20 @@ mask's too. `begin` fills the frame when either pass has a draw, and a
 `FramePrepare` is handed the `FrameContext` (its fourth argument) to ask
 whether a draw can bind this frame (`WorldGlow`'s verdict).
 
-**A draw lands at one of THREE points of rendering group 0** (`DrawPoint`),
-all before the viewmodel's group, whose auto-clear `Game` turns off, so the
-pass is not restarted between them, and in this order every frame:
+**A draw lands at one of FOUR points of the main pass** (`DrawPoint`), three of
+them about rendering group 0, and in this order every frame:
 
+- **`"first"`: as the pass starts, ahead of everything of Babylon's** (X4.5a).
+  It hangs off the draw phase's own observable, right after `begin`, so it is
+  ahead of group 0's opaque list whatever the group holds. **It is the dome's
+  place** (X4.5c): the dome writes no depth and is depth-tested at a 600 m
+  radius, so it is right only because everything past 600 m draws AFTER it, and
+  nothing else may go here. Nothing hangs on it yet. An empty list asks nothing
+  of the pass, so until something does the frame is exactly the frame without
+  the point. **Proved** by a throwaway draw of ours at the point: a depthless
+  full-frame red leaves the frame byte-equal under the dome while its count
+  climbs and shows through where the dome is hidden, and the same triangle
+  writing depth at the near plane hides everything Babylon's and ours.
 - **`"beforeAlphaTest"`: where the group's opaque meshes end and its
   ALPHA-TESTED meshes begin** (X3.5). Babylon has no hook there, so the seam
   WRAPS the group's `_renderAlphaTest` while the main pass's group 0 renders
@@ -3262,23 +3272,24 @@ pass is not restarted between them, and in this order every frame:
   then the optics' glasses, where that group's blended queue drew them ("The
   weapon, ours").
 
-**All three points ride rendering group 0, and Babylon visits no EMPTY
-group**: a frame on which group 0 dispatches no mesh of Babylon's runs none of
-ours, with no error (the seam). A DEV build warns once per change when a frame
-that had draws of ours at those points never reached the group (`Renderer`'s
-`seamWarned`). **What keeps the group non-empty is the SKY**: its dome and
-its cloud ring are group-0 meshes in every state, and over the menu, with the
-kit screen up and no map standing, they are ALL of it (measured at X4.3d, and
-again at X4.4e once every pool of ours had left the group — every frame of
-the menu, the kit screen and the settings over it, the loading card's bake
-and warm-up frames, the deploy screen and the kit over it, play, the pause,
-the death cam, the editor and a `?bench` run held the dome and the clouds;
-no frame in any state rendered the group empty). So X4.4 did not make the
-seam reachable, and **X4.5, which takes the sky, owes it the fix** (the
-owner's decision, 2026-10-31): our draws must not depend on group 0 being
-non-empty. One way to empty it already exists and nothing ships it: a map
-whose `EnvironmentSpec` states no `sky` builds none (`Sky.apply`), which a
-DEV build warns of where the sky is applied (`Game.applySky`). **And a frame with nothing of ours
+**Babylon visits no EMPTY group, and no draw of ours needs it to** (X4.5a, the
+owner's decision of 2026-10-31). `RenderingManager.render` skips a group whose
+`_empty` is set and raises no observable for it, so with nothing of Babylon's in
+group 0 none of the hooks above would run, silently. **So the seam's end-of-phase
+observer asks whether the group was visited, and if it was not, tells
+`beforeAlphaTest`, `afterOpaque` and `afterGroup` together, in that order, there**
+(`babylonSeam.ts`, `onMainPass`): no new internal, and ahead of the glow's mask
+and `FrameDepth`, which hang off the same observable, because it was inserted
+first. No group above 0 holds anything, so where the group would have been and
+that point are the same place. On a frame Babylon does visit the group nothing
+moved: every point keeps its exact place among Babylon's lists, which is what
+keeps the picture while Babylon still has meshes there. It is the path every
+frame takes once the last of them leaves (X4.7). **Measured**: a map stating no
+`sky`, over the menu with the kit screen up, group 0 visited on 0 of 30 frames,
+draws queued on all 30, and the frame byte-equal to the same frame with the sky
+up; at the parent, that frame lost the card and the weapon (97% of its pixels)
+and a DEV build warned of it. `Renderer`'s `seamWarned` and `Game.applySky`'s
+warning went with the fault. **And a frame with nothing of ours
 COMMITTED does no work at all**: each draw states whether it has anything
 (`Renderer.add`'s `Active`; the weapon's while a segment is committed), and
 `begin` skips the fill, the view-projection, the upload, the textures, the
@@ -6655,6 +6666,14 @@ of empty dome.
 `Game.applySky()` no-ops when the environment object is unchanged. The map is
 rebuilt every round; the sky is not, and repainting 8 megapixels of dome for an
 unchanged sky is pure cost.
+
+**The sky owes a state with no map NOTHING, and need not be drawn under the
+photograph at all** (settled at `BABYLON_EXIT.md` X4.5a; `docs/states.md`, "The
+menu sits over no view at all", has the measurement). It is still drawn there
+today, by Babylon, in group 0. **When a piece of it becomes ours its draw's
+`Active` asks whether a map is standing**, so the menu goes on doing no work of
+ours; `Sky.update` and the painted textures stay as they are, the turn being a
+clock and the paint 5 to 50 ms.
 
 ### The clouds are geometry
 
