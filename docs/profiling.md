@@ -1244,10 +1244,14 @@ mask's (`FrameProfile.setView`). Since X4.3d nothing of the weapon is in
 draws are `counters.drawCalls` plus `blocks.drawn`, `bodies.drawn`,
 `hulls.drawn` and `view.drawn`. Their CPU cost moved spans with them, and
 not to where they are queued: the weapon's draws are QUEUED at the end of
-rendering group 0 (`"afterGroup"`, inside `drawWorld`), but Babylon RUNS the
-queue — our recording — when it ends the main pass (`_endCurrentRenderPass`),
-so that cost lands in whichever span is open then, as the bodies' and the
-hulls' does (not confirmed by a capture). The viewer prints it as `weapon`.
+rendering group 0 (`"afterGroup"`, inside `drawWorld` on a frame Babylon visits
+the group), but Babylon RUNS the queue — our recording — when it ends the main
+pass (`_endCurrentRenderPass`), so that cost lands in whichever span is open
+then, as the bodies' and the hulls' does (not confirmed by a capture). The
+viewer prints it as `weapon`. **On a frame Babylon visits no group**
+(`BABYLON_EXIT.md` X4.5a's fallback) no `drawWorld` span opens, so the queuing
+falls under no group span, and from X4.7, when nothing holds group 0,
+`drawWorld` reads 0 on every frame (that step owes the span an answer).
 
 **From report version 26 it says the same of the effect POOLS** (`pools`,
 `BABYLON_EXIT.md` X4.4b): the main pass's draws of the pools' pieces (a RANK

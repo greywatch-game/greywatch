@@ -249,7 +249,7 @@ lamp or a reflection. See the floor, below.
   which replaced the two scrolling textures the freeze was still zeroing
   (`sky.turn` is pinned to 0 and the clouds' shadow re-primed at it), and
   Cinderhaven's storm, whose clock runs in `deploy` (held with no strike in
-  the air). **When the bank goes red on an unchanged tree again, look for the
+  the air, but for a row that asks for one: `strike`, `sky-flash`). **When the bank goes red on an unchanged tree again, look for the
   newest thing that changes by itself in a held world** — that has now been
   the answer four times.
 - **The post chain is left ON, with only its clock pinned.** The plan called

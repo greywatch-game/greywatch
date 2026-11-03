@@ -56,23 +56,36 @@ was a city rendered every frame under a picture of another one with its fires
 and its shore still playing.
 
 **What is left behind the title card is the SKY, and it owes the menu nothing**
-(settled at `BABYLON_EXIT.md` X4.5a, and not yet acted on: Babylon still draws
-it, under every state). Measured on Coldharbour: with the card off, the frame
-with the sky and the frame with a sky stated away are byte-equal under the
-photograph, and so are the kit screen, the settings and the lobby over the menu.
-It shows in exactly four windows: the boot's fade (the photograph is fully
-opaque ~480 ms after the boot screen comes off), a building card whose
-photograph has not decoded (`MenuBackdrop.showNamed`), a lobby row on a map this
-client has never heard of, and the DEV proving ground, which has no shot. **In
-every one of them it is the wrong sky**: `applySky` runs at the boot and at a
-round's build, never on a step along the reel, so what shows is the boot's map
-or the last round's under another map's name, which is the "caption's worth of
-lie" `MenuBackdrop` takes a picture down to avoid. Under the scrim, the frame
-with no sky is the clear colour through the post chain. So **X4.5b and X4.5c
-draw the sky only while a map stands** (each draw's `Active`), which keeps the
-menu's frame doing no work of ours (`Renderer`'s header). **That is a picture
-change in those four windows, none of which the bank holds**, so it lands in a
-commit of its own that says so (rule 2).
+(decided by the owner 2026-11-02, `BABYLON_EXIT.md` X4.5a, and not yet acted on:
+Babylon still draws it, under every state). Measured on Coldharbour: with the
+card off, the frame with the sky and the frame with a sky stated away are
+byte-equal under the photograph, and so are the kit screen, the settings and the
+lobby over the menu. It shows in five windows: the boot's fade (the photograph
+is fully opaque ~480 ms after the boot screen comes off, a figure off a local dev
+server: a phone's cold fetch is unmeasured); a rejected `img.decode()` with no
+picture already up (`MenuBackdrop.show`, `.then(raise, () => {})`), which leaves
+the window open as long as the menu stands; a building card whose photograph has
+not decoded (`MenuBackdrop.showNamed`); a lobby row on a map this client has
+never heard of; and the DEV proving ground, which has no shot.
+
+**X4.5b and X4.5c draw the sky only while a map stands** (each draw's `Active`),
+which keeps the menu's frame doing no work of ours (`Renderer`'s header), so
+those windows will show `scene.clearColor` through the post chain. **At the boot
+that is the boot map's `skyColor`** (`applyClearColor`, from `Game`'s
+constructor, the one write, which `applyEnvironment` goes through too):
+`Game.mapDef` is `readMap()`, `applySky` paints that map and `showMenu`
+photographs it, so until the player steps the reel the boot's fade is the RIGHT
+map's, as its sky today and as its colour from X4.5c. The colour is flat and the
+frame is not quite: the grain, the vignette and the shafts seeded at the boot
+still lie over it (a bright column on Harrowmead and Kurenai under the menu's
+camera). **Neither the reel nor a teardown writes it**, so after a step along the
+reel it is still the boot map's, and **after a round it is the last map's**,
+under whatever the menu then names. A building card's window takes the map being
+built's from `buildRound`'s `applyEnvironment`, two frames after the card goes
+up. Today's dome covers the colour, so setting it moved no pixel. **Taking the
+sky off is a picture change in those five windows, none of which the bank
+holds**, so it lands with X4.5b and X4.5c in a commit of its own that says so
+(rule 2).
 
 **`loading` is the map being built, and the split that creates it is the whole
 feature.** Building one is the better part of a second of synchronous work —

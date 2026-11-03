@@ -1920,7 +1920,8 @@ src/
                         #   the map's floorColor, albedo and height in one pass
     floorSurfaces.ts    # What the valley floor is MADE of: the surface roster
                         #   and the ONE place a floor material is built
-    environment.ts      # EnvironmentSpec + applyEnvironment, and
+    environment.ts      # EnvironmentSpec + applyEnvironment, applyClearColor
+                        #   (the one write of scene.clearColor; the boot's too), and
                         #   bodyDrawDistanceOf — the one reader of a map's body
                         #   draw distance, capped at its own fogEnd — and
                         #   hullDrawDistanceOf, the hull's (X4.2d): absent is

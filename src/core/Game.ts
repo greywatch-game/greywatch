@@ -246,6 +246,7 @@ import { WaterSystem } from "../systems/WaterSystem";
 import { WorldCulling, type PooledBody } from "../systems/WorldCulling";
 import { BlockHandover, type WorldOwner } from "../systems/BlockHandover";
 import {
+  applyClearColor,
   applyEnvironment,
   bodyDrawDistanceOf,
   hullDrawDistanceOf,
@@ -2461,6 +2462,10 @@ export class Game {
     // life of the process and rewrites it as the ring drifts. Until now every
     // material held `ShadowBindings`' own "no cloud" texel.
     this.mats.shadows.setCloudShadowMap(this.sky.cloudShadowMap);
+    // The frame under the boot's fade, once the sky is undrawn with no map
+    // standing (`BABYLON_EXIT.md` X4.5c). Nothing has applied an environment
+    // yet, and the menu's photograph is of this same map. Today's dome covers it.
+    applyClearColor(this.scene, this.mapDef.environment);
     this.applySky();
 
     this.hullRules = {

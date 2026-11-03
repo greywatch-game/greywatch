@@ -7764,7 +7764,8 @@ X4.4e's brief, word for word:
   builds nothing for an environment with no `sky` spec
   (`EnvironmentSpec.sky` is optional); every shipped map, the proving
   ground included, states one; `Game.applySky` now warns in a DEV build
-  when one does not. The `Renderer` warning is kept as it was.
+  when one does not. The `Renderer` warning is kept as it was (both deleted
+  at X4.5a).
 - **Measured.**
   - **The bank**: `--check --keep` at b06595a (the worktree, its `ref/` the
     main tree's) and at the step: **111 of 113 kept frames byte-equal**,
@@ -7907,3 +7908,20 @@ to come. What X4.5a was asked for and what it measured:
     the boot screen comes off (the first boot's Vite cost in it). Not measured:
     the sky's GPU time under the menu, and the other three windows' lengths,
     which are a decode's and a screen's. `docs/states.md` has the argument.
+  - **Corrected at the review** (the owner's decision, 2026-11-02). There are
+    five windows, a rejected `img.decode()` being the fifth; the boot's fade is
+    the right map's sky rather than the wrong one's; the boot figures above are
+    off a local dev server. `scene.clearColor` was Babylon's default slate at the
+    boot and is now the boot map's `skyColor` (`applyClearColor`), after a round
+    still the last map's. It moved no pixel: `x45a-fix/boot.mjs`, clocks pinned,
+    the seven maps twice a tree and Hollowmere and Kurenai five times, the bare
+    canvas and the kit screen over the boot menu byte-equal to 547d803 in every
+    run; a photograph held at half opacity, with and without the card, and the
+    card over no photograph, byte-equal but for flakes that also come up inside
+    one tree (one DOM pixel at 1/255, at (836,811) on Hollowmere and Harrowmead;
+    a lone Kurenai run's photograph, up to 7/255, mean 1). The control: every sky
+    mesh off, all seven differ, Coldharbour's centre (50,50,77) at the parent and
+    (205,188,157) here; the shafts seeded at the boot lie over it, a bright column
+    on Harrowmead and Kurenai that `setVolumetrics("off")` takes away. The bank
+    on Coldharbour, Cinderhaven and Hollowmere: 64 of 64 byte-equal to 547d803,
+    the same 9 stale rows red.

@@ -735,6 +735,25 @@ export function hullDrawDistanceOf(env: EnvironmentSpec): number {
 }
 
 /**
+ * The scene's clear colour off an environment: the one write of
+ * `scene.clearColor` in the tree. `applyEnvironment` calls it, and `Game`'s
+ * constructor calls it alone for the map the menu boots on, so the frame under
+ * the boot's fade is that map's flat colour rather than Babylon's default
+ * slate (`docs/states.md`). The reel and a teardown do not reach it: after a
+ * round the colour is the last map's.
+ */
+export function applyClearColor(scene: Scene, env: EnvironmentSpec): void {
+  const sky = Color3.FromHexString(env.skyColor);
+  // Alpha 0, and it is the frame's alpha channel rather than the canvas's: that
+  // channel is TRANSLUCENT COVERAGE for `CelInk`, everything opaque writes 0
+  // into it and every alpha-blended draw accumulates into it, so the clear is
+  // where "nothing has covered this pixel yet" is stated. Nothing downstream
+  // sees it — the ink consumes it and writes 1, and the grade at the end of the
+  // chain writes 1 again.
+  scene.clearColor = new Color4(sky.r, sky.g, sky.b, 0);
+}
+
+/**
  * Push an environment into the scene clear color and every cel material's
  * lighting/fog uniforms. The scene has no Babylon lights — this is how light
  * reaches the shader.
@@ -744,14 +763,7 @@ export function applyEnvironment(
   env: EnvironmentSpec,
   mats: CelMaterialFactory,
 ): void {
-  const sky = Color3.FromHexString(env.skyColor);
-  // Alpha 0, and it is the frame's alpha channel rather than the canvas's: that
-  // channel is TRANSLUCENT COVERAGE for `CelInk`, everything opaque writes 0
-  // into it and every alpha-blended draw accumulates into it, so the clear is
-  // where "nothing has covered this pixel yet" is stated. Nothing downstream
-  // sees it — the ink consumes it and writes 1, and the grade at the end of the
-  // chain writes 1 again.
-  scene.clearColor = new Color4(sky.r, sky.g, sky.b, 0);
+  applyClearColor(scene, env);
 
   const [dx, dy, dz] = env.lighting.direction;
   const lit = env.lighting;

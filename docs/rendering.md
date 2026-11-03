@@ -6668,12 +6668,14 @@ rebuilt every round; the sky is not, and repainting 8 megapixels of dome for an
 unchanged sky is pure cost.
 
 **The sky owes a state with no map NOTHING, and need not be drawn under the
-photograph at all** (settled at `BABYLON_EXIT.md` X4.5a; `docs/states.md`, "The
-menu sits over no view at all", has the measurement). It is still drawn there
-today, by Babylon, in group 0. **When a piece of it becomes ours its draw's
-`Active` asks whether a map is standing**, so the menu goes on doing no work of
-ours; `Sky.update` and the painted textures stay as they are, the turn being a
-clock and the paint 5 to 50 ms.
+photograph at all** (decided by the owner at `BABYLON_EXIT.md` X4.5a;
+`docs/states.md`, "The menu sits over no view at all", has the measurement and
+the windows it shows in). It is still drawn there today, by Babylon, in group 0.
+**When a piece of it becomes ours its draw's `Active` asks whether a map is
+standing**, so the menu goes on doing no work of ours; `Sky.update` and the
+painted textures stay as they are, the turn being a clock and the paint 5 to 50
+ms. What shows through then is `scene.clearColor`, set at the boot from the boot
+map's `skyColor` (`applyClearColor`) and after a round the last map's.
 
 ### The clouds are geometry
 
