@@ -1004,10 +1004,9 @@ card behind it are off Babylon's scene, and no sub-step changed the picture.
 - **The render cache's frame id** (X5.4, decided): `RenderCache` is keyed
   on `scene.getRenderId()` and settled from a Babylon observable, both of
   which go with the frame. `FINDINGS.md` 55 stays after the exit.
-- **The empty-group seam is X4.5's**: over the menu, with the kit screen up
+- **The empty-group seam is X4.5a's**: over the menu, with the kit screen up
   and no map, the sky is the only thing of Babylon's left in group 0 (X4.3d
-  measured it never empty); whichever of X4.4-X4.6 drains the group owes the
-  fix.
+  measured it never empty).
 - **The kit's cost on a phone**: it is built and uploaded on every boot
   (~14 MB of GPU buffers, the menu included); building it lazily, at its
   first use, is a lever to measure first (boot time and resident memory).
@@ -1510,34 +1509,119 @@ Everything else in X4.4 moves as briefed; `fx-glass-sort` is X4.6's BEFORE.
   say what draws a pool; `docs/rendering.md`'s size gate (the marks leave
   it).
 
-### X4.5 — Sky and clouds — **M**
+### X4.5 — Sky and clouds — **M, as three sub-steps** (split 2026-11-02, decided the same day)
 
-The dome, stars, moon and cloud ring (`Sky`, `cloudMasses`, `CloudShader`).
+The dome, stars, moon and cloud ring (`Sky`, `cloudMasses`, `CloudShader`)
+come off Babylon's scene, and our draws stop depending on it having anything
+in group 0. **No sub-step is meant to change the picture**: each is proven
+byte-identical against the bank and lands on its own; a difference goes in a
+commit of its own with the bank's numbers (rule 2), never absorbed. It was
+rated **M** as one step. It is split because the seam has to be fixed before
+any sky mesh can leave, because the clouds and the dome and moon share no
+shader and no material, and because the bank's rows are not aimed at the sky
+(a read of their descriptions in `src/bench/vantages.ts`: the moon and the
+clouds are nobody's subject), so the instrument comes first.
 
-- **Do:**
-  - **The empty-group seam** (decided 2026-10-31, X4.3c's review): every
-    draw of ours hangs on rendering group 0's three points, and Babylon
-    visits no empty group — so a frame on which group 0 dispatches no mesh
-    of Babylon's runs NONE of ours, silently (a DEV build warns once per
-    change, `Renderer`). This step takes meshes out of group 0; whichever of
-    X4.4, X4.5 and X4.6 leaves it able to be empty in some state (the kit
-    screen over the menu holds the sky alone since X4.3d) owes the seam a
-    fix — our draws must not depend on group 0 being non-empty (a point of
-    ours that does not ride Babylon's group, or a mesh kept in it on
-    purpose, stated as such). **It is THIS step's** (X4.4e measured it):
-    X4.4 left the seam unreachable, and what holds group 0 in every state
-    is the sky's dome and cloud ring — over the menu with the kit screen up,
-    nothing else — so the step that takes them owes the fix. A seam-safe
-    shape is a question for the owner if it needs a NEW Babylon internal on
-    `babylonSeam.ts`'s list (rule 4), and stops there. Today a map stating
-    no `sky` empties the group over the menu already, which a DEV build
-    warns of (`Game.applySky`); no shipped map does.
-- **Contracts it keeps:**
-  - the clouds write the depth of a point 7 km out
-  - they draw after every opaque surface and before everything blended
-  - the moon is exempt from the bloom's fog fade (`infiniteDistance` today)
-  - the cloud shadow on the ground (`cloudShadow`)
-- **Verify:** the bank on every map, the night map included.
+**What the sky is today** (a read of the code, not a measurement; each
+sub-step confirms its own before it moves anything):
+- **The dome**: a `StandardMaterial` sphere, its emissive texture a painted
+  `DynamicTexture`, at `domeRadius` 600 m riding with the eye, writing no
+  depth and depth-tested. `setFlash` lifts it through `emissiveColor` for
+  lightning. Cinderhaven's world reaches 1,250 m, so **the dome is right only
+  because it is drawn BEFORE whatever stands past 600 m**: drawn after it, the
+  dome passes the depth test there and paints over it. Today it is in group
+  0's opaque list, ahead of our `"beforeAlphaTest"` point, and that list is
+  sorted nearest first by bounding-sphere centre (`setRenderingOrder`).
+- **The moon**: a `StandardMaterial` billboard disc on a painted texture
+  (emissive and opacity both), blended, writing no depth, stood at
+  `moonDepthDistance` 9 km, behind the depth a cloud writes. It is the first
+  of Babylon's blended meshes down, and so draws AFTER the group's particles:
+  ash and rotor wash in front of it are painted over by it. It is the one sky
+  piece in the glow, through `GlowPass`'s Babylon mesh walk, exempt from the
+  bloom's fog fade by `mesh.infiniteDistance` (`Game`'s `GlowRules`; the size
+  gate asks the same field in `WorldCulling`).
+- **The clouds**: one merged soup on `CloudShader`'s own WGSL, in the
+  alpha-test list for its ORDER only, writing the depth of a point 7 km out
+  along each pixel's ray, its index buffer rewritten back to front when the
+  eye or the turn has moved enough (`sortClouds`). `Sky.update` pushes the
+  uniforms every frame in every state. `CloudShadowRaster` and the
+  `cloudShadowMap` the cel materials read are not drawn by any of this.
+
+- **X4.5a — our draws stop needing group 0 (no picture change; no sky mesh
+  moves).**
+  - **The empty-group seam** (decided 2026-10-31, X4.3c's review; X4.4e
+    measured it unreachable until this step): every draw of ours hangs on
+    rendering group 0's three points, and Babylon visits no empty group
+    (`renderingManager.js`, `renderingGroup._empty`) — so a frame on which
+    group 0 dispatches no mesh of Babylon's runs NONE of ours, silently. What
+    holds it in every state is the dome and the clouds; over the menu with
+    the kit screen up, nothing else. The fix is a point of ours that does not
+    ride Babylon's group. `scene.onBeforeDrawPhaseObservable` and
+    `onAfterDrawPhaseObservable` fire whether the group is empty or not and
+    the seam already holds both, so **this should need no new Babylon
+    internal; if it does, it is the owner's question under rule 4 and stops
+    there**. `Renderer`'s `seamWarned` and `Game.applySky`'s DEV warning are
+    deleted with the fault.
+  - **A new first point**: a draw point of ours AHEAD of group 0's opaque
+    list (the dome's, above). Nothing hangs on it yet but a proof that it
+    runs.
+  - **The bank sees the sky.** Rows appended at the END of a map's sequence,
+    banked with `--rows`: the moon full in frame, with its bloom; a cloud
+    crossing the moon; a cloud ring against a horizon, on a day map and the
+    night map; a lightning flash on the dome, seeded; ash or rotor wash in
+    front of the moon, if a map can frame one (the order X4.5c must keep);
+    and something past 600 m against the sky on Cinderhaven (the dome's
+    order). Also recorded: `pipelines.mjs`' creations with the sky Babylon's.
+  - **The menu**: once the sky is ours, our renderer has something to draw
+    over the menu, where today it does no work at all (`Renderer`'s header).
+    This step settles what the sky owes a state with no map in it, and says
+    so, including whether it needs drawing under the photograph at all.
+  - **Oracle:** `bank.mjs --check` twice back to back, every new row
+    byte-identical to itself and every old row unmoved; a map stating no
+    `sky` over the menu with the kit screen up, its weapon drawn, where a
+    DEV build warns today.
+- **X4.5b — the clouds are ours (no picture change).** `CloudShader`'s WGSL
+  moves to `src/shaders/wgsl/` and a `render/` draw on its own program, a
+  draw of ours at a point after the opaque surfaces and before everything
+  blended; Babylon is made no `sky-clouds` mesh. `sortClouds` rewrites our
+  index buffer and allocates nothing, and `Sky.update` pushes our uniforms in
+  every state. `Sky` stays the owner of the turn, the matched clock and the
+  cloud shadow. It joins `Game.roundPipelines`.
+  - **Contracts it keeps:** the clouds write the depth of a point 7 km out
+    (along the pixel's ray, never down the axis), and back faces stay culled;
+    they draw after every opaque surface and before everything blended; the
+    cloud shadow on the ground (`cloudShadow`) is untouched; the ring is in
+    no bake and no glow.
+  - **Oracle:** the bank byte-identical, the new sky rows included; a match's
+    ring standing where its clock says.
+- **X4.5c — the dome and the moon are ours, and Babylon draws no sky (no
+  picture change).** A sky program ported from what `StandardMaterial`
+  actually does for these two (emissive texture, the flash's added colour,
+  the moon's opacity texture and its boost) and proven against the bank; the
+  dome on X4.5a's first point; Babylon is made no `sky-dome` or `sky-moon`
+  mesh. The moon's bloom moves into a mask draw of ours at its old place in
+  the order. The painted textures may stay as they are, read through the
+  seam's texture view; no new internal.
+  - **The moon against the particles**: it paints over ash and rotor wash
+    today because Babylon draws them first, and our `"opaque"` point comes
+    BEFORE them. The default is to keep the order, from a point after the
+    particles (the seam's item 6 is that slot, and X4.7 moves them anyway). A
+    moon behind its ash is the better picture and a recorded change, only if
+    the owner asks for it.
+  - **`infiniteDistance`**: the bloom's fog-fade exemption and the size gate's
+    each lose their reason with the last sky mesh; each is deleted once
+    nothing else sets the field, and its comment goes with it.
+  - **Contracts it keeps:** the moon is exempt from the bloom's fog fade; it
+    stands behind the clouds' depth, so it is rejected and un-bloomed through
+    one; the dome writes no depth; the map with no disc draws no disc, its
+    halo still painted.
+  - **Oracle:** the bank on every map, the night map included; zero sky meshes
+    in `scene.meshes` over the menu, in a round and in the editor;
+    `pipelines.mjs` and the sealed cache quiet in a round.
+- **Rewrites:** `CLAUDE.md`'s rendering section (the sky has no Babylon mesh;
+  the group-0 rule), under its cap; `docs/rendering.md`'s sky, clouds and
+  seam; `docs/game.md` if the menu's answer touches it; `Sky.ts`'s header and
+  `CloudShader.ts`'s; `FILES.md` for each new file.
 
 ### X4.6 — Water, glazing, grass, flags and capture rings — **M–L**
 
@@ -1558,16 +1642,6 @@ The dome, stars, moon and cloud ring (`Sky`, `cloudMasses`, `CloudShader`).
     `fx-glass-sort` (a fade squarely behind and squarely in front of a pane)
     plus `fx-glass`, the impact rows and the scorch rows are the BEFORE.
     Their `warm(on)` poses go into X4.4e's declared list then.
-  - **The empty-group seam** (decided 2026-10-31, X4.3c's review): every
-    draw of ours hangs on rendering group 0's three points, and Babylon
-    visits no empty group — so a frame on which group 0 dispatches no mesh
-    of Babylon's runs NONE of ours, silently (a DEV build warns once per
-    change, `Renderer`). This step takes meshes out of group 0; whichever of
-    X4.4, X4.5 and X4.6 leaves it able to be empty in some state (the kit
-    screen over the menu holds the sky alone since X4.3d) owes the seam a
-    fix — our draws must not depend on group 0 being non-empty (a point of
-    ours that does not ride Babylon's group, or a mesh kept in it on
-    purpose, stated as such).
 - **Contracts it keeps:**
   - no pane of either kind casts a shadow
   - see-through glazing writes no depth
@@ -1858,4 +1932,5 @@ Phase 1 actually took.
 | X4.4b | The fading sparks, dust discs and scorch sort among the see-through panes in Babylon's transparent list, and no draw point of ours reproduces that: hook the panes, take a recorded picture change, or wait? | **Decided** 2026-11-01: wait. The three pools stay Babylon meshes (their warm poses with them) until X4.6 takes the glazing, and move with it so one sort of ours orders every blended surface. No picture change, no new reach into Babylon's queue, no stand-in mesh; `fx-glass-sort` is X4.6's BEFORE. |
 | X4.4c | `FINDINGS.md` 58: X4.4c kept Babylon's stale-bounds latch for the debris, byte for byte — no rubble chunk is ever drawn in a live round (its bounds were computed once at its park, a kilometre under the map), and a glass shard is measured from the map's ORIGIN once a burst, so a far pane's smaller pieces never draw (Cinderhaven). The bank's `fx-blast-*` rows show rubble only because the harness's `scene.isReady()` computed the meshes' worlds, which `waitUntilDrawn` now restates. Fix it (gate every piece on its sphere composed this frame, the pieces' rule since finding 67 — one line in `poseView.writePosedDrawing`), and when? | **Decided** 2026-11-01: fix it now, as its own commit — a deliberate picture change (rule 2): every shard and chunk gated on its world sphere composed THIS frame (the hulls' and the pieces' rule), the gate sphere and the harness's refresh deleted, Babylon's latch dropped on purpose. Landed the same day (X4.4c's note); every rubble burst now draws in a round, and the half of a far Cinderhaven pane the latch dropped. |
 | X4.4b | `FINDINGS.md` 67: X4.4b kept Babylon's stale-sphere latch, under which a spent case first thrown far from the world origin (and a mine's plate, an arming mine, a rocket's tail) is never drawn. Fix it, and when? | **Decided** 2026-11-01: fix it now, as its own commit — a deliberate picture change (rule 2): every cel part of a piece gated on its world sphere composed THIS frame, the hulls' rule (X4.2b), the latch dropped on purpose. Landed the same day (X4.4b's note). |
+| X4.5 | One step or several? | **Decided** 2026-11-02: three sub-steps (X4.5). X4.5a fixes the empty-group seam, adds a draw point ahead of group 0's opaque list and widens the bank to the sky before any sky mesh moves; X4.5b moves the clouds; X4.5c moves the dome and the moon, which empties Babylon of the sky. |
 | X6.2 | Is it ready to merge to `develop`? | Only when X6.2's "Before" list passes in full. |
