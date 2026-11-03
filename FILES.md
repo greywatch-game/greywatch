@@ -2647,12 +2647,16 @@ src/
                         #   sampler NOW), PassTargets, HostTexture
     Renderer.ts         # Renderer: the frame's uniforms, textures and their
                         #   group 0, the pipeline cache, the FrameDraws it
-                        #   queues at four points of the MAIN pass — first,
-                        #   ahead of everything of Babylon's (X4.5a, nothing on
-                        #   it yet), and of group 0, needing nothing in it:
+                        #   queues at six points of the MAIN pass — first,
+                        #   ahead of everything of Babylon's (X4.5a; the dome,
+                        #   X4.5c), and of group 0, needing nothing in it:
                         #   before its alpha-tested meshes (the palette FIRST
-                        #   in that draw, X3.6e), where its opaque and
-                        #   alpha-tested meshes end, and after it — and the
+                        #   in that draw, X3.6e), after every opaque surface
+                        #   (afterSurfaces; the clouds, X4.5b), where its
+                        #   opaque and alpha-tested meshes end, past its
+                        #   particles and ahead of its blended list
+                        #   (beforeBlended; the moon, X4.5c), and after it —
+                        #   and the
                         #   FramePrepares run as it begins (a compute cull),
                         #   the LATE ones after the rest (a probe's bake, which
                         #   samples what the others draw), recorded into the
@@ -2660,7 +2664,9 @@ src/
                         #   under ?gpu (its PassTimer, gpu.cull); refuses to
                         #   draw if the pass is not FRAME_TARGETS, and tells
                         #   onRefused listeners. And the GLOW MASK's draws
-                        #   (addGlowMask, X3.6d): queued FIRST in GlowPass's
+                        #   (addGlowMask, X3.6d, and behind those
+                        #   addGlowMaskBlended, the moon's bloom, X4.5c):
+                        #   queued FIRST in GlowPass's
                         #   mask when told it opened (glowMaskOpened), off the
                         #   main pass's frame, refused unless GLOW_TARGETS
                         #   (onGlowMaskRefused); a prepare is handed the

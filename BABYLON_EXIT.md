@@ -1668,8 +1668,8 @@ moved; **all of this is past since X4.5c**: no sky piece is a Babylon mesh):
   **The clouds' `Active` waits for X4.5c, with the dome's.** No line of this plan
   allows that: the owner's decision is that the sky goes undrawn while no map stands,
   at X4.5b/c, and it is the hand-off prompt for this step that left the clouds' half
-  to the implementer. So the split is the implementer's, and **the owner has not
-  ruled on it yet**. Their draw here asks only whether a ring stands, so it draws over the
+  to the implementer. So the split is the implementer's; the owner did not rule on it,
+  and it is moot since X4.5c, whose one commit took the whole sky off the menu. Their draw here asks only whether a ring stands, so it draws over the
   menu as Babylon's mesh did and the windows `docs/states.md` names do not move.
   Landed here it would have left a dome with no cloud on it in those windows for one
   step, on two before-and-afters for one outcome, to save work the same step measures
@@ -1813,8 +1813,8 @@ moved; **all of this is past since X4.5c**: no sky piece is a Babylon mesh):
     `setFlash` lifts the dome (`sky-flash`); `sky-motes`: the moon paints over its ash.
 
   **The menu: the sky undrawn with no map standing, in a commit of its own**
-  (7787229; the owner's decision at X4.5a, the clouds' half left here by X4.5b's
-  implementer and not ruled on). `Sky.setStanding`, from `Game.installMap` and
+  (7787229; the owner's decision at X4.5a; the clouds' half, left here by X4.5b's
+  implementer, is moot, the whole sky having left in that one commit). `Sky.setStanding`, from `Game.installMap` and
   `teardownMap`, is what all three draws' `Active` ask, so **the boot's menu fills
   nothing of ours again**: 0 of 30 frames filled, 0 queues, `Renderer`'s and
   `docs/rendering.md`'s exception gone; a re-sort of the ring is the one thing left, a
@@ -1829,7 +1829,18 @@ moved; **all of this is past since X4.5c**: no sky piece is a Babylon mesh):
   up to 24). What is there now is the map's flat colour through the post
   chain, Coldharbour's centre (205,188,157), corner (114,108,97): no dome, no cloud, no
   stars. After a round it is the last map's (`afterRound`, moved as `decode`, with the
-  round's last motes over it). `bare`, the sky stated away by hand, is byte-equal before
+  round's last motes over it). **A sixth window, accepted by the owner 2026-11-03**: on
+  the way out of a round `enterMenu` tears the map down and `MenuBackdrop.show` raises
+  `#menu-shot` from 0 over its 0.4 s transition, so the frame under the fade is the last
+  map's flat colour where the parent showed the dome and clouds through the picture
+  (Coldharbour: opaque 305 ms on leaving a round, a fade-out still running under it, 393 ms
+  from the pause). **`afterRound` was shot only with the decode held rejected, so this
+  fade was not among the frames compared in 7787229.** Not from the round-over card: its
+  picture is up already and stays at 1, read frame by frame, on the same map. **One more
+  the six do not name, stated and not ruled on**: a step of the photograph (the reel, the
+  lobby) cross-fades two layers, which cover 75% at their lowest, 238 ms in and under 100%
+  from 55 to 657 ms (Coldharbour's computed opacities), so up to a quarter of the same flat
+  colour shows through, under the scrim. `bare`, the sky stated away by hand, is byte-equal before
   and after, so it is no control of the sky any more (`boot.mjs`'s went stale at X4.5b;
   `x45c/windows.mjs` clears the ring as well).
 
@@ -1840,20 +1851,44 @@ moved; **all of this is past since X4.5c**: no sky piece is a Babylon mesh):
   erasing: **0.5% of the frame, up to 56/255, on all seven maps** (`x45c/kitprobe/alpha0.png`).
   The owner's decision took the sky off the kit screen as moving no pixel, so
   `applyClearColor` now writes 1, the dome's own literal; with it the kit screen is
-  byte-equal on five maps (`CelInk`'s comments follow it). Nothing a map stands behind
+  byte-equal on five maps, at one pinned turn of the ring and no other (corrected below;
+  `CelInk`'s comments follow it). Nothing a map stands behind
   reads it, every shipped map stating a dome: `sky-ring` and the rest are byte-equal.
-  **The whole stroke is arguably the better picture and is what the kit screen gets
-  over a wall in a round; it is a recorded change for the owner to ask for, not taken
-  here.** **What remains on the kit screen, explained and kept**: Sarab 247 px and
+  The whole stroke is arguably the better picture and is what the kit screen gets
+  over a wall in a round; the owner did not ask for it (below). **What remains on the kit screen, explained and kept**: Sarab 247 px and
   Kurenai 274 px, up to 40/255, the outline of the sight. A cloud stands behind it under
   the menu's camera, and a cloud's coverage is 0. The parent with the ring cleared by hand
   and the dome left moves exactly those pixels and is **byte-equal to this commit's frame
   on both** (`x45c/kit2.mjs`). X4.5a's "byte-equal under the kit screen" was measured on
   Coldharbour; this is what it did not see, and a ring turning moves it anyway.
 
-  **Still to look at, stated rather than fixed:** Harrowmead's and Kurenai's frame has the
-  bright column `docs/states.md` names, shafts seeded at the boot over the clear colour
-  (`x45c/win-after/harrowmead/canvas.png`, `x45c/win-after/kurenai/canvas.png`).
+  **Corrected at the review, and the 1 is the owner's** (2026-11-03: kept, a constant half
+  stroke on the kit screen's weapon, no longer the implementer's alone). "Five maps, with
+  Sarab and Kurenai moving" was true only at the one pinned turn. At the parent, ring on
+  against ring off (`x45c-review/probe.mjs`), Coldharbour reads 0 px at turn 0 and 35 to 209
+  px, up to 73/255, at five of the seven other turns sampled; the drift being 0.15°/s, the
+  first of them, 0.8 rad, is about 5 minutes on the menu. Hollowmere, with no ring, is 0 px
+  at all 8. **So the old picture's stroke varied with the cloud behind the weapon and the
+  new one does not**: at this tree those five turns read 0 px against turn 0. The other two
+  (2.4 and 3.2 rad) read 539,279 px, up to 60/255, the weapon darker, and are excluded from
+  those figures, not being the stroke. **They are the clouds' SHADOW, and it still reaches
+  the kit stage**: the reviewer's reading was unconfirmed, and here the same two turns read
+  the same 539,279 px against turn 0, and 0 px with the shadow's term off
+  (`cloudShadowArea.w = 1`, `x45c-fix/probe.mjs`). `Sky.update` goes on over the menu and
+  `tick` pushes `setCloudShadow` in every state, so the weapon on the kit screen goes dark
+  as a cloud's shadow crosses the stage, at the parent and now, with no ring drawn over the
+  menu to say why. Stated, not changed.
+
+  **Accepted by the owner 2026-11-03, so no longer open:** Harrowmead's and Kurenai's frame
+  has the soft bright band in the fade that `docs/states.md` names, shafts seeded at the boot
+  over the clear colour (`x45c/win-after/harrowmead/canvas.png`,
+  `x45c/win-after/kurenai/canvas.png`).
+
+  **Its review** (no picture change): `SkyDraw.prepare` built `refresh`'s handles as an
+  object literal up to twice a frame under a header saying nothing allocates; each piece
+  holds its own now (`Standing.textures`). `CloudDraw` has no such site, its `refresh`es
+  being at build. The bank `--check --keep` on Hollowmere and Cinderhaven against a keep at
+  355c6e2: 29 of 29 byte-equal, the same 3 stale rows red with the same means on both sides.
   **Measured** at this commit: the bank `--check --keep` against the same BEFORE, **121 of
   121 byte-equal**, the same 34 stale rows red; `census --against` every row equal;
   `pipelines.mjs --round` as the port's; an offline round (`fire` 101, `explode` 6,
@@ -2197,5 +2232,5 @@ Phase 1 actually took.
 | X4.4c | `FINDINGS.md` 58: X4.4c kept Babylon's stale-bounds latch for the debris, byte for byte — no rubble chunk is ever drawn in a live round (its bounds were computed once at its park, a kilometre under the map), and a glass shard is measured from the map's ORIGIN once a burst, so a far pane's smaller pieces never draw (Cinderhaven). The bank's `fx-blast-*` rows show rubble only because the harness's `scene.isReady()` computed the meshes' worlds, which `waitUntilDrawn` now restates. Fix it (gate every piece on its sphere composed this frame, the pieces' rule since finding 67 — one line in `poseView.writePosedDrawing`), and when? | **Decided** 2026-11-01: fix it now, as its own commit — a deliberate picture change (rule 2): every shard and chunk gated on its world sphere composed THIS frame (the hulls' and the pieces' rule), the gate sphere and the harness's refresh deleted, Babylon's latch dropped on purpose. Landed the same day (X4.4c's note); every rubble burst now draws in a round, and the half of a far Cinderhaven pane the latch dropped. |
 | X4.4b | `FINDINGS.md` 67: X4.4b kept Babylon's stale-sphere latch, under which a spent case first thrown far from the world origin (and a mine's plate, an arming mine, a rocket's tail) is never drawn. Fix it, and when? | **Decided** 2026-11-01: fix it now, as its own commit — a deliberate picture change (rule 2): every cel part of a piece gated on its world sphere composed THIS frame, the hulls' rule (X4.2b), the latch dropped on purpose. Landed the same day (X4.4b's note). |
 | X4.5 | One step or several? | **Decided** 2026-11-02: three sub-steps (X4.5). X4.5a fixes the empty-group seam, adds a draw point ahead of group 0's opaque list and widens the bank to the sky before any sky mesh moves; X4.5b moves the clouds; X4.5c moves the dome and the moon, which empties Babylon of the sky. |
-| X4.5a | What does the sky owe a state with no map, and must it be drawn under the photograph? | **Decided** 2026-11-02 by the owner, overruling part of what X4.5a settled: nothing, and no. Under the photograph, the kit screen, the settings and the lobby the frame is byte-equal with the sky stated away. It shows in five windows (the boot's fade, ~480 ms on a local dev server and unmeasured on a phone's cold fetch; a rejected `img.decode()`, open as long as the menu stands; a building card's undecoded photograph; a lobby row on an unknown map; the DEV proving ground). Each sky draw's `Active` asks whether a map stands, so the menu's frame keeps doing no work of ours (X4.3c's review). **What X4.5a got wrong**: the boot's fade is the RIGHT map's sky until the player steps the reel, not the wrong one, and what would replace it was no meaningful colour (`scene.clearColor` had one writer, reached only from the editor and `startRound`: Babylon's default slate at the boot). So the colour is set at the boot from the boot map's `skyColor` (`applyClearColor`, landed at this review and moving no pixel under today's dome), and the fade shows the right map's colour through the post chain. It is not extended to the reel or a teardown: after a round it is the last map's. Taking the sky off those windows is a picture change, in a commit of its own at X4.5b and X4.5c. How that divides between the two is the implementer's and no part of this decision: X4.5b left its half to X4.5c, so it is one commit there (X4.5b's note says why, and the owner has not ruled on that split). |
+| X4.5a | What does the sky owe a state with no map, and must it be drawn under the photograph? | **Decided** 2026-11-02 by the owner, overruling part of what X4.5a settled: nothing, and no. Under the photograph, the settings and the lobby the frame is byte-equal with the sky stated away; the kit screen is not, at every turn of the ring (below). It shows in six windows (the boot's fade, ~480 ms on a local dev server and unmeasured on a phone's cold fetch; a rejected `img.decode()`, open as long as the menu stands; a building card's undecoded photograph; a lobby row on an unknown map; the DEV proving ground; and, **accepted by the owner 2026-11-03**, the photograph's fade on the way out of a round, about 300 to 400 ms on Coldharbour, over the last map's flat colour where the parent showed the dome and clouds through the picture, not among the frames compared in X4.5c's picture-change commit, and not from the round-over card, whose picture is up already). Each sky draw's `Active` asks whether a map stands, so the menu's frame keeps doing no work of ours (X4.3c's review). **What X4.5a got wrong**: the boot's fade is the RIGHT map's sky until the player steps the reel, not the wrong one, and what would replace it was no meaningful colour (`scene.clearColor` had one writer, reached only from the editor and `startRound`: Babylon's default slate at the boot). So the colour is set at the boot from the boot map's `skyColor` (`applyClearColor`, landed at this review and moving no pixel under today's dome), and the fade shows the right map's colour through the post chain. It is not extended to the reel or a teardown: after a round it is the last map's. Taking the sky off those windows is a picture change, in a commit of its own at X4.5b and X4.5c. How that divides between the two was the implementer's and no part of this decision: X4.5b left the clouds' `Active` to X4.5c, and that is moot now, the whole sky having left the menu in one commit (7787229). **Decided 2026-11-03 by the owner, no picture change:** the clear's alpha of 1 is kept, a constant half stroke on the kit screen's weapon. The old picture's stroke varied with the cloud behind the weapon and the new one does not: ring on against ring off at the parent, Coldharbour is 0 px at turn 0 and 35 to 209 px, up to 73/255, at five other turns, the first about 5 minutes on the menu, and Hollowmere, with no ring, 0 px at all 8. Two further turns read 539,279 px with the weapon darker, excluded from those figures: the clouds' shadow, which still reaches the kit stage (X4.5c's note). And the shafts' soft bright band over the flat colour on Harrowmead and Kurenai is accepted. X4.5c's note states one window the six do not name (a step's cross-fade), not ruled on. |
 | X6.2 | Is it ready to merge to `develop`? | Only when X6.2's "Before" list passes in full. |

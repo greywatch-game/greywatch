@@ -52,7 +52,7 @@ const PIPELINE_FAILED = "our clouds cannot draw: their pipeline failed";
 export class CloudDraw {
   /** Whether the pipeline built — asked once, for the session; false if it failed. */
   readonly ready: Promise<boolean>;
-  /** What the last frame drew: main-pass draws. Nothing in the game reads it; the census does. */
+  /** What the last frame drew: main-pass draws. No outcome reads it; a profiler capture does (`Game`'s `prof.setPools`), and the census. */
   readonly stats = { drawn: 0 };
 
   private readonly device: GPUDevice;

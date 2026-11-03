@@ -39,7 +39,7 @@
  * pixels at alpha 0, where its readers put the sky: `render/ProbeBake.ts`).
  * Contract: `docs/rendering.md`, "The sky".
  */
-import { HostBindGroup } from "./HostBindGroup";
+import { HostBindGroup, type TextureHandles } from "./HostBindGroup";
 import type { BuiltPipeline, PipelineState } from "./PipelineCache";
 import type { FrameContext, Renderer } from "./Renderer";
 import type { PassTargets } from "./frameHost";
@@ -68,6 +68,8 @@ interface Standing {
   readonly recipe: SkyRecipe;
   readonly block: UniformBlockBuffer;
   readonly material: HostBindGroup;
+  /** What `material` is refreshed with every frame, built once so that a frame allocates nothing. */
+  readonly textures: TextureHandles;
   readonly geometry: HostBindGroup;
   readonly buffers: readonly GPUBuffer[];
   readonly count: number;
@@ -86,7 +88,7 @@ const PIPELINE_FAILED = "our sky cannot draw: a pipeline of its failed";
 export class SkyDraw {
   /** Whether every pipeline built — asked once, for the session; false if one failed. */
   readonly ready: Promise<boolean>;
-  /** What the last frame drew: main-pass draws, and mask draws. Nothing in the game reads it; the census does. */
+  /** What the last frame drew: main-pass draws, and mask draws. No outcome reads it; a profiler capture does (`Game`'s `prof.setPools`), and the census. */
   readonly stats = { drawn: 0, masked: 0 };
 
   private readonly device: GPUDevice;
@@ -252,6 +254,7 @@ export class SkyDraw {
       material: new HostBindGroup(device, `sky: ${label} material`, [SKY_BLOCK, SKY_TEXTURE], NO_DEFINES, {
         [SKY_BLOCK.var]: block.buffer,
       }),
+      textures: { skyTexture: piece.recipe.texture },
       geometry,
       buffers: [positions, uvs, indices],
       count: piece.indices.length,
@@ -278,11 +281,11 @@ export class SkyDraw {
     const host = this.renderer.host;
     if (dome && this.domeOurs) {
       dome.block.write(dome.recipe.values);
-      dome.material.refresh(host, { skyTexture: dome.recipe.texture });
+      dome.material.refresh(host, dome.textures);
     }
     if (moon && (this.moonOurs || this.maskOurs)) {
       moon.block.write(moon.recipe.values);
-      moon.material.refresh(host, { skyTexture: moon.recipe.texture });
+      moon.material.refresh(host, moon.textures);
     }
   };
 

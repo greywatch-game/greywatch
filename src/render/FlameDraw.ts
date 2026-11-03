@@ -38,7 +38,8 @@
  * theirs), as Babylon's mask drew the fires after all of ours — by the same
  * vertex module, no depth written, LEQUAL against the depth the main pass
  * wrote — which puts them, with ours at the mask's open, AHEAD of every mesh
- * Babylon's mask still draws (the sparks, the dust discs, the moon), where
+ * Babylon's mask still draws (the sparks, the dust discs) and ahead of the
+ * moon's bloom (ours since X4.5c, `addGlowMaskBlended`), where
  * its queue drew them among those: with no depth written and LEQUAL against
  * the frame's, only an exact tie could differ, and the blended sparks and
  * discs went down after the opaque fires before X4.4d and since; the arrays are uploaded as Babylon uploaded a mesh's (float32, a

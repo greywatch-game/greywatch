@@ -1634,7 +1634,7 @@ Six things about it are load-bearing:
   nothing — which is exactly where the sky gradient above is what a pane should
   show. The shader composites on that alpha and un-premultiplies by hand, the
   same arithmetic and for the same reason as the Fresnel composite. The dome is
-  left out because it rides at `infiniteDistance` and the box projection below
+  left out because it rides with the camera (`Sky.standSky`) and the box projection below
   would drag it around with the viewer; the panes are left out because a
   blended draw over a transparent clear comes back already multiplied.
 - **The mirrored ray is parallax-corrected against the map's own extent**

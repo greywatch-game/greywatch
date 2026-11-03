@@ -751,7 +751,8 @@ export function applyClearColor(scene: Scene, env: EnvironmentSpec): void {
   // shipped map stating one. **The kit screen is what that is for**: the card
   // leaves the coverage under it as it found it, so over a clear of 0 the half of
   // the weapon's outline lying on the card is inked and over a 1 it is not, and
-  // the kit screen over the menu is held to its picture (`BABYLON_EXIT.md` X4.5c).
+  // the owner kept that for the kit screen over the menu, a constant half stroke
+  // (`BABYLON_EXIT.md` X4.5a's row, X4.5c).
   // Nothing downstream sees it — the ink consumes it and writes 1, and the grade at
   // the end of the chain writes 1 again.
   scene.clearColor = new Color4(sky.r, sky.g, sky.b, 1);

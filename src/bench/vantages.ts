@@ -325,7 +325,7 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
       id: "sky-moon",
       of: "the full moon straight overhead of the frame's middle from the farm lane, its halo and the stars round it, the farmstead's roof against the bottom of the sky — the one disc in the set with no cloud on the map to cross it",
       proves:
-        "the MOON (X4.5c): the blended disc on its painted emissive and opacity texture and its boost, the dome's painted halo at the matching uv, and the disc's BLOOM through the glow (exempt from the fog fade by `infiniteDistance`) against a roof's depth, at a `fogEnd` of 78 where any fade would delete it",
+        "the MOON (X4.5c): the blended disc on its painted emissive and opacity texture and its boost, the dome's painted halo at the matching uv, and the disc's BLOOM through the glow (no fog fade: its mask draw states none, `SkyDraw`) against a roof's depth, at a `fogEnd` of 78 where any fade would delete it",
       pos: [52, 0.35, 62],
       target: [98, 62.35, -2],
     },

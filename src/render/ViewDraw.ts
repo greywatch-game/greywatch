@@ -221,7 +221,7 @@ export class ViewDraw {
   /**
    * Whether a refusal of the main pass, or of the mask, has been told since
    * the last frame that drew there — so a refused pass is told ONCE per
-   * change, not up to four times a frame (`Renderer.onRefused`).
+   * change, not up to five times a frame (`Renderer.onRefused`).
    */
   private refusalTold = false;
   private maskRefusalTold = false;

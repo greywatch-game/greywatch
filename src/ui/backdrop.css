@@ -20,8 +20,8 @@
   position: absolute;
   inset: 0;
   /* Under `#overlay` (10) and over the canvas. No background of its own: while
-     a shot is still decoding, what shows is the frame with no map and no sky on
-     it (`docs/states.md`): the clear colour through the post chain, not a black
+     a shot is still decoding, or this fade runs on the way out of a round, what
+     shows is the frame with no map and no sky on it (`docs/states.md`): the clear colour through the post chain, not a black
      hole where a picture is about to be. */
   z-index: 9;
   opacity: 0;

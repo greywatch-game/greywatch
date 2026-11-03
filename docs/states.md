@@ -61,16 +61,24 @@ X4.5c, whose picture-change commit has the before and after). **The sky is drawn
 only while a map stands** (each draw's `Active`, `Sky.setStanding` from
 `Game.installMap` and `teardownMap`), so the menu's frame does no work of ours
 (`Renderer`'s header). Under the photograph, the settings and the lobby over the menu
-that is byte-equal to the frame with the sky, and under the kit screen too, but where
+that is byte-equal to the frame with the sky. Under the kit screen it is too but where
 a cloud stood behind the weapon: the ring's coverage of 0 let the ink draw there, the
-dome's 1 does not (Sarab and Kurenai under the menu's camera, about 250 px on the
-sight, a thing a ring turning would have moved anyway). It shows in five windows: the boot's fade (the photograph is fully opaque ~480 ms after the boot
-screen comes off, a figure off a local dev server: a phone's cold fetch is
+dome's 1 does not, so **the old picture's stroke varied with the cloud and the new one
+does not** (the owner's, 2026-11-03: Coldharbour's ring at the parent, 35 to 209 px up to
+73/255 at five of eight turns, the first about 5 minutes on the menu; Hollowmere, with no
+ring, none). The clouds' SHADOW is not undrawn with them: it still falls on the kit stage
+and darkens the weapon as it crosses (`BABYLON_EXIT.md` X4.5c).
+
+**The sky's absence shows in six windows**: the boot's fade (the photograph is fully
+opaque ~480 ms after the boot screen comes off, a figure off a local dev server: a phone's cold fetch is
 unmeasured); a rejected `img.decode()` with no picture already up
 (`MenuBackdrop.show`, `.then(raise, () => {})`), which leaves the window open as long
 as the menu stands; a building card whose photograph has not decoded
-(`MenuBackdrop.showNamed`); a lobby row on a map this client has never heard of; and
-the DEV proving ground, which has no shot.
+(`MenuBackdrop.showNamed`); a lobby row on a map this client has never heard of;
+the DEV proving ground, which has no shot; and, **accepted by the owner 2026-11-03**, the
+way out of a round: `enterMenu` tears the map down and `MenuBackdrop.show` raises
+`#menu-shot` from 0 over its 0.4 s transition, about 300 to 400 ms on Coldharbour, over the
+last map's colour. From the round-over card there is no fade, its picture being up already.
 
 **Those windows show `scene.clearColor` through the post chain.** **At the boot
 that is the boot map's `skyColor`** (`applyClearColor`, from `Game`'s
@@ -80,10 +88,11 @@ photographs it, so until the player steps the reel the boot's fade is the RIGHT
 map's colour. **Its alpha is 1**, what the dome wrote over the same pixels: the
 frame's alpha is `CelInk`'s coverage, the kit card leaves it as it found it, and a
 clear of 0 would ink the half of the weapon's outline that lies on the card, a
-change to the kit screen over the menu that none of these windows is. The colour is flat and the frame is not quite: the
-grain, the vignette and the shafts seeded at the boot still lie over it (a bright
-column on Harrowmead and Kurenai under the menu's camera, a thing of the windows
-and stated rather than fixed). **Neither the reel nor a teardown writes it**, so
+change to the kit screen over the menu that none of these windows is. The owner kept
+that 1 (2026-11-03) at the cost of a constant half stroke on the weapon. The colour is
+flat and the frame is not quite: the grain, the vignette and the shafts seeded at the boot still lie over it (a soft bright
+band on Harrowmead and Kurenai under the menu's camera, a thing of the windows,
+accepted by the owner 2026-11-03). **Neither the reel nor a teardown writes it**, so
 after a step along the reel it is still the boot map's, and **after a round it is
 the last map's**, under whatever the menu then names. A building card's window takes
 the map being built's from `buildRound`'s `applyEnvironment`, two frames after the
