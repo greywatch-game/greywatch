@@ -1,37 +1,42 @@
 /**
  * Sky.ts — Procedural sky: baked dome texture (gradient/galactic band/stars/
  * moon halo), a textured moon disc, and a ring of faceted cloud MASSES lit per
- * facet off the key light. The dome and disc are unlit emissive meshes of
- * Babylon's (until `BABYLON_EXIT.md` X4.5c); the clouds are one draw of OUR
- * renderer's (`render/CloudDraw.ts`, X4.5b), and `Sky` is made no mesh of them
- * but stays the owner of the turn, the matched clock, the painter's order and
- * the cloud shadow, pushing every value of the ring every frame in every state.
- * Dome and disc are infiniteDistance, unpickable; moon bloom via `GlowPass`.
+ * facet off the key light. All three are OUR renderer's draws
+ * (`render/SkyDraw.ts`, `render/CloudDraw.ts`; `BABYLON_EXIT.md` X4.5b, X4.5c) and
+ * Babylon is made no sky mesh and no sky material: `Sky` paints the two textures
+ * (Babylon's `DynamicTexture`s, read through the seam) and stays the owner of
+ * where the pieces stand, the turn, the matched clock, the painter's order, the
+ * flash and the cloud shadow, pushing every value of the ring every frame in
+ * every state.
  * Invariants: moonDir is negated to align with the shader's light direction;
- * the moon is BLENDED in rendering group 0, so it draws after the opaque dome
- * and before any nearer blended mesh; the clouds sit inside the moon's
- * distance so they hide it by depth. Rebuilt from an
- * EnvironmentSpec via apply() — keep it data-driven, no Hollowmere specifics.
+ * the dome and the disc ride with the camera, composed as Babylon composed a
+ * node's, as this frame's main pass begins (`standSky`); the moon is BLENDED and
+ * draws after the opaque dome and the particles and before any nearer blended
+ * mesh; the clouds sit inside the moon's distance so they hide it by depth.
+ * Rebuilt from an EnvironmentSpec via apply() — keep it data-driven, no Hollowmere
+ * specifics.
  */
 import {
   Camera,
   Color3,
   Constants,
   DynamicTexture,
-  Mesh,
-  MeshBuilder,
   Matrix,
   Quaternion,
   RawTexture,
   Scene,
-  StandardMaterial,
   Texture,
   Vector3,
   Vector4,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { clamp } from "../core/math";
+import { BACKSIDE, createDisc, createSphere } from "../geometry/primitives";
+import type { GeometryBuffer } from "../geometry/buffer";
+import { hostTexture } from "../render/babylonSeam";
 import type { CloudDraw } from "../render/CloudDraw";
+import type { SkyDraw, SkyPiece } from "../render/SkyDraw";
+import type { SkyField } from "../render/skyProgram";
 import { CloudPaint } from "../shaders/CloudShader";
 import { mulberry32 } from "../world/rng";
 import type { EnvironmentSpec, SkySpec } from "../world/environment";
@@ -43,16 +48,15 @@ import { type CloudShadowArea, CloudShadowRaster, LOBE_STRIDE } from "./cloudSha
  * scattering halo baked into a generated texture, an emissive moon disc that
  * feeds the bloom, and a ring of cloud masses turning slowly about the
  * eye. Everything is built at runtime — the game ships no image files — and
- * nothing here is lit by a scene light: the scene has none, so the dome and
- * disc are unlit emissive by construction and the clouds ask the map's KEY
- * light for themselves, as uniforms, exactly as the cel materials do.
+ * nothing here is lit by a scene light: the dome and disc are unlit emissive by
+ * construction and the clouds ask the map's KEY light for themselves, as
+ * uniforms, exactly as the cel materials do.
  *
- * The dome and the disc use `infiniteDistance` (each rides with the camera, so
- * the horizon never gets closer) and stay outside the pick/collide contract: no
- * `solid` metadata, `isPickable = false`, `noInk`. The dome must NOT bloom (a
- * full-screen gradient would haze the frame), so it carries `noGlow`, which the
- * bloom reads every frame; the clouds are in no mask at all, having no mesh. The
- * moon keeps its bloom on purpose.
+ * The dome and the disc each ride with the camera, so the horizon never gets
+ * closer, and being no mesh they are outside the pick/collide contract. The dome
+ * must NOT bloom (a full-screen gradient would haze the frame) and the clouds are
+ * not meant to either, so neither has a mask draw. The moon keeps its bloom on
+ * purpose.
  *
  * The moon sits opposite the key light's direction (`lighting.direction`),
  * so the disc always agrees with the shadows the cel shader paints. Its
@@ -147,8 +151,23 @@ export class Sky {
   private readonly turnMatrix = new Matrix();
   private readonly turnScratch = new Vector3();
 
-  /** The dome's material, for the flash. Null on a sky with no dome. */
-  private domeMat: StandardMaterial | null = null;
+  /** The dome's and the disc's values, which `standSky` and the flash write; null with no sky, or no disc. */
+  private domeValues: SkyValues | null = null;
+  private moonValues: SkyValues | null = null;
+  /** Where the disc stands from the camera, and its scale: what its node held. */
+  private readonly moonPosition = new Vector3();
+  private readonly moonScaling = new Vector3(1, 1, 1);
+  /** `standSky`'s scratch. */
+  private readonly moonWorld = new Matrix();
+  private readonly viewRotation = new Matrix();
+  private readonly viewInverse = new Matrix();
+  private readonly moonTranslation = new Vector3();
+  private readonly moonStored = new Vector3();
+  /** The disc's bounding sphere in its own frame, as Babylon's bounding info held it. */
+  private readonly moonCentre = new Vector3();
+  private moonRadius = 0;
+  private readonly moonCentreWorld = new Vector3();
+  private readonly moonReach = new Vector3();
   /** The clouds' two lit tones as the map painted them, for the flash. */
   private cloudShade = new Color3();
   private cloudLit = new Color3();
@@ -160,6 +179,8 @@ export class Sky {
     private scene: Scene,
     /** The ring's draw, for the session: `Sky` hands it each ring and writes it each order. */
     private readonly cloudDraw: CloudDraw,
+    /** The dome's and the disc's, for the session: `Sky` hands it each sky. */
+    private readonly skyDraw: SkyDraw,
   ) {
     const n = CONFIG.sky.clouds.shadow.size;
     // One texture for the life of the process, so the materials are bound to
@@ -184,17 +205,21 @@ export class Sky {
    * A lightning flash over the dome and through the clouds, 0 when none is up.
    *
    * The DOME takes it as an emissive colour laid over its painted texture —
-   * which a `StandardMaterial` ADDS, so the whole sky lifts evenly and the
-   * stars and the halo stay painted on it. The CLOUDS take it on both lit
+   * which `wgsl/sky.ts` ADDS, so the whole sky lifts evenly and the stars and
+   * the halo stay painted on it. The CLOUDS take it on both lit
    * tones, so a deck is lit from inside rather than tinted from outside.
    */
   setFlash(color: Color3, amount: number): void {
-    if (this.domeMat) {
-      this.domeMat.emissiveColor.copyFrom(color).scaleInPlace(amount * 0.35);
+    const f = this.flashScratch;
+    if (this.domeValues) {
+      f.copyFrom(color).scaleInPlace(amount * 0.35);
+      const e = this.domeValues.skyEmissive;
+      e[0] = f.r;
+      e[1] = f.g;
+      e[2] = f.b;
     }
     const paint = this.cloudPaint;
     if (paint) {
-      const f = this.flashScratch;
       f.copyFrom(color).scaleInPlace(amount * 0.6);
       // Into scratches: this runs every frame in every state on every map with
       // clouds, lightning or none.
@@ -228,12 +253,7 @@ export class Sky {
     // source is drawn.
 
     // --- dome: gradient + galactic band + stars + baked halo, one draw ---
-    const domeMat = new StandardMaterial("sky-dome-mat", this.scene);
-    domeMat.emissiveTexture = this.paintDomeTexture(spec, env, moonDir, rand);
-    domeMat.disableLighting = true;
-    domeMat.diffuseColor = Color3.Black();
-    domeMat.specularColor = Color3.Black();
-    domeMat.disableDepthWrite = true;
+    const domeTex = this.paintDomeTexture(spec, env, moonDir, rand);
     // **The dome is NOT dithered, and that was measured rather than assumed.**
     // It looks like the one surface that would need it — the widest, shallowest
     // ramp in the game, magnified about sevenfold on its way to the screen — but
@@ -244,70 +264,53 @@ export class Sky {
     // dither against 229 with one — the same 1.55 px mean run either way, which
     // is already broken up. See `shaders/Dither.ts` for the surfaces that DO
     // band; the fog ramp on a plain cel-shaded wall is six times coarser.
-    const dome = MeshBuilder.CreateSphere(
-      "sky-dome",
-      {
-        diameter: cfg.domeRadius * 2,
-        segments: 24,
-        sideOrientation: Mesh.BACKSIDE,
-      },
-      this.scene,
+    this.domeValues = skyValues(new Color3(0, 0, 0));
+    const dome = skyPiece(
+      createSphere({ diameter: cfg.domeRadius * 2, segments: 24, sideOrientation: BACKSIDE }),
+      this.domeValues,
+      domeTex,
     );
-    dome.material = domeMat;
-    this.domeMat = domeMat;
-    this.prepare(dome, true);
-    this.disposables.push(domeMat, domeMat.emissiveTexture!);
+    this.disposables.push(domeTex);
 
     // --- moon: emissive disc, deliberately left inside the bloom ---
     // Omitted entirely at radius 0 — an overcast sky has a source but no
     // visible disc, and drawing a small one instead reads as a hole rather
     // than as a sun behind cloud.
+    let moon: SkyPiece | null = null;
     if (discRadius > 0) {
       const moonTex = this.paintMoonTexture(rand);
-      const moonMat = new StandardMaterial("sky-moon-mat", this.scene);
-      moonMat.emissiveTexture = moonTex;
       // The limb fades out through the same texture's alpha, so the disc has
       // no polygon edge — a hard circle in the sky reads as a decal.
-      moonMat.opacityTexture = moonTex;
-      moonMat.emissiveColor = Color3.FromHexString(spec.moonColor).scale(
-        cfg.moonEmissiveBoost,
+      this.moonValues = skyValues(
+        Color3.FromHexString(spec.moonColor).scale(cfg.moonEmissiveBoost),
       );
-      moonMat.disableLighting = true;
-      moonMat.diffuseColor = Color3.Black();
-      moonMat.specularColor = Color3.Black();
-      moonMat.disableDepthWrite = true;
-      const moon = MeshBuilder.CreateDisc(
-        "sky-moon",
-        { radius: discRadius, tessellation: 48 },
-        this.scene,
-      );
+      moon = skyPiece(createDisc({ radius: discRadius, tessellation: 48 }), this.moonValues, moonTex);
+      this.boundMoon(moon.positions);
       // Stood BEHIND the clouds' depth rather than at `moonDistance`, and
       // scaled up by the same ratio so it subtends exactly the angle a map's
       // `discRadius` was written for. The disc writes no depth, but the glow
       // layer blooms it against the frame's depth buffer, so a disc in front of
       // the clouds' depth blooms straight through every cloud crossing it.
       const moonScale = cfg.moonDepthDistance / cfg.moonDistance;
-      moon.position.copyFrom(moonDir.scale(cfg.moonDepthDistance));
-      moon.scaling.setAll(moonScale);
+      this.moonPosition.copyFrom(moonDir.scale(cfg.moonDepthDistance));
+      this.moonScaling.setAll(moonScale);
       // Billboard, not lookAt: the disc must face the camera dead-on from
-      // everywhere on the map, and with infiniteDistance it rides with it.
-      moon.billboardMode = Mesh.BILLBOARDMODE_ALL;
-      moon.material = moonMat;
-      // **Group 0, in its BLENDED pass**, which Babylon draws after the opaque
-      // dome and after the clouds (see `buildClouds`), sorted far to near — so
-      // at 9 km the disc is the first blended mesh down and every capture
-      // marker, tracer and pane in front of it draws over it. It rode in the
-      // viewmodel's group once, after the whole world, and painted itself over
-      // anything blended standing against it: none of those write a depth to
-      // stop it. PARTICLES are the exception the group cannot fix — Babylon
-      // draws a group's particle systems before its blended meshes. And the
-      // disc's BLOOM still reaches over all of them: the glow is occluded
-      // by depth alone (`GlowPass`), and at `moonEmissiveBoost` the bloom
-      // saturates the disc white again over a beacon — measured on Cinderhaven,
-      // byte-identical in either group with the glow on, different with it off.
-      this.prepare(moon, false);
-      this.disposables.push(moonMat, moonTex);
+      // everywhere on the map, and it rides with it (`standSky`).
+      //
+      // **Ahead of Babylon's BLENDED list, where it was first by distance**
+      // (`"beforeBlended"`, `SkyDraw`), so every capture marker, tracer and pane
+      // in front of it draws over it. It rode in the viewmodel's group once,
+      // after the whole world, and painted itself over anything blended standing
+      // against it: none of those write a depth to stop it. PARTICLES are the
+      // exception that place cannot fix — Babylon draws a group's particle
+      // systems before its blended meshes (X4.7's to take up). And the disc's
+      // BLOOM still reaches over all of them: the glow is occluded by depth alone
+      // (`GlowPass`), and at `moonEmissiveBoost` the bloom saturates the disc
+      // white again over a beacon — measured on Cinderhaven, byte-identical in
+      // either group with the glow on, different with it off.
+      this.disposables.push(moonTex);
     }
+    this.skyDraw.setSky(dome, moon, this.standSky);
 
     // --- cloud masses: one soup, one draw of ours (`CloudDraw`), the whole ring ---
     this.buildClouds(spec, moonDir, rand, mapSize);
@@ -388,11 +391,14 @@ export class Sky {
   }
 
   private clear(): void {
+    // The draw first: it holds the textures through their handles.
+    this.skyDraw.clearSky();
     for (const d of this.disposables) d.dispose();
     this.disposables.length = 0;
     this.cloudDraw.clearRing();
     this.cloudPaint = null;
-    this.domeMat = null;
+    this.domeValues = null;
+    this.moonValues = null;
     this.cloudGeo = null;
     this.sortedEye.set(Infinity, Infinity, Infinity);
     this.sortedTurn = Infinity;
@@ -790,20 +796,73 @@ export class Sky {
   }
 
   /**
-   * Tags a sky mesh out of every scene contract and parks it at infinite
-   * distance. `excludeGlow` is for the piece whose emissive fill must not bloom
-   * (the dome); the moon passes false so the bloom haloes it. The clouds are no
-   * mesh: they stand in the world (see `buildClouds`).
+   * Stands the dome and the disc on the camera as this frame draws it, as the
+   * main pass begins (`SkyDraw`, which calls it). What Babylon's nodes were asked
+   * as the frame's meshes were evaluated, composed the way they composed one, off
+   * the camera's WORLD matrix, whose translation is its view's inverse and not
+   * `camera.position` to the last bit: the dome a translation and nothing else,
+   * the disc the same added to where it stands, and turned to face the eye by the
+   * inverse of the view with its translation taken out (`TransformNode
+   * .computeWorldMatrix`, `BILLBOARDMODE_ALL`). Never in `update`, which a frozen
+   * frame holds still while the camera moves. The clouds are not stood here: they
+   * stand in the world (see `buildClouds`).
+   *
+   * **Answers whether the disc is in view**, the one question Babylon's walk asked
+   * of it (`AbstractMesh.isInFrustum`: a mesh's default strategy, the sphere alone,
+   * against the frame's planes), so a moon behind the eye is no draw in either pass,
+   * as it was not. The sphere bounds the disc, so nothing the answer drops can reach
+   * the target.
    */
-  private prepare(mesh: Mesh, excludeGlow: boolean): void {
-    mesh.infiniteDistance = true;
-    mesh.isPickable = false;
-    // noGlow only where true — the moon keeps its bloom, so it must not
-    // claim the flag (the contract reads it as "excluded from the bloom").
-    mesh.metadata = excludeGlow
-      ? { noInk: true, noGlow: true }
-      : { noInk: true };
-    this.disposables.push(mesh);
+  private readonly standSky = (): boolean => {
+    const camera = this.scene.activeCamera;
+    if (!camera) return false;
+    const m = camera.getWorldMatrix().m;
+    const dome = this.domeValues?.skyWorld;
+    if (dome) {
+      dome[12] = m[12];
+      dome[13] = m[13];
+      dome[14] = m[14];
+    }
+    const moon = this.moonValues?.skyWorld;
+    if (!moon) return false;
+    const p = this.moonPosition;
+    const world = this.moonWorld;
+    this.moonTranslation.copyFromFloats(p.x + m[12], p.y + m[13], p.z + m[14]);
+    Matrix.ComposeToRef(this.moonScaling, MOON_TURN, this.moonTranslation, world);
+    world.getTranslationToRef(this.moonStored);
+    this.viewRotation.copyFrom(camera.getViewMatrix());
+    this.viewRotation.setTranslationFromFloats(0, 0, 0);
+    this.viewRotation.invertToRef(this.viewInverse);
+    world.setTranslationFromFloats(0, 0, 0);
+    world.multiplyToRef(this.viewInverse, world);
+    world.setTranslation(this.moonStored);
+    moon.set(world.m);
+    // `BoundingSphere._update`, then its `isInFrustum`.
+    const centre = this.moonCentreWorld;
+    Vector3.TransformCoordinatesToRef(this.moonCentre, world, centre);
+    const reach = this.moonReach;
+    Vector3.TransformNormalFromFloatsToRef(1, 1, 1, world, reach);
+    const radius = Math.max(Math.abs(reach.x), Math.abs(reach.y), Math.abs(reach.z)) * this.moonRadius;
+    const planes = this.scene.frustumPlanes;
+    for (let i = 0; i < 6; i++) {
+      if (planes[i].dotCoordinate(centre) <= -radius) return false;
+    }
+    return true;
+  };
+
+  /** The disc's bounding sphere in its own frame: half the box its vertices make. */
+  private boundMoon(positions: Float32Array): void {
+    let ax = Infinity, ay = Infinity, az = Infinity, bx = -Infinity, by = -Infinity, bz = -Infinity;
+    for (let i = 0; i < positions.length; i += 3) {
+      ax = Math.min(ax, positions[i]);
+      ay = Math.min(ay, positions[i + 1]);
+      az = Math.min(az, positions[i + 2]);
+      bx = Math.max(bx, positions[i]);
+      by = Math.max(by, positions[i + 1]);
+      bz = Math.max(bz, positions[i + 2]);
+    }
+    this.moonCentre.set((ax + bx) * 0.5, (ay + by) * 0.5, (az + bz) * 0.5);
+    this.moonRadius = Math.hypot(bx - ax, by - ay, bz - az) * 0.5;
   }
 
   /**
@@ -1094,6 +1153,36 @@ export class Sky {
 /** The ring's scale and place: a turn about y and nothing else (`Sky.standRing`). */
 const RING_SCALE = new Vector3(1, 1, 1);
 const RING_ORIGIN = new Vector3(0, 0, 0);
+
+/** The disc's node held no rotation of its own: the billboard is all of it (`Sky.standSky`). */
+const MOON_TURN = Quaternion.Identity();
+
+/** A sky piece's block, each field written in place: `Sky.standSky`, `Sky.setFlash`. */
+type SkyValues = Record<SkyField, Float32Array>;
+
+/**
+ * A piece's values before anything has stood it: `world` the identity, and
+ * `emissive` both the colour the material held and the bloom colour `GlowRules`
+ * composed from it (`Game.bloomColour` at a fade of 1, the moon being exempt from
+ * the fog's), the alpha the material's 1.
+ */
+function skyValues(emissive: Color3): SkyValues {
+  return {
+    skyWorld: Float32Array.of(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1),
+    skyEmissive: Float32Array.of(emissive.r, emissive.g, emissive.b),
+    skyGlow: Float32Array.of(emissive.r, emissive.g, emissive.b, 1),
+  };
+}
+
+/** What `SkyDraw` is handed of a piece: its arrays as the GPU reads them, and what it is drawn with. */
+function skyPiece(geometry: GeometryBuffer, values: SkyValues, texture: DynamicTexture): SkyPiece {
+  return {
+    positions: Float32Array.from(geometry.positions),
+    uvs: Float32Array.from(geometry.uvs!),
+    indices: Uint32Array.from(geometry.indices),
+    recipe: { values, texture: hostTexture(texture) },
+  };
+}
 
 /**
  * A DynamicTexture's context, typed as the DOM one it actually is. Babylon's

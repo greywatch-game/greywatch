@@ -1369,14 +1369,15 @@ export class FrameProfile {
    * lost, and the mask's groups are not counted twice.
    *
    * **Every rendering group is `drawWorld`**, which since `BABYLON_EXIT.md`
-   * X4.3d is group 0 alone: the sky draws in it, and the whole weapon — the
-   * kit card and the optics' glasses with the opaque parts — is our
-   * renderer's, QUEUED at the end of group 0 and so inside it (recorded where
-   * Babylon runs the queue: `docs/profiling.md`) on a frame Babylon visits the
-   * group. On a frame it does not (X4.5a's fallback) no group opens, so no
-   * `drawWorld` opens and the queuing falls under no group span; from X4.7,
-   * with nothing of Babylon's in group 0, this span reads 0 on every frame,
-   * and that step owes it an answer. Group 1 was `drawOverlay`
+   * X4.3d is group 0 alone: what is left of Babylon's draws in it (no sky since
+   * X4.5c), and the whole weapon — the kit card and the optics' glasses with the
+   * opaque parts — is our renderer's, QUEUED at the end of group 0 and so inside
+   * it (recorded where Babylon runs the queue: `docs/profiling.md`) on a frame
+   * Babylon visits the group. On a frame it does not (X4.5a's fallback: the menu,
+   * and since X4.5c any frame of a round with nothing of Babylon's in view) no
+   * group opens, so no `drawWorld` opens and the queuing falls under no group
+   * span; from X4.7, with nothing of Babylon's in group 0, this span reads 0 on
+   * every frame, and that step owes it an answer. Group 1 was `drawOverlay`
    * until then, the gun's share against the map's; it held nothing after
    * X4.3d and was retired (report version 24), and a group added to the game
    * joins `drawWorld` rather than going unrecorded.

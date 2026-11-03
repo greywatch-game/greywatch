@@ -1412,8 +1412,10 @@ src/
                         #   one soup of faceted masses standing in the
                         #   world over the map, drawn back to front at one
                         #   shared depth 7 km out (the disc stands at 9 km). The
-                        #   ring's turn, clock, order and shadow are here, and
-                        #   render/CloudDraw.ts draws it (X4.5b): no mesh
+                        #   paint, where dome and disc stand, the ring's turn,
+                        #   clock, order and shadow are here; render/SkyDraw.ts
+                        #   and render/CloudDraw.ts draw them (X4.5b, X4.5c): no
+                        #   sky mesh and no sky material
     cloudMasses.ts      # The cloud ring's SHAPE: cumulus heaps, banks and
                         #   puffs of round lobes on flat bellies, buried facets
                         #   dropped, as one triangle soup carrying the facet
@@ -2548,6 +2550,11 @@ src/
                         #   lit smoke, dissolve — and its bloom under GLOW_MASK,
                         #   one vertex text for both. Babylon-free:
                         #   render/blastProgram.ts declares them
+      sky.ts            # The dome and the moon as plain strings (X4.5c): what
+                        #   StandardMaterial compiled for them (the clamped sum
+                        #   of the emissive colour and the texture) and the mask
+                        #   material's bloom. Babylon-free: render/skyProgram.ts
+                        #   declares them
       cloud.ts          # The cloud masses as plain strings (X4.5b): the vertex
                         #   stage pinned short of the far plane and the pixel in
                         #   cel TONES — lit mostly off the lump's smooth normal so
@@ -2800,6 +2807,16 @@ src/
                         #   the main pass's and the mask's modules — one vertex
                         #   module for both (the LEQUAL tie); the frame's
                         #   light, eye and fog, the rest the block's
+    SkyDraw.ts          # The sky's DOME and MOON as OUR renderer draws them
+                        #   (X4.5c): the session's three pipelines, each piece's
+                        #   arrays and block from setSky to clearSky, the dome at
+                        #   "first", the disc at "beforeBlended", its bloom behind
+                        #   every other draw of ours at the mask's open; every
+                        #   value and the textures Sky's, the bloom's admission
+                        #   Game's; a failure (or a refused pass) the round's
+    skyProgram.ts       # Their program (X4.5c): the block, the texture, the
+                        #   geometry and the index it pulls through, SkyRecipe,
+                        #   the blend, one vertex module and three fragments
     CloudDraw.ts        # The sky's cloud RING as OUR renderer draws it (X4.5b):
                         #   the session's pipeline and block, a ring's soup and
                         #   index on the GPU from setRing to clearRing, the

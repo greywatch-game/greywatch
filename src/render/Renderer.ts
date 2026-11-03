@@ -6,9 +6,10 @@
  * Owns: `Renderer` — the frame's `FrameUniforms` and `FrameUniformBuffer`,
  * its `FrameTextures` and the bind group they make with the buffer (group 0
  * of every program, `FrameContext.frameGroup`, handed to a prepare as to a
- * draw), the `PipelineCache`, the `FrameDraw`s at each of the five
+ * draw), the `PipelineCache`, the `FrameDraw`s at each of the six
  * points they may be drawn at and those drawn in the glow's mask — first
- * (`addGlowMask`) or last (`addGlowMaskLate`) — each with the predicate that
+ * (`addGlowMask`, and behind those `addGlowMaskBlended`) or last
+ * (`addGlowMaskLate`) — each with the predicate that
  * says whether it has anything to draw this frame (`Active`), the
  * `FramePrepare`s run as the pass begins, whoever is told of a refused pass
  * (`onRefused`, and the mask's `onGlowMaskRefused`),
@@ -68,19 +69,17 @@
  * material; finds the glow's mask by testing a pass's targets — it is TOLD.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
  *
- * WHERE A DRAW LANDS, in the host's own order, at one of five points of the
- * main pass, four of them about rendering group `groupId` (0: the world)
+ * WHERE A DRAW LANDS, in the host's own order, at one of six points of the
+ * main pass, five of them about rendering group `groupId` (0: the world)
  * (`DrawPoint`), which come in this order in every frame, whatever the group
  * holds (on a frame Babylon does not visit the group, all of them are told
  * together at the end of the phase, in this order):
- * - `"first"`: as the pass starts, ahead of everything of the host's — group
- *   0's opaque list, where the sky dome is today, first among it. A draw that
- *   writes no depth and is MEANT to be painted over belongs here, and nothing
- *   else: anything drawn after a depthless sky must be nearer than it or the
- *   sky paints over it, and anything before it spends shading the sky covers.
- *   Nothing hangs on it yet (`BABYLON_EXIT.md` X4.5a, for X4.5c's dome), and
- *   with nothing on it the frame is exactly the frame without the point: an
- *   empty list asks nothing of the pass.
+ * - `"first"`: as the pass starts, ahead of everything of the host's. A draw
+ *   that writes no depth and is MEANT to be painted over belongs here, and
+ *   nothing else: anything drawn after a depthless sky must be nearer than it
+ *   or the sky paints over it, and anything before it spends shading the sky
+ *   covers. It is the dome's (`SkyDraw`, `BABYLON_EXIT.md` X4.5c); an empty list
+ *   asks nothing of the pass.
  * - `"beforeAlphaTest"`: after the group's opaque meshes and before its
  *   ALPHA-TESTED ones — or, in a frame with none of those, immediately ahead
  *   of `"opaque"`. An opaque draw that something on the alpha-tested list
@@ -107,6 +106,11 @@
  *   opaque wall drawn after the glazing or the water in front of it paints
  *   over them, and one drawn after a particle in front of it paints over
  *   the particle.
+ * - `"beforeBlended"`: after the group's sprites and particles and ahead of its
+ *   transparent meshes. It is the moon's (`SkyDraw`, `BABYLON_EXIT.md` X4.5c), a
+ *   blended draw that writes no depth and was the first of that list by distance:
+ *   so it paints over the particles in front of it, and everything else that
+ *   blends paints over it.
  * - `"afterGroup"`: after the group has been queued whole — its blended
  *   queue included — and before any group above it (none holds anything
  *   since `BABYLON_EXIT.md` X4.3d). The player's whole WEAPON is drawn here
@@ -193,7 +197,7 @@ export interface RendererOptions {
 }
 
 /** Where in the main pass a `FrameDraw` is drawn — see the header. */
-export type DrawPoint = "first" | "beforeAlphaTest" | "afterSurfaces" | "opaque" | "afterGroup";
+export type DrawPoint = "first" | "beforeAlphaTest" | "afterSurfaces" | "opaque" | "beforeBlended" | "afterGroup";
 
 /**
  * Whether a draw has anything to draw this frame — asked once a frame as the
@@ -228,12 +232,14 @@ export class Renderer {
   private readonly beforeAlpha: FrameDraw[] = [];
   private readonly surfaced: FrameDraw[] = [];
   private readonly opaque: FrameDraw[] = [];
+  private readonly blended: FrameDraw[] = [];
   private readonly after: FrameDraw[] = [];
   /** Each list's predicates, index for index (null: always active). */
   private readonly firstActive: (Active | null)[] = [];
   private readonly beforeAlphaActive: (Active | null)[] = [];
   private readonly surfacedActive: (Active | null)[] = [];
   private readonly opaqueActive: (Active | null)[] = [];
+  private readonly blendedActive: (Active | null)[] = [];
   private readonly afterActive: (Active | null)[] = [];
   private readonly prepares: FramePrepare[] = [];
   private readonly latePrepares: FramePrepare[] = [];
@@ -241,6 +247,9 @@ export class Renderer {
   /** Drawn first in the glow's mask, in the order added (`addGlowMask`). */
   private readonly maskDraws: FrameDraw[] = [];
   private readonly maskActive: (Active | null)[] = [];
+  /** Drawn behind every `addGlowMask` draw in that same place, in the order added (`addGlowMaskBlended`). */
+  private readonly maskBlendedDraws: FrameDraw[] = [];
+  private readonly maskBlendedActive: (Active | null)[] = [];
   /** Drawn LAST in the glow's mask, in the order added (`addGlowMaskLate`). */
   private readonly maskLateDraws: FrameDraw[] = [];
   private readonly maskLateActive: (Active | null)[] = [];
@@ -295,6 +304,7 @@ export class Renderer {
       first: this.first,
       beforeAlphaTest: this.beforeAlphaTest,
       afterOpaque: this.afterOpaque,
+      beforeBlended: this.beforeBlended,
       afterGroup: this.afterGroup,
     });
   }
@@ -313,6 +323,8 @@ export class Renderer {
         return hang(this.surfaced, this.surfacedActive, draw, active);
       case "opaque":
         return hang(this.opaque, this.opaqueActive, draw, active);
+      case "beforeBlended":
+        return hang(this.blended, this.blendedActive, draw, active);
       case "afterGroup":
         return hang(this.after, this.afterActive, draw, active);
     }
@@ -337,7 +349,7 @@ export class Renderer {
   /**
    * Calls `refused` on every frame whose main pass is not `FRAME_TARGETS` and
    * something was to draw, until the returned function is called — at each
-   * point with something to draw, so up to four times a frame, which a
+   * point with something to draw, so up to five times a frame, which a
    * listener must take as one refusal. It runs INSIDE the render, after this
    * frame's prepares were recorded, so it may take draws and prepares off
    * this renderer but must free nothing this frame's commands hold.
@@ -361,6 +373,19 @@ export class Renderer {
    */
   addGlowMask(draw: FrameDraw, active?: Active): () => void {
     return hang(this.maskDraws, this.maskActive, draw, active);
+  }
+
+  /**
+   * Draws `draw` in the glow's MASK pass from the next frame on, until the
+   * returned function is called: where `addGlowMask`'s go and behind every one of
+   * them, whatever order anything was added in — so still ahead of every mesh of
+   * Babylon's. A draw that was first of the mask's BLENDED list belongs here: only
+   * Babylon's mask-opaque meshes lie between the two places, and each of those
+   * wrote the depth a blended draw at its pixel is rejected by, so neither order
+   * is seen (the moon, `SkyDraw`, `BABYLON_EXIT.md` X4.5c).
+   */
+  addGlowMaskBlended(draw: FrameDraw, active?: Active): () => void {
+    return hang(this.maskBlendedDraws, this.maskBlendedActive, draw, active);
   }
 
   /**
@@ -403,7 +428,8 @@ export class Renderer {
     const filled = this.maskFilled;
     this.maskFilled = false;
     this.maskOpenOk = false;
-    if (!filled || this.maskDraws.length + this.maskLateDraws.length === 0) return;
+    const opening = this.maskDraws.length + this.maskBlendedDraws.length;
+    if (!filled || opening + this.maskLateDraws.length === 0) return;
     if (!this.host.passIs(GLOW_TARGETS)) {
       if (!this.maskRefused) {
         console.error(
@@ -418,7 +444,7 @@ export class Renderer {
     }
     this.maskRefused = false;
     this.maskOpenOk = true;
-    if (this.maskDraws.length > 0) this.host.queue(this.runMask);
+    if (opening > 0) this.host.queue(this.runMask);
   }
 
   /**
@@ -440,18 +466,22 @@ export class Renderer {
     this.beforeAlpha.length = 0;
     this.surfaced.length = 0;
     this.opaque.length = 0;
+    this.blended.length = 0;
     this.after.length = 0;
     this.prepares.length = 0;
     this.latePrepares.length = 0;
     this.refusals.length = 0;
     this.maskDraws.length = 0;
     this.maskActive.length = 0;
+    this.maskBlendedDraws.length = 0;
+    this.maskBlendedActive.length = 0;
     this.maskLateDraws.length = 0;
     this.maskLateActive.length = 0;
     this.firstActive.length = 0;
     this.beforeAlphaActive.length = 0;
     this.surfacedActive.length = 0;
     this.opaqueActive.length = 0;
+    this.blendedActive.length = 0;
     this.afterActive.length = 0;
     this.maskRefusals.length = 0;
     this.frameBuffer.destroy();
@@ -470,11 +500,14 @@ export class Renderer {
       anyActive(this.beforeAlpha, this.beforeAlphaActive) ||
       anyActive(this.surfaced, this.surfacedActive) ||
       anyActive(this.opaque, this.opaqueActive) ||
+      anyActive(this.blended, this.blendedActive) ||
       anyActive(this.after, this.afterActive);
     // The glow's mask opens after the main pass, and draws from the frame
     // filled here.
     this.maskFilled =
-      anyActive(this.maskDraws, this.maskActive) || anyActive(this.maskLateDraws, this.maskLateActive);
+      anyActive(this.maskDraws, this.maskActive) ||
+      anyActive(this.maskBlendedDraws, this.maskBlendedActive) ||
+      anyActive(this.maskLateDraws, this.maskLateActive);
     if (!this.filled && !this.maskFilled) return;
     this.fill(this.frame);
     this.host.viewProjection(this.frame.viewProjection);
@@ -503,6 +536,10 @@ export class Renderer {
 
   private readonly afterOpaque = (): void => {
     if (this.filled && this.opaque.length > 0 && this.passOk()) this.host.queue(this.runOpaque);
+  };
+
+  private readonly beforeBlended = (): void => {
+    if (this.filled && this.blended.length > 0 && this.passOk()) this.host.queue(this.runBlended);
   };
 
   private readonly afterGroup = (): void => {
@@ -547,14 +584,22 @@ export class Renderer {
     for (let i = 0; i < draws.length; i++) draws[i](pass, this.ctx);
   };
 
+  private readonly runBlended = (pass: GPURenderPassEncoder): void => {
+    const draws = this.blended;
+    for (let i = 0; i < draws.length; i++) draws[i](pass, this.ctx);
+  };
+
   private readonly runAfter = (pass: GPURenderPassEncoder): void => {
     const draws = this.after;
     for (let i = 0; i < draws.length; i++) draws[i](pass, this.ctx);
   };
 
+  /** `addGlowMask`'s list and then `addGlowMaskBlended`'s: one place in the pass. */
   private readonly runMask = (pass: GPURenderPassEncoder): void => {
     const draws = this.maskDraws;
     for (let i = 0; i < draws.length; i++) draws[i](pass, this.ctx);
+    const last = this.maskBlendedDraws;
+    for (let i = 0; i < last.length; i++) last[i](pass, this.ctx);
   };
 
   private readonly runMaskLate = (pass: GPURenderPassEncoder): void => {

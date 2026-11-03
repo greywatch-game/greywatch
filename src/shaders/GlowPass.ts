@@ -99,8 +99,14 @@
  * them, told by `onMaskCloseObservable` (X4.3c's review, the owner's
  * decision): so a blended emissive that writes no depth (an impact's spark
  * fading) in front of a lit weapon part lands UNDER the weapon's colour, as
- * it did. Everything else in the mask — the effects and fires,
- * the moon, and an EDITOR build's every emissive — is still drawn here.
+ * it did. The MOON is ours too (`render/SkyDraw.ts`, X4.5c: no sky piece is a
+ * Babylon mesh), drawn at the open behind every other draw of ours, so still
+ * ahead of the blended meshes here, of which it was the first by distance; the
+ * opaque ones lying between, each having written the depth it is rejected by,
+ * cannot be told from either order. Everything else in the mask — the sparks
+ * and an EDITOR build's every emissive — is still drawn here, and no surface of
+ * Babylon's left pairs a texture with a glow, so the `EMISSIVE` and `OPACITY`
+ * variants have no caller until this pass is ours (X5.2).
  *
  * A MATERIAL WHOSE VERTICES MOVE BRINGS ITS OWN MASK (`SelfMasking`). The
  * stock variants transform by `world` and `viewProjection` alone, so a surface

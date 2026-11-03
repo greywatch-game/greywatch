@@ -1061,9 +1061,8 @@ export class WorldCulling {
       // bounds were the last frame's — once, before any draw, the ORIGIN.
       // Asked for its size, it answered "1.8 px at 726 m" — the distance from
       // the origin to the player — and the gate deleted the weapon out of the
-      // player's hands. `infiniteDistance` is the same argument for the sky,
-      // which is nowhere at all.
-      if (gate && !mesh.infiniteDistance) {
+      // player's hands.
+      if (gate) {
         // ONE lookup, which is why the two answers share a map: this runs on
         // every candidate every frame, and the emissive exemption used to be
         // the only question here.

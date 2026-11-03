@@ -680,7 +680,7 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
       id: "sky-flash",
       of: "the same horizon as `sky-ring` under a lightning flash near its peak, the dome and the clouds lifted, every ridge and lighthouse black against them",
       proves:
-        "the flash on the dome (X4.5c: `Sky.setFlash` through the dome's `emissiveColor`, which a `StandardMaterial` adds over its texture) and through the clouds' two lit tones (X4.5b) — the map's own seeded strike, read off its schedule at a clock of 28.484 s",
+        "the flash on the dome (X4.5c: `Sky.setFlash` through the dome's emissive colour, which `wgsl/sky.ts` adds over its texture, as a `StandardMaterial` did) and through the clouds' two lit tones (X4.5b) — the map's own seeded strike, read off its schedule at a clock of 28.484 s",
       pos: [250, 0.35, 404],
       target: [-200, 60, -100],
       strike: 28.484,

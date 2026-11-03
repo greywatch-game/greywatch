@@ -7,9 +7,10 @@
  * Babylon's own draw order (`queue`), the encoder submitted ahead of the
  * frame's draws (`prepareEncoder`), the camera's matrix, the frame's main
  * pass told apart from every render target that also draws rendering group
- * 0 — its start, and the two points inside it where that group's alpha-tested
- * meshes begin and where its opaque and alpha-tested meshes end, all told
- * whether Babylon has anything in the group or not — and a
+ * 0 — its start, and the three points inside it where that group's alpha-tested
+ * meshes begin, where its opaque and alpha-tested meshes end, and where its
+ * transparent meshes begin (past its particles), all told whether Babylon has
+ * anything in the group or not — and a
  * Babylon texture's own view and sampler (`bind`); and `hostTexture`, the one
  * crossing that turns a Babylon texture into the handle the renderer holds.
  * Items 2 to 5 are reached in a second pass of Babylon's too, the glow's MASK
@@ -59,9 +60,12 @@
  *      (`Rendering/renderingGroup.js`), reached by the public
  *      `scene.renderingManager.getRenderingGroup`, on a class Babylon tags
  *      `@internal`. One slot, called in `render` after the group's opaque and
- *      alpha-tested meshes, its sprites and its particles. Only the SCENE's
- *      manager is reached — every render target owns a manager of its own —
- *      so it fires in the camera's pass and in no other.
+ *      alpha-tested meshes, its sprites and its particles, ahead of its
+ *      transparent meshes. Only the SCENE's manager is reached — every render
+ *      target owns a manager of its own — so it fires in the camera's pass and
+ *      in no other. The `beforeBlended` point is this same slot (X4.5c), and
+ *      the moon's draw hangs on it until the particles move (X4.7) and the
+ *      blended list with them (X4.6).
  *   7. `internalTexture._hardwareTexture.view` (`WebGPU/webgpuHardwareTexture
  *      .js`): the `GPUTextureView` Babylon itself binds for a texture
  *      (`webgpuCacheBindGroups.js`, `getBindGroups`), so ours is the same view
@@ -293,12 +297,12 @@ export class BabylonFrameHost implements FrameHost {
    * the group holds: `first` is told there, right after `begin`, ahead of
    * everything Babylon queues in the pass.
    *
-   * **THE GROUP'S THREE POINTS ARE TOLD ON A FRAME IT DOES NOT RENDER TOO.**
+   * **THE GROUP'S FOUR POINTS ARE TOLD ON A FRAME IT DOES NOT RENDER TOO.**
    * Babylon visits no empty group (`RenderingManager.render` skips a group
    * whose `_empty` is set, and it raises no observable for one), so with
    * nothing of Babylon's in it none of the group's hooks below would run. So
    * the phase's end asks whether the group was visited, and if it was not,
-   * tells all three in their order, there: no internal beyond the public
+   * tells all four in their order, there: no internal beyond the public
    * observables, and it is ahead of the glow's mask, which renders from the
    * same observer list, because this one is inserted FIRST. No group above
    * `groupId` holds anything (`BABYLON_EXIT.md` X4.3d), so nothing of Babylon's
@@ -318,6 +322,11 @@ export class BabylonFrameHost implements FrameHost {
    * is outside any group, so it counts only inside one), or item 6, which it
    * always reaches. A group with none of them, a `customRenderFunction`'s,
    * is answered as it ends, before `afterGroup`.
+   *
+   * WHERE THE TRANSPARENT MESHES BEGIN is item 6 itself, past the sprites and
+   * the particles whichever of the three answered the point above; a
+   * `customRenderFunction`'s group, which never reaches it, is answered as it
+   * ends, behind that point and before `afterGroup`.
    */
   onMainPass(groupId: number, hooks: MainPassHooks): { dispose(): void } {
     const scene = this.scene;
@@ -332,6 +341,7 @@ export class BabylonFrameHost implements FrameHost {
     let inGroup = false;
     let alphaBegun = false;
     let opaqueDone = false;
+    let blendedBegun = false;
     const inMainPass = (): boolean => frame !== undefined && e._currentRenderTarget === frame;
     const alphaTestBegins = (): void => {
       if (!inGroup || alphaBegun) return;
@@ -344,6 +354,13 @@ export class BabylonFrameHost implements FrameHost {
       alphaTestBegins();
       opaqueDone = true;
       hooks.afterOpaque();
+    };
+    const blendedBegins = (): void => {
+      if (!inGroup || blendedBegun) return;
+      // A group with no sprites or particles reached nothing else first.
+      opaqueEnds();
+      blendedBegun = true;
+      hooks.beforeBlended();
     };
     // Items 6 and 10. Typed as always set; item 6 is one slot nothing in
     // Babylon fills, and item 10 is set by the group's constructor.
@@ -372,6 +389,7 @@ export class BabylonFrameHost implements FrameHost {
         if (!visited && inMainPass()) {
           hooks.beforeAlphaTest();
           hooks.afterOpaque();
+          hooks.beforeBlended();
           hooks.afterGroup();
         }
         frame = undefined;
@@ -388,6 +406,7 @@ export class BabylonFrameHost implements FrameHost {
         inGroup = true;
         alphaBegun = false;
         opaqueDone = false;
+        blendedBegun = false;
         // Re-read every frame: the sort setters replace the function.
         const own = group._renderAlphaTest;
         if (own !== wrapped) {
@@ -399,7 +418,7 @@ export class BabylonFrameHost implements FrameHost {
     const groupEnd: Observer<RenderingGroupInfo> = scene.onAfterRenderingGroupObservable.add(
       (info) => {
         if (!inGroup || info.renderingGroupId !== groupId) return;
-        opaqueEnds();
+        blendedBegins();
         inGroup = false;
         unwrap();
         hooks.afterGroup();
@@ -415,7 +434,7 @@ export class BabylonFrameHost implements FrameHost {
     if (group.onBeforeTransparentRendering) {
       throw new Error(`babylonSeam: rendering group ${groupId}'s transparent hook is already taken`);
     }
-    group.onBeforeTransparentRendering = opaqueEnds;
+    group.onBeforeTransparentRendering = blendedBegins;
     return {
       dispose: () => {
         scene.onBeforeDrawPhaseObservable.remove(before);
@@ -424,7 +443,7 @@ export class BabylonFrameHost implements FrameHost {
         scene.onAfterRenderingGroupObservable.remove(groupEnd);
         if (sprites) spriteHook?.remove(sprites);
         scene.onBeforeParticlesRenderingObservable.remove(particles);
-        if (group.onBeforeTransparentRendering === opaqueEnds) {
+        if (group.onBeforeTransparentRendering === blendedBegins) {
           group.onBeforeTransparentRendering = undefined;
         }
         unwrap();

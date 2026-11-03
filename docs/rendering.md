@@ -3218,20 +3218,21 @@ mask's too. `begin` fills the frame when either pass has a draw, and a
 `FramePrepare` is handed the `FrameContext` (its fourth argument) to ask
 whether a draw can bind this frame (`WorldGlow`'s verdict).
 
-**A draw lands at one of FIVE points of the main pass** (`DrawPoint`), four of
-them about rendering group 0, and in this order every frame:
+**A draw lands at one of SIX points of the main pass** (`DrawPoint`), five of
+them about rendering group 0, and in this order every frame (the moon's, the fifth,
+`"beforeBlended"`, is X4.5c's: past the group's particles and ahead of its
+transparent list, the seam's item 6 itself; see "The sky"):
 
 - **`"first"`: as the pass starts, ahead of everything of Babylon's** (X4.5a).
   It hangs off the draw phase's own observable, right after `begin`, so it is
   ahead of group 0's opaque list whatever the group holds. **It is the dome's
-  place** (X4.5c): the dome writes no depth and is depth-tested at a 600 m
-  radius, so it is right only because everything past 600 m draws AFTER it, and
-  nothing else may go here. Nothing hangs on it yet. An empty list asks nothing
-  of the pass, so until something does the frame is exactly the frame without
-  the point. **Proved** by a throwaway draw of ours at the point: a depthless
-  full-frame red leaves the frame byte-equal under the dome while its count
-  climbs and shows through where the dome is hidden, and the same triangle
-  writing depth at the near plane hides everything Babylon's and ours.
+  place** (`SkyDraw`, X4.5c): the dome writes no depth and is depth-tested at a
+  600 m radius, so it is right only because everything past 600 m draws AFTER it,
+  and nothing else may go here. An empty list asks nothing of the pass. **Proved**
+  by a throwaway draw of ours at the point, while the dome was still Babylon's: a
+  depthless full-frame red left the frame byte-equal under the dome while its count
+  climbed and showed through where the dome was hidden, and the same triangle
+  writing depth at the near plane hid everything Babylon's and ours.
 - **`"beforeAlphaTest"`: where the group's opaque meshes end and its
   ALPHA-TESTED meshes begin** (X3.5). Babylon has no hook there, so the seam
   WRAPS the group's `_renderAlphaTest` while the main pass's group 0 renders
@@ -3320,8 +3321,8 @@ writes no depth must be BLENDED or on group 0's ALPHA-TEST list (the turf),
 never on the opaque list**, or the floor paints over it every frame —
 a rule anyone adding a decal, a mark or a sheet on the ground can break
 without touching the renderer (`CLAUDE.md` states it). The sky dome is the one
-deliberate case: it writes no depth, draws first, and is MEANT to be painted
-over by everything, ours included. The clouds, at `"afterSurfaces"`,
+deliberate case: it writes no depth, draws first (`"first"`, ours since X4.5c), and
+is MEANT to be painted over by everything. The clouds, at `"afterSurfaces"`,
 land after our blocks and our landform, and write a depth nearer than nothing
 in the world. **The turf lands after the blocks too**, as it did when Babylon's
 opaque list drew them: where its sheet floats over a slab laid level with the
@@ -3333,9 +3334,9 @@ reaches the blocks or the landform, so the loose props are shaded before the
 buildings that hide them, but the floor no longer is — measured at X3.5, the
 blocks drawn ahead of the landform took 4-7% off `gpu.frame` on the paths of
 Greyfen, Sarab and Cinderhaven (`FINDINGS.md` 61 holds what is left). Drawing
-ours at the group's START was weighed and refused: the sky dome writes no
-depth and draws first, at a 600 m radius, so a block past 600 m drawn before
-it would be painted over.
+the world at the group's START was weighed and refused: the sky dome writes no
+depth, at a 600 m radius, so a block past 600 m drawn before it would be painted
+over.
 
 **The attachments are stated ONCE** (`render/targets.ts`, `FRAME_TARGETS`).
 A pipeline is compiled AHEAD of the frame that draws with it, so its formats
@@ -4845,7 +4846,8 @@ written, LEQUAL. What moved is only the fires' interleave with the meshes
 Babylon still draws in that queue — the grass, the capture zones, the backed
 panes, the water — every one of which writes depth, so it is an exact tie
 or nothing. In the mask the fires now go down with ours at its open, AHEAD of
-every mesh Babylon's mask still draws (the sparks, the dust discs, the moon),
+every mesh Babylon's mask still draws (the sparks, the dust discs, and the moon
+until X4.5c made it ours, behind them all at the open),
 where its queue drew them among those — no depth written and LEQUAL against
 the frame's, so again only an exact tie could differ, and the blended sparks
 and discs drew after the opaque fires before X4.4d and since. **No bake draws a fire, and still none does** (`FINDINGS.md` 51:
@@ -5230,7 +5232,7 @@ because it seemed wise.**
   draw through the main view (`PASS_GLOW`, X3.6d, X3.6e): a cluster carrying
   that bit is never size-gated, and `?cullcheck`'s probe and replay skip it
   the same way.
-- **`infiniteDistance`, and the viewmodel by being no candidate at all** —
+- **The viewmodel, by being no candidate at all** —
   the weapon's opaque parts since `BABYLON_EXIT.md` X4.3c and its glass and
   card since X4.3d (no Babylon mesh is made of any, "The weapon, ours"), all
   drawn at every size; until X4.3d the test exempted anything outside
@@ -5520,16 +5522,17 @@ all in the counter this finding is named after. Not chased.
   went with the group. **The moon
   disc used to share the group and does not any more**: it drew after every
   blended mesh in group 0, none of which write depth, so it painted over a
-  capture beacon or a tracer standing in front of it. It is a blended mesh in
-  group 0 now, drawn after the opaque dome and the clouds and, at 9 km, first of
-  the blended queue. **Particles are still under it** — Babylon draws a group's
-  particle systems before its blended meshes, so a plume in front of the disc is
-  the one case the move does not fix. **Nor does it fix the disc's BLOOM**: the
-  glow occludes on depth alone, so the halo is composited over a beacon in
-  front of the disc and saturates it back to white — on Cinderhaven the frame is
-  byte-identical in either group with the glow on, and differs over the disc with
-  it off. `infiniteDistance` stays the glow's fog
-  exemption; the kit screen's test is stated by the weapon's DRAW, which masks
+  capture beacon or a tracer standing in front of it. It is a draw of ours now
+  (`SkyDraw`, X4.5c), after the opaque dome and the clouds and ahead of the blended
+  queue, where it was the first of Babylon's by distance. **Particles are still
+  under it** — Babylon draws a group's particle systems before that queue, so a
+  plume in front of the disc is the one case the move does not fix. **Nor does it
+  fix the disc's BLOOM**: the glow occludes on depth alone, so the halo is composited
+  over a beacon in front of the disc and saturates it back to white — on Cinderhaven
+  the frame was byte-identical in either group with the glow on, and differed over
+  the disc with it off. The moon has no fog fade to be exempt from, its bloom's
+  colour being stated by `Sky` and no distance asked; the kit screen's test is
+  stated by the weapon's DRAW, which masks
   its lit parts in every state, while `Game.glowAdmits` answers for the world
   (every Babylon mesh, the palette, the visors) — it asked of a rendering group
   until X4.3d.
@@ -6438,7 +6441,8 @@ renderer, in the main pass and into the glow's mask, in every round, and
 Babylon is made no mesh of them** (since X3.7b; `render/WorldBlocks.ts` for the
 frame, `render/WorldGlow.ts` for the mask; `BABYLON_EXIT.md` X3.6d, X3.6e), and
 `GlowPass` draws everything else in the mask as before: the bodies, the
-effects, the fire's twin, the viewmodel and the moon. There is no Babylon
+effects, the fire's twin and the viewmodel, each of those but the effects ours by
+now, and the moon's ours too since X4.5c (`SkyDraw`). There is no Babylon
 draw of the palette left anywhere since X3.7c — its Babylon stages and mask
 twin, which no round and no editor build drew any more, are deleted. The mask is the depth
 share carried one step further, and it rests on the same tie: a mask draw
@@ -6677,11 +6681,51 @@ of empty dome.
 rebuilt every round; the sky is not, and repainting 8 megapixels of dome for an
 unchanged sky is pure cost.
 
+**The dome and the moon are OUR renderer's (`render/SkyDraw.ts`, `render/skyProgram.ts`,
+the bodies in `shaders/wgsl/sky.ts`; `BABYLON_EXIT.md` X4.5c): Babylon is made no
+`sky-dome` or `sky-moon` mesh and no material**, as the clouds are not, and
+`Sky` still paints the two `DynamicTexture`s, read through the seam's view of them.
+What is drawn is what `StandardMaterial` compiled for these two, read off the effect
+Babylon built rather than off its options (`EMISSIVE`, `OPACITY` on the moon,
+nothing lit, fogged, tone-mapped or image-processed): the colour is the CLAMPED sum
+of the emissive colour and the texture, and the alpha 1 on the dome and the texture's
+on the disc. So the moon's boost is what saturates its face, a flash lifts the whole
+dome, and the two are not in any bake.
+
+- **The dome is first in the frame** (`"first"`), opaque, LEQUAL, no depth written,
+  alpha 1. Everything past its 600 m radius is only in front of it because it draws
+  after it.
+- **The moon is after the particles and ahead of the blended meshes**
+  (`"beforeBlended"`, the seam's item 6), blended by `ALPHA_COMBINE`, no depth
+  written, so it paints over ash and rotor wash in front of it, as Babylon's
+  blended queue did, and everything blended that is a mesh paints over it. A moon
+  behind its ash would be the better picture and is the owner's to ask for; `sky-motes`
+  is the row that grades the order. It stands at 9 km, behind the depth a cloud
+  writes, so a cloud rejects it. **Its bloom** is a draw of ours in the mask, at the
+  mask's open behind every other draw of ours (`addGlowMaskBlended`), where it was
+  the first of Babylon's blended mask list (the meshes between, each with the depth
+  it is rejected by, cannot be told from either order), LEQUAL against the frame's
+  depth, so a cloud un-blooms it. It has no fog fade: `skyGlow` is the emissive colour
+  at the material's alpha, stated once, and `Game.glowAdmits` is the one question it
+  asks a frame, so it blooms in every state but the kit screen.
+- **Each rides with the camera through a world `Sky` composes as the main pass
+  begins** (`Sky.standSky`, called by the draw), the way `TransformNode.computeWorldMatrix`
+  composed `infiniteDistance` and `BILLBOARDMODE_ALL` until no mesh set them: off the
+  camera's world matrix, whose translation is its view's inverse and not `position` to
+  the last bit, and never in `Sky.update`, which a frozen frame holds still while the
+  camera moves. **The disc is culled as Babylon's walk culled it**, its bounding
+  sphere against the frame's planes in the same call, so a moon behind the eye is no
+  draw in either pass and the census holds one draw for one.
+- **The map with no disc draws no disc, its halo still painted** (`discRadius` 0: no
+  piece, no mask draw, and no texture painted, so the seeded stream runs short by
+  the moon's own draws as it always did).
+- **A failure of the draw is the map's while a sky stands**, the clouds' rule
+  (`SkyDraw.onFailed`).
+
 **The sky owes a state with no map NOTHING, and need not be drawn under the
 photograph at all** (decided by the owner at `BABYLON_EXIT.md` X4.5a;
 `docs/states.md`, "The menu sits over no view at all", has the measurement and
-the windows it shows in). It is still drawn there today, the dome and the disc by
-Babylon and the clouds by us. **It leaves ALL AT ONCE, at X4.5c: each sky draw's
+the windows it shows in). It is still drawn there today. **It leaves ALL AT ONCE, at X4.5c: each sky draw's
 `Active` asks whether a map is standing**, so the menu goes back to doing no work
 of ours, and the picture in those windows moves once, in one commit; a ring taken
 off at X4.5b alone would leave a dome with no cloud on it for one step, with the
@@ -6811,9 +6855,11 @@ the frame's `camPos`, and its `world` is composed as Babylon composes a node's
   wobbles by about one 24-bit LSB, which would speckle every overlap.
 - **The clouds draw at `"afterSurfaces"`** ("Our renderer's frame") — after every
   opaque surface and before everything blended, the turf and the group's particles
-  and blended meshes among it. Both halves are load-bearing. After the
-  opaque list, because the dome is depth-TESTED at `domeRadius` (600 m) and paints
-  over any cloud drawn before it. Before the blended draws, because those write
+  and blended meshes among it. After every opaque surface, which until X4.5c was
+  load-bearing because the dome, depth-TESTED at `domeRadius` (600 m), painted over
+  any cloud drawn before it, and which with the dome first in the frame only spares
+  the ring the pixels a surface covers. Before the blended draws, which is
+  load-bearing, because those write
   no depth, so a cloud drawn after them passes its test wherever they stand
   against the sky: the clouds had rendering group 2 to themselves once, and every
   capture ring, beacon, tracer and plume against the sky was drawn over. **The turf

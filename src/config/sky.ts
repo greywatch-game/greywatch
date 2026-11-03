@@ -5,7 +5,7 @@
  * shafts: those are `CONFIG.graphics.volumetrics`, marched through the shadow
  * volume rather than smeared out of the moon's own pixels.
  * Contract: `docs/rendering.md`.
- * Gotcha: the dome and the disc ride at `infiniteDistance`, so their radii and
+ * Gotcha: the dome and the disc ride with the eye, so their radii and
  * heights are angular conveniences, not reachable places. The CLOUDS do not:
  * `clouds.minRadius` is real metres over the map.
  */
@@ -14,7 +14,7 @@
  * The night sky (src/systems/Sky.ts): a gradient dome with baked stars and
  * moon halo, an emissive moon disc that feeds the bloom, and drifting
  * cloud banks. Palette lives in the map's EnvironmentSpec (`sky`); this is
- * geometry and motion. The dome and disc ride at `infiniteDistance`, so radii and
+ * geometry and motion. The dome and disc ride with the eye, so radii and
  * heights are angular conveniences, not reachable places.
  */
 export const sky = {

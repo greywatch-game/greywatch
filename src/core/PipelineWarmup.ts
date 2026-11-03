@@ -17,7 +17,7 @@
  * OPENS by waiting, with no vantage, for OUR renderer's pipelines
  * (`CONFIG.graphics.warmup.oursCapMs`): every entry of the declared list
  * settled — the bodies, the hulls, the weapon, the bodies' shadow map, the
- * lamps' proxies, every effect pool of ours and the clouds, each asked once at
+ * lamps' proxies, every effect pool of ours and the sky, each asked once at
  * `Game`'s construction — and nothing of ours left compiling, which is the map's own
  * (the world's groups, its depth passes — the lamps' atlas's casters among
  * them — the probes' bake, the palette's mask, asked as its install built
@@ -47,7 +47,7 @@
  * and asks for it ahead of the frame (`render/PipelineCache.ts`), so the
  * warm-up only has to wait for them — which is why an effect pool of ours is
  * never POSED at a vantage (`BABYLON_EXIT.md` X4.4e). What the vantages still
- * draw for is Babylon's own meshes: the sky, the grass and its turf, the
+ * draw for is Babylon's own meshes: the grass and its turf, the
  * water, the glazing, the flags and the capture rings, the blob shadows, the
  * particles, and the three blended pools still Babylon's — `CombatFx`'s
  * sparks and dust discs and `BlastDebrisSystem`'s scorch, which keep a

@@ -579,10 +579,13 @@ tree owes it.** Everything opaque writes **0** (`CelShader`'s `opaqueAlpha`),
 every alpha-blended draw accumulates into it (`ALPHA_COMBINE`), and `CelInk`
 scales its edge by `1 - a`. **A REFLECTION PROBE inverts it** (`opaqueAlpha` is 1 for a
 bake), so **a shader that hardcodes either value breaks a pass silently** — the
-EMISSIVE palette's **1** is deliberate: do not "fix" it onto `opaqueAlpha`.
-**The sky's CLOUDS write the depth of a point 7 km out**, so every surface must
-be nearer: OUR draw (`render/CloudDraw.ts`), after every opaque surface and ahead
-of everything blended. **Nothing on the floor writing NO depth is OPAQUE**.
+EMISSIVE palette's **1** and the dome's are deliberate: do not "fix" them.
+**THE SKY HAS NO BABYLON MESH AND IS IN NO BAKE** (`render/SkyDraw.ts`,
+`CloudDraw.ts`). **The DOME is first in the frame and writes no depth**; **the
+CLOUDS write the depth of a point 7 km out**, ahead of everything blended, so every
+surface must be nearer; **the MOON stands behind that depth**, so a cloud rejects
+it and its bloom, and it paints over the particles. **Nothing on the floor writing
+NO depth is OPAQUE**.
 
 **The world is OPAQUE with exactly one exception, and it is glazing.** Glass you
 can see THROUGH is `getGlass` over a cube `ReflectionSystem` bakes **one per
@@ -604,7 +607,7 @@ that cannot draw its world tells the failure it was HANDED WITH it:
 (`GameMap.world`, whole). **The SCATTER is drawn ONCE**, as INSTANCES of its
 variants. **A mesh carrying `metadata.block` (the glazing) is one only while
 the camera is inside the map's `fogEnd`**, **everything else is ELIGIBLE**,
-and **anything EMISSIVE or `infiniteDistance` is exempt** from the size gate.
+and **anything EMISSIVE is exempt** from the size gate.
 **Nothing pooled may ever be block-keyed.**
 **EVERY BODY, HULL AND WEAPON IS OUR RENDERER'S, and Babylon is made NO RIG,
 HULL OR VIEWMODEL MESH** (`render/BodyDraw.ts`, `HullDraw.ts`, `ViewDraw.ts`):
@@ -633,7 +636,8 @@ draw**, **`noGlow` is read PER SURFACE at the take** (a world fire's too), and
 
 **OUR renderer (`src/render/`) draws INSIDE Babylon's frame through ONE seam**
 (`render/babylonSeam.ts`, the only file there that names Babylon, and only as
-types). The frame's uniforms are PULLED off the factory's fields
+types), and **no draw of ours needs anything of Babylon's in group 0**: the seam
+tells every point whether Babylon visits the group or not. The frame's uniforms are PULLED off the factory's fields
 (`CelMaterialFactory.fillFrame`), so **a new value every cel material holds owes
 `render/frame.ts` a field and `fillFrame` a line** — a shared TEXTURE the same,
 in `FRAME_TEXTURES` and `fillFrameTextures`. **A material's OWN value is set
@@ -641,15 +645,12 @@ through the factory's `own`**, which keeps it in the recipe our renderer draws
 that material with (`render/celMaterial.ts`).
 
 → **[`docs/rendering.md`](docs/rendering.md)** — the frozen define set, the
-irradiance volume (why not Lumen, why the blend is 1), the four light terms and
-the three `DirectionalLight`s, the colour buffer and the map's grime, the shadow
-window, back faces and the foliage's third map, the bodies' map, the rungs, the
-lamps' atlas, lightning, the ink's NIB and its coverage channel's two blended
-exceptions, the wind's rigs, the fire, the glazing and reflection bake, the
-grass and turf, the water, the WGSL traps, our renderer's frame and its seam,
-the candidate list and size gate, the bodies, hulls, weapon and pools (ours:
-the kit, the rank, the order), the glow's three failed attempts and the
-palette, ours, and the sky and its clouds' depths.
+irradiance volume, the four light terms, the colour buffer and the map's grime,
+the shadow window and every map's reason, the rungs, the lamps' atlas, lightning,
+the ink's NIB and its coverage channel, the wind's rigs, the fire, the glazing and
+reflection bake, the grass and turf, the water, the WGSL traps, our renderer's
+frame and its seam, the candidate list and size gate, the bodies, hulls, weapon
+and pools, the glow's failed attempts and the palette, and the sky.
 ### The map is data, not code
 
 `src/world/hollowmere/layout.ts` is the entire level — placements, scatter
@@ -920,9 +921,8 @@ renderer reading the record. `GameMap.world` keeps it for every surface:
   and a world FIRE, neither of which has a mesh, read it at the TAKE, PER
   SURFACE (`BlockHandover`, `takeFire` for a fire), so it must be on the part
   when the build hands it over: it keeps that surface out of the mask alone. A mesh that stays in bloom is faded with distance instead
-  (`GlowRules.colour` in `Game`), and `infiniteDistance` is that fade's one
-  exemption — it is what every sky mesh sets, and the moon is not in the
-  valley to be fogged out of.
+  (`GlowRules.colour` in `Game`); the moon is no mesh, and not in the valley
+  to be fogged out of.
 - `noShadowCaster: true` — excluded from `ShadowSystem.setCasters()`. Flat receivers
   (ground, roads) need it: casting from them is pure shadow acne.
 - `block: "3,2"` — which map block a merged visual came from (the block's side

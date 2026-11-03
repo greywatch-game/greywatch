@@ -57,7 +57,7 @@
  * why the row is here rather than the change: its dome ramp is painted over with
  * stars, the galactic band and the halo's additive bloom, and the cloud decks
  * sit in front of it, so it arrives at 1.55 px runs already and a dither moves
- * nothing. `Sky.apply` carries the same note beside the material that does not
+ * nothing. `Sky.apply` carries the same note beside the dome, which does not
  * get one. Anything that ever flattens that dome — a starless overcast, a map
  * with no halo — puts the question back.
  *

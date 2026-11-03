@@ -78,10 +78,10 @@
  * Also owns: the glow's RULES (`GlowRules` — which meshes may bloom this frame,
  * and the distance fade on each — the bloom is the one
  * pass that reads a material and never asks where the mesh stands, so without
- * it a glow is the last thing left when the world around it has gone to fog;
- * infiniteDistance exempts the moon — asked of Babylon's meshes by `GlowPass`
- * and of the emissive palette by our renderer's `WorldGlow`, one statement
- * each (`glowAdmits`, `bloomColour`)),
+ * it a glow is the last thing left when the world around it has gone to fog —
+ * asked of Babylon's meshes by `GlowPass` and of the emissive palette by our
+ * renderer's `WorldGlow`, one statement each (`glowAdmits`, `bloomColour`), and
+ * of the moon by `SkyDraw`, which `admits` alone reaches, a moon having no fade),
  * ShadowSystem wiring (casters re-registered per round from map.visuals),
  * WorldCulling wiring (the map filed per install, the eye pushed from `tick` in
  * every state beside the shader's own — it decides how much of the map Babylon
@@ -118,6 +118,7 @@ import { ViewDraw, type ViewDrawSegment } from "../render/ViewDraw";
 import { PoolDraw, type PoolKit } from "../render/PoolDraw";
 import { BlastDraw } from "../render/BlastDraw";
 import { CloudDraw } from "../render/CloudDraw";
+import { SkyDraw } from "../render/SkyDraw";
 import { FlameDraw } from "../render/FlameDraw";
 import type { CelRecipe } from "../render/celMaterial";
 import { HULL_CHARRED } from "../render/hullProgram";
@@ -576,6 +577,11 @@ function cloudsFailedOverMenu(reason: string): void {
   console.error(`[sky] the clouds cannot be drawn — ${reason}`);
 }
 
+/** …and of the dome and the moon (`SkyDraw.onFailed`). */
+function skyFailedOverMenu(reason: string): void {
+  console.error(`[sky] the sky cannot be drawn — ${reason}`);
+}
+
 /** A 32-bit FNV-1a of a map id — the storm's seed. */
 function hashId(id: string): number {
   let h = 0x811c9dc5;
@@ -856,6 +862,8 @@ export class Game {
    * while a ring stands: a map stating none has no draw to refuse it for.
    */
   private readonly cloudDraw: CloudDraw;
+  /** The dome's and the moon's draws, on the same terms (`BABYLON_EXIT.md` X4.5c). */
+  private readonly skyDraw: SkyDraw;
   /** `drawView`'s scratch: this frame's evaluated segments in drawing order, and the sort's keys. */
   private readonly viewDrawn: ViewMesh[] = [];
   private viewOrder = new Int32Array(0);
@@ -1979,36 +1987,27 @@ export class Game {
     // lamp — so the base pass and the bloom are attenuated separately, and the
     // bloom is by far the larger term. It does NOT reproduce an emissive
     // texture's `level`, which is sound only while nothing in this game pairs a
-    // texture with a glow — the moon is the one textured emissive and it is
-    // exempt below.
-    //
-    // `infiniteDistance` is the exemption and it is exactly the right test:
-    // every sky mesh sets it (see Sky.prepare), it means "this rides with the
-    // camera", and the moon is the one glowing thing that must never fog — it
-    // is not in the valley, and its bounding sphere is a dome radius away, so
-    // any distance fade would delete it outright.
+    // texture with a glow: the moon is the one textured emissive, and it is no
+    // mesh here (`SkyDraw`). It is also the one glowing thing that must never
+    // fog, not being in the valley, so it is handed no fade at all.
     const glow = new GlowPass(this.scene, this.cameraSys.camera, {
       admits: () => this.glowAdmits(),
       colour: (mesh, material, out) => {
-        let fade = 1;
-        if (!mesh.infiniteDistance) {
-          // The sphere's CENTRE, deliberately — not the NEAR point, which is
-          // what a per-mesh ink width used to be measured to. A bloom is a soft
-          // blob with no edge to speak of, so its middle is where it reads
-          // from; the near
-          // point of a block-merged mesh (the chapel's six windows are one,
-          // 8.5 m of radius) sits a whole radius early and fogged them by 16%
-          // where the wall behind was at 35%. Every glowing mesh here is a
-          // fitting or a window, so a centre is never far from the light it
-          // stands for.
-          const sphere = mesh.getBoundingInfo().boundingSphere;
-          const d = Vector3.Distance(
-            sphere.centerWorld,
-            this.cameraSys.camera.globalPosition,
-          );
-          fade = 1 - fogAmountAt(d);
-        }
-        this.bloomColour(material, fade, out);
+        // The sphere's CENTRE, deliberately — not the NEAR point, which is
+        // what a per-mesh ink width used to be measured to. A bloom is a soft
+        // blob with no edge to speak of, so its middle is where it reads
+        // from; the near
+        // point of a block-merged mesh (the chapel's six windows are one,
+        // 8.5 m of radius) sits a whole radius early and fogged them by 16%
+        // where the wall behind was at 35%. Every glowing mesh here is a
+        // fitting or a window, so a centre is never far from the light it
+        // stands for.
+        const sphere = mesh.getBoundingInfo().boundingSphere;
+        const d = Vector3.Distance(
+          sphere.centerWorld,
+          this.cameraSys.camera.globalPosition,
+        );
+        this.bloomColour(material, 1 - fogAmountAt(d), out);
       },
     });
     this.glow = glow;
@@ -2440,7 +2439,8 @@ export class Game {
     // …and what all five drew (`ProfileReport.pools`): Babylon's counter has
     // counted no tracer, mark, thrown or laid body, nor any case, since X4.4b,
     // nor any billow, shard or chunk since X4.4c, nor any fire since X4.4d,
-    // nor the cloud ring since X4.5b (no pool, but its draw owes the sum).
+    // nor the cloud ring since X4.5b, nor the dome and the moon since X4.5c (no
+    // pool, but their draws owe the sum).
     this.prof.setPools(() => ({
       drawn:
         this.pieceDraw.stats.drawn +
@@ -2448,17 +2448,25 @@ export class Game {
         this.blastDraw.stats.drawn +
         this.debrisDraw.stats.drawn +
         this.flameDraw.stats.drawn +
-        this.cloudDraw.stats.drawn,
-      masked: this.pieceDraw.stats.masked + this.blastDraw.stats.masked + this.flameDraw.stats.masked,
+        this.cloudDraw.stats.drawn +
+        this.skyDraw.stats.drawn,
+      masked:
+        this.pieceDraw.stats.masked +
+        this.blastDraw.stats.masked +
+        this.flameDraw.stats.masked +
+        this.skyDraw.stats.masked,
       instances: this.pieceDraw.stats.instances,
       marks: this.markDraw.stats.instances,
       billows: this.blastDraw.stats.instances,
       debris: this.debrisDraw.stats.instances,
       fires: this.flameDraw.stats.drawn,
       clouds: this.cloudDraw.stats.drawn,
+      sky: this.skyDraw.stats.drawn,
     }));
-    // The sky's ring is OUR renderer's (X4.5b) and `Sky` is handed it below.
+    // The sky's ring is OUR renderer's (X4.5b), its dome and moon too (X4.5c), and
+    // `Sky` is handed them below.
     this.cloudDraw = new CloudDraw(this.renderer, cloudsFailedOverMenu);
+    this.skyDraw = new SkyDraw(this.renderer, () => this.glowAdmits(), skyFailedOverMenu);
     // The list itself — see the field. Every entry's asks were made by its
     // constructor, above; this states them, in one place.
     this.roundPipelines = [
@@ -2473,10 +2481,11 @@ export class Game {
       { name: "debris", ready: this.debrisDraw.ready },
       { name: "fires", ready: this.flameDraw.ready },
       { name: "the clouds", ready: this.cloudDraw.ready },
+      { name: "the sky", ready: this.skyDraw.ready },
     ];
     // The sky hangs behind every state (menu included), so it is dressed
     // once here and re-applied per round alongside the environment.
-    this.sky = new Sky(this.scene, this.cloudDraw);
+    this.sky = new Sky(this.scene, this.cloudDraw, this.skyDraw);
     // The clouds' shadow field, bound once: `Sky` keeps one texture for the
     // life of the process and rewrites it as the ring drifts. Until now every
     // material held `ShadowBindings`' own "no cloud" texel.
@@ -2564,9 +2573,8 @@ export class Game {
    * stated by its DRAW (`BABYLON_EXIT.md` X4.3d): `ViewDraw` masks the
    * weapon's lit parts in every state and never asks — where until then
    * this asked of a rendering group, the viewmodel's having been one. Every
-   * Babylon mesh left is the world's: the moon, which shared that group once
-   * and needed an `infiniteDistance` test to be picked back out, draws in
-   * group 0 (see `Sky.apply`).
+   * Babylon mesh left is the world's, and so is the moon (`SkyDraw`, which
+   * asks here too).
    */
   private glowAdmits(): boolean {
     return this.state !== "loadout";
@@ -5420,6 +5428,7 @@ export class Game {
     // of it with no round standing is the console's (X4.3c).
     this.viewDraw.onFailed((reason) => console.error(`[view] the weapon cannot be drawn — ${reason}`));
     this.cloudDraw.onFailed(cloudsFailedOverMenu);
+    this.skyDraw.onFailed(skyFailedOverMenu);
     // …and the bodies' blobs, which only a simulating frame places, so each
     // would stay lit on a floor that is no longer there.
     this.shadows.hideBlobs();
@@ -5658,6 +5667,8 @@ export class Game {
     // (`applySky`, ahead of this install), so a ring that came after the failure
     // refuses its round here, and a map stating none plays on (X4.5b).
     if (!editor) this.cloudDraw.onFailed((reason) => this.worldFailed(reason, owner));
+    // …and the dome and the moon, on the clouds' terms (X4.5c).
+    if (!editor) this.skyDraw.onFailed((reason) => this.worldFailed(reason, owner));
     if (unfiled && editor) {
       console.error(`[world] ${owner.id}: the cull refused the editor's build — ${unfiled}; nothing is filed`);
     } else if (unfiled) {

@@ -1249,9 +1249,11 @@ the group), but Babylon RUNS the queue — our recording — when it ends the ma
 pass (`_endCurrentRenderPass`), so that cost lands in whichever span is open
 then, as the bodies' and the hulls' does (not confirmed by a capture). The
 viewer prints it as `weapon`. **On a frame Babylon visits no group**
-(`BABYLON_EXIT.md` X4.5a's fallback) no `drawWorld` span opens, so the queuing
-falls under no group span, and from X4.7, when nothing holds group 0,
-`drawWorld` reads 0 on every frame (that step owes the span an answer).
+(`BABYLON_EXIT.md` X4.5a's fallback: the menu, and since X4.5c, with no dome to
+hold the group, any frame of a round with nothing of Babylon's in view) no
+`drawWorld` span opens, so the queuing falls under no group span, and from X4.7,
+when nothing holds group 0, `drawWorld` reads 0 on every frame (that step owes the
+span an answer).
 
 **From report version 26 it says the same of the effect POOLS** (`pools`,
 `BABYLON_EXIT.md` X4.4b): the main pass's draws of the pools' pieces (a RANK
@@ -1275,7 +1277,9 @@ the main pass and one in the mask for each that blooms
 them in `counters.drawCalls` any more. **From report version 29**
 (`BABYLON_EXIT.md` X4.5b) `pools.drawn` counts the cloud ring's one draw too
 (`render/CloudDraw.ts`), no pool but owed to that sum, and `pools.clouds` says
-whether it was drawn.
+whether it was drawn. **From report version 30** (`BABYLON_EXIT.md` X4.5c)
+`pools.drawn` counts the dome's and the moon's draws too and `pools.masked` the
+moon's bloom (`render/SkyDraw.ts`), and `pools.sky` says how many were drawn.
 
 **Report version 24 RETIRED `drawOverlay`** (`BABYLON_EXIT.md` X4.3d): it was
 the rendering groups above 0, which by X4.3c held the optics' glass alone and

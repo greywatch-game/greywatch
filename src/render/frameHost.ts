@@ -47,12 +47,12 @@ export interface BoundTexture {
 }
 
 /**
- * The five points of the frame's main pass a renderer is told of, in the
+ * The six points of the frame's main pass a renderer is told of, in the
  * order they come, once each in EVERY main pass: `begin` and `first` as the
- * pass starts, then `beforeAlphaTest`, `afterOpaque` and `afterGroup`. **A
- * frame on which rendering group `groupId` holds nothing still gets all five**:
- * the group's three are told together where it would have been drawn, the
- * host having nothing of its own to order them against.
+ * pass starts, then `beforeAlphaTest`, `afterOpaque`, `beforeBlended` and
+ * `afterGroup`. **A frame on which rendering group `groupId` holds nothing still
+ * gets all six**: the group's four are told together where it would have been
+ * drawn, the host having nothing of its own to order them against.
  */
 export interface MainPassHooks {
   /** Once, as the main pass's drawing starts. */
@@ -76,6 +76,12 @@ export interface MainPassHooks {
    * particles and its transparent meshes.
    */
   afterOpaque(): void;
+  /**
+   * Once, after rendering group `groupId`'s sprites and particles have been
+   * queued and before its transparent meshes are: so always after `afterOpaque`,
+   * with whatever is blended and is not a mesh between the two.
+   */
+  beforeBlended(): void;
   /** Once, after rendering group `groupId` has been queued whole. */
   afterGroup(): void;
 }

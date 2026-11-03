@@ -1523,10 +1523,9 @@ shader and no material, and because the bank's rows are not aimed at the sky
 (a read of their descriptions in `src/bench/vantages.ts`: the moon and the
 clouds are nobody's subject), so the instrument comes first.
 
-**What the sky is today** (a read of the code, not a measurement; each
-sub-step confirms its own before it moves anything; the dome and the moon are
-still Babylon's, and the clouds' bullet is what X4.5b moved):
-- **The dome**: a `StandardMaterial` sphere, its emissive texture a painted
+**What the sky WAS** (a read of the code, not a measurement, before any of it
+moved; **all of this is past since X4.5c**: no sky piece is a Babylon mesh):
+- **The dome** (**MOVED at X4.5c**): a `StandardMaterial` sphere, its emissive texture a painted
   `DynamicTexture`, at `domeRadius` 600 m riding with the eye, writing no
   depth and depth-tested. `setFlash` lifts it through `emissiveColor` for
   lightning. Cinderhaven's world reaches 1,250 m, so **the dome is right only
@@ -1534,7 +1533,7 @@ still Babylon's, and the clouds' bullet is what X4.5b moved):
   dome passes the depth test there and paints over it. Today it is in group
   0's opaque list, ahead of our `"beforeAlphaTest"` point, and that list is
   sorted nearest first by bounding-sphere centre (`setRenderingOrder`).
-- **The moon**: a `StandardMaterial` billboard disc on a painted texture
+- **The moon** (**MOVED at X4.5c**): a `StandardMaterial` billboard disc on a painted texture
   (emissive and opacity both), blended, writing no depth, stood at
   `moonDepthDistance` 9 km, behind the depth a cloud writes. It is the first
   of Babylon's blended meshes down, and so draws AFTER the group's particles:
@@ -1729,35 +1728,89 @@ still Babylon's, and the clouds' bullet is what X4.5b moved):
     they draw after every opaque surface and before everything blended; the
     cloud shadow on the ground (`cloudShadow`) is untouched; the ring is in
     no bake and no glow.
-- **X4.5c — the dome and the moon are ours, and Babylon draws no sky (no
-  picture change).** A sky program ported from what `StandardMaterial`
-  actually does for these two (emissive texture, the flash's added colour,
-  the moon's opacity texture and its boost) and proven against the bank; the
-  dome on X4.5a's first point; Babylon is made no `sky-dome` or `sky-moon`
-  mesh. The moon's bloom moves into a mask draw of ours at its old place in
-  the order. The painted textures may stay as they are, read through the
-  seam's texture view; no new internal.
-  - **The moon against the particles**: it paints over ash and rotor wash
-    today because Babylon draws them first, and our `"opaque"` point comes
-    BEFORE them. The default is to keep the order, from a point after the
-    particles (the seam's item 6 is that slot, and X4.7 moves them anyway). A
-    moon behind its ash is the better picture and a recorded change, only if
-    the owner asks for it.
-  - **`infiniteDistance`**: the bloom's fog-fade exemption and the size gate's
-    each lose their reason with the last sky mesh; each is deleted once
-    nothing else sets the field, and its comment goes with it.
-  - **The menu** (the owner's decision; that all of it lands here, the clouds'
-    with the rest, is X4.5b's implementer's split, not yet ruled on): every sky
-    draw's `Active` asks whether a map stands, the clouds' with them, and taking
-    the sky off the five windows goes in a commit of its own with its before and
-    after.
-  - **Contracts it keeps:** the moon is exempt from the bloom's fog fade; it
-    stands behind the clouds' depth, so it is rejected and un-bloomed through
-    one; the dome writes no depth; the map with no disc draws no disc, its
-    halo still painted.
-  - **Oracle:** the bank on every map, the night map included; zero sky meshes
-    in `scene.meshes` over the menu, in a round and in the editor;
-    `pipelines.mjs` and the sealed cache quiet in a round.
+- **X4.5c — the dome and the moon are ours, and Babylon draws no sky LANDED**
+  (PORTHASH; 2026-11-03; no picture change, the menu's windows included). A sky
+  program of one vertex stage and three fragments (`shaders/wgsl/sky.ts`,
+  `render/skyProgram.ts`, `render/SkyDraw.ts`), read off the effects Babylon had
+  built: `EMISSIVE`, `OPACITY` on the moon, no light, fog, image processing,
+  specular or reflection. With the exact zeros and ones out, the colour is
+  `clamp(emissive + texture)` and the alpha 1 (the dome) or the texture's (the
+  moon); no colour-space step was in force. The dome draws at `"first"`, the moon at
+  a new point, `"beforeBlended"` (the seam's item 6, past the particles and ahead of
+  the blended list, told by the fallback too), and its bloom at a new mask place
+  (`addGlowMaskBlended`), behind every other draw of ours at the mask's open. Babylon
+  is made no `sky-dome` or `sky-moon` mesh and no material; the two `DynamicTexture`s
+  stay, read through the seam's item 7 and 8. **No new Babylon internal.** Geometry
+  from `src/geometry/`'s copies of the builders, bit-equal to Babylon's meshes.
+  `infiniteDistance` set by nothing now, so the bloom's fade exemption and the size
+  gate's test are deleted with their comments (`scripts/kit-hash.mjs` still READS the
+  field in its fingerprint, always false, left so a hash stays comparable). Pipelines
+  on `Game.roundPipelines`; `pools.sky`, `pools.drawn` and `pools.masked` count them
+  (report version 30), `census.mjs` too. `CloudShader.ts` keeps its reason (the
+  `CloudLook` and `CloudPaint` values). In no bake and in no other pass: read off
+  `ProbeBake`, whose sky is alpha 0, and off the mask's list.
+
+  **What a port owes that a table of options does not say.** Each piece's world
+  is composed the way `TransformNode.computeWorldMatrix` composed it, off the camera's
+  WORLD matrix (whose translation is the view's inverse, not `position`) through the
+  same `Matrix` calls in the same order (`Sky.standSky`), as the main pass begins and
+  never in `Sky.update`, which a frozen frame holds still. **The disc is CULLED as
+  Babylon culled it** (the sphere alone, the default strategy, against the frame's
+  planes): the first run drew it always, the picture byte-equal, and `census` read +1
+  on every row the moon was out of (Hollowmere 321 against 308), so it was put back,
+  one draw for one. **The mask's place, read before moving it**: the list a mask holds
+  of Babylon's over all 114 rows at the parent (`x45c/mask.mjs --all`) is the moon and
+  the sparks, and a spark in that list's opaque half wrote the depth a moon at its
+  pixel is rejected by, so ahead of them and behind them cannot be told apart.
+
+  **Group 0, the question the step inherits.** Over the boot's menu it now holds
+  NOTHING, so X4.5a's fallback is that frame's path: 0 of 30 frames visited, 0 active
+  meshes, 180 queues, kit screen over it the same. In a round the glazing, the water,
+  the flags and the particles keep it visited: on the 61 rows of three maps
+  (`x45c/group.mjs`) none is empty. **Back at the menu after a round it IS visited,
+  0 active meshes**, by the `motes` particle system: `teardownMap` stops its emitter,
+  Babylon goes on dispatching a stopped GPU system, and the motes in the air live out
+  their lives over the menu, at the parent too. Either path tells the same points.
+  **The fallback carries the four points with the sky on them** (`x45c/fb.mjs`, every
+  Babylon mesh and particle off, the moon in frame, Coldharbour, Hollowmere,
+  Cinderhaven): held by one mesh behind the eye 8 of 8 frames visited, empty 0 of 8,
+  the same 48 queues, **byte-equal**, and the moon's control differs on all three.
+  `FrameProfile`'s `drawWorld` qualifier holds, reworded: "the sky draws in it" goes,
+  and a frame of a round with nothing of Babylon's in view joins the menu's. Nothing
+  else read the sky's meshes: `GlowRules` and the size gate are above; the editor's
+  pick filters on `solid`; `Atmosphere` reads nothing of them; `Sky.update`'s pushes are
+  the ring's.
+
+  **Measured.** The bank `--check --keep` against a BEFORE at 1520d41: **120 and 121
+  of 121 byte-equal** (two runs before the cull went in) and **120 of 121 on the
+  committed tree**, the one being the known `view-pistol-reload` flake, 2 px at 1/255;
+  the same 34 stale rows red on both sides; the 8 sky rows byte-equal every time.
+  `census --against` a BEFORE: **every row of 121 equal** (308, 205, 2,735, 2,314, 472,
+  508, 125), the dome and the moon moved from Babylon's column to ours. **The moving
+  part** (`x45c/stand.mjs`, the camera walked by a function of the frame, four maps):
+  on 60 of 60 frames the dome's and the moon's worlds, as 32-bit floats, hash equal to
+  the parent's nodes; the sphere's and the disc's positions, uvs and indices too. **The
+  bloom in the mask** (`x45c/mask.mjs`, read back raw): the mask's whole RGBA hash-equal
+  to the parent's on `sky-moon`, `sky-motes`, `sky-disc`, `sky-ring` (Coldharbour's, the
+  moon culled), `sky-cloud-moon`, Cinderhaven's `sky-ring` and `sky-flash`, up to
+  42,241 lit pixels. **The menu** (`x45c/windows.mjs`, clocks pinned, the seven maps and
+  the proving ground): the bare canvas, the fade held half way with and without the
+  card, a rejected decode, a building card with the note's `Math.random` pinned, a
+  lobby row on no map, the kit screen and the sky stated away, all equal to the parent
+  but for the known DOM flake (at most 6 px at 1/255); after a round, equal once the
+  motes are held off, those last ones in the air being what moves there in both trees. **Sky meshes and
+  materials**: 0 and 0 over the menu, over the kit screen, in a round, in the editor,
+  after it and back at the menu. `pipelines.mjs --round`: Coldharbour zero in play,
+  install 20 of Babylon's (22 less the moon's two, the dome's having been the menu's)
+  and 23 of ours; Cinderhaven zero of ours, the rotor wash's two of Babylon's, install
+  20 and 21. An offline round (`x45a/round.mjs`, six lives, `fire` 101, `explode` 6,
+  `blaze` 3) with no warning from the sealed cache, and a server's (`x45a/net2.mjs`,
+  `PORT=8097`: `blaze` 2, `explode` 1, flames on 757 frames), 0 errors on every page.
+  `gate`, `shaders`, `parity`, typecheck, build and corecheck pass.
+  - **Contracts it kept:** the moon has no fog fade to be exempt from; it stands
+    behind the clouds' depth, so it is rejected and un-bloomed through one; the dome
+    writes no depth; the map with no disc draws no disc, its halo still painted;
+    `setFlash` lifts the dome (`sky-flash`); `sky-motes`: the moon paints over its ash.
 - **Rewrites:** `CLAUDE.md`'s rendering section (the sky has no Babylon mesh;
   the group-0 rule), under its cap; `docs/rendering.md`'s sky, clouds and
   seam; `docs/game.md` if the menu's answer touches it; `Game`'s "the sky hangs

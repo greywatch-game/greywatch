@@ -57,8 +57,7 @@ and its shore still playing.
 
 **What is left behind the title card is the SKY, and it owes the menu nothing**
 (decided by the owner 2026-11-02, `BABYLON_EXIT.md` X4.5a, and not yet acted on:
-it is still drawn under every state, the dome and the disc by Babylon and the
-clouds by us since X4.5b). Measured on Coldharbour: with the
+it is still drawn under every state, all of it by us since X4.5c). Measured on Coldharbour: with the
 card off, the frame with the sky and the frame with a sky stated away are
 byte-equal under the photograph, and so are the kit screen, the settings and the
 lobby over the menu. It shows in five windows: the boot's fade (the photograph
@@ -169,7 +168,7 @@ them, but a group of ours still compiling draws NOTHING and Babylon no longer
 draws the blocks in the main pass — so the vantages are drawn with ours
 built, and nothing of ours is POSED at one (`BABYLON_EXIT.md` X4.4e: the
 `warm(on)` poses of the pools that are ours became that list). **The
-vantages are for Babylon's own meshes** — the dome and the disc, the grass and its turf,
+vantages are for Babylon's own meshes** — the grass and its turf,
 the water, the glazing, the flags and the capture rings, the particles, and
 the three blended pools still Babylon's until X4.6, which are the only poses
 left. **When the wait ends, our cache is SEALED** (`PipelineCache.seal`)

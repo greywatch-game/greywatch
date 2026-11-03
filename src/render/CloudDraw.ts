@@ -13,8 +13,8 @@
  * it was handed and read every frame it draws; it draws at `"afterSurfaces"`, so
  * after every opaque surface of Babylon's and ours and ahead of group 0's
  * alpha-tested list, the turf, as Babylon's alpha-test list drew the mesh ahead
- * of the turf (by material id, `RenderingGroup.PainterSortCompare`: the sky is
- * applied before the map's grass is built); front faces only, LEQUAL, depth
+ * of the turf (by material id, `RenderingGroup.PainterSortCompare`: the sky was
+ * applied before the map's grass was built); front faces only, LEQUAL, depth
  * written; the draw is hung for the SESSION as the weapon's is, so it draws in
  * every state while a ring stands, the menu included (`BABYLON_EXIT.md` X4.5c
  * owes that an `Active` of a map standing); a frame with its pipeline unbuilt

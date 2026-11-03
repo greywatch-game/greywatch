@@ -495,12 +495,14 @@ export interface ViewFacts {
  * every world fire and molotov flame drawn, one draw each and one mask draw
  * each that glows (`render/FlameDraw.ts`) — and `fires` says how many. Since
  * report version 29 (`BABYLON_EXIT.md` X4.5b) `drawn` counts the cloud ring's
- * one draw too (`render/CloudDraw.ts`), no pool but the last draw of ours with
- * no count of its own, and `clouds` says whether it was. None
+ * one draw too (`render/CloudDraw.ts`), no pool, and `clouds` says whether it
+ * was. Since report version 30 (`BABYLON_EXIT.md` X4.5c) `drawn` counts the dome's
+ * and the moon's too and `masked` the moon's bloom (`render/SkyDraw.ts`), no pool
+ * either, and `sky` says how many were drawn. None
  * is in `counters.drawCalls`, which since X4.4b counts no tracer, mark,
  * case, thrown or laid body, since X4.4c no billow, shard or chunk,
- * since X4.4d no fire, and since X4.5b no ring: a capture from before any of
- * them counted a draw a mesh there. The sparks, the dust discs and the scorch are still Babylon's,
+ * since X4.4d no fire, since X4.5b no ring, and since X4.5c no dome and no moon:
+ * a capture from before any of them counted a draw a mesh there. The sparks, the dust discs and the scorch are still Babylon's,
  * and still counted there.
  */
 export interface PoolFacts {
@@ -516,6 +518,8 @@ export interface PoolFacts {
   fires?: number;
   /** Absent before report version 29. */
   clouds?: number;
+  /** Absent before report version 30. */
+  sky?: number;
 }
 
 export interface ProfileGraphics {
@@ -1300,7 +1304,10 @@ export function buildReport(
     // 29: `pools.clouds`, and the cloud ring's one draw in `pools.drawn`:
     // since `BABYLON_EXIT.md` X4.5b it is not in `counters.drawCalls`. Nothing
     // else changed meaning.
-    version: 29,
+    // 30: `pools.sky`, the dome's and the moon's draws in `pools.drawn` and the
+    // moon's bloom in `pools.masked`: since `BABYLON_EXIT.md` X4.5c none is in
+    // `counters.drawCalls`. Nothing else changed meaning.
+    version: 30,
     build: buildStamp(),
     takenAt: new Date().toISOString(),
     reason,

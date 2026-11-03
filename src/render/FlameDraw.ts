@@ -305,7 +305,7 @@ export class FlameDraw {
    * so everything else of ours goes down before these in that pass, as it
    * did while Babylon drew the fires' meshes after it. Being ours, they go
    * down AHEAD of every mesh Babylon's mask still draws (the sparks, the
-   * dust discs, the moon), where its queue drew them among those — no depth
+   * dust discs), where its queue drew them among those — no depth
    * written and LEQUAL against the frame's, so only an exact tie could
    * differ, and the blended sparks and discs drew after the opaque fires
    * before X4.4d and since.
