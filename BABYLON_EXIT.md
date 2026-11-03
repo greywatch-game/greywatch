@@ -1510,7 +1510,7 @@ Everything else in X4.4 moves as briefed; `fx-glass-sort` is X4.6's BEFORE.
   say what draws a pool; `docs/rendering.md`'s size gate (the marks leave
   it).
 
-### X4.5 — Sky and clouds — **M, as three sub-steps** (split 2026-11-02, decided the same day) — X4.5a **LANDED** (4118b5b), X4.5b **LANDED** (8d3b6fc), X4.5c **LANDED** (PORTHASH, its picture change PICTUREHASH) — **all three LANDED**
+### X4.5 — Sky and clouds — **M, as three sub-steps** (split 2026-11-02, decided the same day) — X4.5a **LANDED** (4118b5b), X4.5b **LANDED** (8d3b6fc), X4.5c **LANDED** (a3773c9, its picture change 7787229) — **all three LANDED**
 
 The dome, stars, moon and cloud ring (`Sky`, `cloudMasses`, `CloudShader`)
 come off Babylon's scene, and our draws stop depending on it having anything
@@ -1729,7 +1729,7 @@ moved; **all of this is past since X4.5c**: no sky piece is a Babylon mesh):
     cloud shadow on the ground (`cloudShadow`) is untouched; the ring is in
     no bake and no glow.
 - **X4.5c — the dome and the moon are ours, and Babylon draws no sky LANDED**
-  (PORTHASH; 2026-11-03; no picture change, the menu's windows included). A sky
+  (a3773c9; 2026-11-03; no picture change, the menu's windows included). A sky
   program of one vertex stage and three fragments (`shaders/wgsl/sky.ts`,
   `render/skyProgram.ts`, `render/SkyDraw.ts`), read off the effects Babylon had
   built: `EMISSIVE`, `OPACITY` on the moon, no light, fog, image processing,
@@ -1813,7 +1813,7 @@ moved; **all of this is past since X4.5c**: no sky piece is a Babylon mesh):
     `setFlash` lifts the dome (`sky-flash`); `sky-motes`: the moon paints over its ash.
 
   **The menu: the sky undrawn with no map standing, in a commit of its own**
-  (PICTUREHASH; the owner's decision at X4.5a, the clouds' half left here by X4.5b's
+  (7787229; the owner's decision at X4.5a, the clouds' half left here by X4.5b's
   implementer and not ruled on). `Sky.setStanding`, from `Game.installMap` and
   `teardownMap`, is what all three draws' `Active` ask, so **the boot's menu fills
   nothing of ours again**: 0 of 30 frames filled, 0 queues, `Renderer`'s and
@@ -1865,7 +1865,7 @@ moved; **all of this is past since X4.5c**: no sky piece is a Babylon mesh):
   and the sealed cache quiet in a round.
   **Met** at X4.5c: every row byte-equal to a BEFORE through all three sub-steps but the
   known flake, the sky rows and `hollowmere-lanterns` and `cinderhaven-town` among them, and
-  every picture change in a commit of its own (the menu's windows, PICTUREHASH); 0 sky
+  every picture change in a commit of its own (the menu's windows, 7787229); 0 sky
   meshes and 0 sky materials in all of those states and back; zero in play on Coldharbour
   and zero of ours on Cinderhaven (its two are the rotor wash's, X4.7's), no warning from
   the seal. **Owes onward**: X4.6's blended list and X4.7's particles take the seam's
