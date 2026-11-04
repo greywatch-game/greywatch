@@ -7925,3 +7925,137 @@ to come. What X4.5a was asked for and what it measured:
     on Harrowmead and Kurenai that `setVolumetrics("off")` takes away. The bank
     on Coldharbour, Cinderhaven and Hollowmere: 64 of 64 byte-equal to 547d803,
     the same 9 stale rows red.
+
+### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (HASH)
+
+The plan's `BABYLON_EXIT.md` holds what the surfaces are today, the two tables X4.6a
+measured and the four sub-steps to come. X4.6a's brief, word for word:
+
+- **X4.6a — the bank sees what it does not yet** (no change to the game). The
+  bank already holds `marsh` and `millpond` (water), `ashwood` and the `ground`
+  rows (grass and turf edges), `ring` (paint, and a flag at rest at the foot of
+  its pole), `curtain2`, `curtain40` and `curtain90` (`backed`), `shopfront`
+  (see-through), and `fx-glass`, `fx-glass-sort`, `fx-impact-hard`,
+  `fx-impact-ground`, `fx-impact-kinds`, `fx-scorch` and `fx-fire-fade`. **Gaps,
+  from the rows' descriptions, each to be confirmed against the frames**: a flag
+  flown up its pole in the wind; a ring's stones on open ground; Greyfen's grass
+  at each row of `CONFIG.grass.tiers` (`settings` already sets one per row);
+  a pane `GlassFx` has collapsed (`fx-shards` says it is not a real break's
+  picture); the water's far quad; a fade over water; water through a pane.
+  **It also records** where each surface sits in Babylon's frame (which list, and
+  ahead of which of our draw points), which the later sub-steps hang on, and what
+  each does in an editor build, since an editor build's surfaces stay Babylon
+  meshes until X5.3 and the editor edits the water and grass rects.
+
+**X4.6a landed** (HASH; 2026-11-03; no change to the game: the reference bank, its
+harness, its table, a new instrument and docs).
+
+- **The instrument: `plans/webgpu-ref/surfaces.mjs`, kept in the repo** because every
+  later sub-step owes the same reading. It shoots a map's sequence exactly as
+  `bank.mjs` does and in each row's frozen frame hangs three wrappers, none of them a
+  draw that shows: `Mesh.prototype.render` (every Babylon draw, in the order Babylon
+  records it, which under `compatibilityMode = false` is the order the pass replays
+  it), the host's `queue` (how each of our points reaches that same list, with an
+  empty function hung on every point so each is in the log) and
+  `Renderer.glowMaskOpened`. So a surface's place among our points is read off one
+  log, never argued. **The list a mesh is on is its place between the points**, not a
+  flag on its material. Beside it the pipeline state the engine's `applyStates` leaves
+  for the draw, because a material's own flags lie here: a see-through pane's
+  `disableDepthWrite` reads false and its pipeline's depth write is off. **`--pixels`
+  skips one class at `Mesh.render` for three frames in every pass**, grabs, and counts
+  what moved against the row's own frame, with no `isVisible` written (`GrassSystem`
+  and `WaterSystem` rewrite those from `tick`); a class's count is everything that
+  differs without it, the ink included. Overlaps of two classes' masks answer "over
+  water" and "through a pane". Its first run read `getRenderPipeline`, which a fast
+  bundle never asks, and printed `null` for every draw; then `_alphaBlendEnabled`, an
+  array, always truthy. The numbers below are the third.
+- **The gaps, each against the frames.** The counts are pixels a class owns.
+  | claimed gap | real? | the old rows | the new row |
+  | --- | --- | --- | --- |
+  | a flag flown up its pole | **yes** | `hollowmere-ring` alone holds a flag, 2,457 px, at the foot behind the well | `hollowmere-ring-flown` 16,113 (near sheet, Valeguard), `coldharbour-ring-flown-far` 11,908 (far sheet, Redline) |
+  | a ring's stones | **yes** | 4 draws and 0 px in `ring`, the only row showing zones: its point is all paint | `coldharbour-ring-stones` 9,731, with paint 3,728 and the flag at rest 12,222 |
+  | Greyfen's grass at each rung | **yes** | no row sets `grass`, so every frame is `high` here | `greyfen-grass-low`, `-medium`, `-high`, at `crossing`'s pose mid-gust: blades 240,932, 517,071, 715,646; turf 778,754, 732,071, 650,948 |
+  | a pane collapsed | **yes** | `fx-shards` leaves the sheet up | `coldharbour-fx-glass-broken`: see-through owns 12,327 against `fx-glass-sort`'s 100,713 from the same eye |
+  | the water's far quad | **NO** | `waterFar` owns pixels in 16 of 121 rows: `coldharbour-menu` 204,387, `cinderhaven-sky-cloud-moon` 120,672, `coldharbour-sky-disc` 69,292, `cinderhaven-tank-far` 43,229 | none |
+  | a fade over water | **yes for the sparks and discs** | `spark&water` and `disc&water` are 0 in all 121 (`fx-impact-hard` has both in a frame, on no shared pixel). `fx-scorch` already holds the scorch over water, 27,480, in a band along the quay's outer edge: the disc overhangs the wall, no depth written and nothing under it | `coldharbour-fx-water-fade`: 27,736 and 1,484 |
+  | water through a pane | **yes** | 1 + 9 px on `cinderhaven-tank-far`, 4 on `coldharbour-menu` | `sarab-pane-water` 24,785 |
+- **Where each sits.** The table is in `BABYLON_EXIT.md`'s X4.6, and these are its
+  readings. All 130 rows report the one mark order, `first` > `beforeAlphaTest` >
+  `opaque` > `beforeBlended` > `afterGroup`, then the mask's open and late draws.
+  Across them: 2,041 draws on the opaque list, 997 steps outward, 917 ties (the blades,
+  at the field's one bounding centre), no step inward, so nearest first holds. 261 on
+  the alpha-tested list, all turf, no two distances differing, and always coarsest
+  cell first. 582 on the transparent list, 524 steps inward, 2 ties at the log's
+  centimetre (a spark and another impact's disc in `fx-impact-hard`), no step outward,
+  so farthest first holds, with `fx-glass-sort`'s order the one X4.4a read: pane blocks
+  down to 40.92 m, spark 12.58, disc 12.57, the pane block 8.35, spark 7.19, disc 7.17.
+  910 pairs of neighbouring blade meshes, none out of `lods` order. Sparks in the mask:
+  17 of 17 drawn, between our mask's open and `maskLate`, farthest first; no disc and no
+  scorch there. **`fx-water-fade`'s third disc proves the water's depth write**: its
+  draw is in the log at (-13.03, -2.88, -56.9), `visibility` 0.85, 0.7 m under the
+  surface; it projects near (605, 790), and the discs' mask has its whole bound in
+  x 748-1219. The size gate (in the frustum, switched on, not drawn) drops no surface
+  of these in any row. **The transparent order is also why a fade under `visibility` 1
+  is on that list and only then**: raised in a frame, a spark and a disc get one
+  `combatFx.update` before they draw (`updateOnFoot` and `net.update` both come before
+  `stepShots`), a read of the code rather than a measurement.
+- **The editor build**, also in the plan's X4.6: no zones at all, the same grass, turf
+  and water, glazing per placement (179 surfaces on Coldharbour, `paneGroups` against
+  a round's 78), the pools idle, no probe. A value edit on a water rect and a grass rect
+  through `Editor.rebuildGeometry` remade every mesh of both. **Open for the owner**:
+  whether X4.6c and X4.6d move the grass, the turf and the water in an editor build too
+  (they are no world surfaces, so nothing keeps them Babylon's but a second path), the
+  plan's "stay Babylon meshes" having assumed they were.
+- **Found, for the sub-steps, and written into their briefs.** The glazing is often
+  not at identity: a group of one is not baked (`docs/editor.md` says it of the editor;
+  it is as true in a round), 42 of Coldharbour's 78 surfaces, 12 of them see-through,
+  20 of Sarab's 28 and 12 of Cinderhaven's 14. Breakable panes sit in those too, so a
+  `WorldPane`'s range is into local positions (a scan of this step's that read them
+  without `getWorldMatrix` looked for its glazing in the wrong block).
+  `wrapCubeTexture` cannot retire at X4.6e, the editor's glazing binding the default
+  cube through it until X5.3. `docs/rendering.md` said Babylon's mask holds the dust
+  discs; it never has (corrected). A shopfront's transom lights are the same sheet as
+  its window, behind the bars, so they go with it (`fx-glass-broken`, read against the
+  mended frame).
+- **The rows.** Each stands at an eye a row above stands at, or the menu's, and by the
+  dedupe `BenchScript` runs no map gains a stop (Sarab's one new position among the
+  table's rows is its own menu's, already the first stop). **`sarab-pane-water` was
+  the only sight line going**: rays from every eye of the three glazed maps through
+  every see-through triangle and on to water, colliders in the way subtracted (but for
+  the 3 m before a pane and the 5 m past it, or a car's own box blocks its own glass),
+  gave 23 on Coldharbour, 0 on Cinderhaven and 3 on Sarab. The three of Coldharbour's
+  photographed are the goods depots' clerestories, over a room and a ceiling the ray
+  knows nothing of (a visual is no collider), and the rest are the same blocks; Sarab's
+  is a car drowned to its sills in the east pool, the one that holds. So the pane is
+  over the far quad; no body in the table is both inside `quadBeyond` and
+  behind glass from any eye, and both lists are the opaque one. `coldharbour-fx-water-fade`'s
+  sparks are `drawn` over the water as `onRound` hands over a round stopped on a hull,
+  and its third round flies by `drawRounds`, tracer in frame. **New fields**:
+  `Vantage.flown` steps `CaptureZoneSystem.update`, the door a round uses, after one
+  frame with the camera in place (a flag outside the LAST render's frustum is not
+  stepped); and an `fx` event `breaks`, which calls `GlassSystem.onBroken` and then
+  `onBreak`, the two callbacks `Game` wires, in that order, leaving `g.glass` unwritten.
+  Its put-away writes the stashed range back, so the row is no longer a last row and a
+  later row has a window: the reason X4.4a set a real break aside. Mended, proven at the same eye in one boot: the frame after
+  a `breaks` row is byte-equal to the frame after a row that only bursts the shards
+  (`shards`, the sheet never collapsed). Against the frame BEFORE either it differs
+  in 16% of pixels at a mean of 0.27/255, both alike: a row's frame depends on the rows
+  before it, as the README says.
+  **No bank-only hook in game code**; `src/bench/vantages.ts` is data and types, and
+  `BenchScript` is untouched.
+- **Measured.** New rows banked by `bank.mjs hollowmere greyfen coldharbour sarab
+  --rows=...`, each from two byte-identical grabs and each looked at, its `proves`
+  written against its frame. `bank.mjs --check --keep` twice alone on this tree,
+  against one at 1b5fec8 in the worktree: **121 of 121 old rows byte-equal to the
+  BEFORE** in the second run, 120 in the first (`view-pistol-reload`, one pixel by
+  1/255, the known flake); the two runs against each other 129 of 130, the same
+  pixel, **all 9 new rows byte-equal**; 96 within floor and 34 red, the same 34 at the
+  same means as the BEFORE's run; no page or console error. Typecheck, build
+  (`check-babylon-free`, `check-proving`), corecheck and parity pass. **Not run**:
+  `census`, `gate`, `shaders`, `kit:hash`, `pipelines.mjs --round`; nothing in the game
+  moved, and `git diff` under `src/` is `bench/vantages.ts` alone.
+- **Not verified.** A flag captured in a live round: every reading here is of a held
+  frame, and `flown` steps the zones by hand at a stated meter. The rotor wash and the
+  ash: the freeze turns particles off (but for `sky-motes`), so their place between
+  `opaque` and `beforeBlended` is the seam's reading and not this log's. Drag of a rect
+  in the editor: read off `repositionScene` and `onDragEnd`, not driven. The phone.

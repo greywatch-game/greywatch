@@ -4845,8 +4845,9 @@ written, LEQUAL. What moved is only the fires' interleave with the meshes
 Babylon still draws in that queue — the grass, the capture zones, the backed
 panes, the water — every one of which writes depth, so it is an exact tie
 or nothing. In the mask the fires now go down with ours at its open, AHEAD of
-every mesh Babylon's mask still draws (the sparks, the dust discs, and the moon
-until X4.5c made it ours, behind them all at the open),
+every mesh Babylon's mask still draws (the sparks, and the moon until X4.5c made
+it ours, behind them all at the open; a dust disc is `noGlow` and was never in
+it, `BABYLON_EXIT.md` X4.6a measured),
 where its queue drew them among those — no depth written and LEQUAL against
 the frame's, so again only an exact tie could differ, and the blended sparks
 and discs drew after the opaque fires before X4.4d and since. **No bake draws a fire, and still none does** (`FINDINGS.md` 51:

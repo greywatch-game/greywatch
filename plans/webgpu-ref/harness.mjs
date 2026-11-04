@@ -316,6 +316,16 @@ export function placeVantage(page, vantage) {
     // refuses a row whose two grabs differ, and `--check` twice is the
     // proof), but a row shot alone or out of order is not its banked frame.
     if (window.__refFx) {
+      // A pane a `breaks` event collapsed (X4.6a) stands again, its vertex
+      // range written back as the stash took it, so no row after it stands
+      // behind a broken pane: a pane never mends in a round, and this is the
+      // bank's own write and nothing the game can do. Through whatever holds the
+      // range, which X4.6e moves.
+      for (const { group, base, range } of window.__refFx.collapsed ?? []) {
+        const positions = group.mesh.getVerticesData("position");
+        positions.set(range, base);
+        group.mesh.updateVerticesData("position", positions);
+      }
       g.combatFx.clearTransient();
       g.grenades.reset();
       g.grenadeFx.reset();
@@ -424,6 +434,27 @@ export function placeVantage(page, vantage) {
     const focus = target.subtract(cam.position).normalize().scaleInPlace(8).addInPlace(cam.position);
     // No bodies argument: the default is the roster's, which is what is drawn.
     g.updateSceneForCamera(0, focus, null, []);
+
+    // The flags FLOWN (X4.6a): the zone system stepped by the door a round steps
+    // it by, with the meters the row states, for a fixed count of fixed steps.
+    // The cloth is a fixed-step simulation on a clock of its own, seeded per
+    // flag, so the sheet is a function of the steps it has had since the build:
+    // the sequence's, like every other row's state. **One frame first**: a flag
+    // out of the frustum is not stepped (`FlagCloth.inView`, the planes of the
+    // LAST render), so a flag must have been drawn from here before it is asked.
+    // The zones keep what they were flown to: a later row showing them owes
+    // its own `flown`, and no row before these shows them flown.
+    if (v.flown) {
+      await new Promise((res) => {
+        const o = g.scene.onAfterRenderObservable.add(() => {
+          g.scene.onAfterRenderObservable.remove(o);
+          res();
+        });
+      });
+      const points = g.zones.zones.map((_, i) => ({ meter: v.flown.meters[i] ?? 0 }));
+      const steps = Math.round(v.flown.seconds * 60);
+      for (let i = 0; i < steps; i++) g.zones.update(1 / 60, points, cam.position);
+    }
 
     // A blast in the air: the real `BlastFx` raised at a point and aged by
     // a fixed number of fixed steps, so it is posed in flight the same way
@@ -593,6 +624,25 @@ export function placeVantage(page, vantage) {
           if (!g.debris.burst(pane, B(e.shards.at), dir, cam.position)) {
             throw new Error("the pane's burst was refused (past its gate, or the pool full)");
           }
+        } else if (e.breaks) {
+          // A REAL break's picture, through the two callbacks `Game` wires
+          // (`GlassSystem.onBroken`, then `onBreak`, in that order): the range
+          // collapsed, the shards, the sound. `g.glass`'s own state is not
+          // written, so the pane's box stays in the queries and the nav graph
+          // and the put-away can stand the sheet up again; only the picture of
+          // a break is under test. The range is stashed before the collapse.
+          const pane = g.map.panes[e.breaks.pane];
+          if (!pane || pane.group < 0) throw new Error(`no drawn pane ${e.breaks.pane}`);
+          const group = g.map.paneGroups[pane.group];
+          const base = pane.vertexStart * 3;
+          const live = group.mesh.getVerticesData("position");
+          (window.__refFx.collapsed ??= []).push({
+            group,
+            base,
+            range: live.slice(base, base + pane.vertexCount * 3),
+          });
+          g.glass.onBroken(e.breaks.pane);
+          g.glass.onBreak(e.breaks.pane, new M.Vector3(...e.breaks.at), new M.Vector3(...e.breaks.dir).normalize());
         } else if (e.brass) {
           g.playerView.fired();
         } else if (e.drawn) {

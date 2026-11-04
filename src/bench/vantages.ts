@@ -94,7 +94,11 @@
  *   seeded for the clock (the sound's are not, and do not reach them), the
  *   rubble and the shards run on their own seeded streams under Havok's fixed
  *   step, and `mines` are laid as the wire lays them
- *   (`NetOrdnance.applyMines`). `drawn` is a round's PICTURE handed over as
+ *   (`NetOrdnance.applyMines`). `breaks` is a REAL break's picture, raised by
+ *   the two callbacks `Game` wires (`GlassSystem.onBroken`, then `onBreak`):
+ *   the pane's range collapsed out of its merged glazing and its shards, with
+ *   `g.glass` itself unwritten and the sheet stood up again by the put-away.
+ *   `drawn` is a round's PICTURE handed over as
  *   `CombatSystem.onRound` hands it (`CombatFx.drawRound`: no wall query, the
  *   impact at `to` of the stated kind and normal, no mark) — the door the
  *   flesh and glass kinds, and an impact off the static world, come through.
@@ -105,6 +109,12 @@
  * - `zones: true` — the capture rings and their flags, which every other row
  *   hides. Built at the start of a round, so the flag is at the foot of its
  *   pole and the cloth at rest.
+ * - `flown: { meters, seconds }` — with `zones`: the flags stepped by
+ *   `CaptureZoneSystem.update`, the door a round steps them by, for `seconds`
+ *   of 1/60 s steps at the stated `meters` (one per zone, in build order, -1 to
+ *   +1; 0 where absent), so a flag is up its pole in its side's colours and the
+ *   cloth has had that much air. The zones keep it: a later row showing them
+ *   states its own.
  * - `settings: { key: value }` — `Game.setSetting` for this row only, which is
  *   how a post setting is photographed OFF beside the row that has it on.
  * - `turn` — radians: the motion blur held mid-turn rather than at rest (see
@@ -147,6 +157,7 @@ export type FxEvent =
   | { at: number; explode: { at: Point; power?: number } }
   | { at: number; blaze: { at: Point } }
   | { at: number; shards: { pane: number; at: Point; dir: Point } }
+  | { at: number; breaks: { pane: number; at: Point; dir: Point } }
   | { at: number; brass: true }
   | { at: number; drawn: { from: Point; to: Point; kind: ImpactKind; normal?: Point } };
 
@@ -198,6 +209,7 @@ export interface Vantage {
     wire?: { snapshots: readonly WireFlights[]; poses: readonly number[] };
   };
   zones?: boolean;
+  flown?: { meters: readonly number[]; seconds: number };
   settings?: Readonly<Record<string, string | boolean | number>>;
   turn?: number;
   strike?: number;
@@ -339,6 +351,19 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
       fov: 24,
       motes: { step: 0.1, steps: 200, box: 24 },
     },
+    // Appended for X4.6a, after every row above, at `ring`'s eye so the
+    // benchmark gains no stop.
+    {
+      id: "ring-flown",
+      of: "the square's flag run to the top of its pole in the Valeguard's tan, from the same eye as `ring`, the field closed to 22° on the top of the pole",
+      proves:
+        "the CLOTH (X4.6b) up its pole in the wind: the NEAR sheet (16x10, the eye ~35 m off, inside `LOD_FAR`) after six seconds of its own fixed-step air, the hoist band and the field in their two materials, backlit by the night's sky, its folds in the positions and normals `updateVerticesData` wrote — where `ring`'s flag is at rest at the foot of the pole, behind the well",
+      pos: [4, 9, 32],
+      target: [0, 9, -3],
+      fov: 22,
+      zones: true,
+      flown: { meters: [0, 0, -1, 0, 0], seconds: 6 },
+    },
   ],
   greyfen: [
     {
@@ -382,6 +407,12 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
       pos: [82, 6, 23],
       target: [72, 1.93, 12],
     },
+    // Appended for X4.6a: the field at each row of `CONFIG.grass.tiers`, from
+    // `crossing`'s pose so the benchmark gains no stop and the road the mask
+    // rejects and the channel it stops at are both in frame. `high` is this
+    // machine's default and is last, so it is also the proof the two before it
+    // put back what they changed.
+    ...grassRows(),
   ],
   coldharbour: [
     // Re-posed for the bay (6e848a1): the curtain walls now front the street
@@ -472,6 +503,53 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
         "the CLOUDS on a day map (X4.5b): lit and shaded facets against the dome down to the horizon, every roof in front of them by the 7 km depth they write, and their order against the opaque world",
       pos: [-150, 12, -26],
       target: [150, 50, -26],
+    },
+    // Appended for X4.6a, after every row above, at eyes the rows above stand at.
+    {
+      id: "ring-stones",
+      of: "the civic square's capture ring from eight metres over its south side: limed stones in a line across the crazy paving and the lawn, the paint taking over across the cobbled pad, the flag at rest behind the memorial at the frame's left edge",
+      proves:
+        "a ring's STONES on open ground (X4.6b), both tones' batches, bedded in the floor and inked — `ring` holds only paint, its square being all made ground — and the point where the stones stop and the paint takes over",
+      pos: [-16, 8, 3],
+      target: [-6, 0.5, -6],
+      zones: true,
+    },
+    {
+      id: "ring-flown-far",
+      of: "the same square's flag run up in the Redline's colours from south of the square, ~53 m off, through a 14° field, against the tower behind the memorial",
+      proves:
+        "the cloth's FAR sheet (11x7, past `LOD_FAR`) in the other side's colours, its handover resampled off the near sheet (X4.6b): the second of the two sheets and the second pair of the four meshes a flag has",
+      pos: [-16, 8, -47],
+      target: [2.5, 8, 2.5],
+      fov: 14,
+      zones: true,
+      flown: { meters: [0, 0, 1, 0, 0], seconds: 6 },
+    },
+    {
+      id: "fx-water-fade",
+      of: "two rounds' sparks and discs mid-fade over the harbour's water from eight metres above it, a third round's tracer on its way through the surface into the bed, a moored boat at the top of the frame",
+      proves:
+        "a FADE over WATER (X4.6d, X4.6e): two `hard` impacts as `onRound` hands over a round stopped on a hull (`drawn`, no mark), their sparks and discs blended over the water's grid, the water having written depth and colour first — and a round through the surface (`round`, `drawRounds`' own wall query, which no water is in) whose `ground` disc is on the bed, 0.7 m under the surface, and rejected by the water's depth: its draw is in the log and it owns no pixel",
+      pos: [-16, 8, -47],
+      target: [-16, -2.2, -60],
+      fov: 40,
+      fx: {
+        seconds: 0.3,
+        events: [
+          { at: 0.18, drawn: { from: [-16, 6, -48], to: [-18, -1.9, -58], kind: "hard", normal: [0, 1, 0.2] } },
+          { at: 0.22, drawn: { from: [-16, 6, -48], to: [-14, -1.9, -61], kind: "hard", normal: [0, 1, 0.2] } },
+          { at: 0.25, round: { from: [-16, 6, -48], to: [-12, -6, -60] } },
+        ],
+      },
+    },
+    {
+      id: "fx-glass-broken",
+      of: "the square's west shopfront with pane 0 BROKEN, 0.9 s on: the shop's empty room through the hole, the street's reflection gone with the glass, the transom lights with it (they are one sheet behind the bars), the shards on the pavement in front and the left-hand window untouched",
+      proves:
+        "a REAL break's picture (X4.6e): `GlassFx.collapse` writing the pane's vertex range out of its merged block's position buffer, raised by the two callbacks `Game` wires, beside the glazing the same block still draws — what `fx-shards` says it is not. The put-away stands the sheet up again, so a row after it has a window to look at",
+      pos: [-16, 1.7, -12],
+      target: [-23.8, 2, -6.65],
+      fx: { seconds: 0.9, events: [{ at: 0, breaks: { pane: 0, at: [-23.8, 2, -6], dir: [1, -0.1, 0] } }] },
     },
   ],
   harrowmead: [
@@ -602,6 +680,17 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
         "two RECTANGLE roads crossing as coplanar sheets, asphalt over dirt (`ROAD_RANK` 2 against 0) — the case the rank ladder exists for, with no junction patch to hide it — and both against the sand: the road depth bias (`ROAD_DEPTH_UNITS`, -8) and the rank ladder that X3.5 moves into our renderer",
       pos: [-55, 7, 197],
       target: [-66, 0, 208],
+    },
+    // Appended for X4.6a, at the menu's eye so the benchmark gains no stop: the
+    // one sight line from any eye in the table that reaches water through glass.
+    {
+      id: "pane-water",
+      of: "the car drowned to its sills in the east pool, ~187 m from the menu's eye through a 1° field, the pool's water seen through its windows",
+      proves:
+        "WATER THROUGH A PANE (X4.6d, X4.6e): see-through glazing blended over water that was drawn first, the pool's far quad at this range (no body is both inside `quadBeyond` and behind glass from any eye in the table). A pane drawn before the water would be painted over by it, and the glass would read as dry",
+      pos: [96, 9, 30],
+      target: [268.27, -6.3, -39.8],
+      fov: 1,
     },
   ],
   cinderhaven: [
@@ -1211,7 +1300,7 @@ function effectRows(): Vantage[] {
       id: "fx-shards",
       of: "a shopfront's pane on the square bursting outward, its shards falling 0.3 s after",
       proves:
-        "the SHARD POOL (`DebrisSystem`, X4.4c) and NOT a real break's picture: cel slivers cut from pane 0 and posed off Havok's step (`poseView`), falling — in front of a sheet left STANDING, a state the game never draws (a real break takes the glazing out through `GlassFx`, and a broken pane never mends in a round, so the put-away could not undo one)",
+        "the SHARD POOL (`DebrisSystem`, X4.4c) and NOT a real break's picture: cel slivers cut from pane 0 and posed off Havok's step (`poseView`), falling — in front of a sheet left STANDING, a state the game never draws (a real break takes the glazing out through `GlassFx`: `fx-glass-broken`)",
       pos: square,
       target: [-23.8, 2, -7.5],
       fx: { seconds: 0.3, events: [{ at: 0, shards: { pane: 0, at: [-23.8, 2, -6], dir: [1, -0.1, 0] } }] },
@@ -1363,6 +1452,21 @@ function fireRows(): Vantage[] {
       },
     },
   ];
+}
+
+function grassRows(): Vantage[] {
+  const pos: Pos = [82, 6, 23];
+  const target: Point = [72, 1.93, 12];
+  const row = (grass: "low" | "medium" | "high", density: number, near: number): Vantage => ({
+    id: `grass-${grass}`,
+    of: `\`crossing\`'s frame at the ${grass} rung, mid-gust: the field round the cobbled path and the graves, the channel past the trunks`,
+    proves: `the GRASS at \`CONFIG.grass.tiers.${grass}\` (X4.6c): ${density} blades a square metre inside ${near} m, the patch meshes that rung rebuilds (\`GrassSystem.buildLods\`), the turf under them, the blades' sway, and the mask's rejection of the road and the water`,
+    pos,
+    target,
+    wind: 2.6,
+    settings: { grass },
+  });
+  return [row("low", 28, 7), row("medium", 52, 9), row("high", 90, 11)];
 }
 
 /**

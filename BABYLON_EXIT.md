@@ -1916,7 +1916,7 @@ moved; **all of this is past since X4.5c**: no sky piece is a Babylon mesh):
   stood over", with the `Active` commit; `Sky.ts`'s header and
   `CloudShader.ts`'s; `FILES.md` for each new file.
 
-### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day)
+### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (HASH)
 
 Everything left on the floor that Babylon still draws, and the three blended
 pools X4.4 left waiting for the glazing. **No sub-step is meant to change the
@@ -1926,11 +1926,13 @@ absorbed. It is split because the surfaces share no shader and each reaches the
 GPU its own way, and because only the last has to replace a sort of Babylon's.
 The order runs from the least risk to the most.
 
-**What they are today** (a read of the code, not a measurement; X4.6a checks
-every claim about order):
+**What they are today** (a read of the code; **X4.6a measured every claim about
+order and all of them hold**, on all 130 rows of the bank, the table below):
 - **The flags**: `FlagCloth`, a two-sided sheet in world space under an identity
   transform, on a cel material, its positions and normals uploaded by
-  `updateVerticesData` whenever the cloth moves.
+  `updateVerticesData` whenever the cloth moves. **There are five meshes to a flag,
+  not one**: a static pole, a field and a band on each of the two sheets (16x10
+  inside `LOD_FAR`, 11x7 past it).
 - **The rings**: `CaptureZoneSystem.finish`, static batches of stones and paint
   on `mats.get(hex, depthUnits)`, the paint on a depth bias.
 - **The grass**: `GrassSystem`, thin instances per patch at each level of detail,
@@ -1940,44 +1942,117 @@ every claim about order):
 - **The water**: `createWaterMaterial`, a grid and a `waterFar` quad per body
   (`WaterSystem` shows one or the other by distance), a bed-depth map per body
   and a cube per body read through `wrapCubeTexture`. No blending flag on the
-  material.
+  material, and **it writes depth**.
 - **The glazing**: `PaneBlocks`, see-through over its block's cube and writing no
   depth, `backed` writing depth. `GlassFx`'s collapse writes positions into a
-  block's buffer with `updateVerticesData`.
+  block's buffer with `updateVerticesData`. **Many of these surfaces are NOT at
+  identity** (a group of one is not baked, in a round as in the editor): 42 of
+  Coldharbour's 78 (12 see-through), 20 of Sarab's 28 (16), 12 of Cinderhaven's 14
+  (4), and every one's positions are local to that matrix.
 - **The three pools**: `CombatFx`'s sparks and dust discs and
   `BlastDebrisSystem`'s scorch (a `StandardMaterial` decal). Babylon draws them
   back to front by bounding-sphere centre, INTERLEAVED with the see-through pane
-  blocks (X4.4a measured this).
+  blocks (X4.4a measured this, and X4.6a on every row since).
 
-- **X4.6a — the bank sees what it does not yet** (no change to the game). The
-  bank already holds `marsh` and `millpond` (water), `ashwood` and the `ground`
-  rows (grass and turf edges), `ring` (paint, and a flag at rest at the foot of
-  its pole), `curtain2`, `curtain40` and `curtain90` (`backed`), `shopfront`
-  (see-through), and `fx-glass`, `fx-glass-sort`, `fx-impact-hard`,
-  `fx-impact-ground`, `fx-impact-kinds`, `fx-scorch` and `fx-fire-fade`. **Gaps,
-  from the rows' descriptions, each to be confirmed against the frames**: a flag
-  flown up its pole in the wind; a ring's stones on open ground; Greyfen's grass
-  at each row of `CONFIG.grass.tiers` (`settings` already sets one per row);
-  a pane `GlassFx` has collapsed (`fx-shards` says it is not a real break's
-  picture); the water's far quad; a fade over water; water through a pane.
-  **It also records** where each surface sits in Babylon's frame (which list, and
-  ahead of which of our draw points), which the later sub-steps hang on, and what
-  each does in an editor build, since an editor build's surfaces stay Babylon
-  meshes until X5.3 and the editor edits the water and grass rects.
+**Where each sits in Babylon's frame** (measured by X4.6a, `surfaces.mjs`: the
+same order on all 130 rows, seven maps, every mark in the same place). Our points
+come `first`, then Babylon's opaque list, `beforeAlphaTest`, `afterSurfaces`, its
+alpha-tested list, `opaque`, its particles, `beforeBlended`, its transparent list,
+`afterGroup`. Every one tests depth LEQUAL and writes all four channels, so an
+equal-depth pixel goes to whichever draws LATER: a port hung BEHIND the world on
+`"beforeAlphaTest"` flips any exact tie with it, where Babylon's opaque list has it
+ahead, and only a byte comparison will say.
+
+| surface | Babylon's list, sorted by | ahead of | depth write | bias | cull | blend |
+| --- | --- | --- | --- | --- | --- | --- |
+| flag (both sheets), pole, stones | opaque, nearest first | `beforeAlphaTest` | on | 0 | back | off |
+| paint | opaque, nearest first | `beforeAlphaTest` | on | -8 | back | off |
+| blades (`grass0..`) | opaque, nearest first, all tied at the field's centre, in `lods` order | `beforeAlphaTest` | on | 0 | off | off |
+| water, `waterFar` | opaque, nearest first by the rect's centre | `beforeAlphaTest` | on | 0 | back | off |
+| `backed` | opaque, nearest first | `beforeAlphaTest` | on | -16 | back | off |
+| turf | alpha-tested, tied, coarsest cell first (8, 4, 2) | `opaque`; past `afterSurfaces` | **off** | -8 | off | `SRC_ALPHA, ONE_MINUS_SRC_ALPHA`, alpha `ZERO, ONE` |
+| see-through | transparent, farthest first, with the pools | `afterGroup`; past `beforeBlended` | **off** (by the blend) | -16 | back | `SRC_ALPHA, ONE_MINUS_SRC_ALPHA`, alpha `ONE, ONE` |
+| spark, dust disc | the same list | the same | **off** | 0 | back | the same |
+| scorch | the same list | the same | **off** | -4, slope -2 | off | the same |
+| spark, in the glow's mask | the mask's own, farthest first | our `maskLate`; past our mask's open | **off** | 0 | back | the same |
+
+**Nothing else of Babylon's is drawn in the main pass in any of the 130 rows**, the
+particles being off in all but one. A dust disc is `noGlow` and in no mask. A spark
+and a disc are always under `visibility` 1 when they draw (raised before
+`stepShots`, a read of the code), so neither is ever on the opaque list. The size
+gate drops none of these surfaces in any row.
+
+**What each does in an editor build** (`surfaces.mjs --editor`, Coldharbour and
+Greyfen, `F2` from the menu and each eye of the map's rows):
+- **The flags and the rings do not exist**: `buildEditorMap` is `installMap` alone,
+  `zones.build` is `buildRound`'s, and `teardownMap` took any away (`zones` 0, no
+  `zone-*` mesh). X4.6b has nothing to do there.
+- **The grass, the turf and the water are the same meshes on the same lists**,
+  following the free camera from `tick`, because `GrassSystem` and `WaterSystem` are
+  no world surfaces and `installMap` builds both on either path (the water's cube
+  the default one, at strength 0, nothing baked). **So "an editor build's surfaces
+  stay Babylon meshes" is only true of them if a sub-step makes it so**: see the
+  question under X4.6c. Changing a water or a grass rect's value is the tier-3
+  rebuild, measured: every mesh of both remade. Dragging one moves its PROXY alone
+  (`repositionScene` returns for any list but placements and scatter, and
+  `onDragEnd` rebuilds navigation only), so what is drawn waits for the next tier-3
+  (a read of the code).
+- **The glazing is the one world surface here, and it stays Babylon's**: 179
+  surfaces on Coldharbour against a round's 78, one mesh a placement, `backed` on the
+  opaque list and see-through on the transparent one, over the default cube.
+- **The pools stand idle**: built, hidden, nothing raises them. Babylon's transparent
+  list holds only see-through glazing there.
+
+- **X4.6a — the bank sees what it does not yet LANDED** (HASH; 2026-11-03; no change
+  to the game; its full note is in `plans/done/babylon_exit_landed.md`). **Nine rows**,
+  appended by `--rows`, every one at an eye a row above it stands at or the menu's,
+  so the benchmark gains no stop: `hollowmere-ring-flown`,
+  `coldharbour-ring-flown-far` (the cloth up its pole, both sheets and both sides),
+  `coldharbour-ring-stones`, `greyfen-grass-low`, `-medium`, `-high`,
+  `coldharbour-fx-water-fade`, `coldharbour-fx-glass-broken` (a real collapse, stood
+  up again by the put-away) and `sarab-pane-water` (the one sight line from any eye
+  in the table that reaches water through glass). **One gap was not real**: the far
+  quad already owns pixels in 16 rows (`coldharbour-menu` 204,387,
+  `cinderhaven-sky-cloud-moon` 120,672, `coldharbour-sky-disc` 69,292), so it took no
+  row. **The instrument is kept**: `plans/webgpu-ref/surfaces.mjs` is the two tables
+  above, and each sub-step re-runs it to show it took the whole of its surface. Two
+  new fields, `flown` and an `fx` event `breaks`. **Measured**: 121 of 121 old rows
+  byte-equal to a BEFORE at 1b5fec8 in one run and 120 in the other (the known pistol
+  pixel); the 9 new rows byte-equal to themselves across two checks; the same 34
+  stale rows red with the same means. Typecheck, build, corecheck and parity pass.
 - **X4.6b — the flags and the rings.** The smallest step. The ring keeps its
   batches and depth bias on OUR renderer's cel recipes. The cloth is the one new
   shape: a vertex buffer of ours rewritten while the flag moves, with no per-frame
-  allocation (the sim stays where it is). **Verify:** `ring`, the flown flag's
-  row, a flag captured in a live round; the ring is still the zone's boundary.
+  allocation (the sim stays where it is), for BOTH sheets; **the pole goes with it**.
+  All of it lands on `"beforeAlphaTest"`, which is where Babylon's opaque list has it
+  relative to everything of ours but the order on that point, and an editor build
+  has none of it. **Verify:** `ring`, `ring-stones`, `ring-flown`, `ring-flown-far`,
+  a flag captured in a live round; the ring is still the zone's boundary; `surfaces.mjs`
+  reports no `flag`, `pole`, `stones` or `paint`.
 - **X4.6c — the grass and the turf.** The field keeps its frustum test and its
   levels of detail, and its instance buffers become ours. The turf keeps its place
   in the order and its blend, and owes the coverage alpha what the blend writes
-  today (`docs/rendering.md`). **Verify:** Greyfen's
-  grass at every rung; the `ground` rows; the mask still rejects roads and water.
+  today (`docs/rendering.md`). **The blades are opaque and go on
+  `"beforeAlphaTest"`; the turf must be past `"afterSurfaces"` and past the floor, and
+  writes no depth, so with the alpha-tested list empty behind it `"opaque"` is its
+  place**, coarsest cell first. **Verify:** `grass-low`, `-medium`, `-high`; the
+  `ground` rows; the mask still rejects roads and water (`grass-*` hold both);
+  `surfaces.mjs` reports no `grass` or `turf`.
+  **An open question, the owner's** (X4.6a, not decided): an editor build's grass, turf
+  and water are NOT world surfaces, so the brief's "stay Babylon meshes until X5.3" is
+  a choice these two steps would make rather than a fact. Moving them in the editor
+  too is one path through each system, as the sky's did at X4.5c, and owes an `F2`
+  and a rect edit in its Verify; keeping them Babylon's there is two paths through
+  each until X5.3.
 - **X4.6d — the water.** The largest shader of the five (`WaterShader.ts`). The
   bed-depth bake and the probes stay what they are, and the water reads its cube
-  directly, so `wrapCubeTexture` has one reader left, the glazing. **Verify:**
-  `marsh`, `millpond`, the far quad's row; a cube's bake on Cinderhaven's sea.
+  directly, so `wrapCubeTexture` has one reader left, the glazing. **It must be ahead
+  of `"afterSurfaces"`**: it writes depth, the clouds' far depth passes wherever
+  nothing has, and the turf at a shore and every fade land on it (`"beforeAlphaTest"`).
+  **Verify:** `marsh`, `millpond`; the far quad in `coldharbour-menu`, `-sky-disc`
+  and `cinderhaven-sky-cloud-moon` (no row of its own, the gap was not real);
+  `fx-water-fade`, its disc on the bed still rejected; `sarab-pane-water`; a cube's
+  bake on Cinderhaven's sea; `surfaces.mjs` reports no `water` or `waterFar`.
 - **X4.6e — the glazing and the three blended pools, together.** The see-through
   panes and the three pools land in ONE commit, because one sort of ours orders
   every blended surface (decided 2026-11-01, X4.4's "Find out first"), and neither
@@ -1987,15 +2062,26 @@ every claim about order):
     centres, so a tie comes out as it did;
   - holds the moon's place (`"beforeBlended"` stands on the seam's item 6, which
     this sort takes from under it: `sky-moon`, `sky-disc` and `sky-motes` read it);
-  - gives `GlassFx`'s collapse a buffer of ours, and retires `wrapCubeTexture`;
+  - gives `GlassFx`'s collapse a buffer of ours, and takes the round's glazing off
+    `wrapCubeTexture`. **It cannot retire it**: the editor's glazing binds the default
+    cube through it until X5.3 (`ReflectionSystem.defaultCube`). The harness's
+    put-away of a `breaks` event writes the range back through the mesh and moves
+    with the buffer;
+  - draws each surface under its own world matrix or bakes it (the list above: most
+    are not at identity, and a `WorldPane`'s range is into its local positions);
+  - keeps `backed` ahead of the blocks on `"beforeAlphaTest"`, which is the whole of
+    what makes a backed pane pay (`Game`'s sort comment), and the sparks' mask draw
+    between the mask's open and its late draws, where Babylon's mask has them;
   - moves the three pools' `warm(on)` poses into X4.4e's declared list, retiring
     the last of them on `CombatFx` and `BlastDebrisSystem`;
   - **ports the scorch exactly**. A port that cannot match comes back to the owner
     with the numbers rather than being taken as a picture change.
   **The BEFORE**: `fx-glass-sort` (a fade squarely behind and squarely in front of
-  a pane), `fx-glass`, the impact rows, `fx-scorch`, `fx-fire-fade` and the
-  collapsed pane's row. **Read first against X5.3**: glazing in an editor build
-  stays Babylon's until then, and with it a transparent list there.
+  a pane), `fx-glass`, the impact rows, `fx-scorch`, `fx-fire-fade`,
+  `fx-glass-broken`, `fx-water-fade` and `sarab-pane-water`. **Read first against
+  X5.3**: glazing in an editor build stays Babylon's until then, and with it a
+  transparent list there, the seam's item 6 and `wrapCubeTexture`; **no pool is ever
+  drawn there**, so the list holds glazing alone and the sort of ours never meets it.
 - **Contracts it keeps:**
   - no pane of either kind casts a shadow
   - see-through glazing writes no depth
@@ -2297,4 +2383,5 @@ Phase 1 actually took.
 | X4.5 | One step or several? | **Decided** 2026-11-02: three sub-steps (X4.5). X4.5a fixes the empty-group seam, adds a draw point ahead of group 0's opaque list and widens the bank to the sky before any sky mesh moves; X4.5b moves the clouds; X4.5c moves the dome and the moon, which empties Babylon of the sky. |
 | X4.5a | What does the sky owe a state with no map, and must it be drawn under the photograph? | **Decided** 2026-11-02 by the owner, overruling part of what X4.5a settled: nothing, and no. Under the photograph, the settings and the lobby the frame is byte-equal with the sky stated away; the kit screen is not, at every turn of the ring (below). It shows in six windows (the boot's fade, ~480 ms on a local dev server and unmeasured on a phone's cold fetch; a rejected `img.decode()`, open as long as the menu stands; a building card's undecoded photograph; a lobby row on an unknown map; the DEV proving ground; and, **accepted by the owner 2026-11-03**, the photograph's fade on the way out of a round, about 300 to 400 ms on Coldharbour, over the last map's flat colour where the parent showed the dome and clouds through the picture, not among the frames compared in X4.5c's picture-change commit, and not from the round-over card, whose picture is up already). Each sky draw's `Active` asks whether a map stands, so the menu's frame keeps doing no work of ours (X4.3c's review). **What X4.5a got wrong**: the boot's fade is the RIGHT map's sky until the player steps the reel, not the wrong one, and what would replace it was no meaningful colour (`scene.clearColor` had one writer, reached only from the editor and `startRound`: Babylon's default slate at the boot). So the colour is set at the boot from the boot map's `skyColor` (`applyClearColor`, landed at this review and moving no pixel under today's dome), and the fade shows the right map's colour through the post chain. It is not extended to the reel or a teardown: after a round it is the last map's. Taking the sky off those windows is a picture change, in a commit of its own at X4.5b and X4.5c. How that divides between the two was the implementer's and no part of this decision: X4.5b left the clouds' `Active` to X4.5c, and that is moot now, the whole sky having left the menu in one commit (7787229). **Decided 2026-11-03 by the owner, no picture change:** the clear's alpha of 1 is kept, a constant half stroke on the kit screen's weapon. The old picture's stroke varied with the cloud behind the weapon and the new one does not: ring on against ring off at the parent, Coldharbour is 0 px at turn 0 and 35 to 209 px, up to 73/255, at five other turns, the first about 5 minutes on the menu, and Hollowmere, with no ring, 0 px at all 8. Two further turns read 539,279 px with the weapon darker, excluded from those figures: the clouds' shadow, which still reaches the kit stage (X4.5c's note). And the shafts' soft bright band over the flat colour on Harrowmead and Kurenai is accepted. X4.5c's note states one window the six do not name (a step's cross-fade), not ruled on. |
 | X4.6 | One step or several? | **Decided** 2026-11-03: five sub-steps (X4.6). X4.6a fills the bank's gaps and records where each surface sits in Babylon's frame; X4.6b moves the flags and the rings, X4.6c the grass and the turf, X4.6d the water; X4.6e moves the glazing with the sparks, the dust discs and the scorch, so one sort of ours orders them (2026-11-01), and may land `backed` panes ahead of it. The scorch is ported exactly; a port that cannot match comes back to the owner with the numbers. |
+| X4.6c, X4.6d | An editor build's grass, turf and water are no world surfaces (X4.6a): do these steps move them there too, one path through each system as the sky did at X4.5c, or keep them Babylon's until X5.3, two paths? | **Open**, raised by X4.6a: it changes what each step's Verify owes, and neither step's order. |
 | X6.2 | Is it ready to merge to `develop`? | Only when X6.2's "Before" list passes in full. |
