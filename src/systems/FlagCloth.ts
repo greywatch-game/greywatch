@@ -2,22 +2,22 @@
  * FlagCloth.ts — the flag over one control point: a pole, and a sheet of
  * cloth on it that is SIMULATED in the valley's one wind rather than posed.
  *
- * Owns: the pole mesh, the cloth meshes (a field and a hoist band, at two
+ * Owns: the pole's surface, the cloth's (a field and a hoist band, at two
  * levels of detail), the particle state under them, and the height the flag
  * is flown at.
  *
- * The POLE is static geometry and is built as `Part`s through `src/geometry/`,
- * merged by `mergeParts` and made a mesh by `drawnMesh`. The CLOTH is not: its
- * meshes are the simulation's output, written every frame into updatable
- * Babylon buffers, and stay Babylon's until the renderer that draws them is
- * ours.
+ * **Babylon is made no mesh of any of it** (`BABYLON_EXIT.md` X4.6b): every
+ * surface is `render/ZoneDraw.ts`'s, and this reads no node. The POLE is static
+ * geometry, built as `Part`s through `src/geometry/` and merged by
+ * `mergeParts`. The CLOTH is the simulation's output, its arrays written into
+ * the draw's own vertex buffer whenever the sheet moves, allocating nothing:
+ * a field and a band are two ranges of indices over one sheet's vertices.
  *
- * Invariants: annotation exactly as the ring is — never `solid`, never
- * `checkCollisions`, never pickable, never a WorldBox, so no ray, no nav
- * consumer and no sweep has heard of it. Every mesh is `noShadowCaster`: the
+ * Invariants: annotation exactly as the ring is — no collider, no ray, no nav
+ * consumer and no sweep has heard of it. Nothing here casts a shadow: the
  * cloth moves every frame and the world's shadow map re-renders only when its
  * window moves, so one animated caster would make it a per-frame redraw of the
- * map. Both cloth materials are cel (`getCloth`, a canvas backlit by the
+ * map. Both cloth recipes are cel (`getCloth`, a canvas backlit by the
  * key) so the flag is fogged, lit, shadowed and inked like the wall behind it.
  *
  * **Why a simulation and not a vertex wave.** A travelling sine on a sheet is
@@ -43,20 +43,16 @@
  * frozen cel material needs no culling change and each face is lit from the
  * side it is seen from.
  *
- * Never disposes a material: all of them are the factory's cache.
+ * Never disposes a recipe: all of them are the factory's cache. Its geometry
+ * goes with the round's (`ZoneDraw.clear`).
  */
-import {
-  BoundingInfo,
-  Mesh,
-  Scene,
-  Vector3,
-  VertexBuffer,
-  VertexData,
-} from "@babylonjs/core";
 import { CONFIG } from "../config";
+import { computeNormals } from "../geometry/buffer";
 import { createCylinder, createSphere } from "../geometry/primitives";
+import type { CelRecipe } from "../render/celMaterial";
+import type { ZoneBox, ZoneDraw, ZoneSurface } from "../render/ZoneDraw";
 import type { CelMaterialFactory } from "../shaders/CelShader";
-import { drawnMesh, mergeParts, Part } from "../world/parts";
+import { mergeParts, Part } from "../world/parts";
 
 /*
  * Art constants — what the flag and its pole ARE, not how they behave.
@@ -119,6 +115,14 @@ const REACH = FLAG_LENGTH + 0.3;
  */
 const MAX_SUBSTEPS = 4;
 
+/**
+ * The one wind's bearing as `bearing` reads it, and its length, read once: it is
+ * read every substep of every flag, and a destructuring is an iterator each time.
+ */
+const WIND_X = CONFIG.wind.dir[0];
+const WIND_Z = CONFIG.wind.dir[1];
+const WIND_LEN = Math.hypot(WIND_X, WIND_Z) || 1;
+
 /** What one flag is wearing: the field and the band, both cel hexes. */
 export interface FlagColours {
   field: string;
@@ -140,8 +144,22 @@ interface Step {
   floorY: number;
 }
 
+/** What a flag's cloth is drawn with, as the factory states it: a cached recipe per colour. */
+function clothRecipe(mats: CelMaterialFactory, hex: string): CelRecipe {
+  return mats.celRecipe(mats.getCloth(hex, CONFIG.graphics.translucency.awning))!;
+}
+
+/**
+ * The recipes whose variants a flag wears, for `ZoneDraw` to ask their
+ * pipelines ahead of any round: the pole's and a cloth's (`clothHex` stands
+ * for every colour, each one variant).
+ */
+export function flagRecipes(mats: CelMaterialFactory, clothHex: string): readonly CelRecipe[] {
+  return [mats.celRecipe(mats.get(POLE_HEX))!, clothRecipe(mats, clothHex)];
+}
+
 export class FlagCloth {
-  private pole: Mesh;
+  private pole: ZoneSurface;
   private near: Sheet;
   private far: Sheet;
   private active: Sheet;
@@ -157,7 +175,7 @@ export class FlagCloth {
   private bandHex = "";
 
   constructor(
-    private scene: Scene,
+    private draw: ZoneDraw,
     private mats: CelMaterialFactory,
     name: string,
     x: number,
@@ -165,6 +183,7 @@ export class FlagCloth {
     z: number,
     poleHeight: number,
     seed: number,
+    colours: FlagColours,
   ) {
     const topY = baseY + poleHeight;
     this.hoistHigh = topY - FINIAL_RADIUS - TOP_GAP;
@@ -184,12 +203,15 @@ export class FlagCloth {
     bearing(this.step);
 
     this.pole = this.buildPole(name, x, z, baseY, topY);
-    const bounds = new BoundingInfo(
-      new Vector3(x - REACH, baseY, z - REACH),
-      new Vector3(x + REACH, topY, z + REACH),
-    );
-    this.near = new Sheet(scene, `${name}-flag`, NEAR_GRID, this.step, bounds);
-    this.far = new Sheet(scene, `${name}-flag-far`, FAR_GRID, this.step, bounds);
+    // World-space vertices under an identity transform, and bounds that hold
+    // every shape the sheet can take, set once — an upload never re-measures.
+    const bounds: ZoneBox = [x - REACH, baseY, z - REACH, x + REACH, topY, z + REACH];
+    this.fieldHex = colours.field;
+    this.bandHex = colours.band;
+    const field = clothRecipe(mats, colours.field);
+    const band = clothRecipe(mats, colours.band);
+    this.near = new Sheet(draw, `${name}-flag`, NEAR_GRID, this.step, bounds, field, band);
+    this.far = new Sheet(draw, `${name}-flag-far`, FAR_GRID, this.step, bounds, field, band);
     this.far.setEnabled(false);
     this.active = this.near;
 
@@ -198,20 +220,19 @@ export class FlagCloth {
     this.active.present();
   }
 
-  /** Paints the flag. Materials are the factory's; swapping one is a pointer. */
+  /** Paints the flag. Recipes are the factory's; swapping one is a pointer. */
   setColours(c: FlagColours): void {
-    const trans = CONFIG.graphics.translucency.awning;
     if (c.field !== this.fieldHex) {
       this.fieldHex = c.field;
-      const mat = this.mats.getCloth(c.field, trans);
-      this.near.field.material = mat;
-      this.far.field.material = mat;
+      const recipe = clothRecipe(this.mats, c.field);
+      this.draw.wear(this.near.field, recipe);
+      this.draw.wear(this.far.field, recipe);
     }
     if (c.band !== this.bandHex) {
       this.bandHex = c.band;
-      const mat = this.mats.getCloth(c.band, trans);
-      this.near.band.material = mat;
-      this.far.band.material = mat;
+      const recipe = clothRecipe(this.mats, c.band);
+      this.draw.wear(this.near.band, recipe);
+      this.draw.wear(this.far.band, recipe);
     }
   }
 
@@ -219,18 +240,19 @@ export class FlagCloth {
   setVisible(on: boolean): void {
     if (this.visible === on) return;
     this.visible = on;
-    this.pole.setEnabled(on);
+    this.pole.on = on;
     this.active.setEnabled(on);
   }
 
   /**
-   * Whether the flag was inside the view last frame — the planes are the
-   * render's own. A flag nobody can see is not worth stepping: it holds its
-   * shape and picks the air up again where it left off.
+   * Whether the flag was inside the view last frame, by `test` — its sphere
+   * against the render's own planes (`CaptureZoneSystem` is handed the test).
+   * A flag nobody can see is not worth stepping: it holds its shape and picks
+   * the air up again where it left off.
    */
-  inView(): boolean {
-    const planes = this.scene.frustumPlanes;
-    return !planes || this.active.field.isInFrustum(planes);
+  inView(test: (x: number, y: number, z: number, radius: number) => boolean): boolean {
+    const s = this.active.field;
+    return test(s.x, s.y, s.z, s.radius);
   }
 
   /**
@@ -279,12 +301,6 @@ export class FlagCloth {
     this.active.present();
   }
 
-  dispose(): void {
-    this.pole.dispose();
-    this.near.dispose();
-    this.far.dispose();
-  }
-
   private substep(): void {
     const s = this.step;
     this.t += s.h;
@@ -300,7 +316,7 @@ export class FlagCloth {
     z: number,
     baseY: number,
     topY: number,
-  ): Mesh {
+  ): ZoneSurface {
     const shaft = new Part(
       `${name}-pole-shaft`,
       createCylinder({
@@ -328,21 +344,26 @@ export class FlagCloth {
     finial.position.set(x, topY, z);
     // `Mesh.MergeMeshes([shaft, plinth, finial], true)`, which is what this
     // was: the three merged in world space.
-    const pole = drawnMesh(`${name}-pole`, mergeParts([shaft, plinth, finial]), this.scene);
-    pole.material = this.mats.get(POLE_HEX);
-    annotate(pole);
-    return pole;
+    const pole = mergeParts([shaft, plinth, finial]);
+    return this.draw.addStatic(
+      `${name}-pole`,
+      { positions: pole.positions, normals: pole.normals!, colors: pole.colors, uvs: pole.uvs },
+      pole.indices,
+      this.mats.celRecipe(this.mats.get(POLE_HEX))!,
+    );
   }
 }
 
 /**
  * One level of detail: a grid of particles, its constraints, and the two
- * meshes it is drawn as. Knows nothing about hoisting or distance — the flag
- * hands it a `Step` and it answers to that.
+ * surfaces it is drawn as, over one range of vertices. Knows nothing about
+ * hoisting or distance — the flag hands it a `Step` and it answers to that.
  */
 class Sheet {
-  readonly field: Mesh;
-  readonly band: Mesh;
+  readonly field: ZoneSurface;
+  readonly band: ZoneSurface;
+  /** Where its vertices start in the draw's arrays. */
+  private readonly first: number;
   private readonly nu: number;
   private readonly nv: number;
   private readonly n: number;
@@ -353,23 +374,25 @@ class Sheet {
   private force: Float32Array;
   private windV: Float32Array;
   /** Both sides' positions and normals, as uploaded. */
-  private outPos: Float32Array;
-  private outNrm: Float32Array;
+  private outPos: Float32Array<ArrayBuffer>;
+  private outNrm: Float32Array<ArrayBuffer>;
   /** Constraint pairs, rest lengths and stiffnesses, flat. */
   private pairs: Uint16Array;
   private rest: Float32Array;
   private stiff: Float32Array;
   /** Triangles of the front face, for the air — shared with both meshes. */
   private tris: Uint16Array;
-  /** +1 or -1: which way `cross(du, dv)` points against Babylon's front. */
+  /** +1 or -1: which way `cross(du, dv)` points against the winding's front. */
   private normalSign = 1;
 
   constructor(
-    scene: Scene,
+    private readonly draw: ZoneDraw,
     name: string,
     grid: readonly [number, number],
     s: Step,
-    bounds: BoundingInfo,
+    bounds: ZoneBox,
+    fieldRecipe: CelRecipe,
+    bandRecipe: CelRecipe,
   ) {
     const [nu, nv] = grid;
     const n = nu * nv;
@@ -425,7 +448,7 @@ class Sheet {
       this.rest[c] = dist(this.pos, this.pairs[c * 2], this.pairs[c * 2 + 1]);
     }
 
-    // --- triangles, and which side of them Babylon calls the front ---
+    // --- triangles, and which side of them the winding calls the front ---
     const bandCols = Math.round((nu - 1) * BAND_SHARE);
     const front: number[] = [];
     const bandIdx: number[] = [];
@@ -444,8 +467,7 @@ class Sheet {
       }
     }
     this.tris = Uint16Array.from(front);
-    const probe: number[] = [];
-    VertexData.ComputeNormals(Array.from(this.pos), front, probe);
+    const probe = computeNormals(this.pos, front);
     this.writeOut();
     this.normalSign =
       probe[0] * this.outNrm[0] +
@@ -456,13 +478,14 @@ class Sheet {
         : 1;
     this.writeOut();
 
-    this.field = this.buildMesh(scene, name, fieldIdx, bounds);
-    this.band = this.buildMesh(scene, `${name}-band`, bandIdx, bounds);
+    this.first = draw.addVertices({ positions: this.outPos, normals: this.outNrm });
+    this.field = draw.addSurface(name, this.first, fieldIdx, fieldRecipe, bounds);
+    this.band = draw.addSurface(`${name}-band`, this.first, bandIdx, bandRecipe, bounds);
   }
 
   setEnabled(on: boolean): void {
-    this.field.setEnabled(on);
-    this.band.setEnabled(on);
+    this.field.on = on;
+    this.band.on = on;
   }
 
   /** Carries the whole sheet up or down, velocity and all. */
@@ -519,15 +542,7 @@ class Sheet {
   /** Normals, both faces, and the upload. */
   present(): void {
     this.writeOut();
-    for (const m of [this.field, this.band]) {
-      m.updateVerticesData(VertexBuffer.PositionKind, this.outPos);
-      m.updateVerticesData(VertexBuffer.NormalKind, this.outNrm);
-    }
-  }
-
-  dispose(): void {
-    this.field.dispose();
-    this.band.dispose();
+    this.draw.rewrite(this.first, this.outPos, this.outNrm);
   }
 
   substep(s: Step): void {
@@ -731,27 +746,6 @@ class Sheet {
       }
     }
   }
-
-  private buildMesh(
-    scene: Scene,
-    name: string,
-    indices: number[],
-    bounds: BoundingInfo,
-  ): Mesh {
-    const mesh = new Mesh(name, scene);
-    const data = new VertexData();
-    data.positions = this.outPos;
-    data.normals = this.outNrm;
-    data.indices = indices;
-    data.applyToMesh(mesh, true);
-    // World-space vertices under an identity transform, and bounds that hold
-    // every shape the sheet can take, set once — an upload never re-measures.
-    mesh.setBoundingInfo(
-      new BoundingInfo(bounds.minimum.clone(), bounds.maximum.clone()),
-    );
-    annotate(mesh);
-    return mesh;
-  }
 }
 
 /**
@@ -759,8 +753,6 @@ class Sheet {
  * shares — veered a little and slowly, per flag. Written into the step.
  */
 function bearing(s: Step): void {
-  const [x, z] = CONFIG.wind.dir;
-  const len = Math.hypot(x, z) || 1;
   const ph = s.phase;
   const t = s.t;
   const veer =
@@ -768,15 +760,8 @@ function bearing(s: Step): void {
     (0.7 * Math.sin(t * 0.21 + ph) + 0.3 * Math.sin(t * 0.53 + ph * 1.3));
   const c = Math.cos(veer);
   const sn = Math.sin(veer);
-  s.wdx = (x * c - z * sn) / len;
-  s.wdz = (x * sn + z * c) / len;
-}
-
-function annotate(mesh: Mesh): void {
-  mesh.isPickable = false;
-  mesh.checkCollisions = false;
-  mesh.metadata = { noGlow: true, noShadowCaster: true };
-  mesh.freezeWorldMatrix();
+  s.wdx = (WIND_X * c - WIND_Z * sn) / WIND_LEN;
+  s.wdz = (WIND_X * sn + WIND_Z * c) / WIND_LEN;
 }
 
 function dist(p: Float32Array, i: number, j: number): number {

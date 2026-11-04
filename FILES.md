@@ -1148,8 +1148,11 @@ src/
                         #   No picture — Game draws off what the guns return;
                         #   SimCore hands in a `HullRules` context, and Game a
                         #   second only for a match client's PREDICTED round
-    CaptureZoneSystem.ts# Flags drawn in the world: ring, skirt, flag on its pole
-    FlagCloth.ts        # One flag: the pole and a Verlet cloth flown in the wind
+    CaptureZoneSystem.ts# Flags drawn in the world: a ring of stones and paint, a
+                        #   flag on its pole; every surface render/ZoneDraw.ts's,
+                        #   no mesh (X4.6b)
+    FlagCloth.ts        # One flag: the pole and a Verlet cloth flown in the wind,
+                        #   its vertices written into ZoneDraw's buffer as it moves
     BulletMarks.ts      # The holes a round leaves behind: a ring of pooled
                         #   SLOTS, each a frozen world and sphere, cel-lit so a
                         #   mark belongs to the wall on every map, and stood
@@ -2813,6 +2816,13 @@ src/
                         #   the main pass's and the mask's modules — one vertex
                         #   module for both (the LEQUAL tie); the frame's
                         #   light, eye and fog, the rest the block's
+    ZoneDraw.ts         # The capture ZONES as OUR renderer draws them (X4.6b):
+                        #   the session's pipelines and a block a recipe worn; a
+                        #   round's arrays (static and cloth) and indices from
+                        #   finish to clear, the cloth's rewrite, one draw a
+                        #   surface, the near ones at "first" behind the dome, the
+                        #   far FIRST of ours at "beforeAlphaTest"; the gate, the
+                        #   frustum, the nearest-first order and the split Game's
     SkyDraw.ts          # The sky's DOME and MOON as OUR renderer draws them
                         #   (X4.5c): the session's three pipelines, each piece's
                         #   arrays and block from setSky to clearSky, the dome at

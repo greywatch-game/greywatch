@@ -117,6 +117,8 @@ function read(page) {
     // The CLOUDS are ours since X4.5b (`CloudDraw`, one draw, as Babylon drew
     // the mesh), counted the same way; a BEFORE older than that counts the
     // same draw in Babylon's, so a row's total holds.
+    // The RINGS and the FLAGS are ours since X4.6b (`ZoneDraw`, a draw a surface,
+    // as Babylon drew a mesh).
     // The DOME and the MOON are ours since X4.5c (`SkyDraw`, a draw each, as
     // Babylon drew a mesh each), likewise.
     const ours = g.handover ? g.handover.stats : { taken: 0, drawn: 0 };
@@ -130,7 +132,8 @@ function read(page) {
       (g.debrisDraw ? g.debrisDraw.stats.drawn : 0) +
       (g.flameDraw ? g.flameDraw.stats.drawn : 0) +
       (g.cloudDraw ? g.cloudDraw.stats.drawn : 0) +
-      (g.skyDraw ? g.skyDraw.stats.drawn : 0);
+      (g.skyDraw ? g.skyDraw.stats.drawn : 0) +
+      (g.zoneDraw ? g.zoneDraw.stats.drawn : 0);
     return { babylon: window.__census.babylon, ours: ours.drawn + bodies + hulls + view + pools, bodies, hulls, view, pools, taken: ours.taken };
   });
 }

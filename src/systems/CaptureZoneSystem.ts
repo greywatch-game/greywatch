@@ -6,14 +6,14 @@
  * pole at the point itself (`FlagCloth`), flown in the holding side's colours
  * at the height the capture meter stands at.
  *
- * Invariants: this is dressing and nothing else — never `metadata.solid`,
- * never `checkCollisions`, never pickable, and never a WorldBox, so no ray test
- * (hitscan, LOS, ground probe) and no nav consumer can see it, and a body walks
- * over a boundary stone. Everything here is drawn in the cel material like the
- * world, so it is lit, shadowed, fogged and inked like the wall behind it and
- * owes no fade of its own. None of it casts (`noShadowCaster`): a stone's
- * shadow is a few centimetres, and the world's caster list is fixed before a
- * round's markers exist.
+ * Invariants: this is dressing and nothing else — no collider, no mesh at all
+ * and never a WorldBox, so no ray test (hitscan, LOS, ground probe) and no nav
+ * consumer can see it, and a body walks over a boundary stone. Everything here
+ * is drawn in the cel recipes like the world, by our renderer
+ * (`render/ZoneDraw.ts`, `BABYLON_EXIT.md` X4.6b), so it is lit, shadowed, fogged
+ * and inked like the wall behind it and owes no fade of its own. None of it
+ * casts: a stone's shadow is a few centimetres, and the world's caster list is
+ * fixed before a round's markers exist.
  *
  * The ring's radius IS the capture radius — both this and
  * `ConquestSystem.pointAt` read `ControlPointDef.radius`, so the stones you see
@@ -39,17 +39,18 @@
  *
  * The ring's geometry is ours: each stone is a
  * `createPolyhedron` shape put through its own scale, turn and seat into a
- * batch, and a batch becomes a mesh only at `finish`, through `drawnMesh`.
+ * batch, and a batch becomes a surface of the draw only at `finish`.
  *
  * build() once per round; update() every frame — the flag's visibility and
  * its cloth step are functions of the viewpoint.
  */
-import { Color3, type Mesh, Scene, Vector3 } from "@babylonjs/core";
 import { teamLook } from "../core/teamView";
 import type { Team } from "../entities/Combatant";
-import { GeometryBuffer } from "../geometry/buffer";
+import type { GeometryBuffer } from "../geometry/buffer";
 import { createPolyhedron } from "../geometry/primitives";
-import { Matrix } from "../math";
+import { Color3, Matrix, Vector3 } from "../math";
+import type { CelRecipe } from "../render/celMaterial";
+import type { ZoneDraw, ZoneSurface } from "../render/ZoneDraw";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { EnvironmentSpec } from "../world/environment";
 import type { ControlPointDef } from "../world/MapBuilder";
@@ -62,9 +63,9 @@ import {
   roadTopAt,
 } from "../world/roads";
 import type { TerrainField } from "../world/TerrainField";
-import { drawnMesh } from "../world/parts";
 import {
   FlagCloth,
+  flagRecipes,
   MIN_POLE_HEIGHT,
   POLE_HEIGHT,
   ROOF_POLE_HEIGHT,
@@ -161,8 +162,8 @@ const MOUNT_HIT: RayHit<Vector3> = {
 interface Zone {
   x: number;
   z: number;
-  /** The ring: a mesh per stone tone, and the paint. */
-  meshes: Mesh[];
+  /** The ring: a surface per stone tone, and the paint. */
+  ring: ZoneSurface[];
   flag: FlagCloth;
   /** The meter as the flag shows it — signed, rate-limited toward the real one. */
   shown: number;
@@ -175,11 +176,24 @@ interface Lay {
   made: boolean;
 }
 
-/** One mesh's worth of triangles, filled stone by stone. */
+/** One surface's worth of triangles, filled stone by stone. */
 interface Batch {
   positions: number[];
   normals: number[];
   indices: number[];
+}
+
+/**
+ * The recipes whose variants the zones wear, for `ZoneDraw` to ask their
+ * pipelines ahead of any round: a stone's, the paint's (its depth bias being
+ * pipeline state) and the flag's.
+ */
+export function zoneRecipes(mats: CelMaterialFactory): readonly CelRecipe[] {
+  return [
+    mats.celRecipe(mats.get(STONE_HEXES[0]))!,
+    mats.celRecipe(mats.get(PAINT_HEX, ROAD_DEPTH_UNITS))!,
+    ...flagRecipes(mats, NEUTRAL_FLAG.field),
+  ];
 }
 
 /**
@@ -196,8 +210,10 @@ export class CaptureZoneSystem {
   private protos = new Map<number, GeometryBuffer>();
 
   constructor(
-    private scene: Scene,
     private mats: CelMaterialFactory,
+    private draw: ZoneDraw,
+    /** Whether a sphere is inside the last render's view, which decides whether a flag steps. */
+    private inView: (x: number, y: number, z: number, radius: number) => boolean,
   ) {}
 
   /**
@@ -225,7 +241,7 @@ export class CaptureZoneSystem {
         obstacles.wallAt(x, z, y + WALL_FLOOR, y + WALL_CEILING);
 
       const rng = mulberry32(0x57a9e + this.zones.length * 7919);
-      const meshes = [
+      const ring = [
         ...this.stones(cp, lay, walled, rng),
         ...this.paint(cp, lay, walled),
       ];
@@ -233,8 +249,10 @@ export class CaptureZoneSystem {
       // And the flag, which is what you navigate to — stood on the surface
       // the ring is, or on the roof over it (`flagMount`).
       const mount = flagMount(cp, terrain, obstacles, roads, rays);
+      // Painted now rather than on the first `update`: a round is built under
+      // the deploy screen, which draws the scene and steps no markers.
       const flag = new FlagCloth(
-        this.scene,
+        this.draw,
         this.mats,
         `zone-${cp.id}`,
         cp.pos.x,
@@ -242,20 +260,19 @@ export class CaptureZoneSystem {
         cp.pos.z,
         mount.height,
         this.zones.length + 1,
+        NEUTRAL_FLAG,
       );
-      // Painted now rather than on the first `update`: a round is built under
-      // the deploy screen, which draws the scene and steps no markers.
-      flag.setColours(NEUTRAL_FLAG);
 
       this.zones.push({
         x: cp.pos.x,
         z: cp.pos.z,
-        meshes,
+        ring,
         flag,
         shown: 0,
         primed: false,
       });
     }
+    this.draw.finish();
   }
 
   /**
@@ -278,11 +295,8 @@ export class CaptureZoneSystem {
   }
 
   dispose(): void {
-    for (const zone of this.zones) {
-      // The materials are the factory's cache and shared with the world.
-      for (const m of zone.meshes) m.dispose();
-      zone.flag.dispose();
-    }
+    // The recipes are the factory's cache and shared with the world.
+    this.draw.clear();
     this.zones = [];
   }
 
@@ -313,7 +327,7 @@ export class CaptureZoneSystem {
           ? this.coloursOf(1)
           : NEUTRAL_FLAG,
     );
-    if (zone.flag.inView()) zone.flag.update(dt, Math.abs(shown), dist);
+    if (zone.flag.inView(this.inView)) zone.flag.update(dt, Math.abs(shown), dist);
   }
 
   /** A side's cloth: its worn colour, and a darker band at the hoist. */
@@ -334,7 +348,7 @@ export class CaptureZoneSystem {
   /**
    * The stones: one every `STONE_SPACING` metres of boundary that is open
    * ground, each a squashed polyhedron at its own size, yaw and lean, bedded
-   * into the floor. Merged into one mesh per tone, so a ring is two draws
+   * into the floor. Merged into one surface per tone, so a ring is two draws
    * however many stones it has. Seeded, so a ring is the same ring every
    * load — the same rule as the scatter.
    */
@@ -343,7 +357,7 @@ export class CaptureZoneSystem {
     lay: (x: number, z: number) => Lay,
     walled: (x: number, z: number, y: number) => boolean,
     rng: () => number,
-  ): Mesh[] {
+  ): ZoneSurface[] {
     const batches: Batch[] = STONE_HEXES.map(() => ({
       positions: [],
       normals: [],
@@ -406,7 +420,7 @@ export class CaptureZoneSystem {
     cp: ControlPointDef,
     lay: (x: number, z: number) => Lay,
     walled: (x: number, z: number, y: number) => boolean,
-  ): Mesh[] {
+  ): ZoneSurface[] {
     const count = Math.max(
       24,
       Math.round((Math.PI * 2 * cp.radius) / PAINT_STEP),
@@ -506,39 +520,23 @@ export class CaptureZoneSystem {
   }
 
   /**
-   * A batch as a world-space mesh in the cel material, or nothing at all for
-   * an empty one (a ring entirely indoors has no stones; one in a field has
-   * no paint). The batch is a `GeometryBuffer` and `drawnMesh` is where it
-   * becomes a mesh — the one a fresh `Mesh` and `applyToMesh` made of it.
+   * A batch as a world-space surface in the cel recipe of `hex`, or nothing at
+   * all for an empty one (a ring entirely indoors has no stones; one in a field
+   * has no paint). Dressing, not world: out of every ray test and off the
+   * collidable list. The paint is inkless by intent only — a sheet on a floor
+   * has no depth step for the ink to find — and the stones are inked like any
+   * rock. Its depth bias is the recipe's (`get` keys its cache on it).
    */
-  private finish(
-    name: string,
-    b: Batch,
-    hex: string,
-    depthUnits = 0,
-  ): Mesh[] {
+  private finish(name: string, b: Batch, hex: string, depthUnits = 0): ZoneSurface[] {
     if (b.indices.length === 0) return [];
-    const mesh = drawnMesh(
-      name,
-      new GeometryBuffer({
-        positions: b.positions,
-        normals: b.normals,
-        indices: b.indices,
-      }),
-      this.scene,
-    );
-    mesh.material = this.mats.get(hex, depthUnits);
-    // Dressing, not world: out of every ray test and off the collidable list.
-    // The paint is `noInk` by intent only — a sheet on a floor has no depth
-    // step for the ink to find — and the stones are inked like any rock.
-    mesh.isPickable = false;
-    mesh.checkCollisions = false;
-    mesh.metadata =
-      depthUnits === 0
-        ? { noGlow: true, noShadowCaster: true }
-        : { noInk: true, noGlow: true, noShadowCaster: true };
-    mesh.freezeWorldMatrix();
-    return [mesh];
+    return [
+      this.draw.addStatic(
+        name,
+        { positions: b.positions, normals: b.normals },
+        b.indices,
+        this.mats.celRecipe(this.mats.get(hex, depthUnits))!,
+      ),
+    ];
   }
 }
 

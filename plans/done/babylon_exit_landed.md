@@ -7926,7 +7926,7 @@ to come. What X4.5a was asked for and what it measured:
     on Coldharbour, Cinderhaven and Hollowmere: 64 of 64 byte-equal to 547d803,
     the same 9 stale rows red.
 
-### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4, its review 5d43b2e)
+### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4, its review 5d43b2e), X4.6b **LANDED** (X46B_HASH)
 
 The plan's `BABYLON_EXIT.md` holds what the surfaces are today, the two tables X4.6a
 measured and the four sub-steps to come. X4.6a's brief, word for word:
@@ -8160,3 +8160,117 @@ changed, two owner decisions, and one thing nobody had noticed.
   `bench/vantages.ts` alone. **Left for the owner, being `CLAUDE.md`**: its lines naming
   what stays Babylon's still read true (the blob is Babylon's until X4.6e), and go with
   X4.6e's rewrites.
+
+#### X4.6b's brief, word for word
+
+- **X4.6b — the flags and the rings.** The smallest step. The ring keeps its
+  batches and depth bias on OUR renderer's cel recipes. The cloth is the one new
+  shape: a vertex buffer of ours rewritten while the flag moves, with no per-frame
+  allocation (the sim stays where it is), for BOTH sheets; **the pole goes with it**.
+  All of it lands on `"beforeAlphaTest"`, which is where Babylon's opaque list has it
+  relative to everything of ours but the order on that point, and an editor build
+  has none of it. **Verify:** `ring`, `ring-stones`, `ring-flown`, `ring-flown-far`,
+  a flag captured in a live round; the ring is still the zone's boundary; `surfaces.mjs`
+  reports no `flag`, `pole`, `stones` or `paint`.
+
+**X4.6b landed** (X46B_HASH; 2026-11-04; no change to the picture).
+
+- **What moved.** `render/ZoneDraw.ts` (new) draws every `zone-*` mesh Babylon's opaque list
+  drew: each ring's two batches of stones and its paint, each pole, and a field and a band
+  on each of a flag's two sheets, one draw for one, 40 surfaces on Coldharbour and 36 on
+  Hollowmere, through the plain cel stage and the fragment the world's plain variants use,
+  on the recipes `get` and now `getCloth` keep (`bear` and `own`, `CLOTH_VARIANT` beside the
+  others). The pipelines are three (plain, plain at bias -8, `CEL_SMOOTH`), asked at
+  construction off `zoneRecipes` and declared on `Game.roundPipelines`; a recipe of a variant
+  not asked is refused. **The bias is pipeline state from the recipe**, keyed by `get` as
+  `CLAUDE.md`'s road rules have it. The arrays are one set a round (`finish` to `clear`),
+  static and cloth together under one group 2 and one index buffer, the indices rebased.
+  `CaptureZoneSystem` and `FlagCloth` no longer import Babylon (`src/math` for `Color3` and
+  `Vector3`, `computeNormals` for the winding probe), hold no node, and stay where they are:
+  neither is a core simulation, so `SIMULATIONS` gains nothing. A sheet writes its arrays
+  through `ZoneDraw.rewrite`: two `writeBuffer`s, where `present` made an array and four
+  `updateVerticesData`s, since a field and a band are two index ranges over one sheet.
+- **Where it is in each pass, read and not assumed.** On the BEFORE (a scan of Coldharbour's
+  40 meshes in a round): no material with an emissive colour, every one `noGlow` and
+  `noShadowCaster`, none in any render target's list, no record among the world's, and the
+  casters are `map.visuals`, handed over before `buildRound` builds a zone; X4.6a's log has
+  sparks alone in the mask. **So: no shadow map, no lamp atlas, no bake, no glow mask, then
+  and now.** They RECEIVE shadow, take fog and light, and are inked, all from the cel
+  fragment, the frame and the depth buffer, which is why those needed no line here.
+- **The draw point, which the brief had wrong and only a byte comparison said.** Hung at
+  `"beforeAlphaTest"` first of ours, as briefed: **130 of 132 rows byte-equal, and 8 pixels
+  of `ring-stones` (worst 68/255) and 7 of `ring-flown-far` (worst 43/255) moved**, both
+  `within floor` at `--check`, mean 0.0001. Babylon's log at the BEFORE has the near zones at
+  18-20 m ahead of the blades at their one key, 57 m, so the stones drew first and the blade
+  won the tie; hung behind the list, the stone took it. The crop has a stone under blades at
+  the pixels. It is a real tie: under the 0.05 m near plane a 32-bit float depth steps every
+  half-millimetre at 18 m and every 3 mm at 53 m. **All at `"first"` was the next try, and
+  byte-equal on all 132, and wrong**: two scratch rows from eyes where the ring's centre is
+  farther than the field's differed by 70 pixels (worst 119/255) on one. So `Game.zonePull`
+  splits its one nearest-first order at the blades' key: nearer at `"first"` behind the dome
+  and farther at `"beforeAlphaTest"`, first of ours (`zoneDraw.install` ahead of the fires).
+  That reproduces Babylon's order against the blades in every frame, whatever the rows
+  hold, since it is the comparison Babylon made. The key is read through
+  `GrassSystem.bladeSortCentre`, off a bounding sphere: no reach into Babylon's queue, and
+  gone at X4.6c. **The guard stays**: `coldharbour-ring-behind-field`, at `crossing`'s eye so
+  the benchmark gains no stop, appended and banked by `--rows` from the BEFORE, two
+  byte-identical grabs: all at `"first"` moves 54 of its pixels (worst 113/255), the split
+  none, and `surfaces.mjs` shows it holds the grass and the stones. **The bank alone could
+  not have said this**, for the blob's reason: no old row was on that side of the key.
+- **What is left of the interleave.** The water and the `backed` panes are on the same list
+  at their own keys, and the split does not read them, so a surface between one of those
+  and the blades draws on the wrong side of it: an exact tie or nothing, it needs a stone at
+  a shore or a flag through a curtain wall, no row of 133 holds one, and it goes with
+  X4.6d and X4.6e. It is the class X4.4d's note accepted for the fires.
+- **Allocation**, by V8's sampling heap profiler over 3,000 steps of the door a round steps
+  the zones by, Coldharbour, two flags in view (`seconds of air` read back, 50 s each), warmed
+  by 3,000 first. **BEFORE ~1,315 bytes a frame; AFTER ~313.** `present` 239,904 bytes, the
+  iterator's `next` and `values`, `_markSubMeshesAsAttributesDirty`, `_notifyUpdate` and
+  `_markSubMeshesAsDirty` are gone, and `ZoneDraw`, `rewrite`, `present` and `zonePull` take no
+  sample. `bearing` fell from 564,292 to ~16,000 by reading the one wind once (a destructure
+  per substep), the same numbers: the bank proves it. `inFrustum` would have added `Vector3`'s
+  boxed getters per surface, so the zones hold the render's planes as numbers (`inPlanes`,
+  filled once a frame; `FlagCloth.inView` reads the same, the LAST render's). **What remains
+  is not the cloth's write**: `viewer.x` and `.z` in `update`, the doubles `update` and
+  `flyFlag` pass (code this step did not touch), `writeOut`'s small residue, and other
+  systems' frames falling in the window. Under 2,000 loops of `update`, `drawZones` and
+  `zonePull` in a live round: `CaptureZoneSystem.update` ~78 KB, `flyFlag` ~40 KB, `writeOut` ~21 KB.
+- **Measured.** BEFORE `bank.mjs --check --keep` alone in the worktree at a269bfb (the new
+  rows' PNGs copied in). AFTER twice alone on the final tree: **133 of 133 byte-equal to the
+  BEFORE in one run and 132 in the other** (`harrowmead-view-pistol-reload`, 2 pixels by 1/255,
+  the known flake; `sarab/shelf` held), the two runs against each other the same pixels; 99
+  within floor and 34 red, the same 34 at the same means; no page or console error. **A row's
+  `--check` pass line would have hidden every difference above.** `kit:hash --models` against
+  the BEFORE: 244 builds identical, the 8 `zone` among them, the geometry, order, names,
+  materials, bounds and enabled state, through a stand-in that makes each surface handed to
+  `ZoneDraw` the mesh it was (`zoneDrawStandIn`). `census --against`: all 132 old rows equal on
+  all seven maps, so the total differs only on Coldharbour, by the new row's 64 (not in the
+  BEFORE). Typecheck, build (`check-babylon-free`, `check-proving`), corecheck, parity, `gate`
+  (seven maps clean), `shaders` (seven clean). `merge:hash` not run: nothing of the world's
+  merge moved. `surfaces.mjs` on the ring rows: no `flag`, `pole`, `stones` or `paint`.
+- **In play.** `pipelines.mjs coldharbour --round`: **zero of ours in play in every run**, the
+  seal quiet. Three of Babylon's are made at `life 1: spawn` with no mesh drawing in 3 of 4
+  runs here and 1 of 2 at the BEFORE, or under the card in the others (the count at the
+  install 13 or 16 here, 17 or 20 there), so **a race that predates this step**, and one a
+  later step could name; one run at the BEFORE wrote nothing, a run of a tree nothing here
+  touched. Ours at the install fell from 23 to 21, the plain pipelines being asked at boot.
+- **Live**, Coldharbour offline, the real bots, no script but `spawnPlayer`: by t=26 s Echo's flag
+  had gone from 0 to 1 in the Redline's red and Alpha's to -0.74 in the Valeguard's tan, canvas
+  until the meter left the foot; Delta's went up to 1 and came back down through 0 and up in tan
+  (-0.286, `#c9a15e`, photographed, the ring's stones in place and the plinth under it). 30 of
+  40 surfaces drawn at the spawn, 0 Babylon `zone-*` meshes, the cache sealed; two
+  `powerPreference` warnings and nothing else in the console. Echo's indoor point flies from
+  its roof, seen from 60 m. `F2` out of that live round: the editor opens, `installed` false,
+  0 surfaces, 0 zones, 203 proxies, no `zone-*`; closing it goes to `loading` and a new round.
+  `surfaces.mjs coldharbour --editor`: a water and a grass rect both remade, as at X4.6a.
+- **Tools.** `shaders.mjs` asked for any mesh on a cel material as its probe, and the zones
+  were the last on a map with no glazing, so it threw on Hollowmere: it mints a hidden one.
+  `census.mjs` counts `zoneDraw`. `harness.mjs`'s zone switch writes `ZoneSurface.on`.
+  `profileReport` is version 31, `pools.zones`, the draws in `pools.drawn`.
+- **Rewritten**: `docs/rendering.md` (the capture zone, the `"first"` point), `docs/game.md`'s
+  pushes, `CLAUDE.md`'s line on what is ours (its section runs to 138 lines against ~135, the
+  owner's to trim), `FILES.md`, every header named, and X4.6c's and X4.6d's briefs, which owe
+  this tie. `docs/rendering.md`'s "`placeVantage` disposes the zones" was stale since X4.6a.
+- **Not verified.** A server's match in a browser: the zones read the same doors, and only
+  `corecheck` and `parity` have run one. The phone. The gate's frame rates are not an A/B. A
+  stone at a shore against the water, by the reasoning above and no row.

@@ -362,7 +362,7 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
       id: "ring-flown",
       of: "the square's flag run to the top of its pole in the Valeguard's tan, from the same eye as `ring`, the field closed to 22° on the top of the pole",
       proves:
-        "the CLOTH (X4.6b) up its pole in the wind: the NEAR sheet (16x10, the eye ~35 m off, inside `LOD_FAR`) after six seconds of its own fixed-step air, the hoist band and the field in their two materials, backlit by the night's sky, its folds in the positions and normals `updateVerticesData` wrote — where `ring`'s flag is at rest at the foot of the pole, behind the well",
+        "the CLOTH (X4.6b) up its pole in the wind: the NEAR sheet (16x10, the eye ~35 m off, inside `LOD_FAR`) after six seconds of its own fixed-step air, the hoist band and the field in their two materials, backlit by the night's sky, its folds in the positions and normals the sheet last wrote — where `ring`'s flag is at rest at the foot of the pole, behind the well",
       pos: [4, 9, 32],
       target: [0, 9, -3],
       fov: 22,
@@ -523,7 +523,7 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
       id: "ring-flown-far",
       of: "the same square's flag run up in the Redline's colours from south of the square, ~53 m off, through a 14° field, against the tower behind the memorial",
       proves:
-        "the cloth's FAR sheet (11x7, past `LOD_FAR`) in the other side's colours, its handover resampled off the near sheet (X4.6b): the second of the two sheets and the second pair of the four meshes a flag has",
+        "the cloth's FAR sheet (11x7, past `LOD_FAR`) in the other side's colours, its handover resampled off the near sheet (X4.6b): the second of the two sheets and the second pair of the four surfaces a flag has",
       pos: [-16, 8, -47],
       target: [2.5, 8, 2.5],
       fov: 14,
@@ -584,6 +584,16 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
       pos: [-16, 1.7, -12],
       target: [-23.8, 2, -6.65],
       fx: { seconds: 11.5, events: [{ at: 0, blaze: { at: [-22.6, 1.6, -8] } }, { at: 2.5, blaze: { at: [-27.5, 0.8, -6.5] } }] },
+    },
+    {
+      id: "ring-behind-field",
+      of: "the square's lawns and the memorial through a 12° field, from the crossing's eye south-west of it, the limed stones crossing the far lawn and the cobbles behind the tree, two parked cars in front",
+      proves:
+        "a ring FARTHER than its field's blades (X4.6b): Babylon's opaque list drew such a surface behind the blades, which all sort at their field's centre, and a tie between a blade and a stone is real, so `ZoneDraw`'s far run belongs at `beforeAlphaTest` where the near run in `ring-stones` belongs at `first`, and X4.6c owes both: drawn all at `first`, 54 pixels of this frame move by up to 113/255, within floor at `--check`",
+      pos: [-41, 6, -41],
+      target: [-7.5, 0.4, -10],
+      fov: 12,
+      zones: true,
     },
   ],
   harrowmead: [

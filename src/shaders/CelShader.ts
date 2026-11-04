@@ -612,6 +612,7 @@ const PLAIN_VARIANT: readonly string[] = [];
 const PALETTE_VARIANT: readonly string[] = ["CEL_PALETTE"];
 const GROUND_VARIANT: readonly string[] = ["CEL_GROUND_TEX"];
 const GROUND_BUMP_VARIANT: readonly string[] = ["CEL_GROUND_TEX", "CEL_BUMP"];
+const CLOTH_VARIANT: readonly string[] = ["CEL_SMOOTH"];
 
 /** A variant as a `ShaderMaterial`'s `defines` option spells it. */
 function babylonDefines(variant: readonly string[]): string[] {
@@ -1207,10 +1208,10 @@ export class CelMaterialFactory {
    * What each material our renderer may draw was BORN with, kept beside it:
    * its variant, its depth bias and its own block and textures, written by
    * `own` and `ownTexture` in the same call that sets them on the material.
-   * Only the getters whose meshes our renderer takes keep one —
-   * `getWorldCel`, `get`, `getGlossy`, `getTranslucent`, `getGroundTextured`;
-   * glazing and cloth are Babylon's alone (`BABYLON_EXIT.md` X3.3a), and a
-   * body has no material at all, only a recipe (`bodyCelRecipe`, X4.1d).
+   * Only the getters our renderer draws keep one — `getWorldCel`, `get`,
+   * `getGlossy`, `getTranslucent`, `getGroundTextured`, `getCloth`; glazing is
+   * Babylon's alone (`BABYLON_EXIT.md` X3.3a), and a body has no material at
+   * all, only a recipe (`bodyCelRecipe`, X4.1d).
    */
   private readonly recipes = new Map<ShaderMaterial, MutableRecipe>();
 
@@ -1685,14 +1686,14 @@ export class CelMaterialFactory {
 
   /**
    * `getTranslucent` for a sheet that BENDS — today the flags over the
-   * control points (`systems/FlagCloth.ts`) and nothing else. The one
+   * control points (`systems/FlagCloth.ts`, drawn off this recipe by our
+   * renderer since `BABYLON_EXIT.md` X4.6b) and nothing else. The one
    * difference is `CEL_SMOOTH`: shaded off the interpolated normal rather
    * than the per-triangle facet, because cloth is a fine grid and a facet per
    * triangle of it reads as a lattice rather than a fold. The bands stay hard.
    *
-   * A mesh wearing one carries no vertex colour buffer, and nothing else wears
-   * one, so the frozen define set is never shared across a disagreement.
-   * Cached under its own key and named `cel-cloth-#rrggbb`, outside the three
+   * A surface wearing one carries no vertex colour buffer, and nothing else
+   * wears one. Cached under its own key and named `cel-cloth-#rrggbb`, outside the three
    * names the merge readers parse — cloth is never merged.
    */
   getCloth(hex: string, trans: TranslucencySpec): ShaderMaterial {
@@ -1707,11 +1708,12 @@ export class CelMaterialFactory {
           attributes: [...CelMaterialFactory.ATTRIBUTES],
           uniforms: [...CelMaterialFactory.UNIFORMS],
           samplers: [...CelMaterialFactory.SAMPLERS],
-          defines: ["#define CEL_SMOOTH"],
+          defines: babylonDefines(CLOTH_VARIANT),
           shaderLanguage: ShaderLanguage.WGSL,
         },
       );
-      mat.setColor3("baseColor", Color3.FromHexString(hex));
+      this.bear(mat, CLOTH_VARIANT, 0);
+      this.own(mat, "baseColor", Color3.FromHexString(hex));
       this.applyCamera(mat);
       this.applyWind(mat);
       this.applyEnvironment(mat);

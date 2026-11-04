@@ -304,18 +304,28 @@ for (const id of MAPS) {
     g.spawnPlayer();
     await new Promise((res) => setTimeout(res, 2500));
 
-    // Any mesh currently drawn with a cel material stands in for all of them.
-    // Every cel variant is built from the same attribute list, so one mesh is
-    // enough to ASK any of them to compile — which is the whole point: the
-    // factory outlives a mesh, and a pooled rig that never deployed leaves its
-    // paint in the cache with no draw behind it to have compiled it.
-    const probe = g.scene.meshes.find(
-      (m) =>
-        m.material &&
-        m.material.name.startsWith("cel-") &&
-        m.getTotalVertices() > 0,
+    // A mesh of our own stands in for all of them, hidden, on positions and
+    // normals as a ring's batch had them. Every cel variant is built from the
+    // same attribute list, so one mesh is enough to ASK any of them to compile
+    // — which is the whole point: the factory outlives a mesh, and a pooled rig
+    // that never deployed leaves its paint in the cache with no draw behind it
+    // to have compiled it. It took any mesh on a cel material until
+    // `BABYLON_EXIT.md` X4.6b, whose rings and flags were the last of those on a
+    // map with no glazing: our renderer draws the rest and Babylon is made none.
+    const { drawnMesh } = await import("/src/world/parts.ts");
+    const { GeometryBuffer } = await import("/src/geometry/buffer.ts");
+    const probe = drawnMesh(
+      "shaders-probe",
+      new GeometryBuffer({
+        positions: [0, 0, 0, 1, 0, 0, 0, 1, 0],
+        normals: [0, 0, 1, 0, 0, 1, 0, 0, 1],
+        indices: [0, 1, 2],
+      }),
+      g.scene,
     );
-    if (!probe) throw new Error("no cel-material mesh to compile against");
+    probe.material = [...g.mats.cache.values()].find((m) => m.name.startsWith("cel-"));
+    probe.isVisible = false;
+    if (!probe.material) throw new Error("no cel material to compile against");
 
     // The one variant no shipped map mints: a ground albedo with no height map
     // beside it. Both call sites pass a bump today, so `CEL_GROUND_TEX` alone

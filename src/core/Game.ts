@@ -119,6 +119,7 @@ import { PoolDraw, type PoolKit } from "../render/PoolDraw";
 import { BlastDraw } from "../render/BlastDraw";
 import { CloudDraw } from "../render/CloudDraw";
 import { SkyDraw } from "../render/SkyDraw";
+import { ZoneDraw } from "../render/ZoneDraw";
 import { FlameDraw } from "../render/FlameDraw";
 import type { CelRecipe } from "../render/celMaterial";
 import { HULL_CHARRED } from "../render/hullProgram";
@@ -194,7 +195,7 @@ import {
 } from "../entities/weapons";
 import { AimAssistSystem } from "../systems/AimAssistSystem";
 import { Atmosphere } from "../systems/Atmosphere";
-import { CaptureZoneSystem } from "../systems/CaptureZoneSystem";
+import { CaptureZoneSystem, zoneRecipes } from "../systems/CaptureZoneSystem";
 import { CombatFx } from "../systems/CombatFx";
 import {
   CombatSystem,
@@ -512,6 +513,18 @@ function inFrustum(x: number, y: number, z: number, radius: number, planes: read
 }
 
 /**
+ * `inFrustum` over planes copied to numbers (`zonePlanes`, a plane's normal then
+ * its `d`): the same arithmetic, read through no getter, so a test made forty
+ * times a frame boxes nothing however it is compiled.
+ */
+function inPlanes(x: number, y: number, z: number, radius: number, planes: Float64Array): boolean {
+  for (let i = 0; i < 24; i += 4) {
+    if (planes[i] * x + planes[i + 1] * y + planes[i + 2] * z + planes[i + 3] <= -radius) return false;
+  }
+  return true;
+}
+
+/**
  * A world fire's world matrix, as its frozen mesh held it: the identity, in
  * the float32 its `world` uniform was uploaded as (`flamePull`).
  */
@@ -770,6 +783,18 @@ export class Game {
   private conquest: ConquestSystem;
   /** The flags' in-world markers — rings, skirts and beacons. */
   private zones: CaptureZoneSystem;
+  /**
+   * The rings' and the flags' draw (`BABYLON_EXIT.md` X4.6b): every surface of
+   * `zones`, fed by `drawZones` and pulled by `zonePull` inside the render.
+   */
+  private readonly zoneDraw: ZoneDraw;
+  /**
+   * The last render's frustum planes, as numbers (`zonePull`), and whether a
+   * render has given any: what a surface is tested against inside the render, and
+   * what a flag asks of the LAST one before it steps (`FlagCloth.inView`).
+   */
+  private readonly zonePlanes = new Float64Array(24);
+  private zonePlanesHeld = false;
   private lighting: LightingSystem;
   /**
    * The world's sustained sounds — the fires, and whatever is put beside them.
@@ -2246,7 +2271,13 @@ export class Game {
     this.antiTankFx = new AntiTankFx(this.mats, this.antiTank);
     this.aimAssist = new AimAssistSystem();
     this.conquest = new ConquestSystem(this.random);
-    this.zones = new CaptureZoneSystem(this.scene, this.mats);
+    // The rings and the flags are OUR renderer's (`BABYLON_EXIT.md` X4.6b).
+    this.zoneDraw = new ZoneDraw(this.renderer, zoneRecipes(this.mats), (into) => this.zonePull(into));
+    this.zones = new CaptureZoneSystem(
+      this.mats,
+      this.zoneDraw,
+      (x, y, z, radius) => !this.zonePlanesHeld || inPlanes(x, y, z, radius, this.zonePlanes),
+    );
     // The weapon hangs from the camera (its tree's root reads the camera's
     // world, `ViewModel.tree`), so the camera has to exist first.
     this.playerView = new PlayerView(this.scene, this.mats, this.cameraSys.camera);
@@ -2439,8 +2470,8 @@ export class Game {
     // …and what all five drew (`ProfileReport.pools`): Babylon's counter has
     // counted no tracer, mark, thrown or laid body, nor any case, since X4.4b,
     // nor any billow, shard or chunk since X4.4c, nor any fire since X4.4d,
-    // nor the cloud ring since X4.5b, nor the dome and the moon since X4.5c (no
-    // pool, but their draws owe the sum).
+    // nor the cloud ring since X4.5b, nor the dome and the moon since X4.5c, nor
+    // the rings and the flags since X4.6b (no pool, but their draws owe the sum).
     this.prof.setPools(() => ({
       drawn:
         this.pieceDraw.stats.drawn +
@@ -2449,7 +2480,8 @@ export class Game {
         this.debrisDraw.stats.drawn +
         this.flameDraw.stats.drawn +
         this.cloudDraw.stats.drawn +
-        this.skyDraw.stats.drawn,
+        this.skyDraw.stats.drawn +
+        this.zoneDraw.stats.drawn,
       masked:
         this.pieceDraw.stats.masked +
         this.blastDraw.stats.masked +
@@ -2462,6 +2494,7 @@ export class Game {
       fires: this.flameDraw.stats.drawn,
       clouds: this.cloudDraw.stats.drawn,
       sky: this.skyDraw.stats.drawn,
+      zones: this.zoneDraw.stats.drawn,
     }));
     // The sky's ring is OUR renderer's (X4.5b), its dome and moon too (X4.5c), and
     // `Sky` is handed them below.
@@ -2482,6 +2515,7 @@ export class Game {
       { name: "fires", ready: this.flameDraw.ready },
       { name: "the clouds", ready: this.cloudDraw.ready },
       { name: "the sky", ready: this.skyDraw.ready },
+      { name: "the rings and flags", ready: this.zoneDraw.ready },
     ];
     // The sky is painted once here, the boot map's, and re-applied per round
     // alongside the environment; it is DRAWN only while a map stands
@@ -4543,6 +4577,9 @@ export class Game {
     // …and the fires (X4.4d): the world's, and the molotov's flames where
     // `GrenadeFx` stood them.
     this.drawFires();
+    // …and the rings and the flags (X4.6b): through the size gate here, the
+    // rest inside the render.
+    this.drawZones();
     this.scene.render();
     this.prof.end(P.render);
     if (warming) this.unstageWarmFrame();
@@ -5426,6 +5463,7 @@ export class Game {
     this.blastDraw.uninstall();
     this.debrisDraw.uninstall();
     this.flameDraw.uninstall();
+    this.zoneDraw.uninstall();
     // The weapon stays drawn — the kit screen covers the menu — but a failure
     // of it with no round standing is the console's (X4.3c).
     this.viewDraw.onFailed((reason) => console.error(`[view] the weapon cannot be drawn — ${reason}`));
@@ -5654,6 +5692,11 @@ export class Game {
     // that queue until X4.4d, ahead of the billows' draw of ours, front to
     // back among themselves as they still are. An editor build's fires are
     // Babylon's meshes, drawn by its `FlameMaterial`.
+    // The RINGS AND FLAGS ahead of even those (X4.6b): the ones nearer than the
+    // field's blades at the frame's `"first"`, ahead of what is left of that queue,
+    // the rest here, first at this point. `ZoneDraw`'s header says why. An editor
+    // build has none: `zones.build` is the round's.
+    if (!editor) this.zoneDraw.install((reason) => this.worldFailed(reason, owner));
     if (!editor) this.flameDraw.install((reason) => this.worldFailed(reason, owner));
     if (!editor) this.blastDraw.install((reason) => this.worldFailed(reason, owner));
     if (!editor) this.pieceDraw.install((reason) => this.worldFailed(reason, owner));
@@ -6920,6 +6963,95 @@ export class Game {
 
   /** `blastPull`'s scratch: a batch's centre. */
   private readonly blastAt = new Vector3();
+
+  /**
+   * Hands our renderer this frame's RINGS AND FLAGS (`BABYLON_EXIT.md` X4.6b):
+   * a surface is drawn while its switch is on and the size gate keeps its sphere
+   * (`WorldCulling.keepsSphere`, as `offer` asked it of the mesh it was), and the
+   * rest of what Babylon did with those meshes is asked inside the render
+   * (`zonePull`). In every state, after everything that moves the zones.
+   */
+  private drawZones(): void {
+    const draw = this.zoneDraw;
+    if (!draw.installed) return;
+    const surfaces = draw.surfaces;
+    for (let i = 0; i < surfaces.length; i++) {
+      const s = surfaces[i];
+      s.kept = s.on && this.culling.keepsSphere(s.x, s.y, s.z, s.radius);
+    }
+    draw.commit();
+  }
+
+  /**
+   * What our renderer PULLS inside the render for this frame's rings and flags
+   * (`drawZones`), where the render has placed the camera — what Babylon did
+   * with their meshes, step for step: a surface is drawn when it is kept and its
+   * sphere passes the frustum test of the mesh's culling strategy, the sphere
+   * alone (`inPlanes`, off this render's planes, none while the scene skips
+   * clipping); in group 0's opaque order, nearest first by `eyeDistanceSq` off
+   * `globalPosition`, the order the meshes were made in breaking a tie (a sheet's
+   * field and band share one sphere), stable. **And which side of the field's
+   * blades each falls on** (`split`): they are still on that list, all at one key
+   * (their field's centre), and ties with them are real, so a surface drawn ahead
+   * of them stays ahead and one behind stays behind.
+   */
+  private zonePull(into: ZoneDraw): void {
+    const eye = this.cameraSys.camera.globalPosition;
+    const ex = eye.x;
+    const ey = eye.y;
+    const ez = eye.z;
+    const planes = this.scene.frustumPlanes;
+    const held = this.zonePlanes;
+    if (planes) {
+      for (let i = 0; i < 6; i++) {
+        const p = planes[i];
+        const normal = p.normal;
+        held[i * 4] = normal.x;
+        held[i * 4 + 1] = normal.y;
+        held[i * 4 + 2] = normal.z;
+        held[i * 4 + 3] = p.d;
+      }
+      this.zonePlanesHeld = true;
+    }
+    const clip = planes && !this.scene.skipFrustumClipping;
+    const blades = this.grass.bladeSortCentre;
+    let bladeKey = Number.POSITIVE_INFINITY;
+    if (blades) {
+      const bx = blades.x - ex;
+      const by = blades.y - ey;
+      const bz = blades.z - ez;
+      bladeKey = bx * bx + by * by + bz * bz;
+    }
+    const surfaces = into.surfaces;
+    const order = into.order;
+    const keys = into.keys;
+    let n = 0;
+    let near = 0;
+    for (let i = 0; i < surfaces.length; i++) {
+      const s = surfaces[i];
+      if (!s.kept) continue;
+      if (clip && !inPlanes(s.x, s.y, s.z, s.radius, held)) continue;
+      const dx = s.x - ex;
+      const dy = s.y - ey;
+      const dz = s.z - ez;
+      const key = dx * dx + dy * dy + dz * dz;
+      // A stable insertion sort: a surface moves ahead only of one strictly
+      // farther.
+      let r = n;
+      while (r > 0 && keys[r - 1] > key) {
+        keys[r] = keys[r - 1];
+        order[r] = order[r - 1];
+        r--;
+      }
+      keys[r] = key;
+      order[r] = i;
+      n++;
+      // A tie with the blades' key went to the mesh made first: theirs.
+      if (key < bladeKey) near++;
+    }
+    into.draws = n;
+    into.split = near;
+  }
 
   /**
    * Hands our renderer this frame's FIRES (`BABYLON_EXIT.md` X4.4d): whether

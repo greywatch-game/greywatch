@@ -621,7 +621,9 @@ bullet MARKS** (`render/PoolDraw.ts`, `entities/pieces.ts`); **so is every
 blast BILLOW** (`render/BlastDraw.ts`) **and every glass SHARD and rubble
 CHUNK** (`systems/poseView.ts`), and every FIRE (`FlameDraw`, in no bake) —
 **but the sparks, the dust discs and the scorch stay Babylon meshes until the
-glazing moves (X4.6)**, and a pool is never split across two renderers.
+glazing moves (X4.6)**, and a pool is never split across two renderers. **So
+are a capture zone's stones, paint, pole and cloth** (`render/ZoneDraw.ts`), drawn
+either side of what is left of Babylon's opaque list, whose ties they must keep.
 
 **The GLOW draws the EMISSIVE meshes and nothing else, its occlusion being the
 FRAME's own depth buffer** (`src/shaders/GlowPass.ts`). **What may bloom is read

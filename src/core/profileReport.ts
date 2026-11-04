@@ -520,6 +520,8 @@ export interface PoolFacts {
   clouds?: number;
   /** Absent before report version 30. */
   sky?: number;
+  /** Absent before report version 31. */
+  zones?: number;
 }
 
 export interface ProfileGraphics {
@@ -1307,7 +1309,10 @@ export function buildReport(
     // 30: `pools.sky`, the dome's and the moon's draws in `pools.drawn` and the
     // moon's bloom in `pools.masked`: since `BABYLON_EXIT.md` X4.5c none is in
     // `counters.drawCalls`. Nothing else changed meaning.
-    version: 30,
+    // 31: `pools.zones`, the rings' and the flags' draws, in `pools.drawn` too:
+    // since `BABYLON_EXIT.md` X4.6b none is in `counters.drawCalls`. Nothing else
+    // changed meaning.
+    version: 31,
     build: buildStamp(),
     takenAt: new Date().toISOString(),
     reason,

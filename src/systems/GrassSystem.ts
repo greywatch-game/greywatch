@@ -413,6 +413,16 @@ export class GrassSystem {
     if (this.mat) this.buildLods();
   }
 
+  /**
+   * The centre every blade mesh's bounding sphere holds, which is what group 0's
+   * opaque sort keys them all on (`eyeDistanceSq`), or null with no field. Read
+   * by the one thing of ours that must keep its place against them
+   * (`Game.zonePull`, `BABYLON_EXIT.md` X4.6b), and gone when they are ours (X4.6c).
+   */
+  get bladeSortCentre(): Vector3 | null {
+    return this.lods.length > 0 ? this.lods[0].mesh.getBoundingInfo().boundingSphere.centerWorld : null;
+  }
+
   /** The bounds WorldCulling's size gate reads: the whole field. */
   private fieldBounds(): BoundingInfo {
     const mask = this.mask!;

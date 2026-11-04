@@ -3232,7 +3232,10 @@ transparent list, the seam's item 6 itself; see "The sky"):
   ahead of group 0's opaque list whatever the group holds. **It is the dome's
   place** (`SkyDraw`, X4.5c): the dome writes no depth and is depth-tested at a
   600 m radius, so it is right only because everything past 600 m draws AFTER it,
-  and nothing else may go here. An empty list asks nothing of the pass. **Proved**
+  and nothing may go here AHEAD of it. **The capture zones nearer than the field's
+  blades stand behind it** (`ZoneDraw`, X4.6b), the one opaque draw here, for the ties
+  they hold against what is left of group 0's opaque list ("The capture zone"). An
+  empty list asks nothing of the pass. **Proved**
   by a throwaway draw of ours at the point, while the dome was still Babylon's: a
   depthless full-frame red left the frame byte-equal under the dome while its count
   climbed and showed through where the dome was hidden, and the same triangle
@@ -3323,8 +3326,8 @@ writes no depth must be BLENDED or on group 0's ALPHA-TEST list (the turf),
 never on the opaque list**, or the floor paints over it every frame —
 a rule anyone adding a decal, a mark or a sheet on the ground can break
 without touching the renderer (`CLAUDE.md` states it). The sky dome is the one
-deliberate case: it writes no depth, draws first (`"first"`, ours since X4.5c), and
-is MEANT to be painted over by everything. The clouds, at `"afterSurfaces"`,
+deliberate case: it writes no depth, draws first of all (`"first"`, ours since
+X4.5c), and is MEANT to be painted over by everything. The clouds, at `"afterSurfaces"`,
 land after our blocks and our landform, and write a depth nearer than nothing
 in the world. **The turf lands after the blocks too**, as it did when Babylon's
 opaque list drew them: where its sheet floats over a slab laid level with the
@@ -4308,7 +4311,7 @@ against its 5,352 corners, the surplus exiting after four storage reads — and
 a new segment is a new rank, a longer one paid at every rank it lands on
 (`SoldierModel`'s header). What
 is NOT reproduced is the order ACROSS bodies, and against Babylon's own
-opaque meshes (a flag's cloth): both matter only where two of them meet at one
+opaque meshes (a blade of grass): both matter only where two of them meet at one
 depth, which takes two bodies standing in each other. (A hull was one of
 those meshes until X4.2b; it is ours now and drawn AHEAD of every body, where
 Babylon's queue drew it — "The hulls, ours".)
@@ -4845,8 +4848,8 @@ before every draw of ours at that point, and the order among the fires is
 the queue's own — and **the mask's after the billows'** (Babylon's mask drew
 the fires after every draw of ours), by the same vertex module, no depth
 written, LEQUAL. What moved is only the fires' interleave with the meshes
-Babylon still draws in that queue — the grass, the capture zones, the backed
-panes, the water — every one of which writes depth, so it is an exact tie
+Babylon still drew in that queue — the grass, the capture zones until X4.6b, the
+backed panes, the water — every one of which writes depth, so it is an exact tie
 or nothing. In the mask the fires now go down with ours at its open, AHEAD of
 every mesh Babylon's mask still draws (the sparks, and the moon until X4.5c made
 it ours, behind them all at the open; a dust disc is `noGlow` and was never in
@@ -5263,7 +5266,7 @@ LAST FRAME's at best and as never-computed at worst**, and exempt anything whose
 bounds this pass could be the first to need.
 
 **`bank.mjs` cannot see any of this.** `placeVantage` disables the bots and
-disposes the zones, so the banked vantages hold no BODY — none of what the
+hides the zones, so the banked vantages hold no BODY — none of what the
 latch above touches — and the broken version came back byte-identical on all
 21. (Since `BABYLON_EXIT.md` X4.4a the bank does hold the size gate's edge on
 one pool, `fx-marks-far`'s bullet marks, raised fresh every row; a stale
@@ -7197,7 +7200,7 @@ DRAWING; the meter they annotate is `ConquestSystem`'s and is in
   whitewashed stones on open ground and a painted line on MADE ground (a
   carriageway, a deck, a plinth, a slab), both in the cel material, so they are lit,
   shadowed, fogged and inked like the wall beside them and owe no fade of their own.
-  The stones are seeded per zone and merged one mesh per tone, so a ring is at most
+  The stones are seeded per zone and merged one surface per tone, so a ring is at most
   three draws. **Nothing on the ground says who holds the point**: the flag and the
   HUD strip already say it, and colour on the floor was the part that read as UI.
 - **It follows the surface you STAND on, not the terrain.** A 28 m ring placed by one
@@ -7212,10 +7215,46 @@ DRAWING; the meter they annotate is `ConquestSystem`'s and is in
 - **It breaks where it meets a wall.** A stone or a stretch of paint that would
   stand inside a box (`ObstacleField.wallAt` over the band a stone occupies) is not
   laid, so a boundary crossing a building stops at its walls as a real one would.
-- **Markers are dressing.** No `solid`, no collider, no `WorldBox`, `noGlow`,
-  `noShadowCaster` (the world's caster list is fixed before a round's markers exist,
-  and a stone's shadow is centimetres); a body walks over a boundary stone. The paint
-  takes `ROAD_DEPTH_UNITS` for a road's reason and is `noInk` by intent only.
+- **Markers are dressing.** No collider, no `WorldBox`, no mesh, in no bake and in no
+  caster list (the world's is fixed before a round's markers exist, and a stone's
+  shadow is centimetres); a body walks over a boundary stone. The paint takes
+  `ROAD_DEPTH_UNITS` for a road's reason, in its RECIPE, and is inkless by intent only.
+- **Every surface of it is OUR renderer's, and Babylon is made no mesh of any**
+  (`render/ZoneDraw.ts`, `BABYLON_EXIT.md` X4.6b): each ring's stones and paint, each
+  pole, and a field and a band on each of a flag's two sheets. **One draw for one**, on
+  the recipes `get` and `getCloth` keep (`CelMaterialFactory.celRecipe`), so the depth
+  bias stays what `get(hex, depthUnits)` keys its cache on: pipeline state, -8 on the
+  paint and nothing elsewhere, the cloth `CEL_SMOOTH`. **The one order is drawn at TWO
+  points, either side of what is left of Babylon's opaque list**, because these
+  surfaces were ON that list, every test is LEQUAL, and **a tie here is not a
+  curiosity**: under a 0.05 m near plane a 32-bit float depth steps every
+  half-millimetre at 18 m and every 3 mm at 53 m, so a blade growing through a stone
+  ties along their intersection for real. A surface nearer than the field's blades
+  (all at one key, the field's centre, `GrassSystem.bladeSortCentre`) hangs at
+  `"first"`, behind the dome, and one farther at `"beforeAlphaTest"`, first of everything
+  of ours there, which that whole list was ahead of. **At either point alone it moves**:
+  all at `"beforeAlphaTest"`, 8 pixels of `ring-stones` and 7 of `ring-flown-far` by up
+  to 68/255; all at `"first"`, 54 of `ring-behind-field` by up to 113/255. What is
+  left of the interleave is the water and the `backed` panes, whose keys the split does
+  not read: a stone at a shore could flip a tie, no row holds one, and it goes as they
+  move here. **Among
+  themselves they keep Babylon's order** (`Game.zonePull`, inside the render): nearest
+  first by the sphere's centre off `globalPosition`, the order of building breaking a
+  tie, which a sheet's field and band always are. Each surface's sphere is the one its
+  mesh held (off its vertices' box, or a sheet's stated reach whatever shape it takes),
+  and the size gate (`keepsSphere`, per surface, from `Game.drawZones`) and the frustum
+  (the sphere alone, `inFrustum`) read it as they read the mesh's. **`FlagCloth.inView`
+  reads the same sphere against the LAST render's planes**, which is what decides
+  whether a flag steps, so it is a question about the picture as well as the cost.
+  **The cloth is a vertex buffer of ours rewritten as the sheet moves, and allocates
+  nothing**: a sheet's vertices are one range of the round's one set of arrays, a field
+  and a band two ranges of indices over them, `Sheet.present` two `writeBuffer`s where
+  it was four uploads and an array. **What a surface does not carry reads what Babylon's
+  empty buffer read**: (0, 0, 0, 1) for `color`, (0, 0) for `uv`; the pole keeps its
+  real `uv`. Fog, light, shadow receipt and the ink are the cel fragment's and the
+  frame's, so all of them come for free; it is in no glow mask (nothing here is
+  emissive), no shadow map, no lamp atlas and no bake, and it never was. An editor build
+  has no zones, and `Game.teardownMap` takes the draw and the geometry back.
 - **The flag IS the meter, and it is cloth rather than a picture of cloth.**
   `FlagCloth` replaced a translucent 20 m beacon: a pole with a flag flown at
   `|meter|` of its height in the colours of the side the meter leans to (`teamLook`'s
@@ -7233,7 +7272,8 @@ DRAWING; the meter they annotate is `ConquestSystem`'s and is in
   spawn were 0.36 ms of the frame — more than the rest of `gameplay` — so it runs four
   passes, and a flag past 44 m (back under 40) is simulated on an 11 x 7 sheet that
   the running one is RESAMPLED into, velocity and all, so the handover does not
-  re-settle. The profiler files all of it under `zones`.
+  re-settle. The profiler files all of it under `zones`, and `pools.zones` (report
+  version 31) counts the draws, which left `counters.drawCalls`.
 - **Cloth is the one thing shaded SMOOTH** (`getCloth`, `CEL_SMOOTH`): the cel
   shader's facet normal on a grid that fine is a lattice of flickering diamonds, so a
   bending sheet takes the interpolated normal and the bands still cut hard along its

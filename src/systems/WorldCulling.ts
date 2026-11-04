@@ -617,8 +617,9 @@ export class WorldCulling {
 
   /**
    * Whether the size gate KEEPS a world sphere this frame — a HULL's segment
-   * (`BABYLON_EXIT.md` X4.2b), and since X4.4b a pool's cel part and a bullet
-   * mark (`Game.drawPieces`, `Game.drawMarks`), which our renderer draws and
+   * (`BABYLON_EXIT.md` X4.2b), since X4.4b a pool's cel part and a bullet
+   * mark (`Game.drawPieces`, `Game.drawMarks`), and since X4.6b a ring's batch
+   * and a flag's surface (`Game.drawZones`), which our renderer draws and
    * which are no candidate: the test `offer` asks of a loose mesh (`tooSmall`, from the
    * eye and at the scale it was last handed, and true while the gate is off
    * — the warm-up, a gate of 0 px, no camera), asked of the sphere its caller

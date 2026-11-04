@@ -373,7 +373,7 @@ export function placeVantage(page, vantage) {
     // a boot shoots the whole table in order and a disposed ring is gone for
     // every row after the one that took it.
     for (const zone of g.zones.zones) {
-      for (const m of zone.meshes) m.setEnabled(Boolean(v.zones));
+      for (const s of zone.ring) s.on = Boolean(v.zones);
       zone.flag.setVisible(Boolean(v.zones));
     }
     // `blasts` since BABYLON_EXIT.md X4.4c (`fx`, private, before it).

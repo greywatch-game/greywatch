@@ -74,11 +74,13 @@
  * holds (on a frame Babylon does not visit the group, all of them are told
  * together at the end of the phase, in this order):
  * - `"first"`: as the pass starts, ahead of everything of the host's. A draw
- *   that writes no depth and is MEANT to be painted over belongs here, and
- *   nothing else: anything drawn after a depthless sky must be nearer than it
- *   or the sky paints over it, and anything before it spends shading the sky
- *   covers. It is the dome's (`SkyDraw`, `BABYLON_EXIT.md` X4.5c); an empty list
- *   asks nothing of the pass.
+ *   that writes no depth and is MEANT to be painted over belongs here: anything
+ *   drawn after a depthless sky must be nearer than it or the sky paints over it,
+ *   and anything before it spends shading the sky covers. It is the dome's
+ *   (`SkyDraw`, `BABYLON_EXIT.md` X4.5c, added at construction and so first of
+ *   the list). **One opaque draw stands behind it**, the capture zones nearer than
+ *   the field's blades (`ZoneDraw`, X4.6b), because what they tie with on the host's
+ *   opaque list must keep the tie; an empty list asks nothing of the pass.
  * - `"beforeAlphaTest"`: after the group's opaque meshes and before its
  *   ALPHA-TESTED ones — or, in a frame with none of those, immediately ahead
  *   of `"opaque"`. An opaque draw that something on the alpha-tested list

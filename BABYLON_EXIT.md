@@ -1916,7 +1916,7 @@ moved; **all of this is past since X4.5c**: no sky piece is a Babylon mesh):
   stood over", with the `Active` commit; `Sky.ts`'s header and
   `CloudShader.ts`'s; `FILES.md` for each new file.
 
-### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4, its review 5d43b2e)
+### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4, its review 5d43b2e), X4.6b **LANDED** (X46B_HASH)
 
 Everything left on the floor that Babylon still draws, the three blended pools
 X4.4 left waiting for the glazing, and the blob shadows (decided 2026-11-03).
@@ -1930,12 +1930,12 @@ The order runs from the least risk to the most.
 **What they are today** (a read of the code; **X4.6a measured every claim about
 order and all of them hold**, on all 130 rows of the bank, the table below, and
 its review the blobs and a scorch through glass on two more):
-- **The flags**: `FlagCloth`, a two-sided sheet in world space under an identity
+- **The flags** (ours since X4.6b, this the record): `FlagCloth`, a two-sided sheet in world space under an identity
   transform, on a cel material, its positions and normals uploaded by
   `updateVerticesData` whenever the cloth moves. **There are five meshes to a flag,
   not one**: a static pole, a field and a band on each of the two sheets (16x10
   inside `LOD_FAR`, 11x7 past it).
-- **The rings**: `CaptureZoneSystem.finish`, static batches of stones and paint
+- **The rings** (the same): `CaptureZoneSystem.finish`, static batches of stones and paint
   on `mats.get(hex, depthUnits)`, the paint on a depth bias.
 - **The grass**: `GrassSystem`, thin instances per patch at each level of detail,
   rewritten by its own frustum test. No blending flag on the blades.
@@ -1975,7 +1975,15 @@ alpha-tested list, `opaque`, its particles, `beforeBlended`, its transparent lis
 `afterGroup`. Every one tests depth LEQUAL and writes all four channels, so an
 equal-depth pixel goes to whichever draws LATER: a port hung BEHIND the world on
 `"beforeAlphaTest"` flips any exact tie with it, where Babylon's opaque list has it
-ahead, and only a byte comparison will say.
+ahead, and only a byte comparison will say. **The same goes for what stays on that
+list: a tie with it is real, and X4.6b measured one.** Under a 0.05 m near plane a 32-bit
+float depth steps every half-millimetre at 18 m and every 3 mm at 53 m, so a blade
+growing through a stone ties for real. Hung at `"beforeAlphaTest"` as first briefed, the
+zones moved 8 pixels of `ring-stones` and 7 of `ring-flown-far`, by up to 68/255, both
+`within floor` at `--check`; all at `"first"`, 54 of `ring-behind-field` by up to 113/255.
+So they are split at the blades' key, the near ones at `"first"` and the far ones at
+`"beforeAlphaTest"` (X4.6b's entry). The table below is Babylon's order as X4.6a measured it,
+the record each later sub-step is proven against.
 
 | surface | Babylon's list, sorted by | ahead of | depth write | bias | cull | blend |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -2067,20 +2075,37 @@ Greyfen, `F2` from the menu and each eye of the map's rows):
   whole-frame mean, and `--keep`. Measured in its note; the owner's two decisions are
   in "Decisions", and one question goes back to the owner: **a blob draws nothing from
   above**.
-- **X4.6b — the flags and the rings.** The smallest step. The ring keeps its
-  batches and depth bias on OUR renderer's cel recipes. The cloth is the one new
-  shape: a vertex buffer of ours rewritten while the flag moves, with no per-frame
-  allocation (the sim stays where it is), for BOTH sheets; **the pole goes with it**.
-  All of it lands on `"beforeAlphaTest"`, which is where Babylon's opaque list has it
-  relative to everything of ours but the order on that point, and an editor build
-  has none of it. **Verify:** `ring`, `ring-stones`, `ring-flown`, `ring-flown-far`,
-  a flag captured in a live round; the ring is still the zone's boundary; `surfaces.mjs`
-  reports no `flag`, `pole`, `stones` or `paint`.
+- **X4.6b — the flags and the rings LANDED** (X46B_HASH; 2026-11-04; no change to the
+  picture; its full note and first brief are in `plans/done/babylon_exit_landed.md`). Every
+  `zone-*` mesh is gone: `render/ZoneDraw.ts` draws each ring's stones and paint, each pole
+  and a field and a band on each sheet, one draw for one, on the recipes `get` and
+  `getCloth` keep, the paint's bias in its recipe. The cloth is one buffer of ours, two
+  `writeBuffer`s a move. **The brief's draw point was wrong, and only bytes said so**: at
+  `"beforeAlphaTest"` 8 pixels of `ring-stones` and 7 of `ring-flown-far` moved (up to
+  68/255, `within floor` at `--check`), a blade growing through a stone being a real tie;
+  all at `"first"`, 54 of the new row `ring-behind-field` (up to 113/255). **So the one
+  nearest-first order is drawn at two points, split at the blades' key**
+  (`GrassSystem.bladeSortCentre`, `Game.zonePull`): the near run at `"first"`, behind the
+  dome, and the far run first of ours at `"beforeAlphaTest"`. **Measured** against a BEFORE
+  at a269bfb: 133 of 133 byte-equal in one run and 132 in the other (`view-pistol-reload`,
+  2 pixels by 1/255), the same 34 stale rows red at the same means; `kit:hash --models`
+  identical over 244 builds, the zones' 8 among them; `census` every old row equal; a flag
+  taken and then changing hands in a live Coldharbour round, no console error, the seal
+  quiet; our pipelines in play zero. A flag's step fell from ~1,315 to ~313 bytes a frame,
+  none of it in `present`, `rewrite` or `ZoneDraw`. **What is left of the interleave** is the
+  water and the `backed` panes, whose keys the split does not read: no row holds such a
+  tie. **Not verified**: a server's match in a browser, the phone.
 - **X4.6c — the grass and the turf.** The field keeps its frustum test and its
   levels of detail, and its instance buffers become ours. The turf keeps its place
   in the order and its blend, and owes the coverage alpha what the blend writes
-  today (`docs/rendering.md`). **The blades are opaque and go on
-  `"beforeAlphaTest"`; the turf must be past `"afterSurfaces"` and past the floor, and
+  today (`docs/rendering.md`). **The blades are opaque, and their place is where the
+  zones are split: `ZoneDraw`'s near run, the blades, its far run**, a tie between them
+  being real (X4.6b measured it). That is `"first"` behind the near run, and
+  `"beforeAlphaTest"`, as this first said, only if the bytes allow it: there they fall
+  behind the water and the `backed` panes, which they are ahead of wherever the field's
+  centre is nearer, and the near run must come with them. `GrassSystem.bladeSortCentre`
+  and `Game.zonePull`'s split read Babylon's sort, and are rewritten here. **The turf must be past
+  `"afterSurfaces"` and past the floor, and
   writes no depth, so with the alpha-tested list empty behind it `"opaque"` is its
   place**, coarsest cell first. **It moves the editor's grass and turf too** (decided
   2026-11-03): one path through the system, as the sky's did at X4.5c. **Verify:**
@@ -2098,7 +2123,8 @@ Greyfen, `F2` from the menu and each eye of the map's rows):
   X5.3. `cubeOf` makes a wrapped view for every pool today, and the water's pool no
   longer wants one. **It must be ahead
   of `"afterSurfaces"`**: it writes depth, the clouds' far depth passes wherever
-  nothing has, and the turf at a shore and every fade land on it (`"beforeAlphaTest"`).
+  nothing has, and the turf at a shore and every fade land on it (`"beforeAlphaTest"`,
+  or `"first"` if the bytes ask: X4.6b's tie).
   **Verify:** `marsh`, `millpond`; the far quad in `coldharbour-menu`, `-sky-disc`
   and `cinderhaven-sky-cloud-moon` (no row of its own, the gap was not real);
   `fx-water-fade`, its disc on the bed still rejected; `sarab-pane-water`; a cube's
@@ -2154,7 +2180,8 @@ Greyfen, `F2` from the menu and each eye of the map's rows):
   - see-through glazing writes no depth
   - the ring is the zone's boundary
   - the coverage alpha's two blended exceptions (`docs/rendering.md`)
-- **Every sub-step owes**: its pipelines on `Game.roundPipelines`, and
+- **Every sub-step owes**: what leaves Babylon's opaque list lands between `ZoneDraw`'s
+  near and far runs (X4.6b), or owes the bytes that say otherwise; its pipelines on `Game.roundPipelines`, and
   `pipelines.mjs --round` zero of ours in play; `surfaces.mjs`, to show it took the
   whole of its surface; and **a BYTE comparison of every row against a BEFORE at its
   parent, never `--check`'s pass line alone** (the known flakes are `view-pistol-reload`
