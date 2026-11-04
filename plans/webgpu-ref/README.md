@@ -37,7 +37,7 @@ node plans/webgpu-ref/shaders.mjs [map...] [--headed] [--list]
 node plans/webgpu-ref/depth.mjs glass|zoffset [--headed]
 node plans/webgpu-ref/diff.mjs a.png b.png [--tiles]
 node plans/webgpu-ref/pipelines.mjs [map] [--seconds N] [--round]
-node plans/webgpu-ref/surfaces.mjs [map...] [--rows=<id,...>] [--pixels] [--editor] [--out=<f.json>]
+node plans/webgpu-ref/surfaces.mjs [map...] [--rows=<id,...>] [--pixels] [--editor] [--keep=<dir>] [--out=<f.json>]
 node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--gpu] [--max] [--size WxH] [--out f.json] [--against f.json]
 ```
 
@@ -55,10 +55,11 @@ node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--gpu] [--max] [
   blocks, taken before `BABYLON_EXIT.md` X3.3c, and its old rows are STALE**:
   X3.4 moved the scatter on purpose (sixteen variants a kind, one colour bake
   a kind) and the GPU driver has moved since the bank was taken (596.21 to
-  610.88), so a plain `--check` fails 33 of the 47 rows banked before X3.5 —
-  Greyfen's `canopy` at a mean of 44/255 — whatever the tree under test does.
-  Only the fourteen `ground` and `crossing` rows, banked at 54ec8c0, still
-  grade within the floor against the bank. **Until the bank is re-taken
+  610.88), so a plain `--check` fails 34 of its 132 rows, whatever the tree under
+  test does: 33 of the 47 banked before X3.5, Greyfen's `canopy` at a mean of
+  44/255, and `greyfen-crossing` (0.0581), one of the fourteen `ground` and
+  `crossing` rows banked at 54ec8c0. Every row banked since grades within the
+  floor against the bank. **Until the bank is re-taken
   (the user's call), a step is graded against a BEFORE**: `--check
   --keep=<dir>` at the parent commit and again at the step, the two
   directories compared frame by frame with `diff.mjs`'s `comparePngs` at
@@ -177,10 +178,16 @@ node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--gpu] [--max] [
   class out at `Mesh.render` for a frame and counts the pixels that move, which
   is how a row is shown to hold a surface rather than merely to draw it, and
   counts the overlaps the plan asks about: a blended surface over water, a pane
-  over water. **`--editor`** asks the same of an editor build and changes one
-  water rect and one grass rect through the editor's own rebuild. What it reads
-  stops being reported as each surface leaves Babylon, which is how a sub-step
-  shows it took the whole of one. X4.6a's note has the table.
+  over water. Each class prints a count per list, `other` and the editor's `proxy`
+  included, and under `--pixels` the whole-frame mean its removal comes to, which is
+  what `--check`'s tolerance would see. **`--editor`** asks the same of an editor
+  build and changes one water rect and one grass rect through the editor's own
+  rebuild. **`--keep=<dir>`** writes each reported row's frame as the probe saw it,
+  under the names `bank.mjs --keep` uses, which is how the probe is shown to move no
+  pixel. What it reads stops being reported as each surface leaves Babylon, which is
+  how a sub-step shows it took the whole of one. **An empty class says only that
+  frame**: no frozen frame reaches `updateBlobs`, so a blob is in no row but one that
+  raises it with a `blob` event. X4.6a's note has the table.
 
 `cold-stagger.mjs` is **gone and is not coming back**. It existed to bake
 Coldharbour's forty cube probes four a frame because doing all forty at once
@@ -327,7 +334,7 @@ taken headless on the Windows box (`nvidia/lovelace`), and a diff taken against
 it on different silicon is measuring the silicon.
 
 **Which is why `ref/` is NOT committed** — it is in `.gitignore` beside
-`gate.json`. It is ~130 MB of PNG (47 frames since X0.1) that is only
+`gate.json`. It is ~360 MB of PNG (132 frames, measured at X4.6a's review) that is only
 meaningful on one machine in one browser mode, and it has a generator: `node
 plans/webgpu-ref/bank.mjs` rebuilds the whole set in about five minutes. That is the same bar the four generated
 assets in `docs/build.md` are held to, and a bank fails the other half of it —
@@ -362,7 +369,7 @@ for each step of the exit:
 | X4.3 the viewmodel | `harrowmead-view-<optic>-hip` / `-aim`, one weapon per optic; and X4.3a's twenty-two, appended at the end of Harrowmead's list by `--rows`: the two optics those leave out (`view-greendot-*`, `view-longscope-*` on the DMR), the three rigs with a sight of their own (`view-pistol-aim`, `view-rpg-aim`, `view-mine-hip`), one finish on each rung of the gloss ladder above matte (`view-finish-satin`, `-glint`, `-mirror`), every gesture held mid-phase (`view-reload-drop` and `-seat` — a dry reload, the camera turned by the head's look, each posed off its OWN previous frame because the reload's gravity reads Babylon's render cache — `view-bolt`, `view-load`, `view-throw-frag`, `-molotov`, and `view-flash` on a seeded strobe), and the kit screen (`kit-desktop`, `kit-phone`: the real lid raised over `deploy`, the card, the bench lamps and the glow's stage rule, at the bay `stageBay` measures on a desktop and on an 832x384 phone, stated because the bank hides the interface), and after them the review's three (`view-pistol-reload`, the pistol's slide locked back in its dry reload; `view-bolt-aim`, the bolt cycle aimed with the reticle on the axis; `view-reload-tactical`, the spent magazine stripped into the hand) |
 | X4.4 effect pools | `coldharbour-blast`; and X4.4a's twenty-one, appended by `--rows` at the end of Coldharbour's list and Cinderhaven's (`fx` rows, every one standing at a position the map's rows already stand at, so the benchmark gains no stop): a tracer in flight (`fx-tracer`), impacts mid-fade on `hard` and `ground` (`fx-impact-hard`, `-ground`), a wall of marks near and at the size gate's edge (`fx-marks-near`, `-far`), a frag in flight and at rest with a bottle (`fx-grenade`), a rocket (`fx-rocket`), two mines lit and dark (`fx-mine`), brass (`fx-brass`), the blast at three ages on each surface with its rubble and scorch (`fx-blast-{hard,ground}-{fireball,billows,smoke}`), two scorches full and fading (`fx-scorch`), a molotov (`fx-molotov`), a pane's shards (`fx-shards`), fading effects behind and in front of see-through glazing (`fx-glass`), and on Cinderhaven a world fire alone and with fading effects round it (`fx-fire`, `fx-fire-fade`); and after X4.4b, when the pieces' stale-sphere latch came out, three pieces far enough from the world origin that the latch dropped them, each appended by `--rows` at its stop and at the game's own hip field (`fx-brass-far` at Coldharbour's `avenue`, `fx-mine-far` and `fx-rocket-far` at Cinderhaven's `fx-fire` eye); and after X4.4c, when the debris's latch came out, a pane's shards on Cinderhaven ~313 m from the origin, half of which it dropped (`fx-shards-far` at the `town` eye, appended by `--rows`) |
 | X4.5 sky and clouds | every row; `hollowmere-lanterns` and `cinderhaven-town` at night; and X4.5a's eight, appended by `--rows` at the end of Hollowmere's, Coldharbour's and Cinderhaven's lists, every one at an eye a row above it stands at, so the benchmark gains no stop: the moon and its bloom with a roof under it (`hollowmere-sky-moon`), ash in front of and beside it (`hollowmere-sky-motes`), the disc and its bloom on a day map (`coldharbour-sky-disc`), the ring against a horizon by day and by night (`coldharbour-sky-ring`, `cinderhaven-sky-ring`), a cloud crossing the disc (`cinderhaven-sky-cloud-moon`), the ridge 680 to 740 m off against the dome (`cinderhaven-sky-far`) and a seeded flash (`cinderhaven-sky-flash`, last on its list) |
-| X4.6 water, glazing, grass, flags, rings | `greyfen-marsh`, `harrowmead-millpond`, `coldharbour-shopfront` (see-through), `coldharbour-curtain2/40/90` (backed), `hollowmere-ring`; the far quad in `coldharbour-menu`, `-avenue` and `-sky-disc` and `cinderhaven-sky-cloud-moon` (`surfaces.mjs --pixels` has the counts); and X4.6a's nine, appended by `--rows` at the end of Hollowmere's, Greyfen's, Coldharbour's and Sarab's lists, every one at an eye a row above it stands at or the menu's, so the benchmark gains no stop: the cloth up its pole on both sheets and both sides (`hollowmere-ring-flown`, `coldharbour-ring-flown-far`), a ring's stones (`coldharbour-ring-stones`), Greyfen's grass at each rung (`greyfen-grass-low`, `-medium`, `-high`), sparks and discs over water with a disc under it (`coldharbour-fx-water-fade`), a pane really collapsed (`coldharbour-fx-glass-broken`) and water through glass (`sarab-pane-water`) |
+| X4.6 water, glazing, grass, flags, rings | `greyfen-marsh`, `harrowmead-millpond`, `coldharbour-shopfront` (see-through), `coldharbour-curtain2/40/90` (backed), `hollowmere-ring`; the far quad in `coldharbour-menu`, `-avenue` and `-sky-disc` and `cinderhaven-sky-cloud-moon` (`surfaces.mjs --pixels` has the counts); and X4.6a's nine, appended by `--rows` at the end of Hollowmere's, Greyfen's, Coldharbour's and Sarab's lists, every one at an eye a row above it stands at or the menu's, so the benchmark gains no stop: the cloth up its pole on both sheets and both sides (`hollowmere-ring-flown`, `coldharbour-ring-flown-far`), a ring's stones (`coldharbour-ring-stones`), Greyfen's grass at each rung (`greyfen-grass-low`, `-medium`, `-high`), sparks and discs over water with a disc under it (`coldharbour-fx-water-fade`), a pane really collapsed (`coldharbour-fx-glass-broken`) and water through glass (`sarab-pane-water`); and its review's two, at the end of Coldharbour's list at `square`'s eye: the blob among the panes and the fades (`coldharbour-fx-blob-sort`) and a scorch through glass on both sides of the sort (`coldharbour-fx-scorch-glass`) |
 | X5.2 the post chain | `hollowmere-post-*`, each one setting off against `lanterns` |
 
 **`placeVantage` also places the camera-dependent passes at each row's eye**

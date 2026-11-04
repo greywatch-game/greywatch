@@ -7926,7 +7926,7 @@ to come. What X4.5a was asked for and what it measured:
     on Coldharbour, Cinderhaven and Hollowmere: 64 of 64 byte-equal to 547d803,
     the same 9 stale rows red.
 
-### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4)
+### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4, its review REVIEWHASH)
 
 The plan's `BABYLON_EXIT.md` holds what the surfaces are today, the two tables X4.6a
 measured and the four sub-steps to come. X4.6a's brief, word for word:
@@ -7996,13 +7996,14 @@ harness, its table, a new instrument and docs).
   surface; it projects near (605, 790), and the discs' mask has its whole bound in
   x 748-1219. The size gate (in the frustum, switched on, not drawn) drops no surface
   of these in any row. **The transparent order is also why a fade under `visibility` 1
-  is on that list and only then**: raised in a frame, a spark and a disc get one
-  `combatFx.update` before they draw (`updateOnFoot` and `net.update` both come before
-  `stepShots`), a read of the code rather than a measurement.
+  is on that list and only then**: a spark and a disc are raised inside
+  `combatFx.update`, by the tracer loop in `stepShots` ahead of the fade loops, so the
+  same call that raises them fades them, and with `dt` over 0 they stay under 1, a read
+  of the code rather than a measurement.
 - **The editor build**, also in the plan's X4.6: no zones at all, the same grass, turf
   and water, glazing per placement (179 surfaces on Coldharbour, `paneGroups` against
   a round's 78), the pools idle, no probe. A value edit on a water rect and a grass rect
-  through `Editor.rebuildGeometry` remade every mesh of both. **Open for the owner**:
+  through `Editor.rebuildGeometry` remade every mesh of both. **Open for the owner** then, decided since (its review, below):
   whether X4.6c and X4.6d move the grass, the turf and the water in an editor build too
   (they are no world surfaces, so nothing keeps them Babylon's but a second path), the
   plan's "stay Babylon meshes" having assumed they were.
@@ -8059,3 +8060,103 @@ harness, its table, a new instrument and docs).
   ash: the freeze turns particles off (but for `sky-motes`), so their place between
   `opaque` and `beforeBlended` is the seam's reading and not this log's. Drag of a rect
   in the editor: read off `repositionScene` and `onDragEnd`, not driven. The phone.
+
+**X4.6a's review** (REVIEWHASH; 2026-11-03; no change to the game: the bank, its
+harness, its table, the instrument and docs). Seven findings, all verified before being
+changed, two owner decisions, and one thing nobody had noticed.
+
+- **The owner's two decisions, 2026-11-03.** The blob shadows move in X4.6e's one
+  commit, `warmBlob` with them. X4.6c and X4.6d move the editor's grass, turf and water
+  too, one path through each system, each Verify gaining an `F2` and a rect edit; the
+  editor's glazing stays Babylon's until X5.3. Both are in "Decisions" and the briefs.
+- **The blob was on no list and in no row** (the must-fix). `updateBlobs` has two
+  callers, a played frame's and the benchmark's, and the harness hands
+  `updateSceneForCamera` no player, so a frozen frame reaches neither, and "nothing else
+  of Babylon's in the main pass" was true only of what no row raised. `surfaces.mjs` has
+  a `blob` class now, and a new `fx` event raises one through `updateBlobs` itself, on
+  a stand-in body holding only what that door reads, kept for the boot so a later row
+  reuses its mesh and switched off by the put-away with `hideBlobs`, after a row that
+  raised one and no other. **The reading this row took**: a blob is on the transparent
+  list by its centre, `depthWrite off, depthTest LEQUAL, bias 0, cull back, blend
+  770,771,1,1`, as the reviewer's probe had it.
+- **A blob draws nothing from above, which nobody knew and which reshaped the row.** The
+  first placement, on floors below the eye, drew three blobs at `visibility` 0.55 and
+  owned 0 pixels. The disc's normal reads (0, -1, 0) in the world: `rotation.x = -PI/2`
+  sends local +Z up on `blobFor`'s comment's belief that `CreateDisc` faces +Z, its front
+  is -Z, and the material culls back. With the cull off or the disc flipped the same
+  frame moves 0.1153% of its pixels, mean 0.0042, worst 32/255. A dust disc has the same
+  builder and shows because it is `DOUBLESIDE` geometry. So the row stands three blobs
+  above the eye and one on the pavement as a guard, and the question goes to the owner
+  (`FINDINGS.md` 67, "Decisions"). **Nothing in the game was changed.** A live round draws
+  ~14 of these a frame on Coldharbour.
+- **The rows**, both at `square`'s eye, appended at the end of Coldharbour's list, so the
+  benchmark gains no stop and no earlier row's clock or frames move.
+  - `coldharbour-fx-blob-sort`, frame looked at, cropped 3x: the farthest-first order
+    reads the panes down to 40.92, spark 12.58, disc 12.57, **blob 11.32**, pane 0's block
+    8.35, **blob 7.76**, spark 7.14, disc 7.12, **blob 7.00**, **blob 6.21**. Dark slivers
+    cross both sparks where the stacks are. Class: 4,465 pixels, mean 0.0235, of which
+    3,149 on the panes, 3,802 on the sparks, 1,328 on the discs. One mesh at a time, the
+    row shot on its own: the blob behind the glass 547 (all on the panes and all on
+    the far spark), the one between the glass and the near impact 1,234 (all on the
+    panes, 1,130 on the near spark), the nearest 2,789 (1,463 on the panes, 2,221 on the
+    near spark), and the pavement's 0. **Three blended layers on one pixel in a known
+    order**, which is what an exact sort of ours has to reproduce. The stated floors stand
+    in for a deck nothing is built under, as `fx-glass-sort`'s impact has no hull.
+  - `coldharbour-fx-scorch-glass`, frame looked at, cropped: the bottom of both windows
+    faintly darker (worst 13/255). **All nine old scorch rows hold no scorch-and-pane
+    pixel**, read by `surfaces.mjs --pixels` on each (`fx-blast-*` seven, `fx-scorch`,
+    `fx-molotov`), so the gap was real. A mark on the shop's floor sorted behind pane 0's
+    block (12.83, 9 s old, `visibility` 0.40) owns 9,170 pixels, 6,980 through the panes,
+    and one on a ledge 1.2 m short of the glass sorted in front of it (7.75, 11.5 s old,
+    0.28) owns 37,279, 22,939 on the panes, its far half behind the sheet and blended over
+    it all the same; the two share 6,878. Class: 39,547 pixels, 23,585 on the panes.
+- **The editor's transparent list is not glazing alone**, and the printed line hid it.
+  Every `ed-*` proxy drawn is blended, and they usually outnumber the panes: 69 against 8
+  at Coldharbour's `menu`, 150 against 89 at `avenue`, 38 against 4 at `crossing`, and on
+  Greyfen, with no glass, 26 to 414 alone. `surfaces.mjs` has a `proxy` class and prints
+  every class, `other` included, by list. X5.3's brief inherits them.
+- **"One mesh a placement" was wrong**: it is per placement per material. Coldharbour's
+  179 surfaces are 115 glazed placements (57 cars, 26 towers, 24 shophouses, 6 depots, 2
+  offices), 83 with one see-through surface and 32 with three, so 115 see-through and 64
+  `backed`; Sarab 42 over 38, Cinderhaven 16 over 8; a round's 78 is 32 and 46 over 32
+  blocks. `merge.ts`'s 82 placements and 40 meshes are stale, and that is `src/`, so it
+  went on X4.6e's rewrites.
+- **`surfaces.mjs`'s header described `--pixels` output that did not exist.** It has
+  `--keep=<dir>` now, which writes each reported row's frame under `bank.mjs --keep`'s
+  names, and that made the claim checkable: **13 of 13 frames byte-equal** with every
+  wrapper and empty point hung (11 to the BEFORE, 2 to the bank), so the probe moves no
+  pixel on those rows. It prints each class's whole-frame mean too.
+- **`--check` cannot grade these surfaces.** Taken out whole, `fx-water-fade`'s discs are
+  0.0281, `fx-blob-sort`'s blobs 0.0235, and the scorch 0, 0.0004, 0.0008, 0.0014 and
+  0.0149 in five of the seven blast rows, against a tolerance of 0.02: those five print
+  `within floor` with the mark gone. "Every sub-step owes" a byte comparison now.
+- **The smaller ones.** `spawnImpact` is not "raised before `stepShots`": its one caller
+  is `CombatFx.update`'s tracer loop, ahead of the fade loops, so the same call fades what
+  it raised (corrected in the plan and above). `docs/rendering.md`'s mask sentence still said "sparks and discs".
+  `VERIFYING.md`'s black frame was "a tenth" of neighbours that are 2-4 MB. "33 stale rows"
+  and 34 were both right about different things: 33 of the 47 old rows, plus
+  `greyfen-crossing` at 0.0581, one of the fourteen the README said still graded clean,
+  so 34 of 132 and the README says so. The bank is ~360 MB, not ~130. After X4.6d what
+  reads `wrapCubeTexture` is the glazing alone, a round's until X4.6e and the default
+  cube, which the editor's glazing samples until X5.3.
+- **The Phase 4 gate** reads "in a round" now, since an editor build draws whole until
+  X5.3, and it is checked: Coldharbour and Cinderhaven, 25 s of live round each at a spawn
+  with every Babylon `render` logged, drew the panes, the water, the zones, the grass, the
+  turf and (Coldharbour) the blobs, and Coldharbour's scene holds nothing else but the
+  idle pools and `localShadowProxy`, undrawn. Neither round saw a fight, so the sparks,
+  discs and scorch are the rows' reading and not those rounds'.
+- **Measured.** New rows banked by `bank.mjs coldharbour --rows=...`, each from two byte-identical
+  grabs and each looked at. `bank.mjs --check --keep` twice alone on this tree against
+  one at 6c8d71a: **130 of 130 old rows byte-equal to the BEFORE** in the first run and
+  129 in the second (`view-pistol-reload`, one pixel by 1/255, the known flake); the
+  two runs against each other 131 of 132, the same pixel; **both new rows byte-equal to
+  the bank in both**; 98 within floor and 34 red, the same 34 at the same means as the
+  BEFORE's run; no page or console error. Typecheck, build (`check-babylon-free`,
+  `check-proving`), corecheck and parity pass. A check of the 132 takes about 6 minutes.
+- **Not verified.** A blob seen from below in live play; whether an earlier Babylon ever
+  showed one from above. The two live rounds stood at a spawn: no vehicle mounted, no
+  rotor wash, no shot. The phone. `census`, `gate`, `shaders`, `kit:hash` and `pipelines.mjs
+  --round` were not run; nothing in the game moved, and `git diff` under `src/` is
+  `bench/vantages.ts` alone. **Left for the owner, being `CLAUDE.md`**: its lines naming
+  what stays Babylon's still read true (the blob is Babylon's until X4.6e), and go with
+  X4.6e's rewrites.

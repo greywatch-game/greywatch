@@ -1972,7 +1972,10 @@ shadow.** What back faces give up is the few centimetres between a boot's near
 and far faces — exactly where the eye looks for the body to be touching the
 floor — so the pair is what a renderer normally spends an ambient-occlusion term
 and a shadow map on. Suppressing the disc where the cast shadow covers the same
-body would put that gap back.
+body would put that gap back. **That is the intent, and it is not what is drawn**:
+measured at `BABYLON_EXIT.md` X4.6a's review, a blob's disc faces DOWN on a
+back-culled material, so from above it owns no pixel (`FINDINGS.md` 67, the owner's
+question).
 
 **None of its numbers transfer from the world's map**, which is the mistake to
 avoid when editing either: the tap radius is in UV and a UV texel is
@@ -4850,7 +4853,7 @@ it ours, behind them all at the open; a dust disc is `noGlow` and was never in
 it, `BABYLON_EXIT.md` X4.6a measured),
 where its queue drew them among those — no depth written and LEQUAL against
 the frame's, so again only an exact tie could differ, and the blended sparks
-and discs drew after the opaque fires before X4.4d and since. **No bake draws a fire, and still none does** (`FINDINGS.md` 51:
+drew after the opaque fires before X4.4d and since. **No bake draws a fire, and still none does** (`FINDINGS.md` 51:
 the fire ENTERING the bake is a picture change of its own). **What X4.4d's
 oracles hold it to**: the bank byte-identical (the 68 of its 113 rows with a
 fire drawn among them); a probe over 640 scripted frames on each of

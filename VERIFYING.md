@@ -406,8 +406,8 @@ you are on before you believe anything else in this section.
   wholly BLACK (8.5 KB, `cinderhaven-fx-fire-fade`) and the run then hung in the
   next row, with a scratch `surfaces.mjs` sharing the machine; the same row ran
   clean alone, and so did many other shared runs, so the cause is unproven. A
-  check that goes red at a mean of 31/255 on one row, its kept file a tenth the
-  size of its neighbours, is this and not a regression: look at the frame.
+  check that goes red at a mean of 31/255 on one row, its kept file a few KB against
+  its neighbours' 2-4 MB, is this and not a regression: look at the frame.
 - **Coldharbour's bake is OUR RENDERER's now and drains in five frames**
   (X3.6c, `render/ProbeBake.ts`): 39 probes at `probesPerFrame` 8, frames of
   5-6 ms against an idle 1-3, ~41 ms of wall clock, under the loading card.

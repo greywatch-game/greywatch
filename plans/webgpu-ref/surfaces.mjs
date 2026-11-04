@@ -4,8 +4,8 @@
  * rather than read off the code (X4.4a's scratch probe, kept this time).
  *
  * Run with `node plans/webgpu-ref/surfaces.mjs [map...] [--rows=<id,...>]
- * [--pixels] [--editor] [--out=<f.json>]`. Nothing is written but `--out`, and
- * nothing in `ref/` is touched or read.
+ * [--pixels] [--editor] [--keep=<dir>] [--out=<f.json>]`. Nothing is written but
+ * `--out` and `--keep`, and nothing in `ref/` is touched or read.
  *
  * **It shoots a map's sequence exactly as `bank.mjs` does** (`thaw`,
  * `placeVantage`, the wait, the settle, `freeze`, the settle), because a row's
@@ -20,8 +20,10 @@
  * point's place among Babylon's draws is read off the same log and never argued.
  * The third is `Renderer.glowMaskOpened`, which tells the frame's mask apart. A
  * draw point with nothing on it queues nothing, so an empty function is hung on
- * every point: it draws nothing, and its bundle break moves no pixel (`--pixels`
- * prints a row's base frame against nothing, so compare it with a `--keep`).
+ * every point: it draws nothing, and its bundle break moves no pixel. `--keep`
+ * is how that is checked: it writes each reported row's frame, as the probe saw
+ * it, to `<dir>/<map>-<row>.png`, the names `bank.mjs --check --keep` writes, so
+ * the two directories compare frame by frame with `diff.mjs`.
  *
  * **The list a mesh is on is read from WHERE it comes in the log**, between the
  * points: ahead of `beforeAlphaTest` is Babylon's opaque list, from there to
@@ -42,10 +44,17 @@
  * are the OVERLAPS the plan asks about: a pixel both a blended surface and the
  * water own is that surface over the water, and likewise a pane and the water.
  *
+ * **Every draw in a frame is reported, `other` included, by the list it is on**:
+ * `other[opaque x640, transparent x6]`. `blob` is a body's contact shadow
+ * (`ShadowSystem`), and `proxy` is the editor's handles (`editor/proxies.ts`), the
+ * `ed-*` meshes, most of them blended. An empty class says only that nothing raised
+ * it in THAT frame: a bank row reaches no `updateBlobs`, so only a row with a `blob`
+ * event shows one, which is how the blob went unnoticed through X4.6a's first run.
+ *
  * `render` only reaches what Babylon draws, so a class stops being reported the
  * moment its step lands (X4.6b the flags and the rings, X4.6c the grass and the
- * turf, X4.6d the water, X4.6e the rest), which is how a sub-step proves it took
- * the whole of its surface.
+ * turf, X4.6d the water, X4.6e the glazing, the three pools and the blobs), which
+ * is how a sub-step proves it took the whole of its surface.
  *
  * **`--editor` asks the same of an editor build**: `F2` from the menu (no round
  * and no freeze), the free camera warped to each distinct eye of the map's rows
@@ -54,7 +63,8 @@
  * editor's own rebuild, and the meshes before and after are compared. Nothing is
  * saved: the page is simply closed.
  */
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   bootMap,
   freeze,
@@ -75,6 +85,7 @@ const args = process.argv.slice(2);
 const PIXELS = args.includes("--pixels");
 const EDITOR = args.includes("--editor");
 const OUT = args.find((a) => a.startsWith("--out="))?.slice("--out=".length) ?? "";
+const KEEP = args.find((a) => a.startsWith("--keep="))?.slice("--keep=".length) ?? "";
 const ROWS = new Set(
   (args.find((a) => a.startsWith("--rows="))?.slice("--rows=".length) ?? "").split(",").filter(Boolean),
 );
@@ -88,11 +99,16 @@ const OVERLAPS = [
   ["disc", "water"],
   ["disc", "waterFar"],
   ["scorch", "water"],
+  ["blob", "water"],
   ["seeThrough", "water"],
   ["seeThrough", "waterFar"],
   ["seeThrough", "spark"],
   ["seeThrough", "disc"],
   ["seeThrough", "scorch"],
+  ["seeThrough", "blob"],
+  ["blob", "spark"],
+  ["blob", "disc"],
+  ["blob", "scorch"],
   ["seeThrough", "turf"],
   ["seeThrough", "grass"],
   ["turf", "water"],
@@ -116,6 +132,8 @@ function hangProbe(page) {
       if (/^grass\d/.test(n)) return "grass";
       if (n === "water") return "water";
       if (n === "waterFar") return "waterFar";
+      if (n === "blobShadow") return "blob";
+      if (/^ed-/.test(n)) return "proxy";
       if (/^spark\d/.test(n)) return "spark";
       if (/^impact\d/.test(n)) return "disc";
       if (mat?.name === "blastScorch") return "scorch";
@@ -225,6 +243,12 @@ function hangProbe(page) {
   });
 }
 
+/** One class of `summarise`'s as a line prints it, a count per list. */
+function classLine(k, c, px) {
+  const on = Object.entries(c.lists).map(([list, n]) => `${list} x${n}`).join(", ");
+  return `${k}[${on}${px ? ` ${px.pixels}px mean ${px.mean}` : ""}]`;
+}
+
 /** One rendered frame's log. */
 function recordFrame(page) {
   return page.evaluate(async () => {
@@ -281,8 +305,8 @@ function summarise(order) {
   for (const it of order) {
     if (it.mark || it.pass === "target") continue;
     const key = it.pass === "mask" ? `${it.cls}@mask` : it.cls;
-    const c = (classes[key] ??= { list: new Set(), n: 0, near: Infinity, far: 0, gpu: new Set(), vis: new Set() });
-    c.list.add(it.list);
+    const c = (classes[key] ??= { lists: {}, n: 0, near: Infinity, far: 0, gpu: new Set(), vis: new Set() });
+    c.lists[it.list] = (c.lists[it.list] ?? 0) + 1;
     c.n++;
     c.near = Math.min(c.near, it.d);
     c.far = Math.max(c.far, it.d);
@@ -290,7 +314,7 @@ function summarise(order) {
     c.vis.add(+it.vis.toFixed(2));
   }
   for (const c of Object.values(classes)) {
-    c.list = [...c.list];
+    c.list = Object.keys(c.lists);
     c.gpu = [...c.gpu];
     c.vis = [...c.vis];
   }
@@ -322,10 +346,12 @@ async function maskOf(baseB64, otherB64, key) {
       const mask = new Uint8Array(p.length / 4);
       let n = 0;
       let worst = 0;
+      let sum = 0;
       const w = 1920;
       const box = [w, 1080, -1, -1];
       for (let i = 0, j = 0; i < p.length; i += 4, j++) {
         const d = Math.max(Math.abs(p[i] - q[i]), Math.abs(p[i + 1] - q[i + 1]), Math.abs(p[i + 2] - q[i + 2]));
+        sum += (Math.abs(p[i] - q[i]) + Math.abs(p[i + 1] - q[i + 1]) + Math.abs(p[i + 2] - q[i + 2])) / 3;
         if (d > 0) {
           mask[j] = 1;
           n++;
@@ -339,7 +365,9 @@ async function maskOf(baseB64, otherB64, key) {
         }
       }
       (window.__masks ??= {})[k] = mask;
-      return { pixels: n, worst, box };
+      // `mean` is `diff.mjs`'s, over the whole frame: what `bank.mjs --check` would
+      // grade this class's removal at against its tolerance.
+      return { pixels: n, worst, box, mean: +(sum / mask.length).toFixed(4) };
     },
     [baseB64, otherB64, key],
   );
@@ -377,17 +405,18 @@ async function editorBuild(id) {
     const classes = summarise(readOrder(log));
     rows[v.id] = { classes, gated };
     const line = Object.entries(classes)
-      .filter(([k]) => !k.startsWith("other"))
-      .map(([k, c]) => `${k}[${c.list.join("/")} x${c.n}]`)
+      .map(([k, c]) => classLine(k, c))
       .join(" ");
-    console.log(`  ${v.id.padEnd(26)} other x${classes.other?.n ?? 0}  ${line}`);
+    console.log(`  ${v.id.padEnd(26)} ${line}`);
   }
   const before = await page.evaluate(() => {
     const g = window.__celshock;
     const counts = {};
     for (const m of g.scene.meshes) {
       const n = m.name;
-      const k = /^zone-/.test(n)
+      const k = /^ed-/.test(n)
+        ? "ed-*"
+        : /^zone-/.test(n)
         ? "zone-*"
         : /^grassTurf/.test(n)
           ? "grassTurf*"
@@ -403,7 +432,9 @@ async function editorBuild(id) {
                     ? "impact*"
                     : m.material?.name === "blastScorch"
                       ? "scorch*"
-                      : null;
+                      : n === "blobShadow"
+                        ? "blob*"
+                        : null;
       if (k) counts[k] = (counts[k] ?? 0) + 1;
     }
     return {
@@ -412,6 +443,10 @@ async function editorBuild(id) {
       zones: g.zones.zones.length,
       panes: g.map.panes.length,
       paneGroups: g.map.paneGroups.length,
+      // `PaneBlocks` splits an owner's glazing by material, so a group is not a
+      // placement: on an editor build its owner is one (`item<n>`).
+      paneOwners: new Set(g.map.paneGroups.map((p) => p.block)).size,
+      paneMaterials: new Set(g.map.paneGroups.map((p) => p.mesh.material)).size,
       probes: g.reflections.probeCount,
     };
   });
@@ -476,8 +511,15 @@ for (const id of targets) {
     const order = readOrder(log);
     const classes = summarise(order);
     const row = { classes, order, gated };
+    let base = "";
+    if (PIXELS || KEEP) {
+      base = (await page.screenshot({ type: "png", timeout: 120_000 })).toString("base64");
+      if (KEEP) {
+        mkdirSync(KEEP, { recursive: true });
+        writeFileSync(join(KEEP, `${id}-${v.id}.png`), Buffer.from(base, "base64"));
+      }
+    }
     if (PIXELS) {
-      const base = (await page.screenshot({ type: "png", timeout: 120_000 })).toString("base64");
       await canvasPage.evaluate(() => {
         window.__masks = {};
       });
@@ -526,11 +568,7 @@ for (const id of targets) {
     }
     report[id][v.id] = row;
     const line = Object.entries(classes)
-      .filter(([k]) => k !== "other" && k !== "other@mask")
-      .map(([k, c]) => {
-        const px = row.owned?.[k];
-        return `${k}[${c.list.join("/")} x${c.n}${px ? ` ${px.pixels}px` : ""}]`;
-      })
+      .map(([k, c]) => classLine(k, c, row.owned?.[k]))
       .join(" ");
     const over = Object.entries(row.overlaps ?? {})
       .filter(([, n]) => n > 0)

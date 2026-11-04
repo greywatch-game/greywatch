@@ -98,6 +98,10 @@
  *   the two callbacks `Game` wires (`GlassSystem.onBroken`, then `onBreak`):
  *   the pane's range collapsed out of its merged glazing and its shards, with
  *   `g.glass` itself unwritten and the sheet stood up again by the put-away.
+ *   `blob` is a body's contact shadow (`ShadowSystem.updateBlobs`, the door a
+ *   frame places it by, which no frozen frame reaches): the disc at `at`, whose
+ *   `y` is the floor under the body, faded with distance by the door itself and
+ *   switched off by the put-away.
  *   `drawn` is a round's PICTURE handed over as
  *   `CombatSystem.onRound` hands it (`CombatFx.drawRound`: no wall query, the
  *   impact at `to` of the stated kind and normal, no mark) — the door the
@@ -159,6 +163,7 @@ export type FxEvent =
   | { at: number; shards: { pane: number; at: Point; dir: Point } }
   | { at: number; breaks: { pane: number; at: Point; dir: Point } }
   | { at: number; brass: true }
+  | { at: number; blob: { at: Point } }
   | { at: number; drawn: { from: Point; to: Point; kind: ImpactKind; normal?: Point } };
 
 /**
@@ -550,6 +555,35 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
       pos: [-16, 1.7, -12],
       target: [-23.8, 2, -6.65],
       fx: { seconds: 0.9, events: [{ at: 0, breaks: { pane: 0, at: [-23.8, 2, -6], dir: [1, -0.1, 0] } }] },
+    },
+    // Appended by X4.6a's review, after every row above, at an eye they stand at.
+    {
+      id: "fx-blob-sort",
+      of: "the square's west shopfront with four bodies' contact shadows: dark slivers across pane 0's upper half, one behind the glass under the far impact, one in front of the glass behind the near impact, one in front of both, and a fourth on the pavement that shows nothing. Each of the three sits on a stated floor above the eye, standing in for a deck nothing is built under here",
+      proves:
+        "the BLOB on Babylon's transparent list, sorted by centre among the panes and the fades (X4.6e): farthest first the panes, the far spark and disc (12.58, 12.57), a blob (11.3), pane 0's block (8.35), a blob (7.76), the near spark and disc (7.14, 7.12), a blob (6.21), each stack sharing pixels. **A blob faces DOWN on a back-culled material, so it draws nothing from above**: the fourth, on the pavement below the eye, is in the log and owns no pixel, the guard on a port that gets the facing or the cull wrong, and the reason the others are above the eye",
+      pos: [-16, 1.7, -12],
+      target: [-23.8, 2, -6.65],
+      fx: {
+        seconds: 0.3,
+        events: [
+          { at: 0, blob: { at: [-24.79, 2.94, -4.9] } },
+          { at: 0, blob: { at: [-22.74, 2.9, -8.2] } },
+          { at: 0, blob: { at: [-21.4, 2.85, -9] } },
+          { at: 0, blob: { at: [-21.5, 0.6, -8] } },
+          { at: 0.2, round: { from: [-17, 2, -11], to: [-25.769, 3.051, -4.11] } },
+          { at: 0.23, drawn: { from: [-17, 2, -11], to: [-22.2, 2.89, -8.5], kind: "hard", normal: [7.8, 0.8, -4.4] } },
+        ],
+      },
+    },
+    {
+      id: "fx-scorch-glass",
+      of: "the same shopfront with two scorch marks, the fires long out, faintly darkening the bottom of both windows: one on the shop's floor behind the glass, 9 s old at full, and one on a ledge 1.2 m short of it, 11.5 s old and fading, overhanging through the glass",
+      proves:
+        "the SCORCH THROUGH GLASS (X4.6e), which `fx-scorch` and every other scorch row lack: a mark sorted BEHIND pane 0's block (12.83 against 8.35), so the glass is blended over it, and one sorted IN FRONT of the block (7.75) whose far half lies behind the sheet and is blended over it all the same: both orders of a decal with no depth write on a pipeline of its own (bias -4, slope -2, no cull), each sharing thousands of pixels with the panes and with the other mark",
+      pos: [-16, 1.7, -12],
+      target: [-23.8, 2, -6.65],
+      fx: { seconds: 11.5, events: [{ at: 0, blaze: { at: [-22.6, 1.6, -8] } }, { at: 2.5, blaze: { at: [-27.5, 0.8, -6.5] } }] },
     },
   ],
   harrowmead: [

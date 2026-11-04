@@ -326,6 +326,9 @@ export function placeVantage(page, vantage) {
         positions.set(range, base);
         group.mesh.updateVerticesData("position", positions);
       }
+      // The blobs a `blob` event placed (X4.6a's review): switched off by the
+      // door a teardown takes them by, and only after a row that raised one.
+      if (window.__refFx.blobs) g.shadows.hideBlobs();
       g.combatFx.clearTransient();
       g.grenades.reset();
       g.grenadeFx.reset();
@@ -643,6 +646,22 @@ export function placeVantage(page, vantage) {
           });
           g.glass.onBroken(e.breaks.pane);
           g.glass.onBreak(e.breaks.pane, new M.Vector3(...e.breaks.at), new M.Vector3(...e.breaks.dir).normalize());
+        } else if (e.blob) {
+          // A body's contact shadow placed by the door a frame places one by
+          // (`ShadowSystem.updateBlobs`), its fade toward the fog the door's own.
+          // No frozen frame reaches that door, so without this no row holds a
+          // blob. The body is a stand-in with only what the door reads, kept for
+          // the boot so a later row reuses its mesh; `y` is the floor it stands
+          // on, and the door lifts the disc off it.
+          const bodies = (window.__refBlobBodies ??= []);
+          const n = window.__refFx.blobs ?? 0;
+          const [bx, by, bz] = e.blob.at;
+          const body = (bodies[n] ??= { alive: true, position: { x: 0, y: 0, z: 0 } });
+          body.position.x = bx;
+          body.position.y = by;
+          body.position.z = bz;
+          g.shadows.updateBlobs(body, [], cam.position, by);
+          window.__refFx.blobs = n + 1;
         } else if (e.brass) {
           g.playerView.fired();
         } else if (e.drawn) {
