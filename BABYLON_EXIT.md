@@ -1916,7 +1916,7 @@ moved; **all of this is past since X4.5c**: no sky piece is a Babylon mesh):
   stood over", with the `Active` commit; `Sky.ts`'s header and
   `CloudShader.ts`'s; `FILES.md` for each new file.
 
-### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4, its review 5d43b2e), X4.6b **LANDED** (483165a, its review e1f5712), X4.6c **LANDED** (XHASHX)
+### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4, its review 5d43b2e), X4.6b **LANDED** (483165a, its review e1f5712), X4.6c **LANDED** (4a16b5f)
 
 Everything left on the floor that Babylon still draws, the three blended pools
 X4.4 left waiting for the glazing, and the blob shadows (decided 2026-11-03).
@@ -2108,7 +2108,7 @@ Greyfen, `F2` from the menu and each eye of the map's rows):
   against a BEFORE at a269bfb: every old row byte-equal but the known pistol pixel in one of two pairs,
   no device lost, the same 34 stale rows red. The `CLAUDE.md` trim is left for the owner. Typecheck,
   build, corecheck and parity pass.
-- **X4.6c — the grass and the turf LANDED** (XHASHX; 2026-11-04; no change to the picture;
+- **X4.6c — the grass and the turf LANDED** (4a16b5f; 2026-11-04; no change to the picture;
   its BEFORE's rows 21839d1; its full note and first brief are in
   `plans/done/babylon_exit_landed.md`). No `grass*` or `grassTurf*` mesh is left, in a round or an
   editor build: `render/GrassDraw.ts` draws each as a run of one index buffer, instanced, a patch an
