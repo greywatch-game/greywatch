@@ -1916,7 +1916,7 @@ moved; **all of this is past since X4.5c**: no sky piece is a Babylon mesh):
   stood over", with the `Active` commit; `Sky.ts`'s header and
   `CloudShader.ts`'s; `FILES.md` for each new file.
 
-### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4, its review 5d43b2e), X4.6b **LANDED** (X46B_HASH)
+### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4, its review 5d43b2e), X4.6b **LANDED** (483165a)
 
 Everything left on the floor that Babylon still draws, the three blended pools
 X4.4 left waiting for the glazing, and the blob shadows (decided 2026-11-03).
@@ -2075,7 +2075,7 @@ Greyfen, `F2` from the menu and each eye of the map's rows):
   whole-frame mean, and `--keep`. Measured in its note; the owner's two decisions are
   in "Decisions", and one question goes back to the owner: **a blob draws nothing from
   above**.
-- **X4.6b — the flags and the rings LANDED** (X46B_HASH; 2026-11-04; no change to the
+- **X4.6b — the flags and the rings LANDED** (483165a; 2026-11-04; no change to the
   picture; its full note and first brief are in `plans/done/babylon_exit_landed.md`). Every
   `zone-*` mesh is gone: `render/ZoneDraw.ts` draws each ring's stones and paint, each pole
   and a field and a band on each sheet, one draw for one, on the recipes `get` and

@@ -7926,7 +7926,7 @@ to come. What X4.5a was asked for and what it measured:
     on Coldharbour, Cinderhaven and Hollowmere: 64 of 64 byte-equal to 547d803,
     the same 9 stale rows red.
 
-### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4, its review 5d43b2e), X4.6b **LANDED** (X46B_HASH)
+### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4, its review 5d43b2e), X4.6b **LANDED** (483165a)
 
 The plan's `BABYLON_EXIT.md` holds what the surfaces are today, the two tables X4.6a
 measured and the four sub-steps to come. X4.6a's brief, word for word:
@@ -8173,7 +8173,7 @@ changed, two owner decisions, and one thing nobody had noticed.
   a flag captured in a live round; the ring is still the zone's boundary; `surfaces.mjs`
   reports no `flag`, `pole`, `stones` or `paint`.
 
-**X4.6b landed** (X46B_HASH; 2026-11-04; no change to the picture).
+**X4.6b landed** (483165a; 2026-11-04; no change to the picture).
 
 - **What moved.** `render/ZoneDraw.ts` (new) draws every `zone-*` mesh Babylon's opaque list
   drew: each ring's two batches of stones and its paint, each pole, and a field and a band
