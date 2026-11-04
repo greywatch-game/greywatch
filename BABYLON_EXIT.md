@@ -1916,7 +1916,7 @@ moved; **all of this is past since X4.5c**: no sky piece is a Babylon mesh):
   stood over", with the `Active` commit; `Sky.ts`'s header and
   `CloudShader.ts`'s; `FILES.md` for each new file.
 
-### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4, its review 5d43b2e), X4.6b **LANDED** (483165a, its review REVIEWHASH)
+### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4, its review 5d43b2e), X4.6b **LANDED** (483165a, its review e1f5712)
 
 Everything left on the floor that Babylon still draws, the three blended pools
 X4.4 left waiting for the glazing, and the blob shadows (decided 2026-11-03).
@@ -2095,7 +2095,7 @@ Greyfen, `F2` from the menu and each eye of the map's rows):
   none of it in `present`, `rewrite` or `ZoneDraw`. **What is left of the interleave** is the
   water and the `backed` panes, whose keys the split does not read: no row holds such a
   tie. **Not verified**: a server's match in a browser, the phone.
-  **Its review** (REVIEWHASH; 2026-11-04; no change to the game, nothing under `src/`): no
+  **Its review** (e1f5712; 2026-11-04; no change to the game, nothing under `src/`): no
   must-fix and no picture problem. **The tools now end on a lost device** (`harness.mjs`: exit 4 on the
   console line, exit 3 at a hard limit, each proven; `VERIFYING.md`), and **`exact.mjs` is the byte
   comparison** this step owed by hand. `kit:hash` cannot fail on `ZoneDraw`'s draw, which is now

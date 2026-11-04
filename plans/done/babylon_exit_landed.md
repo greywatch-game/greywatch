@@ -7926,7 +7926,7 @@ to come. What X4.5a was asked for and what it measured:
     on Coldharbour, Cinderhaven and Hollowmere: 64 of 64 byte-equal to 547d803,
     the same 9 stale rows red.
 
-### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4, its review 5d43b2e), X4.6b **LANDED** (483165a, its review REVIEWHASH)
+### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4, its review 5d43b2e), X4.6b **LANDED** (483165a, its review e1f5712)
 
 The plan's `BABYLON_EXIT.md` holds what the surfaces are today, the two tables X4.6a
 measured and the four sub-steps to come. X4.6a's brief, word for word:
@@ -8283,7 +8283,7 @@ changed, two owner decisions, and one thing nobody had noticed.
   stone at a shore against the water, by the reasoning above and no row (the review measured
   it, below).
 
-**X4.6b's review** (REVIEWHASH; 2026-11-04; no change to the game, and nothing under `src/`
+**X4.6b's review** (e1f5712; 2026-11-04; no change to the game, and nothing under `src/`
 moved, comments included). The reviewer found no must-fix and no picture problem. What it
 found is the instruments' and the record's:
 
