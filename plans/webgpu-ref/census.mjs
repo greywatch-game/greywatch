@@ -34,7 +34,7 @@
  * figure quoted as a map's.
  */
 import { readFileSync, writeFileSync } from "node:fs";
-import { freeze, installRound, MAP_IDS, placeVantage, root, settle, startDevServer, launchClient, thaw, vantages, waitUntilDrawn, bootMap } from "./harness.mjs";
+import { freeze, hardLimit, installRound, MAP_IDS, placeVantage, root, settle, startDevServer, launchClient, thaw, vantages, waitUntilDrawn, bootMap } from "./harness.mjs";
 import { shotList } from "./vantages.mjs";
 
 const args = process.argv.slice(2);
@@ -51,6 +51,7 @@ const BEFORE = AGAINST ? JSON.parse(readFileSync(AGAINST, "utf8")) : null;
 const valued = new Set([OUT, AGAINST]);
 const maps = args.filter((a) => !a.startsWith("--") && !valued.has(a));
 const targets = maps.length ? maps : MAP_IDS;
+hardLimit(3600);
 
 /** The bank's own settle, so the count is of the frame `bank.mjs` grades. */
 const CONVERGE_FRAMES = 30;

@@ -1280,6 +1280,11 @@ them in `counters.drawCalls` any more. **From report version 29**
 whether it was drawn. **From report version 30** (`BABYLON_EXIT.md` X4.5c)
 `pools.drawn` counts the dome's and the moon's draws too and `pools.masked` the
 moon's bloom (`render/SkyDraw.ts`), and `pools.sky` says how many were drawn.
+**From report version 31** (`BABYLON_EXIT.md` X4.6b) `pools.drawn` counts the
+capture zones' draws too — each ring's stones and paint, each pole, and a field
+and a band on each sheet, a draw each (`render/ZoneDraw.ts`, in no mask) — and
+`pools.zones` says how many were drawn, none of them in `counters.drawCalls` any
+more.
 
 **Report version 24 RETIRED `drawOverlay`** (`BABYLON_EXIT.md` X4.3d): it was
 the rendering groups above 0, which by X4.3c held the optics' glass alone and

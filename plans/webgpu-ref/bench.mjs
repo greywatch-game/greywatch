@@ -70,7 +70,7 @@
  * GC figure out of an uncapped run.
  */
 import { readFileSync, writeFileSync } from "node:fs";
-import { MAP_IDS, launchClient, root, startDevServer } from "./harness.mjs";
+import { MAP_IDS, launchClient, root, startDevServer, watchDevice } from "./harness.mjs";
 
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(name);
@@ -283,7 +283,8 @@ console.log("\nall runs completed, every map fought one fight");
  * stored settings or the hand-off key.
  */
 async function benchOnce(id) {
-  const page = await browser.newPage({ viewport: { width: VW, height: VH } });
+  // A lost device ends the whole run at once, rather than after `RUN_TIMEOUT_MS`.
+  const page = watchDevice(await browser.newPage({ viewport: { width: VW, height: VH } }));
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("console", (m) => {

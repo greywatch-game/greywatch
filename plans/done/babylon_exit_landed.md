@@ -7926,7 +7926,7 @@ to come. What X4.5a was asked for and what it measured:
     on Coldharbour, Cinderhaven and Hollowmere: 64 of 64 byte-equal to 547d803,
     the same 9 stale rows red.
 
-### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4, its review 5d43b2e), X4.6b **LANDED** (483165a)
+### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4, its review 5d43b2e), X4.6b **LANDED** (483165a, its review REVIEWHASH)
 
 The plan's `BABYLON_EXIT.md` holds what the surfaces are today, the two tables X4.6a
 measured and the four sub-steps to come. X4.6a's brief, word for word:
@@ -8185,9 +8185,13 @@ changed, two owner decisions, and one thing nobody had noticed.
   not asked is refused. **The bias is pipeline state from the recipe**, keyed by `get` as
   `CLAUDE.md`'s road rules have it. The arrays are one set a round (`finish` to `clear`),
   static and cloth together under one group 2 and one index buffer, the indices rebased.
-  `CaptureZoneSystem` and `FlagCloth` no longer import Babylon (`src/math` for `Color3` and
-  `Vector3`, `computeNormals` for the winding probe), hold no node, and stay where they are:
-  neither is a core simulation, so `SIMULATIONS` gains nothing. A sheet writes its arrays
+  `CaptureZoneSystem` and `FlagCloth` no longer name Babylon (`src/math` for `Color3` and
+  `Vector3`, `computeNormals` for the winding probe) and hold no node, but **neither is free
+  of it** (corrected by the review; this first said they import none): `FlagCloth` takes
+  `mergeParts` and `Part` from `world/parts.ts`, which imports Babylon as a value, and
+  `CaptureZoneSystem` reaches that through `FlagCloth`. `ZoneDraw` has no such path. Both stay
+  where they are: neither is a core simulation, so `SIMULATIONS` gains nothing and
+  `check-babylon-free` does not hold them. A sheet writes its arrays
   through `ZoneDraw.rewrite`: two `writeBuffer`s, where `present` made an array and four
   `updateVerticesData`s, since a field and a band are two index ranges over one sheet.
 - **Where it is in each pass, read and not assumed.** On the BEFORE (a scan of Coldharbour's
@@ -8226,8 +8230,11 @@ changed, two owner decisions, and one thing nobody had noticed.
   the zones by, Coldharbour, two flags in view (`seconds of air` read back, 50 s each), warmed
   by 3,000 first. **BEFORE ~1,315 bytes a frame; AFTER ~313.** `present` 239,904 bytes, the
   iterator's `next` and `values`, `_markSubMeshesAsAttributesDirty`, `_notifyUpdate` and
-  `_markSubMeshesAsDirty` are gone, and `ZoneDraw`, `rewrite`, `present` and `zonePull` take no
-  sample. `bearing` fell from 564,292 to ~16,000 by reading the one wind once (a destructure
+  `_markSubMeshesAsDirty` are gone, and `ZoneDraw`, `rewrite`, `present` and `zonePull` took no
+  sample in that run. **That is not "`zonePull` allocates nothing"** (the review): its own run of
+  the same profiler over 3,000 steps has `zonePull` at 6,180 bytes, one or two samples and about 2
+  bytes a step, beside the `Vector3` getters it reads at 5-6 KB each. Its source makes no object,
+  and neither run can say whether that is a cold function's boxing or a small steady cost. `bearing` fell from 564,292 to ~16,000 by reading the one wind once (a destructure
   per substep), the same numbers: the bank proves it. `inFrustum` would have added `Vector3`'s
   boxed getters per surface, so the zones hold the render's planes as numbers (`inPlanes`,
   filled once a frame; `FlagCloth.inView` reads the same, the LAST render's). **What remains
@@ -8251,8 +8258,8 @@ changed, two owner decisions, and one thing nobody had noticed.
 - **In play.** `pipelines.mjs coldharbour --round`: **zero of ours in play in every run**, the
   seal quiet. Three of Babylon's are made at `life 1: spawn` with no mesh drawing in 3 of 4
   runs here and 1 of 2 at the BEFORE, or under the card in the others (the count at the
-  install 13 or 16 here, 17 or 20 there), so **a race that predates this step**, and one a
-  later step could name; one run at the BEFORE wrote nothing, a run of a tree nothing here
+  install 13 or 16 here, 17 or 20 there), so **a race that predates this step**, and the
+  review named it: `GiVolume`'s three compute pipelines (`FINDINGS.md` 16); one run at the BEFORE wrote nothing, a run of a tree nothing here
   touched. Ours at the install fell from 23 to 21, the plain pipelines being asked at boot.
 - **Live**, Coldharbour offline, the real bots, no script but `spawnPlayer`: by t=26 s Echo's flag
   had gone from 0 to 1 in the Redline's red and Alpha's to -0.74 in the Valeguard's tan, canvas
@@ -8273,4 +8280,76 @@ changed, two owner decisions, and one thing nobody had noticed.
   this tie. `docs/rendering.md`'s "`placeVantage` disposes the zones" was stale since X4.6a.
 - **Not verified.** A server's match in a browser: the zones read the same doors, and only
   `corecheck` and `parity` have run one. The phone. The gate's frame rates are not an A/B. A
-  stone at a shore against the water, by the reasoning above and no row.
+  stone at a shore against the water, by the reasoning above and no row (the review measured
+  it, below).
+
+**X4.6b's review** (REVIEWHASH; 2026-11-04; no change to the game, and nothing under `src/`
+moved, comments included). The reviewer found no must-fix and no picture problem. What it
+found is the instruments' and the record's:
+
+- **A lost device ended nothing.** A `pipelines.mjs --round` sat about 11 hours at no CPU, a
+  hung device (`DXGI_ERROR_DEVICE_HUNG`) leaving the frame counter stopped and `settle` waiting.
+  `harness.mjs` now holds two stops, both a `process.exit`: the console line on every `bootMap`
+  page and `pipelines` and `bench`'s own (`watchDevice`, exit 4), and a hard limit (exit 3) on
+  `settle`, `waitUntilDrawn`, `installRound` and `freeze`, and over a run (`hardLimit`,
+  `--limit=<seconds>`: `bank`, `surfaces`, `census`, `shaders`, `pipelines`). `dev-server.mjs`
+  stops its child on any exit, or the first of these would orphan it. **Proven on the real
+  thing**: `device.destroy()` mid-run exits 4 in 0.2 s naming the line, a stopped render loop
+  under an 8 s `settle` exits 3 in 8.1 s, `pipelines --round --limit=8` exits 3, and none leaves
+  a Chromium or a Node behind. A clean `pipelines --round`: 16 at the install, zero in play.
+  `gate` and `depth` have the page's stop and the waits' limits, not a run's.
+- **`plans/webgpu-ref/exact.mjs`** compares two `--keep` directories, the proof the plan owes
+  and no committed tool gave: per row byte-equal, or pixels and worst value, exit 1 outside
+  `KNOWN_FLAKES` (`view-pistol-reload` 2 by 1/255, `sarab-shelf` 1 by 1/255) or a row on one side
+  only unless `--new`. Shown to fail: the review's all-at-`"first"` `ring-behind-field` prints
+  `MOVED: 53 pixels, worst 113/255, mean 0.0002/255`, exit 1 (54 on this step's own try).
+  `comparePngs` returns `pixels`.
+- **`kit:hash` could not fail on `ZoneDraw`**, its stand-in rebuilding a mesh from what the
+  builders hand over. Stated in the script and `docs/rendering.md`, with what holds the rest (the
+  bank's byte comparison: the rebasing, the upload's defaults, `rewrite`, the split). **A guard for
+  the sphere was cheap**: the stand-in runs the real `addSurface` on an object holding what it
+  writes and throws on any bit's difference from the mesh's sphere. All 8 zone builds pass, and
+  `boxOf`'s `maxX` nudged by 1e-9 (reverted) throws on all 8. `--against` the BEFORE: identical.
+- **The tie this step could not reach, measured small**: re-run here over all seven maps, **no
+  stone, paint or pole triangle meets a `backed` pane's box, and only Hollowmere's rings B and E
+  have stones crossing the water plane, 61 triangles** (19, 11, 19, 12). Seven eyes with the order
+  reversed against the blades and the water, all `zones`, byte-equal to the BEFORE: pos `[-85, 1.5,
+  -50]` to `[-88.1, -1.3, -37.2]` fov 14; `[-40, 3, -15]` to `[-89.8, -1.3, -18.5]` and to `[-88.1,
+  -1.3, -37.2]` fov 5; `[35, 1.5, -112]` to `[29, -1.3, -80.8]` fov 8; `[15, 3, -25]` to `[29, -1.3,
+  -80.8]` and to `[50.7, -1.3, -82.1]` fov 5; `[-85, 1.5, -30]` to `[-89.5, -1.3, -18.2]` fov 14. A
+  cloth's triangles are not in that count (a sheet's stated reach overlaps a water rect in plan on
+  five maps, and a pane's on none, and it flies up its pole). **So that class is an engineering
+  call, judged and measured small, not a proof.**
+- **X4.6c's brief was one-sided**: it warned of the blades falling behind water at
+  `"beforeAlphaTest"`, not of their falling ahead of it at `"first"`, which the log shows both ways
+  and a shore makes real. It owes the bytes at both, rows first, and an open question in "Decisions"
+  if neither holds. **Nothing retired the split**: X4.6e's brief does now, in the commit moving the
+  last of Babylon's opaque list (the `backed` panes), with `"first"`'s exception in `Renderer.ts`.
+- **Written up, no change to the game**: `GiVolume`'s three compute pipelines, on no declared list
+  (`FINDINGS.md` 16, and what "a race" above was: 16 at the install in 4 of 5 runs, 13 with 3 at the
+  spawn in the fifth; X5.1 picks them up), and a lost device freezing the game with no message
+  (`FINDINGS.md` 64).
+- **Was the review's device loss this step? No.** It had lost the device in 12 of 16 short runs here
+  against 2 of 4 at the BEFORE, unpaired. Paired, alternating BEFORE at a269bfb and AFTER at 7097196,
+  fresh process each run, nothing else on the GPU: **0 of 37 against 0 of 37** over the review's own
+  script (10 each, and 5 each with no gap), the bank's bare loop on the same rows (10 each), the bank's
+  order over 42 of Coldharbour's rows (5 each), 5 each beside a deliberately idle tree, and the whole
+  bank (2 each). So a short named-row sequence does not provoke it, and neither does the bank's order,
+  and what the review saw was of that hour (`FINDINGS.md` 64 has the table and the limits of it).
+- **Corrected**: `bank.mjs`'s count (133), `docs/states.md`'s vantages, `docs/rendering.md`'s
+  `inFrustum` (`inPlanes`) and "first of all ours" on the fires (the far zones are ahead),
+  `docs/profiling.md`'s version 31 and `pools.zones`, and above in this note, "import no Babylon"
+  and "`zonePull` takes no sample".
+- **Measured.** Bank twice each, alternating, each alone: **through the fixed `settle` no device
+  lost in ~366 s a pass**, and by `exact.mjs` 131 of 132 old rows byte-equal in one pair and 132
+  in the other (`view-pistol-reload`, 2 by 1/255, the known flake), `ring-behind-field` new at
+  this BEFORE, and against this step's own BEFORE, which holds it, 132 of 133 and the flake. The same
+  34 stale rows red at the same means, which is `--check`'s exit 1. Typecheck, build, corecheck and
+  parity pass.
+- **Left for the owner, being `CLAUDE.md`**: the rendering section still runs to 138 lines against
+  its ~135. The trim is drafted, unapplied, and hands the section back at 135 with no rule lost: what
+  goes is argument `docs/rendering.md` holds (why the moon's depth, "nothing excludes a mesh by hand")
+  and words of the pointer's list.
+- **Not verified.** A real hang through the new stops: no run here lost a device without being told
+  to (`census`, `surfaces` and `shaders` ran clean through them on Hollowmere, `bench` did not run).
+  A fresh boot (`FINDINGS.md` 64), a server's match, the phone.

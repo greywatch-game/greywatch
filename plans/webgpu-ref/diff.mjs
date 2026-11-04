@@ -125,6 +125,7 @@ export async function comparePngs(pathA, pathB, { tiles = false, browser = null 
         const out = {
           w,
           h,
+          pixels: differing,
           pctPixels: +((differing / total) * 100).toFixed(4),
           meanAbs: +(sum / (total * 3)).toFixed(4),
           max,

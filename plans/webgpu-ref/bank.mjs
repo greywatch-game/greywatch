@@ -26,7 +26,7 @@
  * every build, so a plain `--check` grades it against Babylon's frames: the
  * residue is X3.3a's equal-depth ties, which Babylon's front-to-back sort
  * settles pair by pair. **And its old rows are STALE since X3.4**, which
- * moved the scatter on purpose, and since a GPU driver update: 34 of its 132
+ * moved the scatter on purpose, and since a GPU driver update: 34 of its 133
  * rows fail a plain `--check` on an unchanged tree (33 of the 47 banked before
  * X3.5, and `greyfen-crossing`), so a
  * step is graded against a BEFORE taken with `--keep` at its parent
@@ -102,6 +102,7 @@ import {
   bootMap,
   describeStack,
   freeze,
+  hardLimit,
   installRound,
   launchClient,
   placeVantage,
@@ -158,6 +159,8 @@ if (banked && banked.mode !== mode) {
 }
 
 const sha = (b) => createHash("sha256").update(b).digest("hex");
+// The stops are the harness's (its header); a whole bank is minutes here.
+hardLimit(3600);
 const vite = await startDevServer(root);
 const browser = await launchClient({ headed: HEADED });
 const stack = await describeStack(browser, vite.url);

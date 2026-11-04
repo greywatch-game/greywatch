@@ -53,12 +53,17 @@
  * every pipeline of ours asked before the card comes down (the round's
  * declared list, `Game.roundPipelines`, and the map's install) — and a DEV
  * build names any compile of ours in play itself (`PipelineCache.seal`).
+ *
+ * **A lost device ends it** (`harness.mjs`'s header, exit 4), and so does a hard
+ * limit (exit 3, `--limit=<seconds>`): `--round`'s `until` counts FRAMES, so
+ * under a stopped frame counter its own limit never fires. One such run sat
+ * about 11 hours (`FINDINGS.md` 64).
  */
 import {
-  bootMap,
-  launchClient,
+  hardLimit,
   startDevServer,
   root,
+  watchDevice,
 } from "./harness.mjs";
 
 const args = process.argv.slice(2);
@@ -66,6 +71,8 @@ const MAP = args.find((a) => !a.startsWith("--")) ?? "coldharbour";
 const secondsArg = args.indexOf("--seconds");
 const SECONDS = secondsArg >= 0 ? Number(args[secondsArg + 1]) : 16;
 const ROUND = args.includes("--round");
+// A `--round` takes a minute or so on the Windows box.
+hardLimit(ROUND ? 300 : SECONDS + 240);
 
 const vite = await startDevServer(root);
 const { chromium } = await import("playwright");
@@ -77,7 +84,7 @@ const browser = await chromium.launch({
   args: ["--enable-unsafe-webgpu", "--disable-frame-rate-limit", "--disable-gpu-vsync"],
 });
 
-const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+const page = watchDevice(await browser.newPage({ viewport: { width: 1920, height: 1080 } }));
 await page.addInitScript((mapId) => {
   window.localStorage.setItem("greywatch.map", mapId);
   window.__gpuLog = { modules: [], pipelines: [], ours: [], moduleMs: 0, pipelineMs: 0 };

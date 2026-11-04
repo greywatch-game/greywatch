@@ -31,7 +31,8 @@ own dev server.
 
 ```
 node plans/webgpu-ref/gate.mjs [map...] [--headed] [--uncap] [--query=<flags>]
-node plans/webgpu-ref/bank.mjs [map...] [--headed] [--check] [--query=<flags>] [--keep=<dir>] [--rows=<id,...>]
+node plans/webgpu-ref/bank.mjs [map...] [--headed] [--check] [--query=<flags>] [--keep=<dir>] [--rows=<id,...>] [--limit=<seconds>]
+node plans/webgpu-ref/exact.mjs <before-dir> <after-dir> [--new=<id,...>]
 node plans/webgpu-ref/census.mjs [map...] [--query=<flags>] [--out f.json] [--against f.json] [--fall]
 node plans/webgpu-ref/shaders.mjs [map...] [--headed] [--list]
 node plans/webgpu-ref/depth.mjs glass|zoffset [--headed]
@@ -139,6 +140,14 @@ node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--gpu] [--max] [
   rung first and fails a run whose capture says otherwise; without it a run
   gets a fresh context's per-device defaults. `docs/profiling.md`, "The
   benchmark", is the contract.
+- **`exact.mjs`** is the proof a step that must move nothing owes: two
+  `--check --keep=<dir>` directories, at the parent and at the step, compared
+  byte for byte. Each row prints `byte-equal`, or the pixels moved and the worst
+  value, and it exits 1 on any row that differs, or stands on one side only, outside
+  `KNOWN_FLAKES` (`harrowmead-view-pistol-reload` up to 2 pixels by 1/255, `sarab-shelf`
+  1 pixel by 1/255). A row the step added is named in `--new`. **`--check`'s pass line
+  cannot do this**: `coldharbour-ring-behind-field` with the zones' split wrong moves 54
+  pixels by up to 113/255, a mean of 0.0002 against 0.02. It wants no GPU.
 - **`diff.mjs`** says how much and where two PNGs differ. `bank.mjs --check`
   grades itself with the same function; the CLI is for looking at a specific
   pair by hand, and `--tiles` names the region rather than the number.

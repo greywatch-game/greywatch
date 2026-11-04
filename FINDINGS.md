@@ -914,6 +914,19 @@ keyed on the pose, not on the mesh.
   spawn and first-blast frames, and the card's extra time on that device.
 - **The rotor wash** on Sarab and Cinderhaven is a GPU particle system, not a
   mesh, and compiles on the first frame a helicopter raises dust.
+- **`GiVolume`'s three compute pipelines** (`trace`, `compose`, `vis`) compile on
+  their first dispatch (`src/systems/GiVolume.ts`, `update`) and are on no declared
+  list and in no vantage's draw, so the warm-up does not wait for them. Five runs of
+  `pipelines.mjs coldharbour --round`, X4.6b's tree, 2026-11-04, each creation's stack
+  kept: **16 of Babylon's at the install in 4 of 5, and 13 at the install with 3 at
+  `life 1: spawn` in the fifth**, those three naming `GiVolume.update`, with no mesh
+  drawing. So which side of the card comes down first is a race, and **it is what
+  X4.6b's note first called three pipelines "a race that predates this"**, the count at
+  the install moving with them (13 or 16). In the runs where they land past the card, a
+  person meets them on the deploy screen's first frames. Nothing here says what that
+  costs, and **a phone reading is owed**: `createdNear` on the deploy screen's first
+  frames, on the finding-13 phone. Babylon's until `BABYLON_EXIT.md` X5.1, whose list
+  they join.
 - **Hollowmere standing still.** Plain `pipelines.mjs hollowmere` (no `--round`,
   which needs armour) creates 5 of Babylon's pipelines and 1 module in its second
   second after the spawn, on every run: X4.5a's tree, 89879c6 and f035cc6 alike,
@@ -2825,8 +2838,10 @@ that is a guess from the shape, not a reading.
 
 ## 64. The desktop's D3D12 device hangs under the uncapped 3440x1440 benchmark, before X3.6a as after it
 
-**Status:** open; measured 2026-10-23 on the desktop (the RTX box, Chrome's
-Dawn on D3D12), cause unknown.
+**Status:** open; measured 2026-10-23 and 2026-11-04 on the desktop (the RTX box,
+Chrome's Dawn on D3D12), cause unknown. **The newest reading says the tree is not
+what provokes it** ("The paired test"), and **the game has no answer when it
+happens** ("What a player gets").
 
 ### What was measured
 
@@ -2873,6 +2888,51 @@ or in the machine. (`?babylonworld` went at X3.7b; that control is a build
 at the tag `exit-babylonworld` now. X3.7b's and X3.7c's own X0.3,
 3440x1440 uncapped, are in `BABYLON_EXIT.md`: X3.7c's eighteen runs, three a
 side on Greyfen, Coldharbour and Cinderhaven, completed with none hung.)
+
+### The paired test (2026-11-04, X4.6b's review)
+
+X4.6b's reviewer lost the device in 12 of 16 short runs on the AFTER tree against 2
+of 4 on the BEFORE (a269bfb): 12:45 to 13:03 that day, unpaired, the same script
+retried with no gap until one came back clean, and an earlier run's idle Chromium
+tree still alive. That could have meant the step harms a machine, so it was paired:
+a fresh process each run, **alternating** BEFORE then AFTER at 7097196, the same
+rows in the same order on Coldharbour (`ring-stones`, `ring-flown-far`,
+`ring-behind-field`), a hard limit on each, no other Chromium or Node, the device-lost
+line counted:
+
+| arm | BEFORE lost | AFTER lost |
+| --- | --- | --- |
+| the reviewer's own script, the named rows alone, 8 s between runs | 0 of 10 | 0 of 10 |
+| the bank's loop and nothing else, the same rows | 0 of 10 | 0 of 10 |
+| the bank's loop over Coldharbour's whole order up to the last of them, 42 rows | 0 of 5 | 0 of 5 |
+| the reviewer's script, no gap between runs, as it first ran | 0 of 5 | 0 of 5 |
+| the same beside an idle tree on purpose: a Coldharbour round, render loop stopped, its device alive | 0 of 5 | 0 of 5 |
+| the whole bank, 133 rows (132 at the BEFORE), through the harness's own stops at the AFTER | 0 of 2 | 0 of 2 |
+
+**So device loss is not more frequent on the AFTER: 0 of 37 against 0 of 37.** A short
+named-row sequence does not provoke it either (0 of 30 a side), and neither does the
+bank's order. What the review saw belonged to that hour rather than to a tree: its last
+loss is at 13:03, and its five `pipelines.mjs` runs from 13:06 on were clean, on the
+same tree. An idle tree with a LIVE device did not bring it back; one left by a real
+hang was not tried, there being no way to make one without a hang. All 0 of 37 can say
+about a rate is that it is under about 8% on these runs (95%, one-sided) against
+the review's 14 of 20, so a small difference between the trees is not excluded. The box
+had been up 288 hours, driver 610.88, and **the fresh boot below has still not been
+tried**.
+
+### What a player gets
+
+**Nothing: the frame stops for good with no message.** Dawn's `DXGI_ERROR_DEVICE_HUNG`
+and Babylon's "WebGPU context lost" are warnings on the console, Babylon says
+"successfully restored", then "A fatal error occurred during WebGPU creation" and
+"Device failed at creation", and the frame counter never moves again (held at 397 in
+`deploy` over 120 s of polling, the page visible and focused, `evaluate` answering).
+**Nothing in `src/` handles it**: no listener on the device's `lost`, nothing on
+Babylon's context-lost observables, no toast and no way back to the menu, so the game
+looks frozen and only a reload gets out. Pre-existing and not fixed here. What it would
+take is a small door beside `Game.worldFailed`'s toast, and whether a player's own TDR
+is common enough to earn it is unmeasured. The bank's tools no longer hang on it
+(`harness.mjs`, `VERIFYING.md`).
 
 ### How to settle it
 - A fresh boot of the machine, then the loop again (the scratch watchdog,

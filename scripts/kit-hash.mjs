@@ -136,7 +136,11 @@
  *   is not the map. Since `BABYLON_EXIT.md` X4.6b our renderer draws them and
  *   Babylon is made no mesh, so what is hashed is what `ZoneDraw` is handed,
  *   each surface as the mesh it was (`zoneDrawStandIn`), which leaves the hash
- *   where it stood.
+ *   where it stood. **So this hash cannot fail on `ZoneDraw` itself**: the
+ *   rebasing, the upload and the rewrite are outside it, and the bank's byte
+ *   comparison holds them (`plans/webgpu-ref/exact.mjs`, `docs/rendering.md`).
+ *   The one thing of `ZoneDraw`'s it does run is `addSurface`, for its sphere,
+ *   which is compared with the mesh's and throws on any difference.
  *
  * Each build gets a fresh Scene under the NullEngine and the stub factory
  * above. The viewer is on side 0, so side 1 is the other kit, and
@@ -731,8 +735,14 @@ function hashScene(scene, data, plain, tree = null, meshOfSegment = null) {
  * ring's batch and a pole through the game's `drawnMesh`, a sheet's field and band
  * `applyToMesh`'d over its own arrays under the box it states, each dressed as it
  * was. A recipe IS the stub's material here (the job's `celRecipe`).
+ *
+ * **It holds `ZoneDraw`'s sphere to the mesh's.** The size gate, the frustum, the
+ * sort and the zones' split all read that sphere, and a mesh is what it was
+ * copied from, so the real `addSurface` runs on an object holding only what it
+ * writes (no device is needed to work out a sphere) and any difference from the
+ * mesh's, in any bit, throws. Nothing else of `ZoneDraw`'s is reached from here.
  */
-function zoneDrawStandIn(B, PA, GB, scene) {
+function zoneDrawStandIn(B, PA, GB, scene, ZD) {
   const ranges = [];
   const surfaces = [];
   return {
@@ -740,13 +750,22 @@ function zoneDrawStandIn(B, PA, GB, scene) {
       ranges.push(geometry);
       return ranges.length - 1;
     },
-    addSurface(name, first, indices, recipe, box) {
-      const surface = { name, first, indices, recipe, box, on: true, mesh: null };
+    addSurface(name, first, indices, recipe, box, geometry = null) {
+      const sphere = ZD.ZoneDraw.prototype.addSurface.call(
+        { indexList: [], surfaces: [], materialOf: () => null },
+        name,
+        0,
+        [],
+        recipe,
+        box,
+        geometry,
+      );
+      const surface = { name, first, indices, recipe, box, on: true, mesh: null, sphere };
       surfaces.push(surface);
       return surface;
     },
     addStatic(name, geometry, indices, recipe) {
-      return this.addSurface(name, this.addVertices(geometry), indices, recipe, null);
+      return this.addSurface(name, this.addVertices(geometry), indices, recipe, null, geometry);
     },
     wear(surface, recipe) {
       surface.recipe = recipe;
@@ -779,6 +798,14 @@ function zoneDrawStandIn(B, PA, GB, scene) {
         mesh.freezeWorldMatrix();
         mesh.setEnabled(s.on);
         s.mesh = mesh;
+        const held = mesh.getBoundingInfo().boundingSphere;
+        const c = held.centerWorld;
+        const z = s.sphere;
+        if (z.x !== c.x || z.y !== c.y || z.z !== c.z || z.radius !== held.radiusWorld) {
+          throw new Error(
+            `ZoneDraw's sphere for ${s.name} is (${z.x}, ${z.y}, ${z.z}) r ${z.radius}; its mesh's is (${c.x}, ${c.y}, ${c.z}) r ${held.radiusWorld}`,
+          );
+        }
       }
     },
   };
@@ -858,7 +885,7 @@ async function hashModelJobs(jobs) {
     const B = await server.ssrLoadModule("@babylonjs/core");
     B.Logger.LogLevels = B.Logger.NoneLogLevel;
     const load = (p) => server.ssrLoadModule(p);
-    const [W, VM, PL, PV, GR, MO, RPG, MINE, VK, SM, CZ, FIN, TV, VT, PA, CFG, GB] = await Promise.all(
+    const [W, VM, PL, PV, GR, MO, RPG, MINE, VK, SM, CZ, FIN, TV, VT, PA, CFG, GB, ZD] = await Promise.all(
       [
         "/src/entities/weapons.ts",
         "/src/entities/ViewModel.ts",
@@ -877,6 +904,7 @@ async function hashModelJobs(jobs) {
         "/src/world/parts.ts",
         "/src/config/index.ts",
         "/src/geometry/buffer.ts",
+        "/src/render/ZoneDraw.ts",
       ].map(load),
     );
     // A pool's piece parts as the meshes they were until X4.4b (the header):
@@ -987,7 +1015,7 @@ async function hashModelJobs(jobs) {
         } else if (p.kind === "zone") {
           const w = zoneWorld(p.points);
           const zoneMats = new Proxy(mats, { get: (t, prop) => (prop === "celRecipe" ? (m) => m : t[prop]) });
-          const zones = new CZ.CaptureZoneSystem(zoneMats, zoneDrawStandIn(B, PA, GB, scene), () => true);
+          const zones = new CZ.CaptureZoneSystem(zoneMats, zoneDrawStandIn(B, PA, GB, scene, ZD), () => true);
           zones.build(p.points, w.terrain, w.obstacles, w.roads, w.rays, w.env);
           data = zones.zones.map((z) => ({ x: z.x, z: z.z, meshes: z.ring.map((s) => s.mesh) }));
         } else throw new Error(`no model "${p.kind}"`);

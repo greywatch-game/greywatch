@@ -52,6 +52,7 @@
 import {
   assertNoTranspiler,
   bootMap,
+  hardLimit,
   installRound,
   launchClient,
   MAP_IDS,
@@ -65,6 +66,7 @@ const HEADED = args.includes("--headed");
 const LIST = args.includes("--list");
 const maps = args.filter((a) => !a.startsWith("--"));
 const MAPS = maps.length > 0 ? maps : MAP_IDS;
+hardLimit(1800);
 
 /**
  * The cel variants the shipped maps must between them compile, keyed by

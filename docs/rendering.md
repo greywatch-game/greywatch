@@ -4842,10 +4842,11 @@ test under the mesh's culling strategy (the sphere alone); group 0's opaque
 order (nearest centre first, that order breaking a tie, stable); and the
 bloom's distance fade, a `noGlow` world fire left out of the mask. A fire is
 EMISSIVE, so the size gate never dropped one, and no gate of ours reads it:
-there is no latch to keep. **The draws hang at `"beforeAlphaTest"` FIRST of
-all ours** — the fires' meshes were in Babylon's opaque queue, which drew
-before every draw of ours at that point, and the order among the fires is
-the queue's own — and **the mask's after the billows'** (Babylon's mask drew
+there is no latch to keep. **The draws hang at `"beforeAlphaTest"` first of
+all ours but the zones' far run** (`ZoneDraw`, installed ahead of them since
+X4.6b, off the same queue) — the fires' meshes were in Babylon's opaque queue,
+which drew before every draw of ours at that point, and the order among the
+fires is the queue's own — and **the mask's after the billows'** (Babylon's mask drew
 the fires after every draw of ours), by the same vertex module, no depth
 written, LEQUAL. What moved is only the fires' interleave with the meshes
 Babylon still drew in that queue — the grass, the capture zones until X4.6b, the
@@ -7237,13 +7238,24 @@ DRAWING; the meter they annotate is `ConquestSystem`'s and is in
   to 68/255; all at `"first"`, 54 of `ring-behind-field` by up to 113/255. What is
   left of the interleave is the water and the `backed` panes, whose keys the split does
   not read: a stone at a shore could flip a tie, no row holds one, and it goes as they
-  move here. **Among
+  move here. Measured small and judged an engineering call (X4.6b's review, its note):
+  no stone, paint or pole triangle meets a `backed` pane's box, and only Hollowmere's
+  rings B and E have stones crossing the water plane, 61 triangles, seven eyes in the
+  reversed order byte-equal to the BEFORE. **What holds this, and what does not**:
+  `kit:hash --models` cannot fail on `ZoneDraw`'s draw, because its stand-in rebuilds
+  a mesh from what the builders hand over, so what it covers is the geometry, the
+  order, the names and the recipes handed over, and since the review the SPHERE
+  (`addSurface` itself is run and its sphere compared with the mesh's, bit for bit, a
+  throw on any difference). The rebasing onto the round's arrays, the upload's default
+  colour and `uv`, the cloth's `rewrite`, and the split are outside it and only the
+  bank's byte comparison holds them (`ring`, `ring-stones`, `ring-flown`,
+  `ring-flown-far`, `ring-behind-field`; `plans/webgpu-ref/exact.mjs`). **Among
   themselves they keep Babylon's order** (`Game.zonePull`, inside the render): nearest
   first by the sphere's centre off `globalPosition`, the order of building breaking a
   tie, which a sheet's field and band always are. Each surface's sphere is the one its
   mesh held (off its vertices' box, or a sheet's stated reach whatever shape it takes),
   and the size gate (`keepsSphere`, per surface, from `Game.drawZones`) and the frustum
-  (the sphere alone, `inFrustum`) read it as they read the mesh's. **`FlagCloth.inView`
+  (the sphere alone, `inPlanes`) read it as they read the mesh's. **`FlagCloth.inView`
   reads the same sphere against the LAST render's planes**, which is what decides
   whether a flag steps, so it is a question about the picture as well as the cost.
   **The cloth is a vertex buffer of ours rewritten as the sheet moves, and allocates

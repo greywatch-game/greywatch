@@ -74,6 +74,20 @@
  * banking in one mode and diffing in the other, which reports a shader
  * regression that is a browser mode. Whatever `bank.mjs` took the reference in
  * is what a comparison has to run in.
+ *
+ * **A LOST DEVICE MUST END THE RUN, and left to itself it never does.** Every
+ * wait here is a promise in the page that a rendered frame resolves. When the
+ * D3D12 device hangs (`DXGI_ERROR_DEVICE_HUNG`, `FINDINGS.md` 64) Babylon says
+ * "context lost ... successfully restored", no frame is drawn again, the frame
+ * counter stops, the page goes on answering `evaluate`, and the wait simply
+ * never lands: one run sat about 11 hours at no CPU. So there are two stops and
+ * both exit the PROCESS, non-zero, naming what happened: `watchDevice`, which
+ * every page `bootMap` makes already wears, on the console line (exit 4), and a
+ * hard limit (exit 3), on `settle`, `waitUntilDrawn`, `installRound` and
+ * `freeze` each and over a tool's whole run (`hardLimit`, `--limit=<seconds>`),
+ * for a device that goes without a word. `process.exit` is the door and a
+ * rejected promise is not: `browser.close()` can hang on the same GPU, and the
+ * browser and the dev server both go on the process's `exit`.
  */
 import { launchClient } from "../../scripts/browser.mjs";
 import { MAPS, root } from "../../scripts/collision-hash.mjs";
@@ -116,6 +130,63 @@ export const FREEZE_SET = [
  */
 export const GI_SWEEPS = 8;
 
+/** The exit codes of the two stops (the header). */
+export const EXIT_HARD_LIMIT = 3;
+export const EXIT_DEVICE_LOST = 4;
+
+/**
+ * Every console line a lost device has been seen to say, in the order it says
+ * them: Dawn's, Babylon's, and Babylon's failing to get it back. Matched on the
+ * TEXT, because Dawn's and Babylon's first are `warning`s, so a filter on
+ * `error` hears only the last, if that.
+ */
+const DEVICE_LOST_LINE =
+  /DXGI_ERROR_DEVICE_|GetDeviceRemovedReason|WebGPU context lost|Device failed at creation|fatal error occurred during WebGPU/;
+
+/** What the run was last waiting on: said when it is given up on. */
+let waitingOn = "the start of the run";
+
+function giveUp(code, message) {
+  console.error(`\n${message}\n  waiting on: ${waitingOn}`);
+  process.exit(code);
+}
+
+/** The console half of the stop, for a page `bootMap` did not make. */
+export function watchDevice(page) {
+  page.on("console", (m) => {
+    const text = m.text();
+    if (DEVICE_LOST_LINE.test(text)) {
+      giveUp(EXIT_DEVICE_LOST, `DEVICE LOST: no frame will come again. The console said: ${text.slice(0, 240)}`);
+    }
+  });
+  page.on("crash", () => giveUp(EXIT_DEVICE_LOST, "DEVICE LOST: the page crashed, which a hung GPU can do."));
+  return page;
+}
+
+/**
+ * The whole run's limit: `seconds`, unless the command line says `--limit=<s>`.
+ * Unref'd, so a run that finishes is not held open by it.
+ */
+export function hardLimit(seconds) {
+  const stated = process.argv.find((a) => a.startsWith("--limit="));
+  const limit = stated ? Number(stated.slice("--limit=".length)) : seconds;
+  setTimeout(() => {
+    giveUp(
+      EXIT_HARD_LIMIT,
+      `HARD LIMIT: ${limit} s of run and not finished. If the frames have stopped, the device is lost without a console line; if the run is merely long, say --limit=<seconds>.`,
+    );
+  }, limit * 1000).unref();
+}
+
+/** `work`, which frames must land, with a limit in milliseconds on how long it may take. */
+function limited(what, ms, work) {
+  waitingOn = what;
+  const timer = setTimeout(() => {
+    giveUp(EXIT_HARD_LIMIT, `HARD LIMIT: ${what} took over ${ms / 1000} s. The frames have stopped, so the device is very likely lost without a console line.`);
+  }, ms);
+  return work.finally(() => clearTimeout(timer));
+}
+
 /** Map ids in the order the shipped registry states them. */
 export const MAP_IDS = MAPS.map((m) => m.id);
 
@@ -127,7 +198,7 @@ export const MAP_IDS = MAPS.map((m) => m.id);
  * and the page error that explains it has already gone past by then.
  */
 export async function bootMap(browser, url, id, { hideUI = true } = {}) {
-  const page = await browser.newPage({ viewport: { width: WIDTH, height: HEIGHT } });
+  const page = watchDevice(await browser.newPage({ viewport: { width: WIDTH, height: HEIGHT } }));
   const pageErrors = [];
   const consoleErrors = [];
   const consoleLines = [];
@@ -171,7 +242,7 @@ export async function bootMap(browser, url, id, { hideUI = true } = {}) {
  * drained (`Game.bakeWait`), so the state flipping to `deploy` is the whole of
  * the install landing — forty cube probes on Coldharbour, 265 on the 900 m
  * proving ground, which is 5.7 s of frames on top of the build. Budget for it:
- * there is no timeout here.
+ * the limit here is a stop for a lost device, generous on purpose.
  *
  * `bakeFrameMs` is therefore the frame AFTER all of that and is now an
  * ordinary frame on every map. It is kept because a reading that suddenly
@@ -180,7 +251,7 @@ export async function bootMap(browser, url, id, { hideUI = true } = {}) {
  * a forced re-bake measures instead.
  */
 export function installRound(page) {
-  return page.evaluate(async () => {
+  return limited("installRound", 900_000, page.evaluate(async () => {
     const g = window.__celshock;
     const t0 = performance.now();
     g.startRound();
@@ -208,7 +279,7 @@ export function installRound(page) {
       bakePending: g.reflections.bakePending,
       paneGroups: g.map.paneGroups.length,
     };
-  });
+  }));
 }
 
 /**
@@ -219,7 +290,8 @@ export function installRound(page) {
  * state — is its own business and is a few frames.
  */
 export function waitUntilDrawn(page, timeoutMs = 120_000) {
-  return page.evaluate(async (timeout) => {
+  // Its own deadline is read between frames, so it cannot fire when they stop.
+  return limited("waitUntilDrawn", timeoutMs + 60_000, page.evaluate(async (timeout) => {
     const g = window.__celshock;
     const deadline = performance.now() + timeout;
     let frames = 0;
@@ -234,7 +306,7 @@ export function waitUntilDrawn(page, timeoutMs = 120_000) {
       if (g.scene.isReady()) return { drawnOnFrame: frames };
       if (performance.now() > deadline) throw new Error("scene never became ready");
     }
-  }, timeoutMs);
+  }, timeoutMs));
 }
 
 /**
@@ -873,7 +945,8 @@ export function placeVantage(page, vantage) {
  * freeze cannot record its own no-ops as the real methods.
  */
 export function freeze(page, set = FREEZE_SET, { windTime = 0, turn = 0, strike = null } = {}) {
-  return page.evaluate(async ([f, wind, blurTurn, sweeps, strikeAt]) => {
+  // Its sweeps' own cap counts frames, so it cannot fire when they stop.
+  return limited("freeze", 1_800_000, page.evaluate(async ([f, wind, blurTurn, sweeps, strikeAt]) => {
     const g = window.__celshock;
     // The real updaters, recorded ONCE. See `thaw`.
     window.__refThaw ??= {
@@ -1078,7 +1151,7 @@ export function freeze(page, set = FREEZE_SET, { windTime = 0, turn = 0, strike 
         for (const p of r.waterProbes ?? []) p.cubeTexture.resetRefreshCounter();
       }
     }
-  }, [set, windTime, turn, GI_SWEEPS, strike]);
+  }, [set, windTime, turn, GI_SWEEPS, strike]));
 }
 
 /**
@@ -1111,9 +1184,12 @@ export function thaw(page) {
   });
 }
 
-/** Lets `n` rendered frames pass. The settle AFTER readiness, never instead of it. */
-export function settle(page, n = 6) {
-  return page.evaluate(async (frames) => {
+/**
+ * Lets `n` rendered frames pass. The settle AFTER readiness, never instead of it.
+ * The limit is the header's, roomy enough for a Chromebook's half a frame a second.
+ */
+export function settle(page, n = 6, limitMs = Math.max(120_000, n * 5_000)) {
+  return limited(`settle(${n})`, limitMs, page.evaluate(async (frames) => {
     const g = window.__celshock;
     let seen = 0;
     await new Promise((res) => {
@@ -1123,7 +1199,7 @@ export function settle(page, n = 6) {
         res();
       });
     });
-  }, n);
+  }, n));
 }
 
 /**

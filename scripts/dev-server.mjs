@@ -65,9 +65,15 @@ export async function startDevServer(root) {
     );
   });
 
+  // Whatever ends the script, a thrown error or the harness's stop on a lost
+  // device: an exit that skipped `stop` would otherwise orphan the server.
+  const stopAtExit = () => proc.kill("SIGTERM");
+  process.on("exit", stopAtExit);
+
   return {
     url,
     stop() {
+      process.off("exit", stopAtExit);
       proc.kill("SIGTERM");
     },
   };

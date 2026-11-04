@@ -74,6 +74,22 @@ you are on before you believe anything else in this section.
 - **`scripts/browser.mjs` and `scripts/dev-server.mjs` are the only places a
   launch flag or a server spawn is written**, and the harness under
   `plans/webgpu-ref/` imports both rather than copying either.
+- **A LOST DEVICE MUST END A RUN, and a script of yours has to arrange it.** On a
+  hung device (`DXGI_ERROR_DEVICE_HUNG`, `FINDINGS.md` 64) the page goes on
+  answering `evaluate` with its frame counter stopped, so anything awaiting a frame
+  waits for ever at no CPU: one `pipelines.mjs --round` sat about 11 hours.
+  `plans/webgpu-ref/harness.mjs` is where the stops are (its header): a page from
+  `bootMap` exits the process 4 on the console line, `settle`, `waitUntilDrawn`,
+  `installRound` and `freeze` exit it 3 at a hard limit, and `hardLimit(seconds)` is
+  the whole run's, `--limit=<seconds>` over it on `bank`, `surfaces`, `census`,
+  `shaders` and `pipelines`. A page you make yourself wears `watchDevice(page)`; a
+  frame count in a page's own loop never fires under a stopped counter, so it wants a
+  wall-clock limit beside it. **The console line is a WARNING first** (Dawn's, then
+  Babylon's "WebGPU context lost"), so a filter on `error` does not hear it. Exit
+  through `process.exit`, which takes the browser and the dev server with it, and not
+  through `browser.close()`, which can hang on the same GPU. **An outer `timeout -k` is
+  the last resort**: its SIGKILL skips those handlers and can leave a Chromium tree
+  standing, idle, in the next run's way, so check for one before you measure anything.
 - **A script that needs Babylon's own classes must import the URL the PAGE
   loaded, and find it off the resource timeline.** Vite pre-bundles
   `@babylonjs/core` into `/node_modules/.vite/deps/@babylonjs_core.js` under a

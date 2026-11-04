@@ -68,6 +68,7 @@ import { join } from "node:path";
 import {
   bootMap,
   freeze,
+  hardLimit,
   installRound,
   launchClient,
   MAP_IDS,
@@ -91,6 +92,7 @@ const ROWS = new Set(
 );
 const maps = args.filter((a) => !a.startsWith("--"));
 const targets = maps.length ? maps : MAP_IDS;
+hardLimit(3600);
 
 /** The overlaps `--pixels` reports: a blended surface, then what it lies over. */
 const OVERLAPS = [
