@@ -366,8 +366,7 @@ attribute uv2: vec2f;
 #endif
 
 // No instances declaration and no bones, and both absences are facts about the
-// game rather than omissions. Nothing here is drawn instanced — the one
-// thin-instanced surface is the grass, which has a shader of its own — and
+// game rather than omissions. Nothing here is drawn instanced and
 // there is no rigged asset in the tree at all, so the skinned+textured variant
 // this shader used to carry had no caller left. Deleting it took the two bone
 // includes with it, and with them two of the four grandfathered deep imports
@@ -398,7 +397,7 @@ uniform windBough: vec4f;
 uniform windBoughRate: vec4f;
 uniform windBoughFade: vec2f;
 // The eye, for that fade alone. Declared in the fragment stage too; Babylon
-// puts both stages' uniforms in one buffer, as the grass shader leans on.
+// puts both stages' uniforms in one buffer.
 uniform camPos: vec3f;
 
 varying vNormalW: vec3f;
@@ -994,7 +993,8 @@ export class CelMaterialFactory {
 
   // The key light as every material HOLDS it: these two objects are handed
   // out by reference and never replaced, only written into, so a map's key
-  // reaches the grass and the water in the same write as the cache.
+  // reaches the water in the same write as the cache, and the grass in the
+  // frame it copies them (`GrassSystem.commit`).
   private readonly lightDir = new Vector3(-0.5, -0.9, 0.4).normalize();
   private readonly lightColor = new Color3(0.55, 0.62, 0.8);
   private keyWrap = 0;
@@ -1119,7 +1119,7 @@ export class CelMaterialFactory {
   private palette = new Float32Array(MAX_PALETTE * 3);
 
   /**
-   * Every shadow a lit material samples, and the grass and water that sample
+   * Every shadow a lit material samples, and the water that samples
    * them too — see `shaders/ShadowBindings.ts`. Published into by the systems
    * that render the maps; the factory's part is only to seed each material it
    * mints (`applyShadow` below).
@@ -2771,8 +2771,8 @@ const fogState = { color: new Color3(0.05, 0.06, 0.08), start: 24, end: 78 };
  *
  * A module constant rather than a field for the reason `CONFIG.wind` is one
  * table rather than a per-map override: the air over a valley is not something
- * a map states, and nothing in the game changes it at runtime. `GrassShader`
- * normalises the same pair for its own material — two readers of one bearing,
+ * a map states, and nothing in the game changes it at runtime. `GrassSystem`
+ * normalises the same pair for its own block — two readers of one bearing,
  * which is exactly what moving it out of `CONFIG.grass` bought.
  */
 

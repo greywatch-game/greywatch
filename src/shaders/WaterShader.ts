@@ -418,7 +418,7 @@ uniform pointCount: f32;
 // below as real consts, and the split is forced rather than stylistic: a
 // uniform array's size must be a literal or a #define, because Babylon resolves
 // the bound out of the preprocessor table when it lays out the leftover UBO and
-// a WGSL const is not in that table. GrassShader settled this.
+// a WGSL const is not in that table. The grass's shader settled this.
 const MAX_POINT_LIGHTS: i32 = ${MAX_POINT_LIGHTS};
 const TAU: f32 = 6.2831853;
 

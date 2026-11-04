@@ -522,6 +522,8 @@ export interface PoolFacts {
   sky?: number;
   /** Absent before report version 31. */
   zones?: number;
+  /** Absent before report version 32. */
+  grass?: number;
 }
 
 export interface ProfileGraphics {
@@ -1312,7 +1314,10 @@ export function buildReport(
     // 31: `pools.zones`, the rings' and the flags' draws, in `pools.drawn` too:
     // since `BABYLON_EXIT.md` X4.6b none is in `counters.drawCalls`. Nothing else
     // changed meaning.
-    version: 31,
+    // 32: `pools.grass`, the blades' and the turf's draws, in `pools.drawn` too:
+    // since `BABYLON_EXIT.md` X4.6c none is in `counters.drawCalls`. Nothing else
+    // changed meaning.
+    version: 32,
     build: buildStamp(),
     takenAt: new Date().toISOString(),
     reason,

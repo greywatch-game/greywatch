@@ -44,10 +44,10 @@
  * one failed for the map (said once, `onPaletteFailed`); the probes'
  * VIEWS of the culls (`probeView`) and the glow's (`glowView`) while their
  * holders keep them, and with the map at the latest.
- * WHY THAT POINT, AND THE LANDFORM LAST: the turf (`GrassSystem`) is a blend
- * laid over the floor on group 0's alpha-tested list, and it writes no depth
+ * WHY THAT POINT, AND THE LANDFORM LAST: the turf (`GrassDraw`) is a blend
+ * laid over the floor at `"opaque"`, and it writes no depth
  * of its own — so the floor, and a road beside it, must be drawn before that
- * list, or they would paint over it. The point is after the sky dome, so the
+ * point, or they would paint over it. The point is after the sky dome, so the
  * blocks are drawn there too, AHEAD of the landform: the floor behind a
  * building then fails the depth test before it shades, rather than being
  * shaded and painted over (`BABYLON_EXIT.md` X3.5, `FINDINGS.md` 61).

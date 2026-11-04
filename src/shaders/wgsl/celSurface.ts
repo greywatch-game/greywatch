@@ -73,7 +73,7 @@ export const CEL_SURFACE = `
 // the bound out of the preprocessor table when it lays out the leftover UBO and
 // a WGSL const is not in that table — while a #define is the worse of the two,
 // since the processor implements one as an un-anchored regex over the whole
-// source. GrassShader settled this; see docs/rendering.md.
+// source. The grass's shader settled this; see docs/rendering.md.
 const MAX_POINT_LIGHTS: i32 = ${MAX_POINT_LIGHTS};
 
 // How big a light is in a mirror — the exponent of the lobe the mirrored ray
@@ -549,7 +549,7 @@ fn celSurface() -> vec4f {
   // what breaks that up is variation across the block rather than between the
   // buildings in it.
   //
-  // INTERPOLATED, and that is not a detail. GrassShader gets away with a
+  // INTERPOLATED, and that is not a detail. wgsl/grass.ts gets away with a
   // floor()-cell hash because a tuft is a quarter of a metre and lands inside
   // one cell. On a six-metre wall a stepped hash draws a hard vertical seam
   // through the middle of it with no geometry behind it, which is worse than

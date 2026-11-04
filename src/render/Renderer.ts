@@ -78,14 +78,15 @@
  *   drawn after a depthless sky must be nearer than it or the sky paints over it,
  *   and anything before it spends shading the sky covers. It is the dome's
  *   (`SkyDraw`, `BABYLON_EXIT.md` X4.5c, added at construction and so first of
- *   the list). **One opaque draw stands behind it**, the capture zones nearer than
- *   the field's blades (`ZoneDraw`, X4.6b), because what they tie with on the host's
- *   opaque list must keep the tie; an empty list asks nothing of the pass.
+ *   the list). **Two opaque draws stand behind it**, the capture zones nearer than
+ *   the field's blades (`ZoneDraw`, X4.6b) and on some frames those blades
+ *   (`GrassDraw`, X4.6c), because what they tie with on the host's opaque list must
+ *   keep the tie; an empty list asks nothing of the pass.
  * - `"beforeAlphaTest"`: after the group's opaque meshes and before its
  *   ALPHA-TESTED ones — or, in a frame with none of those, immediately ahead
- *   of `"opaque"`. An opaque draw that something on the alpha-tested list
- *   is laid OVER goes here: that list is where a blend that must land after
- *   the surface under it is put (the turf, `GrassSystem`), and
+ *   of `"opaque"`. An opaque draw that something at `"opaque"`
+ *   is laid OVER goes here: that is where a blend that must land after
+ *   the surface under it is put (the turf, `GrassDraw`), and
  *   the turf writes no depth of its own — so the FLOOR it lies on must be in
  *   the depth buffer, and in the picture, before it draws. The world's other
  *   opaque draws go here too, AHEAD of the floor (`WorldBlocks`): the point
@@ -102,7 +103,8 @@
  *   a surface they pass where it has not written yet, and drawn after the turf,
  *   which writes no depth, they paint over any of it against the sky.
  * - `"opaque"`: after the group's opaque and alpha-tested meshes and before
- *   anything blended in it — its particles and its transparent meshes. No
+ *   anything blended in it — its particles and its transparent meshes. It is the
+ *   turf's (`GrassDraw`, `BABYLON_EXIT.md` X4.6c). No
  *   OPAQUE draw goes later, because the blended surfaces write no depth: an
  *   opaque wall drawn after the glazing or the water in front of it paints
  *   over them, and one drawn after a particle in front of it paints over

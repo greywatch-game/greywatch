@@ -47,7 +47,7 @@
  * and asks for it ahead of the frame (`render/PipelineCache.ts`), so the
  * warm-up only has to wait for them — which is why an effect pool of ours is
  * never POSED at a vantage (`BABYLON_EXIT.md` X4.4e). What the vantages still
- * draw for is Babylon's own meshes: the grass and its turf, the
+ * draw for is Babylon's own meshes: the
  * water, the glazing, the blob shadows, the
  * particles, and the three blended pools still Babylon's — `CombatFx`'s
  * sparks and dust discs and `BlastDebrisSystem`'s scorch, which keep a

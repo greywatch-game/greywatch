@@ -853,7 +853,7 @@ export class ShadowSystem {
       // Inside the guard, where it belongs: this is the branch that just
       // decided the shadow camera moved, and the matrix is a function of
       // nothing else. Outside it, every frame paid a `setMatrix` on every cel
-      // material plus the grass and the water to re-hand them a matrix that
+      // material plus the water to re-hand them a matrix that
       // had not changed — and the contract line above already claimed
       // otherwise.
       //

@@ -1508,9 +1508,10 @@ src/
     GrassSystem.ts      # The grass field stood around the EYE: patches of
                         #   blade seeds chosen per frame in view (`follow`,
                         #   pushed from `tick` in every state), each drawn from
-                        #   the smallest prefix mesh that holds the blades it
+                        #   the smallest prefix run that holds the blades it
                         #   keeps, and the TURF sheet under them. Cost is what
-                        #   is in view, never the map's grass area
+                        #   is in view, never the map's grass area. Plain arrays:
+                        #   render/GrassDraw.ts draws them (X4.6c)
   dev/                  # Dev-only tools that are not the editor. Same rule:
     mixer/              #   dynamically imported, never on the static graph
       index.ts          #   The F4 audio mixer: a slider per family and per
@@ -2541,6 +2542,13 @@ src/
                         #   transform, the wind's ramp and rigged layers, the
                         #   varyings. Babylon-free; shared verbatim with
                         #   src/render/; no y flip (each side's main owns it)
+      grass.ts          # THE GRASS as plain strings (X4.6c): blades BUILT in the
+                        #   vertex stage off the mask (the keep threshold over
+                        #   rank, the lean, the gusts carried downwind, bodies
+                        #   pushing through) and the turf, a density RAMP blended
+                        #   over the floor, its patches stitched edge to edge
+                        #   (`TURF_LODS`). One lighting function for both.
+                        #   Babylon-free: render/grassProgram.ts assembles it
       flame.ts          # The FIRE as plain strings both renderers assemble
                         #   (X4.4d): the noise and drawn clock, the vertex
                         #   stage (tongue, ember, bounds marker) and the
@@ -2587,12 +2595,6 @@ src/
                         #   the grid and lighting it from one function, Fresnel
                         #   mirror, light cut hard on the waves, and the hole a
                         #   rotor tears in it. WGSL
-    GrassShader.ts      # Blades BUILT in the vertex stage off the mask: the
-                        #   keep threshold over rank, the lean, the gusts carried
-                        #   downwind, bodies pushing through; and the turf's
-                        #   material — a density RAMP blended over the floor,
-                        #   its patches stitched edge to edge (`TURF_LODS`).
-                        #   One lighting function for both. WGSL
     FlameShader.ts      # THE FIRE: every open flame's one material. Tongues
                         #   that boil on twos in hard bands, embers on the
                         #   smooth clock, and the glow-mask TWIN that runs the
@@ -2823,6 +2825,16 @@ src/
                         #   surface, the near ones at "first" behind the dome, the
                         #   far FIRST of ours at "beforeAlphaTest"; the gate, the
                         #   frustum, the nearest-first order and the split Game's
+    GrassDraw.ts        # THE GRASS as OUR renderer draws it (X4.6c), in an editor
+                        #   build too: a blade or turf mesh a run of one index
+                        #   buffer, instanced, a patch an instance; the mask and
+                        #   the block, the patches' buffers, the turf at "opaque"
+                        #   and the blades at "first" or "beforeAlphaTest" as
+                        #   Game.grassPull says; what is in view is GrassSystem's
+    grassProgram.ts     # Its program (X4.6c): the field's block and mask (one
+                        #   group 1), the two geometries, the frame's block with
+                        #   the field's own names renamed out of it, the blades'
+                        #   and the turf's state, TURF_BLEND
     SkyDraw.ts          # The sky's DOME and MOON as OUR renderer draws them
                         #   (X4.5c): the session's three pipelines, each piece's
                         #   arrays and block from setSky to clearSky, the dome at

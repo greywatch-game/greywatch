@@ -19,9 +19,11 @@
  * cloth's shape is the simulation's, which hands over its own arrays; **the
  * nearest-first order is drawn at TWO points**, because what is left of Babylon's
  * opaque list holds a place in it and can only be drawn around: the surfaces
- * nearer than the field's blades at `"first"`, behind the dome, and the rest at
- * `"beforeAlphaTest"`, behind that list and FIRST of everything of ours, which the
- * list is ahead of (`Game.installMap` installs it first). Every test is LEQUAL, so
+ * nearer than the field's blades at `"first"`, behind the dome and ahead of the
+ * blades on a frame they are there (`GrassDraw`), and the rest at
+ * `"beforeAlphaTest"`, behind that list and FIRST of everything of ours but the
+ * blades on a frame they are there, which the
+ * list is ahead of (`Game.installMap` installs it so). Every test is LEQUAL, so
  * an equal depth goes to the later draw, and a depth this close to the far plane
  * ties for real where a blade grows through a stone: at either point alone, tens of
  * pixels flip by up to 113/255 (`BABYLON_EXIT.md` X4.6b has the numbers, and what

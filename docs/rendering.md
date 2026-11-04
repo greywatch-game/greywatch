@@ -260,10 +260,9 @@ world-keyed term on a *moving* mesh makes it shimmer as it walks.
 
 **Every material `CelMaterialFactory` hands out is frozen, and `remember` is
 the one door into the cache** — the six creation paths all file through it, so
-no future seventh can leave one unfrozen by omission. `createGrassMaterial`,
-`createTurfMaterial` and the water's factory freeze on the same argument at
-their single return — the grass's one material is worn by every blade patch
-mesh, which is safe because they differ only in how many blades they hold.
+no future seventh can leave one unfrozen by omission. The water's factory
+freezes on the same argument at its single return (the grass's two materials did
+until `BABYLON_EXIT.md` X4.6c took them out of Babylon).
 
 **What freezing skips is the ASKING, not the answer.**
 `ShaderMaterial.isReady` is called for every submesh of every draw — in the
@@ -713,7 +712,7 @@ nothing alpha-blended writes depth, and the capture markers must not
 derived from the bodies behind a plume was painted over the plume at full
 strength and read as ink floating in FRONT of the effect. The channel nothing
 was using carries the answer. Everything opaque writes **0** into it —
-`CelShader`'s `opaqueAlpha` uniform, and a literal 0 in `GrassShader` and
+`CelShader`'s `opaqueAlpha` uniform, and a literal 0 in `wgsl/grass.ts` and
 `WaterShader` — a pixel of sky holds **1** (the dome's literal, and the clear on a
 frame with no map, `applyClearColor`), and every alpha-blended draw
 accumulates into it with no help at all, because Babylon's `ALPHA_COMBINE`
@@ -1813,9 +1812,11 @@ edge of a grass rect and at the waterline. The lookup and the band function are
 shared so all three sample one depth map with one kernel — the WGSL includes
 `celShadow` and `celBand`, taken by all three.
 `ShadowBindings.registerShadowConsumer` /
-`unregisterShadowConsumer` is how a non-cel material joins the per-frame shadow
-uploads. **Registering is half the contract and unregistering is the other
-half**: grass and water are rebuilt every round, and a material left registered
+`unregisterShadowConsumer` is how a non-cel material of Babylon's joins the
+per-frame shadow uploads, and since `BABYLON_EXIT.md` X4.6c the water's is the one
+left: the grass reads the frame's shadow fields and textures, as everything of
+ours does. **Registering is half the contract and unregistering is the other
+half**: the water is rebuilt every round, and a material left registered
 after its `dispose` takes uniform writes for the rest of the session. Water
 offsets its shadow sample along the FLAT up-vector rather than the wave normal,
 for the same reason the cel shader offsets along the facet rather than the
@@ -2400,7 +2401,7 @@ floor** — on Harrowmead, cracked earth. The TURF is a sheet laid on the same
 ground from the same mask, in the colour the field reads as from the distance
 it is drawn at: the dark floor of the stand under your feet, the field's own
 average green on the far hillside. Three patch meshes (1, 2 and 4 m cells,
-`TURF_LODS` in `GrassShader.ts`) out to the rung's `turf` reach, capped at the
+`TURF_LODS` in `wgsl/grass.ts`) out to the rung's `turf` reach, capped at the
 map's `fogEnd`. **It is biased toward the eye by `ROAD_DEPTH_UNITS`, because it
 IS a road's problem** — a sheet coplanar with the floor — and it stays under a
 road by growing nowhere a road is. Under water it does not grow at all.
@@ -2421,21 +2422,16 @@ however coarse the patch drawing it.
 frame's coverage alpha alone.** Under `ALPHA_COMBINE` it would add itself to
 the coverage `CelInk` scales its edge by, and take the ink off every blade
 standing in a lush field — so its colour blends `SRC_ALPHA / ONE_MINUS_SRC_ALPHA`
-and its alpha `ZERO / ONE`. Babylon has no alpha mode for that, so
-`createTurfMaterial` writes the factors into the engine's alpha state on BIND
-and sets the mode back to disabled on UNBIND; the WebGPU pipeline cache reads
-that state's arrays at draw time, and resetting the MODE is what makes the next
-`setAlphaMode(COMBINE)` rewrite them rather than early-out on a mode it thinks
-is already set. Two more things follow. It draws on group 0's **ALPHA-TEST
-list**, the clouds' trick for the clouds' reason until they became ours — that
-list is the ORDER, and a blend has to land after the floor it lies over, which
-the opaque list does not promise. **Since `BABYLON_EXIT.md` X3.5 the floor and the roads are OUR
-renderer's, and they keep this contract by a draw point of their own**:
-`"beforeAlphaTest"`, after Babylon's opaque list and before this one ("Our
-renderer's frame", below). Drawn where the blocks are, at the end of this list,
-they would paint over the turf. And it writes **no depth**: the floor has
-written the surface, the blades are drawn before it and test it out where they
-stand, and a sheet that wrote depth wherever it was a hundredth covered would
+and its alpha `ZERO / ONE` (`TURF_BLEND`, `render/grassProgram.ts`; while it was
+Babylon's, its material wrote those factors into the engine's alpha state on bind,
+Babylon having no alpha mode for them). Two more things follow. It draws at
+`"opaque"` (`BABYLON_EXIT.md` X4.6c), where group 0's **ALPHA-TEST list** had it until
+then: a blend has to land after the floor it lies over, and **the floor and the roads
+are at `"beforeAlphaTest"`**, ahead of it ("Our renderer's frame", below), with the
+clouds at `"afterSurfaces"` behind them, which is the one place their far depth is
+written ahead of it. Nothing else is at `"opaque"`. And it writes **no depth**: the
+floor has written the surface, the blades are drawn before it and test it out where
+they stand, and a sheet that wrote depth wherever it was a hundredth covered would
 hide every coplanar mark laid after it.
 
 **The patches are STITCHED rather than skirted.** A fine patch beside a coarse
@@ -2486,29 +2482,94 @@ else takes the normal turned most of the way up, so a stand is lit like the
 ground it covers and does not scintillate facet by facet under a banded key.
 Before this a field under Harrowmead's 14-degree sun stood in its own shade.
 
-### Three rules that are not visible until they break
+### The field, ours: one draw for each mesh it was
+
+**Since `BABYLON_EXIT.md` X4.6c no blade and no turf is a Babylon mesh, in a round or
+in an editor build, and the two `ShaderMaterial`s are gone**: `render/GrassDraw.ts`
+draws a patch mesh as a RUN of one index buffer, instanced, a patch an instance, over
+the program in `render/grassProgram.ts` and the bodies in `shaders/wgsl/grass.ts`.
+`GrassSystem` keeps the walk, the frustum test, the levels of detail and every number
+as it had them and writes plain arrays: a patch is two `vec4f`s rather than a matrix
+(side, lift and corner; edges and corners), the runs' patches go up end to end in a
+buffer of ours as the main pass begins, and five-triangle runs share one set of seeds
+and one-triangle runs another, each a prefix of it, where every mesh held a copy.
+
+- **The field states its own eye, lamps, fog and wind, as its materials did**, in a
+  block of its own (`GRASS_BLOCK`), under the names the bodies and the shared chunks
+  read, and those names on the FRAME's block are renamed for these programs alone
+  (`FIELD_FRAME_BLOCK`), the layout unmoved, so the frame's one bind group binds. It
+  matters that `pointLocal` in `celShadow` reads the field's `pointPos`: the frame's
+  are the same lamps only on a frame both were pushed. So what the field takes from the
+  frame is the view-projection, every shadow, the clouds, the lightning and the lamps'
+  cones. A later step may well collapse this; it costs a 1.5 KB block a frame and it is
+  what kept the bytes.
+- **In every pass, read and not assumed.** No shadow map, no lamps' atlas, no bake and
+  no glow's mask, before or since (each patch mesh was `noShadowCaster` and `noGlow`,
+  in no render target's list). It RECEIVES shadow, clouds and the flash from the frame.
+  It is inked because blades write depth and alpha 0, the turf writing neither to the
+  channel the ink reads. Its fog is its own `fieldAtmosphere` over the field's values,
+  and its wind its own clock (`values.time`, which `update` advances, so a held world
+  is a held field) over `CONFIG.wind`'s one bearing.
+- **The size gate is the field's one sphere** (`Game.drawGrass`, `keepsSphere`), as
+  `offer` asked it of each patch mesh, which all held it. No Babylon frustum test ever
+  read them (`alwaysSelectAsActiveMesh`); the walk's own is the only one.
+- **A rung change rebuilds the blades' seeds and nothing else** (`setQuality`), and a
+  map's teardown takes the lot back (`GrassSystem.dispose`, `GrassDraw.uninstall`), the
+  mask's texture and every buffer. An editor tier-3 rebuild is that teardown and a new
+  build, as ever (`installMap`).
+- **Nothing in a frame allocates but the frame a patch buffer grows**, and that is
+  safe where it happens: inside the render, ahead of this frame's draws, the last
+  frame already submitted.
+
+**The blades are drawn at ONE of TWO points a frame, and neither point alone is
+right.** They sort as a block at the field's centre, on a list that still holds the
+water; under the 0.05 m near plane a 32-bit depth steps by centimetres at range, and a
+blade standing in water crosses its surface. So an exact tie is real and goes to the
+later draw, and which draws later depends on the eye: Babylon's list has the field's
+centre nearer than the water from some and farther from others, on one map.
+
+| row | keys (field, water) | at `"beforeAlphaTest"` | at `"first"` |
+| --- | --- | --- | --- |
+| `greyfen-shore-ahead` | 85.5, 85.7 | 355 px by up to 60/255 | byte-equal |
+| `harrowmead-shore-ahead` | 34.6, 76.3 | 251 px by up to 154/255 | byte-equal |
+| `harrowmead-shore-behind` | 189.8, 165.9 | byte-equal | 58 px by up to 76/255 |
+
+**So `Game.grassPull` makes Babylon's comparison, frame by frame, inside the render**:
+`"first"`, behind the dome and the zones' near run and ahead of what is left of that
+list, unless a body the frame's drawn patches may stand in (`GrassSystem.drawnReeds`,
+off `reedsOf`, a bit a body) sorts at or ahead of the field's centre, and then
+`"beforeAlphaTest"`, first of ours, the zones' far run next. Every map but Hollowmere
+has at most one reedy body (Coldharbour has none), so the comparison is the whole of
+it there. **Hollowmere alone has two, and a frame whose
+drawn patches reach both, one each side of the key, cannot be held by two points**:
+it falls behind the list, flipping a tie against the farther water only. 98 poses built
+to find it (`BABYLON_EXIT.md` X4.6c's note), 72 of them with water on both sides of the
+key and 40 of those reaching both bodies, are byte-equal to Babylon's order; the one
+pose a coarser test moved, 3 px by 6/255, had no patch standing in the nearer water and
+is held by the patch test. It is judged small and not proved absent, and it goes when
+the water is ours (X4.6d). **The `backed` panes are on that list too, and
+no blade can reach one**: over all three maps with any, not one of 14,844 triangles
+is within a blade's height and sway of a texel that grows grass.
+
+### The rules that are not visible until they break
 
 - **`follow` is pushed from `tick` in EVERY state**, beside the water's, and
   `update` (the clock, the lamps, the pushers) is the camera tail. A field
   chosen only in the tail is a deploy screen over bare ground — which is how
-  the rule was found. **And it is pushed BEFORE `WorldCulling.update`**,
-  because `follow` is what sets each patch mesh's `isVisible` and the cull's
-  `offer` drops anything not visible: after it, a mesh that gained its first
-  patch this frame was not offered and blinked out for one frame. The middle
-  LOD rings are narrower than a patch, so running down a meadow emptied and
-  refilled one every few strides — an 8 m patch 13–26 m ahead flickering about
-  three times a second. The water's `follow` stands beside it for the same
-  reason (its grid/quad swap).
-- **A patch mesh with no patches this frame is made INVISIBLE, never merely
-  emptied.** Babylon draws a thin-instanced mesh at a count of zero as one
-  plain copy at its own origin, and this mesh's origin is a 1 m patch of grass
-  at the map's centre.
-- **Growing a patch mesh's instance buffer owes `resetDrawCache`.** Handing a
-  mesh a new buffer destroys the old one, and under `compatibilityMode =
-  false` the cached draw still names it: every frame after is a submit of a
-  destroyed buffer, which WebGPU refuses WHOLE — the entire frame comes out
-  black, not just the grass. The buffers start at 512 patches so a round rarely
-  grows one, and a test that forces growth is in `FINDINGS.md`.
+  the rule was found. It stands ahead of `WorldCulling.update`, where it had to
+  while a patch mesh's `isVisible` was what the cull's `offer` read, and the water's
+  `follow` still has that reason (its grid/quad swap). **The gate that replaced it
+  reads `keepsSphere`, so `drawGrass` stands AFTER that update**, with the other
+  draws of ours, for the eye it measures from.
+- **A run with no patches this frame is not drawn.** The mesh it was had to be made
+  INVISIBLE, Babylon drawing a thin-instanced mesh at a count of zero as one plain copy
+  at its own origin; a draw of ours is simply skipped.
+- **Growing a patches' buffer remakes group 2.** It starts with room for 2,048 patches
+  across a kind's runs, and doubles (`GrassDraw.growPatches`): the old buffer is
+  destroyed, and a group still naming it would have WebGPU refuse the submit WHOLE —
+  the entire frame comes out black, not just the grass. It was `resetDrawCache` on a
+  mesh until X4.6c. Forced in a live round by setting a kind's `capacity` to 1 and
+  cutting a run's `patches` short (X4.6c's note): the field draws on, whole.
 
 ### What it costs
 
@@ -3099,8 +3160,9 @@ column, which is what makes that read correctly.
 not do**: Babylon resolves the bound out of the preprocessor table when it lays
 out the leftover UBO, and a WGSL `const` is not in that table. Where the count is
 already a TypeScript constant, interpolate the NUMBER into the declaration and
-keep a real `const` for the loop bound — that is what `GrassShader` does with
-`MAX_PUSHERS` and `MAX_POINT_LIGHTS`, and it avoids the define trap below
+keep a real `const` for the loop bound — that is what `WaterShader` does with
+`MAX_POINT_LIGHTS` (and what settled it, the grass's, is ours since X4.6c, where
+an assembled block needs no such thing), and it avoids the define trap below
 entirely.
 
 **Prefer a WGSL `const` to a `#define` for a compile-time number.** The
@@ -3233,9 +3295,10 @@ transparent list, the seam's item 6 itself; see "The sky"):
   place** (`SkyDraw`, X4.5c): the dome writes no depth and is depth-tested at a
   600 m radius, so it is right only because everything past 600 m draws AFTER it,
   and nothing may go here AHEAD of it. **The capture zones nearer than the field's
-  blades stand behind it** (`ZoneDraw`, X4.6b), the one opaque draw here, for the ties
-  they hold against what is left of group 0's opaque list ("The capture zone"). An
-  empty list asks nothing of the pass. **Proved**
+  blades stand behind it** (`ZoneDraw`, X4.6b), **and the blades behind those on a frame
+  no water they stand in sorts ahead of them** (`GrassDraw`, X4.6c), the two opaque draws
+  here, for the ties they hold against what is left of group 0's opaque list ("The
+  capture zone", "The grass"). An empty list asks nothing of the pass. **Proved**
   by a throwaway draw of ours at the point, while the dome was still Babylon's: a
   depthless full-frame red left the frame byte-equal under the dome while its count
   climbed and showed through where the dome was hidden, and the same triangle
@@ -3250,9 +3313,11 @@ transparent list, the seam's item 6 itself; see "The sky"):
   A frame whose alpha-tested list is empty makes no such call, and the point
   fires at `"opaque"`'s trigger instead, immediately AHEAD of it, so the
   order holds every frame. **The LANDFORM is drawn here** — the floor, the
-  rim and the road merge — because the turf is a blend on the alpha-tested
-  list that writes no depth and must land on a floor already drawn ("The
-  turf", above). **So are the blocks and the scatter, AHEAD of the
+  rim and the road merge — because the turf is a blend at `"opaque"`, behind this
+  point, that writes no depth and must land on a floor already drawn ("The
+  turf", above). **The blades are first here on a frame they are not at `"first"`,
+  and the zones' far run right behind them** ("The grass"). **So are the blocks and the
+  scatter, AHEAD of the
   landform** (since X3.5's measurement): the point is after the sky dome, so
   the dome's objection to the group's start (below) does not reach it, and a
   building drawn first spares the floor behind it its shading. **And the
@@ -3322,8 +3387,8 @@ PICTURE (the palette's ties are tabled in "The palette, ours", under the glow).
 later surface painting over it, so whatever Babylon draws OPAQUE without
 writing depth is drawn over by every surface of ours behind it. Since X3.5
 that includes the FLOOR. **So a mesh that lies on the floor and
-writes no depth must be BLENDED or on group 0's ALPHA-TEST list (the turf),
-never on the opaque list**, or the floor paints over it every frame —
+writes no depth must be BLENDED, on group 0's ALPHA-TEST list or at `"opaque"` (the
+turf), never on the opaque list**, or the floor paints over it every frame —
 a rule anyone adding a decal, a mark or a sheet on the ground can break
 without touching the renderer (`CLAUDE.md` states it). The sky dome is the one
 deliberate case: it writes no depth, draws first of all (`"first"`, ours since
@@ -4849,7 +4914,7 @@ which drew before every draw of ours at that point, and the order among the
 fires is the queue's own — and **the mask's after the billows'** (Babylon's mask drew
 the fires after every draw of ours), by the same vertex module, no depth
 written, LEQUAL. What moved is only the fires' interleave with the meshes
-Babylon still drew in that queue — the grass, the capture zones until X4.6b, the
+Babylon still drew in that queue — the grass until X4.6c, the capture zones until X4.6b, the
 backed panes, the water — every one of which writes depth, so it is an exact tie
 or nothing. In the mask the fires now go down with ours at its open, AHEAD of
 every mesh Babylon's mask still draws (the sparks, and the moon until X4.5c made
@@ -6871,7 +6936,8 @@ the frame's `camPos`, and its `world` is composed as Babylon composes a node's
   not `"opaque"`, behind it: the ring was on that list until X4.5b
   (`needAlphaTesting`, which tested nothing), and it and the turf were all the list
   held, ordered by material id (`RenderingGroup.PainterSortCompare`), the ring's
-  first, because the sky is applied ahead of the map's grass. The disc
+  first, because the sky is applied ahead of the map's grass (the turf is at `"opaque"`
+  since X4.6c, the same side of the clouds). The disc
   (group 0's blended pass, after them) needs no order from them — it stands behind
   the depth a cloud writes and is rejected by it.
 - **The drift is a TURN of the ring about the map's centre and never of what lights
@@ -7231,9 +7297,10 @@ DRAWING; the meter they annotate is `ConquestSystem`'s and is in
   curiosity**: under a 0.05 m near plane a 32-bit float depth steps every
   half-millimetre at 18 m and every 3 mm at 53 m, so a blade growing through a stone
   ties along their intersection for real. A surface nearer than the field's blades
-  (all at one key, the field's centre, `GrassSystem.bladeSortCentre`) hangs at
+  (all at one key, the field's centre, `GrassSystem.sphere`) hangs at
   `"first"`, behind the dome, and one farther at `"beforeAlphaTest"`, first of everything
-  of ours there, which that whole list was ahead of. **At either point alone it moves**:
+  of ours there but the blades on a frame they are there ("The grass"), which that whole
+  list was ahead of. **At either point alone it moves**:
   all at `"beforeAlphaTest"`, 8 pixels of `ring-stones` and 7 of `ring-flown-far` by up
   to 68/255; all at `"first"`, 54 of `ring-behind-field` by up to 113/255. What is
   left of the interleave is the water and the `backed` panes, whose keys the split does

@@ -458,7 +458,8 @@ async function editorBuild(id) {
     const layout = g.mapDef.layout;
     const stamp = () => ({
       water: g.water.bodies.map((b) => b.grid.uniqueId),
-      grass: g.scene.meshes.filter((m) => /^grass/.test(m.name)).map((m) => m.uniqueId),
+      // No mesh since X4.6c: the field's mask, which a rebuild bakes anew.
+      grass: g.grass.mask,
     });
     const a = stamp();
     if (layout.water?.[0]) layout.water[0].width += 2;
@@ -470,7 +471,9 @@ async function editorBuild(id) {
     if (layout.grass?.[0]) layout.grass[0].width -= 2;
     return {
       waterRemade: a.water.length > 0 && a.water.every((u) => !b.water.includes(u)),
-      grassRemade: a.grass.length > 0 && a.grass.every((u) => !b.grass.includes(u)),
+      grassRemade: a.grass !== null && a.grass !== b.grass && b.grass !== null,
+      grassDrawn: { ...g.grassDraw.stats },
+      grassMeshes: g.scene.meshes.filter((m) => /^grass/.test(m.name)).length,
     };
   });
   console.log(`  a water rect and a grass rect edited: ${JSON.stringify(edited)}`);

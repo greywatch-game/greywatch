@@ -565,6 +565,23 @@ export class WaterSystem {
     }
   }
 
+  /**
+   * The centre body `i` sorts at on group 0's opaque list, its grid's and its
+   * quad's one rect, or null with no such body: read by the one thing of ours that
+   * must keep its place against it (`Game.grassPull`, `BABYLON_EXIT.md` X4.6c), and
+   * gone when the water is ours (X4.6d). `i` is the rect's index in the map's list.
+   */
+  sortCentre(i: number): Vector3 | null {
+    const body = this.bodies[i];
+    return body ? body.grid.getBoundingInfo().boundingSphere.centerWorld : null;
+  }
+
+  /** The tallest body `i`'s surface stands, its crest off its rest level, or null with no such body. */
+  surfaceTop(i: number): number | null {
+    const body = this.bodies[i];
+    return body ? body.grid.getBoundingInfo().boundingBox.maximumWorld.y : null;
+  }
+
   dispose(): void {
     // The next build's materials have never been told where the eye is.
     this.followed = false;

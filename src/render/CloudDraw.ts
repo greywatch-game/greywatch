@@ -11,8 +11,8 @@
  * Invariants: it DECIDES NOTHING: where the ring stands, its turn, its order and
  * every value it is lit with are `Sky`'s (`systems/Sky.ts`), held in the recipe
  * it was handed and read every frame it draws; it draws at `"afterSurfaces"`, so
- * after every opaque surface of Babylon's and ours and ahead of group 0's
- * alpha-tested list, the turf, as Babylon's alpha-test list drew the mesh ahead
+ * after every opaque surface of Babylon's and ours and ahead of the turf
+ * (`"opaque"`), as Babylon's alpha-test list drew the mesh ahead
  * of the turf (by material id, `RenderingGroup.PainterSortCompare`: the sky was
  * applied before the map's grass was built); front faces only, LEQUAL, depth
  * written; the draw is hung for the SESSION as the weapon's is, and draws in

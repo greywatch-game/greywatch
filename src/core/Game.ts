@@ -119,6 +119,7 @@ import { PoolDraw, type PoolKit } from "../render/PoolDraw";
 import { BlastDraw } from "../render/BlastDraw";
 import { CloudDraw } from "../render/CloudDraw";
 import { SkyDraw } from "../render/SkyDraw";
+import { GrassDraw } from "../render/GrassDraw";
 import { ZoneDraw } from "../render/ZoneDraw";
 import { FlameDraw } from "../render/FlameDraw";
 import type { CelRecipe } from "../render/celMaterial";
@@ -788,6 +789,13 @@ export class Game {
    * `zones`, fed by `drawZones` and pulled by `zonePull` inside the render.
    */
   private readonly zoneDraw: ZoneDraw;
+  /**
+   * The grass field as our renderer draws it (`BABYLON_EXIT.md` X4.6c), in an
+   * editor build as in a round; `grass` writes its runs and values, `drawGrass`
+   * passes it through the size gate and `grassPull` picks the blades' point
+   * inside the render.
+   */
+  private readonly grassDraw: GrassDraw;
   /**
    * The last render's frustum planes, as numbers (`zonePull`), and whether a
    * render has given any: what a surface is tested against inside the render, and
@@ -2173,7 +2181,8 @@ export class Game {
     // shader. It is the publisher of the shadow map, its matrix and its params,
     // which both now sample (see `celShadow`).
     this.water = new WaterSystem(this.scene, this.mats);
-    this.grass = new GrassSystem(this.scene, this.mats);
+    this.grassDraw = new GrassDraw(this.renderer, (into) => this.grassPull(into));
+    this.grass = new GrassSystem(this.grassDraw, this.mats);
     // Same relationship to `mats` as the two above, in the other direction:
     // this one PUBLISHES to it — the cube the glazing samples, baked from the
     // map itself. Built here so a pane material is born holding the sampler.
@@ -2471,7 +2480,8 @@ export class Game {
     // counted no tracer, mark, thrown or laid body, nor any case, since X4.4b,
     // nor any billow, shard or chunk since X4.4c, nor any fire since X4.4d,
     // nor the cloud ring since X4.5b, nor the dome and the moon since X4.5c, nor
-    // the rings and the flags since X4.6b (no pool, but their draws owe the sum).
+    // the rings and the flags since X4.6b, nor the grass since X4.6c (no pools,
+    // but their draws owe the sum).
     this.prof.setPools(() => ({
       drawn:
         this.pieceDraw.stats.drawn +
@@ -2481,7 +2491,9 @@ export class Game {
         this.flameDraw.stats.drawn +
         this.cloudDraw.stats.drawn +
         this.skyDraw.stats.drawn +
-        this.zoneDraw.stats.drawn,
+        this.zoneDraw.stats.drawn +
+        this.grassDraw.stats.blades +
+        this.grassDraw.stats.turf,
       masked:
         this.pieceDraw.stats.masked +
         this.blastDraw.stats.masked +
@@ -2495,6 +2507,7 @@ export class Game {
       clouds: this.cloudDraw.stats.drawn,
       sky: this.skyDraw.stats.drawn,
       zones: this.zoneDraw.stats.drawn,
+      grass: this.grassDraw.stats.blades + this.grassDraw.stats.turf,
     }));
     // The sky's ring is OUR renderer's (X4.5b), its dome and moon too (X4.5c), and
     // `Sky` is handed them below.
@@ -2516,6 +2529,7 @@ export class Game {
       { name: "the clouds", ready: this.cloudDraw.ready },
       { name: "the sky", ready: this.skyDraw.ready },
       { name: "the rings and flags", ready: this.zoneDraw.ready },
+      { name: "the grass", ready: this.grassDraw.ready },
     ];
     // The sky is painted once here, the boot map's, and re-applied per round
     // alongside the environment; it is DRAWN only while a map stands
@@ -3756,17 +3770,15 @@ export class Game {
     // frustum: a deploy screen over a meadow is a live view of it too. Nothing
     // here advances its clock — see `GrassSystem.follow`.
     //
-    // **Both of these come BEFORE the cull, because both decide `isVisible`
-    // on their own meshes and the cull's `offer` reads it.** The grass hides a
-    // patch mesh with no patches this frame and the water swaps a body's grid
+    // **The water's comes BEFORE the cull, because it decides `isVisible` on its
+    // own meshes and the cull's `offer` reads it.** The water swaps a body's grid
     // for its quad by distance; with the cull first, a mesh switched ON here
-    // was not offered and dropped out for exactly one frame. Running down a
-    // meadow that was an 8 m patch blinking out 13–26 m ahead about three
-    // times a second — the middle LOD rings are narrower than a patch, so one
-    // empties and refills every few strides. The water's live frames were
-    // safe only because the camera tail's `water.update` follows first; in a
-    // state with no tail it lost its near surface on the frame the eye came
-    // within the grid's reach.
+    // was not offered and dropped out for exactly one frame. Its live frames
+    // were safe only because the camera tail's `water.update` follows first; in
+    // a state with no tail it lost its near surface on the frame the eye came
+    // within the grid's reach. (The grass's patch meshes had the same rule, and
+    // are no meshes since X4.6c; what the cull says of the field is asked after
+    // it, in `drawGrass`.)
     this.grass.follow(this.cameraSys.camera);
     // And on the same terms and for the same reason: the map around the eye,
     // rather than the map. Every state renders and only some of them simulate,
@@ -4580,6 +4592,9 @@ export class Game {
     // …and the rings and the flags (X4.6b): through the size gate here, the
     // rest inside the render.
     this.drawZones();
+    // …and the grass (X4.6c) on the same terms, its patches chosen by `follow`
+    // above.
+    this.drawGrass();
     this.scene.render();
     this.prof.end(P.render);
     if (warming) this.unstageWarmFrame();
@@ -5464,6 +5479,7 @@ export class Game {
     this.debrisDraw.uninstall();
     this.flameDraw.uninstall();
     this.zoneDraw.uninstall();
+    this.grassDraw.uninstall();
     // The weapon stays drawn — the kit screen covers the menu — but a failure
     // of it with no round standing is the console's (X4.3c).
     this.viewDraw.onFailed((reason) => console.error(`[view] the weapon cannot be drawn — ${reason}`));
@@ -5696,7 +5712,13 @@ export class Game {
     // field's blades at the frame's `"first"`, ahead of what is left of that queue,
     // the rest here, first at this point. `ZoneDraw`'s header says why. An editor
     // build has none: `zones.build` is the round's.
+    // The BLADES between the two runs (X4.6c), at whichever of those two points
+    // the frame calls for (`grassPull`), so ahead of the far run here and behind
+    // the near run there, and the TURF first at `"opaque"`. These on either path:
+    // an editor build's field is the same field (`GrassDraw`'s header).
+    this.grassDraw.install((reason) => this.worldFailed(reason, owner));
     if (!editor) this.zoneDraw.install((reason) => this.worldFailed(reason, owner));
+    this.grassDraw.installNear();
     if (!editor) this.flameDraw.install((reason) => this.worldFailed(reason, owner));
     if (!editor) this.blastDraw.install((reason) => this.worldFailed(reason, owner));
     if (!editor) this.pieceDraw.install((reason) => this.worldFailed(reason, owner));
@@ -5792,6 +5814,7 @@ export class Game {
       map.terrain,
       map.size,
       map.margin,
+      (i) => this.water.surfaceTop(i),
     );
     // Where the edge of the map is, and whether it is a rule rather than a
     // wall. `margin` is 0 on every map closed by the rim, which turns the leash
@@ -6991,9 +7014,9 @@ export class Game {
    * clipping); in group 0's opaque order, nearest first by `eyeDistanceSq` off
    * `globalPosition`, the order the meshes were made in breaking a tie (a sheet's
    * field and band share one sphere), stable. **And which side of the field's
-   * blades each falls on** (`split`): they are still on that list, all at one key
-   * (their field's centre), and ties with them are real, so a surface drawn ahead
-   * of them stays ahead and one behind stays behind.
+   * blades each falls on** (`split`): they all sort at one key (their field's
+   * centre), and ties with them are real, so a surface drawn ahead of them stays
+   * ahead and one behind stays behind.
    */
   private zonePull(into: ZoneDraw): void {
     const eye = this.cameraSys.camera.globalPosition;
@@ -7014,7 +7037,7 @@ export class Game {
       this.zonePlanesHeld = true;
     }
     const clip = planes && !this.scene.skipFrustumClipping;
-    const blades = this.grass.bladeSortCentre;
+    const blades = this.grass.sphere;
     let bladeKey = Number.POSITIVE_INFINITY;
     if (blades) {
       const bx = blades.x - ex;
@@ -7051,6 +7074,62 @@ export class Game {
     }
     into.draws = n;
     into.split = near;
+  }
+
+  /**
+   * Hands our renderer this frame's GRASS (`BABYLON_EXIT.md` X4.6c): the field is
+   * drawn while the size gate keeps its one sphere (`WorldCulling.keepsSphere`, as
+   * `offer` asked it of every patch mesh, which all held that sphere), its patches
+   * chosen by `GrassSystem.follow` and the point its blades take asked inside the
+   * render (`grassPull`). In every state.
+   */
+  private drawGrass(): void {
+    const field = this.grass.sphere;
+    if (field && this.culling.keepsSphere(field.x, field.y, field.z, field.radius)) this.grass.commit();
+  }
+
+  /**
+   * Which point this frame's blades take (`GrassDraw`'s header), inside the render
+   * where the eye is this frame's: the blades were on group 0's opaque list, nearest
+   * first by `eyeDistanceSq` at their field's centre, and what is left of it holds a
+   * place against them, since a blade standing in water ties with it for real. So
+   * they go ahead of that list (`"first"`) unless a body of water their drawn patches
+   * may stand in sorts at or ahead of the field's centre, a tie of keys having gone
+   * to the mesh made first, which was the water's. **It is the comparison Babylon
+   * made, for every map with one reedy body and every frame whose reeds stand on one
+   * side of the key.** A frame whose drawn patches reach reedy bodies on both sides
+   * (only Hollowmere can) falls behind the list, flipping a tie with the farther
+   * water alone; `BABYLON_EXIT.md` X4.6c has what that measured, and it goes when the
+   * water is ours (X4.6d). The `backed` panes are on that list too, and no blade can
+   * reach one (measured, the same entry).
+   */
+  private grassPull(into: GrassDraw): void {
+    const field = this.grass.sphere;
+    let reeds = this.grass.drawnReeds;
+    let near = true;
+    if (field && reeds !== 0) {
+      const eye = this.cameraSys.camera.globalPosition;
+      const ex = eye.x;
+      const ey = eye.y;
+      const ez = eye.z;
+      const fx = field.x - ex;
+      const fy = field.y - ey;
+      const fz = field.z - ez;
+      const fieldKey = fx * fx + fy * fy + fz * fz;
+      for (let b = 0; reeds !== 0; b++, reeds >>>= 1) {
+        if ((reeds & 1) === 0) continue;
+        const c = this.water.sortCentre(b);
+        if (!c) continue;
+        const wx = c.x - ex;
+        const wy = c.y - ey;
+        const wz = c.z - ez;
+        if (wx * wx + wy * wy + wz * wz <= fieldKey) {
+          near = false;
+          break;
+        }
+      }
+    }
+    into.near = near;
   }
 
   /**

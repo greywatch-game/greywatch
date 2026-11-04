@@ -9,7 +9,7 @@
  * any more.
  * Invariants:
  * - The map is OUR renderer's in every state and on every rung that has one:
- *   Babylon's readers (the cel materials, the grass, the water, the
+ *   Babylon's readers (the cel materials, the water, the
  *   volumetric march) sample a wrapped view of its texture
  *   (`wrapShadowTexture`), our frame binds the texture itself (rule 5), and
  *   there is no generator to fall back to — a map ours cannot draw is the
@@ -247,7 +247,7 @@ export class BodyShadows {
    *
    * `mats` takes the matrix on the frames the window actually moved, which is
    * `ShadowSystem.update`'s argument verbatim — outside that guard this is a
-   * `setMatrix` on every cel material plus the grass and the water, every
+   * `setMatrix` on every cel material plus the water, every
    * frame, to re-hand them a matrix that had not changed.
    */
   update(

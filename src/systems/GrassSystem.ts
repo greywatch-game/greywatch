@@ -2,17 +2,18 @@
  * GrassSystem.ts — The grass field: a mask baked per round from the map's
  * GrassRects, a handful of PATCH meshes of blade seeds and of turf, and per
  * frame the patches around the eye that are in view, each drawn from the
- * smallest mesh that still holds everything it wants — plus the uploads of
- * time, camera, point lights and pushers to the two field materials.
- * Invariants: grass is VISUAL ONLY — unpickable, non-colliding, never
- * metadata.solid, no glow; ray tests and bots must not see it. The CPU's
+ * smallest mesh that still holds everything it wants — plus the values of
+ * time, camera, point lights and pushers the two programs read. Its PICTURE is
+ * `render/GrassDraw.ts` (`BABYLON_EXIT.md` X4.6c): this holds the runs and the
+ * block's values as plain arrays, writes them, and names no mesh and no material.
+ * Invariants: grass is VISUAL ONLY — no node, no collider, in no bake, no shadow
+ * map and no glow's mask; ray tests and bots must not see it. The CPU's
  * `keep` is the shader's `keepShare`, number for number: the mesh a patch is
  * drawn from is chosen off it, and a patch drawn from a mesh holding fewer
  * blades than the shader keeps is a patch with a hole in it. Every blade
- * patch mesh holds a PREFIX of one blade order, so a blade's place in the
- * patch is the same whichever mesh draws it. A patch mesh with no patches
- * this frame is made INVISIBLE, never merely emptied: Babylon draws a
- * thin-instanced mesh at a count of zero as one plain copy at its own origin.
+ * patch mesh is a PREFIX of one blade order, so a blade's place in the
+ * patch is the same whichever mesh draws it. A run with no patches this frame
+ * is not drawn at all.
  * `follow` is pushed from `tick` in every state; `update` is the camera tail
  * and runs after the camera and LightingSystem updates (shares the same 16
  * light slots) — same frame-order rule as WaterSystem.
@@ -22,38 +23,20 @@
  * thin instance each, drawn every frame from one bounding box over the whole
  * valley — so a map paid for its grass by AREA and every layout carried a
  * tuft budget spread as thin as its ground was wide. Now the blades are
- * placed on the GPU (`GrassShader`) and only the patches the eye can see are
+ * placed on the GPU (`shaders/wgsl/grass.ts`) and only the patches the eye can see are
  * drawn, dense near and thinning as `(near / d)^2` beyond, which is a
  * constant number of blades per unit of SCREEN. A hillside costs what can be
  * seen of it, and a map may state as much grass as it likes.
  */
-import {
-  BoundingInfo,
-  Color3,
-  Constants,
-  Frustum,
-  Matrix,
-  Mesh,
-  type Plane,
-  RawTexture,
-  Scene,
-  type ShaderMaterial,
-  Texture,
-  type TargetCamera,
-  Vector2,
-  Vector3,
-  Vector4,
-  VertexData,
-} from "@babylonjs/core";
+import { Frustum, Matrix, type Plane, type TargetCamera, type Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { GrassQuality } from "../core/settings";
 import type { Combatant } from "../entities/Combatant";
-import {
-  MAX_POINT_LIGHTS,
-  type CelMaterialFactory,
-  type PointLightData,
-} from "../shaders/CelShader";
-import { TURF_LODS, createGrassMaterial, createTurfMaterial } from "../shaders/GrassShader";
+import { Color3 } from "../math";
+import type { GrassDraw, GrassRun } from "../render/GrassDraw";
+import { createGrassValues, PATCH_FLOATS, type GrassValues } from "../render/grassProgram";
+import { MAX_POINT_LIGHTS, type CelMaterialFactory, type PointLightData } from "../shaders/CelShader";
+import { TURF_LODS } from "../shaders/wgsl/grass";
 import type { EnvironmentSpec } from "../world/environment";
 import { bakeGrassMask, type GrassMask, MAX_HEIGHT_SCALE } from "../world/grassMask";
 import type { GrassRect, WaterRect, WorldBox } from "../world/MapBuilder";
@@ -93,6 +76,7 @@ const SIMPLE_SHARE = 0.126;
 
 /** Patches per side of the coarse block the walk culls first. */
 const BLOCK = 4;
+
 
 /**
  * The order blades are drawn in within a patch: `n` roots in the unit square,
@@ -208,14 +192,12 @@ function bladeVertexData(
 }
 
 /**
- * One turf patch mesh: an `n` x `n` grid over the unit square. `position` is
- * (u, 0, v); the shader puts it on the ground, and puts a vertex on an EDGE
- * where the coarser patch beside it draws that edge.
+ * One turf patch mesh, appended to its kind's arrays: an `n` x `n` grid over the
+ * unit square. `position` is (u, 0, v); the shader puts it on the ground, and
+ * puts a vertex on an EDGE where the coarser patch beside it draws that edge.
  */
-function turfVertexData(n: number): VertexData {
-  const positions: number[] = [];
-  const indices: number[] = [];
-  const at = (i: number, j: number): number => j * (n + 1) + i;
+function turfGrid(n: number, positions: number[], indices: number[], base: number): void {
+  const at = (i: number, j: number): number => base + j * (n + 1) + i;
   for (let j = 0; j <= n; j++) {
     for (let i = 0; i <= n; i++) positions.push(i / n, 0, j / n);
   }
@@ -228,10 +210,6 @@ function turfVertexData(n: number): VertexData {
       indices.push(a, c, b, b, c, d);
     }
   }
-  const data = new VertexData();
-  data.positions = positions;
-  data.indices = indices;
-  return data;
 }
 
 /** A smoothstep, the shader's, for `keep`. */
@@ -240,13 +218,14 @@ function smoothstep(a: number, b: number, x: number): number {
   return t * t * (3 - 2 * t);
 }
 
-/** One patch mesh and the instance buffer it draws from this frame. */
-interface PatchLod {
-  mesh: Mesh;
-  /** Blades it holds, as a share of the full patch (1 for the turf). */
+/** One blade patch mesh: its run, and the blades it holds as a share of the full patch. */
+interface PatchLod extends GrassRun {
   share: number;
-  matrices: Float32Array;
-  count: number;
+}
+
+/** A run with room for a round's patches: big enough that a round rarely outgrows it (`place`). */
+function newRun(firstIndex: number, indexCount: number, baseVertex: number): GrassRun {
+  return { firstIndex, indexCount, baseVertex, patches: new Float32Array(PATCH_FLOATS * 512), count: 0, firstInstance: 0 };
 }
 
 /** Per BLOCK of patches, what the walk needs to skip the whole block at once. */
@@ -260,19 +239,18 @@ interface Blocks {
 
 /**
  * Owns the grass field: bakes the mask per round, builds the patch meshes per
- * quality rung, and per frame chooses the patches in view and uploads time,
+ * quality rung, and per frame chooses the patches in view and writes time,
  * camera, the winning point-light set and the nearest combatants as pushers.
  *
- * The field is drawn and never tested: unpickable, non-colliding, no `solid`
- * metadata — every ray (hitscan, LOS, ground probes) passes through it, and
- * bots neither path around nor trip over it.
+ * The field is drawn and never tested: it is no node and no collider — every ray
+ * (hitscan, LOS, ground probes) passes through it, and bots neither path around
+ * nor trip over it.
  */
 export class GrassSystem {
   private lods: PatchLod[] = [];
-  private turfLods: PatchLod[] = [];
-  private mat: ShaderMaterial | null = null;
-  private turfMat: ShaderMaterial | null = null;
-  private tex: RawTexture | null = null;
+  private turfLods: GrassRun[] = [];
+  /** The block's values, the standing field's: `time` is read by the bank's pin too. */
+  values: GrassValues | null = null;
   private mask: GrassMask | null = null;
   private blocks: Blocks | null = null;
   private quality: GrassQuality = "high";
@@ -280,15 +258,20 @@ export class GrassSystem {
   private fogEnd = Infinity;
   private time = 0;
 
-  // Packed uniforms and scratch, reused every frame to avoid allocation.
-  private pointPos = new Float32Array(MAX_POINT_LIGHTS * 3);
-  private pointColor = new Float32Array(MAX_POINT_LIGHTS * 3);
-  private pointRange = new Float32Array(MAX_POINT_LIGHTS);
-  private pushers = new Float32Array(MAX_PUSHERS * 3);
+  // Scratch, reused every frame to avoid allocation.
   private bestD2 = new Float32Array(MAX_PUSHERS);
   private planes: Plane[] = Frustum.GetPlanes(Matrix.Identity());
-  private fieldParams = new Vector4();
-  private camScratch = new Vector3();
+  /** The factory's LIVE key, by reference: `commit` copies it, so a flash lights the field in its frame. */
+  private key: CelMaterialFactory["keyLight"] | null = null;
+  /** Per patch, a bit per water body it may stand in (`reedsOf`). */
+  private reeds = new Uint32Array(0);
+  /**
+   * The bodies this frame's drawn blades may stand in, a bit each, a body's index
+   * in the map's list: what `Game.grassPull` weighs against the field's centre.
+   */
+  drawnReeds = 0;
+  /** The whole field's bounding sphere, or null with no field: the size gate's and the sort key's. */
+  sphere: { readonly x: number; readonly y: number; readonly z: number; readonly radius: number } | null = null;
   /**
    * Per patch, the `TURF_LODS` row it draws its turf at this walk (-1 for
    * none), filled only as the walk asks, and the walk that filled it. See
@@ -312,7 +295,7 @@ export class GrassSystem {
   readonly stats = { patches: 0, blades: 0, turf: 0 };
 
   constructor(
-    private scene: Scene,
+    private draw: GrassDraw,
     private mats: CelMaterialFactory,
   ) {}
 
@@ -335,6 +318,8 @@ export class GrassSystem {
     /** The map's extent, and how far its ground runs past it. */
     size: number,
     margin: number,
+    /** The tallest water rect `i`'s surface stands, or null where it has no body (`WaterSystem.surfaceTop`). */
+    waterTop: (i: number) => number | null,
   ): void {
     this.dispose();
     if (rects.length === 0 || !env.grass) return;
@@ -348,55 +333,57 @@ export class GrassSystem {
     this.rowOf = new Int8Array(mask.patches.nx * mask.patches.nz);
     this.rowWalk = new Uint32Array(mask.patches.nx * mask.patches.nz);
 
-    // invertY false: row 0 is the min-Z edge, which is what the shader's
-    // `(xz - origin) / texel` puts at row 0. Every read is a textureLoad, but a
-    // declared sampler must still be bound, so the texture carries one.
-    const tex = RawTexture.CreateRGBATexture(
-      mask.data,
-      mask.nx,
-      mask.nz,
-      this.scene,
-      false,
-      false,
-      Texture.NEAREST_SAMPLINGMODE,
-      Constants.TEXTURETYPE_UNSIGNED_BYTE,
-    );
-    tex.wrapU = Texture.CLAMP_ADDRESSMODE;
-    tex.wrapV = Texture.CLAMP_ADDRESSMODE;
-    this.tex = tex;
+    this.reeds = reedsOf(mask, water, waterTop);
+    this.sphere = fieldSphere(mask);
+    this.key = this.mats.keyLight;
 
+    const values = createGrassValues();
+    this.values = values;
     const lit = env.lighting;
-    // The factory's LIVE key, by reference, so a lightning flash lights the
-    // field in the same frame it lights the ground under it.
-    const key = this.mats.keyLight;
-    const mat = createGrassMaterial(this.scene, "grass");
-    const turf = createTurfMaterial(this.scene, "grassTurf");
-    for (const m of [mat, turf]) {
-      m.setVector3("lightDir", key.dir);
-      m.setColor3("lightColor", key.color);
-      m.setFloat("keyWrap", lit.keyWrap ?? 0);
-      m.setColor3(
-        "ambientColor",
-        Color3.FromHexString(lit.ambientColor).scale(lit.ambientIntensity),
-      );
-      m.setColor3("fogColor", Color3.FromHexString(env.fogColor));
-      m.setVector2("fogParams", new Vector2(env.fogStart, env.fogEnd));
-      m.setColor3("mistColor", Color3.FromHexString(env.mistColor));
-      m.setVector2("mistParams", new Vector2(env.mistHeight, env.mistStrength));
-      m.setColor3("rootColor", Color3.FromHexString(env.grass.rootColor));
-      m.setColor3("tipColor", Color3.FromHexString(env.grass.tipColor));
-      m.setTexture("maskTex", tex);
-      m.setVector4("maskOrigin", new Vector4(mask.x0, mask.z0, mask.texel, 0));
-      m.setVector2("maskSize", new Vector2(mask.nx, mask.nz));
-      m.setVector2("maskHeight", new Vector2(mask.yMin, mask.yMax));
-      // The depth map, its matrix and its params come from the factory, which
-      // is the one publisher of all three. Unregistered, the shader would
-      // sample an unbound sampler and the field would stand in permanent shadow.
-      this.mats.shadows.registerShadowConsumer(m);
-    }
-    mat.setColor3("rimColor", Color3.FromHexString(lit.rimColor).scale(lit.rimIntensity));
-    this.mat = mat;
-    this.turfMat = turf;
+    const color = (out: Float32Array, hex: string, scale = 1): void => {
+      const c = Color3.FromHexString(hex).scale(scale);
+      out[0] = c.r;
+      out[1] = c.g;
+      out[2] = c.b;
+    };
+    values.keyWrap[0] = lit.keyWrap ?? 0;
+    color(values.ambientColor, lit.ambientColor, lit.ambientIntensity);
+    color(values.fogColor, env.fogColor);
+    values.fogParams[0] = env.fogStart;
+    values.fogParams[1] = env.fogEnd;
+    color(values.mistColor, env.mistColor);
+    values.mistParams[0] = env.mistHeight;
+    values.mistParams[1] = env.mistStrength;
+    color(values.rootColor, env.grass.rootColor);
+    color(values.tipColor, env.grass.tipColor);
+    color(values.rimColor, lit.rimColor, lit.rimIntensity);
+    values.maskOrigin[0] = mask.x0;
+    values.maskOrigin[1] = mask.z0;
+    values.maskOrigin[2] = mask.texel;
+    values.maskSize[0] = mask.nx;
+    values.maskSize[1] = mask.nz;
+    values.maskHeight[0] = mask.yMin;
+    values.maskHeight[1] = mask.yMax;
+    // The bearing is the valley's, not the field's — `CONFIG.wind` is shared with
+    // the foliage the same air moves, and a field leaning one way under a canopy
+    // leaning another is two animations rather than a breeze.
+    const w = CONFIG.wind;
+    const windLength = Math.sqrt(w.dir[0] * w.dir[0] + w.dir[1] * w.dir[1]);
+    values.windDir[0] = w.dir[0] * (1 / windLength);
+    values.windDir[1] = w.dir[1] * (1 / windLength);
+    values.windParams[0] = w.grass.travel;
+    values.windParams[1] = w.grass.speed;
+    values.gustParams[0] = 1 / w.grass.gust;
+    values.gustParams[1] = w.grass.gustSpeed;
+    values.gustParams[2] = w.grass.gustLean;
+    values.gustParams[3] = w.grass.flutter;
+    values.sheen[0] = w.grass.sheen;
+    values.pushParams[0] = CONFIG.grass.pushRadius;
+    values.pushParams[1] = CONFIG.grass.pushStrength;
+    // What a field is drawn with before its first `follow` and `update`.
+    values.lodScale[0] = 1;
+    values.fieldParams.fill(1);
+    this.draw.setField(values, mask.data as Uint8Array<ArrayBuffer>, mask.nx, mask.nz);
 
     this.buildLods();
     this.buildTurf();
@@ -410,59 +397,7 @@ export class GrassSystem {
   setQuality(q: GrassQuality): void {
     if (q === this.quality) return;
     this.quality = q;
-    if (this.mat) this.buildLods();
-  }
-
-  /**
-   * The centre every blade mesh's bounding sphere holds, which is what group 0's
-   * opaque sort keys them all on (`eyeDistanceSq`), or null with no field. Read
-   * by the one thing of ours that must keep its place against them
-   * (`Game.zonePull`, `BABYLON_EXIT.md` X4.6b), and gone when they are ours (X4.6c).
-   */
-  get bladeSortCentre(): Vector3 | null {
-    return this.lods.length > 0 ? this.lods[0].mesh.getBoundingInfo().boundingSphere.centerWorld : null;
-  }
-
-  /** The bounds WorldCulling's size gate reads: the whole field. */
-  private fieldBounds(): BoundingInfo {
-    const mask = this.mask!;
-    const g = CONFIG.grass;
-    // The patches are placed by instance matrices over a unit square, so
-    // nothing Babylon could derive would be the field's extent, and the
-    // frustum test is this system's own (`alwaysSelectAsActiveMesh`).
-    return new BoundingInfo(
-      new Vector3(mask.x0, mask.yMin - 1, mask.z0),
-      new Vector3(
-        mask.x0 + mask.patches.nx * g.patch,
-        mask.yMax + g.heightMax * MAX_HEIGHT_SCALE + 1,
-        mask.z0 + mask.patches.nz * g.patch,
-      ),
-    );
-  }
-
-  /** A patch mesh wearing `mat`, set up the way every one of them must be. */
-  private patchMesh(name: string, mat: ShaderMaterial): PatchLod {
-    const mesh = new Mesh(name, this.scene);
-    // Big enough that a round rarely outgrows it; see `grow` for what that costs.
-    const matrices = new Float32Array(16 * 512);
-    // The bounds are the FIELD's, set once — Babylon would otherwise rebuild
-    // them from the patch matrices on every buffer it is handed.
-    mesh.doNotSyncBoundingInfo = true;
-    mesh.isPickable = false;
-    mesh.checkCollisions = false;
-    mesh.alwaysSelectAsActiveMesh = true;
-    mesh.metadata = { noGlow: true, noShadowCaster: true };
-    mesh.material = mat;
-    return { mesh, share: 1, matrices, count: 0 };
-  }
-
-  /** Hands a filled patch mesh its instance buffer, bounds and frozen matrix. */
-  private finishPatch(lod: PatchLod, bounds: BoundingInfo): void {
-    lod.mesh.thinInstanceSetBuffer("matrix", lod.matrices, 16, false);
-    lod.mesh.thinInstanceCount = 0;
-    lod.mesh.isVisible = false;
-    lod.mesh.setBoundingInfo(bounds);
-    lod.mesh.freezeWorldMatrix();
+    if (this.values) this.buildLods();
   }
 
   /**
@@ -470,10 +405,8 @@ export class GrassSystem {
    * `LOD_STEP` of it down to `MIN_LOD_BLADES`, each a prefix of the same order.
    */
   private buildLods(): void {
-    for (const l of this.lods) l.mesh.dispose();
     this.lods = [];
-    const mat = this.mat;
-    if (!this.mask || !mat) return;
+    if (!this.mask || !this.values) return;
     const g = CONFIG.grass;
     const tier = g.tiers[this.quality];
     const total = Math.max(MIN_LOD_BLADES, Math.round(tier.density * g.patch * g.patch));
@@ -483,35 +416,50 @@ export class GrassSystem {
     const roots = bladeOrder(total, rng);
     const seeds = new Float32Array(total * 2);
     for (let i = 0; i < seeds.length; i++) seeds[i] = rng();
-    const bounds = this.fieldBounds();
 
+    // Each mesh is a prefix of one of two sets of seeds, the five-triangle blades
+    // and the one-triangle ones: a run of a set's indices, its blades' first.
+    const steps: { share: number; count: number; simple: boolean }[] = [];
+    let simpleMost = 0;
     for (let share = 1; ; share *= LOD_STEP) {
       const count = Math.ceil(total * share);
       if (count < MIN_LOD_BLADES && share < 1) break;
-      const vd = bladeVertexData(roots, seeds, count, total, share <= SIMPLE_SHARE);
-      const lod = this.patchMesh(`grass${this.lods.length}`, mat);
-      const data = new VertexData();
-      data.positions = vd.positions;
-      data.indices = vd.indices;
-      data.applyToMesh(lod.mesh);
-      lod.mesh.setVerticesData("blade", vd.blade, false, 4);
-      lod.share = share;
-      this.finishPatch(lod, bounds);
-      this.lods.push(lod);
+      const simple = share <= SIMPLE_SHARE;
+      steps.push({ share, count, simple });
+      if (simple) simpleMost = Math.max(simpleMost, count);
     }
+    const full = bladeVertexData(roots, seeds, total, total, false);
+    const thin = bladeVertexData(roots, seeds, simpleMost, total, true);
+    const positions = new Float32Array(full.positions.length + thin.positions.length);
+    positions.set(full.positions);
+    positions.set(thin.positions, full.positions.length);
+    const blade = new Float32Array(full.blade.length + thin.blade.length);
+    blade.set(full.blade);
+    blade.set(thin.blade, full.blade.length);
+    const indices = new Uint32Array(full.indices.length + thin.indices.length);
+    indices.set(full.indices);
+    indices.set(thin.indices, full.indices.length);
+    const fullVertices = full.positions.length / 3;
+    for (const { share, count, simple } of steps) {
+      const run = simple
+        ? newRun(full.indices.length, count * 3, fullVertices)
+        : newRun(0, count * 15, 0);
+      this.lods.push(Object.assign(run, { share }));
+    }
+    this.draw.setBlades({ positions, blade, indices }, this.lods);
   }
 
-  /** The turf patch meshes, one per row of `TURF_LODS`. */
+  /** The turf patch meshes, one per row of `TURF_LODS`: a run each of one set of grids. */
   private buildTurf(): void {
-    const mat = this.turfMat;
-    if (!this.mask || !mat) return;
-    const bounds = this.fieldBounds();
-    for (const row of TURF_LODS) {
-      const lod = this.patchMesh(`grassTurf${row.cells}`, mat);
-      turfVertexData(row.cells).applyToMesh(lod.mesh);
-      this.finishPatch(lod, bounds);
-      this.turfLods.push(lod);
-    }
+    if (!this.mask) return;
+    const positions: number[] = [];
+    const indices: number[] = [];
+    this.turfLods = TURF_LODS.map((row) => {
+      const first = indices.length;
+      turfGrid(row.cells, positions, indices, positions.length / 3);
+      return newRun(first, indices.length - first, 0);
+    });
+    this.draw.setTurf({ positions: Float32Array.from(positions), indices: Uint32Array.from(indices) }, this.turfLods);
   }
 
   /**
@@ -537,27 +485,29 @@ export class GrassSystem {
     lights: readonly PointLightData[],
     combatants: readonly Combatant[],
   ): void {
-    const mat = this.mat;
-    const turf = this.turfMat;
-    if (!mat || !turf) return;
+    const values = this.values;
+    if (!values) return;
     this.time += dt;
 
     const count = Math.min(lights.length, MAX_POINT_LIGHTS);
+    const pointPos = values.pointPos;
+    const pointColor = values.pointColor;
+    const pointRange = values.pointRange;
     for (let i = 0; i < count; i++) {
       const l = lights[i];
-      this.pointPos[i * 3] = l.position.x;
-      this.pointPos[i * 3 + 1] = l.position.y;
-      this.pointPos[i * 3 + 2] = l.position.z;
-      this.pointColor[i * 3] = l.color.r * l.intensity;
-      this.pointColor[i * 3 + 1] = l.color.g * l.intensity;
-      this.pointColor[i * 3 + 2] = l.color.b * l.intensity;
-      this.pointRange[i] = l.range;
+      pointPos[i * 3] = l.position.x;
+      pointPos[i * 3 + 1] = l.position.y;
+      pointPos[i * 3 + 2] = l.position.z;
+      pointColor[i * 3] = l.color.r * l.intensity;
+      pointColor[i * 3 + 1] = l.color.g * l.intensity;
+      pointColor[i * 3 + 2] = l.color.b * l.intensity;
+      pointRange[i] = l.range;
     }
 
     // Insertion-select the nearest MAX_PUSHERS combatants (a sort would
     // allocate per frame for nothing).
     this.bestD2.fill(Infinity);
-    const p = this.pushers;
+    const p = values.pushers;
     let pusherCount = 0;
     for (const c of combatants) {
       const dx = c.position.x - camPos.x;
@@ -579,15 +529,9 @@ export class GrassSystem {
       pusherCount = Math.min(pusherCount + 1, MAX_PUSHERS);
     }
 
-    mat.setFloat("time", this.time);
-    mat.setArray3("pushers", p as unknown as number[]);
-    mat.setFloat("pusherCount", pusherCount);
-    for (const m of [mat, turf]) {
-      m.setArray3("pointPos", this.pointPos as unknown as number[]);
-      m.setArray3("pointColor", this.pointColor as unknown as number[]);
-      m.setFloats("pointRange", this.pointRange as unknown as number[]);
-      m.setFloat("pointCount", count);
-    }
+    values.time[0] = this.time;
+    values.pusherCount[0] = pusherCount;
+    values.pointCount[0] = count;
   }
 
   /**
@@ -615,9 +559,8 @@ export class GrassSystem {
   follow(camera: TargetCamera): void {
     const mask = this.mask;
     const blocks = this.blocks;
-    const mat = this.mat;
-    const turf = this.turfMat;
-    if (!mask || !blocks || !mat || !turf) return;
+    const values = this.values;
+    if (!mask || !blocks || !values) return;
     const g = CONFIG.grass;
     const P = g.patch;
     const tier = g.tiers[this.quality];
@@ -656,6 +599,8 @@ export class GrassSystem {
     for (const l of lods) l.count = 0;
     for (const l of turfs) l.count = 0;
     let blades = 0;
+    let reeds = 0;
+    const reedOf = this.reeds;
     // How far a tip can travel past its patch, and how tall a blade can stand.
     const sway = g.heightMax * MAX_HEIGHT_SCALE * 0.9;
     const bladeTop = g.heightMax * (1 + g.clump.amount);
@@ -707,6 +652,7 @@ export class GrassSystem {
             while (pick + 1 < lods.length && lods[pick + 1].share >= need) pick++;
             const lod = lods[pick];
             this.place(lod, x0, z0, P, 0);
+            reeds |= reedOf[k];
             blades += Math.ceil(lod.share * tier.density * P * P);
           }
         }
@@ -714,38 +660,52 @@ export class GrassSystem {
     }
     let patches = 0;
     let turfPatches = 0;
-    for (const l of lods) patches += this.publish(l);
-    for (const l of turfs) turfPatches += this.publish(l);
+    for (const l of lods) patches += l.count;
+    for (const l of turfs) turfPatches += l.count;
     this.stats.patches = patches;
     this.stats.blades = blades;
     this.stats.turf = turfPatches;
+    this.drawnReeds = reeds;
 
-    this.fieldParams.set(near, reach, g.thinFloor, g.widenMax);
+    const fieldParams = values.fieldParams;
+    fieldParams[0] = near;
+    fieldParams[1] = reach;
+    fieldParams[2] = g.thinFloor;
+    fieldParams[3] = g.widenMax;
+    values.lodScale[0] = lodScale;
     // The shaders measure from the same eye the patches were chosen from.
-    this.camScratch.copyFrom(eye);
-    for (const m of [mat, turf]) {
-      m.setVector4("fieldParams", this.fieldParams);
-      m.setFloat("lodScale", lodScale);
-      m.setVector3("camPos", this.camScratch);
-    }
+    const camPos = values.camPos;
+    camPos[0] = ex;
+    camPos[1] = ey;
+    camPos[2] = ez;
   }
 
   /**
-   * Appends one patch to a mesh's instance list: X scale the side, the
-   * translation its min corner, and — read only by the turf — Y translation
-   * its lift. Returns the offset it wrote at.
+   * This frame draws, the field through the size gate (`Game.drawGrass`): the live
+   * key, which a lightning flash moves in the frame it lights the ground under it,
+   * and the draw told.
    */
-  private place(lod: PatchLod, x0: number, z0: number, side: number, lift: number): number {
-    if ((lod.count + 1) * 16 > lod.matrices.length) this.grow(lod);
-    const m = lod.matrices;
-    const o = lod.count * 16;
+  commit(): void {
+    const values = this.values;
+    const key = this.key;
+    if (!values || !key) return;
+    key.dir.toArray(values.lightDir);
+    key.color.toArray(values.lightColor);
+    this.draw.commit();
+  }
+
+  /**
+   * Appends one patch to a run: its side, its min corner and — read only by the
+   * turf — its lift. Returns the offset it wrote at.
+   */
+  private place(lod: GrassRun, x0: number, z0: number, side: number, lift: number): number {
+    if ((lod.count + 1) * PATCH_FLOATS > lod.patches.length) grow(lod);
+    const m = lod.patches;
+    const o = lod.count * PATCH_FLOATS;
     m[o] = side;
-    m[o + 5] = 1;
-    m[o + 10] = side;
-    m[o + 12] = x0;
-    m[o + 13] = lift;
-    m[o + 14] = z0;
-    m[o + 15] = 1;
+    m[o + 1] = lift;
+    m[o + 2] = x0;
+    m[o + 3] = z0;
     lod.count++;
     return o;
   }
@@ -754,14 +714,14 @@ export class GrassSystem {
    * Appends one turf patch at `TURF_LODS` row `t`, STITCHED to the patches
    * round it: each edge is drawn at the coarser of the two rows either side of
    * it and each corner lifted by the coarsest of the four patches meeting
-   * there, packed as base-4 digits into the matrix's two spare entries — edges
+   * there, packed as base-4 digits into the patch's second half — edges
    * W, E, S, N and corners SW, SE, NW, NE, where W is `i - 1` and S `j - 1`.
    * Both patches either side of a seam work the seam out from the same rows,
    * so both draw it through the same points. A neighbour with no turf of its
    * own (-1) stitches nothing.
    */
   private placeTurf(
-    lod: PatchLod,
+    lod: GrassRun,
     i: number,
     j: number,
     t: number,
@@ -778,9 +738,9 @@ export class GrassSystem {
     const se = Math.max(e, s, this.turfRow(i + 1, j - 1));
     const nw = Math.max(w, n, this.turfRow(i - 1, j + 1));
     const ne = Math.max(e, n, this.turfRow(i + 1, j + 1));
-    const m = lod.matrices;
-    m[o + 1] = w + 4 * e + 16 * s + 64 * n;
-    m[o + 2] = sw + 4 * se + 16 * nw + 64 * ne;
+    const m = lod.patches;
+    m[o + 4] = w + 4 * e + 16 * s + 64 * n;
+    m[o + 5] = sw + 4 * se + 16 * nw + 64 * ne;
   }
 
   /**
@@ -819,50 +779,81 @@ export class GrassSystem {
     return row;
   }
 
-  /** Hands a mesh this frame's count; hides it outright when that is zero. */
-  private publish(l: PatchLod): number {
-    l.mesh.thinInstanceCount = l.count;
-    l.mesh.isVisible = l.count > 0;
-    if (l.count > 0) l.mesh.thinInstanceBufferUpdated("matrix");
-    return l.count;
-  }
-
-  /**
-   * Doubles a mesh's instance buffer, keeping what is already written.
-   *
-   * **The draw cache is reset with it, and that is not optional.** Handing a
-   * mesh a new buffer DESTROYS the old one, and under `compatibilityMode =
-   * false` the mesh's cached draw still names the old buffer: every frame after
-   * is a submit of a destroyed buffer, which WebGPU refuses whole — the entire
-   * frame, not just the grass, comes out black.
-   */
-  private grow(lod: PatchLod): void {
-    const next = new Float32Array(lod.matrices.length * 2);
-    next.set(lod.matrices);
-    lod.matrices = next;
-    // Only the live count is ever drawn or uploaded.
-    lod.mesh.thinInstanceSetBuffer("matrix", next, 16, false);
-    lod.mesh.resetDrawCache();
-  }
-
   dispose(): void {
-    // Before the dispose, not after: the factory would otherwise keep writing
-    // three uniforms a frame into a dead material for the rest of the session.
-    if (this.mat) this.mats.shadows.unregisterShadowConsumer(this.mat);
-    if (this.turfMat) this.mats.shadows.unregisterShadowConsumer(this.turfMat);
-    for (const l of this.lods) l.mesh.dispose();
-    for (const l of this.turfLods) l.mesh.dispose();
+    this.draw.clear();
     this.lods = [];
     this.turfLods = [];
-    this.mat?.dispose();
-    this.turfMat?.dispose();
-    this.tex?.dispose();
-    this.mat = null;
-    this.turfMat = null;
-    this.tex = null;
+    this.values = null;
     this.mask = null;
     this.blocks = null;
+    this.sphere = null;
+    this.drawnReeds = 0;
   }
+}
+
+/** Doubles a run's patches, keeping what is already written. */
+function grow(lod: GrassRun): void {
+  const next = new Float32Array(lod.patches.length * 2);
+  next.set(lod.patches);
+  lod.patches = next;
+}
+
+/**
+ * The field's bounding sphere, off its box as a mesh's was: the patches are placed
+ * by the walk, so nothing could be derived from them, and it is what the size gate
+ * and the order of what still sorts against the blades read (`BoundingSphere.reConstruct`).
+ */
+function fieldSphere(mask: GrassMask): NonNullable<GrassSystem["sphere"]> {
+  const g = CONFIG.grass;
+  const x0 = mask.x0;
+  const y0 = mask.yMin - 1;
+  const z0 = mask.z0;
+  const x1 = mask.x0 + mask.patches.nx * g.patch;
+  const y1 = mask.yMax + g.heightMax * MAX_HEIGHT_SCALE + 1;
+  const z1 = mask.z0 + mask.patches.nz * g.patch;
+  const dx = x1 - x0;
+  const dy = y1 - y0;
+  const dz = z1 - z0;
+  return {
+    x: (x1 + x0) * 0.5,
+    y: (y1 + y0) * 0.5,
+    z: (z1 + z0) * 0.5,
+    radius: Math.sqrt(dx * dx + dy * dy + dz * dz) * 0.5,
+  };
+}
+
+/**
+ * Per patch, a bit per water body its blades may stand in: over the rect, on ground
+ * under the tallest its surface stands, a blade rooted above that being above the
+ * water all the way up. The first 32 bodies of a map; no shipped map has more than
+ * 8. Which of them a frame's blades reach is what decides where those blades are
+ * drawn against the water (`Game.grassPull`).
+ */
+function reedsOf(
+  mask: GrassMask,
+  water: readonly WaterRect[],
+  waterTop: (i: number) => number | null,
+): Uint32Array<ArrayBuffer> {
+  const pt = mask.patches;
+  const P = CONFIG.grass.patch;
+  const out = new Uint32Array(pt.nx * pt.nz);
+  const bodies = Math.min(water.length, 32);
+  for (let b = 0; b < bodies; b++) {
+    const r = water[b];
+    const y = waterTop(b);
+    if (y === null) continue;
+    const i0 = Math.max(0, Math.floor((r.x - r.width / 2 - mask.x0) / P));
+    const i1 = Math.min(pt.nx - 1, Math.floor((r.x + r.width / 2 - mask.x0) / P));
+    const j0 = Math.max(0, Math.floor((r.z - r.depth / 2 - mask.z0) / P));
+    const j1 = Math.min(pt.nz - 1, Math.floor((r.z + r.depth / 2 - mask.z0) / P));
+    for (let j = j0; j <= j1; j++) {
+      for (let i = i0; i <= i1; i++) {
+        const k = j * pt.nx + i;
+        if (pt.cover[k] > 0 && pt.yLo[k] < y) out[k] |= 1 << b;
+      }
+    }
+  }
+  return out;
 }
 
 /** The mask's patches summarised per BLOCK, so the walk can skip a block whole. */

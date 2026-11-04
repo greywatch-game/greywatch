@@ -1022,7 +1022,7 @@ export function freeze(page, set = FREEZE_SET, { windTime = 0, turn = 0, strike 
       // is exactly where the two maps disagreed.
       if (g.grass) {
         g.grass.time = wind;
-        g.grass.mat?.setFloat("time", wind);
+        if (g.grass.values) g.grass.values.time[0] = wind;
         g.grass.update = () => {};
       }
       if (g.water) {

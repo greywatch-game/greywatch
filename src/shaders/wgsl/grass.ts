@@ -1,54 +1,31 @@
 /**
- * GrassShader.ts — The grass field's two materials: the BLADES, placed in the
- * vertex stage from a patch of seeds and the map's grass mask, bent by a
- * travelling gust field, a steady sway and combatants pushing through; and the
- * TURF, the ground-hugging sheet under them that carries the field's colour
- * out past the last blade. Both are lit with the same banded key/point/fog/
- * mist terms as the cel shader, through one shared function.
+ * wgsl/grass.ts — The grass field's two surfaces as plain strings OUR renderer
+ * assembles (`render/grassProgram.ts`, `BABYLON_EXIT.md` X4.6c): the BLADES,
+ * placed in the vertex stage from a patch of seeds and the map's grass mask,
+ * bent by a travelling gust field, a steady sway and combatants pushing
+ * through; and the TURF, the ground-hugging sheet under them that carries the
+ * field's colour out past the last blade. Both are lit with the same banded
+ * key/point/fog/mist terms as the cel shader, through one shared function.
+ * Owns: `TURF_LODS`; `GRASS_VERTEX` (`grassVertex`), `GRASS_SURFACE`
+ * (`grassSurface`), `TURF_VERTEX` (`turfVertex`) and `TURF_SURFACE`
+ * (`turfSurface`).
  * Invariants: the blade mesh carries SEEDS, not blades — `position` is
  * (u, t, v), the root's place in its patch and the height along the blade,
- * and `blade` is (side, rank, s0, s1). The thin-instance matrix is the PATCH:
- * its translation is the patch's min corner and its X scale the patch's side
- * (the turf reads its lift from the matrix's Y translation, and how its edges
- * and corners are stitched from two spare entries — see its vertex stage).
+ * and `blade` is (side, rank, s0, s1). A patch is two `vec4f`s:
+ * `uniforms.patch0` is (side, lift, min x, min z) and `uniforms.patch1`
+ * (edges, corners), the turf's stitching, read only by its vertex stage.
  * `rank` is the blade's place in the patch's progressive order, and the keep
  * test below must agree with `GrassSystem.keep` or a patch is drawn
  * from a mesh that holds fewer blades than it wants. Point-light arrays are
  * MAX_POINT_LIGHTS and filled from the same LightingSystem slots as the cel
- * shader; the pusher array is CONFIG.grass.maxPushers. The blades are
- * opaque; the turf BLENDS, and leaves the frame's coverage alpha untouched
- * (`createTurfMaterial`). No Babylon lights. Nothing inside a WGSL template
- * string may contain a backtick — it closes the template.
- * Both stages of both are hand-written WGSL, and `shaderLanguage` on the
- * material is load-bearing rather than declarative: a `ShaderMaterial`
- * defaults to GLSL and would look these up in a store nothing writes any more.
- * See `docs/rendering.md` for what the dialect and Babylon's WGSL processor
- * decide.
- */
-import {
-  Constants,
-  Scene,
-  ShaderLanguage,
-  ShaderMaterial,
-  ShaderStore,
-  Vector2,
-  Vector3,
-  Vector4,
-} from "@babylonjs/core";
-import { CONFIG } from "../config";
-import { ROAD_DEPTH_UNITS } from "../world/roads";
-import {
-  MAX_POINT_LIGHTS,
-  SHADOW_SAMPLER_NAMES,
-  SHADOW_UNIFORM_NAMES,
-} from "./CelShader";
-// The shared includes self-register in the IncludesShadersStoreWGSL; import
-// them explicitly so the #include<cel...> lines below can never be tree-shaken
-// away, and so registration is provably before the first effect COMPILE rather
-// than merely before the first material.
-import "./wgsl/includes";
-
-/**
+ * shader; the pusher array is CONFIG.grass.maxPushers. The blades are opaque;
+ * the turf BLENDS, and leaves the frame's coverage alpha untouched
+ * (`render/grassProgram.ts`' `TURF_BLEND`). No Babylon lights. Nothing inside
+ * a WGSL template string may contain a backtick — it closes the template.
+ * Never: imports Babylon (`src/render/` imports this, and the build gate walks
+ * it); declares a binding (`wgsl/chunks.ts`' rule).
+ * Contract: `docs/rendering.md`, "The grass".
+ *
  * Grass — the one surface in the game that is BUILT in the vertex stage.
  *
  * Nothing about a blade is stored per blade on the CPU. A patch mesh holds
@@ -56,7 +33,7 @@ import "./wgsl/includes";
  * progressive order, two random numbers — and the vertex stage turns each into
  * a blade on the ground under it:
  *
- * - **where and whether**: the patch matrix puts the root in the world, the
+ * - **where and whether**: the patch puts the root in the world, the
  *   MASK (density, height multiplier, and the ground's height, baked by
  *   `world/grassMask.ts`) says whether anything grows there and how tall, and
  *   the blade's `rank` against the field's keep share says whether this far
@@ -90,26 +67,20 @@ import "./wgsl/includes";
  * It is biased toward the eye as a road is (`ROAD_DEPTH_UNITS`), because it IS
  * a road's problem — a sheet coplanar with the floor.
  */
-
-/**
- * The pusher count, and — with `MAX_POINT_LIGHTS` — one of the two numbers that
- * reach the shader by INTERPOLATION and never as a `#define`.
- *
- * An array's size has to be a literal or a define, because Babylon resolves the
- * bound out of the preprocessor table when it lays out the leftover UBO and a
- * WGSL `const` is not in that table. A define is the worse of the two: the WGSL
- * processor implements one by searching the whole source for its NAME with an
- * un-anchored regex and pasting the value over every hit, so a name that is a
- * substring of any other identifier corrupts the shader with no diagnostic.
- * Both counts are TypeScript constants already, so interpolating the number
- * costs nothing and leaves the loop bounds as real WGSL `const` declarations.
- */
-const MAX_PUSHERS = CONFIG.grass.maxPushers;
+import { CONFIG } from "../../config";
+import { MAX_POINT_LIGHTS } from "./celSurface";
 
 /** A float as a WGSL literal: always with a point, never in exponent form. */
 const f = (n: number): string => n.toFixed(6);
 
 const g = CONFIG.grass;
+
+/**
+ * The pusher count, one of the two numbers (with `MAX_POINT_LIGHTS`) that
+ * reach the shader by INTERPOLATION: both are TypeScript constants, and the
+ * loop bounds stay real WGSL `const` declarations.
+ */
+const MAX_PUSHERS = g.maxPushers;
 
 /**
  * The turf's patch meshes: cells a side, the distance (already scaled by the
@@ -174,18 +145,8 @@ fn fieldTint(xz: vec2f) -> f32 {
 }
 `;
 
-/**
- * The mask, read by hand. Declares its own uniforms and texture, so a stage
- * that includes it must be one whose material lists them.
- */
+/** The mask, read by hand. A stage that includes it reads `maskTex` and three of the block's fields. */
 const MASK = /* wgsl */ `
-uniform maskOrigin: vec4f;   // x, z of the texel grid's corner; z = metres per texel; w unused
-uniform maskSize: vec2f;     // texels
-uniform maskHeight: vec2f;   // yMin, yMax
-
-var maskTexSampler: sampler;
-var maskTex: texture_2d<f32>;
-
 // One texel of the mask, as (ground height 0..1, density, height multiplier,
 // wet). Alpha's low seven bits are the multiplier and its top bit the water.
 fn maskAt(p: vec2i) -> vec4f {
@@ -224,23 +185,6 @@ fn sampleMask(xz: vec2f) -> vec4f {
  * Needs the includes celBand, celShadow and celDither ahead of it.
  */
 const LIGHTING = /* wgsl */ `
-uniform lightDir: vec3f;
-uniform lightColor: vec3f;
-uniform keyWrap: f32;
-uniform ambientColor: vec3f;
-uniform fogColor: vec3f;
-uniform fogParams: vec2f;  // x = start, y = end
-uniform mistColor: vec3f;
-uniform mistParams: vec2f; // x = height falloff, y = strength
-uniform camPos: vec3f;
-uniform rootColor: vec3f;
-uniform tipColor: vec3f;
-
-uniform pointPos: array<vec3f, ${MAX_POINT_LIGHTS}>;
-uniform pointColor: array<vec3f, ${MAX_POINT_LIGHTS}>; // rgb premultiplied by intensity
-uniform pointRange: array<f32, ${MAX_POINT_LIGHTS}>;
-uniform pointCount: f32;
-
 const MAX_POINT_LIGHTS: i32 = ${MAX_POINT_LIGHTS};
 
 struct FieldLit {
@@ -303,32 +247,9 @@ fn fieldAtmosphere(c: vec3f, posW: vec3f) -> vec3f {
 }
 `;
 
-ShaderStore.ShadersStoreWGSL["grassVertexShader"] = `
-attribute position: vec3f;   // (u, t, v): root in the patch, height along the blade
-attribute blade: vec4f;      // (side, rank, s0, s1)
-
-// Declares world (and world0..3 when INSTANCES): the PATCH transform. Do NOT
-// redeclare "uniform world" here or the shader declares it twice over.
-#include<celInstancesDeclaration>
-
-uniform viewProjection: mat4x4f;
-uniform camPos: vec3f;
-uniform time: f32;
-uniform windDir: vec2f;
-uniform windParams: vec2f;   // x = steady tip travel (m), y = speed
-uniform gustParams: vec4f;   // x = 1 / wavelength, y = downwind speed, z = lean share, w = flutter share
-uniform pushParams: vec2f;   // x = radius (m), y = tip travel as a share of height
-uniform pushers: array<vec3f, ${MAX_PUSHERS}>;
-uniform pusherCount: f32;
-uniform fieldParams: vec4f;  // x = near, y = reach, z = thinFloor, w = widenMax
-uniform lodScale: f32;       // tan(fov/2) / tan(fovHip/2): a sight up draws the far field as near
+/** The blades' vertex stage: the whole of a blade, off its seeds. */
+export const GRASS_VERTEX = /* wgsl */ `
 ${MASK}
-
-varying vPosW: vec3f;
-varying vBladeN: vec3f;   // the blade's own face normal, unflipped
-varying vTip: f32;        // 0 at the root, 1 at the tip — drives the gradient
-varying vGust: f32;       // how hard the gust is leaning this blade, 0..1
-varying vShade: f32;      // the blade's own value, and the field's tint wave
 
 const MAX_PUSHERS: i32 = ${MAX_PUSHERS};
 
@@ -343,16 +264,12 @@ fn keepShare(d: f32) -> f32 {
   return thin * (1.0 - smoothstep(reach * ${f(1 - g.fade)}, reach, d));
 }
 
-@vertex
-fn main(input: VertexInputs) -> FragmentInputs {
-  // Declares finalWorld (mesh world * instance matrix under THIN_INSTANCES).
-  #include<celInstancesVertex>
-
+fn grassVertex() {
   let t = vertexInputs.position.y;
   let side = vertexInputs.blade.x;
   let rank = vertexInputs.blade.y;
-  let patchSide = finalWorld[0].x;
-  let patchXZ = finalWorld[3].xz;
+  let patchSide = uniforms.patch0.x;
+  let patchXZ = uniforms.patch0.zw;
   let root = patchXZ + vertexInputs.position.xz * patchSide;
 
   // Every patch holds the SAME seeds, so a patch's own position is folded into
@@ -384,7 +301,7 @@ fn main(input: VertexInputs) -> FragmentInputs {
     // Collapsed: every vertex of the blade lands on one point outside the clip
     // volume, so its triangles have no area and never reach the rasteriser.
     vertexOutputs.position = vec4f(0.0, 0.0, 2.0, 1.0);
-    return vertexOutputs;
+    return;
   }
 
   // --- how it stands ---
@@ -455,31 +372,22 @@ fn main(input: VertexInputs) -> FragmentInputs {
 }
 `;
 
-// The derivatives below are what was MEANT — band()'s width is how fast its
-// index moves per pixel — so there is no explicit-LOD form to reach for the
-// way a texture fetch has one, and WGSL's uniformity analysis has to be told.
-// Every fetch in celShadow is already a textureSampleLevel, so this covers the
-// derivatives and nothing else.
-ShaderStore.ShadersStoreWGSL["grassFragmentShader"] = `
-#define DISABLE_UNIFORMITY_ANALYSIS
-
-varying vPosW: vec3f;
-varying vBladeN: vec3f;
-varying vTip: f32;
-varying vGust: f32;
-varying vShade: f32;
-
-uniform rimColor: vec3f;
-uniform sheen: f32;
-
+/**
+ * The blades' pixel. The derivatives in `band` are what was MEANT — its width
+ * is how fast its index moves per pixel — so there is no explicit-LOD form to
+ * reach for the way a texture fetch has one, and WGSL's uniformity analysis has
+ * to be told (`derivative_uniformity`, the program's). Every fetch in celShadow
+ * is already a textureSampleLevel, so that covers the derivatives and nothing
+ * else.
+ */
+export const GRASS_SURFACE = /* wgsl */ `
 #include<celBand>
 #include<celShadow>
 #include<celDither>
 
 ${LIGHTING}
 
-@fragment
-fn main(input: FragmentInputs) -> FragmentOutputs {
+fn grassSurface() -> vec4f {
   let posW = fragmentInputs.vPosW;
   let tip = clamp(fragmentInputs.vTip, 0.0, 1.0);
   let up = vec3f(0.0, 1.0, 0.0);
@@ -523,31 +431,20 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   // Last thing before the write, because the write is the quantiser. Alpha 0
   // and not 1: a blade is opaque, and the frame's alpha channel is TRANSLUCENT
   // COVERAGE — what the ink reads to know how much smoke is in front of the
-  // depth it is drawing an edge off. See CelInk. Grass is in no reflection
-  // probe's render list (those are map.visuals), so unlike the cel shader it
-  // needs no uniform to say which pass it is in.
-  fragmentOutputs.color = vec4f(dither(col), 0.0);
+  // depth it is drawing an edge off. See CelInk. Grass is in no bake, so unlike
+  // the cel shader it needs no uniform to say which pass it is in.
+  return vec4f(dither(col), 0.0);
 }
 `;
 
-ShaderStore.ShadersStoreWGSL["grassTurfVertexShader"] = `
-attribute position: vec3f;   // (u, 0, v): the vertex in its patch
-
-// The PATCH transform. X scale is its side, translation its min corner, and
-// the turf's own three: Y translation its lift, and two numbers packed four
-// base-4 digits apiece — which TURF_LODS row each EDGE is sampled at (W, E, S,
-// N) and each CORNER is lifted by (SW, SE, NW, NE). See GrassSystem.stitch.
-#include<celInstancesDeclaration>
-
-uniform viewProjection: mat4x4f;
-uniform camPos: vec3f;
-uniform fieldParams: vec4f;  // x = near, y = reach, z = thinFloor, w = widenMax
-uniform lodScale: f32;
+/**
+ * The turf's vertex stage. A patch's side and corner are `patch0`'s, its lift
+ * its y, and `patch1` two numbers packed four base-4 digits apiece — which
+ * `TURF_LODS` row each EDGE is sampled at (W, E, S, N) and each CORNER is
+ * lifted by (SW, SE, NW, NE). See `GrassSystem.placeTurf`.
+ */
+export const TURF_VERTEX = /* wgsl */ `
 ${MASK}
-
-varying vPosW: vec3f;
-varying vNormalW: vec3f;
-varying vFar: f32;        // 0 under the stand, 1 where the turf IS the field
 
 fn turfCells(row: u32) -> f32 {
   ${turfTable("cells")}
@@ -580,21 +477,18 @@ fn edgeHeight(base: vec2f, dir: vec2f, side: f32, along: f32, row: u32,
   return mix(h0, h1, (along - s0) * n);
 }
 
-@vertex
-fn main(input: VertexInputs) -> FragmentInputs {
-  #include<celInstancesVertex>
-
-  let patchSide = finalWorld[0].x;
-  let corner = finalWorld[3].xz;
-  let edges = finalWorld[0].y;
-  let corners = finalWorld[0].z;
+fn turfVertex() {
+  let patchSide = uniforms.patch0.x;
+  let corner = uniforms.patch0.zw;
+  let edges = uniforms.patch1.x;
+  let corners = uniforms.patch1.y;
   let uv = vertexInputs.position.xz;
   let xz = corner + uv * patchSide;
   // An interior vertex is the ground plus this patch's own lift; one on an
   // edge is the edge's, which is what keeps the sheet whole across a change of
   // cell size. A corner is on two edges and both give the same answer, the
   // corner's own lift at the ground under it.
-  var h = sampleMask(xz).x + finalWorld[3].y;
+  var h = sampleMask(xz).x + uniforms.patch0.y;
   if (uv.x <= 0.0 || uv.x >= 1.0) {
     let east = uv.x >= 1.0;
     h = edgeHeight(corner + vec2f(uv.x * patchSide, 0.0), vec2f(0.0, 1.0), patchSide, uv.y,
@@ -622,13 +516,8 @@ fn main(input: VertexInputs) -> FragmentInputs {
 }
 `;
 
-ShaderStore.ShadersStoreWGSL["grassTurfFragmentShader"] = `
-#define DISABLE_UNIFORMITY_ANALYSIS
-
-varying vPosW: vec3f;
-varying vNormalW: vec3f;
-varying vFar: f32;
-
+/** The turf's pixel. Its `discard` and its derivatives are `GRASS_SURFACE`'s rule. */
+export const TURF_SURFACE = /* wgsl */ `
 ${MASK}
 
 #include<celBand>
@@ -639,8 +528,7 @@ ${LIGHTING}
 
 ${NOISE}
 
-@fragment
-fn main(input: FragmentInputs) -> FragmentOutputs {
+fn turfSurface() -> vec4f {
   let posW = fragmentInputs.vPosW;
   // How much turf: a RAMP over the mask's density, centred at about HALF and
   // never a contour across it. Half and not the field's own edge, because a
@@ -673,177 +561,8 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   let lit = fieldLight(n, n, posW, occl, mix(${f(g.rootShade)}, 1.0, far));
   let col = fieldAtmosphere(base * lit.light, posW);
   // The alpha here is the BLEND weight and nothing else: the turf's blend
-  // leaves the frame's coverage channel as the floor under it wrote it (see
-  // createTurfMaterial), so what this writes never reaches the ink.
-  fragmentOutputs.color = vec4f(dither(col), cover);
+  // leaves the frame's coverage channel as the floor under it wrote it
+  // (TURF_BLEND), so what this writes never reaches the ink.
+  return vec4f(dither(col), cover);
 }
 `;
-
-/** Uniforms both field materials take, beside their own. */
-const SHARED_UNIFORMS = [
-  "world",
-  "viewProjection",
-  "camPos",
-  "fieldParams",
-  "lodScale",
-  "maskOrigin",
-  "maskSize",
-  "maskHeight",
-  "lightDir",
-  "lightColor",
-  "keyWrap",
-  "ambientColor",
-  "fogColor",
-  "fogParams",
-  "mistColor",
-  "mistParams",
-  "rootColor",
-  "tipColor",
-  "pointPos",
-  "pointColor",
-  "pointRange",
-  "pointCount",
-];
-
-/** The blades' own uniforms, pushed per frame or per round by GrassSystem. */
-const BLADE_UNIFORMS = [
-  "time",
-  "windDir",
-  "windParams",
-  "gustParams",
-  "pushParams",
-  "pushers",
-  "pusherCount",
-  "rimColor",
-  "sheen",
-];
-
-/** Zeroes every per-frame array so a material drawn before its first push is valid. */
-function primeShared(mat: ShaderMaterial): void {
-  mat.setFloat("lodScale", 1);
-  mat.setVector3("camPos", Vector3.Zero());
-  mat.setVector4("fieldParams", new Vector4(1, 1, 1, 1));
-  mat.setArray3("pointPos", new Array(MAX_POINT_LIGHTS * 3).fill(0));
-  mat.setArray3("pointColor", new Array(MAX_POINT_LIGHTS * 3).fill(0));
-  mat.setFloats("pointRange", new Array(MAX_POINT_LIGHTS).fill(0));
-  mat.setFloat("pointCount", 0);
-}
-
-/**
- * One blade material per map build, worn by every blade patch mesh the field
- * draws (they differ only in how many blades they hold, so they agree about
- * every define and one frozen material is safe across all of them). Motion
- * tunables come straight from CONFIG; palette, lighting and the mask are set
- * by the GrassSystem, and time/camera/lights/pushers per frame. Two-sided: a
- * blade is a paper-thin tapered strip seen from every angle.
- */
-export function createGrassMaterial(scene: Scene, name: string): ShaderMaterial {
-  const mat = new ShaderMaterial(
-    name,
-    scene,
-    { vertex: "grass", fragment: "grass" },
-    {
-      attributes: ["position", "blade"],
-      uniforms: [...SHARED_UNIFORMS, ...BLADE_UNIFORMS, ...SHADOW_UNIFORM_NAMES],
-      samplers: ["maskTex", ...SHADOW_SAMPLER_NAMES],
-      shaderLanguage: ShaderLanguage.WGSL,
-    },
-  );
-  mat.backFaceCulling = false;
-  const gr = CONFIG.grass;
-  // The bearing is the valley's, not the field's — `CONFIG.wind` is shared with
-  // the foliage the same air moves, and a field leaning one way under a canopy
-  // leaning another is two animations rather than a breeze.
-  const w = CONFIG.wind;
-  mat.setVector2("windDir", new Vector2(w.dir[0], w.dir[1]).normalize());
-  mat.setVector2("windParams", new Vector2(w.grass.travel, w.grass.speed));
-  mat.setVector4(
-    "gustParams",
-    new Vector4(1 / w.grass.gust, w.grass.gustSpeed, w.grass.gustLean, w.grass.flutter),
-  );
-  mat.setFloat("sheen", w.grass.sheen);
-  mat.setVector2("pushParams", new Vector2(gr.pushRadius, gr.pushStrength));
-  mat.setFloat("time", 0);
-  mat.setArray3("pushers", new Array(MAX_PUSHERS * 3).fill(0));
-  mat.setFloat("pusherCount", 0);
-  primeShared(mat);
-  // FROZEN for `CelMaterialFactory.remember`'s reason, which is the same here:
-  // `ShaderMaterial.isReady` rebuilds this material's whole define set for
-  // every submesh of every pass and throws it away, and `isFrozen` is what
-  // stops it. The uniforms below keep flowing — what gates those is
-  // `_mustRebind`, which does not read `isFrozen`.
-  mat.freeze();
-  return mat;
-}
-
-/**
- * The turf's material: one per map build, worn by every turf patch mesh.
- * Biased toward the eye by the road's own depth offset, because the turf is a
- * sheet lying ON the floor exactly as a carriageway is — and for that reason
- * it must stay below a road, which it does by growing nowhere a road is.
- *
- * **It is BLENDED over the floor and is the one blended draw that leaves the
- * frame's coverage alpha alone.** A thin field is the floor partly covered,
- * so its weight is a blend (see the fragment stage). But the frame's alpha is
- * translucent COVERAGE, which `CelInk` scales its edge by — and a turf that
- * added itself there under `ALPHA_COMBINE` would take the ink off every blade
- * standing in a lush field. Nothing is SEEN THROUGH the turf, so it must say
- * nothing about coverage: colour blends SRC_ALPHA / ONE_MINUS_SRC_ALPHA, alpha
- * ZERO / ONE. Babylon has no alpha mode for that, so the factors are written
- * into the engine's alpha state while this material is bound and the mode is
- * put back to disabled when it unbinds — the WebGPU pipeline cache reads that
- * state's arrays at draw time, and a later `setAlphaMode(COMBINE)` rewrites
- * them because the mode it compares against is DISABLE again.
- *
- * Two more things follow from blending. It draws on group 0's ALPHA-TEST list
- * (as the clouds did until X4.5b, and for their reason: that list is the ORDER, after
- * Babylon's opaque surfaces), because a blend has to land on the floor it lies
- * over and the opaque list has no order in which the terrain comes first. The
- * floor and the roads are OUR renderer's since `BABYLON_EXIT.md` X3.5, and it
- * draws them at the one point that keeps this true — after the opaque list and
- * before this one (`render/Renderer.ts`, `"beforeAlphaTest"`), the blocks
- * there too and ahead of the floor, as Babylon's opaque list put them before
- * this one — so where the sheet floats over a slab laid level with the floor,
- * it blends over the slab's edge, as it always did under Babylon. And it
- * writes NO depth: the floor under it already wrote the surface, the blades over it
- * are drawn before it and test it out where they stand, and a sheet writing a
- * depth wherever it is a hundredth covered would hide every coplanar mark laid
- * after it.
- */
-export function createTurfMaterial(scene: Scene, name: string): ShaderMaterial {
-  const mat = new ShaderMaterial(
-    name,
-    scene,
-    { vertex: "grassTurf", fragment: "grassTurf" },
-    {
-      attributes: ["position"],
-      uniforms: [...SHARED_UNIFORMS, ...SHADOW_UNIFORM_NAMES],
-      samplers: ["maskTex", ...SHADOW_SAMPLER_NAMES],
-      shaderLanguage: ShaderLanguage.WGSL,
-      // Not a claim that anything is alpha-tested: the draw ORDER. See above.
-      needAlphaTesting: true,
-    },
-  );
-  // A sheet on the ground is never seen from below, so nothing is saved by
-  // culling one face of it and nothing has to agree which way the grid winds.
-  mat.backFaceCulling = false;
-  mat.zOffsetUnits = ROAD_DEPTH_UNITS;
-  mat.disableDepthWrite = true;
-  const engine = scene.getEngine();
-  mat.onBindObservable.add(() => {
-    // `true`: leave the depth mask to `disableDepthWrite`.
-    engine.setAlphaMode(Constants.ALPHA_COMBINE, true);
-    engine.alphaState.setAlphaBlendFunctionParameters(
-      Constants.GL_ALPHA_FUNCTION_SRC_ALPHA,
-      Constants.GL_ALPHA_FUNCTION_ONE_MINUS_SRC_ALPHA,
-      0, // ZERO and ONE: Babylon names neither
-      1,
-    );
-  });
-  mat.onUnBindObservable.add(() => {
-    engine.setAlphaMode(Constants.ALPHA_DISABLE, true);
-  });
-  primeShared(mat);
-  mat.freeze();
-  return mat;
-}

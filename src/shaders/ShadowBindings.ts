@@ -2,12 +2,12 @@
  * ShadowBindings.ts — Every shadow a lit material samples, bound onto it: the
  * world's map, the bodies', the lamps' atlas, the lightning's key and its map,
  * the clouds' field and the foliage's front-face map, plus the registry of the
- * non-cel materials (grass, water) that read the same `celShadow` include.
+ * non-cel material (the water) that reads the same `celShadow` include.
  * `CelMaterialFactory` owns one (`mats.shadows`) and lends it its cache. The
  * maps are published by the systems that render them (`ShadowSystem`,
  * `BodyShadows`, `LocalShadows`, and `Sky`'s field through `Game`); `Game`
- * also pushes the clouds and the lightning each frame, and grass and water
- * register here; a reflection bake's frame holds the clouds off on its own
+ * also pushes the clouds and the lightning each frame, and the water
+ * registers here; a reflection bake's frame holds the clouds off on its own
  * (`fillFrame`'s `bake`).
  * Invariants: **every sampler `SHADOW_SAMPLER_NAMES` names, and `foliageMap`
  * on a cel material, is BOUND on every material that declares it, always** — a
@@ -94,7 +94,7 @@ export class ShadowBindings {
   // a bake's frame is our renderer's, and holds it off itself (`fillFrame`).
   private readonly cloudShadowPushed = new Vector4(0, 0, 0, 1);
   // The foliage's front-face map — see `setFoliageMap`. Cel materials only:
-  // grass and water have no translucency and do not declare it.
+  // the water has no translucency and does not declare it.
   private foliageMap: BaseTexture | null = null;
   private foliageMatrix = Matrix.Identity();
   private foliageParams = new Vector4(0, 0, 0, 0);
@@ -149,9 +149,9 @@ export class ShadowBindings {
   }
 
   /**
-   * Materials that sample the depth map but are not cel materials — the grass
-   * and the water, each of which reproduces the cel lighting model in its own
-   * shader (see `celShadow`).
+   * Materials that sample the depth map but are not cel materials — the water,
+   * which reproduces the cel lighting model in its own shader (see `celShadow`),
+   * and until `BABYLON_EXIT.md` X4.6c the grass, whose program now reads the frame's.
    *
    * They cannot live in the factory's cache: that map is keyed by colour and
    * its entries are shared, permanent and created on demand, while these are
@@ -160,7 +160,7 @@ export class ShadowBindings {
    * `specs`, which holds foreign material references for the same reason.
    *
    * **Registering is the consumer's half of the contract and unregistering is
-   * the other half.** Grass and water are rebuilt every round; a material left
+   * the other half.** The water is rebuilt every round; a material left
    * here after its `dispose()` takes a `setMatrix` per frame for the rest of
    * the session.
    */
@@ -436,8 +436,8 @@ export class ShadowBindings {
    * material exists, for `setBodyShadowMap`'s reason — every cel material
    * declares the sampler, so there is no state in which it may be absent.
    *
-   * Pushed over the CACHE and not over `eachShadowReader`: grass and water
-   * carry no translucency and do not declare it.
+   * Pushed over the CACHE and not over `eachShadowReader`: the water
+   * carries no translucency and does not declare it.
    */
   setFoliageMap(map: BaseTexture, own: OwnTexture | null = null): void {
     this.foliageMap = map;
@@ -518,7 +518,7 @@ export class ShadowBindings {
     mat.setVector4("flashParams", this.flashParams);
     mat.setVector3("flashDir", this.flashDir);
     mat.setColor3("flashColor", this.flashColor);
-    // A grass or water consumer is registered BEFORE this runs, which is how
+    // A water consumer is registered BEFORE this runs, which is how
     // this tells the two apart: only a cel material declares the foliage map.
     if (!this.shadowConsumers.has(mat)) {
       if (this.foliageMap) mat.setTexture("foliageMap", this.foliageMap);

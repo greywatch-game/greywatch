@@ -7926,7 +7926,7 @@ to come. What X4.5a was asked for and what it measured:
     on Coldharbour, Cinderhaven and Hollowmere: 64 of 64 byte-equal to 547d803,
     the same 9 stale rows red.
 
-### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4, its review 5d43b2e), X4.6b **LANDED** (483165a, its review e1f5712)
+### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4, its review 5d43b2e), X4.6b **LANDED** (483165a, its review e1f5712), X4.6c **LANDED** (XHASHX)
 
 The plan's `BABYLON_EXIT.md` holds what the surfaces are today, the two tables X4.6a
 measured and the four sub-steps to come. X4.6a's brief, word for word:
@@ -8353,3 +8353,107 @@ found is the instruments' and the record's:
 - **Not verified.** A real hang through the new stops: no run here lost a device without being told
   to (`census`, `surfaces` and `shaders` ran clean through them on Hollowmere, `bench` did not run).
   A fresh boot (`FINDINGS.md` 64), a server's match, the phone.
+
+#### X4.6c's brief, word for word
+
+- **X4.6c — the grass and the turf.** The field keeps its frustum test and its
+  levels of detail, and its instance buffers become ours. The turf keeps its place
+  in the order and its blend, and owes the coverage alpha what the blend writes
+  today (`docs/rendering.md`). **The blades are opaque, and their place is where the
+  zones are split: `ZoneDraw`'s near run, the blades, its far run**, a tie between them
+  being real (X4.6b measured it). **Neither point is free, and this step owes the bytes
+  at both.** At `"beforeAlphaTest"`, as this first said, they fall behind the water and the
+  `backed` panes, which they are ahead of wherever the field's centre is nearer, and the near
+  run must come with them. At `"first"` behind the near run they fall AHEAD of the water and
+  the `backed` panes, which they are BEHIND wherever the field's centre is farther: the log
+  has both on one map, `ring-flown-far` drawing zone, water, grass, and Hollowmere `water@12`
+  then blades at 95 m from one eye and blades at 39 m then `water@65` from another. **A blade
+  does stand in shallow water at a shore**, so this is a real tie and no row holds it: this
+  step adds rows at a shore from either side of the key (Hollowmere's rings B and E have
+  both, the eyes in `X4.6b`'s note) before it moves anything, as X4.6b's guard was added, and
+  then proves them by `exact.mjs`. **If neither point holds them, the blades and the water must
+  move together or the tie be taken as a picture change, and that comes back to the owner**
+  ("Decisions") with the numbers, rather than being absorbed. `GrassSystem.bladeSortCentre`
+  and `Game.zonePull`'s split read Babylon's sort, and are rewritten here. **The turf must be past
+  `"afterSurfaces"` and past the floor, and
+  writes no depth, so with the alpha-tested list empty behind it `"opaque"` is its
+  place**, coarsest cell first. **It moves the editor's grass and turf too** (decided
+  2026-11-03): one path through the system, as the sky's did at X4.5c. **Verify:**
+  `grass-low`, `-medium`, `-high`; the `ground` rows; the mask still rejects roads and
+  water (`grass-*` hold both); `F2` in an editor build, a grass rect edited through the
+  tier-3 rebuild and drawn; `surfaces.mjs` reports no `grass` or `turf`, in a round and
+  under `--editor`.
+
+**X4.6c landed** (21839d1 the rows, XHASHX the move; 2026-11-04; no change to the picture).
+
+- **What moved.** `render/GrassDraw.ts` (new) draws each `grass*` and `grassTurf*` mesh as a run of one
+  index buffer, one draw for one, instanced, a patch an instance; `render/grassProgram.ts` (new) is the
+  program, `shaders/wgsl/grass.ts` (new) the bodies, near enough verbatim, and `shaders/GrassShader.ts` is
+  deleted. `GrassSystem` keeps the walk, `keep`, `turfRow`, the frustum test and the levels of detail, holds
+  no mesh or material, and writes plain arrays: a patch is two `vec4f`s where it was a matrix with four
+  entries read, and the five-triangle runs share one set of seeds and the one-triangle ones another, each
+  a prefix, where every mesh held a copy. It keeps Babylon's `Frustum` alone, for the planes off the camera.
+  The pipelines are two, on `Game.roundPipelines`. **In an editor build too**, by the owner's decision: the
+  install is on both paths, and the editor's glazing stays Babylon's until X5.3.
+- **The field keeps its own uniforms, and that is how the bytes held.** Its materials held their own eye,
+  fog, mist, key wrap, ambient, wind and lamps, set at different moments from the frame's: `update` does not
+  run on a frozen row, nor on a held frame, and `lighting.update` can, and `pointLocal` in `celShadow` read the
+  material's `pointPos`. So they are `GRASS_BLOCK`'s, under the names the bodies and the chunks read, with
+  those names on the frame's block renamed for these programs alone (`FIELD_FRAME_BLOCK`), the layout unmoved
+  so the frame's one bind group binds. The live key is copied in `commit`, in the frame a flash moves it. It
+  costs a block a frame, and a later step can collapse it against the frame's fields with bytes to prove it.
+- **The draw point, by bytes, before anything moved.** Babylon's opaque list was forced with the blades first
+  or last in one frozen frame (a scratch comparator, `setRenderingOrder`, no write to anything else), so each
+  point could be read off without a port. At existing eyes, and at no new stop:
+  | row | field, water keys | at `"beforeAlphaTest"` | at `"first"` |
+  | --- | --- | --- | --- |
+  | `greyfen-shore-ahead` (`crossing`'s eye) | 85.5, 85.7 | 355 px, worst 60/255 | byte-equal |
+  | `harrowmead-shore-ahead` (the menu's) | 34.6, 76.3 | 251 px, worst 154/255 | byte-equal |
+  | `harrowmead-shore-behind` (`millpond`'s) | 189.8, 165.9 | byte-equal | 58 px, worst 76/255 |
+  Hollowmere's existing eyes hold no such tie (the brief's rings B and E are at eyes no row stands at), so the
+  rows are on the maps whose eyes do. **Moving the point each frame was the brief's "move where it helps", and
+  it is the comparison Babylon made**: `Game.grassPull`, inside the render, puts the blades at `"first"`, behind
+  the zones' near run, unless a body the frame's drawn patches may stand in sorts at or ahead of the field's
+  centre (`GrassSystem.drawnReeds`, off `reedsOf`: over the rect, and on ground under the tallest the surface
+  stands, read off the water's own box), and then at `"beforeAlphaTest"`, first of ours, ahead of the zones' far
+  run. Keys tie to the water, made first. **The patch test earns its place**: by key alone, a sight on the bog from
+  `[-30, 3, -75]` (fov 6, creek 56.7, field 79.4, bog 85.1) moved 3 px by 6/255, there being no creek in frame.
+- **What cannot be held, and what it measured.** Only Hollowmere has two reedy bodies (wet texels per body: Hollowmere
+  349 and 106; Kurenai 481; Cinderhaven 499; Sarab 149; Greyfen and Harrowmead one body; Coldharbour none), so everywhere
+  else the comparison is whole. A frame on Hollowmere whose drawn patches reach both, one nearer than the field's
+  centre and one farther, wants the blades BETWEEN them, which two points cannot do; it goes behind the list, flipping a
+  tie against the farther only. **98 poses built to hit it, shot on both trees and compared by `exact.mjs`, all byte-equal**:
+  every pose a scan of forced orders logged as moving at either point (Hollowmere, Greyfen, Harrowmead), 72 of them with water
+  either side of the key, 40 of those reaching both bodies. In forced order the farther water never tied in such a frame. **That
+  is judged small and not proved absent.** It is the class X4.6b's review judged the same way, and X4.6d ends it. No draw hook
+  on the water was tried, the owner having refused that reach at X4.4b.
+- **The other thing still on that list, the `backed` panes, cannot be reached**: over Coldharbour, Sarab and Cinderhaven, 58
+  `backed` meshes and 14,844 triangles, none is within a blade's sway (2.34 m, generous) and height of a texel that grows grass.
+- **The turf** is at `"opaque"`, first and alone there, past the clouds at `"afterSurfaces"` as it was past the ring: `cull none`,
+  no depth write, bias -8, `SRC_ALPHA, ONE_MINUS_SRC_ALPHA` and alpha `ZERO, ONE`, read off the table and proved by the bytes,
+  coverage channel included (a whole-frame compare reads the ink, which reads that channel).
+- **In every pass, read and not assumed.** At the BEFORE each patch mesh was `noShadowCaster` and `noGlow`, in no render
+  target's list, and X4.6a's log has none in a mask or a bake. **So no shadow map, no lamp atlas, no bake, no mask, then and
+  now.** It receives shadow, clouds, the flash and the lamps' cones from the frame; blades write depth and alpha 0, so the
+  ink draws on them as it did; fog and mist are its own `fieldAtmosphere`; the wind its own `values.time` over the one
+  bearing. The size gate is the field's one sphere (`keepsSphere`, `Game.drawGrass`), each mesh having held it.
+- **Measured.** BEFORE `bank.mjs --check --keep` alone at 21839d1 (the shore rows banked from two byte-identical grabs). AFTER twice alone on the final tree, and once before the patch test was tightened: **136 of 136 byte-equal to the BEFORE in all three by `exact.mjs`**, neither known flake coming up, `greyfen-grass-low`, `-medium`, `-high`, every `ground` row, `ashwood`, `hollowmere-ring` and the shore rows among them, which hold the road the mask rejects and the channel it stops at; 102 within floor and 34 red, the same 34 at the same means; no page or console error. `surfaces.mjs` on Greyfen's `marsh`, `crossing`, `grass-high` and `shore-ahead` and under `--editor`
+  on Coldharbour and Greyfen: no `grass` or `turf`, `grassMeshes` 0, a water and a grass rect both remade. `census` `--against` the BEFORE by row: all 136 rows and all seven totals equal, Babylon down by the field (`marsh` 18 of 38 to 1, `ground` 17 of 37 to 1), ours up by the same.
+  `pipelines.mjs --round` on Coldharbour and Cinderhaven: **zero of ours in play**, and on Cinderhaven the two of Babylon's the
+  rotor wash already owed (X4.7). Typecheck, build (`check-babylon-free`, `check-proving`), corecheck, parity, `gate` (seven maps clean) and `shaders` (seven clean) pass.
+  `kit:hash` and `merge:hash` not run: no builder and no merge moved. The harness pins `values.time`; `census` counts the runs;
+  `surfaces.mjs --editor` watches the mask. Report version 32, `pools.grass`.
+- **Allocation**, V8's sampling heap profiler with short-lived objects counted, Greyfen at `crossing`'s eye. 3,000 calls of the
+  field's per-frame work: `follow` 1,688 bytes a call to none sampled, `update` 122 to 42. 1,200 rendered frames at deploy:
+  `follow` and `thinInstanceBufferUpdated` ~1,740 bytes a frame, against ~100 now, of which `drawGrass` ~43 and `grassPull` ~56, a
+  once-a-frame function's boxed doubles (`Vector3`'s getters, `keepsSphere`'s arguments), and nothing in `GrassDraw`. So none is
+  added: the field's share falls.
+- **Live.** Greyfen offline, spawned, the real bots: 15 blade and 2 turf runs drawn, the clock moving (a frame 0.7 s on differs
+  across the field), `low`, `medium`, `high` in the round (11, 14, 15 runs, 8,661 to 45,835 blades, the picture plainly thinner at
+  `low`), both growths forced (a run's array cut to one patch and a kind's buffer to `capacity` 1: 128 patches, group 2 remade, the
+  field whole), out to the menu with `installed` false, and a second round. No page or console error, no warning, the seal on. Hollowmere the same, 12 and 2 runs, one reedy body in reach at its spawn, the blades at `"first"`.
+  **Editor**, Greyfen, `F2` from the menu: `grass.mask` rebaked on a rect's density going to 0 through `rebuildGeometry`, the blades
+  under that rect gone from the frame and back on restoring it, a rung change, out to a round, to the menu and into another
+  round, no error and no warning. Nothing was saved.
+- **Not verified.** A server's match in a browser: the field reads no wire. The phone (no capture was owed by this step: the
+  draw count is unchanged). A frame on Hollowmere that actually flips, above. The field's GPU cost against the BEFORE: not an A/B.
