@@ -1916,7 +1916,7 @@ moved; **all of this is past since X4.5c**: no sky piece is a Babylon mesh):
   stood over", with the `Active` commit; `Sky.ts`'s header and
   `CloudShader.ts`'s; `FILES.md` for each new file.
 
-### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4, its review REVIEWHASH)
+### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4, its review 5d43b2e)
 
 Everything left on the floor that Babylon still draws, the three blended pools
 X4.4 left waiting for the glazing, and the blob shadows (decided 2026-11-03).
@@ -2055,7 +2055,7 @@ Greyfen, `F2` from the menu and each eye of the map's rows):
   byte-equal to a BEFORE at 1b5fec8 in one run and 120 in the other (the known pistol
   pixel); the 9 new rows byte-equal to themselves across two checks; the same 34
   stale rows red with the same means. Typecheck, build, corecheck and parity pass.
-  **Its review** (REVIEWHASH; 2026-11-03; no change to the game, and under `src/` only
+  **Its review** (5d43b2e; 2026-11-03; no change to the game, and under `src/` only
   `bench/vantages.ts`) added the blob class, a blob `fx` event and **two rows**, both
   at `square`'s eye and at the end of Coldharbour's list: `fx-blob-sort` (the panes, a
   far spark and disc, a blob at 11.32, pane 0's block at 8.35, a blob at 7.76, a near

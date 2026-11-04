@@ -7926,7 +7926,7 @@ to come. What X4.5a was asked for and what it measured:
     on Coldharbour, Cinderhaven and Hollowmere: 64 of 64 byte-equal to 547d803,
     the same 9 stale rows red.
 
-### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4, its review REVIEWHASH)
+### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4, its review 5d43b2e)
 
 The plan's `BABYLON_EXIT.md` holds what the surfaces are today, the two tables X4.6a
 measured and the four sub-steps to come. X4.6a's brief, word for word:
@@ -8061,7 +8061,7 @@ harness, its table, a new instrument and docs).
   `opaque` and `beforeBlended` is the seam's reading and not this log's. Drag of a rect
   in the editor: read off `repositionScene` and `onDragEnd`, not driven. The phone.
 
-**X4.6a's review** (REVIEWHASH; 2026-11-03; no change to the game: the bank, its
+**X4.6a's review** (5d43b2e; 2026-11-03; no change to the game: the bank, its
 harness, its table, the instrument and docs). Seven findings, all verified before being
 changed, two owner decisions, and one thing nobody had noticed.
 
