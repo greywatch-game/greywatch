@@ -1916,7 +1916,7 @@ moved; **all of this is past since X4.5c**: no sky piece is a Babylon mesh):
   stood over", with the `Active` commit; `Sky.ts`'s header and
   `CloudShader.ts`'s; `FILES.md` for each new file.
 
-### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (HASH)
+### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4)
 
 Everything left on the floor that Babylon still draws, and the three blended
 pools X4.4 left waiting for the glazing. **No sub-step is meant to change the
@@ -2003,7 +2003,7 @@ Greyfen, `F2` from the menu and each eye of the map's rows):
 - **The pools stand idle**: built, hidden, nothing raises them. Babylon's transparent
   list holds only see-through glazing there.
 
-- **X4.6a — the bank sees what it does not yet LANDED** (HASH; 2026-11-03; no change
+- **X4.6a — the bank sees what it does not yet LANDED** (df74bd4; 2026-11-03; no change
   to the game; its full note is in `plans/done/babylon_exit_landed.md`). **Nine rows**,
   appended by `--rows`, every one at an eye a row above it stands at or the menu's,
   so the benchmark gains no stop: `hollowmere-ring-flown`,

@@ -7926,7 +7926,7 @@ to come. What X4.5a was asked for and what it measured:
     on Coldharbour, Cinderhaven and Hollowmere: 64 of 64 byte-equal to 547d803,
     the same 9 stale rows red.
 
-### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (HASH)
+### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4)
 
 The plan's `BABYLON_EXIT.md` holds what the surfaces are today, the two tables X4.6a
 measured and the four sub-steps to come. X4.6a's brief, word for word:
@@ -7947,7 +7947,7 @@ measured and the four sub-steps to come. X4.6a's brief, word for word:
   each does in an editor build, since an editor build's surfaces stay Babylon
   meshes until X5.3 and the editor edits the water and grass rects.
 
-**X4.6a landed** (HASH; 2026-11-03; no change to the game: the reference bank, its
+**X4.6a landed** (df74bd4; 2026-11-03; no change to the game: the reference bank, its
 harness, its table, a new instrument and docs).
 
 - **The instrument: `plans/webgpu-ref/surfaces.mjs`, kept in the repo** because every
