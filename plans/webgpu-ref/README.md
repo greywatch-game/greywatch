@@ -56,7 +56,7 @@ node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--gpu] [--max] [
   blocks, taken before `BABYLON_EXIT.md` X3.3c, and its old rows are STALE**:
   X3.4 moved the scatter on purpose (sixteen variants a kind, one colour bake
   a kind) and the GPU driver has moved since the bank was taken (596.21 to
-  610.88), so a plain `--check` fails 34 of its 133 rows, whatever the tree under
+  610.88), so a plain `--check` fails 34 of its 136 rows, whatever the tree under
   test does: 33 of the 47 banked before X3.5, Greyfen's `canopy` at a mean of
   44/255, and `greyfen-crossing` (0.0581), one of the fourteen `ground` and
   `crossing` rows banked at 54ec8c0. Every row banked since grades within the

@@ -418,6 +418,17 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
     // machine's default and is last, so it is also the proof the two before it
     // put back what they changed.
     ...grassRows(),
+    // Appended for X4.6c, at `crossing`'s eye so the benchmark gains no stop.
+    {
+      id: "shore-ahead",
+      of: "the channel and the far bank's reeds through the trunks, mid-gust, through a 15° field from `crossing`'s eye, blades standing in the water on both banks",
+      proves:
+        "blades AHEAD of the water they stand in (X4.6c): the field's centre is nearer this eye than the water's by a hand's width, so Babylon's opaque list drew the blades first and the water takes every tie along each waterline. Drawn behind the water, 355 pixels move by up to 60/255; `harrowmead-shore-behind` is the other way round, which is why no one draw point holds both",
+      pos: [82, 6, 23],
+      target: [69.25, -0.09, -19.75],
+      fov: 15.3,
+      wind: 2.6,
+    },
   ],
   coldharbour: [
     // Re-posed for the bay (6e848a1): the curtain walls now front the street
@@ -636,6 +647,28 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
     ...kitRows(),
     // Appended for X4.3a's review, after the kit rows for the same reason.
     ...reviewRows(),
+    // Appended for X4.6c, at `millpond`'s eye and the menu's, so the benchmark
+    // gains no stop.
+    {
+      id: "shore-behind",
+      of: "the millpond's bank a dozen metres off along the water's edge, mid-gust, through an 8° field: the swell and the blades standing in it",
+      proves:
+        "blades BEHIND the water they stand in (X4.6c): the water's centre is nearer this eye than the field's, so Babylon's opaque list drew the water first and the blades take every tie along the waterline. Drawn ahead of the water, 58 pixels move by up to 76/255",
+      pos: [-160, 1.6, 102],
+      target: [-161.37, 0.14, 88.95],
+      fov: 8,
+      wind: 2.6,
+    },
+    {
+      id: "shore-ahead",
+      of: "the far bank of the mill stream over a shed roof, mid-gust, through a 4° field from the menu's eye: the water, and a wall of meadow standing at the end of it",
+      proves:
+        "blades AHEAD of the water at range, through a sight (X4.6c): the field's centre is nearer this eye than the water's and a depth step here is centimetres, so the ties run the length of the bank. Drawn behind the water, 251 pixels move by up to 154/255",
+      pos: [32, 12, -10],
+      target: [200.04, -0.08, 13.01],
+      fov: 4.05,
+      wind: 2.6,
+    },
   ],
   sarab: [
     {
