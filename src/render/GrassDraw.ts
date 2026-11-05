@@ -8,25 +8,19 @@
  * session; the field's block and group 1 (`setField`: its values, and the mask
  * on the GPU), each kind's seeds and indices (`setBlades`, `setTurf`) and its
  * patches' buffer, grown as a frame outruns it; the prepare that uploads a
- * frame, the blades' draw at both of its points, the turf's at `"opaque"`, the
- * refusal listeners it holds while installed, and what it drew last (`stats`);
- * `GrassRun`, `GrassSeeds`.
+ * frame, the blades' draw (`drawBlades`, which the run calls where they fall), the
+ * turf's at `"opaque"`, the refusal listeners it holds while installed, and what
+ * it drew last (`stats`); `GrassRun`, `GrassSeeds`.
  * Invariants: it DECIDES NOTHING — which patches are in view and which run each
  * goes on are `GrassSystem`'s, written into the runs from `tick`; whether a frame
- * draws is `Game.drawGrass`'s (`commit`, through the size gate), and the point
- * the blades take is `Game.grassPull`'s (`near`), inside the render where the eye
- * is this frame's; a run draws only with a patch on it, as a patch mesh with none
- * was made invisible, and the runs draw in the order `GrassSystem` built them, the
- * order the meshes were made in, which Babylon's lists kept. **The blades are
- * drawn at ONE of TWO points a frame**, because what is left of Babylon's opaque
- * list holds a place against them: every test is LEQUAL, a depth this far from
- * the near plane ties for real where a blade stands in water, and at either point
- * alone hundreds of pixels flip (`BABYLON_EXIT.md` X4.6c). At `"first"` they are
- * ahead of that list, behind the dome and the zones' near run (`installNear`, asked
- * after `ZoneDraw.install`); at `"beforeAlphaTest"` they are behind it, and FIRST of
- * everything of ours (`install`, asked ahead of it), the zones' far run next. The
- * turf is at `"opaque"`, past the clouds and the floor it lands on, and nothing of
- * ours is ahead of it there. A frame with a pipeline unbuilt or no field set draws
+ * draws is `Game.drawGrass`'s (`commit`, through the size gate), and where among the
+ * rest the blades fall is the one run's (`NearestRun`, X4.6d), since every test is
+ * LEQUAL and a depth this far from the near plane ties for real where a blade stands
+ * in water; a run draws only with a patch on it, as a patch mesh with none was made
+ * invisible, and the runs draw in the order `GrassSystem` built them, the order the
+ * meshes were made in, which Babylon's lists kept. The turf is at `"opaque"`, past
+ * the clouds and the floor it lands on, and nothing of ours is ahead of it there.
+ * A frame with a pipeline unbuilt or no field set draws
  * no grass, as a material not ready drew none; a pipeline that FAILS is the round's
  * failure (`install`'s), told every round after it too, and so is a refused main
  * pass while it is installed — never inside the render's commands (the caller
@@ -122,8 +116,6 @@ export class GrassDraw {
   readonly ready: Promise<boolean>;
   /** What the last frame drew, a draw a run. Nothing in the game reads it; a profiler capture does (`ProfileReport.pools.grass`) and the census. */
   readonly stats = { blades: 0, turf: 0 };
-  /** Whether this frame's blades go at `"first"` rather than `"beforeAlphaTest"`: the pull writes it. */
-  near = false;
 
   private readonly device: GPUDevice;
   private readonly block: UniformBlockBuffer;
@@ -144,11 +136,7 @@ export class GrassDraw {
   private failed: (reason: string) => void = ignore;
   private generation = 0;
 
-  constructor(
-    private readonly renderer: Renderer,
-    /** Asked inside the render: writes `near`. */
-    private readonly pull: (into: GrassDraw) => void,
-  ) {
+  constructor(private readonly renderer: Renderer) {
     const device = renderer.device;
     this.device = device;
     this.block = new UniformBlockBuffer(device, GRASS_BLOCK, GRASS_DEFINES, "grass: field");
@@ -229,12 +217,22 @@ export class GrassDraw {
     this.stats.turf = 0;
   }
 
+  /** Whether a frame is owed: what the run's predicate asks. */
+  get active(): boolean {
+    return this.committed;
+  }
+
+  /** Whether this frame draws at all: the prepare's verdict, which the run reads. */
+  get drawing(): boolean {
+    return this.ours;
+  }
+
   /**
-   * Draws the field from the next frame on, the blades' `"beforeAlphaTest"` run
-   * and the turf: asked ahead of everything else of ours at those points — telling
-   * `failed` if it cannot: a pipeline that failed (now or for the session already),
-   * or the main pass refused. Replaces any earlier install's failure. The blades'
-   * `"first"` run is `installNear`'s.
+   * Draws the field from the next frame on, the blades through the run
+   * (`NearestRun`) and the turf here, asked ahead of everything else of ours at
+   * `"opaque"` — telling `failed` if it cannot: a pipeline that failed (now or for
+   * the session already), or the main pass refused. Replaces any earlier install's
+   * failure.
    */
   install(failed: (reason: string) => void): void {
     this.uninstall();
@@ -247,17 +245,10 @@ export class GrassDraw {
     this.removes.push(
       renderer.onFrame(this.prepare),
       // Counted only on a frame something was committed (`Renderer.begin`).
-      renderer.add(this.drawFar, "beforeAlphaTest", () => this.committed),
       renderer.add(this.drawTurf, "opaque", () => this.committed),
       renderer.onRefused(this.refused),
     );
     this.isInstalled = true;
-  }
-
-  /** The blades' `"first"` run, for the install standing: asked after the zones' near run. */
-  installNear(): void {
-    if (!this.isInstalled) return;
-    this.removes.push(this.renderer.add(this.drawNear, "first", () => this.committed));
   }
 
   /** Draws nothing again until the next `install`, and tells nobody of anything. */
@@ -358,7 +349,7 @@ export class GrassDraw {
     }
   }
 
-  /** As the main pass begins — inside the render, the camera placed: this frame's verdict, its point and its uploads. */
+  /** As the main pass begins — inside the render, the camera placed: this frame's verdict and its uploads. */
   private readonly prepare = (): void => {
     const committed = this.committed;
     this.committed = false;
@@ -375,19 +366,15 @@ export class GrassDraw {
       blades.arrays !== null &&
       turf.arrays !== null;
     if (!this.ours) return;
-    this.pull(this);
     this.upload(blades);
     this.upload(turf);
     this.block.write(values!);
   };
 
-  private readonly drawNear = (pass: GPURenderPassEncoder, ctx: FrameContext): void => {
-    if (this.near) this.stats.blades = this.drawKind(pass, ctx, this.bladeKind);
-  };
-
-  private readonly drawFar = (pass: GPURenderPassEncoder, ctx: FrameContext): void => {
-    if (!this.near) this.stats.blades = this.drawKind(pass, ctx, this.bladeKind);
-  };
+  /** The blades, where the run has them fall (`NearestRun`). */
+  drawBlades(pass: GPURenderPassEncoder, ctx: FrameContext): void {
+    this.stats.blades = this.drawKind(pass, ctx, this.bladeKind);
+  }
 
   private readonly drawTurf = (pass: GPURenderPassEncoder, ctx: FrameContext): void => {
     this.stats.turf = this.drawKind(pass, ctx, this.turfKind);

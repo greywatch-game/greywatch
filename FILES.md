@@ -1503,8 +1503,10 @@ src/
                         #   pushed from `tick` in every state). `setWash` is the
                         #   rotor sites, pushed from `tick` and not from the
                         #   camera tail — see it for why. Hands its mirrors'
-                        #   sites to the reflection bake, once a build, and
-                        #   binds each body the cube it is handed back
+                        #   sites to the reflection bake, once a build, and hands
+                        #   each body the cube it is handed back. Its PICTURE is
+                        #   render/WaterDraw.ts (X4.6d): no mesh, no material,
+                        #   and the values plain arrays; the foam a Babylon Texture
     GrassSystem.ts      # The grass field stood around the EYE: patches of
                         #   blade seeds chosen per frame in view (`follow`,
                         #   pushed from `tick` in every state), each drawn from
@@ -2542,6 +2544,11 @@ src/
                         #   transform, the wind's ramp and rigged layers, the
                         #   varyings. Babylon-free; shared verbatim with
                         #   src/render/; no y flip (each side's main owns it)
+      water.ts          # THE WATER as plain strings (X4.6d): analytic wave trains
+                        #   DISPLACING the grid and lighting it from one function,
+                        #   Fresnel mirror, light cut hard on the waves, the hole a
+                        #   rotor tears in it, waveTrains. Babylon-free:
+                        #   render/waterProgram.ts assembles it
       grass.ts          # THE GRASS as plain strings (X4.6c): blades BUILT in the
                         #   vertex stage off the mask (the keep threshold over
                         #   rank, the lean, the gusts carried downwind, bodies
@@ -2591,10 +2598,6 @@ src/
                         #   with GiVolume. RayWorld's box and floor queries,
                         #   ported: the volume traces the COLLIDERS, never a
                         #   mesh
-    WaterShader.ts      # Water ShaderMaterial: analytic wave trains DISPLACING
-                        #   the grid and lighting it from one function, Fresnel
-                        #   mirror, light cut hard on the waves, and the hole a
-                        #   rotor tears in it. WGSL
     FlameShader.ts      # THE FIRE: every open flame's one material. Tongues
                         #   that boil on twos in hard bands, embers on the
                         #   smooth clock, and the glow-mask TWIN that runs the
@@ -2822,15 +2825,27 @@ src/
                         #   the session's pipelines and a block a recipe worn; a
                         #   round's arrays (static and cloth) and indices from
                         #   finish to clear, the cloth's rewrite, one draw a
-                        #   surface, the near ones at "first" behind the dome, the
-                        #   far FIRST of ours at "beforeAlphaTest"; the gate, the
-                        #   frustum, the nearest-first order and the split Game's
+                        #   surface; the gate, the frustum and the nearest-first
+                        #   order Game's, their place among the rest NearestRun's
     GrassDraw.ts        # THE GRASS as OUR renderer draws it (X4.6c), in an editor
                         #   build too: a blade or turf mesh a run of one index
                         #   buffer, instanced, a patch an instance; the mask and
                         #   the block, the patches' buffers, the turf at "opaque"
-                        #   and the blades at "first" or "beforeAlphaTest" as
-                        #   Game.grassPull says; what is in view is GrassSystem's
+                        #   and the blades where NearestRun has them fall; what is
+                        #   in view is GrassSystem's
+    WaterDraw.ts        # THE WATER as OUR renderer draws it (X4.6d), in an editor
+                        #   build too: a body its grid or its far quad, a range of
+                        #   one index buffer; the shared block, a group 0 of its own
+                        #   (the six shadow maps), each body's block, bed-depth
+                        #   texture and group 1, the two samplers; the foam stays
+                        #   Babylon's through the seam, a cube is read where it lies
+    waterProgram.ts     # Its program (X4.6d): WATER_SHARED, WATER_BODY, the three
+                        #   textures, the frame's block with the water's own names
+                        #   renamed out of it, the prefix of the frame's textures
+    NearestRun.ts       # THE ONE RUN (X4.6d): the zones, the blades and the water
+                        #   in Babylon's one nearest-first order, at one point,
+                        #   first of ours at "beforeAlphaTest"; three lists merged,
+                        #   a tie to the mesh made first; the keys Game.nearestPull's
     grassProgram.ts     # Its program (X4.6c): the field's block and mask (one
                         #   group 1), the two geometries, the frame's block with
                         #   the field's own names renamed out of it, the blades'

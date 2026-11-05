@@ -3,7 +3,8 @@
  * (`BABYLON_EXIT.md` X3.6c): each probe's cube, its six faces drawn from the
  * world our main pass takes — through a second VIEW of the main pass's culls,
  * with the probe's eye PASSED in a frame of the bake's own — and its mip
- * chain after them; Babylon's glazing and water sample a wrapped view of it.
+ * chain after them; the water reads it where it lies, and Babylon's glazing a
+ * wrapped view of it.
  * The only bake there is since X3.7c (Babylon's `ReflectionProbe`s are gone).
  * Owns: `ProbeBake` — the cube pool (`cube`: `rgba8unorm`, six layers, a
  * full mip chain, never destroyed but by `dispose`, the pool outliving

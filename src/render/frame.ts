@@ -3,7 +3,7 @@
  * renderer draws with binds at group 0, binding 0, stated once as data, and
  * the plain struct it is written from.
  * Owns: `FRAME_FIELDS` and `FRAME_BLOCK` (the declaration `celFragment.ts`,
- * `celVertex.ts` and every later program include), `FrameUniforms` (one
+ * `celVertex.ts` and every later program include), `frameBlockExcept`, `FrameUniforms` (one
  * `Float32Array` per field, named as the shader names it) and
  * `createFrameUniforms`; `FRAME_TEXTURES`, the rest of group 0 — every
  * shadow map, the foliage map and the irradiance volume — and
@@ -127,6 +127,18 @@ export const FRAME_BLOCK = {
   struct: "CelFrame",
   fields: FRAME_FIELDS,
 } as const satisfies Binding;
+
+/**
+ * The frame block for a program that states `own` names for itself (the grass, the
+ * water): its one layout, with each of those fields renamed out of the way, so the
+ * frame's one buffer still binds and a body's `uniforms.<name>` reaches the program's.
+ */
+export function frameBlockExcept(own: ReadonlySet<string>): Binding {
+  return {
+    ...FRAME_BLOCK,
+    fields: (FRAME_FIELDS as readonly UniformField[]).map((f) => (own.has(f.name) ? { ...f, name: `frame_${f.name}` } : f)),
+  };
+}
 
 /** The rest of group 0, after the block, in binding order. */
 export const FRAME_TEXTURES = [

@@ -600,7 +600,7 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
       id: "ring-behind-field",
       of: "the square's lawns and the memorial through a 12° field, from the crossing's eye south-west of it, the limed stones crossing the far lawn and the cobbles behind the tree, two parked cars in front",
       proves:
-        "a ring FARTHER than its field's blades (X4.6b): Babylon's opaque list drew such a surface behind the blades, which all sort at their field's centre, and a tie between a blade and a stone is real, so `ZoneDraw`'s far run belongs at `beforeAlphaTest` where the near run in `ring-stones` belongs at `first`, and X4.6c owes both: drawn all at `first`, 54 pixels of this frame move by up to 113/255, within floor at `--check`",
+        "a ring FARTHER than its field's blades (X4.6b): Babylon's opaque list drew such a surface behind the blades, which all sort at their field's centre, and a tie between a blade and a stone is real, so it falls behind them in the one run (`NearestRun`, X4.6d) where `ring-stones`' falls ahead: drawn ahead of them, 54 pixels of this frame move by up to 113/255, within floor at `--check`",
       pos: [-41, 6, -41],
       target: [-7.5, 0.4, -10],
       fov: 12,
@@ -774,7 +774,7 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
       id: "shore-flip",
       of: "the far pool's bank 474 m off across the town from the Martyrs' shelf, mid-gust, at a 13.75° field, between the 3.5x's and the 6x's: blades standing in the west pool, with the middle pool's reeds in the same frame on the other side of the sort",
       proves:
-        "the ONE PICTURE DIFFERENCE X4.6c left (owner's decision, 2026-11-04): this eye has the middle pool nearer than the field's centre and the west pool farther, so Babylon's opaque list drew the blades BETWEEN them, which `Game.grassPull`'s two points cannot do. Its truth is Babylon's order, banked at 21839d1; until X4.6d the blades take ties the farther water should win (`exact.mjs`'s `EXPECTED_MOVES`), and X4.6d owes this row byte-equal to that truth",
+        "the ONE PICTURE DIFFERENCE X4.6c left, the owner's of 2026-11-04, and ended at X4.6d: this eye has the middle pool nearer than the field's centre and the west pool farther, so Babylon's opaque list drew the blades BETWEEN them, which the one run does again (`NearestRun`) and two points around that list could not. Its truth is Babylon's order, banked at 21839d1; from X4.6c to X4.6d the blades took ties the farther water should win, 27 pixels by 54/255",
       pos: [228, 20, 132],
       target: [-190.75, -6.31, -90.75],
       fov: 13.75,

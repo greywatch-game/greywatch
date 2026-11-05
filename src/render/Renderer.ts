@@ -78,17 +78,17 @@
  *   drawn after a depthless sky must be nearer than it or the sky paints over it,
  *   and anything before it spends shading the sky covers. It is the dome's
  *   (`SkyDraw`, `BABYLON_EXIT.md` X4.5c, added at construction and so first of
- *   the list). **Two opaque draws stand behind it**, the capture zones nearer than
- *   the field's blades (`ZoneDraw`, X4.6b) and on some frames those blades
- *   (`GrassDraw`, X4.6c), because what they tie with on the host's opaque list must
- *   keep the tie; an empty list asks nothing of the pass.
+ *   the list); an empty list asks nothing of the pass.
  * - `"beforeAlphaTest"`: after the group's opaque meshes and before its
  *   ALPHA-TESTED ones — or, in a frame with none of those, immediately ahead
  *   of `"opaque"`. An opaque draw that something at `"opaque"`
  *   is laid OVER goes here: that is where a blend that must land after
  *   the surface under it is put (the turf, `GrassDraw`), and
  *   the turf writes no depth of its own — so the FLOOR it lies on must be in
- *   the depth buffer, and in the picture, before it draws. The world's other
+ *   the depth buffer, and in the picture, before it draws. FIRST of ours here is the
+ *   one nearest-first run of the zones, the blades and the water (`NearestRun`,
+ *   X4.6d), what stands in Babylon's opaque list's place, which holds only the
+ *   `backed` panes in a round now and ties with nothing in it. The world's other
  *   opaque draws go here too, AHEAD of the floor (`WorldBlocks`): the point
  *   is after the sky dome, which writes no depth, and a building drawn
  *   before the floor behind it spares that floor its shading. The emissive

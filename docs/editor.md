@@ -29,10 +29,14 @@ Things it deliberately does not do:
   Both are too heavy for every frame of a drag, so during one they trace and
   shadow the old footprint. A new system that copies the world at install
   belongs in that callback too.
-- **It takes nothing of OUR renderer's: Babylon draws an editor build
+- **It takes no WORLD of OUR renderer's: Babylon draws an editor build's world
   WHOLE**, in every pass — `installMap` hands it no `onSurface`, so
   `worldMeshes` makes every surface a mesh (`BABYLON_EXIT.md` X3.7b, X5.3's
-  to move). Its blocks are unmerged, and the terrain brush rewrites the
+  to move). **The sky, the grass and the water are no world surfaces and are
+  ours here too** (X4.5c, X4.6c, X4.6d: one path through each system), so a
+  field's blades and the water draw behind that whole world and do not interleave
+  with it by key: its frames differ from a round's order until X5.3, which is
+  dev-only and recorded. Its glazing stays Babylon's. Its blocks are unmerged, and the terrain brush rewrites the
   floor's meshes in place, which a copy of ours cut once could not follow.
   Since X3.7b a ROUND is no Babylon mesh at all, so this is the one build
   that still uses Babylon's world passes — the shadow generators and the

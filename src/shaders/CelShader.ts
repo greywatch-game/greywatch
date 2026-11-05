@@ -227,8 +227,9 @@ const PROBE_BOX_UNIFORM_NAMES = ["reflectBoxMin", "reflectBoxMax"];
  * one uniform; `PROBE_BOX_UNIFORM_NAMES` above is `celProbeBox`'s two, and a
  * material lists exactly the includes it takes. This list used to carry all
  * three, which was harmless under GLSL and read as though the water — which
- * includes `celProbe` and deliberately not `celProbeBox` — wanted a parallax
- * box it has never set and must never have.
+ * includes `celProbe` and deliberately not `celProbeBox`, a program of ours since
+ * `BABYLON_EXIT.md` X4.6d — wanted a parallax box it has never set and must never
+ * have.
  */
 export const PROBE_UNIFORM_NAMES = ["reflectProbe"];
 
@@ -751,9 +752,10 @@ export interface GlassSpec {
 }
 
 /**
- * One reflection probe, as a surface that samples it WITHOUT the parallax
- * correction needs it — which today is the water. See `celProbeBox` for why
- * that is a considered choice rather than an omission.
+ * One reflection probe: a wrapped view of its cube for Babylon's glazing, the one
+ * reader of one left, the water reading its cube directly since `BABYLON_EXIT.md`
+ * X4.6d (`WaterMirror`), without the parallax correction, for the reason
+ * `celProbeBox` argues.
  *
  * `ReflectionSystem` hands the three over together because they are one fact:
  * a cube is only meaningful with the point it was baked from and the strength
@@ -993,8 +995,8 @@ export class CelMaterialFactory {
 
   // The key light as every material HOLDS it: these two objects are handed
   // out by reference and never replaced, only written into, so a map's key
-  // reaches the water in the same write as the cache, and the grass in the
-  // frame it copies them (`GrassSystem.commit`).
+  // reaches the grass and the water in the frame each copies them
+  // (`GrassSystem.commit`, `WaterSystem.commit`).
   private readonly lightDir = new Vector3(-0.5, -0.9, 0.4).normalize();
   private readonly lightColor = new Color3(0.55, 0.62, 0.8);
   private keyWrap = 0;
@@ -1119,8 +1121,7 @@ export class CelMaterialFactory {
   private palette = new Float32Array(MAX_PALETTE * 3);
 
   /**
-   * Every shadow a lit material samples, and the water that samples
-   * them too — see `shaders/ShadowBindings.ts`. Published into by the systems
+   * Every shadow a lit material samples — see `shaders/ShadowBindings.ts`. Published into by the systems
    * that render the maps; the factory's part is only to seed each material it
    * mints (`applyShadow` below).
    */
@@ -2510,9 +2511,9 @@ export class CelMaterialFactory {
   }
 
   /**
-   * The key light's two live objects, for a material outside the cache that
-   * is lit by the same key (the grass, the water): bind these rather than a
-   * copy, and a map's key reaches it in the same write.
+   * The key light's two live objects, for what is outside the cache and lit by
+   * the same key (the grass, the water): hold these rather than a copy, and copy
+   * them in the frame that draws.
    */
   get keyLight(): { dir: Vector3; color: Color3 } {
     return { dir: this.lightDir, color: this.lightColor };

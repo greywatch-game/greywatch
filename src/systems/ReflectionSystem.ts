@@ -11,8 +11,9 @@
  * are, where each stands, what it leaves out, how far it reaches and when it
  * is released are decided here; the cubes are our renderer's, their faces
  * culled and drawn from the main pass's own world with the probe's eye
- * PASSED, and Babylon's readers (the glazing, the water) are handed a
- * wrapped view of each (`wrapCubeTexture`). There is no other bake: Babylon's
+ * PASSED; the water reads its cube where it lies (`WaterDraw`, `BABYLON_EXIT.md`
+ * X4.6d), and Babylon's one reader left, the glazing, is handed a wrapped view of
+ * each of its pool (`wrapCubeTexture`). There is no other bake: Babylon's
  * `ReflectionProbe`s went with X3.7c, a world our bake cannot draw being the
  * world's failure (`BlockHandover`, `Game.worldFailed`). A bake that drained
  * depends on our renderer for nothing: its cubes stand.
@@ -49,13 +50,14 @@
  * - Nothing moves for a bake: the eye, the opaque alpha and the held clouds
  *   are the bake's own frame's (`CelMaterialFactory.fillBakeFrame`).
  * - The cubes are pooled and never destroyed, like the bot rigs
- *   (`ProbeBake.cube`), each with the wrapped view its readers sample, which
- *   is never disposed either: disposing it destroys the cube.
+ *   (`ProbeBake.cube`), each glazing one with the wrapped view its readers
+ *   sample, which is never disposed either: disposing it destroys the cube.
  * - **The DEFAULT cube is a cube of ours that nothing ever bakes**, made in
  *   the constructor before any map exists (WebGPU makes it zeroed: alpha 0,
  *   the sky) and bound only at a strength of 0 — the glazing material a pane
- *   is born with (`CelMaterialFactory.setDefaultReflection`) and the water of
- *   a build that bakes nothing. It replaced Babylon's probe 0 at X3.7c.
+ *   is born with (`CelMaterialFactory.setDefaultReflection`), through a wrapped
+ *   view, and the water of a build that bakes nothing, directly. It replaced
+ *   Babylon's probe 0 at X3.7c.
  * - A map with no glazing bakes no glazing probe. The default cube stays
  *   bound to the glazing material regardless.
  * - **An EDITOR build bakes nothing either**, for the reason the whole file is
@@ -67,13 +69,14 @@ import { CONFIG } from "../config";
 import { wrapCubeTexture } from "../core/wrappedTextures";
 import { Vector3 as MathVector3 } from "../math";
 import type { ProbeBake, ProbeExclusion, ProbeJob } from "../render/ProbeBake";
+import type { WaterMirror } from "../render/WaterDraw";
 import { blockCoordsOf, blockKey } from "../render/wgsl/clusterCull";
-import type { CelMaterialFactory, CubeReflection, ProbeReflection } from "../shaders/CelShader";
+import type { CelMaterialFactory, ProbeReflection } from "../shaders/CelShader";
 import type { GameMap, PaneGroup, WorldBox } from "../world/MapBuilder";
 
-/** A cube of ours: the view Babylon's readers sample, and the probe our bake is handed. */
+/** A cube of ours: the view Babylon's glazing samples (none in the water's pool), and the probe our bake is handed. */
 interface OurProbe {
-  readonly wrapped: BaseTexture;
+  readonly wrapped: BaseTexture | null;
   readonly job: ProbeJob;
 }
 
@@ -127,16 +130,16 @@ interface InstallPlan {
 export class ReflectionSystem {
   /**
    * The cubes, by pool and slot (`ProbeBake.cube`, which keeps no index of
-   * its own), each with the wrapped view Babylon's readers are handed
-   * (`wrapCubeTexture`) and the probe as our bake is handed it. Made on first
-   * use and kept for the process: a wrapped view is never disposed, since
+   * its own), each with the probe as our bake is handed it and, in the glazing's
+   * pool, the wrapped view Babylon's glazing is handed (`wrapCubeTexture`). Made on
+   * first use and kept for the process: a wrapped view is never disposed, since
    * disposing one destroys the texture it wraps. Grown on demand and never
    * shrunk: a map with fewer glazed blocks than the last one leaves the spare
    * cubes holding the last map's picture, which nothing samples.
    */
   private readonly pools: Record<Pool, OurProbe[]> = { glazing: [], water: [] };
   /** The cube bound at a strength of 0 before any probe claims a reader — see the header. */
-  private readonly defaultCube: BaseTexture;
+  private readonly defaultCube: GPUTexture;
   /**
    * The probes waiting for a frame, oldest first, released at the bake's own
    * budget (`ProbeBake.perFrame`) — see `releaseOurs`.
@@ -176,8 +179,8 @@ export class ReflectionSystem {
     // .setDefaultReflection`. Nothing bakes into it: WebGPU makes it zeroed,
     // alpha 0 on every face and level, which is the sky — and it is only ever
     // bound at a strength of 0 (`applyReflection`), so no pixel reads it.
-    this.defaultCube = wrapCubeTexture(scene, bake.cube("default").texture, "reflection default");
-    this.mats.setDefaultReflection(this.defaultCube);
+    this.defaultCube = bake.cube("default").texture;
+    this.mats.setDefaultReflection(wrapCubeTexture(scene, this.defaultCube, "reflection default"));
   }
 
   /**
@@ -349,7 +352,7 @@ export class ReflectionSystem {
 
   /**
    * Bakes what the map's WATER reflects — one cube per body, taken from a
-   * point on that body's own surface — and hands back one `CubeReflection`
+   * point on that body's own surface — and hands back one `WaterMirror`
    * per site, in the order the sites arrived.
    *
    * **A separate pool from the glazing's, and the reason is not tidiness.**
@@ -380,13 +383,12 @@ export class ReflectionSystem {
    * strength 0 on the default cube, which leaves the water showing the
    * analytic sky half of its mirror.
    */
-  bakeWater(sites: readonly Vector3[], map: GameMap, editor: boolean): CubeReflection[] {
+  bakeWater(sites: readonly Vector3[], map: GameMap, editor: boolean): WaterMirror[] {
     const cfg = CONFIG.graphics.reflection;
     if (sites.length === 0) return [];
 
-    // Every material still needs a cube BOUND, or its sampler reads whatever
-    // texture unit the last draw left there: the default cube, which is what
-    // a strength of 0 returns.
+    // Every body still needs a cube BOUND, or its group cannot be made: the
+    // default cube, which is what a strength of 0 returns.
     if (editor || !this.plan || this.plan.map !== map) {
       return sites.map((site) => ({ cube: this.defaultCube, at: site, strength: 0 }));
     }
@@ -405,7 +407,7 @@ export class ReflectionSystem {
     }
     this.queueWater(plan);
     const out = plan.water.map((w) => ({
-      cube: this.cubeOf("water", w.slot).wrapped,
+      cube: this.cubeOf("water", w.slot).job.cube.texture,
       at: w.at,
       strength: cfg.strength,
     }));
@@ -468,7 +470,7 @@ export class ReflectionSystem {
       this.boxMin.copyFrom(boxMin);
       this.boxMax.copyFrom(boxMax);
       const refl: ProbeReflection = {
-        cube: this.cubeOf("glazing", slot).wrapped,
+        cube: this.cubeOf("glazing", slot).wrapped!,
         boxMin: this.boxMin,
         boxMax: this.boxMax,
         at: plan.glazing[slot].at,
@@ -535,7 +537,7 @@ export class ReflectionSystem {
     return job;
   }
 
-  /** The cube in `pool`'s `slot`, made on first use with its wrapped view and its probe. */
+  /** The cube in `pool`'s `slot`, made on first use with its probe and, for the glazing, its wrapped view. */
   private cubeOf(pool: Pool, slot: number): OurProbe {
     const slots = this.pools[pool];
     // Grown to the slot.
@@ -543,7 +545,7 @@ export class ReflectionSystem {
       const name = `${pool} ${slots.length}`;
       const cube = this.bake.cube(name);
       slots.push({
-        wrapped: wrapCubeTexture(this.scene, cube.texture, `reflection ${name}`),
+        wrapped: pool === "glazing" ? wrapCubeTexture(this.scene, cube.texture, `reflection ${name}`) : null,
         job: {
           cube,
           eye: new MathVector3(),

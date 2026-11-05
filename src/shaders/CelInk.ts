@@ -113,7 +113,7 @@
  * plume was painted over the plume at full strength. The channel nothing was
  * using carries the answer: everything opaque writes 0 into it
  * (`CelShader`'s `opaqueAlpha`, and a literal 0 in `wgsl/grass.ts` and
- * `WaterShader`), the dome and a frame with no map say 1 where there is only sky
+ * `wgsl/water.ts`), the dome and a frame with no map say 1 where there is only sky
  * (`wgsl/sky.ts`, `applyClearColor`), and every alpha-blended draw
  * accumulates into it with no help at all, because Babylon's ALPHA_COMBINE
  * blends alpha as (ONE, ONE). **So it costs no pass, no target and no texture

@@ -12,7 +12,7 @@
  * Invariants: **the field states its own eye, its own lamps, its own fog and
  * its own wind, as its materials did**, under the names the bodies and the
  * shared chunks read, and the frame's fields of those names are renamed for
- * these programs alone (`FIELD_FRAME_BLOCK`) — the same layout, so the frame's
+ * these programs alone (`FIELD_FRAME_BLOCK`, `frameBlockExcept`) — the same layout, so the frame's
  * one bind group binds here as everywhere, and `pointLocal` in `celShadow`
  * reads the field's `pointPos` as it did: what a shared chunk reads of the frame
  * is the shadows, the clouds, the lightning and the lamps' cones. A patch is two
@@ -31,7 +31,7 @@ import { MAX_POINT_LIGHTS } from "../shaders/wgsl/celSurface";
 import { WGSL_CHUNKS } from "../shaders/wgsl/chunks";
 import { GRASS_SURFACE, GRASS_VERTEX, TURF_SURFACE, TURF_VERTEX } from "../shaders/wgsl/grass";
 import { ROAD_DEPTH_UNITS } from "../world/roads";
-import { FRAME_BLOCK, FRAME_FIELDS, FRAME_TEXTURES } from "./frame";
+import { FRAME_TEXTURES, frameBlockExcept } from "./frame";
 import type { PipelineState } from "./PipelineCache";
 import { FRAME_TARGETS } from "./targets";
 import {
@@ -122,13 +122,7 @@ export const PATCH_FLOATS = 8;
  * The frame's block for these programs: its one layout, with every name the
  * field states for itself renamed out of the way (the header).
  */
-const FIELD_FRAME_BLOCK: Binding = (() => {
-  const own = new Set<string>(GRASS_BLOCK.fields.map((f) => f.name));
-  return {
-    ...FRAME_BLOCK,
-    fields: (FRAME_FIELDS as readonly UniformField[]).map((f) => (own.has(f.name) ? { ...f, name: `frame_${f.name}` } : f)),
-  };
-})();
+const FIELD_FRAME_BLOCK: Binding = frameBlockExcept(new Set<string>(GRASS_BLOCK.fields.map((f) => f.name)));
 
 /** The frame's palette is declared, so group 0 is laid out as every cel program's is. */
 export const GRASS_DEFINES = ["CEL_PALETTE"];

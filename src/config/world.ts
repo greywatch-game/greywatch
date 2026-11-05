@@ -329,7 +329,7 @@ export const wear = {
  * directional wave trains rather than sampled from a tiling normal map, and
  * since the swell became GEOMETRY it is summed twice — once per vertex to
  * displace the grid, once per pixel to light it — from one WGSL function. See
- * `shaders/WaterShader.ts`.
+ * `shaders/wgsl/water.ts`.
  */
 export const water = {
   /** Default surface height above the ground plane: ankle-deep. */

@@ -135,7 +135,8 @@ function read(page) {
       (g.cloudDraw ? g.cloudDraw.stats.drawn : 0) +
       (g.skyDraw ? g.skyDraw.stats.drawn : 0) +
       (g.zoneDraw ? g.zoneDraw.stats.drawn : 0) +
-      (g.grassDraw ? g.grassDraw.stats.blades + g.grassDraw.stats.turf : 0);
+      (g.grassDraw ? g.grassDraw.stats.blades + g.grassDraw.stats.turf : 0) +
+      (g.waterDraw ? g.waterDraw.stats.drawn : 0);
     return { babylon: window.__census.babylon, ours: ours.drawn + bodies + hulls + view + pools, bodies, hulls, view, pools, taken: ours.taken };
   });
 }

@@ -267,8 +267,8 @@ export class LightingSystem {
 
   /**
    * The lights that won shader slots in the last `update`, nearest-first by
-   * construction. Other uniform-lit materials (water) read the same set so
-   * every surface agrees about which lights exist.
+   * construction. What states its own lamps (the grass, the water) reads the same
+   * set, so every surface agrees about which lights exist.
    */
   get activeLights(): readonly PointLightData[] {
     return this.active;

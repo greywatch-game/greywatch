@@ -4,8 +4,8 @@
  * wrapped view of it, never a copy): a shadow texture's
  * (`wrapShadowTexture`, which `ShadowSystem`, `BodyShadows` and
  * `LocalShadows` hand their readers) and a reflection probe's cube
- * (`wrapCubeTexture`, which `ReflectionSystem` hands the glazing and the
- * water).
+ * (`wrapCubeTexture`, which `ReflectionSystem` hands the glazing, the one
+ * reader left: the water reads its cube directly since `BABYLON_EXIT.md` X4.6d).
  * Owns nothing: each call makes a view, and its caller holds it.
  * Invariants: a view samples as the Babylon texture it stands in for did —
  * its filter, its wrap, its dimension and its mip chain; a wrapped view is
@@ -48,8 +48,8 @@ export function wrapShadowTexture(scene: Scene, texture: GPUTexture, name: strin
 
 /**
  * Babylon's view of a reflection probe's CUBE our renderer owns
- * (`render/ProbeBake.ts`, `BABYLON_EXIT.md` X3.6c) — what the glazing and the
- * water are handed (Babylon's `ReflectionProbe` cube was, until X3.7c),
+ * (`render/ProbeBake.ts`, `BABYLON_EXIT.md` X3.6c) — what the glazing is handed
+ * (Babylon's `ReflectionProbe` cube was, until X3.7c),
  * sampled as that cube was: a cube view over all six layers and the whole mip chain,
  * trilinear, and the coordinates mode Babylon's cube render target takes
  * (`INVCUBIC_MODE`), from which Babylon's bind derives the cube's wrap. Here

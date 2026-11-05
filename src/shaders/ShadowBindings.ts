@@ -1,20 +1,18 @@
 /**
  * ShadowBindings.ts — Every shadow a lit material samples, bound onto it: the
  * world's map, the bodies', the lamps' atlas, the lightning's key and its map,
- * the clouds' field and the foliage's front-face map, plus the registry of the
- * non-cel material (the water) that reads the same `celShadow` include.
+ * the clouds' field and the foliage's front-face map.
  * `CelMaterialFactory` owns one (`mats.shadows`) and lends it its cache. The
  * maps are published by the systems that render them (`ShadowSystem`,
  * `BodyShadows`, `LocalShadows`, and `Sky`'s field through `Game`); `Game`
- * also pushes the clouds and the lightning each frame, and the water
- * registers here; a reflection bake's frame holds the clouds off on its own
+ * also pushes the clouds and the lightning each frame; a reflection bake's frame
+ * holds the clouds off on its own
  * (`fillFrame`'s `bake`).
  * Invariants: **every sampler `SHADOW_SAMPLER_NAMES` names, and `foliageMap`
  * on a cel material, is BOUND on every material that declares it, always** — a
  * declared sampler with nothing behind it is a bind group that fails to build
  * and the draw silently lost. So a new material is seeded on the spot
- * (`applyShadow`, called by every creation path in the factory and by
- * `registerShadowConsumer`), each map is published before the first material
+ * (`applyShadow`, called by every creation path in the factory), each map is published before the first material
  * is asked for, and the clouds start on a texel of their own. The per-frame
  * pushes (the clouds, the lightning, the lamp slots) write into objects every
  * material already holds BY REFERENCE and walk nothing; the other setters
@@ -22,7 +20,7 @@
  * Never: adds, removes or reorders a binding — the bumped ground variant is at
  * 16 of WebGPU's 16 sampled textures per stage since the near cascade
  * (CLAUDE.md), so a seventeenth is a packing first; creates or caches
- * a material; holds a consumer past its owner's `dispose`. The irradiance
+ * a material. The irradiance
  * volume is NOT here: it is bound only on cel materials and stays with the
  * factory (`setGi`), which binds it straight after this on creation.
  */
@@ -148,39 +146,9 @@ export class ShadowBindings {
     this.cloudShadowMap = this.noCloudShadow;
   }
 
-  /**
-   * Materials that sample the depth map but are not cel materials — the water,
-   * which reproduces the cel lighting model in its own shader (see `celShadow`),
-   * and until `BABYLON_EXIT.md` X4.6c the grass, whose program now reads the frame's.
-   *
-   * They cannot live in the factory's cache: that map is keyed by colour and
-   * its entries are shared, permanent and created on demand, while these are
-   * one per map build and disposed with the map. So they are a second list
-   * that only the shadow setters walk — the same shape as the factory's
-   * `specs`, which holds foreign material references for the same reason.
-   *
-   * **Registering is the consumer's half of the contract and unregistering is
-   * the other half.** The water is rebuilt every round; a material left
-   * here after its `dispose()` takes a `setMatrix` per frame for the rest of
-   * the session.
-   */
-  private readonly shadowConsumers = new Set<ShaderMaterial>();
-
-  /** Adds a non-cel material to the shadow uploads, and seeds it now. */
-  registerShadowConsumer(mat: ShaderMaterial): void {
-    this.shadowConsumers.add(mat);
-    this.applyShadow(mat);
-  }
-
-  /** Drops a consumer. Call from the owner's `dispose`, without exception. */
-  unregisterShadowConsumer(mat: ShaderMaterial): void {
-    this.shadowConsumers.delete(mat);
-  }
-
-  /** Every material that samples the depth map, cel or not. */
+  /** Every material that samples the depth map: the cel materials, the glazing among them. */
   private eachShadowReader(fn: (mat: ShaderMaterial) => void): void {
     this.cels.forEach(fn);
-    this.shadowConsumers.forEach(fn);
   }
 
   /**
@@ -436,8 +404,8 @@ export class ShadowBindings {
    * material exists, for `setBodyShadowMap`'s reason — every cel material
    * declares the sampler, so there is no state in which it may be absent.
    *
-   * Pushed over the CACHE and not over `eachShadowReader`: the water
-   * carries no translucency and does not declare it.
+   * Pushed over the CACHE, as every setter here is at bottom: the water carried
+   * no translucency and declared none, while it had a material.
    */
   setFoliageMap(map: BaseTexture, own: OwnTexture | null = null): void {
     this.foliageMap = map;
@@ -488,8 +456,7 @@ export class ShadowBindings {
   }
 
   /**
-   * Seeds a material with every shadow it samples: a consumer from
-   * `registerShadowConsumer`, and a cel material from every one of the
+   * Seeds a material with every shadow it samples: a cel material from every one of the
    * factory's creation paths, which binds the irradiance volume straight
    * after it.
    */
@@ -518,12 +485,8 @@ export class ShadowBindings {
     mat.setVector4("flashParams", this.flashParams);
     mat.setVector3("flashDir", this.flashDir);
     mat.setColor3("flashColor", this.flashColor);
-    // A water consumer is registered BEFORE this runs, which is how
-    // this tells the two apart: only a cel material declares the foliage map.
-    if (!this.shadowConsumers.has(mat)) {
-      if (this.foliageMap) mat.setTexture("foliageMap", this.foliageMap);
-      mat.setMatrix("foliageLightMatrix", this.foliageMatrix);
-      mat.setVector4("foliageParams", this.foliageParams);
-    }
+    if (this.foliageMap) mat.setTexture("foliageMap", this.foliageMap);
+    mat.setMatrix("foliageLightMatrix", this.foliageMatrix);
+    mat.setVector4("foliageParams", this.foliageParams);
   }
 }

@@ -3020,7 +3020,7 @@ dust comes out dark. **`foamColor` is near-white on every map by construction**,
 because that is what froth is, so it carries none of it: raw, a rotor over
 Cinderhaven's bay at night threw a ring of daylight-white spray onto a surface
 whose own foam was being drawn at about half that. `RotorWash.surfaceLight` is
-the correction and it is `WaterShader`'s own three terms taken at the value a
+the correction and it is `wgsl/water.ts`'s own three terms taken at the value a
 flat surface gets — the ambient whole, the sky fill whole (that shader's note:
 water is the most up-facing surface on any map), and the key by how far above
 the horizon it is. The bands themselves are deliberately not reproduced: a
@@ -3030,7 +3030,7 @@ quantised step is a thing a lit SURFACE does and a puff of spray is not one.
 
 The other half of a downwash on water is not a particle at all — it is the
 surface going matte, foaming and throwing a wake — so it is drawn by
-`WaterShader`, out of the same normal, the same mirror and the same foam mix the
+`wgsl/water.ts`, out of the same normal, the same mirror and the same foam mix the
 surface already has. `RotorWash` publishes the SITES (x, z, the ring's radius,
 0..1) because it is already asking each machine the only question the shader
 needs, and `Game` hands them to `WaterSystem.setWash` on the line under

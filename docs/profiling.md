@@ -1287,7 +1287,9 @@ and a band on each sheet, a draw each (`render/ZoneDraw.ts`, in no mask) — and
 more. **From report version 32** (`BABYLON_EXIT.md` X4.6c) `pools.drawn` counts the
 grass's too — a draw a blade or turf run with a patch on it (`render/GrassDraw.ts`, in
 no mask) — and `pools.grass` says how many, none of them in `counters.drawCalls` any
-more.
+more. **From report version 33** (`BABYLON_EXIT.md` X4.6d) `pools.drawn` counts the
+water's too — a draw a body, its grid or its far quad (`render/WaterDraw.ts`, in no
+mask) — and `pools.water` says how many, none of them in `counters.drawCalls` any more.
 
 **Report version 24 RETIRED `drawOverlay`** (`BABYLON_EXIT.md` X4.3d): it was
 the rendering groups above 0, which by X4.3c held the optics' glass alone and

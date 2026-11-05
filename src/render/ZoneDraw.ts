@@ -8,27 +8,19 @@
  * (`ready`), one block and bind group a recipe worn (`wear`); a round's
  * vertices and indices on the GPU, in one set of arrays with one group 2, from
  * `finish` to `clear`; the surfaces (`surfaces`, each a `ZoneSurface`), and the
- * order this frame draws them in (`order`, `draws`, and `split` between the two
- * draw points), which its pull writes;
+ * order this frame draws them in (`order`, `keys`, `draws`), which the run's pull
+ * writes;
  * the rewrite of a sheet's vertices (`rewrite`); the refusal listeners it holds
  * while installed, and what it drew last (`stats`). `ZoneGeometry`, `ZoneBox`.
  * Invariants: it DECIDES NOTHING — which surface is on and what it wears are
  * `CaptureZoneSystem`'s and `FlagCloth`'s (`ZoneSurface.on`, `wear`), the size
- * gate, the frustum and the order are `Game`'s (`drawZones`, `zonePull`, inside
+ * gate, the frustum and the order are `Game`'s (`drawZones`, `nearestPull`, inside
  * the render where the camera and the planes are this frame's), and the
- * cloth's shape is the simulation's, which hands over its own arrays; **the
- * nearest-first order is drawn at TWO points**, because what is left of Babylon's
- * opaque list holds a place in it and can only be drawn around: the surfaces
- * nearer than the field's blades at `"first"`, behind the dome and ahead of the
- * blades on a frame they are there (`GrassDraw`), and the rest at
- * `"beforeAlphaTest"`, behind that list and FIRST of everything of ours but the
- * blades on a frame they are there, which the
- * list is ahead of (`Game.installMap` installs it so). Every test is LEQUAL, so
- * an equal depth goes to the later draw, and a depth this close to the far plane
- * ties for real where a blade grows through a stone: at either point alone, tens of
- * pixels flip by up to 113/255 (`BABYLON_EXIT.md` X4.6b has the numbers, and what
- * this cannot reach against the water and the `backed` panes while they are
- * Babylon's); a surface's sphere is the one its mesh held — off its vertices' box (`extractMinAndMax`'s doubles) or the box stated for a sheet,
+ * cloth's shape is the simulation's, which hands over its own arrays; **where a
+ * surface falls among the blades and the water is the one run's** (`NearestRun`,
+ * X4.6d), since every test is LEQUAL, so an equal depth goes to the later draw, and
+ * a depth this close to the far plane ties for real where a blade grows through a
+ * stone; a surface's sphere is the one its mesh held — off its vertices' box (`extractMinAndMax`'s doubles) or the box stated for a sheet,
  * whatever shape the sheet takes, `BoundingSphere.reConstruct` operation for
  * operation — so the size gate, the frustum and the sort read what Babylon read;
  * **a vertex's attributes are uploaded as Babylon uploaded a mesh's** (float32,
@@ -139,8 +131,6 @@ export class ZoneDraw {
   keys = new Float64Array(0);
   /** How many of `order` this frame draws: the pull writes it. */
   draws = 0;
-  /** How many of those are drawn at `"first"`, the rest at `"beforeAlphaTest"`: the pull writes it. */
-  split = 0;
 
   private readonly device: GPUDevice;
   private readonly variants = new Map<string, Variant>();
@@ -171,8 +161,6 @@ export class ZoneDraw {
     private readonly renderer: Renderer,
     /** One recipe of each (variant, bias) a surface will wear: their pipelines are asked now, for the session. */
     recipes: readonly CelRecipe[],
-    /** Asked inside the render: writes `order` and `draws`. */
-    private readonly pull: (into: ZoneDraw) => void,
   ) {
     this.device = renderer.device;
     const asks: Promise<boolean>[] = [];
@@ -206,12 +194,21 @@ export class ZoneDraw {
     this.ready = Promise.all(asks).then((oks) => oks.every(Boolean));
   }
 
+  /** Whether a frame is owed: what the run's predicate asks. */
+  get active(): boolean {
+    return this.committed;
+  }
+
+  /** Whether this frame draws at all: the prepare's verdict, which the run's pull reads. */
+  get drawing(): boolean {
+    return this.ours;
+  }
+
   /**
-   * Draws the round's surfaces from the next frame on, at both points (the
-   * header): the caller asks before everything else of ours at the second, and
-   * the dome stands ahead of the first for the session — telling `failed` if
-   * they cannot be: a pipeline that failed (now or for the session already),
-   * or the main pass refused. Replaces any earlier install's failure.
+   * Draws the round's surfaces from the next frame on, through the run
+   * (`NearestRun`) — telling `failed` if they cannot be: a pipeline that failed
+   * (now or for the session already), or the main pass refused. Replaces any
+   * earlier install's failure.
    */
   install(failed: (reason: string) => void): void {
     this.uninstall();
@@ -223,9 +220,6 @@ export class ZoneDraw {
     const renderer = this.renderer;
     this.removes.push(
       renderer.onFrame(this.prepare),
-      // Counted only on a frame something was committed (`Renderer.begin`).
-      renderer.add(this.drawNear, "first", () => this.committed),
-      renderer.add(this.drawFar, "beforeAlphaTest", () => this.committed),
       renderer.onRefused(this.refused),
     );
     this.isInstalled = true;
@@ -243,6 +237,7 @@ export class ZoneDraw {
     this.removes.length = 0;
     this.isInstalled = false;
     this.failed = ignore;
+    this.draws = 0;
     this.committed = false;
     this.ours = false;
     this.stats.drawn = 0;
@@ -382,13 +377,12 @@ export class ZoneDraw {
     this.vertices = 0;
     this.indexList = [];
     this.draws = 0;
-    this.split = 0;
     this.committed = false;
     this.ours = false;
     this.stats.drawn = 0;
   }
 
-  /** This frame draws: the surfaces' `kept` written, the pull asked inside the render. */
+  /** This frame draws: the surfaces' `kept` written, the order asked inside the render. */
   commit(): void {
     if (!this.isInstalled) return;
     this.committed = this.surfaces.length > 0;
@@ -430,27 +424,17 @@ export class ZoneDraw {
     return true;
   }
 
-  /** As the main pass begins — inside the render, the camera placed: this frame's verdict and its order. */
+  /** As the main pass begins — inside the render, the camera placed: this frame's verdict. */
   private readonly prepare = (): void => {
     const committed = this.committed;
     this.committed = false;
     this.stats.drawn = 0;
     this.draws = 0;
-    this.split = 0;
     this.ours = committed && this.geometry !== null && this.allBuilt();
-    if (this.ours) this.pull(this);
   };
 
-  private readonly drawNear = (pass: GPURenderPassEncoder, ctx: FrameContext): void => {
-    this.drawRange(pass, ctx, 0, this.split);
-  };
-
-  private readonly drawFar = (pass: GPURenderPassEncoder, ctx: FrameContext): void => {
-    this.drawRange(pass, ctx, this.split, this.draws);
-  };
-
-  /** A run of the pull's order in the main pass: a pipeline and its groups only when they change. */
-  private drawRange(pass: GPURenderPassEncoder, ctx: FrameContext, from: number, to: number): void {
+  /** A run of the pull's order in the main pass: a pipeline and its groups only when they change, and everything afresh at its start. */
+  drawRange(pass: GPURenderPassEncoder, ctx: FrameContext, from: number, to: number): void {
     if (!this.ours || from >= to) return;
     const geometry = this.geometry!;
     const order = this.order;

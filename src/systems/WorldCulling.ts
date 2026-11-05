@@ -99,11 +99,11 @@
  *   reaching their cel parts through `keepsSphere`; the blast's billows, the
  *   shards and the rubble since X4.4c, a billow emissive and so never gated,
  *   a shard and a chunk asked `keepsSphere` of the sphere it is drawn with
- *   this frame, `poseView`),
- *   the water (the viewmodel is our renderer's whole since
+ *   this frame, `poseView`) (the viewmodel is our renderer's whole since
  *   `BABYLON_EXIT.md` X4.3d — the optics' glass and the kit card the last of
- *   it — and no candidate; the sky since X4.5 and the grass since X4.6c, the
- *   field's one sphere asked of `keepsSphere` by `Game.drawGrass`), and every
+ *   it — and no candidate; the sky since X4.5, the grass since X4.6c, the
+ *   field's one sphere asked of `keepsSphere` by `Game.drawGrass`, and the water
+ *   since X4.6d, each body's by `Game.drawWater`), and every
  *   visual an EDITOR build makes,
  *   which is keyed per placement and carries no block at all. The HULLS were
  *   loose until `BABYLON_EXIT.md` X4.2b and are no mesh now: our renderer

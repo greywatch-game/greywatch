@@ -263,14 +263,6 @@ export class GrassSystem {
   private planes: Plane[] = Frustum.GetPlanes(Matrix.Identity());
   /** The factory's LIVE key, by reference: `commit` copies it, so a flash lights the field in its frame. */
   private key: CelMaterialFactory["keyLight"] | null = null;
-  /** Per patch, a bit per water body it may stand in (`reedsOf`). */
-  private reeds = new Uint32Array(0);
-  /**
-   * The bodies this frame's drawn patches may stand in, a bit each (`reedsOf`, no
-   * promise of a reed), a body's index in the map's list: what `Game.grassPull`
-   * weighs against the field's centre.
-   */
-  drawnReeds = 0;
   /** The whole field's bounding sphere, or null with no field: the size gate's and the sort key's. */
   sphere: { readonly x: number; readonly y: number; readonly z: number; readonly radius: number } | null = null;
   /**
@@ -319,8 +311,6 @@ export class GrassSystem {
     /** The map's extent, and how far its ground runs past it. */
     size: number,
     margin: number,
-    /** The tallest water rect `i`'s surface stands, or null where it has no body (`WaterSystem.surfaceTop`). */
-    waterTop: (i: number) => number | null,
   ): void {
     this.dispose();
     if (rects.length === 0 || !env.grass) return;
@@ -334,7 +324,6 @@ export class GrassSystem {
     this.rowOf = new Int8Array(mask.patches.nx * mask.patches.nz);
     this.rowWalk = new Uint32Array(mask.patches.nx * mask.patches.nz);
 
-    this.reeds = reedsOf(mask, water, waterTop);
     this.sphere = fieldSphere(mask);
     this.key = this.mats.keyLight;
 
@@ -600,8 +589,6 @@ export class GrassSystem {
     for (const l of lods) l.count = 0;
     for (const l of turfs) l.count = 0;
     let blades = 0;
-    let reeds = 0;
-    const reedOf = this.reeds;
     // How far a tip can travel past its patch, and how tall a blade can stand.
     const sway = g.heightMax * MAX_HEIGHT_SCALE * 0.9;
     const bladeTop = g.heightMax * (1 + g.clump.amount);
@@ -653,7 +640,6 @@ export class GrassSystem {
             while (pick + 1 < lods.length && lods[pick + 1].share >= need) pick++;
             const lod = lods[pick];
             this.place(lod, x0, z0, P, 0);
-            reeds |= reedOf[k];
             blades += Math.ceil(lod.share * tier.density * P * P);
           }
         }
@@ -666,7 +652,6 @@ export class GrassSystem {
     this.stats.patches = patches;
     this.stats.blades = blades;
     this.stats.turf = turfPatches;
-    this.drawnReeds = reeds;
 
     const fieldParams = values.fieldParams;
     fieldParams[0] = near;
@@ -788,7 +773,6 @@ export class GrassSystem {
     this.mask = null;
     this.blocks = null;
     this.sphere = null;
-    this.drawnReeds = 0;
   }
 }
 
@@ -821,44 +805,6 @@ function fieldSphere(mask: GrassMask): NonNullable<GrassSystem["sphere"]> {
     z: (z1 + z0) * 0.5,
     radius: Math.sqrt(dx * dx + dy * dy + dz * dz) * 0.5,
   };
-}
-
-/**
- * Per patch, a bit per water body its blades MAY stand in: a grown patch over the
- * rect whose LOWEST ground is under the tallest the surface stands, a blade rooted
- * above that being above the water all the way up. **That is a conservative test
- * of a whole patch and not that a reed stands there**: Kurenai's two ponds carry
- * bits on 8 and 12 patches and grow no blade below their surface, and all that costs
- * is the frame's point being asked for a tie that does not exist (300 poses at them
- * moved 0 pixels, `BABYLON_EXIT.md` X4.6c). The first 32 bodies of a map; no shipped
- * map has more than 8. Which of them a frame's patches reach is what decides where
- * those blades are drawn against the water (`Game.grassPull`).
- */
-function reedsOf(
-  mask: GrassMask,
-  water: readonly WaterRect[],
-  waterTop: (i: number) => number | null,
-): Uint32Array<ArrayBuffer> {
-  const pt = mask.patches;
-  const P = CONFIG.grass.patch;
-  const out = new Uint32Array(pt.nx * pt.nz);
-  const bodies = Math.min(water.length, 32);
-  for (let b = 0; b < bodies; b++) {
-    const r = water[b];
-    const y = waterTop(b);
-    if (y === null) continue;
-    const i0 = Math.max(0, Math.floor((r.x - r.width / 2 - mask.x0) / P));
-    const i1 = Math.min(pt.nx - 1, Math.floor((r.x + r.width / 2 - mask.x0) / P));
-    const j0 = Math.max(0, Math.floor((r.z - r.depth / 2 - mask.z0) / P));
-    const j1 = Math.min(pt.nz - 1, Math.floor((r.z + r.depth / 2 - mask.z0) / P));
-    for (let j = j0; j <= j1; j++) {
-      for (let i = i0; i <= i1; i++) {
-        const k = j * pt.nx + i;
-        if (pt.cover[k] > 0 && pt.yLo[k] < y) out[k] |= 1 << b;
-      }
-    }
-  }
-  return out;
 }
 
 /** The mask's patches summarised per BLOCK, so the walk can skip a block whole. */

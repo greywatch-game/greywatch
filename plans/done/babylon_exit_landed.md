@@ -7926,7 +7926,7 @@ to come. What X4.5a was asked for and what it measured:
     on Coldharbour, Cinderhaven and Hollowmere: 64 of 64 byte-equal to 547d803,
     the same 9 stale rows red.
 
-### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4, its review 5d43b2e), X4.6b **LANDED** (483165a, its review e1f5712), X4.6c **LANDED** (4a16b5f)
+### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4, its review 5d43b2e), X4.6b **LANDED** (483165a, its review e1f5712), X4.6c **LANDED** (4a16b5f), X4.6d **LANDED** (HASH)
 
 The plan's `BABYLON_EXIT.md` holds what the surfaces are today, the two tables X4.6a
 measured and the four sub-steps to come. X4.6a's brief, word for word:
@@ -8531,3 +8531,148 @@ what was corrected and measured.
   known flake coming up, `sarab-shore-flip` new (`--new`), exit 0; the same 34 stale rows red at the same means, no device lost. The new row against its truth:
   `expected to move until X4.6d: 27 pixels, worst 54/255`, exit 0, byte-equal to the earlier takes; a different frame in its place exits 1 naming the bound. Typecheck, build,
   corecheck and parity pass. **Not verified**: a server's match in a browser, the phone, and how often a player would meet the flip, since every rate here is of poses aimed at it.
+
+#### X4.6d's brief, word for word
+
+- **X4.6d — the water.** The largest shader of the five (`WaterShader.ts`). **It retires what X4.6c
+  could not do without it and owes back what the owner accepted until it lands** ("Decisions", 2026-11-04):
+  the blades, the zones' two runs and the water become ONE nearest-first run of ours by the keys Babylon
+  used, the water and the blades' tie exact again in every frame, Sarab's and Hollowmere's included, and with
+  that `Game.grassPull`, `GrassDraw.near` and `installNear`, `GrassSystem.reeds` and `drawnReeds`, and
+  `WaterSystem.sortCentre` and `surfaceTop` all go. **`backed` panes stay Babylon's through this step, the only
+  thing left on that list in a round, and they tie with nothing in the run**: no blade and no zone triangle
+  reaches one (X4.6b's review, X4.6c), and no water either (X4.6c's review: none of the 14,844 triangles is
+  within half a metre of any body's surface range on the three maps with any; `sarab-pane-water`'s drowned car
+  is see-through). **So the run needs one point and no split**: first of ours at `"beforeAlphaTest"`,
+  behind the panes, and this step takes out `ZoneDraw`'s near run and its "drawn at TWO points",
+  `Game.zonePull`'s split and `GrassSystem.bladeSortCentre`, `GrassDraw`'s `"first"` run, `Renderer.ts`'s "two
+  opaque draws" under `"first"` (the dome alone there again) and `docs/rendering.md`'s. **What remains after it
+  is the panes' place on Babylon's list and nothing else.** If `exact.mjs` refuses that point, the whole run goes
+  at `"first"`, behind the dome, and only then does an exception stay in `Renderer.ts`, for X4.6e. Two points
+  again is an owner question, not a choice. **An editor build keeps its difference** (the whole world on that
+  list, no zones): this step moves its blades and water into the same one run, and that stays until X5.3. **Its
+  proof includes the banked flip**: `exact.mjs plans/webgpu-ref/ref <keep> --rows=sarab-shore-flip` byte-equal
+  against 21839d1's truth, this step REMOVES the row's `EXPECTED_MOVES` entry (against its parent's BEFORE the
+  row moves by that same bound, the one row that may), and it re-shoots the seven poses in `docs/rendering.md`'s
+  table against a BEFORE at 21839d1, byte-equal. `ref/` is gitignored, so a lost frame is re-taken at 21839d1
+  with the row's definition added (`bank.mjs sarab --rows=shore-flip`), which reproduced byte for byte. The
+  bed-depth bake and the probes stay what they are, and the water reads its cube
+  directly, a round's (`cubeOf("water", slot)`) and an editor build's (the default
+  cube) alike, as it moves there too (decided 2026-11-03). **So what reads
+  `wrapCubeTexture` after this step is the glazing alone**: a round's through
+  `pointGlazing`, until X4.6e, and the default cube every glass material is born with
+  (`setDefaultReflection`), which is all the editor's glazing ever samples, until
+  X5.3. `cubeOf` makes a wrapped view for every pool today, and the water's pool no
+  longer wants one. **It must be ahead
+  of `"afterSurfaces"`**: it writes depth, the clouds' far depth passes wherever
+  nothing has, and the turf at a shore and every fade land on it (the one run's point,
+  above).
+  **Verify:** `marsh`, `millpond`; the far quad in `coldharbour-menu`, `-sky-disc`
+  and `cinderhaven-sky-cloud-moon` (no row of its own, the gap was not real);
+  `fx-water-fade`, its disc on the bed still rejected; `sarab-pane-water`; a cube's
+  bake on Cinderhaven's sea; `F2` in an editor build, a water rect edited through the
+  tier-3 rebuild and drawn at strength 0; `surfaces.mjs` reports no `water` or
+  `waterFar`, in a round and under `--editor`.
+
+**X4.6d landed** (HASH; 2026-11-04; no change to the picture in a round but the accepted, temporary one of X4.6c ending).
+
+- **What moved.** `render/WaterDraw.ts` (new) draws every body of water its grid or its far quad, one draw for one, a
+  range of one index buffer over one storage array; `render/waterProgram.ts` (new) is the program,
+  `shaders/wgsl/water.ts` (new) the bodies, verbatim but for their entry points and the essay kept with them, and
+  `shaders/WaterShader.ts` is deleted. `WaterSystem` keeps the bed-depth bake, the grid's lines, `follow`'s near/far test
+  and the clock, holds no mesh and no material, and writes plain arrays. One pipeline, on `Game.roundPipelines`. **In an
+  editor build too**, by the owner's decision: the install is on both paths, and the editor's glazing stays Babylon's until X5.3.
+- **The order: one run at one point, first of ours at `"beforeAlphaTest"`, and it held at the first try.**
+  `render/NearestRun.ts` (new) is the frame's one draw there; `Game.nearestPull` writes each list's order and keys off the
+  scene's planes and `globalPosition`, inside the render, as a late prepare so each draw's verdict stands; the merge sends an
+  equal key to the mesh made first, the water's, then the blades', then the zones', which was Babylon's stable sort over
+  its list. Nothing but the `backed` panes is left on that list in a round, and nothing in the run ties with one (X4.6b's
+  and X4.6c's reviews). **Bytes at each point tried: `"beforeAlphaTest"`, 136 of 137 rows byte-equal to a7b29fb and the 137th
+  byte-equal to its truth. No other point was tried, none being needed**, so `"first"` holds the dome alone and `Renderer.ts`'
+  exception is gone rather than left for X4.6e. No further scheme was built.
+- **Retired**: `Game.grassPull` and `zonePull` (the second's frustum and sort are `nearestPull`'s), `GrassDraw.near`, its
+  `pull`, `drawNear`, `drawFar` and `installNear`, `GrassSystem.reeds`, `drawnReeds`, `reedsOf` and `build`'s `waterTop`,
+  `WaterSystem.sortCentre` and `surfaceTop`, `ZoneDraw`'s `split`, `pull`, `drawNear` and `drawFar`, `ShadowBindings`'
+  `shadowConsumers`, `registerShadowConsumer` and `unregisterShadowConsumer`, the water's pool's wrapped views, and
+  `exact.mjs`'s one `EXPECTED_MOVES` entry. **Not retired**: Babylon's opaque list in a round (the `backed` panes, X4.6e's),
+  `wrapCubeTexture` (the glazing's, and the default cube's for the editor's glazing), the foam's `Texture`, the empty
+  `EXPECTED_MOVES` table, and the harness's optional chain on `body.mat` for a BEFORE at a tree whose water is Babylon's.
+- **What it keeps, in each pass, measured at a7b29fb and not assumed.** A scratch hook on every water mesh's
+  `onBeforeRenderObservable`, over 90 frames of a real round and a `reflections.rebake()`: Cinderhaven 720 draws (90 grid, 630
+  quad) and Hollowmere 90, every one in the frame's main pass (`PostProcessRTT-celInk`), none in the glow's mask, a shadow map,
+  the lamps' atlas or a bake; no render target's list holds one. So no shadow map, no atlas, no bake, no mask, then and now. It
+  RECEIVES shadow, clouds, the flash and the lamps' cones off the frame. It writes depth and alpha 0, so the ink draws on it as
+  it did. Its fog, mist, key, ambient, sky fill and lamps are its own, in `WATER_SHARED`, under the names the bodies and
+  `celShadow` read, with those names on the frame's block renamed for this program alone (`frameBlockExcept`, moved here out of
+  `grassProgram.ts`); `pointLocal` reads the water's `pointPos`, as it did. Its wind is none: its waves are its own clock. Depth
+  write on, LEQUAL, bias 0, back cull, no blend: the defaults, which `surfaces.mjs` had measured.
+- **Found by the limit, before anything drew: group 0 cannot be the frame's whole.** The frame's fourteen textures and the
+  water's three are 17 sampled textures in the fragment stage, and WebGPU promises 16; the material declared nine. So
+  `WaterDraw` holds a group 0 of its own, the frame's block and the six shadow maps at the head of `FRAME_TEXTURES`, a prefix so each
+  keeps its binding, refreshed from the frame's handles in its prepare.
+- **Three textures, three owners, each sampler read off the BEFORE.** Babylon's own `_GetSamplerDescriptor` over each texture's
+  state, in the page: the bed `r8unorm` 1 level, linear in all three, clamped, `maxAnisotropy` 4; the foam `rgba8unorm`, 9 levels,
+  `invertY`, repeat, `maxAnisotropy` 4; the cube linear in all three, `repeat` (from `INVCUBIC_MODE`), `maxAnisotropy` 4. The bed is
+  ours now and its sampler states exactly that; the cube is the bake's, read through a cube view over every level with a sampler
+  stating that; **the foam stays Babylon's `Texture`**, read through the seam (`hostTexture`), so its decode and mips are what they
+  were, and that goes to X5.4's list, where the seam ends.
+- **Values read live, kept live.** A material held `key.dir`, `key.color` and the rotors' array by reference and read them at its
+  bind, so `WaterSystem.commit` copies all three in the frame that draws, right before the render; `update` alone moves the clock and
+  the lamps, so a frozen or held frame keeps what it had, and `follow` writes the eye and the grid's origin in every state. A build's
+  first frame draws at clock 0 on a fresh `values`, as a new material did, and `this.time` carries on across builds, as it did.
+- **Proof.** BEFORE `bank.mjs --check --keep` alone at a7b29fb, AFTER twice alone on the tree, the second on the final source. By
+  `exact.mjs`: **136 of 137 rows byte-equal in both, neither known flake coming up, and the one that moved is `sarab-shore-flip`,
+  27 pixels by 54/255, exactly the bound X4.6c's review banked**. Against its truth (`ref/`, taken at 21839d1)
+  `exact.mjs plans/webgpu-ref/ref <keep> --rows=sarab-shore-flip` is byte-equal. The same 34 stale rows red at the same means, no
+  device lost, no page or console error. With the entry removed, `exact.mjs <a7b29fb> <after>` exits 1 naming that row alone, which
+  is what "the one row that may" means.
+  - **The flips.** The seven poses of X4.6c's review and every pose of its scans (`rev-c/hole-*.json`), shot frozen at wind 2.6, in one
+    order, at 21839d1 and on the tree, compared by the PNG's SHA-1: **Sarab 599 of 599, Hollowmere 302 of 302, Kurenai 300 of 300 byte-equal**,
+    the 34 of Sarab's and 9 of Hollowmere's that had moved among them. Pose by pose: all seven, 29 px, 22, 12, 16, 6, 1 and 4, now 0.
+  - **The far quad.** `surfaces.mjs --pixels` at the BEFORE, what it owns: `coldharbour-menu` 204,387 px, `-sky-disc` 69,292, `-avenue`
+    26,171, `cinderhaven-sky-cloud-moon` 120,672, `cinderhaven-tank-far` 43,229, so those rows do prove it, and all five are byte-equal.
+    `marsh`, `millpond`, `sarab-pane-water`, `coldharbour-fx-water-fade`, `fx-scorch`, `greyfen-shore-ahead`, `harrowmead-shore-ahead`
+    and `-behind` byte-equal. `sarab-pane-water`'s drowned car is byte-equal with the pool's quad now behind the `backed` panes.
+  - **A cube's bake on Cinderhaven's sea.** Every water cube read back after a frozen re-bake, every face at every level, hashed: all 8 of
+    Cinderhaven's (world 0.50 to 0.52 on the four in reach of the land, 0 on the four out at sea) and Greyfen's 1 (0.66), equal on both trees.
+  - **What no row holds.** A rotor's wash forced at one site on each of Cinderhaven's and Hollowmere's largest body, near and far, frozen: 8 frames
+    byte-equal, the wash moving the frame in 3 of the 4 (the fourth has that site out of Hollowmere's far view, and no wash in either tree).
+  - **The order against a `backed` pane** had been measured as non-tying and these rows bear it out: `curtain2`, `curtain40`, `curtain90`
+    and `shopfront` byte-equal.
+- **`census`** `--against` the BEFORE by row: all 137 rows and all seven totals equal, Babylon down by the water, ours up by the same. **`surfaces.mjs`**
+  on Coldharbour, Cinderhaven and Greyfen and under `--editor` on Coldharbour and Greyfen: no `water` or `waterFar`, `waterMeshes` 0, a water
+  and a grass rect both remade. **`pipelines.mjs --round`**: zero of ours in play on Coldharbour and Cinderhaven, and on Cinderhaven the two of Babylon's
+  the rotor wash already owed (X4.7). Typecheck, build (`check-babylon-free`, `check-proving`), corecheck, parity, `gate` (seven maps clean) and `shaders`
+  pass. `kit:hash` and `merge:hash` not run: no builder and no merge moved. Report version 33, `pools.water`.
+- **Allocation**, V8's sampling heap profiler with short-lived objects counted, Cinderhaven, BEFORE against AFTER. 1,200 rendered frames at deploy:
+  **63,757 to 56,538 bytes a frame**, Babylon's material binds and uniform pushes gone with its eight draws. In that, `drawWater` ~255 and `NearestRun.draw`
+  ~102, once-a-frame functions' boxed doubles (`keepsSphere`'s arguments for eight bodies, a read of a `Float64Array`), and nothing in `WaterDraw`.
+  3,000 calls of `follow`, `update` and `commit` under a camera moved every call: 294 to 333 bytes a call, all of it boxed doubles.
+- **Live.** Cinderhaven offline, spawned, the real bots: 8 bodies drawn, one grid and seven quads, the clock moving, two frames at the water
+  about a second apart differing by 333,920 pixels; the near/far test turning between 121 m and 119 m past a rect's edge, and placed by the harness first at 300 m and then at 20 m
+  the shapes swapped body by body; out to the menu with no body standing, and a second round. No page or console error, no warning, the seal on. Hollowmere the same, 2
+  bodies. **Babylon's active list is EMPTY in a Hollowmere round** (0 a frame, at deploy and in play, group 0 still visited 60 of 60), so the seam's fallback is not this frame's
+  path; Coldharbour's holds its panes and its blobs. **Editor**, Greyfen, `F2` from the menu, at `marsh`'s eye, frozen: rect 0's surface raised 0.5 m through
+  `rebuildGeometry`, its body remade, 969,041 pixels moved by up to 212/255 with the water plainly up the piles; restored, 0 pixels against the frame before; out, to the menu
+  with no body standing, and into a round. No error and no warning. Nothing was saved.
+- **An editor build, re-measured, since the owner was told of it.** Frozen at wind 2.6, `F2` from the menu, each distinct eye of the map's rows. Its blades and water now stand
+  behind its whole world. Against 21839d1:
+  | eye | at X4.6c (a7b29fb) | now |
+  | --- | --- | --- |
+  | Greyfen `crossing` | 302 px, worst 94/255 | byte-equal |
+  | Greyfen `menu` | 47, 58/255 | byte-equal |
+  | Greyfen `ground` | 10, 21/255 | byte-equal |
+  | Greyfen `marsh` | 5, 6/255 | byte-equal |
+  | Greyfen `canopy` | byte-equal | byte-equal |
+  | Greyfen `treeline` | noise | 21,029 px, its own residue (one tree against itself is 127,370 and 88,506 px) |
+  | Sarab `menu` | 73, 60/255 | 2, 1/255 |
+  | Sarab `wadi` | 414, 98/255 | 456, 91/255 |
+  | Sarab `shelf` | byte-equal | 17, 35/255 |
+  | Harrowmead `ground` | not taken | 2, 1/255 |
+  So Greyfen's were the blades against the water, and they ended with the flips. **A difference stays, and it is the run's place against the world on Babylon's list**: Sarab's seven other
+  eyes and Harrowmead's `borderland` and `millpond` byte-equal; Harrowmead's `crossing` (10,494 px) and `menu` (1,645) are inside their own residue, one tree against itself 11,051 and 9,053. Sarab's and Harrowmead's
+  repeat on the tree, byte-equal across two runs, and each tree's truth was taken once, so these are small differences and not a bound. It stays until X5.3. Dev-only; no player sees it.
+- **Corrected as it went**: `docs/editor.md` said Babylon draws an editor build whole, which stopped being so at X4.5c; `docs/states.md`'s vantages; `VERIFYING.md`'s default cube; `Game.ts`'s comment on
+  why `follow` comes before the cull; `WorldCulling`'s loose list; `docs/rendering.md`'s draw points, the run's section, the water's own and the capture zone's. **`CLAUDE.md` is not touched**: no statement in
+  it is made false here, its rendering section naming neither the water's renderer nor the run.
+- **Not verified.** A server's match in a browser: the water reads no wire. The phone (no capture was owed by this step: the draw count is unchanged). GPU cost against the BEFORE: not an A/B.

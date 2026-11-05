@@ -196,9 +196,9 @@ fn cloudLitAir(p: vec3f) -> f32 {
  * unchanged on a frame with nobody in it.
  *
  * A consumer owes every name in `SHADOW_UNIFORM_NAMES` and
- * `SHADOW_SAMPLER_NAMES` in its own lists, and owes REGISTERING with
- * `ShadowBindings.registerShadowConsumer` (`mats.shadows`) — that pushes all
- * of them, and a material that is never registered samples an unbound texture.
+ * `SHADOW_SAMPLER_NAMES`: a cel material through `ShadowBindings`, which pushes
+ * them, and a program of ours off the frame's block and textures (the water binds
+ * only those, `render/waterProgram.ts`).
  */
 export const CEL_SHADOW = `
 #include<celCloud>

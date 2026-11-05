@@ -38,8 +38,8 @@
  * **`--pixels` owns a surface by taking it out.** Each class in a row's main pass
  * is skipped at `Mesh.render` for three frames, in every pass, the frame is
  * grabbed and compared with the row's own, and the skip comes off; no `isVisible`
- * or `setEnabled` is written, because `GrassSystem` and `WaterSystem` rewrite
- * those from `tick`. So a class's count is every pixel of the frame that would
+ * or `setEnabled` is written, because the systems drawing them rewrote those from
+ * `tick`. So a class's count is every pixel of the frame that would
  * differ without it, its depth's effect on the ink included. Beside the counts
  * are the OVERLAPS the plan asks about: a pixel both a blended surface and the
  * water own is that surface over the water, and likewise a pane and the water.
@@ -457,7 +457,8 @@ async function editorBuild(id) {
     const g = window.__celshock;
     const layout = g.mapDef.layout;
     const stamp = () => ({
-      water: g.water.bodies.map((b) => b.grid.uniqueId),
+      // No mesh since X4.6d: each body's surface, which a rebuild makes anew.
+      water: g.water.bodies.map((b) => b.surface),
       // No mesh since X4.6c: the field's mask, which a rebuild bakes anew.
       grass: g.grass.mask,
     });
@@ -473,6 +474,8 @@ async function editorBuild(id) {
       waterRemade: a.water.length > 0 && a.water.every((u) => !b.water.includes(u)),
       grassRemade: a.grass !== null && a.grass !== b.grass && b.grass !== null,
       grassDrawn: { ...g.grassDraw.stats },
+      waterDrawn: { ...g.waterDraw.stats },
+      waterMeshes: g.scene.meshes.filter((m) => /^water/.test(m.name)).length,
       grassMeshes: g.scene.meshes.filter((m) => /^grass/.test(m.name)).length,
     };
   });

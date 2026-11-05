@@ -84,7 +84,7 @@
  *
  * The other half of a downwash on water is not a particle at all — it is the
  * surface itself going matte, foaming and throwing a wake — and that is drawn
- * by `WaterShader`, because it is made of the same normal, the same mirror and
+ * by `wgsl/water.ts`, because it is made of the same normal, the same mirror and
  * the same foam mix the surface already has. What this class publishes is the
  * SITE (`sites`/`siteCount`: x, z, the ring's radius and how hard, per rotor),
  * and it publishes it because it is already asking each machine the only
@@ -197,7 +197,7 @@ export class RotorWash {
   private readonly at = new Vector3();
 
   /**
-   * The rotors currently working water, packed as `WaterShader` wants them —
+   * The rotors currently working water, packed as `wgsl/water.ts` wants them —
    * four floats a site, x/z/radius/strength — and read by `Game` on the line
    * under `update`. Fixed length, filled from the front, valid up to
    * `siteCount`; the tail is stale and the shader never looks at it.
@@ -468,7 +468,7 @@ export class RotorWash {
   /**
    * What the map's light does to a HORIZONTAL surface, as one multiplier.
    *
-   * It is `WaterShader`'s own three terms with the two banded ones taken at
+   * It is `wgsl/water.ts`'s own three terms with the two banded ones taken at
    * the value a flat surface gets: the ambient whole, the sky fill whole —
    * that shader's note, "water is the most up-facing surface on any map, so it
    * takes essentially all of it" — and the key by how far above the horizon it

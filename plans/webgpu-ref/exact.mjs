@@ -49,10 +49,9 @@ const KNOWN_FLAKES = {
  * says which step removes the entry, and that step's proof is the row byte-equal.
  */
 const EXPECTED_MOVES = {
-  // `BABYLON_EXIT.md`, "Decisions", the owner's of 2026-11-04: `Game.grassPull`'s two
-  // points against Babylon's order, the frame's reedy bodies either side of the key.
-  // Graded against 21839d1's truth (`ref/`), the one frame on the other side of it.
-  "sarab-shore-flip": { pixels: 27, worst: 54, until: "X4.6d" },
+  // Empty since X4.6d: the one entry there has been, `sarab-shore-flip` (`BABYLON_EXIT.md`,
+  // "Decisions", the owner's of 2026-11-04), ended with the one run, its row byte-equal to
+  // its truth in `ref/`. A step that moves it against a parent still drawing the flip fails.
 };
 
 const args = process.argv.slice(2);

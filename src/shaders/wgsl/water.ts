@@ -1,41 +1,23 @@
 /**
- * WaterShader.ts — Stylized water ShaderMaterial: a displaced wave field over
- * a camera-following grid, a Fresnel mirror over a depth-graded body colour,
- * light cut hard on the waves themselves, shoreline foam, cel banding.
- * Invariants: point-light uniform arrays are pre-allocated to MAX_POINT_LIGHTS
- * and filled by WaterSystem each frame from the same LightingSystem slots as
- * the cel shader. Opaque output. No Babylon lights. The wave field is SAMPLED
+ * wgsl/water.ts — The water's surface as plain strings OUR renderer assembles
+ * (`render/waterProgram.ts`, `BABYLON_EXIT.md` X4.6d): a displaced wave field
+ * over a camera-following grid, a Fresnel mirror over a depth-graded body
+ * colour, light cut hard on the waves themselves, shoreline foam, cel banding.
+ * Owns: `WATER_VERTEX` (`waterVertex`), `WATER_SURFACE` (`waterSurface`),
+ * `waveTrains` and `WaveTrains`, and the argument for all of it.
+ * Invariants: the point-light arrays are MAX_POINT_LIGHTS and filled by
+ * `WaterSystem` each frame from the same `LightingSystem` slots as the cel
+ * shader. Opaque output, alpha 0. No Babylon lights. The wave field is SAMPLED
  * FROM NOTHING — there is no normal map and there must not be one again — and
  * the vertex and fragment stages evaluate the SAME field (`WAVES` below), so
- * the geometry and the light can never describe two different seas.
- * Both stages are hand-written WGSL, and `shaderLanguage` on the material is
- * load-bearing rather than declarative: a `ShaderMaterial` defaults to GLSL
- * and would look these up in a store nothing writes any more. See
- * `docs/rendering.md` for what the dialect and Babylon's WGSL processor decide.
+ * the geometry and the light can never describe two different seas. Nothing
+ * inside a WGSL template string may contain a backtick — it closes the template.
+ * Never: imports Babylon (`src/render/` imports this, and the build gate walks
+ * it); declares a binding (`wgsl/chunks.ts`' rule).
+ * Contract: `docs/rendering.md`, "The water".
  */
-import {
-  Scene,
-  ShaderLanguage,
-  ShaderMaterial,
-  ShaderStore,
-  Texture,
-  Vector2,
-  Vector3,
-  Vector4,
-} from "@babylonjs/core";
-import { CONFIG } from "../config";
-import {
-  MAX_POINT_LIGHTS,
-  PROBE_SAMPLER_NAMES,
-  PROBE_UNIFORM_NAMES,
-  SHADOW_SAMPLER_NAMES,
-  SHADOW_UNIFORM_NAMES,
-} from "./CelShader";
-// The shared includes self-register in the IncludesShadersStoreWGSL; import
-// them explicitly so the #include<cel...> lines below can never be tree-shaken
-// away, and so registration is provably before the first effect COMPILE rather
-// than merely before the first material.
-import "./wgsl/includes";
+import { CONFIG } from "../../config";
+import { MAX_POINT_LIGHTS } from "./celSurface";
 
 /**
  * Water — the one surface in the game whose SHAPE moves, and the only one
@@ -120,7 +102,7 @@ import "./wgsl/includes";
  * the glint while dimming it by the same factor, so the far reach of a lake
  * is a soft sheen rather than a hard egg of light.
  *
- * Output is opaque and display-ready (`imageProcessingEnabled` stays false).
+ * Output is opaque and display-ready.
  */
 
 /**
@@ -233,34 +215,8 @@ fn bedDepth(texel: f32) -> f32 {
 }
 `;
 
-/** The uniforms both stages read. Declared in each, laid out once. */
-const SHARED_UNIFORMS = /* wgsl */ `
-uniform time: f32;
-uniform bounds: vec4f;   // minX, minZ, maxX, maxZ — the rect
-uniform surfaceY: f32;   // the rest level
-uniform depthMax: f32;   // metres the depth byte saturates at
-uniform depthDry: f32;   // metres of bank the byte reaches below zero
-
-// --- the wave field (see waves() and waveTrains) ---
-uniform trainA: array<vec4f, ${CONFIG.water.waves.trains}>;
-uniform trainB: array<vec4f, ${CONFIG.water.waves.trains}>;
-uniform trainCount: f32;
-uniform waveFlow: vec2f;  // metres per second the whole field is carried
-uniform waveDrag: f32;
-uniform waveBreak: f32;
-uniform waveLap: f32;
-
-// --- the rotor wash: what a machine hovering over this water is doing to it ---
-// One site per rotor working the surface, published by 'RotorWash'. xy = where
-// the ring is standing, z = its radius (the DISC's, so the rim of the hole and
-// the ring of spray particles are the same circle), w = 0..1, how hard. Both
-// stages read it: the swell is pressed out of the GEOMETRY under the disc as
-// well as out of the light, or the lit surface lies flat on a mesh still
-// heaving under it.
-uniform washSite: array<vec4f, ${CONFIG.water.wash.sites}>;
-uniform washCount: f32;
-uniform washFlatten: f32; // how much of the wind's field is pressed out
-
+/** The rotor wash's one shape both stages read, written once. */
+const WASH_CORE = /* wgsl */ `
 const ROTOR_WASH: i32 = ${CONFIG.water.wash.sites};
 
 // How hard the rotors are shredding this point: the disc, 0..1. The one shape
@@ -279,30 +235,20 @@ fn washCore(p: vec2f) -> f32 {
 }
 `;
 
-ShaderStore.ShadersStoreWGSL["waterVertexShader"] = `
-// x, z: where this vertex stands relative to the grid's origin. y: how many
-// metres of world one cell of the grid covers here — the grid is fine under
-// the camera and coarse away from it, and this is what the vertex's own
-// sampling test is asked against.
-attribute position: vec3f;
-
-uniform viewProjection: mat4x4f;
-// Where the grid is standing: the camera, snapped to one near cell so the
-// near vertices land on the same world points every frame and cannot swim.
-uniform gridOrigin: vec2f;
-uniform gridDetail: vec2f; // cells per wavelength: drawn at all, drawn whole
-${SHARED_UNIFORMS}
-
-var depthTexSampler: sampler;
-var depthTex: texture_2d<f32>;
-
-varying vPosW: vec3f;
-
+/**
+ * The vertex stage: x and z of `position` are where the vertex stands relative
+ * to the grid's origin, and y how many metres of world one cell of the grid
+ * covers here — the grid is fine under the camera and coarse away from it, and
+ * that is what the vertex's own sampling test is asked against. `gridOrigin` is
+ * the camera, snapped to one near cell so the near vertices land on the same
+ * world points every frame and cannot swim.
+ */
+export const WATER_VERTEX = /* wgsl */ `
+${WASH_CORE}
 ${WAVES}
 ${BED_UV}
 
-@vertex
-fn main(input: VertexInputs) -> FragmentInputs {
+fn waterVertex() {
   // **The rect is cut by CLAMPING, not by discarding.** The grid is axis
   // aligned and so is the rect, so clamping a cell's four corners into the
   // rect gives exactly the cell's overlap with it: a cell wholly outside
@@ -325,100 +271,11 @@ fn main(input: VertexInputs) -> FragmentInputs {
 // The derivatives are what was MEANT — `fwidth(vPosW.xz)` IS the sampling
 // criterion the whole lit field rests on, and every hard cut below is widened
 // by its own fwidth — so there is no explicit-LOD form to reach for, and
-// WGSL's uniformity analysis has to be told. Of the fetches below only the
-// cube's LOD is explicit — its level IS the unresolved chop.
-ShaderStore.ShadersStoreWGSL["waterFragmentShader"] = `
-#define DISABLE_UNIFORMITY_ANALYSIS
-
-varying vPosW: vec3f;
-
-var foamTexSampler: sampler;
-var foamTex: texture_2d<f32>;
-var depthTexSampler: sampler;
-var depthTex: texture_2d<f32>; // r = SIGNED bed depth (see bedDepth), over "bounds"
-uniform camPos: vec3f;
-${SHARED_UNIFORMS}
-
-uniform lightDir: vec3f;
-uniform lightColor: vec3f;
-uniform ambientColor: vec3f;
-// The hemispheric fill from the sky itself, the same term the cel shader gives
-// the ground by n.y. Water is the most up-facing surface on any map, and
-// leaving it out was what made a pond read as a hole in a lit field.
-uniform skyLightColor: vec3f;
-uniform fogColor: vec3f;
-uniform fogParams: vec2f;  // x = start, y = end
-uniform mistColor: vec3f;
-uniform mistParams: vec2f; // x = height falloff, y = strength
-// The top of the sky dome and the bright band under it, as the mirror
-// returns them. The HORIZON end of the same gradient is fogColor.
-uniform skyZenithColor: vec3f;
-uniform skyHorizonColor: vec3f;
-
-uniform deepColor: vec3f;
-uniform shallowColor: vec3f;
-uniform bedColor: vec3f;
-uniform foamColor: vec3f;
-
-uniform waveDetail: f32;     // pixels per wavelength a train needs to be lit
-
-// --- the mirror ---
-uniform reflectance: f32;    // Fresnel face-on. Water is about 0.02
-uniform fresnelPower: f32;   // Schlick is 5. Lower brings the sheen on sooner
-uniform sunHalo: f32;        // cosine half-width of the light's soft glare
-uniform haloStrength: f32;
-uniform mirrorBlur: f32;     // mip levels the unresolved chop blurs it by
-uniform mirrorChop: f32;     // share of the chop the PICTURE follows (the light takes all)
-
-// --- the light on the waves: two hard cuts on the mirrored ray ---
-uniform glintCut: f32;       // radians — the core, where a facet shows the light
-uniform glintStrength: f32;
-uniform sheenCut: f32;       // radians — the path of light round it
-uniform sheenStrength: f32;
-uniform lampCut: vec2f;      // the same pair for a point light, radians
-// Light through a backlit crest: how much, and where on the swell it starts.
-uniform throughStrength: f32;
-uniform throughCrest: f32;
-
-// --- the bed ---
-uniform depthFade: f32;  // metres over which the body reaches deepColor
-uniform bedDepth: f32;   // metres over which the bed stops showing through
-uniform bedShow: f32;    // how much of the bed shows at zero depth
-uniform caustics: f32;   // crest-focused light on a shoal
-uniform scatter: f32;    // share of the key the body takes facing any way
-
-// --- the foam ---
-uniform foamWidth: f32;
-uniform foamScale: f32;
-uniform foamSpeed: f32;
-uniform foamSlope: f32;  // the flattest bed the foam line is measured against
-uniform crestFoam: f32;  // whitecaps, on a swell big enough to break
-uniform capLevel: f32;   // how near the crest a cap may start
-uniform fleckStrength: f32; // scum drifting out on the open water
-
-// --- the rotor wash: what a machine hovering over this water is doing to it ---
-// One site per rotor working the surface, published by 'RotorWash'. xy = where
-// the ring is standing, z = its radius (the DISC's, so the rim of the hole and
-// the ring of spray particles are the same circle), w = 0..1, how hard.
-uniform washReach: f32;   // multiples of the radius the rings run out to
-uniform washBlur: f32;    // roughness added to the mirror inside the disc
-uniform washFoam: f32;    // whitewater across it
-// The rings themselves, deliberately the same three numbers a wave train
-// states, because that is what they are — one train bent into a circle.
-uniform washHeight: f32;
-uniform washLength: f32;
-uniform washSpeed: f32;
-
-uniform pointPos: array<vec3f, ${MAX_POINT_LIGHTS}>;
-uniform pointColor: array<vec3f, ${MAX_POINT_LIGHTS}>; // rgb premultiplied by intensity
-uniform pointRange: array<f32, ${MAX_POINT_LIGHTS}>;
-uniform pointCount: f32;
-
-// Both counts reach the declarations above by INTERPOLATION and the loop bounds
-// below as real consts, and the split is forced rather than stylistic: a
-// uniform array's size must be a literal or a #define, because Babylon resolves
-// the bound out of the preprocessor table when it lays out the leftover UBO and
-// a WGSL const is not in that table. The grass's shader settled this.
+// WGSL's uniformity analysis has to be told (`waterProgram.ts`' diagnostics). Of
+// the fetches below only the cube's LOD is explicit — its level IS the
+// unresolved chop.
+export const WATER_SURFACE = /* wgsl */ `
+${WASH_CORE}
 const MAX_POINT_LIGHTS: i32 = ${MAX_POINT_LIGHTS};
 const TAU: f32 = 6.2831853;
 
@@ -544,8 +401,7 @@ fn domeAt(y: f32) -> vec3f {
     (v - 0.43) / 0.07);
 }
 
-@fragment
-fn main(input: FragmentInputs) -> FragmentOutputs {
+fn waterSurface() -> vec4f {
   let posW = fragmentInputs.vPosW;
   let viewDist = length(posW - uniforms.camPos);
   let viewDir = normalize(uniforms.camPos - posW);
@@ -556,8 +412,8 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
 
   // --- bed depth, off the baked map (metres) ---
   // textureSample and NOT textureSampleLevel: the sampler is anisotropic
-  // (Babylon enables it for BILINEAR whether or not the texture carries
-  // mips), and an explicit level 0 turns that off — a single bilinear tap
+  // (the draw's, as Babylon's was for BILINEAR whether or not the texture
+  // carried mips), and an explicit level 0 turns that off — a single bilinear tap
   // that moved the far shoreline of Harrowmead's millpond by up to 28/255.
   // See docs/rendering.md.
   let restDepth = bedDepth(textureSample(depthTex, depthTexSampler, bedUv(posW.xz)).r);
@@ -800,82 +656,9 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
 
   // Alpha 0, for the reason the grass writes 0: the frame's alpha channel is
   // TRANSLUCENT COVERAGE and the water is opaque. See CelInk.
-  fragmentOutputs.color = vec4f(dither(col), 0.0);
+  return vec4f(dither(col), 0.0);
 }
 `;
-
-/** Uniforms the WaterSystem pushes per frame / per round. */
-const WATER_UNIFORMS = [
-  "viewProjection",
-  "gridOrigin",
-  "gridDetail",
-  "time",
-  "camPos",
-  "surfaceY",
-  "lightDir",
-  "lightColor",
-  "ambientColor",
-  "skyLightColor",
-  "fogColor",
-  "fogParams",
-  "mistColor",
-  "mistParams",
-  "skyZenithColor",
-  "skyHorizonColor",
-  "deepColor",
-  "shallowColor",
-  "bedColor",
-  "foamColor",
-  "bounds",
-  "trainA",
-  "trainB",
-  "trainCount",
-  "waveFlow",
-  "waveDrag",
-  "waveBreak",
-  "waveLap",
-  "waveDetail",
-  "reflectance",
-  "fresnelPower",
-  "sunHalo",
-  "haloStrength",
-  "mirrorBlur",
-  "mirrorChop",
-  "glintCut",
-  "glintStrength",
-  "sheenCut",
-  "sheenStrength",
-  "lampCut",
-  "throughStrength",
-  "throughCrest",
-  "depthMax",
-  "depthDry",
-  "depthFade",
-  "bedDepth",
-  "bedShow",
-  "caustics",
-  "scatter",
-  "foamWidth",
-  "foamScale",
-  "foamSpeed",
-  "foamSlope",
-  "crestFoam",
-  "capLevel",
-  "fleckStrength",
-  "washSite",
-  "washCount",
-  "washReach",
-  "washFlatten",
-  "washBlur",
-  "washFoam",
-  "washHeight",
-  "washLength",
-  "washSpeed",
-  "pointPos",
-  "pointColor",
-  "pointRange",
-  "pointCount",
-];
 
 /**
  * The trains one body's surface is summed from: two vec4s each, as the shader
@@ -933,134 +716,4 @@ export function waveTrains(swell: number): WaveTrains {
     amp *= w.gain;
   }
   return { a, b, count, crest };
-}
-
-/** What a body's shape is, as `WaterSystem` works it out per rect. */
-export interface WaterSurface {
-  /** The rest level, metres. */
-  y: number;
-  /** The field it sums. */
-  trains: WaveTrains;
-  /** Metres per second its whole field is carried; zero for standing water. */
-  flow: Vector2;
-  /** How far a crest may break toward the foam colour — the map's sea state. */
-  caps: number;
-  /** How much light shows through a backlit crest — none on a ripple. */
-  through: number;
-}
-
-/**
- * One water material per body (each carries its own shoreline `bounds`, its own
- * baked bed-depth map and its own reflection probe). Motion and shape come from
- * `CONFIG.water` and the body's own `WaterSurface`; palette, lighting and the
- * mirror are set by the WaterSystem from the map's environment and from
- * `ReflectionSystem`.
- *
- * Every uniform the fragment shader reads is written here or by the system —
- * `foamParams` was once declared, read and never uploaded, which silently
- * zeroed the foam on every map. **Add a uniform to the shader and it owes a
- * line here and a name in `WATER_UNIFORMS`.**
- *
- * `reflectionCube` is the one exception and it is deliberate: it is bound by
- * `WaterSystem.build` from the probe the reflection callback hands back inside
- * the same call, so a material never exists for a frame without one — and
- * under WebGPU **a sampler a material DECLARES has to be BOUND, used or not**,
- * or the bind group fails to build and every draw with it is lost.
- */
-export function createWaterMaterial(
-  scene: Scene,
-  name: string,
-  textures: { foam: Texture; depth: Texture },
-  bounds: Vector4,
-  surface: WaterSurface,
-): ShaderMaterial {
-  const mat = new ShaderMaterial(
-    name,
-    scene,
-    { vertex: "water", fragment: "water" },
-    {
-      attributes: ["position"],
-      uniforms: [
-        ...WATER_UNIFORMS,
-        ...SHADOW_UNIFORM_NAMES,
-        ...PROBE_UNIFORM_NAMES,
-      ],
-      samplers: [
-        "foamTex",
-        "depthTex",
-        ...SHADOW_SAMPLER_NAMES,
-        ...PROBE_SAMPLER_NAMES,
-      ],
-      shaderLanguage: ShaderLanguage.WGSL,
-    },
-  );
-  const w = CONFIG.water;
-  const deg = Math.PI / 180;
-  mat.setTexture("foamTex", textures.foam);
-  mat.setTexture("depthTex", textures.depth);
-  mat.setVector4("bounds", bounds);
-  mat.setFloat("surfaceY", surface.y);
-  mat.setArray4("trainA", surface.trains.a as unknown as number[]);
-  mat.setArray4("trainB", surface.trains.b as unknown as number[]);
-  mat.setFloat("trainCount", surface.trains.count);
-  mat.setVector2("waveFlow", surface.flow);
-  mat.setFloat("waveDrag", w.waves.drag);
-  mat.setFloat("waveBreak", w.waves.break);
-  mat.setFloat("waveLap", w.waves.lap);
-  mat.setFloat("waveDetail", w.waves.detail);
-  mat.setVector2("gridDetail", new Vector2(w.grid.detail[0], w.grid.detail[1]));
-  mat.setVector2("gridOrigin", Vector2.Zero());
-  mat.setFloat("reflectance", w.reflectance);
-  mat.setFloat("fresnelPower", w.fresnelPower);
-  mat.setFloat("sunHalo", w.sunHalo);
-  mat.setFloat("haloStrength", w.haloStrength);
-  mat.setFloat("mirrorBlur", w.mirrorBlur);
-  mat.setFloat("mirrorChop", w.mirrorChop);
-  mat.setFloat("glintCut", w.light.glint.degrees * deg);
-  mat.setFloat("glintStrength", w.light.glint.strength);
-  mat.setFloat("sheenCut", w.light.sheen.degrees * deg);
-  mat.setFloat("sheenStrength", w.light.sheen.strength);
-  mat.setVector2(
-    "lampCut",
-    new Vector2(w.light.lamp[0] * deg, w.light.lamp[1] * deg),
-  );
-  mat.setFloat("throughStrength", surface.through);
-  mat.setFloat("throughCrest", w.light.through.crest);
-  mat.setFloat("depthMax", w.depthMax);
-  mat.setFloat("depthDry", w.depthDry);
-  mat.setFloat("depthFade", w.depthFade);
-  mat.setFloat("bedDepth", w.bedDepth);
-  mat.setFloat("bedShow", w.bedShow);
-  mat.setFloat("caustics", w.caustics);
-  mat.setFloat("scatter", w.scatter);
-  mat.setFloat("foamWidth", w.foamWidth);
-  mat.setFloat("foamScale", w.foamScale);
-  mat.setFloat("foamSpeed", w.foamSpeed);
-  mat.setFloat("foamSlope", w.foamSlope);
-  mat.setFloat("crestFoam", surface.caps);
-  mat.setFloat("capLevel", w.caps.level);
-  mat.setFloat("fleckStrength", w.fleckStrength);
-  mat.setFloat("washReach", w.wash.reach);
-  mat.setFloat("washFlatten", w.wash.flatten);
-  mat.setFloat("washBlur", w.wash.blur);
-  mat.setFloat("washFoam", w.wash.foam);
-  mat.setFloat("washHeight", w.wash.height);
-  mat.setFloat("washLength", w.wash.length);
-  mat.setFloat("washSpeed", w.wash.speed);
-  // A body born with no rotor over it, which is every body on every map until
-  // one flies out there — `WaterSystem.setWash` is what moves it.
-  mat.setArray4("washSite", new Array(w.wash.sites * 4).fill(0));
-  mat.setFloat("washCount", 0);
-  mat.setFloat("time", 0);
-  mat.setVector3("camPos", Vector3.Zero());
-  mat.setArray3("pointPos", new Array(MAX_POINT_LIGHTS * 3).fill(0));
-  mat.setArray3("pointColor", new Array(MAX_POINT_LIGHTS * 3).fill(0));
-  mat.setFloats("pointRange", new Array(MAX_POINT_LIGHTS).fill(0));
-  mat.setFloat("pointCount", 0);
-  // FROZEN for `CelMaterialFactory.remember`'s reason: `ShaderMaterial.isReady`
-  // rebuilds the whole define set for every submesh of every pass and throws
-  // it away, and `isFrozen` is what stops it. The uniforms keep flowing — what
-  // gates those is `_mustRebind`, which does not read `isFrozen`.
-  mat.freeze();
-  return mat;
 }

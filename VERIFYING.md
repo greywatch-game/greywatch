@@ -1747,8 +1747,9 @@ is one machine's:
   128 is world, everything else is the sky the shader fills in. The default
   cube is none of them and reads all zeroes: its raw `GPUTexture` is the
   bake's, `g.probeBake.cubes.find((c) => c.texture.label === "probe bake:
-  default").texture` (`g.reflections.defaultCube` is Babylon's wrapped
-  `BaseTexture` over it, which `copyTextureToBuffer` cannot take).
+  default").texture`, which is also `g.reflections.defaultCube` since X4.6d (a
+  glazing material holds Babylon's wrapped `BaseTexture` over it, which
+  `copyTextureToBuffer` cannot take).
   Babylon's `ReflectionProbe` cubes went at X3.7c (the tag
   `exit-babylonworld` still has them). Three standing checks:
   - **Coverage says the enclosure rule fired.** Mean coverage over all six faces

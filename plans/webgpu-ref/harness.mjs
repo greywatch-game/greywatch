@@ -1026,15 +1026,17 @@ export function freeze(page, set = FREEZE_SET, { windTime = 0, turn = 0, strike 
         g.grass.update = () => {};
       }
       if (g.water) {
-        // **A `WaterBody` is `{ mesh, mat, depth }` and the field is `mat`.**
-        // Written as `body.material` this whole line is an optional chain onto
-        // `undefined` — it throws nothing, reports nothing and pins nothing,
-        // leaving the water HALTED at whatever clock the run booted with,
-        // which is the exact trap the paragraph above exists to name. It
+        // **The clock is the shared block's since X4.6d, and it was a material's
+        // field before it.** Written once as `body.material` this line was an
+        // optional chain onto `undefined` — it threw nothing, reported nothing and
+        // pinned nothing, leaving the water HALTED at whatever clock the run booted
+        // with, which is the exact trap the paragraph above exists to name. It
         // survived because the four menu vantages barely have water in them;
-        // the millpond and the marsh are in the set so that it cannot again.
+        // the millpond and the marsh are in the set so that it cannot again. The
+        // chain stays for a BEFORE taken at a tree whose water is Babylon's.
         g.water.time = wind;
         for (const body of g.water.bodies ?? []) body.mat?.setFloat?.("time", wind);
+        if (g.water.values) g.water.values.time[0] = wind;
         g.water.update = () => {};
       }
     }
