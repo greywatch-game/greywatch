@@ -146,20 +146,14 @@ node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--gpu] [--max] [
   value, and it exits 1 on any row that differs, or stands on one side only, outside
   `KNOWN_FLAKES` (`harrowmead-view-pistol-reload` up to 2 pixels by 1/255, `sarab-shelf`
   1 pixel by 1/255). A row the step added is named in `--new`. **`--check`'s pass line
-  cannot do this**: `coldharbour-ring-behind-field` with the zones' split wrong moves 54
+  cannot do this**: `coldharbour-ring-behind-field` with the ring ahead of the blades moves 54
   pixels by up to 113/255, a mean of 0.0002 against 0.02. It wants no GPU.
   **`EXPECTED_MOVES` is not flakes**: a row whose move is a recorded picture difference
   the owner accepted for a stated time, bounded so the tool fails if it moves MORE, and
-  removed by the step its `until` names (`sarab-shore-flip`, 27 pixels by 54/255 against
-  21839d1's truth, until X4.6d, `BABYLON_EXIT.md` "Decisions"). `--rows` compares only the
-  named rows, which is how a kept frame is held against `ref/` alone, whose other rows are
-  stale: `exact.mjs plans/webgpu-ref/ref <keep> --rows=sarab-shore-flip`.
-  **`EXPECTED_MOVES` is not flakes**: a row whose move is a recorded picture difference
-  the owner accepted for a stated time, bounded so the tool fails if it moves MORE, and
-  removed by the step its `until` names (`sarab-shore-flip`, 27 pixels by 54/255 against
-  21839d1's truth, until X4.6d, `BABYLON_EXIT.md` "Decisions"). `--rows` compares only the
-  named rows, which is how a kept frame is held against `ref/` alone, whose other rows are
-  stale: `exact.mjs plans/webgpu-ref/ref <keep> --rows=sarab-shore-flip`.
+  removed by the step its `until` names. It is empty since X4.6d, whose run ended the one
+  entry it has held (`sarab-shore-flip`, `BABYLON_EXIT.md` "Decisions"). `--rows` compares
+  only the named rows, which is how a kept frame is held against `ref/` alone, whose other
+  rows are stale: `exact.mjs plans/webgpu-ref/ref <keep> --rows=sarab-shore-flip`.
 - **`diff.mjs`** says how much and where two PNGs differ. `bank.mjs --check`
   grades itself with the same function; the CLI is for looking at a specific
   pair by hand, and `--tiles` names the region rather than the number.
