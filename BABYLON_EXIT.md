@@ -1916,7 +1916,7 @@ moved; **all of this is past since X4.5c**: no sky piece is a Babylon mesh):
   stood over", with the `Active` commit; `Sky.ts`'s header and
   `CloudShader.ts`'s; `FILES.md` for each new file.
 
-### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4, its review 5d43b2e), X4.6b **LANDED** (483165a, its review e1f5712), X4.6c **LANDED** (4a16b5f, its review hash pending)
+### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4, its review 5d43b2e), X4.6b **LANDED** (483165a, its review e1f5712), X4.6c **LANDED** (4a16b5f, its review d80c078)
 
 Everything left on the floor that Babylon still draws, the three blended pools
 X4.4 left waiting for the glazing, and the blob shadows (decided 2026-11-03).
@@ -2127,7 +2127,7 @@ Greyfen, `F2` from the menu and each eye of the map's rows):
   growths and a teardown, and `F2` with a rect edit, no console error and the seal quiet; our pipelines
   in play zero. The field's share of a frame's allocation falls from ~1,740 to ~100 bytes.
   **Not verified**: a server's match in a browser, the phone.
-  **Its review** (hash pending; 2026-11-04; no change to the game, under `src/` only comments and
+  **Its review** (d80c078; 2026-11-04; no change to the game, under `src/` only comments and
   `bench/vantages.ts`'s rows): **"only Hollowmere can" was false and pixels do move**. Sarab has four reedy
   bodies, and where a frame's patches reach one nearer than the field's centre and another farther,
   `grassPull` takes `"beforeAlphaTest"` and the blades win ties Babylon gave the farther water: up to 29 px

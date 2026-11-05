@@ -8461,7 +8461,7 @@ found is the instruments' and the record's:
   draw count is unchanged). The field's GPU cost against the BEFORE: not an A/B. "A frame on Hollowmere that actually flips" stood here,
   and the review found them.
 
-**X4.6c's review** (hash pending; 2026-11-04; no change to the game or to the picture, under `src/` only comments and
+**X4.6c's review** (d80c078; 2026-11-04; no change to the game or to the picture, under `src/` only comments and
 `bench/vantages.ts`'s row and text). **The picture difference the step left is real, and the owner accepted it on 2026-11-04 as
 recorded and temporary until X4.6d** (`BABYLON_EXIT.md`, "Decisions"). The review had found the record understated it; what follows is
 what was corrected and measured.
