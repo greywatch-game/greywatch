@@ -163,7 +163,7 @@ export class WaterSystem {
   private foamHandle: HostTexture | null = null;
   /** What every body reads alike; null with no water standing. */
   private values: WaterShared | null = null;
-  /** The factory's LIVE key, by reference: `commit` copies it, so a flash lights the water in its frame. */
+  /** The factory's LIVE key, by reference: `commit` copies it, so an environment pushed lights the water in its frame. */
   private key: CelMaterialFactory["keyLight"] | null = null;
   /** The eye the bodies were last stood under — see `follow`. */
   private eye = new Vector3();
@@ -466,8 +466,8 @@ export class WaterSystem {
 
   /**
    * This frame draws, each body through the size gate (`Game.drawWater`): the live
-   * key, which a lightning flash moves in the frame it lights the ground around it,
-   * the rotors' array as it stands, and the draw told.
+   * key, which `setEnvironment` alone writes (a lightning flash is a second light, read
+   * off the frame, and moves no key), the rotors' array as it stands, and the draw told.
    */
   commit(): void {
     const values = this.values;

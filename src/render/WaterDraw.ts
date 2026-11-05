@@ -190,7 +190,7 @@ export class WaterDraw {
     return this.ours;
   }
 
-  /** The standing map's shapes, replacing any before: the grid and the far quad, end to end. */
+  /** The standing map's shapes: the grid and the far quad, end to end. Destroys nothing, so a `clear` is owed first (`WaterSystem.build`'s `dispose`). */
   setGeometry(grid: WaterShape, quad: WaterShape, values: WaterShared): void {
     const device = this.device;
     const positions = new Float32Array(grid.positions.length + quad.positions.length);

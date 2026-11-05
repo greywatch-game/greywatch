@@ -2205,9 +2205,10 @@ export class Game {
     // GPU emitter driven off where something is — and NOT beside the fleet,
     // which it never touches. The server builds no such class at all.
     this.rotorWash = new RotorWash(this.scene);
-    // `mats` is not for building materials here — both systems own their own
-    // shader. It is the publisher of the shadow map, its matrix and its params,
-    // which both now sample (see `celShadow`).
+    // `mats` is not for building materials here — both systems' pictures are our
+    // renderer's. It is the holder of the map's key, the one thing either asks it
+    // for (`keyLight`); the shadow map, its matrix and its params reach both
+    // shaders off the frame (see `celShadow`).
     this.waterDraw = new WaterDraw(this.renderer);
     this.water = new WaterSystem(this.scene, this.mats, this.waterDraw);
     this.grassDraw = new GrassDraw(this.renderer);
@@ -2512,8 +2513,8 @@ export class Game {
     // counted no tracer, mark, thrown or laid body, nor any case, since X4.4b,
     // nor any billow, shard or chunk since X4.4c, nor any fire since X4.4d,
     // nor the cloud ring since X4.5b, nor the dome and the moon since X4.5c, nor
-    // the rings and the flags since X4.6b, nor the grass since X4.6c (no pools,
-    // but their draws owe the sum).
+    // the rings and the flags since X4.6b, nor the grass since X4.6c, nor the
+    // water since X4.6d (no pools, but their draws owe the sum).
     this.prof.setPools(() => ({
       drawn:
         this.pieceDraw.stats.drawn +

@@ -2537,8 +2537,11 @@ both sides of the key moved pixels, an accepted, temporary picture difference (`
 and the seven poses of X4.6c's review are byte-equal to Babylon's order again. **An editor
 build's blades and water are not held**: its whole world is on Babylon's opaque list, ahead of the
 run, so neither can interleave with it by key, and until X5.3 a few of its frames differ
-(against 21839d1, Sarab's `wadi` 456 px by 91/255 at worst; Greyfen's six eyes hold,
-`BABYLON_EXIT.md` X4.6d's note). **The `backed` panes are on that list too, and no blade can
+(against 21839d1, Sarab's `wadi` 456 px by 91/255 at worst). Greyfen's six eyes come back
+byte-equal or inside their own residue, but **that is those eyes and not the map**: a difference
+there was the blades against the WORLD, and behind it they tie the way they did only where every
+tying surface sorts nearer than the field's centre, which is inferred and not measured
+(`BABYLON_EXIT.md` X4.6d's note and its review's table). **The `backed` panes are on that list too, and no blade can
 reach one, nor can the water**: over all three maps with any, not one of 14,844 triangles is
 within a blade's height and sway of a texel that grows grass, nor within half a metre of a
 body's surface range.
@@ -2597,7 +2600,9 @@ surface comes within half a metre of one (X4.6b's and X4.6c's reviews, every map
 shows is drawn first either way). **Two points were never a design**: the near and far runs of
 X4.6b and the blades' per-frame point of X4.6c existed only because the water was Babylon's and
 could only be drawn around, and each is gone. A third list that sorts with these owes the merge
-a line and its made-first place in the tie.
+a line and its made-first place in the tie. **A NaN key sorts last**, read as +Infinity at the top
+of the loop, because no comparison holds of one and an arm assuming the other two had failed would
+spin; no shipped path to one is known.
 
 ## The water: a mirror with a body under it
 

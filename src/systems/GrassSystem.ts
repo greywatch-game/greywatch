@@ -261,7 +261,7 @@ export class GrassSystem {
   // Scratch, reused every frame to avoid allocation.
   private bestD2 = new Float32Array(MAX_PUSHERS);
   private planes: Plane[] = Frustum.GetPlanes(Matrix.Identity());
-  /** The factory's LIVE key, by reference: `commit` copies it, so a flash lights the field in its frame. */
+  /** The factory's LIVE key, by reference: `commit` copies it, so an environment pushed lights the field in its frame. */
   private key: CelMaterialFactory["keyLight"] | null = null;
   /** The whole field's bounding sphere, or null with no field: the size gate's and the sort key's. */
   sphere: { readonly x: number; readonly y: number; readonly z: number; readonly radius: number } | null = null;
@@ -668,8 +668,8 @@ export class GrassSystem {
 
   /**
    * This frame draws, the field through the size gate (`Game.drawGrass`): the live
-   * key, which a lightning flash moves in the frame it lights the ground under it,
-   * and the draw told.
+   * key, which `setEnvironment` alone writes (a lightning flash is a second light, read
+   * off the frame, and moves no key), and the draw told.
    */
   commit(): void {
     const values = this.values;

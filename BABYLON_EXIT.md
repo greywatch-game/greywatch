@@ -2166,10 +2166,18 @@ Greyfen, `F2` from the menu and each eye of the map's rows):
   in the main pass. **Group 0 of the water is its own**: the frame's block and six shadow maps, because the whole frame
   group and these three textures would be 17 in the stage. **The foam stays a Babylon `Texture`** through the seam (X5.4's).
   **An editor build's blades and water stand behind its whole world**; against 21839d1 Greyfen's `crossing`, menu,
-  `ground`, `marsh` and `canopy` are byte-equal now, and Sarab and Harrowmead keep small differences (the note's table).
+  `ground`, `marsh` and `canopy` are byte-equal now at those eyes, and Sarab and Harrowmead keep small differences (the note's table).
   A real Cinderhaven and Hollowmere round, `F2` with a rect edited and seen, out to the menu and a round: no console
   error, no warning, the seal quiet; our pipelines in play zero. A Cinderhaven frame's allocation falls ~7.2 KB.
   Report version 33, `pools.water`. **Not verified**: a server's match in a browser, the phone.
+  **Its review** (hash pending; 2026-11-04; no change to the picture; its table is in the note): Greyfen's editor
+  frames were the blades against the WORLD, as X4.6c's review said, and not against the water as X4.6d's note said,
+  and they hold at those eyes and not for the map; `CLAUDE.md`'s clause on the zones and the grass was false and is
+  rewritten, and 5f26b00's message saying otherwise stands, corrected by the note; `NearestRun.draw` no longer spins on
+  a NaN key, which sorts last, the review having found no shipped path to one and finite keys taking the same path
+  (200,000 random cases against the old class, in Node); stale comments and `WaterDraw.setGeometry`'s doc. Bank by `exact.mjs`
+  against a BEFORE at af5eff1: 137 of 137 byte-equal, the same 34 stale rows red at the same means. Typecheck, build, corecheck and
+  parity pass. **Not verified**: a server's match in a browser, the phone, the NaN path on a real frame.
 - **X4.6e — the glazing, the three blended pools and the blob shadows, together.** The
   see-through panes, the three pools and the blobs land in ONE commit, because one sort
   of ours orders every blended surface (decided 2026-11-01, X4.4's "Find out first",

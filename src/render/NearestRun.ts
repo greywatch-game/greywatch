@@ -13,9 +13,11 @@
  * installs it so), behind what is left of Babylon's opaque list, the `backed` panes,
  * with which nothing here ties (measured, X4.6c's review); an equal key goes to the
  * mesh made first, which is what Babylon's stable sort over its list did: the
- * water's, then the blades', then the zones'; a frame it has nothing to draw costs a
- * predicate; nothing here makes an object on a frame (what the sampling profiler sees
- * here is a once-a-frame function's boxed doubles, about 100 bytes).
+ * water's, then the blades', then the zones'; a NaN key sorts as +Infinity, last, as
+ * an emptied list's does, so whatever the keys the merge ends with every item drawn
+ * once; a frame it has nothing to draw costs a predicate; nothing here makes an object
+ * on a frame (what the sampling profiler sees here is a once-a-frame function's boxed
+ * doubles, about 100 bytes).
  * Never: imports Babylon; draws a thing itself; holds a surface; decides a key.
  * Contract: `docs/rendering.md`, "The one run".
  */
@@ -73,13 +75,16 @@ export class NearestRun {
     const zn = zones.draws;
     const wn = water.draws;
     const bladeKey = this.bladeKey;
+    const last = Number.POSITIVE_INFINITY;
     let blades = this.grass.drawing;
     let z = 0;
     let w = 0;
     while (z < zn || w < wn || blades) {
-      const zk = z < zn ? zoneKeys[z] : Number.POSITIVE_INFINITY;
-      const bk = blades ? bladeKey : Number.POSITIVE_INFINITY;
-      const wk = w < wn ? waterKeys[w] : Number.POSITIVE_INFINITY;
+      // A NaN key reads as `last` (`<= last` is false of nothing else): no comparison
+      // holds of one, so the final arm would be reached with `z` spent, and spin.
+      const zk = z < zn && zoneKeys[z] <= last ? zoneKeys[z] : last;
+      const bk = blades && bladeKey <= last ? bladeKey : last;
+      const wk = w < wn && waterKeys[w] <= last ? waterKeys[w] : last;
       if (w < wn && wk <= bk && wk <= zk) {
         let end = w + 1;
         while (end < wn && waterKeys[end] <= bk && waterKeys[end] <= zk) end++;
