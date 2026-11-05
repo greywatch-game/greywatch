@@ -2170,7 +2170,7 @@ Greyfen, `F2` from the menu and each eye of the map's rows):
   A real Cinderhaven and Hollowmere round, `F2` with a rect edited and seen, out to the menu and a round: no console
   error, no warning, the seal quiet; our pipelines in play zero. A Cinderhaven frame's allocation falls ~7.2 KB.
   Report version 33, `pools.water`. **Not verified**: a server's match in a browser, the phone.
-  **Its review** (hash pending; 2026-11-04; no change to the picture; its table is in the note): Greyfen's editor
+  **Its review** (9b086ef; 2026-11-04; no change to the picture; its table is in the note): Greyfen's editor
   frames were the blades against the WORLD, as X4.6c's review said, and not against the water as X4.6d's note said,
   and they hold at those eyes and not for the map; `CLAUDE.md`'s clause on the zones and the grass was false and is
   rewritten, and 5f26b00's message saying otherwise stands, corrected by the note; `NearestRun.draw` no longer spins on
