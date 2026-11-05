@@ -2002,10 +2002,20 @@ padded query per 8 m patch and then per texel took it down.
   frame down (`docs/rendering.md`'s third rule). It was tested by shrinking the
   starting capacity to four patches and walking Harrowmead through three rung
   switches: buffers grew to 32x, no GPU validation error, every frame drawn.
-  Re-run that if anything about how the patch meshes are made changes — and it
-  is not covered by `npm run parity` or the reference bank. **That re-run is
-  OWED now**: its own condition was met by 3ff0456, which stitched the turf's
-  patches edge to edge instead of skirting them, and the test was not repeated.
+  Re-run that if anything about how the patches' buffers are made changes — and
+  it is not covered by `npm run parity` or the reference bank. Its condition was
+  met by 3ff0456, which stitched the turf's patches edge to edge instead of
+  skirting them, with no re-run, and again by `BABYLON_EXIT.md` X4.6c, which
+  replaced the meshes and their buffers outright (`GrassDraw.growPatches`).
+  **What X4.6c forced, and what that settles**: in a live offline Greyfen round,
+  a run's array cut to one patch and a kind's buffer to `capacity` 1, grown back
+  to 128 patches with group 2 remade, the field whole, no console error. That
+  is the path as it now is, and the one thing that mattered about 3ff0456 is
+  gone with the meshes it stitched. **What it does not settle**: it was one forced
+  growth on one map and desktop, not the original test's walk through three rung
+  switches under a tiny starting capacity on Harrowmead, and a phone has never run
+  either. So the re-run is no longer owed for 3ff0456 and is still owed by any
+  later change to `growPatches`.
 
 ---
 
@@ -2821,19 +2831,27 @@ the same section). So a section of GRASS still going on a build after
 ### What is derived from the code
 
 It is NOT the same cause, or not by the same door: the grass draws nothing
-indirect. It is Babylon's thin instances (`systems/GrassSystem.ts`), patch
-meshes chosen per frame around the eye, a patch mesh with no patches made
-INVISIBLE rather than emptied. A SECTION going is the shape of a patch, so
-the first suspects are the per-frame choice of which mesh draws a patch and
-its thin-instance buffer being rewritten while that device reads it — but
-that is a guess from the shape, not a reading.
+indirect. **It stopped being Babylon's thin instances at `BABYLON_EXIT.md`
+X4.6c (4a16b5f)**, which the report predates: it is our renderer's now
+(`render/GrassDraw.ts`), a run of one index buffer per former patch mesh,
+`drawIndexed` with a patch an instance, the patches chosen per frame around the
+eye by `systems/GrassSystem.ts` and written end to end into one storage buffer
+per kind (`queue.writeBuffer`, ahead of the frame's draws), a run with no
+patches simply not drawn. A SECTION going is the shape of a patch, so the one
+suspect left of the two this entry first named is the per-frame choice of which
+run draws a patch; the other, Babylon's thin-instance buffer being rewritten
+while that device reads it, no longer exists. That is still a guess from the
+shape, not a reading. **So a build's date now says something**: a flicker gone
+on a build after 4a16b5f was Babylon's path and closes this; one still there is
+in what the two paths share, the choice of patches or that device's vertex
+stage over them, or in the new upload.
 
 ### How to settle it
 
 - **Ask what a section is**: a square patch of the field, standing still or
   only while moving, near or far.
-- **A diagnostic switch that holds the patch choice fixed** (the meshes and
-  their instance buffers written once, as `?cullonce` did for the blocks):
+- **A diagnostic switch that holds the patch choice fixed** (the runs and
+  their patches' buffer written once, as `?cullonce` did for the blocks):
   if the flicker stops, it is the rewrite; if not, it is the draw.
 
 ## 64. The desktop's D3D12 device hangs under the uncapped 3440x1440 benchmark, before X3.6a as after it

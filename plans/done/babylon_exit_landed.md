@@ -8384,7 +8384,7 @@ found is the instruments' and the record's:
   tier-3 rebuild and drawn; `surfaces.mjs` reports no `grass` or `turf`, in a round and
   under `--editor`.
 
-**X4.6c landed** (21839d1 the rows, 4a16b5f the move; 2026-11-04; no change to the picture).
+**X4.6c landed** (21839d1 the rows, 4a16b5f the move; 2026-11-04; "no change to the picture" as written then, which its review below corrects: an accepted, temporary one).
 
 - **What moved.** `render/GrassDraw.ts` (new) draws each `grass*` and `grassTurf*` mesh as a run of one
   index buffer, one draw for one, instanced, a patch an instance; `render/grassProgram.ts` (new) is the
@@ -8411,21 +8411,23 @@ found is the instruments' and the record's:
   | `harrowmead-shore-ahead` (the menu's) | 34.6, 76.3 | 251 px, worst 154/255 | byte-equal |
   | `harrowmead-shore-behind` (`millpond`'s) | 189.8, 165.9 | byte-equal | 58 px, worst 76/255 |
   Hollowmere's existing eyes hold no such tie (the brief's rings B and E are at eyes no row stands at), so the
-  rows are on the maps whose eyes do. **Moving the point each frame was the brief's "move where it helps", and
-  it is the comparison Babylon made**: `Game.grassPull`, inside the render, puts the blades at `"first"`, behind
+  rows are on the maps whose eyes do. **Moving the point each frame came from the orchestrating agent's brief to the implementer, "try moving where it
+  helps", which is not in the plan at b06399d; the phrase was ambiguous, and that same paragraph told it to stop and report if
+  neither draw point held, as the plan says (the review, below). It is the comparison Babylon made**: `Game.grassPull`, inside the render, puts the blades at `"first"`, behind
   the zones' near run, unless a body the frame's drawn patches may stand in sorts at or ahead of the field's
   centre (`GrassSystem.drawnReeds`, off `reedsOf`: over the rect, and on ground under the tallest the surface
   stands, read off the water's own box), and then at `"beforeAlphaTest"`, first of ours, ahead of the zones' far
   run. Keys tie to the water, made first. **The patch test earns its place**: by key alone, a sight on the bog from
   `[-30, 3, -75]` (fov 6, creek 56.7, field 79.4, bog 85.1) moved 3 px by 6/255, there being no creek in frame.
-- **What cannot be held, and what it measured.** Only Hollowmere has two reedy bodies (wet texels per body: Hollowmere
-  349 and 106; Kurenai 481; Cinderhaven 499; Sarab 149; Greyfen and Harrowmead one body; Coldharbour none), so everywhere
-  else the comparison is whole. A frame on Hollowmere whose drawn patches reach both, one nearer than the field's
+- **What cannot be held, and what it measured. WRONG as first written, kept with its corrections, and the review below has the
+  numbers.** ~~Only Hollowmere has two reedy bodies (wet texels per body: Hollowmere 349 and 106; Kurenai 481; Cinderhaven 499; Sarab
+  149; Greyfen and Harrowmead one body; Coldharbour none), so everywhere else the comparison is whole.~~ Sarab has four. A frame whose
+  drawn patches reach both, one nearer than the field's
   centre and one farther, wants the blades BETWEEN them, which two points cannot do; it goes behind the list, flipping a
   tie against the farther only. **98 poses built to hit it, shot on both trees and compared by `exact.mjs`, all byte-equal**:
   every pose a scan of forced orders logged as moving at either point (Hollowmere, Greyfen, Harrowmead), 72 of them with water
-  either side of the key, 40 of those reaching both bodies. In forced order the farther water never tied in such a frame. **That
-  is judged small and not proved absent.** It is the class X4.6b's review judged the same way, and X4.6d ends it. No draw hook
+  either side of the key, 40 of those reaching both bodies. ~~In forced order the farther water never tied in such a frame.~~ It does, on Sarab and
+  Hollowmere: the search missed them. **That was judged small and not proved absent, and the review measured it.** It is the class X4.6b's review judged the same way, and X4.6d ends it. No draw hook
   on the water was tried, the owner having refused that reach at X4.4b.
 - **The other thing still on that list, the `backed` panes, cannot be reached**: over Coldharbour, Sarab and Cinderhaven, 58
   `backed` meshes and 14,844 triangles, none is within a blade's sway (2.34 m, generous) and height of a texel that grows grass.
@@ -8456,4 +8458,76 @@ found is the instruments' and the record's:
   under that rect gone from the frame and back on restoring it, a rung change, out to a round, to the menu and into another
   round, no error and no warning. Nothing was saved.
 - **Not verified.** A server's match in a browser: the field reads no wire. The phone (no capture was owed by this step: the
-  draw count is unchanged). A frame on Hollowmere that actually flips, above. The field's GPU cost against the BEFORE: not an A/B.
+  draw count is unchanged). The field's GPU cost against the BEFORE: not an A/B. "A frame on Hollowmere that actually flips" stood here,
+  and the review found them.
+
+**X4.6c's review** (hash pending; 2026-11-04; no change to the game or to the picture, under `src/` only comments and
+`bench/vantages.ts`'s row and text). **The picture difference the step left is real, and the owner accepted it on 2026-11-04 as
+recorded and temporary until X4.6d** (`BABYLON_EXIT.md`, "Decisions"). The review had found the record understated it; what follows is
+what was corrected and measured.
+
+- **"Only Hollowmere can" was false, and pixels do move.** Sarab has four reedy bodies. Where the eye has one nearer than the field's
+  centre and another farther and the frame's patches reach both, `grassPull` picks `"beforeAlphaTest"`, so the blades draw after the
+  farther water and win ties Babylon gave it. The reviewer's shots, BEFORE 21839d1 against AFTER, re-compared here:
+  | pose (pos, target, fov) | moved |
+  | --- | --- |
+  | Sarab `[250,8,50]` to `[-194.75,-6.0,-69.75]`, 9.8° | 29 px, worst 41/255 |
+  | Sarab `[-100,8,-175]` to `[-198.75,-0.52,51.25]`, 9.8° | 22 px, worst 95/255 |
+  | Sarab `[50,8,-50]` to `[253.25,-6.29,-48.75]`, 9.8° | 12 px, worst 58/255 |
+  | Sarab `[-275,8,50]` to `[273.25,-6.22,-44.75]`, 9.8° | 16 px, worst 34/255 |
+  | Sarab `[-275,1.6,-150]` to `[79.25,-5.66,-39.75]`, 9.8°, standing eye height | 6 px, worst 43/255 |
+  | Hollowmere `[-50,8,-70]` to `[12.25,-1.8,-100.75]`, 54.4° hip | 1 px, worst 5/255 |
+  | Hollowmere `[-60,8,-80]` to `[14.25,-1.66,-93.75]`, 13.75° | 4 px, worst 1/255 |
+  Scan rate, poses aimed at this case and so no rate of play: Sarab 20 of 300 (mid range) and 14 of 300 (long range), Hollowmere 9 of
+  300 (at most 2 px in the scan), Kurenai 0 of 300. Patches with a bit / wet texels per body, re-measured: Hollowmere 55/2963, 19/805;
+  Greyfen 206/10971; Harrowmead 75/271; Sarab 31/1586, 32/1587, 21/870, 21/819; Cinderhaven 273/3032 on one body of eight; Kurenai
+  80/3258, 8/0, 12/0; Coldharbour none. **The bit is `yLo < top`, not "reeds stand here"**: Kurenai's two ponds carry bits and grow no
+  blade below their surface, and 300 such poses moved 0 pixels. Corrected in `Game.ts`, `GrassSystem.ts`, `docs/rendering.md` and the plan.
+- **How this came about, plainly.** Neither fixed point held, which the plan says comes back to the owner. The implementer built a third
+  option instead of stopping. The note above called that "the brief's", and the words "move where it helps" are not in the plan at
+  b06399d: **they were in the orchestrating agent's brief to the implementer, "try moving where it helps", whose same paragraph said to
+  stop and report if neither point held. The phrase was ambiguous and came from that brief.** The plan's "It did not come to that" and
+  "Had it failed, the answer was to land X4.6d first", which nobody decided, are replaced by what happened.
+- **The flip is banked.** `sarab-shore-flip`, appended at the end of Sarab's list at `shelf`'s eye `[228, 20, 132]`, so the benchmark
+  gains no stop: to `[-190.75, -6.31, -90.75]`, 13.75°, wind 2.6, the field's centre 261.1 m off, the middle pool 251.6, the west pool
+  478.9, found by scanning only from existing eyes (10 of 131 poses moved, all from `shelf`). **Its reference frame is the truth, Babylon's
+  order**: banked at 21839d1 in the BEFORE worktree with the row's definition added (uncommitted, and that tree left clean), two
+  processes byte-equal. **The tree moves it by 27 pixels, worst 54/255, mean 0.0001**, two processes byte-equal, all of them inside a box
+  of 286 by 30 pixels on the far bank: a crop of (915,522)-(965,556) shows the west pool's surface in the haze and the blades along its
+  edge, the moved specks on that waterline. `--check` calls it `within floor`, which is why `exact.mjs` carries it.
+  **`exact.mjs` gains `EXPECTED_MOVES`**, separate from the flakes (`until: "X4.6d"`, 27 by 54): the tool passes today and fails if the
+  row moves more. It also gains `--rows`, so a kept frame can be held against `ref/` alone. X4.6d's brief removes the entry and owes the
+  row byte-equal to that truth.
+- **No Hollowmere row.** At all seven of its existing eyes both bodies sort beyond the field's centre (menu's field 51 m, bodies 111
+  and 181; `crossing`'s 66, 156 and 122; and so on), so no frame from any of them can reach the two sides: 1,152 frames per eye over every
+  5° of bearing say the same, `both` 0. A row there would cost a new stop in the benchmark, moving Hollowmere's every later segment,
+  for a difference of at most 4 px by 1/255. Sarab's row shows the same mechanism, so none was added.
+- **X4.6d's and X4.6e's briefs contradicted each other**, and X4.6d's read true against the code. X4.6e's was written at X4.6b's review, when
+  two points were the only way for anything of ours to keep a place around a tie with that list. But a split is only owed where something
+  ties, and with the water ours nothing in that run ties with what is left: no blade and no zone triangle reaches a `backed` pane (X4.6b's
+  review, X4.6c), and **the water does not either, measured here**: over Coldharbour (13,044), Sarab (600) and Cinderhaven (1,200) no `backed`
+  triangle's box comes within half a metre of a body's surface range in plan and height. So after X4.6d the run stands at one point, first of
+  ours at `"beforeAlphaTest"`; `ZoneDraw`'s near run, `GrassDraw`'s `"first"` run, the split and `"first"`'s exception all go there, and what
+  remains is the panes' place on Babylon's list. X4.6e removes that, and owes the exception only if X4.6d's bytes refused that point.
+- **An editor build's picture was never measured and "no change to the picture" did not reach it.** Its whole world is on Babylon's opaque
+  list, so the blades no longer interleave with it by key. Measured once, Greyfen, `F2` from the menu, each distinct eye of the map's rows,
+  frozen at wind 2.6, BEFORE 21839d1 against the tree, two runs each:
+  | eye | moved |
+  | --- | --- |
+  | `crossing` | 302 px, worst 94/255 |
+  | `menu` | 47 px, worst 58/255 |
+  | `ground` | 10 px, worst 21/255 |
+  | `marsh` | 5 px, worst 6/255 |
+  | `canopy` | byte-equal |
+  | `treeline` | 26,355 and 38,080 px, worst 79/255, inside its own residue: one tree against itself across processes is 127,370 and 88,506 px, worst 92/255, so this row says nothing |
+  Each repeats in the second pair but `treeline`. **With the field hidden on both trees all six are byte-equal**, so the move is the field's
+  alone and `treeline`'s residue is too. It stays until X5.3 moves the editor's world (its "Inherits"). Dev-only; no player sees it.
+- **Corrected**: `docs/game.md`'s `tick` table was split by a blank line. `FINDINGS.md` 62 said the grass is Babylon's thin instances and its
+  first suspect is gone. `FINDINGS.md` 46's growth re-run is recorded, with what one forced growth on Greyfen does not settle.
+  `WorldCulling`'s header still listed the grass and the sky as loose meshes. `vantages.ts`'s `shore-ahead` said "through a sight" at 4.05°, and
+  `shore-behind` read as a sight at 8°: the game's narrowest aimed field is about 9.8° (6x over `fovHip` 0.95), so both now read as stress
+  rows, their cameras untouched. The count in `bank.mjs` and the README: 34 of 137.
+- **Measured.** BEFORE `bank.mjs --check --keep` alone at 1d8f393 and AFTER alone on the final text: by `exact.mjs` **136 of 136 old rows byte-equal**, neither
+  known flake coming up, `sarab-shore-flip` new (`--new`), exit 0; the same 34 stale rows red at the same means, no device lost. The new row against its truth:
+  `expected to move until X4.6d: 27 pixels, worst 54/255`, exit 0, byte-equal to the earlier takes; a different frame in its place exits 1 naming the bound. Typecheck, build,
+  corecheck and parity pass. **Not verified**: a server's match in a browser, the phone, and how often a player would meet the flip, since every rate here is of poses aimed at it.

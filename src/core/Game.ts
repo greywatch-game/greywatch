@@ -7096,12 +7096,15 @@ export class Game {
    * they go ahead of that list (`"first"`) unless a body of water their drawn patches
    * may stand in sorts at or ahead of the field's centre, a tie of keys having gone
    * to the mesh made first, which was the water's. **It is the comparison Babylon
-   * made, for every map with one reedy body and every frame whose reeds stand on one
-   * side of the key.** A frame whose drawn patches reach reedy bodies on both sides
-   * (only Hollowmere can) falls behind the list, flipping a tie with the farther
-   * water alone; `BABYLON_EXIT.md` X4.6c has what that measured, and it goes when the
-   * water is ours (X4.6d). The `backed` panes are on that list too, and no blade can
-   * reach one (measured, the same entry).
+   * made, for every frame whose drawn patches reach reedy bodies on one side of the
+   * key.** A frame whose patches reach bodies on both sides wants the blades BETWEEN
+   * them, which two points cannot do: it falls behind the list, so **the blades win
+   * ties Babylon gave the farther water, and pixels move**. Sarab (four reedy bodies)
+   * and Hollowmere (two) have such frames, Sarab's up to 29 px or 95/255 at long range
+   * through a sight, and `sarab-shore-flip` banks one. **An accepted, recorded picture
+   * difference until the water is ours (X4.6d)** (`BABYLON_EXIT.md`, "Decisions", the
+   * owner's of 2026-11-04). The `backed` panes are on that list too, and no blade can
+   * reach one (measured, X4.6c's entry).
    */
   private grassPull(into: GrassDraw): void {
     const field = this.grass.sphere;

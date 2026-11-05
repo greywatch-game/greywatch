@@ -2538,18 +2538,38 @@ centre nearer than the water from some and farther from others, on one map.
 `"first"`, behind the dome and the zones' near run and ahead of what is left of that
 list, unless a body the frame's drawn patches may stand in (`GrassSystem.drawnReeds`,
 off `reedsOf`, a bit a body) sorts at or ahead of the field's centre, and then
-`"beforeAlphaTest"`, first of ours, the zones' far run next. Every map but Hollowmere
-has at most one reedy body (Coldharbour has none), so the comparison is the whole of
-it there. **Hollowmere alone has two, and a frame whose
-drawn patches reach both, one each side of the key, cannot be held by two points**:
-it falls behind the list, flipping a tie against the farther water only. 98 poses built
-to find it (`BABYLON_EXIT.md` X4.6c's note), 72 of them with water on both sides of the
-key and 40 of those reaching both bodies, are byte-equal to Babylon's order; the one
-pose a coarser test moved, 3 px by 6/255, had no patch standing in the nearer water and
-is held by the patch test. It is judged small and not proved absent, and it goes when
-the water is ours (X4.6d). **The `backed` panes are on that list too, and
-no blade can reach one**: over all three maps with any, not one of 14,844 triangles
-is within a blade's height and sway of a texel that grows grass.
+`"beforeAlphaTest"`, first of ours, the zones' far run next. **That bit is a whole patch's
+lowest ground under the surface's top, not a reed standing there**: patches with a bit and
+wet texels per body are Hollowmere 55/2963 and 19/805; Greyfen 206/10971; Harrowmead 75/271;
+Sarab 31/1586, 32/1587, 21/870 and 21/819; Cinderhaven 273/3032 on one body of eight;
+Kurenai 80/3258, 8/0 and 12/0, those two ponds growing nothing in the water (300 poses at
+them moved 0 pixels); Coldharbour none. **The comparison is whole for a frame whose patches
+reach bodies on one side of the key, and a frame reaching bodies on both cannot be held by
+two points**: it wants the blades BETWEEN them, falls behind the list, and the blades win
+ties Babylon gave the farther water. **So pixels move, on Sarab and Hollowmere, and this is
+an accepted, recorded and temporary picture difference** (`BABYLON_EXIT.md`, "Decisions",
+the owner's of 2026-11-04), until the water is ours (X4.6d), which owes those poses exact
+again. Against Babylon's order at 21839d1:
+
+| pose (pos to target, field) | moved |
+| --- | --- |
+| Sarab `[250,8,50]` to `[-194.75,-6.0,-69.75]`, 9.8° | 29 px, worst 41/255 |
+| Sarab `[-100,8,-175]` to `[-198.75,-0.52,51.25]`, 9.8° | 22 px, worst 95/255 |
+| Sarab `[50,8,-50]` to `[253.25,-6.29,-48.75]`, 9.8° | 12 px, worst 58/255 |
+| Sarab `[-275,8,50]` to `[273.25,-6.22,-44.75]`, 9.8° | 16 px, worst 34/255 |
+| Sarab `[-275,1.6,-150]` to `[79.25,-5.66,-39.75]`, 9.8°, standing eye height | 6 px, worst 43/255 |
+| Hollowmere `[-50,8,-70]` to `[12.25,-1.8,-100.75]`, 54.4° hip | 1 px, worst 5/255 |
+| Hollowmere `[-60,8,-80]` to `[14.25,-1.66,-93.75]`, 13.75° | 4 px, worst 1/255 |
+
+Those are poses aimed at this case and not a rate of play: Sarab moved 20 of 300 poses at
+mid range and 14 of 300 at long range, Hollowmere 9 of 300 (at most 2 px in that scan),
+Kurenai 0 of 300. **`sarab-shore-flip` banks one** at an existing eye, its frame Babylon's
+order, 27 px by 54/255 until X4.6d (`exact.mjs`'s `EXPECTED_MOVES`). **An editor build's blades
+are not held either**: its whole world is on that list, so the field's one point cannot
+interleave with it by key, and until X5.3 its frames differ (Greyfen, `BABYLON_EXIT.md` X4.6c's
+review). **The `backed` panes are on that list too, and no blade can reach one, nor can the
+water**: over all three maps with any, not one of 14,844 triangles is within a blade's height
+and sway of a texel that grows grass, nor within half a metre of a body's surface range.
 
 ### The rules that are not visible until they break
 

@@ -1916,7 +1916,7 @@ moved; **all of this is past since X4.5c**: no sky piece is a Babylon mesh):
   stood over", with the `Active` commit; `Sky.ts`'s header and
   `CloudShader.ts`'s; `FILES.md` for each new file.
 
-### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4, its review 5d43b2e), X4.6b **LANDED** (483165a, its review e1f5712), X4.6c **LANDED** (4a16b5f)
+### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4, its review 5d43b2e), X4.6b **LANDED** (483165a, its review e1f5712), X4.6c **LANDED** (4a16b5f, its review hash pending)
 
 Everything left on the floor that Babylon still draws, the three blended pools
 X4.4 left waiting for the glazing, and the blob shadows (decided 2026-11-03).
@@ -2108,8 +2108,8 @@ Greyfen, `F2` from the menu and each eye of the map's rows):
   against a BEFORE at a269bfb: every old row byte-equal but the known pistol pixel in one of two pairs,
   no device lost, the same 34 stale rows red. The `CLAUDE.md` trim is left for the owner. Typecheck,
   build, corecheck and parity pass.
-- **X4.6c — the grass and the turf LANDED** (4a16b5f; 2026-11-04; no change to the picture;
-  its BEFORE's rows 21839d1; its full note and first brief are in
+- **X4.6c — the grass and the turf LANDED** (4a16b5f; 2026-11-04; no change to the picture but
+  the accepted, temporary one its review recorded below; its BEFORE's rows 21839d1; its full note and first brief are in
   `plans/done/babylon_exit_landed.md`). No `grass*` or `grassTurf*` mesh is left, in a round or an
   editor build: `render/GrassDraw.ts` draws each as a run of one index buffer, instanced, a patch an
   instance, over `render/grassProgram.ts` and `shaders/wgsl/grass.ts`, and `GrassSystem` keeps the
@@ -2121,21 +2121,52 @@ Greyfen, `F2` from the menu and each eye of the map's rows):
   comparison Babylon made): `"first"`, behind the zones' near run, unless a body their drawn patches
   may stand in sorts at or ahead of the field's centre, and then `"beforeAlphaTest"`, first of ours,
   ahead of the far run; the turf at `"opaque"`. **Measured** against a BEFORE at 21839d1: 136 of 136 byte-equal in each of two runs on the final tree by `exact.mjs`, the same 34 stale rows red at the same means. 98
-  further poses built to break it, 72 with water either side of the key, byte-equal. **What is
-  not proved is one class**: only Hollowmere has two reedy bodies, and a frame reaching both, one each
-  side of the key, cannot be held by two points; of 40 such poses none moved (X4.6d retires it).
-  No `backed` triangle of 14,844 is within a blade's reach. A real round with a rung change, both
+  further poses built to break it were byte-equal, which its review found was the wrong search:
+  **a frame whose patches reach reedy bodies on both sides of the key cannot be held by two points,
+  and pixels move** on Sarab and Hollowmere (below). No `backed` triangle of 14,844 is within a blade's reach. A real round with a rung change, both
   growths and a teardown, and `F2` with a rect edit, no console error and the seal quiet; our pipelines
   in play zero. The field's share of a frame's allocation falls from ~1,740 to ~100 bytes.
   **Not verified**: a server's match in a browser, the phone.
+  **Its review** (hash pending; 2026-11-04; no change to the game, under `src/` only comments and
+  `bench/vantages.ts`'s rows): **"only Hollowmere can" was false and pixels do move**. Sarab has four reedy
+  bodies, and where a frame's patches reach one nearer than the field's centre and another farther,
+  `grassPull` takes `"beforeAlphaTest"` and the blades win ties Babylon gave the farther water: up to 29 px
+  (41/255) or 22 px (95/255) at long range through a sight, the table in `docs/rendering.md`, poses aimed at
+  this and no rate of play. **The owner accepted it on 2026-11-04 as a recorded, temporary picture difference
+  until X4.6d** ("Decisions"). **`sarab-shore-flip` banks it**, appended at `shelf`'s eye: its frame is Babylon's
+  order, banked at 21839d1 and byte-equal across two processes; the tree moves 27 px by 54/255, byte-equal across
+  two, at the west pool's waterline, read in the crop; `exact.mjs`'s `EXPECTED_MOVES` bounds it. **No
+  Hollowmere row**: at each of its seven existing eyes both bodies sort beyond the field's centre, so none can
+  hold this case and a row would cost a new benchmark stop, for 4 px by 1/255. **The two briefs below are made to
+  agree**: nothing in the one run X4.6d makes ties with a `backed` pane, measured for the water here too, so
+  X4.6d retires the split and `"first"`'s exception and X4.6e owes neither. **An editor build was never covered by
+  "no change to the picture"**: Greyfen's frames at its six eyes against 21839d1, 302 px by 94/255 at `crossing`,
+  47 by 58/255 at the menu's, 10 by 21/255 at `ground`, 5 by 6/255 at `marsh`, `canopy` byte-equal, `treeline`
+  noise on one tree, and with the field hidden all six byte-equal, so it is the blades' place against the world on
+  Babylon's list, and it stays until X5.3. Bank by `exact.mjs` against a BEFORE at 1d8f393: all 136 old rows byte-equal, no flake coming up, the new row new, the same 34 stale rows red at the same means, no device lost; the row against its truth 27 px by 54/255, through its bound, and a frame over the bound exits 1. Typecheck, build,
+  corecheck and parity pass. **Not verified**: a server's match in a browser, the phone.
 - **X4.6d — the water.** The largest shader of the five (`WaterShader.ts`). **It retires what X4.6c
-  could not do without it**: the blades, the zones' two runs and the water become one nearest-first
-  order of ours by the keys Babylon used, the water and the blades' tie exact again in every frame,
-  Hollowmere's included, and with that `Game.grassPull`, `GrassDraw.near` and `installNear`,
-  `GrassSystem.reeds` and `drawnReeds`, and `WaterSystem.sortCentre` and `surfaceTop` all go. Where
-  that one run stands against the `backed` panes left on Babylon's list owes the bytes: no blade and
-  no zone triangle reaches a `backed` pane (X4.6b's review, X4.6c), so what is left is the water
-  against a pane (`sarab-pane-water`'s drowned car). The
+  could not do without it and owes back what the owner accepted until it lands** ("Decisions", 2026-11-04):
+  the blades, the zones' two runs and the water become ONE nearest-first run of ours by the keys Babylon
+  used, the water and the blades' tie exact again in every frame, Sarab's and Hollowmere's included, and with
+  that `Game.grassPull`, `GrassDraw.near` and `installNear`, `GrassSystem.reeds` and `drawnReeds`, and
+  `WaterSystem.sortCentre` and `surfaceTop` all go. **`backed` panes stay Babylon's through this step, the only
+  thing left on that list in a round, and they tie with nothing in the run**: no blade and no zone triangle
+  reaches one (X4.6b's review, X4.6c), and no water either (X4.6c's review: none of the 14,844 triangles is
+  within half a metre of any body's surface range on the three maps with any; `sarab-pane-water`'s drowned car
+  is see-through). **So the run needs one point and no split**: first of ours at `"beforeAlphaTest"`,
+  behind the panes, and this step takes out `ZoneDraw`'s near run and its "drawn at TWO points",
+  `Game.zonePull`'s split and `GrassSystem.bladeSortCentre`, `GrassDraw`'s `"first"` run, `Renderer.ts`'s "two
+  opaque draws" under `"first"` (the dome alone there again) and `docs/rendering.md`'s. **What remains after it
+  is the panes' place on Babylon's list and nothing else.** If `exact.mjs` refuses that point, the whole run goes
+  at `"first"`, behind the dome, and only then does an exception stay in `Renderer.ts`, for X4.6e. Two points
+  again is an owner question, not a choice. **An editor build keeps its difference** (the whole world on that
+  list, no zones): this step moves its blades and water into the same one run, and that stays until X5.3. **Its
+  proof includes the banked flip**: `exact.mjs plans/webgpu-ref/ref <keep> --rows=sarab-shore-flip` byte-equal
+  against 21839d1's truth, this step REMOVES the row's `EXPECTED_MOVES` entry (against its parent's BEFORE the
+  row moves by that same bound, the one row that may), and it re-shoots the seven poses in `docs/rendering.md`'s
+  table against a BEFORE at 21839d1, byte-equal. `ref/` is gitignored, so a lost frame is re-taken at 21839d1
+  with the row's definition added (`bank.mjs sarab --rows=shore-flip`), which reproduced byte for byte. The
   bed-depth bake and the probes stay what they are, and the water reads its cube
   directly, a round's (`cubeOf("water", slot)`) and an editor build's (the default
   cube) alike, as it moves there too (decided 2026-11-03). **So what reads
@@ -2145,8 +2176,8 @@ Greyfen, `F2` from the menu and each eye of the map's rows):
   X5.3. `cubeOf` makes a wrapped view for every pool today, and the water's pool no
   longer wants one. **It must be ahead
   of `"afterSurfaces"`**: it writes depth, the clouds' far depth passes wherever
-  nothing has, and the turf at a shore and every fade land on it (`"beforeAlphaTest"`,
-  or `"first"` if the bytes ask: X4.6b's tie).
+  nothing has, and the turf at a shore and every fade land on it (the one run's point,
+  above).
   **Verify:** `marsh`, `millpond`; the far quad in `coldharbour-menu`, `-sky-disc`
   and `cinderhaven-sky-cloud-moon` (no row of its own, the gap was not real);
   `fx-water-fade`, its disc on the bed still rejected; `sarab-pane-water`; a cube's
@@ -2184,14 +2215,14 @@ Greyfen, `F2` from the menu and each eye of the map's rows):
     picture change "Decisions" holds open, in a commit of its own;
   - **ports the scorch exactly**. A port that cannot match comes back to the owner
     with the numbers rather than being taken as a picture change;
-  - **retires the zones' split**, in the commit that moves the last of what is left of
-    Babylon's opaque list: the blades go at X4.6c and the water at X4.6d, so that is the
-    `backed` panes' commit, here or ahead of here. With that list empty, `ZoneDraw`'s two
-    runs, the blades, the water and the `backed` panes collapse into ONE sorted run of ours
-    (`Game.zonePull` and whatever X4.6c and X4.6d left beside it, one nearest-first order by
-    the keys Babylon used, proven by `exact.mjs`, `ring-behind-field` above all), and **that
-    same commit takes `"first"`'s exception out of `Renderer.ts`'s header** (the dome is
-    alone there again), `ZoneDraw`'s "drawn at TWO points" and `docs/rendering.md`'s;
+  - **takes the last of Babylon's opaque list in a round, the `backed` panes**, in their own
+    commit here or ahead of here. **The zones' split and `"first"`'s exception are not its to
+    retire**: X4.6d's one run takes them, nothing in it tying with a `backed` pane. So what this
+    removes is the panes' reach into Babylon's list and that list's hold on a round, and the panes
+    keep their place ahead of the blocks, above. **Only if X4.6d's bytes held its run at `"first"`**
+    does this commit move the run to `"beforeAlphaTest"` and take that exception out of
+    `Renderer.ts`'s header, the dome alone there again, proven by `exact.mjs`. An editor build's
+    list stands until X5.3 either way;
   **The BEFORE**: `fx-glass-sort` (a fade squarely behind and squarely in front of
   a pane), `fx-blob-sort` (a blob behind a pane, between it and a fade, and in front of
   both, and one that must own no pixel), `fx-glass`, the impact rows, `fx-scorch`,
@@ -2211,7 +2242,7 @@ Greyfen, `F2` from the menu and each eye of the map's rows):
   - the ring is the zone's boundary
   - the coverage alpha's two blended exceptions (`docs/rendering.md`)
 - **Every sub-step owes**: what leaves Babylon's opaque list lands among `ZoneDraw`'s
-  near and far runs and the blades (X4.6b, X4.6c), or owes the bytes that say otherwise; its pipelines on `Game.roundPipelines`, and
+  near and far runs and the blades (X4.6b, X4.6c; one run from X4.6d), or owes the bytes that say otherwise; its pipelines on `Game.roundPipelines`, and
   `pipelines.mjs --round` zero of ours in play; `surfaces.mjs`, to show it took the
   whole of its surface; and **a BYTE comparison of every row against a BEFORE at its
   parent, never `--check`'s pass line alone**: `plans/webgpu-ref/exact.mjs <before> <after>`
@@ -2312,6 +2343,11 @@ It stays behind its one dynamic `import()` in a DEV branch.
   that same transparent list. **X4.6c and X4.6d leave it no grass, turf or water**
   (decided 2026-11-03), so what is left to draw per item here is the world surfaces
   and the proxies.
+- **Inherits from X4.6c: an editor build's blades no longer interleave with its world.** Its
+  whole world is on Babylon's opaque list, so the field's one point flips ties against what sorted
+  nearer or farther than its key: measured on Greyfen against 21839d1, 302 px by 94/255 at
+  `crossing`'s eye, nothing with the field hidden (X4.6c's review). Dev-only and recorded; moving
+  the editor's world here is what ends it.
 - **Verify:** select, drag, rotate, sculpt, lay a path road, save — and
   confirm the save patches `layout.ts` byte for byte for untouched entries
   (`docs/editor.md`). `merge:hash --editor`.
@@ -2531,7 +2567,7 @@ Phase 1 actually took.
 | X4.5a | What does the sky owe a state with no map, and must it be drawn under the photograph? | **Decided** 2026-11-02 by the owner, overruling part of what X4.5a settled: nothing, and no. Under the photograph, the settings and the lobby the frame is byte-equal with the sky stated away; the kit screen is not, at every turn of the ring (below). It shows in six windows (the boot's fade, ~480 ms on a local dev server and unmeasured on a phone's cold fetch; a rejected `img.decode()`, open as long as the menu stands; a building card's undecoded photograph; a lobby row on an unknown map; the DEV proving ground; and, **accepted by the owner 2026-11-03**, the photograph's fade on the way out of a round, about 300 to 400 ms on Coldharbour, over the last map's flat colour where the parent showed the dome and clouds through the picture, not among the frames compared in X4.5c's picture-change commit, and not from the round-over card, whose picture is up already). Each sky draw's `Active` asks whether a map stands, so the menu's frame keeps doing no work of ours (X4.3c's review). **What X4.5a got wrong**: the boot's fade is the RIGHT map's sky until the player steps the reel, not the wrong one, and what would replace it was no meaningful colour (`scene.clearColor` had one writer, reached only from the editor and `startRound`: Babylon's default slate at the boot). So the colour is set at the boot from the boot map's `skyColor` (`applyClearColor`, landed at this review and moving no pixel under today's dome), and the fade shows the right map's colour through the post chain. It is not extended to the reel or a teardown: after a round it is the last map's. Taking the sky off those windows is a picture change, in a commit of its own at X4.5b and X4.5c. How that divides between the two was the implementer's and no part of this decision: X4.5b left the clouds' `Active` to X4.5c, and that is moot now, the whole sky having left the menu in one commit (7787229). **Decided 2026-11-03 by the owner, no picture change:** the clear's alpha of 1 is kept, a constant half stroke on the kit screen's weapon. The old picture's stroke varied with the cloud behind the weapon and the new one does not: ring on against ring off at the parent, Coldharbour is 0 px at turn 0 and 35 to 209 px, up to 73/255, at five other turns, the first about 5 minutes on the menu, and Hollowmere, with no ring, 0 px at all 8. Two further turns read 539,279 px with the weapon darker, excluded from those figures: the clouds' shadow, which still reaches the kit stage (X4.5c's note). And the shafts' soft bright band over the flat colour on Harrowmead and Kurenai is accepted. X4.5c's note states one window the six do not name (a step's cross-fade), not ruled on. |
 | X4.6 | One step or several? | **Decided** 2026-11-03: five sub-steps (X4.6). X4.6a fills the bank's gaps and records where each surface sits in Babylon's frame; X4.6b moves the flags and the rings, X4.6c the grass and the turf, X4.6d the water; X4.6e moves the glazing with the sparks, the dust discs and the scorch, so one sort of ours orders them (2026-11-01), and may land `backed` panes ahead of it. The scorch is ported exactly; a port that cannot match comes back to the owner with the numbers. |
 | X4.6c, X4.6d | An editor build's grass, turf and water are no world surfaces (X4.6a): do these steps move them there too, one path through each system as the sky did at X4.5c, or keep them Babylon's until X5.3, two paths? | **Decided** 2026-11-03: they move there too, one path through each system. Each step's Verify gains an `F2` in an editor build and a rect edit. The editor's GLAZING still stays Babylon's until X5.3. |
-| X4.6c | At `"first"` the blades fall ahead of water they were behind, and at `"beforeAlphaTest"` behind water they were ahead of (X4.6b's review): if no point holds the bytes at a shore, do the blades and the water move together, or is the tie taken as a picture change? | **It did not come to that.** No FIXED point holds (X4.6c: 355 px by 60/255 one way, 58 by 76/255 the other), and a point chosen each frame by Babylon's own comparison holds all 136 rows and 98 poses built to break it, so neither was needed. One class stays unproved and is the owner's to overrule: a frame on Hollowmere reaching reedy bodies either side of the key, none moved in 40 poses, gone at X4.6d. Had it failed, the answer was to land X4.6d first: many waters split around one blade key is exact, as the zones are. |
+| X4.6c | At `"first"` the blades fall ahead of water they were behind, and at `"beforeAlphaTest"` behind water they were ahead of (X4.6b's review): if no point holds the bytes at a shore, do the blades and the water move together, or is the tie taken as a picture change? | **Decided** 2026-11-04, by the owner: **X4.6c's moving draw point and its rare distant flips are accepted as a recorded, temporary picture difference until X4.6d, which must make those poses exact again.** How it came about: neither fixed point held (`greyfen-shore-ahead` 355 px by 60/255 and `harrowmead-shore-ahead` 251 px by 154/255 at `"beforeAlphaTest"`; `harrowmead-shore-behind` 58 px by 76/255 at `"first"`), which is the case the plan said comes back to the owner. The implementer built a third option instead of stopping, a point chosen each frame by Babylon's own comparison (`Game.grassPull`), which holds all 136 rows, and landed it as "no change to the picture". The phrase it worked from, "try moving where it helps", was in the orchestrating agent's brief to it, not in the plan, and was ambiguous; that same paragraph told it to stop and report if neither point held. X4.6c's review found the record understated the result: it said only Hollowmere could flip, and that none had. **The worst, which the owner saw**: a frame reaching reedy bodies either side of the key, Sarab `[250,8,50]` to `[-194.75,-6.0,-69.75]` at 9.8° 29 px by 41/255; `[-100,8,-175]` to `[-198.75,-0.52,51.25]` at 9.8° 22 by 95/255; `[50,8,-50]` to `[253.25,-6.29,-48.75]` at 9.8° 12 by 58/255; `[-275,8,50]` to `[273.25,-6.22,-44.75]` at 9.8° 16 by 34/255; `[-275,1.6,-150]` to `[79.25,-5.66,-39.75]` at 9.8°, standing eye height, 6 by 43/255; Hollowmere `[-50,8,-70]` to `[12.25,-1.8,-100.75]` at 54.4°, the hip, 1 by 5/255; `[-60,8,-80]` to `[14.25,-1.66,-93.75]` at 13.75° 4 by 1/255. Scans aimed at this case, so no rate of play: Sarab moved 20 of 300 poses at mid range and 14 of 300 at long range, Hollowmere 9 of 300 (at most 2 px there), Kurenai 0 of 300. `sarab-shore-flip` banks it (27 px by 54/255, `exact.mjs`'s `EXPECTED_MOVES`), and X4.6d's brief removes that entry and owes the row byte-equal to 21839d1's truth. |
 | X4.6e | `ShadowSystem`'s blob shadows are a Babylon `StandardMaterial`, blended, no depth write, on the list X4.6e replaces, and were on no step's list (found by X4.6a's review): where do they go? | **Decided** 2026-11-03: X4.6e's one commit. The blob joins the see-through panes and the three pools under one sort of ours, and `warmBlob` goes with it. |
 | X4.6e | A blob's disc faces DOWN on a back-culled material, so it draws nothing from above (X4.6a's review, `FINDINGS.md` 67; `docs/rendering.md` calls it the contact term): port it as it is, fix the facing as a picture change, or delete it? | **Open**, raised by X4.6a's review, the owner's. X4.6e's brief ports it byte-identically unless told otherwise; a fix is a commit of its own with the bank's numbers (rule 2), and every frame with a body on a floor would move. |
 | X6.2 | Is it ready to merge to `develop`? | Only when X6.2's "Before" list passes in full. |

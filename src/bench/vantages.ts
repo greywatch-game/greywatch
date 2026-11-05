@@ -651,7 +651,7 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
     // gains no stop.
     {
       id: "shore-behind",
-      of: "the millpond's bank a dozen metres off along the water's edge, mid-gust, through an 8° field: the swell and the blades standing in it",
+      of: "the millpond's bank a dozen metres off along the water's edge, mid-gust, a stress row at an 8° field, narrower than any sight in the game (the 6x's is about 9.8°): the swell and the blades standing in it",
       proves:
         "blades BEHIND the water they stand in (X4.6c): the water's centre is nearer this eye than the field's, so Babylon's opaque list drew the water first and the blades take every tie along the waterline. Drawn ahead of the water, 58 pixels move by up to 76/255",
       pos: [-160, 1.6, 102],
@@ -661,9 +661,9 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
     },
     {
       id: "shore-ahead",
-      of: "the far bank of the mill stream over a shed roof, mid-gust, through a 4° field from the menu's eye: the water, and a wall of meadow standing at the end of it",
+      of: "the far bank of the mill stream over a shed roof, mid-gust, a stress row at a 4° field from the menu's eye, far narrower than any sight in the game (the 6x's is about 9.8°): the water, and a wall of meadow standing at the end of it",
       proves:
-        "blades AHEAD of the water at range, through a sight (X4.6c): the field's centre is nearer this eye than the water's and a depth step here is centimetres, so the ties run the length of the bank. Drawn behind the water, 251 pixels move by up to 154/255",
+        "blades AHEAD of the water at range (X4.6c): the field's centre is nearer this eye than the water's and a depth step here is centimetres, so the ties run the length of the bank. Drawn behind the water, 251 pixels move by up to 154/255",
       pos: [32, 12, -10],
       target: [200.04, -0.08, 13.01],
       fov: 4.05,
@@ -768,6 +768,17 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
       pos: [96, 9, 30],
       target: [268.27, -6.3, -39.8],
       fov: 1,
+    },
+    // Appended for X4.6c's review, at `shelf`'s eye so the benchmark gains no stop.
+    {
+      id: "shore-flip",
+      of: "the far pool's bank 474 m off across the town from the Martyrs' shelf, mid-gust, at a 13.75° field, between the 3.5x's and the 6x's: blades standing in the west pool, with the middle pool's reeds in the same frame on the other side of the sort",
+      proves:
+        "the ONE PICTURE DIFFERENCE X4.6c left (owner's decision, 2026-11-04): this eye has the middle pool nearer than the field's centre and the west pool farther, so Babylon's opaque list drew the blades BETWEEN them, which `Game.grassPull`'s two points cannot do. Its truth is Babylon's order, banked at 21839d1; until X4.6d the blades take ties the farther water should win (`exact.mjs`'s `EXPECTED_MOVES`), and X4.6d owes this row byte-equal to that truth",
+      pos: [228, 20, 132],
+      target: [-190.75, -6.31, -90.75],
+      fov: 13.75,
+      wind: 2.6,
     },
   ],
   cinderhaven: [

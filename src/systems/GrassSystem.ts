@@ -266,8 +266,9 @@ export class GrassSystem {
   /** Per patch, a bit per water body it may stand in (`reedsOf`). */
   private reeds = new Uint32Array(0);
   /**
-   * The bodies this frame's drawn blades may stand in, a bit each, a body's index
-   * in the map's list: what `Game.grassPull` weighs against the field's centre.
+   * The bodies this frame's drawn patches may stand in, a bit each (`reedsOf`, no
+   * promise of a reed), a body's index in the map's list: what `Game.grassPull`
+   * weighs against the field's centre.
    */
   drawnReeds = 0;
   /** The whole field's bounding sphere, or null with no field: the size gate's and the sort key's. */
@@ -823,11 +824,15 @@ function fieldSphere(mask: GrassMask): NonNullable<GrassSystem["sphere"]> {
 }
 
 /**
- * Per patch, a bit per water body its blades may stand in: over the rect, on ground
- * under the tallest its surface stands, a blade rooted above that being above the
- * water all the way up. The first 32 bodies of a map; no shipped map has more than
- * 8. Which of them a frame's blades reach is what decides where those blades are
- * drawn against the water (`Game.grassPull`).
+ * Per patch, a bit per water body its blades MAY stand in: a grown patch over the
+ * rect whose LOWEST ground is under the tallest the surface stands, a blade rooted
+ * above that being above the water all the way up. **That is a conservative test
+ * of a whole patch and not that a reed stands there**: Kurenai's two ponds carry
+ * bits on 8 and 12 patches and grow no blade below their surface, and all that costs
+ * is the frame's point being asked for a tie that does not exist (300 poses at them
+ * moved 0 pixels, `BABYLON_EXIT.md` X4.6c). The first 32 bodies of a map; no shipped
+ * map has more than 8. Which of them a frame's patches reach is what decides where
+ * those blades are drawn against the water (`Game.grassPull`).
  */
 function reedsOf(
   mask: GrassMask,
