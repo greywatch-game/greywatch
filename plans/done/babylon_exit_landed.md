@@ -7926,7 +7926,7 @@ to come. What X4.5a was asked for and what it measured:
     on Coldharbour, Cinderhaven and Hollowmere: 64 of 64 byte-equal to 547d803,
     the same 9 stale rows red.
 
-### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4, its review 5d43b2e), X4.6b **LANDED** (483165a, its review e1f5712), X4.6c **LANDED** (4a16b5f), X4.6d **LANDED** (HASH)
+### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4, its review 5d43b2e), X4.6b **LANDED** (483165a, its review e1f5712), X4.6c **LANDED** (4a16b5f), X4.6d **LANDED** (5f26b00)
 
 The plan's `BABYLON_EXIT.md` holds what the surfaces are today, the two tables X4.6a
 measured and the four sub-steps to come. X4.6a's brief, word for word:
@@ -8574,7 +8574,7 @@ what was corrected and measured.
   tier-3 rebuild and drawn at strength 0; `surfaces.mjs` reports no `water` or
   `waterFar`, in a round and under `--editor`.
 
-**X4.6d landed** (HASH; 2026-11-04; no change to the picture in a round but the accepted, temporary one of X4.6c ending).
+**X4.6d landed** (5f26b00; 2026-11-04; no change to the picture in a round but the accepted, temporary one of X4.6c ending).
 
 - **What moved.** `render/WaterDraw.ts` (new) draws every body of water its grid or its far quad, one draw for one, a
   range of one index buffer over one storage array; `render/waterProgram.ts` (new) is the program,
