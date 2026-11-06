@@ -381,3 +381,17 @@ against the new library — then
 `npm run merge:hash -- --against before.json` (and `--editor`). A merge:hash
 difference with all three checks clean is Babylon's own output changing under the
 adapter or a collider.
+
+**A baseline taken before `BABYLON_EXIT.md` X4.6e differs by design, and a
+`before.json` must be taken on the same side of it.** `merge:hash --against`
+one older shows every round's glazing visual losing its `mesh` (a round's
+glazing is our renderer's, no mesh made of it), and the ones that were a
+probe slot's material renamed (`cel-glass-#2a333b#1` is
+`cel-glass-#2a333b`: `getGlass` lost its slot); `paneGroups` fingerprint by
+the group's record (`PaneGroup.record`), the surface index its mesh had, so
+they compare equal across it. `kit:hash --against` one older shows `drawing
+changed 537` (car 94, depot 40, office 31, shophouse 82, tower 290) and
+`colliders changed 0`: its stub factory names a material by the call's
+arguments, and `Build.pane`'s `getGlass` call lost its slot argument. Measured
+at X4.6e's review: with that call given its old four arguments back, the
+same run against 8bf7789's baseline is `identical`.

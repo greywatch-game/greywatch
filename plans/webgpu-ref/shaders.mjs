@@ -156,7 +156,11 @@ const HOOK = () => {
  * (`CelMaterialFactory.emissiveRecipe`): the main pass's and a probe face's
  * (`emissiveWorld(FRAME_TARGETS)`, `WorldBlocks.askPalette`'s state) and the
  * glow MASK's twin (`emissiveWorld(GLOW_TARGETS, true)`, no depth written,
- * `WorldBlocks.glowView`'s) — every map's main pass draws its lit windows
+ * `WorldBlocks.glowView`'s) — and, since X4.6e's review, the cel stage's
+ * PLACED twin (`celPlacedVertex`) over the glazing's two shapes in the four
+ * states `GlassDraw` asks (backed and see-through, either winding, at
+ * `GLASS_DEPTH_BIAS`), and the four fade programs (`fadePrograms`, `FadeDraw`)
+ * in the states `FadeDraw` asks them in (`FADE_STATES`) — every map's main pass draws its lit windows
  * with the first (`BABYLON_EXIT.md` X3.7a), so a failed one is a failed round
  * once the fallback is gone (X3.7b). A map with no palette builds neither.
  * The biases are read off EVERY material on the page (`scene.materials`), the
@@ -164,7 +168,23 @@ const HOOK = () => {
  */
 async function oursCheck({ shapes, biased, paletteBiases }) {
   const { celFragment } = await import("/src/render/celFragment.ts");
-  const { celVertex } = await import("/src/render/celVertex.ts");
+  const { celVertex, celPlacedVertex } = await import("/src/render/celVertex.ts");
+  const { fadePrograms } = await import("/src/render/fadeProgram.ts");
+  const { FADE_STATES } = await import("/src/render/FadeDraw.ts");
+  const { GLASS_DEPTH_BIAS } = await import("/src/render/GlassDraw.ts");
+  // As `GlassDraw` states its four: `ALPHA_COMBINE` for the see-through.
+  const seeThroughBlend = {
+    color: { srcFactor: "src-alpha", dstFactor: "one-minus-src-alpha", operation: "add" },
+    alpha: { srcFactor: "one", dstFactor: "one", operation: "add" },
+  };
+  const backedState = { depthBias: GLASS_DEPTH_BIAS };
+  const seeThroughState = { depthBias: GLASS_DEPTH_BIAS, depthWrite: false, blend: seeThroughBlend };
+  const glassBuilds = [
+    { shape: "CEL_GLASS+CEL_GLASS_BACKED", placed: backedState },
+    { shape: "CEL_GLASS+CEL_GLASS_BACKED", placed: { ...backedState, reversed: true } },
+    { shape: "CEL_GLASS", placed: seeThroughState },
+    { shape: "CEL_GLASS", placed: { ...seeThroughState, reversed: true } },
+  ];
   const { PipelineCache } = await import("/src/render/PipelineCache.ts");
   const { FRAME_TARGETS, GLOW_TARGETS } = await import("/src/render/targets.ts");
   const { emissiveWorld } = await import("/src/render/emissiveWorld.ts");
@@ -185,16 +205,21 @@ async function oursCheck({ shapes, biased, paletteBiases }) {
     ...shapes.map((shape) => ({ shape, depthBias: 0, scatter: stride })),
     ...paletteBiases.map((depthBias) => ({ palette: "main", depthBias, scatter: null })),
     ...paletteBiases.map((depthBias) => ({ palette: "glow", depthBias, scatter: null })),
+    ...glassBuilds.map(({ shape, placed }) => ({ shape, depthBias: 0, scatter: null, placed })),
+    ...Object.keys(FADE_STATES).map((fade) => ({ fade, depthBias: 0, scatter: null })),
   ];
-  for (const { shape, palette, depthBias, scatter } of builds) {
+  for (const { shape, palette, depthBias, scatter, placed, fade } of builds) {
     const kind =
-      `${palette ? `palette ${palette} ` : ""}${scatter === null ? "" : "scatter "}` +
-      `${depthBias === 0 ? "" : `bias ${depthBias} `}`;
+      `${palette ? `palette ${palette} ` : ""}${fade ? `fade ${fade} ` : ""}${placed ? "placed " : ""}` +
+      `${scatter === null ? "" : "scatter "}${depthBias === 0 ? "" : `bias ${depthBias} `}`;
     const defines = shape ? shape.split("+") : [];
-    const targets = palette === "glow" ? GLOW_TARGETS : FRAME_TARGETS;
-    // As `WorldBlocks` states each: the mask writes no depth.
-    const state =
-      palette === "glow"
+    const targets = palette === "glow" || fade === "mask" ? GLOW_TARGETS : FRAME_TARGETS;
+    // As `WorldBlocks` states each: the mask writes no depth. A fade's is `FadeDraw`'s own.
+    const state = fade
+      ? FADE_STATES[fade]
+      : placed
+        ? placed
+        : palette === "glow"
         ? depthBias === 0
           ? { depthWrite: false }
           : { depthWrite: false, depthBias }
@@ -206,6 +231,11 @@ async function oursCheck({ shapes, biased, paletteBiases }) {
     try {
       if (palette) {
         ({ vertex: vm, fragment: fm } = emissiveWorld(targets, palette === "glow"));
+      } else if (fade) {
+        ({ vertex: vm, fragment: fm } = fadePrograms(fade));
+      } else if (placed) {
+        vm = celPlacedVertex(defines, FRAME_TARGETS);
+        fm = celFragment(defines, FRAME_TARGETS);
       } else {
         vm = celVertex(defines, FRAME_TARGETS, scatter);
         fm = celFragment(defines, FRAME_TARGETS);

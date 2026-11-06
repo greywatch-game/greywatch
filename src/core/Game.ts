@@ -874,6 +874,13 @@ export class Game {
    */
   private readonly fadePools: readonly (readonly Fade[])[];
   /**
+   * How many blobs stood before this map's panes in Babylon's scene: those
+   * made before its build (an earlier round's, kept since), counted as the
+   * round's glazing is installed. Where `farthestPull` files the panes among
+   * the blobs, which breaks a tie at one distance to the bit; 0 in a first round.
+   */
+  private blobsBeforeGlass = 0;
+  /**
    * The last render's frustum planes, as numbers (`nearestPull`), and whether a
    * render has given any: what a surface is tested against inside the render, and
    * what a flag asks of the LAST one before it steps (`FlagCloth.inView`).
@@ -5850,6 +5857,7 @@ export class Game {
     // and every fade are the back-to-front run's, behind the moon at
     // `"beforeBlended"` (`FarthestRun`). An editor build's glazing is Babylon's.
     if (!editor) this.glassDraw.install((reason) => this.worldFailed(reason, owner));
+    this.blobsBeforeGlass = this.shadows.blobFades.length;
     this.grassDraw.install((reason) => this.worldFailed(reason, owner));
     if (!editor) this.zoneDraw.install((reason) => this.worldFailed(reason, owner));
     this.waterDraw.install((reason) => this.worldFailed(reason, owner));
@@ -7341,11 +7349,11 @@ export class Game {
    * - and all of them into group 0's TRANSPARENT order: farthest first by
    *   `_distanceToCamera` — the square root of the sphere's centre from
    *   `globalPosition` — a tie in the order the meshes stood in the scene (the
-   *   sparks, the discs and the scorch, made at construction; then the panes,
-   *   made at the build; then the blobs, made as each body is first placed,
-   *   which in a first round is after the panes — the one tie order no single
-   *   list holds, and no frame has been found to need: two different surfaces
-   *   at one distance to the bit), stable (`fileFarthest`). A spark's bloom is
+   *   sparks, the discs and the scorch, made at construction; then the blobs
+   *   made before this map was built — in an earlier round, and kept since —
+   *   then the panes, made at the build; then the rest of the blobs, made as
+   *   each body is first placed: `blobsBeforeGlass` is where the panes stand
+   *   among them), stable (`fileFarthest`). A spark's bloom is
    *   `GlowRules.colour` as `GlowPass` asked it of the mesh: its emissive colour
    *   faded by the fog at that same distance, its material's alpha of 1.
    */
@@ -7364,12 +7372,18 @@ export class Game {
     const kits = this.fadeKits;
     const pools = this.fadePools;
     let count = 0;
-    // The panes are filed between the scorch and the blobs, in scene order.
+    // The panes are filed among the blobs where their meshes stood in the
+    // scene: after the ones made before this map was built, ahead of the rest.
+    const last = pools.length - 1;
     for (let p = 0; p < pools.length; p++) {
-      if (p === pools.length - 1) n = this.fileGlass(run, n);
-      if (!drawing) continue;
       const pool = pools[p];
+      const glassAt = p === last ? Math.min(this.blobsBeforeGlass, pool.length) : -1;
+      if (!drawing) {
+        if (glassAt >= 0) n = this.fileGlass(run, n);
+        continue;
+      }
       for (let i = 0; i < pool.length; i++) {
+        if (i === glassAt) n = this.fileGlass(run, n);
         const f = pool[i];
         const node = f.node;
         if (!node.visible || !(f.visibility > 0)) continue;
@@ -7403,6 +7417,7 @@ export class Game {
         run.reserve(n + 1);
         fileFarthest(run.keys, run.order, n++, d, FADE + at);
       }
+      if (glassAt === pool.length) n = this.fileGlass(run, n);
     }
     if (drawing) fades.upload(count);
     run.draws = n;

@@ -67,8 +67,8 @@ const FADE_BLEND: GPUBlendState = {
   alpha: { srcFactor: "one", dstFactor: "one", operation: "add" },
 };
 
-/** Each variant's state, off the BEFORE's pipelines (`surfaces.mjs`). */
-const STATES: Readonly<Record<FadeVariant, PipelineState>> = {
+/** Each variant's state, off the BEFORE's pipelines (`surfaces.mjs`); `shaders.mjs` builds each in it. */
+export const FADE_STATES: Readonly<Record<FadeVariant, PipelineState>> = {
   emissive: { depthWrite: false, blend: FADE_BLEND },
   scorch: { depthWrite: false, blend: FADE_BLEND, cullMode: "none", depthBias: -4, depthBiasSlopeScale: -2 },
   blob: { depthWrite: false, blend: FADE_BLEND },
@@ -188,7 +188,7 @@ export class FadeDraw {
     this.scorchHandles = { opacityTex: scorchMap };
     this.blobHandles = { opacityTex: blobMap };
     this.reserve(64);
-    const asks = (Object.keys(STATES) as FadeVariant[]).map((variant) => {
+    const asks = (Object.keys(FADE_STATES) as FadeVariant[]).map((variant) => {
       const program = fadePrograms(variant);
       return renderer.pipelines
         .get({
@@ -197,7 +197,7 @@ export class FadeDraw {
           fragment: program.fragment,
           fragmentEntry: "main",
           targets: variant === "mask" ? GLOW_TARGETS : FRAME_TARGETS,
-          state: STATES[variant],
+          state: FADE_STATES[variant],
         })
         .then(
           (built) => {

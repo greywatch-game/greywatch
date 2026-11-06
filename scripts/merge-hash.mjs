@@ -362,8 +362,11 @@ function fingerprintMap() {
         p.w, p.h, p.d, p.cx, p.cy, p.cz, p.rotY,
         p.vertexStart, p.vertexCount, p.group, p.box,
       ]),
+      // A group's SURFACE index: its record's (`PaneGroup.record`) since
+      // BABYLON_EXIT.md X4.6e, where a round's group has no mesh; its mesh's
+      // before, which was that same index.
       paneGroups: (map.paneGroups ?? []).map((pg) => [
-        indexOfVisual(pg.mesh), [...pg.panes], pg.block,
+        typeof pg.record === "number" ? pg.record : indexOfVisual(pg.mesh), [...pg.panes], pg.block,
       ]),
       editorItems: map.editor
         ? {

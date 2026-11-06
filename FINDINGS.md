@@ -3043,3 +3043,66 @@ exactly as before e172f88) for an A/B inside one build. If e172f88 is it, the
 fix is per device, since the Intel Xe-LPG laptop needs the plain draw
 (`docs/rendering.md`, "NOTHING OF THE STATIC WORLD IS DRAWN OR DISPATCHED
 INDIRECT").
+
+## 68. The bank cannot see a Babylon size-gate latch, and has missed three
+
+**Open, recorded and not tooled, by the owner's decision of 2026-11-06**
+(`BABYLON_EXIT.md` X4.6e's review). While a surface was a Babylon mesh, the
+size gate (`WorldCulling.offer`) read the mesh's bounds as of the last time its
+world was COMPUTED, and `_evaluateActiveMeshes` computed only a candidate the
+gate kept, so a drop LATCHED (`docs/rendering.md`, "A WRONG DROP LATCHES"). The
+bank waits on `scene.isReady()` (`harness.mjs`' `waitUntilDrawn`), and
+`Mesh.isReady(true)` computes every mesh's world, so every banked frame is
+drawn with every mesh's bounds fresh, and a port that gates on this frame's
+sphere comes back byte-equal to a BEFORE that latched. **Structurally blind,
+not unlucky**: it missed the pieces (X4.4b), the debris (X4.4c) and the scorch
+and the blobs (X4.6e, whose note said Babylon's gate read "the last frame's"
+sphere; its review found the latch).
+
+### What is measured
+
+- X4.6e's review, a live probe on Sarab at 832x384, eye 446 m from the origin,
+  a real `explode` event 6 m ahead and a stand-in body through
+  `ShadowSystem.updateBlobs`: at 8bf7789 the mark and the blob were in no
+  candidate list on any frame, and X4.6e (35b97b2) drew both; the bank
+  byte-equal across the two. The port matched Babylon on every frame of ten
+  cases, a release by a larger viewport and a second round's warm-up among
+  them, and was then dropped (its note).
+
+### What to use instead
+
+A LIVE probe, the review's shape (and X4.4b's and X4.4c's before it): the
+render loop running, no `scene.isReady()`, no freeze; the surface raised by the
+game's own door (a real event, `updateBlobs`) far from where its mesh was last
+computed; read per frame — on Babylon the active list and `WorldCulling`'s
+candidates, on ours what the draw was handed — at the BEFORE and on the port,
+at a phone-height viewport and at 1080p, with a case that releases the latch
+(the viewport grown, the eye walked back) and one across a second round.
+
+### How to settle it
+
+It ends with Babylon's meshes: nothing of ours latches, every pool being gated
+on the sphere it is drawn with. An editor build's glazing is the one gated
+Babylon surface left until X5.3, and no row is an editor build.
+
+## 69. `depth.mjs glass` throws: the `GLASS_DEPTH_UNITS` sweep owes a port to our glazing
+
+**Open since `BABYLON_EXIT.md` X4.6e** (recorded by its review). The mode
+reads Babylon's glazing MESHES (`PaneGroup.mesh`, `computeWorldMatrix`, its
+bounding box) and hides the world by them; a round's glazing is our renderer's
+since X4.6e (`GlassDraw`, no mesh made of it), so the mode throws "owes a
+port" rather than measure nothing. The other mode, `zoffset`, is untouched.
+`plans/webgpu-ref/README.md`, `VERIFYING.md` and `docs/rendering.md` still
+quote the sweep's table, which stands as measured but cannot be re-taken.
+
+### What is derived from the code
+
+- The panes' bias is now a pipeline state of ours (`GlassDraw`'s `depthBias`,
+  from the same constant), so the number the sweep re-derives still decides
+  the picture; only the instrument is gone.
+
+### How to settle it
+
+Port the mode to `GlassDraw`: the group's record (`PaneGroup.record`, its
+sphere and box), the tint through its recipe, and the hide through the cull's
+own switches rather than a mesh's; then re-run it once against the table.

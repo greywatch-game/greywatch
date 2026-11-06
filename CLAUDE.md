@@ -920,9 +920,9 @@ renderer reading the record. `GameMap.world` keeps it for every surface:
   which the ink does draw on purpose.
 - `noGlow: true` — out of the bloom. `GlowPass` reads it per mesh every frame,
   so a mesh built at any time needs only the flag — but the emissive PALETTE
-  and a world FIRE, neither of which has a mesh, read it at the TAKE, PER
-  SURFACE (`BlockHandover`, `takeFire` for a fire), so it must be on the part
-  when the build hands it over: it keeps that surface out of the mask alone. A mesh that stays in bloom is faded with distance instead
+  and a world FIRE, which have no mesh, read it at the TAKE, PER SURFACE
+  (`BlockHandover`, `takeFire`), so it must be on the part when the build hands it over: it keeps that surface out of the mask alone;
+  a spark, disc, scorch or blob has no mesh either and blooms by KIND (`FarthestRun`'s `blooms`: a spark alone). A mesh that stays in bloom is faded with distance instead
   (`GlowRules.colour` in `Game`); the moon is no mesh, and not in the valley
   to be fogged out of.
 - `noShadowCaster: true` — excluded from `ShadowSystem.setCasters()`. Flat receivers

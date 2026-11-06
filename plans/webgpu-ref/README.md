@@ -119,7 +119,9 @@ node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--gpu] [--max] [
   palette material on the page carries, and fails if a palette group our
   renderer cut carries a bias it found no material for (so a page with a
   palette cannot pass having built neither program, as X3.7c's first run
-  did).
+  did). Since X4.6e's review it also builds the glazing's PLACED stage
+  (`celPlacedVertex`) in the four states `GlassDraw` asks, and the four fade
+  programs in `FadeDraw`'s (`FADE_STATES`): eight more a map.
   Exits non-zero, so it stands in front of a merge beside
   `gate.mjs`. It is also the strongest place the transpiler tripwire is asked,
   because it forces the CACHED materials to compile rather than the drawn ones.
@@ -163,7 +165,8 @@ node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--gpu] [--max] [
   `depth24plus-stencil8`, and WebGPU defines `depthBias` in a different unit for
   a float format, so `CelMaterialFactory.GLASS_DEPTH_UNITS` and
   `OutlineRenderer`'s own offsets are both stated in a unit that moves when that
-  flag moves. `glass` sweeps the bias against range on a tinted curtain wall;
+  flag moves. `glass` sweeps the bias against range on a tinted curtain wall
+  (and throws since X4.6e, owing a port to our glazing: `FINDINGS.md` 69);
   `zoffset` is a ruler that says what the outline pass's offsets are worth in
   metres. **Nothing else re-derives these, the bank least of all** — a pane that
   has quietly stopped being drawn at 180 m is in no banked frame.
@@ -320,6 +323,14 @@ lamp or a reflection. See the floor, below.
   exactly for one commit, with this refresh restated in `waitUntilDrawn`, and
   then dropped by the owner's decision of 2026-11-06, the refresh with it:
   nothing here touches the game's state before asking whether it is ready.
+  **So the bank is BLIND to a Babylon size-gate latch, by construction, and
+  "no change to the picture" for a size-gated Babylon mesh is not something
+  it can say** — it missed the pieces, the debris and the scorch
+  (`FINDINGS.md` 68). Ask a LIVE probe instead: the render loop running, no
+  `scene.isReady()` and no freeze, the surface raised through the game's own
+  door far from where its mesh was last computed, the active and candidate
+  lists read per frame on Babylon's side and the draw's on ours, at a
+  phone-height viewport and at 1080p, with a case that releases the latch.
 
 ## One process per MAP, and the pause lid never comes off
 
@@ -422,7 +433,10 @@ from the spawn photographed no shadow window at all.
   On the Chromebook
   that frame takes the device, and no reference set taken there covers it.
 - **The `GLASS_DEPTH_UNITS` SWEEP is not in it, and the three curtain-wall
-  frames are not a substitute for it.** It is `depth.mjs glass` now. The sweep
+  frames are not a substitute for it.** It is `depth.mjs glass` now — **which
+  THROWS since `BABYLON_EXIT.md` X4.6e** ("owes a port"): it reads Babylon's
+  glazing meshes and a round has none, so the sweep is not re-takeable until
+  it is ported to `GlassDraw` (`FINDINGS.md` 69). The sweep
   is a measurement: it hides the rest of the map, holds the incidence angle and the
   on-screen size still by moving `fov` with the distance, and reads the pane's
   own contribution by toggling the group and differencing — see

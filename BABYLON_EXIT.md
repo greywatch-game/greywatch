@@ -1945,17 +1945,17 @@ its review the blobs and a scorch through glass on two more):
   (`WaterSystem` shows one or the other by distance), a bed-depth map per body
   and a cube per body read through `wrapCubeTexture`. No blending flag on the
   material, and **it writes depth**.
-- **The glazing**: `PaneBlocks`, see-through over its block's cube and writing no
+- **The glazing** (ours since X4.6e, this the record): `PaneBlocks`, see-through over its block's cube and writing no
   depth, `backed` writing depth. `GlassFx`'s collapse writes positions into a
   block's buffer with `updateVerticesData`. **Many of these surfaces are NOT at
   identity** (a group of one is not baked, in a round as in the editor): 42 of
   Coldharbour's 78 (12 see-through), 20 of Sarab's 28 (16), 12 of Cinderhaven's 14
   (4), and every one's positions are local to that matrix.
-- **The three pools**: `CombatFx`'s sparks and dust discs and
+- **The three pools** (the same): `CombatFx`'s sparks and dust discs and
   `BlastDebrisSystem`'s scorch (a `StandardMaterial` decal). Babylon draws them
   back to front by bounding-sphere centre, INTERLEAVED with the see-through pane
   blocks (X4.4a measured this, and X4.6a on every row since).
-- **The blob shadows**: `ShadowSystem`, one disc per combatant (`blobFor`), a black
+- **The blob shadows** (the same, and the facing below the record of before 0e44130, which turned it UP by the owner's decision of 2026-11-05 and deleted `FINDINGS.md` 67): `ShadowSystem`, one disc per combatant (`blobFor`), a black
   `StandardMaterial` with a radial `opacityTexture` (a canvas gradient), faded by
   `visibility`, `noInk`, `noGlow`, and one `warmBlob` pose. Placed by `updateBlobs`,
   whose two callers are a played frame's and the benchmark's, so no frozen frame

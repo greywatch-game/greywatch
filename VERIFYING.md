@@ -1803,7 +1803,9 @@ is one machine's:
     separate the two, against the 0.04 m the builder gives it.
 
   **This whole sweep is now a committed script** —
-  `node plans/webgpu-ref/depth.mjs glass` — because the number it takes is
+  `node plans/webgpu-ref/depth.mjs glass`, which THROWS "owes a port" since
+  `BABYLON_EXIT.md` X4.6e, a round's glazing being our renderer's and no mesh
+  (`FINDINGS.md` 69) — because the number it takes is
   decided by the DEPTH FORMAT, which is decided by one boot flag, and nothing
   else in the repository re-derives it. It differs from the recipe above in one
   further way worth knowing: the reading is a COUNT of tinted pixels rather than

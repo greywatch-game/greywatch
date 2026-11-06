@@ -1330,8 +1330,9 @@ same `2^-24` everywhere a shipped map is drawn — a depth in [0.5, 1) is every
 fragment past a few metres — which is why the answer did not move much, and it
 is not something to assume the next time the flag does. Re-run on the north
 tower's 542-sheet curtain wall with the rest of the map hidden and the glass
-tinted so a surviving sheet is countable (`plans/webgpu-ref/depth.mjs glass`),
-the pane's own share of the frame is:
+tinted so a surviving sheet is countable (`plans/webgpu-ref/depth.mjs glass`,
+which throws "owes a port" since `BABYLON_EXIT.md` X4.6e: it reads Babylon's glazing
+meshes, which a round no longer has, `FINDINGS.md` 69), the pane's own share of the frame is:
 
 | units | 40 m | 90 m | 130 m | 180 m | 220 m | 260 m | |
 | --- | --- | --- | --- | --- | --- | --- | --- |
