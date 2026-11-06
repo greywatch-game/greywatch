@@ -1916,7 +1916,7 @@ moved; **all of this is past since X4.5c**: no sky piece is a Babylon mesh):
   stood over", with the `Active` commit; `Sky.ts`'s header and
   `CloudShader.ts`'s; `FILES.md` for each new file.
 
-### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4, its review 5d43b2e), X4.6b **LANDED** (483165a, its review e1f5712), X4.6c **LANDED** (4a16b5f, its review d80c078), X4.6d **LANDED** (5f26b00), X4.6e **LANDED** (a3d24c6, ccd194a, 0e44130, its note a5a4b28, its review 4251a34..a5ca27d) — **all five LANDED**
+### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4, its review 5d43b2e), X4.6b **LANDED** (483165a, its review e1f5712), X4.6c **LANDED** (4a16b5f, its review d80c078), X4.6d **LANDED** (5f26b00), X4.6e **LANDED** (a3d24c6, ccd194a, 0e44130, its note a5a4b28, its review 4251a34..a5ca27d, its note 2052df0) — **all five LANDED**
 
 Everything left on the floor that Babylon still draws, the three blended pools
 X4.4 left waiting for the glazing, and the blob shadows (decided 2026-11-03).
@@ -2198,7 +2198,7 @@ Greyfen, `F2` from the menu and each eye of the map's rows):
   136 (`sarab-ground`, the flake), 136 and the move; the same 34 stale rows red. `census` equal, Babylon 0 a row;
   `pipelines.mjs --round` zero of ours in play; live rounds, `F2`, the menu and a second round clean; a frame's allocation
   159 KB to 73 KB. Report versions 34 and 35. **Not verified**: a server's match in a browser, the phone.
-  **Its review** (4251a34, 48796b8, 1a89216, fdfae2e, a5ca27d, its note; 2026-11-06; no change to the picture but
+  **Its review** (4251a34, 48796b8, 1a89216, fdfae2e, a5ca27d, its note 2052df0; 2026-11-06; no change to the picture but
   the owner's decided one in 1a89216; the numbers are in the note). **`FarthestRun.reserve` dropped what the pull had
   filed** when it grew mid-filing, so a frame past 64 items drew pane 0 in the first 64's place: it carries them now
   (the real class in Node, and the review's live frame 0 on Coldharbour, 100 draws, 100 distinct). **Babylon's size gate
