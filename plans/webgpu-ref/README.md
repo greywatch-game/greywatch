@@ -312,8 +312,14 @@ lamp or a reflection. See the floor, below.
   rows' rubble drawable, a chunk a live round never drew, and X4.4c restated
   that refresh in `waitUntilDrawn` for its pieces. Since the commit after
   X4.4c every piece is gated on the sphere it is drawn with, the game draws
-  the rubble the rows always showed, and the refresh is gone: nothing here
-  touches the game's state before asking whether it is ready.
+  the rubble the rows always showed, and the refresh is gone. **The scorch and
+  the blobs were the same case until X4.6e** and nobody saw it: their meshes'
+  bounds were refreshed by the same call, so no row could tell Babylon's
+  latch from a gate on this frame's sphere, and X4.6e's note said the two
+  were the same. Its review found the latch with a live probe; it is ported
+  exactly (`Fade.gate`), so `waitUntilDrawn` refreshes every scorch's and
+  blob's gate sphere before it asks, as the scene's call computed their
+  meshes, until the owner's drop of that latch.
 
 ## One process per MAP, and the pause lid never comes off
 

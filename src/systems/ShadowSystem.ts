@@ -933,6 +933,18 @@ export class ShadowSystem {
     for (const blob of this.blobFades) blob.node.visible = false;
   }
 
+  /**
+   * What the building card's warm-up did to the size gate's latch while a
+   * blob was a Babylon mesh (`Fade.gate`): it switched `cbt`'s on for the
+   * warm-up's frame, gate off — making it there, at the origin, the first
+   * time — so its world was computed where it stands. Nothing is shown now;
+   * the making and the computation are kept, until the owner's drop of the
+   * latch.
+   */
+  warmGate(cbt: Combatant): void {
+    this.blobFor(cbt).compute(this.blobKit);
+  }
+
   private updateBlob(cbt: Combatant, camPos: Vector3, groundY: number): void {
     const blob = this.blobFor(cbt);
     // A dead combatant normally has no shadow, and for the 0.9 s the collapse
@@ -975,7 +987,7 @@ export class ShadowSystem {
   private blobFor(cbt: Combatant): Fade {
     let blob = this.blobs.get(cbt);
     if (!blob) {
-      blob = new Fade(BLOB);
+      blob = new Fade(BLOB, this.blobKit);
       // `CreateDisc`'s FRONT is its -Z, not its +Z, and its pipeline culls
       // back faces: this turn sends local -Z UP, so the disc faces up and is
       // seen from above, the floor's side, and from below it draws nothing.

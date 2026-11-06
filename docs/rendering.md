@@ -2646,8 +2646,18 @@ sparks' blooms go into the glow's mask in that same order, behind the moon's
   the seam), `EmissiveFog`'s fade where the material wore it (not the blob). The pipeline state
   is each material's: blended `ALPHA_COMBINE`, no depth written, back faces culled, but for the
   scorch (no cull, `-4` and a slope of `-2`). A spark and a disc pass the size gate as emissive
-  meshes did, never dropped; a scorch and a blob are gated on THIS frame's sphere, the pools'
-  rule (no drop can latch).
+  meshes did, never dropped. **A scorch and a blob are gated on their GATE sphere, and that
+  LATCHES as Babylon's did** (`Fade.gate`, ported exactly by the owner's decision of 2026-11-06,
+  until the owner's drop of it): the sphere as of the last time the mesh's world was COMPUTED,
+  which `_evaluateActiveMeshes` did only for a candidate the gate kept — one never computed at
+  the world origin under its built radius (a scorch's 1.41 m, a blob's 0.85 m), so either is
+  dropped from the moment the eye stands farther than `2 r perRad / 3` from it (381 m and 229 m
+  at a 384-pixel-high viewport, 1,072 m and 643 m at 1080p) and is not drawn again until the
+  eye comes back within reach. The warm-up's frame computed the last free scorch and the
+  player's blob, gate off (`stageWarmFrame`'s `warmGate`s). **X4.6e called this "the last
+  frame's sphere, which no bank row can tell apart"**: no row can, because the harness's
+  `scene.isReady()` computed every mesh's world — `waitUntilDrawn` restates that refresh — and a
+  live probe found it (X4.6e's review).
 - **No pose for the warm-up**: every pipeline of these is on the round's declared list
   (`Game.roundPipelines`), so `stageWarmFrame` poses nothing.
 - **An editor build's glazing stays Babylon's until X5.3**, one mesh per placement per material

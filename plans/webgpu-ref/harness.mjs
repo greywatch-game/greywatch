@@ -303,6 +303,16 @@ export function waitUntilDrawn(page, timeoutMs = 120_000) {
         });
       });
       frames++;
+      // `scene.isReady()` COMPUTES every mesh's world (`Mesh.isReady(true)`),
+      // which while the scorch and the blobs were Babylon meshes, until
+      // BABYLON_EXIT.md X4.6e, refreshed the bounds Babylon's size gate then
+      // read off them — so a row raising one far from where it was last
+      // computed drew it, where a live round, which never asks the scene if it
+      // is ready, kept it latched off. Their drawing keeps that latch as a
+      // GATE sphere (`Fade.gate`, X4.6e's review), so the same refresh is made
+      // here, member for member, every member as every mesh was.
+      for (const f of g.blastDebris?.scorchFades ?? []) f.compute(g.blastDebris.scorchKit);
+      for (const f of g.shadows?.blobFades ?? []) f.compute(g.shadows.blobKit);
       if (g.scene.isReady()) return { drawnOnFrame: frames };
       if (performance.now() > deadline) throw new Error("scene never became ready");
     }

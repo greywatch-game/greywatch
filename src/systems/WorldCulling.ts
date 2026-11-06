@@ -97,8 +97,10 @@
  * - **Loose** — everything else in the scene: the terrain, the roads, the rim,
  *   the effect pools Babylon drew (every one our renderer's and no mesh now —
  *   the sparks, the dust discs, the scorch and the blob shadows since X4.6e,
- *   asked `keepsSphere` of this frame's sphere but the emissive two, which the
- *   gate never dropped; the tracers, the marks, the brass and the thrown and laid bodies are our
+ *   the scorch and the blobs asked `keepsSphere` of the sphere their mesh was
+ *   last computed at (`Fade.gate`, Babylon's latch, ported exactly until the
+ *   owner's drop of it), the emissive two never, the gate never having
+ *   dropped them; the tracers, the marks, the brass and the thrown and laid bodies are our
  *   renderer's and no mesh since `BABYLON_EXIT.md` X4.4b, the size gate
  *   reaching their cel parts through `keepsSphere`; the blast's billows, the
  *   shards and the rubble since X4.4c, a billow emissive and so never gated,

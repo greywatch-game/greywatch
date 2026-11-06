@@ -7328,10 +7328,19 @@ export class Game {
    *   0, composed as `computeWorldMatrix` composed its mesh this frame
    *   (`composeNode`), its world sphere carried from its kit's (`worldSphere`),
    *   through the size gate — but a spark and a disc, emissive as their meshes'
-   *   materials were, which `offer` never gated (its `glows`) — on THIS frame's
-   *   sphere, the pools' rule (`docs/rendering.md`, "The pools, ours": no drop
-   *   can latch), and the frustum test; its world, look and bloom written at its
-   *   index among the drawn fades;
+   *   materials were, which `offer` never gated (its `glows`) — and the frustum
+   *   test; its world, look and bloom written at its index among the drawn
+   *   fades. **The gate reads a scorch's and a blob's GATE sphere and LATCHES
+   *   as Babylon's did** (`Fade.gate`; X4.6e's review, ported exactly by the
+   *   owner's decision of 2026-11-06): the sphere as of the last frame its
+   *   mesh's world was COMPUTED — `offer` read the mesh's bounds before
+   *   `_evaluateActiveMeshes` computed only the candidates it kept — so one
+   *   never computed is measured at the world origin, and stays dropped while
+   *   the eye is out of its reach; one the gate keeps becomes this frame's
+   *   whatever its visibility, as a mesh was computed before its `visibility`
+   *   was asked. (X4.6e's note had it "the last frame's, which no
+   *   bank row can tell apart": no row can, because the harness's
+   *   `scene.isReady()` computed every mesh's world, `Mesh.isReady(true)`.)
    * - a SEE-THROUGH pane as `glassPull` kept it, at its key;
    * - and all of them into group 0's TRANSPARENT order: farthest first by
    *   `_distanceToCamera` — the square root of the sphere's centre from
@@ -7367,12 +7376,23 @@ export class Game {
       for (let i = 0; i < pool.length; i++) {
         const f = pool[i];
         const node = f.node;
-        if (!node.visible || !(f.visibility > 0)) continue;
+        if (!node.visible) continue;
         const kit = kits[f.kit];
         composeNode(node);
         const sphere = node.sphere;
         worldSphere(kit.centre, kit.radius, node.world, sphere);
-        if (f.kit !== SPARK && f.kit !== DISC && !culling.keepsSphere(sphere.x, sphere.y, sphere.z, sphere.radius)) continue;
+        if (f.kit !== SPARK && f.kit !== DISC) {
+          // Babylon's latch, ported exactly: the gate reads the sphere as of
+          // the last time the mesh's world was computed, and a candidate it
+          // keeps is computed — this frame's sphere — whatever its visibility.
+          const gate = f.gate;
+          if (!culling.keepsSphere(gate.x, gate.y, gate.z, gate.radius)) continue;
+          gate.x = sphere.x;
+          gate.y = sphere.y;
+          gate.z = sphere.z;
+          gate.radius = sphere.radius;
+        }
+        if (!(f.visibility > 0)) continue;
         if (clip && !inPlanes(sphere.x, sphere.y, sphere.z, sphere.radius, held)) continue;
         const dx = sphere.x - ex;
         const dy = sphere.y - ey;
@@ -7943,6 +7963,11 @@ export class Game {
     // shard, a chunk, a flame and, since `BABYLON_EXIT.md` X4.6e, a spark, a
     // dust disc, a scorch and a blob — and on the round's declared list
     // (`roundPipelines`, X4.4e), as every body, hull, weapon and pane is.
+    // But the frame that posed the last free scorch and the player's blob,
+    // gate off, COMPUTED their worlds, which the size gate's latch reads
+    // (`Fade.gate`): that computation, and nothing shown.
+    this.blastDebris.warmGate();
+    this.shadows.warmGate(this.player);
     this.updateSceneForCamera(0, this.shadowFocus, null, NO_SOLDIERS, NO_SOLDIERS);
     this.culling.setWarm(true);
     this.scene.skipFrustumClipping = true;
