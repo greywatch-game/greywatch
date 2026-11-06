@@ -1969,10 +1969,11 @@ shadow.** What back faces give up is the few centimetres between a boot's near
 and far faces — exactly where the eye looks for the body to be touching the
 floor — so the pair is what a renderer normally spends an ambient-occlusion term
 and a shadow map on. Suppressing the disc where the cast shadow covers the same
-body would put that gap back. **That is the intent, and it is not what is drawn**:
-measured at `BABYLON_EXIT.md` X4.6a's review, a blob's disc faces DOWN on a
-back-culled material, so from above it owns no pixel (`FINDINGS.md` 67, the owner's
-question).
+body would put that gap back. **It is drawn from above, the floor's side, since
+`BABYLON_EXIT.md` X4.6e** (the owner's decision of 2026-11-05): until then the disc
+faced DOWN on a back-culled material, `CreateDisc`'s front being its -Z, so from
+above it owned no pixel and from below it showed, which X4.6a's review measured.
+It faces up now, culls its back as it always did, and from below draws nothing.
 
 **None of its numbers transfer from the world's map**, which is the mistake to
 avoid when editing either: the tap radius is in UV and a UV texel is

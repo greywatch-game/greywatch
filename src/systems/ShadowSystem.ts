@@ -976,10 +976,13 @@ export class ShadowSystem {
     let blob = this.blobs.get(cbt);
     if (!blob) {
       blob = new Fade(BLOB);
-      // `CreateDisc`'s FRONT is its -Z, and this turn sends local +Z up, so
-      // the disc faces DOWN: its pipeline culls back faces, and from above it
-      // draws nothing (`FINDINGS.md` 67, the owner's question).
-      blob.node.rotation.x = -Math.PI / 2;
+      // `CreateDisc`'s FRONT is its -Z, not its +Z, and its pipeline culls
+      // back faces: this turn sends local -Z UP, so the disc faces up and is
+      // seen from above, the floor's side, and from below it draws nothing.
+      // It turned the other way, face down, until the owner's decision of
+      // 2026-11-05 (`BABYLON_EXIT.md` X4.6e, "Decisions"): the contact term
+      // was drawn under every body to nobody standing above it.
+      blob.node.rotation.x = Math.PI / 2;
       this.blobs.set(cbt, blob);
       this.blobFades.push(blob);
     }

@@ -3043,38 +3043,3 @@ exactly as before e172f88) for an A/B inside one build. If e172f88 is it, the
 fix is per device, since the Intel Xe-LPG laptop needs the plain draw
 (`docs/rendering.md`, "NOTHING OF THE STATIC WORLD IS DRAWN OR DISPATCHED
 INDIRECT").
-
-## 67. A body's blob shadow draws nothing from above
-
-`docs/rendering.md` calls the blob disc the contact term under every body, and
-`ShadowSystem.blobFor` tips it "face-up". It is face-DOWN, and its material culls back
-faces, so from any eye above the floor it owns no pixel. Found at `BABYLON_EXIT.md`
-X4.6a's review, by the first bank row that ever raised one.
-
-### What was measured
-
-- `fx-blob-sort`: three blobs above the eye own 547, 1,234 and 2,789 pixels, seen from
-  below; the fourth, on the pavement below the eye, is in Babylon's log at `visibility`
-  0.55, on the transparent list, and owns **0**.
-- In that frame the disc's first normal reads (0, 0, -1) locally and (0, -1, 0) in the
-  world. `rotation.x = -PI/2` sends local +Z up, on the comment's belief that
-  `CreateDisc` faces +Z, and its front is -Z.
-- Turning the material's cull off, or flipping the disc to `rotation.x = PI/2`, moves
-  the same pixels: 0.1153% of the frame, a mean of 0.0042/255, worst 32/255.
-- The dust discs share the mesh builder and show, being `DOUBLESIDE` geometry
-  (`CombatFx`); the scorch shows, its material culling nothing.
-- It still costs: ~14 blob draws a frame through a 25 s live round on Coldharbour,
-  where a body in the frustum draws a disc nobody can see from above.
-- The rotation line is as old as the tree's first commit (3ed9fec). **Not measured**:
-  whether an earlier Babylon ever showed it, or whether anybody has seen a blob in play
-  from below (a disc overhanging a deck's edge is the case a read of the geometry
-  suggests).
-
-### How to settle it
-
-The owner's call, and it is held open in `BABYLON_EXIT.md`'s "Decisions" because X4.6e
-ports the blob. Three outcomes: port it as it is and leave this entry; flip it, which is
-a picture change on every frame with a body on a floor, a commit of its own with the
-bank's numbers (and a look at whether the contact term still earns its place beside the
-bodies' map now that it can be seen); or delete it, and the draws with it, and rewrite
-the paragraph that calls it the contact term. **Delete this entry when one is chosen.**

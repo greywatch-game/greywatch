@@ -570,9 +570,9 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
     // Appended by X4.6a's review, after every row above, at an eye they stand at.
     {
       id: "fx-blob-sort",
-      of: "the square's west shopfront with four bodies' contact shadows: dark slivers across pane 0's upper half, one behind the glass under the far impact, one in front of the glass behind the near impact, one in front of both, and a fourth on the pavement that shows nothing. Each of the three sits on a stated floor above the eye, standing in for a deck nothing is built under here",
+      of: "the square's west shopfront with four bodies' contact shadows: three on stated floors above the eye — behind the glass under the far impact, in front of the glass behind the near impact, in front of both — standing in for decks nothing is built under here, which show nothing from below, and a fourth on the pavement below the eye, seen from above",
       proves:
-        "the BLOB on Babylon's transparent list, sorted by centre among the panes and the fades (X4.6e): farthest first the panes, the far spark and disc (12.58, 12.57), a blob (11.3), pane 0's block (8.35), a blob (7.76), the near spark and disc (7.14, 7.12), a blob (6.21), each stack sharing pixels. **A blob faces DOWN on a back-culled material, so it draws nothing from above**: the fourth, on the pavement below the eye, is in the log and owns no pixel, the guard on a port that gets the facing or the cull wrong, and the reason the others are above the eye",
+        "the BLOB's FACING (X4.6e's picture change, the owner's decision of 2026-11-05): a disc faces UP on a back-culled pipeline, so the one on the pavement below the eye is drawn and the three above it, seen from below, own no pixel — the guard on anything that gets the facing or the cull wrong. Until that change the facing was the other way and the three above showed, which is how this row held the blob's place in the back-to-front run among the panes and the fades (farthest first: the panes, the far spark and disc, 12.58 and 12.57, a blob, 11.3, pane 0's block, 8.35, a blob, 7.76, the near spark and disc, 7.14 and 7.12, a blob, 6.21); a blob seen from above between two glass layers is a row no table holds yet",
       pos: [-16, 1.7, -12],
       target: [-23.8, 2, -6.65],
       fx: {
