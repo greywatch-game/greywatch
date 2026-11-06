@@ -572,7 +572,7 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
       id: "fx-blob-sort",
       of: "the square's west shopfront with four bodies' contact shadows: three on stated floors above the eye — behind the glass under the far impact, in front of the glass behind the near impact, in front of both — standing in for decks nothing is built under here, which show nothing from below, and a fourth on the pavement below the eye, seen from above",
       proves:
-        "the BLOB's FACING (X4.6e's picture change, the owner's decision of 2026-11-05): a disc faces UP on a back-culled pipeline, so the one on the pavement below the eye is drawn and the three above it, seen from below, own no pixel — the guard on anything that gets the facing or the cull wrong. Until that change the facing was the other way and the three above showed, which is how this row held the blob's place in the back-to-front run among the panes and the fades (farthest first: the panes, the far spark and disc, 12.58 and 12.57, a blob, 11.3, pane 0's block, 8.35, a blob, 7.76, the near spark and disc, 7.14 and 7.12, a blob, 6.21); a blob seen from above between two glass layers is a row no table holds yet",
+        "the BLOB's FACING (X4.6e's picture change, the owner's decision of 2026-11-05): a disc faces UP on a back-culled pipeline, so the one on the pavement below the eye is drawn and the three above it, seen from below, own no pixel — the guard on anything that gets the facing or the cull wrong. Until that change the facing was the other way and the three above showed, which is how this row held the blob's place in the back-to-front run among the panes and the fades (farthest first: the panes, the far spark and disc, 12.58 and 12.57, a blob, 11.3, pane 0's block, 8.35, a blob, 7.76, the near spark and disc, 7.14 and 7.12, a blob, 6.21); a blob seen from above between two glass layers is `fx-blob-glass`'s, appended after it",
       pos: [-16, 1.7, -12],
       target: [-23.8, 2, -6.65],
       fx: {
@@ -605,6 +605,17 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
       target: [-7.5, 0.4, -10],
       fov: 12,
       zones: true,
+    },
+    // Appended by X4.6e's review, the owner's decision of 2026-11-06, at `square`'s eye.
+    {
+      id: "fx-blob-glass",
+      of: "a shop window 40 m east of the square through a 6° field, the gap at its side glazed again by a building 97 m out, and one body's contact shadow on a stated floor just inside the window, below the eye, seen from above",
+      proves:
+        "the BLOB BETWEEN TWO GLASS LAYERS in the back-to-front run (`FarthestRun`), seen from above as it faces since X4.6e: it sorts at 42.05, behind the window's block (pane 44, 40.25) and ahead of the far block (pane 65, 97.17), so the far glass is blended under it and the near glass over it. Its 581 pixels are all under the near glass and 96 of them over the far glass; drawn first of the run they move 96 pixels, drawn last 612, so a sort that puts it on either wrong side of either layer moves this frame",
+      pos: [-16, 1.7, -12],
+      target: [23.67, 2.24, -6.49],
+      fov: 6,
+      fx: { seconds: 0.3, events: [{ at: 0, blob: { at: [25.65, 1.63, -6.23] } }] },
     },
   ],
   harrowmead: [
