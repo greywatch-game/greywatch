@@ -239,8 +239,10 @@ export interface WorldPane {
   cz: number;
   rotY: number;
   /**
-   * Where this pane's 24 positions live in `PaneGroup.mesh`'s vertex buffer.
-   * Collapsing them to the pane's own centre is what takes it off the screen.
+   * Where this pane's 24 positions live in its group's vertex buffer — our
+   * renderer's in a round (`render/GlassDraw.ts`), `PaneGroup.mesh`'s in an
+   * editor build. Collapsing them onto the first is what takes it off the
+   * screen.
    */
   vertexStart: number;
   vertexCount: number;
@@ -265,7 +267,15 @@ export interface WorldPane {
  * `MapBuilder.paneGroup`.
  */
 export interface PaneGroup {
-  mesh: Mesh;
+  /**
+   * The merged mesh, in an EDITOR build — whose glazing Babylon draws until
+   * `BABYLON_EXIT.md` X5.3 — and null in a round, whose glazing our renderer
+   * draws with no mesh made of it (`render/GlassDraw.ts`, X4.6e): its surface
+   * there is the one named by `record`.
+   */
+  mesh: Mesh | null;
+  /** Its surface's index in the build's list: what names its record in `GameMap.world` and its draw in a round. */
+  record: number;
   /** Indices into `GameMap.panes`. */
   panes: number[];
   /**
@@ -507,8 +517,9 @@ export interface GameMap {
    */
   panes: WorldPane[];
   /**
-   * The merged glazing meshes — all of the map's glass, not only the panes
-   * above, which hold their vertices in these.
+   * The merged glazing groups — all of the map's glass, not only the panes
+   * above, which hold their vertices in these: a mesh each in an editor
+   * build, a surface of our renderer's each in a round.
    */
   paneGroups: PaneGroup[];
   /**

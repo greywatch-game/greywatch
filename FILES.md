@@ -1407,7 +1407,8 @@ src/
                         #   deleted Babylon's ReflectionProbes. Owns the
                         #   DEFAULT cube, one of ours nothing bakes, bound at a
                         #   strength of 0; an editor build, or a round whose
-                        #   world failed, bakes nothing
+                        #   world failed, bakes nothing. Points a round's backed
+                        #   glazing at its probe's recipe and cube (X4.6e)
     Atmosphere.ts       # Ash field on the GPU, simulated by a compute shader.
                         #   No CPU fallback — WebGPU is a hard requirement and
                         #   guarantees it
@@ -2719,7 +2720,9 @@ src/
                         #   CEL_GEOMETRY) at the vertex the index names,
                         #   world identity or the instance's transform, over
                         #   the shared celVertex body — one stage for blocks
-                        #   and scatter (X3.5b); a ZERO list entry draws
+                        #   and scatter (X3.5b), and its PLACED twin, a whole
+                        #   matrix at the draw's instance (the glazing, X4.6e);
+                        #   a ZERO list entry draws
                         #   nothing (the corner clipped before any read), in
                         #   every stage sharing the decode. Every variant compiled by
                         #   plans/webgpu-ref/shaders.mjs
@@ -2844,8 +2847,15 @@ src/
                         #   renamed out of it, the prefix of the frame's textures
     NearestRun.ts       # THE ONE RUN (X4.6d): the zones, the blades and the water
                         #   in Babylon's one nearest-first order, at one point,
-                        #   first of ours at "beforeAlphaTest"; three lists merged,
-                        #   a tie to the mesh made first; the keys Game.nearestPull's
+                        #   first of ours at "beforeAlphaTest" but the backed
+                        #   panes; three lists merged, a tie to the mesh made
+                        #   first; the keys Game.nearestPull's
+    GlassDraw.ts        # A ROUND'S BACKED GLAZING as OUR renderer draws it
+                        #   (X4.6e): a draw a pane group under its own world
+                        #   matrix, nearest first ahead of everything of ours at
+                        #   "beforeAlphaTest"; a probe's recipe and its cube read
+                        #   where the bake left it. The see-through glazing and an
+                        #   editor build's stay Babylon's
     grassProgram.ts     # Its program (X4.6c): the field's block and mask (one
                         #   group 1), the two geometries, the frame's block with
                         #   the field's own names renamed out of it, the blades'

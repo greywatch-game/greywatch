@@ -136,7 +136,9 @@ function read(page) {
       (g.skyDraw ? g.skyDraw.stats.drawn : 0) +
       (g.zoneDraw ? g.zoneDraw.stats.drawn : 0) +
       (g.grassDraw ? g.grassDraw.stats.blades + g.grassDraw.stats.turf : 0) +
-      (g.waterDraw ? g.waterDraw.stats.drawn : 0);
+      (g.waterDraw ? g.waterDraw.stats.drawn : 0) +
+      // The BACKED panes are ours since X4.6e (`GlassDraw`, a draw a group).
+      (g.glassDraw ? g.glassDraw.stats.backed : 0);
     return { babylon: window.__census.babylon, ours: ours.drawn + bodies + hulls + view + pools, bodies, hulls, view, pools, taken: ours.taken };
   });
 }

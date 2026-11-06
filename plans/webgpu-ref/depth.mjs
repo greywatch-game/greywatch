@@ -142,8 +142,16 @@ if (MODE === "glass") {
   await settle(page, 6);
 
   // The biggest sheet count on the map, which is a tower's whole curtain wall.
+  // **This mode reads Babylon's glazing MESHES, and a round has none since
+  // `BABYLON_EXIT.md` X4.6e**: its panes are our renderer's (`GlassDraw`),
+  // their bias pipeline state (`GLASS_DEPTH_BIAS`) and their walls ours since
+  // X3.7b (which `map.visuals` no longer holds). It owes a port; until then it
+  // says so rather than measuring nothing.
   const target = await page.evaluate(() => {
     const g = window.__celshock;
+    if (g.map.paneGroups.some((grp) => !grp.mesh)) {
+      throw new Error("depth.mjs glass: a round's glazing is our renderer's since BABYLON_EXIT.md X4.6e, and this mode reads Babylon's meshes — it owes a port");
+    }
     const rows = g.map.paneGroups.map((grp, i) => {
       const m = grp.mesh;
       m.computeWorldMatrix(true);

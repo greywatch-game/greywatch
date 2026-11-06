@@ -198,3 +198,37 @@ export function celVertex(defines: Iterable<string>, target: StageTarget, stride
   if (!program) scatterPrograms.set(stride, (program = celProgram(stride)));
   return assembleVertex(program, defines, target);
 }
+
+/** One placed surface's world in `transforms`, in 32-bit words: the whole matrix, `Matrix.m`'s sixteen. */
+export const PLACED_WORDS = 16;
+
+/**
+ * The PLACED twin's prelude: `world` is the matrix at the draw's instance — a
+ * draw of one instance, its `firstInstance` the surface's slot in
+ * `transforms` — read WHOLE, its four columns as Babylon's `world` uniform
+ * held them (`Matrix.m`, sixteen float32s), no column built from a literal,
+ * so the product is compiled as the uniform's was.
+ */
+const PLACED_PRELUDE = [
+  `  let t = instanceIndex * ${PLACED_WORDS / 4}u;`,
+  "  instance.world = mat4x4f(transforms[t], transforms[t + 1u], transforms[t + 2u], transforms[t + 3u]);",
+].join("\n");
+
+/**
+ * The cel vertex stage drawn PLACED (`BABYLON_EXIT.md` X4.6e, the glazing):
+ * the plain stage's decode, every index a plain vertex, and `world` the
+ * transform its draw's instance names (`PLACED_PRELUDE`) rather than the
+ * identity — for surfaces that keep a world matrix of their own, as a group
+ * of one that `PaneBlocks` takes as it stands does.
+ */
+const CEL_PLACED_PROGRAM: VertexProgram = {
+  ...celProgram(null),
+  label: "cel-vertex-placed",
+  instanced: true,
+  prelude: PLACED_PRELUDE,
+};
+
+/** One variant of the cel vertex stage drawn placed — see `CEL_PLACED_PROGRAM`. */
+export function celPlacedVertex(defines: Iterable<string>, target: StageTarget): AssembledVertex {
+  return assembleVertex(CEL_PLACED_PROGRAM, defines, target);
+}

@@ -1350,20 +1350,18 @@ export class MapBuilder {
     // merge still ran on meshes — the floor and the rim first, as they were —
     // and none for a surface our renderer draws whole (`onSurface`,
     // `BABYLON_EXIT.md` X3.7b), with each surface's arrays released once it
-    // is past. The glazing groups are handed their meshes on the way past,
-    // which is the shape `GameMap.paneGroups` and `GlassFx` read: glazing is
-    // always Babylon's, so a group without one is a broken build.
+    // is past. The glazing groups are handed their surface's index on the way
+    // past, and their mesh where one was made — an editor build's, whose
+    // glazing is Babylon's until `BABYLON_EXIT.md` X5.3; a round's is our
+    // renderer's (`onSurface`, X4.6e) and made none — which is the shape
+    // `GameMap.paneGroups` and `GlassFx` read.
     const made = record("upload", () => worldMeshes(surfaces, this.scene, plain, onSurface));
-    const meshOf = new Map<WorldSurface, Mesh>();
-    surfaces.forEach((surface, i) => {
-      const mesh = made.meshes[i];
-      if (mesh) meshOf.set(surface, mesh);
-    });
+    const indexOf = new Map<WorldSurface, number>();
+    surfaces.forEach((surface, i) => indexOf.set(surface, i));
     for (const mesh of made.visuals) visuals.push(mesh);
     this.paneGroups = glazing.map((g) => {
-      const mesh = meshOf.get(g.surface);
-      if (!mesh) throw new Error(`MapBuilder: the glazing "${g.surface.part.name}" was made no mesh`);
-      return { mesh, panes: g.panes, block: g.block };
+      const at = indexOf.get(g.surface)!;
+      return { mesh: made.meshes[at], record: at, panes: g.panes, block: g.block };
     });
     const records = made.records;
 

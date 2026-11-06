@@ -1,10 +1,12 @@
 /**
  * GlassFx.ts — The PICTURE of a pane going in: the glazing's vertex range
- * collapsed out of its merged mesh, and the collider MESH told it is no longer
- * a wall.
+ * collapsed out of its merged surface — our renderer's in a round
+ * (`render/GlassDraw.ts`, `BABYLON_EXIT.md` X4.6e), the merged mesh in an
+ * editor build — and the collider MESH told it is no longer a wall.
  * Owns: the pane → collider-mesh index for the standing map (built off the
  * `metadata.pane` stamp `MapBuilder.paneGroup` writes), and the two writes a
- * break makes on Babylon objects — `collapse` and `clear`.
+ * break makes — `collapse` (into the glazing draw's buffer, or an editor
+ * build's mesh) and `clear` (onto the collider mesh).
  * Invariants: it READS `GameMap` and is told by `GlassSystem`'s `onBroken`
  * and `onCleared`, and it never writes the simulation — whether a pane is
  * broken, whether its box is out of the queries and the nav graph, and the
@@ -23,9 +25,10 @@
  * glazing (`WorldPane.vertexStart`/`vertexCount` into `paneGroups[group]`).
  * Collapsing that range onto its own first vertex makes every triangle in it
  * degenerate, which rasterises nothing — and a pane carries no outline and
- * casts no shadow, so there is no second registration to revoke. One
- * `updateVerticesData` on one small buffer; only the blocks that hold a
- * breakable pane keep an updatable position buffer at all.
+ * casts no shadow, so there is no second registration to revoke. One write of
+ * the range into one buffer (`GlassDraw.collapse`; an editor build's mesh, one
+ * `updateVerticesData`); only the blocks that hold a breakable pane keep a
+ * writable copy of their positions at all.
  *
  * ## Why the collider mesh is written at all
  *
@@ -38,9 +41,15 @@
  * describing itself as what it now is.
  */
 import { VertexBuffer, type Mesh } from "@babylonjs/core";
+import type { GlassDraw } from "../render/GlassDraw";
 import type { GameMap, PaneGroup, WorldPane } from "../world/mapTypes";
 
 export class GlassFx {
+  constructor(
+    /** A round's glazing, whose buffer a collapse writes into (`BABYLON_EXIT.md` X4.6e). */
+    private readonly glass: Pick<GlassDraw, "surfaces" | "collapse">,
+  ) {}
+
   private panes: readonly WorldPane[] = [];
   private groups: readonly PaneGroup[] = [];
   /**
@@ -80,6 +89,14 @@ export class GlassFx {
     if (!p || p.group < 0) return;
     const group = this.groups[p.group];
     if (!group) return;
+    if (!group.mesh) {
+      // A round's: the surface its record names.
+      const surfaces = this.glass.surfaces;
+      for (let i = 0; i < surfaces.length; i++) {
+        if (surfaces[i].record === group.record) this.glass.collapse(surfaces[i], p.vertexStart, p.vertexCount);
+      }
+      return;
+    }
     const positions = group.mesh.getVerticesData(VertexBuffer.PositionKind);
     if (!positions) return;
     const base = p.vertexStart * 3;

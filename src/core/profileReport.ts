@@ -498,7 +498,9 @@ export interface ViewFacts {
  * one draw too (`render/CloudDraw.ts`), no pool, and `clouds` says whether it
  * was. Since report version 30 (`BABYLON_EXIT.md` X4.5c) `drawn` counts the dome's
  * and the moon's too and `masked` the moon's bloom (`render/SkyDraw.ts`), no pool
- * either, and `sky` says how many were drawn. None
+ * either, and `sky` says how many were drawn. Since report version 34
+ * (`BABYLON_EXIT.md` X4.6e) `drawn` counts the backed glazing's draws (a pane
+ * group each, `render/GlassDraw.ts`) and `glass` says how many. None
  * is in `counters.drawCalls`, which since X4.4b counts no tracer, mark,
  * case, thrown or laid body, since X4.4c no billow, shard or chunk,
  * since X4.4d no fire, since X4.5b no ring, and since X4.5c no dome and no moon:
@@ -526,6 +528,8 @@ export interface PoolFacts {
   grass?: number;
   /** Absent before report version 33. */
   water?: number;
+  /** Absent before report version 34. */
+  glass?: number;
 }
 
 export interface ProfileGraphics {
@@ -1322,7 +1326,10 @@ export function buildReport(
     // 33: `pools.water`, a draw a body of water, in `pools.drawn` too: since
     // `BABYLON_EXIT.md` X4.6d none is in `counters.drawCalls`. Nothing else changed
     // meaning.
-    version: 33,
+    // 34: `pools.glass`, a draw a backed pane group, in `pools.drawn` too:
+    // since `BABYLON_EXIT.md` X4.6e none is in `counters.drawCalls`. Nothing
+    // else changed meaning.
+    version: 34,
     build: buildStamp(),
     takenAt: new Date().toISOString(),
     reason,

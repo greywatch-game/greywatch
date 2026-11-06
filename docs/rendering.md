@@ -2541,7 +2541,7 @@ run, so neither can interleave with it by key, and until X5.3 a few of its frame
 byte-equal or inside their own residue, but **that is those eyes and not the map**: a difference
 there was the blades against the WORLD, and behind it they tie the way they did only where every
 tying surface sorts nearer than the field's centre, which is inferred and not measured
-(`BABYLON_EXIT.md` X4.6d's note and its review's table). **The `backed` panes are on that list too, and no blade can
+(`BABYLON_EXIT.md` X4.6d's note and its review's table). **The `backed` panes were on that list too (ours, ahead of the run, since X4.6e), and no blade can
 reach one, nor can the water**: over all three maps with any, not one of 14,844 triangles is
 within a blade's height and sway of a texel that grows grass, nor within half a metre of a
 body's surface range.
@@ -2593,9 +2593,10 @@ a blade growing through a stone, a blade standing in water, a stone at a shore. 
 sorted as Babylon sorted it (`Game.nearestPull`, inside the render: the sphere's centre off
 `globalPosition`, squared, stable over the order the meshes were made in) and the three are
 merged, an equal key going to the mesh made first: the water's, then the blades', then the
-zones'. **Nothing else is left on that list in a round but the `backed` panes, and nothing in
-the run ties with one**: no zone triangle meets a pane's box, no blade can reach one and no water
-surface comes within half a metre of one (X4.6b's and X4.6c's reviews, every map with glass;
+zones'. **Nothing is left on that list in a round** since X4.6e: the `backed` panes, the last of
+it, are ours and drawn ahead of the run ("The backed panes, ours"), and nothing in the run ties
+with one: no zone triangle meets a pane's box, no blade can reach one and no water surface comes
+within half a metre of one (X4.6b's and X4.6c's reviews, every map with glass;
 `sarab-pane-water`'s drowned car is SEE-THROUGH glass, on the transparent list, and the water it
 shows is drawn first either way). **Two points were never a design**: the near and far runs of
 X4.6b and the blades' per-frame point of X4.6c existed only because the water was Babylon's and
@@ -2603,6 +2604,23 @@ could only be drawn around, and each is gone. A third list that sorts with these
 a line and its made-first place in the tie. **A NaN key sorts last**, read as +Infinity at the top
 of the loop, because no comparison holds of one and an arm assuming the other two had failed would
 spin; no shipped path to one is known.
+
+## The backed panes, ours
+
+**A round's `backed` panes are OUR renderer's since `BABYLON_EXIT.md` X4.6e, and Babylon is made
+no mesh of them** (`render/GlassDraw.ts`). A group is one draw, under its OWN world matrix: a
+group of one `PaneBlocks` takes as it stands is not at identity, and its positions are local to
+that matrix, which the placed cel stage reads WHOLE out of storage (`celVertex.ts`), because the
+uniform it stands in for was a whole matrix to the compiler. The groups are drawn nearest first by
+`eyeDistanceSq`, AHEAD of everything else of ours at `"beforeAlphaTest"` — the one run, the
+palette, the blocks — where Babylon's opaque list drew them, which is the whole of what makes a
+backed pane pay; **Babylon's opaque list is empty in a round now**. A group is offered as its mesh
+was — its block's cell (`WorldCulling.offersBlock`), the size gate on its record's sphere, the
+sphere's frustum test (`Game.glassPull`) — its material is its probe's recipe
+(`CelMaterialFactory.glassProbeRecipe`), and its cube is read where the bake left it, sampled as
+`wrapCubeTexture`'s view sampled it. The see-through glazing is still Babylon's, on its
+transparent list among the fading pools, and an editor build's glazing is Babylon's whole until
+X5.3.
 
 ## The water: a mirror with a body under it
 

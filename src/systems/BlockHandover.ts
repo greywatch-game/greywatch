@@ -111,6 +111,7 @@ import { Material, type Mesh } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { type BlockBox, type CullDiagnostics, NO_DIAGNOSTICS } from "../render/ClusterCull";
 import type { FlameDraw, FlameShapeArrays } from "../render/FlameDraw";
+import type { GlassDraw, GlassGeometry } from "../render/GlassDraw";
 import type { Renderer } from "../render/Renderer";
 import type { LampAtlas } from "../render/LampAtlas";
 import type { ProbeBake } from "../render/ProbeBake";
@@ -131,6 +132,8 @@ import type { WorldGlow } from "../render/WorldGlow";
 import type { WorldShadows } from "../render/WorldShadows";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { isFlame } from "../shaders/FlameShader";
+import { Matrix } from "../math";
+import { worldMatrixOf } from "../world/parts";
 import type { ScatterField } from "../world/scatterVariants";
 import type { WorldGeometry, WorldSurface } from "../world/worldGeometry";
 import { blockOf, type WorldCulling } from "./WorldCulling";
@@ -153,11 +156,11 @@ function blends(material: Material | null): boolean {
   return material.needAlphaBlending();
 }
 
-/** What the build hands `install`: its records, the meshes Babylon was given, and which of them are the glazing. */
+/** What the build hands `install`: its records, the meshes Babylon was given, and which of them are the glazing (an editor build's). */
 export interface InstalledWorld {
   readonly world: WorldGeometry;
   readonly visuals: readonly Mesh[];
-  readonly paneGroups: readonly { readonly mesh: Mesh }[];
+  readonly paneGroups: readonly { readonly mesh: Mesh | null }[];
 }
 
 /**
@@ -188,6 +191,21 @@ export interface WorldFire {
   readonly z: number;
   readonly radius: number;
   readonly glows: boolean;
+}
+
+/** A glazing surface taken from the build, held until the install hands it over. */
+interface TakenGlass {
+  /** Its index in the build — what names its record and its `PaneGroup`. */
+  readonly index: number;
+  /** When `worldMeshes` would have made its mesh: the order the install hands the glazing over in. */
+  readonly born: number;
+  readonly name: string;
+  readonly block: string;
+  readonly backed: boolean;
+  readonly updatable: boolean;
+  /** Its world matrix, as its mesh's `world` uniform would have held it. */
+  readonly world: Float32Array;
+  readonly geometry: GlassGeometry;
 }
 
 /** A fire taken from the build, held until the install hands it over. */
@@ -222,6 +240,8 @@ export class BlockHandover {
   private taken: TakenFire[] = [];
   /** The installed map's fires, in birth order — fire `k` is the fire draw's surface `1 + k`. */
   private worldFires: WorldFire[] = [];
+  /** The glazing taken from the build, until the install hands it to the glazing draw. */
+  private takenGlass: TakenGlass[] = [];
   /** A surface this build could not hold: the install fails on it (`refuse`). */
   private refusal: string | null = null;
   /**
@@ -253,6 +273,8 @@ export class BlockHandover {
     private readonly glow: WorldGlow,
     /** Our renderer's fire draw, handed the map's fires at the install and let go of them at a `clear`. */
     private readonly flames: Pick<FlameDraw, "setWorld" | "clearWorld">,
+    /** Our renderer's glazing draw, handed the map's glass at the install (`BABYLON_EXIT.md` X4.6e); its `clear` is the teardown's. */
+    private readonly glass: Pick<GlassDraw, "add" | "finish">,
     /**
      * Told, once an install, that the world cannot be drawn, why, and whose
      * install it was — after our draws have stopped. `Game.worldFailed`,
@@ -297,6 +319,11 @@ export class BlockHandover {
       k.x === 1 && k.y === 1 && k.z === 1 &&
       part.rotationQuaternion === null;
     if (isFlame(part.material)) return this.takeFire(surface, index, atIdentity, passes);
+    // A BACKED pane is ours since X4.6e; a see-through one is still
+    // Babylon's, made a mesh, its material's recipe notwithstanding.
+    const glass = this.mats.glassKind(part.material);
+    if (glass === "seeThrough") return false;
+    if (glass !== null) return this.takeGlass(surface, index, true, passes);
     // Every surface the main pass takes is in a probe's bake too: Babylon's
     // drew the map's visuals whole but for the glazing, which is never ours.
     let at = this.takeForMainPass(surface, atIdentity, passes | PASS_PROBE, key);
@@ -312,7 +339,9 @@ export class BlockHandover {
         if ((passes & SHADOW_PASSES) !== 0) {
           return this.refuse(`"${part.name}" casts a shadow but our renderer can hold it in no way`);
         }
-        // Babylon's alone, in every pass: the glazing.
+        // Babylon's alone, in every pass: a surface nothing of ours can
+        // hold, which no round builds (the see-through glazing returned
+        // above), so `strayMesh` refuses it at the install.
         return false;
       }
       this.palette.add(at);
@@ -363,6 +392,43 @@ export class BlockHandover {
       block,
       glows,
       arrays: { positions: g.positions, normals: g.normals, uvs: g.uvs, indices: g.indices },
+    });
+    return true;
+  }
+
+  /**
+   * A BACKED glazing surface (`CelMaterialFactory.glassKind`), taken for our
+   * renderer's glazing draw (`render/GlassDraw.ts`, `BABYLON_EXIT.md` X4.6e) —
+   * `true`, and the build makes no mesh of it — if that draw holds it exactly
+   * as Babylon drew it: block-merged (its cell is what offers it), casting
+   * nothing (no pane of either kind is a caster: `MapBuilder` marks every one
+   * `noShadowCaster`), with the normals its stage reads, under the world
+   * matrix its mesh would have been composed with (`worldMatrixOf`: a group of
+   * one `PaneBlocks` takes as it stands is NOT at identity) and with its
+   * positions writable if a break may rewrite them (`updatable`); else
+   * REFUSED. It is in no bake, no shadow and no mask, as its mesh was in none.
+   * Its arrays are kept until the install uploads them.
+   */
+  private takeGlass(surface: WorldSurface, index: number, backed: boolean, passes: number): boolean {
+    const { part } = surface;
+    const block = blockOf(part.metadata);
+    const g = part.geometry;
+    if (block === null || surface.block === null || surface.landform) {
+      return this.refuse(`the glazing "${part.name}" is not block-merged, which is all our glazing draw can hold`);
+    }
+    if ((passes & SHADOW_PASSES) !== 0) {
+      return this.refuse(`the glazing "${part.name}" casts a shadow, which no pane may`);
+    }
+    if (!g.normals) return this.refuse(`the glazing "${part.name}" has no normals, which its vertex stage reads`);
+    this.takenGlass.push({
+      index,
+      born: surface.born,
+      name: part.name,
+      block,
+      backed,
+      updatable: surface.updatable,
+      world: Float32Array.from(worldMatrixOf(part, GLASS_WORLD).m),
+      geometry: { positions: g.positions, normals: g.normals, colors: g.colors ?? null, uvs: g.uvs ?? null, indices: g.indices },
     });
     return true;
   }
@@ -497,6 +563,7 @@ export class BlockHandover {
       return;
     }
     if (!this.handFires(map)) return;
+    if (!this.handGlass(map)) return;
     if (field) {
       field.sets.forEach((set, s) => {
         for (const part of set.parts) {
@@ -598,6 +665,40 @@ export class BlockHandover {
   }
 
   /**
+   * The glazing taken from the build, handed to the glazing draw in BIRTH
+   * order — the order `worldMeshes` made their meshes in, which was the order
+   * of Babylon's candidates, and so what broke a tie in either of its sorts —
+   * each with its record's world sphere (the numbers its mesh's bounding info
+   * held) and the block whose cell offers it; their arrays are read there and
+   * let go. False, the world failed, if one is filed under a block no cell was
+   * grown for: the build's contract broken, as `setMap` refuses its own.
+   */
+  private handGlass(map: InstalledWorld): boolean {
+    const taken = this.takenGlass.sort((a, b) => a.born - b.born);
+    this.takenGlass = [];
+    for (const t of taken) {
+      const record = map.world.surfaces[t.index];
+      if (!record || !this.culling.reachBoxOf(t.block)) {
+        this.fail(`the cull grew no cell for block "${t.block}", which the glazing "${t.name}" is filed under`);
+        return false;
+      }
+      const b = record.bounds;
+      this.glass.add(
+        t.name,
+        t.index,
+        t.geometry,
+        t.world,
+        t.backed,
+        { x: b.centerX, y: b.centerY, z: b.centerZ, radius: b.radius },
+        t.block,
+        t.updatable,
+      );
+    }
+    this.glass.finish();
+    return true;
+  }
+
+  /**
    * The fires taken from the build, handed to the fire draw in BIRTH order —
    * the order `worldMeshes` made their meshes in, which was the order of
    * Babylon's candidates and so of its active list: the glow mask's order
@@ -674,6 +775,7 @@ export class BlockHandover {
     this.probing = new Set();
     this.glowing = new Set();
     this.taken = [];
+    this.takenGlass = [];
     this.worldFires = [];
     this.refusal = null;
     this.owner = null;
@@ -737,3 +839,6 @@ export class BlockHandover {
     }
   };
 }
+
+/** `takeGlass`'s scratch for a surface's world matrix, copied out at once. */
+const GLASS_WORLD = new Matrix();

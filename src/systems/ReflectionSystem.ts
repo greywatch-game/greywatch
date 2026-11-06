@@ -12,8 +12,9 @@
  * is released are decided here; the cubes are our renderer's, their faces
  * culled and drawn from the main pass's own world with the probe's eye
  * PASSED; the water reads its cube where it lies (`WaterDraw`, `BABYLON_EXIT.md`
- * X4.6d), and Babylon's one reader left, the glazing, is handed a wrapped view of
- * each of its pool (`wrapCubeTexture`). There is no other bake: Babylon's
+ * X4.6d), and so does a round's BACKED glazing since X4.6e (`GlassDraw.point`);
+ * Babylon's one reader left, the see-through glazing, is handed a wrapped view
+ * of each of its pool (`wrapCubeTexture`). There is no other bake: Babylon's
  * `ReflectionProbe`s went with X3.7c, a world our bake cannot draw being the
  * world's failure (`BlockHandover`, `Game.worldFailed`). A bake that drained
  * depends on our renderer for nothing: its cubes stand.
@@ -64,15 +65,17 @@
  *   affordable: a bake is a build step because the world is static, and the
  *   editor is the one place it is not. See `build`.
  */
-import { type BaseTexture, type Mesh, type Scene, type ShaderMaterial, Vector3 } from "@babylonjs/core";
+import { type BaseTexture, type Scene, type ShaderMaterial, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { wrapCubeTexture } from "../core/wrappedTextures";
 import { Vector3 as MathVector3 } from "../math";
+import type { GlassDraw } from "../render/GlassDraw";
 import type { ProbeBake, ProbeExclusion, ProbeJob } from "../render/ProbeBake";
 import type { WaterMirror } from "../render/WaterDraw";
 import { blockCoordsOf, blockKey } from "../render/wgsl/clusterCull";
 import type { CelMaterialFactory, ProbeReflection } from "../shaders/CelShader";
 import type { GameMap, PaneGroup, WorldBox } from "../world/MapBuilder";
+import type { SurfaceBounds } from "../world/worldGeometry";
 
 /** A cube of ours: the view Babylon's glazing samples (none in the water's pool), and the probe our bake is handed. */
 interface OurProbe {
@@ -95,7 +98,7 @@ interface InstallPlan {
   /** Each glazing group, the material it was built with, its probe and its box. */
   readonly bases: {
     readonly group: PaneGroup;
-    readonly base: ShaderMaterial;
+    readonly base: unknown;
     readonly slot: number;
     readonly boxMin: Vector3;
     readonly boxMax: Vector3;
@@ -167,6 +170,8 @@ export class ReflectionSystem {
     private readonly mats: CelMaterialFactory,
     /** Our renderer's half of the bake: the cubes and their faces. */
     private readonly bake: ProbeBake,
+    /** A round's backed glazing, which each group's recipe and cube are pointed at (`BABYLON_EXIT.md` X4.6e). */
+    private readonly glass: Pick<GlassDraw, "surfaces" | "point">,
   ) {
     // This frame's share of whatever bake is outstanding. It rides the render
     // targets' hook rather than a `Game.tick` call because our renderer
@@ -256,7 +261,11 @@ export class ReflectionSystem {
     // probe of a map that is gone. Above the return, so the editor's build
     // empties the round's it was opened from.
     this.clear();
-    if (editor || !this.bake.holds) return;
+    if (editor) return;
+    if (!this.bake.holds) {
+      this.pointDefault(map);
+      return;
+    }
     this.plan = { map, glazing: [], water: [], perCell: 1, bases: [] };
     if (map.paneGroups.length === 0) return;
 
@@ -302,7 +311,7 @@ export class ReflectionSystem {
         slot = slots.size;
         slots.set(key, slot);
         const at = Vector3.Zero();
-        centreOf(group.mesh, at);
+        centreOf(map.world.surfaces[group.record].bounds, at);
         glazing.push({ slot, at, served: new Set() });
       }
       glazing[slot].served.add(group.block);
@@ -319,7 +328,7 @@ export class ReflectionSystem {
       // The box per GROUP, each its own.
       const boxMin = new Vector3(-half, floor, -half);
       const boxMax = new Vector3(half, Math.max(roof, floor + 1), half);
-      const base = group.mesh.material as ShaderMaterial | null;
+      const base = map.world.surfaces[group.record].material;
       if (base) this.plan.bases.push({ group, base, slot, boxMin, boxMax });
     }
     this.pointGlazing(this.plan);
@@ -463,10 +472,22 @@ export class ReflectionSystem {
     if (plan.water.length > 0) this.openOurs();
   }
 
-  /** Every glazing group of `plan` handed the material sampling its slot's cube. */
+  /**
+   * Every glazing group of `plan` handed its slot's probe: a see-through
+   * group's mesh the material sampling its slot's cube (`glassProbe`), and a
+   * BACKED group, our renderer's since `BABYLON_EXIT.md` X4.6e, a recipe of
+   * its own (`glassProbeRecipe`) and the slot's cube, which the glazing draw
+   * reads where it lies.
+   */
   private pointGlazing(plan: InstallPlan): void {
     const strength = CONFIG.graphics.reflection.strength;
     for (const { group, base, slot, boxMin, boxMax } of plan.bases) {
+      if (!group.mesh) {
+        const recipe = this.mats.glassProbeRecipe(base, { boxMin, boxMax, at: plan.glazing[slot].at, strength });
+        const surface = this.surfaceOf(group);
+        if (recipe && surface) this.glass.point(surface, recipe, this.cubeOf("glazing", slot).job.cube.texture);
+        continue;
+      }
       this.boxMin.copyFrom(boxMin);
       this.boxMax.copyFrom(boxMax);
       const refl: ProbeReflection = {
@@ -476,8 +497,30 @@ export class ReflectionSystem {
         at: plan.glazing[slot].at,
         strength,
       };
-      group.mesh.material = this.mats.glassProbe(base, slot, refl);
+      group.mesh.material = this.mats.glassProbe(base as ShaderMaterial, slot, refl);
     }
+  }
+
+  /**
+   * Every backed group of a ROUND whose world our bake does not hold pointed
+   * at what its mesh was born with: its own material's recipe, at a strength
+   * of 0, over the default cube — the sky half of the reflection and no more.
+   */
+  private pointDefault(map: GameMap): void {
+    for (const group of map.paneGroups) {
+      const base = map.world.surfaces[group.record]?.material;
+      const recipe = base ? this.mats.celRecipe(base) : null;
+      const surface = this.surfaceOf(group);
+      if (recipe && surface) this.glass.point(surface, recipe, this.defaultCube);
+    }
+  }
+
+  /** A backed group's surface of the glazing draw: the one its record names, or null (one Babylon draws). */
+  private surfaceOf(group: PaneGroup): GlassDraw["surfaces"][number] | null {
+    if (group.mesh) return null;
+    const surfaces = this.glass.surfaces;
+    for (let i = 0; i < surfaces.length; i++) if (surfaces[i].record === group.record) return surfaces[i];
+    return null;
   }
 
   /** The bake opened: its view of the culls built for the queue (`ProbeBake.open`). */
@@ -625,10 +668,13 @@ function top(b: WorldBox): number {
   return b.cy + b.h / 2;
 }
 
-/** The centre of a mesh's world bounding box, into `out`. */
-function centreOf(mesh: Mesh, out: Vector3): Vector3 {
-  const box = mesh.getBoundingInfo().boundingBox;
-  return box.minimumWorld.addToRef(box.maximumWorld, out).scaleInPlace(0.5);
+/**
+ * The centre of a surface's world bounding box, into `out`: its record's box,
+ * the numbers its mesh's `minimumWorld` and `maximumWorld` held, summed and
+ * halved as `addToRef` and `scaleInPlace` did.
+ */
+function centreOf(b: SurfaceBounds, out: Vector3): Vector3 {
+  return out.set(b.minX + b.maxX, b.minY + b.maxY, b.minZ + b.maxZ).scaleInPlace(0.5);
 }
 
 /**

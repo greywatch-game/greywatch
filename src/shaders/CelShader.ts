@@ -613,6 +613,8 @@ const PALETTE_VARIANT: readonly string[] = ["CEL_PALETTE"];
 const GROUND_VARIANT: readonly string[] = ["CEL_GROUND_TEX"];
 const GROUND_BUMP_VARIANT: readonly string[] = ["CEL_GROUND_TEX", "CEL_BUMP"];
 const CLOTH_VARIANT: readonly string[] = ["CEL_SMOOTH"];
+const GLASS_VARIANT: readonly string[] = ["CEL_GLASS"];
+const GLASS_BACKED_VARIANT: readonly string[] = ["CEL_GLASS", "CEL_GLASS_BACKED"];
 
 /** A variant as a `ShaderMaterial`'s `defines` option spells it. */
 function babylonDefines(variant: readonly string[]): string[] {
@@ -1210,8 +1212,9 @@ export class CelMaterialFactory {
    * its variant, its depth bias and its own block and textures, written by
    * `own` and `ownTexture` in the same call that sets them on the material.
    * Only the getters our renderer draws keep one — `getWorldCel`, `get`,
-   * `getGlossy`, `getTranslucent`, `getGroundTextured`, `getCloth`; glazing is
-   * Babylon's alone (`BABYLON_EXIT.md` X3.3a), and a body has no material at
+   * `getGlossy`, `getTranslucent`, `getGroundTextured`, `getCloth`, and since
+   * `BABYLON_EXIT.md` X4.6e `getGlass` (a round's backed glazing is ours; a
+   * group's probe is `glassProbeRecipe`'s) — and a body has no material at
    * all, only a recipe (`bodyCelRecipe`, X4.1d).
    */
   private readonly recipes = new Map<ShaderMaterial, MutableRecipe>();
@@ -1251,11 +1254,12 @@ export class CelMaterialFactory {
   private own(
     mat: ShaderMaterial,
     name: CelMaterialField,
-    value: Color3 | Vector2 | Vector4 | number,
+    value: Color3 | Vector2 | Vector3 | Vector4 | number,
   ): void {
     if (typeof value === "number") mat.setFloat(name, value);
     else if (value instanceof Color3) mat.setColor3(name, value);
     else if (value instanceof Vector2) mat.setVector2(name, value);
+    else if (value instanceof Vector3) mat.setVector3(name, value);
     else mat.setVector4(name, value);
     const out = this.recipes.get(mat)?.values[name];
     if (!out) return;
@@ -1782,6 +1786,7 @@ export class CelMaterialFactory {
       (slot === 0 ? "" : `#${slot}`);
     let mat = this.cache.get(cacheKey);
     if (!mat) {
+      const variant = backed ? GLASS_BACKED_VARIANT : GLASS_VARIANT;
       mat = new ShaderMaterial(
         name,
         this.scene,
@@ -1797,9 +1802,7 @@ export class CelMaterialFactory {
             ...(backed ? ["glassBackdrop"] : []),
           ],
           samplers: [...CelMaterialFactory.SAMPLERS, ...PROBE_SAMPLER_NAMES],
-          defines: backed
-            ? ["#define CEL_GLASS", "#define CEL_GLASS_BACKED"]
-            : ["#define CEL_GLASS"],
+          defines: babylonDefines(variant),
           // What puts these subMeshes in the transparent pass at all. The
           // material's own `alpha` stays 1: the alpha that matters is written
           // per pixel by the shader, and a material-wide one would fade the
@@ -1816,9 +1819,13 @@ export class CelMaterialFactory {
       // Biased toward the eye by the depth buffer's own step, which is what
       // keeps a distant window a window — see GLASS_DEPTH_UNITS.
       mat.zOffsetUnits = CelMaterialFactory.GLASS_DEPTH_UNITS;
-      mat.setColor3("baseColor", Color3.FromHexString(hex));
+      // A recipe, as every material our renderer draws keeps one: a round's
+      // backed glazing is ours (`render/GlassDraw.ts`, `BABYLON_EXIT.md`
+      // X4.6e), and Babylon draws this material, stating the same values.
+      this.bear(mat, variant, CelMaterialFactory.GLASS_DEPTH_UNITS);
+      this.own(mat, "baseColor", Color3.FromHexString(hex));
       if (backed) {
-        mat.setColor3("glassBackdrop", Color3.FromHexString(backed));
+        this.own(mat, "glassBackdrop", Color3.FromHexString(backed));
       }
       this.applyCamera(mat);
       this.applyWind(mat);
@@ -2377,6 +2384,45 @@ export class CelMaterialFactory {
   }
 
   /**
+   * What ONE glazing group is drawn WITH in a round (`render/GlassDraw.ts`,
+   * `BABYLON_EXIT.md` X4.6e): `base`'s recipe — the same colour, backdrop and
+   * four glass numbers — with that group's probe in it: where its cube was
+   * baked from and at what strength, and the box its ray is corrected
+   * against. A fresh recipe a call, its arrays its own, which is what the
+   * per-slot material twin of `glassProbe` is for a pane Babylon still draws —
+   * the CUBE is not in it: it is the bake's, and the draw binds it where it
+   * lies (`GlassDraw.point`). Null for a material that is no glazing.
+   */
+  glassProbeRecipe(
+    base: unknown,
+    refl: { readonly at: Vector3Like; readonly strength: number; readonly boxMin: Vector3Like; readonly boxMax: Vector3Like },
+  ): CelRecipe | null {
+    const recipe = this.glassRecipes.has(base as ShaderMaterial) ? this.recipes.get(base as ShaderMaterial) : undefined;
+    if (!recipe) return null;
+    const values: Partial<Record<CelMaterialField, Float32Array>> = {};
+    for (const [name, value] of Object.entries(recipe.values) as [CelMaterialField, Float32Array][]) {
+      values[name] = new Float32Array(value);
+    }
+    // As the twin's `setVector3`s and `setVector4` wrote them: each double to
+    // a float32, in the order the uniform holds it.
+    const min = values.reflectBoxMin!;
+    min[0] = refl.boxMin.x;
+    min[1] = refl.boxMin.y;
+    min[2] = refl.boxMin.z;
+    const max = values.reflectBoxMax!;
+    max[0] = refl.boxMax.x;
+    max[1] = refl.boxMax.y;
+    max[2] = refl.boxMax.z;
+    const probe = values.reflectProbe!;
+    probe[0] = refl.at.x;
+    probe[1] = refl.at.y;
+    probe[2] = refl.at.z;
+    probe[3] = refl.strength;
+    this.materialEpoch++;
+    return { defines: recipe.defines, depthBias: recipe.depthBias, values, textures: {} };
+  }
+
+  /**
    * The glazing material for ONE reflection probe: the same colour and the
    * same four glass numbers as `base`, carrying that probe's cube, the box its
    * ray is corrected against, and where it was baked from.
@@ -2526,6 +2572,19 @@ export class CelMaterialFactory {
    */
   isSolid(mat: unknown): boolean {
     return this.solids.has(mat as ShaderMaterial);
+  }
+
+  /**
+   * Whether a material is one of `getGlass`'s, and which kind: `"backed"`
+   * (it writes depth, on Babylon's opaque list) or `"seeThrough"` (blended, on
+   * its transparent one); null for any other. `BlockHandover` asks it of each
+   * surface a round builds, which is how the glazing becomes our renderer's
+   * (`BABYLON_EXIT.md` X4.6e).
+   */
+  glassKind(mat: unknown): "backed" | "seeThrough" | null {
+    const recipe = this.glassRecipes.get(mat as ShaderMaterial);
+    if (!recipe) return null;
+    return recipe.backed ? "backed" : "seeThrough";
   }
 
   private applyEnvironment(mat: ShaderMaterial): void {
@@ -2719,10 +2778,7 @@ export class CelMaterialFactory {
    * push onto the rest of the cache.
    */
   private applyGlass(mat: ShaderMaterial, glass: GlassSpec): void {
-    mat.setVector4(
-      "glassParams",
-      new Vector4(glass.reflectance, glass.falloff, glass.halo, glass.tint),
-    );
+    this.own(mat, "glassParams", new Vector4(glass.reflectance, glass.falloff, glass.halo, glass.tint));
   }
 
   /**
@@ -2735,9 +2791,9 @@ export class CelMaterialFactory {
    */
   private applyReflection(mat: ShaderMaterial): void {
     if (this.defaultCube) mat.setTexture("reflectionCube", this.defaultCube);
-    mat.setVector3("reflectBoxMin", Vector3.Zero());
-    mat.setVector3("reflectBoxMax", Vector3.Zero());
-    mat.setVector4("reflectProbe", new Vector4(0, 0, 0, 0));
+    this.own(mat, "reflectBoxMin", Vector3.Zero());
+    this.own(mat, "reflectBoxMax", Vector3.Zero());
+    this.own(mat, "reflectProbe", new Vector4(0, 0, 0, 0));
   }
 }
 

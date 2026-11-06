@@ -123,6 +123,7 @@ import { GrassDraw } from "../render/GrassDraw";
 import { ZoneDraw } from "../render/ZoneDraw";
 import { WaterDraw } from "../render/WaterDraw";
 import { NearestRun } from "../render/NearestRun";
+import { GlassDraw } from "../render/GlassDraw";
 import { FlameDraw } from "../render/FlameDraw";
 import type { CelRecipe } from "../render/celMaterial";
 import { HULL_CHARRED } from "../render/hullProgram";
@@ -825,6 +826,13 @@ export class Game {
    */
   private readonly nearestRun: NearestRun;
   /**
+   * A round's BACKED glazing as our renderer draws it (`BABYLON_EXIT.md`
+   * X4.6e): the handover hands it the map's backed panes, the reflection bake
+   * points each group at its cube, and `glassPull` says which groups draw, in
+   * what order. Its see-through glazing is still Babylon's.
+   */
+  private readonly glassDraw: GlassDraw;
+  /**
    * The last render's frustum planes, as numbers (`nearestPull`), and whether a
    * render has given any: what a surface is tested against inside the render, and
    * what a flag asks of the LAST one before it steps (`FlagCloth.inView`).
@@ -1043,7 +1051,7 @@ export class Game {
    * moving casters; its static ones are the map's, asked at its install)
    * and every effect pool of ours (the pieces: the tracers, the brass, the
    * thrown and laid bodies of both sides of the wire; the marks; the
-   * billows; the shards and the rubble; the fires). The building card's
+   * billows; the shards and the rubble; the fires) and the backed glazing. The building card's
    * warm-up waits on this list by name
    * before its first vantage (`core/PipelineWarmup.ts`), beside the map's
    * own pipelines, which its install asked; and our cache is SEALED once
@@ -1993,9 +2001,11 @@ export class Game {
     // first. Ordering is the whole of the win; nothing about the picture moves,
     // because opaque draws are order-independent through the depth buffer.
     //
-    // It is also what makes `backed` glazing pay (see `CelMaterialFactory
-    // .getGlass`): a curtain wall only saves the shading of the shaft behind it
-    // if the pane is down first, and by material id it would be a coin toss.
+    // It made `backed` glazing pay (see `CelMaterialFactory.getGlass`) while
+    // this queue held it: a curtain wall only saves the shading of the shaft
+    // behind it if the pane is down first. A round's panes are our renderer's
+    // since `BABYLON_EXIT.md` X4.6e, drawn nearest first AHEAD of everything of
+    // ours (`GlassDraw`, `glassPull`); an editor build's are still here.
     //
     // The comparator is ours rather than `RenderingGroup.frontToBackSortCompare`
     // because that one reads `subMesh._distanceToCamera`, which Babylon fills in
@@ -2011,8 +2021,8 @@ export class Game {
     // scatter and the floor, the rim and the roads after them
     // (`render/Renderer.ts`, `"beforeAlphaTest"`) — so the floor behind a
     // building fails the depth test before it shades. What this sort still
-    // orders is what Babylon draws; what is left of the cost of ours coming
-    // after it is `FINDINGS.md` 61's.
+    // orders is what Babylon draws — in a round, since X4.6e, nothing — and
+    // what is left of the cost of ours coming after it is `FINDINGS.md` 61's.
     this.scene.setRenderingOrder(0, (a, b) => {
       const eye = this.scene.activeCamera?.globalPosition;
       if (!eye) return 0;
@@ -2213,10 +2223,15 @@ export class Game {
     this.water = new WaterSystem(this.scene, this.mats, this.waterDraw);
     this.grassDraw = new GrassDraw(this.renderer);
     this.grass = new GrassSystem(this.grassDraw, this.mats);
+    // A round's GLAZING is our renderer's (`BABYLON_EXIT.md` X4.6e): the
+    // handover takes it from the build, the reflection bake points each group
+    // at its cube, and a break collapses a pane in its buffer.
+    this.glassDraw = new GlassDraw(this.renderer, (into) => this.glassPull(into));
     // Same relationship to `mats` as the two above, in the other direction:
-    // this one PUBLISHES to it — the cube the glazing samples, baked from the
-    // map itself. Built here so a pane material is born holding the sampler.
-    this.reflections = new ReflectionSystem(this.scene, this.mats, this.probeBake);
+    // this one PUBLISHES to it — the default cube an editor build's glazing
+    // samples, born on every pane material — and points a round's glazing at
+    // the cubes it bakes from the map itself.
+    this.reflections = new ReflectionSystem(this.scene, this.mats, this.probeBake, this.glassDraw);
     // A cube is baked once per install and keeps the bounce it was baked
     // under, so the bake waits for the volume `installMap` has just cleared —
     // and the shadows it samples, which our renderer draws a frame or more
@@ -2245,6 +2260,7 @@ export class Game {
         setWorld: (fires) => this.flameDraw.setWorld(fires),
         clearWorld: () => this.flameDraw.clearWorld(),
       },
+      this.glassDraw,
       (reason, owner) => this.worldFailed(reason, owner),
       {
         mode: this.overrides.cullMode,
@@ -2290,7 +2306,7 @@ export class Game {
     this.debris = new DebrisSystem(this.mats, this.physics);
     this.blastDebris = new BlastDebrisSystem(this.scene, this.mats, this.physics);
     this.glass = new GlassSystem();
-    this.glassFx = new GlassFx();
+    this.glassFx = new GlassFx(this.glassDraw);
     // The two events a break's picture needs, wired here beside `onRound` for
     // that line's reason: the simulation keeps the panes, the boxes and the
     // nav graph and draws nothing; the view collapses the glazing when a pane
@@ -2514,7 +2530,8 @@ export class Game {
     // nor any billow, shard or chunk since X4.4c, nor any fire since X4.4d,
     // nor the cloud ring since X4.5b, nor the dome and the moon since X4.5c, nor
     // the rings and the flags since X4.6b, nor the grass since X4.6c, nor the
-    // water since X4.6d (no pools, but their draws owe the sum).
+    // water since X4.6d, nor a backed pane since X4.6e (no pools, but their
+    // draws owe the sum).
     this.prof.setPools(() => ({
       drawn:
         this.pieceDraw.stats.drawn +
@@ -2527,7 +2544,8 @@ export class Game {
         this.zoneDraw.stats.drawn +
         this.grassDraw.stats.blades +
         this.grassDraw.stats.turf +
-        this.waterDraw.stats.drawn,
+        this.waterDraw.stats.drawn +
+        this.glassDraw.stats.backed,
       masked:
         this.pieceDraw.stats.masked +
         this.blastDraw.stats.masked +
@@ -2543,6 +2561,7 @@ export class Game {
       zones: this.zoneDraw.stats.drawn,
       grass: this.grassDraw.stats.blades + this.grassDraw.stats.turf,
       water: this.waterDraw.stats.drawn,
+      glass: this.glassDraw.stats.backed,
     }));
     // The sky's ring is OUR renderer's (X4.5b), its dome and moon too (X4.5c), and
     // `Sky` is handed them below.
@@ -2566,6 +2585,7 @@ export class Game {
       { name: "the rings and flags", ready: this.zoneDraw.ready },
       { name: "the grass", ready: this.grassDraw.ready },
       { name: "the water", ready: this.waterDraw.ready },
+      { name: "the glazing", ready: this.glassDraw.ready },
     ];
     // The sky is painted once here, the boot map's, and re-applied per round
     // alongside the environment; it is DRAWN only while a map stands
@@ -4628,6 +4648,9 @@ export class Game {
     // …and the water (X4.6d) on the same terms, each body's shape chosen by `follow`
     // above.
     this.drawWater();
+    // …and the backed glazing (X4.6e), read inside the render, where the camera
+    // and the frustum are this frame's.
+    if (this.glassDraw.installed) this.glassDraw.commit();
     this.scene.render();
     this.prof.end(P.render);
     if (warming) this.unstageWarmFrame();
@@ -5515,6 +5538,8 @@ export class Game {
     this.grassDraw.uninstall();
     this.waterDraw.uninstall();
     this.nearestRun.uninstall();
+    this.glassDraw.uninstall();
+    this.glassDraw.clear();
     // The weapon stays drawn — the kit screen covers the menu — but a failure
     // of it with no round standing is the console's (X4.3c).
     this.viewDraw.onFailed((reason) => console.error(`[view] the weapon cannot be drawn — ${reason}`));
@@ -5750,6 +5775,12 @@ export class Game {
     // round's) and its whole world on that queue, ahead of the run. The TURF first at
     // `"opaque"`. The field and the water on either path: an editor build's is the
     // same field and the same water.
+    // AHEAD of even the run: the `backed` panes, the last of that queue in a
+    // round, ours since X4.6e (`GlassDraw`), nearest first, so a pane still goes
+    // down ahead of the blocks it saves the shading of. Its see-through panes
+    // are still Babylon's, on its transparent list. An editor build's glazing
+    // is Babylon's whole.
+    if (!editor) this.glassDraw.install((reason) => this.worldFailed(reason, owner));
     this.grassDraw.install((reason) => this.worldFailed(reason, owner));
     if (!editor) this.zoneDraw.install((reason) => this.worldFailed(reason, owner));
     this.waterDraw.install((reason) => this.worldFailed(reason, owner));
@@ -7082,20 +7113,8 @@ export class Game {
     const ex = eye.x;
     const ey = eye.y;
     const ez = eye.z;
-    const planes = this.scene.frustumPlanes;
     const held = this.heldPlanes;
-    if (planes) {
-      for (let i = 0; i < 6; i++) {
-        const p = planes[i];
-        const normal = p.normal;
-        held[i * 4] = normal.x;
-        held[i * 4 + 1] = normal.y;
-        held[i * 4 + 2] = normal.z;
-        held[i * 4 + 3] = p.d;
-      }
-      this.planesHeld = true;
-    }
-    const clip = planes && !this.scene.skipFrustumClipping;
+    const clip = this.holdPlanes();
     const zones = this.zoneDraw;
     if (zones.drawing) {
       const surfaces = zones.surfaces;
@@ -7137,6 +7156,66 @@ export class Game {
       const fz = field.z - ez;
       run.bladeKey = fx * fx + fy * fy + fz * fz;
     }
+  }
+
+  /**
+   * This render's frustum planes copied to numbers (`heldPlanes`), and whether
+   * a surface is to be tested against them: a render has given planes and the
+   * scene does not skip clipping (the warm-up's frames do).
+   */
+  private holdPlanes(): boolean {
+    const planes = this.scene.frustumPlanes;
+    const held = this.heldPlanes;
+    if (planes) {
+      for (let i = 0; i < 6; i++) {
+        const p = planes[i];
+        const normal = p.normal;
+        held[i * 4] = normal.x;
+        held[i * 4 + 1] = normal.y;
+        held[i * 4 + 2] = normal.z;
+        held[i * 4 + 3] = p.d;
+      }
+      this.planesHeld = true;
+    }
+    return !!planes && !this.scene.skipFrustumClipping;
+  }
+
+  /**
+   * What our renderer PULLS inside the render for this frame's BACKED GLAZING
+   * (`GlassDraw`, `BABYLON_EXIT.md` X4.6e), where the render has placed the
+   * camera — what Babylon did with each group's mesh, step for step: a pane
+   * (`GlassDraw.surfaces`, in birth order) is drawn while its block's cell is
+   * offered (`WorldCulling.offersBlock`, what its mesh was a candidate by), the
+   * size gate keeps its record's sphere (`keepsSphere`, as `offer` asked it of
+   * the filed mesh) and the sphere passes the frustum test of the mesh's
+   * culling strategy (`inPlanes`, none while the scene skips clipping); every
+   * one BACKED, into group 0's opaque order, nearest first by `eyeDistanceSq`
+   * off `globalPosition`, stable (`fileNearest`), which `GlassDraw` draws first
+   * at `"beforeAlphaTest"`.
+   */
+  private glassPull(glass: GlassDraw): void {
+    const eye = this.cameraSys.camera.globalPosition;
+    const ex = eye.x;
+    const ey = eye.y;
+    const ez = eye.z;
+    const held = this.heldPlanes;
+    const clip = this.holdPlanes();
+    const culling = this.culling;
+    const surfaces = glass.surfaces;
+    let backed = 0;
+    for (let i = 0; i < surfaces.length; i++) {
+      const s = surfaces[i];
+      const c = s.sphere;
+      if (!culling.offersBlock(s.block)) continue;
+      if (!culling.keepsSphere(c.x, c.y, c.z, c.radius)) continue;
+      if (clip && !inPlanes(c.x, c.y, c.z, c.radius, held)) continue;
+      const dx = c.x - ex;
+      const dy = c.y - ey;
+      const dz = c.z - ez;
+      const d2 = dx * dx + dy * dy + dz * dz;
+      fileNearest(glass.backedKeys, glass.backedOrder, backed++, d2, i);
+    }
+    glass.backedDraws = backed;
   }
 
   /**

@@ -72,8 +72,10 @@
  * - **Blocked** — drawn map geometry carrying `metadata.block`, filed one cull
  *   cell per map block — 48 m on every shipped map, `MapLayout.blockSize` where
  *   one states otherwise — and offered only while the camera is inside `reach`
- *   of that cell's own bounds. On a shipped build that is the merged glazing,
- *   the rest of `BlockMerge`'s output being our renderer's (below); the
+ *   of that cell's own bounds. On a shipped build that is the merged
+ *   see-through glazing (a backed pane is our renderer's and no mesh since
+ *   X4.6e, offered by its block: `offersBlock`), the rest of `BlockMerge`'s
+ *   output being our renderer's (below); the
  *   cell's box is grown from all of it, every STRUCTURE on the map. The
  *   world's FIRES were filed here too until X4.4d, and are no mesh now: our
  *   renderer draws each (`render/FlameDraw.ts`) while its block's cell is
@@ -556,7 +558,10 @@ export class WorldCulling {
       const refused = fileMesh(mesh);
       if (refused) return refused;
     }
+    // A backed pane is our renderer's and no mesh since X4.6e (`offersBlock`
+    // answers for it, `Game.glassPull`).
     for (const group of map.paneGroups) {
+      if (!group.mesh) continue;
       const refused = fileMesh(group.mesh);
       if (refused) return refused;
     }
@@ -734,10 +739,12 @@ export class WorldCulling {
    * was last built (`rebuildList`): its cell within reach, with its
    * hysteresis, or every cell under the warm-up; false for a block no cell
    * was grown for, and from `setMap` until the first list after it. Read by
-   * `Game.flamePull` for each world fire (`BABYLON_EXIT.md` X4.4d), after
-   * `update`, the same frame — so a fire is offered exactly when its mesh
-   * was. No size gate: a fire is a light source, which the gate never
-   * dropped (`glows`).
+   * `Game.flamePull` for each world fire (`BABYLON_EXIT.md` X4.4d) and
+   * `Game.glassPull` for each backed pane group (X4.6e), after `update`, the
+   * same frame — so a fire or a pane is offered exactly when its mesh was.
+   * No size gate here: a fire is a light source, which the gate never
+   * dropped (`glows`), and a pane's is asked of its record's sphere
+   * (`keepsSphere`).
    */
   offersBlock(block: string): boolean {
     return this.cellByKey.get(block)?.offered ?? false;
