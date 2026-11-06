@@ -1916,7 +1916,7 @@ moved; **all of this is past since X4.5c**: no sky piece is a Babylon mesh):
   stood over", with the `Active` commit; `Sky.ts`'s header and
   `CloudShader.ts`'s; `FILES.md` for each new file.
 
-### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4, its review 5d43b2e), X4.6b **LANDED** (483165a, its review e1f5712), X4.6c **LANDED** (4a16b5f, its review d80c078), X4.6d **LANDED** (5f26b00), X4.6e **LANDED** (a3d24c6, ccd194a, 0e44130, its note a5a4b28) — **all five LANDED**
+### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4, its review 5d43b2e), X4.6b **LANDED** (483165a, its review e1f5712), X4.6c **LANDED** (4a16b5f, its review d80c078), X4.6d **LANDED** (5f26b00), X4.6e **LANDED** (a3d24c6, ccd194a, 0e44130, its note a5a4b28, its review 4251a34..a5ca27d) — **all five LANDED**
 
 Everything left on the floor that Babylon still draws, the three blended pools
 X4.4 left waiting for the glazing, and the blob shadows (decided 2026-11-03).
@@ -2198,6 +2198,25 @@ Greyfen, `F2` from the menu and each eye of the map's rows):
   136 (`sarab-ground`, the flake), 136 and the move; the same 34 stale rows red. `census` equal, Babylon 0 a row;
   `pipelines.mjs --round` zero of ours in play; live rounds, `F2`, the menu and a second round clean; a frame's allocation
   159 KB to 73 KB. Report versions 34 and 35. **Not verified**: a server's match in a browser, the phone.
+  **Its review** (4251a34, 48796b8, 1a89216, fdfae2e, a5ca27d, its note; 2026-11-06; no change to the picture but
+  the owner's decided one in 1a89216; the numbers are in the note). **`FarthestRun.reserve` dropped what the pull had
+  filed** when it grew mid-filing, so a frame past 64 items drew pane 0 in the first 64's place: it carries them now
+  (the real class in Node, and the review's live frame 0 on Coldharbour, 100 draws, 100 distinct). **Babylon's size gate
+  LATCHED the scorch and the blobs** — it read the bounds as of the last time the mesh's world was computed, only for a
+  candidate it kept, so one never computed was measured at the origin (381 m and 229 m at 384 px, 1,072 m and 643 m at
+  1080p) — where X4.6e's note said "the last frame's", the bank blind to it by `scene.isReady()`: by the owner's decision
+  it was **ported exactly** (48796b8: the same gate decision as 8bf7789 on every frame of a live probe, a release and a
+  second round's warm-up among them) and **then dropped** (1a89216, `Picture change:`: on Sarab at 832x384 every case
+  the latch dropped is drawn, on Sarab and Cinderhaven at 1080p a blob far from where it was last computed). The panes
+  are filed among the blobs where their meshes stood in a later round's scene (`blobsBeforeGlass`); `merge:hash` reads
+  a pane group's record and `docs/build.md` says why an older `merge:hash` or `kit:hash` baseline differs (the
+  glazing's meshes and the probe slot's names; colliders 0); `shaders.mjs` builds the placed stage and the fades;
+  `FINDINGS.md` 68 (the bank cannot see a Babylon latch: use a live probe) and 69 (`depth.mjs glass` owes a port).
+  **`coldharbour-fx-blob-glass`** banks a blob seen from above sorted between two glass layers (the owner's), 581
+  pixels, 96 of them over the far layer; drawn first of the run they move 96, last 612. Bank by `exact.mjs` at every
+  code commit against its parent's take: every old row byte-equal but the known flakes, `sarab-ground` shown a
+  two-state cross-process flake; the same 34 stale rows red. **Not verified**: a server's match in a browser, the
+  phone, `merge:hash --editor`, `gate`.
 - **Contracts it keeps:**
   - no pane of either kind casts a shadow
   - see-through glazing writes no depth
