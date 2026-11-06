@@ -500,12 +500,15 @@ export interface ViewFacts {
  * and the moon's too and `masked` the moon's bloom (`render/SkyDraw.ts`), no pool
  * either, and `sky` says how many were drawn. Since report version 34
  * (`BABYLON_EXIT.md` X4.6e) `drawn` counts the backed glazing's draws (a pane
- * group each, `render/GlassDraw.ts`) and `glass` says how many. None
+ * group each, `render/GlassDraw.ts`) and `glass` says how many; since
+ * version 35 the see-through glazing's too, and the fades' (a spark, a dust
+ * disc, a scorch or a blob each, `render/FadeDraw.ts`), `masked` the sparks'
+ * blooms, and `fades` says how many. None
  * is in `counters.drawCalls`, which since X4.4b counts no tracer, mark,
  * case, thrown or laid body, since X4.4c no billow, shard or chunk,
- * since X4.4d no fire, since X4.5b no ring, and since X4.5c no dome and no moon:
- * a capture from before any of them counted a draw a mesh there. The sparks, the dust discs and the scorch are still Babylon's,
- * and still counted there.
+ * since X4.4d no fire, since X4.5b no ring, since X4.5c no dome and no moon,
+ * and since X4.6e no pane, spark, disc, scorch or blob: a capture from before
+ * any of them counted a draw a mesh there.
  */
 export interface PoolFacts {
   drawn: number;
@@ -530,6 +533,8 @@ export interface PoolFacts {
   water?: number;
   /** Absent before report version 34. */
   glass?: number;
+  /** Absent before report version 35. */
+  fades?: number;
 }
 
 export interface ProfileGraphics {
@@ -1329,7 +1334,12 @@ export function buildReport(
     // 34: `pools.glass`, a draw a backed pane group, in `pools.drawn` too:
     // since `BABYLON_EXIT.md` X4.6e none is in `counters.drawCalls`. Nothing
     // else changed meaning.
-    version: 34,
+    // 35: `pools.glass` counts the see-through pane groups too, and
+    // `pools.fades` — a draw a spark, dust disc, scorch or blob — in
+    // `pools.drawn` too, the sparks' blooms in `pools.masked`: since
+    // `BABYLON_EXIT.md` X4.6e's second commit none is in `counters.drawCalls`.
+    // Nothing else changed meaning.
+    version: 35,
     build: buildStamp(),
     takenAt: new Date().toISOString(),
     reason,

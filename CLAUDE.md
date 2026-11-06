@@ -283,9 +283,9 @@ round's DECLARED list (`Game.roundPipelines`: bodies, hulls, weapon and every
 pool of ours, asked once at construction) and the map's, which its install
 asks — and our cache is SEALED once the card is down (a compile in play is a
 DEV warning). **A new draw of ours joins that list.** The vantages are for
-BABYLON's meshes, and an idle pool of its own is SHOWN by a `warm(on)` —
-**only the sparks, the dust discs and the scorch** (Babylon's until X4.6) and
-the blob — **posed as IN FLIGHT**: a `visibility` under 1 is another pipeline.
+BABYLON's meshes — in a round its particles alone — and **no pool is posed**:
+every one is ours since X4.6e (the sparks, the dust discs, the scorch and the
+blob the last), so on that list, and nothing is shown for a pipeline's sake.
 
 **A LID is a screen laid over a state, which taking it off puts back rather than
 moving the game on — and which state is which, and what each one owes, is
@@ -597,7 +597,7 @@ caster**, and see-through glazing gets no ink.
 **THE WORLD DRAWS WHOLE OR THE ROUND DOES NOT START.** Every BLOCK, the
 LANDFORM (the BUILD marks `WorldSurface.landform`) and the emissive PALETTE are
 OUR renderer's in every pass and **Babylon is made NO MESH of them**
-(`BlockHandover`, `worldMeshes`) — only of the glazing — so a surface ours
+(`BlockHandover`, `worldMeshes`), nor of a round's glazing — so a surface ours
 cannot hold is REFUSED (a DEV throw `merge:hash` fails on), and a pass of ours
 that cannot draw its world tells the failure it was HANDED WITH it:
 **`Game.worldFailed`**, the menu and a toast, never a fallback.
@@ -605,7 +605,7 @@ that cannot draw its world tells the failure it was HANDED WITH it:
 **replaces `scene.getActiveMeshCandidates` and writes nothing onto any mesh**.
 **A collider is never a candidate**, and a CELL is grown from the RECORDS
 (`GameMap.world`, whole). **The SCATTER is drawn ONCE**, as INSTANCES of its
-variants. **A mesh carrying `metadata.block` (the glazing) is one only while
+variants. **A block-keyed surface (a pane, a fire) is offered only while
 the camera is inside the map's `fogEnd`**, **everything else is ELIGIBLE**,
 and **anything EMISSIVE is exempt** from the size gate.
 **Nothing pooled may ever be block-keyed.**
@@ -620,8 +620,8 @@ and no group above 0 holds anything. **So are the effect pools' PIECES and the
 bullet MARKS** (`render/PoolDraw.ts`, `entities/pieces.ts`); **so is every
 blast BILLOW** (`render/BlastDraw.ts`) **and every glass SHARD and rubble
 CHUNK** (`systems/poseView.ts`), and every FIRE (`FlameDraw`, in no bake) —
-**but the sparks, the dust discs and the scorch stay Babylon meshes until the
-glazing moves (X4.6)**, and a pool is never split across two renderers. **So
+**and every spark, dust disc, scorch and blob, in ONE back-to-front run with
+the see-through panes** (`FadeDraw`, `GlassDraw`), and no pool is split. **So
 are a capture zone's stones, paint, pole and cloth, the GRASS and the WATER** (`ZoneDraw`,
 `GrassDraw`, `WaterDraw`), one nearest-first run, the turf apart, behind the `backed` panes.
 
@@ -939,7 +939,7 @@ renderer reading the record. `GameMap.world` keeps it for every surface:
   `WorldSurface.block`, and for a scatter instance the REGION its copy was
   merged under, `ScatterSet.blocks`), so those keep the merge's lattice. And
   `WorldCulling`, which grows a cull cell from every RECORD carrying one, files
-  Babylon's meshes carrying one into it, and answers a fire by it (`offersBlock`).
+  Babylon's meshes carrying one into it, and answers a fire and a pane by it (`offersBlock`).
 - `surface: "ground"` — what a round that stops here kicks up. The odd one out:
   it is a **value with a default**, not a flag, and **absent means `"hard"`**.
   `MapBuilder` sets it on exactly one thing — the terrain floor's collider clone

@@ -72,16 +72,16 @@
  * - **Blocked** — drawn map geometry carrying `metadata.block`, filed one cull
  *   cell per map block — 48 m on every shipped map, `MapLayout.blockSize` where
  *   one states otherwise — and offered only while the camera is inside `reach`
- *   of that cell's own bounds. On a shipped build that is the merged
- *   see-through glazing (a backed pane is our renderer's and no mesh since
- *   X4.6e, offered by its block: `offersBlock`), the rest of `BlockMerge`'s
- *   output being our renderer's (below); the
- *   cell's box is grown from all of it, every STRUCTURE on the map. The
- *   world's FIRES were filed here too until X4.4d, and are no mesh now: our
- *   renderer draws each (`render/FlameDraw.ts`) while its block's cell is
+ *   of that cell's own bounds. On a shipped build NOTHING is filed here since
+ *   `BABYLON_EXIT.md` X4.6e: the merged glazing was the last of it, and every
+ *   block surface is our renderer's (below); the cell's box is still grown
+ *   from all of it, every STRUCTURE on the map. The world's FIRES (since
+ *   X4.4d) and the GLAZING (since X4.6e) are no mesh: our renderer draws each
+ *   (`render/FlameDraw.ts`, `render/GlassDraw.ts`) while its block's cell is
  *   offered, read back by the block (`offersBlock`) — the same cell, the same
- *   reach and the same hysteresis a filed mesh is offered by, and, a fire
- *   being a light source, no size gate.
+ *   reach and the same hysteresis a filed mesh is offered by — a pane through
+ *   the size gate as a filed mesh was, off its record's sphere
+ *   (`keepsSphere`), and a fire, a light source, through none.
  * - **Pooled** — what was a body's rig, fourteen meshes the walk paid for
  *   whether or not the body was in the round. Since `BABYLON_EXIT.md` X4.1d no
  *   body is a mesh: our renderer draws every one as an instance of its kit
@@ -95,8 +95,10 @@
  *   spends it as a screen door, so a body leaves at either edge without a
  *   pop.
  * - **Loose** — everything else in the scene: the terrain, the roads, the rim,
- *   the effect pools Babylon still draws (sparks, dust discs, the scorch —
- *   the tracers, the marks, the brass and the thrown and laid bodies are our
+ *   the effect pools Babylon drew (every one our renderer's and no mesh now —
+ *   the sparks, the dust discs, the scorch and the blob shadows since X4.6e,
+ *   asked `keepsSphere` of this frame's sphere but the emissive two, which the
+ *   gate never dropped; the tracers, the marks, the brass and the thrown and laid bodies are our
  *   renderer's and no mesh since `BABYLON_EXIT.md` X4.4b, the size gate
  *   reaching their cel parts through `keepsSphere`; the blast's billows, the
  *   shards and the rubble since X4.4c, a billow emissive and so never gated,
@@ -537,12 +539,13 @@ export class WorldCulling {
         this.cells.push(cell);
       }
     }
-    // Babylon's block-keyed meshes, each into its cell: the glazing on a
-    // shipped build (the fires are no mesh since X4.4d: `offersBlock`), and
-    // on an editor's none (it carries no block). The glazing is filed under the same key its block is, which is
-    // the key `PaneBlocks` writes it under — a curtain wall and the shaft
-    // behind it go out of the frame together, or the tower is a sheet of
-    // glass hanging in the fog with nothing behind it.
+    // Babylon's block-keyed meshes, each into its cell: none on a shipped
+    // build (the fires are no mesh since X4.4d and the glazing since X4.6e:
+    // `offersBlock`), and on an editor's none (it carries no block). The
+    // glazing is offered by the same key its block is, which is the key
+    // `PaneBlocks` writes it under — a curtain wall and the shaft behind it go
+    // out of the frame together, or the tower is a sheet of glass hanging in
+    // the fog with nothing behind it.
     const fileMesh = (mesh: Mesh): string | null => {
       const key = blockOf(mesh.metadata);
       if (key === null || this.cellOf.has(mesh) || this.hidden.has(mesh)) return null;
@@ -558,8 +561,8 @@ export class WorldCulling {
       const refused = fileMesh(mesh);
       if (refused) return refused;
     }
-    // A backed pane is our renderer's and no mesh since X4.6e (`offersBlock`
-    // answers for it, `Game.glassPull`).
+    // An editor build's glazing, which keys per placement and so files nothing
+    // (a round's is our renderer's and no mesh: `offersBlock` answers for it).
     for (const group of map.paneGroups) {
       if (!group.mesh) continue;
       const refused = fileMesh(group.mesh);
@@ -740,10 +743,10 @@ export class WorldCulling {
    * hysteresis, or every cell under the warm-up; false for a block no cell
    * was grown for, and from `setMap` until the first list after it. Read by
    * `Game.flamePull` for each world fire (`BABYLON_EXIT.md` X4.4d) and
-   * `Game.glassPull` for each backed pane group (X4.6e), after `update`, the
-   * same frame — so a fire or a pane is offered exactly when its mesh was.
-   * No size gate here: a fire is a light source, which the gate never
-   * dropped (`glows`), and a pane's is asked of its record's sphere
+   * `Game.glassPull` for each pane group (X4.6e), after
+   * `update`, the same frame — so a fire or a pane is offered exactly when
+   * its mesh was. No size gate here: a fire is a light source, which the gate
+   * never dropped (`glows`), and a pane's is asked of its record's sphere
    * (`keepsSphere`).
    */
   offersBlock(block: string): boolean {
@@ -906,8 +909,10 @@ export class WorldCulling {
    * **The pools are why it is worth a pass.** Every effect pool in the game is
    * built once and idled with `isVisible = false` — 96 tracers, 54 embers, 48
    * sparks, 48 shards, 40 impacts, 30 blast chunks, 40 grenade parts, 48 mine
-   * parts, 49 blob shadows — and `rebuildList` files all of them as `loose`,
-   * so the frame was being offered a few hundred meshes it could not draw.
+   * parts, 49 blob shadows, when it was measured — and `rebuildList` filed all
+   * of them as `loose`, so the frame was being offered a few hundred meshes it
+   * could not draw. (Every one of those pools is our renderer's and no mesh
+   * since `BABYLON_EXIT.md` X4.6e; the pass stands for any mesh switched off.)
    * Measured on Sarab at a real viewport and a real roster, this halves the
    * list (1,525 → 729) and is worth **+8.9%** of frame rate; the mesh walk is
    * a third of the tick there, so that is most of what the halving predicts.

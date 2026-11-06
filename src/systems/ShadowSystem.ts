@@ -21,11 +21,14 @@
  *
  * Casters are the merged static world meshes, re-registered via setCasters()
  * after every map build (the map is disposed and rebuilt per round).
- * Characters never cast into the map — the player rig is ~60 meshes and each
- * bot 9, so per-frame caster cost would dwarf the ~40 merged static draws.
- * They get blob shadows instead: soft unlit alpha discs that follow each
- * combatant (raycast to the ground for the airborne-capable player, the
- * nav-surface height for always-grounded bots).
+ * Characters never cast into the WORLD's maps — their shadow is the bodies'
+ * own map (`BodyShadows`) — and each also gets a blob shadow, the contact
+ * term: a soft unlit alpha disc that follows the combatant (on the floor the
+ * player's ground probe found, the nav-surface height for a bot). A blob is
+ * a FADE of its kit (`entities/fades.ts`), drawn by OUR renderer in the one
+ * back-to-front run (`render/FarthestRun.ts`, `BABYLON_EXIT.md` X4.6e), where
+ * Babylon's transparent list drew its mesh; its map stays a Babylon texture,
+ * read through the seam (`blobMap`).
  *
  * Invariants:
  * - The light position is snapped to the shadow map's texel grid as it
@@ -47,7 +50,8 @@
  *   much crown the light crossed, which a back-face map cannot say.
  * - Meshes with metadata.noShadowCaster (flat ground sheets, roads) must
  *   never be registered — they are receivers, and casting from them is acne.
- * - Blob discs are isPickable=false, metadata.noInk, and never casters.
+ * - Blob discs are no mesh, in no pick and no caster list, and out of the
+ *   glow's mask (the `noInk` and `noGlow` their meshes carried).
  * - The world's casters are drawn TWICE, as two cascades off the one focus: the
  *   far map over the map's own `shadowWindow`, and the NEAR map over
  *   `CONFIG.graphics.shadows.nearWindow` at the rung's `near` resolution,
@@ -78,19 +82,21 @@
 import {
   type AbstractMesh,
   type BaseTexture,
-  Color3,
   DirectionalLight,
   DynamicTexture,
   Matrix,
-  Mesh,
-  MeshBuilder,
+  type Mesh,
   RenderTargetTexture,
   type Scene,
   ShadowGenerator,
-  StandardMaterial,
   Vector3,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import { BLOB, Fade, fadeKit, type FadeKit } from "../entities/fades";
+import { createDisc } from "../geometry/primitives";
+import { Vector3 as MathVector3 } from "../math";
+import { hostTexture } from "../render/babylonSeam";
+import type { HostTexture } from "../render/frameHost";
 import {
   depthBias,
   lightTransformToRef,
@@ -204,8 +210,19 @@ export class ShadowSystem {
   );
   /** Where a map's light stands, as `WorldShadows.draw` takes it. */
   private readonly lightEye = new Float32Array(3);
-  private readonly blobMaterial: StandardMaterial;
-  private readonly blobs = new Map<Combatant, Mesh>();
+  /**
+   * Every combatant's blob, made the first time it is placed: what our
+   * renderer draws. `blobFades` is the same fades in the order they were
+   * made, the order their meshes stood in the scene.
+   */
+  private readonly blobs = new Map<Combatant, Fade>();
+  readonly blobFades: Fade[] = [];
+  /** The arrays `MeshBuilder.CreateDisc` made every blob's mesh of. */
+  readonly blobKit: FadeKit = fadeKit(
+    createDisc({ radius: CONFIG.graphics.shadows.blobRadius, tessellation: 32 }),
+  );
+  /** The radial gradient every blob is cut by, a Babylon texture through the seam (rule 5). */
+  readonly blobMap: HostTexture;
   /**
    * Wired by `Game`: where a downed body's shadow goes, into `out`, and how
    * strong (0..1). 0 means "nothing to shade", which is every corpse nobody
@@ -332,7 +349,8 @@ export class ShadowSystem {
     this.setQuality(quality);
 
     // Blob shadow: a radial-gradient disc, unlit black, depth-write off so it
-    // layers over the ground without z-fighting.
+    // layers over the ground without z-fighting (`render/FadeDraw.ts` holds
+    // the state its material had).
     const tex = new DynamicTexture(
       "blobShadowTex",
       { width: 128, height: 128 },
@@ -347,13 +365,7 @@ export class ShadowSystem {
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, 128, 128);
     tex.update();
-    this.blobMaterial = new StandardMaterial("blobShadow", scene);
-    this.blobMaterial.emissiveColor = Color3.Black();
-    this.blobMaterial.diffuseColor = Color3.Black();
-    this.blobMaterial.specularColor = Color3.Black();
-    this.blobMaterial.disableLighting = true;
-    this.blobMaterial.opacityTexture = tex;
-    this.blobMaterial.disableDepthWrite = true;
+    this.blobMap = hostTexture(tex);
   }
 
   /**
@@ -918,32 +930,8 @@ export class ShadowSystem {
    * `updateBlobs` puts back whichever are owed.
    */
   hideBlobs(): void {
-    for (const blob of this.blobs.values()) blob.setEnabled(false);
+    for (const blob of this.blobFades) blob.node.visible = false;
   }
-
-  /**
-   * `cbt`'s blob switched on at its standing opacity, or back off, for the
-   * frames of the building card's pipeline warm-up (`core/PipelineWarmup.ts`)
-   * — so the frame a body first stands on the floor does not also compile the
-   * blob's blended pipeline. It is the player's blob that `Game` asks for,
-   * which the first `updateBlobs` of the round would build anyway. A blob some
-   * frame has already switched on is left alone, and only the one this switched
-   * on is switched off.
-   */
-  warmBlob(on: boolean, cbt: Combatant): void {
-    if (!on) {
-      if (this.warmedBlob) this.warmedBlob.setEnabled(false);
-      this.warmedBlob = null;
-      return;
-    }
-    const fresh = !this.blobs.has(cbt);
-    const blob = this.blobFor(cbt);
-    if (!fresh && blob.isEnabled(false)) return;
-    blob.visibility = CONFIG.graphics.shadows.blobOpacity;
-    blob.setEnabled(true);
-    this.warmedBlob = blob;
-  }
-  private warmedBlob: Mesh | null = null;
 
   private updateBlob(cbt: Combatant, camPos: Vector3, groundY: number): void {
     const blob = this.blobFor(cbt);
@@ -957,22 +945,25 @@ export class ShadowSystem {
     if (!cbt.alive) {
       corpse = this.corpseShadow(cbt, this.corpseAt);
       if (corpse <= 0) {
-        blob.setEnabled(false);
+        blob.node.visible = false;
         return;
       }
     }
-    blob.setEnabled(true);
+    blob.node.visible = true;
+    const at = blob.node.position;
     if (corpse > 0) {
       // All three axes from the corpse, `groundY` included — it is the height
       // the body DIED at, and a corpse is the one thing here that moves after
       // that. A body thrown down a bank or off a deck otherwise leaves its
       // shadow hanging at the height it was shot at. Whoever answers the
       // callback owes the floor under the body, not the body's own height.
-      blob.position.set(this.corpseAt.x, this.corpseAt.y + 0.04, this.corpseAt.z);
+      at.set(this.corpseAt.x, this.corpseAt.y + 0.04, this.corpseAt.z);
     } else {
-      blob.position.set(cbt.position.x, groundY + 0.04, cbt.position.z);
+      at.set(cbt.position.x, groundY + 0.04, cbt.position.z);
     }
-    const dist = Vector3.Distance(camPos, blob.position);
+    // Off the math's statics, which read a vector by its fields: the
+    // blob's node is `src/math`'s, which Babylon's read as `_x`.
+    const dist = MathVector3.Distance(camPos, at);
     const fade = Math.min(
       1,
       Math.max(0, 1 - (dist - this.fogStart) / (this.fogEnd - this.fogStart)),
@@ -981,19 +972,16 @@ export class ShadowSystem {
       CONFIG.graphics.shadows.blobOpacity * fade * (corpse > 0 ? corpse : 1);
   }
 
-  private blobFor(cbt: Combatant): Mesh {
+  private blobFor(cbt: Combatant): Fade {
     let blob = this.blobs.get(cbt);
     if (!blob) {
-      blob = MeshBuilder.CreateDisc(
-        "blobShadow",
-        { radius: CONFIG.graphics.shadows.blobRadius, tessellation: 32 },
-        this.scene,
-      );
-      blob.rotation.x = -Math.PI / 2; // CreateDisc faces +Z; tip it face-up
-      blob.material = this.blobMaterial;
-      blob.isPickable = false;
-      blob.metadata = { noInk: true, noGlow: true };
+      blob = new Fade(BLOB);
+      // `CreateDisc`'s FRONT is its -Z, and this turn sends local +Z up, so
+      // the disc faces DOWN: its pipeline culls back faces, and from above it
+      // draws nothing (`FINDINGS.md` 67, the owner's question).
+      blob.node.rotation.x = -Math.PI / 2;
       this.blobs.set(cbt, blob);
+      this.blobFades.push(blob);
     }
     return blob;
   }

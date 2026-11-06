@@ -4,15 +4,15 @@
  * Owns: the four pools, the `IMPACTS` look table, the tracer's flight and the
  * impact it spawns on arrival, the tracer's KIT, and the wall query
  * `drawRounds` makes for a round this client did not resolve.
- * **Two renderers draw these four pools, a pool never split between them**
- * (`BABYLON_EXIT.md` X4.4b, the owner's decision of 2026-11-01): each
- * tracer is a PIECE of its kit (`entities/pieces.ts`) and each mark a slot of
- * `BulletMarks`, both drawn by OUR renderer (`Game.drawPieces`,
- * `Game.drawMarks`) with no Babylon mesh made of either; the sparks and the
- * dust discs stay Babylon meshes, because they FADE among the see-through
- * panes in Babylon's transparent sort, and move with the glazing at X4.6 —
- * so they alone keep a `warm(on)` pose for the building card's warm-up, the
- * tracer and the mark being on the round's declared list (X4.4e).
+ * **Our renderer draws all four pools, and Babylon is made no mesh of any**:
+ * each tracer is a PIECE of its kit (`entities/pieces.ts`) and each mark a
+ * slot of `BulletMarks` (`Game.drawPieces`, `Game.drawMarks`, `BABYLON_EXIT.md`
+ * X4.4b), and since X4.6e each spark and each dust disc a FADE of its kit
+ * (`entities/fades.ts`), drawn in the one back-to-front run among the
+ * see-through panes (`Game.farthestPull`, `render/FarthestRun.ts`), where they
+ * fade as Babylon's transparent sort faded their meshes. Every pipeline of
+ * theirs is on the round's declared list (`Game.roundPipelines`), so nothing
+ * here is posed for the building card's warm-up.
  * Invariants: it READS the simulation and never writes it — what it draws
  * reaches it as `CombatSystem.onRound` (wired by `Game`) or as a `drawRounds`
  * call, and nothing here deals damage, raises a near miss or breaks glass.
@@ -48,16 +48,11 @@
  * because an impact seen before its round lands is what makes a slowed tracer
  * read as fake — and `onImpact`, the sound, rides the same clock.
  */
-import {
-  Mesh,
-  MeshBuilder,
-  Quaternion,
-  Scene,
-  Vector3,
-} from "@babylonjs/core";
+import { Color3, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import { DISC, Fade, fadeKit, type FadeKit, SPARK } from "../entities/fades";
 import { Piece, pieceKit, type PieceKit, type PiecePart } from "../entities/pieces";
-import { createCylinder } from "../geometry/primitives";
+import { createCylinder, createDisc, createSphere, DOUBLESIDE } from "../geometry/primitives";
 import { Quaternion as MathQuaternion, type Vector3Like } from "../math";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { Part } from "../world/parts";
@@ -163,15 +158,38 @@ interface Tracer {
 
 /** One dust disc: a facing quad that opens and fades on the surface. */
 interface Disc {
-  mesh: Mesh;
+  /** What our renderer draws: the mesh it was until `BABYLON_EXIT.md` X4.6e. */
+  fade: Fade;
   t: number;
   from: number;
   to: number;
 }
 
 interface Spark {
-  mesh: Mesh;
+  fade: Fade;
   t: number;
+}
+
+/**
+ * Every colour a spark or a disc is painted, in `IMPACTS`' order, each once:
+ * a fade's `slot` is its index here plus one (`entities/fades.ts`), and our
+ * renderer is handed the table (`CelMaterialFactory.poolEmissiveRecipe`) as
+ * `getEmissive`'s materials were each handed one colour.
+ */
+export const FADE_COLOURS: readonly string[] = (() => {
+  const out: string[] = [];
+  for (const look of Object.values(IMPACTS)) {
+    for (const hex of [look.spark, look.disc]) if (hex && !out.includes(hex)) out.push(hex);
+  }
+  return out;
+})();
+
+/** The colours of `FADE_COLOURS` as `getEmissive` made each material's `emissiveColor` — what the glow's mask scales. */
+export const FADE_EMISSIVE: readonly Color3[] = FADE_COLOURS.map((hex) => Color3.FromHexString(hex));
+
+/** A colour's slot in `FADE_COLOURS`, 1-based. */
+function slotOf(hex: string): number {
+  return FADE_COLOURS.indexOf(hex) + 1;
 }
 
 /** The tracer's paint: unlit, so a streak at night is its own light. */
@@ -214,6 +232,18 @@ export class CombatFx {
   private sparks: Spark[] = [];
   private discs: Disc[] = [];
   /**
+   * The sparks' and the discs' kits (`BABYLON_EXIT.md` X4.6e): the arrays
+   * `MeshBuilder.CreateSphere` and `CreateDisc` made each of their meshes of.
+   */
+  readonly sparkKit: FadeKit = fadeKit(createSphere({ diameter: 0.3, segments: 4 }));
+  readonly discKit: FadeKit = fadeKit(createDisc({ radius: 1, tessellation: 8, sideOrientation: DOUBLESIDE }));
+  /**
+   * Every spark, then every disc, by slot — the order their meshes stood in
+   * the scene, which is what broke a tie in Babylon's sort: what
+   * `Game.farthestPull` reads (never writes).
+   */
+  readonly fades: Fade[] = [];
+  /**
    * The fourth pool, and the only one whose slots outlive the shot — see
    * `BulletMarks`. Built here rather than wired by `Game` for the reason the
    * other three are: it is this file's own picture of a round arriving, and
@@ -246,10 +276,7 @@ export class CombatFx {
     this.rays = rays;
   }
 
-  constructor(
-    scene: Scene,
-    private mats: CelMaterialFactory,
-  ) {
+  constructor(mats: CelMaterialFactory) {
     const fx = CONFIG.effects;
     this.tracerKit = pieceKit("tracer", tracerParts(mats));
     for (let i = 0; i < fx.tracerPoolSize; i++) {
@@ -269,34 +296,21 @@ export class CombatFx {
       });
     }
     for (let i = 0; i < fx.sparkPoolSize; i++) {
-      const mesh = MeshBuilder.CreateSphere(
-        `spark${i}`,
-        { diameter: 0.3, segments: 4 },
-        scene,
-      );
-      mesh.material = mats.getEmissive("#ffe680");
-      mesh.isVisible = false;
-      mesh.isPickable = false;
-      this.sparks.push({ mesh, t: 0 });
+      const fade = new Fade(SPARK);
+      fade.slot = slotOf("#ffe680");
+      this.fades.push(fade);
+      this.sparks.push({ fade, t: 0 });
     }
     for (let i = 0; i < fx.discPoolSize; i++) {
-      // DOUBLESIDE as GEOMETRY, never by touching the material's
-      // `backFaceCulling`: `getEmissive` caches one material per colour and
-      // this pool shares those with the tracers and the sparks, so a flag
-      // flipped here would flip for every effect in the game. A disc is lifted
+      // DOUBLESIDE as GEOMETRY (`discKit`), as the mesh was built: the pool's
+      // pipeline culls back faces like every unlit one, and a disc is lifted
       // off its surface and can be looked at from either side of a thin wall.
-      const mesh = MeshBuilder.CreateDisc(
-        `impact${i}`,
-        { radius: 1, tessellation: 8, sideOrientation: Mesh.DOUBLESIDE },
-        scene,
-      );
-      mesh.rotationQuaternion = Quaternion.Identity();
-      mesh.isVisible = false;
-      mesh.isPickable = false;
-      // Out of the bloom — see the header. Without it a brown dust disc
-      // blooms like a lamp.
-      mesh.metadata = { noGlow: true };
-      this.discs.push({ mesh, t: 0, from: 0, to: 1 });
+      // Out of the bloom — see the header: the run draws no disc in the mask,
+      // or a brown dust disc would bloom like a lamp.
+      const fade = new Fade(DISC);
+      fade.node.quaternion = MathQuaternion.Identity();
+      this.fades.push(fade);
+      this.discs.push({ fade, t: 0, from: 0, to: 1 });
     }
     this.marks = new BulletMarks();
   }
@@ -421,9 +435,9 @@ export class CombatFx {
       if (s.t > 0) {
         s.t -= dt;
         const k = Math.max(0, s.t / 0.18);
-        s.mesh.scaling.setAll(0.4 + (1 - k) * 1.6);
-        s.mesh.visibility = k;
-        if (s.t <= 0) s.mesh.isVisible = false;
+        s.fade.node.scaling.setAll(0.4 + (1 - k) * 1.6);
+        s.fade.visibility = k;
+        if (s.t <= 0) s.fade.node.visible = false;
       }
     }
 
@@ -436,81 +450,12 @@ export class CombatFx {
       if (d.t > 0) {
         d.t -= dt;
         const k = Math.max(0, d.t / CONFIG.effects.discLife);
-        d.mesh.scaling.setAll(d.from + (1 - k) * (d.to - d.from));
-        d.mesh.visibility = k * k;
-        if (d.t <= 0) d.mesh.isVisible = false;
+        d.fade.node.scaling.setAll(d.from + (1 - k) * (d.to - d.from));
+        d.fade.visibility = k * k;
+        if (d.t <= 0) d.fade.node.visible = false;
       }
     }
   }
-
-  /**
-   * Shows idle members of the two pools here that are still BABYLON'S — the
-   * sparks and the dust discs — for the frames of the building card's
-   * pipeline warm-up (`core/PipelineWarmup.ts`), or takes them back off, so
-   * the first shot of a round draws them through pipelines already compiled
-   * rather than paying for them on the frame the trigger is pulled. **Those
-   * two alone, until they move with the glazing** (`BABYLON_EXIT.md` X4.6):
-   * the tracer and the mark are our renderer's, their pipelines on the
-   * round's declared list (`Game.roundPipelines`, X4.4e), and posed by
-   * nothing.
-   *
-   * **Each is posed as it is IN FLIGHT, because that is what decides the
-   * pipeline, and an idle pose compiles the wrong one.** A spark and a disc
-   * fade by `visibility`, and under 1 that is a BLENDED pipeline beside the
-   * opaque one their first frame uses — so each is shown twice, once at
-   * each. Only idle slots are used, from the end of each pool, and every
-   * property touched is put back exactly as it was.
-   */
-  warm(on: boolean): void {
-    const look = IMPACTS.hard;
-    if (!on) {
-      for (let i = 0; i < this.warmedCount; i++) {
-        const w = this.warmed[i];
-        w.mesh!.isVisible = false;
-        w.mesh!.visibility = w.visibility;
-        w.mesh!.scaling.copyFrom(w.scaling);
-        w.mesh = null;
-      }
-      this.warmedCount = 0;
-      return;
-    }
-    for (let i = 0; i < 2; i++) {
-      const spark = this.sparks[this.sparks.length - 1 - i];
-      if (spark.t > 0) continue;
-      spark.mesh.material = this.mats.getEmissive(look.spark!);
-      this.warmOne(spark.mesh, i === 0 ? 1 : 0.5);
-    }
-    for (let i = 0; i < 2; i++) {
-      const disc = this.discs[this.discs.length - 1 - i];
-      if (disc.t > 0) continue;
-      disc.mesh.material = this.mats.getEmissive(look.disc!);
-      this.warmOne(disc.mesh, i === 0 ? 1 : 0.5);
-    }
-  }
-
-  /** One pooled mesh shown for `warm`, its old visibility and scale kept. */
-  private warmOne(mesh: Mesh, visibility: number): void {
-    if (mesh.isVisible) return;
-    const w = this.warmed[this.warmedCount++];
-    w.mesh = mesh;
-    w.visibility = mesh.visibility;
-    w.scaling.copyFrom(mesh.scaling);
-    mesh.visibility = visibility;
-    mesh.scaling.set(1, 1, 1);
-    mesh.isVisible = true;
-  }
-
-  /**
-   * What `warm` switched on, and what to put back when it switches off: one
-   * record per mesh it can show (two sparks, two discs), held so a warm frame
-   * allocates nothing.
-   */
-  private readonly warmed = Array.from({ length: 4 }, () => ({
-    mesh: null as Mesh | null,
-    visibility: 1,
-    scaling: new Vector3(),
-  }));
-  private warmedCount = 0;
 
   /** Clears transient effects between rounds. */
   clearTransient(): void {
@@ -521,11 +466,11 @@ export class CombatFx {
     }
     for (const s of this.sparks) {
       s.t = 0;
-      s.mesh.isVisible = false;
+      s.fade.node.visible = false;
     }
     for (const d of this.discs) {
       d.t = 0;
-      d.mesh.isVisible = false;
+      d.fade.node.visible = false;
     }
     // The marks go with them, and this is the only thing that takes one off
     // the world: they belong to the MAP that was standing when they were
@@ -620,25 +565,27 @@ export class CombatFx {
     // wall it was thrown from, and that reads as a broken decal rather than
     // as dust — see `effects.discLift`.
     normal.scaleToRef(CONFIG.effects.discLift, SCRATCH);
-    d.mesh.position.copyFrom(pos).addInPlace(SCRATCH);
+    const node = d.fade.node;
+    node.position.copyFrom(pos).addInPlace(SCRATCH);
     // A disc is built in the XY plane facing +Z, so its facing is the axis
     // that has to be turned onto the normal.
-    Quaternion.FromUnitVectorsToRef(FORWARD, normal, d.mesh.rotationQuaternion!);
-    d.mesh.material = this.mats.getEmissive(look.disc!);
+    MathQuaternion.FromUnitVectorsToRef(FORWARD, normal, node.quaternion!);
+    d.fade.slot = slotOf(look.disc!);
     d.from = look.from;
     d.to = look.to;
-    d.mesh.scaling.setAll(look.from);
-    d.mesh.visibility = 1;
-    d.mesh.isVisible = true;
+    node.scaling.setAll(look.from);
+    d.fade.visibility = 1;
+    node.visible = true;
     d.t = CONFIG.effects.discLife;
   }
 
   private spawnSpark(pos: Vector3, colorHex: string): void {
     const s = this.sparks.find((x) => x.t <= 0) ?? this.sparks[0];
-    s.mesh.position.copyFrom(pos);
-    s.mesh.material = this.mats.getEmissive(colorHex);
-    s.mesh.scaling.setAll(0.4);
-    s.mesh.isVisible = true;
+    const node = s.fade.node;
+    node.position.copyFrom(pos);
+    s.fade.slot = slotOf(colorHex);
+    node.scaling.setAll(0.4);
+    node.visible = true;
     s.t = 0.18;
   }
 }

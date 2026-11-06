@@ -2594,33 +2594,64 @@ sorted as Babylon sorted it (`Game.nearestPull`, inside the render: the sphere's
 `globalPosition`, squared, stable over the order the meshes were made in) and the three are
 merged, an equal key going to the mesh made first: the water's, then the blades', then the
 zones'. **Nothing is left on that list in a round** since X4.6e: the `backed` panes, the last of
-it, are ours and drawn ahead of the run ("The backed panes, ours"), and nothing in the run ties
-with one: no zone triangle meets a pane's box, no blade can reach one and no water surface comes
-within half a metre of one (X4.6b's and X4.6c's reviews, every map with glass;
-`sarab-pane-water`'s drowned car is SEE-THROUGH glass, on the transparent list, and the water it
-shows is drawn first either way). **Two points were never a design**: the near and far runs of
+it, are ours and drawn ahead of the run ("The back-to-front run"), and nothing in the run ties with
+one: no zone triangle meets a pane's box, no blade can reach one and no water surface comes within
+half a metre of one (X4.6b's and X4.6c's reviews, every map with glass; `sarab-pane-water`'s
+drowned car is SEE-THROUGH glass, in the back-to-front run, and the water it shows is drawn first
+either way). **Two points were never a design**: the near and far runs of
 X4.6b and the blades' per-frame point of X4.6c existed only because the water was Babylon's and
 could only be drawn around, and each is gone. A third list that sorts with these owes the merge
 a line and its made-first place in the tie. **A NaN key sorts last**, read as +Infinity at the top
 of the loop, because no comparison holds of one and an arm assuming the other two had failed would
 spin; no shipped path to one is known.
 
-## The backed panes, ours
+## The back-to-front run: the glazing and the fades
 
-**A round's `backed` panes are OUR renderer's since `BABYLON_EXIT.md` X4.6e, and Babylon is made
-no mesh of them** (`render/GlassDraw.ts`). A group is one draw, under its OWN world matrix: a
-group of one `PaneBlocks` takes as it stands is not at identity, and its positions are local to
-that matrix, which the placed cel stage reads WHOLE out of storage (`celVertex.ts`), because the
-uniform it stands in for was a whole matrix to the compiler. The groups are drawn nearest first by
-`eyeDistanceSq`, AHEAD of everything else of ours at `"beforeAlphaTest"` — the one run, the
-palette, the blocks — where Babylon's opaque list drew them, which is the whole of what makes a
-backed pane pay; **Babylon's opaque list is empty in a round now**. A group is offered as its mesh
-was — its block's cell (`WorldCulling.offersBlock`), the size gate on its record's sphere, the
-sphere's frustum test (`Game.glassPull`) — its material is its probe's recipe
-(`CelMaterialFactory.glassProbeRecipe`), and its cube is read where the bake left it, sampled as
-`wrapCubeTexture`'s view sampled it. The see-through glazing is still Babylon's, on its
-transparent list among the fading pools, and an editor build's glazing is Babylon's whole until
-X5.3.
+**A round's GLAZING, its SPARKS, DUST DISCS, SCORCH and BLOB SHADOWS are OUR renderer's since
+`BABYLON_EXIT.md` X4.6e, and Babylon is made no mesh of any** (`render/GlassDraw.ts`,
+`render/FadeDraw.ts`, `render/FarthestRun.ts`). They are one step because the blended ones are
+one ORDER: each writes no depth, so what lies over what is the sequence they are drawn in, and
+Babylon's transparent list put a fade behind a pane and another in front of it by one sort.
+**So there is one sort of ours over all of them**: `FarthestRun`, the frame's one draw at
+`"beforeBlended"` — behind the moon, which `SkyDraw` adds there at its construction, so the
+moon keeps its place as the first of that list by distance — and farthest first by Babylon's
+own key, `_distanceToCamera`: the SQUARE ROOT of the bounding sphere's centre from
+`globalPosition` (two different squares can share a root, so the key is the root), a tie going
+to the mesh that stood first in the scene — the sparks, the discs, the scorch, then the panes,
+then the blobs, which in a first round were made after the panes (`Game.farthestPull`). The
+sparks' blooms go into the glow's mask in that same order, behind the moon's
+(`addGlowMaskBlended`), where the mask's own blended list drew them.
+
+- **A pane is one draw of its group**, under its OWN world matrix: a group of one `PaneBlocks`
+  takes as it stands is not at identity, and its positions are local to that matrix. The
+  matrix is read WHOLE out of storage (`celVertex.ts`' placed stage), because the uniform it
+  stands in for was a whole matrix to the compiler. It is offered as its mesh was — its block's
+  cell (`WorldCulling.offersBlock`), the size gate on its record's sphere, the sphere's frustum
+  test (`Game.glassPull`). Its material is its probe's recipe (`glassProbeRecipe`) and its cube
+  is read where the bake left it, sampled as `wrapCubeTexture`'s view sampled it; no baked cube
+  is wrapped for Babylon any more, the default cube alone being, for an editor build.
+- **The `backed` panes write depth and are not in the run**: they are drawn nearest first by
+  `eyeDistanceSq`, AHEAD of everything else of ours at `"beforeAlphaTest"` — the one run, the
+  palette, the blocks — where Babylon's opaque list drew them, which is the whole of what makes
+  a backed pane pay. **Babylon's opaque list is EMPTY in a round now**, and so is its
+  transparent list.
+- **A break writes into our buffer** (`GlassDraw.collapse`, `GlassFx`): a block that holds a
+  breakable pane keeps a CPU copy of its positions, and only it.
+- **A fade is one draw of one instance of its kit** (`entities/fades.ts`): a spark, a disc, a
+  scorch or a blob, each the mesh it was as plain data — its node composed as the mesh was, its
+  `visibility` multiplied into its alpha LAST — drawn by one program that is each unlit
+  `StandardMaterial`'s pixel read off its compiled effect (`shaders/wgsl/fade.ts`): the slot's
+  colour, the opacity map's alpha (the scorch's and the blob's, Babylon textures read through
+  the seam), `EmissiveFog`'s fade where the material wore it (not the blob). The pipeline state
+  is each material's: blended `ALPHA_COMBINE`, no depth written, back faces culled, but for the
+  scorch (no cull, `-4` and a slope of `-2`). A spark and a disc pass the size gate as emissive
+  meshes did, never dropped; a scorch and a blob are gated on THIS frame's sphere, the pools'
+  rule (no drop can latch).
+- **No pose for the warm-up**: every pipeline of these is on the round's declared list
+  (`Game.roundPipelines`), so `stageWarmFrame` poses nothing.
+- **An editor build's glazing stays Babylon's until X5.3**, one mesh per placement per material
+  over the default cube, on Babylon's lists with the editor's own `ed-*` proxies. No pool and no
+  blob is ever raised there, so the run never meets that list.
 
 ## The water: a mirror with a body under it
 
@@ -3360,7 +3391,8 @@ whether a draw can bind this frame (`WorldGlow`'s verdict).
 **A draw lands at one of SIX points of the main pass** (`DrawPoint`), five of
 them about rendering group 0, and in this order every frame (the moon's, the fifth,
 `"beforeBlended"`, is X4.5c's: past the group's particles and ahead of its
-transparent list, the seam's item 6 itself; see "The sky"):
+transparent list, the seam's item 6 itself; see "The sky" — and behind the moon there
+the one back-to-front run of the glazing and the fades, X4.6e's, where that list began):
 
 - **`"first"`: as the pass starts, ahead of everything of Babylon's** (X4.5a).
   It hangs off the draw phase's own observable, right after `begin`, so it is
@@ -4813,21 +4845,16 @@ own program; the shards and chunks a third `PoolDraw`, the DEBRIS), **and
 every FIRE since X4.4d** (`render/FlameDraw.ts`, on the fire's program: the
 molotov's flames and, beside them, the world's) — and Babylon is made no
 mesh of any: X4.1d's shape for things that never fade.
-**The sparks, the dust discs and the blast's SCORCH are not among them, and
-that is the owner's decision (2026-11-01) rather than a gap**: they fade by
-`visibility` in Babylon's TRANSPARENT sort, interleaved with the see-through
-glazing, which no draw point of ours reproduces, so all three pools stay
-Babylon meshes — whole, the frames a spark is still opaque included, so a pool
-is never split across two renderers (the scorch is a pool of its own, so the
-rubble leaving while it stays splits none) — until X4.6 moves them with the
-glazing. `fx-glass-sort` is that step's BEFORE. They are also the only pools
-still POSED by the building card's warm-up (`CombatFx.warm`,
-`BlastDebrisSystem.warm`, a `visibility` under 1 being a pipeline of its own):
-every pool of ours is on the round's DECLARED list (`Game.roundPipelines`,
-X4.4e), each of its pipelines asked once at `Game`'s construction, so its
-first use in a round compiles nothing BY CONSTRUCTION — the pools that never
-had a pose (the shards, the rubble, the thrown and laid bodies of both sides
-of the wire, the brass) as much as the ones that did — and none is posed.
+**And every spark, dust disc, scorch and blob shadow since X4.6e**
+(`render/FadeDraw.ts`), which fade by `visibility` among the see-through
+panes and so moved with the glazing, into one back-to-front sort of ours
+("The back-to-front run"): the owner's decision of 2026-11-01 kept them
+Babylon's until then, whole, so no pool was ever split across two renderers.
+Every pool is on the round's DECLARED list (`Game.roundPipelines`, X4.4e),
+each of its pipelines asked once at `Game`'s construction, so its first use
+in a round compiles nothing BY CONSTRUCTION, and none is posed by the
+building card's warm-up (the sparks, the discs, the scorch and the blob were
+the last, until X4.6e).
 
 **A piece is the meshes it was, as plain data** (`entities/pieces.ts`): a
 KIT a kind — its segments, each a mesh until X4.4b: the arrays, a cel paint or
@@ -4984,10 +5011,10 @@ fires is the queue's own — and **the mask's after the billows'** (Babylon's ma
 the fires after every draw of ours), by the same vertex module, no depth
 written, LEQUAL. What moved is only the fires' interleave with the meshes
 Babylon still drew in that queue — the grass until X4.6c, the capture zones until X4.6b, the
-water until X4.6d, the backed panes — every one of which writes depth, so it is an exact tie
+water until X4.6d, the backed panes until X4.6e — every one of which writes depth, so it is an exact tie
 or nothing. In the mask the fires now go down with ours at its open, AHEAD of
-every mesh Babylon's mask still draws (the sparks, and the moon until X4.5c made
-it ours, behind them all at the open; a dust disc is `noGlow` and was never in
+every mesh Babylon's mask drew (the sparks until X4.6e, and the moon until X4.5c made
+it ours, both behind them all at the open; a dust disc is `noGlow` and was never in
 it, `BABYLON_EXIT.md` X4.6a measured),
 where its queue drew them among those — no depth written and LEQUAL against
 the frame's, so again only an exact tie could differ, and the blended sparks
@@ -5163,13 +5190,13 @@ never the draw, because a disabled mesh was going to be rejected anyway — and 
 staged A/B/A with half the roster in frame came back inside its own control
 (27-34/255 worst against a 33/255 control, mean 0.001-0.003).
 
-**Everything else pooled is still loose** — sparks, dust discs, the scorch —
-and their idle meshes are kept out of the list by `offer` instead (the size
-gate, below). The hulls were loose too until `BABYLON_EXIT.md` X4.2b, the
-tracers, the marks, the brass and the thrown and laid bodies until X4.4b, and
-the blast's billows, the shards and the rubble until X4.4c; they are no mesh
-now, and the size gate reaches their segments through `keepsSphere` ("The
-hulls, ours", "The pools, ours").
+**Nothing pooled is loose any more.** The sparks, the dust discs, the scorch
+and the blobs were until `BABYLON_EXIT.md` X4.6e, their idle meshes kept out of
+the list by `offer`; the hulls until X4.2b, the tracers, the marks, the brass
+and the thrown and laid bodies until X4.4b, and the blast's billows, the shards
+and the rubble until X4.4c. None is a mesh now, and the size gate reaches each
+through `keepsSphere` ("The hulls, ours", "The pools, ours", "The back-to-front
+run").
 
 **Nothing pooled may ever be block-keyed.** They are loose or pooled because
 they MOVE, and this is precisely why `scene.freezeActiveMeshes()` is a bug in

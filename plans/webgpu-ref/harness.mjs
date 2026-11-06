@@ -391,12 +391,10 @@ export function placeVantage(page, vantage) {
       // A pane a `breaks` event collapsed (X4.6a) stands again, its vertex
       // range written back as the stash took it, so no row after it stands
       // behind a broken pane: a pane never mends in a round, and this is the
-      // bank's own write and nothing the game can do. Through whatever holds the
-      // range, which X4.6e moves.
-      for (const { group, base, range } of window.__refFx.collapsed ?? []) {
-        const positions = group.mesh.getVerticesData("position");
-        positions.set(range, base);
-        group.mesh.updateVerticesData("position", positions);
+      // bank's own write and nothing the game can do. Through what holds the
+      // range since X4.6e: our renderer's glazing (`GlassDraw.writePositions`).
+      for (const { surface, first, range } of window.__refFx.collapsed ?? []) {
+        g.glassDraw.writePositions(surface, first, range);
       }
       // The blobs a `blob` event placed (X4.6a's review): switched off by the
       // door a teardown takes them by, and only after a row that raised one.
@@ -709,13 +707,10 @@ export function placeVantage(page, vantage) {
           const pane = g.map.panes[e.breaks.pane];
           if (!pane || pane.group < 0) throw new Error(`no drawn pane ${e.breaks.pane}`);
           const group = g.map.paneGroups[pane.group];
-          const base = pane.vertexStart * 3;
-          const live = group.mesh.getVerticesData("position");
-          (window.__refFx.collapsed ??= []).push({
-            group,
-            base,
-            range: live.slice(base, base + pane.vertexCount * 3),
-          });
+          const surface = g.glassDraw.surfaces.find((s) => s.record === group.record);
+          const range = surface ? g.glassDraw.readPositions(surface, pane.vertexStart, pane.vertexCount) : null;
+          if (!range) throw new Error(`pane ${e.breaks.pane} has no writable range in the glazing draw`);
+          (window.__refFx.collapsed ??= []).push({ surface, first: pane.vertexStart, range });
           g.glass.onBroken(e.breaks.pane);
           g.glass.onBreak(e.breaks.pane, new M.Vector3(...e.breaks.at), new M.Vector3(...e.breaks.dir).normalize());
         } else if (e.blob) {
@@ -728,6 +723,14 @@ export function placeVantage(page, vantage) {
           const bodies = (window.__refBlobBodies ??= []);
           const n = window.__refFx.blobs ?? 0;
           const [bx, by, bz] = e.blob.at;
+          // A body's FIRST blob drew 31 numbers off `Math.random` while it was a
+          // Babylon mesh (`Geometry.RandomId`, counted at X4.6e's BEFORE: 31 the
+          // first time, none after), and a row's pictures run on the seeded
+          // stream below, so the marks a later round of the row leaves rolled
+          // off where those draws left it. Our renderer's blob is no mesh
+          // (`BABYLON_EXIT.md` X4.6e) and draws none, so they are drawn here, in
+          // the same place, and the banked frame's marks stay where they were.
+          if (!bodies[n]) for (let i = 0; i < 31; i++) Math.random();
           const body = (bodies[n] ??= { alive: true, position: { x: 0, y: 0, z: 0 } });
           body.position.x = bx;
           body.position.y = by;

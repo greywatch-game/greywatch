@@ -177,9 +177,9 @@ them, but a group of ours still compiling draws NOTHING and Babylon no longer
 draws the blocks in the main pass — so the vantages are drawn with ours
 built, and nothing of ours is POSED at one (`BABYLON_EXIT.md` X4.4e: the
 `warm(on)` poses of the pools that are ours became that list). **The
-vantages are for Babylon's own meshes** —
-the glazing, the particles, and the three blended pools and the
-blob shadow still Babylon's until X4.6e, which are the only poses left. **When the wait ends, our cache is SEALED** (`PipelineCache.seal`)
+vantages are for Babylon's own meshes** — in a round its particles alone:
+the glazing, the three blended pools and the blob shadow were Babylon's
+until X4.6e, posed here, and nothing is posed now. **When the wait ends, our cache is SEALED** (`PipelineCache.seal`)
 until the map is torn down: a pipeline of ours compiled in play is a DEV
 warning naming it — what the list missed. Three rules hold it to `loading`'s
 contract:

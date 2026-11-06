@@ -47,11 +47,11 @@
  * and asks for it ahead of the frame (`render/PipelineCache.ts`), so the
  * warm-up only has to wait for them — which is why an effect pool of ours is
  * never POSED at a vantage (`BABYLON_EXIT.md` X4.4e). What the vantages still
- * draw for is Babylon's own meshes: the
- * glazing, the blob shadows, the
- * particles, and the three blended pools still Babylon's — `CombatFx`'s
- * sparks and dust discs and `BlastDebrisSystem`'s scorch, which keep a
- * `warm(on)` pose each until they move with the glazing (X4.6).
+ * draw for in a round is Babylon's own: the particles (X4.7's) and what the
+ * post chain draws. The glazing, the blob shadows and the three blended pools
+ * were Babylon's until X4.6e, the pools and the blobs posed at a vantage
+ * (`warm(on)`, `warmBlob`) until then; they are our renderer's now, their
+ * pipelines on the round's declared list like every other draw of ours.
  */
 import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";

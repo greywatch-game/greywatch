@@ -137,8 +137,10 @@ function read(page) {
       (g.zoneDraw ? g.zoneDraw.stats.drawn : 0) +
       (g.grassDraw ? g.grassDraw.stats.blades + g.grassDraw.stats.turf : 0) +
       (g.waterDraw ? g.waterDraw.stats.drawn : 0) +
-      // The BACKED panes are ours since X4.6e (`GlassDraw`, a draw a group).
-      (g.glassDraw ? g.glassDraw.stats.backed : 0);
+      // The GLAZING and the FADES are ours since X4.6e (`GlassDraw`, a draw a
+      // pane group; `FadeDraw`, a draw a spark, disc, scorch or blob).
+      (g.glassDraw ? g.glassDraw.stats.backed + g.glassDraw.stats.seeThrough : 0) +
+      (g.fadeDraw ? g.fadeDraw.stats.drawn : 0);
     return { babylon: window.__census.babylon, ours: ours.drawn + bodies + hulls + view + pools, bodies, hulls, view, pools, taken: ours.taken };
   });
 }

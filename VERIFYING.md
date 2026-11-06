@@ -1749,7 +1749,8 @@ is one machine's:
   bake's, `g.probeBake.cubes.find((c) => c.texture.label === "probe bake:
   default").texture`, which is also `g.reflections.defaultCube` since X4.6d (a
   glazing material holds Babylon's wrapped `BaseTexture` over it, which
-  `copyTextureToBuffer` cannot take).
+  `copyTextureToBuffer` cannot take; a round's glazing has no material since
+  X4.6e, its group bound to the cube itself, `g.glassDraw.surfaces[i].material`).
   Babylon's `ReflectionProbe` cubes went at X3.7c (the tag
   `exit-babylonworld` still has them). Three standing checks:
   - **Coverage says the enclosure rule fired.** Mean coverage over all six faces
@@ -1762,10 +1763,10 @@ is one machine's:
     rather than a curiosity: face 2 is `POSITIVE_Y` and it holds the DOWNWARD
     view, which is why the shader samples the cube with `-y`. A bake that lost
     the flip reads as glass that is simply too dark.
-  - **A material per probe, and no extra draw.** `new
-    Set(g.map.paneGroups.map(p => p.mesh.material.name)).size` is the probe
-    count, while the mesh count is unchanged — that is the whole affordability
-    argument, and a regression here shows up as one name for all 37.
+  - **A probe per block, and no extra draw.** Since X4.6e a round's glazing is
+    no mesh and holds no material: count the slots, `g.reflections.pools
+    .glazing.length`, against `g.glassDraw.surfaces.length`, one draw a group —
+    that is the whole affordability argument.
 - **The eye was the thing Babylon's bake could leak** — it moved every cel
   material's `camPos` into the probe and back, and a bake that put it back
   wrong fogged the install frame from a point inside the map. Ours PASSES the
@@ -1776,7 +1777,9 @@ is one machine's:
   looks, it is a number, and it has to be asked at RANGE** — that is where
   glass past ~100 m was found not to be drawn at all
   (`CelMaterialFactory.GLASS_DEPTH_UNITS`). The reading is the pane's own
-  contribution: grab a patch, `paneGroups[i].mesh.setEnabled(false)`, grab
+  contribution: grab a patch, take the pane out of its draw (since X4.6e a
+  round's is `g.glassDraw.surfaces[i]`, no mesh: clear its `material` and it
+  draws nothing; an editor build's is still `paneGroups[i].mesh`), grab
   again, and difference the two. Zero means the pane lost the depth test, not
   that it is subtle. Three things make the sweep say something:
   - **Hold the incidence angle and the on-screen size still, or the answer is

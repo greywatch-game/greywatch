@@ -4,8 +4,10 @@
  * wrapped view of it, never a copy): a shadow texture's
  * (`wrapShadowTexture`, which `ShadowSystem`, `BodyShadows` and
  * `LocalShadows` hand their readers) and a reflection probe's cube
- * (`wrapCubeTexture`, which `ReflectionSystem` hands the glazing, the one
- * reader left: the water reads its cube directly since `BABYLON_EXIT.md` X4.6d).
+ * (`wrapCubeTexture`: the DEFAULT cube, which every glazing material is born
+ * holding and an editor build's glazing samples until `BABYLON_EXIT.md` X5.3 —
+ * the water reads its cube directly since X4.6d and a round's glazing since
+ * X4.6e, so no baked cube is wrapped).
  * Owns nothing: each call makes a view, and its caller holds it.
  * Invariants: a view samples as the Babylon texture it stands in for did —
  * its filter, its wrap, its dimension and its mip chain; a wrapped view is

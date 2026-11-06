@@ -13,11 +13,12 @@
  * `DebrisSystem`'s shards are (`Game.drawDebris`,
  * `poseView.writePosedDrawing`): Babylon is made no chunk mesh, a chunk's box
  * is its own arrays (`chunkBoxes`), and its switch, its scale and its bounds
- * are its `PosedPiece`'s. **The SCORCH is still Babylon's** (decided
- * 2026-11-01): it fades by `visibility` in Babylon's transparent sort among
- * the see-through panes, so it moves with the glazing at `BABYLON_EXIT.md`
- * X4.6 — the scorch is a pool of its own, so the rubble leaving while it
- * stays splits no pool across two renderers.
+ * are its `PosedPiece`'s. **The SCORCH is our renderer's too since
+ * `BABYLON_EXIT.md` X4.6e**: each mark a FADE of its kit (`entities/fades.ts`),
+ * drawn in the one back-to-front run among the see-through panes
+ * (`Game.farthestPull`), where it fades by `visibility` as Babylon's
+ * transparent sort faded its mesh; its map stays a Babylon texture, read
+ * through the seam (`scorchMap`).
  *
  * ## What makes this worth having is that it knows what it went off ON
  *
@@ -67,16 +68,17 @@ import {
   Color3,
   CreateBoxVertexData,
   DynamicTexture,
-  Mesh,
-  MeshBuilder,
   Quaternion,
   Scene,
-  StandardMaterial,
   Vector3,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import { Fade, fadeKit, type FadeKit, SCORCH } from "../entities/fades";
+import { createDisc } from "../geometry/primitives";
+import { Quaternion as MathQuaternion } from "../math";
+import { hostTexture } from "../render/babylonSeam";
+import type { HostTexture } from "../render/frameHost";
 import type { CelMaterialFactory } from "../shaders/CelShader";
-import { attachEmissiveFog } from "../shaders/EmissiveFog";
 import type { ShaderMaterial } from "@babylonjs/core";
 import type { EnvironmentSpec } from "../world/environment";
 import type { BlastGround } from "./GrenadeSystem";
@@ -331,16 +333,19 @@ export class BlastDebrisSystem implements PhysicsClient {
     this.scorch.mark(at, power, ground);
   }
 
-  /**
-   * One scorch mark shown, or taken back off, for the frames of the building
-   * card's pipeline warm-up (`core/PipelineWarmup.ts`) — see
-   * `ScorchMarks.warm`. The SCORCH alone: the rubble is our renderer's, its
-   * pipeline on the round's declared list (`Game.roundPipelines`,
-   * `BABYLON_EXIT.md` X4.4e), and posed by nothing; the scorch is Babylon's
-   * until it moves with the glazing (X4.6), and keeps this pose until then.
-   */
-  warm(on: boolean): void {
-    this.scorch.warm(on);
+  /** The scorch's kit: the arrays `MeshBuilder.CreateDisc` made each mark's mesh of. */
+  get scorchKit(): FadeKit {
+    return this.scorch.kit;
+  }
+
+  /** The scorch's map, Babylon's texture as our renderer holds it (rule 5). */
+  get scorchMap(): HostTexture {
+    return this.scorch.map;
+  }
+
+  /** Every mark, by slot — the order their meshes stood in the scene: what `Game.farthestPull` reads (never writes). */
+  get scorchFades(): readonly Fade[] {
+    return this.scorch.fades;
   }
 
   burst(at: Vector3, power: number, ground: DebrisGround, camPos: Vector3): boolean {
@@ -609,7 +614,8 @@ export class BlastDebrisSystem implements PhysicsClient {
 
 /** One scorch: the disc, and how long it has left. */
 interface Mark {
-  mesh: Mesh;
+  /** What our renderer draws: the mesh it was until `BABYLON_EXIT.md` X4.6e. */
+  fade: Fade;
   /** Seconds since it was laid; < 0 while the slot is free. */
   t: number;
 }
@@ -623,7 +629,10 @@ interface Mark {
  * for `scorch.life` and fading over `scorch.fade`.
  *
  * **Four things about it are what stop a decal from looking like a decal**, and
- * every one of them has been got wrong here already:
+ * every one of them has been got wrong here already. Each was the
+ * `StandardMaterial` its meshes wore until `BABYLON_EXIT.md` X4.6e, and each
+ * is the state and the pixel our renderer's scorch is drawn with now
+ * (`render/FadeDraw.ts`, `shaders/wgsl/fade.ts`):
  *
  * - **It is BLACK, and that is what makes it a multiply.** Ordinary alpha
  *   blending over an RGB of zero is `dst * (1 - a) + 0 * a` — a proportional
@@ -638,87 +647,49 @@ interface Mark {
  *   - **`Constants.ALPHA_MULTIPLY`** is `blendFunc(DST_COLOR, ZERO)`: the result
  *     is `dst * src` and the source ALPHA plays no part in the colour at all. A
  *     black disc came out as a hard-edged black hole cut in the street, with the
- *     soft texture doing nothing and `mesh.visibility` unable to fade it. The
- *     mode is named for multiplying COLOURS, not for a decal.
- * - **It loses the depth fight on purpose.** `disableDepthWrite` plus a
- *   negative `zOffset` — the polygon offset is what puts it in front of the
- *   floor it is lying on, rather than a lift big enough to make it visibly
- *   hover the moment the ground tilts. `scorch.lift` is the small remainder.
+ *     soft texture doing nothing and the fade unable to touch it. The mode is
+ *     named for multiplying COLOURS, not for a decal.
+ * - **It loses the depth fight on purpose.** No depth written, plus a negative
+ *   polygon offset of BOTH terms, -4 units and a slope of -2: the slope term is
+ *   scaled by the fragment's depth slope, which for a decal lying flat on a
+ *   floor seen from above is very nearly zero, so the factor alone does nothing
+ *   in exactly the case the offset exists for. The offset is what puts it in
+ *   front of the floor it is lying on, rather than a lift big enough to make it
+ *   visibly hover the moment the ground tilts. `scorch.lift` is the small
+ *   remainder. Both faces are drawn.
  * - **It is turned onto the surface, not onto world up.** A mark drawn flat on
  *   a hillside is a disc floating over it at both ends.
- * - **It is FOGGED**, through the same `attachEmissiveFog` plugin every unlit
- *   emissive material in the game wears — and it is the fog that stops a distant
- *   mark darkening, because the plugin lifts the RGB off black toward the fog
- *   colour and `dst * (1 - a) + fog * a` is the haze rather than a hole in it. A
- *   scorch that stayed pitch black across a valley the rest of which had gone to
- *   haze is the bug that rule exists for.
+ * - **It is FOGGED**, on the curve every unlit emissive in the game takes
+ *   (`EmissiveFog`'s, which its material wore) — and it is the fog that stops a
+ *   distant mark darkening, because the fade lifts the RGB off black toward the
+ *   fog colour and `dst * (1 - a) + fog * a` is the haze rather than a hole in
+ *   it. A scorch that stayed pitch black across a valley the rest of which had
+ *   gone to haze is the bug that rule exists for.
  *
- * One material for every mark and one texture behind it, so the per-mark fade
- * is `mesh.visibility` — which IS per mesh, is the same lever the fireball's
- * lobes fade on, and at zero walks the mark back to `dst` exactly.
+ * One map behind every mark, so the per-mark fade is the fade's `visibility`
+ * — the same lever the fireball's lobes fade on, and at zero the mark walks
+ * back to `dst` exactly.
  */
 class ScorchMarks {
   private marks: Mark[] = [];
-  private readonly material: StandardMaterial;
+  /** Every mark, by slot. */
+  readonly fades: Fade[] = [];
+  /** The arrays `MeshBuilder.CreateDisc` made every mark's mesh of: built at radius 1 and scaled. */
+  readonly kit: FadeKit = fadeKit(createDisc({ radius: 1, tessellation: 24 }));
+  /** The alpha map, a Babylon texture through the seam. */
+  readonly map: HostTexture;
 
   constructor(scene: Scene) {
     const s = CONFIG.grenade.scorch;
-    this.material = new StandardMaterial("blastScorch", scene);
-    this.material.opacityTexture = buildScorchTexture(scene);
-    this.material.diffuseColor = Color3.Black();
-    this.material.specularColor = Color3.Black();
-    // BLACK, and it has to be: ordinary alpha blending over zero is
-    // `dst * (1 - a)`, which is the proportional darkening this whole decal is.
-    // Any RGB above zero is a colour being painted ON the ground instead, which
-    // is the version that could not be made to read on a night village and a
-    // dusk city at once. The blend mode is left at the DEFAULT for the same
-    // reason — see the header on what `ALPHA_MULTIPLY` actually does. The RGB's
-    // only other job is to be lifted toward the fog colour by the plugin below,
-    // which is what stops a distant mark darkening.
-    this.material.emissiveColor = Color3.Black();
-    this.material.disableLighting = true;
-    this.material.backFaceCulling = false;
-    this.material.disableDepthWrite = true;
-    // BOTH terms. `zOffset` is the polygon-offset FACTOR, which is scaled by
-    // the fragment's depth slope — and a decal lying flat on a floor seen from
-    // above has a slope of very nearly zero, so the factor alone does nothing
-    // in exactly the case the offset exists for. `zOffsetUnits` is the constant
-    // that bites there.
-    this.material.zOffset = -2;
-    this.material.zOffsetUnits = -4;
-    attachEmissiveFog(this.material);
-
+    this.map = hostTexture(buildScorchTexture(scene));
     for (let i = 0; i < s.marks; i++) {
       // Built at radius 1 and scaled, which a flat disc may do and a physics
       // body may not: nothing here is under the solver.
-      const mesh = MeshBuilder.CreateDisc(
-        `blastScorch${i}`,
-        { radius: 1, tessellation: 24 },
-        scene,
-      );
-      mesh.material = this.material;
-      mesh.metadata = { noGlow: true, noShadowCaster: true };
-      mesh.isPickable = false;
-      mesh.checkCollisions = false;
-      mesh.rotationQuaternion = Quaternion.Identity();
-      mesh.isVisible = false;
-      this.marks.push({ mesh, t: -1 });
+      const fade = new Fade(SCORCH);
+      fade.node.quaternion = MathQuaternion.Identity();
+      this.fades.push(fade);
+      this.marks.push({ fade, t: -1 });
     }
-  }
-
-  /**
-   * The last mark shown at its standing opacity while it is free, or hidden
-   * again — so the first blast of a round draws its scorch through a pipeline
-   * the building card already compiled. The opacity is part of it: a mark
-   * fades by `visibility`, which is what puts it on the blended pipeline.
-   * One of the three poses left (`BABYLON_EXIT.md` X4.4e), because the
-   * scorch is still a Babylon mesh: it goes with the pool at X4.6.
-   */
-  warm(on: boolean): void {
-    const slot = this.marks[this.marks.length - 1];
-    if (slot.t >= 0) return;
-    if (on) slot.mesh.visibility = CONFIG.grenade.scorch.opacity;
-    slot.mesh.isVisible = on;
   }
 
   /**
@@ -737,19 +708,13 @@ class ScorchMarks {
       }
       if (m.t > slot.t) slot = m;
     }
+    const node = slot.fade.node;
     // `CreateDisc` faces +Z, so the turn is from that onto the surface normal.
-    Quaternion.FromUnitVectorsToRef(
-      FORWARD,
-      ground.normal,
-      slot.mesh.rotationQuaternion!,
-    );
-    slot.mesh.position
-      .copyFrom(ground.normal)
-      .scaleInPlace(s.lift)
-      .addInPlace(at);
-    slot.mesh.scaling.setAll(s.radius * power);
-    slot.mesh.visibility = s.opacity;
-    slot.mesh.isVisible = true;
+    MathQuaternion.FromUnitVectorsToRef(FORWARD, ground.normal, node.quaternion!);
+    node.position.copyFrom(ground.normal).scaleInPlace(s.lift).addInPlace(at);
+    node.scaling.setAll(s.radius * power);
+    slot.fade.visibility = s.opacity;
+    node.visible = true;
     slot.t = 0;
   }
 
@@ -760,11 +725,11 @@ class ScorchMarks {
       m.t += dt;
       if (m.t > s.life + s.fade) {
         m.t = -1;
-        m.mesh.isVisible = false;
+        m.fade.node.visible = false;
         continue;
       }
       if (m.t > s.life) {
-        m.mesh.visibility = s.opacity * (1 - (m.t - s.life) / s.fade);
+        m.fade.visibility = s.opacity * (1 - (m.t - s.life) / s.fade);
       }
     }
   }
@@ -772,7 +737,7 @@ class ScorchMarks {
   reset(): void {
     for (const m of this.marks) {
       m.t = -1;
-      m.mesh.isVisible = false;
+      m.fade.node.visible = false;
     }
   }
 }

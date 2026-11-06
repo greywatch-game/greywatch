@@ -1,25 +1,26 @@
 /**
- * render/GlassDraw.ts — A round's BACKED GLAZING as OUR renderer draws it
- * (`BABYLON_EXIT.md` X4.6e): every block's merged backed glass, the
- * `paneblock*` meshes on a `CEL_GLASS_BACKED` material that Babylon's opaque
- * list drew until X4.6e, one draw for one, nearest first ahead of everything
- * of ours at `"beforeAlphaTest"`, where that list drew them. The see-through
- * glazing is still Babylon's, on its transparent list.
- * Owns: `GlassDraw` — the two pipelines (either winding), asked once for the
- * session; a round's vertices, indices
+ * render/GlassDraw.ts — A round's GLAZING as OUR renderer draws it
+ * (`BABYLON_EXIT.md` X4.6e): every block's merged glass, the `paneblock*`
+ * meshes on a `CEL_GLASS` material that Babylon drew until X4.6e, one draw
+ * for one — the `backed` sheets nearest first ahead of everything of ours at
+ * `"beforeAlphaTest"` (where Babylon's opaque list drew them), the
+ * see-through ones in the one back-to-front run (`FarthestRun`).
+ * Owns: `GlassDraw` — the four pipelines (backed and see-through, each in
+ * either winding), asked once for the session; a round's vertices, indices
  * and each surface's world matrix on the GPU, from `finish` to `clear`; the
  * surfaces (`surfaces`, each a `GlassSurface`), each one's material — its
  * probe's recipe, a block, and a group binding its cube where the bake left
- * it (`point`) — the pull it asks inside the render, the sheets' order this
- * frame (`backedOrder`, which the pull writes), the CPU copy of every range a
- * break may rewrite and the write of one (`collapse`, `writePositions`: no
- * backed sheet is breakable, so none yet), the refusal listeners it holds
- * while installed, and what it drew last (`stats`); `GlassSurface`,
- * `GlassGeometry`.
+ * it (`point`) — the pull it asks inside the render, the backed sheets' order
+ * this frame (`backedOrder`, which the pull writes, as it writes each
+ * see-through surface's `kept` and `key`), the CPU copy of every range a break
+ * may rewrite and the write of one (`collapse`, `writePositions`), the refusal
+ * listeners it holds while installed, and what it drew last (`stats`);
+ * `GlassSurface`, `GlassGeometry`.
  * Invariants: it DECIDES NOTHING — which surface is drawn this frame (its
  * block's cell offered, the size gate, the frustum) and in what order are the
  * pull's (`Game.glassPull`, asked once a frame after every prepare that is not
- * late), what a group wears is
+ * late, and ahead of the run's, which files the see-through surfaces it
+ * kept: `FarthestRun`), what a group wears is
  * `ReflectionSystem`'s (`point`), and whether a pane is broken is
  * `GlassSystem`'s, told through `GlassFx`; a surface is drawn under its OWN
  * world matrix, as its mesh's `world` uniform held it — a group of one
@@ -32,8 +33,9 @@
  * through a view of its own over every face and level, sampled as
  * `wrapCubeTexture`'s view was (trilinear, anisotropic 4, the wrap its
  * coordinates mode gave: repeat); a pane's depth bias is pipeline state
- * (`GLASS_DEPTH_UNITS`), its depth written, its alpha the frame's opaque
- * one; a frame with a
+ * (`GLASS_DEPTH_UNITS`), and a see-through one writes no depth and blends
+ * as Babylon's `ALPHA_COMBINE` (colour `SRC_ALPHA, ONE_MINUS_SRC_ALPHA`,
+ * alpha `ONE, ONE`), its alpha the coverage the ink reads; a frame with a
  * pipeline unbuilt draws no pane; a pipeline that FAILS is the round's
  * failure (`install`'s), and so is a refused main pass while it is
  * installed — never inside the render's commands (the caller defers it,
@@ -41,8 +43,7 @@
  * Never: imports Babylon; reads a node or a camera; casts a shadow, or draws
  * in a bake, the lamps' atlas or the glow's mask (no pane was in any of
  * them); destroys a cube, which is the bake's; draws while not installed (the
- * menu, an editor build, whose glazing is Babylon's until X5.3); holds a
- * see-through surface (the handover takes none).
+ * menu, an editor build, whose glazing is Babylon's until X5.3).
  * Contract: `docs/rendering.md`, "The glazing: the one thing here that is not
  * opaque" and "Our renderer's frame".
  *
@@ -89,13 +90,20 @@ interface GlassMaterial {
 export class GlassSurface {
   /** What `point` gave it: null until then, and then it draws nothing. */
   material: GlassMaterial | null = null;
+  /**
+   * This frame's, for a SEE-THROUGH surface: drawn (`kept`) and its distance
+   * from the eye (`key`), which the pull writes and the back-to-front run
+   * files it by (`FarthestRun`).
+   */
+  kept = false;
+  key = 0;
 
   constructor(
     /** What its mesh was called (`paneblock<key>-<material>`): a label. */
     readonly name: string,
     /** Its index in the build's surface list: what names its record and its `PaneGroup`. */
     readonly record: number,
-    /** Written depth on Babylon's opaque list: every surface here is (the handover takes no other). */
+    /** Written depth on Babylon's opaque list, or blended on its transparent one. */
     readonly backed: boolean,
     /** Its world matrix turns it inside out (a negative determinant). */
     readonly reversed: boolean,
@@ -114,13 +122,22 @@ export class GlassSurface {
   ) {}
 }
 
-/** The two pipelines: either winding. */
+/** `ALPHA_COMBINE`'s factors (Babylon's `alphaCullingState`, mode 2): a see-through pane's. */
+const SEE_THROUGH_BLEND: GPUBlendState = {
+  color: { srcFactor: "src-alpha", dstFactor: "one-minus-src-alpha", operation: "add" },
+  alpha: { srcFactor: "one", dstFactor: "one", operation: "add" },
+};
+
+/** The four pipelines: backed or see-through, each in either winding. */
 interface Pipelines {
   backed: BuiltPipeline | null;
   backedReversed: BuiltPipeline | null;
+  seeThrough: BuiltPipeline | null;
+  seeThroughReversed: BuiltPipeline | null;
 }
 
 const BACKED_DEFINES = ["CEL_GLASS", "CEL_GLASS_BACKED"] as const;
+const SEE_THROUGH_DEFINES = ["CEL_GLASS"] as const;
 
 /** What a pending surface uploads at `finish`. */
 interface Pending {
@@ -131,8 +148,8 @@ interface Pending {
 export class GlassDraw {
   /** Whether every pipeline built — asked once, for the session; false if one failed. */
   readonly ready: Promise<boolean>;
-  /** What the last frame drew: backed sheets. Nothing in the game reads it; a profiler capture does (`ProfileReport.pools.glass`) and the census. */
-  readonly stats = { backed: 0 };
+  /** What the last frame drew: backed sheets, see-through ones. Nothing in the game reads it; a profiler capture does (`ProfileReport.pools.glass`) and the census. */
+  readonly stats = { backed: 0, seeThrough: 0 };
   /** The round's surfaces, in the order the build made them: the order their meshes were born in. */
   readonly surfaces: GlassSurface[] = [];
   /** Which backed surfaces this frame draws, nearest first (`surfaces`' indices): the pull writes it. */
@@ -143,7 +160,7 @@ export class GlassDraw {
   backedDraws = 0;
 
   private readonly device: GPUDevice;
-  private readonly pipelines: Pipelines = { backed: null, backedReversed: null };
+  private readonly pipelines: Pipelines = { backed: null, backedReversed: null, seeThrough: null, seeThroughReversed: null };
   /** As `wrapCubeTexture`'s view sampled: trilinear, anisotropic, and the wrap its coordinates mode gives. */
   private readonly cubeSampler: GPUSampler;
 
@@ -158,7 +175,7 @@ export class GlassDraw {
   private committed = false;
   /** This frame's verdict: committed, built, a round loaded. */
   private ours = false;
-  /** What the draw bound last, so a run of panes binds only what changes. */
+  /** What the run drew last, so a run of panes binds only what changes. */
   private bound: BuiltPipeline | null = null;
   private worn: GlassMaterial | null = null;
 
@@ -169,7 +186,7 @@ export class GlassDraw {
 
   constructor(
     private readonly renderer: Renderer,
-    /** Asked inside the render, once a frame: writes the backed order. */
+    /** Asked inside the render, once a frame: writes the backed order and each see-through surface's verdict and key. */
     private readonly pull: (into: GlassDraw) => void,
   ) {
     const device = renderer.device;
@@ -207,19 +224,22 @@ export class GlassDraw {
     // `GLASS_DEPTH_UNITS`, which the factory's recipe states and `point` checks.
     const bias = GLASS_DEPTH_BIAS;
     const backed: PipelineState = { depthBias: bias };
+    const seeThrough: PipelineState = { depthBias: bias, depthWrite: false, blend: SEE_THROUGH_BLEND };
     const p = this.pipelines;
     this.ready = Promise.all([
       ask(BACKED_DEFINES, backed, (b) => (p.backed = b), "backed"),
       ask(BACKED_DEFINES, { ...backed, reversed: true }, (b) => (p.backedReversed = b), "backed (reversed)"),
+      ask(SEE_THROUGH_DEFINES, seeThrough, (b) => (p.seeThrough = b), "see-through"),
+      ask(SEE_THROUGH_DEFINES, { ...seeThrough, reversed: true }, (b) => (p.seeThroughReversed = b), "see-through (reversed)"),
     ]).then((oks) => oks.every(Boolean));
   }
 
-  /** Whether a frame is owed: what the draw's predicate asks. */
+  /** Whether a frame is owed: what the backed draw's and the run's predicates ask. */
   get active(): boolean {
     return this.committed;
   }
 
-  /** Whether this frame draws at all: the prepare's verdict, which the pull reads. */
+  /** Whether this frame draws at all: the prepare's verdict, which the pulls read. */
   get drawing(): boolean {
     return this.ours;
   }
@@ -305,7 +325,7 @@ export class GlassDraw {
     };
     this.positionBuffer = buffer("positions", positions, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
     this.indexBuffer = buffer("indices", indices, GPUBufferUsage.INDEX);
-    this.geometry = new HostBindGroup(device, "glass: geometry", CEL_GEOMETRY, BACKED_DEFINES, {
+    this.geometry = new HostBindGroup(device, "glass: geometry", CEL_GEOMETRY, SEE_THROUGH_DEFINES, {
       positionData: this.positionBuffer,
       normalData: buffer("normals", normals, GPUBufferUsage.STORAGE),
       colorData: buffer("colours", colors, GPUBufferUsage.STORAGE),
@@ -326,10 +346,10 @@ export class GlassDraw {
    */
   point(surface: GlassSurface, recipe: CelRecipe, cube: GPUTexture): void {
     const backed = recipe.defines.includes("CEL_GLASS_BACKED");
-    if (!recipe.defines.includes("CEL_GLASS") || !backed || recipe.depthBias !== GLASS_DEPTH_BIAS) {
+    if (!recipe.defines.includes("CEL_GLASS") || backed !== surface.backed || recipe.depthBias !== GLASS_DEPTH_BIAS) {
       throw new Error(`GlassDraw: "${surface.name}" was pointed at a recipe of [${recipe.defines.join("+")}] at ${recipe.depthBias}, which no pipeline of the glazing draws`);
     }
-    const defines = BACKED_DEFINES;
+    const defines = backed ? BACKED_DEFINES : SEE_THROUGH_DEFINES;
     const old = surface.material;
     if (old) old.block.destroy();
     const label = `glass: ${surface.name}`;
@@ -408,15 +428,16 @@ export class GlassDraw {
     this.committed = false;
     this.ours = false;
     this.stats.backed = 0;
+    this.stats.seeThrough = 0;
   }
 
   /**
    * Draws the round's backed sheets from the next frame on, at
    * `"beforeAlphaTest"` — the caller installs this AHEAD of everything else of
-   * ours at that point, where Babylon's opaque list drew them — telling
-   * `failed` if they cannot be: a pipeline that failed (now or for the
-   * session already), or the main pass refused. Replaces any earlier
-   * install's failure.
+   * ours at that point, where Babylon's opaque list drew them — and its
+   * see-through ones through the run (`FarthestRun`), telling `failed` if they
+   * cannot be: a pipeline that failed (now or for the session already), or
+   * the main pass refused. Replaces any earlier install's failure.
    */
   install(failed: (reason: string) => void): void {
     this.uninstall();
@@ -428,7 +449,8 @@ export class GlassDraw {
     const renderer = this.renderer;
     this.removes.push(
       renderer.onFrame(this.prepare),
-      // Late, so every draw's prepare has given its verdict on this frame.
+      // Late, so every draw's prepare has given its verdict on this frame;
+      // installed ahead of the run's (`FarthestRun`), which reads `kept`.
       renderer.onFrame(this.late, true),
       renderer.add(this.drawBacked, "beforeAlphaTest", this.hasBacked),
       renderer.onRefused(this.refused),
@@ -447,6 +469,7 @@ export class GlassDraw {
     this.committed = false;
     this.ours = false;
     this.stats.backed = 0;
+    this.stats.seeThrough = 0;
   }
 
   /** This frame draws: the order asked inside the render. */
@@ -456,11 +479,27 @@ export class GlassDraw {
     // This frame's, from here: a frame `Renderer.begin` skips runs neither the
     // prepare nor the draw that would reset it.
     this.stats.backed = 0;
+    this.stats.seeThrough = 0;
   }
 
   dispose(): void {
     this.uninstall();
     this.clear();
+  }
+
+  /**
+   * One see-through surface (`surfaces` index `i`) in the run's order; `fresh`
+   * when something else of the run drew last, so everything is bound afresh.
+   */
+  drawSeeThrough(pass: GPURenderPassEncoder, ctx: FrameContext, i: number, fresh: boolean): void {
+    if (!this.ours) return;
+    if (fresh) {
+      this.bound = null;
+      this.worn = null;
+    }
+    const surface = this.surfaces[i];
+    const p = this.pipelines;
+    if (this.drawOne(pass, ctx, surface, surface.reversed ? p.seeThroughReversed! : p.seeThrough!)) this.stats.seeThrough++;
   }
 
   private readonly hasBacked = (): boolean => this.committed;
@@ -512,9 +551,18 @@ export class GlassDraw {
     const committed = this.committed;
     this.committed = false;
     this.stats.backed = 0;
+    this.stats.seeThrough = 0;
     this.backedDraws = 0;
+    const surfaces = this.surfaces;
+    for (let i = 0; i < surfaces.length; i++) surfaces[i].kept = false;
     const p = this.pipelines;
-    this.ours = committed && this.geometry !== null && p.backed !== null && p.backedReversed !== null;
+    this.ours =
+      committed &&
+      this.geometry !== null &&
+      p.backed !== null &&
+      p.backedReversed !== null &&
+      p.seeThrough !== null &&
+      p.seeThroughReversed !== null;
   };
 
   /** After every prepare: this frame's order and verdicts, asked of the pull. */

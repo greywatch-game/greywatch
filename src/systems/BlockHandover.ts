@@ -319,11 +319,8 @@ export class BlockHandover {
       k.x === 1 && k.y === 1 && k.z === 1 &&
       part.rotationQuaternion === null;
     if (isFlame(part.material)) return this.takeFire(surface, index, atIdentity, passes);
-    // A BACKED pane is ours since X4.6e; a see-through one is still
-    // Babylon's, made a mesh, its material's recipe notwithstanding.
     const glass = this.mats.glassKind(part.material);
-    if (glass === "seeThrough") return false;
-    if (glass !== null) return this.takeGlass(surface, index, true, passes);
+    if (glass !== null) return this.takeGlass(surface, index, glass === "backed", passes);
     // Every surface the main pass takes is in a probe's bake too: Babylon's
     // drew the map's visuals whole but for the glazing, which is never ours.
     let at = this.takeForMainPass(surface, atIdentity, passes | PASS_PROBE, key);
@@ -339,9 +336,9 @@ export class BlockHandover {
         if ((passes & SHADOW_PASSES) !== 0) {
           return this.refuse(`"${part.name}" casts a shadow but our renderer can hold it in no way`);
         }
-        // Babylon's alone, in every pass: a surface nothing of ours can
-        // hold, which no round builds (the see-through glazing returned
-        // above), so `strayMesh` refuses it at the install.
+        // A surface nothing of ours can hold, which since X4.6e no round
+        // builds: Babylon would be made a mesh of it, and `strayMesh`
+        // refuses the map at the install.
         return false;
       }
       this.palette.add(at);
@@ -397,7 +394,7 @@ export class BlockHandover {
   }
 
   /**
-   * A BACKED glazing surface (`CelMaterialFactory.glassKind`), taken for our
+   * A GLAZING surface (`CelMaterialFactory.glassKind`), taken for our
    * renderer's glazing draw (`render/GlassDraw.ts`, `BABYLON_EXIT.md` X4.6e) —
    * `true`, and the build makes no mesh of it — if that draw holds it exactly
    * as Babylon drew it: block-merged (its cell is what offers it), casting

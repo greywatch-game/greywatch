@@ -626,7 +626,8 @@ src/
                         #   owns: a shadow texture's (wrapShadowTexture, for
                         #   ShadowSystem, BodyShadows and LocalShadows) and a
                         #   probe's cube
-                        #   (wrapCubeTexture, for ReflectionSystem); disposing
+                        #   (wrapCubeTexture: the default cube alone since
+                        #   X4.6e, for an editor build's glazing); disposing
                         #   one destroys the texture it wraps
     proxyBoxes.ts       # What a soldier and a hull ARE to a shadow: boxes,
                         #   packed as instance matrices. RAGDOLL_BONES and the
@@ -744,6 +745,10 @@ src/
                         #   tree, X4.3c) and the brass pool (pieces of the
                         #   casing's kit, which it builds — X4.4b). Client
                         #   only; told by Player (fired/stepped/cleared/stowed)
+    fades.ts            # The FADING pools as data (X4.6e): the four kits (a
+                        #   spark, a dust disc, a scorch, a blob) and a fade —
+                        #   its mesh's node, its visibility, its paint's slot.
+                        #   No Babylon
     pieces.ts           # The effect pools' PIECES as data (X4.4b): a kit a
                         #   kind (its segments — arrays, paint, local sphere,
                         #   the transform its mesh was dressed with, its
@@ -1164,9 +1169,9 @@ src/
                         #   `drawRounds`; the impact (and its sound) on the
                         #   tracer's arrival clock. The tracers (pieces of the
                         #   kit it builds) and the marks are our renderer's
-                        #   (X4.4b); the sparks and discs Babylon meshes until
-                        #   X4.6, and the warm-up's pose (warm) theirs alone.
-                        #   Client only
+                        #   (X4.4b), the sparks and discs too since X4.6e (fades
+                        #   of the two kits it builds); nothing is posed for the
+                        #   warm-up. Client only
     CombatSystem.ts     # Hitscan, fall-off, the head zone, the cone; raises
                         #   `onNearMiss`, `onRound`, `onShotPath`. Babylon-free
     GrenadeSystem.ts    # The one thing that isn't hitscan: the flight, the
@@ -1214,8 +1219,10 @@ src/
                         #   Raises `onBreak`/`onBroken`/`onCleared`.
                         #   Babylon-free
     GlassFx.ts          # A break's PICTURE: the pane's vertex range collapsed
-                        #   in its merged glazing (`onBroken`) and the collider
-                        #   mesh's editor flags (`onCleared`). Client only
+                        #   in its merged glazing (`onBroken`: our renderer's
+                        #   buffer in a round, the mesh in an editor build) and
+                        #   the collider mesh's editor flags (`onCleared`).
+                        #   Client only
     PhysicsWorld.ts     # The ONLY Havok in the game: the engine, the map as
                         #   one static body per 48 m block (a single compound is
                         #   quadratic in its shapes) built on the raw API — the
@@ -1263,9 +1270,9 @@ src/
                         #   rather than painting a colour onto it. A chunk's
                         #   size and shape are decided at construction, so a
                         #   burst never touches the WASM heap. No chunk mesh
-                        #   (a PosedPiece our renderer draws, X4.4c); the
-                        #   scorch is still Babylon's, and posed for the
-                        #   warm-up (warm), until X4.6
+                        #   (a PosedPiece our renderer draws, X4.4c); no scorch
+                        #   mesh either since X4.6e (a fade of its kit, its map
+                        #   Babylon's through the seam)
     glassFracture.ts    # The crack pattern itself: radials out of the hole,
                         #   concentrics across them, clipped to the frame. Pure
                         #   arithmetic — no Babylon, no state
@@ -1355,7 +1362,8 @@ src/
                         #   and a shore is a line — and its INDEX is the key
                         #   Sfx holds a graph on, so add()/addRun() only append
                         #   and clear() is the only thing that renumbers
-    ShadowSystem.ts     # Moon shadow maps (stepped) + blob shadows. The STATIC
+    ShadowSystem.ts     # Moon shadow maps (stepped) + blob shadows (fades our
+                        #   renderer draws since X4.6e, no mesh). The STATIC
                         #   world's casters in two cascades (near + far),
                         #   re-rendered only when the snapped focus moves;
                         #   the four world maps OUR renderer's
@@ -1407,7 +1415,7 @@ src/
                         #   deleted Babylon's ReflectionProbes. Owns the
                         #   DEFAULT cube, one of ours nothing bakes, bound at a
                         #   strength of 0; an editor build, or a round whose
-                        #   world failed, bakes nothing. Points a round's backed
+                        #   world failed, bakes nothing. Points a round's
                         #   glazing at its probe's recipe and cube (X4.6e)
     Atmosphere.ts       # Ash field on the GPU, simulated by a compute shader.
                         #   No CPU fallback — WebGPU is a hard requirement and
@@ -2545,6 +2553,12 @@ src/
                         #   transform, the wind's ramp and rigged layers, the
                         #   varyings. Babylon-free; shared verbatim with
                         #   src/render/; no y flip (each side's main owns it)
+      fade.ts           # THE FADES as plain strings (X4.6e): an unlit
+                        #   StandardMaterial's pixel read off its compiled
+                        #   effect — the slot's colour, the opacity map, the
+                        #   visibility last, EmissiveFog's fade — and the
+                        #   spark's mask twin. Babylon-free: render/fadeProgram.ts
+                        #   assembles it
       water.ts          # THE WATER as plain strings (X4.6d): analytic wave trains
                         #   DISPLACING the grid and lighting it from one function,
                         #   Fresnel mirror, light cut hard on the waves, the hole a
@@ -2850,12 +2864,25 @@ src/
                         #   first of ours at "beforeAlphaTest" but the backed
                         #   panes; three lists merged, a tie to the mesh made
                         #   first; the keys Game.nearestPull's
-    GlassDraw.ts        # A ROUND'S BACKED GLAZING as OUR renderer draws it
-                        #   (X4.6e): a draw a pane group under its own world
-                        #   matrix, nearest first ahead of everything of ours at
-                        #   "beforeAlphaTest"; a probe's recipe and its cube read
-                        #   where the bake left it. The see-through glazing and an
-                        #   editor build's stay Babylon's
+    GlassDraw.ts        # A ROUND'S GLAZING as OUR renderer draws it (X4.6e): a
+                        #   draw a pane group under its own world matrix, the
+                        #   backed ones nearest first ahead of everything of ours
+                        #   at "beforeAlphaTest", the see-through ones in the
+                        #   back-to-front run; a probe's recipe and its cube read
+                        #   where the bake left it; a break's collapse written
+                        #   into its buffer. An editor build's stays Babylon's
+    FadeDraw.ts         # The FADING pools as OUR renderer draws them (X4.6e):
+                        #   every spark, dust disc, scorch and blob shadow, a
+                        #   draw an instance of its kit, and a spark's bloom in
+                        #   the glow's mask; each material's state, the two
+                        #   opacity maps Babylon's through the seam
+    fadeProgram.ts      # Its program (X4.6e): FADE_BLOCK (the colours and the
+                        #   fog band), the opacity map, the geometry and each
+                        #   drawn fade's world, look and bloom; four variants
+    FarthestRun.ts      # THE BACK-TO-FRONT RUN (X4.6e): the see-through panes
+                        #   and the fades in Babylon's one transparent order, at
+                        #   "beforeBlended" behind the moon, and the sparks'
+                        #   blooms in the mask; the order Game.farthestPull's
     grassProgram.ts     # Its program (X4.6c): the field's block and mask (one
                         #   group 1), the two geometries, the frame's block with
                         #   the field's own names renamed out of it, the blades'

@@ -148,15 +148,19 @@ export class BlockMerge {
  * `BlockMerge` exists to make a placement unrecoverable — that is the saving.
  * A breakable pane must survive it, so this one carries every such pane's
  * vertex range across by the running offset of the surfaces ahead of it. Same
- * key, same reason (glass is unbatched alpha, so a mesh is a sorted draw of its
- * own), and measured on Coldharbour: 6,139 sheets across 82 glazed placements
- * (44 towers, 26 cars, 8 shophouses, 2 offices, 2 depots) come out as 40
- * meshes, eight of which hold a range anything will ever write.
+ * key, same reason (glass is unbatched alpha, so a surface is a sorted draw of
+ * its own), and counted on Coldharbour at `BABYLON_EXIT.md` X4.6a's review:
+ * 115 glazed placements (57 cars, 26 towers, 24 shophouses, 6 depots, 2
+ * offices) come out as 78 surfaces over 32 blocks — 32 see-through and 46
+ * `backed` — a handful of which hold a range anything will ever write. A
+ * round's are our renderer's (`render/GlassDraw.ts`, X4.6e) and made no mesh;
+ * an editor build's are one Babylon mesh per placement per material (179 on
+ * Coldharbour).
  *
  * **The editor keys per placement instead**, so nothing merges across
  * placements there — the same exemption `BlockMerge` gets, for the same reason.
  * Running the pass either way keeps one code path, and the pass is where the
- * position buffer is marked updatable.
+ * positions are marked writable.
  */
 export class PaneBlocks {
   private blocks = new Map<string, PaneSurfaceGroup[]>();

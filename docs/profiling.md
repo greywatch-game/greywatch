@@ -1292,7 +1292,10 @@ water's too — a draw a body, its grid or its far quad (`render/WaterDraw.ts`, 
 mask) — and `pools.water` says how many, none of them in `counters.drawCalls` any more.
 **From report version 34** (`BABYLON_EXIT.md` X4.6e) `pools.drawn` counts the backed
 glazing's too — a draw a pane group (`render/GlassDraw.ts`, in no mask) — and `pools.glass`
-says how many, none of them in `counters.drawCalls` any more.
+says how many, none of them in `counters.drawCalls` any more. **From report version 35**
+(X4.6e's second commit) `pools.glass` counts the see-through groups too, `pools.drawn` the
+fading pools' — a draw a spark, dust disc, scorch or blob (`render/FadeDraw.ts`) — and
+`pools.masked` the sparks' blooms, and `pools.fades` says how many.
 
 **Report version 24 RETIRED `drawOverlay`** (`BABYLON_EXIT.md` X4.3d): it was
 the rendering groups above 0, which by X4.3c held the optics' glass alone and

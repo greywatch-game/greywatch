@@ -1198,12 +1198,7 @@ export class Build implements Structure {
     // The one alpha-blended material in the world, and the only builder call
     // that reaches it: a pane is glass because `pane` made it, not because
     // somebody passed the glass colour to `box`.
-    m.material = this.mats.getGlass(
-      opts?.color ?? GLASS,
-      CONFIG.graphics.glass,
-      0,
-      opts?.backed ?? null,
-    );
+    m.material = this.mats.getGlass(opts?.color ?? GLASS, CONFIG.graphics.glass, opts?.backed ?? null);
     this.paneMeshes.push(m);
     this.panes.push({ w, h, d, x, y, z, rotY: opts?.rotY, breakable: opts?.breakable });
     return m;

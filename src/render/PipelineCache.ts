@@ -62,6 +62,8 @@ export interface PipelineState {
   readonly depthWrite?: boolean;
   readonly depthCompare?: GPUCompareFunction;
   readonly depthBias?: number;
+  /** Babylon's `zOffset`, the polygon offset's FACTOR: `depthBiasSlopeScale` (the scorch's, X4.6e). */
+  readonly depthBiasSlopeScale?: number;
   readonly blend?: GPUBlendState;
 }
 
@@ -203,6 +205,7 @@ export class PipelineCache implements CompileProgress {
             depthWriteEnabled: s.depthWrite ?? true,
             depthCompare: s.depthCompare ?? "less-equal",
             depthBias: s.depthBias ?? 0,
+            depthBiasSlopeScale: s.depthBiasSlopeScale ?? 0,
           }
         : undefined,
       multisample: { count: t.sampleCount },

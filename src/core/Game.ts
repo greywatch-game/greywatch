@@ -124,6 +124,9 @@ import { ZoneDraw } from "../render/ZoneDraw";
 import { WaterDraw } from "../render/WaterDraw";
 import { NearestRun } from "../render/NearestRun";
 import { GlassDraw } from "../render/GlassDraw";
+import { FadeDraw } from "../render/FadeDraw";
+import { FADE, FarthestRun } from "../render/FarthestRun";
+import { PLACED_WORDS } from "../render/celVertex";
 import { FlameDraw } from "../render/FlameDraw";
 import type { CelRecipe } from "../render/celMaterial";
 import { HULL_CHARRED } from "../render/hullProgram";
@@ -200,7 +203,8 @@ import {
 import { AimAssistSystem } from "../systems/AimAssistSystem";
 import { Atmosphere } from "../systems/Atmosphere";
 import { CaptureZoneSystem, zoneRecipes } from "../systems/CaptureZoneSystem";
-import { CombatFx } from "../systems/CombatFx";
+import { CombatFx, FADE_EMISSIVE } from "../systems/CombatFx";
+import { type Fade, type FadeKit, SPARK, DISC } from "../entities/fades";
 import {
   CombatSystem,
   type DamageKind,
@@ -519,6 +523,23 @@ function fileNearest(keys: Float64Array, order: Int32Array, n: number, key: numb
 }
 
 /**
+ * Files `code` into the first `n` of a list sorted FARTHEST first: a stable
+ * insertion, so it moves ahead only of one strictly nearer, as Babylon's stable
+ * sort over its active list put its transparent meshes (`backToFrontSortCompare`).
+ * Allocates nothing.
+ */
+function fileFarthest(keys: Float64Array, order: Int32Array, n: number, key: number, code: number): void {
+  let r = n;
+  while (r > 0 && keys[r - 1] < key) {
+    keys[r] = keys[r - 1];
+    order[r] = order[r - 1];
+    r--;
+  }
+  keys[r] = key;
+  order[r] = code;
+}
+
+/**
  * Babylon's frustum test of a mesh under its default culling strategy
  * (`CULLINGSTRATEGY_BOUNDINGSPHERE_ONLY`): its world bounding sphere against
  * the six planes, `BoundingSphere.isInFrustum` operation for operation — out
@@ -826,12 +847,32 @@ export class Game {
    */
   private readonly nearestRun: NearestRun;
   /**
-   * A round's BACKED glazing as our renderer draws it (`BABYLON_EXIT.md`
-   * X4.6e): the handover hands it the map's backed panes, the reflection bake
-   * points each group at its cube, and `glassPull` says which groups draw, in
-   * what order. Its see-through glazing is still Babylon's.
+   * A round's glazing as our renderer draws it (`BABYLON_EXIT.md` X4.6e): the
+   * handover hands it the map's glass, the reflection bake points each group
+   * at its cube, `glassFx` collapses a broken pane in it, and `farthestPull`
+   * says which groups draw, in what order.
    */
   private readonly glassDraw: GlassDraw;
+  /**
+   * The fading pools — every spark, dust disc, scorch and blob — as our
+   * renderer draws them (X4.6e), their members read inside the render by
+   * `farthestPull`.
+   */
+  private readonly fadeDraw: FadeDraw;
+  /**
+   * The one back-to-front run of the see-through panes and the fades (X4.6e):
+   * where each falls among the rest, ordered by `farthestPull` inside the render.
+   */
+  private readonly farthestRun: FarthestRun;
+  /** The four fading kits, in `FADE_KITS`' order, for `farthestPull`'s spheres. */
+  private readonly fadeKits: readonly FadeKit[];
+  /**
+   * The fading pools' members in the order their meshes stood in the scene —
+   * the sparks, the discs, the scorch — then the blobs, which a pool grows as
+   * bodies are first placed (`ShadowSystem.blobFades`): the order `farthestPull`
+   * files them in, which breaks a tie.
+   */
+  private readonly fadePools: readonly (readonly Fade[])[];
   /**
    * The last render's frustum planes, as numbers (`nearestPull`), and whether a
    * render has given any: what a surface is tested against inside the render, and
@@ -1051,7 +1092,8 @@ export class Game {
    * moving casters; its static ones are the map's, asked at its install)
    * and every effect pool of ours (the pieces: the tracers, the brass, the
    * thrown and laid bodies of both sides of the wire; the marks; the
-   * billows; the shards and the rubble; the fires) and the backed glazing. The building card's
+   * billows; the shards and the rubble; the fires; and since X4.6e the
+   * sparks, the dust discs, the scorch and the blobs) and the glazing. The building card's
    * warm-up waits on this list by name
    * before its first vantage (`core/PipelineWarmup.ts`), beside the map's
    * own pipelines, which its install asked; and our cache is SEALED once
@@ -1059,7 +1101,7 @@ export class Game {
    * DEV warning naming what this list missed. **This is what the
    * `warm(on)` poses of the pools that are ours became**: nothing of ours
    * is posed at a vantage. A new draw of ours joins it, or its first use
-   * compiles in the round. The pools still Babylon's keep their poses
+   * compiles in the round. No pool is Babylon's since X4.6e, so none is posed
    * (`stageWarmFrame`).
    */
   private readonly roundPipelines: readonly DeclaredPipelines[];
@@ -2278,7 +2320,7 @@ export class Game {
       this.ambience,
     );
     this.combat = new CombatSystem();
-    this.combatFx = new CombatFx(this.scene, this.mats);
+    this.combatFx = new CombatFx(this.mats);
     // The one event the picture of a round needs, and it is wired here rather
     // than with the cues in `wireBattle` because it is the PAIR's: the
     // simulation raises it once per resolved round and draws nothing, the view
@@ -2525,13 +2567,33 @@ export class Game {
     }
     this.debrisDrawn = new Int32Array(this.debrisDraw.capacity);
     this.debrisKeys = new Float64Array(this.debrisDraw.capacity);
+    // The fading pools (`BABYLON_EXIT.md` X4.6e): the four kits each pool
+    // made its meshes of, the sparks' and the discs' colours a slot each, the
+    // scorch's and the blob's maps through the seam.
+    this.fadeKits = [this.combatFx.sparkKit, this.combatFx.discKit, this.blastDebris.scorchKit, this.shadows.blobKit];
+    this.fadePools = [this.combatFx.fades, this.blastDebris.scorchFades, this.shadows.blobFades];
+    this.fadeDraw = new FadeDraw(
+      this.renderer,
+      this.fadeKits.map((k) => ({ positions: k.geometry.positions, uvs: k.geometry.uvs ?? null, indices: k.geometry.indices })),
+      this.mats.poolEmissiveRecipe(FADE_EMISSIVE),
+      () => this.mats.materialEpoch,
+      this.blastDebris.scorchMap,
+      this.shadows.blobMap,
+    );
+    this.farthestRun = new FarthestRun(
+      this.renderer,
+      this.glassDraw,
+      this.fadeDraw,
+      (into) => this.farthestPull(into),
+      (k) => this.fadeDraw.kit[k] === SPARK,
+    );
     // …and what all five drew (`ProfileReport.pools`): Babylon's counter has
     // counted no tracer, mark, thrown or laid body, nor any case, since X4.4b,
     // nor any billow, shard or chunk since X4.4c, nor any fire since X4.4d,
     // nor the cloud ring since X4.5b, nor the dome and the moon since X4.5c, nor
     // the rings and the flags since X4.6b, nor the grass since X4.6c, nor the
-    // water since X4.6d, nor a backed pane since X4.6e (no pools, but their
-    // draws owe the sum).
+    // water since X4.6d, nor the glazing, a spark, a disc, a scorch or a blob
+    // since X4.6e (pools, those last four, but the rest's draws owe the sum too).
     this.prof.setPools(() => ({
       drawn:
         this.pieceDraw.stats.drawn +
@@ -2545,12 +2607,15 @@ export class Game {
         this.grassDraw.stats.blades +
         this.grassDraw.stats.turf +
         this.waterDraw.stats.drawn +
-        this.glassDraw.stats.backed,
+        this.glassDraw.stats.backed +
+        this.glassDraw.stats.seeThrough +
+        this.fadeDraw.stats.drawn,
       masked:
         this.pieceDraw.stats.masked +
         this.blastDraw.stats.masked +
         this.flameDraw.stats.masked +
-        this.skyDraw.stats.masked,
+        this.skyDraw.stats.masked +
+        this.fadeDraw.stats.masked,
       instances: this.pieceDraw.stats.instances,
       marks: this.markDraw.stats.instances,
       billows: this.blastDraw.stats.instances,
@@ -2561,7 +2626,8 @@ export class Game {
       zones: this.zoneDraw.stats.drawn,
       grass: this.grassDraw.stats.blades + this.grassDraw.stats.turf,
       water: this.waterDraw.stats.drawn,
-      glass: this.glassDraw.stats.backed,
+      glass: this.glassDraw.stats.backed + this.glassDraw.stats.seeThrough,
+      fades: this.fadeDraw.stats.drawn,
     }));
     // The sky's ring is OUR renderer's (X4.5b), its dome and moon too (X4.5c), and
     // `Sky` is handed them below.
@@ -2586,6 +2652,7 @@ export class Game {
       { name: "the grass", ready: this.grassDraw.ready },
       { name: "the water", ready: this.waterDraw.ready },
       { name: "the glazing", ready: this.glassDraw.ready },
+      { name: "the sparks, dust discs, scorch and blobs", ready: this.fadeDraw.ready },
     ];
     // The sky is painted once here, the boot map's, and re-applied per round
     // alongside the environment; it is DRAWN only while a map stands
@@ -4648,9 +4715,9 @@ export class Game {
     // …and the water (X4.6d) on the same terms, each body's shape chosen by `follow`
     // above.
     this.drawWater();
-    // …and the backed glazing (X4.6e), read inside the render, where the camera
-    // and the frustum are this frame's.
-    if (this.glassDraw.installed) this.glassDraw.commit();
+    // …and the glazing and the fading pools (X4.6e), all of them read inside the
+    // render, where the camera and the frustum are this frame's.
+    this.drawBlended();
     this.scene.render();
     this.prof.end(P.render);
     if (warming) this.unstageWarmFrame();
@@ -5540,6 +5607,8 @@ export class Game {
     this.nearestRun.uninstall();
     this.glassDraw.uninstall();
     this.glassDraw.clear();
+    this.fadeDraw.uninstall();
+    this.farthestRun.uninstall();
     // The weapon stays drawn — the kit screen covers the menu — but a failure
     // of it with no round standing is the console's (X4.3c).
     this.viewDraw.onFailed((reason) => console.error(`[view] the weapon cannot be drawn — ${reason}`));
@@ -5778,13 +5847,15 @@ export class Game {
     // AHEAD of even the run: the `backed` panes, the last of that queue in a
     // round, ours since X4.6e (`GlassDraw`), nearest first, so a pane still goes
     // down ahead of the blocks it saves the shading of. Its see-through panes
-    // are still Babylon's, on its transparent list. An editor build's glazing
-    // is Babylon's whole.
+    // and every fade are the back-to-front run's, behind the moon at
+    // `"beforeBlended"` (`FarthestRun`). An editor build's glazing is Babylon's.
     if (!editor) this.glassDraw.install((reason) => this.worldFailed(reason, owner));
     this.grassDraw.install((reason) => this.worldFailed(reason, owner));
     if (!editor) this.zoneDraw.install((reason) => this.worldFailed(reason, owner));
     this.waterDraw.install((reason) => this.worldFailed(reason, owner));
     this.nearestRun.install();
+    if (!editor) this.fadeDraw.install((reason) => this.worldFailed(reason, owner));
+    if (!editor) this.farthestRun.install();
     if (!editor) this.flameDraw.install((reason) => this.worldFailed(reason, owner));
     if (!editor) this.blastDraw.install((reason) => this.worldFailed(reason, owner));
     if (!editor) this.pieceDraw.install((reason) => this.worldFailed(reason, owner));
@@ -7159,6 +7230,29 @@ export class Game {
   }
 
   /**
+   * Hands our renderer this frame's GLAZING and FADES (`BABYLON_EXIT.md` X4.6e):
+   * whether either may be drawn at all — and, for the fades, whether the glow
+   * may draw a spark's bloom, which `GlowRules.admits` asked of every mesh
+   * (`glowAdmits`). Which of them draws, and in what order, is asked inside the
+   * render (`farthestPull`). Once a frame, after the cull, in every state.
+   */
+  private drawBlended(): void {
+    if (this.glassDraw.installed) this.glassDraw.commit();
+    const fades = this.fadeDraw;
+    if (!fades.installed) return;
+    const pools = this.fadePools;
+    for (let p = 0; p < pools.length; p++) {
+      const pool = pools[p];
+      for (let i = 0; i < pool.length; i++) {
+        if (pool[i].node.visible) {
+          fades.commit(this.glowAdmits());
+          return;
+        }
+      }
+    }
+  }
+
+  /**
    * This render's frustum planes copied to numbers (`heldPlanes`), and whether
    * a surface is to be tested against them: a render has given planes and the
    * scene does not skip clipping (the warm-up's frames do).
@@ -7181,17 +7275,19 @@ export class Game {
   }
 
   /**
-   * What our renderer PULLS inside the render for this frame's BACKED GLAZING
+   * What our renderer PULLS inside the render for this frame's GLAZING
    * (`GlassDraw`, `BABYLON_EXIT.md` X4.6e), where the render has placed the
    * camera — what Babylon did with each group's mesh, step for step: a pane
    * (`GlassDraw.surfaces`, in birth order) is drawn while its block's cell is
    * offered (`WorldCulling.offersBlock`, what its mesh was a candidate by), the
    * size gate keeps its record's sphere (`keepsSphere`, as `offer` asked it of
    * the filed mesh) and the sphere passes the frustum test of the mesh's
-   * culling strategy (`inPlanes`, none while the scene skips clipping); every
-   * one BACKED, into group 0's opaque order, nearest first by `eyeDistanceSq`
+   * culling strategy (`inPlanes`, none while the scene skips clipping); a
+   * BACKED one into group 0's opaque order, nearest first by `eyeDistanceSq`
    * off `globalPosition`, stable (`fileNearest`), which `GlassDraw` draws first
-   * at `"beforeAlphaTest"`.
+   * at `"beforeAlphaTest"`; a SEE-THROUGH one kept, with its key in the
+   * transparent order — Babylon's `_distanceToCamera`, the square root of its
+   * centre from `globalPosition` — which the run files (`farthestPull`).
    */
   private glassPull(glass: GlassDraw): void {
     const eye = this.cameraSys.camera.globalPosition;
@@ -7213,9 +7309,112 @@ export class Game {
       const dy = c.y - ey;
       const dz = c.z - ez;
       const d2 = dx * dx + dy * dy + dz * dz;
-      fileNearest(glass.backedKeys, glass.backedOrder, backed++, d2, i);
+      if (s.backed) {
+        fileNearest(glass.backedKeys, glass.backedOrder, backed++, d2, i);
+      } else {
+        s.kept = true;
+        s.key = Math.sqrt(d2);
+      }
     }
     glass.backedDraws = backed;
+  }
+
+  /**
+   * What our renderer PULLS inside the render for this frame's one back-to-front
+   * run (`FarthestRun`, `BABYLON_EXIT.md` X4.6e), where the render has placed the
+   * camera — what Babylon did with the meshes on its transparent list, step for
+   * step:
+   * - a FADE is drawn while its node is switched on and its visibility is over
+   *   0, composed as `computeWorldMatrix` composed its mesh this frame
+   *   (`composeNode`), its world sphere carried from its kit's (`worldSphere`),
+   *   through the size gate — but a spark and a disc, emissive as their meshes'
+   *   materials were, which `offer` never gated (its `glows`) — on THIS frame's
+   *   sphere, the pools' rule (`docs/rendering.md`, "The pools, ours": no drop
+   *   can latch), and the frustum test; its world, look and bloom written at its
+   *   index among the drawn fades;
+   * - a SEE-THROUGH pane as `glassPull` kept it, at its key;
+   * - and all of them into group 0's TRANSPARENT order: farthest first by
+   *   `_distanceToCamera` — the square root of the sphere's centre from
+   *   `globalPosition` — a tie in the order the meshes stood in the scene (the
+   *   sparks, the discs and the scorch, made at construction; then the panes,
+   *   made at the build; then the blobs, made as each body is first placed,
+   *   which in a first round is after the panes — the one tie order no single
+   *   list holds, and no frame has been found to need: two different surfaces
+   *   at one distance to the bit), stable (`fileFarthest`). A spark's bloom is
+   *   `GlowRules.colour` as `GlowPass` asked it of the mesh: its emissive colour
+   *   faded by the fog at that same distance, its material's alpha of 1.
+   */
+  private farthestPull(run: FarthestRun): void {
+    const eye = this.cameraSys.camera.globalPosition;
+    const ex = eye.x;
+    const ey = eye.y;
+    const ez = eye.z;
+    const held = this.heldPlanes;
+    const clip = this.holdPlanes();
+    const culling = this.culling;
+    let n = 0;
+    const fades = this.fadeDraw;
+    const drawing = fades.drawing;
+    const glowOn = fades.masking;
+    const kits = this.fadeKits;
+    const pools = this.fadePools;
+    let count = 0;
+    // The panes are filed between the scorch and the blobs, in scene order.
+    for (let p = 0; p < pools.length; p++) {
+      if (p === pools.length - 1) n = this.fileGlass(run, n);
+      if (!drawing) continue;
+      const pool = pools[p];
+      for (let i = 0; i < pool.length; i++) {
+        const f = pool[i];
+        const node = f.node;
+        if (!node.visible || !(f.visibility > 0)) continue;
+        const kit = kits[f.kit];
+        composeNode(node);
+        const sphere = node.sphere;
+        worldSphere(kit.centre, kit.radius, node.world, sphere);
+        if (f.kit !== SPARK && f.kit !== DISC && !culling.keepsSphere(sphere.x, sphere.y, sphere.z, sphere.radius)) continue;
+        if (clip && !inPlanes(sphere.x, sphere.y, sphere.z, sphere.radius, held)) continue;
+        const dx = sphere.x - ex;
+        const dy = sphere.y - ey;
+        const dz = sphere.z - ez;
+        const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        fades.reserve(count + 1);
+        const at = count++;
+        fades.world.set(node.world.m, at * PLACED_WORDS);
+        const look = fades.look;
+        look[at * 4] = f.slot;
+        look[at * 4 + 1] = f.visibility;
+        fades.kit[at] = f.kit;
+        if (f.kit === SPARK && glowOn) {
+          const c = FADE_EMISSIVE[f.slot - 1];
+          const fade = 1 - fogAmountAt(d);
+          const glow = fades.glow;
+          glow[at * 4] = c.r * fade;
+          glow[at * 4 + 1] = c.g * fade;
+          glow[at * 4 + 2] = c.b * fade;
+          glow[at * 4 + 3] = 1;
+          run.masked++;
+        }
+        run.reserve(n + 1);
+        fileFarthest(run.keys, run.order, n++, d, FADE + at);
+      }
+    }
+    if (drawing) fades.upload(count);
+    run.draws = n;
+  }
+
+  /** The see-through panes `glassPull` kept, filed into the run's order from `n`, which it hands back advanced. */
+  private fileGlass(run: FarthestRun, n: number): number {
+    const glass = this.glassDraw;
+    if (!glass.drawing) return n;
+    const surfaces = glass.surfaces;
+    for (let i = 0; i < surfaces.length; i++) {
+      const s = surfaces[i];
+      if (!s.kept) continue;
+      run.reserve(n + 1);
+      fileFarthest(run.keys, run.order, n++, s.key, i);
+    }
+    return n;
   }
 
   /**
@@ -7739,19 +7938,11 @@ export class Game {
     this.warmPose.rot.copyFrom(camera.rotation);
     this.shadowFocus.copyFrom(vantage);
     camera.position.copyFrom(vantage);
-    // …and what the map does not have standing: the pools a round draws from
-    // the moment it starts that are still BABYLON'S — a shot's sparks and
-    // dust discs and a blast's scorch, each idle and switched off until then,
-    // each of which used to compile on the frame it was first needed — an
-    // idle member of each, posed as it is in flight, for this frame, and the
-    // player's blob shadow. Those alone, until they move with the glazing
-    // (`BABYLON_EXIT.md` X4.6): every pool that is OURS — a tracer, a mark, a
-    // case, a thrown or laid body, a billow, a shard, a chunk, a flame — is on
-    // the round's declared list instead (`roundPipelines`, X4.4e), as every
-    // body, hull and weapon is (X4.1d-X4.3d), and is posed by nothing.
-    this.combatFx.warm(true);
-    this.blastDebris.warm(true);
-    this.shadows.warmBlob(true, this.player);
+    // Nothing of the round's pools is posed here: every one of them is OUR
+    // renderer's — a tracer, a mark, a case, a thrown or laid body, a billow, a
+    // shard, a chunk, a flame and, since `BABYLON_EXIT.md` X4.6e, a spark, a
+    // dust disc, a scorch and a blob — and on the round's declared list
+    // (`roundPipelines`, X4.4e), as every body, hull, weapon and pane is.
     this.updateSceneForCamera(0, this.shadowFocus, null, NO_SOLDIERS, NO_SOLDIERS);
     this.culling.setWarm(true);
     this.scene.skipFrustumClipping = true;
@@ -7762,9 +7953,6 @@ export class Game {
   private unstageWarmFrame(): void {
     this.scene.skipFrustumClipping = false;
     this.culling.setWarm(false);
-    this.combatFx.warm(false);
-    this.blastDebris.warm(false);
-    this.shadows.warmBlob(false, this.player);
     // Position and rotation outright rather than through `place`, whose
     // `setTarget` would re-derive the rotation from a target the camera may
     // never have been pointed at.

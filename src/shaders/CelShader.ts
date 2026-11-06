@@ -753,35 +753,6 @@ export interface GlassSpec {
   tint: number;
 }
 
-/**
- * One reflection probe: a wrapped view of its cube for Babylon's glazing, the one
- * reader of one left, the water reading its cube directly since `BABYLON_EXIT.md`
- * X4.6d (`WaterMirror`), without the parallax correction, for the reason
- * `celProbeBox` argues.
- *
- * `ReflectionSystem` hands the three over together because they are one fact:
- * a cube is only meaningful with the point it was baked from and the strength
- * it is worth. Splitting them into setters would let a surface sample one
- * probe's picture at another probe's strength.
- */
-export interface CubeReflection {
-  /** The baked cube. Alpha 1 where the bake drew world, 0 where it saw sky. */
-  cube: BaseTexture;
-  /** Where the bake was taken from. */
-  at: Vector3;
-  /** How much of it the surface returns, against the sky it would show. */
-  strength: number;
-}
-
-/**
- * The same, plus the box the mirrored ray is re-aimed against — what the
- * glazing needs, and what makes a reflection stay put on the building it
- * belongs to as a player walks along a frontage.
- */
-export interface ProbeReflection extends CubeReflection {
-  boxMin: Vector3;
-  boxMax: Vector3;
-}
 
 /** What `CelMaterialFactory.readLighting` hands back — live, read-only. */
 export interface LightingView {
@@ -1085,14 +1056,14 @@ export class CelMaterialFactory {
   private readonly albedos = new WeakMap<object, Color3>();
 
   /**
-   * What each glazing material was built FROM, so a per-probe twin of it can be
-   * built from the same thing.
+   * What each glazing material was built FROM: which glass it is (`glassKind`)
+   * and the materials `setDefaultReflection` re-binds.
    *
    * The reflection is the one piece of shared state that is not shared: every
    * other uniform in here is the same on every material in the cache, and a
-   * cube is one probe's picture of one place. So a pane group's material is
-   * keyed by (colour, slot) rather than by colour alone, and this is what lets
-   * `glassProbe` mint slot 7 of a colour it was never told the name of.
+   * cube is one probe's picture of one place. So a group's probe is a recipe
+   * of its own (`glassProbeRecipe`), its cube bound by the glazing draw, and
+   * no material is minted a slot (`BABYLON_EXIT.md` X4.6e).
    */
   private glassRecipes = new Map<
     ShaderMaterial,
@@ -1213,9 +1184,9 @@ export class CelMaterialFactory {
    * `own` and `ownTexture` in the same call that sets them on the material.
    * Only the getters our renderer draws keep one — `getWorldCel`, `get`,
    * `getGlossy`, `getTranslucent`, `getGroundTextured`, `getCloth`, and since
-   * `BABYLON_EXIT.md` X4.6e `getGlass` (a round's backed glazing is ours; a
-   * group's probe is `glassProbeRecipe`'s) — and a body has no material at
-   * all, only a recipe (`bodyCelRecipe`, X4.1d).
+   * `BABYLON_EXIT.md` X4.6e `getGlass` (a round's glazing is ours; a group's
+   * probe is `glassProbeRecipe`'s) — and a body has no material at all, only
+   * a recipe (`bodyCelRecipe`, X4.1d).
    */
   private readonly recipes = new Map<ShaderMaterial, MutableRecipe>();
 
@@ -1773,17 +1744,10 @@ export class CelMaterialFactory {
    * MATERIAL, so two variants in one placement fall into two merged meshes
    * without either merge being told that glazing now comes in two kinds.
    */
-  getGlass(
-    hex: string,
-    glass: GlassSpec,
-    slot = 0,
-    backed: string | null = null,
-  ): ShaderMaterial {
+  getGlass(hex: string, glass: GlassSpec, backed: string | null = null): ShaderMaterial {
     const kind = backed ? `glass-backed-${backed}` : "glass";
-    const cacheKey = slot === 0 ? `\0${kind}-${hex}` : `\0${kind}-${hex}#${slot}`;
-    const name =
-      (backed ? `cel-glass-${hex}-on-${backed}` : `cel-glass-${hex}`) +
-      (slot === 0 ? "" : `#${slot}`);
+    const cacheKey = `\0${kind}-${hex}`;
+    const name = backed ? `cel-glass-${hex}-on-${backed}` : `cel-glass-${hex}`;
     let mat = this.cache.get(cacheKey);
     if (!mat) {
       const variant = backed ? GLASS_BACKED_VARIANT : GLASS_VARIANT;
@@ -1820,8 +1784,8 @@ export class CelMaterialFactory {
       // keeps a distant window a window — see GLASS_DEPTH_UNITS.
       mat.zOffsetUnits = CelMaterialFactory.GLASS_DEPTH_UNITS;
       // A recipe, as every material our renderer draws keeps one: a round's
-      // backed glazing is ours (`render/GlassDraw.ts`, `BABYLON_EXIT.md`
-      // X4.6e), and Babylon draws this material, stating the same values.
+      // glazing is ours (`render/GlassDraw.ts`, `BABYLON_EXIT.md` X4.6e), and
+      // an editor build's draws this material, which states the same values.
       this.bear(mat, variant, CelMaterialFactory.GLASS_DEPTH_UNITS);
       this.own(mat, "baseColor", Color3.FromHexString(hex));
       if (backed) {
@@ -2389,9 +2353,9 @@ export class CelMaterialFactory {
    * four glass numbers — with that group's probe in it: where its cube was
    * baked from and at what strength, and the box its ray is corrected
    * against. A fresh recipe a call, its arrays its own, which is what the
-   * per-slot material twin of `glassProbe` is for a pane Babylon still draws —
-   * the CUBE is not in it: it is the bake's, and the draw binds it where it
-   * lies (`GlassDraw.point`). Null for a material that is no glazing.
+   * per-slot material twin it replaced was until X4.6e — the CUBE is not in
+   * it: it is the bake's, and the draw binds it where it lies
+   * (`GlassDraw.point`). Null for a material that is no glazing.
    */
   glassProbeRecipe(
     base: unknown,
@@ -2420,61 +2384,6 @@ export class CelMaterialFactory {
     probe[3] = refl.strength;
     this.materialEpoch++;
     return { defines: recipe.defines, depthBias: recipe.depthBias, values, textures: {} };
-  }
-
-  /**
-   * The glazing material for ONE reflection probe: the same colour and the
-   * same four glass numbers as `base`, carrying that probe's cube, the box its
-   * ray is corrected against, and where it was baked from.
-   *
-   * This is the one place the per-colour cache is deliberately widened, and
-   * the reason is that a cube is not shared state: it is one probe's picture
-   * of one place, and two buildings that reflect the same thing are two
-   * buildings in the same street. `slot` is the probe's index and the second
-   * half of the cache key, so a map installed twice reuses the same materials
-   * rather than growing the cache by a mapful every round.
-   *
-   * Costs no draw call: the glazing is already one merged mesh per map block
-   * (`MapBuilder.paneGroup`), so this hands each of those meshes a material of
-   * its own rather than splitting anything. What it does cost is a seat in the
-   * cache for every one of them — the per-frame walks are guarded, so that is
-   * paid on the frames that move the camera or the lights.
-   */
-  glassProbe(
-    base: ShaderMaterial,
-    slot: number,
-    refl: ProbeReflection,
-  ): ShaderMaterial {
-    const recipe = this.glassRecipes.get(base);
-    if (!recipe) {
-      // Not a glazing material, which is a caller error rather than a state
-      // this can be in. Handing the base back leaves the pane drawn and
-      // reflecting nothing, which is the old behaviour and not a crash.
-      if (import.meta.env.DEV) {
-        console.warn(`[cel] glassProbe on a non-glass material: ${base.name}`);
-      }
-      return base;
-    }
-    // `backed` travels with the recipe rather than being re-derived: it is the
-    // difference between the opaque twin and the blended one, and a probe twin
-    // that dropped it would put a tower's curtain wall back in the transparent
-    // pass the moment `ReflectionSystem` claimed a slot for it.
-    const mat = this.getGlass(recipe.hex, recipe.glass, slot, recipe.backed);
-    mat.setTexture("reflectionCube", refl.cube);
-    // **Cloned, and that is not defensive tidiness.** `ShaderMaterial` keeps
-    // the Vector3 it is handed BY REFERENCE and reads it again on every bind —
-    // which is exactly what `applyCamera` leans on to push one eye onto the
-    // whole cache with a single copy. Here it inverts: the caller hands over
-    // one scratch pair reused down a loop over 37 probes, so storing the
-    // reference would leave every glazing material in the map sharing the last
-    // probe's box.
-    mat.setVector3("reflectBoxMin", refl.boxMin.clone());
-    mat.setVector3("reflectBoxMax", refl.boxMax.clone());
-    mat.setVector4(
-      "reflectProbe",
-      new Vector4(refl.at.x, refl.at.y, refl.at.z, refl.strength),
-    );
-    return mat;
   }
 
   /**
@@ -2786,8 +2695,9 @@ export class CelMaterialFactory {
    * which is a pane that reflects the sky and nothing else.
    *
    * Unlike every other `apply*` here this is not a copy of shared state, and
-   * that is the whole shape of the reflection: `glassProbe` is what gives a
-   * material a real one, and it does it on the spot rather than from a walk.
+   * that is the whole shape of the reflection: `glassProbeRecipe` is what
+   * gives a round's group a real one, on the spot rather than from a walk; an
+   * editor build's glazing keeps this, its default cube at a strength of 0.
    */
   private applyReflection(mat: ShaderMaterial): void {
     if (this.defaultCube) mat.setTexture("reflectionCube", this.defaultCube);

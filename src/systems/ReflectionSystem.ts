@@ -12,18 +12,19 @@
  * is released are decided here; the cubes are our renderer's, their faces
  * culled and drawn from the main pass's own world with the probe's eye
  * PASSED; the water reads its cube where it lies (`WaterDraw`, `BABYLON_EXIT.md`
- * X4.6d), and so does a round's BACKED glazing since X4.6e (`GlassDraw.point`);
- * Babylon's one reader left, the see-through glazing, is handed a wrapped view
- * of each of its pool (`wrapCubeTexture`). There is no other bake: Babylon's
+ * X4.6d), and since X4.6e so does a round's glazing (`GlassDraw.point`): no
+ * cube of the pools is wrapped for Babylon, whose one reader left is an editor
+ * build's glazing, which samples only the default cube. There is no other bake: Babylon's
  * `ReflectionProbe`s went with X3.7c, a world our bake cannot draw being the
  * world's failure (`BlockHandover`, `Game.worldFailed`). A bake that drained
  * depends on our renderer for nothing: its cubes stand.
  *
  * Invariants:
  * - One probe per glazed BLOCK, standing at the CENTRE of the first glazing
- *   group filed under it, and every group on that block gets a material of its
- *   own carrying that probe's cube. Costs no draw call: the glazing is already
- *   one merged mesh per map block.
+ *   group filed under it (its record's world box), and every group on that
+ *   block is pointed at a recipe of its own carrying that probe and its cube
+ *   (`CelMaterialFactory.glassProbeRecipe`, `GlassDraw.point`). Costs no draw
+ *   call: the glazing is already one merged surface per map block.
  * - A probe draws the map's surfaces of ours MINUS whatever encloses it — the
  *   blocks it serves, told to the cull as numbers (`exclusionOf`; read it
  *   before touching this, because a probe standing inside a tower with the
@@ -51,21 +52,22 @@
  * - Nothing moves for a bake: the eye, the opaque alpha and the held clouds
  *   are the bake's own frame's (`CelMaterialFactory.fillBakeFrame`).
  * - The cubes are pooled and never destroyed, like the bot rigs
- *   (`ProbeBake.cube`), each glazing one with the wrapped view its readers
- *   sample, which is never disposed either: disposing it destroys the cube.
+ *   (`ProbeBake.cube`); since X4.6e none of the pools' is wrapped for Babylon.
  * - **The DEFAULT cube is a cube of ours that nothing ever bakes**, made in
  *   the constructor before any map exists (WebGPU makes it zeroed: alpha 0,
  *   the sky) and bound only at a strength of 0 — the glazing material a pane
- *   is born with (`CelMaterialFactory.setDefaultReflection`), through a wrapped
- *   view, and the water of a build that bakes nothing, directly. It replaced
- *   Babylon's probe 0 at X3.7c.
+ *   is born with (`CelMaterialFactory.setDefaultReflection`), through the ONE
+ *   wrapped view left (`wrapCubeTexture`), which an editor build's glazing
+ *   samples until `BABYLON_EXIT.md` X5.3; and directly the water of a build
+ *   that bakes nothing, and a round's glazing in a build whose world our bake
+ *   does not hold (`pointDefault`). It replaced Babylon's probe 0 at X3.7c.
  * - A map with no glazing bakes no glazing probe. The default cube stays
  *   bound to the glazing material regardless.
  * - **An EDITOR build bakes nothing either**, for the reason the whole file is
  *   affordable: a bake is a build step because the world is static, and the
  *   editor is the one place it is not. See `build`.
  */
-import { type BaseTexture, type Scene, type ShaderMaterial, Vector3 } from "@babylonjs/core";
+import { type Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { wrapCubeTexture } from "../core/wrappedTextures";
 import { Vector3 as MathVector3 } from "../math";
@@ -73,13 +75,12 @@ import type { GlassDraw } from "../render/GlassDraw";
 import type { ProbeBake, ProbeExclusion, ProbeJob } from "../render/ProbeBake";
 import type { WaterMirror } from "../render/WaterDraw";
 import { blockCoordsOf, blockKey } from "../render/wgsl/clusterCull";
-import type { CelMaterialFactory, ProbeReflection } from "../shaders/CelShader";
+import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { GameMap, PaneGroup, WorldBox } from "../world/MapBuilder";
 import type { SurfaceBounds } from "../world/worldGeometry";
 
-/** A cube of ours: the view Babylon's glazing samples (none in the water's pool), and the probe our bake is handed. */
+/** A cube of ours: the probe our bake is handed. */
 interface OurProbe {
-  readonly wrapped: BaseTexture | null;
   readonly job: ProbeJob;
 }
 
@@ -133,12 +134,10 @@ interface InstallPlan {
 export class ReflectionSystem {
   /**
    * The cubes, by pool and slot (`ProbeBake.cube`, which keeps no index of
-   * its own), each with the probe as our bake is handed it and, in the glazing's
-   * pool, the wrapped view Babylon's glazing is handed (`wrapCubeTexture`). Made on
-   * first use and kept for the process: a wrapped view is never disposed, since
-   * disposing one destroys the texture it wraps. Grown on demand and never
-   * shrunk: a map with fewer glazed blocks than the last one leaves the spare
-   * cubes holding the last map's picture, which nothing samples.
+   * its own), each with the probe as our bake is handed it. Made on first use
+   * and kept for the process. Grown on demand and never shrunk: a map with
+   * fewer glazed blocks than the last one leaves the spare cubes holding the
+   * last map's picture, which nothing samples.
    */
   private readonly pools: Record<Pool, OurProbe[]> = { glazing: [], water: [] };
   /** The cube bound at a strength of 0 before any probe claims a reader — see the header. */
@@ -161,16 +160,13 @@ export class ReflectionSystem {
    * build that bakes nothing.
    */
   private plan: InstallPlan | null = null;
-  /** Scratch for the box handed to the factory, which copies it. */
-  private readonly boxMin = Vector3.Zero();
-  private readonly boxMax = Vector3.Zero();
 
   constructor(
     private readonly scene: Scene,
     private readonly mats: CelMaterialFactory,
     /** Our renderer's half of the bake: the cubes and their faces. */
     private readonly bake: ProbeBake,
-    /** A round's backed glazing, which each group's recipe and cube are pointed at (`BABYLON_EXIT.md` X4.6e). */
+    /** A round's glazing, which each group's recipe and cube are pointed at (`BABYLON_EXIT.md` X4.6e). */
     private readonly glass: Pick<GlassDraw, "surfaces" | "point">,
   ) {
     // This frame's share of whatever bake is outstanding. It rides the render
@@ -473,36 +469,22 @@ export class ReflectionSystem {
   }
 
   /**
-   * Every glazing group of `plan` handed its slot's probe: a see-through
-   * group's mesh the material sampling its slot's cube (`glassProbe`), and a
-   * BACKED group, our renderer's since `BABYLON_EXIT.md` X4.6e, a recipe of
-   * its own (`glassProbeRecipe`) and the slot's cube, which the glazing draw
-   * reads where it lies.
+   * Every glazing group of `plan` pointed at its slot's probe: a recipe of
+   * its own (`CelMaterialFactory.glassProbeRecipe` — the probe twin its mesh
+   * was handed until `BABYLON_EXIT.md` X4.6e) and the slot's cube, which the
+   * glazing draw reads where it lies.
    */
   private pointGlazing(plan: InstallPlan): void {
     const strength = CONFIG.graphics.reflection.strength;
     for (const { group, base, slot, boxMin, boxMax } of plan.bases) {
-      if (!group.mesh) {
-        const recipe = this.mats.glassProbeRecipe(base, { boxMin, boxMax, at: plan.glazing[slot].at, strength });
-        const surface = this.surfaceOf(group);
-        if (recipe && surface) this.glass.point(surface, recipe, this.cubeOf("glazing", slot).job.cube.texture);
-        continue;
-      }
-      this.boxMin.copyFrom(boxMin);
-      this.boxMax.copyFrom(boxMax);
-      const refl: ProbeReflection = {
-        cube: this.cubeOf("glazing", slot).wrapped!,
-        boxMin: this.boxMin,
-        boxMax: this.boxMax,
-        at: plan.glazing[slot].at,
-        strength,
-      };
-      group.mesh.material = this.mats.glassProbe(base as ShaderMaterial, slot, refl);
+      const recipe = this.mats.glassProbeRecipe(base, { boxMin, boxMax, at: plan.glazing[slot].at, strength });
+      const surface = this.surfaceOf(group);
+      if (recipe && surface) this.glass.point(surface, recipe, this.cubeOf("glazing", slot).job.cube.texture);
     }
   }
 
   /**
-   * Every backed group of a ROUND whose world our bake does not hold pointed
+   * Every glazing group of a ROUND whose world our bake does not hold pointed
    * at what its mesh was born with: its own material's recipe, at a strength
    * of 0, over the default cube — the sky half of the reflection and no more.
    */
@@ -515,7 +497,7 @@ export class ReflectionSystem {
     }
   }
 
-  /** A backed group's surface of the glazing draw: the one its record names, or null (one Babylon draws). */
+  /** A round's group's surface of the glazing draw: the one its record names, or null (an editor build's). */
   private surfaceOf(group: PaneGroup): GlassDraw["surfaces"][number] | null {
     if (group.mesh) return null;
     const surfaces = this.glass.surfaces;
@@ -580,7 +562,7 @@ export class ReflectionSystem {
     return job;
   }
 
-  /** The cube in `pool`'s `slot`, made on first use with its probe and, for the glazing, its wrapped view. */
+  /** The cube in `pool`'s `slot`, made on first use with its probe. */
   private cubeOf(pool: Pool, slot: number): OurProbe {
     const slots = this.pools[pool];
     // Grown to the slot.
@@ -588,7 +570,6 @@ export class ReflectionSystem {
       const name = `${pool} ${slots.length}`;
       const cube = this.bake.cube(name);
       slots.push({
-        wrapped: pool === "glazing" ? wrapCubeTexture(this.scene, cube.texture, `reflection ${name}`) : null,
         job: {
           cube,
           eye: new MathVector3(),

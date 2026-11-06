@@ -250,7 +250,10 @@ async function playRound(page) {
     // The pane's shards are counted as they are DRAWN as well (frames with a
     // shard in the main pass), so a pane phase that created nothing can be
     // told from one whose shards were never on screen to compile anything.
-    const meshProto = Object.getPrototypeOf(g.combatFx.sparks[0].mesh);
+    // Any mesh of the scene's (its colliders, in a round where every pool is
+    // our renderer's since BABYLON_EXIT.md X4.6e): the prototype that owns `render`.
+    let meshProto = Object.getPrototypeOf(g.scene.meshes[0]);
+    while (!Object.prototype.hasOwnProperty.call(meshProto, "render")) meshProto = Object.getPrototypeOf(meshProto);
     const render = meshProto.render;
     let shardDraws = 0;
     // Since BABYLON_EXIT.md X4.4c a shard is our renderer's (`debrisDraw`):
