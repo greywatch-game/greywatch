@@ -58,13 +58,23 @@ export class FarthestRun {
     private readonly blooms: (k: number) => boolean,
   ) {}
 
-  /** Room for `n` draws: the one allocation, past the most any frame before drew. */
+  /**
+   * Room for `n` draws: the one allocation, past the most any frame before
+   * drew. Asked by the pull MID-FILING, so what it has filed is carried into
+   * the grown arrays (as `FadeDraw.reserve` carries its own): grown empty,
+   * a frame filing past 64 drew pane 0 in place of the first 64. The bound
+   * is not fixed at an install — the blobs grow as bodies are first placed.
+   */
   reserve(n: number): void {
     if (n <= this.order.length) return;
     let cap = this.order.length;
     while (cap < n) cap *= 2;
-    this.order = new Int32Array(cap);
-    this.keys = new Float64Array(cap);
+    const order = new Int32Array(cap);
+    const keys = new Float64Array(cap);
+    order.set(this.order);
+    keys.set(this.keys);
+    this.order = order;
+    this.keys = keys;
   }
 
   /** Draws the run from the next frame on: the caller installs it after the moon's draw at `"beforeBlended"`. */
