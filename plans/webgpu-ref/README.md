@@ -316,10 +316,10 @@ lamp or a reflection. See the floor, below.
   the blobs were the same case until X4.6e** and nobody saw it: their meshes'
   bounds were refreshed by the same call, so no row could tell Babylon's
   latch from a gate on this frame's sphere, and X4.6e's note said the two
-  were the same. Its review found the latch with a live probe; it is ported
-  exactly (`Fade.gate`), so `waitUntilDrawn` refreshes every scorch's and
-  blob's gate sphere before it asks, as the scene's call computed their
-  meshes, until the owner's drop of that latch.
+  were the same. Its review found the latch with a live probe; it was ported
+  exactly for one commit, with this refresh restated in `waitUntilDrawn`, and
+  then dropped by the owner's decision of 2026-11-06, the refresh with it:
+  nothing here touches the game's state before asking whether it is ready.
 
 ## One process per MAP, and the pause lid never comes off
 

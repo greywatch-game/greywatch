@@ -343,14 +343,9 @@ export class BlastDebrisSystem implements PhysicsClient {
     return this.scorch.map;
   }
 
-  /** Every mark, by slot — the order their meshes stood in the scene: what `Game.farthestPull` reads (and the gate sphere of, `Fade.gate`, writes). */
+  /** Every mark, by slot — the order their meshes stood in the scene: what `Game.farthestPull` reads (never writes). */
   get scorchFades(): readonly Fade[] {
     return this.scorch.fades;
-  }
-
-  /** The warm-up's frame's computation of the last free mark's world (`ScorchMarks.warmGate`): `Game.stageWarmFrame`. */
-  warmGate(): void {
-    this.scorch.warmGate();
   }
 
   burst(at: Vector3, power: number, ground: DebrisGround, camPos: Vector3): boolean {
@@ -690,7 +685,7 @@ class ScorchMarks {
     for (let i = 0; i < s.marks; i++) {
       // Built at radius 1 and scaled, which a flat disc may do and a physics
       // body may not: nothing here is under the solver.
-      const fade = new Fade(SCORCH, this.kit);
+      const fade = new Fade(SCORCH);
       fade.node.quaternion = MathQuaternion.Identity();
       this.fades.push(fade);
       this.marks.push({ fade, t: -1 });
@@ -744,18 +739,6 @@ class ScorchMarks {
       m.t = -1;
       m.fade.node.visible = false;
     }
-  }
-
-  /**
-   * What the building card's warm-up did to the size gate's latch while the
-   * scorch was a Babylon mesh (`Fade.gate`): it showed the LAST mark, if
-   * free, for the warm-up's frame, gate off — so that mark's world was
-   * computed where it stands. Nothing is shown now; the computation alone is
-   * kept, until the owner's drop of the latch.
-   */
-  warmGate(): void {
-    const slot = this.marks[this.marks.length - 1];
-    if (slot.t < 0) slot.fade.compute(this.kit);
   }
 }
 

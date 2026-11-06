@@ -9,8 +9,7 @@
  * by `BlastDebrisSystem`, the blobs by `ShadowSystem`), `FadeKit` (a kit's
  * arrays and its LOCAL bounding sphere) and `fadeKit`, and `Fade` (one
  * member's node — its transform, its switch and its world as last composed —
- * its `visibility`, the paint it wears and, for a scorch and a blob, the
- * sphere the size gate reads, `gate`, which latches as Babylon's did).
+ * its `visibility` and the paint it wears).
  * Invariants:
  * - **A fade's node is the MESH it replaced, channel for channel**
  *   (`PieceNode`, `composeNode`: `computeWorldMatrix`, bit for bit), and its
@@ -29,7 +28,7 @@
  */
 import type { GeometryBuffer } from "../geometry/buffer";
 import { Vector3 } from "../math";
-import { PieceNode, composeNode, worldSphere } from "./pieces";
+import { PieceNode } from "./pieces";
 
 /** The four kits, in the order their pools' meshes were made. */
 export const FADE_KITS = ["spark", "disc", "scorch", "blob"] as const;
@@ -69,38 +68,6 @@ export class Fade {
   visibility = 1;
   /** Its paint, a 1-based slot into the emissive table, or 0 for black. */
   slot = 0;
-  /**
-   * The world sphere Babylon's size gate read off the mesh — a scorch's and
-   * a blob's, the two the gate could drop: its bounds as of the last time
-   * its world was COMPUTED, which `_evaluateActiveMeshes` did only for a
-   * candidate the gate let through (`WorldCulling.offer`), and before that
-   * the kit's local sphere under the identity a mesh is built at. So a
-   * member first switched on far from where it was last computed is
-   * measured from THERE — the world origin, for one never computed — and a
-   * drop LATCHES until the eye comes within reach of that stale sphere.
-   * Ported exactly (`BABYLON_EXIT.md` X4.6e, its review, the owner's
-   * decision of 2026-11-06); `Game.farthestPull` reads and writes it.
-   */
-  readonly gate = { x: 0, y: 0, z: 0, radius: 0 };
 
-  /** `shape`, the kit's arrays and sphere, seeds `gate` for a gated member: its mesh's bounds as built. */
-  constructor(readonly kit: FadeKitId, shape?: FadeKit) {
-    if (shape) {
-      this.gate.x = shape.centre.x;
-      this.gate.y = shape.centre.y;
-      this.gate.z = shape.centre.z;
-      this.gate.radius = shape.radius;
-    }
-  }
-
-  /**
-   * Its mesh's world COMPUTED as it stands — the node composed and `shape`'s
-   * sphere carried into `gate` — where something other than the frame's gate
-   * computed it: the warm-up's frame, which drew it gate or no gate
-   * (`Game.stageWarmFrame`), and a harness's `scene.isReady()`.
-   */
-  compute(shape: FadeKit): void {
-    composeNode(this.node);
-    worldSphere(shape.centre, shape.radius, this.node.world, this.gate);
-  }
+  constructor(readonly kit: FadeKitId) {}
 }
