@@ -1916,7 +1916,7 @@ moved; **all of this is past since X4.5c**: no sky piece is a Babylon mesh):
   stood over", with the `Active` commit; `Sky.ts`'s header and
   `CloudShader.ts`'s; `FILES.md` for each new file.
 
-### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4, its review 5d43b2e), X4.6b **LANDED** (483165a, its review e1f5712), X4.6c **LANDED** (4a16b5f, its review d80c078), X4.6d **LANDED** (5f26b00), X4.6e **LANDED** (a3d24c6, ccd194a, 0e44130) — **all five LANDED**
+### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4, its review 5d43b2e), X4.6b **LANDED** (483165a, its review e1f5712), X4.6c **LANDED** (4a16b5f, its review d80c078), X4.6d **LANDED** (5f26b00), X4.6e **LANDED** (a3d24c6, ccd194a, 0e44130, its note a5a4b28) — **all five LANDED**
 
 Everything left on the floor that Babylon still draws, the three blended pools
 X4.4 left waiting for the glazing, and the blob shadows (decided 2026-11-03).
@@ -2178,7 +2178,7 @@ Greyfen, `F2` from the menu and each eye of the map's rows):
   (200,000 random cases against the old class, in Node); stale comments and `WaterDraw.setGeometry`'s doc. Bank by `exact.mjs`
   against a BEFORE at af5eff1: 137 of 137 byte-equal, the same 34 stale rows red at the same means. Typecheck, build, corecheck and
   parity pass. **Not verified**: a server's match in a browser, the phone, the NaN path on a real frame.
-- **X4.6e — the glazing, the three blended pools and the blob shadows LANDED** (a3d24c6, ccd194a, 0e44130;
+- **X4.6e — the glazing, the three blended pools and the blob shadows LANDED** (a3d24c6, ccd194a, 0e44130, its note a5a4b28;
   2026-11-05; no change to the picture in the first two, the owner's decided one in the third; the full note and the
   brief are in `plans/done/babylon_exit_landed.md`). **Babylon draws nothing in a round** — its opaque and transparent
   lists are empty and its active list too in a live Coldharbour round; an editor build is Babylon's (its glazing until
