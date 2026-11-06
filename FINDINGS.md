@@ -3106,3 +3106,58 @@ quote the sweep's table, which stands as measured but cannot be re-taken.
 Port the mode to `GlassDraw`: the group's record (`PaneGroup.record`, its
 sphere and box), the tint through its recipe, and the hide through the cull's
 own switches rather than a mesh's; then re-run it once against the table.
+
+## 70. `ShadowSystem.blobs` keeps every body it ever placed, a roster a round for the page's life
+
+**Open since `BABYLON_EXIT.md` X4.6** (found in code by X4.6e's review, measured
+by X4.6's whole-step verification). `ShadowSystem.blobFor` makes a body's blob
+the first time `updateBlobs` places it and files it in `blobs`, a
+`Map<Combatant, Fade>`, and in `blobFades`; nothing ever takes one out, and
+`hideBlobs` (the teardown's) only switches them off. The page's own match is a
+fresh session every round, so every round brings a fresh `NetSoldier` per slot
+(`NetSession` builds a new `NetRoster`), and the map keeps the last round's as
+KEYS. It predates X4.6e: at a269bfb the same map held a Babylon `Mesh` per body
+(`Map<Combatant, Mesh>`), each a `blobShadow` in the scene.
+
+### What is measured
+
+Coldharbour offline, five rounds in one page (`startRound` from `playing`, a
+spawn and 240 frames each), a forced GC (CDP `HeapProfiler.collectGarbage`
+three times) before each reading, the bodies held by `WeakRef`:
+
+| | round 1 | 2 | 3 | 4 | 5 |
+| --- | --- | --- | --- | --- | --- |
+| HEAD (4623a7f): `blobs.size`, `blobFades.length` | 17 | 33 | 49 | 65 | 81 |
+| HEAD: heap after GC, KB | 95,378 | 95,389 | 96,285 | 96,751 | 97,150 |
+| a269bfb: `blobs.size`, `blobShadow` meshes in the scene | 17 | 33 | 49 | 65 | 81 |
+| a269bfb: `scene.meshes.length` | 2,047 | 2,063 | 2,079 | 2,095 | 2,111 |
+| a269bfb: heap after GC, KB | 107,454 | 108,036 | 109,218 | 110,086 | 110,710 |
+
+Sixteen a round, one per roster slot, and the player's one (the `Player` is the
+same object every round). **Every earlier round's sixteen bodies are still alive
+after the GC at round 5, on both trees, and the blob map is what holds them**:
+with its keys cleared by a probe (`blobs.clear()`, nothing else written) and
+collected again, rounds 1 to 4 are gone and only round 5's sixteen live, the
+heap falling 769 KB at HEAD and 493 KB at a269bfb. A second HEAD run read the
+same counts (heap 93,920 to 95,493 KB). The heap's per-round growth is noisy
+across runs and is not quoted as a rate.
+
+### What is derived from the code
+
+- `blobFades` grows with the map, and two loops walk it every frame in every
+  state (`Game.drawBlended`'s visibility scan and
+  `farthestPull`'s filing), so the dead entries are a per-frame walk that
+  lengthens a roster a round. Not timed: at 81 entries it is noise.
+- A bigger map grows faster: 48 a round on Sarab and Cinderhaven (24 a side).
+- A server's match keeps its roster across a rotation (`NetRoster.setFielded`
+  rebuilds only when the count or the viewer's side moves), so it grows only
+  then; not measured.
+
+### How to settle it
+
+Forget a blob when its body goes: at the teardown (`Game.teardownMap`, beside
+`hideBlobs`) or when a roster is replaced, dropping the map's entries and the
+fades with them (`Game.blobsBeforeGlass` counts the fades standing at a round's
+glazing install, so a change here owes that count a look, and the run's tie
+order after a first round with it). Then the probe above: `blobs.size` 17 every
+round and no earlier round's body alive after a GC.

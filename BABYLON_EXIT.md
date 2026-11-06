@@ -2237,7 +2237,14 @@ Greyfen, `F2` from the menu and each eye of the map's rows):
   0.0008, 0.0014 and 0.0149 in five of the seven blast rows, each of which would print
   `within floor` with its mark gone.
 - **Verify, the whole step:** the bank's water and glass vantages; Greyfen's
-  grass at every rung; a flag captured.
+  grass at every rung; a flag captured. **DONE** (2026-11-06, against a BEFORE at
+  a269bfb; the note "X4.6, the whole step verified" in `plans/done/babylon_exit_landed.md`):
+  131 of 132 old rows byte-equal by `exact.mjs`, `fx-blob-sort` the one move (5,270 px by
+  78/255, every pixel a blob's), the six new rows byte-equal to `ref/` and across two
+  processes; Greyfen's three rungs at 13 poses each, wind steps and turf, 39 of 39
+  byte-equal; the flag posed at six meters on two maps, 14 of 14 byte-equal, and captured
+  live with the player in the ring, no error, the seal holding. The blob map's leak is
+  measured (`FINDINGS.md` 70).
 
 ### X4.7 — GPU particles — **S–M**
 
