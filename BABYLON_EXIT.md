@@ -1916,7 +1916,7 @@ moved; **all of this is past since X4.5c**: no sky piece is a Babylon mesh):
   stood over", with the `Active` commit; `Sky.ts`'s header and
   `CloudShader.ts`'s; `FILES.md` for each new file.
 
-### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4, its review 5d43b2e), X4.6b **LANDED** (483165a, its review e1f5712), X4.6c **LANDED** (4a16b5f, its review d80c078), X4.6d **LANDED** (5f26b00)
+### X4.6 — Water, glazing, grass, flags and capture rings — **M–L, as five sub-steps** (split 2026-11-03, decided the same day) — X4.6a **LANDED** (df74bd4, its review 5d43b2e), X4.6b **LANDED** (483165a, its review e1f5712), X4.6c **LANDED** (4a16b5f, its review d80c078), X4.6d **LANDED** (5f26b00), X4.6e **LANDED** (a3d24c6, ccd194a, 0e44130) — **all five LANDED**
 
 Everything left on the floor that Babylon still draws, the three blended pools
 X4.4 left waiting for the glazing, and the blob shadows (decided 2026-11-03).
@@ -2178,56 +2178,26 @@ Greyfen, `F2` from the menu and each eye of the map's rows):
   (200,000 random cases against the old class, in Node); stale comments and `WaterDraw.setGeometry`'s doc. Bank by `exact.mjs`
   against a BEFORE at af5eff1: 137 of 137 byte-equal, the same 34 stale rows red at the same means. Typecheck, build, corecheck and
   parity pass. **Not verified**: a server's match in a browser, the phone, the NaN path on a real frame.
-- **X4.6e — the glazing, the three blended pools and the blob shadows, together.** The
-  see-through panes, the three pools and the blobs land in ONE commit, because one sort
-  of ours orders every blended surface (decided 2026-11-01, X4.4's "Find out first",
-  and for the blobs 2026-11-03), and no half can be proven without the rest. **`backed`
-  panes write depth, so they may go in a commit ahead of it** if the step runs large. It:
-  - replaces Babylon's transparent sort with ours, back to front by the same
-    centres, so a tie comes out as it did;
-  - holds the moon's place (`"beforeBlended"` stands on the seam's item 6, which
-    this sort takes from under it: `sky-moon`, `sky-disc` and `sky-motes` read it);
-  - gives `GlassFx`'s collapse a buffer of ours, and takes the round's glazing off
-    `wrapCubeTexture`. **It cannot retire it**: the editor's glazing binds the default
-    cube through it until X5.3 (`ReflectionSystem.defaultCube`). The harness's
-    put-away of a `breaks` event writes the range back through the mesh and moves
-    with the buffer;
-  - draws each surface under its own world matrix or bakes it (the list above: most
-    are not at identity, and a `WorldPane`'s range is into its local positions);
-  - keeps `backed` ahead of the blocks on `"beforeAlphaTest"`, which is the whole of
-    what makes a backed pane pay (`Game`'s sort comment), and the sparks' mask draw
-    between the mask's open and its late draws, where Babylon's mask has them;
-  - moves the three pools' `warm(on)` poses and `warmBlob` into X4.4e's declared list,
-    retiring the last of them on `CombatFx`, `BlastDebrisSystem` and `ShadowSystem`,
-    and with them `stageWarmFrame`'s list of what is Babylon's and idle;
-  - moves the **blob**: its disc, its radial texture, its `visibility` and its
-    switch (`updateBlob`, `hideBlobs`) onto ours, with the depth state in the table
-    above, in the sort by its centre, out of the mask, through the size gate
-    (`tooSmallMesh`) and, like every blended draw here, accumulating into the coverage
-    alpha. **Its FACING is part of the port**: what a port must match today is a disc
-    that shows from below and not from above, so it is byte-identical or it is the
-    picture change "Decisions" holds open, in a commit of its own;
-  - **ports the scorch exactly**. A port that cannot match comes back to the owner
-    with the numbers rather than being taken as a picture change;
-  - **takes the last of Babylon's opaque list in a round, the `backed` panes**, in their own
-    commit here or ahead of here. **The zones' split and `"first"`'s exception are gone already**:
-    X4.6d's one run stands at `"beforeAlphaTest"`, its bytes having held it there, and nothing in it
-    ties with a `backed` pane. So what this removes is the panes' reach into Babylon's list and that
-    list's hold on a round, and the panes keep their place ahead of the blocks, above, on either side
-    of the run. An editor build's list stands until X5.3 either way;
-  **The BEFORE**: `fx-glass-sort` (a fade squarely behind and squarely in front of
-  a pane), `fx-blob-sort` (a blob behind a pane, between it and a fade, and in front of
-  both, and one that must own no pixel), `fx-glass`, the impact rows, `fx-scorch`,
-  `fx-scorch-glass` (a mark sorted behind a pane and one in front, both through it),
-  `fx-fire-fade`, `fx-glass-broken`, `fx-water-fade` and `sarab-pane-water`. **Rewrites**:
-  `ShadowSystem`'s header and its "CreateDisc faces +Z" comment, `PipelineWarmup`'s
-  list, `merge.ts`'s stale counts, `docs/rendering.md`'s blob paragraph, and the
-  `CLAUDE.md` lines on what stays Babylon's, for the owner. **Read first against
-  X5.3**: glazing in an editor build stays Babylon's until then, and with it a
-  transparent list there, the seam's item 6 and `wrapCubeTexture`, and **the editor's
-  `ed-*` proxies are on that list with it**, usually outnumbering the panes. No pool and
-  no blob is ever drawn there (`--editor`, every eye), so the sort of ours never meets
-  that list, and neither does it need to: X5.3 takes the list, whole.
+- **X4.6e — the glazing, the three blended pools and the blob shadows LANDED** (a3d24c6, ccd194a, 0e44130;
+  2026-11-05; no change to the picture in the first two, the owner's decided one in the third; the full note and the
+  brief are in `plans/done/babylon_exit_landed.md`). **Babylon draws nothing in a round** — its opaque and transparent
+  lists are empty and its active list too in a live Coldharbour round; an editor build is Babylon's (its glazing until
+  X5.3). a3d24c6: `render/GlassDraw.ts` draws the `backed` pane groups under their own world matrices (the cel stage's
+  placed twin, the matrix read whole), nearest first AHEAD of everything of ours at `"beforeAlphaTest"`. ccd194a: the
+  see-through groups and every spark, dust disc, scorch and blob (`render/FadeDraw.ts`, `entities/fades.ts`) in ONE
+  back-to-front run of ours (`render/FarthestRun.ts`) at `"beforeBlended"` behind the moon, farthest first by Babylon's
+  `_distanceToCamera` (the square root), a tie to the mesh first in the scene, and the sparks' blooms in the mask behind
+  the moon's; the fades' pixel and state read off each material's compiled effect, the scorch's slope term
+  (`depthBiasSlopeScale`) new; `warm(on)`, `warmBlob` and `stageWarmFrame`'s poses retired; the round's glazing off
+  `wrapCubeTexture` (the default cube keeps it), `glassProbe` gone; a break written into `GlassDraw`'s buffer. The
+  harness draws the 31 picture-stream numbers a blob's Babylon mesh drew (`Geometry.RandomId`), which had moved
+  `fx-blob-sort`'s bullet mark. 0e44130: **the blob faces UP** (the owner, 2026-11-05): `fx-blob-sort` alone moves,
+  5,270 px by up to 78/255, every one a blob's (4,465 of the three above the eye, now unseen from below, 805 of the one
+  on the pavement, now seen), re-banked in `ref/`; `FINDINGS.md` 67 deleted; the row no longer holds a blob among the
+  panes, a row the owner may ask for. **Measured** by `exact.mjs`, each commit against its parent's take: 137 of 137,
+  136 (`sarab-ground`, the flake), 136 and the move; the same 34 stale rows red. `census` equal, Babylon 0 a row;
+  `pipelines.mjs --round` zero of ours in play; live rounds, `F2`, the menu and a second round clean; a frame's allocation
+  159 KB to 73 KB. Report versions 34 and 35. **Not verified**: a server's match in a browser, the phone.
 - **Contracts it keeps:**
   - no pane of either kind casts a shadow
   - see-through glazing writes no depth
