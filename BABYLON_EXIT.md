@@ -2246,7 +2246,7 @@ Greyfen, `F2` from the menu and each eye of the map's rows):
   live with the player in the ring, no error, the seal holding. The blob map's leak is
   measured (`FINDINGS.md` 70).
 
-### X4.7 — GPU particles — **S–M, as four sub-steps** (split 2026-11-07: the owner instructed that X4.7 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the four-way split was proposed by the orchestrating session and run under that instruction) — X4.7a **LANDED** (bad6caa, its review 30bd400), X4.7b **LANDED** (8c691c7, its review 312dc44), X4.7c **LANDED** (9dff2c4, its review 9d5ab4a), X4.7d **LANDED** (999d4ca, its review fd7199b) — **all four LANDED**; the step's own Verify and the Gate after Phase 4 not yet claimed
+### X4.7 — GPU particles — **S–M, as four sub-steps** (split 2026-11-07: the owner instructed that X4.7 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the four-way split was proposed by the orchestrating session and run under that instruction) — X4.7a **LANDED** (bad6caa, its review 30bd400), X4.7b **LANDED** (8c691c7, its review 312dc44), X4.7c **LANDED** (9dff2c4, its review 9d5ab4a), X4.7d **LANDED** (999d4ca, its review fd7199b) — **all four LANDED**; the step's own Verify not yet marked (the owner's); the Gate after Phase 4 passed 2026-11-07
 
 `Atmosphere`'s ash and `RotorWash`'s two rings (`GPUParticleSystem`, a box and a
 `CylinderParticleEmitter`) as our own compute particles: our update, our draw, our
@@ -2848,9 +2848,10 @@ each as stated):
   ash and the rings, 143 of 143 byte-equal at X4.7d; landings on Sarab's sand and
   Cinderhaven's water, live; `pipelines.mjs cinderhaven --round` and `sarab --round` zero
   of either renderer in play; `scene.particleSystems` empty in a round and an editor build.
-  **Not marked done**: the whole step's Verify and the Gate after Phase 4 below (a live
+  **Not marked done**: the whole step's Verify. The Gate after Phase 4 below (a live
   round's `render` log with `surfaces.mjs`, the seam's list read against PERF_PLAN B4)
-  remain open.
+  passed on 2026-11-07, its live log showing no Babylon particle in a round or an editor
+  build; it reads the Verify as measured in full, for the owner to mark.
 
 **Gate after Phase 4:** in a round, Babylon's scene draws only the post chain (an
 editor build draws whole until X5.3). That is true of the blob shadows only because
@@ -2858,6 +2859,75 @@ X4.6e now carries them, and checked rather than assumed: `surfaces.mjs` on the r
 and a live round's `render` log, since a class no frozen frame raises is in no row.
 Read `babylonSeam.ts`'s list against PERF_PLAN B4's criterion. If the count of
 internals is still high, it is a measure of how much risk Phase 5 removes.
+
+**Passed, 2026-11-07, at 55d98aa** (no change to the game; **the `exit-phase-4` tag is
+the owner's call**, as the phase-3 one still is). In a round Babylon draws the post chain
+and nothing else, on every bank row and through three live rounds:
+- **`surfaces.mjs` on all 143 rows of the seven maps**: no Babylon draw through
+  `Mesh.render` or a particle field in any pass (main, mask or target) of any row, the
+  seam on its fallback in all 143. Given a fourth wrapper for the gate (the engine's
+  `_draw` outside any mesh or field, `effect -> target`), every row's other Babylon draws
+  are the post chain alone: `kernelBlur` four times (`glowNearH`, `glowNear`, `glowWideH`,
+  `glowWide`: the glow's blur), `celInk` (the glow's compose in its last line), `fxaa`,
+  `volumetrics_medium`, `motionBlur`, `paperGrain` to the canvas — 143, 142 or 141 rows
+  each, the five `hollowmere-post-*` rows dropping their own pass (`noblur`, `nograin`,
+  `nofxaa`, `novol`) and `post-glowlow` adding the glow's `glowDown`. `FrameDepth` and
+  render scale draw nothing of their own. No page or console error.
+- **A live round's render log** (the gate's scratch `gate-p4/renderlog.mjs`: the engine's
+  `_draw` by frame class, keyed by the mesh rendering or the effect, with the target),
+  offline, headless on the Windows box, through the menu, the building card, deploy, two
+  lives (every primary round the compass, a frag and a molotov, the launcher and a mine,
+  a pane broken — by `glass.shoot` on both maps, 60 frames of fire not reaching one — and
+  on the helicopter maps a flying hull pinned down to 0.3 m and back up), the walk at the
+  far flag until the bots killed the player, the death cam, the redeploy, the menu and a
+  second round: **Coldharbour**, run twice (13,972 and 5,796 frames of play, 80 and 23
+  kills, 38 and 12 blasts, the player killed and redeployed in each), **Cinderhaven** (18,649 frames, 112 kills,
+  the rings drawn, killed twice) and **Sarab** (21,653 frames of play and 10,419 of the
+  round-over card, 288 kills, 43 blasts, all three kinds crewed; the player was never
+  killed there). In menu, loading, deploy, playing, dying and roundover alike: **the nine
+  post-chain draws once a frame and not one mesh draw**; on every sampled frame (every
+  twentieth) `scene.particleSystems`, the sprite managers, `scene.layers` and
+  `scene.effectLayers` 0, the active meshes 0, and group 0's opaque, alpha-tested,
+  transparent and depth-only lists empty — so the group is never visited and the seam's
+  items 6 and 10 do not fire in a round. The one mesh held for drawing is
+  `localShadowProxy`, which nothing draws. Babylon's one other GPU work in a round is
+  `GiVolume`'s compute (`computeSource`, every frame: X5.1's, not a draw). No page or
+  console error and no `[pipelines]` warning.
+- **An editor build (`F2`) is the stated exception and only that**: Babylon draws it
+  whole — 356 (Coldharbour) and 423 (Cinderhaven) mesh keys, 295,745 and 572,090 draws
+  over 122 frames, into the frame, the glow's mask and the lamps' atlas — and its own
+  shadow generators (`moonShadow`, `nearShadow`, `foliageDepth`, and `flashDepth` on
+  Cinderhaven), beside the same post chain. **So does the building card raised from it**,
+  for the two frames before `buildRound` tears the editor's build down (4,504 and 9,130
+  draws): the editor's world, not a round's, X5.3's with the rest. A round's own card
+  draws no mesh.
+- **The seam's list against B4.** Ten numbered internals, as at the end of Phase 3
+  (item 10 came at X3.5; c4d3021 had ten): Phase 4 added none and retired none (rule 4).
+  None is one per pass. Items 1 (the device), 7 and 8 (a Babylon texture's view and
+  sampler) and 9 (the encoder submitted first) serve every pass of ours alike; 2 to 5
+  (the open pass, the bundle list, its attachments, the target and its flip) serve
+  whichever Babylon pass is open, which is the main pass and the glow's mask; 6 and 10
+  (the group's `beforeBlended` and `beforeAlphaTest` points) serve the main pass's group
+  and, since X4.7d, only in an editor build. Each retires: 6 and 10 at X5.3; 2 to 5 for
+  the mask at X5.2 and for the main pass at X5.4; 1 and 9 at X5.4; 7 and 8 piecemeal —
+  `GiVolume`'s seven textures at X5.1, the editor's shadow generators' maps at X5.3, the
+  water's foam at X5.4 — and the canvas-made textures read through `hostTexture` (the
+  mote, the puff, the scorch, the blob, the sky's, the cel recipes' own) at no named step
+  before X6.1 deletes the file. Outside the seam, its header's four touches in three
+  files (`FrameDepth` X5.4; `webgpuLeaks` and `FrameProfile`'s two, X5.4 and X6.1).
+  **Against the criterion that reads ONE SEAM**, which by B4's own words is the case for
+  keeping Babylon owning the frame: the frame's ownership is not forced by upgrade risk.
+  B4 is decided the other way for the exit's own reason (removing Babylon, X5.4), which
+  the count does not argue against; ten in the seam and four outside it is what Phase 5
+  and X6.1 remove.
+
+**Not verified:** a server's match in a browser; the phone; the lids (pause, kit,
+settings, lobby) and the benchmark in a live round (the kit bay and the post settings are
+in the rows, frozen); a helicopter flown down by a pilot (the hull was pinned; bots flew
+their own); a pane broken by a round's own path rather than `glass.shoot`; the player's
+death on Sarab. **X4.7's whole-step Verify** is measured in full by its sub-steps (X4.7,
+"What the sub-steps measured toward it") and this gate adds the live log with no Babylon
+particle: it can be marked done, which is the owner's to do.
 
 ---
 

@@ -25,6 +25,13 @@
  * it, to `<dir>/<map>-<row>.png`, the names `bank.mjs --check --keep` writes, so
  * the two directories compare frame by frame with `diff.mjs`.
  *
+ * **A fourth wrapper hears what no `Mesh.render` carries** (Phase 4's gate): the
+ * engine's `_draw`, which every Babylon draw of any kind reaches, logged when no
+ * mesh or field is rendering — the post chain's passes, and anything else Babylon
+ * might draw on its own (a layer, an effect layer, a sprite) — as `effect ->
+ * target`, printed under a row when it differs from the row before and totalled
+ * over the run at the end. It draws nothing and changes no state.
+ *
  * **The list a mesh is on is read from WHERE it comes in the log**, between the
  * points: ahead of `beforeAlphaTest` is Babylon's opaque list, from there to
  * `opaque` its alpha-tested list, and past `beforeBlended` its transparent list
@@ -147,6 +154,10 @@ function hangProbe(page) {
     };
     const s = {
       rec: false,
+      /** Inside a `Mesh.render` or a field's `render` (the engine-level log skips those). */
+      inMesh: 0,
+      /** Babylon's draws this frame that came through NO `Mesh.render`, `effect -> target`. */
+      engine: [],
       log: [],
       hide: null,
       frame: undefined,
@@ -202,7 +213,13 @@ function hangProbe(page) {
         s.log.push(entry);
       }
       s.drawn = null;
-      const out = render.apply(this, a);
+      s.inMesh++;
+      let out;
+      try {
+        out = render.apply(this, a);
+      } finally {
+        s.inMesh--;
+      }
       if (entry) entry.gpu = s.drawn;
       return out;
     };
@@ -227,7 +244,13 @@ function hangProbe(page) {
         if (!preWarm && !forceUpdateOnly && s.hide?.has(cls)) return 0;
         const pass = s.inMask ? "mask" : e._currentRenderTarget === s.frame ? "main" : "target";
         s.drawn = null;
-        const out = fieldRender.call(this, preWarm, forceUpdateOnly);
+        s.inMesh++;
+        let out;
+        try {
+          out = fieldRender.call(this, preWarm, forceUpdateOnly);
+        } finally {
+          s.inMesh--;
+        }
         if (s.rec && !preWarm && out > 0) {
           const eye = scene.activeCamera.globalPosition;
           const c = this.emitter;
@@ -282,6 +305,26 @@ function hangProbe(page) {
       }
       return out;
     };
+    // **Every Babylon draw that comes through NO `Mesh.render`** (Phase 4's gate,
+    // `BABYLON_EXIT.md`): the engine's `_draw`, which every draw of Babylon's of
+    // any kind reaches, logged when no mesh or field is rendering — the post
+    // chain's passes, and anything else Babylon draws on its own (a layer, an
+    // effect layer, a sprite). By its effect's name and the target it drew into
+    // (`canvas` for the swap chain). Our renderer's draws never reach it.
+    const effName = (eff) => {
+      const n = eff?.name;
+      if (typeof n === "string") return n;
+      if (n && typeof n === "object") return n.fragment ?? n.fragmentElement ?? n.vertex ?? n.vertexElement ?? "(inline)";
+      return "(none)";
+    };
+    const drawOf = e._draw;
+    e._draw = function (...a) {
+      if (s.rec && !s.inMesh) {
+        const rt = this._currentRenderTarget;
+        s.engine.push(`${effName(this._currentEffect)} -> ${rt ? rt.label || rt.texture?.name || "target" : "canvas"}`);
+      }
+      return drawOf.apply(this, a);
+    };
     const r = g.renderer;
     const points = new Map([
       [r.runFirst, "first"],
@@ -327,6 +370,7 @@ function recordFrame(page) {
     return new Promise((res) => {
       g.scene.onBeforeRenderObservable.addOnce(() => {
         s.log = [];
+        s.engine = [];
         s.rec = true;
         g.scene.onAfterRenderObservable.addOnce(() => {
           s.rec = false;
@@ -340,7 +384,7 @@ function recordFrame(page) {
             if (!m.alwaysSelectAsActiveMesh && !m.isInFrustum(planes)) continue;
             gated[cls] = (gated[cls] ?? 0) + 1;
           }
-          res({ log: s.log, gated });
+          res({ log: s.log, gated, engine: s.engine });
           s.log = [];
         });
       });
@@ -557,6 +601,15 @@ async function editorBuild(id) {
 }
 
 const report = {};
+/** Each engine-level draw (`effect -> target`) and the rows it was in. */
+const engineRows = {};
+let lastEngine = null;
+/** A frame's engine-level draws as one line: each in order of first draw, with its count. */
+function engineLine(engine) {
+  const n = new Map();
+  for (const d of engine) n.set(d, (n.get(d) ?? 0) + 1);
+  return [...n].map(([d, k]) => `${d}${k > 1 ? ` x${k}` : ""}`).join(", ");
+}
 for (const id of targets) {
   if (EDITOR) {
     report[id] = await editorBuild(id);
@@ -583,10 +636,10 @@ for (const id of targets) {
     await settle(page, 6);
     if (ROWS.size && !ROWS.has(v.id)) continue;
 
-    const { log, gated } = await recordFrame(page);
+    const { log, gated, engine } = await recordFrame(page);
     const order = readOrder(log);
     const classes = summarise(order);
-    const row = { classes, order, gated };
+    const row = { classes, order, gated, engine };
     let base = "";
     if (PIXELS || KEEP) {
       base = (await page.screenshot({ type: "png", timeout: 120_000 })).toString("base64");
@@ -652,6 +705,11 @@ for (const id of targets) {
       .map(([k, n]) => `${k}=${n}`)
       .join(" ");
     console.log(`  ${v.id.padEnd(26)} [seam: ${row.paths.join("/") || "no phase"}] ${line}${over ? `  || ${over}` : ""}`);
+    // The engine-level draws, printed when they differ from the row before.
+    const sig = engineLine(engine);
+    if (sig !== lastEngine) console.log(`      babylon, through no Mesh.render: ${sig || "nothing"}`);
+    lastEngine = sig;
+    for (const d of new Set(engine)) (engineRows[d] ??= new Set()).add(`${id}-${v.id}`);
     for (const it of order) {
       if (!it.field) continue;
       console.log(
@@ -666,6 +724,13 @@ for (const id of targets) {
     for (const e of [...pageErrors, ...consoleErrors].slice(0, 5)) console.log(`    ${String(e).slice(0, 300)}`);
   }
   await page.close();
+}
+const engineKeys = Object.keys(engineRows);
+if (engineKeys.length) {
+  const rows = Object.values(report).reduce((a, m) => a + Object.keys(m).length, 0);
+  console.log(`
+Babylon's draws through no Mesh.render, over ${rows} rows:`);
+  for (const d of engineKeys) console.log(`  ${d}: ${engineRows[d].size} rows`);
 }
 if (OUT) writeFileSync(OUT, JSON.stringify(report));
 await browser.close();

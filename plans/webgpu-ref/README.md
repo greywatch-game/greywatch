@@ -206,7 +206,13 @@ node plans/webgpu-ref/particles.mjs [map...] [--frames=N] [--out=f.json] [--agai
   pixel. What it reads stops being reported as each surface leaves Babylon, which is
   how a sub-step shows it took the whole of one. **An empty class says only that
   frame**: no frozen frame reaches `updateBlobs`, so a blob is in no row but one that
-  raises it with a `blob` event. X4.6a's note has the table.
+  raises it with a `blob` event. X4.6a's note has the table. **What comes through
+  no `Mesh.render` is logged too** (Phase 4's gate, `BABYLON_EXIT.md`): the engine's
+  `_draw` while no mesh or field renders — the post chain's passes and anything else
+  Babylon would draw on its own (a layer, an effect layer, a sprite) — as `effect ->
+  target`, under a row when it differs from the row before and totalled per draw over
+  the run at the end. A frozen frame still raises only what that frame raises, so the
+  gate read a live round's log beside it (its record names the script).
 
 - **`particles.mjs`** is the GPU particle fields' CPU half, logged frame by frame in
   a live frame loop over the deploy screen's HELD world (`BABYLON_EXIT.md` X4.7a; not a

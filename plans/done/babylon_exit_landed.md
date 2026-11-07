@@ -9441,3 +9441,56 @@ comments only). An independent review found nothing real and nothing architectur
   renderer in play. The whole step's Verify and the Gate after Phase 4 (a live round's
   `render` log with `surfaces.mjs`, the seam's list read against PERF_PLAN B4) remain open.
 - **Gates**: typecheck passes; `git diff` is docs, records and comments alone.
+
+### The Gate after Phase 4 — **PASSED** (2026-11-07, at 55d98aa)
+
+No change to the game. **The `exit-phase-4` tag is the owner's call**, and is not taken
+here. The record of what was measured stands under the gate in `BABYLON_EXIT.md`; this
+note adds how.
+
+- **The instrument change.** `plans/webgpu-ref/surfaces.mjs` gained a fourth wrapper:
+  the engine's `_draw`, logged while no `Mesh.render` and no field's `render` is on the
+  stack (`s.inMesh`), as `effect -> target`, printed under a row when it differs from the
+  row before and totalled per draw at the end. Without it the tool could not see the post
+  chain at all (no post process comes through `Mesh.render`), so "only the post chain"
+  could not be read off a row; with it, the rows say which passes Babylon draws and
+  nothing else moved in the tool. It draws nothing and changes no state; the frames were
+  not re-compared against the bank for it (`--keep` not run), the wrapper being a call
+  through. The README's bullet says so.
+- **The rows.** `surfaces.mjs` over every map, twice (before and after the wrapper): 143
+  rows, no class in any, the seam's path `fallback` in all 143; the engine-level totals
+  as the plan records them. Run time about four minutes a pass.
+- **The live log.** The scratch `gate-p4/renderlog.mjs` (in the session's scratchpad, not
+  the repo): boots a map through `harness.mjs`'s `bootMap` with the HUD shown, wraps
+  `engine._draw` (keyed by the mesh in `Mesh.render`, folded of digits, else the effect,
+  with the render target's label), `engine.computeDispatch`, and samples every twentieth
+  frame `scene.meshes` enabled, visible and not `solid`, the particle systems, sprite
+  managers, layers, effect layers, the camera's post processes, the active meshes and
+  each rendering group's lists. The frame class is `g.state` at the engine's begin-frame,
+  a building card raised from the editor told apart. The round drives `g.input` as
+  `pipelines.mjs --round` does (the trigger, the throw, the forward axis and the sprint
+  redefined), pins a flying hull through `followEye` as X4.7d's `live.mjs` did, and walks
+  the player at the control point farthest from the spawn, firing, until the authority
+  kills them (200 s cap). Counted at the doors: Coldharbour rounds 197 / throws 2 /
+  blasts 38 / fires 8 / rubble 37 / rockets 2 / shard bursts 12 / kills 80 (the second
+  run 141 / 1 / 12 / 1 / 11 / 2 / 2 / 23); Cinderhaven 197 / 2 / 10 / 1 / 9 / 2 / 1 /
+  112; Sarab 188 / 2 / 43 / 1 / 42 / 2 / 0 / 288 (the round ran out of tickets: 10,419
+  frames of `roundover`, no mesh drawn there either).
+- **What the first Coldharbour run showed and the second settled.** The first logged 273
+  mesh keys over two frames under `loading`; the editor's `F2` came last in that run, and
+  the second, with the card raised from the editor classed apart, put all of them there
+  (4,504 draws, two frames) and none under a round's card. The same on Cinderhaven
+  (9,130). It is the editor's build standing under the card for the two frames
+  `startRound` waits before `buildRound` tears it down.
+- **The seam's count**, read off `git show` of the header at e59b96a (five, X3.2),
+  c4d3021 (ten, the end of Phase 3) and HEAD (ten). The breakdown and the B4 reading are
+  in the plan. One thing for the plan, not a fault of the gate: the canvas-made textures
+  our draws read through `hostTexture` (items 7 and 8) have no step named before X6.1;
+  X5.4's foam bullet covers only a texture Babylon DECODED and mipped.
+- **X4.7's whole-step Verify**: every item it names was measured by X4.7c and X4.7d
+  (the particle rows byte-equal, the two landings live with the hull pinned, the two
+  `--round` runs with none of the wash's in play, no particle system in a round or an
+  editor build), and the live log here adds a round and an editor build with no Babylon
+  particle draw. It can be marked done; marking it is the owner's.
+- **Gates**: typecheck and build (`check-babylon-free`, `check-proving`) pass at 55d98aa.
+  `git diff` is this note, the plan's record, `surfaces.mjs` and the README.
