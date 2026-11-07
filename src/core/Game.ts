@@ -3711,7 +3711,7 @@ export class Game {
     // A no-op unless it moved; a move is one uniform on every bumped ground.
     this.mats.setGroundRelief(this.settings.groundRelief);
     // A no-op unless the tier moved; a change stands up a new texture set and
-    // republishes it to every cel material (`GiVolume.setQuality`).
+    // republishes it to the frame (`GiVolume.setQuality`).
     this.gi.setQuality(this.overrides.gi(this.settings.gi));
     // Each a no-op unless its own map's rung moved; a change rebuilds that
     // generator at the new size and re-binds it to every consumer.

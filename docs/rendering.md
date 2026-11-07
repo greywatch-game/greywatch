@@ -566,8 +566,21 @@ phone**, which is why a coarse pointer defaults to `low` — `FINDINGS.md` 44.
 - **Seven textures and six uniforms on every cel material, bound always**
   (`GI_SAMPLER_NAMES`, `GI_UNIFORM_NAMES`), through the factory's `applyShadow`,
   the one door all six creation paths share. `GiVolume` publishes a real set in
-  its constructor and keeps one published whatever the setting. Grass and water
-  do not declare them and keep the flat path.
+  its constructor and keeps one published whatever the setting; OUR renderer's
+  frame reads it (`fillFrame`, `fillFrameTextures`). Grass and water do not
+  declare them and keep the flat path.
+- **An editor build has NO GI until `BABYLON_EXIT.md` X5.3**, by the owner's
+  decision of 2026-11-07 (X5.1b's row 1). Its world is drawn by BABYLON's cel
+  materials until then, and none of them is handed the volume: every one is
+  bound, on creation and for good, to what the setting `off` gives
+  (`CelMaterialFactory.babylonGi` — seven single texels of Babylon's own, made
+  as `GiVolume` makes them at `off`, and `giShade.w` at 0, which is the whole of
+  "off" to `giCoord`; the lightning's fill is the live `giExtra`, as at `off`).
+  So an editor build's Babylon world draws as if GI were off, and a tier change
+  walks no material. The volume still steps in an editor build — our draws
+  there (the sky, the bodies, the weapon, the particles) read it — and the
+  editor regains it when X5.3 draws its world with ours. A dev-only picture
+  change, made in its own commit ahead of X5.1b's move.
 - **`GameMap.colliderAlbedo` stays parallel to `colliderBoxes`** — `recordBox`
   is the one place either grows. It is client-only: the collision bake, the
   server and `npm run parity` have never heard of it.

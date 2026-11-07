@@ -7,8 +7,10 @@
  * which lights bounce.
  * Invariants: constructed BEFORE the first cel material, and it keeps a full
  * set of seven textures published to `CelMaterialFactory.setGi` for its whole
- * life — whatever the setting, and before any map — because every cel material
- * declares all seven and an unbound one loses the draw. It adds NO draw calls
+ * life — whatever the setting, and before any map — because our frame binds
+ * all seven and an unbound one loses the draw, and the factory stands up its
+ * BABYLON materials' GI-`off` set at that first call (an editor build has no
+ * GI until `BABYLON_EXIT.md` X5.3, the owner's decision). It adds NO draw calls
  * (the frame is draw-call bound, `docs/rendering.md`): everything it does is
  * compute and three texture fetches in a shader that already runs. It reads
  * the scene's light off `CelMaterialFactory.readLighting`, never off the map,
@@ -241,9 +243,10 @@ export class GiVolume {
 
   /**
    * Changes the tier. A different grid is a different set of textures, so
-   * this stands a new set up, republishes it to every cel material and throws
-   * the old one away — which is the one walk of the material cache this class
-   * ever causes. The volume re-converges from scratch at the warm budget.
+   * this stands a new set up, republishes it to the factory — whose frame
+   * pulls it, so no material is walked: a Babylon cel material holds GI `off`
+   * (`CelMaterialFactory.setGi`) — and throws the old one away. The volume
+   * re-converges from scratch at the warm budget.
    */
   /**
    * The lightning's sky fill, 0 when no flash is up. Written into the binding's
@@ -424,7 +427,7 @@ export class GiVolume {
     this.binding.shade.set(g.strength, g.floor, g.aoKeep, 0);
     this.binding.extra.set(g.bandSpan, 0, 0, 0);
     this.mats.setGi(this.binding);
-    // After the republish, so no material is ever left holding a disposed one.
+    // After the republish, so the frame is never left holding a disposed one.
     if (old !== this.textures) for (const t of Object.values(old)) t.dispose();
     this.bindShaders();
   }

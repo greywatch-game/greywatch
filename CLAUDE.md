@@ -535,7 +535,9 @@ Cel materials carry their own light as uniforms (key, ambient, sky fill, up to
 **The indirect light is TRACED in compute against the COLLIDERS**
 (`systems/GiVolume.ts`): **a light whose brightness changes faster than a sweep
 is registered `fast`**, or its bounce freezes into the probes, and
-**`GameMap.colliderAlbedo` stays parallel to `colliderBoxes`**.
+**`GameMap.colliderAlbedo` stays parallel to `colliderBoxes`**. **An editor
+build has NO GI until X5.3** (the owner's decision): no Babylon cel material is
+handed the volume, every one holding GI `off` (`CelMaterialFactory.babylonGi`).
 
 **THERE ARE TWO SHADOW MAPS, AND WHICH CASTERS GO IN WHICH IS DECIDED BY REFRESH
 RATE RATHER THAN BY WHAT THEY ARE.** The world's re-renders only when its

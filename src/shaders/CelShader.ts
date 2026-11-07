@@ -73,11 +73,14 @@
 import {
   type BaseTexture,
   Color3,
+  Constants,
+  RawTexture3D,
   Scene,
   ShaderLanguage,
   ShaderMaterial,
   ShaderStore,
   StandardMaterial,
+  Texture,
   Vector2,
   Vector3,
   Vector4,
@@ -108,6 +111,7 @@ import { ShadowBindings } from "./ShadowBindings";
 // numbers live with the fragment's body, which our own renderer reads too.
 import "./wgsl/includes";
 import { MAX_PALETTE, MAX_POINT_LIGHTS } from "./wgsl/celSurface";
+import { GI_SLOTS } from "./wgsl/giTrace";
 
 export { MAX_PALETTE, MAX_POINT_LIGHTS };
 
@@ -1044,9 +1048,22 @@ export class CelMaterialFactory {
   /**
    * The irradiance volume's textures and uniforms, as `GiVolume` last
    * published them — see `setGi`. Null only before `GiVolume` is constructed,
-   * which is before the first material is.
+   * which is before the first material is. OUR renderer's frame reads it
+   * (`fillFrame`, `fillFrameTextures`); no Babylon material does.
    */
   private gi: GiBinding | null = null;
+  /**
+   * What every BABYLON cel material is bound to for the volume — an editor
+   * build's world, the only Babylon cel draw left (`BABYLON_EXIT.md` X5.3):
+   * GI `off`, always, by the owner's decision of 2026-11-07 (X5.1b's row 1).
+   * Seven single texels of Babylon's own, as `GiVolume` stands up at `off`,
+   * and the window's vectors with `giShade.w` at 0 — which is the whole of
+   * "off" to the shader (`giCoord` answers "outside" before any fetch). The
+   * lightning's sky fill (`giExtra`) is the LIVE vector, held by reference,
+   * because a flash rides whatever the tier, `off` included. Built at the
+   * first `setGi`; never replaced, so no tier change walks the cache.
+   */
+  private babylonGi: GiBinding | null = null;
   /**
    * The flat albedo each single-colour material was minted with, for the one
    * reader that needs a colour back from a MATERIAL: `MapBuilder`, which hands
@@ -2437,24 +2454,69 @@ export class CelMaterialFactory {
   }
 
   /**
-   * Publishes the irradiance volume to every cel material — its seven
-   * textures and the five vectors describing the window.
+   * Publishes the irradiance volume — its seven textures and the five
+   * vectors describing the window — to the frame our renderer draws with
+   * (`fillFrame`, `fillFrameTextures`), which pulls it every frame, so a tier
+   * change standing up a new set walks nothing.
    *
-   * **The vectors are handed over BY REFERENCE and that is the design**, the
-   * same thing `applyCamera` leans on: a `ShaderMaterial` keeps the vector it
-   * is given and reads it again on every bind, so `GiVolume` moves the window
-   * by writing into its own `Vector4` and no material has to be walked. A walk
-   * happens here, when the TEXTURES change — a tier change stands up a new set
-   * — and on a material's creation (`applyShadow`), which is what lets a
-   * material minted mid-round be born holding the live volume.
+   * **No Babylon cel material is handed it** (`babylonGi`): they are an
+   * editor build's world alone, and the owner decided on 2026-11-07 that an
+   * editor build has no GI until X5.3 (`BABYLON_EXIT.md` X5.1b's row 1). They
+   * are bound to GI `off` on creation (`applyShadow`), once, for good.
    */
   setGi(binding: GiBinding): void {
     this.gi = binding;
-    this.cache.forEach((mat) => this.applyGi(mat));
+    this.babylonGi ??= this.offGi(binding.extra);
+  }
+
+  /**
+   * GI `off` for a Babylon cel material, as `GiVolume` stands it up for the
+   * setting: seven single texels, made as its `makeTextures(null)` makes them,
+   * and a window whose `giShade.w` is 0. `extra` is the live lightning fill.
+   */
+  private offGi(extra: Vector4): GiBinding {
+    const g = CONFIG.gi;
+    const make = (name: string, half: boolean): RawTexture3D => {
+      const tex = new RawTexture3D(
+        null,
+        1,
+        1,
+        1,
+        Constants.TEXTUREFORMAT_RGBA,
+        this.scene,
+        false,
+        false,
+        Texture.BILINEAR_SAMPLINGMODE,
+        half ? Constants.TEXTURETYPE_HALF_FLOAT : Constants.TEXTURETYPE_UNSIGNED_BYTE,
+        Constants.TEXTURE_CREATIONFLAG_STORAGE,
+      );
+      tex.name = `celGiOff-${name}`;
+      tex.wrapU = Texture.WRAP_ADDRESSMODE;
+      tex.wrapV = Texture.CLAMP_ADDRESSMODE;
+      tex.wrapR = Texture.WRAP_ADDRESSMODE;
+      return tex;
+    };
+    return {
+      textures: {
+        giIrr: make("irr", true),
+        giDir: make("dir", true),
+        giAux: make("aux", false),
+        giVis0: make("vis0", false),
+        giVis1: make("vis1", false),
+        giVis2: make("vis2", false),
+        giVis3: make("vis3", false),
+      },
+      grid: new Vector4(1, 1, 1, 1),
+      window: new Vector4(0, 1, 0, 0),
+      shade: new Vector4(g.strength, g.floor, g.aoKeep, 0),
+      band: new Vector4(3, 1, 1, 0),
+      extra,
+      slotChannel: new Float32Array(GI_SLOTS),
+    };
   }
 
   private applyGi(mat: ShaderMaterial): void {
-    const gi = this.gi;
+    const gi = this.babylonGi;
     if (!gi) return;
     for (const name of GI_SAMPLER_NAMES) mat.setTexture(name, gi.textures[name]);
     mat.setVector4("giGrid", gi.grid);

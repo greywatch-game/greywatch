@@ -46,6 +46,11 @@ Things it deliberately does not do:
   emissives are `getEmissive`'s `StandardMaterial`s, which `GlowPass` blooms
   as ever) — and the reference bank cannot see it: `npm run merge:hash --
   --editor` and `F2` by hand (select, drag, sculpt, save) are what watch it.
+- **Its world has NO GI until X5.3** (the owner's decision of 2026-11-07,
+  `BABYLON_EXIT.md` X5.1b's row 1): Babylon's cel materials are handed nothing
+  of the irradiance volume's and hold GI `off` (`CelMaterialFactory.babylonGi`,
+  `docs/rendering.md`), so the world reads flatter here than in a round — that
+  is the decision, not a bug. The volume still steps, and our draws read it.
 - **It does not bake reflections, and it registers no physics world.** Both are
   build steps that are affordable because the world is static, and this is the
   view where it is not: they are refused on the `editor` flag `installMap`
