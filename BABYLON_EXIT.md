@@ -2246,7 +2246,7 @@ Greyfen, `F2` from the menu and each eye of the map's rows):
   live with the player in the ring, no error, the seal holding. The blob map's leak is
   measured (`FINDINGS.md` 70).
 
-### X4.7 — GPU particles — **S–M, as four sub-steps** (split 2026-11-07, proposed by the orchestrating session at the owner's instruction to implement X4.7 in sub-steps; not yet decided by the owner) — X4.7a **LANDED** (bad6caa), X4.7b **LANDED** (HASH)
+### X4.7 — GPU particles — **S–M, as four sub-steps** (split 2026-11-07, proposed by the orchestrating session at the owner's instruction to implement X4.7 in sub-steps; not yet decided by the owner) — X4.7a **LANDED** (bad6caa), X4.7b **LANDED** (8c691c7)
 
 `Atmosphere`'s ash and `RotorWash`'s two rings (`GPUParticleSystem`, a box and a
 `CylinderParticleEmitter`) as our own compute particles: our update, our draw, our
@@ -2488,7 +2488,7 @@ each as stated):
   says four times); the same 34 stale rows red at the same means; the measurements above in
   its note. If a row cannot be pinned without changing the game, STOP and report.
 
-- **X4.7b — the profiler's `drawWorld` is answered.** **LANDED** (HASH; 2026-11-07; no
+- **X4.7b — the profiler's `drawWorld` is answered.** **LANDED** (8c691c7; 2026-11-07; no
   change to the picture; report version 36). `drawWorld` hangs off the camera's DRAW PHASE as
   the brief recommends: opened on `onBeforeDrawPhaseObservable`, closed where the glow's
   span opens (or at `onAfterDrawPhaseObservable` on a frame the glow does no work), the group
