@@ -1339,7 +1339,15 @@ export function buildReport(
     // `pools.drawn` too, the sparks' blooms in `pools.masked`: since
     // `BABYLON_EXIT.md` X4.6e's second commit none is in `counters.drawCalls`.
     // Nothing else changed meaning.
-    version: 35,
+    // 36: `drawWorld` is the camera's DRAW PHASE up to the glow's work
+    // (`BABYLON_EXIT.md` X4.7b), no longer the rendering groups: it is
+    // entered on every frame the camera draws, whichever path told our
+    // renderer's points. A v35 capture's `drawWorld` is group 0 alone, and
+    // absent on a frame Babylon visited no group (the menu, a frame with
+    // nothing of Babylon's in group 0); on a frame it did visit one, v36 adds
+    // only the rendering manager's own walk and nothing measurable. Nothing
+    // else changed meaning.
+    version: 36,
     build: buildStamp(),
     takenAt: new Date().toISOString(),
     reason,

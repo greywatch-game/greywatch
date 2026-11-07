@@ -431,11 +431,14 @@ frame                       the whole tick, wall to wall
    │                        X4.1c: a round has none, every shadow map ours
    ├─ glow                  GlowPass: its mask and four blurs at the end of
    │                        the draw phase (the compose is inside the ink)
-   └─ drawWorld             every rendering group, which since X4.3d is
-                            group 0 alone — the map; our draws (the bodies,
-                            the hulls and the whole gun) only QUEUED here —
-                            see `view` below. (`drawOverlay`, the groups
-                            above 0, was retired with report version 24.)
+   └─ drawWorld             the camera's DRAW PHASE up to the glow's work
+                            (report version 36): Babylon's group 0 when it
+                            visits one, and our draws only QUEUED here at
+                            the group's points on either path — see `view`
+                            below. Entered on every frame the camera draws.
+                            (Until v36 the rendering groups alone; and
+                            `drawOverlay`, the groups above 0, was retired
+                            with report version 24.)
 
 present                     the engine's endFrame AFTER tick returns: the
                             render pass closed and queue.submit. A ROOT, not a
@@ -603,20 +606,46 @@ them either.
 the assertion: `Scene._renderForCamera` runs the render targets (the shadow
 map) *before* it opens the draw phase, the camera's own pass *inside* it with
 the glow's mask and blur at its very end, and the post chain — the ink, with
-the glow's compose as its last line — *after* it closes. The group span is
-gated on being in that draw phase, because `onBeforeRenderingGroupObservable`
-is the SCENE's and a render target's
-own rendering manager fires it too — without the gate the shadow map's groups
-would be added to `drawWorld` on top of `shadowPass`. **The glow closes the
-gate when its span opens**, since its mask renders from the same end-of-draw
-observable before the profiler's own observer there runs; until it did, the
-mask's groups were being added to `drawWorld` too.
+the glow's compose as its last line — *after* it closes. **`drawWorld` is that
+draw phase** (report version 36, `BABYLON_EXIT.md` X4.7b): it opens on
+`onBeforeDrawPhaseObservable` and **the glow closes it when its own span
+opens**, since its mask renders from the end-of-draw observable before the
+profiler's own observer there runs (which closes it instead on a frame the
+glow does no work). Only `Scene._renderForCamera` fires the draw phase, so a
+render target's own rendering manager — the shadow map's, the mask's — adds
+nothing to it and no gate is needed.
+
+Until version 36 it was the rendering GROUPS instead, gated on being in the
+draw phase, and that made it an instrument the exit would empty: Babylon
+visits no empty group, so on a frame with nothing of Babylon's in group 0 —
+the menu, every bank row, and from X4.7c and X4.7d every frame of a round —
+no span opened at all, and our draws queued at the group's points (told then
+by the seam's fallback at the phase's end, `docs/rendering.md`) fell under no
+span. Now it is entered on every frame the camera draws, and reads the same
+whichever path told our points. **What it does not hold** is the seam's start
+of the main pass — our renderer's `begin` (the frame's uniforms and every
+PREPARE recorded onto the upload encoder) and its `first` point — because the
+seam's observer on the same observable was added when `Game` built the
+renderer, before any `arm`, and so runs ahead of the span's opening: under
+`render`, named by nothing, as it was before.
+
+**Measured at X4.7b** (headless on the Windows box, `?profile`, 600 frames a
+capture): on the menu, the parent entered `drawWorld` on no frame and the step
+on every one, at 0.003-0.005 ms; in a live round, where the ash holds group 0
+and the parent opened the span on every frame too, 0.153 and 0.144 ms at the
+parent against 0.132 and 0.144 at the step (Coldharbour, Cinderhaven: the same
+within the clock's grain); and 0.003 ms at the step in a Coldharbour round with
+the particles off, which is the fallback's path. **So in a live round today
+`drawWorld` is almost all Babylon's PARTICLES** (their draw, and their compute
+dispatch, which ends the main pass, `BABYLON_EXIT.md` X4.7a; not split further),
+and a capture read across X4.7c and X4.7d has to expect it to fall by that much
+as the fields become ours, whatever the span's form.
 
 **What is left inside `render` and named by nothing** is the active-mesh
 evaluation (the `Mesh walk` counter, which is the same number in other units),
 `Game.drawBodies` (every drawn rig's joints composed and handed to its meshes,
 `BABYLON_EXIT.md` X4.1a — the composition Babylon did inside the walk until
-then), `Game.drawHulls` (the hulls' drawing written for ours, X4.2b — their joints composed inside `render` from X4.2a until X4.2d's post-commit review moved the compose into `culling`, `Game.fadeHulls`, so the rotor wash is handed the same fade), `ViewModel.drawView` (the player's own weapon's joints evaluated and handed to its meshes, X4.3b — Babylon composed its nodes inside the walk until then — and since X4.3c and X4.3d every surface of it handed to our renderer), `Game.drawPieces` and `Game.drawMarks` (the effect pools' pieces composed and the bullet marks gathered for ours, X4.4b — Babylon composed their meshes inside the walk until then), `Game.drawBlasts` and `Game.drawDebris` (whether a blast batch is drawn, and every glass shard and rubble chunk composed off its pose for ours, X4.4c), the post chain, a frame's share of a reflection bake, and the present. Measured
+then), `Game.drawHulls` (the hulls' drawing written for ours, X4.2b — their joints composed inside `render` from X4.2a until X4.2d's post-commit review moved the compose into `culling`, `Game.fadeHulls`, so the rotor wash is handed the same fade), `ViewModel.drawView` (the player's own weapon's joints evaluated and handed to its meshes, X4.3b — Babylon composed its nodes inside the walk until then — and since X4.3c and X4.3d every surface of it handed to our renderer), `Game.drawPieces` and `Game.drawMarks` (the effect pools' pieces composed and the bullet marks gathered for ours, X4.4b — Babylon composed their meshes inside the walk until then), `Game.drawBlasts` and `Game.drawDebris` (whether a blast batch is drawn, and every glass shard and rubble chunk composed off its pose for ours, X4.4c), our renderer's start of the main pass (its `begin` and its prepares, above, X4.7b), the post chain, a frame's share of a reflection bake, and the present. Measured
 on Hollowmere headless, 969 frames at 101 fps: `render` 4.86 ms, of which
 `drawWorld` 2.15, `glow` 1.04, `drawOverlay` (then the viewmodel's group, retired
 since) 0.25 and `shadowPass` 0.73 — 86% of the bar attributed, and the glow's share of the whole frame **10.5%**, which
@@ -1244,16 +1273,17 @@ mask's (`FrameProfile.setView`). Since X4.3d nothing of the weapon is in
 draws are `counters.drawCalls` plus `blocks.drawn`, `bodies.drawn`,
 `hulls.drawn` and `view.drawn`. Their CPU cost moved spans with them, and
 not to where they are queued: the weapon's draws are QUEUED at the end of
-rendering group 0 (`"afterGroup"`, inside `drawWorld` on a frame Babylon visits
-the group), but Babylon RUNS the queue — our recording — when it ends the main
-pass (`_endCurrentRenderPass`), so that cost lands in whichever span is open
-then, as the bodies' and the hulls' does (not confirmed by a capture). The
-viewer prints it as `weapon`. **On a frame Babylon visits no group**
-(`BABYLON_EXIT.md` X4.5a's fallback: the menu, and since X4.5c, with no dome to
-hold the group, any frame of a round with nothing of Babylon's in view) no
-`drawWorld` span opens, so the queuing falls under no group span, and from X4.7,
-when nothing holds group 0, `drawWorld` reads 0 on every frame (that step owes the
-span an answer).
+rendering group 0 (`"afterGroup"`, inside `drawWorld`), but Babylon RUNS the
+queue — our recording — when it ends the main pass (`_endCurrentRenderPass`),
+so that cost lands in whichever span is open then, as the bodies' and the
+hulls' does (not confirmed by a capture). The viewer prints it as `weapon`.
+**On a frame Babylon visits no group** (`BABYLON_EXIT.md` X4.5a's fallback: the
+menu, and since X4.5c, with no dome to hold the group, any frame of a round with
+nothing of Babylon's in view) the seam tells the group's points at the draw
+phase's end instead, and **from report version 36 that is inside `drawWorld`
+too** (X4.7b: the span is the draw phase, not the groups, so it opens on every
+frame the camera draws — "They cannot overlap" above). Before version 36 no
+`drawWorld` opened on such a frame and the queuing fell under no span.
 
 **From report version 26 it says the same of the effect POOLS** (`pools`,
 `BABYLON_EXIT.md` X4.4b): the main pass's draws of the pools' pieces (a RANK
@@ -1304,6 +1334,15 @@ now (which is group 0's), and a group added to the game joins it rather than
 going unrecorded. A v23 capture's `drawOverlay` is the glass, and nothing on
 a frame with no optic up; the viewer reads each capture's own tree, so an old
 capture still shows it.
+
+**Report version 36 RE-HUNG `drawWorld`** (`BABYLON_EXIT.md` X4.7b): the
+camera's draw phase up to the glow's work, where it was the rendering groups —
+so it is entered on every frame the camera draws, the menu and a round whose
+group 0 holds nothing of Babylon's included, and our renderer's draws queued at
+the group's points are inside it on either path ("They cannot overlap" above).
+Its name and its parent did not move, so the viewer needed nothing. A v35
+capture's `drawWorld` is absent on a frame with no group, and on a frame with
+one it reads what v36 does, within the clock's grain (measured at X4.7b).
 
 **From report version 18 a capture says the SIZE every frame was drawn at**
 (`viewport`), and **`device.window` and `device.backingStore` are read at SAVE

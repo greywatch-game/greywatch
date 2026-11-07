@@ -2246,7 +2246,7 @@ Greyfen, `F2` from the menu and each eye of the map's rows):
   live with the player in the ring, no error, the seal holding. The blob map's leak is
   measured (`FINDINGS.md` 70).
 
-### X4.7 — GPU particles — **S–M, as four sub-steps** (split 2026-11-07, proposed by the orchestrating session at the owner's instruction to implement X4.7 in sub-steps; not yet decided by the owner) — X4.7a **LANDED** (bad6caa)
+### X4.7 — GPU particles — **S–M, as four sub-steps** (split 2026-11-07, proposed by the orchestrating session at the owner's instruction to implement X4.7 in sub-steps; not yet decided by the owner) — X4.7a **LANDED** (bad6caa), X4.7b **LANDED** (HASH)
 
 `Atmosphere`'s ash and `RotorWash`'s two rings (`GPUParticleSystem`, a box and a
 `CylinderParticleEmitter`) as our own compute particles: our update, our draw, our
@@ -2488,7 +2488,33 @@ each as stated):
   says four times); the same 34 stale rows red at the same means; the measurements above in
   its note. If a row cannot be pinned without changing the game, STOP and report.
 
-- **X4.7b — the profiler's `drawWorld` is answered.** No change to the picture; a report
+- **X4.7b — the profiler's `drawWorld` is answered.** **LANDED** (HASH; 2026-11-07; no
+  change to the picture; report version 36). `drawWorld` hangs off the camera's DRAW PHASE as
+  the brief recommends: opened on `onBeforeDrawPhaseObservable`, closed where the glow's
+  span opens (or at `onAfterDrawPhaseObservable` on a frame the glow does no work), the group
+  observers and `inDraw` gone; `hookRender` still hangs only off the scene's own observables.
+  It holds the rendering manager and, on the fallback's frames, the seam's telling of the
+  points (its observer is inserted first, ahead of the glow); NOT the seam's start of the
+  pass (our `begin`, its prepares and `first`), whose observer was added at the renderer's
+  construction, before any `arm`. **Measured** (`?profile`, 600 frames a capture, the
+  Windows box headless): the menu, `drawWorld` on 0 of 600 frames at the parent and 600 of
+  600 at the step (0.003 ms Coldharbour, 0.005 Cinderhaven); a live round, 600 of 600 at both
+  (the ash holds group 0), 0.153 → 0.132 ms (Coldharbour) and 0.144 → 0.144 (Cinderhaven); a
+  Coldharbour round with the particles off (the fallback's path) 600 of 600 at 0.003 ms. On
+  every frame of every capture `drawWorld` and `glow` both inside `render`, `drawWorld` ended
+  before `glow` began (the trace, 601 frames each); the tree `drawWorld: render`, `glow:
+  render`. **So in a live round today the span is almost all Babylon's particles**, and it
+  will fall by that much across X4.7c and X4.7d whatever its form: like is compared with
+  like, but not a constant. The viewer opens v36 and v35 captures with no error (no name
+  moved, so it was not touched). The bank, all 143 rows, against a BEFORE at 30bd400 by
+  `exact.mjs`: 141 byte-equal, `harrowmead-view-pistol-reload` within its known flake, and
+  `sarab-ground` 100 pixels by 2/255, the cross-process residue: Sarab alone three times a
+  tree, the parent drew the step's frame once (the two frames both the parent's). The same
+  34 stale rows red at the same means. Typecheck, build (`check-babylon-free`,
+  `check-proving`), corecheck and parity pass. The note is in
+  `plans/done/babylon_exit_landed.md`. The brief, as it was handed over:
+
+  No change to the picture; a report
   version. The span opens on Babylon's rendering group, so on a frame Babylon visits no group
   (X4.5a's fallback: the menu, every bank row, and from X4.7c every live frame on five maps)
   no span opens and our queuing falls under none; from X4.7d it reads 0 on every frame of a

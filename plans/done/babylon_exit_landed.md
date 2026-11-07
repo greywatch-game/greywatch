@@ -8779,7 +8779,7 @@ what was corrected and measured.
 - **The blob map's leak, measured** (`FINDINGS.md` 70, not fixed). Five Coldharbour rounds in one page at each tree, a forced GC before each reading: `ShadowSystem.blobs` 17, 33, 49, 65, 81 on both (HEAD's `blobFades` the same; a269bfb's `blobShadow` meshes the same, its scene 2,047 to 2,111 meshes), every earlier round's sixteen bodies alive after the GC, and freed once the map's keys are cleared by a probe. Heap after GC: HEAD 95,378 to 97,150 KB, a269bfb 107,454 to 110,710.
 - **Not verified.** A server's match in a browser; the phone; the editor (its recorded differences stay until X5.3); a gate or latch case live (the drop is 1a89216's record); `gate`, `shaders`, `census`, `pipelines.mjs --round`, `merge:hash`, `kit:hash`, typecheck and build, none of which this note's text-only change could move. The player capturing ALONE (bots may have stood in Alpha too: the page reads no bot). Live frames are pictures, not bytes: the byte comparisons are of held frames.
 
-### X4.7 — GPU particles — **S–M, as four sub-steps** (split 2026-11-07) — X4.7a **LANDED** (bad6caa)
+### X4.7 — GPU particles — **S–M, as four sub-steps** (split 2026-11-07) — X4.7a **LANDED** (bad6caa), X4.7b **LANDED** (HASH)
 
 The plan's `BABYLON_EXIT.md` holds X4.7's brief, the table of what the fields are
 (corrected in place by X4.7a) and the three sub-steps to come.
@@ -8967,3 +8967,64 @@ minor points, fixed now because X4.7c and X4.7d grade themselves with these inst
   X4.7c). A live round's splits and seam path. The rest of the bank (the harness change is
   inside the `particles` branch, which only a particle row enters). `corecheck`, parity,
   `census`, `gate`, `shaders` (no game code moved).
+
+**X4.7b landed** (HASH; 2026-11-07; no change to the picture; report version 36; `git diff`
+under `src/` is `core/FrameProfile.ts` and `core/profileReport.ts`).
+
+- **The span.** `FrameProfile.hookRender` opens `drawWorld` on the scene's
+  `onBeforeDrawPhaseObservable` and closes it with `endAdd` in the glow's `onBeforeWork`
+  (ahead of `begin(glow)`), and again at `onAfterDrawPhaseObservable` for a frame the glow does
+  no work, where the second `endAdd` returns on its first test. The rendering-group observers
+  and the `inDraw` gate are gone: the draw phase fires from `Scene._renderForCamera` alone
+  (`scene.pure.js`; no render target's manager raises it), so a shadow map's or the mask's
+  groups cannot reach it. The brief's recommended form, taken; the other (retiring the span)
+  was not needed, the spans nesting as before. No new observer kind, nothing allocated per
+  frame (the four closures are made at `arm`), no seam item.
+- **What it holds, read off the observers' order rather than measured apart**: the rendering
+  manager (group 0 when Babylon visits it: today the ash, and our draws QUEUED at its points)
+  and, on a frame it visits none, the seam's fallback telling the same points at the phase's
+  end (`onMainPass`'s `after`, inserted FIRST, so ahead of the glow's observer); `FrameDepth`'s
+  identity test only on a frame the glow skips. NOT the seam's start of the pass, our
+  renderer's `begin` (the frame's uniforms, every prepare on the upload encoder) and `first`:
+  the seam's `before` was added when `Game` built the renderer (Game.ts:1901), before any
+  `arm` (2718 on, or the bench's), so it runs ahead of the span's opening, under `render` and
+  unnamed, as it did when the span was the groups'.
+- **Measured** (scratch `x47b/capture.mjs`: `?profile`, the profiler re-armed after 30 menu
+  frames and again 60 frames into a live round with the player unkillable, 600 frames each,
+  `capture(…, true)` and `trace(3000)`, headless on the Windows box). `drawWorld` frames of 600
+  and mean, parent (v35) → step (v36):
+
+  | capture | parent | step |
+  | --- | --- | --- |
+  | Coldharbour menu | 0, — | 600, 0.003 ms |
+  | Cinderhaven menu | 0, — | 600, 0.005 ms |
+  | Coldharbour round | 600, 0.153 ms | 600, 0.132 ms |
+  | Cinderhaven round | 600, 0.144 ms | 600, 0.144 ms |
+  | Coldharbour round, `particlesEnabled` false (the fallback) | — | 600, 0.003 ms |
+
+  `glow` on every frame of every capture (0.07-0.14 ms). Per frame, off the trace (601 frames a
+  capture): `drawWorld` and `glow` both inside `render`, and `drawWorld` ending before `glow`
+  begins, on every frame at both trees; the report's tree `drawWorld: render`, `glow: render`,
+  roots `frame`, `sim`, `present`. No page or console error. **In a live round today the span
+  is almost all Babylon's particles** (0.13-0.15 ms with the ash, 0.003 without), so a
+  capture across X4.7c and X4.7d compares the same span, but its reading falls by the ash's and
+  then the wash's cost as they become ours (their update a prepare, outside it).
+- **The viewer** (scratch `x47b/viewer.mjs`, through the hand-off key): a v36 round and menu
+  capture and a v35 round and menu capture open, the report shown, no loader error, no page
+  error; the v36 menu lists `drawWorld`, the v35 menu does not. No name moved, so the viewer is
+  untouched.
+- **The bank**, `bank.mjs --check --keep` at 30bd400 (the BEFORE, the main tree before the
+  edit) and at the step: **141 of 143 byte-equal by `exact.mjs`**,
+  `harrowmead-view-pistol-reload` within its known flake (2 pixels by 1/255), and
+  `sarab-ground` 100 pixels by 2/255. Sarab alone, three times a tree, alternating: the step
+  drew one frame every time (its full run too); the parent drew the other twice and the step's
+  once (its full run the other), so both frames are the parent's own, the cross-process residue
+  `exact.mjs`'s header names. The same 34 stale rows red at the same means (the two logs' red
+  lines identical).
+- **Gates**: typecheck, build (`check-babylon-free`, `check-proving`), corecheck and parity
+  pass. Not run: `gate`, `shaders`, `census`, `surfaces.mjs`, `pipelines.mjs` (no draw, pipeline
+  or shader moved; the profiler is disarmed in all of them).
+- **Not verified.** The bench's halted capture (`?bench=`, the same `hookRender`); a phone; an
+  editor build's frames (an editor's Babylon generator still enters `shadowPass`, unchanged);
+  a `?gpu` capture. `CLAUDE.md`'s "Measuring a frame" stands as written (the spans still hang
+  off the scene's own observables), so it is not touched.

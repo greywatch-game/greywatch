@@ -593,17 +593,6 @@ export class FrameProfile {
   private readonly openAt = new Float64Array(SLOTS);
 
   /**
-   * Whether the frame is inside the CAMERA's own draw phase.
-   *
-   * The one piece of state `hookRender`'s spans need, and it exists because
-   * `onBeforeRenderingGroupObservable` is notified by every `RenderingManager`
-   * in the process — a render target has one of its own and fires the SCENE's
-   * observable from it. Without this the shadow map's groups and the glow's
-   * would be added to `drawWorld` on top of their own spans. See `hookRender`.
-   */
-  private inDraw = false;
-
-  /**
    * The observers `hookRender` hung off the scene, as teardowns.
    *
    * Built once by `arm` and run by `disarm`, which is what keeps the promise
@@ -995,7 +984,6 @@ export class FrameProfile {
     this.poolsAtHalt = this.poolsOf?.() ?? null;
     for (const off of this.unhook) off();
     this.unhook = [];
-    this.inDraw = false;
     this.tickEndAt = 0;
     this.instr?.dispose();
     this.instr = null;
@@ -1007,7 +995,6 @@ export class FrameProfile {
     this.on = false;
     for (const off of this.unhook) off();
     this.unhook = [];
-    this.inDraw = false;
     this.tickEndAt = 0;
     this.lastSlot = -1;
     this.instr?.dispose();
@@ -1352,35 +1339,38 @@ export class FrameProfile {
    *     the glow draws its mask and blurs it, after every group has drawn;
    *  3. the post chain, where the ink runs the glow's compose as its last line.
    *
-   * So the shadow map is in (1), the group span and then the glow's mask are
-   * in (2), and the glow's compose is in (3), unnamed. What is left inside
-   * `render` and named by nothing is the active-mesh evaluation, the post
-   * chain, a frame's share of a reflection bake, and the present.
+   * So the shadow map is in (1), `drawWorld` and then the glow's mask are in
+   * (2), and the glow's compose is in (3), unnamed. What is left inside
+   * `render` and named by nothing is the active-mesh evaluation, our
+   * renderer's start of the main pass (below), the post chain, a frame's share
+   * of a reflection bake, and the present.
    *
-   * **The group span is gated on `inDraw` and would double-count without
-   * it.** `onBeforeRenderingGroupObservable` is the SCENE's, and every
-   * `RenderingManager` in the process notifies it — including the one inside a
-   * render target — so the shadow map's own groups and the glow's would be
-   * added to `drawWorld` on top of the spans that already hold them. **The glow
-   * closes that gate itself when its span opens**, because its mask renders
-   * from `onAfterDrawPhaseObservable` BEFORE the observer below that would
-   * otherwise close it (the glow's was added at construction, ours at `arm`):
-   * every group of the camera's own pass has drawn by then, so nothing is
-   * lost, and the mask's groups are not counted twice.
-   *
-   * **Every rendering group is `drawWorld`**, which since `BABYLON_EXIT.md`
-   * X4.3d is group 0 alone: what is left of Babylon's draws in it (no sky since
-   * X4.5c), and the whole weapon — the kit card and the optics' glasses with the
-   * opaque parts — is our renderer's, QUEUED at the end of group 0 and so inside
-   * it (recorded where Babylon runs the queue: `docs/profiling.md`) on a frame
-   * Babylon visits the group. On a frame it does not (X4.5a's fallback: the menu,
-   * and since X4.5c any frame of a round with nothing of Babylon's in view) no
-   * group opens, so no `drawWorld` opens and the queuing falls under no group
-   * span; from X4.7, with nothing of Babylon's in group 0, this span reads 0 on
-   * every frame, and that step owes it an answer. Group 1 was `drawOverlay`
-   * until then, the gun's share against the map's; it held nothing after
-   * X4.3d and was retired (report version 24), and a group added to the game
-   * joins `drawWorld` rather than going unrecorded.
+   * **`drawWorld` is the camera's DRAW PHASE, not its rendering groups**
+   * (`BABYLON_EXIT.md` X4.7b, report version 36): it opens on
+   * `onBeforeDrawPhaseObservable` and closes where the glow's work opens —
+   * the glow's mask renders from `onAfterDrawPhaseObservable` BEFORE the
+   * observer here that would otherwise close it (the glow's was added at
+   * construction, ours at `arm`) — or at the phase's end on a frame the glow
+   * does no work. The draw phase fires from `Scene._renderForCamera` alone,
+   * never from a render target's own manager, so no gate is needed against a
+   * shadow map's groups or the mask's. What it holds is the rendering manager
+   * — group 0 when Babylon visits it, its particles and our renderer's draws
+   * QUEUED at its points — and, on a frame Babylon visits NO group (X4.5a's
+   * fallback: the menu, every bank row, and from X4.7c a round on the maps
+   * whose ash is ours), the seam's telling of the same points at the phase's
+   * end, which is inserted FIRST on that observable and so lands ahead of the
+   * glow. **So it is entered on every frame the camera draws, and reads the
+   * same whichever path told our points.** Our recording itself lands where
+   * Babylon runs the queue (`docs/profiling.md`), not here. **What it does
+   * NOT hold is the seam's own start of the pass** — our renderer's `begin`
+   * (the frame's uniforms and every prepare recorded onto the upload encoder)
+   * and its `first` point: the seam's observer on the same
+   * `onBeforeDrawPhaseObservable` was added when `Game` built the renderer,
+   * before any `arm`, so it runs ahead of this span's opening, under `render`
+   * and named by nothing, as it did when this span was the groups'. Until
+   * version 36 it was the rendering groups' (gated on being in the draw
+   * phase), so it opened only on a frame Babylon visited one; group 1 was
+   * `drawOverlay` until X4.3d emptied it (report version 24).
    *
    * **A render target is bracketed BIND to UNBIND.** The glow is not bracketed
    * as a target at all: it notifies around its mask AND its blur together.
@@ -1388,27 +1378,13 @@ export class FrameProfile {
   private hookRender(scene: Scene, glow: GlowSpans | null): void {
     const off = this.unhook;
 
-    const drawOn = scene.onBeforeDrawPhaseObservable.add(() => {
-      this.inDraw = true;
-    });
+    // `drawWorld`: the camera's draw phase, closed where the glow's work opens
+    // (below) or, on a frame the glow does no work, where the phase ends — an
+    // `endAdd` on a span already closed returns on its first test.
+    const drawOn = scene.onBeforeDrawPhaseObservable.add(() => this.begin(P.drawWorld));
     off.push(() => scene.onBeforeDrawPhaseObservable.remove(drawOn));
-    const drawOff = scene.onAfterDrawPhaseObservable.add(() => {
-      this.inDraw = false;
-    });
+    const drawOff = scene.onAfterDrawPhaseObservable.add(() => this.endAdd(P.drawWorld));
     off.push(() => scene.onAfterDrawPhaseObservable.remove(drawOff));
-
-    const groupIn = scene.onBeforeRenderingGroupObservable.add(() => {
-      if (this.inDraw) {
-        this.begin(P.drawWorld);
-      }
-    });
-    off.push(() => scene.onBeforeRenderingGroupObservable.remove(groupIn));
-    const groupOut = scene.onAfterRenderingGroupObservable.add(() => {
-      if (this.inDraw) {
-        this.endAdd(P.drawWorld);
-      }
-    });
-    off.push(() => scene.onAfterRenderingGroupObservable.remove(groupOut));
 
     // Every shadow map in the scene, which is ShadowSystem's one directional
     // light. Its texture is created once at a fixed `mapSize` and never
@@ -1424,11 +1400,11 @@ export class FrameProfile {
       off.push(() => map.onAfterUnbindObservable.remove(unbind));
     }
 
-    // The glow: its mask and blur at the end of the draw phase. See the header
-    // on `inDraw`.
+    // The glow: its mask and blur at the end of the draw phase, which closes
+    // `drawWorld` as it opens. See the method's header.
     if (!glow) return;
     const before = glow.onBeforeWorkObservable.add(() => {
-      this.inDraw = false;
+      this.endAdd(P.drawWorld);
       this.begin(P.glow);
     });
     off.push(() => glow.onBeforeWorkObservable.remove(before));
