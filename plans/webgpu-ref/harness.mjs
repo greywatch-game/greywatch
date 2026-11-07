@@ -953,11 +953,18 @@ export function placeVantage(page, vantage) {
     // (`installMap`: `atmosphere.apply`, then `rotorWash.build`), so the
     // scene's list holds them in the order a shipped flow does.
     //
-    // **Every touch of a field goes through `fields`**, one adapter for whose
-    // fields they are: Babylon's `GPUParticleSystem`s today. The step that
-    // makes the fields ours adds its own adapter beside this one and picks by
-    // what the page holds, so a BEFORE taken at a parent still drawing
-    // Babylon's runs this file unchanged.
+    // **Every touch of a field in THIS path goes through `babylonFields`**
+    // (held as `__refParticles.fields` for the put-away), one adapter for
+    // whose fields they are: Babylon's `GPUParticleSystem`s today. The step
+    // that makes the fields ours adds its own adapter beside this one and
+    // picks by what the page holds, so a BEFORE taken at a parent still
+    // drawing Babylon's runs this file unchanged. **Two paths in this file
+    // are still Babylon's alone and are X4.7c's to give an adapter**: the
+    // `motes` row's path above (`sky-motes`: the field's emitter, emit box,
+    // `preWarmStepOffset`, `updateSpeed`, `isReady` and pre-warm pair, read
+    // and written on `g.atmosphere.system` directly), and `freeze`'s
+    // `particles` switch with its thaw (`g.scene.particlesEnabled`, below),
+    // which on a tree whose fields are ours would switch nothing of theirs.
     if (v.particles) {
       const want = v.particles;
       const spec = g.mapDef.environment.particles;
@@ -966,11 +973,19 @@ export function placeVantage(page, vantage) {
         /** Every field of the game's, in the order the frame steps and draws them. */
         all: () => g.scene.particleSystems,
         motes: () => g.atmosphere.system,
-        rings: () => g.rotorWash.washes.flatMap((w) => [w.dust, w.spray].filter(Boolean)),
+        /** One hull's rings, dust then spray, as `RotorWash` holds them. */
+        ringsOf: (w) => [w.dust, w.spray].filter(Boolean),
+        rings: () => g.rotorWash.washes.flatMap((w) => babylonFields.ringsOf(w)),
         enable: (on) => {
           g.scene.particlesEnabled = on;
         },
         ready: (f) => f.isReady(),
+        /** Whether `RotorWash.update` left the ring emitting (a rate over zero). */
+        emits: (f) => f.emitRate > 0,
+        /** A pre-warm step made one fixed frame at an animation ratio of 1. */
+        prime: (f) => {
+          f.preWarmStepOffset = 1;
+        },
         empty: (f) => {
           f.stop();
           f.reset();
@@ -1015,7 +1030,7 @@ export function placeVantage(page, vantage) {
         seeded(0xa7, () => g.rotorWash.build(g.vehicles.hulls, g.map.water, g.map.terrain, g.mapDef.environment));
         g.rotorWash.update(true, g.hullFades);
         const wash = g.rotorWash.washes.find((w) => w.hull === P.hull);
-        const ring = [wash.dust, wash.spray].find((r) => r && r.emitRate > 0);
+        const ring = F.ringsOf(wash).find(F.emits);
         if (!ring) throw new Error("the pinned hull raises no wash: too high, or over nothing");
         stated.push(ring);
       }
@@ -1023,7 +1038,7 @@ export function placeVantage(page, vantage) {
         if (!stated.includes(f)) F.empty(f);
       }
       for (const ring of F.rings()) P.speeds.push([ring, F.speed(ring)]);
-      for (const f of stated) f.preWarmStepOffset = 1;
+      for (const f of stated) F.prime(f);
       for (let frames = 0; !stated.every(F.ready); frames++) {
         if (frames > 1200) throw new Error("a stated field never became ready");
         await new Promise((res) => {
@@ -1213,7 +1228,10 @@ export function freeze(page, set = FREEZE_SET, { windTime = 0, turn = 0, strike 
       }
     }
     // A row asking for the motes, or for the fields as the game runs them
-    // (`particles`), has them posed and held by now (`placeVantage`).
+    // (`particles`), has them posed and held by now (`placeVantage`). **This
+    // switch is BABYLON's** (`scene.particlesEnabled`, the same at the thaw)
+    // and goes through no adapter: a tree whose fields are ours owes it one
+    // (`BABYLON_EXIT.md` X4.7c), or it holds nothing of theirs.
     if (f.includes("particles")) g.scene.particlesEnabled = Boolean(window.__refMotes || window.__refParticles);
     if (f.includes("lights")) {
       // A lantern's flame is a clock like any other and is pinned like one.

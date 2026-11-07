@@ -2269,10 +2269,13 @@ to the picture": that is X4.6c's history (its row in "Decisions"), where an ambi
 brief led an implementer to an unplanned third option. **A brief from an orchestrating
 agent that reads otherwise is wrong, and this paragraph wins.**
 
-**What they are today** (a read of the code, Babylon 9.28; **X4.7a measured every claim
-here** and corrected this list in place: the table holds, every number in it measured;
-the corrections are the defines, the random draws at rest, the editor's order and the
-splits, each marked "X4.7a"):
+**What they are today** (a read of the code, Babylon 9.28; **X4.7a measured the claims
+here** and corrected this list in place: the corrections are the defines, the random draws
+at rest, the editor's order and the splits, each marked "X4.7a". **The table holds, and
+every cell in it is measured — but only since X4.7a's review**: X4.7a left the Greyfen,
+Coldharbour and Harrowmead capacities and the Sarab, Coldharbour and Harrowmead blends
+unread, and its review read every cell off the live fields on all seven maps in one boot,
+each as stated):
 
 | field | systems | emitter | texture | colour | blend | random texture | capacity |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -2335,7 +2338,9 @@ splits, each marked "X4.7a"):
   Babylon restarts it for the draw. **Once a ring has emitted, its count stays up until its
   `reset()`** (`RotorWash.clear`, at every install and teardown), so it dispatches and draws
   its dead slots every frame after, at a rate of zero. **X4.7a counted it** (`particles.mjs`,
-  the main pass's passes a frame, Sarab and Cinderhaven alike): with the particles off, 10
+  the main pass's passes a frame, Sarab and Cinderhaven alike — **in the deploy screen's
+  HELD world with `Game.followEye` told the fleet stepped and the hull pinned, not in a live
+  round**, which the brief asked for and nobody has counted; X4.7a's review): with the particles off, 10
   render passes from the draw phase's start to the frame's end and no compute pass; with the
   ash and a dust ring live, 11-12 and 1-2, the main pass split 1-2 times; over water, the dust
   ring at a rate of zero with its count of 84 still up beside the spray, 13 and 3, split 3
@@ -2346,7 +2351,8 @@ splits, each marked "X4.7a"):
   not**: `freeze` sets `scene.particlesEnabled` false for every row but a `motes` row, so
   every other row of a round is drawn through the seam's empty-group fallback (X4.5a), its
   points told at the draw phase's end (X4.7a, `surfaces.mjs` on all 143 rows: 137 by the
-  fallback, the 6 particle rows by the group; live, the group on every frame the ash runs).
+  fallback, the 6 particle rows by the group; in the probe's held deploy screen, the group
+  on every frame the ash runs — a live round's path was not read, X4.7a's review).
   So the bank already grades the path a live round
   takes from X4.7c on (five maps) and from X4.7d on (all seven), and only a particle row
   grades the switch. A stopped field (`apply(undefined)`, every teardown) is still
@@ -2402,7 +2408,32 @@ splits, each marked "X4.7a"):
   `surfaces.mjs --keep` with every probe hung); the same 34 stale rows red at the same
   means; the probe's log over the rotation equal to itself by `Object.is` across two runs;
   the corrections above, each marked X4.7a. Typecheck, build, corecheck and parity pass.
-  The note is in `plans/done/babylon_exit_landed.md`. The brief, as it was handed over:
+  The note is in `plans/done/babylon_exit_landed.md`.
+
+  **Its review** (2026-11-07; instruments and records only, no change to the game) found
+  nothing real and five minor points, fixed because X4.7c and X4.7d use these instruments as
+  their oracle. The harness's `particles` path now touches a field only through its adapter
+  (the ring's rate and `preWarmStepOffset` were direct), and its header and this plan say
+  which paths are still Babylon's alone and X4.7c's to give an adapter: the `motes` path
+  (`sky-motes`) and `freeze`'s `particles` switch with its thaw. The probe's `_initialize`
+  wrap no longer throws inside `Atmosphere.build` on a field that is not Babylon's (it names
+  it in `unwrapped`); its header names the adapter it has (`babylon`, `__fields`, not
+  `FIELDS`); `--against` now compares every construction's and first update's random draws
+  and the editor's orders and draws; and its window's clock is a schedule of frame deltas
+  handed to the scene's own path (16.7 ms, and 0.25 and 1,500 ms once in sixty), so
+  `getAnimationRatio`'s 1..1000 ms clamp is exercised, where
+  `useConstantAnimationDeltaTime` skipped it. The records no longer claim a live round
+  for the splits (a held deploy screen) or every table cell for X4.7a (its review read the
+  rest), and X4.7c's and X4.7d's Verify name what no row holds. **Measured**: the bank on
+  Sarab, Cinderhaven, Kurenai and Hollowmere (51 rows, the five particle rows and
+  `sky-motes` among them) against a BEFORE at 260552e by `exact.mjs`, 50 byte-equal and
+  `sarab-ground` the documented cross-process residue (100 pixels by 2/255: two frames,
+  each taken by both harnesses, Sarab alone at both ends); the same stale rows red at the
+  same means; the probe over the note's rotation with `--editor` equal by `Object.is` to
+  itself across three runs, and FAILING on a copy of its log with a first update, a
+  construction and an editor draw each changed by hand; the table on all seven maps;
+  typecheck and build. The note is in `plans/done/babylon_exit_landed.md`. The brief, as it
+  was handed over:
 
   No change to the game; under `src/` only
   `bench/vantages.ts`. **Do:** append rows, each at the END of its map's list and at an eye
@@ -2543,6 +2574,21 @@ splits, each marked "X4.7a"):
   before, and plain `pipelines.mjs hollowmere` creating nothing new; `F2` in an editor build
   (the motes run there too, one path), its frames at a map's eyes byte-compared with the
   BEFORE and reported, as X4.6c's review did; the menu and a second round; the seal quiet.
+  **And what the instruments do NOT hold, each checked another way and the way named in
+  the note** (X4.7a's review): **no row puts a particle against the see-through panes or the
+  fades** (the one run at `"beforeBlended"`), and the ash's order against the MOON is held
+  by `sky-motes` alone — through the harness's `motes` path, which is Babylon's alone at
+  X4.7a, so it grades OUR field only once this step gives that path (and `freeze`'s
+  `particles` switch and its thaw) the adapter for ours; a `sky-motes` byte-equal to the
+  BEFORE while the path still rebuilds a Babylon field proves nothing. **The particle rows sit
+  under `--check`'s mean** (the embers' whole field 0.0142 against `CHECK_TOLERANCE`'s 0.02;
+  the ring-and-ash row's two fields drawn in the other order, about 0.0001), so only
+  `exact.mjs` grades them, never the pass line. **The bank's rows step a field by its
+  pre-warm pair and never read the animation ratio**: the probe is the one test of the
+  clock (its window runs the scene's own path, the 1..1000 ms clamp included, since X4.7a's
+  review), and its `--against` compares every construction's and first update's random
+  draws, so the motes' counting is the port's to add beside Babylon's (the probe names a
+  field it cannot wrap in `unwrapped` and does not throw).
   **Owes:** `docs/rendering.md` (the ash's place; "Particles are still under it" now of ours;
   `Renderer.ts`'s point docs), `CLAUDE.md`'s warm-up sentence ("in a round its particles
   alone" becomes the wash alone) and `docs/states.md`'s, `PipelineWarmup`'s header,
@@ -2574,7 +2620,16 @@ splits, each marked "X4.7a"):
   probe's log equal by `Object.is` to the parent's in every rate, emitter and site; the fade
   with its hull at a stated `hullDrawDistance`, as X4.2d's review measured it; a rotation
   through both palettes; `census`, `surfaces.mjs` and a live round's `render` log with no
-  Babylon particle; `F2`, the menu, a second round, the seal quiet. **Owes:** `CLAUDE.md`'s
+  Babylon particle; `F2`, the menu, a second round, the seal quiet. **And what the
+  instruments do NOT hold** (X4.7a's review), each checked another way and the way named in
+  the note: **no row puts a ring against the see-through panes, the fades or the moon**, and
+  nothing at all holds a ring's order there (the ash's against the moon is `sky-motes`'s,
+  once X4.7c has ported the `motes` path); the wash rows are graded by `exact.mjs` alone,
+  the ring-and-ash row's order flip sitting about 0.0001 under `--check`'s mean; and the
+  probe's `--against` compares the 540 and 504 seeds a ring draws AT REST at its first
+  render after every reset (every install, teardown and editor rebuild), which no logged
+  number and no row shows, so a port that drops them fails the probe and nothing else.
+  **Owes:** `CLAUDE.md`'s
   gradient sentence DELETED (the vehicles section) and its warm-up sentence ("nothing of
   Babylon's in a round but the post chain"); `docs/vehicles.md`'s "What a GPU particle system
   here may and may not do" and "A puff fades IN" (the rules that were Babylon's and the port

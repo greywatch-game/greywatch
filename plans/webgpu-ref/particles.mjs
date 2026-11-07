@@ -19,13 +19,25 @@
  * as compiled, draws Babylon's field. `--against` makes that comparison, field by
  * field and frame by frame, and names the first number that differs.
  *
- * **What makes two runs comparable.** The clock is held by
- * `scene.useConstantAnimationDeltaTime` (public: a 16 ms frame, an animation
- * ratio of 0.96), so the step is not the wall clock. Each map's window opens
- * from a KNOWN state: every field reset (`reset()`, the CPU half zeroed) with the
- * particles off, the camera and the hull pinned, and the window's first frame is
- * the first with every field READY (its effects compiled), so a compile that
- * takes three frames on one run and five on the next moves nothing logged. The
+ * **What makes two runs comparable.** The clock is a SCHEDULE, not the wall
+ * clock: through the window the engine's frame delta (`getDeltaTime`, the one
+ * number `Scene.animate` reads) is answered by frame, counted from the window's
+ * first, 16.7 ms on most frames, 0.25 ms on the thirtieth of every sixty and
+ * 1,500 ms on the sixtieth, and the scene computes its animation ratio off it
+ * by its own path — **the 1..1000 ms clamp included** (`Scene.MinDeltaTime`,
+ * `MaxDeltaTime`), so the ratio a frame reads is 1.002, 0.06 (clamped up from
+ * 0.015) or 60 (clamped down from 90). A port whose clock skips the clamp, or
+ * reads a clock of its own, logs another `timeDelta` on those frames. (Until
+ * X4.7a's review the window ran under `scene.useConstantAnimationDeltaTime`,
+ * which skips the clamp and so could not catch that.) Nothing in `Game` steps
+ * by that number: the world is stepped by `FrameCap`'s refresh stamps, the
+ * delta read only for the readout. Before the window, waiting for the fields
+ * to be ready with the particles off, the scene's constant 16 ms holds. Each
+ * map's window opens from a KNOWN state: every field reset (`reset()`, the CPU
+ * half zeroed) with the particles off, the camera and the hull pinned, and the
+ * window's first frame is the first with every field READY (its effects
+ * compiled), so a compile that takes three frames on one run and five on the
+ * next moves nothing logged. The
  * world is the deploy screen's, HELD, with `Game.followEye` told the fleet
  * stepped (X4.2d's scratch `x42dr/wash.mjs` did the same): nothing moves the
  * camera, the hull or the eye the ash follows but this file. A map with a
@@ -52,9 +64,23 @@
  * editor's panel edits no `particles` field: this is the one way in), and after
  * it is put back.
  *
- * Every touch of a field goes through one adapter (`FIELDS`), Babylon's
- * `GPUParticleSystem`s today, so the step that makes them ours adds its own
- * beside it and a BEFORE at the parent runs this file unchanged.
+ * Every touch of a field's STATE goes through one adapter (`babylon`, held as
+ * `window.__fields`), Babylon's `GPUParticleSystem`s today, so the step that
+ * makes them ours adds its own beside it and a BEFORE at the parent runs this
+ * file unchanged. **The draw counting is not in it**: the constructions are
+ * counted around the game's own doors (`Atmosphere.build`, `RotorWash.buildRing`),
+ * whatever they build, but a first update is counted by wrapping Babylon's
+ * `_initialize` on the prototype that holds it, and a field with none in its
+ * chain (a field of ours) is NOT wrapped: it is named in the log's `unwrapped`
+ * and on the console, the probe goes on, and its first updates are simply
+ * absent — so `--against` against a Babylon parent fails on them until the
+ * port adds its own counting beside this one.
+ *
+ * **`--against`** compares, map by map, the order at deploy, the `Math.random`
+ * draws of every construction and every first update (label and count), the
+ * fields nobody could count, and then every logged number by `Object.is`; and
+ * with `--editor` on both sides, the editor's orders and draws. It names the
+ * first difference and exits 1.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { bootMap, hardLimit, installRound, launchClient, root, startDevServer } from "./harness.mjs";
@@ -158,12 +184,21 @@ await page.evaluate(() => {
       draws.push([label, n]);
     }
   };
+  // A first update is Babylon's `_initialize`, wrapped once on the prototype
+  // that holds it. A field with no `_initialize` in its chain (not Babylon's)
+  // is named here and left alone, never a throw inside the game's build.
   let initWrapped = false;
+  window.__unwrapped = [];
   const wrapInit = (f) => {
     if (initWrapped) return;
+    let proto = f ? Object.getPrototypeOf(f) : null;
+    while (proto && !Object.prototype.hasOwnProperty.call(proto, "_initialize")) proto = Object.getPrototypeOf(proto);
+    if (!proto) {
+      const what = `${f?.constructor?.name ?? typeof f} ${f?.name ?? ""}`.trim();
+      if (!window.__unwrapped.includes(what)) window.__unwrapped.push(what);
+      return;
+    }
     initWrapped = true;
-    let proto = Object.getPrototypeOf(f);
-    while (!Object.prototype.hasOwnProperty.call(proto, "_initialize")) proto = Object.getPrototypeOf(proto);
     const init = proto._initialize;
     proto._initialize = function (force = false) {
       if (this._buffer0 && !force) return init.call(this, force);
@@ -266,6 +301,7 @@ for (const id of maps) {
     const order = F.all().map(F.name);
     const draws = window.__draws.slice(drawsFrom);
     const frame = () => new Promise((res) => g.scene.onAfterRenderObservable.addOnce(res));
+    // The constant 16 ms until the window opens; the schedule through it (the header).
     g.scene.useConstantAnimationDeltaTime = true;
     const cam = g.cameraSys.camera;
     const V = cam.position.constructor;
@@ -314,6 +350,15 @@ for (const id of maps) {
       if (F.all().every(F.ready)) break;
     }
     F.enable(true);
+    // The window's clock: the engine's frame delta answered by frame, counted
+    // from the window's first, and the scene's own clamp left to read it.
+    const e = g.engine;
+    const frame0 = e.frameId;
+    e.getDeltaTime = () => {
+      const k = (e.frameId - frame0) % 60;
+      return k === 29 ? 0.25 : k === 59 ? 1500 : 16.7;
+    };
+    g.scene.useConstantAnimationDeltaTime = false;
     const log = [];
     for (const p of places) {
       pin(p);
@@ -324,6 +369,7 @@ for (const id of maps) {
     }
     F.enable(true);
     g.followEye = window.__fe;
+    delete e.getDeltaTime;
     g.scene.useConstantAnimationDeltaTime = false;
     if (keep) {
       hull.pos.copyFrom(keep.pos);
@@ -343,6 +389,7 @@ for (const id of maps) {
     firstUpdates: at.drawsAfter,
     places: at.places,
     columns: await page.evaluate(() => window.__fieldColumns),
+    unwrapped: await page.evaluate(() => [...window.__unwrapped]),
     log: at.log.map((f) => ({ ...f, fields: f.fields.map((r) => r.map(enc)), sites: f.sites.map(enc), passes: undefined })),
     passes: {
       control: controlStats,
@@ -358,6 +405,7 @@ for (const id of maps) {
   console.log(`  order at deploy: ${entry.order.join(", ")}`);
   for (const [label, n] of entry.constructions) console.log(`  random draws: ${label}: ${n}`);
   for (const [label, n] of entry.firstUpdates) console.log(`  random draws in the window: ${label}: ${n}`);
+  if (entry.unwrapped.length) console.log(`  NOT COUNTED (no _initialize to wrap): ${entry.unwrapped.join(", ")}`);
   console.log(
     `  passes in the draw phase, particles off (control): ${controlStats.map((s) => `${s.renderPasses}R/${s.computePasses}C/${s.splits}S`).join(" ")}; seam path ${[...new Set(at.controlPaths)].join("/")}`,
   );
@@ -421,6 +469,16 @@ if (pageErrors.length || consoleErrors.length) {
 }
 if (OUT) writeFileSync(OUT, JSON.stringify(report));
 
+/** The first difference between two lists of `[label, count]` (or of names), or null. */
+function drawsDiffer(here, there) {
+  for (let i = 0; i < Math.max(here.length, there.length); i++) {
+    const a = JSON.stringify(here[i]);
+    const b = JSON.stringify(there[i]);
+    if (a !== b) return `entry ${i} is ${a ?? "absent"} here and ${b ?? "absent"} there`;
+  }
+  return null;
+}
+
 let failed = false;
 if (AGAINST) {
   const ref = JSON.parse(readFileSync(AGAINST, "utf8"));
@@ -435,6 +493,15 @@ if (AGAINST) {
     if (JSON.stringify(r.order) !== JSON.stringify(m.order)) {
       console.log(`against: ${m.map}'s order differs: ${r.order.join(",")} there`);
       failed = true;
+    }
+    // The random draws, label and count: a port that skips a draw (a ring's
+    // seeds at rest after a reset) moves no logged number, so this is its test.
+    for (const key of ["constructions", "firstUpdates", "unwrapped"]) {
+      const d = drawsDiffer(m[key] ?? [], r[key] ?? []);
+      if (d) {
+        console.log(`against ${m.map}: ${key} DIFFER — ${d}`);
+        failed = true;
+      }
     }
     let first = null;
     let compared = 0;
@@ -470,6 +537,21 @@ if (AGAINST) {
     if (first) failed = true;
     console.log(`against ${m.map}: ${first ? `DIFFERS — ${first}` : `equal by Object.is, ${compared} numbers over ${m.log.length} frames`}`);
   });
+  if (ref.maps.length !== report.maps.length) {
+    console.log(`against: ${report.maps.length} maps here and ${ref.maps.length} there`);
+    failed = true;
+  }
+  if (report.editor && ref.editor) {
+    const orders = ["built", "countEdited", "countPutBack"].map((k) => [k, JSON.stringify(report.editor[k]), JSON.stringify(ref.editor[k])]);
+    const o = orders.find(([, a, b]) => a !== b);
+    const d = drawsDiffer(report.editor.draws, ref.editor.draws);
+    if (o) console.log(`against editor: ${o[0]} is ${o[1]} here and ${o[2]} there`);
+    if (d) console.log(`against editor: draws DIFFER — ${d}`);
+    if (o || d) failed = true;
+    else console.log("against editor: orders and draws equal");
+  } else if (report.editor || ref.editor) {
+    console.log("against: --editor on one side only, the editor not compared");
+  }
 }
 await browser.close();
 vite.stop();

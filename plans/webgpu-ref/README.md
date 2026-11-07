@@ -209,19 +209,28 @@ node plans/webgpu-ref/particles.mjs [map...] [--frames=N] [--out=f.json] [--agai
   raises it with a `blob` event. X4.6a's note has the table.
 
 - **`particles.mjs`** is the GPU particle fields' CPU half, logged frame by frame in
-  a LIVE loop (`BABYLON_EXIT.md` X4.7a): each field's emission state (rate,
+  a live frame loop over the deploy screen's HELD world (`BABYLON_EXIT.md` X4.7a; not a
+  live round: `Game.followEye` is told the fleet stepped, the hull and the camera
+  pinned): each field's emission state (rate,
   accumulator, count, emit index and count, write pointer, step, emitter), the
   rotors' water sites, the GPU passes each frame began (a field's dispatch
   SPLITTING the main pass, counted) and which path the seam took, with a flying
-  hull pinned over dry ground and then over water and the ash running, the clock
-  held by `scene.useConstantAnimationDeltaTime`, every field reset and the window
-  opened on the first frame every field is ready. Several maps are one boot,
+  hull pinned over dry ground and then over water and the ash running, every field
+  reset and the window opened on the first frame every field is ready. **The clock
+  is a schedule of frame deltas handed to the scene's own path** (16.7 ms, and
+  0.25 ms and 1,500 ms once every sixty frames, so the 1..1000 ms clamp in
+  `Scene.animate` is exercised; X4.7a's review, where it had been
+  `useConstantAnimationDeltaTime`, which skips the clamp). Several maps are one boot,
   rotated through the menu as a player rotates them; at each install it logs the
   scene's particle systems in order and the `Math.random` draws of each
   construction and each first update, and `--editor` ends with `F2` and an
-  editor rebuild. `--against` compares two logs by `Object.is`, number by number,
-  which is how a port of the CPU half is proven, since no live frame's pixels
-  reproduce; one tree against itself is the control.
+  editor rebuild. `--against` compares two logs — the order, every construction's
+  and first update's draws (label and count), then every logged number by
+  `Object.is`, and the editor's orders and draws — which is how a port of the CPU
+  half is proven, since no live frame's pixels reproduce; one tree against itself
+  is the control. A field it cannot count (no Babylon `_initialize` in its chain)
+  is named in the log's `unwrapped` rather than thrown on, so a port adds its own
+  counting beside Babylon's.
   `surfaces.mjs` has a class per field (`motes`, `rotorWash`, `rotorSpray`), each
   draw logged at its place between the points with its pipeline, blend mode, count
   and the defines of its compiled update and render effects, and the seam's path
@@ -452,7 +461,14 @@ from the spawn photographed no shadow window at all.
   (`cinderhaven-particles-ring-ash`). Each field is rebuilt under a seed (the
   ash before the rings, an install's order), stepped by its own pre-warm pair
   through fixed frames at an animation ratio of 1 under a second seed, and held
-  by a clock of zero, and every field a row does not state is held EMPTY. **What
+  by a clock of zero, and every field a row does not state is held EMPTY. **Every
+  touch of a field in that path goes through one adapter (`babylonFields`)**; the
+  `motes` path and `freeze`'s `particles` switch (with its thaw) are still
+  Babylon's alone, and are `BABYLON_EXIT.md` X4.7c's to give an adapter for ours.
+  **These rows sit under `--check`'s mean** — the embers' whole field 0.0142, the
+  order between the ring and the ash about 0.0001 — **so only `exact.mjs` grades
+  them.** No row puts a particle against the see-through panes or the fades, or a
+  ring against the moon. **What
   no row holds is a field MOVING**: the CPU half a port must reproduce (the
   emission accumulator, the count, the write pointer, the step, the emitter) is
   logged frame by frame in a live loop by `particles.mjs`, compared by

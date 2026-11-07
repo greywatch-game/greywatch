@@ -8888,3 +8888,82 @@ under `src/` is `bench/vantages.ts` alone).
   the probe across two TREES (it has one tree's run against itself, the control the later
   steps compare against); a live frame's pixels of either field (none reproduce, which is
   why the probe exists).
+
+**X4.7a's review** (2026-11-07; no change to the game: the instruments and the records;
+`git diff` touches nothing under `src/`). An independent review found nothing real and five
+minor points, fixed now because X4.7c and X4.7d grade themselves with these instruments.
+
+- **The one adapter, made true and its limits stated.** `harness.mjs`'s `particles` path
+  read the ring's `emitRate` and wrote `preWarmStepOffset` directly; both go through
+  `babylonFields` now (`emits`, `prime`, and `ringsOf` for a hull's rings), with the same
+  arithmetic, so a field's bytes cannot move. The comment named a `fields` that is
+  `babylonFields`. **Two paths stay Babylon's alone, and are X4.7c's to give an adapter**,
+  as its brief already said and its Verify now spells out: the `motes` row's path
+  (`sky-motes`, writing the mote field's emitter, emit box, `preWarmStepOffset` and
+  `updateSpeed` on `g.atmosphere.system` and calling its pre-warm pair) and `freeze`'s
+  `particles` switch with its thaw (`g.scene.particlesEnabled`). On a tree whose ash is
+  ours, `sky-motes` byte-equal to a BEFORE proves nothing until that path builds ours.
+- **The probe no longer throws on a field that is not Babylon's.** Its `_initialize` wrap
+  walked the prototype chain to `null` and threw inside `Atmosphere.build`, breaking the
+  install. It now stops at the end of the chain, leaves that field uncounted, names it in
+  the log's `unwrapped` and on the console, and wraps the next field that has an
+  `_initialize`. Its header named an adapter `FIELDS`; it is `babylon`, held as
+  `window.__fields`, and the header says the draw counting is outside it.
+- **`--against` compares the random draws.** Before, it compared the order and the logged
+  numbers alone, so a port dropping the 540 and 504 seeds a ring draws at rest after each
+  reset passed. It now compares every construction's and first update's `[label, count]`,
+  the `unwrapped` list, the map count, and with `--editor` on both sides the editor's three
+  orders and its draws, and names the first difference.
+- **The probe's clock is the scene's own path (item 3: the clock exercised, not the gap
+  recorded).** `useConstantAnimationDeltaTime` makes `Scene.animate` use 16 ms and skip
+  `Math.max(MinDeltaTime, Math.min(getDeltaTime(), MaxDeltaTime))`, so a port that dropped
+  the 1..1000 ms clamp passed. Through the window the engine's `getDeltaTime` is now
+  answered by frame, counted from the window's first: 16.7 ms, but 0.25 ms on the
+  thirtieth of every sixty frames and 1,500 ms on the sixtieth, with
+  `useConstantAnimationDeltaTime` off, so the scene clamps it itself. The log's `timeDelta`
+  shows all three: motes 0.012024, 0.00072 and 0.72, a ring 0.0167, 0.001 and 1 (clamped up
+  from 0.015 and down from 90). Nothing in `Game` steps by that number (`FrameCap`'s stamps
+  step the world, and the delta reaches only the readout). The constant 16 ms still holds
+  while the fields compile with the particles off, so the window still opens from a known
+  state. The bank's rows step by the pre-warm pair and never read the ratio, so the probe
+  is the clock's only test, and X4.7c's Verify says so.
+- **The records claimed more than was measured.** "Every number in it measured" was not
+  true of the table. Read now off the live fields on all seven maps in one boot (scratch
+  `x47a-fix/table.mjs`), every cell is as stated: the mote capacities 18,667, 22,400,
+  14,934, 16,800, 5,600, 6,067 and 7,467; ADD on Coldharbour, Harrowmead, Sarab and
+  Cinderhaven and STANDARD on the other three; random textures 8,192 (the device's
+  `maxTextureSize`) and 4,096 a ring; `mote` a 64² `DynamicTexture` with no mips and the
+  rings' a 128² one; boxes 0.2 to 11 m, half-widths 130, 125 and 70 on the three maps
+  stating a `volume` and the map's half otherwise; rings at 135 and 126, STANDARD, a
+  cylinder of radius 5.72, height 0.4, `radiusRange` 0.5 and `directionRandomizer` 0.4,
+  three colour stops in two rows with only the alpha moving, two size and three velocity
+  gradients; `updateSpeed` 0.012 and 1/60; two fliers on Sarab and Cinderhaven, water on
+  all seven. The plan's table header now says the review measured them. **The splits and
+  the seam's path were counted in the deploy screen's HELD world** with `followEye` told
+  the fleet stepped, not in a live round, as the brief asked; the plan and the README now
+  say so, and nobody has counted a live round's.
+- **What no row holds, now in X4.7c's and X4.7d's Verify**: a particle against the
+  see-through panes or the fades, and a ring against the moon (the ash's order there is
+  `sky-motes`'s alone, once X4.7c ports the `motes` path; nothing holds the rings'); and
+  the particle rows sit under `--check`'s mean (the embers 0.0142, the ring-and-ash order
+  flip about 0.0001), so only `exact.mjs` grades them. The README says the same.
+- **Measured.** `bank.mjs sarab cinderhaven kurenai hollowmere --check --keep` at 260552e
+  (the BEFORE, the parent's harness) and with this harness: **50 of 51 rows byte-equal by
+  `exact.mjs`**, the five particle rows and `sky-motes` among them. The one other was
+  `sarab-ground`, 100 pixels by 2/255, the cross-process residue `exact.mjs`'s header
+  names. Sarab alone at both ends shows it is two frames, each taken by BOTH harnesses
+  (the BEFORE equal to this harness's Sarab-alone run, and this harness's four-map run
+  equal to the parent's Sarab-alone run), on a row shot before any particle row on its
+  list. The same ten stale rows were red at the same means on both sides. The probe, `sarab
+  cinderhaven sarab hollowmere cinderhaven --editor`, 240 frames a place: three runs equal
+  by `Object.is` (45,120 numbers a map with a hull, 4,800 on Hollowmere, and the editor's
+  orders and draws). A copy of the first log with Sarab's `_initialize rotorWash0` 540
+  changed to 0, Cinderhaven's `construct motes` 65,536 to 65,535 and an editor draw 504 to
+  503 **FAILED**, all three named, exit 1. `unwrapped` was empty on every map. The order,
+  the draws, the splits (10 render passes with the particles off; 11-12 and 1-2 dry; 13
+  and 3 wet) and the editor's order are X4.7a's readings unchanged. Typecheck and build
+  (`check-babylon-free`, `check-proving`) pass. No page or console error.
+- **Not verified.** The `unwrapped` path on a real non-Babylon field (there is none until
+  X4.7c). A live round's splits and seam path. The rest of the bank (the harness change is
+  inside the `particles` branch, which only a particle row enters). `corecheck`, parity,
+  `census`, `gate`, `shaders` (no game code moved).
