@@ -2246,26 +2246,312 @@ Greyfen, `F2` from the menu and each eye of the map's rows):
   live with the player in the ring, no error, the seal holding. The blob map's leak is
   measured (`FINDINGS.md` 70).
 
-### X4.7 — GPU particles — **S–M**
+### X4.7 — GPU particles — **S–M, as four sub-steps** (split 2026-11-07, proposed by the orchestrating session at the owner's instruction to implement X4.7 in sub-steps; not yet decided by the owner)
 
-`Atmosphere`'s ash and `RotorWash` (`GPUParticleSystem`,
-`CylinderParticleEmitter`) as our own compute particles over `puffTexture`.
-The rule that a colour gradient can only be added before a system's first
-render goes away with Babylon's particle system.
+`Atmosphere`'s ash and `RotorWash`'s two rings (`GPUParticleSystem`, a box and a
+`CylinderParticleEmitter`) as our own compute particles: our update, our draw, our
+pipelines on the round's list, and Babylon's scene left with no particle system in a
+round or an editor build. The rule that a colour gradient can only be added before a
+system's first render goes away with Babylon's particle system (rule 7). **No sub-step
+is meant to change the picture**: each is proven byte-identical against a BEFORE at its
+parent and lands on its own; a difference goes in a commit of its own whose subject
+starts `Picture change:`, only by the owner's decision, with the bank's numbers (rule
+2), never absorbed. It is split because the bank holds one particle frame and no wash,
+so it is widened first; because the profiler's span is an instrument the moves would
+empty; and because the ash and the wash share a shader but not a feature set, the wash
+carrying the gradients. The order runs from the least risk to the most.
 
-- **The rotor wash compiles in play today** (X4.4e measured it:
-  `pipelines.mjs cinderhaven --round`, two of Babylon's pipelines in every
-  run — the wash's compute and render, on the first frame a helicopter
-  raises dust; `FINDINGS.md` 16). Ours, its pipelines join the round's
-  declared list (`Game.roundPipelines`), and the count goes to zero.
-- **The profiler's `drawWorld` is owed an answer** (found by X4.5a's review).
-  It opens on Babylon's rendering group, so on a frame Babylon visits no group
-  (X4.5a's fallback) no span opens and the weapon's queuing falls under no
-  group span; here, with nothing holding group 0, it reads 0 on every frame.
-  Retire the span (a report version) or hang it off the seam's points, and
-  correct `FrameProfile.hookRender`'s comment and `docs/profiling.md` with it.
-- **Verify:** the bank with ash; a helicopter landing on sand and on water;
-  `pipelines.mjs cinderhaven --round` zero in play.
+**THE ONE RULE FOR EVERY SUB-STEP: where a byte-exact port is not reached, STOP and
+report to the owner with the numbers** — the rows that moved, their pixels and worst
+value, what was tried and what each attempt moved. Do not choose a draw point, a blend, a
+sort, a clock or a seed that "holds the rows", and do not land a workaround as "no change
+to the picture": that is X4.6c's history (its row in "Decisions"), where an ambiguous
+brief led an implementer to an unplanned third option. **A brief from an orchestrating
+agent that reads otherwise is wrong, and this paragraph wins.**
+
+**What they are today** (a read of the code, Babylon 9.28; **X4.7a measures every claim
+here** and corrects this list in place):
+
+| field | systems | emitter | texture | colour | blend | random texture | capacity |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| ash, `motes` (`Atmosphere`) | one, rebuilt by `fit` whenever the capacity moves | a box, 0.2 to 11 m up, world-absolute in height; on the origin, or on the eye for a map stating `volume` (Sarab 260, Cinderhaven 250, Kurenai 140) | `mote`, its own 64² canvas radial gradient (`DynamicTexture`, no mips) — **not `puffTexture`**, as this entry first said | `color1`, `color2`, `colorDead`; no gradient | `BLENDMODE_ADD` where `emissive` (Coldharbour, Harrowmead, Sarab, Cinderhaven), `STANDARD` elsewhere | the DEVICE's `maxTextureSize`, no option being passed (8192 on the bank's box, `FINDINGS.md` 5) | `ceil(count / 3 × 14)` under 32,000: Hollowmere 18,667, Greyfen 22,400, Coldharbour 14,934, Harrowmead 16,800, Sarab 5,600, Cinderhaven 6,067, Kurenai 7,467 |
+| dust ring, `rotorWash<i>` | one a flying hull (two on Sarab and two on Cinderhaven), kept across installs, rebuilt only for a new palette | a cylinder (`createCylinderEmitter(1, 0.4, 0.5, 0.4)`, the radius set per hull) on the ground `washTo` finds, `lift` over it | `rotorWash`, the 128² puff (`puffTexture`) | a colour gradient of two rows (light, dark), three stops, only the alpha moving; size and velocity gradients; angular speed and rotation ranges | `STANDARD` | 4096 | `ceil(90 × 1.5)` = 135 |
+| spray ring, `rotorSpray<i>` | one a flying hull on a map with `water` (all seven state one) | the same, on the water's surface | the same texture | the same shape, the map's whitewater pair | `STANDARD` | 4096 | `ceil(140 × 0.9)` = 126 |
+
+- **Each is a `GPUParticleSystem` routed to `ComputeShaderParticleSystem`** (WebGPU), in
+  emit-rate-controlled mode (`Atmosphere.build`'s and `RotorWash.buildRing`'s notes say
+  why both depend on it). **Its CPU half is the emission.** `animate()`, called once a
+  frame from `Scene._evaluateActiveMeshes` for every started system while
+  `scene.particlesEnabled`, sets `timeDelta = updateSpeed × scene.getAnimationRatio()`,
+  the ratio being the engine's frame delta clamped to 1..1000 ms, × 0.06: **the wall
+  clock, not `tick`'s `dt`**. `render()` adds `emitRate × timeDelta` to an accumulator
+  while not stopped, grows `_currentActiveCount` toward `ceil(emitRate × maxLifeTime)`
+  and never shrinks it but on `reset()`, and hands the update shader an emit range off a
+  circular write pointer. **`render()` returns before any of it while the system is not
+  ready** (its effects compiling), so a field emits from the first frame its effects are
+  ready, not from its construction. The motes' `updateSpeed` is 0.012 (0.72 s of mote
+  time a second), the rings' 1/60.
+- **Where it sits in Babylon's frame.** Every system is dispatched to rendering group 0
+  (its emitter is a `Vector3`, so no frustum test or size gate touches it, and
+  `WorldCulling` never sees it) and drawn by `RenderingGroup._renderParticles`, after the
+  group's alpha-tested list and before item 6, in `scene.particleSystems` order:
+  **creation order, a disposed system removed, so a rebuilt field goes to the END.**
+  Against our points: `first`, `beforeAlphaTest`, `afterSurfaces`, `opaque` (the turf,
+  added at each install), **the particles**, `beforeBlended` (the moon, first, added at
+  `SkyDraw`'s construction; then `FarthestRun`), `afterGroup`. So the moon paints over a
+  mote in front of it, and every pane and fade of the one run paints over the particles.
+  **No particle is drawn in the glow's mask** (`GlowPass`, `renderParticles = false`),
+  the lamps' atlas (the same), a shadow map or a bake (all ours). Each draw is an
+  instanced triangle strip of four, an instance a slot, in slot order, unsorted; depth
+  test LEQUAL, no depth write, no cull, `ALPHA_ADD` or `ALPHA_COMBINE`
+  (`_setEngineBasedOnBlendMode`), so an ember leaves the coverage alpha alone and ash and
+  dust accumulate into it. Its vertex stage is handed `view` and `projection` APART,
+  `eyePosition`, `translationPivot` and `worldOffset`; its fragment stage carries whatever
+  fog and image-processing defines the scene gives it. **That last is a read only**: no
+  `scene.fogMode` is set, and the scene's default `ImageProcessingConfiguration` is enabled
+  and not applied by a post process, so `IMAGEPROCESSING` (a round trip through linear) is
+  probably compiled in. The bytes need the compiled source, not this guess.
+- **It SPLITS the main pass.** `ComputeShaderParticleSystem.updateParticleBuffer`
+  dispatches from inside `render()`, and `WebGPUEngine._computeDispatch` opens with
+  `_endCurrentRenderPass()`: every system with a live count ends the main pass, and
+  Babylon restarts it for the draw. **Once a ring has emitted, its count stays up until its
+  `reset()`** (`RotorWash.clear`, at every install and teardown), so it dispatches and draws
+  its dead slots every frame after, at a rate of zero.
+- **It holds group 0, and that decides which path the seam takes.** Since X4.6e nothing
+  else of Babylon's is in a round, but a started system is dispatched every frame, so in a
+  live round group 0 is VISITED and our points are told inside it. **In the bank it is
+  not**: `freeze` sets `scene.particlesEnabled` false for every row but a `motes` row, so
+  every other row of a round is drawn through the seam's empty-group fallback (X4.5a), its
+  points told at the draw phase's end. So the bank already grades the path a live round
+  takes from X4.7c on (five maps) and from X4.7d on (all seven), and only a particle row
+  grades the switch. A stopped field (`apply(undefined)`, every teardown) is still
+  STARTED: it drains, and holds the group, behind the menu's photograph.
+- **Pipelines.** Babylon's: an update COMPUTE pipeline, made by the synchronous
+  `createComputePipeline` at a system's first dispatch, and a render pipeline at its first
+  draw, one of each per define set and blend (the dust and spray rings sharing theirs is a
+  read). The motes' are made under the building card, the field emitting at the vantages.
+  The rings', at rest at a count of zero, are made on the first frame a helicopter raises
+  dust: the two of Babylon's X4.4e measured in play (`pipelines.mjs cinderhaven --round`,
+  `FINDINGS.md` 16). **Beside them in that count stands `GiVolume`'s race** (three of
+  Babylon's at the spawn in some runs, `FINDINGS.md` 16, X5.1's), which X4.7 does not touch:
+  "zero in play" below means zero of ours and none of the wash's.
+- **Randomness.** Every number a field draws is `Math.random`, a picture's, which the game
+  allows (`CLAUDE.md`); the bank pins it by seeding the calls that draw.
+  `GPUParticleSystem`'s constructor draws `4 × randomTextureSize` for its first random
+  texture and as many for its second (65,536 for the motes on the bank's box, 32,768 a
+  ring); `_initialize`, at the first `render()` after a construction or a `reset()`, draws
+  4 a slot for the seeds (74,668 on Hollowmere, 540 a dust ring, 504 a spray ring);
+  nothing else in the class, its emitters, `ComputeShader`, `UniformBuffer` or `RawTexture`
+  draws (a read, by `grep`). The update shader picks from the random textures by slot, seed
+  and `currentCount`, so the GPU's state is a function of the CPU's emission, and so of the
+  clock. `sky-motes` pins all of it (`placeVantage`'s `motes`): the field rebuilt under seed
+  `0xa5`, stepped by Babylon's own pre-warm calls (`animate(true)`, `render(true, true)`) at
+  a fixed step under seed `0xa6`, which is where `_initialize`'s seeds are drawn, and held
+  by an `updateSpeed` of 0. **X4.6e's lesson is the rule here**: a port that draws a
+  different count in a seeded window, or at another call, moves a row for a reason that is
+  not the picture (`Geometry.RandomId`'s 31 draws moved `fx-blob-sort`'s bullet mark). So a
+  field of ours draws what Babylon's drew, in the same calls and in the same order; a draw
+  Babylon made that ours does not make owes the harness a compensation stated beside it, as
+  the blob's 31 were, never a new seed.
+
+**The sub-steps.** Each one's Verify includes "Every sub-step owes" below.
+
+- **X4.7a — the bank sees the particles.** No change to the game; under `src/` only
+  `bench/vantages.ts`. **Do:** append rows, each at the END of its map's list and at an eye
+  a row above it already stands at, so no older row moves and the benchmark gains no stop,
+  banked with `--rows` at the parent: the ash as a map runs it, not gathered, on an ADD
+  field that follows the eye (Cinderhaven's embers) and on a STANDARD one that follows it
+  and falls (Kurenai's leaves); a helicopter low over SAND, its dust ring stepped and held
+  (Sarab); one low over WATER, its spray ring and the water's hole (Cinderhaven's bay); and
+  one frame holding a ring and the ash together, which is the order BETWEEN two systems. A
+  wash row is posed by the game's own doors where they exist — the hull placed and spooled
+  as X4.2d's `x42dr/wash.mjs` pinned it, the rings driven by `RotorWash.update` with the
+  fleet stepped — and pinned as `sky-motes` is: the rings REBUILT under a seed (they are
+  built at install, off the native stream), stepped by Babylon's pre-warm calls at a fixed
+  step under a second seed, held by a clock of zero. **In a particle row the particles
+  drawn are exactly the ones it states**: every other field is held empty (`stop()` and
+  `reset()`, which stays empty in emit-rate-controlled mode). **Write the harness's
+  particle paths so a later step adds the path for OURS beside Babylon's**, because X4.7c's
+  and X4.7d's BEFOREs run the newest instrument files over the parent's tree (X4.5a's note;
+  `freeze`'s water clock is kept for a tree whose water is Babylon's). **Measure and
+  record, at the parent:** `surfaces.mjs` gains a `particles` class — each system's draw
+  logged at its place between the points, its pipeline state, and the defines of its
+  compiled update and render effects — and `--pixels` takes each system out for a frame,
+  which shows a row HOLDS it; which path the seam takes in every row and in a live round;
+  the main pass's render passes a frame in a live Cinderhaven round, the splits counted;
+  the `Math.random` draws at each construction and each `_initialize`, counted as X4.6e
+  counted the blob's; and the order of `scene.particleSystems` across a live rotation Sarab
+  → Cinderhaven → Sarab → Hollowmere → Cinderhaven and an editor rebuild. **The read is
+  that in every shipped flow the motes stand ahead of every ring** (a ring is rebuilt only
+  for a new palette, and no two maps with rings share one), and that an editor's edit of a
+  map's `particles.count` is the one flow that could put them behind (dev only; record it,
+  it does not block). And `pipelines.mjs cinderhaven --round` and `sarab --round`, each
+  creation's stack kept. **Keep a live probe** (`plans/webgpu-ref/particles.mjs`, a name to
+  change freely): a live round with a hull pinned over sand and over water and the ash
+  running, the clock held by `scene.useConstantAnimationDeltaTime` (public), logging per
+  frame each field's emission state (rate, accumulator, count, emit index and count, write
+  pointer, `timeDelta`, emitter) and the water's site — the CPU half a port must reproduce
+  bit for bit, compared by `Object.is` across two trees, since no live frame's pixels
+  reproduce. Rewrite `plans/webgpu-ref/README.md`'s "One row holds a GPU particle" and its
+  table's row for X4.7. **Read first:** `plans/webgpu-ref/README.md` (the scripts, "What a
+  row can stand in front of the camera", "What is NOT in it"); `src/bench/vantages.ts`'s
+  header (`motes`, `fx`); `harness.mjs` (`placeVantage`'s `seeded`, its `motes` and the
+  put-away; `freeze`'s `particles`); `surfaces.mjs`; `pipelines.mjs`; X4.5a's and X4.6a's
+  notes; X4.6e's note on `Geometry.RandomId`; `FINDINGS.md` 16 and 68; `Atmosphere.ts`;
+  `RotorWash.ts`; `Vehicle.washTo`; and Babylon's `Particles/gpuParticleSystem.pure.js`
+  (the constructor, `animate`, `render`, `_initialize`, `_update`, `_render`),
+  `Particles/computeShaderParticleSystem.pure.js`,
+  `Engines/WebGPU/Extensions/engine.computeShader.pure.js` (`_computeDispatch`),
+  `Rendering/renderingGroup.js` (`render`, `_renderParticles`) and `scene.pure.js` (the
+  particle loop in `_evaluateActiveMeshes`, `getAnimationRatio`). **Verify:** every old row
+  byte-equal to a BEFORE at the parent by `exact.mjs`; each new row byte-equal to itself
+  across two processes (a row that is not, is not banked: find what moves, as the README
+  says four times); the same 34 stale rows red at the same means; the measurements above in
+  its note. If a row cannot be pinned without changing the game, STOP and report.
+
+- **X4.7b — the profiler's `drawWorld` is answered.** No change to the picture; a report
+  version. The span opens on Babylon's rendering group, so on a frame Babylon visits no group
+  (X4.5a's fallback: the menu, every bank row, and from X4.7c every live frame on five maps)
+  no span opens and our queuing falls under none; from X4.7d it reads 0 on every frame of a
+  round. **It lands BEFORE any move**, so a capture across X4.7c and X4.7d compares like with
+  like. **Do:** hang it off the camera's DRAW PHASE instead of the group —
+  `onBeforeDrawPhaseObservable` to `onAfterDrawPhaseObservable`, the public observables
+  `inDraw` already reads, so `hookRender` still hangs off the scene's own observables and
+  `CLAUDE.md`'s "Measuring a frame" stands — closed where the glow's span opens, as `inDraw`
+  is closed there today, so `glow` stays outside it and the spans still nest. It then reads
+  the same whichever path told our points. Retiring the span (the phase out of `PHASES` and
+  `PARENT_OF`, a report version) is the other answer, if the draw-phase form cannot be made
+  to nest. **Read first:** `FrameProfile.hookRender` and its header (`inDraw`, "the three
+  cannot overlap"); `docs/profiling.md` (the phase tree, ~line 425; the weapon's queuing,
+  ~line 1240; the viewer's three rules); `render/babylonSeam.ts`'s `onMainPass` (which
+  observers are inserted first, and the fallback); `GlowPass`'s observables. **Verify:**
+  `?profile` captures of a live round at the parent and at the step on Coldharbour and
+  Cinderhaven, and of the menu: `drawWorld` open on every frame, `glow` outside it, the tree
+  as `ProfileReport.tree` states it; the bank by `exact.mjs`, which should move nothing (the
+  profiler is disarmed there). **Owes:** `FrameProfile.hookRender`'s comment,
+  `docs/profiling.md`'s tree and its "from X4.7 ... owes the span an answer", the report
+  version, and the viewer only if a name moved.
+
+- **X4.7c — the ash is ours.** **Do:** the machinery, and the motes on it. Names are
+  proposals: `render/ParticleDraw.ts` (every field of the game's in ONE list in creation
+  order, a disposed one removed, so the order `scene.particleSystems` held is kept; their
+  buffers; the update dispatched and the draw queued), `render/particleProgram.ts` (the
+  pipelines: an update a feature set, a render a feature set and blend),
+  `shaders/wgsl/particles.ts`, and a field's CPU half: Babylon's `animate` and the
+  emit-rate-controlled arm of its `render`, ported line for line, the not-ready gate
+  included, so a field emits and draws nothing until its pipelines are ready. **What makes
+  it exact:**
+  - **the WGSL is Babylon's AS COMPILED** for that feature set, read off the parent's
+    effects after its preprocessor and copied, the bindings alone changed: a re-typed shader
+    is a different rounding (X4.6e read the fades' pixel stage and state off each
+    material's compiled effect);
+  - **the buffers are Babylon's layout** (`_initialize`'s stride and its
+    `alignDataInBuffer` padding), ping-ponged as `_targetIndex` is, the draw reading the
+    buffer the update just wrote;
+  - **the random textures** are `rgba32float`, `randomTextureSize` × 1, read by
+    `textureLoad`, the motes' width the device's `maxTextureDimension2D` as Babylon's caps
+    read it (so another device keeps its own field); both drawn at the field's construction
+    and the seeds at its first update after a build or a reset, in Babylon's order;
+  - **the uniforms are the values Babylon bound**: `view` and `projection` APART (a fused
+    matrix is a different rounding; read off the camera in the system and handed in, as
+    `Sky` hands in its `viewRotation`), the camera's `globalPosition`, `colorDead`, and the
+    emitter's matrix built as `Matrix.TranslationToRef` builds it;
+  - **the clock is Babylon's**: `updateSpeed × scene.getAnimationRatio()` (public), handed in
+    by `Game` once a frame in every state the scene renders, as `animate()` ran; X5.4, which
+    takes the frame, inherits that clock;
+  - **the update runs OUTSIDE the main pass** (`host.prepareEncoder()`, item 9: submitted
+    first, inside the GPU timer), so the pass no longer splits. A split costs no pixel by
+    construction (the pass restarts with `load`), and the bytes are what say so: if a row
+    moves because the split is gone, STOP;
+  - **the draw goes where Babylon's particles were**, after the turf and ahead of the moon.
+    The turf is added at `"opaque"` at each install and the moon first at `"beforeBlended"`
+    at `SkyDraw`'s construction, so a draw added at `"opaque"` at `Game`'s construction
+    lands AHEAD of the turf. The implementer picks the mechanism; `exact.mjs` says whether it
+    holds. It is also **ahead of Babylon's rings**, which stay Babylon's through this step:
+    the order every shipped flow has (X4.7a's reading; the ring-and-ash row grades it). If
+    X4.7a found a shipped flow with a ring ahead of the motes, this step and X4.7d land
+    together or the order goes to the owner, never a draw point that holds one flow;
+  - **the `mote` texture stays Babylon's `DynamicTexture`**, bound through the seam
+    (`hostTexture`, `bind`, items 7 and 8) as the water's foam is until X5.4. **No new Babylon
+    internal**: a step that needs one STOPS (rule 4).
+
+  `Atmosphere` keeps `fit`, `apply`, `update`, the wrap invariant and its DEV warning, on a
+  field of ours; its header's note on the routing goes. The harness's `motes` path and
+  `freeze`'s `particles` switch reach ours and keep Babylon's for a BEFORE. The pipelines join
+  `Game.roundPipelines` (BOTH blends declared: a map change can flip one), `shaders.mjs` builds
+  them, and a report version counts the particles' draws (the main pass's identity, as
+  `pools.water` did). Correct `Game`'s stale comment at `atmosphere.update` ("all of them but
+  one": three maps state a `volume`). **Read first:** X4.7a's note; `Atmosphere.ts`;
+  `render/babylonSeam.ts` (items 3 and 6 to 9); `render/Renderer.ts` (the points and their
+  order); `render/SkyDraw.ts` and `FarthestRun.ts` (what stands at `"beforeBlended"`);
+  `render/GrassDraw.ts` (the turf at `"opaque"`); `render/PipelineCache.ts` and
+  `core/PipelineWarmup.ts`; the ports of X4.6c and X4.6d for a Babylon program copied as
+  compiled; Babylon's sources as X4.7a lists them; `docs/rendering.md`'s frame order and its
+  moon. **Verify:** `exact.mjs` against a BEFORE at X4.7b, every row, `sky-motes`, the ash rows
+  and the ring-and-ash row among them; `census --against`, Babylon down by the motes and ours
+  up by as many; `surfaces.mjs`, no `motes`; the probe's log equal by `Object.is` to the
+  parent's on Hollowmere, Coldharbour and Cinderhaven and across a map change; `pipelines.mjs
+  cinderhaven --round`, zero of ours in play and the wash's two and `GiVolume`'s race as
+  before, and plain `pipelines.mjs hollowmere` creating nothing new; `F2` in an editor build
+  (the motes run there too, one path), its frames at a map's eyes byte-compared with the
+  BEFORE and reported, as X4.6c's review did; the menu and a second round; the seal quiet.
+  **Owes:** `docs/rendering.md` (the ash's place; "Particles are still under it" now of ours;
+  `Renderer.ts`'s point docs), `CLAUDE.md`'s warm-up sentence ("in a round its particles
+  alone" becomes the wash alone) and `docs/states.md`'s, `PipelineWarmup`'s header,
+  `FINDINGS.md` 5's ash field, the seam's item 6 text, and the new modules' contract headers
+  and `FILES.md` lines.
+
+- **X4.7d — the rotor wash is ours, and Babylon's particle system goes.** **Do:** the two
+  rings as fields of ours on X4.7c's machinery, with the features the ash does not use: the
+  cylinder emitter (the radius per hull, its height, `radiusRange` and
+  `directionRandomizer`), the colour gradient of two rows, the size and velocity gradients,
+  the angular speed and initial rotation ranges, `randomTextureSize` 4096. **The gradients
+  are BAKED as Babylon bakes them** (`_rawTextureWidth`, `GradientHelper.GetCurrentGradient`,
+  the colour texture's 8-bit RGBA and its sampling, the factor textures' format), ported, and
+  proven equal element for element against the parent's baked arrays before a frame is
+  compared. `RotorWash`'s `update`, `drive`, `silence`, `clear` and `surfaceOver` write the
+  same numbers into our fields; **the rebuild on a new palette is KEPT** (it decides when the
+  random textures are drawn) and only the reason for it changes — a repaint in its place is a
+  later commit, if the bytes allow one. `scene.particleSystems` is empty in a round and in an
+  editor build; `GPUParticleSystem` and `CylinderParticleEmitter` are imported nowhere; the
+  seam's particle observable (`onMainPass`) and its line on the public list go, and item 6's
+  text says what still hangs there (the moon and the one run, while an editor build's group
+  is visited, until X5.3). **Read first:** X4.7a's and X4.7c's notes; `RotorWash.ts`, all of
+  it (the palette, `paint`, `buildRing`); `config/vehicles.ts`'s `wash`; `docs/vehicles.md`,
+  "The dust under a rotor"; `Game.fadeHulls` and X4.2d's review's note (the fade and its
+  `Object.is` check); `docs/rendering.md` on the water's hole (the sites). **Verify:**
+  `exact.mjs` against a BEFORE at X4.7c, the wash rows among them; `pipelines.mjs cinderhaven
+  --round` and `sarab --round`, zero of ours and none of the wash's in play (`GiVolume`'s race
+  stays, X5.1's); a helicopter landing on sand (Sarab) and on water (Cinderhaven) live, the
+  probe's log equal by `Object.is` to the parent's in every rate, emitter and site; the fade
+  with its hull at a stated `hullDrawDistance`, as X4.2d's review measured it; a rotation
+  through both palettes; `census`, `surfaces.mjs` and a live round's `render` log with no
+  Babylon particle; `F2`, the menu, a second round, the seal quiet. **Owes:** `CLAUDE.md`'s
+  gradient sentence DELETED (the vehicles section) and its warm-up sentence ("nothing of
+  Babylon's in a round but the post chain"); `docs/vehicles.md`'s "What a GPU particle system
+  here may and may not do" and "A puff fades IN" (the rules that were Babylon's and the port
+  keeps, restated as ours; the gradient's deleted); `docs/states.md`; `RotorWash.ts`'s header
+  and `paint`'s note; `Game`'s comment at `rotorWash.build`; `FINDINGS.md` 16's rotor-wash
+  bullet, deleted; `docs/rendering.md`; and what the warm-up's vantages still compile in a
+  round, measured and handed to X5.4, which owns retiring them (this step does not).
+
+- **Contracts it keeps:**
+  - the ring is the disc: one radius for the particles and the water's hole
+  - the wash fades with its hull, in its rate and its site, never its throw
+  - a held world runs the rings at zero, and what is aloft drifts on its own clock
+  - the wrap invariant, and `count` a density
+  - no particle in the glow, a shadow map or a bake; no fog on the wash
+  - the coverage alpha: an ember leaves it, ash and dust accumulate into it (`docs/rendering.md`)
+- **Every sub-step owes**: **a BYTE comparison of every row against a BEFORE at its parent**
+  (`exact.mjs` over two `--check --keep` directories, never `--check`'s pass line: a particle
+  row's whole field can sit under `CHECK_TOLERANCE`), the known flakes alone excused; its
+  pipelines on `Game.roundPipelines`; `pipelines.mjs cinderhaven --round`; `surfaces.mjs`;
+  typecheck, build (`check-babylon-free`, `check-proving`), corecheck and parity; `gate` and
+  `shaders` once code moves; each new module's contract header and `FILES.md` line (rules 7
+  and 9); and **STOP with the numbers** wherever the bytes do not hold.
+- **Verify, the whole step:** the bank's particle rows; a helicopter landing on sand and on
+  water; `pipelines.mjs cinderhaven --round` with none of the wash's in play; no Babylon
+  particle system in a round or in an editor build.
 
 **Gate after Phase 4:** in a round, Babylon's scene draws only the post chain (an
 editor build draws whole until X5.3). That is true of the blob shadows only because
@@ -2451,8 +2737,8 @@ Each is rewritten by the step that breaks it, in the same commit.
 | `CLAUDE.md`: the forced world matrix on the authority | X2.2 |
 | `CLAUDE.md`: the server cannot run `MapBuilder` / `NullEngine` | X2.3 |
 | `CLAUDE.md`: Havok and `scene.physicsEnabled` | X2.4, X5.4 |
-| `CLAUDE.md`: the pipeline warm-up | X4.4, X5.4 |
-| `CLAUDE.md`: a colour gradient changes a particle system's vertex layout | X4.7 (deleted) |
+| `CLAUDE.md`: the pipeline warm-up | X4.4, X4.7c and X4.7d (the vantages' last Babylon draws in a round, the particles), X5.4 |
+| `CLAUDE.md`: a colour gradient changes a particle system's vertex layout | X4.7d (deleted) |
 | `CLAUDE.md`: measuring a frame, the two roots | X5.4 |
 | `docs/build.md`: the four copied Babylon internals, `merge:hash` owed per upgrade | X1.2, X1.4, X2.1 (adds the sweep and `sweep-check`), X6.1 |
 | `docs/rendering.md` | X3.1 onward, swept at X6.1 |
@@ -2562,4 +2848,6 @@ Phase 1 actually took.
 | X4.6e | `ShadowSystem`'s blob shadows are a Babylon `StandardMaterial`, blended, no depth write, on the list X4.6e replaces, and were on no step's list (found by X4.6a's review): where do they go? | **Decided** 2026-11-03: X4.6e's one commit. The blob joins the see-through panes and the three pools under one sort of ours, and `warmBlob` goes with it. |
 | X4.6e | A blob's disc faces DOWN on a back-culled material, so it draws nothing from above (X4.6a's review, `FINDINGS.md` 67; `docs/rendering.md` calls it the contact term): port it as it is, fix the facing as a picture change, or delete it? | **Decided** 2026-11-05 (owner: flip to face up). Ported byte-identically, face down, in X4.6e's second commit, then turned face up in a commit of its own whose subject starts `Picture change:`, with the bank's numbers; `FINDINGS.md` 67 deleted as fixed. Seen from above now, the floor's side, and from below not at all. |
 | X4.6e | X4.6e's review: the scorch and the blob were gated on this frame's sphere, where Babylon's size gate LATCHED — it read a mesh's bounds as of the last time its world was computed, which only a candidate it kept was, so a mark or a blob never computed was measured at the world origin and stayed dropped (381 m and 229 m at a 384-pixel-high viewport, 1,072 m and 643 m at 1080p), and the bank could not see it, its harness's `scene.isReady()` computing every mesh's world. X4.6e's note called the two the same. Port it, or keep this frame's? | **Decided** 2026-11-06 by the owner: port it exactly, then drop it in a commit of its own whose subject starts `Picture change:`, as X4.4b and X4.4c did for the pieces and the debris. The port (`Fade.gate`, the warm-up's computation of the last free mark and the player's blob, the harness's restated refresh) matched Babylon's gate decisions on every frame of a live probe at 8bf7789, then went; the numbers are in X4.6e's review's note. |
+| X4.7 | One step or several? | **Proposed** 2026-11-07 by the orchestrating session, at the owner's instruction to implement X4.7 in sub-steps; **not yet decided by the owner**: four sub-steps (X4.7). X4.7a widens the bank at the parent, before anything moves (the ash as a map runs it on an ADD and a STANDARD field, a wash over sand, one over water, a ring and the ash in one frame), records where each system sits, its pass splits, its random draws and its pipelines, and keeps a live probe of each field's emission; X4.7b answers the profiler's `drawWorld`, so captures across the moves compare; X4.7c builds the machinery and moves the ash (Babylon's WGSL as compiled, its buffers, its random draws, its clock, its place in the frame); X4.7d moves the wash and takes Babylon's particle system out of the scene, deleting the gradient rule. None is meant to change the picture; **a port that cannot match STOPS and comes back to the owner with the numbers**, never a third option (X4.6c's row). |
+| X4.7 | **OPEN.** X4.7 keeps the particles where Babylon drew them: after the turf, ahead of the moon and of the one back-to-front run (`FarthestRun`). So the moon paints over a mote in front of it, and a see-through pane or a fade paints over a particle whether it stands in front of it or behind, none of them writing depth. Once the particles are ours they could be ordered among the panes and the fades, and the moon could stand behind its ash, which `docs/rendering.md` already calls "the better picture and the owner's to ask for". Keep Babylon's order, or change it after X4.7? | Keep it through X4.7, which ports it byte for byte; a change is a picture change of its own (`Picture change:`, the bank's numbers), after X4.7d, by the owner's word, and needs a sort key a FIELD can give (its emitter, or its own extent), which is a design of its own. Not blocking: no sub-step needs the answer. |
 | X6.2 | Is it ready to merge to `develop`? | Only when X6.2's "Before" list passes in full. |
