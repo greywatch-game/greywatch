@@ -6138,10 +6138,11 @@ export class Game {
     // The environment goes in on the same call rather than through a
     // `setEnvironment` of its own, which is the one place this differs from
     // the grenades' two lines above. A ring's colour is a GRADIENT — the fade
-    // in as well as the fade out — baked once, at the ring's first update, so
-    // a ring is COLOURED WHEN IT IS BUILT and a map whose dust is a different
-    // colour gets new rings, which is also when their random textures are
-    // drawn (`RotorWash.paint`).
+    // in as well as the fade out — baked once, at the ring's first ready
+    // test, so a ring is COLOURED WHEN IT IS BUILT and a map whose dust is a
+    // different colour gets new rings, which is also when their random
+    // textures are drawn and what puts them after the motes (`atmosphere.apply`,
+    // above) in `ParticleDraw`'s one list (`RotorWash.paint`).
     this.rotorWash.build(
       this.vehicles.hulls,
       map.water,

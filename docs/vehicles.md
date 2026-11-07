@@ -2939,7 +2939,7 @@ because it was Babylon's:
   the GPU clock advances by `updateSpeed * scene.getAnimationRatio()` and that ratio
   is `dt * 60`, so a lifetime is seconds and an emit power is m/s. (`Atmosphere`'s
   0.012 is deliberately not that.)
-- **A ring's gradients are BAKED ONCE**, at its first update, as Babylon made
+- **A ring's gradients are BAKED ONCE**, at its first ready test, as Babylon made
   its textures once — so they are stated in `RotorWash.buildRing` before
   `start()`, and a map whose colours differ gets new rings rather than a
   repaint (below).
@@ -3103,7 +3103,7 @@ under its peak at both ends of a life instead of one, so `opacity` went 0.65 to
 
 **A ring's gradients are three textures and they are BAKED ONCE**, which is
 how the ring is wired. `render/ParticleDraw.ts` bakes them at the ring's first
-update, off the stops `RotorWash.buildRing` and `paint` stated, exactly as
+ready test (`_recreateUpdateEffect`'s, kept across a reset), off the stops `RotorWash.buildRing` and `paint` stated, exactly as
 Babylon's `GPUParticleSystem` baked its own (`ParticleField.bakeColorGradients`
 and `bakeFactorGradients`, `_bakeColorGradientData` and `_bakeFactorGradientData`
 ported, proven element for element against the parent's arrays at X4.7d): the
@@ -3114,9 +3114,16 @@ The stops are alpha 0, 0.72 at a fifth of a life, and 0. So the gradients are
 stated before `start()`, the environment arrives on `build` rather than through
 a `setEnvironment` of its own, and a map whose dust is a different colour gets
 NEW rings rather than a repaint — the only thing that ever disposes one inside a
-session, and so the one thing that draws a ring's random textures again (which
-is why the port kept the rebuild: a repaint in its place would draw them at
-another time, a later commit if the bank's bytes allow it).
+session, and so the one thing that draws a ring's random textures again. **The
+rebuild decides two things, and the port kept it for both**: when a ring's random
+textures are drawn, and where the rings stand in `ParticleDraw`'s one
+creation-ordered list. On a palette change the motes are rebuilt first
+(`atmosphere.apply`, earlier in `installMap`) and the rings after them, so the
+rings go to the end of the list and draw after the ash. A repaint in its place
+is a later commit if the bank's bytes allow it, and it owes the ORDER a check as
+well as the draws: it would leave the rings where they were, so a map change
+that rebuilds the motes would put them behind the rings and flip the
+ring-against-ash order in a rotation.
 
 **Under Babylon's particle system this was a harder rule, and it is gone with
 it.** A gradient texture changed a `GPUParticleSystem`'s VERTEX BUFFER LAYOUT —

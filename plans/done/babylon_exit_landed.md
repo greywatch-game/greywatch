@@ -8779,7 +8779,7 @@ what was corrected and measured.
 - **The blob map's leak, measured** (`FINDINGS.md` 70, not fixed). Five Coldharbour rounds in one page at each tree, a forced GC before each reading: `ShadowSystem.blobs` 17, 33, 49, 65, 81 on both (HEAD's `blobFades` the same; a269bfb's `blobShadow` meshes the same, its scene 2,047 to 2,111 meshes), every earlier round's sixteen bodies alive after the GC, and freed once the map's keys are cleared by a probe. Heap after GC: HEAD 95,378 to 97,150 KB, a269bfb 107,454 to 110,710.
 - **Not verified.** A server's match in a browser; the phone; the editor (its recorded differences stay until X5.3); a gate or latch case live (the drop is 1a89216's record); `gate`, `shaders`, `census`, `pipelines.mjs --round`, `merge:hash`, `kit:hash`, typecheck and build, none of which this note's text-only change could move. The player capturing ALONE (bots may have stood in Alpha too: the page reads no bot). Live frames are pictures, not bytes: the byte comparisons are of held frames.
 
-### X4.7 — GPU particles — **S–M, as four sub-steps** (split 2026-11-07) — X4.7a **LANDED** (bad6caa), X4.7b **LANDED** (8c691c7), X4.7c **LANDED** (9dff2c4), X4.7d **LANDED** (999d4ca) — **all four LANDED**
+### X4.7 — GPU particles — **S–M, as four sub-steps** (split 2026-11-07: the owner instructed that X4.7 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the four-way split was proposed by the orchestrating session and run under that instruction) — X4.7a **LANDED** (bad6caa, its review 30bd400), X4.7b **LANDED** (8c691c7, its review 312dc44), X4.7c **LANDED** (9dff2c4, its review 9d5ab4a), X4.7d **LANDED** (999d4ca, its review HASH_X47DR) — **all four LANDED**
 
 The plan's `BABYLON_EXIT.md` holds X4.7's brief, the table of what the fields are
 (corrected in place by X4.7a) and the three sub-steps to come.
@@ -9352,7 +9352,11 @@ X4.7c's machinery; Babylon's scene holds no particle system.
     the rings rebuilt) landing on the bay: the spray 11.8 → 134.1, its count to 121, the
     site published and held by the water; `F2` (an editor build, the rings cleared) and
     back to a round. `scene.particleSystems` 0 throughout, no page or console error, no
-    `[pipelines]` warning from the sealed cache.
+    `[pipelines]` warning from the sealed cache. **After a teardown** the rings left
+    standing over the menu (cleared, not disposed) re-create their two buffers and draw
+    their 540/504 seeds at rest, at their first update after the reset — Babylon's
+    `_initialize` did the same before its count test, so this is parity, not a fault
+    (recorded by X4.7d's review).
   - **The fade** at a stated hull draw distance, X4.2d's review's way (its scratch
     `x42dr/wash.mjs`, `hullDrawDistance: 420` written into Cinderhaven's environment for
     the run and taken out): every rate and site, after every render, `Object.is` the
@@ -9392,3 +9396,48 @@ X4.7c's machinery; Babylon's scene holds no particle system.
   Verify and the Gate after Phase 4 are not claimed here**: the whole step's Verify is
   met by the measurements above, but the gate's "a live round's `render` log" with
   `surfaces.mjs` and the seam's list read against PERF_PLAN B4 are the phase gate's.
+
+**X4.7d's review** (HASH_X47DR; 2026-11-07; no change to the game: records, docs and
+comments only). An independent review found nothing real and nothing architectural.
+
+- **Read** against Babylon 9.28: the ring's stride 20 and its slot layout; the bakes
+  ported line for line at a width of 256, the `Uint8Array`'s truncation included; the
+  bake at the first ready test, kept across a reset; the clamped colour sampler and the
+  repeating factor samplers matching Babylon's compute-binding fallback; `SimParams` 176
+  bytes; `PipelineCache.compute`'s key now `label:entry:shape:code`, the `"auto"`
+  callers' behaviour identical; the ring's pipelines on `Game.roundPipelines`; one
+  creation-ordered list.
+- **Run**: a live script of ten installs in one boot — Sarab, Cinderhaven, Hollowmere,
+  Sarab, Cinderhaven, Kurenai, Sarab, Cinderhaven, Sarab, Cinderhaven — both helicopters
+  pinned, one over sand and one over the deepest water. The rings exclusive (dust 55.6/s
+  on hull 0, spray 86.4/s on hull 1); a destroyed hull silencing its ring; climbing away
+  taking every rate to 0 and back; no GPU-resource growth across rounds (5 of each kind
+  and 4 gradient textures at every helicopter-map deploy); the maps without vehicles down
+  to the motes alone; `scene.particleSystems` 0 throughout; the motes ahead of the rings
+  at every deploy; no console error or seal warning.
+- **Not re-run by the review**: the bank, `pipelines.mjs`, the probe's `--editor` flow,
+  an editor build.
+- **MINOR, wording: what the palette rebuild decides.** `RotorWash.paint`'s note and
+  `docs/vehicles.md` said the rebuild kept on a new palette now decides only when a
+  ring's random textures are drawn. It also decides the rings' place in `ParticleDraw`'s
+  one creation-ordered list: on a palette change the motes are rebuilt first
+  (`atmosphere.apply`, earlier in `installMap`) and the rings after them, so the rings
+  draw after the ash. A repaint in place would leave the rings where they were, so a map
+  change that rebuilds the motes would put them behind the rings and flip the
+  ring-against-ash order in a rotation; the later commit those notes promise owes that
+  check. Corrected there, in `RotorWash`'s header and in `Game`'s comment at
+  `rotorWash.build`.
+- **MINOR, wording: when the gradients are baked.** `docs/vehicles.md` said "at its first
+  update"; the code bakes them at the first ready test (`_recreateUpdateEffect`'s, kept
+  across a reset), as `docs/rendering.md` says. Corrected in both of its places, and in
+  `RotorWash`'s two comments and `Game`'s that said the same.
+- **Recorded, parity**: after a teardown the rings left standing over the menu re-create
+  their two buffers and draw their 540/504 seeds at rest — Babylon's behaviour too (X4.7d's
+  note, its Live bullet).
+- **X4.7 is not closed by this note.** X4.7d's note says the whole step's Verify is met by
+  its measurements; it is not marked done. What the sub-steps measured toward it: the
+  bank with the ash and the rings 143 of 143 byte-equal (X4.7d), landings on sand and
+  water live, `pipelines.mjs cinderhaven --round` and `sarab --round` zero of either
+  renderer in play. The whole step's Verify and the Gate after Phase 4 (a live round's
+  `render` log with `surfaces.mjs`, the seam's list read against PERF_PLAN B4) remain open.
+- **Gates**: typecheck passes; `git diff` is docs, records and comments alone.

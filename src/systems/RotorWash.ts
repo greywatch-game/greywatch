@@ -15,7 +15,8 @@
  * inside a round; nothing per frame but two numbers and a position; a ring is
  * built, coloured and started in one call (`buildRing`), and a map whose colours
  * differ gets NEW rings rather than a repaint (`build`) — which is also what
- * decides when a ring's random textures are drawn.
+ * decides when a ring's random textures are drawn and where the rings stand in
+ * `ParticleDraw`'s one creation-ordered list, after the ash (`paint`).
  *
  * ## It FADES with its hull, and is told the fade rather than working it out
  *
@@ -186,8 +187,8 @@ export class RotorWash {
    * The map's colours, and the reason they are held rather than pushed.
    *
    * **A ring's colour is fixed when it is BUILT and never written again** —
-   * see `paint`: its gradient textures are baked once, at its first update, as
-   * Babylon's were. So this is compared on every `build` and a map whose dust
+   * see `paint`: its gradient textures are baked once, at its first ready
+   * test, as Babylon's were. So this is compared on every `build` and a map whose dust
    * or whose water is a different colour gets fresh rings, which is the one
    * thing that ever disposes one inside a session — and so the one thing that
    * draws a ring's random textures again. Null until the first map has landed.
@@ -599,16 +600,22 @@ export class RotorWash {
    *
    * A ring's gradients are three textures (`render/ParticleDraw.ts`: the
    * colour's two rows, the size's and the velocity's), baked off the stops
-   * stated here at the ring's first update and never again — Babylon's
+   * stated here at the ring's first ready test and never again — Babylon's
    * `GPUParticleSystem` made its textures the same once (`BABYLON_EXIT.md`
    * X4.7d ported it so). So the stops are stated here, inside the build, before
    * `start()`, and a map whose colours are different gets NEW rings rather than
    * a repaint, which is what `build` compares the palette for. (Under
    * Babylon's particle system this was a harder rule — a gradient added after
    * a system's first render changed its vertex buffer layout under it and took
-   * the scene down — and the rebuild kept for it now decides only when a ring's
-   * random textures are drawn. A repaint in its place is a later step, if the
-   * bank's bytes allow one.)
+   * the scene down — and the rebuild kept for it now decides two things: when
+   * a ring's random textures are drawn, and where the rings stand in
+   * `ParticleDraw`'s one creation-ordered list. On a palette change the motes
+   * are rebuilt first (`atmosphere.apply`, earlier in `installMap`) and the
+   * rings after them, so the rings go to the END of the list and draw after
+   * the ash. A repaint in place is a later step, if the bank's bytes allow
+   * one, and it owes that ORDER a check as well: it would leave the rings
+   * where they were, so a map change that rebuilds the motes would put them
+   * BEHIND the rings and flip the ring-against-ash order in a rotation.)
    *
    * ## What the stops are
    *
