@@ -2246,7 +2246,7 @@ Greyfen, `F2` from the menu and each eye of the map's rows):
   live with the player in the ring, no error, the seal holding. The blob map's leak is
   measured (`FINDINGS.md` 70).
 
-### X4.7 — GPU particles — **S–M, as four sub-steps** (split 2026-11-07, proposed by the orchestrating session at the owner's instruction to implement X4.7 in sub-steps; not yet decided by the owner) — X4.7a **LANDED** (bad6caa), X4.7b **LANDED** (8c691c7), X4.7c **LANDED** (9dff2c4, reviewed)
+### X4.7 — GPU particles — **S–M, as four sub-steps** (split 2026-11-07, proposed by the orchestrating session at the owner's instruction to implement X4.7 in sub-steps; not yet decided by the owner) — X4.7a **LANDED** (bad6caa), X4.7b **LANDED** (8c691c7), X4.7c **LANDED** (9dff2c4, reviewed), X4.7d **LANDED** (HASH_X47D) — **all four LANDED**; the step's own Verify and the Gate after Phase 4 not yet claimed
 
 `Atmosphere`'s ash and `RotorWash`'s two rings (`GPUParticleSystem`, a box and a
 `CylinderParticleEmitter`) as our own compute particles: our update, our draw, our
@@ -2699,7 +2699,53 @@ each as stated):
   `FINDINGS.md` 5's ash field, the seam's item 6 text, and the new modules' contract headers
   and `FILES.md` lines.
 
-- **X4.7d — the rotor wash is ours, and Babylon's particle system goes.** **Do:** the two
+- **X4.7d — the rotor wash is ours, and Babylon's particle system goes.** **LANDED**
+  (HASH_X47D; 2026-11-07; no change to the picture). The dust and spray rings are
+  `ParticleField`s of a second feature set, `"ring"` (`render/particleProgram.ts`'s
+  `ParticleFeatures`), on X4.7c's machinery: the cylinder emitter's four numbers, the
+  colour, size and velocity gradients (`ParticleField.add…Gradient`, Babylon's sort),
+  BAKED at the ring's first ready test as `_recreateUpdateEffect` baked them
+  (`bakeColorGradients`, `bakeFactorGradients`: an `rgba8unorm` 256 × 2 and two
+  `rg32float` 256 × 1), the spin range, a 4096 random texture; the update and the draw's
+  vertex stage Babylon's WGSL as compiled (read off 9d5ab4a's device), the update on
+  Babylon's EXPLICIT layout (`PipelineCache.compute` takes one now: the gradients are
+  unfilterable floats behind non-filtering samplers, which `"auto"` would call
+  filterable), the samplers the descriptors Babylon's cache made (the colour clamped,
+  the factors REPEATING), stride 20. `RotorWash` decides the rings and draws nothing;
+  the rebuild on a new palette is kept. The pipelines join "the ash and the rotor wash"
+  on `Game.roundPipelines`. **Retired**: `GPUParticleSystem` and
+  `CylinderParticleEmitter` are imported nowhere, `scene.particleSystems` is empty in a
+  round and an editor build, the seam's particle observable and its line on the public
+  list are gone (no numbered item retires: item 6 stays, for the moon and the one run
+  while an editor build's group is visited, until X5.3), `CLAUDE.md`'s gradient rule is
+  deleted, and X4.7c's recorded editor-order difference is gone. **Measured**: the bank,
+  all 143 rows, by `exact.mjs` against a BEFORE at 9d5ab4a: **143 of 143 byte-equal**
+  (no flake came up; the same 34 stale rows red at the same means); each wash row holds
+  our ring (dust 83,644 px, spray 42,466, the ring in ring-and-ash 71,242 — X4.7a's
+  counts); the gradients element for element equal to the parent's baked arrays on all
+  eight rings of Sarab and Cinderhaven (2,048 + 512 + 512 each, with the stops, the
+  cylinder and the lives); the probe `sarab cinderhaven sarab hollowmere cinderhaven
+  --editor` equal by `Object.is` to the parent's and to 312dc44's on every map (45,120
+  numbers a map with a hull, 4,800 on Hollowmere) with every construction's and first
+  update's draws, the rings' 540/504 at rest after each reset among them, and the
+  editor flow — now ending in the round leaving the editor starts — **equal to
+  312dc44's in its orders and draws** (the motes behind the rings after the edit, as
+  Babylon put them), where the parent differs; `census --against` equal on Sarab and
+  Cinderhaven, Babylon down one and ours up one in each wash row; `surfaces.mjs` no
+  Babylon draw in the four particle rows, the seam on its fallback; `pipelines.mjs
+  cinderhaven --round` and `sarab --round` zero of either renderer in play; across an
+  install Babylon compiles nothing at a vantage (the post chain's six before the card,
+  `GiVolume`'s three under it, X5.1's) — handed to X5.4; live, a helicopter landing on
+  Sarab's sand and Cinderhaven's water, a teardown, a second round, the map change to
+  another palette, `F2` and back, no error and no seal warning; the fade at a stated
+  `hullDrawDistance` (420 m on Cinderhaven, temporary) every rate and site equal to
+  `rate × strength × fade` as X4.2d's review measured; editor frames at four eyes 8 of 8
+  byte-equal across the trees; `?profile` `drawWorld` 0.050 → 0.003 ms (Sarab) and
+  0.061 → 0.002 (Cinderhaven); `gate` and `shaders` clean on seven maps; typecheck,
+  build, corecheck, parity. The note is in `plans/done/babylon_exit_landed.md`. The
+  brief, as it was handed over:
+
+  **Do:** the two
   rings as fields of ours on X4.7c's machinery, with the features the ash does not use: the
   cylinder emitter (the radius per hull, its height, `radiusRange` and
   `directionRandomizer`), the colour gradient of two rows, the size and velocity gradients,
@@ -3070,5 +3116,5 @@ Phase 1 actually took.
 | X4.6e | X4.6e's review: the scorch and the blob were gated on this frame's sphere, where Babylon's size gate LATCHED — it read a mesh's bounds as of the last time its world was computed, which only a candidate it kept was, so a mark or a blob never computed was measured at the world origin and stayed dropped (381 m and 229 m at a 384-pixel-high viewport, 1,072 m and 643 m at 1080p), and the bank could not see it, its harness's `scene.isReady()` computing every mesh's world. X4.6e's note called the two the same. Port it, or keep this frame's? | **Decided** 2026-11-06 by the owner: port it exactly, then drop it in a commit of its own whose subject starts `Picture change:`, as X4.4b and X4.4c did for the pieces and the debris. The port (`Fade.gate`, the warm-up's computation of the last free mark and the player's blob, the harness's restated refresh) matched Babylon's gate decisions on every frame of a live probe at 8bf7789, then went; the numbers are in X4.6e's review's note. |
 | X4.7 | One step or several? | **Proposed** 2026-11-07 by the orchestrating session, at the owner's instruction to implement X4.7 in sub-steps; **not yet decided by the owner**: four sub-steps (X4.7). X4.7a widens the bank at the parent, before anything moves (the ash as a map runs it on an ADD and a STANDARD field, a wash over sand, one over water, a ring and the ash in one frame), records where each system sits, its pass splits, its random draws and its pipelines, and keeps a live probe of each field's emission; X4.7b answers the profiler's `drawWorld`, so captures across the moves compare; X4.7c builds the machinery and moves the ash (Babylon's WGSL as compiled, its buffers, its random draws, its clock, its place in the frame); X4.7d moves the wash and takes Babylon's particle system out of the scene, deleting the gradient rule. None is meant to change the picture; **a port that cannot match STOPS and comes back to the owner with the numbers**, never a third option (X4.6c's row). |
 | X4.7 | **OPEN.** X4.7 keeps the particles where Babylon drew them: after the turf, ahead of the moon and of the one back-to-front run (`FarthestRun`). So the moon paints over a mote in front of it, and a see-through pane or a fade paints over a particle whether it stands in front of it or behind, none of them writing depth. Once the particles are ours they could be ordered among the panes and the fades, and the moon could stand behind its ash, which `docs/rendering.md` already calls "the better picture and the owner's to ask for". Keep Babylon's order, or change it after X4.7? | Keep it through X4.7, which ports it byte for byte; a change is a picture change of its own (`Picture change:`, the bank's numbers), after X4.7d, by the owner's word, and needs a sort key a FIELD can give (its emitter, or its own extent), which is a design of its own. Not blocking: no sub-step needs the answer. |
-| X4.7c | In one dev-only flow — `F2`, an in-memory edit of `particles.count`, the editor's rebuild, then leaving back to a round on Sarab or Cinderhaven — Babylon put the motes BEHIND its live rotor rings (the rebuilt field going to the end of `scene.particleSystems`), where ours keeps them AHEAD at `"particles"`. ADD motes over STANDARD rings do not commute, so overlapping pixels would differ there — reasoned, not measured: no bank row reaches the flow. In the editor itself no pixel differs (the rings are cleared to count 0 and there is no fleet, so Babylon's render returns early); only the probe's order and the order of the `Math.random` draws differ. No shipped flow reaches it: every shipped map and the proving map has a distinct `floorColor`, so every map change rebuilds the rings after `atmosphere.apply` and the motes stay first; a second round on one map rebuilds neither; a server's rotation takes the same `installMap` path; no setting rebuilds the ash. Accept it, or hold X4.7c? | **Decided** 2026-11-07 by the owner: **accepted as a recorded, dev-only order difference until X4.7d**, which puts the rings in `ParticleDraw`'s one creation-ordered list and so restores Babylon's order; X4.7d's Verify shows the flow back in that order against a BEFORE at 312dc44. How it came about: X4.7c's implementer was told by the orchestrator to stop and report this, and landed it flagged instead ("For the owner" in its entry); the brief's own stop condition was a SHIPPED flow with a ring ahead of the motes, which none is. |
+| X4.7c | In one dev-only flow — `F2`, an in-memory edit of `particles.count`, the editor's rebuild, then leaving back to a round on Sarab or Cinderhaven — Babylon put the motes BEHIND its live rotor rings (the rebuilt field going to the end of `scene.particleSystems`), where ours keeps them AHEAD at `"particles"`. ADD motes over STANDARD rings do not commute, so overlapping pixels would differ there — reasoned, not measured: no bank row reaches the flow. In the editor itself no pixel differs (the rings are cleared to count 0 and there is no fleet, so Babylon's render returns early); only the probe's order and the order of the `Math.random` draws differ. No shipped flow reaches it: every shipped map and the proving map has a distinct `floorColor`, so every map change rebuilds the rings after `atmosphere.apply` and the motes stay first; a second round on one map rebuilds neither; a server's rotation takes the same `installMap` path; no setting rebuilds the ash. Accept it, or hold X4.7c? | **Decided** 2026-11-07 by the owner: **accepted as a recorded, dev-only order difference until X4.7d**, which puts the rings in `ParticleDraw`'s one creation-ordered list and so restores Babylon's order; X4.7d's Verify shows the flow back in that order against a BEFORE at 312dc44. **Ended at X4.7d** (HASH_X47D): the rings in the one list, the probe's editor orders and draws — through the round after — equal to 312dc44's. How it came about: X4.7c's implementer was told by the orchestrator to stop and report this, and landed it flagged instead ("For the owner" in its entry); the brief's own stop condition was a SHIPPED flow with a ring ahead of the motes, which none is. |
 | X6.2 | Is it ready to merge to `develop`? | Only when X6.2's "Before" list passes in full. |

@@ -177,10 +177,13 @@ them, but a group of ours still compiling draws NOTHING and Babylon no longer
 draws the blocks in the main pass — so the vantages are drawn with ours
 built, and nothing of ours is POSED at one (`BABYLON_EXIT.md` X4.4e: the
 `warm(on)` poses of the pools that are ours became that list). **The
-vantages are for Babylon's own meshes** — in a round the rotor wash alone
-(the ash is ours since `BABYLON_EXIT.md` X4.7c, its pipelines on the list):
-the glazing, the three blended pools and the blob shadow were Babylon's
-until X4.6e, posed here, and nothing is posed now. **When the wait ends, our cache is SEALED** (`PipelineCache.seal`)
+vantages are for Babylon's own meshes** — in a round nothing of Babylon's but
+the post chain (every particle field is ours since `BABYLON_EXIT.md` X4.7d, the
+ash since X4.7c, their pipelines on the list; measured at X4.7d on Cinderhaven,
+Sarab and Hollowmere, Babylon compiles nothing at a vantage: the post chain's
+six on the frames before the card, `GiVolume`'s three computes under it, and
+retiring the vantages is X5.4's): the glazing, the three blended pools and the
+blob shadow were Babylon's until X4.6e, posed here, and nothing is posed now. **When the wait ends, our cache is SEALED** (`PipelineCache.seal`)
 until the map is torn down: a pipeline of ours compiled in play is a DEV
 warning naming it — what the list missed. Three rules hold it to `loading`'s
 contract:

@@ -283,9 +283,10 @@ round's DECLARED list (`Game.roundPipelines`: bodies, hulls, weapon and every
 pool of ours, asked once at construction) and the map's, which its install
 asks — and our cache is SEALED once the card is down (a compile in play is a
 DEV warning). **A new draw of ours joins that list.** The vantages are for
-BABYLON's meshes — in a round the rotor wash alone — and **no pool is posed**:
-every one is ours since X4.6e (the sparks, the dust discs, the scorch and the
-blob the last), so on that list, and nothing is shown for a pipeline's sake.
+BABYLON's meshes — in a round nothing of Babylon's but the post chain — and
+**no pool is posed**: every one is ours since X4.6e (the sparks, the dust
+discs, the scorch and the blob the last), so on that list, and nothing is shown
+for a pipeline's sake.
 
 **A LID is a screen laid over a state, which taking it off puts back rather than
 moving the game on — and which state is which, and what each one owes, is
@@ -624,9 +625,10 @@ CHUNK** (`systems/poseView.ts`), and every FIRE (`FlameDraw`, in no bake) —
 the see-through panes** (`FadeDraw`, `GlassDraw`), and no pool is split. **So
 are a capture zone's stones, paint, pole and cloth, the GRASS and the WATER** (`ZoneDraw`,
 `GrassDraw`, `WaterDraw`), one nearest-first run, the turf apart, behind the `backed` panes.
-**So is the ASH** (`ParticleDraw`: Babylon's `GPUParticleSystem` PORTED, its
-shaders as compiled, its seeds and its clock), behind the turf and ahead of the
-moon; the rotor wash is Babylon's until X4.7d.
+**So is every PARTICLE FIELD, the ash and the rotor wash** (`ParticleDraw`:
+Babylon's `GPUParticleSystem` PORTED, its shaders as compiled, its seeds, its
+gradients and its clock), in creation order, behind the turf and ahead of the
+moon, and **Babylon's scene holds no particle system**.
 
 **The GLOW draws the EMISSIVE meshes and nothing else, its occlusion being the
 FRAME's own depth buffer** (`src/shaders/GlowPass.ts`). **What may bloom is read
@@ -1122,10 +1124,9 @@ keeping its LIFE, its POSITION slaved to the hull and its SQUAD'S ORDER.
 
 **A hull is HEARD whoever is in it**, pushed per FRAME (`Game.pushHullEngines`),
 and **what drives the voice and the rotor's wash is asked of the HULL**
-(`Vehicle.powerplant`, `Vehicle.washTo`), never of the kind. **A colour GRADIENT
-changes a particle system's VERTEX BUFFER LAYOUT, so one may only be added
-before that system's FIRST RENDER.** **A frame that did not STEP the fleet owes
-`Sfx.enginesOff` and a wash of zero** (`Game.fleetStepped`, **read ONCE**).
+(`Vehicle.powerplant`, `Vehicle.washTo`), never of the kind. **A frame that did
+not STEP the fleet owes `Sfx.enginesOff` and a wash of zero**
+(`Game.fleetStepped`, **read ONCE**).
 
 → **[`docs/vehicles.md`](docs/vehicles.md)** — the kinds, their trades and
 models, and every reader of `flies`; the hull and its view, and what a picture

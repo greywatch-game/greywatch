@@ -160,8 +160,9 @@ const HOOK = () => {
  * PLACED twin (`celPlacedVertex`) over the glazing's two shapes in the four
  * states `GlassDraw` asks (backed and see-through, either winding, at
  * `GLASS_DEPTH_BIAS`), and the four fade programs (`fadePrograms`, `FadeDraw`)
- * in the states `FadeDraw` asks them in (`FADE_STATES`), and since X4.7c the
+ * in the states `FadeDraw` asks them in (`FADE_STATES`), since X4.7c the
  * ash's three (`particlePipelines`: the update, and the draw at both blends)
+ * and since X4.7d the rotor wash's two (its update and its STANDARD draw)
  * — every map's main pass draws its lit windows
  * with the first (`BABYLON_EXIT.md` X3.7a), so a failed one is a failed round
  * once the fallback is gone (X3.7b). A map with no palette builds neither.
@@ -308,7 +309,8 @@ async function oursCheck({ shapes, biased, paletteBiases }) {
   }
   // The ASH's three (X4.7c): the update and the draw at both blends, built
   // through our cache as `ParticleDraw` asks them (`particlePipelines`), every
-  // map, whatever its own field's blend — a map change can flip it.
+  // map, whatever its own field's blend — a map change can flip it; and the
+  // ROTOR WASH's two (X4.7d): its update, on its explicit layout, and its draw.
   const { particlePipelines } = await import("/src/render/particleProgram.ts");
   const particles = await import("/src/shaders/wgsl/particles.ts");
   {
@@ -317,6 +319,8 @@ async function oursCheck({ shapes, biased, paletteBiases }) {
       ["particles-update-box", particles.PARTICLE_UPDATE_BOX],
       ["particles-render-vertex", particles.PARTICLE_RENDER_VERTEX],
       ["particles-render-fragment", particles.PARTICLE_RENDER_FRAGMENT],
+      ["particles-update-ring", particles.PARTICLE_UPDATE_RING],
+      ["particles-ring-render-vertex", particles.PARTICLE_RING_RENDER_VERTEX],
     ];
     device.pushErrorScope("validation");
     for (const [label, code] of sources) {
@@ -325,7 +329,7 @@ async function oursCheck({ shapes, biased, paletteBiases }) {
     }
     try {
       const asked = particlePipelines(cache);
-      await Promise.all([asked.update, asked.render.add, asked.render.standard]);
+      await Promise.all([asked.box.update, asked.box.render.add, asked.box.render.standard, asked.ring.update, asked.ring.render.standard]);
     } catch (e) {
       errors.push(String(e?.message ?? e));
     }

@@ -61,15 +61,18 @@
  * build or a reset (`_initialize`). `--editor` ends the run with `F2` on the last
  * map from the menu, the order read after the editor's build, then after the
  * map's `particles.count` is changed IN MEMORY and the editor rebuilds (the
- * editor's panel edits no `particles` field: this is the one way in), and after
- * it is put back.
+ * editor's panel edits no `particles` field: this is the one way in), after
+ * it is put back, and in the round leaving the editor starts (`F2` again,
+ * `Game.toggleEditor`'s `startRound`) — the flow `BABYLON_EXIT.md` X4.7c's
+ * decision names, whose oracle for X4.7d is a BEFORE at 312dc44.
  *
  * Every touch of a field's STATE goes through one adapter (`window.__fields`),
- * which picks per field between `babylon` (Babylon's `GPUParticleSystem`s: the
- * rotor wash, and every field at a parent before `BABYLON_EXIT.md` X4.7c) and
- * `ours` (`ParticleDraw`'s fields since X4.7c: the ash), the same seventeen
- * columns off each; `all` lists ours first, the order the frame draws them, so
- * a BEFORE at the parent runs this file unchanged and logs the same order.
+ * which picks per field between `babylon` (Babylon's `GPUParticleSystem`s:
+ * every field at a parent before `BABYLON_EXIT.md` X4.7c, the rotor wash at one
+ * before X4.7d; none since) and `ours` (`ParticleDraw`'s fields: the ash since
+ * X4.7c, the rotor wash too since X4.7d), the same seventeen columns off each;
+ * `all` lists ours first, the order the frame draws them, so a BEFORE at the
+ * parent runs this file unchanged and logs the same order.
  * **The draw counting is beside it**: the constructions are counted around the
  * game's own doors (`Atmosphere.build`, `RotorWash.buildRing`), whatever they
  * build; a Babylon field's first update by wrapping its `_initialize` on the
@@ -132,7 +135,7 @@ await page.evaluate(() => {
 // The adapter, the counters and the per-frame reader, once a boot.
 await page.evaluate(() => {
   const g = window.__celshock;
-  /** Babylon's fields: the rotor wash, and at a parent before X4.7c the ash too. */
+  /** Babylon's fields: none since X4.7d; the rotor wash at a parent before it, and the ash too before X4.7c. */
   const babylon = {
     all: () => g.scene.particleSystems,
     enable: (on) => {
@@ -166,9 +169,10 @@ await page.evaluate(() => {
     },
   };
   /**
-   * OUR fields (`BABYLON_EXIT.md` X4.7c: the ash, a `ParticleField` that
-   * `ParticleDraw` steps and draws), the same columns under their own names.
-   * Absent at a parent before X4.7c, where every field is Babylon's.
+   * OUR fields (`BABYLON_EXIT.md` X4.7c: the ash; X4.7d: the rotor wash —
+   * `ParticleField`s that `ParticleDraw` steps and draws, in one list), the
+   * same columns under their own names. Absent at a parent before X4.7c, where
+   * every field is Babylon's.
    */
   const draw = g.particleDraw ?? null;
   const ours = draw
@@ -499,6 +503,9 @@ for (const id of maps) {
 }
 
 if (EDITOR) {
+  // Leaving the editor asks before dropping unsaved edits; none are made, but
+  // a dialog would wait on nobody.
+  page.on("dialog", (d) => void d.accept());
   const ed = await page.evaluate(async () => {
     const g = window.__celshock;
     const F = window.__fields;
@@ -521,6 +528,15 @@ if (EDITOR) {
       for (let i = 0; i < 10; i++) await frame();
       out.countPutBack = F.all().map(F.name);
     }
+    // Back to a round, as leaving the editor goes (`toggleEditor` runs
+    // `startRound`), on the same map: its order, ten frames into the deploy.
+    await g.toggleEditor();
+    await new Promise((res) => {
+      const poll = () => (g.state === "deploy" ? res() : setTimeout(poll, 10));
+      poll();
+    });
+    for (let i = 0; i < 10; i++) await frame();
+    out.round = F.all().map(F.name);
     out.draws = window.__draws.slice(from);
     return out;
   });
@@ -529,6 +545,7 @@ if (EDITOR) {
   console.log(`  order after F2: ${ed.built.order.join(", ")} (hulls ${ed.built.hulls}, flying ${ed.built.fliers})`);
   if (ed.countEdited) console.log(`  after particles.count changed in memory and the editor rebuilt: ${ed.countEdited.join(", ")}`);
   if (ed.countPutBack) console.log(`  after it was put back and rebuilt: ${ed.countPutBack.join(", ")}`);
+  console.log(`  in the round leaving the editor starts: ${ed.round.join(", ")}`);
   for (const [label, n] of ed.draws) console.log(`  random draws: ${label}: ${n}`);
 }
 
@@ -611,7 +628,7 @@ if (AGAINST) {
     failed = true;
   }
   if (report.editor && ref.editor) {
-    const orders = ["built", "countEdited", "countPutBack"].map((k) => [k, JSON.stringify(report.editor[k]), JSON.stringify(ref.editor[k])]);
+    const orders = ["built", "countEdited", "countPutBack", "round"].map((k) => [k, JSON.stringify(report.editor[k]), JSON.stringify(ref.editor[k])]);
     const o = orders.find(([, a, b]) => a !== b);
     const d = drawsDiffer(report.editor.draws, ref.editor.draws);
     if (o) console.log(`against editor: ${o[0]} is ${o[1]} here and ${o[2]} there`);

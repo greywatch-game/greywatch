@@ -822,7 +822,7 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
       id: "particles-dust",
       of: "the west base's helicopter hovering 2.5 m over the sand in the crossing's north-west corner, its rotor's dust ring boiling round it, from `crossing`'s eye",
       proves:
-        "the DUST RING as the game runs it (X4.7d): a `GPUParticleSystem` on a cylinder emitter at the disc's radius, driven by `RotorWash.update` off `Vehicle.washTo` (the rate, the throw, the emitter on the ground it found), its colour GRADIENT of two rows, its size and velocity gradients and its spin, STANDARD-blended, two seconds of fixed frames from a rebuild and held — every other field held empty",
+        "the DUST RING as the game runs it (X4.7d): a ring field (Babylon's `GPUParticleSystem`, ours since X4.7d) on a cylinder emitter at the disc's radius, driven by `RotorWash.update` off `Vehicle.washTo` (the rate, the throw, the emitter on the ground it found), its colour GRADIENT of two rows, its size and velocity gradients and its spin, STANDARD-blended, two seconds of fixed frames from a rebuild and held — every other field held empty",
       pos: [-55, 7, 197],
       target: [-80, 1.5, 222],
       fov: 40,
@@ -936,7 +936,7 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
       id: "particles-ring-ash",
       of: "the same helicopter hovering 2.5 m over the shore below `tank-far`'s eye, its dust ring with the map's embers drifting through and past it, through a 20° field",
       proves:
-        "the ORDER BETWEEN TWO FIELDS (X4.7c, X4.7d): no particle writes depth, so the field drawn later paints over the one drawn first whichever is nearer, and Babylon draws them in the scene's list — the mote field ahead of every ring in every shipped flow (an install applies the ash before it builds the rings). An ember behind or in front of the dust is blended UNDER it; drawn after the rings, it would add over it",
+        "the ORDER BETWEEN TWO FIELDS (X4.7c, X4.7d): no particle writes depth, so the field drawn later paints over the one drawn first whichever is nearer, and they are drawn in creation order (Babylon's scene list, `ParticleDraw`'s one list since X4.7d) — the mote field ahead of every ring in every shipped flow (an install applies the ash before it builds the rings). An ember behind or in front of the dust is blended UNDER it; drawn after the rings, it would add over it",
       pos: [-581, 15, 73],
       target: [-645, 5, 58],
       fov: 20,

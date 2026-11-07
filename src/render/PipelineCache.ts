@@ -26,8 +26,8 @@
  * made for one pipeline binds into any other whose group has the same
  * entries (the frame block's always does when both stages see it alike; a
  * material's group differs per variant); a COMPUTE pipeline's layout is
- * `"auto"`, because nothing else binds into it: its bind groups are made
- * against its own `getBindGroupLayout`; the WINDING is derived, never
+ * `"auto"` unless its asker states one, because nothing else binds into it:
+ * its bind groups are made against its own `getBindGroupLayout`; the WINDING is derived, never
  * stated, by Babylon's rule (`webgpuEngine.pure.js`, "Front face", and
  * `Material._preBind`): a mesh in this left-handed scene is born
  * `CounterClockWiseSideOrientation` (`Mesh`'s constructor), which faces the
@@ -136,15 +136,33 @@ export class PipelineCache implements CompileProgress {
 
   /**
    * The compute pipeline for entry point `entry` of the module `code`,
-   * compiled once on an `"auto"` layout (see the header); every later ask
-   * shares the same promise.
+   * compiled once on an `"auto"` layout (see the header) — or, given `groups`,
+   * on an explicit one, a bind-group layout a group, for a module whose
+   * bindings `"auto"` would type otherwise (a float texture SAMPLED through a
+   * non-filtering sampler, which `"auto"` calls filterable: the rotor wash's
+   * gradients, `BABYLON_EXIT.md` X4.7d); every later ask shares the same
+   * promise.
    */
-  compute(label: string, code: string, entry: string): Promise<GPUComputePipeline> {
-    return this.cached(this.computes, `${label}:${entry}:${code}`, async () => {
+  compute(
+    label: string,
+    code: string,
+    entry: string,
+    groups?: readonly (readonly GPUBindGroupLayoutEntry[])[],
+  ): Promise<GPUComputePipeline> {
+    const shape = groups ? JSON.stringify(groups) : "auto";
+    return this.cached(this.computes, `${label}:${entry}:${shape}:${code}`, async () => {
       if (import.meta.env.DEV && this.sealed) this.missed(`${label}: ${entry}`);
+      const layout: GPUPipelineLayout | "auto" = groups
+        ? this.device.createPipelineLayout({
+            label: `${label}: ${entry}`,
+            bindGroupLayouts: groups.map((entries, g) =>
+              this.device.createBindGroupLayout({ label: `${label} group ${g}`, entries: [...entries] }),
+            ),
+          })
+        : "auto";
       return this.device.createComputePipelineAsync({
         label: `${label}: ${entry}`,
-        layout: "auto",
+        layout,
         compute: { module: this.module({ label, code, bindings: [] }), entryPoint: entry },
       });
     });

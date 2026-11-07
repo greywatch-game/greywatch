@@ -111,11 +111,10 @@
  *   the particle.
  * - `"particles"`: right behind the whole of `"opaque"`, whatever order anything
  *   was added in, and still ahead of `"beforeBlended"` and of anything blended
- *   the host draws in the group: where the host's group draws its PARTICLES
- *   (`ParticleDraw`, `BABYLON_EXIT.md` X4.7c), behind the turf, which is added at
- *   `"opaque"` at every install, and ahead of the moon — and ahead of every
- *   particle system the host itself still draws (the rotor wash, until X4.7d),
- *   which its group draws after this slot is queued.
+ *   the host draws in the group: where the host's group drew its PARTICLES —
+ *   every field of the game's is ours (`ParticleDraw`, `BABYLON_EXIT.md` X4.7c
+ *   the ash, X4.7d the rotor wash), behind the turf, which is added at
+ *   `"opaque"` at every install, and ahead of the moon.
  * - `"beforeBlended"`: after the group's sprites and particles and ahead of its
  *   transparent meshes. It is the moon's (`SkyDraw`, `BABYLON_EXIT.md` X4.5c), a
  *   blended draw that writes no depth and was the first of that list by distance:

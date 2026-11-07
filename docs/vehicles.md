@@ -2920,26 +2920,32 @@ spooled down or has no rotor at all is one whose emitter is running at a rate of
 zero. Nothing is spawned and nothing is scheduled, which is `Sfx`'s rule for the
 held-open ambience voices arriving in the other half of the frame.
 
-### What a GPU particle system here may and may not do
+### What a GPU particle field here may and may not do
 
 These were `BlastDust`'s, recorded in `docs/grenades.md` while that class
-existed, and are Babylon's rather than the game's. Moved here verbatim when the
-blast stopped using particles, because a GPU emitter is still built here:
+existed, and were Babylon's rather than the game's. Moved here when the blast
+stopped using particles, because a GPU emitter is still built here — and since
+`BABYLON_EXIT.md` X4.7d the rings are OUR renderer's fields (`ParticleField`s
+of the `"ring"` feature set, stepped and drawn by `render/ParticleDraw.ts`),
+Babylon's `GPUParticleSystem` ported exactly, so every rule below is the port's
+because it was Babylon's:
 
-- **A stopped system refuses manual emissions too** (the update shader gates its
-  emit branch on `stopFactor != 0`), so `stop()` is not a way to hold a burst system
+- **A stopped field refuses manual emissions too** (the update shader gates its
+  emit branch on `stopFactor != 0`), so `stop()` is not a way to hold a burst field
   idle. Each is started once and left started; with `emitRate` zero an idle one emits
-  nothing and costs nothing.
+  nothing and costs nothing (at rest it still dispatches and draws nothing: its
+  count is zero until it first emits, and stays up after until a reset).
 - **`updateSpeed` is `1/60`**, which is what makes the numbers mean what they say:
   the GPU clock advances by `updateSpeed * scene.getAnimationRatio()` and that ratio
   is `dt * 60`, so a lifetime is seconds and an emit power is m/s. (`Atmosphere`'s
   0.012 is deliberately not that.)
-- **A colour gradient may only be added BEFORE a system's first render** — the
-  narrower rule under what `BlastDust` stated as "the fade cannot be curved"; see
-  below for how `RotorWash` spends it.
-- **In emit-rate-controlled mode a `GPUParticleSystem` re-emits into a ring of
+- **A ring's gradients are BAKED ONCE**, at its first update, as Babylon made
+  its textures once — so they are stated in `RotorWash.buildRing` before
+  `start()`, and a map whose colours differ gets new rings rather than a
+  repaint (below).
+- **In emit-rate-controlled mode a field re-emits into a ring of
   `max(emitRate * maxLifeTime, this frame's emission)` slots from a circular write
-  pointer**, so a burst system's ring is exactly one `manualEmitCount`, and a second
+  pointer**, so a burst field's ring is exactly one `manualEmitCount`, and a second
   burst inside the first's life overwrites its slots. `Atmosphere` documents the
   other side of this invariant.
 
@@ -3095,33 +3101,32 @@ life, ~0.3 s) is the up-ramp, and it costs a little density — the alpha is now
 under its peak at both ends of a life instead of one, so `opacity` went 0.65 to
 0.72 to put the cloud back where the sweep had left it.
 
-**`BlastDust` says a colour gradient on a GPU system takes the whole scene's
-rendering down, and it is right about what it measured — but the rule underneath
-is narrower, and it is the rule that lets this file have the curve that one
-cannot.** A gradient texture changes the VERTEX BUFFER LAYOUT: with one, the
-per-particle `color` attribute is gone and the shader samples the gradient
-instead (`gpuParticleSystem.pure.js` — `_GetAttributeNamesOrOptions`, and the
-`!this._colorGradientsTexture` guards around the buffer build). Those buffers are
-built by `_initialize()` on a system's FIRST RENDER and never again, while the
-gradient texture is created whenever the update effect is next recreated. So a
-gradient added to a system that has already drawn leaves the buffers and the
-effect disagreeing about the vertex format, which on WebGPU is not a wrong
-colour but a dead scene.
+**A ring's gradients are three textures and they are BAKED ONCE**, which is
+how the ring is wired. `render/ParticleDraw.ts` bakes them at the ring's first
+update, off the stops `RotorWash.buildRing` and `paint` stated, exactly as
+Babylon's `GPUParticleSystem` baked its own (`ParticleField.bakeColorGradients`
+and `bakeFactorGradients`, `_bakeColorGradientData` and `_bakeFactorGradientData`
+ported, proven element for element against the parent's arrays at X4.7d): the
+colour an 8-bit RGBA texture of 256 x **2** — two rows, so the light and dark
+halves of the pair are lerped per puff by its own seed and the two-tone body
+survives the ramp — the size and the velocity a 256 x 1 pair of floats each.
+The stops are alpha 0, 0.72 at a fifth of a life, and 0. So the gradients are
+stated before `start()`, the environment arrives on `build` rather than through
+a `setEnvironment` of its own, and a map whose dust is a different colour gets
+NEW rings rather than a repaint — the only thing that ever disposes one inside a
+session, and so the one thing that draws a ring's random textures again (which
+is why the port kept the rebuild: a repaint in its place would draw them at
+another time, a later commit if the bank's bytes allow it).
 
-**So the rule is "before the first render", not "never"** — and the whole of how
-this class is wired is that rule. Gradients are added in `buildRing`, before
-`start()` and before the ring has been offered to a frame; the environment
-therefore arrives on `build` rather than through a `setEnvironment` of its own;
-and a map whose dust is a different colour gets NEW rings rather than a repaint,
-which is the only thing that ever disposes one inside a session. `BlastDust`
-re-tints per install on systems that have been drawing since the `Game` was
-constructed, so for that class the conclusion stands unchanged.
-
-Verified on the live client rather than inferred: the ring's gradient texture
-comes back 256 x **2** — two rows, so the light and dark halves of the pair are
-still lerped per puff by its own seed and the two-tone body survives the ramp —
-with stops at alpha 0, 0.72 at a fifth of a life, and 0, and the scene went on
-rendering (frame 430 to 541 over the second after).
+**Under Babylon's particle system this was a harder rule, and it is gone with
+it.** A gradient texture changed a `GPUParticleSystem`'s VERTEX BUFFER LAYOUT —
+the per-particle `color` attribute dropped and the shader sampling the gradient
+instead — while its buffers were built at its first render and never again, so
+a gradient added to a system that had already drawn left the buffers and the
+effect disagreeing about the vertex format, which on WebGPU was not a wrong
+colour but a dead scene (what the retired `BlastDust` measured). Our fields pull
+their slots out of storage by a stride fixed with the feature set, so there is
+no vertex layout to disagree with; what is left is the bake's once.
 
 ### The tint is the FLOOR where a blast's cloud is the MIST
 

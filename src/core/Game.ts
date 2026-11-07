@@ -1276,9 +1276,10 @@ export class Game {
   private culling: WorldCulling;
   private atmosphere: Atmosphere;
   /**
-   * Every GPU particle field of ours — the ash since `BABYLON_EXIT.md` X4.7c —
-   * stepped on the scene's animation ratio and drawn where Babylon's group drew
-   * its particles. `Atmosphere` decides the field; this runs and draws it.
+   * Every GPU particle field of the game's — the ash since `BABYLON_EXIT.md`
+   * X4.7c, the rotor wash since X4.7d — stepped on the scene's animation ratio
+   * and drawn where Babylon's group drew its particles. `Atmosphere` and
+   * `RotorWash` decide the fields; this runs and draws them.
    */
   private readonly particleDraw: ParticleDraw;
   /** The view's inverse, made once: `ParticleDraw`'s camera, as `_render` made it. */
@@ -2268,7 +2269,8 @@ export class Game {
     // Thunder is the strike's own event, raised the frame its flash starts;
     // `Sfx` delays it by the distance on the audio clock.
     this.lightning.onStrike = (distance) => this.sfx.thunder(distance);
-    // The ash's update and draw are our renderer's (X4.7c), on Babylon's clock:
+    // Every particle field's update and draw is our renderer's (X4.7c the ash,
+    // X4.7d the rotor wash), on Babylon's clock:
     // the scene's animation ratio, read as the frame draws, which is when
     // `GPUParticleSystem.animate` read it; and the camera as `_render` bound it,
     // the view and the projection APART, the view's inverse and the eye.
@@ -2279,9 +2281,10 @@ export class Game {
     );
     this.atmosphere = new Atmosphere(this.scene, this.particleDraw);
     // Beside the mote field because it is the same kind of thing — a standing
-    // GPU emitter driven off where something is — and NOT beside the fleet,
-    // which it never touches. The server builds no such class at all.
-    this.rotorWash = new RotorWash(this.scene);
+    // GPU emitter driven off where something is, its rings fields of ours on
+    // the same `ParticleDraw` (X4.7d) — and NOT beside the fleet, which it
+    // never touches. The server builds no such class at all.
+    this.rotorWash = new RotorWash(this.scene, this.particleDraw);
     // `mats` is not for building materials here — both systems' pictures are our
     // renderer's. It is the holder of the map's key, the one thing either asks it
     // for (`keyLight`); the shadow map, its matrix and its params reach both
@@ -2619,7 +2622,8 @@ export class Game {
     // the rings and the flags since X4.6b, nor the grass since X4.6c, nor the
     // water since X4.6d, nor the glazing, a spark, a disc, a scorch or a blob
     // since X4.6e (pools, those last four, but the rest's draws owe the sum too),
-    // nor the ash since X4.7c (a draw a field, no pool).
+    // nor the ash since X4.7c, nor the rotor wash since X4.7d (a draw a field,
+    // no pool).
     this.prof.setPools(() => ({
       drawn:
         this.pieceDraw.stats.drawn +
@@ -2681,8 +2685,9 @@ export class Game {
       { name: "the water", ready: this.waterDraw.ready },
       { name: "the glazing", ready: this.glassDraw.ready },
       { name: "the sparks, dust discs, scorch and blobs", ready: this.fadeDraw.ready },
-      // Both blends: a map change can flip the ash's (`Atmosphere.apply`).
-      { name: "the ash", ready: this.particleDraw.ready },
+      // The ash's update and both its blends (a map change can flip one,
+      // `Atmosphere.apply`), and the rotor wash's update and draw (X4.7d).
+      { name: "the ash and the rotor wash", ready: this.particleDraw.ready },
     ];
     // The sky is painted once here, the boot map's, and re-applied per round
     // alongside the environment; it is DRAWN only while a map stands
@@ -6133,12 +6138,10 @@ export class Game {
     // The environment goes in on the same call rather than through a
     // `setEnvironment` of its own, which is the one place this differs from
     // the grenades' two lines above. A ring's colour is a GRADIENT — the fade
-    // in as well as the fade out — and a gradient may only be set before a GPU
-    // particle system's first render, so a ring is COLOURED WHEN IT IS BUILT
-    // and a map whose dust is a different colour gets new rings. See
-    // `RotorWash.paint`, which carries why that is safe here and is not safe
-    // on the clouds the blast's retired `BlastDust` held from the `Game`'s
-    // construction on.
+    // in as well as the fade out — baked once, at the ring's first update, so
+    // a ring is COLOURED WHEN IT IS BUILT and a map whose dust is a different
+    // colour gets new rings, which is also when their random textures are
+    // drawn (`RotorWash.paint`).
     this.rotorWash.build(
       this.vehicles.hulls,
       map.water,

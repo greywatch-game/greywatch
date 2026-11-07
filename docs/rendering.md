@@ -3449,21 +3449,22 @@ the one back-to-front run of the glazing and the fades, X4.6e's, where that list
   anything blended in it. **No opaque draw of ours goes later**, because
   the blended surfaces write no depth: an opaque wall drawn after the
   glazing or the water in front of it paints over them. The point is the
-  FIRST of three things Babylon's `RenderingGroup.render` does after its
+  FIRST of the things Babylon's `RenderingGroup.render` does after its
   alpha-tested list: its sprites (an observable only once Babylon's sprite
-  component is loaded, which nothing here loads), its particles (an
-  observable only when the group holds some, which also fires in the
-  active-mesh walk, outside any group), and `onBeforeTransparentRendering`,
-  which it always reaches. **That last hook alone is too late**: the
-  particles come before it, so a wall drawn there paints over every particle
-  in front of it.
+  component is loaded, which nothing here loads), its particles, and
+  `onBeforeTransparentRendering`, which it always reaches. **Babylon draws no
+  particle since X4.7d**, so the seam hooks the sprites and that last slot alone
+  (its particle observable went with the last of Babylon's fields); while it
+  drew them, the slot alone was too late — the particles came before it, so a
+  wall drawn there would have painted over every particle in front of it, and
+  every field of ours is drawn at `"particles"`, right behind this point.
 - **`"particles"`: right behind the whole of `"opaque"`, in the same slot of the
   host's** (X4.7c), whatever order anything was added in, and so behind the turf,
   which is added at `"opaque"` at every install — a draw added at `"opaque"` at
-  `Game`'s construction would land AHEAD of it. **The ash is the one draw here**
-  ("The particles, ours"): where the group drew its particle systems, ahead of the
-  moon, and ahead of every particle system Babylon still draws (the rotor wash,
-  until X4.7d), which the group draws after this slot is queued.
+  `Game`'s construction would land AHEAD of it. **Every particle field is the one
+  draw here** ("The particles, ours": the ash since X4.7c, the rotor wash since
+  X4.7d), in creation order: where the group drew its particle systems, ahead of
+  the moon. Babylon's scene holds no particle system since X4.7d.
 - **`"afterGroup"`**: after the group has been queued whole, blended meshes
   and all, and before any group above it — none holds anything since X4.3d.
   **The player's whole WEAPON is drawn here** (X4.3c, X4.3d — the one draw at
@@ -5074,18 +5075,30 @@ Babylon's counter counts none of it.
 
 ## The particles, ours: Babylon's field, ported exactly
 
-**The ash — the map's motes, embers or leaves (`systems/Atmosphere.ts`) — is our
-renderer's since `BABYLON_EXIT.md` X4.7c** (`render/ParticleDraw.ts`,
-`ParticleField.ts`, `particleProgram.ts`, `shaders/wgsl/particles.ts`): a compute
-update and an instanced draw, what Babylon 9.28's `GPUParticleSystem` on
-`ComputeShaderParticleSystem` did, PORTED rather than rewritten, so every bank
-row holding a field (`sky-motes`, the X4.7a `particles` rows) is byte-equal to
-Babylon's and the live probe's log (`plans/webgpu-ref/particles.mjs`) equal by
-`Object.is`. The rotor wash is still Babylon's until X4.7d, on the same terms
-below once it moves. `Atmosphere` DECIDES the field (its box, colours, rate,
-lives, blend, step) and draws nothing; `ParticleDraw` runs and draws every field
-of ours, in ONE list in creation order, a disposed field taken out — the rule
-`scene.particleSystems` kept, so a rebuilt field goes to the end.
+**Every GPU particle field in the game is our renderer's: the ash — the map's
+motes, embers or leaves (`systems/Atmosphere.ts`) — since `BABYLON_EXIT.md`
+X4.7c, and the rotor wash's dust and spray rings (`systems/RotorWash.ts`) since
+X4.7d** (`render/ParticleDraw.ts`, `ParticleField.ts`, `particleProgram.ts`,
+`shaders/wgsl/particles.ts`): a compute update and an instanced draw, what Babylon
+9.28's `GPUParticleSystem` on `ComputeShaderParticleSystem` did, PORTED rather
+than rewritten, so every bank row holding a field (`sky-motes`, the X4.7a
+`particles` rows) is byte-equal to Babylon's and the live probe's log
+(`plans/webgpu-ref/particles.mjs`) equal by `Object.is`. **Babylon's scene holds
+no particle system** in a round or an editor build, and nothing imports
+`GPUParticleSystem`. `Atmosphere` and `RotorWash` DECIDE their fields (box or
+cylinder, colours or gradients, rate, lives, blend, step) and draw nothing;
+`ParticleDraw` runs and draws every field, in ONE list in creation order, a
+disposed field taken out — the rule `scene.particleSystems` kept, so a rebuilt
+field goes to the end (the motes rebuilt by an editor's edit of their count go
+behind the rings, as Babylon put them: X4.7c's recorded dev-only difference is
+gone).
+
+- **A field is one of two FEATURE SETS** (`ParticleFeatures`), each its own
+  compiled modules: the ash's `"box"` (a box emitter, a colour a slot) and the
+  rotor wash's `"ring"` (a cylinder emitter — its radius per hull, height,
+  `radiusRange`, `directionRandomizer` — a colour gradient of two rows, size and
+  velocity gradients, a spin range). A field needing another feature owes the
+  port its own compiled modules and its stride.
 
 - **The WGSL is Babylon's AS COMPILED.** The three modules were read off the
   parent's device (`createShaderModule` at 312dc44) for the one feature set the
@@ -5097,10 +5110,29 @@ of ours, in ONE list in creation order, a disposed field taken out — the rule
   size, angle and colour at stride 96 bytes, a corner's offset and uv at 16) out
   of storage into the same private `vertexInputs`. `LeftOver` and `Internals` are
   Babylon's structs member for member, the clip-space y flipped by
-  `internals.yFactor_` as Babylon's processor wrote it. A field needing another
-  feature (a cylinder emitter, a gradient) owes the port its own compiled modules.
-- **The buffers are Babylon's.** A slot is 24 floats (`_initialize`'s stride with
-  its `alignDataInBuffer` padding); both buffers are made at the field's first
+  `internals.yFactor_` as Babylon's processor wrote it. The ring's modules
+  (X4.7d, read off 9d5ab4a's device) are `CYLINDEREMITTER BILLBOARD
+  COLORGRADIENTS SIZEGRADIENTS VELOCITYGRADIENTS EMITRATECTRL` for the update,
+  copied verbatim with Babylon's two groups (the size and velocity gradients in
+  group 1), on Babylon's EXPLICIT layout — the gradients are `rg32float`, read
+  through a non-filtering sampler, which an `"auto"` layout would call filterable
+  — and `+ COLORGRADIENTS COLORGRADIENTS_COLOR2` for the draw's vertex stage (the
+  colour two texture rows at the slot's age, mixed by its seed; no `colorDead` in
+  its `LeftOver`), whose fragment stage is the box's.
+- **A ring's gradients are BAKED as Babylon baked them**, at its first ready test
+  (`_recreateUpdateEffect`), once for its life — a reset keeps them:
+  `GradientHelper.GetCurrentGradient` over 256 texels (`_rawTextureWidth`), the
+  colour lerped as `Color4.LerpToRef` and stored by the `Uint8Array`'s own
+  conversion into an `rgba8unorm` of 256 × 2, the size and velocity lerped as
+  `Lerp` into an `rg32float` of 256 × 1, proven element for element against the
+  parent's arrays on Sarab and Cinderhaven. Each is read through the sampler
+  Babylon's cache made for it, off the parent's device: the colour nearest and
+  CLAMPED, the factors nearest and REPEATING (a compute binding takes a
+  texture's sampler state as no material ever set it), so an age at or past its
+  life reads the first texel, as Babylon's did.
+- **The buffers are Babylon's.** A slot is 24 floats in the box's set and 20 in
+  the ring's (`_initialize`'s stride with its `alignDataInBuffer` padding, a
+  colour gradient taking the slot's colour out); both buffers are made at the field's first
   update after a build or a reset, every slot dead and its seed drawn, and
   released by a reset. They ping-pong as `_targetIndex` did: the update reads
   the buffer it names and writes the other, and **the DRAW reads the buffer the
@@ -5116,7 +5148,9 @@ of ours, in ONE list in creation order, a disposed field taken out — the rule
   Babylon's `getCaps().maxTextureSize` read (8192 on the bank's box), so another
   device keeps its own field. The seeds (4 a slot, in slot order) are drawn at the
   first update after a build or a reset. Nothing else draws: 65,536 at a mote
-  field's construction, 4 × capacity at its first update, as X4.7a counted.
+  field's construction, 32,768 at a ring's (its width stated, 4096), 4 ×
+  capacity at its first update — 540 a dust ring, 504 a spray ring, which a ring
+  AT REST draws too, at its first render after every reset — as X4.7a counted.
 - **The clock is Babylon's**: `updateSpeed` × `scene.getAnimationRatio()` (`|| 1`),
   read as the main pass begins, which is where `animate()` read it — after
   `Scene.animate`, with its 1..1000 ms clamp — on every frame the scene draws
@@ -5143,33 +5177,36 @@ of ours, in ONE list in creation order, a disposed field taken out — the rule
   ended the main pass from inside group 0 (`_computeDispatch`), which restarted
   with `load`; ours splits nothing, and the bytes say the split cost no pixel.
 - **The draw is at `"particles"`** ("Our renderer's frame"): behind the turf, ahead
-  of the moon, where the group drew its particle systems, and ahead of every one
-  Babylon still draws (the rotor wash, until X4.7d) — the order every shipped flow
-  had, the motes ahead of every ring (X4.7a); the editor's dev-only flow that put
-  them behind a ring (an in-memory edit of `particles.count`) now keeps them
-  ahead — accepted by the owner 2026-11-07 as a recorded, dev-only order
-  difference until X4.7d puts the rings in the same list (`BABYLON_EXIT.md`,
-  "Decisions that are yours"). Each field is one instanced strip of four, `currentActiveCount`
+  of the moon, where the group drew its particle systems, in the one list's
+  creation order — the motes ahead of every ring in every shipped flow (X4.7a),
+  and behind them after an editor's in-memory edit of `particles.count`
+  rebuilds the motes, as Babylon's list put them (X4.7c's recorded difference,
+  gone at X4.7d). Each field is one instanced strip of four, `currentActiveCount`
   instances in slot order, unsorted, with no frustum test and no size gate (Babylon
   dispatched it to group 0 by its emitter); LEQUAL, no depth written, no cull, and
   `ALPHA_ADD` (an ember leaves the coverage alpha alone) or `ALPHA_COMBINE` (ash
   accumulates into it). The camera is handed in APART — the view, the projection,
   the view's inverse by `invertToRef` and the eye, read off the scene by `Game` as
   the frame draws (`ParticleCamera`) — never the frame's fused matrix, which is a
-  different rounding. The mote texture stays Babylon's `DynamicTexture`, bound
-  through the seam (`hostTexture`, `bind`) until X5.4.
+  different rounding. The mote texture and the rotor wash's puff stay Babylon's
+  `DynamicTexture`s, bound through the seam (`hostTexture`, `bind`) until X5.4.
 - **No particle is drawn in the glow's mask, a shadow map or a bake**, as before.
 - **Its pipelines are on the round's declared list** (`Game.roundPipelines`, "the
-  ash": the update and the draw at BOTH blends, since a map change can flip one),
-  so a field's first frame in play compiles nothing. A capture counts its draws
+  ash and the rotor wash": the ash's update and its draw at BOTH blends, since a
+  map change can flip one, and the ring's update and STANDARD draw), so a field's
+  first frame in play compiles nothing — a helicopter raising its first dust
+  mid-round compiled Babylon's two until X4.7d. A capture counts their draws
   (`ProfileReport.pools.particles`, report version 37); Babylon's counter no longer
   does.
 - **What no row holds** (X4.7a's review): a particle against the see-through
   panes or the fades (the one back-to-front run, behind the moon at
   `"beforeBlended"`), so the order there is held by construction (both points are
   ours, `"particles"` ahead of `"beforeBlended"`) and not by a frame; the ash's
-  order against the moon is `sky-motes`'s. And no row holds a field MOVING: the
-  probe does (its clock the scene's own path, the clamp included).
+  order against the moon is `sky-motes`'s, and a RING's against the moon or the
+  run is held by nothing but that same construction. And no row holds a field
+  MOVING: the probe does (its clock the scene's own path, the clamp included),
+  and its `--against` is the one test of the 540 and 504 seeds a ring draws at
+  rest after a reset.
 
 ## Block visibility: how much of the map the frame walks
 
@@ -5810,11 +5847,11 @@ all in the counter this finding is named after. Not chased.
   capture beacon or a tracer standing in front of it. It is a draw of ours now
   (`SkyDraw`, X4.5c), after the opaque dome and the clouds and ahead of the blended
   queue, where it was the first of Babylon's by distance. **Particles are still
-  under it** — Babylon drew a group's particle systems before that queue, and the
-  ash, ours since X4.7c, keeps that place (`"particles"`, ahead of the moon's
-  `"beforeBlended"`), so a plume in front of the disc is the one case the move
-  does not fix; it is the owner's to ask for, after X4.7 (`BABYLON_EXIT.md`,
-  "Decisions"). **Nor does it
+  under it** — Babylon drew a group's particle systems before that queue, and
+  every field, ours since X4.7c (the ash) and X4.7d (the rotor wash), keeps that
+  place (`"particles"`, ahead of the moon's `"beforeBlended"`), so a plume in
+  front of the disc is the one case the move does not fix; it is the owner's to
+  ask for, after X4.7 (`BABYLON_EXIT.md`, "Decisions"). **Nor does it
   fix the disc's BLOOM**: the glow occludes on depth alone, so the halo is composited
   over a beacon in front of the disc and saturates it back to white — on Cinderhaven
   the frame was byte-identical in either group with the glow on, and differed over
@@ -6986,9 +7023,9 @@ dome, and the two are not in any bake.
 - **The moon is after the particles and ahead of the blended meshes**
   (`"beforeBlended"`, the seam's item 6), blended by `ALPHA_COMBINE`, no depth
   written, so it paints over ash and rotor wash in front of it, as Babylon's
-  blended queue did — the ash ours since X4.7c, at `"particles"`, and the wash
-  Babylon's in its group until X4.7d, drawn after the ash and ahead of the moon —
-  and everything blended that is a mesh paints over it. A moon
+  blended queue did — both ours (the ash since X4.7c, the wash since X4.7d), at
+  `"particles"`, in creation order, the ash ahead of the rings in every shipped
+  flow — and everything blended that is a mesh paints over it. A moon
   behind its ash would be the better picture and is the owner's to ask for; `sky-motes`
   is the row that grades the order. It stands at 9 km, behind the depth a cloud
   writes, so a cloud rejects it. **Its bloom** is a draw of ours in the mask, at the

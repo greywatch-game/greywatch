@@ -2,14 +2,20 @@
  * RotorWash.ts — What a helicopter does to the ground when it comes down: one
  * standing ring of puffs per rotor on the field, driven by how hard that rotor
  * is working the surface under it, and made of whatever that surface is.
- * Owns: two `GPUParticleSystem`s per hull in the fleet that has a rotor — the
- * dust ring and the spray ring — the puff texture they share, the colours the
- * map gives them, and the list of sites the WATER's own shader draws its half
- * from. Owns NO vehicle: it holds the fleet the way `RayWorld` holds the hulls
- * — handed the list once per map install by `Game`, and asking each one a
- * single question a frame.
+ * Owns: two particle fields per hull in the fleet that has a rotor — the dust
+ * ring and the spray ring, `ParticleField`s of the `"ring"` feature set, which
+ * OUR renderer steps and draws (`render/ParticleDraw.ts`; `BABYLON_EXIT.md`
+ * X4.7d, Babylon's `GPUParticleSystem` ported exactly) and this file only
+ * DECIDES — the puff texture they share, the colours the map gives them, and
+ * the list of sites the WATER's own shader draws its half from. Owns NO
+ * vehicle: it holds the fleet the way `RayWorld` holds the hulls — handed the
+ * list once per map install by `Game`, and asking each one a single question a
+ * frame.
  * Invariants: fixed capacity per emitter, allocated on a map install and never
- * inside a round; nothing per frame but two numbers and a position.
+ * inside a round; nothing per frame but two numbers and a position; a ring is
+ * built, coloured and started in one call (`buildRing`), and a map whose colours
+ * differ gets NEW rings rather than a repaint (`build`) — which is also what
+ * decides when a ring's random textures are drawn.
  *
  * ## It FADES with its hull, and is told the fade rather than working it out
  *
@@ -105,17 +111,12 @@
  * the split every picture in the game takes (`GrenadeFx`, `CombatFx`): the
  * server does not construct this class at all.
  */
-import {
-  Color3,
-  Color4,
-  type CylinderParticleEmitter,
-  type DynamicTexture,
-  GPUParticleSystem,
-  type Scene,
-  Vector3,
-} from "@babylonjs/core";
+import { Color3, type DynamicTexture, type Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { Vehicle } from "../entities/Vehicle";
+import { hostTexture } from "../render/babylonSeam";
+import type { ParticleDraw } from "../render/ParticleDraw";
+import type { ParticleField } from "../render/ParticleField";
 import type { EnvironmentSpec } from "../world/environment";
 import type { WaterRect } from "../world/MapBuilder";
 import { waterY, type TerrainField } from "../world/TerrainField";
@@ -124,13 +125,13 @@ import { buildPuffTexture } from "./puffTexture";
 /** One rotor's two rings, and the hull they stand under. */
 interface Wash {
   /** Dry ground. Always built: every map has some. */
-  dust: GPUParticleSystem;
+  dust: ParticleField;
   /**
    * Water. Null on a map with no `WaterEnvSpec` — there is nothing to colour
    * it from and no surface for it to be thrown off, so it is not built at all
    * rather than built and left silent.
    */
-  spray: GPUParticleSystem | null;
+  spray: ParticleField | null;
   /** Null for a slot the current map has no machine for. */
   hull: Vehicle | null;
   /**
@@ -184,12 +185,12 @@ export class RotorWash {
   /**
    * The map's colours, and the reason they are held rather than pushed.
    *
-   * **A ring's colour is fixed when it is BUILT and may never be written
-   * again** — see `buildRing`, where the fade is a colour GRADIENT and a
-   * gradient is only safe before a system's first render. So this is compared
-   * on every `build` and a map whose dust or whose water is a different colour
-   * gets fresh rings, which is the one thing that ever disposes one inside a
-   * session. Null until the first map has landed.
+   * **A ring's colour is fixed when it is BUILT and never written again** —
+   * see `paint`: its gradient textures are baked once, at its first update, as
+   * Babylon's were. So this is compared on every `build` and a map whose dust
+   * or whose water is a different colour gets fresh rings, which is the one
+   * thing that ever disposes one inside a session — and so the one thing that
+   * draws a ring's random textures again. Null until the first map has landed.
    */
   private palette: Palette | null = null;
 
@@ -205,7 +206,11 @@ export class RotorWash {
   private readonly washSites = new Float32Array(CONFIG.water.wash.sites * 4);
   private washCount = 0;
 
-  constructor(private readonly scene: Scene) {}
+  constructor(
+    private readonly scene: Scene,
+    /** Our renderer's particle fields, which step and draw the rings built here. */
+    private readonly draw: ParticleDraw,
+  ) {}
 
   /** The packed sites. Valid up to `siteCount`; see `washSites`. */
   get sites(): Float32Array {
@@ -239,11 +244,11 @@ export class RotorWash {
     env: EnvironmentSpec,
   ): void {
     // **The colours arrive with the fleet rather than in a call of their own**,
-    // and that is the gradient's doing: a ring cannot be re-coloured after it
-    // has drawn a frame (`buildRing`), so the only safe moment to decide what
-    // this map's dust and spray are made of is the moment its rings are made.
-    // A map with the same floor, the same key light and the same water keeps
-    // the rings it had.
+    // and that is the gradient's doing: a ring's colour is baked at its first
+    // update and never again (`paint`), so the moment to decide what this
+    // map's dust and spray are made of is the moment its rings are made. A map
+    // with the same floor, the same key light and the same water keeps the
+    // rings it had.
     const palette = this.paletteFor(env);
     if (!this.samePalette(palette)) {
       this.disposeRings();
@@ -285,12 +290,8 @@ export class RotorWash {
       // this drawing (`drive.collideRadius`, and see its note). `spread` is how
       // far past the edge of it the dust is by the time it is lit.
       wash.radius = hull.spec.drive.collideRadius * CONFIG.vehicles.wash.spread;
-      (wash.dust.particleEmitterType as CylinderParticleEmitter).radius =
-        wash.radius;
-      if (wash.spray) {
-        (wash.spray.particleEmitterType as CylinderParticleEmitter).radius =
-          wash.radius;
-      }
+      wash.dust.radius = wash.radius;
+      if (wash.spray) wash.spray.radius = wash.radius;
     }
   }
 
@@ -309,9 +310,9 @@ export class RotorWash {
    *
    * The emitter properties written here are the three the GPU update shader
    * reads inside its EMISSION branch, so they may move freely from frame to
-   * frame — see `BlastDust.burst`, which rests on exactly that: the puffs
-   * already in the air were sized and thrown when they were born and are not
-   * re-thrown under a machine that has since climbed away.
+   * frame — as the retired `BlastDust.burst` rested on: the puffs already in
+   * the air were sized and thrown when they were born and are not re-thrown
+   * under a machine that has since climbed away.
    *
    * `fades` is each hull's draw-distance fade this frame, by its index in the
    * fleet (`Game.hullFades`, written by `Game.fadeHulls` just before this):
@@ -388,14 +389,13 @@ export class RotorWash {
    * and multiplied in last, so at 1 the rate is `rate * strength`, bit for bit.
    */
   private drive(
-    system: GPUParticleSystem,
+    system: ParticleField,
     strength: number,
     fade: number,
     rate: number,
     speed: number,
   ): void {
-    (system.emitter as Vector3).copyFrom(this.at).y +=
-      CONFIG.vehicles.wash.lift;
+    system.emitter.copyFrom(this.at).y += CONFIG.vehicles.wash.lift;
     system.emitRate = rate * strength * fade;
     const out = speed * (0.35 + 0.65 * strength);
     system.minEmitPower = out * 0.45;
@@ -525,38 +525,44 @@ export class RotorWash {
    * file spells out. Below full strength the pointer comes round SLOWER than a
    * life, which is the safe side of it.
    */
-  private buildRing(index: number, wet: boolean): GPUParticleSystem {
+  private buildRing(index: number, wet: boolean): ParticleField {
     const w = CONFIG.vehicles.wash;
     const s = w.spray;
     const life = wet ? s.life : w.life;
-    const system = new GPUParticleSystem(
+    const texture = (this.texture ??= buildPuffTexture(this.scene, "rotorWash"));
+    // Its two random textures are drawn here, as `GPUParticleSystem`'s
+    // constructor drew them; its emitter is a point (the origin until `drive`
+    // moves it), as the `Vector3` handed Babylon's was.
+    const system = this.draw.create(
       `rotor${wet ? "Spray" : "Wash"}${index}`,
       {
         capacity: Math.ceil((wet ? s.rate : w.rate) * life),
-        emitRateControl: true,
-        // `BlastDust`'s note: the default is the engine's max texture size,
-        // which is half a megabyte of VRAM and ~131,000 `Math.random()` calls
-        // to seed a hundred puffs.
+        // Babylon's default is the device's max texture size, which is half a
+        // megabyte of VRAM and ~131,000 `Math.random()` calls to seed a
+        // hundred puffs (the retired `BlastDust`'s note).
         randomTextureSize: 4096,
+        features: "ring",
       },
-      this.scene,
+      hostTexture(texture),
+      () => texture.isReady(),
     );
-    this.texture ??= buildPuffTexture(this.scene, "rotorWash");
-    system.particleTexture = this.texture;
-    system.emitter = new Vector3();
-    system.blendMode = GPUParticleSystem.BLENDMODE_STANDARD;
+    system.blendMode = "standard";
     system.updateSpeed = 1 / 60;
     system.emitRate = 0;
     system.minLifeTime = life * 0.7;
     system.maxLifeTime = life;
     // A flat RING rather than a filled disc: `radiusRange` 0.5 puts every puff
     // in the outer half of the circle, which is where the air leaving a rotor
-    // meets the surface. The radius itself is per hull and is set in `build`.
-    system.createCylinderEmitter(1, 0.4, 0.5, 0.4);
+    // meets the surface. The radius itself is per hull and is set in `build`;
+    // the rest is `createCylinderEmitter(1, 0.4, 0.5, 0.4)` as it was.
+    system.radius = 1;
+    system.height = 0.4;
+    system.radiusRange = 0.5;
+    system.directionRandomizer = 0.4;
     // Dust rises because it is fine enough for the outflow's curl to carry it;
     // spray is thrown and then falls, which is the one number in the pair with
     // an opposite SIGN rather than a different size.
-    system.gravity = new Vector3(0, wet ? s.rise : w.rise, 0);
+    system.gravity.set(0, wet ? s.rise : w.rise, 0);
     // Thrown out hard and slowing, but never to nothing — the disc over it is
     // still pushing, which is the blast dust's `settle` read for a source that
     // has not gone away.
@@ -589,30 +595,20 @@ export class RotorWash {
    * a viewer reads is the cloud; on a fountain it is the whole texture of the
    * effect, and it read as the dust popping in.
    *
-   * ## Which is safe here and is NOT safe on the blast's clouds
+   * ## It is baked ONCE, which is why a new palette is a new ring
    *
-   * `BlastDust` states that `addColorGradient` on a GPU system takes the whole
-   * scene's rendering down on the next frame, and it is right about what it
-   * measured — but the rule underneath it is narrower, and it is the rule that
-   * lets this file have what that one cannot. **A gradient texture changes the
-   * VERTEX BUFFER LAYOUT**: with one, the per-particle `color` attribute is
-   * gone and the shader samples the gradient instead
-   * (`gpuParticleSystem.pure.js`, `_GetAttributeNamesOrOptions` and the
-   * `!this._colorGradientsTexture` guards around the buffer build). Those
-   * buffers are built by `_initialize()` on the system's FIRST RENDER and
-   * never again, while the gradient texture is created whenever the update
-   * effect is next recreated. So a gradient added to a system that has already
-   * drawn leaves the buffers and the effect disagreeing about the vertex
-   * format, which on WebGPU is not a wrong colour but a dead scene.
-   *
-   * **So the rule is "before the first render", not "never"**, and everything
-   * about the way this class is wired is that rule: gradients are added here,
-   * inside the constructor path, before `start()` and before the ring has been
-   * offered to a frame — and a map whose colours are different gets NEW rings
-   * rather than a repaint, which is what `build` compares the palette for.
-   * `BlastDust` re-tints per install on systems that have been drawing since
-   * the `Game` was constructed, so for that class the conclusion stands
-   * unchanged.
+   * A ring's gradients are three textures (`render/ParticleDraw.ts`: the
+   * colour's two rows, the size's and the velocity's), baked off the stops
+   * stated here at the ring's first update and never again — Babylon's
+   * `GPUParticleSystem` made its textures the same once (`BABYLON_EXIT.md`
+   * X4.7d ported it so). So the stops are stated here, inside the build, before
+   * `start()`, and a map whose colours are different gets NEW rings rather than
+   * a repaint, which is what `build` compares the palette for. (Under
+   * Babylon's particle system this was a harder rule — a gradient added after
+   * a system's first render changed its vertex buffer layout under it and took
+   * the scene down — and the rebuild kept for it now decides only when a ring's
+   * random textures are drawn. A repaint in its place is a later step, if the
+   * bank's bytes allow one.)
    *
    * ## What the stops are
    *
@@ -622,14 +618,14 @@ export class RotorWash {
    * kept exactly, ramp and all. RGB is the same at every stop and only the
    * alpha moves: a puff that changed COLOUR as it faded would be dust turning
    * into something else. `colorDead` is deliberately not set — with a gradient
-   * texture the shader never reads it.
+   * the shader never reads it.
    *
    * The two-tone pair is the same idea on both materials and is arrived at two
    * ways: dust darkens its own tint, because a cloud of one substance is the
    * lit and unlit sides of itself, and spray is handed a pair by the map,
    * because what the unlit side of whitewater is showing is the water under it.
    */
-  private paint(system: GPUParticleSystem, wet: boolean): void {
+  private paint(system: ParticleField, wet: boolean): void {
     const w = CONFIG.vehicles.wash;
     const spray = wet ? this.palette?.spray : null;
     const t = this.palette?.dust ?? new Color3(0.6, 0.58, 0.54);
@@ -638,9 +634,9 @@ export class RotorWash {
       ? spray[1]
       : new Color3(t.r * 0.5, t.g * 0.5, t.b * 0.58);
     const peak = wet ? w.spray.opacity : w.opacity;
-    const light = (a: number) =>
-      new Color4(lightRgb.r, lightRgb.g, lightRgb.b, a);
-    const dark = (a: number) => new Color4(darkRgb.r, darkRgb.g, darkRgb.b, a);
+    // A `Color4`'s four numbers, as `new Color4(r, g, b, a)` held them.
+    const light = (a: number): [number, number, number, number] => [lightRgb.r, lightRgb.g, lightRgb.b, a];
+    const dark = (a: number): [number, number, number, number] => [darkRgb.r, darkRgb.g, darkRgb.b, a];
     system.addColorGradient(0, light(0), dark(0));
     system.addColorGradient(w.fadeIn, light(peak), dark(peak * 0.72));
     system.addColorGradient(1, light(0), dark(0));
@@ -656,16 +652,17 @@ export class RotorWash {
     for (const wash of this.washes) {
       wash.hull = null;
       this.silence(wash);
-      wash.dust.reset();
-      wash.spray?.reset();
+      this.draw.reset(wash.dust);
+      if (wash.spray) this.draw.reset(wash.spray);
     }
     this.washCount = 0;
   }
 
+  /** Every ring out of the one list, the shared puff texture kept (`dispose(false)` as it was). */
   private disposeRings(): void {
     for (const wash of this.washes) {
-      wash.dust.dispose(false);
-      wash.spray?.dispose(false);
+      this.draw.dispose(wash.dust);
+      if (wash.spray) this.draw.dispose(wash.spray);
     }
     this.washes.length = 0;
   }

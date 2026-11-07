@@ -327,13 +327,14 @@ export function placeVantage(page, vantage) {
     // subject whose LAYOUT is drawn at random (a blast, a muzzle flash) is
     // the same picture every run, without touching the game's own draw.
     // **Every touch of a particle field in this file goes through `fields`**
-    // (`BABYLON_EXIT.md` X4.7a, X4.7c), one adapter for whose fields they are:
-    // since X4.7c the ash is OURS (`g.particleDraw`: a `ParticleField`, stepped
-    // and drawn by `ParticleDraw`) and the rotor wash still Babylon's
-    // (`GPUParticleSystem`s on `g.scene.particleSystems`), and each call picks
-    // by which list a field is on — so a BEFORE taken at a parent that holds no
-    // `particleDraw` runs this file and touches Babylon's alone, exactly as the
-    // file before X4.7c did. The names a field is written through (`emitter`,
+    // (`BABYLON_EXIT.md` X4.7a, X4.7c, X4.7d), one adapter for whose fields
+    // they are: since X4.7c the ash is OURS and since X4.7d the rotor wash too
+    // (`g.particleDraw`: `ParticleField`s, stepped and drawn by `ParticleDraw`,
+    // in one list), where a parent before X4.7d held Babylon's rings
+    // (`GPUParticleSystem`s on `g.scene.particleSystems`) and one before X4.7c
+    // its ash as well — and each call picks by which list a field is on, so a
+    // BEFORE taken at any of those parents runs this file and touches each
+    // field where it lies, exactly as the file before X4.7c did there. The names a field is written through (`emitter`,
     // the emit box, `emitRate`, `updateSpeed`, `preWarmStepOffset`, `start`,
     // `stop`, `isStopped`) are the same on both; what differs — the ready test,
     // a reset, a pre-warm step and the switch — goes through `ParticleDraw` for
@@ -1024,9 +1025,9 @@ export function placeVantage(page, vantage) {
     // **Every touch of a field in THIS path goes through `fields`** (held as
     // `__refParticles.fields` for the put-away), the one adapter above, as the
     // `motes` row's path and `freeze`'s `particles` switch with its thaw do
-    // since X4.7c: on a tree whose ash is ours they step, hold and switch OUR
-    // field (`ParticleDraw`) and Babylon's rings beside it, and at a parent
-    // drawing Babylon's they touch Babylon's alone, as before.
+    // since X4.7c: on a tree whose fields are ours (the ash since X4.7c, the
+    // rings since X4.7d) they step, hold and switch OUR fields (`ParticleDraw`),
+    // and at a parent drawing Babylon's they touch Babylon's, as before.
     if (v.particles) {
       const want = v.particles;
       const spec = g.mapDef.environment.particles;

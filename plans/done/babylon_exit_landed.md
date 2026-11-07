@@ -8779,7 +8779,7 @@ what was corrected and measured.
 - **The blob map's leak, measured** (`FINDINGS.md` 70, not fixed). Five Coldharbour rounds in one page at each tree, a forced GC before each reading: `ShadowSystem.blobs` 17, 33, 49, 65, 81 on both (HEAD's `blobFades` the same; a269bfb's `blobShadow` meshes the same, its scene 2,047 to 2,111 meshes), every earlier round's sixteen bodies alive after the GC, and freed once the map's keys are cleared by a probe. Heap after GC: HEAD 95,378 to 97,150 KB, a269bfb 107,454 to 110,710.
 - **Not verified.** A server's match in a browser; the phone; the editor (its recorded differences stay until X5.3); a gate or latch case live (the drop is 1a89216's record); `gate`, `shaders`, `census`, `pipelines.mjs --round`, `merge:hash`, `kit:hash`, typecheck and build, none of which this note's text-only change could move. The player capturing ALONE (bots may have stood in Alpha too: the page reads no bot). Live frames are pictures, not bytes: the byte comparisons are of held frames.
 
-### X4.7 — GPU particles — **S–M, as four sub-steps** (split 2026-11-07) — X4.7a **LANDED** (bad6caa), X4.7b **LANDED** (8c691c7), X4.7c **LANDED** (9dff2c4)
+### X4.7 — GPU particles — **S–M, as four sub-steps** (split 2026-11-07) — X4.7a **LANDED** (bad6caa), X4.7b **LANDED** (8c691c7), X4.7c **LANDED** (9dff2c4), X4.7d **LANDED** (HASH_X47D) — **all four LANDED**
 
 The plan's `BABYLON_EXIT.md` holds X4.7's brief, the table of what the fields are
 (corrected in place by X4.7a) and the three sub-steps to come.
@@ -9242,3 +9242,153 @@ Coldharbour (a second round) → Sarab → Hollowmere, found nothing real.
 - **MINOR, wording.** `docs/rendering.md`'s moon passage said the wash, Babylon's until X4.7d,
   drew "ahead of both"; it draws after the ash and before the moon. Corrected.
 - **Gates**: typecheck passes; `git diff` is docs and records alone.
+
+**X4.7d landed** (HASH_X47D; 2026-11-07; no change to the picture; no report version —
+`pools.particles` counts the rings with the ash, as Babylon's counter did). The rotor
+wash's dust and spray rings — `RotorWash`'s — are our renderer's compute particles,
+Babylon 9.28's `GPUParticleSystem` on `ComputeShaderParticleSystem` ported exactly on
+X4.7c's machinery; Babylon's scene holds no particle system.
+
+- **What moved.** `render/ParticleField.ts` gained a feature set (`features`, `"box"`
+  the default, `"ring"`), the cylinder emitter's four numbers (`createCylinderEmitter`'s
+  defaults), the colour, size and velocity gradients (`addColorGradient`,
+  `addSizeGradient`, `addVelocityGradient`, sorted by Babylon's comparator) and their
+  bakes (`bakeColorGradients`, `bakeFactorGradients`: `_bakeColorGradientData`,
+  `_bakeFactorGradientData` and `GradientHelper.GetCurrentGradient` line for line, the
+  `Uint8Array`'s own conversion of `channel × 255`). `render/ParticleDraw.ts` runs both
+  sets in its one list: a ring's three gradient textures are baked at its first ready
+  test that creates the update (`_recreateUpdateEffect`'s), kept across a reset as
+  Babylon's were, destroyed at its dispose; the ring's stride is 20 (21, the padding
+  float, less the colour's 4, rounded to 4); its `SimParams` are Babylon's layout for
+  the set (no colours; `radius`, `height`, `radiusRange`, `directionRandomizer` at
+  floats 40-43, 176 bytes); its update binds a second group (the size and velocity
+  gradients) and its draw a colour gradient beside the puff. `render/particleProgram.ts`
+  states both sets (`PARTICLE_RING_GROUP`, `PARTICLE_RING_BLOCK` — no `colorDead` —
+  `RING_PARAMS`, `FEATURE_BLENDS`, `RING_UPDATE_GROUPS`, `RING_COLOR_SAMPLER`,
+  `RING_FACTOR_SAMPLER`) and `particlePipelines` asks the ring's update and STANDARD
+  draw beside the box's three. `render/PipelineCache.compute` takes an explicit layout
+  when stated. `shaders/wgsl/particles.ts` gained `PARTICLE_UPDATE_RING` (verbatim) and
+  `PARTICLE_RING_RENDER_VERTEX`. `RotorWash` builds its rings with `ParticleDraw.create`
+  and draws nothing; `update`, `drive`, `silence`, `clear` and `surfaceOver` write the
+  same numbers; the rebuild on a new palette is kept. `Game`: `RotorWash` handed the
+  draw; "the ash and the rotor wash" on `Game.roundPipelines`. The seam's particle
+  observable and its public-list line are gone; no numbered internal retires (item 6
+  stays: the moon and the one run, told there while an editor build's group is visited,
+  until X5.3). Babylon's `GPUParticleSystem` and `CylinderParticleEmitter` are imported
+  nowhere.
+- **The WGSL and the state, read off the parent's device** (scratch `x47d/dump.mjs` at
+  9d5ab4a, every module, sampler, texture, bind group and layout hooked from the page's
+  first script, the `sarab-particles-dust` and `cinderhaven-particles-spray` rows posed):
+  one update module (`CYLINDEREMITTER BILLBOARD COLORGRADIENTS SIZEGRADIENTS
+  VELOCITYGRADIENTS EMITRATECTRL`), one vertex (`BILLBOARD BILLBOARDMODE_ALL
+  COLORGRADIENTS COLORGRADIENTS_COLOR2 EMITRATECTRL TONEMAPPING 0`) and a fragment whose
+  `main` is the motes' (so the ring draws with `PARTICLE_RENDER_FRAGMENT`); a compute
+  pipeline on an EXPLICIT layout (group 0 the box's, the random textures
+  `unfilterable-float`; group 1 a `non-filtering` sampler and an `unfilterable-float`
+  texture at 0/1 and 4/5) and a render pipeline whose instance buffer is stride 80
+  (position 0, age 12, size 16, life 28, seed 32, angle 64). The samplers: the colour
+  gradient's nearest, lod 0..0, CLAMPED; the factors' nearest, lod 0..0, REPEATING —
+  the compute binding takes the sampler state of a texture no material ever bound — so
+  an age at or past its life reads texel 0, as ours does. The puff's linear, clamped,
+  through the seam's `bind` as before. The textures `rgba8unorm` 256 × 2 and
+  `rg32float` 256 × 1.
+- **Why `"auto"` would not do**: an `"auto"` layout types a float texture sampled with a
+  `sampler` as filterable, and `rg32float` is filterable only under `float32-filterable`,
+  which a phone may lack; the explicit layout is Babylon's own.
+- **Measured.** The BEFORE: `bank.mjs --check --keep` at 9d5ab4a in the worktree
+  `greywatch-2-before-x36b` (moved there from 312dc44; moved to 312dc44 and back for the
+  editor oracle), its own harness. The step's, alone (a first AFTER run died mid-way on
+  a navigation when a source file was edited under its dev server; re-run whole).
+  - **The bank, by `exact.mjs`: 143 of 143 byte-equal**, the five particle rows and
+    `sky-motes` among them, no known flake coming up; the same 34 stale rows red at the
+    same means (the two logs' red lines identical). One run was enough: nothing moved.
+  - **Each wash row holds our ring** (scratch `x47d/holds.mjs`: the frame against the
+    same frame with the rings' `started` off for a frame, one process):
+    `sarab-particles-dust` 83,644 px (mean 0.668), `cinderhaven-particles-spray` 42,466
+    (0.285), `-ring-ash` 71,242 of its 75,309 — X4.7a's counts for Babylon's rings; on
+    again, the first grab's bytes.
+  - **The gradients against the parent's baked arrays** (scratch `x47d/gradcheck.mjs`
+    against the dump's `_bakeColorGradientData(2)` and `_bakeFactorGradientData`
+    outputs): on all four rings of Sarab and of Cinderhaven (two palettes, a map change
+    rebuilding them), the colour 2,048 elements, the size 512 and the velocity 512 equal
+    by `Object.is`, and the stops, the cylinder's four numbers, the capacity, the random
+    texture width, the lives, sizes, spin, gravity and blend equal; `scene.particleSystems`
+    empty after each install.
+  - **The probe** (`particles.mjs sarab cinderhaven sarab hollowmere cinderhaven`, 240
+    frames a place): against the parent (9d5ab4a, its own probe) **equal by `Object.is`
+    on every map** — 45,120 numbers on each Sarab and Cinderhaven, 4,800 on Hollowmere —
+    with the order at every deploy and every construction's and first update's draws
+    (65,536 a mote field, 32,768 a ring; 22,400, 24,268 and 74,668 the motes' seeds, 540
+    and 504 a ring's, at rest after every reset too), `unwrapped` empty. **The editor
+    flow** (`--editor`, now ending in the round leaving the editor starts — this step's
+    probe, run in the worktree at 312dc44 with this step's `particles.mjs` and
+    `harness.mjs`, then put back): **orders and draws equal to 312dc44's** — after `F2`
+    the motes ahead of the four rings; after the in-memory `particles.count` edit and
+    the rebuild, after putting it back, and in the round after, the motes BEHIND them —
+    and the maps equal to 312dc44's as well; the same probe over the parent keeps the
+    motes ahead throughout (X4.7c's recorded difference), so it differs, as the brief
+    said it must.
+  - **`census --against`** a parent run on Sarab and Cinderhaven: every row and both
+    totals equal (595, 619); in `particles-dust`, `-spray` and `-ring-ash` Babylon 1 → 0
+    and ours up one; Babylon 0 in every row.
+  - **`surfaces.mjs`** on the four Sarab and Cinderhaven particle rows: no Babylon draw,
+    no particle class, the seam's path the fallback in each (at the parent the group,
+    Babylon's rings dispatched).
+  - **Pipelines.** `pipelines.mjs cinderhaven --round` and `sarab --round`: **zero of
+    either renderer in play** (both lives); at the first install 3 of Babylon's and 19
+    of ours, as at X4.7c. Where Babylon compiles across an install (scratch
+    `x47d/warmup.mjs`, Cinderhaven, Sarab, Hollowmere, `startRound` to 120 frames into
+    the deploy, each creation's state and program): the post chain's six (`kernelBlur`,
+    `celInk`, `fxaa`, `volumetrics_medium`, `motionBlur`, `paperGrain`) on the frames
+    before the card, `GiVolume`'s three computes under it, and **nothing at a vantage** —
+    the warm-up's vantages compile nothing of Babylon's in a round, handed to X5.4,
+    which owns retiring them.
+  - **Live**, offline, headless (scratch `x47d/live.mjs`): Sarab, the first helicopter
+    pinned each frame on a descent from 14 m of skid clearance to 0.3 m over 300 frames
+    and held 120, on the real clock with the world stepping (`fleetStepped` true): the
+    dust ring's rate 0.8 → 86.2 a second and its count 0 → 130, drawn from its first
+    count; the menu after (the rings cleared to 0, the motes drained and drawn); a
+    second Sarab round the same numbers; the map change to Cinderhaven (another palette,
+    the rings rebuilt) landing on the bay: the spray 11.8 → 134.1, its count to 121, the
+    site published and held by the water; `F2` (an editor build, the rings cleared) and
+    back to a round. `scene.particleSystems` 0 throughout, no page or console error, no
+    `[pipelines]` warning from the sealed cache.
+  - **The fade** at a stated hull draw distance, X4.2d's review's way (its scratch
+    `x42dr/wash.mjs`, `hullDrawDistance: 420` written into Cinderhaven's environment for
+    the run and taken out): every rate and site, after every render, `Object.is` the
+    formula — the dust 55.561 at a fade of 1, 44.449, 33.337, 22.224, 11.112, 0 at 420 and
+    428.4 m with no hull instance; the spray 134.672 → 107.738, 80.803, 53.869, 26.934,
+    0; the ripple 0.9619 → 0.7696, 0.5772, 0.3848, 0.1924, no site — X4.2d's numbers.
+  - **An editor build's frames** (X4.7c's `edframes.mjs`): Cinderhaven `town` and
+    `tank-far`, Sarab `crossing` and `ground`, held without and with a seeded ash:
+    **8 of 8 byte-equal** across the trees.
+  - **`?profile`**, 600 frames a capture, parent → step: a live Sarab round `drawWorld`
+    0.050 → 0.003 ms, `glow` 0.111 → 0.111, `render` 0.578 → 0.519; Cinderhaven 0.061 →
+    0.002, 0.100 → 0.108, 0.525 → 0.493; the menus 0.002-0.004 at both; the nesting
+    check clean on every frame. The wash's share was small on these runs (a ring splits
+    the pass only while it holds a count, so only while a bot flies low); the move to
+    `glow` sits inside the clock's grain.
+  - **Gates**: `gate` all seven maps clean; `shaders` every shader compiled clean on
+    seven maps (the ring's two among ours); typecheck, build (`check-babylon-free`,
+    `check-proving`), corecheck and parity pass.
+- **Rewritten**: `CLAUDE.md` (the gradient rule deleted; the warm-up's vantages are for
+  nothing of Babylon's but the post chain; every particle field ours, no particle
+  system on Babylon's scene), `docs/vehicles.md` ("What a GPU particle field here may
+  and may not do", "A puff fades IN": the rules restated as the port's, the gradient's
+  deleted), `docs/rendering.md` ("The particles, ours", the `"opaque"` and `"particles"`
+  points, the moon's two notes), `docs/states.md`, `docs/profiling.md` (the X4.7d
+  captures), `FINDINGS.md` 16 (the rotor-wash bullet deleted, its table rows answered),
+  `FILES.md`, `plans/webgpu-ref/README.md`, the headers of `RotorWash` (and `paint`'s
+  note), `ParticleDraw`, `ParticleField`, `particleProgram`, `wgsl/particles`,
+  `PipelineCache`, `Renderer`'s point, `PipelineWarmup` and the seam; `Game`'s comments
+  at `rotorWash.build` and at the draw's construction; `bench/vantages.ts`' two row
+  descriptions; the harness's and the probe's adapters' comments, `shaders.mjs`.
+- **Not verified.** A server's match in a browser; the phone; a `?gpu` capture; a ring
+  whose pipelines are still compiling when first asked (every build here had them
+  settled); a ring with a gradient missing or a palette with one colour row (refused by
+  a throw — no field states one); `merge:hash` and `kit:hash` (no world geometry moved).
+  Nothing holds a ring against the moon or the one run in a frame; both points are ours,
+  `"particles"` ahead of `"beforeBlended"`, so it is held by construction. **X4.7's own
+  Verify and the Gate after Phase 4 are not claimed here**: the whole step's Verify is
+  met by the measurements above, but the gate's "a live round's `render` log" with
+  `surfaces.mjs` and the seam's list read against PERF_PLAN B4 are the phase gate's.

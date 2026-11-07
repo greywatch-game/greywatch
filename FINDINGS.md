@@ -896,8 +896,8 @@ fire — counting creations per phase (2026-10-07):
 | Hollowmere | 15 (spawn 7; first blast 189 ms) | 0 (blast 6.5) | 16 in 220-824 ms |
 | Greyfen | 16 (spawn 7; first blast 147 ms) | 0 (blast 9.4) | 18 in 1,432 ms |
 | Harrowmead | — | 0 | 17 in 1,328 ms |
-| Sarab | — | 1 (the rotor wash, below) | 21 in 990 ms |
-| Cinderhaven | — | 1 (the rotor wash, below) | 19 in 916 ms |
+| Sarab | — | 1 (the rotor wash: since `BABYLON_EXIT.md` X4.7d ours, asked at construction — 0) | 21 in 990 ms |
+| Cinderhaven | — | 1 (the rotor wash: since X4.7d ours — 0) | 19 in 916 ms |
 | Kurenai | — | 1 (a lamp's proxy: since X3.6b ours, asked at construction — 0) | 18 in 701 ms |
 
 Render pipelines only; the "before" column is the same script on the tree
@@ -914,8 +914,6 @@ keyed on the pose, not on the mesh.
   was 1,268 ms with 34 creations near it and its first blast 403 ms (finding
   13's session, Greyfen, 2026-10-05); a capture there owes `createdNear` on the
   spawn and first-blast frames, and the card's extra time on that device.
-- **The rotor wash** on Sarab and Cinderhaven is a GPU particle system, not a
-  mesh, and compiles on the first frame a helicopter raises dust.
 - **`GiVolume`'s three compute pipelines** (`trace`, `compose`, `vis`) compile on
   their first dispatch (`src/systems/GiVolume.ts`, `update`) and are on no declared
   list and in no vantage's draw, so the warm-up does not wait for them. Five runs of

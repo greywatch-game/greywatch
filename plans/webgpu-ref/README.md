@@ -229,15 +229,20 @@ node plans/webgpu-ref/particles.mjs [map...] [--frames=N] [--out=f.json] [--agai
   `Object.is`, and the editor's orders and draws — which is how a port of the CPU
   half is proven, since no live frame's pixels reproduce; one tree against itself
   is the control. Since X4.7c it reads OUR fields beside Babylon's through one
-  adapter (the ash is `g.particleDraw`'s, listed first, the order the frame draws
-  it in), the same columns off each, and counts our first updates around
+  adapter (the ash since X4.7c and the rotor wash since X4.7d are
+  `g.particleDraw`'s, listed first, the order the frame draws them in), the same
+  columns off each, and counts our first updates around
   `ParticleDraw.initialize` under Babylon's label; a field it cannot count (neither
   ours nor holding a Babylon `_initialize`) is named in the log's `unwrapped`
-  rather than thrown on.
-  `surfaces.mjs` has a class per field (`motes`, `rotorWash`, `rotorSpray`), each
-  draw logged at its place between the points with its pipeline, blend mode, count
-  and the defines of its compiled update and render effects, and the seam's path
-  each frame; `pipelines.mjs --round` keeps each creation's stack.
+  rather than thrown on. `--editor` ends in the round leaving the editor starts
+  (X4.7d), so the dev-only flow X4.7c's decision names — `F2`, an in-memory
+  `particles.count` edit, the rebuild, back to a round — is compared whole; its
+  oracle for X4.7d was a BEFORE at 312dc44, where every field was Babylon's.
+  `surfaces.mjs` has a class per BABYLON field (`motes`, `rotorWash`,
+  `rotorSpray`), each draw logged at its place between the points with its
+  pipeline, blend mode, count and the defines of its compiled update and render
+  effects, and the seam's path each frame — which logs none on a tree since X4.7d,
+  every field being ours, and is how a BEFORE's are read; `pipelines.mjs --round` keeps each creation's stack.
 
 `cold-stagger.mjs` is **gone and is not coming back**. It existed to bake
 Coldharbour's forty cube probes four a frame because doing all forty at once
@@ -468,9 +473,10 @@ from the spawn photographed no shadow window at all.
   touch of a field in this file goes through one adapter (`placeVantage`'s
   `fields`)** — that path, the `motes` path and `freeze`'s `particles` switch with
   its thaw — which since `BABYLON_EXIT.md` X4.7c picks per field between OURS (the
-  ash, `g.particleDraw`: its ready test, reset, pre-warm step and switch) and
-  Babylon's (the rotor wash), so `sky-motes` and the ash rows grade our field, and a
-  BEFORE at a parent holding no `particleDraw` touches Babylon's alone, as before.
+  ash since X4.7c and the rings since X4.7d, `g.particleDraw`: its ready test,
+  reset, pre-warm step and switch) and Babylon's (the rotor wash at a parent
+  before X4.7d), so every particle row grades our fields, and a BEFORE at a parent
+  touches each field where it lies, as before.
   **These rows sit under `--check`'s mean** — the embers' whole field 0.0142, the
   order between the ring and the ash about 0.0001 — **so only `exact.mjs` grades
   them.** No row puts a particle against the see-through panes or the fades, or a

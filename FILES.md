@@ -1282,7 +1282,9 @@ src/
                         #   Needs a canvas, so nothing on the server reaches it
     RotorWash.ts        # What a helicopter does to the surface when it comes
                         #   down: TWO standing GPU emitters per rotor on the
-                        #   field — dust and SPRAY — with `emitRate` driven off
+                        #   field — dust and SPRAY, ring ParticleFields of ours
+                        #   it DECIDES and render/ParticleDraw.ts steps and
+                        #   draws (X4.7d) — with `emitRate` driven off
                         #   `Vehicle.washTo`, the disc's power against its skid
                         #   clearance, and 0 for anything that does not fly.
                         #   BlastDust's fountain twin: nothing is spawned,
@@ -1294,10 +1296,10 @@ src/
                         #   under a machine over a bay is the bed. It also
                         #   publishes the wash SITES the water's own shader
                         #   draws the hole and the rings from. A puff fades IN
-                        #   as well as out, which is a colour GRADIENT and is
-                        #   why a ring is coloured when it is BUILT — see
-                        #   `paint` for the before-the-first-render rule that
-                        #   makes that safe here and not in BlastDust, and for
+                        #   as well as out, which is a colour GRADIENT, baked
+                        #   once at a ring's first update, and is why a ring is
+                        #   coloured when it is BUILT and a new palette is new
+                        #   rings — see `paint`, and for
                         #   why the spray's pair is LIT on the way in and the
                         #   dust's is not. FADES with its hull at a map's hull
                         #   draw distance: handed each hull's fade by Game
@@ -2590,13 +2592,15 @@ src/
                         #   of the emissive colour and the texture) and the mask
                         #   material's bloom. Babylon-free: render/skyProgram.ts
                         #   declares them
-      particles.ts      # THE ASH's three WHOLE modules (X4.7c): Babylon's
+      particles.ts      # Every particle field's WHOLE modules: Babylon's
                         #   gpuUpdateParticles and gpuRenderParticles AS
-                        #   COMPILED for the box emitter's feature set, read off
-                        #   the parent's device and copied, only the bindings
-                        #   and the attribute fetch (pulled out of storage)
-                        #   changed; PARTICLE_STRIDE. Babylon-free:
-                        #   render/particleProgram.ts builds them
+                        #   COMPILED for the ash's box feature set (X4.7c) and
+                        #   the rotor wash's ring set (X4.7d: cylinder emitter,
+                        #   colour, size and velocity gradients), read off the
+                        #   parent's device and copied, only the bindings and
+                        #   the attribute fetch (pulled out of storage)
+                        #   changed; PARTICLE_STRIDE, PARTICLE_RING_STRIDE.
+                        #   Babylon-free: render/particleProgram.ts builds them
       cloud.ts          # The cloud masses as plain strings (X4.5b): the vertex
                         #   stage pinned short of the far plane and the pixel in
                         #   cel TONES — lit mostly off the lump's smooth normal so
@@ -2686,8 +2690,9 @@ src/
                         #   in that draw, X3.6e), after every opaque surface
                         #   (afterSurfaces; the clouds, X4.5b), where its
                         #   opaque and alpha-tested meshes end, right behind
-                        #   that (particles; the ash, X4.7c), past its
-                        #   particles and ahead of its blended list
+                        #   that (particles; every particle field, X4.7c and
+                        #   X4.7d), past where its particles were and ahead of
+                        #   its blended list
                         #   (beforeBlended; the moon, X4.5c), and after it —
                         #   and the
                         #   FramePrepares run as it begins (a compute cull),
@@ -2731,7 +2736,8 @@ src/
                         #   createRenderPipelineAsync pipelines, keyed on
                         #   variant, vertex layout, targets and state; the
                         #   front face by Babylon's rule; compute pipelines on
-                        #   "auto" layouts, cached across maps; the compile
+                        #   "auto" layouts unless the asker states one (the
+                        #   rotor wash's, X4.7d), cached across maps; the compile
                         #   counts the warm-up waits on (CompileProgress); and
                         #   the SEAL a round is played under (a compile in
                         #   play is a DEV warning naming it)
@@ -2881,24 +2887,30 @@ src/
                         #   back-to-front run; a probe's recipe and its cube read
                         #   where the bake left it; a break's collapse written
                         #   into its buffer. An editor build's stays Babylon's
-    ParticleDraw.ts     # THE ASH as OUR renderer runs it (X4.7c): every field in
-                        #   one list in creation order, Babylon's
-                        #   GPUParticleSystem ported exactly — random textures
-                        #   at create, seeds at the first update, the ready
-                        #   gate, the clock (the scene's animation ratio), the
-                        #   update dispatched into the prepare encoder (no pass
-                        #   split), the draw reading the buffer the update READ,
-                        #   at "particles"; enabled, scene.particlesEnabled's
-                        #   twin; the harness's preWarmStep
-    ParticleField.ts    # One field's CPU half (X4.7c): its settings under
-                        #   Babylon's names and defaults, start/stop/reset,
-                        #   animate and the emit-rate-controlled emission, line
-                        #   for line; no GPU, no random
-    particleProgram.ts  # Its programs (X4.7c): PARTICLE_GROUP (Babylon's
-                        #   LeftOver and Internals, the particle and sprite
-                        #   buffers, the texture), the two blends, SimParams'
-                        #   offsets, particlePipelines (the update, the draw at
-                        #   both blends)
+    ParticleDraw.ts     # EVERY PARTICLE FIELD as OUR renderer runs it (X4.7c
+                        #   the ash, X4.7d the rotor wash): one list in creation
+                        #   order, Babylon's GPUParticleSystem ported exactly —
+                        #   random textures at create, a ring's gradient
+                        #   textures baked at its first ready test, seeds at
+                        #   the first update, the ready gate, the clock (the
+                        #   scene's animation ratio), the update dispatched
+                        #   into the prepare encoder (no pass split), the draw
+                        #   reading the buffer the update READ, at "particles";
+                        #   enabled, scene.particlesEnabled's twin; the
+                        #   harness's preWarmStep
+    ParticleField.ts    # One field's CPU half (X4.7c, X4.7d): its feature set,
+                        #   its settings under Babylon's names and defaults (a
+                        #   box or a cylinder, a ring's gradients),
+                        #   start/stop/reset, animate and the emit-rate-
+                        #   controlled emission, line for line, and the
+                        #   gradients' bakes; no GPU, no random
+    particleProgram.ts  # Its programs (X4.7c, X4.7d): the two feature sets'
+                        #   groups (Babylon's LeftOver and Internals, the
+                        #   particle and sprite buffers, the texture, a ring's
+                        #   colour gradient), the blends, SimParams' offsets,
+                        #   the ring's explicit update layout and its two
+                        #   samplers, particlePipelines (the box's update and
+                        #   both blends, the ring's update and STANDARD draw)
     FadeDraw.ts         # The FADING pools as OUR renderer draws them (X4.6e):
                         #   every spark, dust disc, scorch and blob shadow, a
                         #   draw an instance of its kit, and a spark's bloom in

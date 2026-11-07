@@ -661,6 +661,15 @@ where the ash was the only field, and on Cinderhaven the motes' share alone. The
 field's own update is a PREPARE now, recorded at the seam's start of the pass, so
 under `render` and named by nothing, as every prepare is.
 
+**Measured at X4.7d** (the rotor wash ours, the same captures, parent → step, live
+rounds whose bots' helicopters raise dust when they fly low): Sarab `drawWorld`
+0.050 → 0.003 ms, `glow` 0.111 → 0.111, `render` 0.578 → 0.519; Cinderhaven 0.061 →
+0.002, 0.100 → 0.108, 0.525 → 0.493; the menus 0.002-0.004 at both. So no field
+ends the main pass inside group 0 any more, and in a round `drawWorld` reads the
+fallback's telling of our points alone; what the wash's dispatch used to drag into
+it was small on these runs (a ring splits the pass only while it holds a count),
+and the glow's share of it is inside the clock's grain.
+
 **What is left inside `render` and named by nothing** is the active-mesh
 evaluation (the `Mesh walk` counter, which is the same number in other units),
 `Game.drawBodies` (every drawn rig's joints composed and handed to its meshes,
