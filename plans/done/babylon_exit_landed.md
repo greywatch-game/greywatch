@@ -9599,7 +9599,7 @@ headless on the Windows box.
   (where a cloud field's edge may fall inside the window); a live round's per-frame log on a
   phone; a server's match.
 
-**Its review** (2026-11-07; instruments and records only, no change to the game; nothing
+**Its review** (aaca294; 2026-11-07; instruments and records only, no change to the game; nothing
 under `src/`). Every finding was checked against the code before it was fixed; none was
 wrong.
 

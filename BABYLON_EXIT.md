@@ -3120,7 +3120,7 @@ correction marked "X5.1a"):
   typecheck, build (`check-babylon-free`, `check-proving`), corecheck and parity pass. The
   note is in `plans/done/babylon_exit_landed.md`.
 
-  **Its review** (2026-11-07; instruments and records only, no change to the game) found
+  **Its review** (aaca294; 2026-11-07; instruments and records only, no change to the game) found
   three real points and eight minor ones, fixed because X5.1b uses these instruments as its
   oracle. **Real**: the harness's Babylon arm counted a dispatch through ANY object in
   `trace`, `compose` or `vis`, so a port that kept a `trace` field of its own and forgot its
