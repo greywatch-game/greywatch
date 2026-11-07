@@ -8779,7 +8779,7 @@ what was corrected and measured.
 - **The blob map's leak, measured** (`FINDINGS.md` 70, not fixed). Five Coldharbour rounds in one page at each tree, a forced GC before each reading: `ShadowSystem.blobs` 17, 33, 49, 65, 81 on both (HEAD's `blobFades` the same; a269bfb's `blobShadow` meshes the same, its scene 2,047 to 2,111 meshes), every earlier round's sixteen bodies alive after the GC, and freed once the map's keys are cleared by a probe. Heap after GC: HEAD 95,378 to 97,150 KB, a269bfb 107,454 to 110,710.
 - **Not verified.** A server's match in a browser; the phone; the editor (its recorded differences stay until X5.3); a gate or latch case live (the drop is 1a89216's record); `gate`, `shaders`, `census`, `pipelines.mjs --round`, `merge:hash`, `kit:hash`, typecheck and build, none of which this note's text-only change could move. The player capturing ALONE (bots may have stood in Alpha too: the page reads no bot). Live frames are pictures, not bytes: the byte comparisons are of held frames.
 
-### X4.7 — GPU particles — **S–M, as four sub-steps** (split 2026-11-07) — X4.7a **LANDED** (bad6caa), X4.7b **LANDED** (8c691c7), X4.7c **LANDED** (HASH)
+### X4.7 — GPU particles — **S–M, as four sub-steps** (split 2026-11-07) — X4.7a **LANDED** (bad6caa), X4.7b **LANDED** (8c691c7), X4.7c **LANDED** (9dff2c4)
 
 The plan's `BABYLON_EXIT.md` holds X4.7's brief, the table of what the fields are
 (corrected in place by X4.7a) and the three sub-steps to come.
@@ -9059,7 +9059,7 @@ source and the step's captures (scratch `x47b/`), found one real mis-statement a
   rendering manager's walk.
 - **Gates**: typecheck and build pass.
 
-**X4.7c landed** (HASH; 2026-11-07; no change to the picture; report version 37). The ash —
+**X4.7c landed** (9dff2c4; 2026-11-07; no change to the picture; report version 37). The ash —
 `Atmosphere`'s mote field — is our renderer's compute particles, Babylon 9.28's
 `GPUParticleSystem` on `ComputeShaderParticleSystem` ported exactly; the rotor wash stays
 Babylon's (X4.7d).

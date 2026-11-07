@@ -2246,7 +2246,7 @@ Greyfen, `F2` from the menu and each eye of the map's rows):
   live with the player in the ring, no error, the seal holding. The blob map's leak is
   measured (`FINDINGS.md` 70).
 
-### X4.7 — GPU particles — **S–M, as four sub-steps** (split 2026-11-07, proposed by the orchestrating session at the owner's instruction to implement X4.7 in sub-steps; not yet decided by the owner) — X4.7a **LANDED** (bad6caa), X4.7b **LANDED** (8c691c7), X4.7c **LANDED** (HASH)
+### X4.7 — GPU particles — **S–M, as four sub-steps** (split 2026-11-07, proposed by the orchestrating session at the owner's instruction to implement X4.7 in sub-steps; not yet decided by the owner) — X4.7a **LANDED** (bad6caa), X4.7b **LANDED** (8c691c7), X4.7c **LANDED** (9dff2c4)
 
 `Atmosphere`'s ash and `RotorWash`'s two rings (`GPUParticleSystem`, a box and a
 `CylinderParticleEmitter`) as our own compute particles: our update, our draw, our
@@ -2556,7 +2556,7 @@ each as stated):
   `docs/profiling.md`'s tree and its "from X4.7 ... owes the span an answer", the report
   version, and the viewer only if a name moved.
 
-- **X4.7c — the ash is ours.** **LANDED** (HASH; 2026-11-07; no change to the picture;
+- **X4.7c — the ash is ours.** **LANDED** (9dff2c4; 2026-11-07; no change to the picture;
   report version 37). The ash is `render/ParticleDraw.ts` (every field in one list in
   creation order, its GPU half, the prepare and the draw), `render/ParticleField.ts` (a
   field's CPU half: Babylon's `animate` and the emit-rate-controlled arm of `render`, line
