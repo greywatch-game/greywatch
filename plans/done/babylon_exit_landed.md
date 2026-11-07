@@ -8779,12 +8779,12 @@ what was corrected and measured.
 - **The blob map's leak, measured** (`FINDINGS.md` 70, not fixed). Five Coldharbour rounds in one page at each tree, a forced GC before each reading: `ShadowSystem.blobs` 17, 33, 49, 65, 81 on both (HEAD's `blobFades` the same; a269bfb's `blobShadow` meshes the same, its scene 2,047 to 2,111 meshes), every earlier round's sixteen bodies alive after the GC, and freed once the map's keys are cleared by a probe. Heap after GC: HEAD 95,378 to 97,150 KB, a269bfb 107,454 to 110,710.
 - **Not verified.** A server's match in a browser; the phone; the editor (its recorded differences stay until X5.3); a gate or latch case live (the drop is 1a89216's record); `gate`, `shaders`, `census`, `pipelines.mjs --round`, `merge:hash`, `kit:hash`, typecheck and build, none of which this note's text-only change could move. The player capturing ALONE (bots may have stood in Alpha too: the page reads no bot). Live frames are pictures, not bytes: the byte comparisons are of held frames.
 
-### X4.7 — GPU particles — **S–M, as four sub-steps** (split 2026-11-07) — X4.7a **LANDED** (COMMIT_A)
+### X4.7 — GPU particles — **S–M, as four sub-steps** (split 2026-11-07) — X4.7a **LANDED** (bad6caa)
 
 The plan's `BABYLON_EXIT.md` holds X4.7's brief, the table of what the fields are
 (corrected in place by X4.7a) and the three sub-steps to come.
 
-**X4.7a landed** (COMMIT_A; 2026-11-07; no change to the game: the reference bank, its
+**X4.7a landed** (bad6caa; 2026-11-07; no change to the game: the reference bank, its
 harness and table, a new live probe, two instruments widened, and docs; `git diff`
 under `src/` is `bench/vantages.ts` alone).
 

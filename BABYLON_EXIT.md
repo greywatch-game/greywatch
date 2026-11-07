@@ -2246,7 +2246,7 @@ Greyfen, `F2` from the menu and each eye of the map's rows):
   live with the player in the ring, no error, the seal holding. The blob map's leak is
   measured (`FINDINGS.md` 70).
 
-### X4.7 — GPU particles — **S–M, as four sub-steps** (split 2026-11-07, proposed by the orchestrating session at the owner's instruction to implement X4.7 in sub-steps; not yet decided by the owner) — X4.7a **LANDED** (COMMIT_A)
+### X4.7 — GPU particles — **S–M, as four sub-steps** (split 2026-11-07, proposed by the orchestrating session at the owner's instruction to implement X4.7 in sub-steps; not yet decided by the owner) — X4.7a **LANDED** (bad6caa)
 
 `Atmosphere`'s ash and `RotorWash`'s two rings (`GPUParticleSystem`, a box and a
 `CylinderParticleEmitter`) as our own compute particles: our update, our draw, our
@@ -2390,7 +2390,7 @@ splits, each marked "X4.7a"):
 
 **The sub-steps.** Each one's Verify includes "Every sub-step owes" below.
 
-- **X4.7a — the bank sees the particles.** **LANDED** (COMMIT_A; 2026-11-07; no change
+- **X4.7a — the bank sees the particles.** **LANDED** (bad6caa; 2026-11-07; no change
   to the game). Five rows banked with `--rows` (`sarab-particles-dust`,
   `cinderhaven-particles-embers`, `-spray`, `-ring-ash`, `kurenai-particles-leaves`), each
   at an eye a row above it stands at; `placeVantage`'s `particles` path, through one field
