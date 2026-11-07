@@ -64,17 +64,28 @@
  * **Logged every step** (compared by `Object.is`, and the typed arrays by their
  * BYTES): the tier, `cursor`, `warmFrames`, `placed`, the window (`ox`, `oz`,
  * `refY`), `converged`; the binding's five vectors and `slotChannel`; the slow
- * and fast light lists; the channels (dirty, owned, where, and age rather than
- * the absolute frame stamp, which counts from boot); the hull scratch; the whole
- * params array; and the passes the frame dispatched, each by NAME
- * (`gi-trace`/`-compose`/`-vis`, told apart by its module's source, so the count
- * reads the same whoever records them) and workgroup count. **Read back every
- * step**: the seven textures and the six buffers, as above, through one adapter
- * (`window.__giGpu`) that finds them: Babylon's `RawTexture3D`s and
- * `StorageBuffer`s at the parent; **X5.1b adds its arm**, picked first when
- * present (its GPUTextures and GPUBuffers by the same thirteen names, made with
- * `COPY_SRC`, which Babylon's carry and a readback needs; one without it reads
- * `not-copyable` and the comparison fails).
+ * and fast light lists; the channels (dirty — as `writeParams` hands them to the
+ * GPU, since a frame that traced clears them before `update` returns — owned,
+ * where, and age rather than the absolute frame stamp, which counts from boot);
+ * the hull scratch; the whole params array; and the passes the frame
+ * dispatched, each by NAME (`gi-trace`/`-compose`/`-vis`, told apart by its
+ * module's source, so the count reads the same whoever records them) and its
+ * workgroups, x, y and z. **Read back every step**: the seven textures and the
+ * six buffers, as above. **Every read of the volume's own resources goes
+ * through one adapter, `window.__giGpu`**, with four members: `texture(n)` and
+ * `buffer(n)` (the GPU objects, by the thirteen names), `frameBind(n)` (what
+ * our frame binds for one of the seven: its sampler, and whether its view is the
+ * producer's own) and `cachedSampling(n)` (the sampling fields a Babylon bind —
+ * an editor build's cel materials — leaves on one of the seven). Babylon's arm
+ * answers off the `RawTexture3D`s and `StorageBuffer`s at the parent; **X5.1b
+ * adds its arm**, picked first when present, with the same four members (its
+ * GPUTextures and GPUBuffers made with `COPY_SRC`, which Babylon's carry and a
+ * readback needs; one without it reads `not-copyable` and the comparison
+ * fails). Read directly, and so Babylon's on both trees: the CLOUD FIELD (its
+ * internal texture's sampling fields, and `host.bind` of it), which is Babylon's
+ * texture through X5.1b and until X5.4; and the live half's wraps
+ * (`_computeDispatch`, `_setTexture`, the two encoders), which measure Babylon
+ * and are printed, not compared.
  *
  * **The scenarios**, on each map: `serial` (a fresh history, 96 steps at one
  * workgroup: every byte); `warm` (a fresh history through its two warm sweeps,
@@ -87,7 +98,9 @@
  * sweep" as a number — by magnitude, since it is the trace's colour); `pulse` (a
  * transient flash stepped at 1/60 s until it dies, the flame clock held and the
  * trace's budget at ZERO, beside the same steps with none: compose takes it and
- * gives it back byte for byte); `tiers` (`setQuality` low — `serial`, a warm-up,
+ * gives it back byte for byte — its verdict logged as `vsControl`, a string of
+ * per-step bits per resource, so that `--against` compares the steps it lands
+ * and dies on, colour lanes included); `tiers` (`setQuality` low — `serial`, a warm-up,
  * the lamp — then off and high again); and `samplerSerial` (the cloud field's
  * sampler as Babylon's compute bind makes it, then forced to the other state —
  * null, as no Babylon bind leaves it, or our host's — each from a fresh history
@@ -451,7 +464,17 @@ await page.evaluate(async () => {
       P.tokens--;
     }
     P.real++;
+    P.dirty = null;
     return real.apply(this, a);
+  };
+  // The channels' dirty flags as the step's `update` HANDS them to the GPU:
+  // read at `writeParams` (which copies them into the params), since a frame
+  // that traced clears them before `update` returns, so a read after it is
+  // always zeros. One of the CPU half's own methods, which X5.1b keeps.
+  const writeParams = Object.getPrototypeOf(gi).writeParams;
+  gi.writeParams = function (...a) {
+    P.dirty = Array.from(this.chanDirty);
+    return writeParams.apply(this, a);
   };
   P.engine = e;
   e.onEndFrameObservable.add(() => {
@@ -463,7 +486,7 @@ await page.evaluate(async () => {
     for (const x of ev) {
       if (x.k === "R") before.set(x.enc, (before.get(x.enc) ?? 0) + 1);
       if (x.k === "C" && x.name && x.name.startsWith("gi-")) {
-        giPasses.push([x.name, x.x ? x.x[0] : null, x.role, before.get(x.enc) ?? 0]);
+        giPasses.push([x.name, x.x ? [...x.x] : null, x.role, before.get(x.enc) ?? 0]);
       }
     }
     // Where our prepares' passes sit against the volume's: the first pass on
@@ -499,12 +522,40 @@ await page.evaluate(async () => {
   P.nextFrame = () => new Promise((res) => e.onEndFrameObservable.addOnce(() => res()));
 
   // **The GPU half, through ONE adapter.** Babylon's arm: the seven
-  // `RawTexture3D`s' and the six `StorageBuffer`s' GPU objects. X5.1b adds OURS
-  // beside it, picked first when present, by the same thirteen names.
+  // `RawTexture3D`s' and the six `StorageBuffer`s' GPU objects, what our frame
+  // binds for each of the seven, and the sampling fields a Babylon bind leaves
+  // on one. X5.1b adds OURS beside it, picked first when present, by the same
+  // thirteen names and the same four members — nothing below reads one of the
+  // volume's resources but through them.
+  const babylonTex = (n) => g.gi.textures?.[n] ?? null;
   const babylon = {
-    texture: (n) => g.gi.textures?.[n]?.getInternalTexture?.()?._hardwareTexture?.underlyingResource ?? null,
+    /** The GPUTexture of one of the seven, or null. */
+    texture: (n) => babylonTex(n)?.getInternalTexture?.()?._hardwareTexture?.underlyingResource ?? null,
+    /** The GPUBuffer of one of the six, or null. */
     buffer: (n) =>
       ({ params: g.gi.params, state: g.gi.state, vis: g.gi.visState, boxes: g.gi.boxes, index: g.gi.index, heights: g.gi.heights })[n]?.getBuffer?.()?.underlyingResource ?? null,
+    /**
+     * What OUR FRAME binds for one of the seven (`fillFrameTextures`; items 7
+     * and 8 today): the GPUSampler, and whether the view is the producer's own
+     * — today Babylon's `_hardwareTexture.view`, from X5.1b the view of ours
+     * the compute writes. Null when there is no such texture.
+     */
+    frameBind: (n) => {
+      const t = babylonTex(n);
+      if (!t) return null;
+      const out = { view: null, sampler: null };
+      g.renderer.host.bind(t, out);
+      return { sampler: out.sampler, viewIsProducers: out.view !== null && out.view === t.getInternalTexture?.()?._hardwareTexture?.view };
+    },
+    /**
+     * The sampling fields a Babylon bind caches on one of the seven (an
+     * editor build's cel materials bind them): today the `RawTexture3D`'s
+     * internal texture, from X5.1b the WRAPPED view's (the owner's row 1).
+     */
+    cachedSampling: (n) => {
+      const it = babylonTex(n)?.getInternalTexture?.();
+      return it ? { wrapU: it._cachedWrapU, wrapV: it._cachedWrapV, wrapR: it._cachedWrapR, anisotropy: it._cachedAnisotropicFilteringLevel } : null;
+    },
   };
   window.__giGpu = babylon;
   P.TEXTURES = ["giIrr", "giDir", "giAux", "giVis0", "giVis1", "giVis2", "giVis3"];
@@ -653,7 +704,8 @@ await page.evaluate(async () => {
       slotChannel: b64(b.slotChannel),
       slow: v.slow.map(L),
       fast: v.fast.map(L),
-      chanDirty: Array.from(v.chanDirty),
+      // As `writeParams` saw them (above), not as `update` left them.
+      chanDirty: P.dirty,
       chanOwned: v.chanLight.map((l) => (l ? 1 : 0)),
       chanAt: b64(v.chanAt),
       chanAge: Array.from(v.chanSeen, (s) => (s === 0 ? -1 : v.frame - s)),
@@ -818,14 +870,13 @@ async function statics() {
     const tex = {};
     for (const n of P.TEXTURES) {
       const t = window.__giGpu.texture(n);
-      const host = { view: null, sampler: null };
-      g.renderer.host.bind(g.gi.textures[n], host);
+      const bound = window.__giGpu.frameBind(n);
       tex[n] = t
         ? {
             gpu: { width: t.width, height: t.height, depth: t.depthOrArrayLayers, format: t.format, dimension: t.dimension, mipLevelCount: t.mipLevelCount, usage: t.usage },
             created: P.textureDesc.get(t) ?? null,
-            hostSampler: host.sampler ? P.samplerDesc.get(host.sampler) ?? "undescribed" : null,
-            hostViewIsBabylons: host.view === g.gi.textures[n].getInternalTexture()._hardwareTexture.view,
+            frameSampler: bound?.sampler ? P.samplerDesc.get(bound.sampler) ?? "undescribed" : null,
+            frameViewIsProducers: bound ? bound.viewIsProducers : null,
           }
         : null;
     }
@@ -1200,6 +1251,17 @@ for (let mi = 0; mi < maps.length; mi++) {
   M.noise = d.noise;
   M.scenarios.lampHigh = await lamp(d.noise);
   M.scenarios.pulse = await pulse();
+  // Its verdict as a COMPARED field: per resource, per step, whether the flash
+  // run's readback differs from the control's (1) or not (0). The colour lanes
+  // live only in the `~` hashes, which `--against` leaves out of a scenario not
+  // named serial, so the bits are stored under names that are compared: the
+  // trace is at zero here, nothing races, and the step a flash lands on and
+  // the step it is given back on are a function of the inputs.
+  {
+    const pl = M.scenarios.pulse;
+    const PULSE_KEYS = ["giIrr", "giIrr~", "giDir", "giDir~", "giAux", "giVis0", "giVis1", "giVis2", "giVis3", "state", "state~", "vis"];
+    pl.vsControl = Object.fromEntries(PULSE_KEYS.map((k) => [k.replace("~", ".colour"), pl.flash.map((s, i) => (s.read[k] !== pl.control[i].read[k] ? 1 : 0)).join("")]));
+  }
   // The tiers. The first `low` of a boot compiles its pipelines, so it is taken
   // once, unlogged, and its frames to a first dispatch kept as a measurement.
   if (mi === 0) {
@@ -1263,7 +1325,6 @@ if (EDITOR) {
     for (let i = 0; i < 60; i++) await P.nextFrame();
     const cloud = g.mats.readLighting().cloudMap;
     const it = cloud.getInternalTexture();
-    const giIt = g.gi.textures.giIrr.getInternalTexture();
     const trace = () => {
       const bg = P.bindGroups["gi-trace"];
       const s = bg?.raw?.find((x) => x.binding === 5)?.resource;
@@ -1271,7 +1332,7 @@ if (EDITOR) {
     };
     out.built = {
       cloudInternal: { wrapU: it._cachedWrapU, wrapV: it._cachedWrapV, wrapR: it._cachedWrapR, anisotropy: it._cachedAnisotropicFilteringLevel },
-      giIrrInternal: { wrapU: giIt._cachedWrapU, wrapV: giIt._cachedWrapV, wrapR: giIt._cachedWrapR, anisotropy: giIt._cachedAnisotropicFilteringLevel },
+      giIrrInternal: window.__giGpu.cachedSampling("giIrr"),
       traceSampler: trace(),
     };
     // A drag released: a placement moved through the editor's own handlers.
@@ -1360,7 +1421,7 @@ for (const M of report.maps) {
     console.log(`  lamp at ${k} (sweep ${r.sweep} frames): ${r.affected} of ${r.texels} texels over the drift (${r.noiseMax.toExponential(2)}); share of the eventual change in place after sweep ${JSON.stringify(r.shareOfChangeAfterSweep)}; texels within 10% ${JSON.stringify(r.texelsWithin10PercentAfterSweep)}; eventual L1 ${r.eventualL1} against the held world's drift L1 ${r.noiseL1}`);
   }
   const pl = M.scenarios.pulse;
-  const vs = (k) => pl.flash.map((s, i) => (s.read[k] !== pl.control[i].read[k] ? 1 : 0)).join("");
+  const vs = (k) => pl.vsControl[k.replace("~", ".colour")];
   console.log(`  pulse (budget 0): fast lights per step ${pl.flash.map((s) => s.fast.length).join(" ")} (control ${[...new Set(pl.control.map((s) => s.fast.length))].join("/")}); against the control, per step: irr~ ${vs("giIrr~")} dir~ ${vs("giDir~")} aux ${vs("giAux")} vis0 ${vs("giVis0")} vis3 ${vs("giVis3")} state ${vs("state")} state~ ${vs("state~")}; control moved ${[...new Set(pl.control.map((s) => s.read["giIrr~"]))].length - 1}`);
   const w = M.scenarios.warm;
   console.log(`  warm: dispatched per step ${[...new Set(w.map((s) => JSON.stringify(s.dispatched)))].join(" | ")}; converged at step ${w.findIndex((s) => s.converged) + 1}`);
@@ -1369,7 +1430,7 @@ for (const M of report.maps) {
     console.log(`  wgsl ${m.name}@${m.frame} (${m.length} chars, ${m.tokens} tokens): ${m.tokensEqualTo ? `the source's tokens exactly (rays ${m.tokensEqualTo.rays}, fastRays ${m.tokensEqualTo.fastRays}), behind ${JSON.stringify(m.prefix)}` : `PARTS from every source: ${JSON.stringify(m.parts)}`}`);
   }
   console.log(`  pipelines: ${M.statics.pipelines.map((p) => `${p.name} ${p.call} layout ${p.layout} @${p.frame}`).join("; ")}`);
-  for (const [n, t] of Object.entries(M.statics.textures)) console.log(`  ${n}: ${t ? `${t.gpu.width}x${t.gpu.height}x${t.gpu.depth} ${t.gpu.format} ${t.gpu.dimension} mips ${t.gpu.mipLevelCount} usage ${t.gpu.usage}; created ${JSON.stringify(t.created)}; host sampler ${shortSampler(t.hostSampler)}; host view is Babylon's ${t.hostViewIsBabylons}` : "none"}`);
+  for (const [n, t] of Object.entries(M.statics.textures)) console.log(`  ${n}: ${t ? `${t.gpu.width}x${t.gpu.height}x${t.gpu.depth} ${t.gpu.format} ${t.gpu.dimension} mips ${t.gpu.mipLevelCount} usage ${t.gpu.usage}; created ${JSON.stringify(t.created)}; frame sampler ${shortSampler(t.frameSampler)}; frame view is the producer's ${t.frameViewIsProducers}` : "none"}`);
   console.log(`  buffers: ${Object.entries(M.statics.buffers).map(([n, b]) => `${n} ${b ? `${b.size} B usage ${b.usage}` : "none"}`).join("; ")}`);
   for (const [n, es] of Object.entries(M.statics.bindGroups)) console.log(`  bind ${n}: ${es.map((e) => `${e.binding}:${e.kind}${e.kind === "buffer" ? `(${e.size ?? "whole"} of ${e.buffer?.size})` : e.kind === "view" ? `(${e.texture?.format} ${JSON.stringify(e.desc)})` : e.kind === "sampler" ? `(${shortSampler(e.desc)})` : ""}`).join(" ")}`);
   console.log(`  prepares ${M.statics.prepares}, late ${M.statics.late}; calls ${M.calls.map((c) => `${c.call}${c.arg ? `(${c.arg})` : ""}@${c.frame}:${c.state}`).join(" ")}`);

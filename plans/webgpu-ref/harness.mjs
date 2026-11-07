@@ -1204,13 +1204,24 @@ export function freeze(page, set = FREEZE_SET, { windTime = 0, turn = 0, strike 
     // BABYLON's arm: every `ComputeShader` named `gi-*` (`GiVolume`'s three)
     // counted at its `dispatch`, wrapped once on the class's prototype, which
     // is reached off a live one — none exists at `off`, where nothing
-    // dispatches and the `gi` block does not run. **X5.1b adds OURS beside
-    // it** (the frames its prepare recorded the volume's passes on); with
-    // neither arm the count is null and the freeze throws, so a port cannot
-    // pass this silently.
+    // dispatches and the `gi` block does not run. **The arm answers only for
+    // Babylon's own objects**: every one of `trace`, `compose` and `vis` that
+    // is set must be a `ComputeShader` (its `getClassName()`), named `gi-*`,
+    // whose prototype has a `dispatch` of its own; anything else in any of
+    // the three — a port that kept a `trace` field holding its own pipeline —
+    // answers null, as no arm at all does. **X5.1b adds OURS beside it** (the
+    // frames its prepare recorded the volume's passes on). The freeze throws
+    // on null, so a port that forgets its arm fails at the first row rather
+    // than counting a dispatch nobody makes and holding every row vacuously.
     window.__refGiCount ??= () => {
-      const cs = g.gi.trace ?? g.gi.compose ?? g.gi.vis;
-      if (!cs) return null;
+      const set = [g.gi.trace, g.gi.compose, g.gi.vis].filter((x) => x !== null && x !== undefined);
+      const babylons = (cs) =>
+        typeof cs.getClassName === "function" &&
+        cs.getClassName() === "ComputeShader" &&
+        String(cs.name).startsWith("gi-") &&
+        typeof Object.getPrototypeOf(cs).dispatch === "function";
+      if (!set.length || !set.every(babylons)) return null;
+      const cs = set[0];
       const proto = Object.getPrototypeOf(cs);
       if (!proto.__refGiCounted) {
         const dispatch = proto.dispatch;
@@ -1455,6 +1466,9 @@ export function thaw(page) {
       const held = window.__refGiHeld;
       delete window.__refGiHeld;
       const now = window.__refGiCount();
+      if (now === null) {
+        throw new Error("thaw: no adapter counts the irradiance volume's dispatches any more (window.__refGiCount)");
+      }
       if (now !== held) {
         throw new Error(`thaw: the irradiance volume dispatched ${now - held} times while its update was stubbed`);
       }

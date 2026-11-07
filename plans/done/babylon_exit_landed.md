@@ -9549,7 +9549,7 @@ headless on the Windows box.
   0.533 / 0.426, 0.921 / 0.895, 0.990 / 0.974. A pulse (`#ffd9a0`, range 12, 3, life 0.25 s,
   stepped at 1/60 with the flame clock held at t = 1/60 and the trace's budget 0) beside a
   control: compose (`giIrr~`, `giDir~`) differs from the control on steps 1-15 /
-  1-14 and `giVis3` on 1-15 on both, each byte-equal to it again after; `giAux`, the state and vis never; the control never
+  1-14 and `giVis3` on 1-15 on both, each byte-equal to it again after; `giAux` and the state never (the vis buffer, not printed here, moves with `giVis3` on 1-15: its review); the control never
   moved. (The `lamp` numbers move in the fourth decimal run to run: the race.)
 - **The live half** (Hollowmere through its card, 60 frames of deploy, a spawn and 240 frames
   of a live round, 60 of the round-over card raised by `Game.endRound`, 30 of the menu;
@@ -9588,8 +9588,8 @@ headless on the Windows box.
   stub's hold checked: `window.__refGiCount` (Babylon's arm, `ComputeShader.prototype.dispatch`
   counted for `gi-*`, wrapped once; X5.1b adds ours; null throws in the freeze) taken at the
   stub and compared at the thaw, which throws on a dispatch under the stub. Held over every
-  row of the AFTER below.
-- **The bank**: all 143 rows, against a BEFORE at f7790e4 (`--check --keep`, the parent's harness) by `exact.mjs`: 141 byte-equal, `sarab-shelf` within its known flake and `sarab-ground` 100 pixels by 2/255, the cross-process residue (Sarab alone, with this harness and with the parent's, drew the AFTER's frame both times: the BEFORE's is the parent's other); the same 34 stale rows red against `ref/` at the same means; the stub's hold held on every row (no thaw threw)
+  row of the AFTER below that a thaw followed — each map's last row had none (its review).
+- **The bank**: all 143 rows, against a BEFORE at f7790e4 (`--check --keep`, the parent's harness) by `exact.mjs`: 141 byte-equal, `sarab-shelf` within its known flake and `sarab-ground` 100 pixels by 2/255, the cross-process residue (Sarab alone, with this harness and with the parent's, drew the AFTER's frame both times: the BEFORE's is the parent's other); the same 34 stale rows red against `ref/` at the same means; the stub's hold held on every row a thaw followed (no thaw threw; `bank.mjs` thawed only before a next row, so each map's last was unchecked until its review)
 - **The floors**: two full processes each: `--query=gi=off` 142 of 143 byte-equal and `harrowmead-view-pistol-reload` within its flake; `--query=gi=low` 142 byte-equal and `sarab-alley` 5 pixels by 2/255 — two frames, Sarab alone twice more drawing the second run's (3 processes of 4 against 1), the class `sarab-ground` is at high (what moves is that row's frame, both frames the same tree's; the cause is not pinned — it did not appear at off in two runs, which fits the volume's race leaving a sub-8-bit residue there, unproven)
 - **`FINDINGS.md` 16's baseline**: `pipelines.mjs coldharbour --round` five times, the `FINDINGS.md` 16 baseline: 3 of Babylon's at the install in 5 of 5 (the volume's), none in play, 21 of ours and 15 modules at the install
 - **Gates**: typecheck, build (`check-babylon-free`, `check-proving`), corecheck and parity
@@ -9598,3 +9598,71 @@ headless on the Windows box.
 - **Not verified**: the probe on a map with no hulls but Hollowmere, on Sarab or Cinderhaven
   (where a cloud field's edge may fall inside the window); a live round's per-frame log on a
   phone; a server's match.
+
+**Its review** (2026-11-07; instruments and records only, no change to the game; nothing
+under `src/`). Every finding was checked against the code before it was fixed; none was
+wrong.
+
+- **Real, three.** (1) `harness.mjs`'s Babylon arm of `__refGiCount` took the first
+  non-null of `trace`, `compose` and `vis` and wrapped its prototype's `dispatch` whatever
+  it was, so a port keeping a `trace` field of its own (with no `dispatch` call) and no arm
+  would have read the same count for ever and held every row vacuously, while its comment said a port
+  "cannot pass this silently". It now answers null unless every one of the three that is set
+  is Babylon's own `ComputeShader` (`getClassName()`, its name `gi-*`, a `dispatch` on its
+  prototype), and `thaw` throws on null as `freeze` does. (2) X5.1b's Verify asked `gi.mjs
+  --against` to be equal, but the log differs by design in fields it did not name
+  (`statics.late`, `statics.pipelines`, `statics.wgsl`'s count, `length` and `prefix`, and,
+  under row 2's recommended answer, the cloud sampler's `samplerSerial.unbound` in a default
+  boot and `samplersFresh`, `samplerSerial.asFound` and `.restored` under `--shafts-off`),
+  and `statics()` and the editor block read three of the volume's facts past the one
+  adapter (`_hardwareTexture.view`, `host.bind` of the seven, `giIrr`'s cached sampling
+  fields). Following X4.7a's review, the reads go through `window.__giGpu`'s two new
+  members (`frameBind`: the sampler our frame binds and whether its view is the producer's;
+  `cachedSampling`), the statics' fields renamed for what they mean on both arms
+  (`frameSampler`, `frameViewIsProducers`), and X5.1b's Verify names every field expected to
+  differ and why, the sampler ones only under row 2's "the host's always". The cloud field
+  (Babylon's texture until X5.4) and the live half's wraps stay direct reads, which the
+  header now says. (3) X5.1b's late prepare had no converse: `Renderer.begin` returns before
+  any prepare when nothing of ours is active or none is registered, while `update` has
+  already moved the cursor, the warm frames and the dirty channels — a slice skipped
+  silently, on a frame X5.1a measured never happens today. The brief now requires that an
+  armed frame whose prepares do not run advances nothing (or fails loudly in a dev build),
+  the mechanism left to X5.1b.
+- **Minor, eight.** The pulse's per-step flash-against-control bits are logged as
+  `vsControl` (keys with `.colour` for the `~` lanes), so `--against` compares the steps a
+  flash lands and dies on, colour included; `bank.mjs` thaws once more after each map's last
+  row; `dispatched` logs each pass's workgroups as x, y and z; `chanDirty` is captured at
+  `writeParams` (the CPU half's own method, which X5.1b keeps), since `update` clears it
+  after a trace and the log read zeros; decision row 2 restated (the evidence is 256 serially
+  traced probes on Coldharbour, no hit near the field's edge; Hollowmere's trace never
+  samples the field; Sarab and Cinderhaven unmeasured), and its open question beside it; the
+  late prepares counted right in the plan (`FarthestRun`, `NearestRun`, `GlassDraw`'s
+  `late`, `ProbeBake`: the plan had `NearestRun` twice, "with the rings' run"); `exact.mjs`'s
+  header names `sarab-alley`'s `gi=low` residue beside `sarab-ground`, with the procedure
+  (Sarab alone at both ends, under the same `--query`); and X5.1b's brief says the
+  bake-before-dispatch order rests on the late list's push order alone (`ProbeBake` pushed in
+  its constructor, before `GiVolume` is built).
+- **Found by the fix.** The pulse's compared bits name the vis BUFFER moving with the flash on
+  steps 1-15, exactly as `giVis3` does, on both maps; X5.1a's record said it never moved,
+  never having printed it. Corrected in the plan's "A pulse" and above.
+- **Measured** (the Windows box, headless). `gi.mjs` twice in separate processes, the second
+  `--against` the first, and `--compare` of the two with no browser: equal, 914,616 values
+  on Hollowmere and 254,736 on Coldharbour (914,612 and 254,732 read back from the files),
+  every scenario's steps; `--compare` FAILING on copies of the log with one pulse bit, one
+  step's `chanDirty` and one pass's workgroup y each changed by hand. `chanDirty` now logs the
+  set flags (all sixteen after each fresh history's `setMap`, 3 of 410 steps a map), where
+  it read zeros. The hold, by a hand test on Hollowmere: Babylon's arm took its count and
+  thawed clean; a real `update` called under the stub made the thaw throw ("dispatched 3
+  times"); with `trace`, `compose` and `vis` holding objects of another class the old arm's
+  code answered 219 twice (a number for ever) and the new one null, and the freeze threw
+  ("no adapter counts the irradiance volume's dispatches"). The bank on Hollowmere and
+  Greyfen (`--check --keep`, the review's harness): 26 of 26 rows byte-equal to X5.1a's AFTER
+  by `exact.mjs`, the same 7 rows red against `ref/` at the same means, no thaw thrown at the
+  maps' last rows. Typecheck and build (`check-babylon-free`, `check-proving`) pass.
+- **The owner's, not decided.** The ONE RULE paragraph defined "byte-exact" for X5.1 as
+  never covering the trace's colour at the game's budget and said it won, which answered
+  decision row 3 for the owner. It now leaves that to row 3 and says X5.1b may not land until
+  the row is answered; row 3 gains how thin the `serial` oracle is (96 probes, 64 at low, 256
+  in the sampler scenario, from a fresh history, so most history reads return the fallback
+  and a carried lamp's fast bounce likely reaches no valid probe — reasoned, not measured)
+  and lists its three options, still OPEN.

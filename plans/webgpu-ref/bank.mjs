@@ -296,6 +296,11 @@ for (const id of targets) {
       );
     }
   }
+  // The thaw at the top of the loop is the one that CHECKS the freeze it
+  // undoes (the irradiance volume's hold, `freeze`'s `gi` block, throws there
+  // if it dispatched under the stub), and it runs only before a NEXT row — so
+  // without this one the map's last row would be the one row never checked.
+  await thaw(page);
   if (pageErrors.length) problems.push(`${id}: ${pageErrors.length} page errors`);
   // The console is part of the verdict: a draw of ours that fails says so
   // there (an uncaptured WebGPU error, a pipeline that did not build) and

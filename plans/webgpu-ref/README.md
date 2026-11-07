@@ -270,11 +270,16 @@ node plans/webgpu-ref/gi.mjs --compare=a.json --against=b.json
   writing), so its colour lanes are compared only in its `serial` scenarios (one
   workgroup a dispatch), and everything else everywhere. `--against` compares two
   logs by `Object.is` and by hash; `--compare=a.json --against=b.json` does it with
-  no browser. Every touch of the GPU resources goes through one adapter
-  (`window.__giGpu`), Babylon's at a parent before X5.1b, X5.1b's arm beside it.
+  no browser. Every read of the volume's own resources — the thirteen, and what our
+  frame binds for the seven — goes through one adapter (`window.__giGpu`), Babylon's at
+  a parent before X5.1b, X5.1b's arm beside it; the cloud field, Babylon's texture until
+  X5.4, and the live half's Babylon wraps are read directly (its header).
   **The harness holds the volume by stubbing its `update`**, and that is a contract a
   port keeps: `freeze`'s `gi` block counts the volume's dispatches through one adapter
-  (`window.__refGiCount`) and `thaw` throws if any happened under the stub.
+  (`window.__refGiCount`, whose Babylon arm answers null — and the freeze throws — for
+  anything in `trace`, `compose` or `vis` that is not Babylon's own `ComputeShader`) and
+  `thaw` throws if any happened under the stub; `bank.mjs` thaws once more after each
+  map's last row, so every row's hold is checked.
 
 `cold-stagger.mjs` is **gone and is not coming back**. It existed to bake
 Coldharbour's forty cube probes four a frame because doing all forty at once

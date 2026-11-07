@@ -2966,9 +2966,11 @@ sort, a clock or a seed that "holds the rows", and do not land a workaround as "
 to the picture": that is X4.6c's history (its row in "Decisions"), where an ambiguous
 brief led an implementer to an unplanned third option. **A brief from an orchestrating
 agent that reads otherwise is wrong, and this paragraph wins.** For X5.1, "byte-exact"
-means what X5.1a measured can be: the bank's rows, and every part of the probe's log that
-is a function of its inputs (below, "the race") — never the trace's colour at the game's
-own budget, which no two runs of the parent reproduce either.
+covers at least the bank's rows and every part of the probe's log that is a function of
+its inputs (below, "the race"). **What it means for the trace's COLOUR at the game's own
+budget** — which no two runs of the parent reproduce, the trace racing — **is the owner's
+decision, not this paragraph's**: the third open question under X5.1b, a row in "Decisions
+that are yours". Until the owner has answered it, X5.1b may not land.
 
 **What it is today** (a read of the code, Babylon 9.28, by a planning agent; **X5.1a
 measured it** with `plans/webgpu-ref/gi.mjs` at f7790e4 and corrected it in place, each
@@ -3049,9 +3051,13 @@ correction marked "X5.1a"):
   volume without our prepares running** (`FrameHost.prepareEncoder` asked): 0 of 19, 61,
   241, 60 and 120 dispatched frames in the card, deploy, a live round, the round-over card
   and an editor build (Hollowmere live, Coldharbour's editor); the card had 2 frames with no
-  prepare and no dispatch either. The late prepares are `FarthestRun`'s and `NearestRun`'s
-  (CPU order, no GPU work) and `ProbeBake`'s, the one that samples the volume (4 in all on
-  the list with the rings' run).
+  prepare and no dispatch either. The late prepares are four: `FarthestRun`'s and
+  `NearestRun`'s (CPU order, no GPU work), `GlassDraw`'s `late` (a CPU pull, every draw's
+  verdict in before the run reads it) and `ProbeBake`'s, the one that samples the volume.
+  (Corrected by X5.1a's review: this said "4 in all on the list with the rings' run",
+  which counted `NearestRun` twice and left `GlassDraw`'s out.) **They run in PUSH order**
+  (`Renderer.onFrame` appends; `begin` walks the list): `ProbeBake` pushes in its
+  constructor (`Game.ts`, built before `GiVolume`), the other three at each map's install.
 - **The race** (X5.1a; the planning read had nothing on it). The trace lights a hit with
   the volume's own HISTORY (the state buffer, the probe nearest the hit), and another
   workgroup of the SAME dispatch may be rewriting that probe — the shader's own comment says
@@ -3082,8 +3088,10 @@ correction marked "X5.1a"):
 - **A pulse** (X5.1a, `pulse`: a transient flash held at the eye with the trace's budget at
   zero, beside the same steps with none): compose takes it on the step after it is raised
   and gives it back byte for byte the step after it dies (15 or 16 steps at 1/60 s, a
-  quarter of a second), `giIrr` and `giDir` alike; `giVis3` (its channel) the same; `giAux`,
-  the state and the vis buffer never move.
+  quarter of a second), `giIrr` and `giDir` alike; `giVis3` (its channel) and the vis buffer
+  the same, steps 1-15 on both maps; `giAux` and the state never move. (Corrected by X5.1a's
+  review, off the bits it made a compared field: this said the vis buffer never moves, which
+  X5.1a never printed; it moves with `giVis3`, the same visibility written to both.)
 - **Lifetimes, clears, device loss.** Babylon defers every buffer and texture release to
   after the frame's submit (`destroyDeferredBuffers`); its `_rebuildComputeEffects` rebuilds
   the three after a device loss, which no draw of ours does (`FINDINGS.md` 64). GiVolume
@@ -3105,12 +3113,45 @@ correction marked "X5.1a"):
   stated as a contract (`freeze`'s `gi` block) and checked: a stubbed `update` must stop
   the dispatch, the volume's dispatches counted through one adapter (`__refGiCount`,
   Babylon's arm; X5.1b adds ours) and the count held to the thaw. **Measured**: every
-  measurement above marked X5.1a; the bank, all 143 rows, against a BEFORE at f7790e4 (`--check --keep`, the parent's harness) by `exact.mjs`: 141 byte-equal, `sarab-shelf` within its known flake and `sarab-ground` 100 pixels by 2/255, the cross-process residue (Sarab alone, with this harness and with the parent's, drew the AFTER's frame both times: the BEFORE's is the parent's other); the same 34 stale rows red against `ref/` at the same means; the stub's hold held on every row (no thaw threw); the floors, two full processes each: `--query=gi=off` 142 of 143 byte-equal and `harrowmead-view-pistol-reload` within its flake; `--query=gi=low` 142 byte-equal and `sarab-alley` 5 pixels by 2/255 — two frames, Sarab alone twice more drawing the second run's (3 processes of 4 against 1), the class `sarab-ground` is at high (what moves is that row's frame, both frames the same tree's; the cause is not pinned — it did not appear at off in two runs, which fits the volume's race leaving a sub-8-bit residue there, unproven); the probe equal to itself across two
+  measurement above marked X5.1a; the bank, all 143 rows, against a BEFORE at f7790e4 (`--check --keep`, the parent's harness) by `exact.mjs`: 141 byte-equal, `sarab-shelf` within its known flake and `sarab-ground` 100 pixels by 2/255, the cross-process residue (Sarab alone, with this harness and with the parent's, drew the AFTER's frame both times: the BEFORE's is the parent's other); the same 34 stale rows red against `ref/` at the same means; the stub's hold held on every row a thaw followed (no thaw threw; each map's last row had none, which its review found and closed); the floors, two full processes each: `--query=gi=off` 142 of 143 byte-equal and `harrowmead-view-pistol-reload` within its flake; `--query=gi=low` 142 byte-equal and `sarab-alley` 5 pixels by 2/255 — two frames, Sarab alone twice more drawing the second run's (3 processes of 4 against 1), the class `sarab-ground` is at high (what moves is that row's frame, both frames the same tree's; the cause is not pinned — it did not appear at off in two runs, which fits the volume's race leaving a sub-8-bit residue there, unproven); the probe equal to itself across two
   processes (`--against`: 904,662 values on Hollowmere and 244,782 on Coldharbour, by `Object.is` and hash, twice: with the file as it was measured and as it is committed; every comparable readback a SHA-256), and FAILING on copies of its log with a step's cursor, a step's params, a serial readback, a vis
   readback, a sampler's anisotropy and a dispatch's workgroups each changed by hand (an
   edited RACED hash of a full-budget step passes: that lane is not compared); `pipelines.mjs coldharbour --round` five times, the `FINDINGS.md` 16 baseline: 3 of Babylon's at the install in 5 of 5 (the volume's), none in play, 21 of ours and 15 modules at the install;
   typecheck, build (`check-babylon-free`, `check-proving`), corecheck and parity pass. The
   note is in `plans/done/babylon_exit_landed.md`.
+
+  **Its review** (2026-11-07; instruments and records only, no change to the game) found
+  three real points and eight minor ones, fixed because X5.1b uses these instruments as its
+  oracle. **Real**: the harness's Babylon arm counted a dispatch through ANY object in
+  `trace`, `compose` or `vis`, so a port that kept a `trace` field of its own and forgot its
+  arm would have read the same count for ever and held every row vacuously — it now answers null (and the
+  freeze throws) unless each of the three that is set is Babylon's own `ComputeShader`
+  (`getClassName()`, named `gi-*`, a `dispatch` on its prototype), and `thaw` throws on null
+  too; X5.1b's Verify asked `gi.mjs --against` to be equal while the log differs by design in
+  fields it did not name, and read three of the volume's facts past the adapter — the reads
+  now go through `window.__giGpu` (two new members, `frameBind` and `cachedSampling`) and
+  X5.1b's Verify names every field expected to differ and why, the sampler ones conditional
+  on row 2; and X5.1b's late prepare now carries the converse contract (an armed frame whose
+  prepares do not run must not advance the CPU half), which today's frames never exercise.
+  **Minor**: the pulse's flash-against-control bits are a compared field (`vsControl`); the
+  bank thaws after each map's last row, so its hold is checked there too; `dispatched` logs
+  x, y and z; `chanDirty` is read as `writeParams` hands it over (it was read after the
+  trace's clear, always zeros); row 2's evidence restated (256 probes on Coldharbour, far
+  from the field's edge; Hollowmere's trace never samples it; Sarab and Cinderhaven
+  unmeasured); the late prepares counted right (`GlassDraw`'s, not `NearestRun`'s twice);
+  `exact.mjs`'s header names `sarab-alley` beside `sarab-ground`; and X5.1b's brief says the
+  bake-before-dispatch order rests on registration order alone. **Owner's, not decided**:
+  the ONE RULE paragraph defined byte-exact for the trace's colour and said it won, which
+  settled row 3; it now leaves that to the row, and X5.1b may not land until it is answered,
+  the row now saying how thin the `serial` oracle is. The pulse's new compared bits found one
+  record wrong — the vis buffer moves with a flash, as `giVis3` does (corrected in "A
+  pulse"). **Measured**: `gi.mjs` twice in separate processes equal by `--against` and by
+  `--compare` (914,616 values on Hollowmere, 254,736 on Coldharbour), and FAILING on copies
+  with a pulse bit, a `chanDirty` and a workgroup y changed by hand; a hand test of the hold
+  (a dispatch under the stub throws at the thaw; a port's own objects in the three fields
+  read 219 for ever through the old arm and null through the new, and the freeze throws);
+  the bank on Hollowmere and Greyfen, 26 of 26 rows byte-equal to X5.1a's AFTER by
+  `exact.mjs`; typecheck and build. The note is in `plans/done/babylon_exit_landed.md`.
 
 - **X5.1b — the volume's GPU half is ours, and Babylon does no compute in a round.** A
   module of ours (`render/GiCompute.ts`, a name to change freely; no Babylon import, rule 6):
@@ -3127,7 +3168,22 @@ correction marked "X5.1a"):
   as a LATE prepare after `ProbeBake`'s, which keeps today's order exactly (the bake reads
   the previous frame's compose, the passes after it this frame's; nothing can be put between
   Babylon's two encoders), and recorded ONLY on a frame whose `update` armed it, so the
-  harness's stub still stops it (X5.1a's adapter gains our arm); every buffer and texture
+  harness's stub still stops it (X5.1a's two adapters gain our arms: the harness's
+  `__refGiCount`, and `gi.mjs`'s `__giGpu` with its four members, `texture`, `buffer`,
+  `frameBind` and `cachedSampling`). **And the converse, which nothing measured can catch**:
+  an armed frame whose prepares do NOT run must not advance the CPU half, or must fail
+  loudly in a dev build. `Renderer.begin` returns before any prepare when nothing of ours is
+  active on the frame (`!this.filled && !this.maskFilled`) or none is registered, while
+  today's `update` advances the cursor, counts down `warmFrames` and clears `chanDirty` in
+  the call that dispatches — so a port that keeps those in `update` and records the passes
+  in a prepare that did not run skips a slice silently. X5.1a measured that frame never
+  happening today (0 dispatched frames without our prepares, in every state), so neither the
+  probe nor the bank would see it; the requirement is stated here and the mechanism is
+  X5.1b's. **The bake-before-dispatch order rests on REGISTRATION order alone**: the late
+  list runs in push order, and `ProbeBake` pushes in its constructor (`Game.ts`, built
+  before `GiVolume`), so a late prepare pushed when the volume is built runs after the bake;
+  a construction order changed, or the bake hooked again after the volume, reverses it with
+  no error — X5.1b states it where the push is made. Every buffer and texture
   destroyed past the frame's submit, never at the call (`setMap`, `setQuality`,
   `worldMoved` and `clearMap` all replace them mid-frame, and an immediate `destroy()` fails
   the upload encoder's whole command buffer). `systems/GiVolume.ts` keeps its CPU half line
@@ -3145,8 +3201,26 @@ correction marked "X5.1a"):
   (X5.1a's floors); `gi.mjs` over its parent's log (`--against`): equal by `Object.is` on
   every step's CPU half and dispatches (the same workgroups on the same steps), and byte-equal
   on every comparable readback — the `serial` scenarios whole (the colour lanes included:
-  there nothing races), and every other scenario's exact lanes; its statics the same but for
-  what moves by design (the pipelines async, the modules' text the source's: compare TOKENS);
+  there nothing races), and every other scenario's exact lanes; its statics and the rest of
+  its log the same but for what moves BY DESIGN, each named here and nothing else excused
+  (X4.7a's review's precedent): **`statics.late`** 4 → 5 (the dispatch a late prepare of its
+  own); **`statics.pipelines`** (Babylon's three made by the first map's statics, synchronous,
+  at the high tier's first dispatch, and low's two only at the first `setQuality("low")`,
+  after them — ours all five asked at construction, asynchronous, so the count, the order and
+  `call` differ, and `layout` `"auto"` and the entry point do not); **`statics.wgsl`** (three
+  modules by the first map's statics against our five, and every module's `length` and
+  `prefix`: Babylon's text reflowed behind `//#define main` and `//#define SHADER_NAME …`,
+  ours the source as written, no prefix — while `tokens` and `tokensEqualTo` stay equal:
+  compare TOKENS); and, **only if the owner answers row 2 "the host's always"**, the cloud
+  field's sampler where Babylon's depended on the session — in a default boot
+  `samplerSerial.unbound.sampler` and `.isHosts` (Babylon's repeat/nearest at anisotropy 1
+  and false; ours the host's and true, since `host.bind` reads the texture's own wrap fields
+  and never the internal texture's cache, `babylonSeam.ts`'s `bind`), and under
+  `--shafts-off` `samplersFresh.trace` and `.same`, `samplerSerial.asFound.sampler` and
+  `.isHosts` and `samplerSerial.restored` (the same two answers), the trace's readbacks under
+  each still byte-equal; answered the other way, none of these differ. Everything else in
+  the statics is equal, the textures', buffers' and samplers' descriptors and the bind
+  groups' entries descriptor for descriptor, and `frameViewIsProducers` true on both arms;
   editor frames at four eyes byte-equal to the BEFORE; `pipelines.mjs coldharbour --round`
   five times with none of the volume's in play and none of Babylon's compute anywhere (the
   baseline is X5.1a's), then `cinderhaven --round`, `sarab --round` and plain `hollowmere`;
@@ -3173,14 +3247,22 @@ correction marked "X5.1a"):
     recommended), or an editor build with no GI until X5.3 (a dev-only picture change)?
   - **The cloud field's sampler**: the trace's today depends on the session (our host's
     own object once the light shafts or an editor build have bound the texture; repeat and nearest-mipped at anisotropy 1 in a session where neither has, the light shafts off from boot,
-    before), and X5.1a measured no byte of the trace's output move between the two. Bind
+    before), and X5.1a measured no byte of the trace's output move between the two over
+    256 serially traced probes on Coldharbour, no hit near the field's edge where clamp and
+    repeat part (Hollowmere's trace never samples the field; Sarab and Cinderhaven are
+    unmeasured). Bind
     the host's always (recommended: it is the default session's, and the one the cel shader
     reads the same texture with), or reproduce Babylon's dependence on the history?
   - **The oracle for the trace's colour**: X5.1a found it races at the game's budget, so no
-    two runs of the parent agree on those lanes; X5.1b's byte oracle for them is the
-    `serial` scenarios and the bank's converged rows, the full-budget scenarios being
-    compared on everything else. Accept that as "byte-exact" for this step (recommended),
-    or make the trace order-independent first — a picture change of its own (rule 2)?
+    two runs of the parent agree on those lanes. Today's byte oracle for them would be the
+    `serial` scenarios and the bank's converged rows, the full-budget scenarios compared on
+    everything else — and the `serial` oracle is THIN: 96 probes traced (64 at low, 256 in
+    the sampler scenario) from a fresh history, so most of the history reads it makes
+    (`volumeAt`, the probe nearest a hit) find an untraced probe and return the fallback, and
+    a carried lamp's fast bounce likely reaches no valid probe at all (reasoned from the
+    counts, not measured). Accept that as "byte-exact" for this step, widen that oracle first
+    (instruments only), or make the trace order-independent first — a picture change of its
+    own (rule 2)? The row has the options; X5.1b may not land until it is answered.
 - **Every sub-step owes**: **a BYTE comparison of every row against a BEFORE at its parent**
   (`exact.mjs` over two `--check --keep` directories, never `--check`'s pass line), the known
   flakes alone excused, and from X5.1b on the same under `--query=gi=low` and
@@ -3488,7 +3570,7 @@ Phase 1 actually took.
 | X4.7c | In one dev-only flow — `F2`, an in-memory edit of `particles.count`, the editor's rebuild, then leaving back to a round on Sarab or Cinderhaven — Babylon put the motes BEHIND its live rotor rings (the rebuilt field going to the end of `scene.particleSystems`), where ours keeps them AHEAD at `"particles"`. ADD motes over STANDARD rings do not commute, so overlapping pixels would differ there — reasoned, not measured: no bank row reaches the flow. In the editor itself no pixel differs (the rings are cleared to count 0 and there is no fleet, so Babylon's render returns early); only the probe's order and the order of the `Math.random` draws differ. No shipped flow reaches it: every shipped map and the proving map has a distinct `floorColor`, so every map change rebuilds the rings after `atmosphere.apply` and the motes stay first; a second round on one map rebuilds neither; a server's rotation takes the same `installMap` path; no setting rebuilds the ash. Accept it, or hold X4.7c? | **Decided** 2026-11-07 by the owner: **accepted as a recorded, dev-only order difference until X4.7d**, which puts the rings in `ParticleDraw`'s one creation-ordered list and so restores Babylon's order; X4.7d's Verify shows the flow back in that order against a BEFORE at 312dc44. **Ended at X4.7d** (999d4ca): the rings in the one list, the probe's editor orders and draws — through the round after — equal to 312dc44's. How it came about: X4.7c's implementer was told by the orchestrator to stop and report this, and landed it flagged instead ("For the owner" in its entry); the brief's own stop condition was a SHIPPED flow with a ring ahead of the motes, which none is. |
 | X5.1 | One step or several? | **Instructed by the owner 2026-11-07**: X5.1 implemented in sub-steps, each implemented, reviewed and fixed by agents. **The two-way split was proposed by the orchestrating session and run under that instruction**: X5.1a the instruments (no change to the game), X5.1b the volume's GPU half (X5.1). |
 | X5.1b | **OPEN.** An editor build (`F2`) samples the volume's seven textures through Babylon's cel materials until X5.3 (X5.1a: ~100,000 binds of each in 120 editor frames; none in a round). Once the textures are ours, what do those materials sample? | A WRAPPED view of ours (rule 5), a third kind in `core/wrappedTextures.ts`. The other answer, an editor build with no GI until X5.3, is a dev-only picture change. |
-| X5.1b | **OPEN.** The trace's cloud-field sampler depends on the session today: our host's own object (clamp, anisotropy 4) once Babylon's light shafts or an editor build have bound the texture, repeat and nearest-mipped at anisotropy 1 in a session where neither has (the light shafts off from boot). X5.1a measured no byte of the trace's output move between them (256 serial steps, Coldharbour and Hollowmere). Which does ours bind? | Our host's, always: it is the default session's (shafts at `medium`), and the sampler the cel shader reads the same field with. |
-| X5.1b | **OPEN.** The trace RACES at the game's budget (X5.1a: it reads history another workgroup of the same dispatch is rewriting, by design), so no two runs of the parent agree on its colour lanes before convergence. Is X5.1b's byte oracle for those lanes the probe's `serial` scenarios and the bank's converged rows, every other byte of the probe compared everywhere? | Yes. Making the trace order-independent (a second state buffer, or a read of last frame's) would be a picture change of its own (rule 2), not part of the port. |
+| X5.1b | **OPEN.** The trace's cloud-field sampler depends on the session today: our host's own object (clamp, anisotropy 4) once Babylon's light shafts or an editor build have bound the texture, repeat and nearest-mipped at anisotropy 1 in a session where neither has (the light shafts off from boot). X5.1a measured no byte of the trace's output move between them over 256 serially traced probes (16,384 rays) from a fresh history on Coldharbour, whose trace samples the field (`cloudArea.w` 0.45) and none of whose hits came near the field's edge, where clamp and repeat part. Hollowmere's run is no evidence: its trace never samples the field (`cloudArea.w` 1). Sarab and Cinderhaven, where an edge may fall inside the window, are unmeasured. Which does ours bind? | Our host's, always: it is the default session's (shafts at `medium`), and the sampler the cel shader reads the same field with. |
+| X5.1b | **OPEN.** The trace RACES at the game's budget (X5.1a: it reads history another workgroup of the same dispatch is rewriting, by design), so no two runs of the parent agree on its colour lanes before convergence. Is X5.1b's byte oracle for those lanes the probe's `serial` scenarios and the bank's converged rows, every other byte of the probe compared everywhere? **How thin that oracle is** (X5.1a's review): a `serial` scenario traces 96 probes of 73,728 (64 of 24,576 at low; 256 in the sampler scenario) one workgroup a dispatch from a FRESH history, so most of the history reads the trace makes (`volumeAt`, the probe nearest a hit) find a probe nothing has traced and return the fallback, and a carried lamp's fast bounce likely reaches no valid probe at all (reasoned from the counts, not measured); the bank's rows are the converged fixed point, which a wrong order of reads can converge to as well. Until this row is answered, X5.1b may not land (X5.1's ONE RULE paragraph). | The planning session's recommendation was yes: making the trace order-independent (a second state buffer, or a read of last frame's) would be a picture change of its own (rule 2), not part of the port. The options as they stand: (a) yes, the oracle as it is; (b) widen it first, instruments only — serial steps over far more of the volume, so the history it reads is mostly traced (its cost in minutes a map not measured); (c) the trace order-independent first, a `Picture change:` of its own with the bank's numbers, after which every lane is an oracle at the game's budget. |
 | X5.4 | Phase 4's gate found the canvas and raw textures our draws read through the seam (`hostTexture`: the motes, the puff, the scorch, the blob, the sky's, the cel materials' own, the shadow maps it wraps) named by no step before X6.1, X5.4's foam item covering only a texture Babylon decoded and mipped. When do they go? | **Decided** 2026-11-07 by the owner: in X5.4, beside the foam, as one item under one bank proof — the five ours alone since Phase 4 wait only for that, the cel materials' and the shadow maps' because an editor build samples them until X5.3; `GiVolume`'s seven stay X5.1's. |
 | X6.2 | Is it ready to merge to `develop`? | Only when X6.2's "Before" list passes in full. |
