@@ -2934,7 +2934,7 @@ particle: it can be marked done, which is the owner's to do.
 
 ## Phase 5 — The frame
 
-### X5.1 — GI and the compute passes are ours — **M, as two sub-steps** (split 2026-11-07: the owner instructed that X5.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the two-way split was proposed by the orchestrating session and run under that instruction) — X5.1a **LANDED** (its hash in the commit after it)
+### X5.1 — GI and the compute passes are ours — **M, as two sub-steps** (split 2026-11-07: the owner instructed that X5.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the two-way split was proposed by the orchestrating session and run under that instruction) — X5.1a **LANDED** (06b9daa)
 
 `GiVolume` (`ComputeShader`, `StorageBuffer`, `RawTexture3D`) on our side: its three
 compute passes, its six buffers and its seven 3D textures made, bound and dispatched by
@@ -3093,7 +3093,7 @@ correction marked "X5.1a"):
 
 **The sub-steps.** Each one's Verify includes "Every sub-step owes" below.
 
-- **X5.1a — the instruments see the volume.** **LANDED** (its hash in the commit after it; 2026-11-07; no change to
+- **X5.1a — the instruments see the volume.** **LANDED** (06b9daa; 2026-11-07; no change to
   the game; nothing under `src/`). The live probe `plans/webgpu-ref/gi.mjs` (its header is
   its contract): the device wrapped from the page's first line (`bootMap`'s new `init`), the
   volume STEPPED one `update` at a time in a held deploy world under a pinned seed, every
