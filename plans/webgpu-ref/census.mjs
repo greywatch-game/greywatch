@@ -140,7 +140,11 @@ function read(page) {
       // The GLAZING and the FADES are ours since X4.6e (`GlassDraw`, a draw a
       // pane group; `FadeDraw`, a draw a spark, disc, scorch or blob).
       (g.glassDraw ? g.glassDraw.stats.backed + g.glassDraw.stats.seeThrough : 0) +
-      (g.fadeDraw ? g.fadeDraw.stats.drawn : 0);
+      (g.fadeDraw ? g.fadeDraw.stats.drawn : 0) +
+      // The ASH is ours since X4.7c (`ParticleDraw`, a draw a field, as
+      // Babylon's `GPUParticleSystem` drew one): Babylon's count falls by the
+      // fields a row draws and ours rises by as many.
+      (g.particleDraw ? g.particleDraw.stats.drawn : 0);
     return { babylon: window.__census.babylon, ours: ours.drawn + bodies + hulls + view + pools, bodies, hulls, view, pools, taken: ours.taken };
   });
 }

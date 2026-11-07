@@ -180,9 +180,11 @@ scale 0.75 the GPU frame is ~28 ms, and draw calls don't predict it** (finding
 frame budget rather than a footnote to it.
 
 **Re-counted on WebGPU and the shape is unchanged**: the post chain is all still
-there, and the ash field is a `ComputeShaderParticleSystem` (WebGPU
-routes `GPUParticleSystem` to compute rather than transform feedback — no import
-and no code changed) with `randomTextureSize` 8192. Its capacity on Hollowmere
+there, and the ash field is a compute update and an instanced draw — since
+`BABYLON_EXIT.md` X4.7c OUR renderer's (`render/ParticleDraw.ts`), Babylon's
+`GPUParticleSystem` on `ComputeShaderParticleSystem` ported exactly, so the same
+field at the same cost — with `randomTextureSize` 8192 (the device's
+`maxTextureDimension2D`). Its capacity on Hollowmere
 is `Atmosphere.fit`'s `ceil(count / 3 × MAX_LIFE)` = ceil(4000 / 3 × 14) =
 **18,667** (`hollowmere/environment.ts`, `Atmosphere.ts`), under the 32,000
 `particlePoolCeiling` — the 14,934 this entry once recorded does not follow
@@ -249,8 +251,8 @@ priced**, and there the GPU is the wall (below).
   reads 0.079 mean/255 against a 0.068 control and 0.152 for the bloom off.
   **Not yet priced on the phone**: the same spot, `?profile&gpu`, `low`
   against `high`, several runs a side.
-- **The ash field is 18,667 alpha-blended GPU particles** (`getCapacity`, at
-  steady state). Simulation is on the GPU and cheap; the overdraw is not.
+- **The ash field is 18,667 alpha-blended GPU particles** (`ParticleField.capacity`,
+  at steady state). Simulation is on the GPU and cheap; the overdraw is not.
 - **The glass FRAGMENT's reflection has no distance fade.** The
   parallax-corrected cube fetch in `reflectBoxDir` is its most
   expensive term, and past ~100 m the reflection is motion and colour rather

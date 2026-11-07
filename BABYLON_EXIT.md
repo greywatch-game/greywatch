@@ -2246,7 +2246,7 @@ Greyfen, `F2` from the menu and each eye of the map's rows):
   live with the player in the ring, no error, the seal holding. The blob map's leak is
   measured (`FINDINGS.md` 70).
 
-### X4.7 — GPU particles — **S–M, as four sub-steps** (split 2026-11-07, proposed by the orchestrating session at the owner's instruction to implement X4.7 in sub-steps; not yet decided by the owner) — X4.7a **LANDED** (bad6caa), X4.7b **LANDED** (8c691c7)
+### X4.7 — GPU particles — **S–M, as four sub-steps** (split 2026-11-07, proposed by the orchestrating session at the owner's instruction to implement X4.7 in sub-steps; not yet decided by the owner) — X4.7a **LANDED** (bad6caa), X4.7b **LANDED** (8c691c7), X4.7c **LANDED** (HASH)
 
 `Atmosphere`'s ash and `RotorWash`'s two rings (`GPUParticleSystem`, a box and a
 `CylinderParticleEmitter`) as our own compute particles: our update, our draw, our
@@ -2556,7 +2556,44 @@ each as stated):
   `docs/profiling.md`'s tree and its "from X4.7 ... owes the span an answer", the report
   version, and the viewer only if a name moved.
 
-- **X4.7c — the ash is ours.** **Do:** the machinery, and the motes on it. Names are
+- **X4.7c — the ash is ours.** **LANDED** (HASH; 2026-11-07; no change to the picture;
+  report version 37). The ash is `render/ParticleDraw.ts` (every field in one list in
+  creation order, its GPU half, the prepare and the draw), `render/ParticleField.ts` (a
+  field's CPU half: Babylon's `animate` and the emit-rate-controlled arm of `render`, line
+  for line, the not-ready gate's one frame included), `render/particleProgram.ts` and
+  `shaders/wgsl/particles.ts` (Babylon's three modules AS COMPILED, read off the parent's
+  device and copied, the bindings and the attribute fetch alone changed); a new draw point,
+  `"particles"`, right behind `"opaque"` in the same slot of the host's, so behind the
+  turf, ahead of the moon and ahead of Babylon's rings. `Atmosphere` decides the field
+  and draws nothing; its pipelines (the update and both blends) are "the ash" on
+  `Game.roundPipelines`; the update is a prepare, so the pass no longer splits; no seam
+  item was added. **One thing the brief read otherwise**: the DRAW reads the buffer the
+  update READ (`_createVertexBuffers`' crossed lists, bound at the incremented index), not
+  the one it wrote — the port follows the code, and no held row can tell. **Measured**:
+  the bank, all 143 rows, against a BEFORE at 312dc44 by `exact.mjs`: 142 byte-equal, the six particle rows
+  and `sky-motes` among them, `view-pistol-reload` within its flake, and `sarab-ground` 100
+  pixels by 2/255, the cross-process residue (Sarab alone twice a tree: the parent drew
+  the step's frame once); the six particle rows also byte-equal with THIS harness run over
+  the parent's tree, so the adapter picks Babylon's there; each ash row HOLDS our field
+  (on against off: `sky-motes` 630,923 px, the embers 4,387, ring-and-ash 4,159, the
+  leaves 16,696 — X4.7a's own counts); the probe across the trees, `hollowmere coldharbour
+  cinderhaven sarab cinderhaven`, equal by `Object.is` on every map and every
+  construction's and first update's draws; `census --against` equal on four maps, Babylon
+  down one and ours up one in each ash row; editor frames at four eyes, held with and
+  without a seeded ash, byte-equal across the trees; `pipelines.mjs cinderhaven --round` and
+  `sarab --round` none of ours in play and the wash's two, and a standing Hollowmere
+  making two of Babylon's fewer after its install (the motes') and three of ours more at
+  the boot; `?profile`,
+  `drawWorld` 0.132 → 0.002 ms and `glow` 0.075 → 0.143 in a Coldharbour round, as
+  X4.7b's review predicted; live rounds on Cinderhaven and Kurenai through a teardown, a
+  second round and `F2`, no console error and the seal quiet; `gate`, `shaders`,
+  typecheck, build, corecheck and parity pass. **For the owner**: the dev-only
+  editor flow X4.7a recorded (an in-memory `particles.count` edit rebuilding the motes
+  behind the rings) now keeps them AHEAD, so the probe's `--editor` orders and the order
+  of its draws differ there (the same draws); no shipped flow reaches it. The note is in
+  `plans/done/babylon_exit_landed.md`. The brief, as it was handed over:
+
+  **Do:** the machinery, and the motes on it. Names are
   proposals: `render/ParticleDraw.ts` (every field of the game's in ONE list in creation
   order, a disposed one removed, so the order `scene.particleSystems` held is kept; their
   buffers; the update dispatched and the draw queued), `render/particleProgram.ts` (the

@@ -6,7 +6,7 @@
  * Owns: `Renderer` — the frame's `FrameUniforms` and `FrameUniformBuffer`,
  * its `FrameTextures` and the bind group they make with the buffer (group 0
  * of every program, `FrameContext.frameGroup`, handed to a prepare as to a
- * draw), the `PipelineCache`, the `FrameDraw`s at each of the six
+ * draw), the `PipelineCache`, the `FrameDraw`s at each of the seven
  * points they may be drawn at and those drawn in the glow's mask — first
  * (`addGlowMask`, and behind those `addGlowMaskBlended`) or last
  * (`addGlowMaskLate`) — each with the predicate that
@@ -68,8 +68,8 @@
  * material; finds the glow's mask by testing a pass's targets — it is TOLD.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
  *
- * WHERE A DRAW LANDS, in the host's own order, at one of six points of the
- * main pass, five of them about rendering group `groupId` (0: the world)
+ * WHERE A DRAW LANDS, in the host's own order, at one of seven points of the
+ * main pass, six of them about rendering group `groupId` (0: the world)
  * (`DrawPoint`), which come in this order in every frame, whatever the group
  * holds (on a frame Babylon does not visit the group, all of them are told
  * together at the end of the phase, in this order):
@@ -109,6 +109,13 @@
  *   opaque wall drawn after the glazing or the water in front of it paints
  *   over them, and one drawn after a particle in front of it paints over
  *   the particle.
+ * - `"particles"`: right behind the whole of `"opaque"`, whatever order anything
+ *   was added in, and still ahead of `"beforeBlended"` and of anything blended
+ *   the host draws in the group: where the host's group draws its PARTICLES
+ *   (`ParticleDraw`, `BABYLON_EXIT.md` X4.7c), behind the turf, which is added at
+ *   `"opaque"` at every install, and ahead of the moon — and ahead of every
+ *   particle system the host itself still draws (the rotor wash, until X4.7d),
+ *   which its group draws after this slot is queued.
  * - `"beforeBlended"`: after the group's sprites and particles and ahead of its
  *   transparent meshes. It is the moon's (`SkyDraw`, `BABYLON_EXIT.md` X4.5c), a
  *   blended draw that writes no depth and was the first of that list by distance:
@@ -171,8 +178,10 @@ export type FrameDraw = (pass: GPURenderPassEncoder, ctx: FrameContext) => void;
  * begun and ended there — and it records nothing into the main pass, submits
  * nothing and keeps neither.
  * `timing` is non-null on a frame whose passes are timed (`PassTimer`): each
- * compute pass it records then begins with `timing.pass(its descriptor)`, so
- * `gpu.cull` is the sum of them.
+ * CULL's compute pass it records then begins with `timing.pass(its descriptor)`,
+ * so `gpu.cull` is the sum of them; a compute pass that is no cull — the
+ * particles' update (`ParticleDraw`, `BABYLON_EXIT.md` X4.7c) — is left untimed
+ * and is in the frame's time (`gpu.frame`) alone.
  * **Once a SUBMIT, as the frame block is**: what it hands the queue
  * (`writeBuffer`) lands before the submit its recording rides in, so a second
  * run before that submit would leave both reading the second one's values.
@@ -200,7 +209,14 @@ export interface RendererOptions {
 }
 
 /** Where in the main pass a `FrameDraw` is drawn — see the header. */
-export type DrawPoint = "first" | "beforeAlphaTest" | "afterSurfaces" | "opaque" | "beforeBlended" | "afterGroup";
+export type DrawPoint =
+  | "first"
+  | "beforeAlphaTest"
+  | "afterSurfaces"
+  | "opaque"
+  | "particles"
+  | "beforeBlended"
+  | "afterGroup";
 
 /**
  * Whether a draw has anything to draw this frame — asked once a frame as the
@@ -235,6 +251,7 @@ export class Renderer {
   private readonly beforeAlpha: FrameDraw[] = [];
   private readonly surfaced: FrameDraw[] = [];
   private readonly opaque: FrameDraw[] = [];
+  private readonly particles: FrameDraw[] = [];
   private readonly blended: FrameDraw[] = [];
   private readonly after: FrameDraw[] = [];
   /** Each list's predicates, index for index (null: always active). */
@@ -242,6 +259,7 @@ export class Renderer {
   private readonly beforeAlphaActive: (Active | null)[] = [];
   private readonly surfacedActive: (Active | null)[] = [];
   private readonly opaqueActive: (Active | null)[] = [];
+  private readonly particlesActive: (Active | null)[] = [];
   private readonly blendedActive: (Active | null)[] = [];
   private readonly afterActive: (Active | null)[] = [];
   private readonly prepares: FramePrepare[] = [];
@@ -326,6 +344,8 @@ export class Renderer {
         return hang(this.surfaced, this.surfacedActive, draw, active);
       case "opaque":
         return hang(this.opaque, this.opaqueActive, draw, active);
+      case "particles":
+        return hang(this.particles, this.particlesActive, draw, active);
       case "beforeBlended":
         return hang(this.blended, this.blendedActive, draw, active);
       case "afterGroup":
@@ -469,6 +489,7 @@ export class Renderer {
     this.beforeAlpha.length = 0;
     this.surfaced.length = 0;
     this.opaque.length = 0;
+    this.particles.length = 0;
     this.blended.length = 0;
     this.after.length = 0;
     this.prepares.length = 0;
@@ -484,6 +505,7 @@ export class Renderer {
     this.beforeAlphaActive.length = 0;
     this.surfacedActive.length = 0;
     this.opaqueActive.length = 0;
+    this.particlesActive.length = 0;
     this.blendedActive.length = 0;
     this.afterActive.length = 0;
     this.maskRefusals.length = 0;
@@ -503,6 +525,7 @@ export class Renderer {
       anyActive(this.beforeAlpha, this.beforeAlphaActive) ||
       anyActive(this.surfaced, this.surfacedActive) ||
       anyActive(this.opaque, this.opaqueActive) ||
+      anyActive(this.particles, this.particlesActive) ||
       anyActive(this.blended, this.blendedActive) ||
       anyActive(this.after, this.afterActive);
     // The glow's mask opens after the main pass, and draws from the frame
@@ -538,7 +561,9 @@ export class Renderer {
   };
 
   private readonly afterOpaque = (): void => {
-    if (this.filled && this.opaque.length > 0 && this.passOk()) this.host.queue(this.runOpaque);
+    if (this.filled && this.opaque.length + this.particles.length > 0 && this.passOk()) {
+      this.host.queue(this.runOpaque);
+    }
   };
 
   private readonly beforeBlended = (): void => {
@@ -582,9 +607,12 @@ export class Renderer {
     for (let i = 0; i < last.length; i++) last[i](pass, this.ctx);
   };
 
+  /** `"opaque"`'s list and then `"particles"`': one slot of the host's. */
   private readonly runOpaque = (pass: GPURenderPassEncoder): void => {
     const draws = this.opaque;
     for (let i = 0; i < draws.length; i++) draws[i](pass, this.ctx);
+    const last = this.particles;
+    for (let i = 0; i < last.length; i++) last[i](pass, this.ctx);
   };
 
   private readonly runBlended = (pass: GPURenderPassEncoder): void => {

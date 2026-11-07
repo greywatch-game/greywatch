@@ -2043,13 +2043,15 @@ is one machine's:
   (`cameraSys.pitch` is NEGATIVE downward) with `player.view` disabled — and
   point a run at the surfaces no map ships, since `turf` rotted precisely because
   nothing ever selected it.
-- **The mote field is frozen for a pixel diff with `stop()` + `reset()`** on
-  `g.atmosphere.system`. That works on `GPUParticleSystem` only because
-  `Atmosphere` constructs it with `emitRateControl: true`; Babylon's legacy GPU
-  mode keeps accumulating while stopped and refills the sky a second later — do not
-  change that option. The field takes `maxLifeTime` to reach steady state, so let
-  `getActiveCount()` settle first. Read `system` through the handle each time: a
-  *different* `ParticleSpec` replaces the whole system. **Two maps have one now**
+- **The mote field is frozen for a pixel diff with `stop()` and then
+  `g.particleDraw.reset(field)`** on `g.atmosphere.system` (a `ParticleField` of
+  ours since `BABYLON_EXIT.md` X4.7c; `g.particleDraw.enabled = false` is
+  `scene.particlesEnabled`'s twin and switches every field of ours off). It stays
+  empty only because the field is emit-rate CONTROLLED, the one mode ported
+  (Babylon's legacy GPU mode kept accumulating while stopped and refilled the sky
+  a second later). The field takes `maxLifeTime` to reach steady state, so let
+  `currentActiveCount` settle first. Read `system` through the handle each time: a
+  *different* `ParticleSpec` capacity replaces the whole field. **Two maps have one now**
   — Hollowmere's falling ash and Coldharbour's rising dust — so a script that
   froze the field on one map and not the other no longer covers both.
 - **The wind is an A/B, not a wait.** Foliage sway is a per-vertex displacement

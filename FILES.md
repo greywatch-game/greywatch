@@ -1417,9 +1417,11 @@ src/
                         #   strength of 0; an editor build, or a round whose
                         #   world failed, bakes nothing. Points a round's
                         #   glazing at its probe's recipe and cube (X4.6e)
-    Atmosphere.ts       # Ash field on the GPU, simulated by a compute shader.
-                        #   No CPU fallback — WebGPU is a hard requirement and
-                        #   guarantees it
+    Atmosphere.ts       # The ash field: DECIDES its box, colours, rate, lives
+                        #   and blend on a ParticleField of ours, rebuilt to the
+                        #   capacity the map's density needs; the mote texture
+                        #   (Babylon's, through the seam). render/ParticleDraw.ts
+                        #   steps and draws it (X4.7c). No CPU fallback
     Sky.ts              # Generated dome, textured moon, and the cloud RING —
                         #   one soup of faceted masses standing in the
                         #   world over the map, drawn back to front at one
@@ -2588,6 +2590,13 @@ src/
                         #   of the emissive colour and the texture) and the mask
                         #   material's bloom. Babylon-free: render/skyProgram.ts
                         #   declares them
+      particles.ts      # THE ASH's three WHOLE modules (X4.7c): Babylon's
+                        #   gpuUpdateParticles and gpuRenderParticles AS
+                        #   COMPILED for the box emitter's feature set, read off
+                        #   the parent's device and copied, only the bindings
+                        #   and the attribute fetch (pulled out of storage)
+                        #   changed; PARTICLE_STRIDE. Babylon-free:
+                        #   render/particleProgram.ts builds them
       cloud.ts          # The cloud masses as plain strings (X4.5b): the vertex
                         #   stage pinned short of the far plane and the pixel in
                         #   cel TONES — lit mostly off the lump's smooth normal so
@@ -2670,13 +2679,14 @@ src/
                         #   sampler NOW), PassTargets, HostTexture
     Renderer.ts         # Renderer: the frame's uniforms, textures and their
                         #   group 0, the pipeline cache, the FrameDraws it
-                        #   queues at six points of the MAIN pass — first,
+                        #   queues at seven points of the MAIN pass — first,
                         #   ahead of everything of Babylon's (X4.5a; the dome,
                         #   X4.5c), and of group 0, needing nothing in it:
                         #   before its alpha-tested meshes (the palette FIRST
                         #   in that draw, X3.6e), after every opaque surface
                         #   (afterSurfaces; the clouds, X4.5b), where its
-                        #   opaque and alpha-tested meshes end, past its
+                        #   opaque and alpha-tested meshes end, right behind
+                        #   that (particles; the ash, X4.7c), past its
                         #   particles and ahead of its blended list
                         #   (beforeBlended; the moon, X4.5c), and after it —
                         #   and the
@@ -2871,6 +2881,24 @@ src/
                         #   back-to-front run; a probe's recipe and its cube read
                         #   where the bake left it; a break's collapse written
                         #   into its buffer. An editor build's stays Babylon's
+    ParticleDraw.ts     # THE ASH as OUR renderer runs it (X4.7c): every field in
+                        #   one list in creation order, Babylon's
+                        #   GPUParticleSystem ported exactly — random textures
+                        #   at create, seeds at the first update, the ready
+                        #   gate, the clock (the scene's animation ratio), the
+                        #   update dispatched into the prepare encoder (no pass
+                        #   split), the draw reading the buffer the update READ,
+                        #   at "particles"; enabled, scene.particlesEnabled's
+                        #   twin; the harness's preWarmStep
+    ParticleField.ts    # One field's CPU half (X4.7c): its settings under
+                        #   Babylon's names and defaults, start/stop/reset,
+                        #   animate and the emit-rate-controlled emission, line
+                        #   for line; no GPU, no random
+    particleProgram.ts  # Its programs (X4.7c): PARTICLE_GROUP (Babylon's
+                        #   LeftOver and Internals, the particle and sprite
+                        #   buffers, the texture), the two blends, SimParams'
+                        #   offsets, particlePipelines (the update, the draw at
+                        #   both blends)
     FadeDraw.ts         # The FADING pools as OUR renderer draws them (X4.6e):
                         #   every spark, dust disc, scorch and blob shadow, a
                         #   draw an instance of its kit, and a spark's bloom in

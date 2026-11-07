@@ -63,9 +63,11 @@
  *      alpha-tested meshes, its sprites and its particles, ahead of its
  *      transparent meshes. Only the SCENE's manager is reached — every render
  *      target owns a manager of its own — so it fires in the camera's pass and
- *      in no other. The `beforeBlended` point is this same slot (X4.5c), and
- *      the moon's draw hangs on it until the particles move (X4.7) and the
- *      blended list with them (X4.6).
+ *      in no other. The `beforeBlended` point is this same slot (X4.5c): the
+ *      moon's draw and the one back-to-front run of ours (X4.6e) hang on it,
+ *      past the group's particles — Babylon's rotor wash, until X4.7d; the ash
+ *      is ours since X4.7c and drawn at the `"particles"` point, ahead of the
+ *      group's particle systems, told with `"opaque"` where they begin.
  *   7. `internalTexture._hardwareTexture.view` (`WebGPU/webgpuHardwareTexture
  *      .js`): the `GPUTextureView` Babylon itself binds for a texture
  *      (`webgpuCacheBindGroups.js`, `getBindGroups`), so ours is the same view

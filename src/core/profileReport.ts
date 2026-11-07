@@ -503,12 +503,15 @@ export interface ViewFacts {
  * group each, `render/GlassDraw.ts`) and `glass` says how many; since
  * version 35 the see-through glazing's too, and the fades' (a spark, a dust
  * disc, a scorch or a blob each, `render/FadeDraw.ts`), `masked` the sparks'
- * blooms, and `fades` says how many. None
+ * blooms, and `fades` says how many; since version 37 (`BABYLON_EXIT.md`
+ * X4.7c) `drawn` counts the ASH's draws too (a field each, `render/ParticleDraw.ts`
+ * — no pool, and never in the mask) and `particles` says how many. None
  * is in `counters.drawCalls`, which since X4.4b counts no tracer, mark,
  * case, thrown or laid body, since X4.4c no billow, shard or chunk,
  * since X4.4d no fire, since X4.5b no ring, since X4.5c no dome and no moon,
- * and since X4.6e no pane, spark, disc, scorch or blob: a capture from before
- * any of them counted a draw a mesh there.
+ * since X4.6e no pane, spark, disc, scorch or blob, and since X4.7c no mote
+ * field: a capture from before any of them counted a draw a mesh (or a
+ * particle system) there.
  */
 export interface PoolFacts {
   drawn: number;
@@ -535,6 +538,8 @@ export interface PoolFacts {
   glass?: number;
   /** Absent before report version 35. */
   fades?: number;
+  /** Absent before report version 37. */
+  particles?: number;
 }
 
 export interface ProfileGraphics {
@@ -1348,7 +1353,14 @@ export function buildReport(
     // the rendering manager's own walk and, on such a frame the glow skips,
     // the seam's `after` observer and `FrameDepth`'s identity test — nothing
     // measurable. Nothing else changed meaning.
-    version: 36,
+    // 37: `pools.particles`, a draw a particle field of ours (the ash, since
+    // `BABYLON_EXIT.md` X4.7c), in `pools.drawn` too and no longer in
+    // `counters.drawCalls`, where Babylon's draw of the field was. Its update is a prepare's
+    // compute pass, outside the main pass and outside `drawWorld` (no longer a
+    // dispatch ending the main pass inside group 0, which ran our queued opaque
+    // recording there), and it is not in `gpu.cull`, being no cull. Nothing else
+    // changed meaning.
+    version: 37,
     build: buildStamp(),
     takenAt: new Date().toISOString(),
     reason,

@@ -283,7 +283,7 @@ round's DECLARED list (`Game.roundPipelines`: bodies, hulls, weapon and every
 pool of ours, asked once at construction) and the map's, which its install
 asks — and our cache is SEALED once the card is down (a compile in play is a
 DEV warning). **A new draw of ours joins that list.** The vantages are for
-BABYLON's meshes — in a round its particles alone — and **no pool is posed**:
+BABYLON's meshes — in a round the rotor wash alone — and **no pool is posed**:
 every one is ours since X4.6e (the sparks, the dust discs, the scorch and the
 blob the last), so on that list, and nothing is shown for a pipeline's sake.
 
@@ -624,6 +624,9 @@ CHUNK** (`systems/poseView.ts`), and every FIRE (`FlameDraw`, in no bake) —
 the see-through panes** (`FadeDraw`, `GlassDraw`), and no pool is split. **So
 are a capture zone's stones, paint, pole and cloth, the GRASS and the WATER** (`ZoneDraw`,
 `GrassDraw`, `WaterDraw`), one nearest-first run, the turf apart, behind the `backed` panes.
+**So is the ASH** (`ParticleDraw`: Babylon's `GPUParticleSystem` PORTED, its
+shaders as compiled, its seeds and its clock), behind the turf and ahead of the
+moon; the rotor wash is Babylon's until X4.7d.
 
 **The GLOW draws the EMISSIVE meshes and nothing else, its occlusion being the
 FRAME's own depth buffer** (`src/shaders/GlowPass.ts`). **What may bloom is read

@@ -651,6 +651,16 @@ about 0.13 ms while `glow` RISES by about 0.06** — a move between spans as the
 fields become ours and stop splitting the pass, not a regression of the glow,
 whatever the span's form.
 
+**Measured at X4.7c** (the ash ours, the same captures, parent → step): a live
+Coldharbour round `drawWorld` 0.132 → 0.002 ms, `glow` 0.075 → 0.143, `render`
+0.569 → 0.496; Kurenai 0.125 → 0.004, 0.079 → 0.131, 0.547 → 0.466; Cinderhaven,
+whose rotor wash is still Babylon's and still ends the pass inside group 0,
+0.149 → 0.060, 0.075 → 0.116, 0.628 → 0.586. The menu stays at 0.002-0.005.
+The prediction held: about 0.13 ms out of `drawWorld` and about 0.06 into `glow`
+where the ash was the only field, and on Cinderhaven the motes' share alone. The
+field's own update is a PREPARE now, recorded at the seam's start of the pass, so
+under `render` and named by nothing, as every prepare is.
+
 **What is left inside `render` and named by nothing** is the active-mesh
 evaluation (the `Mesh walk` counter, which is the same number in other units),
 `Game.drawBodies` (every drawn rig's joints composed and handed to its meshes,

@@ -326,6 +326,77 @@ export function placeVantage(page, vantage) {
     // A seeded `Math.random` for the length of `fn` and put back — how a
     // subject whose LAYOUT is drawn at random (a blast, a muzzle flash) is
     // the same picture every run, without touching the game's own draw.
+    // **Every touch of a particle field in this file goes through `fields`**
+    // (`BABYLON_EXIT.md` X4.7a, X4.7c), one adapter for whose fields they are:
+    // since X4.7c the ash is OURS (`g.particleDraw`: a `ParticleField`, stepped
+    // and drawn by `ParticleDraw`) and the rotor wash still Babylon's
+    // (`GPUParticleSystem`s on `g.scene.particleSystems`), and each call picks
+    // by which list a field is on — so a BEFORE taken at a parent that holds no
+    // `particleDraw` runs this file and touches Babylon's alone, exactly as the
+    // file before X4.7c did. The names a field is written through (`emitter`,
+    // the emit box, `emitRate`, `updateSpeed`, `preWarmStepOffset`, `start`,
+    // `stop`, `isStopped`) are the same on both; what differs — the ready test,
+    // a reset, a pre-warm step and the switch — goes through `ParticleDraw` for
+    // ours. `freeze` and `thaw` switch both lists the same way
+    // (`particlesOn`, the same two writes as `enable`).
+    const fields = (() => {
+      const draw = g.particleDraw ?? null;
+      const ours = (f) => draw !== null && draw.fields.includes(f);
+      const F = {
+        /** Every field of the game's, in the order the frame steps and draws them: ours first, at `"particles"`. */
+        all: () => [...(draw ? draw.fields : []), ...g.scene.particleSystems],
+        motes: () => g.atmosphere.system,
+        /** One hull's rings, dust then spray, as `RotorWash` holds them. */
+        ringsOf: (w) => [w.dust, w.spray].filter(Boolean),
+        rings: () => g.rotorWash.washes.flatMap((w) => F.ringsOf(w)),
+        /** `scene.particlesEnabled`, and ours's twin of it. */
+        enable: (on) => {
+          g.scene.particlesEnabled = on;
+          if (draw) draw.enabled = on;
+        },
+        ready: (f) => (ours(f) ? draw.isReady(f) : f.isReady()),
+        /** Whether `RotorWash.update` left the ring emitting (a rate over zero). */
+        emits: (f) => f.emitRate > 0,
+        /** A pre-warm step made one fixed frame at an animation ratio of 1. */
+        prime: (f) => {
+          f.preWarmStepOffset = 1;
+        },
+        reset: (f) => (ours(f) ? draw.reset(f) : f.reset()),
+        empty: (f) => {
+          f.stop();
+          F.reset(f);
+        },
+        /** One fixed frame of `f` at an animation ratio of 1, its own pre-warm pair. */
+        step: (f) => {
+          if (ours(f)) {
+            draw.preWarmStep(f);
+            return;
+          }
+          f.animate(true);
+          f.render(true, true);
+        },
+        /** The emitter put at `(x, y, z)`: Babylon's is replaced by a clone of the eye, ours written. */
+        placeEmitter: (f, x, y, z) => {
+          if (ours(f)) {
+            f.emitter.set(x, y, z);
+            return;
+          }
+          f.emitter = g.cameraSys.camera.position.clone();
+          f.emitter.set(x, y, z);
+        },
+        speed: (f) => f.updateSpeed,
+        hold: (f) => {
+          f.updateSpeed = 0;
+        },
+        /** A ring as `RotorWash.clear` leaves it at an install, on `speed`. */
+        putBack: (f, speed) => {
+          F.reset(f);
+          f.updateSpeed = speed;
+          if (f.isStopped()) f.start();
+        },
+      };
+      return F;
+    })();
     const seeded = (seed, fn) => {
       const keep = Math.random;
       let s = seed >>> 0;
@@ -893,23 +964,23 @@ export function placeVantage(page, vantage) {
     if (v.motes) {
       const spec = g.mapDef.environment.particles;
       if (!spec) throw new Error(`${g.mapDef.id} states no particles`);
-      g.scene.particlesEnabled = false;
+      const F = fields;
+      F.enable(false);
       const air = g.atmosphere;
       air.capacity = 0;
       seeded(0xa5, () => air.apply(spec, g.map.size, g.map.size));
       air.update(cam.position);
-      const ps = air.system;
+      const ps = F.motes();
       // The field gathered into a box on the eye, at the map's own motes and
       // rate: the disc is a few degrees across and the field a valley, so the
       // map's own density puts about a tenth of a mote in front of it.
       const half = v.motes.box / 2;
-      ps.emitter = cam.position.clone();
-      ps.emitter.y = 0;
+      F.placeEmitter(ps, cam.position.x, 0, cam.position.z);
       ps.minEmitBox.x = ps.minEmitBox.z = -half;
       ps.maxEmitBox.x = ps.maxEmitBox.z = half;
-      ps.preWarmStepOffset = 1;
+      F.prime(ps);
       window.__refMotes = true;
-      for (let frames = 0; !ps.isReady(); frames++) {
+      for (let frames = 0; !F.ready(ps); frames++) {
         if (frames > 1200) throw new Error("the mote field never became ready");
         await new Promise((res) => {
           const o = g.scene.onAfterRenderObservable.add(() => {
@@ -924,13 +995,10 @@ export function placeVantage(page, vantage) {
       await new Promise((res) => {
         g.scene.onBeforeRenderObservable.addOnce(() => {
           seeded(0xa6, () => {
-            for (let i = 0; i < v.motes.steps; i++) {
-              ps.animate(true);
-              ps.render(true, true);
-            }
+            for (let i = 0; i < v.motes.steps; i++) F.step(ps);
           });
-          ps.updateSpeed = 0;
-          g.scene.particlesEnabled = true;
+          F.hold(ps);
+          F.enable(true);
           res();
         });
       });
@@ -953,60 +1021,17 @@ export function placeVantage(page, vantage) {
     // (`installMap`: `atmosphere.apply`, then `rotorWash.build`), so the
     // scene's list holds them in the order a shipped flow does.
     //
-    // **Every touch of a field in THIS path goes through `babylonFields`**
-    // (held as `__refParticles.fields` for the put-away), one adapter for
-    // whose fields they are: Babylon's `GPUParticleSystem`s today. The step
-    // that makes the fields ours adds its own adapter beside this one and
-    // picks by what the page holds, so a BEFORE taken at a parent still
-    // drawing Babylon's runs this file unchanged. **Two paths in this file
-    // are still Babylon's alone and are X4.7c's to give an adapter**: the
-    // `motes` row's path above (`sky-motes`: the field's emitter, emit box,
-    // `preWarmStepOffset`, `updateSpeed`, `isReady` and pre-warm pair, read
-    // and written on `g.atmosphere.system` directly), and `freeze`'s
-    // `particles` switch with its thaw (`g.scene.particlesEnabled`, below),
-    // which on a tree whose fields are ours would switch nothing of theirs.
+    // **Every touch of a field in THIS path goes through `fields`** (held as
+    // `__refParticles.fields` for the put-away), the one adapter above, as the
+    // `motes` row's path and `freeze`'s `particles` switch with its thaw do
+    // since X4.7c: on a tree whose ash is ours they step, hold and switch OUR
+    // field (`ParticleDraw`) and Babylon's rings beside it, and at a parent
+    // drawing Babylon's they touch Babylon's alone, as before.
     if (v.particles) {
       const want = v.particles;
       const spec = g.mapDef.environment.particles;
       if (want.ash && !spec) throw new Error(`${g.mapDef.id} states no particles`);
-      const babylonFields = {
-        /** Every field of the game's, in the order the frame steps and draws them. */
-        all: () => g.scene.particleSystems,
-        motes: () => g.atmosphere.system,
-        /** One hull's rings, dust then spray, as `RotorWash` holds them. */
-        ringsOf: (w) => [w.dust, w.spray].filter(Boolean),
-        rings: () => g.rotorWash.washes.flatMap((w) => babylonFields.ringsOf(w)),
-        enable: (on) => {
-          g.scene.particlesEnabled = on;
-        },
-        ready: (f) => f.isReady(),
-        /** Whether `RotorWash.update` left the ring emitting (a rate over zero). */
-        emits: (f) => f.emitRate > 0,
-        /** A pre-warm step made one fixed frame at an animation ratio of 1. */
-        prime: (f) => {
-          f.preWarmStepOffset = 1;
-        },
-        empty: (f) => {
-          f.stop();
-          f.reset();
-        },
-        /** One fixed frame of `f` at an animation ratio of 1, its own pre-warm pair. */
-        step: (f) => {
-          f.animate(true);
-          f.render(true, true);
-        },
-        speed: (f) => f.updateSpeed,
-        hold: (f) => {
-          f.updateSpeed = 0;
-        },
-        /** A ring as `RotorWash.clear` leaves it at an install, on `speed`. */
-        putBack: (f, speed) => {
-          f.reset();
-          f.updateSpeed = speed;
-          if (f.isStopped()) f.start();
-        },
-      };
-      const F = babylonFields;
+      const F = fields;
       const P = (window.__refParticles ??= { hull: null, wet: false, speeds: [], fields: null });
       P.fields = F;
       F.enable(false);
@@ -1228,11 +1253,15 @@ export function freeze(page, set = FREEZE_SET, { windTime = 0, turn = 0, strike 
       }
     }
     // A row asking for the motes, or for the fields as the game runs them
-    // (`particles`), has them posed and held by now (`placeVantage`). **This
-    // switch is BABYLON's** (`scene.particlesEnabled`, the same at the thaw)
-    // and goes through no adapter: a tree whose fields are ours owes it one
-    // (`BABYLON_EXIT.md` X4.7c), or it holds nothing of theirs.
-    if (f.includes("particles")) g.scene.particlesEnabled = Boolean(window.__refMotes || window.__refParticles);
+    // (`particles`), has them posed and held by now (`placeVantage`). The
+    // switch is both lists' (`placeVantage`'s `fields.enable`): Babylon's
+    // `scene.particlesEnabled`, and since X4.7c ours beside it
+    // (`ParticleDraw.enabled`), the same at the thaw.
+    if (f.includes("particles")) {
+      const on = Boolean(window.__refMotes || window.__refParticles);
+      g.scene.particlesEnabled = on;
+      if (g.particleDraw) g.particleDraw.enabled = on;
+    }
     if (f.includes("lights")) {
       // A lantern's flame is a clock like any other and is pinned like one.
       // **What is deliberately NOT touched here is the flicker PHASE.** It
@@ -1374,6 +1403,7 @@ export function thaw(page) {
     if (g.grass && s.grass) g.grass.update = s.grass;
     if (g.water && s.water) g.water.update = s.water;
     g.scene.particlesEnabled = true;
+    if (g.particleDraw) g.particleDraw.enabled = true;
   });
 }
 

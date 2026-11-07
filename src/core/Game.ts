@@ -128,6 +128,7 @@ import { FadeDraw } from "../render/FadeDraw";
 import { FADE, FarthestRun } from "../render/FarthestRun";
 import { PLACED_WORDS } from "../render/celVertex";
 import { FlameDraw } from "../render/FlameDraw";
+import { ParticleDraw, type ParticleCamera } from "../render/ParticleDraw";
 import type { CelRecipe } from "../render/celMaterial";
 import { HULL_CHARRED } from "../render/hullProgram";
 import { BodyShadowMap } from "../render/BodyShadowMap";
@@ -1275,6 +1276,14 @@ export class Game {
   private culling: WorldCulling;
   private atmosphere: Atmosphere;
   /**
+   * Every GPU particle field of ours — the ash since `BABYLON_EXIT.md` X4.7c —
+   * stepped on the scene's animation ratio and drawn where Babylon's group drew
+   * its particles. `Atmosphere` decides the field; this runs and draws it.
+   */
+  private readonly particleDraw: ParticleDraw;
+  /** The view's inverse, made once: `ParticleDraw`'s camera, as `_render` made it. */
+  private readonly particleInvView = new Matrix();
+  /**
    * The dust under the rotors. A picture and nothing else: it reads the fleet
    * and writes nothing back, exactly as the mote field reads the eye.
    */
@@ -2259,7 +2268,16 @@ export class Game {
     // Thunder is the strike's own event, raised the frame its flash starts;
     // `Sfx` delays it by the distance on the audio clock.
     this.lightning.onStrike = (distance) => this.sfx.thunder(distance);
-    this.atmosphere = new Atmosphere(this.scene);
+    // The ash's update and draw are our renderer's (X4.7c), on Babylon's clock:
+    // the scene's animation ratio, read as the frame draws, which is when
+    // `GPUParticleSystem.animate` read it; and the camera as `_render` bound it,
+    // the view and the projection APART, the view's inverse and the eye.
+    this.particleDraw = new ParticleDraw(
+      this.renderer,
+      (out) => this.readParticleCamera(out),
+      () => this.scene.getAnimationRatio(),
+    );
+    this.atmosphere = new Atmosphere(this.scene, this.particleDraw);
     // Beside the mote field because it is the same kind of thing — a standing
     // GPU emitter driven off where something is — and NOT beside the fleet,
     // which it never touches. The server builds no such class at all.
@@ -2600,7 +2618,8 @@ export class Game {
     // nor the cloud ring since X4.5b, nor the dome and the moon since X4.5c, nor
     // the rings and the flags since X4.6b, nor the grass since X4.6c, nor the
     // water since X4.6d, nor the glazing, a spark, a disc, a scorch or a blob
-    // since X4.6e (pools, those last four, but the rest's draws owe the sum too).
+    // since X4.6e (pools, those last four, but the rest's draws owe the sum too),
+    // nor the ash since X4.7c (a draw a field, no pool).
     this.prof.setPools(() => ({
       drawn:
         this.pieceDraw.stats.drawn +
@@ -2616,7 +2635,8 @@ export class Game {
         this.waterDraw.stats.drawn +
         this.glassDraw.stats.backed +
         this.glassDraw.stats.seeThrough +
-        this.fadeDraw.stats.drawn,
+        this.fadeDraw.stats.drawn +
+        this.particleDraw.stats.drawn,
       masked:
         this.pieceDraw.stats.masked +
         this.blastDraw.stats.masked +
@@ -2635,6 +2655,7 @@ export class Game {
       water: this.waterDraw.stats.drawn,
       glass: this.glassDraw.stats.backed + this.glassDraw.stats.seeThrough,
       fades: this.fadeDraw.stats.drawn,
+      particles: this.particleDraw.stats.drawn,
     }));
     // The sky's ring is OUR renderer's (X4.5b), its dome and moon too (X4.5c), and
     // `Sky` is handed them below.
@@ -2660,6 +2681,8 @@ export class Game {
       { name: "the water", ready: this.waterDraw.ready },
       { name: "the glazing", ready: this.glassDraw.ready },
       { name: "the sparks, dust discs, scorch and blobs", ready: this.fadeDraw.ready },
+      // Both blends: a map change can flip the ash's (`Atmosphere.apply`).
+      { name: "the ash", ready: this.particleDraw.ready },
     ];
     // The sky is painted once here, the boot map's, and re-applied per round
     // alongside the environment; it is DRAWN only while a map stands
@@ -3913,7 +3936,8 @@ export class Game {
     this.culling.update(this.cameraSys.camera.position);
     // And on exactly those terms again, for a map whose dust is emitted around
     // the eye rather than over the whole square (`ParticleSpec.volume`). A
-    // no-op for every map that states none, which is all of them but one.
+    // no-op for every map that states none — all but three (Sarab, Cinderhaven
+    // and Kurenai state one).
     this.atmosphere.update(this.cameraSys.camera.position);
     // Every hull composed, once, and asked its draw-distance FADE: after the
     // cull, whose `offer` just set the eye and the warm-up the fade is asked
@@ -4425,6 +4449,26 @@ export class Game {
       this.enterMenu();
       this.hud.toast(`${owner.name} could not be drawn on this device`);
     });
+  }
+
+  /**
+   * The camera as `GPUParticleSystem._render` bound it, for `ParticleDraw`, asked
+   * as the main pass begins (the scene's transform is the frame's by then, as it
+   * was at the group's draw): the scene's view and projection apart, the view's
+   * inverse by `Matrix.invertToRef` (the same doubles rounded to the same floats),
+   * and the active camera's `globalPosition`.
+   */
+  private readParticleCamera(out: ParticleCamera): void {
+    const view = this.scene.getViewMatrix();
+    out.view.set(view.m);
+    out.projection.set(this.scene.getProjectionMatrix().m);
+    view.invertToRef(this.particleInvView);
+    out.invView.set(this.particleInvView.m);
+    const eye = this.scene.activeCamera?.globalPosition;
+    if (!eye) return;
+    out.eye[0] = eye.x;
+    out.eye[1] = eye.y;
+    out.eye[2] = eye.z;
   }
 
   private tick(): void {

@@ -170,14 +170,15 @@ exists. **It OPENS with no vantage at all, waiting for OUR renderer's
 pipelines** (`render/PipelineCache.ts`, handed in as `CompileProgress`): the
 round's DECLARED list (`Game.roundPipelines` — the bodies, the hulls, the
 weapon, the bodies' shadow map, the lamps' proxies, every effect pool of
-ours and the clouds, each asked once at `Game`'s construction, waited on by name: a cap
+ours, the clouds and the ash, each asked once at `Game`'s construction, waited on by name: a cap
 reached names those unsettled) and the map's own, asked as its install built
 them (the lamps' atlas's CASTERS among them). They compile off the frame, so drawing does not hurry
 them, but a group of ours still compiling draws NOTHING and Babylon no longer
 draws the blocks in the main pass — so the vantages are drawn with ours
 built, and nothing of ours is POSED at one (`BABYLON_EXIT.md` X4.4e: the
 `warm(on)` poses of the pools that are ours became that list). **The
-vantages are for Babylon's own meshes** — in a round its particles alone:
+vantages are for Babylon's own meshes** — in a round the rotor wash alone
+(the ash is ours since `BABYLON_EXIT.md` X4.7c, its pipelines on the list):
 the glazing, the three blended pools and the blob shadow were Babylon's
 until X4.6e, posed here, and nothing is posed now. **When the wait ends, our cache is SEALED** (`PipelineCache.seal`)
 until the map is torn down: a pipeline of ours compiled in play is a DEV

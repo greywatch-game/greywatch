@@ -64,17 +64,21 @@
  * editor's panel edits no `particles` field: this is the one way in), and after
  * it is put back.
  *
- * Every touch of a field's STATE goes through one adapter (`babylon`, held as
- * `window.__fields`), Babylon's `GPUParticleSystem`s today, so the step that
- * makes them ours adds its own beside it and a BEFORE at the parent runs this
- * file unchanged. **The draw counting is not in it**: the constructions are
- * counted around the game's own doors (`Atmosphere.build`, `RotorWash.buildRing`),
- * whatever they build, but a first update is counted by wrapping Babylon's
- * `_initialize` on the prototype that holds it, and a field with none in its
- * chain (a field of ours) is NOT wrapped: it is named in the log's `unwrapped`
- * and on the console, the probe goes on, and its first updates are simply
- * absent — so `--against` against a Babylon parent fails on them until the
- * port adds its own counting beside this one.
+ * Every touch of a field's STATE goes through one adapter (`window.__fields`),
+ * which picks per field between `babylon` (Babylon's `GPUParticleSystem`s: the
+ * rotor wash, and every field at a parent before `BABYLON_EXIT.md` X4.7c) and
+ * `ours` (`ParticleDraw`'s fields since X4.7c: the ash), the same seventeen
+ * columns off each; `all` lists ours first, the order the frame draws them, so
+ * a BEFORE at the parent runs this file unchanged and logs the same order.
+ * **The draw counting is beside it**: the constructions are counted around the
+ * game's own doors (`Atmosphere.build`, `RotorWash.buildRing`), whatever they
+ * build; a Babylon field's first update by wrapping its `_initialize` on the
+ * prototype that holds it, and one of OURS by wrapping
+ * `ParticleDraw.initialize`, under the same label, so the two trees' logs name
+ * the same entries. A field with neither (no `_initialize` in its chain and not
+ * one of ours) is NOT wrapped: it is named in the log's `unwrapped` and on the
+ * console, the probe goes on, and its first updates are simply absent — so
+ * `--against` fails on them.
  *
  * **`--against`** compares, map by map, the order at deploy, the `Math.random`
  * draws of every construction and every first update (label and count), the
@@ -128,7 +132,7 @@ await page.evaluate(() => {
 // The adapter, the counters and the per-frame reader, once a boot.
 await page.evaluate(() => {
   const g = window.__celshock;
-  /** Babylon's fields. A port adds its own adapter beside this one. */
+  /** Babylon's fields: the rotor wash, and at a parent before X4.7c the ash too. */
   const babylon = {
     all: () => g.scene.particleSystems,
     enable: (on) => {
@@ -161,7 +165,62 @@ await page.evaluate(() => {
       ];
     },
   };
-  const F = babylon;
+  /**
+   * OUR fields (`BABYLON_EXIT.md` X4.7c: the ash, a `ParticleField` that
+   * `ParticleDraw` steps and draws), the same columns under their own names.
+   * Absent at a parent before X4.7c, where every field is Babylon's.
+   */
+  const draw = g.particleDraw ?? null;
+  const ours = draw
+    ? {
+        all: () => draw.fields,
+        enable: (on) => {
+          draw.enabled = on;
+        },
+        ready: (f) => draw.isReady(f),
+        reset: (f) => draw.reset(f),
+        name: (f) => f.name,
+        state: (f) => {
+          const e = f.emitter;
+          return [
+            f.isStarted() ? 1 : 0,
+            f.isStopped() ? 1 : 0,
+            f.initialized ? 1 : 0,
+            f.emitRate,
+            f.accumulatedCount,
+            f.currentActiveCount,
+            f.emitIndex,
+            f.emitCount,
+            f.writePointer,
+            f.timeDelta,
+            f.targetIndex,
+            e.x,
+            e.y,
+            e.z,
+            f.minEmitPower,
+            f.maxEmitPower,
+            f.updateSpeed,
+          ];
+        },
+      }
+    : null;
+  const isOurs = (f) => ours !== null && draw.fields.includes(f);
+  const pick = (f) => (isOurs(f) ? ours : babylon);
+  /**
+   * Every field, in the order the frame steps and DRAWS them: ours first (at
+   * `"particles"`, ahead of Babylon's group), then Babylon's in its list's order.
+   */
+  const F = {
+    all: () => [...(ours ? ours.all() : []), ...babylon.all()],
+    enable: (on) => {
+      babylon.enable(on);
+      ours?.enable(on);
+    },
+    ready: (f) => pick(f).ready(f),
+    reset: (f) => pick(f).reset(f),
+    name: (f) => pick(f).name(f),
+    state: (f) => pick(f).state(f),
+  };
   window.__fields = F;
   window.__fieldColumns = [
     "started", "stopped", "initialized", "emitRate", "accumulated", "count", "emitIndex", "emitCount",
@@ -205,18 +264,28 @@ await page.evaluate(() => {
       return counted(`_initialize ${this.name} (capacity ${this._capacity})`, () => init.call(this, force));
     };
   };
+  // A field of OURS has its first update counted where it is made, around
+  // `ParticleDraw.initialize` under Babylon's own label, so the two trees'
+  // logs name the same entry; it is never handed to `wrapInit`.
+  if (draw) {
+    const initialize = draw.initialize;
+    draw.initialize = function (slot) {
+      if (slot.buffers) return initialize.call(this, slot);
+      return counted(`_initialize ${slot.field.name} (capacity ${slot.field.capacity})`, () => initialize.call(this, slot));
+    };
+  }
   const air = g.atmosphere;
   const build = air.build;
   air.build = function (capacity) {
     const f = counted(`construct motes (capacity ${capacity})`, () => build.call(this, capacity));
-    wrapInit(f);
+    if (!isOurs(f)) wrapInit(f);
     return f;
   };
   const rw = g.rotorWash;
   const ring = rw.buildRing;
   rw.buildRing = function (index, wet) {
     const f = counted(`construct rotor${wet ? "Spray" : "Wash"}${index} (buildRing)`, () => ring.call(this, index, wet));
-    wrapInit(f);
+    if (!isOurs(f)) wrapInit(f);
     return f;
   };
   // Every frame's record, taken after the render.

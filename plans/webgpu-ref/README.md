@@ -228,9 +228,12 @@ node plans/webgpu-ref/particles.mjs [map...] [--frames=N] [--out=f.json] [--agai
   and first update's draws (label and count), then every logged number by
   `Object.is`, and the editor's orders and draws — which is how a port of the CPU
   half is proven, since no live frame's pixels reproduce; one tree against itself
-  is the control. A field it cannot count (no Babylon `_initialize` in its chain)
-  is named in the log's `unwrapped` rather than thrown on, so a port adds its own
-  counting beside Babylon's.
+  is the control. Since X4.7c it reads OUR fields beside Babylon's through one
+  adapter (the ash is `g.particleDraw`'s, listed first, the order the frame draws
+  it in), the same columns off each, and counts our first updates around
+  `ParticleDraw.initialize` under Babylon's label; a field it cannot count (neither
+  ours nor holding a Babylon `_initialize`) is named in the log's `unwrapped`
+  rather than thrown on.
   `surfaces.mjs` has a class per field (`motes`, `rotorWash`, `rotorSpray`), each
   draw logged at its place between the points with its pipeline, blend mode, count
   and the defines of its compiled update and render effects, and the seam's path
@@ -462,9 +465,12 @@ from the spawn photographed no shadow window at all.
   ash before the rings, an install's order), stepped by its own pre-warm pair
   through fixed frames at an animation ratio of 1 under a second seed, and held
   by a clock of zero, and every field a row does not state is held EMPTY. **Every
-  touch of a field in that path goes through one adapter (`babylonFields`)**; the
-  `motes` path and `freeze`'s `particles` switch (with its thaw) are still
-  Babylon's alone, and are `BABYLON_EXIT.md` X4.7c's to give an adapter for ours.
+  touch of a field in this file goes through one adapter (`placeVantage`'s
+  `fields`)** — that path, the `motes` path and `freeze`'s `particles` switch with
+  its thaw — which since `BABYLON_EXIT.md` X4.7c picks per field between OURS (the
+  ash, `g.particleDraw`: its ready test, reset, pre-warm step and switch) and
+  Babylon's (the rotor wash), so `sky-motes` and the ash rows grade our field, and a
+  BEFORE at a parent holding no `particleDraw` touches Babylon's alone, as before.
   **These rows sit under `--check`'s mean** — the embers' whole field 0.0142, the
   order between the ring and the ash about 0.0001 — **so only `exact.mjs` grades
   them.** No row puts a particle against the see-through panes or the fades, or a

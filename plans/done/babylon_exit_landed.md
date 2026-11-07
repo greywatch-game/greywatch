@@ -8779,7 +8779,7 @@ what was corrected and measured.
 - **The blob map's leak, measured** (`FINDINGS.md` 70, not fixed). Five Coldharbour rounds in one page at each tree, a forced GC before each reading: `ShadowSystem.blobs` 17, 33, 49, 65, 81 on both (HEAD's `blobFades` the same; a269bfb's `blobShadow` meshes the same, its scene 2,047 to 2,111 meshes), every earlier round's sixteen bodies alive after the GC, and freed once the map's keys are cleared by a probe. Heap after GC: HEAD 95,378 to 97,150 KB, a269bfb 107,454 to 110,710.
 - **Not verified.** A server's match in a browser; the phone; the editor (its recorded differences stay until X5.3); a gate or latch case live (the drop is 1a89216's record); `gate`, `shaders`, `census`, `pipelines.mjs --round`, `merge:hash`, `kit:hash`, typecheck and build, none of which this note's text-only change could move. The player capturing ALONE (bots may have stood in Alpha too: the page reads no bot). Live frames are pictures, not bytes: the byte comparisons are of held frames.
 
-### X4.7 — GPU particles — **S–M, as four sub-steps** (split 2026-11-07) — X4.7a **LANDED** (bad6caa), X4.7b **LANDED** (8c691c7)
+### X4.7 — GPU particles — **S–M, as four sub-steps** (split 2026-11-07) — X4.7a **LANDED** (bad6caa), X4.7b **LANDED** (8c691c7), X4.7c **LANDED** (HASH)
 
 The plan's `BABYLON_EXIT.md` holds X4.7's brief, the table of what the fields are
 (corrected in place by X4.7a) and the three sub-steps to come.
@@ -9058,3 +9058,151 @@ source and the step's captures (scratch `x47b/`), found one real mis-statement a
   the seam's `after` observer and `FrameDepth`'s identity test (negligible), not only the
   rendering manager's walk.
 - **Gates**: typecheck and build pass.
+
+**X4.7c landed** (HASH; 2026-11-07; no change to the picture; report version 37). The ash —
+`Atmosphere`'s mote field — is our renderer's compute particles, Babylon 9.28's
+`GPUParticleSystem` on `ComputeShaderParticleSystem` ported exactly; the rotor wash stays
+Babylon's (X4.7d).
+
+- **What moved.** New: `render/ParticleDraw.ts` (every field of ours in ONE list in creation
+  order, a disposed one spliced out; each field's GPU half — two `rgba32float` random
+  textures, the update's `SimParams` buffer, the draw's `LeftOver` block, and from its first
+  update its two particle buffers with the bind groups over them; the three pipelines asked
+  once; the prepare that steps every started field and dispatches its update into the host's
+  prepare encoder; the draw; `enabled`, `scene.particlesEnabled`'s twin; `preWarmStep` for the
+  harness), `render/ParticleField.ts` (a field's CPU half under Babylon's names and defaults:
+  `start`, `stop`, the reset's state, `animate`, and the emit-rate-controlled arm of `render`
+  line for line), `render/particleProgram.ts` (the bind group, the two blends, `SimParams`'
+  offsets, `particlePipelines`) and `shaders/wgsl/particles.ts` (the three modules). A new
+  `DrawPoint`, `"particles"`: a list of its own run right behind `"opaque"`'s in the same slot
+  of the host's, so behind the turf (added at `"opaque"` at each install, after anything added
+  at construction) and ahead of the moon. `Atmosphere` now DECIDES a `ParticleField` and
+  draws nothing; its routing note is gone; `fit`, `apply`, `update`, the wrap invariant and its
+  DEV warning are as they were. `Game` builds `ParticleDraw` with the scene's animation ratio
+  and a camera reader (`readParticleCamera`: the scene's view and projection apart, the view's
+  inverse by `Matrix.invertToRef`, the active camera's `globalPosition`, asked as the main pass
+  begins). Its pipelines are "the ash" on `Game.roundPipelines` (the update and the draw at
+  both blends). `ProfileReport.pools.particles`, in `pools.drawn` too: report version 37. No
+  seam item was added (the mote texture is bound through `hostTexture` and `bind`, items 7
+  and 8).
+- **The WGSL, read off the parent's device.** A scratch dump at 312dc44 (`createShaderModule`
+  hooked, Kurenai then Cinderhaven) gave one update module (`BOXEMITTER BILLBOARD
+  EMITRATECTRL`), one vertex and one fragment module (`BILLBOARD BILLBOARDMODE_ALL
+  EMITRATECTRL TONEMAPPING 0`), shared by both blends, and the three pipelines Babylon built
+  from them: a compute pipeline, and two render pipelines differing in the blend alone —
+  `triangle-strip`, cull none, `less-equal`, no depth write, bias 0, mask 15, STANDARD
+  `src-alpha, one-minus-src-alpha` / `one, one` and ADD `src-alpha, one` / `zero, one`, the
+  particle buffer an instance-stepped layout of stride 96 (position 0, age 12, size 16, life
+  28, colour 64, angle 80) and the sprite a vertex-stepped one of stride 16. The update is
+  copied verbatim, bindings included (equal to the device's text but for comment lines, checked
+  by a script); the vertex body from `let shouldCullParticle` on and its two functions are
+  verbatim, its first lines PULLING the same attributes out of storage into the same private
+  `vertexInputs`; the fragment's `main` is verbatim (the helper functions every WGSL effect gets,
+  which it never calls, dropped). `LeftOver` and `Internals` are Babylon's structs, laid out by
+  `blockLayout` exactly as WGSL reads them (view 0, projection 64, translationPivot 128,
+  worldOffset 144, invView 160, colorDead 224, eyePosition 240; 256 bytes). `SimParams`' floats
+  are the parent's `UniformBuffer` locations (`currentCount` 0 … `maxEmitBox` 64), the struct 272
+  bytes.
+- **The buffers and the draw.** Babylon's `_initialize` stride for this feature set is 24
+  floats (21, plus `alignDataInBuffer`'s 1, rounded to 4); both buffers hold every slot dead
+  with its seed at floats 8 to 11, made at the first update after a build or a reset (which
+  also zeroes `_targetIndex`) and released by a reset. **The draw reads the buffer the update
+  READ**: `_createVertexBuffers(_buffer0, _buffer1)` then `(_buffer1, _buffer0)` makes list 0
+  render `_buffer1` and list 1 render `_buffer0`, and `_render` binds the list at the index
+  `_update` just incremented — so a frame draws the slots as the PREVIOUS update left them. The
+  brief said the draw reads the buffer the update just wrote; the port follows the code. A held
+  field's update writes what it read, so no bank row can tell the two apart, and no live frame
+  reproduces. One instanced strip of four, `currentActiveCount` instances, in list order.
+- **The random draws, the clock, the gate.** Two textures at `create`, 4 × `randomTextureSize`
+  each, the first then the second (65,536 on this box, whose `maxTextureDimension2D` is 8192,
+  the number Babylon's caps read); 4 a slot at the first update. The clock is `updateSpeed` ×
+  `scene.getAnimationRatio()` (`|| 1`), read at the prepare, after `Scene.animate`; a started
+  field is stepped on every frame the scene draws with the switch on, so a stopped one drains
+  and is drawn over the menu as Babylon's was. The ready gate: the texture ready, the draw's
+  pipeline for the field's blend built, and the update "created" by the first test after a
+  build or a reset, which answers no (`isUpdateBufferCreated`), so a field emits from its second
+  ready frame.
+- **The harness and the probe.** `harness.mjs` has ONE adapter for every field
+  (`placeVantage`'s `fields`), picking per field between ours (`g.particleDraw`: its ready test,
+  reset, pre-warm step and switch) and Babylon's, and the `motes` path (`sky-motes`) and
+  `freeze`'s `particles` switch with its thaw go through it (both switches); `babylonFields` is
+  folded into it. On the parent's tree, which has no `particleDraw`, it touches Babylon's alone.
+  `particles.mjs` reads ours beside Babylon's through one adapter (ours listed first, the order
+  the frame draws them, the same seventeen columns) and counts our first updates around
+  `ParticleDraw.initialize` under Babylon's label. `census.mjs` counts `particleDraw.stats.drawn`;
+  `shaders.mjs` builds the three pipelines on every map.
+- **Measured.** The BEFORE: `bank.mjs --check --keep` at 312dc44 in the worktree
+  `greywatch-2-before-x36b` (moved there from a269bfb), its own harness. The step's, alone.
+  - **The bank, by `exact.mjs`: 142 of 143 byte-equal**, every particle row and `sky-motes`
+    among them, `harrowmead-view-pistol-reload` within its known flake (2 pixels by 1/255), and
+    `sarab-ground` 100 pixels by 2/255. Sarab alone twice a tree, alternating: the step drew
+    one frame both times; the parent drew that frame once and its own once — the cross-process
+    residue. The same 34 stale rows red at the same means (the two logs' red lines identical).
+    No page or console error.
+  - **The new harness over the parent**: the six particle rows (`--rows`, four maps) in the
+    worktree with this commit's `harness.mjs`, byte-equal to the BEFORE and to the step — the
+    adapter's Babylon side is the old path.
+  - **Each ash row holds our field**: the frame against the same frame with
+    `particleDraw.enabled` off, one process: `hollowmere-sky-motes` 630,923 px (the field
+    gathered into 24 m), `cinderhaven-particles-embers` 4,387 px (mean 0.0142),
+    `-ring-ash` 4,159, `kurenai-particles-leaves` 16,696 (mean 0.0274) — X4.7a's counts for
+    Babylon's fields; switched back on, the frame is its first grab's bytes.
+  - **The probe across the trees**, `hollowmere coldharbour cinderhaven sarab cinderhaven`, 240
+    frames a place, parent (this probe in the worktree) then step `--against`: **equal by
+    `Object.is` on every map** (4,800 numbers on Hollowmere and Coldharbour, 45,120 on each
+    Cinderhaven and Sarab), the order at every deploy and every construction's and first
+    update's draws equal (59 entries; 65,536 a mote field, 74,668, 59,736, 24,268 and 22,400 at
+    the first updates), `unwrapped` empty. Its pass counts: at the parent the motes split the
+    main pass once a frame on the ash-only maps (11 render, 1 compute) and Cinderhaven and Sarab
+    1-2 dry and 3 wet; at the step none on the ash-only maps (10 render, the seam on its fallback
+    path in the held world) and 0-1 dry, 2 wet — the wash's alone. Our update's pass is recorded
+    at the seam's `begin`, whose observer runs ahead of the probe's, so the probe counts it
+    nowhere.
+  - **`--editor` (Cinderhaven)**: the build's order after `F2` equal (motes ahead of the four
+    rings); after the in-memory `particles.count` edit and its rebuild, the parent's motes are
+    BEHIND the rings and ours ahead, and the order of the draws differs with it (the same twenty
+    entries). That is the dev-only flow X4.7a recorded, which no shipped flow reaches; ours is
+    drawn at `"particles"`, ahead of every Babylon field, whatever order they were made in.
+    **Reported to the owner.**
+  - **`census --against`** (Hollowmere, Sarab, Cinderhaven, Kurenai): every row and every total
+    equal (331, 595, 619, 168); in `sky-motes`, `particles-embers`, `-ring-ash` and `-leaves`
+    Babylon down one and ours up one.
+  - **`surfaces.mjs`** on the five particle rows and `sky-motes`: no `motes` class; the rings
+    as before (`rotorSpray0` 78 of 126, `rotorWash0` 92 of 135, their defines and state); the
+    seam's path the fallback on `sky-motes` and the leaves, the group on Cinderhaven's rows
+    (its emptied rings still dispatched).
+  - **An editor build's frames**, Cinderhaven `town` and `tank-far`, Kurenai `ground` and
+    `crossing`, each held by the freeze without the ash and again with the map's ash rebuilt
+    under a seed, 600 pre-warm steps and held, through each tree's own field: **8 of 8
+    byte-equal across the trees**, the ash moving 236 to 22,377 pixels.
+  - **Pipelines.** `pipelines.mjs cinderhaven --round` and `sarab --round`: in play 2 of
+    Babylon's, the wash's compute and render pipelines at `life 1: sniper`, none of ours; 3 of
+    Babylon's and 19 of ours at the first install (X4.7a: 2 and 19, and `GiVolume`'s race at the
+    spawn; the motes' two are gone, and the race fell under the card this run — inferred from
+    the counts, the install's creations keep no stack). Plain `pipelines.mjs hollowmere`: three
+    more of ours at the boot (64 against 61), and two fewer of Babylon's in the first second (3
+    against 5), nothing after it.
+  - **Live**, offline, headless: Cinderhaven (ADD) 300 frames playing, our field drawn on every
+    one; the menu, 60 frames, the stopped field still drawn (drained, as Babylon's was); Kurenai
+    (STANDARD) 300, a second Kurenai round on the same field 120, then `F2` 120, drawn on every
+    frame. No console or page error, no `[pipelines]` warning from the sealed cache.
+  - **`?profile`**, 600 frames a capture, parent → step: a live Coldharbour round `drawWorld`
+    0.132 → 0.002 ms, `glow` 0.075 → 0.143, `render` 0.569 → 0.496; Kurenai 0.125 → 0.004,
+    0.079 → 0.131, 0.547 → 0.466; Cinderhaven (its wash still Babylon's) 0.149 → 0.060, 0.075 →
+    0.116, 0.628 → 0.586; the menus 0.002-0.005 at both. `pools.particles` 1 in a round,
+    `counters.drawCalls` 10 → 9. The prediction (X4.7b's review) held.
+  - **Gates**: `gate` all seven maps clean; `shaders` every shader compiled clean on seven
+    maps (the ash's three among ours); typecheck, build (`check-babylon-free`, `check-proving`),
+    corecheck and parity pass.
+- **Rewritten**: `CLAUDE.md` (the warm-up's vantages are for the rotor wash alone in a round; the
+  ash joins the list of what is ours), `docs/rendering.md` ("The particles, ours", the new point,
+  the moon's two notes), `docs/states.md`, `docs/profiling.md` (the X4.7c captures),
+  `FINDINGS.md` 5, `VERIFYING.md` (freezing the field), `FILES.md`, `plans/webgpu-ref/README.md`,
+  and the headers of `Atmosphere`, `Renderer` (the point; `FramePrepare`'s timing: the update is
+  no cull, so untimed), `PipelineWarmup`, the seam's item 6 and `profileReport`; `Game`'s stale
+  "all of them but one" (three maps state a `volume`).
+- **Not verified.** A server's match in a browser; the phone; a `?gpu` capture; a field whose
+  pipelines are still compiling when it is first asked (every build here had them settled);
+  `merge:hash` and `kit:hash` (no world geometry moved). Nothing holds a particle against the
+  see-through panes or the fades in a frame: both points are ours, `"particles"` ahead of
+  `"beforeBlended"`, so it is held by construction.
