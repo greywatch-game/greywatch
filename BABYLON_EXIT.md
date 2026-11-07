@@ -2246,7 +2246,7 @@ Greyfen, `F2` from the menu and each eye of the map's rows):
   live with the player in the ring, no error, the seal holding. The blob map's leak is
   measured (`FINDINGS.md` 70).
 
-### X4.7 — GPU particles — **S–M, as four sub-steps** (split 2026-11-07: the owner instructed that X4.7 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the four-way split was proposed by the orchestrating session and run under that instruction) — X4.7a **LANDED** (bad6caa, its review 30bd400), X4.7b **LANDED** (8c691c7, its review 312dc44), X4.7c **LANDED** (9dff2c4, its review 9d5ab4a), X4.7d **LANDED** (999d4ca, its review fd7199b) — **all four LANDED**; the step's own Verify not yet marked (the owner's); the Gate after Phase 4 passed 2026-11-07
+### X4.7 — GPU particles — **S–M, as four sub-steps** (split 2026-11-07: the owner instructed that X4.7 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the four-way split was proposed by the orchestrating session and run under that instruction) — X4.7a **LANDED** (bad6caa, its review 30bd400), X4.7b **LANDED** (8c691c7, its review 312dc44), X4.7c **LANDED** (9dff2c4, its review 9d5ab4a), X4.7d **LANDED** (999d4ca, its review fd7199b) — **all four LANDED**; the step's own Verify **DONE** (marked by the owner 2026-11-07); the Gate after Phase 4 passed 2026-11-07, tagged `exit-phase-4`
 
 `Atmosphere`'s ash and `RotorWash`'s two rings (`GPUParticleSystem`, a box and a
 `CylinderParticleEmitter`) as our own compute particles: our update, our draw, our
@@ -2848,10 +2848,10 @@ each as stated):
   ash and the rings, 143 of 143 byte-equal at X4.7d; landings on Sarab's sand and
   Cinderhaven's water, live; `pipelines.mjs cinderhaven --round` and `sarab --round` zero
   of either renderer in play; `scene.particleSystems` empty in a round and an editor build.
-  **Not marked done**: the whole step's Verify. The Gate after Phase 4 below (a live
+  **DONE** (marked by the owner on 2026-11-07): the Gate after Phase 4 below (a live
   round's `render` log with `surfaces.mjs`, the seam's list read against PERF_PLAN B4)
   passed on 2026-11-07, its live log showing no Babylon particle in a round or an editor
-  build; it reads the Verify as measured in full, for the owner to mark.
+  build, and read the Verify as measured in full.
 
 **Gate after Phase 4:** in a round, Babylon's scene draws only the post chain (an
 editor build draws whole until X5.3). That is true of the blob shadows only because
@@ -2860,8 +2860,9 @@ and a live round's `render` log, since a class no frozen frame raises is in no r
 Read `babylonSeam.ts`'s list against PERF_PLAN B4's criterion. If the count of
 internals is still high, it is a measure of how much risk Phase 5 removes.
 
-**Passed, 2026-11-07, at 55d98aa** (no change to the game; **the `exit-phase-4` tag is
-the owner's call**, as the phase-3 one still is). In a round Babylon draws the post chain
+**Passed, 2026-11-07, at 55d98aa** (no change to the game; **tagged `exit-phase-4`** on
+2026-11-07 by the owner's call, at the commit recording it; the phase-3 tag is still the
+owner's call). In a round Babylon draws the post chain
 and nothing else, on every bank row and through three live rounds:
 - **`surfaces.mjs` on all 143 rows of the seven maps**: no Babylon draw through
   `Mesh.render` or a particle field in any pass (main, mask or target) of any row, the

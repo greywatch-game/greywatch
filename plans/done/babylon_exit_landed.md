@@ -9444,8 +9444,9 @@ comments only). An independent review found nothing real and nothing architectur
 
 ### The Gate after Phase 4 — **PASSED** (2026-11-07, at 55d98aa)
 
-No change to the game. **The `exit-phase-4` tag is the owner's call**, and is not taken
-here. The record of what was measured stands under the gate in `BABYLON_EXIT.md`; this
+No change to the game. **The `exit-phase-4` tag is the owner's call**, and was not taken
+by the gate's commit; the owner took it on 2026-11-07, at the commit that also marks X4.7's
+whole-step Verify done. The record of what was measured stands under the gate in `BABYLON_EXIT.md`; this
 note adds how.
 
 - **The instrument change.** `plans/webgpu-ref/surfaces.mjs` gained a fourth wrapper:
