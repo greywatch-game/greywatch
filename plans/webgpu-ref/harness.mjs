@@ -40,6 +40,20 @@
  * and all of them are re-asked each time something new starts moving by
  * itself.
  *
+ * **The volume is held by STUBBING its `update`, and that is a contract the
+ * port keeps** (`BABYLON_EXIT.md` X5.1a). `freeze`'s `gi` block reaches only
+ * `GiVolume`'s CPU half — `tier`, `cursor`, `warmFrames`, `sweepFrames()` and
+ * `update` — which X5.1b keeps line for line, so the block reads the same
+ * whoever records the passes; what it relies on is that a frame whose `update`
+ * did not run dispatches NOTHING. That is checked: the volume's dispatches are
+ * counted through one adapter (`window.__refGiCount`: Babylon's `ComputeShader`s
+ * at a parent before X5.1b, our arm beside it from X5.1b), and `thaw` throws if
+ * the count moved while the stub stood. **Its converged frame is what reproduces
+ * and nothing before it does**: the trace reads the history other workgroups of
+ * the same dispatch are writing, so its colour during convergence differs run to
+ * run (X5.1a, `gi.mjs`'s header); eight sweeps leave a held world's drift at most
+ * 3.8e-6 a texel, under any 8-bit frame.
+ *
  * **Six reach zero inside ONE process and not across two**, which is the floor
  * that actually matters — a bank is compared against by a later run. The two
  * in the way were a lantern's flicker PHASE, drawn from `Math.random()` per
@@ -196,8 +210,14 @@ export const MAP_IDS = MAPS.map((m) => m.id);
  * Errors are collected rather than thrown: a boot that fails shows up as
  * `waitForFunction` timing out on the handle, which says nothing about why,
  * and the page error that explains it has already gone past by then.
+ *
+ * `init` is an init script run in the page before ANY of the game's — a
+ * function, or `[function, argument]` as `page.addInitScript` takes them — for
+ * a probe that must see what the game builds at boot (the irradiance volume's
+ * shader modules, textures and samplers are made inside `Game`'s constructor,
+ * `gi.mjs`). Absent by default, so no caller that does not ask is touched.
  */
-export async function bootMap(browser, url, id, { hideUI = true } = {}) {
+export async function bootMap(browser, url, id, { hideUI = true, init = null } = {}) {
   const page = watchDevice(await browser.newPage({ viewport: { width: WIDTH, height: HEIGHT } }));
   const pageErrors = [];
   const consoleErrors = [];
@@ -218,6 +238,7 @@ export async function bootMap(browser, url, id, { hideUI = true } = {}) {
     if (m.type() === "error") consoleErrors.push(m.text());
   });
   await page.addInitScript(([k, v]) => window.localStorage.setItem(k, v), [MAP_KEY, id]);
+  if (init) await (Array.isArray(init) ? page.addInitScript(init[0], init[1]) : page.addInitScript(init));
   const started = Date.now();
   await page.goto(url, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => Boolean(window.__celshock), null, { timeout: 180_000 });
@@ -1178,6 +1199,29 @@ export function freeze(page, set = FREEZE_SET, { windTime = 0, turn = 0, strike 
       grass: g.grass?.update,
       water: g.water?.update,
     };
+    // The irradiance volume's dispatches, counted through ONE adapter
+    // (`BABYLON_EXIT.md` X5.1a; the `gi` block below and `thaw` read it).
+    // BABYLON's arm: every `ComputeShader` named `gi-*` (`GiVolume`'s three)
+    // counted at its `dispatch`, wrapped once on the class's prototype, which
+    // is reached off a live one — none exists at `off`, where nothing
+    // dispatches and the `gi` block does not run. **X5.1b adds OURS beside
+    // it** (the frames its prepare recorded the volume's passes on); with
+    // neither arm the count is null and the freeze throws, so a port cannot
+    // pass this silently.
+    window.__refGiCount ??= () => {
+      const cs = g.gi.trace ?? g.gi.compose ?? g.gi.vis;
+      if (!cs) return null;
+      const proto = Object.getPrototypeOf(cs);
+      if (!proto.__refGiCounted) {
+        const dispatch = proto.dispatch;
+        proto.dispatch = function (...a) {
+          if (String(this.name).startsWith("gi-")) window.__refGiDispatches = (window.__refGiDispatches ?? 0) + 1;
+          return dispatch.apply(this, a);
+        };
+        proto.__refGiCounted = true;
+      }
+      return window.__refGiDispatches ?? 0;
+    };
     if (f.includes("post")) {
       g.post.time = 0;
       g.post.update = () => {};
@@ -1337,6 +1381,21 @@ export function freeze(page, set = FREEZE_SET, { windTime = 0, turn = 0, strike 
         });
       }
       gi.update = () => {};
+      // **THE HOLD IS THE STUB, and that is a contract the port keeps**
+      // (`BABYLON_EXIT.md` X5.1a). This block touches the volume through the
+      // fields `GiVolume`'s CPU half owns — `tier`, `cursor`, `warmFrames`,
+      // `sweepFrames()` and `update` — and nothing GPU-side, so it reads the
+      // same whoever records the volume's passes. What it RELIES on is that a
+      // frame whose `update` did not run dispatches nothing: today the three
+      // dispatches are inside `update` (Babylon's `ComputeShader.dispatch`);
+      // a port that records them anywhere else (a prepare of ours) records
+      // them only on a frame `update` ARMED. That is checked, not assumed:
+      // the volume's dispatches are counted through one adapter and the count
+      // taken here must still stand at the thaw (`thaw`).
+      window.__refGiHeld = window.__refGiCount();
+      if (window.__refGiHeld === null) {
+        throw new Error("freeze: no adapter counts the irradiance volume's dispatches (window.__refGiCount)");
+      }
     }
     if (f.includes("reflections")) {
       // **A cube probe is refresh-ONCE, and it was baked before any of this
@@ -1390,6 +1449,16 @@ export function thaw(page) {
     const s = window.__refThaw;
     if (!s) return;
     const g = window.__celshock;
+    // The volume held by the stub dispatched nothing while it was held (the
+    // `gi` block's contract). Read before `update` is put back.
+    if (window.__refGiHeld !== undefined) {
+      const held = window.__refGiHeld;
+      delete window.__refGiHeld;
+      const now = window.__refGiCount();
+      if (now !== held) {
+        throw new Error(`thaw: the irradiance volume dispatched ${now - held} times while its update was stubbed`);
+      }
+    }
     g.post.update = s.post;
     g.sky.update = s.sky;
     g.lightning.step = s.lightning;

@@ -1,4 +1,4 @@
-# BABYLON_EXIT.md, Phases 3 and 4 — the landed steps, the record as it landed
+# BABYLON_EXIT.md, Phases 3 to 5 — the landed steps, the record as it landed
 
 > **ARCHIVED 2026-10-31. This is a record, not a plan.** The live plan is
 > [`BABYLON_EXIT.md`](../../BABYLON_EXIT.md), which keeps every landed step's
@@ -9495,3 +9495,106 @@ note adds how.
   particle draw. It can be marked done; marking it is the owner's.
 - **Gates**: typecheck and build (`check-babylon-free`, `check-proving`) pass at 55d98aa.
   `git diff` is this note, the plan's record, `surfaces.mjs` and the README.
+
+---
+
+## Phase 5 — The frame
+
+### X5.1 — GI and the compute passes are ours — **M, as two sub-steps** (split 2026-11-07: the owner instructed that X5.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the two-way split was proposed by the orchestrating session and run under that instruction) — X5.1a **LANDED** (its hash in the commit after it)
+
+The plan's `BABYLON_EXIT.md` holds X5.1's brief, "What it is today" (corrected in place
+by X5.1a, each correction marked) and X5.1b's brief with its open questions.
+
+**X5.1a landed** (its hash in the commit after it; 2026-11-07; no change to the game: a new live probe, the
+harness's GI path stated and checked, docs; nothing under `src/`). Measured at f7790e4,
+headless on the Windows box.
+
+- **The probe, `plans/webgpu-ref/gi.mjs`** (its header is its contract). The device is
+  wrapped from the page's first line (`bootMap` gained an `init` option, absent by
+  default): shader modules (the volume's three told apart by their source), compute
+  pipelines, `getBindGroupLayout`, bind groups (each entry described), samplers,
+  textures, views, buffers, command encoders' passes and submits. On the game: Babylon's
+  `_computeDispatch` (whether its `_endCurrentRenderPass` ended a pass), the frame host's
+  `prepareEncoder` and `viewProjection`, the draw phase, Babylon's `_setTexture` for the
+  seven and the cloud field, and `GiVolume`'s four doors. A frame record at
+  `onEndFrameObservable` (after the submit), so a readback submitted there sees the frame.
+  **The volume is STEPPED**: `update` wrapped to run only on a frame holding a token, the
+  probe reading the CPU half and copying the thirteen GPU resources back between tokens,
+  under a pinned seed (`?seed=5101`) in the deploy screen's held world frozen by `freeze`
+  minus `gi` and `reflections`. **The pinned seed was found needed**: without it two runs
+  differed on their first step, the player's carried lamp (a light every channel and fast
+  list sees) standing at the seed's spawn.
+- **The race** (the finding that shaped the probe). Two fresh histories with identical CPU
+  halves gave different state on their first step. A scratch test (`x51a/scratch/race*.mjs`):
+  one step from a fresh history, four times, four state hashes (the age lane masked); 432 of
+  the 8,192 probes traced differing, every one in the colour lanes (SH colour rgb, direction
+  xyz), none in the sun, sky, age, validity, column or position lanes; with the trace's budget
+  at ONE workgroup a dispatch, three runs of 40 steps byte-equal; the vis buffer equal under
+  both. The trace reads the history of the probe nearest a hit, which another workgroup of
+  the same dispatch may be rewriting — documented in `giTrace.ts` ("may be read before or
+  after its own write; both are history"). So the probe hashes the state, `giIrr` and `giDir`
+  twice (the lanes that reproduce, and the colour as `name~`), compares the colour only in
+  its `serial` scenarios (budget 1, through `GiVolume.tier`), and everything else everywhere.
+- **Every scenario's number** (Hollowmere / Coldharbour, high unless said): warm-up
+  dispatches trace 8,192 then 1,024, compose and vis 1,152 each, `converged` on step 18; low
+  4,096 then 384, 384 and 384; off nothing, the textures 1×1×1. Converged (eight warm sweeps,
+  72 steps) then two steady sweeps (144 steps): `giIrr`'s colour changed on 0 / 29 steps,
+  `giDir`'s on 28 / 38, the exact lanes, `giAux`, the vis textures and buffer on none, the
+  state on all (its age lane); the irradiance's largest drift over those steps 0 / 3.815e-6 a
+  texel (L1 0 / 1.4e-5). A lamp (`#ffc070`, range 14, 2.5, 5 m off the eye and 1.2 up, `fast`
+  false): 14,221 / 8,874 of 73,728 texels changed past the drift; share of the eventual change
+  in place after one sweep (72 frames) 0.9222 / 0.9173, two 0.9930 / 0.9902, three 0.9990 /
+  0.9986; texels within 10% of their own 0.504 / 0.478, 0.925 / 0.912, 0.987 / 0.981; at low
+  (64 frames) 4,087 / 2,589 of 24,576, 0.9464 / 0.9110, 0.9957 / 0.9904, 0.9994 / 0.9986, and
+  0.533 / 0.426, 0.921 / 0.895, 0.990 / 0.974. A pulse (`#ffd9a0`, range 12, 3, life 0.25 s,
+  stepped at 1/60 with the flame clock held at t = 1/60 and the trace's budget 0) beside a
+  control: compose (`giIrr~`, `giDir~`) differs from the control on steps 1-15 /
+  1-14 and `giVis3` on 1-15 on both, each byte-equal to it again after; `giAux`, the state and vis never; the control never
+  moved. (The `lamp` numbers move in the fourth decimal run to run: the race.)
+- **The live half** (Hollowmere through its card, 60 frames of deploy, a spawn and 240 frames
+  of a live round, 60 of the round-over card raised by `Game.endRound`, 30 of the menu;
+  Coldharbour's card; Coldharbour's editor build, 120 frames with a quay dragged 2 m and back,
+  its card and the round after): the volume dispatched on 19 of 48 card frames (the warm-up
+  vantages skip it), 61 of 62 deploy, 241 of 241 playing, 60 of 60 round-over, 0 of 30 menu,
+  120 of 120 editor; **with none of our prepares on 0 of them**, the card's 2 frames with no
+  prepare dispatching nothing; Babylon's dispatch ended a render pass on 0 frames; every one
+  of the volume's passes on Babylon's render encoder with no render pass begun on it before
+  (0 in every state); the trace's bind group made once per dispatched frame. Render passes a
+  frame 12-18 (round 14.1 mean), compute 6-18. Babylon's binds of the cloud field: one a frame
+  in the menu and deploy (`cloudShadowMap`, the light shafts); of each of the seven, 0 in a
+  round and 100,365 in 120 editor frames (1,648 in the card raised from the editor), the cloud
+  field 100,485.
+- **The statics**: the three modules' tokens equal the sources' (5,618, 4,392, 4,415), the text
+  reflowed and two comment lines prepended; pipelines synchronous, layout `"auto"`, made on
+  the first dispatch (6 or 7 frames after the boot's first `setMap`; the first `setQuality("low")`
+  2 frames on; every later door 0), low's two made once; the seven 96×8×96 (64×6×64 low,
+  1×1×1 off), `3d`, one mip, usage 15, two `rgba16float` and five `rgba8unorm`; the buffers'
+  sizes and usage 140 (the plan's entry lists them); the bind groups' entries at the mapping's
+  numbers; our host's sampler for the seven repeat/clamp/repeat, linear×3, anisotropy 4; 22
+  prepares and 4 late ones on our renderer.
+- **The cloud field's sampler.** Shafts on (the default): the trace's is our host's own object
+  (clamp, clamp, repeat; linear×3; anisotropy 4), fresh, after `F2` and in the round after;
+  the internal texture's fields filled every frame by the light shafts. `--shafts-off`: the
+  internal's fields null in a round, the trace's sampler repeat, repeat, repeat; linear,
+  linear, nearest; lod 0..0; anisotropy 1, not the host's; after `F2` the host's, and so for
+  the round after. **The trace's bytes under each**: 0 of 256 serial steps differ (state, both
+  halves; `giIrr`, `giDir`, `giAux`) on Hollowmere (whose trace never samples the field,
+  `cloudArea.w` 1) and Coldharbour (0.45), in both boots (each forcing the other state).
+- **The probe against itself**: two processes, `--against`, equal — 904,662 values on Hollowmere and 244,782 on Coldharbour, by `Object.is` and hash, twice: with the file as it was measured and as it is committed — and FAILING on
+  copies of the first log with a warm step's cursor, a stable step's params, a serial step's raced state hash, a low
+  step's `giVis0` hash, the cloud sampler's anisotropy and a pulse step's workgroups each
+  changed by hand; a full-budget step's edited `giIrr~` passes (not compared, by design).
+- **The harness**: `freeze`'s `gi` block's contract stated (its header and the block), and the
+  stub's hold checked: `window.__refGiCount` (Babylon's arm, `ComputeShader.prototype.dispatch`
+  counted for `gi-*`, wrapped once; X5.1b adds ours; null throws in the freeze) taken at the
+  stub and compared at the thaw, which throws on a dispatch under the stub. Held over every
+  row of the AFTER below.
+- **The bank**: all 143 rows, against a BEFORE at f7790e4 (`--check --keep`, the parent's harness) by `exact.mjs`: 141 byte-equal, `sarab-shelf` within its known flake and `sarab-ground` 100 pixels by 2/255, the cross-process residue (Sarab alone, with this harness and with the parent's, drew the AFTER's frame both times: the BEFORE's is the parent's other); the same 34 stale rows red against `ref/` at the same means; the stub's hold held on every row (no thaw threw)
+- **The floors**: two full processes each: `--query=gi=off` 142 of 143 byte-equal and `harrowmead-view-pistol-reload` within its flake; `--query=gi=low` 142 byte-equal and `sarab-alley` 5 pixels by 2/255 — two frames, Sarab alone twice more drawing the second run's (3 processes of 4 against 1), the class `sarab-ground` is at high (what moves is that row's frame, both frames the same tree's; the cause is not pinned — it did not appear at off in two runs, which fits the volume's race leaving a sub-8-bit residue there, unproven)
+- **`FINDINGS.md` 16's baseline**: `pipelines.mjs coldharbour --round` five times, the `FINDINGS.md` 16 baseline: 3 of Babylon's at the install in 5 of 5 (the volume's), none in play, 21 of ours and 15 modules at the install
+- **Gates**: typecheck, build (`check-babylon-free`, `check-proving`), corecheck and parity
+  pass. Not run: `census`, `gate`, `shaders`, `kit:hash` — no game code moved. No `FILES.md`
+  line: it lists no `plans/` instrument.
+- **Not verified**: the probe on a map with no hulls but Hollowmere, on Sarab or Cinderhaven
+  (where a cloud field's edge may fall inside the window); a live round's per-frame log on a
+  phone; a server's match.

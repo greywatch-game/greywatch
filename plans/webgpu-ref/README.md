@@ -41,6 +41,8 @@ node plans/webgpu-ref/pipelines.mjs [map] [--seconds N] [--round]
 node plans/webgpu-ref/surfaces.mjs [map...] [--rows=<id,...>] [--pixels] [--editor] [--keep=<dir>] [--out=<f.json>]
 node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--gpu] [--max] [--size WxH] [--out f.json] [--against f.json]
 node plans/webgpu-ref/particles.mjs [map...] [--frames=N] [--out=f.json] [--against=f.json] [--editor]
+node plans/webgpu-ref/gi.mjs [map...] [--out=f.json] [--against=f.json] [--shafts-off] [--no-editor] [--no-states]
+node plans/webgpu-ref/gi.mjs --compare=a.json --against=b.json
 ```
 
 - **`gate.mjs`** boots every shipped map, plays a real round on each and fails
@@ -250,6 +252,30 @@ node plans/webgpu-ref/particles.mjs [map...] [--frames=N] [--out=f.json] [--agai
   effects, and the seam's path each frame — which logs none on a tree since X4.7d,
   every field being ours, and is how a BEFORE's are read; `pipelines.mjs --round` keeps each creation's stack.
 
+- **`gi.mjs`** is the irradiance volume, STEPPED one `update` at a time in a held
+  deploy world under a pinned seed (`BABYLON_EXIT.md` X5.1a; its header is its
+  contract): every step's CPU half (the cursor, the warm frames, the window, the
+  light lists, the channels, the hull slots, the whole params array, the passes
+  dispatched by name and workgroups) and its thirteen GPU resources read back and
+  hashed, from a fresh history through the warm-up, a converged world held, a lamp
+  switched on (its bounce followed sweep by sweep), a flash raised and dying, the
+  tiers, and the cloud field's sampler both ways; beside it, measured live and not
+  compared, the states (the building card, deploy, a round, the round-over card,
+  the menu, an editor build with a drag), whether each dispatch ended a render pass,
+  which encoder it went on, whether our prepares ran that frame, and Babylon's binds
+  of the seven and the cloud field. The device is wrapped from the page's first line
+  (`bootMap`'s `init`), so the modules' tokens, the pipelines, the bind groups, the
+  textures', buffers' and samplers' descriptors are read as they are made. **The
+  trace RACES** (it reads history another workgroup of the same dispatch may be
+  writing), so its colour lanes are compared only in its `serial` scenarios (one
+  workgroup a dispatch), and everything else everywhere. `--against` compares two
+  logs by `Object.is` and by hash; `--compare=a.json --against=b.json` does it with
+  no browser. Every touch of the GPU resources goes through one adapter
+  (`window.__giGpu`), Babylon's at a parent before X5.1b, X5.1b's arm beside it.
+  **The harness holds the volume by stubbing its `update`**, and that is a contract a
+  port keeps: `freeze`'s `gi` block counts the volume's dispatches through one adapter
+  (`window.__refGiCount`) and `thaw` throws if any happened under the stub.
+
 `cold-stagger.mjs` is **gone and is not coming back**. It existed to bake
 Coldharbour's forty cube probes four a frame because doing all forty at once
 killed a CPU rasteriser's device; on real hardware the shipped one-frame bake
@@ -446,6 +472,7 @@ for each step of the exit:
 | X4.5 sky and clouds | every row; `hollowmere-lanterns` and `cinderhaven-town` at night; and X4.5a's eight, appended by `--rows` at the end of Hollowmere's, Coldharbour's and Cinderhaven's lists, every one at an eye a row above it stands at, so the benchmark gains no stop: the moon and its bloom with a roof under it (`hollowmere-sky-moon`), ash in front of and beside it (`hollowmere-sky-motes`), the disc and its bloom on a day map (`coldharbour-sky-disc`), the ring against a horizon by day and by night (`coldharbour-sky-ring`, `cinderhaven-sky-ring`), a cloud crossing the disc (`cinderhaven-sky-cloud-moon`), the ridge 680 to 740 m off against the dome (`cinderhaven-sky-far`) and a seeded flash (`cinderhaven-sky-flash`, last on its list) |
 | X4.6 water, glazing, grass, flags, rings | `greyfen-marsh`, `harrowmead-millpond`, `coldharbour-shopfront` (see-through), `coldharbour-curtain2/40/90` (backed), `hollowmere-ring`; the far quad in `coldharbour-menu`, `-avenue` and `-sky-disc` and `cinderhaven-sky-cloud-moon` (`surfaces.mjs --pixels` has the counts); and X4.6a's nine, appended by `--rows` at the end of Hollowmere's, Greyfen's, Coldharbour's and Sarab's lists, every one at an eye a row above it stands at or the menu's, so the benchmark gains no stop: the cloth up its pole on both sheets and both sides (`hollowmere-ring-flown`, `coldharbour-ring-flown-far`), a ring's stones (`coldharbour-ring-stones`), Greyfen's grass at each rung (`greyfen-grass-low`, `-medium`, `-high`), sparks and discs over water with a disc under it (`coldharbour-fx-water-fade`), a pane really collapsed (`coldharbour-fx-glass-broken`) and water through glass (`sarab-pane-water`); and its review's two, at the end of Coldharbour's list at `square`'s eye: the blob among the panes and the fades (`coldharbour-fx-blob-sort`) and a scorch through glass on both sides of the sort (`coldharbour-fx-scorch-glass`); and X4.6b's one at the end of the same list at `crossing`'s eye: a ring farther than its field's blades (`coldharbour-ring-behind-field`); and X4.6c's three, at the end of Greyfen's and Harrowmead's lists at `crossing`'s, `millpond`'s and the menu's eyes: blades in water on either side of its sort key (`greyfen-shore-ahead`, `harrowmead-shore-ahead`, `harrowmead-shore-behind`), which no fixed draw point holds; and its review's one, at the end of Sarab's list at `shelf`'s eye: reedy bodies on BOTH sides of the key in one frame (`sarab-shore-flip`), whose frame is 21839d1's truth, banked there, and which the tree moves until X4.6d (the owner's decision, `exact.mjs`'s `EXPECTED_MOVES`); and X4.6e's review's one, by the owner's decision of 2026-11-06, at the end of Coldharbour's list at `square`'s eye through a 6° field: a blob seen from above sorted BETWEEN two glass layers, under the near one and over the far one, which `fx-blob-sort` stopped holding when the blob turned to face up (`coldharbour-fx-blob-glass`) |
 | X4.7 GPU particles | `hollowmere-sky-motes` (the field gathered, for the moon's order); and X4.7a's five, appended by `--rows` at the end of Sarab's, Cinderhaven's and Kurenai's lists, every one at an eye a row above it stands at, so the benchmark gains no stop, each the fields as the game runs them and nothing else in the air: the ash on an ADD field that follows the eye (`cinderhaven-particles-embers`, `town`'s eye) and on a STANDARD one that follows it and falls (`kurenai-particles-leaves`, `ground`'s); a helicopter pinned 2.5 m over sand, its dust ring (`sarab-particles-dust`, `crossing`'s eye); one 3 m over the western sea, its spray ring and the water's hole (`cinderhaven-particles-spray`, `tank-far`'s, 12°); and the dust ring with the embers through it, the order between two fields (`cinderhaven-particles-ring-ash`, the same eye, 20°) |
+| X5.1 the irradiance volume | every row, converged and held (`freeze`'s `gi` block): no row holds it MOVING, which `gi.mjs` logs instead; and the floors under `--query=gi=low` and `--query=gi=off` (X5.1a: the floors, two full processes each: `--query=gi=off` 142 of 143 byte-equal and `harrowmead-view-pistol-reload` within its flake; `--query=gi=low` 142 byte-equal and `sarab-alley` 5 pixels by 2/255 — two frames, Sarab alone twice more drawing the second run's (3 processes of 4 against 1), the class `sarab-ground` is at high (what moves is that row's frame, both frames the same tree's; the cause is not pinned — it did not appear at off in two runs, which fits the volume's race leaving a sub-8-bit residue there, unproven)), the BEFOREs X5.1b is graded against beside the plain bank's |
 | X5.2 the post chain | `hollowmere-post-*`, each one setting off against `lanterns` |
 
 **`placeVantage` also places the camera-dependent passes at each row's eye**
@@ -491,6 +518,18 @@ from the spawn photographed no shadow window at all.
   emission accumulator, the count, the write pointer, the step, the emitter) is
   logged frame by frame in a live loop by `particles.mjs`, compared by
   `Object.is` across two trees, since no live frame's pixels reproduce.
+- **No row holds the irradiance volume MOVING.** Every row is its converged fixed
+  point, with no dispatch in the frame and no pulse light (`freeze`), so a wrong
+  slice order, a dropped frame, a dirty vis channel, or the bake and the dispatch
+  recorded in another order can converge to the same bytes. `gi.mjs` logs it moving
+  (`BABYLON_EXIT.md` X5.1a). **And no two runs agree on it before it converges**: the
+  trace reads the history other workgroups of its own dispatch are rewriting, so
+  one step from the same fresh history came back with four hashes in four tries;
+  what reproduces is the converged frame (eight sweeps leave a held world's drift at
+  most 3.8e-6 a texel) and anything traced one workgroup a dispatch. No row sets
+  `gi`, so the bank is the HIGH tier's; the low and off tiers are graded by
+  `--check --keep --query=gi=low` (and `=off`) at the parent and at the step,
+  compared by `exact.mjs` — never against `ref/`, which is high's.
 - **Nothing here is a frame TIME.** `gate.mjs` reports those and they are real
   on this machine, but they are not what a reference IMAGE is for. Quote the
   gate's `warmFps`, never a number read off a bank run.

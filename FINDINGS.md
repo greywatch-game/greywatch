@@ -915,18 +915,19 @@ keyed on the pose, not on the mesh.
   13's session, Greyfen, 2026-10-05); a capture there owes `createdNear` on the
   spawn and first-blast frames, and the card's extra time on that device.
 - **`GiVolume`'s three compute pipelines** (`trace`, `compose`, `vis`) compile on
-  their first dispatch (`src/systems/GiVolume.ts`, `update`) and are on no declared
-  list and in no vantage's draw, so the warm-up does not wait for them. Five runs of
-  `pipelines.mjs coldharbour --round`, X4.6b's tree, 2026-11-04, each creation's stack
-  kept: **16 of Babylon's at the install in 4 of 5, and 13 at the install with 3 at
-  `life 1: spawn` in the fifth**, those three naming `GiVolume.update`, with no mesh
-  drawing. So which side of the card comes down first is a race, and **it is what
-  X4.6b's note first called three pipelines "a race that predates this"**, the count at
-  the install moving with them (13 or 16). In the runs where they land past the card, a
-  person meets them on the deploy screen's first frames. Nothing here says what that
-  costs, and **a phone reading is owed**: `createdNear` on the deploy screen's first
-  frames, on the finding-13 phone. Babylon's until `BABYLON_EXIT.md` X5.1, whose list
-  they join.
+  their first dispatch (`src/systems/GiVolume.ts`, `update`: Babylon's synchronous
+  `createComputePipeline`, layout `"auto"`) and are on no declared list and in no
+  vantage's draw, so the warm-up does not wait for them. Five runs of `pipelines.mjs
+  coldharbour --round`, X4.6b's tree, 2026-11-04, each creation's stack kept: **16 of
+  Babylon's at the install in 4 of 5, and 13 at the install with 3 at `life 1: spawn` in
+  the fifth**, those three naming `GiVolume.update`, with no mesh drawing. So which side of
+  the card comes down first was a race. **The baseline `BABYLON_EXIT.md` X5.1b is graded
+  against** (X5.1a, f7790e4, 2026-11-07, five runs): **3 of Babylon's at the install in 5 of
+  5, none in play**, 21 of ours and 15 modules at the install, nothing at the second; the
+  three are the volume's (`pipelines.mjs` keeps no stack at an install, but `gi.mjs`
+  recorded exactly those three made under the building card, 6 or 7 frames after the boot's first `setMap`, in every
+  run). The race has not been seen since X4.6b's runs, but nothing holds it shut: the card's
+  length decides it. Babylon's until X5.1b, whose list they join.
 - **Hollowmere standing still.** Plain `pipelines.mjs hollowmere` (no `--round`,
   which needs armour) creates 5 of Babylon's pipelines and 1 module in its second
   second after the spawn, on every run: X4.5a's tree, 89879c6 and f035cc6 alike,
