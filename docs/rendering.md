@@ -5127,6 +5127,12 @@ of ours, in ONE list in creation order, a disposed field taken out — the rule
   texture is ready and both its pipelines are built; and the first ready test
   after a build or a reset answers no, because it is the one that "creates" the
   update (`isUpdateBufferCreated`), so a field emits from its second ready frame.
+  That one frame equals Babylon's only once Babylon's effects were CACHED: on a
+  session's FIRST field Babylon's render and compute effects could take more
+  frames to come ready, so ours can start emitting a few frames earlier there,
+  under the building card (X4.7c's review). Nothing measures it — the probe opens
+  its window at the first ready frame — and nothing shows it, the field running
+  on the wall clock.
 - **The emission is Babylon's**: the emit-rate-controlled arm of `render()`, line
   for line (`ParticleField.emit`), in doubles — the accumulator, the live count
   growing toward `ceil(emitRate × maxLifeTime)` under the capacity and never
@@ -5141,7 +5147,9 @@ of ours, in ONE list in creation order, a disposed field taken out — the rule
   Babylon still draws (the rotor wash, until X4.7d) — the order every shipped flow
   had, the motes ahead of every ring (X4.7a); the editor's dev-only flow that put
   them behind a ring (an in-memory edit of `particles.count`) now keeps them
-  ahead. Each field is one instanced strip of four, `currentActiveCount`
+  ahead — accepted by the owner 2026-11-07 as a recorded, dev-only order
+  difference until X4.7d puts the rings in the same list (`BABYLON_EXIT.md`,
+  "Decisions that are yours"). Each field is one instanced strip of four, `currentActiveCount`
   instances in slot order, unsorted, with no frustum test and no size gate (Babylon
   dispatched it to group 0 by its emitter); LEQUAL, no depth written, no cull, and
   `ALPHA_ADD` (an ember leaves the coverage alpha alone) or `ALPHA_COMBINE` (ash
@@ -6978,8 +6986,9 @@ dome, and the two are not in any bake.
 - **The moon is after the particles and ahead of the blended meshes**
   (`"beforeBlended"`, the seam's item 6), blended by `ALPHA_COMBINE`, no depth
   written, so it paints over ash and rotor wash in front of it, as Babylon's
-  blended queue did — the ash ours since X4.7c, at `"particles"` ahead of it, the
-  wash Babylon's in its group until X4.7d, ahead of both — and everything blended that is a mesh paints over it. A moon
+  blended queue did — the ash ours since X4.7c, at `"particles"`, and the wash
+  Babylon's in its group until X4.7d, drawn after the ash and ahead of the moon —
+  and everything blended that is a mesh paints over it. A moon
   behind its ash would be the better picture and is the owner's to ask for; `sky-motes`
   is the row that grades the order. It stands at 9 km, behind the depth a cloud
   writes, so a cloud rejects it. **Its bloom** is a draw of ours in the mask, at the

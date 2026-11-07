@@ -9206,3 +9206,39 @@ Babylon's (X4.7d).
   `merge:hash` and `kit:hash` (no world geometry moved). Nothing holds a particle against the
   see-through panes or the fades in a frame: both points are ours, `"particles"` ahead of
   `"beforeBlended"`, so it is held by construction.
+
+**X4.7c's review** (2026-11-07; no change to the game: records and docs only). An independent
+review, by reading Babylon 9.28's source and a live rotation Hollowmere → Coldharbour →
+Coldharbour (a second round) → Sarab → Hollowmere, found nothing real.
+
+- **Confirmed**: always one field and exactly six `particles:` GPU resources live, no leak
+  across the rebuilds or the second round; the field drawn on every frame of the deploy
+  screen, play and the menu; no console error. Against the source: the ping-pong (the draw
+  reading the buffer the update read), the ready gate after a reset, the emission, the clock,
+  the blends, the uniforms and the ordering.
+- **The editor flow, decided.** In `F2`, an in-memory `particles.count` edit, the editor's
+  rebuild, then back to a round on Sarab or Cinderhaven, Babylon put the motes behind its live
+  rings and ours keeps them ahead; ADD over STANDARD does not commute, so overlapping pixels
+  would differ (reasoned, not measured: no bank row reaches it). In the editor itself no pixel
+  differs (the rings cleared to count 0, no fleet, Babylon's render returning early); only the
+  probe's order and the order of the `Math.random` draws. No shipped flow reaches it: every
+  shipped map and the proving map has a distinct `floorColor`, so a map change rebuilds the
+  rings after `atmosphere.apply`; a second round rebuilds neither; a server's rotation takes
+  the same `installMap`; no setting rebuilds the ash. **The owner accepted it 2026-11-07 as a
+  recorded, dev-only order difference until X4.7d** (`BABYLON_EXIT.md`, "Decisions that are
+  yours"), whose Verify now shows the flow back in Babylon's order against a BEFORE at 312dc44,
+  not at its own parent. The implementer had been told by the orchestrator to stop and report
+  this and landed it flagged instead; the brief's own stop condition was a shipped flow, which
+  none is.
+- **MINOR, the first field's timing.** The ported one-frame ready gate equals Babylon's only
+  once Babylon's effects are cached: on a session's first field Babylon's render and compute
+  effects may have taken more frames to come ready, so our first emission can start a few
+  frames earlier, under the building card. The probe opens its window at the first ready
+  frame, so nothing measures it, and nothing shows it (the field runs on the wall clock).
+  Recorded in `docs/rendering.md`'s ready gate.
+- **MINOR, device loss.** Babylon's particle `rebuild()` path is gone with the port. Not worse
+  in practice: every draw of ours already dies on a lost device, and nothing in `src/` handles
+  one (`FINDINGS.md` 64, "What a player gets").
+- **MINOR, wording.** `docs/rendering.md`'s moon passage said the wash, Babylon's until X4.7d,
+  drew "ahead of both"; it draws after the ash and before the moon. Corrected.
+- **Gates**: typecheck passes; `git diff` is docs and records alone.
