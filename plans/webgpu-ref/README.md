@@ -40,6 +40,7 @@ node plans/webgpu-ref/diff.mjs a.png b.png [--tiles]
 node plans/webgpu-ref/pipelines.mjs [map] [--seconds N] [--round]
 node plans/webgpu-ref/surfaces.mjs [map...] [--rows=<id,...>] [--pixels] [--editor] [--keep=<dir>] [--out=<f.json>]
 node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--gpu] [--max] [--size WxH] [--out f.json] [--against f.json]
+node plans/webgpu-ref/particles.mjs [map...] [--frames=N] [--out=f.json] [--against=f.json] [--editor]
 ```
 
 - **`gate.mjs`** boots every shipped map, plays a real round on each and fails
@@ -56,7 +57,7 @@ node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--gpu] [--max] [
   blocks, taken before `BABYLON_EXIT.md` X3.3c, and its old rows are STALE**:
   X3.4 moved the scatter on purpose (sixteen variants a kind, one colour bake
   a kind) and the GPU driver has moved since the bank was taken (596.21 to
-  610.88), so a plain `--check` fails 34 of its 137 rows, whatever the tree under
+  610.88), so a plain `--check` fails 34 of its 143 rows, whatever the tree under
   test does: 33 of the 47 banked before X3.5, Greyfen's `canopy` at a mean of
   44/255, and `greyfen-crossing` (0.0581), one of the fourteen `ground` and
   `crossing` rows banked at 54ec8c0. Every row banked since grades within the
@@ -206,6 +207,25 @@ node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--gpu] [--max] [
   how a sub-step shows it took the whole of one. **An empty class says only that
   frame**: no frozen frame reaches `updateBlobs`, so a blob is in no row but one that
   raises it with a `blob` event. X4.6a's note has the table.
+
+- **`particles.mjs`** is the GPU particle fields' CPU half, logged frame by frame in
+  a LIVE loop (`BABYLON_EXIT.md` X4.7a): each field's emission state (rate,
+  accumulator, count, emit index and count, write pointer, step, emitter), the
+  rotors' water sites, the GPU passes each frame began (a field's dispatch
+  SPLITTING the main pass, counted) and which path the seam took, with a flying
+  hull pinned over dry ground and then over water and the ash running, the clock
+  held by `scene.useConstantAnimationDeltaTime`, every field reset and the window
+  opened on the first frame every field is ready. Several maps are one boot,
+  rotated through the menu as a player rotates them; at each install it logs the
+  scene's particle systems in order and the `Math.random` draws of each
+  construction and each first update, and `--editor` ends with `F2` and an
+  editor rebuild. `--against` compares two logs by `Object.is`, number by number,
+  which is how a port of the CPU half is proven, since no live frame's pixels
+  reproduce; one tree against itself is the control.
+  `surfaces.mjs` has a class per field (`motes`, `rotorWash`, `rotorSpray`), each
+  draw logged at its place between the points with its pipeline, blend mode, count
+  and the defines of its compiled update and render effects, and the seam's path
+  each frame; `pipelines.mjs --round` keeps each creation's stack.
 
 `cold-stagger.mjs` is **gone and is not coming back**. It existed to bake
 Coldharbour's forty cube probes four a frame because doing all forty at once
@@ -387,7 +407,7 @@ being replaced piece by piece**, and a table of map views holds none of the
 pieces after the static world. So a row may ask for a SUBJECT — soldiers, a
 blast in the air, the effect pools on a stated clock (`fx`: rounds, throws, rockets, mines, blasts, fires, shards, brass), the viewmodel (fitted, painted, or held mid-gesture), the
 kit screen, the capture rings and flags, a setting changed, the motion blur in
-flight — each posed by the game's own code from a fixed state through fixed
+flight, the particle fields as the game runs them — each posed by the game's own code from a fixed state through fixed
 steps (`src/bench/vantages.ts`'s header lists them, and
 `placeVantage` puts every one away before the next row). What the table holds
 for each step of the exit:
@@ -402,6 +422,7 @@ for each step of the exit:
 | X4.4 effect pools | `coldharbour-blast`; and X4.4a's twenty-one, appended by `--rows` at the end of Coldharbour's list and Cinderhaven's (`fx` rows, every one standing at a position the map's rows already stand at, so the benchmark gains no stop): a tracer in flight (`fx-tracer`), impacts mid-fade on `hard` and `ground` (`fx-impact-hard`, `-ground`), a wall of marks near and at the size gate's edge (`fx-marks-near`, `-far`), a frag in flight and at rest with a bottle (`fx-grenade`), a rocket (`fx-rocket`), two mines lit and dark (`fx-mine`), brass (`fx-brass`), the blast at three ages on each surface with its rubble and scorch (`fx-blast-{hard,ground}-{fireball,billows,smoke}`), two scorches full and fading (`fx-scorch`), a molotov (`fx-molotov`), a pane's shards (`fx-shards`), fading effects behind and in front of see-through glazing (`fx-glass`), and on Cinderhaven a world fire alone and with fading effects round it (`fx-fire`, `fx-fire-fade`); and after X4.4b, when the pieces' stale-sphere latch came out, three pieces far enough from the world origin that the latch dropped them, each appended by `--rows` at its stop and at the game's own hip field (`fx-brass-far` at Coldharbour's `avenue`, `fx-mine-far` and `fx-rocket-far` at Cinderhaven's `fx-fire` eye); and after X4.4c, when the debris's latch came out, a pane's shards on Cinderhaven ~313 m from the origin, half of which it dropped (`fx-shards-far` at the `town` eye, appended by `--rows`) |
 | X4.5 sky and clouds | every row; `hollowmere-lanterns` and `cinderhaven-town` at night; and X4.5a's eight, appended by `--rows` at the end of Hollowmere's, Coldharbour's and Cinderhaven's lists, every one at an eye a row above it stands at, so the benchmark gains no stop: the moon and its bloom with a roof under it (`hollowmere-sky-moon`), ash in front of and beside it (`hollowmere-sky-motes`), the disc and its bloom on a day map (`coldharbour-sky-disc`), the ring against a horizon by day and by night (`coldharbour-sky-ring`, `cinderhaven-sky-ring`), a cloud crossing the disc (`cinderhaven-sky-cloud-moon`), the ridge 680 to 740 m off against the dome (`cinderhaven-sky-far`) and a seeded flash (`cinderhaven-sky-flash`, last on its list) |
 | X4.6 water, glazing, grass, flags, rings | `greyfen-marsh`, `harrowmead-millpond`, `coldharbour-shopfront` (see-through), `coldharbour-curtain2/40/90` (backed), `hollowmere-ring`; the far quad in `coldharbour-menu`, `-avenue` and `-sky-disc` and `cinderhaven-sky-cloud-moon` (`surfaces.mjs --pixels` has the counts); and X4.6a's nine, appended by `--rows` at the end of Hollowmere's, Greyfen's, Coldharbour's and Sarab's lists, every one at an eye a row above it stands at or the menu's, so the benchmark gains no stop: the cloth up its pole on both sheets and both sides (`hollowmere-ring-flown`, `coldharbour-ring-flown-far`), a ring's stones (`coldharbour-ring-stones`), Greyfen's grass at each rung (`greyfen-grass-low`, `-medium`, `-high`), sparks and discs over water with a disc under it (`coldharbour-fx-water-fade`), a pane really collapsed (`coldharbour-fx-glass-broken`) and water through glass (`sarab-pane-water`); and its review's two, at the end of Coldharbour's list at `square`'s eye: the blob among the panes and the fades (`coldharbour-fx-blob-sort`) and a scorch through glass on both sides of the sort (`coldharbour-fx-scorch-glass`); and X4.6b's one at the end of the same list at `crossing`'s eye: a ring farther than its field's blades (`coldharbour-ring-behind-field`); and X4.6c's three, at the end of Greyfen's and Harrowmead's lists at `crossing`'s, `millpond`'s and the menu's eyes: blades in water on either side of its sort key (`greyfen-shore-ahead`, `harrowmead-shore-ahead`, `harrowmead-shore-behind`), which no fixed draw point holds; and its review's one, at the end of Sarab's list at `shelf`'s eye: reedy bodies on BOTH sides of the key in one frame (`sarab-shore-flip`), whose frame is 21839d1's truth, banked there, and which the tree moves until X4.6d (the owner's decision, `exact.mjs`'s `EXPECTED_MOVES`); and X4.6e's review's one, by the owner's decision of 2026-11-06, at the end of Coldharbour's list at `square`'s eye through a 6° field: a blob seen from above sorted BETWEEN two glass layers, under the near one and over the far one, which `fx-blob-sort` stopped holding when the blob turned to face up (`coldharbour-fx-blob-glass`) |
+| X4.7 GPU particles | `hollowmere-sky-motes` (the field gathered, for the moon's order); and X4.7a's five, appended by `--rows` at the end of Sarab's, Cinderhaven's and Kurenai's lists, every one at an eye a row above it stands at, so the benchmark gains no stop, each the fields as the game runs them and nothing else in the air: the ash on an ADD field that follows the eye (`cinderhaven-particles-embers`, `town`'s eye) and on a STANDARD one that follows it and falls (`kurenai-particles-leaves`, `ground`'s); a helicopter pinned 2.5 m over sand, its dust ring (`sarab-particles-dust`, `crossing`'s eye); one 3 m over the western sea, its spray ring and the water's hole (`cinderhaven-particles-spray`, `tank-far`'s, 12°); and the dust ring with the embers through it, the order between two fields (`cinderhaven-particles-ring-ash`, the same eye, 20°) |
 | X5.2 the post chain | `hollowmere-post-*`, each one setting off against `lanterns` |
 
 **`placeVantage` also places the camera-dependent passes at each row's eye**
@@ -416,13 +437,26 @@ from the spawn photographed no shadow window at all.
   walked.** A posed rig and a held camera cover what is drawn, not what a
   candidate-list change does while bodies move — `VERIFYING.md` has the live
   round's screenshot pair with a control for that.
-- **One row holds a GPU particle and it is there for an ORDER.** The freeze
-  turns particles off, because they run on their own clock; `hollowmere-sky-motes`
-  alone rebuilds the mote field under a seed, steps it by hand and holds it by a
-  clock of zero (`placeVantage`, the `motes` field), to show the moon painting
-  over ash in front of it. It is not the field as a map runs it (gathered into
-  24 m on the eye), and nothing here holds the rotor wash, so X4.7 still has to
-  bring its own check.
+- **Six rows hold a GPU particle, and every other row holds none.** The freeze
+  turns particles off, because they run on their own clock. `hollowmere-sky-motes`
+  rebuilds the mote field under a seed, gathered into 24 m on the eye, steps it
+  by hand and holds it by a clock of zero (`placeVantage`, the `motes` field),
+  for the moon painting over ash in front of it — an ORDER, not the field.
+  **Since `BABYLON_EXIT.md` X4.7a five more hold the fields AS THE GAME RUNS
+  THEM** (the `particles` field): the ash in its own box on the eye at its own
+  rate on an ADD field (`cinderhaven-particles-embers`) and a STANDARD one that
+  falls (`kurenai-particles-leaves`); a helicopter pinned hovering over sand, its
+  dust ring driven by `RotorWash.update` (`sarab-particles-dust`), and over the
+  sea, its spray ring and the water's hole (`cinderhaven-particles-spray`); and
+  a ring and the ash in one frame, the order BETWEEN two fields
+  (`cinderhaven-particles-ring-ash`). Each field is rebuilt under a seed (the
+  ash before the rings, an install's order), stepped by its own pre-warm pair
+  through fixed frames at an animation ratio of 1 under a second seed, and held
+  by a clock of zero, and every field a row does not state is held EMPTY. **What
+  no row holds is a field MOVING**: the CPU half a port must reproduce (the
+  emission accumulator, the count, the write pointer, the step, the emitter) is
+  logged frame by frame in a live loop by `particles.mjs`, compared by
+  `Object.is` across two trees, since no live frame's pixels reproduce.
 - **Nothing here is a frame TIME.** `gate.mjs` reports those and they are real
   on this machine, but they are not what a reference IMAGE is for. Quote the
   gate's `warmFps`, never a number read off a bank run.

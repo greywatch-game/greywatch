@@ -426,6 +426,25 @@ export function placeVantage(page, vantage) {
       g.atmosphere.apply(g.mapDef.environment.particles, g.map.size, g.map.size);
       window.__refMotes = false;
     }
+    // The rings a `particles` row posed (X4.7a), and the hull it pinned: every
+    // ring emptied and started again, as `RotorWash.clear` leaves them at an
+    // install (a ring is started once and never stopped), on its own clock
+    // again; the water's hole closed; the hull put back where the install
+    // stood it and its picture posed there. Its mote field went with
+    // `__refMotes` above. Only after a row that raised them.
+    if (window.__refParticles) {
+      const P = window.__refParticles;
+      const F = P.fields;
+      for (const [ring, speed] of P.speeds) F.putBack(ring, speed);
+      if (P.wet) g.water.setWash(g.rotorWash.sites, 0);
+      if (P.hull) {
+        P.hull.pos.set(P.pos[0], P.pos[1], P.pos[2]);
+        P.hull.yaw = P.yaw;
+        P.hull.flight.rotor = P.rotor;
+        g.vehicleViews.update();
+      }
+      window.__refParticles = null;
+    }
     // The place, not the fight: no bodies, no rings, no beacons. The bodies
     // are the round's session's (`g.net.roster` — a client's, offline too),
     // and the roster poses and re-shows every living one off the wire each
@@ -494,6 +513,41 @@ export function placeVantage(page, vantage) {
         rig.root.rotation.y = r.yaw ?? 0;
         body.setEnabled(true);
       });
+    }
+
+    // A flying hull PINNED HOVERING for a `particles` row's wash (X4.7a), as
+    // X4.2d's scratch `x42dr/wash.mjs` pinned one: its position held over the
+    // stated point at `clearance` metres of skid clearance over the floor (the
+    // water's surface where `onWater` says, the point `Vehicle.washTo` is then
+    // asked off), its rotor spooled to 1, and its picture posed there by the
+    // door a frame poses it by (`VehicleViews.update`). Before the passes are
+    // placed below, so the bodies' shadow map is drawn with it where it hangs.
+    // Put back by the put-away above.
+    const wash = v.particles?.wash;
+    if (wash) {
+      const fleet = g.vehicles.hulls.filter((h) => h.flies);
+      const hull = fleet[wash.hull ?? 0];
+      if (!hull) throw new Error(`no flying hull ${wash.hull ?? 0} on ${g.mapDef.id}`);
+      const [hx, hz] = wash.at;
+      let floor = g.map.terrain.surfaceAt(hx, hz, true);
+      if (wash.onWater) {
+        const pool = g.rotorWash.pools.find((p) => hx >= p.minX && hx <= p.maxX && hz >= p.minZ && hz <= p.maxZ);
+        if (!pool || floor >= pool.surface) throw new Error(`(${hx}, ${hz}) is over no water`);
+        floor = pool.surface;
+      }
+      window.__refParticles = {
+        hull,
+        pos: [hull.pos.x, hull.pos.y, hull.pos.z],
+        yaw: hull.yaw,
+        rotor: hull.flight.rotor,
+        wet: Boolean(wash.onWater),
+        speeds: [],
+        fields: null,
+      };
+      hull.pos.set(hx, floor + hull.spec.hull.height / 2 + wash.clearance, hz);
+      if (wash.yaw !== undefined) hull.yaw = wash.yaw;
+      hull.flight.rotor = 1;
+      g.vehicleViews.update();
     }
 
     // **The camera-dependent passes are placed at the vantage**, by the same
@@ -882,6 +936,121 @@ export function placeVantage(page, vantage) {
       });
     }
 
+    // THE PARTICLE FIELDS AS THE GAME RUNS THEM (X4.7a): the map's mote field
+    // as it states it (its own box on the eye, its own rate, NOT gathered) and
+    // a rotor's ring under the hull pinned above, each pinned as `motes` pins
+    // the field: REBUILT under a seed, which is where its random textures come
+    // from (both are built at an install, off the native stream), stepped by
+    // the field's own pre-warm pair through `steps` fixed frames at a ratio of
+    // 1 inside one frame under a second seed, which is where its first update
+    // draws its slots' seeds, and HELD by a clock of zero. The rings are
+    // DRIVEN through the game's own door, `RotorWash.update` told the fleet
+    // stepped, before each step as a frame drives them, and the water told the
+    // sites as `Game.followEye` tells it. **The particles drawn are exactly
+    // the ones the row states**: every other field is held EMPTY (stopped and
+    // reset, which stays empty under emit-rate control). The mote field is
+    // rebuilt BEFORE the rings, the order an install builds them in
+    // (`installMap`: `atmosphere.apply`, then `rotorWash.build`), so the
+    // scene's list holds them in the order a shipped flow does.
+    //
+    // **Every touch of a field goes through `fields`**, one adapter for whose
+    // fields they are: Babylon's `GPUParticleSystem`s today. The step that
+    // makes the fields ours adds its own adapter beside this one and picks by
+    // what the page holds, so a BEFORE taken at a parent still drawing
+    // Babylon's runs this file unchanged.
+    if (v.particles) {
+      const want = v.particles;
+      const spec = g.mapDef.environment.particles;
+      if (want.ash && !spec) throw new Error(`${g.mapDef.id} states no particles`);
+      const babylonFields = {
+        /** Every field of the game's, in the order the frame steps and draws them. */
+        all: () => g.scene.particleSystems,
+        motes: () => g.atmosphere.system,
+        rings: () => g.rotorWash.washes.flatMap((w) => [w.dust, w.spray].filter(Boolean)),
+        enable: (on) => {
+          g.scene.particlesEnabled = on;
+        },
+        ready: (f) => f.isReady(),
+        empty: (f) => {
+          f.stop();
+          f.reset();
+        },
+        /** One fixed frame of `f` at an animation ratio of 1, its own pre-warm pair. */
+        step: (f) => {
+          f.animate(true);
+          f.render(true, true);
+        },
+        speed: (f) => f.updateSpeed,
+        hold: (f) => {
+          f.updateSpeed = 0;
+        },
+        /** A ring as `RotorWash.clear` leaves it at an install, on `speed`. */
+        putBack: (f, speed) => {
+          f.reset();
+          f.updateSpeed = speed;
+          if (f.isStopped()) f.start();
+        },
+      };
+      const F = babylonFields;
+      const P = (window.__refParticles ??= { hull: null, wet: false, speeds: [], fields: null });
+      P.fields = F;
+      F.enable(false);
+      const stated = [];
+      if (spec) {
+        // Whether stated or emptied, the field is the row's: the put-away
+        // rebuilds it as the map states it (`__refMotes`).
+        window.__refMotes = true;
+        if (want.ash) {
+          g.atmosphere.capacity = 0;
+          seeded(0xa5, () => g.atmosphere.apply(spec, g.map.size, g.map.size));
+          g.atmosphere.update(cam.position);
+          stated.push(F.motes());
+        }
+      }
+      if (P.hull) {
+        // A ring is rebuilt only for a new palette (`RotorWash.build`), so the
+        // palette is forgotten and the fleet handed back: every ring disposed
+        // and built again, for the map's own colours.
+        g.rotorWash.palette = null;
+        seeded(0xa7, () => g.rotorWash.build(g.vehicles.hulls, g.map.water, g.map.terrain, g.mapDef.environment));
+        g.rotorWash.update(true, g.hullFades);
+        const wash = g.rotorWash.washes.find((w) => w.hull === P.hull);
+        const ring = [wash.dust, wash.spray].find((r) => r && r.emitRate > 0);
+        if (!ring) throw new Error("the pinned hull raises no wash: too high, or over nothing");
+        stated.push(ring);
+      }
+      for (const f of F.all()) {
+        if (!stated.includes(f)) F.empty(f);
+      }
+      for (const ring of F.rings()) P.speeds.push([ring, F.speed(ring)]);
+      for (const f of stated) f.preWarmStepOffset = 1;
+      for (let frames = 0; !stated.every(F.ready); frames++) {
+        if (frames > 1200) throw new Error("a stated field never became ready");
+        await new Promise((res) => {
+          const o = g.scene.onAfterRenderObservable.add(() => {
+            g.scene.onAfterRenderObservable.remove(o);
+            res();
+          });
+        });
+      }
+      await new Promise((res) => {
+        g.scene.onBeforeRenderObservable.addOnce(() => {
+          // In the frame's order: the scene's list, the fields the row states.
+          const order = F.all().filter((f) => stated.includes(f));
+          seeded(0xa6, () => {
+            for (let i = 0; i < want.steps; i++) {
+              if (P.hull) g.rotorWash.update(true, g.hullFades);
+              for (const f of order) F.step(f);
+            }
+          });
+          for (const f of order) F.hold(f);
+          if (P.wet) g.water.setWash(g.rotorWash.sites, g.rotorWash.siteCount);
+          F.enable(true);
+          res();
+        });
+      });
+    }
+
     // The kit screen, raised for real over `deploy`: the card, the bench lamps
     // and the glow's stage rule are the lid's, and the weapon is on the
     // turntable at its authored angles, posed every frame by the lid itself
@@ -1043,8 +1212,9 @@ export function freeze(page, set = FREEZE_SET, { windTime = 0, turn = 0, strike 
         g.water.update = () => {};
       }
     }
-    // A row asking for the motes has them posed and held by now (`placeVantage`).
-    if (f.includes("particles")) g.scene.particlesEnabled = Boolean(window.__refMotes);
+    // A row asking for the motes, or for the fields as the game runs them
+    // (`particles`), has them posed and held by now (`placeVantage`).
+    if (f.includes("particles")) g.scene.particlesEnabled = Boolean(window.__refMotes || window.__refParticles);
     if (f.includes("lights")) {
       // A lantern's flame is a clock like any other and is pinned like one.
       // **What is deliberately NOT touched here is the flicker PHASE.** It

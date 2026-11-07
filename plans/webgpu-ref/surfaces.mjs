@@ -116,6 +116,9 @@ const OVERLAPS = [
   ["turf", "water"],
   ["grass", "water"],
   ["grass", "turf"],
+  // X4.7a: the ORDER between two fields, which only a pixel both own can show.
+  ["motes", "rotorWash"],
+  ["motes", "rotorSpray"],
 ];
 
 /** The wrappers, once a boot. See the header. */
@@ -154,11 +157,19 @@ function hangProbe(page) {
     scene.onBeforeDrawPhaseObservable.add(() => {
       s.frame = e._currentRenderTarget;
       s.inMask = false;
+      s.visited = false;
       if (s.rec) s.log.push({ mark: "phase" });
+    });
+    // WHICH PATH the seam took this phase (`render/babylonSeam.ts`, `onMainPass`):
+    // group 0 of the main pass visited, so our points were told inside it, or
+    // not, so they were told at the phase's end (X4.5a's fallback). Read off the
+    // same public observable the seam reads, the same test.
+    scene.onBeforeRenderingGroupObservable.add((info) => {
+      if (info.renderingGroupId === 0 && s.frame !== undefined && e._currentRenderTarget === s.frame) s.visited = true;
     });
     scene.onAfterDrawPhaseObservable.add(
       () => {
-        if (s.rec) s.log.push({ mark: "phaseEnd" });
+        if (s.rec) s.log.push({ mark: "phaseEnd", path: s.visited ? "group" : "fallback" });
       },
       undefined,
       true,
@@ -195,6 +206,63 @@ function hangProbe(page) {
       if (entry) entry.gpu = s.drawn;
       return out;
     };
+    // **The PARTICLES (X4.7a) come through no `Mesh.render`**: each started
+    // field is drawn by `RenderingGroup._renderParticles`, in the scene's list
+    // order, as its own `render()`, which dispatches its update and then draws.
+    // So the class is hung on the field's own `render`, and a field is a class
+    // by its name with the index taken off (`motes`, `rotorWash`, `rotorSpray`).
+    // An entry is logged only for a call that DREW (a field at a count of zero,
+    // or not ready, returns before either), with the pipeline its draw left,
+    // its blend mode, its live count and the defines of its compiled update
+    // (`_cachedUpdateDefines`) and render effect. `--pixels` skips the whole
+    // call, which on a held field (a clock of zero) moves nothing it would not
+    // move again.
+    const field = scene.particleSystems[0];
+    if (field) {
+      let fproto = Object.getPrototypeOf(field);
+      while (!Object.prototype.hasOwnProperty.call(fproto, "render")) fproto = Object.getPrototypeOf(fproto);
+      const fieldRender = fproto.render;
+      fproto.render = function (preWarm = false, forceUpdateOnly = false) {
+        const cls = this.name.replace(/\d+$/, "");
+        if (!preWarm && !forceUpdateOnly && s.hide?.has(cls)) return 0;
+        const pass = s.inMask ? "mask" : e._currentRenderTarget === s.frame ? "main" : "target";
+        s.drawn = null;
+        const out = fieldRender.call(this, preWarm, forceUpdateOnly);
+        if (s.rec && !preWarm && out > 0) {
+          const eye = scene.activeCamera.globalPosition;
+          const c = this.emitter;
+          let renderDefines = null;
+          try {
+            renderDefines = this._getWrapper(this.blendMode).effect.defines;
+          } catch {
+            renderDefines = "(unread)";
+          }
+          s.log.push({
+            id: `field${this.uniqueId}`,
+            n: this.name,
+            cls,
+            mat: null,
+            pass,
+            vis: 1,
+            alphaIndex: 0,
+            group: this.renderingGroupId,
+            d: +Math.hypot(c.x - eye.x, c.y - eye.y, c.z - eye.z).toFixed(2),
+            at: [+c.x.toFixed(2), +c.y.toFixed(2), +c.z.toFixed(2)],
+            inst: out,
+            gpu: s.drawn,
+            field: {
+              blendMode: this.blendMode,
+              count: this._currentActiveCount,
+              capacity: this._capacity,
+              randomTextureSize: this._randomTextureSize,
+              updateDefines: (this._cachedUpdateDefines ?? "").split("\n").filter(Boolean),
+              renderDefines: String(renderDefines).split("\n").filter(Boolean),
+            },
+          });
+        }
+        return out;
+      };
+    }
     // What the pipeline of a mesh's (first) draw actually has, which is not what
     // a material's flags say: a blended draw's depth write goes off in
     // `setAlphaMode`, whatever `disableDepthWrite` says.
@@ -574,6 +642,7 @@ for (const id of targets) {
       row.owned = owned;
       row.overlaps = overlaps;
     }
+    row.paths = log.filter((it) => it.mark === "phaseEnd").map((it) => it.path);
     report[id][v.id] = row;
     const line = Object.entries(classes)
       .map(([k, c]) => classLine(k, c, row.owned?.[k]))
@@ -582,7 +651,15 @@ for (const id of targets) {
       .filter(([, n]) => n > 0)
       .map(([k, n]) => `${k}=${n}`)
       .join(" ");
-    console.log(`  ${v.id.padEnd(26)} ${line}${over ? `  || ${over}` : ""}`);
+    console.log(`  ${v.id.padEnd(26)} [seam: ${row.paths.join("/") || "no phase"}] ${line}${over ? `  || ${over}` : ""}`);
+    for (const it of order) {
+      if (!it.field) continue;
+      console.log(
+        `      ${it.n}: ${it.list}, ${it.inst} drawn of ${it.field.count} (capacity ${it.field.capacity}), blend mode ${it.field.blendMode}, random texture ${it.field.randomTextureSize}; ${it.gpu}`,
+      );
+      console.log(`        update defines: ${it.field.updateDefines.join(" ")}`);
+      console.log(`        render defines: ${it.field.renderDefines.join(" ")}`);
+    }
   }
   if (pageErrors.length || consoleErrors.length) {
     console.log(`  ${pageErrors.length} page errors, ${consoleErrors.length} console errors`);

@@ -8778,3 +8778,113 @@ what was corrected and measured.
 - **A flag captured.** Posed, by the harness's `flown` (the zones stepped through `CaptureZoneSystem.update` at a stated meter for six seconds), the square's flag at meters 0, 0.5, 1, -0.5, -1 and 0 again, on Hollowmere (its square's ring all paint, from `ring`'s eye) and Coldharbour (stones and paint, the memorial's flag from `ring-flown-far`'s), and each ring standing: **14 of 14 byte-equal** to the BEFORE. Looked at: the cloth at the foot of the pole in the neutral cloth at 0, half way and at the top at 0.5 and 1, the Redline's red for a positive meter and the Valeguard's tan for a negative. **Live at HEAD**, offline, the real bots, the player walked by held `W` and its own look toward the nearest flag its side did not hold: on Coldharbour **the player stood in Alpha's ring through its capture** (inside its 15 m on 42 of 43 samples while the meter went 0 to -1 in 10.3 s, the HUD reading `CAPTURING` then `SECURED`), and the bots took the rest (Charlie to -1, Echo to 1, Delta rising); on Hollowmere the player did not reach a ring and the bots took all five. Sampled every 30 frames (305 and 366 samples): **the hoist equal to the shown meter's magnitude on every sample where the cloth was stepped**, its colour the side's whenever drawn (`#c9a15e` below 0, `#c8404a` above), every ring's surfaces on and kept every sample (Coldharbour two stone tones and paint at each point; Hollowmere's from stones alone to paint alone), the cloth's positions changing sample to sample (up to 305 distinct readings of 305 on a flag in view), both sheets used. Where they differed (57, then 25, 21, 273 and 331) the cloth was NOT stepped in that sample — out of the last render's frustum, or past the fog, which the zone system skips by design (`FlagCloth.inView`) — and a second Coldharbour run shows why from inside Alpha: its flag flies from a roof at 16.2 to 19.5 m (the ground at 3), out of a level view 14 m off. No page or console error, no `compiled in play` warning, the cache still sealed, in three live rounds.
 - **The blob map's leak, measured** (`FINDINGS.md` 70, not fixed). Five Coldharbour rounds in one page at each tree, a forced GC before each reading: `ShadowSystem.blobs` 17, 33, 49, 65, 81 on both (HEAD's `blobFades` the same; a269bfb's `blobShadow` meshes the same, its scene 2,047 to 2,111 meshes), every earlier round's sixteen bodies alive after the GC, and freed once the map's keys are cleared by a probe. Heap after GC: HEAD 95,378 to 97,150 KB, a269bfb 107,454 to 110,710.
 - **Not verified.** A server's match in a browser; the phone; the editor (its recorded differences stay until X5.3); a gate or latch case live (the drop is 1a89216's record); `gate`, `shaders`, `census`, `pipelines.mjs --round`, `merge:hash`, `kit:hash`, typecheck and build, none of which this note's text-only change could move. The player capturing ALONE (bots may have stood in Alpha too: the page reads no bot). Live frames are pictures, not bytes: the byte comparisons are of held frames.
+
+### X4.7 — GPU particles — **S–M, as four sub-steps** (split 2026-11-07) — X4.7a **LANDED** (COMMIT_A)
+
+The plan's `BABYLON_EXIT.md` holds X4.7's brief, the table of what the fields are
+(corrected in place by X4.7a) and the three sub-steps to come.
+
+**X4.7a landed** (COMMIT_A; 2026-11-07; no change to the game: the reference bank, its
+harness and table, a new live probe, two instruments widened, and docs; `git diff`
+under `src/` is `bench/vantages.ts` alone).
+
+- **The rows**, appended by `bank.mjs sarab cinderhaven kurenai --rows=...` at the
+  parent's game, each at the END of its map's list and at an eye a row above it stands
+  at, so no older row moves and the benchmark (one stop a POSITION) gains none. Each
+  was looked at.
+  | row | eye | what is in the air | its fields' pixels (`surfaces.mjs --pixels`) |
+  | --- | --- | --- | --- |
+  | `sarab-particles-dust` | `crossing`'s, 40° | the west base's helicopter 2.5 m over the sand, its dust ring, 120 frames | `rotorWash0` 92 of 135 slots, 83,644 px, mean 0.668 |
+  | `cinderhaven-particles-embers` | `town`'s | the map's embers as it runs them, 1,200 frames | `motes` 6,067 slots, 4,387 px, mean 0.0142 |
+  | `cinderhaven-particles-spray` | `tank-far`'s, 12° | the west yard's helicopter 3 m over the western sea, its spray ring and the water's hole, 120 frames | `rotorSpray0` 78 of 126, 42,466 px, mean 0.285 |
+  | `cinderhaven-particles-ring-ash` | `tank-far`'s, 20° | the same helicopter 2.5 m over the shore, its dust ring and the embers, 1,200 frames | `motes` 4,159 px, `rotorWash0` 71,242 px, **92 px both**: the order between two fields |
+  | `kurenai-particles-leaves` | `ground`'s | the map's falling leaves as it runs them, 1,200 frames | `motes` 7,467 slots, 16,696 px, mean 0.0274 |
+
+  The embers' whole field sits under `CHECK_TOLERANCE`'s mean (0.0142 against 0.02) and
+  the leaves' barely over it: only `exact.mjs` grades those rows, as the brief said. The
+  water's hole in `particles-spray` is real: with the row's site taken off the water
+  (`WaterSystem.setWash(sites, 0)`) the frame moves 7.74% of its pixels by up to 25/255
+  (scratch `x47a/hole.mjs`); the water holds 1 site, (-705, 45), radius 5.72, strength
+  0.617.
+- **The harness** (`harness.mjs`, `placeVantage`'s `particles`, the vantage field
+  documented in `vantages.ts`'s header). A `wash` row pins its hull before the passes are
+  placed (position over the floor or the water's surface at the stated clearance, a yaw,
+  the rotor at 1, `VehicleViews.update`), then the fields: the particles off; the mote
+  field rebuilt under seed `0xa5` (as `sky-motes`) and put on the eye; the rings rebuilt
+  under `0xa7` through the game's own door (`RotorWash.build` with the palette forgotten,
+  so an install's order: motes, then rings); `RotorWash.update(true, hullFades)` names the
+  ring that raises the wash; every other field `stop()` and `reset()`; the stated ones
+  waited ready, then `steps` frames under `0xa6` in the scene's list order, each a
+  `RotorWash.update(true, ...)` and the field's own `animate(true)` + `render(true, true)`
+  at `preWarmStepOffset` 1, so a step is a 60 fps frame at the field's own `updateSpeed`
+  (0.012 the motes, 1/60 a ring); then `updateSpeed` 0, the water told the sites, the
+  particles on. The put-away rebuilds the motes (`__refMotes`), resets and restarts every
+  ring on its own speed, closes the hole and stands the hull back. **Every touch of a
+  field goes through one adapter** (`babylonFields`), so X4.7c adds its own beside it and
+  its BEFORE runs this file over the parent unchanged. `freeze`'s `particles` switch reads
+  `__refParticles` beside `__refMotes`. `sky-flash`'s "LAST" comment is corrected: the
+  rows after it step the storm on from 28.484 s through their settle, held by their
+  freeze with no strike up, and they reproduce.
+- **The bank.** `bank.mjs --check --keep` alone at 38c65fd (the BEFORE, 138 rows) and
+  alone at the step (143): **138 of 138 old rows byte-equal by `exact.mjs`**, no known
+  flake coming up, 5 new; the same 34 stale rows red at the same means (the two logs'
+  red lines identical). **The five new rows byte-equal across three processes**: the
+  banking run (two identical grabs each), the full check against `ref/`, and
+  `surfaces.mjs --keep` (with every wrapper and empty point hung) against the check, which
+  also holds `sky-motes` byte-equal with the probe on. No page or console error.
+- **`surfaces.mjs`**: a class per field, hung on the field's own `render` (a particle
+  comes through no `Mesh.render`), named by the field with its index off, logged only for
+  a call that drew, with its pipeline, blend mode, count, capacity, random texture and the
+  defines of its compiled update and render effects; `--pixels` skips the call (a held
+  field moves nothing by it); the seam's path a phase; two overlaps, `motes&rotorWash` and
+  `motes&rotorSpray`. **Read**: every field's draw on the list between `opaque` and
+  `beforeBlended`, none in the mask; depth write off, test LEQUAL, bias 0, cull off, mask
+  15; ADD `770,1` / `0,1`, STANDARD `770,771` / `1,1`. The render defines are `BILLBOARD
+  BILLBOARDMODE_ALL EMITRATECTRL TONEMAPPING 0` (the rings `+ COLORGRADIENTS
+  COLORGRADIENTS_COLOR2`): **no `IMAGEPROCESSING` and no fog**, where the brief guessed
+  one was compiled in. Update: `BOXEMITTER BILLBOARD EMITRATECTRL`, the rings
+  `CYLINDEREMITTER BILLBOARD COLORGRADIENTS SIZEGRADIENTS VELOCITYGRADIENTS EMITRATECTRL`.
+  The dust and spray rings' defines and blend are the same, so one pipeline each. **The
+  seam's path in every row**: 137 rows by the empty-group fallback, the six particle rows
+  (`sky-motes` and these five) by the group.
+- **The live probe, `particles.mjs`** (kept, its header the contract). In one boot the
+  rotation Sarab → Cinderhaven → Sarab → Hollowmere → Cinderhaven through the menu, each
+  map: `useConstantAnimationDeltaTime`, every field reset with the particles off, the
+  deploy screen's held world with `followEye` told the fleet stepped (X4.2d's scratch's
+  way), the first flying hull pinned 3 m over dry ground 30 m off its pad and then over the
+  deepest-bedded rect centre, 240 frames each, the camera 40 m south and 12 m up; the window
+  opens on the first frame every field is ready. **Two runs, equal by `Object.is`**: 45,120
+  numbers a map with a hull over 480 frames, 4,800 on Hollowmere. Read: the motes' step
+  0.01152 (0.012 × 0.96), a ring's 0.016; the dust ring at 55.561 a second dry, the spray
+  at 86.429 wet, the site's strength 0.617; over water the dust ring holds its count of 84
+  at a rate of zero. **The order**: motes ahead of every ring at every deploy of the
+  rotation. **`--editor`** (Cinderhaven, after the rotation): `F2`'s build has no hulls and
+  keeps the round's four rings; `particles.count` changed in memory and the editor's
+  rebuild put the motes BEHIND them, and putting it back left them there. The panel edits
+  no `particles` field, so only an in-memory edit reaches it (dev only, recorded). **The
+  random draws**: 65,536 a mote field and 32,768 a ring at construction; 22,400 (Sarab),
+  24,268 (Cinderhaven; 27,068 at the editor's edited 6,767), 74,668 (Hollowmere), 540 and 504 at
+  `_initialize` — **and a ring at rest draws its seeds too**, at its first render after
+  every reset, since `_initialize` precedes the count test: every install, teardown and
+  editor rebuild re-draws 540/504 a ring off the native stream. **The splits**: with the
+  particles off, 10 render passes from the draw phase's start to the frame's end and no
+  compute pass; dry, 11-12 and 1-2 compute, the main pass split 1-2 times (the motes, then
+  the dust ring once it has a count); wet, 13 and 3, split 3 times every frame. The seam
+  took the group on every frame of the window, the fallback on the particles-off frames.
+- **`pipelines.mjs --round`**, each creation in play kept with its stack. Cinderhaven: 5 of
+  Babylon's in play, 3 at `life 1: spawn` under `GiVolume.update` (the race, X5.1's) and 2 at
+  `life 1: dmr` with no mesh drawing, a compute pipeline under
+  `ComputeShaderParticleSystem.updateParticleBuffer` and a render one under
+  `GPUParticleSystem._render`: the wash, a bot's helicopter raising dust; none of ours; the
+  installs 2 and 0 of Babylon's, 19 and 0 of ours. Sarab: **it threw at the parent**
+  (`panes[-1]`: Sarab has no breakable pane), so the pane phase is skipped on such a map;
+  then 2 in play, the wash's same two at `life 1: sniper`, `GiVolume`'s three at the install
+  this run (5 there).
+- **Gates**: typecheck, build (`check-babylon-free`, `check-proving`), corecheck and parity
+  pass. Not run: `census`, `gate`, `shaders`, `kit:hash` — no game code moved. No
+  `FILES.md` line: it lists no `plans/` instrument (`surfaces.mjs` has none either); the
+  probe's header is its contract.
+- **Not verified.** A field in a server's match; the phone; `census` with the new rows;
+  the probe across two TREES (it has one tree's run against itself, the control the later
+  steps compare against); a live frame's pixels of either field (none reproduce, which is
+  why the probe exists).

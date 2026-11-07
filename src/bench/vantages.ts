@@ -132,6 +132,21 @@
  *   own rate, so denser, or the disc would have a tenth of a mote in front of
  *   it), run `steps` fixed steps of `step` seconds and held by a clock of zero.
  *   It is here for the ORDER of the disc against what is in front of it.
+ * - `particles: { steps, ash?, wash? }` — the GPU particle fields AS THE GAME
+ *   RUNS THEM (X4.7a), where `motes` gathers one for an order. `ash` is the
+ *   map's mote field as it states it: its own box on the eye (or the map, for
+ *   a map stating no `volume`) at its own rate. `wash` is a flying hull of the
+ *   fleet (`hull`, its index among the hulls that fly, 0 if absent) PINNED
+ *   hovering over `at` with `clearance` metres under its skids — over the
+ *   water's surface where `onWater` says, else over the floor — its rotor
+ *   spooled and its picture posed there, and its ring driven by
+ *   `RotorWash.update` told the fleet stepped, the water told the sites. Each
+ *   field is REBUILT under a seed (the mote field before the rings, an
+ *   install's order), run `steps` fixed frames at an animation ratio of 1 by
+ *   its own pre-warm pair under a second seed, and held by a clock of zero;
+ *   every field the row does not state is held EMPTY, so the particles drawn
+ *   are exactly the ones it states. All of it is put away before the next row,
+ *   the hull stood back on its hardstanding.
  *
  * Positions read like `pos`: `[x, z]` on the floor as drawn.
  */
@@ -219,6 +234,17 @@ export interface Vantage {
   turn?: number;
   strike?: number;
   motes?: { step: number; steps: number; box: number };
+  particles?: {
+    steps: number;
+    ash?: boolean;
+    wash?: {
+      hull?: number;
+      at: readonly [x: number, z: number];
+      clearance: number;
+      yaw?: number;
+      onWater?: boolean;
+    };
+  };
 }
 
 /**
@@ -791,6 +817,17 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
       fov: 13.75,
       wind: 2.6,
     },
+    // Appended for X4.7a, at `crossing`'s eye so the benchmark gains no stop.
+    {
+      id: "particles-dust",
+      of: "the west base's helicopter hovering 2.5 m over the sand in the crossing's north-west corner, its rotor's dust ring boiling round it, from `crossing`'s eye",
+      proves:
+        "the DUST RING as the game runs it (X4.7d): a `GPUParticleSystem` on a cylinder emitter at the disc's radius, driven by `RotorWash.update` off `Vehicle.washTo` (the rate, the throw, the emitter on the ground it found), its colour GRADIENT of two rows, its size and velocity gradients and its spin, STANDARD-blended, two seconds of fixed frames from a rebuild and held — every other field held empty",
+      pos: [-55, 7, 197],
+      target: [-80, 1.5, 222],
+      fov: 40,
+      particles: { steps: 120, wash: { at: [-80, 222], clearance: 2.5, yaw: 0.6 } },
+    },
   ],
   cinderhaven: [
     {
@@ -836,9 +873,10 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
     // after every row above (`farShardRows`).
     ...farShardRows(),
     // Appended for X4.5a, after every row above, at eyes the rows above stand
-    // at, so the benchmark gains no stop. `sky-flash` LAST: it reads the storm's
-    // schedule at a clock of its own, and any row after it would step on from
-    // there.
+    // at, so the benchmark gains no stop. `sky-flash` was banked LAST: it reads
+    // the storm's schedule at a clock of its own, and every row after it steps
+    // the storm on from there through its settle (X4.7a's rows, below, whose
+    // freeze holds it with no strike up).
     {
       id: "sky-cloud-moon",
       of: "the crater's disc going behind a cumulus over the sea at night, from the west shore with the field closed to 30°, its bloom cut along the cloud's top",
@@ -873,6 +911,37 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
       target: [-200, 60, -100],
       strike: 28.484,
     },
+    // Appended for X4.7a, after every row above, at eyes the rows above stand
+    // at, so the benchmark gains no stop.
+    {
+      id: "particles-embers",
+      of: "the town square at night from `town`'s eye, the map's embers in the air all round it as the map runs them",
+      proves:
+        "the ASH as the map runs it (X4.7c), on an ADD field that FOLLOWS the eye: `Atmosphere`'s field in its own 250 m box centred on the eye (`ParticleSpec.volume`), at its own rate and lives, rising and drifting, twenty seconds of fixed frames from a rebuild and held — every ember leaving the frame's coverage alpha alone, every other field held empty",
+      pos: [-90, 1.7, 300],
+      target: [-60, 8.4, 340],
+      particles: { steps: 1200, ash: true },
+    },
+    {
+      id: "particles-spray",
+      of: "the west yard's helicopter hovering 3 m over the western sea off the shore, its spray ring thrown off the water and the hole it tears in the surface, from `tank-far`'s eye through a 12° field",
+      proves:
+        "the SPRAY RING and the water's HOLE as the game runs them (X4.7d): `RotorWash.update` asking `washTo` a second time with the water's surface as its floor, the spray ring (the map's whitewater pair, lit) on the surface at the disc's radius, and the site handed to the water (`WaterSystem.setWash`) as `Game.followEye` hands it — the ring and the hole one circle — every other field held empty",
+      pos: [-581, 15, 73],
+      target: [-705, 2, 45],
+      fov: 12,
+      particles: { steps: 120, wash: { at: [-705, 45], clearance: 3, yaw: -0.2, onWater: true } },
+    },
+    {
+      id: "particles-ring-ash",
+      of: "the same helicopter hovering 2.5 m over the shore below `tank-far`'s eye, its dust ring with the map's embers drifting through and past it, through a 20° field",
+      proves:
+        "the ORDER BETWEEN TWO FIELDS (X4.7c, X4.7d): no particle writes depth, so the field drawn later paints over the one drawn first whichever is nearer, and Babylon draws them in the scene's list — the mote field ahead of every ring in every shipped flow (an install applies the ash before it builds the rings). An ember behind or in front of the dust is blended UNDER it; drawn after the rings, it would add over it",
+      pos: [-581, 15, 73],
+      target: [-645, 5, 58],
+      fov: 20,
+      particles: { steps: 1200, ash: true, wash: { at: [-645, 58], clearance: 2.5, yaw: -0.2 } },
+    },
   ],
   kurenai: [
     {
@@ -890,6 +959,16 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
         "DIRT meeting COBBLE across a rectangle road's end, at its kerb — `ROAD_RANK` 0 against 1 — and the floor on the verges: the road depth bias (`ROAD_DEPTH_UNITS`, -8) and the rank ladder that X3.5 moves into our renderer",
       pos: [0, 7, -70],
       target: [0, 0.01, -52],
+    },
+    // Appended for X4.7a, at `ground`'s eye so the benchmark gains no stop.
+    {
+      id: "particles-leaves",
+      of: "the same view west under the maple from 35 cm off the floor, the map's falling leaves in the air as the map runs them",
+      proves:
+        "the ASH as the map runs it (X4.7c), on a STANDARD field that FOLLOWS the eye and FALLS (a negative `riseSpeed`): `Atmosphere`'s field in its own 140 m box on the eye, at its own rate and lives, twenty seconds of fixed frames from a rebuild and held — every leaf accumulating into the frame's coverage alpha, every other field held empty",
+      pos: [-20, 0.35, -74],
+      target: [-60, 0.9, -90],
+      particles: { steps: 1200, ash: true },
     },
   ],
 };

@@ -1,0 +1,476 @@
+/**
+ * The GPU particle fields' CPU half, logged frame by frame in a LIVE frame loop:
+ * what `BABYLON_EXIT.md` X4.7c and X4.7d must reproduce bit for bit when the ash
+ * and the rotor wash become ours, read off the parent rather than argued.
+ *
+ * Run with `node plans/webgpu-ref/particles.mjs [map...] [--frames=N] [--out=f.json]
+ * [--against=f.json] [--editor]`. Several maps are played in ONE boot, in the order
+ * given, through the menu as a player rotates them (`Game.enterMenu`, `setMap`,
+ * `startRound`), so `sarab cinderhaven sarab hollowmere cinderhaven` is the
+ * rotation the plan asks about. Nothing in the repository is written but `--out`.
+ *
+ * **Why a log and not a frame.** No live frame's pixels reproduce (the bank's
+ * whole apparatus exists because they do not), but a field's CPU half is a pure
+ * function of its numbers and its clock: the emission accumulator, the live
+ * count, the circular write pointer, the emit range handed to the update shader,
+ * the step, the emitter. The GPU's state is a function of those (the update shader
+ * reads its random textures by slot, seed and count), so a port whose CPU half is
+ * equal to Babylon's by `Object.is` on every frame, and whose shader is Babylon's
+ * as compiled, draws Babylon's field. `--against` makes that comparison, field by
+ * field and frame by frame, and names the first number that differs.
+ *
+ * **What makes two runs comparable.** The clock is held by
+ * `scene.useConstantAnimationDeltaTime` (public: a 16 ms frame, an animation
+ * ratio of 0.96), so the step is not the wall clock. Each map's window opens
+ * from a KNOWN state: every field reset (`reset()`, the CPU half zeroed) with the
+ * particles off, the camera and the hull pinned, and the window's first frame is
+ * the first with every field READY (its effects compiled), so a compile that
+ * takes three frames on one run and five on the next moves nothing logged. The
+ * world is the deploy screen's, HELD, with `Game.followEye` told the fleet
+ * stepped (X4.2d's scratch `x42dr/wash.mjs` did the same): nothing moves the
+ * camera, the hull or the eye the ash follows but this file. A map with a
+ * flying hull pins its first one hovering 3 m over dry ground (30 m east of its
+ * hardstanding) for `frames`, then over the deepest-bedded centre of a water
+ * rect for `frames` more, the camera 40 m south of and 12 m above each; a map
+ * without one logs the ash alone, the camera at its centre.
+ *
+ * **Logged beside the fields, every frame:** the rotors' water sites
+ * (`RotorWash.sites`, `siteCount`) and what the water holds of them
+ * (`WaterSystem.washCount`); and the GPU passes the frame began, in order (a
+ * render pass by its first colour attachment's view and its load op, a compute
+ * pass as `C`), between the draw phase's start and its end, so a field's
+ * dispatch SPLITTING the main pass is counted (`splits`: a render pass on the
+ * main pass's view, loaded, right after a compute pass). The particles-off
+ * frames before the window are its control.
+ *
+ * **Logged at each install:** the scene's particle systems in order (the order
+ * Babylon draws them in), and the `Math.random` draws each construction made
+ * (`Atmosphere.build`, `RotorWash.buildRing`) and each first update after a
+ * build or a reset (`_initialize`). `--editor` ends the run with `F2` on the last
+ * map from the menu, the order read after the editor's build, then after the
+ * map's `particles.count` is changed IN MEMORY and the editor rebuilds (the
+ * editor's panel edits no `particles` field: this is the one way in), and after
+ * it is put back.
+ *
+ * Every touch of a field goes through one adapter (`FIELDS`), Babylon's
+ * `GPUParticleSystem`s today, so the step that makes them ours adds its own
+ * beside it and a BEFORE at the parent runs this file unchanged.
+ */
+import { readFileSync, writeFileSync } from "node:fs";
+import { bootMap, hardLimit, installRound, launchClient, root, startDevServer } from "./harness.mjs";
+
+const args = process.argv.slice(2);
+const opt = (k, d) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d;
+const FRAMES = Number(opt("frames", "240"));
+const OUT = opt("out", "");
+const AGAINST = opt("against", "");
+const EDITOR = args.includes("--editor");
+const maps = args.filter((a) => !a.startsWith("--"));
+if (!maps.length) maps.push("cinderhaven");
+hardLimit(600 + maps.length * 300);
+
+const vite = await startDevServer(root);
+const browser = await launchClient({ headed: false });
+const { page, pageErrors, consoleErrors } = await bootMap(browser, vite.url, maps[0]);
+
+// The GPU passes a frame begins, in order: an init script cannot reach a page
+// that has already loaded, so the encoder's prototype is wrapped here, before
+// the first round is built — every encoder is made after it.
+await page.evaluate(() => {
+  const ids = new WeakMap();
+  let next = 0;
+  const idOf = (v) => {
+    if (!v) return "-";
+    if (!ids.has(v)) ids.set(v, ++next);
+    return ids.get(v);
+  };
+  window.__passes = [];
+  const enc = GPUCommandEncoder.prototype;
+  const render = enc.beginRenderPass;
+  enc.beginRenderPass = function (desc) {
+    const a = desc?.colorAttachments?.[0];
+    window.__passes.push(a ? `R${idOf(a.view)}:${a.loadOp}` : `R-:${desc?.depthStencilAttachment?.depthLoadOp ?? "?"}`);
+    return render.call(this, desc);
+  };
+  const compute = enc.beginComputePass;
+  enc.beginComputePass = function (desc) {
+    window.__passes.push("C");
+    return compute.call(this, desc);
+  };
+});
+
+// The adapter, the counters and the per-frame reader, once a boot.
+await page.evaluate(() => {
+  const g = window.__celshock;
+  /** Babylon's fields. A port adds its own adapter beside this one. */
+  const babylon = {
+    all: () => g.scene.particleSystems,
+    enable: (on) => {
+      g.scene.particlesEnabled = on;
+    },
+    ready: (f) => f.isReady(),
+    reset: (f) => f.reset(),
+    name: (f) => f.name,
+    /** The CPU half: every number a frame's emission is made of. */
+    state: (f) => {
+      const e = f.emitter;
+      return [
+        f.isStarted() ? 1 : 0,
+        f.isStopped() ? 1 : 0,
+        f._buffer0 ? 1 : 0,
+        f.emitRate,
+        f._accumulatedCount,
+        f._currentActiveCount,
+        f._emitIndex,
+        f._emitCount,
+        f._writePointer,
+        f._timeDelta,
+        f._targetIndex,
+        e.x,
+        e.y,
+        e.z,
+        f.minEmitPower,
+        f.maxEmitPower,
+        f.updateSpeed,
+      ];
+    },
+  };
+  const F = babylon;
+  window.__fields = F;
+  window.__fieldColumns = [
+    "started", "stopped", "initialized", "emitRate", "accumulated", "count", "emitIndex", "emitCount",
+    "writePointer", "timeDelta", "targetIndex", "emitterX", "emitterY", "emitterZ", "minEmitPower", "maxEmitPower", "updateSpeed",
+  ];
+  // Math.random draws at each construction and each first update.
+  const draws = [];
+  window.__draws = draws;
+  const counted = (label, fn) => {
+    const native = Math.random;
+    let n = 0;
+    Math.random = () => {
+      n++;
+      return native();
+    };
+    try {
+      return fn();
+    } finally {
+      Math.random = native;
+      draws.push([label, n]);
+    }
+  };
+  let initWrapped = false;
+  const wrapInit = (f) => {
+    if (initWrapped) return;
+    initWrapped = true;
+    let proto = Object.getPrototypeOf(f);
+    while (!Object.prototype.hasOwnProperty.call(proto, "_initialize")) proto = Object.getPrototypeOf(proto);
+    const init = proto._initialize;
+    proto._initialize = function (force = false) {
+      if (this._buffer0 && !force) return init.call(this, force);
+      return counted(`_initialize ${this.name} (capacity ${this._capacity})`, () => init.call(this, force));
+    };
+  };
+  const air = g.atmosphere;
+  const build = air.build;
+  air.build = function (capacity) {
+    const f = counted(`construct motes (capacity ${capacity})`, () => build.call(this, capacity));
+    wrapInit(f);
+    return f;
+  };
+  const rw = g.rotorWash;
+  const ring = rw.buildRing;
+  rw.buildRing = function (index, wet) {
+    const f = counted(`construct rotor${wet ? "Spray" : "Wash"}${index} (buildRing)`, () => ring.call(this, index, wet));
+    wrapInit(f);
+    return f;
+  };
+  // Every frame's record, taken after the render.
+  window.__frame = () => {
+    const rw = g.rotorWash;
+    const sites = [];
+    for (let i = 0; i < rw.siteCount * 4; i++) sites.push(rw.sites[i]);
+    return {
+      fields: F.all().map((f) => [F.name(f), ...F.state(f)]),
+      siteCount: rw.siteCount,
+      sites,
+      waterWash: g.water.washCount,
+      passes: window.__phasePasses,
+      path: window.__path,
+    };
+  };
+  // The passes between the draw phase's start and the frame's end, read after
+  // the frame; and WHICH PATH the seam took (`babylonSeam.onMainPass`): group 0
+  // of the main pass visited, or not (X4.5a's fallback), by the seam's own test.
+  const e = g.engine;
+  let target;
+  let visited = false;
+  g.scene.onBeforeDrawPhaseObservable.add(() => {
+    window.__phaseStart = window.__passes.length;
+    target = e._currentRenderTarget;
+    visited = false;
+  });
+  g.scene.onBeforeRenderingGroupObservable.add((info) => {
+    if (info.renderingGroupId === 0 && e._currentRenderTarget === target) visited = true;
+  });
+  g.scene.onAfterRenderObservable.add(() => {
+    window.__phasePasses = window.__passes.slice(window.__phaseStart ?? 0);
+    window.__path = visited ? "group" : "fallback";
+    window.__passes.length = 0;
+    window.__phaseStart = 0;
+  });
+});
+
+/** -0 and NaN do not survive JSON; every number is kept as `Object.is` would compare it. */
+const enc = (x) =>
+  typeof x === "number" ? (Object.is(x, -0) ? "-0" : Number.isNaN(x) ? "NaN" : x === Infinity ? "Inf" : x === -Infinity ? "-Inf" : x) : x;
+
+/** Splits: a render pass on the main pass's view, LOADED, straight after a compute pass. */
+function splits(passes) {
+  const first = passes.find((p) => p.startsWith("R"));
+  if (!first) return { renderPasses: 0, computePasses: 0, splits: 0, main: null };
+  // The main pass is the view drawn most within the phase.
+  const views = {};
+  for (const p of passes) if (p.startsWith("R")) views[p.split(":")[0]] = (views[p.split(":")[0]] ?? 0) + 1;
+  const main = Object.entries(views).sort((a, b) => b[1] - a[1])[0][0];
+  let n = 0;
+  for (let i = 1; i < passes.length; i++) {
+    if (passes[i - 1] === "C" && passes[i] === `${main}:load`) n++;
+  }
+  return {
+    renderPasses: passes.filter((p) => p.startsWith("R")).length,
+    computePasses: passes.filter((p) => p === "C").length,
+    splits: n,
+    main,
+  };
+}
+
+const report = { frames: FRAMES, maps: [] };
+const MAP_IDS = (await page.evaluate(async () => (await import("/src/world/maps.ts")).MAPS.map((m) => m.id)));
+let first = true;
+for (const id of maps) {
+  if (!first) {
+    // Rotated as a player rotates it: to the menu, the map picked, a round.
+    await page.evaluate((i) => {
+      const g = window.__celshock;
+      g.enterMenu();
+      g.setMap(i);
+      if (g.mapDef.id === undefined) throw new Error("no map");
+    }, MAP_IDS.indexOf(id));
+  }
+  first = false;
+  const before = await page.evaluate(() => window.__draws.length);
+  const install = await installRound(page);
+  const at = await page.evaluate(async ([F_FRAMES, drawsFrom]) => {
+    const g = window.__celshock;
+    const F = window.__fields;
+    const order = F.all().map(F.name);
+    const draws = window.__draws.slice(drawsFrom);
+    const frame = () => new Promise((res) => g.scene.onAfterRenderObservable.addOnce(res));
+    g.scene.useConstantAnimationDeltaTime = true;
+    const cam = g.cameraSys.camera;
+    const V = cam.position.constructor;
+    const hull = g.vehicles.hulls.find((h) => h.flies) ?? null;
+    // The world held as the deploy screen holds it; the wash told the fleet stepped.
+    window.__fe ??= g.followEye;
+    g.followEye = function () {
+      return window.__fe.call(this, Boolean(hull));
+    };
+    const places = [];
+    if (hull) {
+      const pad = { x: hull.pos.x, z: hull.pos.z };
+      places.push({ phase: "dry", x: pad.x + 30, z: pad.z, floor: g.map.terrain.surfaceAt(pad.x + 30, pad.z, true) });
+      let wet = null;
+      for (const p of g.rotorWash.pools) {
+        const x = (p.minX + p.maxX) / 2;
+        const z = (p.minZ + p.maxZ) / 2;
+        const bed = g.map.terrain.surfaceAt(x, z, true);
+        if (bed < p.surface - 0.5 && (!wet || p.surface - bed > wet.depth)) wet = { x, z, floor: p.surface, depth: p.surface - bed };
+      }
+      if (wet) places.push({ phase: "wet", ...wet });
+    } else {
+      places.push({ phase: "ash", x: 0, z: 0, floor: g.map.terrain.surfaceAt(0, 0, true) });
+    }
+    const keep = hull ? { pos: hull.pos.clone(), rotor: hull.flight.rotor } : null;
+    const pin = (p) => {
+      if (hull) {
+        hull.pos.set(p.x, p.floor + hull.spec.hull.height / 2 + 3, p.z);
+        hull.flight.rotor = 1;
+        g.vehicleViews.update();
+      }
+      cam.position.set(p.x, p.floor + 12, p.z - 40);
+      cam.setTarget(new V(p.x, p.floor + 2, p.z));
+    };
+    // The known state: particles off, every field reset, pinned, ready.
+    F.enable(false);
+    pin(places[0]);
+    for (const f of F.all()) F.reset(f);
+    const control = [];
+    const controlPaths = [];
+    for (let i = 0; ; i++) {
+      if (i > 1200) throw new Error("a field never became ready");
+      await frame();
+      if (control.length < 8) control.push(window.__phasePasses);
+      if (controlPaths.length < 8) controlPaths.push(window.__path);
+      if (F.all().every(F.ready)) break;
+    }
+    F.enable(true);
+    const log = [];
+    for (const p of places) {
+      pin(p);
+      for (let i = 0; i < F_FRAMES; i++) {
+        await frame();
+        log.push({ phase: p.phase, ...window.__frame() });
+      }
+    }
+    F.enable(true);
+    g.followEye = window.__fe;
+    g.scene.useConstantAnimationDeltaTime = false;
+    if (keep) {
+      hull.pos.copyFrom(keep.pos);
+      hull.flight.rotor = keep.rotor;
+      g.vehicleViews.update();
+    }
+    return { order, draws, places, control, controlPaths, log, drawsAfter: window.__draws.slice(drawsFrom + draws.length) };
+  }, [FRAMES, before]);
+  const passStats = at.log.map((f) => splits(f.passes ?? []));
+  const controlStats = at.control.map((p) => splits(p ?? []));
+  const sum = (xs, k) => xs.reduce((a, x) => a + x[k], 0);
+  const entry = {
+    map: id,
+    installMs: install.installMs,
+    order: at.order,
+    constructions: at.draws,
+    firstUpdates: at.drawsAfter,
+    places: at.places,
+    columns: await page.evaluate(() => window.__fieldColumns),
+    log: at.log.map((f) => ({ ...f, fields: f.fields.map((r) => r.map(enc)), sites: f.sites.map(enc), passes: undefined })),
+    passes: {
+      control: controlStats,
+      perFrame: passStats,
+      meanRender: +(sum(passStats, "renderPasses") / passStats.length).toFixed(2),
+      meanCompute: +(sum(passStats, "computePasses") / passStats.length).toFixed(2),
+      meanSplits: +(sum(passStats, "splits") / passStats.length).toFixed(2),
+      sample: at.log.slice(-1)[0]?.passes,
+    },
+  };
+  report.maps.push(entry);
+  console.log(`${id}  installMs ${install.installMs}`);
+  console.log(`  order at deploy: ${entry.order.join(", ")}`);
+  for (const [label, n] of entry.constructions) console.log(`  random draws: ${label}: ${n}`);
+  for (const [label, n] of entry.firstUpdates) console.log(`  random draws in the window: ${label}: ${n}`);
+  console.log(
+    `  passes in the draw phase, particles off (control): ${controlStats.map((s) => `${s.renderPasses}R/${s.computePasses}C/${s.splits}S`).join(" ")}; seam path ${[...new Set(at.controlPaths)].join("/")}`,
+  );
+  entry.paths = { control: at.controlPaths, window: [...new Set(at.log.map((f) => f.path))] };
+  for (const ph of new Set(at.log.map((f) => f.phase))) {
+    const idx = at.log.map((f, i) => (f.phase === ph ? i : -1)).filter((i) => i >= 0);
+    const st = idx.map((i) => passStats[i]);
+    const last = at.log[idx[idx.length - 1]];
+    console.log(
+      `  ${ph}: ${idx.length} frames; passes a frame ${Math.min(...st.map((s) => s.renderPasses))}-${Math.max(...st.map((s) => s.renderPasses))} render, ` +
+        `${Math.min(...st.map((s) => s.computePasses))}-${Math.max(...st.map((s) => s.computePasses))} compute, splits ${Math.min(...st.map((s) => s.splits))}-${Math.max(...st.map((s) => s.splits))}; ` +
+        `seam path ${[...new Set(idx.map((i) => at.log[i].path))].join("/")}`,
+    );
+    console.log(`    last frame's passes: ${(last.passes ?? []).join(" ")}`);
+    for (const r of last.fields) {
+      console.log(
+        `    ${String(r[0]).padEnd(12)} rate ${(+r[4]).toFixed(3)} acc ${(+r[5]).toFixed(4)} count ${r[6]} emit ${r[7]}+${r[8]} ptr ${r[9]} dt ${r[10]}`,
+      );
+    }
+    console.log(`    sites ${last.siteCount} [${last.sites.map((x) => (+x).toFixed(3)).join(", ")}], water holds ${last.waterWash}`);
+  }
+}
+
+if (EDITOR) {
+  const ed = await page.evaluate(async () => {
+    const g = window.__celshock;
+    const F = window.__fields;
+    const frame = () => new Promise((res) => g.scene.onAfterRenderObservable.addOnce(res));
+    g.enterMenu();
+    const out = {};
+    const from = window.__draws.length;
+    await g.toggleEditor();
+    if (!g.editor) throw new Error("the editor did not open");
+    for (let i = 0; i < 10; i++) await frame();
+    out.built = { order: F.all().map(F.name), hulls: g.vehicles.hulls.length, fliers: g.vehicles.hulls.filter((h) => h.flies).length };
+    const spec = g.mapDef.environment.particles;
+    if (spec) {
+      spec.count += 150;
+      g.editor.rebuildGeometry(null);
+      for (let i = 0; i < 10; i++) await frame();
+      out.countEdited = F.all().map(F.name);
+      spec.count -= 150;
+      g.editor.rebuildGeometry(null);
+      for (let i = 0; i < 10; i++) await frame();
+      out.countPutBack = F.all().map(F.name);
+    }
+    out.draws = window.__draws.slice(from);
+    return out;
+  });
+  report.editor = ed;
+  console.log(`editor build (${maps[maps.length - 1]})`);
+  console.log(`  order after F2: ${ed.built.order.join(", ")} (hulls ${ed.built.hulls}, flying ${ed.built.fliers})`);
+  if (ed.countEdited) console.log(`  after particles.count changed in memory and the editor rebuilt: ${ed.countEdited.join(", ")}`);
+  if (ed.countPutBack) console.log(`  after it was put back and rebuilt: ${ed.countPutBack.join(", ")}`);
+  for (const [label, n] of ed.draws) console.log(`  random draws: ${label}: ${n}`);
+}
+
+if (pageErrors.length || consoleErrors.length) {
+  console.log(`${pageErrors.length} page errors, ${consoleErrors.length} console errors`);
+  for (const e of [...pageErrors, ...consoleErrors].slice(0, 5)) console.log(`  ${String(e).slice(0, 300)}`);
+}
+if (OUT) writeFileSync(OUT, JSON.stringify(report));
+
+let failed = false;
+if (AGAINST) {
+  const ref = JSON.parse(readFileSync(AGAINST, "utf8"));
+  if (ref.frames !== report.frames) console.log(`--against was logged at ${ref.frames} frames a place, this at ${report.frames}`);
+  report.maps.forEach((m, k) => {
+    const r = ref.maps[k];
+    if (!r || r.map !== m.map) {
+      console.log(`against: map ${k} is ${m.map} here and ${r?.map} there`);
+      failed = true;
+      return;
+    }
+    if (JSON.stringify(r.order) !== JSON.stringify(m.order)) {
+      console.log(`against: ${m.map}'s order differs: ${r.order.join(",")} there`);
+      failed = true;
+    }
+    let first = null;
+    let compared = 0;
+    for (let i = 0; i < Math.max(m.log.length, r.log.length) && !first; i++) {
+      const a = m.log[i];
+      const b = r.log[i];
+      if (!a || !b) {
+        first = `frame ${i} is on one side only`;
+        break;
+      }
+      const rows = [
+        ...a.fields.map((row, j) => [`field ${row[0]}`, row, b.fields[j]]),
+        ["sites", a.sites, b.sites],
+        ["siteCount", [a.siteCount], [b.siteCount]],
+        ["waterWash", [a.waterWash], [b.waterWash]],
+      ];
+      for (const [what, x, y] of rows) {
+        if (!y || x.length !== y.length) {
+          first = `frame ${i} (${a.phase}): ${what} has another shape`;
+          break;
+        }
+        for (let c = 0; c < x.length; c++) {
+          compared++;
+          if (!Object.is(x[c], y[c])) {
+            const col = what.startsWith("field") ? m.columns[c - 1] ?? "name" : `[${c}]`;
+            first = `frame ${i} (${a.phase}): ${what} ${col} is ${x[c]} here and ${y[c]} there`;
+            break;
+          }
+        }
+        if (first) break;
+      }
+    }
+    if (first) failed = true;
+    console.log(`against ${m.map}: ${first ? `DIFFERS — ${first}` : `equal by Object.is, ${compared} numbers over ${m.log.length} frames`}`);
+  });
+}
+await browser.close();
+vite.stop();
+process.exit(failed ? 1 : 0);

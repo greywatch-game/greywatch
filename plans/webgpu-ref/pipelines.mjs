@@ -52,7 +52,10 @@
  * synchronous ones, in both modes. That total is X4.4e's oracle: zero in play,
  * every pipeline of ours asked before the card comes down (the round's
  * declared list, `Game.roundPipelines`, and the map's install) — and a DEV
- * build names any compile of ours in play itself (`PipelineCache.seal`).
+ * build names any compile of ours in play itself (`PipelineCache.seal`). Each
+ * Babylon creation in play is printed with its STACK (X4.7a), which is what
+ * names a particle field's (no mesh is drawing when one compiles) and a
+ * compute pipeline's.
  *
  * **A lost device ends it** (`harness.mjs`'s header, exit 4), and so does a hard
  * limit (exit 3, `--limit=<seconds>`): `--round`'s `until` counts FRAMES, so
@@ -106,7 +109,11 @@ await page.addInitScript((mapId) => {
       const t0 = performance.now();
       const result = orig.apply(this, a);
       const dt = performance.now() - t0;
-      window.__gpuLog[bucket].push({ t: +t0.toFixed(1), ms: +dt.toFixed(2), phase: window.__gpuPhase, mesh: window.__gpuMesh });
+      // A creation IN PLAY keeps its stack (X4.7a): what made it is then read
+      // off the frames rather than guessed from the mesh being drawn, which a
+      // particle field (no mesh) or a compute pipeline never has.
+      const stack = String(window.__gpuPhase).startsWith("life") ? (new Error().stack ?? "").split("\n").slice(2, 14).map((l) => l.trim()) : undefined;
+      window.__gpuLog[bucket].push({ t: +t0.toFixed(1), ms: +dt.toFixed(2), phase: window.__gpuPhase, mesh: window.__gpuMesh, stack });
       if (bucket === "pipelines") window.__gpuLog.pipelineMs += dt;
       else if (bucket === "modules") window.__gpuLog.moduleMs += dt;
       return result;
@@ -367,7 +374,9 @@ async function playRound(page) {
         await seconds(4);
       }
       await draw(0);
-      if (n === 1) {
+      // A map with no breakable pane (Sarab) has no pane phase: until X4.7a the
+      // lookup below read `panes[-1]` there and threw.
+      if (n === 1 && g.map.panes.length) {
         // One pane, broken by a round's path through it: the nearest
         // breakable pane, crossed along its own normal from either side —
         // with the camera turned onto it first, so its shards are in the
@@ -419,7 +428,9 @@ async function playRound(page) {
     await install();
     await life(2, { weapon: "carbine", equipment: "mine", throwable: "molotov" });
     const sum = (k) => phases.reduce((a, p) => a + p[k], 0);
-    const made = L.pipelines.filter((x) => x.phase.startsWith("life")).map((x) => `${x.phase}: ${x.mesh ?? "(no Babylon mesh drawing)"}`);
+    const made = L.pipelines
+      .filter((x) => x.phase.startsWith("life"))
+      .map((x) => `${x.phase}: ${x.mesh ?? "(no Babylon mesh drawing)"}\n      ${(x.stack ?? []).join("\n      ")}`);
     return { made, phases, installs, did, total: { babylon: sum("babylon"), ours: sum("ours"), modules: sum("modules") } };
   });
   console.log(`map ${MAP} --round`);

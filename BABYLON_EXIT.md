@@ -2246,7 +2246,7 @@ Greyfen, `F2` from the menu and each eye of the map's rows):
   live with the player in the ring, no error, the seal holding. The blob map's leak is
   measured (`FINDINGS.md` 70).
 
-### X4.7 — GPU particles — **S–M, as four sub-steps** (split 2026-11-07, proposed by the orchestrating session at the owner's instruction to implement X4.7 in sub-steps; not yet decided by the owner)
+### X4.7 — GPU particles — **S–M, as four sub-steps** (split 2026-11-07, proposed by the orchestrating session at the owner's instruction to implement X4.7 in sub-steps; not yet decided by the owner) — X4.7a **LANDED** (COMMIT_A)
 
 `Atmosphere`'s ash and `RotorWash`'s two rings (`GPUParticleSystem`, a box and a
 `CylinderParticleEmitter`) as our own compute particles: our update, our draw, our
@@ -2269,8 +2269,10 @@ to the picture": that is X4.6c's history (its row in "Decisions"), where an ambi
 brief led an implementer to an unplanned third option. **A brief from an orchestrating
 agent that reads otherwise is wrong, and this paragraph wins.**
 
-**What they are today** (a read of the code, Babylon 9.28; **X4.7a measures every claim
-here** and corrects this list in place):
+**What they are today** (a read of the code, Babylon 9.28; **X4.7a measured every claim
+here** and corrected this list in place: the table holds, every number in it measured;
+the corrections are the defines, the random draws at rest, the editor's order and the
+splits, each marked "X4.7a"):
 
 | field | systems | emitter | texture | colour | blend | random texture | capacity |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -2291,48 +2293,74 @@ here** and corrects this list in place):
   ready** (its effects compiling), so a field emits from the first frame its effects are
   ready, not from its construction. The motes' `updateSpeed` is 0.012 (0.72 s of mote
   time a second), the rings' 1/60.
-- **Where it sits in Babylon's frame.** Every system is dispatched to rendering group 0
+- **Where it sits in Babylon's frame** (X4.7a measured it, `surfaces.mjs`: every field's
+  draw on the list between `opaque` and `beforeBlended`, in every particle row). Every system is dispatched to rendering group 0
   (its emitter is a `Vector3`, so no frustum test or size gate touches it, and
   `WorldCulling` never sees it) and drawn by `RenderingGroup._renderParticles`, after the
   group's alpha-tested list and before item 6, in `scene.particleSystems` order:
   **creation order, a disposed system removed, so a rebuilt field goes to the END.**
+  **X4.7a's reading** (`particles.mjs`, a live rotation Sarab → Cinderhaven → Sarab →
+  Hollowmere → Cinderhaven in one boot): the motes stand ahead of every ring at every
+  deploy, a map change rebuilding the motes (their capacity moves) before the rings (their
+  palette does). An editor build (`F2`) has no fleet but keeps the round's rings, cleared,
+  when the palette is the same; an in-memory edit of `particles.count` and the editor's
+  rebuild then put the motes BEHIND them, and putting the count back leaves them there. The
+  editor's panel edits no `particles` field (it edits the floor alone), so no shipped or
+  editor flow reaches that order: dev only, recorded, not blocking.
   Against our points: `first`, `beforeAlphaTest`, `afterSurfaces`, `opaque` (the turf,
   added at each install), **the particles**, `beforeBlended` (the moon, first, added at
   `SkyDraw`'s construction; then `FarthestRun`), `afterGroup`. So the moon paints over a
   mote in front of it, and every pane and fade of the one run paints over the particles.
-  **No particle is drawn in the glow's mask** (`GlowPass`, `renderParticles = false`),
+  **No particle is drawn in the glow's mask** (`GlowPass`, `renderParticles = false`;
+  X4.7a: no particle draw in any row's mask),
   the lamps' atlas (the same), a shadow map or a bake (all ours). Each draw is an
   instanced triangle strip of four, an instance a slot, in slot order, unsorted; depth
   test LEQUAL, no depth write, no cull, `ALPHA_ADD` or `ALPHA_COMBINE`
   (`_setEngineBasedOnBlendMode`), so an ember leaves the coverage alpha alone and ash and
   dust accumulate into it. Its vertex stage is handed `view` and `projection` APART,
-  `eyePosition`, `translationPivot` and `worldOffset`; its fragment stage carries whatever
-  fog and image-processing defines the scene gives it. **That last is a read only**: no
-  `scene.fogMode` is set, and the scene's default `ImageProcessingConfiguration` is enabled
-  and not applied by a post process, so `IMAGEPROCESSING` (a round trip through linear) is
-  probably compiled in. The bytes need the compiled source, not this guess.
+  `eyePosition`, `translationPivot` and `worldOffset`. **X4.7a read the compiled defines
+  (`surfaces.mjs`), and the guess this entry made was wrong**: there is NO `IMAGEPROCESSING`
+  and no fog define. The render effect is `BILLBOARD`, `BILLBOARDMODE_ALL`, `EMITRATECTRL`
+  and `TONEMAPPING 0`, the rings adding `COLORGRADIENTS` and `COLORGRADIENTS_COLOR2`; the
+  update effect is `BOXEMITTER` (the motes) or `CYLINDEREMITTER` (a ring), `BILLBOARD` and
+  `EMITRATECTRL`, the rings adding `COLORGRADIENTS`, `SIZEGRADIENTS` and `VELOCITYGRADIENTS`
+  (no `ANGULARSPEEDGRADIENTS`: the spin is a range). The pipeline, read off the engine's
+  cache for the draw: depth write off, depth test LEQUAL, bias 0, cull off, write mask 15;
+  ADD `src-alpha, one` on colour and `zero, one` on alpha (the coverage untouched), STANDARD
+  `src-alpha, one-minus-src-alpha` and `one, one` (accumulated). The bytes still need the
+  compiled SOURCE, which X4.7c reads off the parent.
 - **It SPLITS the main pass.** `ComputeShaderParticleSystem.updateParticleBuffer`
   dispatches from inside `render()`, and `WebGPUEngine._computeDispatch` opens with
   `_endCurrentRenderPass()`: every system with a live count ends the main pass, and
   Babylon restarts it for the draw. **Once a ring has emitted, its count stays up until its
   `reset()`** (`RotorWash.clear`, at every install and teardown), so it dispatches and draws
-  its dead slots every frame after, at a rate of zero.
+  its dead slots every frame after, at a rate of zero. **X4.7a counted it** (`particles.mjs`,
+  the main pass's passes a frame, Sarab and Cinderhaven alike): with the particles off, 10
+  render passes from the draw phase's start to the frame's end and no compute pass; with the
+  ash and a dust ring live, 11-12 and 1-2, the main pass split 1-2 times; over water, the dust
+  ring at a rate of zero with its count of 84 still up beside the spray, 13 and 3, split 3
+  times every frame.
 - **It holds group 0, and that decides which path the seam takes.** Since X4.6e nothing
   else of Babylon's is in a round, but a started system is dispatched every frame, so in a
   live round group 0 is VISITED and our points are told inside it. **In the bank it is
   not**: `freeze` sets `scene.particlesEnabled` false for every row but a `motes` row, so
   every other row of a round is drawn through the seam's empty-group fallback (X4.5a), its
-  points told at the draw phase's end. So the bank already grades the path a live round
+  points told at the draw phase's end (X4.7a, `surfaces.mjs` on all 143 rows: 137 by the
+  fallback, the 6 particle rows by the group; live, the group on every frame the ash runs).
+  So the bank already grades the path a live round
   takes from X4.7c on (five maps) and from X4.7d on (all seven), and only a particle row
   grades the switch. A stopped field (`apply(undefined)`, every teardown) is still
   STARTED: it drains, and holds the group, behind the menu's photograph.
 - **Pipelines.** Babylon's: an update COMPUTE pipeline, made by the synchronous
   `createComputePipeline` at a system's first dispatch, and a render pipeline at its first
   draw, one of each per define set and blend (the dust and spray rings sharing theirs is a
-  read). The motes' are made under the building card, the field emitting at the vantages.
-  The rings', at rest at a count of zero, are made on the first frame a helicopter raises
-  dust: the two of Babylon's X4.4e measured in play (`pipelines.mjs cinderhaven --round`,
-  `FINDINGS.md` 16). **Beside them in that count stands `GiVolume`'s race** (three of
+  read; X4.7a: the same defines and blend, so one pipeline of each). The motes' are made
+  under the building card, the field emitting at the vantages. The rings', at rest at a
+  count of zero, are made on the first frame a helicopter raises dust: the two of Babylon's
+  X4.4e measured in play (`pipelines.mjs cinderhaven --round`, `FINDINGS.md` 16; X4.7a kept
+  each creation's stack: a compute pipeline under `ComputeShaderParticleSystem.updateParticleBuffer`
+  and a render pipeline under `GPUParticleSystem._render`, on Cinderhaven and on Sarab, a
+  bot's helicopter raising dust mid-round). **Beside them in that count stands `GiVolume`'s race** (three of
   Babylon's at the spawn in some runs, `FINDINGS.md` 16, X5.1's), which X4.7 does not touch:
   "zero in play" below means zero of ours and none of the wash's.
 - **Randomness.** Every number a field draws is `Math.random`, a picture's, which the game
@@ -2342,7 +2370,13 @@ here** and corrects this list in place):
   ring); `_initialize`, at the first `render()` after a construction or a `reset()`, draws
   4 a slot for the seeds (74,668 on Hollowmere, 540 a dust ring, 504 a spray ring);
   nothing else in the class, its emitters, `ComputeShader`, `UniformBuffer` or `RawTexture`
-  draws (a read, by `grep`). The update shader picks from the random textures by slot, seed
+  draws (a read, by `grep`). **X4.7a counted every one of these** (`particles.mjs`, each
+  construction and first update wrapped): 65,536 a mote field and 32,768 a ring at
+  construction; 22,400 (Sarab), 24,268 (Cinderhaven), 74,668 (Hollowmere), 540 and 504 at
+  `_initialize`. **And one thing the read missed: a ring AT REST draws its 540 or 504 too**,
+  at its first render after every `reset()`, because `_initialize` comes before the count
+  test, so every install, teardown and editor rebuild that clears the rings re-draws them
+  off the native stream, on the next frame that renders them. The update shader picks from the random textures by slot, seed
   and `currentCount`, so the GPU's state is a function of the CPU's emission, and so of the
   clock. `sky-motes` pins all of it (`placeVantage`'s `motes`): the field rebuilt under seed
   `0xa5`, stepped by Babylon's own pre-warm calls (`animate(true)`, `render(true, true)`) at
@@ -2356,7 +2390,21 @@ here** and corrects this list in place):
 
 **The sub-steps.** Each one's Verify includes "Every sub-step owes" below.
 
-- **X4.7a — the bank sees the particles.** No change to the game; under `src/` only
+- **X4.7a — the bank sees the particles.** **LANDED** (COMMIT_A; 2026-11-07; no change
+  to the game). Five rows banked with `--rows` (`sarab-particles-dust`,
+  `cinderhaven-particles-embers`, `-spray`, `-ring-ash`, `kurenai-particles-leaves`), each
+  at an eye a row above it stands at; `placeVantage`'s `particles` path, through one field
+  adapter a later step adds ours beside; `surfaces.mjs`'s field classes and the seam's
+  path; `pipelines.mjs --round`'s stacks (and its Sarab run, which threw on a map with no
+  breakable pane); and the live probe, `plans/webgpu-ref/particles.mjs`. **Measured**: 138
+  of 138 old rows byte-equal to a BEFORE at 38c65fd by `exact.mjs`; the five new rows
+  byte-equal across three processes (the banking, a full `--check --keep`, and
+  `surfaces.mjs --keep` with every probe hung); the same 34 stale rows red at the same
+  means; the probe's log over the rotation equal to itself by `Object.is` across two runs;
+  the corrections above, each marked X4.7a. Typecheck, build, corecheck and parity pass.
+  The note is in `plans/done/babylon_exit_landed.md`. The brief, as it was handed over:
+
+  No change to the game; under `src/` only
   `bench/vantages.ts`. **Do:** append rows, each at the END of its map's list and at an eye
   a row above it already stands at, so no older row moves and the benchmark gains no stop,
   banked with `--rows` at the parent: the ash as a map runs it, not gathered, on an ADD
