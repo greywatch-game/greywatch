@@ -657,8 +657,10 @@ export class GlowPass {
    * mask's pass are never two sizes.
    */
   private render(): void {
-    // Render targets drive this observable too — a reflection probe's bake is
-    // the one that matters — and a probe's depth is not the frame's.
+    // Only `Scene._renderForCamera` notifies this observable (Babylon 9.28,
+    // `scene.pure.js` 4180; no render target's manager does, a reflection
+    // probe's bake included), so this guards against a camera other than the
+    // frame's being drawn, which nothing does today. Harmless, and kept.
     if (this.scene.activeCamera !== this.camera) return;
     const frame = this.frame?.inputTexture;
     if (!frame) return;

@@ -636,10 +636,20 @@ and the parent opened the span on every frame too, 0.153 and 0.144 ms at the
 parent against 0.132 and 0.144 at the step (Coldharbour, Cinderhaven: the same
 within the clock's grain); and 0.003 ms at the step in a Coldharbour round with
 the particles off, which is the fallback's path. **So in a live round today
-`drawWorld` is almost all Babylon's PARTICLES** (their draw, and their compute
-dispatch, which ends the main pass, `BABYLON_EXIT.md` X4.7a; not split further),
-and a capture read across X4.7c and X4.7d has to expect it to fall by that much
-as the fields become ours, whatever the span's form.
+`drawWorld` is Babylon's PARTICLES and, about half of it, OUR OPAQUE
+RECORDING** (X4.7b's review): the particles' compute dispatch ENDS the main
+pass from inside group 0 (`_computeDispatch` calls `_endCurrentRenderPass`,
+`Engines/WebGPU/Extensions/engine.computeShader.pure.js` line 203, Babylon
+9.28), and ending a pass RUNS the bundle list (`_bundleList.run`,
+`Engines/thinWebGPUEngine.js` lines 59-67) — our `first`, `beforeAlphaTest`
+and `opaque` recordings, queued ahead of the particles. Without the ash the
+main pass ends at the glow's mask instead, so the same recording lands in
+`glow`. The Coldharbour round says so: with the particles `drawWorld` 0.132,
+`glow` 0.078, `render` 0.58 ms; with them off 0.003, 0.140 and 0.48. **So a
+capture read across X4.7c and X4.7d has to expect `drawWorld` to fall by
+about 0.13 ms while `glow` RISES by about 0.06** — a move between spans as the
+fields become ours and stop splitting the pass, not a regression of the glow,
+whatever the span's form.
 
 **What is left inside `render` and named by nothing** is the active-mesh
 evaluation (the `Mesh walk` counter, which is the same number in other units),
@@ -1276,7 +1286,13 @@ not to where they are queued: the weapon's draws are QUEUED at the end of
 rendering group 0 (`"afterGroup"`, inside `drawWorld`), but Babylon RUNS the
 queue — our recording — when it ends the main pass (`_endCurrentRenderPass`),
 so that cost lands in whichever span is open then, as the bodies' and the
-hulls' does (not confirmed by a capture). The viewer prints it as `weapon`.
+hulls' does. That is now confirmed by a capture (X4.7b's review, off that
+step's Coldharbour rounds, the measurement above): the ash's compute dispatch
+ends the main pass inside group 0, so the recordings queued ahead of it (`first`,
+`beforeAlphaTest`, `opaque`) run inside `drawWorld`, about half of its 0.132 ms,
+and with the particles off that half moves to `glow` (0.078 → 0.140 ms). The
+weapon's `"afterGroup"` recording runs at the main pass's END either way — when
+the glow's mask ends it, inside `glow`. The viewer prints it as `weapon`.
 **On a frame Babylon visits no group** (`BABYLON_EXIT.md` X4.5a's fallback: the
 menu, and since X4.5c, with no dome to hold the group, any frame of a round with
 nothing of Babylon's in view) the seam tells the group's points at the draw

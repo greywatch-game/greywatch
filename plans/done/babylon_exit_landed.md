@@ -9006,9 +9006,11 @@ under `src/` is `core/FrameProfile.ts` and `core/profileReport.ts`).
   capture): `drawWorld` and `glow` both inside `render`, and `drawWorld` ending before `glow`
   begins, on every frame at both trees; the report's tree `drawWorld: render`, `glow: render`,
   roots `frame`, `sim`, `present`. No page or console error. **In a live round today the span
-  is almost all Babylon's particles** (0.13-0.15 ms with the ash, 0.003 without), so a
-  capture across X4.7c and X4.7d compares the same span, but its reading falls by the ash's and
-  then the wash's cost as they become ours (their update a prepare, outside it).
+  is Babylon's particles and, about half of it, our opaque recording** (0.13-0.15 ms with the
+  ash, 0.003 without; this said "almost all Babylon's particles" until the review below), so a
+  capture across X4.7c and X4.7d compares the same span, but its reading falls by ~0.13 ms
+  as the ash and then the wash become ours (their update a prepare, outside it), while
+  `glow` rises by ~0.06.
 - **The viewer** (scratch `x47b/viewer.mjs`, through the hand-off key): a v36 round and menu
   capture and a v35 round and menu capture open, the report shown, no loader error, no page
   error; the v36 menu lists `drawWorld`, the v35 menu does not. No name moved, so the viewer is
@@ -9028,3 +9030,31 @@ under `src/` is `core/FrameProfile.ts` and `core/profileReport.ts`).
   editor build's frames (an editor's Babylon generator still enters `shadowPass`, unchanged);
   a `?gpu` capture. `CLAUDE.md`'s "Measuring a frame" stands as written (the spans still hang
   off the scene's own observables), so it is not touched.
+
+**X4.7b's review** (2026-11-07; no change to the game: comments and records only, `git diff`
+under `src/` is comments in `core/FrameProfile.ts`, `core/profileReport.ts`,
+`shaders/GlowPass.ts` and `shaders/FrameDepth.ts`). An independent review, off Babylon 9.28's
+source and the step's captures (scratch `x47b/`), found one real mis-statement and two minor ones.
+
+- **What `drawWorld` holds.** `GPUParticleSystem`'s compute dispatch ENDS the main pass from
+  inside group 0 (`_computeDispatch` calls `_endCurrentRenderPass`,
+  `Engines/WebGPU/Extensions/engine.computeShader.pure.js` line 203), and ending a pass runs
+  the bundle list (`Engines/thinWebGPUEngine.js` lines 59-67): our `first`, `beforeAlphaTest`
+  and `opaque` recordings, queued ahead of the particles. So with the ash our opaque recording
+  runs inside `drawWorld`; without it, where the glow's mask ends the pass, inside `glow`. The
+  step's Coldharbour rounds (`step-summary.json`, `fallback-summary.json`): particles on,
+  `drawWorld` 0.132 / `glow` 0.078 / `render` 0.58 ms; off, 0.003 / 0.140 / 0.48. About half
+  of `drawWorld` is our encoding, not "almost all Babylon's particles": across X4.7c and X4.7d
+  it falls by ~0.13 ms while `glow` rises by ~0.06, a move between spans and not a regression
+  of the glow. Corrected in `docs/profiling.md` (the X4.7b measurement; the weapon's queuing,
+  whose "not confirmed by a capture" is now confirmed by these), `FrameProfile.hookRender`'s
+  header, `BABYLON_EXIT.md`'s entry and the note above; X4.7c's and X4.7d's Verify say to
+  expect the move.
+- **The guards' comments.** `GlowPass.render` and `FrameDepth` said render targets ("a
+  reflection probe's bake") raise `onAfterDrawPhaseObservable`; in 9.28 only
+  `Scene._renderForCamera` notifies it (`scene.pure.js` line 4180). The comments say so; the
+  guards stay, harmless.
+- **The v36 note** (`profileReport.ts`): on a group frame the glow skips, v36 also picks up
+  the seam's `after` observer and `FrameDepth`'s identity test (negligible), not only the
+  rendering manager's walk.
+- **Gates**: typecheck and build pass.

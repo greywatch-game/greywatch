@@ -1345,8 +1345,9 @@ export function buildReport(
     // renderer's points. A v35 capture's `drawWorld` is group 0 alone, and
     // absent on a frame Babylon visited no group (the menu, a frame with
     // nothing of Babylon's in group 0); on a frame it did visit one, v36 adds
-    // only the rendering manager's own walk and nothing measurable. Nothing
-    // else changed meaning.
+    // the rendering manager's own walk and, on such a frame the glow skips,
+    // the seam's `after` observer and `FrameDepth`'s identity test — nothing
+    // measurable. Nothing else changed meaning.
     version: 36,
     build: buildStamp(),
     takenAt: new Date().toISOString(),

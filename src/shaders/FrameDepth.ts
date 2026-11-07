@@ -57,7 +57,7 @@ export class FrameDepth {
 
   /**
    * Takes the frame's depth attachment at the end of the draw phase, with the
-   * same probe guard as `GlowPass`, and binds, renders and copies nothing.
+   * same camera guard as `GlowPass`, and binds, renders and copies nothing.
    * `GlowPass`'s observer on the same hook is registered FIRST (`Game` builds
    * the glow before this) and renders its own targets, so what this reads as
    * the bound target depends on that pass putting the frame back — which it
@@ -72,8 +72,10 @@ export class FrameDepth {
   ) {
     const engine = this.scene.getEngine() as unknown as EngineInternals;
     this.scene.onAfterDrawPhaseObservable.add(() => {
-      // Render targets drive this observable too — a reflection probe's bake
-      // is the one that matters — and a probe's depth is not the frame's.
+      // Only `Scene._renderForCamera` notifies this observable (Babylon
+      // 9.28, `scene.pure.js` 4180; no render target's manager does), so
+      // this guards against another camera's depth, which nothing draws
+      // today. Harmless, and kept, as `GlowPass`'s is.
       if (this.scene.activeCamera !== this.camera) return;
       const tex = engine._currentRenderTarget?._depthStencilTexture;
       if (!tex || tex === this.source) return;

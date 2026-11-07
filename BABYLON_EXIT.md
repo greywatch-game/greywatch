@@ -2503,16 +2503,35 @@ each as stated):
   Coldharbour round with the particles off (the fallback's path) 600 of 600 at 0.003 ms. On
   every frame of every capture `drawWorld` and `glow` both inside `render`, `drawWorld` ended
   before `glow` began (the trace, 601 frames each); the tree `drawWorld: render`, `glow:
-  render`. **So in a live round today the span is almost all Babylon's particles**, and it
-  will fall by that much across X4.7c and X4.7d whatever its form: like is compared with
-  like, but not a constant. The viewer opens v36 and v35 captures with no error (no name
+  render`. **So in a live round today the span is Babylon's particles and, about half of it,
+  our opaque recording** (corrected below; this said "almost all Babylon's particles"), and
+  it will fall by ~0.13 ms across X4.7c and X4.7d while `glow` rises by ~0.06: like is
+  compared with like, but not a constant. The viewer opens v36 and v35 captures with no error (no name
   moved, so it was not touched). The bank, all 143 rows, against a BEFORE at 30bd400 by
   `exact.mjs`: 141 byte-equal, `harrowmead-view-pistol-reload` within its known flake, and
   `sarab-ground` 100 pixels by 2/255, the cross-process residue: Sarab alone three times a
   tree, the parent drew the step's frame once (the two frames both the parent's). The same
   34 stale rows red at the same means. Typecheck, build (`check-babylon-free`,
   `check-proving`), corecheck and parity pass. The note is in
-  `plans/done/babylon_exit_landed.md`. The brief, as it was handed over:
+  `plans/done/babylon_exit_landed.md`. **Reviewed** (independent, off Babylon 9.28's source
+  and the step's captures; comments and records only, no change to the game): **what the
+  span holds was mis-stated.** `GPUParticleSystem`'s compute dispatch ENDS the main pass from
+  inside group 0 (`_computeDispatch` calls `_endCurrentRenderPass`,
+  `Engines/WebGPU/Extensions/engine.computeShader.pure.js` line 203), which runs the bundle
+  list (`Engines/thinWebGPUEngine.js` lines 59-67): our `first`, `beforeAlphaTest` and
+  `opaque` recordings, queued ahead of the particles. So with the ash our opaque recording
+  runs INSIDE `drawWorld`, and without it where the glow's mask ends the pass, inside `glow`.
+  The Coldharbour rounds show it: particles on, `drawWorld` 0.132 / `glow` 0.078 / `render`
+  0.58 ms; off, 0.003 / 0.140 / 0.48. About half of `drawWorld` is our encoding, so across
+  X4.7c and X4.7d it falls by ~0.13 ms while `glow` rises by ~0.06 — a move between spans,
+  not a regression of the glow (both Verifys say so). Corrected: `docs/profiling.md` (the
+  X4.7b measurement, and the weapon's queuing, "not confirmed by a capture" now confirmed),
+  `FrameProfile.hookRender`'s header, and this entry and the note. Also: `GlowPass.render`'s
+  and `FrameDepth`'s guard comments said render targets ("a reflection probe's bake") raise
+  `onAfterDrawPhaseObservable`, when in 9.28 only `Scene._renderForCamera` does
+  (`scene.pure.js` line 4180) — the guards stay, harmless; and the v36 note in
+  `profileReport.ts` now says a group frame the glow skips also picks up the seam's `after`
+  observer and `FrameDepth`'s test (negligible). The brief, as it was handed over:
 
   No change to the picture; a report
   version. The span opens on Babylon's rendering group, so on a frame Babylon visits no group
@@ -2600,6 +2619,10 @@ each as stated):
   before, and plain `pipelines.mjs hollowmere` creating nothing new; `F2` in an editor build
   (the motes run there too, one path), its frames at a map's eyes byte-compared with the
   BEFORE and reported, as X4.6c's review did; the menu and a second round; the seal quiet.
+  **A `?profile` capture across this step is expected to move time from `drawWorld` to
+  `glow`** on the five maps whose ash becomes ours (X4.7b's review: about half of the ~0.13 ms
+  `drawWorld` falls by is our opaque recording, which lands in `glow` once no compute
+  dispatch ends the main pass inside group 0, ~0.06 ms), so neither span's move is a regression.
   **And what the instruments do NOT hold, each checked another way and the way named in
   the note** (X4.7a's review): **no row puts a particle against the see-through panes or the
   fades** (the one run at `"beforeBlended"`), and the ash's order against the MOON is held
@@ -2646,7 +2669,11 @@ each as stated):
   probe's log equal by `Object.is` to the parent's in every rate, emitter and site; the fade
   with its hull at a stated `hullDrawDistance`, as X4.2d's review measured it; a rotation
   through both palettes; `census`, `surfaces.mjs` and a live round's `render` log with no
-  Babylon particle; `F2`, the menu, a second round, the seal quiet. **And what the
+  Babylon particle; `F2`, the menu, a second round, the seal quiet. **A `?profile` capture
+  across this step is expected to move time from `drawWorld` to `glow`** on Sarab and
+  Cinderhaven, as X4.7c's did on the other five (X4.7b's review: about half of the ~0.13 ms
+  `drawWorld` falls by is our opaque recording moving to `glow`), so neither span's move is
+  a regression. **And what the
   instruments do NOT hold** (X4.7a's review), each checked another way and the way named in
   the note: **no row puts a ring against the see-through panes, the fades or the moon**, and
   nothing at all holds a ring's order there (the ash's against the moon is `sky-motes`'s,
