@@ -123,6 +123,9 @@
  *   how a post setting is photographed OFF beside the row that has it on.
  * - `turn` — radians: the motion blur held mid-turn rather than at rest (see
  *   `freeze`), since a still camera leaves the pass inert.
+ * - `damage: true` — the grade's red damage flash (`PaperGrain.flashDamage`)
+ *   held at its kick, which `freeze` raises under the stubbed decay and the
+ *   put-away puts out (X5.2a). Every other row is shot with none.
  * - `strike` — seconds: a lightning strike in the air, the map's own seeded
  *   schedule read once at that clock (`LightningStrikes.step`), which `freeze`
  *   otherwise holds with nothing up.
@@ -232,6 +235,7 @@ export interface Vantage {
   flown?: { meters: readonly number[]; seconds: number };
   settings?: Readonly<Record<string, string | boolean | number>>;
   turn?: number;
+  damage?: boolean;
   strike?: number;
   motes?: { step: number; steps: number; box: number };
   particles?: {
@@ -394,6 +398,45 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
       fov: 22,
       zones: true,
       flown: { meters: [0, 0, -1, 0, 0], seconds: 6 },
+    },
+    // Appended for X5.2a, after every row above, at `lanterns`' eye so the
+    // benchmark gains no stop: what the post chain's move (X5.2) would change
+    // that the `post-*` rows above cannot see — every row there is at a
+    // scaling level of 1, with no flash and with at least one tail pass on.
+    {
+      id: "post-scale50",
+      of: "`lanterns` at render scale 0.5",
+      proves:
+        "the chain at a scaling level of 2: every target re-sized (the chain's inputs 960x540, the glow's 480x270 and 240x135), the glow's blur kernel at 14 rather than 28 (its shader text is a function of it), and the frame upscaled by the compositor — what a port must draw correctly at every scale",
+      pos: [2, 1.7, 18],
+      target: [0, 2.2, -14],
+      settings: { renderScale: 0.5 },
+    },
+    {
+      id: "post-scale75",
+      of: "`lanterns` at render scale 0.75",
+      proves:
+        "the chain at a FRACTIONAL scaling level (1.333): the targets 1440x810, the glow's floored to 720x405 and 360x202 (an odd height halved), the blur kernel at 21",
+      pos: [2, 1.7, 18],
+      target: [0, 2.2, -14],
+      settings: { renderScale: 0.75 },
+    },
+    {
+      id: "post-damage",
+      of: "`lanterns` with the grade's red damage flash held at its kick",
+      proves: "the grade's `damage` term, which no other row reaches — every frozen frame is in a state where nothing hits the player",
+      pos: [2, 1.7, 18],
+      target: [0, 2.2, -14],
+      damage: true,
+    },
+    {
+      id: "post-alloff",
+      of: "`lanterns` with every tail pass off: FXAA, the light shafts, the motion blur and the grain",
+      proves:
+        "the chain as the ink ALONE, writing the canvas itself — the one arrangement no single-setting row reaches, and the one in which the ink is the last pass",
+      pos: [2, 1.7, 18],
+      target: [0, 2.2, -14],
+      settings: { fxaa: false, volumetrics: "off", motionBlur: false, paperGrain: false },
     },
   ],
   greyfen: [

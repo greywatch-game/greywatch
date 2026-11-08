@@ -3422,7 +3422,7 @@ correction marked "X5.1a"):
   of the eventual change, the rest the multi-bounce iteration's: 99% by two); no Babylon
   compute in a round or an editor build.
 
-### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07: the owner instructed that steps be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split below was proposed by the orchestrating session from a planning agent's read at 33a8d35, and its two shaping decisions taken by the owner the same day, its seven others the next, rows in "Decisions that are yours") — X5.2a, X5.2b, X5.2c1, X5.2c2, X5.2d not started
+### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07: the owner instructed that steps be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split below was proposed by the orchestrating session from a planning agent's read at 33a8d35, and its two shaping decisions taken by the owner the same day, its seven others the next, rows in "Decisions that are yours") — X5.2a **LANDED** (this commit); X5.2b, X5.2c1, X5.2c2, X5.2d not started
 
 `FrameDepth`, `CelInk` with the glow's compose in its last line, the glow's
 blur, FXAA (already our own fragment), `Volumetrics`, `MotionBlur` and
@@ -3497,8 +3497,10 @@ commit of its own whose subject starts `Picture change:`, only by the owner's
 decision, with the bank's numbers (rule 2). **No sub-step adds a seam item.**
 
 **What it is today** (a read of the code, Babylon 9.28, by a planning agent at
-33a8d35 — **not measured; X5.2a measures it and corrects it in place**, each
-correction marked "X5.2a"):
+33a8d35; **X5.2a measured it** with `plans/webgpu-ref/post.mjs` at b00b887 — the
+desktop page, 1920x1080 at 1, and a phone's, 832x384 at 2.8125, sixteen scenarios
+each, read off the device pass by pass — and corrected it in place, each correction
+marked "X5.2a"):
 
 - **The order on the camera's list, and how it is held.** `CelInk` is built
   with the camera and attaches itself first (`Game.ts` ~2169).
@@ -3512,7 +3514,14 @@ correction marked "X5.2a"):
   detach nulls an entry and an indexed attach refills a null
   (`camera.pure.js` 619-655); `_getActivePostProcesses` skips nulls
   (`postProcessManager.js` 46-56), so holes accumulate, bounded by settings
-  clicks. The indices (0, 1→2, 3, 4, 5) are inferred, not logged.
+  clicks. The indices (0, 1→2, 3, 4, 5) are inferred, not logged. **X5.2a, logged
+  (`chain.list`)**: at boot the list is `[0 ink, 1 hole, 2 fxaa, 3 shafts, 4 blur,
+  5 grain]` — FXAA's first slot is the HOLE at 1, its live slot 2 (`fxaaSlot`), the
+  shafts' 3 (`volumetricsSlot`) — on both pages; the shafts off leave 3 a hole, FXAA
+  off leaves 2 one; and the holes GROW with the blur-and-grade dance: after the
+  sixteen scenarios' toggles (the blur off and on, the grain off and on) the list is
+  eleven entries, `[ink _ fxaa shafts _ _ _ _ _ blur grain]`, the blur at 9 and the
+  grain at 10. The draws are the same either way (Babylon skips a null).
 - **Every Babylon `PostProcess` alike.** Babylon's QUAD — `(1,1) (-1,1)
   (-1,-1) (1,-1)`, indices `0,1,2,0,2,3`, `drawElementsType(0, 0, 6)` — and its
   `postprocess` vertex stage, `vUV = (pos × 0.5 + 0.5) × scale`, the processor
@@ -3526,17 +3535,67 @@ correction marked "X5.2a"):
   pipeline is Babylon's, compiled at boot (`docs/states.md`: the post chain's
   six on the frames before the card), none on `Game.roundPipelines`. No pass
   uses a seam item; `FrameDepth` reaches an internal outside the seam.
+  **X5.2a, off the device** (every pass and draw below, both pages): the quad is
+  exactly as read — one `float32x2` attribute at stride 8, its bytes `(1,1) (-1,1)
+  (-1,-1) (1,-1)`, `uint16` indices `0,1,2,0,2,3`, `drawIndexed(6, 1, 0, 0, 0)`,
+  triangle-list, cull none, ccw, no blend, write mask 15, an explicit layout (group 0
+  EMPTY, every binding in group 1), the viewport the target's size and no scissor.
+  The vertex text is `vUV = (position × 0.5 + 0.5) × scale` then
+  `position.y *= internals.yFactor_`, and `Internals` is an 8-byte uniform of its own
+  (`yFactor_` -1 into a texture and +1 into the canvas, then `textureOutputHeight_`);
+  **FXAA's vertex stage multiplies by no `scale`**; and **the vertex module carries
+  the pass's whole `LeftOver` struct** (the ink's vertex text declares all of the
+  ink's uniforms), so a pass's vertex TEXT is a function of its fragment's uniforms
+  and each pass has a vertex module of its own (twelve modules for the six stages'
+  first variants). Each pass's colour target is `rgba8unorm`, usage 23 (copy src,
+  copy dst, binding, attachment), the render size, loaded `clear` to the scene's
+  clear colour (Hollowmere's `[0.0314, 0.0510, 0.0863, 1]`) and stored; **only the
+  frame** (the ink's input, the scene's draws) has a depth attachment, `depth32float`
+  cleared to 1, and no intermediate pass has one. The SAMPLERS as bound: the ink's,
+  the shafts', the blur's and the grain's inputs nearest/nearest/nearest, clamp,
+  lod 0..0, anisotropy 1; FXAA's input linear/linear, mip nearest, lod 0..0,
+  anisotropy 1; the ink's mask and the two glow targets linear/linear/linear, clamp,
+  lod 0..32, **anisotropy 4**; the shafts' two shadow maps (`r16float`, 2048 and
+  1024) nearest like their input, the cloud field (`rg8unorm` 256) linear with
+  anisotropy 4. The depth is read by `textureLoad` (`texture_depth_2d`, no
+  sampler). Every RTT pass's pipeline has NO depth-stencil state. **The CANVAS's pass
+  is not like the others**: it carries the ENGINE's own depth (`depth32float`, the
+  render size, no `COPY_SRC`; `canvas.depth` in the log), not the frame's, loaded
+  and stored, and its pipeline has `depth32float`, `depthWriteEnabled` TRUE and
+  compare `always`, so the last pass WRITES the quad's depth into it every frame —
+  and the frame OPENS with a canvas pass of no draws that loads the colour
+  (`scene.autoClear` false) and clears that depth to 1 (`autoClearDepthAndStencil`
+  true). The canvas is `bgra8unorm`, premultiplied, usage 17 (attachment and copy
+  src), the device's preferred format. The uniform blocks: the ink 112 bytes, FXAA
+  16, the shafts 320, the blur 112, the grain 496, a glow blur and the box filter 16,
+  each beside the 8 of `Internals`. **The pipelines** (Babylon's
+  `createRenderPipeline`, synchronous): all six of the chain's are made on the
+  page's FOURTH frame (the desktop's first `loading` frame, the phone's last menu
+  frame) and drawn on it — frames 1 to 3 draw nothing of the chain at all, only
+  canvas passes; a shafts rung change in play makes its pipeline on the frame of
+  the change and draws it on that frame; **no frame was seen with a pass skipped
+  for a compile**. **A render-scale change and a resize each cost ONE frame with
+  nothing in it but the canvas's opening pass** — no scene, no mask, no glow, no
+  chain — and the next frame is whole (both pages, the resize on the desktop's).
 - **`FrameDepth`** captures `engine._currentRenderTarget._depthStencilTexture`
   at `onAfterDrawPhase` (an internal, the seam header's "not here" list) and
   wraps it in a `ThinTexture`; the ink, the shafts, the blur and the grain read
   it by `textureLoad` (`texture_depth_2d`, no sampler); it relies on
-  `GlowPass` rebinding the frame; `depth32float`, one sample.
+  `GlowPass` rebinding the frame; `depth32float`, one sample. **X5.2a**: it is the
+  frame's depth (`frame.depth`, the ink's input's own attachment) on every scenario,
+  the render size, `depth32float`, one sample, usage 23.
 - **`CelInk`** is our WGSL in Babylon's dialect, which the processor rewrites
   into structs and bindings. It reads the frame at `vUV` (alpha the coverage,
   `edge *= 1 - a`), the depth, the mask and `glowNear`/`glowWide` (the glow's
   compose spliced into its last line), writes alpha 1, takes eleven uniforms and
   `glowIntensity` a frame and the fog band at an environment change. **Its input
-  IS the frame the scene draws into**; it is never detached.
+  IS the frame the scene draws into**; it is never detached. **X5.2a**: its bind
+  group is the frame (binding 0), the frame's depth (1), the mask (2), `glowNear` (3)
+  and `glowWide` (4), then four samplers (5 the frame's, nearest; 6 to 8 the mask's
+  and the glow's, linear with anisotropy 4), `Internals` (9) and its 112-byte block
+  (10); the frame's clear (`clear` to the scene's clear colour, depth to 1) is
+  Babylon's `PostProcess.activate` of the ink's own input. With every tail pass off
+  the ink IS the canvas's pass, and takes the canvas pass's depth state above.
 - **`GlowPass`**: the MASK is a Babylon render target (`rgba8`, the frame's
   depth shared, bilinear clamp) whose clear observer opens our draws (items 2 to
   5) and whose after-render closes them, its Babylon list being the active
@@ -3547,35 +3606,84 @@ correction marked "X5.2a"):
   depends on its kernel (`56 / (downsample × level)`, rounded by
   `_nearestBestKernel`, weights baked as `#define`s) and its tap split on the
   device's `maxInterStageShaderVariables`, so a render-scale, DPR or glow-rung
-  change recompiles, and the pass is skipped while it compiles.
+  change recompiles, and the pass is skipped while it compiles. **X5.2a**: the
+  mask is cleared `[0, 0, 0, 1]` and LOADS the frame's depth; the glow's own passes
+  (`glowDown` on `low`, then the four blurs into `glow.nearH`, `glow.near`,
+  `glow.wideH`, `glow.wide`) LOAD their colour — no clear — with the viewport set to
+  the target and no depth attachment, each target `rgba16float`, and each reads its
+  source linear/linear/linear, clamp, lod 0..32, anisotropy 4. The four blurs are
+  ONE program (Babylon's effect cache hands all four the same effect; the direction
+  is a uniform), its text the kernel's: Babylon's `kernel` was 28, 21 and 14 at
+  render scale 1, 0.75 and 0.5 on `high` and 14, 10.5 and 7 on `low` (the desktop),
+  and 78.75, 59.06 and 39.38 on `high`, 39.38, 29.53 and 19.69 on `low` (the phone,
+  whose scaling level is 0.356, 0.474 and 0.711) — five distinct texts a page, ten
+  modules with their vertex stages, the kernel's offsets and weights inlined as
+  constants. The device's `maxInterStageShaderVariables` is 16 here. The targets
+  are floored as read: the desktop at 0.75 is `glow.near` 720x405 and `glow.wide`
+  360x202, the phone at 1 is 1170x540 and 585x270, at 0.75 877x405 and 438x202, and
+  `low`'s `glow.down` is the near size (`1x1` on `high`).
 - **FXAA**: only the FRAGMENT is ours (`Fxaa.ts`); the vertex stage (eight
   sample-coordinate varyings, `texelSize`) and the pass are Babylon's.
   `DefaultRenderingPipeline` sets `scene.autoClear = false` and puts it back on
   dispose. **The "Mali driver" arm is dead under WebGPU**: `WebGPUEngine`'s
   driver info is the empty string, so the claims at `Game.ts` ~4030 and
   `Fxaa.ts` ~39-42 (and `FINDINGS.md` 5's phone statement) are wrong — read,
-  not run on a Mali; corrected by the sub-step that moves FXAA.
+  not run on a Mali; corrected by the sub-step that moves FXAA. **X5.2a, measured
+  on this box**: `engine.extractDriverInfo()`, what Babylon's
+  `ThinFXAAPostProcess._GetDefines` tests for "mali", is the empty string under
+  WebGPU (still not run on a Mali). FXAA's vertex stage writes `vUV` and the eight
+  sample coordinates, nine inter-stage variables; its own block is 16 bytes
+  (`texelSize`); it binds its input and one sampler.
 - **`Volumetrics`**: one shader per rung (`SAMPLES` 8, 16, 32), a rung change a
   rebuild; reads the depth, the world and body shadow maps (ours, wrapped; or
   `litShadowTexture`; or an editor build's generator maps; nearest clamp) and
   Sky's cloud field — **Babylon's last reader of the cloud field in a round**
   (X5.1a); its `hash(vUV × dims)` jitter and dither are bit-sensitive to `vUV`;
   it attaches only once all four inputs exist, so the first frame has no shafts.
+  **X5.2a**: the pass drew on the chain's first frame on both pages (its four
+  inputs already stood); its group is its input (0), the frame's depth (1), the
+  world's and the bodies' shadow maps (2, 3: `r16float` 2048 and 1024 on `high`
+  shadows), the cloud field (4, `rg8unorm` 256), their four samplers (5 to 7
+  nearest, 8 the cloud field's linear with anisotropy 4), `Internals` and a
+  320-byte block. Each rung is its own fragment module; the vertex module is one.
 - **`MotionBlur`**: rotation only; its history is the CPU's previous camera
   basis (from the aim and `dt`), not a texture; its `mat3x3f` repacked into vec4
   columns; the depth sets the weapon band; a `hash(vUV)` jitter; a straight copy
-  at rest; reset at teleports.
+  at rest; reset at teleports. **X5.2a**: at rest its output is byte-equal to its
+  input (`blur.out` and `shafts.out` hash the same), but two of its uniforms are not
+  a function of the frame: `maxShift` is the config's rate times the `dt` of the last
+  `update` — the machine's frame time, 0.01896 against 0.0192 in two processes —
+  and `reproject` is left as the last rotation it was handed ("deliberately
+  stale" while the strength is 0), so the bytes a held blur is handed depend on the
+  frames before it. `freeze` now shows it the aim once at 1/60 s at rest
+  (`harness.mjs`), which pins the first; the second is a function of the row
+  sequence, as a row's frame is.
 - **`PaperGrain`** IS the canvas pass; its aberration reads the input at
   `uv ± offset`, so it is NOT point-wise; the depth gives position;
   `dpdx`/`dpdy`, a `cellOffset` `array<vec4f, 24>` computed in float64; the
   grade set per map, the damage flash decaying in `update`. **It has no clock**:
-  the harness's `g.post.time = 0` is a stale no-op.
+  the harness's `g.post.time = 0` is a stale no-op (**X5.2a**: removed; `freeze`
+  holds the grade, the shafts and the blur through one adapter, `postAdapter`, and
+  raises the flash for a `damage` row under the held decay). **X5.2a**: its block is
+  496 bytes; it binds its input (nearest), the frame's depth and `Internals`; it is
+  the canvas pass with the canvas pass's depth state above.
 - **Render scale** is `engine.setHardwareScalingLevel(1 / (dpr × renderScale))`
   (`Game.ts` ~3836-3839), which moves every target's size and the blur's kernel.
+  **X5.2a**: the levels measured are 1, 1.333 and 2 on the desktop (render sizes
+  1920x1080, 1440x810, 960x540) and 0.356, 0.474 and 0.711 on the phone (2340x1080,
+  1755x810, 1170x540); every chain target follows the render size exactly.
 - **Per state**: the chain runs every frame in every state — the menu under the
   photograph, the kit screen, the editor. `post.update`, `syncVolumetrics` and
   `motionBlur.update` run in `tick`'s `post` span; the recording sits inside
-  `render`, unnamed.
+  `render`, unnamed. **X5.2a**: not from the page's first frame — the first three
+  draw only canvas passes, and the chain (with the scene and the mask) draws from
+  the fourth, in the menu on the phone's page — and on the frame after a
+  render-scale change or a resize it draws nothing at all (above).
+  `scene.imageProcessingConfiguration` is off throughout (`isEnabled` and
+  `applyByPostProcess` false, exposure and contrast 1, tone mapping, vignette, colour
+  curves, grading and dithering off); `scene.autoClear` is false and
+  `autoClearDepthAndStencil` true in every scenario (`DefaultRenderingPipeline` stands
+  throughout); the scene's clear colour is the map's.
 
 **The sub-steps**, least risk first. Each one's Verify includes "Every sub-step
 owes" below.
@@ -3602,6 +3710,61 @@ owes" below.
   corrected in place. **Verify:** the probe equal to itself across two
   processes and failing on hand-edited copies; the new rows byte-stable; every
   old row byte-equal to a BEFORE at the parent.
+
+  **X5.2a LANDED** (this commit; 2026-11-08; no change to the game: a new probe, the
+  harness's post path through one adapter, four rows, docs; nothing under `src/` but the
+  rows and their `damage` field in `bench/vantages.ts`). **The probe**,
+  `plans/webgpu-ref/post.mjs` (its header is its contract): Hollowmere at `lanterns`'
+  eye, each scenario shot as `bank.mjs` shoots a row (`placeVantage`, readiness, every
+  stage's effect ready, the settle, `freeze`), at two pages — `desk` 1920x1080 at 1 and
+  `phone` 832x384 at 2.8125 (`bootMap` gained `viewport` and `deviceScaleFactor`) —
+  through sixteen scenarios a page (render scale 1, 0.75 and 0.5 at both glow rungs,
+  shafts off, low and high, FXAA, the blur and the grain each off, all four off, the blur
+  in flight, the damage flash, the base again); two consecutive frames captured, the
+  second logged and checked equal to the first. Read off the device from the page's first
+  line: every render pass in submit order (role, label, attachments and their targets'
+  formats, sizes and usage, load and store ops, clear values) and a SHA-256 of every
+  colour target as its pass left it (a copy recorded on the pass's own encoder after its
+  `end`; depth for a named target with `COPY_SRC`), and for every draw a named stage made
+  the pipeline (modules by tokens, entry points, vertex layout, topology, cull, front face,
+  depth-stencil, targets' formats, blend and write mask, multisample, the layout entry by
+  entry), the bind groups (samplers by descriptor, views by target, uniform buffers by
+  their BYTES as the queue held them at the submit — bundles resolved where the pass runs
+  them), the vertex and index bytes, the viewport, scissor and draw call; beside each
+  frame the camera's list with its holes, each pass's fields, the glow's rung, kernel and
+  targets, the scaling level, `scene.autoClear`, `autoClearDepthAndStencil`, the clear
+  colour and `scene.imageProcessingConfiguration`; once a page the device's limits, the
+  canvas's configuration, the driver info Babylon's FXAA tests and every module's
+  processed text and tokens. **One adapter names everything** (`window.__postGpu`:
+  `refresh`, `stage(module)`, `target(texture)`, `chain()`; Babylon's arm today, ours
+  added per stage by the sub-step that moves it, under the same names — targets named by
+  what WRITES them, `frame`, `<stage>.out`, `canvas`, the glow's six). The LIVE frames
+  (boot, a shafts rung change, a render-scale change, a glow rung change, a resize) are
+  printed and not compared. **The harness**: `freeze`, `thaw` and `placeVantage` reach the
+  grade, the shafts and the blur through one adapter (`postAdapter`, `window.__refPost`,
+  Babylon's arm), each stashed with the object it came off; the stale `g.post.time = 0` is
+  gone; `freeze` takes `damage` (the flash raised under the held decay; `placeVantage`
+  puts it out); and **the probe found one more thing that moved by itself in a held
+  world**: the motion blur's `maxShift` uniform, the config's rate times the `dt` of its
+  last real `update` (0.01896 against 0.0192 in two processes), so `freeze` now shows the
+  pass the aim once at 1/60 s at rest — no pixel moves (the pass is a copy at rest; 502 of
+  502 readbacks equal with and without it, and the bank below). **The rows**, appended by
+  `--rows` at the end of Hollowmere's list at `lanterns`' eye: `post-scale50`,
+  `post-scale75`, `post-damage` (the vantage table's new `damage` field), `post-alloff`.
+  **Measured**: every correction above marked X5.2a. **Verify**: the probe equal to
+  itself across two processes (`--against`: 34,083 values a page, 68,166 in all, every
+  scenario steady), and FAILING on copies of its log with a sampler's filter, a uniform
+  byte, a load op, the canvas's hash, a module's token count, a vertex stride and a hole
+  in the camera's list each changed by hand; the four new rows banked in one process and
+  byte-equal to it in two more (`--check`: 0 pixels; `exact.mjs` over the two `--keep`
+  directories: Hollowmere's 20 rows byte-equal); the bank, 143 old rows against a BEFORE
+  at b00b887 (`--check --keep`, the parent's harness) by `exact.mjs`: 142 byte-equal and
+  `sarab-shelf` within its flake (1 pixel by 1/255), the four new rows named `--new`; the
+  same 34 stale rows red against `ref/` on both sides; typecheck, build
+  (`check-babylon-free`, `check-proving`), corecheck, parity, `gate` and `shaders`
+  pass. Not run, the step moving no draw: `pipelines.mjs`, `surfaces.mjs`, `census`, the
+  editor's frames, the live toggles by hand and `?profile&gpu` (the probe's live half
+  covers the toggles and the resize). The note is in `plans/done/babylon_exit_landed.md`.
 - **X5.2b — the glow's blur and downsample are our draws**, in `GlowPass`'s own
   passes, with no change to the pass structure: the kernel text generated as
   Babylon generates it (the same device limit), Babylon's vertex stage and quad
@@ -3613,14 +3776,26 @@ owes" below.
   prefix output **only while a stage of ours is active**, so with the grain off
   Babylon's prefix writes the canvas exactly as today and no interim copy pass
   exists. The canvas's pass targets include the main pass's `depth32float`
-  (inferred; X5.2a measures it). The harness's readiness arm asks our
+  (inferred; X5.2a measures it). **X5.2a measured it, and it is not the main
+  pass's**: the canvas's pass carries the ENGINE's own depth (`canvas.depth`,
+  `depth32float`, the render size, loaded and stored), not the frame's, and
+  Babylon's pipeline there WRITES it (compare `always`, write on) — so a stage of
+  ours drawn into that pass owes its pipeline that depth format, and whether it
+  writes that depth is a byte the probe compares (nothing reads it after the
+  frame's opening clear). The harness's readiness arm asks our
   pipelines. Retires the blur-and-grade dance.
 - **X5.2c2 — motion blur, the shafts, FXAA** (may land as one commit a pass,
   each moving the boundary one pass). Babylon's chain becomes `[celInk]`. The
   shadow maps read as `own ?? hostTexture` (`ShadowBindings`' pattern), the
   cloud field through `hostTexture` with the host's sampler. 
   `DefaultRenderingPipeline` is deleted, so `scene.autoClear` returns to true:
-  the clears shown equal by the probe. Every volumetric rung declared. Retires
+  the clears shown equal by the probe. **X5.2a measured what that moves**: the
+  frame opens with a canvas pass of no draws that LOADS the colour and clears the
+  engine's depth; with `autoClear` true it clears the colour too, which the last
+  pass overwrites whole on every frame the chain draws — but on the one frame after
+  a render-scale change or a resize the chain draws nothing (X5.2a), and that frame's
+  canvas is whatever that opening pass leaves. The probe's descriptors will differ
+  there by design; that frame's picture is the case to name. Every volumetric rung declared. Retires
   the FXAA and shafts slot tricks, and the dead Mali comments. **Owes
   `gi.mjs --against`**: with no Babylon bind of the cloud field, its internal's
   cached sampler fields stay unfilled in a default boot, as under

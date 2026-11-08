@@ -74,7 +74,8 @@
  * **What is deliberately NOT frozen is the post chain itself.** Switching it
  * off would reach the same zero floor and would make the bank useless for the
  * three post fragments, which are exactly the shaders a WGSL port has to
- * prove. The grain is held by replacing `post.update` — the clock stops, the
+ * prove. The grade is held by replacing its `update` (it has no clock since its
+ * paper was pinned to the world; what stops is the damage flash's decay) — the
  * vignette, the aberration, the god rays and the motion blur all stay in the
  * picture.
  *
@@ -242,7 +243,12 @@ for (const id of targets) {
     // the freeze pins are unaffected by how long this takes, which is the
     // point of pinning them. See `freeze`.
     await settle(page, CONVERGE_FRAMES);
-    await freeze(page, undefined, { windTime: v.wind ?? 0, turn: v.turn ?? 0, strike: v.strike ?? null });
+    await freeze(page, undefined, {
+      windTime: v.wind ?? 0,
+      turn: v.turn ?? 0,
+      strike: v.strike ?? null,
+      damage: v.damage ?? false,
+    });
     await settle(page, SETTLE_FRAMES);
 
     const a = await page.screenshot({ type: "png", timeout: 120_000 });

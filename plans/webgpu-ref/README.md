@@ -43,6 +43,8 @@ node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--gpu] [--max] [
 node plans/webgpu-ref/particles.mjs [map...] [--frames=N] [--out=f.json] [--against=f.json] [--editor]
 node plans/webgpu-ref/gi.mjs [map...] [--out=f.json] [--against=f.json] [--shafts-off] [--no-editor] [--no-states]
 node plans/webgpu-ref/gi.mjs --compare=a.json --against=b.json
+node plans/webgpu-ref/post.mjs [--sizes=desk,phone] [--out=f.json] [--against=f.json] [--no-live]
+node plans/webgpu-ref/post.mjs --compare=a.json --against=b.json
 ```
 
 - **`gate.mjs`** boots every shipped map, plays a real round on each and fails
@@ -289,6 +291,29 @@ node plans/webgpu-ref/gi.mjs --compare=a.json --against=b.json
   `thaw` throws if any happened under the stub; `bank.mjs` thaws once more after each
   map's last row, so every row's hold is checked.
 
+- **`post.mjs`** is the post chain read off the DEVICE pass by pass (`BABYLON_EXIT.md`
+  X5.2a; its header is its contract): Hollowmere's `lanterns` eye, shot as `bank.mjs`
+  shoots a row, at two page sizes (`desk`, 1920x1080 at 1, the bank's; `phone`, 832x384
+  at a device scale of 2.8125) through sixteen scenarios a boot (every render scale at
+  both glow rungs, every shafts rung, each tail pass off, all of them off, the blur in
+  flight, the damage flash held, and the base again after every toggle), two frames
+  captured each and the second logged: every render pass in submit order with its
+  attachments, load and store ops and clear values, a SHA-256 of each target as its pass
+  left it (a copy recorded on the pass's own encoder after its `end`), and every draw a
+  chain stage made, with its pipeline (both modules by their tokens, the vertex layout,
+  cull, front face, depth state, blend, write mask, the layout), its bind groups entry by
+  entry (each sampler's descriptor, each view's target, each uniform buffer's BYTES as the
+  queue held them at the submit), its vertex and index bytes and its draw call; beside
+  them the camera's list as Babylon holds it (its holes), each pass's own fields,
+  `scene.autoClear` and `scene.imageProcessingConfiguration`; and once a boot the
+  device's limits, the canvas's configuration and every module's processed text. **Every
+  naming goes through one adapter** (`window.__postGpu`: Babylon's arm today, a sub-step
+  that moves a stage adds ours, picked first, under the same names), so a draw of ours is
+  compared with the Babylon draw it replaced. Beside the log, printed and not compared,
+  the LIVE frames from the page's first and after a rung change, a render-scale change, a
+  glow rung change and a resize. `--against` compares two logs by `Object.is` and exits
+  1 on a difference; `--compare` does it with no browser. About 25 minutes for both sizes.
+
 `cold-stagger.mjs` is **gone and is not coming back**. It existed to bake
 Coldharbour's forty cube probes four a frame because doing all forty at once
 killed a CPU rasteriser's device; on real hardware the shipped one-frame bake
@@ -374,13 +399,17 @@ lamp or a reflection. See the floor, below.
   the air, but for a row that asks for one: `strike`, `sky-flash`). **When the bank goes red on an unchanged tree again, look for the
   newest thing that changes by itself in a held world** — that has now been
   the answer four times.
-- **The post chain is left ON, with only its clock pinned.** The plan called
+- **The post chain is left ON, with only its updaters held.** The plan called
   for `g.post.setEnabled(false)`, and that would reach the same floor — the
-  grade's grain is re-hashed every frame at ~14 LSB and is the largest term in
+  grade's grain was re-hashed every frame at ~14 LSB and was the largest term in
   the noise. But the three post fragments are M3's own work and a set taken
-  with the chain disabled could not diff them. Pinning `post.time` kills the
-  grain and keeps the vignette, the aberration, the god rays and the motion
-  blur in the picture.
+  with the chain disabled could not diff them. Pinning the grade's `time` killed the
+  grain and kept the vignette, the aberration, the god rays and the motion
+  blur in the picture. **The grade has had no clock since** (its paper is pinned to
+  the world), so the `g.post.time = 0` the freeze went on writing was a no-op and
+  is gone (`BABYLON_EXIT.md` X5.2a): what holding it stops now is the damage
+  flash's decay, which a `damage` row raises under the hold. The three updaters
+  are reached through one adapter, `harness.mjs`'s `postAdapter`.
 - **A map is drawn when `scene.isReady()` says so, never after N frames.**
   WebGPU compiles pipelines lazily and presents nothing until they exist. The
   frame that first happens on is not a constant — measured across runs it moved
@@ -486,7 +515,7 @@ for each step of the exit:
 | X4.6 water, glazing, grass, flags, rings | `greyfen-marsh`, `harrowmead-millpond`, `coldharbour-shopfront` (see-through), `coldharbour-curtain2/40/90` (backed), `hollowmere-ring`; the far quad in `coldharbour-menu`, `-avenue` and `-sky-disc` and `cinderhaven-sky-cloud-moon` (`surfaces.mjs --pixels` has the counts); and X4.6a's nine, appended by `--rows` at the end of Hollowmere's, Greyfen's, Coldharbour's and Sarab's lists, every one at an eye a row above it stands at or the menu's, so the benchmark gains no stop: the cloth up its pole on both sheets and both sides (`hollowmere-ring-flown`, `coldharbour-ring-flown-far`), a ring's stones (`coldharbour-ring-stones`), Greyfen's grass at each rung (`greyfen-grass-low`, `-medium`, `-high`), sparks and discs over water with a disc under it (`coldharbour-fx-water-fade`), a pane really collapsed (`coldharbour-fx-glass-broken`) and water through glass (`sarab-pane-water`); and its review's two, at the end of Coldharbour's list at `square`'s eye: the blob among the panes and the fades (`coldharbour-fx-blob-sort`) and a scorch through glass on both sides of the sort (`coldharbour-fx-scorch-glass`); and X4.6b's one at the end of the same list at `crossing`'s eye: a ring farther than its field's blades (`coldharbour-ring-behind-field`); and X4.6c's three, at the end of Greyfen's and Harrowmead's lists at `crossing`'s, `millpond`'s and the menu's eyes: blades in water on either side of its sort key (`greyfen-shore-ahead`, `harrowmead-shore-ahead`, `harrowmead-shore-behind`), which no fixed draw point holds; and its review's one, at the end of Sarab's list at `shelf`'s eye: reedy bodies on BOTH sides of the key in one frame (`sarab-shore-flip`), whose frame is 21839d1's truth, banked there, and which the tree moves until X4.6d (the owner's decision, `exact.mjs`'s `EXPECTED_MOVES`); and X4.6e's review's one, by the owner's decision of 2026-11-06, at the end of Coldharbour's list at `square`'s eye through a 6° field: a blob seen from above sorted BETWEEN two glass layers, under the near one and over the far one, which `fx-blob-sort` stopped holding when the blob turned to face up (`coldharbour-fx-blob-glass`) |
 | X4.7 GPU particles | `hollowmere-sky-motes` (the field gathered, for the moon's order); and X4.7a's five, appended by `--rows` at the end of Sarab's, Cinderhaven's and Kurenai's lists, every one at an eye a row above it stands at, so the benchmark gains no stop, each the fields as the game runs them and nothing else in the air: the ash on an ADD field that follows the eye (`cinderhaven-particles-embers`, `town`'s eye) and on a STANDARD one that follows it and falls (`kurenai-particles-leaves`, `ground`'s); a helicopter pinned 2.5 m over sand, its dust ring (`sarab-particles-dust`, `crossing`'s eye); one 3 m over the western sea, its spray ring and the water's hole (`cinderhaven-particles-spray`, `tank-far`'s, 12°); and the dust ring with the embers through it, the order between two fields (`cinderhaven-particles-ring-ash`, the same eye, 20°) |
 | X5.1 the irradiance volume | every row, converged and held (`freeze`'s `gi` block): no row holds it MOVING, which `gi.mjs` logs instead; and the floors under `--query=gi=low` and `--query=gi=off` (X5.1a: the floors, two full processes each: `--query=gi=off` 142 of 143 byte-equal and `harrowmead-view-pistol-reload` within its flake; `--query=gi=low` 142 byte-equal and `sarab-alley` 5 pixels by 2/255 — two frames, Sarab alone twice more drawing the second run's (3 processes of 4 against 1), the class `sarab-ground` is at high (what moves is that row's frame, both frames the same tree's; the cause is not pinned — it did not appear at off in two runs, which fits the volume's race leaving a sub-8-bit residue there, unproven)), the BEFOREs X5.1b is graded against beside the plain bank's |
-| X5.2 the post chain | `hollowmere-post-*`, each one setting off against `lanterns` |
+| X5.2 the post chain | `hollowmere-post-*`, each one setting off against `lanterns`; and X5.2a's four, appended by `--rows` at the end of Hollowmere's list at `lanterns`' eye, so the benchmark gains no stop: the chain at render scale 0.5 and 0.75 (`post-scale50`, `post-scale75`: every target re-sized, the glow's floored, the blur's kernel and so its shader text moved), the grade's damage flash held at its kick (`post-damage`, `freeze`'s `damage`) and every tail pass off, the ink writing the canvas itself (`post-alloff`). What no row holds — the passes' targets, samplers, descriptors and processed WGSL, a phone's density, a frame before readiness, a resize in play — `post.mjs` logs |
 
 **`placeVantage` also places the camera-dependent passes at each row's eye**
 — the two cascades, the bodies' map, the lamps' atlas, the water and the grass

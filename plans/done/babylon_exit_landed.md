@@ -9862,3 +9862,75 @@ seven minor points, each verified against the tree first.
 - **Not verified**: the rest of the bank (the change is inside `__refGiCount`, which every
   row's freeze calls; Hollowmere's 16 rows ran it); the throw itself provoked; corecheck,
   parity, `gate`, `shaders` (no game code moved).
+
+### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07; its decisions the owner's, 2026-11-07 and 2026-11-08, rows in "Decisions that are yours") — X5.2a **LANDED** (this commit)
+
+The plan's `BABYLON_EXIT.md` holds X5.2's brief, its ONE RULE, shape (A), "What it is
+today" (corrected in place by X5.2a, each correction marked) and the five sub-steps.
+
+**X5.2a landed** (this commit; 2026-11-08; no change to the game: a new probe, the
+harness's post path through one adapter, four rows, docs; under `src/` only the rows and
+the `damage` field in `bench/vantages.ts`). Measured at b00b887, headless on the Windows
+box.
+
+- **The probe, `plans/webgpu-ref/post.mjs`** (its header is its contract). The device is
+  wrapped from the page's first line; Hollowmere's round is installed (`?seed=5101`) and held
+  at `deploy`, and each scenario is shot as `bank.mjs` shoots a row at `lanterns`' eye
+  (`placeVantage` with the scenario's settings over a stated base, `waitUntilDrawn`, every
+  stage's effect ready, 30 frames, `freeze`, 6 frames), then two consecutive frames are
+  captured and the second logged. Two pages: `desk` 1920x1080 at 1, `phone` 832x384 at
+  2.8125. Sixteen scenarios a page: `base`, `scale75`, `scale50`, `glowlow`,
+  `glowlow-scale75`, `glowlow-scale50`, `vol-off`, `vol-low`, `vol-high`, `nofxaa`, `blur`
+  (the turn), `noblur`, `nograin`, `alloff`, `damage`, `base-again`. Per frame: every render
+  pass in submit order, its attachments and ops and clear values, a SHA-256 of each colour
+  target as its pass left it (a `copyTextureToBuffer` recorded on the pass's own encoder after
+  `end`), and every draw by a named stage in full — pipeline, bind groups (each sampler's
+  descriptor, each view's target, each uniform buffer's bytes as the queue held them at the
+  submit, mirrored from `writeBuffer` and mapped-at-creation ranges), vertex and index bytes,
+  viewport, scissor, draw call. Render bundles (Babylon's `compatibilityMode = false`) are
+  recorded when made and resolved where a pass executes them. `chain()` logs Babylon's own
+  facts (the camera's list with its holes, each pass's fields, the glow's rung, kernel and
+  targets, the scaling level, `scene.autoClear`, `autoClearDepthAndStencil`, the clear colour,
+  `scene.imageProcessingConfiguration`). One adapter, `window.__postGpu`, names stages by
+  module and targets by what writes them (`frame`, `<stage>.out`, `canvas`, `canvas.depth`,
+  `glow.*`); ours is added per stage by the sub-step that moves it. About 25 minutes for both
+  pages.
+- **The harness.** `postAdapter` (`window.__refPost`) is the one door to the grade, the shafts
+  and the blur for `freeze`, `thaw` and `placeVantage`; each updater is stashed with the
+  object it came off. The stale `g.post.time = 0` is gone (the grade has no clock). `freeze`
+  takes `damage` and raises the flash under the held decay; `placeVantage` puts it out.
+  `bootMap` takes `viewport` and `deviceScaleFactor`. **The probe found the motion blur's
+  `maxShift` unpinned** — the config's rate times the `dt` of the last real `update`, so
+  0.01896 in one process and 0.0192 in the next — and `freeze` now shows the pass the aim
+  once at 1/60 s at rest. No pixel moves: 502 of 502 readbacks equal with it and without it,
+  and the bank below. `reproject` stays the last rotation the pass was handed, a function of
+  the row sequence.
+- **The rows**, appended by `--rows` at the end of Hollowmere's list at `lanterns`' eye:
+  `post-scale50`, `post-scale75`, `post-damage`, `post-alloff`.
+- **What the measurement found** (all in "What it is today", marked X5.2a). The camera's
+  list is `[ink, hole, fxaa, shafts, blur, grain]` at boot and eleven entries after the
+  scenarios' toggles. The quad, the vertex text and the flip are as the planning read said,
+  but the vertex module carries the pass's whole uniform struct, FXAA's has no `scale`, and
+  every binding is in group 1 (group 0 empty). Intermediates are `rgba8unorm`, cleared to the
+  scene's clear colour, with no depth; only the frame has a depth attachment. The samplers:
+  nearest (lod 0..0, anisotropy 1) for the ink's, shafts', blur's and grain's inputs and the
+  shadow maps; FXAA's linear with nearest mips; the mask, the glow targets and the cloud
+  field linear with ANISOTROPY 4. **The canvas's pass carries the ENGINE's depth, not the
+  frame's, and the last pass's pipeline writes it (compare always)**; the frame opens with a
+  canvas pass of no draws that loads the colour and clears that depth. The glow's own passes
+  LOAD (no clear); its four blurs are one program; the kernel text took five values a page.
+  `extractDriverInfo()` is the empty string. The six pipelines are made on the page's fourth
+  frame and drawn on it, nothing is skipped for a compile, and **a render-scale change or a
+  resize costs one frame in which nothing but the canvas's opening pass runs**.
+- **Measured**: `post.mjs` twice in separate processes, equal by `--against` (34,083 values
+  a page) and by `--compare`, every scenario steady, and FAILING on copies of its log with a
+  sampler's `minFilter`, a uniform byte, a load op, a canvas hash, a module's token count, a
+  vertex stride and a camera-list hole each changed by hand. The four new rows banked into
+  `ref/` in one process and byte-equal to it in two more (`--check`, 0 pixels), Hollowmere's
+  20 rows byte-equal across those two by `exact.mjs`. The bank: 143 old rows against a
+  BEFORE at b00b887 (the parent's harness, a worktree with its own `npm ci`) by `exact.mjs` —
+  142 byte-equal, `sarab-shelf` 1 pixel by 1/255 (its known flake), the four new rows named
+  `--new`; 34 stale rows red against `ref/` on both sides, as before. Typecheck, build,
+  corecheck, parity, `gate` and `shaders` pass.
+- **Not run** (the step moves no draw): `pipelines.mjs`, `surfaces.mjs`, `census`, the
+  editor's frames, live toggles by hand, `?profile&gpu`.

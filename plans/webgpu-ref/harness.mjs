@@ -218,9 +218,18 @@ export const MAP_IDS = MAPS.map((m) => m.id);
  * a probe that must see what the game builds at boot (the irradiance volume's
  * shader modules, textures and samplers are made inside `Game`'s constructor,
  * `gi.mjs`). Absent by default, so no caller that does not ask is touched.
+ *
+ * `viewport` and `deviceScaleFactor` stand the page at another size and
+ * density than the bank's 1920x1080 at 1 (`post.mjs`'s phone, 832x384 at
+ * 2.8125, `BABYLON_EXIT.md` X5.2a); absent, the page is the bank's.
  */
-export async function bootMap(browser, url, id, { hideUI = true, init = null } = {}) {
-  const page = watchDevice(await browser.newPage({ viewport: { width: WIDTH, height: HEIGHT } }));
+export async function bootMap(browser, url, id, { hideUI = true, init = null, viewport = null, deviceScaleFactor = null } = {}) {
+  const page = watchDevice(
+    await browser.newPage({
+      viewport: viewport ?? { width: WIDTH, height: HEIGHT },
+      ...(deviceScaleFactor ? { deviceScaleFactor } : {}),
+    }),
+  );
   const pageErrors = [];
   const consoleErrors = [];
   const consoleLines = [];
@@ -344,7 +353,7 @@ export function waitUntilDrawn(page, timeoutMs = 120_000) {
  * SURFACE — upper envelope, because that is the floor as drawn.
  */
 export function placeVantage(page, vantage) {
-  return page.evaluate(async (v) => {
+  return page.evaluate(postAdapter).then(() => page.evaluate(async (v) => {
     const g = window.__celshock;
     // A seeded `Math.random` for the length of `fn` and put back — how a
     // subject whose LAYOUT is drawn at random (a blast, a muzzle flash) is
@@ -572,6 +581,11 @@ export function placeVantage(page, vantage) {
       if (g.settings[k] !== val) g.setSetting(k, val);
     }
     for (const [k, val] of Object.entries(v.settings ?? {})) g.setSetting(k, val);
+    // The damage flash a row held (`damage`, raised by `freeze` under the
+    // stubbed decay) is put out before the next row converges, rather than
+    // left to decay by however many frames that takes: none is what every
+    // row that does not ask for it is shot at (`postAdapter`).
+    window.__refPost().flash(false);
 
     const cam = g.cameraSys.camera;
     const Vec3 = cam.position.constructor;
@@ -1136,7 +1150,41 @@ export function placeVantage(page, vantage) {
       g.openLoadout();
       if (g.state !== "loadout") throw new Error(`the kit screen would not go up over ${g.state}`);
     }
-  }, vantage);
+  }, vantage));
+}
+
+/**
+ * The post chain's CPU half, reached through ONE adapter (`window.__refPost`,
+ * `BABYLON_EXIT.md` X5.2a), so `freeze`, `thaw` and `placeVantage` name no
+ * field of `Game`'s for it: the GRADE (`PaperGrain`: its `update` decays the
+ * damage flash, and it has no clock — the `g.post.time = 0` this file used to
+ * write was a stale no-op, X5.2a), the SHAFTS (`Volumetrics`, null while the
+ * setting is off; its `update` is a pure read of the camera) and the BLUR
+ * (`MotionBlur`: its `update` is the CPU history it reprojects against), and
+ * the damage FLASH a row may hold (`flash`). **BABYLON's arm is the only one
+ * today**: the three objects `Game` builds. A step that moves the chain's
+ * host (X5.2c1 on) adds OURS here, picked first, with the same members —
+ * each part an object whose `update` the freeze replaces and the thaw puts
+ * back on the SAME object — so the freeze reads the same whoever draws.
+ * Installed by the first call that needs it; idempotent.
+ */
+function postAdapter() {
+  window.__refPost ??= () => {
+    const g = window.__celshock;
+    return {
+      arm: "babylon",
+      grade: g.post,
+      shafts: g.volumetrics ?? null,
+      blur: g.motionBlur,
+      // The red edge flash (`PaperGrain.flashDamage`) held at its kick, or
+      // put back to none. Only a row that asks writes it on: none is the
+      // value every state that simulates nothing already has.
+      flash: (on) => {
+        if (on) g.post.flashDamage();
+        else if (g.post.damage !== 0) g.post.damage = 0;
+      },
+    };
+  };
 }
 
 /**
@@ -1149,8 +1197,9 @@ export function placeVantage(page, vantage) {
  * fragments, and those are the work this bank exists to check.
  *
  * **Stopping a clock is not the same as setting it, and the difference is the
- * whole of cross-run reproducibility.** `post.time`, each cloud deck's
- * `uOffset` and `mats.windTime` are accumulators: they advance by `dt` every
+ * whole of cross-run reproducibility.** The sky's turn and `mats.windTime`
+ * (and, when this was written, the grade's `time` and each cloud deck's
+ * `uOffset`, all three gone since) are accumulators: they advance by `dt` every
  * frame from the moment the page loads, so halting them leaves each one
  * holding however much wall clock that particular run happened to spend
  * booting. Two consecutive grabs inside one process then agree perfectly —
@@ -1179,24 +1228,33 @@ export function placeVantage(page, vantage) {
  * is what lets one boot shoot a map's whole table. Re-freezing after a thaw is
  * safe and re-stashes nothing: the first stash is the one kept, so a second
  * freeze cannot record its own no-ops as the real methods.
+ *
+ * **The post chain's three are reached through `postAdapter`** and stashed
+ * with the object each came off, as the shafts always were. `damage` (a row's
+ * `damage`) holds the grade's flash at its kick under the stubbed decay,
+ * raised here, after the settle and not before it, because the real `update`
+ * decays it by the frame's `dt` (`BABYLON_EXIT.md` X5.2a).
  */
-export function freeze(page, set = FREEZE_SET, { windTime = 0, turn = 0, strike = null } = {}) {
+export function freeze(page, set = FREEZE_SET, { windTime = 0, turn = 0, strike = null, damage = false } = {}) {
   // Its sweeps' own cap counts frames, so it cannot fire when they stop.
-  return limited("freeze", 1_800_000, page.evaluate(async ([f, wind, blurTurn, sweeps, strikeAt]) => {
+  return limited("freeze", 1_800_000, page.evaluate(postAdapter).then(() => page.evaluate(async ([f, wind, blurTurn, sweeps, strikeAt, flash]) => {
     const g = window.__celshock;
+    const post = window.__refPost();
     // The real updaters, recorded ONCE. See `thaw`.
     window.__refThaw ??= {
-      post: g.post.update,
+      // The post chain's three, each with the object it came off: the shafts
+      // are NULL when the player has them off and the pass is REBUILT on a
+      // rung change, so a thaw that assigned a stashed method back onto a
+      // different object would put a dead closure on a live pass — and the
+      // grade and the blur are held the same way, so a port that rebuilds
+      // either is no different (`postAdapter`).
+      post: { on: post.grade, fn: post.grade.update },
       sky: g.sky.update,
       lightning: g.lightning.step,
       lighting: g.lighting.update,
       gi: g.gi.update,
-      // The shafts are `Volumetrics` now and the field is NULL when the player
-      // has them off, so this records the instance beside the method: the pass
-      // is REBUILT on a rung change, and a thaw that assigned a stashed method
-      // back onto a different object would put a dead closure on a live pass.
-      shafts: g.volumetrics && { on: g.volumetrics, fn: g.volumetrics.update },
-      blur: g.motionBlur.update,
+      shafts: post.shafts && { on: post.shafts, fn: post.shafts.update },
+      blur: { on: post.blur, fn: post.blur.update },
       wind: g.mats.updateWind,
       grass: g.grass?.update,
       water: g.water?.update,
@@ -1291,8 +1349,11 @@ export function freeze(page, set = FREEZE_SET, { windTime = 0, turn = 0, strike 
       return window.__refGiDispatches ?? 0;
     };
     if (f.includes("post")) {
-      g.post.time = 0;
-      g.post.update = () => {};
+      // The grade has NO clock (its paper is pinned to the world, not to a
+      // time), so holding it is stopping the damage flash's decay — and a row
+      // that asks for the flash has it raised here, under the stub.
+      post.grade.update = () => {};
+      if (flash) post.flash(true);
     }
     if (f.includes("sky")) {
       // **The cloud ring's TURN is the sky's clock** — `Sky.update`
@@ -1315,20 +1376,32 @@ export function freeze(page, set = FREEZE_SET, { windTime = 0, turn = 0, strike 
     // camera already holds it. It stays in the set because the set is "what
     // `tick` runs", and a pass that is exempt today is one somebody gives a
     // clock to tomorrow.
-    if (f.includes("shafts") && g.volumetrics) g.volumetrics.update = () => {};
+    if (f.includes("shafts") && post.shafts) post.shafts.update = () => {};
     if (f.includes("blur")) {
       // A row may ask for the blur IN FLIGHT: the real updater shown the aim
       // `turn` radians to the left and then where it is, which is one frame of
       // a head turning at that rate, and then held — so the pass's matrix is
       // a function of the row and not of a camera nobody can make move
       // between two grabs. At 0 it is held at rest, which is inert.
+      //
+      // **At rest it is still shown the aim ONCE at a stated 1/60 s**
+      // (`BABYLON_EXIT.md` X5.2a): the pass's `maxShift` uniform is the
+      // config's rate times the `dt` of the last real `update`, which is the
+      // machine's frame time, so a held pass otherwise carried a uniform no
+      // two processes agree on (`post.mjs` found it, 0.01896 against 0.0192).
+      // It moves no pixel — at rest the strength is 0 and the pass is a
+      // straight copy — but it is a byte the pass is handed. A camera that
+      // has stood still through the settle sweeps nothing, so the strength
+      // stays 0.
+      const yaw = g.cameraSys.aimYaw;
+      const pitch = g.cameraSys.aimPitch;
       if (blurTurn) {
-        const yaw = g.cameraSys.aimYaw;
-        const pitch = g.cameraSys.aimPitch;
-        window.__refThaw.blur.call(g.motionBlur, yaw - blurTurn, pitch, 1 / 60);
-        window.__refThaw.blur.call(g.motionBlur, yaw, pitch, 1 / 60);
+        window.__refThaw.blur.fn.call(post.blur, yaw - blurTurn, pitch, 1 / 60);
+        window.__refThaw.blur.fn.call(post.blur, yaw, pitch, 1 / 60);
+      } else {
+        window.__refThaw.blur.fn.call(post.blur, yaw, pitch, 1 / 60);
       }
-      g.motionBlur.update = () => {};
+      post.blur.update = () => {};
     }
     if (f.includes("wind")) {
       // Assigned and then pushed through the real updater, because the clock
@@ -1501,7 +1574,7 @@ export function freeze(page, set = FREEZE_SET, { windTime = 0, turn = 0, strike 
         for (const p of r.waterProbes ?? []) p.cubeTexture.resetRefreshCounter();
       }
     }
-  }, [set, windTime, turn, GI_SWEEPS, strike]));
+  }, [set, windTime, turn, GI_SWEEPS, strike, damage])));
 }
 
 /**
@@ -1530,16 +1603,16 @@ export function thaw(page) {
         throw new Error(`thaw: the irradiance volume dispatched ${now - held} times while its update was stubbed`);
       }
     }
-    g.post.update = s.post;
+    // The post chain's three, each only onto the instance it was taken from —
+    // see the stash. The adapter is up: the freeze that made the stash put it.
+    const post = window.__refPost();
+    if (post.grade === s.post.on) post.grade.update = s.post.fn;
     g.sky.update = s.sky;
     g.lightning.step = s.lightning;
     g.lighting.update = s.lighting;
     g.gi.update = s.gi;
-    // Only onto the instance it was taken from — see the stash.
-    if (s.shafts && g.volumetrics === s.shafts.on) {
-      g.volumetrics.update = s.shafts.fn;
-    }
-    g.motionBlur.update = s.blur;
+    if (s.shafts && post.shafts === s.shafts.on) post.shafts.update = s.shafts.fn;
+    if (post.blur === s.blur.on) post.blur.update = s.blur.fn;
     g.mats.updateWind = s.wind;
     if (g.grass && s.grass) g.grass.update = s.grass;
     if (g.water && s.water) g.water.update = s.water;
