@@ -9500,7 +9500,7 @@ note adds how.
 
 ## Phase 5 — The frame
 
-### X5.1 — GI and the compute passes are ours — **M, as two sub-steps** (split 2026-11-07: the owner instructed that X5.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the two-way split was proposed by the orchestrating session and run under that instruction) — X5.1a **LANDED** (06b9daa), X5.1b **LANDED** (e9a39d6, its picture change 9b9d205) — **both LANDED**
+### X5.1 — GI and the compute passes are ours — **M, as two sub-steps** (split 2026-11-07: the owner instructed that X5.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the two-way split was proposed by the orchestrating session and run under that instruction) — X5.1a **LANDED** (06b9daa), X5.1b **LANDED** (e9a39d6, its picture change 9b9d205, its review b22fda3) — **both LANDED**
 
 The plan's `BABYLON_EXIT.md` holds X5.1's brief, "What it is today" (corrected in place
 by X5.1a, each correction marked) and X5.1b's brief with its open questions.
@@ -9780,7 +9780,7 @@ dispatches nothing, in a round or an editor build.
 - **Not verified**: a server's match in a browser; the phone; a lost device; the converse's
   throw provoked on purpose; `surfaces.mjs`.
 
-**Its review** (2026-11-07; no change to the game: documents, comments, contract headers and
+**Its review** (b22fda3; 2026-11-07; no change to the game: documents, comments, contract headers and
 `harness.mjs`; under `src/` comments only). An independent review found nothing real and
 seven minor points, each verified against the tree first.
 

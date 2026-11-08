@@ -2934,7 +2934,7 @@ particle: it can be marked done, which is the owner's to do.
 
 ## Phase 5 — The frame
 
-### X5.1 — GI and the compute passes are ours — **M, as two sub-steps** (split 2026-11-07: the owner instructed that X5.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the two-way split was proposed by the orchestrating session and run under that instruction) — X5.1a **LANDED** (06b9daa), X5.1b **LANDED** (e9a39d6, its picture change 9b9d205) — **both LANDED**
+### X5.1 — GI and the compute passes are ours — **M, as two sub-steps** (split 2026-11-07: the owner instructed that X5.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the two-way split was proposed by the orchestrating session and run under that instruction) — X5.1a **LANDED** (06b9daa), X5.1b **LANDED** (e9a39d6, its picture change 9b9d205, its review b22fda3) — **both LANDED**
 
 `GiVolume` (`ComputeShader`, `StorageBuffer`, `RawTexture3D`) on our side: its three
 compute passes, its six buffers and its seven 3D textures made, bound and dispatched by
@@ -3361,7 +3361,7 @@ correction marked "X5.1a"):
   The note is in `plans/done/babylon_exit_landed.md`. **X5.1 is whole**: both sub-steps
   landed; its own Verify below is the owner's to mark.
 
-  **Its review** (2026-11-07; documents, comments, contract headers and the harness only, no
+  **Its review** (b22fda3; 2026-11-07; documents, comments, contract headers and the harness only, no
   change to the game) found nothing real and seven minor points, each checked against the
   tree before it was acted on. **Records**: `docs/rendering.md` no longer says an editor
   build's Babylon passes read the frame's compose (they hold GI `off` since 9b9d205), and
