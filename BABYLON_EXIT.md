@@ -2909,13 +2909,17 @@ and nothing else, on every bank row and through three live rounds:
   (the open pass, the bundle list, its attachments, the target and its flip) serve
   whichever Babylon pass is open, which is the main pass and the glow's mask; 6 and 10
   (the group's `beforeBlended` and `beforeAlphaTest` points) serve the main pass's group
-  and, since X4.7d, only in an editor build. Each retires: 6 and 10 at X5.3; 2 to 5 for
-  the mask at X5.2 and for the main pass at X5.4; 1 and 9 at X5.4; 7 and 8 piecemeal —
+  and, since X4.7d, only in an editor build. Each retires: 6 and 10 at X5.3; 2 to 5 at
+  X5.4, for the mask and the main pass together (this note first said "for the mask at
+  X5.2": corrected 2026-11-07, row "X5.2, the mask" — moving the mask alone retires no
+  item while the main pass still uses them, so the owner kept the mask Babylon's through
+  X5.2); 1 and 9 at X5.4; 7 and 8 piecemeal —
   `GiVolume`'s seven textures at X5.1, the editor's shadow generators' maps at X5.3, the
   water's foam at X5.4 — and the canvas-made textures read through `hostTexture` (the
   mote, the puff, the scorch, the blob, the sky's, the cel recipes' own) at no named step
   before X6.1 deletes the file. Outside the seam, its header's four touches in three
-  files (`FrameDepth` X5.4; `webgpuLeaks` and `FrameProfile`'s two, X5.4 and X6.1).
+  files (`FrameDepth` X5.4, X5.2d proposing it read the public getter first, row "X5.2,
+  `FrameDepth`"; `webgpuLeaks` and `FrameProfile`'s two, X5.4 and X6.1).
   **Against the criterion that reads ONE SEAM**, which by B4's own words is the case for
   keeping Babylon owning the frame: the frame's ownership is not forced by upgrade risk.
   B4 is decided the other way for the exit's own reason (removing Babylon, X5.4), which
@@ -3418,13 +3422,18 @@ correction marked "X5.1a"):
   of the eventual change, the rest the multi-bounce iteration's: 99% by two); no Babylon
   compute in a round or an editor build.
 
-### X5.2 — The post chain — **M**
+### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07: the owner instructed that steps be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split below was proposed by the orchestrating session from a planning agent's read at 33a8d35, and its two shaping decisions taken by the owner the same day, rows in "Decisions that are yours") — X5.2a, X5.2b, X5.2c1, X5.2c2, X5.2d not started
 
 `FrameDepth`, `CelInk` with the glow's compose in its last line, the glow's
-mask and blur, FXAA (already our own shader), `Volumetrics`, `MotionBlur`,
-`PaperGrain`, and render scale. The chain's order becomes explicit, so the
-slot-claiming tricks `Game` uses today (attach, then detach, to hold a place
-in an append-only list) go away.
+blur, FXAA (already our own fragment), `Volumetrics`, `MotionBlur` and
+`PaperGrain` drawn by our renderer, and the chain correct at every render
+scale. The chain's order becomes explicit, so the slot-claiming tricks `Game`
+uses today (attach, then detach, to hold a place in an append-only list) go
+away. **Two things this entry first named are not X5.2's**, by the owner's
+decision of 2026-11-07: **the glow's MASK** stays Babylon's through X5.2 and
+moves with the main pass (row "X5.2, the mask"), and **render scale's
+setter** is X5.4's with the canvas (row "X5.2, render scale", open, the
+planner's recommendation) — X5.2 owes only a chain correct at every scale.
 
 - **Keep the door open for the GPU side** (deferred until after the exit;
   "What this plan does not do"). The full-screen passes after `CelInk`
@@ -3433,10 +3442,245 @@ in an append-only list) go away.
   than each one hard-wired to read and write a target of its own. On a
   phone every full-screen pass is a whole frame's reads and writes, and the
   `gpu.mainPass` lead in `FINDINGS.md` 52 points here. Fusing them is not
-  this step: this step only must not make it a rewrite.
-- **Verify:** the bank with every post setting on and off; X0.3.
-- **Rewrites:** `docs/rendering.md`'s post sections; the glow rules in
-  `CLAUDE.md`.
+  this step: this step only must not make it a rewrite. **What keeps it open
+  is the HOST, not the shaders** (the planning read): an ordered stage list
+  (ink, FXAA, shafts, blur, grain), each stage declaring its program as
+  compiled, its uniform block and extra bindings, **the sampler it reads its
+  input with** (the consumer's property, never the target's), `active()` (its
+  setting), and whether it reads its input **point-wise** (the ink, the
+  shafts) or across a neighbourhood (FXAA, the blur, the grain's aberration);
+  and one pass owner opening a pass per active stage in list order from a
+  target pool, the last active stage given the canvas. **Nothing may
+  hard-wire** a stage owning its output texture, a stage knowing it is last
+  or that it writes the canvas, `Game` holding a slot or an index, a stage
+  naming "the frame" rather than "my input", or a stage being exactly one
+  pass (in a span or a timer). **The shaders are ported AS COMPILED**, never
+  rewritten as composable functions now: a fusion drops the 8-bit rounding
+  between two passes (as the glow's compose fold did, `GlowPass.ts`'s
+  header), so it is never byte-exact and is a later `Picture change:`. Only a
+  point-wise consumer can fold into its producer — FXAA into the shafts, the
+  ink into the shafts with FXAA off; the blur cannot fold into the shafts (it
+  comes after them), and the grain folds into nothing while it has its
+  aberration.
+
+**How our post passes record — shape (A), decided by the owner 2026-11-07**
+(row "X5.2, the shape"). Our renderer records in two places today: the upload
+encoder (seam item 9), submitted BEFORE Babylon's main pass, and passes
+Babylon opens (items 2 to 5). Every post pass reads the main pass's output, so
+it cannot be on the upload encoder; there is no public way onto Babylon's
+render encoder (`flushFramebuffer` is `@internal`); and a new seam item is
+rule 4 broken. So until X5.4 **our post passes are OUR DRAWS in passes BABYLON
+OPENS, into targets BABYLON OWNS** — the glow mask's precedent: a Babylon-side
+owner binds each stage's target with public API (`engine.bindFramebuffer`,
+`clear`, `unBindFramebuffer`, `restoreDefaultFramebuffer`) and announces that
+stage open, and our renderer queues the stage's draw into it as
+`Renderer.glowMaskOpened` does. The canvas stays Babylon's main pass;
+`gpu.frame` and `gpu.mainPass` keep their meaning (no report version); the
+seam gains no item. **X5.4's Do gains "the post passes' targets and passes"**
+— the sequencer is swapped for our own encoder there. Two consequences fix
+the order: while Babylon runs any of the chain, ours can only take over a
+**SUFFIX** of it (Babylon's FXAA, blur and grain each read their own
+`inputTexture`, and ours cannot run between two of Babylon's), so the chain
+moves **TAIL FIRST, INK LAST**; and the one exception is the glow's blur,
+which already binds its own targets, a draw swap with no change to the pass
+structure, so it moves first.
+
+**THE ONE RULE FOR EVERY SUB-STEP** (X4.7's and X5.1's, carried verbatim):
+**where a byte-exact port is not reached, STOP and report to the owner with
+the numbers** — the rows that moved, their pixels and worst value, what was
+tried and what each attempt moved. Do not choose a draw point, a blend, a
+sort, a sampler, a clear, a target format or a vertex path that "holds the
+rows", and do not land a workaround as "no change to the picture". **A brief
+from an orchestrating agent that reads otherwise is wrong, and this paragraph
+wins.** No sub-step is meant to change the picture; a difference goes in a
+commit of its own whose subject starts `Picture change:`, only by the owner's
+decision, with the bank's numbers (rule 2). **No sub-step adds a seam item.**
+
+**What it is today** (a read of the code, Babylon 9.28, by a planning agent at
+33a8d35 — **not measured; X5.2a measures it and corrects it in place**, each
+correction marked "X5.2a"):
+
+- **The order on the camera's list, and how it is held.** `CelInk` is built
+  with the camera and attaches itself first (`Game.ts` ~2169).
+  `DefaultRenderingPipeline`, FXAA alone, is detached (its index nulled) and
+  re-attached (appended), which is `fxaaSlot` (~2180-2196). The shafts' slot is
+  claimed by attaching and at once detaching (~2219-2227), and
+  `syncVolumetrics` refills it by an indexed attach once `vol.ready`
+  (~3990-4021). `MotionBlur` (~2237) and `PaperGrain` (~2244) attach
+  themselves. The blur's toggle detaches the grade, appends the blur and
+  re-appends the grade (~4060-4072, `PaperGrain.ts` ~465-475). Babylon's
+  detach nulls an entry and an indexed attach refills a null
+  (`camera.pure.js` 619-655); `_getActivePostProcesses` skips nulls
+  (`postProcessManager.js` 46-56), so holes accumulate, bounded by settings
+  clicks. The indices (0, 1→2, 3, 4, 5) are inferred, not logged.
+- **Every Babylon `PostProcess` alike.** Babylon's QUAD — `(1,1) (-1,1)
+  (-1,-1) (1,-1)`, indices `0,1,2,0,2,3`, `drawElementsType(0, 0, 6)` — and its
+  `postprocess` vertex stage, `vUV = (pos × 0.5 + 0.5) × scale`, the processor
+  appending the y-flip (a texture target drawn flipped, the canvas not). Each
+  pass owns its own INPUT texture (`getRenderWidth(true) × 1 | 0`,
+  UNSIGNED_BYTE so `rgba8unorm`, not reusable, so no ping-pong); only the first
+  live pass gets depth. Each input is sampled with that pass's
+  `renderTargetSamplingMode`, **NEAREST by default**, FXAA's BILINEAR; each is
+  cleared to `scene.clearColor` at `activate`; `apply` turns depth off, sets the
+  alpha mode and binds `textureSampler` to the pass's own input. Every
+  pipeline is Babylon's, compiled at boot (`docs/states.md`: the post chain's
+  six on the frames before the card), none on `Game.roundPipelines`. No pass
+  uses a seam item; `FrameDepth` reaches an internal outside the seam.
+- **`FrameDepth`** captures `engine._currentRenderTarget._depthStencilTexture`
+  at `onAfterDrawPhase` (an internal, the seam header's "not here" list) and
+  wraps it in a `ThinTexture`; the ink, the shafts, the blur and the grain read
+  it by `textureLoad` (`texture_depth_2d`, no sampler); it relies on
+  `GlowPass` rebinding the frame; `depth32float`, one sample.
+- **`CelInk`** is our WGSL in Babylon's dialect, which the processor rewrites
+  into structs and bindings. It reads the frame at `vUV` (alpha the coverage,
+  `edge *= 1 - a`), the depth, the mask and `glowNear`/`glowWide` (the glow's
+  compose spliced into its last line), writes alpha 1, takes eleven uniforms and
+  `glowIntensity` a frame and the fog band at an environment change. **Its input
+  IS the frame the scene draws into**; it is never detached.
+- **`GlowPass`**: the MASK is a Babylon render target (`rgba8`, the frame's
+  depth shared, bilinear clamp) whose clear observer opens our draws (items 2 to
+  5) and whose after-render closes them, its Babylon list being the active
+  meshes (none in a round, every emissive in an editor build). The BLUR is four
+  `ThinBlurPostProcess` (Babylon's built-in `kernelBlur`) and a `glowDown`
+  `EffectWrapper` (our fragment, Babylon's vertex) drawn by `EffectRenderer`
+  into `rgba16float` targets **GlowPass binds itself**. The blur's shader TEXT
+  depends on its kernel (`56 / (downsample × level)`, rounded by
+  `_nearestBestKernel`, weights baked as `#define`s) and its tap split on the
+  device's `maxInterStageShaderVariables`, so a render-scale, DPR or glow-rung
+  change recompiles, and the pass is skipped while it compiles.
+- **FXAA**: only the FRAGMENT is ours (`Fxaa.ts`); the vertex stage (eight
+  sample-coordinate varyings, `texelSize`) and the pass are Babylon's.
+  `DefaultRenderingPipeline` sets `scene.autoClear = false` and puts it back on
+  dispose. **The "Mali driver" arm is dead under WebGPU**: `WebGPUEngine`'s
+  driver info is the empty string, so the claims at `Game.ts` ~4030 and
+  `Fxaa.ts` ~39-42 (and `FINDINGS.md` 5's phone statement) are wrong — read,
+  not run on a Mali; corrected by the sub-step that moves FXAA.
+- **`Volumetrics`**: one shader per rung (`SAMPLES` 8, 16, 32), a rung change a
+  rebuild; reads the depth, the world and body shadow maps (ours, wrapped; or
+  `litShadowTexture`; or an editor build's generator maps; nearest clamp) and
+  Sky's cloud field — **Babylon's last reader of the cloud field in a round**
+  (X5.1a); its `hash(vUV × dims)` jitter and dither are bit-sensitive to `vUV`;
+  it attaches only once all four inputs exist, so the first frame has no shafts.
+- **`MotionBlur`**: rotation only; its history is the CPU's previous camera
+  basis (from the aim and `dt`), not a texture; its `mat3x3f` repacked into vec4
+  columns; the depth sets the weapon band; a `hash(vUV)` jitter; a straight copy
+  at rest; reset at teleports.
+- **`PaperGrain`** IS the canvas pass; its aberration reads the input at
+  `uv ± offset`, so it is NOT point-wise; the depth gives position;
+  `dpdx`/`dpdy`, a `cellOffset` `array<vec4f, 24>` computed in float64; the
+  grade set per map, the damage flash decaying in `update`. **It has no clock**:
+  the harness's `g.post.time = 0` is a stale no-op.
+- **Render scale** is `engine.setHardwareScalingLevel(1 / (dpr × renderScale))`
+  (`Game.ts` ~3836-3839), which moves every target's size and the blur's kernel.
+- **Per state**: the chain runs every frame in every state — the menu under the
+  photograph, the kit screen, the editor. `post.update`, `syncVolumetrics` and
+  `motionBlur.update` run in `tick`'s `post` span; the recording sits inside
+  `render`, unnamed.
+
+**The sub-steps**, least risk first. Each one's Verify includes "Every sub-step
+owes" below.
+
+- **X5.2a — the instruments see the chain** (no change to the game). The bank
+  cannot see what the moves would change: every row is 1920×1080 at scaling
+  level 1 (so the blur's kernel text, odd target sizes and floored glow targets
+  are unseen), at DPR 1, with no damage flash, one blur row at `dt` 1/60, no row
+  with every tail pass off, no frame before readiness, no resize or rung change
+  in play, and none of the intermediate targets, samplers, pipeline descriptors
+  or processed WGSL. **Do:** a probe in `gi.mjs`'s style, through one adapter
+  with Babylon's arm now and ours later, logging per pass the module's processed
+  text and tokens, the pipeline descriptor (vertex layout, index format, cull
+  and front face, the pass's depth format, blend, write mask), the bind-group
+  entries with their **sampler descriptors**, the uniform bytes, the render-pass
+  descriptor (load ops, clear values, attachments), and a read-back hash of
+  every pass's output and of the canvas, at 1920×1080 and at 832×384 × 2.8125,
+  render scales 0.5, 0.75 and 1, both glow rungs and every volumetric rung;
+  rows appended by `--rows` — `post-scale50`, `post-scale75` (proven
+  byte-stable across processes, or graded by the probe's canvas read-back),
+  `post-damage`, `post-alloff`; `freeze`'s post, shafts and blur calls through
+  one adapter and the stale `g.post.time` removed; `scene.imageProcessingConfiguration`
+  and `scene.autoClear` logged; and "What it is today" above measured and
+  corrected in place. **Verify:** the probe equal to itself across two
+  processes and failing on hand-edited copies; the new rows byte-stable; every
+  old row byte-equal to a BEFORE at the parent.
+- **X5.2b — the glow's blur and downsample are our draws**, in `GlowPass`'s own
+  passes, with no change to the pass structure: the kernel text generated as
+  Babylon generates it (the same device limit), Babylon's vertex stage and quad
+  as compiled, its samplers and uniform blocks. Its pipelines declared (row
+  "X5.2, pipelines"). The mask stays Babylon's. **Verify** adds `post-glowlow`,
+  the scale rows and both rungs in the probe.
+- **X5.2c1 — the chain's host, and the grain.** `render/PostChain.ts` (ours) and
+  the Babylon-side pass sequencer; `camera.outputRenderTarget` takes Babylon's
+  prefix output **only while a stage of ours is active**, so with the grain off
+  Babylon's prefix writes the canvas exactly as today and no interim copy pass
+  exists. The canvas's pass targets include the main pass's `depth32float`
+  (inferred; X5.2a measures it). The harness's readiness arm asks our
+  pipelines. Retires the blur-and-grade dance.
+- **X5.2c2 — motion blur, the shafts, FXAA** (may land as one commit a pass,
+  each moving the boundary one pass). Babylon's chain becomes `[celInk]`. The
+  shadow maps read as `own ?? hostTexture` (`ShadowBindings`' pattern), the
+  cloud field through `hostTexture` with the host's sampler. 
+  `DefaultRenderingPipeline` is deleted, so `scene.autoClear` returns to true:
+  the clears shown equal by the probe. Every volumetric rung declared. Retires
+  the FXAA and shafts slot tricks, and the dead Mali comments. **Owes
+  `gi.mjs --against`**: with no Babylon bind of the cloud field, its internal's
+  cached sampler fields stay unfilled in a default boot, as under
+  `--shafts-off` (inferred) — named as an expected difference. Ends Babylon's
+  reading of the cloud field in a round (X5.4's list says so).
+- **X5.2d — the head: the ink and the glow's compose are ours.** The scene draws
+  straight into the frame's render target (`outputRenderTarget` with depth),
+  its formats equal to `FRAME_TARGETS` (`render/targets.ts`), the clear moved
+  from `CelInk.activate` to the scene's own frame-buffer clear;
+  `GlowPass.drawsInto` takes that target; `FrameDepth` reads the public
+  `renderTarget.depthStencilTexture`, which takes its internal off the seam
+  header's "not here" list (row "X5.2, `FrameDepth`", open). No Babylon
+  `PostProcess` is left. **Verify** adds `surfaces.mjs`: no Babylon post-process
+  draw in a round.
+
+**Risks to a byte-exact port** (each measured by X5.2a's per-pass hashes and
+descriptors): `vUV`'s bits (the quad against a full-screen triangle, the
+triangulation, the flip, the `scale` multiply), which feed the shafts' and the
+blur's `hash()` — port Babylon's quad, vertex text and flip exactly, and keep a
+boundary pass's target orientation; the samplers (NEAREST for the ink, shafts,
+blur and grain inputs; bilinear for FXAA, the mask and the glow targets;
+clamp; anisotropy as logged); the formats (`rgba8` intermediates, the canvas's
+preferred format — `bgra8` on Windows, `rgba8` on Android — premultiplied,
+alpha 1; the main pass's depth attachment; the glow's half floats); the clear
+values and `scene.autoClear`; the blur's kernel text against the device limit
+and the scaling level; the uniform layouts (the `mat3x3f` repack, the
+`array<vec4f, 24>`, the processor's struct order); motion blur's CPU history
+and `dt` cap; the grain's damage flash; boot and resize (Babylon skips a pass
+while it compiles, leaving a cleared target; targets recreated at a resize);
+the editor's image-processing state once the pipeline is deleted. **Device
+loss**: Babylon's post chain rebuilds after a loss today and ours will not
+(`FINDINGS.md` 64, X5.4's) — recorded, as for every draw of ours.
+
+- **Every sub-step owes**: **a BYTE comparison of every row against a BEFORE at
+  its parent** (`exact.mjs` over two `--check --keep` directories, never
+  `--check`'s pass line), the known flakes alone excused and the Sarab
+  procedure in `exact.mjs`'s header followed; from X5.2c2 on, the same under
+  `--query=volumetrics=low` and `--query=volumetrics=high`; X5.2a's rows; the
+  X5.2a probe `--against` its parent's log, every expected difference named;
+  its pipelines declared on `Game.roundPipelines`; `pipelines.mjs hollowmere`
+  and `pipelines.mjs coldharbour --round`; `surfaces.mjs` (Babylon's post draws
+  falling away as passes move); `census --against`; the editor's frames at
+  X5.1b's eight eyes; live: every post setting toggled in play, a rung change, a
+  render-scale change, a window resize, a teardown, a map change, `F2`;
+  `?profile&gpu`, `render` and `gpu.frame` within 8%; typecheck, build,
+  corecheck, parity, `gate`, `shaders`; each new module's contract header and
+  `FILES.md` line (rules 7 and 9); and **STOP with the numbers** wherever the
+  bytes do not hold.
+- **Verify, the whole step:** the bank with every post setting on and off (row
+  "X5.2, the Verify": X5.2a's rows are its meaning, open); X0.3 (row "X5.2,
+  X0.3", open); no Babylon `PostProcess` in a round.
+- **Rewrites** (each sub-step its own share): `CLAUDE.md`'s glow paragraph, the
+  `shaderLanguage` / declared-sampler rule (a bind-group-layout rule for ours,
+  still the rule for Babylon's remaining materials), the frame-depth and ink
+  lines and, if a span moves, "Measuring a frame"; `docs/rendering.md`'s ink,
+  glow, smear, light-shaft and frame-target sections; `docs/states.md` where it
+  counts the post chain's pipelines; `docs/profiling.md`; `PipelineWarmup.ts`'s
+  header; the contract headers of every module moved; `FILES.md`; the seam
+  header; `FINDINGS.md` 5, 16 and 52; the gate note after Phase 4 (above) and the
+  "Contracts this plan rewrites" rows for the glow and `shaderLanguage`.
 
 ### X5.3 — The editor — **M–L**
 
@@ -3471,7 +3715,10 @@ It stays behind its one dynamic `import()` in a DEV branch.
 - **Do:**
   - Our own `requestAnimationFrame` loop.
   - The canvas: size, DPR and render scale.
-  - Device-loss recovery, tested by destroying the device on purpose.
+  - **The post passes' targets and passes** (X5.2's shape (A), decided 2026-11-07): the
+    Babylon-side sequencer X5.2c1 builds is swapped for our own encoder and targets, and
+    the glow's MASK moves with the main pass (row "X5.2, the mask"), retiring items 2 to
+    5 for both. Render scale's setter is this step's (row "X5.2, render scale").  - Device-loss recovery, tested by destroying the device on purpose.
   - `FrameCap`.
   - `FrameProfile`'s `hookRender` and `hookEngine` replaced by spans around
     our own passes. `present` becomes the span around `queue.submit`; `?gpu`
@@ -3724,5 +3971,15 @@ Phase 1 actually took.
 | X5.1b | An editor build (`F2`) samples the volume's seven textures through Babylon's cel materials until X5.3 (X5.1a: ~100,000 binds of each in 120 editor frames; none in a round). Once the textures are ours, what do those materials sample? | **Answered** 2026-11-07 by the owner: **no GI in an editor build until X5.3**, not a wrapped view. Babylon's cel materials in an `F2` build sample nothing of ours: they are given what GI `off` gives them (1×1×1 placeholders of Babylon's own and a volume that answers "nothing here"), so an editor build's Babylon world draws as if GI were off. A dev-only picture change in its own commit whose subject starts `Picture change:`, with the editor's frames before and after (rule 2), made FIRST, while Babylon still owns the volume, so the move after it is graded byte for byte against it; round rows may not move in it (`exact.mjs`). The editor regains GI at X5.3. (The planning session's recommendation was the wrapped view.) |
 | X5.1b | The trace's cloud-field sampler depends on the session today: our host's own object (clamp, anisotropy 4) once Babylon's light shafts or an editor build have bound the texture, repeat and nearest-mipped at anisotropy 1 in a session where neither has (the light shafts off from boot). X5.1a measured no byte of the trace's output move between them over 256 serially traced probes (16,384 rays) from a fresh history on Coldharbour, whose trace samples the field (`cloudArea.w` 0.45) and none of whose hits came near the field's edge, where clamp and repeat part. Hollowmere's run is no evidence: its trace never samples the field (`cloudArea.w` 1). Sarab and Cinderhaven, where an edge may fall inside the window, are unmeasured. Which does ours bind? | **Answered** 2026-11-07 by the owner: **the host's, always.** The trace binds the cloud field with the sampler our frame resolves for it (`hostTexture`, `host.bind`), dropping Babylon's dependence on whether the light shafts have bound it. The probe fields X5.1a's review named as expected to differ under this answer (X5.1b's Verify) are the expected differences; nothing else may differ. |
 | X5.1b | The trace RACES at the game's budget (X5.1a: it reads history another workgroup of the same dispatch is rewriting, by design), so no two runs of the parent agree on its colour lanes before convergence. Is X5.1b's byte oracle for those lanes the probe's `serial` scenarios and the bank's converged rows, every other byte of the probe compared everywhere? **How thin that oracle is** (X5.1a's review): a `serial` scenario traces 96 probes of 73,728 (64 of 24,576 at low; 256 in the sampler scenario) one workgroup a dispatch from a FRESH history, so most of the history reads the trace makes (`volumeAt`, the probe nearest a hit) find a probe nothing has traced and return the fallback, and a carried lamp's fast bounce likely reaches no valid probe at all (reasoned from the counts, not measured); the bank's rows are the converged fixed point, which a wrong order of reads can converge to as well. | **Answered** 2026-11-07 by the owner: **(a), `serial` and the bank's rows.** The trace's colour lanes are compared byte for byte only in the `serial` scenarios (the trace's budget forced to 1); at the game's budget the oracle is the bank's converged rows plus every deterministic lane the probe compares. The trace is NOT changed. (Before the answer: The planning session's recommendation was yes: making the trace order-independent (a second state buffer, or a read of last frame's) would be a picture change of its own (rule 2), not part of the port. The options as they stand: (a) yes, the oracle as it is; (b) widen it first, instruments only — serial steps over far more of the volume, so the history it reads is mostly traced (its cost in minutes a map not measured); (c) the trace order-independent first, a `Picture change:` of its own with the bank's numbers, after which every lane is an oracle at the game's budget.) |
+| X5.2 | One step or several? | **Instructed by the owner 2026-11-07**: in sub-steps, each implemented, reviewed and fixed by agents. **The split was proposed by the orchestrating session** from a planning agent's read at 33a8d35: X5.2a the instruments (no change to the game), X5.2b the glow's blur and downsample, X5.2c1 the chain's host and the grain, X5.2c2 motion blur, the shafts and FXAA, X5.2d the ink and the compose (X5.2). |
+| X5.2 | **The shape**: our post passes cannot record on the upload encoder (they read the main pass's output) and there is no public way onto Babylon's render encoder. (A) our draws in passes Babylon opens, into targets Babylon owns, until X5.4 — the glow mask's precedent, no seam item, `gpu.frame` keeps its meaning; or (B) our own encoder and targets submitted after Babylon's frame, the canvas taken through the DOM context — the post chain's GPU time leaves `gpu.frame`, a report version and a `gpu.post`, `FINDINGS.md` 52's baseline read as their sum? | **Decided** 2026-11-07 by the owner: **(A)**, the recommendation. X5.4's Do gains the post passes' targets and passes. Under (A) the chain moves tail first, ink last, the glow's blur ahead of it (X5.2). |
+| X5.2 | **The mask**: the gate note said items 2 to 5 retire "for the mask at X5.2", but moving the mask alone retires no item (the main pass still uses them until X5.4), and moving it now would cost an editor build its emissives' bloom until X5.3 (a dev-only picture change) and a depth-attachment view of Babylon's depth. Move it at X5.2 (an X5.2e), or keep it Babylon's? | **Decided** 2026-11-07 by the owner: **keep the mask Babylon's through X5.2**, the recommendation; it moves with the main pass at X5.4 (or at X5.3), and the gate note is corrected. |
+| X5.2 | **Render scale**: the entry named it, and X5.4 owns "the canvas: size, DPR and render scale". | **Open** — the planner's recommendation: X5.4 owns the setter; X5.2 owes a chain correct at every scale, proven by X5.2a's rows. Answer before X5.2b. |
+| X5.2 | **`FrameDepth`**: named by X5.2, listed as X5.4's by the seam header and the gate note. | **Open** — the recommendation: X5.2d makes it read the public `renderTarget.depthStencilTexture`, taking its internal off the seam header's "not here" list; X5.4 deletes it once the depth is ours; the seam header and the gate note reconciled. Answer before X5.2d. |
+| X5.2 | **Port as compiled, or rewrite the passes as composable functions** to keep the door open for fusing? | **Open** — the recommendation: as compiled; the door is the host's structure (X5.2), and a fusion, never byte-exact, is a later `Picture change:`. Answer before X5.2b. |
+| X5.2 | **Pipelines**: the blur's text depends on the scaling level and the glow rung, the shafts' on their rung. | **Open** — the recommendation: every volumetric rung and the current DPR's blur variants declared at construction, so a setting changed in play compiles nothing; a compile on a DPR change allowed (the seal's DEV warning unsealed for it). Answer before X5.2b. |
+| X5.2 | **A profiler report version.** | **Open** — the recommendation: none under shape (A) while the spans keep their meaning; one if the blur's draw leaves the `glow` span. Answer before X5.2b. |
+| X5.2 | **X0.3's scope** in the whole step's Verify. | **Open** — the recommendation: the desktop `bench.mjs --max`, three runs a side; a phone `?bench&gpu` capture optional, the owner's. Answer before X5.2's whole-step Verify. |
+| X5.2 | **"The bank with every post setting on and off"**: the bank holds one row a setting off, none with every tail pass off. | **Open** — the recommendation: X5.2a's added rows (`post-alloff`, `post-damage`, the scale rows, `post-glowlow`) are its meaning. Answer before X5.2a lands. |
 | X5.4 | Phase 4's gate found the canvas and raw textures our draws read through the seam (`hostTexture`: the motes, the puff, the scorch, the blob, the sky's, the cel materials' own, the shadow maps it wraps) named by no step before X6.1, X5.4's foam item covering only a texture Babylon decoded and mipped. When do they go? | **Decided** 2026-11-07 by the owner: in X5.4, beside the foam, as one item under one bank proof — the five ours alone since Phase 4 wait only for that, the cel materials' and the shadow maps' because an editor build samples them until X5.3; `GiVolume`'s seven stay X5.1's. |
 | X6.2 | Is it ready to merge to `develop`? | Only when X6.2's "Before" list passes in full. |
