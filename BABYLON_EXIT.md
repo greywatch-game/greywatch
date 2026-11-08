@@ -3422,7 +3422,7 @@ correction marked "X5.1a"):
   of the eventual change, the rest the multi-bounce iteration's: 99% by two); no Babylon
   compute in a round or an editor build.
 
-### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07: the owner instructed that steps be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split below was proposed by the orchestrating session from a planning agent's read at 33a8d35, and its two shaping decisions taken by the owner the same day, rows in "Decisions that are yours") — X5.2a, X5.2b, X5.2c1, X5.2c2, X5.2d not started
+### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07: the owner instructed that steps be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split below was proposed by the orchestrating session from a planning agent's read at 33a8d35, and its two shaping decisions taken by the owner the same day, its seven others the next, rows in "Decisions that are yours") — X5.2a, X5.2b, X5.2c1, X5.2c2, X5.2d not started
 
 `FrameDepth`, `CelInk` with the glow's compose in its last line, the glow's
 blur, FXAA (already our own fragment), `Volumetrics`, `MotionBlur` and
@@ -3432,8 +3432,8 @@ uses today (attach, then detach, to hold a place in an append-only list) go
 away. **Two things this entry first named are not X5.2's**, by the owner's
 decision of 2026-11-07: **the glow's MASK** stays Babylon's through X5.2 and
 moves with the main pass (row "X5.2, the mask"), and **render scale's
-setter** is X5.4's with the canvas (row "X5.2, render scale", open, the
-planner's recommendation) — X5.2 owes only a chain correct at every scale.
+setter** is X5.4's with the canvas (row "X5.2, render scale", decided
+2026-11-08) — X5.2 owes only a chain correct at every scale.
 
 - **Keep the door open for the GPU side** (deferred until after the exit;
   "What this plan does not do"). The full-screen passes after `CelInk`
@@ -3632,7 +3632,7 @@ owes" below.
   from `CelInk.activate` to the scene's own frame-buffer clear;
   `GlowPass.drawsInto` takes that target; `FrameDepth` reads the public
   `renderTarget.depthStencilTexture`, which takes its internal off the seam
-  header's "not here" list (row "X5.2, `FrameDepth`", open). No Babylon
+  header's "not here" list (row "X5.2, `FrameDepth`", decided 2026-11-08). No Babylon
   `PostProcess` is left. **Verify** adds `surfaces.mjs`: no Babylon post-process
   draw in a round.
 
@@ -3670,8 +3670,8 @@ loss**: Babylon's post chain rebuilds after a loss today and ours will not
   `FILES.md` line (rules 7 and 9); and **STOP with the numbers** wherever the
   bytes do not hold.
 - **Verify, the whole step:** the bank with every post setting on and off (row
-  "X5.2, the Verify": X5.2a's rows are its meaning, open); X0.3 (row "X5.2,
-  X0.3", open); no Babylon `PostProcess` in a round.
+  "X5.2, the Verify": X5.2a's rows are its meaning, decided 2026-11-08); X0.3 (row "X5.2,
+  X0.3": the desktop bench, decided 2026-11-08); no Babylon `PostProcess` in a round.
 - **Rewrites** (each sub-step its own share): `CLAUDE.md`'s glow paragraph, the
   `shaderLanguage` / declared-sampler rule (a bind-group-layout rule for ours,
   still the rule for Babylon's remaining materials), the frame-depth and ink
@@ -3718,7 +3718,8 @@ It stays behind its one dynamic `import()` in a DEV branch.
   - **The post passes' targets and passes** (X5.2's shape (A), decided 2026-11-07): the
     Babylon-side sequencer X5.2c1 builds is swapped for our own encoder and targets, and
     the glow's MASK moves with the main pass (row "X5.2, the mask"), retiring items 2 to
-    5 for both. Render scale's setter is this step's (row "X5.2, render scale").  - Device-loss recovery, tested by destroying the device on purpose.
+    5 for both. Render scale's setter is this step's (row "X5.2, render scale").
+  - Device-loss recovery, tested by destroying the device on purpose.
   - `FrameCap`.
   - `FrameProfile`'s `hookRender` and `hookEngine` replaced by spans around
     our own passes. `present` becomes the span around `queue.submit`; `?gpu`
@@ -3974,12 +3975,12 @@ Phase 1 actually took.
 | X5.2 | One step or several? | **Instructed by the owner 2026-11-07**: in sub-steps, each implemented, reviewed and fixed by agents. **The split was proposed by the orchestrating session** from a planning agent's read at 33a8d35: X5.2a the instruments (no change to the game), X5.2b the glow's blur and downsample, X5.2c1 the chain's host and the grain, X5.2c2 motion blur, the shafts and FXAA, X5.2d the ink and the compose (X5.2). |
 | X5.2 | **The shape**: our post passes cannot record on the upload encoder (they read the main pass's output) and there is no public way onto Babylon's render encoder. (A) our draws in passes Babylon opens, into targets Babylon owns, until X5.4 — the glow mask's precedent, no seam item, `gpu.frame` keeps its meaning; or (B) our own encoder and targets submitted after Babylon's frame, the canvas taken through the DOM context — the post chain's GPU time leaves `gpu.frame`, a report version and a `gpu.post`, `FINDINGS.md` 52's baseline read as their sum? | **Decided** 2026-11-07 by the owner: **(A)**, the recommendation. X5.4's Do gains the post passes' targets and passes. Under (A) the chain moves tail first, ink last, the glow's blur ahead of it (X5.2). |
 | X5.2 | **The mask**: the gate note said items 2 to 5 retire "for the mask at X5.2", but moving the mask alone retires no item (the main pass still uses them until X5.4), and moving it now would cost an editor build its emissives' bloom until X5.3 (a dev-only picture change) and a depth-attachment view of Babylon's depth. Move it at X5.2 (an X5.2e), or keep it Babylon's? | **Decided** 2026-11-07 by the owner: **keep the mask Babylon's through X5.2**, the recommendation; it moves with the main pass at X5.4 (or at X5.3), and the gate note is corrected. |
-| X5.2 | **Render scale**: the entry named it, and X5.4 owns "the canvas: size, DPR and render scale". | **Open** — the planner's recommendation: X5.4 owns the setter; X5.2 owes a chain correct at every scale, proven by X5.2a's rows. Answer before X5.2b. |
-| X5.2 | **`FrameDepth`**: named by X5.2, listed as X5.4's by the seam header and the gate note. | **Open** — the recommendation: X5.2d makes it read the public `renderTarget.depthStencilTexture`, taking its internal off the seam header's "not here" list; X5.4 deletes it once the depth is ours; the seam header and the gate note reconciled. Answer before X5.2d. |
-| X5.2 | **Port as compiled, or rewrite the passes as composable functions** to keep the door open for fusing? | **Open** — the recommendation: as compiled; the door is the host's structure (X5.2), and a fusion, never byte-exact, is a later `Picture change:`. Answer before X5.2b. |
-| X5.2 | **Pipelines**: the blur's text depends on the scaling level and the glow rung, the shafts' on their rung. | **Open** — the recommendation: every volumetric rung and the current DPR's blur variants declared at construction, so a setting changed in play compiles nothing; a compile on a DPR change allowed (the seal's DEV warning unsealed for it). Answer before X5.2b. |
-| X5.2 | **A profiler report version.** | **Open** — the recommendation: none under shape (A) while the spans keep their meaning; one if the blur's draw leaves the `glow` span. Answer before X5.2b. |
-| X5.2 | **X0.3's scope** in the whole step's Verify. | **Open** — the recommendation: the desktop `bench.mjs --max`, three runs a side; a phone `?bench&gpu` capture optional, the owner's. Answer before X5.2's whole-step Verify. |
-| X5.2 | **"The bank with every post setting on and off"**: the bank holds one row a setting off, none with every tail pass off. | **Open** — the recommendation: X5.2a's added rows (`post-alloff`, `post-damage`, the scale rows, `post-glowlow`) are its meaning. Answer before X5.2a lands. |
+| X5.2 | **Render scale**: the entry named it, and X5.4 owns "the canvas: size, DPR and render scale". | **Decided** 2026-11-08 by the owner, the planner's recommendation: X5.4 owns the setter; X5.2 owes a chain correct at every scale, proven by X5.2a's rows (`post-scale50`, `post-scale75`). |
+| X5.2 | **`FrameDepth`**: named by X5.2, listed as X5.4's by the seam header and the gate note. | **Decided** 2026-11-08 by the owner, the planner's recommendation: X5.2d makes it read the public `renderTarget.depthStencilTexture`, taking its internal off the seam header's "not here" list; X5.4 deletes it once the depth is ours; X5.2d reconciles the seam header and the gate note. |
+| X5.2 | **Port as compiled, or rewrite the passes as composable functions** to keep the door open for fusing? | **Decided** 2026-11-08 by the owner, the planner's recommendation: **as compiled**; the door is the host's structure (X5.2), and a fusion, never byte-exact, is a later `Picture change:` with the bank's numbers. |
+| X5.2 | **Pipelines**: the blur's text depends on the scaling level and the glow rung, the shafts' on their rung. | **Decided** 2026-11-08 by the owner, the planner's recommendation: every volumetric rung and both glow rungs' blur variants at the current DPR declared at construction, so a setting changed in play compiles nothing; a compile on a DPR change allowed (the seal's DEV warning lifted for that case alone). |
+| X5.2 | **A profiler report version.** | **Decided** 2026-11-08 by the owner, the planner's recommendation: none under shape (A) while `render`, `glow` and `gpu.frame` keep their meaning, which each sub-step checks rather than assumes; a sub-step that moves a draw out of its span (the blur's out of `glow`) bumps the version and says why. |
+| X5.2 | **X0.3's scope** in the whole step's Verify. | **Decided** 2026-11-08 by the owner, the planner's recommendation: the desktop `bench.mjs --max`, three runs at the parent and three after; a phone `?bench&gpu` capture optional and the owner's, the Verify not waiting on it. |
+| X5.2 | **"The bank with every post setting on and off"**: the bank holds one row a setting off, none with every tail pass off. | **Decided** 2026-11-08 by the owner, the planner's recommendation: X5.2a's added rows (`post-alloff`, `post-damage`, `post-scale50`, `post-scale75`, `post-glowlow`) beside the bank's one-pass-off rows are its meaning; no pairwise or full-combination rows. |
 | X5.4 | Phase 4's gate found the canvas and raw textures our draws read through the seam (`hostTexture`: the motes, the puff, the scorch, the blob, the sky's, the cel materials' own, the shadow maps it wraps) named by no step before X6.1, X5.4's foam item covering only a texture Babylon decoded and mipped. When do they go? | **Decided** 2026-11-07 by the owner: in X5.4, beside the foam, as one item under one bank proof — the five ours alone since Phase 4 wait only for that, the cel materials' and the shadow maps' because an editor build samples them until X5.3; `GiVolume`'s seven stay X5.1's. |
 | X6.2 | Is it ready to merge to `develop`? | Only when X6.2's "Before" list passes in full. |
