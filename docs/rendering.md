@@ -580,9 +580,10 @@ half line for line; what changed is where its decisions are RECORDED.
 - **The dispatch is ARMED in `update` and RECORDED by a late prepare**
   (`Renderer.onFrame(…, true)`, pushed in `GiCompute`'s constructor): three
   compute passes into the host's prepare encoder, which the host submits
-  ahead of every pass of its own — so the main pass, the glow's mask and an
-  editor build's Babylon passes read this frame's compose, as they did with
-  Babylon's dispatch on its render encoder. **The reflection bake reads the
+  ahead of every pass of its own — so the main pass and the glow's mask read
+  this frame's compose, as they did with Babylon's dispatch on its render
+  encoder. (An editor build's Babylon passes read nothing of the volume: since
+  X5.1b's picture change every Babylon cel material holds GI `off`.) **The reflection bake reads the
   PREVIOUS frame's, and that rests on REGISTRATION order alone**: the late
   list runs in push order, and `ProbeBake` pushes in its constructor, which
   `Game` runs before `GiVolume`'s. A construction order changed, or the bake
@@ -4385,11 +4386,15 @@ cast and as what — and hands the frame's proxies over (`BodyShadowMap.draw`).
 
 - **It is ours in EVERY state, and there is no generator behind it.** It
   needs nothing of the handover — its casters are proxies, never the world.
-  An editor build prepares NO frame of ours, so there the map is only ever
-  CLEARED, at once (`BodyShadowMap`'s `clearNow`, on a second ask with no
-  frame prepared between), and an ask holding proxies would never be drawn —
-  that state is never left holding the last round's bodies, and shows no new
-  ones. A pipeline it cannot build (asked ONCE, for
+  An editor build PREPARES frames of ours like any other state: `Renderer.begin`
+  runs the prepares on every frame with a draw of ours active, and X5.1a
+  counted them on 120 of 120 editor frames. So the map there is drawn and
+  cleared exactly as in a round — an ask on the next frame prepared, an owed
+  clear on that same next frame, the last round's bodies gone the frame after
+  the first empty ask — and the clear-at-once branch (`BodyShadowMap`'s
+  `clearNow`, on a second ask with no frame prepared between) is unreachable
+  there: a guard for a state whose frames ours prepares nothing in, which no
+  state measured is. A pipeline it cannot build (asked ONCE, for
   the session) is the round's failure: `Game` hands the map each round's
   `worldFailed` at the install (`setFailure`), and every round after a failed
   build fails on it, rather than playing with no body map; an editor build
@@ -4412,7 +4417,8 @@ cast and as what — and hands the frame's proxies over (`BodyShadowMap.draw`).
   BEFORE the frame's recorded draw (the host's encoder is submitted at the
   frame's end) and left the death cam's stand-in in the map for the rest of
   the bank. Only a SECOND update with no frame prepared between — a state our
-  renderer prepares nothing in, an editor build's — clears at once, into the
+  renderer prepares nothing in, which an editor build is NOT (it prepares
+  every frame, above) and no state measured is — clears at once, into the
   host's prepare encoder, behind anything already recorded there.
   A rung change re-makes the texture AFRESH (the old wrapped view, disposed,
   destroys the one it wraps) and draws the proxies last packed from where the
@@ -4618,8 +4624,8 @@ one (the death cam's stand-in was, until X4.1d). **A failure is the round's**,
 X3.7's and X4.1c's routing: a pipeline that fails (that install's and every
 one after it), a refused main pass or mask while installed, tells
 `Game.worldFailed` with the install's owner. It is installed for a ROUND's map
-only: an EDITOR build draws no body, its world being Babylon's and its frames
-ones ours prepares nothing in, and the menu has none.
+only: an EDITOR build draws no body, its world being Babylon's until X5.3,
+and the menu has none.
 
 ## The hulls, ours: every vehicle an instance of its kind's kit
 

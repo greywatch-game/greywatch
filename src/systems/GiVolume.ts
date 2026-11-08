@@ -22,7 +22,13 @@
  * readiness gate — the GPU half's five pipelines — and recorded that frame,
  * and the CPU half is advanced (the cursor, the warm frames, the dirty
  * channels) only on a frame that armed one, line for line as when it
- * dispatched Babylon's `ComputeShader`s itself. It adds NO draw calls
+ * dispatched Babylon's `ComputeShader`s itself — but for one thing the gate
+ * no longer asks: Babylon's `ComputeShader.isReady()` also waited for every
+ * texture bound to it, the cloud field among them, and `GiCompute.isReady`
+ * asks only its pipelines, so a cloud field not yet ready would now arm and
+ * advance a slice nothing records (`GiCompute`'s header) — unreachable today,
+ * both candidate cloud fields being `RawTexture`s built from data, ready at
+ * creation. It adds NO draw calls
  * (the frame is draw-call bound, `docs/rendering.md`): everything it does is
  * compute and three texture fetches in a shader that already runs. It reads
  * the scene's light off `CelMaterialFactory.readLighting`, never off the map,

@@ -867,8 +867,10 @@ the next one by the economy — two grenades a life, a 3.6 s tank reload.
 ## 16. The round's pipelines are compiled under the building card now — what the warm-up does not reach, and the phone
 
 **Status:** the warm-up LANDED (`core/PipelineWarmup.ts`, `docs/states.md`,
-"a SECOND phase"); what is open is the phone, and two things it does not
-reach. (Two more are settled. A lamp's PROXY variant compiled in play on
+"a SECOND phase"); what is open is the phone, and one thing it does not
+reach (the irradiance volume's compute pipelines, the other, are our
+renderer's and on the declared list since `BABYLON_EXIT.md` X5.1b, its note
+holding the numbers). (Two more are settled. A lamp's PROXY variant compiled in play on
 Kurenai, a body drawn into a lamp's tile only when a casting lamp stood near
 it: since X3.6b the atlas is our renderer's, its one proxies' pipeline asked at
 `LampAtlas`'s construction and on the round's declared list — an offline
@@ -914,23 +916,6 @@ keyed on the pose, not on the mesh.
   was 1,268 ms with 34 creations near it and its first blast 403 ms (finding
   13's session, Greyfen, 2026-10-05); a capture there owes `createdNear` on the
   spawn and first-blast frames, and the card's extra time on that device.
-- **`GiVolume`'s three compute pipelines — SETTLED by `BABYLON_EXIT.md` X5.1b.** They were
-  Babylon's, compiled on their first dispatch (synchronous `createComputePipeline`, layout
-  `"auto"`), on no declared list and in no vantage's draw, so which side of the card came
-  down first was a race: five runs of `pipelines.mjs coldharbour --round` at X4.6b's tree
-  (2026-11-04) had 16 of Babylon's at the install in 4 of 5 and 13 at the install with 3 at
-  `life 1: spawn` in the fifth, those three naming `GiVolume.update`; X5.1a's baseline
-  (f7790e4, five runs) 3 of Babylon's at the install in 5 of 5, none in play, 21 of ours and
-  15 modules at the install. **Since X5.1b they are OUR renderer's** (`render/GiCompute.ts`):
-  five pipelines (the trace and compose at each tier, vis once) asked at `Game`'s
-  construction and declared on `Game.roundPipelines` as "the irradiance volume", so the card
-  waits for them and nothing can race. Measured (five runs of `pipelines.mjs coldharbour
-  --round`, 2026-11-07): **0 of Babylon's at the install in 5 of 5, none in play**, 21 of
-  ours and 12 modules at the install (the volume's three modules now made at the boot),
-  nothing at the second install; `cinderhaven --round` and `sarab --round` 0 of Babylon's
-  and 19 of ours at the install, none in play; and a live log through two rounds, a map
-  change, the tier changed in play and an editor build with a drag: Babylon's
-  `_computeDispatch` never called and no synchronous compute pipeline made.
 - **Hollowmere standing still.** Plain `pipelines.mjs hollowmere` (no `--round`,
   which needs armour) creates 5 of Babylon's pipelines and 1 module in its second
   second after the spawn, on every run: X4.5a's tree, 89879c6 and f035cc6 alike,

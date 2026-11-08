@@ -54,7 +54,22 @@
  * a thrown one in a dev build — because `GiVolume.update` has already moved
  * its cursor, its warm frames and its dirty channels for the slice, which
  * would be skipped silently (X5.1a measured that frame never happening, in
- * every state); a buffer or texture replaced or dropped is destroyed after
+ * every state) — a throw NEVER PROVOKED, by any run, and thrown where it
+ * stops everything: inside the engine's `onEndFrameObservable`
+ * (`FrameHost.afterSubmit`), whose `notifyObservers` catches nothing, so it
+ * leaves Babylon's `endFrame` before the render loop queues its next frame —
+ * a dev build's render loop STOPS, every end-of-frame observer added after
+ * this one is skipped, and the retired buffers and textures are left
+ * undestroyed; the CPU half has already advanced by then, so this is the
+ * "fail loudly" branch X5.1b's brief asked for, never a recovery; the
+ * readiness gate (`isReady`, `GiVolume.update`'s) asks only the five
+ * pipelines, where Babylon's `ComputeShader.isReady()` also waited for every
+ * texture bound to it — the cloud field among them — so a cloud field not
+ * yet READY would there have held the CPU half back and here arms, advances
+ * and records nothing (`record`, said once): unreachable today, both
+ * candidate cloud fields (`Sky.cloudShadowMap`, `ShadowBindings`' no-cloud
+ * texel) being `RawTexture`s built from data and ready at creation; a buffer
+ * or texture replaced or dropped is destroyed after
  * the frame's submit (`FrameHost.afterSubmit`), never at the call — a door
  * may run between an armed dispatch and its prepare, which then records on
  * what was current when it was armed; nothing here allocates on a frame but

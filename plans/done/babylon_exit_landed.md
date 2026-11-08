@@ -9716,7 +9716,8 @@ dispatches nothing, in a round or an editor build.
   unrecorded at the frame's end is dropped and THROWN in a dev build** (logged once in
   production): the converse the brief asked for, never reached by any run here. `GiVolume` keeps
   its CPU half line for line (its fields, `update`'s schedule, `writeParams`, `writeHulls`,
-  `uploadMap`'s arrays); `isReady` is ours; `cloudBound` stays for the probe, the cloud field
+  `uploadMap`'s arrays); `isReady` is ours, and asks only the five pipelines where Babylon's
+  `ComputeShader.isReady()` also waited for every texture bound to it (its review); `cloudBound` stays for the probe, the cloud field
   handed over as `hostTexture(cloud)` and bound with `host.bind`'s view and sampler (row 2).
   `CelShader`: `GiBinding.textures` are our `OwnTexture`s, `fillFrameTextures` hands them over
   directly; the Babylon materials' set (`BabylonGi`) is the picture change's.
@@ -9778,3 +9779,86 @@ dispatches nothing, in a round or an editor build.
   X5.4's texture list; `plans/webgpu-ref/README.md`.
 - **Not verified**: a server's match in a browser; the phone; a lost device; the converse's
   throw provoked on purpose; `surfaces.mjs`.
+
+**Its review** (2026-11-07; no change to the game: documents, comments, contract headers and
+`harness.mjs`; under `src/` comments only). An independent review found nothing real and
+seven minor points, each verified against the tree first.
+
+- **The compose's readers.** `docs/rendering.md` said the main pass, the glow's mask "and an
+  editor build's Babylon passes" read this frame's compose; since 9b9d205 those passes read
+  nothing of the volume (every Babylon cel material holds GI `off`). Corrected. `CLAUDE.md`
+  said an armed frame without prepares "is an error, not a skipped slice"; in production it
+  is a skipped slice logged once and a dev build throws, which is what it says now, tersely.
+- **"An editor build prepares NO frame of ours"** — older than X5.1b, in `docs/rendering.md`
+  (the bodies' map twice, the bodies once), `BodyShadowMap`'s header and its `asks` field,
+  and `BodyShadows`' comment at the ask. X5.1a counted our prepares on 120 of 120 editor
+  frames; `Renderer.begin` runs them whenever `filled || maskFilled`. Checked in the code:
+  `BodyShadowMap.prepare` zeroes `asks` on every prepared frame and the editor asks once a
+  frame (`updateEditor` -> `updateSceneForCamera` -> `BodyShadows.update` -> `draw`), so
+  `asks > 1` never holds there — the clear-at-once branch (`clearNow`) is unreachable in an
+  editor build, and its owed clear lands on the next frame's prepare, as in a round. Each
+  place now says that; the branch stays, a guard for a state that prepares nothing, which no
+  state measured is.
+- **The readiness gate is not line for line.** `GiCompute.isReady` asks the five pipelines;
+  Babylon's `ComputeShader.isReady()` (`computeShader.pure.js`, ~219-231) also walked every
+  bound texture's `isReady()`, the cloud field's among them, so a cloud field not yet ready
+  held the CPU half back. Ours would arm and advance, and `record` would bind nothing and say
+  so once. Unreachable: both candidate cloud fields (`Sky.cloudShadowMap` and
+  `ShadowBindings`' no-cloud texel) are `RawTexture`s built from data, ready at creation.
+  Recorded, not changed, in `GiVolume`'s and `GiCompute`'s headers, `FILES.md` and the
+  "What moved" bullet above.
+- **The converse's DEV throw**, never provoked by any run, is thrown inside `afterSubmit`,
+  which is `onEndFrameObservable`. Checked in Babylon: `AbstractEngine.endFrame` is
+  `_frameId++` then `notifyObservers`, which catches nothing; WebGPU's `endFrame` has
+  submitted (`flushFramebuffer`) and destroyed its own deferred resources before it; and
+  `_renderLoop` queues the next frame only after `_processFrame` returns. So the throw stops
+  a dev build's render loop, skips every end-of-frame observer added after `GiCompute`'s,
+  and leaves the retired buffers and textures undestroyed (`frameEnd` destroys them after
+  the throw), the CPU half having already advanced: the brief's "fail loudly" branch, not a
+  recovery. `GiCompute`'s header says so.
+- **X5.4's list** said nothing of Babylon's samples the textures it moves; the cloud field is
+  bound by Babylon's `Volumetrics` every frame it draws until X5.2, and by an editor build's
+  Babylon cel materials until X5.3 (X5.1a's counts). Corrected.
+- **`FILES.md` and `FINDINGS.md`.** `GiVolume`'s line said "seven 3D textures every cel
+  material binds, always" — they are `GiCompute`'s, bound by our frame and by no Babylon
+  material; `GiCompute`'s line now names the readiness gate and the converse as they are.
+  `FINDINGS.md` 16's `GiVolume` bullet was marked SETTLED rather than deleted; it is deleted,
+  its status saying one thing it does not reach is left. **The settlement, for the record**:
+  the three compute pipelines were Babylon's, compiled on their first dispatch (synchronous,
+  layout `"auto"`), on no declared list, so which side of the card came down first was a
+  race (X4.6b's tree, five runs of `pipelines.mjs coldharbour --round`: 16 of Babylon's at
+  the install in 4 of 5, 13 with 3 at `life 1: spawn` in the fifth, naming
+  `GiVolume.update`; X5.1a's baseline 3 at the install in 5 of 5, none in play, 21 of ours
+  and 15 modules); since X5.1b the five pipelines are ours, asked at construction and
+  declared as "the irradiance volume", and five runs read 0 of Babylon's at the install,
+  none in play, 21 of ours and 12 modules (the "Pipelines" bullet above).
+- **The harness's arm for ours is checked live.** `window.__refGiCount` returned
+  `GiCompute.recorded` whenever it was a number, so a regression that stopped incrementing
+  it would read a constant and every freeze would hold vacuously — the class of hole X5.1a's
+  review closed for Babylon's arm. It now wraps `GPUComputePassEncoder.prototype`'s
+  `setPipeline` (the pass's pipeline in a `WeakMap`) and `dispatchWorkgroups` once, counts a
+  dispatch whose pipeline is one of `GiCompute`'s own (`traces`, `composes`, `visPipeline`),
+  and THROWS at any call where trace, compose and vis have not each been dispatched exactly
+  as many times as `recorded` moved since its first call; with those fields missing it
+  answers null and the freeze throws. Nothing under `src/` changed. `plans/webgpu-ref/README.md`
+  says the same.
+- **Watch**: the reviewer observed that `sarab-particles-dust` is the third Sarab `gi=low`
+  row in the cross-process residue class, after `sarab-ground` and `sarab-alley`.
+- **Measured** (the Windows box, headless). The hand test, scratch
+  `x51b-review/live-count.mjs` on a Hollowmere round: three freeze/thaw cycles pass, the
+  independent count live (204 frames recorded since the arm's first call, 204 of each
+  pass); `recorded` stubbed to a constant after them fails the next freeze ("recorded moved
+  204 while the volume's passes were dispatched trace 296, compose 296, vis 296 times — the
+  count is not live"); on a fresh page, the volume's real `update` put back for ten frames
+  under the hold with `recorded` stubbed fails the thaw ("moved 0 ... dispatched ... 10
+  times"), and the same with the PARENT's harness passes with no error (the hole, shown);
+  with `recorded` live it fails on the old message ("dispatched 10 times while its update
+  was stubbed"). `gi.mjs --against` X5.1b's AFTER log (`x51b/gi-x.json`): equal, 914,611
+  values on Hollowmere and 254,731 on Coldharbour, 0 page and 0 console errors. `bank.mjs
+  hollowmere --check --keep` by `exact.mjs` against X5.1b's kept AFTER (`x51b/x-high`): 16 of
+  16 byte-equal; the same two rows red against `ref/` (`menu` 0.0677/255, `ashwood`
+  0.3918/255) as that AFTER's log. Typecheck and build (`check-babylon-free`,
+  `check-proving`) pass.
+- **Not verified**: the rest of the bank (the change is inside `__refGiCount`, which every
+  row's freeze calls; Hollowmere's 16 rows ran it); the throw itself provoked; corecheck,
+  parity, `gate`, `shaders` (no game code moved).

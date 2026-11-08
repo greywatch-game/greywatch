@@ -48,7 +48,8 @@
  * did not run dispatches NOTHING. That is checked: the volume's dispatches are
  * counted through one adapter (`window.__refGiCount`: Babylon's `ComputeShader`s
  * at a parent before X5.1b, OUR arm — `GiCompute.recorded`, picked first — from
- * X5.1b), and `thaw` throws if
+ * X5.1b, and checked live against the volume's own pipelines' dispatches
+ * counted at the compute pass encoder, X5.1b's review), and `thaw` throws if
  * the count moved while the stub stood. **Its converged frame is what reproduces
  * and nothing before it does**: the trace reads the history other workgroups of
  * the same dispatch are writing, so its colour during convergence differs run to
@@ -1216,9 +1217,60 @@ export function freeze(page, set = FREEZE_SET, { windTime = 0, turn = 0, strike 
     // armed under the stub and recorded would move it too. The freeze throws
     // on null, so a port that forgets its arm fails at the first row rather
     // than counting a dispatch nobody makes and holding every row vacuously.
+    // **Ours is not TRUSTED, it is checked LIVE** (X5.1b's review): a
+    // regression that stopped incrementing `recorded` would read a constant
+    // and hold every row vacuously, the hole X5.1a's review closed for
+    // Babylon's arm. So the arm counts the volume's passes a second way —
+    // `GPUComputePassEncoder`'s `setPipeline` and `dispatchWorkgroups`
+    // wrapped once on the prototype, a dispatch counted when its pass's
+    // pipeline is one of `GiCompute`'s own (`traces`, `composes`,
+    // `visPipeline`: the trace, compose and vis) — and THROWS unless every
+    // call finds trace, compose and vis each dispatched exactly as many times
+    // as `recorded` moved since the arm's first call. It answers null when
+    // those three fields are not there to identify the passes by, which the
+    // freeze turns into a throw like any missing arm. Nothing under `src/`
+    // is touched: the wrap sees the calls the page makes and passes them on.
     window.__refGiCount ??= () => {
       const ours = g.gi.gpu;
-      if (ours && typeof ours.recorded === "number") return ours.recorded;
+      if (ours && typeof ours.recorded === "number") {
+        const CPE = window.GPUComputePassEncoder?.prototype;
+        if (!CPE || !(ours.traces instanceof Map) || !(ours.composes instanceof Map) || !("visPipeline" in ours)) {
+          return null;
+        }
+        if (!CPE.__refGiOurs) {
+          const setPipeline = CPE.setPipeline;
+          const dispatchWorkgroups = CPE.dispatchWorkgroups;
+          const pipelineOf = new WeakMap();
+          CPE.setPipeline = function (...a) {
+            pipelineOf.set(this, a[0]);
+            return setPipeline.apply(this, a);
+          };
+          CPE.dispatchWorkgroups = function (...a) {
+            const c = window.__refGiOurs;
+            const p = pipelineOf.get(this);
+            if (c && p) {
+              const gpu = c.gpu;
+              if (p === gpu.visPipeline) c.vis++;
+              else if ([...gpu.traces.values()].includes(p)) c.trace++;
+              else if ([...gpu.composes.values()].includes(p)) c.compose++;
+            }
+            return dispatchWorkgroups.apply(this, a);
+          };
+          CPE.__refGiOurs = true;
+        }
+        let c = window.__refGiOurs;
+        if (!c || c.gpu !== ours) {
+          c = window.__refGiOurs = { gpu: ours, base: ours.recorded, trace: 0, compose: 0, vis: 0 };
+        }
+        const moved = ours.recorded - c.base;
+        if (c.trace !== moved || c.compose !== moved || c.vis !== moved) {
+          throw new Error(
+            `__refGiCount: GiCompute.recorded moved ${moved} while the volume's passes were dispatched ` +
+              `trace ${c.trace}, compose ${c.compose}, vis ${c.vis} times — the count is not live`,
+          );
+        }
+        return ours.recorded;
+      }
       const set = [g.gi.trace, g.gi.compose, g.gi.vis].filter((x) => x !== null && x !== undefined);
       const babylons = (cs) =>
         typeof cs.getClassName === "function" &&

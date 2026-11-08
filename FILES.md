@@ -1351,8 +1351,9 @@ src/
     GiVolume.ts         # The irradiance volume: bounce light, sky occlusion
                         #   and lamps that stop at walls. A camera-centred,
                         #   toroidally scrolled window of probes traced in
-                        #   compute against the colliders; seven 3D textures
-                        #   every cel material binds, always. No draw calls.
+                        #   compute against the colliders; its GPU half's
+                        #   seven 3D textures our frame binds, always (none
+                        #   in a Babylon material). No draw calls.
                         #   Same ray set every update, so a still scene
                         #   converges to a fixed point instead of crawling.
                         #   Its CPU HALF (the window, the lights, the channels,
@@ -2895,7 +2896,10 @@ src/
                         #   into its buffer. An editor build's stays Babylon's
     GiCompute.ts        # THE IRRADIANCE VOLUME'S GPU HALF as OUR renderer's
                         #   (X5.1b), Babylon's ComputeShader/StorageBuffer/
-                        #   RawTexture3D ported exactly: five pipelines asked at
+                        #   RawTexture3D ported exactly but for the readiness
+                        #   gate (the pipelines only; Babylon's also waited for
+                        #   the bound cloud field, ready at creation today):
+                        #   five pipelines asked at
                         #   construction ("the irradiance volume" on
                         #   Game.roundPipelines), six buffers, seven 3D textures
                         #   (OwnTextures the frame binds) and their sampler, the
@@ -2903,7 +2907,8 @@ src/
                         #   GiVolume ARMS recorded by a LATE prepare pushed after
                         #   ProbeBake's (registration order is the whole of the
                         #   bake-before-dispatch order), an armed frame with no
-                        #   prepare an error, every retired resource destroyed
+                        #   prepare dropped and thrown in DEV (logged once in
+                        #   production), every retired resource destroyed
                         #   after the submit (FrameHost.afterSubmit). The cloud
                         #   field the host's, with the host's sampler
     ParticleDraw.ts     # EVERY PARTICLE FIELD as OUR renderer runs it (X4.7c

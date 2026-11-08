@@ -280,7 +280,10 @@ node plans/webgpu-ref/gi.mjs --compare=a.json --against=b.json
   **The harness holds the volume by stubbing its `update`**, and that is a contract a
   port keeps: `freeze`'s `gi` block counts the volume's dispatches through one adapter
   (`window.__refGiCount`: OURS first since X5.1b — `GiCompute.recorded`, the frames its
-  late prepare recorded the passes on — and Babylon's at a parent, whose arm answers null
+  late prepare recorded the passes on, checked LIVE at every call against the volume's own
+  pipelines' dispatches counted at `GPUComputePassEncoder` (trace, compose and vis each
+  equal to how far `recorded` moved, or it throws: X5.1b's review, so a `recorded` that
+  stopped counting cannot hold a row vacuously) — and Babylon's at a parent, whose arm answers null
   — and the freeze throws — for anything in `trace`, `compose` or `vis` that is not
   Babylon's own `ComputeShader`) and
   `thaw` throws if any happened under the stub; `bank.mjs` thaws once more after each

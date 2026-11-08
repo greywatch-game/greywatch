@@ -273,8 +273,8 @@ export class BodyShadows {
     // Drawn whole on the next frame our renderer prepares — or, with nobody
     // in the window, OWED a clear on that same next frame, the cleared pass
     // Babylon's generator drew for an empty frame and at its timing; cleared
-    // at once only in a state that prepares no frame of ours (an editor
-    // build: `BodyShadowMap.draw`).
+    // at once only in a state that prepares no frame of ours, which an editor
+    // build is not — it prepares every frame (`BodyShadowMap`'s header).
     this.map.draw(this.matrix.m, this.matrices, this.count);
   }
 

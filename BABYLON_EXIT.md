@@ -3292,7 +3292,7 @@ correction marked "X5.1a"):
   buffers, the seven textures (one view each, the frame's `OwnTexture`s), their sampler, the
   bind groups, the history's clears and the retired resources (destroyed at the new
   `FrameHost.afterSubmit`, the engine's end of frame); `GiVolume` keeps its CPU half line for
-  line and ARMS a dispatch that `GiCompute`'s late prepare, pushed after `ProbeBake`'s,
+  line (but for the readiness gate, which asks only our pipelines: its review) and ARMS a dispatch that `GiCompute`'s late prepare, pushed after `ProbeBake`'s,
   records (three compute passes on the host's prepare encoder); the converse is an ERROR
   (an armed dispatch unrecorded at the frame's end is dropped and thrown in a dev build,
   logged once in production — never seen in any run below); the cloud field the host's
@@ -3360,6 +3360,52 @@ correction marked "X5.1a"):
     the converse's throw provoked on purpose (no state of the game reaches it).
   The note is in `plans/done/babylon_exit_landed.md`. **X5.1 is whole**: both sub-steps
   landed; its own Verify below is the owner's to mark.
+
+  **Its review** (2026-11-07; documents, comments, contract headers and the harness only, no
+  change to the game) found nothing real and seven minor points, each checked against the
+  tree before it was acted on. **Records**: `docs/rendering.md` no longer says an editor
+  build's Babylon passes read the frame's compose (they hold GI `off` since 9b9d205), and
+  `CLAUDE.md` says what `GiCompute`'s header says — an armed frame whose prepares never ran
+  is dropped and thrown in a dev build, logged once in production. **An older claim**, "an
+  editor build prepares NO frame of ours" (`docs/rendering.md`'s bodies' map and bodies,
+  `BodyShadowMap`'s header and its `asks`, `BodyShadows`' comment): X5.1a counted our
+  prepares on 120 of 120 editor frames (`Renderer.begin` runs them whenever a draw of ours is
+  active), so `BodyShadowMap`'s clear-at-once branch is unreachable there — `prepare` zeroes
+  `asks` each frame and the editor asks once a frame (`updateEditor`) — and its owed clear
+  lands on the next frame, as in a round. **"Line for line" stated accurately**: the
+  readiness gate (`GiCompute.isReady`) asks only the five pipelines, where Babylon's
+  `ComputeShader.isReady()` also waited for every texture bound to it, the cloud field among
+  them; a cloud field not yet ready would now arm and advance a slice nothing records (said
+  once) — unreachable today, both candidates (`Sky.cloudShadowMap`, `ShadowBindings`' no-cloud
+  texel) being `RawTexture`s built from data; `GiVolume`'s and `GiCompute`'s headers and
+  `FILES.md` say so. **The converse's throw recorded as what it is**: never provoked, and
+  thrown inside `onEndFrameObservable` (`afterSubmit`), whose `notifyObservers` catches
+  nothing — it leaves `endFrame` before `_renderLoop` queues the next frame, so a dev build's
+  render loop stops, the end-of-frame observers after it are skipped and the retired
+  resources stay undestroyed, the CPU half having already advanced: the brief's "fail
+  loudly" branch (`GiCompute`'s header). X5.4's list no longer says nothing of Babylon's
+  samples the cloud field (`Volumetrics` binds it until X5.2, an editor build's materials
+  until X5.3). `FILES.md`'s `GiVolume` and `GiCompute` lines made accurate, and
+  `FINDINGS.md` 16's `GiVolume` bullet DELETED rather than marked settled (its numbers are
+  this entry's and the note's; the entry's status says one thing is left). **The
+  instrument**: the harness's arm for ours trusted `GiCompute.recorded` whenever it was a
+  number, so a `recorded` that stopped counting would have held every freeze vacuously — the
+  hole X5.1a's review closed for Babylon's arm. It now counts the volume's passes a second
+  way, `GPUComputePassEncoder`'s `setPipeline`/`dispatchWorkgroups` wrapped once and a
+  dispatch counted when its pipeline is one of `GiCompute`'s own, and throws unless trace,
+  compose and vis each moved exactly as far as `recorded` since its first call. **Watch**:
+  `sarab-particles-dust` is the THIRD Sarab row in the `gi=low` cross-process residue class
+  (after `sarab-ground` and `sarab-alley`), the reviewer's observation. **Measured**: a hand
+  test (scratch `x51b-review/live-count.mjs`, a Hollowmere round) — three freeze/thaw cycles
+  pass with the count live (204 frames recorded, 204 of each pass); `recorded` stubbed to a
+  constant fails the next freeze ("moved 204 ... dispatched 296 ... not live"); the volume
+  let run ten frames under the hold with `recorded` stubbed fails the thaw ("moved 0 ...
+  dispatched 10"), where the parent's harness passed it with no error, and with `recorded`
+  live fails it on the old message ("dispatched 10 times while its update was stubbed");
+  `gi.mjs` against X5.1b's AFTER log equal (914,611 values on Hollowmere, 254,731 on
+  Coldharbour), no page or console error; `bank.mjs hollowmere --check --keep` against
+  X5.1b's kept AFTER by `exact.mjs`, 16 of 16 byte-equal, the same two rows red against
+  `ref/` (`menu`, `ashwood`) at the same means; typecheck and build pass.
 - **Every sub-step owes**: **a BYTE comparison of every row against a BEFORE at its parent**
   (`exact.mjs` over two `--check --keep` directories, never `--check`'s pass line), the known
   flakes alone excused, and from X5.1b on the same under `--query=gi=low` and
@@ -3445,8 +3491,12 @@ It stays behind its one dynamic `import()` in a DEV branch.
       sky's (`Sky`) — the cloud field, which since X5.1b the irradiance volume's TRACE reads
       through `hostTexture` and `host.bind` too (a compute reader beside the frame, the host's
       sampler by the owner's decision), so its move owes `gi.mjs` beside the bank. Nothing of
-      Babylon's samples them; they wait for this step only so the group moves under one bank
-      proof, not for any reader.
+      Babylon's samples them but the cloud field, which Babylon's `Volumetrics` (the light
+      shafts) binds on every frame it draws until X5.2 takes the post chain, and an editor
+      build's Babylon cel materials until X5.3 (X5.1a counted both: one bind a frame in the
+      menu and deploy, 100,485 in 120 editor frames; corrected by X5.1b's review), both gone
+      before this step; they wait for it only so the group moves under one bank proof, not
+      for any reader.
     - **shared with an editor build until X5.3**: the cel materials' own (`CelShader`'s
       `recipe.textures`) and the shadow maps `ShadowBindings` still wraps. X5.3 takes away the
       editor's Babylon draw that samples them (rule 5: a resource lives with what produces it),

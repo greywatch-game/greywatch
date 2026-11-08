@@ -540,7 +540,8 @@ is registered `fast`**, or its bounce freezes into the probes, and
 is OUR renderer's** (`render/GiCompute.ts`, X5.1b): `update` ARMS a dispatch and
 a LATE prepare records it, **pushed after `ProbeBake`'s — the bake reading last
 frame's compose rests on that registration order alone** — and an armed frame
-whose prepares never ran is an error, not a skipped slice. **An editor build has
+whose prepares never ran is dropped and THROWN in a dev build (logged once in
+production), never skipped in silence. **An editor build has
 NO GI until X5.3** (the owner's decision): no Babylon cel material is handed the
 volume, every one holding GI `off` (`CelMaterialFactory.babylonGi`).
 

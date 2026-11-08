@@ -20,11 +20,14 @@
  * sooner: an empty ask made after a frame's render (the warm-up's last,
  * `Game.finishBakeWait`) leaves that frame's picture alone, as it left
  * Babylon's — unless a SECOND ask arrives with no frame prepared since, which
- * is a state whose frames our renderer prepares nothing in (an editor build,
- * whose world is Babylon's): then the clear is recorded at once, into the
- * host's prepare encoder, so it lands after anything already recorded there
- * and never under it, and such a state is never left holding the last round's
- * bodies; a map holding proxies is drawn whole each time — cleared to LIT (depth 1,
+ * is a state whose frames our renderer prepares nothing in: then the clear is
+ * recorded at once, into the host's prepare encoder, so it lands after
+ * anything already recorded there and never under it, and such a state is
+ * never left holding the last round's bodies (no state measured is one: an
+ * editor build prepares every frame — X5.1a counted our prepares on 120 of
+ * 120 editor frames, `Renderer.begin` running them whenever a draw of ours
+ * is active — so there this branch is unreachable and an owed clear lands on
+ * the next frame, as in a round); a map holding proxies is drawn whole each time — cleared to LIT (depth 1,
  * past every receiver), then every instance — and keeps the casters' BACK
  * faces, as `forceBackFacesOnly` did; a texture is born and re-made CLEARED
  * TO LIT by a submit of its own, and is destroyed when the map is re-sized or
@@ -70,7 +73,10 @@ export class BodyShadowMap {
   private holds = false;
   /** An empty ask was made while it held proxies: a clear is owed (`draw`). */
   private owedClear = false;
-  /** Asks since a frame was last prepared: a second with none between is a state that prepares nothing. */
+  /**
+   * Asks since a frame was last prepared: a second with none between is a
+   * state that prepares nothing (none measured — not an editor build).
+   */
   private asks = 0;
   /** The pass an owed clear is recorded with: the colour cleared to lit, nothing drawn. */
   private clearPass: GPURenderPassDescriptor | null = null;
