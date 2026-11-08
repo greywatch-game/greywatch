@@ -1165,7 +1165,11 @@ export function placeVantage(page, vantage) {
  * today**: the three objects `Game` builds. A step that moves the chain's
  * host (X5.2c1 on) adds OURS here, picked first, with the same members —
  * each part an object whose `update` the freeze replaces and the thaw puts
- * back on the SAME object — so the freeze reads the same whoever draws.
+ * back on that SAME object — so the freeze reads the same whoever draws.
+ * **A part is read FRESH at every call and may be a different object at the
+ * next**: the shafts are rebuilt on every rung change and on every off to on
+ * (`Game.setVolumetrics`), so nothing here or in its callers may hold one
+ * across a freeze (`freeze`'s `__refPostStubs`, X5.2a's held finding F1).
  * Installed by the first call that needs it; idempotent.
  *
  * **Not `post.mjs`'s `postAdapter`**, which shares the name and the shape:
@@ -1235,10 +1239,24 @@ function postAdapter() {
  * **Each replaced updater is stashed first, so `thaw` can put it back**, which
  * is what lets one boot shoot a map's whole table. Re-freezing after a thaw is
  * safe and re-stashes nothing: the first stash is the one kept, so a second
- * freeze cannot record its own no-ops as the real methods.
+ * freeze cannot record its own no-ops as the real methods. That stash is ONCE
+ * PER PAGE, so it may hold only objects that live as long as the page does.
  *
- * **The post chain's three are reached through `postAdapter`** and stashed
- * with the object each came off, as the shafts always were. `damage` (a row's
+ * **The post chain's three are reached through `postAdapter`, and are NOT in
+ * that stash**: each part this freeze stubs is recorded at THIS freeze, with
+ * the real updater read off that same part before its stub
+ * (`__refPostStubs`), and `thaw` restores every part recorded. The stash used
+ * to hold them, once per page, with the object each came off, and the thaw
+ * restored a part only while it was still that object — but the shafts are
+ * REBUILT on every rung change and every off to on (`Game.setVolumetrics`),
+ * so after the first one the live pass was stubbed by a freeze and never
+ * given its `update` back: every later row converged with
+ * `syncVolumetrics`'s `vol.update()` doing nothing, its shafts drawn with the
+ * basis and the FOV of the last row whose pass was fresh, and a page whose
+ * first freeze found the shafts off never restored them at all
+ * (`BABYLON_EXIT.md` X5.2a's held finding F1). The grade and the blur are
+ * built once per page today and were never hit; they are held the same way,
+ * so a port that rebuilds either is no different. `damage` (a row's
  * `damage`) holds the grade's flash at its kick under the stubbed decay,
  * raised here, after the settle and not before it, because the real `update`
  * decays it by the frame's `dt` (`BABYLON_EXIT.md` X5.2a).
@@ -1248,24 +1266,30 @@ export function freeze(page, set = FREEZE_SET, { windTime = 0, turn = 0, strike 
   return limited("freeze", 1_800_000, page.evaluate(postAdapter).then(() => page.evaluate(async ([f, wind, blurTurn, sweeps, strikeAt, flash]) => {
     const g = window.__celshock;
     const post = window.__refPost();
-    // The real updaters, recorded ONCE. See `thaw`.
+    // The real updaters, recorded ONCE per page — so only of objects the page
+    // keeps for its whole life, which the post chain's are not. See `thaw`.
     window.__refThaw ??= {
-      // The post chain's three, each with the object it came off: the shafts
-      // are NULL when the player has them off and the pass is REBUILT on a
-      // rung change, so a thaw that assigned a stashed method back onto a
-      // different object would put a dead closure on a live pass — and the
-      // grade and the blur are held the same way, so a port that rebuilds
-      // either is no different (`postAdapter`).
-      post: { on: post.grade, fn: post.grade.update },
       sky: g.sky.update,
       lightning: g.lightning.step,
       lighting: g.lighting.update,
       gi: g.gi.update,
-      shafts: post.shafts && { on: post.shafts, fn: post.shafts.update },
-      blur: { on: post.blur, fn: post.blur.update },
       wind: g.mats.updateWind,
       grass: g.grass?.update,
       water: g.water?.update,
+    };
+    // The post chain's parts, recorded at EVERY freeze rather than once a
+    // page (the header's F1): each part stubbed, keyed by the object itself,
+    // with the real updater read off THAT object before its stub and whether
+    // it was the object's own property or its class's. A part already stubbed
+    // (a second freeze with no thaw between) keeps its first record, so a
+    // stub is never recorded as the real method. `thaw` restores every part
+    // here, the live one or one the game has since replaced, and empties it.
+    window.__refPostStubs ??= new Map();
+    const stubs = window.__refPostStubs;
+    const realOf = (part) => stubs.get(part)?.fn ?? part.update;
+    const stub = (part) => {
+      if (!stubs.has(part)) stubs.set(part, { own: Object.hasOwn(part, "update"), fn: part.update });
+      part.update = () => {};
     };
     // The irradiance volume's dispatches, counted through ONE adapter
     // (`BABYLON_EXIT.md` X5.1a; the `gi` block below and `thaw` read it).
@@ -1360,7 +1384,7 @@ export function freeze(page, set = FREEZE_SET, { windTime = 0, turn = 0, strike 
       // The grade has NO clock (its paper is pinned to the world, not to a
       // time), so holding it is stopping the damage flash's decay — and a row
       // that asks for the flash has it raised here, under the stub.
-      post.grade.update = () => {};
+      stub(post.grade);
       if (flash) post.flash(true);
     }
     if (f.includes("sky")) {
@@ -1384,7 +1408,7 @@ export function freeze(page, set = FREEZE_SET, { windTime = 0, turn = 0, strike 
     // camera already holds it. It stays in the set because the set is "what
     // `tick` runs", and a pass that is exempt today is one somebody gives a
     // clock to tomorrow.
-    if (f.includes("shafts") && post.shafts) post.shafts.update = () => {};
+    if (f.includes("shafts") && post.shafts) stub(post.shafts);
     if (f.includes("blur")) {
       // A row may ask for the blur IN FLIGHT: the real updater shown the aim
       // `turn` radians to the left and then where it is, which is one frame of
@@ -1404,12 +1428,12 @@ export function freeze(page, set = FREEZE_SET, { windTime = 0, turn = 0, strike 
       const yaw = g.cameraSys.aimYaw;
       const pitch = g.cameraSys.aimPitch;
       if (blurTurn) {
-        window.__refThaw.blur.fn.call(post.blur, yaw - blurTurn, pitch, 1 / 60);
-        window.__refThaw.blur.fn.call(post.blur, yaw, pitch, 1 / 60);
+        realOf(post.blur).call(post.blur, yaw - blurTurn, pitch, 1 / 60);
+        realOf(post.blur).call(post.blur, yaw, pitch, 1 / 60);
       } else {
-        window.__refThaw.blur.fn.call(post.blur, yaw, pitch, 1 / 60);
+        realOf(post.blur).call(post.blur, yaw, pitch, 1 / 60);
       }
-      post.blur.update = () => {};
+      stub(post.blur);
     }
     if (f.includes("wind")) {
       // Assigned and then pushed through the real updater, because the clock
@@ -1611,16 +1635,21 @@ export function thaw(page) {
         throw new Error(`thaw: the irradiance volume dispatched ${now - held} times while its update was stubbed`);
       }
     }
-    // The post chain's three, each only onto the instance it was taken from —
-    // see the stash. The adapter is up: the freeze that made the stash put it.
-    const post = window.__refPost();
-    if (post.grade === s.post.on) post.grade.update = s.post.fn;
+    // The post chain's parts: every one the freezes since the last thaw
+    // stubbed, each given back the updater read off IT — the live part, or
+    // one the game has replaced since, which is harmless — and then
+    // forgotten, so a part the game rebuilds is one the next freeze records
+    // afresh (`freeze`'s header, F1). Restored exactly: a class's method by
+    // deleting the stub so it shows through, an own property assigned back.
+    for (const [part, real] of window.__refPostStubs ?? []) {
+      if (real.own) part.update = real.fn;
+      else delete part.update;
+    }
+    window.__refPostStubs?.clear();
     g.sky.update = s.sky;
     g.lightning.step = s.lightning;
     g.lighting.update = s.lighting;
     g.gi.update = s.gi;
-    if (s.shafts && post.shafts === s.shafts.on) post.shafts.update = s.shafts.fn;
-    if (post.blur === s.blur.on) post.blur.update = s.blur.fn;
     g.mats.updateWind = s.wind;
     if (g.grass && s.grass) g.grass.update = s.grass;
     if (g.water && s.water) g.water.update = s.water;

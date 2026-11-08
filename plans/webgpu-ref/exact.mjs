@@ -33,8 +33,9 @@ import { comparePngs } from "./diff.mjs";
  * (`plans/done/babylon_exit_landed.md`, X4.1's sub-steps for the shelf and X4.3's
  * for the pistol). A row belongs here only with a run of one tree against itself
  * behind it. Three rows are NOT here, being larger, and each is cross-process residue
- * of the same class: `sarab-ground` (up to 100 pixels by 2/255, at X4.1, X4.4c, X4.4d
- * and X5.1a) in the plain bank, and `sarab-alley` (5 pixels by 2/255, X5.1a: two frames
+ * of the same class: `sarab-ground` (up to 100 pixels by 2/255, at X4.1, X4.4c, X4.4d,
+ * X5.1a and X5.2a's F1 fix, where the parent's frame was one the step's processes drew) in
+ * the plain bank, and `sarab-alley` (5 pixels by 2/255, X5.1a: two frames
  * of one tree, 3 processes of 4 against 1) and `sarab-particles-dust` (4 pixels by 1/255,
  * X5.1b: two frames of one tree, each drawn by the parent's processes and the step's,
  * Sarab alone two processes a side) under `--query=gi=low` only, never seen at high or

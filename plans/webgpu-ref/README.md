@@ -464,7 +464,15 @@ are pinned by a camera that has been standing still, so a teleport into a
 still-frozen chain photographs the previous vantage's convergence smeared
 across this one. `harness.mjs` stashes the real updaters on the first freeze
 and `thaw` puts them back; each vantage then converges on its own before it is
-frozen again. **Readiness is asked per vantage too, and for the same reason it
+frozen again. **The post chain's parts are the exception, recorded afresh at
+EVERY freeze off the objects it stubbed**, because the game REBUILDS the shafts
+on a rung change and on off to on: a stash taken once a page gave the first
+pass its updater back and never a successor, so until `BABYLON_EXIT.md` X5.2a's
+held finding F1 was fixed (2026-11-08) Hollowmere's `ground`, `crossing`,
+`sky-moon`, `sky-motes` and `ring-flown`, shot after `post-novol` and
+`post-glowlow` rebuilt the pass, were banked with the shafts held at
+`lanterns`' basis — this smear, measured — and those five were re-banked when
+it was fixed. **Readiness is asked per vantage too, and for the same reason it
 is asked at all** — WebGPU compiles lazily, so a pose that brings a material
 nobody has drawn yet into frame is not ready on the frame the camera moved.
 

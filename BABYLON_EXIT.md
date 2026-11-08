@@ -3790,8 +3790,8 @@ owes" below.
   **Its review** (55ef32c; 2026-11-08; instruments and records only, no change to the game; under
   `src/` one comment) found two real points and five minor ones, each checked against the
   code and the logs first; a third real point (F1: `harness.mjs`'s `thaw` leaving a rebuilt
-  `Volumetrics` stubbed) is **held for the owner's decision**, fixing it moving bank rows, and
-  the harness's freeze and thaw are untouched. **Real**: the record said no pass was skipped
+  `Volumetrics` stubbed) was **held for the owner's decision**, fixing it moving bank rows, and
+  the harness's freeze and thaw were untouched (F1 is fixed since: below). **Real**: the record said no pass was skipped
   for a compile, and the probe's own logs showed two (the phone's FXAA at boot, a desktop
   shafts rung change), while the live render-scale and glow changes ran where every kernel
   was already cached — the live half's changes now run on a second, fresh page, the record
@@ -3814,6 +3814,46 @@ owes" below.
   log differs in exactly the 84 paths the new names move, every scenario steady; the bank on
   Hollowmere 20 of 20 rows byte-equal to X5.2a's AFTER by `exact.mjs`; typecheck and build
   pass. The note is in `plans/done/babylon_exit_landed.md`.
+
+  **Its held finding F1** (2026-11-08, by the owner's decision of that day: fixed before
+  X5.2b, in a commit of its own, the moved rows measured and only those re-banked; it moves
+  the reference, not the game — nothing under `src/` changes) is **fixed**. **Cause**:
+  `freeze` stashed the post chain's three updaters once a page (`window.__refThaw ??=`), each
+  with the object it came off, stubbed whatever `Volumetrics` was live at each freeze, and
+  `thaw` gave `update` back only to the object stashed — but `Game.setVolumetrics` builds a
+  new pass on every rung change and every off to on, so after the first, the live pass was
+  stubbed by the next freeze and never restored. On Hollowmere `post-novol` turned the shafts
+  off and `post-glowlow`'s reset to the boot's settings built a new pass, which its freeze
+  stubbed, so `ground`, `crossing`, `sky-moon`, `sky-motes` and `ring-flown` converged with
+  `syncVolumetrics`'s `vol.update()` doing nothing and were shot with the shafts' basis and
+  `tanY` left at `post-glowlow`'s eye (`lanterns`'); a page whose first freeze found the
+  shafts off never restored them at all. **Fix** (`harness.mjs` alone): the post chain's
+  parts left the once-a-page stash; each freeze records every part it stubs, keyed by the
+  object, with the real updater read off THAT object before its stub (`__refPostStubs`; a
+  part already stubbed keeps its first record), the blur's real updater for the in-flight
+  turn read from the same record, and `thaw` restores every recorded part — deleting the
+  stub so the class's method shows through, or assigning back an own property — then
+  empties the record. The grade and the blur are built once a page (`Game`'s constructor;
+  the blur toggle detaches and re-appends the same grade), so neither was hit; they are held
+  the same way. `post.mjs` has no stubbing of its own (it calls this `freeze` and `thaw`, so
+  it is fixed with it; its scenarios stand at one eye, where the stale basis was the right
+  one). **Measured**: the bank, all 147 rows, against a BEFORE at b9b6c43 (`--check --keep`,
+  the parent's harness, the same tree) by `exact.mjs`, in two processes after the fix:
+  exactly five rows moved, all Hollowmere's and all the bug's — `hollowmere-ground` 1,419,906 pixels by up to 21/255 (a mean of 4.0714/255),
+  `hollowmere-crossing` 1,708,325 by 14/255 (1.8825), `hollowmere-sky-moon` 2,037,583 by 25/255
+  (6.7773), `hollowmere-sky-motes` 2,012,029 by 25/255 (9.1004) and `hollowmere-ring-flown`
+  1,868,088 by 6/255 (1.1955) — and
+  nothing else but `sarab-ground` in one of the two (100 pixels by 2/255, its
+  cross-process residue: the BEFORE's frame is byte-equal to the second process's, so the
+  parent draws the step's frame) and `harrowmead-view-pistol-reload` within its known flake
+  in the other. The five byte-stable across the two processes (`exact.mjs`, 5 of 5
+  byte-equal), then re-banked ALONE (`bank.mjs hollowmere --rows=ground,crossing,sky-moon,
+  sky-motes,ring-flown`, a third process, each row reproducible) and byte-equal to both
+  processes' kept frames; `ref/mode.json` untouched. The five graded within the floor
+  against the old bank before the fix (they were banked with the bug) and 1.2 to 9.1/255
+  over it after; the same 34 stale rows red on both sides at the same means, so 34 with the
+  five re-banked.
+  Typecheck and build pass. `ref/` is gitignored, so this record is the re-bank's.
 - **X5.2b — the glow's blur and downsample are our draws**, in `GlowPass`'s own
   passes, with no change to the pass structure: the kernel text generated as
   Babylon generates it (the same device limit), Babylon's vertex stage and quad

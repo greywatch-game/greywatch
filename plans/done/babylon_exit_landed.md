@@ -9942,8 +9942,9 @@ box.
 **Its review** (55ef32c; 2026-11-08; instruments and records only, no change to the game; under `src/`
 one comment). An independent review found two real points and five minor ones, each checked
 against the code and the logs first; a third real point (F1, `thaw` leaving a rebuilt
-`Volumetrics` stubbed) is held for the owner's decision, because fixing it moves bank rows,
-and `harness.mjs`'s freeze and thaw are untouched.
+`Volumetrics` stubbed) was held for the owner's decision, because fixing it moves bank rows,
+and `harness.mjs`'s freeze and thaw were untouched (fixed since: "Its held finding F1",
+below).
 
 - **Real, two.** (1) The record said no frame was seen with a pass skipped for a compile and
   that all six pipelines were made and drawn on the page's fourth frame; the probe's own logs
@@ -9998,3 +9999,41 @@ and `harness.mjs`'s freeze and thaw are untouched.
   fourteen scenarios with the shafts on, both pages). The bank on Hollowmere `--check --keep`,
   20 of 20 rows byte-equal to X5.2a's AFTER by `exact.mjs` (the harness's change is a
   comment). Typecheck and build pass.
+
+**Its held finding F1** (2026-11-08; the owner's decision of that day: fixed before X5.2b, in
+a commit of its own, the moved rows measured and only those re-banked; the reference moves,
+not the game — `harness.mjs` and comments only, nothing under `src/`).
+
+- **Cause.** `freeze` stashed the post chain's three updaters once a page
+  (`window.__refThaw ??=`), each with the object it came off; it stubbed whatever
+  `Volumetrics` was live at each freeze; `thaw` restored `update` only onto the stashed
+  object. `Game.setVolumetrics` builds a new pass on every rung change and every off to on,
+  so after the first the live pass was stubbed and never restored. On Hollowmere `post-novol`
+  turned the shafts off and `post-glowlow`'s settings reset built a new pass, which its
+  freeze stubbed; `ground`, `crossing`, `sky-moon`, `sky-motes` and `ring-flown` then
+  converged with `syncVolumetrics`'s `vol.update()` doing nothing, their shafts marched with
+  the camera basis and `tanY` of `post-glowlow`'s eye (`lanterns`'). A page whose first freeze
+  found the shafts off never restored them at all.
+- **Fix.** The post chain's parts left the once-a-page stash. Each freeze records every part
+  it stubs (`window.__refPostStubs`, keyed by the object, the real updater read off THAT
+  object before its stub, own property or class method; a part already stubbed keeps its
+  first record), the blur's in-flight calls read the real updater from the same record, and
+  `thaw` restores every recorded part — deleting the stub so the prototype method shows
+  through, or assigning an own property back — and empties the record. The grade and the
+  blur are built once a page (the blur toggle re-appends the same grade), so neither was
+  hit; they are held the same way. `post.mjs` has no stubbing of its own and is fixed with
+  the harness (one eye, so the stale basis there was the right one).
+- **Measured.** The bank, 147 rows, `--check --keep` against a BEFORE at b9b6c43 (the same
+  tree, the parent's harness), compared by `exact.mjs` with two processes after the fix:
+  exactly five rows moved, all Hollowmere's and all the bug's — `hollowmere-ground` 1,419,906 pixels by up to 21/255 (a mean of 4.0714/255),
+  `hollowmere-crossing` 1,708,325 by 14/255 (1.8825), `hollowmere-sky-moon` 2,037,583 by 25/255
+  (6.7773), `hollowmere-sky-motes` 2,012,029 by 25/255 (9.1004) and `hollowmere-ring-flown`
+  1,868,088 by 6/255 (1.1955). Otherwise
+  `sarab-ground` in one process (100 pixels by 2/255, its cross-process residue: the
+  BEFORE's frame byte-equal to the other process's) and `harrowmead-view-pistol-reload`
+  within its flake in the other. The five byte-equal across the two processes; re-banked
+  alone (`bank.mjs hollowmere --rows=ground,crossing,sky-moon,sky-motes,ring-flown`, a third
+  process) and byte-equal to both processes' kept frames; `ref/mode.json` untouched. Before
+  the fix the five graded within the floor against `ref/` (banked with the bug); the same 34
+  stale rows red on both sides at the same means, so 34 with the five re-banked. Typecheck
+  and build pass.

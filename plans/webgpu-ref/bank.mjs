@@ -231,7 +231,14 @@ for (const id of targets) {
     // Put the real updaters back before placing the next camera: the god rays
     // and the motion blur are pinned by a camera that has been standing still
     // rather than by a constant, so a teleport into a frozen chain photographs
-    // the PREVIOUS vantage's convergence smeared across this one.
+    // the PREVIOUS vantage's convergence smeared across this one. **Every**
+    // updater, including a pass a row's settings REBUILT since the last thaw
+    // (the shafts, on a rung change or off to on): until X5.2a's held finding
+    // F1 the thaw restored only the shafts' first object, so Hollowmere's five
+    // rows after `post-novol` and `post-glowlow` (`ground`, `crossing`,
+    // `sky-moon`, `sky-motes`, `ring-flown`) were shot with the shafts held at
+    // `lanterns`' basis — exactly this smear — and were re-banked when it was
+    // fixed (`harness.mjs`'s `freeze`).
     await thaw(page);
     await placeVantage(page, v);
     // Re-asked per vantage rather than once per boot, because readiness is a
