@@ -20,7 +20,9 @@
  * Harrowmead. `scene.isReady()` flipped on exactly those four frames, so it is
  * the wait. A frame count in its place is a duration wearing a frame count's
  * clothes — it was right on a 2 fps box because six frames was three seconds
- * there, and it silently photographs a blank canvas here.
+ * there, and it silently photographs a blank canvas here. Since
+ * `BABYLON_EXIT.md` X5.2c1 the post chain's stages that are OUR draws are not
+ * in it, so the wait asks them beside it (`postAdapter`'s `ready`).
  *
  * **A frozen frame needs EIGHT things held, not the two the plan assumed, and
  * the last two are not clocks at all.** `Game.tick` runs `post.update`,
@@ -323,7 +325,7 @@ export function installRound(page) {
  */
 export function waitUntilDrawn(page, timeoutMs = 120_000) {
   // Its own deadline is read between frames, so it cannot fire when they stop.
-  return limited("waitUntilDrawn", timeoutMs + 60_000, page.evaluate(async (timeout) => {
+  return limited("waitUntilDrawn", timeoutMs + 60_000, page.evaluate(postAdapter).then(() => page.evaluate(async (timeout) => {
     const g = window.__celshock;
     const deadline = performance.now() + timeout;
     let frames = 0;
@@ -335,10 +337,13 @@ export function waitUntilDrawn(page, timeoutMs = 120_000) {
         });
       });
       frames++;
-      if (g.scene.isReady()) return { drawnOnFrame: frames };
+      // The post chain's stages that are OUR draws are not in
+      // `scene.isReady()` (X5.2c1): the adapter's readiness arm asks our
+      // pipelines (Babylon's arm, at a parent, answers true).
+      if (g.scene.isReady() && window.__refPost().ready()) return { drawnOnFrame: frames };
       if (performance.now() > deadline) throw new Error("scene never became ready");
     }
-  }, timeoutMs));
+  }, timeoutMs)));
 }
 
 /**
@@ -1161,9 +1166,12 @@ export function placeVantage(page, vantage) {
  * write was a stale no-op, X5.2a), the SHAFTS (`Volumetrics`, null while the
  * setting is off; its `update` is a pure read of the camera) and the BLUR
  * (`MotionBlur`: its `update` is the CPU history it reprojects against), and
- * the damage FLASH a row may hold (`flash`). **BABYLON's arm is the only one
- * today**: the three objects `Game` builds. A step that moves the chain's
- * host (X5.2c1 on) adds OURS here, picked first, with the same members —
+ * the damage FLASH a row may hold (`flash`), and whether the chain's every
+ * pass can draw (`ready`, asked by `waitUntilDrawn` beside `scene.isReady()`).
+ * **OURS is picked first since X5.2c1** (`g.postChain`: the grade is a stage
+ * of our post chain, its pipelines' readiness `PostChain.drawsReady`, its CPU
+ * half still `g.post`), BABYLON's arm at a parent before it; a later step
+ * that moves the shafts or the blur widens ours with the same members —
  * each part an object whose `update` the freeze replaces and the thaw puts
  * back on that SAME object — so the freeze reads the same whoever draws.
  * **A part is read FRESH at every call and may be a different object at the
@@ -1175,14 +1183,33 @@ export function placeVantage(page, vantage) {
  * **Not `post.mjs`'s `postAdapter`**, which shares the name and the shape:
  * that one (`window.__postGpu`, on a probe's page only) names the chain's
  * GPU modules and textures for `post.mjs`'s log; this one is the CPU half the
- * bank holds. Each has Babylon's arm alone today, and a later sub-step adds
- * OURS to BOTH, picked first, under the same names: that one for each stage
- * it moves (X5.2b on), this one when the grade, the shafts or the blur move
- * (X5.2c1 on, above).
+ * bank holds. Each has OURS, picked first, under the same names as
+ * Babylon's: that one for each stage a sub-step moved (the glow's blur from
+ * X5.2b, the grade from X5.2c1), this one since the grade moved (X5.2c1,
+ * above).
  */
 function postAdapter() {
   window.__refPost ??= () => {
     const g = window.__celshock;
+    // OURS, picked first (X5.2c1): the grade is a stage of our post chain
+    // (`g.postChain`, `render/PostChain.ts`), its CPU half still `g.post`
+    // (`PaperGrain`: the same `update`, `flashDamage` and `damage`), and the
+    // chain's readiness is OUR pipelines', which `scene.isReady()` no longer
+    // covers (`ready`, asked by `waitUntilDrawn`). The shafts and the blur
+    // are still Babylon's passes, reached as Babylon's arm reaches them.
+    if (g.postChain) {
+      return {
+        arm: "ours:grain",
+        grade: g.post,
+        shafts: g.volumetrics ?? null,
+        blur: g.motionBlur,
+        flash: (on) => {
+          if (on) g.post.flashDamage();
+          else if (g.post.damage !== 0) g.post.damage = 0;
+        },
+        ready: () => g.postChain.drawsReady(),
+      };
+    }
     return {
       arm: "babylon",
       grade: g.post,
@@ -1195,6 +1222,9 @@ function postAdapter() {
         if (on) g.post.flashDamage();
         else if (g.post.damage !== 0) g.post.damage = 0;
       },
+      // Every Babylon pass's effect is in `scene.isReady()` (the camera's
+      // post-processes), which `waitUntilDrawn` asks beside this.
+      ready: () => true,
     };
   };
 }

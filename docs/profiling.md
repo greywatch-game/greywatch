@@ -435,7 +435,11 @@ frame                       the whole tick, wall to wall
    │                        the draw phase (the compose is inside the ink;
    │                        the blurs and the box filter OUR draws since
    │                        X5.2b, queued in the passes it binds, so still
-   │                        inside this span — no report version)
+   │                        inside this span — no report version). The post
+   │                        chain after it is in `render` and named by
+   │                        nothing, its grade OUR draw since X5.2c1, queued
+   │                        at the camera's end (`PostPasses`) — no span
+   │                        moved, no report version
    └─ drawWorld             the camera's DRAW PHASE up to the glow's work
                             (report version 36): Babylon's group 0 when it
                             visits one, and our draws only QUEUED here at

@@ -310,9 +310,12 @@ node plans/webgpu-ref/post.mjs --compare=a.json --against=b.json
   device's limits, the canvas's configuration and every module's processed text. **Every
   naming goes through one adapter** (`window.__postGpu`: Babylon's arm, and a sub-step
   that moves a stage adds ours, picked first, under the same names — since X5.2b the
-  glow's box filter and blur, `Game.glowBlur`, named off its modules' labels), so a draw of ours is
+  glow's box filter and blur, `Game.glowBlur`, named off its modules' labels, and since
+  X5.2c1 the grade, `Game.postChain`, the target it reads named for the Babylon pass that
+  writes it), so a draw of ours is
   compared with the Babylon draw it replaced (`harness.mjs`'s `postAdapter`, the CPU half
-  `freeze` holds, shares the name and gains ours by the same sub-step). Beside the log,
+  `freeze` holds, shares the name and has ours since X5.2c1, its `ready` the arm
+  `waitUntilDrawn` asks beside `scene.isReady()`, which no longer covers the grade). Beside the log,
   printed and not compared, the LIVE frames from the page's first, and — on a second,
   fresh page, where nothing has been drawn at those settings yet and a compile can still
   show — after a render-scale change, a glow rung change, a shafts rung change and a
@@ -324,7 +327,8 @@ node plans/webgpu-ref/post.mjs --compare=a.json --against=b.json
   left; `--compare` does it with no browser. About 25 minutes for both sizes.
   **Each X5.2 sub-step's expected differences are committed in
   `plans/webgpu-ref/post-expected.txt`** (`--ignore=@plans/webgpu-ref/post-expected.txt`),
-  a section a sub-step, each line saying why — X5.2b's three on the glow's draws first —
+  a section a sub-step, each line saying why — X5.2b's three on the glow's draws first,
+  X5.2c1's the same three on the grade's draw and three of Babylon's own `chain` fields —
   and a later sub-step adds its own section there. **Key a line on the draw's stage**
   (`**.draws[stage=glow.*].viewport`), never on a pass index: an index names whatever
   draw a scenario puts at it, so it would excuse the same field on another stage's draw

@@ -8,8 +8,8 @@
  * a device, a pass encoder, a command encoder, a texture view and a sampler,
  * formats, floats; a draw reaches the pass through `queue` and nothing else,
  * in the host's own order — in the main pass, in the glow's mask when
- * that pass's owner says it opened, or in a pass of the glow's blur when its
- * owner asks from inside it; work owed ahead of the draws reaches the GPU
+ * that pass's owner says it opened, or in a pass of the glow's blur or of the
+ * post chain when its owner asks from inside it; work owed ahead of the draws reaches the GPU
  * through `prepareEncoder` and nothing else — recorded there, never kept,
  * finished or submitted by the renderer; what may only happen once the frame
  * is submitted (a destroy) waits for `afterSubmit`; a texture the host owns is handed over as ITS view, read where it

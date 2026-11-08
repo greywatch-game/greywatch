@@ -137,7 +137,9 @@ import { ProbeBake } from "../render/ProbeBake";
 import { WorldGlow } from "../render/WorldGlow";
 import { WorldShadows } from "../render/WorldShadows";
 import { GlowBlur } from "../render/GlowBlur";
+import { PostChain } from "../render/PostChain";
 import { PaperGrain } from "../shaders/PaperGrain";
+import { PostPasses } from "../shaders/PostPasses";
 import { CelInk } from "../shaders/CelInk";
 import { fxaaShaderIsOurs } from "../shaders/Fxaa";
 import { FrameDepth } from "../shaders/FrameDepth";
@@ -1365,6 +1367,15 @@ export class Game {
    * (`plans/webgpu-ref/post.mjs`).
    */
   readonly glowBlur: GlowBlur;
+  /**
+   * The post chain's stages that are OUR draws (`BABYLON_EXIT.md` X5.2c1:
+   * the grade alone so far), the host that routes them (`render/PostChain.ts`)
+   * and the Babylon-side owner that opens their passes after Babylon's prefix
+   * of the chain (`shaders/PostPasses.ts`). Public for the harness's and the
+   * probe's adapters (`plans/webgpu-ref/harness.mjs`, `post.mjs`).
+   */
+  readonly postChain: PostChain;
+  readonly postPasses: PostPasses;
   /** Non-null only while the state is "editor". Dev builds only. */
   private editor: EditorSession | null = null;
   /**
@@ -2208,8 +2219,8 @@ export class Game {
     pipeline.imageProcessingEnabled = false;
     // FXAA is BUILT always and taken off the camera by the setting
     // (`setFxaaEnabled`), never by `fxaaEnabled`: that setter rebuilds the
-    // pipeline, which re-attaches its passes by APPENDING — behind the shafts,
-    // the blur and the grade. So its slot is claimed here, while it is the last
+    // pipeline, which re-attaches its passes by APPENDING — behind the shafts
+    // and the blur. So its slot is claimed here, while it is the last
     // pass in the chain: detaching nulls its entry, and re-attaching appends it
     // again and hands back the index, which is the one public way to learn it.
     // The null left behind is skipped by the chain, as the shafts' hole is.
@@ -2237,8 +2248,9 @@ export class Game {
     // where the shafts go, and `detachPostProcess` NULLS the entry rather than
     // removing it — so the hole survives for `syncVolumetrics` to refill, on
     // the first frame the depth image exists and on every later frame the
-    // player turns them back on. The blur and the grade append after the hole
-    // and the order is exact whatever the setting does.
+    // player turns them back on. The blur appends after the hole (and the
+    // grade is no Babylon pass since X5.2c1: our post chain's, after the whole
+    // list), so the order is exact whatever the setting does.
     const bootRung = this.overrides.volumetrics(this.settings.volumetrics);
     const first = new Volumetrics(
       this.scene,
@@ -2264,10 +2276,20 @@ export class Game {
     );
     // Vignette/grain/aberration go last, over the finished frame. Grain in
     // particular has to land AFTER the blur: smeared grain reads as smudge.
-    this.post = new PaperGrain(
+    // The grade is OUR draw (X5.2c1): the last stage of the post chain's
+    // host, after Babylon's prefix (ink, FXAA, the shafts, the blur), whose
+    // passes `PostPasses` opens — built after the glow and the frame depth,
+    // whose draw-phase observers must run before it points the prefix at
+    // its output. The order is the host's list, not an append: nothing of
+    // Babylon's follows the blur any more, so no pass is taken off and put
+    // back to keep a tail.
+    this.post = new PaperGrain(this.cameraSys.camera, this.frameDepth);
+    this.postChain = new PostChain(this.renderer, [this.post.stage]);
+    this.postPasses = new PostPasses(
       this.scene,
       this.cameraSys.camera,
-      this.frameDepth,
+      this.postChain,
+      () => this.postPrefixTail(),
     );
     this.sfx = new Sfx();
     this.hud = new HUD();
@@ -2719,6 +2741,9 @@ export class Game {
       // the boot's device pixel ratio (X5.2b): a Glow or Render Scale setting
       // changed in a round compiles nothing.
       { name: "the glow's blur", ready: this.glowBlur.ready },
+      // The post chain's stages of ours (X5.2c1: the grade), into the canvas
+      // and, for a stage another follows, into the chain's pool.
+      { name: "the post chain", ready: this.postChain.ready },
     ];
     // The sky is painted once here, the boot map's, and re-applied per round
     // alongside the environment; it is DRAWN only while a map stands
@@ -3754,9 +3779,9 @@ export class Game {
     this.grass.setQuality(this.settings.grass);
     this.setFxaaEnabled(this.settings.fxaa);
     this.setMotionBlurEnabled(this.settings.motionBlur);
-    // After the blur, and that is the order rather than a preference: the
-    // blur's own toggle takes the grade off and puts it back to keep the
-    // chain's tail, so the grade has the last word on whether it is attached.
+    // The grade's switch is its stage's `active()`: off, the post chain's host
+    // opens no pass for it, and with no stage of ours active Babylon's prefix
+    // writes the canvas itself (`PostPasses`).
     this.post.setEnabled(this.settings.paperGrain);
     // The look speeds go to the camera and stop there: the aim assist reads its
     // own bound off `stickYawRate`, which already carries the stick's.
@@ -4083,10 +4108,11 @@ export class Game {
    * The order is load-bearing and documented on both passes: the shafts, then
    * the blur, then the grade — the shafts belong to the frame they smear with, and
    * grain over a smear reads as a dirty lens. Babylon's `attachPostProcess`
-   * APPENDS, so simply re-attaching the blur would put it behind the grade.
-   * Taking the grade off and putting it back after is what restores the order
-   * without computing an index into a chain that also holds the pipeline's own
-   * FXAA — and it is Game's job because Game is what assembled the chain.
+   * APPENDS, and since X5.2c1 that is the right place: the blur is the LAST
+   * of Babylon's passes, the grade being a stage of OUR post chain drawn after
+   * Babylon's whole list (`PostPasses`), so nothing is taken off and put back
+   * around it any more (the dance this used to do with the grade). The null
+   * the detach leaves is skipped by the chain, as the shafts' hole is.
    *
    * Nothing throws if this is wrong. The symptom is smeared grain.
    */
@@ -4094,14 +4120,23 @@ export class Game {
     if (on === this.motionBlur.isEnabled) return;
     const camera = this.cameraSys.camera;
     const pass = this.motionBlur.pass;
-    if (on) {
-      this.post.detach();
-      camera.attachPostProcess(pass);
-      this.post.attach();
-    } else {
-      camera.detachPostProcess(pass);
-    }
+    if (on) camera.attachPostProcess(pass);
+    else camera.detachPostProcess(pass);
     this.motionBlur.setEnabled(on);
+  }
+
+  /**
+   * The LAST live pass of Babylon's prefix of the post chain this frame — the
+   * one whose target is our first stage's input while a stage of ours is
+   * active (`PostPasses`, which hangs Babylon's clear of that target on its
+   * `apply`). Read off the order this file assembled: the ink, FXAA, the
+   * shafts, the blur, each while it is on the camera.
+   */
+  private postPrefixTail(): PostProcess {
+    if (this.motionBlur.isEnabled) return this.motionBlur.pass;
+    if (this.volumetricsAttached && this.volumetrics) return this.volumetrics.pass;
+    if (this.fxaaAttached) return this.fxaa;
+    return this.celInk.pass;
   }
 
   private closeLoadout(): void {

@@ -13,7 +13,8 @@
  * out of storage (`wgsl/assemble.ts`), but for a stage ported AS COMPILED off
  * Babylon's full-screen quad, which takes its position as Babylon fed it, a
  * vertex attribute (`PipelineSpec.vertexBuffers`, the glow's blur,
- * `BABYLON_EXIT.md` X5.2b) and is keyed on that layout too; it is built with `createRenderPipelineAsync`, so a
+ * `BABYLON_EXIT.md` X5.2b, and the post chain's stages, X5.2c1) and is keyed
+ * on that layout too; it is built with `createRenderPipelineAsync`, so a
  * compile never stalls a frame and a caller asks AHEAD of the frame that
  * draws with it (`docs/rendering.md`: WebGPU compiles a pipeline on the
  * frame that first uses it, which is what the warm-up exists to move); a
@@ -27,7 +28,8 @@
  * ALLOWS (`get`'s `unsealed`: the glow blur's kernels at a new device pixel
  * ratio, X5.2's row "pipelines": up to five widths, and the one exception),
  * which compiles and counts as any other and says nothing; every RENDER
- * pipeline's layout is EXPLICIT, built from the bindings the modules were assembled with,
+ * pipeline's layout is EXPLICIT, built from the bindings the modules were assembled with
+ * (a `texture_depth_*` binding laid out as `"depth"`, X5.2c1),
  * never `"auto"`, and layouts are shared by their entries — so a bind group
  * made for one pipeline binds into any other whose group has the same
  * entries (the frame block's always does when both stages see it alike; a
@@ -318,13 +320,17 @@ function layoutEntry(b: AssembledBinding, visibility: number): GPUBindGroupLayou
   if (b.kind === "uniform") entry.buffer = { type: "uniform" };
   else if (b.kind === "storage") entry.buffer = { type: "read-only-storage" };
   else if (b.kind === "sampler") entry.sampler = { type: "filtering" };
+  // A depth texture read by `textureLoad` (the post chain's frame depth,
+  // X5.2c1) is bound as one: `"depth"`, which no float sampler may take.
+  else if (b.type.startsWith("texture_depth")) entry.texture = { sampleType: "depth", viewDimension: viewDimension(b.type) };
   else entry.texture = { sampleType: "float", viewDimension: viewDimension(b.type) };
   return entry;
 }
 
 function viewDimension(type: string): GPUTextureViewDimension {
-  if (type.startsWith("texture_3d")) return "3d";
-  if (type.startsWith("texture_cube")) return "cube";
-  if (type.startsWith("texture_2d_array")) return "2d-array";
+  const t = type.replace("texture_depth_", "texture_");
+  if (t.startsWith("texture_3d")) return "3d";
+  if (t.startsWith("texture_cube")) return "cube";
+  if (t.startsWith("texture_2d_array")) return "2d-array";
   return "2d";
 }

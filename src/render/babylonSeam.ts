@@ -21,7 +21,12 @@
  * And in the glow's BLUR passes (X5.2b), which `GlowPass` binds on its own
  * targets with public API and asks our renderer to draw in from between the
  * bind and the unbind (`Renderer.glowBlurOpened`): the same `passIs` and
- * `queue`, and no item more.
+ * `queue`, and no item more. And in the POST CHAIN's passes (X5.2c1), which
+ * `shaders/PostPasses.ts` opens with public API after Babylon's prefix of the
+ * chain — the canvas's, Babylon's main pass, by `restoreDefaultFramebuffer` —
+ * and asks our renderer to draw in (`Renderer.postStageOpened`): `passIs`
+ * (item 5 telling the canvas, which is no render target and so not flipped)
+ * and `queue` again, and no item more.
  * Invariants: NAMES Babylon's types and loads none of it (every import here
  * is `import type`, so the Babylon-free gate walks this file as it walks the
  * rest of `src/render/`); every Babylon INTERNAL anything in `src/render/`

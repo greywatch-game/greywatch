@@ -1,21 +1,22 @@
 /**
  * render/targets.ts — The attachments the frame's main pass draws into, the
- * glow's mask and its blur, and the ones the shadow maps and the lamps' atlas
- * are drawn into, each stated ONCE: every pipeline our renderer builds for one of those
+ * glow's mask and its blur, the post chain's stages (X5.2c1), and the ones the
+ * shadow maps and the lamps' atlas are drawn into, each stated ONCE: every pipeline our renderer builds for one of those
  * passes is built against its own, and nothing else in `src/render/` writes a
  * format.
- * Owns: `FRAME_TARGETS`, `GLOW_TARGETS`, `GLOW_BLUR_TARGETS`, `SHADOW_TARGETS`
- * and `targetsKey`.
+ * Owns: `FRAME_TARGETS`, `GLOW_TARGETS`, `GLOW_BLUR_TARGETS`, `POST_TARGETS`,
+ * `canvasTargets`, `SHADOW_TARGETS` and `targetsKey`.
  * Invariants: `FRAME_TARGETS` is what the host's main pass is,
- * `GLOW_TARGETS` what its glow mask's pass is and `GLOW_BLUR_TARGETS` what
- * each pass of the glow's blur is (`FrameHost.passIs`), each
+ * `GLOW_TARGETS` what its glow mask's pass is, `GLOW_BLUR_TARGETS` what
+ * each pass of the glow's blur is, and `POST_TARGETS` and `canvasTargets`
+ * what a post-chain stage's pass is (`FrameHost.passIs`), each
  * checked by `Renderer` on every frame it draws there — a pass that is not
  * REFUSES the frame's draws rather than recording a pipeline it cannot take.
  * Never: imports Babylon; is read off the pass per draw — a pipeline is
  * compiled ahead, so the formats it is compiled for must be known ahead.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
  *
- * WHY THESE FIVE. Under `compatibilityMode = false` Babylon records render
+ * WHY THESE. Under `compatibilityMode = false` Babylon records render
  * bundles, and a bundle or pipeline whose attachment state differs from the
  * pass's by a format, a count or a sample count is refused — and one refused
  * pipeline poisons the bundle and blacks out the frame (`docs/rendering.md`:
@@ -71,6 +72,35 @@ export const GLOW_BLUR_TARGETS: PassTargets = {
   sampleCount: 1,
   flipY: true,
 };
+
+/**
+ * A pass of the POST CHAIN into a texture (`render/PostChain.ts`, `BABYLON_EXIT.md`
+ * X5.2c1): what a stage of ours draws into when another stage of ours follows
+ * it — a target of the chain's pool, made as Babylon made a post-process's
+ * input (`TEXTURETYPE_UNSIGNED_BYTE`, so `rgba8unorm`, no depth, one sample)
+ * and drawn upside down as every render target is. Babylon's own post passes
+ * into a texture were read so by the probe (`plans/webgpu-ref/post.mjs`, X5.2a).
+ */
+export const POST_TARGETS: PassTargets = {
+  colorFormats: ["rgba8unorm"],
+  depthFormat: undefined,
+  sampleCount: 1,
+  flipY: true,
+};
+
+/**
+ * The CANVAS's pass, as the post chain's LAST stage draws into it (X5.2c1):
+ * Babylon's main pass, whose colour is the swap chain's — `format`, the
+ * device's preferred canvas format, which is what the engine configured the
+ * context with (`main.ts` names none: `bgra8unorm` on Windows, `rgba8unorm`
+ * on Android) — and whose depth is the ENGINE's own `depth32float`
+ * (`stencil: false`), not the frame's (X5.2a measured it); one sample; and
+ * NOT flipped: the canvas is drawn the right way up. A function of the
+ * format because that is the device's, not a constant of the tree's.
+ */
+export function canvasTargets(format: GPUTextureFormat): PassTargets {
+  return { colorFormats: [format], depthFormat: "depth32float", sampleCount: 1, flipY: false };
+}
 
 /**
  * A world shadow map's pass (`render/WorldShadows.ts`, `BABYLON_EXIT.md`

@@ -286,7 +286,8 @@ pool of ours and the irradiance volume's compute, asked once at construction)
 and the map's, which its install asks — and our cache is SEALED once the card
 is down (a compile in play is a DEV warning, but for the glow blur's new widths
 on a pixel-ratio change, `GlowBlur.declare`). **A new draw of ours joins that list.** The vantages are for
-BABYLON's meshes — in a round nothing of Babylon's but the post chain — and
+BABYLON's meshes — in a round nothing of Babylon's but the post chain's
+prefix (the grade is ours since X5.2c1, "the post chain" on the list) — and
 **no pool is posed**: every one is ours since X4.6e (the sparks, the dust
 discs, the scorch and the blob the last), so on that list, and nothing is shown
 for a pipeline's sake.
@@ -638,7 +639,12 @@ are a capture zone's stones, paint, pole and cloth, the GRASS and the WATER** (`
 **So is every PARTICLE FIELD, the ash and the rotor wash** (`ParticleDraw`:
 Babylon's `GPUParticleSystem` PORTED, its shaders as compiled, its seeds, its
 gradients and its clock), in creation order, behind the turf and ahead of the
-moon, and **Babylon's scene holds no particle system**.
+moon, and **Babylon's scene holds no particle system**. **So is the GRADE, the
+post chain's last stage** (`render/PostChain.ts`, X5.2c1: a host of DECLARED
+stages, the last active one given the canvas), drawn after Babylon's prefix of
+the chain, whose passes `shaders/PostPasses.ts` opens with public API — and
+**`camera.outputRenderTarget` is set only across the post phase** while a stage
+of ours is active, because Babylon also reads it as the frame starts.
 
 **The GLOW draws the EMISSIVE meshes and nothing else, its occlusion being the
 FRAME's own depth buffer** (`src/shaders/GlowPass.ts`). **Its blur and box

@@ -2644,6 +2644,13 @@ src/
                         #   output character for character (all ten kernels the
                         #   parent compiled reproduced). Babylon-free:
                         #   render/GlowBlur.ts draws them
+      paperGrain.ts     # The GRADE's two modules AS COMPILED (X5.2c1): the
+                        #   postprocess vertex stage with the grade's whole
+                        #   LeftOver and the grade's fragment, the parent's
+                        #   device text character for character with CONFIG's
+                        #   constants where they were; the bindings, the
+                        #   lattice constants and the 496-byte block's layout.
+                        #   Babylon-free: PaperGrain.stage declares them
     FlameShader.ts      # THE FIRE: every open flame's one material. Tongues
                         #   that boil on twos in hard bands, embers on the
                         #   smooth clock, and the glow-mask TWIN that runs the
@@ -2671,11 +2678,22 @@ src/
                         #   masked shift AND weighted taps — because a gun
                         #   hung from the camera never moves in screen space.
                         #   WGSL
-    PaperGrain.ts       # Vignette / aberration / damage flash, and a PAPER
-                        #   grain pinned to the world through the frame's
-                        #   depth: octaves fixed in world space, weighted by
-                        #   distance. The player's setting is still stored as
-                        #   `filmGrain`, which is what it used to be. WGSL
+    PaperGrain.ts       # The GRADE's CPU half — vignette / aberration /
+                        #   damage flash, and a PAPER grain pinned to the world
+                        #   through the frame's depth: octaves fixed in world
+                        #   space, weighted by distance — and `stage`, the
+                        #   post chain's stage our renderer draws it as since
+                        #   X5.2c1 (render/PostChain.ts; its modules
+                        #   wgsl/paperGrain.ts). The player's setting is still
+                        #   stored as `filmGrain`, which is what it used to be
+    PostPasses.ts       # The post chain's Babylon-side PASS OWNER (X5.2c1):
+                        #   while a stage of ours is active it points
+                        #   camera.outputRenderTarget at a target of its own
+                        #   ONLY across the post phase, clears it as Babylon's
+                        #   activate cleared the grade's input (on the prefix's
+                        #   last apply, or alone if that pass drew nothing),
+                        #   then opens the canvas (restoreDefaultFramebuffer)
+                        #   and any pool pass for our stages; public API only
   render/               # OUR renderer (BABYLON_EXIT.md Phase 3). Never imports
                         #   Babylon — the build gate walks every file in it
     babylonSeam.ts      # THE SEAM: BabylonFrameHost, the one place anything
@@ -2689,14 +2707,16 @@ src/
                         #   group 0's _renderAlphaTest, wrapped for the point
                         #   between its opaque and alpha-tested lists — ten.
                         #   The glow's mask pass reached by the same items
-                        #   (passIs, queue) when GlowPass announces it.
+                        #   (passIs, queue) when GlowPass announces it; the
+                        #   glow's blur passes and the post chain's (X5.2b,
+                        #   X5.2c1) when their owners ask from inside them.
                         #   hostTexture, the one crossing that mints a
                         #   HostTexture
     frameHost.ts        # FrameHost (what the renderer needs from whoever owns
                         #   the frame: the device, the queue — into the main
                         #   pass, the glow's mask when its owner says it
-                        #   opened, or a glow blur pass its owner asks from
-                        #   inside (X5.2b) — the five main-pass hooks, told on every
+                        #   opened, or a glow blur or post chain pass its owner
+                        #   asks from inside (X5.2b, X5.2c1) — the five main-pass hooks, told on every
                         #   main pass whatever group 0 holds, the encoder it
                         #   submits ahead of the draws, a texture's view and
                         #   sampler NOW, a call after every frame's submit —
@@ -2730,7 +2750,9 @@ src/
                         #   (onGlowMaskRefused); a GLOW BLUR draw queued into
                         #   the pass GlowPass has bound when asked from inside
                         #   it (glowBlurOpened, X5.2b), refused unless
-                        #   GLOW_BLUR_TARGETS; a prepare is handed the
+                        #   GLOW_BLUR_TARGETS; a POST CHAIN stage's draw the
+                        #   same (postStageOpened, X5.2c1), refused unless the
+                        #   targets its pipeline was built for; a prepare is handed the
                         #   FrameContext (group 0) as a draw is
     targets.ts          # FRAME_TARGETS, stated once: rgba8unorm, depth32float,
                         #   1 sample, flipY (CelInk's target, not the canvas);
@@ -2738,7 +2760,11 @@ src/
                         #   its own reason (an rgba8unorm target, the frame's
                         #   borrowed depth); GLOW_BLUR_TARGETS, a glow blur
                         #   pass's: rgba16float, no depth, 1 sample, flipY
-                        #   (X5.2b); SHADOW_TARGETS, a world shadow
+                        #   (X5.2b); POST_TARGETS, a post chain pool pass's:
+                        #   rgba8unorm, no depth, flipY, and canvasTargets(
+                        #   format), the canvas's: the swap chain's format,
+                        #   the ENGINE's depth32float, not flipped (X5.2c1);
+                        #   SHADOW_TARGETS, a world shadow
                         #   map's: r16float, depth32float, 1 sample, flipY
     frame.ts            # FRAME_BLOCK (group 0, binding 0 of every program:
                         #   camera, environment, wind, lights, shadows, GI,
@@ -2768,7 +2794,9 @@ src/
                         #   play is a DEV warning naming it, but for an ask the
                         #   asker says the seal allows: the glow blur on a DPR
                         #   change, X5.2b); vertex buffers only for a stage
-                        #   ported off Babylon's quad (the glow's blur)
+                        #   ported off Babylon's quad (the glow's blur, the
+                        #   post chain); a texture_depth binding laid out as
+                        #   "depth" (X5.2c1)
     celFragment.ts      # The cel fragment as WE declare it: frame (group 0)
                         #   and material (group 1) uniforms and textures, the
                         #   inputs (CEL_VARYINGS), over the shared celSurface
@@ -2944,6 +2972,17 @@ src/
                         #   Babylon's quad as a vertex and an index buffer,
                         #   Internals and a LeftOver block a pass, the source
                         #   read through the host's own view and sampler. Babylon's pipeline state field for field
+    PostChain.ts        # THE POST CHAIN'S HOST (X5.2c1): an ordered list of
+                        #   DECLARED stages (PostStage: program as compiled,
+                        #   block and fill, extra bindings, the input's sampler,
+                        #   active(), point-wise or neighbourhood) — the grade
+                        #   alone so far — routed a pass per active stage in
+                        #   list order, the last given the canvas
+                        #   (canvasTargets) and any other a pool target
+                        #   (POST_TARGETS), opened by a PostPassOwner
+                        #   (shaders/PostPasses.ts); Babylon's quad, Internals,
+                        #   each stage's block, sampler, pipelines and groups;
+                        #   "the post chain" on Game.roundPipelines
     ParticleDraw.ts     # EVERY PARTICLE FIELD as OUR renderer runs it (X4.7c
                         #   the ash, X4.7d the rotor wash): one list in creation
                         #   order, Babylon's GPUParticleSystem ported exactly —

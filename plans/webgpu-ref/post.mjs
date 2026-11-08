@@ -101,8 +101,13 @@
  * **`harness.mjs` has an adapter of the same name and shape**
  * (`postAdapter`, `window.__refPost`): the chain's CPU half the bank's
  * `freeze` holds. The two are separate on purpose (this one exists only on a
- * probe's page) and a later sub-step adds ours to BOTH (this one from X5.2b,
- * that one from X5.2c1).
+ * probe's page) and a sub-step that moves a stage adds ours to BOTH (this one
+ * from X5.2b, that one from X5.2c1). **Since X5.2c1 ours names the GRADE**
+ * (`grain`, a stage of `Game.postChain`, `render/PostChain.ts`): its modules off
+ * the labels our cache gave them (`paperGrain: …`), its readiness off
+ * `PostChain.drawsReady`, and the target it reads — the prefix's output,
+ * `PostPasses.prefixTarget`, which Babylon's last live pass writes — named
+ * `<that pass>.out`, as that pass's next input was.
  *
  * **And beside the log, measured and NOT compared** (they ride the machine's
  * timing): the LIVE frames — from the scenarios' page's first frame to thirty
@@ -681,8 +686,8 @@ function deviceProbe() {
  * `update`s a hold replaces); this one (`window.__postGpu`) names the GPU's
  * modules and textures for this probe. Each has Babylon's arm alone today,
  * and a later sub-step adds OURS to BOTH, picked first, under the same names:
- * this one for each stage it moves (X5.2b on), that one when the grade, the
- * shafts or the blur move (X5.2c1 on).
+ * this one for each stage it moves (X5.2b on: the glow's blur; X5.2c1: the
+ * grade), that one since the grade moved (X5.2c1).
  */
 function postAdapter() {
   const g = window.__celshock;
@@ -693,22 +698,36 @@ function postAdapter() {
   // `glow blur <width>: …`) — named off the label, the four blurs one stage as
   // Babylon's were, told apart by the target each draws into. The targets are
   // still `GlowPass`'s own (`glow.*`, below), which binds each pass.
+  // X5.2c1: the GRADE, a stage of our post chain (`Game.postChain`,
+  // `render/PostChain.ts`), its modules labelled `paperGrain: …` by our
+  // pipeline cache and named `grain` as Babylon's were; the target it reads
+  // — the prefix's output, `PostPasses.prefixTarget` — is named by what
+  // WRITES it, Babylon's last live pass (below), as that pass's next input
+  // was; and the canvas it draws into is the canvas.
   const ours = {
     glow: () => Boolean(g.glowBlur),
+    grain: () => Boolean(g.postChain),
     name() {
-      if (!ours.glow()) return;
       for (const [m, rec] of P.moduleList) {
         if (P.stageOf.has(m)) continue;
-        if (rec.label.startsWith("glow down: ")) P.stageOf.set(m, "glow.down");
-        else if (rec.label.startsWith("glow blur ")) P.stageOf.set(m, "glow.blur");
+        if (ours.glow() && rec.label.startsWith("glow down: ")) P.stageOf.set(m, "glow.down");
+        else if (ours.glow() && rec.label.startsWith("glow blur ")) P.stageOf.set(m, "glow.blur");
+        else if (ours.grain() && rec.label.startsWith("paperGrain: ")) P.stageOf.set(m, "grain");
       }
     },
     stages() {
-      if (!ours.glow()) return [];
-      return [
-        { name: "glow.down", ready: g.glowBlur.downReady(), off: false },
-        { name: "glow.blur", ready: g.glowBlur.blurReady(g.glow.blurKernel), off: false },
-      ];
+      const out = [];
+      if (ours.glow()) {
+        out.push(
+          { name: "glow.down", ready: g.glowBlur.downReady(), off: false },
+          { name: "glow.blur", ready: g.glowBlur.blurReady(g.glow.blurKernel), off: false },
+        );
+      }
+      if (ours.grain()) {
+        const on = g.post.stage.active();
+        out.push({ name: "grain", ready: g.postChain.drawsReady(), off: !on });
+      }
+      return out;
     },
   };
   // A Babylon texture's GPU texture: its hardware texture's resource, or the
@@ -765,6 +784,10 @@ function postAdapter() {
         const d = hw(s.input?._depthStencilTexture);
         if (d) m.set(d, i === 0 ? "frame.depth" : `${live[i - 1].name}.out.depth`);
       });
+      // Ours (X5.2c1): the prefix's output, which the last live Babylon pass
+      // writes and our first stage reads, is that pass's `.out`.
+      const prefix = ours.grain() ? hw(g.postPasses.prefixTarget?.getInternalTexture?.()) : null;
+      if (prefix && live.length) m.set(prefix, `${live[live.length - 1].name}.out`);
       if (g.engine._depthTexture) m.set(g.engine._depthTexture, "canvas.depth");
       const glow = g.glow;
       if (glow) {
@@ -878,7 +901,7 @@ function postAdapter() {
   let targets = new Map();
   const inputs = new Set();
   window.__postGpu = {
-    arm: ours.glow() ? "ours:glow" : babylon.arm,
+    arm: ours.grain() ? "ours:glow,grain" : ours.glow() ? "ours:glow" : babylon.arm,
     refresh() {
       for (const s of babylon.stages()) {
         const st = s.effect?._pipelineContext?.stages;

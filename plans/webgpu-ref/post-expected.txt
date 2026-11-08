@@ -22,3 +22,24 @@
 **.draws[stage=glow.*].pipeline.call
 **.draws[stage=glow.*].bundle
 **.draws[stage=glow.*].viewport
+
+# X5.2c1: the grade (`grain`) is our draw — the last stage of our post chain
+# (`render/PostChain.ts`), drawn into the canvas's pass, which `PostPasses`
+# opens as Babylon's `_finalizeFrame` opened it for Babylon's last pass;
+# Babylon's prefix writes the grade's input (`camera.outputRenderTarget`, set
+# only across the post phase), cleared as Babylon's `activate` cleared it. Every
+# pass, its attachments, load ops, clears, labels and hashes are compared, and
+# every field of the grain's draw but X5.2b's three, which differ by
+# construction for the same reasons:
+**.draws[stage=grain].pipeline.call
+**.draws[stage=grain].bundle
+**.draws[stage=grain].viewport
+# And Babylon's own bookkeeping, which X5.2c1 moves by design (`chain` is the
+# CPU facts beside a frame, not a draw): the camera's list no longer holds the
+# grade, and the blur's toggle no longer takes the grade off and re-appends it,
+# so the list is shorter and has fewer holes (`list`); a grade switched off is
+# no longer a detached Babylon pass (`off`); and the grade has no `attached`
+# (`slots.grade.attached`) — its switch is its stage's `active()`.
+**.chain.list
+**.chain.off
+**.chain.slots.grade.attached

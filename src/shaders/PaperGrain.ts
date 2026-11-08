@@ -1,34 +1,50 @@
 /**
- * PaperGrain.ts — Full-screen grade: a VIVID chroma push, a
- * midtone CONTRAST curve,
- * vignette, corner desaturation, radial chromatic aberration, a PAPER grain
- * pinned to the world, red damage flash.
+ * PaperGrain.ts — The GRADE's CPU half: a VIVID chroma push, a midtone
+ * CONTRAST curve, vignette, corner desaturation, radial chromatic
+ * aberration, a PAPER grain pinned to the world, red damage flash — the
+ * values, and the post chain's stage they are drawn by.
+ * Owns: `PaperGrain` — the map's grade (`setGrade`), the player's switch
+ * (`setEnabled`), the damage flash and its decay, the lattice offsets and the
+ * rendered camera's basis read each frame, and `stage`, the `PostStage` our
+ * renderer draws it as (`render/PostChain.ts`, `BABYLON_EXIT.md` X5.2c1: the
+ * program as Babylon compiled it, `wgsl/paperGrain.ts`; its 496-byte block;
+ * the frame's depth as its one extra binding; its input read NEAREST, clamped,
+ * as Babylon bound it).
  * Why hand-written: Babylon's image-processing pass re-gammas the cel shader's
  * already display-ready colors and washes the palette out — which is also why
  * pipeline.imageProcessingEnabled stays false. Keep the grade in this pass.
- * Invariants: this is the LAST pass on the camera; `detach`/`attach` exist so
- * the motion blur ahead of it can be removed and put back without ending up
- * behind it (see Game.setMotionBlurEnabled), and both honour `setEnabled`, so
- * that dance can never re-attach a grade the player turned off.
- * It SAMPLES the frame's depth (`FrameDepth`, shared with the ink, the blur
- * and the shafts) to put the paper on the surfaces rather than on the glass,
- * so like them it has to stay downstream of the pass the scene draws into.
- * Its shader is hand-written WGSL, and `shaderLanguage` on the PostProcess is
- * load-bearing rather than declarative: the constructor defaults to GLSL and
- * would look this pass up in a store nothing writes any more. See
- * `docs/rendering.md` for what the dialect and Babylon's WGSL processor decide.
+ * Invariants: the grade is the chain's LAST stage by the HOST's order, not by
+ * anything here — it is the last entry of `PostChain`'s list, and the host
+ * hands the last ACTIVE stage the canvas; nothing here knows it is last or
+ * that it writes the canvas. `setEnabled` is its `active()`, so the grade off
+ * is a stage the host skips (and with no stage of ours active, Babylon's
+ * prefix writes the canvas itself: `PostPasses`). It SAMPLES the frame's
+ * depth (`FrameDepth`, shared with the ink, the blur and the shafts) to put
+ * the paper on the surfaces rather than on the glass, so like them it has to
+ * stay downstream of the pass the scene draws into. Its block is filled when
+ * the host draws it — after the render has settled the view matrix, the one
+ * the depth was written with — and every float of it every time.
+ * Never: draws, binds or owns a GPU resource (the host does); reads the AIM
+ * rather than the rendered camera.
+ * Contract: `docs/rendering.md`, "Rendering constraints that look like bugs if
+ * you undo them" (the grade's bullets) and "Our renderer's frame" (the host).
  */
-import {
-  Camera,
-  PostProcess,
-  Scene,
-  ShaderLanguage,
-  ShaderStore,
-  Vector3,
-} from "@babylonjs/core";
+import type { Camera } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import { hostTexture } from "../render/babylonSeam";
+import type { PostStage } from "../render/PostChain";
 import type { EnvironmentSpec } from "../world/environment";
 import type { FrameDepth } from "./FrameDepth";
+import {
+  PAPER_GRAIN_BLOCK as B,
+  PAPER_GRAIN_FRAGMENT,
+  PAPER_GRAIN_FRAGMENT_BINDINGS,
+  PAPER_GRAIN_VERTEX,
+  PAPER_GRAIN_VERTEX_BINDINGS,
+  PAPER_LEVEL_MIN as LEVEL_MIN,
+  PAPER_LEVELS as LEVELS,
+  PAPER_PERIOD as PERIOD,
+} from "./wgsl/paperGrain";
 
 /**
  * THE PAPER IS PINNED TO THE WORLD, NOT TO THE SCREEN. A grain keyed on the
@@ -81,244 +97,62 @@ import type { FrameDepth } from "./FrameDepth";
  * of it: a non-reversed depth32float loses decimetres by a few hundred metres,
  * so the footprint is never allowed under that step, or distant ground would
  * show the quantisation as contours in the grain.
+ *
+ * WHAT THE GRADE DOES, in its order (the compiled text, `wgsl/paperGrain.ts`,
+ * has no comments, so the reasons live here):
+ * - **Aberration**: radial, none at the centre, smeared at the edge — the
+ *   input read at `uv ± offset`, which is what makes the stage read a
+ *   NEIGHBOURHOOD and fold into nothing while it has it.
+ * - **Where the pixel is**: the same ray `Volumetrics` builds, unnormalised
+ *   with its camera-space z at exactly 1, so ray times depth is the point.
+ *   The weapon is pinned to the camera, the sky to the direction, the rest to
+ *   the world.
+ * - **The footprint**: how many metres one FRAME pixel covers there — the
+ *   distance times a pixel's angle, widened by the screen derivative on a
+ *   surface seen edge-on (ground down a street), clamped so the 2x2 quad
+ *   straddling a silhouette cannot blow a block of grain up to nothing, and
+ *   on the world never finer than the depth buffer's own step.
+ * - **VIVID**: chroma pushed away from grey, as a VIBRANCE rather than a
+ *   saturation — scaled by how much colour the pixel does NOT already have,
+ *   so a grey wall and a dusty field gain it and a team's armband, already at
+ *   the gamut's edge, cannot clip into another hue. Ahead of the vignette, so
+ *   the corners still drain toward the grey this lifted them from.
+ * - **CONTRAST**: an S-curve on LUMINANCE, one scale on all three channels so
+ *   it moves value and never hue, faded out under a quarter of full luminance
+ *   so the darkest shadows stay where the lighting put them, and standing
+ *   aside past 1 rather than folding back down the smoothstep.
+ * - **Vignette**, then colour **draining toward the edges** of vision.
+ * - **Damage**: blood pushes in from the border and never closes over the
+ *   middle — the player still has to be able to fight while hurt.
+ * - **The paper**, multiplied into the paint (a bright wall shows its tooth as
+ *   a wash on a rough sheet does) and added under it (a black shadow is still
+ *   ink on a sheet), the light side warm and the dark side neutral, the added
+ *   half taking the light at the pixel down to a floor (the sheet is lit).
  */
-const P = CONFIG.graphics.paper;
-/** The lattice wraps every PERIOD cells, per octave. MUST stay 256: the shader
- *  wraps with a mask and packs the wrapped point into 24 bits for one hash. */
-const PERIOD = 256;
-/** The finest and coarsest octave levels, as log2 of the cell in metres. */
-const LEVEL_MIN = -12;
-const LEVELS = 24;
-/** Octaves summed per pixel. */
-const OCTAVES = 5;
-/** The finest octave's cell, in frame pixels (`paper.rows`). */
-const CELL_PIXELS = 2;
-/** The sky's paper is a sphere of this radius around the eye. */
-const SKY_RADIUS = 1000;
 
-ShaderStore.ShadersStoreWGSL["paperGrainFragmentShader"] = `
-varying vUV: vec2f;
-var textureSamplerSampler: sampler;
-var textureSampler: texture_2d<f32>;
-
-// The frame's own depth, out of the shared FrameDepth. Declared as a depth
-// texture so every read is a textureLoad and this pass declares no sampler.
-var depthTexture: texture_depth_2d;
-
-// Widest first, as Volumetrics orders its own.
-uniform cellOffset: array<vec4f, ${LEVELS}>; // where the eye sits in each level's lattice, in cells
-uniform camRight: vec3f;
-uniform camUp: vec3f;
-uniform camFwd: vec3f;
-uniform tanHalfFov: vec2f;
-uniform nearFar: vec2f;
-uniform vignette: f32;
-uniform grain: f32;
-uniform aberration: f32;
-uniform vivid: f32;
-uniform contrast: f32;
-uniform damage: f32;
-
-const PERIOD: i32 = ${PERIOD};
-const LEVEL_MIN: f32 = ${LEVEL_MIN.toFixed(1)};
-const LEVEL_TOP: f32 = ${(LEVEL_MIN + LEVELS - OCTAVES).toFixed(1)};
-const OCTAVES: i32 = ${OCTAVES};
-const CELL_PIXELS: f32 = ${CELL_PIXELS.toFixed(1)};
-const ROWS: f32 = ${P.rows.toFixed(1)};
-const SKY_RADIUS: f32 = ${SKY_RADIUS.toFixed(1)};
-const HELD_WITHIN: f32 = ${P.heldWithin.toFixed(3)};
-const SKY_FROM: f32 = ${P.skyFrom.toFixed(1)};
-const FIBRES: f32 = ${P.fibres.toFixed(3)};
-const MOTTLE: f32 = ${P.mottle.toFixed(3)};
-const LIT_KNEE: f32 = ${P.litKnee.toFixed(3)};
-const LIT_FLOOR: f32 = ${P.litFloor.toFixed(3)};
-
-// Buffer depth -> metres along the view axis. The same inverse CelInk,
-// MotionBlur and Volumetrics take: left-handed, NDC z in [0, 1], no reverse-z.
-fn linearise(d: f32, nf: vec2f) -> f32 {
-  return (nf.x * nf.y) / (nf.y - d * (nf.y - nf.x));
-}
-
-// An integer hash, because a sin() hash of a lattice coordinate is exactly the
-// float precision problem the header is about.
-fn pcg(v: u32) -> u32 {
-  let s = v * 747796405u + 2891336453u;
-  let w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u;
-  return (w >> 22u) ^ w;
-}
-
-// A gradient per lattice point, wrapped to PERIOD so it agrees with cellOffset.
-// PERIOD is 2^8, so the wrapped point packs into 24 bits and ONE pcg step
-// hashes it — the nested three-step form cost three times as much for a
-// pattern nobody can tell apart.
-fn grad(c: vec3i) -> vec3f {
-  let w = vec3u(c & vec3i(PERIOD - 1));
-  let h = pcg(w.x | (w.y << 8u) | (w.z << 16u));
-  return vec3f(f32(h & 1023u), f32((h >> 10u) & 1023u), f32((h >> 20u) & 1023u)) / 511.5 - 1.0;
-}
-
-// 3D gradient noise, quintic. Signed, roughly +-0.5.
-fn gnoise(p: vec3f) -> f32 {
-  let fl = floor(p);
-  let i = vec3i(fl);
-  let f = p - fl;
-  let u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
-  let n000 = dot(grad(i), f);
-  let n100 = dot(grad(i + vec3i(1, 0, 0)), f - vec3f(1.0, 0.0, 0.0));
-  let n010 = dot(grad(i + vec3i(0, 1, 0)), f - vec3f(0.0, 1.0, 0.0));
-  let n110 = dot(grad(i + vec3i(1, 1, 0)), f - vec3f(1.0, 1.0, 0.0));
-  let n001 = dot(grad(i + vec3i(0, 0, 1)), f - vec3f(0.0, 0.0, 1.0));
-  let n101 = dot(grad(i + vec3i(1, 0, 1)), f - vec3f(1.0, 0.0, 1.0));
-  let n011 = dot(grad(i + vec3i(0, 1, 1)), f - vec3f(0.0, 1.0, 1.0));
-  let n111 = dot(grad(i + vec3i(1, 1, 1)), f - vec3f(1.0, 1.0, 1.0));
-  return mix(
-    mix(mix(n000, n100, u.x), mix(n010, n110, u.x), u.y),
-    mix(mix(n001, n101, u.x), mix(n011, n111, u.x), u.y),
-    u.z
-  );
-}
-
-// A window over the octave stack that is zero at both of its ends.
-fn band(u: f32, a: f32, b: f32, c: f32, d: f32) -> f32 {
-  return smoothstep(a, b, u) * (1.0 - smoothstep(c, d, u));
-}
-
-// The paper at one point, signed around zero. rel is camera-relative metres (or
-// camera-space, or a direction on the sky's sphere); world says whether the
-// lattice offsets apply; foot is how many metres one frame pixel covers there.
-fn paper(rel: vec3f, world: bool, foot: f32) -> f32 {
-  let lvl = clamp(log2(foot * CELL_PIXELS), LEVEL_MIN, LEVEL_TOP + 0.999);
-  let e0 = floor(lvl);
-  let fr = lvl - e0;
-  var tooth = 0.0; var toothW = 0.0;
-  var fibre = 0.0; var fibreW = 0.0;
-  var mottle = 0.0; var mottleW = 0.0;
-  for (var k: i32 = 0; k < OCTAVES; k++) {
-    let e = e0 + f32(k);
-    let offset = select(vec3f(0.0), uniforms.cellOffset[i32(e - LEVEL_MIN)].xyz, world);
-    let n = gnoise(offset + rel * pow(2.0, -e));
-    // Where this octave sits in the stack, 0 (finest, arriving) to 1 (coarsest,
-    // leaving). Every window below is zero at both ends, so nothing pops.
-    let u = (f32(k) - fr + 1.0) / f32(OCTAVES);
-    let wt = band(u, 0.0, 0.12, 0.2, 0.45);
-    let wf = band(u, 0.3, 0.5, 0.7, 0.9);
-    let wm = band(u, 0.6, 0.82, 0.9, 1.0);
-    // A fibre is where the noise crosses zero: thin, curling, never straight.
-    let ridge = 1.0 - smoothstep(0.0, 0.045, abs(n));
-    tooth += n * wt; toothW += wt * wt;
-    fibre += (ridge - 0.12) * wf; fibreW += wf * wf;
-    mottle += n * wm; mottleW += wm * wm;
-  }
-  return tooth / sqrt(max(toothW, 1e-4))
-    + FIBRES * fibre / sqrt(max(fibreW, 1e-4))
-    + MOTTLE * mottle / sqrt(max(mottleW, 1e-4));
-}
-
-@fragment
-fn main(input: FragmentInputs) -> FragmentOutputs {
-  let centered = input.vUV - 0.5;
-  let r2 = dot(centered, centered);
-
-  // Radial chromatic aberration — none at the centre, smeared at the edge.
-  let offset = centered * uniforms.aberration * r2 * 0.09;
-  var col = vec3f(
-    textureSampleLevel(textureSampler, textureSamplerSampler, input.vUV + offset, 0.0).r,
-    textureSampleLevel(textureSampler, textureSamplerSampler, input.vUV, 0.0).g,
-    textureSampleLevel(textureSampler, textureSamplerSampler, input.vUV - offset, 0.0).b,
-  );
-
-  // Where this pixel is. The same ray Volumetrics builds: unnormalised with its
-  // camera-space z at exactly 1, so ray * depth is the point.
-  let dims = vec2f(textureDimensions(depthTexture, 0));
-  let px = clamp(vec2i(input.vUV * dims), vec2i(0), vec2i(dims) - vec2i(1));
-  let d = linearise(textureLoad(depthTexture, px, 0), uniforms.nearFar);
-  let ndc = input.vUV * 2.0 - 1.0;
-  let rayC = vec3f(ndc * uniforms.tanHalfFov, 1.0);
-  let rayW = uniforms.camRight * rayC.x + uniforms.camUp * rayC.y + uniforms.camFwd * rayC.z;
-
-  // What the paper is pinned to: the camera for the weapon, the direction for
-  // the sky, the world for everything else.
-  let held = d < HELD_WITHIN;
-  let sky = d > SKY_FROM;
-  let world = !(held || sky);
-  let rel = select(select(rayW * d, normalize(rayW) * SKY_RADIUS, sky), rayC * d, held);
-
-  // How many metres one FRAME pixel covers there. The isotropic figure is the
-  // distance times a pixel's angle; the screen derivative widens it on a
-  // surface seen edge-on (ground down a street), clamped so the 2x2 quad
-  // straddling a silhouette cannot blow one block of grain up to nothing; and
-  // on the world it may never be finer than the depth buffer's own step.
-  let pixAngle = 2.0 * uniforms.tanHalfFov.y / ROWS;
-  let iso = select(d, SKY_RADIUS, sky) * pixAngle;
-  let slope = max(length(dpdx(rel)), length(dpdy(rel))) * dims.y / ROWS;
-  let quantum = select(0.0, d * d / uniforms.nearFar.x * 2.5e-7, world);
-  let foot = max(clamp(slope, iso, iso * 6.0), quantum);
-
-  // VIVID: chroma pushed away from grey. A
-  // VIBRANCE rather than a saturation — the push is scaled by how much colour
-  // the pixel does NOT already have, so a grey wall and a dusty field gain it
-  // and a team's armband, already at the gamut's edge, cannot clip into
-  // another hue. Ahead of the vignette, so the corners still drain toward the
-  // grey this lifted them from.
-  let lumC = dot(col, vec3f(0.2126, 0.7152, 0.0722));
-  let hi = max(col.r, max(col.g, col.b));
-  let sat = (hi - min(col.r, min(col.g, col.b))) / max(hi, 1e-4);
-  let push = 1.0 + (uniforms.vivid - 1.0) * (1.0 - sat);
-  col = max(vec3f(lumC) + (col - vec3f(lumC)) * push, vec3f(0.0));
-
-  // CONTRAST: an S-curve on LUMINANCE, applied as one scale on all three
-  // channels so it moves value and never hue. Its weight is faded out under a
-  // quarter of full luminance, so the darkest shadows stay where the lighting
-  // put them — a night map's street must not sink into black for the sake of
-  // drama — and what it spends is the midtones and the lights. Past 1 it
-  // stands aside rather than folding back down the smoothstep.
-  let lumK = dot(col, vec3f(0.2126, 0.7152, 0.0722));
-  let lc = clamp(lumK, 0.0, 1.0);
-  let bend = uniforms.contrast * smoothstep(0.0, 0.25, lumK) * step(lumK, 1.0);
-  col *= mix(lumK, lc * lc * (3.0 - 2.0 * lc), bend) / max(lumK, 1e-4);
-
-  // Vignette: the corners fall away into the dark.
-  col *= 1.0 - uniforms.vignette * smoothstep(0.05, 0.62, r2);
-
-  // Color drains toward the edges of vision.
-  let lumV = dot(col, vec3f(0.299, 0.587, 0.114));
-  col = mix(col, vec3f(lumV), clamp(r2 * 1.1, 0.0, 0.4));
-
-  // Damage: blood pushes in from the border, but never closes over the middle
-  // of the screen — the player still has to be able to fight while hurt.
-  col = mix(col, vec3f(0.42, 0.02, 0.03), uniforms.damage * 0.8 * smoothstep(0.04, 0.42, r2));
-
-  // The paper. Multiplied into the paint, so a bright wall shows its tooth the
-  // way a wash on a rough sheet does, and added under it too, so a black
-  // shadow is still ink on a sheet rather than a hole in it. The light side is
-  // warm and the dark side neutral: the pale flecks are the sheet showing
-  // through, and a sheet is not white.
-  //
-  // THE SHEET IS LIT AND NOT LUMINOUS, and that is what keeps a night map from
-  // being a spray of grey over black. The added half is the only one that
-  // survives as the paint goes to zero — the multiplied half goes down with it
-  // — so on its own it puts the MOST paper exactly where there is least light
-  // to show any by, and its weight rises as the picture darkens on top of
-  // that. A sheet reflects what falls on it, so the added half takes the light
-  // at the pixel, down to a floor that keeps a shadow a sheet and not a hole.
-  let g = paper(rel, world, foot) * uniforms.grain;
-  let sheet = select(vec3f(1.0), vec3f(1.0, 0.94, 0.82), g > 0.0);
-  let lit = mix(LIT_FLOOR, 1.0, smoothstep(0.0, LIT_KNEE, lumV));
-  col = col * (1.0 + g * 2.2) + g * sheet * (0.9 - lumV * 0.5) * lit;
-
-  fragmentOutputs.color = vec4f(col, 1.0);
-}
-`;
+/**
+ * The sampler Babylon bound the grade's input with (its post-process's
+ * `renderTargetSamplingMode`, NEAREST, on a texture with no mips; read off the
+ * parent's device by `plans/webgpu-ref/post.mjs`).
+ */
+const INPUT_SAMPLER: GPUSamplerDescriptor = {
+  addressModeU: "clamp-to-edge",
+  addressModeV: "clamp-to-edge",
+  addressModeW: "repeat",
+  magFilter: "nearest",
+  minFilter: "nearest",
+  mipmapFilter: "nearest",
+  lodMinClamp: 0,
+  lodMaxClamp: 0,
+  maxAnisotropy: 1,
+};
 
 export class PaperGrain {
-  private post: PostProcess;
-  private readonly camera: Camera;
+  /** The stage the post chain draws the grade as. */
+  readonly stage: PostStage;
   private damage = 0;
-  /** Whether the player wants the grade at all. */
+  /** Whether the player wants the grade at all — the stage's `active()`. */
   private enabled = true;
-  /** Whether the pass is on the camera right now — the constructor puts it
-   *  there, so the two start in agreement and only this file moves them. */
-  private attached = true;
 
   /**
    * How hard the grade is pushed, as the map asked for it. Defaults to
@@ -331,95 +165,83 @@ export class PaperGrain {
   private vivid: number = CONFIG.graphics.vivid;
   private contrast: number = CONFIG.graphics.contrast;
 
-  /** Where the eye sits in each level's wrapped lattice, in cells — `vec4`s. */
-  private readonly cellOffset = new Float32Array(LEVELS * 4);
-  /** The rendered camera's world basis, read off the view matrix at apply. */
-  private readonly right = new Vector3(1, 0, 0);
-  private readonly up = new Vector3(0, 1, 0);
-  private readonly fwd = new Vector3(0, 0, 1);
-
   constructor(
-    scene: Scene,
-    camera: Camera,
+    private readonly camera: Camera,
     /** The frame's own depth image — what puts the paper on the surfaces. */
-    private readonly depth: FrameDepth,
+    depth: FrameDepth,
   ) {
-    this.camera = camera;
-    this.post = new PostProcess("paperGrain", "paperGrain", {
-      uniforms: [
-        "cellOffset",
-        "camRight",
-        "camUp",
-        "camFwd",
-        "tanHalfFov",
-        "nearFar",
-        "vignette",
-        "grain",
-        "aberration",
-        "vivid",
-        "contrast",
-        "damage",
-      ],
-      samplers: ["depthTexture"],
-      size: 1.0,
-      camera,
-      engine: scene.getEngine(),
-      shaderLanguage: ShaderLanguage.WGSL,
-    });
-    this.post.onApply = (effect) => {
-      this.placeLattice();
-      effect.setArray4("cellOffset", this.cellOffset as unknown as number[]);
-      effect.setFloat3("camRight", this.right.x, this.right.y, this.right.z);
-      effect.setFloat3("camUp", this.up.x, this.up.y, this.up.z);
-      effect.setFloat3("camFwd", this.fwd.x, this.fwd.y, this.fwd.z);
-      // Vertical-fixed fov, the aspect off the pass's own target — the same
-      // pair Volumetrics builds, for the same reason.
-      const tanY = Math.tan(this.camera.fov * 0.5);
-      effect.setFloat2(
-        "tanHalfFov",
-        (tanY * this.post.width) / Math.max(1, this.post.height),
-        tanY,
-      );
-      effect.setFloat2("nearFar", this.camera.minZ, this.camera.maxZ);
-      effect.setFloat("vignette", this.vignette);
-      effect.setFloat("grain", this.grain);
-      effect.setFloat("aberration", this.aberration);
-      effect.setFloat("vivid", this.vivid);
-      effect.setFloat("contrast", this.contrast);
-      effect.setFloat("damage", this.damage);
-      // A DECLARED sampler must be BOUND or the bind group fails to build and
-      // the draw is silently lost. It cannot be null by the time this runs —
-      // the capture is on the draw phase of the same `scene.render()` — but
-      // nothing here rests on that.
-      const depth = this.depth.texture;
-      if (depth) effect.setTexture("depthTexture", depth);
+    this.stage = {
+      name: "grain",
+      label: "paperGrain",
+      vertex: PAPER_GRAIN_VERTEX,
+      vertexBindings: PAPER_GRAIN_VERTEX_BINDINGS,
+      fragment: PAPER_GRAIN_FRAGMENT,
+      fragmentBindings: PAPER_GRAIN_FRAGMENT_BINDINGS,
+      // The aberration reads the input at `uv ± offset`.
+      reads: "neighbourhood",
+      inputBinding: 0,
+      inputSamplerBinding: 2,
+      internalsBinding: 3,
+      blockBinding: 4,
+      inputSampler: INPUT_SAMPLER,
+      blockFloats: B.floats,
+      // The frame's depth, read by `textureLoad` (no sampler). Null before
+      // the first draw phase has captured it, and the stage then draws
+      // nothing — it cannot be by the time the host draws, the capture being
+      // on the draw phase of the same `scene.render()`.
+      extras: [{ binding: 1, texture: () => (depth.texture ? hostTexture(depth.texture as never) : null) }],
+      active: () => this.enabled,
+      fill: (block, width, height) => this.fill(block, width, height),
     };
   }
 
   /**
-   * The RENDERED camera's basis and its place in every octave's lattice, at
-   * apply time — after the render has settled the view matrix, which is the
-   * matrix the depth being read was written with. The rendered camera and not
-   * the aim, for Volumetrics' reason: the rays have to land on the pixels the
-   * depth came from, view punch and all.
+   * This frame's block, as Babylon's `onApply` set it: the vertex stage's
+   * `scale` (1, 1: no power-of-two scaling), where the eye sits in each
+   * level's lattice, the RENDERED camera's basis — read off the view matrix
+   * after the render has settled it, which is the matrix the depth being read
+   * was written with, view punch and all (`Volumetrics`' reason) — the
+   * vertical-fixed FOV with the aspect off the input's own size, the clip
+   * planes, and the grade's six scalars. Every float is written; the pads
+   * stay zero.
    *
    * The offsets are computed here in float64 and are the whole precision story
    * (see the header): `position / cell mod PERIOD` is exact on the CPU and
    * crawls by a quarter-cell on the GPU.
    */
-  private placeLattice(): void {
-    const m = this.camera.getViewMatrix().m;
-    this.right.set(m[0], m[4], m[8]);
-    this.up.set(m[1], m[5], m[9]);
-    this.fwd.set(m[2], m[6], m[10]);
+  private fill(b: Float32Array, width: number, height: number): void {
+    b[B.scale] = 1;
+    b[B.scale + 1] = 1;
     const p = this.camera.globalPosition;
-    const o = this.cellOffset;
     for (let i = 0; i < LEVELS; i++) {
       const inv = 2 ** -(LEVEL_MIN + i);
-      o[i * 4] = wrap(p.x * inv);
-      o[i * 4 + 1] = wrap(p.y * inv);
-      o[i * 4 + 2] = wrap(p.z * inv);
+      const o = B.cellOffset + i * 4;
+      b[o] = wrap(p.x * inv);
+      b[o + 1] = wrap(p.y * inv);
+      b[o + 2] = wrap(p.z * inv);
+      b[o + 3] = 0;
     }
+    const m = this.camera.getViewMatrix().m;
+    b[B.camRight] = m[0];
+    b[B.camRight + 1] = m[4];
+    b[B.camRight + 2] = m[8];
+    b[B.camUp] = m[1];
+    b[B.camUp + 1] = m[5];
+    b[B.camUp + 2] = m[9];
+    b[B.camFwd] = m[2];
+    b[B.camFwd + 1] = m[6];
+    b[B.camFwd + 2] = m[10];
+    const tanY = Math.tan(this.camera.fov * 0.5);
+    b[B.tanHalfFov] = (tanY * width) / Math.max(1, height);
+    b[B.tanHalfFov + 1] = tanY;
+    b[B.nearFar] = this.camera.minZ;
+    b[B.nearFar + 1] = this.camera.maxZ;
+    b[B.vignette] = this.vignette;
+    b[B.grain] = this.grain;
+    b[B.aberration] = this.aberration;
+    b[B.vivid] = this.vivid;
+    b[B.contrast] = this.contrast;
+    b[B.damage] = this.damage;
   }
 
   /**
@@ -440,54 +262,16 @@ export class PaperGrain {
   }
 
   /**
-   * Takes the grade off the camera, and puts it back on the END of the chain.
-   *
-   * The pair exists for two callers now. Turning the motion blur off removes a
-   * pass from the middle of the chain, and Babylon's `attachPostProcess`
-   * APPENDS, so putting it back would land it after this grade; detaching and
-   * re-attaching the grade behind it is what keeps the documented order —
-   * the shafts, then the blur, then this — without anyone having to compute an
-   * insert index against a chain that also holds the pipeline's FXAA. The
-   * other caller is `setEnabled` below.
-   *
-   * Grain over a smear is the symptom if this goes wrong: it reads as a dirty
-   * lens rather than as motion, and nothing throws.
-   *
-   * Both are idempotent, and `attach` additionally refuses while the grade is
-   * switched off — the blur's dance is a detach and a re-attach around some
-   * other work, and it must not resurrect a pass the player took away. That is
-   * also why the grade always APPENDS rather than going back into the slot it
-   * came out of, the way `Game.syncVolumetrics` does: the tail is where it belongs,
-   * and a blur attached while it was away is already sitting past its old
-   * index. The cost is one null hole per off/on cycle in the camera's list,
-   * which is bounded by clicks on a settings row rather than by frames.
-   */
-  detach(): void {
-    if (!this.attached) return;
-    this.camera.detachPostProcess(this.post);
-    this.attached = false;
-  }
-
-  attach(): void {
-    if (this.attached || !this.enabled) return;
-    this.camera.attachPostProcess(this.post);
-    this.attached = true;
-  }
-
-  /**
    * Turns the whole grade on or off — a display setting, not a mood.
    *
-   * Detaching rather than zeroing the uniforms, for the reason the motion blur
-   * states about itself: a pass switched off in its shader still reads and
-   * writes the entire frame. Note the red damage flash goes with it, since it
-   * is painted by this shader; the HUD's directional damage arcs are not, and
+   * The stage's `active()`, so off is a pass the host does not open rather
+   * than a pass with its uniforms zeroed, which would still read and write
+   * the entire frame. Note the red damage flash goes with it, since it is
+   * painted by this shader; the HUD's directional damage arcs are not, and
    * are what a player with the grade off still reads a hit from.
    */
   setEnabled(on: boolean): void {
-    if (on === this.enabled) return;
     this.enabled = on;
-    if (on) this.attach();
-    else this.detach();
   }
 
   /** Kicks the red edge flash; call when the player takes a hit. */

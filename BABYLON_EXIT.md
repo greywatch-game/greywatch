@@ -3422,7 +3422,7 @@ correction marked "X5.1a"):
   of the eventual change, the rest the multi-bounce iteration's: 99% by two); no Babylon
   compute in a round or an editor build.
 
-### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07: the owner instructed that steps be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split below was proposed by the orchestrating session from a planning agent's read at 33a8d35, and its two shaping decisions taken by the owner the same day, its seven others the next, rows in "Decisions that are yours") — X5.2a **LANDED** (e5d9390, its review 55ef32c, its held finding F1 fixed 738f5e3), X5.2b **LANDED** (f697f0e, its review e5ab075); X5.2c1, X5.2c2, X5.2d not started
+### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07: the owner instructed that steps be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split below was proposed by the orchestrating session from a planning agent's read at 33a8d35, and its two shaping decisions taken by the owner the same day, its seven others the next, rows in "Decisions that are yours") — X5.2a **LANDED** (e5d9390, its review 55ef32c, its held finding F1 fixed 738f5e3), X5.2b **LANDED** (f697f0e, its review e5ab075), X5.2c1 **LANDED** (HASH); X5.2c2, X5.2d not started
 
 `FrameDepth`, `CelInk` with the glow's compose in its last line, the glow's
 blur, FXAA (already our own fragment), `Volumetrics`, `MotionBlur` and
@@ -3692,7 +3692,26 @@ marked "X5.2a"):
   holds the grade, the shafts and the blur through one adapter, `postAdapter`, and
   raises the flash for a `damage` row under the held decay). **X5.2a**: its block is
   496 bytes; it binds its input (nearest), the frame's depth and `Internals`; it is
-  the canvas pass with the canvas pass's depth state above.
+  the canvas pass with the canvas pass's depth state above. **X5.2c1**: ours since
+  (`render/PostChain.ts`); its block is `scale` (1, 1) first — the `postprocess`
+  vertex stage's — then `cellOffset` at byte 16, the basis at 400, 416 and 432,
+  `tanHalfFov` 448, `nearFar` 456 and the six scalars from 464 (`wgsl/paperGrain.ts`'
+  `PAPER_GRAIN_BLOCK`); its input's sampler is nearest x3, clamp, clamp, REPEAT,
+  lod 0..0, anisotropy 1; and the processor rewrote its `dpdy` as
+  `(-internals.yFactor_)*dpdy`.
+- **`camera.outputRenderTarget`** (**X5.2c1**, read in `scene.pure.js` 4007-4087 and
+  4185-4190): Babylon reads it at THREE points of a frame, not one — as `Scene.render`
+  binds the frame's first target and runs `_clearFrameBuffer` (set, it binds the output
+  target and clears it only under `scene.autoClear`, so the canvas's opening pass, which
+  clears `canvas.depth`, is never recorded), as `_renderForCamera` sets
+  `currentRenderPassId` (the output target's own id, which keys every Babylon draw's
+  wrapper), and as `_finalizeFrame` binds its last pass's target — with
+  `bindFramebuffer` and NO clear, where `PostProcess.activate` clears a pass's input to
+  the scene's clear colour. X5.2c1 sets it only across the post phase and clears the
+  target in its pass (its entry); **X5.2d's "the scene draws straight into the frame's
+  render target (`outputRenderTarget` with depth)" meets the first two points**: the
+  canvas's opening pass and the render pass id move with it, and with
+  `scene.autoClear` true (X5.2c2) the scene's clear lands on that target.
 - **Render scale** is `engine.setHardwareScalingLevel(1 / (dpr × renderScale))`
   (`Game.ts` ~3836-3839), which moves every target's size and the blur's kernel.
   **X5.2a**: the levels measured are 1, 1.333 and 2 on the desktop (render sizes
@@ -3986,6 +4005,125 @@ owes" below.
   writes that depth is a byte the probe compares (nothing reads it after the
   frame's opening clear). The harness's readiness arm asks our
   pipelines. Retires the blur-and-grade dance.
+
+  **X5.2c1 LANDED** (HASH; 2026-11-08; no change to the picture; no report version, the
+  grade's draw queued inside `render` where Babylon's was, named by nothing). **What
+  moved**: the grade is OUR draw, the last stage of the post chain's HOST,
+  `render/PostChain.ts` — an ordered list of DECLARED stages (`PostStage`: the program as
+  compiled with its bindings, the uniform block and its `fill`, extra bindings, the
+  sampler it reads its input with, `active()`, `reads` point-wise or neighbourhood), routed
+  a pass per active stage in list order, the last given the canvas, any other a pool
+  target; nothing a stage holds names its output, its place or the canvas. Its passes are
+  opened by the Babylon-side owner `shaders/PostPasses.ts` with public API (no seam item):
+  while a stage of ours is active `camera.outputRenderTarget` takes Babylon's prefix's
+  output (a `RenderTargetTexture` made as a post-process's input — `rgba8unorm`, no depth,
+  NEAREST, the render size — named for the stage reading it, `PostProcessRTT-paperGrain`),
+  the canvas is opened with `restoreDefaultFramebuffer` as `_finalizeFrame` opened it, and
+  the draw goes in through `Renderer.postStageOpened` (`passIs` against `canvasTargets`:
+  the swap chain's format, the ENGINE's `depth32float` written with compare `always`, not
+  flipped); with no stage of ours active none of it runs and Babylon's prefix writes the
+  canvas as before — no interim copy pass. The grade's modules are the parent's device text
+  character for character (`shaders/wgsl/paperGrain.ts`, CONFIG's constants where they
+  were), its 496-byte block filled as its `onApply` filled it (`PaperGrain.fill`), its input
+  read through our own sampler at Babylon's descriptor (nearest x3, clamp, clamp, repeat,
+  lod 0..0, anisotropy 1), the frame's depth through the host's own view; Babylon's quad,
+  `Internals` (+1, the render height) and layout (group 0 empty, group 1 at Babylon's
+  numbers). `PaperGrain` keeps the CPU half (grade, switch, flash, lattice) and its `stage`;
+  its `attach`/`detach` and the blur-and-grade dance are gone (`Game.setMotionBlurEnabled`
+  appends the blur, the last of Babylon's passes). `PipelineCache` lays a `texture_depth_*`
+  binding out as `"depth"`. The harness's readiness arm (`__refPost().ready`) and both
+  adapters' arms for the grain.
+  **Found, and the reason for two things the plan did not say.** (1) **Babylon reads
+  `outputRenderTarget` at THREE points**, not one: as `Scene.render` binds the frame's
+  first target and clears the canvas's depth (with it set, the scene binds the output
+  target instead and the frame's opening canvas pass — `canvas` loaded, `canvas.depth`
+  cleared, X5.2a — is never recorded, shifting every pass after it); as the camera's render
+  picks its render pass id (`outputRenderTarget.renderPassId`, which keys every Babylon
+  draw's wrapper, an editor build's meshes among them); and as `_finalizeFrame` binds its
+  last pass's target. Only the third is the prefix's output, so `PostPasses` sets it only
+  from the draw phase's end to the camera's (`onAfterDrawPhaseObservable`, after the glow's
+  and the frame depth's observers, to `onAfterCameraRenderObservable`). (2)
+  **`_finalizeFrame` binds that target WITHOUT a clear**, where Babylon's `activate` cleared
+  the grade's input at its pass's open (to the scene's clear colour), so the pass the
+  prefix's last stage draws in would load rather than clear — and on a frame that stage
+  draws nothing (its effect still compiling: the probe's live half sees it at a boot) our
+  grade would grade the target's last contents where Babylon's graded the clear colour. So
+  `PostPasses` clears it in that pass, from the prefix's last pass's `onApplyObservable`
+  (`Game.postPrefixTail`: the blur, the shafts, FXAA or the ink, whichever is last on the
+  camera) — after its own observers, before its draw, the pass still unbegun — or, on a
+  frame it draws nothing, in a pass of its own where that one stood: every pass's load op
+  and clear value the parent's, on every frame.
+  **Measured** (the Windows box, headless; BEFOREs at 79e620d in a worktree with its own
+  `npm ci` and a copy of the main tree's `ref/`): TODO
+  - **The probe** `--against` the parent's log, both pages, sixteen scenarios: equal,
+    29,009 values a page — every pass in submit order (the canvas's opening pass, the
+    prefix's last pass into the grade's input with its `clear` and clear value and its
+    label `PostProcessRTT-paperGrain`, the canvas's pass with the engine's depth loaded),
+    every target's hash, every module's tokens (the module table equal: the grade's two
+    the same text), pipeline, layout, bind group, sampler, uniform byte (the 496-byte block
+    and `Internals` among them), vertex and index byte — with 2,223 excused a page by
+    X5.2c1's section of `post-expected.txt`: the grade's draw's `pipeline.call`, `bundle`
+    and `viewport` (X5.2b's three, for X5.2b's reasons: 28 paths a page) and Babylon's
+    own `chain.list`, `chain.off` and `chain.slots.grade.attached` (the camera's list no
+    longer holds the grade and the blur's toggle no longer re-appends it, so it is shorter
+    with fewer holes; 32 paths each a page, the list's every field counted). Desk-only
+    first, then both pages. The live half (printed): the same pass sequence frame for frame
+    after the boot on both pages — the render-scale change and the resize each one frame
+    with the canvas's opening pass alone, then whole; no stage of ours drawless; the shafts'
+    rungs made on their frames. At the boot, which of Babylon's passes is ready first rides
+    timing on both trees (the parent's desk boot drew FXAA's pass empty on its first chain
+    frame): ours is declared and compiled ahead, so on the one frame the step's desk
+    `boot-2` drew all four of Babylon's prefix passes empty (under the building card), the
+    grade drew over its input cleared to the clear colour — the clear-alone path — where
+    the parent's grade, compiled with the rest, would not yet have drawn.
+  - **The bank**, all 147 rows, `--check --keep` at the step against the BEFORE, by
+    `exact.mjs`: 147 byte-equal, no flake, no Sarab procedure needed; the same 34 stale
+    rows red against `ref/` on both sides.
+  - **Live** (a scratch log, X5.2b's script on the grade: a Hollowmere round, FXAA, the
+    motion blur and the grain off and on, the shafts low/off/high/medium, the glow low and
+    high, render scale 0.5/0.75/1 at both rungs, a window resize and back, a teardown, a
+    second round, Coldharbour, `F2` with a quay dragged and back and the glow rung changed,
+    the round after): our two grade modules made at the boot and none after, no module of
+    Babylon's `paperGrain` (the parent: one); Babylon's synchronous pipelines 32 against 33
+    by the end; the grade's input pass drawn on every frame the grade was on but the three
+    boot frames both trees draw it empty; `outputRenderTarget` null at every frame's end;
+    no "compiled in play" warning, no `uncapturederror`, no page or console error, on
+    either tree.
+  - **Pipelines**: `coldharbour --round` identical on both trees (0 of Babylon's at the
+    install, 21 of ours and 12 modules, none in play); `hollowmere` Babylon's 8 → 7 by the
+    install (the grade's), ours 77 → 78, modules 111 on both, nothing in the 16 seconds
+    after on either.
+  - **`surfaces.mjs`**: Babylon's draws through no mesh lose `paperGrain -> canvas` (145
+    rows); `motionBlur -> PostProcessRTT-paperGrain` stands, the prefix's output named for
+    its reader.
+  - **The editor's frames** (X5.1b's script, its eight eyes, two processes a tree):
+    Coldharbour `menu`, `curtain2`, `curtain40` and Hollowmere `lanterns` byte-equal in all
+    four pairings; `curtain90` 2-5 pixels by 1/255 (each tree against itself 0-3 by 1);
+    Hollowmere `ashwood` 22,735-106,685 pixels by up to 52/255 and `menu` 273-1,165 by up to
+    35/255 (each tree against itself 82,453-90,759 by 52 and 1,028-1,112 by 29-35);
+    `wall40` changes between two grabs in one process on both trees — no oracle.
+  - **`census --against`** (Hollowmere, Sarab, Cinderhaven, Kurenai): every row and total
+    equal (403, 595, 619, 168).
+  - **`?profile&gpu`** (Coldharbour and Hollowmere, the parent and the step alternating
+    twice, report version 37 on both): `render` 0.931/0.960 → 0.964/0.977 and 0.820/0.843 →
+    0.801/0.820 ms; `gpu.frame` 2.646/2.602 → 2.561/2.575 and 2.527/2.471 → 2.473/2.569 ms
+    (within 4%); Babylon's draw calls 5 → 4 (the grade's draw is ours).
+  - **Gates**: `gate` seven maps clean; `shaders` clean on seven; typecheck, build
+    (`check-babylon-free`, `check-proving`), corecheck and parity pass.
+  **For X5.2c2**: Babylon's chain becomes `[celInk]` and the host's list grows ahead of the
+  grade — each stage DECLARED as the grade is, a pool pipeline asked for every stage another
+  follows (`PostChain`'s constructor), the pool's passes opened bound and cleared as
+  `activate` opens a pass (`PostPasses.openPool`, written here and first exercised there:
+  its descriptors are X5.2c2's to prove), `Game.postPrefixTail` shrinking to the ink, and
+  `__refPost`'s ours arm taking the shafts and the blur. Deleting
+  `DefaultRenderingPipeline` sets `scene.autoClear` back to true, which the window does not
+  meet (it opens after the frame's start) — only the opening canvas pass's colour load
+  moves, as that entry says. A pass of ours into a texture is FLIPPED (`Internals` -1, the
+  front face `cw` under cull none, as the probe read Babylon's).
+  **Not run**: the phone (its page is the probe's `phone` size only), a lost device (ours
+  does not rebuild after one, `FINDINGS.md` 64), a server's match in a browser, a DPR
+  change in play (the grade's text and pipeline do not depend on the ratio). The note is in
+  `plans/done/babylon_exit_landed.md`.
 - **X5.2c2 — motion blur, the shafts, FXAA** (may land as one commit a pass,
   each moving the boundary one pass). Babylon's chain becomes `[celInk]`. The
   shadow maps read as `own ?? hostTexture` (`ShadowBindings`' pattern), the
@@ -4094,7 +4232,9 @@ It stays behind its one dynamic `import()` in a DEV branch.
   - Our own `requestAnimationFrame` loop.
   - The canvas: size, DPR and render scale.
   - **The post passes' targets and passes** (X5.2's shape (A), decided 2026-11-07): the
-    Babylon-side sequencer X5.2c1 builds is swapped for our own encoder and targets, and
+    Babylon-side sequencer X5.2c1 builds (`shaders/PostPasses.ts`, a `PostPassOwner`:
+    `render/PostChain.ts` routes through whichever owner it is handed) is swapped for our
+    own encoder and targets, and
     the glow's MASK moves with the main pass (row "X5.2, the mask"), retiring items 2 to
     5 for both — the glow's five BLUR passes with them (bound by `GlowPass` on its own
     targets, our draws queued in them since X5.2b). Render scale's setter is this step's (row "X5.2, render scale").

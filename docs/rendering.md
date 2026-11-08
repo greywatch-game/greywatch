@@ -3504,6 +3504,43 @@ changed in the MENU is the same difference: its widths are declared after the
 round's list was taken, so the warm-up does not wait for them, and a round
 reaching play before they are built skips the same way.
 
+**The POST CHAIN's tail is the third (X5.2c1), and it is a HOST of declared
+stages, not a pass a module owns.** `render/PostChain.ts` holds an ordered list
+of `PostStage`s — the grade alone so far (`PaperGrain.stage`) — each DECLARING
+its program as Babylon compiled it (`shaders/wgsl/paperGrain.ts`, the parent's
+device text character for character), its uniform block and its `fill`, its
+extra bindings (the frame's depth), the sampler it reads its input with (the
+consumer's, made from the stage's descriptor, never the target's), whether it
+is `active()`, and whether it reads its input point-wise or across a
+neighbourhood; the host opens a pass per active stage in list order, each
+reading the one before's output, the LAST given the canvas — nothing a stage
+holds names its output, its place or the canvas, which is what keeps the door
+open for two neighbours to be FUSED later (a fusion drops the 8-bit rounding
+between them: never byte-exact, a later `Picture change:`). The passes are
+Babylon's, opened by the Babylon-side owner `shaders/PostPasses.ts` with public
+API: while a stage of ours is active, **`camera.outputRenderTarget` takes
+Babylon's prefix's output** — a `RenderTargetTexture` made as a post-process's
+input is (`rgba8unorm`, no depth, NEAREST, the render size), named for the
+stage that reads it (`PostProcessRTT-paperGrain`) — **set only from the draw
+phase's end to the camera's** (Babylon reads it at three points: as
+`Scene.render` binds the frame's first target and clears the canvas's depth,
+which with it set would bind this target and skip that clear, the frame's
+opening canvas pass; as the camera picks its render pass id; and as
+`_finalizeFrame` binds its last pass's target, the only one meant); the target
+is CLEARED to the scene's clear colour in the pass that writes it, as Babylon's
+`PostProcess.activate` cleared the grade's input — from the prefix's last
+pass's `onApplyObservable` (`Game.postPrefixTail`), or in a pass of its own on
+a frame that pass draws nothing; then the canvas is opened with
+`restoreDefaultFramebuffer`, as `_finalizeFrame` opened it, and the stage's draw
+goes in through `Renderer.postStageOpened` (`passIs` against `canvasTargets`:
+the swap chain's format, the ENGINE's `depth32float`, written with compare
+`always` as Babylon's last pass wrote it, not flipped). With no stage of ours
+active nothing of this runs and Babylon's prefix writes the canvas itself — no
+interim copy pass, ever. Its pipelines are on the round's declared list ("the
+post chain"); the probe (`plans/webgpu-ref/post.mjs`) reads every pass and
+draw of it the same as the parent's but the three fields a draw of ours always
+differs in (`post-expected.txt`).
+
 **A draw lands at one of SEVEN points of the main pass** (`DrawPoint`), six of
 them about rendering group 0, and in this order every frame (the moon's, the sixth,
 `"beforeBlended"`, is X4.5c's: past the group's particles and ahead of its
@@ -3787,7 +3824,8 @@ frame's group does whenever both stages see it alike; a material's group
 differs per variant. Modules are cached by their CODE, never their label,
 and a compile that fails is not cached. A binding the two stages declare
 differently is refused when the layout is built. A texture binding is laid out as filterable
-`float` with a filtering sampler. A depth texture or an unfilterable format
+`float` with a filtering sampler, and a `texture_depth_*` one as `"depth"`
+(the post chain's frame depth, X5.2c1). Any other unfilterable format
 bound later owes its binding a field saying so, or the layout refuses the
 view. None of the sixteen the cel program binds is either: every shadow map
 is `rgba16float`, the lamps' atlas `r16float`, the cloud field `rg8unorm`,
@@ -6043,16 +6081,17 @@ all in the counter this finding is named after. Not chased.
 - **The post-process chain has an order, and a display setting that switches an
   effect off REMOVES its pass** rather than zeroing its uniforms — an attached but idle
   pass still reads and writes the whole frame. The order is FXAA, shafts (`Volumetrics`),
-  motion blur, paper grain, enforced by where each one re-attaches. FXAA and the shafts
+  motion blur, paper grain. The first three are Babylon's passes, enforced by where each
+  one re-attaches: FXAA and the shafts
   each hold a SLOT claimed while the chain is being built, which `detachPostProcess`
   nulls and an indexed `attachPostProcess` refills (`Game.setFxaaEnabled`,
   `Game.syncVolumetrics`) — never `pipeline.fxaaEnabled`, which rebuilds the pipeline
-  and re-appends FXAA behind the grain. For the other two, `attachPostProcess` appends, so
-  the blur's toggle takes the grade off and puts it back behind it
-  (`Game.setMotionBlurEnabled`), and the grade's own toggle always appends because the
-  tail is where it belongs. `PaperGrain` owns whether it is attached, so the blur's
-  dance can never resurrect a grade the player turned off — the guard is in `attach`,
-  not at the call sites. Nothing throws if this is wrong; the symptom is grain over a
+  and re-appends FXAA behind the blur — and the blur, the last of Babylon's, appends
+  (`Game.setMotionBlurEnabled`). **The grade is a stage of OUR post chain since
+  X5.2c1** ("Our renderer's frame"), after Babylon's whole list by the host's order, so
+  the dance the blur's toggle used to do with it (the grade taken off and put back
+  behind the blur) is gone, and its switch is its stage's `active()`. Nothing throws if
+  the order is wrong; the symptom is grain over a
   smear, which reads as a dirty lens. The red damage flash is painted by the grade's
   shader and goes off with it, leaving the HUD's damage arcs to tell the player where a
   hit came from.

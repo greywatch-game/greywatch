@@ -212,7 +212,9 @@ priced**, and there the GPU is the wall (below).
   its own until it was folded into the ink for a phone's sake, with no change
   to the picture. Four of them are detachable by a setting (`core/settings.ts`,
   `fxaa`, `motionBlur`, `paperGrain`, `volumetrics`). The grain is no longer a
-  trivial pass: its world-pinned paper measured ~0.25 ms of GPU at 1920x1080. The god-ray detach took the chain
+  trivial pass: its world-pinned paper measured ~0.25 ms of GPU at 1920x1080 (our
+  renderer's draw since `BABYLON_EXIT.md` X5.2c1, the same pass ported as compiled,
+  so the same cost; the other four are still Babylon's). The god-ray detach took the chain
   down by one for most of a round while the shafts were `GodRays`; **that saving is
   gone**, because `Volumetrics` replaced it and is ON by default — only `off`
   detaches it. Measured at ~0.75 ms of GPU (`docs/rendering.md` has the per-rung
@@ -2308,7 +2310,9 @@ What the figures show:
   waits on the queue. That is this entry's "70-85 ms waits", now measured
   as GPU.
 - **`gpu.mainPass` reads 6.1 ms cold and 10.2 ms warm.** That pass draws
-  only the final full-screen quad, which measured 27 µs on the desktop. A
+  only the final full-screen quad, which measured 27 µs on the desktop (the
+  grade's, our renderer's draw since `BABYLON_EXIT.md` X5.2c1, in the same pass:
+  the counter keeps its meaning). A
   tiling GPU's pass timestamps may not bracket what they say, so this is a
   lead and not a cost: it points at the post chain.
 
