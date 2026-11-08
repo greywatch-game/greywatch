@@ -9863,7 +9863,7 @@ seven minor points, each verified against the tree first.
   row's freeze calls; Hollowmere's 16 rows ran it); the throw itself provoked; corecheck,
   parity, `gate`, `shaders` (no game code moved).
 
-### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07; its decisions the owner's, 2026-11-07 and 2026-11-08, rows in "Decisions that are yours") — X5.2a **LANDED** (e5d9390, its review 55ef32c, its held finding F1 fixed 738f5e3), X5.2b **LANDED** (f697f0e, its review e5ab075), X5.2c1 **LANDED** (4747fe7, its review bfa6a6b), X5.2c2 the shafts and the blur **LANDED** (14dd887); its FXAA pass not started
+### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07; its decisions the owner's, 2026-11-07 and 2026-11-08, rows in "Decisions that are yours") — X5.2a **LANDED** (e5d9390, its review 55ef32c, its held finding F1 fixed 738f5e3), X5.2b **LANDED** (f697f0e, its review e5ab075), X5.2c1 **LANDED** (4747fe7, its review bfa6a6b), X5.2c2 the shafts and the blur **LANDED** (14dd887, its review 7c5030f); its FXAA pass not started
 
 The plan's `BABYLON_EXIT.md` holds X5.2's brief, its ONE RULE, shape (A), "What it is
 today" (corrected in place by X5.2a, each correction marked) and the five sub-steps.
@@ -10512,7 +10512,7 @@ input a pass; (4) **`fill` is handed the render size**, which every target of th
 **Not run**: the phone (its page is the probe's `phone` size only), a lost device, a
 server's match in a browser.
 
-**Its review** (HASHR; 2026-11-08; no change to the picture: documents, comments, a
+**Its review** (7c5030f; 2026-11-08; no change to the picture: documents, comments, a
 vantage's `proves` text and the probe's `chain` log, under `src/` comments and text only)
 found nothing real and six minor points, each checked against the tree first. **Records
 left on the old order**: `docs/rendering.md`'s post-process bullet (the shafts' slot, the
