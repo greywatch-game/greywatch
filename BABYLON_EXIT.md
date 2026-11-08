@@ -3422,7 +3422,7 @@ correction marked "X5.1a"):
   of the eventual change, the rest the multi-bounce iteration's: 99% by two); no Babylon
   compute in a round or an editor build.
 
-### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07: the owner instructed that steps be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split below was proposed by the orchestrating session from a planning agent's read at 33a8d35, and its two shaping decisions taken by the owner the same day, its seven others the next, rows in "Decisions that are yours") — X5.2a **LANDED** (e5d9390, its review 55ef32c, its held finding F1 fixed 738f5e3), X5.2b **LANDED** (f697f0e, its review e5ab075), X5.2c1 **LANDED** (4747fe7, its review bfa6a6b); X5.2c2, X5.2d not started
+### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07: the owner instructed that steps be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split below was proposed by the orchestrating session from a planning agent's read at 33a8d35, and its two shaping decisions taken by the owner the same day, its seven others the next, rows in "Decisions that are yours") — X5.2a **LANDED** (e5d9390, its review 55ef32c, its held finding F1 fixed 738f5e3), X5.2b **LANDED** (f697f0e, its review e5ab075), X5.2c1 **LANDED** (4747fe7, its review bfa6a6b), X5.2c2 the shafts and the blur **LANDED** (HASH1); its FXAA pass and X5.2d not started
 
 `FrameDepth`, `CelInk` with the glow's compose in its last line, the glow's
 blur, FXAA (already our own fragment), `Volumetrics`, `MotionBlur` and
@@ -4201,6 +4201,114 @@ owes" below.
   cached sampler fields stay unfilled in a default boot, as under
   `--shafts-off` (inferred) — named as an expected difference. Ends Babylon's
   reading of the cloud field in a round (X5.4's list says so).
+  **X5.2c2's first commit LANDED — the shafts and the blur** (HASH1; 2026-11-08; no change
+  to the picture; no report version, the draws queued inside `render` where Babylon's were,
+  named by nothing; FXAA, the third pass, is a commit of its own). **What moved**: the light
+  shafts and the motion blur are OUR draws, stages of the post chain's host ahead of the
+  grade, so Babylon's chain is `[celInk, FXAA]` and ours `[shafts (one stage a rung), blur,
+  grain]`. Each is ported AS COMPILED off the parent's device (`shaders/wgsl/volumetrics.ts`,
+  `shaders/wgsl/motionBlur.ts`: the `postprocess` vertex stage with the stage's whole
+  `LeftOver`, the fragment character for character, CONFIG's constants where they were — the
+  shafts' `celCloud` expanded, the rung's name and `SAMPLES`, `EDGE_FADE`; the blur's
+  `SAMPLES`; every rung's fragment reproduced, the probe's module table equal), its block
+  filled as its `onApply` filled it (the blur's 112 bytes with the `mat3x3f` as three vec4
+  columns, the shafts' 320 with `intensity` in `march`'s fourth float), its CPU half the
+  same objects as before (`Game.volumetrics`, rebuilt on a rung change; `Game.motionBlur`,
+  its history the previous basis, its `dt` cap and jitter unchanged), its input read
+  through our sampler at Babylon's descriptor (nearest x3, clamp, clamp, repeat, lod 0..0,
+  anisotropy 1). **Every rung is a stage** (`volumetricStages`): all six of the shafts'
+  pipelines asked at construction ("the post chain"), so a rung change in play compiles
+  nothing (the parent compiled each rung at its first frame); a rung's stage is drawn only
+  while `Game.syncVolumetrics` has latched the pass ready, where it used to attach it, so a
+  new pass's first frame has no shafts, as before. **The shafts' two shadow maps are bound
+  as our renderer holds them** (`ShadowSystem.ownDepthMap`, `BodyShadows.ownDepthMap`,
+  `own ?? hostTexture`), **the cloud field through `hostTexture` with the host's sampler —
+  Babylon reads the cloud field in a round no longer** (X5.4's list says so). `PostExtra`
+  gains a sampler binding and an `OwnTexture`. The shafts' slot trick is gone
+  (`volumetricsSlot`, `FIRST_VOLUMETRIC_RUNG`), and so is the blur's attach and detach;
+  `Game.postPrefixTail` is FXAA or the ink. The dead Mali comments are corrected (`Fxaa.ts`,
+  `Game.setFxaaEnabled`; `FINDINGS.md` 5 no longer states one).
+  **`PostPasses.openPool`'s four checks** (X5.2c1's review): (1) **the clear** — Babylon's
+  `activate` clears under the READER's `autoClear` and `alphaMode`, with its own `clearColor`
+  if it has one; every reader of ours was a post-process at the defaults (the parent's
+  probe, `chain.list`: `autoClear` true, `alphaMode` 0, `clearColor` null, `pixelPerfect`
+  false on the ink, FXAA, the shafts and the blur, both pages), so the scene's colour,
+  always — stated in `openPool`, a stage needing another owing `PostStage` the field;
+  (2) **`forceFullscreenViewport`** — now passed `true`, as `activate` passes it, so the
+  viewport is the whole target whatever the camera's; (3) **the pool no longer ping-pongs**:
+  one target a pass POSITION (`PostChain.record`'s `slot++`), so each pass of a frame writes
+  a target of its own as each Babylon pass had an input of its own, and the probe names every
+  pool target by its one writer (`PostPasses.poolTarget`, `PostChain.stages`) — with every
+  tail pass on the pool holds two targets and the prefix's output one, where Babylon held an
+  input a pass; (4) **`fill` is handed the render size**, which every target of the chain is
+  (`getRenderWidth(true) | 0`, Babylon's own sizing at `size` 1).
+  **Measured** (the Windows box, headless; BEFOREs at f5c5a42 in a worktree with its own
+  `npm ci` and a copy of the main tree's `ref/`):
+  - **The bank**, all 147 rows, `--check --keep` at the step against the BEFORE, by
+    `exact.mjs`: **default** 146 byte-equal and `sarab-ground` 100 pixels by 2/255 — Sarab
+    alone, two processes a tree: all four frames byte-equal to each other (`sarab-shelf`
+    within its flake) and to the step's full-run frame, so the step draws the frame the
+    parent's processes draw (cross-process residue, as at X5.2b and X5.2a's F1 fix);
+    **`--query=volumetrics=low`** 146 byte-equal and `harrowmead-view-pistol-reload` within
+    its flake; **`--query=volumetrics=high`** the same. The same rows red against `ref/` on
+    both sides at each tier (34, 102, 93).
+  - **The probe** `--against` the parent's log, both pages, sixteen scenarios: equal, with
+    X5.2c2's section of `post-expected.txt` excusing the shafts' and the blur's draws'
+    `pipeline.call`, `bundle` and `viewport` (X5.2b's three), the view descriptors of the
+    shafts' two shadow maps (their owner's view, made with no descriptor: the defaults) and
+    their samplers' `addressModeW` and `lodMaxClamp` (their owner's: nearest as Babylon's,
+    clamp-to-edge and 32 where Babylon's said repeat and 0 — fields a one-mip 2d texture
+    never reads; the march's output hash compared, equal), and `chain.slots.shafts`; every
+    pass, load op, clear value, label, target hash, module, pipeline, layout and uniform byte
+    else compared and equal. The live half: the same pass sequence frame for frame on both
+    pages; the shafts' rungs made at the boot and NONE in play (the parent made each rung's on
+    its frame).
+  - **`gi.mjs --against`** (default): equal but the two paths the plan predicted —
+    `statics.samplersFresh.internalCached.wrapU` and `samplerSerial.found.wrapU` null where
+    the parent's were 0 on both maps: with no Babylon bind of the cloud field its internal's
+    cached sampler fields stay unfilled, as under `--shafts-off`; and Babylon's binds of the
+    cloud field fall from 24 in the menu and 31 in deploy to 0, 1,694 to 1,648 under the
+    building card and 100,485 to 100,365 in 120 editor frames (the editor's shafts, one a
+    frame). **`--shafts-off --against`**: equal.
+  - **Live** (`x52c2/live.mjs`, X5.2c1's script counting the three: a Hollowmere round, every
+    post setting toggled in play, the shafts low/off/high/medium, render scale at both glow
+    rungs, a resize and back, a teardown, a second round, Coldharbour, `F2` with a quay
+    dragged and back and the glow rung changed, the round after): our ten modules (the shafts'
+    vertex and three fragments, the blur's two, the grade's two) made at the boot and none
+    after; no module of Babylon's `volumetrics_*` or `motionBlur` (the parent: five, three of
+    them in play); Babylon's synchronous pipelines 32 → 26 by the end; no "compiled in play"
+    warning, no `uncapturederror`, no page or console error, `outputRenderTarget` null at
+    every frame's end, on either tree. **At the boot one or two more frames than X5.2c1
+    stated may differ**, the same timing-dependent class: our stages are compiled ahead of
+    Babylon's prefix, so on a boot frame where the ink or FXAA is still compiling ours draws
+    the shafts, the blur and the grade over its input cleared to the clear colour, where the
+    parent's, compiling with them, drew less — three menu boot frames drew our blur's and
+    grade's passes here where the parent's drew none. No frozen frame and no bank row shows
+    it; it is not made exact, which would mean faking compile timing.
+  - **Pipelines**: `coldharbour --round` identical on both trees (0 of Babylon's at the
+    install, 21 of ours and 12 modules, none in play); `hollowmere` Babylon's 7 → 5 by the
+    install, ours 78 → 86, modules 111 → 113 (the two rungs' fragments the parent made only
+    once a rung was chosen), nothing after on either.
+  - **`surfaces.mjs`**: Babylon's draws through no mesh lose `volumetrics_medium ->
+    PostProcessRTT-motionBlur` and `motionBlur -> PostProcessRTT-paperGrain` (144 rows each);
+    `fxaa -> PostProcessRTT-volumetrics_medium` stands, the prefix's output named for its
+    reader.
+  - **The editor's frames** (X5.1b's script, its eight eyes, two processes a tree):
+    Coldharbour `menu`, `curtain2`, `curtain40` and Hollowmere `lanterns` byte-equal in all
+    four pairings; `curtain90` 0-3 pixels by 1/255, `ashwood` 0-181,621 by up to 54/255 and
+    `menu` 25-536 by up to 30/255, each within the tree's own floor (each tree against itself
+    1-2, 104,929-181,621 and 178-401); `wall40` changes between two grabs on both trees, as
+    recorded — no oracle.
+  - **`census --against`** (Hollowmere, Sarab, Cinderhaven, Kurenai): every row and total
+    equal (403, 595, 619, 168).
+  - **`?profile&gpu`** (Coldharbour and Hollowmere, the parent and the step alternating
+    twice, report version 37): `render` 0.927/0.893 → 0.904/0.932 and 0.804/0.823 →
+    0.802/0.847 ms; `gpu.frame` 2.610/2.618 → 2.563/2.587 and 2.495/2.498 → 2.496/2.479 ms
+    (within 4%); Babylon's draw calls 4 → 2.
+  - **Gates**: `gate` seven maps clean; `shaders` clean on seven; typecheck, build
+    (`check-babylon-free`, `check-proving`), corecheck and parity pass.
+  **Not run**: the phone (its page is the probe's `phone` size only), a lost device, a
+  server's match in a browser.
 - **X5.2d — the head: the ink and the glow's compose are ours.** The scene draws
   straight into the frame's render target (`outputRenderTarget` with depth),
   its formats equal to `FRAME_TARGETS` (`render/targets.ts`), the clear moved
@@ -4319,8 +4427,9 @@ It stays behind its one dynamic `import()` in a DEV branch.
       through `hostTexture` and `host.bind` too (a compute reader beside the frame, the host's
       sampler by the owner's decision), so its move owes `gi.mjs` beside the bank. Nothing of
       Babylon's samples them but the cloud field, which Babylon's `Volumetrics` (the light
-      shafts) binds on every frame it draws until X5.2 takes the post chain, and an editor
-      build's Babylon cel materials until X5.3 (X5.1a counted both: one bind a frame in the
+      shafts) bound on every frame it drew until X5.2c2 made the shafts a stage of OUR post
+      chain (bound through `hostTexture` with the host's sampler since: no Babylon reader of it
+      in a round), and an editor build's Babylon cel materials until X5.3 (X5.1a counted both: one bind a frame in the
       menu and deploy, 100,485 in 120 editor frames; corrected by X5.1b's review), both gone
       before this step; they wait for it only so the group moves under one bank proof, not
       for any reader.

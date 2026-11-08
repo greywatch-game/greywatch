@@ -145,7 +145,7 @@ import { fxaaShaderIsOurs } from "../shaders/Fxaa";
 import { FrameDepth } from "../shaders/FrameDepth";
 import { GlowPass, glowKernels } from "../shaders/GlowPass";
 import { MotionBlur } from "../shaders/MotionBlur";
-import { Volumetrics, type VolumetricRung } from "../shaders/Volumetrics";
+import { Volumetrics, volumetricStages, type VolumetricRung } from "../shaders/Volumetrics";
 import { difficultyNames, profileFor } from "../entities/BotSkill";
 import { callsign } from "../entities/callsigns";
 import { OTHER_TEAM, type Combatant, type Team } from "../entities/Combatant";
@@ -621,15 +621,6 @@ function burstSpacing(rounds: number): number {
  * Systems never import each other — `Game` is the only place they meet, and
  * cross-system behavior belongs in this wiring rather than in an import.
  */
-/**
- * The rung a pass is built at purely to CLAIM the shafts' slot, when the player
- * has them off. It is the cheapest one, it is never drawn, and it exists only
- * because `attachPostProcess` appends — see the constructor.
- */
-const FIRST_VOLUMETRIC_RUNG = Object.keys(
-  CONFIG.graphics.volumetrics.rungs,
-)[0] as VolumetricRung;
-
 /** A failure of the clouds with no round standing is the console's (`CloudDraw.onFailed`). */
 function cloudsFailedOverMenu(reason: string): void {
   console.error(`[sky] the clouds cannot be drawn — ${reason}`);
@@ -1305,21 +1296,24 @@ export class Game {
   private foliageBuilt: FoliageQuality | null = null;
   private post: PaperGrain;
   /**
-   * The light shafts, or null when the player has them off — which is a
-   * DETACHED pass and not a zeroed one, the post chain's own rule.
+   * The light shafts' CPU half, or null when the player has them off — which
+   * is a stage the post chain does not draw and not a zeroed one, the chain's
+   * own rule.
    *
    * Rebuilt rather than reconfigured on a rung change: the tap count is a WGSL
-   * `const`, so each rung is its own compiled shader. See `setVolumetrics`.
+   * `const`, so each rung is its own compiled shader — and its own stage of
+   * the chain, every one declared at construction (`volumetricStages`). See
+   * `setVolumetrics`.
    */
   private volumetrics: Volumetrics | null = null;
-  /** Which rung is BUILT, so a no-op change does not recompile a shader. */
+  /** Which rung is BUILT, so a no-op change rebuilds nothing. */
   private volumetricsRung: VolumetricRung | null = null;
   /**
-   * Where in the camera's chain the shafts go — claimed once in the
-   * constructor, because `attachPostProcess` APPENDS and only the moment
-   * between the pipeline and the blur knows where they belong.
+   * Whether the shafts' stage draws this frame: latched by `syncVolumetrics`
+   * once every input the pass reads exists, which is where Babylon's pass
+   * used to be attached — so the first frame of a new pass has no shafts, as
+   * it never did.
    */
-  private volumetricsSlot = 0;
   private volumetricsAttached = false;
   /**
    * The pipeline's FXAA pass and where it sits in the camera's chain, claimed
@@ -2219,11 +2213,12 @@ export class Game {
     pipeline.imageProcessingEnabled = false;
     // FXAA is BUILT always and taken off the camera by the setting
     // (`setFxaaEnabled`), never by `fxaaEnabled`: that setter rebuilds the
-    // pipeline, which re-attaches its passes by APPENDING — behind the shafts
-    // and the blur. So its slot is claimed here, while it is the last
-    // pass in the chain: detaching nulls its entry, and re-attaching appends it
-    // again and hands back the index, which is the one public way to learn it.
-    // The null left behind is skipped by the chain, as the shafts' hole is.
+    // pipeline, which re-attaches its passes by APPENDING. So its slot is
+    // claimed here, while it is the last pass in the chain: detaching nulls its
+    // entry, and re-attaching appends it again and hands back the index, which
+    // is the one public way to learn it. The null left behind is skipped by
+    // the chain. (It is the last of Babylon's passes after the ink since
+    // X5.2c2: the shafts and the blur are stages of our post chain.)
     pipeline.fxaaEnabled = true;
     this.fxaa = pipeline.fxaa;
     this.cameraSys.camera.detachPostProcess(this.fxaa);
@@ -2240,51 +2235,35 @@ export class Game {
     }
     // The light shafts: volumetric moonlight marched through the shadow
     // volume, after FXAA and before the blur — they belong to the same instant
-    // as the geometry, so they have to smear and be graded with it.
-    //
-    // **The SLOT is claimed here by attaching and immediately detaching**, and
-    // that is the whole reason `Game` does this rather than the pass: Babylon's
-    // `attachPostProcess` APPENDS, so only this point in the assembly knows
-    // where the shafts go, and `detachPostProcess` NULLS the entry rather than
-    // removing it — so the hole survives for `syncVolumetrics` to refill, on
-    // the first frame the depth image exists and on every later frame the
-    // player turns them back on. The blur appends after the hole (and the
-    // grade is no Babylon pass since X5.2c1: our post chain's, after the whole
-    // list), so the order is exact whatever the setting does.
+    // as the geometry, so they have to smear and be graded with it. The CPU
+    // half is built for the boot's rung (none while the player has them off),
+    // and the chain holds a STAGE for every rung (`volumetricStages`), each
+    // drawn while the pass `syncVolumetrics` latched ready is at its rung.
     const bootRung = this.overrides.volumetrics(this.settings.volumetrics);
-    const first = new Volumetrics(
-      this.scene,
-      this.cameraSys.camera,
-      this.frameDepth,
-      bootRung ?? FIRST_VOLUMETRIC_RUNG,
-    );
-    this.volumetricsSlot = this.cameraSys.camera.attachPostProcess(first.pass);
-    this.cameraSys.camera.detachPostProcess(first.pass);
     if (bootRung) {
+      const first = new Volumetrics(this.cameraSys.camera, this.frameDepth, bootRung);
       this.volumetrics = first;
       this.volumetricsRung = bootRung;
       this.seedVolumetrics(first, this.mapDef.environment);
-    } else {
-      first.dispose();
     }
     // Then the look smears, with the shafts already in the frame — they belong
     // to the same instant as the geometry, so they have to blur with it.
-    this.motionBlur = new MotionBlur(
-      this.scene,
-      this.cameraSys.camera,
-      this.frameDepth,
-    );
+    this.motionBlur = new MotionBlur(this.cameraSys.camera, this.frameDepth);
     // Vignette/grain/aberration go last, over the finished frame. Grain in
     // particular has to land AFTER the blur: smeared grain reads as smudge.
-    // The grade is OUR draw (X5.2c1): the last stage of the post chain's
-    // host, after Babylon's prefix (ink, FXAA, the shafts, the blur), whose
-    // passes `PostPasses` opens — built after the glow and the frame depth,
-    // whose draw-phase observers must run before it points the prefix at
-    // its output. The order is the host's list, not an append: nothing of
-    // Babylon's follows the blur any more, so no pass is taken off and put
-    // back to keep a tail.
+    // The shafts, the blur (X5.2c2) and the grade (X5.2c1) are OUR draws: the
+    // post chain's host, its stages in THIS order, after Babylon's prefix
+    // (the ink, FXAA), whose passes `PostPasses` opens — built after the glow
+    // and the frame depth, whose draw-phase observers must run before it
+    // points the prefix at its output. The order is the host's list, not an
+    // append, and a setting turns a stage off rather than taking a pass off a
+    // camera, so there is no slot to hold.
     this.post = new PaperGrain(this.cameraSys.camera, this.frameDepth);
-    this.postChain = new PostChain(this.renderer, [this.post.stage]);
+    this.postChain = new PostChain(this.renderer, [
+      ...volumetricStages(this.frameDepth, () => (this.volumetricsAttached ? this.volumetrics : null)),
+      this.motionBlur.stage,
+      this.post.stage,
+    ]);
     this.postPasses = new PostPasses(
       this.scene,
       this.cameraSys.camera,
@@ -3897,35 +3876,32 @@ export class Game {
   }
 
   /**
-   * Builds, rebuilds or removes the shaft pass for a quality setting.
+   * Builds, rebuilds or removes the shafts' CPU half for a quality setting.
    *
    * **A rung change is a REBUILD and not a uniform**: the tap count is a WGSL
-   * `const` interpolated per rung, so each is its own compiled shader. That is
-   * why this guards on `volumetricsRung` — `applySettings` runs on every change
-   * to every setting, and recompiling a shader because somebody toggled the FPS
-   * counter would be a hitch with no cause anyone could see.
+   * `const` interpolated per rung, so each is its own compiled shader and its
+   * own stage of the post chain — every one declared when the chain was built,
+   * so a change in play compiles nothing. The guard on `volumetricsRung`
+   * keeps `applySettings`, which runs on every change to every setting, from
+   * rebuilding the pass because somebody toggled the FPS counter.
    *
    * The new pass is SEEDED before it goes anywhere. Everything it reads — the
    * moon's colour, the map's air, the shadow window — is already standing, and
    * a pass that waited for the next `applySky` would show the config's air over
    * this map until the next round started.
    *
-   * It does not attach: `syncVolumetrics` does that on the first frame the
-   * depth image exists, which is also the frame after this on a live rebuild.
+   * It does not turn the stage on: `syncVolumetrics` latches it on the first
+   * frame every input exists, which is also the frame after this on a live
+   * rebuild.
    */
   private setVolumetrics(q: VolumetricQuality): void {
     const want = this.overrides.volumetrics(q);
     if (want === this.volumetricsRung) return;
-    const camera = this.cameraSys.camera;
-    if (this.volumetrics) {
-      camera.detachPostProcess(this.volumetrics.pass);
-      this.volumetrics.dispose();
-      this.volumetrics = null;
-      this.volumetricsAttached = false;
-    }
+    this.volumetrics = null;
+    this.volumetricsAttached = false;
     this.volumetricsRung = want;
     if (!want) return;
-    const vol = new Volumetrics(this.scene, camera, this.frameDepth, want);
+    const vol = new Volumetrics(this.cameraSys.camera, this.frameDepth, want);
     this.seedVolumetrics(vol, this.mapDef.environment);
     this.volumetrics = vol;
   }
@@ -4040,10 +4016,12 @@ export class Game {
   }
 
   /**
-   * The shafts' frame: the three shadow maps they march through, pushed, and
-   * the pass attached on the first frame its depth image exists (or taken off
-   * if it stops existing). Once a frame, from `tick`, after every state has
-   * had its go at the camera and before the render the shafts are drawn into.
+   * The shafts' frame: the three shadow maps they march through, pushed —
+   * each as Babylon holds it and, while it is our renderer's, as ours, which
+   * the stage binds (`own ?? hostTexture`) — and the stage latched on on the
+   * first frame every input exists, its depth image the last (or off if one
+   * stops existing). Once a frame, from `tick`, after every state has had its
+   * go at the camera and before the render the shafts are drawn in.
    */
   private syncVolumetrics(): void {
     const vol = this.volumetrics;
@@ -4054,12 +4032,12 @@ export class Game {
     // in place, and leaning on it is leaning on an implementation detail of
     // Babylon's.
     const map = this.shadows.depthMap;
-    if (map) vol.setShadow(map, this.shadows.lightMatrix);
+    if (map) vol.setShadow(map, this.shadows.lightMatrix, this.shadows.ownDepthMap);
     // And the bodies', which is what lets a soldier standing in a beam cut it.
     // Re-read for the same reason the line above is: both generators mutate
     // their matrix in place.
     const bodyMap = this.bodyShadows.depthMap;
-    if (bodyMap) vol.setBodyShadow(bodyMap, this.bodyShadows.lightMatrix);
+    if (bodyMap) vol.setBodyShadow(bodyMap, this.bodyShadows.lightMatrix, this.bodyShadows.ownDepthMap);
     // And the clouds', so a beam stops where the ground under it goes into a
     // cloud's shadow.
     vol.setCloudShadow(
@@ -4067,15 +4045,7 @@ export class Game {
       this.sky.cloudShadowArea,
       this.sky.cloudShadowRay,
     );
-    const on = vol.ready;
-    if (on === this.volumetricsAttached) return;
-    const camera = this.cameraSys.camera;
-    if (on) {
-      camera.attachPostProcess(vol.pass, this.volumetricsSlot);
-    } else {
-      camera.detachPostProcess(vol.pass);
-    }
-    this.volumetricsAttached = on;
+    this.volumetricsAttached = vol.ready;
   }
 
   /**
@@ -4085,14 +4055,13 @@ export class Game {
    * a phone's: on a high-density panel the backing store already holds two or
    * more device pixels per CSS pixel, so a stair is far less visible, and it is
    * a whole-frame read and write on a GPU whose frame is fill rather than draw
-   * calls (`FINDINGS.md` 5). The shader (Babylon's text, `shaders/Fxaa.ts`) also
-   * moves its early exit to the end on a Mali driver, so there every pixel pays the full edge search.
+   * calls (`FINDINGS.md` 5). The shader is Babylon's text (`shaders/Fxaa.ts`),
+   * whose Mali arm (the early exit moved to the end) never runs under WebGPU:
+   * the driver info Babylon tests for it is the empty string on every device.
    *
-   * Detached and re-attached at `fxaaSlot`, the shafts' trick
-   * (`syncVolumetrics`): `detachPostProcess` NULLS the entry rather than
-   * removing it, and `attachPostProcess` with an index refills a null, so the
-   * order behind it is untouched either way. Nothing throws if this is wrong;
-   * the symptom is FXAA softening the grain.
+   * Detached and re-attached at `fxaaSlot`: `detachPostProcess` NULLS the
+   * entry rather than removing it, and `attachPostProcess` with an index
+   * refills a null, so the order is untouched either way.
    */
   private setFxaaEnabled(on: boolean): void {
     if (on === this.fxaaAttached) return;
@@ -4103,25 +4072,14 @@ export class Game {
   }
 
   /**
-   * Adds or removes the motion blur pass, keeping the chain's order.
-   *
-   * The order is load-bearing and documented on both passes: the shafts, then
-   * the blur, then the grade — the shafts belong to the frame they smear with, and
-   * grain over a smear reads as a dirty lens. Babylon's `attachPostProcess`
-   * APPENDS, and since X5.2c1 that is the right place: the blur is the LAST
-   * of Babylon's passes, the grade being a stage of OUR post chain drawn after
-   * Babylon's whole list (`PostPasses`), so nothing is taken off and put back
-   * around it any more (the dance this used to do with the grade). The null
-   * the detach leaves is skipped by the chain, as the shafts' hole is.
-   *
-   * Nothing throws if this is wrong. The symptom is smeared grain.
+   * Turns the motion blur on or off: its stage's `active()`, so off is a
+   * pass the post chain does not open. The ORDER is the chain's list, which
+   * this file assembled (the shafts, then the blur, then the grade — the
+   * shafts belong to the frame they smear with, and grain over a smear reads
+   * as a dirty lens), and nothing here moves it (`BABYLON_EXIT.md` X5.2c2:
+   * the blur is no Babylon pass to take off a camera and put back).
    */
   private setMotionBlurEnabled(on: boolean): void {
-    if (on === this.motionBlur.isEnabled) return;
-    const camera = this.cameraSys.camera;
-    const pass = this.motionBlur.pass;
-    if (on) camera.attachPostProcess(pass);
-    else camera.detachPostProcess(pass);
     this.motionBlur.setEnabled(on);
   }
 
@@ -4129,14 +4087,13 @@ export class Game {
    * The LAST live pass of Babylon's prefix of the post chain this frame — the
    * one whose target is our first stage's input while a stage of ours is
    * active (`PostPasses`, which hangs Babylon's clear of that target on its
-   * `apply`). Read off the order this file assembled: the ink, FXAA, the
-   * shafts, the blur, each while it is on the camera. A wrong answer would
-   * have the grade read a clear colour; a DEV build throws on it instead (a
-   * ready tail that never applied, `PostPasses.closeWindow`).
+   * `apply`). Read off the order this file assembled: the ink, then FXAA
+   * while it is on the camera — the shafts and the blur are stages of OUR
+   * chain since X5.2c2. A wrong answer would have our first stage read a
+   * clear colour; a DEV build throws on it instead (a ready tail that never
+   * applied, `PostPasses.closeWindow`).
    */
   private postPrefixTail(): PostProcess {
-    if (this.motionBlur.isEnabled) return this.motionBlur.pass;
-    if (this.volumetricsAttached && this.volumetrics) return this.volumetrics.pass;
     if (this.fxaaAttached) return this.fxaa;
     return this.celInk.pass;
   }

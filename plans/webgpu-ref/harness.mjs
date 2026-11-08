@@ -1170,10 +1170,11 @@ export function placeVantage(page, vantage) {
  * pass can draw (`ready`, asked by `waitUntilDrawn` beside `scene.isReady()`).
  * **OURS is picked first since X5.2c1** (`g.postChain`: the grade is a stage
  * of our post chain, its pipelines' readiness `PostChain.drawsReady`, its CPU
- * half still `g.post`), BABYLON's arm at a parent before it; a later step
- * that moves the shafts or the blur widens ours with the same members —
- * each part an object whose `update` the freeze replaces and the thaw puts
- * back on that SAME object — so the freeze reads the same whoever draws.
+ * half still `g.post`), BABYLON's arm at a parent before it; since X5.2c2
+ * the shafts and the blur are stages of the same chain, reached with the same
+ * members — each part an object whose `update` the freeze replaces and the
+ * thaw puts back on that SAME object — so the freeze reads the same whoever
+ * draws.
  * **A part is read FRESH at every call and may be a different object at the
  * next**: the shafts are rebuilt on every rung change and on every off to on
  * (`Game.setVolumetrics`), so nothing here or in its callers may hold one
@@ -1195,11 +1196,14 @@ function postAdapter() {
     // (`g.postChain`, `render/PostChain.ts`), its CPU half still `g.post`
     // (`PaperGrain`: the same `update`, `flashDamage` and `damage`), and the
     // chain's readiness is OUR pipelines', which `scene.isReady()` no longer
-    // covers (`ready`, asked by `waitUntilDrawn`). The shafts and the blur
-    // are still Babylon's passes, reached as Babylon's arm reaches them.
+    // covers (`ready`, asked by `waitUntilDrawn`). Since X5.2c2 the shafts
+    // and the blur are stages of the same chain, their CPU halves the same
+    // objects as before (`g.volumetrics`, rebuilt on a rung change, and
+    // `g.motionBlur`), with the same `update`s, so ours reaches them as
+    // Babylon's arm did; `ready` covers their pipelines with the grade's.
     if (g.postChain) {
       return {
-        arm: "ours:grain",
+        arm: `ours:${[...new Set(g.postChain.stages.map((st) => st.name))].join(",")}`,
         grade: g.post,
         shafts: g.volumetrics ?? null,
         blur: g.motionBlur,

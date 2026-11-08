@@ -97,6 +97,7 @@ import { createDisc } from "../geometry/primitives";
 import { Vector3 as MathVector3 } from "../math";
 import { hostTexture } from "../render/babylonSeam";
 import type { HostTexture } from "../render/frameHost";
+import type { OwnTexture } from "../render/HostBindGroup";
 import {
   depthBias,
   lightTransformToRef,
@@ -279,6 +280,16 @@ export class ShadowSystem {
    */
   get depthMap(): BaseTexture {
     return this.mapTexture(this.maps.far);
+  }
+
+  /**
+   * The same map as OUR renderer holds it while it is ours
+   * (`render/WorldShadows.ts`), or null while it is a generator's or off —
+   * what the shafts bind in place of Babylon's wrapped view, as
+   * `ShadowBindings` hands our frame (`BABYLON_EXIT.md` X5.2c2).
+   */
+  get ownDepthMap(): OwnTexture | null {
+    return this.ours && this.maps.far.wrapped ? this.world.own("far") : null;
   }
 
   /**

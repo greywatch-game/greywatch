@@ -2651,6 +2651,19 @@ src/
                         #   constants where they were; the bindings, the
                         #   lattice constants and the 496-byte block's layout.
                         #   Babylon-free: PaperGrain.stage declares them
+      motionBlur.ts     # The BLUR's two modules AS COMPILED (X5.2c2): the
+                        #   postprocess vertex stage with the blur's LeftOver
+                        #   and the smear's fragment, the parent's device text
+                        #   character for character (SAMPLES off CONFIG); the
+                        #   bindings and the 112-byte block (the mat3x3f as
+                        #   three vec4 columns). Babylon-free: MotionBlur.stage
+      volumetrics.ts    # The SHAFTS' modules AS COMPILED (X5.2c2): one
+                        #   vertex text for every rung and the march's fragment
+                        #   a rung (celCloud expanded; the rung, SAMPLES and
+                        #   EDGE_FADE off CONFIG), the parent's device text
+                        #   character for character; VolumetricRung, the
+                        #   bindings and the 320-byte block. Babylon-free:
+                        #   volumetricStages declares them
     FlameShader.ts      # THE FIRE: every open flame's one material. Tongues
                         #   that boil on twos in hard bands, embers on the
                         #   smooth clock, and the glow-mask TWIN that runs the
@@ -2667,7 +2680,11 @@ src/
                         #   ink draws between billows
     Volumetrics.ts      # Light shafts: raymarched through the shadow volume,
                         #   capped at the light's colour and SCREENED onto the
-                        #   frame so a thick map's glare stays gold. WGSL
+                        #   frame so a thick map's glare stays gold. The CPU
+                        #   half (rung, basis, maps as Babylon and our renderer
+                        #   hold them, air) and volumetricStages, one post chain
+                        #   stage a RUNG, all declared (X5.2c2; modules
+                        #   wgsl/volumetrics.ts)
     CloudShader.ts      # What the cloud masses are drawn WITH, as plain data
                         #   since X4.5b (CloudLook, CloudPaint): the map's look,
                         #   and the world, eye, depth line and flash Sky writes
@@ -2677,7 +2694,9 @@ src/
                         #   angles. The viewmodel is held out of it by DEPTH —
                         #   masked shift AND weighted taps — because a gun
                         #   hung from the camera never moves in screen space.
-                        #   WGSL
+                        #   The CPU half (the previous basis, strength, cap)
+                        #   and `stage`, the post chain's stage our renderer
+                        #   draws it as since X5.2c2 (wgsl/motionBlur.ts)
     PaperGrain.ts       # The GRADE's CPU half — vignette / aberration /
                         #   damage flash, and a PAPER grain pinned to the world
                         #   through the frame's depth: octaves fixed in world
@@ -2694,7 +2713,10 @@ src/
                         #   last apply, or alone if that pass drew nothing —
                         #   a DEV throw if it was ready, a tail named wrongly),
                         #   then opens the canvas (restoreDefaultFramebuffer)
-                        #   and any pool pass for our stages; public API only
+                        #   and the pool passes for our stages, one target a
+                        #   pass position, bound and cleared as activate bound
+                        #   and cleared a reader's input (X5.2c2); public API
+                        #   only
   render/               # OUR renderer (BABYLON_EXIT.md Phase 3). Never imports
                         #   Babylon — the build gate walks every file in it
     babylonSeam.ts      # THE SEAM: BabylonFrameHost, the one place anything
@@ -2976,8 +2998,9 @@ src/
     PostChain.ts        # THE POST CHAIN'S HOST (X5.2c1): an ordered list of
                         #   DECLARED stages (PostStage: program as compiled,
                         #   block and fill, extra bindings, the input's sampler,
-                        #   active(), point-wise or neighbourhood) — the grade
-                        #   alone so far — routed a pass per active stage in
+                        #   active(), point-wise or neighbourhood) — the
+                        #   shafts (a stage a rung), the blur and the grade
+                        #   since X5.2c2 — routed a pass per active stage in
                         #   list order, the last given the canvas
                         #   (canvasTargets) and any other a pool target
                         #   (POST_TARGETS), opened by a PostPassOwner

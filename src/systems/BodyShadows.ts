@@ -104,6 +104,7 @@ import {
 import { wrapShadowTexture } from "../core/wrappedTextures";
 import type { ShadowQuality } from "../core/settings";
 import type { BodyShadowMap } from "../render/BodyShadowMap";
+import type { OwnTexture } from "../render/HostBindGroup";
 import { RAGDOLL_BONES } from "../entities/soldierBones";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 
@@ -162,6 +163,11 @@ export class BodyShadows {
   /** The bodies' depth map, for `ShadowBindings` and `Volumetrics`: our texture's wrapped view, or the lit 1x1. */
   get depthMap(): BaseTexture {
     return this.wrapped ?? litShadowTexture(this.scene);
+  }
+
+  /** The same map as OUR renderer holds it (`render/BodyShadowMap.ts`), or null on a rung with none — the shafts' binding, as `ShadowSystem.ownDepthMap`'s. */
+  get ownDepthMap(): OwnTexture | null {
+    return this.wrapped ? this.map.own : null;
   }
 
   /**

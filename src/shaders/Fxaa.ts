@@ -37,9 +37,11 @@ import { CONFIG } from "../config";
  * The text below is Babylon's, line for line, but for those three constants.
  * The edge search — the half of FXAA that actually removes a stair — is
  * untouched; what moves is how much of the low-pass a pixel takes on top of
- * it. The `MALI` arm is kept exactly as Babylon has it, because the define is
- * Babylon's to set (`ThinFXAAPostProcess._GetDefines`) and the reason it
- * exists is a driver's.
+ * it. The `MALI` arm is kept exactly as Babylon has it, but it is DEAD under
+ * this engine: Babylon sets the define (`ThinFXAAPostProcess._GetDefines`)
+ * when `engine.extractDriverInfo()` names "mali", and under WebGPU that is the
+ * empty string on every device (`BABYLON_EXIT.md` X5.2a measured it), so the
+ * early exit stays at the top on every phone, Mali or not.
  */
 const F = CONFIG.graphics.fxaa;
 const f = (x: number): string => x.toFixed(4);

@@ -1,34 +1,43 @@
 /**
  * MotionBlur.ts — Camera-rotation motion blur: reprojects every pixel through
- * the frame's change in look direction and smears along the difference. Owns
- * the pass and the previous frame's camera basis; owns no scene state.
+ * the frame's change in look direction and smears along the difference. The
+ * smear's CPU HALF and the post chain's stage it is drawn as.
+ * Owns: `MotionBlur` — the previous frame's camera basis (the blur's HISTORY,
+ * on the CPU, not a texture), this frame's reprojection, strength and cap,
+ * the player's switch, and `stage`, the `PostStage` our renderer draws it as
+ * (`render/PostChain.ts`, `BABYLON_EXIT.md` X5.2c2: the program as Babylon
+ * compiled it, `wgsl/motionBlur.ts`; its 112-byte block; the frame's depth as
+ * its one extra binding; its input read NEAREST, clamped, as Babylon bound
+ * it). Owns no scene state.
  * Invariants: runs AFTER Volumetrics and BEFORE PaperGrain, so the shafts smear
  * with the frame they belong to while the grain and vignette stay sharp on top
- * of it. Driven from the player's AIM angles, never from the rendered camera
+ * of it — the HOST's list order, which `Game` assembles, not anything here.
+ * Driven from the player's AIM angles, never from the rendered camera
  * matrix — the view punch's per-shot jitter would otherwise turn every shot
  * into a random full-screen smear. Game must call reset() whenever the camera
  * is teleported, or the jump reads as one blurred frame. Turning it off is a
- * DETACH (`pass` + `setEnabled`, sequenced by Game.setMotionBlurEnabled), not a
- * zeroed strength: the shader's early-out is still a full-screen copy.
+ * stage the host does not draw (`setEnabled` is its `active()`), not a zeroed
+ * strength: the shader's early-out is still a full-screen copy.
  * It SAMPLES the frame's depth (`FrameDepth`, shared with `CelInk`) for one
  * question only: is this pixel the WEAPON, which is the one thing on screen
- * this pass must not touch. That image belongs to the FIRST pass in the
- * camera's chain, so this one has to stay downstream of it.
- * Its shader is hand-written WGSL, and `shaderLanguage` on the PostProcess is
- * load-bearing rather than declarative: the constructor defaults to GLSL and
- * would look this pass up in a store nothing writes any more. See
- * `docs/rendering.md` for what the dialect and Babylon's WGSL processor decide.
+ * this pass must not touch. That image belongs to the pass the scene draws
+ * into, so this one has to stay downstream of it.
+ * Never: draws, binds or owns a GPU resource (the host does).
+ * Contract: `docs/rendering.md`.
  */
-import {
-  Camera,
-  PostProcess,
-  Scene,
-  ShaderLanguage,
-  ShaderStore,
-  Vector3,
-} from "@babylonjs/core";
+import type { Camera } from "@babylonjs/core";
+import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import { FrameDepth } from "./FrameDepth";
+import { hostTexture } from "../render/babylonSeam";
+import type { PostStage } from "../render/PostChain";
+import type { FrameDepth } from "./FrameDepth";
+import {
+  MOTION_BLUR_BLOCK as B,
+  MOTION_BLUR_FRAGMENT,
+  MOTION_BLUR_FRAGMENT_BINDINGS,
+  MOTION_BLUR_VERTEX,
+  MOTION_BLUR_VERTEX_BINDINGS,
+} from "./wgsl/motionBlur";
 
 /**
  * Motion blur for the look, and only for the look.
@@ -83,128 +92,27 @@ import { FrameDepth } from "./FrameDepth";
  * nothing to gather, so the weapon — a large, always-present part of the frame
  * — skips the sample loop outright, and so does the sharp core.
  */
-ShaderStore.ShadersStoreWGSL["motionBlurFragmentShader"] = `
-varying vUV: vec2f;
-var textureSamplerSampler: sampler;
-var textureSampler: texture_2d<f32>;
 
-// The frame's own depth, out of the shared FrameDepth — the same image the ink
-// draws its edges off, and read here for one question: is this pixel the
-// weapon? Declared as a depth texture so Babylon's WGSL processor gives the
-// binding sampleType "depth", which is what lets every read be a textureLoad
-// and this pass declare no sampler for it.
-var depthTexture: texture_depth_2d;
-
-uniform reproject: mat3x3f;   // current camera space -> previous camera space
-uniform tanHalfFov: vec2f;    // half-extents of the near plane, at z = 1
-uniform strength: f32;        // 0 = pass through
-uniform maxShift: f32;
-uniform mask: vec2f;          // radial falloff: x = inner (sharp), y = outer (full)
-uniform nearFar: vec2f;       // the camera's clip planes, for the linearise
-uniform nearBand: vec2f;      // x = metres held sharp (the weapon), y = full smear
-
-// See Volumetrics for why this is a const and not the #define it was.
-const SAMPLES: i32 = ${CONFIG.graphics.motionBlur.samples};
-
-fn hash(p: vec2f) -> f32 {
-  return fract(sin(dot(p, vec2f(127.1, 311.7))) * 43758.5453123);
-}
-
-// Buffer depth -> metres. The same inverse CelInk takes and for the same
-// reasons: Babylon is left-handed, WebGPU's NDC z is [0, 1], and nothing in the
-// tree turns on a reverse depth buffer.
-fn linearise(d: f32, nf: vec2f) -> f32 {
-  return (nf.x * nf.y) / (nf.y - d * (nf.y - nf.x));
-}
-
-// HOW MUCH OF THE SMEAR A PIXEL IS ENTITLED TO — 0 on the viewmodel, 1 on the
-// world, and a band between them where the two could be confused. The sky loads
-// the far plane and reads 1, which is what it wants.
-fn worldness(uv: vec2f, dims: vec2f, nf: vec2f, band: vec2f) -> f32 {
-  let p = clamp(vec2i(uv * dims), vec2i(0), vec2i(dims) - vec2i(1));
-  return smoothstep(band.x, band.y, linearise(textureLoad(depthTexture, p, 0), nf));
-}
-
-@fragment
-fn main(input: FragmentInputs) -> FragmentOutputs {
-  let scene = textureSampleLevel(textureSampler, textureSamplerSampler, input.vUV, 0.0).rgb;
-  if (uniforms.strength <= 0.0) {
-    fragmentOutputs.color = vec4f(scene, 1.0);
-    return fragmentOutputs;
-  }
-
-  // The ray through this pixel, in camera space. Babylon is left-handed, so
-  // the camera looks down +Z and the ray needs no sign flip.
-  let ndc = input.vUV * 2.0 - 1.0;
-  let ray = vec3f(ndc * uniforms.tanHalfFov, 1.0);
-  let prev = uniforms.reproject * ray;
-
-  // Behind the previous camera. Only reachable past a quarter-turn in one
-  // frame, and the divide below would fold it back into frame mirrored rather
-  // than off the edge — so leave the pixel sharp instead.
-  if (prev.z <= 0.0001) {
-    fragmentOutputs.color = vec4f(scene, 1.0);
-    return fragmentOutputs;
-  }
-
-  let prevUV = (prev.xy / (prev.z * uniforms.tanHalfFov)) * 0.5 + 0.5;
-  var shift = (prevUV - input.vUV) * uniforms.strength;
-
-  // A dropped frame arrives as one enormous rotation, and without this cap it
-  // smears the whole screen into paste. Clamping is the honest failure: the
-  // blur saturates instead of exploding.
-  let len = length(shift);
-  if (len > uniforms.maxShift) { shift *= uniforms.maxShift / len; }
-
-  // THE WEAPON, NAMED BY DEPTH. It is parented to the camera, so it is
-  // motionless in screen space while the world behind it sweeps, and it is the
-  // one thing in the frame the reprojection above is wrong about. The class
-  // comment has why this is a depth band and not the radial mask it replaced.
-  let dims = vec2f(textureDimensions(depthTexture, 0));
-  let here = worldness(input.vUV, dims, uniforms.nearFar, uniforms.nearBand);
-  shift *= here;
-
-  // The radial falloff, which is now about the EYE alone: it tracks where the
-  // eye is pointed, so that is where a smear is read AS a smear rather than
-  // felt as speed. Same radial language as PaperGrain's aberration, and
-  // deliberately gentler than it was — it used to carry the weapon as well.
-  let r = length(input.vUV - 0.5) * 2.0;
-  shift *= smoothstep(uniforms.mask.x, uniforms.mask.y, r);
-
-  // Nothing left to gather: under half a texel of travel every tap lands back
-  // in this pixel. The weapon is the big winner — its shift is exactly zero —
-  // and so is the sharp core, which is what makes this a saving.
-  if (length(shift * dims) < 0.5) {
-    fragmentOutputs.color = vec4f(scene, 1.0);
-    return fragmentOutputs;
-  }
-
-  // Taps walk back toward where the pixel came from — a trailing smear, which
-  // is what a shutter integrates, rather than a centred one that would lead
-  // the motion. The jitter breaks the even spacing into noise: at these
-  // sample counts a long smear otherwise arrives as distinct ghosts.
-  //
-  // EVERY TAP CARRIES THE SAME BAND, which is the half a mask on the shift
-  // cannot do: a world pixel beside the gun gathers backwards, lands on the
-  // gun and drags its colour out across the scene. Normalising by the weight
-  // actually kept is what leaves the smear gathering from the WORLD only.
-  let jitter = hash(input.vUV) - 0.5;
-  var accum = scene;
-  var total = 1.0;
-  for (var i: i32 = 1; i < SAMPLES; i++) {
-    let uv = clamp(input.vUV + shift * ((f32(i) + jitter) / f32(SAMPLES - 1)), vec2f(0.0), vec2f(1.0));
-    let w = worldness(uv, dims, uniforms.nearFar, uniforms.nearBand);
-    accum += textureSampleLevel(textureSampler, textureSamplerSampler, uv, 0.0).rgb * w;
-    total += w;
-  }
-
-  fragmentOutputs.color = vec4f(accum / total, 1.0);
-}
-`;
+/**
+ * The sampler Babylon bound the blur's input with (its post-process's
+ * `renderTargetSamplingMode`, NEAREST, on a texture with no mips; read off the
+ * parent's device by `plans/webgpu-ref/post.mjs`).
+ */
+const INPUT_SAMPLER: GPUSamplerDescriptor = {
+  addressModeU: "clamp-to-edge",
+  addressModeV: "clamp-to-edge",
+  addressModeW: "repeat",
+  magFilter: "nearest",
+  minFilter: "nearest",
+  mipmapFilter: "nearest",
+  lodMinClamp: 0,
+  lodMaxClamp: 0,
+  maxAnisotropy: 1,
+};
 
 export class MotionBlur {
-  private post: PostProcess;
-  private readonly camera: Camera;
+  /** The stage the post chain draws the smear as. */
+  readonly stage: PostStage;
 
   /** The previous frame's camera basis, in world space. */
   private readonly prevRight = new Vector3(1, 0, 0);
@@ -216,24 +124,23 @@ export class MotionBlur {
   private readonly fwd = new Vector3(0, 0, 1);
 
   /**
-   * Column-major, which is what both shader languages want and what
-   * `setMatrix3x3` promises: `[1..9]` arrives as the columns `(1,2,3)`,
-   * `(4,5,6)`, `(7,8,9)`. Identity until the first update.
+   * Column-major, which is what WGSL wants: `[1..9]` arrives as the columns
+   * `(1,2,3)`, `(4,5,6)`, `(7,8,9)`. Identity until the first update.
    *
    * **A WGSL `mat3x3f` is three vec4-ALIGNED columns and these nine floats are
-   * not**, so the upload is a repack into 16-byte slots rather than a copy —
-   * Babylon's `UniformBuffer` does it, and getting it wrong would be a
-   * scrambled matrix with no diagnostic anywhere. It is also the one thing
-   * about this pass the reference bank cannot check, because a frozen frame is
-   * a STILL camera, a still camera is `strength = 0`, and that is the early-out
-   * two lines into the shader. Measured instead, twice: a debug WGSL pass
-   * handed `[1..9]` and asked to paint its three columns read them back in that
-   * order, and this shader run beside its GLSL original over one frozen frame
-   * with a forced six-degree yaw came back byte-identical.
+   * not**, so the block is written as a repack into 16-byte slots rather than
+   * a copy (`fill`) — what Babylon's `UniformBuffer` did for `setMatrix3x3`,
+   * and getting it wrong would be a scrambled matrix with no diagnostic
+   * anywhere. It is also the one thing about this pass the reference bank
+   * cannot check, because a frozen frame is a STILL camera, a still camera is
+   * `strength = 0`, and that is the early-out two lines into the shader —
+   * which is why the bank's `post-*` rows and `plans/webgpu-ref/post.mjs`'s
+   * `blur` scenario turn the aim first, and why the probe compares the
+   * block's bytes.
    */
   private readonly reproject = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
   /** Vertical half-extent of the near plane at z = 1; the pair is built at
-   * apply time, when the pass knows the size it is actually running at. */
+   * fill time, when the pass knows the size it is actually running at. */
   private tanY = 1;
   private strength = 0;
   /** `maxShift` for the frame being drawn — the config's rate times its length. */
@@ -244,66 +151,78 @@ export class MotionBlur {
    */
   private primed = false;
   /**
-   * The player's setting. False DETACHES the pass rather than zeroing its
-   * strength: the shader's early-out makes it a straight copy, which is still
-   * a full-screen read and write, and a graphics setting that costs nothing to
-   * turn off is not a graphics setting. `Game` owns the detach, because the
-   * chain's order is Game's to know; this flag is what the pass itself reads.
+   * The player's setting, and the stage's `active()`. False is a pass the
+   * host does not open rather than a zeroed strength: the shader's early-out
+   * makes it a straight copy, which is still a full-screen read and write,
+   * and a graphics setting that costs nothing to turn off is not a graphics
+   * setting.
    */
   private enabled = true;
 
   constructor(
-    scene: Scene,
-    camera: Camera,
+    private readonly camera: Camera,
     /**
      * The frame's own depth image, shared with the ink. It is what names the
      * viewmodel — see the class comment — and it is the reason this pass has
      * to stay downstream of whichever pass the scene draws into.
      */
-    private readonly depth: FrameDepth,
+    depth: FrameDepth,
   ) {
-    const c = CONFIG.graphics.motionBlur;
-    this.camera = camera;
-    this.post = new PostProcess("motionBlur", "motionBlur", {
-      uniforms: [
-        "reproject",
-        "tanHalfFov",
-        "strength",
-        "maxShift",
-        "mask",
-        "nearFar",
-        "nearBand",
-      ],
-      samplers: ["depthTexture"],
-      size: 1.0,
-      camera,
-      engine: scene.getEngine(),
-      shaderLanguage: ShaderLanguage.WGSL,
-    });
-    this.post.onApply = (effect) => {
-      effect.setMatrix3x3("reproject", this.reproject);
-      // The aspect comes from the pass's own target rather than a cached
-      // engine size, so a resized window is right on the frame it happens.
-      effect.setFloat2(
-        "tanHalfFov",
-        (this.tanY * this.post.width) / Math.max(1, this.post.height),
-        this.tanY,
-      );
-      effect.setFloat("strength", this.strength);
-      effect.setFloat("maxShift", this.maxShift);
-      effect.setFloat2("mask", c.maskInner, c.maskOuter);
-      // The clip planes are the camera's own and move with the ADS zoom's
-      // fov not at all, but `minZ` is written once by CameraSystem and read
-      // here rather than copied, for the reason CelInk reads it the same way.
-      effect.setFloat2("nearFar", this.camera.minZ, this.camera.maxZ);
-      effect.setFloat2("nearBand", c.nearSharp, c.nearFull);
-      // A DECLARED sampler must be BOUND or the bind group fails to build and
-      // the draw is silently lost. It cannot be null by the time this runs —
-      // the capture is on the draw phase of the same `scene.render()` — but
-      // nothing here rests on that.
-      const depth = this.depth.texture;
-      if (depth) effect.setTexture("depthTexture", depth);
+    this.stage = {
+      name: "blur",
+      label: "motionBlur",
+      vertex: MOTION_BLUR_VERTEX,
+      vertexBindings: MOTION_BLUR_VERTEX_BINDINGS,
+      fragment: MOTION_BLUR_FRAGMENT,
+      fragmentBindings: MOTION_BLUR_FRAGMENT_BINDINGS,
+      // The taps walk back along the smear.
+      reads: "neighbourhood",
+      inputBinding: 0,
+      inputSamplerBinding: 2,
+      internalsBinding: 3,
+      blockBinding: 4,
+      inputSampler: INPUT_SAMPLER,
+      blockFloats: B.floats,
+      // The frame's depth, read by `textureLoad` (no sampler). Null before
+      // the first draw phase has captured it, and the stage then draws
+      // nothing — it cannot be by the time the host draws, the capture being
+      // on the draw phase of the same `scene.render()`.
+      extras: [{ binding: 1, texture: () => (depth.texture ? hostTexture(depth.texture as never) : null) }],
+      active: () => this.enabled,
+      fill: (block, width, height) => this.fill(block, width, height),
     };
+  }
+
+  /**
+   * This frame's block, as Babylon's `onApply` set it: the vertex stage's
+   * `scale` (1, 1), the reprojection repacked into three vec4 columns, the
+   * FOV with the aspect off the input's own size (so a resized window is
+   * right on the frame it happens), the strength and its cap, the radial
+   * mask, the camera's clip planes — `minZ` written once by CameraSystem and
+   * read here rather than copied, for the reason CelInk reads it the same
+   * way — and the weapon's depth band. Every float is written; the pads stay
+   * zero.
+   */
+  private fill(b: Float32Array, width: number, height: number): void {
+    const c = CONFIG.graphics.motionBlur;
+    b[B.scale] = 1;
+    b[B.scale + 1] = 1;
+    const m = this.reproject;
+    for (let col = 0; col < 3; col++) {
+      b[B.reproject + col * 4] = m[col * 3];
+      b[B.reproject + col * 4 + 1] = m[col * 3 + 1];
+      b[B.reproject + col * 4 + 2] = m[col * 3 + 2];
+    }
+    b[B.tanHalfFov] = (this.tanY * width) / Math.max(1, height);
+    b[B.tanHalfFov + 1] = this.tanY;
+    b[B.strength] = this.strength;
+    b[B.maxShift] = this.maxShift;
+    b[B.mask] = c.maskInner;
+    b[B.mask + 1] = c.maskOuter;
+    b[B.nearFar] = this.camera.minZ;
+    b[B.nearFar + 1] = this.camera.maxZ;
+    b[B.nearBand] = c.nearSharp;
+    b[B.nearBand + 1] = c.nearFull;
   }
 
   /**
@@ -316,27 +235,17 @@ export class MotionBlur {
     this.primed = false;
   }
 
-  /**
-   * The pass, for `Game` to attach and detach. Exposed rather than given an
-   * `attach`/`detach` pair of its own because the ORDER is the caller's
-   * business: this pass has to land between Volumetrics and PaperGrain, and only
-   * the place that assembled the chain knows that.
-   */
-  get pass(): PostProcess {
-    return this.post;
-  }
-
-  /** Whether the pass is attached — the flag Game tests before reordering. */
+  /** Whether the player has it on — the stage's `active()`. */
   get isEnabled(): boolean {
     return this.enabled;
   }
 
   /**
-   * Turns the effect on or off. Detaching is Game's half; this is the half
-   * that stops `update` doing arithmetic for a pass that is not running, and
-   * that re-primes on the way back on — the stored basis is however many
-   * seconds stale by then, and the contract above is explicit that a stale
-   * basis renders as one frame of full-screen smear.
+   * Turns the effect on or off: the stage's `active()`, and the half that
+   * stops `update` doing arithmetic for a pass that is not drawn, and that
+   * re-primes on the way back on — the stored basis is however many seconds
+   * stale by then, and the contract above is explicit that a stale basis
+   * renders as one frame of full-screen smear.
    */
   setEnabled(on: boolean): void {
     if (on === this.enabled) return;
@@ -359,7 +268,7 @@ export class MotionBlur {
    * itself, and only the cap was stated per frame (see `maxShift`).
    */
   update(yaw: number, pitch: number, dt: number): void {
-    // Detached: no pass to feed, and the basis it would be tracking is
+    // Off: no stage to feed, and the basis it would be tracking is
     // discarded by `setEnabled` on the way back on anyway.
     if (!this.enabled) return;
     const c = CONFIG.graphics.motionBlur;
@@ -398,8 +307,8 @@ export class MotionBlur {
     if (this.strength > 0) {
       // Each column is one of THIS frame's basis vectors written in the
       // PREVIOUS frame's coordinates — which is exactly the matrix that
-      // carries a current-camera ray back to where it was pointing. GLSL
-      // mat3 is column-major, so the columns are contiguous here.
+      // carries a current-camera ray back to where it was pointing. A WGSL
+      // mat3x3f is column-major, so the columns are contiguous here.
       const m = this.reproject;
       m[0] = Vector3.Dot(this.prevRight, this.right);
       m[1] = Vector3.Dot(this.prevUp, this.right);
@@ -416,9 +325,5 @@ export class MotionBlur {
     this.prevUp.copyFrom(this.up);
     this.prevFwd.copyFrom(this.fwd);
     this.primed = true;
-  }
-
-  dispose(): void {
-    this.post.dispose();
   }
 }

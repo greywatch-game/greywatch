@@ -43,3 +43,39 @@
 **.chain.list
 **.chain.off
 **.chain.slots.grade.attached
+
+# X5.2c2, the shafts and the blur: both are stages of our post chain, drawn
+# ahead of the grade into the chain's POOL (one target a pass position,
+# `PostPasses.openPool`, bound and cleared as Babylon's `activate` bound and
+# cleared the reader's input), compared with the Babylon draws they replaced
+# under the same names, every target named by the stage that writes it.
+# X5.2b's three fields, for X5.2b's reasons:
+**.draws[stage=shafts].pipeline.call
+**.draws[stage=shafts].bundle
+**.draws[stage=shafts].viewport
+**.draws[stage=blur].pipeline.call
+**.draws[stage=blur].bundle
+**.draws[stage=blur].viewport
+# The shafts' two SHADOW MAPS are bound as our renderer holds them
+# (`own ?? hostTexture`, `ShadowBindings`' pattern; `BABYLON_EXIT.md` rule 5):
+# the same texture (`shadow.world`, `shadow.bodies`), through the view and
+# sampler its owner made — the view with no descriptor (the defaults: a 2d
+# view of its one mip and one layer, where Babylon's wrapped view stated
+# them), and the sampler nearest as Babylon's but at WebGPU's defaults for
+# the two fields a one-mip 2d texture never reads (`addressModeW`
+# clamp-to-edge where Babylon's said repeat, `lodMaxClamp` 32 where it said
+# 0). The bytes the march reads are the same: the pass's output hash is
+# compared, and equal.
+**.draws[stage=shafts].bindGroups[1].entries[2].view.view.dimension
+**.draws[stage=shafts].bindGroups[1].entries[2].view.view.mipLevelCount
+**.draws[stage=shafts].bindGroups[1].entries[2].view.view.arrayLayerCount
+**.draws[stage=shafts].bindGroups[1].entries[3].view.view.dimension
+**.draws[stage=shafts].bindGroups[1].entries[3].view.view.mipLevelCount
+**.draws[stage=shafts].bindGroups[1].entries[3].view.view.arrayLayerCount
+**.draws[stage=shafts].bindGroups[1].entries[6].sampler.addressModeW
+**.draws[stage=shafts].bindGroups[1].entries[6].sampler.lodMaxClamp
+**.draws[stage=shafts].bindGroups[1].entries[7].sampler.addressModeW
+**.draws[stage=shafts].bindGroups[1].entries[7].sampler.lodMaxClamp
+# And Babylon's bookkeeping: the shafts hold no slot in the camera's list
+# (their switch is their stage's `active()`, latched as their attach was).
+**.chain.slots.shafts

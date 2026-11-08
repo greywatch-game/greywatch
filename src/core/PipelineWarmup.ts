@@ -54,7 +54,8 @@
  * compiles NOTHING at a vantage — the post chain's six pipelines on the frames
  * before the card (five since X5.2b made the glow's blur and box filter ours,
  * every rung at every render scale on the declared list as "the glow's blur";
- * four since X5.2c1 made the grade ours, "the post chain" on the list),
+ * four since X5.2c1 made the grade ours, "the post chain" on the list,
+ * two since X5.2c2 made the shafts — every rung — and the blur ours there),
  * and `GiVolume`'s three computes under it (its race) until
  * X5.1b made them OURS, asked at construction and on the declared list ("the
  * irradiance volume"), so Babylon makes no compute pipeline at all — so the

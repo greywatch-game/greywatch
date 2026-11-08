@@ -9,7 +9,8 @@
  * Owns: `PostPasses` — the prefix's output (a `RenderTargetTexture`, made as
  * Babylon makes a post-process's input: `rgba8unorm`, no depth, NEAREST, no
  * mips, the render size), the pool our stages hand on through (made the same
- * way, when a stage of ours follows another), the window `camera.
+ * way, one target a pass POSITION, grown when a stage of ours follows
+ * another: X5.2c2), the window `camera.
  * outputRenderTarget` is set across, and the order the chain's passes are
  * opened in.
  * Invariants: with NO stage of ours active nothing here touches the frame —
@@ -39,6 +40,10 @@
  * stage reads on any frame is what the grade read as Babylon's last pass; a
  * target is named for the stage that READS it, as Babylon names a
  * post-process's input (`PostProcessRTT-<label>`);
+ * a pool target is bound (the whole target as the viewport) and cleared to
+ * the scene's colour as `activate` bound and cleared the input of a READER
+ * at Babylon's defaults, which every stage of ours was (X5.2c2: a stage
+ * declares no `autoClear`, `alphaMode`, `clearColor` or viewport of its own);
  * the canvas is opened with `restoreDefaultFramebuffer`, exactly as
  * `_finalizeFrame` opened it for Babylon's last pass, so the canvas's pass is
  * Babylon's main pass with the engine's depth; every target follows the
@@ -64,7 +69,8 @@ import { hostTexture } from "../render/babylonSeam";
 
 export class PostPasses implements PostPassOwner {
   private output: RenderTargetTexture | null = null;
-  private readonly pool: (RenderTargetTexture | null)[] = [null, null];
+  /** The pool, one target a pass POSITION (`PostPassOwner.openPool`), grown on first use. */
+  private readonly pool: RenderTargetTexture[] = [];
   /** Whether `outputRenderTarget` is set this frame. */
   private open = false;
   /** Whether the prefix's output was cleared in its pass this frame. */
@@ -100,6 +106,11 @@ export class PostPasses implements PostPassOwner {
   /** The prefix's output as Babylon holds it, or null before a stage of ours first drew — for the probe's adapter (`plans/webgpu-ref/post.mjs`). */
   get prefixTarget(): RenderTargetTexture | null {
     return this.output;
+  }
+
+  /** Pool target `slot`, or null before a pass first used it — for the probe's adapter, as `prefixTarget`. */
+  poolTarget(slot: number): RenderTargetTexture | null {
+    return this.pool[slot] ?? null;
   }
 
   /** Points the prefix at this owner's output, if a stage of ours draws this frame. */
@@ -179,12 +190,19 @@ export class PostPasses implements PostPassOwner {
   }
 
   openPool(slot: number, reader: PostStage): HostTexture {
-    const t = this.target(this.pool[slot], `pool ${slot}`);
+    const t = this.target(this.pool[slot] ?? null, `pool ${slot}`);
     this.pool[slot] = t;
     this.label(t, reader);
-    // Bound and cleared as Babylon's `activate` binds and clears a pass's input.
+    // Bound and cleared as Babylon's `activate` bound and cleared the input
+    // of a post-process at its DEFAULTS, which every stage of ours was as
+    // Babylon's (`plans/webgpu-ref/post.mjs` read each one's fields:
+    // `forceFullscreenViewport` true, `enablePixelPerfectMode` false,
+    // `autoClear` true, `alphaMode` 0, no `clearColor` of its own) — so the
+    // whole target as the viewport whatever the camera's, and a clear to the
+    // scene's colour, depth and stencil asked too. A stage declares none of
+    // the three: one that needs another owes `PostStage` the field.
     const engine = this.scene.getEngine();
-    engine.bindFramebuffer(t.renderTarget!);
+    engine.bindFramebuffer(t.renderTarget!, 0, undefined, undefined, true);
     engine.clear(this.scene.clearColor, true, true, true);
     return hostTexture(t);
   }

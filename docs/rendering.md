@@ -574,9 +574,10 @@ half line for line; what changed is where its decisions are RECORDED.
   bound through the host (`hostTexture`, `FrameHost.bind`, items 7 and 8) with
   the HOST's sampler, always — the owner's decision of 2026-11-07. Babylon's
   compute bind took a sampler off the internal texture's cached fields, which
-  only a Babylon bind fills (the light shafts in a round, an editor build's
-  materials), so with the shafts off from boot it had been repeat/nearest at
-  anisotropy 1; X5.1a measured no byte of the trace move between the two.
+  only a Babylon bind fills (the light shafts in a round until X5.2c2 made them
+  ours, bound through the host too; an editor build's materials), so with the
+  shafts off from boot it had been repeat/nearest at anisotropy 1; X5.1a
+  measured no byte of the trace move between the two.
 - **The dispatch is ARMED in `update` and RECORDED by a late prepare**
   (`Renderer.onFrame(…, true)`, pushed in `GiCompute`'s constructor): three
   compute passes into the host's prepare encoder, which the host submits
@@ -896,6 +897,12 @@ block that came in 1.3 ms high. The structural reason it is that small is that
 the band pays for itself: it adds one depth load per pixel and one per tap, and
 it takes the sample loop away entirely from the weapon and from the sharp core,
 whose shift it has already driven under half a texel.
+
+**The pass is a stage of OUR post chain** (`render/PostChain.ts`, X5.2c2): its
+program as Babylon compiled it (`shaders/wgsl/motionBlur.ts`), its block filled
+as its `onApply` filled it — the `mat3x3f` written as three vec4 columns, the
+repack Babylon's uniform buffer did — and its HISTORY still the CPU's previous
+basis, not a texture; off is a stage the host does not open.
 
 **The depth image is SHARED and its owner is `shaders/FrameDepth.ts`** — one
 capture, one wrapper, read by the ink and by this pass. It is the attachment
@@ -3506,14 +3513,22 @@ reaching play before they are built skips the same way.
 
 **The POST CHAIN's tail is the third (X5.2c1), and it is a HOST of declared
 stages, not a pass a module owns.** `render/PostChain.ts` holds an ordered list
-of `PostStage`s — the grade alone so far (`PaperGrain.stage`) — each DECLARING
-its program as Babylon compiled it (`shaders/wgsl/paperGrain.ts`, the parent's
-device text character for character), its uniform block and its `fill`, its
-extra bindings (the frame's depth), the sampler it reads its input with (the
+of `PostStage`s — the shafts (one a rung), the blur and the grade since X5.2c2
+(`volumetricStages`, `MotionBlur.stage`, `PaperGrain.stage`) — each DECLARING
+its program as Babylon compiled it (`shaders/wgsl/volumetrics.ts`,
+`motionBlur.ts`, `paperGrain.ts`, the parent's device text character for
+character), its uniform block and its `fill`, its extra bindings (the frame's
+depth; the shafts' shadow maps and cloud field, each with the sampler it is
+read with), the sampler it reads its input with (the
 consumer's, made from the stage's descriptor, never the target's), whether it
 is `active()`, and whether it reads its input point-wise or across a
 neighbourhood; the host opens a pass per active stage in list order, each
-reading the one before's output, the LAST given the canvas — nothing a stage
+reading the one before's output, the LAST given the canvas and any other a
+target of the chain's POOL — one a pass POSITION, so each pass of a frame
+writes a target of its own as each Babylon pass had an input of its own,
+bound (the whole target as the viewport) and cleared to the scene's colour as
+Babylon's `activate` bound and cleared the input of a reader at its defaults,
+which every stage of ours was — nothing a stage
 holds names its output, its place or the canvas, which is what keeps the door
 open for two neighbours to be FUSED later (a fusion drops the 8-bit rounding
 between them: never byte-exact, a later `Picture change:`). The passes are
@@ -3521,7 +3536,7 @@ Babylon's, opened by the Babylon-side owner `shaders/PostPasses.ts` with public
 API: while a stage of ours is active, **`camera.outputRenderTarget` takes
 Babylon's prefix's output** — a `RenderTargetTexture` made as a post-process's
 input is (`rgba8unorm`, no depth, NEAREST, the render size), named for the
-stage that reads it (`PostProcessRTT-paperGrain`) — **set only from the draw
+stage that reads it (`PostProcessRTT-<reader>`) — **set only from the draw
 phase's end to the camera's** (Babylon reads it at three points: as
 `Scene.render` binds the frame's first target and clears the canvas's depth,
 which with it set would bind this target and skip that clear, the frame's
@@ -3542,7 +3557,8 @@ active nothing of this runs and Babylon's prefix writes the canvas itself — no
 interim copy pass, ever. Its pipelines are on the round's declared list ("the
 post chain"); the probe (`plans/webgpu-ref/post.mjs`) reads every pass and
 draw of it the same as the parent's but the three fields a draw of ours always
-differs in (`post-expected.txt`).
+differs in and, for the shafts, the descriptors of their two shadow maps' view
+and sampler, which are their owner's (`post-expected.txt`).
 
 **A draw lands at one of SEVEN points of the main pass** (`DrawPoint`), six of
 them about rendering group 0, and in this order every frame (the moon's, the sixth,
@@ -7601,14 +7617,23 @@ whole pass — about 0.75 ms of GPU.
 
 ### The three things a reader must not get wrong
 
-**The rung is a SAMPLE COUNT and not a resolution.** A `PostProcess` with `size`
-under 1 renders the chain's whole image into a smaller target and every pass after
+**The rung is a SAMPLE COUNT and not a resolution.** A pass under the render size
+renders the chain's whole image into a smaller target and every pass after
 it reads that target — so a half-res march is a half-res FRAME. Scaling the march
 itself needs a render target of its own plus a depth-aware upsample; the
 measurement above says the taps are not what this costs, so that structure has not
 been built. The count is a WGSL `const` interpolated per rung, so **each rung is
-its own compiled shader** and a rung change is a REBUILD (`Game.setVolumetrics`),
-not a uniform write.
+its own compiled shader** and a rung change is a REBUILD of the CPU half
+(`Game.setVolumetrics`), not a uniform write — and, since the march is a stage
+of OUR post chain (X5.2c2: its program as Babylon compiled it,
+`shaders/wgsl/volumetrics.ts`), **each rung is a STAGE of its own**, every one
+declared when the chain is built (`volumetricStages`), so a rung changed in play
+compiles nothing. The stage is drawn only once `Game.syncVolumetrics` has
+latched every input present, as the pass used to be attached, so a new pass's
+first frame has no shafts. **Its shadow maps are bound as OUR renderer holds
+them** (`own ?? hostTexture`, `ShadowBindings`' pattern: the same texture,
+through its owner's view and sampler), **the clouds' field through the host**
+with the host's sampler.
 
 **The reach is the shadow window's HALF side.** `EnvironmentSpec.lighting
 .shadowWindow` is a square centred on the player, so from the eye there is only

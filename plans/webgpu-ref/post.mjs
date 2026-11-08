@@ -107,7 +107,11 @@
  * the labels our cache gave them (`paperGrain: …`), its readiness off
  * `PostChain.drawsReady`, and the target it reads — the prefix's output,
  * `PostPasses.prefixTarget`, which Babylon's last live pass writes — named
- * `<that pass>.out`, as that pass's next input was.
+ * `<that pass>.out`, as that pass's next input was. **Since X5.2c2 it names
+ * the SHAFTS and the BLUR too** (`shafts`, one stage a rung, its modules
+ * `volumetrics_<rung>: …`; `blur`, `motionBlur: …`), and every target of
+ * the chain's POOL by the stage that writes it this frame (`<stage>.out`,
+ * `PostPasses.poolTarget`: one target a pass position, so each has one writer).
  *
  * **And beside the log, measured and NOT compared** (they ride the machine's
  * timing): the LIVE frames — from the scenarios' page's first frame to thirty
@@ -704,15 +708,31 @@ function postAdapter() {
   // — the prefix's output, `PostPasses.prefixTarget` — is named by what
   // WRITES it, Babylon's last live pass (below), as that pass's next input
   // was; and the canvas it draws into is the canvas.
+  // X5.2c2: the SHAFTS (one stage a rung, `volumetrics_<rung>: …`) and the
+  // BLUR (`motionBlur: …`) are stages of the same chain, named `shafts` and
+  // `blur` as Babylon's were; a target of the chain's POOL (one a pass
+  // position, `PostPasses.poolTarget`) is named by the stage that WRITES it
+  // this frame, `<stage>.out`, as Babylon's next pass's input was.
+  const OURS = [
+    ["paperGrain: ", "grain"],
+    ["volumetrics_", "shafts"],
+    ["motionBlur: ", "blur"],
+  ];
   const ours = {
     glow: () => Boolean(g.glowBlur),
     grain: () => Boolean(g.postChain),
+    /** Which of the chain's stage names are ours on this tree. */
+    names: () => new Set((g.postChain?.stages ?? []).map((st) => st.name)),
     name() {
+      const mine = ours.names();
       for (const [m, rec] of P.moduleList) {
         if (P.stageOf.has(m)) continue;
         if (ours.glow() && rec.label.startsWith("glow down: ")) P.stageOf.set(m, "glow.down");
         else if (ours.glow() && rec.label.startsWith("glow blur ")) P.stageOf.set(m, "glow.blur");
-        else if (ours.grain() && rec.label.startsWith("paperGrain: ")) P.stageOf.set(m, "grain");
+        else {
+          const hit = OURS.find(([prefix, name]) => mine.has(name) && rec.label.startsWith(prefix));
+          if (hit) P.stageOf.set(m, hit[1]);
+        }
       }
     },
     stages() {
@@ -724,10 +744,25 @@ function postAdapter() {
         );
       }
       if (ours.grain()) {
-        const on = g.post.stage.active();
-        out.push({ name: "grain", ready: g.postChain.drawsReady(), off: !on });
+        // One entry a NAME (the shafts' three rungs are one), ready as the
+        // chain's every active stage is, off while none of that name is active.
+        const ready = g.postChain.drawsReady();
+        const byName = new Map();
+        for (const st of g.postChain.stages) byName.set(st.name, (byName.get(st.name) ?? false) || st.active());
+        for (const [name, on] of byName) out.push({ name, ready, off: !on });
       }
       return out;
+    },
+    /** This frame's pool targets by writer: the k-th active stage but the last writes slot k. */
+    pool() {
+      const m = new Map();
+      if (!ours.grain()) return m;
+      const active = g.postChain.stages.filter((st) => st.active());
+      for (let k = 0; k < active.length - 1; k++) {
+        const t = hw(g.postPasses.poolTarget(k)?.getInternalTexture?.());
+        if (t) m.set(t, `${active[k].name}.out`);
+      }
+      return m;
     },
   };
   // A Babylon texture's GPU texture: its hardware texture's resource, or the
@@ -788,6 +823,8 @@ function postAdapter() {
       // writes and our first stage reads, is that pass's `.out`.
       const prefix = ours.grain() ? hw(g.postPasses.prefixTarget?.getInternalTexture?.()) : null;
       if (prefix && live.length) m.set(prefix, `${live[live.length - 1].name}.out`);
+      // Ours (X5.2c2): the pool, each target by the stage writing it.
+      for (const [t, name] of ours.pool()) m.set(t, name);
       if (g.engine._depthTexture) m.set(g.engine._depthTexture, "canvas.depth");
       const glow = g.glow;
       if (glow) {
@@ -901,7 +938,7 @@ function postAdapter() {
   let targets = new Map();
   const inputs = new Set();
   window.__postGpu = {
-    arm: ours.grain() ? "ours:glow,grain" : ours.glow() ? "ours:glow" : babylon.arm,
+    arm: ours.grain() ? `ours:glow,${[...ours.names()].join(",")}` : ours.glow() ? "ours:glow" : babylon.arm,
     refresh() {
       for (const s of babylon.stages()) {
         const st = s.effect?._pipelineContext?.stages;

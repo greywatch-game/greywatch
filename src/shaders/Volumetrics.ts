@@ -1,14 +1,34 @@
 /**
  * Volumetrics.ts — Moonlight scattered by the air, marched through the SHADOW
- * VOLUME rather than smeared across the screen. Owns the pass, the rung it was
- * built at and the camera basis it reconstructs rays from; owns no scene state,
- * renders nothing of its own and copies nothing.
- * Invariants: it runs after the ink and FXAA and before the blur and the grade,
- * because it ADDS light to the frame — the beams belong to the same instant as
- * the geometry, so they have to smear with it and be graded on top of it. Its shader is hand-written WGSL and `shaderLanguage` on
- * the PostProcess is load-bearing rather than declarative: the constructor
- * defaults to GLSL and would look this pass up in a store nothing writes any
- * more. Contract: `docs/rendering.md`.
+ * VOLUME rather than smeared across the screen: the march's CPU HALF and the
+ * post chain's stages it is drawn as.
+ * Owns: `Volumetrics` — the rung it was built at, the camera basis it
+ * reconstructs rays from, the three maps it marches through as they were
+ * pushed (each as Babylon holds it and, where it is our renderer's, as our
+ * renderer holds it), the map's air and the moon's colour and bearing — and
+ * `volumetricStages`, one `PostStage` a RUNG (`render/PostChain.ts`,
+ * `BABYLON_EXIT.md` X5.2c2: the program as Babylon compiled it,
+ * `wgsl/volumetrics.ts`; its 320-byte block; the frame's depth, the two
+ * shadow maps and the clouds' field as its extra bindings; its input read
+ * NEAREST, clamped, as Babylon bound it). Owns no scene state, renders
+ * nothing of its own and copies nothing.
+ * Invariants: it runs after the ink and FXAA and before the blur and the
+ * grade, because it ADDS light to the frame — the beams belong to the same
+ * instant as the geometry, so they have to smear with it and be graded on
+ * top of it; that order is the HOST's list (`Game` assembles it), not
+ * anything here. Every rung is a stage of its own, so every rung's pipelines
+ * are asked when the chain is built and a rung changed in play compiles
+ * nothing (`BABYLON_EXIT.md` X5.2's row "pipelines"); a rung's stage is
+ * `active()` only while `live()` hands back a pass at that rung — `Game`'s,
+ * and only once it has latched the pass READY (`Game.syncVolumetrics`, as it
+ * used to attach it), so the first frame has no shafts exactly as before. A
+ * shadow map our renderer owns is bound as OURS (`own ?? hostTexture`, the
+ * pattern `ShadowBindings.fillFrameTextures` follows); the clouds' field is
+ * Babylon's, through `hostTexture`, with the host's sampler. Its block is
+ * filled when the host draws it, every float every time.
+ * Never: draws, binds or owns a GPU resource (the host does); reads the AIM
+ * rather than the rendered camera (the blur reads the aim, and says why).
+ * Contract: `docs/rendering.md`.
  *
  * **IT REPLACED `GodRays` AND THAT PASS IS GONE**, rather than being kept as a
  * cheap rung. The player's `off` is the bottom of this ladder; there is one
@@ -58,37 +78,36 @@
  * nothing, and adds no draw to the scene.
  *
  * THE RUNG IS A SAMPLE COUNT AND NOT A RESOLUTION, and the reason is worth
- * stating because the obvious lever is the wrong one here. A `PostProcess`
- * with `size` under 1 renders the CHAIN's image into a smaller target and every
+ * stating because the obvious lever is the wrong one here. A pass at under
+ * the render size renders the CHAIN's image into a smaller target and every
  * pass after it reads that target — so a half-res march is a half-res frame.
  * Scaling the march itself means a render target of its own plus a depth-aware
  * upsample, which is real structure; it is the next step if the measurement
  * says taps alone are not enough. The count is a WGSL `const` interpolated per
- * rung, so each rung is its own compiled shader and its own pass — which is why
- * the rung is fixed at construction and `Game.setVolumetrics` REBUILDS rather
- * than re-configures when the player moves the slider.
+ * rung, so each rung is its own compiled shader and its own stage — which is
+ * why the rung is fixed at construction and `Game.setVolumetrics` REBUILDS
+ * this CPU half rather than re-configuring it when the player moves the
+ * slider, and why every rung's stage stands in the chain from the start.
  */
-import {
-  type BaseTexture,
-  Camera,
-  Matrix,
-  PostProcess,
-  Scene,
-  ShaderLanguage,
-  ShaderStore,
-  Vector3,
-  Vector4,
-} from "@babylonjs/core";
+import type { BaseTexture, Camera, Matrix } from "@babylonjs/core";
+import { Vector3, Vector4 } from "@babylonjs/core";
 import { CONFIG } from "../config";
-// celCloud is included by the march; imported for the side effect so the
-// include is provably registered before this effect compiles — an include
-// missing from the store is fetched off Babylon's CDN instead.
-import "./wgsl/includes";
 import { depthBias } from "../core/shadowWindow";
+import { hostTexture } from "../render/babylonSeam";
+import type { HostTexture } from "../render/frameHost";
+import type { OwnTexture } from "../render/HostBindGroup";
+import type { PostStage } from "../render/PostChain";
 import type { FrameDepth } from "./FrameDepth";
+import {
+  VOLUMETRICS_BLOCK as B,
+  VOLUMETRICS_FRAGMENT_BINDINGS,
+  VOLUMETRICS_VERTEX,
+  VOLUMETRICS_VERTEX_BINDINGS,
+  type VolumetricRung,
+  volumetricsFragment,
+} from "./wgsl/volumetrics";
 
-/** The rungs, derived from the config so the ladder is declared exactly once. */
-export type VolumetricRung = keyof typeof CONFIG.graphics.volumetrics.rungs;
+export type { VolumetricRung } from "./wgsl/volumetrics";
 
 /** Whether a string off the query is a rung. Narrows, so the caller needs no cast. */
 export function isVolumetricRung(s: string): s is VolumetricRung {
@@ -96,248 +115,27 @@ export function isVolumetricRung(s: string): s is VolumetricRung {
 }
 
 /**
- * `CONFIG.graphics.shadows.edgeFade` as a WGSL literal, for the same reason
- * `wgsl/chunks.ts` interpolates it rather than binding it: it never varies,
- * and a uniform that never varies is a binding that can be wrong.
- *
- * **The ramp has to be the SAME ramp the surfaces use.** `shadowVisibility`
- * fades a receiver back to fully lit over the outermost `edgeFade` of the
- * volume, and air that stopped being shadowed on a different schedule would
- * put a visible seam in the haze exactly where the ground under it is smooth.
+ * The samplers Babylon bound the shafts' input with (the post-process's
+ * `renderTargetSamplingMode`, NEAREST, on a texture with no mips; read off the
+ * parent's device by `plans/webgpu-ref/post.mjs`).
  */
-const EDGE_FADE = Math.max(CONFIG.graphics.shadows.edgeFade, 1e-4).toFixed(4);
-
-/** One shader per rung; the tap count is a compile-time const. See the header. */
-function source(samples: number): string {
-  return `
-varying vUV: vec2f;
-var textureSamplerSampler: sampler;
-var textureSampler: texture_2d<f32>;
-
-// The frame's own depth, out of the shared FrameDepth — the same image the ink
-// draws its edges off and the blur names the weapon with. Declared as a depth
-// texture so Babylon's WGSL processor gives the binding sampleType "depth",
-// which is what lets every read be a textureLoad and this pass declare no
-// sampler for it.
-var depthTexture: texture_depth_2d;
-
-// The moon's own depth map, sampled in AIR rather than at a surface. Declared
-// exactly as celShadow declares it — texture plus sampler — because that is the
-// pairing Babylon binds from one setTexture, and a sampler a shader declares
-// must be BOUND or the bind group fails to build and the draw is silently lost.
-var shadowMapSampler: sampler;
-var shadowMap: texture_2d<f32>;
-
-// The BODIES' depth map (systems/BodyShadows.ts), declared and sampled exactly
-// as the world's is. **This is what makes a soldier cut a beam**, which the
-// screen-space pass got for free off a dark pixel and the first version of this
-// march could not do at all: a rig is not a caster in the world's map and never
-// will be, so the bodies got a map of their own and this asks both.
-var bodyShadowMapSampler: sampler;
-var bodyShadowMap: texture_2d<f32>;
-
-// The CLOUDS' shadow, the same field and the same uniforms every lit surface
-// reads, so a beam stops where the ground under it goes into a cloud's shadow
-// and the gaps between two clouds are where the shafts are.
-#include<celCloud>
-
-// Ordered widest-first: these are collected into the auto-generated LeftOver
-// UBO, and a std140 layout is least surprising when the big alignments come
-// before the small ones.
-uniform lightMatrix: mat4x4f;
-uniform bodyLightMatrix: mat4x4f;
-uniform air: vec4f;         // x density, y height falloff, z height base, w g
-uniform camPos: vec3f;
-uniform camRight: vec3f;
-uniform camUp: vec3f;
-uniform camFwd: vec3f;
-uniform moonDir: vec3f;     // unit, camera -> moon
-uniform tint: vec3f;
-uniform tanHalfFov: vec2f;  // half-extents of the near plane, at z = 1
-uniform nearFar: vec2f;
-uniform march: vec3f;       // x = metres to march, y = world bias, z = body bias
-uniform intensity: f32;
-
-// A WGSL const rather than a #define. Babylon's WGSL processor implements a
-// define by searching the whole shader for its NAME with an un-anchored regex
-// and pasting the value over every hit, which is a substring collision waiting
-// to happen; the count is interpolated from CONFIG either way, so nothing is
-// lost by declaring it in the language. MotionBlur points here for this.
-const SAMPLES: i32 = ${samples};
-const PI: f32 = 3.14159265359;
-
-fn hash(p: vec2f) -> f32 {
-  return fract(sin(dot(p, vec2f(127.1, 311.7))) * 43758.5453123);
-}
-
-// Buffer depth -> metres ALONG THE VIEW AXIS. The same inverse CelInk and
-// MotionBlur take, and for the same reasons: Babylon is left-handed, WebGPU's
-// NDC z is [0, 1], and nothing in the tree turns on a reverse depth buffer.
-fn linearise(d: f32, nf: vec2f) -> f32 {
-  return (nf.x * nf.y) / (nf.y - d * (nf.y - nf.x));
-}
-
-// Is this POINT IN THE AIR lit by the moon? The surface form of this is
-// shadowVisibility in wgsl/chunks.ts and the differences are both
-// deliberate: there is no facet to offset along, so the normal bias is gone and
-// the depth bias carries the whole job; and one tap rather than four, because
-// the 2x2 exists to dissolve a texel staircase along a visible EDGE and air has
-// no edge to put one on — what it has instead is the march's own jitter, which
-// is already breaking the same grid up.
-//
-// **Outside the volume the answer is LIT, which is celShadow's answer too.** It
-// is also why the march is clamped to the window's half-side: past the boundary
-// this stops knowing anything, the beams stop being cut, and what is left is
-// smooth haze. The ramp below is the same ramp the ground uses, so the air and
-// the floor under it stop together.
-fn litIn(m: mat4x4f, tex: texture_2d<f32>, smp: sampler, p: vec3f, bias: f32) -> f32 {
-  let sc4 = m * vec4f(p, 1.0);
-  let sc = sc4.xyz / sc4.w;
-  let uv = sc.xy * 0.5 + 0.5;
-  let edge = min(
-    min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y)),
-    min(sc.z, 1.0 - sc.z)
-  );
-  if (edge <= 0.0) { return 1.0; }
-  let lit = step(sc.z - bias, textureSampleLevel(tex, smp, uv, 0.0).x);
-  return mix(1.0, lit, smoothstep(0.0, ${EDGE_FADE}, edge));
-}
-
-// The air at p, against BOTH volumes. min because either occluder is enough,
-// and because each returns 1 outside its own window — so the bodies' much
-// smaller volume cannot brighten air the world has already shadowed, and the
-// world's cannot hide a soldier standing in a lit street.
-//
-// **The two windows are very different sizes and that asymmetry is the point.**
-// The world's is the map's shadowWindow (110 m by default) and the bodies' is
-// 48 m, so a beam is cut by walls for the whole march and by bodies only within
-// 24 m of the eye. That is where a body cutting a shaft is worth anything: at
-// 40 m a soldier is a smudge in haze and the cut is a few pixels of noise.
-fn shadowAt(p: vec3f) -> f32 {
-  let world = litIn(uniforms.lightMatrix, shadowMap, shadowMapSampler, p,
-    uniforms.march.y);
-  let bodies = litIn(uniforms.bodyLightMatrix, bodyShadowMap, bodyShadowMapSampler,
-    p, uniforms.march.z);
-  return min(min(world, bodies), cloudLitAir(p));
-}
-
-// Henyey-Greenstein, carrying its own 1/4pi — intensity absorbs it, which is
-// what makes that config field a look knob rather than a physical quantity.
-//
-// This is the term the screen-space pass has no way to express: it is large
-// looking INTO the moon and small looking away from it, off the same march, so
-// one effect covers both and there is nothing to cross-fade.
-fn phaseHG(cosT: f32, g: f32) -> f32 {
-  let g2 = g * g;
-  return (1.0 - g2) / (4.0 * PI * pow(max(1e-4, 1.0 + g2 - 2.0 * g * cosT), 1.5));
-}
-
-// Triangular-PDF dither at one LSB, keyed on the pixel. The argument is
-// Dither.ts and it applies with full force here: this ADDS a very wide, very
-// shallow gradient to an 8-bit chain (DefaultRenderingPipeline is built with
-// hdr = false), which is the exact shape that bands.
-//
-// It is a copy of celDither rather than the registered include, and for one
-// mechanical reason: that include is keyed on fragmentInputs.position, a
-// builtin a surface shader always carries and a post-process fragment stage
-// does not declare. Keyed on the pixel either way — vUV * dims IS position.xy
-// here — so the two do not disagree about anything.
-fn dither(col: vec3f, px: vec2f) -> vec3f {
-  return col + (hash(px) - hash(px + 17.31)) * (1.0 / 255.0);
-}
-
-@fragment
-fn main(input: FragmentInputs) -> FragmentOutputs {
-  let scene = textureSampleLevel(textureSampler, textureSamplerSampler, input.vUV, 0.0).rgb;
-
-  // The ray through this pixel, in world space and NOT normalised. Babylon is
-  // left-handed, so the camera looks down +Z and the ray needs no sign flip;
-  // keeping z at exactly 1 is what makes the depth below a scalar along it.
-  let ndc = input.vUV * 2.0 - 1.0;
-  let rayC = vec3f(ndc * uniforms.tanHalfFov, 1.0);
-  let rayW = uniforms.camRight * rayC.x + uniforms.camUp * rayC.y + uniforms.camFwd * rayC.z;
-
-  // How far the air in front of this pixel actually goes: to the geometry the
-  // frame already drew, or to the edge of what the shadow map knows, whichever
-  // is nearer. linearise is along the view axis and rayW's z-component is the
-  // unit forward, so the two are in the same units and camPos + rayW * z is the
-  // exact world point — no normalise, no second trig.
-  let dims = vec2f(textureDimensions(depthTexture, 0));
-  let px = clamp(vec2i(input.vUV * dims), vec2i(0), vec2i(dims) - vec2i(1));
-  let far = min(linearise(textureLoad(depthTexture, px, 0), uniforms.nearFar), uniforms.march.x);
-
-  // Evenly spaced, jittered by a hash of the pixel. Without the jitter a low
-  // tap count lays the shadow map's own structure down the ray as banding —
-  // distinct slabs of light rather than a shaft — and the jitter turns that
-  // into noise, which composes with the dither on the way out rather than
-  // beating against it.
-  let stepLen = far / f32(SAMPLES);
-  let jitter = hash(input.vUV * dims);
-  var accum = 0.0;
-  for (var i: i32 = 0; i < SAMPLES; i++) {
-    let p = uniforms.camPos + rayW * ((f32(i) + jitter) * stepLen);
-    // Haze thins going up. Without this the sky is as thick as the street and
-    // the whole frame washes; with it a shaft between two roofs still reads.
-    let dens = exp(-max(0.0, p.y - uniforms.air.z) * uniforms.air.y);
-    accum += shadowAt(p) * dens;
-  }
-  accum *= stepLen * uniforms.air.x;
-
-  // rayW is unnormalised, so the phase's cosine needs the direction proper.
-  let phase = phaseHG(dot(normalize(rayW), uniforms.moonDir), uniforms.air.w);
-
-  // HOW MUCH LIGHT, CAPPED, AND THEN HOW IT MEETS THE FRAME — two steps that
-  // exist because this chain is 8-bit (see anisotropy's note in the config) and
-  // there is no tonemapper downstream to take a highlight back.
-  //
-  // The amount stays LINEAR, and the cap is on the result's brightest channel
-  // rather than per channel: a march looking into the light down a lit street
-  // arrives as the light's own colour at full value, never past it. A per-
-  // channel clamp would have kept the red and the green at 1 and let the blue
-  // catch up — which is gold turning white. A saturating curve (1 - exp) was
-  // tried first and was worse in the other direction: it squeezes every lit
-  // tap toward the same value, so the gap between a beam and the shadowed air
-  // beside it — the only thing that makes a beam a beam — closed into haze.
-  //
-  // And it is SCREENED onto the frame rather than added: scene + lit * (1 -
-  // scene). Against a dark trunk or a shadowed wall that is the whole of the
-  // light, which is where a beam is SEEN; against the sky around the sun, which
-  // is already near the top, it is almost nothing. Added, the same air turned
-  // every golden-hour glare white.
-  let raw = uniforms.tint * (accum * phase * uniforms.intensity);
-  let lit = raw / max(1.0, max(raw.r, max(raw.g, raw.b)));
-  let col = scene + lit * (vec3f(1.0) - clamp(scene, vec3f(0.0), vec3f(1.0)));
-
-  // Alpha 1, as every pass downstream of the ink writes: the frame's alpha is
-  // translucent coverage and CelInk is the last pass that could read it.
-  fragmentOutputs.color = vec4f(dither(col, input.vUV * dims), 1.0);
-}
-`;
-}
-
-/** Registered once per rung, at import — before any effect can compile. */
-const SHADERS = new Map<VolumetricRung, string>();
-for (const rung of Object.keys(
-  CONFIG.graphics.volumetrics.rungs,
-) as VolumetricRung[]) {
-  const name = `volumetrics_${rung}`;
-  ShaderStore.ShadersStoreWGSL[`${name}FragmentShader`] = source(
-    CONFIG.graphics.volumetrics.rungs[rung],
-  );
-  SHADERS.set(rung, name);
-}
+const INPUT_SAMPLER: GPUSamplerDescriptor = {
+  addressModeU: "clamp-to-edge",
+  addressModeV: "clamp-to-edge",
+  addressModeW: "repeat",
+  magFilter: "nearest",
+  minFilter: "nearest",
+  mipmapFilter: "nearest",
+  lodMinClamp: 0,
+  lodMaxClamp: 0,
+  maxAnisotropy: 1,
+};
 
 /**
- * The volumetric moonlight pass, built at one rung.
- *
- * Built UNATTACHED, and that is not tidiness: the pass comes off the camera
- * whenever the player turns it off or changes rung, and goes back into the SLOT
- * it came out of. `detachPostProcess` nulls an entry while `attachPostProcess`
- * appends, so only what did the FIRST attach can say where this belongs —
- * `Game` claims that slot in its constructor and holds it.
+ * The light shafts' CPU half, built at one rung — `Game` rebuilds it on a
+ * rung change and drops it when the player turns them off.
  */
 export class Volumetrics {
-  private readonly post: PostProcess;
   /** The rendered camera's world basis, read off the view matrix each frame. */
   private readonly right = new Vector3(1, 0, 0);
   private readonly up = new Vector3(0, 1, 0);
@@ -350,12 +148,18 @@ export class Volumetrics {
     CONFIG.graphics.shadows.frustumSize *
     0.5 *
     CONFIG.graphics.volumetrics.reachFraction;
-  /** The moon's depth map and its view*projection, pushed by `Game`. */
+  /**
+   * The moon's depth map and its view*projection, pushed by `Game` — as
+   * Babylon holds it, and as OUR renderer holds it while the map is ours
+   * (`ShadowSystem.ownDepthMap`), which is what is bound then.
+   */
   private shadowMap: BaseTexture | null = null;
-  private lightMatrix: Matrix = Matrix.Identity();
-  /** The BODIES' depth map and ITS view*projection — `BodyShadows`, via `Game`. */
+  private ownShadowMap: OwnTexture | null = null;
+  private lightMatrix: Matrix | null = null;
+  /** The BODIES' depth map and ITS view*projection — `BodyShadows`', via `Game`, both ways as the world's. */
   private bodyShadowMap: BaseTexture | null = null;
-  private bodyLightMatrix: Matrix = Matrix.Identity();
+  private ownBodyShadowMap: OwnTexture | null = null;
+  private bodyLightMatrix: Matrix | null = null;
   /** The clouds' shadow field and how it is read — `Sky`'s, via `Game`. */
   private cloudShadowMap: BaseTexture | null = null;
   private readonly cloudArea = new Vector4(0, 0, 0, 1);
@@ -365,7 +169,6 @@ export class Volumetrics {
   private intensityMult = 1;
 
   constructor(
-    scene: Scene,
     private readonly camera: Camera,
     /**
      * The frame's own depth image, shared with the ink and the blur. It is
@@ -374,95 +177,9 @@ export class Volumetrics {
      */
     private readonly depth: FrameDepth,
     readonly rung: VolumetricRung,
-  ) {
-    const v = CONFIG.graphics.volumetrics;
-    this.post = new PostProcess(`volumetrics_${rung}`, SHADERS.get(rung)!, {
-      uniforms: [
-        "lightMatrix",
-        "bodyLightMatrix",
-        "air",
-        "camPos",
-        "camRight",
-        "camUp",
-        "camFwd",
-        "moonDir",
-        "tint",
-        "tanHalfFov",
-        "nearFar",
-        "march",
-        "intensity",
-        "cloudShadow",
-        "cloudShadowRay",
-      ],
-      samplers: ["depthTexture", "shadowMap", "bodyShadowMap", "cloudShadowMap"],
-      size: 1.0,
-      camera: null,
-      engine: scene.getEngine(),
-      shaderLanguage: ShaderLanguage.WGSL,
-    });
-    this.post.onApply = (effect) => {
-      effect.setMatrix("lightMatrix", this.lightMatrix);
-      effect.setMatrix("bodyLightMatrix", this.bodyLightMatrix);
-      effect.setFloat4(
-        "air",
-        v.density * this.densityMult,
-        v.heightFalloff,
-        v.heightBase,
-        v.anisotropy,
-      );
-      const p = this.camera.position;
-      effect.setFloat3("camPos", p.x, p.y, p.z);
-      effect.setFloat3("camRight", this.right.x, this.right.y, this.right.z);
-      effect.setFloat3("camUp", this.up.x, this.up.y, this.up.z);
-      effect.setFloat3("camFwd", this.fwd.x, this.fwd.y, this.fwd.z);
-      effect.setFloat3("moonDir", this.moon.x, this.moon.y, this.moon.z);
-      effect.setFloat3("tint", this.tint.x, this.tint.y, this.tint.z);
-      // The aspect comes from the pass's own target rather than a cached
-      // engine size, so a resized window is right on the frame it happens —
-      // MotionBlur reads it the same way and for the same reason.
-      effect.setFloat2(
-        "tanHalfFov",
-        (this.tanY * this.post.width) / Math.max(1, this.post.height),
-        this.tanY,
-      );
-      effect.setFloat2("nearFar", this.camera.minZ, this.camera.maxZ);
-      effect.setFloat3(
-        "march",
-        this.reach,
-        depthBias(CONFIG.graphics.shadows.bias, CONFIG.graphics.shadows.depthRange),
-        depthBias(
-          CONFIG.graphics.bodyShadows.bias,
-          CONFIG.graphics.bodyShadows.depthRange,
-        ),
-      );
-      effect.setFloat("intensity", v.intensity * this.intensityMult);
-      // A DECLARED sampler must be BOUND or the bind group fails to build and
-      // the draw is silently lost. Neither can be null by the time this runs —
-      // the depth capture is on the draw phase of the same `scene.render()`
-      // and the map is bound at startup — but nothing here rests on that.
-      const depth = this.depth.texture;
-      if (depth) effect.setTexture("depthTexture", depth);
-      if (this.shadowMap) effect.setTexture("shadowMap", this.shadowMap);
-      if (this.bodyShadowMap) {
-        effect.setTexture("bodyShadowMap", this.bodyShadowMap);
-      }
-      if (this.cloudShadowMap) effect.setTexture("cloudShadowMap", this.cloudShadowMap);
-      effect.setVector4("cloudShadow", this.cloudArea);
-      effect.setVector4("cloudShadowRay", this.cloudRay);
-    };
-  }
+  ) {}
 
-  /**
-   * The pass, for `Game` to attach and detach — exposed rather than given an
-   * attach/detach pair of its own for the reason `MotionBlur`'s is: the ORDER
-   * is the caller's business, and only what assembled the chain knows where
-   * this goes.
-   */
-  get pass(): PostProcess {
-    return this.post;
-  }
-
-  /** Everything it needs is bound. `Game` will not attach the pass until it is. */
+  /** Everything it needs is bound. `Game` latches the stage on only once it is. */
   get ready(): boolean {
     return (
       this.shadowMap !== null &&
@@ -472,21 +189,24 @@ export class Volumetrics {
     );
   }
 
-  /** The moon's depth map and its view*projection — `ShadowSystem`'s, via `Game`. */
-  setShadow(map: BaseTexture, matrix: Matrix): void {
+  /** The moon's depth map, its view*projection, and the map as our renderer holds it when it is ours — `ShadowSystem`'s, via `Game`. */
+  setShadow(map: BaseTexture, matrix: Matrix, own: OwnTexture | null): void {
     this.shadowMap = map;
+    this.ownShadowMap = own;
     this.lightMatrix = matrix;
   }
 
   /**
-   * The BODIES' depth map and its view*projection — `BodyShadows`', via `Game`.
+   * The BODIES' depth map, its view*projection and our renderer's own
+   * texture behind it — `BodyShadows`', via `Game`.
    *
    * Pushed on the same line as `setShadow` and for the same reason: both
-   * generators mutate their matrix in place, so re-reading every frame is the
+   * owners mutate their matrix in place, so re-reading every frame is the
    * only thing that does not lean on that.
    */
-  setBodyShadow(map: BaseTexture, matrix: Matrix): void {
+  setBodyShadow(map: BaseTexture, matrix: Matrix, own: OwnTexture | null): void {
     this.bodyShadowMap = map;
+    this.ownBodyShadowMap = own;
     this.bodyLightMatrix = matrix;
   }
 
@@ -578,7 +298,127 @@ export class Volumetrics {
     this.tanY = Math.tan(this.camera.fov * 0.5);
   }
 
-  dispose(): void {
-    this.post.dispose();
+  /**
+   * This frame's block, as Babylon's `onApply` set it: the vertex stage's
+   * `scale` (1, 1), the clouds' two vectors, both light matrices, the air,
+   * the camera's place and basis, the moon and its colour, the FOV with the
+   * aspect off the input's own size (so a resized window is right on the
+   * frame it happens — `MotionBlur` reads it the same way), the clip planes,
+   * how far to march and each map's bias, and the intensity. Every float is
+   * written; the pads stay zero.
+   */
+  fill(b: Float32Array, width: number, height: number): void {
+    const v = CONFIG.graphics.volumetrics;
+    b[B.scale] = 1;
+    b[B.scale + 1] = 1;
+    vec4(b, B.cloudShadow, this.cloudArea);
+    vec4(b, B.cloudShadowRay, this.cloudRay);
+    mat4(b, B.lightMatrix, this.lightMatrix);
+    mat4(b, B.bodyLightMatrix, this.bodyLightMatrix);
+    b[B.air] = v.density * this.densityMult;
+    b[B.air + 1] = v.heightFalloff;
+    b[B.air + 2] = v.heightBase;
+    b[B.air + 3] = v.anisotropy;
+    const p = this.camera.position;
+    b[B.camPos] = p.x;
+    b[B.camPos + 1] = p.y;
+    b[B.camPos + 2] = p.z;
+    vec3(b, B.camRight, this.right);
+    vec3(b, B.camUp, this.up);
+    vec3(b, B.camFwd, this.fwd);
+    vec3(b, B.moonDir, this.moon);
+    vec3(b, B.tint, this.tint);
+    b[B.tanHalfFov] = (this.tanY * width) / Math.max(1, height);
+    b[B.tanHalfFov + 1] = this.tanY;
+    b[B.nearFar] = this.camera.minZ;
+    b[B.nearFar + 1] = this.camera.maxZ;
+    b[B.march] = this.reach;
+    b[B.march + 1] = depthBias(CONFIG.graphics.shadows.bias, CONFIG.graphics.shadows.depthRange);
+    b[B.march + 2] = depthBias(CONFIG.graphics.bodyShadows.bias, CONFIG.graphics.bodyShadows.depthRange);
+    b[B.intensity] = v.intensity * this.intensityMult;
   }
+
+  /** The world's shadow map as it is bound: ours while it is ours, Babylon's otherwise; null until pushed. */
+  worldMap(): HostTexture | OwnTexture | null {
+    return this.ownShadowMap ?? (this.shadowMap && hostTexture(this.shadowMap));
+  }
+
+  /** The bodies' map, the same way. */
+  bodiesMap(): HostTexture | OwnTexture | null {
+    return this.ownBodyShadowMap ?? (this.bodyShadowMap && hostTexture(this.bodyShadowMap));
+  }
+
+  /** The clouds' field: Babylon's texture, through the host, with the host's sampler. */
+  cloudField(): HostTexture | null {
+    return this.cloudShadowMap && hostTexture(this.cloudShadowMap);
+  }
+}
+
+/**
+ * The shafts as the post chain's stages: ONE A RUNG, each its own program
+ * (`volumetricsFragment`) and every one declared when the chain is built, each
+ * `active()` only while `live()` — the pass `Game` has latched ready this
+ * frame, or null — is at its rung, and drawn off that pass's CPU half.
+ * Babylon named each rung's pass `volumetrics_<rung>`, which is each stage's
+ * label: its pipelines' and the target it reads (`PostProcessRTT-<it>`).
+ */
+export function volumetricStages(depth: FrameDepth, live: () => Volumetrics | null): PostStage[] {
+  const rungs = Object.keys(CONFIG.graphics.volumetrics.rungs) as VolumetricRung[];
+  return rungs.map((rung): PostStage => {
+    const at = (): Volumetrics | null => {
+      const v = live();
+      return v && v.rung === rung ? v : null;
+    };
+    return {
+      name: "shafts",
+      label: `volumetrics_${rung}`,
+      vertex: VOLUMETRICS_VERTEX,
+      vertexBindings: VOLUMETRICS_VERTEX_BINDINGS,
+      fragment: volumetricsFragment(rung),
+      fragmentBindings: VOLUMETRICS_FRAGMENT_BINDINGS,
+      // Every read of the input is at the pixel's own `vUV`.
+      reads: "point",
+      inputBinding: 0,
+      inputSamplerBinding: 5,
+      internalsBinding: 9,
+      blockBinding: 10,
+      inputSampler: INPUT_SAMPLER,
+      blockFloats: B.floats,
+      // The frame's depth by `textureLoad` (no sampler), then the three maps
+      // each with the sampler it is bound with. Each is null until it exists
+      // (the stage then draws nothing); `Game` latches the stage on only once
+      // all four do, which is what `ready` asks.
+      extras: [
+        { binding: 1, texture: () => (depth.texture ? hostTexture(depth.texture as never) : null) },
+        { binding: 2, samplerBinding: 6, texture: () => at()?.worldMap() ?? null },
+        { binding: 3, samplerBinding: 7, texture: () => at()?.bodiesMap() ?? null },
+        { binding: 4, samplerBinding: 8, texture: () => at()?.cloudField() ?? null },
+      ],
+      active: () => at() !== null,
+      fill: (block, width, height) => at()!.fill(block, width, height),
+    };
+  });
+}
+
+function vec3(b: Float32Array, at: number, v: Vector3): void {
+  b[at] = v.x;
+  b[at + 1] = v.y;
+  b[at + 2] = v.z;
+}
+
+function vec4(b: Float32Array, at: number, v: Vector4): void {
+  b[at] = v.x;
+  b[at + 1] = v.y;
+  b[at + 2] = v.z;
+  b[at + 3] = v.w;
+}
+
+/** A matrix as Babylon's `setMatrix` writes one: its sixteen floats in order; the identity while none is pushed. */
+function mat4(b: Float32Array, at: number, m: Matrix | null): void {
+  if (!m) {
+    for (let i = 0; i < 16; i++) b[at + i] = i % 5 === 0 ? 1 : 0;
+    return;
+  }
+  const a = m.m;
+  for (let i = 0; i < 16; i++) b[at + i] = a[i];
 }

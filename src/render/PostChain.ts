@@ -1,9 +1,12 @@
 /**
  * render/PostChain.ts — The post chain's HOST (`BABYLON_EXIT.md` X5.2c1): the
  * ordered list of full-screen stages OUR renderer draws after Babylon's
- * prefix of the chain, each one DECLARED rather than wired, and the one loop
- * that routes them — a pass per active stage, in list order, each reading
- * the one before's output, the LAST active stage given the canvas.
+ * prefix of the chain (the shafts — a stage a rung — the blur and the grade
+ * since X5.2c2), each one DECLARED rather than wired, and the one loop that
+ * routes them — a pass per active stage, in list order, each reading the one
+ * before's output, the LAST active stage given the canvas and any other a
+ * target of the owner's POOL, one a pass POSITION (so each pass of a frame
+ * writes a target of its own, as each Babylon pass had an input of its own).
  * Owns: `PostChain`; `PostStage` (what a stage declares), `PostExtra` (a
  * texture a stage reads beside its input) and `PostPassOwner` (what the side
  * that OPENS the passes must do); Babylon's full-screen quad as a vertex and
@@ -13,8 +16,11 @@
  * pipelines it was built to declare.
  * Invariants: a stage declares its PROGRAM as compiled (both modules, their
  * bindings: `PipelineCache` builds the layout from them), its uniform block
- * (its size and `fill`, handed the size of what it reads), its EXTRA bindings
- * (`PostExtra`), the SAMPLER it reads its input with (a property of the
+ * (its size and `fill`, handed the size of what it reads — the render size,
+ * which every target of the chain is), its EXTRA bindings (`PostExtra`: a
+ * texture of the host's, bound with the host's own view and sampler, or one
+ * of our renderer's, `OwnTexture`, bound with its owner's; with a sampler
+ * binding if it is sampled), the SAMPLER it reads its input with (a property of the
  * CONSUMER, never of the target it reads, so it is made here from the
  * stage's descriptor), whether it is `active()` (its setting), and whether it
  * reads its input point-wise or across a neighbourhood (`reads`, what a later
@@ -50,16 +56,25 @@
  * `Picture change:`.
  */
 import type { BoundTexture, HostTexture, PassTargets } from "./frameHost";
+import { OwnTexture } from "./HostBindGroup";
 import type { BuiltPipeline, PipelineSpec, PipelineState, ShaderSource } from "./PipelineCache";
 import type { Renderer } from "./Renderer";
 import { canvasTargets, POST_TARGETS } from "./targets";
 import type { AssembledBinding } from "./wgsl/assemble";
 
-/** A texture a stage reads beside its input: its binding in group 1, and what is bound there this frame. */
+/**
+ * A texture a stage reads beside its input: its binding in group 1, the
+ * binding of the sampler it is read with if it is SAMPLED (absent for one
+ * read by `textureLoad`, the frame's depth), and what is bound there this
+ * frame — the host's texture, bound with the host's own view and sampler,
+ * or one our renderer owns, bound with the view and sampler its owner holds
+ * (`OwnTexture`, `BABYLON_EXIT.md` rule 5: the shafts' shadow maps, X5.2c2).
+ */
 export interface PostExtra {
   readonly binding: number;
+  readonly samplerBinding?: number;
   /** The texture now, or null while it does not exist yet (the stage then draws nothing). */
-  texture(): HostTexture | null;
+  texture(): HostTexture | OwnTexture | null;
 }
 
 /** One stage of the chain, as it DECLARES itself (see the header). */
@@ -105,7 +120,14 @@ export interface PostPassOwner {
   /** The render size, which every target of the chain is. */
   readonly width: number;
   readonly height: number;
-  /** Opens a pass into pool target `slot` (0 or 1), cleared, named for `reader`; returns the target. */
+  /**
+   * Opens a pass into pool target `slot` — the POSITION of the pass among
+   * this frame's passes into the pool, 0 first, so each pass of a frame has a
+   * target of its own as each Babylon pass had an input of its own — bound
+   * and cleared as Babylon's `PostProcess.activate` bound and cleared the
+   * input of `reader` (the stage that will read it), named for `reader`;
+   * returns the target.
+   */
   openPool(slot: number, reader: PostStage): HostTexture;
   /** Opens the canvas's pass: the last active stage's. */
   openCanvas(): void;
@@ -151,19 +173,23 @@ interface StageState {
   /** This frame's draw: what `run` binds. */
   pipeline: BuiltPipeline | null;
   group: GPUBindGroup | null;
-  /** What `group` was made from: the layout, the internals, the input view, each extra's view. */
+  /** What `group` was made from: the layout, the internals, the input view, each extra's view and sampler. */
   groupLayout: GPUBindGroupLayout | null;
   groupInternals: GPUBuffer | null;
   groupInput: GPUTextureView | null;
   readonly groupExtras: (GPUTextureView | null)[];
-  /** This frame's extras' views. */
+  readonly groupExtraSamplers: (GPUSampler | null)[];
+  /** This frame's extras' views and samplers. */
   readonly extraViews: (GPUTextureView | null)[];
+  readonly extraSamplers: (GPUSampler | null)[];
   readonly run: (pass: GPURenderPassEncoder) => void;
 }
 
 export class PostChain {
   /** Settles once every pipeline the constructor asked is built (true) or one failed (false). */
   readonly ready: Promise<boolean>;
+  /** The stages in list order, as declared — for the probe's adapter, which names each pool target by the stage that writes it. */
+  readonly stages: readonly PostStage[];
   private readonly device: GPUDevice;
   /** The canvas's targets, at the device's preferred format (the swap chain's). */
   private readonly canvas: PassTargets;
@@ -184,6 +210,7 @@ export class PostChain {
   ) {
     const device = renderer.device;
     this.device = device;
+    this.stages = stages;
     this.canvas = canvasTargets(navigator.gpu.getPreferredCanvasFormat());
     this.quad = this.buffer("post chain: quad", QUAD, QUAD_USAGE);
     this.indices = this.buffer("post chain: quad indices", QUAD_INDICES, INDEX_USAGE);
@@ -208,7 +235,9 @@ export class PostChain {
         groupInternals: null,
         groupInput: null,
         groupExtras: stage.extras.map(() => null),
+        groupExtraSamplers: stage.extras.map(() => null),
         extraViews: stage.extras.map(() => null),
+        extraSamplers: stage.extras.map(() => null),
         run: (pass) => this.run(pass, state),
       };
       this.states.push(state);
@@ -245,7 +274,7 @@ export class PostChain {
    * The chain's passes for this frame, in list order: each active stage is
    * handed the output before it (the first, the prefix's) and drawn into the
    * pass the owner opens for it — the canvas for the last, a pool target
-   * (alternating two) for any other. Called by the owner after Babylon's
+   * for any other, one a position (`PostPassOwner.openPool`). Called by the owner after Babylon's
    * prefix has written `prefixOutput`; a stage whose pipeline is not built,
    * or whose bindings do not exist yet, draws nothing in its pass.
    */
@@ -264,7 +293,7 @@ export class PostChain {
         const out = owner.openPool(slot, this.nextActive(i));
         this.draw(s, POOL, input, owner);
         input = out;
-        slot ^= 1;
+        slot++;
       }
     }
   }
@@ -334,11 +363,17 @@ export class PostChain {
     const inputView = b.view;
     if (!inputView) return;
     for (let i = 0; i < st.extras.length; i++) {
-      const t = st.extras[i].texture();
+      const x = st.extras[i];
+      const t = x.texture();
       if (!t) return;
-      host.bind(t, b);
+      if (t instanceof OwnTexture) {
+        b.view = t.view;
+        b.sampler = t.sampler;
+      } else host.bind(t, b);
       if (!b.view) return;
+      if (x.samplerBinding !== undefined && !b.sampler) return;
       state.extraViews[i] = b.view;
+      state.extraSamplers[i] = x.samplerBinding !== undefined ? b.sampler : null;
     }
     // The block, written only when a value moved.
     st.fill(state.values, owner.width, owner.height);
@@ -360,7 +395,9 @@ export class PostChain {
     const layout = built.groups[1];
     let stale =
       !state.group || state.groupLayout !== layout || state.groupInternals !== internals || state.groupInput !== inputView;
-    for (let i = 0; i < st.extras.length && !stale; i++) stale = state.groupExtras[i] !== state.extraViews[i];
+    for (let i = 0; i < st.extras.length && !stale; i++) {
+      stale = state.groupExtras[i] !== state.extraViews[i] || state.groupExtraSamplers[i] !== state.extraSamplers[i];
+    }
     if (stale) {
       const entries: GPUBindGroupEntry[] = [
         { binding: st.inputBinding, resource: inputView },
@@ -369,13 +406,19 @@ export class PostChain {
         { binding: st.internalsBinding, resource: { buffer: internals, offset: 0, size: 8 } },
         { binding: st.blockBinding, resource: { buffer: state.block, offset: 0, size: st.blockFloats * 4 } },
       ];
-      st.extras.forEach((x, i) => entries.push({ binding: x.binding, resource: state.extraViews[i]! }));
+      st.extras.forEach((x, i) => {
+        entries.push({ binding: x.binding, resource: state.extraViews[i]! });
+        if (x.samplerBinding !== undefined) entries.push({ binding: x.samplerBinding, resource: state.extraSamplers[i]! });
+      });
       entries.sort((p, q) => p.binding - q.binding);
       state.group = this.device.createBindGroup({ label: `${st.label}: group 1`, layout, entries });
       state.groupLayout = layout;
       state.groupInternals = internals;
       state.groupInput = inputView;
-      for (let i = 0; i < st.extras.length; i++) state.groupExtras[i] = state.extraViews[i];
+      for (let i = 0; i < st.extras.length; i++) {
+        state.groupExtras[i] = state.extraViews[i];
+        state.groupExtraSamplers[i] = state.extraSamplers[i];
+      }
     }
     this.empty ??= this.device.createBindGroup({ label: "post chain: group 0", layout: built.groups[0], entries: [] });
     state.pipeline = built;
