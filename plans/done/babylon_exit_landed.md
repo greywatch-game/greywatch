@@ -9863,12 +9863,12 @@ seven minor points, each verified against the tree first.
   row's freeze calls; Hollowmere's 16 rows ran it); the throw itself provoked; corecheck,
   parity, `gate`, `shaders` (no game code moved).
 
-### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07; its decisions the owner's, 2026-11-07 and 2026-11-08, rows in "Decisions that are yours") — X5.2a **LANDED** (this commit)
+### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07; its decisions the owner's, 2026-11-07 and 2026-11-08, rows in "Decisions that are yours") — X5.2a **LANDED** (e5d9390)
 
 The plan's `BABYLON_EXIT.md` holds X5.2's brief, its ONE RULE, shape (A), "What it is
 today" (corrected in place by X5.2a, each correction marked) and the five sub-steps.
 
-**X5.2a landed** (this commit; 2026-11-08; no change to the game: a new probe, the
+**X5.2a landed** (e5d9390; 2026-11-08; no change to the game: a new probe, the
 harness's post path through one adapter, four rows, docs; under `src/` only the rows and
 the `damage` field in `bench/vantages.ts`). Measured at b00b887, headless on the Windows
 box.
