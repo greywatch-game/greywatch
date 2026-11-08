@@ -9863,7 +9863,7 @@ seven minor points, each verified against the tree first.
   row's freeze calls; Hollowmere's 16 rows ran it); the throw itself provoked; corecheck,
   parity, `gate`, `shaders` (no game code moved).
 
-### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07; its decisions the owner's, 2026-11-07 and 2026-11-08, rows in "Decisions that are yours") — X5.2a **LANDED** (e5d9390, its review 55ef32c, its held finding F1 fixed 738f5e3), X5.2b **LANDED** (f697f0e, its review e5ab075), X5.2c1 **LANDED** (4747fe7)
+### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07; its decisions the owner's, 2026-11-07 and 2026-11-08, rows in "Decisions that are yours") — X5.2a **LANDED** (e5d9390, its review 55ef32c, its held finding F1 fixed 738f5e3), X5.2b **LANDED** (f697f0e, its review e5ab075), X5.2c1 **LANDED** (4747fe7, its review bfa6a6b)
 
 The plan's `BABYLON_EXIT.md` holds X5.2's brief, its ONE RULE, shape (A), "What it is
 today" (corrected in place by X5.2a, each correction marked) and the five sub-steps.
@@ -10378,7 +10378,7 @@ change in play (the grade's text and pipeline do not depend on the ratio). The p
   sampler, and `camera.outputRenderTarget`'s three readers — five more, inert under the
   window, added by its review — which X5.2d meets; X5.4's
   sequencer named).
-**Its review** (2026-11-08; no change to the picture: a DEV-only check, the rest documents,
+**Its review** (bfa6a6b; 2026-11-08; no change to the picture: a DEV-only check, the rest documents,
 comments and contract headers) found nothing that must be fixed and five minor points,
 each checked against the tree first. **The tail**: the fallback clear could not tell a
 prefix tail that drew nothing from a `Game.postPrefixTail` naming a pass that never
