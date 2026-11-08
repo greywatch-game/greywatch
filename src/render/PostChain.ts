@@ -41,7 +41,9 @@
  * for that target is built (a stage not built draws nothing: `drawsReady`
  * says so, and the round's declared list waits for every one, so play never
  * reaches it); nothing here allocates on a frame once its bind groups are
- * made (remade only when a view a stage binds changes: a resize).
+ * made (at the stage's first draw — a shafts rung's at its first frame —
+ * and remade only when a view or a sampler it binds changes: a resize, a
+ * shadow map re-made by a quality change or handed between its owners).
  * Never: imports Babylon; binds a target — the `PostPassOwner` binds every
  * one, with Babylon's public API, until the game owns the frame (X5.4); draws
  * a stage that is not `active()`; reads the canvas or its depth.

@@ -311,7 +311,7 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
     {
       id: "post-noblur",
       of: "`post-blur` with the motion blur setting off",
-      proves: "the chain with the blur pass detached, and that taking it off leaves the grade at the tail",
+      proves: "the chain with the blur off (its stage not drawn), and that taking it off leaves the grade at the tail",
       pos: [2, 1.7, 18],
       target: [0, 2.2, -14],
       turn: 0.03,

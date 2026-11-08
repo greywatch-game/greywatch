@@ -894,7 +894,10 @@ function postAdapter() {
       return {
         list: (cam._postProcesses ?? []).map((pp, i) => (pp ? { index: i, ...pass(pp) } : { index: i, hole: true })),
         off: [g.fxaa, g.volumetrics?.pass, g.motionBlur?.pass, g.post?.post].filter((pp) => pp && !(cam._postProcesses ?? []).includes(pp)).map(pass),
-        slots: { fxaa: g.fxaaSlot, shafts: g.volumetricsSlot, shaftsAttached: g.volumetricsAttached, fxaaAttached: g.fxaaAttached, blurEnabled: g.motionBlur?.isEnabled, grade: { enabled: g.post?.enabled, attached: g.post?.attached, damage: g.post?.damage } },
+        // The shafts' slot is gone since X5.2c2 (their switch is their stage's
+        // `active()`), so it is not logged: a log before it holds `shafts`,
+        // one after it none (post-expected.txt's `**.chain.slots.shafts`).
+        slots: { fxaa: g.fxaaSlot, shaftsAttached: g.volumetricsAttached, fxaaAttached: g.fxaaAttached, blurEnabled: g.motionBlur?.isEnabled, grade: { enabled: g.post?.enabled, attached: g.post?.attached, damage: g.post?.damage } },
         shaftsRung: g.volumetricsRung ?? null,
         glow: glow
           ? {

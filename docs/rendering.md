@@ -681,7 +681,8 @@ part of the picture, not a grade over one: FXAA behind it antialiases the lines
 shafts, the smear and the grain all land on top of inked geometry rather than
 under it. A `PostProcess` given a camera attaches itself and `attachPostProcess`
 APPENDS, so what is constructed first runs first — which is why `Game` builds it
-above the `DefaultRenderingPipeline` rather than beside the other three passes.
+above the `DefaultRenderingPipeline`; the passes after FXAA are stages of our post
+chain since X5.2c1 and X5.2c2, which follow Babylon's whole list.
 
 **It needs no normal buffer, and the reason is worth knowing before anyone adds
 one.** A `GeometryBufferRenderer` re-renders the map — the wall the light
@@ -6100,16 +6101,13 @@ all in the counter this finding is named after. Not chased.
 - **The post-process chain has an order, and a display setting that switches an
   effect off REMOVES its pass** rather than zeroing its uniforms — an attached but idle
   pass still reads and writes the whole frame. The order is FXAA, shafts (`Volumetrics`),
-  motion blur, paper grain. The first three are Babylon's passes, enforced by where each
-  one re-attaches: FXAA and the shafts
-  each hold a SLOT claimed while the chain is being built, which `detachPostProcess`
-  nulls and an indexed `attachPostProcess` refills (`Game.setFxaaEnabled`,
-  `Game.syncVolumetrics`) — never `pipeline.fxaaEnabled`, which rebuilds the pipeline
-  and re-appends FXAA behind the blur — and the blur, the last of Babylon's, appends
-  (`Game.setMotionBlurEnabled`). **The grade is a stage of OUR post chain since
-  X5.2c1** ("Our renderer's frame"), after Babylon's whole list by the host's order, so
-  the dance the blur's toggle used to do with it (the grade taken off and put back
-  behind the blur) is gone, and its switch is its stage's `active()`. Nothing throws if
+  motion blur, paper grain. FXAA is Babylon's pass, holding a SLOT claimed while the
+  chain is being built, which `detachPostProcess` nulls and an indexed
+  `attachPostProcess` refills (`Game.setFxaaEnabled`) — never `pipeline.fxaaEnabled`,
+  which rebuilds the pipeline and re-appends FXAA. **The shafts, the blur (X5.2c2) and
+  the grade (X5.2c1) are stages of OUR post chain** ("Our renderer's frame"), after
+  Babylon's whole list, in the host's list order (`Game` assembles it), each switch its
+  stage's `active()`: no slot, no append and no dance. Nothing throws if
   the order is wrong; the symptom is grain over a
   smear, which reads as a dirty lens. The red damage flash is painted by the grade's
   shader and goes off with it, leaving the HUD's damage arcs to tell the player where a
@@ -7629,8 +7627,9 @@ of OUR post chain (X5.2c2: its program as Babylon compiled it,
 `shaders/wgsl/volumetrics.ts`), **each rung is a STAGE of its own**, every one
 declared when the chain is built (`volumetricStages`), so a rung changed in play
 compiles nothing. The stage is drawn only once `Game.syncVolumetrics` has
-latched every input present, as the pass used to be attached, so a new pass's
-first frame has no shafts. **Its shadow maps are bound as OUR renderer holds
+latched every input present, as the pass used to be attached — the same frame
+for a pass a rung change has just built, so only the session's first render,
+before the frame's depth exists, has no shafts, as before. **Its shadow maps are bound as OUR renderer holds
 them** (`own ?? hostTexture`, `ShadowBindings`' pattern: the same texture,
 through its owner's view and sampler), **the clouds' field through the host**
 with the host's sampler.

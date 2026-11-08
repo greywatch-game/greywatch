@@ -21,7 +21,9 @@
  * nothing (`BABYLON_EXIT.md` X5.2's row "pipelines"); a rung's stage is
  * `active()` only while `live()` hands back a pass at that rung — `Game`'s,
  * and only once it has latched the pass READY (`Game.syncVolumetrics`, as it
- * used to attach it), so the first frame has no shafts exactly as before. A
+ * used to attach it) — the same frame for a pass `setVolumetrics` has just
+ * built, every input being standing by then, so only the session's first
+ * render, before the frame's depth exists, has no shafts, exactly as before. A
  * shadow map our renderer owns is bound as OURS (`own ?? hostTexture`, the
  * pattern `ShadowBindings.fillFrameTextures` follows); the clouds' field is
  * Babylon's, through `hostTexture`, with the host's sampler. Its block is

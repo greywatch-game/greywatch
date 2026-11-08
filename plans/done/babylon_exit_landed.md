@@ -10316,6 +10316,11 @@ frame (X5.2c1's review; production keeps the clear).
   of the probe's frame and not of every boot. It is a timing-dependent boot-frame
   difference: no frozen frame and no bank row shows it, and it is not made exact
   because that would mean faking compile timing.
+  **Wider since X5.2c2, for the owner's information** (X5.2c2's review): the shafts and
+  the blur are ours and compiled ahead of Babylon's ink and FXAA too, so on a boot frame
+  where either is still compiling ours draws the shafts' haze and dither and the blur over
+  that input cleared to the clear colour, then grades it — the same timing-dependent
+  class, in no frozen frame and no bank row.
 - **The bank**, all 147 rows, `--check --keep` at the step against the BEFORE, by
   `exact.mjs`: 147 byte-equal, no flake, no Sarab procedure needed; the same 34 stale
   rows red against `ref/` on both sides.
@@ -10414,8 +10419,10 @@ through our sampler at Babylon's descriptor (nearest x3, clamp, clamp, repeat, l
 anisotropy 1). **Every rung is a stage** (`volumetricStages`): all six of the shafts'
 pipelines asked at construction ("the post chain"), so a rung change in play compiles
 nothing (the parent compiled each rung at its first frame); a rung's stage is drawn only
-while `Game.syncVolumetrics` has latched the pass ready, where it used to attach it, so a
-new pass's first frame has no shafts, as before. **The shafts' two shadow maps are bound
+while `Game.syncVolumetrics` has latched the pass ready, where it used to attach it — the
+same frame for a pass a rung change has just built, so only the session's first render,
+before the frame's depth exists, has no shafts, as before (X5.2c2's review: the record
+first said a new pass's first frame had none, against X5.2a's correction and the code). **The shafts' two shadow maps are bound
 as our renderer holds them** (`ShadowSystem.ownDepthMap`, `BodyShadows.ownDepthMap`,
 `own ?? hostTexture`), **the cloud field through `hostTexture` with the host's sampler —
 Babylon reads the cloud field in a round no longer** (X5.4's list says so). `PostExtra`
@@ -10468,7 +10475,7 @@ input a pass; (4) **`fill` is handed the render size**, which every target of th
 - **Live** (`x52c2/live.mjs`, X5.2c1's script counting the three: a Hollowmere round, every
   post setting toggled in play, the shafts low/off/high/medium, render scale at both glow
   rungs, a resize and back, a teardown, a second round, Coldharbour, `F2` with a quay
-  dragged and back and the glow rung changed, the round after): our ten modules (the shafts'
+  dragged and back and the glow rung changed, the round after): our eight modules (the shafts'
   vertex and three fragments, the blur's two, the grade's two) made at the boot and none
   after; no module of Babylon's `volumetrics_*` or `motionBlur` (the parent: five, three of
   them in play); Babylon's synchronous pipelines 32 → 26 by the end; no "compiled in play"
@@ -10504,3 +10511,20 @@ input a pass; (4) **`fill` is handed the render size**, which every target of th
   (`check-babylon-free`, `check-proving`), corecheck and parity pass.
 **Not run**: the phone (its page is the probe's `phone` size only), a lost device, a
 server's match in a browser.
+
+**Its review** (HASHR; 2026-11-08; no change to the picture: documents, comments, a
+vantage's `proves` text and the probe's `chain` log, under `src/` comments and text only)
+found nothing real and six minor points, each checked against the tree first. **Records
+left on the old order**: `docs/rendering.md`'s post-process bullet (the shafts' slot, the
+blur's append), its ink paragraph and `Game`'s ("beside the other three passes"), and
+`post-noblur`'s `proves` ("the blur pass detached") now say the shafts, the blur and the
+grade are stages of our chain. **"A new pass's first frame has no shafts"** was wrong
+against X5.2a's correction and the code: after `setVolumetrics` the next
+`syncVolumetrics` latches `ready` the same frame, every input standing; only the session's
+first render, before the frame's depth exists, has none, as on the parent — corrected in
+`Volumetrics`, `Game`, `docs/rendering.md`, the record above and the note. **Eight
+modules, not ten**, in the live count. **The boot-frame difference is wider** — noted for
+the owner where X5.2c1's is recorded. **`PostChain`'s header** says a group is remade on a
+sampler or a shadow map changing too, not only a resize. **`post.mjs`** no longer logs the
+shafts' slot (it was `undefined`, so absent: `--compare` of the two logs above still
+equal on both pages).
