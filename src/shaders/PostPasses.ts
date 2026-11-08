@@ -18,20 +18,27 @@
  * `outputRenderTarget` is set ONLY from the end of the camera's draw phase to
  * the end of its render (`onAfterDrawPhaseObservable`, added after the glow's
  * and the frame depth's, to `onAfterCameraRenderObservable`), because Babylon
- * reads it at three points and only the last is the prefix's output: as
- * `Scene.render` binds the frame's first target and clears the canvas's depth
- * (it would bind this target instead and skip that clear — the empty canvas
- * pass the frame OPENS with, X5.2a), as the camera's render picks its render
- * pass id (which keys every Babylon draw's wrapper, an editor build's meshes
- * among them), and as `PostProcessManager._finalizeFrame` binds its last
- * pass's target; the prefix's output is CLEARED to the scene's clear colour at
- * the open of the pass that writes it, as Babylon's `PostProcess.activate`
+ * reads it all through a frame and only `_finalizeFrame`'s read is the
+ * prefix's output: as `Scene.render` resets the target's `_cleared` (the
+ * colour clear's gate) and then binds the frame's first target and clears the
+ * canvas's depth (it would bind this target instead and skip that clear — the
+ * empty canvas pass the frame OPENS with, X5.2a), as it hands the camera's
+ * render its bind flag, as the camera's render picks its render pass id
+ * (which keys every Babylon draw's wrapper, an editor build's meshes among
+ * them), in that render's and two materials' MULTIVIEW tests, and as
+ * `PostProcessManager._finalizeFrame` binds its last pass's target — every
+ * read but the last outside the window, and the multiview ones inert on a
+ * one-view target anyway (`BABYLON_EXIT.md`, "What it is today"); the
+ * prefix's output is CLEARED to the scene's clear colour at the open of the
+ * pass that writes it, as Babylon's `PostProcess.activate`
  * clears a pass's input — from inside the prefix's last pass's `apply`
  * (`onApplyObservable`, after its own observers, before its draw), or, on a
  * frame that pass draws nothing (its effect not ready), as a pass of its own
- * where that one stood — so what our first stage reads on any frame is what
- * the grade read as Babylon's last pass; a target is named for the stage that
- * READS it, as Babylon names a post-process's input (`PostProcessRTT-<label>`);
+ * where that one stood (a DEV build THROWS if that pass is ready, which is a
+ * tail `Game` named wrongly, not one that drew nothing) — so what our first
+ * stage reads on any frame is what the grade read as Babylon's last pass; a
+ * target is named for the stage that READS it, as Babylon names a
+ * post-process's input (`PostProcessRTT-<label>`);
  * the canvas is opened with `restoreDefaultFramebuffer`, exactly as
  * `_finalizeFrame` opened it for Babylon's last pass, so the canvas's pass is
  * Babylon's main pass with the engine's depth; every target follows the
@@ -139,7 +146,21 @@ export class PostPasses implements PostPassOwner {
     // The prefix's last pass drew nothing (its effect not ready): Babylon's
     // `activate` would still have cleared the target in a pass of its own,
     // and the target is still bound, with nothing begun on it.
-    if (!this.cleared) this.clear();
+    if (!this.cleared) {
+      // ...or `Game.postPrefixTail` named a pass that is not the prefix's
+      // last, which this cannot tell from that: the real last pass drew, and
+      // this clear would land after it and grade a clear colour, silently.
+      // Babylon's `apply` returns nothing exactly while `!isReady()`, and
+      // no readiness changes inside a frame, so a READY tail that never
+      // applied is the wrong one — thrown in a DEV build, as `GiCompute`
+      // throws a dispatch nobody recorded; production keeps the clear.
+      if (import.meta.env.DEV && this.tail?.isReady()) {
+        throw new Error(
+          `post: the prefix's tail "${this.tail.name}" is ready and never applied this frame — Game.postPrefixTail does not name the prefix's last pass, and the fallback clear would wipe the grade's input`,
+        );
+      }
+      this.clear();
+    }
     this.chain.record(this);
   }
 

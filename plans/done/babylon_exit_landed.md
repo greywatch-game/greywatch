@@ -10267,7 +10267,10 @@ picks its render pass id (`outputRenderTarget.renderPassId`, which keys every Ba
 draw's wrapper, an editor build's meshes among them); and as `_finalizeFrame` binds its
 last pass's target. Only the third is the prefix's output, so `PostPasses` sets it only
 from the draw phase's end to the camera's (`onAfterDrawPhaseObservable`, after the glow's
-and the frame depth's observers, to `onAfterCameraRenderObservable`). (2)
+and the frame depth's observers, to `onAfterCameraRenderObservable`). Five more reads,
+each inert under that window, were listed by X5.2c1's review (the plan's "What it is
+today": `_checkCameraRenderTarget`, the camera loop's bind flag, `_renderForCamera`'s
+multiview branch and two MULTIVIEW tests). (2)
 **`_finalizeFrame` binds that target WITHOUT a clear**, where Babylon's `activate` cleared
 the grade's input at its pass's open (to the scene's clear colour), so the pass the
 prefix's last stage draws in would load rather than clear — and on a frame that stage
@@ -10277,9 +10280,14 @@ grade would grade the target's last contents where Babylon's graded the clear co
 (`Game.postPrefixTail`: the blur, the shafts, FXAA or the ink, whichever is last on the
 camera) — after its own observers, before its draw, the pass still unbegun — or, on a
 frame it draws nothing, in a pass of its own where that one stood: every pass's load op
-and clear value the parent's, on every frame.
+and clear value the parent's, on every frame. **That fallback cannot tell a tail that
+drew nothing from a `postPrefixTail` naming a pass that never applied** (the real last
+pass drew, and the clear would land after it, grading a clear colour), so a DEV build
+THROWS when it is about to run while the named tail `isReady()` — Babylon's `apply`
+returns nothing exactly while `!isReady()`, and readiness does not change inside a
+frame (X5.2c1's review; production keeps the clear).
 **Measured** (the Windows box, headless; BEFOREs at 79e620d in a worktree with its own
-`npm ci` and a copy of the main tree's `ref/`): TODO
+`npm ci` and a copy of the main tree's `ref/`):
 - **The probe** `--against` the parent's log, both pages, sixteen scenarios: equal,
   29,009 values a page — every pass in submit order (the canvas's opening pass, the
   prefix's last pass into the grade's input with its `clear` and clear value and its
@@ -10295,12 +10303,19 @@ and clear value the parent's, on every frame.
   first, then both pages. The live half (printed): the same pass sequence frame for frame
   after the boot on both pages — the render-scale change and the resize each one frame
   with the canvas's opening pass alone, then whole; no stage of ours drawless; the shafts'
-  rungs made on their frames. At the boot, which of Babylon's passes is ready first rides
+  rungs made on their frames. **At the boot one frame may differ, and it is not made
+  exact** (stated plainly by X5.2c1's review): which pipeline is ready first rides
   timing on both trees (the parent's desk boot drew FXAA's pass empty on its first chain
-  frame): ours is declared and compiled ahead, so on the one frame the step's desk
-  `boot-2` drew all four of Babylon's prefix passes empty (under the building card), the
-  grade drew over its input cleared to the clear colour — the clear-alone path — where
-  the parent's grade, compiled with the rest, would not yet have drawn.
+  frame), and our grade is declared and compiled ahead of Babylon's prefix — so on a
+  frame where every pass of that prefix is still compiling, ours grades its input
+  cleared to the clear colour (the clear-alone path) and the canvas shows a GRADED CLEAR
+  COLOUR where the parent's grade, compiling with the rest, left it BLACK. The probe's
+  desk `boot-2` was such a frame, and it was under the building card; a real FIRST MENU
+  BOOT may show it through the canvas for a frame while `#menu-shot` is still decoding
+  (`ui/backdrop.css`: the shot has no background of its own), so "under the card" holds
+  of the probe's frame and not of every boot. It is a timing-dependent boot-frame
+  difference: no frozen frame and no bank row shows it, and it is not made exact
+  because that would mean faking compile timing.
 - **The bank**, all 147 rows, `--check --keep` at the step against the BEFORE, by
   `exact.mjs`: 147 byte-equal, no flake, no Sarab procedure needed; the same 34 stale
   rows red against `ref/` on both sides.
@@ -10360,5 +10375,23 @@ change in play (the grade's text and pipeline do not depend on the ratio). The p
   items 2 to 5 as the glow's are), `Game`'s comments, `plans/webgpu-ref/README.md`,
   `post.mjs`'s and `harness.mjs`' headers and `post-expected.txt` (X5.2c1's section);
   `BABYLON_EXIT.md` (X5.2c1 LANDED, "What it is today" corrected: the grade's block and
-  sampler, and `camera.outputRenderTarget`'s three readers, which X5.2d meets; X5.4's
+  sampler, and `camera.outputRenderTarget`'s three readers — five more, inert under the
+  window, added by its review — which X5.2d meets; X5.4's
   sequencer named).
+**Its review** (2026-11-08; no change to the picture: a DEV-only check, the rest documents,
+comments and contract headers) found nothing that must be fixed and five minor points,
+each checked against the tree first. **The tail**: the fallback clear could not tell a
+prefix tail that drew nothing from a `Game.postPrefixTail` naming a pass that never
+applied; a DEV build now throws on a READY tail that never applied ((2) above,
+`PostPasses`' header and comment, `Game.postPrefixTail`, `docs/rendering.md`, `FILES.md`).
+**The boot frame**: stated plainly in the probe's live half above, a first menu boot
+included. **`outputRenderTarget`'s readers**: five more, inert under the window, listed in
+"What it is today" with what X5.2d meets (and `PostPasses`' header and `docs/rendering.md`
+no longer say three). **`openPool`**: four things X5.2c2 must verify, in its bullet, the
+code unchanged. **A stray `TODO`** after "Measured" removed. **Measured** (the Windows box,
+headless, a dev build): a Hollowmere round with FXAA, the shafts (off, low, high, medium),
+the motion blur and the grain each off and on — the tail at the blur, the shafts and the
+ink in turn — and render scale 0.75 and back: 250 frames, the prefix's output cleared in
+its pass on every frame the grain was on and by the fallback on none, no page or console
+error; the detached (ready) blur named as the tail threw on its first frame. Typecheck and
+build pass; the throw's text is absent from `dist/`.

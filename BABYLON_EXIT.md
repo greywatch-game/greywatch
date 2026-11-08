@@ -3700,18 +3700,34 @@ marked "X5.2a"):
   lod 0..0, anisotropy 1; and the processor rewrote its `dpdy` as
   `(-internals.yFactor_)*dpdy`.
 - **`camera.outputRenderTarget`** (**X5.2c1**, read in `scene.pure.js` 4007-4087 and
-  4185-4190): Babylon reads it at THREE points of a frame, not one — as `Scene.render`
+  4185-4190; the list completed by X5.2c1's review): Babylon reads it at THREE points of a
+  frame that move a pass, not one — as `Scene.render`
   binds the frame's first target and runs `_clearFrameBuffer` (set, it binds the output
   target and clears it only under `scene.autoClear`, so the canvas's opening pass, which
   clears `canvas.depth`, is never recorded), as `_renderForCamera` sets
   `currentRenderPassId` (the output target's own id, which keys every Babylon draw's
   wrapper), and as `_finalizeFrame` binds its last pass's target — with
   `bindFramebuffer` and NO clear, where `PostProcess.activate` clears a pass's input to
-  the scene's clear colour. X5.2c1 sets it only across the post phase and clears the
-  target in its pass (its entry); **X5.2d's "the scene draws straight into the frame's
-  render target (`outputRenderTarget` with depth)" meets the first two points**: the
-  canvas's opening pass and the render pass id move with it, and with
-  `scene.autoClear` true (X5.2c2) the scene's clear lands on that target.
+  the scene's clear colour. **It reads it at five more, all inert under X5.2c1's
+  window**: `_renderFrame`'s `Scene._checkCameraRenderTarget` (4318-4330, as the frame
+  starts: set, it resets the target's `_cleared`, the gate on `_clearFrameBuffer`'s
+  COLOUR clear, `!rtt._cleared`); the camera loop's `_processSubCameras(activeCamera,
+  !!activeCamera.outputRenderTarget)` (4601: set, `_renderForCamera` binds the target
+  and runs `_clearFrameBuffer` a second time); `_renderForCamera`'s multiview branch
+  (4072-4082, under `camera._renderingMultiview` alone); and the two MULTIVIEW tests,
+  `materialHelper.functions.js` 1132 and `shaderMaterial.pure.js` 532 (a target of more
+  than one view). The first two and the branch read it before the window opens (null,
+  and the branch wants a multiview camera besides); the material tests are false of a
+  target of one view, whenever they read it (`RenderTargetTexture.getViewCount()` is 1).
+  X5.2c1 sets it
+  only across the post phase and clears the target in its pass (its entry); **X5.2d's
+  "the scene draws straight into the frame's render target (`outputRenderTarget` with
+  depth)" meets the first two points and the two frame-start reads**: the canvas's
+  opening pass and the render pass id move with it, `_checkCameraRenderTarget` re-arms
+  `_cleared` every frame and the camera's render binds the target again, so under
+  `scene.autoClear` (true from X5.2c2) the scene's colour clear lands on that target once
+  a frame — at the first bind, the second held off by `!rtt._cleared` — and its depth and
+  stencil clear at both.
 - **Render scale** is `engine.setHardwareScalingLevel(1 / (dpr × renderScale))`
   (`Game.ts` ~3836-3839), which moves every target's size and the blur's kernel.
   **X5.2a**: the levels measured are 1, 1.333 and 2 on the desktop (render sizes
@@ -4042,7 +4058,10 @@ owes" below.
   draw's wrapper, an editor build's meshes among them); and as `_finalizeFrame` binds its
   last pass's target. Only the third is the prefix's output, so `PostPasses` sets it only
   from the draw phase's end to the camera's (`onAfterDrawPhaseObservable`, after the glow's
-  and the frame depth's observers, to `onAfterCameraRenderObservable`). (2)
+  and the frame depth's observers, to `onAfterCameraRenderObservable`). Five more reads,
+  each inert under that window, were listed by X5.2c1's review ("What it is today":
+  `_checkCameraRenderTarget`, the camera loop's bind flag, `_renderForCamera`'s multiview
+  branch and two MULTIVIEW tests). (2)
   **`_finalizeFrame` binds that target WITHOUT a clear**, where Babylon's `activate` cleared
   the grade's input at its pass's open (to the scene's clear colour), so the pass the
   prefix's last stage draws in would load rather than clear — and on a frame that stage
@@ -4052,9 +4071,14 @@ owes" below.
   (`Game.postPrefixTail`: the blur, the shafts, FXAA or the ink, whichever is last on the
   camera) — after its own observers, before its draw, the pass still unbegun — or, on a
   frame it draws nothing, in a pass of its own where that one stood: every pass's load op
-  and clear value the parent's, on every frame.
+  and clear value the parent's, on every frame. **That fallback cannot tell a tail that
+  drew nothing from a `postPrefixTail` naming a pass that never applied** (the real last
+  pass drew, and the clear would land after it, grading a clear colour), so a DEV build
+  THROWS when it is about to run while the named tail `isReady()` — Babylon's `apply`
+  returns nothing exactly while `!isReady()`, and readiness does not change inside a
+  frame (X5.2c1's review; production keeps the clear).
   **Measured** (the Windows box, headless; BEFOREs at 79e620d in a worktree with its own
-  `npm ci` and a copy of the main tree's `ref/`): TODO
+  `npm ci` and a copy of the main tree's `ref/`):
   - **The probe** `--against` the parent's log, both pages, sixteen scenarios: equal,
     29,009 values a page — every pass in submit order (the canvas's opening pass, the
     prefix's last pass into the grade's input with its `clear` and clear value and its
@@ -4070,12 +4094,19 @@ owes" below.
     first, then both pages. The live half (printed): the same pass sequence frame for frame
     after the boot on both pages — the render-scale change and the resize each one frame
     with the canvas's opening pass alone, then whole; no stage of ours drawless; the shafts'
-    rungs made on their frames. At the boot, which of Babylon's passes is ready first rides
+    rungs made on their frames. **At the boot one frame may differ, and it is not made
+    exact** (stated plainly by X5.2c1's review): which pipeline is ready first rides
     timing on both trees (the parent's desk boot drew FXAA's pass empty on its first chain
-    frame): ours is declared and compiled ahead, so on the one frame the step's desk
-    `boot-2` drew all four of Babylon's prefix passes empty (under the building card), the
-    grade drew over its input cleared to the clear colour — the clear-alone path — where
-    the parent's grade, compiled with the rest, would not yet have drawn.
+    frame), and our grade is declared and compiled ahead of Babylon's prefix — so on a
+    frame where every pass of that prefix is still compiling, ours grades its input
+    cleared to the clear colour (the clear-alone path) and the canvas shows a GRADED CLEAR
+    COLOUR where the parent's grade, compiling with the rest, left it BLACK. The probe's
+    desk `boot-2` was such a frame, and it was under the building card; a real FIRST MENU
+    BOOT may show it through the canvas for a frame while `#menu-shot` is still decoding
+    (`ui/backdrop.css`: the shot has no background of its own), so "under the card" holds
+    of the probe's frame and not of every boot. It is a timing-dependent boot-frame
+    difference: no frozen frame and no bank row shows it, and it is not made exact
+    because that would mean faking compile timing.
   - **The bank**, all 147 rows, `--check --keep` at the step against the BEFORE, by
     `exact.mjs`: 147 byte-equal, no flake, no Sarab procedure needed; the same 34 stale
     rows red against `ref/` on both sides.
@@ -4124,6 +4155,23 @@ owes" below.
   does not rebuild after one, `FINDINGS.md` 64), a server's match in a browser, a DPR
   change in play (the grade's text and pipeline do not depend on the ratio). The note is in
   `plans/done/babylon_exit_landed.md`.
+  **Its review** (2026-11-08; no change to the picture: a DEV-only check, the rest documents,
+  comments and contract headers) found nothing that must be fixed and five minor points,
+  each checked against the tree first. **The tail**: the fallback clear could not tell a
+  prefix tail that drew nothing from a `Game.postPrefixTail` naming a pass that never
+  applied; a DEV build now throws on a READY tail that never applied ((2) above,
+  `PostPasses`' header and comment, `Game.postPrefixTail`, `docs/rendering.md`, `FILES.md`).
+  **The boot frame**: stated plainly in the probe's live half above, a first menu boot
+  included. **`outputRenderTarget`'s readers**: five more, inert under the window, listed in
+  "What it is today" with what X5.2d meets (and `PostPasses`' header and `docs/rendering.md`
+  no longer say three). **`openPool`**: four things X5.2c2 must verify, in its bullet, the
+  code unchanged. **A stray `TODO`** after "Measured" removed. **Measured** (the Windows box,
+  headless, a dev build): a Hollowmere round with FXAA, the shafts (off, low, high, medium),
+  the motion blur and the grain each off and on — the tail at the blur, the shafts and the
+  ink in turn — and render scale 0.75 and back: 250 frames, the prefix's output cleared in
+  its pass on every frame the grain was on and by the fallback on none, no page or console
+  error; the detached (ready) blur named as the tail threw on its first frame. Typecheck and
+  build pass; the throw's text is absent from `dist/`.
 - **X5.2c2 — motion blur, the shafts, FXAA** (may land as one commit a pass,
   each moving the boundary one pass). Babylon's chain becomes `[celInk]`. The
   shadow maps read as `own ?? hostTexture` (`ShadowBindings`' pattern), the
@@ -4135,7 +4183,19 @@ owes" below.
   pass overwrites whole on every frame the chain draws — but on the one frame after
   a render-scale change or a resize the chain draws nothing (X5.2a), and that frame's
   canvas is whatever that opening pass leaves. The probe's descriptors will differ
-  there by design; that frame's picture is the case to name. Every volumetric rung declared. Retires
+  there by design; that frame's picture is the case to name. **`PostPasses.openPool`
+  (X5.2c1's, first exercised here) owes four checks against Babylon's `activate`**
+  (X5.2c1's review; its code is X5.2c2's to change): it always clears with
+  `scene.clearColor`, where `activate` clears only under the READER's `autoClear` and
+  `alphaMode` (or `forceAutoClearInAlphaMode`) and with the reader's own `clearColor`
+  when it has one — a `PostStage` cannot declare any of the three; it binds with
+  `forceFullscreenViewport` undefined where `activate` passes the pass's, `true` by
+  default — equal only while the camera's viewport is 0,0,1,1; the pool PING-PONGS two
+  textures where Babylon gives each pass an input of its own, so the texture a pass
+  reads and writes is not the one Babylon's would be (anything the probe keys on texture
+  identity differs by design); and a stage's `fill` is handed
+  the render size (`owner.width`/`height`), not the size of what it reads as
+  `PostChain`'s header says — equal while every target is the render size. Every volumetric rung declared. Retires
   the FXAA and shafts slot tricks, and the dead Mali comments. **Owes
   `gi.mjs --against`**: with no Babylon bind of the cloud field, its internal's
   cached sampler fields stay unfilled in a default boot, as under

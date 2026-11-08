@@ -2691,7 +2691,8 @@ src/
                         #   camera.outputRenderTarget at a target of its own
                         #   ONLY across the post phase, clears it as Babylon's
                         #   activate cleared the grade's input (on the prefix's
-                        #   last apply, or alone if that pass drew nothing),
+                        #   last apply, or alone if that pass drew nothing —
+                        #   a DEV throw if it was ready, a tail named wrongly),
                         #   then opens the canvas (restoreDefaultFramebuffer)
                         #   and any pool pass for our stages; public API only
   render/               # OUR renderer (BABYLON_EXIT.md Phase 3). Never imports

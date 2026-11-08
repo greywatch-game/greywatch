@@ -4130,7 +4130,9 @@ export class Game {
    * one whose target is our first stage's input while a stage of ours is
    * active (`PostPasses`, which hangs Babylon's clear of that target on its
    * `apply`). Read off the order this file assembled: the ink, FXAA, the
-   * shafts, the blur, each while it is on the camera.
+   * shafts, the blur, each while it is on the camera. A wrong answer would
+   * have the grade read a clear colour; a DEV build throws on it instead (a
+   * ready tail that never applied, `PostPasses.closeWindow`).
    */
   private postPrefixTail(): PostProcess {
     if (this.motionBlur.isEnabled) return this.motionBlur.pass;
