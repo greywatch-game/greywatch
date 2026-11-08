@@ -1,0 +1,24 @@
+# post.mjs --ignore=@plans/webgpu-ref/post-expected.txt — the differences each
+# BABYLON_EXIT.md X5.2 sub-step EXPECTS of the post chain's probe, against the
+# log of the parent it was measured on. One `--ignore` path pattern a line
+# (`**` any segments, `*` any run within one, `[stage=glob]` an element by its
+# STAGE), `#` a comment; README.md, "post.mjs", and compareLogs' comment.
+#
+# Key a pattern on the DRAW it moved — `**.draws[stage=<name>].<field>` — never
+# on a pass index: an index names whatever draw a scenario puts there, so a
+# pattern on one excuses that field on ANOTHER stage's draw too. A sub-step
+# adds its own section, says why each line is expected, and leaves the earlier
+# sections standing (a pattern that excuses nothing is printed, not failed).
+
+# X5.2b (f697f0e): the glow's box filter (`glow.down`, `low` only) and its four
+# blurs (`glow.blur`) are our draws, compared with the Babylon draws they
+# replaced under the same names. Three fields differ by construction:
+# - `pipeline.call`: ours `createRenderPipelineAsync` ahead of the frame,
+#   Babylon's `createRenderPipeline` at its first draw.
+# - `bundle`: Babylon's draw was recorded into a render bundle; ours is a
+#   bundle-list item run on the pass encoder itself (seam item 3).
+# - `viewport`: Babylon set the whole target before its bundle; ours sets none,
+#   which a render pass defaults to (the same `[0, 0, w, h, 0, 1]`).
+**.draws[stage=glow.*].pipeline.call
+**.draws[stage=glow.*].bundle
+**.draws[stage=glow.*].viewport

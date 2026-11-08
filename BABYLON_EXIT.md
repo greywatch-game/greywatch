@@ -3639,7 +3639,12 @@ marked "X5.2a"):
   OWN holding its own `delta` (Babylon's owner-keyed slots, one per draw context) — the
   probe's log named one buffer holding the wide pass's `delta` for all four, having kept a
   bind group's buffer binding by reference where Babylon rewrites the object for its next
-  group (fixed; the parent's log re-taken). The device's `maxInterStageShaderVariables` is 16 here. The targets
+  group (fixed; the parent's log re-taken). **Not the glow's alone** (X5.2b's review,
+  `--compare` of the re-taken log against X5.2a's): 4 of the 52 paths a page that moved are
+  not the glow's — the ink's `Internals` (`passes[7]`, binding 9) and the motion blur's
+  (`passes[10]`, binding 3), in `damage` and `base-again`, on both pages, logged as +1
+  (`0000803f`) where -1 (`000080bf`) is bound; those stages are X5.2c2's (the motion blur)
+  and X5.2d's (the ink), which read the re-taken log. The device's `maxInterStageShaderVariables` is 16 here. The targets
   are floored as read: the desktop at 0.75 is `glow.near` 720x405 and `glow.wide`
   360x202, the phone at 1 is 1170x540 and 585x270, at 0.75 877x405 and 438x202, and
   `low`'s `glow.down` is the near size (`1x1` on `high`).
@@ -3883,12 +3888,20 @@ owes" below.
   character for character. `PipelineCache` gains `vertexBuffers` (a stage ported off
   Babylon's quad) and `get(spec, unsealed)`. **Pipelines** (row "X5.2, pipelines"): every rung
   at every render scale at the boot's DPR asked at construction (`glowKernels`, "the glow's
-  blur" on `Game.roundPipelines`); `Game.applyRenderScale` declares a new DPR's, the one
-  compile in play the seal allows. A pass whose program is not built is not bound, as Babylon
-  skipped a blur whose effect compiled. **The probe**: `post.mjs` kept a bind group's buffer
+  blur" on `Game.roundPipelines`); `Game.applyRenderScale` declares a new DPR's new widths
+  (up to five), the one exception to the seal. A pass whose program is not built is not
+  bound — **corrected by X5.2b's review: that is not Babylon's behaviour, and is a known live
+  difference the owner accepted on 2026-11-08** (row "X5.2, a DPR change in play"): Babylon
+  compiled a new width synchronously at its first draw (`createRenderPipeline`), a hitch with
+  the bloom drawn, where ours compiles off the frame, so after a device-pixel-ratio change in
+  play the ink composes NO bloom for the ~3 frames the new widths compile (the resize having
+  recreated the glow's targets zero-filled); and a ratio changed in the MENU declares its
+  widths after the round's list was taken, so the warm-up does not wait for them and a round
+  reaching play before they are built skips the same way. **The probe**: `post.mjs` kept a bind group's buffer
   binding by REFERENCE and Babylon rewrites those objects for its next group, so the log named
   the last group's buffer — the glow's four blurs logged as one buffer holding the wide pass's
-  `delta` where the device bound four, each its own (corrected above); it copies the binding
+  `delta` where the device bound four, each its own, and (X5.2b's review) the ink's and the
+  motion blur's `Internals` as +1 in two scenarios (both corrected above); it copies the binding
   now, the parent's log was re-taken with it, and `__postGpu` gains our arm (`glow.down`,
   `glow.blur`, named off our modules' labels). **Verify**: the probe `--against` the parent's
   log (both pages, sixteen scenarios: every render scale at both rungs) equal — 31,031 values
@@ -3896,7 +3909,10 @@ owes" below.
   (`pipeline.call`: our asynchronous compile ahead of the frame against Babylon's synchronous
   one at the first draw; `bundle`: Babylon's draw was in a render bundle, ours is a bundle-list
   item run on the pass itself; `viewport`: Babylon set the whole target, ours sets none and a
-  pass's default is the same); the bank, 147 rows, by `exact.mjs` against a BEFORE at 285da96:
+  pass's default is the same) — committed since X5.2b's review as the first section of
+  `plans/webgpu-ref/post-expected.txt`, keyed on the draws' STAGE (`**.draws[stage=glow.*]`,
+  new in `post.mjs`) rather than on pass indices, which would excuse those fields on any
+  other stage's draw at those indices; the bank, 147 rows, by `exact.mjs` against a BEFORE at 285da96:
   145 byte-equal, `harrowmead-view-pistol-reload` within its flake and `sarab-ground` 100 pixels
   by 2/255 — Sarab alone, two processes a tree: both trees draw both of its frames, the full
   run's one the parent's two drew (cross-process residue); the same 34 stale rows red on both
@@ -3911,9 +3927,51 @@ owes" below.
   from Babylon's draws. `census --against` equal. The editor's eight eyes: four byte-equal in
   every pairing, the rest within each tree's own floor. `?profile&gpu`: `render` and
   `gpu.frame` within 3%, `glow` 8 to 11% lower. A device-pixel-ratio change in play (1 to 2): the
-  two new widths compiled with no in-play warning, the blur skipped for three frames meanwhile.
+  two new widths compiled with no in-play warning, the blur skipped for three frames meanwhile
+  (no bloom on them: the accepted live difference above).
   `gate` (seven maps), `shaders` (seven), typecheck, build, corecheck and parity pass.
   The note is in `plans/done/babylon_exit_landed.md`.
+
+  **Its review** (2026-11-08; no change to the picture: two module-scope constants made equal
+  literals, the rest documents, comments, contract headers and the probe's `--ignore`) found
+  one real point, one the owner decided and two minor ones, each checked against the tree
+  first. **The boot gate (real)**: `GlowBlur.ts` evaluated `GPUBufferUsage` at module load
+  (its quad's two usages), as `GiCompute.ts` had since X5.1b (its buffer and texture usages);
+  `main.ts` imports `Game` statically, so in a browser without WebGPU — or any browser on a
+  LAN address over plain http, where those secure-context globals are undefined — the import
+  threw (`GPUBufferUsage is not defined`) before `checkWebGPU` ran and the boot card stuck on
+  "Fetching the game" with no sentence. Both are literals now (168 and 152; 140 and 15), the
+  flags named in a comment, `particleProgram.ts`' `COMPUTE` the precedent; a scan of every
+  module under `src/` for a `GPU*` global or `navigator` outside a function, a method or an
+  instance field found those two and nothing else. `CLAUDE.md` and `docs/build.md` state the
+  rule. **The DPR skip (the owner's)**: it was recorded as Babylon's behaviour and is not
+  (row "X5.2, a DPR change in play": accepted as a known live difference, the code
+  unchanged); corrected above, in both headers, `Game`'s comments, `docs/rendering.md`,
+  `FILES.md` and the note, with the menu's case beside it. **The probe's correction** named
+  the glow's four blurs alone; 4 of the 52 paths a page are the ink's and the motion blur's
+  `Internals` (corrected in "What it is today"). **The seal's exception** was stated in some
+  places only; `CLAUDE.md`, `docs/states.md`, `docs/rendering.md`'s `PipelineCache`
+  paragraph, `PipelineCache`'s header and `Game`'s comments now name it (a pixel-ratio
+  change's new glow blur widths, up to five). **Nits**: `docs/rendering.md`'s and `Game`'s
+  stale "the setter returns on an unchanged value" removed; `post.mjs`'s `--ignore` takes
+  `[stage=glob]` for an index (an element matched by its `stage`, both logs agreeing), and
+  X5.2b's expected differences are committed, keyed on the glow's draws
+  (`**.draws[stage=glow.*].{pipeline.call,bundle,viewport}`), as the first section of
+  `plans/webgpu-ref/post-expected.txt` (the README says so), which X5.2c1 extends.
+  **Measured** (the Windows box, headless): the boot, a scratch page off the dev server — on
+  `http://192.168.1.136` (no secure context) and on `localhost` with every `GPU*` global and
+  `navigator.gpu` deleted before any script — reached "Not a secure origin" and "No WebGPU"
+  with their sentences and no page error; the parent, the same two ways, stuck on "Fetching
+  the game" with `pageerror: GPUBufferUsage is not defined`. `post.mjs --compare` of X5.2b's
+  final log against the parent's re-taken one, `--ignore=@plans/webgpu-ref/post-expected.txt`:
+  equal on both pages, 31,031 values a page and the same 670 excused (134 a pattern), as
+  under the index-keyed list; a hand-edited copy with the ink's `viewport` changed on
+  `desk.base` and on `phone.glowlow` (where the ink is `passes[8]`) and a field added to a
+  glow draw fails on all three, and one with a glow draw logged under another stage on one
+  side fails on that draw's three fields. The bank on Hollowmere (`--check --keep`) by
+  `exact.mjs`: 20 of 20 rows byte-equal to X5.2b's AFTER and to its parent's BEFORE; the
+  same two rows red against `ref/` (`menu`, `ashwood`) as X5.2b's AFTER. Typecheck, build
+  and corecheck pass.
 - **X5.2c1 — the chain's host, and the grain.** `render/PostChain.ts` (ours) and
   the Babylon-side pass sequencer; `camera.outputRenderTarget` takes Babylon's
   prefix output **only while a stage of ours is active**, so with the grain off
@@ -4300,6 +4358,7 @@ Phase 1 actually took.
 | X5.2 | **`FrameDepth`**: named by X5.2, listed as X5.4's by the seam header and the gate note. | **Decided** 2026-11-08 by the owner, the planner's recommendation: X5.2d makes it read the public `renderTarget.depthStencilTexture`, taking its internal off the seam header's "not here" list; X5.4 deletes it once the depth is ours; X5.2d reconciles the seam header and the gate note. |
 | X5.2 | **Port as compiled, or rewrite the passes as composable functions** to keep the door open for fusing? | **Decided** 2026-11-08 by the owner, the planner's recommendation: **as compiled**; the door is the host's structure (X5.2), and a fusion, never byte-exact, is a later `Picture change:` with the bank's numbers. |
 | X5.2 | **Pipelines**: the blur's text depends on the scaling level and the glow rung, the shafts' on their rung. | **Decided** 2026-11-08 by the owner, the planner's recommendation: every volumetric rung and both glow rungs' blur variants at the current DPR declared at construction, so a setting changed in play compiles nothing; a compile on a DPR change allowed (the seal's DEV warning lifted for that case alone). |
+| X5.2 | **A DPR change in play** (X5.2b's review): our blur's new widths compile off the frame (`createRenderPipelineAsync`) and the blur is skipped until they are built — ~3 frames on the Windows box, on which the glow's targets, recreated zero-filled by the resize the change brings, hold nothing, so the ink composes NO bloom. Babylon compiled a new width synchronously at its first draw (`createRenderPipeline`), taking a hitch and drawing the bloom. X5.2b's record called the skip parity. The same holds for a ratio changed in the MENU: its widths are declared after the round's list is taken, so the warm-up does not wait for them and they can skip the same way in play. Compile them where Babylon did (a hitch, the bloom drawn), or accept the skip? | **Decided** 2026-11-08 by the owner: **accept the skip, recorded as a known live difference**. The code is unchanged; the record says what happens (`render/GlowBlur.ts`' and `shaders/GlowPass.ts`' headers, `docs/rendering.md`, X5.2b's entry and its note), and no longer calls it Babylon's behaviour. |
 | X5.2 | **A profiler report version.** | **Decided** 2026-11-08 by the owner, the planner's recommendation: none under shape (A) while `render`, `glow` and `gpu.frame` keep their meaning, which each sub-step checks rather than assumes; a sub-step that moves a draw out of its span (the blur's out of `glow`) bumps the version and says why. |
 | X5.2 | **X0.3's scope** in the whole step's Verify. | **Decided** 2026-11-08 by the owner, the planner's recommendation: the desktop `bench.mjs --max`, three runs at the parent and three after; a phone `?bench&gpu` capture optional and the owner's, the Verify not waiting on it. |
 | X5.2 | **"The bank with every post setting on and off"**: the bank holds one row a setting off, none with every tail pass off. | **Decided** 2026-11-08 by the owner, the planner's recommendation: X5.2a's added rows (`post-alloff`, `post-damage`, `post-scale50`, `post-scale75`, `post-glowlow`) beside the bank's one-pass-off rows are its meaning; no pairwise or full-combination rows. |

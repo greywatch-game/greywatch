@@ -85,7 +85,13 @@
  * (`kernelTexels`), and `glowKernels` is the same formula asked of every rung
  * at every render scale ahead, because the blur's text is the kernel's and its
  * pipelines are declared (X5.2's row "pipelines"). A pass whose program is not
- * built is not bound, as Babylon skipped a blur whose effect was compiling.
+ * built is not bound — which is NOT what Babylon did: it compiled a new width
+ * synchronously at its first draw and drew the bloom. Ours compiles off the
+ * frame, so after a device-pixel-ratio change in play (or one in the menu
+ * whose widths are not built by the time the round plays) the ink composes
+ * NO bloom for the ~3 frames they compile, the resize having recreated these
+ * targets zero-filled — a known live difference the owner accepted on
+ * 2026-11-08 (`render/GlowBlur.ts`' header, X5.2's row "a DPR change in play").
  *
  * THE COMPOSE IS NOT A PASS OF ITS OWN, and that is a phone's fill rate rather
  * than tidiness. It reads one pixel of the frame and adds two bilinear taps,
@@ -252,7 +258,7 @@ export function glowKernels(dpr: number): number[] {
 export interface GlowBlurDraws {
   /** Whether the box filter can draw this frame (its pipeline built). */
   downReady(): boolean;
-  /** Whether a blur of ideal width `kernel` can draw this frame — a width not built yet is skipped, as Babylon skipped a pass compiling. */
+  /** Whether a blur of ideal width `kernel` can draw this frame — a width not built yet is skipped (Babylon compiled one synchronously and drew it: the header's accepted difference). */
   blurReady(kernel: number): boolean;
   /** The box filter of `source`, the mask, of `width` x `height`, into the bound target; `outputHeight` the render height. */
   down(source: RenderTargetTexture, width: number, height: number, outputHeight: number): void;
@@ -720,8 +726,10 @@ export class GlowPass {
    * renderer** (`draws`, `BABYLON_EXIT.md` X5.2b): the bind opens the pass,
    * our draw is queued into it, the unbind ends it — the structure Babylon's
    * own draws had, with Babylon drawing nothing in it. A pass whose program is
-   * not built is not bound at all, its target keeping what it held, as Babylon
-   * skipped a blur whose effect was compiling.
+   * not built is not bound at all, its target keeping what it held — zeros,
+   * after the resize a device-pixel-ratio change brings, so no bloom for the
+   * frames its new widths compile, where Babylon compiled them synchronously
+   * and drew them (the header's accepted live difference).
    */
   private blur(): void {
     const engine = this.scene.getEngine();

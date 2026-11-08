@@ -3493,7 +3493,16 @@ through `Renderer.glowBlurOpened`, the same `queue` and `passIs`, against
 no frame of ours, so it is queued whether `begin` filled one or not. So the
 passes are what they were — Babylon opens each, loads its target and ends it
 — and Babylon draws nothing in them; a pass whose program is not built yet is
-not bound at all, as Babylon skipped a blur whose effect was compiling.
+not bound at all. **That skip is a known live difference, accepted by the owner
+on 2026-11-08** (`BABYLON_EXIT.md` X5.2's row "a DPR change in play"): Babylon
+compiled a new width synchronously at its first draw (`createRenderPipeline`),
+taking the hitch and drawing the bloom, where ours compiles off the frame — so
+after a device-pixel-ratio change in play (a browser zoom, the window moved to
+another monitor) the ink composes NO bloom for the ~3 frames the new widths
+compile, the resize having recreated the glow's targets zero-filled. A ratio
+changed in the MENU is the same difference: its widths are declared after the
+round's list was taken, so the warm-up does not wait for them, and a round
+reaching play before they are built skips the same way.
 
 **A draw lands at one of SEVEN points of the main pass** (`DrawPoint`), six of
 them about rendering group 0, and in this order every frame (the moon's, the sixth,
@@ -3766,7 +3775,10 @@ building card's warm-up waits on — beside the round's DECLARED list
 asked once at `Game`'s construction, waited on by name; `BABYLON_EXIT.md`
 X4.4e). **Once the card is down the cache is SEALED** (`seal`, from
 `finishBakeWait` to `teardownMap`): a compile it starts then is one nothing
-asked before the round, a hitch in play, and a DEV build warns, naming it.
+asked before the round, a hitch in play, and a DEV build warns, naming it —
+but for the one ask its asker states the seal allows (`get(spec, unsealed)`):
+a device-pixel-ratio change's new glow blur widths, up to five
+(`GlowBlur.declare`, X5.2b), the bloom skipped while they compile.
 
 **Every RENDER pipeline's layout is EXPLICIT**, built from the bindings the
 assembly reports, never `"auto"`. Layouts are shared by their entries, so a bind group made for
@@ -5845,10 +5857,13 @@ all in the counter this finding is named after. Not chased.
   render scale is declared at construction** (`glowKernels`, on the round's list as
   "the glow's blur"), so a Glow or Render Scale setting changed in play compiles
   nothing; a device-pixel-ratio change declares the new ratio's kernels from
-  `Game.applyRenderScale`, the one compile in play the seal allows, the blur
-  skipped while it lasts. The kernel is `glowKernel / (2 * level)` texels of
-  the half target, read before every blur from the scaling level (the setter
-  returns on an unchanged value), so the render-scale setting cannot change the
+  `Game.applyRenderScale` (up to five new widths), the one exception to the
+  seal. The blur is skipped while they compile — no bloom for ~3 frames, where
+  Babylon compiled them synchronously and drew it: a live difference the owner
+  accepted on 2026-11-08 ("Our renderer's frame", above, says what it costs,
+  and the same of a ratio changed in the menu). The kernel is
+  `glowKernel / (2 * level)` texels of the half target, read before every blur
+  from the scaling level, so the render-scale setting cannot change the
   bloom's size on screen: `devicePixelRatio` is already inside the level, and the
   level is 1 at every default install.
 - **The Glow setting moves where the blur STARTS, never how far it reaches**

@@ -106,11 +106,17 @@ export interface GiTierShape {
   readonly fastRays: number;
 }
 
-/** `StorageBuffer`'s usage: `STORAGE | COPY_DST | COPY_SRC` (140). */
-const BUFFER_USAGE = GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC;
-/** `RawTexture3D` with `TEXTURE_CREATIONFLAG_STORAGE`: `COPY_SRC | COPY_DST | TEXTURE_BINDING | STORAGE_BINDING` (15). */
-const TEXTURE_USAGE =
-  GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING;
+/*
+ * The two usages below are LITERALS: this module is read before a device
+ * exists — `main.ts` imports `Game` statically — and `GPUBufferUsage` and
+ * `GPUTextureUsage` are secure-context globals a browser without WebGPU does
+ * not have, so naming them here would throw before the boot gate could say
+ * why (`particleProgram.ts`' `COMPUTE` is the precedent).
+ */
+/** `StorageBuffer`'s usage: `GPUBufferUsage.STORAGE (128) | COPY_DST (8) | COPY_SRC (4)`. */
+const BUFFER_USAGE = 140;
+/** `RawTexture3D` with `TEXTURE_CREATIONFLAG_STORAGE`: `GPUTextureUsage.COPY_SRC (1) | COPY_DST (2) | TEXTURE_BINDING (4) | STORAGE_BINDING (8)`. */
+const TEXTURE_USAGE = 15;
 /** The sampler Babylon's cache made for the seven: toroidal across, clamped up (`celGi`). */
 const FRAME_SAMPLER: GPUSamplerDescriptor = {
   label: "gi: the frame's sampler",

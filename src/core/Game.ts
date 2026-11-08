@@ -1107,7 +1107,9 @@ export class Game {
    * before its first vantage (`core/PipelineWarmup.ts`), beside the map's
    * own pipelines, which its install asked; and our cache is SEALED once
    * the card is down (`PipelineCache.seal`), so a compile in play is a
-   * DEV warning naming what this list missed. **This is what the
+   * DEV warning naming what this list missed — but for the glow blur's new
+   * widths on a device-pixel-ratio change (`applyRenderScale`), the one ask
+   * the seal allows. **This is what the
    * `warm(on)` poses of the pools that are ours became**: nothing of ours
    * is posed at a vantage. A new draw of ours joins it, or its first use
    * compiles in the round. No pool is Babylon's since X4.6e, so none is posed
@@ -3854,16 +3856,18 @@ export class Game {
    * **It is therefore also where anything stated in BACKING-STORE pixels is
    * re-derived**, because this is the one line that moves them — or read per
    * frame, which is what both readers do: `GlowPass` re-derives its blur
-   * kernel from the scaling level before each blur (the setter returns on an
-   * unchanged value), and `WorldCulling`'s size gate converts beside the
-   * camera's FOV, which it has to read anyway.
+   * kernel from the scaling level before each blur, and `WorldCulling`'s size
+   * gate converts beside the camera's FOV, which it has to read anyway.
    */
   private applyRenderScale(): void {
     const dpr = window.devicePixelRatio || 1;
     this.engine.setHardwareScalingLevel(1 / (dpr * this.settings.renderScale));
     // The glow's blur at every rung and render scale at THIS ratio: a no-op
-    // unless the ratio moved, and then the one compile in play the seal allows
-    // (`BABYLON_EXIT.md` X5.2's row "pipelines"), the blur skipped meanwhile.
+    // unless the ratio moved, and then its new widths (up to five) are the one
+    // exception to the seal (`BABYLON_EXIT.md` X5.2's row "pipelines"). The
+    // blur is skipped while they compile — no bloom for ~3 frames, where
+    // Babylon compiled them synchronously and drew it: a live difference the
+    // owner accepted (row "a DPR change in play", `render/GlowBlur.ts`).
     this.glowBlur.declare(glowKernels(dpr));
   }
 
@@ -8153,7 +8157,8 @@ export class Game {
       this.updateSceneForCamera(0, this.shadowFocus, null, NO_SOLDIERS);
       // Every pipeline of ours the round can use is built by now — the
       // declared list and the map's — so a compile from here to the map's
-      // teardown is one nothing asked: sealed, which a DEV build reports.
+      // teardown is one nothing asked: sealed, which a DEV build reports
+      // (but for a pixel-ratio change's glow blur widths, `applyRenderScale`).
       this.renderer.pipelines.seal(true);
     }
     // Read and cleared BEFORE the two calls below, neither of which may find

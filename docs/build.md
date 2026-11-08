@@ -144,6 +144,20 @@ without one gets a sentence instead of a black page; what that costs is reach,
 and Firefox on Linux/macOS plus older Android and iOS no longer boot at all.
 Both phones are PWA install targets, so this is a product fact, not a detail.
 
+**The gate runs AFTER the module graph is evaluated** — `main.ts` imports
+`Game` statically, and everything under it — **so nothing at a module's TOP
+LEVEL may name a WebGPU global** (`GPUBufferUsage`, `GPUTextureUsage`,
+`GPUShaderStage`, `GPUMapMode`, `GPUColorWrite`). They are secure-context
+globals: a browser without WebGPU, or any browser on a LAN address over plain
+http, does not define them, so the import throws a `ReferenceError` before
+`checkWebGPU` runs and the boot card sticks on "Fetching the game" with no
+sentence. A flag a module needs before a device exists is written as a
+LITERAL with the names in a comment (`GlowBlur.ts`' quad usages,
+`GiCompute.ts`' buffer and texture usages, `particleProgram.ts`' `COMPUTE`);
+inside a constructor or a method, where a device already exists, the globals
+are fine. Found by X5.2b's review, which caught two such modules (one of them
+there since X5.1b).
+
 ## Havok's `.wasm` is the one binary that ships
 
 ~2 MB, pulled in by `@babylonjs/havok` for the ragdolls and the glass. It is

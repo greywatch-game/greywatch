@@ -10068,7 +10068,9 @@ copy of the main tree's `ref/`).
   taps) reproduced character for character. `GlowPass`: the four `ThinBlurPostProcess`es, the
   `glowDown` `EffectWrapper` and the `EffectRenderer` gone; it still binds and unbinds each of
   its five targets, reads the kernel every frame (`kernelTexels`, now over `kernelTexelsAt`)
-  and skips a pass whose program is not built (as Babylon skipped one compiling), and asks for
+  and skips a pass whose program is not built (NOT as Babylon did, which compiled a new width
+  synchronously and drew it: corrected by its review, the owner's accepted live difference
+  below), and asks for
   the draws through `GlowBlurDraws`, handed in by `Game` (the targets cross there,
   `hostTexture`); `glowKernels(dpr)` is the same formula over every rung and render scale.
   `PipelineCache.get(spec, unsealed)`: an ask the seal allows. `Game`: `glowBlur` built before
@@ -10083,6 +10085,10 @@ copy of the main tree's `ref/`).
   per draw context, in the probe's own session as in a fresh one. A buffer binding is copied as
   it is handed now; re-taken at the parent, the log differs from X5.2a's in 52 buffer-byte paths
   a page and in nothing else (every hash equal). "What it is today" is corrected in place.
+  **Corrected by its review**: 4 of those 52 are not the glow's — the ink's `Internals`
+  (`passes[7]`, binding 9) and the motion blur's (`passes[10]`, binding 3) in `damage` and
+  `base-again`, on both pages, logged as +1 (`0000803f`) where -1 (`000080bf`) is bound; those
+  stages are X5.2c2's and X5.2d's.
   `__postGpu` gains our arm (`ours`: modules named `glow.down` / `glow.blur` off the labels our
   cache gave them, the chain's kernel and readiness off `GlowPass.blurKernel` and
   `Game.glowBlur`).
@@ -10143,7 +10149,9 @@ copy of the main tree's `ref/`).
   - **A device-pixel-ratio change in play** (a scratch script: CDP's device-metrics override,
     1 to 2 and back, in a Hollowmere round): the two widths new at 2 (57 and 41) compiled as asks
     the seal allows — four modules, no "compiled in play" warning — the blur's passes skipped
-    for three frames while they did, then drawn; the Glow and Render Scale settings changed
+    for three frames while they did (so no bloom on them: the targets the resize recreated hold
+    zeros; where Babylon compiled synchronously and drew it — the live difference its review
+    found and the owner accepted), then drawn; the Glow and Render Scale settings changed
     after it compiled nothing; no error.
   - **Gates**: `gate` seven maps clean; `shaders` clean on seven; typecheck, build
     (`check-babylon-free`, `check-proving`), corecheck and parity pass.
@@ -10158,3 +10166,67 @@ copy of the main tree's `ref/`).
 - **Not run**: the phone (its page is the probe's `phone` size only), a lost device (ours does
   not rebuild after one, as for every draw of ours, `FINDINGS.md` 64), a server's match in a
   browser.
+
+**Its review** (2026-11-08; no change to the picture: two module-scope constants made equal
+literals, the rest documents, comments, contract headers and the probe's `--ignore`). An
+independent review found one real point, one the owner decided and two minor ones, each
+verified against the tree first.
+
+- **F2, real: module-scope `GPUBufferUsage` broke the boot gate.** `GlowBlur.ts`'
+  `QUAD_USAGE` and `INDEX_USAGE` and `GiCompute.ts`' `BUFFER_USAGE` and `TEXTURE_USAGE`
+  (since X5.1b) were evaluated at module load; `main.ts` imports `Game` statically, so where
+  those secure-context globals are undefined — a browser without WebGPU, or any browser on a
+  LAN address over plain http — the import threw before `checkWebGPU` ran and the boot card
+  stuck on "Fetching the game" with no sentence. Now literals with the flags in a comment
+  (168, 152; 140, 15 — each the same number), as `particleProgram.ts`' `COMPUTE` already was.
+  A scan of `src/` with the TypeScript parser for any `GPU*` identifier or `navigator`
+  evaluated outside a function, method or instance field (types excluded) found these two
+  files and nothing else. The rule is in `CLAUDE.md` (a clause) and `docs/build.md` (its
+  reason). **Proved**: a scratch page (`f2/boot.mjs`, the full Chromium headless) on the dev
+  server — `http://192.168.1.136:5391/`, not a secure context, and `localhost` with every
+  `GPU*` global and `navigator.gpu` deleted by an init script — reached `#boot.failed` with
+  "Not a secure origin" and "No WebGPU" and their sentences, no page error; with the fix
+  stashed, both stuck on "Fetching the game" with `pageerror: GPUBufferUsage is not defined`.
+- **F1, the owner's decision (2026-11-08): accept the skip, recorded as a known live
+  difference.** On a device-pixel-ratio change in play the new widths compile off the frame
+  and the blur is skipped ~3 frames, the glow's targets recreated zero-filled by the resize,
+  so the ink composes no bloom on them; Babylon compiled them synchronously at the first
+  draw and drew the bloom. The record called it parity. Corrected in `GlowBlur.ts`' header
+  and `declare`, `GlowPass.ts`' header, `GlowBlurDraws.blurReady` and `blur`, `Game`'s
+  comment at `applyRenderScale`, `docs/rendering.md` (both places), `FILES.md`, X5.2b's entry
+  and this note, and a row in "Decisions that are yours" ("X5.2, a DPR change in play"). The
+  reviewer's nit with it: a ratio changed in the MENU declares its widths after the round's
+  list is taken (`GlowBlur.ready` covers the constructor's alone), so the warm-up does not
+  wait for them and a round reaching play first skips the same way — stated in the same
+  places.
+- **F3: the probe fix's record.** The re-taken parent log differs from X5.2a's in 52 paths a
+  page, and 4 are not the glow's: the ink's `Internals` (`passes[7]`, binding 9) and the
+  motion blur's (`passes[10]`, binding 3), in `damage` and `base-again`, both pages, logged
+  `0000803f` (+1) where `000080bf` (-1) is bound (re-run here: `--compare` of
+  `post-before.json` against `post-before2.json`, 14 scenarios x 3 + 2 x 5 = 52). Those stages
+  are X5.2c2's and X5.2d's; "What it is today" and the bullet above say so.
+- **F4: the seal's exception.** `CLAUDE.md`'s warm-up and glow paragraphs, `docs/states.md`,
+  `docs/rendering.md`'s `PipelineCache` paragraph, `PipelineCache`'s header and `Game`'s
+  comments (the declared list's field, the seal's line) now all say the one exception: a
+  pixel-ratio change's new glow blur widths (up to five: two rungs at three scales are five
+  distinct ideal kernels, high at 0.5 equalling low at 1), asked through `get(spec,
+  unsealed)` by `GlowBlur.declare`.
+- **Nits.** The stale "(the setter returns on an unchanged value)" is gone from
+  `docs/rendering.md` and `Game.applyRenderScale`'s comment (Babylon's kernel setter left
+  with X5.2b). `post.mjs`'s `--ignore` takes `[stage=glob]` in place of an index (matched
+  against the element's `stage`, only when both logs agree on it; a plain index still
+  matches a staged element), and `plans/webgpu-ref/post-expected.txt` holds X5.2b's three
+  expected differences keyed on `**.draws[stage=glow.*]`, a section a sub-step, named in the
+  README and `post.mjs`'s header. **Measured**: `--compare` of `post-after4.json` against
+  `post-before2.json` with the file: equal, both pages, 31,031 values and 670 excused a page
+  (134 a pattern: 32 x 4 + 6), as with the scratch index-keyed list; a hand-edited copy (the
+  ink's `viewport` on `desk.base` `passes[7]` and on `phone.glowlow` `passes[8]`, a field
+  added to a glow draw) fails on all three, and a copy logging one glow draw under another
+  stage on one side fails on that draw's `stage`, `pipeline.call`, `bundle` and `viewport`.
+- **Verified**: `bank.mjs hollowmere --check --keep` by `exact.mjs`: 20 of 20 byte-equal to
+  X5.2b's AFTER (`x52b/bank-after-h`) and to its parent's BEFORE (`x52b/bank-before`); the
+  same two rows red against `ref/` as X5.2b's AFTER (`menu` 0.0677/255, `ashwood` 0.3918/255).
+  Typecheck, build (its gates, `check-babylon-free`, `check-proving`) and corecheck pass.
+- **Not run**: the rest of the bank (the constants are equal numbers and the rest is
+  comments), the probe's browser half (`--compare` only), a real browser without WebGPU (the
+  globals deleted stand for one), the phone.

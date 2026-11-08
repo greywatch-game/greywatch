@@ -130,7 +130,8 @@
  * `--max-diffs` each, then the count), a long value from its first differing
  * character, and excuses only what `--ignore` names (`compareLogs`: a later
  * sub-step states its expected differences there, never by reading past
- * them), and exits 1 on any difference left. A lost device ends it
+ * them — committed in `post-expected.txt`, a section a sub-step, keyed on the
+ * draws' STAGES), and exits 1 on any difference left. A lost device ends it
  * (`harness.mjs`'s header, exit 4), and so does a hard limit (exit 3).
  */
 import { readFileSync, writeFileSync } from "node:fs";
@@ -151,6 +152,8 @@ const IGNORE = args
   .map((p) => p.trim())
   .filter(Boolean);
 const MAX_DIFFS = Number(opt("max-diffs", "40"));
+/** What a dot in a stage's name is in a match path (`compareLogs`); no log holds it. */
+const STAGE_DOT = "\u0001";
 
 /** The two pages a scenario is read at: the bank's, and a dense phone's. */
 const SIZES = {
@@ -1423,9 +1426,18 @@ function printReport(r) {
  * `**` any run of segments, matched against the whole path from the size on
  * (`desk.base.passes[7].draws[0].pipeline.call`) or any prefix of it, so
  * `**.chain.glow.kernel` excuses the kernel on every scenario and
- * `**.statics.modules.*.text` every module's text. What was excused is
- * counted per size, and a pattern that excused nothing is said, because a
- * difference a step named and did not make is a finding too.
+ * `**.statics.modules.*.text` every module's text. **An index may name the
+ * element's STAGE instead** (`[stage=glob]`, its `*` any run within the
+ * stage's name, dots included): `**.draws[stage=glow.*].viewport` excuses the
+ * viewport of every draw whose `stage` is `glow.down` or `glow.blur` and of no
+ * other draw, at whatever pass index it lands — so a sub-step's expected
+ * differences are keyed on the draws it MOVED, and cannot excuse the same
+ * field on another stage's draw that sits at that index on some scenario. An
+ * element carries a stage only when both logs give it the same one (a draw
+ * whose stage differs is named, never excused by stage), and a plain index
+ * still matches it. What was excused is counted per size, and a pattern that
+ * excused nothing is said, because a difference a step named and did not
+ * make is a finding too.
  */
 function compareLogs(a, b) {
   let failed = false;
@@ -1433,9 +1445,25 @@ function compareLogs(a, b) {
     console.log(`against: ${m}`);
     failed = true;
   };
+  // A pattern is tested against a MATCH path: the shown path with a staged
+  // element's index written `[i|stage=name]`, the dots in the name made
+  // STAGE_DOT, so a segment's `*` never runs into or out of it.
+  const escape = (t) => t.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
+  const token = (t) => {
+    if (t === "**") return ".*";
+    if (t === "*") return "[^.]*";
+    const staged = /^\[stage=([^\]]*)\]$/.exec(t);
+    if (staged) {
+      const glob = staged[1].split(/(\*)/).map((g) => (g === "*" ? "[^.\\]]*" : escape(g.replaceAll(".", STAGE_DOT)))).join("");
+      return `\\[\\d+\\|stage=${glob}\\]`;
+    }
+    const index = /^\[(\d+)\]$/.exec(t);
+    if (index) return `\\[${index[1]}(?:\\|stage=[^.\\]]*)?\\]`;
+    return escape(t);
+  };
   const ignores = IGNORE.map((pattern) => ({
     pattern,
-    re: new RegExp(`^${pattern.split(/(\*\*|\*)/).map((t) => (t === "**" ? ".*" : t === "*" ? "[^.]*" : t.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))).join("")}$`),
+    re: new RegExp(`^${pattern.split(/(\[stage=[^\]]*\]|\[\d+\]|\*\*|\*)/).map(token).join("")}$`),
     hits: 0,
   }));
   const count = (v) => (Array.isArray(v) ? v.reduce((s, e) => s + count(e), 0) : v && typeof v === "object" ? Object.values(v).reduce((s, e) => s + count(e), 0) : 1);
@@ -1451,9 +1479,10 @@ function compareLogs(a, b) {
     const hex = typeof x === "string" && typeof y === "string" && /^[0-9a-f]+$/.test(x) && /^[0-9a-f]+$/.test(y);
     return `${cut(sx)} here and ${cut(sy)} there (${sx.length} and ${sy.length} characters, first differing at ${i}${hex ? `, byte ${Math.floor((i - 1) / 2)}` : ""})`;
   };
-  // Every difference under `path`, into `acc` (`diffs`, `equal`, `ignored`).
-  const walk = (x, y, path, acc) => {
-    const ig = ignores.find((r) => r.re.test(path));
+  // Every difference under `path`, into `acc` (`diffs`, `equal`, `ignored`);
+  // `match` is the path the patterns are tested against (above).
+  const walk = (x, y, path, acc, match = path) => {
+    const ig = ignores.find((r) => r.re.test(match));
     if (ig) {
       ig.hits++;
       acc.ignored += Math.max(count(x), count(y));
@@ -1466,11 +1495,15 @@ function compareLogs(a, b) {
     }
     if (Array.isArray(x)) {
       if (x.length !== y.length) acc.diffs.push(`${path} has length ${x.length} here and ${y.length} there`);
-      for (let i = 0; i < Math.min(x.length, y.length); i++) walk(x[i], y[i], `${path}[${i}]`, acc);
+      for (let i = 0; i < Math.min(x.length, y.length); i++) {
+        const sx = x[i]?.stage;
+        const staged = typeof sx === "string" && sx === y[i]?.stage ? `|stage=${sx.replaceAll(".", STAGE_DOT)}` : "";
+        walk(x[i], y[i], `${path}[${i}]`, acc, `${match}[${i}${staged}]`);
+      }
       return;
     }
     if (x && typeof x === "object") {
-      for (const k of new Set([...Object.keys(x), ...Object.keys(y)])) walk(x[k], y[k], `${path}.${k}`, acc);
+      for (const k of new Set([...Object.keys(x), ...Object.keys(y)])) walk(x[k], y[k], `${path}.${k}`, acc, `${match}.${k}`);
       return;
     }
     if (Object.is(x, y)) acc.equal++;

@@ -25,9 +25,9 @@
  * which (`BABYLON_EXIT.md` X4.4e: every pipeline a round can use is asked
  * before the card comes down) — but for an ask its asker states the seal
  * ALLOWS (`get`'s `unsealed`: the glow blur's kernels at a new device pixel
- * ratio, X5.2's row "pipelines"), which compiles and counts as any other and
- * says nothing; every RENDER pipeline's layout
- * is EXPLICIT, built from the bindings the modules were assembled with,
+ * ratio, X5.2's row "pipelines": up to five widths, and the one exception),
+ * which compiles and counts as any other and says nothing; every RENDER
+ * pipeline's layout is EXPLICIT, built from the bindings the modules were assembled with,
  * never `"auto"`, and layouts are shared by their entries — so a bind group
  * made for one pipeline binds into any other whose group has the same
  * entries (the frame block's always does when both stages see it alike; a

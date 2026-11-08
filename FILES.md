@@ -2937,11 +2937,13 @@ src/
                         #   targets (Renderer.glowBlurOpened, GLOW_BLUR_TARGETS):
                         #   a pipeline a compiled kernel width (declared at
                         #   construction, "the glow's blur" on
-                        #   Game.roundPipelines; a DPR change's the one compile
-                        #   in play the seal allows), Babylon's quad as a vertex
-                        #   and an index buffer, Internals and a LeftOver block a
-                        #   pass, the source read through the host's own view and
-                        #   sampler. Babylon's pipeline state field for field
+                        #   Game.roundPipelines; a DPR change's new widths the
+                        #   one exception to the seal, the blur skipped — no
+                        #   bloom — ~3 frames while they compile, where Babylon
+                        #   drew it: a live difference the owner accepted),
+                        #   Babylon's quad as a vertex and an index buffer,
+                        #   Internals and a LeftOver block a pass, the source
+                        #   read through the host's own view and sampler. Babylon's pipeline state field for field
     ParticleDraw.ts     # EVERY PARTICLE FIELD as OUR renderer runs it (X4.7c
                         #   the ash, X4.7d the rotor wash): one list in creation
                         #   order, Babylon's GPUParticleSystem ported exactly —

@@ -28,11 +28,25 @@
  * `declare` is handed are asked as they are handed, and one first asked at
  * draw time is asked as a miss (the seal says so in play); a kernel whose
  * pipeline is not built yet is NOT drawn — the pass is skipped, its target
- * keeping what it held, as Babylon skipped a pass whose effect was compiling;
- * nothing here allocates on a frame once its bind groups are made (they are
- * remade only when a source's view or sampler changes: a resize).
+ * keeping what it held (the difference below); nothing here allocates on a
+ * frame once its bind groups are made (they are remade only when a source's
+ * view or sampler changes: a resize).
  * Never: imports Babylon; binds its own targets — `GlowPass` binds each one
  * and asks from inside it; draws into any pass but one `GlowPass` has bound.
+ *
+ * A KNOWN LIVE DIFFERENCE, ACCEPTED BY THE OWNER ON 2026-11-08 (`BABYLON_EXIT.md`
+ * X5.2's row "a DPR change in play"): that skip is NOT what Babylon did.
+ * Babylon compiled a new width SYNCHRONOUSLY at its first draw
+ * (`createRenderPipeline`), taking the hitch and drawing the bloom on that
+ * frame; ours compiles off the frame (`createRenderPipelineAsync`). So after
+ * a device-pixel-ratio change in play — a browser zoom, the window moved to
+ * another monitor — its new widths (up to five) compile for ~3 frames, and
+ * since the resize that came with the change recreated the glow's targets
+ * zero-filled, the ink composes NO bloom on those frames. A ratio changed in
+ * the MENU is the same difference: its widths are declared after the round's
+ * list was taken (`ready` covers the constructor's alone), so the warm-up
+ * does not wait for them, and a round that reaches play before they are
+ * built skips the blur the same way.
  * Contract: `docs/rendering.md`, "The glow: what the depth share replaced".
  */
 import type { BoundTexture, HostTexture } from "./frameHost";
@@ -67,10 +81,14 @@ const QUAD_INDICES = new Uint16Array([0, 1, 2, 0, 2, 3]);
 /**
  * The usages Babylon's buffer manager gave the quad's two buffers (read off the
  * parent: 168 and 152 — storage, for its vertex pulling, beside vertex or index
- * and copy-dst), so the probe reads them as the same buffers.
+ * and copy-dst), so the probe reads them as the same buffers. As LITERALS:
+ * this module is read before a device exists — `main.ts` imports `Game`
+ * statically — and `GPUBufferUsage` is a secure-context global a browser
+ * without WebGPU does not have, so naming it here would throw before the boot
+ * gate could say why (`particleProgram.ts`' `COMPUTE` is the precedent).
  */
-const QUAD_USAGE = GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST;
-const INDEX_USAGE = GPUBufferUsage.INDEX | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST;
+const QUAD_USAGE = 168; // GPUBufferUsage.VERTEX (32) | STORAGE (128) | COPY_DST (8)
+const INDEX_USAGE = 152; // GPUBufferUsage.INDEX (16) | STORAGE (128) | COPY_DST (8)
 
 /** The five passes, in `GlowPass`'s order: the box filter, then mask → near (across, down) → wide (across, down). */
 const DOWN = 4;
@@ -169,7 +187,9 @@ export class GlowBlur {
    * the glow's every rung at every render scale at a device pixel ratio the
    * session has moved to (`glowKernels`) — as asks the seal ALLOWS (X5.2's row
    * "pipelines": a compile on a DPR change is allowed). The blur is skipped
-   * while one compiles, as Babylon skipped it.
+   * while one compiles (~3 frames), where Babylon compiled it synchronously
+   * and drew it — the live difference the header records, accepted by the
+   * owner on 2026-11-08.
    */
   declare(kernels: readonly number[]): void {
     for (const k of kernels) {

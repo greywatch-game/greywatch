@@ -78,7 +78,9 @@ and what it must never do. Read it before editing that file.
 bleed). **Babylon.js** + **TypeScript** + **Vite**; ES modules, Node 24+,
 **WebGPU** — there is no WebGL fallback engine in the tree and there must not be
 one. `main.ts` gates the boot on `navigator.gpu` AND an adapter, so a browser
-without one gets a sentence instead of a black page.
+without one gets a sentence instead of a black page — **and no module may name
+a WebGPU global (`GPUBufferUsage`, …) at its top level**, which throws before
+the gate runs (`docs/build.md`).
 
 **The engine is built with `compatibilityMode = false`, and that is load-bearing
 rather than a tuning flag. Do not delete it to tidy the boot.** Its risk is
@@ -282,8 +284,8 @@ that first draws it. **It OPENS by waiting for OUR renderer's pipelines** — th
 round's DECLARED list (`Game.roundPipelines`: bodies, hulls, weapon, every
 pool of ours and the irradiance volume's compute, asked once at construction)
 and the map's, which its install asks — and our cache is SEALED once the card
-is down (a compile in play is a
-DEV warning). **A new draw of ours joins that list.** The vantages are for
+is down (a compile in play is a DEV warning, but for the glow blur's new widths
+on a pixel-ratio change, `GlowBlur.declare`). **A new draw of ours joins that list.** The vantages are for
 BABYLON's meshes — in a round nothing of Babylon's but the post chain — and
 **no pool is posed**: every one is ours since X4.6e (the sparks, the dust
 discs, the scorch and the blob the last), so on that list, and nothing is shown
@@ -643,8 +645,9 @@ FRAME's own depth buffer** (`src/shaders/GlowPass.ts`). **Its blur and box
 filter are OUR draws in passes `GlowPass` still binds** (`render/GlowBlur.ts`,
 Babylon's `kernelBlur` ported as compiled): the blur's TEXT is a function of
 its kernel, so every rung at every render scale is declared at construction
-(`glowKernels`) and a pixel-ratio change is the one compile in play the seal
-allows. **What may bloom is read
+(`glowKernels`) and a pixel-ratio change's new widths are the one exception
+to the seal — no bloom is drawn while they compile, an accepted live
+difference (`docs/rendering.md`). **What may bloom is read
 per mesh every frame** — an emissive colour, no `metadata.noGlow`, and `Game`'s
 `GlowRules` — so nothing excludes a mesh by hand; **on the kit screen only the
 STAGE blooms** (`Game.glowAdmits`). **A map's merged emissives are a PALETTE

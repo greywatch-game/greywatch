@@ -187,7 +187,11 @@ and declared it — and `GiVolume`'s three computes under it
 until X5.1b made them ours and declared them; retiring the vantages is X5.4's): the glazing, the three blended pools and the
 blob shadow were Babylon's until X4.6e, posed here, and nothing is posed now. **When the wait ends, our cache is SEALED** (`PipelineCache.seal`)
 until the map is torn down: a pipeline of ours compiled in play is a DEV
-warning naming it — what the list missed. Three rules hold it to `loading`'s
+warning naming it — what the list missed — with ONE exception, asked as one
+(`PipelineCache.get(spec, unsealed)`): a device-pixel-ratio change's new glow
+blur widths, up to five, which `GlowBlur.declare` asks from
+`Game.applyRenderScale` (`BABYLON_EXIT.md` X5.2's row "pipelines"), the bloom
+skipped while they compile (`docs/rendering.md`). Three rules hold it to `loading`'s
 contract:
 
 - **Nothing a warm frame changes outlives that frame.** `Game.stageWarmFrame`

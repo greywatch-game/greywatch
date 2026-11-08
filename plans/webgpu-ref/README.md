@@ -319,9 +319,16 @@ node plans/webgpu-ref/post.mjs --compare=a.json --against=b.json
   resize. `--against` compares two logs by `Object.is`, names EVERY differing path a
   scenario has (`--max-diffs`, 40 by default), a long value from its first differing
   character, and excuses only the path patterns `--ignore` names (`**` any segments, `*`
-  any run within one; `@file` for a list), saying which pattern matched nothing; it exits
-  1 on a difference left; `--compare` does it with no browser. About 25 minutes for both
-  sizes.
+  any run within one, `[stage=glob]` an element by its STAGE rather than its index;
+  `@file` for a list), saying which pattern matched nothing; it exits 1 on a difference
+  left; `--compare` does it with no browser. About 25 minutes for both sizes.
+  **Each X5.2 sub-step's expected differences are committed in
+  `plans/webgpu-ref/post-expected.txt`** (`--ignore=@plans/webgpu-ref/post-expected.txt`),
+  a section a sub-step, each line saying why — X5.2b's three on the glow's draws first —
+  and a later sub-step adds its own section there. **Key a line on the draw's stage**
+  (`**.draws[stage=glow.*].viewport`), never on a pass index: an index names whatever
+  draw a scenario puts at it, so it would excuse the same field on another stage's draw
+  (X5.2b's review).
 
 `cold-stagger.mjs` is **gone and is not coming back**. It existed to bake
 Coldharbour's forty cube probes four a frame because doing all forty at once
