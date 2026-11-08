@@ -9863,7 +9863,7 @@ seven minor points, each verified against the tree first.
   row's freeze calls; Hollowmere's 16 rows ran it); the throw itself provoked; corecheck,
   parity, `gate`, `shaders` (no game code moved).
 
-### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07; its decisions the owner's, 2026-11-07 and 2026-11-08, rows in "Decisions that are yours") — X5.2a **LANDED** (e5d9390, its review 55ef32c)
+### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07; its decisions the owner's, 2026-11-07 and 2026-11-08, rows in "Decisions that are yours") — X5.2a **LANDED** (e5d9390, its review 55ef32c, its held finding F1 fixed 738f5e3)
 
 The plan's `BABYLON_EXIT.md` holds X5.2's brief, its ONE RULE, shape (A), "What it is
 today" (corrected in place by X5.2a, each correction marked) and the five sub-steps.
@@ -10000,7 +10000,7 @@ below).
   20 of 20 rows byte-equal to X5.2a's AFTER by `exact.mjs` (the harness's change is a
   comment). Typecheck and build pass.
 
-**Its held finding F1** (2026-11-08; the owner's decision of that day: fixed before X5.2b, in
+**Its held finding F1** (738f5e3; 2026-11-08; the owner's decision of that day: fixed before X5.2b, in
 a commit of its own, the moved rows measured and only those re-banked; the reference moves,
 not the game — `harness.mjs` and comments only, nothing under `src/`).
 
