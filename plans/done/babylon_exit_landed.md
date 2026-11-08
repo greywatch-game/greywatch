@@ -9863,7 +9863,7 @@ seven minor points, each verified against the tree first.
   row's freeze calls; Hollowmere's 16 rows ran it); the throw itself provoked; corecheck,
   parity, `gate`, `shaders` (no game code moved).
 
-### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07; its decisions the owner's, 2026-11-07 and 2026-11-08, rows in "Decisions that are yours") — X5.2a **LANDED** (e5d9390, its review 55ef32c, its held finding F1 fixed 738f5e3), X5.2b **LANDED** (this commit)
+### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07; its decisions the owner's, 2026-11-07 and 2026-11-08, rows in "Decisions that are yours") — X5.2a **LANDED** (e5d9390, its review 55ef32c, its held finding F1 fixed 738f5e3), X5.2b **LANDED** (f697f0e)
 
 The plan's `BABYLON_EXIT.md` holds X5.2's brief, its ONE RULE, shape (A), "What it is
 today" (corrected in place by X5.2a, each correction marked) and the five sub-steps.
@@ -10038,7 +10038,7 @@ not the game — `harness.mjs` and comments only, nothing under `src/`).
   stale rows red on both sides at the same means, so 34 with the five re-banked. Typecheck
   and build pass.
 
-**X5.2b landed** (this commit; 2026-11-08; no change to the picture; no report version). The
+**X5.2b landed** (f697f0e; 2026-11-08; no change to the picture; no report version). The
 glow's box filter and four blurs are our draws, in the passes `GlowPass` binds on its own
 targets, with no change to the pass structure; the mask stays Babylon's. Measured at 285da96,
 headless on the Windows box (BEFOREs in a worktree of the parent with its own `npm ci` and a
