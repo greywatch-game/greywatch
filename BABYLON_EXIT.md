@@ -2934,7 +2934,7 @@ particle: it can be marked done, which is the owner's to do.
 
 ## Phase 5 — The frame
 
-### X5.1 — GI and the compute passes are ours — **M, as two sub-steps** (split 2026-11-07: the owner instructed that X5.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the two-way split was proposed by the orchestrating session and run under that instruction) — X5.1a **LANDED** (06b9daa), X5.1b **LANDED** (this commit, its picture change 9b9d205) — **both LANDED**
+### X5.1 — GI and the compute passes are ours — **M, as two sub-steps** (split 2026-11-07: the owner instructed that X5.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the two-way split was proposed by the orchestrating session and run under that instruction) — X5.1a **LANDED** (06b9daa), X5.1b **LANDED** (e9a39d6, its picture change 9b9d205) — **both LANDED**
 
 `GiVolume` (`ComputeShader`, `StorageBuffer`, `RawTexture3D`) on our side: its three
 compute passes, its six buffers and its seven 3D textures made, bound and dispatched by
@@ -3162,7 +3162,7 @@ correction marked "X5.1a"):
   `exact.mjs`; typecheck and build. The note is in `plans/done/babylon_exit_landed.md`.
 
 - **X5.1b — the volume's GPU half is ours, and Babylon does no compute in a round.**
-  **LANDED** (this commit, its picture change 9b9d205; below, after the open questions). A
+  **LANDED** (e9a39d6, its picture change 9b9d205; below, after the open questions). A
   module of ours (`render/GiCompute.ts`, a name to change freely; no Babylon import, rule 6):
   the five compute pipelines on `PipelineCache.compute` with layout `"auto"`, every tier's
   asked at construction (the trace and compose at each tier, vis once — X4.7c declared both
@@ -3276,7 +3276,7 @@ correction marked "X5.1a"):
     (instruments only), or make the trace order-independent first — a picture change of its
     own (rule 2)? The row has the options; X5.1b may not land until it is answered.
 
-  **X5.1b LANDED** (this commit, its picture change 9b9d205, the owner's answers recorded in
+  **X5.1b LANDED** (e9a39d6, its picture change 9b9d205, the owner's answers recorded in
   14df397; 2026-11-07). **The picture change first** (9b9d205, dev-only, the owner's row 1):
   every Babylon cel material — an editor build's world, until X5.3 — is bound once, on
   creation, to GI `off` (`CelMaterialFactory.babylonGi`: seven 1x1x1 `RawTexture3D`s of the
@@ -3287,7 +3287,7 @@ correction marked "X5.1a"):
   eyes (Hollowmere's `ashwood` 9,646 pixels and `menu` 771 apart there); the bank 142 of
   143 byte-equal at high and off (`harrowmead-view-pistol-reload` within its flake) and at
   low (`sarab-alley` 5 pixels by 2/255, a frame X5.1a's first `gi=low` process drew on the
-  same source). **Then the move** (this commit): `render/GiCompute.ts` owns the five pipelines
+  same source). **Then the move** (e9a39d6): `render/GiCompute.ts` owns the five pipelines
   (asked at construction, "the irradiance volume" on `Game.roundPipelines`), the six
   buffers, the seven textures (one view each, the frame's `OwnTexture`s), their sampler, the
   bind groups, the history's clears and the retired resources (destroyed at the new

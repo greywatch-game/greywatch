@@ -9500,7 +9500,7 @@ note adds how.
 
 ## Phase 5 — The frame
 
-### X5.1 — GI and the compute passes are ours — **M, as two sub-steps** (split 2026-11-07: the owner instructed that X5.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the two-way split was proposed by the orchestrating session and run under that instruction) — X5.1a **LANDED** (06b9daa), X5.1b **LANDED** (this commit, its picture change 9b9d205) — **both LANDED**
+### X5.1 — GI and the compute passes are ours — **M, as two sub-steps** (split 2026-11-07: the owner instructed that X5.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the two-way split was proposed by the orchestrating session and run under that instruction) — X5.1a **LANDED** (06b9daa), X5.1b **LANDED** (e9a39d6, its picture change 9b9d205) — **both LANDED**
 
 The plan's `BABYLON_EXIT.md` holds X5.1's brief, "What it is today" (corrected in place
 by X5.1a, each correction marked) and X5.1b's brief with its open questions.
@@ -9691,7 +9691,7 @@ Docs: `CLAUDE.md`, `docs/rendering.md`, `docs/editor.md`, `GiVolume`'s header an
   `harrowmead-view-pistol-reload` within its flake; low 142 and `sarab-alley` 5 pixels by
   2/255, a frame X5.1a's first `gi=low` process drew on the same source. No round row moved.
 
-**X5.1b landed** (this commit; 2026-11-07; no change to the picture; no report version). The
+**X5.1b landed** (e9a39d6; 2026-11-07; no change to the picture; no report version). The
 irradiance volume's GPU half is our renderer's; Babylon makes no compute pipeline and
 dispatches nothing, in a round or an editor build.
 
