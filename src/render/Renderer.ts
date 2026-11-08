@@ -1,8 +1,9 @@
 /**
  * render/Renderer.ts — Our renderer: the device, the frame's uniforms and
  * their buffer, the pipeline cache, and the draws it records into the
- * frame's main pass — and into the glow's mask pass, the one other pass of
- * the host's it draws in (`BABYLON_EXIT.md` X3.6d).
+ * frame's main pass — and into the glow's passes, the only others of the
+ * host's it draws in: the mask (`BABYLON_EXIT.md` X3.6d) and the blur's five
+ * (X5.2b).
  * Owns: `Renderer` — the frame's `FrameUniforms` and `FrameUniformBuffer`,
  * its `FrameTextures` and the bind group they make with the buffer (group 0
  * of every program, `FrameContext.frameGroup`, handed to a prepare as to a
@@ -57,14 +58,20 @@
  * it, the pass not yet ended), LAST in it, on that open's verdict — the pass
  * is the one the open checked, and Babylon no longer names it as the bound
  * target by then, so it is never asked again;
+ * a GLOW BLUR draw (`glowBlurOpened`, `render/GlowBlur.ts`) is queued when the
+ * glow's owner has bound one of the blur's targets itself and asks — into a
+ * pass that is exactly `GLOW_BLUR_TARGETS`, one that is not drawing nothing of
+ * ours with one console error per change — and reads no frame of ours, so it
+ * is queued whether or not `begin` filled one;
  * **no draw here needs anything of Babylon's in group 0**: the host tells all
  * of the points on every main pass, a frame on which Babylon visits no group
  * included (`MainPassHooks`, `BABYLON_EXIT.md` X4.5a);
  * it reads the MAIN pass's frame — the same camera, in the same submit — so
  * it binds the same group 0; nothing here allocates on a frame.
  * Never: imports Babylon — it is handed a `FrameHost`; draws into any of the
- * HOST's passes but the main one and the glow's mask when told it opened (a
- * prepare's pass into a texture of ours is the prepare's); reads a Babylon
+ * HOST's passes but the main one, the glow's mask when told it opened and a
+ * pass of the glow's blur when asked from inside it (a prepare's pass into a
+ * texture of ours is the prepare's); reads a Babylon
  * material; finds the glow's mask by testing a pass's targets — it is TOLD.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
  *
@@ -142,7 +149,7 @@ import { FrameUniformBuffer } from "./FrameUniformBuffer";
 import { HostBindGroup } from "./HostBindGroup";
 import { type PassTiming, PassTimer } from "./PassTimer";
 import { PipelineCache } from "./PipelineCache";
-import { FRAME_TARGETS, GLOW_TARGETS } from "./targets";
+import { FRAME_TARGETS, GLOW_BLUR_TARGETS, GLOW_TARGETS } from "./targets";
 
 /** What a draw is handed beside the pass. */
 export interface FrameContext {
@@ -294,6 +301,8 @@ export class Renderer {
   private refused = false;
   /** The same, for the glow's mask. */
   private maskRefused = false;
+  /** The same, for the glow's blur. */
+  private blurRefused = false;
 
   constructor(
     host: FrameHost,
@@ -481,6 +490,31 @@ export class Renderer {
     const ok = this.maskOpenOk;
     this.maskOpenOk = false;
     if (ok && this.maskLateDraws.length > 0) this.host.queue(this.runMaskLate);
+  }
+
+  /**
+   * A pass of the glow's BLUR is open: its owner (`GlowPass`) has bound one of
+   * its own targets and asks, from between that bind and its unbind, for
+   * `run` to draw there (`render/GlowBlur.ts`, `BABYLON_EXIT.md` X5.2b).
+   * Queues it — only into a pass that is exactly `GLOW_BLUR_TARGETS`; one that
+   * is not draws nothing of ours, with one console error per change — and says
+   * whether it did. `run` is queued as handed, so it must be the same function
+   * every frame (`FrameHost.queue` keeps one list item per function).
+   */
+  glowBlurOpened(run: (pass: GPURenderPassEncoder) => void): boolean {
+    if (!this.host.passIs(GLOW_BLUR_TARGETS)) {
+      if (!this.blurRefused) {
+        console.error(
+          "render: a pass of the glow's blur is not what GLOW_BLUR_TARGETS states — drawing nothing of ours in it",
+          { open: this.host.openPass(), stated: GLOW_BLUR_TARGETS },
+        );
+      }
+      this.blurRefused = true;
+      return false;
+    }
+    this.blurRefused = false;
+    this.host.queue(run);
+    return true;
   }
 
   dispose(): void {

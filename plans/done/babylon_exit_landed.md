@@ -9863,7 +9863,7 @@ seven minor points, each verified against the tree first.
   row's freeze calls; Hollowmere's 16 rows ran it); the throw itself provoked; corecheck,
   parity, `gate`, `shaders` (no game code moved).
 
-### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07; its decisions the owner's, 2026-11-07 and 2026-11-08, rows in "Decisions that are yours") — X5.2a **LANDED** (e5d9390, its review 55ef32c, its held finding F1 fixed 738f5e3)
+### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07; its decisions the owner's, 2026-11-07 and 2026-11-08, rows in "Decisions that are yours") — X5.2a **LANDED** (e5d9390, its review 55ef32c, its held finding F1 fixed 738f5e3), X5.2b **LANDED** (this commit)
 
 The plan's `BABYLON_EXIT.md` holds X5.2's brief, its ONE RULE, shape (A), "What it is
 today" (corrected in place by X5.2a, each correction marked) and the five sub-steps.
@@ -10037,3 +10037,124 @@ not the game — `harness.mjs` and comments only, nothing under `src/`).
   the fix the five graded within the floor against `ref/` (banked with the bug); the same 34
   stale rows red on both sides at the same means, so 34 with the five re-banked. Typecheck
   and build pass.
+
+**X5.2b landed** (this commit; 2026-11-08; no change to the picture; no report version). The
+glow's box filter and four blurs are our draws, in the passes `GlowPass` binds on its own
+targets, with no change to the pass structure; the mask stays Babylon's. Measured at 285da96,
+headless on the Windows box (BEFOREs in a worktree of the parent with its own `npm ci` and a
+copy of the main tree's `ref/`).
+
+- **What moved.** `render/GlowBlur.ts` (new, Babylon-free): one pipeline a compiled kernel
+  width and the box filter's, on `PipelineCache.get` with the new `vertexBuffers` (Babylon's
+  quad attribute: `float32x2`, stride 8, location 0); the quad's vertex and index buffers
+  (`(1,1) (-1,1) (-1,-1) (1,-1)`, `uint16` `0,1,2,0,2,3`, usages 168 and 152 as Babylon's
+  buffer manager made them); one `Internals` (8 bytes: -1, the render height, as the engine's
+  `UBInvertY`) and one `LeftOver` a pass (16 bytes: the box filter's `scale` 1, 1 and `texel`;
+  each blur's `delta`, `(1 / width) * direction.x, (1 / height) * direction.y` of its target as
+  `ThinBlurPostProcess.bind` computes it), bound with Babylon's explicit sizes; the source
+  through `FrameHost.bind` (Babylon's own view and its cached sampler: linear x3, clamp, clamp,
+  repeat, lod 0..32, anisotropy 4); an empty group 0 and group 1 at Babylon's numbers; the draw
+  `drawIndexed(6, 1, 0, 0, 0)` queued by `Renderer.glowBlurOpened` (new: `passIs` against
+  `GLOW_BLUR_TARGETS`, new in `targets.ts` — `rgba16float`, no depth, one sample, flipped —
+  then `queue`, one console error a change on a refusal). `shaders/wgsl/glowBlur.ts` (new):
+  the box filter's two modules copied off the parent's device, and the blur's GENERATED, its
+  text being the kernel's — `blurKernel` (`_nearestBestKernel`), the Gaussian, its
+  normalisation, the linear-sampling pairs, `toFixed(8)` with trailing zeros off, the split of
+  the taps between varyings and dependent reads at `maxInterStageShaderVariables - 2` (the
+  device's own limit, Babylon's `maxVaryingVectors` under WebGPU), then the processor's output
+  for those defines; every one of the 24 modules the parent's device was handed for the glow on
+  both pages (the box filter's two and ten kernel widths' — 5, 9, 13, 21 and 29 on the desk, 21,
+  29, 37, 57 and 77 on the phone, the last three with five, fifteen and twenty-five dependent
+  taps) reproduced character for character. `GlowPass`: the four `ThinBlurPostProcess`es, the
+  `glowDown` `EffectWrapper` and the `EffectRenderer` gone; it still binds and unbinds each of
+  its five targets, reads the kernel every frame (`kernelTexels`, now over `kernelTexelsAt`)
+  and skips a pass whose program is not built (as Babylon skipped one compiling), and asks for
+  the draws through `GlowBlurDraws`, handed in by `Game` (the targets cross there,
+  `hostTexture`); `glowKernels(dpr)` is the same formula over every rung and render scale.
+  `PipelineCache.get(spec, unsealed)`: an ask the seal allows. `Game`: `glowBlur` built before
+  the glow at the boot's DPR, "the glow's blur" on `roundPipelines`, `applyRenderScale`
+  declaring a new DPR's kernels (row "X5.2, pipelines").
+- **The probe's bind groups.** `post.mjs` kept `entries[i].resource` by reference, and Babylon
+  rewrites its `{ buffer, offset, size }` objects for the next bind group, so a group's logged
+  buffer was the last one written into that object. Found here: the parent's log showed the
+  glow's four blurs binding one buffer holding the wide pass's `delta` (0, 1/270 on the desk),
+  where a scratch script reading the bundles' groups at creation showed four buffers, each with
+  its own (1/960, 0), (0, 1/540), (1/480, 0), (0, 1/270) — Babylon 9.28's owner-keyed slots, one
+  per draw context, in the probe's own session as in a fresh one. A buffer binding is copied as
+  it is handed now; re-taken at the parent, the log differs from X5.2a's in 52 buffer-byte paths
+  a page and in nothing else (every hash equal). "What it is today" is corrected in place.
+  `__postGpu` gains our arm (`ours`: modules named `glow.down` / `glow.blur` off the labels our
+  cache gave them, the chain's kernel and readiness off `GlowPass.blurKernel` and
+  `Game.glowBlur`).
+- **Measured.**
+  - **The probe** `--against` the parent's re-taken log, both pages, sixteen scenarios
+    (render scale 1, 0.75 and 0.5 at both rungs among them): equal, 31,031 values a page — every
+    pass's targets and hashes, every module's tokens (the module table equal), every pipeline,
+    layout, bind group, sampler, uniform byte, vertex and index byte — with 670 values excused,
+    on the glow's draws alone (passes 3 to 6, and 7 on `low`): `pipeline.call` (ours
+    `createRenderPipelineAsync` ahead of the frame, Babylon's `createRenderPipeline` at its first
+    draw); `bundle` (Babylon's draw was recorded into a render bundle, ours is a bundle-list item
+    run on the pass encoder itself, seam item 3); `viewport` (Babylon set the whole target before
+    its bundle; ours sets none, which a render pass defaults to — the same `[0, 0, w, h, 0, 1]` —
+    and an item that set it would leave it for Babylon's next draws, `FrameHost.queue`'s rule).
+    The patterns, `--ignore=@file`: `*.*.passes[3..6].draws[0].{pipeline.call,bundle,viewport}`
+    and `*.glowlow*.passes[7].draws[0].{…}` (fifteen lines), each excusing 32 paths (6 for
+    `passes[7]`). Two buffer sizes the first run showed (`null` against 8 and 16) were bound
+    explicitly instead. Live, printed: the chain's first frame draws all four blurs on every
+    boot, and no change in play makes a pipeline of ours (the parent made the glow blur's on a
+    render-scale change, a glow rung change and the phone's 0.5 → 1).
+  - **The bank**, all 147 rows, `--check --keep` at the step against the BEFORE, by
+    `exact.mjs`: 145 byte-equal, `harrowmead-view-pistol-reload` within its flake (2 pixels by
+    1/255), `sarab-ground` 100 pixels by 2/255. **The Sarab procedure** (`bank.mjs sarab --check
+    --keep`, two processes a tree, alternating): the row has two frames and both trees draw
+    both (the parent one in its full run and the other in both Sarab-alone processes; the step
+    the other in its full run, then each alone), the step's full-run frame byte-equal to both
+    of the parent's Sarab-alone processes — cross-process residue. The same 34 stale rows red
+    against `ref/` on both sides. After `blurKernel` was made allocation-free (and the
+    constructor's kernels de-duplicated), the probe again equal and Hollowmere's 20 rows
+    byte-equal to the BEFORE.
+  - **Live** (a scratch log: a Hollowmere round, FXAA, the motion blur and the grain off and on,
+    the shafts low/off/high/medium, the glow low and high, render scale 0.5/0.75/1 at both rungs,
+    a window resize and back, a teardown, a second round, Coldharbour, `F2` with a quay dragged
+    and back and the glow rung changed, the round after): our 12 modules made at the boot (ten
+    blur, two box filter) and none after; no module of Babylon's `kernelBlur` or `glowDown`
+    (the parent: 3 at the boot, 11 by the end); Babylon's synchronous pipelines 33 against 39;
+    every glow pass drew (6,464 passes, none empty); no "compiled in play" warning, no
+    `uncapturederror`, no page or console error, on either tree.
+  - **Pipelines**: `coldharbour --round` identical on both trees (0 of Babylon's at the install,
+    21 of ours and 12 modules, none in play); `hollowmere` Babylon's 9 → 8 by the install (the
+    glow blur's), ours 71 → 77 (five kernel widths and the box filter), nothing in the 16
+    seconds after on either.
+  - **`surfaces.mjs`**: Babylon's draws through no mesh lose `kernelBlur -> glowNearH`,
+    `glowNear`, `glowWideH`, `glowWide` (147 rows each) and `glowDown -> glowDown` (1); four
+    items of ours stand in the order where they were.
+  - **`census --against`** (Hollowmere, Sarab, Cinderhaven, Kurenai): every row and total equal
+    (403, 595, 619, 168).
+  - **The editor's frames** (X5.1b's script, its eight eyes, two processes a tree): Coldharbour
+    `menu`, `curtain2`, `curtain40` and Hollowmere `lanterns` byte-equal in all four pairings;
+    `curtain90` 2-4 pixels by up to 2/255 (the parent against itself 2 by 2/255); Hollowmere
+    `ashwood` 42,999-170,205 pixels by 44-52/255 and `menu` 253-482 by up to 30/255 (each tree
+    against itself 113,219-116,198 by 47-52 and 189-627 by 30); `wall40` changes between two
+    grabs in one process on both trees — no oracle.
+  - **`?profile&gpu`** (Coldharbour and Hollowmere, the parent and the step alternating twice,
+    report version 37 on both): `render` 0.928/0.964 → 0.954/0.933 and 0.866/0.855 →
+    0.832/0.839 ms; `gpu.frame` 2.646/2.626 → 2.585/2.697 and 2.509/2.618 → 2.494/2.593 ms
+    (within 3%); `glow` 0.286/0.293 → 0.271/0.258 and 0.242/0.238 → 0.210/0.215 ms.
+  - **A device-pixel-ratio change in play** (a scratch script: CDP's device-metrics override,
+    1 to 2 and back, in a Hollowmere round): the two widths new at 2 (57 and 41) compiled as asks
+    the seal allows — four modules, no "compiled in play" warning — the blur's passes skipped
+    for three frames while they did, then drawn; the Glow and Render Scale settings changed
+    after it compiled nothing; no error.
+  - **Gates**: `gate` seven maps clean; `shaders` clean on seven; typecheck, build
+    (`check-babylon-free`, `check-proving`), corecheck and parity pass.
+- **Rewritten**: `CLAUDE.md` (the glow paragraph), `docs/rendering.md` ("Our renderer's frame":
+  the glow's blur passes; the glow's "the blur and the box filter are OUR draws"), `docs/states.md`
+  and `PipelineWarmup.ts`'s header (the post chain's five), `docs/profiling.md` (`glow`),
+  `FILES.md` (`GlowPass`, `GlowBlur`, `wgsl/glowBlur`, `frameHost`, `Renderer`, `targets`,
+  `PipelineCache`), `FINDINGS.md` 5, the headers of `GlowPass`, `Renderer`, `PipelineCache`,
+  `targets`, `frameHost` and the seam (no item added: the glow's blur passes reached by items 2
+  to 5 as the mask is), `Game`'s comments, `plans/webgpu-ref/README.md` and `post.mjs`'s header;
+  `BABYLON_EXIT.md` (X5.2b LANDED, "What it is today" corrected, X5.4's post passes).
+- **Not run**: the phone (its page is the probe's `phone` size only), a lost device (ours does
+  not rebuild after one, as for every draw of ours, `FINDINGS.md` 64), a server's match in a
+  browser.

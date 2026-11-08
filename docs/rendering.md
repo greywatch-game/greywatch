@@ -3465,8 +3465,8 @@ its group 0 fell inside the window would depend on which observer was
 added first, and the review of X3.2 found the renderer safe only because
 `Game` happened to build it before `GlowPass`.
 
-**The glow's MASK is the one other pass of Babylon's that ours draws in
-(X3.6d), and it is ANNOUNCED rather than found.** No target test could tell
+**The glow's MASK is one of the two other kinds of Babylon pass that ours
+draws in (X3.6d), and it is ANNOUNCED rather than found.** No target test could tell
 the renderer the mask's pass is open without a hook of its own in the seam,
 and none is needed: the mask's owner says so. `GlowPass` raises
 `onMaskOpenObservable` from inside its own clear, the pass begun and nothing
@@ -3481,6 +3481,19 @@ in the same submit, so the frame block written once for the main pass is the
 mask's too. `begin` fills the frame when either pass has a draw, and a
 `FramePrepare` is handed the `FrameContext` (its fourth argument) to ask
 whether a draw can bind this frame (`WorldGlow`'s verdict).
+
+**The glow's BLUR is the other (X5.2b), and it is ASKED for from inside the
+pass.** `GlowPass` still binds each of its five targets itself — the box
+filter's `glow.down` on `low`, then `glowNearH`, `glowNear`, `glowWideH` and
+`glowWide` — with the public `bindFramebuffer` and `unBindFramebuffer`, and
+between the two hands our `GlowBlur` (`render/GlowBlur.ts`, through the
+`GlowBlurDraws` `Game` gives it) the source and the sizes; the draw goes in
+through `Renderer.glowBlurOpened`, the same `queue` and `passIs`, against
+`GLOW_BLUR_TARGETS` (`rgba16float`, no depth, one sample, flipped). It reads
+no frame of ours, so it is queued whether `begin` filled one or not. So the
+passes are what they were — Babylon opens each, loads its target and ends it
+— and Babylon draws nothing in them; a pass whose program is not built yet is
+not bound at all, as Babylon skipped a blur whose effect was compiling.
 
 **A draw lands at one of SEVEN points of the main pass** (`DrawPoint`), six of
 them about rendering group 0, and in this order every frame (the moon's, the sixth,
@@ -5811,7 +5824,29 @@ all in the counter this finding is named after. Not chased.
   starts from a half-resolution downsample: Babylon's own `kernelBlur`, across and
   down at half resolution and again at quarter, the two summed, scaled by
   `glowIntensity`, clamped to 1 and added to the frame — the layer's look at the
-  size its kernel was tuned at. The kernel is `glowKernel / (2 * level)` texels of
+  size its kernel was tuned at.
+- **The blur and the box filter are OUR draws, ported as compiled** (`BABYLON_EXIT.md`
+  X5.2b: `render/GlowBlur.ts`, its modules `shaders/wgsl/glowBlur.ts`), in the
+  passes `GlowPass` binds on its own targets ("Our renderer's frame", above).
+  **The blur's TEXT is a function of its kernel**: Babylon's `ThinBlurPostProcess`
+  rounds the ideal width to the nearest odd one whose half is even
+  (`_nearestBestKernel`), computes a sigma-1/3 Gaussian over it, pairs the taps for
+  bilinear sampling, prints each offset and weight with `toFixed(8)` as a constant,
+  and gives the first `maxInterStageShaderVariables - 2` taps a varying each and the
+  rest a dependent read off the centre — so `glowBlurModules` does that arithmetic in
+  float64 and writes the processor's output character for character, every module
+  the parent's device was handed reproduced (ten kernels, both pages). The position
+  arrives as Babylon fed it, a `float32x2` attribute off its quad
+  (`PipelineSpec.vertexBuffers`), the pipelines are laid out as Babylon's (group 0
+  empty, the source, its sampler, `Internals` and the pass's `LeftOver` in group 1),
+  the source is read through Babylon's own view and sampler for it
+  (`FrameHost.bind`), and each of the five passes has a `LeftOver` of its own, as
+  Babylon's owner-keyed slots gave each draw context one. **Every rung at every
+  render scale is declared at construction** (`glowKernels`, on the round's list as
+  "the glow's blur"), so a Glow or Render Scale setting changed in play compiles
+  nothing; a device-pixel-ratio change declares the new ratio's kernels from
+  `Game.applyRenderScale`, the one compile in play the seal allows, the blur
+  skipped while it lasts. The kernel is `glowKernel / (2 * level)` texels of
   the half target, read before every blur from the scaling level (the setter
   returns on an unchanged value), so the render-scale setting cannot change the
   bloom's size on screen: `devicePixelRatio` is already inside the level, and the

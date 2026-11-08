@@ -52,7 +52,8 @@
  * state, and the layout's groups entry by entry), each bind group entry by
  * entry (a SAMPLER by its descriptor, a texture view by its descriptor and the
  * target it views, a buffer by its range and — for anything mirrored — the
- * BYTES bound, as the queue held them at the submit), the vertex and index
+ * BYTES bound, as the queue held them at the submit; the binding copied as it
+ * was handed, since Babylon rewrites the object for its next group — X5.2b), the vertex and index
  * buffers' bytes, the viewport, scissor, blend constant and stencil reference
  * in force, and the draw call and its arguments (an indirect draw's read off
  * the buffer). Beside each frame, `chain`: the camera's list as Babylon holds
@@ -71,7 +72,12 @@
  * stage since — a rung change, a recompiled kernel — is named), `stage(module)`
  * (the stage a GPU shader module was made for, or null) and `target(texture)`
  * (the name of a GPU texture the chain reads or writes, or null), plus
- * `chain()` (the CPU facts above). **BABYLON's arm is the only one today**:
+ * `chain()` (the CPU facts above). **BABYLON's arm**, and since X5.2b OURS
+ * for the glow's box filter and four blurs (`Game.glowBlur`,
+ * `render/GlowBlur.ts`: its modules named off the labels our pipeline cache
+ * gave them, `glow down: …` and `glow blur <width>: …`, the kernel and the
+ * readiness `chain()` reports off `GlowPass.blurKernel` and the blur's own
+ * asks; the targets are still `GlowPass`'s, which binds each pass). Babylon's:
  * the camera's post processes (`ink`, `fxaa`, `shafts`, `blur`, `grain`, by
  * the object `Game` built each as), the glow's box filter and four blurs
  * (`glow.down`, `glow.blur0..3`), each one's effect's two modules
@@ -249,7 +255,7 @@ function deviceProbe() {
   wrap(D, "createShaderModule", function (orig, a) {
     const m = orig.apply(this, a);
     if (!P.self) {
-      const rec = { code: String(a[0]?.code ?? ""), frame: P.frame };
+      const rec = { code: String(a[0]?.code ?? ""), label: String(a[0]?.label ?? ""), frame: P.frame };
       P.modules.set(m, rec);
       P.moduleList.push([m, rec]);
     }
@@ -277,9 +283,15 @@ function deviceProbe() {
     P.layouts.set(l, [...(a[0]?.bindGroupLayouts ?? [])]);
     return l;
   });
+  // A buffer binding is COPIED as it is handed over, never kept by reference:
+  // Babylon reuses its `{ buffer, offset, size }` objects and rewrites them for
+  // the next bind group (`webgpuCacheBindGroups.js`), so a kept reference names
+  // the buffer of the LAST group made with that object — X5.2b found the glow's
+  // four blurs logged as one buffer holding the wide pass's delta, where the
+  // device bound four, each its own.
   wrap(D, "createBindGroup", function (orig, a) {
     const bg = orig.apply(this, a);
-    P.bindGroups.set(bg, (a[0]?.entries ?? []).map((e) => ({ binding: e.binding, resource: e.resource })));
+    P.bindGroups.set(bg, (a[0]?.entries ?? []).map((e) => ({ binding: e.binding, resource: e.resource?.buffer ? { ...e.resource } : e.resource })));
     return bg;
   });
   wrap(D, "createSampler", function (orig, a) {
@@ -672,6 +684,30 @@ function deviceProbe() {
 function postAdapter() {
   const g = window.__celshock;
   const P = window.__postProbe;
+  // OURS, picked first for each stage it holds, under Babylon's names. X5.2b:
+  // the glow's box filter and four blurs (`Game.glowBlur`, `render/GlowBlur.ts`),
+  // whose modules our pipeline cache made and labelled (`glow down: …`,
+  // `glow blur <width>: …`) — named off the label, the four blurs one stage as
+  // Babylon's were, told apart by the target each draws into. The targets are
+  // still `GlowPass`'s own (`glow.*`, below), which binds each pass.
+  const ours = {
+    glow: () => Boolean(g.glowBlur),
+    name() {
+      if (!ours.glow()) return;
+      for (const [m, rec] of P.moduleList) {
+        if (P.stageOf.has(m)) continue;
+        if (rec.label.startsWith("glow down: ")) P.stageOf.set(m, "glow.down");
+        else if (rec.label.startsWith("glow blur ")) P.stageOf.set(m, "glow.blur");
+      }
+    },
+    stages() {
+      if (!ours.glow()) return [];
+      return [
+        { name: "glow.down", ready: g.glowBlur.downReady(), off: false },
+        { name: "glow.blur", ready: g.glowBlur.blurReady(g.glow.blurKernel), off: false },
+      ];
+    },
+  };
   // A Babylon texture's GPU texture: its hardware texture's resource, or the
   // texture its view was made on (a texture of ours wrapped through the seam).
   const hw = (t) => t?._hardwareTexture?.underlyingResource ?? P.views.get(t?._hardwareTexture?.view)?.texture ?? null;
@@ -699,7 +735,8 @@ function postAdapter() {
         if (pp && !list.includes(pp)) out.push({ name, effect: pp.getEffect?.() ?? null, input: pp.inputTexture ?? null, pp, off: true });
       }
       const glow = g.glow;
-      if (glow) {
+      // Babylon's glow blur (a parent before X5.2b): ours below is picked first.
+      if (glow && !ours.glow()) {
         out.push({ name: "glow.down", effect: glow.downsample?.effect ?? null });
         // The four blurs are ONE program (the direction and the texel step are
         // uniforms; Babylon's effect cache hands all four the same effect), so
@@ -783,6 +820,14 @@ function postAdapter() {
       });
       const glow = g.glow;
       const rt = (t) => (t ? { width: t.getSize().width, height: t.getSize().height, samplingMode: t.samplingMode, wrapU: t.wrapU, wrapV: t.wrapV } : null);
+      // The blur's kernel as each of the four held it, and whether each pass
+      // and the box filter could draw: Babylon's `ThinBlurPostProcess`es, or
+      // ours (X5.2b), `GlowPass.blurKernel` the same ideal width four times.
+      const blurs = ours.glow()
+        ? { kernel: [0, 1, 2, 3].map(() => glow.blurKernel), blurReady: [0, 1, 2, 3].map(() => g.glowBlur.blurReady(glow.blurKernel)), downReady: g.glowBlur.downReady() }
+        : glow
+          ? { kernel: (glow.blurs ?? []).map((b) => b.kernel), blurReady: (glow.blurs ?? []).map((b) => b.isReady?.() ?? null), downReady: glow.downsample?.isReady?.() ?? null }
+          : null;
       return {
         list: (cam._postProcesses ?? []).map((pp, i) => (pp ? { index: i, ...pass(pp) } : { index: i, hole: true })),
         off: [g.fxaa, g.volumetrics?.pass, g.motionBlur?.pass, g.post?.post].filter((pp) => pp && !(cam._postProcesses ?? []).includes(pp)).map(pass),
@@ -791,9 +836,9 @@ function postAdapter() {
         glow: glow
           ? {
               rung: glow.rung,
-              kernel: (glow.blurs ?? []).map((b) => b.kernel),
-              blurReady: (glow.blurs ?? []).map((b) => b.isReady?.() ?? null),
-              downReady: glow.downsample?.isReady?.() ?? null,
+              kernel: blurs.kernel,
+              blurReady: blurs.blurReady,
+              downReady: blurs.downReady,
               targets: Object.fromEntries(["mask", "down", "nearH", "near", "wideH", "wide"].map((k) => [k, rt(glow[k])])),
             }
           : null,
@@ -830,20 +875,24 @@ function postAdapter() {
   let targets = new Map();
   const inputs = new Set();
   window.__postGpu = {
-    arm: babylon.arm,
+    arm: ours.glow() ? "ours:glow" : babylon.arm,
     refresh() {
       for (const s of babylon.stages()) {
         const st = s.effect?._pipelineContext?.stages;
         if (st?.vertexStage?.module) P.stageOf.set(st.vertexStage.module, s.name);
         if (st?.fragmentStage?.module) P.stageOf.set(st.fragmentStage.module, s.name);
       }
+      ours.name();
       targets = babylon.targets();
     },
     stage: (m) => P.stageOf.get(m) ?? null,
     target: (t) => targets.get(t) ?? null,
     input: (t) => inputs.has(t),
     chain: () => babylon.chain(),
-    stages: () => babylon.stages().map((s) => ({ name: s.name, ready: s.effect?.isReady?.() ?? false, off: Boolean(s.off) })),
+    stages: () => [
+      ...babylon.stages().map((s) => ({ name: s.name, ready: s.effect?.isReady?.() ?? false, off: Boolean(s.off) })),
+      ...ours.stages(),
+    ],
   };
   window.__postGpu.refresh();
 }

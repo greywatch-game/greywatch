@@ -432,7 +432,10 @@ frame                       the whole tick, wall to wall
    │                        that re-render it — an editor build's alone since
    │                        X4.1c: a round has none, every shadow map ours
    ├─ glow                  GlowPass: its mask and four blurs at the end of
-   │                        the draw phase (the compose is inside the ink)
+   │                        the draw phase (the compose is inside the ink;
+   │                        the blurs and the box filter OUR draws since
+   │                        X5.2b, queued in the passes it binds, so still
+   │                        inside this span — no report version)
    └─ drawWorld             the camera's DRAW PHASE up to the glow's work
                             (report version 36): Babylon's group 0 when it
                             visits one, and our draws only QUEUED here at

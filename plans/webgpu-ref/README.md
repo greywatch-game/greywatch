@@ -303,12 +303,14 @@ node plans/webgpu-ref/post.mjs --compare=a.json --against=b.json
   chain stage made, with its pipeline (both modules by their tokens, the vertex layout,
   cull, front face, depth state, blend, write mask, the layout), its bind groups entry by
   entry (each sampler's descriptor, each view's target, each uniform buffer's BYTES as the
-  queue held them at the submit), its vertex and index bytes and its draw call; beside
+  queue held them at the submit — a buffer binding recorded by VALUE since X5.2b, Babylon
+  rewriting its binding objects for the next group), its vertex and index bytes and its draw call; beside
   them the camera's list as Babylon holds it (its holes), each pass's own fields,
   `scene.autoClear` and `scene.imageProcessingConfiguration`; and once a boot the
   device's limits, the canvas's configuration and every module's processed text. **Every
-  naming goes through one adapter** (`window.__postGpu`: Babylon's arm today, a sub-step
-  that moves a stage adds ours, picked first, under the same names), so a draw of ours is
+  naming goes through one adapter** (`window.__postGpu`: Babylon's arm, and a sub-step
+  that moves a stage adds ours, picked first, under the same names — since X5.2b the
+  glow's box filter and blur, `Game.glowBlur`, named off its modules' labels), so a draw of ours is
   compared with the Babylon draw it replaced (`harness.mjs`'s `postAdapter`, the CPU half
   `freeze` holds, shares the name and gains ours by the same sub-step). Beside the log,
   printed and not compared, the LIVE frames from the page's first, and — on a second,

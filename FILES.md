@@ -2514,7 +2514,10 @@ src/
                         #   the same function that draws it), Babylon's kernel
                         #   blur at half and quarter resolution (quarter and
                         #   eighth off a box downsample on the Glow setting's
-                        #   `low`), and an additive
+                        #   `low`) — each pass bound HERE and drawn by OUR
+                        #   renderer since X5.2b (GlowBlurDraws, handed in;
+                        #   glowKernels, every rung at every render scale, for
+                        #   its declared pipelines) — and an additive
                         #   compose the ink runs as its last line (a WGSL
                         #   snippet, not a pass). Public API only;
                         #   `Game` supplies the rules (what blooms, how
@@ -2632,6 +2635,15 @@ src/
                         #   with GiVolume. RayWorld's box and floor queries,
                         #   ported: the volume traces the COLLIDERS, never a
                         #   mesh
+      glowBlur.ts       # The glow's blur and box filter AS COMPILED (X5.2b):
+                        #   the box filter's two modules copied off the parent's
+                        #   device, and the blur's GENERATED, its text being the
+                        #   kernel's — Babylon's _nearestBestKernel, Gaussian,
+                        #   linear pairs, toFixed(8) constants and the tap split
+                        #   on maxInterStageShaderVariables, then its processor's
+                        #   output character for character (all ten kernels the
+                        #   parent compiled reproduced). Babylon-free:
+                        #   render/GlowBlur.ts draws them
     FlameShader.ts      # THE FIRE: every open flame's one material. Tongues
                         #   that boil on twos in hard bands, embers on the
                         #   smooth clock, and the glow-mask TWIN that runs the
@@ -2682,8 +2694,9 @@ src/
                         #   HostTexture
     frameHost.ts        # FrameHost (what the renderer needs from whoever owns
                         #   the frame: the device, the queue — into the main
-                        #   pass, or the glow's mask when its owner says it
-                        #   opened — the five main-pass hooks, told on every
+                        #   pass, the glow's mask when its owner says it
+                        #   opened, or a glow blur pass its owner asks from
+                        #   inside (X5.2b) — the five main-pass hooks, told on every
                         #   main pass whatever group 0 holds, the encoder it
                         #   submits ahead of the draws, a texture's view and
                         #   sampler NOW, a call after every frame's submit —
@@ -2714,13 +2727,18 @@ src/
                         #   queued FIRST in GlowPass's
                         #   mask when told it opened (glowMaskOpened), off the
                         #   main pass's frame, refused unless GLOW_TARGETS
-                        #   (onGlowMaskRefused); a prepare is handed the
+                        #   (onGlowMaskRefused); a GLOW BLUR draw queued into
+                        #   the pass GlowPass has bound when asked from inside
+                        #   it (glowBlurOpened, X5.2b), refused unless
+                        #   GLOW_BLUR_TARGETS; a prepare is handed the
                         #   FrameContext (group 0) as a draw is
     targets.ts          # FRAME_TARGETS, stated once: rgba8unorm, depth32float,
                         #   1 sample, flipY (CelInk's target, not the canvas);
                         #   GLOW_TARGETS, the glow mask's: the same values for
                         #   its own reason (an rgba8unorm target, the frame's
-                        #   borrowed depth); SHADOW_TARGETS, a world shadow
+                        #   borrowed depth); GLOW_BLUR_TARGETS, a glow blur
+                        #   pass's: rgba16float, no depth, 1 sample, flipY
+                        #   (X5.2b); SHADOW_TARGETS, a world shadow
                         #   map's: r16float, depth32float, 1 sample, flipY
     frame.ts            # FRAME_BLOCK (group 0, binding 0 of every program:
                         #   camera, environment, wind, lights, shadows, GI,
@@ -2747,7 +2765,10 @@ src/
                         #   rotor wash's, X4.7d), cached across maps; the compile
                         #   counts the warm-up waits on (CompileProgress); and
                         #   the SEAL a round is played under (a compile in
-                        #   play is a DEV warning naming it)
+                        #   play is a DEV warning naming it, but for an ask the
+                        #   asker says the seal allows: the glow blur on a DPR
+                        #   change, X5.2b); vertex buffers only for a stage
+                        #   ported off Babylon's quad (the glow's blur)
     celFragment.ts      # The cel fragment as WE declare it: frame (group 0)
                         #   and material (group 1) uniforms and textures, the
                         #   inputs (CEL_VARYINGS), over the shared celSurface
@@ -2911,6 +2932,16 @@ src/
                         #   production), every retired resource destroyed
                         #   after the submit (FrameHost.afterSubmit). The cloud
                         #   field the host's, with the host's sampler
+    GlowBlur.ts         # THE GLOW'S BLUR AND BOX FILTER as OUR draws (X5.2b),
+                        #   queued into the passes GlowPass binds on its own
+                        #   targets (Renderer.glowBlurOpened, GLOW_BLUR_TARGETS):
+                        #   a pipeline a compiled kernel width (declared at
+                        #   construction, "the glow's blur" on
+                        #   Game.roundPipelines; a DPR change's the one compile
+                        #   in play the seal allows), Babylon's quad as a vertex
+                        #   and an index buffer, Internals and a LeftOver block a
+                        #   pass, the source read through the host's own view and
+                        #   sampler. Babylon's pipeline state field for field
     ParticleDraw.ts     # EVERY PARTICLE FIELD as OUR renderer runs it (X4.7c
                         #   the ash, X4.7d the rotor wash): one list in creation
                         #   order, Babylon's GPUParticleSystem ported exactly —

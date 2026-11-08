@@ -3422,7 +3422,7 @@ correction marked "X5.1a"):
   of the eventual change, the rest the multi-bounce iteration's: 99% by two); no Babylon
   compute in a round or an editor build.
 
-### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07: the owner instructed that steps be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split below was proposed by the orchestrating session from a planning agent's read at 33a8d35, and its two shaping decisions taken by the owner the same day, its seven others the next, rows in "Decisions that are yours") — X5.2a **LANDED** (e5d9390, its review 55ef32c, its held finding F1 fixed 738f5e3); X5.2b, X5.2c1, X5.2c2, X5.2d not started
+### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07: the owner instructed that steps be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split below was proposed by the orchestrating session from a planning agent's read at 33a8d35, and its two shaping decisions taken by the owner the same day, its seven others the next, rows in "Decisions that are yours") — X5.2a **LANDED** (e5d9390, its review 55ef32c, its held finding F1 fixed 738f5e3), X5.2b **LANDED** (this commit); X5.2c1, X5.2c2, X5.2d not started
 
 `FrameDepth`, `CelInk` with the glow's compose in its last line, the glow's
 blur, FXAA (already our own fragment), `Volumetrics`, `MotionBlur` and
@@ -3635,7 +3635,11 @@ marked "X5.2a"):
   and 78.75, 59.06 and 39.38 on `high`, 39.38, 29.53 and 19.69 on `low` (the phone,
   whose scaling level is 0.356, 0.474 and 0.711) — five distinct texts a page, ten
   modules with their vertex stages, the kernel's offsets and weights inlined as
-  constants. The device's `maxInterStageShaderVariables` is 16 here. The targets
+  constants. **X5.2b, corrected**: each of the four binds a `LeftOver` buffer of its
+  OWN holding its own `delta` (Babylon's owner-keyed slots, one per draw context) — the
+  probe's log named one buffer holding the wide pass's `delta` for all four, having kept a
+  bind group's buffer binding by reference where Babylon rewrites the object for its next
+  group (fixed; the parent's log re-taken). The device's `maxInterStageShaderVariables` is 16 here. The targets
   are floored as read: the desktop at 0.75 is `glow.near` 720x405 and `glow.wide`
   360x202, the phone at 1 is 1170x540 and 585x270, at 0.75 877x405 and 438x202, and
   `low`'s `glow.down` is the near size (`1x1` on `high`).
@@ -3860,6 +3864,56 @@ owes" below.
   as compiled, its samplers and uniform blocks. Its pipelines declared (row
   "X5.2, pipelines"). The mask stays Babylon's. **Verify** adds `post-glowlow`,
   the scale rows and both rungs in the probe.
+
+  **X5.2b LANDED** (this commit; 2026-11-08; no change to the picture; no report version, the
+  draws queued inside `glow`'s span). **What moved**: the glow's box filter and four blurs are
+  our draws in the passes `GlowPass` still binds on its own targets (`bindFramebuffer`,
+  `unBindFramebuffer`: Babylon opens, loads and ends each and draws nothing in it), queued
+  through `Renderer.glowBlurOpened` against `GLOW_BLUR_TARGETS` (`rgba16float`, no depth, one
+  sample, flipped) — no seam item, the mask Babylon's. `render/GlowBlur.ts` holds a pipeline a
+  compiled kernel width and the box filter's, Babylon's quad (a `float32x2` attribute at stride
+  8, `uint16` `0,1,2,0,2,3`, `drawIndexed(6, 1, 0, 0, 0)`, the buffers' usages 168 and 152),
+  Babylon's `Internals` (-1, the render height) and one 16-byte `LeftOver` a pass, the source
+  read through the host's own view and sampler (`FrameHost.bind`), layout and state Babylon's
+  field for field (group 0 empty, everything in group 1; cull back, `cw`; no depth, no blend);
+  `shaders/wgsl/glowBlur.ts` writes the blur's modules as Babylon's processor wrote them —
+  `_nearestBestKernel`, the Gaussian, the linear pairs, `toFixed(8)`, the tap split on
+  `maxInterStageShaderVariables` — and holds the box filter's as compiled: all 24 modules the
+  parent's device was handed for the glow on both pages (ten kernel widths) reproduced
+  character for character. `PipelineCache` gains `vertexBuffers` (a stage ported off
+  Babylon's quad) and `get(spec, unsealed)`. **Pipelines** (row "X5.2, pipelines"): every rung
+  at every render scale at the boot's DPR asked at construction (`glowKernels`, "the glow's
+  blur" on `Game.roundPipelines`); `Game.applyRenderScale` declares a new DPR's, the one
+  compile in play the seal allows. A pass whose program is not built is not bound, as Babylon
+  skipped a blur whose effect compiled. **The probe**: `post.mjs` kept a bind group's buffer
+  binding by REFERENCE and Babylon rewrites those objects for its next group, so the log named
+  the last group's buffer — the glow's four blurs logged as one buffer holding the wide pass's
+  `delta` where the device bound four, each its own (corrected above); it copies the binding
+  now, the parent's log was re-taken with it, and `__postGpu` gains our arm (`glow.down`,
+  `glow.blur`, named off our modules' labels). **Verify**: the probe `--against` the parent's
+  log (both pages, sixteen scenarios: every render scale at both rungs) equal — 31,031 values
+  a page, every target's hash among them — with three paths excused on the glow's draws alone
+  (`pipeline.call`: our asynchronous compile ahead of the frame against Babylon's synchronous
+  one at the first draw; `bundle`: Babylon's draw was in a render bundle, ours is a bundle-list
+  item run on the pass itself; `viewport`: Babylon set the whole target, ours sets none and a
+  pass's default is the same); the bank, 147 rows, by `exact.mjs` against a BEFORE at 285da96:
+  145 byte-equal, `harrowmead-view-pistol-reload` within its flake and `sarab-ground` 100 pixels
+  by 2/255 — Sarab alone, two processes a tree: both trees draw both of its frames, the full
+  run's one the parent's two drew (cross-process residue); the same 34 stale rows red on both
+  sides. Then `blurKernel` made allocation-free (and the declared kernels de-duplicated): the
+  probe again equal, Hollowmere's 20 rows (the `post-*` rows, `post-glowlow` and the scale rows
+  among them) byte-equal. Live: our 12 modules made at the boot and none after through every
+  post setting toggled in play, both rungs at every render scale, a resize, a teardown, a map
+  change and `F2` (the parent compiled 8 more glow modules in play), Babylon's none, no glow
+  pass drawn empty, no in-play compile warning, no error. `pipelines.mjs coldharbour --round`
+  equal (0 of Babylon's, 21 of ours, none in play); `hollowmere` 9 to 8 of Babylon's by the
+  install, 71 to 77 of ours, nothing after. `surfaces.mjs`: `kernelBlur` and `glowDown` gone
+  from Babylon's draws. `census --against` equal. The editor's eight eyes: four byte-equal in
+  every pairing, the rest within each tree's own floor. `?profile&gpu`: `render` and
+  `gpu.frame` within 3%, `glow` 8 to 11% lower. A device-pixel-ratio change in play (1 to 2): the
+  two new widths compiled with no in-play warning, the blur skipped for three frames meanwhile.
+  `gate` (seven maps), `shaders` (seven), typecheck, build, corecheck and parity pass.
+  The note is in `plans/done/babylon_exit_landed.md`.
 - **X5.2c1 — the chain's host, and the grain.** `render/PostChain.ts` (ours) and
   the Babylon-side pass sequencer; `camera.outputRenderTarget` takes Babylon's
   prefix output **only while a stage of ours is active**, so with the grain off
@@ -3984,7 +4038,8 @@ It stays behind its one dynamic `import()` in a DEV branch.
   - **The post passes' targets and passes** (X5.2's shape (A), decided 2026-11-07): the
     Babylon-side sequencer X5.2c1 builds is swapped for our own encoder and targets, and
     the glow's MASK moves with the main pass (row "X5.2, the mask"), retiring items 2 to
-    5 for both. Render scale's setter is this step's (row "X5.2, render scale").
+    5 for both — the glow's five BLUR passes with them (bound by `GlowPass` on its own
+    targets, our draws queued in them since X5.2b). Render scale's setter is this step's (row "X5.2, render scale").
   - Device-loss recovery, tested by destroying the device on purpose.
   - `FrameCap`.
   - `FrameProfile`'s `hookRender` and `hookEngine` replaced by spans around

@@ -110,7 +110,7 @@ import {
   fogAmountAt,
   writePaletteIndex,
 } from "../shaders/CelShader";
-import { BabylonFrameHost } from "../render/babylonSeam";
+import { BabylonFrameHost, hostTexture } from "../render/babylonSeam";
 import { Renderer } from "../render/Renderer";
 import { BodyDraw } from "../render/BodyDraw";
 import { HullDraw } from "../render/HullDraw";
@@ -136,11 +136,12 @@ import { LampAtlas } from "../render/LampAtlas";
 import { ProbeBake } from "../render/ProbeBake";
 import { WorldGlow } from "../render/WorldGlow";
 import { WorldShadows } from "../render/WorldShadows";
+import { GlowBlur } from "../render/GlowBlur";
 import { PaperGrain } from "../shaders/PaperGrain";
 import { CelInk } from "../shaders/CelInk";
 import { fxaaShaderIsOurs } from "../shaders/Fxaa";
 import { FrameDepth } from "../shaders/FrameDepth";
-import { GlowPass } from "../shaders/GlowPass";
+import { GlowPass, glowKernels } from "../shaders/GlowPass";
 import { MotionBlur } from "../shaders/MotionBlur";
 import { Volumetrics, type VolumetricRung } from "../shaders/Volumetrics";
 import { difficultyNames, profileFor } from "../entities/BotSkill";
@@ -1353,6 +1354,15 @@ export class Game {
    * scripts that check the glow read its mask off `window.__celshock`.
    */
   readonly glow: GlowPass;
+  /**
+   * The bloom's blur and box filter as OUR draws (`BABYLON_EXIT.md` X5.2b), in
+   * the passes `GlowPass` binds on its own targets; its pipelines are on the
+   * round's declared list, every rung's at every render scale at the current
+   * device pixel ratio (`glowKernels`), and declared again when that ratio
+   * moves (`applyRenderScale`). Public for the probe's adapter
+   * (`plans/webgpu-ref/post.mjs`).
+   */
+  readonly glowBlur: GlowBlur;
   /** Non-null only while the state is "editor". Dev builds only. */
   private editor: EditorSession | null = null;
   /**
@@ -2121,6 +2131,11 @@ export class Game {
     // texture with a glow: the moon is the one textured emissive, and it is no
     // mesh here (`SkyDraw`). It is also the one glowing thing that must never
     // fog, not being in the valley, so it is handed no fade at all.
+    // The blur and the box filter are OUR draws (X5.2b), declared at the
+    // device pixel ratio the page boots at; `GlowPass` binds each pass and asks
+    // for them from inside it, handing its own targets, which cross here.
+    const glowBlur = new GlowBlur(this.renderer, glowKernels(window.devicePixelRatio || 1));
+    this.glowBlur = glowBlur;
     const glow = new GlowPass(this.scene, this.cameraSys.camera, {
       admits: () => this.glowAdmits(),
       colour: (mesh, material, out) => {
@@ -2140,6 +2155,12 @@ export class Game {
         );
         this.bloomColour(material, 1 - fogAmountAt(d), out);
       },
+    }, {
+      downReady: () => glowBlur.downReady(),
+      blurReady: (kernel) => glowBlur.blurReady(kernel),
+      down: (source, w, h, outputHeight) => glowBlur.down(hostTexture(source), w, h, outputHeight),
+      blur: (i, kernel, across, source, w, h, outputHeight) =>
+        glowBlur.blur(i, kernel, across, hostTexture(source), w, h, outputHeight),
     });
     this.glow = glow;
     // The mask's pass has opened: our renderer's palette goes in FIRST, ahead
@@ -2692,6 +2713,10 @@ export class Game {
       // The volume's trace and compose at every tier and its vis pass (X5.1b):
       // a tier changed in a round compiles nothing.
       { name: "the irradiance volume", ready: this.gi.ready },
+      // The bloom's box filter and its blur at every rung and render scale at
+      // the boot's device pixel ratio (X5.2b): a Glow or Render Scale setting
+      // changed in a round compiles nothing.
+      { name: "the glow's blur", ready: this.glowBlur.ready },
     ];
     // The sky is painted once here, the boot map's, and re-applied per round
     // alongside the environment; it is DRAWN only while a map stands
@@ -3836,6 +3861,10 @@ export class Game {
   private applyRenderScale(): void {
     const dpr = window.devicePixelRatio || 1;
     this.engine.setHardwareScalingLevel(1 / (dpr * this.settings.renderScale));
+    // The glow's blur at every rung and render scale at THIS ratio: a no-op
+    // unless the ratio moved, and then the one compile in play the seal allows
+    // (`BABYLON_EXIT.md` X5.2's row "pipelines"), the blur skipped meanwhile.
+    this.glowBlur.declare(glowKernels(dpr));
   }
 
   /**

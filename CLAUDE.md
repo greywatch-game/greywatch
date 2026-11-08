@@ -639,7 +639,12 @@ gradients and its clock), in creation order, behind the turf and ahead of the
 moon, and **Babylon's scene holds no particle system**.
 
 **The GLOW draws the EMISSIVE meshes and nothing else, its occlusion being the
-FRAME's own depth buffer** (`src/shaders/GlowPass.ts`). **What may bloom is read
+FRAME's own depth buffer** (`src/shaders/GlowPass.ts`). **Its blur and box
+filter are OUR draws in passes `GlowPass` still binds** (`render/GlowBlur.ts`,
+Babylon's `kernelBlur` ported as compiled): the blur's TEXT is a function of
+its kernel, so every rung at every render scale is declared at construction
+(`glowKernels`) and a pixel-ratio change is the one compile in play the seal
+allows. **What may bloom is read
 per mesh every frame** — an emissive colour, no `metadata.noGlow`, and `Game`'s
 `GlowRules` — so nothing excludes a mesh by hand; **on the kit screen only the
 STAGE blooms** (`Game.glowAdmits`). **A map's merged emissives are a PALETTE

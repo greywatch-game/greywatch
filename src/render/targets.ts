@@ -1,19 +1,21 @@
 /**
  * render/targets.ts — The attachments the frame's main pass draws into, the
- * glow's mask, and the ones the shadow maps and the lamps' atlas are drawn
- * into, each stated ONCE: every pipeline our renderer builds for one of those
+ * glow's mask and its blur, and the ones the shadow maps and the lamps' atlas
+ * are drawn into, each stated ONCE: every pipeline our renderer builds for one of those
  * passes is built against its own, and nothing else in `src/render/` writes a
  * format.
- * Owns: `FRAME_TARGETS`, `GLOW_TARGETS`, `SHADOW_TARGETS` and `targetsKey`.
- * Invariants: `FRAME_TARGETS` is what the host's main pass is, and
- * `GLOW_TARGETS` what its glow mask's pass is (`FrameHost.passIs`), each
+ * Owns: `FRAME_TARGETS`, `GLOW_TARGETS`, `GLOW_BLUR_TARGETS`, `SHADOW_TARGETS`
+ * and `targetsKey`.
+ * Invariants: `FRAME_TARGETS` is what the host's main pass is,
+ * `GLOW_TARGETS` what its glow mask's pass is and `GLOW_BLUR_TARGETS` what
+ * each pass of the glow's blur is (`FrameHost.passIs`), each
  * checked by `Renderer` on every frame it draws there — a pass that is not
  * REFUSES the frame's draws rather than recording a pipeline it cannot take.
  * Never: imports Babylon; is read off the pass per draw — a pipeline is
  * compiled ahead, so the formats it is compiled for must be known ahead.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
  *
- * WHY THESE FOUR. Under `compatibilityMode = false` Babylon records render
+ * WHY THESE FIVE. Under `compatibilityMode = false` Babylon records render
  * bundles, and a bundle or pipeline whose attachment state differs from the
  * pass's by a format, a count or a sample count is refused — and one refused
  * pipeline poisons the bundle and blacks out the frame (`docs/rendering.md`:
@@ -50,6 +52,22 @@ export const FRAME_TARGETS: PassTargets = {
 export const GLOW_TARGETS: PassTargets = {
   colorFormats: ["rgba8unorm"],
   depthFormat: "depth32float",
+  sampleCount: 1,
+  flipY: true,
+};
+
+/**
+ * A pass of the glow's BLUR (`shaders/GlowPass.ts`, which binds each target
+ * itself; `render/GlowBlur.ts` draws in it, `BABYLON_EXIT.md` X5.2b): the box
+ * filter's and the four blurs' targets are Babylon render targets of
+ * `TEXTURETYPE_HALF_FLOAT`, so `rgba16float`, with NO depth (`generateDepthBuffer`
+ * false, and the pass is bound without one); one sample; and a texture, drawn
+ * upside down — the probe read every one of the five so (`plans/webgpu-ref/
+ * post.mjs`, X5.2a).
+ */
+export const GLOW_BLUR_TARGETS: PassTargets = {
+  colorFormats: ["rgba16float"],
+  depthFormat: undefined,
   sampleCount: 1,
   flipY: true,
 };

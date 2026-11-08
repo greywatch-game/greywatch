@@ -1,8 +1,11 @@
 /**
  * GlowPass.ts — The game's bloom, as a pass it OWNS end to end: the emissive
  * mask, the blur, and the additive compose's arithmetic. Owns its targets, its
- * override materials and the depth it borrows; reads no game state (what may glow and
- * how brightly are `GlowRules`, handed in by `Game`) and writes to no mesh.
+ * override materials and the depth it borrows, and the blur's passes — it
+ * binds each of its targets itself — though not the blur's DRAWS, which are
+ * our renderer's (`GlowBlurDraws`, handed in by `Game`, X5.2b); reads no game
+ * state (what may glow and how brightly are `GlowRules`, handed in by `Game`)
+ * and writes to no mesh.
  * Invariants: the mask is drawn against the frame's OWN depth, borrowed at the
  * size that depth is at on the frame it is borrowed — so a bloom that reaches
  * through a wall is a bug here and never a tuning question; nothing here draws
@@ -72,6 +75,18 @@
  * before it, so a bloom lies over the ink lines around its lamp rather than
  * under them.
  *
+ * THE BLUR IS OUR RENDERER'S DRAWS IN THIS FILE'S PASSES (`render/GlowBlur.ts`,
+ * `BABYLON_EXIT.md` X5.2b). Each of the five targets is bound and unbound here,
+ * with public API, which is what opens and ends its pass; between the two this
+ * file hands `draws` the source and the sizes, and our renderer queues the draw
+ * into the open pass — Babylon's `kernelBlur` and the box filter, ported as
+ * compiled, so nothing of Babylon's draws there and the pass structure is the
+ * one Babylon's own draws had. The kernel is still read HERE every frame
+ * (`kernelTexels`), and `glowKernels` is the same formula asked of every rung
+ * at every render scale ahead, because the blur's text is the kernel's and its
+ * pipelines are declared (X5.2's row "pipelines"). A pass whose program is not
+ * built is not bound, as Babylon skipped a blur whose effect was compiling.
+ *
  * THE COMPOSE IS NOT A PASS OF ITS OWN, and that is a phone's fill rate rather
  * than tidiness. It reads one pixel of the frame and adds two bilinear taps,
  * so as a post-process it was a whole-frame write and read for three fetches —
@@ -124,15 +139,11 @@
 import {
   Color4,
   Constants,
-  EffectRenderer,
-  EffectWrapper,
   Observable,
   RenderTargetTexture,
   ShaderLanguage,
   ShaderMaterial,
   ShaderStore,
-  ThinBlurPostProcess,
-  Vector2,
   type AbstractMesh,
   type BaseTexture,
   type Camera,
@@ -202,38 +213,63 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
 }
 `;
 
-// The `low` rung's downsample: the full-resolution mask to a quarter, as a 4x4
-// box. Each tap sits one source texel off the output texel's centre, which is
-// the corner a 2x2 quad of source pixels shares, so bilinear filtering
-// averages that quad and the four taps read all sixteen pixels once. Exactly
-// so where the frame divides by four. Elsewhere the quarter target is floored,
-// a texel spans a little over four pixels (1755 / 438 is 4.007) and the taps
-// slide off the corners: the weights go uneven and about one column in 150 is
-// read faintly, against seven pixels in eight the first blur would miss
-// without this pass.
-ShaderStore.ShadersStoreWGSL["glowDownFragmentShader"] = `
-varying vUV: vec2f;
-var textureSamplerSampler: sampler;
-var textureSampler: texture_2d<f32>;
-
-// One texel of the SOURCE, the mask.
-uniform texel: vec2f;
-
-@fragment
-fn main(input: FragmentInputs) -> FragmentOutputs {
-  let uv = fragmentInputs.vUV;
-  let d = uniforms.texel;
-  let sum =
-    textureSampleLevel(textureSampler, textureSamplerSampler, uv + vec2f(-d.x, -d.y), 0.0) +
-    textureSampleLevel(textureSampler, textureSamplerSampler, uv + vec2f(d.x, -d.y), 0.0) +
-    textureSampleLevel(textureSampler, textureSamplerSampler, uv + vec2f(-d.x, d.y), 0.0) +
-    textureSampleLevel(textureSampler, textureSamplerSampler, uv + vec2f(d.x, d.y), 0.0);
-  fragmentOutputs.color = sum * 0.25;
-}
-`;
-
 /** A rung of the Glow setting — derived from the config for `VolumetricRung`'s reason. */
 export type GlowRung = keyof typeof CONFIG.graphics.glowTiers;
+
+/**
+ * The blur's kernel in TEXELS of the near target, for a rung's `downsample`
+ * and a scaling `level` — see `GlowPass.kernelTexels`, which reads it every
+ * frame, and `glowKernels`, which asks it of every setting ahead.
+ */
+function kernelTexelsAt(downsample: number, level: number): number {
+  return Math.max(1, CONFIG.graphics.glowKernel / (downsample * level));
+}
+
+/**
+ * Every kernel the blur can be asked for at a device pixel ratio of `dpr`:
+ * each rung at each render scale, at the scaling level `Game.applyRenderScale`
+ * sets for them (`1 / (dpr * scale)`, the same expression, so the same
+ * double) — what the blur's pipelines are declared for (`render/GlowBlur.ts`,
+ * `BABYLON_EXIT.md` X5.2's row "pipelines"), so a setting changed in play
+ * compiles nothing.
+ */
+export function glowKernels(dpr: number): number[] {
+  const out: number[] = [];
+  for (const rung of Object.keys(CONFIG.graphics.glowTiers) as GlowRung[]) {
+    for (const scale of CONFIG.graphics.renderScales) {
+      out.push(kernelTexelsAt(CONFIG.graphics.glowTiers[rung].downsample, 1 / (dpr * scale)));
+    }
+  }
+  return out;
+}
+
+/**
+ * The blur's DRAWS, which are our renderer's (`render/GlowBlur.ts`,
+ * `BABYLON_EXIT.md` X5.2b), handed in by `Game` as `GlowRules` is — so this
+ * file imports nothing of `src/render/`. Each draw is asked from INSIDE a pass
+ * this file has bound on one of its own targets, and queues into it.
+ */
+export interface GlowBlurDraws {
+  /** Whether the box filter can draw this frame (its pipeline built). */
+  downReady(): boolean;
+  /** Whether a blur of ideal width `kernel` can draw this frame — a width not built yet is skipped, as Babylon skipped a pass compiling. */
+  blurReady(kernel: number): boolean;
+  /** The box filter of `source`, the mask, of `width` x `height`, into the bound target; `outputHeight` the render height. */
+  down(source: RenderTargetTexture, width: number, height: number, outputHeight: number): void;
+  /**
+   * Blur pass `index` (0 to 3) of `source` into the bound target of `width` x
+   * `height`, `across` or down, with the kernel of ideal width `kernel`.
+   */
+  blur(
+    index: number,
+    kernel: number,
+    across: boolean,
+    source: RenderTargetTexture,
+    width: number,
+    height: number,
+    outputHeight: number,
+  ): void;
+}
 
 /**
  * The bloom's compose, as WGSL for the pass that runs it (`CelInk`, the header
@@ -430,14 +466,17 @@ export class GlowPass {
   private readonly wideH: RenderTargetTexture;
   private readonly wide: RenderTargetTexture;
 
-  private readonly blurs: ThinBlurPostProcess[];
-  private readonly downsample: EffectWrapper;
+  /** What blurs 1 to 3 read: the pass before's output (the first's is read at draw time, `firstSource`). */
+  private readonly sources: readonly RenderTargetTexture[];
+  /** The blur's targets, in pass order. */
+  private readonly outputs: readonly RenderTargetTexture[];
   /** What the first blur reads this frame: `down` on `low` once it is drawn, else the mask. */
   private firstSource: RenderTargetTexture;
   private rung: GlowRung = "high";
   /** Set when the rung moves, so the next frame re-sizes the targets whatever the frame did. */
   private stale = false;
-  private readonly renderer: EffectRenderer;
+  /** The kernel the blur last read (`kernelTexels`), ideal and unrounded, as Babylon's blurs held it. */
+  private kernel = 1;
 
   /** The pass the scene draws into, whose depth the mask borrows. */
   private frame: PostProcess | null = null;
@@ -460,9 +499,8 @@ export class GlowPass {
     private readonly scene: Scene,
     private readonly camera: Camera,
     private readonly rules: GlowRules,
+    private readonly draws: GlowBlurDraws,
   ) {
-    const engine = scene.getEngine();
-
     this.mask = this.target("glowMask", Constants.TEXTURETYPE_UNSIGNED_BYTE);
     this.mask.renderParticles = false;
     this.mask.renderSprites = false;
@@ -503,38 +541,9 @@ export class GlowPass {
     this.near = this.target("glowNear", half);
     this.wideH = this.target("glowWideH", half);
     this.wide = this.target("glowWide", half);
-
-    this.renderer = new EffectRenderer(engine);
-    const kernel = this.kernelTexels();
-    const across = new Vector2(1, 0);
-    const down = new Vector2(0, 1);
-    // The first pass's source is read at bind time: it is the mask or `down`.
-    const sources = [null, this.nearH, this.near, this.wideH];
-    this.blurs = sources.map((source, i) => {
-      const blur = new ThinBlurPostProcess(`glowBlur${i}`, engine, i % 2 === 0 ? across : down, kernel);
-      blur.onApplyObservable.add(() => {
-        blur.effect.setTexture("textureSampler", source ?? this.firstSource);
-      });
-      return blur;
-    });
-
-    this.downsample = new EffectWrapper({
-      engine,
-      name: "glowDown",
-      fragmentShader: "glowDown",
-      useShaderStore: true,
-      // Babylon's own post-process binding — no blending, and the `scale` its
-      // stock vertex stage reads — which is the shape `ThinBlurPostProcess`
-      // takes.
-      useAsPostProcess: true,
-      uniforms: ["texel"],
-      shaderLanguage: ShaderLanguage.WGSL,
-    });
-    this.downsample.onApplyObservable.add(() => {
-      const size = this.mask.getSize();
-      this.downsample.effect.setTexture("textureSampler", this.mask);
-      this.downsample.effect.setFloat2("texel", 1 / size.width, 1 / size.height);
-    });
+    // The first pass's source is read at draw time: it is the mask or `down`.
+    this.sources = [this.mask, this.nearH, this.near, this.wideH];
+    this.outputs = [this.nearH, this.near, this.wideH, this.wide];
 
     scene.onAfterDrawPhaseObservable.add(() => this.render());
   }
@@ -706,41 +715,48 @@ export class GlowPass {
    * Four separable passes: mask -> near (across, down) -> wide (across, down),
    * near being half resolution on `high` and quarter on `low` — where the mask
    * is box-filtered into `down` first and the first pass reads that instead.
+   *
+   * **Every pass is bound HERE, on a target of this file's, and drawn by OUR
+   * renderer** (`draws`, `BABYLON_EXIT.md` X5.2b): the bind opens the pass,
+   * our draw is queued into it, the unbind ends it — the structure Babylon's
+   * own draws had, with Babylon drawing nothing in it. A pass whose program is
+   * not built is not bound at all, its target keeping what it held, as Babylon
+   * skipped a blur whose effect was compiling.
    */
   private blur(): void {
     const engine = this.scene.getEngine();
-    // Read every frame: the render-scale setting moves the backing store, and
-    // the kernel's setter returns on an unchanged value.
+    // Read every frame: the render-scale setting moves the backing store.
     const kernel = this.kernelTexels();
-    const outputs = [this.nearH, this.near, this.wideH, this.wide];
-    this.renderer.saveStates();
-    // Until the box filter's shader has compiled, the first pass reads the
+    this.kernel = kernel;
+    // `Internals.textureOutputHeight_`, which Babylon's engine wrote the
+    // render height into (`_initializeMainAttachments`) and no blur reads.
+    const outputHeight = engine.getRenderHeight(true);
+    const draws = this.draws;
+    // Until the box filter's program has compiled, the first pass reads the
     // mask direct — undersampled for a frame or two rather than blurring
     // nothing.
     this.firstSource = this.mask;
     const down = this.down.renderTarget;
-    if (this.downsampleBy() > 2 && down && this.downsample.isReady()) {
+    if (this.downsampleBy() > 2 && down && draws.downReady()) {
       engine.bindFramebuffer(down, undefined, undefined, undefined, true);
-      this.renderer.applyEffectWrapper(this.downsample);
-      this.renderer.draw();
+      const size = this.mask.getSize();
+      draws.down(this.mask, size.width, size.height, outputHeight);
       engine.unBindFramebuffer(down);
       this.firstSource = this.down;
     }
     for (let i = 0; i < 4; i++) {
-      const blur = this.blurs[i];
-      blur.kernel = kernel;
-      const target = outputs[i].renderTarget;
-      if (!target || !blur.isReady()) continue;
-      blur.textureWidth = target.width;
-      blur.textureHeight = target.height;
+      const target = this.outputs[i].renderTarget;
+      if (!target || !draws.blurReady(kernel)) continue;
       engine.bindFramebuffer(target, undefined, undefined, undefined, true);
-      // `bind` sets the alpha mode (none) and the texel step; the observer
-      // added at construction binds the source.
-      this.renderer.applyEffectWrapper(blur);
-      this.renderer.draw();
+      const source = i === 0 ? this.firstSource : this.sources[i];
+      draws.blur(i, kernel, i % 2 === 0, source, target.width, target.height, outputHeight);
       engine.unBindFramebuffer(target);
     }
-    this.renderer.restoreStates();
+  }
+
+  /** The kernel the blur last read, ideal and unrounded (`kernelTexels`) — for an instrument. */
+  get blurKernel(): number {
+    return this.kernel;
   }
 
   private resize(w: number, h: number): void {
@@ -777,8 +793,7 @@ export class GlowPass {
    * of 1 on `high` this is exactly the kernel the layer ran with.
    */
   private kernelTexels(): number {
-    const level = this.scene.getEngine().getHardwareScalingLevel();
-    return Math.max(1, CONFIG.graphics.glowKernel / (this.downsampleBy() * level));
+    return kernelTexelsAt(this.downsampleBy(), this.scene.getEngine().getHardwareScalingLevel());
   }
 
   private target(name: string, type: number): RenderTargetTexture {
@@ -795,9 +810,6 @@ export class GlowPass {
   }
 
   dispose(): void {
-    for (const blur of this.blurs) blur.dispose();
-    this.downsample.dispose();
-    this.renderer.dispose();
     for (const mat of this.materials.values()) mat.dispose();
     this.mask.dispose();
     this.down.dispose();

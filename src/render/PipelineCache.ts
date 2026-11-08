@@ -10,7 +10,10 @@
  * CODE, which a label is not trusted to stand for), its TARGETS
  * (`targetsKey`) and its fixed-function state, and nothing else distinguishes
  * two — it binds no vertex buffer, every vertex stage pulling its attributes
- * out of storage (`wgsl/assemble.ts`); it is built with `createRenderPipelineAsync`, so a
+ * out of storage (`wgsl/assemble.ts`), but for a stage ported AS COMPILED off
+ * Babylon's full-screen quad, which takes its position as Babylon fed it, a
+ * vertex attribute (`PipelineSpec.vertexBuffers`, the glow's blur,
+ * `BABYLON_EXIT.md` X5.2b) and is keyed on that layout too; it is built with `createRenderPipelineAsync`, so a
  * compile never stalls a frame and a caller asks AHEAD of the frame that
  * draws with it (`docs/rendering.md`: WebGPU compiles a pipeline on the
  * frame that first uses it, which is what the warm-up exists to move); a
@@ -20,7 +23,10 @@
  * cache is SEALED — from the building card's end to the map's teardown — is
  * one the round's declared list missed, a hitch in play, and a DEV build says
  * which (`BABYLON_EXIT.md` X4.4e: every pipeline a round can use is asked
- * before the card comes down); every RENDER pipeline's layout
+ * before the card comes down) — but for an ask its asker states the seal
+ * ALLOWS (`get`'s `unsealed`: the glow blur's kernels at a new device pixel
+ * ratio, X5.2's row "pipelines"), which compiles and counts as any other and
+ * says nothing; every RENDER pipeline's layout
  * is EXPLICIT, built from the bindings the modules were assembled with,
  * never `"auto"`, and layouts are shared by their entries — so a bind group
  * made for one pipeline binds into any other whose group has the same
@@ -76,6 +82,11 @@ export interface PipelineSpec {
   readonly fragmentEntry: string;
   readonly targets: PassTargets;
   readonly state?: PipelineState;
+  /**
+   * The vertex buffers the vertex stage reads its attributes from — only a
+   * stage ported as compiled off Babylon's quad (see the header); absent, none.
+   */
+  readonly vertexBuffers?: readonly GPUVertexBufferLayout[];
 }
 
 /** What a draw needs beside the pipeline: the layouts its bind groups are made against. */
@@ -125,11 +136,15 @@ export class PipelineCache implements CompileProgress {
     this.sealed = on;
   }
 
-  /** The pipeline for `spec`, compiled once; every later ask shares the same promise. */
-  get(spec: PipelineSpec): Promise<BuiltPipeline> {
+  /**
+   * The pipeline for `spec`, compiled once; every later ask shares the same
+   * promise. `unsealed`: an ask the seal allows (see the header) — a compile
+   * it starts in play is not one the declared list missed, so nothing is said.
+   */
+  get(spec: PipelineSpec, unsealed = false): Promise<BuiltPipeline> {
     return this.cached(this.pipelines, pipelineKey(spec), (key) => {
       // Gated here, so a production build makes no label.
-      if (import.meta.env.DEV && this.sealed) this.missed(`${spec.vertex.label} / ${spec.fragment.label}`);
+      if (import.meta.env.DEV && this.sealed && !unsealed) this.missed(`${spec.vertex.label} / ${spec.fragment.label}`);
       return this.build(spec, key);
     });
   }
@@ -206,6 +221,7 @@ export class PipelineCache implements CompileProgress {
       vertex: {
         module: this.module(spec.vertex),
         entryPoint: spec.vertexEntry,
+        ...(spec.vertexBuffers ? { buffers: [...spec.vertexBuffers] } : {}),
       },
       fragment: {
         module: this.module(spec.fragment),
@@ -292,6 +308,7 @@ function pipelineKey(spec: PipelineSpec): string {
     `${spec.fragment.label}:${spec.fragmentEntry}:${spec.fragment.code}`,
     targetsKey(spec.targets),
     JSON.stringify(spec.state ?? {}),
+    JSON.stringify(spec.vertexBuffers ?? []),
   ].join("|");
 }
 

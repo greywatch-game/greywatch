@@ -242,7 +242,8 @@ priced**, and there the GPU is the wall (below).
   pointer, `high` — the bloom as it was — everywhere else). Its kernel is
   stated in CSS pixels, so it widens in texels with pixel density: on the 0.75
   phone above (dpr 2.8125, level 0.474) `high` asks for 59 texels, which
-  Babylon rounds to a 57-wide kernel of 29 taps a pass over a half- and a
+  Babylon's rule rounds (`_nearestBestKernel`, our renderer's port of it since
+  `BABYLON_EXIT.md` X5.2b) to a 57-wide kernel of 29 taps a pass over a half- and a
   quarter-resolution pair — ~18 fetches per backing-store pixel. `low` blurs
   from a quarter-resolution box downsample at half the kernel (29 wide, 15
   taps), ~2.6 fetches per pixel counting the downsample and a quarter of the

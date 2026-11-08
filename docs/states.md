@@ -182,7 +182,8 @@ vantages are for Babylon's own meshes** — in a round nothing of Babylon's but
 the post chain (every particle field is ours since `BABYLON_EXIT.md` X4.7d, the
 ash since X4.7c, their pipelines on the list; measured at X4.7d on Cinderhaven,
 Sarab and Hollowmere, Babylon compiles nothing at a vantage: the post chain's
-six on the frames before the card, and `GiVolume`'s three computes under it
+six on the frames before the card — five since X5.2b made the glow's blur ours
+and declared it — and `GiVolume`'s three computes under it
 until X5.1b made them ours and declared them; retiring the vantages is X5.4's): the glazing, the three blended pools and the
 blob shadow were Babylon's until X4.6e, posed here, and nothing is posed now. **When the wait ends, our cache is SEALED** (`PipelineCache.seal`)
 until the map is torn down: a pipeline of ours compiled in play is a DEV

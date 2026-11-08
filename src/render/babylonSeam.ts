@@ -18,6 +18,10 @@
  * (`GlowPass.onMaskOpenObservable`, wired by `Game`) and then asks `passIs`
  * and `queue`s into it exactly as into the main pass — no internal beyond
  * the list below, and no hook here, because the mask's owner announces it.
+ * And in the glow's BLUR passes (X5.2b), which `GlowPass` binds on its own
+ * targets with public API and asks our renderer to draw in from between the
+ * bind and the unbind (`Renderer.glowBlurOpened`): the same `passIs` and
+ * `queue`, and no item more.
  * Invariants: NAMES Babylon's types and loads none of it (every import here
  * is `import type`, so the Babylon-free gate walks this file as it walks the
  * rest of `src/render/`); every Babylon INTERNAL anything in `src/render/`
@@ -38,7 +42,10 @@
  *      as internal; there is no other door to it.
  *   2. `engine._getCurrentRenderPass()` — the open pass, STARTED if Babylon
  *      has delayed it (E:933). Called only so (3) has a pass to run in, and
- *      only on a frame something of ours draws.
+ *      only on a frame something of ours draws — and in a glow blur pass,
+ *      where nothing of Babylon's draws since X5.2b, it is what begins the
+ *      pass Babylon's `bindFramebuffer` delayed, with the load ops that bind
+ *      gave it.
  *   3. `engine._bundleList.addItem({ run })` (`WebGPU/webgpuBundleList.js`).
  *      Under `compatibilityMode = false` Babylon does not draw into the pass
  *      as it goes: it records render BUNDLES into this list and replays the
@@ -269,7 +276,7 @@ export class BabylonFrameHost implements FrameHost {
 
   /**
    * Items 2 and 3, into whichever pass is open: the main pass at one of its
-   * hooks, or the glow's mask as it opens. Babylon's bundles reset the
+   * hooks, the glow's mask as it opens, or a pass of the glow's blur. Babylon's bundles reset the
    * pipeline, the bind groups and the vertex and index buffers around an
    * item. The viewport, the scissor,
    * the stencil reference and the blend constant they do NOT reset, and
