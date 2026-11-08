@@ -9863,7 +9863,7 @@ seven minor points, each verified against the tree first.
   row's freeze calls; Hollowmere's 16 rows ran it); the throw itself provoked; corecheck,
   parity, `gate`, `shaders` (no game code moved).
 
-### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07; its decisions the owner's, 2026-11-07 and 2026-11-08, rows in "Decisions that are yours") — X5.2a **LANDED** (e5d9390)
+### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07; its decisions the owner's, 2026-11-07 and 2026-11-08, rows in "Decisions that are yours") — X5.2a **LANDED** (e5d9390, its review 55ef32c)
 
 The plan's `BABYLON_EXIT.md` holds X5.2's brief, its ONE RULE, shape (A), "What it is
 today" (corrected in place by X5.2a, each correction marked) and the five sub-steps.
@@ -9939,7 +9939,7 @@ box.
 - **Not run** (the step moves no draw): `pipelines.mjs`, `surfaces.mjs`, `census`, the
   editor's frames, live toggles by hand, `?profile&gpu`.
 
-**Its review** (2026-11-08; instruments and records only, no change to the game; under `src/`
+**Its review** (55ef32c; 2026-11-08; instruments and records only, no change to the game; under `src/`
 one comment). An independent review found two real points and five minor ones, each checked
 against the code and the logs first; a third real point (F1, `thaw` leaving a rebuilt
 `Volumetrics` stubbed) is held for the owner's decision, because fixing it moves bank rows,

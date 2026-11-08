@@ -3422,7 +3422,7 @@ correction marked "X5.1a"):
   of the eventual change, the rest the multi-bounce iteration's: 99% by two); no Babylon
   compute in a round or an editor build.
 
-### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07: the owner instructed that steps be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split below was proposed by the orchestrating session from a planning agent's read at 33a8d35, and its two shaping decisions taken by the owner the same day, its seven others the next, rows in "Decisions that are yours") — X5.2a **LANDED** (e5d9390); X5.2b, X5.2c1, X5.2c2, X5.2d not started
+### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07: the owner instructed that steps be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split below was proposed by the orchestrating session from a planning agent's read at 33a8d35, and its two shaping decisions taken by the owner the same day, its seven others the next, rows in "Decisions that are yours") — X5.2a **LANDED** (e5d9390, its review 55ef32c); X5.2b, X5.2c1, X5.2c2, X5.2d not started
 
 `FrameDepth`, `CelInk` with the glow's compose in its last line, the glow's
 blur, FXAA (already our own fragment), `Volumetrics`, `MotionBlur` and
@@ -3787,7 +3787,7 @@ owes" below.
   editor's frames, the live toggles by hand and `?profile&gpu` (the probe's live half
   covers the toggles and the resize). The note is in `plans/done/babylon_exit_landed.md`.
 
-  **Its review** (2026-11-08; instruments and records only, no change to the game; under
+  **Its review** (55ef32c; 2026-11-08; instruments and records only, no change to the game; under
   `src/` one comment) found two real points and five minor ones, each checked against the
   code and the logs first; a third real point (F1: `harness.mjs`'s `thaw` leaving a rebuilt
   `Volumetrics` stubbed) is **held for the owner's decision**, fixing it moving bank rows, and
