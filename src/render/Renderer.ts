@@ -179,8 +179,9 @@ export type FrameDraw = (pass: GPURenderPassEncoder, ctx: FrameContext) => void;
  * `timing` is non-null on a frame whose passes are timed (`PassTimer`): each
  * CULL's compute pass it records then begins with `timing.pass(its descriptor)`,
  * so `gpu.cull` is the sum of them; a compute pass that is no cull — the
- * particles' update (`ParticleDraw`, `BABYLON_EXIT.md` X4.7c) — is left untimed
- * and is in the frame's time (`gpu.frame`) alone.
+ * particles' update (`ParticleDraw`, `BABYLON_EXIT.md` X4.7c), the irradiance
+ * volume's three (`GiCompute`, X5.1b, a LATE prepare) — is left untimed and is
+ * in the frame's time (`gpu.frame`) alone.
  * **Once a SUBMIT, as the frame block is**: what it hands the queue
  * (`writeBuffer`) lands before the submit its recording rides in, so a second
  * run before that submit would leave both reading the second one's values.

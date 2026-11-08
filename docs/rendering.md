@@ -375,7 +375,9 @@ hitch fix.**
 
 ## The irradiance volume: bounce light, sky occlusion, lamps that stop at walls
 
-`systems/GiVolume.ts` owns it and `shaders/wgsl/giTrace.ts` holds the three
+`systems/GiVolume.ts` owns it — its CPU half, which decides everything — and
+`render/GiCompute.ts` is its GPU half, OUR renderer's since `BABYLON_EXIT.md`
+X5.1b (below, "Its GPU half, ours"); `shaders/wgsl/giTrace.ts` holds the three
 compute passes; the cel fragment reads it through the `celGi` include. It is the
 answer to "what would Lumen do here", and the answer is **not a port of
 Lumen**, for three reasons that decided the whole shape of it:
@@ -540,6 +542,72 @@ It only reaches where the volume is wider than the shadow window, which is the
 small maps (110-140 m windows against 192 m); on the big ones the window is the
 wider of the two and it does nothing.
 
+### Its GPU half, ours
+
+Since `BABYLON_EXIT.md` X5.1b the passes, the buffers and the textures are our
+renderer's (`render/GiCompute.ts`), Babylon's `ComputeShader`, `StorageBuffer`
+and `RawTexture3D` ported exactly: **Babylon makes no compute pipeline and
+dispatches nothing**, in a round or an editor build. `GiVolume` kept its CPU
+half line for line; what changed is where its decisions are RECORDED.
+
+- **Five pipelines, asked at construction** (`PipelineCache.compute`, layout
+  `"auto"`): the trace and compose at each tier and the visibility pass once,
+  declared on `Game.roundPipelines` as "the irradiance volume", so the
+  building card waits for them and a tier changed in a round compiles
+  nothing. They are the readiness gate `update` asks (`GiCompute.isReady`),
+  where it asked Babylon's `isReady`; the modules are the source as written
+  (Babylon's processor reflowed the text and prepended two comment lines; the
+  tokens were always the source's).
+- **Babylon's resources, descriptor for descriptor**: six buffers of
+  `StorageBuffer`'s sizes and usage (140), written by the same `writeBuffer`s
+  at the same offsets; seven `3d` textures of one mip and usage 15 (`COPY_SRC`
+  kept, so a probe reads them back), each with ONE view of the descriptor
+  Babylon's hardware texture made both of its views with — the compute's
+  storage view and the frame's sampled view are one object — and the frame's
+  sampler is the descriptor Babylon's cache made for the seven. The bind
+  groups are at Babylon's binding numbers in its entry order, each buffer
+  bound whole.
+- **The frame binds the seven as ITS OWN** (`OwnTexture`, `fillFrameTextures`),
+  no longer through `hostTexture`: the same seven objects for the volume's
+  life, their view rewritten in place by a tier change, so nothing is walked.
+- **The cloud field is the one thing in it another side owns**, and it is
+  bound through the host (`hostTexture`, `FrameHost.bind`, items 7 and 8) with
+  the HOST's sampler, always — the owner's decision of 2026-11-07. Babylon's
+  compute bind took a sampler off the internal texture's cached fields, which
+  only a Babylon bind fills (the light shafts in a round, an editor build's
+  materials), so with the shafts off from boot it had been repeat/nearest at
+  anisotropy 1; X5.1a measured no byte of the trace move between the two.
+- **The dispatch is ARMED in `update` and RECORDED by a late prepare**
+  (`Renderer.onFrame(…, true)`, pushed in `GiCompute`'s constructor): three
+  compute passes into the host's prepare encoder, which the host submits
+  ahead of every pass of its own — so the main pass, the glow's mask and an
+  editor build's Babylon passes read this frame's compose, as they did with
+  Babylon's dispatch on its render encoder. **The reflection bake reads the
+  PREVIOUS frame's, and that rests on REGISTRATION order alone**: the late
+  list runs in push order, and `ProbeBake` pushes in its constructor, which
+  `Game` runs before `GiVolume`'s. A construction order changed, or the bake
+  hooked again after the volume, reverses it with no error.
+- **Only a frame `update` armed records anything**, so a frame whose `update`
+  did not run (the harness's hold, a warm-up vantage) dispatches nothing. **And
+  the converse is an ERROR**: `Renderer.begin` runs no prepare on a frame with
+  nothing of ours active, while `update` has already moved its cursor, its
+  warm frames and its dirty channels for the slice — so an armed dispatch
+  still unrecorded at the frame's end is dropped and THROWN in a dev build
+  (logged once in production), never a slice skipped in silence. X5.1a
+  measured that frame never happening, in every state.
+- **A clear of the history lands where Babylon's did**: one asked before a
+  dispatch is armed is recorded ahead of it, one asked after it behind it, and
+  on a frame that dispatches nothing at that frame's prepare.
+- **Nothing is destroyed at the call.** `setMap`, `setQuality`, `worldMoved` and
+  `clearMap` replace resources mid-frame, and a dispatch armed before a door
+  records on what stood when it was armed, so every retired buffer and texture
+  is destroyed after the frame's submit (`FrameHost.afterSubmit`, the engine's
+  end of frame), as Babylon deferred its own; an immediate `destroy()` fails
+  the whole command buffer.
+- **A lost device is not survived**, as for every draw of ours
+  (`FINDINGS.md` 64): Babylon's `_rebuildComputeEffects` rebuilt its three; ours
+  are made once.
+
 ### What it costs
 
 **No draw call.** Everything is compute plus three fetches (four more with
@@ -567,7 +635,8 @@ phone**, which is why a coarse pointer defaults to `low` — `FINDINGS.md` 44.
   (`GI_SAMPLER_NAMES`, `GI_UNIFORM_NAMES`), through the factory's `applyShadow`,
   the one door all six creation paths share. `GiVolume` publishes a real set in
   its constructor and keeps one published whatever the setting; OUR renderer's
-  frame reads it (`fillFrame`, `fillFrameTextures`). Grass and water do not
+  frame reads it (`fillFrame`, `fillFrameTextures`) — our own textures since
+  X5.1b, the GPU half's. Grass and water do not
   declare them and keep the flat path.
 - **An editor build has NO GI until `BABYLON_EXIT.md` X5.3**, by the owner's
   decision of 2026-11-07 (X5.1b's row 1). Its world is drawn by BABYLON's cel
@@ -3634,8 +3703,11 @@ bind group a frame rather than one per material.
 
 - **`CelMaterialFactory.fillFrameTextures`** hands over the very objects it
   binds (`ShadowBindings.fillFrameTextures`, the volume's set), as
-  `HostTexture` handles that only the host can resolve, and the
-  seam's `hostTexture` is the one crossing that mints one.
+  `HostTexture` handles that only the host can resolve — the seam's
+  `hostTexture` is the one crossing that mints one — or, for a texture OUR
+  renderer owns, as an `OwnTexture` read where it lies: every map
+  `ShadowBindings` holds as its `own` (the world's since X3.6a) and, since
+  X5.1b, the irradiance volume's seven (`render/GiCompute.ts`).
 - **The host resolves a handle EVERY frame** (`FrameHost.bind`) into
   Babylon's own `GPUTextureView` and the `GPUSampler` out of Babylon's own
   cache, for the state Babylon's bind would use. So nothing is copied

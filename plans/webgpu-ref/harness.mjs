@@ -47,7 +47,8 @@
  * whoever records the passes; what it relies on is that a frame whose `update`
  * did not run dispatches NOTHING. That is checked: the volume's dispatches are
  * counted through one adapter (`window.__refGiCount`: Babylon's `ComputeShader`s
- * at a parent before X5.1b, our arm beside it from X5.1b), and `thaw` throws if
+ * at a parent before X5.1b, OUR arm — `GiCompute.recorded`, picked first — from
+ * X5.1b), and `thaw` throws if
  * the count moved while the stub stood. **Its converged frame is what reproduces
  * and nothing before it does**: the trace reads the history other workgroups of
  * the same dispatch are writing, so its colour during convergence differs run to
@@ -1209,11 +1210,15 @@ export function freeze(page, set = FREEZE_SET, { windTime = 0, turn = 0, strike 
     // is set must be a `ComputeShader` (its `getClassName()`), named `gi-*`,
     // whose prototype has a `dispatch` of its own; anything else in any of
     // the three — a port that kept a `trace` field holding its own pipeline —
-    // answers null, as no arm at all does. **X5.1b adds OURS beside it** (the
-    // frames its prepare recorded the volume's passes on). The freeze throws
+    // answers null, as no arm at all does. **OURS is picked first** (X5.1b):
+    // `g.gi.gpu.recorded`, the frames `GiCompute`'s late prepare recorded the
+    // volume's passes on — counted where they are RECORDED, so a dispatch
+    // armed under the stub and recorded would move it too. The freeze throws
     // on null, so a port that forgets its arm fails at the first row rather
     // than counting a dispatch nobody makes and holding every row vacuously.
     window.__refGiCount ??= () => {
+      const ours = g.gi.gpu;
+      if (ours && typeof ours.recorded === "number") return ours.recorded;
       const set = [g.gi.trace, g.gi.compose, g.gi.vis].filter((x) => x !== null && x !== undefined);
       const babylons = (cs) =>
         typeof cs.getClassName === "function" &&

@@ -914,20 +914,23 @@ keyed on the pose, not on the mesh.
   was 1,268 ms with 34 creations near it and its first blast 403 ms (finding
   13's session, Greyfen, 2026-10-05); a capture there owes `createdNear` on the
   spawn and first-blast frames, and the card's extra time on that device.
-- **`GiVolume`'s three compute pipelines** (`trace`, `compose`, `vis`) compile on
-  their first dispatch (`src/systems/GiVolume.ts`, `update`: Babylon's synchronous
-  `createComputePipeline`, layout `"auto"`) and are on no declared list and in no
-  vantage's draw, so the warm-up does not wait for them. Five runs of `pipelines.mjs
-  coldharbour --round`, X4.6b's tree, 2026-11-04, each creation's stack kept: **16 of
-  Babylon's at the install in 4 of 5, and 13 at the install with 3 at `life 1: spawn` in
-  the fifth**, those three naming `GiVolume.update`, with no mesh drawing. So which side of
-  the card comes down first was a race. **The baseline `BABYLON_EXIT.md` X5.1b is graded
-  against** (X5.1a, f7790e4, 2026-11-07, five runs): **3 of Babylon's at the install in 5 of
-  5, none in play**, 21 of ours and 15 modules at the install, nothing at the second; the
-  three are the volume's (`pipelines.mjs` keeps no stack at an install, but `gi.mjs`
-  recorded exactly those three made under the building card, 6 or 7 frames after the boot's first `setMap`, in every
-  run). The race has not been seen since X4.6b's runs, but nothing holds it shut: the card's
-  length decides it. Babylon's until X5.1b, whose list they join.
+- **`GiVolume`'s three compute pipelines — SETTLED by `BABYLON_EXIT.md` X5.1b.** They were
+  Babylon's, compiled on their first dispatch (synchronous `createComputePipeline`, layout
+  `"auto"`), on no declared list and in no vantage's draw, so which side of the card came
+  down first was a race: five runs of `pipelines.mjs coldharbour --round` at X4.6b's tree
+  (2026-11-04) had 16 of Babylon's at the install in 4 of 5 and 13 at the install with 3 at
+  `life 1: spawn` in the fifth, those three naming `GiVolume.update`; X5.1a's baseline
+  (f7790e4, five runs) 3 of Babylon's at the install in 5 of 5, none in play, 21 of ours and
+  15 modules at the install. **Since X5.1b they are OUR renderer's** (`render/GiCompute.ts`):
+  five pipelines (the trace and compose at each tier, vis once) asked at `Game`'s
+  construction and declared on `Game.roundPipelines` as "the irradiance volume", so the card
+  waits for them and nothing can race. Measured (five runs of `pipelines.mjs coldharbour
+  --round`, 2026-11-07): **0 of Babylon's at the install in 5 of 5, none in play**, 21 of
+  ours and 12 modules at the install (the volume's three modules now made at the boot),
+  nothing at the second install; `cinderhaven --round` and `sarab --round` 0 of Babylon's
+  and 19 of ours at the install, none in play; and a live log through two rounds, a map
+  change, the tier changed in play and an editor build with a drag: Babylon's
+  `_computeDispatch` never called and no synchronous compute pipeline made.
 - **Hollowmere standing still.** Plain `pipelines.mjs hollowmere` (no `--round`,
   which needs armour) creates 5 of Babylon's pipelines and 1 module in its second
   second after the spawn, on every run: X4.5a's tree, 89879c6 and f035cc6 alike,
@@ -2951,7 +2954,11 @@ Babylon's context-lost observables, no toast and no way back to the menu, so the
 looks frozen and only a reload gets out. Pre-existing and not fixed here. What it would
 take is a small door beside `Game.worldFailed`'s toast, and whether a player's own TDR
 is common enough to earn it is unmeasured. The bank's tools no longer hang on it
-(`harness.mjs`, `VERIFYING.md`).
+(`harness.mjs`, `VERIFYING.md`). **Every draw and pass of OUR renderer is made once on
+the device it was handed and never rebuilt**, so a restored device would bring none of
+them back either; since `BABYLON_EXIT.md` X5.1b that includes the irradiance volume's
+three compute passes, which Babylon's `_rebuildComputeEffects` used to rebuild — one
+more thing a door here would owe a rebuild of, not a new way to fail.
 
 ### How to settle it
 - A fresh boot of the machine, then the loop again (the scratch watchdog,

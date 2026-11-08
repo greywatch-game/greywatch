@@ -32,11 +32,13 @@ import { comparePngs } from "./diff.mjs";
  * Both were traced to the tree's own frames and not to a step
  * (`plans/done/babylon_exit_landed.md`, X4.1's sub-steps for the shelf and X4.3's
  * for the pistol). A row belongs here only with a run of one tree against itself
- * behind it. Two rows are NOT here, being larger, and each is cross-process residue
+ * behind it. Three rows are NOT here, being larger, and each is cross-process residue
  * of the same class: `sarab-ground` (up to 100 pixels by 2/255, at X4.1, X4.4c, X4.4d
  * and X5.1a) in the plain bank, and `sarab-alley` (5 pixels by 2/255, X5.1a: two frames
- * of one tree, 3 processes of 4 against 1) under `--query=gi=low` only, never seen at
- * high or off. If either moves, run Sarab alone at both ends — `bank.mjs sarab --check
+ * of one tree, 3 processes of 4 against 1) and `sarab-particles-dust` (4 pixels by 1/255,
+ * X5.1b: two frames of one tree, each drawn by the parent's processes and the step's,
+ * Sarab alone two processes a side) under `--query=gi=low` only, never seen at high or
+ * off. If any of them moves, run Sarab alone at both ends — `bank.mjs sarab --check
  * --keep=<dir>` at the parent and at the step, two processes each, under the same
  * `--query` — and show the row's frame is one the parent's processes also draw, rather
  * than widen this.

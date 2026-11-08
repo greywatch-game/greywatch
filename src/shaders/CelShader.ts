@@ -103,6 +103,7 @@ import {
 } from "../render/celMaterial";
 import { hostTexture } from "../render/babylonSeam";
 import type { HostTexture } from "../render/frameHost";
+import type { OwnTexture } from "../render/HostBindGroup";
 import { ShadowBindings } from "./ShadowBindings";
 // The shared chunks self-register in the IncludesShadersStoreWGSL; import
 // them for that effect so the #include<cel...> lines below can never be
@@ -328,9 +329,8 @@ export const GI_SAMPLER_NAMES = [
   "giVis3",
 ] as const;
 
-/** What `GiVolume` publishes to the cel materials — see `setGi`. */
-export interface GiBinding {
-  textures: Record<(typeof GI_SAMPLER_NAMES)[number], BaseTexture>;
+/** The volume's window as the shader reads it: five vectors and the slot table, held by reference. */
+export interface GiWindow {
   grid: Vector4;
   window: Vector4;
   shade: Vector4;
@@ -338,6 +338,21 @@ export interface GiBinding {
   extra: Vector4;
   /** Slot to visibility channel, held by reference like the vectors. */
   slotChannel: Float32Array;
+}
+
+/**
+ * What `GiVolume` publishes to the factory — see `setGi`: the window and the
+ * seven textures as OUR renderer owns them (`render/GiCompute.ts`,
+ * `BABYLON_EXIT.md` X5.1b), the same seven objects for the volume's life,
+ * their views rewritten in place by a tier change.
+ */
+export interface GiBinding extends GiWindow {
+  textures: Record<(typeof GI_SAMPLER_NAMES)[number], OwnTexture>;
+}
+
+/** What a BABYLON cel material is bound to for the volume: Babylon's own textures (GI `off`, `babylonGi`). */
+interface BabylonGi extends GiWindow {
+  textures: Record<(typeof GI_SAMPLER_NAMES)[number], BaseTexture>;
 }
 
 ShaderStore.ShadersStoreWGSL["celVertexShader"] = `
@@ -1063,7 +1078,7 @@ export class CelMaterialFactory {
    * because a flash rides whatever the tier, `off` included. Built at the
    * first `setGi`; never replaced, so no tier change walks the cache.
    */
-  private babylonGi: GiBinding | null = null;
+  private babylonGi: BabylonGi | null = null;
   /**
    * The flat albedo each single-colour material was minted with, for the one
    * reader that needs a colour back from a MATERIAL: `MapBuilder`, which hands
@@ -2336,22 +2351,26 @@ export class CelMaterialFactory {
 
   /**
    * The frame's TEXTURES for our renderer (`render/frame.ts`,
-   * `FRAME_TEXTURES`): every one is pushed onto every cel material as shared
-   * state, and this hands over the same objects off the same fields —
-   * `ShadowBindings`' maps and the irradiance volume's set — as handles only
-   * the frame's host resolves. A pull, beside `fillFrame`; allocates nothing.
+   * `FRAME_TEXTURES`): this hands over the same objects off the same fields —
+   * `ShadowBindings`' maps (the host's handles, or ours where ours draws one)
+   * and the irradiance volume's seven, OUR renderer's own since
+   * `BABYLON_EXIT.md` X5.1b (`OwnTexture`s, read where they lie: no Babylon
+   * material holds them, an editor build's holding GI `off`, `babylonGi`). A
+   * pull, beside `fillFrame`; allocates nothing.
    */
   fillFrameTextures(out: FrameTextures): void {
     this.shadows.fillFrameTextures(out);
     const gi = this.gi;
     if (!gi) return;
-    out.giIrr = hostTexture(gi.textures.giIrr);
-    out.giDir = hostTexture(gi.textures.giDir);
-    out.giAux = hostTexture(gi.textures.giAux);
-    out.giVis0 = hostTexture(gi.textures.giVis0);
-    out.giVis1 = hostTexture(gi.textures.giVis1);
-    out.giVis2 = hostTexture(gi.textures.giVis2);
-    out.giVis3 = hostTexture(gi.textures.giVis3);
+    // The volume's own seven, OUR renderer's (X5.1b): read where they lie,
+    // never through the host.
+    out.giIrr = gi.textures.giIrr;
+    out.giDir = gi.textures.giDir;
+    out.giAux = gi.textures.giAux;
+    out.giVis0 = gi.textures.giVis0;
+    out.giVis1 = gi.textures.giVis1;
+    out.giVis2 = gi.textures.giVis2;
+    out.giVis3 = gi.textures.giVis3;
   }
 
   /**
@@ -2474,7 +2493,7 @@ export class CelMaterialFactory {
    * setting: seven single texels, made as its `makeTextures(null)` makes them,
    * and a window whose `giShade.w` is 0. `extra` is the live lightning fill.
    */
-  private offGi(extra: Vector4): GiBinding {
+  private offGi(extra: Vector4): BabylonGi {
     const g = CONFIG.gi;
     const make = (name: string, half: boolean): RawTexture3D => {
       const tex = new RawTexture3D(

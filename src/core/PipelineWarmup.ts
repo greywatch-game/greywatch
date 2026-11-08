@@ -52,8 +52,10 @@
  * since X4.7d), their pipelines on the list. Measured at X4.7d (Cinderhaven,
  * Sarab, Hollowmere, from `startRound` to 120 frames into the deploy): Babylon
  * compiles NOTHING at a vantage — the post chain's six pipelines on the frames
- * before the card, `GiVolume`'s three computes under it (its race, X5.1's) —
- * so the vantages are handed to X5.4, which owns retiring them, as a step that
+ * before the card, and `GiVolume`'s three computes under it (its race) until
+ * X5.1b made them OURS, asked at construction and on the declared list ("the
+ * irradiance volume"), so Babylon makes no compute pipeline at all — so the
+ * vantages are handed to X5.4, which owns retiring them, as a step that
  * finds nothing of Babylon's left to compile. The glazing, the blob shadows
  * and the three blended pools were Babylon's until X4.6e, the pools and the
  * blobs posed at a vantage

@@ -10,7 +10,8 @@
  * in the host's own order — in the main pass, or in the glow's mask when
  * that pass's owner says it opened; work owed ahead of the draws reaches the GPU
  * through `prepareEncoder` and nothing else — recorded there, never kept,
- * finished or submitted by the renderer; a texture the host owns is handed over as ITS view, read where it
+ * finished or submitted by the renderer; what may only happen once the frame
+ * is submitted (a destroy) waits for `afterSubmit`; a texture the host owns is handed over as ITS view, read where it
  * lies and never copied (`BABYLON_EXIT.md` rule 5).
  * Never: imports Babylon. Babylon's host is `babylonSeam.ts`'s
  * `BabylonFrameHost`, until the game owns the frame (`BABYLON_EXIT.md` X5.4)
@@ -117,6 +118,13 @@ export interface FrameHost {
   prepareEncoder(): GPUCommandEncoder;
   /** The view-projection the frame's camera is drawn with, as 16 floats. */
   viewProjection(out: Float32Array): void;
+  /**
+   * Calls `run` after EVERY frame's submit — once the frame's commands have
+   * been handed to the queue, so a buffer or texture they hold may be
+   * destroyed there and not before — until the returned handle is disposed.
+   * What `run` does is its own; it records nothing (no encoder is open).
+   */
+  afterSubmit(run: () => void): { dispose(): void };
   /**
    * Hooks the frame's MAIN pass — never a shadow map's, a probe's or any other
    * render target's — at the points of `MainPassHooks`, for rendering group

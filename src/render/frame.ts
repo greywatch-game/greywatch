@@ -8,7 +8,8 @@
  * `createFrameUniforms`; `FRAME_TEXTURES`, the rest of group 0 — every
  * shadow map, the foliage map and the irradiance volume — and
  * `FrameTextures`, the handles they are bound from — the host's, or our
- * renderer's own (`OwnTexture`: the world's shadow maps since X3.6a).
+ * renderer's own (`OwnTexture`: the world's shadow maps since X3.6a, the
+ * irradiance volume's seven since X5.1b, `render/GiCompute.ts`).
  * Invariants: one LAYOUT in every variant but the last field — a name only
  * some programs read is declared for all of them, and the one guarded field,
  * the 2 KB palette, is LAST, so every variant reads the same offsets (the

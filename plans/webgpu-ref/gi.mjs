@@ -77,11 +77,15 @@
  * our frame binds for one of the seven: its sampler, and whether its view is the
  * producer's own) and `cachedSampling(n)` (the sampling fields a Babylon bind —
  * an editor build's cel materials — leaves on one of the seven). Babylon's arm
- * answers off the `RawTexture3D`s and `StorageBuffer`s at the parent; **X5.1b
- * adds its arm**, picked first when present, with the same four members (its
- * GPUTextures and GPUBuffers made with `COPY_SRC`, which Babylon's carry and a
- * readback needs; one without it reads `not-copyable` and the comparison
- * fails). Read directly, and so Babylon's on both trees: the CLOUD FIELD (its
+ * answers off the `RawTexture3D`s and `StorageBuffer`s at a parent before X5.1b;
+ * **X5.1b's arm** (`GiVolume.gpu`, `render/GiCompute.ts`) is picked whenever it
+ * is present, with the same four members (its GPUTextures and GPUBuffers made
+ * with `COPY_SRC`, which Babylon's carry and a readback needs; one without it
+ * reads `not-copyable` and the comparison fails; `frameBind` read off the frame's
+ * own pull, `cachedSampling` null — no Babylon bind of ours exists, the owner's
+ * row 1). A SAMPLER's descriptor is logged as the device reads it,
+ * `GPUSamplerDescriptor`'s own members alone: Babylon's cache hands the device a
+ * key of its own (`anisotropyEnabled`) that WebGPU ignores. Read directly, and so Babylon's on both trees: the CLOUD FIELD (its
  * internal texture's sampling fields, and `host.bind` of it), which is Babylon's
  * texture through X5.1b and until X5.4; and the live half's wraps
  * (`_computeDispatch`, `_setTexture`, the two encoders), which measure Babylon
@@ -242,10 +246,15 @@ function deviceProbe(shaftsOff) {
       return l;
     });
   }
+  // A sampler's descriptor as the DEVICE reads it: `GPUSamplerDescriptor`'s
+  // own members, in the order handed over. Babylon's cache adds a key of its
+  // own (`anisotropyEnabled`), which WebGPU ignores, so it is no part of the
+  // sampler and is not compared (X5.1b, whose samplers are made without it).
+  const SAMPLER_KEYS = new Set(["addressModeU", "addressModeV", "addressModeW", "magFilter", "minFilter", "mipmapFilter", "lodMinClamp", "lodMaxClamp", "compare", "maxAnisotropy"]);
   wrap(D, "createSampler", function (orig, a) {
     const s = orig.apply(this, a);
-    const d = { ...(a[0] ?? {}) };
-    delete d.label;
+    const d = {};
+    for (const [k, v] of Object.entries(a[0] ?? {})) if (SAMPLER_KEYS.has(k)) d[k] = v;
     P.samplerDesc.set(s, d);
     return s;
   });
@@ -524,9 +533,10 @@ await page.evaluate(async () => {
   // **The GPU half, through ONE adapter.** Babylon's arm: the seven
   // `RawTexture3D`s' and the six `StorageBuffer`s' GPU objects, what our frame
   // binds for each of the seven, and the sampling fields a Babylon bind leaves
-  // on one. X5.1b adds OURS beside it, picked first when present, by the same
-  // thirteen names and the same four members — nothing below reads one of the
-  // volume's resources but through them.
+  // on one — at a parent before X5.1b. OURS beside it (below) is picked
+  // whenever it is present, by the same thirteen names and the same four
+  // members — nothing below reads one of the volume's resources but through
+  // them.
   const babylonTex = (n) => g.gi.textures?.[n] ?? null;
   const babylon = {
     /** The GPUTexture of one of the seven, or null. */
@@ -536,9 +546,9 @@ await page.evaluate(async () => {
       ({ params: g.gi.params, state: g.gi.state, vis: g.gi.visState, boxes: g.gi.boxes, index: g.gi.index, heights: g.gi.heights })[n]?.getBuffer?.()?.underlyingResource ?? null,
     /**
      * What OUR FRAME binds for one of the seven (`fillFrameTextures`; items 7
-     * and 8 today): the GPUSampler, and whether the view is the producer's own
-     * — today Babylon's `_hardwareTexture.view`, from X5.1b the view of ours
-     * the compute writes. Null when there is no such texture.
+     * and 8 before X5.1b): the GPUSampler, and whether the view is the
+     * producer's own — Babylon's `_hardwareTexture.view`; ours below, the view
+     * of ours the compute writes. Null when there is no such texture.
      */
     frameBind: (n) => {
       const t = babylonTex(n);
@@ -549,15 +559,32 @@ await page.evaluate(async () => {
     },
     /**
      * The sampling fields a Babylon bind caches on one of the seven (an
-     * editor build's cel materials bind them): today the `RawTexture3D`'s
-     * internal texture, from X5.1b the WRAPPED view's (the owner's row 1).
+     * editor build's cel materials bind them): the `RawTexture3D`'s internal
+     * texture. Ours answers null: no Babylon material binds ours (row 1).
      */
     cachedSampling: (n) => {
       const it = babylonTex(n)?.getInternalTexture?.();
       return it ? { wrapU: it._cachedWrapU, wrapV: it._cachedWrapV, wrapR: it._cachedWrapR, anisotropy: it._cachedAnisotropicFilteringLevel } : null;
     },
   };
-  window.__giGpu = babylon;
+  // OURS (X5.1b): `GiVolume.gpu`, the `GiCompute` that owns the thirteen, and
+  // what the frame binds for the seven read off the frame's own pull
+  // (`Renderer.textures`, `fillFrameTextures`' handles). No Babylon bind of
+  // ours exists — an editor build's cel materials hold GI `off`, the owner's
+  // row 1 — so `cachedSampling` answers null.
+  const ourGpu = () => g.gi.gpu ?? null;
+  const ours = {
+    texture: (n) => ourGpu()?.textureOf(n) ?? null,
+    buffer: (n) => ourGpu()?.bufferOf(n) ?? null,
+    frameBind: (n) => {
+      const gpu = ourGpu();
+      const h = g.renderer.textures[n];
+      if (!gpu || !h || !("view" in h)) return null;
+      return { sampler: h.sampler, viewIsProducers: h.view !== null && h.view === gpu.viewOf(n) };
+    },
+    cachedSampling: () => null,
+  };
+  window.__giGpu = ourGpu() ? ours : babylon;
   P.TEXTURES = ["giIrr", "giDir", "giAux", "giVis0", "giVis1", "giVis2", "giVis3"];
   P.BUFFERS = ["params", "state", "vis", "boxes", "index", "heights"];
   // The lanes the trace writes from a HISTORY read (the bounce): another

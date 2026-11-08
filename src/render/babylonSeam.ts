@@ -82,6 +82,10 @@
  *      `_comparisonFunction`; `_setTexture`, E:2134): the `GPUSampler` out of
  *      Babylon's own cache for the state Babylon would bind, so its filter
  *      and wrap rules are not restated here.
+ *      Items 7 and 8 lost the irradiance volume's seven at `BABYLON_EXIT.md`
+ *      X5.1b — they are our renderer's own (`render/GiCompute.ts`) — and gained
+ *      a COMPUTE reader: the volume's trace binds the cloud field through them
+ *      (the host's view and sampler, the owner's decision), as the frame does.
  *   9. `engine._uploadEncoder` (E:519, E:2388) — the encoder Babylon finishes
  *      and submits FIRST in `flushFramebuffer`, ahead of `_renderEncoder`
  *      (E:2381-2382), and the one `_timestampQuery.startFrame` opens the frame's
@@ -106,7 +110,8 @@
  *      of the sprites, item 6 or the group's end), ahead of it.
  *
  * Public API used here and nowhere else in `src/render/`, for the same
- * reason (it is Babylon's shape): `engine.currentSampleCount`,
+ * reason (it is Babylon's shape): `engine.currentSampleCount`, the engine's
+ * end of frame (`onEndFrameObservable`, `afterSubmit`, `BABYLON_EXIT.md` X5.1b),
  * `scene.getTransformMatrix()`, the scene's draw-phase, rendering-group and
  * sprite observables (`onMainPass`; its particle observable went with the last
  * of Babylon's particle systems at X4.7d), and a texture's readiness,
@@ -289,6 +294,18 @@ export class BabylonFrameHost implements FrameHost {
 
   viewProjection(out: Float32Array): void {
     out.set(this.scene.getTransformMatrix().m);
+  }
+
+  /**
+   * The engine's end of frame, public API: `endFrame` raises it after
+   * `flushFramebuffer` has submitted both encoders, so the frame's commands
+   * are the queue's by then (the irradiance volume's retired buffers and
+   * textures, `GiCompute`).
+   */
+  afterSubmit(run: () => void): { dispose(): void } {
+    const engine = this.engine;
+    const o = engine.onEndFrameObservable.add(run);
+    return { dispose: () => engine.onEndFrameObservable.remove(o) };
   }
 
   /**

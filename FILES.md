@@ -1354,7 +1354,12 @@ src/
                         #   compute against the colliders; seven 3D textures
                         #   every cel material binds, always. No draw calls.
                         #   Same ray set every update, so a still scene
-                        #   converges to a fixed point instead of crawling
+                        #   converges to a fixed point instead of crawling.
+                        #   Its CPU HALF (the window, the lights, the channels,
+                        #   the hull slots, the params, the schedule): `update`
+                        #   ARMS a dispatch its GPU half, render/GiCompute.ts,
+                        #   records (X5.1b). An editor build's Babylon materials
+                        #   hold GI off until X5.3
     AmbienceSystem.ts   # Where the world makes a noise on its own: the emitter
                         #   registry MapBuilder fills, and the nearest-first
                         #   ranking that spends CONFIG.audio.ambience.maxVoices
@@ -2680,7 +2685,8 @@ src/
                         #   opened — the five main-pass hooks, told on every
                         #   main pass whatever group 0 holds, the encoder it
                         #   submits ahead of the draws, a texture's view and
-                        #   sampler NOW), PassTargets, HostTexture
+                        #   sampler NOW, a call after every frame's submit —
+                        #   afterSubmit, X5.1b), PassTargets, HostTexture
     Renderer.ts         # Renderer: the frame's uniforms, textures and their
                         #   group 0, the pipeline cache, the FrameDraws it
                         #   queues at seven points of the MAIN pass — first,
@@ -2887,6 +2893,19 @@ src/
                         #   back-to-front run; a probe's recipe and its cube read
                         #   where the bake left it; a break's collapse written
                         #   into its buffer. An editor build's stays Babylon's
+    GiCompute.ts        # THE IRRADIANCE VOLUME'S GPU HALF as OUR renderer's
+                        #   (X5.1b), Babylon's ComputeShader/StorageBuffer/
+                        #   RawTexture3D ported exactly: five pipelines asked at
+                        #   construction ("the irradiance volume" on
+                        #   Game.roundPipelines), six buffers, seven 3D textures
+                        #   (OwnTextures the frame binds) and their sampler, the
+                        #   bind groups, the history's clears, the dispatch
+                        #   GiVolume ARMS recorded by a LATE prepare pushed after
+                        #   ProbeBake's (registration order is the whole of the
+                        #   bake-before-dispatch order), an armed frame with no
+                        #   prepare an error, every retired resource destroyed
+                        #   after the submit (FrameHost.afterSubmit). The cloud
+                        #   field the host's, with the host's sampler
     ParticleDraw.ts     # EVERY PARTICLE FIELD as OUR renderer runs it (X4.7c
                         #   the ash, X4.7d the rotor wash): one list in creation
                         #   order, Babylon's GPUParticleSystem ported exactly —

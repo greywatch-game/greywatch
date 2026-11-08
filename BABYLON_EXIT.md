@@ -2934,7 +2934,7 @@ particle: it can be marked done, which is the owner's to do.
 
 ## Phase 5 — The frame
 
-### X5.1 — GI and the compute passes are ours — **M, as two sub-steps** (split 2026-11-07: the owner instructed that X5.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the two-way split was proposed by the orchestrating session and run under that instruction) — X5.1a **LANDED** (06b9daa)
+### X5.1 — GI and the compute passes are ours — **M, as two sub-steps** (split 2026-11-07: the owner instructed that X5.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the two-way split was proposed by the orchestrating session and run under that instruction) — X5.1a **LANDED** (06b9daa), X5.1b **LANDED** (this commit, its picture change 9b9d205) — **both LANDED**
 
 `GiVolume` (`ComputeShader`, `StorageBuffer`, `RawTexture3D`) on our side: its three
 compute passes, its six buffers and its seven 3D textures made, bound and dispatched by
@@ -3161,7 +3161,8 @@ correction marked "X5.1a"):
   the bank on Hollowmere and Greyfen, 26 of 26 rows byte-equal to X5.1a's AFTER by
   `exact.mjs`; typecheck and build. The note is in `plans/done/babylon_exit_landed.md`.
 
-- **X5.1b — the volume's GPU half is ours, and Babylon does no compute in a round.** A
+- **X5.1b — the volume's GPU half is ours, and Babylon does no compute in a round.**
+  **LANDED** (this commit, its picture change 9b9d205; below, after the open questions). A
   module of ours (`render/GiCompute.ts`, a name to change freely; no Babylon import, rule 6):
   the five compute pipelines on `PipelineCache.compute` with layout `"auto"`, every tier's
   asked at construction (the trace and compose at each tier, vis once — X4.7c declared both
@@ -3274,6 +3275,91 @@ correction marked "X5.1a"):
     counts, not measured). Accept that as "byte-exact" for this step, widen that oracle first
     (instruments only), or make the trace order-independent first — a picture change of its
     own (rule 2)? The row has the options; X5.1b may not land until it is answered.
+
+  **X5.1b LANDED** (this commit, its picture change 9b9d205, the owner's answers recorded in
+  14df397; 2026-11-07). **The picture change first** (9b9d205, dev-only, the owner's row 1):
+  every Babylon cel material — an editor build's world, until X5.3 — is bound once, on
+  creation, to GI `off` (`CelMaterialFactory.babylonGi`: seven 1x1x1 `RawTexture3D`s of the
+  factory's own, made as `GiVolume` made them at `off`, `giShade.w` 0, the lightning fill the
+  live `giExtra`), so `setGi` walks no material. Its numbers (`F2`, the first four distinct
+  bank eyes of Hollowmere and Coldharbour, the harness's freeze): every eye moved, 627,166 to
+  1,837,725 pixels, worst 38/255 to 135/255; two processes of the parent agree on 5 of 8
+  eyes (Hollowmere's `ashwood` 9,646 pixels and `menu` 771 apart there); the bank 142 of
+  143 byte-equal at high and off (`harrowmead-view-pistol-reload` within its flake) and at
+  low (`sarab-alley` 5 pixels by 2/255, a frame X5.1a's first `gi=low` process drew on the
+  same source). **Then the move** (this commit): `render/GiCompute.ts` owns the five pipelines
+  (asked at construction, "the irradiance volume" on `Game.roundPipelines`), the six
+  buffers, the seven textures (one view each, the frame's `OwnTexture`s), their sampler, the
+  bind groups, the history's clears and the retired resources (destroyed at the new
+  `FrameHost.afterSubmit`, the engine's end of frame); `GiVolume` keeps its CPU half line for
+  line and ARMS a dispatch that `GiCompute`'s late prepare, pushed after `ProbeBake`'s,
+  records (three compute passes on the host's prepare encoder); the converse is an ERROR
+  (an armed dispatch unrecorded at the frame's end is dropped and thrown in a dev build,
+  logged once in production — never seen in any run below); the cloud field the host's
+  handle and sampler (row 2). The probe's arms (`__giGpu`, picked when `GiVolume.gpu`
+  stands) and the harness's (`__refGiCount`, `GiCompute.recorded`, picked first); `gi.mjs`
+  logs a sampler by `GPUSamplerDescriptor`'s own members (Babylon's cache hands the device
+  `anisotropyEnabled`, which WebGPU ignores; the parent's log was re-taken with this probe).
+  **Measured** (the Windows box, headless; the BEFOREs at 9b9d205 in the worktree):
+  - **The bank**, all 143 rows by `exact.mjs`: high **143 byte-equal**; `--query=gi=off`
+    **143 byte-equal**; `--query=gi=low` 142 byte-equal and `sarab-particles-dust` 4 pixels
+    by 1/255 — a frame X5.1a's two full `gi=low` processes drew on the same source
+    (06b9daa) and this run's BEFORE did not; Sarab alone at both ends under `gi=low`, two processes each (`exact.mjs`'s procedure): the parent drew BOTH of that row's frames (one a process) and so did the step, and each tree drew both of `sarab-alley`'s over its three processes — the cross-process residue `exact.mjs` names, `sarab-particles-dust` added to its header The same red rows against `ref/` at
+    each tier (34, 135, 138), the lists identical. No thaw threw.
+  - **The probe**, `gi.mjs` over the parent's log, a default boot and `--shafts-off`:
+    **equal** — 914,601 values on Hollowmere and 254,721 on Coldharbour (914,595 and
+    254,715 with the shafts off), every scenario's CPU half and dispatches by `Object.is`,
+    every comparable readback byte for byte (the `serial` scenarios whole, colour lanes
+    included; elsewhere the exact lanes; row 3) — once the fields named here are masked:
+    `statics.late` 4 → 5; `statics.pipelines` (Babylon's 3, then 5 after the first
+    `setQuality("low")`, synchronous, made on frames 9 and 2,504, against our 5 asynchronous
+    at the boot — layout `"auto"` and entry `main` on all); `statics.wgsl` (Babylon's text
+    19,056 / 14,243 / 13,615 characters behind `//#define main` and `//#define SHADER_NAME
+    …`, ours 21,004 / 15,876 / 15,105 and no prefix — every module's tokens the source's,
+    5,618 / 4,392 / 4,415); a default boot's `samplerSerial.unbound.sampler` and `.isHosts`
+    (Babylon's repeat/nearest at anisotropy 1 and false, ours the host's and true); under
+    `--shafts-off` `samplersFresh.trace` and `.same`, `samplerSerial.asFound` and
+    `.restored` — and `statics.bindGroups.gi-trace`'s binding 5, which is the SAME sampler
+    `samplersFresh.trace` reads off the same record (the plan's list missed it). Everything
+    else in the statics equal: the seven's and the six's descriptors, the frame's sampler
+    (repeat/clamp/repeat, linear x3, anisotropy 4), `frameViewIsProducers` true, every bind
+    group entry.
+  - **The live log** (a scratch script: Hollowmere's card, deploy and 240 frames playing, the
+    tier set low, off and high in play through `Game.setSetting`, a teardown, a second round,
+    a map change to Coldharbour and a round there, `F2` with a quay dragged 2 m and back and
+    the tier changed in the editor, the round after it): **Babylon's `_computeDispatch`
+    called 0 times and no synchronous compute pipeline made** (the parent: 3,375 and 5),
+    ours recording 1,127 frames of the 1,400, **no WebGPU validation error**
+    (`uncapturederror`), no page or console error. `gi.mjs`'s live half: dispatched on 19 of
+    42 card frames, 63 of 64 deploy, 242 of 242 playing, 60 of 60 round-over, 120 of 120
+    editor, **with no prepare of ours on 0**, every pass on the upload encoder, none ending a
+    render pass; no Babylon bind of `gi-*` in the editor.
+  - **Pipelines**: `pipelines.mjs coldharbour --round` five times, **0 of Babylon's at the
+    install in 5 of 5 (X5.1a: 3, the volume's), none in play**, 21 of ours and 12 modules at
+    the install (15 before: the volume's three modules are made at the boot now);
+    `cinderhaven --round` and `sarab --round` 0 of Babylon's and 19 of ours at the install,
+    none in play; plain `hollowmere` 71 of ours, 9 of Babylon's by the install and nothing in
+    the sixteen seconds after it.
+  - **The editor's frames** at the eight eyes of the picture change, two processes a tree:
+    Coldharbour's `menu`, `curtain2` and `curtain40` and Hollowmere's `lanterns` byte-equal
+    across the trees in all four pairings; `curtain90` 1-3 pixels by 1/255 (the parent
+    against itself: 3); Hollowmere's `ashwood` and `menu` within the parent's own
+    cross-process floor (31,845-102,989 pixels by 41-47/255 and 275-993 by 30-35, against
+    79,451 by 47 and 768 by 35 between the parent's two); `wall40` moves between two grabs
+    in ONE process on both trees and 1,433,398 pixels between the parent's two, so it is no
+    oracle (the port's two runs drew one frame).
+  - **`census --against`** (Hollowmere, Sarab, Cinderhaven, Kurenai): every row and total
+    equal (331, 595, 619, 168).
+  - **`?profile&gpu`** (the X5.1b captures in `docs/profiling.md`): `gi` 0.09-0.10 → 0.02-0.03
+    ms, `render` within its spread, `gpu.frame` within 8%; no report version (the span kept
+    its name and parent).
+  - **Gates**: `gate` all seven maps clean; `shaders` every shader compiled clean on seven
+    maps; typecheck, build (`check-babylon-free`, `check-proving`), corecheck and parity pass.
+  - **Not verified**: a server's match in a browser; the phone; a lost device (not survived,
+    as for every draw of ours, `FINDINGS.md` 64); `surfaces.mjs` (no Babylon draw moved);
+    the converse's throw provoked on purpose (no state of the game reaches it).
+  The note is in `plans/done/babylon_exit_landed.md`. **X5.1 is whole**: both sub-steps
+  landed; its own Verify below is the owner's to mark.
 - **Every sub-step owes**: **a BYTE comparison of every row against a BEFORE at its parent**
   (`exact.mjs` over two `--check --keep` directories, never `--check`'s pass line), the known
   flakes alone excused, and from X5.1b on the same under `--query=gi=low` and
@@ -3356,13 +3442,17 @@ It stays behind its one dynamic `import()` in a DEV branch.
     by `hostTexture`, and each a canvas or raw texture the game draws itself:
     - **ours alone since Phase 4**: the ash's motes (`Atmosphere`), the rotor wash's puff
       (`RotorWash`), the scorch (`BlastDebrisSystem`), the blob (`ShadowSystem.blobMap`) and the
-      sky's (`Sky`). Nothing of Babylon's samples them; they wait for this step only so the
-      group moves under one bank proof, not for any reader.
+      sky's (`Sky`) — the cloud field, which since X5.1b the irradiance volume's TRACE reads
+      through `hostTexture` and `host.bind` too (a compute reader beside the frame, the host's
+      sampler by the owner's decision), so its move owes `gi.mjs` beside the bank. Nothing of
+      Babylon's samples them; they wait for this step only so the group moves under one bank
+      proof, not for any reader.
     - **shared with an editor build until X5.3**: the cel materials' own (`CelShader`'s
       `recipe.textures`) and the shadow maps `ShadowBindings` still wraps. X5.3 takes away the
       editor's Babylon draw that samples them (rule 5: a resource lives with what produces it),
       and leaves them here.
-    - **not this step's**: `GiVolume`'s seven, X5.1's.
+    - **not this step's**: `GiVolume`'s seven, X5.1's — ours since X5.1b (`render/GiCompute.ts`),
+      no longer behind `hostTexture` at all.
     Each is drawn, uploaded and mipped by us, its levels and format stated as the foam's are,
     and proven against the bank rows that hold it — `exact.mjs` against a BEFORE at the parent,
     the six particle rows and the blast and blob rows by name, since several sit under `--check`'s
@@ -3465,7 +3555,8 @@ Each is rewritten by the step that breaks it, in the same commit.
 | `CLAUDE.md`: the forced world matrix on the authority | X2.2 |
 | `CLAUDE.md`: the server cannot run `MapBuilder` / `NullEngine` | X2.3 |
 | `CLAUDE.md`: Havok and `scene.physicsEnabled` | X2.4, X5.4 |
-| `CLAUDE.md`: the pipeline warm-up | X4.4, X4.7c and X4.7d (the vantages' last Babylon draws in a round, the particles), X5.4 |
+| `CLAUDE.md`: the pipeline warm-up | X4.4, X4.7c and X4.7d (the vantages' last Babylon draws in a round, the particles), X5.1b (the irradiance volume's compute on the declared list), X5.4 |
+| `CLAUDE.md`: the indirect light traced in compute (its GPU half ours, the late prepare's registration order; an editor build with no GI until X5.3) | X5.1b and its picture change, X5.3 |
 | `CLAUDE.md`: a colour gradient changes a particle system's vertex layout | X4.7d (deleted) |
 | `CLAUDE.md`: measuring a frame, the two roots | X5.4 |
 | `docs/build.md`: the four copied Babylon internals, `merge:hash` owed per upgrade | X1.2, X1.4, X2.1 (adds the sweep and `sweep-check`), X6.1 |

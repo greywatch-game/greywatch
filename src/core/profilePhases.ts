@@ -107,8 +107,12 @@ export const PHASES = [
    */
   "localShadows",
   /**
-   * `GiVolume.update` — choosing the lights, the params upload and recording
-   * the three compute passes. The GPU's share of it is in `gpu.frame`.
+   * `GiVolume.update` — choosing the lights, the channels and the hull slots,
+   * the params upload and ARMING the dispatch. Its three compute passes are
+   * RECORDED inside `render` since `BABYLON_EXIT.md` X5.1b, by our renderer's
+   * late prepare as the main pass begins (`render/GiCompute.ts`), not here; the
+   * GPU's share is in `gpu.frame`. Same name, same parent, a smaller share, so
+   * no report version moved.
    */
   "gi",
   /** `pushHullEngines` — the fleet's voices. */

@@ -422,8 +422,10 @@ frame                       the whole tick, wall to wall
 ├─ hudDraw                  HUD.update — every state owes it
 ├─ post                     the post chain, the sky, the shafts
 ├─ culling                  the cull cells, the hulls' compose and fade, the motes, the rotors' dust, the shader's eye
-├─ gi                       GiVolume.update: the lights, the params, recording
-│                           three compute passes (their GPU time is gpu.frame's)
+├─ gi                       GiVolume.update: the lights, the params, the
+│                           dispatch ARMED — its three passes are recorded
+│                           inside render since X5.1b, by our late prepare
+│                           (their GPU time is gpu.frame's)
 ├─ audio                    pushHullEngines
 └─ render                   scene.render()
    ├─ shadowPass            a Babylon generator's depth map, on the frames
@@ -669,6 +671,17 @@ ends the main pass inside group 0 any more, and in a round `drawWorld` reads the
 fallback's telling of our points alone; what the wash's dispatch used to drag into
 it was small on these runs (a ring splits the pass only while it holds a count),
 and the glow's share of it is inside the clock's grain.
+
+**Measured at X5.1b** (the irradiance volume's GPU half ours: `?profile&gpu`, a live
+round under `?seed=5101`, 600 frames a capture after 300 to settle, parent and step
+alternating twice in one session on the Windows box, the frame capped at ~126 fps):
+`gi` 0.099 / 0.090 → 0.023 / 0.024 ms on Coldharbour and 0.096 / 0.095 → 0.027 / 0.025
+on Hollowmere — the three passes' RECORDING left it for our late prepare, recorded at
+the seam's start of the pass, so under `render` and named by nothing, as every prepare
+is: `render` 0.894 / 0.848 → 0.907 / 0.877 and 0.787 / 0.774 → 0.811 / 0.783, the move
+the size of the run-to-run spread; `gpu.frame` 2.571 / 2.539 → 2.566 / 2.651 ms and
+2.608 / 2.532 → 2.518 / 2.517, unchanged within the protocol's 8%. The span keeps its
+name and its parent, so no report version moved.
 
 **What is left inside `render` and named by nothing** is the active-mesh
 evaluation (the `Mesh walk` counter, which is the same number in other units),

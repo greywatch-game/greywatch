@@ -279,9 +279,10 @@ there that takes it back.
 reflection bake, the card draws the whole map from each home spawn and flag
 until a frame compiles nothing, because WebGPU compiles a pipeline on the frame
 that first draws it. **It OPENS by waiting for OUR renderer's pipelines** — the
-round's DECLARED list (`Game.roundPipelines`: bodies, hulls, weapon and every
-pool of ours, asked once at construction) and the map's, which its install
-asks — and our cache is SEALED once the card is down (a compile in play is a
+round's DECLARED list (`Game.roundPipelines`: bodies, hulls, weapon, every
+pool of ours and the irradiance volume's compute, asked once at construction)
+and the map's, which its install asks — and our cache is SEALED once the card
+is down (a compile in play is a
 DEV warning). **A new draw of ours joins that list.** The vantages are for
 BABYLON's meshes — in a round nothing of Babylon's but the post chain — and
 **no pool is posed**: every one is ours since X4.6e (the sparks, the dust
@@ -535,9 +536,13 @@ Cel materials carry their own light as uniforms (key, ambient, sky fill, up to
 **The indirect light is TRACED in compute against the COLLIDERS**
 (`systems/GiVolume.ts`): **a light whose brightness changes faster than a sweep
 is registered `fast`**, or its bounce freezes into the probes, and
-**`GameMap.colliderAlbedo` stays parallel to `colliderBoxes`**. **An editor
-build has NO GI until X5.3** (the owner's decision): no Babylon cel material is
-handed the volume, every one holding GI `off` (`CelMaterialFactory.babylonGi`).
+**`GameMap.colliderAlbedo` stays parallel to `colliderBoxes`**. **Its GPU half
+is OUR renderer's** (`render/GiCompute.ts`, X5.1b): `update` ARMS a dispatch and
+a LATE prepare records it, **pushed after `ProbeBake`'s — the bake reading last
+frame's compose rests on that registration order alone** — and an armed frame
+whose prepares never ran is an error, not a skipped slice. **An editor build has
+NO GI until X5.3** (the owner's decision): no Babylon cel material is handed the
+volume, every one holding GI `off` (`CelMaterialFactory.babylonGi`).
 
 **THERE ARE TWO SHADOW MAPS, AND WHICH CASTERS GO IN WHICH IS DECIDED BY REFRESH
 RATE RATHER THAN BY WHAT THEY ARE.** The world's re-renders only when its

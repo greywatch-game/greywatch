@@ -1,16 +1,28 @@
 /**
  * GiVolume.ts — The irradiance volume: this game's answer to what Lumen does,
  * sized for a browser and cut to the cel look.
- * Owns: a camera-centred window of light probes, the compute passes that trace
- * them against the collider world (`shaders/wgsl/giTrace.ts`), the seven 3D
- * textures the cel shader reads them through, and the choice each frame of
- * which lights bounce.
+ * Owns: the volume's CPU half — a camera-centred window of light probes, the
+ * choice each frame of which lights bounce, the visibility channels, the hull
+ * slots, the params and the map's traceable world as arrays, and the schedule
+ * (the rolling cursor, the warm budget, `converged`) — and its GPU half,
+ * `gpu`: OUR renderer's `render/GiCompute.ts` since `BABYLON_EXIT.md` X5.1b
+ * (the three compute passes that trace the probes against the collider
+ * world, `shaders/wgsl/giTrace.ts`, their six buffers and the seven 3D
+ * textures the cel shader reads them through), which records what this
+ * decides and decides nothing.
  * Invariants: constructed BEFORE the first cel material, and it keeps a full
  * set of seven textures published to `CelMaterialFactory.setGi` for its whole
  * life — whatever the setting, and before any map — because our frame binds
  * all seven and an unbound one loses the draw, and the factory stands up its
  * BABYLON materials' GI-`off` set at that first call (an editor build has no
- * GI until `BABYLON_EXIT.md` X5.3, the owner's decision). It adds NO draw calls
+ * GI until `BABYLON_EXIT.md` X5.3, the owner's decision); constructed AFTER
+ * `ProbeBake`, because the GPU half's late prepare is pushed in this
+ * constructor and the bake, which samples the volume, must record ahead of
+ * it (`GiCompute`'s header); a dispatch is ARMED in `update` past the
+ * readiness gate — the GPU half's five pipelines — and recorded that frame,
+ * and the CPU half is advanced (the cursor, the warm frames, the dirty
+ * channels) only on a frame that armed one, line for line as when it
+ * dispatched Babylon's `ComputeShader`s itself. It adds NO draw calls
  * (the frame is draw-call bound, `docs/rendering.md`): everything it does is
  * compute and three texture fetches in a shader that already runs. It reads
  * the scene's light off `CelMaterialFactory.readLighting`, never off the map,
@@ -45,38 +57,14 @@
  * light), and they are re-bounced from scratch every frame near the eye and
  * never remembered, so their bounce rises and dies exactly with the light.
  */
-import {
-  type BaseTexture,
-  Color3,
-  ComputeShader,
-  Constants,
-  RawTexture3D,
-  type Scene,
-  StorageBuffer,
-  Texture,
-  Vector3,
-  Vector4,
-  type WebGPUEngine,
-} from "@babylonjs/core";
+import { type BaseTexture, Color3, Vector3, Vector4 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { GiQuality } from "../core/settings";
-import {
-  type CelMaterialFactory,
-  GI_SAMPLER_NAMES,
-  type GiBinding,
-  type PointLightData,
-} from "../shaders/CelShader";
-import {
-  GI_HULL_SLOTS,
-  GI_LAYOUT,
-  GI_MAX_FAST,
-  GI_MAX_SLOW,
-  GI_SLOTS,
-  GI_STATE_VEC4,
-  giComposeSource,
-  giTraceSource,
-  giVisSource,
-} from "../shaders/wgsl/giTrace";
+import { hostTexture } from "../render/babylonSeam";
+import { GiCompute } from "../render/GiCompute";
+import type { Renderer } from "../render/Renderer";
+import type { CelMaterialFactory, GiBinding, PointLightData } from "../shaders/CelShader";
+import { GI_HULL_SLOTS, GI_LAYOUT, GI_MAX_FAST, GI_MAX_SLOW, GI_SLOTS } from "../shaders/wgsl/giTrace";
 import type { GameMap, WorldBox } from "../world/MapBuilder";
 import type { RayHull } from "../world/RayWorld";
 import type { LightingSystem, RoomLight } from "./LightingSystem";
@@ -124,8 +112,6 @@ if (import.meta.env.DEV) {
   }
 }
 
-type TextureName = (typeof GI_SAMPLER_NAMES)[number];
-
 /** One light as the params buffer carries it. */
 interface GiLight {
   x: number;
@@ -142,24 +128,17 @@ interface GiLight {
 export class GiVolume {
   private quality: GiQuality;
   private tier: Tier | null = null;
-  private textures: Record<TextureName, RawTexture3D>;
   private readonly binding: GiBinding;
-
-  private trace: ComputeShader | null = null;
-  /** The cloud field last bound to `trace`, and the `trace` it went to — see `writeParams`. */
+  /**
+   * The GPU half, OUR renderer's (`render/GiCompute.ts`, `BABYLON_EXIT.md`
+   * X5.1b): the passes, the six buffers and the seven textures, recorded on
+   * the frames `update` arms. Everything in this class decides; it records.
+   */
+  readonly gpu: GiCompute;
+  /** The cloud field last handed to the trace — see `writeParams`. */
   private cloudBound: BaseTexture | null = null;
-  private cloudBoundOn: ComputeShader | null = null;
-  private compose: ComputeShader | null = null;
-  private vis: ComputeShader | null = null;
 
   private readonly paramData = new Float32Array(GI_LAYOUT.size * 4);
-  private readonly params: StorageBuffer;
-  private state: StorageBuffer | null = null;
-  /** Per probe: the visibility mask and the column/validity it was traced for. */
-  private visState: StorageBuffer | null = null;
-  private boxes: StorageBuffer | null = null;
-  private index: StorageBuffer | null = null;
-  private heights: StorageBuffer | null = null;
   /** The hull slots' scratch, rewritten into the box buffer every frame. */
   private readonly hullData = new Float32Array(GI_HULL_SLOTS * 16);
   /** `writeHulls`' scratch: which hulls hold the slots, nearest first, and how far. */
@@ -210,20 +189,16 @@ export class GiVolume {
   private frame = 0;
 
   constructor(
-    private readonly engine: WebGPUEngine,
-    private readonly scene: Scene,
+    renderer: Renderer,
     private readonly mats: CelMaterialFactory,
     quality: GiQuality,
   ) {
     this.quality = quality;
-    this.params = new StorageBuffer(
-      engine,
-      this.paramData.byteLength,
-      Constants.BUFFER_CREATIONFLAG_READ | Constants.BUFFER_CREATIONFLAG_WRITE,
-      "gi-params",
-    );
+    // Its late prepare is pushed here, so the bake's — `ProbeBake`, built
+    // before this in `Game` — records ahead of it (`GiCompute`'s header).
+    this.gpu = new GiCompute(renderer, this.paramData.byteLength);
     this.binding = {
-      textures: {} as Record<TextureName, RawTexture3D>,
+      textures: this.gpu.frameTextures,
       grid: new Vector4(1, 1, 1, 1),
       window: new Vector4(0, 1, 0, 0),
       shade: new Vector4(0, 0, 0, 0),
@@ -231,9 +206,12 @@ export class GiVolume {
       extra: new Vector4(2, 0, 0, 0),
       slotChannel: new Float32Array(GI_SLOTS),
     };
-    this.textures = this.makeTextures(null);
-    this.binding.textures = this.textures;
     this.applyTier();
+  }
+
+  /** Whether the GPU half's five pipelines built: "the irradiance volume" on `Game.roundPipelines`. */
+  get ready(): Promise<boolean> {
+    return this.gpu.ready;
   }
 
   /** The current setting — `Game.applySettings` compares before calling in. */
@@ -243,10 +221,10 @@ export class GiVolume {
 
   /**
    * Changes the tier. A different grid is a different set of textures, so
-   * this stands a new set up, republishes it to the factory — whose frame
-   * pulls it, so no material is walked: a Babylon cel material holds GI `off`
-   * (`CelMaterialFactory.setGi`) — and throws the old one away. The volume
-   * re-converges from scratch at the warm budget.
+   * the GPU half stands a new set up, re-points the frame's seven at it (the
+   * same objects, so nothing is walked: a Babylon cel material holds GI `off`,
+   * `CelMaterialFactory.setGi`) and retires the old one past the frame's
+   * submit. The volume re-converges from scratch at the warm budget.
    */
   /**
    * The lightning's sky fill, 0 when no flash is up. Written into the binding's
@@ -304,8 +282,7 @@ export class GiVolume {
   update(eye: Vector3, lighting: LightingSystem, hulls: readonly RayHull[]): void {
     const tier = this.tier;
     const map = this.map;
-    if (!tier || !map || !this.trace || !this.compose || !this.vis) return;
-    if (!this.state || !this.boxes || !this.index || !this.heights) return;
+    if (!tier || !map || !this.gpu.traceable) return;
 
     const sp = tier.spacing;
     const n = tier.columns;
@@ -343,20 +320,20 @@ export class GiVolume {
     this.writeParams(tier, total, hullCount);
 
     // Nothing is advanced until the three pipelines exist: a dispatch before
-    // its shader has compiled returns false and did nothing, and a cursor
-    // that moved anyway would skip the slice it thinks it traced.
-    if (!this.trace.isReady() || !this.compose.isReady() || !this.vis.isReady()) {
-      return;
-    }
-    this.trace.dispatch(budget, 1, 1);
+    // its shader has compiled would do nothing, and a cursor that moved
+    // anyway would skip the slice it thinks it traced.
+    if (!this.gpu.isReady(tier)) return;
+    // ARMED here and recorded by the GPU half's late prepare this same frame
+    // — the trace at `budget`, compose and vis at `groups` — so a frame whose
+    // `update` did not run records nothing, and an armed frame whose prepares
+    // do not run is an error, not a slice skipped in silence (`GiCompute`).
+    const groups = Math.ceil(total / GROUP);
+    this.gpu.dispatch(tier, budget, groups);
     this.cursor = (this.cursor + budget) % total;
     // Counted down only on a frame that TRACED: a warm-up spent while the
     // pipelines compiled would report a volume converged that had never run —
     // and `converged` is what the reflection bake waits on.
     if (this.warmFrames > 0) this.warmFrames--;
-    const groups = Math.ceil(total / GROUP);
-    this.compose.dispatch(groups, 1, 1);
-    this.vis.dispatch(groups, 1, 1);
     // Only now is a channel's trace recorded, so a frame that returned early
     // above leaves its dirty channels dirty for the next one.
     this.chanDirty.fill(0);
@@ -376,21 +353,18 @@ export class GiVolume {
   }
 
   dispose(): void {
-    this.disposeTier();
-    for (const t of Object.values(this.textures)) t.dispose();
-    this.params.dispose();
-    this.disposeMapBuffers();
+    this.gpu.dispose();
   }
 
   // --- the tier -------------------------------------------------------------
 
   private applyTier(): void {
-    this.disposeTier();
     const tier = this.quality === "off" ? null : CONFIG.gi.tiers[this.quality];
     this.tier = tier;
-    const old = this.textures;
-    this.textures = this.makeTextures(tier);
-    this.binding.textures = this.textures;
+    // The tier's buffers and textures (a single texel each with the setting
+    // off: they have to EXIST either way), the old set retired past the
+    // frame's submit; the frame's seven are the same objects, re-pointed.
+    this.gpu.setTier(tier);
     const g = CONFIG.gi;
     if (tier) {
       this.binding.grid.set(
@@ -405,20 +379,7 @@ export class GiVolume {
         g.normalOffset * tier.spacing,
         g.pointOcclusion ? 1 : 0,
       );
-      this.buildShaders(tier);
       const total = tier.columns * tier.columns * tier.layers;
-      this.state = new StorageBuffer(
-        this.engine,
-        total * GI_STATE_VEC4 * 16,
-        Constants.BUFFER_CREATIONFLAG_READWRITE,
-        "gi-state",
-      );
-      this.visState = new StorageBuffer(
-        this.engine,
-        total * 16,
-        Constants.BUFFER_CREATIONFLAG_READWRITE,
-        "gi-vis",
-      );
       this.forgetChannels();
       this.cursor = 0;
       this.placed = false;
@@ -427,21 +388,6 @@ export class GiVolume {
     this.binding.shade.set(g.strength, g.floor, g.aoKeep, 0);
     this.binding.extra.set(g.bandSpan, 0, 0, 0);
     this.mats.setGi(this.binding);
-    // After the republish, so the frame is never left holding a disposed one.
-    if (old !== this.textures) for (const t of Object.values(old)) t.dispose();
-    this.bindShaders();
-  }
-
-  private disposeTier(): void {
-    this.state?.dispose();
-    this.state = null;
-    this.visState?.dispose();
-    this.visState = null;
-    // ComputeShader has no dispose of its own; dropping it releases the
-    // pipeline with the effect cache.
-    this.trace = null;
-    this.compose = null;
-    this.vis = null;
   }
 
   /** How many warm frames one sweep of the window takes. */
@@ -449,127 +395,10 @@ export class GiVolume {
     return Math.ceil(total / tier.warmProbesPerFrame);
   }
 
-  /**
-   * The seven textures, at the tier's size — or a single texel each when the
-   * setting is off, because they have to EXIST either way.
-   */
-  private makeTextures(tier: Tier | null): Record<TextureName, RawTexture3D> {
-    const n = tier ? tier.columns : 1;
-    const l = tier ? tier.layers : 1;
-    const make = (name: string, half: boolean): RawTexture3D => {
-      const tex = new RawTexture3D(
-        null,
-        n,
-        l,
-        n,
-        Constants.TEXTUREFORMAT_RGBA,
-        this.scene,
-        false,
-        false,
-        Texture.BILINEAR_SAMPLINGMODE,
-        half ? Constants.TEXTURETYPE_HALF_FLOAT : Constants.TEXTURETYPE_UNSIGNED_BYTE,
-        Constants.TEXTURE_CREATIONFLAG_STORAGE,
-      );
-      tex.name = `gi-${name}`;
-      // Toroidal across, clamped up: see `celGi` for why the hardware's own
-      // wrap is the whole of the scrolling window's addressing.
-      tex.wrapU = Texture.WRAP_ADDRESSMODE;
-      tex.wrapV = Texture.CLAMP_ADDRESSMODE;
-      tex.wrapR = Texture.WRAP_ADDRESSMODE;
-      return tex;
-    };
-    return {
-      giIrr: make("irr", true),
-      giDir: make("dir", true),
-      giAux: make("aux", false),
-      giVis0: make("vis0", false),
-      giVis1: make("vis1", false),
-      giVis2: make("vis2", false),
-      giVis3: make("vis3", false),
-    };
-  }
-
-  private buildShaders(tier: Tier): void {
-    const common = {
-      P: { group: 0, binding: 0 },
-      B: { group: 0, binding: 1 },
-      I: { group: 0, binding: 2 },
-      H: { group: 0, binding: 3 },
-      S: { group: 0, binding: 4 },
-    };
-    this.trace = new ComputeShader(
-      "gi-trace",
-      this.engine,
-      { computeSource: giTraceSource(tier.rays) },
-      {
-        // The clouds' field is the trace's alone: it lights a hit with the
-        // sun, and neither other pass does. Its sampler takes binding 5.
-        bindingsMapping: { ...common, cloudField: { group: 0, binding: 6 } },
-      },
-    );
-    this.compose = new ComputeShader(
-      "gi-compose",
-      this.engine,
-      { computeSource: giComposeSource(tier.fastRays) },
-      {
-        bindingsMapping: {
-          ...common,
-          outIrr: { group: 0, binding: 5 },
-          outDir: { group: 0, binding: 6 },
-          outAux: { group: 0, binding: 7 },
-        },
-      },
-    );
-    this.vis = new ComputeShader(
-      "gi-vis",
-      this.engine,
-      { computeSource: giVisSource() },
-      {
-        bindingsMapping: {
-          ...common,
-          V: { group: 0, binding: 5 },
-          outVis0: { group: 0, binding: 6 },
-          outVis1: { group: 0, binding: 7 },
-          outVis2: { group: 0, binding: 8 },
-          outVis3: { group: 0, binding: 9 },
-        },
-      },
-    );
-  }
-
-  /** Hands every pass what it reads and writes. Re-run whenever one changes. */
-  private bindShaders(): void {
-    const { trace, compose, vis, state, visState, boxes, index, heights } = this;
-    if (!trace || !compose || !vis || !state || !visState || !boxes || !index || !heights) {
-      return;
-    }
-    for (const cs of [trace, compose, vis]) {
-      cs.setStorageBuffer("P", this.params);
-      cs.setStorageBuffer("B", boxes);
-      cs.setStorageBuffer("I", index);
-      cs.setStorageBuffer("H", heights);
-      cs.setStorageBuffer("S", state);
-    }
-    const t = this.textures;
-    compose.setStorageTexture("outIrr", t.giIrr);
-    compose.setStorageTexture("outDir", t.giDir);
-    compose.setStorageTexture("outAux", t.giAux);
-    vis.setStorageBuffer("V", visState);
-    vis.setStorageTexture("outVis0", t.giVis0);
-    vis.setStorageTexture("outVis1", t.giVis1);
-    vis.setStorageTexture("outVis2", t.giVis2);
-    vis.setStorageTexture("outVis3", t.giVis3);
-  }
-
   // --- the map --------------------------------------------------------------
 
   private disposeMapBuffers(): void {
-    this.boxes?.dispose();
-    this.index?.dispose();
-    this.heights?.dispose();
-    this.boxes = null;
-    this.index = null;
-    this.heights = null;
+    this.gpu.clearMap();
   }
 
   /**
@@ -652,21 +481,6 @@ export class GiVolume {
     });
     idx.set(big, bigOff);
 
-    this.boxes = new StorageBuffer(
-      this.engine,
-      boxData.byteLength,
-      Constants.BUFFER_CREATIONFLAG_READ | Constants.BUFFER_CREATIONFLAG_WRITE,
-      "gi-boxes",
-    );
-    this.boxes.update(boxData);
-    this.index = new StorageBuffer(
-      this.engine,
-      idx.byteLength,
-      Constants.BUFFER_CREATIONFLAG_READ | Constants.BUFFER_CREATIONFLAG_WRITE,
-      "gi-index",
-    );
-    this.index.update(idx);
-
     const f = map.terrain.field;
     const hData = f ? Float32Array.from(f.heights) : new Float32Array(4);
     let top = 0;
@@ -675,13 +489,9 @@ export class GiVolume {
     // edge, and the march's "above the highest ground" exit must not skip it.
     const t = map.terrain;
     this.topY = f && t.margin > 0 ? top + t.roll / 2 : top;
-    this.heights = new StorageBuffer(
-      this.engine,
-      hData.byteLength,
-      Constants.BUFFER_CREATIONFLAG_READ | Constants.BUFFER_CREATIONFLAG_WRITE,
-      "gi-heights",
-    );
-    this.heights.update(hData);
+    // The boxes, the index and the heights, each a buffer of its own written
+    // whole — as three `StorageBuffer.update`s wrote them.
+    this.gpu.uploadMap(boxData, idx, hData);
 
     const rows = this.sceneRows;
     rows.fill(0);
@@ -693,14 +503,13 @@ export class GiVolume {
     );
     rows.set(f ? [t.margin, t.roll, t.ease, 0] : [0, 0, 1, 0], 48);
 
-    // A fresh history: every probe starts unconverged, and so stale.
-    this.state?.clear();
-    this.visState?.clear();
+    // A fresh history: every probe starts unconverged, and so stale. The
+    // clears are recorded ahead of the next dispatch (`GiCompute`).
+    this.gpu.clearHistory();
     this.forgetChannels();
     this.cursor = 0;
     this.placed = false;
     this.warmFrames = this.sweepFrames(this.tier, this.total()) * 2;
-    this.bindShaders();
   }
 
   private total(): number {
@@ -974,7 +783,7 @@ export class GiVolume {
    * no box (nothing to trace) takes no slot.
    */
   private writeHulls(hulls: readonly RayHull[], eye: Vector3): number {
-    if (!this.boxes) return 0;
+    if (!this.gpu.hasMap) return 0;
     const pick = this.hullPick;
     const dist = this.hullDist;
     let count = 0;
@@ -1013,7 +822,7 @@ export class GiVolume {
       data[k * 16 + 13] = albedo.g;
       data[k * 16 + 14] = albedo.b;
     }
-    this.boxes.update(data, 0);
+    this.gpu.writeHulls(data);
     return count;
   }
 
@@ -1051,19 +860,18 @@ export class GiVolume {
     put4(p, s + 44, this.cursor, 0, 0, 0);
     // The clouds' shadow, read off the factory like the key itself, so a wall
     // under a cloud bounces the key it is lit by (`cloudLitAt`). The texture
-    // is bound here rather than in `bindShaders` because `ShadowBindings` swaps
-    // its own "no cloud" texel for `Sky`'s field after the volume exists — and
-    // only when it or the shader CHANGED, because binding the same texture
-    // again is not free: `ComputeShader.setTexture` mints a binding record on
-    // every call, which was an allocation a frame for nothing.
+    // is handed over here rather than once because `ShadowBindings` swaps its
+    // own "no cloud" texel for `Sky`'s field after the volume exists — and
+    // only when it CHANGED. It is the HOST's texture, bound with the host's
+    // own view and sampler at each dispatch (`GiCompute`; the owner's
+    // decision of 2026-11-07, `BABYLON_EXIT.md` X5.1b's row 2).
     const ca = lit.cloudArea;
     const cr = lit.cloudRay;
     put4(p, s + 52, ca.x, ca.y, ca.z, ca.w);
     put4(p, s + 56, cr.x, cr.y, cr.z, cr.w);
     const cloud = lit.cloudMap;
-    if (this.trace && (this.trace !== this.cloudBoundOn || cloud !== this.cloudBound)) {
-      this.trace.setTexture("cloudField", cloud);
-      this.cloudBoundOn = this.trace;
+    if (cloud !== this.cloudBound) {
+      this.gpu.cloud = hostTexture(cloud);
       this.cloudBound = cloud;
     }
 
@@ -1084,7 +892,7 @@ export class GiVolume {
       p[o + 4] = this.chanDirty[i];
       p[o + 5] = this.chanLight[i] ? 1 : 0;
     }
-    this.params.update(p);
+    this.gpu.writeParams(p);
 
     // The band reference: the unoccluded sky's own brightness, so the traced
     // term's steps land where the flat sky fill's used to.

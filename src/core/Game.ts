@@ -2041,13 +2041,14 @@ export class Game {
     });
     // The same rule again, for the irradiance volume's seven textures: every
     // cel material declares them, so they are published before the first one
-    // exists and stay published whatever the setting says.
-    this.gi = new GiVolume(
-      this.engine,
-      this.scene,
-      this.mats,
-      this.overrides.gi(this.settings.gi),
-    );
+    // exists and stay published whatever the setting says. Its GPU half is
+    // OUR renderer's (`render/GiCompute.ts`, `BABYLON_EXIT.md` X5.1b), whose
+    // dispatch is a LATE prepare pushed in this constructor — AFTER
+    // `ProbeBake`'s, above, which is the whole of why the bake reads the
+    // previous frame's compose: the late list runs in push order. Build the
+    // volume before the bake, or hook the bake again after it, and the order
+    // reverses with no error.
+    this.gi = new GiVolume(this.renderer, this.mats, this.overrides.gi(this.settings.gi));
     this.input = new InputManager(canvas);
     this.cameraSys = new CameraSystem(this.scene);
 
@@ -2688,6 +2689,9 @@ export class Game {
       // The ash's update and both its blends (a map change can flip one,
       // `Atmosphere.apply`), and the rotor wash's update and draw (X4.7d).
       { name: "the ash and the rotor wash", ready: this.particleDraw.ready },
+      // The volume's trace and compose at every tier and its vis pass (X5.1b):
+      // a tier changed in a round compiles nothing.
+      { name: "the irradiance volume", ready: this.gi.ready },
     ];
     // The sky is painted once here, the boot map's, and re-applied per round
     // alongside the environment; it is DRAWN only while a map stands
@@ -4690,8 +4694,11 @@ export class Game {
     // first second of a spawn. After `lighting.update` on the frames that run one, because
     // its point-light visibility is written per SLOT and the slots are that
     // frame's; on the frames that do not, they are simply the last ones
-    // chosen. All compute — no draw call — so what this span measures is the
-    // CPU side of recording it, and the GPU's share is in `gpu.frame`.
+    // chosen. All compute — no draw call — and since `BABYLON_EXIT.md` X5.1b
+    // only its CPU half is here: this span is the lights, the channels, the
+    // hulls and the params written and the dispatch ARMED; the three passes
+    // are RECORDED by our renderer's late prepare as the main pass begins
+    // (`GiCompute`), so under `render`, and the GPU's share is in `gpu.frame`.
     // Never from a warm-up's vantage: the volume converges around the camera
     // behind the card, and one dragged to every flag in turn would have to
     // converge again around the deploy screen.

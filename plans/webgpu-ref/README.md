@@ -272,12 +272,17 @@ node plans/webgpu-ref/gi.mjs --compare=a.json --against=b.json
   logs by `Object.is` and by hash; `--compare=a.json --against=b.json` does it with
   no browser. Every read of the volume's own resources — the thirteen, and what our
   frame binds for the seven — goes through one adapter (`window.__giGpu`), Babylon's at
-  a parent before X5.1b, X5.1b's arm beside it; the cloud field, Babylon's texture until
-  X5.4, and the live half's Babylon wraps are read directly (its header).
+  a parent before X5.1b, and OURS (`GiVolume.gpu`, `render/GiCompute.ts`) wherever it
+  is present; the cloud field, Babylon's texture until X5.4, and the live half's
+  Babylon wraps are read directly (its header). A sampler is logged by the members
+  `GPUSamplerDescriptor` has (Babylon's cache hands the device one of its own,
+  `anisotropyEnabled`, which WebGPU ignores; X5.1b).
   **The harness holds the volume by stubbing its `update`**, and that is a contract a
   port keeps: `freeze`'s `gi` block counts the volume's dispatches through one adapter
-  (`window.__refGiCount`, whose Babylon arm answers null — and the freeze throws — for
-  anything in `trace`, `compose` or `vis` that is not Babylon's own `ComputeShader`) and
+  (`window.__refGiCount`: OURS first since X5.1b — `GiCompute.recorded`, the frames its
+  late prepare recorded the passes on — and Babylon's at a parent, whose arm answers null
+  — and the freeze throws — for anything in `trace`, `compose` or `vis` that is not
+  Babylon's own `ComputeShader`) and
   `thaw` throws if any happened under the stub; `bank.mjs` thaws once more after each
   map's last row, so every row's hold is checked.
 
