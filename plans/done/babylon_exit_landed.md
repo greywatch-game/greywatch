@@ -9919,11 +9919,15 @@ box.
   frame's, and the last pass's pipeline writes it (compare always)**; the frame opens with a
   canvas pass of no draws that loads the colour and clears that depth. The glow's own passes
   LOAD (no clear); its four blurs are one program; the kernel text took five values a page.
-  `extractDriverInfo()` is the empty string. The six pipelines are made on the page's fourth
-  frame and drawn on it, nothing is skipped for a compile, and **a render-scale change or a
-  resize costs one frame in which nothing but the canvas's opening pass runs**.
+  `extractDriverInfo()` is the empty string. ~~The six pipelines are made on the page's fourth
+  frame and drawn on it, nothing is skipped for a compile~~ (**wrong, corrected by its review
+  below**: the chain first draws on the page's third to fifth frame, and on the phone's page
+  FXAA's pass drew nothing on the chain's first frame or two in two boots of four, as did the
+  shafts' on one desktop rung change), and **a render-scale change or a resize costs one
+  frame in which nothing but the canvas's opening pass runs**.
 - **Measured**: `post.mjs` twice in separate processes, equal by `--against` (34,083 values
-  a page) and by `--compare`, every scenario steady, and FAILING on copies of its log with a
+  a page counted in the process, absent fields included; 31,701 off the written log, which
+  both modes count since its review) and by `--compare`, every scenario steady, and FAILING on copies of its log with a
   sampler's `minFilter`, a uniform byte, a load op, a canvas hash, a module's token count, a
   vertex stride and a camera-list hole each changed by hand. The four new rows banked into
   `ref/` in one process and byte-equal to it in two more (`--check`, 0 pixels), Hollowmere's
@@ -9934,3 +9938,63 @@ box.
   corecheck, parity, `gate` and `shaders` pass.
 - **Not run** (the step moves no draw): `pipelines.mjs`, `surfaces.mjs`, `census`, the
   editor's frames, live toggles by hand, `?profile&gpu`.
+
+**Its review** (2026-11-08; instruments and records only, no change to the game; under `src/`
+one comment). An independent review found two real points and five minor ones, each checked
+against the code and the logs first; a third real point (F1, `thaw` leaving a rebuilt
+`Volumetrics` stubbed) is held for the owner's decision, because fixing it moves bank rows,
+and `harness.mjs`'s freeze and thaw are untouched.
+
+- **Real, two.** (1) The record said no frame was seen with a pass skipped for a compile and
+  that all six pipelines were made and drawn on the page's fourth frame; the probe's own logs
+  said otherwise — the phone's FXAA always compiled one frame after the rest, and drew nothing
+  (`->fxaa.out/clear`) on the chain's first frame in `postB2`; a desktop shafts rung change
+  drew nothing in the shafts' pass on its first frame in `postA2`; the chain first drew on the
+  3rd to 5th frame. And the live render-scale and glow-rung changes ran after the scenarios had
+  drawn every kernel and rung, so they could never show a compile. The live half's changes now
+  run on a SECOND, FRESH page (its own boot, `boot-2`; the settings put to the base,
+  `to-base`; then render scale 0.75, glow `low`, shafts `low` then `high`, and the desktop's
+  resize), each a change that page has never drawn; pipelines are counted from the same `+0`
+  as the frames, a pass or pipeline made between two engine frames is marked `~`, and each
+  change prints its drawless chain passes. **The rerun** (both pages, one process): on the
+  fresh pages nothing in play was skipped — render scale 0.75 made the glow blur's new pipeline
+  on the first frame the chain drew after it (the one after the canvas-only frame) and drew it
+  there, glow `low` made the blur's and the box filter's on the first frame after it and drew
+  them, each shafts rung made and drew its own
+  on its frame, and a render-scale change (the phone's fresh page also booted at its device
+  default of 0.5 and went to 1) and the resize each cost the one canvas-only frame; at boot the
+  phone's first page drew FXAA's pass empty for TWO frames (`+2`, `+3`, its pipeline on `+4`),
+  its fresh page not at all. Across the eight boots now logged a stage's pipeline is stamped on
+  the chain's first frame or on the frame before it, a frame with no pass of the chain
+  recorded, which the probe does not explain. "What it is today" is corrected in place.
+  (2) `--against` named only the first difference a scenario met, and `chain` (Babylon's own
+  fields, which X5.2b and X5.2c1 change by design) was walked before the passes, so a moved
+  stage would have hidden every pass and draw; and a value was cut at 120 characters, so two
+  uniform buffers differing past that printed alike. It now names every differing path
+  (`--max-diffs`, 40 a scenario, then the count), shows a long value from its first differing
+  character (the byte, for hex), walks the common prefix of two arrays of unequal length, and
+  excuses only path patterns `--ignore` names (`*` within a segment, `**` across, `@file`),
+  saying what each excused and which matched nothing; the in-process comparison goes through
+  JSON so both modes count alike (31,701 values a page, the 34,083 X5.2a quoted having
+  counted absent fields).
+- **Minor, five.** X5.2c1's correction says the canvas pass (Babylon's main pass) carries the
+  ENGINE's depth, not the frame's, rather than "not the main pass's"; the adapter names the
+  shafts' two shadow maps and the cloud field (`shadow.world`, `shadow.bodies`,
+  `cloud.field`, off the pass or off what `Game` hands it, and `input()` so the live half
+  does not count their passes), so X5.2c2's `own ?? hostTexture` is compared by name; the two
+  `postAdapter`s (`harness.mjs`'s `window.__refPost`, `post.mjs`'s `window.__postGpu`) each
+  point to the other and say a later sub-step adds ours to both; `post.mjs`'s header says about
+  25 minutes, as the README does; `src/bench/BenchScript.ts`'s comment counts the post chain's
+  ten rows on `lanterns`.
+- **Measured.** `--compare` of X5.2a's two logs (`postA2`, `postB2`): equal, 31,701 values a
+  page. The seven hand-edited copies of `postA2` each fail on their one path; one copy with all
+  seven edits plus a glow kernel and a pipeline's `call` in the same scenario names all nine
+  (the filled hole as the 21 fields it moves: three printed under `--max-diffs=3`, then the
+  count) and, under
+  `--ignore=**.chain.glow.kernel,**.pipeline.call`, the other seven, with a pattern that
+  matched nothing said. The rerun `--against` `postA2`: every scenario steady and every value
+  equal but the 84 the new names move (`shadow.world`, `shadow.bodies` and `cloud.field`
+  against `-r16float`, `-r16float` and `-rg8unorm`, the shafts' bindings 2 to 4 on the
+  fourteen scenarios with the shafts on, both pages). The bank on Hollowmere `--check --keep`,
+  20 of 20 rows byte-equal to X5.2a's AFTER by `exact.mjs` (the harness's change is a
+  comment). Typecheck and build pass.

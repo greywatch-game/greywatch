@@ -4,11 +4,12 @@
  * off the parent rather than argued (X5.2a, which built it and measured with it).
  *
  * Run with `node plans/webgpu-ref/post.mjs [--sizes=desk,phone] [--out=f.json]
- * [--against=f.json] [--no-live]`, or with no browser at all as
- * `node plans/webgpu-ref/post.mjs --compare=a.json --against=b.json`, which
- * compares two logs this file wrote (how the comparison is shown to FAIL on a
- * hand-edited copy). Nothing in the repository is written but `--out`. About
- * six minutes on the Windows box for both sizes.
+ * [--against=f.json] [--ignore=pattern,…|@file] [--max-diffs=40] [--no-live]`,
+ * or with no browser at all as `node plans/webgpu-ref/post.mjs
+ * --compare=a.json --against=b.json [--ignore=…]`, which compares two logs
+ * this file wrote (how the comparison is shown to FAIL on a hand-edited copy).
+ * Nothing in the repository is written but `--out`. About 25 minutes on the
+ * Windows box for both sizes, the live half's second page included.
  *
  * **Why a probe and not only the bank.** Every bank row is 1920x1080 at a
  * scaling level of 1 and a DPR of 1, so the glow blur's kernel text, an odd
@@ -81,27 +82,50 @@
  * `<stage>.out` (what a stage draws into: Babylon's next live pass's input),
  * `canvas` and `canvas.depth` (the engine's own depth, which the canvas's pass
  * carries), and the glow's six (`glow.mask`, `glow.down`, `glow.nearH`,
- * `glow.near`, `glow.wideH`, `glow.wide`). **A sub-step that moves a stage adds OURS**,
- * picked first for that stage, with the same names: a draw of ours is then
- * logged under the name the Babylon draw it replaced was, so `--against` its
- * parent compares the two draw for draw. The GPU side is read the same
- * whoever records: everything below `__postGpu` is the device.
+ * `glow.near`, `glow.wideH`, `glow.wide`). The INPUTS a stage reads and no
+ * stage writes are named by their producer, so a change in how a stage
+ * reaches one (X5.2c2's `own ?? hostTexture`) is compared by name rather than
+ * by format and size: the shafts' `shadow.world` and `shadow.bodies` and
+ * Sky's `cloud.field` (`input(texture)` says a name is one of these, which
+ * the live half does not count as a chain pass). **A sub-step that moves a
+ * stage adds OURS**, picked first for that stage, with the same names: a draw
+ * of ours is then logged under the name the Babylon draw it replaced was, so
+ * `--against` its parent compares the two draw for draw. The GPU side is read
+ * the same whoever records: everything below `__postGpu` is the device.
+ * **`harness.mjs` has an adapter of the same name and shape**
+ * (`postAdapter`, `window.__refPost`): the chain's CPU half the bank's
+ * `freeze` holds. The two are separate on purpose (this one exists only on a
+ * probe's page) and a later sub-step adds ours to BOTH (this one from X5.2b,
+ * that one from X5.2c1).
  *
- * **And beside the log, measured once a boot and NOT compared** (they ride the
- * machine's timing): the LIVE frames — from the page's first frame to thirty
- * frames into `deploy`, and thirty frames after each of a shafts rung change,
- * a render-scale change, a glow rung change and (on `desk`) a window resize,
- * all in play — each frame's passes that a named stage drew in or that wrote
- * the canvas, by stage, target and load op, and the frame each stage's
- * pipelines were made on. That is where a pass Babylon SKIPPED while it
- * compiled shows, which no frozen frame can.
+ * **And beside the log, measured and NOT compared** (they ride the machine's
+ * timing): the LIVE frames — from the scenarios' page's first frame to thirty
+ * frames into `deploy` (`boot`), and on a SECOND, FRESH page at the same size
+ * its own boot (`boot-2`), then thirty frames after each of: the settings put
+ * to the base (`to-base`, nothing to do where the boot already stands
+ * there), a render-scale change to 0.75, a glow rung change to `low`, a
+ * shafts rung change (`low`, then `high` a frame later) and (on `desk`) a
+ * window resize, all in play. **The changes are on a fresh page because the
+ * scenarios draw every one of them first**: after them every glow kernel
+ * text and every pipeline is cached and a change could never show a compile;
+ * on the fresh page each change is one the page has never drawn. Each frame's
+ * passes that a named stage drew in, that wrote a chain target or that wrote
+ * the canvas, by stage, target and load op (a pass with no stage's draw shows
+ * as `-`), and the frame each stage's pipelines were made on, counted from the
+ * same `+0` (a pass begun or a pipeline made between two engine frames is
+ * marked `~`); under each, the chain passes that drew nothing (`drawless`).
+ * That is where a pass Babylon SKIPPED while it compiled shows, which no
+ * frozen frame can.
  *
  * **`--against`** (or `--compare`) compares size by size, scenario by
  * scenario: every value by `Object.is` (strings, hashes and hex bytes by
  * equality), the module table, and the boot's statics; the live half is
- * printed, not compared. It names the first difference per scenario and exits
- * 1. A lost device ends it (`harness.mjs`'s header, exit 4), and so does a hard
- * limit (exit 3).
+ * printed, not compared. It names EVERY differing path a scenario has (up to
+ * `--max-diffs` each, then the count), a long value from its first differing
+ * character, and excuses only what `--ignore` names (`compareLogs`: a later
+ * sub-step states its expected differences there, never by reading past
+ * them), and exits 1 on any difference left. A lost device ends it
+ * (`harness.mjs`'s header, exit 4), and so does a hard limit (exit 3).
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { bootMap, freeze, FREEZE_SET, hardLimit, installRound, launchClient, placeVantage, root, settle, startDevServer, thaw, waitUntilDrawn } from "./harness.mjs";
@@ -113,6 +137,14 @@ const AGAINST = opt("against", "");
 const COMPARE = opt("compare", "");
 const LIVE = !args.includes("--no-live");
 const SIZE_IDS = opt("sizes", "desk,phone").split(",").filter(Boolean);
+/** The paths `--against` excuses (`compareLogs`): `--ignore=a,b` (repeatable), or `--ignore=@file`. */
+const IGNORE = args
+  .filter((a) => a.startsWith("--ignore="))
+  .flatMap((a) => a.slice("--ignore=".length).split(","))
+  .flatMap((p) => (p.startsWith("@") ? readFileSync(p.slice(1), "utf8").split(/\r?\n/).map((l) => l.replace(/#.*/, "")) : [p]))
+  .map((p) => p.trim())
+  .filter(Boolean);
+const MAX_DIFFS = Number(opt("max-diffs", "40"));
 
 /** The two pages a scenario is read at: the bank's, and a dense phone's. */
 const SIZES = {
@@ -161,7 +193,7 @@ if (COMPARE) {
   process.exit(failed ? 1 : 0);
 }
 
-hardLimit(600 + SIZE_IDS.length * 1200);
+hardLimit(600 + SIZE_IDS.length * 1500);
 
 /**
  * The device, wrapped before the game's first line (`bootMap`'s `init`).
@@ -177,6 +209,7 @@ function deviceProbe() {
     arm: 0,
     live: true,
     frame: 0,
+    inFrame: false,
     begun: 0,
     modules: new WeakMap(),
     moduleList: [],
@@ -226,7 +259,7 @@ function deviceProbe() {
     wrap(D, k, function (orig, a) {
       const r = orig.apply(this, a);
       if (!P.self) {
-        const rec = { desc: a[0], call: k, frame: P.frame };
+        const rec = { desc: a[0], call: k, frame: P.frame, inFrame: P.inFrame };
         P.pipelineList.push(rec);
         if (r && typeof r.then === "function") r.then((p) => P.pipelines.set(p, rec));
         else P.pipelines.set(r, rec);
@@ -372,6 +405,7 @@ function deviceProbe() {
       seq: P.begun++,
       enc: this,
       role: roleOf(this),
+      inFrame: P.inFrame,
       label: d.label ?? "",
       color: (d.colorAttachments ?? []).map((c) =>
         c ? { view: c.view, resolve: c.resolveTarget ?? null, loadOp: c.loadOp, storeOp: c.storeOp, clear: c.clearValue === undefined ? null : Array.isArray(c.clearValue) ? [...c.clearValue] : [c.clearValue.r, c.clearValue.g, c.clearValue.b, c.clearValue.a], depthSlice: c.depthSlice ?? null } : null,
@@ -558,6 +592,7 @@ function deviceProbe() {
       P.engine = e;
       e.onBeginFrameObservable.add(() => {
         P.frame++;
+        P.inFrame = true;
         if (P.arm > 0) {
           P.arm--;
           P.capture = true;
@@ -575,10 +610,17 @@ function deviceProbe() {
           const kept = [];
           for (const rec of P.frameOrder.splice(0)) {
             const stages = [...new Set(rec.pipes.map((p) => P.stageOfPipe(p)).filter(Boolean))];
-            const named = rec.color.some((c) => c && window.__postGpu?.target(P.views.get(c.view)?.texture));
+            // A chain target: one a stage writes, not an input it only reads
+            // (the shafts' shadow maps and cloud field, whose own passes are
+            // not the chain's).
+            const named = rec.color.some((c) => {
+              const t = P.views.get(c?.view)?.texture;
+              return t && window.__postGpu?.target(t) && !window.__postGpu?.input(t);
+            });
             const canvasOut = rec.color.some((c) => c && P.canvas.has(P.views.get(c.view)?.texture));
             if (stages.length || canvasOut || named) {
               kept.push({
+                between: !rec.inFrame,
                 stages,
                 out: rec.color.map((c) => (c ? P.nameOf(P.views.get(c.view)?.texture) : null)),
                 load: rec.color.map((c) => (c ? c.loadOp : null)),
@@ -590,6 +632,7 @@ function deviceProbe() {
         } else {
           P.frameOrder.length = 0;
         }
+        P.inFrame = false;
       });
     },
   });
@@ -616,11 +659,22 @@ function deviceProbe() {
 /**
  * The adapter (see the header), installed once the game is up. Babylon's arm:
  * the stages `Game` built, by object, and the targets they read and write.
+ *
+ * **Not `harness.mjs`'s `postAdapter`**, which shares the name and the shape:
+ * that one (`window.__refPost`) is the chain's CPU half for `freeze`, `thaw`
+ * and `placeVantage` (the grade, the shafts and the blur objects whose
+ * `update`s a hold replaces); this one (`window.__postGpu`) names the GPU's
+ * modules and textures for this probe. Each has Babylon's arm alone today,
+ * and a later sub-step adds OURS to BOTH, picked first, under the same names:
+ * this one for each stage it moves (X5.2b on), that one when the grade, the
+ * shafts or the blur move (X5.2c1 on).
  */
 function postAdapter() {
   const g = window.__celshock;
   const P = window.__postProbe;
-  const hw = (t) => t?._hardwareTexture?.underlyingResource ?? null;
+  // A Babylon texture's GPU texture: its hardware texture's resource, or the
+  // texture its view was made on (a texture of ours wrapped through the seam).
+  const hw = (t) => t?._hardwareTexture?.underlyingResource ?? P.views.get(t?._hardwareTexture?.view)?.texture ?? null;
   const babylon = {
     arm: "babylon",
     /** The chain's stages, each with what it draws with and into: the camera's list, then the glow's. */
@@ -677,6 +731,23 @@ function postAdapter() {
         for (const k of ["mask", "down", "nearH", "near", "wideH", "wide"]) {
           const t = hw(glow[k]?.renderTarget?.texture);
           if (t) m.set(t, `glow.${k}`);
+        }
+      }
+      // The INPUTS no stage writes, named by their producer rather than
+      // matched by format and size: the shafts' two shadow maps (the world's
+      // and the bodies', ours or Babylon's generators') and Sky's cloud
+      // field, so a sub-step that swaps how they are reached (X5.2c2's
+      // `own ?? hostTexture`) is compared by name. Read off the pass, or —
+      // while the shafts are off or not yet built — off what `Game` hands
+      // it (`syncVolumetrics`), so the name does not depend on the setting.
+      inputs.clear();
+      const vol = g.volumetrics;
+      const handed = { shadowMap: g.shadows?.depthMap, bodyShadowMap: g.bodyShadows?.depthMap, cloudShadowMap: g.sky?.cloudShadowMap };
+      for (const [k, name] of [["shadowMap", "shadow.world"], ["bodyShadowMap", "shadow.bodies"], ["cloudShadowMap", "cloud.field"]]) {
+        const t = hw((vol?.[k] ?? handed[k])?.getInternalTexture?.());
+        if (t && !m.has(t)) {
+          m.set(t, name);
+          inputs.add(t);
         }
       }
       return m;
@@ -757,6 +828,7 @@ function postAdapter() {
   // keeps its name, so a stage whose effect was replaced (a recompiled kernel)
   // still names the draws its old module made.
   let targets = new Map();
+  const inputs = new Set();
   window.__postGpu = {
     arm: babylon.arm,
     refresh() {
@@ -769,6 +841,7 @@ function postAdapter() {
     },
     stage: (m) => P.stageOf.get(m) ?? null,
     target: (t) => targets.get(t) ?? null,
+    input: (t) => inputs.has(t),
     chain: () => babylon.chain(),
     stages: () => babylon.stages().map((s) => ({ name: s.name, ready: s.effect?.isReady?.() ?? false, off: Boolean(s.off) })),
   };
@@ -782,28 +855,17 @@ const enc = (x) =>
   typeof x === "number" ? (Object.is(x, -0) ? "-0" : Number.isNaN(x) ? "NaN" : x === Infinity ? "Inf" : x === -Infinity ? "-Inf" : x) : Array.isArray(x) ? x.map(enc) : x && typeof x === "object" ? Object.fromEntries(Object.entries(x).map(([k, v]) => [k, enc(v)])) : x;
 
 const report = { seed: SEED, map: "hollowmere", base: BASE, sizes: {} };
-let pageErrors = [];
-let consoleErrors = [];
 
 for (const sizeId of SIZE_IDS) {
   const size = SIZES[sizeId];
   if (!size) throw new Error(`no size "${sizeId}" (${Object.keys(SIZES).join(", ")})`);
-  const booted = await bootMap(browser, `${vite.url}${vite.url.endsWith("/") ? "" : "/"}?seed=${SEED}`, "hollowmere", {
-    init: deviceProbe,
-    viewport: size.viewport,
-    deviceScaleFactor: size.deviceScaleFactor,
-  });
-  const { page } = booted;
-  pageErrors = booted.pageErrors;
-  consoleErrors = booted.consoleErrors;
-  page.on("dialog", (d) => void d.accept());
-  page.on("pageerror", (e) => console.error(`[${sizeId}] page error: ${e.message}`));
-  page.on("console", (m) => m.type() === "error" && console.error(`[${sizeId}] console: ${m.text().slice(0, 300)}`));
-  console.error(`[${sizeId}] booted`);
-  await page.evaluate(postAdapter);
   const out = { size, statics: null, scenarios: {}, live: {} };
   report.sizes[sizeId] = out;
+  const errors = { page: [], console: [] };
 
+  // The SCENARIOS' page: the boot's live frames, then every scenario in its
+  // one order, then the statics.
+  const page = await openPage(sizeId, size, errors);
   await installRound(page);
   console.error(`[${sizeId}] deploy`);
   await settleLive(page, 30);
@@ -828,43 +890,70 @@ for (const sizeId of SIZE_IDS) {
     console.log(`${sizeId.padEnd(5)} ${sc.id.padEnd(16)} ${steady ? "steady" : "NOT STEADY"}  ${b.frame.passes.length} passes, canvas ${canvas?.hash?.slice(0, 16) ?? "?"}  chain [${b.chain.list.map((x) => (x.hole ? "_" : x.stage)).join(" ")}]`);
   }
   out.statics = await statics(page);
-  await thaw(page);
+  await page.close();
 
   if (LIVE) {
-    // In play: a shafts rung change, a render-scale change, a glow rung change
-    // and a resize, thirty frames after each, in the held deploy world.
-    const change = async (label, fn) => {
-      await page.evaluate(() => (window.__postProbe.liveFrames.length = 0));
-      await page.evaluate(fn);
-      await settleLive(page, 30);
-      out.live[label] = await takeLive(page);
+    // The changes in play, on a FRESH page: on the scenarios' page every
+    // render scale, glow rung and shafts rung has already been drawn, so the
+    // glow blur's kernel texts and every pipeline are cached and a change
+    // there could never show a pass skipped for a compile. Here the boot's
+    // settings are put to BASE first (its own frames, a step like the
+    // others), then each change is one this page has never drawn: render
+    // scale 0.75 (a new glow kernel text at `high`), the glow to `low` (a
+    // new kernel at 0.75, and the box filter's first draw), the shafts
+    // `low` then `high` (two new rungs) and, on `desk`, a resize. Thirty
+    // frames after each, in the held deploy world.
+    const live = await openPage(sizeId, size, errors);
+    await installRound(live);
+    console.error(`[${sizeId}] live: deploy`);
+    await settleLive(live, 30);
+    out.live["boot-2"] = await takeLive(live);
+    const change = async (label, fn, arg) => {
+      await live.evaluate(() => (window.__postProbe.liveFrames.length = 0));
+      const said = await live.evaluate(fn, arg);
+      await settleLive(live, 30);
+      out.live[label] = { ...(await takeLive(live)), ...(said ? { said } : {}) };
+      console.error(`[${sizeId}] live: ${label}`);
     };
-    await page.evaluate(() => {
-      const P = window.__postProbe;
-      P.live = true;
-      P.liveFrames.length = 0;
-    });
+    await change(
+      "to-base",
+      (base) => {
+        const g = window.__celshock;
+        const moved = {};
+        for (const [k, v] of Object.entries(base)) {
+          if (g.settings[k] === v) continue;
+          moved[k] = [g.settings[k], v];
+          g.setSetting(k, v);
+        }
+        return moved;
+      },
+      BASE,
+    );
+    await change("scale-to-75", () => void window.__celshock.setSetting("renderScale", 0.75));
+    await change("glow-to-low", () => void window.__celshock.setSetting("glow", "low"));
     await change("shafts-low-to-high", () => {
       const g = window.__celshock;
       g.setSetting("volumetrics", "low");
-      return new Promise((r) => g.engine.onEndFrameObservable.addOnce(() => r(g.setSetting("volumetrics", "high"))));
+      return new Promise((r) => g.engine.onEndFrameObservable.addOnce(() => r(void g.setSetting("volumetrics", "high"))));
     });
-    await change("scale-to-75", () => window.__celshock.setSetting("renderScale", 0.75));
-    await change("glow-to-low", () => window.__celshock.setSetting("glow", "low"));
     if (sizeId === "desk") {
-      await page.evaluate(() => (window.__postProbe.liveFrames.length = 0));
-      await page.setViewportSize({ width: 1280, height: 721 });
-      await settleLive(page, 30);
-      out.live["resize-1280x721"] = await takeLive(page);
+      await live.evaluate(() => (window.__postProbe.liveFrames.length = 0));
+      await live.setViewportSize({ width: 1280, height: 721 });
+      await settleLive(live, 30);
+      out.live["resize-1280x721"] = await takeLive(live);
     }
+    await live.close();
   }
+  const pageErrors = errors.page.flat();
+  const consoleErrors = errors.console.flat();
   if (pageErrors.length) out.pageErrors = pageErrors.slice(0, 5);
   if (consoleErrors.length) out.consoleErrors = consoleErrors.slice(0, 5);
-  await page.close();
 }
 
 printReport(report);
-const clean = enc(report);
+// Through JSON, so the log compared here is the one `--out` writes (an
+// `undefined` field is absent in both) and the counts match `--compare`'s.
+const clean = JSON.parse(JSON.stringify(enc(report)));
 if (OUT) writeFileSync(OUT, JSON.stringify(clean));
 let failed = false;
 if (AGAINST) failed = compareLogs(clean, JSON.parse(readFileSync(AGAINST, "utf8")));
@@ -882,6 +971,27 @@ for (const [id, s] of Object.entries(report.sizes)) {
 await browser.close();
 vite.stop();
 process.exit(failed ? 1 : 0);
+
+/** A page booted at `size` with the device wrapped from its first line, and the adapter installed. */
+async function openPage(sizeId, size, errors) {
+  const booted = await bootMap(browser, `${vite.url}${vite.url.endsWith("/") ? "" : "/"}?seed=${SEED}`, "hollowmere", {
+    init: deviceProbe,
+    viewport: size.viewport,
+    deviceScaleFactor: size.deviceScaleFactor,
+  });
+  const { page } = booted;
+  // The harness's own lists, which it keeps filling for the page's life,
+  // read once the size is done (a live page's errors fail the run as a
+  // scenario page's do).
+  errors.page.push(booted.pageErrors);
+  errors.console.push(booted.consoleErrors);
+  page.on("pageerror", (e) => console.error(`[${sizeId}] page error: ${e.message}`));
+  page.on("console", (m) => m.type() === "error" && console.error(`[${sizeId}] console: ${m.text().slice(0, 300)}`));
+  page.on("dialog", (d) => void d.accept());
+  console.error(`[${sizeId}] booted`);
+  await page.evaluate(postAdapter);
+  return page;
+}
 
 /** Lets `n` frames pass with the render loop running (the live half's clock). */
 function settleLive(page, n) {
@@ -918,18 +1028,27 @@ function allReady(page) {
   );
 }
 
-/** The live frames recorded since the last take, named, and the pipelines made in them. */
+/**
+ * The live frames recorded since the last take, named, and the pipelines made
+ * in them, both counted from the take's first frame (`+0`): a frame's `f` and
+ * a pipeline's `at` are the same count, so "made on +4 and drawn on +4" is
+ * read off one number. A pass begun, or a pipeline made, OUTSIDE the engine's
+ * frame (after one frame's end and before the next's begin) is marked `~`
+ * and `between`, and counts with the frame that ended before it.
+ */
 function takeLive(page) {
   return page.evaluate(() => {
     const P = window.__postProbe;
     window.__postGpu.refresh();
     const frames = P.liveFrames.splice(0);
-    const from = frames[0]?.f ?? 0;
-    const pipes = P.pipelineList.filter((r) => r.frame >= from).map((r) => ({ frame: r.frame, call: r.call, stage: (r.desc?.fragment?.module && window.__postGpu.stage(r.desc.fragment.module)) ?? null })).filter((r) => r.stage);
     const first = frames[0]?.f ?? 0;
+    const pipes = P.pipelineList
+      .filter((r) => r.frame >= first)
+      .map((r) => ({ at: r.frame - first, frame: r.frame, between: !r.inFrame, call: r.call, stage: (r.desc?.fragment?.module && window.__postGpu.stage(r.desc.fragment.module)) ?? null }))
+      .filter((r) => r.stage);
     return {
       from: first,
-      frames: frames.map((f) => ({ f: f.f - first, state: f.state, passes: f.passes.map((p) => `${p.stages.join("+") || "-"}>${p.out.join(",")}${p.load.includes("clear") ? "/clear" : ""}`) })),
+      frames: frames.map((f) => ({ f: f.f - first, state: f.state, passes: f.passes.map((p) => `${p.between ? "~" : ""}${p.stages.join("+") || "-"}>${p.out.join(",")}${p.load.includes("clear") ? "/clear" : ""}`) })),
       pipelines: pipes,
     };
   });
@@ -1210,13 +1329,26 @@ function printReport(r) {
       }
     }
     for (const [k, l] of Object.entries(s.live ?? {})) {
-      console.log(`-- live ${k}: ${l.frames.length} frames from ${l.from}`);
+      console.log(`-- live ${k}: ${l.frames.length} frames from ${l.from}${l.said && Object.keys(l.said).length ? `, moved ${JSON.stringify(l.said)}` : ""}`);
       let last = null;
       for (const f of l.frames) {
         const line = `${f.state} ${f.passes.join(" | ")}`;
         if (line !== last) console.log(`   +${f.f}: ${line}`);
         last = line;
       }
+      console.log(`   pipelines made: ${l.pipelines.length ? l.pipelines.map((p) => `${p.stage} +${p.at}${p.between ? "~" : ""}`).join(", ") : "none"}`);
+      // A pass a stage owed and did not draw: a chain target written by a
+      // pass with no stage's draw in it (the scene's frame and the glow's mask
+      // are drawn by no stage, and the canvas's opening pass is drawless by
+      // design, so neither is counted).
+      const skipped = [];
+      for (const f of l.frames) {
+        for (const p of f.passes) {
+          const m = /^~?->([^/]+)/.exec(p);
+          if (m && m[1] !== "canvas" && m[1] !== "frame" && m[1] !== "glow.mask") skipped.push(`+${f.f} ${m[1]}`);
+        }
+      }
+      console.log(`   drawless chain passes: ${skipped.length ? skipped.join(", ") : "none"}`);
     }
   }
 }
@@ -1226,6 +1358,25 @@ function printReport(r) {
  * passes, by `Object.is` on numbers and equality on strings. The live half
  * rides the machine's timing and is printed, not compared. Returns true on a
  * difference.
+ *
+ * **Every differing path is named**, not the first one a scenario meets —
+ * a sub-step that moves a stage changes Babylon's own fields in `chain` by
+ * design, and a walk that stopped there would never reach a pass or a draw —
+ * up to `--max-diffs` a scenario (40 by default), with the count past it. A
+ * long value (a uniform buffer's hex, a hash, a module's text) is shown from
+ * its FIRST DIFFERING CHARACTER, with the byte that is for a hex string, so
+ * two values that agree for their first 120 characters still print apart.
+ * An array of two lengths is named once and its common prefix still walked.
+ *
+ * **`--ignore` names the differences a step EXPECTS**, so none is excused by
+ * reading past it: a comma list of PATH patterns (or `@file`, one a line,
+ * `#` comments), `*` any run within one segment (`passes[*]` any index) and
+ * `**` any run of segments, matched against the whole path from the size on
+ * (`desk.base.passes[7].draws[0].pipeline.call`) or any prefix of it, so
+ * `**.chain.glow.kernel` excuses the kernel on every scenario and
+ * `**.statics.modules.*.text` every module's text. What was excused is
+ * counted per size, and a pattern that excused nothing is said, because a
+ * difference a step named and did not make is a finding too.
  */
 function compareLogs(a, b) {
   let failed = false;
@@ -1233,30 +1384,57 @@ function compareLogs(a, b) {
     console.log(`against: ${m}`);
     failed = true;
   };
-  const walk = (x, y, path) => {
-    if (typeof x !== typeof y) return `${path} is ${JSON.stringify(x)?.slice(0, 120)} here and ${JSON.stringify(y)?.slice(0, 120)} there`;
+  const ignores = IGNORE.map((pattern) => ({
+    pattern,
+    re: new RegExp(`^${pattern.split(/(\*\*|\*)/).map((t) => (t === "**" ? ".*" : t === "*" ? "[^.]*" : t.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))).join("")}$`),
+    hits: 0,
+  }));
+  const count = (v) => (Array.isArray(v) ? v.reduce((s, e) => s + count(e), 0) : v && typeof v === "object" ? Object.values(v).reduce((s, e) => s + count(e), 0) : 1);
+  // A value as it differs: whole when short, else from its first differing
+  // character (and, for two hex strings, the byte that character is in).
+  const show = (x, y) => {
+    const sx = x === undefined ? "absent" : JSON.stringify(x);
+    const sy = y === undefined ? "absent" : JSON.stringify(y);
+    if (sx.length <= 100 && sy.length <= 100) return `${sx} here and ${sy} there`;
+    let i = 0;
+    while (i < sx.length && i < sy.length && sx[i] === sy[i]) i++;
+    const cut = (t) => `${i > 16 ? "…" : ""}${t.slice(Math.max(0, i - 16), i + 48)}${t.length > i + 48 ? "…" : ""}`;
+    const hex = typeof x === "string" && typeof y === "string" && /^[0-9a-f]+$/.test(x) && /^[0-9a-f]+$/.test(y);
+    return `${cut(sx)} here and ${cut(sy)} there (${sx.length} and ${sy.length} characters, first differing at ${i}${hex ? `, byte ${Math.floor((i - 1) / 2)}` : ""})`;
+  };
+  // Every difference under `path`, into `acc` (`diffs`, `equal`, `ignored`).
+  const walk = (x, y, path, acc) => {
+    const ig = ignores.find((r) => r.re.test(path));
+    if (ig) {
+      ig.hits++;
+      acc.ignored += Math.max(count(x), count(y));
+      return;
+    }
+    const kind = (v) => (v === null ? "null" : Array.isArray(v) ? "array" : typeof v);
+    if (kind(x) !== kind(y)) {
+      acc.diffs.push(`${path} is ${show(x, y)}`);
+      return;
+    }
     if (Array.isArray(x)) {
-      if (!Array.isArray(y) || x.length !== y.length) return `${path} has length ${x.length} here and ${y?.length} there`;
-      for (let i = 0; i < x.length; i++) {
-        const d = walk(x[i], y[i], `${path}[${i}]`);
-        if (d) return d;
-      }
-      return null;
+      if (x.length !== y.length) acc.diffs.push(`${path} has length ${x.length} here and ${y.length} there`);
+      for (let i = 0; i < Math.min(x.length, y.length); i++) walk(x[i], y[i], `${path}[${i}]`, acc);
+      return;
     }
     if (x && typeof x === "object") {
-      const keys = new Set([...Object.keys(x), ...Object.keys(y ?? {})]);
-      for (const k of keys) {
-        const d = walk(x[k], y?.[k], `${path}.${k}`);
-        if (d) return d;
-      }
-      return null;
+      for (const k of new Set([...Object.keys(x), ...Object.keys(y)])) walk(x[k], y[k], `${path}.${k}`, acc);
+      return;
     }
-    return Object.is(x, y) ? null : `${path} is ${JSON.stringify(x)?.slice(0, 120)} here and ${JSON.stringify(y)?.slice(0, 120)} there`;
+    if (Object.is(x, y)) acc.equal++;
+    else acc.diffs.push(`${path} is ${show(x, y)}`);
   };
-  const count = (v) => (Array.isArray(v) ? v.reduce((s, e) => s + count(e), 0) : v && typeof v === "object" ? Object.values(v).reduce((s, e) => s + count(e), 0) : 1);
+  const report = (acc, where) => {
+    for (const d of acc.diffs.slice(0, MAX_DIFFS)) say(d);
+    if (acc.diffs.length > MAX_DIFFS) say(`… and ${acc.diffs.length - MAX_DIFFS} more differences under ${where} (--max-diffs)`);
+  };
   if (a.seed !== b.seed || a.map !== b.map) say(`logged on ${a.map} under seed ${a.seed} here, ${b.map} and ${b.seed} there`);
-  const d0 = walk(a.base, b.base, "base");
-  if (d0) say(d0);
+  const top = { diffs: [], equal: 0, ignored: 0 };
+  walk(a.base, b.base, "base", top);
+  report(top, "base");
   for (const id of new Set([...Object.keys(a.sizes), ...Object.keys(b.sizes)])) {
     const x = a.sizes[id];
     const y = b.sizes[id];
@@ -1264,21 +1442,23 @@ function compareLogs(a, b) {
       say(`size ${id} is logged on one side only`);
       continue;
     }
-    const before = failed;
-    failed = false;
-    let compared = 0;
-    const statics = (s) => ({ ...s.statics, modules: Object.fromEntries(Object.entries(s.statics?.modules ?? {}).map(([k, m]) => [k, { ...m }])) });
-    const ds = walk(statics(x), statics(y), `${id}.statics`);
-    if (ds) say(ds);
-    else compared += count(statics(x));
-    for (const k of new Set([...Object.keys(x.scenarios), ...Object.keys(y.scenarios)])) {
-      const e = walk(x.scenarios[k], y.scenarios[k], `${id}.${k}`);
-      if (e) say(e);
-      else compared += count(x.scenarios[k]);
-    }
-    console.log(`against ${id}: ${failed ? "DIFFERS (above)" : `equal, ${compared} values over its statics and every scenario's passes`}`);
-    failed = failed || before;
+    let equal = 0;
+    let ignored = 0;
+    const differing = [];
+    const one = (u, v, where) => {
+      const acc = { diffs: [], equal: 0, ignored: 0 };
+      walk(u, v, where, acc);
+      report(acc, where);
+      equal += acc.equal;
+      ignored += acc.ignored;
+      if (acc.diffs.length) differing.push(`${where.slice(id.length + 1)} ${acc.diffs.length}`);
+    };
+    one(x.statics, y.statics, `${id}.statics`);
+    for (const k of new Set([...Object.keys(x.scenarios), ...Object.keys(y.scenarios)])) one(x.scenarios[k], y.scenarios[k], `${id}.${k}`);
+    const tail = `${equal} values equal over its statics and every scenario's passes${ignored ? `, ${ignored} excused by --ignore` : ""}`;
+    console.log(`against ${id}: ${differing.length ? `DIFFERS (above; differences per part: ${differing.join(", ")}), ` : "equal, "}${tail}`);
   }
+  for (const r of ignores) console.log(`against: --ignore ${r.pattern} ${r.hits ? `excused ${r.hits} path${r.hits === 1 ? "" : "s"}` : "matched NOTHING"}`);
   if (!failed) console.log("against: equal");
   return failed;
 }

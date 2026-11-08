@@ -187,7 +187,7 @@ export class BenchScript {
     for (const v of DIFF_VANTAGES[mapId] ?? []) rows.push(v);
     // One stop per POSITION. Eight headings make a row's own target moot but
     // for its pitch, and the bank stands several rows on one spot — the post
-    // chain's six on `lanterns`, the viewmodel and kit rows on the millpond — to
+    // chain's ten on `lanterns`, the viewmodel and kit rows on the millpond — to
     // vary what is IN the frame rather than where it is taken from.
     const seen = new Set<string>();
     for (const row of rows) {

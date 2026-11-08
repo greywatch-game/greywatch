@@ -309,10 +309,17 @@ node plans/webgpu-ref/post.mjs --compare=a.json --against=b.json
   device's limits, the canvas's configuration and every module's processed text. **Every
   naming goes through one adapter** (`window.__postGpu`: Babylon's arm today, a sub-step
   that moves a stage adds ours, picked first, under the same names), so a draw of ours is
-  compared with the Babylon draw it replaced. Beside the log, printed and not compared,
-  the LIVE frames from the page's first and after a rung change, a render-scale change, a
-  glow rung change and a resize. `--against` compares two logs by `Object.is` and exits
-  1 on a difference; `--compare` does it with no browser. About 25 minutes for both sizes.
+  compared with the Babylon draw it replaced (`harness.mjs`'s `postAdapter`, the CPU half
+  `freeze` holds, shares the name and gains ours by the same sub-step). Beside the log,
+  printed and not compared, the LIVE frames from the page's first, and — on a second,
+  fresh page, where nothing has been drawn at those settings yet and a compile can still
+  show — after a render-scale change, a glow rung change, a shafts rung change and a
+  resize. `--against` compares two logs by `Object.is`, names EVERY differing path a
+  scenario has (`--max-diffs`, 40 by default), a long value from its first differing
+  character, and excuses only the path patterns `--ignore` names (`**` any segments, `*`
+  any run within one; `@file` for a list), saying which pattern matched nothing; it exits
+  1 on a difference left; `--compare` does it with no browser. About 25 minutes for both
+  sizes.
 
 `cold-stagger.mjs` is **gone and is not coming back**. It existed to bake
 Coldharbour's forty cube probes four a frame because doing all forty at once

@@ -3569,14 +3569,31 @@ marked "X5.2a"):
   src), the device's preferred format. The uniform blocks: the ink 112 bytes, FXAA
   16, the shafts 320, the blur 112, the grain 496, a glow blur and the box filter 16,
   each beside the 8 of `Internals`. **The pipelines** (Babylon's
-  `createRenderPipeline`, synchronous): all six of the chain's are made on the
-  page's FOURTH frame (the desktop's first `loading` frame, the phone's last menu
-  frame) and drawn on it — frames 1 to 3 draw nothing of the chain at all, only
-  canvas passes; a shafts rung change in play makes its pipeline on the frame of
-  the change and draws it on that frame; **no frame was seen with a pass skipped
-  for a compile**. **A render-scale change and a resize each cost ONE frame with
-  nothing in it but the canvas's opening pass** — no scene, no mask, no glow, no
-  chain — and the next frame is whole (both pages, the resize on the desktop's).
+  `createRenderPipeline`, synchronous; **corrected by X5.2a's review**, which read
+  the four live logs again and ran the in-play changes on a fresh page, eight boots
+  in all): the chain first draws on the page's THIRD to FIFTH frame (in the menu or
+  the first `loading` frame) — the frames before it draw only canvas passes — and
+  each stage's pipeline is stamped on that frame or on the one before it (a frame
+  with no pass of the chain recorded; the probe does not say what made it there).
+  **A pass IS skipped for a compile, and not rarely**: on the phone's page FXAA's
+  pipeline comes one or two frames after the rest in all four phone boots, and in
+  two of them the chain's first frames ran with FXAA's pass drawing NOTHING
+  (`->fxaa.out/clear`: its target cleared and handed on as the shafts' input),
+  for one frame and for two; and one desktop shafts rung change in play
+  (`postA2`) drew nothing in the shafts' pass on the frame of the change, its
+  pipeline made on the next. On a fresh page (nothing drawn at those settings
+  yet, so the glow blur's kernel text new each time) a render-scale change to
+  0.75 makes the glow blur's new pipeline on the first frame the chain draws after
+  it (the one after the canvas-only frame below) and draws it there, a glow rung
+  change to `low` makes the blur's and the box filter's on the first frame after
+  it and draws them there, and a shafts rung change
+  (`low`, then `high`) makes each rung's on its frame and draws it there —
+  nothing skipped on either page, one run; the scenarios' page could not show
+  these, having drawn every kernel and rung first. **A render-scale change and a
+  resize each cost ONE frame with nothing in it but the canvas's opening pass** —
+  no scene, no mask, no glow, no chain — and the next frame is whole (both pages,
+  every log, the resize on the desktop's; the phone's fresh page, booting at its
+  device default of 0.5, showed the same frame going to 1).
 - **`FrameDepth`** captures `engine._currentRenderTarget._depthStencilTexture`
   at `onAfterDrawPhase` (an internal, the seam header's "not here" list) and
   wraps it in a `ThinTexture`; the ink, the shafts, the blur and the grain read
@@ -3675,10 +3692,12 @@ marked "X5.2a"):
 - **Per state**: the chain runs every frame in every state — the menu under the
   photograph, the kit screen, the editor. `post.update`, `syncVolumetrics` and
   `motionBlur.update` run in `tick`'s `post` span; the recording sits inside
-  `render`, unnamed. **X5.2a**: not from the page's first frame — the first three
-  draw only canvas passes, and the chain (with the scene and the mask) draws from
-  the fourth, in the menu on the phone's page — and on the frame after a
-  render-scale change or a resize it draws nothing at all (above).
+  `render`, unnamed. **X5.2a** (corrected by its review): not from the page's
+  first frame — the first two to four draw only canvas passes, and the chain (with
+  the scene and the mask) draws from the third to the fifth, in the menu or the
+  first `loading` frame, on the phone's page sometimes with FXAA's pass drawing
+  nothing for a frame or two (above) — and on the frame after a render-scale
+  change or a resize it draws nothing at all (above).
   `scene.imageProcessingConfiguration` is off throughout (`isEnabled` and
   `applyByPostProcess` false, exposure and contrast 1, tone mapping, vignette, colour
   curves, grading and dithering off); `scene.autoClear` is false and
@@ -3738,8 +3757,9 @@ owes" below.
   processed text and tokens. **One adapter names everything** (`window.__postGpu`:
   `refresh`, `stage(module)`, `target(texture)`, `chain()`; Babylon's arm today, ours
   added per stage by the sub-step that moves it, under the same names — targets named by
-  what WRITES them, `frame`, `<stage>.out`, `canvas`, the glow's six). The LIVE frames
-  (boot, a shafts rung change, a render-scale change, a glow rung change, a resize) are
+  what WRITES them, `frame`, `<stage>.out`, `canvas`, the glow's six; since its review the
+  shafts' inputs too). The LIVE frames (boot, a shafts rung change, a render-scale change,
+  a glow rung change, a resize; since its review the changes on a second, fresh page) are
   printed and not compared. **The harness**: `freeze`, `thaw` and `placeVantage` reach the
   grade, the shafts and the blur through one adapter (`postAdapter`, `window.__refPost`,
   Babylon's arm), each stashed with the object it came off; the stale `g.post.time = 0` is
@@ -3752,8 +3772,9 @@ owes" below.
   `--rows` at the end of Hollowmere's list at `lanterns`' eye: `post-scale50`,
   `post-scale75`, `post-damage` (the vantage table's new `damage` field), `post-alloff`.
   **Measured**: every correction above marked X5.2a. **Verify**: the probe equal to
-  itself across two processes (`--against`: 34,083 values a page, 68,166 in all, every
-  scenario steady), and FAILING on copies of its log with a sampler's filter, a uniform
+  itself across two processes (`--against`: 34,083 values a page counted in the process,
+  absent fields included — 31,701 off the written log, which both modes count since its
+  review — every scenario steady), and FAILING on copies of its log with a sampler's filter, a uniform
   byte, a load op, the canvas's hash, a module's token count, a vertex stride and a hole
   in the camera's list each changed by hand; the four new rows banked in one process and
   byte-equal to it in two more (`--check`: 0 pixels; `exact.mjs` over the two `--keep`
@@ -3765,6 +3786,34 @@ owes" below.
   pass. Not run, the step moving no draw: `pipelines.mjs`, `surfaces.mjs`, `census`, the
   editor's frames, the live toggles by hand and `?profile&gpu` (the probe's live half
   covers the toggles and the resize). The note is in `plans/done/babylon_exit_landed.md`.
+
+  **Its review** (2026-11-08; instruments and records only, no change to the game; under
+  `src/` one comment) found two real points and five minor ones, each checked against the
+  code and the logs first; a third real point (F1: `harness.mjs`'s `thaw` leaving a rebuilt
+  `Volumetrics` stubbed) is **held for the owner's decision**, fixing it moving bank rows, and
+  the harness's freeze and thaw are untouched. **Real**: the record said no pass was skipped
+  for a compile, and the probe's own logs showed two (the phone's FXAA at boot, a desktop
+  shafts rung change), while the live render-scale and glow changes ran where every kernel
+  was already cached — the live half's changes now run on a second, fresh page, the record
+  above is corrected from the rerun (nothing skipped in play there; FXAA's pass empty for two
+  boot frames on the phone's first page), and the live print counts pipelines from the
+  frames' own `+0` and lists the drawless chain passes; and `--against` stopped at a
+  scenario's first difference, with `chain` (Babylon's fields, which X5.2b and X5.2c1 move by
+  design) walked first, so it could never show the draw-for-draw comparison the adapter
+  exists for, and cut values at 120 characters — it now names every differing path
+  (`--max-diffs`), shows a long value from its first differing character (the byte, for
+  hex), and excuses only what `--ignore` names by path pattern, saying which pattern matched
+  nothing. **Minor**: X5.2c1's correction says the depth is the engine's, not the frame's;
+  the adapter names the shafts' shadow maps and the cloud field (`shadow.world`,
+  `shadow.bodies`, `cloud.field`), so X5.2c2's swap is compared by name; the two
+  `postAdapter`s point to each other; the header's time agrees with the README;
+  `BenchScript.ts`'s comment counts ten rows. **Measured**: `--compare` of X5.2a's two logs
+  equal (31,701 values a page; its 34,083 counted absent fields); the seven hand-edited
+  copies fail, and one copy with all seven plus a kernel and a pipeline's `call` in one
+  scenario names all nine, the two excused under `--ignore`; the rerun `--against` X5.2a's
+  log differs in exactly the 84 paths the new names move, every scenario steady; the bank on
+  Hollowmere 20 of 20 rows byte-equal to X5.2a's AFTER by `exact.mjs`; typecheck and build
+  pass. The note is in `plans/done/babylon_exit_landed.md`.
 - **X5.2b — the glow's blur and downsample are our draws**, in `GlowPass`'s own
   passes, with no change to the pass structure: the kernel text generated as
   Babylon generates it (the same device limit), Babylon's vertex stage and quad
@@ -3776,9 +3825,10 @@ owes" below.
   prefix output **only while a stage of ours is active**, so with the grain off
   Babylon's prefix writes the canvas exactly as today and no interim copy pass
   exists. The canvas's pass targets include the main pass's `depth32float`
-  (inferred; X5.2a measures it). **X5.2a measured it, and it is not the main
-  pass's**: the canvas's pass carries the ENGINE's own depth (`canvas.depth`,
-  `depth32float`, the render size, loaded and stored), not the frame's, and
+  (inferred; X5.2a measures it). **X5.2a measured it, and the depth is the
+  ENGINE's, not the frame's**: the canvas's pass — Babylon's main pass — carries
+  the engine's own depth (`canvas.depth`, `depth32float`, the render size, loaded
+  and stored), not the one the scene draws into (`frame.depth`), and
   Babylon's pipeline there WRITES it (compare `always`, write on) — so a stage of
   ours drawn into that pass owes its pipeline that depth format, and whether it
   writes that depth is a byte the probe compares (nothing reads it after the
@@ -3834,7 +3884,8 @@ loss**: Babylon's post chain rebuilds after a loss today and ours will not
   `--check`'s pass line), the known flakes alone excused and the Sarab
   procedure in `exact.mjs`'s header followed; from X5.2c2 on, the same under
   `--query=volumetrics=low` and `--query=volumetrics=high`; X5.2a's rows; the
-  X5.2a probe `--against` its parent's log, every expected difference named;
+  X5.2a probe `--against` its parent's log, every expected difference named
+  (`--ignore`, by path pattern, never read past);
   its pipelines declared on `Game.roundPipelines`; `pipelines.mjs hollowmere`
   and `pipelines.mjs coldharbour --round`; `surfaces.mjs` (Babylon's post draws
   falling away as passes move); `census --against`; the editor's frames at

@@ -1167,6 +1167,14 @@ export function placeVantage(page, vantage) {
  * each part an object whose `update` the freeze replaces and the thaw puts
  * back on the SAME object — so the freeze reads the same whoever draws.
  * Installed by the first call that needs it; idempotent.
+ *
+ * **Not `post.mjs`'s `postAdapter`**, which shares the name and the shape:
+ * that one (`window.__postGpu`, on a probe's page only) names the chain's
+ * GPU modules and textures for `post.mjs`'s log; this one is the CPU half the
+ * bank holds. Each has Babylon's arm alone today, and a later sub-step adds
+ * OURS to BOTH, picked first, under the same names: that one for each stage
+ * it moves (X5.2b on), this one when the grade, the shafts or the blur move
+ * (X5.2c1 on, above).
  */
 function postAdapter() {
   window.__refPost ??= () => {
