@@ -9863,7 +9863,7 @@ seven minor points, each verified against the tree first.
   row's freeze calls; Hollowmere's 16 rows ran it); the throw itself provoked; corecheck,
   parity, `gate`, `shaders` (no game code moved).
 
-### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07; its decisions the owner's, 2026-11-07 and 2026-11-08, rows in "Decisions that are yours") — X5.2a **LANDED** (e5d9390, its review 55ef32c, its held finding F1 fixed 738f5e3), X5.2b **LANDED** (f697f0e)
+### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07; its decisions the owner's, 2026-11-07 and 2026-11-08, rows in "Decisions that are yours") — X5.2a **LANDED** (e5d9390, its review 55ef32c, its held finding F1 fixed 738f5e3), X5.2b **LANDED** (f697f0e, its review e5ab075)
 
 The plan's `BABYLON_EXIT.md` holds X5.2's brief, its ONE RULE, shape (A), "What it is
 today" (corrected in place by X5.2a, each correction marked) and the five sub-steps.
@@ -10167,7 +10167,7 @@ copy of the main tree's `ref/`).
   not rebuild after one, as for every draw of ours, `FINDINGS.md` 64), a server's match in a
   browser.
 
-**Its review** (2026-11-08; no change to the picture: two module-scope constants made equal
+**Its review** (e5ab075; 2026-11-08; no change to the picture: two module-scope constants made equal
 literals, the rest documents, comments, contract headers and the probe's `--ignore`). An
 independent review found one real point, one the owner decided and two minor ones, each
 verified against the tree first.
