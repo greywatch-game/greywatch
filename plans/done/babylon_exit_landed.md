@@ -9863,7 +9863,7 @@ seven minor points, each verified against the tree first.
   row's freeze calls; Hollowmere's 16 rows ran it); the throw itself provoked; corecheck,
   parity, `gate`, `shaders` (no game code moved).
 
-### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07; its decisions the owner's, 2026-11-07 and 2026-11-08, rows in "Decisions that are yours") — X5.2a **LANDED** (e5d9390, its review 55ef32c, its held finding F1 fixed 738f5e3), X5.2b **LANDED** (f697f0e, its review e5ab075), X5.2c1 **LANDED** (4747fe7, its review bfa6a6b), X5.2c2 the shafts and the blur **LANDED** (HASH1); its FXAA pass not started
+### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07; its decisions the owner's, 2026-11-07 and 2026-11-08, rows in "Decisions that are yours") — X5.2a **LANDED** (e5d9390, its review 55ef32c, its held finding F1 fixed 738f5e3), X5.2b **LANDED** (f697f0e, its review e5ab075), X5.2c1 **LANDED** (4747fe7, its review bfa6a6b), X5.2c2 the shafts and the blur **LANDED** (14dd887); its FXAA pass not started
 
 The plan's `BABYLON_EXIT.md` holds X5.2's brief, its ONE RULE, shape (A), "What it is
 today" (corrected in place by X5.2a, each correction marked) and the five sub-steps.
@@ -10396,7 +10396,7 @@ its pass on every frame the grain was on and by the fallback on none, no page or
 error; the detached (ready) blur named as the tail threw on its first frame. Typecheck and
 build pass; the throw's text is absent from `dist/`.
 
-**X5.2c2's first commit landed — the shafts and the blur** (HASH1; 2026-11-08; no change
+**X5.2c2's first commit landed — the shafts and the blur** (14dd887; 2026-11-08; no change
 to the picture; no report version, the draws queued inside `render` where Babylon's were,
 named by nothing; FXAA, the third pass, is a commit of its own). **What moved**: the light
 shafts and the motion blur are OUR draws, stages of the post chain's host ahead of the
