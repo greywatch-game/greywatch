@@ -44,7 +44,14 @@
  * layer (`UtilityLayerRenderer`, on `onAfterRenderCameraObservable`), which
  * draws over the finished canvas as it did, where with the field set it
  * would bind the frame the chain has already read and draw into nothing
- * shown.
+ * shown — which rests on a RULE: nothing renders the main camera after
+ * `onAfterCameraRender` but that gizmo layer (no later
+ * `onAfterRenderObservable` observer renders it, and `Game` calls
+ * `scene.render()` once a tick); X5.3 and X5.4 retire it. And the frame's
+ * clear is Babylon's only under `scene.autoClear` (its colour AND its depth:
+ * the camera's output target is cleared only then, where
+ * `PostProcess.activate` cleared the ink's input's depth whatever the
+ * setting), so a DEV build THROWS on a frame that starts with it false.
  * Never: reaches a Babylon internal (public API only: no seam item, rule 4);
  * draws — our renderer does, queued from inside the pass this opened
  * (`Renderer.postStageOpened`); holds a slot or an index in the camera's list;
@@ -124,6 +131,15 @@ export class PostPasses implements PostPassOwner {
 
   private prepareFrame(): void {
     if (this.scene.activeCamera !== this.camera) return;
+    // Babylon clears a camera's output target only under `scene.autoClear`
+    // (`Scene._clearFrameBuffer`), colour and depth together, where
+    // `PostProcess.activate` cleared the ink's input whatever it said: with
+    // it false the scene would draw over last frame's depth, silently.
+    if (import.meta.env.DEV && !this.scene.autoClear) {
+      throw new Error(
+        "post: scene.autoClear is false — the scene clears the frame (its colour and depth) only under it, so this frame would draw over the last one's depth",
+      );
+    }
     this.size();
     this.target(this.frameTarget, "frame", true);
     const first = this.chain?.firstActive();

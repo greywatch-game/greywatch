@@ -3561,7 +3561,10 @@ end of one frame's render to the end of the next frame's camera render — taken
 off once the chain is recorded, because an editor build's gizmo layer
 (`UtilityLayerRenderer`) renders with the same camera after it and would
 otherwise draw into the frame the chain has already read, and put back as the
-scene's render ends (`onAfterRenderObservable`) —
+scene's render ends (`onAfterRenderObservable`; **the rule it rests on: never
+render the main camera after `onAfterCameraRender` but for the gizmo layer —
+no later `onAfterRenderObservable` observer rendering it, one `scene.render()`
+a tick; X5.3 and X5.4 retire it**) —
 resized to the render size before the scene first binds it
 (`onBeforeRenderObservable`) and named for the stage that reads it
 (`PostProcessRTT-celInk`, as Babylon named the ink's input). Babylon reads that
@@ -6005,10 +6008,13 @@ all in the counter this finding is named after. Not chased.
   The case that found it was the retired `CEL_INK` variant: unlit, binding no
   lights and at first no shadow either, so Hollowmere's two swaying merge groups
   took their ink twins, `Failed to read the 'resource' property from
-  'GPUBindGroupEntry'` and a black frame with them. **`CelInk` is now the pass
-  most exposed to this rule** — it declares a `texture_depth_2d` and binds it
-  from `onApply`, and a frame where that bind is missed is a lost draw and no
-  error.
+  'GPUBindGroupEntry'` and a black frame with them. **`CelInk` WAS the pass
+  most exposed to this rule** while it was Babylon's — it declared a
+  `texture_depth_2d` and bound it from `onApply`, and a frame where that bind
+  was missed was a lost draw and no error. Since X5.2d it is a stage of our
+  post chain, whose host builds the bind group from the stage's declared
+  layout and draws NOTHING in a frame where a binding it declares (the
+  frame's depth among them) does not exist yet (`PostChain.draw`).
   **UNIFORMS are the opposite and need no equivalent care**: an unwritten
   uniform in the leftover UBO reads as zeros, which is why the ink still binds
   no point lights.

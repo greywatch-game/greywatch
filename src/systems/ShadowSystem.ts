@@ -275,8 +275,8 @@ export class ShadowSystem {
    *
    * `mats` gets this pushed when it changes, and the texture object is stable
    * while its contents re-render — so a second reader that is not in the
-   * factory's lists (the volumetric pass, which is a `PostProcess` and not a
-   * `ShaderMaterial`) has to come and ask. It is the same texture, not a copy.
+   * factory's lists (the volumetric pass, a stage of our post chain and no
+   * material) has to come and ask. It is the same texture, not a copy.
    */
   get depthMap(): BaseTexture {
     return this.mapTexture(this.maps.far);

@@ -9863,7 +9863,7 @@ seven minor points, each verified against the tree first.
   row's freeze calls; Hollowmere's 16 rows ran it); the throw itself provoked; corecheck,
   parity, `gate`, `shaders` (no game code moved).
 
-### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07; its decisions the owner's, 2026-11-07 and 2026-11-08, rows in "Decisions that are yours") — X5.2a **LANDED** (e5d9390, its review 55ef32c, its held finding F1 fixed 738f5e3), X5.2b **LANDED** (f697f0e, its review e5ab075), X5.2c1 **LANDED** (4747fe7, its review bfa6a6b), X5.2c2 the shafts and the blur **LANDED** (14dd887, its review 7c5030f), its FXAA **LANDED** (cb17a73, its picture change a459e7c, their review 117c5fd), X5.2d **LANDED** (4f83650, a picture change, row "X5.2, the boot canvas") — **all LANDED**
+### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07; its decisions the owner's, 2026-11-07 and 2026-11-08, rows in "Decisions that are yours") — X5.2a **LANDED** (e5d9390, its review 55ef32c, its held finding F1 fixed 738f5e3), X5.2b **LANDED** (f697f0e, its review e5ab075), X5.2c1 **LANDED** (4747fe7, its review bfa6a6b), X5.2c2 the shafts and the blur **LANDED** (14dd887, its review 7c5030f), its FXAA **LANDED** (cb17a73, its picture change a459e7c, their review 117c5fd), X5.2d **LANDED** (4f83650, a picture change, row "X5.2, the boot canvas"; its review HASHREV) — **all LANDED**
 
 The plan's `BABYLON_EXIT.md` holds X5.2's brief, its ONE RULE, shape (A), "What it is
 today" (corrected in place by X5.2a, each correction marked) and the five sub-steps.
@@ -10702,3 +10702,22 @@ and a copy of the main tree's `ref/`):
 **Not run**: the phone (its page is the probe's `phone` size only), a lost device, a server's
 match in a browser. **X5.2 is whole**: no Babylon `PostProcess` in a round, the bank with every
 post setting on and off and X0.3 measured above.
+
+**Its review** (HASHREV; 2026-11-08; no change to the picture: a DEV-only check, the rest
+comments and documents) found nothing real and six minor points, each checked against the tree
+first. **Stale text**: `PaperGrain`'s header said Babylon's prefix writes the canvas with no stage
+of ours active (the ink is never off: the last active stage writes it); `docs/rendering.md` said
+`CelInk` binds its depth from `onApply` (now in the past tense, the host building the group from
+the declared layout and drawing nothing while a binding is missing); `ShadowSystem`'s header
+called the shafts a `PostProcess`; `docs/profiling.md`'s render tree now says the post chain is
+ours whole. **Dead code**: `PostChain.active()`, whose one reader was `PostPasses.openWindow`, is
+gone. **The clear**: Babylon clears a camera's output target (colour and depth) only under
+`scene.autoClear`, where `PostProcess.activate` cleared the ink's input's depth whatever it said,
+so `PostPasses` THROWS in a DEV build on a frame that starts with it false (absent from `dist/`).
+**Recorded, not decided** (the reviewer's architectural note): `outputRenderTarget` is on the
+camera from the scene's render end to the chain's record and off between, which rests on nothing
+rendering the main camera after `onAfterCameraRender` but the gizmo layer, no later
+`onAfterRenderObservable` observer rendering it, and one `scene.render()` a tick — stated as a rule
+beside the gizmo note in `docs/rendering.md` and in `PostPasses`' header; X5.3 and X5.4 retire it.
+**Measured**: `post.mjs --against` b1203cc's log, both pages: equal, 30,073 values a page, nothing
+excused. Typecheck, build, corecheck and parity pass.

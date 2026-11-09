@@ -17,8 +17,8 @@
  * anything here — it is the last entry of `PostChain`'s list, and the host
  * hands the last ACTIVE stage the canvas; nothing here knows it is last or
  * that it writes the canvas. `setEnabled` is its `active()`, so the grade off
- * is a stage the host skips (and with no stage of ours active, Babylon's
- * prefix writes the canvas itself: `PostPasses`). It SAMPLES the frame's
+ * is a stage the host skips, and the last stage still active writes the
+ * canvas (the ink, the chain's first, is never off: X5.2d). It SAMPLES the frame's
  * depth (`FrameDepth`, shared with the ink, the blur and the shafts) to put
  * the paper on the surfaces rather than on the glass, so like them it has to
  * stay downstream of the pass the scene draws into. Its block is filled when

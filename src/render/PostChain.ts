@@ -253,12 +253,6 @@ export class PostChain {
     this.ready = Promise.all(asks).then((oks) => oks.every(Boolean));
   }
 
-  /** Whether any stage draws this frame (the ink always does). */
-  active(): boolean {
-    for (const s of this.states) if (s.stage.active()) return true;
-    return false;
-  }
-
   /**
    * Whether every active stage can draw this frame where `record` would draw
    * it — the harness's readiness arm, and what a frame drawn before it reads
