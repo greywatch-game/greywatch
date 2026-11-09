@@ -4592,7 +4592,7 @@ loss**: Babylon's post chain rebuilds after a loss today and ours will not
   header; `FINDINGS.md` 5, 16 and 52; the gate note after Phase 4 (above) and the
   "Contracts this plan rewrites" rows for the glow and `shaderLanguage`.
 
-### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it; the split was proposed by a planning agent's read at b3cea5d) — X5.3a **LANDED** (f51b043, its review 85a2273), X5.3b **LANDED** (111829f, its review 64de1d1), X5.3c **LANDED** (1b1f829, its review a22098a), X5.3d **LANDED** (8be80ec, its review HASHREV)
+### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it; the split was proposed by a planning agent's read at b3cea5d) — X5.3a **LANDED** (f51b043, its review 85a2273), X5.3b **LANDED** (111829f, its review 64de1d1), X5.3c **LANDED** (1b1f829, its review a22098a), X5.3d **LANDED** (8be80ec, its review 85ab629)
 
 **This replaces the entry that ported the editor.** That entry put `F2`'s editor on our
 renderer: its unmerged build drawn per item, picking against `RayWorld`, our own move and
@@ -5146,7 +5146,7 @@ reviews: the first is the feature, the second is the renderer. The colliders com
   rungs, render scale, a resize, a teardown and the viewer; `?profile&gpu` within 1.2%; typecheck,
   build, `gate`, `shaders`, corecheck, parity, `maps:check`. **Not run**: the phone.
 
-  **Its review** (HASHREV; 2026-11-09; no change to the game: comments, documents, a
+  **Its review** (85ab629; 2026-11-09; no change to the game: comments, documents, a
   skill's script and two instruments; the full note is in `plans/done/babylon_exit_landed.md`)
   found one bug, outside the game: the model-detail skill's `shots.mjs` still called
   `ShadowSystem.invalidate()`, which this step deleted, and threw on its first view; both calls
