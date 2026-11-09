@@ -4,10 +4,10 @@
  * its speed step. Owns no camera of its own.
  *
  * It writes CameraSystem's FreeCamera rather than creating a second one on
- * purpose: the ink and the post chain's pass owner (`PostPasses`, which opens
- * FXAA's, the shafts', the blur's and the grade's passes) are bound to that
- * camera INSTANCE, so a second camera would render without them until both
- * were rebound. Nothing needs restoring on the way out either —
+ * purpose: the post chain's pass owner (`PostPasses`, whose frame is that
+ * camera's `outputRenderTarget` and which opens every stage's pass, the ink's
+ * among them since `BABYLON_EXIT.md` X5.2d) is bound to that camera INSTANCE,
+ * so a second camera would render without the chain until it was rebound. Nothing needs restoring on the way out either —
  * CameraSystem.update() writes position, target and fov absolutely every
  * frame, so the first gameplay frame overwrites everything done here.
  *

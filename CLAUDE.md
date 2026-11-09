@@ -286,9 +286,8 @@ pool of ours and the irradiance volume's compute, asked once at construction)
 and the map's, which its install asks — and our cache is SEALED once the card
 is down (a compile in play is a DEV warning, but for the glow blur's new widths
 on a pixel-ratio change, `GlowBlur.declare`). **A new draw of ours joins that list.** The vantages are for
-BABYLON's meshes — in a round nothing of Babylon's but the post chain's
-prefix, the ink alone (the grade is ours since X5.2c1, FXAA, the shafts at every
-rung and the blur since X5.2c2, "the post chain" on the list) — and
+BABYLON's meshes — in a round nothing of Babylon's draws at all (the post
+chain is ours whole since X5.2d, "the post chain" on the list) — and
 **no pool is posed**: every one is ours since X4.6e (the sparks, the dust
 discs, the scorch and the blob the last), so on that list, and nothing is shown
 for a pipeline's sake.
@@ -523,9 +522,10 @@ fallback, and the touch controls — with [`docs/pwa.md`](docs/pwa.md) for them
 as a phone.
 ### The scene has (almost) no Babylon lights
 
-**Every shader in the tree is hand-written WGSL** (`shaderLanguage` is
-load-bearing; the default is GLSL), and **a sampler a material DECLARES must be
-BOUND, used or not**, or the draw is silently lost. **A shared body declares
+**Every shader in the tree is hand-written WGSL** (on a Babylon material
+`shaderLanguage` is load-bearing; the default is GLSL), and **a sampler a
+Babylon material DECLARES must be BOUND, used or not** (ours bind exactly what
+their layout declares), or the draw is silently lost. **A shared body declares
 NOTHING** (`wgsl/chunks.ts`): `src/render/` includes it, so both sides declare.
 
 **Every cel material is FROZEN, and `CelMaterialFactory.remember` is the one
@@ -640,14 +640,18 @@ are a capture zone's stones, paint, pole and cloth, the GRASS and the WATER** (`
 **So is every PARTICLE FIELD, the ash and the rotor wash** (`ParticleDraw`:
 Babylon's `GPUParticleSystem` PORTED, its shaders as compiled, its seeds, its
 gradients and its clock), in creation order, behind the turf and ahead of the
-moon, and **Babylon's scene holds no particle system**. **So are the post
-chain's TAIL STAGES — FXAA, the shafts, a stage a rung, the blur and the grade**
-(`render/PostChain.ts`, X5.2c1 and X5.2c2: a host of DECLARED stages, the last
-active one given the canvas, any other a pool target of its own), drawn after
-Babylon's prefix of the chain — the ink alone since X5.2c2 — whose passes
-`shaders/PostPasses.ts` opens with public API — and
-**`camera.outputRenderTarget` is set only across the post phase** while a stage
-of ours is active, because Babylon also reads it as the frame starts.
+moon, and **Babylon's scene holds no particle system**. **So is the WHOLE
+post chain — the ink, FXAA, the shafts, a stage a rung, the blur and the
+grade** (`render/PostChain.ts`, X5.2c1 to X5.2d: a host of DECLARED stages,
+the first reading the frame, the last active one given the canvas, any other
+a pool target of its own), whose passes `shaders/PostPasses.ts` opens with
+public API, and **no Babylon `PostProcess` stands on the camera**. **The scene
+draws STRAIGHT INTO the frame** — `PostPasses`' render target, the camera's
+`outputRenderTarget` through the camera's render (off after it, for the
+editor's gizmo layer), its formats `FRAME_TARGETS`' — **and clears it
+itself** (Babylon's clear of a camera's output target, under `scene.autoClear`),
+so **the frame's opening pass is the frame's, not the canvas's**, and
+**`FrameDepth` reads its depth by the public getter**.
 
 **The GLOW draws the EMISSIVE meshes and nothing else, its occlusion being the
 FRAME's own depth buffer** (`src/shaders/GlowPass.ts`). **Its blur and box

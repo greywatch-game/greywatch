@@ -80,10 +80,14 @@ way out of a round: `enterMenu` tears the map down and `MenuBackdrop.show` raise
 `#menu-shot` from 0 over its 0.4 s transition, about 300 to 400 ms on Coldharbour, over the
 last map's colour. From the round-over card there is no fade, its picture being up already.
 
-**Those windows show `scene.clearColor` through the post chain** — and since
-X5.2c2's picture change (`scene.autoClear` true) the canvas itself is cleared to it as
-every frame opens, so the page's first two or three frames, before the chain first draws,
-show it too, under the boot screen. **At the boot
+**Those windows show `scene.clearColor` through the post chain** — the scene
+clears the FRAME to it as every frame opens (`scene.autoClear` true, X5.2c2's picture
+change; the frame the scene draws into, `PostPasses`', since X5.2d). The canvas is
+cleared by no pass since X5.2d, so the page's first frames, before the chain first
+draws, hold what the swap chain hands over (transparent zeros), under the boot screen,
+where X5.2c2's picture change had them show the clear colour — X5.2d's own picture
+change, the owner's decision (`BABYLON_EXIT.md` row "X5.2, the boot canvas": accepted as the
+plan designs it, no stand-in). **At the boot
 that is the boot map's `skyColor`** (`applyClearColor`, from `Game`'s
 constructor, the one write, which `applyEnvironment` goes through too):
 `Game.mapDef` is `readMap()`, `applySky` paints that map and `showMenu`
@@ -181,14 +185,15 @@ them, but a group of ours still compiling draws NOTHING and Babylon no longer
 draws the blocks in the main pass — so the vantages are drawn with ours
 built, and nothing of ours is POSED at one (`BABYLON_EXIT.md` X4.4e: the
 `warm(on)` poses of the pools that are ours became that list). **The
-vantages are for Babylon's own meshes** — in a round nothing of Babylon's but
-the post chain (every particle field is ours since `BABYLON_EXIT.md` X4.7d, the
+vantages are for Babylon's own meshes** — in a round nothing of Babylon's at
+all since X5.2d, the post chain ours whole (every particle field is ours since `BABYLON_EXIT.md` X4.7d, the
 ash since X4.7c, their pipelines on the list; measured at X4.7d on Cinderhaven,
 Sarab and Hollowmere, Babylon compiles nothing at a vantage: the post chain's
 six on the frames before the card — five since X5.2b made the glow's blur ours
 and declared it, four since X5.2c1 made the grade ours ("the post chain" on the
 list), one — the ink's — since X5.2c2 made FXAA, the shafts at every rung and the
-blur ours on the same entry — and `GiVolume`'s three computes under it
+blur ours on the same entry, NONE since X5.2d made the ink ours there too, so no
+Babylon `PostProcess` is left — and `GiVolume`'s three computes under it
 until X5.1b made them ours and declared them; retiring the vantages is X5.4's): the glazing, the three blended pools and the
 blob shadow were Babylon's until X4.6e, posed here, and nothing is posed now. **When the wait ends, our cache is SEALED** (`PipelineCache.seal`)
 until the map is torn down: a pipeline of ours compiled in play is a DEV

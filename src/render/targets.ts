@@ -21,8 +21,10 @@
  * pass's by a format, a count or a sample count is refused — and one refused
  * pipeline poisons the bundle and blacks out the frame (`docs/rendering.md`:
  * "The trap it found" for the cascade, "The MRT route, spiked" for bundles
- * keyed on attachment state). What the frame draws into is the post chain's first
- * target, `CelInk`'s: one `rgba8unorm` colour attachment (a post-process's
+ * keyed on attachment state). What the frame draws into is the FRAME,
+ * `PostPasses`' render target (the camera's `outputRenderTarget` since
+ * `BABYLON_EXIT.md` X5.2d), made as the post chain's first target, `CelInk`'s
+ * input, was: one `rgba8unorm` colour attachment (a post-process's
  * default texture), one sample (`main.ts` builds the engine with
  * `antialias: false`), and `depth32float` (`stencil: false`;
  * `plans/webgpu-ref/depth.mjs`). And it is a TEXTURE, which Babylon renders

@@ -93,7 +93,6 @@ import {
   Color4,
   Matrix,
   type Plane,
-  type PostProcess,
   Scene,
   type SubMesh,
   Vector3,
@@ -1360,10 +1359,11 @@ export class Game {
    */
   readonly glowBlur: GlowBlur;
   /**
-   * The post chain's stages that are OUR draws (`BABYLON_EXIT.md` X5.2c1:
-   * the grade alone so far), the host that routes them (`render/PostChain.ts`)
-   * and the Babylon-side owner that opens their passes after Babylon's prefix
-   * of the chain (`shaders/PostPasses.ts`). Public for the harness's and the
+   * The post chain's stages, every one OUR draw since `BABYLON_EXIT.md`
+   * X5.2d (the ink, FXAA, the shafts, the blur, the grade), the host that
+   * routes them (`render/PostChain.ts`) and the Babylon-side owner that owns
+   * the frame the scene draws into and opens their passes after the camera's
+   * render (`shaders/PostPasses.ts`). Public for the harness's and the
    * probe's adapters (`plans/webgpu-ref/harness.mjs`, `post.mjs`).
    */
   readonly postChain: PostChain;
@@ -2175,35 +2175,35 @@ export class Game {
     // Babylon's, where its group 1 drew them (`Renderer.glowMaskClosing`,
     // BABYLON_EXIT.md X4.3c's review, the owner's decision).
     glow.onMaskCloseObservable.add(() => this.renderer.glowMaskClosing());
-    // THE INK GOES ON FIRST, and it is the one pass of the chain Babylon
-    // still draws: a `PostProcess` given a camera attaches itself, and the
-    // ink is the only one built (FXAA, the shafts, the blur and the grade are
-    // our post chain's stages, after Babylon's whole list, in the host's
-    // order — X5.2c1, X5.2c2). The ink is part of the
-    // PICTURE and not a grade over one: FXAA below then antialiases the lines
-    // it draws (they come off a depth buffer, which has no antialiasing of its
-    // own), and the shafts, the smear and the grain all land on top of inked
-    // geometry rather than under it.
-    // The frame's own depth image, captured ONCE and read by two passes — the
-    // ink's edges and the blur's weapon mask. It has to exist before either of
-    // them, since a declared sampler that is still null at apply time loses the
-    // draw silently; `FrameDepth` argues the rest.
-    this.frameDepth = new FrameDepth(this.scene, this.cameraSys.camera);
-    // The bloom's compose is the ink's last line rather than a pass of its own
-    // (`GlowPass`'s header): after the ink, so a bloom lies over the lines
-    // round its lamp rather than under them, and before FXAA and everything
-    // else, which treat it as part of the picture.
-    this.celInk = new CelInk(
-      this.scene,
-      this.cameraSys.camera,
-      glow,
-      this.frameDepth,
-    );
-    // The ink is also the pass the scene draws into, and so the one whose depth
-    // the mask borrows. Worth ~20% of the frame on the three big maps against
-    // a mask that redrew the whole visible scene to occlude itself
-    // (docs/rendering.md, "The glow: what the depth share replaced").
-    glow.drawsInto(this.celInk.pass);
+    // THE FRAME: the render target the scene draws straight into, with its
+    // depth, and clears itself (Babylon's own clear of a camera's output
+    // target, under `scene.autoClear`) — the camera's `outputRenderTarget`
+    // through each frame's camera render (off after it, for an editor
+    // build's gizmo layer), owned by the post chain's pass owner,
+    // `PostPasses`, which opens every pass of the chain after that render.
+    // No Babylon `PostProcess` stands on the camera since X5.2d: the ink,
+    // whose input this target was, is the chain's first stage of OURS.
+    this.postPasses = new PostPasses(this.scene, this.cameraSys.camera);
+    // The frame is the target whose depth the mask borrows. Worth ~20% of the
+    // frame on the three big maps against a mask that redrew the whole visible
+    // scene to occlude itself (docs/rendering.md, "The glow: what the depth
+    // share replaced").
+    glow.drawsInto(this.postPasses.frameTarget);
+    // The frame's own depth image, captured ONCE and read by four stages —
+    // the ink's edges, the shafts' march, the blur's weapon mask and the
+    // grade's position. It has to exist before any of them, since a stage
+    // whose depth is still null draws nothing; `FrameDepth` argues the rest.
+    this.frameDepth = new FrameDepth(this.scene, this.cameraSys.camera, this.postPasses.frameTarget);
+    // THE INK GOES FIRST: our post chain's first stage (X5.2d), reading the
+    // frame the scene drew. It is part of the PICTURE and not a grade over
+    // one: FXAA below then antialiases the lines it draws (they come off a
+    // depth buffer, which has no antialiasing of its own), and the shafts,
+    // the smear and the grain all land on top of inked geometry rather than
+    // under it. The bloom's compose is its last line rather than a pass of
+    // its own (`GlowPass`'s header): after the ink, so a bloom lies over the
+    // lines round its lamp rather than under them, and before FXAA and
+    // everything else, which treat it as part of the picture.
+    this.celInk = new CelInk(this.cameraSys.camera, glow, this.frameDepth);
     // The cel shader outputs display-ready colours, and Babylon's image
     // processing would re-apply gamma and wash them out — so it is OFF, as
     // `DefaultRenderingPipeline`'s `imageProcessingEnabled = false` left it
@@ -2217,10 +2217,13 @@ export class Game {
     // false while it stood; the last pass of the chain overwrites the canvas
     // whole on every frame it draws, so what moved is only the page's first
     // frames, before the chain first draws (the clear colour, opaque, where
-    // they were transparent), under the boot screen. X5.2d's scene clear into
-    // the frame's own target rests on it.
-    // FXAA: OUR draw since X5.2c2, the post chain's first stage of ours, after
-    // the ink it antialiases (`shaders/Fxaa.ts`).
+    // they were transparent), under the boot screen. The scene's clear of the
+    // frame's own target (X5.2d, `PostPasses`) rests on it — and since X5.2d
+    // that clear lands on the frame, not the canvas, so those boot frames
+    // hold the swap chain's transparent zeros again: X5.2d's picture change,
+    // the owner's decision (`BABYLON_EXIT.md` row "X5.2, the boot canvas").
+    // FXAA: OUR draw since X5.2c2, the post chain's stage after the ink it
+    // antialiases (`shaders/Fxaa.ts`).
     this.fxaa = new Fxaa();
     // The light shafts: volumetric moonlight marched through the shadow
     // volume, after FXAA and before the blur — they belong to the same instant
@@ -2240,26 +2243,21 @@ export class Game {
     this.motionBlur = new MotionBlur(this.cameraSys.camera, this.frameDepth);
     // Vignette/grain/aberration go last, over the finished frame. Grain in
     // particular has to land AFTER the blur: smeared grain reads as smudge.
-    // FXAA, the shafts, the blur (X5.2c2) and the grade (X5.2c1) are OUR
-    // draws: the post chain's host, its stages in THIS order, after Babylon's
-    // prefix (the ink alone), whose passes `PostPasses` opens — built after the glow
-    // and the frame depth, whose draw-phase observers must run before it
-    // points the prefix at its output. The order is the host's list, not an
+    // The ink (X5.2d), FXAA, the shafts, the blur (X5.2c2) and the grade
+    // (X5.2c1) are OUR draws: the post chain's host, its stages in THIS
+    // order over the frame the scene drew, whose passes `PostPasses` opens
+    // after the camera's render. The order is the host's list, not an
     // append, and a setting turns a stage off rather than taking a pass off a
     // camera, so there is no slot to hold.
     this.post = new PaperGrain(this.cameraSys.camera, this.frameDepth);
     this.postChain = new PostChain(this.renderer, [
+      this.celInk.stage,
       this.fxaa.stage,
       ...volumetricStages(this.frameDepth, () => (this.volumetricsAttached ? this.volumetrics : null)),
       this.motionBlur.stage,
       this.post.stage,
     ]);
-    this.postPasses = new PostPasses(
-      this.scene,
-      this.cameraSys.camera,
-      this.postChain,
-      () => this.postPrefixTail(),
-    );
+    this.postPasses.drive(this.postChain);
     this.sfx = new Sfx();
     this.hud = new HUD();
     // After the HUD: its root is the element every screen appends to.
@@ -3749,8 +3747,7 @@ export class Game {
     this.setFxaaEnabled(this.settings.fxaa);
     this.setMotionBlurEnabled(this.settings.motionBlur);
     // The grade's switch is its stage's `active()`: off, the post chain's host
-    // opens no pass for it, and with no stage of ours active Babylon's prefix
-    // writes the canvas itself (`PostPasses`).
+    // opens no pass for it, and the last stage still on writes the canvas.
     this.post.setEnabled(this.settings.paperGrain);
     // The look speeds go to the camera and stop there: the aim assist reads its
     // own bound off `stickYawRate`, which already carries the stick's.
@@ -4064,19 +4061,6 @@ export class Game {
    */
   private setMotionBlurEnabled(on: boolean): void {
     this.motionBlur.setEnabled(on);
-  }
-
-  /**
-   * The LAST live pass of Babylon's prefix of the post chain this frame — the
-   * one whose target is our first stage's input while a stage of ours is
-   * active (`PostPasses`, which hangs Babylon's clear of that target on its
-   * `apply`). Since X5.2c2 that is the INK, always: FXAA, the shafts and the
-   * blur are stages of OUR chain, so Babylon's list is the ink alone. A wrong
-   * answer would have our first stage read a clear colour; a DEV build throws
-   * on it instead (a ready tail that never applied, `PostPasses.closeWindow`).
-   */
-  private postPrefixTail(): PostProcess {
-    return this.celInk.pass;
   }
 
   private closeLoadout(): void {

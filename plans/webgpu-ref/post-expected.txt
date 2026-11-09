@@ -108,3 +108,46 @@
 #   **.passes[0].color[0].clear
 #   **.passes[0].out[0].hash
 #   **.chain.autoClear
+
+# X5.2d: the ink — the chain's first stage, its glow compose in its last line —
+# is our draw (`shaders/CelInk.ts`, `wgsl/celInk.ts`), compared with the Babylon
+# draw it replaced under the same name, `ink`; no Babylon `PostProcess` is left
+# on the camera. X5.2b's three fields, for X5.2b's reasons:
+**.draws[stage=ink].pipeline.call
+**.draws[stage=ink].bundle
+**.draws[stage=ink].viewport
+# And the scene draws STRAIGHT INTO the frame (`PostPasses.frameTarget`, the
+# camera's `outputRenderTarget` through the camera's render), clearing it itself: Babylon's own
+# clear of a camera's output target under `scene.autoClear` — its colour and
+# depth at the frame's first bind, its depth again as the camera's render binds
+# it — where `PostProcess.activate` cleared the ink's input once. So the frame's
+# OPENING pass — always `passes[0]`, the scene's first bind, so the index names
+# that pass alone in every scenario — is the frame's, cleared, with no draw, where
+# it was the canvas's (its label, target, format, usage and view, its depth's
+# target, usage and stencil clear, and what it leaves: the frame cleared, and
+# the frame's depth now hashed, having `COPY_SRC`, where the canvas's had none);
+# and the pass the scene draws in — always `passes[1]` — LOADS the frame's colour
+# that opening pass cleared, where it cleared it (its load op and clear value),
+# its depth cleared as before. Every other field of both passes, every later
+# pass and every target's hash, the final canvas's among them, are compared, and
+# equal: the canvas's pass, the last, loads the canvas as before, which the last
+# stage overwrites whole. What this moves that NO frozen frame shows is the
+# canvas on a boot frame before our chain's pipelines are built — no pass
+# clears it any more, so it holds the swap chain's transparent zeros where
+# a459e7c left the clear colour — X5.2d's picture change, the owner's
+# decision (BABYLON_EXIT.md row "X5.2, the boot canvas"), seen in the live
+# half (menu frames lose their `->canvas/clear`), which is printed and not
+# compared.
+**.passes[0].label
+**.passes[0].color[0].target
+**.passes[0].color[0].format
+**.passes[0].color[0].usage
+**.passes[0].color[0].view.format
+**.passes[0].depth.target
+**.passes[0].depth.usage
+**.passes[0].depth.stencilClearValue
+**.passes[0].out[0].target
+**.passes[0].out[0].hash
+**.passes[0].out[1]
+**.passes[1].color[0].loadOp
+**.passes[1].color[0].clear

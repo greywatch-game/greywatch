@@ -1,11 +1,12 @@
 /**
  * GlowPass.ts — The game's bloom, as a pass it OWNS end to end: the emissive
- * mask, the blur, and the additive compose's arithmetic. Owns its targets, its
- * override materials and the depth it borrows, and the blur's passes — it
- * binds each of its targets itself — though not the blur's DRAWS, which are
- * our renderer's (`GlowBlurDraws`, handed in by `Game`, X5.2b); reads no game
- * state (what may glow and how brightly are `GlowRules`, handed in by `Game`)
- * and writes to no mesh.
+ * mask, the blur, and what the additive compose adds (its two blurred targets
+ * and its intensity; the arithmetic is the ink's last line, X5.2d). Owns its
+ * targets, its override materials and the depth it borrows, and the blur's
+ * passes — it binds each of its targets itself — though not the blur's
+ * DRAWS, which are our renderer's (`GlowBlurDraws`, handed in by `Game`,
+ * X5.2b); reads no game state (what may glow and how brightly are
+ * `GlowRules`, handed in by `Game`) and writes to no mesh.
  * Invariants: the mask is drawn against the frame's OWN depth, borrowed at the
  * size that depth is at on the frame it is borrowed — so a bloom that reaches
  * through a wall is a bug here and never a tuning question; nothing here draws
@@ -31,8 +32,9 @@
  *   rendered once, from the end of the draw phase, where the depth is final.
  * - **No clear to replace.** Colour only, installed once on a texture nothing
  *   else ever recreates — `resize` swaps its wrapper and keeps the observer.
- * - **No framebuffer to re-bind by internal.** The frame is `frame.inputTexture`,
- *   a public getter on the pass the scene draws into.
+ * - **No framebuffer to re-bind by internal.** The frame is the render
+ *   target the scene draws into (`PostPasses`' frame, `BABYLON_EXIT.md`
+ *   X5.2d) and its `renderTarget`, a public getter.
  * - **No frame lost on a resize.** The layer's
  *   texture and the depth it borrowed resized on different schedules, and the
  *   frame between was encoded with a colour attachment at one size and a depth
@@ -97,11 +99,21 @@
  * than tidiness. It reads one pixel of the frame and adds two bilinear taps,
  * so as a post-process it was a whole-frame write and read for three fetches —
  * on a tile-based GPU, a round trip of the full backing store through memory.
- * So the arithmetic stays HERE, as `GLOW_COMPOSE_WGSL` and `bindCompose`, and
- * `CelInk` splices it into its own last line: the ink already holds the pixel,
+ * So the arithmetic is the ink's LAST LINE: the ink already holds the pixel,
  * and adding the bloom after its own `mix` is exactly the order the separate
  * pass kept. The one difference is that the inked frame is no longer rounded
- * to 8 bits before the bloom lands on it, which is under half a step.
+ * to 8 bits before the bloom lands on it, which is under half a step. Its
+ * text is the ink's compiled module's `glowAt` (`wgsl/celInk.ts`,
+ * `BABYLON_EXIT.md` X5.2d: the snippet this file spliced into the ink's
+ * source, as Babylon's processor compiled it), and what it reads is handed
+ * from here — the two blurred targets and the intensity (`composeNear`,
+ * `composeWide`, `composeIntensity`), which the ink's stage binds and fills.
+ * The snippet's own note, kept verbatim: "Clamped BEFORE the add, as the
+ * layer's merge was: it wrote into an 8-bit target and was blended on from
+ * there. The layer's blend also scaled by the merge's alpha, which was always
+ * 1 — the mask clears to alpha 1 and nothing drawn into it lowers that — so
+ * there is no alpha term here, and the caller keeps whatever alpha it was
+ * going to write."
  *
  * THE EMISSIVE PALETTE'S MASK IS OUR RENDERER'S, and nothing of it is drawn
  * here (`render/WorldGlow.ts`, X3.6d, X3.7b, X3.7c): it draws the merged
@@ -127,7 +139,8 @@
  * cannot be told from either order. Everything else in the mask — the sparks
  * and an EDITOR build's every emissive — is still drawn here, and no surface of
  * Babylon's left pairs a texture with a glow, so the `EMISSIVE` and `OPACITY`
- * variants have no caller until this pass is ours (X5.2).
+ * variants have no caller until the mask is ours (with the main pass, X5.4:
+ * `BABYLON_EXIT.md` X5.2's row "the mask").
  *
  * A MATERIAL WHOSE VERTICES MOVE BRINGS ITS OWN MASK (`SelfMasking`). The
  * stock variants transform by `world` and `viewProjection` alone, so a surface
@@ -153,12 +166,10 @@ import {
   type AbstractMesh,
   type BaseTexture,
   type Camera,
-  type Effect,
   type Material,
   type Matrix,
   type Mesh,
   type Nullable,
-  type PostProcess,
   type Scene,
   type StandardMaterial,
   type SubMesh,
@@ -276,37 +287,6 @@ export interface GlowBlurDraws {
     outputHeight: number,
   ): void;
 }
-
-/**
- * The bloom's compose, as WGSL for the pass that runs it (`CelInk`, the header
- * says why it is not a pass of its own). Splice it in at the top level of a
- * fragment shader, declare `GLOW_COMPOSE_UNIFORMS` and `GLOW_COMPOSE_SAMPLERS`
- * on that pass, call `bindCompose` from its `onApply`, and add `glowAt(uv)` to
- * the finished pixel.
- */
-export const GLOW_COMPOSE_WGSL = `
-var glowNearSampler: sampler;
-var glowNear: texture_2d<f32>;
-var glowWideSampler: sampler;
-var glowWide: texture_2d<f32>;
-
-uniform glowIntensity: f32;
-
-// Clamped BEFORE the add, as the layer's merge was: it wrote into an 8-bit
-// target and was blended on from there. The layer's blend also scaled by the
-// merge's alpha, which was always 1 — the mask clears to alpha 1 and nothing
-// drawn into it lowers that — so there is no alpha term here, and the caller
-// keeps whatever alpha it was going to write.
-fn glowAt(uv: vec2f) -> vec3f {
-  let near = textureSampleLevel(glowNear, glowNearSampler, uv, 0.0).rgb;
-  let wide = textureSampleLevel(glowWide, glowWideSampler, uv, 0.0).rgb;
-  return min((near + wide) * uniforms.glowIntensity, vec3f(1.0));
-}
-`;
-
-/** What a pass splicing in `GLOW_COMPOSE_WGSL` declares beside its own. */
-export const GLOW_COMPOSE_UNIFORMS = ["glowIntensity"] as const;
-export const GLOW_COMPOSE_SAMPLERS = ["glowNear", "glowWide"] as const;
 
 /** What `Game` decides about the bloom, and the only game knowledge this pass sees. */
 export interface GlowRules {
@@ -484,8 +464,8 @@ export class GlowPass {
   /** The kernel the blur last read (`kernelTexels`), ideal and unrounded, as Babylon's blurs held it. */
   private kernel = 1;
 
-  /** The pass the scene draws into, whose depth the mask borrows. */
-  private frame: PostProcess | null = null;
+  /** The render target the scene draws into, whose depth the mask borrows. */
+  private frame: RenderTargetTexture | null = null;
 
   /** Both ends of the last depth share. A share is a relation between two targets. */
   private sharedFrom: object | null = null;
@@ -555,12 +535,13 @@ export class GlowPass {
   }
 
   /**
-   * Names the pass the scene draws into, whose depth the mask borrows.
+   * Names the render target the scene draws into, whose depth the mask
+   * borrows (`PostPasses`' frame, the camera's `outputRenderTarget`).
    *
-   * **`frame` must be the FIRST pass in the chain**, because it is the only one
-   * Babylon gives a depth buffer to — `render` asserts it in a DEV build.
+   * **`frame` must carry a depth buffer** — the frame's own, which the scene
+   * draws into — and `render` asserts it in a DEV build.
    */
-  drawsInto(frame: PostProcess): void {
+  drawsInto(frame: RenderTargetTexture): void {
     this.frame = frame;
   }
 
@@ -576,14 +557,21 @@ export class GlowPass {
   }
 
   /**
-   * Binds what `GLOW_COMPOSE_WGSL` reads, from the `onApply` of the pass that
-   * spliced it in. Declared samplers must be BOUND or the draw is silently
-   * lost; both targets exist from construction, so neither can be missing.
+   * The compose's two blurred halves — the near target and the wide one —
+   * which the ink's stage binds beside the mask (`CelInk`, X5.2d). Both exist
+   * from construction; `resize` swaps what is under each, never the object.
    */
-  bindCompose(effect: Effect): void {
-    effect.setFloat("glowIntensity", CONFIG.graphics.glowIntensity);
-    effect.setTexture("glowNear", this.near);
-    effect.setTexture("glowWide", this.wide);
+  get composeNear(): RenderTargetTexture {
+    return this.near;
+  }
+
+  get composeWide(): RenderTargetTexture {
+    return this.wide;
+  }
+
+  /** The compose's scale on the summed halves (`CONFIG.graphics.glowIntensity`). */
+  get composeIntensity(): number {
+    return CONFIG.graphics.glowIntensity;
   }
 
   /** The emissive meshes of this frame, dressed for the mask. */
@@ -677,14 +665,13 @@ export class GlowPass {
     // probe's bake included), so this guards against a camera other than the
     // frame's being drawn, which nothing does today. Harmless, and kept.
     if (this.scene.activeCamera !== this.camera) return;
-    const frame = this.frame?.inputTexture;
+    const frame = this.frame?.renderTarget;
     if (!frame) return;
     if (!frame.depthStencilTexture) {
       // The same failure `GlowDepth` guarded: a frame with no depth to share
       // is a mask with no occluders, every lamp blooming through its wall.
-      // The scene draws into the FIRST pass in the chain and Babylon gives a
-      // depth buffer to that one alone, so this is an assertion about the
-      // order `Game` built the chain in.
+      // The frame is made with its depth (`PostPasses`), so this is an
+      // assertion about what `Game` handed `drawsInto`.
       if (import.meta.env.DEV) {
         throw new Error(
           "GlowPass: the frame has no depth to share — the mask would occlude against nothing",
@@ -709,10 +696,11 @@ export class GlowPass {
     this.blur();
 
     // Put the frame back, because the draw phase's contract is that the frame
-    // is what is bound when it ends — and `FrameDepth`, whose observer on this
-    // same hook runs AFTER this one, reads the bound target to find the
-    // frame's depth. Leave the last blur target bound and the ink and the
-    // motion blur sample a target with no depth at all.
+    // is what is bound when it ends: anything Babylon draws after the phase
+    // (its after-camera-draw stage) lands in it. It begins no pass of its
+    // own — a bind is lazy, and the post chain's first bind ends it unbegun.
+    // (`FrameDepth` read the bound target for the frame's depth until X5.2d;
+    // it reads the frame's own `depthStencilTexture` now.)
     this.scene.getEngine().bindFramebuffer(frame, undefined, undefined, undefined, true);
     this.onAfterWorkObservable.notifyObservers();
   }

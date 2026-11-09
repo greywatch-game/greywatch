@@ -9863,7 +9863,7 @@ seven minor points, each verified against the tree first.
   row's freeze calls; Hollowmere's 16 rows ran it); the throw itself provoked; corecheck,
   parity, `gate`, `shaders` (no game code moved).
 
-### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07; its decisions the owner's, 2026-11-07 and 2026-11-08, rows in "Decisions that are yours") — X5.2a **LANDED** (e5d9390, its review 55ef32c, its held finding F1 fixed 738f5e3), X5.2b **LANDED** (f697f0e, its review e5ab075), X5.2c1 **LANDED** (4747fe7, its review bfa6a6b), X5.2c2 the shafts and the blur **LANDED** (14dd887, its review 7c5030f), its FXAA **LANDED** (cb17a73, its picture change a459e7c, their review 117c5fd)
+### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07; its decisions the owner's, 2026-11-07 and 2026-11-08, rows in "Decisions that are yours") — X5.2a **LANDED** (e5d9390, its review 55ef32c, its held finding F1 fixed 738f5e3), X5.2b **LANDED** (f697f0e, its review e5ab075), X5.2c1 **LANDED** (4747fe7, its review bfa6a6b), X5.2c2 the shafts and the blur **LANDED** (14dd887, its review 7c5030f), its FXAA **LANDED** (cb17a73, its picture change a459e7c, their review 117c5fd), X5.2d **LANDED** (HASHX52D, a picture change, row "X5.2, the boot canvas") — **all LANDED**
 
 The plan's `BABYLON_EXIT.md` holds X5.2's brief, its ONE RULE, shape (A), "What it is
 today" (corrected in place by X5.2a, each correction marked) and the five sub-steps.
@@ -10609,3 +10609,96 @@ into the canvas — compared `--against` with `post-expected.txt`: **equal**, 29
 page, FXAA's draw's X5.2b fields alone excused (30 paths, the new scenario's two among them);
 `fxaa-alone`'s canvas `1735d52707135209` (desk) and `38f1059d519aab3f` (phone) on both trees.
 Typecheck, build and corecheck pass.
+
+**X5.2d LANDED** (HASHX52D; 2026-11-08; a `Picture change:` by the owner's decision, row "X5.2,
+the boot canvas": the boot frames before the chain first draws; otherwise no change to the picture
+was measured; no report version, the ink's draw queued inside `render` where Babylon's was).
+**What moved**: the INK is OUR draw, the post chain's FIRST stage (`shaders/CelInk.ts`, its CPU
+half — the fog band — and `stage`; `shaders/wgsl/celInk.ts`, the `postprocess` vertex stage with
+the ink's whole `LeftOver` and the fragment with the glow's compose, `glowAt`, ahead of it, both
+the parent's device text character for character, written off the probe's module table and
+checked round trip; its 112-byte block filled as its `onApply` filled it, `glowIntensity` in
+`grain`'s fourth float; the frame read NEAREST through our sampler at Babylon's descriptor, its
+depth by `textureLoad`, the glow's mask and two blurred targets through the host's own view and
+sampler). The source's comments, which the compiled text keeps none of, are kept verbatim in
+`CelInk.ts`. The GLOW's compose is the ink's last line as compiled: `GLOW_COMPOSE_*` and
+`bindCompose` are gone, `GlowPass` hands the stage `composeNear`, `composeWide` and
+`composeIntensity`. **The scene draws STRAIGHT INTO the frame**: `PostPasses` owns it, a
+`RenderTargetTexture` made as the ink's input was (`FRAME_TARGETS`: `rgba8unorm`, NEAREST, the
+render size, `depth32float`, no stencil), named `PostProcessRTT-celInk` for its reader, resized
+before the scene first binds it (`onBeforeRenderObservable`), and the camera's
+`outputRenderTarget` from the end of one frame's render to the end of the next frame's camera
+render; the scene clears it itself (Babylon's clear of a camera's output target under
+`scene.autoClear`). `GlowPass.drawsInto` takes it; `FrameDepth` reads its public
+`renderTarget.depthStencilTexture` and is off the seam header's "not here" list (row "X5.2,
+`FrameDepth`"; the gate note reconciled). `Game.postPrefixTail`, the prefix's output, its clear
+on the tail's `apply` and the DEV throw are gone: **no Babylon `PostProcess` is left** in the
+tree. The ink's two pipelines are on "the post chain" (`Game.roundPipelines`); no seam item.
+**Found, and the reason for one thing the plan did not say**: with `outputRenderTarget` set for
+good, an editor build's gizmo layer (`UtilityLayerRenderer`, which renders with the SAME camera
+on `onAfterRenderCameraObservable`, after the camera's render) bound the frame the chain had
+already read and drew its gizmos into nothing shown. So `PostPasses` takes `outputRenderTarget`
+off the camera once the chain is recorded and puts it back as the scene's render ends
+(`onAfterRenderObservable`) — before `_checkCameraRenderTarget` reads it at the next frame's
+start; nothing in a round reads it in between. Measured: F2 on Hollowmere, a placement selected,
+the frame byte-equal to the parent's with its gizmo (0.6057% of pixels moved by the selection
+on both trees, the two selected frames byte-equal).
+**The picture change — the boot canvas.** The frame's OPENING pass is the frame's (an empty
+pass, the clear) where it was the canvas's, so no pass clears the canvas any more: the last
+stage overwrites it whole on every frame the chain draws, and on a boot frame before our
+chain's pipelines are built it holds what the swap chain hands over. Read back off the device
+each frame (a scratch script, the canvas's centre and (8, 8)): page frame 3 22,13,8,255 at the
+parent (the boot map's clear colour) → 0,0,0,0 (transparent zeros); frames 1–2 (0,0,0,0) and
+4 on equal. The probe's live half: menu frames +0 to +1 lose their `->canvas/clear`. It undoes
+a459e7c (row "X5.2, autoClear") for that frame, under `#boot` (opaque); the canvas-only frame
+after a render-scale change or a resize is unaffected (its canvas pass still loads).
+**Measured** (the Windows box, headless; BEFOREs at 20de8ee in a worktree with its own `npm ci`
+and a copy of the main tree's `ref/`):
+- **The probe** `--against` the parent's log, both pages, seventeen scenarios: equal, 29,209
+  values a page, 1,425 excused by X5.2d's section of `post-expected.txt` — the ink's draw's
+  X5.2b three; `passes[0]`, the opening pass, the frame's (cleared, no draw) where it was the
+  canvas's (its label, target, format, usage and view, its depth's target, usage and stencil
+  clear, what it leaves, the frame's depth hashed); `passes[1]`, the scene's pass, LOADING the
+  colour it cleared. Every other field — the ink's uniform bytes, samplers, views, pipeline,
+  layout, every target's hash — equal, and every FINAL canvas in all 34 scenarios equal. Re-run
+  on the final tree: equal again, and the default bank with it (146 byte-equal and `sarab-ground`
+  the same 100 pixels by 2/255; 146 byte-equal and the pistol within its flake against the
+  step's first run).
+- **The bank**, 147 rows by `exact.mjs`: **default** 145 byte-equal,
+  `harrowmead-view-pistol-reload` within its flake and `sarab-ground` 100 pixels by 2/255 —
+  Sarab alone, two processes a tree: all four frames byte-equal (14 of 14 rows) and equal to
+  the step's full-run frame (cross-process residue); **`volumetrics=low`** and
+  **`volumetrics=high`** 146 byte-equal and the pistol within its flake; the same rows red
+  against `ref/` on both sides (34, 102, 93). This is the whole step's "bank with every post
+  setting on and off" (X5.2a's rows, row "X5.2, the Verify").
+- **No Babylon `PostProcess` in a round**: `surfaces.mjs` — Babylon's draws through no mesh were
+  the ink's in all 147 rows (`celInk -> PostProcessRTT-fxaa` 145, `-> PostProcessRTT-volumetrics_medium`
+  1, `-> canvas` 1), and are nothing in all 147; live, the camera held no Babylon post-process
+  on any frame.
+- **X0.3, the whole step's** (row "X5.2, X0.3"): `bench.mjs greyfen sarab --max`, three runs a
+  tree, the fight hashes `83e8e74ef36916ba` and `986c2e35557fb679` on every run; medians new over
+  old: Greyfen vantages 0.970, path 1.002, fight 1.002; Sarab vantages 0.980, path 0.996, fight
+  1.000; Sarab's fight 1% low 13.2 → 12.4 ms; some vantage segments over 8% spread on both trees.
+- **`gi.mjs --against`**, default and `--shafts-off`: equal (914,611 and 254,731 values).
+- **`census --against`** (Hollowmere, Sarab, Cinderhaven, Kurenai): equal (403, 595, 619, 168).
+- **Pipelines**: `coldharbour --round` identical (0 of Babylon's, 21 of ours and 12 modules at
+  the install, none in play); `hollowmere` Babylon's 4 → 3 by the install (the ink's), ours
+  88 → 90, modules 109 on both, nothing after on either.
+- **Live** (X5.2c2's script counting the ink: a Hollowmere round, every post setting toggled in
+  play, the shafts' rungs, render scale at both glow rungs, a resize and back, a teardown, a
+  second round, Coldharbour, `F2` with a drag and the glow rung changed, the round after): our
+  twelve post modules made at the boot and none after; Babylon's `celInk` module gone (the
+  parent: one); Babylon's synchronous pipelines 25 → 24; no Babylon post-process on the camera;
+  no in-play compile, no `uncapturederror`, no page or console error, on either tree.
+- **The editor's eight eyes** (two processes a tree): Coldharbour `menu`, `curtain2`,
+  `curtain40` and Hollowmere `lanterns` byte-equal in all six pairings; `curtain90` 0-2/255,
+  `ashwood` and `menu` within each tree's own floor; `wall40` unstable between two grabs on
+  both trees, as recorded — no oracle.
+- **`?profile&gpu`** (Coldharbour and Hollowmere, four alternating runs a tree, report version
+  37): `render` 0.887 → 0.851 and 0.799 → 0.771 ms, `gpu.frame` 2.655 → 2.643 and 2.535 → 2.525
+  ms (means, within 4%); Babylon's draw calls 1 → 0.
+- **Gates**: `gate` seven maps clean; `shaders` clean on seven; typecheck, build
+  (`check-babylon-free`, `check-proving`), corecheck and parity pass.
+**Not run**: the phone (its page is the probe's `phone` size only), a lost device, a server's
+match in a browser. **X5.2 is whole**: no Babylon `PostProcess` in a round, the bank with every
+post setting on and off and X0.3 measured above.

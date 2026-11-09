@@ -47,16 +47,18 @@
  * and asks for it ahead of the frame (`render/PipelineCache.ts`), so the
  * warm-up only has to wait for them — which is why an effect pool of ours is
  * never POSED at a vantage (`BABYLON_EXIT.md` X4.4e). What the vantages still
- * draw for in a round is Babylon's own, and since X4.7d that is the post chain
- * alone: every particle field is ours (the ash since X4.7c, the rotor wash
- * since X4.7d), their pipelines on the list. Measured at X4.7d (Cinderhaven,
+ * draw for in a round is Babylon's own, and since X4.7d that was the post chain
+ * alone — since X5.2d nothing, the post chain ours whole: every particle
+ * field is ours (the ash since X4.7c, the rotor wash since X4.7d), their
+ * pipelines on the list. Measured at X4.7d (Cinderhaven,
  * Sarab, Hollowmere, from `startRound` to 120 frames into the deploy): Babylon
  * compiles NOTHING at a vantage — the post chain's six pipelines on the frames
  * before the card (five since X5.2b made the glow's blur and box filter ours,
  * every rung at every render scale on the declared list as "the glow's blur";
  * four since X5.2c1 made the grade ours, "the post chain" on the list,
  * one since X5.2c2 made FXAA, the shafts — every rung — and the blur ours
- * there: the ink's alone),
+ * there: the ink's alone; none since X5.2d made the ink ours on the same
+ * entry, no Babylon `PostProcess` left on the camera),
  * and `GiVolume`'s three computes under it (its race) until
  * X5.1b made them OURS, asked at construction and on the declared list ("the
  * irradiance volume"), so Babylon makes no compute pipeline at all — so the

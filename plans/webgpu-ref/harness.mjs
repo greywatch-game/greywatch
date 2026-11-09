@@ -22,7 +22,8 @@
  * clothes — it was right on a 2 fps box because six frames was three seconds
  * there, and it silently photographs a blank canvas here. Since
  * `BABYLON_EXIT.md` X5.2c1 the post chain's stages that are OUR draws are not
- * in it, so the wait asks them beside it (`postAdapter`'s `ready`).
+ * in it, so the wait asks them beside it (`postAdapter`'s `ready`) — since
+ * X5.2d the whole chain, the ink included.
  *
  * **A frozen frame needs EIGHT things held, not the two the plan assumed, and
  * the last two are not clocks at all.** `Game.tick` runs `post.update`,
@@ -1171,7 +1172,8 @@ export function placeVantage(page, vantage) {
  * **OURS is picked first since X5.2c1** (`g.postChain`: the grade is a stage
  * of our post chain, its pipelines' readiness `PostChain.drawsReady`, its CPU
  * half still `g.post`), BABYLON's arm at a parent before it; since X5.2c2
- * the shafts and the blur are stages of the same chain, reached with the same
+ * the shafts and the blur are stages of the same chain (and since X5.2d the
+ * ink, which has no CPU half this freeze holds), reached with the same
  * members — each part an object whose `update` the freeze replaces and the
  * thaw puts back on that SAME object — so the freeze reads the same whoever
  * draws.

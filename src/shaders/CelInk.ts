@@ -1,23 +1,36 @@
 /**
  * CelInk.ts — The game's ink, as one full-screen pass over the depth buffer
- * the frame has ALREADY written. Owns the pass, the depth handle it borrows
- * and the band it fades over; reads no game state and writes to no mesh.
- * Invariants: it runs FIRST in the post chain, before the light shafts and the
- * blur and the grade, because it is part of the picture rather than a grade
- * over one — shafts and grain belong on top of inked geometry, not under it.
+ * the frame has ALREADY written: its CPU HALF and the post chain's stage our
+ * renderer draws it as (`render/PostChain.ts`, `BABYLON_EXIT.md` X5.2d).
+ * Owns: `CelInk` — the map's fog band it fades over, and `stage`, the
+ * `PostStage` the host draws: the program as Babylon's processor compiled
+ * the WGSL this file used to register (`wgsl/celInk.ts`, the glow's compose
+ * in its last line), its 112-byte block, its four extra bindings (the frame's
+ * depth, read by `textureLoad`, and the glow's mask and two blurred targets,
+ * each read through the host's own view and sampler) and its input — the
+ * frame the scene drew — read NEAREST, clamped, as Babylon bound it. Reads no
+ * game state and writes to no mesh.
+ * Invariants: it runs FIRST in the post chain, before FXAA, the light shafts,
+ * the blur and the grade — the host's list order, which `Game` assembles —
+ * because it is part of the picture rather than a grade over one: FXAA
+ * antialiases the lines it draws, and shafts and grain belong on top of
+ * inked geometry, not under it.
  * Running first is also what lets it read the frame's alpha as translucent
  * coverage: it is the last pass that could, since every pass after it writes
  * alpha 1.
  * It only ever DARKENS (`mix(scene, scene * tint, edge)` with tint < 1), which
  * is what makes it safe to lay over a lit frame and is worth keeping true. The
- * bloom is composited AFTER it, in this pass's own last line — `GlowPass` owns
- * the arithmetic and hands it over as `GLOW_COMPOSE_WGSL`, and the header there
- * says why it is not a pass of its own — so a halo lies over the lines round
- * its lamp rather than under them. "Only darker" is therefore a promise about
- * the ink's own `mix`, not about the pixel this pass writes. Its shader is
- * hand-written WGSL and `shaderLanguage` on the PostProcess is load-bearing
- * rather than declarative: the constructor defaults to GLSL and would look this
- * pass up in a store nothing writes any more.
+ * bloom is composited AFTER it, in this pass's own last line — the glow's
+ * compose, `GlowPass`' arithmetic, which the header there says is not a pass
+ * of its own and which hands this stage its two targets and its intensity —
+ * so a halo lies over the lines round its lamp rather than under them. "Only
+ * darker" is therefore a promise about the ink's own `mix`, not about the
+ * pixel this pass writes. Its block is filled when the host draws it, every
+ * float; it is never off.
+ * Never: draws, binds or owns a GPU resource (the host does); edits its
+ * program — the text is the compiled one, and the notes on what each line
+ * does are kept below, verbatim from the source it was compiled from.
+ * Contract: `docs/rendering.md`, "The ink".
  *
  * WHAT IT REPLACED, AND WHY THE OLD ANSWER WAS TWO ANSWERS. The ink used to be
  * geometry, twice over. Babylon's `renderOutline` drew a back-face shell for
@@ -41,10 +54,11 @@
  * which `FrameDepth` owns and argues in full — this pass was where that
  * capture used to live, and it moved out when `MotionBlur` became its second
  * reader. What is left here is the one fact that is this shader's: **no
- * sampler is needed and therefore none can be wrong.** The declaration below
- * is `texture_depth_2d`, off which Babylon's WGSL processor infers
- * `sampleType: "depth"`, and every read is a `textureLoad`. An edge wants
- * exact texels rather than filtered ones anyway.
+ * sampler is needed and therefore none can be wrong.** The declaration is
+ * `texture_depth_2d`, off which Babylon's WGSL processor inferred
+ * `sampleType: "depth"` and which our pipeline cache lays out the same, and
+ * every read is a `textureLoad`. An edge wants exact texels rather than
+ * filtered ones anyway.
  *
  * DISTANCE IS IN THIS PASS THREE TIMES AND THE DEPTH BUFFER DOES NOT HOLD IT.
  * What a depth texel holds, linearised, is z along the camera's FORWARD AXIS;
@@ -133,358 +147,318 @@
  * blade is a silhouette, and what that reads as is denser, darker grass. A
  * judgement rather than an accident — and `noInk` is deliberately absent from
  * those meshes so the flag does not claim otherwise.
+ *
+ * THE SHADER'S OWN NOTES, verbatim from the WGSL this file registered until
+ * X5.2d, which Babylon's processor compiled into `wgsl/celInk.ts` and which
+ * the compiled text keeps no comment of — each under the line it explained,
+ * in the order the lines run. They were written for that source: where one
+ * says Babylon's processor or `GlowPass` declares or binds something, the
+ * compiled text and the stage below hold it as the processor left it.
+ *
+ * **At `depthTexture`, the frame's depth:**
+ * The MAIN pass's depth attachment, out of the shared FrameDepth. Declared as a
+ * depth texture so Babylon's WGSL processor gives the binding sampleType
+ * "depth"; every read below is a textureLoad, so this pass declares no sampler
+ * for it and there is none to get wrong.
+ *
+ * **At `emissiveSampler`, the glow's mask:**
+ * The GLOW's mask: the emissive meshes ALONE, full resolution and UNBLURRED
+ * (the blur reads a downsample of it and never writes back), already
+ * depth-tested against this same frame. See
+ * CONFIG.graphics.ink.emissiveMask.
+ *
+ * **At the glow's compose (`glowAt`):**
+ * The bloom's compose, owned by GlowPass and added in this pass's last line.
+ *
+ * **At `linearise`:**
+ * Buffer depth -> metres. Babylon is left-handed and WebGPU's NDC z is [0, 1]
+ * (engine.isNDCHalfZRange), and nothing in the tree turns on a reverse depth
+ * buffer, so this is the plain inverse of the projection's z row.
+ *
+ * **At `ringAt`:**
+ * THE TWO TESTS, taken at a RING of radius r and handed back as (silhouette,
+ * crease), so one function serves every ring the nib is wide enough to want.
+ *
+ * A SILHOUETTE is a step in depth, taken relative to the centre so that one
+ * doorway reads the same at 5 m and at 50.
+ *
+ * A CREASE is a box corner, where depth is CONTINUOUS and only its slope
+ * jumps — what a naive Sobel of depth misses, and what a normal buffer is
+ * usually bought for. See CONFIG.graphics.ink.crease: 1/z is linear in screen
+ * space across any plane, so this is zero on a flat surface at any angle and
+ * large at a corner. Multiplying back by dc makes it dimensionless, so one
+ * threshold holds at every range.
+ *
+ * **BOTH ARE DIVIDED BY r, and that is what lets ONE PAIR OF THRESHOLDS serve
+ * every ring.** Across a sloped surface a depth difference grows in proportion
+ * to the step taken over it, and a slope BREAK's second difference does the
+ * same, so without the division an outer ring would read a grazing floor as a
+ * silhouette and every dune would be a contour. What the division costs is
+ * sensitivity on the outer ring at a WEAK edge — and that cost is the feature
+ * rather than the price: a weak edge keeps the inner ring alone and is drawn
+ * as a hairline, a strong one carries the whole nib, so a stroke varies in
+ * width along its length with what it is describing. That is pressure, and it
+ * is arrived at rather than painted on.
+ *
+ * **At `strokeOf`:**
+ * A stroke's DARKNESS from a measurement and its threshold. The first factor is
+ * whether there is a line here at all; the second is PRESSURE — a line that
+ * only just qualifies is laid down lighter than one the geometry shouts, over a
+ * band (t..5t) wide enough that the variation runs ALONG a stroke rather than
+ * sitting at its ends. The floor is what the faintest line keeps.
+ *
+ * **At `frame`, the first sample:**
+ * RGBA, because the alpha is doing work here — see the coverage term below.
+ *
+ * **At the wobble (`n`, `wob`, `p`):**
+ * THE WOBBLE — the whole cross displaced together, so a stroke MEANDERS
+ * rather than its sampling breaking up. Two octaves per axis, the long one
+ * carrying the drift and the short one the tremor, at an amplitude under a
+ * texel. What it buys is that a long straight edge is no longer exactly
+ * straight, which is the clearest single tell of a machine-drawn line.
+ * **It is anchored in SCREEN space, and that is a compromise stated rather
+ * than hidden**: a surface-anchored field would want the world position
+ * reconstructed per pixel, and would swim over every bot that walks anyway.
+ * At this amplitude and this frequency it reads as a line that wavers rather
+ * than as a pattern the camera slides across — turning grain.y or grain.z up
+ * finds the shower door quickly, which is why both are small.
+ *
+ * **At `dist` (`ndc`):**
+ * VIEW-Z IS NOT A DISTANCE, AND THE THREE TERMS BELOW WANT A DISTANCE. What
+ * the depth buffer holds is z along the camera's FORWARD AXIS, and what the
+ * cel shader fogs against is length(vPosW - camPos) — the radial distance
+ * to the eye. The two agree only down the middle of the screen and diverge as
+ * 1/cos(theta) toward its edges: on a 21:9 panel at the hip fov the horizontal
+ * edge is 50.9 degrees off-axis, so a tree the fog has fully dissolved at 78 m
+ * reported 49 m here and kept 0.78 of its ink and a near-bold nib.
+ * That is line work hanging in FRONT of the fog on the flanks of the frame and
+ * nowhere else — and turning to face it walks theta back to zero and takes it
+ * away again, which is the tell.
+ *
+ * The ring tests above stay on view-z and MUST: ringAt's crease term rests
+ * on 1/z being linear in screen space across a plane, which is a fact about
+ * the projection's z and not about distance. So the conversion is spent here,
+ * once, on the three terms that are asking how far away a thing IS.
+ *
+ * **At the nib (`wb` to `nib`):**
+ * THE NIB, WHICH IS THE WHOLE OF WHY DISTANCE IS IN THIS PASS TWICE.
+ *
+ * A line one texel wide everywhere is the one thing a pen never draws: it
+ * gives the palm grove at 300 m exactly the weight of the crate at 5, so a
+ * frame full of geometry arrives with no hierarchy in it and the fog fade is
+ * left to do alone what a draughtsman does with the NIB. Darkness and weight
+ * are not one reading — a thin black line comes forward and a thick pale one
+ * does not — so the two are separated here and spent together.
+ *
+ * The curve has TWO SIDES, because the near end is the viewmodel's: bold at
+ * widthRange.x, tapering to a fine line by widthRange.y, and tapering back
+ * DOWN inside widthRange.x for the reason ink.near already exists — at arm's
+ * length the parts are smaller than the pen, and a full nib on a trigger
+ * guard is a smudge.
+ * The outward taper is on sqrt so most of the thinning happens in the first
+ * few metres, where perspective does most of its own — but nowhere near the
+ * 1/z that a constant WORLD thickness would give, which is the inverted hull
+ * this pass replaced and which vanished at range.
+ *
+ * Widths are stated at widthBand.w rows and scale with the frame's own,
+ * because a stroke is a fraction of the PICTURE rather than a count of
+ * pixels — the same drawing on a phone and on a 4K panel. The reach is two
+ * rings, so the nib is clamped at 3 texels (a five-texel stroke); past that a
+ * third ring is four more loads.
+ *
+ * **At `core` and `flank`:**
+ * What each ring is worth at this nib. The inner one carries a stroke up to a
+ * texel wide and LIGHTENS below that rather than vanishing, which is the
+ * honest reading of a sub-texel line and is what keeps distant clutter from
+ * matting into a tangle of full-strength hairlines. The outer one is the
+ * flank, and it arrives only once the core is full — so a stroke has a dark
+ * centre and a softer edge, which is what a nib does and what a single ring
+ * could never give.
+ *
+ * **At `kNib`:**
+ * A crease is interior detail, and an artist draws it finer as well as
+ * lighter: the contour is laid down first and heaviest.
+ *
+ * **At the fade (`t`):**
+ * The ink's own fade, on the cel shader's t*t curve. **Anything drawn
+ * unshaded owes this** — see fogAmountAt — and here it is free and exact,
+ * because the distance is already in hand where the hull needed a whole
+ * shader-store patch (OutlineFog) to get it per pixel and a per-mesh width
+ * ramp to approximate it. Without it a dense map at range mats into black
+ * lines, which is the classic screen-space outline failure. The nib's taper
+ * is the OTHER half of that and neither stands in for the other: this one
+ * takes the line's DARKNESS, the nib takes its WEIGHT.
+ *
+ * **At the near band (`edge *= mix(uniforms.nearBand.y, …)`):**
+ * The NEAR BAND, which is the viewmodel and can only be the viewmodel: a body
+ * cannot get within about 0.4 m of world geometry, so this names the weapon
+ * without any per-mesh data. It stands in for the 0.004 m hull the gun used
+ * to wear — full-weight line work on parts that small swallows it in black.
+ * The nib's inward taper above is that same argument spent on WIDTH; this is
+ * the darkness half, and the weapon wants both.
+ *
+ * **At the emissive mask (`emissive`, `lit`):**
+ * The EMISSIVE MASK — what the noInk flag used to buy. An inked emissive is
+ * swallowed glow, so the ink gives way wherever the glow layer drew
+ * something. Luma rather than a channel, because an emissive may be any
+ * colour and a green sign must mask as well as a white one.
+ *
+ * **At the coverage term (`edge *= 1.0 - saturate(frame.a)`):**
+ * TRANSLUCENT COVERAGE, and it is the one thing a depth buffer cannot tell
+ * this pass. Smoke and the capture columns write no depth — they must not,
+ * or a marker would hide what it marks — so the depth here is the bots and
+ * the crates BEHIND them, and their line work was landing on top of the
+ * effect at full strength, which reads as ink floating in front of it. The
+ * frame's alpha channel carries how much got in the way: everything opaque
+ * writes 0 (opaqueAlpha in CelShader, and the same 0 in the grass and the
+ * water), a pixel of sky is 1, and every alpha-blended draw accumulates into it
+ * for free, because Babylon's ALPHA_COMBINE blends the alpha channel (ONE,
+ * ONE). So this costs no pass, no target and not even a texture read — it is
+ * the channel of the sample the first line already took.
+ *
+ * It ATTENUATES rather than deletes, which is what makes it right rather than
+ * merely absent: a wall seen through thin smoke keeps a faint line, and only
+ * a fully opaque plume takes the line away. An ADDITIVE effect contributes
+ * nothing here (ALPHA_ADD leaves the channel alone) and wants to contribute
+ * nothing — a tracer's flare adds light rather than hiding what is behind it.
+ *
+ * **At the output (`inked`):**
+ * ONLY EVER DARKER. tint < 1, so the ink cannot leave a pixel brighter than
+ * it arrived — which is what lets it sit over a lit frame, with the bloom
+ * composited over it afterwards, without either disturbing the other. The
+ * bloom is that afterwards: added to the inked pixel rather than inked over.
  */
-import {
-  Camera,
-  PostProcess,
-  Scene,
-  ShaderLanguage,
-  ShaderStore,
-} from "@babylonjs/core";
+import type { Camera } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import { hostTexture } from "../render/babylonSeam";
+import type { PostStage } from "../render/PostChain";
 import { fogBand } from "./CelShader";
-import { FrameDepth } from "./FrameDepth";
+import type { FrameDepth } from "./FrameDepth";
+import type { GlowPass } from "./GlowPass";
 import {
-  GLOW_COMPOSE_SAMPLERS,
-  GLOW_COMPOSE_UNIFORMS,
-  GLOW_COMPOSE_WGSL,
-  type GlowPass,
-} from "./GlowPass";
+  CEL_INK_BLOCK as B,
+  CEL_INK_FRAGMENT,
+  CEL_INK_FRAGMENT_BINDINGS,
+  CEL_INK_VERTEX,
+  CEL_INK_VERTEX_BINDINGS,
+} from "./wgsl/celInk";
 
-ShaderStore.ShadersStoreWGSL["celInkFragmentShader"] = `
-varying vUV: vec2f;
-var textureSamplerSampler: sampler;
-var textureSampler: texture_2d<f32>;
-
-// The MAIN pass's depth attachment, out of the shared FrameDepth. Declared as a
-// depth texture so Babylon's WGSL processor gives the binding sampleType
-// "depth"; every read below is a textureLoad, so this pass declares no sampler
-// for it and there is none to get wrong.
-var depthTexture: texture_depth_2d;
-
-// The GLOW's mask: the emissive meshes ALONE, full resolution and UNBLURRED
-// (the blur reads a downsample of it and never writes back), already
-// depth-tested against this same frame. See
-// CONFIG.graphics.ink.emissiveMask.
-var emissiveSamplerSampler: sampler;
-var emissiveSampler: texture_2d<f32>;
-
-uniform nearFar: vec2f;
-uniform tanHalfFov: vec2f;   // the half-angles of the frustum, as tangents
-uniform thresholds: vec2f;   // x = silhouette, y = crease
-uniform fadeBand: vec2f;     // the map's fog start and end, in metres
-uniform nearBand: vec2f;     // x = metres it holds for, y = ink kept at the eye
-uniform maskBand: vec2f;     // x = emissive luma where ink starts giving way, y = gone
-uniform tint: f32;
-uniform widthBand: vec4f;    // the NIB, in texels: x at the eye, y bold, z fine, w = the rows it is stated at
-uniform widthRange: vec2f;   // x = where the bold nib is, y = where the fine one is, in metres
-uniform creaseStroke: vec2f; // what a CREASE is worth against a contour: x = darkness, y = width
-uniform grain: vec3f;        // x = pressure of the faintest line, y = wobble in texels, z = wobble frequency
-
-// The bloom's compose, owned by GlowPass and added in this pass's last line.
-${GLOW_COMPOSE_WGSL}
-
-// Buffer depth -> metres. Babylon is left-handed and WebGPU's NDC z is [0, 1]
-// (engine.isNDCHalfZRange), and nothing in the tree turns on a reverse depth
-// buffer, so this is the plain inverse of the projection's z row.
-fn linearise(d: f32, nf: vec2f) -> f32 {
-  return (nf.x * nf.y) / (nf.y - d * (nf.y - nf.x));
-}
-
-fn rawAt(p: vec2i, dims: vec2i) -> f32 {
-  return textureLoad(depthTexture, clamp(p, vec2i(0), dims - vec2i(1)), 0);
-}
-
-// THE TWO TESTS, taken at a RING of radius r and handed back as (silhouette,
-// crease), so one function serves every ring the nib is wide enough to want.
-//
-// A SILHOUETTE is a step in depth, taken relative to the centre so that one
-// doorway reads the same at 5 m and at 50.
-//
-// A CREASE is a box corner, where depth is CONTINUOUS and only its slope
-// jumps — what a naive Sobel of depth misses, and what a normal buffer is
-// usually bought for. See CONFIG.graphics.ink.crease: 1/z is linear in screen
-// space across any plane, so this is zero on a flat surface at any angle and
-// large at a corner. Multiplying back by dc makes it dimensionless, so one
-// threshold holds at every range.
-//
-// **BOTH ARE DIVIDED BY r, and that is what lets ONE PAIR OF THRESHOLDS serve
-// every ring.** Across a sloped surface a depth difference grows in proportion
-// to the step taken over it, and a slope BREAK's second difference does the
-// same, so without the division an outer ring would read a grazing floor as a
-// silhouette and every dune would be a contour. What the division costs is
-// sensitivity on the outer ring at a WEAK edge — and that cost is the feature
-// rather than the price: a weak edge keeps the inner ring alone and is drawn
-// as a hairline, a strong one carries the whole nib, so a stroke varies in
-// width along its length with what it is describing. That is pressure, and it
-// is arrived at rather than painted on.
-fn ringAt(p: vec2i, dims: vec2i, r: i32, dc: f32, nf: vec2f) -> vec2f {
-  let rf = f32(r);
-  let dl = linearise(rawAt(p + vec2i(-r,  0), dims), nf);
-  let dr = linearise(rawAt(p + vec2i( r,  0), dims), nf);
-  let du = linearise(rawAt(p + vec2i( 0, -r), dims), nf);
-  let dd = linearise(rawAt(p + vec2i( 0,  r), dims), nf);
-
-  let sil = max(max(abs(dc - dl), abs(dc - dr)),
-                max(abs(dc - du), abs(dc - dd))) / (max(dc, 0.001) * rf);
-
-  let ic = 1.0 / max(dc, 0.001);
-  let cx = abs((1.0 / max(dl, 0.001) + 1.0 / max(dr, 0.001)) * 0.5 - ic) * dc / rf;
-  let cy = abs((1.0 / max(du, 0.001) + 1.0 / max(dd, 0.001)) * 0.5 - ic) * dc / rf;
-  return vec2f(sil, max(cx, cy));
-}
-
-// A stroke's DARKNESS from a measurement and its threshold. The first factor is
-// whether there is a line here at all; the second is PRESSURE — a line that
-// only just qualifies is laid down lighter than one the geometry shouts, over a
-// band (t..5t) wide enough that the variation runs ALONG a stroke rather than
-// sitting at its ends. The floor is what the faintest line keeps.
-fn strokeOf(m: f32, t: f32, press: f32) -> f32 {
-  return smoothstep(t, t * 2.0, m) * mix(press, 1.0, smoothstep(t, t * 5.0, m));
-}
-
-@fragment
-fn main(input: FragmentInputs) -> FragmentOutputs {
-  // RGBA, because the alpha is doing work here — see the coverage term below.
-  let frame = textureSampleLevel(textureSampler, textureSamplerSampler, input.vUV, 0.0);
-  let scene = frame.rgb;
-
-  let nf = uniforms.nearFar;
-  let dims = vec2i(textureDimensions(depthTexture, 0));
-  let dimsf = vec2f(dims);
-  let base = input.vUV * dimsf;
-
-  // THE WOBBLE — the whole cross displaced together, so a stroke MEANDERS
-  // rather than its sampling breaking up. Two octaves per axis, the long one
-  // carrying the drift and the short one the tremor, at an amplitude under a
-  // texel. What it buys is that a long straight edge is no longer exactly
-  // straight, which is the clearest single tell of a machine-drawn line.
-  // **It is anchored in SCREEN space, and that is a compromise stated rather
-  // than hidden**: a surface-anchored field would want the world position
-  // reconstructed per pixel, and would swim over every bot that walks anyway.
-  // At this amplitude and this frequency it reads as a line that wavers rather
-  // than as a pattern the camera slides across — turning grain.y or grain.z up
-  // finds the shower door quickly, which is why both are small.
-  let n = base * uniforms.grain.z;
-  let wob = vec2f(
-    sin(n.y * 1.7 + 1.3) + 0.5 * sin(n.y * 4.3 + n.x * 1.1),
-    sin(n.x * 1.9 + 2.7) + 0.5 * sin(n.x * 4.7 + n.y * 0.9)
-  ) * uniforms.grain.y;
-  let p = vec2i(base + wob);
-
-  let dc = linearise(rawAt(p, dims), nf);
-
-  // VIEW-Z IS NOT A DISTANCE, AND THE THREE TERMS BELOW WANT A DISTANCE. What
-  // the depth buffer holds is z along the camera's FORWARD AXIS, and what the
-  // cel shader fogs against is length(vPosW - camPos) — the radial distance
-  // to the eye. The two agree only down the middle of the screen and diverge as
-  // 1/cos(theta) toward its edges: on a 21:9 panel at the hip fov the horizontal
-  // edge is 50.9 degrees off-axis, so a tree the fog has fully dissolved at 78 m
-  // reported 49 m here and kept 0.78 of its ink and a near-bold nib.
-  // That is line work hanging in FRONT of the fog on the flanks of the frame and
-  // nowhere else — and turning to face it walks theta back to zero and takes it
-  // away again, which is the tell.
-  //
-  // The ring tests above stay on view-z and MUST: ringAt's crease term rests
-  // on 1/z being linear in screen space across a plane, which is a fact about
-  // the projection's z and not about distance. So the conversion is spent here,
-  // once, on the three terms that are asking how far away a thing IS.
-  let ndc = input.vUV * 2.0 - vec2f(1.0);
-  let dist = dc * length(vec3f(ndc * uniforms.tanHalfFov, 1.0));
-
-  // THE NIB, WHICH IS THE WHOLE OF WHY DISTANCE IS IN THIS PASS TWICE.
-  //
-  // A line one texel wide everywhere is the one thing a pen never draws: it
-  // gives the palm grove at 300 m exactly the weight of the crate at 5, so a
-  // frame full of geometry arrives with no hierarchy in it and the fog fade is
-  // left to do alone what a draughtsman does with the NIB. Darkness and weight
-  // are not one reading — a thin black line comes forward and a thick pale one
-  // does not — so the two are separated here and spent together.
-  //
-  // The curve has TWO SIDES, because the near end is the viewmodel's: bold at
-  // widthRange.x, tapering to a fine line by widthRange.y, and tapering back
-  // DOWN inside widthRange.x for the reason ink.near already exists — at arm's
-  // length the parts are smaller than the pen, and a full nib on a trigger
-  // guard is a smudge.
-  // The outward taper is on sqrt so most of the thinning happens in the first
-  // few metres, where perspective does most of its own — but nowhere near the
-  // 1/z that a constant WORLD thickness would give, which is the inverted hull
-  // this pass replaced and which vanished at range.
-  //
-  // Widths are stated at widthBand.w rows and scale with the frame's own,
-  // because a stroke is a fraction of the PICTURE rather than a count of
-  // pixels — the same drawing on a phone and on a 4K panel. The reach is two
-  // rings, so the nib is clamped at 3 texels (a five-texel stroke); past that a
-  // third ring is four more loads.
-  let wb = uniforms.widthBand;
-  let far = saturate((dist - uniforms.widthRange.x)
-    / max(0.001, uniforms.widthRange.y - uniforms.widthRange.x));
-  let arm = smoothstep(0.0, 1.0, saturate(dist / max(0.001, uniforms.widthRange.x)));
-  let nib = min(3.0, mix(wb.x, mix(wb.y, wb.z, sqrt(far)), arm) * (dimsf.y / wb.w));
-
-  // What each ring is worth at this nib. The inner one carries a stroke up to a
-  // texel wide and LIGHTENS below that rather than vanishing, which is the
-  // honest reading of a sub-texel line and is what keeps distant clutter from
-  // matting into a tangle of full-strength hairlines. The outer one is the
-  // flank, and it arrives only once the core is full — so a stroke has a dark
-  // centre and a softer edge, which is what a nib does and what a single ring
-  // could never give.
-  let core = saturate(nib);
-  let flank = saturate((nib - 1.0) * 0.5);
-  // A crease is interior detail, and an artist draws it finer as well as
-  // lighter: the contour is laid down first and heaviest.
-  let kNib = nib * uniforms.creaseStroke.y;
-  let kCore = saturate(kNib);
-  let kFlank = saturate((kNib - 1.0) * 0.5);
-
-  let r1 = ringAt(p, dims, 1, dc, nf);
-  let r2 = ringAt(p, dims, 2, dc, nf);
-
-  let press = uniforms.grain.x;
-  let contour = max(strokeOf(r1.x, uniforms.thresholds.x, press) * core,
-                    strokeOf(r2.x, uniforms.thresholds.x, press) * flank);
-  let crease = max(strokeOf(r1.y, uniforms.thresholds.y, press) * kCore,
-                   strokeOf(r2.y, uniforms.thresholds.y, press) * kFlank);
-
-  var edge = max(contour, crease * uniforms.creaseStroke.x);
-
-  // The ink's own fade, on the cel shader's t*t curve. **Anything drawn
-  // unshaded owes this** — see fogAmountAt — and here it is free and exact,
-  // because the distance is already in hand where the hull needed a whole
-  // shader-store patch (OutlineFog) to get it per pixel and a per-mesh width
-  // ramp to approximate it. Without it a dense map at range mats into black
-  // lines, which is the classic screen-space outline failure. The nib's taper
-  // is the OTHER half of that and neither stands in for the other: this one
-  // takes the line's DARKNESS, the nib takes its WEIGHT.
-  let t = saturate((dist - uniforms.fadeBand.x) / max(0.001, uniforms.fadeBand.y - uniforms.fadeBand.x));
-  edge *= 1.0 - t * t;
-
-  // The NEAR BAND, which is the viewmodel and can only be the viewmodel: a body
-  // cannot get within about 0.4 m of world geometry, so this names the weapon
-  // without any per-mesh data. It stands in for the 0.004 m hull the gun used
-  // to wear — full-weight line work on parts that small swallows it in black.
-  // The nib's inward taper above is that same argument spent on WIDTH; this is
-  // the darkness half, and the weapon wants both.
-  edge *= mix(uniforms.nearBand.y, 1.0, saturate(dist / max(0.001, uniforms.nearBand.x)));
-
-  // The EMISSIVE MASK — what the noInk flag used to buy. An inked emissive is
-  // swallowed glow, so the ink gives way wherever the glow layer drew
-  // something. Luma rather than a channel, because an emissive may be any
-  // colour and a green sign must mask as well as a white one.
-  let emissive = textureSampleLevel(emissiveSampler, emissiveSamplerSampler, input.vUV, 0.0).rgb;
-  let lit = dot(emissive, vec3f(0.2126, 0.7152, 0.0722));
-  edge *= 1.0 - smoothstep(uniforms.maskBand.x, uniforms.maskBand.y, lit);
-
-  // TRANSLUCENT COVERAGE, and it is the one thing a depth buffer cannot tell
-  // this pass. Smoke and the capture columns write no depth — they must not,
-  // or a marker would hide what it marks — so the depth here is the bots and
-  // the crates BEHIND them, and their line work was landing on top of the
-  // effect at full strength, which reads as ink floating in front of it. The
-  // frame's alpha channel carries how much got in the way: everything opaque
-  // writes 0 (opaqueAlpha in CelShader, and the same 0 in the grass and the
-  // water), a pixel of sky is 1, and every alpha-blended draw accumulates into it
-  // for free, because Babylon's ALPHA_COMBINE blends the alpha channel (ONE,
-  // ONE). So this costs no pass, no target and not even a texture read — it is
-  // the channel of the sample the first line already took.
-  //
-  // It ATTENUATES rather than deletes, which is what makes it right rather than
-  // merely absent: a wall seen through thin smoke keeps a faint line, and only
-  // a fully opaque plume takes the line away. An ADDITIVE effect contributes
-  // nothing here (ALPHA_ADD leaves the channel alone) and wants to contribute
-  // nothing — a tracer's flare adds light rather than hiding what is behind it.
-  edge *= 1.0 - saturate(frame.a);
-
-  // ONLY EVER DARKER. tint < 1, so the ink cannot leave a pixel brighter than
-  // it arrived — which is what lets it sit over a lit frame, with the bloom
-  // composited over it afterwards, without either disturbing the other. The
-  // bloom is that afterwards: added to the inked pixel rather than inked over.
-  let inked = mix(scene, scene * uniforms.tint, edge);
-  fragmentOutputs.color = vec4f(inked + glowAt(input.vUV), 1.0);
-  return fragmentOutputs;
-}
-`;
+/**
+ * The sampler Babylon bound the ink's input — the frame — with (a
+ * post-process's default `NEAREST_SAMPLINGMODE`, on a texture with no mips;
+ * read off the parent's device by `plans/webgpu-ref/post.mjs`).
+ */
+const INPUT_SAMPLER: GPUSamplerDescriptor = {
+  addressModeU: "clamp-to-edge",
+  addressModeV: "clamp-to-edge",
+  addressModeW: "repeat",
+  magFilter: "nearest",
+  minFilter: "nearest",
+  mipmapFilter: "nearest",
+  lodMinClamp: 0,
+  lodMaxClamp: 0,
+  maxAnisotropy: 1,
+};
 
 export class CelInk {
-  readonly pass: PostProcess;
+  /** The stage the post chain draws the ink as. */
+  readonly stage: PostStage;
 
   /** The map's fog band, re-read on every environment change. */
   private fadeStart = 0;
   private fadeEnd = 1;
 
   constructor(
-    scene: Scene,
     private readonly camera: Camera,
     /**
      * The bloom: its emissive mask (`GlowPass.mask`), read as the ink's mask,
-     * and the blurred halves the compose adds. Read, never written.
+     * and the blurred halves and the intensity the compose adds
+     * (`composeNear`, `composeWide`, `composeIntensity`). Read, never written.
      */
     private readonly glow: GlowPass,
     /** The frame's own depth image. Shared — see `FrameDepth`. */
-    private readonly depth: FrameDepth,
+    depth: FrameDepth,
   ) {
-    const ink = CONFIG.graphics.ink;
-    this.pass = new PostProcess("celInk", "celInk", {
-      uniforms: [
-        "nearFar",
-        "tanHalfFov",
-        "thresholds",
-        "fadeBand",
-        "nearBand",
-        "maskBand",
-        "tint",
-        "widthBand",
-        "widthRange",
-        "creaseStroke",
-        "grain",
-        ...GLOW_COMPOSE_UNIFORMS,
+    this.stage = {
+      name: "ink",
+      label: "celInk",
+      vertex: CEL_INK_VERTEX,
+      vertexBindings: CEL_INK_VERTEX_BINDINGS,
+      fragment: CEL_INK_FRAGMENT,
+      fragmentBindings: CEL_INK_FRAGMENT_BINDINGS,
+      // The rings and the wobble walk the DEPTH across a neighbourhood, but
+      // the input — the frame — is read at its own pixel alone.
+      reads: "point",
+      inputBinding: 0,
+      inputSamplerBinding: 5,
+      internalsBinding: 9,
+      blockBinding: 10,
+      inputSampler: INPUT_SAMPLER,
+      blockFloats: B.floats,
+      extras: [
+        // The frame's depth, read by `textureLoad` (no sampler). Null before
+        // the first draw phase has captured it, and the stage then draws
+        // nothing — it cannot be by the time the host draws, the capture
+        // being on the draw phase of the same `scene.render()`.
+        { binding: 1, texture: () => (depth.texture ? hostTexture(depth.texture as never) : null) },
+        // The glow's mask and its two blurred targets, each through the
+        // host's own view and sampler (bilinear, clamped, as Babylon bound
+        // them). The glow owns all three from construction.
+        { binding: 2, samplerBinding: 6, texture: () => hostTexture(glow.mask) },
+        { binding: 3, samplerBinding: 7, texture: () => hostTexture(glow.composeNear) },
+        { binding: 4, samplerBinding: 8, texture: () => hostTexture(glow.composeWide) },
       ],
-      samplers: ["depthTexture", "emissiveSampler", ...GLOW_COMPOSE_SAMPLERS],
-      size: 1.0,
-      camera,
-      engine: scene.getEngine(),
-      shaderLanguage: ShaderLanguage.WGSL,
-    });
-
-    this.pass.onApply = (effect) => {
-      effect.setFloat2("nearFar", this.camera.minZ, this.camera.maxZ);
-      // Read fresh every frame rather than cached, because `fov` is written by
-      // `CameraSystem.place` and moves with the ADS zoom, the sight and the
-      // per-shot punch — and a stale one puts the ink's idea of distance back
-      // out of step with the fog's the moment a scope comes up. Babylon's
-      // default fovMode is FOVMODE_VERTICAL_FIXED, so `camera.fov` is the
-      // VERTICAL half-angle doubled and the horizontal follows the aspect,
-      // which is taken from the pass's own target so a resized window is right
-      // on the frame it happens (`MotionBlur` reads both the same way).
-      const tanY = Math.tan(this.camera.fov * 0.5);
-      effect.setFloat2(
-        "tanHalfFov",
-        (tanY * this.pass.width) / Math.max(1, this.pass.height),
-        tanY,
-      );
-      effect.setFloat2("thresholds", ink.silhouette, ink.crease);
-      effect.setFloat2("fadeBand", this.fadeStart, this.fadeEnd);
-      effect.setFloat2("nearBand", ink.near.until, ink.near.scale);
-      effect.setFloat2("maskBand", ink.emissiveMask.from, ink.emissiveMask.to);
-      effect.setFloat("tint", ink.tint);
-      effect.setFloat4("widthBand", ink.width.eye, ink.width.bold, ink.width.fine, ink.width.rows);
-      effect.setFloat2("widthRange", ink.width.from, ink.width.to);
-      effect.setFloat2("creaseStroke", ink.creaseStroke.weight, ink.creaseStroke.width);
-      effect.setFloat3("grain", ink.pressure, ink.wobble.amount, ink.wobble.scale);
-      // A DECLARED texture must be BOUND or the bind group fails to build and
-      // the draw is silently lost. It cannot be null by the time this runs —
-      // the capture below is on the draw phase, which is earlier in the same
-      // scene.render() — but `applyEnvironment` keeps the pass off the camera
-      // until the first frame has handed one over, rather than resting on it.
-      const depth = this.depth.texture;
-      if (depth) effect.setTexture("depthTexture", depth);
-      // Same rule, and these cannot be null: the glow owns its mask and its
-      // blur targets from construction and `Game` builds the glow before this
-      // pass.
-      effect.setTexture("emissiveSampler", this.glow.mask);
-      this.glow.bindCompose(effect);
+      // Never off: the ink is part of the picture, not a setting.
+      active: () => true,
+      fill: (block, width, height) => this.fill(block, width, height),
     };
-
     this.applyEnvironment();
+  }
+
+  /**
+   * This frame's block, as Babylon's `onApply` set it: the vertex stage's
+   * `scale` (1, 1), then every uniform the ink declares, and the compose's
+   * intensity in the last float. Every float is written; the pad stays zero.
+   */
+  private fill(b: Float32Array, width: number, height: number): void {
+    const ink = CONFIG.graphics.ink;
+    b[B.scale] = 1;
+    b[B.scale + 1] = 1;
+    b[B.nearFar] = this.camera.minZ;
+    b[B.nearFar + 1] = this.camera.maxZ;
+    // Read fresh every frame rather than cached, because `fov` is written by
+    // `CameraSystem.place` and moves with the ADS zoom, the sight and the
+    // per-shot punch — and a stale one puts the ink's idea of distance back
+    // out of step with the fog's the moment a scope comes up. Babylon's
+    // default fovMode is FOVMODE_VERTICAL_FIXED, so `camera.fov` is the
+    // VERTICAL half-angle doubled and the horizontal follows the aspect,
+    // which is taken from the size of what the pass reads so a resized
+    // window is right on the frame it happens (`MotionBlur` reads both the
+    // same way).
+    const tanY = Math.tan(this.camera.fov * 0.5);
+    b[B.tanHalfFov] = (tanY * width) / Math.max(1, height);
+    b[B.tanHalfFov + 1] = tanY;
+    b[B.thresholds] = ink.silhouette;
+    b[B.thresholds + 1] = ink.crease;
+    b[B.fadeBand] = this.fadeStart;
+    b[B.fadeBand + 1] = this.fadeEnd;
+    b[B.nearBand] = ink.near.until;
+    b[B.nearBand + 1] = ink.near.scale;
+    b[B.maskBand] = ink.emissiveMask.from;
+    b[B.maskBand + 1] = ink.emissiveMask.to;
+    b[B.tint] = ink.tint;
+    b[B.widthBand] = ink.width.eye;
+    b[B.widthBand + 1] = ink.width.bold;
+    b[B.widthBand + 2] = ink.width.fine;
+    b[B.widthBand + 3] = ink.width.rows;
+    b[B.widthRange] = ink.width.from;
+    b[B.widthRange + 1] = ink.width.to;
+    b[B.creaseStroke] = ink.creaseStroke.weight;
+    b[B.creaseStroke + 1] = ink.creaseStroke.width;
+    b[B.grain] = ink.pressure;
+    b[B.grain + 1] = ink.wobble.amount;
+    b[B.grain + 2] = ink.wobble.scale;
+    b[B.glowIntensity] = this.glow.composeIntensity;
   }
 
   /**
@@ -498,9 +472,5 @@ export class CelInk {
     const band = fogBand();
     this.fadeStart = band.start;
     this.fadeEnd = band.end;
-  }
-
-  dispose(): void {
-    this.pass.dispose();
   }
 }

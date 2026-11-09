@@ -679,10 +679,20 @@ light along a ray they have already bounded at the frame's own depth.
 part of the picture, not a grade over one: FXAA behind it antialiases the lines
 (they come off a depth buffer, which has no antialiasing of its own), and the
 shafts, the smear and the grain all land on top of inked geometry rather than
-under it. A `PostProcess` given a camera attaches itself and `attachPostProcess`
-APPENDS — and it is the only one: FXAA, the shafts, the smear and the grain are
-stages of our post chain (X5.2c1, X5.2c2), after Babylon's whole list, in the
-host's order.
+under it. Since `BABYLON_EXIT.md` X5.2d it is the FIRST STAGE of our post chain
+(`render/PostChain.ts`, the host's list order, which `Game` assembles), reading
+the frame the scene drew; FXAA, the shafts, the smear and the grain follow it
+(X5.2c1, X5.2c2), and no Babylon `PostProcess` stands on the camera.
+
+**The pass is ours, ported AS COMPILED** (`shaders/wgsl/celInk.ts`): the
+`postprocess` vertex stage with the ink's whole `LeftOver` block and the
+fragment — the glow's compose spliced in ahead of it — character for character
+the text Babylon's processor handed the parent's device, its 112-byte block
+filled as its `onApply` filled it (`CelInk.fill`, `glowIntensity` in `grain`'s
+fourth float), the frame read NEAREST through our sampler at Babylon's
+descriptor, its depth by `textureLoad`, the glow's mask and two blurred targets
+through the host's own view and sampler. The source's comments, which the
+compiled text keeps none of, are kept verbatim in `CelInk.ts`.
 
 **It needs no normal buffer, and the reason is worth knowing before anyone adds
 one.** A `GeometryBufferRenderer` re-renders the map — the wall the light
@@ -906,10 +916,12 @@ repack Babylon's uniform buffer did — and its HISTORY still the CPU's previous
 basis, not a texture; off is a stage the host does not open.
 
 **The depth image is SHARED and its owner is `shaders/FrameDepth.ts`** — one
-capture, one wrapper, read by the ink and by this pass. It is the attachment
-belonging to the FIRST pass in the camera's chain, so **anything inserted ahead
-of the ink takes the depth with it**, and a pass that samples it must stay
-downstream of whatever the scene draws into.
+capture, one wrapper, read by the ink, the shafts, this pass and the grade. It
+is the depth of the FRAME, the render target the scene draws into
+(`PostPasses`' frame, the camera's `outputRenderTarget`, `BABYLON_EXIT.md`
+X5.2d; the ink's input before it), read by Babylon's public getter
+(`renderTarget.depthStencilTexture`) — so a pass that samples it must stay
+downstream of the scene's draw, which every stage of the chain is.
 
 ## The wind, and the one thing in the world that moves
 
@@ -3171,7 +3183,9 @@ are in different places. A shader is registered into
 `ShaderStore.ShadersStoreWGSL` rather than `Effect.ShadersStore`, and its
 consumer states `shaderLanguage: ShaderLanguage.WGSL` — a `PostProcess` and a
 `ShaderMaterial` both default to GLSL and will otherwise look the shader up in
-a store nothing wrote. There used to be one thing in the engine that did the
+a store nothing wrote (no `PostProcess` is left in the tree since
+`BABYLON_EXIT.md` X5.2d: every pass of the post chain is ours, its program the
+processor's output as compiled, and the rule is a `ShaderMaterial`'s). There used to be one thing in the engine that did the
 opposite — `OutlineRenderer` picks WGSL for itself under WebGPU with no flag to
 say otherwise, its constructor setting GLSL and then overwriting it, with no
 `ForceGLSL` between as `StandardMaterial` has — and the patch that had to know
@@ -3436,10 +3450,11 @@ recorded into (`FrameHost.prepareEncoder`, below). X3.5 added a tenth: the
 group's `_renderAlphaTest`, WRAPPED while the main pass's group 0 renders, so
 a draw can land between its opaque and alpha-tested lists (below). That list
 only shrinks after Phase 3.
-Four older touches in three files (`FrameDepth`, `webgpuLeaks`,
-`FrameProfile`) are not the renderer's and stay where they are, listed in
-the seam's header with the step each leaves at; one of them patches a
-Babylon class's prototype, a value this directory may not import.
+Three older touches in two files (`webgpuLeaks`, `FrameProfile`) are not the
+renderer's and stay where they are, listed in the seam's header with the step
+each leaves at; one of them patches a Babylon class's prototype, a value this
+directory may not import. `FrameDepth`'s, the fourth, left at
+`BABYLON_EXIT.md` X5.2d: it reads the frame's depth by Babylon's public getter.
 `ReflectionSystem`'s two (`_releaseRenderPassId`, `_removeDrawWrapper`) went
 with Babylon's bake at X3.7c.
 
@@ -3464,7 +3479,9 @@ follow:
 and every shadow pass Babylon still draws (an editor build's world maps and
 lamps' atlas; no probe face since X3.7c, no bodies' map since X4.1c) draw
 rendering group 0 too, each into its own target. The frame's target is the one bound as
-`onBeforeDrawPhaseObservable` fires (the post chain binds it just before),
+`onBeforeDrawPhaseObservable` fires (the scene binds it, the camera's
+`outputRenderTarget`, since X5.2d; the post chain bound the ink's input there
+before),
 and a group counts only if it finishes into that same target before the
 draw phase ends (`FrameHost.onMainPass`). **The window alone is not
 enough.** The probes and the shadow maps draw before the phase, but the
@@ -3512,56 +3529,68 @@ changed in the MENU is the same difference: its widths are declared after the
 round's list was taken, so the warm-up does not wait for them, and a round
 reaching play before they are built skips the same way.
 
-**The POST CHAIN's tail is the third (X5.2c1), and it is a HOST of declared
-stages, not a pass a module owns.** `render/PostChain.ts` holds an ordered list
-of `PostStage`s — FXAA, the shafts (one a rung), the blur and the grade since X5.2c2
-(`Fxaa.stage`, `volumetricStages`, `MotionBlur.stage`, `PaperGrain.stage`), after
-Babylon's prefix, the ink alone — each DECLARING
-its program as Babylon compiled it (`shaders/wgsl/fxaa.ts`, `volumetrics.ts`,
-`motionBlur.ts`, `paperGrain.ts`, the parent's device text character for
-character), its uniform block and its `fill`, its extra bindings (the frame's
-depth; the shafts' shadow maps and cloud field, each with the sampler it is
-read with), the sampler it reads its input with (the
-consumer's, made from the stage's descriptor, never the target's), whether it
-is `active()`, and whether it reads its input point-wise or across a
-neighbourhood; the host opens a pass per active stage in list order, each
-reading the one before's output, the LAST given the canvas and any other a
-target of the chain's POOL — one a pass POSITION, so each pass of a frame
-writes a target of its own as each Babylon pass had an input of its own,
-bound (the whole target as the viewport) and cleared to the scene's colour as
-Babylon's `activate` bound and cleared the input of a reader at its defaults,
-which every stage of ours was — nothing a stage
-holds names its output, its place or the canvas, which is what keeps the door
-open for two neighbours to be FUSED later (a fusion drops the 8-bit rounding
-between them: never byte-exact, a later `Picture change:`). The passes are
-Babylon's, opened by the Babylon-side owner `shaders/PostPasses.ts` with public
-API: while a stage of ours is active, **`camera.outputRenderTarget` takes
-Babylon's prefix's output** — a `RenderTargetTexture` made as a post-process's
-input is (`rgba8unorm`, no depth, NEAREST, the render size), named for the
-stage that reads it (`PostProcessRTT-<reader>`) — **set only from the draw
-phase's end to the camera's** (Babylon reads it at three points: as
-`Scene.render` binds the frame's first target and clears the canvas's depth,
-which with it set would bind this target and skip that clear, the frame's
-opening canvas pass; as the camera picks its render pass id; and as
-`_finalizeFrame` binds its last pass's target, the only one meant — and at five
-more, inert under the window, which `BABYLON_EXIT.md`'s "What it is today"
-lists); the target is CLEARED to the scene's clear colour in the pass that
-writes it, as Babylon's `PostProcess.activate` cleared the input of Babylon's next
-pass — whichever stage of ours reads it first, FXAA when it is on — from
-the prefix's last pass's `onApplyObservable` (`Game.postPrefixTail`), or in a
-pass of its own on a frame that pass draws nothing (a DEV build THROWS if that
-pass is READY, since a ready pass that never applied is a tail named wrongly,
-whose fallback clear would wipe our first stage's input); then the canvas is opened with
-`restoreDefaultFramebuffer`, as `_finalizeFrame` opened it, and the stage's draw
-goes in through `Renderer.postStageOpened` (`passIs` against `canvasTargets`:
-the swap chain's format, the ENGINE's `depth32float`, written with compare
-`always` as Babylon's last pass wrote it, not flipped). With no stage of ours
-active nothing of this runs and Babylon's prefix writes the canvas itself — no
-interim copy pass, ever. Its pipelines are on the round's declared list ("the
-post chain"); the probe (`plans/webgpu-ref/post.mjs`) reads every pass and
-draw of it the same as the parent's but the three fields a draw of ours always
-differs in and, for the shafts, the descriptors of their two shadow maps' view
-and sampler, which are their owner's (`post-expected.txt`).
+**The POST CHAIN is the third (X5.2c1; WHOLE since X5.2d), and it is a HOST of
+declared stages, not a pass a module owns.** `render/PostChain.ts` holds an
+ordered list of `PostStage`s — the ink (X5.2d), FXAA, the shafts (one a rung),
+the blur and the grade (`CelInk.stage`, `Fxaa.stage`, `volumetricStages`,
+`MotionBlur.stage`, `PaperGrain.stage`), with no Babylon pass before them —
+each DECLARING its program as Babylon compiled it (`shaders/wgsl/celInk.ts`,
+`fxaa.ts`, `volumetrics.ts`, `motionBlur.ts`, `paperGrain.ts`, the parent's
+device text character for character), its uniform block and its `fill`, its
+extra bindings (the frame's depth; the ink's glow mask and two blurred
+targets; the shafts' shadow maps and cloud field, each with the sampler it is
+read with), the sampler it reads its input with (the consumer's, made from the
+stage's descriptor, never the target's), whether it is `active()`, and whether
+it reads its input point-wise or across a neighbourhood; the host opens a pass
+per active stage in list order, the first reading the FRAME and each other the
+one before's output, the LAST given the canvas and any other a target of the
+chain's POOL — one a pass POSITION, so each pass of a frame writes a target of
+its own as each Babylon pass had an input of its own, bound (the whole target
+as the viewport) and cleared to the scene's colour as Babylon's `activate`
+bound and cleared the input of a reader at its defaults, which every stage of
+ours was — nothing a stage holds names its output, its place or the canvas,
+which is what keeps the door open for two neighbours to be FUSED later (a
+fusion drops the 8-bit rounding between them: never byte-exact, a later
+`Picture change:`). The passes are Babylon's, opened by the Babylon-side owner
+`shaders/PostPasses.ts` with public API, after the camera's render
+(`onAfterCameraRenderObservable`). **The scene draws STRAIGHT INTO the frame**
+(X5.2d): `PostPasses`' `RenderTargetTexture`, made as Babylon made the ink's
+input (`rgba8unorm`, NEAREST, the render size, its `depth32float` depth and no
+stencil: `FRAME_TARGETS`), held as the camera's `outputRenderTarget` from the
+end of one frame's render to the end of the next frame's camera render — taken
+off once the chain is recorded, because an editor build's gizmo layer
+(`UtilityLayerRenderer`) renders with the same camera after it and would
+otherwise draw into the frame the chain has already read, and put back as the
+scene's render ends (`onAfterRenderObservable`) —
+resized to the render size before the scene first binds it
+(`onBeforeRenderObservable`) and named for the stage that reads it
+(`PostProcessRTT-celInk`, as Babylon named the ink's input). Babylon reads that
+field all through a frame (`BABYLON_EXIT.md`'s "What it is today" lists the
+eight points), and with it set as a frame starts **the scene CLEARS the frame itself** —
+`_checkCameraRenderTarget` re-arms its `_cleared` as the frame starts,
+`Scene.render`'s first bind clears its colour and depth (under
+`scene.autoClear`), and the camera's render binds it again and clears its depth
+— which is the clear `PostProcess.activate` gave the ink's input; so **the
+frame's OPENING pass is the frame's** (an empty pass, the clear) where it was
+the canvas's, the pass the scene draws in LOADS the colour that pass cleared,
+and Babylon's render pass id for the camera's draws is the frame's (an editor
+build's meshes draw with it). No Babylon `PostProcess` stands on the camera, so
+`_finalizeFrame` returns at once. The canvas is opened with
+`restoreDefaultFramebuffer`, as `_finalizeFrame` opened it for Babylon's last
+pass, and the last stage's draw goes in through `Renderer.postStageOpened`
+(`passIs` against `canvasTargets`: the swap chain's format, the ENGINE's
+`depth32float`, written with compare `always` as Babylon's last pass wrote it,
+not flipped). **The canvas is cleared by no pass any more**: the last stage
+overwrites it whole on every frame the chain draws, and on a boot frame before
+the chain's pipelines are built it holds what the swap chain hands over
+(transparent zeros) where the scene's opening clear left the clear colour —
+X5.2d's picture change, the owner's decision (`BABYLON_EXIT.md` row "X5.2, the
+boot canvas": accepted as the plan designs it, no stand-in). Its pipelines are on the round's declared list ("the post
+chain"); the probe (`plans/webgpu-ref/post.mjs`) reads every pass and draw of
+it the same as the parent's but the three fields a draw of ours always differs
+in, for the shafts the descriptors of their two shadow maps' view and sampler,
+which are their owner's, and the two passes the frame's own clear moved
+(`post-expected.txt`).
 
 **A draw lands at one of SEVEN points of the main pass** (`DrawPoint`), six of
 them about rendering group 0, and in this order every frame (the moon's, the sixth,
@@ -3694,9 +3723,11 @@ over.
 
 **The attachments are stated ONCE** (`render/targets.ts`, `FRAME_TARGETS`).
 A pipeline is compiled AHEAD of the frame that draws with it, so its formats
-must be known ahead. What the frame draws into is NOT the canvas: the post
-chain binds its first target, `CelInk`'s, before the draw phase. So the
-frame is:
+must be known ahead. What the frame draws into is NOT the canvas: it is the
+FRAME, `PostPasses`' render target, the camera's `outputRenderTarget`, which
+the scene binds as the frame starts (`BABYLON_EXIT.md` X5.2d; the post chain
+bound its first target, `CelInk`'s input, before the draw phase until then,
+and the frame is made as that input was). So the frame is:
 
 - one `rgba8unorm` colour attachment (a post-process's default);
 - one sample (`antialias: false`);
@@ -5953,9 +5984,12 @@ all in the counter this finding is named after. Not chased.
 - **…and it is the ink's LAST LINE rather than a pass of its own.** It reads
   one pixel of the frame and two bilinear taps, so as a post-process it was a
   whole-frame write and read for three fetches — on a phone's tile-based GPU, the
-  full backing store through memory and back (`FINDINGS.md` 5 and 13). `GlowPass`
-  still owns the arithmetic, as `GLOW_COMPOSE_WGSL` and `bindCompose`, and
-  `CelInk` splices it in after its own `mix`, which is the order the pass kept.
+  full backing store through memory and back (`FINDINGS.md` 5 and 13). Its text
+  is the ink's compiled module's `glowAt` (`shaders/wgsl/celInk.ts`, X5.2d: the
+  snippet `GlowPass` spliced into the ink's source until then, as Babylon's
+  processor compiled it), after the ink's own `mix`, which is the order the
+  pass kept; `GlowPass` hands the ink's stage what it adds (`composeNear`,
+  `composeWide`, `composeIntensity`).
   The inked pixel is no longer rounded to 8 bits before the bloom is added, which
   is under half a step: the committed vantages of Harrowmead, Coldharbour and
   Hollowmere diffed against the two-pass build inside the A-vs-A floor.

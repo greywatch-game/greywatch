@@ -1,66 +1,59 @@
 /**
  * PostPasses.ts — The Babylon-side PASS OWNER of the post chain
- * (`BABYLON_EXIT.md` X5.2c1, shape (A)): it opens, with Babylon's public API,
- * every pass a stage of OUR renderer draws in (`render/PostChain.ts`), in
- * Babylon's frame, into targets Babylon owns — and while a stage of ours is
- * active it takes Babylon's PREFIX of the chain off the canvas and onto a
- * target of its own, so the prefix's last pass writes what our first stage
- * reads.
- * Owns: `PostPasses` — the prefix's output (a `RenderTargetTexture`, made as
- * Babylon makes a post-process's input: `rgba8unorm`, no depth, NEAREST, no
- * mips, the render size), the pool our stages hand on through (made the same
- * way, one target a pass POSITION, grown when a stage of ours follows
- * another: X5.2c2), the window `camera.
- * outputRenderTarget` is set across, and the order the chain's passes are
+ * (`BABYLON_EXIT.md` X5.2c1, shape (A)): it owns the FRAME — the render
+ * target the scene draws straight into (X5.2d) — and opens, with Babylon's
+ * public API, every pass a stage of OUR renderer draws in
+ * (`render/PostChain.ts`), in Babylon's frame, into targets Babylon owns.
+ * Owns: `PostPasses` — the frame (a `RenderTargetTexture` made as Babylon
+ * made the ink's input, the post chain's first target: `rgba8unorm`, NEAREST,
+ * no mips, the render size, WITH its `depth32float` depth and no stencil —
+ * `render/targets.ts`' `FRAME_TARGETS`), held as the camera's
+ * `outputRenderTarget` from the end of one frame's render to the end of the
+ * next frame's camera render; the pool our stages hand on through (made
+ * the same way without depth, one target a pass POSITION, grown when a stage
+ * of ours follows another: X5.2c2); and the order the chain's passes are
  * opened in.
- * Invariants: with NO stage of ours active nothing here touches the frame —
- * `outputRenderTarget` stays null and Babylon's prefix writes the canvas
- * exactly as before X5.2c1, with no interim copy pass; with one active,
- * `outputRenderTarget` is set ONLY from the end of the camera's draw phase to
- * the end of its render (`onAfterDrawPhaseObservable`, added after the glow's
- * and the frame depth's, to `onAfterCameraRenderObservable`), because Babylon
- * reads it all through a frame and only `_finalizeFrame`'s read is the
- * prefix's output: as `Scene.render` resets the target's `_cleared` (the
- * colour clear's gate) and then binds the frame's first target and clears the
- * canvas's depth (it would bind this target instead and skip that clear — the
- * empty canvas pass the frame OPENS with, X5.2a), as it hands the camera's
- * render its bind flag, as the camera's render picks its render pass id
- * (which keys every Babylon draw's wrapper, an editor build's meshes among
- * them), in that render's and two materials' MULTIVIEW tests, and as
- * `PostProcessManager._finalizeFrame` binds its last pass's target — every
- * read but the last outside the window, and the multiview ones inert on a
- * one-view target anyway (`BABYLON_EXIT.md`, "What it is today"); the
- * prefix's output is CLEARED to the scene's clear colour at the open of the
- * pass that writes it, as Babylon's `PostProcess.activate`
- * clears a pass's input — from inside the prefix's last pass's `apply`
- * (`onApplyObservable`, after its own observers, before its draw), or, on a
- * frame that pass draws nothing (its effect not ready), as a pass of its own
- * where that one stood (a DEV build THROWS if that pass is ready, which is a
- * tail `Game` named wrongly, not one that drew nothing) — so what our first
- * stage reads on any frame is what it read as Babylon's next pass (the grade
- * at X5.2c1, FXAA when it is on since X5.2c2); a
- * target is named for the stage that READS it, as Babylon names a
- * post-process's input (`PostProcessRTT-<label>`);
- * a pool target is bound (the whole target as the viewport) and cleared to
- * the scene's colour as `activate` bound and cleared the input of a READER
- * at Babylon's defaults, which every stage of ours was (X5.2c2: a stage
- * declares no `autoClear`, `alphaMode`, `clearColor` or viewport of its own);
- * the canvas is opened with `restoreDefaultFramebuffer`, exactly as
- * `_finalizeFrame` opened it for Babylon's last pass, so the canvas's pass is
- * Babylon's main pass with the engine's depth; every target follows the
- * render size, resized before the prefix binds it.
+ * Invariants: the scene draws into the frame and CLEARS it itself — Babylon's
+ * own frame-buffer clear of a camera's output target (`Scene._clearFrameBuffer`,
+ * under `scene.autoClear`: its colour once a frame, at the frame's first bind,
+ * where `_checkCameraRenderTarget` re-armed it, its depth and stencil at that
+ * bind and again as the camera's render binds the target), the clear
+ * `PostProcess.activate` gave the ink's input until X5.2d — so the frame's
+ * OPENING pass is the frame's and no longer the canvas's (X5.2c1's reading of
+ * `outputRenderTarget`, "What it is today"), and Babylon's render pass id for
+ * the camera's draws is the frame's (an editor build's meshes draw with it);
+ * no Babylon `PostProcess` stands on the camera, so `_finalizeFrame` returns
+ * at once, and every pass of the chain is ours: after the camera's render
+ * (`onAfterCameraRenderObservable`), our first stage — the ink — reads the
+ * frame and its depth; a pool target is bound (the whole target as the
+ * viewport) and cleared to the scene's colour as `activate` bound and cleared
+ * the input of a READER at Babylon's defaults, which every stage of ours was
+ * (X5.2c2: a stage declares no `autoClear`, `alphaMode`, `clearColor` or
+ * viewport of its own); the canvas is opened with `restoreDefaultFramebuffer`,
+ * exactly as `_finalizeFrame` opened it for Babylon's last pass, so the
+ * canvas's pass is Babylon's main pass with the engine's depth; a target is
+ * named for the stage that READS it, as Babylon names a post-process's input
+ * (`PostProcessRTT-<label>`); every target follows the render size, the frame
+ * resized before the scene first binds it (`onBeforeRenderObservable`); and
+ * `outputRenderTarget` is taken OFF the camera once the chain is recorded and
+ * put back as the scene's render ends (`onAfterRenderObservable`), so it
+ * stands through every read Babylon makes of it as a frame starts
+ * (`_checkCameraRenderTarget` re-arms the colour clear before anything else
+ * in the frame runs) and through the camera's render, and NOT while
+ * anything renders with the same camera after it — an editor build's gizmo
+ * layer (`UtilityLayerRenderer`, on `onAfterRenderCameraObservable`), which
+ * draws over the finished canvas as it did, where with the field set it
+ * would bind the frame the chain has already read and draw into nothing
+ * shown.
  * Never: reaches a Babylon internal (public API only: no seam item, rule 4);
  * draws — our renderer does, queued from inside the pass this opened
  * (`Renderer.postStageOpened`); holds a slot or an index in the camera's list;
- * opens a pass while no stage of ours is active.
+ * clears the frame itself.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
  */
 import {
   type Camera,
   Constants,
-  type Effect,
-  type Observer,
-  type PostProcess,
   RenderTargetTexture,
   type Scene,
 } from "@babylonjs/core";
@@ -69,121 +62,83 @@ import type { PostChain, PostPassOwner, PostStage } from "../render/PostChain";
 import { hostTexture } from "../render/babylonSeam";
 
 export class PostPasses implements PostPassOwner {
-  private output: RenderTargetTexture | null = null;
+  /**
+   * The FRAME: what the scene draws into, with its depth, and what the post
+   * chain's first stage reads — the camera's `outputRenderTarget`. Public for
+   * the glow (whose mask borrows its depth), `FrameDepth` and the probe's
+   * adapter (`plans/webgpu-ref/post.mjs`).
+   */
+  readonly frameTarget: RenderTargetTexture;
+  private readonly frameHandle: HostTexture;
   /** The pool, one target a pass POSITION (`PostPassOwner.openPool`), grown on first use. */
   private readonly pool: RenderTargetTexture[] = [];
-  /** Whether `outputRenderTarget` is set this frame. */
-  private open = false;
-  /** Whether the prefix's output was cleared in its pass this frame. */
-  private cleared = false;
-  /** The prefix's last pass the clear is hung on, and its observer — moved only when the tail does. */
-  private tail: PostProcess | null = null;
-  private tailObserver: Observer<Effect> | null = null;
-  private outputHandle: HostTexture | null = null;
+  /** The chain this owner opens the passes of (`drive`). */
+  private chain: PostChain | null = null;
   width = 0;
   height = 0;
 
   constructor(
     private readonly scene: Scene,
     private readonly camera: Camera,
-    private readonly chain: PostChain,
-    /**
-     * The prefix's LAST live pass this frame — the one whose target is this
-     * owner's output. `Game` assembled the prefix and knows its order
-     * (`Game.postPrefixTail`).
-     */
-    private readonly prefixTail: () => PostProcess,
   ) {
-    // After the glow's and the frame depth's observers (both built first),
-    // so nothing they render is drawn while the output is set.
-    scene.onAfterDrawPhaseObservable.add(() => this.openWindow());
-    scene.onAfterCameraRenderObservable.add(() => this.closeWindow());
+    this.size();
+    this.frameTarget = this.target(null, "frame", true);
+    // The whole target, whatever the camera's viewport says — as
+    // `PostProcess.activate` bound the ink's input (`forceFullscreenViewport`).
+    this.frameTarget.ignoreCameraViewport = true;
+    this.frameHandle = hostTexture(this.frameTarget);
+    // The scene binds and clears it as a frame starts, and the camera's
+    // render binds it again (`Scene._bindFrameBuffer`): set before the first
+    // frame, and again as each frame's render ends, ready for the next.
+    camera.outputRenderTarget = this.frameTarget;
+    // Before the scene's first bind of the frame: the frame at this frame's
+    // render size, named for its reader.
+    scene.onBeforeRenderObservable.add(() => this.prepareFrame());
+    scene.onAfterCameraRenderObservable.add(() => this.record());
+    scene.onAfterRenderObservable.add(() => {
+      camera.outputRenderTarget = this.frameTarget;
+    });
   }
 
-  get prefixOutput(): HostTexture {
-    return this.outputHandle!;
+  /** The chain whose passes this opens, once `Game` has built it — its stages read the frame. */
+  drive(chain: PostChain): void {
+    this.chain = chain;
   }
 
-  /** The prefix's output as Babylon holds it, or null before a stage of ours first drew — for the probe's adapter (`plans/webgpu-ref/post.mjs`). */
-  get prefixTarget(): RenderTargetTexture | null {
-    return this.output;
+  get frame(): HostTexture {
+    return this.frameHandle;
   }
 
-  /** Pool target `slot`, or null before a pass first used it — for the probe's adapter, as `prefixTarget`. */
+  /** Pool target `slot`, or null before a pass first used it — for the probe's adapter. */
   poolTarget(slot: number): RenderTargetTexture | null {
     return this.pool[slot] ?? null;
   }
 
-  /** Points the prefix at this owner's output, if a stage of ours draws this frame. */
-  private openWindow(): void {
-    if (this.scene.activeCamera !== this.camera || !this.chain.active()) return;
+  /** The render size, which every target of the chain is. */
+  private size(): void {
     const engine = this.scene.getEngine();
-    // Babylon sizes a post-process's input as `getRenderWidth(true) * 1 | 0`.
+    // Babylon sized a post-process's input as `getRenderWidth(true) * 1 | 0`.
     this.width = engine.getRenderWidth(true) | 0;
     this.height = engine.getRenderHeight(true) | 0;
-    this.output = this.target(this.output, "output");
-    this.outputHandle = hostTexture(this.output);
-    this.label(this.output, this.firstActive());
-    this.camera.outputRenderTarget = this.output;
-    this.open = true;
-    this.cleared = false;
-    // The clear Babylon's `activate` gave our first stage's input (FXAA's
-    // when it is on, since X5.2c2; the grade's at X5.2c1), in the same
-    // pass: inside the prefix's last `apply`, after its own observers and
-    // before its draw, so the pass the bind left pending opens cleared.
-    // Hung once on whichever pass is the tail, and moved when a setting
-    // moves the tail, so a frame adds no observer.
-    const tail = this.prefixTail();
-    if (tail !== this.tail) {
-      if (this.tail && this.tailObserver) this.tail.onApplyObservable.remove(this.tailObserver);
-      this.tail = tail;
-      this.tailObserver = tail.onApplyObservable.add(this.clearInPass);
-    }
+  }
+
+  private prepareFrame(): void {
+    if (this.scene.activeCamera !== this.camera) return;
+    this.size();
+    this.target(this.frameTarget, "frame", true);
+    const first = this.chain?.firstActive();
+    if (first) this.label(this.frameTarget, first);
   }
 
   /**
-   * On the tail's `apply`: only while the window is open is the pass it is
-   * about to draw in this owner's output — with no stage of ours active the
-   * tail draws into the canvas, which this never clears.
+   * After the camera's render: the chain's passes, the frame drawn — and the
+   * frame off the camera until the scene's render ends (the header: an
+   * editor build's gizmo layer renders with this camera after it).
    */
-  private readonly clearInPass = (): void => {
-    if (!this.open || this.cleared) return;
-    this.clear();
-  };
-
-  /** After the prefix: the canvas (and any pool) passes of ours, then the output put back. */
-  private closeWindow(): void {
-    if (!this.open) return;
-    this.open = false;
+  private record(): void {
+    if (this.scene.activeCamera !== this.camera) return;
+    this.chain?.record(this);
     this.camera.outputRenderTarget = null;
-    // The prefix's last pass drew nothing (its effect not ready): Babylon's
-    // `activate` would still have cleared the target in a pass of its own,
-    // and the target is still bound, with nothing begun on it.
-    if (!this.cleared) {
-      // ...or `Game.postPrefixTail` named a pass that is not the prefix's
-      // last, which this cannot tell from that: the real last pass drew, and
-      // this clear would land after it and our first stage would read a
-      // clear colour, silently.
-      // Babylon's `apply` returns nothing exactly while `!isReady()`, and
-      // no readiness changes inside a frame, so a READY tail that never
-      // applied is the wrong one — thrown in a DEV build, as `GiCompute`
-      // throws a dispatch nobody recorded; production keeps the clear.
-      if (import.meta.env.DEV && this.tail?.isReady()) {
-        throw new Error(
-          `post: the prefix's tail "${this.tail.name}" is ready and never applied this frame — Game.postPrefixTail does not name the prefix's last pass, and the fallback clear would wipe our first stage's input`,
-        );
-      }
-      this.clear();
-    }
-    this.chain.record(this);
-  }
-
-  /** The bound target cleared as Babylon's `activate` clears a pass's input: colour to the scene's, depth and stencil asked too. */
-  private clear(): void {
-    this.cleared = true;
-    // `scene._allowPostProcessClearColor` is the second argument there; it
-    // is true unless something sets it, and nothing here does.
-    this.scene.getEngine().clear(this.scene.clearColor, true, true, true);
   }
 
   openCanvas(): void {
@@ -193,7 +148,7 @@ export class PostPasses implements PostPassOwner {
   }
 
   openPool(slot: number, reader: PostStage): HostTexture {
-    const t = this.target(this.pool[slot] ?? null, `pool ${slot}`);
+    const t = this.target(this.pool[slot] ?? null, `pool ${slot}`, false);
     this.pool[slot] = t;
     this.label(t, reader);
     // Bound and cleared as Babylon's `activate` bound and cleared the input
@@ -211,11 +166,11 @@ export class PostPasses implements PostPassOwner {
   }
 
   /** `t` at the render size: made on first use, resized when the render size moved. */
-  private target(t: RenderTargetTexture | null, name: string): RenderTargetTexture {
+  private target(t: RenderTargetTexture | null, name: string, depth: boolean): RenderTargetTexture {
     if (!t) {
       return new RenderTargetTexture(`postChain ${name}`, { width: this.width, height: this.height }, this.scene, {
         generateMipMaps: false,
-        generateDepthBuffer: false,
+        generateDepthBuffer: depth,
         generateStencilBuffer: false,
         type: Constants.TEXTURETYPE_UNSIGNED_BYTE,
         format: Constants.TEXTUREFORMAT_RGBA,
@@ -232,9 +187,5 @@ export class PostPasses implements PostPassOwner {
     const rt = t.renderTarget;
     const want = `PostProcessRTT-${reader.label}`;
     if (rt && rt.label !== want) rt.label = want;
-  }
-
-  private firstActive(): PostStage {
-    return this.chain.firstActive()!;
   }
 }

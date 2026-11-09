@@ -4,9 +4,12 @@
  * the wrapper; owns no pass, no uniform and no scene state, and renders and
  * copies nothing.
  * Invariants: it must be constructed BEFORE anything that reads it, because
- * the wrapper is filled from a draw-phase hook and a declared sampler that is
- * still null at apply time fails to build its bind group and loses the draw
- * silently. `Game` builds it first in the post chain for that reason.
+ * the wrapper is filled from a draw-phase hook and a stage whose depth is
+ * still null when the host draws it draws nothing. `Game` builds it ahead of
+ * the post chain's stages for that reason. It reads the frame's depth off
+ * the frame's own render target, by Babylon's PUBLIC getter
+ * (`RenderTargetWrapper.depthStencilTexture`, `BABYLON_EXIT.md` X5.2d, row
+ * "X5.2, `FrameDepth`") — no internal and no bound target.
  *
  * WHY IT IS A THING OF ITS OWN. It was `CelInk`'s private capture, and it
  * stopped being private the moment a SECOND pass wanted the same image:
@@ -28,27 +31,18 @@
  * 2. **Babylon's WebGPU backend creates depth textures with `TEXTURE_BINDING`**,
  *    and `main.ts` puts the engine at sample count 1 with `depth32float`
  *    and no stencil, so no MSAA resolve stands in the way.
- * 3. **The buffer belongs to the FIRST pass in the camera's chain and nothing
- *    downstream writes to it.** The scene draws into that pass's texture, every
- *    later pass writes into the next one's, and the last writes to the screen —
- *    so a pass sampling this is never reading a target it is also attached to.
- *    A pass inserted BEFORE the ink would take the depth with it.
+ * 3. **The buffer belongs to the FRAME's render target and nothing downstream
+ *    writes to it.** The scene draws into that target (`PostPasses`' frame, the
+ *    camera's `outputRenderTarget`, X5.2d; the ink's input before it), the
+ *    post chain's first stage reads it, every stage writes a target of its
+ *    own and the last writes to the screen — so a pass sampling this is never
+ *    reading a target it is also attached to.
  *
  * NO ORIENTATION FLAG, AND THAT IS DELIBERATE: a reader indexes it at
  * `vUV * textureDimensions(...)` and the colour at `vUV`, and those name the
  * same screen point in the same convention whatever the storage is.
  */
-import { Camera, Scene, ThinTexture } from "@babylonjs/core";
-
-/** What a render-target wrapper carries that this needs, cast in one place. */
-type DepthOwner = {
-  _depthStencilTexture?: object | null;
-};
-
-/** The one engine internal this reads, named in one place. */
-type EngineInternals = {
-  _currentRenderTarget?: DepthOwner | null;
-};
+import { ThinTexture, type Camera, type RenderTargetTexture, type Scene } from "@babylonjs/core";
 
 export class FrameDepth {
   /** The main pass's depth, re-wrapped whenever the underlying texture moves. */
@@ -57,11 +51,9 @@ export class FrameDepth {
 
   /**
    * Takes the frame's depth attachment at the end of the draw phase, with the
-   * same camera guard as `GlowPass`, and binds, renders and copies nothing.
-   * `GlowPass`'s observer on the same hook is registered FIRST (`Game` builds
-   * the glow before this) and renders its own targets, so what this reads as
-   * the bound target depends on that pass putting the frame back — which it
-   * does, as its last act.
+   * same camera guard as `GlowPass`, and binds, renders and copies nothing:
+   * the depth is read off `frame`, the render target the scene draws into,
+   * so nothing the glow binds on the same hook can move what this finds.
    *
    * One identity test a frame, and on the frames the target actually moves (a
    * resize) one wrapper.
@@ -69,28 +61,29 @@ export class FrameDepth {
   constructor(
     private readonly scene: Scene,
     private readonly camera: Camera,
+    /** The render target the scene draws into (`PostPasses`' frame). */
+    private readonly frame: RenderTargetTexture,
   ) {
-    const engine = this.scene.getEngine() as unknown as EngineInternals;
     this.scene.onAfterDrawPhaseObservable.add(() => {
       // Only `Scene._renderForCamera` notifies this observable (Babylon
       // 9.28, `scene.pure.js` 4180; no render target's manager does), so
       // this guards against another camera's depth, which nothing draws
       // today. Harmless, and kept, as `GlowPass`'s is.
       if (this.scene.activeCamera !== this.camera) return;
-      const tex = engine._currentRenderTarget?._depthStencilTexture;
+      const tex = this.frame.renderTarget?.depthStencilTexture;
       if (!tex || tex === this.source) return;
       this.source = tex;
-      this.wrapped = new ThinTexture(tex as never);
+      this.wrapped = new ThinTexture(tex);
     });
   }
 
   /**
    * The frame's depth, or null before the first draw phase has run.
    *
-   * A DECLARED sampler must be BOUND or the bind group fails to build and the
+   * A declared binding must be BOUND or the bind group fails to build and the
    * draw is silently lost, so every reader tests this — it cannot be null by
-   * the time an `onApply` runs, since the capture above is on the draw phase
-   * of the same `scene.render()`, but no pass rests on that.
+   * the time the post chain draws, since the capture above is on the draw
+   * phase of the same `scene.render()`, but no stage rests on that.
    */
   get texture(): ThinTexture | null {
     return this.wrapped;

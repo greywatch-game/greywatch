@@ -21,12 +21,15 @@
  * And in the glow's BLUR passes (X5.2b), which `GlowPass` binds on its own
  * targets with public API and asks our renderer to draw in from between the
  * bind and the unbind (`Renderer.glowBlurOpened`): the same `passIs` and
- * `queue`, and no item more. And in the POST CHAIN's passes (X5.2c1), which
- * `shaders/PostPasses.ts` opens with public API after Babylon's prefix of the
- * chain — the canvas's, Babylon's main pass, by `restoreDefaultFramebuffer` —
- * and asks our renderer to draw in (`Renderer.postStageOpened`): `passIs`
- * (item 5 telling the canvas, which is no render target and so not flipped)
- * and `queue` again, and no item more.
+ * `queue`, and no item more. And in the POST CHAIN's passes (X5.2c1; the
+ * whole chain since X5.2d), which `shaders/PostPasses.ts` opens with public
+ * API after the camera's render — the canvas's, Babylon's main pass, by
+ * `restoreDefaultFramebuffer` — and asks our renderer to draw in
+ * (`Renderer.postStageOpened`): `passIs` (item 5 telling the canvas, which is
+ * no render target and so not flipped) and `queue` again, and no item more.
+ * The frame those stages read is `PostPasses`' render target, which the scene
+ * binds for the main pass (the camera's `outputRenderTarget`, public API):
+ * item 5 tells the main pass by THAT target, as it told the ink's input.
  * Invariants: NAMES Babylon's types and loads none of it (every import here
  * is `import type`, so the Babylon-free gate walks this file as it walks the
  * rest of `src/render/`); every Babylon INTERNAL anything in `src/render/`
@@ -130,17 +133,19 @@
  * wrap modes and filtering level and the engine's empty textures and
  * anisotropy cap (`bind`).
  *
- * WHAT IS NOT HERE. Four touches of Babylon internals in three files predate
+ * WHAT IS NOT HERE. Three touches of Babylon internals in two files predate
  * this one and stay where they were written, because none of them is our
- * renderer's and one cannot move here at all: `shaders/FrameDepth.ts` (the
- * frame's depth texture, `_currentRenderTarget._depthStencilTexture`),
- * `core/webgpuLeaks.ts` (`_deletePipelineContext`) and
- * `core/FrameProfile.ts` (the timestamp query, and a patch on
- * `WebGPUCacheRenderPipeline`'s prototype — a Babylon VALUE, which this
- * directory may not import). Each leaves with the code that owns it:
- * FrameDepth when the frame's depth is ours (X5.4), the rest with Babylon
- * (X6.1). `systems/ReflectionSystem.ts`' two (`_releaseRenderPassId`,
- * `_removeDrawWrapper`) left with Babylon's bake at X3.7c. So rule 4 holds here as "every internal OUR RENDERER reaches";
+ * renderer's and one cannot move here at all: `core/webgpuLeaks.ts`
+ * (`_deletePipelineContext`) and `core/FrameProfile.ts` (the timestamp query,
+ * and a patch on `WebGPUCacheRenderPipeline`'s prototype — a Babylon VALUE,
+ * which this directory may not import). Each leaves with Babylon (X6.1).
+ * `shaders/FrameDepth.ts`' (the frame's depth texture,
+ * `_currentRenderTarget._depthStencilTexture`) left at `BABYLON_EXIT.md`
+ * X5.2d: it reads the frame's own render target's PUBLIC
+ * `renderTarget.depthStencilTexture` (row "X5.2, `FrameDepth`"), and X5.4
+ * deletes it once the depth is ours. `systems/ReflectionSystem.ts`' two
+ * (`_releaseRenderPassId`, `_removeDrawWrapper`) left with Babylon's bake at
+ * X3.7c. So rule 4 holds here as "every internal OUR RENDERER reaches";
  * `BABYLON_EXIT.md` records that reading at X3.2.
  */
 import type {
@@ -322,9 +327,11 @@ export class BabylonFrameHost implements FrameHost {
 
   /**
    * The frame's main pass is the TARGET bound as the draw phase begins — the
-   * post chain's first, bound by `_prepareFrame` just before — and a group
-   * rendering into THAT target before the draw phase ends. Both halves are
-   * needed: probes and shadow maps draw before the phase (so outside it), but
+   * frame, the camera's `outputRenderTarget`, which the scene's camera render
+   * binds (the post chain's first, bound by `_prepareFrame`, until X5.2d) —
+   * and a group rendering into THAT target before the draw phase ends. Both
+   * halves are needed: probes and shadow maps draw before the phase (so
+   * outside it), but
    * the glow renders its mask from `onAfterDrawPhaseObservable` itself, so
    * whether its group 0 lands inside the window depends on which observer
    * was added first. The target does not.

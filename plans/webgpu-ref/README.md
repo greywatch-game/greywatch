@@ -314,7 +314,9 @@ node plans/webgpu-ref/post.mjs --compare=a.json --against=b.json
   glow's box filter and blur, `Game.glowBlur`, named off its modules' labels, and since
   X5.2c1 the grade, `Game.postChain`, the target it reads named for the Babylon pass that
   writes it, and since X5.2c2 the shafts and the blur, each pool target named for the
-  stage that writes it), so a draw of ours is
+  stage that writes it, and since X5.2d the ink and the frame the scene draws into,
+  `PostPasses.frameTarget`, `frame` and `frame.depth` as Babylon's first pass's input
+  was), so a draw of ours is
   compared with the Babylon draw it replaced (`harness.mjs`'s `postAdapter`, the CPU half
   `freeze` holds, shares the name and has ours since X5.2c1, its `ready` the arm
   `waitUntilDrawn` asks beside `scene.isReady()`, which no longer covers the grade). Beside the log,
@@ -333,7 +335,11 @@ node plans/webgpu-ref/post.mjs --compare=a.json --against=b.json
   X5.2c1's the same three on the grade's draw and three of Babylon's own `chain` fields,
   X5.2c2's the same three on the shafts' and the blur's draws, the shafts' two shadow
   maps' view and sampler descriptors (their owner's since) and the shafts' slot, then the
-  same three on FXAA's draw and its slot and attach (the probe logs neither since) —
+  same three on FXAA's draw and its slot and attach (the probe logs neither since),
+  X5.2d's the same three on the ink's draw and the two passes the frame's own clear
+  moved (the opening pass, `passes[0]`, the frame's where it was the canvas's, and the
+  scene's pass, `passes[1]`, loading what it cleared — the one place an index is the
+  key, since each names the same pass in every scenario) —
   and a later sub-step adds its own section there. **Key a line on the draw's stage**
   (`**.draws[stage=glow.*].viewport`), never on a pass index: an index names whatever
   draw a scenario puts at it, so it would excuse the same field on another stage's draw

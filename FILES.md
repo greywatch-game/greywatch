@@ -2508,7 +2508,11 @@ src/
     CelInk.ts           # THE INK: one full-screen edge over the depth the
                         #   frame already wrote. Replaced Babylon's outline
                         #   hull AND MapBuilder's ink twins — Coldharbour
-                        #   +32%, Harrowmead +51%. Only ever DARKENS
+                        #   +32%, Harrowmead +51%. Only ever DARKENS. The CPU
+                        #   half (the fog band) and `stage`, the post chain's
+                        #   FIRST stage, our renderer's draw since X5.2d
+                        #   (wgsl/celInk.ts; the glow's compose its last
+                        #   line); the source's notes kept verbatim
     GlowPass.ts         # THE BLOOM, owned end to end: an emissive-only mask
                         #   drawn against the FRAME's depth (shared, sized in
                         #   the same function that draws it), Babylon's kernel
@@ -2518,8 +2522,10 @@ src/
                         #   renderer since X5.2b (GlowBlurDraws, handed in;
                         #   glowKernels, every rung at every render scale, for
                         #   its declared pipelines) — and an additive
-                        #   compose the ink runs as its last line (a WGSL
-                        #   snippet, not a pass). Public API only;
+                        #   compose the ink runs as its last line (no pass:
+                        #   its text the ink's compiled module's glowAt, its
+                        #   inputs composeNear/composeWide/composeIntensity,
+                        #   X5.2d). Public API only;
                         #   `Game` supplies the rules (what blooms, how
                         #   bright); the mask pass's opening announced from
                         #   inside its clear (onMaskOpenObservable), where
@@ -2530,9 +2536,11 @@ src/
                         #   CONFIG.graphics.fxaa's three constants (sub-pixel
                         #   blend 0.25 where Babylon's 1.0 blurred the frame)
     FrameDepth.ts       # The frame's own depth attachment, captured once and
-                        #   wrapped for the two passes that sample it (the ink's
-                        #   edges, the blur's weapon mask). Renders and copies
-                        #   nothing; owns no pass
+                        #   wrapped for the stages that sample it (the ink's
+                        #   edges, the shafts, the blur's weapon mask, the
+                        #   grade), read off the frame's render target by the
+                        #   PUBLIC depthStencilTexture since X5.2d. Renders and
+                        #   copies nothing; owns no pass
     EmissiveFog.ts      # The same fog as a material plugin on every unlit
                         #   emissive material — windows, flames, tracers. WGSL
                         #   only, which is what isCompatible states
@@ -2651,6 +2659,12 @@ src/
                         #   constants where they were; the bindings, the
                         #   lattice constants and the 496-byte block's layout.
                         #   Babylon-free: PaperGrain.stage declares them
+      celInk.ts         # The INK's two modules AS COMPILED (X5.2d): the
+                        #   postprocess vertex stage with the ink's whole
+                        #   LeftOver and the ink's fragment with the glow's
+                        #   compose (glowAt) ahead of it, the parent's device
+                        #   text character for character; the bindings and
+                        #   the 112-byte block. Babylon-free: CelInk.stage
       fxaa.ts           # FXAA's two modules AS COMPILED (X5.2c2): Babylon's
                         #   own fxaa vertex stage (no scale multiply, the eight
                         #   sample coordinates) and the fragment with CONFIG's
@@ -2713,17 +2727,17 @@ src/
                         #   wgsl/paperGrain.ts). The player's setting is still
                         #   stored as `filmGrain`, which is what it used to be
     PostPasses.ts       # The post chain's Babylon-side PASS OWNER (X5.2c1):
-                        #   while a stage of ours is active it points
-                        #   camera.outputRenderTarget at a target of its own
-                        #   ONLY across the post phase, clears it as Babylon's
-                        #   activate cleared the grade's input (on the prefix's
-                        #   last apply, or alone if that pass drew nothing —
-                        #   a DEV throw if it was ready, a tail named wrongly),
-                        #   then opens the canvas (restoreDefaultFramebuffer)
-                        #   and the pool passes for our stages, one target a
-                        #   pass position, bound and cleared as activate bound
-                        #   and cleared a reader's input (X5.2c2); public API
-                        #   only
+                        #   owns the FRAME (X5.2d) — the render target the
+                        #   scene draws straight into and clears itself, the
+                        #   camera's outputRenderTarget through the camera's
+                        #   render (off after it, for the editor's gizmo
+                        #   layer), made as the
+                        #   ink's input was (FRAME_TARGETS) — and after the
+                        #   camera's render opens the pool passes for our
+                        #   stages, one target a pass position, bound and
+                        #   cleared as activate bound and cleared a reader's
+                        #   input (X5.2c2), and the canvas
+                        #   (restoreDefaultFramebuffer); public API only
   render/               # OUR renderer (BABYLON_EXIT.md Phase 3). Never imports
                         #   Babylon — the build gate walks every file in it
     babylonSeam.ts      # THE SEAM: BabylonFrameHost, the one place anything
@@ -2785,7 +2799,8 @@ src/
                         #   targets its pipeline was built for; a prepare is handed the
                         #   FrameContext (group 0) as a draw is
     targets.ts          # FRAME_TARGETS, stated once: rgba8unorm, depth32float,
-                        #   1 sample, flipY (CelInk's target, not the canvas);
+                        #   1 sample, flipY (the frame PostPasses owns, made as
+                        #   CelInk's input was; not the canvas);
                         #   GLOW_TARGETS, the glow mask's: the same values for
                         #   its own reason (an rgba8unorm target, the frame's
                         #   borrowed depth); GLOW_BLUR_TARGETS, a glow blur
@@ -3006,9 +3021,10 @@ src/
                         #   DECLARED stages (PostStage: program as compiled,
                         #   block and fill, extra bindings, the input's sampler,
                         #   active(), point-wise or neighbourhood) — the
-                        #   shafts (a stage a rung), the blur and the grade
-                        #   since X5.2c2 — routed a pass per active stage in
-                        #   list order, the last given the canvas
+                        #   WHOLE chain since X5.2d: the ink, FXAA, the shafts
+                        #   (a stage a rung), the blur and the grade — routed
+                        #   a pass per active stage in list order, the first
+                        #   reading the frame, the last given the canvas
                         #   (canvasTargets) and any other a pool target
                         #   (POST_TARGETS), opened by a PostPassOwner
                         #   (shaders/PostPasses.ts); Babylon's quad, Internals,

@@ -1,13 +1,14 @@
 /**
  * render/PostChain.ts — The post chain's HOST (`BABYLON_EXIT.md` X5.2c1): the
- * ordered list of full-screen stages OUR renderer draws after Babylon's
- * prefix of the chain, the ink alone (FXAA, the shafts — a stage a rung —
- * the blur and the grade since X5.2c2), each one DECLARED rather than wired,
- * and the one loop that routes them — a pass per active stage, in list
- * order, each reading the one before's output, the LAST active stage given
- * the canvas and any other a target of the owner's POOL, one a pass POSITION
- * (so each pass of a frame writes a target of its own, as each Babylon pass
- * had an input of its own).
+ * ordered list of full-screen stages OUR renderer draws over the frame the
+ * scene drew — the WHOLE chain since X5.2d: the ink, FXAA, the shafts (a
+ * stage a rung), the blur and the grade, no Babylon pass before them — each
+ * one DECLARED rather than wired, and the one loop that routes them — a pass
+ * per active stage, in list order, the first reading the frame and each
+ * other the one before's output, the LAST active stage given the canvas and
+ * any other a target of the owner's POOL, one a pass POSITION (so each pass
+ * of a frame writes a target of its own, as each Babylon pass had an input
+ * of its own).
  * Owns: `PostChain`; `PostStage` (what a stage declares), `PostExtra` (a
  * texture a stage reads beside its input) and `PostPassOwner` (what the side
  * that OPENS the passes must do); Babylon's full-screen quad as a vertex and
@@ -114,12 +115,12 @@ export interface PostStage {
 
 /**
  * What the side that OPENS the chain's passes does (`shaders/PostPasses.ts`
- * until X5.4): Babylon's prefix of the chain writes `prefixOutput`, and each
- * stage of ours draws into a pass it opens, in the order `record` asks.
+ * until X5.4): the scene draws `frame`, and each stage of ours draws into a
+ * pass it opens, in the order `record` asks.
  */
 export interface PostPassOwner {
-  /** What the first active stage reads: the prefix's output. */
-  readonly prefixOutput: HostTexture;
+  /** What the first active stage reads: the frame the scene drew (its depth is `FrameDepth`'s). */
+  readonly frame: HostTexture;
   /** The render size, which every target of the chain is. */
   readonly width: number;
   readonly height: number;
@@ -252,7 +253,7 @@ export class PostChain {
     this.ready = Promise.all(asks).then((oks) => oks.every(Boolean));
   }
 
-  /** Whether any stage draws this frame — what decides whether Babylon's prefix writes the canvas or our input. */
+  /** Whether any stage draws this frame (the ink always does). */
   active(): boolean {
     for (const s of this.states) if (s.stage.active()) return true;
     return false;
@@ -275,16 +276,16 @@ export class PostChain {
 
   /**
    * The chain's passes for this frame, in list order: each active stage is
-   * handed the output before it (the first, the prefix's) and drawn into the
+   * handed the output before it (the first, the frame) and drawn into the
    * pass the owner opens for it — the canvas for the last, a pool target
-   * for any other, one a position (`PostPassOwner.openPool`). Called by the owner after Babylon's
-   * prefix has written `prefixOutput`; a stage whose pipeline is not built,
-   * or whose bindings do not exist yet, draws nothing in its pass.
+   * for any other, one a position (`PostPassOwner.openPool`). Called by the
+   * owner once the scene has drawn `frame`; a stage whose pipeline is not
+   * built, or whose bindings do not exist yet, draws nothing in its pass.
    */
   record(owner: PostPassOwner): void {
     const last = this.lastActive();
     if (last < 0) return;
-    let input = owner.prefixOutput;
+    let input = owner.frame;
     let slot = 0;
     for (let i = 0; i <= last; i++) {
       const s = this.states[i];
@@ -308,7 +309,7 @@ export class PostChain {
     for (const s of this.states) s.block.destroy();
   }
 
-  /** The first stage that draws this frame, or null — what reads the prefix's output. */
+  /** The first stage that draws this frame, or null — what reads the frame. */
   firstActive(): PostStage | null {
     for (const s of this.states) if (s.stage.active()) return s.stage;
     return null;

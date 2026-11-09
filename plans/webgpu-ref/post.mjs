@@ -112,6 +112,11 @@
  * `volumetrics_<rung>: …`; `blur`, `motionBlur: …`), and every target of
  * the chain's POOL by the stage that writes it this frame (`<stage>.out`,
  * `PostPasses.poolTarget`: one target a pass position, so each has one writer).
+ * **Since X5.2d it names the INK** (`ink`, the chain's first stage, its
+ * modules `celInk: …`) and the FRAME (`frame` and `frame.depth`: the render
+ * target the scene draws into, the camera's `outputRenderTarget`,
+ * `PostPasses.frameTarget`), so no Babylon pass is left for Babylon's arm to
+ * name but the glow's mask's targets, which are `GlowPass`' own.
  *
  * **And beside the log, measured and NOT compared** (they ride the machine's
  * timing): the LIVE frames — from the scenarios' page's first frame to thirty
@@ -717,11 +722,16 @@ function postAdapter() {
   // `blur` as Babylon's were; a target of the chain's POOL (one a pass
   // position, `PostPasses.poolTarget`) is named by the stage that WRITES it
   // this frame, `<stage>.out`, as Babylon's next pass's input was.
+  // X5.2d: the INK (`celInk: …`) is the chain's first stage, named `ink` as
+  // Babylon's was, and the target the scene draws into — the camera's
+  // `outputRenderTarget`, `PostPasses.frameTarget` — is `frame`, its depth
+  // `frame.depth`, as Babylon's first live pass's input and its depth were.
   const OURS = [
     ["paperGrain: ", "grain"],
     ["volumetrics_", "shafts"],
     ["motionBlur: ", "blur"],
     ["fxaa: ", "fxaa"],
+    ["celInk: ", "ink"],
   ];
   const ours = {
     glow: () => Boolean(g.glowBlur),
@@ -832,6 +842,14 @@ function postAdapter() {
       if (prefix && live.length) m.set(prefix, `${live[live.length - 1].name}.out`);
       // Ours (X5.2c2): the pool, each target by the stage writing it.
       for (const [t, name] of ours.pool()) m.set(t, name);
+      // Ours (X5.2d): the frame, which the scene draws into and the ink reads.
+      const frame = g.postPasses?.frameTarget;
+      if (frame) {
+        const t = hw(frame.getInternalTexture?.());
+        if (t) m.set(t, "frame");
+        const d = hw(frame.renderTarget?._depthStencilTexture);
+        if (d) m.set(d, "frame.depth");
+      }
       if (g.engine._depthTexture) m.set(g.engine._depthTexture, "canvas.depth");
       const glow = g.glow;
       if (glow) {
@@ -939,7 +957,7 @@ function postAdapter() {
               skipFinalColorClamp: ipc.skipFinalColorClamp,
             }
           : null,
-        frameDepth: g.frameDepth?.texture ? { width: g.frameDepth.texture.getSize?.().width ?? null, height: g.frameDepth.texture.getSize?.().height ?? null, isInkDepth: g.frameDepth.source === g.celInk?.pass?.inputTexture?._depthStencilTexture } : null,
+        frameDepth: g.frameDepth?.texture ? { width: g.frameDepth.texture.getSize?.().width ?? null, height: g.frameDepth.texture.getSize?.().height ?? null, isInkDepth: g.frameDepth.source === (g.postPasses?.frameTarget?.renderTarget?._depthStencilTexture ?? g.celInk?.pass?.inputTexture?._depthStencilTexture) } : null,
       };
     },
   };
