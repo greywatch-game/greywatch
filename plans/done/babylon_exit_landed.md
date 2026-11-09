@@ -10722,7 +10722,7 @@ beside the gizmo note in `docs/rendering.md` and in `PostPasses`' header; X5.3 a
 **Measured**: `post.mjs --against` b1203cc's log, both pages: equal, 30,073 values a page, nothing
 excused. Typecheck, build, corecheck and parity pass.
 
-### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it) — X5.3a **LANDED** (f51b043, its review 85a2273), X5.3b **LANDED** (111829f, its review 64de1d1), X5.3c **LANDED** (1b1f829, its review a22098a)
+### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it) — X5.3a **LANDED** (f51b043, its review 85a2273), X5.3b **LANDED** (111829f, its review 64de1d1), X5.3c **LANDED** (1b1f829, its review a22098a), X5.3d **LANDED** (8be80ec)
 
 The plan's `BABYLON_EXIT.md` holds X5.3's brief, its ONE RULE, the step's own rule on retiring
 an oracle, "Every sub-step owes" and the five sub-steps.
@@ -11266,3 +11266,149 @@ session's scratchpad, `x53c-fix/` (`run.sh`).
   log, the live rounds and `?profile&gpu`: what was removed has no reader, and the bank's bytes
   and `merge:hash` are the proof a round did not move.
 - **`CLAUDE.md`**: 1,600 lines before and after.
+
+**X5.3d LANDED** (8be80ec; 2026-11-09; no change to the picture: the Babylon draw paths the
+editor kept deleted, a DEV counter of Babylon effect compiles, four instruments adjusted, comments
+and documents). Measured headless on the Windows box against a BEFORE at 559a854, in the worktree
+`greywatch-2-before-x53a` moved there (`package-lock.json` unchanged, no `npm ci`), its `ref/`
+identical to the main tree's. Scripts and logs in the session's scratchpad, `x53d/`.
+
+- **How each path was shown unreachable** (the plan's method, "a DEV throw on the path for one
+  bank run, or the draw log"). A scratch PROBE, in a worktree of its own at the parent and never
+  committed, put a recorder on every path this step deletes — the generators' build, render,
+  cull, publish, matrix and redraw, a hand back to them, `invalidate`; the Babylon atlas's build,
+  its full clear, a tile clear, a bake pass, a proxy pass, its `ready` and `compiled`, the proxy
+  upload, a hand back to it, the moved-fixture re-bake; `worldMoved`; `offGi`, `applyGi`,
+  `setDefaultReflection` and the default cube's bind; the flame's `glowMask`; a mesh dressed for
+  the glow's mask and a mask material made; group 0 visited in the main pass, item 6 fired, item
+  10's wrapper called, the sprite hook; and a read of the camera's `outputRenderTarget` inside the
+  window — each logging a console error when reached outside the boot. Run through the bank's
+  147 rows (all seven maps; byte-equal to the BEFORE, 147 of 147), the draw log (every state, the
+  viewer included; equal to the BEFORE) and the live script below. **What was reached**: at the
+  boot, before any map, the four generators built and published, their matrices read, the Babylon
+  atlas built and fully cleared once, `offGi` and `setDefaultReflection`; at the menu, ONE render
+  of each generator's map over an empty caster list (its cull called once); and in a round
+  `applyGi` and the default cube's bind on every material minted (pushes onto `ShaderMaterial`s
+  that draw nothing). **Nothing else, anywhere**: no group-0 visit, no item 6 or 10, no glow mesh
+  path, no flame mask, no atlas pass but the boot's clear, no hand back to Babylon, no
+  `invalidate`, `worldMoved` or fixture re-bake, no read inside the window. The boot's maps were
+  read back in the live script at the BEFORE: all five (the far, near, foliage, flash and the
+  atlas) 1.0 in every texel, so they answered "lit" exactly as the lit 1x1 bound in their place
+  now does; and the kit screen raised over the boot menu (both kit rows' weapons, Hollowmere and
+  Coldharbour, `menukit.mjs`) is byte-equal on both trees.
+- **What went.** `ShadowSystem`: the `ShadowGenerator`s (`remakeGenerator`, `buildGenerator`,
+  `casts`, `cullToWindow`, the `REFRESHRATE_RENDER_ONCE` target), `invalidate`, the hand back to
+  the generators, the casters it kept for them, and the four `DirectionalLight`s with their
+  layers — the plan's either-or: **the light had no reader left** (no Babylon material reads a
+  scene light, and `lightTransformToRef` and `ShadowWindow.place` read a `ShadowLight`), so a
+  map's light is a plain pair, `MapLight` (the direction the very vector handed in, the position
+  minus it, as `DirectionalLight`'s constructor made them, and the window's side), the bodies'
+  shape since X4.1c; the scene holds no Babylon light. Until the first map hands ours its casters
+  every map is the lit 1x1 (`ours` false), drawn by nobody; ours keeps them from then on, so a
+  round's sequence is the parent's exactly. `setCasters()` takes no argument (it read
+  `map.visuals` for the generators alone). `LocalShadows`: the four `ShaderStore` programs, the
+  proxy and bake `ShaderMaterial`s, the clear material and sheet, `localShadowProxy`, the render
+  target, `render`, `pass`, `compiled`, the Babylon half of `ready` and `update`, the visuals it
+  baked from (`setWorld` takes three arguments), the hand back to it, and the moved-fixture
+  re-bake in `refresh`. `wrappedTextures.wrapCubeTexture`; `CelMaterialFactory`'s
+  `setDefaultReflection`, `defaultCube`, the cube's bind in `applyReflection` (its recipe values
+  stay), `babylonGi`, `offGi`, `applyGi` and the seven `RawTexture3D` placeholders.
+  `FlameShader`'s two `ShaderStore` stages, `FlameMaskMaterial`, `glowMask`, `SelfMasking`
+  (the `FlameMaterial` stays a `ShaderMaterial` recipe key, its `values`, inks and pushes as they
+  were). `GlowPass`: the `glowMask*` programs, `GlowMaskMaterial`, `SelfMasking`, the dressing
+  (`buildList`, `dress`, `paint`) and the `GlowRules` it took — the mask's render list is
+  answered EMPTY every frame with `renderList` still null, so the pass renders, clears, opens and
+  closes as it did; `Game`'s rules stay as `glowAdmits` and `bloomColour`. The seam: items 6 and
+  10 with the group and sprite observables — `onMainPass` keeps the draw-phase pair and tells the
+  four points at the phase's end, the path every frame of a round took (the list is EIGHT items;
+  6 and 10 are recorded as retired below it, their numbers not reused, so every citation of
+  items 7 to 9 stands). `PostPasses`: the take-off after the chain's record and the restore at
+  the render's end (the field stands for good). `FrameProfile`: the `scene.lights` walk (the
+  `shadowPass` phase stays in `PHASES`, opened by nothing; retiring it is a report version).
+  `GiVolume.worldMoved`.
+- **The DEV counter** (`src/core/babylonCompiles.ts`, row "X5.3, the collider meshes", its scope
+  note): `Game` wraps the engine's `createEffect` and `createComputeEffect` (public API, on the
+  instance) first thing in its constructor, and counts each effect object handed back for the
+  first time — so the engine's own `clearQuad`, made in `initAsync`, is not counted (X5.3a's
+  review's owed item). `Game.babylonCompiles` holds it (null in production). The draw log reads
+  it at every frame's end, keeps it beside the classes (so a parent's log compares) and fails the
+  run (exit 1) where it is not 0. **It warns rather than errs** — first written as a console
+  error, it failed `gate`, `shaders`, `post.mjs` and the bank's console verdict, because the
+  harness's readiness wait (`scene.isReady()`) compiles Babylon's `default` `StandardMaterial`
+  for the collider meshes, which wear no material (882 of 882 on Hollowmere; one compile a page,
+  measured), and `shaders.mjs` compiles every cel variant by design; the game itself compiles
+  nothing (`counterneg.mjs`: 0 at the menu, 0 after a round's install and 300 frames of play, 1
+  after the harness's `isReady` (`default`), 2 after a cel material asked `isReady` against a
+  collider — the negative test). That was the step's one gate failure, fixed and re-run once (all
+  passed).
+- **Instruments** (no change to what they compare): `drawlog.mjs` reads and asserts the counter
+  and prints `compiledAtBoot`'s names, and hooks `Mesh.render` LAZILY, at the first frame that
+  ends with a mesh in the scene — at the boot it found `localShadowProxy`, which is gone;
+  `pipelines.mjs --round` the same (it crashed on the empty boot scene; run with the fixed script
+  on BOTH trees, the copy in the BEFORE worktree put back after, the worktree left clean);
+  `shaders.mjs` no longer compiles the fire's Babylon stages, which no longer exist; `gi.mjs`
+  drops `worldMoved` from its doors.
+- **Measured**:
+  - **The bank**, 147 rows by `exact.mjs`: default 147 byte-equal; `volumetrics=low` 147;
+    `volumetrics=high` 146 and `harrowmead-view-pistol-reload` within its flake (2 pixels by
+    1/255); `sarab-ground` byte-equal in all three, so no Sarab procedure; the same rows red
+    against `ref/` on both trees (34, 102, 93). After the counter became a warning the default
+    bank was run again: 146 and the pistol's flake, 0 console errors.
+  - **The draw log** (`--ignore` the expected paths, then each ignored path read): equal to the
+    BEFORE but for `compiledAtBoot` (`clearQuad` and `localShadowClear` to `clearQuad` alone) and
+    `scene.meshes` in every class (`localShadowProxy` gone, 1,783 to 1,782 in a round;
+    `localShadowClear` and `localShadowProxy` gone, 1-2 to 0, on the menu and the building card) —
+    21 paths with the viewer, 19 without; in every state 0 Babylon draws, 0 group-0 visits, 0
+    effect compiles, and the counter 0 in every class.
+  - **Babylon's synchronous pipelines at the boot** (`bootpipes.mjs`, every
+    `createRenderPipeline` named, Hollowmere): 3 to 2 — the one that fell is
+    `RenderPipeline_r16float_depth32float_samples1_textureState0` over the `localShadowClear`
+    program, the clear sheet's first full clear at the menu; the two left are the engine's own
+    (`InternalPipeline_rgba8unorm`, the mip/copy blit; `InternalVideoPipeline_rgba8unorm`, the
+    canvas-to-texture copy a `DynamicTexture` uses). The generators' boot render made none (no
+    caster). `pipelines.mjs hollowmere`: 98 to 96 modules and 3 to 2 pipelines at the boot, 90 of
+    ours, none after the install; `coldharbour --round`: each install 0 / 21 / 12, nothing in play,
+    on both trees.
+  - **The probes**: `post.mjs --against`, both pages, 30,073 values a page, nothing excused (the
+    frame bound where it was); `gi.mjs --against` equal (914,611 and 254,731 values); `census
+    --against` equal (168); `surfaces.mjs` byte-identical JSON; `merge:hash` (shipped) identical on
+    eight maps, its info lines `sceneMeshes` one fewer.
+  - **Live** (X5.3c's script with the kit lid over the boot menu, a pause and the boot maps' read
+    back added, both trees): all 42 phases equal in modules, post processes (0), the output target
+    set at every frame's end, errors (none) and in-play compiles (none) — but Babylon's synchronous
+    pipelines, 3 to 2 in every phase; the mixer and viewer keys 9 of 9; in a match (`npm run
+    build:server`, port 8097): Hollowmere and Coldharbour joined, a life fired, the viewer up and
+    down, a teardown, and offline the same, 16 of 16 steps, no page or console error.
+  - **`?profile&gpu`** (Coldharbour and Hollowmere, four alternating runs a tree): `render` 0.748
+    to 0.744 and 0.674 to 0.666 ms, `gpu.frame` 2.615 to 2.609 and 2.579 to 2.581 ms (within
+    1.2%); Babylon's draw calls 0.
+  - **Gates**: typecheck, build (`check-babylon-free` and the rest), `gate` (seven maps clean),
+    `shaders` (clean on seven), corecheck, parity, `maps:check` 7 of 7.
+- **Documents**: `CLAUDE.md` (the FROZEN rule says no Babylon material compiles and names the
+  counter; the GI paragraph's editor clause, the frame target's gizmo clause, the glow's mask
+  clause, the seam's sentence, `noGlow`'s and `noShadowCaster`'s readers and the world caster's
+  door rewritten; 1,600 lines to 1,597); `docs/rendering.md` (the volume, the fire, the glazing
+  and the bake, the lights, the shadow maps and rungs, the lamps, the back-to-front run and the
+  water's cube, "Our renderer's frame" — the target, the window, the seven points, the empty
+  group, the counter — the glow's mask); `docs/profiling.md` (`shadowPass`), `docs/world.md`
+  (`mapSize`); `FILES.md` (the six lines, the seam's and the glow's, `wgsl/flame.ts`,
+  `lampDepth.ts`, `shadowWindow.ts`, and the counter's new line); `FINDINGS.md` 68 trimmed; this
+  plan's X5.4 texture item; `plans/webgpu-ref/README.md`'s draw log bullet; the headers and the
+  comments on every path deleted.
+- **Where the plan's text was not followed to the letter, and why.** (1) The counter warns, where
+  the brief read as an error (above). (2) The seam's list is eight NUMBERED items 1-5 and 7-9,
+  6 and 10 recorded as retired beneath it rather than the list renumbered, so every document
+  citing an item by number stays true. (3) `setCasters` and `LocalShadows.setWorld` lost the
+  argument only the generators and the Babylon atlas read (`map.visuals`). (4) The `shadowPass`
+  profiler phase is left in `PHASES`, opened by nothing (the plan names only the read). (5) The
+  WGSL arms written for Babylon's flame stages (no `FLAME_INSTANCED`) are left in
+  `wgsl/flame.ts`, assembled by nothing, its header says so: our programs' text is unchanged.
+  (6) `PaneGroup.mesh` and `WorldCulling`'s loop over it stay (always null since X5.3c; not on
+  the plan's list); their comments no longer say X5.3d deletes them.
+- **Not run**: the phone; a person's hands on the viewer and the mixer (keys through Playwright).
+- **For the reviewer**: `ShadowSystem`'s boot-to-first-install path (`ours` false, the lit 1x1
+  and `offMatrix`/`nearOffMatrix`, the foliage and flash matrices left at `ShadowBindings`'
+  identity until the first take-over — the parent held the boot generators' there; both read
+  "lit" off an all-1.0 map); `onMainPass`'s end-of-phase telling now unconditional; the glow
+  mask's constant empty list; the counter's first-seen test (an effect compiled before the watch
+  and asked again after it would count — nothing does).

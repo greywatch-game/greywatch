@@ -4592,7 +4592,7 @@ loss**: Babylon's post chain rebuilds after a loss today and ours will not
   header; `FINDINGS.md` 5, 16 and 52; the gate note after Phase 4 (above) and the
   "Contracts this plan rewrites" rows for the glow and `shaderLanguage`.
 
-### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it; the split was proposed by a planning agent's read at b3cea5d) — X5.3a **LANDED** (f51b043, its review 85a2273), X5.3b **LANDED** (111829f, its review 64de1d1), X5.3c **LANDED** (1b1f829, its review a22098a)
+### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it; the split was proposed by a planning agent's read at b3cea5d) — X5.3a **LANDED** (f51b043, its review 85a2273), X5.3b **LANDED** (111829f, its review 64de1d1), X5.3c **LANDED** (1b1f829, its review a22098a), X5.3d **LANDED** (8be80ec)
 
 **This replaces the entry that ported the editor.** That entry put `F2`'s editor on our
 renderer: its unmerged build drawn per item, picking against `RayWorld`, our own move and
@@ -5121,6 +5121,30 @@ reviews: the first is the feature, the second is the renderer. The colliders com
       build.
     - **`FINDINGS.md`:** 68 trimmed.
     - **This file:** X5.4's texture item (no Babylon reader left).
+
+  **X5.3d LANDED** (8be80ec; 2026-11-09; no change to the picture: the Babylon draw paths the
+  editor kept, a DEV counter of Babylon effect compiles, four instruments adjusted, documents).
+  The full note is in `plans/done/babylon_exit_landed.md`. Deleted, each first checked
+  unreachable by a scratch probe that recorded every reach over the bank's 147 rows, the draw
+  log's every state and a live script (none past the boot's one empty render of the generators
+  and the lamps' atlas, both read back at 1.0 in every texel): `ShadowSystem`'s generators, their
+  cull, `invalidate` and the `DirectionalLight`s (no reader left: a map's light is a plain pair,
+  `MapLight`, and the scene holds no Babylon light); `LocalShadows`' Babylon atlas,
+  `localShadowProxy` and the moved-fixture re-bake; `wrapCubeTexture`, `setDefaultReflection`,
+  `babylonGi`/`offGi`; `FlameShader`'s stages and mask twin; the glow mask's mesh path; the
+  seam's items 6 and 10 (eight items); `PostPasses`' `outputRenderTarget` window;
+  `FrameProfile`'s generator read; `GiVolume.worldMoved`. The counter (`core/babylonCompiles.ts`)
+  reads 0 in every state and the draw log fails a run where it does not; it WARNS, because the
+  harness's `scene.isReady()` compiles Babylon's `default` material for the collider meshes (one
+  a page) and `shaders.mjs` compiles the cel variants by design. **Measured** against a BEFORE at
+  559a854: the bank by `exact.mjs` 147, 147 and 146 with the pistol's flake (default,
+  `volumetrics=low`, `=high`), `sarab-ground` byte-equal; `post.mjs`, `gi.mjs`, `census`,
+  `surfaces.mjs`, `merge:hash` and `pipelines.mjs --round` equal; the draw log equal but for
+  `compiledAtBoot` and `scene.meshes` (`localShadowClear`, `localShadowProxy`), 0 draws, 0 group-0
+  visits, the counter 0; Babylon's synchronous boot pipelines 3 to 2 (the clear sheet's); the kit
+  screen over the boot menu byte-equal; live rounds offline and in a match, every post setting,
+  rungs, render scale, a resize, a teardown and the viewer; `?profile&gpu` within 1.2%; typecheck,
+  build, `gate`, `shaders`, corecheck, parity, `maps:check`. **Not run**: the phone.
 
 - **X5.3e — the colliders stop being meshes** (no change to the game; row "X5.3, the
   collider meshes") — **S–M**.
