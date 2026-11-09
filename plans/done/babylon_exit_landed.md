@@ -10722,7 +10722,7 @@ beside the gizmo note in `docs/rendering.md` and in `PostPasses`' header; X5.3 a
 **Measured**: `post.mjs --against` b1203cc's log, both pages: equal, 30,073 values a page, nothing
 excused. Typecheck, build, corecheck and parity pass.
 
-### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it) — X5.3a **LANDED** (f51b043, its review 85a2273), X5.3b **LANDED** (111829f, its review HASHREV)
+### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it) — X5.3a **LANDED** (f51b043, its review 85a2273), X5.3b **LANDED** (111829f, its review 64de1d1)
 
 The plan's `BABYLON_EXIT.md` holds X5.3's brief, its ONE RULE, the step's own rule on retiring
 an oracle, "Every sub-step owes" and the five sub-steps.
@@ -11017,7 +11017,7 @@ log's BEFORE (nothing under `src/` moved between the two).
   `FILES.md`; `plans/webgpu-ref/README.md` and the draw log's header; the contract headers of every
   new module, `ScreenStack.ts`'s and `Game.ts`'s.
 
-**Its review** (HASHREV; 2026-11-09; no change to a round: `Game`'s viewer lid, a flag on `Player`,
+**Its review** (64de1d1; 2026-11-09; no change to a round: `Game`'s viewer lid, a flag on `Player`,
 the `.editing` rule, comments and documents) found two bugs and six minor points, each checked
 against the tree first. Measured headless on the Windows box against a BEFORE at 3c96bca, in the
 worktree `greywatch-2-before-x53a` moved there (no `npm ci`: `package-lock.json` unchanged), its
