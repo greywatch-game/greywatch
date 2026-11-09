@@ -697,8 +697,10 @@ is one machine's:
   taken from, and outside it `shadowVisibility` returns FULLY LIT — so a camera
   teleported to a vantage is standing in a world with no shadows in it, and a
   script that collapses the PCF kernel, changes the bias or darkens the term
-  reports that none of them does anything. `g.shadows.invalidate()` then
-  `g.shadows.update(cam.position, g.mats)` before the grab is the whole fix.
+  reports that none of them does anything. `g.shadows.update(cam.position,
+  g.mats)` before the grab is the whole fix: it re-centres the window on the
+  vantage once the camera has moved past the rung's `hold` (2 m at most), which
+  a teleport always has.
   **Write the control, because the failure is silent in the direction of
   "clean"**: set `shadowParams.y` (the darkness) to 0 and diff — that says how
   much of the frame is in shadow at all, and if it too comes back 0% then
@@ -1654,12 +1656,15 @@ is one machine's:
   feature rather than a testing problem.** It is a Fresnel between the tint of
   what is behind the pane and a reflection of the sky, so square-on and down the
   street are two different materials to the eye: shoot both, or a value tuned on
-  one will be wrong on the other. Two standing checks are cheap and are worth
-  asserting instead of eyeballing — `map.paneGroups.every(g =>
-  !g.mesh.renderOutline)` and no pane mesh in
-  `g.shadows.generator.getShadowMap().renderList` (40 pane meshes against 316
-  casters on Coldharbour). A pane that gains either is drawn as a dark plate or
-  lays a hard shadow through clear glass.
+  one will be wrong on the other. The two standing checks that were cheap to
+  assert here (no pane mesh with `renderOutline`, no pane mesh in the shadow
+  generator's render list) have nothing left to read: a round makes no pane
+  mesh (`PaneGroup.mesh` is null since `BABYLON_EXIT.md` X5.3c) and there is no
+  generator (X5.3d). Both rules are held by construction now — see-through
+  glazing writes no depth, so the ink never finds it, and
+  `BlockHandover.takeGlass` REFUSES a glazing surface that would cast, so a
+  round that starts holds no pane in any shadow pass. A pane that broke either
+  would be drawn as a dark plate or lay a hard shadow through clear glass.
 - **The bodies' map reads back the same way** (`BABYLON_EXIT.md` X4.1c):
   `g.bodyShadowMap.colour` is our `r16float` texture, made WITHOUT
   `COPY_SRC`, so a readback adds it in an init script (wrap

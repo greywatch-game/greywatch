@@ -5,7 +5,8 @@
  * `shaders/FlameShader.ts`' stages and its glow-mask twin, which the map
  * editor drew its fires with; those were deleted at X5.3d, and the arms below
  * written for them (`uniforms.world` a uniform, the bloom
- * `uniforms.glowColor`: no `FLAME_INSTANCED`) are assembled by nothing since.
+ * `uniforms.glowColor`: no `FLAME_INSTANCED`) are assembled by nothing since
+ * (X6.1 deletes them with `FlameMaterial`'s recipe key).
  * The vertex stage that writhes, leans, licks and
  * hooks a tongue and carries an ember up out of the bed, and the pixel that
  * bands it in the fire's five inks — and, under `GLOW_MASK`, that pixel's

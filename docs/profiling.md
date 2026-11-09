@@ -703,9 +703,11 @@ since) 0.25 and `shadowPass` 0.73 — 86% of the bar attributed, and the glow's 
 is the first continuous reading of a figure `CLAUDE.md` had only from an A/B.
 
 **`shadowPass` reads on a HANDFUL of frames and that is the finding, not a
-fault.** The depth map is `REFRESHRATE_RENDER_ONCE` with a manual reset, so it
-re-renders only when the texel-snapped light window moves — 3 frames in 969 on
-that run. **Read `PhaseStat.frames` before `mean` on any phase like this**: the
+fault.** The depth map was then Babylon's, `REFRESHRATE_RENDER_ONCE` with a
+manual reset, so it re-rendered only when the texel-snapped light window moved —
+3 frames in 969 on that run; ours keeps the same rule (`ShadowSystem.redraw`,
+owed only on a frame the window moves) and the generator is gone since
+`BABYLON_EXIT.md` X5.3d. **Read `PhaseStat.frames` before `mean` on any phase like this**: the
 mean is over the frames that ENTERED it, so a phase costing 0.73 ms on three
 frames and a phase costing 0.73 ms on all of them have the same `mean` and the
 same `share`, and only `frames` tells them apart. **Since `BABYLON_EXIT.md`

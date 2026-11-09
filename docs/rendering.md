@@ -1898,8 +1898,9 @@ the reading that comes back is 0.000% on every map.** The shadow window follows
 the player, `updateWorld` does not run under the deploy lid the reference poses
 are taken from, and outside the window `shadowVisibility` returns FULLY LIT — so
 a camera teleported to a vantage is looking at a lit world and every shadow
-measurement reads as a kernel that does nothing. `g.shadows.invalidate()` then
-`g.shadows.update(cam.position, g.mats)` before the grab is the fix, and the
+measurement reads as a kernel that does nothing. `g.shadows.update(cam.position,
+g.mats)` before the grab is the fix — it re-centres the window once the camera
+has moved past the rung's `hold`, which a teleport always has — and the
 control that proves it landed is setting the darkness term to zero: if THAT
 comes back 0% too, then nothing is being measured.
 

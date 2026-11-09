@@ -19,7 +19,14 @@
  * a compile. (An effect compiled BEFORE the watch and asked for again after
  * it would be counted too, there being no public way to list the engine's
  * cache: nothing asks for `clearQuad` by name, the clear quad holding its
- * own.)
+ * own.) **There is one door it does not see**: an `EffectWrapper` built with
+ * `useShaderStore` false, Babylon's default, makes its `Effect` with `new`
+ * rather than through `createEffect` (`Materials/effectRenderer.pure.js`), so
+ * a wrapper built that way (an `EffectRenderer`'s pass, say) would compile
+ * uncounted; a `PostProcess` sets `useShaderStore` and is seen. Nothing in
+ * `src/` builds a wrapper — the post chain and the glow's blur are ours since
+ * X5.2 — so a new one owes this watch that door before it lands, or the
+ * counter reads 0 while it compiles.
  * Never: runs in a production build (the caller's `import.meta.env.DEV`);
  * changes what either call does or returns.
  * Contract: `docs/rendering.md`, "Our renderer's frame"; the draw log

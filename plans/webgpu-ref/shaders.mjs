@@ -415,9 +415,12 @@ for (const id of MAPS) {
     // whose Babylon stages were deleted at `BABYLON_EXIT.md` X5.3d (our
     // renderer draws every fire, `render/flameProgram.ts`, whose modules are
     // on the round's declared list), so there is no Babylon program of it
-    // left to compile.
+    // left to compile. Told apart by IDENTITY, the factory's one fire
+    // (`getFlame`, which mints it if no map has yet — harmless on a page about
+    // to be thrown away), never by a class name a minifier may rename.
+    const flame = g.mats.getFlame();
     const shaders = [...g.scene.materials].filter(
-      (m) => m._options && Array.isArray(m._options.defines) && m.constructor?.name !== "FlameMaterial",
+      (m) => m._options && Array.isArray(m._options.defines) && m !== flame,
     );
     // WebGPU compiles a pipeline asynchronously, so readiness is polled rather
     // than read: `isReady` is what ASKS for the compile as well as what reports

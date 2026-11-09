@@ -317,6 +317,9 @@ export class BabylonFrameHost implements FrameHost {
    * any build's since X5.3c took the map editor's — and visits no empty
    * group (`RenderingManager.render` raises no observable for one), so there
    * is nothing of Babylon's between the points for them to fall between.
+   * That is ASSUMED here, not checked: the draw log is what asserts it
+   * (`plans/webgpu-ref/drawlog.mjs` fails a run with a group-0 visit in any
+   * class), and the game carries no check of its own.
    * Until X5.3d a frame on which Babylon DID visit the group was told each
    * point inside it, through items 6 and 10 and the group and sprite
    * observables; that path, the map editor's build's alone since X5.3c, went

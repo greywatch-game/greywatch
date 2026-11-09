@@ -10722,7 +10722,7 @@ beside the gizmo note in `docs/rendering.md` and in `PostPasses`' header; X5.3 a
 **Measured**: `post.mjs --against` b1203cc's log, both pages: equal, 30,073 values a page, nothing
 excused. Typecheck, build, corecheck and parity pass.
 
-### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it) — X5.3a **LANDED** (f51b043, its review 85a2273), X5.3b **LANDED** (111829f, its review 64de1d1), X5.3c **LANDED** (1b1f829, its review a22098a), X5.3d **LANDED** (8be80ec)
+### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it) — X5.3a **LANDED** (f51b043, its review 85a2273), X5.3b **LANDED** (111829f, its review 64de1d1), X5.3c **LANDED** (1b1f829, its review a22098a), X5.3d **LANDED** (8be80ec, its review HASHREV)
 
 The plan's `BABYLON_EXIT.md` holds X5.3's brief, its ONE RULE, the step's own rule on retiring
 an oracle, "Every sub-step owes" and the five sub-steps.
@@ -11412,3 +11412,60 @@ identical to the main tree's. Scripts and logs in the session's scratchpad, `x53
   "lit" off an all-1.0 map); `onMainPass`'s end-of-phase telling now unconditional; the glow
   mask's constant empty list; the counter's first-seen test (an effect compiled before the watch
   and asked again after it would count — nothing does).
+
+**Its review** (HASHREV; 2026-11-09; no change to the game: comments, documents, a skill's script
+and two instruments) found one bug, outside the game, and documentation and instrument findings
+besides, each checked against the tree first. Measured headless on the Windows box against a BEFORE
+at 7dcc08e, in the worktree `greywatch-2-before-x53a` moved there (`package-lock.json` unchanged, no
+`npm ci`), its `ref/` identical to the main tree's. Scripts and logs in the session's scratchpad,
+`x53d-fix/` (`bank.sh`, `sarab.sh`, `distcmp.mjs`, `neg-group0.mjs`).
+
+- **The bug**: `.claude/skills/model-detail/scripts/shots.mjs` called `g.shadows.invalidate()`
+  twice, which this step deleted — at the parent it throws `g.shadows.invalidate is not a
+  function` on its first view. Both calls are deleted: the `update` after each re-centres the
+  window once the camera has moved past the rung's `hold` (2 m at most, and every vantage is a
+  teleport). The grep for every name this step deleted over `.claude/skills/`, `scripts/` and
+  `plans/webgpu-ref/` found no other caller. `VERIFYING.md`'s and `docs/rendering.md`'s frozen-
+  vantage notes, which named the pair as the fix, name `update` alone and say why it is enough.
+- **Documents**: `CelShader`'s header (the scene holds no Babylon light; a map's shadow light is
+  `ShadowSystem`'s `MapLight`); `ReflectionSystem`'s (no cube is wrapped for Babylon at all, where
+  it named an editor build's glazing as the last reader); `Game.glowAdmits` and `bloomColour`
+  (asked by draws of ours alone — both have callers, and `GlowRules` is a name in comments, the
+  interface gone at X5.3d, so no member was dead); `wgsl/fade.ts` (the mask stages in the past);
+  `wgsl/chunks.ts`' shadow comment (the matrix is `lightTransformToRef`'s, the generator's
+  arithmetic); `docs/profiling.md`'s `shadowPass` reading (the generator's rule in the past,
+  ours keeping it); `VERIFYING.md`'s two glazing checks, which read `g.shadows.generator` and a
+  pane's mesh — nothing is left to read, and the rules are held by construction (see-through
+  glazing writes no depth; `BlockHandover.takeGlass` refuses glazing that would cast).
+- **The counter's blind door**: `babylonCompiles.ts`' header now says an `EffectWrapper` built
+  without the shader store (Babylon's default) makes its `Effect` with `new`, not through
+  `createEffect` (`Materials/effectRenderer.pure.js`), so it would compile uncounted; a
+  `PostProcess` sets the store and is seen; nothing in `src/` builds a wrapper. Named rather than
+  hooked: hooking it means patching a constructor, not an instance.
+- **What `onMainPass` assumes is asserted**: `drawlog.mjs` fails a run (exit 1) with a group-0
+  visit in any class, as it does the counter; its header and `README.md` say so, and the seam's
+  doc says the draw log, not the game, is the check. No runtime code was added.
+- **`shaders.mjs`** tells the fire apart by identity (`g.mats.getFlame()`), not by a class name.
+- **The departures booked** (this step's deviations 4 to 6): `PaneGroup.mesh` and its two
+  readers (`WorldCulling`'s loop, `BlockHandover.strayMesh`'s pane set) on X5.3e's Deleted list;
+  the `shadowPass` phase on X5.4's `FrameProfile` item, a report version its spans owe anyway;
+  the flame's Babylon-only WGSL arms on X6.1's list, with `FlameMaterial`'s recipe key. A comment
+  at each points there.
+- **Measured.** Both production builds compared with Vite's hashes folded out: one difference in
+  the shipped JS, `wgsl/chunks.ts`' comment, which is inside the shadow WGSL string (beside the
+  build stamp and `sw.js`'s version); so the bank was owed. By `exact.mjs`: **default** 146
+  byte-equal and `harrowmead-view-pistol-reload` within its flake; **`volumetrics=low`** the
+  same; **`volumetrics=high`** 145, `sarab-shelf` within its flake and `sarab-ground` 97 pixels by
+  2/255. The Sarab procedure (`exact.mjs`' header): Sarab alone under the same query, two
+  processes a side — the parent's first process drew its bank run's frame, its second drew the
+  step's frame byte for byte, and both of the step's drew that frame — so the row is the known
+  cross-process residue, not a move. The same rows red against `ref/` on both trees (34, 102,
+  93). The draw log on Coldharbour: exit 0, no group-0 visit and the counter 0 in all nine
+  classes, no error; the new verdict, lifted from the file and run on that log with one visit
+  injected, exits 1. `shaders`: clean on seven, the table equal to the parent's run of it.
+  `shots.mjs` on a Greyfen placement (`--at 80,34,0`, `sun` and `shade`): both written, shadows
+  drawn at the vantage. Typecheck, build (`maps:check` and the gates), corecheck, parity and
+  `gate`.
+- **Not run**: the probes (`post.mjs`, `gi.mjs`, `surfaces.mjs`, `census`, `pipelines.mjs`),
+  `merge:hash`, the live rounds and `?profile&gpu`: the only shipped change is a WGSL comment,
+  and the bank's bytes are the proof a round did not move.

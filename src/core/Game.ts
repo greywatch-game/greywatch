@@ -2810,9 +2810,10 @@ export class Game {
   }
 
   /**
-   * Whether the WORLD's emissives may bloom this frame — `GlowRules.admits`
-   * for every Babylon mesh, and for the emissive palette our renderer draws
-   * into the mask (`WorldGlow`) and the visors (`BodyDraw`).
+   * Whether the WORLD's emissives may bloom this frame, asked by every draw of
+   * ours into the mask but the weapon's: the emissive palette (`WorldGlow`),
+   * the visors (`BodyDraw`), the pieces, the billows, the sparks and the
+   * fires. Babylon draws nothing into it since `BABYLON_EXIT.md` X5.3d.
    *
    * The kit screen hangs a dark card behind the weapon (see
    * `inspect.backdrop`), and the one thing in the game that card cannot
@@ -2824,8 +2825,8 @@ export class Game {
    * stated by its DRAW (`BABYLON_EXIT.md` X4.3d): `ViewDraw` masks the
    * weapon's lit parts in every state and never asks — where until then
    * this asked of a rendering group, the viewmodel's having been one. Every
-   * Babylon mesh left is the world's, and so is the moon (`SkyDraw`, which
-   * asks here too).
+   * draw that asks is the world's, and so is the moon (`SkyDraw`, which asks
+   * here too).
    */
   private glowAdmits(): boolean {
     return this.state !== "loadout";
@@ -2833,10 +2834,10 @@ export class Game {
 
   /**
    * A material's bloom colour, into `out` — its emissive colour times its
-   * intensity and `fade`, the alpha its own: `GlowRules.colour` for one of
-   * Babylon's meshes, which passes the distance fade it measured (or 1), and
-   * the emissive palette's for our renderer, which fades per pixel and
-   * passes 1.
+   * intensity and `fade`, the alpha its own. Asked only by draws of ours: the
+   * visors, the weapon, the pieces, the billows and the fires, each passing
+   * the distance fade it measured, and the emissive palette (`WorldGlow`),
+   * which fades per pixel and passes 1.
    */
   private bloomColour(
     material: { readonly emissiveColor: Color3; readonly alpha: number },

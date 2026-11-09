@@ -4592,7 +4592,7 @@ loss**: Babylon's post chain rebuilds after a loss today and ours will not
   header; `FINDINGS.md` 5, 16 and 52; the gate note after Phase 4 (above) and the
   "Contracts this plan rewrites" rows for the glow and `shaderLanguage`.
 
-### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it; the split was proposed by a planning agent's read at b3cea5d) — X5.3a **LANDED** (f51b043, its review 85a2273), X5.3b **LANDED** (111829f, its review 64de1d1), X5.3c **LANDED** (1b1f829, its review a22098a), X5.3d **LANDED** (8be80ec)
+### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it; the split was proposed by a planning agent's read at b3cea5d) — X5.3a **LANDED** (f51b043, its review 85a2273), X5.3b **LANDED** (111829f, its review 64de1d1), X5.3c **LANDED** (1b1f829, its review a22098a), X5.3d **LANDED** (8be80ec, its review HASHREV)
 
 **This replaces the entry that ported the editor.** That entry put `F2`'s editor on our
 renderer: its unmerged build drawn per item, picking against `RayWorld`, our own move and
@@ -5146,6 +5146,34 @@ reviews: the first is the feature, the second is the renderer. The colliders com
   rungs, render scale, a resize, a teardown and the viewer; `?profile&gpu` within 1.2%; typecheck,
   build, `gate`, `shaders`, corecheck, parity, `maps:check`. **Not run**: the phone.
 
+  **Its review** (HASHREV; 2026-11-09; no change to the game: comments, documents, a
+  skill's script and two instruments; the full note is in `plans/done/babylon_exit_landed.md`)
+  found one bug, outside the game: the model-detail skill's `shots.mjs` still called
+  `ShadowSystem.invalidate()`, which this step deleted, and threw on its first view; both calls
+  are gone (the `update` after each re-centres the window once the camera has moved past the
+  rung's `hold`), and `VERIFYING.md` and `docs/rendering.md`, which named the pair as the fix for
+  a frozen vantage, now name `update` alone. The other findings were documents and instruments:
+  `CelShader`'s header (no Babylon light; a map's light is `MapLight`), `ReflectionSystem`'s (no
+  cube wrapped for Babylon at all), `Game.glowAdmits` and `bloomColour` (asked by draws of ours
+  alone; both live, no member dead), `wgsl/fade.ts`, `wgsl/chunks.ts`' shadow comment
+  (`lightTransformToRef`'s matrix), `docs/profiling.md`'s `shadowPass` and `VERIFYING.md`'s two
+  glazing checks (nothing left to read; the rules held by construction); `babylonCompiles.ts`'
+  header names the door it does not see (an `EffectWrapper` without the shader store); the draw
+  log ASSERTS what `onMainPass` assumes, a run with a group-0 visit in any class failing (exit
+  1); `shaders.mjs` tells the fire apart by identity (`getFlame`); and this step's three
+  recorded departures are booked (`PaneGroup.mesh` and its two readers on X5.3e's Deleted list,
+  the `shadowPass` phase on X5.4's profiler item, the flame's Babylon-only WGSL arms on X6.1's).
+  **Measured**, owed because `wgsl/chunks.ts`' comment is inside the shadow WGSL and so in the
+  shipped bundle (the one difference between the two builds, hashes folded): the bank by
+  `exact.mjs` against a BEFORE at 7dcc08e, default 146 byte-equal and the pistol's flake,
+  `volumetrics=low` the same, `volumetrics=high` 145, `sarab-shelf`'s flake and `sarab-ground`
+  97 pixels by 2/255 — run Sarab alone, two processes a side, the parent's second process drew
+  the step's frame byte for byte, so the row is the known cross-process residue; the same rows
+  red against `ref/` on both trees (34, 102, 93). The draw log (Coldharbour) with no group-0 visit and the counter 0 in every
+  class, its new verdict shown failing on a visit injected into its own log; `shaders` clean on
+  seven, its table the parent's; `shots.mjs` photographing a Greyfen placement where the parent's
+  threw; typecheck, build, corecheck, parity and `gate`.
+
 - **X5.3e — the colliders stop being meshes** (no change to the game; row "X5.3, the
   collider meshes") — **S–M**.
   - **What changes:**
@@ -5162,6 +5190,10 @@ reviews: the first is the feature, the second is the renderer. The colliders com
     - `parts.ts`' "colliders are not parts" rule.
     - `metadata.solid`'s last writer.
     - `merge:hash`'s collider-mesh lists, whose place X5.3a's data hashes take.
+    - `PaneGroup.mesh`, null on every build since X5.3c, and the two readers that still
+      ask it: `WorldCulling`'s loop filing a glazing group's mesh, and the pane set
+      `BlockHandover.strayMesh` skips (X5.3d left them, its deviation 6; booked here by
+      its review).
   - **Measured (`FINDINGS.md` 26):** the install time and the heap before and after, on
     seven maps.
   - **Verify:**
@@ -5258,7 +5290,10 @@ pointer, its history unchanged):
   - `FrameCap`.
   - `FrameProfile`'s `hookRender` and `hookEngine` replaced by spans around
     our own passes. `present` becomes the span around `queue.submit`; `?gpu`
-    uses timestamp queries.
+    uses timestamp queries. **The `shadowPass` phase goes with them**: it stays in
+    `PHASES` opened by nothing since X5.3d deleted the generators it bracketed (that
+    step's deviation 4), and retiring it is a report version, which this step's spans
+    owe anyway (booked by X5.3d's review).
   - `PipelineWarmup` becomes waiting for X4.4's list.
   - Delete `webgpuLeaks.ts`.
   - **The water's foam mask is the last texture a draw of ours reads off a Babylon `Texture` it
@@ -5335,6 +5370,12 @@ pointer, its history unchanged):
     `ShaderMaterial` recipe keys; the viewer's one Babylon type (`FreeCamera`, through
     `CameraSystem`) goes with the camera; X5.3a's `boundsOf` check keeps a recorded table
     in place of Babylon. There is no editor to exempt or port (X5.3).
+  - **The WGSL arms `wgsl/flame.ts` holds for Babylon's flame stages** (no
+    `FLAME_INSTANCED`: `uniforms.world` a uniform, the bloom off `uniforms.glowColor`),
+    assembled by nothing since X5.3d deleted those stages (that step's deviation 5;
+    booked by its review), go with `FlameMaterial`'s recipe key; our programs' text,
+    assembled under `FLAME_INSTANCED`, is proven unchanged by `shaders` and the bank's
+    fire rows.
 - **Verify:** `npm run build`, every oracle once more against the parent; the
   bundle size before and after; the PWA updating cleanly over an installed
   copy.

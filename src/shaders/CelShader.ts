@@ -4,9 +4,9 @@
  * rim, hard stepped shadows, opt-in toon specular) and CelMaterialFactory,
  * the cache every lit material comes from. The shadows every material samples
  * are bound by `ShadowBindings` (`mats.shadows`), which this seeds on create.
- * Invariants: the scene's ONLY Babylon light is ShadowSystem's shadow-camera
- * DirectionalLight, which no material reads — light arrives via these
- * uniforms, uploaded by LightingSystem once per frame. Flat/faceted shading is
+ * Invariants: the scene holds NO Babylon light (a map's shadow light is
+ * ShadowSystem's `MapLight`, a plain pair since `BABYLON_EXIT.md` X5.3d), and
+ * no material ever read one — light arrives via these uniforms, uploaded by LightingSystem once per frame. Flat/faceted shading is
  * recovered in the fragment shader from screen-space derivatives — NEVER call
  * convertToFlatShadedMesh(). Output is display-ready color, which is why
  * `scene.imageProcessingConfiguration.isEnabled` must stay false (`Game`). Output is also opaque, and

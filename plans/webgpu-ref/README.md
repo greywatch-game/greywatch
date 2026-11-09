@@ -375,7 +375,9 @@ node plans/webgpu-ref/drawlog.mjs [map...] [--out=f.json] [--against=f.json] [--
   reads the game's own DEV counter of Babylon effect compiles** (`Game.babylonCompiles`,
   `src/core/babylonCompiles.ts`) at every frame's end and FAILS the run (exit 1) where it
   is not 0 in every class, whatever `--against` says; it is kept beside the classes, so a
-  parent's log without one compares. `compiledAtBoot` is the engine's own `clearQuad` alone
+  parent's log without one compares. A VISIT of group 0 in any class fails the run the
+  same way (exit 1), since `onMainPass` assumes none (the seam's items 6 and 10 retired;
+  X5.3d's review). `compiledAtBoot` is the engine's own `clearQuad` alone
   since X5.3d deleted `localShadowClear`, and no mesh stands at the boot any more (the
   `Mesh.render` hook waits for the first).
 

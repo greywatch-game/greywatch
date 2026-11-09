@@ -1400,7 +1400,8 @@ export class FrameProfile {
     // `shadowPass` is bracketed by nothing: it was a Babylon shadow
     // generator's map, found through `scene.lights`, and the scene has no
     // light and no generator since `BABYLON_EXIT.md` X5.3d (every map ours,
-    // drawn on the upload encoder ahead of the frame's draws).
+    // drawn on the upload encoder ahead of the frame's draws). The phase
+    // stays in `PHASES` until X5.4's spans retire it, a report version.
 
     // The glow: its mask and blur at the end of the draw phase, which closes
     // `drawWorld` as it opens. See the method's header.

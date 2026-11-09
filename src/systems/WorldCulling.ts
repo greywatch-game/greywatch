@@ -561,7 +561,8 @@ export class WorldCulling {
     }
     // A glazing group's mesh, where a build made one — none does since the map
     // editor's went (`BABYLON_EXIT.md` X5.3c): a round's is our renderer's and
-    // no mesh, and `offersBlock` answers for it.
+    // no mesh, and `offersBlock` answers for it. X5.3e deletes this loop with
+    // `PaneGroup.mesh`.
     for (const group of map.paneGroups) {
       if (!group.mesh) continue;
       const refused = fileMesh(group.mesh);

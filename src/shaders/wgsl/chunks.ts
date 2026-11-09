@@ -203,9 +203,10 @@ fn cloudLitAir(p: vec3f) -> f32 {
 export const CEL_SHADOW = `
 #include<celCloud>
 
-// Stepped directional shadows. lightMatrix is the ShadowGenerator's
-// view*projection with no [0,1] bias baked in, so the XY remap below is the
-// usual uv = clip.xy*0.5+0.5.
+// Stepped directional shadows. lightMatrix is lightTransformToRef's
+// view*projection (core/shadowWindow.ts: the ShadowGenerator's arithmetic,
+// the generator gone since X5.3d) with no [0,1] bias baked in, so the XY
+// remap below is the usual uv = clip.xy*0.5+0.5.
 //
 // **The DEPTH is not remapped at all, and that is a WebGPU fact rather than a
 // choice.** Under WebGPU engine.isNDCHalfZRange is true, so a clip-space z is

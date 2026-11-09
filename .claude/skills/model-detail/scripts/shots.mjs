@@ -139,13 +139,11 @@ try {
       g.cameraSys.pitch = cam.rotation.x;
       g.mats.updateCamera(cam.position);
       g.lighting.update(0.05, cam.position, g.mats);
-      g.shadows.invalidate();
       g.shadows.update(cam.position, g.mats);
     }, { px, pz, rot, v, keepZones });
     await H.settle(page, 8);
     await page.evaluate(() => {
       const g = window.__celshock;
-      g.shadows.invalidate();
       g.shadows.update(g.cameraSys.camera.position, g.mats);
     });
     await H.settle(page, 4);

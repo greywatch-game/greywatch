@@ -13,8 +13,8 @@
  * culled and drawn from the main pass's own world with the probe's eye
  * PASSED; the water reads its cube where it lies (`WaterDraw`, `BABYLON_EXIT.md`
  * X4.6d), and since X4.6e so does a round's glazing (`GlassDraw.point`): no
- * cube of the pools is wrapped for Babylon, whose one reader left is an editor
- * build's glazing, which samples only the default cube. There is no other bake: Babylon's
+ * cube is wrapped for Babylon at all, the default cube's view having gone with
+ * its last reader, the map editor's glazing (X5.3d). There is no other bake: Babylon's
  * `ReflectionProbe`s went with X3.7c, a world our bake cannot draw being the
  * world's failure (`BlockHandover`, `Game.worldFailed`). A bake that drained
  * depends on our renderer for nothing: its cubes stand.

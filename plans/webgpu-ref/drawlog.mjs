@@ -21,8 +21,12 @@
  * - **`group0`**: Babylon's VISITS of rendering group 0
  *   (`onBeforeRenderingGroupObservable` for group 0), keyed by the target the
  *   visit drew into — the frame (the camera's output target) or another pass's
- *   (a shadow generator's, the glow's mask). A round visits none, which is what
- *   the seam's items 6 and 10 wait on (`render/babylonSeam.ts`).
+ *   (the glow's mask; a shadow generator's until X5.3d). No class visits it,
+ *   and since X5.3d retired the seam's items 6 and 10 `onMainPass` ASSUMES
+ *   none does (`render/babylonSeam.ts`), telling the four points at the draw
+ *   phase's end with nothing of Babylon's between them — so a visit is
+ *   ASSERTED as the counter below is: a run with one in any class fails
+ *   (exit 1), whatever `--against` says.
  * - **`compiles`**: every Babylon EFFECT compiled — `createEffect` adding a key
  *   to the engine's cache, named by its vertex and fragment (an inline source
  *   by a hash) and a hash of its defines — and every compute effect
@@ -741,6 +745,16 @@ if (OUT) {
   console.log(`\nwrote ${OUT}`);
 }
 let code = 0;
+// No class may visit group 0: `onMainPass` assumes it (the header).
+const visited = Object.values(result).flatMap((r) =>
+  Object.entries(r.classes)
+    .filter(([, c]) => Object.keys(c.group0).length > 0)
+    .map(([cls, c]) => `${r.map}/${cls} (${Object.keys(c.group0).join(", ")})`),
+);
+if (visited.length) {
+  console.log(`\nGROUP 0 VISITED: Babylon visited rendering group 0, which the seam's onMainPass assumes it never does, on ${visited.join("; ")}`);
+  code = 1;
+}
 // The game's counter must read 0 in every class (the header).
 const counted = Object.values(result).filter((r) => r.babylonCompiles && (r.babylonCompiles.count !== 0 || Object.values(r.babylonCompiles.byClass).some((v) => v.some((n) => n !== 0))));
 if (counted.length) {

@@ -270,7 +270,7 @@ export interface PaneGroup {
    * (`render/GlassDraw.ts`, X4.6e), its surface the one named by `record`. The
    * map editor's build was the one that made a mesh, and it is gone
    * (`BABYLON_EXIT.md` X5.3c), with the default cube's wrapped view Babylon
-   * kept for its glazing (X5.3d).
+   * kept for its glazing (X5.3d). X5.3e deletes the field and its two readers.
    */
   mesh: Mesh | null;
   /** Its surface's index in the build's list: what names its record in `GameMap.world` and its draw in a round. */

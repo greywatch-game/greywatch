@@ -7,7 +7,8 @@
  * `default.fragment` was with lighting off, every texture but an opacity map
  * absent, image processing off and the scene's fog off, `EmissiveFog`'s fade
  * after it where the material wore that plugin — and, under `GLOW_MASK`, the
- * spark's mask twin (`GlowPass`'s `glowMask` stages).
+ * spark's mask twin (what `GlowPass`'s `glowMask` stages were, deleted at
+ * `BABYLON_EXIT.md` X5.3d).
  * Owns: `FADE_VERTEX` (`fadeVertex`) and `FADE_SURFACE` (`fadeSurface`).
  * Invariants: a body DECLARES NOTHING (`wgsl/chunks.ts`' rule): it reads
  * `uniforms.<name>`, `vertexInputs.<name>`, `fadeItem.<name>` and
