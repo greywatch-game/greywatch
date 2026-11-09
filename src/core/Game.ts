@@ -1410,12 +1410,20 @@ export class Game {
   /** `editorLoading`'s twin, for the same one-cold-import-wide window. */
   private viewerLoading = false;
   /**
-   * What the viewer's lid found and puts back that is not the session's own:
-   * whether the weapon was hidden (it is hidden under the lid, the camera it
-   * hangs from being the viewer's), and the shadow window's focus, which the
-   * viewer's camera tail moves and a deploy screen under it would not move back.
+   * The shadow window's focus as the viewer's lid found it: its camera tail
+   * moves the window, and a deploy screen or a round-over card under it would
+   * not move it back (`sceneOwed`).
    */
-  private viewerFound = { bodyHidden: true, focus: new Vector3() };
+  private viewerFocus = new Vector3();
+  /**
+   * The viewer's lid came down, however it came down, and the scene it moved
+   * is owed back to the camera the session put back: the shadow window, the
+   * light slots and the lamps' atlas. Honoured by the next `tick`, inside the
+   * frame and after its state's arm (`honourSceneOwed`), and cleared by any
+   * camera tail that runs first (`updateSceneForCamera`) — a live frame's own
+   * tail is the debt paid.
+   */
+  private sceneOwed = false;
 
   /**
    * The map being played, as the layout/environment pair `src/world/maps.ts`
@@ -3157,7 +3165,10 @@ export class Game {
       const locked = document.pointerLockElement === canvas;
       // Only a transition OUT of a held lock, and never the browser taking
       // back a lock it granted a beat ago — see `PointerLockChase.changed`.
-      const lost = this.lockChase.changed(locked, performance.now());
+      // The dev viewer's right-drag lock is its own and never the round's:
+      // registered as held, its release on the lowering would land in
+      // `playing` as a player leaving and pause the round it went back to.
+      const lost = this.lockChase.changed(locked && this.state !== "viewer", performance.now());
       // `dying` counts too. The death cam deliberately KEEPS the lock — there
       // is nothing to click, and dropping it on the way in would pause the
       // very shot it is about to show — so it has a lock to lose like any
@@ -4632,6 +4643,10 @@ export class Game {
         this.prof.end(P.gameplay);
         break;
     }
+    // A lowered viewer's camera tail, if one is owed and no arm above ran its
+    // own — inside the frame, so its spans are this frame's, and after every
+    // arm has placed the camera.
+    this.honourSceneOwed();
 
     // The page's own match is handed the frame's clock: what `updateWorld`
     // stepped, and the rest of the frame as time it HELD (`LocalOwner.pass`).
@@ -5488,16 +5503,12 @@ export class Game {
       if (!this.lowerLid("viewer")) return;
       // Back into a live frame: the pointer lock it held is owed back, by the
       // resume's own route and for its reasons (`resume`). The deploy screen
-      // takes none.
+      // takes none. (The scene the viewer's camera moved is `closeViewer`'s,
+      // since a lid the wire takes down owes it too.)
       if (this.state === "playing" || this.state === "dying") {
         this.input.consumeFire();
         this.lockChase.owe();
       }
-      // The camera tail once more, at no time and from where the lid found
-      // it: the viewer's camera moved the shadow window, the light slots and
-      // the lamps' atlas with it, and a deploy screen under the lid runs no
-      // tail of its own to move them back. A live frame's next tail would.
-      if (this.map) this.updateSceneForCamera(0, this.shadowFocus.copyFrom(this.viewerFound.focus), null, this.pushers);
       return;
     }
     if (this.viewerLoading || !this.map) return;
@@ -5519,10 +5530,11 @@ export class Game {
     }
     const map = this.map;
     if (this.viewer || !map || !this.raiseLid("viewer")) return;
-    this.viewerFound.bodyHidden = this.player.bodyIsHidden;
-    this.viewerFound.focus.copyFrom(this.shadowFocus);
-    // The weapon hangs from the camera the viewer is about to fly.
-    this.player.setBodyHidden(true);
+    this.viewerFocus.copyFrom(this.shadowFocus);
+    // The weapon hangs from the camera the viewer is about to fly — put away
+    // by the lid's own flag, never `bodyHidden`, which a step decided under
+    // the lid writes for the state it lands in (`Player.setLidHidden`).
+    this.player.setLidHidden(true);
     this.hud.setEditing(true);
     // A resume's lock still being chased is not the viewer's to take.
     this.lockChase.cancel();
@@ -5548,16 +5560,41 @@ export class Game {
 
   /**
    * What the viewer's lid changed, undone — half of `takeDown("viewer")`, and
-   * called from nowhere else. The session puts back the camera and the map's
-   * own environment itself (`ViewerSession.dispose`); this puts back what was
-   * the page's: the HUD's chrome, the weapon as it was, and the audio clock.
+   * called from nowhere else, so it runs however the lid comes down: `F2`, or
+   * a step the wire decides under it. The session puts back the camera and
+   * the map's own environment itself (`ViewerSession.dispose`); this puts
+   * back what was the page's: the HUD's chrome, the lid's hold on the weapon
+   * (which leaves whatever the state under it says — a step decided under the
+   * lid has already said it), the audio clock, and the scene the viewer's
+   * camera moved, owed to the next frame (`sceneOwed`) rather than run from a
+   * keydown or a socket's message between two.
    */
   private closeViewer(): void {
     this.viewer?.dispose();
     this.viewer = null;
     this.hud.setEditing(false);
-    this.player.setBodyHidden(this.viewerFound.bodyHidden);
+    this.player.setLidHidden(false);
     this.sfx.setSuspended(false);
+    this.sceneOwed = true;
+  }
+
+  /**
+   * The camera tail a lowered viewer owes, run once at no time from the
+   * shadow focus its lid found — in the frame after the lid came down, after
+   * that frame's state arm, so the camera is wherever this frame leaves it
+   * and nothing moves it after `lighting.update` (the end-of-frame order).
+   * A live frame's own tail has already paid it (`updateSceneForCamera`
+   * clears the flag); a deploy screen, a round-over card or a pause runs
+   * none, and the shadow window, the light slots and the lamps' atlas would
+   * stand where the viewer flew. Never on the way to a build, the menu or
+   * the editor: what stands then is no longer the round the lid was over.
+   */
+  private honourSceneOwed(): void {
+    if (!this.sceneOwed) return;
+    this.sceneOwed = false;
+    const s = this.state;
+    if (!this.map || s === "loading" || s === "menu" || s === "editor") return;
+    this.updateSceneForCamera(0, this.shadowFocus.copyFrom(this.viewerFocus), null, this.pushers);
   }
 
   /**
@@ -6326,7 +6363,11 @@ export class Game {
     this.shadowFocus
       .copyFrom(this.cameraSys.camera.position)
       .addInPlaceFromFloats(f.x * 8, f.y * 8, f.z * 8);
-    this.updateSceneForCamera(dt, this.shadowFocus, null, this.pushers);
+    // At no time over the page's own HELD match, as the pause holds it: the
+    // wind, the water, the grass and the lamps' flicker stop with the bodies
+    // (`updateSceneForCamera`'s own reason about a canopy over a frozen
+    // field). Over a server's round the world goes on, and so do they.
+    this.updateSceneForCamera(this.worldHeld ? 0 : dt, this.shadowFocus, null, this.pushers);
   }
 
   /**
@@ -12018,6 +12059,8 @@ export class Game {
     // none — see `stageWarmFrame`.
     bodies: readonly ShadowBody[] = this.mapBodies(),
   ): void {
+    // Any tail pays what a lowered viewer owed (`honourSceneOwed`).
+    this.sceneOwed = false;
     this.shadows.update(shadowFocus, this.mats);
     // The bodies' map follows the same focus and is rebuilt from whatever is
     // DRAWN — `rig.enabled` inside, which is true of a living bot, of

@@ -72,7 +72,8 @@ it by being turned round.
 off the glass**, because it is a tool for looking at the world rather than a
 screen of the game's (`BABYLON_EXIT.md` X5.3b, `docs/states.md`): `HUD.setEditing`
 puts `.editing` on `#hud`, and `hud.css` hides every child of `#hud` by
-`visibility` but the viewer's and the editor's panels and the instruments
+`visibility` but the three dev panels (the viewer's, the editor's and the F4
+mixer's) and the instruments
 (`#hud-fps`, the profiler's `#prof`, `#cullcheck`) and `#toasts` — the deploy
 screen and the minimap under it come back unredrawn, as under `.kitting`. Its
 panel (`viewer/ViewerPanel.ts`) is a dev panel in the editor's look — the old

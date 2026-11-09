@@ -318,8 +318,8 @@ round it holds nothing, because the authority never heard the key. **The
 dev-only map VIEWER is a lid too** (`viewer`, `F2`, `src/viewer/`, the section
 below): it covers the three states a round is in, holds the page's own match
 as the pause does, and is the one lid that MOVES the camera, so taking it down
-puts back the camera, the weapon, the HUD's chrome and the map's own
-environment.
+however it comes down owes back the camera, its scene, the HUD's chrome and the
+map's environment, and lifts only its OWN hold off the weapon (`setLidHidden`).
 
 `Game.updateGameplay` has a load-bearing order at the end of the frame: camera
 update → carried-light updates → `lighting.update(dt, camera.position, mats)`.

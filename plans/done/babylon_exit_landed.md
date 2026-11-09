@@ -10722,7 +10722,7 @@ beside the gizmo note in `docs/rendering.md` and in `PostPasses`' header; X5.3 a
 **Measured**: `post.mjs --against` b1203cc's log, both pages: equal, 30,073 values a page, nothing
 excused. Typecheck, build, corecheck and parity pass.
 
-### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it) — X5.3a **LANDED** (f51b043, its review 85a2273), X5.3b **LANDED** (111829f)
+### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it) — X5.3a **LANDED** (f51b043, its review 85a2273), X5.3b **LANDED** (111829f, its review HASHREV)
 
 The plan's `BABYLON_EXIT.md` holds X5.3's brief, its ONE RULE, the step's own rule on retiring
 an oracle, "Every sub-step owes" and the five sub-steps.
@@ -10917,7 +10917,8 @@ log's BEFORE (nothing under `src/` moved between the two).
 - **The lid.** `SCREENS.viewer` is `{ covers: ["playing","dying","deploy"], holdsWorld: true,
   roundBehind: true, inRound: false }`, `LidState` gains `viewer`, `takeDown` gains its arm
   (`closeViewer`: the session's `dispose`, `HUD.setEditing(false)`, the weapon as the lid found it —
-  `Player.bodyIsHidden`, a getter added, so a driver's hidden weapon stays hidden — and
+  `Player.bodyIsHidden`, a getter added, so a driver's hidden weapon stays hidden; replaced by
+  the lid's own flag, `Player.setLidHidden`, in the review — and
   `sfx.setSuspended(false)`). `toggleViewer` asks the state before its import (so `F2` on the menu
   fetches nothing) and raises the lid BEFORE it changes anything, so the pointer lock's loss lands
   on `viewer` and pauses nothing; it hides the weapon, puts `.editing` on the HUD, cancels a
@@ -10938,11 +10939,12 @@ log's BEFORE (nothing under `src/` moved between the two).
   panel's "back to the game" key line, so it stands beside the viewer as the oracle its checks are
   graded against. X5.3c deletes the directory whole; its explicit list gains `EditorCamera.ts`,
   `EditorPanel.ts`, `panel.css`, `navOverlay.ts`, `proxies.ts`, `validate.ts`, `workLight.ts` and
-  `tuning.ts`. (2) `validate`'s `ref` is `FindingRef` (three of `SelectionRef`'s members) so the
+  `tuning.ts` (written into X5.3c's own list by the review). (2) `validate`'s `ref` is `FindingRef` (three of `SelectionRef`'s members) so the
   viewer imports nothing of the editor's. (3) The `.editing` catch-all above. (4) The dt-0 tail on
-  `F2`'s lowering. (5) The work light opens ON, the editor's default. (6) Over a held world the
+  `F2`'s lowering (owed by EVERY lowering since the review, in the next frame). (5) The work light opens ON, the editor's default. (6) Over a held world the
   tail runs at the frame's `dt`, as the editor's did: the foliage, the water and the lamps'
-  flicker move while the bodies stand still (the plan's "the editor's tail, renamed").
+  flicker move while the bodies stand still (the plan's "the editor's tail, renamed"). **Reversed
+  by the review**: at `dt` 0 over a held world, the plan's "holds the world as the pause does".
 - **`validate` against the editor** (a scratch script, one boot, the seven maps in turn: deploy,
   `toggleViewer`, the viewer's findings; `toggleEditor` — `Shift+F2`'s, which took the viewer down
   through `go("editor")` on every map — and the editor's own findings off its unmerged build;
@@ -11014,3 +11016,68 @@ log's BEFORE (nothing under `src/` moved between the two).
   `Shift+F2` in `docs/editor.md`, `docs/audio.md`, `docs/deaths.md` and `docs/game.md`;
   `FILES.md`; `plans/webgpu-ref/README.md` and the draw log's header; the contract headers of every
   new module, `ScreenStack.ts`'s and `Game.ts`'s.
+
+**Its review** (HASHREV; 2026-11-09; no change to a round: `Game`'s viewer lid, a flag on `Player`,
+the `.editing` rule, comments and documents) found two bugs and six minor points, each checked
+against the tree first. Measured headless on the Windows box against a BEFORE at 3c96bca, in the
+worktree `greywatch-2-before-x53a` moved there (no `npm ci`: `package-lock.json` unchanged), its
+`ref/` identical to the main tree's. Scripts in the session's scratchpad, `x53b-fix/`
+(`fixcheck.mjs`, `server.mjs`, `mixer.mjs`, `run.sh`).
+
+- **A step the wire decides under the lid lost the weapon's visibility** (bug 1). `enterDeploy` and
+  `spawnPlayer` set `bodyHidden` and then `go`, whose `takeDown("viewer")` put back the value the
+  lid had found: a death under the lid over a life came to the deploy screen with the rifle out,
+  and a spawn under the lid over deploy began a life with no weapon. The lid now holds the weapon
+  by a flag of its own, `Player.setLidHidden`, OR'd into `bodyHidden` in `applyVisibility` (the
+  flash and brass with it); the viewer never writes `bodyHidden`, and `bodyIsHidden` is gone.
+  **Measured** (the reviewer's `wire.mjs` as `fixcheck.mjs`, Hollowmere, the page's own match):
+  the death `deploy`, hidden (BEFORE: shown); the spawn `playing`, shown; `F2` over a life,
+  shown. In a SERVER's round (`npm run build:server`, port 8097, `?mp=`): walked at the far flag
+  until under fire (health 58), the lid raised, the authority's `died` landing under it — `deploy`,
+  hidden, `.editing` off.
+- **A lid `go` took down left the scene where the viewer flew** (bug 2, with nit 4). The dt-0 tail
+  ran only in `toggleViewer`'s lowering, and from a keydown, outside `tick`. `closeViewer` now sets
+  `Game.sceneOwed`; the next `tick` pays it after its state's arm (`honourSceneOwed`: the tail once
+  at `dt` 0 from the focus the lid found), never in `loading`, `menu` or `editor` or with no map,
+  and any tail that runs first clears it (`updateSceneForCamera`'s first line), so a live frame's
+  own tail is the payment. **Measured**: the focus 7.9 m from the eye on the deploy screen after
+  the death under the lid (BEFORE: 240.6 m, at (40, 12.6, -91.7) with the camera at (-109.3, 4.8,
+  96.8)), 7.9 m after the spawn and after `F2` over a life, 8.0 m after the server's death. A
+  `?profile` page lowered over deploy by the `F2` KEY: the one `localShadows` span in the next 20
+  rows starts 0.7 ms into a 3.1 ms frame (BEFORE: 3.8 ms into a 3.2 ms one, the stray).
+- **The tail ran at the frame's `dt` over a held world** (nit 6; deviation 6 above reversed). It
+  runs at `worldHeld ? 0 : dt`, the HUD's own rule. **Measured**: over a life in the page's own
+  match, `windTime`, the water's and the grass's clocks moved 0 in 60 frames under the lid and
+  0.463 s in the 60 after it (BEFORE: 0.512 s under it); in a server's round about 3.0 s in each
+  3-second lid, over deploy and over a life.
+- **`.editing` hid the F4 mixer** (nit 3), under the editor too. `#mixer-panel` is carved out and
+  the comment says three panels. **Measured**: `F2` then `F4` over deploy, the mixer `visible`
+  (BEFORE: `hidden`). `.kitting` and `.setting` hide it as well, against `docs/audio.md`'s "the kit
+  screen's weapon can be mixed with its screen up": pre-existing (since 0214dfa), left, and
+  recorded as `FINDINGS.md` 71.
+- **Lowering with the right-drag lock held paused the round** (nit 5). `pointerlockchange` in
+  `viewer` now tells `PointerLockChase.changed` the lock is not held, so the viewer's release lands
+  in `playing` as no loss. **Measured** with a faked `pointerLockElement` (a lock taken under the
+  lid, 400 ms past `lockGrace`, the release dispatched after the lowering): `playing` (BEFORE:
+  `paused`).
+- **The flow fields stay registered** (nit 7, not done). `NavGrid` has no way to drop a field, and
+  a method on the world layer's graph for a dev tool is not worth it: they stand until the
+  teardown, at most the flags plus the two homes, relaxed on a pane's break and reused by the next
+  raise. Said in `navPlan.ts`' header.
+- **Documents** (docs 1 and 2, nit 8): `docs/states.md`'s "The map viewer's lid", `docs/game.md`'s
+  viewer frame and `CLAUDE.md`'s lid sentence (net zero lines, 1,616) say the lid lifts only its
+  own hold on the weapon and owes the scene to the next frame; `docs/ui.md` names the mixer's
+  carve-out; X5.3c's list in `BABYLON_EXIT.md` gains the eight copies, the `Shift+F2` line and the
+  `#editor-panel` carve-out; `FILES.md`'s viewer `validate.ts` is a copy until X5.3c.
+- **The rest of the Verify**: the draw log with the viewer equal to X5.3b's own (366 viewer frames,
+  every class, no Babylon draw, no `[pipelines]` line) and with `--no-viewer` equal to X5.3a's
+  BEFORE; `f2states.mjs` 18 of 18; `clock.mjs` PASS (0 `advance`s under the lid, 375 to 381
+  `hold`s, the fight, tickets and bodies unmoved; 379 `advance`s after a life's lowering); the
+  bank by `exact.mjs`, **default** 146 byte-equal and `harrowmead-view-pistol-reload` within its
+  flake (2 pixels by 1/255), **`volumetrics=low`** 147, **`volumetrics=high`** 147, `sarab-ground`
+  byte-equal in all three, the same rows red against `ref/` on both trees (34, 102, 93);
+  `post.mjs --against` equal on both pages (30,073 values a page); absent from `dist/` (no viewer
+  chunk; `closeViewer`, `setLidHidden` and `honourSceneOwed` remain as arms over a flag that is
+  never set); typecheck, build, corecheck, parity, `gate` (seven maps clean) and `shaders` (clean
+  on seven). Not re-run: the other probes, `merge:hash`, `maps:check` and `?profile&gpu`, nothing
+  they read having moved.

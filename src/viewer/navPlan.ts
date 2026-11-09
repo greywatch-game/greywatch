@@ -29,7 +29,10 @@
  * (a server's match builds them all) and otherwise sweeps it with the goal and
  * radius `MapBuilder.derive` uses, which registers it on the graph under the
  * same name: from then on `NavGrid.openBox` relaxes it with the rest when a
- * pane breaks, and nothing on the page that decides anything reads it.
+ * pane breaks, and nothing on the page that decides anything reads it. It is
+ * not dropped when the lid comes down — `NavGrid` has no way to unregister a
+ * field — so it stands until the map is torn down: CPU on a pane's break, at
+ * most the flags plus the two homes, reused by the next raise.
  *
  * Never: draws, holds a mesh, or changes a link.
  */

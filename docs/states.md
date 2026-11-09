@@ -482,17 +482,27 @@ free camera (`ViewerCamera`, writing `CameraSystem`'s `FreeCamera`, which the po
 chain is bound to) is the shadow focus, and the round's own bodies are passed to
 the tail, so what is drawn is the round's frame — its GI, glazing, fires, grass,
 water, bodies and hulls — through the round's path, with no second one. The tail
-runs at the frame's `dt`, as the editor's did, so the foliage, the water and the
-lamps' flicker go on moving over a held match while the bodies stand still.
+runs at `dt` 0 over the page's own held match, as the pause holds it — the
+foliage, the water and the lamps' flicker stop with the bodies — and at the
+frame's `dt` over a server's round, which goes on under it.
 **Taking it down** (`Game.takeDown` → `closeViewer`, however it comes down: `F2`
 again, or a step the wire decides under it) puts back the camera's pose as the
 lid found it, the map's own environment over the work light
-(`ViewerSession.dispose`), the HUD's chrome (`HUD.setEditing`), the weapon as it
-was (`Player.bodyIsHidden`) and the audio clock. **`F2`'s own lowering also owes
-the pointer lock** back to a live frame (the resume's route), and runs the camera
-tail once at no time from the shadow focus the lid found — because a `deploy`
-under it runs no tail of its own, and the viewer's camera moved the shadow window,
-the light slots and the lamps' atlas with it.
+(`ViewerSession.dispose`), the HUD's chrome (`HUD.setEditing`) and the audio
+clock, and takes the lid's OWN hold off the weapon (`Player.setLidHidden`, OR'd
+into `bodyHidden`, which the viewer never writes) — so the weapon is whatever the
+state under it says NOW: a death's `enterDeploy` under the lid leaves it put
+away, a `spawnPlayer` there leaves it out. **It also owes the scene back**: the
+viewer's camera moved the shadow window, the light slots and the lamps' atlas,
+and a `deploy`, a round-over card or a pause runs no tail of its own, so
+`closeViewer` sets `Game.sceneOwed` and the NEXT `tick` runs the camera tail once
+at no time from the shadow focus the lid found, after its state's arm — inside a
+frame, so no profiler span lands between two — unless a live frame's own tail has
+paid it first, and never on the way to a build, the menu or the editor.
+**`F2`'s own lowering also owes the pointer lock** back to a live frame (the
+resume's route); the viewer's own right-drag lock is never registered with the
+chase (`PointerLockChase.changed` is told "not held" in `viewer`), so its release
+on the lowering pauses nothing.
 
 **It is raised BEFORE the pointer lock is let go**, so the state is `viewer` by the
 time the lock's loss arrives and the loss pauses nothing (the trigger asks for

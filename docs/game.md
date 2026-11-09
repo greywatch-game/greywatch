@@ -573,8 +573,9 @@ nothing to run the camera tail** (`Game.updateViewer`, `BABYLON_EXIT.md` X5.3b,
 which, the viewer answering `roundBehind`, steps a server's round under it — and
 `LocalOwner.pass`, which hands the page's own match the whole frame as a `hold`,
 the viewer answering `holdsWorld`. It moves the free camera and then runs
-`updateSceneForCamera` at the frame's `dt` from it, with the round's bodies as the
-grass's pushers and no player: the shadow window, the bodies' map, the light
+`updateSceneForCamera` from it — at `dt` 0 over the page's own held match, as
+the pause holds it, and at the frame's `dt` over a server's round — with the
+round's bodies as the grass's pushers and no player: the shadow window, the bodies' map, the light
 slots, the lamps' atlas, the water's and the grass's own clocks and the wind —
 the half of a played frame that needs only a posed camera, which is the editor's
 tail renamed. So every row of the table above reads the viewer's camera as it
@@ -582,8 +583,12 @@ reads the player's: the EYE (`followEye`), the bounce around it (`gi.update`),
 the EAR (`sfx.setListener`, over an audio clock suspended in the page's own
 match), and the draws before the render. It is in the arm and not in `tick`
 because it is owed by that one state rather than by a span of them. Lowering
-the lid with `F2` runs the tail once more at `dt` 0 from the shadow focus the lid
-found, for the deploy screen's sake, which runs no tail of its own.
+the lid, however it comes down, owes the tail once more at `dt` 0 from the shadow
+focus the lid found, for the sake of a deploy screen, a round-over card or a
+pause, which run no tail of its own: `closeViewer` sets `sceneOwed` and the next
+`tick` pays it after its state's arm (`honourSceneOwed`), inside the frame —
+never from the keydown or the message that lowered it — unless that frame's own
+tail paid it first.
 
 Every row above shares a shape worth recognising before adding another: the
 thing being pushed is owed by a **span** of states rather than by one, and the

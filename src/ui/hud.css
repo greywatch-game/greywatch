@@ -1401,9 +1401,10 @@
    under it: the deploy screen, the minimap, the gun marker and the use prompt
    are all standing under it, and visibility (the kit screen's `.kitting`
    rule) brings each back on the lowering exactly as it was, unredrawn. The
-   two dev panels are carved out by name, and so are the instruments — the
-   frame rate, the profiler's chip, the cull check — and the toasts, which
-   are how either tool says it could not open. */
-#hud.editing > *:not(#viewer-panel):not(#editor-panel):not(#hud-fps):not(#prof):not(#cullcheck):not(#toasts) {
+   three dev panels are carved out by name — the viewer's, the editor's and
+   the F4 mixer's, which is no lid and stands over either — and so are the
+   instruments — the frame rate, the profiler's chip, the cull check — and
+   the toasts, which are how either tool says it could not open. */
+#hud.editing > *:not(#viewer-panel):not(#editor-panel):not(#mixer-panel):not(#hud-fps):not(#prof):not(#cullcheck):not(#toasts) {
   visibility: hidden;
 }

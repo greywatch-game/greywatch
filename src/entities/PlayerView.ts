@@ -100,8 +100,8 @@ export class PlayerView implements PlayerPicture {
   /** The ejection port's world, read once a case (`ViewModel.ejectPortWorld`). */
   private readonly portWorld = new Matrix();
   /**
-   * Whether the weapon is put away — `Player`'s `bodyHidden`, as `stowed`
-   * last said it. A case thrown while it is set is thrown unseen.
+   * Whether the weapon is put away — `Player`'s `bodyHidden` or a lid's hold
+   * on it (`setLidHidden`), as `stowed` last said it. A case thrown while it is set is thrown unseen.
    */
   private hidden = true;
 

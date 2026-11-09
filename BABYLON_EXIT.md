@@ -4592,7 +4592,7 @@ loss**: Babylon's post chain rebuilds after a loss today and ours will not
   header; `FINDINGS.md` 5, 16 and 52; the gate note after Phase 4 (above) and the
   "Contracts this plan rewrites" rows for the glow and `shaderLanguage`.
 
-### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it; the split was proposed by a planning agent's read at b3cea5d) — X5.3a **LANDED** (f51b043, its review 85a2273), X5.3b **LANDED** (111829f)
+### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it; the split was proposed by a planning agent's read at b3cea5d) — X5.3a **LANDED** (f51b043, its review 85a2273), X5.3b **LANDED** (111829f, its review HASHREV)
 
 **This replaces the entry that ported the editor.** That entry put `F2`'s editor on our
 renderer: its unmerged build drawn per item, picking against `RayWorld`, our own move and
@@ -4880,7 +4880,8 @@ reviews: the first is the feature, the second is the renderer. The colliders com
   `EditorPanel.ts`, `panel.css`, `navOverlay.ts`, `proxies.ts`, `validate.ts`, `workLight.ts` and
   `tuning.ts`); `validate`'s `ref` is a `FindingRef` of its own; `HUD.setEditing`'s `.editing` rule
   is a catch-all by visibility, since the lid stands over the deploy screen and the minimap;
-  lowering with `F2` also runs the camera tail once at `dt` 0 from the shadow focus the lid found.
+  lowering with `F2` also runs the camera tail once at `dt` 0 from the shadow focus the lid found
+  (every lowering since its review, in the next frame).
   **Measured** against a BEFORE at f5c22c5: `validate`'s findings equal to the editor's own on all
   seven maps; the nav classification equal to `navOverlay`'s float for float (84 comparisons, every
   route, round and editor maps); the draw log with the viewer up — no Babylon draw, no group-0
@@ -4892,12 +4893,40 @@ reviews: the first is the feature, the second is the renderer. The colliders com
   within 2.2%; typecheck, build, corecheck, parity, `gate` and `shaders`. **Not run**: the phone;
   by a person's hands, the mouse look and the plan's click (scripted only).
 
+  **Its review** (HASHREV; 2026-11-09; no change to a round; the full note is in
+  `plans/done/babylon_exit_landed.md`) found two bugs and six minor points. **The bugs**: a step
+  the wire decides under the lid set the weapon's visibility and then `go` took the lid down and
+  put back what the lid had found — a death's `enterDeploy` left a rifle on the deploy screen, a
+  `spawnPlayer` a life with none; the lid now holds the weapon by a flag of its own
+  (`Player.setLidHidden`, OR'd into `bodyHidden`, which it never writes). And only `F2`'s lowering
+  ran the dt-0 camera tail, so a lid `go` took down left the shadow window, the light slots and the
+  lamps' atlas where the viewer flew (240.6 m from the eye on the deploy screen); every lowering
+  now owes it to the next `tick` (`Game.sceneOwed`, paid after the state's arm, inside the frame,
+  so no profiler span lands between two, or by a live frame's own tail). Also: the viewer's tail
+  runs at `dt` 0 over a held world (deviation 6 reversed: "holds the world as the pause does");
+  `.editing` carves out the F4 mixer; the viewer's own pointer lock is never registered with the
+  chase, so lowering with it held pauses nothing; X5.3c's file list gains the copies. **Measured**
+  against a BEFORE at 3c96bca: both cases right in the page's own match and a death under the lid
+  right in a server's, the focus 7.9 to 8 m from the eye after each; no stray `localShadows` span;
+  the wind, water and grass clocks 0 under the lid over the page's own match and about 3.0 s over
+  a server's in 3 s; the draw log equal to X5.3b's own (the viewer class too) and, without the
+  viewer, to X5.3a's BEFORE; every bank row byte-equal (146 and the pistol's flake, 147, 147);
+  `post.mjs --against` equal. **Left**: the viewer's flow fields stay registered on the page's
+  graph until the teardown (`NavGrid` cannot drop one; at most the flags plus two); the kit and
+  settings screens hide the mixer, against `docs/audio.md` (`FINDINGS.md` 71).
+
 - **X5.3c — the editor deleted** (no change to the game; the editor's instruments
   retired, row "X5.3, retire the editor") — **M**.
   - **Deleted from `src/editor/`:** everything X5.3b did not move. That is `index.ts`,
     `selection.ts`, `gizmos.ts`, `pathHandles.ts`, `terrainBrush.ts`, `mutate.ts`,
     `inspect.ts`, `fields.ts`, `params.ts`, `save.ts`, `saveEnvironment.ts`,
-    `serialize.ts` and `sourceScan.ts`, then the directory. `Shift+F2` goes too.
+    `serialize.ts` and `sourceScan.ts` — and, since X5.3b COPIED rather than moved
+    them (its note's deviation 1), `EditorCamera.ts`, `EditorPanel.ts`, `panel.css`,
+    `navOverlay.ts`, `proxies.ts`, `validate.ts`, `workLight.ts` and `tuning.ts` — then
+    the directory.
+  - **Owed with them:** `Shift+F2`, the one line in `Game.installDomListeners` that
+    routes it to `toggleEditor`, and `hud.css`'s `#editor-panel` carve-out in the
+    `.editing` rule (which keeps `#viewer-panel`'s and `#mixer-panel`'s).
   - **Deleted from `Game`:**
     - `toggleEditor`, `buildEditorMap`, the editor half of the frame, the `editor` field
       and `editorLoading`.

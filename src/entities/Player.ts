@@ -332,6 +332,14 @@ export class Player implements Combatant {
   /** Whether the viewmodel is hidden (menu, deploy screen, editor). */
   private bodyHidden = true;
   /**
+   * Whether a LID has the weapon put away over whatever `bodyHidden` says —
+   * the dev-only map viewer's (`setLidHidden`). Its own flag, OR'd in, so the
+   * steps the wire decides under the lid (a death's `enterDeploy`, a
+   * `spawnPlayer`) write `bodyHidden` as they always do and the lid coming
+   * down owes nothing back but its own half.
+   */
+  private lidHidden = false;
+  /**
    * Whether the weapon is on the loadout screen's turntable. Its own flag
    * rather than a case of `bodyHidden`: every state the kit screen covers has
    * the gun put away, and showing it there must not mean the player is
@@ -2462,13 +2470,18 @@ export class Player implements Combatant {
   }
 
   /**
-   * What `setBodyHidden` last said — read by the one caller that hides the
-   * weapon for a while and must put back what it found rather than guess it
-   * from the state: the dev-only map viewer, a lid that can be raised over a
-   * player who is driving as well as one on foot (`Game.toggleViewer`).
+   * A lid's own hold on the weapon, beside `setBodyHidden` rather than
+   * through it: the dev-only map viewer flies the camera the weapon hangs
+   * from (`Game.toggleViewer`), and a step decided under it writes
+   * `bodyHidden` for the state it lands in. So the viewer never writes
+   * `bodyHidden`, and lowering it puts back exactly what the state under it
+   * says now — a rifle for a life that began under the lid, none for a
+   * deploy a death opened there. Ends no inspection: no lid it serves can be
+   * raised over the kit screen.
    */
-  get bodyIsHidden(): boolean {
-    return this.bodyHidden;
+  setLidHidden(hidden: boolean): void {
+    this.lidHidden = hidden;
+    this.applyVisibility();
   }
 
   /**
@@ -2502,11 +2515,12 @@ export class Player implements Combatant {
   }
 
   private applyVisibility(): void {
-    this.view.setVisible(!this.bodyHidden || this.inspecting);
+    const hidden = this.bodyHidden || this.lidHidden;
+    this.view.setVisible(!hidden || this.inspecting);
     // The flash and the brass go with the weapon — but not into an
     // inspection: brass is thrown into the world, and the world is not what
     // the kit screen is showing. See `PlayerView.stowed` for why the flash
     // has to be ENDED rather than left to retire itself.
-    this.picture.stowed(this.bodyHidden);
+    this.picture.stowed(hidden);
   }
 }

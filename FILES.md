@@ -1605,7 +1605,8 @@ src/
                         #     sweeps on the standing graph on demand
     marks.ts            #   The proxies' shapes without their meshes: flags at
                         #     their true radius, spawns, water/grass, scatter
-    validate.ts         #   The editor's checks, moved (src/math's Vector3)
+    validate.ts         #   A copy of the editor's checks (src/math's Vector3)
+                        #     until X5.3c deletes the original
     workLight.ts        #   Brightened EnvironmentSpec for looking at a night map
     tuning.ts           #   Tool constants (NOT src/config/ — not gameplay)
   editor/               # Dev-only map editor (Shift+F2 since X5.3b; deleted at

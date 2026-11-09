@@ -3162,3 +3162,29 @@ fades with them (`Game.blobsBeforeGlass` counts the fades standing at a round's
 glazing install, so a change here owes that count a look, and the run's tie
 order after a first round with it). Then the probe above: `blobs.size` 17 every
 round and no earlier round's body alive after a GC.
+
+## 71. The F4 mixer is hidden under the kit and settings screens, which `docs/audio.md` says it can be used over
+
+**Open since the mixer landed (0214dfa)**, found by `BABYLON_EXIT.md` X5.3b's
+review. `docs/audio.md` ("F4: setting them") says the panel sits at
+`z-index: 40` over the whole `src/ui/` ladder, "so the menu's ambience and the
+kit screen's weapon can both be mixed with their own screen up". The z-index is
+true and the conclusion is not: `#mixer-panel` is a child of `#hud`, and the
+kit screen's blanket rule (`#hud.kitting > *:not(#loadout):not(#hud-fps)`,
+`loadout.css`) and the settings screen's (`#hud.setting > *:not(#settings)…`,
+`settings.css`) take every child of `#hud` off the glass by `visibility` but the
+ones they name, which the mixer is not. The `.editing` rule (the viewer's and
+the editor's) carves it out since X5.3b's review.
+
+### What is derived from the code
+
+- With the kit screen up, F4 builds and toggles a panel nobody can see; the
+  audio it changes still plays, so the weapon on the turntable cannot be mixed
+  by eye. Not seen in a browser.
+- The menu's half of the claim is not affected: no menu rule hides it.
+
+### How to settle it
+
+Either carve `#mixer-panel` out of `.kitting` and `.setting` by name (as
+`#hud-fps` is), or correct the sentence in `docs/audio.md`; then F4 over the kit
+screen in a dev build.
