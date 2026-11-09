@@ -140,7 +140,9 @@ trap in full, and what the WebGPU gate cost in reach.
 npm install
 npm run dev        # Vite dev server
 npm run typecheck  # tsc --noEmit (strict, noUnusedLocals/Parameters)
-npm run build      # gates + typecheck + production build to dist/
+npm run build      # gates (the collision bake current, maps:check, the
+                   #   import rules, audio) + typecheck + production build
+                   #   to dist/
 npm run corecheck  # the ONE test: the core's scoring and person rules off its
                    #   events with no Game, then through a real Match
 npm run preview    # serve the production build
@@ -174,6 +176,10 @@ npm run merge:hash # kit:hash's other half: builds every map in a real browser
                    #   and is owed by every Babylon upgrade (docs/build.md).
                    #   `-- --out f.json`, `--against f.json`, `--maps a,b`,
                    #   `--editor` for the editor's unmerged build
+npm run maps:check # every map's generator re-run into scratch (`--out`) and
+                   #   its layout.ts and heights.ts held to the committed
+                   #   files byte for byte, line endings aside — a BUILD GATE:
+                   #   a map is authored in its generator only (docs/build.md)
 npm run shots      # re-photograph the maps for the menu backdrop (committed).
                    #   The ONE script here that needs a real GPU — docs/build.md
 npm run proving    # regenerate the DEV-ONLY proving ground (committed source).

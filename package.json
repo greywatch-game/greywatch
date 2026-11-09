@@ -9,7 +9,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/check-collision.mjs && node scripts/check-deep-imports.mjs && node scripts/check-babylon-free.mjs && node scripts/check-audio.mjs && npm run typecheck && vite build && node scripts/check-proving.mjs",
+    "build": "node scripts/check-collision.mjs && node scripts/check-maps.mjs && node scripts/check-deep-imports.mjs && node scripts/check-babylon-free.mjs && node scripts/check-audio.mjs && npm run typecheck && vite build && node scripts/check-proving.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit && tsc --noEmit -p server/tsconfig.json",
     "collision": "node scripts/bake-collision.mjs",
@@ -34,7 +34,8 @@
     "audio:measure": "node scripts/measure-audio.mjs",
     "loc": "node scripts/loc.mjs",
     "kit:hash": "node scripts/kit-hash.mjs",
-    "merge:hash": "node scripts/merge-hash.mjs"
+    "merge:hash": "node scripts/merge-hash.mjs",
+    "maps:check": "node scripts/check-maps.mjs"
   },
   "dependencies": {
     "@babylonjs/core": "^9.28.0",

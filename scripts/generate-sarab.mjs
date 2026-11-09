@@ -6,6 +6,10 @@
  * collision bake, and re-running it with the tree unchanged must produce the
  * same bytes.
  *
+ * `--out <dir>` writes the two files into `<dir>` and nothing in `src/`: how
+ * `npm run maps:check` (`scripts/check-maps.mjs`, a build gate) re-runs this
+ * and holds the committed files to those bytes.
+ *
  * ## Why this map is seeded by a script and the other four are not
  *
  * Two reasons, and only the second is about this map in particular.
@@ -63,7 +67,7 @@
  *   the reason the two blocks at the end of that array are appended.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   centredRectDist,
@@ -81,7 +85,10 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
-const out = join(root, "src", "world", "sarab");
+// `--out <dir>` writes the two files there and nothing in `src/`: how
+// `npm run maps:check` (`scripts/check-maps.mjs`) re-runs this into scratch.
+const outAt = process.argv.indexOf("--out");
+const out = outAt >= 0 ? resolve(process.argv[outAt + 1]) : join(root, "src", "world", "sarab");
 
 // --- the extent --------------------------------------------------------------
 
@@ -2190,9 +2197,9 @@ grass.push(
   "  { x: -300, z: 24, width: 70, depth: 60, density: 0.22, height: 0.6 },",
   "  { x: 120, z: 40, width: 80, depth: 70, density: 0.22, height: 0.6 },",
   "  { x: -60, z: 330, width: 110, depth: 60, density: 0.2, height: 0.6 },",
-  // This patch crosses the eastern wadi pool, and is open desert scrub rather
-  // than a margin: it stops at the water (`GrassRect.dry`) instead of growing
-  // on into it as reeds.
+  "  // This patch crosses the eastern wadi pool, and is open desert scrub rather",
+  "  // than a margin: it stops at the water (`GrassRect.dry`) instead of growing",
+  "  // on into it as reeds.",
   "  { x: 300, z: -60, width: 90, depth: 80, density: 0.2, height: 0.6, dry: true },",
   "  { x: 30, z: -350, width: 120, depth: 60, density: 0.2, height: 0.6 },",
 );

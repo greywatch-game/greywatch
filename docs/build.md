@@ -306,6 +306,30 @@ adds `src/render/` and `src/math/` to its `DIRECTORIES`, naming
 file from being a root and never from being REACHED; X6.1 widens it to the
 whole tree, the day the package goes.
 
+## A map reproduces from its generator: `check-maps.mjs`
+
+**`scripts/check-maps.mjs` (`npm run maps:check`) runs from `npm run build`
+right after the collision bake's staleness check, and it is what holds "the
+generators are the only way to author a map"** (`BABYLON_EXIT.md` X5.3, the
+owner's of 2026-11-08). Each shipped map's generator is re-run with `--out
+<scratch>` — which writes the two files there and nothing in `src/` — and its
+`layout.ts` and `heights.ts` are compared with the committed files byte for
+byte after line-ending normalisation alone (the generators write LF; a Windows
+checkout under `core.autocrlf` holds CRLF). One byte of any other kind fails
+the build, naming the map, the file and the first line that differs. All seven
+run at once in child processes, about a second here, with no GPU and no
+browser.
+
+So a change to a map goes into its generator's design section, its parameters
+or its seed, and is re-run (`npm run <map>`), then `npm run collision -- <map>`
+and `npm run parity` — never into `layout.ts` by hand, and there is no overrides
+file. The two checks are a pair and catch different things: `check-collision.mjs`
+says the bake is older than the layout, this says the layout is not its
+generator's. A merge from `develop` owes it as well (`BABYLON_EXIT.md`, "The
+branch"). A generator's map list is `collision-hash.mjs`'s `MAPS`, so a new map
+is checked by the row it already owes there; the DEV-only proving ground is
+not.
+
 ## The simulation's Worker is a second bundle, and two compiler settings it rests on
 
 **`server/localMatchWorker.ts` is its own Rollup build** (`BABYLON_EXIT.md`
@@ -336,7 +360,7 @@ the measurement. esbuild reads it from the tsconfig nearest each file, so
 growable `SharedArrayBuffer` the core's old Worker published through, and back
 to ES2022 at X2.5c C5, when that Worker went.)
 
-## A Babylon upgrade owes geometry-check, math-check, sweep-check, then `npm run merge:hash`
+## A Babylon upgrade owes geometry-check, math-check, bounds-check, sweep-check, then `npm run merge:hash`
 
 **The map build used to lean on Babylon's INTERNALS in four places, none of
 which failed loudly when an upgrade moved what it leaned on, and since
@@ -374,7 +398,15 @@ the INSTALLED Babylon: `scripts/geometry-check.mjs` (the generators, the merge
 reference the copy is checked against — the transform and the normals), and
 `scripts/math-check.mjs` (`Vector3`, `Quaternion`, `Matrix`: the compose,
 decompose, multiply and Euler conversions `worldMatrixOf`, `detachPart` and
-`flattenParts` are built from). **The body sweep is a third copy**:
+`flattenParts` are built from). **Beside it, `scripts/bounds-check.mjs`** holds
+`boundsOf` (`world/worldGeometry.ts`, the bounds `WorldCulling` grows its cells
+from in place of a mesh's bounding info) to the bit against Babylon's
+`BoundingInfo` — a `Mesh` with the same positions frozen at the same sixteen
+floats — over every kit and scatter kind at seeded OFF-identity transforms,
+which is the arm no round's build exercises (its visuals are at identity) and
+which `merge:hash --editor` alone covered until the editor's retirement
+(`BABYLON_EXIT.md` X5.3a); `--perturb` is its negative test. It runs until X6.1.
+**The body sweep is a third copy**:
 `src/world/ellipsoidSweep.ts` is Babylon 9.28's `moveWithCollisions` — the
 collider's triangle test, its response and the coordinator's retry loop —
 ported operation for operation against each `WorldBox`'s twelve triangles
@@ -382,18 +414,18 @@ ported operation for operation against each `WorldBox`'s twelve triangles
 the BIT against the installed Babylon in its default `exact` mode (it builds
 each map as the authority does, off the bake, and its Babylon reference scenes
 on a `NullEngine` of its own, so it needs no browser).
-After an upgrade a difference in any of the three means
+After an upgrade a difference in any of the four means
 Babylon changed under the copy, not that the map moved — and since the copy is
 what Babylon 9.28 did, which version it should now follow is a decision, not a
 fix.
 
 **So an upgrade is three runs, in this order, on the same machine.** Take
 `npm run merge:hash -- --out before.json` (and the same with `--editor`) on
-the OLD version. Upgrade. Run `node scripts/geometry-check.mjs` and
-`node scripts/math-check.mjs` and `node scripts/sweep-check.mjs` — the copies
-against the new library — then
+the OLD version. Upgrade. Run `node scripts/geometry-check.mjs`,
+`node scripts/math-check.mjs`, `node scripts/bounds-check.mjs` and
+`node scripts/sweep-check.mjs` — the copies against the new library — then
 `npm run merge:hash -- --against before.json` (and `--editor`). A merge:hash
-difference with all three checks clean is Babylon's own output changing under the
+difference with all four checks clean is Babylon's own output changing under the
 adapter or a collider.
 
 **A baseline taken before `BABYLON_EXIT.md` X4.6e differs by design, and a

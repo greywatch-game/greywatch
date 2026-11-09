@@ -45,6 +45,7 @@ node plans/webgpu-ref/gi.mjs [map...] [--out=f.json] [--against=f.json] [--shaft
 node plans/webgpu-ref/gi.mjs --compare=a.json --against=b.json
 node plans/webgpu-ref/post.mjs [--sizes=desk,phone] [--out=f.json] [--against=f.json] [--no-live]
 node plans/webgpu-ref/post.mjs --compare=a.json --against=b.json
+node plans/webgpu-ref/drawlog.mjs [map...] [--out=f.json] [--against=f.json] [--ignore=<regex>] [--no-editor] [--limit=<seconds>]
 ```
 
 - **`gate.mjs`** boots every shipped map, plays a real round on each and fails
@@ -344,6 +345,28 @@ node plans/webgpu-ref/post.mjs --compare=a.json --against=b.json
   (`**.draws[stage=glow.*].viewport`), never on a pass index: an index names whatever
   draw a scenario puts at it, so it would excuse the same field on another stage's draw
   (X5.2b's review).
+
+- **`drawlog.mjs`** is the DRAW LOG (`BABYLON_EXIT.md` X5.3a; its header is its
+  contract): what BABYLON draws and compiles in every state a live session passes
+  through, the Phase 4 gate's scratch render log made an instrument. One page a map
+  (Coldharbour by default), the round's seed pinned, scripted through the menu, the
+  building card, deploy, the kit lid, a life (every primary fired, a frag, the third
+  slot, a pane broken, a flying hull pinned where there is one, then walked at the far
+  flag until the authority kills the player), the death cam, deploy, a life under the
+  pause lid, the round-over card, the menu, a second round, the menu and `F2` (the
+  editor, `--no-editor` to leave it out); a step it does not reach fails the run (exit
+  2). By FRAME CLASS (the state at the engine's begin-frame, the card raised from the
+  editor apart): every `_draw` keyed by mesh or effect and target, every visit of
+  rendering group 0 keyed by target, every effect (and compute effect) COMPILED, and
+  `scene.meshes`' sizes and folded names — each key as the SET of per-frame counts it
+  took and whether it was there every frame, never a total, so the log compares with
+  itself across two processes. `--against` compares with an earlier `--out` by path
+  (`<map>/<class>/<field>/<key>`) and exits 1 on a difference `--ignore`'s regular
+  expression does not excuse. Frames, what the round did and the steps are printed and
+  not compared. About a minute and a half on Coldharbour here. Its log at X5.3a's parent
+  is X5.3's BEFORE: the editor (`F2`) and the building card raised over its build are the
+  only classes in which Babylon draws, visits group 0 or compiles an effect; in every
+  other state it does none of the three (the post chain is ours since X5.2d).
 
 `cold-stagger.mjs` is **gone and is not coming back**. It existed to bake
 Coldharbour's forty cube probes four a frame because doing all forty at once

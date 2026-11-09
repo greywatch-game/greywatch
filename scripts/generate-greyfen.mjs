@@ -7,6 +7,10 @@
  * every collision bake, and re-running it with the tree unchanged must produce
  * the same bytes.
  *
+ * `--out <dir>` writes the two files into `<dir>` and nothing in `src/`: how
+ * `npm run maps:check` (`scripts/check-maps.mjs`, a build gate) re-runs this
+ * and holds the committed files to those bytes.
+ *
  * Flags for iterating on it: `--probe` prints the floor as a plan and writes
  * nothing, `--at x0,z0,x1,z1` prints it at a metre over one box and
  * `--point x,z` says what each pass made of one spot (both write nothing);
@@ -97,7 +101,7 @@
  * own note). The beds are cut to -1.34 as they were.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { roadNetwork } from "../src/world/roadPaths.ts";
 import { onRoad } from "../src/world/roads.ts";
@@ -138,7 +142,10 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
-const out = join(root, "src", "world", "greyfen");
+// `--out <dir>` writes the two files there and nothing in `src/`: how
+// `npm run maps:check` (`scripts/check-maps.mjs`) re-runs this into scratch.
+const outAt = process.argv.indexOf("--out");
+const out = outAt >= 0 ? resolve(process.argv[outAt + 1]) : join(root, "src", "world", "greyfen");
 
 // --- the extent --------------------------------------------------------------
 

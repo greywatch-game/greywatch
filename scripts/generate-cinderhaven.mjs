@@ -6,6 +6,10 @@
  * every collision bake, and re-running it with the tree unchanged must produce
  * the same bytes.
  *
+ * `--out <dir>` writes the two files into `<dir>` and nothing in `src/`: how
+ * `npm run maps:check` (`scripts/check-maps.mjs`, a build gate) re-runs this
+ * and holds the committed files to those bytes.
+ *
  * ## Why this map is seeded and not typed
  *
  * `scripts/generate-sarab.mjs`'s header owns that argument in full and this
@@ -61,7 +65,7 @@
  *   fits. Sarab's rule, and its `must()` for the set pieces with it.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 // The GAME's own bend, loaded by Node's type stripping (Node 24+). This file
 // claims the ground a path road will cover before anything else is placed, and
@@ -86,7 +90,10 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
-const out = join(root, "src", "world", "cinderhaven");
+// `--out <dir>` writes the two files there and nothing in `src/`: how
+// `npm run maps:check` (`scripts/check-maps.mjs`) re-runs this into scratch.
+const outAt = process.argv.indexOf("--out");
+const out = outAt >= 0 ? resolve(process.argv[outAt + 1]) : join(root, "src", "world", "cinderhaven");
 
 // --- the extent --------------------------------------------------------------
 

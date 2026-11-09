@@ -6,6 +6,10 @@
  * Committed output, like every `heights.ts` and every collision bake, and
  * re-running it with the tree unchanged must produce the same bytes.
  *
+ * `--out <dir>` writes the two files into `<dir>` and nothing in `src/`: how
+ * `npm run maps:check` (`scripts/check-maps.mjs`, a build gate) re-runs this
+ * and holds the committed files to those bytes.
+ *
  * Three flags for iterating on it: `--probe` prints the floor as a plan and
  * writes nothing, `--plan` prints the claim list as a plan, and `--refusals`
  * lists every plot that was refused and what refused it.
@@ -53,7 +57,7 @@
  *   nothing about water and will plant a maple in the middle of a river.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   bell,
@@ -78,7 +82,10 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
-const out = join(root, "src", "world", "kurenai");
+// `--out <dir>` writes the two files there and nothing in `src/`: how
+// `npm run maps:check` (`scripts/check-maps.mjs`) re-runs this into scratch.
+const outAt = process.argv.indexOf("--out");
+const out = outAt >= 0 ? resolve(process.argv[outAt + 1]) : join(root, "src", "world", "kurenai");
 
 // --- the extent --------------------------------------------------------------
 

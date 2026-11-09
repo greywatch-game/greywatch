@@ -19,6 +19,15 @@
  * a fourth, `pieces`: `GameMap.world.pieces`, the PIECE table (each layout
  * item a piece id names, as `[list, index]`).
  *
+ * **And the collider DATA, beside the collider MESHES** (`BABYLON_EXIT.md`
+ * X5.3a): `boxGroups` kept as data — the `colliderBoxes` indices each cluster
+ * mesh merged, which is the order a SWEEP breaks a tie in on both sides — and
+ * `rayGroups` (a hash of each strut group's boxes) and `terrainGeometry` (a
+ * hash of each floor block's positions and indices, `PhysicsWorld`'s floor)
+ * hashed, an entry a group or a block. They are what stays once no collider is
+ * a mesh (X5.3e), so a baseline taken with them is X5.3e's BEFORE and needs no
+ * mesh to compare; a baseline older than them compares everything else it has.
+ *
  * **Each VISUAL also records its piece ranges** (`pieces`, from the record
  * `GameMap.world` keeps beside it: `[piece, vertexStart, vertexCount,
  * indexStart, indexCount]` per range), which say which layout item each span
@@ -45,7 +54,10 @@
  * `radiusWorld`; a failure, named `bounds≠mesh`), over EVERY surface that has
  * a mesh — so `--editor`, whose visuals are placed off identity, puts
  * `boundsOf`'s transformed path under test on every run, which the shipped
- * build's (all at identity but the odd loose mesh) does not.
+ * build's (all at identity but the odd loose mesh) does not. **That coverage
+ * is `scripts/bounds-check.mjs`'s since `BABYLON_EXIT.md` X5.3a** — `boundsOf`
+ * against Babylon's `BoundingInfo` over every kind at seeded off-identity
+ * transforms, in Node — because `--editor` goes with the editor (X5.3c).
  *
  * **A surface with no mesh** (`BABYLON_EXIT.md` X3.7b: our renderer draws it
  * in every pass, and Babylon is made none — on a shipped build every surface
@@ -375,6 +387,16 @@ function fingerprintMap() {
           }
         : null,
       pieces: map.world ? map.world.pieces.map((p) => [p.list, p.index]) : null,
+      // The collider DATA, beside the meshes above (BABYLON_EXIT.md X5.3a):
+      // what X5.3e keeps once no collider is a mesh. `boxGroups` as DATA —
+      // the `colliderBoxes` indices each cluster mesh merged, the sweeps' tie
+      // order — and the strut groups and the floor's blocks HASHED, a group
+      // or a block an entry, so a difference names which.
+      boxGroups: map.boxGroups ? map.boxGroups.map((grp) => [...grp]) : null,
+      rayGroups: map.rayGroups ? map.rayGroups.map((grp) => boxes(grp)) : null,
+      terrainGeometry: map.terrainGeometry
+        ? map.terrainGeometry.map((t) => [hashArray(t.positions), hashArray(t.indices)])
+        : null,
     },
     // Not compared: what the scene holds besides the map (pools, the sky,
     // the viewmodel) is not this script's business, but a change that leaks
@@ -629,7 +651,9 @@ try {
       r.error
         ? `${id}: FAILED — ${r.error}`
         : `${id}: ${r.visuals.length} surfaces (${r.visuals.filter((m) => m.mesh !== false).length} meshes), ${r.colliders.length} colliders, ` +
-            `${r.terrainColliders.length} terrain (${((Date.now() - t0) / 1000).toFixed(1)} s)`,
+            `${r.terrainColliders.length} terrain; data: ${r.lists.boxGroups?.length ?? "-"} box groups, ` +
+            `${r.lists.rayGroups?.length ?? "-"} strut groups, ${r.lists.terrainGeometry?.length ?? "-"} floor blocks ` +
+            `(${((Date.now() - t0) / 1000).toFixed(1)} s)`,
     );
   }
 } finally {

@@ -123,6 +123,14 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   collision bake is older than its layout and
                               #   heights (collision-hash.mjs's hash), the
                               #   DEV-only maps included
+  check-maps.mjs              # BUILD GATE (`npm run maps:check`): re-runs
+                              #   every shipped map's generator with `--out`
+                              #   into scratch, all seven at once, and refuses
+                              #   a layout.ts or heights.ts that differs from
+                              #   the committed file by one byte (line endings
+                              #   aside), naming the map, the file and the
+                              #   first line. A map is authored in its
+                              #   generator only (BABYLON_EXIT.md X5.3)
   check-deep-imports.mjs      # BUILD GATE: refuses a deep static import into
                               #   @babylonjs/core under src/ and main.ts — an
                               #   absolute rule tsc cannot see
@@ -219,7 +227,10 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   install — fails the run,
                               #   `--foliage <rung>` asking it of a crown rung;
                               #   the panes, pane groups, editor items (surface
-                              #   indices) and the piece table.
+                              #   indices) and the piece table; and the collider
+                              #   DATA beside the collider meshes (X5.3a):
+                              #   boxGroups as indices, each strut group and
+                              #   floor block (terrainGeometry) hashed.
                               #   `--profile` prints the build's phases. Same
                               #   machine and Babylon only. Not a gate
   geometry-check.mjs          # `node scripts/geometry-check.mjs`: builds every
@@ -237,6 +248,14 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   case covers. Owed by every method added
                               #   there. Deleted with Babylon (X6.1). Not a
                               #   gate
+  bounds-check.mjs            # `node scripts/bounds-check.mjs`: world/
+                              #   worldGeometry.ts' boundsOf against a Babylon
+                              #   Mesh's BoundingInfo, BIT for bit, over every
+                              #   kit and scatter kind's parts at seeded
+                              #   OFF-identity transforms — the arm no round's
+                              #   build reaches, merge:hash --editor's before
+                              #   the editor went. `--perturb` is the negative
+                              #   test. Until X6.1. Not a gate
   sweep-check.mjs             # `node scripts/sweep-check.mjs [map...]`: moves
                               #   the player and every hull kind's ellipsoid by
                               #   Babylon's moveWithCollisions and by the
@@ -290,7 +309,10 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   door onto somewhere). Re-running discards
                               #   editor edits, and owes the collision rebake
                               #   of that map and `npm run parity`. `--probe`,
-                              #   `--refusals`, `--claims`, `--dry`
+                              #   `--refusals`, `--claims`, `--dry`. Every one
+                              #   of the seven takes `--out <dir>`, writing the
+                              #   two files there and nothing in src/ (how
+                              #   check-maps.mjs re-runs it)
   generate-greyfen.mjs        # `npm run greyfen`: the same for the jungle
                               #   valley, plus `--at`/`--point` (the floor over
                               #   a box or at one spot) and `--stands` (how the
@@ -324,6 +346,16 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   skill. MEASURED off the builder by
                               #   `npm run kit:hash -- --feet`, and an edit
                               #   re-seeds every map it moves
+plans/webgpu-ref/     # The exit's probes and the reference bank, indexed by
+                      #   its own README.md rather than here, bar one:
+  drawlog.mjs         # The DRAW LOG (BABYLON_EXIT.md X5.3a): Babylon's
+                      #   `_draw`s, group-0 visits, effect compiles and
+                      #   scene.meshes by frame class, live, through the
+                      #   menu, the card, deploy, the kit and pause lids, a
+                      #   life to the death cam, the round-over card, a
+                      #   second round and F2; per-frame count SETS, so it
+                      #   compares with itself and a parent (`--against`)
+
 index.html          # The head, and NO interface CSS beyond the two things shown
                     #   while there IS no interface: a black background (so a
                     #   dev reload does not flash white) and the boot screen —
