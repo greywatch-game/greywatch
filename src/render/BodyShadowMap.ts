@@ -23,11 +23,11 @@
  * is a state whose frames our renderer prepares nothing in: then the clear is
  * recorded at once, into the host's prepare encoder, so it lands after
  * anything already recorded there and never under it, and such a state is
- * never left holding the last round's bodies (no state measured is one: an
- * editor build prepares every frame — X5.1a counted our prepares on 120 of
- * 120 editor frames, `Renderer.begin` running them whenever a draw of ours
- * is active — so there this branch is unreachable and an owed clear lands on
- * the next frame, as in a round); a map holding proxies is drawn whole each time — cleared to LIT (depth 1,
+ * never left holding the last round's bodies (no state measured is one: the
+ * map editor's build, while there was one, prepared every frame — X5.1a
+ * counted our prepares on 120 of 120 of its frames, `Renderer.begin` running
+ * them whenever a draw of ours is active — so there this branch was
+ * unreachable and an owed clear landed on the next frame, as in a round); a map holding proxies is drawn whole each time — cleared to LIT (depth 1,
  * past every receiver), then every instance — and keeps the casters' BACK
  * faces, as `forceBackFacesOnly` did; a texture is born and re-made CLEARED
  * TO LIT by a submit of its own, and is destroyed when the map is re-sized or
@@ -75,7 +75,7 @@ export class BodyShadowMap {
   private owedClear = false;
   /**
    * Asks since a frame was last prepared: a second with none between is a
-   * state that prepares nothing (none measured — not an editor build).
+   * state that prepares nothing (none measured).
    */
   private asks = 0;
   /** The pass an owed clear is recorded with: the colour cleared to lit, nothing drawn. */
@@ -272,8 +272,7 @@ export class BodyShadowMap {
 
   /**
    * Who is told if this map cannot be drawn — the round's failure (the
-   * round's install, `Game.worldFailed`), or nobody (an editor build, a map
-   * going): told once the pipeline has settled false, unless another has
+   * round's install, `Game.worldFailed`), or nobody (a map going): told once the pipeline has settled false, unless another has
    * been handed over since.
    */
   setFailure(failed: (reason: string) => void = ignore): void {
@@ -345,5 +344,5 @@ export class BodyShadowMap {
   };
 }
 
-/** A `setFailure` with nobody to tell: an editor build, or tearing down. */
+/** A `setFailure` with nobody to tell: tearing down. */
 function ignore(): void {}

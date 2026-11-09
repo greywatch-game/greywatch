@@ -365,8 +365,7 @@ prices it: Coldharbour's 39 probes drain in 5 frames of 5-6 ms, ~41 ms of wall
 clock, at `probesPerFrame` 8 on the Windows box. Everything below — the
 per-draw cost, the worst frame, `drawsPerFrame` — is Babylon's
 `ReflectionProbe` bake, which no round took after X3.7b and X3.7c deleted
-(the tag `exit-babylonworld` has the last build of it); an editor build bakes
-nothing. The PICTURE questions at the end (the 800 m hole, `perCell`, a wider
+(the tag `exit-babylonworld` has the last build of it). The PICTURE questions at the end (the 800 m hole, `perCell`, a wider
 block) bear on ours, which keeps the radius and the enclosure.
 
 **Measured, headless (SwiftShader, Coldharbour); superseded on real hardware —
@@ -490,90 +489,6 @@ draw a mesh and has no such queue — a frame is `probesPerFrame` probes.
   exists now (Cinderhaven; S11 has landed too), so the comparison is a count
   away. The SHAPE is not a worst case — the bake is priced on glazing and
   `docs/rendering.md` says glazing has no natural bound.
-
----
-
-## 11. The editor's tier-3 rebuild is ~2.3 s on Coldharbour, and it is `MapBuilder`
-
-**Status:** measured (CPU), cause located, not acted on — **and every figure
-below NEEDS RE-MEASUREMENT.** They are from 3ed9fec (2026-08-24, before the
-WebGPU boot, headless), and `MapBuilder.ts` has had ~50 commits since;
-Coldharbour itself was re-laid (6e848a1) and its buildings reworked. The newest
-figure is `docs/editor.md`'s: a tier-3 rebuild is **~0.5 s on Hollowmere and
-~2.5 s on Cinderhaven** (the path-road section). Re-measuring is cheap —
-`window.__buildProfile` (`src/world/buildProfile.ts`, DEV only) gives the
-per-phase split of a `MapBuilder.build` without a CPU profile — and the open
-threads below (Coldharbour on hardware, the skip-AO/cover probe, an incremental
-rebuild) stay open until it is done.
-
-This is the other half of the editor's Coldharbour problem. The first half —
-one frame of ~300,000 draw calls from the reflection bake after every rebuild —
-is fixed: `ReflectionSystem.build` now parks its probes on an editor build (see
-[`docs/rendering.md`](docs/rendering.md)). What is left is the JS.
-
-### What was measured
-
-Headless, `buildEditorMap()` timed around each of `installMap`'s calls, and
-then a CDP CPU profile of the same call. The wall-clock figures below are from
-this machine under SwiftShader, but they are **JS and driver time, not
-rasterisation** — the profile is of the build, which renders nothing.
-
-| | Coldharbour | Hollowmere |
-| --- | --- | --- |
-| placements in the layout | 133 | 195 |
-| `installMap` total | **2300 ms** | 784 ms |
-| of which `MapBuilder.build` | **2131 ms** | 707 ms |
-| `editor.rebuildProxies` after it | 79 ms | 230 ms |
-| everything else in `installMap` | ≤4 ms each | ≤28 ms each |
-
-`reflections.build` is 4 ms of that on Coldharbour and 0 on Hollowmere: the
-bake's cost was never in the queueing, it was the frame afterwards.
-
-Rolled up by function inside the build (total, so these nest):
-
-| ms | what |
-| --- | --- |
-| 525 | `kit/city/tower.ts` `buildTower` — 44 of them |
-| 450 / 401 / 362 | `glaze` / `pane` / `cut` — the 6,139 sheets |
-| 389 | `mergeByMaterial` |
-| 383 | `MapBuilder.paneGroup` |
-| 265 + 236 + 160 | `NavGrid`, `link`, `severLinks` |
-| 199 | `bakeVertexShading` |
-| 184 | disposing the standing map |
-
-(`glaze` and `cut` no longer exist as functions — the glazing is
-`Build.pane` now — so these rows will not come back under those names. And
-one cost this table cannot list has been added since: `GiVolume.setMap` runs in
-`installMap` on an editor build as on any other.)
-
-### What it means, and what is still a hypothesis
-
-**Coldharbour is expensive to BUILD, not expensive to edit** — the same
-`installMap` costs ~1.8–2.3 s starting a round, where it is paid once behind
-the building card. The editor's problem is the frequency: tier 3 fires on every
-param edit, add, delete, brush stroke release and road drag release, and
-[`docs/editor.md`](docs/editor.md)'s ~570 ms is a Hollowmere number.
-
-The glazing is over half of it and it is drawn twice over — `glaze`/`pane`/`cut`
-build 6,139 sheets, then `paneGroup` and `mergeByMaterial` merge them, and on an
-editor build the merge is keyed per PLACEMENT so it is 82 merges rather than 40.
-**Derived, not measured:** the tier-3 rebuild exists because a param change
-shifts every later index in `colliderBoxes`, and that argument is about the
-edited placement's own geometry — nothing says the other 132 have to be built
-again. An incremental rebuild that re-ran one builder and re-indexed from there
-is the shape, and the reason it has not been tried is that the index is what
-every editor structure hangs off.
-
-Part of this is not JS at all: `_createVertexBuffer` is 133 ms of SELF time in
-the profile, which is buffer upload and will be faster on a real driver.
-
-### How to settle it
-
-Time `buildEditorMap()` on real hardware on both maps first — if Coldharbour
-lands under ~600 ms there, this is a headless artefact and the entry should be
-deleted. If it stays several times Hollowmere's, the cheap probe before any
-incremental work is to skip the AO bake and the cover bake on editor builds the
-way the reflections and the physics world already are, and measure what is left.
 
 ---
 
@@ -1147,9 +1062,8 @@ part is not a real mesh; what it does not yet do is let one avoid BEING one.
   change rather than a local one.
 - **`parts.ts` exists because some parts must stay real meshes**, and that is
   the constraint any fix has to respect: `uploadPart` puts a part back on the
-  normal path on the three ways out of a merge that KEEP their source, and an
-  editor build keeps every placement unmerged. A merge-only path has to be a
-  second path, not a replacement.
+  normal path on the three ways out of a merge that KEEP their source. A
+  merge-only path has to be a second path, not a replacement.
 - **The oracle already exists and this change must not move a vertex.** A
   nav-graph fingerprint cannot see it — this is VISUAL geometry, and
   `npm run parity` is blind to it by design. What was compared instead, per map,
@@ -1170,15 +1084,12 @@ part is not a real mesh; what it does not yet do is let one avoid BEING one.
   to be rebuilt.
   `plans/physics-ref/drop.mjs` covers anything that changes what a body stands
   on.
-- **The collider half was BLOCKED, and since `BABYLON_EXIT.md` X2.1 the block
-  is the editor's alone.** `boxMesh` aggregates to 669 ms at 1500/0 (~430 at
-  900/300 before the flatten), and Babylon's `moveWithCollisions` walked
-  `mesh.subMeshes`, which a part has none of. The sweeps read `WorldBox`es
-  now, so the only reader of a collider mesh's submeshes is the editor's
-  centre-screen pick (`parts.ts`'s header) — on the server the meshes are an
-  inert mirror X2.3 deletes. A collider is still not a merge candidate, so the
-  mechanism above does not reach it; not building the meshes outside the
-  editor would, and is unmeasured.
+- **The collider half is UNBLOCKED, and `BABYLON_EXIT.md` X5.3e takes it.**
+  `boxMesh` aggregates to 669 ms at 1500/0 (~430 at 900/300 before the
+  flatten). The sweeps read `WorldBox`es since X2.1 and the map editor's
+  centre-screen pick, the last reader of a collider mesh's submeshes, went at
+  X5.3c, so nothing reads the meshes; not building them is X5.3e's, which owes
+  the install time and the heap before and after, on seven maps.
 - **The AO bake is now the second-largest named cost** — `occlusionAt` is
   1,738 ms subtree and 1,399 self, 9.3% — and it is not in the placement loop at
   all. It has never been questioned; `segmentHitsBox` under it is another
@@ -1555,8 +1466,8 @@ past its own geometry and this is a night map full of lit windows; the test is
 exact rather than a name guess — a non-black `emissiveColor` on the material.
 (This entry once said `getEmissive` was the only `StandardMaterial` in the
 tree; it is not — `FlameMaterial` and `BlastShader` declare an
-`emissiveColor`, and the optics, the kit screen's backdrop, the sky and the
-editor all make `StandardMaterial`s. `glows` in `WorldCulling.ts` states the
+`emissiveColor`, and the optics, the kit screen's backdrop and the sky all
+make `StandardMaterial`s. `glows` in `WorldCulling.ts` states the
 test as it is.)
 
 ### The bug this had, which the pixel bank could not catch
@@ -3173,8 +3084,8 @@ true and the conclusion is not: `#mixer-panel` is a child of `#hud`, and the
 kit screen's blanket rule (`#hud.kitting > *:not(#loadout):not(#hud-fps)`,
 `loadout.css`) and the settings screen's (`#hud.setting > *:not(#settings)…`,
 `settings.css`) take every child of `#hud` off the glass by `visibility` but the
-ones they name, which the mixer is not. The `.editing` rule (the viewer's and
-the editor's) carves it out since X5.3b's review.
+ones they name, which the mixer is not. The `.editing` rule (the viewer's)
+carves it out since X5.3b's review.
 
 ### What is derived from the code
 

@@ -168,8 +168,8 @@ export interface CrewCtx {
    * dead ahead. The fix is `docs/vehicles.md`'s own — take the hull out of the
    * answer for the length of the call, as the query's `skip`
    * (`BattleSystem.losBetween` → `RayWorld.blocked`) — and it is the caller's
-   * to make, because the caller holds the hull and `world/solid.ts` forbids
-   * minting a predicate that closes over one.
+   * to make, because the caller holds the hull and no query takes a
+   * predicate that closes over one (`RayWorld.castBody`'s `skip`).
    */
   visibleFrom: (tank: Vehicle, to: Vector3Like) => boolean;
   /**
@@ -352,7 +352,7 @@ export class VehicleCrew {
 
   /**
    * The map's nav graph, for the bearing half of the drive. Null on a map with
-   * no armour and in the editor, where this system is asked nothing.
+   * no armour, where this system is asked nothing.
    */
   setMap(map: GameMap | null): void {
     this.nav = map?.nav ?? null;

@@ -217,8 +217,9 @@ export type BuilderKind = keyof typeof BUILDERS;
 
 /**
  * Kinds whose geometry is a function of the ground under them, so moving one
- * is a rebuild rather than a translate. The editor's drag path patches meshes
- * in place, which is correct for everything else and stale for these.
+ * is a rebuild rather than a translate. (The map editor's drag path patched
+ * meshes in place, which was correct for everything else and stale for these;
+ * a build reads the list still.)
  *
  * **Declaring a `BuildCtx` parameter on a builder is what puts it here**: a
  * builder that reads the ground and is missing from this set is drawn against

@@ -8,8 +8,7 @@
  * operations in the same order, which `scripts/math-check.mjs` holds to
  * Babylon's bit for bit — so the one Babylon thing it touches is the camera it
  * is handed, through a copy (`toBabylon`) where `setTarget` wants one of
- * Babylon's. The editor keeps its own copy while it stands beside the viewer,
- * and goes with it (X5.3c).
+ * Babylon's. The editor's copy went with the editor (X5.3c).
  *
  * It writes CameraSystem's FreeCamera rather than creating a second one on
  * purpose: the post chain's pass owner (`PostPasses`, whose frame is that
@@ -39,7 +38,7 @@
  *   fills in whether or not the lock exists. A tool that stops turning because
  *   a lock request was refused is a tool that looks broken.
  *
- * Never: imports from `src/editor/`, or hands a `src/math` vector to a Babylon
+ * Never: hands a `src/math` vector to a Babylon
  * method (it would read `_x` and write NaN, CLAUDE.md's two `Vector3`s).
  */
 import type { FreeCamera } from "@babylonjs/core";

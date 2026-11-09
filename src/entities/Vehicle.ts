@@ -60,7 +60,7 @@
  *   questions: a round stops on it, a sightline breaks on it, and a player can
  *   climb onto the deck (`deckAt`). That is the whole of what a tank is to
  *   anything holding a rifle. A view's body MESH is no collider at all: never
- *   `solid`, never pickable, the editor building no hulls.
+ *   `solid`, never pickable.
  * - It is in every SWEEP — the player's and the other hulls' — because
  *   `rayBox` is what `RayWorld.bodyNear` hands a sweep as well as what a ray
  *   meets, behind the same gate (`hide` ends both).
@@ -1987,8 +1987,8 @@ export class Vehicle implements Combatant, RayHull {
    *
    * `drive` is null for a hull nobody is in, which is not the same as one being
    * driven with the sticks centred: an empty tank still has to be put on the
-   * ground it is standing on (the map under it can change — a pane breaks, the
-   * editor rebuilds) and still runs its wreck clock, but its turret stays where
+   * ground it is standing on (the map under it can change — a pane breaks)
+   * and still runs its wreck clock, but its turret stays where
    * the last driver left it rather than walking back to the hull's heading.
    */
   update(dt: number, drive: DriveInput | null): void {

@@ -14,10 +14,12 @@
  * derives from its parts: `colliderBoxes`, `colliderAlbedo` and `partBoxes`
  * (hashed), and three that say how the merged meshes are WIRED to the rest of
  * the map (kept as data): `panes` (every `WorldPane` field), `paneGroups` (each
- * as `[surface index, panes, block]`) and `editorItems` (each layout item's
- * `visuals` as surface indices, `null` on a shipped build) — and
- * a fourth, `pieces`: `GameMap.world.pieces`, the PIECE table (each layout
- * item a piece id names, as `[list, index]`).
+ * as `[surface index, panes, block]`) — and a third, `pieces`:
+ * `GameMap.world.pieces`, the PIECE table (each layout item a piece id names,
+ * as `[list, index]`, `ItemRef`). (A fourth, `editorItems`, each layout item's
+ * `visuals` on the map editor's build and `null` on a shipped one, was retired
+ * with the editor at `BABYLON_EXIT.md` X5.3c, row "X5.3, retire the editor": a
+ * baseline that holds it as `null` compares as a baseline without it.)
  *
  * **And the collider DATA, beside the collider MESHES** (`BABYLON_EXIT.md`
  * X5.3a): `boxGroups` kept as data — the `colliderBoxes` indices each cluster
@@ -54,12 +56,12 @@
  * cells from. **Every run also checks them against the mesh's own bounding
  * info bit for bit** (`minimumWorld`/`maximumWorld`, `centerWorld`/
  * `radiusWorld`; a failure, named `bounds≠mesh`), over EVERY surface that has
- * a mesh — so `--editor`, whose visuals are placed off identity, puts
- * `boundsOf`'s transformed path under test on every run, which the shipped
- * build's (all at identity but the odd loose mesh) does not. **That coverage
- * is `scripts/bounds-check.mjs`'s since `BABYLON_EXIT.md` X5.3a** — `boundsOf`
+ * a mesh — which on a shipped build (all at identity but the odd loose mesh)
+ * leaves `boundsOf`'s transformed path untested. **That coverage is
+ * `scripts/bounds-check.mjs`'s since `BABYLON_EXIT.md` X5.3a** — `boundsOf`
  * against Babylon's `BoundingInfo` over every kind at seeded off-identity
- * transforms, in Node — because `--editor` goes with the editor (X5.3c).
+ * transforms, in Node — the `--editor` arm that used to give it being retired
+ * with the editor (X5.3c).
  *
  * **A surface with no mesh** (`BABYLON_EXIT.md` X3.7b: our renderer draws it
  * in every pass, and Babylon is made none — on a shipped build every surface
@@ -116,11 +118,7 @@
  * version's bake reaches the same bits.
  *
  * Flags: `--maps a,b` limits it to those map ids (with `--against`, only those
- * maps of the file are compared); `--editor` fingerprints the EDITOR's build
- * instead (`Game.buildEditorMap`, run over the round's: nothing block-merged,
- * every mesh one layout item's) — the other path out of `mergeByMaterial`,
- * which a shipped build never takes, so it owes a baseline of its own and is
- * never compared with one taken without the flag; `--out file` writes the
+ * maps of the file are compared); `--out file` writes the
  * fingerprint; `--foliage <rung>` (above);
  * `--against file` compares and exits 1 on any difference, naming the list,
  * the index, the mesh and the fields that moved. A map that fails to build is
@@ -129,9 +127,10 @@
  * older baseline still compares everything it has. `info` (the scene's mesh and
  * geometry counts) is reported when it moves but never fails the run: it counts
  * what the scene holds besides the map. `--profile` prints the build's phases
- * (`window.__buildProfile()`, `world/buildProfile.ts`) per map — the editor's
- * rebuild under `--editor` — and they are never written or compared: a duration
- * is not a fingerprint.
+ * (`window.__buildProfile()`, `world/buildProfile.ts`) per map, and they are
+ * never written or compared: a duration is not a fingerprint. (`--editor`, the
+ * map editor's build, is retired with the editor — X5.3c — and a baseline
+ * taken with it is refused rather than compared.)
  *
  * Boots the dev server and the GPU-capable Chromium the other browser scripts
  * use (`dev-server.mjs`, `browser.mjs`) — read `VERIFYING.md` first if it
@@ -153,7 +152,10 @@ function arg(name) {
 }
 
 const only = arg("--maps")?.split(",");
-const editor = process.argv.includes("--editor");
+if (process.argv.includes("--editor")) {
+  console.error("merge:hash: --editor is retired with the map editor (BABYLON_EXIT.md X5.3c)");
+  process.exit(2);
+}
 const foliage = arg("--foliage");
 const outFile = arg("--out");
 const againstFile = arg("--against");
@@ -218,7 +220,7 @@ function fingerprintMap() {
 
   // Where each mesh stands in the scene's list — its creation order, since
   // `removeMesh` splices and so keeps the survivors' order. A Map, because an
-  // `indexOf` per mesh is quadratic over an editor build's thousands.
+  // `indexOf` per mesh is quadratic over a list of thousands.
   const sceneIndex = new Map();
   g.scene.meshes.forEach((m, i) => sceneIndex.set(m, i));
   // A mesh's rank within its own LIST by that index: which of the list's
@@ -360,7 +362,6 @@ function fingerprintMap() {
   });
   else map.visuals.forEach((m, i) => visualIndex.set(m, i));
   const indexOfVisual = (m) => visualIndex.get(m) ?? -1;
-  const itemVisuals = (items) => items.map((item) => item.visuals.map(indexOfVisual));
 
   return {
     visuals,
@@ -382,12 +383,6 @@ function fingerprintMap() {
       paneGroups: (map.paneGroups ?? []).map((pg) => [
         typeof pg.record === "number" ? pg.record : indexOfVisual(pg.mesh), [...pg.panes], pg.block,
       ]),
-      editorItems: map.editor
-        ? {
-            placements: itemVisuals(map.editor.placements),
-            scatter: itemVisuals(map.editor.scatter),
-          }
-        : null,
       pieces: map.world ? map.world.pieces.map((p) => [p.list, p.index]) : null,
       // The collider DATA, beside the meshes above (BABYLON_EXIT.md X5.3a):
       // what X5.3e keeps once no collider is a mesh. `boxGroups` as DATA —
@@ -463,7 +458,7 @@ function installSink() {
   };
 }
 
-async function buildOne(browser, url, id, editor) {
+async function buildOne(browser, url, id) {
   const page = await browser.newPage();
   try {
     page.on("pageerror", (e) => console.error(`  [page] ${e.message}`));
@@ -502,20 +497,7 @@ async function buildOne(browser, url, id, editor) {
         poll();
       });
     }, DEPLOY_TIMEOUT_MS);
-    if (editor) {
-      // The editor's own rebuild, over the floor the round just fetched — the
-      // same synchronous `installMap({ editor: true })` F2 ends in, without
-      // the editor's UI. Private, and reached anyway: this is a DEV page.
-      // Braced so it returns nothing: the `GameMap` it hands back is a scene
-      // graph, and Playwright would try to serialise it.
-      // The sink's hashes start again: they are the editor build's from here.
-      await page.evaluate(() => {
-        window.__surfaceHashes = [];
-        window.__celshock.buildEditorMap();
-      });
-    }
     const print = await page.evaluate(fingerprintMap);
-    print.editor = editor;
     if (profile) {
       // Printed now and never stored: see the header.
       const phases = await page.evaluate(() => window.__buildProfile?.() ?? []);
@@ -525,7 +507,7 @@ async function buildOne(browser, url, id, editor) {
     }
     return print;
   } catch (e) {
-    return { error: String(e.message ?? e).split("\n")[0], editor };
+    return { error: String(e.message ?? e).split("\n")[0] };
   } finally {
     await page.close();
   }
@@ -582,8 +564,10 @@ function compare(before, after) {
       lines.push(`${id}: not in the "before" file`);
       continue;
     }
-    if (Boolean(a.editor) !== Boolean(b.editor)) {
-      lines.push(`${id}: an ${a.editor ? "editor" : "shipped"} build against an ${b.editor ? "editor" : "shipped"} one`);
+    // A baseline of the map editor's build (`--editor`, retired at X5.3c) is
+    // another path out of the merge and is never compared with a shipped one.
+    if (a.editor) {
+      lines.push(`${id}: the "before" file is an editor build's, which no run takes any more`);
       continue;
     }
     if (a.error || b.error) {
@@ -658,7 +642,7 @@ try {
   browser = await launchClient();
   for (const id of ids) {
     const t0 = Date.now();
-    result[id] = await buildOne(browser, vite.url, id, editor);
+    result[id] = await buildOne(browser, vite.url, id);
     const r = result[id];
     console.log(
       r.error

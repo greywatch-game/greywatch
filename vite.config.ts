@@ -1,11 +1,15 @@
 /**
- * vite.config.ts — Dev-server plumbing for the map editor, and nothing else.
+ * vite.config.ts — The build's plugins (the build stamp, the service worker),
+ * its asset and worker settings, and the dev server's one write endpoint: the
+ * audio mixer's (`F4`, `src/dev/mixer/`), which reads and patches
+ * `src/config/mix.ts` and nothing else. The map editor's map rows went with
+ * the editor (`BABYLON_EXIT.md` X5.3c): a map's generator is its only author.
  *
  * NOTE: this file is deliberately kept OUT of tsconfig.json's `include`
  * (which is ["src", "main.ts"]), so `node:fs` here does not have to typecheck
  * against a browser compile. The trade is that this file is not typechecked —
- * so it stays trivial, and all the real logic lives in src/editor/serialize.ts
- * where the compiler does cover it.
+ * so it stays trivial, and the real logic of a patch lives in
+ * `src/dev/mixer/source.ts` where the compiler does cover it.
  *
  * That guarantee used to rest on @types/node simply not being installed. It is
  * installed now, for `server/`, so the root tsconfig pins `"types": []`
@@ -13,7 +17,7 @@
  * now written down rather than being a happy accident of the dependency list.
  * `server/tsconfig.json` opts back in. See `server/README.md`.
  *
- * The plugin is `apply: "serve"`, so it does not exist in a production build.
+ * The writer is `apply: "serve"`, so it does not exist in a production build.
  */
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -22,108 +26,16 @@ import { join, relative, resolve } from "node:path";
 import { defineConfig, type Plugin } from "vite";
 
 /**
- * The only files the editor may write, as a LITERAL table — one group per map.
- * Compared, never used to build a path. `layout.ts` is patched line by line and
- * must look like a layout; `heights.ts` is regenerated wholesale by terrain mode
- * and must look like a heightfield; `environment.ts` is patched one key at a
- * time by the floor picker and must look like a spec.
- *
- * Deliberately not derived from a directory listing or matched with a regex,
- * however repetitive three entries per map becomes: path safety here comes from
+ * The only files the dev server may write, as a LITERAL table — one row, the
+ * mixer's. Compared, never used to build a path: path safety here comes from
  * the client's path only ever being LOOKED UP in this object, and anything that
  * computes the set of writable files trades that guarantee for convenience in
- * the one tool here whose whole job is writing to disk. A new map adds three
- * lines.
+ * the one tool here whose whole job is writing to disk. (It held three rows a
+ * map while the map editor saved through it; a map adds none now.)
  */
 const WRITABLE = {
-  "src/world/hollowmere/layout.ts": {
-    min: 4000,
-    marker: "export const HollowmereLayout",
-  },
-  "src/world/hollowmere/heights.ts": {
-    min: 500,
-    marker: "export const HollowmereHeights",
-  },
-  "src/world/hollowmere/environment.ts": {
-    min: 1200,
-    marker: "export const HollowmereEnvironment",
-  },
-  "src/world/greyfen/layout.ts": {
-    min: 4000,
-    marker: "export const GreyfenLayout",
-  },
-  "src/world/greyfen/heights.ts": {
-    min: 500,
-    marker: "export const GreyfenHeights",
-  },
-  "src/world/greyfen/environment.ts": {
-    min: 1200,
-    marker: "export const GreyfenEnvironment",
-  },
-  "src/world/cinderhaven/layout.ts": {
-    min: 4000,
-    marker: "export const CinderhavenLayout",
-  },
-  "src/world/cinderhaven/heights.ts": {
-    min: 500,
-    marker: "export const CinderhavenHeights",
-  },
-  "src/world/cinderhaven/environment.ts": {
-    min: 1200,
-    marker: "export const CinderhavenEnvironment",
-  },
-  "src/world/coldharbour/layout.ts": {
-    min: 4000,
-    marker: "export const ColdharbourLayout",
-  },
-  "src/world/coldharbour/heights.ts": {
-    min: 500,
-    marker: "export const ColdharbourHeights",
-  },
-  "src/world/coldharbour/environment.ts": {
-    min: 1200,
-    marker: "export const ColdharbourEnvironment",
-  },
-  "src/world/harrowmead/layout.ts": {
-    min: 4000,
-    marker: "export const HarrowmeadLayout",
-  },
-  "src/world/harrowmead/heights.ts": {
-    min: 500,
-    marker: "export const HarrowmeadHeights",
-  },
-  "src/world/sarab/layout.ts": {
-    min: 4000,
-    marker: "export const SarabLayout",
-  },
-  "src/world/sarab/heights.ts": {
-    min: 500,
-    marker: "export const SarabHeights",
-  },
-  "src/world/sarab/environment.ts": {
-    min: 1200,
-    marker: "export const SarabEnvironment",
-  },
-  "src/world/harrowmead/environment.ts": {
-    min: 1200,
-    marker: "export const HarrowmeadEnvironment",
-  },
-  "src/world/kurenai/layout.ts": {
-    min: 4000,
-    marker: "export const KurenaiLayout",
-  },
-  "src/world/kurenai/heights.ts": {
-    min: 500,
-    marker: "export const KurenaiHeights",
-  },
-  "src/world/kurenai/environment.ts": {
-    min: 1200,
-    marker: "export const KurenaiEnvironment",
-  },
-  // Not a map's file, and the one entry here a map does not add: the audio
-  // mixer (F4) patches the eleven numbers in `CONFIG.mix` in place, which is
-  // the same bargain the layout patcher makes — everything that is not one of
-  // those lines comes back byte for byte.
+  // The audio mixer (F4) patches the eleven numbers in `CONFIG.mix` in place:
+  // everything that is not one of those lines comes back byte for byte.
   "src/config/mix.ts": {
     min: 800,
     marker: "export const mix",
@@ -134,27 +46,29 @@ const WRITABLE = {
  * One spelling for a path, so both sides of `selfWritten` agree.
  *
  * `resolve` returns the platform's own separators — on Windows
- * `C:\...\layout.ts` — while Vite normalises the `ctx.file` it hands
- * `handleHotUpdate` to POSIX ones, `C:/.../layout.ts`. A Set keyed on one and
+ * `C:\...\mix.ts` — while Vite normalises the `ctx.file` it hands
+ * `handleHotUpdate` to POSIX ones, `C:/.../mix.ts`. A Set keyed on one and
  * probed with the other never matches, and the swallow below silently stops
- * swallowing: nothing throws, but every Ctrl+S full-reloads the page and takes
- * the editing session, the camera and the selection with it, which reads as the
- * editor crashing on save rather than as a path bug. Normalising BOTH sides
+ * swallowing: nothing throws, but every save full-reloads the page and takes
+ * the session and the camera with it, which reads as the tool crashing on save
+ * rather than as a path bug. Normalising BOTH sides
  * rather than adopting Vite's spelling means neither can drift from the other.
  */
 const norm = (p: string) => p.replace(/\\/g, "/");
 
-function layoutWriter(): Plugin {
+function devWriter(): Plugin {
   // Forward slashes reach `node:fs` fine on Windows, so the write path can be
   // the normalised one too and there is only ever one form in flight.
   const absOf = (rel: string) => norm(resolve(process.cwd(), rel));
   const selfWritten = new Set();
 
   return {
-    name: "greywatch-layout-writer",
+    name: "greywatch-dev-writer",
     apply: "serve",
 
     configureServer(server) {
+      // `/__layout` is the name the map editor gave it; the mixer is its one
+      // client now (`src/dev/mixer/source.ts`), and the URL is kept for it.
       server.middlewares.use("/__layout", (req, res) => {
         // GET hands back one writable file's current text. A tool that
         // PATCHES rather than regenerates needs the bytes it is patching, and
@@ -222,12 +136,12 @@ function layoutWriter(): Plugin {
     },
 
     handleHotUpdate(ctx) {
-      // None of the three files has import.meta.hot.accept, so an update
-      // propagates all the way to main.ts, finds no accepting module, and
-      // full-reloads the page — losing the camera, the selection, and the
-      // editing session, on every save. Swallow the editor's OWN writes. A
-      // manual edit in the editor of your choice still reloads, which is what
-      // you want. Both sides go through `norm`; see its note.
+      // `mix.ts` has no import.meta.hot.accept, so an update propagates all
+      // the way to main.ts, finds no accepting module, and full-reloads the
+      // page — losing the round, the camera and the panel, on every save.
+      // Swallow the endpoint's OWN writes. A manual edit in the text editor of
+      // your choice still reloads, which is what you want. Both sides go
+      // through `norm`; see its note.
       const file = norm(ctx.file);
       if (selfWritten.has(file)) {
         selfWritten.delete(file);
@@ -382,7 +296,7 @@ function serviceWorker(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [layoutWriter(), buildStamp(), serviceWorker()],
+  plugins: [devWriter(), buildStamp(), serviceWorker()],
 
   /**
    * The local match's Worker (`server/localMatchWorker.ts`, opened by

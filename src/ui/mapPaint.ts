@@ -43,7 +43,7 @@ import { waterY } from "../world/TerrainField";
  * `oy` is the canvas row world z = 0 falls on and the Z axis runs UP the page
  * from it, which is the one thing every map in this game agrees on — the
  * layout diagram, the deploy screen, the minimap's prerendered backdrop (which
- * is turned afterwards, not drawn turned) and the editor.
+ * is turned afterwards, not drawn turned) and the viewer's plan.
  */
 export interface PlanView {
   /** Canvas pixels per world metre. */

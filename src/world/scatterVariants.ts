@@ -24,8 +24,7 @@
  * variants shared out evenly between them; a variant's parts are never
  * admitted — a placement admits CLONES, every array its own (`worldGeometry`'s
  * admission refuses a shared one).
- * Never: draws from a stream it did not make; reads a scene; is used by an
- * editor build's caller for anything but the same parts a shipped build gets.
+ * Never: draws from a stream it did not make; reads a scene.
  * Contract: `docs/world.md`, the scatter.
  *
  * WHY VARIANTS. Every tree was a different shape: a tree builder seeds a

@@ -235,8 +235,8 @@ export class RotorWash {
    * the churn.
    *
    * Every ring is reset whichever way the count went, for `BlastDust.reset`'s
-   * reason: a cloud left standing over terrain that no longer exists is what an
-   * editor rebuild would otherwise hang in the air.
+   * reason: a cloud left standing over terrain that no longer exists would
+   * otherwise hang in the air.
    */
   build(
     hulls: readonly Vehicle[],

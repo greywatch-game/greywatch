@@ -3,7 +3,7 @@
  * (`BABYLON_EXIT.md` X4.6c): every blade patch mesh and every turf patch mesh
  * a run of one index buffer, drawn instanced with a patch an instance — the
  * `grass*` and `grassTurf*` meshes on two `ShaderMaterial`s that Babylon drew
- * until X4.6c, one draw for one, in an editor build as in a round.
+ * until X4.6c, one draw for one.
  * Owns: `GrassDraw` — the two pipelines (`grassProgram.ts`), asked once for the
  * session; the field's block and group 1 (`setField`: its values, and the mask
  * on the GPU), each kind's seeds and indices (`setBlades`, `setTurf`) and its

@@ -3,8 +3,7 @@
  * material within a structure or a scatter field (`mergeByMaterial`), then per
  * map block across neighbours (`BlockMerge` for everything opaque,
  * `PaneBlocks` for the glazing, which has to keep its breakable panes'
- * vertex ranges). Plus `tag`, the editor's per-item mark, and the block
- * LATTICE both passes cut on (`blockCell`, `blockOf`: a key "bx,bz"), which
+ * vertex ranges). Plus the block LATTICE both passes cut on (`blockCell`, `blockOf`: a key "bx,bz"), which
  * the scatter's field files each placement under too
  * (`scatterVariants.ts`, `ScatterSet.blocks`). `BLOCK_SIZE`, the
  * block side a map that states none is merged at, is `blocks.ts`'s.
@@ -42,8 +41,8 @@
  */
 import type { Material } from "@babylonjs/core";
 import { writePaletteIndex } from "../shaders/CelShader";
-import type { EditorItem, EditorRef, WorldPane } from "./mapTypes";
-import { bakePartTransform, mergeParts, Part, type PartMetadata } from "./parts";
+import type { WorldPane } from "./mapTypes";
+import { bakePartTransform, mergeParts, Part } from "./parts";
 import { marksSway, type SwayLayer, swayLayerOf } from "./sway";
 import {
   concatPieces,
@@ -52,17 +51,6 @@ import {
   surfaceOf,
   type WorldSurface,
 } from "./worldGeometry";
-
-/**
- * Records which layout item a mesh — or a surface's part, which hands the mesh
- * made of it the same metadata object — belongs to. The editor picks with a
- * predicate on this, which is why visuals can stay `isPickable = false`:
- * Babylon skips the isPickable test entirely when a pick supplies a predicate,
- * so the visual/collider split survives the editor untouched.
- */
-export function tag(target: { metadata: PartMetadata | null }, ref: EditorRef): void {
-  target.metadata = { ...(target.metadata ?? {}), editorRef: ref };
-}
 
 /** The block lattice's cell `v` (an x or a z, metres) falls in, at blocks of `size` metres. */
 export function blockCell(v: number, size: number): number {
@@ -153,19 +141,11 @@ export class BlockMerge {
  * 115 glazed placements (57 cars, 26 towers, 24 shophouses, 6 depots, 2
  * offices) come out as 78 surfaces over 32 blocks — 32 see-through and 46
  * `backed` — a handful of which hold a range anything will ever write. A
- * round's are our renderer's (`render/GlassDraw.ts`, X4.6e) and made no mesh;
- * an editor build's are one Babylon mesh per placement per material (179 on
- * Coldharbour).
- *
- * **The editor keys per placement instead**, so nothing merges across
- * placements there — the same exemption `BlockMerge` gets, for the same reason.
- * Running the pass either way keeps one code path, and the pass is where the
- * positions are marked writable.
+ * round's are our renderer's (`render/GlassDraw.ts`, X4.6e) and made no mesh.
+ * The pass is also where the positions are marked writable.
  */
 export class PaneBlocks {
   private blocks = new Map<string, PaneSurfaceGroup[]>();
-  /** The layout item a block belongs to, on editor builds. See `add`. */
-  private owners = new Map<string, { item: EditorItem; placement: number }>();
 
   /**
    * The block's side, in metres. **It must be `BlockMerge`'s**, and it is the
@@ -181,25 +161,9 @@ export class PaneBlocks {
     private readonly mint: Mint,
   ) {}
 
-  /**
-   * Files one placement's merged glazing under its map block.
-   *
-   * **On an editor build the key is the PLACEMENT**, so nothing merges across
-   * placements and every block has exactly one owner — which is what lets the
-   * merged surface be handed back to that item's `visuals`. Without it a
-   * dragged building leaves its own windows behind in the street, and nothing
-   * says so: the glass is still drawn, still in `visuals`, and still disposed
-   * with the map.
-   */
-  add(
-    x: number,
-    z: number,
-    group: PaneSurfaceGroup,
-    item: EditorItem | null,
-    placement: number,
-  ): void {
-    const key = item ? `item${placement}` : blockOf(x, z, this.blockSize);
-    if (item) this.owners.set(key, { item, placement });
+  /** Files one placement's merged glazing under its map block. */
+  add(x: number, z: number, group: PaneSurfaceGroup): void {
+    const key = blockOf(x, z, this.blockSize);
     const existing = this.blocks.get(key);
     if (existing) existing.push(group);
     else this.blocks.set(key, [group]);
@@ -246,11 +210,11 @@ export class PaneBlocks {
         // surface because its caller then composes a placement's transform onto
         // what it gets back. Nothing composes anything onto these:
         // `MapBuilder.paneGroup` has already put each surface where it belongs.
-        // Baking anyway flattens that transform into the vertices and leaves
-        // the mesh at identity, which the editor's `repositionItem` then reads
-        // as "no transform yet" and applies the placement a second time — a
-        // dragged building whose glass is at twice its own offset, drawn
-        // perfectly, with nothing in the numbers to point at.
+        // (The map editor's drag was what found it: baking flattened that
+        // transform into the vertices and its `repositionItem` applied the
+        // placement a second time. The editor is gone since `BABYLON_EXIT.md`
+        // X5.3c; a round's lone groups are drawn exactly as they stand, and
+        // `merge:hash` holds them there.)
         const merged =
           list.length === 1
             ? list[0].surface
@@ -284,21 +248,10 @@ export class PaneBlocks {
         // travels for a second reader: `WorldCulling` groups by it, and a
         // tower's glazing has to leave the frame on the same block as the
         // shaft it is hung on or the city keeps its windows and loses its
-        // walls. **Only on a play build** — an editor key is a PLACEMENT
-        // (`item12`), which is not a map block and must not be filed as one.
-        if (!this.owners.has(key)) {
-          merged.part.metadata = { ...(merged.part.metadata ?? {}), block: key };
-          merged.block = key;
-        }
+        // walls.
+        merged.part.metadata = { ...(merged.part.metadata ?? {}), block: key };
+        merged.block = key;
         out.push({ surface: merged, panes: indices, block: key });
-        // Editor builds only: tag the surface for its item and hand it over,
-        // so a dragged building takes its glazing with it. Its mesh joins the
-        // item's `visuals` when the adapter makes it (`worldMeshes`).
-        const owner = this.owners.get(key);
-        if (owner) {
-          tag(merged.part, { list: "placements", index: owner.placement });
-          merged.owner = owner.item;
-        }
       }
     }
     return out;
@@ -414,8 +367,8 @@ export function mergeByMaterial(
       // colours only one part uses — and the caller, which positions and
       // rotates what it gets back, would clobber that part's own transform
       // instead of composing with it. The lone surface keeps its birth and its
-      // metadata OBJECT (the editor writes a road's flag into it in place); a
-      // merge starts from none, as `MergeMeshes`' new mesh did.
+      // metadata OBJECT; a merge starts from none, as `MergeMeshes`' new mesh
+      // did.
       let merged: WorldSurface;
       if (group.length === 1) {
         merged = group[0];

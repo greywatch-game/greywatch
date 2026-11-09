@@ -76,8 +76,7 @@ import { TerrainField } from "../world/TerrainField";
  * `ConquestSystem.start` reads `controlPoints`/`spawns`, and both get exactly
  * what they get on the client. The fields that are genuinely absent are the
  * MESH lists (`colliders`, `terrainColliders`, `visuals`, `paneGroups` —
- * there is no scene to stand one in) and `editor` (there is no editor); all
- * are empty rather than faked.
+ * there is no scene to stand one in); all are empty rather than faked.
  */
 export function buildSimWorld(
   def: MapDef,
@@ -124,7 +123,7 @@ export function buildSimWorld(
   // was when it asked whether the box had a collider mesh of its own.
   //
   // The client also stamps the pane index on the collider MESH, for `GlassFx`
-  // to write the editor's flags on; there is no mesh here, the authority builds
+  // to write its flags on; there is no mesh here, the authority builds
   // no `GlassFx`, and `GlassSystem` reads only the box.
   const panes = toWorldPanes(collision);
   for (const p of panes) {

@@ -72,14 +72,14 @@ it by being turned round.
 off the glass**, because it is a tool for looking at the world rather than a
 screen of the game's (`BABYLON_EXIT.md` X5.3b, `docs/states.md`): `HUD.setEditing`
 puts `.editing` on `#hud`, and `hud.css` hides every child of `#hud` by
-`visibility` but the three dev panels (the viewer's, the editor's and the F4
-mixer's) and the instruments
+`visibility` but the two dev panels (the viewer's and the F4 mixer's) and the
+instruments
 (`#hud-fps`, the profiler's `#prof`, `#cullcheck`) and `#toasts` — the deploy
 screen and the minimap under it come back unredrawn, as under `.kitting`. Its
-panel (`viewer/ViewerPanel.ts`) is a dev panel in the editor's look — the old
+panel (`viewer/ViewerPanel.ts`) is a dev panel in the map editor's look — the old
 interface font, bare pixels, no unit — and its plan is the FOURTH surface
 `ui/mapPlan.ts` foresaw: `planFromWorld` painted by `paintPlan`, the deploy
-screen's projection, with the viewer's overlays over it in the editor's colours,
+screen's projection, with the viewer's overlays over it in the map editor's colours,
 which no player reads and which the ownership rule below therefore does not bind.
 
 **Nothing under `#hud` is scaled to a short viewport any more.** `--ov-scale`
@@ -724,13 +724,13 @@ is for, and it decides how it is drawn.
   which is the same one fact `drawSlot` and the `1`/`2` keys already share.
 
 **One stylesheet per module that writes markup, imported by that module**
-(`HUD.ts`→`hud.css` … `editor/EditorPanel.ts`→`editor/panel.css`,
-`viewer/ViewerPanel.ts`→`viewer/viewer.css`); `main.ts`
+(`HUD.ts`→`hud.css` … `viewer/ViewerPanel.ts`→`viewer/viewer.css`,
+`dev/mixer/index.ts`→`dev/mixer/mixer.css`); `main.ts`
 imports `base.css` first. Vite bundles them into one hashed stylesheet the built
 `index.html` links from its head. All of it was once ~2,050 lines inline in
 `index.html`, which cost three things worth not paying again: no compile-time link
 between markup and the rules styling it, so a renamed class was a silent visual
-break; the editor's ~170 lines shipped in every production build; and a CSS-only
+break; the map editor's ~170 lines shipped in every production build; and a CSS-only
 change moved no content-hashed filename. Three rules keep it that way:
 
 - **`base.css` is for what two or more screens share** — the reset, the canvas, the

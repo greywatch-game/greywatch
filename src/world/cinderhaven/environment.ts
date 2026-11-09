@@ -101,7 +101,7 @@ export const CinderhavenEnvironment: EnvironmentSpec = {
    * layout entry's argument and `Ridge.ts`'s.
    *
    * They are left at what they were rather than deleted or blanked. A map's
-   * environment is swapped live by the editor's work light and read by
+   * environment is swapped live by the viewer's work light and read by
    * `MapThumb`, so an unused colour is worth nothing and a wrong one is worth
    * less than nothing the day somebody puts an island back out there.
    */

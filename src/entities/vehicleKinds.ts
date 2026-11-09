@@ -49,8 +49,7 @@
  * `VehicleSpawnDef.kind` is a string in a layout file, defaulting to `"tank"`
  * so that the maps written before there was a second kind say nothing and are
  * unaffected. That default is stated once, here (`resolveKind`), rather than
- * at each of the readers (the fleet, its views, `MapBuilder.keepClear`, the
- * editor) — copies of a default are places for a map to mean different things
+ * at each of the readers (the fleet, its views, `MapBuilder.keepClear`) — copies of a default are places for a map to mean different things
  * to different halves of the game.
  */
 import { CONFIG } from "../config";

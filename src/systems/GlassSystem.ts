@@ -11,7 +11,7 @@
  * and this applies what it is told (see `shoot` and `applyBreak`). It holds no
  * reference to any other system, imports nothing from `@babylonjs/core`, and
  * draws nothing: the PICTURE of a break — the collapsed vertex range and the
- * collider mesh's editor flags — is `GlassFx`'s, which only the client builds
+ * collider mesh's flags — is `GlassFx`'s, which only the client builds
  * and which hears of a pane through `onBroken` and `onCleared`.
  * The authority runs this file alone.
  *
@@ -59,8 +59,8 @@
  * gathers through `RayWorld.bodyNear`, off the same body bit);
  * `ObstacleField.remove` takes it out of the sub-cell push-out the bots and the
  * server's move validator both read. Those are the BOX's and are here. The
- * collider MESH's `solid` flag — the editor's alone now, `world/solid.ts` being
- * all that still reads it — and its `checkCollisions` and enabled flag are
+ * collider MESH's `solid` flag — read by nothing since the map editor went
+ * (`BABYLON_EXIT.md` X5.3c) — and its `checkCollisions` and enabled flag are
  * `GlassFx`'s, told by `onCleared`: nothing that moves or shoots reads a mesh.
  *
  * The NAV GRAPH is `NavGrid.openBox`, which relinks the ground the pane was
@@ -161,7 +161,7 @@ export class GlassSystem {
    * Called when a pane's box has left the world — the authoritative half of a
    * break, once per pane, after the queries, the push-out and the nav graph
    * have all been told. The client's `GlassFx` writes the collider MESH's
-   * editor flags off it; nothing on the authority listens.
+   * flags off it; nothing on the authority listens.
    */
   onCleared: (pane: number) => void = () => {};
 
@@ -348,7 +348,7 @@ export class GlassSystem {
 
     // The collider MESH is not touched here: nothing that moves or shoots reads
     // one (the rays and the sweeps both answer off boxes), and its three
-    // editor-facing writes are `GlassFx.clear`'s, off `onCleared` below.
+    // writes are `GlassFx.clear`'s, off `onCleared` below.
     map.obstacles.remove(box);
     // And out of every ray in the game, which is the write that used to be
     // `mesh.metadata.solid = false` — one flag, clearing both questions at

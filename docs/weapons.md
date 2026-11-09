@@ -314,8 +314,9 @@ pushes through `setSwayDrive`. It is deliberately **not** normalised by
 magnification the way the ADS look rates are: a sight magnifying your unsteadiness
 is the trade it is asking you to make.
 
-`Player.setBodyHidden` hides the viewmodel, which matters in the editor: it flies
-the same camera the weapon is parented to.
+`Player.setBodyHidden` hides the viewmodel; the map viewer's lid hides it by a
+flag of its own (`Player.setLidHidden`), since it flies the same camera the
+weapon is parented to.
 
 ## The reload is two hands changing a magazine on a weapon that has weight
 

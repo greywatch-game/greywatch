@@ -5,7 +5,7 @@
  * owns no LEVEL — `Sfx` holds the faders and this only moves them.
  * Invariant: dev-only. Reachable solely through the dynamic import() inside
  * the `import.meta.env.DEV` branch in `Game.toggleMixer`, exactly as
- * `src/editor/` is, so none of this and none of `mixer.css` reaches a
+ * `src/viewer/` is, so none of this and none of `mixer.css` reaches a
  * production bundle. Never import it statically.
  * Invariant: the PANEL is the source of truth for what a fader is worth and
  * `Sfx` is handed what is currently AUDIBLE, which are two different numbers

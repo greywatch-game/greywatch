@@ -9,9 +9,9 @@
  * `Vector3` rather than Babylon's (a copy of the layout's own, where the
  * editor's was `toBabylon`'s), and its `ref` is `FindingRef` here — the three
  * lists a finding can name — rather than the editor's `SelectionRef`, so
- * nothing in `src/viewer/` reaches into `src/editor/`. The editor keeps its
- * own copy while it stands beside the viewer as the oracle the viewer's
- * findings are graded against, and goes with it (X5.3c).
+ * nothing in `src/viewer/` reached into `src/editor/`. The editor's copy stood
+ * beside the viewer as the oracle the viewer's findings were graded against
+ * (equal on all seven maps), and went with it (X5.3c).
  *
  * Run against whatever map is standing — the viewer's is a ROUND's, merged,
  * where the editor's was its own unmerged build off the same boxes. The one
@@ -34,7 +34,7 @@
  * None of these look wrong in the viewport. They only show up as "the bots
  * never go there", half an hour later.
  *
- * Never: imports from `src/editor/`, writes to the map, or draws.
+ * Never: writes to the map, or draws.
  */
 import { Vector3, type Vector3Like } from "../math";
 import { CONFIG } from "../config";
@@ -223,9 +223,8 @@ export function validate(
 
   // 6b. The floor's own gradients. Beside `hygiene` rather than inside it,
   //     because the heightfield is no longer one of the layout's fields —
-  //     it is a lazy chunk (`MapDef.heights`) and reaches the editor as the
-  //     BUILD's `terrain.field`, which is also the object the terrain brush
-  //     writes through. Still static; just not the layout's.
+  //     it is a lazy chunk (`MapDef.heights`) and reaches the viewer as the
+  //     BUILD's `terrain.field`. Still static; just not the layout's.
   out.push(...terrainGrade(map.terrain.field));
 
   // 7. The bookkeeping that only breaks once entries can be added and deleted.

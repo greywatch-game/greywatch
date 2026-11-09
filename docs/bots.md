@@ -61,7 +61,8 @@ not — measured occupancy is **1.58 surfaces per cell on Coldharbour, 1.02 on
 Harrowmead and 1.47 on the proving ground** — so the graph, the seven flow
 fields and the cover bake were all paying 2.3x to 2.6x over for padding that
 every read already walked `counts` to skip. Nothing outside `NavGrid`,
-`CoverMap` and the editor has ever held a surface id, and all three must index
+`CoverMap` and the viewer (the map editor before it) has ever held a surface id,
+and all three must index
 through `cellBase`: `CoverMap` borrows the graph's own array rather than
 re-deriving the arithmetic, because a second copy of it can drift and address
 the wrong spots with nothing to see.
@@ -72,8 +73,8 @@ to pad the slots no surface takes. It is thrown away in the constructor, and the
 -1 is **not** a "below ground" sentinel: every read walks `counts[cell]`, which
 is what lets sunken terrain hold ordinary negative heights. Any new consumer must
 bound on `counts` rather than testing `y < 0` — and the one place that was
-testing it, the editor's island finder, was reading the padding rather than the
-ground and is now bounded properly.
+testing it, the editor's island finder (`viewer/validate.ts` now), was reading
+the padding rather than the ground and is now bounded properly.
 
 Reachability is a flood fill from the map's outer ring. That is what keeps bots off
 rooftops: a roof is a perfectly good standable surface, but nothing beside it is
@@ -282,8 +283,8 @@ placed where a round's build already holds a loading card over the wait — on a
 server's session only when the map changes what it fields, on the page's own
 match at every round, the session being new (above). Both halves sit at a
 ROUND's start and neither
-in `installMap` — the editor is that method's other caller and has no round,
-no player and no bots. On the page `NetRoster.setFielded` is called from
+in `installMap`, which is about the MAP (the map editor, its other caller until
+X5.3c, had no round, no player and no bots). On the page `NetRoster.setFielded` is called from
 `buildRound` after `RagdollSystem.reset`, the ragdolls being what holds a RIG;
 in the core `setRoster` is `startRound`'s first line, before `setDifficulty`,
 which draws a skill for every bot in the pool it is handed, and `setRoster`

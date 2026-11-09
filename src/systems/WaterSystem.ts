@@ -3,8 +3,7 @@
  * one wave grid under the camera and writes what the water's program reads
  * of time, the camera and the point lights every frame. Its PICTURE is
  * `render/WaterDraw.ts` (`BABYLON_EXIT.md` X4.6d): this holds the values as plain
- * arrays, writes them, and names no mesh and no material, in a round and in an
- * editor build alike.
+ * arrays, writes them, and names no mesh and no material.
  * Invariants: water is unpickable, non-colliding and no `solid` metadata — no
  * node at all — so ray tests cannot see it. `update` runs after the camera and
  * LightingSystem updates (shares the same 16 light slots). The grid and the quad

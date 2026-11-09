@@ -267,7 +267,7 @@ export function buildPylon(
     // not to be — and Sarab's open ground rolls five metres over a swell, so
     // a run across one had cable hanging in mid-air at every second station.
     // `BuildCtx` already carries the terrain and the Y this placement was
-    // dropped to, so the rise is one sample and the editor gets it for free.
+    // dropped to, so the rise is one sample.
     let rise = 0;
     if (ctx) {
       const nx = ctx.x + span * Math.cos(ctx.rotY);

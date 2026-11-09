@@ -4,8 +4,7 @@
  *
  * `editor/workLight.ts` as it is (`BABYLON_EXIT.md` X5.3b, row "X5.3,
  * environment tuning": the work light is kept, the floor picker is not); the
- * editor keeps its own copy while it stands beside the viewer, and goes with
- * it (X5.3c).
+ * editor's copy went with the editor (X5.3c).
  *
  * Hollowmere is a night map: fog closes at 78 m, ambient is a dim blue, and
  * most of what you see is silhouette. That is the point in play and useless for

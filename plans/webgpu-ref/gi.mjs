@@ -119,11 +119,10 @@
  * inside `_computeDispatch`), which encoder each of the volume's passes went on
  * (read at the pass: both are replaced at every flush) and how many render
  * passes that encoder had begun ahead of it, and Babylon's binds of the seven
- * and the cloud field (`_setTexture`, by texture and sampler name: an editor
- * build's cel materials, the light shafts) — through the building card, deploy,
- * a live round, the round-over card (raised by `Game.endRound`, the method the
- * wire's `roundover` reaches), the menu and an editor build (`F2`, a placement
- * dragged and released and dragged back: `worldMoved` twice); and the frames
+ * and the cloud field (`_setTexture`, by texture and sampler name: the light
+ * shafts) — through the building card, deploy, a live round, the round-over
+ * card (raised by `Game.endRound`, the method the wire's `roundover` reaches)
+ * and the menu; and the frames
  * from each `setMap` and `setQuality` to the volume's first dispatch. Read off
  * the device from the page's first line (`bootMap`'s `init`): the three
  * modules' TOKENS against `giTrace.ts`'s sources (Babylon reflows the text and
@@ -131,8 +130,13 @@
  * (sync or async, the layout), the bind groups' entries, the seven textures'
  * descriptors and usage, the buffers' sizes and usage, and every sampler
  * involved: the seven's as our host resolves them, and the cloud field's as the
- * trace binds it and as our host would, fresh, after `F2` and in the round after
- * it.
+ * trace binds it and as our host would, fresh.
+ *
+ * **The editor's arm is retired** (`BABYLON_EXIT.md` X5.3c, row "X5.3, retire
+ * the editor"): it ended the run with the map editor's build (`F2`, a
+ * placement dragged and released and dragged back, the round after it), the
+ * live half only, so no compared field moved with it. `--no-editor`, which
+ * left it out, is accepted and does nothing.
  *
  * **`--against`** (or `--compare`) compares map by map, scenario by scenario,
  * step by step: every logged number by `Object.is`, every array's bytes, every
@@ -152,7 +156,7 @@ const opt = (k, d) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length 
 const OUT = opt("out", "");
 const AGAINST = opt("against", "");
 const COMPARE = opt("compare", "");
-const EDITOR = !args.includes("--no-editor");
+// `--no-editor` is accepted and does nothing: the editor's arm is retired (X5.3c).
 const STATES = !args.includes("--no-states");
 // A boot with the light shafts OFF: the one Babylon pass in a round that binds
 // the cloud field (`Volumetrics`), so its sampler fields are as nothing set them.
@@ -441,8 +445,8 @@ await page.evaluate(async () => {
     return vp.call(this, out);
   };
   g.scene.onBeforeDrawPhaseObservable.add(() => P.dp++);
-  // Babylon's materials binding the volume's textures or the cloud field (an
-  // editor build): a Babylon draw sampling them, counted at the engine's bind.
+  // Babylon's materials binding the volume's textures or the cloud field: a
+  // Babylon draw sampling them, counted at the engine's bind.
   const st = e._setTexture;
   e._setTexture = function (channel, texture, ...rest) {
     const nm = texture?.name ?? "";
@@ -457,7 +461,7 @@ await page.evaluate(async () => {
   for (const k of ["setMap", "setQuality", "clearMap", "worldMoved"]) {
     const f = gi[k];
     gi[k] = function (...a) {
-      const c = { call: k, arg: k === "setQuality" ? a[0] : undefined, frame: P.frame, state: g.state, editor: Boolean(g.editor) };
+      const c = { call: k, arg: k === "setQuality" ? a[0] : undefined, frame: P.frame, state: g.state };
       P.calls.push(c);
       P.callsAll.push(c);
       return f.apply(this, a);
@@ -505,7 +509,6 @@ await page.evaluate(async () => {
     P.records.push({
       f: P.frame,
       state: g.state,
-      editor: Boolean(g.editor),
       upd: P.upd,
       real: P.real,
       gi: giPasses,
@@ -763,7 +766,7 @@ await page.evaluate(async () => {
 const enc = (x) =>
   typeof x === "number" ? (Object.is(x, -0) ? "-0" : Number.isNaN(x) ? "NaN" : x === Infinity ? "Inf" : x === -Infinity ? "-Inf" : x) : Array.isArray(x) ? x.map(enc) : x && typeof x === "object" ? Object.fromEntries(Object.entries(x).map(([k, v]) => [k, enc(v)])) : x;
 
-const report = { seed: SEED, shaftsOff: SHAFTS_OFF, maps: [], states: null, statics: {}, editor: null, firstDispatch: [] };
+const report = { seed: SEED, shaftsOff: SHAFTS_OFF, maps: [], states: null, statics: {}, firstDispatch: [] };
 
 /** Frames recorded since `from`, summarised per state. */
 async function stateSummary(from) {
@@ -771,7 +774,7 @@ async function stateSummary(from) {
     const P = window.__giProbe;
     const out = {};
     for (const r of P.records.filter((r) => r.f >= from)) {
-      const k = r.editor ? `editor (${r.state})` : r.state;
+      const k = r.state;
       const s = (out[k] ??= { frames: 0, dispatched: 0, dispatchedNoPrepare: 0, dispatchedNoBegin: 0, endedPass: 0, renderPassBefore: 0, onRender: 0, onUpload: 0, other: 0, R: [Infinity, 0, 0], C: [Infinity, 0, 0], giPasses: [Infinity, 0], noPrepare: 0, setTex: 0, traceBinds: 0 });
       s.frames++;
       const d = r.gi.length > 0;
@@ -1173,8 +1176,8 @@ const drift = (n) =>
  * The cloud field's sampler, both ways, each from a fresh history through the
  * same `n` serial steps: as Babylon's compute bind makes it out of the
  * internal texture's cached sampling fields (filled by whichever Babylon
- * material or pass bound the texture last: the light shafts' in a round, an
- * editor build's cel materials), and with those fields as a session where
+ * material or pass bound the texture last: the light shafts' in a round),
+ * and with those fields as a session where
  * nothing of Babylon's ever bound it leaves them (null: the light shafts off
  * from boot); and our frame host's for the same texture beside both.
  */
@@ -1339,72 +1342,11 @@ for (let mi = 0; mi < maps.length; mi++) {
 }
 
 
-if (EDITOR) {
-  const from = await frameNow();
-  report.editor = await page.evaluate(async () => {
-    const g = window.__celshock;
-    const P = window.__giProbe;
-    const out = {};
-    g.enterMenu();
-    for (let i = 0; i < 10; i++) await P.nextFrame();
-    await g.toggleEditor();
-    if (!g.editor) throw new Error("the editor did not open");
-    for (let i = 0; i < 60; i++) await P.nextFrame();
-    const cloud = g.mats.readLighting().cloudMap;
-    const it = cloud.getInternalTexture();
-    const trace = () => {
-      const bg = P.bindGroups["gi-trace"];
-      const s = bg?.raw?.find((x) => x.binding === 5)?.resource;
-      return s ? P.samplerDesc.get(s) ?? "undescribed" : null;
-    };
-    out.built = {
-      cloudInternal: { wrapU: it._cachedWrapU, wrapV: it._cachedWrapV, wrapR: it._cachedWrapR, anisotropy: it._cachedAnisotropicFilteringLevel },
-      giIrrInternal: window.__giGpu.cachedSampling("giIrr"),
-      traceSampler: trace(),
-    };
-    // A drag released: a placement moved through the editor's own handlers.
-    const ed = g.editor;
-    let moved = null;
-    const layout = ed.deps.layout;
-    for (let i = 0; i < layout.placements.length && !moved; i++) {
-      ed.select({ list: "placements", index: i });
-      if (ed.draggedConformingKind()) continue;
-      const p = layout.placements[i];
-      const terrain = g.map.terrain;
-      const x0 = p.x;
-      const rot = p.rotY ?? 0;
-      const lift = p.y ?? 0;
-      const at = (x) => ({ x, y: terrain.heightAt(x, p.z) + lift, z: p.z });
-      ed.onDrag(at(x0 + 2), rot);
-      ed.onDragEnd();
-      for (let k = 0; k < 30; k++) await P.nextFrame();
-      // …and back, so the round after the editor stands on the layout it shipped with.
-      ed.onDrag(at(x0), rot);
-      ed.onDragEnd();
-      moved = { index: i, kind: p.kind };
-    }
-    out.drag = moved;
-    for (let i = 0; i < 30; i++) await P.nextFrame();
-    out.calls = P.calls.splice(0);
-    await g.toggleEditor();
-    for (let i = 0; i < 20000 && g.state !== "deploy"; i++) await P.nextFrame();
-    for (let i = 0; i < 30; i++) await P.nextFrame();
-    out.roundAfter = {
-      cloudInternal: { wrapU: it._cachedWrapU, wrapV: it._cachedWrapV, wrapR: it._cachedWrapR, anisotropy: it._cachedAnisotropicFilteringLevel },
-      traceSampler: trace(),
-    };
-    out.callsAfter = P.calls.splice(0);
-    return out;
-  });
-  report.editor.states = await stateSummary(from);
-  report.editor.samplersAfter = await samplers();
-}
-
 // Every door's first dispatch after it, read off the whole run's records.
 {
   const { records, calls } = await page.evaluate(() => {
     const P = window.__giProbe;
-    return { records: P.records.map((r) => [r.f, r.state, r.gi.some((x) => x[0] === "gi-trace") ? 1 : 0, r.editor ? 1 : 0]), calls: P.callsAll };
+    return { records: P.records.map((r) => [r.f, r.state, r.gi.some((x) => x[0] === "gi-trace") ? 1 : 0]), calls: P.callsAll };
   });
   for (const c of calls) {
     if (c.call !== "setMap" && c.call !== "setQuality" && c.call !== "worldMoved") continue;
@@ -1413,7 +1355,7 @@ if (EDITOR) {
       continue;
     }
     const r = records.find((x) => x[0] >= c.frame && x[2]);
-    report.firstDispatch.push({ what: `${c.call}${c.arg ? `(${c.arg})` : ""} at frame ${c.frame} in ${c.state}`, frames: r ? r[0] - c.frame : null, state: r ? r[1] : null, editor: r ? r[3] : null });
+    report.firstDispatch.push({ what: `${c.call}${c.arg ? `(${c.arg})` : ""} at frame ${c.frame} in ${c.state}`, frames: r ? r[0] - c.frame : null, state: r ? r[1] : null });
   }
 }
 
@@ -1462,15 +1404,7 @@ for (const M of report.maps) {
   for (const [n, es] of Object.entries(M.statics.bindGroups)) console.log(`  bind ${n}: ${es.map((e) => `${e.binding}:${e.kind}${e.kind === "buffer" ? `(${e.size ?? "whole"} of ${e.buffer?.size})` : e.kind === "view" ? `(${e.texture?.format} ${JSON.stringify(e.desc)})` : e.kind === "sampler" ? `(${shortSampler(e.desc)})` : ""}`).join(" ")}`);
   console.log(`  prepares ${M.statics.prepares}, late ${M.statics.late}; calls ${M.calls.map((c) => `${c.call}${c.arg ? `(${c.arg})` : ""}@${c.frame}:${c.state}`).join(" ")}`);
 }
-if (report.editor) {
-  const E = report.editor;
-  console.log("editor:");
-  console.log(`  built: cloud internal ${JSON.stringify(E.built.cloudInternal)}; giIrr internal ${JSON.stringify(E.built.giIrrInternal)}; trace sampler ${shortSampler(E.built.traceSampler)}`);
-  console.log(`  drag: ${JSON.stringify(E.drag)}; calls ${E.calls.map((c) => `${c.call}@${c.frame}:${c.state}`).join(" ")}`);
-  console.log(`  the round after: cloud internal ${JSON.stringify(E.roundAfter.cloudInternal)}; trace sampler ${shortSampler(E.roundAfter.traceSampler)}; host ${shortSampler(E.samplersAfter.host)}; same object ${E.samplersAfter.same}`);
-  for (const [k, s] of Object.entries(E.states)) console.log(`  ${k.padEnd(22)} ${s.frames} frames, dispatched ${s.dispatched}, NO prepare ${s.dispatchedNoPrepare}, ended a pass ${s.endedPass}, Babylon binds of gi-*/cloudShadow ${s.setTex} ${JSON.stringify(s.setTexNames ?? {})}`);
-}
-for (const f of report.firstDispatch) console.log(`first dispatch: ${f.what}: ${f.records ? JSON.stringify(f.records.slice(0, 12)) : `${f.frames} frames on, in ${f.state}${f.editor ? " (editor)" : ""}`}`);
+for (const f of report.firstDispatch) console.log(`first dispatch: ${f.what}: ${f.records ? JSON.stringify(f.records.slice(0, 12)) : `${f.frames} frames on, in ${f.state}`}`);
 console.log(`${report.errors.page} page errors, ${report.errors.console} console errors`);
 for (const x of report.errors.first) console.log(`  ${String(x).slice(0, 300)}`);
 
@@ -1497,7 +1431,7 @@ function stripObjects(x) {
  * Two logs, compared: the deterministic half only — each map's statics and
  * every scenario's steps — by `Object.is` on numbers and equality on strings
  * (the arrays' bytes and the readbacks' hashes are strings). The live half
- * (states, installs, first dispatches, the editor's frames) rides the
+ * (states, installs, first dispatches) rides the
  * machine's timing and is printed, not compared. Returns true on a difference.
  */
 function compareLogs(a, b) {

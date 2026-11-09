@@ -36,7 +36,7 @@
  * Never: imports Babylon; reads a node or a pool; casts a shadow, or draws in
  * a bake or the lamps' atlas (no fade was in either); draws a disc, a scorch
  * or a blob in the mask (each was `noGlow`); draws while not installed (the
- * menu, an editor build, where no pool is ever raised).
+ * menu, where no pool is ever raised).
  * Contract: `docs/rendering.md`, "The pools, ours".
  *
  * WHAT A DRAW BINDS, by group: 0 the frame (`Renderer`'s), 1 the colours and

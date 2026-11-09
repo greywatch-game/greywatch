@@ -209,8 +209,8 @@ var reflectionCubeSampler: sampler;
 var reflectionCube: texture_cube<f32>;
 // Where the cube was baked from, and how much of it this surface returns
 // against the sky it would otherwise show: reflectProbe.xyz is the bake point
-// and .w is the strength — 0 where nothing was baked, which is every editor
-// build and every map with nothing to bake for.
+// and .w is the strength — 0 where nothing was baked, which is every map with
+// nothing to bake for.
 uniform reflectProbe: vec4f;
 `,
   celProbeBox: `

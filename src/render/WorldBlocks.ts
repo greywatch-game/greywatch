@@ -389,7 +389,7 @@ export class WorldBlocks {
   /**
    * Takes the draws and the culls' prepare back off the renderer; null while
    * nothing is registered. Registered only while a map's culls are BUILT, so
-   * a frame with nothing of ours to draw — the menu, an editor build — costs
+   * a frame with nothing of ours to draw — the menu — costs
    * the renderer one empty branch rather than a filled and uploaded frame.
    */
   private unhook: (() => void) | null = null;
@@ -535,8 +535,7 @@ export class WorldBlocks {
   finish(blocks: readonly BlockBox[], scatter: ScatterCut | null = null, shadowSlots = 0): void {
     const surfaces = this.surfaces;
     if (blocks.length !== surfaces.length) throw new Error("world blocks: a block for every surface");
-    // Nothing taken (an editor build): no cull, and no instance either —
-    // Babylon draws every recipe whole.
+    // Nothing taken: no cull, and no instance either.
     if (surfaces.length === 0) return;
     const device = this.renderer.device;
     const sets = scatter?.sets ?? [];

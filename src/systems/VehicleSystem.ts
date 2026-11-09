@@ -568,7 +568,7 @@ export class VehicleSystem {
     this.stands = [];
     // Out of the segment query as well as off the field. `build` installs a
     // fresh map's own `RayWorld` a line later, so this only matters when no
-    // fleet follows — the editor's rebuild and the menu's teardown — but a
+    // fleet follows — the menu's teardown — but a
     // disposed hull left in a live list is exactly the stale pointer the
     // vehicle wiring in `installMap` is ordered to prevent.
     if (this.rays) {

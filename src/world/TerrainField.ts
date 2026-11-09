@@ -24,8 +24,8 @@
  *
  * This file must NOT create meshes, materials or colliders — it hands back
  * `GeometryBuffer`s (`src/geometry/`) and lets MapBuilder own the scene, and it
- * imports nothing from Babylon: the server and the editor read it too, and
- * each turns a patch into a mesh through `world/parts.ts`'s `vertexDataOf`.
+ * imports nothing from Babylon: the server reads it too, and the client turns
+ * a patch into a mesh through `world/parts.ts`'s `vertexDataOf`.
  */
 import { CONFIG } from "../config";
 import { computeNormals, GeometryBuffer } from "../geometry/buffer";
@@ -294,8 +294,8 @@ export class TerrainField {
 
 /**
  * A pool's surface height: whatever the rect asks for, or ankle-deep over its
- * own bed. Lives here rather than in WaterSystem so the editor's proxy and the
- * real water cannot end up at different heights — they did, and a translucent
+ * own bed. Lives here rather than in WaterSystem so a stand-in (the map
+ * editor's proxy was one) and the real water cannot end up at different heights — they did, and a translucent
  * sheet hanging over a dug basin looks exactly like the ground disappearing.
  */
 export function waterY(r: WaterRect, terrain: TerrainField): number {
@@ -306,8 +306,8 @@ export function waterY(r: WaterRect, terrain: TerrainField): number {
  * The steepest gradient the nav graph will link across: `NavGrid.link` joins
  * neighbouring surfaces only within `stepHeight`, and its cells are
  * `nav.cellSize` apart. Terrain steeper than this severs its own links and
- * strands whatever is beyond it, which is why the editor validates against it
- * and the brush reports it.
+ * strands whatever is beyond it, which is why the viewer's `validate` checks
+ * against it.
  */
 export const MAX_WALKABLE_GRADE = CONFIG.nav.stepHeight / CONFIG.nav.cellSize;
 
@@ -326,9 +326,9 @@ export function terrainPatches(
   /**
    * The patch's side, in metres — `MapLayout.terrainBlock`, or `BLOCK_SIZE`.
    * **A whole number of terrain cells**, or the round below cuts somewhere
-   * other than where the caller said. Both callers — `buildValley` and the
-   * editor's brush — must pass the same map's value or the brush re-cuts
-   * patches the floor was never cut into.
+   * other than where the caller said. One caller, `buildValley`, with the
+   * map's `MapLayout.terrainBlock` (the map editor's brush was a second until
+   * `BABYLON_EXIT.md` X5.3c).
    */
   blockSize: number,
 ): TerrainPatch[] {
@@ -383,9 +383,8 @@ export function terrainPatches(
   // the whole way round the map.
   //
   // `size` is not consulted, here or above: the extent is the FIELD's, and the
-  // borderland is the field's too. That is what lets both callers — the client's
-  // `buildValley` and the editor's brush — get the same floor without either of
-  // them being told the margin exists.
+  // borderland is the field's too. That is what lets the caller, the client's
+  // `buildValley`, get the floor without being told the margin exists.
   const m = Math.round(terrain.margin / f.cell);
   if (m > 0) {
     // Blocks four times the floor's, because nobody fights out here: what the

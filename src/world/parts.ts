@@ -72,12 +72,13 @@
  * world keeps, once, through public API. The part mesh, and every helper that
  * kept it honest, is deleted.
  *
- * **Colliders are deliberately NOT parts.** The editor's centre-screen pick
- * walks `mesh.subMeshes`, and a collider built without them would be one it
+ * **Colliders are deliberately NOT parts.** The map editor's centre-screen
+ * pick walked `mesh.subMeshes`, and a collider built without them was one it
  * could never select. Nothing that moves or shoots reads the meshes any more
  * — the rays and the sweeps both answer off the `WorldBox`es (`RayWorld`,
- * `CollisionField`) — so `MapBuilder.collider` staying on `MeshBuilder` is the
- * editor's, and goes when the editor stops picking meshes.
+ * `CollisionField`) — and the editor is gone (`BABYLON_EXIT.md` X5.3c), so
+ * `MapBuilder.collider` staying on `MeshBuilder` goes at X5.3e, when the
+ * colliders stop being meshes.
  */
 import {
   Mesh,
@@ -379,11 +380,10 @@ export function drawnMesh(
  * unchanged — **but for a surface our renderer draws in every pass**, which
  * `onSurface` (`BuildOptions.onSurface`, `BlockHandover`) answers `true` for
  * and which is made no mesh at all (`BABYLON_EXIT.md` X3.7b): on a shipped
- * build that is every surface but the glazing and the fires, and an editor
- * build, which hands no `onSurface`, is made a mesh of every one — but for
- * a surface wearing the emissive PALETTE, which is made a mesh in NO build
- * (`EmissiveWorld.ts`; an editor build never merges its blocks, so never
- * mints one, and a DEV build throws on one handed no `onSurface`). A surface
+ * build that is every surface but the glazing and the fires, and a build
+ * handed no `onSurface` is made a mesh of every one — but for a surface
+ * wearing the emissive PALETTE, which is made a mesh in NO build
+ * (`EmissiveWorld.ts`; a DEV build throws on one handed no `onSurface`). A surface
  * the bake gave colours is given `hasVertexAlpha = false`, as the bake gave
  * its mesh: the alpha is a lighting term, and the world is opaque.
  *
@@ -398,9 +398,7 @@ export function drawnMesh(
  *
  * A surface whose positions must stay writable (`updatable`, a pane block
  * holding a breakable pane) gets them through `Mesh.setVerticesData(…, true)`,
- * the call that made them writable before. Each editor surface's mesh joins
- * its item's `visuals`, in list order: a placement's merged surfaces, then its
- * glazing.
+ * the call that made them writable before.
  *
  * **A surface's ARRAYS are released as its mesh is made** (`releaseArrays`):
  * the record the map keeps (`SurfaceRecord`, `GameMap.world`) is everything
@@ -449,9 +447,8 @@ export function worldMeshes(
       // refuses it, the refusal failing the world at the install
       // (`BlockHandover.refuse`) — so it is left meshless with the rest of a
       // map that is about to be torn down. Handed none, there is no handover
-      // to hold a refusal to, and no such build merges its blocks (an
-      // editor's, the one build that hands none, is DEV-only): a DEV build
-      // says so here.
+      // to hold a refusal to (every build the game makes hands one since the
+      // map editor went, `BABYLON_EXIT.md` X5.3c): a DEV build says so here.
       if (import.meta.env.DEV && !onSurface) {
         throw new Error(
           `worldMeshes: "${surface.part.name}" wears the emissive palette, which no Babylon mesh may wear ` +
@@ -472,12 +469,11 @@ export function worldMeshes(
   // `GameMap.visuals`: the meshes made, in list order, each record naming
   // its own.
   const visuals: Mesh[] = [];
-  surfaces.forEach((surface, i) => {
+  surfaces.forEach((_, i) => {
     const mesh = meshes[i];
     if (!mesh) return;
     records[i].visual = visuals.length;
     visuals.push(mesh);
-    surface.owner?.visuals.push(mesh);
   });
   return { visuals, meshes, records };
 }

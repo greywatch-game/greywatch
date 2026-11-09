@@ -228,7 +228,7 @@ export class MotionBlur {
   /**
    * Drops the previous basis, so the next frame is reprojected against itself
    * and comes out sharp. Call after any discontinuity in the camera — a
-   * respawn, a round start, a warp into or out of the editor — or the jump
+   * respawn, a round start, a warp into or out of the viewer — or the jump
    * renders as a single frame of full-screen smear.
    */
   reset(): void {

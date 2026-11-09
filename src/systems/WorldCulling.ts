@@ -107,9 +107,7 @@
  *   `BABYLON_EXIT.md` X4.3d — the optics' glass and the kit card the last of
  *   it — and no candidate; the sky since X4.5, the grass since X4.6c, the
  *   field's one sphere asked of `keepsSphere` by `Game.drawGrass`, and the water
- *   since X4.6d, each body's by `Game.drawWater`), and every
- *   visual an EDITOR build makes,
- *   which is keyed per placement and carries no block at all. The HULLS were
+ *   since X4.6d, each body's by `Game.drawWater`). The HULLS were
  *   loose until `BABYLON_EXIT.md` X4.2b and are no mesh now: our renderer
  *   draws each as an instance of its kind's kit, and the size gate reaches
  *   its segments one by one through `keepsSphere` — the test a loose mesh
@@ -326,8 +324,8 @@ export class WorldCulling {
    * (`BABYLON_EXIT.md` X3.7a). A candidate is still a mesh; the record and the
    * mesh hold the same numbers bit for bit (`npm run merge:hash` checks every
    * visual), so the verdict is the one the mesh's own sphere gave. Every
-   * other mesh — a loose one, an editor build's, an effect — is absent and
-   * tested off its own bounding info, which an editor move rewrites under it.
+   * other mesh — a loose one, an effect — is absent and tested off its own
+   * bounding info.
    */
   private gateOf = new Map<AbstractMesh, SurfaceBounds | null>();
 
@@ -345,7 +343,7 @@ export class WorldCulling {
   /**
    * Every pooled body, in the order `setPools` was handed them — the index
    * `drawsBody` answers by. Kept apart from the cells, which `setMap` clears
-   * on a path the ROSTER does not run (the editor's rebuild).
+   * on a path the ROSTER does not run (an install).
    */
   private pools: Pool[] = [];
 
@@ -541,7 +539,7 @@ export class WorldCulling {
     }
     // Babylon's block-keyed meshes, each into its cell: none on a shipped
     // build (the fires are no mesh since X4.4d and the glazing since X4.6e:
-    // `offersBlock`), and on an editor's none (it carries no block). The
+    // `offersBlock`). The
     // glazing is offered by the same key its block is, which is the key
     // `PaneBlocks` writes it under — a curtain wall and the shaft behind it go
     // out of the frame together, or the tower is a sheet of glass hanging in
@@ -561,8 +559,9 @@ export class WorldCulling {
       const refused = fileMesh(mesh);
       if (refused) return refused;
     }
-    // An editor build's glazing, which keys per placement and so files nothing
-    // (a round's is our renderer's and no mesh: `offersBlock` answers for it).
+    // A glazing group's mesh, where a build made one — none does since the map
+    // editor's went (`BABYLON_EXIT.md` X5.3c; X5.3d deletes what is left): a
+    // round's is our renderer's and no mesh, and `offersBlock` answers for it.
     for (const group of map.paneGroups) {
       if (!group.mesh) continue;
       const refused = fileMesh(group.mesh);

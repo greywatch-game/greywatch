@@ -21,8 +21,7 @@
  * method body). That is deliberate and load-bearing: a static import would keep
  * every viewer module in the production bundle even with the branch
  * eliminated. Nothing in src/viewer/ may be imported statically from anywhere
- * on the game's graph, and nothing here imports from src/editor/, which X5.3c
- * deletes.
+ * on the game's graph.
  *
  * Never: makes a mesh, a material, a draw or a pipeline (the overlays are a 2D
  * plan in the panel), writes the layout, or owns a camera.
@@ -76,8 +75,8 @@ export class ViewerSession {
   private classes: NavClasses | null = null;
   /**
    * The validation list against the standing map — read by a script as well
-   * as drawn, which is how the viewer's findings are graded against the
-   * editor's (X5.3b's Verify).
+   * as drawn, which is how the viewer's findings were graded against the
+   * map editor's (X5.3b's Verify).
    */
   readonly findings: Finding[];
   private workLight = true;

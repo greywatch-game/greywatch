@@ -1728,8 +1728,9 @@ is one machine's:
   either way, with no toast (`Game.roundWorld`).
 - **Whether the RECORD still describes the mesh is `npm run merge:hash`'s**
   (`BABYLON_EXIT.md` X3.7a): EVERY surface that has a mesh — on a shipped
-  build the glazing (and the fires until X4.4d), on an EDITOR build every one, 2,000-odd
-  meshes almost all off identity, which exercise the transformed path —
+  build the glazing (and the fires until X4.4d); on the map editor's build, until
+  X5.3c retired it, every one, 2,000-odd meshes almost all off identity, which
+  exercised the transformed path (`scripts/bounds-check.mjs`'s since X5.3a) —
   record bounds against the mesh's bounding info bit for bit (`bounds≠mesh`,
   and the `record bounds` line counts those off identity), and its record's
   arrays against the mesh's buffers (`arrays≠buffers`). The DEV reads X3.7a
@@ -1779,7 +1780,8 @@ is one machine's:
   (`CelMaterialFactory.GLASS_DEPTH_UNITS`). The reading is the pane's own
   contribution: grab a patch, take the pane out of its draw (since X4.6e a
   round's is `g.glassDraw.surfaces[i]`, no mesh: clear its `material` and it
-  draws nothing; an editor build's is still `paneGroups[i].mesh`), grab
+  draws nothing; no build makes `paneGroups[i].mesh` since the map editor's
+  went at X5.3c), grab
   again, and difference the two. Zero means the pane lost the depth test, not
   that it is subtle. Three things make the sweep say something:
   - **Hold the incidence angle and the on-screen size still, or the answer is

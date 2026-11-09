@@ -37,8 +37,8 @@ export interface BuildPhase {
 
 /**
  * The phases of the LAST build, oldest first. Replaced wholesale by `begin`,
- * so a reader always sees one build rather than an accumulation across the
- * editor's rebuilds.
+ * so a reader always sees one build rather than an accumulation across
+ * rebuilds.
  */
 let phases: BuildPhase[] = [];
 

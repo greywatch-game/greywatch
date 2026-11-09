@@ -115,7 +115,7 @@ export interface BoxSpec {
 
   /**
    * Stops a round and a sightline, and is not a body at all: no
-   * `checkCollisions`, invisible to `SOLID_ONLY`, and — the part with teeth —
+   * `checkCollisions`, not a body to `RayWorld.castBody`, and — the part with teeth —
    * **no `WorldBox`**, so the nav grid, the cover bake, the obstacle field and
    * the AO bake never see it. Declared by `Build.strut`, which is where the
    * reasoning lives.
@@ -233,8 +233,8 @@ export interface BuildParams {
    * The corners are drawn as arcs (`radius`), and where a path's end meets
    * another path, or two paths cross, the junction is resolved by the network
    * rather than by the layout: see `world/roadPaths.ts`. Local rather than world
-   * coordinates so that moving the placement moves the road, which is what the
-   * editor's gizmo does to everything else.
+   * coordinates so that moving the placement moves the road, as it moves
+   * everything else.
    */
   path?: readonly (readonly [number, number])[];
   /**
@@ -362,8 +362,8 @@ export interface BuildCtx {
  *
  * The position is what makes the builder a function of WHERE it stands, and
  * that is what puts every builder that calls it in `CONFORMS_TO_TERRAIN` —
- * without it the editor would translate a dragged house and leave it wearing
- * the door of the spot it left. Absent (a caller with no placement), the size
+ * without it the map editor (while there was one) would translate a dragged
+ * house and leave it wearing the door of the spot it left. Absent (a caller with no placement), the size
  * alone decides.
  */
 export function streetSeed(w: number, d: number, h: number, ctx?: BuildCtx): number {

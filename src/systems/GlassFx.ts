@@ -1,12 +1,12 @@
 /**
  * GlassFx.ts — The PICTURE of a pane going in: the glazing's vertex range
  * collapsed out of its merged surface — our renderer's in a round
- * (`render/GlassDraw.ts`, `BABYLON_EXIT.md` X4.6e), the merged mesh in an
- * editor build — and the collider MESH told it is no longer a wall.
+ * (`render/GlassDraw.ts`, `BABYLON_EXIT.md` X4.6e) — and the collider MESH
+ * told it is no longer a wall.
  * Owns: the pane → collider-mesh index for the standing map (built off the
  * `metadata.pane` stamp `MapBuilder.paneGroup` writes), and the two writes a
- * break makes — `collapse` (into the glazing draw's buffer, or an editor
- * build's mesh) and `clear` (onto the collider mesh).
+ * break makes — `collapse` (into the glazing draw's buffer) and `clear` (onto
+ * the collider mesh).
  * Invariants: it READS `GameMap` and is told by `GlassSystem`'s `onBroken`
  * and `onCleared`, and it never writes the simulation — whether a pane is
  * broken, whether its box is out of the queries and the nav graph, and the
@@ -26,19 +26,18 @@
  * Collapsing that range onto its own first vertex makes every triangle in it
  * degenerate, which rasterises nothing — and a pane carries no outline and
  * casts no shadow, so there is no second registration to revoke. One write of
- * the range into one buffer (`GlassDraw.collapse`; an editor build's mesh, one
- * `updateVerticesData`); only the blocks that hold a breakable pane keep a
+ * the range into one buffer (`GlassDraw.collapse`); only the blocks that hold a breakable pane keep a
  * writable copy of their positions at all.
  *
  * ## Why the collider mesh is written at all
  *
  * Nothing that moves or shoots reads it: the rays (`RayWorld`) and the
  * sweeps (`CollisionField`) both
- * read the BOX, which `GlassSystem` takes out. `metadata.solid` is still read
- * by `world/solid.ts`, which is the editor's centre-screen pick — the
- * editor's side of CLAUDE.md's "one write on each side", `RayWorld.remove`
- * being the queries' — and `checkCollisions` and disabling keep the mesh
- * describing itself as what it now is.
+ * read the BOX, which `GlassSystem` takes out. `metadata.solid` was read by
+ * the map editor's centre-screen pick, which went with the editor
+ * (`BABYLON_EXIT.md` X5.3c); the write stays, with `checkCollisions` and
+ * disabling, so the mesh describes itself as what it now is until X5.3e
+ * stops making collider meshes at all.
  */
 import { VertexBuffer, type Mesh } from "@babylonjs/core";
 import type { GlassDraw } from "../render/GlassDraw";
@@ -59,8 +58,8 @@ export class GlassFx {
   private readonly colliders = new Map<number, Mesh>();
 
   /**
-   * Takes a freshly built map, beside `GlassSystem.setMap` in `installMap` —
-   * the editor's rebuilds included, so nothing here holds a disposed mesh.
+   * Takes a freshly built map, beside `GlassSystem.setMap` in `installMap`, so
+   * nothing here holds a disposed mesh.
    */
   setMap(map: GameMap): void {
     this.panes = map.panes;
@@ -115,8 +114,8 @@ export class GlassFx {
   /**
    * The collider MESH's three writes, once its box has left the world. Wired
    * to `GlassSystem.onCleared`, which only an authoritative break raises — so
-   * a client's own predicted break leaves the editor's pick seeing the pane
-   * for the round trip the box itself is left standing, and the two agree.
+   * a client's own predicted break leaves the mesh describing the pane for
+   * the round trip the box itself is left standing, and the two agree.
    */
   clear(pane: number): void {
     const mesh = this.colliders.get(pane);

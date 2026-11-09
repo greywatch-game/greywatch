@@ -32,7 +32,7 @@
  * (the frame is draw-call bound, `docs/rendering.md`): everything it does is
  * compute and three texture fetches in a shader that already runs. It reads
  * the scene's light off `CelMaterialFactory.readLighting`, never off the map,
- * so the editor's work light and a map switch reach the bounce with no second
+ * so the viewer's work light and a map switch reach the bounce with no second
  * path. `update` runs after `LightingSystem.update` in the same frame, because
  * it hands each of that frame's point-light slots a visibility channel.
  * Contract: `docs/rendering.md`, "The irradiance volume".
@@ -272,7 +272,8 @@ export class GiVolume {
   }
 
   /**
-   * The standing map's boxes moved in place — the editor's drag, released.
+   * The standing map's boxes moved in place — the map editor's drag, released.
+   * No caller since the editor went (`BABYLON_EXIT.md` X5.3c); X5.3d deletes it.
    * Re-uploads them and starts the history again, as a fresh install does;
    * the boxes are copied to the GPU at `setMap`, so nothing else would notice.
    */
@@ -834,7 +835,7 @@ export class GiVolume {
 
   /**
    * The whole params buffer for this frame: the map's rows, the light the
-   * surfaces are lit by (read live, so the editor's work light reaches the
+   * surfaces are lit by (read live, so the viewer's work light reaches the
    * bounce), the window, and the three light lists.
    */
   private writeParams(tier: Tier, total: number, hullCount: number): void {

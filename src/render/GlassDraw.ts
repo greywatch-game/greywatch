@@ -43,7 +43,7 @@
  * Never: imports Babylon; reads a node or a camera; casts a shadow, or draws
  * in a bake, the lamps' atlas or the glow's mask (no pane was in any of
  * them); destroys a cube, which is the bake's; draws while not installed (the
- * menu, an editor build, whose glazing is Babylon's until X5.3).
+ * menu).
  * Contract: `docs/rendering.md`, "The glazing: the one thing here that is not
  * opaque" and "Our renderer's frame".
  *
@@ -244,7 +244,7 @@ export class GlassDraw {
     return this.ours;
   }
 
-  /** Whether a round's install stands — false on the menu and in an editor build. */
+  /** Whether a round's install stands — false on the menu. */
   get installed(): boolean {
     return this.isInstalled;
   }

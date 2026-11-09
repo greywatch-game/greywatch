@@ -38,14 +38,14 @@ node plans/webgpu-ref/shaders.mjs [map...] [--headed] [--list]
 node plans/webgpu-ref/depth.mjs glass|zoffset [--headed]
 node plans/webgpu-ref/diff.mjs a.png b.png [--tiles]
 node plans/webgpu-ref/pipelines.mjs [map] [--seconds N] [--round]
-node plans/webgpu-ref/surfaces.mjs [map...] [--rows=<id,...>] [--pixels] [--editor] [--keep=<dir>] [--out=<f.json>]
+node plans/webgpu-ref/surfaces.mjs [map...] [--rows=<id,...>] [--pixels] [--keep=<dir>] [--out=<f.json>]
 node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--gpu] [--max] [--size WxH] [--out f.json] [--against f.json]
-node plans/webgpu-ref/particles.mjs [map...] [--frames=N] [--out=f.json] [--against=f.json] [--editor]
-node plans/webgpu-ref/gi.mjs [map...] [--out=f.json] [--against=f.json] [--shafts-off] [--no-editor] [--no-states]
+node plans/webgpu-ref/particles.mjs [map...] [--frames=N] [--out=f.json] [--against=f.json]
+node plans/webgpu-ref/gi.mjs [map...] [--out=f.json] [--against=f.json] [--shafts-off] [--no-states]
 node plans/webgpu-ref/gi.mjs --compare=a.json --against=b.json
 node plans/webgpu-ref/post.mjs [--sizes=desk,phone] [--out=f.json] [--against=f.json] [--no-live]
 node plans/webgpu-ref/post.mjs --compare=a.json --against=b.json
-node plans/webgpu-ref/drawlog.mjs [map...] [--out=f.json] [--against=f.json] [--ignore=<regex>] [--no-editor] [--limit=<seconds>]
+node plans/webgpu-ref/drawlog.mjs [map...] [--out=f.json] [--against=f.json] [--ignore=<regex>] [--no-viewer] [--limit=<seconds>]
 ```
 
 - **`gate.mjs`** boots every shipped map, plays a real round on each and fails
@@ -202,11 +202,11 @@ node plans/webgpu-ref/drawlog.mjs [map...] [--out=f.json] [--against=f.json] [--
   class out at `Mesh.render` for a frame and counts the pixels that move, which
   is how a row is shown to hold a surface rather than merely to draw it, and
   counts the overlaps the plan asks about: a blended surface over water, a pane
-  over water. Each class prints a count per list, `other` and the editor's `proxy`
-  included, and under `--pixels` the whole-frame mean its removal comes to, which is
-  what `--check`'s tolerance would see. **`--editor`** asks the same of an editor
-  build and changes one water rect and one grass rect through the editor's own
-  rebuild. **`--keep=<dir>`** writes each reported row's frame as the probe saw it,
+  over water. Each class prints a count per list, `other` included, and under
+  `--pixels` the whole-frame mean its removal comes to, which is what `--check`'s
+  tolerance would see. (`--editor`, which asked the same of the map editor's build,
+  and its `proxy` class are retired with the editor, `BABYLON_EXIT.md` X5.3c.)
+  **`--keep=<dir>`** writes each reported row's frame as the probe saw it,
   under the names `bank.mjs --keep` uses, which is how the probe is shown to move no
   pixel. What it reads stops being reported as each surface leaves Babylon, which is
   how a sub-step shows it took the whole of one. **An empty class says only that
@@ -234,10 +234,9 @@ node plans/webgpu-ref/drawlog.mjs [map...] [--out=f.json] [--against=f.json] [--
   `useConstantAnimationDeltaTime`, which skips the clamp). Several maps are one boot,
   rotated through the menu as a player rotates them; at each install it logs the
   scene's particle systems in order and the `Math.random` draws of each
-  construction and each first update, and `--editor` ends with `F2` and an
-  editor rebuild. `--against` compares two logs — the order, every construction's
-  and first update's draws (label and count), then every logged number by
-  `Object.is`, and the editor's orders and draws — which is how a port of the CPU
+  construction and each first update. `--against` compares two logs — the order,
+  every construction's and first update's draws (label and count), then every
+  logged number by `Object.is` — which is how a port of the CPU
   half is proven, since no live frame's pixels reproduce; one tree against itself
   is the control. Since X4.7c it reads OUR fields beside Babylon's through one
   adapter (the ash since X4.7c and the rotor wash since X4.7d are
@@ -245,10 +244,9 @@ node plans/webgpu-ref/drawlog.mjs [map...] [--out=f.json] [--against=f.json] [--
   columns off each, and counts our first updates around
   `ParticleDraw.initialize` under Babylon's label; a field it cannot count (neither
   ours nor holding a Babylon `_initialize`) is named in the log's `unwrapped`
-  rather than thrown on. `--editor` ends in the round leaving the editor starts
-  (X4.7d), so the dev-only flow X4.7c's decision names — `F2`, an in-memory
-  `particles.count` edit, the rebuild, back to a round — is compared whole; its
-  oracle for X4.7d was a BEFORE at 312dc44, where every field was Babylon's.
+  rather than thrown on. (`--editor`, which ended in the map editor's flow X4.7c's
+  decision names — `F2`, an in-memory `particles.count` edit, the rebuild, back to
+  a round — X4.7d's oracle at 312dc44, is retired with the editor at X5.3c.)
   `surfaces.mjs` has a class per BABYLON field (`motes`, `rotorWash`,
   `rotorSpray`), each draw logged at its place between the points with its
   pipeline, blend mode, count and the defines of its compiled update and render
@@ -264,7 +262,8 @@ node plans/webgpu-ref/drawlog.mjs [map...] [--out=f.json] [--against=f.json] [--
   switched on (its bounce followed sweep by sweep), a flash raised and dying, the
   tiers, and the cloud field's sampler both ways; beside it, measured live and not
   compared, the states (the building card, deploy, a round, the round-over card,
-  the menu, an editor build with a drag), whether each dispatch ended a render pass,
+  the menu; the map editor's build with a drag until X5.3c retired that arm,
+  `--no-editor` a no-op since), whether each dispatch ended a render pass,
   which encoder it went on, whether our prepares ran that frame, and Babylon's binds
   of the seven and the cloud field. The device is wrapped from the page's first line
   (`bootMap`'s `init`), so the modules' tokens, the pipelines, the bind groups, the
@@ -353,14 +352,14 @@ node plans/webgpu-ref/drawlog.mjs [map...] [--out=f.json] [--against=f.json] [--
   building card, deploy, the kit lid, a life (every primary fired, a frag, the third
   slot, a pane broken, a flying hull pinned where there is one, then walked at the far
   flag until the authority kills the player), the death cam, deploy, a life under the
-  pause lid, the round-over card, the menu, a second round, the menu and the editor
-  (`Game.toggleEditor`, `Shift+F2` since X5.3b; `--no-editor` to leave it out); and,
+  pause lid, the round-over card, the menu, a second round and the menu (the map
+  editor's step after it is retired with the editor at X5.3c, `--no-editor` a
+  no-op); and,
   since X5.3b, the map VIEWER's lid (`F2`) raised over the first deploy, the death cam
   and the second life, flown to a flag with its plan shown and its work light toggled
   (`--no-viewer` to leave it out; a parent with no viewer is compared with
   `--ignore='^[a-z]+/viewer(/|$)'`); a step it does not reach fails the run (exit 2).
-  By FRAME CLASS (the state at the engine's begin-frame, the card raised from the
-  editor apart): every `_draw` keyed by mesh or effect and target, every visit of
+  By FRAME CLASS (the state at the engine's begin-frame): every `_draw` keyed by mesh or effect and target, every visit of
   rendering group 0 keyed by target, every effect (and compute effect) COMPILED, and
   `scene.meshes`' sizes and folded names — each key as the SET of per-frame counts it
   took and whether it was there every frame, never a total, so the log compares with
@@ -368,9 +367,11 @@ node plans/webgpu-ref/drawlog.mjs [map...] [--out=f.json] [--against=f.json] [--
   (`<map>/<class>/<field>/<key>`) and exits 1 on a difference `--ignore`'s regular
   expression does not excuse. Frames, what the round did and the steps are printed and
   not compared. About a minute and a half on Coldharbour here. Its log at X5.3a's parent
-  is X5.3's BEFORE: the editor (`F2`) and the building card raised over its build are the
-  only classes in which Babylon draws, visits group 0 or compiles an effect; in every
-  other state it does none of the three (the post chain is ours since X5.2d).
+  is X5.3's BEFORE: the editor (`F2`) and the building card raised over its build were
+  the only classes in which Babylon draws, visits group 0 or compiles an effect; in every
+  other state it does none of the three (the post chain is ours since X5.2d). Since
+  X5.3c neither class exists, and a parent's log is compared with
+  `--ignore='^[a-z]+/(editor|loading \(from the editor\))(/|$)'`.
 
 `cold-stagger.mjs` is **gone and is not coming back**. It existed to bake
 Coldharbour's forty cube probes four a frame because doing all forty at once
@@ -585,7 +586,7 @@ for each step of the exit:
 
 **`placeVantage` also places the camera-dependent passes at each row's eye**
 — the two cascades, the bodies' map, the lamps' atlas, the water and the grass
-— by `Game.updateSceneForCamera` at dt 0, the path the editor and the warm-up
+— by `Game.updateSceneForCamera` at dt 0, the path the viewer and the warm-up
 use. Before X0.1 they stayed wherever the install left them, so a frame far
 from the spawn photographed no shadow window at all.
 

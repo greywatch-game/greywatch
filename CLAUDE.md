@@ -18,8 +18,7 @@ substitute: read the companion before changing that subsystem.
 | [`docs/states.md`](docs/states.md) | a new screen, a new game state, anything about what a lid holds or lets run |
 | [`docs/ui.md`](docs/ui.md) | any screen, any stylesheet, anything under `src/ui/` |
 | [`docs/rendering.md`](docs/rendering.md) | lights, shadows, fog, outlines, block visibility, the post chain, the sky, the grass |
-| [`docs/world.md`](docs/world.md) | a map, a layout, a builder, the terrain or the rim |
-| [`docs/editor.md`](docs/editor.md) | anything under `src/editor/` or the dev write endpoint |
+| [`docs/world.md`](docs/world.md) | a map, a layout, a builder, the terrain or the rim, or the map viewer (`src/viewer/`) |
 | [`docs/bots.md`](docs/bots.md) | navigation, perception, cover, squads, bot cost |
 | [`docs/deaths.md`](docs/deaths.md) | ragdolls, glass shards, Havok, the death cam |
 | [`docs/vehicles.md`](docs/vehicles.md) | a vehicle of either kind, a new kind, its hull collider, its picture (`VehicleView`), the chase camera, mounting, the respawn |
@@ -175,8 +174,7 @@ npm run merge:hash # kit:hash's other half: builds every map in a real browser
                    #   lists — and fails on any mesh left a PART. Proves a
                    #   change to how parts are built or merged moved nothing,
                    #   and is owed by every Babylon upgrade (docs/build.md).
-                   #   `-- --out f.json`, `--against f.json`, `--maps a,b`,
-                   #   `--editor` for the editor's unmerged build
+                   #   `-- --out f.json`, `--against f.json`, `--maps a,b`
 npm run maps:check # every map's generator re-run into scratch (`--out`) and
                    #   its layout.ts and heights.ts held to the committed
                    #   files byte for byte, line endings aside — a BUILD GATE:
@@ -185,8 +183,8 @@ npm run shots      # re-photograph the maps for the menu backdrop (committed).
                    #   The ONE script here that needs a real GPU — docs/build.md
 npm run proving    # regenerate the DEV-ONLY proving ground (committed source).
                    #   `-- --play 900 --margin 300`. Not a level — ENGINE_UPGRADE.md
-# RE-SEED a map's layout and heights (committed source). Each is ONE-SHOT —
-# it DISCARDS editor edits to both files — is part of no build, and owes
+# RE-RUN a map's generator, its layout's and heights' only author (committed
+# source; `maps:check` holds the files to it), and owe
 # `npm run collision -- <map>` after it. `--probe` (and greyfen's `--at` and
 # `--point`) print the floor and write nothing; the script's header has the rest.
 npm run sarab        # ENGINE_UPGRADE.md S11
@@ -262,19 +260,18 @@ simulation joins its `SIMULATIONS` list** (`docs/build.md`).
 fields that answers only to itself** (`net/RegionBook.ts`), never anything
 whose methods reach across systems, however big it gets (`docs/game.md`).
 
-**`installMap` is the one place a map is built**, and both callers — a round
-starting and an editor rebuild — go through it, since two copies drift
-silently. **Anything new that
+**`installMap` is the one place a map is built**, and its one caller is a round
+starting (`buildRound`). **Anything new that
 consumes a `GameMap` or an `EnvironmentSpec` goes in `installMap`.** **What a
 round SIMULATES is not built there**: `SimCore.startRound` builds the core's
 world (`buildSimWorld`) off the map as DATA — its committed collider bake and
 its floor (`loadSimWorld`), on a server and in the page's own match alike — so
-a new fact the simulation reads goes through that pair, and an editor save
+a new fact the simulation reads goes through that pair, and a re-run generator
 plays against the old colliders until `npm run collision` re-bakes them.
 
 `Game`'s state machine is `menu -> loading -> deploy -> playing -> dying ->
 deploy`, with `roundover` when a side runs out of tickets, and `bench` — the
-benchmark `?bench=<map>` plays — off to one side of it like `editor`. **The 3D
+benchmark `?bench=<map>` plays — off to one side of it. **The 3D
 scene renders in every state** — in the page's own match over a HELD world,
 advanced only through `updateWorld` (`playing`, `dying`, `bench`) — and
 `loading` and `dying` are **STEPS, not lids**: `updateWorld` runs in full under
@@ -706,8 +703,8 @@ regions, control points, spawns, the water and grass rects — and `MapBuilder`
 special-cases nothing, so **a second map is one new layout file plus an
 `EnvironmentSpec`**. Every figure on the menu's map panel is read off the layout
 and the environment, so nothing countable is stated twice. The two halves are
-paired in `src/world/maps.ts`, which with `vite.config.ts`'s `WRITABLE` table and
-`scripts/collision-hash.mjs`'s `MAPS` are the only existing files a new map
+paired in `src/world/maps.ts`, which with `scripts/collision-hash.mjs`'s `MAPS`
+(which `scripts/check-maps.mjs` reads) are the only existing files a new map
 touches, and **nothing outside `maps.ts` may import a map's own modules**. **A
 new map also owes a GENERATOR** (`scripts/generate-<id>.mjs`, taking `--out
 <dir>`): `maps:check` re-runs one for every row in `MAPS` and fails the build on
@@ -722,7 +719,7 @@ FLOOR, which grows with the square of the map. **There is no
 `MapLayout.terrain`**: everything that needs the ground is HANDED it —
 `MapBuilder.build` takes it as an argument, `Game.floor` holds the standing
 map's (`installMap` cannot contain a fetch), `loadSimWorld` awaits it, and the
-editor writes through `map.terrain.field`, which is that same object. `size *
+built map's `map.terrain.field` is that same object. `size *
 cell` must still equal the map's extent and nothing typed can see the pair any
 more, so `build` asserts it in a DEV build.
 
@@ -738,7 +735,7 @@ so that a map saying nothing is unaffected:
 | `MapLayout.surfaces` — how deep it stacks | `CONFIG.nav.maxSurfaces`, 3 | only a map that stacks FLOORS raises it; overflow drops candidates silently (see the bots section) |
 | `MapLayout.perTeam` — how many bodies a side | `CONFIG.bots.perTeam`, 8 | it is DENSITY, bounded by `CONFIG.bots.maxPerTeam` (24), and it is spent in RIGS — the core's `BattleSystem.setRoster` resizes the pool and the page's `NetRoster` rebuilds its rigs when it moves (`setFielded`). The squads and the scoreboard follow it; `CONFIG.conquest.tickets` deliberately does not, so a denser map is a shorter round. **It reaches a match too**: the authority's slot table is the ceiling, `setFielded` says how many a round fights, and the SEATS stay at sixteen |
 | `MapLayout.blockSize` — how big a merge block is | `BLOCK_SIZE`, 48 | it is DRAW CALLS and cull granularity and nothing else; the reflection bake's exclusion and `WorldCulling` follow it for free because they read the block KEY rather than a size, and the world layer's unit of LOCALITY (the physics buckets, the pane index) deliberately does **not** |
-| `MapLayout.terrainBlock` — how big a floor patch is | `BLOCK_SIZE`, 48, **independently of `blockSize`** | a whole number of terrain cells, and the same value in both callers of `terrainPatches` — `buildValley` and the editor's brush — or a stroke re-cuts patches the floor was never cut into |
+| `MapLayout.terrainBlock` — how big a floor patch is | `BLOCK_SIZE`, 48, **independently of `blockSize`** | a whole number of terrain cells, handed to `terrainPatches` by its one caller, `buildValley` |
 | `EnvironmentSpec.lighting.shadowWindow` — how far its shadows reach | `CONFIG.graphics.shadows.frustumSize`, 110 | shadow length is `h / tan(elevation)`, and `shadowVisibility` is FULLY LIT outside the window, the last `edgeFade` of the volume ramping back to it — so an undersized one puts that transition on ground the player can see, and an OVERSIZED one moves it not at all while costing texel density (`ShadowSystem` DEV-warns) |
 
 **A map is CLOSED one of two ways, and NO map takes the first one any more** —
@@ -764,8 +761,9 @@ the four with vehicles on them**; **Sarab and Cinderhaven are the two with all
 THREE KINDS and the two that are not 8v8** — 24 a side, online and off. **Every
 shipped map is SEEDED by a generator** (the commands above), which CHECKS that
 every front door opens onto a street, a yard or the green, and emits an ordinary
-`layout.ts` — which an editor save (`Shift+F2`) still patches, and which then FAILS `npm run
-build` (`maps:check`) until that edit is folded into the generator and re-run.
+`layout.ts` — **the generator is its only author**: a change goes into the
+generator and is re-run, and `npm run build` fails (`maps:check`) on a byte it
+did not write.
 **Cinderhaven's rules are general rather than details of that map**
 (`docs/world.md`); the one that reaches outside the world layer is that **there
 is no swimming in this game**, so water anybody must cross is walkable and
@@ -810,41 +808,29 @@ layout gotchas that have already cost time, the valley rim's contract with the
 sky, the borderland, the three rim forms, the mouth and the leash, the margin
 that IS the landform, and the proving ground's bake and build sentinel.
 
-### The map viewer and the map editor (dev only)
+### The map viewer (dev only)
 
-**`F2` in a dev build raises the MAP VIEWER** (`src/viewer/`, `BABYLON_EXIT.md`
-X5.3b): a LID over a ROUND (`playing`, `dying` or `deploy`, in either kind of
-round, and nothing from any other state), so what it shows is the round's own
-frame drawn by the round's own path — a free camera on `CameraSystem`'s, the
-validation list, and the nav graph and the layout's proxies as a 2D PLAN in its
-panel through `ui/mapPlan.ts` and `ui/mapPaint.ts`. **It adds no draw and no
-pipeline, of Babylon's or of ours**; a 3D overlay is a step of its own. It
-reaches the game through **one dynamic `import()` inside an
-`import.meta.env.DEV` branch** in `Game.toggleViewer`, the *whole method body*
-behind that gate, as the mixer's is — what makes the chunk unreachable under
-`vite build`. **Never import `src/viewer/` statically, and nothing in it
-imports `src/editor/`.**
+**`F2` in a dev build raises the MAP VIEWER** (`src/viewer/`): a LID over a
+ROUND (`playing`, `dying` or `deploy`, either kind of round) that EDITS NOTHING
+— a free camera, the validation list, a work light, and the nav graph and the
+layout's marks as a 2D PLAN in its panel (`ui/mapPlan.ts`, `ui/mapPaint.ts`).
+**It adds no draw and no pipeline, of Babylon's or of ours.** It is reached
+through **one dynamic `import()` inside an `import.meta.env.DEV` branch** in
+`Game.toggleViewer`, the *whole method body* behind that gate, as the mixer's
+is — what keeps the chunk out of `vite build`. **Never import `src/viewer/`
+statically.** There is no map editor (`BABYLON_EXIT.md` X5.3c): a map's
+generator is its only author.
 
-**The editor is `Shift+F2` until X5.3c deletes it**, standing beside the viewer
-as the oracle the viewer's checks are graded against: free-fly the real scene,
-click to select, drag gizmos, edit properties, sculpt terrain, lay a path road
-point by point, reached the same way through `Game.toggleEditor`. **Never import
-`src/editor/` statically.** Saving **patches `layout.ts`'s text and does not
-regenerate it**: an untouched entry is re-emitted byte for byte. There is no
-undo.
-
-→ **[`docs/editor.md`](docs/editor.md)** — the two pointer modes and the terrain
-brush, the three rebuild tiers, `SelectionRef` and the three files that must
-agree on a field key, the source-scan properties a save rests on, and
-`environment.ts` patching.
+→ **[`docs/world.md`](docs/world.md)**, "Looking at a map" — what the nav
+colours mean, what `validate` checks and the bug behind each, the work light;
+**[`docs/states.md`](docs/states.md)** for the lid.
 
 ### Visual meshes and collider proxies are separate things
 
 The single most load-bearing rule in the world layer. Every ray test —
 `CombatSystem`'s hitscan (every shot), `BattleSystem`'s LOS, the grenade's step
 ray, the death cam's pull-in — and every body's sweep is answered off the
-COLLIDERS, and the editor's pick filters on `metadata.solid === true`. At
-village scale, visual geometry must stay out of all of it.
+COLLIDERS. At village scale, visual geometry must stay out of all of it.
 
 **The ground under a body's feet is the one question no longer asked with a
 ray**: `Player.probeGround` reads the `WorldBox` list through
@@ -876,8 +862,7 @@ other path is invisible to navigation.
 
 **A collider answers two questions and they can disagree.** *Where may a body
 be?* is `RayWorld.castBody` — the death cam's pull-in, a tank's chase camera,
-the dismount's floor test — and `SOLID_ONLY`, the mesh predicate the same
-question still wears for the editor's centre-screen pick. *What stops a round or
+the dismount's floor test. *What stops a round or
 a look?* is `RayWorld.castRound` and its any-hit twin `blocked` — the hitscan
 and its wall cap, the bots' and the aim assist's LOS, the grenade's step ray and
 its blast check, the rocket. A builder picks which by how it declares the box:
@@ -899,9 +884,9 @@ can only get wrong.
 
 **`glass` is the one thing in the world that CHANGES, and it needs no new term
 to do it.** A breakable pane is `porous` exactly, so both questions already get
-intact glass right, and breaking it is one write on each side —
-`RayWorld.remove` for the queries, `metadata.solid = false` for the editor's
-predicate. `WorldBox.glass` exists only for the readers that must SKIP a pane
+intact glass right, and breaking it is one write — `RayWorld.remove`, for every
+query and every sweep (`metadata.solid = false` on the collider MESH beside it
+is read by nothing, and X5.3e stops making the mesh). `WorldBox.glass` exists only for the readers that must SKIP a pane
 rather than merely pass a round through it: `CoverMap`, the AO bake, and the
 collision bake.
 
@@ -950,8 +935,8 @@ misbehaves silently. **On the world's drawn geometry they are written on the
 RECORD, not the mesh** — the surface's part (`WorldSurface.part.metadata`,
 `world/worldGeometry.ts`) — and the one adapter (`worldMeshes`) hands that same
 object, unchanged, to a mesh WHERE IT MAKES ONE: since X3.7b only for what
-Babylon draws (the glazing, an editor build's every surface), our
-renderer reading the record. `GameMap.world` keeps it for every surface:
+Babylon draws (none in a round since X4.6e), our renderer reading the
+record. `GameMap.world` keeps it for every surface:
 
 - `solid: true` — collider proxies only. Unmarked geometry is shot through, seen
   through, and walked through.
@@ -1158,8 +1143,8 @@ but it emits **no `WorldBox`** — so the nav graph, the cover bake, the obstacl
 field and the collision bake have never heard of it, and **bots walk through a
 parked tank as they walk through a corpse**. **Anything taking a hull out of its
 own way passes it as the query's `skip`** (`castBody`, `castRound`, `blocked`) —
-never a predicate (`world/solid.ts` forbids minting one) and never a write to
-the hull. **It is also the one TARGET answered by its collider rather than by a
+never a predicate (no query takes one, so nothing allocates per cast) and
+never a write to the hull. **It is also the one TARGET answered by its collider rather than by a
 hit sphere** (`RayHit.hull`), **which is why a hull's own ROUNDS leave that
 collider out too** (`ShotOptions.fromHull`, stated on the GUN).
 
@@ -1253,7 +1238,7 @@ CORE's — the page breaks a pane when its `glass` event says so. **A pane is
 see-through, a FAIRNESS rule and not a look**: `castRound` already lets a bot
 shoot through a window. **`GlassSystem` is the
 simulation and draws nothing** — the box, the push-out and the nav graph;
-the collapsed glazing and the collider MESH's editor flags are `GlassFx`'s,
+the collapsed glazing and the collider MESH's flags are `GlassFx`'s,
 told by `onBroken` and `onCleared`, and the core builds none.
 
 → **[`docs/world.md`](docs/world.md)** for the builder's side and
@@ -1522,9 +1507,8 @@ built.
   NaN without a word**, so a crossing is a copy through `src/math/babylon.ts`,
   and a function both sides reach takes `Vector3Like` (read) or `Vector3Ref`
   (written through `set`), which Babylon's satisfies. The types catch every
-  crossing but two: an `instanceof` (the editor's serializer knows a position
-  by its CLASS) and a push into an untyped array (the editor's new entries) —
-  so a vector put INTO a layout is `src/math/`'s.
+  crossing (the two they could not were the map editor's, gone at X5.3c), and
+  a layout's positions are `src/math/`'s.
 - Smoothing is normally the frame-lerp idiom `Math.min(1, dt * rate)`. **Anything
   that moves where bullets go, or that a player will read as recoil, is stepped
   EXACTLY instead**, because burst climb must not vary with frame rate.

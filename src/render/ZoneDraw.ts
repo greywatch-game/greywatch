@@ -37,8 +37,7 @@
  * frame allocates nothing past the first bind of a group.
  * Never: imports Babylon; reads a node or a camera; casts a shadow, or draws in
  * a bake, the lamps' atlas or the glow's mask (no surface here was in any of
- * them); draws while not installed (the menu, an editor build, which has no
- * zones).
+ * them); draws while not installed (the menu).
  * Contract: `docs/rendering.md`, "The capture zone" and "Our renderer's frame".
  *
  * WHAT A DRAW BINDS, by group: 0 the frame (`Renderer`'s), 1 the worn recipe's
@@ -225,7 +224,7 @@ export class ZoneDraw {
     this.isInstalled = true;
   }
 
-  /** Whether a round's install stands — false on the menu and in an editor build. */
+  /** Whether a round's install stands — false on the menu. */
   get installed(): boolean {
     return this.isInstalled;
   }

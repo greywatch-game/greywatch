@@ -43,7 +43,7 @@
 import type { MapCollision } from "../collision";
 
 export const KurenaiCollision: MapCollision = {
-  sourceHash: "477963ecacfe0eaf",
+  sourceHash: "16e354f3e3155b33",
   boxes: [
   [444,20,2,0,10,221,0,0],
   [444,20,2,0,10,-221,0,0],

@@ -209,8 +209,8 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   every merged visual, collider and terrain
                               #   collider plus the box lists, so a change to
                               #   how parts are built or merged proves it moved
-                              #   nothing; `--editor` does the editor's unmerged
-                              #   build. Per mesh also its creation rank in the
+                              #   nothing (`--editor`, the map editor's build,
+                              #   retired with it at X5.3c and refused). Per mesh also its creation rank in the
                               #   scene, updatable positions, vertex alpha and
                               #   frozen matrix, and each visual's PIECE ranges
                               #   and its RECORD's arrays, hashed through the DEV
@@ -218,7 +218,7 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   checked equal to its mesh's buffers every run,
                               #   and its RECORD's bounds, checked bit for bit
                               #   against its mesh's bounding info every run
-                              #   (`--editor` is the off-identity path). One
+                              #   (the off-identity path is bounds-check's). One
                               #   entry a SURFACE: one our renderer draws whole
                               #   has no mesh (X3.7b) and is fingerprinted and
                               #   compared off its record, the run saying how
@@ -227,8 +227,8 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   ours cannot hold, thrown in DEV at the
                               #   install — fails the run,
                               #   `--foliage <rung>` asking it of a crown rung;
-                              #   the panes, pane groups, editor items (surface
-                              #   indices) and the piece table; and the collider
+                              #   the panes, pane groups and the piece table
+                              #   (ItemRef); and the collider
                               #   DATA beside the collider meshes (X5.3a):
                               #   boxGroups as indices, each strut group and
                               #   floor block (terrainGeometry) hashed.
@@ -254,8 +254,8 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   Mesh's BoundingInfo, BIT for bit, over every
                               #   kit and scatter kind's parts at seeded
                               #   OFF-identity transforms — the arm no round's
-                              #   build reaches, merge:hash --editor's before
-                              #   the editor went — and parts.ts'
+                              #   build reaches, merge:hash --editor's until
+                              #   the editor went (X5.3c) — and parts.ts'
                               #   worldMatrixOf against TransformNode's
                               #   computeWorldMatrix over those parts and
                               #   seeded parent chains (`--chains`). `--perturb`
@@ -311,8 +311,8 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   layout.ts and heights.ts — the design
                               #   authored, the transcription CHECKED (nothing
                               #   in the water, on a road or on a slope, every
-                              #   door onto somewhere). Re-running discards
-                              #   editor edits, and owes the collision rebake
+                              #   door onto somewhere). The map's only author:
+                              #   a change goes in here, and owes the collision rebake
                               #   of that map and `npm run parity`. `--probe`,
                               #   `--refusals`, `--claims`, `--dry`. Every one
                               #   of the seven takes `--out <dir>` (or
@@ -358,8 +358,9 @@ plans/webgpu-ref/     # The exit's probes and the reference bank, indexed by
                       #   `_draw`s, group-0 visits, effect compiles and
                       #   scene.meshes by frame class, live, through the
                       #   menu, the card, deploy, the kit and pause lids, a
-                      #   life to the death cam, the round-over card, a
-                      #   second round and the editor; the VIEWER's lid over
+                      #   life to the death cam, the round-over card and a
+                      #   second round (the editor's step retired at X5.3c);
+                      #   the VIEWER's lid over
                       #   deploy, the death cam and a life (X5.3b, its own
                       #   class); per-frame count SETS, so it compares with
                       #   itself and a parent (`--against`)
@@ -381,9 +382,9 @@ main.ts             # Bootstrap. Imports src/ui/base.css FIRST. Awaits the two
                     #   fades it on the first drawn frame, or fills plate and
                     #   note with one of the four failures.
 vite.config.ts      # The client build, and the three plugins only it can hold:
-                    #   the DEV-only layout writer the editor saves through
-                    #   (WRITABLE, the literal table of files it may write —
-                    #   three per map), the build stamp in index.html (the
+                    #   the DEV-only write endpoint the F4 mixer saves
+                    #   through (WRITABLE, the literal table of files it may
+                    #   write — one row, config/mix.ts), the build stamp in index.html (the
                     #   commit, BUILD_COMMIT from CI or else git), and the
                     #   build-only service worker
                     #   substitution (src/pwa/sw.js's PRECACHE, split
@@ -1261,8 +1262,8 @@ src/
                         #   Babylon-free
     GlassFx.ts          # A break's PICTURE: the pane's vertex range collapsed
                         #   in its merged glazing (`onBroken`: our renderer's
-                        #   buffer in a round, the mesh in an editor build) and
-                        #   the collider mesh's editor flags (`onCleared`).
+                        #   buffer) and the collider mesh's flags
+                        #   (`onCleared`).
                         #   Client only
     PhysicsWorld.ts     # The ONLY Havok in the game: the engine, the map as
                         #   one static body per 48 m block (a single compound is
@@ -1521,7 +1522,7 @@ src/
                         #   hullDrawDistance, setHullDrawDistance), all off for
                         #   the warm-up
     BlockHandover.ts    # The map's world as OUR renderer draws it, in every
-                        #   pass of every build but the editor's, with NO
+                        #   pass of every build, with NO
                         #   fallback (BABYLON_EXIT.md X3.3-X3.7b): every block
                         #   surface, the landform (WorldSurface.landform) and
                         #   the emissive palette are OURS at the build
@@ -1554,7 +1555,7 @@ src/
                         #   it was handed — fails the world once
                         #   (Game.worldFailed), with the install's
                         #   WorldOwner (latched at install: a stale one is
-                        #   ignored; an editor build fails nothing). The
+                        #   ignored). The
                         #   scatter's field (BuildOptions.onScatter) added as
                         #   instances at install, its pieces cut out of the
                         #   blocks (X3.4b). Reads no node per frame
@@ -1574,7 +1575,7 @@ src/
                         #   keeps, and the TURF sheet under them. Cost is what
                         #   is in view, never the map's grass area. Plain arrays:
                         #   render/GrassDraw.ts draws them (X4.6c)
-  dev/                  # Dev-only tools that are not the editor. Same rule:
+  dev/                  # Dev-only tools that are not the viewer. Same rule:
     mixer/              #   dynamically imported, never on the static graph
       index.ts          #   The F4 audio mixer: a slider per family and per
                         #     sound, live, over a round that carries on
@@ -1588,12 +1589,12 @@ src/
   viewer/               # Dev-only MAP VIEWER (F2, BABYLON_EXIT.md X5.3b): a LID
                         #   over a round. Dynamically imported (Game.toggleViewer,
                         #   the mixer's gate) — never statically imported from
-                        #   anywhere, and never importing src/editor/
+                        #   anywhere
     index.ts            #   The session: what it borrows (the round's camera and
                         #   map), the findings, the toggles, and putting back the
                         #   camera's pose and the map's own environment
     ViewerCamera.ts     #   Free-fly drive of CameraSystem's FreeCamera: the
-                        #     editor's camera on src/math vectors
+                        #     map editor's camera on src/math vectors
     ViewerPanel.ts      #   The panel: readout, plan, toggles, findings, help
     viewer.css          #   Imported by ViewerPanel so it rides the dynamic
                         #   chunk. Never link it from HTML
@@ -1605,36 +1606,9 @@ src/
                         #     sweeps on the standing graph on demand
     marks.ts            #   The proxies' shapes without their meshes: flags at
                         #     their true radius, spawns, water/grass, scatter
-    validate.ts         #   A copy of the editor's checks (src/math's Vector3)
-                        #     until X5.3c deletes the original
+    validate.ts         #   The map editor's checks, moved (src/math's
+                        #     Vector3): docs/world.md, "Looking at a map"
     workLight.ts        #   Brightened EnvironmentSpec for looking at a night map
-    tuning.ts           #   Tool constants (NOT src/config/ — not gameplay)
-  editor/               # Dev-only map editor (Shift+F2 since X5.3b; deleted at
-                        #   X5.3c, standing beside the viewer as its oracle).
-                        #   Dynamically imported —
-    index.ts            #   never statically imported from anywhere, or it
-    EditorCamera.ts     #   lands in the production bundle
-    EditorPanel.ts
-    panel.css           #   Imported by EditorPanel so it rides the dynamic
-                        #   chunk. Never link it from HTML
-    workLight.ts        #   Brightened EnvironmentSpec for authoring
-    selection.ts        #   SelectionRef, predicate pick, highlight
-    proxies.ts          #   Stand-ins for flags/spawns/scatter/water/grass
-    gizmos.ts           #   Move + Y-rotate handles, snapping
-    pathHandles.ts      #   A path road's point/insert/extend handles and the
-                        #     bendPath preview a point drag reads against
-    mutate.ts           #   Layout writes: transform, fields, add/delete, and a
-                        #     path road's points (move/insert/delete/recentre)
-    fields.ts           #   FieldSpec + the key conventions inspect, the panel
-                        #   and mutate all have to agree on
-    inspect.ts/params.ts#   Inspector read model + per-kind param table
-    sourceScan.ts       #   layout.ts as text: regions, entries, tokens
-    validate.ts         #   Pre-save checks against the layout being emitted
-    navOverlay.ts       #   Draws the nav graph over the scene for authoring
-    terrainBrush.ts     #   Terrain mode: hover highlight + sculpt stroke
-    serialize.ts/save.ts#   Minimal-diff emit + POST to the dev server
-    saveEnvironment.ts  #   environment.ts patched one top-level KEY at a time
-                        #     — what the floor picker writes
     tuning.ts           #   Tool constants (NOT src/config/ — not gameplay)
   world/
     layout.ts           # Placement/ScatterSpec/Heightfield/MapLayout — the
@@ -1701,13 +1675,14 @@ src/
                         #   whole, X3.7b) and keeps the record of every one
                         #   as GameMap.world
     mapTypes.ts         # GameMap, WorldBox, WorldPane, PaneGroup, the layout's
-                        #   flag/spawn/water/grass shapes and the editor index.
+                        #   flag/spawn/water/grass shapes and ItemRef (a piece's
+                        #   layout item).
                         #   Types only; MapBuilder re-exports every one
     merge.ts            # The visual merges, on WorldSurfaces: mergeByMaterial,
                         #   then BlockMerge and PaneBlocks per map block (one
                         #   key, one metadata.block — blockOf, on the lattice
                         #   blockCell states, which the scatter's field files
-                        #   placements under too), tag; the palette slot through
+                        #   placements under too); the palette slot through
                         #   CelShader's writePaletteIndex; mergeSurfaces, the one
                         #   2+ merge, carrying the piece ranges. Nothing in it
                         #   touches the device
@@ -1719,8 +1694,8 @@ src/
                         #   Part, its block, whether it is the LANDFORM our
                         #   renderer draws ahead of the alpha-tested list, its
                         #   piece ranges, whether its positions stay writable,
-                        #   its BIRTH — the scene order its mesh is made in —
-                        #   and its editor item),
+                        #   and its BIRTH — the scene order its mesh is made
+                        #   in),
                         #   PaneSurfaceGroup, SurfaceRecord / WorldGeometry
                         #   (GameMap.world: everything kept but the arrays,
                         #   which releaseArrays drops at upload — through the
@@ -1733,9 +1708,6 @@ src/
                         #   enters the merge by, refusing a shared array in DEV.
                         #   The PIECE id (a layout item) and its ranges'
                         #   arithmetic: concatPieces, assertPieces (DEV)
-    solid.ts            # SOLID_ONLY — the one mesh pick predicate left, and the
-                        #   editor's alone. The three-way table of what a
-                        #   collider answers a body and a round is still here
     RayWorld.ts         # The segment query every ray in the game asks, off the
                         #   collider boxes, the strut groups and the terrain
                         #   rather than off scene.meshes. castBody / castRound /
@@ -2025,7 +1997,7 @@ src/
                         #   RAISED to hullDrawFloor (a hull's gun reach, so no
                         #   setting buys an unseen shooter)
     maps.ts             # MapDef + the MAPS registry. The only EXISTING file a
-                        #   new map has to touch (plus vite.config's WRITABLE).
+                        #   new map has to touch (plus collision-hash's MAPS).
                         #   `MAPS` is an `import.meta.env.DEV` ternary and must
                         #   stay one — that fold is what keeps the proving
                         #   ground out of both bundles. Also loadHeights/
@@ -2048,7 +2020,7 @@ src/
     fingerprint.ts      # A comparable summary of a built world — the nav graph,
                         #   not the boxes. What `npm run parity` diffs
     hollowmere/layout.ts      # A MAP — every placement, flag and spawn
-    hollowmere/heights.ts     # GENERATED floor heights (editor terrain mode).
+    hollowmere/heights.ts     # GENERATED floor heights (`npm run hollowmere`).
                               #   Reached via MapDef.heights, a LAZY import —
                               #   a map's grid is not in the main bundle
     hollowmere/environment.ts # Palette, fog, mist, particles — night
@@ -2058,8 +2030,8 @@ src/
                               #   stilt village, the ferry, the temple on its
                               #   hill, a dug-in camp, and the landing, the
                               #   sawmill and the old city between them.
-                              #   SEEDED by `npm run greyfen` and owned by the
-                              #   editor after
+                              #   GENERATED by `npm run greyfen`, its only
+                              #   author
     greyfen/heights.ts        # GENERATED floor heights (`npm run greyfen`) —
                               #   a Y-shaped river wadeable everywhere, the
                               #   temple's hill, the spine, the old city's
@@ -2081,8 +2053,8 @@ src/
                               #   vale (`size: 400`) — a green with the church
                               #   and the inn, five flags in rolling, hedged
                               #   country, and the second map with armour.
-                              #   SEEDED by `npm run harrowmead` and owned by
-                              #   the editor after
+                              #   GENERATED by `npm run harrowmead`, its only
+                              #   author
     harrowmead/heights.ts     # GENERATED floor heights (`npm run harrowmead`)
                               #   — rolling hills, level plots and a brook cut
                               #   to a constant wadeable bed. LAZY
@@ -2091,9 +2063,9 @@ src/
     harrowmead/collision.ts   # GENERATED collider boxes (`npm run collision`)
     sarab/layout.ts           # The fifth map, and the one ENGINE_UPGRADE.md
                               #   exists for: a desert town, 900 m of play
-                              #   inside 1500 m of ground. SEEDED by
-                              #   `npm run sarab` and owned by the editor after
-                              #   that — its header carries the argument. The
+                              #   inside 1500 m of ground. GENERATED by
+                              #   `npm run sarab`, its only author — its header
+                              #   carries the argument. The
                               #   first map to state `blockSize`/`terrainBlock`
                               #   and the first whose `fogEnd` is inside its own
                               #   diagonal
@@ -2618,7 +2590,7 @@ src/
                         #   the factory hangs its recipe off it, GlowRules
                         #   reads its white emissiveColor). Our renderer draws
                         #   the palette in every pass; no Babylon draw of it
-                        #   is left (an editor build never merges blocks), and
+                        #   is left, and
                         #   no mesh is made of it (worldMeshes: one would draw
                         #   nothing and bloom white in GlowPass).
                         #   Two per factory, by over-glass offset
@@ -2962,8 +2934,7 @@ src/
                         #   (X4.1e) drawn after the whole ones by the faded
                         #   twin of each program, at its fade; pipelines asked
                         #   once a session, a failure (or a refused pass) the
-                        #   round's (Game.worldFailed); installed for a round,
-                        #   never an editor build
+                        #   round's (Game.worldFailed); installed for a round
     hullProgram.ts      # The HULLS' program (X4.2b): the cel stage over every
                         #   segment of a kind's kit, the kit palette its own —
                         #   X4.1d's body decode (a draw one RANK of every hull,
@@ -2987,8 +2958,7 @@ src/
                         #   installed AHEAD of the bodies, as Babylon's queue
                         #   drew the hulls; its two pipelines asked once a session,
                         #   a failure (or a refused pass) the round's
-                        #   (Game.worldFailed); installed for a round, never an
-                        #   editor build
+                        #   (Game.worldFailed); installed for a round
     BlastDraw.ts        # The blast's BILLOWS as OUR renderer draws them
                         #   (X4.4c): the two icospheres on the GPU once, each
                         #   frame's billows as instances, a batch one draw in
@@ -2997,8 +2967,7 @@ src/
                         #   back) and again into the glow's mask after the
                         #   pieces'; installed AHEAD of the pieces; its two
                         #   pipelines asked once a session, a failure the
-                        #   round's; installed for a round, never an editor
-                        #   build
+                        #   round's; installed for a round
     FlameDraw.ts        # The FIRES as OUR renderer draws them (X4.4d): the
                         #   molotov's one flame and each map's world fires
                         #   on the GPU (setWorld/clearWorld), a fire one draw
@@ -3009,7 +2978,7 @@ src/
                         #   the billows'; installed FIRST of all ours at
                         #   beforeAlphaTest; its two pipelines asked once a
                         #   session, a failure the round's; installed for a
-                        #   round, never an editor build; in no bake
+                        #   round; in no bake
     flameProgram.ts     # The fire's program (X4.4d): its block, its geometry
                         #   (every fire surface's arrays, each draw's matrix
                         #   and bloom), FlameRecipe, and the main pass's and
@@ -3028,14 +2997,14 @@ src/
                         #   finish to clear, the cloth's rewrite, one draw a
                         #   surface; the gate, the frustum and the nearest-first
                         #   order Game's, their place among the rest NearestRun's
-    GrassDraw.ts        # THE GRASS as OUR renderer draws it (X4.6c), in an editor
-                        #   build too: a blade or turf mesh a run of one index
+    GrassDraw.ts        # THE GRASS as OUR renderer draws it (X4.6c): a blade
+                        #   or turf mesh a run of one index
                         #   buffer, instanced, a patch an instance; the mask and
                         #   the block, the patches' buffers, the turf at "opaque"
                         #   and the blades where NearestRun has them fall; what is
                         #   in view is GrassSystem's
-    WaterDraw.ts        # THE WATER as OUR renderer draws it (X4.6d), in an editor
-                        #   build too: a body its grid or its far quad, a range of
+    WaterDraw.ts        # THE WATER as OUR renderer draws it (X4.6d): a body
+                        #   its grid or its far quad, a range of
                         #   one index buffer; the shared block, a group 0 of its own
                         #   (the six shadow maps), each body's block, bed-depth
                         #   texture and group 1, the two samplers; the foam stays
@@ -3054,7 +3023,7 @@ src/
                         #   at "beforeAlphaTest", the see-through ones in the
                         #   back-to-front run; a probe's recipe and its cube read
                         #   where the bake left it; a break's collapse written
-                        #   into its buffer. An editor build's stays Babylon's
+                        #   into its buffer.
     GiCompute.ts        # THE IRRADIANCE VOLUME'S GPU HALF as OUR renderer's
                         #   (X5.1b), Babylon's ComputeShader/StorageBuffer/
                         #   RawTexture3D ported exactly but for the readiness
@@ -3173,8 +3142,7 @@ src/
                         #   pipeline at the recipe's depth bias (the marks');
                         #   installed AHEAD of the hulls, as Babylon's queue
                         #   drew the pools; pipelines asked once a session, a
-                        #   failure the round's; installed for a round, never
-                        #   an editor build
+                        #   failure the round's; installed for a round
     viewProgram.ts      # The WEAPON's programs (X4.3c): the cel stage and the
                         #   emissive palette's over a viewmodel segment — a
                         #   draw ONE segment, an instance the draw, its matrix

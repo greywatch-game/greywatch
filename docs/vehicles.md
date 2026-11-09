@@ -297,8 +297,8 @@ Four things the model may not do, each of which has already been done once:
   a look nobody has chosen. The headlights are boxes.
 - **Nothing pickable.** Not even the collider box's mesh, since the X2.2
   review, and since X4.2b there is no mesh of a hull at all: a hull is
-  answered by `rayBox` off its fields, and the editor — the one mesh pick left
-  — builds no hulls. A pickable visual would put the hitscan's wall ray, the bots' LOS and the
+  answered by `rayBox` off its fields, and no mesh is picked at all (the map
+  editor's was the last pick, and it built no hulls; gone at X5.3c). A pickable visual would put the hitscan's wall ray, the bots' LOS and the
   ground probe on sixty triangles of track link.
 - **Nothing above the deck inside the turret's sweep.** The ring is at the deck
   and the turret's underside is 11 cm above it, so a raised engine deck, a
@@ -903,8 +903,7 @@ What the hull's collider box is:
 - A box to both questions, and neither `porous` nor `rayOnly` (no mesh of a
   hull carries `metadata.solid` or is pickable — since `BABYLON_EXIT.md`
   X4.2a there is no body MESH at all, only the rig's body joint, and since
-  X4.2b no mesh of a hull at all — and the editor builds no hulls, and
-  nothing else picks a mesh). Those two describe a fence — a thing that is a wall to a body and mostly air to a bullet, or the
+  X4.2b no mesh of a hull at all — and nothing picks a mesh). Those two describe a fence — a thing that is a wall to a body and mostly air to a bullet, or the
   reverse. A tank is both to both, which is the plain case. So it answers both
   of `RayWorld`'s questions: a round stops on it and a sightline breaks on it.
   It reaches those queries as `RayWorld.hulls` — a list `VehicleSystem` keeps
@@ -1055,8 +1054,8 @@ write. It used to be `body.isEnabled() && body.isPickable`, the terms
 `SOLID_ONLY` reads; since `BABYLON_EXIT.md` X2.2 C8 it is a field and the body
 mesh merely follows it (enabled exactly while present) — since C9 the body
 mesh is the VIEW's (`VehicleView.update`), and since the X2.2 review it is
-neither pickable nor `solid`, the editor (the predicate's one caller) building
-no hulls at all. (Since X4.2a that body is a joint and no mesh, and since
+neither pickable nor `solid`, the map editor (the predicate's one caller,
+gone since X5.3c) having built no hulls at all. (Since X4.2a that body is a joint and no mesh, and since
 X4.2b no mesh of a hull exists: the rig's switch, `VehicleRig.enabled`, is
 what follows `present` now.) **The bug that found the pickable term was the ground probe's**, back
 when the ground was a ray: it started INSIDE the box it was meant to ignore,
@@ -1234,8 +1233,7 @@ That formulation is why terrain costs nothing: a hill asks for exactly
 `speed * grade`, which is inside the limit for every slope on any shipped map,
 so the limiter never touches a tank driving over ground and only ever bites on a
 STEP. `drive.climbFloor` is the rise a stopped hull is still allowed, so ground
-that came up under a parked one — a pane breaking, the editor rebuilding — does
-not strand it. Falling is left to gravity and has no limit at all: a hull driven
+that came up under a parked one — a pane breaking — does not strand it. Falling is left to gravity and has no limit at all: a hull driven
 off a roof is supposed to drop like one.
 
 `drive.climbDrag` is what the climb costs the drive, and it is what stops a tank
@@ -2896,8 +2894,7 @@ the audio context — which is already holding these voices exactly as it holds
 the tail of the last shot, and stopping them as well would put a half-second
 wind-down under the fresh voice the resume rebuilds. It is also what makes a map
 rebuild safe without knowing anything about one — the key is the hull's index in
-the fleet, and `installMap` runs from `loading` and from the editor, neither of
-which steps a fleet.
+the fleet, and `installMap` runs from `loading`, which steps no fleet.
 
 ## The dust under a rotor
 
@@ -4080,10 +4077,9 @@ ray happened to find, which can be a street away.
   parked one, for the ragdoll's reason above, and one per squad still shoots
   ROCKETS at it. What they DO do now is crew it — see the section above, which
   is where this entry used to say they never would.
-- **The editor builds none.** A vehicle is not level data to be authored — the
-  hardstanding is, and that is a layout entry. A solid, pickable mesh with no
-  `SelectionRef` behind it is also something the centre-screen pick can land on
-  and fail to resolve.
+- **A vehicle is not level data.** The hardstanding is, and that is a layout
+  entry; the map editor built no fleet for that reason (gone since
+  `BABYLON_EXIT.md` X5.3c).
 - **~~No shadow.~~ Built** — in a map of its own, not the world's. The entry
   that used to stand here gave the right reason a hull is not registered with
   `ShadowSystem` — that depth map re-renders only when the texel-snapped focus

@@ -133,7 +133,7 @@ export interface ScatterRect extends ScatterBase {
  * The two shapes are distinguished by which extent fields are present, not by
  * a tag: a region with a `width` is a rectangle and one with a `radius` is a
  * disc. That keeps the shipped layout lines exactly as they were — every
- * existing region is a circle and gains nothing — and gives the editor a
+ * existing region is a circle and gains nothing — and gives a reader a
  * discriminated union to narrow on.
  */
 export type ScatterSpec = ScatterCircle | ScatterRect;
@@ -151,8 +151,7 @@ export function isScatterRect(s: ScatterSpec): s is ScatterRect {
  * rises. That is what lets a pool sit in the ground with a bank around it
  * instead of hovering over a flat plane.
  *
- * Authored by the editor's terrain mode and written to its own generated file,
- * NOT into the hand-written layout: a grid of several thousand numbers has no
+ * Written by the map's generator to its own file, NOT into the layout: a grid of several thousand numbers has no
  * business sitting next to the ASCII village map.
  *
  * **It is not ON the layout, and that is the whole of what it costs to keep it
@@ -175,7 +174,7 @@ export function isScatterRect(s: ScatterSpec): s is ScatterRect {
  * Placements, scatter and grass rects read their `y` as an offset ABOVE the
  * terrain, so dropping a building into a basin needs no bookkeeping. Control
  * points and spawns stay absolute: they are single authored points, and the
- * editor snaps their height to the nav surface, which the terrain feeds. Water
+ * generator puts their height on the nav surface, which the terrain feeds. Water
  * is absolute too — a pool's surface is level whatever its bed does — but a
  * rect with no `y` defaults to ankle-deep over its own bed.
  */
@@ -328,7 +327,7 @@ export interface RidgeMouth {
  * colours are the environment's (`ridgeColor`/`ridgeScreeColor`), the same
  * split as the floor's `terrain` here against `floorColor` there. That is not
  * tidiness: `applyEnvironment` writes uniforms and nothing else, which is what
- * lets the editor's work light swap an EnvironmentSpec per keypress with no
+ * lets the viewer's work light swap an EnvironmentSpec per keypress with no
  * rebuild. A shape living there would silently stop working.
  *
  * Every field is optional so a second map still costs one layout file plus an
@@ -441,8 +440,7 @@ export interface Borderland {
    * How far the borderland's own undulation swings, peak to trough, in metres.
    * Absent means 2.6.
    *
-   * The margin is not authored — there are no heights out there and no editor
-   * to draw them — so `TerrainField` continues the field's own edge and rolls
+   * The margin is not authored — there are no heights out there — so `TerrainField` continues the field's own edge and rolls
    * it. This is how much: enough that the country reads as more of the same
    * fields, gentle enough that every gradient it makes stays walkable, because
    * a player being run out of the map must never be stopped by the ground on

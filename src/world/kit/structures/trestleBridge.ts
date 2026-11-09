@@ -69,9 +69,9 @@ const TRESTLE_BENT = 4.0;
  * and the feet bury themselves by `TRESTLE_DROP` as intended.
  *
  * It could instead read `BuildCtx` and derive that itself. It deliberately does
- * not: that would put it in `CONFORMS_TO_TERRAIN`, whose members the editor
- * REBUILDS rather than translates on every frame of a drag (~570 ms against
- * sub-ms), and a landmark placed once does not need to cost that. If a second
+ * not: that would put it in `CONFORMS_TO_TERRAIN`, whose members the map
+ * editor REBUILT rather than translated on every frame of a drag (~570 ms
+ * against sub-ms), and a landmark placed once did not need to cost that. If a second
  * trestle ever lands somewhere awkward, this is the thing to change.
  *
  * ## Why the deck is 1.6 m up, which is not a choice

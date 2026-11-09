@@ -11,8 +11,7 @@
  * says which of a group's faders a channel actually passes through, and a
  * channel may pass through more than one.
  * Gotcha: the dev mixer (F4) PATCHES the value lines in `groups` and
- * `channels` and leaves every other byte alone, the way the editor patches a
- * layout. Hand-edit them freely; what it will not survive is either TABLE
+ * `channels` and leaves every other byte alone. Hand-edit them freely; what it will not survive is either TABLE
  * being reshaped — one `<key>: <number>,` per line, two spaces of indent
  * (`dev/mixer/source.ts`, which refuses rather than writing a partial file).
  */

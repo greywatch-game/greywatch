@@ -372,8 +372,8 @@ export interface EnvironmentSpec {
    *
    * It is a MATERIAL, so unlike everything else here it is baked at build time
    * rather than pushed as a uniform: changing it needs the map rebuilt, which
-   * is why the editor treats it as a structural edit and why `workLight.ts`
-   * leaves it alone along with the two rim colours.
+   * is why the viewer's `workLight.ts` leaves it alone along with the two rim
+   * colours.
    */
   floorSurface?: FloorSurfaceId;
   /**
@@ -489,7 +489,7 @@ export interface EnvironmentSpec {
    * ABSENT IS CLEAN, so a map that says nothing is unaffected and this shipped
    * without touching five of the six. The ramp itself is always baked (it is
    * map-independent geometry — see `CONFIG.wear`), so this is a pair of
-   * uniforms and nothing here needs a rebuild: the editor's work light
+   * uniforms and nothing here needs a rebuild: the viewer's work light
    * re-derives it with every other palette field, and a map may be dirtied and
    * cleaned in a live round.
    *
@@ -805,6 +805,6 @@ export function applyEnvironment(
   // The ground's wet sheen is the map's weather, and it is tuned against the
   // key light's elevation — which this function has just changed. Pushed here
   // rather than from `installMap` so it lands BEFORE the map's materials are
-  // built, and so the editor's work light re-derives it like everything else.
+  // built, and so the viewer's work light re-derives it like everything else.
   mats.setGroundSpec(env.groundSpec);
 }

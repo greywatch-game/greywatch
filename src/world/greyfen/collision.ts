@@ -43,7 +43,7 @@
 import type { MapCollision } from "../collision";
 
 export const GreyfenCollision: MapCollision = {
-  sourceHash: "02eb1f16e6498bc1",
+  sourceHash: "f7a2d5b25f1004da",
   boxes: [
   [604,20,2,0,10,301,0,0],
   [604,20,2,0,10,-301,0,0],

@@ -51,7 +51,7 @@
  * — never inside the render's commands (the caller defers it,
  * `Game.worldFailed`); nothing here allocates on a frame.
  * Never: imports Babylon; reads a node, a rig or a material; draws while not
- * installed (an editor build, the menu).
+ * installed (the menu).
  * Contract: `docs/rendering.md`, "The bodies, ours".
  */
 import { CEL_MATERIAL_BLOCK, CEL_MATERIAL_TEXTURES, type CelRecipe } from "./celMaterial";
@@ -401,8 +401,8 @@ export class BodyDraw {
   }
 
   /**
-   * Whether a round's install stands — false on the menu and in an editor
-   * build, where `commit` takes nothing and the caller need write nothing.
+   * Whether a round's install stands — false on the menu, where `commit`
+   * takes nothing and the caller need write nothing.
    */
   get installed(): boolean {
     return this.unhook !== null;

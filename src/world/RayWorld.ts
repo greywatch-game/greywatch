@@ -27,10 +27,11 @@
  *
  * ## The two questions, and where the mesh predicates went
  *
- * `world/solid.ts` holds them and they are now the EDITOR's alone — its
- * centre-screen pick is a `scene.pick` over real meshes and stays one. The two
- * questions live on here as `castBody` and `castRound`, and the mapping is
- * exact:
+ * They were `SOLID_ONLY` and `OPAQUE_ONLY`, two pick predicates in
+ * `world/solid.ts`; the last caller of the first was the map editor's
+ * centre-screen pick, and the file went with the editor (`BABYLON_EXIT.md`
+ * X5.3c). The two questions live on here as `castBody` and `castRound`, and
+ * the mapping is exact:
  *
  * | collider | `SOLID_ONLY` / `castBody` | `OPAQUE_ONLY` / `castRound` |
  * | --- | --- | --- |
@@ -243,7 +244,7 @@ export class RayWorld {
     /**
      * `GameMap.boxGroups`: which boxes the client merged into one scatter
      * cluster, in the order it made them. Read for the sweep's tie order and
-     * nothing else; absent is no clusters, which is the editor's build.
+     * nothing else; absent is no clusters.
      */
     boxGroups: readonly (readonly number[])[] = [],
   ) {
@@ -280,7 +281,7 @@ export class RayWorld {
     };
     for (const box of boxes) {
       // Glass is `porous` and says so on the box, so an intact pane stops a
-      // body and passes a round with no term of its own — `world/solid.ts`.
+      // body and passes a round with no term of its own.
       take(box, box.porous ? BLOCKS_BODY : BLOCKS_BODY | BLOCKS_ROUND);
     }
     for (const group of rayGroups) for (const box of group) take(box, BLOCKS_ROUND);
@@ -348,8 +349,8 @@ export class RayWorld {
    *
    * `skip` is how a caster takes its OWN hull out of the answer — two property
    * writes around a `scene.pickWithRay` before this, an argument now, and the
-   * only way there is: `world/solid.ts` forbade minting a predicate at a call
-   * site and that rule is kept (nothing here allocates per cast), and a hull
+   * only way there is: no predicate is minted at a call site (nothing here
+   * allocates per cast, the rule `world/solid.ts` stated while it stood), and a hull
    * has no flag left to clear (`Vehicle.present` is whether it is on the
    * field at all).
    */

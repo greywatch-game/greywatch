@@ -28,16 +28,18 @@ Then load the reference that fits:
 - **[generator.md](generator.md)** — the anatomy of a seeded generator, what to
   copy from the two worked ones, and its traps. For a re-lay or a new map.
 
-## Hand edit or generator?
+## Always the generator
 
-**A few placements on a map** (move a house, add a lamp, open a gate): edit
-`layout.ts` by hand or in the editor (`F2`), then run the audit.
-**Anything that moves the ground, the roads, or more than a district**: use the
-map's generator, or write one. A hand-kept layout and a hand-sculpted floor
-drift apart the way any two hand-kept copies of one idea do — that is the whole
-reason Harrowmead and Hollowmere are seeded now. Re-running a generator
-DISCARDS editor edits to both files; say so before running one on a map whose
-`layout.ts` has been hand-edited since its last run (`git log` both files).
+**Every map is its generator's output, and the generator is its only author**
+(`BABYLON_EXIT.md` row "X5.3, the generators only"). A small edit — move a
+house, add a lamp, open a gate — goes into the generator's DESIGN section and
+is re-run (`npm run <map>`), then audited; anything bigger the same, and a new
+map owes a generator of its own (generator.md). Never edit `layout.ts` or
+`heights.ts` by hand: `npm run maps:check`, which `npm run build` runs, re-runs
+every generator into scratch and fails on one byte of drift. There is no
+overrides file and no map editor any more (`F2` is a VIEWER that edits nothing:
+`docs/world.md`, "Looking at a map"). A re-run owes `npm run collision -- <map>`
+and `npm run parity`, as every change to a layout does.
 
 ## The procedure
 
@@ -81,8 +83,8 @@ In this order, because each constrains the next:
 
 For a generator: `node scripts/generate-<map>.mjs --dry --refusals` (or its
 map's flags — each generator's header lists them) to see what it refused and
-why, then write the files and draw the plan. For a hand edit: edit, audit,
-plan. Most first passes refuse a lot: rows crowding corner plots, set pieces
+why, then write the files and draw the plan. For a small edit: the
+generator's design section, re-run, audit, plan. Most first passes refuse a lot: rows crowding corner plots, set pieces
 on the new roads, plots on a skirt's slope. Fix the design, not the check.
 Loop until the audit is clean of ERRORs and every WARN is one you can explain.
 

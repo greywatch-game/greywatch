@@ -5,7 +5,7 @@
  * frame's main pass, and its twin into the glow's mask — what
  * `FlameShader.ts`'s `ShaderMaterial` and its mask material drew through
  * Babylon until X4.4d, over the same bodies (`shaders/wgsl/flame.ts`, which
- * an editor build's Babylon stages assemble too).
+ * `FlameShader`'s Babylon stages assemble too until X5.3d).
  * Owns: `FLAME_BLOCK` (group 1: the fire's own values — the clock, the
  * motion, the curl, the embers, the boil and the five inks), `FLAME_GEOMETRY`
  * (group 2: every fire surface's positions, normals and uvs end to end, their

@@ -256,7 +256,7 @@ export class LightingSystem {
    * Every registered static fixture, in registration order — not the slots
    * that won this frame (that is `activeLights`).
    *
-   * Exists for the map editor's light-cluster check: the shader cap is
+   * Exists for the map viewer's light-cluster check (`viewer/validate.ts`): the shader cap is
    * absolute, fixtures compete nearest-first, so a cluster of lanterns wastes
    * slots and flattens the darkness around it. Read-only — mutating a fixture
    * behind LightingSystem's back desyncs `baseIntensity` from the flicker.

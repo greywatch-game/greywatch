@@ -4,16 +4,15 @@
  * `gate-p4/renderlog.mjs` made an instrument.
  *
  *   node plans/webgpu-ref/drawlog.mjs [map...] [--out=f.json] [--against=f.json]
- *     [--ignore=<regex>] [--no-editor] [--no-viewer] [--limit=<seconds>]
+ *     [--ignore=<regex>] [--no-viewer] [--limit=<seconds>]
  *
  * Owns: nothing but a report and, when asked, one JSON file. It draws nothing
  * and changes no state of the game's but what its script plays.
  *
  * **What it records, by FRAME CLASS** (the game's state at the engine's
- * begin-frame; the building card raised FROM the editor is a class of its own,
- * `loading (from the editor)`, since it stands over the editor's build for the
- * two frames before `buildRound` tears it down, where a round's card stands
- * over the menu's empty scene):
+ * begin-frame; until `BABYLON_EXIT.md` X5.3c the map editor's state and the
+ * building card raised over its build, `loading (from the editor)`, were two
+ * classes more):
  * - **`draws`**: every call of the engine's `_draw` — which every Babylon draw
  *   of any kind comes through, a mesh, a post process, a layer, an effect
  *   layer, a utility layer — keyed by what was drawing (inside `Mesh.render`,
@@ -32,8 +31,8 @@
  * - **`meshes`**: the sizes `scene.meshes` held at a frame's end, and the
  *   folded names of what it held (each name's largest count), read on the
  *   first frame of every visit to the class and on every frame its size
- *   moved — never on a clock, which a two-frame state (the card over the
- *   editor's build) is hit or missed by as the machine's pace decides.
+ *   moved — never on a clock, which a two-frame state is hit or missed by as
+ *   the machine's pace decides.
  *
  * **A draw between frames** — issued after one frame's end and before the
  * next's begin, as a render target rendered from a promise would be — is
@@ -56,10 +55,12 @@
  * the farthest flag until the authority kills the player: the DEATH CAM),
  * deploy again, a second life with the PAUSE lid raised and lowered, the
  * ROUND-OVER card (`Game.endRound`, the method the wire's `roundover`
- * reaches), the menu, a second round and a short life, the menu, and `F2` (the
- * editor, from the menu, and back — into the fresh round leaving it opens, and
- * from its deploy to the menu) unless `--no-editor`. **A step it does not
- * reach fails the run** (exit 2): a log missing a state is not a log of it.
+ * reaches), the menu, a second round and a short life, and the menu. (Until
+ * X5.3c it ended in the map editor — `Shift+F2` from the menu, and back into the
+ * round leaving it opened — unless `--no-editor`; the editor's step is retired
+ * with the editor, row "X5.3, retire the editor", and `--no-editor` is accepted
+ * and does nothing.) **A step it does not reach fails the run** (exit 2): a log
+ * missing a state is not a log of it.
  *
  * **The VIEWER** (`BABYLON_EXIT.md` X5.3b, the dev-only map viewer's lid, `F2`
  * since then) is raised three times unless `--no-viewer`: over the first
@@ -69,19 +70,20 @@
  * through `Game.toggleViewer` as `F2` lowers it. Its frames are the class
  * `viewer`. The page's own match is held under it, so the classes around it
  * are the ones a run without it logs, which is how a parent with no viewer is
- * compared: `--ignore='^[a-z]+/viewer(/|$)'`. The editor's step calls
- * `Game.toggleEditor`, which is `Shift+F2`'s since X5.3b, as it was `F2`'s.
+ * compared: `--ignore='^[a-z]+/viewer(/|$)'`.
  *
  * `--against` compares the recorded classes with an earlier `--out`'s and exits
  * 1 on any difference, naming each by path (`<map>/<class>/<field>/<key>`);
  * `--ignore` takes a regular expression over those paths, for a difference a
- * step names (X5.3c's: every state but the one the editor was).
+ * step names (X5.3c's: the two classes the editor was,
+ * `--ignore='^[a-z]+/(editor|loading \(from the editor\))(/|$)'`, against a
+ * parent's log that has them).
  *
  * Its log at X5.3a's parent is X5.3's BEFORE: the editor and the card raised
- * over its build are the only classes in which Babylon draws, visits group 0
+ * over its build were the only classes in which Babylon draws, visits group 0
  * or compiles an effect, and every other state does none of the three — the
  * post chain being ours since X5.2d, so a round's frame holds no Babylon draw
- * at all.
+ * at all. Since X5.3c no class here draws, visits group 0 or compiles.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { bootMap, hardLimit, installRound, launchClient, root, startDevServer } from "./harness.mjs";
@@ -89,7 +91,7 @@ import { bootMap, hardLimit, installRound, launchClient, root, startDevServer } 
 const args = process.argv.slice(2);
 const MAPS = args.filter((a) => !a.startsWith("--"));
 if (MAPS.length === 0) MAPS.push("coldharbour");
-const EDITOR = !args.includes("--no-editor");
+// `--no-editor` is accepted and does nothing: the editor's step is retired (X5.3c).
 const VIEWER = !args.includes("--no-viewer");
 const val = (k) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3);
 const OUT = val("out");
@@ -156,16 +158,7 @@ function installHooks() {
   /** The class of what was drawn between one frame's end and the next's begin. */
   const BETWEEN = "between frames";
 
-  // A building card raised from the EDITOR is its own class (the header).
-  let lastSettled = "boot";
-  const classNow = () => {
-    const c = g.state;
-    if (c !== "loading") {
-      lastSettled = c;
-      return c;
-    }
-    return lastSettled === "editor" ? "loading (from the editor)" : "loading";
-  };
+  const classNow = () => g.state;
   // A frame's counts, folded into its class: the SET of per-frame counts each
   // key took, and on how many frames it appeared (`always` at the end).
   const fold1 = (bucket, counts) => {
@@ -204,8 +197,8 @@ function installHooks() {
     if (!c.meshes.sizes.includes(n)) c.meshes.sizes.push(n);
     // The names are read on a visit's first frame and on every frame the
     // count moved, never on a clock: a sample keyed to the session's frame
-    // number lands in a two-frame state (the card over the editor's build) or
-    // misses it as the machine's pace decides, and the log stops repeating.
+    // number lands in a two-frame state or misses it as the machine's pace
+    // decides, and the log stops repeating.
     if (L.visit || n !== L.lastSize) {
       const names = {};
       for (const m of scene.meshes) {
@@ -611,20 +604,6 @@ async function logMap(browser, url, map) {
   await page.evaluate(() => window.__celshock.enterMenu());
   need((await state()) === "menu", "the menu again");
   await frames(page, 60);
-  if (EDITOR) {
-    await page.evaluate(() => window.__celshock.toggleEditor());
-    need(await page.evaluate(waitState, ["editor", 300]), "F2, the editor");
-    await frames(page, 120);
-    // Leaving the editor opens a fresh round (`Game.toggleEditor`): its card
-    // stands over the editor's build first, then deploy, then the menu again.
-    await page.evaluate(() => window.__celshock.toggleEditor());
-    need(await page.evaluate(waitState, ["deploy", 300]), "F2 again, to the round it opens");
-    await frames(page, 60);
-    await page.evaluate(() => window.__celshock.enterMenu());
-    need((await state()) === "menu", "the menu after the editor");
-    await frames(page, 60);
-  }
-
   const rec = await page.evaluate(() => {
     const L = window.__drawLog;
     const sortObj = (o) => Object.fromEntries(Object.entries(o).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));

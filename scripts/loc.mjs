@@ -14,8 +14,8 @@
  *
 ^ *   - `hand-written` — TypeScript, JavaScript, CSS and HTML somebody wrote.
  *   - `map data`  — a map's `layout.ts` and `environment.ts`: data rather than
- *                   logic, and a seeded map's layout is generator output that
- *                   the editor then patches, so it is neither kind cleanly.
+ *                   logic, and a seeded map's layout is generator output while
+ *                   its environment is typed, so it is neither kind cleanly.
  *   - `generated` — the collision bakes and heightfields (`npm run collision`,
  *                   the map generators). Nobody edits these.
  *   - `docs`      — Markdown.

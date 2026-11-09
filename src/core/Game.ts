@@ -41,10 +41,9 @@
  * match. Browser listeners are `installDomListeners`. Screen callbacks are `wireScreens`.
  * `tick` is a dispatch: the input handling for each screen is its own
  * `update*Screen`/`updateMenuCard`/`updatePauseMenu` method, and only `playing`,
- * `dying`, `editor` and `viewer` are inline, because they are two lines each.
+ * `dying` and `viewer` are inline, because they are two lines each.
  * The dev-only map VIEWER (`F2`, `toggleViewer`) is a LID over a round, the one
- * that moves the camera; the editor is `Shift+F2` until `BABYLON_EXIT.md` X5.3c
- * deletes it.
+ * that moves the camera.
  * The remembered difficulty/map/loadout live in `prefs.ts`, the display
  * settings in `settings.ts`; neither applies anything, that is this file's job.
  * Which SERVER is `net/RegionBook.ts` — the list, the pick, and the automatic
@@ -76,8 +75,8 @@
  * (`onNetKill`), the score feed off its `score` (`onNetEvent`), and the
  * corpse when the roster's interpolated death arrives (`roster.onDeath`).
  * The map is a `MapDef` held in one field (`mapDef`) and built in one method
- * (`installMap`), which both a round start and an editor rebuild go through —
- * no map's layout or environment may be named anywhere else in here.
+ * (`installMap`), which a round start goes through and nothing else — no
+ * map's layout or environment may be named anywhere else in here.
  * Also owns: the glow's RULES (`GlowRules` — which meshes may bloom this frame,
  * and the distance fade on each — the bloom is the one
  * pass that reads a material and never asks where the mesh stands, so without
@@ -270,12 +269,11 @@ import {
 } from "../world/environment";
 import { Leash, LEASH_KILLER } from "../world/leash";
 import { perTeamOf, type Heightfield } from "../world/layout";
-import type { EditorSession } from "../editor";
 import type { ViewerSession } from "../viewer";
 import type { MixerSession } from "../dev/mixer";
 import type { BenchScript } from "../bench/BenchScript";
 import { MAPS, loadHeights, type MapDef } from "../world/maps";
-import { MapBuilder, type BuildOptions, type GameMap } from "../world/MapBuilder";
+import { MapBuilder, type GameMap } from "../world/MapBuilder";
 import { TerrainField } from "../world/TerrainField";
 import { newRayHit } from "../world/RayWorld";
 import { DeployScreen } from "../ui/DeployScreen";
@@ -338,9 +336,9 @@ import { setViewerTeam, teamLook } from "./teamView";
 import { forgetBindGroups } from "./webgpuLeaks";
 
 /**
- * The bodies in the round when there is no round — the menu, the editor, the
- * building card: nothing on the minimap, under a blob, in the bodies' shadow
- * map or in the grass.
+ * The bodies in the round when there is no round — the menu and the building
+ * card: nothing on the minimap, under a blob, in the bodies' shadow map or in
+ * the grass.
  */
 const NO_SOLDIERS: readonly NetSoldier[] = [];
 
@@ -827,15 +825,15 @@ export class Game {
    */
   private readonly zoneDraw: ZoneDraw;
   /**
-   * The grass field as our renderer draws it (`BABYLON_EXIT.md` X4.6c), in an
-   * editor build as in a round; `grass` writes its runs and values, and `drawGrass`
-   * passes it through the size gate.
+   * The grass field as our renderer draws it (`BABYLON_EXIT.md` X4.6c);
+   * `grass` writes its runs and values, and `drawGrass` passes it through the
+   * size gate.
    */
   private readonly grassDraw: GrassDraw;
   /**
-   * The water as our renderer draws it (`BABYLON_EXIT.md` X4.6d), in an editor
-   * build as in a round; `water` writes its values and which shape each body takes,
-   * and `drawWater` passes each through the size gate.
+   * The water as our renderer draws it (`BABYLON_EXIT.md` X4.6d); `water`
+   * writes its values and which shape each body takes, and `drawWater` passes
+   * each through the size gate.
    */
   private readonly waterDraw: WaterDraw;
   /**
@@ -901,7 +899,7 @@ export class Game {
    */
   private readonly lightning = new LightningStrikes();
   private shadows: ShadowSystem;
-  /** The world's directional maps as our renderer owns them: every round's (an editor build's are `shadows`' generators). */
+  /** The world's directional maps as our renderer owns them: every round's. */
   private readonly worldShadows: WorldShadows;
   /**
    * The bodies' own shadow map — soldiers and hulls, and nothing static.
@@ -1085,7 +1083,7 @@ export class Game {
    * fed by `drawFires` and pulled inside the render (`flamePull`). Drawn
    * while a ROUND's map is installed, its pipelines asked here once for the
    * session; one that cannot be built is the round's failure, as the
-   * pieces' are. An editor build's fires are Babylon's meshes.
+   * pieces' are.
    */
   private readonly flameDraw: FlameDraw;
   /**
@@ -1158,7 +1156,7 @@ export class Game {
    * and everything that moves redrawn from proxies (`systems/LocalShadows.ts`).
    */
   private localShadows: LocalShadows;
-  /** The lamps' atlas as our renderer owns it: every round's (an editor build's is `localShadows`' render target). */
+  /** The lamps' atlas as our renderer owns it: every round's. */
   private readonly lampAtlas: LampAtlas;
   /** The reflection bake as our renderer draws it: every round's (X3.6c). */
   private readonly probeBake: ProbeBake;
@@ -1372,24 +1370,10 @@ export class Game {
    */
   readonly postChain: PostChain;
   readonly postPasses: PostPasses;
-  /** Non-null only while the state is "editor". Dev builds only. */
-  private editor: EditorSession | null = null;
-  /**
-   * Held across `toggleEditor`'s dynamic `import()`, because `this.editor` is
-   * not the latch it looks like: it is not assigned until the session has been
-   * built, which is a map build and a screenful of teardown after the await
-   * returns. Two F2s inside a cold import both got past `if (this.editor)` and
-   * ran the whole opening twice — a second `installMap` disposing the map the
-   * first had just handed to `createEditor`, and the first session leaked with
-   * no reference left to dispose it. Dev builds only, and the window is one
-   * cold load wide, but it is exactly the failure `installMap` exists to stop.
-   */
-  private editorLoading = false;
-
   /**
    * The dev audio mixer's session, or null. `F4`.
    *
-   * Nothing like `editor` beyond the dynamic import it shares: the mixer is a
+   * Nothing like the viewer beyond the dynamic import it shares: the mixer is a
    * panel over a round that carries on underneath it, so there is no state
    * transition, no map rebuild and nothing to put back — which is why it does
    * not go through `go`/`raiseLid` and is not a row in `SCREENS`. What it
@@ -1397,17 +1381,24 @@ export class Game {
    * panel (see `MixerPanel.dispose`): you close it to go and listen.
    */
   private mixer: MixerSession | null = null;
-  /** `editorLoading`'s twin, for the same one-cold-import-wide window. */
+  /** `viewerLoading`'s twin, for the same one-cold-import-wide window. */
   private mixerLoading = false;
 
   /**
    * The dev-only map viewer's session (`F2`, `src/viewer/`, `BABYLON_EXIT.md`
-   * X5.3b), non-null only while its lid is up. A LID, unlike the editor and
-   * unlike the mixer: `toggleViewer` raises it over a round and `takeDown`
-   * puts it away, however it comes down.
+   * X5.3b), non-null only while its lid is up. A LID, unlike the mixer:
+   * `toggleViewer` raises it over a round and `takeDown` puts it away, however
+   * it comes down.
    */
   private viewer: ViewerSession | null = null;
-  /** `editorLoading`'s twin, for the same one-cold-import-wide window. */
+  /**
+   * Held across `toggleViewer`'s dynamic `import()`, because `this.viewer` is
+   * not the latch it looks like: it is not assigned until the session has been
+   * built, after the await returns. Two F2s inside a cold import would both get
+   * past `if (this.viewer)` and run the whole opening twice, the first session
+   * leaking with no reference left to dispose it. Dev builds only, and the
+   * window is one cold load wide.
+   */
   private viewerLoading = false;
   /**
    * The shadow window's focus as the viewer's lid found it: its camera tail
@@ -1428,7 +1419,7 @@ export class Game {
   /**
    * The map being played, as the layout/environment pair `src/world/maps.ts`
    * keeps together. The single place either half is named: everything from the
-   * round start to the editor session reads it off here, so a second map is a
+   * round start to the viewer's session reads it off here, so a second map is a
    * `MapDef` in that registry and a write to this field, not a hunt through the
    * orchestrator for the fourteen places the old constants were spelled out.
    */
@@ -1457,18 +1448,14 @@ export class Game {
    *
    * `MapDef.heights` is a lazy `import()` (ENGINE_UPGRADE.md S7), so the
    * heightfield is a fetch and `installMap` is one synchronous turn that
-   * cannot contain one. This is where the fetch is put down: the two async
-   * doors into a build — `buildRound` and `toggleEditor` — resolve it before
-   * they start, and everything from there on reads it here.
-   *
-   * **It is the module's own object and is written through.** The editor's
-   * terrain brush edits `map.terrain.field`, which is this, and the rebuild
-   * tier reads the edits straight back — exactly as it did when the field hung
-   * off the layout constant. `null` is a level floor and is what a map with no
-   * `heights` resolves to.
+   * cannot contain one. This is where the fetch is put down: the one async
+   * door into a build, `buildRound`, resolves it before it starts, and
+   * everything from there on reads it here. It is the module's own object
+   * (`map.terrain.field` is this), and `null` is a level floor and is what a
+   * map with no `heights` resolves to.
    *
    * The one invariant is that it is `mapDef`'s and not the last map's, which is
-   * why nothing assigns it outside those two doors: see `buildRound`, where the
+   * why nothing assigns it outside that door: see `buildRound`, where the
    * authority is allowed to rotate the map inside the very fetch that is
    * answering for it.
    */
@@ -1604,8 +1591,8 @@ export class Game {
     return this.overrides.shadows(this.settings.shadows);
   }
   /**
-   * The round's session — null only where there is no round (the menu, the
-   * editor, a build that has not opened one yet).
+   * The round's session — null only where there is no round (the menu, a
+   * build that has not opened one yet).
    *
    * **Every round is a match.** A server's, or
    * the page's own: a `Match` this page hosts
@@ -3221,16 +3208,14 @@ export class Game {
       this.profChip.keep();
     });
 
-    // The map viewer, the map editor and the audio mixer are development
-    // tools: the whole of src/viewer, src/editor and src/dev is behind a
-    // dynamic import so none of it reaches a production bundle. `F2` is the
-    // viewer; the editor is `Shift+F2` until X5.3c deletes it, standing beside
-    // the viewer as the oracle it is graded against (`BABYLON_EXIT.md` X5.3b).
+    // The map viewer and the audio mixer are development tools: the whole of
+    // src/viewer and src/dev is behind a dynamic import so none of it reaches
+    // a production bundle. `F2` is the viewer, `F4` the mixer.
     if (import.meta.env.DEV) {
       window.addEventListener("keydown", (e) => {
         if (e.code === "F2") {
           e.preventDefault();
-          void (e.shiftKey ? this.toggleEditor() : this.toggleViewer());
+          void this.toggleViewer();
         } else if (e.code === "F4") {
           e.preventDefault();
           void this.toggleMixer();
@@ -3456,10 +3441,11 @@ export class Game {
    * Moves the game on to a step, taking down every screen the player had raised
    * over the last one.
    *
-   * The three transitions that leave a round — the menu, a round starting, F2
-   * into the editor — each used to write out the same list of screens to put
-   * away, and the copies had already drifted: F2 from the lobby left the match
-   * list hanging over the editor's own panel, because that one list was written
+   * The transitions that left a round — the menu, a round starting, and F2
+   * into the map editor while there was one — each used to write out the same
+   * list of screens to put away, and the copies had already drifted: F2 from
+   * the lobby left the match list hanging over the editor's panel, because that
+   * one list was written
    * before the lobby existed. The other twelve transitions wrote none of it and
    * were not merely untidy but broken wherever a step can be decided by the
    * wire while a lid is up — a netplay round then, every round now: a `died`
@@ -4626,9 +4612,6 @@ export class Game {
         this.updateDeathCam(dt);
         this.prof.end(P.gameplay);
         break;
-      case "editor":
-        this.updateEditor(dt);
-        break;
       // The dev-only viewer's lid. A server's round behind it is stepped by
       // `updateRoundBehind` above, as under the pause; the page's own is held.
       case "viewer":
@@ -4701,10 +4684,10 @@ export class Game {
     // the shafts are drawn into.
     this.syncVolumetrics();
     // Every frame in every state, so the basis it reprojects against can never
-    // go stale while the player sits in a menu. In the editor the free-fly cam
-    // drives the Babylon camera directly and never touches these angles, so
-    // the pass sees no rotation and stays inert — which is what we want in an
-    // authoring tool.
+    // go stale while the player sits in a menu. Under the viewer the free-fly
+    // cam drives the Babylon camera directly and never touches these angles,
+    // so the pass sees no rotation and stays inert — which is what we want in
+    // a dev tool.
     this.motionBlur.update(this.cameraSys.aimYaw, this.cameraSys.aimPitch, dt);
     this.prof.end(P.post);
     // **Read ONCE, here, and spent twice below.** Two of the pushes at the end
@@ -5393,20 +5376,19 @@ export class Game {
    * standing in one — it awaits the map's floor now (`MapDef.heights`), and
    * that wait is inside this window rather than beside it.
    *
-   * A method rather than `this.state === "loading"` written out twice, because
-   * `toggleEditor` has to ask it on both sides of an await and TypeScript
-   * carries the first check's narrowing straight through one — it calls the
-   * second comparison dead, which is precisely the assumption the second check
-   * exists to refuse. Behind a call it cannot narrow, so the question stays
-   * askable.
+   * A method rather than `this.state === "loading"` written out at every
+   * caller: a caller asking it on both sides of an await would have the first
+   * check's narrowing carried straight through by TypeScript, which calls the
+   * second comparison dead — precisely the assumption the second check exists
+   * to refuse. Behind a call it cannot narrow, so the question stays askable.
    *
    * **It is not "the state is `loading`" any more, and the difference is the
    * whole of what `bakeWait` changed.** `loading` used to be the two frames
    * between the confirm and the build; it is now those two frames AND however
    * many the reflection bake takes to drain behind the card, which on a 1500 m
    * map is forty-seven of them. What every caller here is guarding against is a
-   * build that has not run yet — a second one queued behind it, an editor
-   * opened into it, a welcome arriving before there is a map to correct — and
+   * build that has not run yet — a second one queued behind it, a welcome
+   * arriving before there is a map to correct — and
    * once the wait is open the build HAS run. Reading the state alone would
    * refuse a map change or a team correction for the length of the drain and
    * drop it on the floor, because the branch that defers to `buildRound`
@@ -5419,12 +5401,12 @@ export class Game {
   /**
    * `F4`: the audio mixer, over whatever is on screen.
    *
-   * `toggleEditor`'s shape and almost none of its problems. There is no state
-   * transition here and no map to rebuild, so the two pre-await guards that
-   * method needs do not apply — what is left is the same one-cold-import-wide
-   * double-open window, and the same whole-body DEV gate, which is what makes
-   * `src/dev/` unreachable under `vite build` and keeps the chunk out of the
-   * bundle entirely rather than emitting an orphan nobody fetches.
+   * `toggleViewer`'s shape and almost none of its problems. There is no state
+   * transition here, so no lid is raised — what is left is the same
+   * one-cold-import-wide double-open window, and the same whole-body DEV gate,
+   * which is what makes `src/dev/` unreachable under `vite build` and keeps the
+   * chunk out of the bundle entirely rather than emitting an orphan nobody
+   * fetches.
    *
    * The pointer lock has to go, and that is the one thing the panel cannot do
    * for itself: under a lock a click reaches no element at all, so a mixer
@@ -5450,7 +5432,7 @@ export class Game {
       this.hud.toast("could not open the mixer");
       return;
     } finally {
-      // Cleared before the opening for `toggleEditor`'s reason: everything
+      // Cleared before the opening for `toggleViewer`'s reason: everything
       // below is synchronous, and a throw in the import must not wedge F4 for
       // the rest of the session.
       this.mixerLoading = false;
@@ -5485,7 +5467,7 @@ export class Game {
    * (`BABYLON_EXIT.md` X5.3b; rows "X5.3, the viewer's key and reach" and "the
    * viewer's overlays"). It covers `playing`, `dying` and `deploy` in both
    * kinds of round, and from every other state — the menu, a build, the
-   * round-over card, another lid, a benchmark, the editor — it does nothing
+   * round-over card, another lid, a benchmark — it does nothing
    * (`SCREENS.viewer.covers` refuses it).
    *
    * The mixer's shape: the whole body behind the DEV gate, which is what makes
@@ -5524,8 +5506,9 @@ export class Game {
       this.hud.toast("could not open the viewer");
       return;
     } finally {
-      // `toggleEditor`'s reason: everything below is synchronous, and a throw
-      // in the import must not wedge F2 for the rest of the session.
+      // Cleared before the opening rather than after it: everything below is
+      // synchronous, so nothing can interleave with it, and a throw in the
+      // import must not wedge F2 for the rest of the session.
       this.viewerLoading = false;
     }
     const map = this.map;
@@ -5586,150 +5569,15 @@ export class Game {
    * A live frame's own tail has already paid it (`updateSceneForCamera`
    * clears the flag); a deploy screen, a round-over card or a pause runs
    * none, and the shadow window, the light slots and the lamps' atlas would
-   * stand where the viewer flew. Never on the way to a build, the menu or
-   * the editor: what stands then is no longer the round the lid was over.
+   * stand where the viewer flew. Never on the way to a build or the menu:
+   * what stands then is no longer the round the lid was over.
    */
   private honourSceneOwed(): void {
     if (!this.sceneOwed) return;
     this.sceneOwed = false;
     const s = this.state;
-    if (!this.map || s === "loading" || s === "menu" || s === "editor") return;
+    if (!this.map || s === "loading" || s === "menu") return;
     this.updateSceneForCamera(0, this.shadowFocus.copyFrom(this.viewerFocus), null, this.pushers);
-  }
-
-  /**
-   * Enters or leaves the map editor. Dev-only, and the import is dynamic so
-   * `src/editor` never reaches a production bundle.
-   *
-   * Leaving always restarts the round rather than resuming. ConquestSystem,
-   * Minimap and DeployScreen all hold the map they were handed, so the only
-   * safe way back from a session that may have rebuilt the map is to build a
-   * fresh one and re-point all of them — which is exactly what `startRound`
-   * does, opening a fresh match on the way (`openLocalRound`).
-   *
-   * **That match is built off the map's committed collider BAKE**, as a
-   * server's is (`MapDef.collision`), and not off the map this page just
-   * built: an edit the editor saved plays against stale colliders on the
-   * authority's side until `npm run collision` re-bakes it.
-   */
-  private async toggleEditor(): Promise<void> {
-    // Gating the whole body, not just the keybind: this is what makes the
-    // dynamic import unreachable under `vite build`, so Rollup drops the
-    // editor chunk entirely rather than emitting an orphan nobody fetches.
-    if (!import.meta.env.DEV) return;
-    // A map is mid-build and a `buildRound` is already queued for the next
-    // frame. Opening the editor into that would put a second build behind it
-    // and leave the editor holding a map that the first one had disposed —
-    // the failure `installMap` exists to prevent, arriving by the one door it
-    // does not cover. One frame, and F2 works on the next.
-    if (this.buildPending()) return;
-    // A benchmark, booked or running, is the whole session: the editor would
-    // tear its map down under it. Escape stops one first.
-    if (this.bench) return;
-    // A previous F2 is still waiting on the import. Its `createEditor` has not
-    // run yet, so `this.editor` is still null and would wave this one through.
-    if (this.editorLoading) return;
-    if (this.editor) {
-      // Leaving rebuilds the map from the layout module, so anything edited
-      // and not written to disk is gone. Until the editor can save, that is
-      // every edit — ask before throwing the work away.
-      if (
-        this.editor.hasUnsavedChanges &&
-        !window.confirm("Discard unsaved map edits and return to the game?")
-      ) {
-        return;
-      }
-      this.editor.dispose();
-      this.editor = null;
-      this.hud.setEditing(false);
-      this.startRound();
-      return;
-    }
-
-    this.editorLoading = true;
-    let createEditor;
-    try {
-      // TWO awaits under the one latch, and the second is the map's FLOOR.
-      // F2 is reachable from the menu, where no round has ever been built and
-      // `floor` is still null — and the heightfield is a chunk of its own now
-      // (`MapDef.heights`), so it has to be asked for rather than read off the
-      // layout. It is the module's OWN object: the terrain brush writes through
-      // it and `buildEditorMap` reads the edits straight back, which is what
-      // lets the editor's rebuild tier stay synchronous.
-      ({ createEditor } = await import("../editor"));
-      this.floor = await loadHeights(this.mapDef);
-    } catch (err) {
-      // A floor the network ate, or an editor chunk. Nothing has been torn
-      // down yet, so there is nothing to put back — say so and leave the round
-      // where it was.
-      console.error("[editor] could not open", err);
-      this.hud.toast("could not open the editor");
-      return;
-    } finally {
-      // Cleared before the opening rather than after it: everything below this
-      // point is synchronous, so nothing can interleave with it, and a throw in
-      // either await must not wedge F2 for the rest of the session.
-      this.editorLoading = false;
-    }
-    // Both pre-await guards owe a second look. The import and the floor are
-    // both task boundaries, so the `loading` state that was clear a moment ago
-    // may not be — a round started underneath would have its build stomped to
-    // "editor" here.
-    if (this.buildPending() || this.editor) return;
-
-    // F2 is reachable from every screen in the game — the pause card, whose
-    // suspended audio context and hidden chrome an editor session would
-    // otherwise inherit; the kit screen and the settings, either of which would
-    // sit over the editor's own panel; and the lobby, which used to be missing
-    // from the list here and did exactly that. `go` takes down whichever it was
-    // — and the menu's own card with them, which is not a lid but is `go`'s all
-    // the same, because F2 is reachable from the menu too.
-    this.go("editor");
-    // The page's own match goes with the round: the editor has no round, and
-    // leaving it opens a fresh one (`startRound`, `openLocalRound`). A held
-    // match left open would be a world in the host nobody will play.
-    if (this.localRound) this.leaveMatch();
-    const map = this.buildEditorMap();
-    this.hud.setEditing(true);
-    this.deployScreen.hide();
-    // And from the death cam, whose body would otherwise be left standing in
-    // the map the editor is about to rebuild — `installMap` frees the ragdoll
-    // slot underneath it, so the cam has to be told rather than find out.
-    this.deathCam.stop();
-    this.hud.setDeathCam(false);
-    this.minimap.setVisible(false);
-    this.player.setBodyHidden(true);
-    if (document.pointerLockElement) document.exitPointerLock();
-
-    this.editor = createEditor({
-      canvas: this.canvas,
-      camera: this.cameraSys.camera,
-      input: this.input,
-      scene: this.scene,
-      map,
-      rebuildMap: () => this.buildEditorMap(),
-      mapId: this.mapDef.id,
-      layout: this.mapDef.layout,
-      environment: this.mapDef.environment,
-      fixtures: this.lighting.fixtures,
-      applyEnvironment: (env) => {
-        applyEnvironment(this.scene, env, this.mats);
-        this.celInk.applyEnvironment();
-      },
-      invalidateShadows: () => this.shadows.invalidate(),
-      worldMoved: () => {
-        const map = this.map;
-        if (!map) return;
-        this.gi.worldMoved();
-        this.localShadows.setWorld(map.size, map.colliderBoxes, map.rayGroups, map.visuals);
-      },
-    });
-    // Open where the player was standing, looking the way they were looking.
-    this.editor.warpTo(
-      this.cameraSys.camera.position.clone(),
-      this.cameraSys.aimYaw,
-      this.cameraSys.aimPitch,
-    );
   }
 
   /**
@@ -5769,8 +5617,7 @@ export class Game {
     this.sky.setStanding(false);
     this.combatFx.clearTransient();
     // A grenade whose fuse outlived the map it was thrown across would go off
-    // over terrain that no longer exists — and, in the editor, in the middle
-    // of a rebuild.
+    // over terrain that no longer exists.
     this.grenades.reset();
     this.grenadeFx.reset();
     // …and everything the AT kit has left lying about. A mine that outlived
@@ -5778,9 +5625,8 @@ export class Game {
     // the same failure a live fuse would be.
     this.antiTank.reset();
     this.antiTankFx.reset();
-    // The flag markers are geometry hung off the old map's terrain. The editor
-    // draws proxies of its own and would double every ring; a round rebuilds
-    // them. Either way they cannot survive the map they were placed on.
+    // The flag markers are geometry hung off the old map's terrain; a round
+    // rebuilds them, and they cannot survive the map they were placed on.
     this.zones.dispose();
     // The storm, and the thunder it still owes: the next map's weather is
     // its own, and the menu has none.
@@ -5810,7 +5656,7 @@ export class Game {
     this.atmosphere.apply(undefined, 0, 0);
     this.shadows.setCasters([]);
     // A body map failing for a map that is gone is no news of the next one —
-    // and no body is drawn over the menu or an editor build.
+    // and no body is drawn over the menu.
     this.bodyShadowMap.setFailure();
     this.hullDraw.uninstall();
     this.bodyDraw.uninstall();
@@ -5838,7 +5684,7 @@ export class Game {
     this.localShadows.clearWorld();
     this.gi.clearMap();
     this.culling.setMap(null, 0);
-    this.physics.setMap(null, false);
+    this.physics.setMap(null);
     // And every JS reference to the map's DATA — the nav graph, the cover
     // map, the ray world, the floor, the colliders, the panes — so the collector
     // can have the last map back while the menu is up, rather than when the
@@ -5875,44 +5721,30 @@ export class Game {
    * Throws the standing map away, builds `this.mapDef` afresh, and hands the
    * result to everything that reads geometry or environment off it.
    *
-   * THE ONE PLACE A MAP IS BUILT. Both callers — a round starting and an editor
-   * rebuild — owe this whole sequence, and before it was one method they were
-   * two copies of it that had already drifted apart. The failure mode is silent
-   * in the worst way: a system added to the round's copy and forgotten in the
-   * editor's keeps a cached pointer into a disposed map, so the editor renders
-   * last build's water over this build's terrain and nothing throws. Anything
-   * new that consumes a `GameMap` or an `EnvironmentSpec` goes here, and both
-   * callers get it.
+   * THE ONE PLACE A MAP IS BUILT, and its one caller is a round starting
+   * (`buildRound`). It had two once — the map editor's rebuild was the other,
+   * until `BABYLON_EXIT.md` X5.3c deleted the editor — and before it was one
+   * method they were two copies of it that had already drifted apart, silently
+   * in the worst way: a system added to one copy and forgotten in the other
+   * kept a cached pointer into a disposed map, and nothing threw. Anything new
+   * that consumes a `GameMap` or an `EnvironmentSpec` goes here.
    *
-   * What deliberately stays with the callers is what they genuinely disagree
-   * about: the round applies the environment and repaints the sky, while the
-   * editor drives `applyEnvironment` itself so it can toggle its work light;
-   * and the round alone owns the things that are about a FIGHT rather than a
-   * map — the flags this page mirrors, the flag markers and the minimap.
-   *
-   * The particle field is the one thing the editor gains by being folded in
-   * here, and it is a fix rather than a side effect: `atmosphere.apply` used to
-   * be the round's alone, so an editor opened from a live round drifted ash and
-   * one opened from the main menu did not. It is the map's own weather and it
-   * now runs in both. What strips the night back for authoring is the work
-   * light, which is the editor's to toggle.
-   *
-   * `editor: true` keeps geometry per layout item instead of block-merging it,
-   * which is what makes an individual placement selectable. It costs ~10x the
-   * draw calls — never judge frame cost from the editor.
+   * What deliberately stays with the caller is the environment and what is
+   * about a FIGHT rather than a map: the round applies the environment and
+   * repaints the sky, and owns the flags this page mirrors, the flag markers
+   * and the minimap.
    */
-  private installMap(opts?: BuildOptions): GameMap {
+  private installMap(): GameMap {
     const { layout, environment } = this.mapDef;
     // Which map the ring is recording. Here rather than in `setMap` because
-    // this is the one place a map is BUILT, and both doors into it — a round
-    // starting and an editor rebuild — come through here; a capture that named
+    // this is the one place a map is BUILT; a capture that named
     // the map the player last picked rather than the one under their feet
     // would be wrong in exactly a server's match (`applyMatchMap`), where it
     // matters most. A no-op while the profiler is disarmed.
     this.prof.setMap(this.mapDef.id);
     // The floor comes off `this.floor` rather than off the layout, because it
     // is fetched rather than bundled — see the field, and `MapDef.heights`.
-    // Both doors into this method resolve it first; nothing here may wait.
+    // The door into this method resolves it first; nothing here may wait.
     const heights = this.floor ?? undefined;
     // The old map, gone whole — the other half of this method, and the half
     // the menu owes on its own. See `teardownMap`.
@@ -5922,24 +5754,18 @@ export class Game {
     // as the world is built and a change waits for the next one
     // (`CONFIG.graphics.foliage`).
     const foliage = CONFIG.graphics.foliage.tiers[this.settings.foliage].detail;
-    // The flow fields only where something on this page steers by them: the
-    // editor's overlay, and a server's match (the netplay smoke's walker).
-    // The bots are steered by the authority off its own world
-    // (`BuildOptions.navFields`) — in the page's own match, in its host.
-    const navFields = opts?.editor === true || this.remoteRound;
+    // The flow fields only where something on this page steers by them: a
+    // server's match (the netplay smoke's walker). The bots are steered by the
+    // authority off its own world (`BuildOptions.navFields`) — in the page's
+    // own match, in its host. (The viewer sweeps the fields it draws itself.)
+    const navFields = this.remoteRound;
     // Our renderer draws the world in every pass, and Babylon is made a mesh
-    // of only what it does not (`BABYLON_EXIT.md` X3.7b) — but for an EDITOR
-    // build, which Babylon draws whole: its blocks are unmerged, so nothing of
-    // them would be taken anyway, and its brush rewrites the floor's meshes
-    // in place (`editor/terrainBrush.ts`), which our side, holding a copy cut
-    // once, could not follow.
-    const take = opts?.editor !== true;
+    // of only what it does not (`BABYLON_EXIT.md` X3.7b).
     const map = this.mapBuilder.build(layout, environment, heights, {
-      ...opts,
       foliage,
       navFields,
-      onSurface: take ? this.handover.onSurface : undefined,
-      onScatter: take ? this.handover.onScatter : undefined,
+      onSurface: this.handover.onSurface,
+      onScatter: this.handover.onScatter,
     });
     this.map = map;
     this.sky.setStanding(true);
@@ -6021,31 +5847,25 @@ export class Game {
     // And the fresh map's world to our renderer, cut against the cells the
     // cull grew — unless the cull found the build's own contract broken, which
     // is the world failing rather than a map to cut. Whose world it is, for
-    // its failure: a fresh owner an install, the round's from here on. An
-    // EDITOR build is Babylon's whole and nothing of it fails the world: a
-    // refusal there is said on the console, the editor kept open over a map
-    // the cull files nothing of (every mesh offered, as a loose one is).
+    // its failure: a fresh owner an install, the round's from here on.
     const owner: WorldOwner = { id: this.mapDef.id, name: this.mapDef.name };
-    const editor = opts?.editor === true;
-    if (!editor) this.roundWorld = owner;
+    this.roundWorld = owner;
     // The bodies are no part of the world the handover hands over, and have
     // no fallback either (`BABYLON_EXIT.md` X4.1d): a ROUND's map draws them,
     // a pipeline of theirs that cannot be built — this install's, and every
     // one after it, the pipelines being the session's — or a pass of ours
     // refused under them fails the round as the world's passes do. Installed
     // BEFORE the world, so they draw ahead of it at the one point both use,
-    // as Babylon's opaque queue drew the rigs ahead of ours. An editor build
-    // draws no body: its world is Babylon's, and its frames ours prepares
-    // nothing in.
+    // as Babylon's opaque queue drew the rigs ahead of ours.
     // The hulls on the bodies' terms, and installed AHEAD of them (X4.2b):
     // Babylon's opaque queue, the hulls' meshes in it, drew before the
     // bodies' draw of ours, so a hull goes down first at the one point both
-    // use. An editor build has no fleet to draw.
+    // use.
     // The pools' pieces and the marks on the bodies' terms, installed AHEAD
     // of the hulls, the bodies and the world (X4.4b): the pools' meshes were
     // in Babylon's opaque queue, which drew before every draw of ours at the
     // one point all of them use — so a mark still goes down before the wall
-    // it is biased off. An editor build fires nothing.
+    // it is biased off.
     // The blast's billows and the debris on the same terms (X4.4c), the
     // billows first: every one of them was in that queue too, so each goes
     // down ahead of everything else of ours at that point — the order among
@@ -6053,74 +5873,66 @@ export class Game {
     // where two of them tie, the bodies' accepted price.
     // The FIRES on the same terms (X4.4d), and FIRST of all: they were in
     // that queue until X4.4d, ahead of the billows' draw of ours, front to
-    // back among themselves as they still are. An editor build's fires are
-    // Babylon's meshes, drawn by its `FlameMaterial`.
+    // back among themselves as they still are.
     // THE ONE RUN ahead of even those (X4.6d): the RINGS AND FLAGS, the BLADES and the
     // WATER in Babylon's one nearest-first order, first at this point and behind what
     // is left of that queue, the `backed` panes, with which nothing in it ties
-    // (`NearestRun`'s header). An editor build has no zones (`zones.build` is the
-    // round's) and its whole world on that queue, ahead of the run. The TURF first at
-    // `"opaque"`. The field and the water on either path: an editor build's is the
-    // same field and the same water.
+    // (`NearestRun`'s header). The TURF first at `"opaque"`.
     // AHEAD of even the run: the `backed` panes, the last of that queue in a
     // round, ours since X4.6e (`GlassDraw`), nearest first, so a pane still goes
     // down ahead of the blocks it saves the shading of. Its see-through panes
     // and every fade are the back-to-front run's, behind the moon at
-    // `"beforeBlended"` (`FarthestRun`). An editor build's glazing is Babylon's.
-    if (!editor) this.glassDraw.install((reason) => this.worldFailed(reason, owner));
+    // `"beforeBlended"` (`FarthestRun`).
+    this.glassDraw.install((reason) => this.worldFailed(reason, owner));
     this.blobsBeforeGlass = this.shadows.blobFades.length;
     this.grassDraw.install((reason) => this.worldFailed(reason, owner));
-    if (!editor) this.zoneDraw.install((reason) => this.worldFailed(reason, owner));
+    this.zoneDraw.install((reason) => this.worldFailed(reason, owner));
     this.waterDraw.install((reason) => this.worldFailed(reason, owner));
     this.nearestRun.install();
-    if (!editor) this.fadeDraw.install((reason) => this.worldFailed(reason, owner));
-    if (!editor) this.farthestRun.install();
-    if (!editor) this.flameDraw.install((reason) => this.worldFailed(reason, owner));
-    if (!editor) this.blastDraw.install((reason) => this.worldFailed(reason, owner));
-    if (!editor) this.pieceDraw.install((reason) => this.worldFailed(reason, owner));
-    if (!editor) this.markDraw.install((reason) => this.worldFailed(reason, owner));
-    if (!editor) this.debrisDraw.install((reason) => this.worldFailed(reason, owner));
-    if (!editor) this.hullDraw.install((reason) => this.worldFailed(reason, owner));
-    if (!editor) this.bodyDraw.install((reason) => this.worldFailed(reason, owner));
+    this.fadeDraw.install((reason) => this.worldFailed(reason, owner));
+    this.farthestRun.install();
+    this.flameDraw.install((reason) => this.worldFailed(reason, owner));
+    this.blastDraw.install((reason) => this.worldFailed(reason, owner));
+    this.pieceDraw.install((reason) => this.worldFailed(reason, owner));
+    this.markDraw.install((reason) => this.worldFailed(reason, owner));
+    this.debrisDraw.install((reason) => this.worldFailed(reason, owner));
+    this.hullDraw.install((reason) => this.worldFailed(reason, owner));
+    this.bodyDraw.install((reason) => this.worldFailed(reason, owner));
     // The weapon is drawn for the SESSION (X4.3c), so this hands it only whom
     // to tell: the round, while one stands — told at once if its pipelines
     // failed already, as every round after one that failed is.
-    if (!editor) this.viewDraw.onFailed((reason) => this.worldFailed(reason, owner));
+    this.viewDraw.onFailed((reason) => this.worldFailed(reason, owner));
     // …and the clouds, on the same terms but for one: a failed pipeline is told
     // only if a ring stands. `startRound` has stood this map's by this line
     // (`applySky`, ahead of this install), so a ring that came after the failure
     // refuses its round here, and a map stating none plays on (X4.5b).
-    if (!editor) this.cloudDraw.onFailed((reason) => this.worldFailed(reason, owner));
+    this.cloudDraw.onFailed((reason) => this.worldFailed(reason, owner));
     // …and the dome and the moon, on the clouds' terms (X4.5c).
-    if (!editor) this.skyDraw.onFailed((reason) => this.worldFailed(reason, owner));
-    if (unfiled && editor) {
-      console.error(`[world] ${owner.id}: the cull refused the editor's build — ${unfiled}; nothing is filed`);
-    } else if (unfiled) {
+    this.skyDraw.onFailed((reason) => this.worldFailed(reason, owner));
+    if (unfiled) {
       this.worldFailed(`the cull refused the build: ${unfiled}`, owner);
     } else {
-      this.handover.install(map, owner, editor);
+      this.handover.install(map, owner);
     }
     // The bodies' map is no part of the world the handover hands over, but it
     // has no fallback either: a pipeline of it that cannot be built fails the
     // round as the world's passes do — this install's, and every one after
-    // it, the pipeline being the session's. An editor build fails nothing.
-    this.bodyShadowMap.setFailure(
-      editor ? undefined : (reason) => this.worldFailed(reason, owner),
-    );
+    // it, the pipeline being the session's.
+    this.bodyShadowMap.setFailure((reason) => this.worldFailed(reason, owner));
     // …and the visors into the glow's mask AFTER the world's palette, which
     // the handover registered just now: the palette went down first in that
     // pass while Babylon drew the visors.
-    if (!editor) this.bodyDraw.installMask();
+    this.bodyDraw.installMask();
     // …and the pieces' unlit parts after the visors, where Babylon's mask
     // drew the pools' meshes: after everything first in that pass.
-    if (!editor) this.pieceDraw.installMask();
+    this.pieceDraw.installMask();
     // …and the billows' bloom after the pieces' (X4.4c): Babylon's mask drew
     // their meshes after every draw of ours there. (No shard or chunk is
     // emissive: the debris has no mask.)
-    if (!editor) this.blastDraw.installMask();
+    this.blastDraw.installMask();
     // …and the fires' after the billows' (X4.4d): Babylon's mask drew their
     // meshes after every draw of ours, the billows' last among them.
-    if (!editor) this.flameDraw.installMask();
+    this.flameDraw.installMask();
     // The fires' pull is sized to what the handover handed over just now.
     this.flameDrawn = new Int32Array(this.flameDraw.capacity);
     this.flameKeys = new Float64Array(this.flameDraw.capacity);
@@ -6148,17 +5960,15 @@ export class Game {
     this.gi.setMap(map, environment.floorColor);
     // And the other thing baked off the fresh map: what its glass reflects,
     // off the world the handover handed our bake above — the last build's
-    // queue emptied. Editor builds bake nothing, exactly as the physics
-    // world below refuses one: a bake is a build step, and the editor is where
-    // a build stops being rare.
-    this.reflections.build(map, opts?.editor === true);
+    // queue emptied.
+    this.reflections.build(map);
     this.atmosphere.apply(environment.particles, map.size, map.size);
     // And what the map's WATER reflects, which is the same bake from a second
     // set of points — handed in as a callback rather than reached for, and
     // called from INSIDE the build because a probe has to stand where the
     // water is and only the bed-depth bake knows where that is.
     this.water.build(map.water, environment, map.terrain, (sites) =>
-      this.reflections.bakeWater(sites, map, opts?.editor === true),
+      this.reflections.bakeWater(sites, map),
     );
     this.grass.build(
       map.grass,
@@ -6211,8 +6021,7 @@ export class Game {
     // Whether a molotov that breaks on THIS screen lights anything: in a round
     // the fire is the authority's and arrives as a `blaze` event, so the
     // thrower's own local bottle flies and breaks and lights nothing — the
-    // hulls' `predicted` below, for the same reason one system over. Only the
-    // editor builds a map with no session.
+    // hulls' `predicted` below, for the same reason one system over.
     this.grenades.predicted = this.net !== null;
     this.antiTank.setWorld(map.rays);
     this.aimAssist.setWorld(map.rays);
@@ -6240,10 +6049,8 @@ export class Game {
     }
     // The static world corpses and shards land on. Same reason the grenades are
     // cleared above: a physics world still holding shapes built from the map
-    // that was just disposed is geometry that no longer exists, and in the
-    // editor that means in the middle of a rebuild. Editor builds register
-    // nothing at all.
-    this.physics.setMap(map, opts?.editor === true);
+    // that was just disposed is geometry that no longer exists.
+    this.physics.setMap(map);
     // The panes, and the collider meshes standing behind them. Same
     // reason as every line above it: a system holding last build's geometry is
     // holding meshes that are already disposed, and the glass's view is the one
@@ -6267,11 +6074,8 @@ export class Game {
     // the wire by `NetVehicles`, except the one this player is sitting in.
     // See `docs/vehicles.md` and `docs/multiplayer.md`.
     //
-    // Nothing is built for the EDITOR: a vehicle is not level data to be
-    // authored — the hardstanding is, and that is a layout entry — and a
-    // solid, pickable mesh with no `SelectionRef` behind it is something the
-    // centre-screen pick can land on and fail to resolve. The last map's fleet
-    // and its crews are already gone — `teardownMap`, at the top.
+    // The last map's fleet and its crews are already gone — `teardownMap`, at
+    // the top.
     //
     // **And the fleet is not this page's either**: the
     // authority fleets its own off the same spawns, whoever hosts the
@@ -6280,9 +6084,9 @@ export class Game {
     // `predicted`, refusing local damage and running neither hardstanding
     // clock. It is still the fleet this page's rays, sweeps, decks and cameras
     // meet.
-    if (opts?.editor !== true) this.vehicles.build(map, true);
+    this.vehicles.build(map, true);
     // …and what it looks like: one view per hull, by hardstanding, each with
-    // its kind's model (`VehicleViews`). The editor's empty fleet draws none.
+    // its kind's model (`VehicleViews`).
     this.vehicleViews.build(this.vehicles.hulls, map.vehicleSpawns);
     if (this.vehicles.hulls.length > this.hullDraw.capacity) {
       console.error(
@@ -6294,9 +6098,8 @@ export class Game {
     // be a second brain steering a hull that is being posed from elsewhere.
     // And the dust under whatever of that fleet has a rotor — after the build,
     // because it is handed the hulls themselves and there are none until the
-    // line above. It is a PICTURE and the editor gets it too: an editor build
-    // fields no fleet, so this is the empty list and every ring goes quiet,
-    // which is the same call doing the same thing rather than a second path.
+    // line above. It is a PICTURE: a map that fields no fleet hands it the
+    // empty list and every ring goes quiet.
     // The environment goes in on the same call rather than through a
     // `setEnvironment` of its own, which is the one place this differs from
     // the grenades' two lines above. A ring's colour is a GRADIENT — the fade
@@ -6315,43 +6118,13 @@ export class Game {
   }
 
   /**
-   * The editor's rebuild. Called on entry and again whenever it changes
-   * something the builders read — a param, a kind, an added or deleted entry.
-   *
-   * Deliberately does NOT open a match or re-point the minimap: `teardownMap`
-   * at the top of `installMap` has let go of the minimap's world, and nothing
-   * an editor frame runs steps a round.
-   * That is safe only because leaving the editor always runs `startRound` and
-   * hands them a fresh, properly merged build.
-   */
-  private buildEditorMap(): GameMap {
-    return this.installMap({ editor: true });
-  }
-
-  /**
-   * The editor frame. Same tail as gameplay minus the player: no aim assist,
-   * no blob shadows, no carried lamp, no grass pushers.
-   */
-  private updateEditor(dt: number): void {
-    const editor = this.editor;
-    if (!editor) return;
-    editor.update(dt);
-    // The shadow window follows the camera itself here — there is no player to
-    // centre it on, and the same forward bias keeps what's ahead covered.
-    this.shadowFocus
-      .copyFrom(this.cameraSys.camera.position)
-      .addInPlace(editor.forward.scale(8));
-    this.updateSceneForCamera(dt, this.shadowFocus, null, NO_SOLDIERS);
-  }
-
-  /**
-   * The viewer's frame: the editor's tail, renamed (`BABYLON_EXIT.md` X5.3b).
-   * The free camera is the shadow focus, biased ahead as the editor's was, and
+   * The viewer's frame: the map editor's tail, renamed (`BABYLON_EXIT.md`
+   * X5.3b). The free camera is the shadow focus, biased ahead, and
    * the ROUND's bodies are what the grass bends round — the pushers the last
    * world frame filled, held with the world in the page's own match and
    * refilled by `updateRoundBehind` in a server's — so the bodies and hulls are
    * drawn and cast by the round's own draws. No player: no blob shadows and no
-   * carried lamp are placed, as in the editor (the lamp stays where it was).
+   * carried lamp are placed (the lamp stays where it was).
    */
   private updateViewer(dt: number): void {
     const viewer = this.viewer;
@@ -6599,7 +6372,8 @@ export class Game {
     const env = this.mapDef.environment;
     applyEnvironment(this.scene, env, this.mats);
     // The ink fades over the MAP's fog band, so it owes a re-read here and at
-    // the editor's own call above — an ink that kept the previous map's band
+    // every other `applyEnvironment` (the viewer's work light) — an ink that
+    // kept the previous map's band
     // would either hang in front of the fog wall or vanish inside it.
     this.celInk.applyEnvironment();
     this.applySky();
@@ -6700,7 +6474,7 @@ export class Game {
    * immediately before `scene.render` — inside the render span, where
    * Babylon composed the rigs' meshes until X4.1a, so the profiler's
    * attribution does not move. A body not drawn is not composed — and while
-   * the draw is not installed (the menu, an editor build) none is: `commit`
+   * the draw is not installed (the menu) none is: `commit`
    * would take nothing, and no other reader depends on these composes, every
    * one composing a joint FRESH (`SoldierModel`'s header).
    */
@@ -7059,7 +6833,7 @@ export class Game {
    * pools' own steps, `NetSession.update`, `PlayerView.stepped`) and after
    * the cull, immediately before `scene.render` — inside the render span,
    * where Babylon composed the pools' meshes until X4.4b. While the draw is
-   * not installed (the menu, an editor build) none is composed.
+   * not installed (the menu) none is composed.
    */
   private drawPieces(): void {
     const draw = this.pieceDraw;
@@ -7933,7 +7707,7 @@ export class Game {
    * span, where Babylon composed the hulls' nodes until X4.2a (the compose
    * itself is `fadeHulls`', in the cull span, since X4.2d's post-commit
    * review). A hull not present is not drawn, and while the draw is not
-   * installed (the menu, an editor build) none is.
+   * installed (the menu) none is.
    */
   private drawHulls(): void {
     const draw = this.hullDraw;
@@ -7979,7 +7753,7 @@ export class Game {
    * ripple by the fade (the post-commit review's owner decision: a hull's
    * wash fades with it), and `drawHulls`, which draws off the same compose.
    * A hull not present, and every hull while the draw is not installed (the
-   * menu, an editor build), is not composed and reads 1 — so the wash under
+   * menu), is not composed and reads 1 — so the wash under
    * it is what it always was, and nothing else reads its joints.
    */
   private fadeHulls(): void {
@@ -8059,8 +7833,8 @@ export class Game {
    * X4.1d: no rig is a Babylon mesh, so a rig not filed here is not drawn).
    *
    * **Here rather than in `installMap`, for `setRoster`'s reason**: this is the
-   * ROUND's roster, and that method's other caller is the editor, which has no
-   * round. It runs after the pool has been sized and before anything draws.
+   * ROUND's roster, and that method is about the MAP. It runs after the pool
+   * has been sized and before anything draws.
    *
    * **The GLOW is deliberately not fed from here.** A rig is occluder and
    * never emitter, and the glow's occlusion is the frame's own depth
@@ -8178,7 +7952,7 @@ export class Game {
    * and the frustum test off, so everything in the scene that is switched on
    * reaches a draw — and through it a pipeline — whichever way the eye faces.
    * The camera-dependent passes (the two shadow maps, the lamps' atlas, the
-   * water, the grass) are placed by the same tail the editor's free camera
+   * water, the grass) are placed by the same tail the viewer's free camera
    * uses, at `dt` 0, so nothing is stepped: `loading` still simulates nothing.
    *
    * Returns whether it staged anything, and `unstageWarmFrame` undoes ALL of it
@@ -9497,8 +9271,8 @@ export class Game {
    * The key is the hull's index in the fleet, which is stable for as long as a
    * map is: the stands are built once and neither added to nor reordered. A
    * map REBUILD invalidates them all, and nothing here has to know that —
-   * `installMap` runs from `loading` and from the editor, neither of which
-   * steps the fleet, so the frame that rebuilds is a frame that has already
+   * `installMap` runs from `loading`, which does not step the fleet, so the
+   * frame that rebuilds is a frame that has already
    * called `enginesOff`.
    */
   /**
@@ -10261,7 +10035,7 @@ export class Game {
     // (`installBodyPools`): re-filed with no session, so the pools — and
     // `drawBodies`, which draws what they hold — hold the death cam's body
     // alone rather than a roster that is nobody's any more, until the next
-    // round files its own — which an editor session after F2 never does.
+    // round files its own.
     if (net) this.installBodyPools();
     if (net?.local) this.localOwner.close();
     // Nothing can claim these now, and dropping them at the boundary is what
@@ -12036,14 +11810,14 @@ export class Game {
 
   /**
    * The half of the tail that needs only a posed camera — shared with the map
-   * editor, which has no player, no bots and no aim assist but still has to
-   * keep fog, shadows, outlines, lights, water, grass and audio agreeing about
-   * where the viewer is.
+   * viewer and the building card's warm-up, which have no player and no aim
+   * assist but still have to keep fog, shadows, outlines, lights, water, grass
+   * and audio agreeing about where the eye is.
    *
    * The order here is the load-bearing part of the sequence above and must not
-   * be rearranged. `player` is null in the editor: it gates exactly the two
+   * be rearranged. `player` is null in those: it gates exactly the two
    * steps that need a body — blob shadows and the carried shoulder lamp — and
-   * gating them in place is what keeps both callers on one ordering.
+   * gating them in place is what keeps every caller on one ordering.
    *
    * The shader's own eye is deliberately NOT here. It is the one thing in this
    * list a state that simulates nothing still owes, so `tick` pushes it for

@@ -51,7 +51,7 @@
  * render's commands (the caller defers it, `Game.worldFailed`); nothing here
  * allocates on a frame.
  * Never: imports Babylon; reads a node, a mesh or a material; draws while not
- * installed (an editor build, whose fires are Babylon's, or the menu).
+ * installed (the menu).
  * Contract: `docs/rendering.md`, "The fire".
  */
 import { FLAME_BLOCK, FLAME_GEOMETRY, flamePrograms, type FlameRecipe } from "./flameProgram";
@@ -321,8 +321,8 @@ export class FlameDraw {
   }
 
   /**
-   * Whether a round's install stands — false on the menu and in an editor
-   * build, where `commit` takes nothing and the caller need write nothing.
+   * Whether a round's install stands — false on the menu, where `commit`
+   * takes nothing and the caller need write nothing.
    */
   get installed(): boolean {
     return this.isInstalled;

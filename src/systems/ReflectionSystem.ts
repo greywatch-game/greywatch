@@ -240,24 +240,16 @@ export class ReflectionSystem {
    * strength of ZERO (`CelMaterialFactory.applyReflection`), so it shows the
    * analytic sky half of the reflection and no more.
    *
-   * **Editor builds bake nothing**, which is the same refusal
-   * `PhysicsWorld.setMap` makes one line below it in `installMap` and for a
-   * sharper version of the same reason. A bake is affordable because the
-   * world is static, so it is a BUILD STEP rather than a pass — and the editor
-   * is the one place in the game where the world is not static and a build is
-   * not rare. Every tier-3 rebuild would pay for one, and an editor build is
-   * Babylon's whole, which our bake does not draw. That is the state a pane
-   * is in before any probe has claimed it rather than a new one, and it is
-   * the right trade in a view that already strips the map's own night back to
-   * a work light to author under.
+   * A bake is affordable because the world is static, so it is a BUILD STEP
+   * rather than a pass. (The map editor, the one place the world was not
+   * static and a build not rare, baked nothing; it is gone since
+   * `BABYLON_EXIT.md` X5.3c.)
    */
-  build(map: GameMap, editor: boolean): void {
+  build(map: GameMap): void {
     const cfg = CONFIG.graphics.reflection;
     // Empty the queue first: a probe left over from the last install is a
-    // probe of a map that is gone. Above the return, so the editor's build
-    // empties the round's it was opened from.
+    // probe of a map that is gone.
     this.clear();
-    if (editor) return;
     if (!this.bake.holds) {
       this.pointDefault(map);
       return;
@@ -384,17 +376,17 @@ export class ReflectionSystem {
    * every map shipped. A body that genuinely spanned two basins would want two
    * probes, and the layout would say so by cutting two rects.
    *
-   * A build that bakes nothing (an editor's, `build`) returns sites at
-   * strength 0 on the default cube, which leaves the water showing the
+   * A build that bakes nothing (no plan for this map, `build`) returns sites
+   * at strength 0 on the default cube, which leaves the water showing the
    * analytic sky half of its mirror.
    */
-  bakeWater(sites: readonly Vector3[], map: GameMap, editor: boolean): WaterMirror[] {
+  bakeWater(sites: readonly Vector3[], map: GameMap): WaterMirror[] {
     const cfg = CONFIG.graphics.reflection;
     if (sites.length === 0) return [];
 
     // Every body still needs a cube BOUND, or its group cannot be made: the
     // default cube, which is what a strength of 0 returns.
-    if (editor || !this.plan || this.plan.map !== map) {
+    if (!this.plan || this.plan.map !== map) {
       return sites.map((site) => ({ cube: this.defaultCube, at: site, strength: 0 }));
     }
     const plan = this.plan;

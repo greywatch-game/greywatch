@@ -385,9 +385,9 @@ buffers, and the world becomes meshes once, at the end of the build.
 - **The colliders**, which are still `MeshBuilder.CreateBox` boxes merged by
   `Mesh.MergeMeshes` (`MapBuilder.clusterColliders`, `struts`). Nothing that
   moves or shoots reads them since BABYLON_EXIT.md X2.1 — the rays and the
-  sweeps both answer off the `WorldBox`es — so on the client they are the
-  editor's centre-screen pick's, which walks a mesh's submeshes. The server
-  builds none since X2.3.
+  sweeps both answer off the `WorldBox`es — and the map editor's centre-screen
+  pick, which walked a mesh's submeshes, went at `BABYLON_EXIT.md` X5.3c; X5.3e
+  stops making them. The server builds none since X2.3.
 
 **And the copies, which an upgrade cannot move but can make WRONG.** The
 geometry every model and every structure is built and merged from is ours
@@ -425,11 +425,11 @@ what Babylon 9.28 did, which version it should now follow is a decision, not a
 fix.
 
 **So an upgrade is three runs, in this order, on the same machine.** Take
-`npm run merge:hash -- --out before.json` (and the same with `--editor`) on
-the OLD version. Upgrade. Run `node scripts/geometry-check.mjs`,
+`npm run merge:hash -- --out before.json` on the OLD version (no `--editor`:
+that arm is retired with the editor, X5.3c). Upgrade. Run `node scripts/geometry-check.mjs`,
 `node scripts/math-check.mjs`, `node scripts/bounds-check.mjs` and
 `node scripts/sweep-check.mjs` — the copies against the new library — then
-`npm run merge:hash -- --against before.json` (and `--editor`). A merge:hash
+`npm run merge:hash -- --against before.json`. A merge:hash
 difference with all four checks clean is Babylon's own output changing under the
 adapter or a collider.
 

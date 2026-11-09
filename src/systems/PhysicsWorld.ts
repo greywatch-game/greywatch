@@ -96,7 +96,7 @@ export type { HavokInstance };
  * message and the game does not start.
  *
  * The import is dynamic so Havok's glue is a chunk of its own rather than part
- * of the main bundle's parse. Unlike `src/editor/`, it is deliberately NOT
+ * of the main bundle's parse. Unlike `src/viewer/`, it is deliberately NOT
  * `import.meta.env.DEV`-gated: this ships.
  *
  * Nothing here names the `.wasm`, and it must not. Havok's ESM glue resolves
@@ -164,9 +164,9 @@ export interface PhysicsClient {
    */
   afterFirstStep(): void;
   /**
-   * The static world is being torn down — a map is being replaced, or the
-   * editor is rebuilding one. Release everything: the ground these bodies were
-   * standing on is about to stop existing.
+   * The static world is being torn down — a map is being replaced. Release
+   * everything: the ground these bodies were standing on is about to stop
+   * existing.
    */
   worldCleared(): void;
 }
@@ -326,14 +326,11 @@ export class PhysicsWorld {
    * Called for every map build, and it must be, because the alternative is a
    * physics world holding shapes built from a DISPOSED map's geometry — the
    * silent failure `installMap`'s own note is about.
-   *
-   * Editor builds are skipped outright: there are no corpses in the editor and
-   * a tier-3 rebuild is already ~570 ms.
    */
-  setMap(map: GameMap | null, editor: boolean): void {
+  setMap(map: GameMap | null): void {
     for (const c of this.clients) c.worldCleared();
     this.clearWorld();
-    if (map && !editor) this.buildWorld(map);
+    if (map) this.buildWorld(map);
   }
 
   /**
@@ -623,8 +620,8 @@ export class PhysicsWorld {
    * **Every list, and all of them**: the world used to be one body, one
    * container and its leaves, and it is now one body and one container PER
    * BLOCK. A rebuild that dropped a single bucket would leak a live static
-   * body into the next map — the editor's tier-3 rebuild does this on every
-   * save — which is why the bucketing's sharp edge is here rather than in
+   * body into the next map — every map change does this — which is why the
+   * bucketing's sharp edge is here rather than in
    * `buildWorld`.
    */
   private clearWorld(): void {

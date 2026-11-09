@@ -217,7 +217,7 @@ contract:
   wait abandoned between two frames therefore leaves no map drawn unculled and
   no camera parked at a flag.
 - **It simulates nothing.** The camera-dependent passes are placed by
-  `updateSceneForCamera` at `dt` 0 — the editor's tail — and the bounce volume
+  `updateSceneForCamera` at `dt` 0 — the viewer's tail — and the bounce volume
   and the ear are not moved at all, because both are owed to the camera the
   deploy screen will be drawn from. That tail runs once more at the end, around
   that camera, because in the page's own match nothing in `deploy` would place
@@ -257,8 +257,8 @@ both come out) drops the held spawn: both hand out a fresh body regardless, a
 rotation by retiring every player on the authority and a reconnect by seating
 this client into a new slot that is dead until it asks.
 
-**`bench` is the benchmark (`?bench=<map>`) and is the other STEP outside the
-cycle**, beside `editor`. It is entered from `deploy` on the frame the deploy
+**`bench` is the benchmark (`?bench=<map>`) and is the one STEP outside the
+cycle** (the map editor's `editor` was the other until `BABYLON_EXIT.md` X5.3c). It is entered from `deploy` on the frame the deploy
 screen opens — `finishBakeWait` hands the round to `Game.enterBench` instead of
 waiting for the player — and it leaves for `menu` and for nothing else: its
 script running out, Escape, or a round that ends inside it all go through
@@ -324,8 +324,8 @@ the game is in are unchanged by any of this; it is only the answering that is
 funnelled.
 
 **A step transition takes down whatever lids were up, and that is `go`'s job
-rather than the caller's.** The three transitions that leave a round — the menu, a
-round starting, F2 into the editor — each used to write out the same list of
+rather than the caller's.** The transitions that left a round — the menu, a
+round starting, F2 into the map editor while there was one — each used to write out the same list of
 screens to put away, and the copies had already drifted: F2 from the lobby left
 the match list hanging over the editor's own panel. The other twelve wrote none
 of it, which was invisible offline (nothing moves the state while a lid is up
@@ -342,8 +342,8 @@ second time before it was moved into `go` beside the lids.** The menu, the
 round-over card and the building card are all one element and all belong to a
 STEP rather than being laid over one, so there is no row in `SCREENS` to hang
 them off and they were left to the callers — where they drifted exactly as the
-lid lists had: of the seven `go` call sites, `startRound`, `toggleEditor` and
-`enterMenu` took the card down, `endRound` replaced it, and `enterDeploy`,
+lid lists had: of the seven `go` call sites then, `startRound`, the map editor's
+toggle and `enterMenu` took the card down, `endRound` replaced it, and `enterDeploy`,
 `spawnPlayer` and `enterDying` did neither. Where the player alone decides the
 step that is invisible, because those three are only ever reached from a state
 with no card up. Where the wire decides it — a server's match, and since X2.5c
@@ -465,9 +465,9 @@ arrives beneath the player's fingers.
 ## The map viewer's lid (dev only)
 
 **`F2` in a DEV build raises the map viewer (`src/viewer/`, `BABYLON_EXIT.md`
-X5.3b) as a LID over a round**, where the editor it replaces was a STEP of its
-own over a build of its own (`editor`, `Shift+F2` until X5.3c deletes it). Its
-row is the pause's, for the pause's reasons:
+X5.3b) as a LID over a round**, where the map editor it replaced was a STEP of
+its own over a build of its own (`editor`, deleted at X5.3c). Its row is the
+pause's, for the pause's reasons:
 
 | field | answer | why |
 | --- | --- | --- |
@@ -477,7 +477,7 @@ row is the pause's, for the pause's reasons:
 | `inRound` | `false` | a lid takes the board away |
 
 **It is the one lid that MOVES the camera, and so the one that owes the camera
-back.** Its frame (`Game.updateViewer`) is the editor's camera tail, renamed: the
+back.** Its frame (`Game.updateViewer`) is the map editor's camera tail, renamed: the
 free camera (`ViewerCamera`, writing `CameraSystem`'s `FreeCamera`, which the post
 chain is bound to) is the shadow focus, and the round's own bodies are passed to
 the tail, so what is drawn is the round's frame — its GI, glazing, fires, grass,
@@ -498,7 +498,7 @@ and a `deploy`, a round-over card or a pause runs no tail of its own, so
 `closeViewer` sets `Game.sceneOwed` and the NEXT `tick` runs the camera tail once
 at no time from the shadow focus the lid found, after its state's arm — inside a
 frame, so no profiler span lands between two — unless a live frame's own tail has
-paid it first, and never on the way to a build, the menu or the editor.
+paid it first, and never on the way to a build or the menu.
 **`F2`'s own lowering also owes the pointer lock** back to a live frame (the
 resume's route); the viewer's own right-drag lock is never registered with the
 chase (`PointerLockChase.changed` is told "not held" in `viewer`), so its release

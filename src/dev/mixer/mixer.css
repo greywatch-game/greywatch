@@ -7,7 +7,7 @@
  * from anything on the static graph.
  */
 
-/* Same opt-in as #editor-panel: #hud is pointer-events:none, and the same
+/* Same opt-in as #viewer-panel: #hud is pointer-events:none, and the same
    font for the same reason — this is a dense numeric tool, not part of the
    game's presentation, and it should not move when the HUD is restyled. */
 #mixer-panel {
@@ -168,7 +168,7 @@
 }
 /* Mute and solo are the two states that make the panel lie about the mix, so
    they are the two that have to be unmistakable from the corner of the eye —
-   the same argument the editor's terrain border makes. */
+   the same argument the map editor's terrain border made. */
 #mixer-panel button.mx-on.mx-mute {
   background: #4a1520;
   color: #ff9aa8;

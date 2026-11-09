@@ -3,8 +3,7 @@
  * `WorldSurface` (one surface of the world — the floor's patches, the rim's
  * runs, and every merged surface: a `Part`, the map block it was filed under,
  * which layout items its vertex ranges came from, whether its positions must
- * stay writable, when its mesh is BORN, whether it is the LANDFORM, and the
- * editor item it joins),
+ * stay writable, when its mesh is BORN, and whether it is the LANDFORM),
  * `PaneSurfaceGroup` (a glazing surface and the breakable panes that live in
  * it), `SurfaceRecord` and `WorldGeometry` (what `GameMap.world` keeps of a
  * build once its arrays are uploaded — everything but the arrays, since
@@ -17,8 +16,8 @@
  *
  * **A PIECE is a LAYOUT ITEM** — one per placement (roads included) and one
  * per scatter region, numbered in that order by `MapBuilder` — and its id is
- * an index into `WorldGeometry.pieces`, which says which item it is in the
- * editor's own shape (`EditorRef`). Every admitted part's surface starts as
+ * an index into `WorldGeometry.pieces`, which says which item it is
+ * (`ItemRef`). Every admitted part's surface starts as
  * ONE range of its piece covering the whole of it, and every merge carries
  * the ranges through by running vertex and index offsets in member order,
  * the order the merge concatenates in (`concatPieces`, which `merge.ts`'s
@@ -33,7 +32,7 @@
  * piece of the cottage"): admission would file such a part under a new id,
  * and nothing downstream of admission would change.
  * Owns: nothing that outlasts a build but the DEV-only set of admitted
- * arrays. No Babylon — the `Part`, `Structure`, `Material` and `EditorItem`
+ * arrays. No Babylon — the `Part`, `Structure` and `Material`
  * it names are TYPES — so the merge and the bake that run on these
  * (`merge.ts`, `vertexShading.ts`) move nothing on the device and the one
  * adapter that does (`worldMeshes` in `parts.ts`) is the only crossing.
@@ -51,8 +50,7 @@
  * buffer two parts shared would be moved twice, silently — DEV refuses one at
  * admission. A surface's piece ranges are CONTIGUOUS, in order, and cover
  * every one of its vertices and indices exactly, and no two adjacent ranges
- * name the same piece; on an editor build each surface is ONE range whose
- * piece is its own `editorRef` (`assertPieces`, DEV, every build).
+ * name the same piece (`assertPieces`, DEV, every build).
  * Must NOT hold a mesh, read a scene, or let a part in by any other door.
  */
 import type { Material } from "@babylonjs/core";
@@ -60,7 +58,7 @@ import { GeometryBuffer } from "../geometry/buffer";
 import { Matrix, Vector3 } from "../math";
 import type { Part, PartMetadata } from "./parts";
 import type { Structure } from "./kit/core";
-import type { EditorItem, EditorRef } from "./mapTypes";
+import type { ItemRef } from "./mapTypes";
 
 /**
  * A span of a surface's vertices and indices that came from one PIECE — a
@@ -85,14 +83,14 @@ export interface PieceRange {
  * `GameMap.visuals` unless our renderer draws it in every pass (X3.7b).
  *
  * `part` carries the geometry, the transform (identity once block-merged; a
- * placement's own on an editor build and on a pane block of one), the
+ * placement's own on a pane block of one), the
  * material, and the METADATA — the contract `CLAUDE.md` names (`block`,
- * `noShadowCaster`, `noGlow`, `noInk`, `sway`, `editorRef`), which the adapter
+ * `noShadowCaster`, `noGlow`, `noInk`, `sway`), which the adapter
  * hands the mesh unchanged and by identity.
  */
 export interface WorldSurface {
   part: Part;
-  /** Mirrors `part.metadata.block`; null on roads, the editor's surfaces, and anything not block-merged. */
+  /** Mirrors `part.metadata.block`; null on roads and anything not block-merged. */
   block: string | null;
   /**
    * The LANDFORM: the floor's patches (the borderland's included), the rim's
@@ -102,7 +100,7 @@ export interface WorldSurface {
    * reach is none. Marked by the BUILD (`MapBuilder`) where it makes them,
    * never guessed from a name or a missing block. On the RECORD only and
    * never in `part.metadata`, so it reaches no mesh and nothing `merge:hash`
-   * fingerprints; an editor build's roads are its items' and not landform.
+   * fingerprints.
    */
   landform: boolean;
   /** See `PieceRange`. */
@@ -114,8 +112,6 @@ export interface WorldSurface {
   updatable: boolean;
   /** Where its mesh stands in the scene's creation order. See the header. */
   born: number;
-  /** The editor item whose `visuals` its mesh joins; null on a shipped build. */
-  owner: EditorItem | null;
 }
 
 /**
@@ -133,7 +129,7 @@ export interface PaneSurfaceGroup {
  * What the map KEEPS of a surface once its arrays are uploaded
  * (`GameMap.world`): its name, its world bounds, its material, its METADATA
  * (the very object a mesh made of it carries — `block`, the exemptions,
- * `sway`, `editorRef`), its block, its piece ranges, whether its positions
+ * `sway`), its block, its piece ranges, whether its positions
  * are writable, how many vertices and indices it holds — which is the
  * merge's KEY (block, material, sway, exemptions) and everything a piece
  * range is measured against — and WHO DRAWS IT (`visual`).
@@ -154,8 +150,7 @@ export interface SurfaceRecord {
    * every pass and Babylon was given no mesh of it (`BuildOptions.onSurface`,
    * `BABYLON_EXIT.md` X3.7b) — on a shipped build every surface but the
    * glazing and the fires. Every index of `visuals` is named by exactly one
-   * record (`WorldCulling.setMap` checks), and on an editor build, which our
-   * renderer takes nothing of, record `i` is visual `i`.
+   * record (`WorldCulling.setMap` checks).
    */
   visual: number;
   /**
@@ -190,7 +185,7 @@ export interface SurfaceRecord {
 export interface WorldGeometry {
   surfaces: SurfaceRecord[];
   /** Piece id -> the layout item it is. */
-  pieces: EditorRef[];
+  pieces: ItemRef[];
 }
 
 /**
@@ -347,7 +342,7 @@ export function mintFrom(start = 0): Mint {
 
 /** A surface for `part`, born `born`, filed nowhere yet, of no piece and no landform. */
 export function surfaceOf(part: Part, born: number): WorldSurface {
-  return { part, block: null, landform: false, pieces: [], updatable: false, born, owner: null };
+  return { part, block: null, landform: false, pieces: [], updatable: false, born };
 }
 
 /**
@@ -430,10 +425,9 @@ export function concatPieces(members: readonly WorldSurface[]): PieceRange[] {
  * The first `unpieced` records (the floor and the rim) carry none; every
  * other one is covered exactly — contiguous from 0, in order, no two adjacent
  * ranges of one piece, every vertex and every index — by ranges whose ids are
- * in the table. On an `editor` build each surface is ONE range, and its piece
- * is the item its `editorRef` names.
+ * in the table.
  */
-export function assertPieces(world: WorldGeometry, unpieced: number, editor: boolean): void {
+export function assertPieces(world: WorldGeometry, unpieced: number): void {
   const fail = (r: SurfaceRecord, why: string): never => {
     throw new Error(`assertPieces: "${r.name}" ${why}`);
   };
@@ -455,14 +449,6 @@ export function assertPieces(world: WorldGeometry, unpieced: number, editor: boo
     });
     if (v !== r.vertexCount || x !== r.indexCount) {
       fail(r, `ranges cover ${v}/${x} of ${r.vertexCount} vertices / ${r.indexCount} indices`);
-    }
-    if (editor) {
-      if (r.pieces.length !== 1) fail(r, `is ${r.pieces.length} pieces on an editor build`);
-      const ref = r.metadata?.editorRef as EditorRef | undefined;
-      const piece = world.pieces[r.pieces[0].piece];
-      if (!ref || ref.list !== piece.list || ref.index !== piece.index) {
-        fail(r, `is piece ${JSON.stringify(piece)} but its editorRef is ${JSON.stringify(ref)}`);
-      }
     }
   });
 }

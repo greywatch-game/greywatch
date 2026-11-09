@@ -46,7 +46,7 @@
  * this frame draws it), and every other value is the field's own; no particle is
  * drawn in the glow's mask, a shadow map or a bake; a field's buffers and
  * textures are released by `reset` and `dispose`, which are called only OUTSIDE
- * the render (an install, a teardown, the editor's rebuild, a harness) — never
+ * the render (an install, a teardown, a harness) — never
  * while a frame's recording holds them; nothing here allocates on a frame.
  * Never: imports Babylon; reads a node, a camera or a mesh; draws a random number
  * outside `create` and a field's first update; decides what a field emits (its

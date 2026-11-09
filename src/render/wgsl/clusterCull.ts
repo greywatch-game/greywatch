@@ -122,7 +122,8 @@ export const NO_BLOCK = 0;
 /**
  * A block merge's key ("bx,bz", `world/merge.ts`' `blockOf`) as its grid
  * coordinates — the ONE parse of it — or null for a key that is not a pair
- * of integers (an editor build's, which keys per placement).
+ * of integers (none is since the map editor's build, which keyed per
+ * placement, went at `BABYLON_EXIT.md` X5.3c).
  */
 export function blockCoordsOf(block: string): readonly [number, number] | null {
   const comma = block.indexOf(",");

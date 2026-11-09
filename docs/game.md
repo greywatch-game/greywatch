@@ -109,8 +109,8 @@ is a guard — `updateMenuCard`'s `!this.remoteRound`; `docs/states.md`), whethe
 `updateRoundBehind`, `docs/states.md`), and the facts that follow from there
 being a server at all: the clouds' turn and the storm on the authority's
 clock, the ping column, whose seed a capture names, and the flow fields
-(`BuildOptions.navFields`, baked on the page only for the editor's overlay and
-a server's match, whose netplay smoke steers by them). **Never what the page
+(`BuildOptions.navFields`, baked on the page only for a server's match, whose
+netplay smoke steers by them). **Never what the page
 PREDICTS** — a fork on who hosts that changes a prediction is offline getting
 a different game from online, which is what X2.5c exists to rule out.
 
@@ -134,19 +134,19 @@ behind its snapshots in its own match as in a server's. **There is no
 `NetSoldier`s (read through `mapBodies`), and the posed fleet is
 `syncNetVehicles`'. Nor the AI's map data: the page's build always returns
 `cover: null` (`MapBuilder.build`), skips the flow fields wherever nothing on
-the page steers by them (`BuildOptions.navFields`, set only for the editor and
-a server's match), and keeps the nav GRAPH for `standableAt` and the editor.
+the page steers by them (`BuildOptions.navFields`, set only for a server's
+match), and keeps the nav GRAPH for `standableAt` and the viewer.
 
 **The match's world is the map's committed BAKE, not the page's build**
 (found at X2.5c C4). The old in-page core was handed `collisionOf(map)` off the
 map the page had just built; a `Match` reads `MapDef.collision` through
-`loadSimWorld`, as a server's does — so an edit the editor saved plays against
-stale colliders on the authority's side until `npm run collision` re-bakes it.
-The same rule a server match always had, now met in the dev loop. **An owned
+`loadSimWorld`, as a server's does — so a change to a generator plays against
+stale colliders on the authority's side until `npm run collision` re-bakes it
+(`npm run build` refuses a bake older than its layout). The same rule a server
+match always had, now met in the dev loop. **An owned
 match has no idle timer, so nothing closes it but the page**: `leaveMatch`
-does, from `enterMenu`, from `Shift+F2` into the editor and at the top of every
-`openLocalRound`, so the menu, the editor and a server's match hold no second
-world.
+does, from `enterMenu` and at the top of every `openLocalRound`, so the menu
+and a server's match hold no second world.
 
 **A host that dies is SAID, and REPLACED.** A port into a dead Worker says
 nothing, so `LocalMatch`'s watchdog calls the host lost on SILENCE
@@ -267,20 +267,20 @@ place.
 
 ## `installMap` is the one place a map is built
 
-**`installMap` is the one place a map is built**, and both callers — a round
-starting and an editor rebuild — go through it. It disposes the standing map,
+**`installMap` is the one place a map is built**, and its one caller is a
+round starting (`buildRound`); the map editor's rebuild was the other until
+`BABYLON_EXIT.md` X5.3c deleted it. It disposes the standing map,
 builds `this.mapDef`, and hands the result to every system that reads geometry or
 environment off it: shadows (casters, key light, fog range), atmosphere, water,
 grass, the player's terrain, the grenade pool, the physics body — and every
 simulation's PICTURE beside it (below). It was once two
 copies that had drifted apart, and the failure is silent: a system added to the
-round's copy and forgotten in the editor's keeps a cached pointer into a *disposed*
-map, so the editor renders last build's water over this build's terrain and
-nothing throws. **Anything new that consumes a `GameMap` or an `EnvironmentSpec`
-goes in `installMap`.** What stays with the callers is what they genuinely
-disagree about: the round applies the environment and repaints the sky while the
-editor drives `applyEnvironment` itself so it can toggle its work light, and the
-round alone owns what is about a *fight* — the match it plays (opened before
+round's copy and forgotten in the editor's kept a cached pointer into a *disposed*
+map, so the editor rendered last build's water over this build's terrain and
+nothing threw. **Anything new that consumes a `GameMap` or an `EnvironmentSpec`
+goes in `installMap`.** What stays with the caller is the environment (the round
+applies it and repaints the sky; the viewer's work light swaps it over a round
+and puts it back) and what is about a *fight* — the match it plays (opened before
 the build, `openLocalRound`), the roster's pool, flag markers, minimap.
 
 **A simulation and its view are handed the map on adjacent lines, and a view
@@ -342,8 +342,7 @@ since `BABYLON_EXIT.md` X4.4d, `render/FlameDraw.ts`, handed it at the
 install and drawn while their block's cell is offered), while `map.world` keeps a
 record of every surface, each naming its mesh if it has one — then files it
 (`WorldCulling.setMap`, the cells grown off the records) and hands it over
-(`handover.install`, the cut, and every pass of ours its world). An editor
-build hands nothing over: Babylon draws it whole. **What ours cannot draw is
+(`handover.install`, the cut, and every pass of ours its world). **What ours cannot draw is
 never handed back, there being no mesh to hand it to: it is
 `Game.worldFailed(reason)`**, run after the task in hand (a failure can land
 inside a render, or inside `installMap` itself) — a `console.error`,
@@ -363,17 +362,15 @@ whose own contract is broken (`setMap` hands back the reason rather than
 throwing, `reachBoxOf` a null, and `installMap` hands nothing over after
 it). **One door is not the handover's**: the bodies' shadow map (X4.1c) is no
 part of the world but has no fallback either, so `installMap` hands it the
-install's failure after the handover's (`BodyShadowMap.setFailure`, none for
-an editor build, taken back by `teardownMap`), and its pipeline, asked once
+install's failure after the handover's (`BodyShadowMap.setFailure`, taken
+back by `teardownMap`), and its pipeline, asked once
 for the session, fails every round after a failed build. **A failure belongs to the INSTALL it came from**: the handover latches
 a fresh `WorldOwner` at each install and hands it back with the failure, so
 the console line and the toast name the map that failed, and one of the OLD
 map still standing under the next round's building card (between
 `startRound` and that round's install, `Game.roundWorld` null) is said and
-ignored rather than ending the round being built. **An EDITOR build fails
-nothing** — the exemption is the build's kind (`install`'s `editor`), never
-whether ours took a surface — and a cull refusal of one is a
-`console.error`, the editor kept open. `teardownMap` takes our side down
+ignored rather than ending the round being built. (The map editor's build
+failed nothing, by the build's kind, until X5.3c deleted it.) `teardownMap` takes our side down
 first (`handover.clear`), ahead of the map's meshes.
 
 **It also lets go of the map's DATA, and that half is proved rather than
@@ -397,9 +394,9 @@ and ~28 MB of GPU buffers per Coldharbour build, kept for the life of the tab
 
 **It is one SYNCHRONOUS turn and that is why the map's floor is resolved before
 it rather than inside it.** A heightfield is a lazy `import()` now
-(`MapDef.heights`, ENGINE_UPGRADE.md S7), so the two doors into a build each
-await it and put it down on `Game.floor`: `buildRound`, which is async for that
-one line, and `toggleEditor`, which already was. `installMap` reads the field
+(`MapDef.heights`, ENGINE_UPGRADE.md S7), so the one door into a build awaits
+it and puts it down on `Game.floor`: `buildRound`, which is async for that one
+line (the map editor's toggle was a second until X5.3c). `installMap` reads the field
 and hands it to `MapBuilder.build`.
 
 The await in `buildRound` is a hole the MAP can move through, and it is covered
@@ -430,8 +427,8 @@ which reads as a bot with a wallhack or a round that never stops.
 
 **Silent is the operative word.** A system that missed the funnel does not throw
 and does not log; it renders, correctly, from a map that no longer exists. The
-editor is where it shows first because the editor is the caller that rebuilds
-most often, but a round is just as capable of it — and by then the symptom is a
+map editor was where it showed first, being the caller that rebuilt most often,
+but a round is just as capable of it — and by then the symptom is a
 map that looks a build out of date in one layer only, which reads as a bug in
 that layer. The funnel is cheap insurance against a class of bug that costs a
 day to attribute.
@@ -529,7 +526,7 @@ site:
 | `drawView` | every state, right after `drawHulls`, immediately before `scene.render` | the player's own weapon (`BABYLON_EXIT.md` X4.3b-d): its switches synced (`ViewTree.syncSwitches` — every viewmodel surface's own enabled flag written to its joint chain's; until X4.3d also run before the cull, which asked a Babylon glass or card `isEnabled()`), then every switched-on, visible SURFACE of every role, the set `_evaluateActiveMeshes` took off the cull's list before X4.3c, evaluated through the viewmodel's `RenderCache` as the render evaluated its nodes (`ViewModel.drawView`), and each written as one draw of the weapon's kit — its joint's world, its slot, an opaque part's material's recipe — the kit card first (its canvas uploaded if it was painted since, `ViewDraw.cardPicture`), the opaque parts in Babylon's group-1 order (a stable sort of the order made by material `uniqueId`), the glasses back to front, and handed to our renderer (`ViewDraw.commit`), each lit draw's bloom PULLED inside the render (`Game.viewPull`). The joints it stamped are given the render's id from inside the render (`onAfterActiveMeshesEvaluationObservable`), so the next frame's readers (`muzzleWorld`, `throwHandWorld`, the eject port, the reload's gravity) meet Babylon's stamps — after every write to a joint and after the cull; in the render span because Babylon composed the viewmodel's nodes inside `scene.render` until X4.3b |
 | `drawPieces`, `drawMarks` | every state, right after `drawView`, immediately before `scene.render` | the effect pools' PIECES (`BABYLON_EXIT.md` X4.4b): every switched-on tracer, spent case, thrown body (the simulation's and the wire's), rocket and mine composed fresh and written as an instance of its kit (`pieces.writePieceDrawing`) — an unlit segment always, a cel one where the size gate keeps its world sphere this frame — and every standing bullet MARK the gate keeps, by its frozen sphere, handed to our renderer (`PoolDraw.commit`); after every pool's step (`CombatFx.update`, `GrenadeFx.update`, `AntiTankFx.update`, `NetSession.update`, `PlayerView.stepped`) and after the cull; in the render span because Babylon composed the pools' meshes inside `scene.render` until X4.4b. Each piece's segment ORDER and its unlit part's bloom, and the marks' own order, are PULLED inside the render (`Game.piecePull`, `Game.markPull`), off `camera.globalPosition` |
 | `drawBlasts`, `drawDebris` | every state, right after `drawMarks`, immediately before `scene.render` | the blast's BILLOWS and the DEBRIS (`BABYLON_EXIT.md` X4.4c): whether any batch `BlastFx` posed holds a billow, and whether the glow may draw them (`glowAdmits`) — the batches themselves PULLED inside the render (`Game.blastPull`: Babylon's frustum test of each batch's hand-set sphere off this render's planes, group 0's front-to-back order, the active list's order for the mask, each batch's bloom faded at its centre); and every switched-on glass shard and rubble chunk composed off its body's pose (`poseView.writePosedDrawing`) and kept by the size gate on its sphere composed this frame (Babylon's latch on stale bounds dropped on purpose, the owner's decision of 2026-11-01), handed over in pool order, the order front to back PULLED inside the render (`Game.debrisPull`); after `stepAftermath` (the engine, then the debris clients) and after the cull, in the render span because Babylon composed those meshes inside `scene.render` until X4.4c |
-| `drawZones` | every state, right after `drawFires`, immediately before `scene.render` | the capture zones' RINGS AND FLAGS (`BABYLON_EXIT.md` X4.6b): each surface `ZoneDraw` holds through its switch (`ZoneSurface.on`) and the size gate (`keepsSphere`, as `offer` asked it of the mesh it was), and the rest PULLED inside the render (`Game.nearestPull`: Babylon's frustum test of the surface's sphere off this render's planes, nearest first off `globalPosition`, the order of building breaking a tie, and the one run merges them with the blades and the water, `render/NearestRun.ts`). The cloth's vertices are written earlier, by `zones.update` itself. Absent while the draw is not installed: the menu, an editor build |
+| `drawZones` | every state, right after `drawFires`, immediately before `scene.render` | the capture zones' RINGS AND FLAGS (`BABYLON_EXIT.md` X4.6b): each surface `ZoneDraw` holds through its switch (`ZoneSurface.on`) and the size gate (`keepsSphere`, as `offer` asked it of the mesh it was), and the rest PULLED inside the render (`Game.nearestPull`: Babylon's frustum test of the surface's sphere off this render's planes, nearest first off `globalPosition`, the order of building breaking a tie, and the one run merges them with the blades and the water, `render/NearestRun.ts`). The cloth's vertices are written earlier, by `zones.update` itself. Absent while the draw is not installed: the menu |
 | `drawGrass` | every state, right after `drawZones`, immediately before `scene.render` | the GRASS (`BABYLON_EXIT.md` X4.6c): the field through the size gate (`keepsSphere`, its one sphere), the patches `GrassSystem.follow` chose, where the blades fall being the one run's (`docs/rendering.md`) |
 | `drawWater` | every state, right after `drawGrass`, immediately before `scene.render` | the WATER (`BABYLON_EXIT.md` X4.6d): each body through the size gate (`keepsSphere`, its one sphere), the shape `WaterSystem.follow` chose, the live key and the rotors' array copied (`WaterSystem.commit`), and its place in the one run asked inside the render (`Game.nearestPull`) |
 | `updateBakeWait` | while a reflection bake drains, and then while the pipeline warm-up runs | after the render, which released the bake's share or compiled the warm frame's pipelines; not an arm, because `loading` simulates nothing. The wait's end (`finishBakeWait`) SEALS our pipeline cache for the round (`PipelineCache.seal`, until `teardownMap`): a compile of ours in play is a DEV warning naming what the declared list missed |
@@ -577,8 +574,8 @@ the viewer answering `holdsWorld`. It moves the free camera and then runs
 the pause holds it, and at the frame's `dt` over a server's round — with the
 round's bodies as the grass's pushers and no player: the shadow window, the bodies' map, the light
 slots, the lamps' atlas, the water's and the grass's own clocks and the wind —
-the half of a played frame that needs only a posed camera, which is the editor's
-tail renamed. So every row of the table above reads the viewer's camera as it
+the half of a played frame that needs only a posed camera, which is the map
+editor's tail renamed. So every row of the table above reads the viewer's camera as it
 reads the player's: the EYE (`followEye`), the bounce around it (`gi.update`),
 the EAR (`sfx.setListener`, over an audio clock suspended in the page's own
 match), and the draws before the render. It is in the arm and not in `tick`

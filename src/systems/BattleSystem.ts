@@ -549,8 +549,8 @@ export class BattleSystem {
    * (`NetRoster.setFielded`); this file only says how many bodies there are.
    *
    * **Called from `buildRound` and never from `installMap`**, unlike the other
-   * map-derived pushes: this is the ROUND's roster, and the editor rebuild —
-   * that method's other caller — has no round, no player and no bots. It runs
+   * map-derived pushes: this is the ROUND's roster, and that method is about
+   * the MAP. It runs
    * after `RagdollSystem.reset` has handed every rig back and after
    * `VehicleCrew.clear` has emptied the seats, because both hold a body this
    * may be about to dispose, and before `setDifficulty`, which draws a skill

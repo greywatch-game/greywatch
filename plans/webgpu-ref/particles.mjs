@@ -4,7 +4,7 @@
  * and the rotor wash become ours, read off the parent rather than argued.
  *
  * Run with `node plans/webgpu-ref/particles.mjs [map...] [--frames=N] [--out=f.json]
- * [--against=f.json] [--editor]`. Several maps are played in ONE boot, in the order
+ * [--against=f.json]`. Several maps are played in ONE boot, in the order
  * given, through the menu as a player rotates them (`Game.enterMenu`, `setMap`,
  * `startRound`), so `sarab cinderhaven sarab hollowmere cinderhaven` is the
  * rotation the plan asks about. Nothing in the repository is written but `--out`.
@@ -58,13 +58,10 @@
  * **Logged at each install:** the scene's particle systems in order (the order
  * Babylon draws them in), and the `Math.random` draws each construction made
  * (`Atmosphere.build`, `RotorWash.buildRing`) and each first update after a
- * build or a reset (`_initialize`). `--editor` ends the run with `F2` on the last
- * map from the menu, the order read after the editor's build, then after the
- * map's `particles.count` is changed IN MEMORY and the editor rebuilds (the
- * editor's panel edits no `particles` field: this is the one way in), after
- * it is put back, and in the round leaving the editor starts (`F2` again,
- * `Game.toggleEditor`'s `startRound`) — the flow `BABYLON_EXIT.md` X4.7c's
- * decision names, whose oracle for X4.7d is a BEFORE at 312dc44.
+ * build or a reset (`_initialize`). (`--editor`, which ended the run with the
+ * map editor's build and its rebuilds — X4.7c's flow, X4.7d's oracle at
+ * 312dc44 — is retired with the editor at `BABYLON_EXIT.md` X5.3c, row "X5.3,
+ * retire the editor", and refused.)
  *
  * Every touch of a field's STATE goes through one adapter (`window.__fields`),
  * which picks per field between `babylon` (Babylon's `GPUParticleSystem`s:
@@ -85,9 +82,9 @@
  *
  * **`--against`** compares, map by map, the order at deploy, the `Math.random`
  * draws of every construction and every first update (label and count), the
- * fields nobody could count, and then every logged number by `Object.is`; and
- * with `--editor` on both sides, the editor's orders and draws. It names the
- * first difference and exits 1.
+ * fields nobody could count, and then every logged number by `Object.is`. It
+ * names the first difference and exits 1; a log with an `editor` record (an
+ * older `--editor` run's) has it ignored, said on the console.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { bootMap, hardLimit, installRound, launchClient, root, startDevServer } from "./harness.mjs";
@@ -97,7 +94,10 @@ const opt = (k, d) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length 
 const FRAMES = Number(opt("frames", "240"));
 const OUT = opt("out", "");
 const AGAINST = opt("against", "");
-const EDITOR = args.includes("--editor");
+if (args.includes("--editor")) {
+  console.error("particles: --editor is retired with the map editor (BABYLON_EXIT.md X5.3c)");
+  process.exit(2);
+}
 const maps = args.filter((a) => !a.startsWith("--"));
 if (!maps.length) maps.push("cinderhaven");
 hardLimit(600 + maps.length * 300);
@@ -502,53 +502,6 @@ for (const id of maps) {
   }
 }
 
-if (EDITOR) {
-  // Leaving the editor asks before dropping unsaved edits; none are made, but
-  // a dialog would wait on nobody.
-  page.on("dialog", (d) => void d.accept());
-  const ed = await page.evaluate(async () => {
-    const g = window.__celshock;
-    const F = window.__fields;
-    const frame = () => new Promise((res) => g.scene.onAfterRenderObservable.addOnce(res));
-    g.enterMenu();
-    const out = {};
-    const from = window.__draws.length;
-    await g.toggleEditor();
-    if (!g.editor) throw new Error("the editor did not open");
-    for (let i = 0; i < 10; i++) await frame();
-    out.built = { order: F.all().map(F.name), hulls: g.vehicles.hulls.length, fliers: g.vehicles.hulls.filter((h) => h.flies).length };
-    const spec = g.mapDef.environment.particles;
-    if (spec) {
-      spec.count += 150;
-      g.editor.rebuildGeometry(null);
-      for (let i = 0; i < 10; i++) await frame();
-      out.countEdited = F.all().map(F.name);
-      spec.count -= 150;
-      g.editor.rebuildGeometry(null);
-      for (let i = 0; i < 10; i++) await frame();
-      out.countPutBack = F.all().map(F.name);
-    }
-    // Back to a round, as leaving the editor goes (`toggleEditor` runs
-    // `startRound`), on the same map: its order, ten frames into the deploy.
-    await g.toggleEditor();
-    await new Promise((res) => {
-      const poll = () => (g.state === "deploy" ? res() : setTimeout(poll, 10));
-      poll();
-    });
-    for (let i = 0; i < 10; i++) await frame();
-    out.round = F.all().map(F.name);
-    out.draws = window.__draws.slice(from);
-    return out;
-  });
-  report.editor = ed;
-  console.log(`editor build (${maps[maps.length - 1]})`);
-  console.log(`  order after F2: ${ed.built.order.join(", ")} (hulls ${ed.built.hulls}, flying ${ed.built.fliers})`);
-  if (ed.countEdited) console.log(`  after particles.count changed in memory and the editor rebuilt: ${ed.countEdited.join(", ")}`);
-  if (ed.countPutBack) console.log(`  after it was put back and rebuilt: ${ed.countPutBack.join(", ")}`);
-  console.log(`  in the round leaving the editor starts: ${ed.round.join(", ")}`);
-  for (const [label, n] of ed.draws) console.log(`  random draws: ${label}: ${n}`);
-}
-
 if (pageErrors.length || consoleErrors.length) {
   console.log(`${pageErrors.length} page errors, ${consoleErrors.length} console errors`);
   for (const e of [...pageErrors, ...consoleErrors].slice(0, 5)) console.log(`  ${String(e).slice(0, 300)}`);
@@ -627,17 +580,7 @@ if (AGAINST) {
     console.log(`against: ${report.maps.length} maps here and ${ref.maps.length} there`);
     failed = true;
   }
-  if (report.editor && ref.editor) {
-    const orders = ["built", "countEdited", "countPutBack", "round"].map((k) => [k, JSON.stringify(report.editor[k]), JSON.stringify(ref.editor[k])]);
-    const o = orders.find(([, a, b]) => a !== b);
-    const d = drawsDiffer(report.editor.draws, ref.editor.draws);
-    if (o) console.log(`against editor: ${o[0]} is ${o[1]} here and ${o[2]} there`);
-    if (d) console.log(`against editor: draws DIFFER — ${d}`);
-    if (o || d) failed = true;
-    else console.log("against editor: orders and draws equal");
-  } else if (report.editor || ref.editor) {
-    console.log("against: --editor on one side only, the editor not compared");
-  }
+  if (ref.editor) console.log("against: the other log's --editor record is not compared (retired at X5.3c)");
 }
 await browser.close();
 vite.stop();

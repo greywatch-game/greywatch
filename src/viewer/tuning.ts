@@ -3,9 +3,9 @@
  * Owns: the fly camera's speeds, the plan's size, and the overlay and mark
  * colours.
  *
- * Deliberately NOT in src/config/, for the editor's reason (`editor/tuning.ts`,
- * whose camera block and colours these are, copied while the editor stands
- * beside the viewer as its oracle, `BABYLON_EXIT.md` X5.3b): that directory
+ * Deliberately NOT in src/config/, for the map editor's reason (its
+ * `editor/tuning.ts`, whose camera block and colours these are, copied at
+ * `BABYLON_EXIT.md` X5.3b; the editor went at X5.3c): that directory
  * owns gameplay tunables, and nothing here reaches the shipped game — the
  * viewer is dev-only and dynamically imported, so these values never load in a
  * production build.

@@ -548,8 +548,8 @@ export function bakeVertexShading(
     // so the core reads exactly the numbers the mesh will.
     const { positions, normals } = part.geometry;
     if (!normals) continue;
-    // Merged blocks sit at identity, and an editor build's surfaces and a
-    // pane block of one do not — so nothing may assume, and the matrix is
+    // Merged blocks sit at identity, and a pane block of one does not — so
+    // nothing may assume, and the matrix is
     // composed as `computeWorldMatrix(true)` composed the mesh's, in float32.
     const m = worldMatrixOf(part, world).m;
     // Read once per surface, never per vertex: `mergeByMaterial` keys on the

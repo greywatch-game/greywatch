@@ -2,7 +2,7 @@
  * render/WaterDraw.ts — The water as OUR renderer draws it (`BABYLON_EXIT.md`
  * X4.6d): every body of water its grid or its far quad, a range of one index
  * buffer — the `water` and `waterFar` meshes on a `ShaderMaterial` that Babylon's
- * opaque list drew until X4.6d, one draw for one, in an editor build as in a round.
+ * opaque list drew until X4.6d, one draw for one.
  * Owns: `WaterDraw` — the pipeline (`waterProgram.ts`), asked once for the session;
  * the shared block and a group 0 of the water's own (`WATER_FRAME_GROUP`), the grid
  * and the quad on the GPU (`setGeometry`), each body's block, its bed-depth texture

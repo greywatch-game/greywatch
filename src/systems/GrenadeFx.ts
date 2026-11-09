@@ -430,7 +430,7 @@ export class GrenadeFx {
   /**
    * Everything off the screen — every body, every flame and every cloud —
    * beside `GrenadeSystem.reset`, wherever the map under it is thrown away. A
-   * cloud left up would hang in the middle of an editor rebuild.
+   * cloud left up would hang over terrain that no longer exists.
    */
   reset(): void {
     for (let i = 0; i < this.bodies.length; i++) {

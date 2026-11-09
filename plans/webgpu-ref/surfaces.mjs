@@ -4,7 +4,7 @@
  * rather than read off the code (X4.4a's scratch probe, kept this time).
  *
  * Run with `node plans/webgpu-ref/surfaces.mjs [map...] [--rows=<id,...>]
- * [--pixels] [--editor] [--keep=<dir>] [--out=<f.json>]`. Nothing is written but
+ * [--pixels] [--keep=<dir>] [--out=<f.json>]`. Nothing is written but
  * `--out` and `--keep`, and nothing in `ref/` is touched or read.
  *
  * **It shoots a map's sequence exactly as `bank.mjs` does** (`thaw`,
@@ -53,22 +53,20 @@
  *
  * **Every draw in a frame is reported, `other` included, by the list it is on**:
  * `other[opaque x640, transparent x6]`. `blob` is a body's contact shadow
- * (`ShadowSystem`), and `proxy` is the editor's handles (`editor/proxies.ts`), the
- * `ed-*` meshes, most of them blended. An empty class says only that nothing raised
- * it in THAT frame: a bank row reaches no `updateBlobs`, so only a row with a `blob`
- * event shows one, which is how the blob went unnoticed through X4.6a's first run.
+ * (`ShadowSystem`). (A `proxy` class, the map editor's `ed-*` handles, was
+ * retired with the editor at `BABYLON_EXIT.md` X5.3c.) An empty class says
+ * only that nothing raised it in THAT frame: a bank row reaches no
+ * `updateBlobs`, so only a row with a `blob` event shows one, which is how
+ * the blob went unnoticed through X4.6a's first run.
  *
  * `render` only reaches what Babylon draws, so a class stops being reported the
  * moment its step lands (X4.6b the flags and the rings, X4.6c the grass and the
  * turf, X4.6d the water, X4.6e the glazing, the three pools and the blobs), which
  * is how a sub-step proves it took the whole of its surface.
  *
- * **`--editor` asks the same of an editor build**: `F2` from the menu (no round
- * and no freeze), the free camera warped to each distinct eye of the map's rows
- * looking at that row's target, one frame's log at each. Then one water rect and
- * one grass rect are changed in memory, as the panel changes them, through the
- * editor's own rebuild, and the meshes before and after are compared. Nothing is
- * saved: the page is simply closed.
+ * **`--editor`**, which asked the same of the map editor's build, is retired
+ * with the editor (`BABYLON_EXIT.md` X5.3c, row "X5.3, retire the editor") and
+ * refused.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -91,7 +89,10 @@ import { shotList } from "./vantages.mjs";
 
 const args = process.argv.slice(2);
 const PIXELS = args.includes("--pixels");
-const EDITOR = args.includes("--editor");
+if (args.includes("--editor")) {
+  console.error("surfaces: --editor is retired with the map editor (BABYLON_EXIT.md X5.3c)");
+  process.exit(2);
+}
 const OUT = args.find((a) => a.startsWith("--out="))?.slice("--out=".length) ?? "";
 const KEEP = args.find((a) => a.startsWith("--keep="))?.slice("--keep=".length) ?? "";
 const ROWS = new Set(
@@ -145,7 +146,6 @@ function hangProbe(page) {
       if (n === "water") return "water";
       if (n === "waterFar") return "waterFar";
       if (n === "blobShadow") return "blob";
-      if (/^ed-/.test(n)) return "proxy";
       if (/^spark\d/.test(n)) return "spark";
       if (/^impact\d/.test(n)) return "disc";
       if (mat?.name === "blastScorch") return "scorch";
@@ -487,119 +487,6 @@ async function maskOf(baseB64, otherB64, key) {
   );
 }
 
-/** `--editor`: one map's editor build, as the header says. */
-async function editorBuild(id) {
-  const { page, pageErrors, consoleErrors } = await bootMap(browser, vite.url, id);
-  await page.evaluate(async () => {
-    const g = window.__celshock;
-    await g.toggleEditor();
-    if (!g.editor) throw new Error("the editor did not open");
-  });
-  await settle(page, 30);
-  await hangProbe(page);
-  const rows = {};
-  const seen = new Set();
-  console.log(`${id} (editor build)`);
-  for (const v of shotList(id, VANTAGES[id])) {
-    const key = v.pos.join(",");
-    if (seen.has(key)) continue;
-    seen.add(key);
-    await page.evaluate((r) => {
-      const g = window.__celshock;
-      const [x, above, z] = r.pos;
-      const y = g.map.terrain.surfaceAt(x, z, true) + above;
-      const d = [r.target[0] - x, r.target[1] - y, r.target[2] - z];
-      const yaw = Math.atan2(d[0], d[2]);
-      const pitch = Math.atan2(d[1], Math.hypot(d[0], d[2]));
-      const P = g.cameraSys.camera.position.constructor;
-      g.editor.warpTo(new P(x, y, z), yaw, pitch);
-    }, v);
-    await settle(page, 10);
-    const { log, gated } = await recordFrame(page);
-    const classes = summarise(readOrder(log));
-    rows[v.id] = { classes, gated };
-    const line = Object.entries(classes)
-      .map(([k, c]) => classLine(k, c))
-      .join(" ");
-    console.log(`  ${v.id.padEnd(26)} ${line}`);
-  }
-  const before = await page.evaluate(() => {
-    const g = window.__celshock;
-    const counts = {};
-    for (const m of g.scene.meshes) {
-      const n = m.name;
-      const k = /^ed-/.test(n)
-        ? "ed-*"
-        : /^zone-/.test(n)
-        ? "zone-*"
-        : /^grassTurf/.test(n)
-          ? "grassTurf*"
-          : /^grass\d/.test(n)
-            ? "grass*"
-            : /^water/.test(n)
-              ? n
-              : /glass/.test(m.material?.name ?? "")
-                ? "glazing"
-                : /^spark\d/.test(n)
-                  ? "spark*"
-                  : /^impact\d/.test(n)
-                    ? "impact*"
-                    : m.material?.name === "blastScorch"
-                      ? "scorch*"
-                      : n === "blobShadow"
-                        ? "blob*"
-                        : null;
-      if (k) counts[k] = (counts[k] ?? 0) + 1;
-    }
-    return {
-      counts,
-      bodies: g.water.bodies.length,
-      zones: g.zones.zones.length,
-      panes: g.map.panes.length,
-      paneGroups: g.map.paneGroups.length,
-      // `PaneBlocks` splits an owner's glazing by material, so a group is not a
-      // placement: on an editor build its owner is one (`item<n>`).
-      paneOwners: new Set(g.map.paneGroups.map((p) => p.block)).size,
-      paneMaterials: new Set(g.map.paneGroups.map((p) => p.mesh.material)).size,
-      probes: g.reflections.probeCount,
-    };
-  });
-  console.log(`  standing: ${JSON.stringify(before)}`);
-  const edited = await page.evaluate(async () => {
-    const g = window.__celshock;
-    const layout = g.mapDef.layout;
-    const stamp = () => ({
-      // No mesh since X4.6d: each body's surface, which a rebuild makes anew.
-      water: g.water.bodies.map((b) => b.surface),
-      // No mesh since X4.6c: the field's mask, which a rebuild bakes anew.
-      grass: g.grass.mask,
-    });
-    const a = stamp();
-    if (layout.water?.[0]) layout.water[0].width += 2;
-    if (layout.grass?.[0]) layout.grass[0].width += 2;
-    g.editor.rebuildGeometry(null);
-    await new Promise((res) => g.scene.onAfterRenderObservable.addOnce(res));
-    const b = stamp();
-    if (layout.water?.[0]) layout.water[0].width -= 2;
-    if (layout.grass?.[0]) layout.grass[0].width -= 2;
-    return {
-      waterRemade: a.water.length > 0 && a.water.every((u) => !b.water.includes(u)),
-      grassRemade: a.grass !== null && a.grass !== b.grass && b.grass !== null,
-      grassDrawn: { ...g.grassDraw.stats },
-      waterDrawn: { ...g.waterDraw.stats },
-      waterMeshes: g.scene.meshes.filter((m) => /^water/.test(m.name)).length,
-      grassMeshes: g.scene.meshes.filter((m) => /^grass/.test(m.name)).length,
-    };
-  });
-  console.log(`  a water rect and a grass rect edited: ${JSON.stringify(edited)}`);
-  if (pageErrors.length || consoleErrors.length) {
-    console.log(`  ${pageErrors.length} page errors, ${consoleErrors.length} console errors`);
-    for (const e of [...pageErrors, ...consoleErrors].slice(0, 5)) console.log(`    ${String(e).slice(0, 300)}`);
-  }
-  await page.close();
-  return { rows, before, edited };
-}
-
 const report = {};
 /** Each engine-level draw (`effect -> target`) and the rows it was in. */
 const engineRows = {};
@@ -611,10 +498,6 @@ function engineLine(engine) {
   return [...n].map(([d, k]) => `${d}${k > 1 ? ` x${k}` : ""}`).join(", ");
 }
 for (const id of targets) {
-  if (EDITOR) {
-    report[id] = await editorBuild(id);
-    continue;
-  }
   let shots = shotList(id, VANTAGES[id]);
   if (!shots.length) continue;
   if (ROWS.size) {

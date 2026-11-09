@@ -157,7 +157,7 @@ export class WorldShadows {
     this.order = WORLD_SHADOW_MAPS.map((name) => this.maps[name]);
   }
 
-  /** The casters handed over — the map's in a round; null with none (the menu, an editor build). */
+  /** The casters handed over — the map's in a round; null with none (the menu). */
   get casters(): WorldDepth | null {
     return this.depth;
   }
@@ -257,7 +257,7 @@ export class WorldShadows {
 
   /**
    * The casters the world's maps are drawn from from now on, or null when
-   * there are none (the map going, an editor build): then every map is
+   * there are none (the map going): then every map is
    * cleared to lit and nothing more is drawn until casters are handed over
    * again. Their build is waited on here, and one that FAILS is never drawn:
    * `failed` is told why (the world's failure, `BlockHandover`) — unless

@@ -66,11 +66,10 @@
  *   number, exported so a caller gating on it names the same one.
  *
  * **The grid this reads is stamped once and never updated**, which is a claim
- * about the world: a collider is built where it stands. The one dev-only
- * exception is the editor's tier-1 gizmo drag (`docs/editor.md`), which moves a
- * placement's boxes in place without re-stamping `RayWorld` — so a sweep goes
- * stale exactly as a round does: it meets the box at its new pose, but only
- * where a query still reaches the cells of its old one.
+ * about the world: a collider is built where it stands. (The one dev-only
+ * exception was the map editor's tier-1 gizmo drag, which moved a placement's
+ * boxes in place without re-stamping `RayWorld`; it went with the editor,
+ * `BABYLON_EXIT.md` X5.3c.)
  */
 import type { Vector3Like, Vector3Ref } from "../math/index.ts";
 import {

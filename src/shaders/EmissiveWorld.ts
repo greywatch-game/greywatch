@@ -6,9 +6,8 @@
  * pass of a round — the main pass (`render/WorldBlocks.ts`), a probe's bake
  * (`render/ProbeBake.ts`) and the glow's mask (`render/WorldGlow.ts`), off
  * the one body in `wgsl/emissiveWorld.ts` (`render/emissiveWorld.ts`
- * assembles it) — and Babylon is made no mesh of it (`BlockHandover`), nor
- * is one made of it in an EDITOR build, whose blocks are never merged
- * (`MapBuilder.mergeBlocks`), so no Babylon draw of it is left anywhere and
+ * assembles it) — and Babylon is made no mesh of it (`BlockHandover`), so
+ * no Babylon draw of it is left anywhere and
  * its Babylon stages and its glow-mask twin went with X3.7c
  * (`BABYLON_EXIT.md`). The object stays (X3.7, Keeps): the merge keys on it
  * and the factory hangs the recipe our renderer draws it with off it

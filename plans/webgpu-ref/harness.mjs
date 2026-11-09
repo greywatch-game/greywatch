@@ -666,7 +666,7 @@ export function placeVantage(page, vantage) {
     }
 
     // **The camera-dependent passes are placed at the vantage**, by the same
-    // tail the editor's free camera and the building card's warm-up use, at
+    // tail the viewer's free camera and the building card's warm-up use, at
     // dt 0 so nothing is stepped: the world's two cascades, the bodies' map,
     // the lamps' atlas and their slots, the water and the grass. Without it
     // they stay wherever the install left them, which on a big map is

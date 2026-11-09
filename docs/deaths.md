@@ -407,7 +407,7 @@ FINDINGS #8's older 1.37 ms for four does not reproduce; see the note there.
   shape per block holding that block's collider boxes plus its terrain patch as
   a mesh shape (the floor has no `WorldBox`, hence `GameMap.terrainGeometry`,
   the terrain colliders as data), and Hollowmere is 35 of them. Built in
-  `installMap`, skipped on editor builds, and torn down body by body, container
+  `installMap` (the map editor's builds were skipped until X5.3c), and torn down body by body, container
   by container and leaf by leaf, or the WASM heap grows one map build at a time
   — measured flat at 193 bodies and 35 nodes across three rebuilds, and back to
   none on a teardown.
@@ -742,8 +742,7 @@ without that subtract turns feedback into a punishment.
 - **The pointer lock is deliberately KEPT.** There is nothing to click, and dropping
   it would trip the lock-loss pause on the very frame the shot begins. `enterDeploy`
   releases it one state later — and it is also the single funnel for retiring the body,
-  so every path out (the clock, the round ending, the editor's `Shift+F2`) hands the
-  rig back. The map viewer's `F2` is not a path out: it is a lid that HOLDS the page's
+  so every path out (the clock, the round ending) hands the rig back. The map viewer's `F2` is not a path out: it is a lid that HOLDS the page's
   own match, the cam with it, and lowering it puts `dying` back where it was.
 
 `HUD.setDeathCam` raises `.dying`, which hides the same four things `.paused` does

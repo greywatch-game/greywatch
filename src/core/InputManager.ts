@@ -396,8 +396,8 @@ export class InputManager {
   pointerLocked = false;
   gamepadConnected = false;
   /**
-   * Held: the modifier key. No gameplay meaning — the map editor uses it to
-   * suspend grid snapping. Read per frame rather than latched so a keyup lost
+   * Held: the modifier key. No gameplay meaning (the map editor used it to
+   * suspend grid snapping until `BABYLON_EXIT.md` X5.3c deleted it). Read per frame rather than latched so a keyup lost
    * to a window blur cannot leave it stuck on (blur clears the key set).
    */
   altHeld = false;
@@ -625,9 +625,9 @@ export class InputManager {
     });
     // The wheel. Passive, and deliberately not prevented: nothing on this page
     // scrolls (the canvas fills the viewport and `#hud` is fixed), so the
-    // browser default is already a no-op where it matters — while the map
-    // editor's inspector is a panel full of number inputs that a wheel is
-    // supposed to be able to scroll past. Accumulated rather than read as an
+    // browser default is already a no-op where it matters — while a dev
+    // panel (the viewer's, the mixer's) is a column a wheel is supposed to be
+    // able to scroll. Accumulated rather than read as an
     // event, because a trackpad delivers a dozen of these per frame.
     //
     // `deltaMode` is normalised here rather than at the read: the same gesture
@@ -1204,8 +1204,8 @@ const BOUND_CODES = new Set([
 
 /**
  * True when the key is going into a form control, in which case the browser's
- * default IS the wanted behaviour. The editor's inspector is full of text and
- * number inputs, and the bound set covers Tab, Enter, Space, the arrows and
+ * default IS the wanted behaviour. A dev panel (the mixer's) holds number
+ * inputs, and the bound set covers Tab, Enter, Space, the arrows and
  * most of the alphabet a name is spelled with.
  */
 function isTyping(target: EventTarget | null): boolean {

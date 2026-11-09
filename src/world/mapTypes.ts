@@ -2,7 +2,7 @@
  * mapTypes.ts — The shapes a built map is described in: what a layout's flags,
  * spawns, hardstandings, water and grass are once `MapBuilder` has read them,
  * the collider box and the pane every query and the collision bake carry, the
- * editor's per-item index, and `GameMap` itself.
+ * layout item a piece names (`ItemRef`), and `GameMap` itself.
  * Owns: types and nothing else — no value, no Babylon object, no code path.
  * Every import here is `import type`, so a module that reads a `GameMap`
  * pulls nothing in at runtime by naming one.
@@ -12,14 +12,13 @@
  * into `colliderBoxes` or `panes` is an IDENTITY on both sides of the wire —
  * both are rules about how `MapBuilder` fills these, stated where the field is.
  * Must NOT grow a function: what builds or moves one of these lives in
- * `MapBuilder.ts` (`collider()`, `recordBox`, `repositionItem`) or in
+ * `MapBuilder.ts` (`collider()`, `recordBox`) or in
  * `merge.ts` (`PaneBlocks`), never beside the shape.
  */
 import type { Mesh } from "@babylonjs/core";
 import type { Vector3 } from "../math";
 import type { WaterAmbienceId } from "../core/Sfx";
 import type { VehicleKind } from "../entities/vehicleKinds";
-import type { BoxSpec } from "./BuildingKit";
 import type { CollisionField } from "./CollisionField";
 import type { CoverMap } from "./CoverMap";
 import type { NavGrid } from "./NavGrid";
@@ -240,9 +239,8 @@ export interface WorldPane {
   rotY: number;
   /**
    * Where this pane's 24 positions live in its group's vertex buffer — our
-   * renderer's in a round (`render/GlassDraw.ts`), `PaneGroup.mesh`'s in an
-   * editor build. Collapsing them onto the first is what takes it off the
-   * screen.
+   * renderer's (`render/GlassDraw.ts`). Collapsing them onto the first is what
+   * takes it off the screen.
    */
   vertexStart: number;
   vertexCount: number;
@@ -268,10 +266,10 @@ export interface WorldPane {
  */
 export interface PaneGroup {
   /**
-   * The merged mesh, in an EDITOR build — whose glazing Babylon draws until
-   * `BABYLON_EXIT.md` X5.3 — and null in a round, whose glazing our renderer
-   * draws with no mesh made of it (`render/GlassDraw.ts`, X4.6e): its surface
-   * there is the one named by `record`.
+   * Null: a round's glazing is drawn by our renderer with no mesh made of it
+   * (`render/GlassDraw.ts`, X4.6e), its surface the one named by `record`. The
+   * map editor's build was the one that made a mesh, and it is gone
+   * (`BABYLON_EXIT.md` X5.3c); X5.3d deletes what Babylon kept for it.
    */
   mesh: Mesh | null;
   /** Its surface's index in the build's list: what names its record in `GameMap.world` and its draw in a round. */
@@ -300,47 +298,19 @@ export interface PaneGroup {
 }
 
 /**
- * Which layout item a mesh came from. Present in `metadata.editorRef` only on
- * editor builds — the shipped path merges across placements, so a mesh there
- * belongs to a whole map block rather than to any one item.
+ * Which layout item a PIECE came from: an entry of the layout's `placements`
+ * or `scatter`, by its index. The block merge makes a placement unrecoverable
+ * as a mesh; `GameMap.world.pieces` is where each surface's ranges still name
+ * the item they were built for (`worldGeometry.ts`), and `merge:hash` hashes
+ * that table.
  */
-export interface EditorRef {
+export interface ItemRef {
   list: "placements" | "scatter";
   index: number;
 }
 
-/** One layout item's geometry, so the editor can move or rebuild it alone. */
-export interface EditorItem {
-  visuals: Mesh[];
-  colliders: Mesh[];
-  /** Positions in `GameMap.colliderBoxes` of this item's boxes. */
-  boxes: number[];
-  /**
-   * The builder's own collider specs, in the structure's local space, in the
-   * same order as `colliders`/`boxes`. Kept so a move or rotate can be
-   * recomputed exactly — `repositionItem` needs the pre-transform boxes, and
-   * the world-space ones have already had the placement baked into them.
-   */
-  localBoxes: BoxSpec[];
-}
-
-/**
- * Per-item geometry index. Built only when `build()` is given `editor: true`;
- * that mode also skips the BlockMerge pass, because merging across placements
- * is exactly what makes a single placement unrecoverable afterwards.
- */
-export interface EditorIndex {
-  placements: EditorItem[];
-  scatter: EditorItem[];
-}
-
-/** Opt-in build behaviour. Absent in the shipped path. */
+/** Opt-in build behaviour. */
 export interface BuildOptions {
-  /**
-   * Keep geometry per layout item and tag it, at the cost of the block merge:
-   * ~1740 draws against ~150. Fine for authoring, never for play.
-   */
-  editor?: boolean;
   /**
    * How full a tree's crown is, 0..1 — the player's `Settings.foliage`
    * resolved through `CONFIG.graphics.foliage`, handed to every scatter
@@ -358,9 +328,9 @@ export interface BuildOptions {
    * (`buildSimWorld`), so on the page they were seven fields per map nobody
    * read, built behind the loading card and relaxed again on every broken
    * pane (`NavGrid.openBox` relaxes only the fields there are). The graph
-   * itself is built either way — `standableAt` and the editor need it. The
-   * editor's build and a netplay round's keep them (the editor's overlay
-   * draws one; the scratch netplay smoke steers its walker by them).
+   * itself is built either way — `standableAt` and the viewer need it. A
+   * netplay round's keeps them (the scratch netplay smoke steers its walker by
+   * them); the viewer sweeps the one it draws on demand.
    */
   navFields?: boolean;
   /**
@@ -370,9 +340,8 @@ export interface BuildOptions {
    * they go) — and answering whether OUR renderer draws it in every pass:
    * `true` and Babylon is made no mesh of it (`BABYLON_EXIT.md` X3.7b). For a
    * renderer of our own that uploads a surface itself
-   * (`systems/BlockHandover.ts`, which the game passes on every build but
-   * the editor's). Absent is a mesh of every surface, nothing handed and
-   * nothing kept.
+   * (`systems/BlockHandover.ts`, which the game passes on every build).
+   * Absent is a mesh of every surface, nothing handed and nothing kept.
    */
   onSurface?: (surface: WorldSurface, index: number) => boolean;
   /**
@@ -418,11 +387,7 @@ export interface GameMap {
   /**
    * The side of the square the FLOOR was tessellated over — the map's
    * `MapLayout.terrainBlock`, or `BLOCK_SIZE`, and independent of `blockSize`.
-   *
-   * The editor's terrain brush is the reader: a stroke names the patches it
-   * moved by the same arithmetic `terrainPatches` cut them with, and a brush
-   * that assumed 48 on a map that states otherwise re-tessellates the wrong
-   * meshes and silently leaves the ones under the cursor stale.
+   * `PhysicsWorld` reads it to bucket the floor's blocks.
    */
   terrainBlock: number;
   controlPoints: ControlPointDef[];
@@ -438,8 +403,8 @@ export interface GameMap {
    */
   vehicleSpawns: VehicleSpawnDef[];
   /**
-   * Invisible collider proxies — the only geometry the editor's pick takes, and
-   * what `GlassFx` and `WorldCulling` index. **Client-only and EMPTY on the
+   * Invisible collider proxies — what `GlassFx` and `WorldCulling` index, and
+   * nothing that moves or shoots reads (`BABYLON_EXIT.md` X5.3e deletes them). **Client-only and EMPTY on the
    * authority**, like `visuals`: no ray and no sweep reads a mesh on either
    * side (they answer off `colliderBoxes`, `rayGroups` and the floor through
    * `rays`), and `buildSimWorld` builds none.
@@ -518,8 +483,8 @@ export interface GameMap {
   panes: WorldPane[];
   /**
    * The merged glazing groups — all of the map's glass, not only the panes
-   * above, which hold their vertices in these: a mesh each in an editor
-   * build, a surface of our renderer's each in a round.
+   * above, which hold their vertices in these: a surface of our renderer's
+   * each.
    */
   paneGroups: PaneGroup[];
   /**
@@ -546,9 +511,8 @@ export interface GameMap {
   /**
    * The drawn geometry BABYLON holds a mesh of, merged per colour — on a
    * shipped build the glazing and the fires alone, every other surface being
-   * our renderer's in every pass and made no mesh (`BABYLON_EXIT.md` X3.7b);
-   * on an editor build every surface. In list order; `world` names each
-   * one's record.
+   * our renderer's in every pass and made no mesh (`BABYLON_EXIT.md` X3.7b).
+   * In list order; `world` names each one's record.
    */
   visuals: Mesh[];
   /**
@@ -625,7 +589,5 @@ export interface GameMap {
    * layout declares no terrain, which is the whole of the old behaviour.
    */
   terrain: TerrainField;
-  /** Per-item geometry. Editor builds only — undefined in play. */
-  editor?: EditorIndex;
   dispose(): void;
 }

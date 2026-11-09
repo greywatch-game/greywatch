@@ -329,7 +329,7 @@ export class Player implements Combatant {
   private readonly picture: PlayerPicture;
   /** The rifle and hands on screen — `picture.model`, held for brevity. */
   private readonly view: ViewModel;
-  /** Whether the viewmodel is hidden (menu, deploy screen, editor). */
+  /** Whether the viewmodel is hidden (menu, deploy screen). */
   private bodyHidden = true;
   /**
    * Whether a LID has the weapon put away over whatever `bodyHidden` says —
@@ -1607,10 +1607,7 @@ export class Player implements Combatant {
    * The fourth is the same collider set a further way round: what a body WALKS
    * INTO rather than what it stands on. See `world/CollisionField.ts`.
    * Called from `installMap` and nowhere else, which is the same contract
-   * `VehicleSystem.build` has with the fleet: the editor rebuilds
-   * `map.obstacles` without going back through `installMap`, so these go stale
-   * there, and it does not matter because the editor frame is the gameplay one
-   * MINUS the player.
+   * `VehicleSystem.build` has with the fleet.
    */
   setGround(
     terrain: TerrainField,
@@ -2455,16 +2452,17 @@ export class Player implements Combatant {
   /**
    * Shows/hides everything the player renders — which in first person is the
    * viewmodel and its brass, nothing else. Hidden outside gameplay: the menu
-   * and deploy screen sit over a live view of the world, and the editor flies
-   * the same camera the weapon is parented to, so a visible rifle would ride
-   * along in front of it.
+   * and deploy screen sit over a live view of the world, and the viewer flies
+   * the same camera the weapon is parented to (its lid hides it by a flag of
+   * its own, `setLidHidden`), so a visible rifle would ride along in front of
+   * it.
    */
   setBodyHidden(hidden: boolean): void {
     this.bodyHidden = hidden;
     // Putting the gun away and taking it out both end an inspection, which is
     // what stops a turntable pose surviving into a round — and it is why the
-    // three places that hide the kit screen from underneath (the menu, the
-    // editor, a round starting) owe nothing beyond the call they already make.
+    // places that hide the kit screen from underneath (the menu, a round
+    // starting) owe nothing beyond the call they already make.
     if (this.inspecting) this.inspectWeapon(false);
     else this.applyVisibility();
   }

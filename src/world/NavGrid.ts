@@ -146,9 +146,9 @@ export class NavGrid {
    * than a constant (see `MapLayout.surfaces`), and a bound on what the
    * rasteriser will keep rather than the stride of anything.
    *
-   * Public because the editor rebuilds this grid from a `GameMap` and has no
-   * layout in hand: reading it back off the grid it is replacing is what keeps
-   * the rebuild the same shape as the build.
+   * Public because a reader with a `GameMap` and no layout in hand (the map
+   * editor's rebuild, while there was one) read it back off the grid, which
+   * kept a rebuild the same shape as the build.
    */
   readonly maxSurfaces: number;
   private readonly origin: number;
@@ -261,7 +261,7 @@ export class NavGrid {
   }
 
   /**
-   * Raw internals, for the map editor's overlay and validation passes.
+   * Raw internals, for the map viewer's plan and validation passes.
    *
    * Returns LIVE references, not copies — the arrays total ~600 KB and copying
    * them per redraw would cost more than everything the caller does with them.
@@ -272,7 +272,7 @@ export class NavGrid {
    * `walkable` is what the flood fill reached; a surface with `counts > 0`
    * that is neither `blocked` nor `walkable` is standable ground nothing can
    * get to — a sealed courtyard or a deck out of step range, which is exactly
-   * what the editor wants to draw in red.
+   * what the viewer draws in red.
    */
   debugSnapshot(): {
     dim: number;
@@ -391,8 +391,8 @@ export class NavGrid {
    * The `<= step` test below is also the map's slope limit, and terrain leans
    * on it: with cellSize 1.5 and stepHeight 0.6 a graded bank is walkable up to
    * a gradient of 0.4 (~22 deg) and severs itself above that. Nothing else
-   * enforces it, which is why the editor validates a terrain rect's skirt
-   * against the same ratio.
+   * enforces it, which is why the viewer's `validate` checks the floor against
+   * the same ratio (`terrainGrade`).
    *
    * ## Why blocked surfaces are decided FIRST
    *

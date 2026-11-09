@@ -26,7 +26,7 @@
  * Babylon's processor appends it, -1 into a texture.
  * The box filter's one whitespace-only line (two spaces, where Babylon's
  * processor indented an empty first line of `main`) is written `${"  "}`, so
- * no editor's trailing-space trim moves a character of it.
+ * no text editor's trailing-space trim moves a character of it.
  * Never: imports Babylon (`src/render/` imports this, and the build gate walks
  * it); is assembled (`render/wgsl/assemble.ts`) — these are whole modules;
  * changes a character without the probe's `--against` its parent and the

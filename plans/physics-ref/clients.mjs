@@ -203,9 +203,9 @@ function quietRound(page) {
 
 /**
  * A map change and a teardown, twice, before the script: the static world
- * cleared (`setMap(null, …)`, which is what leaving a round does) and built
- * again off the same map (`setMap(map, …)`, an editor rebuild's or the next
- * round's), reading after each how many bodies the Havok WORLD holds. Every
+ * cleared (`setMap(null)`, which is what leaving a round does) and built
+ * again off the same map (`setMap(map)`, the next round's — an older tree's
+ * `setMap` took a second, `editor`, argument, which an absent one leaves off), reading after each how many bodies the Havok WORLD holds. Every
  * reading must be the map's static bodies plus the pools' — a teardown that
  * dropped a bucket, or a client that released a pooled body, shows here and
  * nowhere else. Then the script runs on the REBUILT world, so it also says
@@ -219,9 +219,9 @@ function cycle(page) {
     const read = (step) => ({ step, statics: ref.staticCount(g), world: ref.worldCount(g) });
     const steps = [read("built")];
     for (let i = 0; i < 2; i++) {
-      g.physics.setMap(null, false);
+      g.physics.setMap(null);
       steps.push(read("cleared"));
-      g.physics.setMap(g.map, false);
+      g.physics.setMap(g.map);
       steps.push(read("rebuilt"));
     }
     return { era: ref.era(g), pooled, steps };

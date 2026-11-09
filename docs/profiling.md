@@ -429,8 +429,8 @@ frame                       the whole tick, wall to wall
 ├─ audio                    pushHullEngines
 └─ render                   scene.render()
    ├─ shadowPass            a Babylon generator's depth map, on the frames
-   │                        that re-render it — an editor build's alone since
-   │                        X4.1c: a round has none, every shadow map ours
+   │                        that re-render it — none in any build since
+   │                        X5.3c (a round's since X4.1c), every map ours
    ├─ glow                  GlowPass: its mask and four blurs at the end of
    │                        the draw phase (the compose is inside the ink;
    │                        the blurs and the box filter OUR draws since
@@ -709,8 +709,9 @@ frames and a phase costing 0.73 ms on all of them have the same `mean` and the
 same `share`, and only `frames` tells them apart. **Since `BABYLON_EXIT.md`
 X4.1c it reads on NO frame of a round**: the world's maps have been our
 renderer's since X3.6a and the bodies' since X4.1c, and none of ours is
-bracketed (their culls are not in `gpu.cull` either) — only an editor build's
-generators still enter it. The reading above is from before both.
+bracketed (their culls are not in `gpu.cull` either) — and the map editor's
+build, whose generators were the last to enter it, is gone since X5.3c. The
+reading above is from before both.
 
 **What they measure is CPU.** Under `compatibilityMode = false` that is the
 recording of a render BUNDLE and not the work the GPU then does — still the
@@ -1196,8 +1197,8 @@ belong beside it (Windows box, live round, 2026-08-26, before the paint palette 
   `OffscreenCanvas` worker RELOCATES 18 ms rather than removing it, and the
   worker becomes the wall. What is genuinely worker-shaped here is burst work
   and not the frame — `MapBuilder`'s geometry, the AO bake, the
-  `NavGrid`/`CoverMap`/`ObstacleField` builds, `FINDINGS.md` 11's editor
-  tier-3 — and moving any of them buys load time and nothing else. Do not
+  `NavGrid`/`CoverMap`/`ObstacleField` builds (and the map editor's tier-3
+  rebuild while there was one) — and moving any of them buys load time and nothing else. Do not
   re-derive this. Inside that tenth, on real hardware rather than an earlier
   inflated headless run: `player.probeGround` was **0.483 ms** and everything
   else under 0.12 (`updateHud` 0.112, `battle.update` 0.094, `minimap.update`

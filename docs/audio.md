@@ -930,12 +930,12 @@ that sounds like.
 ### F4: setting them, and writing them back
 
 The panel is [`src/dev/mixer/`](../src/dev/mixer/), dev-only behind the same
-dynamic `import()` gate as the editor, and it is the reason these numbers can be
+dynamic `import()` gate as the map viewer, and it is the reason these numbers can be
 set honestly at all: you cannot mix a shooter from a spreadsheet, and the only
 useful place to judge a footstep is under fire.
 
-- **It does not take a screen down**, unlike the editor's `Shift+F2`, and is
-  no lid either, unlike the viewer's `F2` (`docs/states.md`). There is no state
+- **It does not take a screen down**, and is no lid either, unlike the
+  viewer's `F2` (`docs/states.md`). There is no state
   transition, no map rebuild and nothing to put back — the round carries on
   underneath it, which is the entire workflow. It sits at `z-index: 40`, over
   the whole `src/ui/` ladder, so the menu's ambience and the kit screen's

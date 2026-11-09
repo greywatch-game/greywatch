@@ -1,7 +1,7 @@
 /**
  * floorSurfaces.ts — What the valley floor is MADE of: the roster of ground
  * surfaces a map may state, and the one place a floor material is built.
- * Owns: the surface table (label, world scale, relief) and `floorMaterial`.
+ * Owns: the surface table (name, world scale, relief) and `floorMaterial`.
  * Owns no colour — that is `EnvironmentSpec.floorColor`, and this reads it.
  *
  * A surface is a PATTERN, not a place. The tones are derived from the map's
@@ -11,9 +11,9 @@
  *
  * **`flat` is a real member of the list, not the absence of one.** It is what
  * Hollowmere is, it is the only variant that costs no texture sample per
- * ground pixel, and a map has to be able to choose it in the editor after
- * trying the others — an id that meant "unset" could be reached by clearing a
- * field but never by picking it.
+ * ground pixel, and a map has to be able to state it after trying the others
+ * — an id that meant "unset" could be reached by leaving a field out but never
+ * by naming it.
  *
  * The material is deliberately MATTE. `getGroundTextured` registers a spec'd
  * material for `setGroundSpec` to re-apply the map's sheen to, and that sheen
@@ -32,7 +32,7 @@ import {
 
 /** One textured surface's world scale and relief. */
 interface FloorSurface {
-  /** Shown in the editor's picker. */
+  /** What the surface is called. */
   label: string;
   /**
    * Metres spanned by one texture repeat. Bigger reads as coarser ground and
@@ -79,17 +79,6 @@ export type FloorSurfaceId = "flat" | FloorPatternId;
 
 /** The default: the plain cel colour the floor was before surfaces existed. */
 export const DEFAULT_FLOOR_SURFACE: FloorSurfaceId = "flat";
-
-/** The picker's roster, in the order it is offered. */
-export const FLOOR_SURFACE_IDS: readonly FloorSurfaceId[] = [
-  "flat",
-  ...(Object.keys(SURFACES) as FloorPatternId[]),
-];
-
-/** A surface's name for the editor. */
-export function floorSurfaceLabel(id: FloorSurfaceId): string {
-  return id === "flat" ? "flat colour" : SURFACES[id].label;
-}
 
 /**
  * The material every terrain block wears.

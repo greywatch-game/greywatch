@@ -43,7 +43,7 @@
  * commands (the caller defers it, `Game.worldFailed`); nothing here allocates
  * on a frame.
  * Never: imports Babylon; reads a batch, a node or a material; draws while not
- * installed (an editor build, the menu).
+ * installed (the menu).
  * Contract: `docs/rendering.md`, "The pools, ours".
  */
 import { BLAST_BLOCK, BLAST_GEOMETRY, blastPrograms, type BlastRecipe } from "./blastProgram";
@@ -288,8 +288,8 @@ export class BlastDraw {
   }
 
   /**
-   * Whether a round's install stands — false on the menu and in an editor
-   * build, where `commit` takes nothing and the caller need write nothing.
+   * Whether a round's install stands — false on the menu, where `commit`
+   * takes nothing and the caller need write nothing.
    */
   get installed(): boolean {
     return this.isInstalled;

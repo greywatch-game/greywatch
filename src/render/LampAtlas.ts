@@ -274,7 +274,7 @@ export class LampAtlas {
     this.unhook = renderer.onFrame(this.prepare);
   }
 
-  /** The casters handed over — the map's in a round; null with none (the menu, an editor build). */
+  /** The casters handed over — the map's in a round; null with none (the menu). */
   get casters(): WorldDepth | null {
     return this.depth;
   }
@@ -375,7 +375,7 @@ export class LampAtlas {
   /**
    * The casters the static faces are drawn from from now on, at the culls'
    * slots from `firstSlot` (past the world's maps'), or null when there are
-   * none (the map going, an editor build). Their build and the proxies'
+   * none (the map going). Their build and the proxies'
    * pipeline are waited on here, and either FAILING leaves them undrawn:
    * `failed` is told why (the world's failure, `BlockHandover`) — unless
    * other casters have been handed over since.

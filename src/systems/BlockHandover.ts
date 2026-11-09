@@ -59,17 +59,13 @@
  * holds no latch and keeps no listener) — each said ONCE an install (`fail`), our draws
  * stopped there and then, and
  * handed to `Game.worldFailed` with the install's OWNER (`WorldOwner`), so a
- * failure names the map it came from and is never another round's, and
- * nothing of an EDITOR build fails (`install`'s `editor`, the build's kind,
- * never whether ours took a surface); `Game` takes the round down after the
+ * failure names the map it came from and is never another round's; `Game`
+ * takes the round down after the
  * task in hand; nothing goes back to Babylon, which has no mesh to draw it
  * with.
  * Our surfaces are drawn ahead of group 0's alpha-tested meshes, the
  * palette first and the blocks before the landform (`WorldBlocks`'s header
- * says why); nothing is taken from an EDITOR build, which `Game` hands no
- * `onSurface` — its blocks are unmerged, and its brush rewrites the floor's
- * meshes in place — so Babylon draws every surface of it, in every pass;
- * what our side draws of the main pass each frame is decided on the GPU,
+ * says why); what our side draws of the main pass each frame is decided on the GPU,
  * cluster by cluster, from numbers alone — the frame's camera, and the
  * reach and size gate `WorldCulling` decides (`WorldCulling.reachGate`,
  * measured to the box of the cell a block's records grew, and never cutting
@@ -156,7 +152,7 @@ function blends(material: Material | null): boolean {
   return material.needAlphaBlending();
 }
 
-/** What the build hands `install`: its records, the meshes Babylon was given, and which of them are the glazing (an editor build's). */
+/** What the build hands `install`: its records, the meshes Babylon was given, and which of them are the glazing. */
 export interface InstalledWorld {
   readonly world: WorldGeometry;
   readonly visuals: readonly Mesh[];
@@ -246,8 +242,7 @@ export class BlockHandover {
   private refusal: string | null = null;
   /**
    * Whose world this is, latched at `install` and handed back with its
-   * failure: null for an EDITOR build — Babylon's whole, so nothing of it can
-   * fail the world — and from a `clear` until the next install.
+   * failure: null from a `clear` until the next install.
    */
   private owner: WorldOwner | null = null;
   /** Why this install failed, once it did: said once (`fail`). */
@@ -494,8 +489,8 @@ export class BlockHandover {
    * SOLID (`CelMaterialFactory.isSolid`). The generators' own statement of
    * it is `ShadowSystem.casts`, which the blend test is not in because a
    * generator makes it itself, and the atlas's is `LocalShadows.setWorld`'s
-   * filter: each must agree, or a shadow differs by who draws it (an editor
-   * build's are Babylon's). The blend is the material's (`blends`), for a
+   * filter: each must agree, or a shadow differs by who draws it. The blend
+   * is the material's (`blends`), for a
    * surface and a scatter part alike.
    */
   private passesOf(metadata: { noShadowCaster?: boolean } | null | undefined, material: Material | null): number {
@@ -532,24 +527,20 @@ export class BlockHandover {
    * casters to the shadows on every rung, the world to the bake and the
    * palette's glowing share to the mask — each with the install's failure
    * (`failFor`), which it tells if it cannot draw what it was handed.
-   * `owner` is latched for the install's failure; an EDITOR build
-   * (`editor`) is taken from by
-   * nothing and fails nothing — the exemption is the build's kind, never
-   * that ours took no surface, so a production refusal on a map ours took
-   * nothing of still fails. A refusal held from the build (thrown after it
+   * `owner` is latched for the install's failure, so a production refusal
+   * on a map ours took nothing of still fails. A refusal held from the build (thrown after it
    * in a DEV build: `refuse`), a mesh Babylon was
    * made that is not the glazing (`strayMesh`), a surface or a fire filed
    * under a block no cell was grown for, or a cut that fails, fails the
    * world (`fail`). The fires go to the fire draw first, in birth order
    * (`handFires`).
    */
-  install(map: InstalledWorld, owner: WorldOwner, editor: boolean): void {
-    this.owner = editor ? null : owner;
+  install(map: InstalledWorld, owner: WorldOwner): void {
+    this.owner = owner;
     const failed = (reason: string): void => this.failFor(owner, reason);
     this.epoch = -1;
     const field = this.field;
     this.field = null;
-    if (editor) return;
     const stray = this.strayMesh(map);
     if (stray) this.refuse(stray);
     if (this.refusal) {
@@ -724,8 +715,8 @@ export class BlockHandover {
 
   /**
    * The installed map's FIRES, in birth order — fire `k` the fire draw's
-   * surface `1 + k` — for `Game`'s pull; empty on the menu, for an editor
-   * build (whose fires are Babylon's meshes) and from a `clear`.
+   * surface `1 + k` — for `Game`'s pull; empty on the menu and from a
+   * `clear`.
    */
   get fires(): readonly WorldFire[] {
     return this.worldFires;
@@ -790,9 +781,9 @@ export class BlockHandover {
    * The world cannot be drawn: said once an install — our draws stopped at
    * once (`WorldBlocks.stop`, safe inside a render: its buffers stay until
    * `clear`) — and handed to `Game.worldFailed` with the install's owner.
-   * Nothing of a world with no owner can fail: an EDITOR build (Babylon's
-   * whole, `install`), or none installed (the menu, a build not yet
-   * installed) — and a failure told for a world since replaced is dropped
+   * Nothing of a world with no owner can fail: none installed (the menu, a
+   * build not yet installed) — and a failure told for a world since replaced
+   * is dropped
    * (`failFor`, and each pass's own generation).
    */
   private fail(reason: string): void {

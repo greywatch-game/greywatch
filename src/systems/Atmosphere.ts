@@ -128,7 +128,7 @@ export class Atmosphere {
    * one that matches — and it is affordable because it is **stable under an
    * unchanged spec by construction, not by care**: a map's `ParticleSpec` is a
    * module constant, so `wanted` comes out the same integer on every
-   * `installMap`, which the editor runs on each keystroke. Only a genuine
+   * `installMap`. Only a genuine
    * change of map or of the ceiling reaches the rebuild, where the world is
    * being rebuilt around it anyway and a field that refills over `MAX_LIFE`
    * seconds costs nothing anybody is looking at. (`applySky`'s identity check

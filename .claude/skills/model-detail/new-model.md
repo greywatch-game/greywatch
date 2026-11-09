@@ -40,9 +40,9 @@ server's bake — follows from what the builder declares.
 
 1. `src/world/BuildingKit.ts`: import it and add `thing: buildThing` to
    `BUILDERS` (grouped with its set). `BuilderKind` derives from this.
-2. `src/editor/params.ts`: a `PARAMS` row listing exactly the `BuildParams` it
-   reads, with the builder's own defaults (`[]` if none). It is a `Record` over
-   `BuilderKind`, so this is a compile error until done.
+2. (There was a `src/editor/params.ts` row here, the map editor's inspector
+   table; it went with the editor, `BABYLON_EXIT.md` X5.3c. A builder's params
+   are documented in its own header and on `BuildParams`.)
 3. A NEW param: add the field to `BuildParams` in `kit/core.ts` with a doc
    comment saying which builder reads it and what it means. The bag is shared
    and flat on purpose; reuse `width`/`depth`/`height`/`length`/`ruined`/`lit`

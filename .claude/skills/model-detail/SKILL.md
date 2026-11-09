@@ -26,7 +26,7 @@ Then load the reference that fits:
 - **[craft.md](craft.md)** — how to draw detail that reads in this cel look,
   and the specific mistakes that have already been made. Always.
 - **[new-model.md](new-model.md)** — registering a new kind, choosing its
-  colliders, params, editor wiring, placing it. Only for a new builder.
+  colliders, params, placing it. Only for a new builder.
 
 ## The procedure
 

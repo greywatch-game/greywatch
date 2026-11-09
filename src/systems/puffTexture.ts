@@ -6,8 +6,8 @@
  * too, until they became drawn billows (`BlastFx`). Size, rotation, colour and
  * count are what vary a cloud, never the sprite.
  * Invariants: no state that outlives the call. It is a function rather than a
- * shared instance because a `DynamicTexture` belongs to a scene, and an editor
- * rebuild disposes one; each system holds its own and disposes it with itself.
+ * shared instance because a `DynamicTexture` belongs to a scene; each system
+ * holds its own and disposes it with itself.
  *
  * Three overlapping gradients at FIXED offsets rather than random ones — one
  * texture is shared by every puff in every cloud a system holds, so the variety

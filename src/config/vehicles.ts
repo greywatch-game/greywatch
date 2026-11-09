@@ -1265,7 +1265,7 @@ export const vehicles = {
       /**
        * The rise a hull is allowed even at a standstill, m/s. Small, and it
        * exists so a stopped hull whose ground came up under it — a pane
-       * breaking, the editor rebuilding, a fresh hull placed low — still
+       * breaking, a fresh hull placed low — still
        * settles instead of hanging there for the rest of the round.
        */
       climbFloor: 0.5,

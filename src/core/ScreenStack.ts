@@ -35,7 +35,7 @@
 /**
  * The states the game is DOING rather than showing: `menu` -> `loading` ->
  * `deploy` -> `playing` -> `dying` -> `deploy`, with `roundover` when one side
- * runs out of tickets, and `editor` off to one side of all of it.
+ * runs out of tickets, and `bench` off to one side of all of it.
  *
  * `loading` is the map being built — and then the reflection bake draining
  * behind the same card, which is the longer half on any map big enough for it
@@ -68,15 +68,8 @@
  * rather than by acting: `onDeploy` sends a request and the authority's own
  * spawn event is what puts them in the world.
  *
- * `editor` sits outside the cycle: a dev-only side state reachable from anywhere
- * with Shift+F2 (F2 itself is the viewer lid since `BABYLON_EXIT.md` X5.3b,
- * the editor standing beside it until X5.3c deletes it), and leaving it always
- * restarts the round rather than resuming,
- * because the systems that cache the `GameMap` cannot be handed a map that was
- * rebuilt underneath them.
- *
  * `bench` is the benchmark (`?bench=<map>`, `bench/BenchScript.ts`), and it is
- * the other state outside the cycle: entered from `deploy` in place of the
+ * the one state outside the cycle: entered from `deploy` in place of the
  * player, left for `menu` and never for anything in the round. The GAME plays
  * it — the camera stands where the script says, and for the round at the end
  * the world is stepped at a FIXED step with nobody in the player's slot — so
@@ -90,7 +83,6 @@ export type StepState =
   | "playing"
   | "dying"
   | "roundover"
-  | "editor"
   | "bench";
 
 /**
@@ -227,7 +219,6 @@ const SCREENS: Record<GameState, ScreenSpec> = {
   playing: { covers: null, holdsWorld: false, roundBehind: false, inRound: true },
   dying: { covers: null, holdsWorld: false, roundBehind: false, inRound: true },
   roundover: { covers: null, holdsWorld: false, roundBehind: false, inRound: false },
-  editor: { covers: null, holdsWorld: false, roundBehind: false, inRound: false },
   // A round is standing and the script is in it, so the board is owed; there
   // is never a server's match behind it (the page's own only) and nothing may
   // cover it — a pause over a benchmark would be frames of a pause card in its
