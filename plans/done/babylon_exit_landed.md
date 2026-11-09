@@ -9863,7 +9863,7 @@ seven minor points, each verified against the tree first.
   row's freeze calls; Hollowmere's 16 rows ran it); the throw itself provoked; corecheck,
   parity, `gate`, `shaders` (no game code moved).
 
-### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07; its decisions the owner's, 2026-11-07 and 2026-11-08, rows in "Decisions that are yours") — X5.2a **LANDED** (e5d9390, its review 55ef32c, its held finding F1 fixed 738f5e3), X5.2b **LANDED** (f697f0e, its review e5ab075), X5.2c1 **LANDED** (4747fe7, its review bfa6a6b), X5.2c2 the shafts and the blur **LANDED** (14dd887, its review 7c5030f), its FXAA **LANDED** (cb17a73, its picture change a459e7c, their review 117c5fd), X5.2d **LANDED** (4f83650, a picture change, row "X5.2, the boot canvas"; its review HASHREV) — **all LANDED**
+### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07; its decisions the owner's, 2026-11-07 and 2026-11-08, rows in "Decisions that are yours") — X5.2a **LANDED** (e5d9390, its review 55ef32c, its held finding F1 fixed 738f5e3), X5.2b **LANDED** (f697f0e, its review e5ab075), X5.2c1 **LANDED** (4747fe7, its review bfa6a6b), X5.2c2 the shafts and the blur **LANDED** (14dd887, its review 7c5030f), its FXAA **LANDED** (cb17a73, its picture change a459e7c, their review 117c5fd), X5.2d **LANDED** (4f83650, a picture change, row "X5.2, the boot canvas"; its review e1f54eb) — **all LANDED**
 
 The plan's `BABYLON_EXIT.md` holds X5.2's brief, its ONE RULE, shape (A), "What it is
 today" (corrected in place by X5.2a, each correction marked) and the five sub-steps.
@@ -10703,7 +10703,7 @@ and a copy of the main tree's `ref/`):
 match in a browser. **X5.2 is whole**: no Babylon `PostProcess` in a round, the bank with every
 post setting on and off and X0.3 measured above.
 
-**Its review** (HASHREV; 2026-11-08; no change to the picture: a DEV-only check, the rest
+**Its review** (e1f54eb; 2026-11-08; no change to the picture: a DEV-only check, the rest
 comments and documents) found nothing real and six minor points, each checked against the tree
 first. **Stale text**: `PaperGrain`'s header said Babylon's prefix writes the canvas with no stage
 of ours active (the ink is never off: the last active stage writes it); `docs/rendering.md` said
