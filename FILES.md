@@ -206,8 +206,7 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   reported apart. Not a gate
   merge-hash.mjs              # `npm run merge:hash`: kit:hash's other half —
                               #   builds every map in a real browser and hashes
-                              #   every merged visual, collider and terrain
-                              #   collider plus the box lists, so a change to
+                              #   every merged visual plus the box lists, so a change to
                               #   how parts are built or merged proves it moved
                               #   nothing (`--editor`, the map editor's build,
                               #   retired with it at X5.3c and refused). Per mesh also its creation rank in the
@@ -229,7 +228,9 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   `--foliage <rung>` asking it of a crown rung;
                               #   the panes, pane groups and the piece table
                               #   (ItemRef); and the collider
-                              #   DATA beside the collider meshes (X5.3a):
+                              #   DATA (X5.3a), the whole of a collider since
+                              #   X5.3e retired the collider-mesh lists (a
+                              #   baseline's are said, not compared):
                               #   boxGroups as indices, each strut group and
                               #   floor block (terrainGeometry) hashed.
                               #   `--profile` prints the build's phases. Same
@@ -1264,12 +1265,12 @@ src/
                         #   world, monotonically so, and every CLEARED pane
                         #   comes out of the list `openBox` re-severs against
                         #   or a second break puts the first one's wall back.
-                        #   Raises `onBreak`/`onBroken`/`onCleared`.
+                        #   Raises `onBreak`/`onBroken`.
                         #   Babylon-free
     GlassFx.ts          # A break's PICTURE: the pane's vertex range collapsed
                         #   in its merged glazing (`onBroken`: our renderer's
-                        #   buffer) and the collider mesh's flags
-                        #   (`onCleared`).
+                        #   buffer). No collider is a mesh (X5.3e), so the
+                        #   picture is all it writes.
                         #   Client only
     PhysicsWorld.ts     # The ONLY Havok in the game: the engine, the map as
                         #   one static body per 48 m block (a single compound is
@@ -1501,8 +1502,8 @@ src/
                         #   offered. Replaces scene.getActiveMeshCandidates and
                         #   writes NOTHING onto a mesh, which is what leaves
                         #   every ray, the shadow map, every cube probe and
-                        #   every sweep unable to tell it ran. A collider
-                        #   is never a candidate, a mesh carrying metadata.block
+                        #   every sweep unable to tell it ran. No collider
+                        #   is a mesh (X5.3e), a mesh carrying metadata.block
                         #   is one inside the map's fogEnd, everything else
                         #   always is; what our renderer draws is no mesh
                         #   (X3.7b), and a world FIRE is drawn while its
@@ -1674,7 +1675,9 @@ src/
                         #   and the map generators' too: Node loads it by type
                         #   stripping through scripts/lib/mapgen.mjs, the
                         #   helpers the seven generate-<map>.mjs share
-    MapBuilder.ts       # Builds the map; merges visuals, emits colliders.
+    MapBuilder.ts       # Builds the map; merges visuals, records colliders as
+                        #   DATA (colliderBoxes, rayGroups, boxGroups,
+                        #   terrainGeometry; no collider mesh since X5.3e).
                         #   build() is a list of phases, one method each. The
                         #   floor, the rim and every part are WorldSurfaces;
                         #   the merges and the vertex bake run on those, and
@@ -1719,9 +1722,10 @@ src/
     RayWorld.ts         # The segment query every ray in the game asks, off the
                         #   collider boxes, the strut groups and the terrain
                         #   rather than off scene.meshes. castBody / castRound /
-                        #   blocked, bodyNear (a body sweep's candidates, in
-                        #   the client's collider-mesh order, ranked from
-                        #   boxGroups, hulls last), the grid behind them, and the hulls, which
+                        #   blocked, bodyNear (a body sweep's candidates,
+                        #   ranked from boxGroups on both sides — the client's
+                        #   collider-mesh order while they were meshes — hulls
+                        #   last), the grid behind them, and the hulls, which
                         #   are the one solid thing that moves. It is what
                         #   retired scene.pickWithRay at all eight sites
     ellipsoidSweep.ts   # The swept ellipsoid every body moves by: Babylon's
@@ -1764,10 +1768,11 @@ src/
                         #   of one onSurface says our renderer draws whole,
                         #   X3.7b, and none of the emissive palette, which DEV
                         #   refuses in a build handing no onSurface — arrays
-                        #   released, the floor sharing its
-                        #   clone's through the PlainArrays memo), vertexDataOf. Only public
-                        #   Babylon API. Colliders are NOT parts — a collider
-                        #   needs submeshes or it stops nothing
+                        #   released, a floor mesh sharing terrainGeometry's
+                        #   arrays through the PlainArrays memo), vertexDataOf,
+                        #   plainGeometryOf (the floor's positions and indices
+                        #   for PhysicsWorld). Only public
+                        #   Babylon API. Colliders are NOT parts, nor meshes
     BuildingKit.ts      # Facade: shared types + BUILDERS registry
     kit/core.ts         #   Build accumulator (box/wall/guard/flight/...),
                         #   palette, builder contract, and the forest's

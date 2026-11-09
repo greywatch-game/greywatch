@@ -391,10 +391,11 @@ you are on before you believe anything else in this section.
   uploaded at its first paint, so it cannot hold the scene unready.)
   **What generalises is the diagnosis**: when `scene.isReady()` will not flip,
   list the meshes where `!mesh.isReady(true)` — it is usually ONE, and it is
-  usually a texture rather than a shader. Material-less meshes (colliders, the
-  effect pools) show up in that list on the FIRST call and clear themselves on
-  later ones, because asking is what compiles them; ask every frame before
-  believing the list. **`npm run parity` asks this of every map now**, prints the
+  usually a texture rather than a shader. Material-less meshes (the colliders
+  and the effect pools were, until `BABYLON_EXIT.md` X4.6e and X5.3e left a
+  round's scene holding none) show up in that list on the FIRST call and clear
+  themselves on later ones, because asking is what compiles them; ask every
+  frame before believing the list. **`npm run parity` asks this of every map now**, prints the
   frame count each one took, and fails the run naming the meshes that are stuck
   — which is the guard the shots script could not be, because nobody runs a
   photographer as a check.
@@ -1332,8 +1333,8 @@ is one machine's:
 - **A canopy is checked by firing rays at the sky, not by looking at a
   screenshot.** Make the visual meshes pickable (they are `isPickable = false`
   by default), sample a grid of ground points inside the stand, cast straight up
-  with a predicate that rejects `metadata.solid`, and the hit fraction is the
-  closure. Pair it with the local stem density off `map.colliderBoxes` and the
+  (no collider is a mesh since `BABYLON_EXIT.md` X5.3e, so a pick meets only the
+  visuals), and the hit fraction is the closure. Pair it with the local stem density off `map.colliderBoxes` and the
   two give the crown's effective area: for randomly placed crowns
   `closure = 1 - exp(-rho * Aeff)`, so `Aeff = -ln(1 - closure) / rho` — which is
   what makes "is a bigger crown worth more than another frond" a measurement
@@ -1659,8 +1660,8 @@ is one machine's:
   one will be wrong on the other. The two standing checks that were cheap to
   assert here (no pane mesh with `renderOutline`, no pane mesh in the shadow
   generator's render list) have nothing left to read: a round makes no pane
-  mesh (`PaneGroup.mesh` is null since `BABYLON_EXIT.md` X5.3c) and there is no
-  generator (X5.3d). Both rules are held by construction now — see-through
+  mesh (none since `BABYLON_EXIT.md` X4.6e, and the `PaneGroup.mesh` field went
+  at X5.3e) and there is no generator (X5.3d). Both rules are held by construction now — see-through
   glazing writes no depth, so the ink never finds it, and
   `BlockHandover.takeGlass` REFUSES a glazing surface that would cast, so a
   round that starts holds no pane in any shadow pass. A pane that broke either

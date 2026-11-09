@@ -1467,27 +1467,27 @@ ground at all and every number you can check still reads correct. `assertFacesUp
 throws on it in dev builds; trust that over your own derivation.
 
 The terrain is emitted **per terrain block** (`MapLayout.terrainBlock`, 48 m by
-default and independent of the merge's), each with an invisible clone marked
-`solid` — the one place a collider shares a visual's vertices, since a heightfield
-has no box to stand in for it, so `MapBuilder.collider()` is bypassed and `NavGrid`
-reads the field directly. The block split is not just for culling: `CameraSystem`
-picks every frame and `CombatSystem` every shot, and one map-wide floor mesh would
-defeat bounding-box rejection.
+default and independent of the merge's), each block's own arrays kept as its
+collider (`GameMap.terrainGeometry`, `PhysicsWorld`'s floor) — the one place a
+collider shares a visual's vertices, since a heightfield has no box to stand in
+for it, so `MapBuilder.collider()` is bypassed and `NavGrid` and `RayWorld` read
+the field directly. (Each block's collider was an invisible clone MESH marked
+`solid` until `BABYLON_EXIT.md` X5.3e; the block split was for a pick's
+bounding-box rejection, which no ray makes now.)
 
-**That clone is also the one collider in the world that says what it is made
-of.** It carries `metadata.surface = "ground"`, which is what a round stopping
-there kicks up — a dull brown dust disc and a lowpassed thud rather than the
-spark and tick a wall gives. Being bypassed by `collider()` is exactly what
-makes this cheap: the clone *is* the heightfield, so it is the one thing that
-can honestly answer the question, and every box `collider()` makes leaves the
-field **absent**, which reads as `"hard"`.
+**The floor is also the one collider in the world that says what it is made
+of.** A ray that stops on it answers `"ground"` (`RayHit.surface`, off
+`TerrainField` in `RayWorld`), which is what a round stopping there kicks up — a
+dull brown dust disc and a lowpassed thud rather than the spark and tick a wall
+gives — and every box `collider()` records answers `"hard"`. (It was
+`metadata.surface` on the clone mesh while there was one.)
 
 So a new map, a new building or a new prop owes nothing here at all — the
-default is the common case, and the exception is a single line beside the one
-mesh that is genuinely different. Splitting the boxes into stone, timber and
-metal later is a `surface` argument on `collider()` plus a member of
-`ImpactKind`; nothing between the world layer and `CombatSystem` moves, and
-nothing already built has to be revisited.
+default is the common case, and the exception is the one collider that is
+genuinely different. Splitting the boxes into stone, timber and metal later is
+a field on `WorldBox` that `collider()` takes and `RayWorld` answers with, plus
+a member of `ImpactKind`; nothing between the world layer and `CombatSystem`
+moves, and nothing already built has to be revisited.
 
 ## The valley rim
 
@@ -2094,35 +2094,33 @@ streams (`sub`, a tree's `own`) moves only its variants, and is free. When
 X3.4a landed, `npm run collision` rewrote no bake on any map: the placement
 had not moved a box.
 
-**Blocking scatter colliders are MERGED BY LOCALITY, not one mesh per prop**
-(`MapBuilder.clusterColliders`), and it is the fence lesson at forest scale. A
-`pickWithRay` costs per mesh before it costs per triangle — a predicate call, a
-world-matrix inverse and a bounding test each — and the game used to fire such
-rays every frame against every solid mesh on the map: the hitscan on every shot,
-LOS for sixteen bots, the aim assist, the grenade's step ray, the death cam's
-pull-in and a tank's chase camera. **None of them is a pick any longer** — they
+**Blocking scatter colliders are GROUPED BY LOCALITY, not one group per prop**
+(`MapBuilder.clusterColliders`), and it began as the fence lesson at forest
+scale. A `pickWithRay` cost per mesh before it cost per triangle — a predicate
+call, a world-matrix inverse and a bounding test each — and the game used to
+fire such rays every frame against every solid mesh on the map, so each group
+was MERGED into one collider mesh. **None of them is a pick any longer** — they
 are box queries through `RayWorld`, exactly as `Player.probeGround` became one
-first — so what the merge buys the FRAME is gone with them. It stays for two
-reasons that are not performance: the server still stands them up, and the
-grouping is baked into `MapCollision.boxGroups`,
-so it is data both sides have to agree on — and since `BABYLON_EXIT.md` X2.1 it
-is what a body's SWEEP breaks ties by (`RayWorld`'s rank: the order the client
-made its collider meshes, singles first and then the clusters). The `WorldBox` list keeps one entry
-per prop either way, which is why nothing derived from geometry can tell.
-So every blocking prop
-on the map, across all regions, is gathered into one mesh per 12 m square after
-the scatter pass. Greyfen's 1,412 blocking props (as it was before its re-lay;
-~1,040 since) came to ~180 meshes; unmerged
-they would be more collider meshes than the rest of the map put together. The
-grouping is deliberately done ONCE for the whole pass rather than per region,
+first — and **no collider is a mesh since `BABYLON_EXIT.md` X5.3e**: the groups
+are data and nothing else, byte for byte the groups the meshes were merged
+from. They stay because the grouping is baked into `MapCollision.boxGroups`,
+so it is data both sides have to agree on — and since X2.1 it is what a body's
+SWEEP breaks ties by (`RayWorld`'s rank: every box no group names, then each
+group's — the order the client made its collider meshes in while it made
+them). The `WorldBox` list keeps one entry per prop either way, which is why
+nothing derived from geometry can tell. So every blocking prop on the map,
+across all regions, is gathered into one group per 12 m square after the
+scatter pass — Greyfen's 1,412 blocking props (before its re-lay; ~1,040 since)
+came to ~180 — and **ONCE for the whole pass rather than per region**,
 because the regions overlap and per-region grouping left the same square with
-one mesh per region standing over it (~500 meshes for the same props).
+one group per region standing over it (~500 for the same props). The bucket
+order and each bucket's order are the tie order, so they are not a tidiness
+question: `merge:hash` holds `boxGroups` as data.
 
 The boxes themselves stay in `colliderBoxes`, one per prop: the nav grid, the
-cover bake, the obstacle field and the AO all still see individual trunks, and
-the merged MESH is met by nothing at all; only the grouping's order reaches the
-game. The grouping is carried to the server on `MapCollision.boxGroups` — see
-`docs/multiplayer.md`.
+cover bake, the obstacle field, the AO and the rays all still see individual
+trunks; only the grouping's order reaches the game. The grouping is carried
+to the server on `MapCollision.boxGroups` — see `docs/multiplayer.md`.
 
 Builders assemble geometry **at the origin, unrotated**, and return three parallel
 lists (`meshes`, `colliders`, `lights`) in local space; `MapBuilder` merges the
@@ -2180,11 +2178,12 @@ would draw it. And **the adapter makes the meshes in BIRTH order**
 inherited by a merge of one) — the order Babylon made them in while the merge
 ran on meshes, and the order `scene.meshes` holds them in, which `WorldCulling`
 offers candidates in. `npm run merge:hash` records that order per mesh
-(`sceneRank`) and fails on it. **The floor's collider clone shares its patch's
-arrays** although the two meshes are made at opposite ends of the build: the
-clone in `buildValley`, the patch by the adapter, both through the build's
-`PlainArrays` memo, which hands the second the very `number[]` the first was
-given.
+(`sceneRank`) and fails on it. **The floor's collider arrays share its patch's**
+(`GameMap.terrainGeometry`, `PhysicsWorld`'s floor; a mesh, the patch's
+collider clone, until `BABYLON_EXIT.md` X5.3e): taken in `buildValley` through
+the build's `PlainArrays` memo (`plainGeometryOf`), which hands a floor mesh
+made of the patch at the end of the build — where one is made — the very
+`number[]` they hold.
 
 **A merged surface still knows which LAYOUT ITEM each span of it came from —
 its PIECE ranges** (`WorldSurface.pieces`, kept on `GameMap.world`). A piece
@@ -2393,14 +2392,16 @@ a regression. Twelve is nothing,
 and the sweep that goes with them costs **~1 µs a shot** (twenty-four panes in
 a handful of buckets; it was ~15 µs when every sheet on the map was a pane).
 
-**The grouping is per PLACEMENT and that middle ground is the whole trick.**
-Merging every strut on the map into one mesh would be worse than leaving them
-loose: it is one bounding box around every fence in the village, so the cheap
-early-out a pick gets from the bounds never fires and every ray pays the whole
-triangle count. Per fence, a ray that crosses nothing is rejected by the bounds
-and a ray that crosses one fence tests one fence. The same reasoning is what
-sets the 12 m square for scatter, one section down — small enough that the
-bounds still reject, large enough that the mesh count collapses.
+**The grouping is per PLACEMENT and that middle ground was the whole trick**
+while each group was merged into one collider mesh. Merging every strut on the
+map into one mesh would have been worse than leaving them loose: one bounding
+box around every fence in the village, so the cheap early-out a pick got from
+the bounds never fired. Per fence, a ray that crossed nothing was rejected by
+the bounds and a ray that crossed one fence tested one fence; the same
+reasoning set the 12 m square for scatter, one section down. **No strut is a
+mesh since `BABYLON_EXIT.md` X5.3e** — `RayWorld` indexes every one on its own
+— and the groups ride on as DATA (`rayGroups`, `MapCollision.rayGroups`),
+unchanged, because the bake carries them.
 
 *(History: this paragraph and the one before it were measured while every ray
 picked meshes, and none does now — `src/world/RayWorld.ts` answers them all off
@@ -2429,22 +2430,19 @@ shophouses' 7.8 and 11.6, the latter cut into one bay or two by the unit's own
 width — which a pattern cut at about a metre accounts for. The tower's bays are cut to the same rhythm for the look alone — nothing
 holds a range into them and nothing ever will.
 
-**Breaking a pane is five writes and nothing deferred, and they are split
+**Breaking a pane is four writes and nothing deferred, and they are split
 between the simulation and its picture** (`BABYLON_EXIT.md` X2.2 C4). The
-visual range collapses — `GlassFx`, off `GlassSystem.onBroken`; `RayWorld.remove`
-takes the box out of both questions every ray asks and out of every body's
-sweep (a sweep gathers through `RayWorld.bodyNear`, off the same body bit), and
-`metadata.solid` is cleared beside it (the map editor's predicate read it until
-X5.3c; nothing does now, and X5.3e stops making the mesh) — the first
-`GlassSystem`'s, the second `GlassFx`'s off `onCleared`;
-`checkCollisions` is cleared (`GlassFx` again), which was the movement half
-while the sweep was Babylon's and now only keeps the mesh describing itself;
+visual range collapses — `GlassFx`, off `GlassSystem.onBroken`; the rest is
+`GlassSystem`'s. **The collider is ONE write**: `RayWorld.remove` takes the box
+out of both questions every ray asks and out of every body's sweep (a sweep
+gathers through `RayWorld.bodyNear`, off the same body bit) — the collider MESH
+whose `metadata.solid` and `checkCollisions` were cleared beside it went at
+X5.3e, read by nothing since the map editor's pick (X5.3c);
 `ObstacleField.remove` takes it out of the sub-cell push-out the bots and the
 server's move validator both read; and `NavGrid.openBox` relinks the ground it
 was severing, floods walkability into whatever that opened, and relaxes the
 flow fields over the result. All of that is local and cheap. The authority runs
-the simulation's half alone: it builds no `GlassFx`, draws no glazing and
-reads no collider mesh.
+the simulation's half alone: it builds no `GlassFx` and draws no glazing.
 
 **The flow fields used to be deferred, and the deferral was the wrong axis.** A
 field is a breadth-first sweep over every walkable surface, so `GlassSystem`

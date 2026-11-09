@@ -18,8 +18,8 @@
  * `surroundingMeshes` (Sarab's fleet 2.30 ms a frame to 0.12, the player's own
  * sweep 2.21 to 0.036). Now the collider itself is ours (`ellipsoidSweep.ts`,
  * a port of Babylon's) and it is fed boxes rather than
- * meshes, so no collider mesh is walked by anything and the authority's
- * sweeps need no scene at all.
+ * meshes, so the authority's sweeps need no scene at all — and since
+ * `BABYLON_EXIT.md` X5.3e no collider is a mesh on either side.
  *
  * ## The same answers, and the places they differ on purpose
  *
@@ -44,9 +44,10 @@
  * matters only on a knife edge — an ellipsoid already touching two boxes,
  * whose slide Babylon's own answer would change under a micrometre's nudge.
  * The TIE ORDER is not among them: `RayWorld.bodyNear` hands boxes over in
- * the order the client's collider meshes were made, which is the order
- * Babylon met them in there — and the authority, which made its clusters
- * first, now agrees with the client where it used to break those ties apart.
+ * the order the client's collider meshes were made while they were meshes,
+ * which is the order Babylon met them in there — derived from `boxGroups`
+ * alone, so the authority, which made its clusters first, now agrees with the
+ * client where it used to break those ties apart.
  *
  * ## The two rules this file keeps
  *

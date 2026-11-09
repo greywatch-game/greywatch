@@ -2410,14 +2410,13 @@ export class Game {
     this.blastDebris = new BlastDebrisSystem(this.scene, this.mats, this.physics);
     this.glass = new GlassSystem();
     this.glassFx = new GlassFx(this.glassDraw);
-    // The two events a break's picture needs, wired here beside `onRound` for
+    // The one event a break's picture needs, wired here beside `onRound` for
     // that line's reason: the simulation keeps the panes, the boxes and the
     // nav graph and draws nothing; the view collapses the glazing when a pane
-    // goes (by any path, a late joiner's catch-up included) and clears the
-    // collider mesh's flags when its box leaves the world (read by nothing
-    // since the map editor went; X5.3e stops making the mesh).
+    // goes (by any path, a late joiner's catch-up included). There is no
+    // collider mesh to tell (`BABYLON_EXIT.md` X5.3e): the box leaving every
+    // query is the simulation's one write, `RayWorld.remove`.
     this.glass.onBroken = (pane) => this.glassFx.collapse(pane);
-    this.glass.onCleared = (pane) => this.glassFx.clear(pane);
     this.deathCam = new DeathCam();
     this.vehicles = new VehicleSystem(this.random);
     this.vehicleViews = new VehicleViews();
@@ -6053,10 +6052,10 @@ export class Game {
     // cleared above: a physics world still holding shapes built from the map
     // that was just disposed is geometry that no longer exists.
     this.physics.setMap(map);
-    // The panes, and the collider meshes standing behind them. Same
-    // reason as every line above it: a system holding last build's geometry is
-    // holding meshes that are already disposed, and the glass's view is the one
-    // that would then write vertices into them.
+    // The panes, their boxes and their glazing. Same reason as every line
+    // above it: a system holding last build's geometry is holding a world that
+    // is already gone, and the glass's view is the one that would then write
+    // vertices into a draw that no longer holds them.
     this.glass.setMap(map);
     this.glassFx.setMap(map);
     // The armour, last, and it is the one line in this method with two reasons

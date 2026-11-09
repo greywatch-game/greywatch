@@ -20,8 +20,8 @@
  * behind the bottom of the frame. Nothing fires while it is in flight.
  * Invariants: probeGround is ANALYTIC — the collider boxes bucketed at map
  * load, the heightfield, and the fleet's decks — and no longer a scene pick, so
- * it costs the same on a 400 m map as on a 240 m one. It filters nothing on
- * `metadata.solid`, because the structures it reads only ever held solids.
+ * it costs the same on a 400 m map as on a 240 m one. It filters nothing,
+ * because the structures it reads only ever held solids.
  * `position` is the FEET, as `Combatant` requires, and is NOT `mid` — the
  * sweep body's centre, half a body higher, and the one point the movement
  * writes. Anything wanting the middle of the body wants `center`. The three

@@ -39,7 +39,8 @@ Everything about `src/systems/GrenadeSystem.ts` follows from being a thrown
 thing with a clock in it:
 
 - **ONE ray per grenade per frame**, cast along the step and a radius past it so a
-  fast grenade cannot tunnel between frames, filtered on `metadata.solid === true`.
+  fast grenade cannot tunnel between frames, answered by `RayWorld.castRound` off the
+  collider boxes.
   Affordable only because there are at most a handful in the air. A reported normal
   facing *away* from the grenade is flipped before the bounce: a collider's back face
   is what a grenade thrown from inside a doorway finds, and bouncing off one drives

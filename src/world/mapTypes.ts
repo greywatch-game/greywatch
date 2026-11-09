@@ -12,7 +12,7 @@
  * into `colliderBoxes` or `panes` is an IDENTITY on both sides of the wire —
  * both are rules about how `MapBuilder` fills these, stated where the field is.
  * Must NOT grow a function: what builds or moves one of these lives in
- * `MapBuilder.ts` (`collider()`, `recordBox`) or in
+ * `MapBuilder.ts` (`collider()`) or in
  * `merge.ts` (`PaneBlocks`), never beside the shape.
  */
 import type { Mesh } from "@babylonjs/core";
@@ -30,10 +30,12 @@ import type { ScatterField } from "./scatterVariants";
 import type { WorldGeometry, WorldSurface } from "./worldGeometry";
 
 /**
- * One floor block's collider as data: the positions it was built from (three
- * a vertex, in the world's space — the clone stands at identity) and its
- * triangles, three indices each, wound for Babylon's left-handed default as
- * every triangle in the world is. The arrays are the mesh's own, not copies.
+ * One floor block's collider as data: its positions (three a vertex, in the
+ * world's space — the block stands at identity) and its triangles, three
+ * indices each, wound for Babylon's left-handed default as every triangle in
+ * the world is. The arrays are the floor block's own, in the types its
+ * collider clone held when it was a mesh (`BABYLON_EXIT.md` X5.3e took the
+ * mesh away) — not copies (`parts.ts`' `plainGeometryOf`).
  */
 export interface TerrainGeometry {
   readonly positions: ArrayLike<number>;
@@ -266,14 +268,11 @@ export interface WorldPane {
  */
 export interface PaneGroup {
   /**
-   * Null: a round's glazing is drawn by our renderer with no mesh made of it
-   * (`render/GlassDraw.ts`, X4.6e), its surface the one named by `record`. The
-   * map editor's build was the one that made a mesh, and it is gone
-   * (`BABYLON_EXIT.md` X5.3c), with the default cube's wrapped view Babylon
-   * kept for its glazing (X5.3d). X5.3e deletes the field and its two readers.
+   * Its surface's index in the build's list: what names its record in
+   * `GameMap.world` and its draw in a round — glazing is our renderer's
+   * (`render/GlassDraw.ts`, X4.6e) and no mesh is made of it (the field that
+   * held one went at `BABYLON_EXIT.md` X5.3e, null on every build since X5.3c).
    */
-  mesh: Mesh | null;
-  /** Its surface's index in the build's list: what names its record in `GameMap.world` and its draw in a round. */
   record: number;
   /** Indices into `GameMap.panes`. */
   panes: number[];
@@ -404,14 +403,11 @@ export interface GameMap {
    */
   vehicleSpawns: VehicleSpawnDef[];
   /**
-   * Invisible collider proxies — what `GlassFx` and `WorldCulling` index, and
-   * nothing that moves or shoots reads (`BABYLON_EXIT.md` X5.3e deletes them). **Client-only and EMPTY on the
-   * authority**, like `visuals`: no ray and no sweep reads a mesh on either
-   * side (they answer off `colliderBoxes`, `rayGroups` and the floor through
-   * `rays`), and `buildSimWorld` builds none.
+   * The colliders, as plain boxes — and there is nothing else to a collider:
+   * no mesh is made of one on either side (`BABYLON_EXIT.md` X5.3e). What
+   * every ray and sweep (`rays`, `collidables`), the nav grid, the cover bake,
+   * the obstacle field, the AO bake and the collision bake read.
    */
-  colliders: Mesh[];
-  /** The same colliders as plain boxes, for the nav grid. */
   colliderBoxes: WorldBox[];
   /**
    * An ALBEDO per `colliderBoxes` entry, as `r, g, b` triples in the same
@@ -422,7 +418,7 @@ export interface GameMap {
    * the collision bake and has no materials to average — so this is kept off
    * `WorldBox` and out of the bake, and neither `npm run collision` nor
    * `npm run parity` has heard of it. It must stay PARALLEL to
-   * `colliderBoxes`: `MapBuilder.recordBox` is the one place either grows.
+   * `colliderBoxes`: `MapBuilder.collider` is the one place either grows.
    */
   colliderAlbedo?: Float32Array;
   /**
@@ -441,29 +437,32 @@ export interface GameMap {
   partBoxes?: WorldBox[];
   /**
    * The `strut` boxes — ray geometry with no body behind it — grouped by the
-   * collider mesh each group was merged into.
+   * placement that declared them (one collider mesh a group until
+   * `BABYLON_EXIT.md` X5.3e; the groups are unchanged).
    *
    * Not in `colliderBoxes` on purpose: everything derived from geometry reads
    * that list, and none of it can represent a 0.1 m rail (see
    * `BoxSpec.rayOnly`). The grouping is carried rather than flattened because
-   * the server has to rebuild and merge the same meshes from the bake, and it
-   * cannot recover from a flat list which boxes were one fence.
+   * the collision bake carries it to the server, which rebuilds the same list
+   * from it, and a flat list cannot say which boxes were one fence.
    */
   rayGroups: WorldBox[][];
   /**
-   * The `colliderBoxes` indices that were merged into one collider mesh each,
-   * one entry per merged mesh — a scatter region's props, grouped by locality.
+   * The `colliderBoxes` indices grouped by locality — the scatter's blocking
+   * props, one entry per `CLUSTER` square (one merged collider mesh each until
+   * `BABYLON_EXIT.md` X5.3e; the groups are unchanged, byte for byte).
    *
    * Unlike `rayGroups` these boxes ARE in `colliderBoxes` and everything
-   * derived from geometry still sees them one at a time. The grouping says
-   * which meshes the client made, and in what order — every box named here got
-   * its mesh after every box named nowhere, cluster by cluster — which is the
-   * order a SWEEP breaks a tie in (`RayWorld`'s rank) and the only thing that
-   * still reads it. Boxes named by no group are their own mesh, which is every
-   * collider a structure builder makes.
+   * derived from geometry still sees them one at a time. The grouping is the
+   * order a SWEEP breaks a tie in (`RayWorld`'s rank: every box named nowhere,
+   * in index order, then each group's boxes, group by group) — the order
+   * Babylon's walk met the client's collider meshes in, which the feel of a
+   * body leaning on two boxes was tuned against — and the only thing that
+   * still reads it. Boxes named by no group are every collider a structure
+   * builder makes.
    *
    * Carried rather than recomputed for the same reason `rayGroups` is: the
-   * server rebuilds these meshes from the bake, and the grouping is a decision
+   * server ranks the same boxes from the bake, and the grouping is a decision
    * the client made rather than a property of the boxes.
    * See `MapBuilder.clusterColliders`.
    */
@@ -489,24 +488,13 @@ export interface GameMap {
    */
   paneGroups: PaneGroup[];
   /**
-   * The floor's collider blocks, a SUBSET of `colliders`.
-   *
-   * They are called out because they are the one collider with no `WorldBox`
-   * behind it (a heightfield is not a box — see `MapBuilder.buildValley`), so
-   * anything that wants the whole solid world as geometry has to take
-   * `colliderBoxes` for the boxes and these for the floor (or, without a
-   * mesh, `terrainGeometry`). Picking them out of `colliders` by name would
-   * work and is exactly the sort of string-sniffing that breaks silently when
-   * a name changes. **Empty on the authority**, with `colliders`: it has no
-   * Havok and no scene.
-   */
-  terrainColliders: Mesh[];
-  /**
-   * The same floor blocks as GEOMETRY, one entry per `terrainColliders` mesh
-   * and in its order: the very vertex and index arrays each clone was made
-   * of. `PhysicsWorld` is the reader — it rests a body on the floor and
-   * reaches no mesh to do it. **Empty on the
-   * authority**, with `terrainColliders`.
+   * The floor's collider blocks as GEOMETRY, one entry a floor block in the
+   * build's order: the very vertex and index arrays each block is made of.
+   * The floor is the one collider with no `WorldBox` behind it (a
+   * heightfield is not a box — see `MapBuilder.buildValley`), so anything
+   * that wants the whole solid world as geometry takes `colliderBoxes` for
+   * the boxes and these for the floor. `PhysicsWorld` is the reader — it
+   * rests a body on the floor. **Empty on the authority**: it has no Havok.
    */
   terrainGeometry: TerrainGeometry[];
   /**

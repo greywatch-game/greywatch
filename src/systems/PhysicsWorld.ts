@@ -33,9 +33,9 @@
  *   `havok.ts`). It reaches no node, no mesh and no scene: a body's pose is a
  *   plain array (`WorldBody.pose`) that a client's drawing is composed from
  *   (a rig's joint, a shard, a chunk — none of them a node since
- *   `BABYLON_EXIT.md` X4.4c), and the floor arrives as the
- *   collider clones' own vertex arrays (`GameMap.terrainGeometry`), not as
- *   the meshes.
+ *   `BABYLON_EXIT.md` X4.4c), and the floor arrives as each floor block's
+ *   own vertex arrays (`GameMap.terrainGeometry`) — what its collider clone
+ *   was made of while it was a mesh (until X5.3e).
  * - Stepping is `update()`'s job and it is only ever called from a gameplay
  *   path — `Game.stepAftermath`, and nowhere else. The scene has no physics
  *   engine for `scene.animate()` to step behind a pause card, and `Game`,
@@ -560,11 +560,12 @@ export class PhysicsWorld {
 
   /**
    * One terrain patch as a Havok mesh shape, and the centre it is bucketed by
-   * — `PhysicsShapeMesh`'s `MeshAccumulator` and the collider clone's bounding
-   * box, both without the mesh.
+   * — `PhysicsShapeMesh`'s `MeshAccumulator` and the bounding box of the
+   * floor's collider clone (a mesh until `BABYLON_EXIT.md` X5.3e), both
+   * without a mesh.
    *
-   * **The positions are the clone's own LOCAL ones and the shape's space is
-   * the world's**, because the clone stands at identity: the plugin baked
+   * **The positions are the block's own LOCAL ones and the shape's space is
+   * the world's**, because the block stands at identity: the plugin baked
    * them through the mesh's absolute scaling (exactly 1) as
    * `Vector3.TransformCoordinates` over `Matrix.Scaling`, and every term that
    * arithmetic added was a zero — which changes no finite number but a `-0`,

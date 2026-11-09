@@ -92,38 +92,40 @@ export interface MapCollision {
   boxes: readonly CollisionBox[];
   /**
    * The `strut` boxes — ray geometry with no body behind it — **grouped as the
-   * client merged them**, one inner array per collider mesh.
+   * client groups them**, one inner array per placement (`GameMap.rayGroups`;
+   * one collider mesh each until `BABYLON_EXIT.md` X5.3e).
    *
    * Separate from `boxes` because these are not the solid world: nothing
    * derived from geometry may see them (see `BoxSpec.rayOnly`), and `boxes` is
    * exactly the list `NavGrid`, `CoverMap` and `ObstacleField` are handed. The
-   * grouping is baked rather than a flat list because the server merges each
-   * group into one mesh the way the client does, and merging every fence on
-   * the map into a single mesh would put one bounding box around the whole
-   * village — every ray in the process would then pay for every fence's
-   * triangles.
+   * grouping is baked rather than a flat list because it was what the server
+   * merged each group into one mesh by while a ray was a pick — merging every
+   * fence on the map into a single mesh would have put one bounding box around
+   * the whole village. `RayWorld` indexes every strut on its own now, on both
+   * sides, and the groups ride on unchanged.
    */
   rayGroups: readonly (readonly CollisionBox[])[];
   /**
-   * Which `boxes` the client merged into one collider mesh each, as indices
-   * into that array — a scatter region's props, grouped by locality.
+   * Which `boxes` the client groups together, as indices into that array — a
+   * scatter region's props, grouped by locality (one merged collider mesh
+   * each until `BABYLON_EXIT.md` X5.3e).
    *
    * The mirror of `rayGroups` and not its twin: these boxes ARE the solid
    * world and ARE in `boxes`, so the nav grid, the cover bake and the obstacle
    * field see every one of them separately. The grouping says nothing about
-   * the world's shape: it is which meshes the client made, and in what order,
-   * and what still reads it is a body's SWEEP, whose ties go by that order
+   * the world's shape: it is the order the client's collider meshes were made
+   * in while they were meshes, and what still reads it is a body's SWEEP,
+   * whose ties go by that order
    * (`RayWorld`'s rank) — so the authority's hulls break them as the client's
    * do. It began as a pick budget, when a pick cost per mesh and a jungle belt
    * was hundreds of one-metre trunks.
    *
-   * Every index that appears here is left out of the one-mesh-per-box pass, so
-   * a box belongs to exactly one mesh either way. Boxes named by no group are
-   * their own mesh, which is every collider a structure builds.
+   * Every index that appears here is ranked after every box named by no
+   * group, so a box belongs to exactly one place in that order either way.
+   * Boxes named by no group are every collider a structure builds.
    *
    * Optional so a map baked before clustering existed still loads: absent
-   * reads as a map whose every box is its own mesh, which is what the bake
-   * always produced.
+   * reads as a map with no group, which is what the bake always produced.
    */
   boxGroups?: readonly (readonly number[])[];
   /**

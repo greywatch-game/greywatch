@@ -70,11 +70,11 @@
  * | `seat` | slot, tank, seat, at·3, yaw | the answer to a person's mount/dismount, and the hull burning under them; `at`/`yaw` mean something only when `tank` is -1 |
  * | `ordnanceRefused` | slot, item | a person's rocket (0), mine (1) or throw (2) was refused — by the pool, or because the body was dead, seated or out of them — `REFUSED_ITEMS` |
  *
- * **Glass is ONE event, not three.** `GlassSystem`'s `onBroken`/`onBreak`/
- * `onCleared` are per pane and describe what a pane's own VIEW must do; the
- * page applies a `glass` event through its own `GlassSystem`, which raises
- * those three for itself — exactly as a netplay client does with the wire's
- * `glass` event. So the core says what broke, once.
+ * **Glass is ONE event, not two.** `GlassSystem`'s `onBroken`/`onBreak` are
+ * per pane and describe what a pane's own VIEW must do; the page applies a
+ * `glass` event through its own `GlassSystem`, which raises both for itself —
+ * exactly as a netplay client does with the wire's `glass` event. So the core
+ * says what broke, once.
  */
 import { CONFIG } from "../config";
 import type { Vector3Like } from "../math";

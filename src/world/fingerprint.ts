@@ -59,22 +59,24 @@ export interface WorldFingerprint {
    * catch different faults: the count catches a bake that predates the flag or
    * a server that dropped the groups, and the hash catches timber standing
    * somewhere else from where the client draws it. `groups` matters on its own
-   * because grouping decides how the geometry is merged, and a server that
-   * merged them differently would pick against the same triangles with a
-   * different bounding box.
+   * because the grouping is what the bake carries (it decided how the
+   * geometry was merged while a ray was a pick), and a server that grouped
+   * them differently has read a different bake.
    */
   rayGroups: number;
   rayBoxes: number;
   rayHash: string;
   /**
-   * The clustering of the SOLID boxes — how many merged collider meshes a
-   * scatter region's props were gathered into, and which boxes went into each.
+   * The clustering of the SOLID boxes — how many groups a scatter region's
+   * props were gathered into (a merged collider mesh each until
+   * `BABYLON_EXIT.md` X5.3e), and which boxes went into each.
    *
    * The nav graph is blind to this one too, and completely: a cluster changes
-   * nothing about the world, only how many bounding tests a ray pays to meet
-   * it. That is precisely why it belongs here — a server that ignored
-   * `boxGroups` would agree with the client about every box on the map and
-   * quietly do hundreds of times the picking work per shot, with nothing
+   * nothing about the world's shape, only the order a body's sweep breaks a
+   * tie in (`RayWorld`'s rank) — and, while a ray was a pick, how many
+   * bounding tests it paid. That is precisely why it belongs here — a server
+   * that ignored `boxGroups` would agree with the client about every box on
+   * the map and quietly slide a wedged hull the other way, with nothing
    * visible on either side to say so.
    */
   boxGroups: number;

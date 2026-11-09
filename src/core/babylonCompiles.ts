@@ -33,15 +33,15 @@
  * (`plans/webgpu-ref/drawlog.mjs`) reads `count` in every state and fails a
  * run where it is not 0.
  *
- * **It WARNS rather than errs, because two instruments compile on purpose.**
- * The harness's readiness wait (`waitUntilDrawn`: `scene.isReady()`, which
- * the bank, `gate.mjs`, `post.mjs` and `surfaces.mjs` stand on) asks every
- * mesh's material, and the collider meshes wear none, so it compiles
- * Babylon's `default` `StandardMaterial` once a page — measured at X5.3d, one
- * on every map, the game itself compiling nothing; and `shaders.mjs` compiles
- * every Babylon cel variant by design, which is what it checks. A console
- * error would fail each of those on its own instrument; the game never asks
- * either (X5.3e, taking the collider meshes away, takes the first with them).
+ * **It WARNS rather than errs, because an instrument compiles on purpose**:
+ * `shaders.mjs` compiles every Babylon cel variant by design, which is what it
+ * checks, and a console error would fail it on its own instrument; the game
+ * never asks. (There were two until `BABYLON_EXIT.md` X5.3e: the harness's
+ * readiness wait — `waitUntilDrawn`'s `scene.isReady()`, which the bank,
+ * `gate.mjs`, `post.mjs` and `surfaces.mjs` stand on — asks every mesh's
+ * material, and the collider meshes wore none, so it compiled Babylon's
+ * `default` `StandardMaterial` once a page. No collider is a mesh now, a
+ * round's scene holds none of the world's, and the wait compiles nothing.)
  */
 import type { AbstractEngine } from "@babylonjs/core";
 

@@ -320,9 +320,9 @@ export class SimCore {
   /**
    * Breakable glazing. The same simulation the client runs, on the same panes
    * — this side gets them off the collision bake instead of off a build, and
-   * builds no `GlassFx`: nothing collapses and no collider mesh is written, so
-   * the sweep, the box and the nav graph are all that happen, and nothing
-   * listens to `onBroken` or `onCleared`.
+   * builds no `GlassFx`: nothing collapses, so the sweep, the box and the
+   * nav graph are all that happen — on both sides, there being no collider
+   * mesh on either — and nothing listens to `onBroken`.
    */
   readonly glass = new GlassSystem();
 

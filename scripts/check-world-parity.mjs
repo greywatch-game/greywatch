@@ -128,10 +128,12 @@ const DEPLOY_TIMEOUT_MS = 300_000;
  *
  * **It ASKS EVERY FRAME rather than once, and that is not politeness.**
  * `Scene.isReady` walks every mesh, and asking is what starts a material
- * compiling — the colliders and the effect pools carry no material of their
- * own, so they answer false on the first call and clear themselves on later
- * ones. A single call names hundreds of innocent meshes; the poll names the
- * one that is actually stuck, which is what the failure report prints.
+ * compiling — a mesh with no material of its own (the collider meshes and the
+ * effect pools were, before `BABYLON_EXIT.md` X4.6e and X5.3e left a round's
+ * scene holding none of either) answers false on the first call and clears
+ * itself on later ones. A single call could name hundreds of innocent meshes;
+ * the poll names the one that is actually stuck, which is what the failure
+ * report prints.
  */
 async function inspectClient(browser, url, id) {
   const page = await browser.newPage();

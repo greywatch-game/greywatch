@@ -15,7 +15,8 @@
  * floor, the rim and every merged surface — a mesh for each Babylon draws,
  * none for one our renderer draws whole — each surface's arrays released
  * once it is past), `vertexDataOf` for a bare buffer (through a build's
- * `PlainArrays` memo where two meshes must share one copy).
+ * `PlainArrays` memo where two holders must share one copy), and
+ * `plainGeometryOf` for the floor's positions and indices alone.
  * Invariants: a `Part` is plain data — nothing in it has heard of Babylon but
  * the material it carries — and `drawnMesh` is the ONE place one becomes a
  * mesh (`worldMeshes` makes every world mesh through it), handing Babylon
@@ -72,13 +73,11 @@
  * world keeps, once, through public API. The part mesh, and every helper that
  * kept it honest, is deleted.
  *
- * **Colliders are deliberately NOT parts.** The map editor's centre-screen
- * pick walked `mesh.subMeshes`, and a collider built without them was one it
- * could never select. Nothing that moves or shoots reads the meshes any more
- * — the rays and the sweeps both answer off the `WorldBox`es (`RayWorld`,
- * `CollisionField`) — and the editor is gone (`BABYLON_EXIT.md` X5.3c), so
- * `MapBuilder.collider` staying on `MeshBuilder` goes at X5.3e, when the
- * colliders stop being meshes.
+ * **Colliders are not parts, and not meshes.** A collider is a `WorldBox`
+ * (`MapBuilder.collider`), a strut group or the floor's own arrays, and
+ * nothing that moves or shoots reads anything else (`RayWorld`,
+ * `CollisionField`); the meshes the map editor's centre-screen pick walked
+ * went with their last reader (`BABYLON_EXIT.md` X5.3c, X5.3e).
  */
 import {
   Mesh,
@@ -308,10 +307,12 @@ function plainArray(a: ArrayLike<number>): number[] {
 
 /**
  * The plain arrays one build has already made of a buffer's typed arrays,
- * keyed by the typed array — so two meshes made of ONE buffer (the floor and
- * its collider clone, `MapBuilder.buildValley`) hold one `number[]` between
- * them, as they did when both were applied from one `VertexData`. Per build,
- * and weak, so it holds nothing once the build's buffers are gone.
+ * keyed by the typed array — so the floor's arrays `PhysicsWorld` rests bodies
+ * on (`plainGeometryOf`, `MapBuilder.buildValley`) and a mesh made of the same
+ * buffer hold one `number[]` between them, as the floor's mesh and its
+ * collider clone did when both were applied from one `VertexData` (the clone
+ * was a mesh until `BABYLON_EXIT.md` X5.3e). Per build, and weak, so it holds
+ * nothing once the build's buffers are gone.
  */
 export type PlainArrays = WeakMap<object, number[]>;
 
@@ -333,6 +334,19 @@ export function vertexDataOf(buffer: GeometryBuffer, plain?: PlainArrays): Verte
   if (buffer.colors) data.colors = babylonFloats(buffer.colors, plain);
   data.indices = plainOnce(buffer.indices, plain);
   return data;
+}
+
+/**
+ * A buffer's positions and indices alone, in the types `vertexDataOf` hands
+ * Babylon and through the same memo — what the floor's collider clone was
+ * made of when it was a mesh, so `GameMap.terrainGeometry` (`PhysicsWorld`'s
+ * floor) holds the very arrays, in the very types, it held then.
+ */
+export function plainGeometryOf(
+  buffer: GeometryBuffer,
+  plain: PlainArrays,
+): { positions: number[] | Float32Array; indices: number[] } {
+  return { positions: babylonFloats(buffer.positions, plain), indices: plainOnce(buffer.indices, plain) };
 }
 
 /**
@@ -404,8 +418,8 @@ export function drawnMesh(
  * the record the map keeps (`SurfaceRecord`, `GameMap.world`) is everything
  * else, so the CPU holds the world's geometry once — in the arrays Babylon
  * keeps, or in our renderer's buffers — rather than twice. `plain` is the
- * build's `PlainArrays`, which is how the floor's mesh comes out holding the
- * arrays its collider clone was already made of. `onSurface`
+ * build's `PlainArrays`, which is how a floor mesh comes out holding the
+ * arrays `GameMap.terrainGeometry` was already made of. `onSurface`
  * (`BuildOptions.onSurface`) is handed each surface and its index in the
  * list at its turn, BEFORE any mesh is made of it and before the release,
  * and answers whether our renderer draws it whole; the record's BOUNDS are

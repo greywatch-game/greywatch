@@ -377,17 +377,15 @@ semver covers. All three of the last went with X1.4, and so did the mesh they
 served: the world's merges, its vertex bake and its palette run on our own
 buffers, and the world becomes meshes once, at the end of the build.
 
-**What is left is no internal at all, only public API**, in two places:
-
-- **The one adapter** — `drawnMesh` (`src/world/parts.ts`), and `worldMeshes`
-  through it: `VertexData.applyToMesh` on a fresh `Mesh`, and
-  `Mesh.setVerticesData` to make a pane block's positions writable.
-- **The colliders**, which are still `MeshBuilder.CreateBox` boxes merged by
-  `Mesh.MergeMeshes` (`MapBuilder.clusterColliders`, `struts`). Nothing that
-  moves or shoots reads them since BABYLON_EXIT.md X2.1 — the rays and the
-  sweeps both answer off the `WorldBox`es — and the map editor's centre-screen
-  pick, which walked a mesh's submeshes, went at `BABYLON_EXIT.md` X5.3c; X5.3e
-  stops making them. The server builds none since X2.3.
+**What is left is no internal at all, only public API**, in one place: **the
+one adapter** — `drawnMesh` (`src/world/parts.ts`), and `worldMeshes` through
+it: `VertexData.applyToMesh` on a fresh `Mesh`, and `Mesh.setVerticesData` to
+make a pane block's positions writable. **The colliders were a second**, until
+`BABYLON_EXIT.md` X5.3e: `MeshBuilder.CreateBox` boxes merged by
+`Mesh.MergeMeshes` (`MapBuilder.clusterColliders`, `struts`), read by nothing
+that moves or shoots since X2.1 and by nothing at all once the map editor's
+pick went (X5.3c). A collider is a `WorldBox` and its groups are data now, on
+both sides, so an upgrade cannot move one.
 
 **And the copies, which an upgrade cannot move but can make WRONG.** The
 geometry every model and every structure is built and merged from is ours
@@ -431,7 +429,12 @@ that arm is retired with the editor, X5.3c). Upgrade. Run `node scripts/geometry
 `node scripts/sweep-check.mjs` — the copies against the new library — then
 `npm run merge:hash -- --against before.json`. A merge:hash
 difference with all four checks clean is Babylon's own output changing under the
-adapter or a collider.
+adapter. **What `merge:hash` holds of a collider is DATA** — `colliderBoxes`
+hashed, `boxGroups` as indices, `rayGroups` and `terrainGeometry` hashed a group
+or a block an entry — and its two collider-MESH lists (`colliders`,
+`terrainColliders`) were retired with the meshes at X5.3e: a baseline older
+than that is compared on everything else and the two lists are said, not
+compared.
 
 **A baseline taken before `BABYLON_EXIT.md` X4.6e differs by design, and a
 `before.json` must be taken on the same side of it.** `merge:hash --against`

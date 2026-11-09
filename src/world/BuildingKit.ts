@@ -4,9 +4,9 @@
  * kit/ (core.ts = Build accumulator + palette + contract, buildings/,
  * city/, desert/, harbour/, japan/, structures/,
  * terrain.ts).
- * Invariants: builders assemble AT THE ORIGIN, UNROTATED and NEVER set
- * metadata.solid, checkCollisions, or isPickable — MapBuilder owns the
- * visual/collider split. A builder may take a BuildCtx to read the world it is
+ * Invariants: builders assemble AT THE ORIGIN, UNROTATED and NEVER make a
+ * collider — they declare `BoxSpec`s, and MapBuilder owns the visual/collider
+ * split (`collider()`). A builder may take a BuildCtx to read the world it is
  * about to land in (the road bends onto the ground), but still returns
  * origin-local geometry. Collider top faces must stay within
  * CONFIG.nav.stepHeight of adjacent ground; ramp colliders need rotX.

@@ -53,7 +53,7 @@
  * - **What the blast went off ON is answered once**, by a single downward ray
  *   in `probeGround`, and handed to everything that needs it: the surge rolls
  *   out flat to that surface and `BlastDebrisSystem` throws that surface's own
- *   rubble. It reads the same `metadata.surface` a bullet's impact reads, so a
+ *   rubble. It reads the same `RayHit.surface` a bullet's impact reads, so a
  *   new floor material is one row in `CombatFx`'s table and nothing here.
  *
  * ## The molotov is the same flight and a different ending
@@ -938,9 +938,9 @@ export class GrenadeSystem {
    * `castRound` rather than `castBody`, which is the same choice the flight
    * makes and for the same reason: debris comes off things that stop rounds, so
    * a fence's coarse run is not a surface a blast tears anything out of. The
-   * kind is read off `metadata.surface` — the field `MapBuilder` sets on
-   * exactly one thing, the terrain floor's collider clone — so every wall, roof
-   * and prop in the village answers "hard" by omission, and a new floor
+   * kind is read off `RayHit.surface` — "ground" off exactly one thing, the
+   * floor `RayWorld` marches — so every wall, roof and prop in the village
+   * answers "hard" by omission, and a new floor
    * material is a row in `CombatFx`'s table and nothing here.
    *
    * A blast in mid-air (a shell into a wall high up, a grenade that went off

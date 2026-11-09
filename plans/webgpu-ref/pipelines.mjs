@@ -257,11 +257,12 @@ async function playRound(page) {
     // The pane's shards are counted as they are DRAWN as well (frames with a
     // shard in the main pass), so a pane phase that created nothing can be
     // told from one whose shards were never on screen to compile anything.
-    // Any mesh of the scene's (its colliders, in a round where every pool is
-    // our renderer's since BABYLON_EXIT.md X4.6e): the prototype that owns
-    // `render`. Found once the first install has made one — at the menu the
-    // scene holds no mesh since X5.3d deleted `localShadowProxy` — which
-    // names nothing less: only a creation IN PLAY is filed by its mesh.
+    // Any mesh of the scene's: the prototype that owns `render`. Found once
+    // one exists — at the menu the scene holds no mesh since X5.3d deleted
+    // `localShadowProxy`, and a round none since X5.3e (no collider is a mesh,
+    // and every pool is our renderer's since BABYLON_EXIT.md X4.6e), so it may
+    // never be hooked — which names nothing less: only a creation IN PLAY
+    // with a Babylon mesh being drawn is filed by its mesh.
     let shardDraws = 0;
     // Since BABYLON_EXIT.md X4.4c a shard is our renderer's (`debrisDraw`):
     // each one handed over inside the render counts, as a mesh drawn did.

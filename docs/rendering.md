@@ -645,8 +645,8 @@ phone**, which is why a coarse pointer defaults to `low` — `FINDINGS.md` 44.
   owner's decision of 2026-11-07, X5.1b's row 1), and that set went at
   `BABYLON_EXIT.md` X5.3d. Grass and water do not declare them and keep the
   flat path.
-- **`GameMap.colliderAlbedo` stays parallel to `colliderBoxes`** — `recordBox`
-  is the one place either grows. It is client-only: the collision bake, the
+- **`GameMap.colliderAlbedo` stays parallel to `colliderBoxes`** —
+  `MapBuilder.collider` is the one place either grows. It is client-only: the collision bake, the
   server and `npm run parity` have never heard of it.
 - **`update` runs from `tick`, in every state, after `lighting.update`** — so
   the volume converges behind the loading card rather than fading in across a
@@ -3685,10 +3685,10 @@ effect compiled after that — a Babylon draw cannot happen without one — is
 counted and said as a console WARNING; the draw log reads the count in every
 state and fails a run where it is not 0. What the engine compiled for itself
 while it was built (`clearQuad`, the clear quad's own) is not counted. It is a
-warning and not an error because two instruments compile on purpose: the
-harness's readiness wait (`scene.isReady()`) compiles Babylon's `default`
-material for the collider meshes, which wear none (one a page, until X5.3e
-takes the meshes away), and `shaders.mjs` compiles every cel variant.
+warning and not an error because an instrument compiles on purpose:
+`shaders.mjs` compiles every cel variant. (The harness's readiness wait,
+`scene.isReady()`, compiled Babylon's `default` material for the collider
+meshes, which wore none — one a page — until X5.3e took the meshes away.)
 It is what lets the cel program's Babylon declarations (`celVertex`,
 `celFragment`) and the factory's per-frame pushes into Babylon materials stand
 until X6.1 as recipe keys and nothing more. While Babylon still drew in the
@@ -5462,12 +5462,13 @@ disabled mesh is still in the walk, and merely shortens what the walk does with
 it. That is what made the palette measurement's 0.67 us ("The paint palette",
 below) and S0's 1.10 us disagree about the same number.
 
-**Four classes of mesh, and which class a mesh is in is the design** — and
-what our renderer draws is in none: since X3.7b it is no mesh at all.
+**Three classes of mesh, and which class a mesh is in is the design** — and
+what our renderer draws is in none: since X3.7b it is no mesh at all. (A
+fourth, **hidden** — the collider proxies, never offered at any distance —
+emptied at `BABYLON_EXIT.md` X5.3e, when no collider was a mesh any more.)
 
 | class | what | offered |
 | --- | --- | --- |
-| hidden | `map.colliders` — invisible by construction | **never**, at any distance |
 | blocked | drawn map geometry carrying `metadata.block` — on a shipped build the glazing (a world fire, no mesh since X4.4d, is drawn by our renderer while its cell is offered: `offersBlock`); the cell's box is grown from EVERY record filed under its block, ours included | while the camera is within the map's `fogEnd` |
 | pooled | a body — no mesh since `BABYLON_EXIT.md` X4.1d: our renderer draws it, by this class's verdict (`drawsBody`) | never a candidate; DRAWN while its switch is on and the size gate passes it |
 | loose | everything else in the scene | **always** |
@@ -5488,12 +5489,13 @@ dropped; X3.6e measured it on two rows of the bank, a lit window drawn
 fog-dark past the reach on Babylon's side where ours drops window and wall
 together.
 
-**Most of the win is the hidden class and it is exact rather than a trade.** A
-collider proxy cannot draw — `MapBuilder.boxMesh` sets `isVisible = false` and
-nothing turns one back on — so leaving it out cannot move a pixel, and on the
-900/300 proving ground **6,349 of 9,019 scene meshes are collider boxes** the
-walk was paying full price for and rejecting on `isVisible` after it had already
-done everything expensive.
+**Most of the first win was the hidden class, and it was exact rather than a
+trade.** A collider proxy could not draw — `MapBuilder.boxMesh` set
+`isVisible = false` and nothing turned one back on — so leaving it out could not
+move a pixel, and on the 900/300 proving ground **6,349 of 9,019 scene meshes
+were collider boxes** the walk was paying full price for and rejecting on
+`isVisible` after it had already done everything expensive. X5.3e stopped
+making them, so the walk never meets one.
 
 **The landform is deliberately loose.** A structure past the fog wall draws
 exactly `fogColor` and stands in front of ground that draws exactly `fogColor`,

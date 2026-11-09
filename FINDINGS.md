@@ -950,10 +950,12 @@ colour weighted by part size again. Every map builds 16-28% faster than at
 684a88c; the table is `PERF_PLAN.md` A1. **The first sub-thread is worth far
 less than when this was written**: with most builders on `StoneBatch`, a
 `Mesh` per part is ~300 ms of Coldharbour's 4.4 s, so the merge-only
-accumulator was not built. **What remains open from this entry**: the collider
-half (unchanged), the GC share (not re-measured), and the final upload's
-plain-array conversion, which only a change that rounds vertices differently
-would remove. If nothing here is taken up, delete the entry.
+accumulator was not built. **The collider half is CLOSED**
+(`BABYLON_EXIT.md` X5.3e: no collider is a mesh; the numbers are under "What is
+open"). **What remains open from this entry**: the GC share (not re-measured),
+and the final upload's plain-array conversion, which only a change that rounds
+vertices differently would remove. If nothing here is taken up, delete the
+entry.
 
 `StoneBatch` and `Mesher` (`kit/core.ts`) take the first sub-thread below
 locally, for the stone and tile runs that opt in. Since BABYLON_EXIT.md X1.2 a
@@ -963,8 +965,8 @@ X1.4 the merge and the vertex bake run on those buffers and no part is ever a
 mesh: the world becomes meshes once, at the end of the build (`worldMeshes`),
 and the part mesh and its helpers are deleted. That is this entry's first
 sub-thread, taken; the round trip described below no longer exists, and what
-is left open is the paragraph above (the colliders, the GC share, the final
-upload's plain-array conversion).
+is left open is the paragraph above (the GC share, the final upload's plain-array
+conversion; the colliders closed at X5.3e).
 
 ### The instrument
 
@@ -1084,12 +1086,32 @@ part is not a real mesh; what it does not yet do is let one avoid BEING one.
   to be rebuilt.
   `plans/physics-ref/drop.mjs` covers anything that changes what a body stands
   on.
-- **The collider half is UNBLOCKED, and `BABYLON_EXIT.md` X5.3e takes it.**
-  `boxMesh` aggregates to 669 ms at 1500/0 (~430 at 900/300 before the
-  flatten). The sweeps read `WorldBox`es since X2.1 and the map editor's
-  centre-screen pick, the last reader of a collider mesh's submeshes, went at
-  X5.3c, so nothing reads the meshes; not building them is X5.3e's, which owes
-  the install time and the heap before and after, on seven maps.
+- **The collider half is CLOSED by `BABYLON_EXIT.md` X5.3e**, which stopped
+  making the collider meshes (`boxMesh` was 669 ms at 1500/0 when this was
+  written; nothing had read the meshes since the map editor's pick went at
+  X5.3c). The groups (`boxGroups`, `rayGroups`) and the floor's arrays
+  (`terrainGeometry`) are byte-identical as data, the collision bake did not
+  move, and every bank row is byte-equal. **Measured** on the Windows box, a
+  dev build (`buildProfile`), medians of three alternating runs a tree, a fresh
+  page a map; the heap is `Runtime.getHeapUsage` after two forced GCs, at
+  deploy minus at the menu:
+
+  | map | `scene.meshes` | `build:total` ms | install ms (`startRound` to `deploy`) | heap the map holds, MB |
+  | --- | --- | --- | --- | --- |
+  | Hollowmere | 882 → 0 | 1,511 → 1,387 | 2,534 → 2,422 | 29.8 → 16.4 |
+  | Greyfen | 872 → 0 | 3,282 → 3,133 | 4,556 → 4,332 | 35.9 → 21.7 |
+  | Coldharbour | 1,782 → 0 | 1,913 → 1,736 | 3,137 → 2,887 | 42.7 → 18.6 |
+  | Harrowmead | 1,215 → 0 | 2,358 → 2,214 | 4,519 → 4,390 | 48.9 → 25.4 |
+  | Sarab | 3,617 → 0 | 1,573 → 1,314 | 2,980 → 2,730 | 79.3 → 30.5 |
+  | Cinderhaven | 4,064 → 0 | 3,455 → 3,223 | 5,444 → 5,240 | 101.7 → 47.8 |
+  | Kurenai | 770 → 0 | 2,096 → 2,058 | 3,123 → 3,110 | 25.3 → 12.9 |
+
+  The build is 2-16% faster (the placement loop alone 7-33%: Sarab 524 → 357
+  ms, Coldharbour 641 → 540; `scatterClusters` 3-84 ms → under 1), and the
+  heap a map holds roughly halves: 12-54 MB a map, the meshes' geometry,
+  vertex buffers' CPU copies and per-mesh state. The run-to-run spread is ~2%
+  of `build:total` and ~1 MB of heap. No GPU number moves: nothing drew the
+  meshes.
 - **The AO bake is now the second-largest named cost** — `occlusionAt` is
   1,738 ms subtree and 1,399 self, 9.3% — and it is not in the placement loop at
   all. It has never been questioned; `segmentHitsBox` under it is another
@@ -3003,7 +3025,7 @@ Delete the entry with Babylon (X6.1).
 ## 69. `depth.mjs glass` throws: the `GLASS_DEPTH_UNITS` sweep owes a port to our glazing
 
 **Open since `BABYLON_EXIT.md` X4.6e** (recorded by its review). The mode
-reads Babylon's glazing MESHES (`PaneGroup.mesh`, `computeWorldMatrix`, its
+reads Babylon's glazing MESHES (`PaneGroup.mesh`, a field gone since X5.3e, `computeWorldMatrix`, its
 bounding box) and hides the world by them; a round's glazing is our renderer's
 since X4.6e (`GlassDraw`, no mesh made of it), so the mode throws "owes a
 port" rather than measure nothing. The other mode, `zoffset`, is untouched.

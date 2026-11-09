@@ -247,10 +247,12 @@ function installHooks() {
   // `Mesh.render`, found on the prototype chain of a mesh the scene holds,
   // so a draw inside it is named by its mesh — any `Mesh` serves, since the
   // hook is on the prototype. At boot the menu has none (no map, and since
-  // X5.3d no `localShadowProxy`), so the hook waits for the first frame that
-  // ends with a mesh in the scene (a map's colliders): a mesh is drawn only
-  // once one exists, so nothing is drawn unnamed but in the frame a first
-  // mesh was made and drawn in.
+  // X5.3d no `localShadowProxy`), and since X5.3e a round holds none either
+  // (no collider is a mesh), so the hook waits for the first frame that ends
+  // with a mesh in the scene, which may never come: a mesh is drawn only once
+  // one exists, so nothing is drawn unnamed but in the frame a first mesh was
+  // made and drawn in — and a draw with no mesh hooked is still logged, by
+  // its effect.
   L.meshHooked = false;
   function hookMeshRender() {
     const anyMesh = scene.meshes[0];

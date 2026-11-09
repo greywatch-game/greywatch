@@ -848,15 +848,15 @@ sweep's own so the push never asks for room the sweep does not hold it out to.
 `server/validate.ts` runs the same query and calls a position deeper than
 `nav.bodyRadius` a noclip.
 
-| Kind         | visible | pickable | collides | `solid` | merged | frozen |
-| ------------ | ------- | -------- | -------- | ------- | ------ | ------ |
-| **Visual**   | yes     | **no**   | **no**   | —       | yes    | yes    |
-| **Collider** | **no**  | yes      | yes      | yes     | no     | yes    |
+| Kind         | what it is | drawn | in the rays, sweeps and nav | merged |
+| ------------ | ---------- | ----- | --------------------------- | ------ |
+| **Visual**   | a surface's record (a mesh only where Babylon draws it) | yes | **no** | yes |
+| **Collider** | a `WorldBox` — **no mesh** (`BABYLON_EXIT.md` X5.3e) | **no** | yes | no — grouped as DATA |
 
 Colliders must line up with the surfaces they stand in for or bullet sparks land
-off the visible geometry. `MapBuilder.collider()` is the only place that creates
-them, and it also records a `WorldBox` for the nav grid — geometry added by any
-other path is invisible to navigation.
+off the visible geometry. `MapBuilder.collider()` is the only place a `WorldBox`
+enters `colliderBoxes` — geometry added by any other path is invisible to every
+ray, sweep and navigation.
 
 **A collider answers two questions and they can disagree.** *Where may a body
 be?* is `RayWorld.castBody` — the death cam's pull-in, a tank's chase camera,
@@ -882,9 +882,8 @@ can only get wrong.
 
 **`glass` is the one thing in the world that CHANGES, and it needs no new term
 to do it.** A breakable pane is `porous` exactly, so both questions already get
-intact glass right, and breaking it is one write — `RayWorld.remove`, for every
-query and every sweep (`metadata.solid = false` on the collider MESH beside it
-is read by nothing, and X5.3e stops making the mesh). `WorldBox.glass` exists only for the readers that must SKIP a pane
+intact glass right, and breaking it is ONE write — `RayWorld.remove`, for every
+query and every sweep. `WorldBox.glass` exists only for the readers that must SKIP a pane
 rather than merely pass a round through it: `CoverMap`, the AO bake, and the
 collision bake.
 
@@ -904,15 +903,16 @@ are exactly THREE sweeps and all of them go through `CollisionField`**
 whatever changes what blocks a body changes it THERE: a hull through
 `rays.hulls`, a broken pane through `RayWorld.remove`. **The list is CHECKED
 against the path the centre took**, and re-gathered when the sweep outran it.
-**Ties go in the CLIENT's collider-mesh order, which both sides derive from
-`boxGroups`** — so that grouping is load-bearing for MOVEMENT, on both sides.
+**Ties go in the order both sides rank from `boxGroups`** (every box no group
+names, then each group's — the client's collider-mesh order while they were
+meshes) — so that grouping is load-bearing for MOVEMENT, on both sides.
 **A FOURTH sweep goes through `CollisionField` too.**
 
-**Colliders are still MERGED, and the grouping is DATA**: `rayGroups` is how
-the struts reach the queries (`MapBuilder.struts`, one mesh per placement), the
-blocking scatter is merged by LOCALITY (`MapBuilder.clusterColliders`), the
-boxes stay in `colliderBoxes` one per prop, **only plain `solid` boxes may be
-grouped**, and the grouping rides to the server as `MapCollision.boxGroups`.
+**Colliders are GROUPED, and the grouping is DATA**: `rayGroups` is how the
+struts reach the queries (`MapBuilder.struts`, a group per placement), the
+blocking scatter is grouped by LOCALITY (`MapBuilder.clusterColliders`), the
+boxes stay in `colliderBoxes` one per prop, **only plain boxes may be grouped**,
+and the grouping rides to the server as `MapCollision.boxGroups`.
 
 **A blocking scatter prop may not stand on a control point or a spawn**, and
 `MapBuilder.keepClear` refuses it rather than the layout dodging by hand — a
@@ -920,35 +920,35 @@ flag inside a collider cannot be captured and sinks its own flow field.
 Non-blocking props are exempt: a fern over a capture point is dressing.
 
 **The floor is the one documented exception**, and it proves the rule rather than
-bending it: the heightfield has no box that could stand in for it, so each block's
-collider is an invisible *clone of the visual's vertex data* — same shape, two
-separate meshes, only the clone marked `solid`. It emits no `WorldBox` and
-`NavGrid` reads `TerrainField` directly. It is also in no sweep (a sweep reads
-`WorldBox`es): every sweep asks a horizontal step, vertical placement is the ground
-probe's job, and bots never sweep.
+bending it: the heightfield has no box that could stand in for it, so the rays
+and `NavGrid` read `TerrainField` directly and `PhysicsWorld` rests a body on each
+block's own *vertex data* (`GameMap.terrainGeometry`, no mesh). It emits no
+`WorldBox`, and it is in no sweep (a sweep reads `WorldBox`es): every sweep asks
+a horizontal step, vertical placement is the ground probe's job, and bots never sweep.
 ### Mesh metadata is a contract
 
-Seven flags and two values, all read elsewhere; new geometry that omits them
-misbehaves silently. **On the world's drawn geometry they are written on the
+Six flags and two values, all read elsewhere; new geometry that omits them
+misbehaves silently. **A collider's are fields on its BOX** (`BoxSpec` onto the
+`WorldBox`) **or the ray's answer** (`surface`), and there is no `solid` flag: a
+box in `colliderBoxes` or a strut in `rayGroups` IS the solid world, and nothing
+else stops a round, a look or a body. **On the world's drawn geometry they are written on the
 RECORD, not the mesh** — the surface's part (`WorldSurface.part.metadata`,
 `world/worldGeometry.ts`) — and the one adapter (`worldMeshes`) hands that same
 object, unchanged, to a mesh WHERE IT MAKES ONE: since X3.7b only for what
 Babylon draws (none in a round since X4.6e), our renderer reading the
 record. `GameMap.world` keeps it for every surface:
 
-- `solid: true` — collider proxies only. Unmarked geometry is shot through, seen
-  through, and walked through.
-- `porous: true` — a `solid` collider that rounds, sightlines and grenades pass
+- `porous: true` — a collider that rounds, sightlines and grenades pass
   through anyway (`castRound` subtracts it; `castBody` keeps it). Declared as
   `BoxSpec.porous` by the builder, carried on the `WorldBox` — which is what the
   queries read — and into the collision bake, and skipped by `CoverMap`. Today
-  it is the fence's coarse run, and only that.
-- `rayOnly: true` — the mirror: a `solid` collider that stops a round and a look
+  it is the fence's coarse run and, with `glass: true`, a breakable pane.
+- `rayOnly: true` — the mirror: a collider that stops a round and a look
   but is no body at all (`castBody` subtracts it, `castRound` keeps it), and the
   one collider that emits **no `WorldBox`** — invisible to the nav grid, the
   cover bake, the obstacle field, the AO bake and scatter placement. It reaches
   the queries as `GameMap.rayGroups` instead, which is why that list is on the
-  map rather than only in the bake. Declared by `Build.strut`, merged per
+  map rather than only in the bake. Declared by `Build.strut`, grouped per
   placement, baked in groups. Today it is fence posts and rails.
 - `noInk: true` — **records INTENT, and nothing reads it to decide ink.** It
   says "this was never meant to carry line work", it is the list a future
@@ -986,14 +986,14 @@ record. `GameMap.world` keeps it for every surface:
   `WorldCulling`, which grows a cull cell from every RECORD carrying one, files
   Babylon's meshes carrying one into it, and answers a fire and a pane by it (`offersBlock`).
 - `surface: "ground"` — what a round that stops here kicks up. The odd one out:
-  it is a **value with a default**, not a flag, and **absent means `"hard"`**.
-  `MapBuilder` sets it on exactly one thing — the terrain floor's collider clone
-  — so every wall, prop and roof in the village answers by omission and a new
+  a **value with a default** that nothing WRITES — `RayHit.surface`, which
+  `RayWorld` answers `"ground"` off the floor alone and `"hard"` off every box —
+  so every wall, prop and roof in the village answers by omission and a new
   collider needs no thought at all. Read by `CombatSystem` to name the impact,
   which `CombatFx` turns into its spark, its dust disc and its sound. Adding
   `"wood"`/`"metal"` is one member of `ImpactKind`, one row in `CombatFx`'s
-  `IMPACTS` table, one arm in `Sfx.impact` and a `surface` argument on
-  `collider()`; no signature in between moves.
+  `IMPACTS` table, one arm in `Sfx.impact` and a field on `WorldBox` that
+  `RayWorld` answers with; no signature in between moves.
 
 ### Bots: navigation, scaling, perception and squads
 
@@ -1235,8 +1235,8 @@ CORE's — the page breaks a pane when its `glass` event says so. **A pane is
 see-through, a FAIRNESS rule and not a look**: `castRound` already lets a bot
 shoot through a window. **`GlassSystem` is the
 simulation and draws nothing** — the box, the push-out and the nav graph;
-the collapsed glazing and the collider MESH's flags are `GlassFx`'s,
-told by `onBroken` and `onCleared`, and the core builds none.
+the collapsed glazing is `GlassFx`'s, told by `onBroken`, and the core
+builds none.
 
 → **[`docs/world.md`](docs/world.md)** for the builder's side and
 **[`docs/multiplayer.md`](docs/multiplayer.md)** for the wire's.

@@ -901,7 +901,7 @@ established: things that MOVE cannot be in structures that are BAKED.
 What the hull's collider box is:
 
 - A box to both questions, and neither `porous` nor `rayOnly` (no mesh of a
-  hull carries `metadata.solid` or is pickable — since `BABYLON_EXIT.md`
+  hull is pickable — since `BABYLON_EXIT.md`
   X4.2a there is no body MESH at all, only the rig's body joint, and since
   X4.2b no mesh of a hull at all — and nothing picks a mesh). Those two describe a fence — a thing that is a wall to a body and mostly air to a bullet, or the
   reverse. A tank is both to both, which is the plain case. So it answers both
@@ -956,8 +956,8 @@ and the authority's Sarab tick p50 0.691 ms to 0.053.**
 operation — a port rather than a new sweep because every push-out, the offset
 sphere and the climb band in this file were tuned against its response — and
 `CollisionField.move` feeds it the BOXES near the hull out of `RayWorld`
-rather than meshes, so no collider mesh is walked by anything and the
-authority's hulls drive with no scene at all. `scripts/sweep-check.mjs` holds
+rather than meshes, so the authority's hulls drive with no scene at all — and
+since X5.3e no collider is a mesh on either side. `scripts/sweep-check.mjs` holds
 it to the bit against Babylon (56,000 of 56,000 over the seven maps) at 10-33
 us a move. It still runs only while `|speed| > 1e-3`, so a parked fleet still
 costs nothing.
@@ -968,8 +968,8 @@ sweep can reach — radius plus the whole step plus a margin — and that is
 CHECKED: a sweep whose centre travelled farther than the list was gathered for
 is re-gathered at the reach it needed and run again, three times, then against
 every body box on the map, which is what makes an ejection out of a wall safe.
-The list must be in the CLIENT's collider-mesh ORDER (`RayWorld`'s rank,
-derived from `boxGroups` on both sides), because the sweep breaks a distance
+The list must be in `RayWorld`'s RANK ORDER (derived from `boxGroups` on both
+sides: the client's collider-mesh order while there were collider meshes), because the sweep breaks a distance
 tie in favour of whichever box it met first and a box world is full of
 coplanar ties — measured, a different order slid hulls metres apart from an
 embedded start. And a move of a millimetre or less is not written back

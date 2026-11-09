@@ -24,9 +24,9 @@
  *   Babylon's `MeshBuilder` or `VertexData`, whose output is not a part and
  *   whose arithmetic `scripts/geometry-check.mjs` is the only proof ours
  *   matches.
- * - Builders NEVER set metadata.solid, checkCollisions, or isPickable — the
- *   visual/collider split is MapBuilder's job; builders only declare where
- *   collider boxes go, and what kind: `BoxSpec.porous` is the one property of
+ * - Builders NEVER make a collider — the visual/collider split is
+ *   MapBuilder's job (`collider()`, a `WorldBox` and no mesh); builders only
+ *   declare where collider boxes go, and what kind: `BoxSpec.porous` is the one property of
  *   a collider a builder decides, because only the builder knows its box is
  *   standing in for a shape that is mostly gaps.
  * - Collider top faces must stay within CONFIG.nav.stepHeight of adjacent
@@ -1067,10 +1067,13 @@ export class Build implements Structure {
    * no obstacle field, no AO. That is deliberate and it is why the coarse box
    * is not optional — the navigation half of a fence is that box's job, and a
    * 0.18 m post is a shape `NavGrid` cannot represent anyway (see `guard`).
-   * `MapBuilder` merges a placement's struts into ONE collider mesh, which is
-   * what makes the fidelity affordable: measured over Hollowmere's fences, 161
-   * loose post/rail boxes cost every ray in the game ~17%, and the same
-   * geometry merged per fence costs the ground probe 1.4% and a shot 0.3%.
+   * `MapBuilder` groups a placement's struts into ONE `rayGroups` entry, and
+   * that grouping is what made the fidelity affordable while a ray was a pick
+   * and each group a merged collider mesh: measured over Hollowmere's fences,
+   * 161 loose post/rail boxes cost every ray in the game ~17%, and the same
+   * geometry merged per fence cost the ground probe 1.4% and a shot 0.3%.
+   * `RayWorld` answers off the boxes now, and no collider is a mesh
+   * (`BABYLON_EXIT.md` X5.3e).
    */
   strut(
     w: number,

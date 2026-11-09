@@ -547,7 +547,7 @@ function drop(page, opts) {
         second,
         bodies: sites.length,
         colliderBoxes: g.map.colliderBoxes.length,
-        terrainColliders: g.map.terrainColliders.length,
+        terrainBlocks: g.map.terrainGeometry.length,
         staticBodies,
         size: g.map.size,
       };
@@ -629,7 +629,7 @@ for (const id of targets) {
   // It is a constant plus the world, so the DELTA across a change is the
   // grouping, which is the fact S5b moves.
   const shape =
-    `${r.bodies} bodies, ${r.colliderBoxes} boxes + ${r.terrainColliders} ` +
+    `${r.bodies} bodies, ${r.colliderBoxes} boxes + ${r.terrainBlocks} ` +
     `terrain, ${r.staticBodies} static bodies in the engine`;
   // The engine's own arithmetic, measured rather than assumed — see REPRO_POS.
   const repro = compare(first.rows, second.rows);

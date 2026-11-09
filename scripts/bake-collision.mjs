@@ -119,10 +119,12 @@ async function bakeMap(browser, url, id) {
       if (b.porous) out.push(1);
       return out;
     };
-    // `rayGroups` stays GROUPED: each inner array is one merged collider mesh,
-    // and the server merges the same way. Flattening it would leave the server
-    // guessing where one fence ends and the next begins, and the wrong guess
-    // (one mesh for the map) puts a bounding box around the whole village.
+    // `rayGroups` stays GROUPED: each inner array is one placement's struts —
+    // one merged collider mesh until BABYLON_EXIT.md X5.3e, when the server
+    // merged the same way. Flattening it would leave the server guessing
+    // where one fence ends and the next begins, and the bake's text (below,
+    // which still says "collider mesh") is held byte for byte across that
+    // change: `npm run collision` after it moved nothing.
     // Panes, in build order — which is what makes the index into this array a
     // name the client and the authority both know a pane by. Seven numbers and
     // an index: no `rotX` (nothing in the kit tilts a sheet), and `box` is the
@@ -136,9 +138,9 @@ async function bakeMap(browser, url, id) {
       // `boxGroups` is INDICES rather than boxes, because unlike `rayGroups`
       // these boxes are already in `boxes` — they are the solid world and the
       // nav grid reads every one of them. What is baked is only which of them
-      // the client merged into one mesh, and in what order: a body's sweep
-      // breaks ties in the order the client made its collider meshes
-      // (`RayWorld`'s rank), so the server needs the grouping to agree.
+      // the client groups (one merged mesh each until X5.3e), and in what
+      // order: a body's sweep breaks ties in that order (`RayWorld`'s rank),
+      // so the server needs the grouping to agree.
       boxGroups: g.map.boxGroups,
       panes: g.map.panes.map(pane),
     };

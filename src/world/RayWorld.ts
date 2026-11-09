@@ -289,8 +289,9 @@ export class RayWorld {
     this.flags = Uint8Array.from(flags);
     this.mark = new Int32Array(this.boxes.length).fill(-1);
     // **The sweep's tie order is the order the client's collider MESHES were
-    // made, because that is the order Babylon's walk met them in and the feel
-    // of a body leaning on two boxes at once was tuned against it.** A sweep
+    // made in while they were meshes (until `BABYLON_EXIT.md` X5.3e), because
+    // that is the order Babylon's walk met them in and the feel of a body
+    // leaning on two boxes at once was tuned against it.** A sweep
     // keeps the FIRST of two contacts at one distance, and an ellipsoid that
     // has ended up touching two boxes — a hull wedged on a quay's corner, a
     // body against a tree beside a wall — slides along whichever plane won. On
@@ -426,7 +427,7 @@ export class RayWorld {
    * **The order is part of the answer.** A sweep keeps the FIRST of two
    * contacts at the same distance (`ellipsoidSweep.ts`), so the static boxes
    * come back sorted by `rank` — the order the client's collider meshes were
-   * made in (see the constructor) — and the hulls last, which is where
+   * made in while they were meshes (see the constructor) — and the hulls last, which is where
    * `scene.meshes` had a hull built after the map it stands on. A hull is its
    * `rayBox()`, so one `hide` or a wreck carried away takes it out of every
    * sweep as it takes it out of every ray, and `skip` is the hull doing the
@@ -519,7 +520,7 @@ export class RayWorld {
     const s = Math.abs(Math.sin(box.rotY));
     // `createBox`'s defaulting, `||` and all — a zero extent is a metre — so
     // the footprint stamped here is the one a SWEEP tests (`ellipsoidSweep`
-    // builds its triangles the way the collider mesh was built). No bake holds
+    // builds its triangles the way a collider mesh of it was built). No bake holds
     // such a box; this keeps `bodyNear` a superset if one ever does.
     const hw = (box.w || 1) / 2;
     const hd =

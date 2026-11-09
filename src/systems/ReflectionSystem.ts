@@ -483,9 +483,8 @@ export class ReflectionSystem {
     }
   }
 
-  /** A group's surface of the glazing draw: the one its record names, or null (a group with a mesh, which no build makes since X5.3c). */
+  /** A group's surface of the glazing draw: the one its record names, or null. */
   private surfaceOf(group: PaneGroup): GlassDraw["surfaces"][number] | null {
-    if (group.mesh) return null;
     const surfaces = this.glass.surfaces;
     for (let i = 0; i < surfaces.length; i++) if (surfaces[i].record === group.record) return surfaces[i];
     return null;

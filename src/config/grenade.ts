@@ -340,7 +340,7 @@ export const grenade = {
    * primitive on a clock.
    *
    * **It is keyed on the SURFACE** — one downward ray at the detonation,
-   * reading the same `metadata.surface` a bullet's impact reads, so a grenade
+   * reading the same `RayHit.surface` a bullet's impact reads, so a grenade
    * in a field throws clods of the map's own earth and one in a stairwell
    * throws pale rubble. That is the whole reason it is worth having: an
    * explosion that throws identical grey chips everywhere is an explosion that

@@ -38,12 +38,12 @@
  * asked of the surface's RECORD, never of a mesh (X3.7a: the identity off
  * the part's own transform, the blend off the material, `blends`, and
  * rendering group 0 on the layer mask every camera sees by construction,
- * those being what `worldMeshes` makes every world mesh with). Everything
- * else is BABYLON's, made a mesh — on a shipped map the glazing alone, which
- * casts nothing — and a surface Babylon keeps that casts, a palette surface
- * or a fire our renderer cannot hold, or a mesh Babylon is made that is not
- * the glazing (`strayMesh`: one our bake would owe a picture of)
- * is REFUSED — held to the install, which fails the world on it, and then
+ * those being what `worldMeshes` makes every world mesh with) — or the
+ * GLAZING (`takeGlass`, X4.6e). Everything else would be BABYLON's, made a
+ * mesh — on a shipped map nothing is — and a surface Babylon keeps that
+ * casts, a palette surface, a pane or a fire our renderer cannot hold, or
+ * any mesh Babylon is made of the world (`strayMesh`: one our bake would owe
+ * a picture of) is REFUSED — held to the install, which fails the world on it, and then
  * THROWN in a DEV build (so `npm run merge:hash` cannot pass a map that has
  * one, and the page still reaches the menu). **THE WORLD DRAWS WHOLE OR THE
  * ROUND DOES NOT START** (`BABYLON_EXIT.md` X3.7b): every former handback is
@@ -152,11 +152,10 @@ function blends(material: Material | null): boolean {
   return material.needAlphaBlending();
 }
 
-/** What the build hands `install`: its records, the meshes Babylon was given, and which of them are the glazing. */
+/** What the build hands `install`: its records and the meshes Babylon was given (none, on every shipped map). */
 export interface InstalledWorld {
   readonly world: WorldGeometry;
   readonly visuals: readonly Mesh[];
-  readonly paneGroups: readonly { readonly mesh: Mesh | null }[];
 }
 
 /**
@@ -529,8 +528,8 @@ export class BlockHandover {
    * (`failFor`), which it tells if it cannot draw what it was handed.
    * `owner` is latched for the install's failure, so a production refusal
    * on a map ours took nothing of still fails. A refusal held from the build (thrown after it
-   * in a DEV build: `refuse`), a mesh Babylon was
-   * made that is not the glazing (`strayMesh`), a surface or a fire filed
+   * in a DEV build: `refuse`), any mesh Babylon was
+   * made of the world (`strayMesh`), a surface or a fire filed
    * under a block no cell was grown for, or a cut that fails, fails the
    * world (`fail`). The fires go to the fire draw first, in birth order
    * (`handFires`).
@@ -632,18 +631,18 @@ export class BlockHandover {
   }
 
   /**
-   * The first mesh Babylon was made that is not the glazing (which no bake
-   * draws), with how many others — a mesh the reflection bake would owe a
-   * picture of and cannot draw, our bake reading no mesh (a fire is no mesh
-   * since X4.4d: `takeFire` takes it or refuses it); null for none, every
-   * shipped map. Asked at the install, of every map.
+   * The first mesh Babylon was made of the world, with how many others — a
+   * mesh the reflection bake would owe a picture of and cannot draw, our bake
+   * reading no mesh (a fire is no mesh since X4.4d: `takeFire` takes it or
+   * refuses it; the glazing none since X4.6e, and the glazing groups' mesh
+   * field, null on every build since X5.3c and skipped here until then, went
+   * at `BABYLON_EXIT.md` X5.3e); null for none, every shipped map. Asked at
+   * the install, of every map.
    */
   private strayMesh(map: InstalledWorld): string | null {
-    const panes = new Set(map.paneGroups.map((g) => g.mesh));
     let first: Mesh | null = null;
     let others = 0;
     for (const mesh of map.visuals) {
-      if (panes.has(mesh)) continue;
       if (first) others++;
       else first = mesh;
     }

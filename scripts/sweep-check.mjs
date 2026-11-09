@@ -364,7 +364,7 @@ function serverOrder(map) {
   return map.boxGroups.flat().concat([...map.colliderBoxes.keys()].filter((i) => !grouped.has(i)));
 }
 
-/** A box's own collider mesh, as `MapBuilder.boxMesh` and `collider()` made it. */
+/** A box's own collider mesh, as `MapBuilder.boxMesh` and `collider()` made it until BABYLON_EXIT.md X5.3e. */
 function boxMesh(B, scene, name, box) {
   const mesh = B.MeshBuilder.CreateBox(name, { width: box.w, height: box.h, depth: box.d }, scene);
   mesh.position.set(box.cx, box.cy, box.cz);

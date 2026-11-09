@@ -185,44 +185,58 @@ function hangProbe(page) {
       undefined,
       true,
     );
-    let proto = Object.getPrototypeOf(scene.meshes[0]);
-    while (!Object.prototype.hasOwnProperty.call(proto, "render")) proto = Object.getPrototypeOf(proto);
-    const render = proto.render;
-    proto.render = function (...a) {
-      const mat = this.material;
-      const cls = classOf(this, mat);
-      if (s.hide?.has(cls)) return this;
-      let entry = null;
-      if (s.rec) {
-        const eye = scene.activeCamera.globalPosition;
-        const c = this.getBoundingInfo().boundingSphere.centerWorld;
-        entry = {
-          id: this.uniqueId,
-          n: this.name,
-          cls,
-          mat: mat?.name ?? null,
-          pass: s.inMask ? "mask" : e._currentRenderTarget === s.frame ? "main" : "target",
-          vis: this.visibility,
-          alphaIndex: this.alphaIndex,
-          group: this.renderingGroupId,
-          d: +Math.hypot(c.x - eye.x, c.y - eye.y, c.z - eye.z).toFixed(2),
-          at: [+c.x.toFixed(2), +c.y.toFixed(2), +c.z.toFixed(2)],
-          inst: this.hasThinInstances ? this.thinInstanceCount : 0,
-          gpu: null,
-        };
-        s.log.push(entry);
-      }
-      s.drawn = null;
-      s.inMesh++;
-      let out;
-      try {
-        out = render.apply(this, a);
-      } finally {
-        s.inMesh--;
-      }
-      if (entry) entry.gpu = s.drawn;
-      return out;
+    // `Mesh.render`, found on the prototype chain of a mesh — any `Mesh`
+    // serves. Since BABYLON_EXIT.md X5.3e a round's scene may hold none (no
+    // collider is a mesh, and nothing of the world is Babylon's), so the hook
+    // is installed on the first mesh the scene is handed, before it can draw,
+    // where there is none yet — as the draw log's and `pipelines.mjs`' are.
+    const hookMesh = (anyMesh) => {
+      let proto = Object.getPrototypeOf(anyMesh);
+      while (!Object.prototype.hasOwnProperty.call(proto, "render")) proto = Object.getPrototypeOf(proto);
+      const render = proto.render;
+      proto.render = function (...a) {
+        const mat = this.material;
+        const cls = classOf(this, mat);
+        if (s.hide?.has(cls)) return this;
+        let entry = null;
+        if (s.rec) {
+          const eye = scene.activeCamera.globalPosition;
+          const c = this.getBoundingInfo().boundingSphere.centerWorld;
+          entry = {
+            id: this.uniqueId,
+            n: this.name,
+            cls,
+            mat: mat?.name ?? null,
+            pass: s.inMask ? "mask" : e._currentRenderTarget === s.frame ? "main" : "target",
+            vis: this.visibility,
+            alphaIndex: this.alphaIndex,
+            group: this.renderingGroupId,
+            d: +Math.hypot(c.x - eye.x, c.y - eye.y, c.z - eye.z).toFixed(2),
+            at: [+c.x.toFixed(2), +c.y.toFixed(2), +c.z.toFixed(2)],
+            inst: this.hasThinInstances ? this.thinInstanceCount : 0,
+            gpu: null,
+          };
+          s.log.push(entry);
+        }
+        s.drawn = null;
+        s.inMesh++;
+        let out;
+        try {
+          out = render.apply(this, a);
+        } finally {
+          s.inMesh--;
+        }
+        if (entry) entry.gpu = s.drawn;
+        return out;
+      };
     };
+    if (scene.meshes[0]) hookMesh(scene.meshes[0]);
+    else {
+      const added = scene.onNewMeshAddedObservable.add((mesh) => {
+        scene.onNewMeshAddedObservable.remove(added);
+        hookMesh(mesh);
+      });
+    }
     // **The PARTICLES (X4.7a) come through no `Mesh.render`**: each started
     // field is drawn by `RenderingGroup._renderParticles`, in the scene's list
     // order, as its own `render()`, which dispatches its update and then draws.

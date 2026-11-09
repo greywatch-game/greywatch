@@ -10,9 +10,9 @@
  * It never decides that a pane broke in a netplay round; the authority does,
  * and this applies what it is told (see `shoot` and `applyBreak`). It holds no
  * reference to any other system, imports nothing from `@babylonjs/core`, and
- * draws nothing: the PICTURE of a break — the collapsed vertex range and the
- * collider mesh's flags — is `GlassFx`'s, which only the client builds
- * and which hears of a pane through `onBroken` and `onCleared`.
+ * draws nothing: the PICTURE of a break — the collapsed vertex range — is
+ * `GlassFx`'s, which only the client builds and which hears of a pane
+ * through `onBroken`.
  * The authority runs this file alone.
  *
  * ## Why the sweep is analytic and not a pick
@@ -58,10 +58,10 @@
  * questions every ray asks AND out of every body's sweep in one write (a sweep
  * gathers through `RayWorld.bodyNear`, off the same body bit);
  * `ObstacleField.remove` takes it out of the sub-cell push-out the bots and the
- * server's move validator both read. Those are the BOX's and are here. The
- * collider MESH's `solid` flag — read by nothing since the map editor went
- * (`BABYLON_EXIT.md` X5.3c) — and its `checkCollisions` and enabled flag are
- * `GlassFx`'s, told by `onCleared`: nothing that moves or shoots reads a mesh.
+ * server's move validator both read. Those are the BOX's and are here, and
+ * the box is all a collider is: there is no collider MESH to tell
+ * (`BABYLON_EXIT.md` X5.3e), so taking a pane out of the world is that one
+ * write and its push-out.
  *
  * The NAV GRAPH is `NavGrid.openBox`, which relinks the ground the pane was
  * severing AND relaxes the flow fields over what that opened. Both are local
@@ -156,14 +156,6 @@ export class GlassSystem {
    * vertex range off it; nothing on the authority listens.
    */
   onBroken: (pane: number) => void = () => {};
-
-  /**
-   * Called when a pane's box has left the world — the authoritative half of a
-   * break, once per pane, after the queries, the push-out and the nav graph
-   * have all been told. The client's `GlassFx` writes the collider MESH's
-   * flags off it; nothing on the authority listens.
-   */
-  onCleared: (pane: number) => void = () => {};
 
   /**
    * Takes a freshly built map. Called from `installMap`, which is the only
@@ -346,9 +338,9 @@ export class GlassSystem {
     // not relink the same ground twice for nothing.
     delete box.glass;
 
-    // The collider MESH is not touched here: nothing that moves or shoots reads
-    // one (the rays and the sweeps both answer off boxes), and its three
-    // writes are `GlassFx.clear`'s, off `onCleared` below.
+    // There is no collider MESH to touch: no collider is one
+    // (`BABYLON_EXIT.md` X5.3e), and the rays and the sweeps both answer off
+    // the boxes.
     map.obstacles.remove(box);
     // And out of every ray in the game, which is the write that used to be
     // `mesh.metadata.solid = false` — one flag, clearing both questions at
@@ -384,7 +376,6 @@ export class GlassSystem {
     // Which relinks the ground and relaxes every field over it, in this call.
     // Nothing is owed afterwards, and there is nothing here to drain.
     map.nav.openBox(box, standing);
-    this.onCleared(pane);
   }
 }
 

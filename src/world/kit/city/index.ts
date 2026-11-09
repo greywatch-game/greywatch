@@ -75,8 +75,9 @@
  * - **Mullions and railings are `strut`s, not walls.** A 0.24 m fin is a shape
  *   `NavGrid` can only get wrong, and it is exactly the fence's problem: it has
  *   to stop a round where it is drawn and be no body at all. `MapBuilder`
- *   merges a placement's struts into one collider mesh, which is what makes a
- *   glazed elevation affordable.
+ *   groups a placement's struts into one `rayGroups` entry (one merged
+ *   collider mesh while a ray was a pick — what made a glazed elevation
+ *   affordable then).
  *
  * ## What an enterable building COSTS, which is the budget for the next one
  *

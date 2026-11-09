@@ -59,16 +59,14 @@
  * `createOrUpdateSelectionOctree` replaces), it is read in exactly one place,
  * and a mesh left out of it is skipped ENTIRELY rather than skipped cheaply.
  *
- * **Four classes of mesh, and which class a mesh is in is the whole design.**
- * What our renderer draws (below) is in none of them: it has no mesh.
+ * **Three classes of mesh, and which class a mesh is in is the whole design.**
+ * What our renderer draws (below) is in none of them: it has no mesh. (A
+ * fourth, **hidden**, was the map's collider proxies — invisible boxes the
+ * walk paid full price for and rejected on `isVisible`, 5,929 of 9,002 scene
+ * meshes on the 900/300 proving ground, never candidates at any distance and
+ * most of this file's first win. No collider is a mesh since
+ * `BABYLON_EXIT.md` X5.3e, so there is nothing left to hide.)
  *
- * - **Hidden** — the map's collider proxies, `map.colliders`. Invisible by
- *   construction (`MapBuilder.boxMesh` sets `isVisible = false` and nothing
- *   ever turns one back on), so they can never draw and are never candidates at
- *   ANY distance. This is most of the win and it is exact rather than a trade:
- *   on the 900/300 proving ground 5,929 of 9,002 scene meshes are collider
- *   boxes the walk pays full price for and rejects on `isVisible` after it has
- *   already done everything expensive.
  * - **Blocked** — drawn map geometry carrying `metadata.block`, filed one cull
  *   cell per map block — 48 m on every shipped map, `MapLayout.blockSize` where
  *   one states otherwise — and offered only while the camera is inside `reach`
@@ -148,9 +146,9 @@
  * The reach is the map's own `fogEnd` plus `CONFIG.graphics.culling.pad`, and
  * on a map whose fog never closes — `fogEnd` past its own diagonal, which the
  * proving ground states on purpose — that is a reach nothing is outside and
- * this degrades to the hidden-collider half alone.
+ * this offers every mesh it is handed.
  */
-import type { AbstractMesh, Mesh, Scene, Vector3 } from "@babylonjs/core";
+import type { AbstractMesh, Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { type BlockBox, F32_MAX, type ReachGate } from "../render/ClusterCull";
 import type { GameMap } from "../world/MapBuilder";
@@ -332,8 +330,6 @@ export class WorldCulling {
   /** Every mesh filed in a cell, and the bounds its record holds — see `gateOf`. */
   private filedBounds = new Map<AbstractMesh, SurfaceBounds>();
 
-  /** The map's collider proxies: never candidates, at any distance. */
-  private hidden = new Set<AbstractMesh>();
   /** Every drawn map mesh that carries a block, and the cell it was filed in. */
   private cellOf = new Map<AbstractMesh, Cell>();
   private cells: Cell[] = [];
@@ -387,7 +383,6 @@ export class WorldCulling {
    */
   readonly stats = {
     scene: 0,
-    hidden: 0,
     blocked: 0,
     /** Pooled BODIES (`setPools`), none of them a mesh since X4.1d. */
     pooled: 0,
@@ -411,7 +406,8 @@ export class WorldCulling {
     // A flag rather than any real work, because these fire for every mesh a
     // build creates and destroys — of the order of a million on a 1500 m map
     // while every part was a mesh (`ENGINE_UPGRADE.md`, wall 4), thousands of
-    // colliders still — and the rebuild they ask for is owed once.
+    // colliders until `BABYLON_EXIT.md` X5.3e — and the rebuild they ask for
+    // is owed once.
     scene.onNewMeshAddedObservable.add(() => {
       this.listDirty = true;
     });
@@ -436,7 +432,6 @@ export class WorldCulling {
    * leaves it: the caller fails the world on it (`Game.worldFailed`).
    */
   setMap(map: GameMap | null, fogEnd: number): string | null {
-    this.hidden = new Set();
     this.cellOf = new Map();
     this.cellByKey = new Map();
     this.filedBounds = new Map();
@@ -444,7 +439,6 @@ export class WorldCulling {
     this.listDirty = true;
     this.evalX = Number.POSITIVE_INFINITY;
     this.evalZ = Number.POSITIVE_INFINITY;
-    this.stats.hidden = 0;
     this.stats.blocked = 0;
     this.stats.cells = 0;
     // The lists handed to Babylon, emptied rather than only marked dirty:
@@ -477,16 +471,6 @@ export class WorldCulling {
     this.on = on;
     this.onSq = on * on;
     this.offSq = off * off;
-
-    for (const mesh of map.colliders) {
-      // The invariant this rests on, written as a test rather than as a
-      // comment: a collider that could DRAW is not one this may drop. Nothing
-      // in `MapBuilder` makes one, and if something ever does it falls through
-      // to `loose` and costs a walk rather than disappearing.
-      if (mesh.isVisible) continue;
-      this.hidden.add(mesh);
-      this.stats.hidden++;
-    }
 
     // Each visual's RECORD (`GameMap.world`, one a surface, each naming its
     // mesh if it has one): every index of `visuals` named exactly once.
@@ -539,34 +523,18 @@ export class WorldCulling {
     }
     // Babylon's block-keyed meshes, each into its cell: none on a shipped
     // build (the fires are no mesh since X4.4d and the glazing since X4.6e:
-    // `offersBlock`). The
-    // glazing is offered by the same key its block is, which is the key
-    // `PaneBlocks` writes it under — a curtain wall and the shaft behind it go
-    // out of the frame together, or the tower is a sheet of glass hanging in
-    // the fog with nothing behind it.
-    const fileMesh = (mesh: Mesh): string | null => {
+    // `offersBlock`, by the same key `PaneBlocks` writes a group under — a
+    // curtain wall and the shaft behind it go out of the frame together, or
+    // the tower is a sheet of glass hanging in the fog with nothing behind it).
+    for (const mesh of map.visuals) {
       const key = blockOf(mesh.metadata);
-      if (key === null || this.cellOf.has(mesh) || this.hidden.has(mesh)) return null;
+      if (key === null || this.cellOf.has(mesh)) continue;
       const record = recordByMesh.get(mesh);
       if (!record) return `"${mesh.name}" carries a block but is no map visual`;
       // Its own record is filed under the same key, so the cell exists.
       this.cellOf.set(mesh, this.cellByKey.get(key)!);
       this.filedBounds.set(mesh, record.bounds);
       this.stats.blocked++;
-      return null;
-    };
-    for (const mesh of map.visuals) {
-      const refused = fileMesh(mesh);
-      if (refused) return refused;
-    }
-    // A glazing group's mesh, where a build made one — none does since the map
-    // editor's went (`BABYLON_EXIT.md` X5.3c): a round's is our renderer's and
-    // no mesh, and `offersBlock` answers for it. X5.3e deletes this loop with
-    // `PaneGroup.mesh`.
-    for (const group of map.paneGroups) {
-      if (!group.mesh) continue;
-      const refused = fileMesh(group.mesh);
-      if (refused) return refused;
     }
     this.stats.cells = this.cells.length;
     return null;
@@ -868,7 +836,6 @@ export class WorldCulling {
         if (cell.on || this.warm) data.push(mesh);
         continue;
       }
-      if (this.hidden.has(mesh)) continue;
       loose++;
       data.push(mesh);
     }
@@ -902,9 +869,10 @@ export class WorldCulling {
    * `continue`, and it reaches the activation test only if `isVisible &&
    * visibility > 0` — where `alwaysSelectAsActiveMesh` bypasses the FRUSTUM
    * test and not this one. So neither of the two asked here can be a mesh
-   * Babylon would have drawn, whatever else is true of it. That is the same
-   * claim `hidden` already rests on for the collider proxies; this is it made
-   * per frame instead of once per map, which is what reaches a POOL.
+   * Babylon would have drawn, whatever else is true of it. It is the claim
+   * the hidden class rested on for the collider proxies, once per map, until
+   * no collider was a mesh (`BABYLON_EXIT.md` X5.3e), made per frame — which
+   * is what reaches a POOL.
    *
    * **The pools are why it is worth a pass.** Every effect pool in the game is
    * built once and idled with `isVisible = false` — 96 tracers, 54 embers, 48

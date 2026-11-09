@@ -227,12 +227,13 @@ export interface ShotOptions {
  * What a round stopped on, and the only thing that decides how the impact
  * looks and sounds.
  *
- * "hard" is the DEFAULT rather than a value anything writes: `MapBuilder`
- * marks only the terrain floor's collider clone (`surface: "ground"`), and
- * every box `collider()` makes leaves the field absent. Adding "wood" or
- * "metal" is one member here, one row in `CombatFx`'s `IMPACTS`, one arm in
- * `Sfx.impact` and a `surface` argument on `collider()` — no signature
- * between here and the world layer moves.
+ * "hard" is the DEFAULT rather than a value anything writes: `RayWorld`
+ * answers "ground" off the floor (`TerrainField`) alone, and every box
+ * `MapBuilder.collider()` records answers "hard". Adding "wood" or "metal" is
+ * one member here, one row in `CombatFx`'s `IMPACTS`, one arm in
+ * `Sfx.impact`, a field on `WorldBox` that `collider()` takes and
+ * `RayWorld` answers with — no signature between here and the world layer
+ * moves.
  */
 export type ImpactKind = "flesh" | "ground" | "hard" | "glass";
 

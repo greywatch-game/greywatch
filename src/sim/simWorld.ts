@@ -4,13 +4,12 @@
  * Owns: the nav/cover/obstacle/ray/sweep structures built from the baked
  * boxes and the map's floor, and the `GameMap` that carries them.
  *
- * **There are no collider meshes on this side, and none is owed.** Every ray
- * is a box query (`RayWorld`) and so is every sweep (`CollisionField`), both
- * off `colliderBoxes`, so a mesh here would be an inert mirror of the
- * client's that nothing read. `GameMap.colliders` and
- * `terrainColliders` are therefore EMPTY here, as `visuals` and `paneGroups`
- * always were — every reader of either is a client view (`GlassFx`,
- * `WorldCulling`, `PhysicsWorld`), and the authority builds none of them.
+ * **There are no collider meshes on this side — nor on the client's since
+ * `BABYLON_EXIT.md` X5.3e.** Every ray is a box query (`RayWorld`) and so is
+ * every sweep (`CollisionField`), both off `colliderBoxes`. What a client
+ * draws or rests a corpse on — `visuals`, `paneGroups`, `terrainGeometry` — is
+ * EMPTY here: every reader of it is a client view (`GlassFx`, `WorldCulling`,
+ * `PhysicsWorld`), and the authority builds none of them.
  * Invariants: this is the collider half of `MapBuilder.build` and nothing else,
  * and it imports nothing from `@babylonjs/core` — `scripts/check-babylon-free.mjs`
  * fails the build if any path from `server/` or `src/sim/` reaches it. What it builds must
@@ -75,8 +74,8 @@ import { TerrainField } from "../world/TerrainField";
  * variant — `BattleSystem.setMap` reads `nav`/`cover`/`obstacles` and
  * `ConquestSystem.start` reads `controlPoints`/`spawns`, and both get exactly
  * what they get on the client. The fields that are genuinely absent are the
- * MESH lists (`colliders`, `terrainColliders`, `visuals`, `paneGroups` —
- * there is no scene to stand one in); all are empty rather than faked.
+ * client views' lists (`visuals`, `paneGroups`, `terrainGeometry` — there is
+ * no scene to stand one in and no Havok); all are empty rather than faked.
  */
 export function buildSimWorld(
   def: MapDef,
@@ -113,18 +112,16 @@ export function buildSimWorld(
   );
   const boxes = toWorldBoxes(collision);
 
-  // The boxes the client merged with their neighbours into a scatter cluster —
-  // see `MapCollision.boxGroups`. Read here for one guard: a clustered box was
-  // never a mesh of its own, so it is never a pane.
+  // The boxes the client grouped with their neighbours into a scatter cluster
+  // — see `MapCollision.boxGroups`. Read here for one guard: a clustered box
+  // is a scatter prop, so it is never a pane.
   const grouped = new Set((collision.boxGroups ?? []).flat());
   // A pane's BOX carries `glass`, as `MapBuilder.paneGroup` marks it on the
   // client. A pane is never clustered (glass has to stay addressable one sheet
-  // at a time, and the client refuses to group it), so the guard is the test it
-  // was when it asked whether the box had a collider mesh of its own.
-  //
-  // The client also stamps the pane index on the collider MESH, for `GlassFx`
-  // to write its flags on; there is no mesh here, the authority builds
-  // no `GlassFx`, and `GlassSystem` reads only the box.
+  // at a time, and only the scatter is grouped), so the guard is the test it
+  // was when it asked whether the box had a collider mesh of its own. The
+  // pane names its box by index (`WorldPane.box`) on both sides, and
+  // `GlassSystem` reads only the box.
   const panes = toWorldPanes(collision);
   for (const p of panes) {
     if (p.box < 0 || p.box >= boxes.length || grouped.has(p.box)) continue;
@@ -188,23 +185,19 @@ export function buildSimWorld(
     // `docs/multiplayer.md` on hulls and `docs/vehicles.md` on the driver's
     // report.
     vehicleSpawns: def.layout.vehicles ?? [],
-    // The collider MESHES, which stand in the client's scene and nowhere else:
-    // no ray and no sweep reads one on either side, and every reader left is a
-    // client view (`GlassFx`'s pane index, `WorldCulling`, `PhysicsWorld`'s
-    // floor). Empty, as `visuals` is — see the header.
-    colliders: [],
     colliderBoxes: boxes,
     rayGroups,
     boxGroups: (collision.boxGroups ?? []).map((g) => [...g]),
     // Panes come off the bake with the boxes, and `paneGroups` deliberately
-    // stays empty: a group is the MERGED MESH a pane's vertices live in, and
-    // there is nothing to draw here. The authority needs a pane's rect to know
+    // stays empty: a group is the merged glazing SURFACE a pane's vertices
+    // live in, and there is nothing to draw here. The authority needs a pane's rect to know
     // a round crossed it and its `box` to stop blocking a body — both of which
     // are on the pane itself. See `GlassSystem`, which reads exactly those two
     // fields on both sides; `paneGroups` is `GlassFx`'s, which only draws.
     panes,
     paneGroups: [],
-    terrainColliders: [],
+    // The floor's blocks as `PhysicsWorld` rests a corpse on them: a client
+    // view's, and there is no Havok here — see the header.
     terrainGeometry: [],
     visuals: [],
     // Empty for `paneGroups`' reason: it is the record the DRAWN world was

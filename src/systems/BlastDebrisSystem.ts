@@ -26,9 +26,9 @@
  * and in a marble lobby is a blast that has not noticed where it happened, and
  * that is most of why explosions read as decals stuck onto a world rather than
  * as something the world did. `GrenadeSystem.probeGround` casts one downward
- * ray at the detonation and reads the same `metadata.surface` a bullet's impact
- * reads — the field `MapBuilder` sets on exactly one thing, the terrain floor's
- * collider clone — so a blast is one of two things:
+ * ray at the detonation and reads the same `RayHit.surface` a bullet's impact
+ * reads — which `RayWorld` answers "ground" off exactly one thing, the floor,
+ * and "hard" off every box — so a blast is one of two things:
  *
  * | surface | throws | coloured from |
  * | --- | --- | --- |

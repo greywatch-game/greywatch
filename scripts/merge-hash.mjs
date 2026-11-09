@@ -6,8 +6,8 @@
  * real client in a real browser, and every surface and mesh the build hands
  * the world is hashed in list order: the world's SURFACES (`GameMap.world`,
  * one a record, each with the mesh `GameMap.visuals` holds of it, if any —
- * see "A surface with no mesh" below), `colliders` and `terrainColliders`
- * — name, material name, metadata, transform, the flags the world layer reads
+ * see "A surface with no mesh" below) — name, material name, metadata,
+ * transform, the flags the world layer reads
  * (`isVisible`, `isPickable`, `checkCollisions`, rendering group), vertex,
  * index and submesh counts, `geometry.delayLoadState`, and a hash of every
  * vertex buffer and of the index buffer. Beside them, the plain lists a build
@@ -21,16 +21,19 @@
  * with the editor at `BABYLON_EXIT.md` X5.3c, row "X5.3, retire the editor": a
  * baseline that holds it as `null` compares as a baseline without it.)
  *
- * **And the collider DATA, beside the collider MESHES** (`BABYLON_EXIT.md`
- * X5.3a): `boxGroups` kept as data — the `colliderBoxes` indices each cluster
- * mesh merged, which is the order a SWEEP breaks a tie in on both sides — and
- * `rayGroups` (a hash of each strut group's boxes) and `terrainGeometry` (a
- * hash of each floor block's positions and indices, `PhysicsWorld`'s floor)
- * hashed, an entry a group or a block. They are what stays once no collider is
- * a mesh (X5.3e), so a baseline taken with them is X5.3e's BEFORE and needs no
- * mesh to compare; a baseline older than them compares everything else it has.
- * A list that differs is named with its FIRST differing entry (`boxGroups[12]`),
- * and with both lengths when its length moved.
+ * **And the collider DATA** (`BABYLON_EXIT.md` X5.3a): `boxGroups` kept as
+ * data — the `colliderBoxes` indices each scatter cluster groups, which is
+ * the order a SWEEP breaks a tie in on both sides — and `rayGroups` (a hash
+ * of each strut group's boxes) and `terrainGeometry` (a hash of each floor
+ * block's positions and indices, `PhysicsWorld`'s floor) hashed, an entry a
+ * group or a block. **They are the whole of a collider since X5.3e**, which
+ * stopped making collider meshes and RETIRED the two mesh lists this file
+ * kept beside them (`colliders`, `terrainColliders`; row "X5.3, the collider
+ * meshes"): a baseline that holds them compares everything else it has, the
+ * mesh lists said and not compared — X5.3a's data was taken as their
+ * BEFORE for exactly that. A list that differs is named with its FIRST
+ * differing entry (`boxGroups[12]`), and with both lengths when its length
+ * moved.
  *
  * **Each VISUAL also records its piece ranges** (`pieces`, from the record
  * `GameMap.world` keeps beside it: `[piece, vertexStart, vertexCount,
@@ -365,8 +368,6 @@ function fingerprintMap() {
 
   return {
     visuals,
-    colliders: records(map.colliders),
-    terrainColliders: records(map.terrainColliders),
     lists: {
       colliderBoxes: boxes(map.colliderBoxes),
       colliderAlbedo: hashArray(map.colliderAlbedo ?? null),
@@ -384,11 +385,11 @@ function fingerprintMap() {
         typeof pg.record === "number" ? pg.record : indexOfVisual(pg.mesh), [...pg.panes], pg.block,
       ]),
       pieces: map.world ? map.world.pieces.map((p) => [p.list, p.index]) : null,
-      // The collider DATA, beside the meshes above (BABYLON_EXIT.md X5.3a):
-      // what X5.3e keeps once no collider is a mesh. `boxGroups` as DATA —
-      // the `colliderBoxes` indices each cluster mesh merged, the sweeps' tie
-      // order — and the strut groups and the floor's blocks HASHED, a group
-      // or a block an entry, so a difference names which.
+      // The collider DATA (BABYLON_EXIT.md X5.3a), and since X5.3e the whole
+      // of a collider: `boxGroups` as DATA — the `colliderBoxes` indices each
+      // scatter cluster groups, the sweeps' tie order — and the strut groups
+      // and the floor's blocks HASHED, a group or a block an entry, so a
+      // difference names which.
       boxGroups: map.boxGroups ? map.boxGroups.map((grp) => [...grp]) : null,
       rayGroups: map.rayGroups ? map.rayGroups.map((grp) => boxes(grp)) : null,
       terrainGeometry: map.terrainGeometry
@@ -555,6 +556,9 @@ function fieldsThatMoved(a, b) {
   return moved;
 }
 
+/** What `compare` says without failing: a baseline's retired lists (see there). */
+const notes = [];
+
 function compare(before, after) {
   const lines = [];
   for (const id of Object.keys(after)) {
@@ -574,7 +578,17 @@ function compare(before, after) {
       if (a.error !== b.error) lines.push(`${id}: build ${a.error ?? "ok"} -> ${b.error ?? "ok"}`);
       continue;
     }
-    for (const list of ["visuals", "colliders", "terrainColliders"]) {
+    // The collider MESH lists, retired at BABYLON_EXIT.md X5.3e: a baseline
+    // that holds them is said, never compared — the collider DATA in `lists`
+    // is what a collider is now (see the header).
+    const retired = ["colliders", "terrainColliders"].filter((list) => Array.isArray(a[list]));
+    if (retired.length > 0) {
+      notes.push(
+        `${id}: the "before" file's collider-mesh lists (${retired.map((l) => `${l} ${a[l].length}`).join(", ")}) ` +
+          "are retired (X5.3e) — not compared; the collider data is",
+      );
+    }
+    for (const list of ["visuals"]) {
       if (a[list].length !== b[list].length) {
         lines.push(`${id}.${list}: ${a[list].length} meshes -> ${b[list].length}`);
       }
@@ -647,8 +661,8 @@ try {
     console.log(
       r.error
         ? `${id}: FAILED — ${r.error}`
-        : `${id}: ${r.visuals.length} surfaces (${r.visuals.filter((m) => m.mesh !== false).length} meshes), ${r.colliders.length} colliders, ` +
-            `${r.terrainColliders.length} terrain; data: ${r.lists.boxGroups?.length ?? "-"} box groups, ` +
+        : `${id}: ${r.visuals.length} surfaces (${r.visuals.filter((m) => m.mesh !== false).length} meshes); ` +
+            `colliders: ${r.lists.boxGroups?.length ?? "-"} box groups, ` +
             `${r.lists.rayGroups?.length ?? "-"} strut groups, ${r.lists.terrainGeometry?.length ?? "-"} floor blocks ` +
             `(${((Date.now() - t0) / 1000).toFixed(1)} s)`,
     );
@@ -683,7 +697,7 @@ for (const [id, r] of Object.entries(result)) {
 let stranded = 0;
 for (const [id, r] of Object.entries(result)) {
   if (r.error) continue;
-  for (const list of ["visuals", "colliders", "terrainColliders"]) {
+  for (const list of ["visuals"]) {
     const parts = r[list].filter((m) => m.mesh !== false && m.vertices > 0 && !m.onDevice);
     stranded += parts.length;
     for (const m of parts.slice(0, 5)) {
@@ -752,6 +766,7 @@ if (outFile) {
 if (againstFile) {
   const before = JSON.parse(readFileSync(againstFile, "utf8"));
   const lines = compare(before, result);
+  for (const l of notes) console.log(l);
   for (const l of infoThatMoved(before, result)) console.log(l);
   if (lines.length === 0) {
     console.log(`identical to ${againstFile} on ${ids.join(", ")}`);

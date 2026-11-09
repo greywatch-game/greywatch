@@ -54,9 +54,10 @@
  *   order) and the authority (made before every single collider), and so the
  *   two sides already broke ties apart. Collider order is the one both sides
  *   hold.
- * - **Nothing here knows the floor.** The terrain's collider clone never had
- *   `checkCollisions` — vertical placement is the ground probe's job — so a
- *   sweep has never seen it, and does not now.
+ * - **Nothing here knows the floor.** The terrain's collider clone, while it
+ *   was a mesh (until `BABYLON_EXIT.md` X5.3e), never had `checkCollisions`
+ *   — vertical placement is the ground probe's job — so a sweep has never
+ *   seen it, and does not now.
  * - **The cull changes no answer.** It drops a box only when its scaled-space
  *   bounding box misses the ball the unit sphere can reach this pass, and every
  *   contact a triangle can report lies inside that ball — so what it drops is
@@ -249,7 +250,7 @@ export class EllipsoidSweep {
 
   /**
    * Hands the sweep one box to be tested against: its twelve triangles placed
-   * as the collider mesh placed them, in scaled space.
+   * as a collider mesh of the box placed them, in scaled space.
    *
    * The matrix is `computeWorldMatrix`'s for a mesh at the box's centre turned
    * by `rotation.set(rotX, rotY, 0)` — yaw, then pitch, through the

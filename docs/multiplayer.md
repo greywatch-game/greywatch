@@ -1796,9 +1796,10 @@ off the same boxes and in the same tie order (`RayWorld`'s rank, from the baked
 first so the server's `scene.pickWithRay` had something to pick, then so a
 driven hull's `moveWithCollisions` had something to walk; both became box
 queries (`BABYLON_EXIT.md` X2.1), the meshes stood on as an inert mirror of
-the client's, and X2.3 took them away with the scene. `GameMap.colliders` and
-`terrainColliders` are EMPTY on the authority, as `visuals` and `paneGroups`
-always were — every reader of either is a client view.
+the client's, and X2.3 took them away with the scene — and X5.3e took the
+client's away too, so no collider is a mesh on either side. `visuals`,
+`paneGroups` and `terrainGeometry` are EMPTY on the authority — every reader of
+any of them is a client view.
 
 **The FLOOR is the one part of that world which is not baked and is no longer
 on the layout either.** It is a `TerrainField` over the map's heightfield,
@@ -1818,32 +1819,34 @@ watched stop on a post. Either way it disagrees in the direction that is hardest
 to report, because the client drew the outcome and the authority is the only
 side that counts.
 
-`rayGroups` stays **grouped as the client merged it**, one inner array per
-collider mesh, and `RayWorld` indexes it group by group on both sides. The
-grouping is not cosmetic: it was measured when every ray was a mesh pick —
-merged per fence, the timber cost a shot 0.2%; merged into one mesh for the map
-it wrapped a single bounding box around every fence in the village; not merged
-at all it cost ~17% on every ray in the process — and the server is told it
-rather than inventing one, because it is a decision the CLIENT made.
+`rayGroups` stays **grouped as the client groups it**, one inner array per
+placement (one collider mesh each until `BABYLON_EXIT.md` X5.3e), and
+`RayWorld` indexes it group by group on both sides. The grouping was measured
+when every ray was a mesh pick — merged per fence, the timber cost a shot 0.2%;
+merged into one mesh for the map it wrapped a single bounding box around every
+fence in the village; not merged at all it cost ~17% on every ray in the
+process — and the server is told it rather than inventing one, because it is a
+decision the CLIENT made.
 
 **The bake carries a third list, and it is a third VIEW of `boxes` rather than
-new geometry.** `boxGroups` is which of them the client merged into one collider
-mesh each — indices, not boxes, because these ARE the solid world and are
+new geometry.** `boxGroups` is which of them the client groups together (one
+merged collider mesh each until X5.3e) — indices, not boxes, because these ARE the solid world and are
 already in `boxes`, so the nav grid, the cover bake and the obstacle field on
 both sides still read every one of them separately. **What the grouping decides
 now is a body's SWEEP's tie order** (`BABYLON_EXIT.md` X2.1): a sweep keeps the
 first of two contacts at one distance, `RayWorld` ranks the static boxes in the
-order the CLIENT made its collider meshes — every box no group names, then each
-group in turn — and both sides derive that rank from `boxGroups` alone, so a
+order the CLIENT made its collider meshes while it made them — every box no
+group names, then each group in turn — and both sides derive that rank from
+`boxGroups` alone, so a
 hull wedged on two boxes slides the same way on the authority as on the client
 that drove it. (Under Babylon the server made its clusters first and broke those
 ties apart from the client.) It began as a pick budget, when a ray paid a
 bounding test per mesh and Greyfen's ~1,390 one-metre trunks would have been
 more collider meshes than the rest of the map put together; the server merged
-them too until X2.3, and now reads the grouping and builds nothing from it.
-Anything named in a group is left out of the one-mesh-per-box pass, so a box
-belongs to exactly one mesh either way — and nothing porous or glass is ever
-grouped, because one mesh cannot carry two answers about porosity and a pane has
+them too until X2.3, and now reads the grouping and builds nothing from it, as
+the client does since X5.3e. Anything named in a group is ranked after every
+box no group names, so a box has exactly one place in the order either way —
+and nothing porous or glass is ever grouped: only the scatter is, and a pane has
 to stay addressable a sheet at a time.
 
 **The bake carries a fourth list, and it is the one with an ORDER that matters.**
@@ -1977,7 +1980,7 @@ may only decide half of it.** The split is the point:
 - The **visual** is predicted. `CombatSystem.onShotPath` runs on the client's own
   shot and `GlassSystem.shoot(..., authoritative = false)` breaks the pane on
   the spot — `GlassFx` collapses it off `onBroken` and the shards fly off
-  `onBreak` — and leaves the box standing, so `onCleared` waits for the word.
+  `onBreak` — and leaves the box standing, so the collider waits for the word.
   There is nothing to be wrong about: a sheet that vanished on the shooter's
   screen and not on the server's is pixels, and a
   window that shatters a round trip after the round went through it is a window

@@ -107,8 +107,8 @@ const IMPACTS: Record<
     mark: { hex: "#4b3a26", radius: 0.062 },
   },
   // Glass is the odd one, and it is the ONLY kind not chosen by
-  // `metadata.surface`: a round passes through a pane rather than stopping on
-  // it, so there is no pick to read a surface off. `GlassSystem` names this
+  // `RayHit.surface`: a round passes through a pane rather than stopping on
+  // it, so there is no hit to read a surface off. `GlassSystem` names this
   // one directly at the crossing point. A bright cold spark and no disc —
   // glass throws shards, which `DebrisSystem` draws, not dust.
   glass: { spark: "#cfeaf2", disc: null, from: 0, to: 0, mark: null },

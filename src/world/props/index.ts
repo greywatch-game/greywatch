@@ -10,7 +10,8 @@
  * metadata.noInk (and noGlow where they shouldn't feed the bloom).
  * Foliage the wind moves calls `marksSway`, and NOTHING a collider stands in
  * for may (`PROP_BODIES` is the list to check) — see `world/sway.ts`.
- * Never set metadata.solid here — colliders come from MapBuilder only.
+ * Never make a collider here — colliders come from MapBuilder only
+ * (`PROP_BODIES`, recorded by `collider()`).
  * Never call `Math.random()` here — the jitter that makes a stand of trees look
  * like a stand of trees comes from the seeded streams the caller hands in, so
  * the same layout builds the same world on every boot (see world/rng.ts).
