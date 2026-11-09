@@ -4592,7 +4592,7 @@ loss**: Babylon's post chain rebuilds after a loss today and ours will not
   header; `FINDINGS.md` 5, 16 and 52; the gate note after Phase 4 (above) and the
   "Contracts this plan rewrites" rows for the glow and `shaderLanguage`.
 
-### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it; the split was proposed by a planning agent's read at b3cea5d) — X5.3a **LANDED** (f51b043, its review 85a2273), X5.3b **LANDED** (111829f, its review 64de1d1), X5.3c **LANDED** (1b1f829, its review a22098a), X5.3d **LANDED** (8be80ec, its review 85ab629)
+### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it; the split was proposed by a planning agent's read at b3cea5d) — X5.3a **LANDED** (f51b043, its review 85a2273), X5.3b **LANDED** (111829f, its review 64de1d1), X5.3c **LANDED** (1b1f829, its review a22098a), X5.3d **LANDED** (8be80ec, its review 85ab629), X5.3e **LANDED** (a86cdae)
 
 **This replaces the entry that ported the editor.** That entry put `F2`'s editor on our
 renderer: its unmerged build drawn per item, picking against `RayWorld`, our own move and
@@ -5213,6 +5213,32 @@ reviews: the first is the feature, the second is the renderer. The colliders com
     - **`FINDINGS.md`:** 26's collider sub-thread closed with its numbers.
     - **Also:** `FILES.md`, `merge-hash.mjs`' header, and the headers of `MapBuilder`,
       `parts.ts`, `GlassFx` and `WorldCulling`.
+
+  **X5.3e LANDED** (a86cdae; 2026-11-09; no change to the game: the collider meshes, their readers
+  and `merge:hash`'s two mesh lists deleted, an instrument fixed, comments and documents). The
+  full note is in `plans/done/babylon_exit_landed.md`. `MapBuilder.collider` records a `WorldBox`
+  and makes no mesh (`recordBox` folded into it); `clusterColliders` and `struts` push their
+  groups and merge nothing; the terrain clone is gone and `terrainGeometry` holds the very arrays,
+  in the very types, the clone held (`parts.ts`' `plainGeometryOf`, through the build's memo).
+  Deleted: `GameMap.colliders`, `terrainColliders`, `PaneGroup.mesh` and its two readers,
+  `WorldCulling`'s hidden set, `GlassFx`'s collider write (and `GlassSystem.onCleared`, whose one
+  listener it was), the DEV `assertSweepOrder` over the meshes, `metadata.solid`'s last writer,
+  `merge:hash`'s `colliders` and `terrainColliders` (retired with what they measured; a baseline
+  holding them is compared on the rest). **Measured** against a BEFORE at 6870cd1: `merge:hash`
+  identical on eight maps (`colliderBoxes`, `boxGroups`, `rayGroups`, `terrainGeometry`, the panes
+  and groups); `npm run collision` no diff on any of the eight bakes; the bank by `exact.mjs` 147,
+  147 and 146 with `sarab-shelf`'s flake (default, `volumetrics=low`, `=high`); parity,
+  `sweep-check` 56,000 of 56,000, `drop.mjs --check --exact` bits identical on seven (Harrowmead
+  "within tol" against its bank, the same at the parent); `simulate` at seed 5101 the parent's
+  fight hash on seven; a pane breaking in a live round (Coldharbour, pane 0): a predicted break
+  leaves the box in `castBody` and `bodyNear`, the authority's event takes it out of both, as at
+  the parent; the bounds check; `post.mjs`, `gi.mjs`, `census`, `surfaces.mjs` and both
+  `pipelines.mjs` runs equal; the draw log equal but for `scene.meshes`, 1,782 to 0 in every round
+  class (0 draws, 0 group-0 visits, the counter 0); the harness's `scene.isReady()` no longer
+  compiles Babylon's `default` (the counter's warning gone, seven maps); live rounds offline and in
+  a match, the mixer and viewer keys; `?profile&gpu` within 2.8%; typecheck, build, corecheck,
+  `gate`, `shaders`, `maps:check`. Install (`FINDINGS.md` 26, closed): `build:total` 2-16% faster,
+  the heap a map holds roughly halved (12-54 MB a map). **Not run**: the phone.
 
 **Verify, the whole step:**
 

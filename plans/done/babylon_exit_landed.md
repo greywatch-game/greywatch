@@ -10722,7 +10722,7 @@ beside the gizmo note in `docs/rendering.md` and in `PostPasses`' header; X5.3 a
 **Measured**: `post.mjs --against` b1203cc's log, both pages: equal, 30,073 values a page, nothing
 excused. Typecheck, build, corecheck and parity pass.
 
-### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it) — X5.3a **LANDED** (f51b043, its review 85a2273), X5.3b **LANDED** (111829f, its review 64de1d1), X5.3c **LANDED** (1b1f829, its review a22098a), X5.3d **LANDED** (8be80ec, its review 85ab629)
+### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it) — X5.3a **LANDED** (f51b043, its review 85a2273), X5.3b **LANDED** (111829f, its review 64de1d1), X5.3c **LANDED** (1b1f829, its review a22098a), X5.3d **LANDED** (8be80ec, its review 85ab629), X5.3e **LANDED** (a86cdae)
 
 The plan's `BABYLON_EXIT.md` holds X5.3's brief, its ONE RULE, the step's own rule on retiring
 an oracle, "Every sub-step owes" and the five sub-steps.
@@ -11469,3 +11469,133 @@ at 7dcc08e, in the worktree `greywatch-2-before-x53a` moved there (`package-lock
 - **Not run**: the probes (`post.mjs`, `gi.mjs`, `surfaces.mjs`, `census`, `pipelines.mjs`),
   `merge:hash`, the live rounds and `?profile&gpu`: the only shipped change is a WGSL comment,
   and the bank's bytes are the proof a round did not move.
+
+**X5.3e LANDED** (a86cdae; 2026-11-09; no change to the game: the collider meshes and every reader
+of them deleted, `merge:hash`'s two collider-mesh lists retired, one instrument fixed, comments and
+documents). Measured headless on the Windows box against a BEFORE at 6870cd1, in the worktree
+`greywatch-2-before-x53a` moved there (`package-lock.json` unchanged, no `npm ci`), its `ref/`
+identical to the main tree's. Scripts and logs in the session's scratchpad, `x53e/` (`before.sh`,
+`after.sh`, `install.mjs`, `warncheck.mjs`, `panecheck.mjs`, `dlcmp.mjs`).
+
+- **What changed.** `MapBuilder.collider(box, origin, rotY)` records the `WorldBox` (and its
+  albedo and the scatter index) and makes no mesh: `recordBox` is folded into it, `boxMesh` is
+  gone, and every caller (a structure's boxes, a breakable pane's, the four boundary boxes, a
+  blocking scatter prop's) calls it in the order it did. `clusterColliders(indices)` buckets as
+  before (the same `Map`, first box seen, box index within) and pushes each bucket to `boxGroups`;
+  `struts(specs, …)` pushes its `rayGroups` entry; neither merges. The terrain clone is gone:
+  `terrainGeometry` takes `plainGeometryOf(patch.data, plain)` (`parts.ts`, new), the positions
+  and indices in exactly the types `vertexDataOf` handed the clone and through the same memo, so
+  `PhysicsWorld` reads the same arrays. `paneGroup` returns its surfaces alone and stamps nothing.
+  `GlassFx` is the collapse alone; `GlassSystem.clearCollider` is the box's writes alone.
+- **Deleted**: `GameMap.colliders`, `terrainColliders`, `BuildRun.colliders`, `PaneGroup.mesh`;
+  `WorldCulling`'s hidden set, its filing loop over `PaneGroup.mesh` (`fileMesh` folded into the
+  visuals loop) and `stats.hidden` (no reader); `BlockHandover.strayMesh`'s pane set (every mesh
+  Babylon is made of the world is now stray; `InstalledWorld` drops `paneGroups`);
+  `ReflectionSystem.surfaceOf`'s mesh test; `GlassFx`'s pane-to-collider index and `clear`;
+  `GlassSystem.onCleared` and `Game`'s wiring of it; the DEV `assertSweepOrder` and
+  `clusterMeshes` (the premise it checked, the mesh order against `boxGroups`, has no meshes left
+  to disagree; the rank is derived from `boxGroups` alone on both sides); `metadata.solid`,
+  `porous`, `rayOnly`, `glass`, `pane` and `surface` on any mesh (no writer is left: they were
+  written on collider meshes alone); `merge:hash`'s `colliders` and `terrainColliders`.
+- **Every reader found, and what was done.** In `src/` and `server/`: `GlassFx` (the flag write,
+  deleted), `WorldCulling` (hidden set and pane loop, deleted), `BlockHandover.strayMesh`,
+  `ReflectionSystem.surfaceOf` (the field's readers, deleted), `simWorld` (the empty lists,
+  deleted). `CombatSystem`, `GrenadeSystem` and `BlastDebrisSystem` read the impact kind from
+  `RayHit.surface`, which `RayWorld` answers "ground" off `TerrainField` and "hard" off every box,
+  so nothing that names an impact read the clone's `metadata.surface`; `porous`, `rayOnly` and
+  `glass` reach the queries on the `WorldBox` and the strut groups (`worldBoxOf`, unchanged). In
+  the instruments: `merge-hash.mjs` (lists retired); `plans/physics-ref/drop.mjs` read
+  `terrainColliders.length` for its report line (now `terrainGeometry.length`, same numbers);
+  `plans/webgpu-ref/surfaces.mjs` found `Mesh.render`'s prototype through `scene.meshes[0]` — a
+  collider — and threw on a round with no mesh: it now hooks on the first mesh the scene is handed
+  (none in a round), as the draw log and `pipelines.mjs` already did since X5.3d; re-run, its JSON
+  byte-identical to the parent's. `plans/webgpu-ref/depth.mjs glass` reads `PaneGroup.mesh` and has
+  thrown "owes a port" since X4.6e (`FINDINGS.md` 69): the same throw, noted there. The harness's
+  readiness wait (`scene.isReady()`) asked the collider meshes and compiled Babylon's `default`
+  material, one a page (X5.3d's warning): with no mesh it compiles nothing (`warncheck.mjs`, seven
+  maps: at the parent 770 to 4,064 material-less meshes, the counter 1, `default`, one warning a
+  map; now 0 meshes, the counter 0, no warning), and the wait is met on the first frame where it
+  was the third or fourth — the bank is byte-equal across it. `kit-hash.mjs` and `sweep-check.mjs`
+  build meshes of their own and read none of the game's.
+- **Measured.**
+  - **The bank**, 147 rows by `exact.mjs`: **default** 147 byte-equal; **`volumetrics=low`** 147;
+    **`volumetrics=high`** 146 and `sarab-shelf` within its flake (1 pixel by 1/255).
+    `sarab-ground` and the pistol byte-equal in all three, so no Sarab procedure. The same rows
+    red against `ref/` on both trees (34, 102, 93).
+  - **`merge:hash`** (shipped) `--against` the parent's baseline: identical on eight maps — the
+    surfaces, `colliderBoxes`, `colliderAlbedo`, `partBoxes`, the panes, the pane groups, the piece
+    table and the collider DATA (`boxGroups` 97, 311, 45, 316, 296, 845, 161 and 271 groups;
+    `rayGroups` 13 to 59; `terrainGeometry` 12 to 417 blocks), each map's retired mesh lists said
+    (Coldharbour's 1,782 and 24); `info.sceneMeshes` and `sceneGeometries` to 0 (reported).
+  - **`npm run collision`**: all eight bakes re-made, `git status` showing nothing under
+    `src/world/*/collision.ts` (the source hashes and every box and group unchanged; the bake's
+    emitted header, which still says "collider mesh", is held byte for byte rather than reworded).
+  - **parity** (every map, and every scene ready); **`sweep-check`** (`exact`, seven maps) 56,000 of
+    56,000 identical; **`drop.mjs --check --exact`** bits identical on seven, Harrowmead "within
+    tol" (0.0453 m) against its banked rest set — the same reading at the parent, so not this
+    step's; **`simulate <map> 1 2 5101`** the parent's fight hash on all seven (Hollowmere
+    `f382211e36a45b11`, Greyfen `dd5ab4155ccba246`, Coldharbour `8f3b1279e71e3279`, Harrowmead
+    `77dfc6f0212b404d`, Sarab `60a7da07077efd45`, Cinderhaven `734dc1fe554ab865`, Kurenai
+    `949348dc6cf59426`); the **bounds check** 145,620 bounds and 25,518 matrices equal.
+  - **A pane broken in play** (`panecheck.mjs`, Coldharbour, the page's own match, a life live):
+    no breakable pane was in clear sight of the spawn within 40 m, nor after 600 frames walked at
+    one, so pane 0 was broken through the client's two doors: `GlassSystem.shoot(…, false)` (what
+    the page's own shot predicts) — the box still `glass`, `castBody` through the sheet hitting it
+    at 1.44 m, in `bodyNear` — then `Game.breakPane` (`onNetEvent`'s `glass` arm) — `glass` cleared,
+    `castBody` passing, out of `bodyNear`; `castRound` passing throughout. Both trees identical.
+    The draw log's life also broke pane 21 by firing at it, at both trees.
+  - **The draw log** (Coldharbour, with the viewer and `--no-viewer`): against the parent's, every
+    difference under `meshes/` — `scene.meshes` 1,782 to 0 in `deploy`, `loadout`, `viewer`,
+    `playing`, `dying`, `paused` and `roundover`, `[0, 1782]` to `[0]` in `loading`, 0 on the menu
+    before and after, and the 44 folded collider names gone (360 and 315 paths); 0 Babylon draws,
+    0 group-0 visits and the counter 0 in every class.
+  - **The probes**: `post.mjs --against`, both pages, 30,073 values a page, nothing excused;
+    `gi.mjs --against` equal (914,611 and 254,731 values); `census --against` equal (168, and the
+    four maps); `surfaces.mjs` JSON byte-identical; `pipelines.mjs hollowmere` (96 modules and 2
+    pipelines at the boot, 107 at the install, 90 of ours, none after) and `coldharbour --round`
+    (each install 0 / 21 / 12, nothing in play) the same on both trees.
+  - **Live** (X5.3d's script, both trees): 42 phases equal in modules, Babylon's synchronous
+    pipelines (2), post processes (0), errors and in-play compiles (none); the mixer and viewer
+    keys 9 of 9; in a match (`npm run build:server`, port 8097): Hollowmere and Coldharbour joined,
+    a life, the viewer up and down, a teardown, and offline the same, no page or console error.
+  - **`?profile&gpu`** (Coldharbour and Hollowmere, four alternating runs a tree): `render` 0.733
+    to 0.753 and 0.676 to 0.657 ms, `gpu.frame` 2.612 to 2.627 and 2.590 to 2.555 ms (within
+    2.8%); Babylon's draw calls 0.
+  - **Install and heap** (`install.mjs`, seven maps, three alternating runs a tree, dev build,
+    medians): `build:total` Hollowmere 1,511 to 1,387 ms, Greyfen 3,282 to 3,133, Coldharbour
+    1,913 to 1,736, Harrowmead 2,358 to 2,214, Sarab 1,573 to 1,314, Cinderhaven 3,455 to 3,223,
+    Kurenai 2,096 to 2,058; the heap a map holds (after two forced GCs, deploy minus the menu)
+    29.8 to 16.4, 35.9 to 21.7, 42.7 to 18.6, 48.9 to 25.4, 79.3 to 30.5, 101.7 to 47.8 and 25.3 to
+    12.9 MB. `FINDINGS.md` 26's collider sub-thread is closed with the table.
+  - **Gates**: typecheck, build (`check-collision`, `check-maps`, `check-babylon-free`,
+    `check-proving`), corecheck, parity, `maps:check` 7 of 7, `gate` (seven maps clean) and
+    `shaders` (clean on seven).
+- **Documents**: `CLAUDE.md` (the collider table's row a `WorldBox` and no mesh, the glass
+  paragraph's one write, the tie order and the grouping as data, the floor's arrays, the metadata
+  contract, `GlassFx` told by `onBroken`; 1,597 lines before and after); `docs/world.md` (the
+  scatter grouping, the struts, the floor's surface and arrays, the pane's writes); `docs/build.md`
+  (the colliders no longer Babylon API, `merge:hash`'s lists); `docs/rendering.md` (the three
+  classes, the counter's warning, `colliderAlbedo`); `docs/multiplayer.md`, `docs/vehicles.md`,
+  `docs/grenades.md`, `VERIFYING.md`; `FILES.md` (`MapBuilder`, `parts.ts`, `GlassFx`,
+  `GlassSystem`, `WorldCulling`, `RayWorld`, `merge-hash.mjs`); `FINDINGS.md` 26 and 69; the
+  headers of `MapBuilder`, `parts.ts`, `GlassFx`, `GlassSystem`, `WorldCulling`, `mapTypes`,
+  `BlockHandover`, `simWorld`, `collision.ts`, `fingerprint.ts`, `babylonCompiles.ts` and the
+  comments that read `metadata.surface` or `metadata.solid` as standing.
+- **Where the plan's text was not followed to the letter, and why.** (1) `GlassSystem.onCleared`
+  is deleted as well: `GlassFx.clear` was its one listener, and a hook with no listener whose
+  documented purpose was the deleted write would be dead. (2) The metadata contract: the plan says
+  `solid` leaves it, six flags and two values; `porous`, `rayOnly`, `glass` and `surface` lost their
+  only mesh writer too, so `CLAUDE.md` keeps six flags and two values but says a collider's are
+  fields on its BOX (`porous`, with `glass`; `rayOnly`) or the ray's answer (`surface`,
+  `RayHit.surface`), and there is no `solid`. (3) `recordBox` is folded into `collider()`, so the
+  documented "one place a collider is made" is one function. (4) `surfaces.mjs` (not on the
+  plan's list) is fixed, as above. (5) The DEV `assertSweepOrder` is deleted with the meshes it
+  checked. (6) The bake's emitted header still says "collider mesh": rewording it would move all
+  eight bakes, against row "X5.3, the collider meshes" (no diff at all); `bake-collision.mjs`'s own
+  comment says so.
+- **Not run**: the phone.
+- **For the reviewer**: `clusterColliders`' bucket order (the tie order; `merge:hash` holds it as
+  data and found it equal); `plainGeometryOf` against the clone's `vertexDataOf` (types and the
+  memo); `strayMesh` now refusing any mesh at all; the readiness wait flipping on frame 1 where it
+  flipped on 3 or 4 (the bank byte-equal across it, but any later probe that counted frames from
+  it would see the difference); `GlassSystem` without `onCleared`.
