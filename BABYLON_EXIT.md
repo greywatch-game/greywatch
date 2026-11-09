@@ -4592,7 +4592,7 @@ loss**: Babylon's post chain rebuilds after a loss today and ours will not
   header; `FINDINGS.md` 5, 16 and 52; the gate note after Phase 4 (above) and the
   "Contracts this plan rewrites" rows for the glow and `shaderLanguage`.
 
-### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it; the split was proposed by a planning agent's read at b3cea5d) — X5.3a **LANDED** (f51b043, its review 85a2273), X5.3b **LANDED** (111829f, its review 64de1d1)
+### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it; the split was proposed by a planning agent's read at b3cea5d) — X5.3a **LANDED** (f51b043, its review 85a2273), X5.3b **LANDED** (111829f, its review 64de1d1), X5.3c **LANDED** (1b1f829)
 
 **This replaces the entry that ported the editor.** That entry put `F2`'s editor on our
 renderer: its unmerged build drawn per item, picking against `RayWorld`, our own move and
@@ -5003,6 +5003,27 @@ reviews: the first is the feature, the second is the renderer. The colliders com
     - The skills: `map-layout`'s "Hand edit or generator?", `generator.md` and
       `audit.mjs`, and `model-detail`'s `new-model.md` step 2 and `SKILL.md`.
     - `plans/webgpu-ref/README.md`.
+
+  **X5.3c LANDED** (1b1f829; 2026-11-09; no change to the game: the editor, its build path and
+  its oracles deleted, the generators' prose and the bakes' source hashes). The full note is in
+  `plans/done/babylon_exit_landed.md`. `src/editor/` (21 files, 7,207 lines) is gone, with
+  `toggleEditor`, `buildEditorMap`, the `editor` step and every `opts.editor` arm in `installMap`
+  (one caller, `buildRound`), the world layer's editor build and `world/solid.ts`; `EditorRef` is
+  `ItemRef`; the endpoint keeps the mixer's row; `docs/editor.md` is deleted, what survives moved
+  verbatim into `docs/world.md`'s "Looking at a map". Retired in the same commit: `merge:hash
+  --editor` and `editorItems`, `surfaces.mjs --editor` and `proxy`, `particles.mjs --editor`,
+  `gi.mjs`'s editor arm, the draw log's editor step, the eight eyes. **Measured** against a BEFORE
+  at c5f4206: `merge:hash` identical on eight maps (`editorItems` aside); the bank by `exact.mjs`
+  146 byte-equal and `sarab-ground` (100 pixels by 2/255) by default and under `volumetrics=low`
+  (98), 147 under `volumetrics=high` — `sarab-ground` settled by the Sarab procedure in
+  `exact.mjs`' header, the parent's own two processes drawing both frames; the draw log equal to
+  the parent's `--no-editor` log, with the viewer and without it, and to its full log but for the
+  editor's two classes; `post.mjs`, `gi.mjs`, `census`, `surfaces.mjs` and both `pipelines.mjs`
+  runs equal; `maps:check` 7 of 7 on the new text; all seven bakes moved in their source-hash line
+  alone; parity; `?profile&gpu` within 1.6%; the viewer and the mixer by their keys; live rounds
+  offline and in a match; typecheck, build, corecheck, `gate` and `shaders`. **Not run**: the
+  phone. **`CLAUDE.md`** went from 1,616 lines to 1,600, still over its ~1,500 cap (the note says
+  why that is left).
 
 - **X5.3d — Babylon's draw paths the editor kept, deleted** (no change to the picture) —
   **M**. Each is unreachable after X5.3c, and each is checked unreachable before it is

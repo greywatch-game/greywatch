@@ -10722,7 +10722,7 @@ beside the gizmo note in `docs/rendering.md` and in `PostPasses`' header; X5.3 a
 **Measured**: `post.mjs --against` b1203cc's log, both pages: equal, 30,073 values a page, nothing
 excused. Typecheck, build, corecheck and parity pass.
 
-### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it) — X5.3a **LANDED** (f51b043, its review 85a2273), X5.3b **LANDED** (111829f, its review 64de1d1)
+### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it) — X5.3a **LANDED** (f51b043, its review 85a2273), X5.3b **LANDED** (111829f, its review 64de1d1), X5.3c **LANDED** (1b1f829)
 
 The plan's `BABYLON_EXIT.md` holds X5.3's brief, its ONE RULE, the step's own rule on retiring
 an oracle, "Every sub-step owes" and the five sub-steps.
@@ -11081,3 +11081,104 @@ worktree `greywatch-2-before-x53a` moved there (no `npm ci`: `package-lock.json`
   never set); typecheck, build, corecheck, parity, `gate` (seven maps clean) and `shaders` (clean
   on seven). Not re-run: the other probes, `merge:hash`, `maps:check` and `?profile&gpu`, nothing
   they read having moved.
+
+**X5.3c LANDED** (1b1f829; 2026-11-09; no change to the game: the editor and every path kept for
+it deleted, the editor's instruments retired, comments, documents, the generators' prose and the
+fourteen files they emit, and the seven bakes' source-hash lines). Measured headless on the
+Windows box against a BEFORE at c5f4206, in the worktree `greywatch-2-before-x53a` moved there
+(`package-lock.json` unchanged, no `npm ci`), its `ref/` identical to the main tree's. Scripts and
+logs in the session's scratchpad, `x53c/`.
+
+- **What went.** `src/editor/` whole (21 files, 7,207 lines: the thirteen the plan names, the eight
+  X5.3b copied, and the directory). `Game`: `toggleEditor`, `buildEditorMap`, `updateEditor`, the
+  `editor` and `editorLoading` fields, the `Shift+F2` routing (`Shift+F2` now raises the viewer, as
+  `F2` does), the `editor` case in `tick`, every `opts.editor` arm in `installMap` (which takes no
+  options now: its one caller is `buildRound`, and every draw install, the world's failure and
+  `bodyShadowMap.setFailure` are unconditional, exactly the round's old path). `SCREENS.editor` and
+  the `editor` member of `StepState`. The world layer: `BuildOptions.editor`, `GameMap.editor`,
+  `EditorItem`, `EditorIndex`, `MapBuilder`'s `item`, `newItem` and `repositionItem` and every
+  `item` branch (placements, struts, glazing, scatter — `scatterRegion` returns nothing now: its
+  surfaces always went to `BlockMerge`), `merge.ts`' `tag` and `PaneBlocks`' `owners` (its key is
+  always the block), `WorldSurface.owner`, `assertPieces`' editor arm, the `editor` parameter of
+  `BlockHandover.install`, `PhysicsWorld.setMap`, `ReflectionSystem.build` and `bakeWater`,
+  `world/solid.ts` and `floorSurfaceLabel` (with `FLOOR_SURFACE_IDS`, the floor picker's roster,
+  which nothing else read). `EditorRef` is `ItemRef`. `vite.config.ts`' `WRITABLE` keeps the
+  mixer's one row (its URL, `/__layout`, kept for the mixer; the plugin renamed `devWriter`).
+  `hud.css`'s `.editing` rule lost the `#editor-panel` carve-out.
+- **Why a round's bytes cannot move**: every deleted arm ran only under `opts.editor === true`,
+  which no round passed, and the round's arms now run unconditionally in the same order. The
+  collision bake, re-made by the step's own builder, is the first proof (below).
+- **The editor's oracles retired**, in the commit that deletes the editor (row "X5.3, retire the
+  editor"): `merge:hash --editor` (refused, exit 2) and its `editorItems` list (a baseline's
+  `editorItems: null` compares as absent, the comparer walking the new lists only; a baseline taken
+  with `--editor` is refused rather than compared); `surfaces.mjs --editor` and its `proxy` class
+  (refused; the class list is dynamic, so a round's JSON is unchanged); `particles.mjs --editor`
+  (refused; an older log's `editor` record is said and not compared); `gi.mjs`'s editor arm (the
+  live half only — nothing compared moved — and `--no-editor` a no-op); the draw log's editor step
+  and its two classes (`--no-editor` a no-op); X5.1b's eight eyes, stated retired.
+- **The generators** (all seven): their own headers and the headers they emit say the generator is
+  the file's only author and a change goes into the script (`maps:check` failing the build on a
+  byte it did not write); re-run, `maps:check` 7 of 7 on the new text (0.9 s); `npm run collision`
+  moved each of the seven bakes in its `sourceHash` line alone (Hollowmere `aae3ede27bdca925` to
+  `430ccdea06e70c3a`, Greyfen `02eb1f16…` to `f7a2d5b2…`, Coldharbour `1fa56962…` to `ccc40eed…`,
+  Harrowmead `5062fce8…` to `d3832cb8…`, Sarab `c637bce1…` to `7cb964de…`, Cinderhaven `9f0fe8af…`
+  to `3c45f3c7…`, Kurenai `477963ec…` to `16e354f3…`; the proving ground's unchanged), every box
+  and strut group byte for byte off the step's builder; parity, all eight maps.
+- **`merge:hash`** (shipped) `--against` the parent's baseline: identical on eight maps, the
+  parent's `editorItems: null` aside.
+- **The bank**, 147 rows by `exact.mjs`: **default** 146 byte-equal and `sarab-ground` (100 pixels
+  by 2/255); **`volumetrics=low`** 146 and `sarab-ground` (98 pixels by 2/255); **`volumetrics=high`**
+  147 byte-equal (the pistol byte-equal in all three). **The Sarab procedure** (`exact.mjs`' header:
+  `bank.mjs sarab --check --keep`, two processes a tree, each query): under the default query the
+  parent's two processes drew the two frames (100 pixels by 2/255 between them), the step's full
+  bank drew the parent's first process's frame byte for byte and the step's two Sarab runs the
+  parent's full bank's; under `volumetrics=low` the same (each of the step's frames byte-equal to
+  one of the parent's processes'); under `volumetrics=high` all five frames one. Cross-process
+  residue of the recorded class, not the step.
+- **The probes** against the parent's logs: `post.mjs --against`, both pages, 30,073 values a page,
+  nothing excused; `gi.mjs --against` the parent run with `--no-editor`, equal (914,611 and 254,731
+  values); `census --against` equal (403, 595, 619, 168); `surfaces.mjs --out` on all seven maps,
+  the two JSON files byte-identical (113,920 bytes); `pipelines.mjs hollowmere` (109 modules, 3 of
+  Babylon's pipelines, 90 of ours, none after the install) and `coldharbour --round` (each install
+  0 / 21 / 12, nothing in play) the same on both trees.
+- **The draw log**: with the viewer, equal to the parent's `--no-editor` log; with `--no-viewer`,
+  equal to the parent's `--no-viewer --no-editor` log; against the parent's full log (editor and
+  viewer), two differences, the `editor` and `loading (from the editor)` classes the step deletes —
+  and the parent's full log against its own `--no-editor` log differs by the same two, so no other
+  class carried anything of the editor's step.
+- **Live** (X5.3b's live script with the editor's phases replaced by the viewer over the
+  Coldharbour round, both trees: Hollowmere, every post setting toggled, the shafts' rungs, render
+  scale and glow rungs, a resize and back, a teardown, a second round with the viewer raised,
+  flown, its nav and work light toggled and a render-scale and glow change under it, Coldharbour
+  with the viewer and a glow change, the menu and a round after): all 38 phases equal in modules,
+  Babylon's synchronous pipelines (3), post processes (0), errors and in-play compiles (none). The
+  viewer and the mixer by their keys (`F4` open and closed, `F2` open and closed, `F4` over the
+  viewer, `Shift+F2` raising the viewer): 9 of 9. In a match (`npm run build:server`, a fresh
+  `dist-server` on a local port, `?mp=`): a Hollowmere and a Coldharbour round each joined, a life
+  fired, the `F2` key's viewer up and down over `playing`, a teardown to the menu; offline the
+  same on both maps; no page or console error.
+- **`?profile&gpu`** (Coldharbour and Hollowmere, four alternating runs a tree, report version 37):
+  `render` 0.848 → 0.831 and 0.742 → 0.734 ms, `gpu.frame` 2.605 → 2.626 and 2.510 → 2.549 ms
+  (within 1.6%); Babylon's draw calls 0.
+- **Gates**: typecheck (`noUnusedLocals` the dead-code oracle), build (`check-collision`,
+  `check-maps`, `check-babylon-free`, `check-proving` in it), corecheck, parity, `maps:check`,
+  `gate` (seven maps clean) and `shaders` (clean on seven). The `grep` for `toggleEditor`,
+  `buildEditorMap`, `editorRef`, `EditorItem` and `sourceScan` returns `plans/done/`,
+  `ENGINE_UPGRADE.md`, `PERF_PLAN.md` and this file's history alone.
+- **Where the plan's text was not followed to the letter, and why.** (1) Comments that name an
+  "editor build" in the files X5.3d rewrites (`ShadowSystem`, `LocalShadows`, `CelShader`,
+  `FlameShader`, `GlowPass`, `PostPasses`, `ReflectionSystem`'s header, `wrappedTextures`, the
+  seam, `GiVolume`'s GI-`off` line, `shadowWindow.ts`, four lines of `Game`'s constructor about
+  the glazing queue, the gizmo layer, image processing and the default cube) and the matching
+  `FILES.md` lines and `docs/rendering.md` (58 mentions) are left for X5.3d, whose Rewrites name
+  them; every comment elsewhere that described the editor as standing was rewritten. (2)
+  `FINDINGS.md` 71's `.editing` sentence was trimmed beside 10, 26 and 39. (3) `FLOOR_SURFACE_IDS`
+  went with `floorSurfaceLabel`. (4) **`CLAUDE.md` is 1,600 lines** (from 1,616): the editor
+  section became "The map viewer (dev only)" at 17 lines from 28, and the rest of what this step
+  rewrites is net zero; bringing it under the ~1,500 cap is a section-cap pass across sections this
+  step does not touch, left for the owner to order. (5) The dev write endpoint's URL stays
+  `/__layout` (the mixer's client names it).
+- **Not run**: the phone; a person's hands on the viewer (the keys pressed through Playwright).
+- **For the reviewer**: `installMap` (now argument-free) against the parent's round path; the
+  `MapBuilder` deletions (`scatterRegion`, `struts`, `paneGroup`'s lost `placement` parameter) and
+  `PaneBlocks.finish` writing `metadata.block` unconditionally; the instruments' refusals.
