@@ -6,7 +6,8 @@
  * every collision bake, and re-running it with the tree unchanged must produce
  * the same bytes.
  *
- * `--out <dir>` writes the two files into `<dir>` and nothing in `src/`: how
+ * `--out <dir>` (or `--out=<dir>`) writes the two files into `<dir>` and
+ * nothing in `src/`, and an `--out` naming no directory is refused: how
  * `npm run maps:check` (`scripts/check-maps.mjs`, a build gate) re-runs this
  * and holds the committed files to those bytes.
  *
@@ -90,10 +91,17 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
-// `--out <dir>` writes the two files there and nothing in `src/`: how
-// `npm run maps:check` (`scripts/check-maps.mjs`) re-runs this into scratch.
-const outAt = process.argv.indexOf("--out");
-const out = outAt >= 0 ? resolve(process.argv[outAt + 1]) : join(root, "src", "world", "cinderhaven");
+// `--out <dir>` or `--out=<dir>` writes the two files there and nothing in
+// `src/`: how `npm run maps:check` (`scripts/check-maps.mjs`) re-runs this into
+// scratch. An `--out` naming no directory is refused rather than falling back
+// to `src/`, which would overwrite the committed files.
+const outAt = process.argv.findIndex((a) => a === "--out" || a.startsWith("--out="));
+const outDir = outAt < 0 ? null : process.argv[outAt] === "--out" ? process.argv[outAt + 1] : process.argv[outAt].slice("--out=".length);
+if (outAt >= 0 && (!outDir || outDir.startsWith("--"))) {
+  console.error("--out needs a directory: --out <dir> or --out=<dir>");
+  process.exit(1);
+}
+const out = outDir ? resolve(outDir) : join(root, "src", "world", "cinderhaven");
 
 // --- the extent --------------------------------------------------------------
 

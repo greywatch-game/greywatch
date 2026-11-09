@@ -27,6 +27,8 @@
  * hashed, an entry a group or a block. They are what stays once no collider is
  * a mesh (X5.3e), so a baseline taken with them is X5.3e's BEFORE and needs no
  * mesh to compare; a baseline older than them compares everything else it has.
+ * A list that differs is named with its FIRST differing entry (`boxGroups[12]`),
+ * and with both lengths when its length moved.
  *
  * **Each VISUAL also records its piece ranges** (`pieces`, from the record
  * `GameMap.world` keeps beside it: `[piece, vertexStart, vertexCount,
@@ -613,7 +615,18 @@ function compare(before, after) {
     for (const k of Object.keys(b.lists)) {
       // A list an older fingerprint did not record is not a difference.
       if (!(k in a.lists)) continue;
-      if (JSON.stringify(a.lists[k]) !== JSON.stringify(b.lists[k])) {
+      const before = a.lists[k];
+      const after = b.lists[k];
+      if (JSON.stringify(before) === JSON.stringify(after)) continue;
+      // A list of entries (a group, a block, a piece) names the FIRST entry
+      // that differs, and both lengths when they moved; anything else is
+      // reported as changed.
+      if (Array.isArray(before) && Array.isArray(after)) {
+        let i = 0;
+        while (i < before.length && i < after.length && JSON.stringify(before[i]) === JSON.stringify(after[i])) i++;
+        const len = before.length !== after.length ? ` (${before.length} entries -> ${after.length})` : "";
+        lines.push(`${id}.${k}[${i}]: the first entry that differs${len}`);
+      } else {
         lines.push(`${id}.${k}: changed`);
       }
     }

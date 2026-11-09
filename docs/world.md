@@ -25,6 +25,12 @@ touches.** A `MapDef` is `{ id, name, layout, environment, collision }`; `MAPS` 
 the registry
 and `DEFAULT_MAP` is the fallback. `Game` holds one `mapDef` field (`Game.mapDef`) and
 reads both halves off it. Nothing outside `maps.ts` may import a map's own modules.
+**A new map also owes a GENERATOR among its new files**:
+`scripts/generate-<id>.mjs`, taking `--out <dir>` (writing the two files there and
+nothing in `src/`), since `npm run maps:check` re-runs one for every row in
+`collision-hash.mjs`'s `MAPS` and fails the build on a map without it — the
+generators being the only way to author a map (`BABYLON_EXIT.md` X5.3,
+`docs/build.md`).
 The shipped maps are **Hollowmere** (night), **Greyfen** (a jungle morning, sun
 through the canopy), **Coldharbour** (a harbour town on a bay before dusk), **Harrowmead** (a
 farming vale at sunset in high summer), **Sarab** (a desert town an hour

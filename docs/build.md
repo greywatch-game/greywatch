@@ -316,9 +316,9 @@ owner's of 2026-11-08). Each shipped map's generator is re-run with `--out
 `layout.ts` and `heights.ts` are compared with the committed files byte for
 byte after line-ending normalisation alone (the generators write LF; a Windows
 checkout under `core.autocrlf` holds CRLF). One byte of any other kind fails
-the build, naming the map, the file and the first line that differs. All seven
-run at once in child processes, about a second here, with no GPU and no
-browser.
+the build, naming the map, the file and the first line that differs. Every map
+in `MAPS` runs at once in child processes, about a second here for the seven
+shipped today, with no GPU and no browser.
 
 So a change to a map goes into its generator's design section, its parameters
 or its seed, and is re-run (`npm run <map>`), then `npm run collision -- <map>`
@@ -327,8 +327,9 @@ file. The two checks are a pair and catch different things: `check-collision.mjs
 says the bake is older than the layout, this says the layout is not its
 generator's. A merge from `develop` owes it as well (`BABYLON_EXIT.md`, "The
 branch"). A generator's map list is `collision-hash.mjs`'s `MAPS`, so a new map
-is checked by the row it already owes there; the DEV-only proving ground is
-not.
+is checked by the row it already owes there — **and so a new map owes a
+generator**, `scripts/generate-<id>.mjs` taking `--out <dir>`, or the build
+fails on its row; the DEV-only proving ground is not checked.
 
 ## The simulation's Worker is a second bundle, and two compiler settings it rests on
 
@@ -405,7 +406,11 @@ from in place of a mesh's bounding info) to the bit against Babylon's
 floats — over every kit and scatter kind at seeded OFF-identity transforms,
 which is the arm no round's build exercises (its visuals are at identity) and
 which `merge:hash --editor` alone covered until the editor's retirement
-(`BABYLON_EXIT.md` X5.3a); `--perturb` is its negative test. It runs until X6.1.
+(`BABYLON_EXIT.md` X5.3a) — and holds `worldMatrixOf` to Babylon's
+`TransformNode.computeWorldMatrix` over every one of those parts and seeded
+parent chains, the WALK (Euler to quaternion, the parent multiplied in) that
+`math-check.mjs`'s primitives do not cover; `--perturb` is its negative test
+for both halves. It runs until X6.1.
 **The body sweep is a third copy**:
 `src/world/ellipsoidSweep.ts` is Babylon 9.28's `moveWithCollisions` — the
 collider's triangle test, its response and the coordinator's retry loop —

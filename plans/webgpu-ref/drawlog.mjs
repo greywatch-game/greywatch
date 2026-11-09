@@ -30,7 +30,16 @@
  *   (`createComputeEffect`) the same. What was compiled before the probe
  *   could hook the engine is `compiledAtBoot`, the cache's keys at that moment.
  * - **`meshes`**: the sizes `scene.meshes` held at a frame's end, and the
- *   folded names of what it held, every twentieth frame of the class.
+ *   folded names of what it held (each name's largest count), read on the
+ *   first frame of every visit to the class and on every frame its size
+ *   moved — never on a clock, which a two-frame state (the card over the
+ *   editor's build) is hit or missed by as the machine's pace decides.
+ *
+ * **A draw between frames** — issued after one frame's end and before the
+ * next's begin, as a render target rendered from a promise would be — is
+ * folded into a class of its own, `between frames`, rather than cleared
+ * unread; a session that issues none has no such class. (A compile there is
+ * filed under the class of the frame before it.)
  *
  * A key's entry is the SET of per-frame counts it took and whether it was
  * there on every frame of the class (`always`) — never a total, which rides
@@ -122,6 +131,8 @@ function installHooks() {
     frames: {},
     cls: null,
     frameNo: 0,
+    visit: true,
+    lastSize: -1,
     draw: new Map(),
     group0: new Map(),
     meshCtx: null,
@@ -130,6 +141,8 @@ function installHooks() {
   });
   const classOf = (c) =>
     (L.classes[c] ??= { draws: {}, group0: {}, compiles: {}, computeCompiles: {}, meshes: { sizes: [], names: {} } });
+  /** The class of what was drawn between one frame's end and the next's begin. */
+  const BETWEEN = "between frames";
 
   // A building card raised from the EDITOR is its own class (the header).
   let lastSettled = "boot";
@@ -141,13 +154,6 @@ function installHooks() {
     }
     return lastSettled === "editor" ? "loading (from the editor)" : "loading";
   };
-  e.onBeginFrameObservable.add(() => {
-    L.cls = classNow();
-    L.frames[L.cls] = (L.frames[L.cls] ?? 0) + 1;
-    L.frameNo++;
-    L.draw.clear();
-    L.group0.clear();
-  });
   // A frame's counts, folded into its class: the SET of per-frame counts each
   // key took, and on how many frames it appeared (`always` at the end).
   const fold1 = (bucket, counts) => {
@@ -157,14 +163,38 @@ function installHooks() {
       r.frames++;
     }
   };
+  e.onBeginFrameObservable.add(() => {
+    // Whatever was drawn since the last frame ENDED (a render target rendered
+    // from a promise, say) is outside every frame: it is folded into a class
+    // of its own rather than cleared unread, or it is a draw no log shows.
+    if (L.draw.size > 0 || L.group0.size > 0) {
+      const b = classOf(BETWEEN);
+      L.frames[BETWEEN] = (L.frames[BETWEEN] ?? 0) + 1;
+      fold1(b.draws, L.draw);
+      fold1(b.group0, L.group0);
+      L.draw.clear();
+      L.group0.clear();
+    }
+    const cls = classNow();
+    if (cls !== L.cls) L.visit = true;
+    L.cls = cls;
+    L.frames[L.cls] = (L.frames[L.cls] ?? 0) + 1;
+    L.frameNo++;
+  });
   e.onEndFrameObservable.add(() => {
     if (L.cls === null) return;
     const c = classOf(L.cls);
     fold1(c.draws, L.draw);
     fold1(c.group0, L.group0);
+    L.draw.clear();
+    L.group0.clear();
     const n = scene.meshes.length;
     if (!c.meshes.sizes.includes(n)) c.meshes.sizes.push(n);
-    if (L.frameNo % 20 === 0) {
+    // The names are read on a visit's first frame and on every frame the
+    // count moved, never on a clock: a sample keyed to the session's frame
+    // number lands in a two-frame state (the card over the editor's build) or
+    // misses it as the machine's pace decides, and the log stops repeating.
+    if (L.visit || n !== L.lastSize) {
       const names = {};
       for (const m of scene.meshes) {
         const k = fold(m.name);
@@ -172,6 +202,8 @@ function installHooks() {
       }
       for (const [k, v] of Object.entries(names)) c.meshes.names[k] = Math.max(c.meshes.names[k] ?? 0, v);
     }
+    L.visit = false;
+    L.lastSize = n;
   });
 
   const bump = (map, key) => map.set(key, (map.get(key) ?? 0) + 1);
@@ -185,8 +217,10 @@ function installHooks() {
     bump(L.draw, key);
     return draw.apply(this, a);
   };
-  // `Mesh.render`, found on the prototype chain of a mesh the scene holds (a
-  // collider is always there), so a draw inside it is named by its mesh.
+  // `Mesh.render`, found on the prototype chain of a mesh the scene holds —
+  // at boot, on the menu, that is `localShadowProxy` (there is no map yet, so
+  // no collider), and any `Mesh` serves, since the hook is on the prototype —
+  // so a draw inside it is named by its mesh.
   const anyMesh = scene.meshes[0];
   if (anyMesh) {
     let proto = Object.getPrototypeOf(anyMesh);

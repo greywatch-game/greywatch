@@ -125,12 +125,13 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   DEV-only maps included
   check-maps.mjs              # BUILD GATE (`npm run maps:check`): re-runs
                               #   every shipped map's generator with `--out`
-                              #   into scratch, all seven at once, and refuses
-                              #   a layout.ts or heights.ts that differs from
-                              #   the committed file by one byte (line endings
-                              #   aside), naming the map, the file and the
-                              #   first line. A map is authored in its
-                              #   generator only (BABYLON_EXIT.md X5.3)
+                              #   into scratch, every map in MAPS at once, and
+                              #   refuses a layout.ts or heights.ts that
+                              #   differs from the committed file by one byte
+                              #   (line endings aside), naming the map, the
+                              #   file and the first line. A map is authored in
+                              #   its generator only (BABYLON_EXIT.md X5.3), so
+                              #   a new map owes one, or the build fails
   check-deep-imports.mjs      # BUILD GATE: refuses a deep static import into
                               #   @babylonjs/core under src/ and main.ts — an
                               #   absolute rule tsc cannot see
@@ -254,8 +255,12 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   kit and scatter kind's parts at seeded
                               #   OFF-identity transforms — the arm no round's
                               #   build reaches, merge:hash --editor's before
-                              #   the editor went. `--perturb` is the negative
-                              #   test. Until X6.1. Not a gate
+                              #   the editor went — and parts.ts'
+                              #   worldMatrixOf against TransformNode's
+                              #   computeWorldMatrix over those parts and
+                              #   seeded parent chains (`--chains`). `--perturb`
+                              #   is the negative test of both. Until X6.1.
+                              #   Not a gate
   sweep-check.mjs             # `node scripts/sweep-check.mjs [map...]`: moves
                               #   the player and every hull kind's ellipsoid by
                               #   Babylon's moveWithCollisions and by the
@@ -310,9 +315,10 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   editor edits, and owes the collision rebake
                               #   of that map and `npm run parity`. `--probe`,
                               #   `--refusals`, `--claims`, `--dry`. Every one
-                              #   of the seven takes `--out <dir>`, writing the
-                              #   two files there and nothing in src/ (how
-                              #   check-maps.mjs re-runs it)
+                              #   of the seven takes `--out <dir>` (or
+                              #   `--out=<dir>`), writing the two files there
+                              #   and nothing in src/ (how check-maps.mjs
+                              #   re-runs it); a bare `--out` is refused
   generate-greyfen.mjs        # `npm run greyfen`: the same for the jungle
                               #   valley, plus `--at`/`--point` (the floor over
                               #   a box or at one spot) and `--stands` (how the

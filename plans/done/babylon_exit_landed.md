@@ -10722,7 +10722,7 @@ beside the gizmo note in `docs/rendering.md` and in `PostPasses`' header; X5.3 a
 **Measured**: `post.mjs --against` b1203cc's log, both pages: equal, 30,073 values a page, nothing
 excused. Typecheck, build, corecheck and parity pass.
 
-### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it) — X5.3a **LANDED** (f51b043)
+### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it) — X5.3a **LANDED** (f51b043, its review HASHREV)
 
 The plan's `BABYLON_EXIT.md` holds X5.3's brief, its ONE RULE, the step's own rule on retiring
 an oracle, "Every sub-step owes" and the five sub-steps.
@@ -10828,3 +10828,60 @@ tree's `ref/`.
   corecheck, parity, `gate` (seven maps clean) and `shaders` (clean on seven) pass.
   **Not run**: a server's match in a browser (the live checks are the page's own match), the
   phone.
+
+**Its review** (HASHREV; 2026-11-09; no change to the game: the draw log, `merge:hash`'s
+comparator, the bounds check, the generators' `--out`, comments and documents; nothing under
+`src/`) found one bug and nine minor points, each checked against the tree first.
+
+- **The draw log did not repeat** (the bug). `meshes.names` was read on the session's
+  `frameNo % 20`, so whether the card over the editor's build (`loading (from the editor)`, 47
+  frames, the editor's meshes under it for about two) was sampled with them was the machine's
+  pace: the reviewer's two runs differed at 257 paths under its `meshes/names`, where X5.3a's own
+  two had happened to agree. The names are now read on the first frame of every visit to a class
+  and on every frame `scene.meshes`' size moved, never on a clock. **Measured**: three runs at
+  HEAD in separate processes, pairwise equal (`playing` 7,600, 7,095 and 6,472 frames); the
+  BEFORE re-taken at fba1119 with the fixed script (copied into the BEFORE worktree
+  `greywatch-2-before-x53a` for the run and removed after, the worktree left clean) equal to all
+  three, and a fourth run at HEAD, through the script's own `--against`, equal to it.
+  **X5.3's draw-log BEFORE is that log**, at
+  `C:\Users\chris\AppData\Local\Temp\claude\C--Users-chris-workspace-greywatch-2\0e8fb006-64f2-403c-a508-261cf7d1e7fd\scratchpad\x53a-fix\dl-before-fba1119.json`, for X5.3b on to compare with (`--against=`); if the
+  scratchpad has gone, re-take it in that worktree with the current script the same way.
+- **A draw between frames** (after one frame's `onEndFrame`, before the next's
+  `onBeginFrame`: a render target rendered from a promise) was cleared unread, the one way the
+  log could pass a regression. It is folded into a class of its own, `between frames`, which no
+  run here has. The `Mesh.render` hook's comment is corrected: at boot `scene.meshes[0]` is
+  `localShadowProxy`, there being no map and so no collider.
+- **`merge:hash`'s comparator names a list's FIRST differing entry** (`coldharbour.boxGroups[12]`)
+  and both lengths when they moved, where it printed `changed`, so the header's "a difference
+  names which" holds (X5.3e will want it). Checked on a doctored fingerprint (`boxGroups[12]`,
+  `rayGroups[3]`, `terrainGeometry` one short): three lines, naming 12, 3 and 23 with 24 entries
+  to 23; the fingerprint against itself, none. `--against` fba1119's baseline: identical on eight
+  maps.
+- **The bounds check gains a MATRIX half**: `worldMatrixOf` against Babylon's
+  `TransformNode.computeWorldMatrix` (a mirrored chain, field for field), over every part checked
+  (24,270) and 500 seeded parent chains one to four deep (1,248 nodes; Euler and quaternion turns,
+  zero and negative scale axes), sixteen floats by `Object.is` — the parent walk `math-check`
+  does not cover and `merge:hash --editor` covered by implication; its header's "composition is
+  `math-check`'s to prove" is corrected. **Measured**: 25,518 matrices equal, beside the 145,620
+  bounds; `--perturb` moves the chain ROOT's X by the same millimetre: 25,518 of 25,518 caught,
+  and 145,620 of 145,620 bounds.
+- **The generators take `--out=<dir>` as well as `--out <dir>`**, and refuse an `--out` naming
+  no directory (exit 1) where the `=` form fell back to overwriting `src/world/<map>/`. All
+  seven run both ways: the same bytes, `--out` and `--out=` alone refused, `git status` clean
+  under `src/`.
+- **Documents**: `CLAUDE.md` and `docs/editor.md` say an `F2` save now fails `npm run build`
+  (`maps:check`) until it is folded into its generator; `CLAUDE.md`'s "The map is data" and
+  `docs/world.md` that a new map owes a generator taking `--out`, or the build fails on its row;
+  "all seven" in `check-maps.mjs`, `docs/build.md` and `FILES.md` is every map in `MAPS`;
+  `CLAUDE.md`'s build line names `check-proving`; X5.3's "What it is today" says Babylon draws
+  nothing in a round.
+- **Owed onward** (carried, not decided): what X5.3d's "DEV counter of Babylon effect compiles
+  must read 0" counts. `WebGPUEngine` compiles `clearQuad` at its construction — the ENGINE's
+  own, which no step deletes — and `LocalShadows` compiles `localShadowClear` at boot until X5.3d
+  deletes it; the draw log files both as `compiledAtBoot`, made before its hooks, and compares
+  them. **X5.3d's counter counts the compiles AFTER the engine's construction**, `clearQuad`
+  named as the engine's.
+
+**Gates**: typecheck, build (`check-maps` and `check-proving` in it), corecheck, parity,
+`maps:check`, the bounds check and `--perturb`, `merge:hash --against` fba1119's baseline, the
+draw log as above. Nothing under `src/` moved, so the bank was not re-run.

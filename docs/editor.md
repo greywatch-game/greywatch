@@ -252,7 +252,11 @@ field still equal to what was loaded re-emits its **original source token**, whi
 how `TERRACE_H` and `Math.PI / 2` survive on a rewritten line (comparison is against
 a deep snapshot taken when the editor opened, so nothing ever evaluates those
 expressions); a **deleted** entry's line goes with it and nothing around it moves;
-an **added** entry is written fresh at the end of its array.
+an **added** entry is written fresh at the end of its array. **And a save now
+FAILS `npm run build`** until the same change is folded into the map's generator
+and re-run: `maps:check` holds every committed `layout.ts` and `heights.ts` to
+what its generator writes, the generators being the only way to author a map
+(`BABYLON_EXIT.md` X5.3, `docs/build.md`).
 
 **A `LayoutSaver` is bound to ONE map, by id, and checks that it is.** The id picks
 the source text (out of an `import.meta.glob` of every `world/*/layout.ts` — a `?raw`

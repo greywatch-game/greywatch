@@ -4592,7 +4592,7 @@ loss**: Babylon's post chain rebuilds after a loss today and ours will not
   header; `FINDINGS.md` 5, 16 and 52; the gate note after Phase 4 (above) and the
   "Contracts this plan rewrites" rows for the glow and `shaderLanguage`.
 
-### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it; the split was proposed by a planning agent's read at b3cea5d) — X5.3a **LANDED** (f51b043)
+### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it; the split was proposed by a planning agent's read at b3cea5d) — X5.3a **LANDED** (f51b043, its review HASHREV)
 
 **This replaces the entry that ported the editor.** That entry put `F2`'s editor on our
 renderer: its unmerged build drawn per item, picking against `RayWorld`, our own move and
@@ -4641,8 +4641,9 @@ the owner decided it on 2026-11-08 (row "X5.3, retire the editor"):
 
 **What it is today** (a read of the code at b3cea5d):
 
-- **The Phase 4 gate measured that in a round, in every state, Babylon draws the post
-  chain and not one mesh.** Group 0 is never visited, so items 6 and 10 never fire.
+- **The Phase 4 gate measured that in a round, in every state, Babylon draws not one
+  mesh, and since X5.2d made the post chain ours it draws nothing at all** (X5.3a's draw
+  log). Group 0 is never visited, so items 6 and 10 never fire.
   `localShadowProxy` is the one mesh held for drawing, and nothing draws it.
 - **An editor build is the stated exception.** Babylon draws it whole: 356 mesh keys on
   Coldharbour and 423 on Cinderhaven, into the frame, the glow's mask and the lamps'
@@ -4789,6 +4790,21 @@ reviews: the first is the feature, the second is the renderer. The colliders com
   every state but `F2` and the card raised over the editor's build, Babylon draws nothing, visits
   no group 0 and compiles no effect (the post chain has been ours since X5.2d), so "draws the post
   chain alone" above is "draws nothing". **Not run**: a server's match in a browser, the phone.
+
+  **Its review** (HASHREV; 2026-11-09; no change to the game; the full note is in
+  `plans/done/babylon_exit_landed.md`) found one bug and nine minor points. **The bug**: the draw
+  log's mesh names were read on the session's `frameNo % 20`, so the two-frame card over the
+  editor's build was sampled or not as the machine's pace decided; they are now read on a class
+  visit's first frame and on every size change. **Measured**: three runs at HEAD pairwise equal and
+  the BEFORE re-taken at fba1119 with the fixed script equal to all three; X5.3's draw-log BEFORE is
+  that log (the note says where). Also: a draw between frames is logged (`between frames`) rather
+  than cleared unread; `merge:hash` names a list's first differing entry; the bounds check holds
+  `worldMatrixOf` to `TransformNode.computeWorldMatrix` over every part and 500 seeded parent
+  chains (25,518 equal, all caught under `--perturb`); the generators take `--out=<dir>` and
+  refuse a bare `--out`; the documents say an `F2` save fails the build and a new map owes a
+  generator. **Owed onward**: X5.3d's "DEV counter of Babylon effect compiles" counts the compiles
+  after the engine's construction, `clearQuad` being the engine's own (`compiledAtBoot` in the
+  draw log, beside `localShadowClear`, which X5.3d deletes).
 
 - **X5.3b — the viewer** (no change to a round) — **S–M**.
   - **Where it lives** (row "X5.3, the viewer's key and reach"): `src/viewer/`, DEV only,

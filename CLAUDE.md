@@ -142,7 +142,8 @@ npm run dev        # Vite dev server
 npm run typecheck  # tsc --noEmit (strict, noUnusedLocals/Parameters)
 npm run build      # gates (the collision bake current, maps:check, the
                    #   import rules, audio) + typecheck + production build
-                   #   to dist/
+                   #   to dist/ + the proving ground's sentinel
+                   #   (check-proving, after it)
 npm run corecheck  # the ONE test: the core's scoring and person rules off its
                    #   events with no Game, then through a real Match
 npm run preview    # serve the production build
@@ -702,10 +703,13 @@ special-cases nothing, so **a second map is one new layout file plus an
 and the environment, so nothing countable is stated twice. The two halves are
 paired in `src/world/maps.ts`, which with `vite.config.ts`'s `WRITABLE` table and
 `scripts/collision-hash.mjs`'s `MAPS` are the only existing files a new map
-touches, and **nothing outside `maps.ts` may import a map's own modules**. A
-`MapDef` must be a **module constant**, `Game.mapDef` may only be written from
-`menu`, and **scatter placement is seeded — never call `Math.random()` in
-world-building code**, or the nav graph differs between page loads.
+touches, and **nothing outside `maps.ts` may import a map's own modules**. **A
+new map also owes a GENERATOR** (`scripts/generate-<id>.mjs`, taking `--out
+<dir>`): `maps:check` re-runs one for every row in `MAPS` and fails the build on
+a map without it. A `MapDef` must be a **module constant**, `Game.mapDef` may
+only be written from `menu`, and **scatter placement is seeded — never call
+`Math.random()` in world-building code**, or the nav graph differs between page
+loads.
 
 **Two of a map's four halves are LAZY imports and neither is on the layout** —
 `MapDef.collision`, which only the server reads, and `MapDef.heights`, the
@@ -755,10 +759,12 @@ the four with vehicles on them**; **Sarab and Cinderhaven are the two with all
 THREE KINDS and the two that are not 8v8** — 24 a side, online and off. **Every
 shipped map is SEEDED by a generator** (the commands above), which CHECKS that
 every front door opens onto a street, a yard or the green, and emits an ordinary
-`layout.ts` the editor patches. **Cinderhaven's rules are general rather than
-details of that map** (`docs/world.md`); the one that reaches outside the world
-layer is that **there is no swimming in this game**, so water anybody must cross
-is walkable and everything else is made steep enough to sever.
+`layout.ts` — which an `F2` save still patches, and which then FAILS `npm run
+build` (`maps:check`) until that edit is folded into the generator and re-run.
+**Cinderhaven's rules are general rather than details of that map**
+(`docs/world.md`); the one that reaches outside the world layer is that **there
+is no swimming in this game**, so water anybody must cross is walkable and
+everything else is made steep enough to sever.
 
 **A ROAD is visual-only and rejects exactly one thing, which is anything that
 GROWS** (`world/roads.ts`, `GameMap.roads`): `MapBuilder` sows no
