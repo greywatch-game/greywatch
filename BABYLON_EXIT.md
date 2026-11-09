@@ -53,7 +53,11 @@ has nothing to revert.
   The bake's staleness guard hashes the layout, not the builders, so a builder
   change arriving by merge is the case it misses. From X1.2 on, any kit change arriving from `develop` is written
   against the old geometry layer. Convert it in the merge commit and prove it
-  with `kit:hash` against `develop`'s version.
+  with `kit:hash` against `develop`'s version. **From X5.3a on, a merge also owes
+  `npm run maps:check`**: `develop` keeps its editor until X6.2, and an `F2` save made
+  there (off-limits since 2026-11-08 as a working rule, row "X5.3, the two comments and
+  `develop`") is a map that no longer reproduces, folded into its generator or dropped
+  in the merge commit.
 - **Tag every phase gate:** `exit-phase-0` through `exit-phase-5`. A tag is a
   known-good point to return to if a phase goes wrong. Moving the branch back
   to one is the user's call, never an agent's.
@@ -92,9 +96,9 @@ then the frame loop itself, at which point taking the frame is mostly deletion.
 | **0. Instruments** | nothing — the oracles this plan needs and the "before" | the bank and the benchmark both reproduce |
 | **1. Data off Babylon types** | math, geometry and the merge become plain arrays | `kit:hash` and `merge:hash` identical, no pixel moved |
 | **2. The simulation off the scene** | sweeps, state, the server, Havok, one core in a Worker | `server/` and the simulation import nothing from Babylon (a build gate says so) |
-| **3. The static world** | our renderer draws blocks, scatter and terrain, in every pass | Babylon builds no mesh in a round for anything our renderer draws (glazing and fires stay Babylon's until X4.6 and X4.4) — met at X3.7b; the world passes Babylon kept for the fallback deleted at X3.7c, but the editor's (X5.3) |
+| **3. The static world** | our renderer draws blocks, scatter and terrain, in every pass | Babylon builds no mesh in a round for anything our renderer draws (glazing and fires stay Babylon's until X4.6 and X4.4) — met at X3.7b; the world passes Babylon kept for the fallback deleted at X3.7c, but the editor's (X5.3d deletes them: the editor is retired, decided 2026-11-08) |
 | **4. Everything else that draws** | bodies, hulls, the viewmodel, effects, sky, water, glass, grass, particles | Babylon's scene draws nothing but the post chain |
-| **5. The frame** | GI compute, the post chain, the editor, the loop | Babylon's engine is not constructed |
+| **5. The frame** | GI compute, the post chain, the editor retired (X5.3, decided 2026-11-08), the loop | Babylon's engine is not constructed |
 | **6. The cut** | the package, the gates, the docs, then the merge | `develop` carries the exit as one merge commit |
 
 ---
@@ -468,7 +472,7 @@ the seam.
 **The end condition reads true** — "Babylon builds no mesh in a round for
 anything our renderer draws" — since X3.7b, and since X3.7c no fallback pass
 of Babylon's is left for a round (the editor's build keeps the generators and
-the lamps' render target, X5.3's). **No phase tag yet**: the phone's
+the lamps' render target, X5.3's — deleted at X5.3d, the editor retired by X5.3, decided 2026-11-08). **No phase tag yet**: the phone's
 follow-up reading owed since X3.3c, and the tag itself, are the user's
 (X3.7c, "Owed onward").
 
@@ -722,7 +726,7 @@ longer draws the palette's main pass while the handover holds it. It still
 BUILDS every one of those meshes, as the fallback each pass hands back to (an
 editor build, `?babylonworld`, a surface ours cannot hold, a loss mid-map).
 Phase 3's end condition is met only once the fallbacks are deleted: X3.7,
-below. Editor builds keep the old path until X5.3. **Since X3.7b** Babylon
+below. Editor builds keep the old path until X5.3 (which retires the editor, deleting that path at X5.3d, decided 2026-11-08). **Since X3.7b** Babylon
 builds no mesh in a round for anything our renderer draws — a round's
 `GameMap.visuals` are the glazing and the fires — `?babylonworld` is gone
 (its last build tagged `exit-babylonworld`), and every former handback is
@@ -731,7 +735,7 @@ fallback machinery is gone for a round: Babylon's `ReflectionProbe` path (the
 default cube one of ours), the emissive palette's Babylon stages and its glow
 mask twin, and every pass's `lose`/`onLost`/`broken` latch (a pass is handed
 its world WITH the install's failure). The editor keeps `ShadowSystem`'s
-generators and `LocalShadows`' render target (X5.3).
+generators and `LocalShadows`' render target (X5.3; deleted at X5.3d, the editor retired by X5.3, decided 2026-11-08).
 
 The full record of all five, with every readback, forced path and review, is
 in [the archive](plans/done/babylon_exit_landed.md).
@@ -745,7 +749,7 @@ in DEV and `merge:hash` refuses it, so it cannot ship. **Kept:** the cel and
 emissive MATERIAL objects, never compiled in a round, which the merge keys on
 and which hold the recipes (Phase 4's); the scatter merged into the block
 ARRAYS (un-merging it is a picture change of its own); `metadata.block` on
-glazing and fires. **Not its:** the editor's path (X5.3), glazing (X4.6),
+glazing and fires. **Not its:** the editor's path (X5.3; retired by X5.3, decided 2026-11-08), glazing (X4.6),
 fires (X4.4), the Material objects (Phase 4), device-loss recovery (X5.4).
 - **X3.7a — the take off the RECORD LANDED** (c52ebb4, review fixes d795e76;
   2026-10-25; no picture change). The handover's verdict and the cull cells'
@@ -779,13 +783,13 @@ fires (X4.4), the Material objects (Phase 4), device-loss recovery (X5.4).
 - the `exit-phase-3` tag and pushing `exit-babylonworld`, both the user's
   call;
 - the forest maps' rise on the phone, `FINDINGS.md` 66;
-- X5.3 deletes what the editor keeps;
+- X5.3 deletes what the editor keeps (X5.3d: the editor is retired rather than ported, decided 2026-11-08);
 - X4.4 uses or deletes the HELD-caster layer (`WorldBlocks.addCaster`,
   `BlockHandover`'s `held`), which no build reaches: every fire is made
   `noShadowCaster` (deleted at X4.4d);
 - a stale comment naming `ReflectionSystem.encloses` stays in
   `src/world/harrowmead/layout.ts`, because the collision bake's staleness
-  guard hashes that file's text and editing it would re-bake.
+  guard hashes that file's text and editing it would re-bake (closed by X5.3a's re-run and re-stamp, decided 2026-11-08).
 
 The full record is in [the archive](plans/done/babylon_exit_landed.md).
 
@@ -877,7 +881,7 @@ under X0.4's floor of 69).
   (`rigJoints.ts`' header) must not be undone to buy it back without a
   measurement**.
 - **The editor draws no soldier**: X5.3 owes it the body draw if it is to
-  show one. `VERIFYING.md`'s soldier-in-a-picture recipe borrows a roster
+  show one. (Moot: the editor is retired by X5.3, decided 2026-11-08; its viewer is laid over a round, whose bodies are the round's.) `VERIFYING.md`'s soldier-in-a-picture recipe borrows a roster
   body, since a rig a script builds is never drawn.
 - The body map's pass is not timed on our side (read as `gpu.frame`). **An
   open question for the owner:** degrade the body map to its `off` state on a
@@ -945,7 +949,7 @@ lamps' atlas were already done (X4.1c).
   ~7.5 MB of JS heap stay resident on every map, armour or not; the lever is
   building them at the first install of a map with armour. Unmeasured on the
   phone.
-- **The editor draws no hull**: X5.3's, as its bodies are.
+- **The editor draws no hull**: X5.3's, as its bodies are. (Moot: the editor is retired by X5.3, decided 2026-11-08; the viewer's hulls are the round's.)
 
 The full record is in [the archive](plans/done/babylon_exit_landed.md).
 
@@ -2030,7 +2034,7 @@ Greyfen, `F2` from the menu and each eye of the map's rows):
   (`repositionScene` returns for any list but placements and scatter, and
   `onDragEnd` rebuilds navigation only), so what is drawn waits for the next tier-3
   (a read of the code).
-- **The glazing is the one world surface here, and it stays Babylon's until X5.3**:
+- **The glazing is the one world surface here, and it stays Babylon's until X5.3** (where it is deleted with the editor, X5.3c: retired by X5.3, decided 2026-11-08):
   179 surfaces on Coldharbour against a round's 78, one mesh per placement PER
   MATERIAL (`PaneBlocks.finish` splits by material after the owner), `backed` on the
   opaque list and see-through on the transparent one, over the default cube. Counted:
@@ -2044,7 +2048,7 @@ Greyfen, `F2` from the menu and each eye of the map's rows):
   proxies** (`editor/proxies.ts`, `ed-rect`, `-frame`, `-ring`, `-pole`, `-arrow`), every
   one of them blended and usually the larger part of it: at Coldharbour's eyes, 69
   against 8 panes at `menu`, 150 against 89 at `avenue`, 38 against 4 at `crossing`,
-  and on Greyfen, with no glass at all, 26 to 414 alone. X5.3 inherits both.
+  and on Greyfen, with no glass at all, 26 to 414 alone. X5.3 inherits both (both deleted with the editor at X5.3c: retired by X5.3, decided 2026-11-08).
 
 - **X4.6a — the bank sees what it does not yet LANDED** (df74bd4; 2026-11-03; no change
   to the game; its full note is in `plans/done/babylon_exit_landed.md`). **Nine rows**,
@@ -2143,7 +2147,7 @@ Greyfen, `F2` from the menu and each eye of the map's rows):
   "no change to the picture"**: Greyfen's frames at its six eyes against 21839d1, 302 px by 94/255 at `crossing`,
   47 by 58/255 at the menu's, 10 by 21/255 at `ground`, 5 by 6/255 at `marsh`, `canopy` byte-equal, `treeline`
   noise on one tree, and with the field hidden all six byte-equal, so it is the blades' place against the world on
-  Babylon's list, and it stays until X5.3. Bank by `exact.mjs` against a BEFORE at 1d8f393: all 136 old rows byte-equal, no flake coming up, the new row new, the same 34 stale rows red at the same means, no device lost; the row against its truth 27 px by 54/255, through its bound, and a frame over the bound exits 1. Typecheck, build,
+  Babylon's list, and it stays until X5.3 (where it ends by deletion: the editor is retired, decided 2026-11-08). Bank by `exact.mjs` against a BEFORE at 1d8f393: all 136 old rows byte-equal, no flake coming up, the new row new, the same 34 stale rows red at the same means, no device lost; the row against its truth 27 px by 54/255, through its bound, and a frame over the bound exits 1. Typecheck, build,
   corecheck and parity pass. **Not verified**: a server's match in a browser, the phone.
 - **X4.6d — the water LANDED** (5f26b00; 2026-11-04; no change to the picture but the accepted flips ENDING, in
   a round; its full note and first brief are in `plans/done/babylon_exit_landed.md`). No `water` or `waterFar` mesh
@@ -2182,7 +2186,7 @@ Greyfen, `F2` from the menu and each eye of the map's rows):
   2026-11-05; no change to the picture in the first two, the owner's decided one in the third; the full note and the
   brief are in `plans/done/babylon_exit_landed.md`). **Babylon draws nothing in a round** — its opaque and transparent
   lists are empty and its active list too in a live Coldharbour round; an editor build is Babylon's (its glazing until
-  X5.3). a3d24c6: `render/GlassDraw.ts` draws the `backed` pane groups under their own world matrices (the cel stage's
+  X5.3; deleted with the editor at X5.3c, retired by X5.3, decided 2026-11-08). a3d24c6: `render/GlassDraw.ts` draws the `backed` pane groups under their own world matrices (the cel stage's
   placed twin, the matrix read whole), nearest first AHEAD of everything of ours at `"beforeAlphaTest"`. ccd194a: the
   see-through groups and every spark, dust disc, scorch and blob (`render/FadeDraw.ts`, `entities/fades.ts`) in ONE
   back-to-front run of ours (`render/FarthestRun.ts`) at `"beforeBlended"` behind the moon, farthest first by Babylon's
@@ -2717,7 +2721,7 @@ each as stated):
   `CylinderParticleEmitter` are imported nowhere, `scene.particleSystems` is empty in a
   round and an editor build, the seam's particle observable and its line on the public
   list are gone (no numbered item retires: item 6 stays, for the moon and the one run
-  while an editor build's group is visited, until X5.3), `CLAUDE.md`'s gradient rule is
+  while an editor build's group is visited, until X5.3 — item 6 retires at X5.3d, the editor retired, decided 2026-11-08), `CLAUDE.md`'s gradient rule is
   deleted, and X4.7c's recorded editor-order difference is gone. **Measured**: the bank,
   all 143 rows, by `exact.mjs` against a BEFORE at 9d5ab4a: **143 of 143 byte-equal**
   (no flake came up; the same 34 stale rows red at the same means); each wash row holds
@@ -2786,7 +2790,7 @@ each as stated):
   editor build; `GPUParticleSystem` and `CylinderParticleEmitter` are imported nowhere; the
   seam's particle observable (`onMainPass`) and its line on the public list go, and item 6's
   text says what still hangs there (the moon and the one run, while an editor build's group
-  is visited, until X5.3). **Read first:** X4.7a's and X4.7c's notes; `RotorWash.ts`, all of
+  is visited, until X5.3 — X5.3d, decided 2026-11-08). **Read first:** X4.7a's and X4.7c's notes; `RotorWash.ts`, all of
   it (the palette, `paint`, `buildRing`); `config/vehicles.ts`'s `wash`; `docs/vehicles.md`,
   "The dust under a rotor"; `Game.fadeHulls` and X4.2d's review's note (the fade and its
   `Object.is` check); `docs/rendering.md` on the water's hole (the sites). **Verify:**
@@ -2854,7 +2858,7 @@ each as stated):
   build, and read the Verify as measured in full.
 
 **Gate after Phase 4:** in a round, Babylon's scene draws only the post chain (an
-editor build draws whole until X5.3). That is true of the blob shadows only because
+editor build draws whole until X5.3, which retires the editor, decided 2026-11-08). That is true of the blob shadows only because
 X4.6e now carries them, and checked rather than assumed: `surfaces.mjs` on the rows
 and a live round's `render` log, since a class no frozen frame raises is in no row.
 Read `babylonSeam.ts`'s list against PERF_PLAN B4's criterion. If the count of
@@ -2900,7 +2904,7 @@ and nothing else, on every bank row and through three live rounds:
   shadow generators (`moonShadow`, `nearShadow`, `foliageDepth`, and `flashDepth` on
   Cinderhaven), beside the same post chain. **So does the building card raised from it**,
   for the two frames before `buildRound` tears the editor's build down (4,504 and 9,130
-  draws): the editor's world, not a round's, X5.3's with the rest. A round's own card
+  draws): the editor's world, not a round's, X5.3's with the rest (retired by X5.3, decided 2026-11-08). A round's own card
   draws no mesh.
 - **The seam's list against B4.** Ten numbered internals, as at the end of Phase 3
   (item 10 came at X3.5; c4d3021 had ten): Phase 4 added none and retired none (rule 4).
@@ -2909,12 +2913,12 @@ and nothing else, on every bank row and through three live rounds:
   (the open pass, the bundle list, its attachments, the target and its flip) serve
   whichever Babylon pass is open, which is the main pass and the glow's mask; 6 and 10
   (the group's `beforeBlended` and `beforeAlphaTest` points) serve the main pass's group
-  and, since X4.7d, only in an editor build. Each retires: 6 and 10 at X5.3; 2 to 5 at
+  and, since X4.7d, only in an editor build. Each retires: 6 and 10 at X5.3 (X5.3d, decided 2026-11-08); 2 to 5 at
   X5.4, for the mask and the main pass together (this note first said "for the mask at
   X5.2": corrected 2026-11-07, row "X5.2, the mask" — moving the mask alone retires no
   item while the main pass still uses them, so the owner kept the mask Babylon's through
   X5.2); 1 and 9 at X5.4; 7 and 8 piecemeal —
-  `GiVolume`'s seven textures at X5.1, the editor's shadow generators' maps at X5.3, the
+  `GiVolume`'s seven textures at X5.1, the editor's shadow generators' maps at X5.3 (X5.3d), the
   water's foam at X5.4 — and the canvas-made textures read through `hostTexture` (the
   mote, the puff, the scorch, the blob, the sky's, the cel recipes' own) at no named step
   before X6.1 deletes the file. Outside the seam, its header's four touches in three
@@ -2959,7 +2963,7 @@ in "Decisions that are yours"): **no GI in an editor build until X5.3** — Baby
 materials sample nothing of ours, bound to what GI `off` gives them (1×1×1 placeholders of
 Babylon's own and a volume that says "no answer"), a dev-only picture change in a commit of
 its own made before the move, so the move is graded against it; the editor regains GI when
-X5.3 draws its world with our renderer. The editor's frames stay part of the oracle.
+X5.3 draws its world with our renderer. The editor's frames stay part of the oracle. (Moot: X5.3 retires the editor instead, decided 2026-11-08, row "X5.3, retire the editor": the viewer is the round, with GI, and the editor's frames are retired as instruments at X5.3c.)
 **No sub-step is meant to change the picture**: each is proven against
 a BEFORE at its parent and lands on its own; a difference goes in a commit of its own
 whose subject starts `Picture change:`, only by the owner's decision, with the bank's
@@ -3261,7 +3265,7 @@ correction marked "X5.1a"):
 
   **Open questions, the owner's, before X5.1b is handed over** (each a row in "Decisions
   that are yours") — **all three ANSWERED by the owner on 2026-11-07**: row 1 no GI in an
-  editor build until X5.3; row 2 the host's sampler, always; row 3 option (a), `serial` and
+  editor build until X5.3 (moot since X5.3 retires the editor, decided 2026-11-08); row 2 the host's sampler, always; row 3 option (a), `serial` and
   the bank's rows, the trace unchanged. As they were asked:
   - **The editor's seven**: a wrapped view of ours for Babylon's cel materials (rule 5,
     recommended), or an editor build with no GI until X5.3 (a dev-only picture change)?
@@ -3286,7 +3290,7 @@ correction marked "X5.1a"):
 
   **X5.1b LANDED** (e9a39d6, its picture change 9b9d205, the owner's answers recorded in
   14df397; 2026-11-07). **The picture change first** (9b9d205, dev-only, the owner's row 1):
-  every Babylon cel material — an editor build's world, until X5.3 — is bound once, on
+  every Babylon cel material — an editor build's world, until X5.3 (retired by X5.3, decided 2026-11-08) — is bound once, on
   creation, to GI `off` (`CelMaterialFactory.babylonGi`: seven 1x1x1 `RawTexture3D`s of the
   factory's own, made as `GiVolume` made them at `off`, `giShade.w` 0, the lightning fill the
   live `giExtra`), so `setGi` walks no material. Its numbers (`F2`, the first four distinct
@@ -3393,7 +3397,7 @@ correction marked "X5.1a"):
   resources stay undestroyed, the CPU half having already advanced: the brief's "fail
   loudly" branch (`GiCompute`'s header). X5.4's list no longer says nothing of Babylon's
   samples the cloud field (`Volumetrics` binds it until X5.2, an editor build's materials
-  until X5.3). `FILES.md`'s `GiVolume` and `GiCompute` lines made accurate, and
+  until X5.3, which retires the editor, decided 2026-11-08). `FILES.md`'s `GiVolume` and `GiCompute` lines made accurate, and
   `FINDINGS.md` 16's `GiVolume` bullet DELETED rather than marked settled (its numbers are
   this entry's and the note's; the entry's status says one thing is left). **The
   instrument**: the harness's arm for ours trusted `GiCompute.recorded` whenever it was a
@@ -4536,7 +4540,7 @@ owes" below.
   camera from the scene's render end to the chain's record and off between, which rests on nothing
   rendering the main camera after `onAfterCameraRender` but the gizmo layer, no later
   `onAfterRenderObservable` observer rendering it, and one `scene.render()` a tick — stated as a rule
-  beside the gizmo note in `docs/rendering.md` and in `PostPasses`' header; X5.3 and X5.4 retire it.
+  beside the gizmo note in `docs/rendering.md` and in `PostPasses`' header; X5.3 and X5.4 retire it (X5.3d retires the window and the rule, the gizmo layer having gone with the editor, decided 2026-11-08; X5.4 deletes the field with the frame).
   **Measured**: `post.mjs --against` b1203cc's log, both pages: equal, 30,073 values a page, nothing
   excused. Typecheck, build, corecheck and parity pass.
 
@@ -4568,7 +4572,8 @@ loss**: Babylon's post chain rebuilds after a loss today and ours will not
   its pipelines declared on `Game.roundPipelines`; `pipelines.mjs hollowmere`
   and `pipelines.mjs coldharbour --round`; `surfaces.mjs` (Babylon's post draws
   falling away as passes move); `census --against`; the editor's frames at
-  X5.1b's eight eyes; live: every post setting toggled in play, a rung change, a
+  X5.1b's eight eyes (retired as an instrument at X5.3c, the editor retired by X5.3,
+  decided 2026-11-08); live: every post setting toggled in play, a rung change, a
   render-scale change, a window resize, a teardown, a map change, `F2`;
   `?profile&gpu`, `render` and `gpu.frame` within 8%; typecheck, build,
   corecheck, parity, `gate`, `shaders`; each new module's contract header and
@@ -4587,39 +4592,498 @@ loss**: Babylon's post chain rebuilds after a loss today and ours will not
   header; `FINDINGS.md` 5, 16 and 52; the gate note after Phase 4 (above) and the
   "Contracts this plan rewrites" rows for the glow and `shaderLanguage`.
 
-### X5.3 — The editor — **M–L**
+### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it; the split was proposed by a planning agent's read at b3cea5d)
 
-`F2`'s editor on our renderer:
-- its unmerged build drawn per item
-- picking against `RayWorld` and item bounds instead of `scene.pick`
-- our own move and Y-rotate gizmos (today `PositionGizmo`, `RotationGizmo`,
-  `UtilityLayerRenderer`)
-- the free-fly camera, `navOverlay`, the proxies and the terrain brush
+**This replaces the entry that ported the editor.** That entry put `F2`'s editor on our
+renderer: its unmerged build drawn per item, picking against `RayWorld`, our own move and
+rotate gizmos, the free-fly camera, `navOverlay`, the proxies and the terrain brush. The
+owner proposed retiring it instead. The orchestrating session recommended retirement, and
+the owner decided it on 2026-11-08 (row "X5.3, retire the editor"):
 
-It stays behind its one dynamic `import()` in a DEV branch.
+- **The generators are the only way to author a map.** A change goes into a generator's
+  design section, its parameters or its seed, and is re-run. `npm run maps:check` fails
+  the build on an output nobody re-ran (row "X5.3, the generators only"), and there is no
+  overrides file.
+- **A small dev-only VIEWER replaces the editor**: a free-fly camera, the nav graph and
+  the layout's proxies. It is laid over the ROUND as a lid, so it is drawn by the round's
+  own path, and nothing needs porting.
+- **Deleted:** picking, gizmos, the terrain brush, path-road laying, saving (the floor
+  picker and `saveEnvironment` with it, row "X5.3, environment tuning"), source scanning,
+  the unmerged build, every Babylon draw path kept only for the editor, and the collider
+  MESHES (row "X5.3, the collider meshes").
 
-- **Inherits from X3.7:** the editor's build is the last Babylon draws whole —
-  every mesh, `ShadowSystem`'s generators and `LocalShadows`' render target,
-  kept for it alone; X5.3 deletes them.
-- **Inherits from X4.6e:** the editor's glazing, one Babylon mesh per placement per
-  material over the default cube; `wrapCubeTexture` and `setDefaultReflection`, kept
-  for that alone; the seam's item 6; and the `ed-*` proxies, every one blended, on
-  that same transparent list. **X4.6c and X4.6d leave it no grass, turf or water**
-  (decided 2026-11-03), so what is left to draw per item here is the world surfaces
-  and the proxies.
-- **Inherits from X4.6d: an editor build's blades and water do not interleave with its world.** Its
-  whole world is on Babylon's opaque list and the one run stands behind that list, so anything that
-  sorted ahead of the run's surfaces and ties with them flips. Measured against 21839d1 at X4.6d: Greyfen's `crossing`, menu, `ground`, `marsh` and `canopy` byte-equal, Sarab `wadi` 456 px by 91/255, `shelf` 17 by 35/255, `menu` 2 by 1/255, and Harrowmead `ground` 2 by 1/255 (X4.6d's note). Dev-only and recorded; moving
-  the editor's world here is what ends it.
-- **Verify:** select, drag, rotate, sculpt, lay a path road, save — and
-  confirm the save patches `layout.ts` byte for byte for untouched entries
-  (`docs/editor.md`). `merge:hash --editor`.
+**Why** (the planning read at b3cea5d, the owner's reasons measured where they could be):
+
+- **Every shipped map is seeded by a generator**, and re-seeding discards editor edits.
+- **No map's `layout.ts` has been authored by hand since the generators landed** (late
+  September to early October 2026). All seven generators, run with no arguments in a clean
+  worktree:
+  - reproduce their committed `heights.ts` byte for byte;
+  - reproduce their `layout.ts` byte for byte on five maps;
+  - differ on the other two in comment text alone: on Sarab, a hand-added grass comment
+    (d2656f3) that the generator does not emit; on Harrowmead, the stale
+    `ReflectionSystem.encloses`, which c4d3021 corrected in the generator and left in the
+    layout so as not to re-bake (X3.7's owed item);
+  - run in about a second each, with no GPU, and give the same bytes on a second run.
+
+  The commits that read like `F2` saves (6f5f278, 74551de, f94eb88, 512ad04) all predate
+  the generator that re-seeded their map.
+- **The editor is 7,017 lines in `src/editor/`, and it is what keeps alive:**
+  - a second build path;
+  - the last Babylon-drawn world: Babylon's cel materials, `ShadowSystem`'s generators,
+    `LocalShadows`' render target, the editor's glazing, `wrapCubeTexture` and
+    `setDefaultReflection`, GI `off`'s placeholders, the fire's Babylon stages, the glow
+    mask's Babylon mesh path, and the seam's items 6 and 10;
+  - the dev write endpoint's map rows;
+  - the source-scan constraint on how `layout.ts` is written;
+  - a verify burden on every exit step (the editor's eight eyes, `merge:hash --editor`,
+    and accepted dev-only editor picture differences).
+
+**What it is today** (a read of the code at b3cea5d):
+
+- **The Phase 4 gate measured that in a round, in every state, Babylon draws the post
+  chain and not one mesh.** Group 0 is never visited, so items 6 and 10 never fire.
+  `localShadowProxy` is the one mesh held for drawing, and nothing draws it.
+- **An editor build is the stated exception.** Babylon draws it whole: 356 mesh keys on
+  Coldharbour and 423 on Cinderhaven, into the frame, the glow's mask and the lamps'
+  atlas, beside its own generators (`moonShadow`, `nearShadow`, `foliageDepth`,
+  `flashDepth`).
+- **So every Babylon path booked below as the editor's is reachable through `F2` alone.**
+  Deleting the editor makes those paths dead code, and deleting dead code moves no
+  picture.
+- **The bank holds no editor row.** The editor's oracles are:
+  - `merge:hash --editor`;
+  - the `--editor` arms of `surfaces.mjs` and `particles.mjs`;
+  - `gi.mjs`'s editor arm, which is on by default;
+  - "the editor's frames at X5.1b's eight eyes", a scratch script (`x51b/edframes.mjs`)
+    that was never committed.
+- **The dev write endpoint is shared.** The audio mixer (`F4`) reads and writes
+  `src/config/mix.ts` through `/__layout`, so the endpoint stays with that one row.
+- **The collider MESHES are the editor's too.** `parts.ts`' header says so ("goes when
+  the editor stops picking meshes"). Every ray and sweep reads the `WorldBox`es. The
+  meshes' only readers are:
+  - the editor's pick;
+  - `GlassFx`'s flag write for that pick;
+  - `WorldCulling`'s hidden set;
+  - `merge:hash`.
+
+  `FINDINGS.md` 26 recorded not building them as unmeasured, at a time when `boxMesh` was
+  669 ms of an install at 1500/0.
+
+**THE ONE RULE FOR EVERY SUB-STEP** (X4.7's, X5.1's and X5.2's, carried verbatim):
+**where a byte-exact port is not reached, STOP and report to the owner with the
+numbers** — the rows that moved, their pixels and worst value, what was tried and what
+each attempt moved. Do not choose a draw point, a blend, a sort, a sampler, a clear, a
+target format or a vertex path that "holds the rows", and do not land a workaround as "no
+change to the picture". **A brief from an orchestrating agent that reads otherwise is
+wrong, and this paragraph wins.** No sub-step is meant to change the picture; a
+difference goes in a commit of its own whose subject starts `Picture change:`, only by
+the owner's decision, with the bank's numbers (rule 2). **No sub-step adds a seam item.**
+
+**And one rule of this step's own.** **Retiring one of the editor's oracles is a deletion
+of INSTRUMENTS, never a picture change.**
+
+- It lands in the commit that deletes what the oracle measured. That commit's subject
+  says "no change to the game", and its body names each oracle retired and cites row
+  "X5.3, retire the editor".
+- An editor build's pictures cease to exist; they do not move.
+- **A ROUND's bytes are never excused by it.** Every round row, every probe log, the
+  round's `merge:hash` and the collision bake are compared against a BEFORE at each
+  parent, exactly as X5.2 compared them.
+
+**Every sub-step owes:**
+
+- **A BYTE comparison of every bank row against a BEFORE at its parent.** Use `exact.mjs`
+  over two `--check --keep` directories, never `--check`'s pass line. Excuse only the
+  known flakes, and follow the Sarab procedure in `exact.mjs`'s header. Repeat it under
+  `--query=volumetrics=low` and `--query=volumetrics=high`. The BEFORE worktree needs its
+  own `npm ci` and a copy of the gitignored `plans/webgpu-ref/ref/`.
+- **The probes against their parent's logs:**
+  - `post.mjs --against`;
+  - `gi.mjs --against`, the parent run with `--no-editor` from X5.3c on;
+  - `surfaces.mjs` on the rows;
+  - `census --against`;
+  - `pipelines.mjs hollowmere` and `pipelines.mjs coldharbour --round`;
+  - every expected difference named (`--ignore`, by path pattern, never read past).
+- **`merge:hash` (the shipped build) `--against` a baseline at its parent.**
+- **From X5.3a on:** `maps:check`, and the draw log against its parent's.
+- **Live:**
+  - a Hollowmere and a Coldharbour round, offline and in a match;
+  - every post setting toggled;
+  - a rung change, a render-scale change and a resize;
+  - a teardown and a map change;
+  - `F2` (from X5.3b on, the viewer).
+- **`?profile&gpu`**, with `render` and `gpu.frame` within 8%.
+- **Typecheck, build, corecheck, parity, `gate` and `shaders`.**
+- **Each new or moved module's contract header and `FILES.md` line** (rules 7 and 9).
+- **STOP with the numbers** wherever the bytes do not hold.
+
+**The sub-steps, least risk first.** The instruments come first. The viewer is built
+BEFORE the editor goes, so its moved checks are graded against the editor still
+standing. The editor's deletion and the deletion of the Babylon paths it kept are two
+reviews: the first is the feature, the second is the renderer. The colliders come last.
+
+- **X5.3a — the instruments, and the maps reproduce** (no change to the game) — **S**.
+  - **`npm run maps:check`** (`scripts/check-maps.mjs`; row "X5.3, the generators only"):
+    - Each map's generator gains `--out <dir>` (it writes there and nothing in `src/`).
+    - The check runs each generator into scratch and compares `layout.ts` and
+      `heights.ts` with the committed files, byte for byte after line-ending
+      normalisation (the generators write LF, and a Windows checkout holds CRLF).
+    - It fails on one byte, naming the map, the file and the first differing line.
+    - It joins `npm run build`'s gates beside `check-collision.mjs`; about 5 s for seven
+      maps.
+  - **The two comment differences are folded** (row "X5.3, the two comments and
+    `develop`"):
+    - Sarab's grass comment is emitted by `generate-sarab.mjs`: its three lines become
+      strings in `grass.push`, as the BIRKAT entries' prose already is. The committed
+      file is unchanged.
+    - `npm run harrowmead` is re-run, then `npm run collision -- harrowmead` (the source
+      hash only) and `npm run parity`. This closes X3.7's owed comment.
+  - **A committed draw log** (`plans/webgpu-ref/drawlog.mjs`, the Phase 4 gate's scratch
+    `gate-p4/renderlog.mjs` made an instrument). It records:
+    - Babylon's `_draw` by frame class, keyed by mesh or effect, with its target;
+    - **Babylon effect compiles**;
+    - the size of `scene.meshes`;
+    - group 0's visits.
+
+    It runs through the menu, the building card, deploy, a life, the death cam, the
+    round-over card, the kit and pause lids, a second round and `F2`. Its log at this
+    parent is X5.3's BEFORE: the editor's draws are the known exception, and every other
+    state draws the post chain alone.
+  - **`merge:hash` prints the collider DATA beside the meshes**: `boxGroups` as indices,
+    and `rayGroups` and `terrainGeometry` hashed as arrays. This is X5.3e's BEFORE, which
+    needs no mesh.
+  - **A Node check of `boundsOf`** (`scripts/bounds-check.mjs`, in `math-check.mjs`'s
+    style; row "X5.3, `merge:hash --editor`"). It checks `boundsOf`'s TRANSFORMED path
+    against Babylon's `BoundingInfo`, bit for bit, over every kind at seeded off-identity
+    transforms. This replaces the `bounds≠mesh` coverage that `merge:hash --editor` alone
+    gave, since a round's visuals are at identity and after X5.3e no mesh is made. It
+    runs until X6.1, which keeps a recorded table in place of Babylon.
+  - **Verify:**
+    - `maps:check` 7 of 7, and failing on a hand-edited copy of each file;
+    - the draw log equal to itself across two processes;
+    - the bounds check failing on a perturbed transform;
+    - every bank row byte-equal to a BEFORE at the parent;
+    - the Harrowmead bake moved in its source-hash line alone;
+    - parity.
+  - **Rewrites:**
+    - `CLAUDE.md`'s commands block (`maps:check`) and the build line;
+    - `docs/build.md` (the new gate, the bounds check beside `math-check`);
+    - `FILES.md` (`check-maps.mjs`, `bounds-check.mjs`, `drawlog.mjs`);
+    - `plans/webgpu-ref/README.md` (the draw log);
+    - `merge-hash.mjs`' header;
+    - `generate-sarab.mjs` and the generators' `--out`.
+
+- **X5.3b — the viewer** (no change to a round) — **S–M**.
+  - **Where it lives** (row "X5.3, the viewer's key and reach"): `src/viewer/`, DEV only,
+    reached through ONE dynamic `import()` in an `import.meta.env.DEV` branch, as the
+    mixer is. It is made of:
+    - `EditorCamera`, which becomes `ViewerCamera` nearly as it is: it writes
+      `CameraSystem`'s `FreeCamera`, because `PostPasses` is bound to that instance.
+    - `validate.ts`, moved as it is, its one `Vector3` becoming `src/math`'s.
+    - `navOverlay`'s classification without its Babylon draw.
+    - The proxies' shapes without their meshes.
+    - The work light (row "X5.3, environment tuning").
+    - A trimmed panel: the camera readout, the validation list, key help, and the
+      overlay and work-light toggles.
+  - **It is a LID, not a build.** `SCREENS` gains
+    `viewer: { covers: ["playing", "dying", "deploy"], holdsWorld: true, roundBehind: true, inRound: false }`.
+    - It covers both kinds of round. In the page's own match it holds the world as the
+      pause does. In a server's round the authority carries on, and the player's body
+      stands where the authority has it.
+    - `F2` raises it over a round and does nothing on the menu or in any other state.
+    - Its frame is the editor's tail, renamed. The camera is the shadow focus, and the
+      ROUND's soldiers are passed rather than `NO_SOLDIERS`, so bodies and hulls are drawn
+      and cast by the round's own draws.
+    - So the viewer has GI, the round's glazing, fires, grass and water, with nothing
+      ported and no second path.
+    - Lowering the lid puts the state, the camera, the HUD's chrome (`HUD.setEditing`)
+      and the map's own environment back.
+  - **The overlays are a 2D PLAN in the viewer's panel** (row "X5.3, the viewer's
+    overlays"), painted through `ui/mapPlan.ts` and `ui/mapPaint.ts` with a projection of
+    its own:
+    - the nav graph, green (walkable), red (standable, never reached) and amber (no route
+      to the chosen flag), with a layer control for maps that stack floors;
+    - amber is drawn off a field built on demand with `NavGrid.buildField`, since the
+      page's own round builds none (`navFields` is a server's match's);
+    - the scatter regions, the flags at their true radius, the spawns, and the water and
+      grass rects;
+    - the camera, warped by a click.
+
+    It adds **no draw and no pipeline** to our renderer, nothing to the warm-up's seal,
+    and nothing for Babylon to draw.
+  - **For this one sub-step the editor moves to `Shift+F2`** (one line), so the viewer can
+    be graded against it.
+  - **Verify:**
+    - **`validate`'s findings in the viewer equal the editor's own** on all seven maps. A
+      difference is either explained by the build (the editor's is unmerged, its nav
+      graph off the same boxes) or a bug.
+    - **The nav classification arrays equal** `navOverlay`'s, cell for cell, over the
+      same `debugSnapshot`.
+    - **The draw log with the viewer up:** no Babylon mesh draw, no Babylon effect
+      compile, and no pipeline of ours compiled in play.
+    - **The page's own match's clock held** across the lid (its time and the bench's
+      fight hash unmoved), and a server's round carrying on.
+    - **Every bank row byte-equal to its BEFORE.**
+    - `F2` from `playing`, `dying` and `deploy` in both kinds of round, and doing nothing
+      from every other state.
+    - Absent from `dist/`.
+  - **Rewrites:**
+    - `docs/states.md` (the lid's row and its four answers);
+    - `docs/ui.md` (the panel's stylesheet);
+    - `docs/game.md` (the viewer's frame among the pushes from `tick`);
+    - `CLAUDE.md`'s state-machine and lid sentences;
+    - the viewer's contract headers;
+    - `FILES.md`.
+
+- **X5.3c — the editor deleted** (no change to the game; the editor's instruments
+  retired, row "X5.3, retire the editor") — **M**.
+  - **Deleted from `src/editor/`:** everything X5.3b did not move. That is `index.ts`,
+    `selection.ts`, `gizmos.ts`, `pathHandles.ts`, `terrainBrush.ts`, `mutate.ts`,
+    `inspect.ts`, `fields.ts`, `params.ts`, `save.ts`, `saveEnvironment.ts`,
+    `serialize.ts` and `sourceScan.ts`, then the directory. `Shift+F2` goes too.
+  - **Deleted from `Game`:**
+    - `toggleEditor`, `buildEditorMap`, the editor half of the frame, the `editor` field
+      and `editorLoading`.
+    - The `editor` STEP state in `SCREENS`, where the viewer lid stands instead.
+    - Every `opts.editor` arm in `installMap`, which has one caller now: `buildRound`.
+      `navFields` stays for a server's match.
+  - **Deleted from the world layer:**
+    - `BuildOptions.editor`, `GameMap.editor`, `EditorItem`, `EditorIndex`, and
+      `MapBuilder`'s per-item index, `newItem` and `repositionItem`.
+    - `merge.ts`' `tag` and `owners`, and `WorldSurface.owner`.
+    - `assertPieces`' editor arm.
+    - The `editor` parameter of `BlockHandover.install`, `PhysicsWorld.setMap`,
+      `ReflectionSystem.build` and `bakeWater`.
+    - `world/solid.ts`, whose one importer was the editor's pick.
+    - `floorSurfaceLabel`.
+  - **Renamed: `EditorRef` becomes `ItemRef`.** The PIECE table still names layout items
+    with it, and `merge:hash` hashes it.
+  - **The dev write endpoint keeps one row**, the mixer's `src/config/mix.ts`. Its 21 map
+    rows go.
+  - **The generators' prose is rewritten**, in their own headers and in the headers they
+    EMIT ("owned by the editor after…", "editable afterwards with the map editor's
+    terrain mode (F2, then T)", "`sourceScan.ts` requires"). The new text is "the
+    generator is this file's only author; a change goes into the script".
+    - All seven maps are re-run: `maps:check` 7 of 7 on the new text.
+    - All seven bakes are re-stamped (`npm run collision`): **the bake files may differ in
+      their source-hash line alone**.
+    - `npm run parity` passes.
+  - **The editor's oracles are retired:**
+    - `merge:hash --editor` and its `editorItems` field. The comparer reads a baseline's
+      `editorItems: null` as absent.
+    - `surfaces.mjs --editor` and its `proxy` class.
+    - `particles.mjs --editor`.
+    - `gi.mjs`'s editor arm, with `--no-editor` kept as a no-op.
+    - The eight eyes, stated retired.
+  - **Verify:**
+    - `merge:hash` (shipped) equal to its parent baseline on eight maps, `editorItems`
+      aside;
+    - every bank row byte-equal to a BEFORE at the parent;
+    - the probes and `census --against` equal;
+    - the draw log equal to its parent's in every state but the one the editor was;
+    - `maps:check` 7 of 7;
+    - the bakes moved in their source-hash lines alone, and parity;
+    - typecheck (`noUnusedLocals` as the dead-code oracle);
+    - the viewer and the mixer both opening and closing;
+    - a `grep` for `toggleEditor`, `buildEditorMap`, `editorRef`, `EditorItem` and
+      `sourceScan`, which returns history alone (`plans/done/`, `ENGINE_UPGRADE.md`,
+      `PERF_PLAN.md`, this file's landed entries).
+  - **Rewrites:**
+    - **`CLAUDE.md`:**
+      - the companion table's `docs/editor.md` row;
+      - the commands block (`merge:hash --editor`, "DISCARDS editor edits");
+      - `installMap`'s one caller and the editor-save sentence;
+      - the editor section, which becomes "The map viewer (dev only)" with the
+        dynamic-import rule kept for `src/viewer/`;
+      - "the files a new map touches" (`WRITABLE` out, `check-maps.mjs` in);
+      - "the editor writes through `map.terrain.field`";
+      - the terrain-patch row's two callers;
+      - "the layout the editor patches";
+      - the collider-proxy section's `SOLID_ONLY` and the editor's predicate;
+      - the metadata contract's "an editor build's every surface";
+      - the glass paragraph's "editor flags";
+      - the two-`Vector3` crossings, whose two exceptions were the editor's.
+    - **`docs/editor.md` is deleted.** What survives goes VERBATIM into a new "Looking at
+      a map" section of `docs/world.md`: what the nav colours mean, what `validate`
+      checks and the bug behind each check, and the work light.
+    - `docs/world.md`, `docs/game.md`, `docs/states.md`, `docs/vehicles.md`,
+      `docs/bots.md`, `docs/build.md` (`merge:hash` owed per upgrade without
+      `--editor`), `docs/profiling.md`, `docs/deaths.md`, `docs/audio.md` (the mixer
+      owns the endpoint), `docs/ui.md` and `docs/weapons.md`.
+    - `FILES.md`, `VERIFYING.md` and `AGENTS.md`.
+    - `FINDINGS.md`: 11 deleted, and 10, 26 and 39 trimmed.
+    - `vite.config.ts`' header.
+    - The seven generators and the fourteen files they emit.
+    - The skills: `map-layout`'s "Hand edit or generator?", `generator.md` and
+      `audit.mjs`, and `model-detail`'s `new-model.md` step 2 and `SKILL.md`.
+    - `plans/webgpu-ref/README.md`.
+
+- **X5.3d — Babylon's draw paths the editor kept, deleted** (no change to the picture) —
+  **M**. Each is unreachable after X5.3c, and each is checked unreachable before it is
+  deleted (a DEV throw on the path for one bank run, or the draw log).
+  - **Deleted:**
+    - `ShadowSystem`'s `ShadowGenerator`s, its render-list cull and its
+      `REFRESHRATE_RENDER_ONCE` target. If the `DirectionalLight` has no reader left
+      (`core/shadowWindow.ts` already copies its matrix), it is deleted too, or the
+      reason it stays is written down.
+    - `LocalShadows`' Babylon atlas: the four `ShaderStore` programs (`localShadowDepth*`,
+      `localShadowClear*`), their `ShaderMaterial`s, `localShadowProxy`, the clear sheet,
+      the `RenderTargetTexture` and `pass()`.
+    - `wrapCubeTexture`, `setDefaultReflection`, and `reflectionCube` on Babylon glass
+      materials. Our default cube stays.
+    - `CelMaterialFactory.babylonGi` and `offGi`, and the seven `RawTexture3D`
+      placeholders.
+    - `FlameShader`'s Babylon stages and its mask twin. Its `values` and recipe stay for
+      `FlameDraw`.
+    - **The glow mask's Babylon mesh path**: the `glowMask*` programs, the stock
+      variants and `SelfMasking` (row "X5.3, the collider meshes", its scope note). The
+      PASS stays, since items 2 to 5 belong to X5.4.
+    - The seam's **items 6 and 10**: `onMainPass` keeps the draw-phase pair and tells the
+      group's four points at the phase's end, which the gate measured to be a round's
+      path on every row. The list falls from ten items to eight.
+    - **`PostPasses`' `outputRenderTarget` window**: the field stays set through the
+      frame. The take-off after the chain's record and the restore at the render's end
+      existed for the gizmo layer alone, and with them goes X5.2d's recorded rule.
+    - `FrameProfile`'s `getShadowGenerator()` read.
+    - `GiVolume.worldMoved` and `LocalShadows`' moved-fixture re-bake, if no caller is
+      left.
+  - **Left for X6.1, guarded:** Babylon's declarations of the cel program
+    (`celVertex`/`celFragment` in `ShaderStore`) and the factory's per-frame pushes into
+    Babylon materials (the palette, `windTime` over the cache, and the light, camera and
+    point-light uniforms). No Babylon material compiles or draws in any state after
+    X5.3c, our renderer reads recipes and `fillFrame`, and the `ShaderMaterial` OBJECTS
+    stay as recipe keys (X3.7's "Kept"). So this sub-step adds **a DEV counter of Babylon
+    effect compiles that must read 0** in every state, asserted by the draw log.
+  - **Verify:**
+    - every bank row byte-equal to a BEFORE at the parent, under all three volumetric
+      queries;
+    - `post.mjs --against` equal, nothing excused (the frame is bound where it was);
+    - `surfaces.mjs` equal (the fallback on every row);
+    - the draw log with 0 Babylon effect compiles and 0 group-0 visits in every state,
+      and `scene.meshes` without `localShadowProxy`;
+    - `pipelines.mjs`, with Babylon's synchronous pipelines at the boot falling by
+      exactly what these paths made, every one named;
+    - `gi.mjs --against` equal;
+    - the seam header's list at eight;
+    - typecheck, build (`check-babylon-free`), gate, shaders, corecheck and parity.
+  - **Rewrites:**
+    - **`CLAUDE.md`:**
+      - the GI paragraph's "An editor build has NO GI until X5.3", deleted;
+      - the frame target's "(off after it, for the editor's gizmo layer)", deleted;
+      - the cel-material FROZEN rule, which stays until X6.1 but says no Babylon material
+        compiles (the DEV counter);
+      - the glow paragraph's mask clause.
+    - **`docs/rendering.md`:** the shadow maps, the lamps, the glazing and the default
+      cube, the volume, the fire, the glow's mask, the gizmo note beside the frame-target
+      rule, and "Our renderer's frame" (items 6 and 10).
+    - **Headers:** the seam's, and those of `PostPasses`, `ShadowSystem`, `LocalShadows`,
+      `CelShader`, `FlameShader`, `GlowPass`, `ReflectionSystem` and `wrappedTextures`.
+    - **`FILES.md`.**
+    - **`FINDINGS.md`:** 68 trimmed.
+    - **This file:** X5.4's texture item (no Babylon reader left).
+
+- **X5.3e — the colliders stop being meshes** (no change to the game; row "X5.3, the
+  collider meshes") — **S–M**.
+  - **What changes:**
+    - `MapBuilder.collider` records its box and makes no `MeshBuilder` box.
+    - `clusterColliders` and `struts` compute their GROUPS and merge no mesh. `boxGroups`
+      is load-bearing for the sweeps' tie order ("ties go in the client's collider-mesh
+      order, which both sides derive from `boxGroups`") and stays byte-identical as data.
+    - The terrain collider clone goes; `terrainGeometry` stays for `PhysicsWorld`.
+  - **Deleted:**
+    - `GameMap.colliders` and `terrainColliders`.
+    - `WorldCulling`'s hidden set.
+    - `GlassFx`'s collider-mesh flag write, so breaking a pane is one write
+      (`RayWorld.remove`).
+    - `parts.ts`' "colliders are not parts" rule.
+    - `metadata.solid`'s last writer.
+    - `merge:hash`'s collider-mesh lists, whose place X5.3a's data hashes take.
+  - **Measured (`FINDINGS.md` 26):** the install time and the heap before and after, on
+    seven maps.
+  - **Verify:**
+    - `merge:hash`'s collider data equal to its parent's;
+    - `npm run collision` producing **no diff at all**;
+    - parity, `sweep-check`, and `drop.mjs --check` on seven maps;
+    - `simulate` at a fixed seed giving the parent's `fight` hash;
+    - every bank row byte-equal;
+    - a pane broken in play still clearing from `RayWorld`;
+    - the bounds check still passing.
+  - **Rewrites:**
+    - **`CLAUDE.md`:** "Visual meshes and collider proxies" (the table's Collider row, no
+      mesh), the glass paragraph's one write, and the metadata contract (`solid` leaves
+      it: six flags and two values).
+    - **`docs/world.md`:** the collider merge and the struts.
+    - **`docs/build.md`:** `merge:hash`'s lists.
+    - **`FINDINGS.md`:** 26's collider sub-thread closed with its numbers.
+    - **Also:** `FILES.md`, `merge-hash.mjs`' header, and the headers of `MapBuilder`,
+      `parts.ts`, `GlassFx` and `WorldCulling`.
+
+**Verify, the whole step:**
+
+- **Babylon draws no mesh and compiles no material in any state** (the draw log and the
+  DEV counter).
+- **A round's `scene.meshes` holds no world mesh.**
+- **The seam lists eight items.**
+- `maps:check` is in `npm run build`.
+- `F2` opens the viewer over a round on every map, offline and in a match.
+- A round's bank rows are byte-equal to a BEFORE at X5.3a's parent, end to end, as well
+  as step by step.
+
+**What the earlier decisions that name X5.3 become** (each earlier place carries a
+pointer, its history unchanged):
+
+- **"The editor regains GI at X5.3"** (X5.1's entry, row "X5.1b" 1, the Contracts
+  table's GI row): **moot**. There is no editor build. The viewer is the round, with GI.
+  `babylonGi` goes at X5.3d.
+- **"The editor's frames stay part of the oracle"** (X5.1's entry, every X5.1 and X5.2
+  sub-step's "owes"): **retired at X5.3c**, as instruments.
+- **X4.6d's recorded editor interleave**: ends at X5.3c by deletion, not by a move. No
+  measurement is owed.
+- **X4.6's and X4.6e's inheritance** (the editor's glazing over the default cube, item 6,
+  the `ed-*` proxies on Babylon's transparent list): the glazing and the proxies go at
+  X5.3c; item 6 and the default cube's wrap at X5.3d.
+- **X3.7's "X5.3 deletes what the editor keeps"** and the Phase 3 notes: **X5.3d**.
+  X3.7's owed Harrowmead comment: **X5.3a**.
+- **X4.1's soldier and X4.2's hull "owed" to the editor**: **moot**. The viewer's bodies
+  and hulls are the round's.
+- **X4.7a's and the Phase 4 gate's "6 and 10 at X5.3"**, and the gate's "the editor's
+  shadow generators' maps at X5.3": **X5.3d**.
+- **X5.2d's `outputRenderTarget` rule** ("X5.3 and X5.4 retire it"): **X5.3d retires the
+  window and the rule**. X5.4 deletes the field with the frame.
+- **Row "X5.2, the mask"** ("at X5.4 (or at X5.3)"): **X5.4**. The PASS moves with the
+  main pass. Its Babylon MESH path is deleted at X5.3d.
+- **X5.4's texture item and row "X5.4, the textures"** ("because an editor build samples
+  them until X5.3"): after X5.3d no Babylon reader samples them. They wait only for the
+  one bank proof.
+
+**What it means for X5.4:**
+
+- **X5.4 takes a frame in which Babylon draws nothing but the passes it OPENS.** No mesh,
+  no material compile, no shadow generator, no render target of its own but the glow's
+  and the post chain's, no group hook, and no `outputRenderTarget` window.
+- **Every texture `hostTexture` wraps is read by ours alone.**
+- **There is no `F2` path of its own to verify**: the viewer is the round's frame.
+
+**What it means for Phase 6:**
+
+- **X6.1's whole-tree gate has no editor to exempt.** It meets the viewer's one Babylon
+  type (`FreeCamera`, through `CameraSystem`).
+- **X6.1 deletes the cel program's Babylon declarations and pushes**, under X5.3d's
+  counter, as the last of the `ShaderMaterial` recipe keys.
+- **X6.2's merge carries the editor's deletion to `develop`.** `develop` keeps its editor
+  until then, and `F2` saves on `develop` are off-limits as a working rule (row "X5.3,
+  the two comments and `develop`").
+- **A merge from `develop` owes `maps:check`** ("The branch"). The Candy Land branch,
+  when it lands, owes three things: its generator's emitted header rewritten, its
+  `params.ts` and `WRITABLE` rows dropped, and a `maps:check` entry.
 
 ### X5.4 — Take the frame — **M**
 
 - **Do:**
   - Our own `requestAnimationFrame` loop.
   - The canvas: size, DPR and render scale.
+  - **What X5.3 leaves this step** (the editor retired, row "X5.3, retire the editor", decided 2026-11-08): a frame in which Babylon draws nothing but the passes it OPENS — no mesh in any state, no material compile (X5.3d's DEV counter reads 0), no shadow generator, no render target of its own but the glow's and the post chain's, no group hook (items 6 and 10 retired at X5.3d) and no `outputRenderTarget` window (X5.3d). The glow mask's Babylon mesh path is already gone (X5.3d); its PASS moves here.
   - **The post passes' targets and passes** (X5.2's shape (A), decided 2026-11-07): the
     Babylon-side sequencer X5.2c1 builds (`shaders/PostPasses.ts`, a `PostPassOwner`:
     `render/PostChain.ts` routes through whichever owner it is handed) is swapped for our
@@ -4650,14 +5114,16 @@ It stays behind its one dynamic `import()` in a DEV branch.
       Babylon's samples them but the cloud field, which Babylon's `Volumetrics` (the light
       shafts) bound on every frame it drew until X5.2c2 made the shafts a stage of OUR post
       chain (bound through `hostTexture` with the host's sampler since: no Babylon reader of it
-      in a round), and an editor build's Babylon cel materials until X5.3 (X5.1a counted both: one bind a frame in the
+      in a round), and an editor build's Babylon cel materials until X5.3 (deleted at X5.3d, the editor retired, decided 2026-11-08; X5.1a counted both: one bind a frame in the
       menu and deploy, 100,485 in 120 editor frames; corrected by X5.1b's review), both gone
       before this step; they wait for it only so the group moves under one bank proof, not
       for any reader.
     - **shared with an editor build until X5.3**: the cel materials' own (`CelShader`'s
       `recipe.textures`) and the shadow maps `ShadowBindings` still wraps. X5.3 takes away the
       editor's Babylon draw that samples them (rule 5: a resource lives with what produces it),
-      and leaves them here.
+      and leaves them here. **Since the editor is retired (row "X5.3, retire the editor",
+      decided 2026-11-08) and X5.3d deletes its Babylon draws, no Babylon reader of these is
+      left either**: they move as the first group does, waiting only for the one bank proof.
     - **not this step's**: `GiVolume`'s seven, X5.1's — ours since X5.1b (`render/GiCompute.ts`),
       no longer behind `hostTexture` at all.
     Each is drawn, uploaded and mipped by us, its levels and format stated as the foam's are,
@@ -4678,7 +5144,9 @@ It stays behind its one dynamic `import()` in a DEV branch.
     through the exit. `FINDINGS.md` 55 (the points stated analytically)
     stays after it.
 - **Verify:** X0.3 against X0.4's "before" on every device; `gate.mjs`; a
-  phone install from the home screen, offline.
+  phone install from the home screen, offline; X5.3a's draw log (Babylon draws and compiles
+  nothing of its own); `maps:check`; `F2`, the viewer over a round (X5.3b), as an ordinary live
+  check of the round's frame.
 - **Rewrites:** `CLAUDE.md`: the `compatibilityMode = false` rule (deleted),
   "Measuring a frame" (the two roots and the hooks); `docs/profiling.md`;
   `docs/states.md` where it says the scene renders in every state.
@@ -4696,6 +5164,13 @@ It stays behind its one dynamic `import()` in a DEV branch.
   - Replace `check-deep-imports.mjs` with `check-babylon-free.mjs` over the
     whole tree.
   - Keep `@babylonjs/havok`: it does not depend on core.
+  - **What X5.3 leaves it** (row "X5.3, the collider meshes", decided 2026-11-08):
+    Babylon's declarations of the cel program (`celVertex`/`celFragment` in `ShaderStore`)
+    and `CelMaterialFactory`'s per-frame pushes into Babylon materials, guarded since X5.3d
+    by a DEV counter of Babylon effect compiles that must read 0, go with the
+    `ShaderMaterial` recipe keys; the viewer's one Babylon type (`FreeCamera`, through
+    `CameraSystem`) goes with the camera; X5.3a's `boundsOf` check keeps a recorded table
+    in place of Babylon. There is no editor to exempt or port (X5.3).
 - **Verify:** `npm run build`, every oracle once more against the parent; the
   bundle size before and after; the PWA updating cleanly over an installed
   copy.
@@ -4710,7 +5185,10 @@ to X0.3 (see "The branch"). It is the user's to start.
 
 - **Before:** merge `develop` into `babylon-exit` one last time and run every
   oracle on the result. X0.3 against X0.4's "before" must pass on every device,
-  and the targets must be met or the shortfall written down. Play rounds on
+  and the targets must be met or the shortfall written down. `npm run maps:check`
+  must pass: an `F2` save made on `develop` since 2026-11-08 is against the working
+  rule (row "X5.3, the two comments and `develop`") and is folded into its generator
+  or dropped. The merge carries the editor's retirement to `develop`. Play rounds on
   every map, offline and in a match, for long enough that you would ship it.
 - **Do:** merge with `git merge --no-ff babylon-exit`, so the whole exit is
   ONE merge commit on `develop`. If it has to come out after landing,
@@ -4748,7 +5226,9 @@ Each is rewritten by the step that breaks it, in the same commit.
 | --- | --- |
 | `CLAUDE.md`: `compatibilityMode = false` is load-bearing | X5.4 (deleted) |
 | `CLAUDE.md`: no deep static import, keep `optimizeDeps.exclude`; the two WASMs that never ship | X6.1 |
-| `CLAUDE.md`: every cel material is frozen; `remember`; a vertex colour buffer gained after a first draw | end of Phase 4 (deleted) |
+| `CLAUDE.md`: every cel material is frozen; `remember`; a vertex colour buffer gained after a first draw | end of Phase 4 (deleted); since the editor's retirement no Babylon material draws in any state (X5.3d, its DEV counter), and the rule goes with the Babylon declarations at X6.1 |
+| `CLAUDE.md`: the map editor (dev only), its dynamic-import rule and `docs/editor.md`; the generators' "the editor patches"; the dev write endpoint's map rows; `installMap`'s two callers; the terrain-patch rule's two callers; the two-`Vector3` crossings | X5.3b, X5.3c (the viewer replaces the editor; row "X5.3, retire the editor") |
+| `CLAUDE.md`: visual meshes and collider proxies (a collider is no mesh); breakable glass's one write; mesh metadata's `solid` | X5.3e |
 | `CLAUDE.md`: `shaderLanguage` is load-bearing; a declared sampler must be bound | X3.1, X5.2 (becomes a bind-group-layout rule) |
 | `CLAUDE.md`: the two shadow maps; the lamps' atlas | X3.6a, X3.6b, X3.7, X4.1c |
 | `CLAUDE.md`: the rig pool, fourteen meshes a rig, rigs filed mesh by mesh; `docs/deaths.md`'s reparented corpse | X4.1a, X4.1b, X4.1d |
@@ -4756,14 +5236,14 @@ Each is rewritten by the step that breaks it, in the same commit.
 | `CLAUDE.md`: a vehicle's picture (`VehicleView`, the rig's meshes; since X4.2b every hull an instance of its kind's kit, gated per segment, `docs/rendering.md`'s "The hulls, ours") | X4.2a, X4.2b |
 | `CLAUDE.md`: the map's overrides table (a ninth, `hullDrawDistance`, landed: absent is no distance, a stated one floored at a hull's gun reach); `docs/world.md`'s section on them; the bodies-and-hulls paragraph's fade (a hull at its draw distance only) | X4.2d |
 | `CLAUDE.md`: the frame walks the scene (`WorldCulling`) | X3.3c through X4.7 |
-| `CLAUDE.md`: the glow | X3.6d, X3.6e, X3.7, X5.2 |
+| `CLAUDE.md`: the glow | X3.6d, X3.6e, X3.7, X5.2, X5.3d (the mask's Babylon mesh path) |
 | `CLAUDE.md`: visual meshes and collider proxies; exactly three sweeps | X2.1, X2.3 |
 | `CLAUDE.md`: mesh metadata is a contract | X1.4 (moves to the geometry record), X3.3 onward |
 | `CLAUDE.md`: the forced world matrix on the authority | X2.2 |
 | `CLAUDE.md`: the server cannot run `MapBuilder` / `NullEngine` | X2.3 |
 | `CLAUDE.md`: Havok and `scene.physicsEnabled` | X2.4, X5.4 |
 | `CLAUDE.md`: the pipeline warm-up | X4.4, X4.7c and X4.7d (the vantages' last Babylon draws in a round, the particles), X5.1b (the irradiance volume's compute on the declared list), X5.4 |
-| `CLAUDE.md`: the indirect light traced in compute (its GPU half ours, the late prepare's registration order; an editor build with no GI until X5.3) | X5.1b and its picture change, X5.3 |
+| `CLAUDE.md`: the indirect light traced in compute (its GPU half ours, the late prepare's registration order; an editor build with no GI until X5.3) | X5.1b and its picture change, X5.3d (the editor clause deleted: the editor is retired) |
 | `CLAUDE.md`: a colour gradient changes a particle system's vertex layout | X4.7d (deleted) |
 | `CLAUDE.md`: measuring a frame, the two roots | X5.4 |
 | `docs/build.md`: the four copied Babylon internals, `merge:hash` owed per upgrade | X1.2, X1.4, X2.1 (adds the sweep and `sweep-check`), X6.1 |
@@ -4869,7 +5349,7 @@ Phase 1 actually took.
 | X4.5 | One step or several? | **Decided** 2026-11-02: three sub-steps (X4.5). X4.5a fixes the empty-group seam, adds a draw point ahead of group 0's opaque list and widens the bank to the sky before any sky mesh moves; X4.5b moves the clouds; X4.5c moves the dome and the moon, which empties Babylon of the sky. |
 | X4.5a | What does the sky owe a state with no map, and must it be drawn under the photograph? | **Decided** 2026-11-02 by the owner, overruling part of what X4.5a settled: nothing, and no. Under the photograph, the settings and the lobby the frame is byte-equal with the sky stated away; the kit screen is not, at every turn of the ring (below). It shows in six windows (the boot's fade, ~480 ms on a local dev server and unmeasured on a phone's cold fetch; a rejected `img.decode()`, open as long as the menu stands; a building card's undecoded photograph; a lobby row on an unknown map; the DEV proving ground; and, **accepted by the owner 2026-11-03**, the photograph's fade on the way out of a round, about 300 to 400 ms on Coldharbour, over the last map's flat colour where the parent showed the dome and clouds through the picture, not among the frames compared in X4.5c's picture-change commit, and not from the round-over card, whose picture is up already). Each sky draw's `Active` asks whether a map stands, so the menu's frame keeps doing no work of ours (X4.3c's review). **What X4.5a got wrong**: the boot's fade is the RIGHT map's sky until the player steps the reel, not the wrong one, and what would replace it was no meaningful colour (`scene.clearColor` had one writer, reached only from the editor and `startRound`: Babylon's default slate at the boot). So the colour is set at the boot from the boot map's `skyColor` (`applyClearColor`, landed at this review and moving no pixel under today's dome), and the fade shows the right map's colour through the post chain. It is not extended to the reel or a teardown: after a round it is the last map's. Taking the sky off those windows is a picture change, in a commit of its own at X4.5b and X4.5c. How that divides between the two was the implementer's and no part of this decision: X4.5b left the clouds' `Active` to X4.5c, and that is moot now, the whole sky having left the menu in one commit (7787229). **Decided 2026-11-03 by the owner, no picture change:** the clear's alpha of 1 is kept, a constant half stroke on the kit screen's weapon. The old picture's stroke varied with the cloud behind the weapon and the new one does not: ring on against ring off at the parent, Coldharbour is 0 px at turn 0 and 35 to 209 px, up to 73/255, at five other turns, the first about 5 minutes on the menu, and Hollowmere, with no ring, 0 px at all 8. Two further turns read 539,279 px with the weapon darker, excluded from those figures: the clouds' shadow, which still reaches the kit stage (X4.5c's note). And the shafts' soft bright band over the flat colour on Harrowmead and Kurenai is accepted. X4.5c's note states one window the six do not name (a step's cross-fade), not ruled on. |
 | X4.6 | One step or several? | **Decided** 2026-11-03: five sub-steps (X4.6). X4.6a fills the bank's gaps and records where each surface sits in Babylon's frame; X4.6b moves the flags and the rings, X4.6c the grass and the turf, X4.6d the water; X4.6e moves the glazing with the sparks, the dust discs and the scorch, so one sort of ours orders them (2026-11-01), and may land `backed` panes ahead of it. The scorch is ported exactly; a port that cannot match comes back to the owner with the numbers. |
-| X4.6c, X4.6d | An editor build's grass, turf and water are no world surfaces (X4.6a): do these steps move them there too, one path through each system as the sky did at X4.5c, or keep them Babylon's until X5.3, two paths? | **Decided** 2026-11-03: they move there too, one path through each system. Each step's Verify gains an `F2` in an editor build and a rect edit. The editor's GLAZING still stays Babylon's until X5.3. |
+| X4.6c, X4.6d | An editor build's grass, turf and water are no world surfaces (X4.6a): do these steps move them there too, one path through each system as the sky did at X4.5c, or keep them Babylon's until X5.3, two paths? | **Decided** 2026-11-03: they move there too, one path through each system. Each step's Verify gains an `F2` in an editor build and a rect edit. The editor's GLAZING still stays Babylon's until X5.3. **It ended at X5.3c by deletion**: the editor is retired rather than ported (row "X5.3, retire the editor", decided 2026-11-08). |
 | X4.6c | At `"first"` the blades fall ahead of water they were behind, and at `"beforeAlphaTest"` behind water they were ahead of (X4.6b's review): if no point holds the bytes at a shore, do the blades and the water move together, or is the tie taken as a picture change? | **Decided** 2026-11-04, by the owner: **X4.6c's moving draw point and its rare distant flips are accepted as a recorded, temporary picture difference until X4.6d, which must make those poses exact again.** How it came about: neither fixed point held (`greyfen-shore-ahead` 355 px by 60/255 and `harrowmead-shore-ahead` 251 px by 154/255 at `"beforeAlphaTest"`; `harrowmead-shore-behind` 58 px by 76/255 at `"first"`), which is the case the plan said comes back to the owner. The implementer built a third option instead of stopping, a point chosen each frame by Babylon's own comparison (`Game.grassPull`), which holds all 136 rows, and landed it as "no change to the picture". The phrase it worked from, "try moving where it helps", was in the orchestrating agent's brief to it, not in the plan, and was ambiguous; that same paragraph told it to stop and report if neither point held. X4.6c's review found the record understated the result: it said only Hollowmere could flip, and that none had. **The worst, which the owner saw**: a frame reaching reedy bodies either side of the key, Sarab `[250,8,50]` to `[-194.75,-6.0,-69.75]` at 9.8° 29 px by 41/255; `[-100,8,-175]` to `[-198.75,-0.52,51.25]` at 9.8° 22 by 95/255; `[50,8,-50]` to `[253.25,-6.29,-48.75]` at 9.8° 12 by 58/255; `[-275,8,50]` to `[273.25,-6.22,-44.75]` at 9.8° 16 by 34/255; `[-275,1.6,-150]` to `[79.25,-5.66,-39.75]` at 9.8°, standing eye height, 6 by 43/255; Hollowmere `[-50,8,-70]` to `[12.25,-1.8,-100.75]` at 54.4°, the hip, 1 by 5/255; `[-60,8,-80]` to `[14.25,-1.66,-93.75]` at 13.75° 4 by 1/255. Scans aimed at this case, so no rate of play: Sarab moved 20 of 300 poses at mid range and 14 of 300 at long range, Hollowmere 9 of 300 (at most 2 px there), Kurenai 0 of 300. `sarab-shore-flip` banks it (27 px by 54/255, `exact.mjs`'s `EXPECTED_MOVES`), and X4.6d's brief removes that entry and owes the row byte-equal to 21839d1's truth. **They ended at X4.6d** (5f26b00, 2026-11-04): with the water ours the blades, the zones and the water are one nearest-first run at one point, `sarab-shore-flip` is byte-equal to its truth, every pose above and all 1,201 poses of the scans byte-equal to 21839d1, and the entry is removed. |
 | X4.6e | `ShadowSystem`'s blob shadows are a Babylon `StandardMaterial`, blended, no depth write, on the list X4.6e replaces, and were on no step's list (found by X4.6a's review): where do they go? | **Decided** 2026-11-03: X4.6e's one commit. The blob joins the see-through panes and the three pools under one sort of ours, and `warmBlob` goes with it. |
 | X4.6e | A blob's disc faces DOWN on a back-culled material, so it draws nothing from above (X4.6a's review, `FINDINGS.md` 67; `docs/rendering.md` calls it the contact term): port it as it is, fix the facing as a picture change, or delete it? | **Decided** 2026-11-05 (owner: flip to face up). Ported byte-identically, face down, in X4.6e's second commit, then turned face up in a commit of its own whose subject starts `Picture change:`, with the bank's numbers; `FINDINGS.md` 67 deleted as fixed. Seen from above now, the floor's side, and from below not at all. |
@@ -4878,12 +5358,12 @@ Phase 1 actually took.
 | X4.7 | **OPEN.** X4.7 keeps the particles where Babylon drew them: after the turf, ahead of the moon and of the one back-to-front run (`FarthestRun`). So the moon paints over a mote in front of it, and a see-through pane or a fade paints over a particle whether it stands in front of it or behind, none of them writing depth. Once the particles are ours they could be ordered among the panes and the fades, and the moon could stand behind its ash, which `docs/rendering.md` already calls "the better picture and the owner's to ask for". Keep Babylon's order, or change it after X4.7? | Keep it through X4.7, which ports it byte for byte; a change is a picture change of its own (`Picture change:`, the bank's numbers), after X4.7d, by the owner's word, and needs a sort key a FIELD can give (its emitter, or its own extent), which is a design of its own. Not blocking: no sub-step needs the answer. |
 | X4.7c | In one dev-only flow — `F2`, an in-memory edit of `particles.count`, the editor's rebuild, then leaving back to a round on Sarab or Cinderhaven — Babylon put the motes BEHIND its live rotor rings (the rebuilt field going to the end of `scene.particleSystems`), where ours keeps them AHEAD at `"particles"`. ADD motes over STANDARD rings do not commute, so overlapping pixels would differ there — reasoned, not measured: no bank row reaches the flow. In the editor itself no pixel differs (the rings are cleared to count 0 and there is no fleet, so Babylon's render returns early); only the probe's order and the order of the `Math.random` draws differ. No shipped flow reaches it: every shipped map and the proving map has a distinct `floorColor`, so every map change rebuilds the rings after `atmosphere.apply` and the motes stay first; a second round on one map rebuilds neither; a server's rotation takes the same `installMap` path; no setting rebuilds the ash. Accept it, or hold X4.7c? | **Decided** 2026-11-07 by the owner: **accepted as a recorded, dev-only order difference until X4.7d**, which puts the rings in `ParticleDraw`'s one creation-ordered list and so restores Babylon's order; X4.7d's Verify shows the flow back in that order against a BEFORE at 312dc44. **Ended at X4.7d** (999d4ca): the rings in the one list, the probe's editor orders and draws — through the round after — equal to 312dc44's. How it came about: X4.7c's implementer was told by the orchestrator to stop and report this, and landed it flagged instead ("For the owner" in its entry); the brief's own stop condition was a SHIPPED flow with a ring ahead of the motes, which none is. |
 | X5.1 | One step or several? | **Instructed by the owner 2026-11-07**: X5.1 implemented in sub-steps, each implemented, reviewed and fixed by agents. **The two-way split was proposed by the orchestrating session and run under that instruction**: X5.1a the instruments (no change to the game), X5.1b the volume's GPU half (X5.1). |
-| X5.1b | An editor build (`F2`) samples the volume's seven textures through Babylon's cel materials until X5.3 (X5.1a: ~100,000 binds of each in 120 editor frames; none in a round). Once the textures are ours, what do those materials sample? | **Answered** 2026-11-07 by the owner: **no GI in an editor build until X5.3**, not a wrapped view. Babylon's cel materials in an `F2` build sample nothing of ours: they are given what GI `off` gives them (1×1×1 placeholders of Babylon's own and a volume that answers "nothing here"), so an editor build's Babylon world draws as if GI were off. A dev-only picture change in its own commit whose subject starts `Picture change:`, with the editor's frames before and after (rule 2), made FIRST, while Babylon still owns the volume, so the move after it is graded byte for byte against it; round rows may not move in it (`exact.mjs`). The editor regains GI at X5.3. (The planning session's recommendation was the wrapped view.) |
+| X5.1b | An editor build (`F2`) samples the volume's seven textures through Babylon's cel materials until X5.3 (X5.1a: ~100,000 binds of each in 120 editor frames; none in a round). Once the textures are ours, what do those materials sample? | **Answered** 2026-11-07 by the owner: **no GI in an editor build until X5.3**, not a wrapped view. Babylon's cel materials in an `F2` build sample nothing of ours: they are given what GI `off` gives them (1×1×1 placeholders of Babylon's own and a volume that answers "nothing here"), so an editor build's Babylon world draws as if GI were off. A dev-only picture change in its own commit whose subject starts `Picture change:`, with the editor's frames before and after (rule 2), made FIRST, while Babylon still owns the volume, so the move after it is graded byte for byte against it; round rows may not move in it (`exact.mjs`). The editor regains GI at X5.3. (The planning session's recommendation was the wrapped view.) **Moot since 2026-11-08**: X5.3 retires the editor instead (row "X5.3, retire the editor"); its viewer is laid over the round, with GI, and `babylonGi` is deleted at X5.3d. |
 | X5.1b | The trace's cloud-field sampler depends on the session today: our host's own object (clamp, anisotropy 4) once Babylon's light shafts or an editor build have bound the texture, repeat and nearest-mipped at anisotropy 1 in a session where neither has (the light shafts off from boot). X5.1a measured no byte of the trace's output move between them over 256 serially traced probes (16,384 rays) from a fresh history on Coldharbour, whose trace samples the field (`cloudArea.w` 0.45) and none of whose hits came near the field's edge, where clamp and repeat part. Hollowmere's run is no evidence: its trace never samples the field (`cloudArea.w` 1). Sarab and Cinderhaven, where an edge may fall inside the window, are unmeasured. Which does ours bind? | **Answered** 2026-11-07 by the owner: **the host's, always.** The trace binds the cloud field with the sampler our frame resolves for it (`hostTexture`, `host.bind`), dropping Babylon's dependence on whether the light shafts have bound it. The probe fields X5.1a's review named as expected to differ under this answer (X5.1b's Verify) are the expected differences; nothing else may differ. |
 | X5.1b | The trace RACES at the game's budget (X5.1a: it reads history another workgroup of the same dispatch is rewriting, by design), so no two runs of the parent agree on its colour lanes before convergence. Is X5.1b's byte oracle for those lanes the probe's `serial` scenarios and the bank's converged rows, every other byte of the probe compared everywhere? **How thin that oracle is** (X5.1a's review): a `serial` scenario traces 96 probes of 73,728 (64 of 24,576 at low; 256 in the sampler scenario) one workgroup a dispatch from a FRESH history, so most of the history reads the trace makes (`volumeAt`, the probe nearest a hit) find a probe nothing has traced and return the fallback, and a carried lamp's fast bounce likely reaches no valid probe at all (reasoned from the counts, not measured); the bank's rows are the converged fixed point, which a wrong order of reads can converge to as well. | **Answered** 2026-11-07 by the owner: **(a), `serial` and the bank's rows.** The trace's colour lanes are compared byte for byte only in the `serial` scenarios (the trace's budget forced to 1); at the game's budget the oracle is the bank's converged rows plus every deterministic lane the probe compares. The trace is NOT changed. (Before the answer: The planning session's recommendation was yes: making the trace order-independent (a second state buffer, or a read of last frame's) would be a picture change of its own (rule 2), not part of the port. The options as they stand: (a) yes, the oracle as it is; (b) widen it first, instruments only — serial steps over far more of the volume, so the history it reads is mostly traced (its cost in minutes a map not measured); (c) the trace order-independent first, a `Picture change:` of its own with the bank's numbers, after which every lane is an oracle at the game's budget.) |
 | X5.2 | One step or several? | **Instructed by the owner 2026-11-07**: in sub-steps, each implemented, reviewed and fixed by agents. **The split was proposed by the orchestrating session** from a planning agent's read at 33a8d35: X5.2a the instruments (no change to the game), X5.2b the glow's blur and downsample, X5.2c1 the chain's host and the grain, X5.2c2 motion blur, the shafts and FXAA, X5.2d the ink and the compose (X5.2). |
 | X5.2 | **The shape**: our post passes cannot record on the upload encoder (they read the main pass's output) and there is no public way onto Babylon's render encoder. (A) our draws in passes Babylon opens, into targets Babylon owns, until X5.4 — the glow mask's precedent, no seam item, `gpu.frame` keeps its meaning; or (B) our own encoder and targets submitted after Babylon's frame, the canvas taken through the DOM context — the post chain's GPU time leaves `gpu.frame`, a report version and a `gpu.post`, `FINDINGS.md` 52's baseline read as their sum? | **Decided** 2026-11-07 by the owner: **(A)**, the recommendation. X5.4's Do gains the post passes' targets and passes. Under (A) the chain moves tail first, ink last, the glow's blur ahead of it (X5.2). |
-| X5.2 | **The mask**: the gate note said items 2 to 5 retire "for the mask at X5.2", but moving the mask alone retires no item (the main pass still uses them until X5.4), and moving it now would cost an editor build its emissives' bloom until X5.3 (a dev-only picture change) and a depth-attachment view of Babylon's depth. Move it at X5.2 (an X5.2e), or keep it Babylon's? | **Decided** 2026-11-07 by the owner: **keep the mask Babylon's through X5.2**, the recommendation; it moves with the main pass at X5.4 (or at X5.3), and the gate note is corrected. |
+| X5.2 | **The mask**: the gate note said items 2 to 5 retire "for the mask at X5.2", but moving the mask alone retires no item (the main pass still uses them until X5.4), and moving it now would cost an editor build its emissives' bloom until X5.3 (a dev-only picture change) and a depth-attachment view of Babylon's depth. Move it at X5.2 (an X5.2e), or keep it Babylon's? | **Decided** 2026-11-07 by the owner: **keep the mask Babylon's through X5.2**, the recommendation; it moves with the main pass at X5.4 (or at X5.3), and the gate note is corrected. **At X5.4** (2026-11-08: the editor is retired, row "X5.3, retire the editor", so the editor's bloom cost that made X5.3 an option is gone, and moving the mask alone still retires no item); the mask's Babylon MESH path (its programs and variants) is deleted at X5.3d, the pass staying (row "X5.3, the collider meshes"). |
 | X5.2 | **Render scale**: the entry named it, and X5.4 owns "the canvas: size, DPR and render scale". | **Decided** 2026-11-08 by the owner, the planner's recommendation: X5.4 owns the setter; X5.2 owes a chain correct at every scale, proven by X5.2a's rows (`post-scale50`, `post-scale75`). |
 | X5.2 | **`FrameDepth`**: named by X5.2, listed as X5.4's by the seam header and the gate note. | **Decided** 2026-11-08 by the owner, the planner's recommendation: X5.2d makes it read the public `renderTarget.depthStencilTexture`, taking its internal off the seam header's "not here" list; X5.4 deletes it once the depth is ours; X5.2d reconciles the seam header and the gate note. |
 | X5.2 | **Port as compiled, or rewrite the passes as composable functions** to keep the door open for fusing? | **Decided** 2026-11-08 by the owner, the planner's recommendation: **as compiled**; the door is the host's structure (X5.2), and a fusion, never byte-exact, is a later `Picture change:` with the bank's numbers. |
@@ -4894,5 +5374,13 @@ Phase 1 actually took.
 | X5.2 | **"The bank with every post setting on and off"**: the bank holds one row a setting off, none with every tail pass off. | **Decided** 2026-11-08 by the owner, the planner's recommendation: X5.2a's added rows (`post-alloff`, `post-damage`, `post-scale50`, `post-scale75`, `post-glowlow`) beside the bank's one-pass-off rows are its meaning; no pairwise or full-combination rows. |
 | X5.2 | **autoClear** (X5.2c2): deleting `DefaultRenderingPipeline` takes away the `scene.autoClear = false` it set, so the frame's opening canvas pass CLEARS its colour where it loaded it. Measured with the probe: every final canvas equal in all 32 scenarios (the last pass overwrites the canvas whole), the canvas-only frame after a render-scale change or a resize unaffected (its pass is not the scene's clear), and the page's first two or three frames of every boot — before the chain first draws, under the boot screen — holding the boot map's clear colour, opaque, where the parent held transparent zeros. Hold `autoClear` false (byte-exact) or let it return to true as the plan says (a picture change)? | **Decided** 2026-11-08 by the owner: **true, as the plan says, as a picture change** — FXAA lands byte-exact first with an explicit `scene.autoClear = false` standing in for the pipeline's, then a commit of its own whose subject starts `Picture change:` turns it back to true, with its numbers. X5.2d's text reads `autoClear` true. |
 | X5.2 | **The boot canvas** (X5.2d): with the scene drawing straight into the frame (`camera.outputRenderTarget`), Babylon's opening clear lands on the FRAME, so no pass clears the canvas: on every frame the chain draws, the last stage overwrites it whole (every final canvas of the probe's 34 scenarios and every bank row equal), but on a boot frame before our chain's pipelines are built it holds what the swap chain hands over — transparent zeros — where since a459e7c it held the boot map's clear colour, opaque (measured: page frame 3 22,13,8,255 → 0,0,0,0; frames 1–2 and 4 on equal), under `#boot`. (1) Accept, as the plan designs it, as a picture change; (2) land byte-exact with a stand-in canvas clear (a clear in the canvas's pass, `PostPasses.openCanvas`: the boot frame's clear colour back, the canvas pass's load ops `load` → `clear` on every frame, its pixels equal), then a `Picture change:` commit removing it; (3) keep that stand-in until X5.4 owns the canvas? | **Decided** 2026-11-08 by the owner: accept, as the plan designs it, as a picture change; no stand-in. X5.2d lands as one commit whose subject starts `Picture change:` (the implementer's recommendation was (2), the autoClear precedent). |
-| X5.4 | Phase 4's gate found the canvas and raw textures our draws read through the seam (`hostTexture`: the motes, the puff, the scorch, the blob, the sky's, the cel materials' own, the shadow maps it wraps) named by no step before X6.1, X5.4's foam item covering only a texture Babylon decoded and mipped. When do they go? | **Decided** 2026-11-07 by the owner: in X5.4, beside the foam, as one item under one bank proof — the five ours alone since Phase 4 wait only for that, the cel materials' and the shadow maps' because an editor build samples them until X5.3; `GiVolume`'s seven stay X5.1's. |
+| X5.4 | Phase 4's gate found the canvas and raw textures our draws read through the seam (`hostTexture`: the motes, the puff, the scorch, the blob, the sky's, the cel materials' own, the shadow maps it wraps) named by no step before X6.1, X5.4's foam item covering only a texture Babylon decoded and mipped. When do they go? | **Decided** 2026-11-07 by the owner: in X5.4, beside the foam, as one item under one bank proof — the five ours alone since Phase 4 wait only for that, the cel materials' and the shadow maps' because an editor build samples them until X5.3; `GiVolume`'s seven stay X5.1's. **After X5.3d no Babylon reader samples any of them** (the editor retired, row "X5.3, retire the editor", decided 2026-11-08): the whole group waits only for the one bank proof. |
+| X5.3 | **Retire the editor**: port `F2`'s editor to our renderer (an unmerged build drawn per item, picking against `RayWorld`, our own gizmos, the free-fly camera, `navOverlay`, the proxies and the terrain brush, M–L), or retire it? | **Decided** 2026-11-08 by the owner: **retire it.** The question was the owner's; the orchestrating session recommended retirement. Every shipped map is seeded by a generator, re-seeding discards editor edits, and no `layout.ts` has been authored by hand since the generators landed. A planning agent's read at b3cea5d found that all seven generators, run with no arguments, reproduce their committed `heights.ts` byte for byte and their `layout.ts` on five maps, the other two differing in comment text alone (a hand-added grass comment on Sarab, d2656f3, that its generator does not emit; Harrowmead's stale `ReflectionSystem.encloses`, corrected in its generator by c4d3021). Every generator ran in about a second, with no GPU, deterministically, and every commit that reads like an `F2` save predates the generator that re-seeded its map. The editor is 7,017 lines and keeps alive a second build path, the last Babylon-drawn world, the dev write endpoint's map rows, the source-scan constraint and a verify burden on every step. So: the generators are the only way to author a map; a dev-only VIEWER over the round replaces the editor; picking, gizmos, the brush, path roads, saving, source scanning, the unmerged build and every Babylon path kept for it are deleted (X5.3, five sub-steps). |
+| X5.3 | **The collider meshes**: every collider is still a Babylon mesh in a round (a box each, the strut and cluster merges, the terrain clone), the editor's by `parts.ts`' own header and read by nothing that moves or shoots. Delete them in X5.3, later, or at X6.1? And the scope note: after X5.3c no Babylon material compiles, so the glow mask's Babylon mesh path and Babylon's cel program declarations (with the factory's per-frame pushes) are dead — X5.3d, X5.4 or X6.1? | **Decided** 2026-11-08 by the owner, the planner's recommendation: **X5.3e, part of this step**, `boxGroups` kept byte-identical as data and the collision bake showing no diff at all; the install time and heap measured (`FINDINGS.md` 26). **The glow mask's Babylon mesh path goes at X5.3d**; **Babylon's cel declarations are left to X6.1**, under a DEV counter of Babylon effect compiles that must read 0 in every state. |
+| X5.3 | **The viewer's overlays**: the editor drew the nav graph and the proxies as Babylon meshes, which would put a Babylon draw back in a round (and re-arm items 6 and 10). A 2D plan in the viewer's panel, a dev-only debug draw of OUR renderer in the world (a pipeline, WGSL, the seal), or the camera alone? | **Decided** 2026-11-08 by the owner, the planner's recommendation: **a 2D plan in the viewer's panel**, through `ui/mapPlan.ts` and `ui/mapPaint.ts` — the nav cells green, red and amber with a layer control, the scatter regions, flags, spawns, water and grass rects, the camera warped by a click. No draw and no pipeline of ours; a 3D debug draw is a later step of its own if it is missed. |
+| X5.3 | **The viewer's key and reach**: which key, over which rounds, from the menu, and in which builds? | **Decided** 2026-11-08 by the owner, the planner's recommendation: **`F2` kept**, raising a LID over `playing`, `dying` and `deploy` in **both kinds of round** (holding the page's own world as the pause does; a server's carries on); **nothing on the menu**; **DEV only, behind one dynamic `import()`**, as the mixer is. |
+| X5.3 | **Environment tuning**: the editor's floor picker patches two keys of `environment.ts` (`saveEnvironment.ts`), and its work light lights a night map for looking at. Keep the work light only, add a print-to-paste floor picker, or build a general live environment panel on the mixer's pattern? | **Decided** 2026-11-08 by the owner, the planner's recommendation: **keep the work light** in the viewer; **delete the floor picker and `saveEnvironment`**. `environment.ts` stays hand-authored; a real tuning panel, if wanted, is its own step after the exit. |
+| X5.3 | **`merge:hash --editor`**: it goes with the editor's build, and it was the only run that put `boundsOf`'s TRANSFORMED path under the `bounds≠mesh` check (a round's visuals are at identity, and after X5.3e no mesh is made). Replace it, or record the coverage as dropped? | **Decided** 2026-11-08 by the owner, the planner's recommendation: **replace it with a Node check of `boundsOf`** against Babylon's `BoundingInfo` over every kind at seeded off-identity transforms, in `math-check.mjs`'s style, landed at X5.3a and kept until X6.1. |
+| X5.3 | **The generators only**: how is "the generators are the only way to author a map" held — `npm run maps:check` in `npm run build`, or a command owed by hand — and where does a small edit (move a house, open a gate) go: the generator's design section, or a per-map overrides block? | **Decided** 2026-11-08 by the owner, the planner's recommendation: **`maps:check` in `npm run build`** (every generator re-run into scratch, about 5 s, failing on one byte of drift); **a small edit goes in the generator's design section**, then a re-run; **no overrides file**. |
+| X5.3 | **The two comments and `develop`**: fold the two comment differences now? And `develop` keeps the editor until X6.2 — leave it, make `F2` saves there off-limits, or retire it there by an early merge? | **Decided** 2026-11-08 by the owner, the planner's recommendation: **both comments folded in X5.3a** (Sarab's emitted by its generator, Harrowmead re-run and re-stamped); **`develop` left alone until X6.2**, and **`F2` saves on `develop` off-limits from now, as a working rule**; `maps:check` catches any at the next merge. |
 | X6.2 | Is it ready to merge to `develop`? | Only when X6.2's "Before" list passes in full. |
