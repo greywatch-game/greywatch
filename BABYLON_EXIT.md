@@ -4592,7 +4592,7 @@ loss**: Babylon's post chain rebuilds after a loss today and ours will not
   header; `FINDINGS.md` 5, 16 and 52; the gate note after Phase 4 (above) and the
   "Contracts this plan rewrites" rows for the glow and `shaderLanguage`.
 
-### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it; the split was proposed by a planning agent's read at b3cea5d)
+### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it; the split was proposed by a planning agent's read at b3cea5d) — X5.3a **LANDED** (f51b043)
 
 **This replaces the entry that ported the editor.** That entry put `F2`'s editor on our
 renderer: its unmerged build drawn per item, picking against `RayWorld`, our own move and
@@ -4773,6 +4773,22 @@ reviews: the first is the feature, the second is the renderer. The colliders com
     - `plans/webgpu-ref/README.md` (the draw log);
     - `merge-hash.mjs`' header;
     - `generate-sarab.mjs` and the generators' `--out`.
+
+  **X5.3a LANDED** (f51b043; 2026-11-09; no change to the game: build gates, instruments,
+  docs; under `src/` only Harrowmead's corrected comment and its bake's source hash). The full
+  note is in `plans/done/babylon_exit_landed.md`. **Measured** against a BEFORE at fba1119:
+  `maps:check` 7 of 7 (about a second, the seven run at once), failing on a hand edit of each
+  of the fourteen files; the bank by `exact.mjs` 146 byte-equal and the pistol's flake
+  (default), 147 (`volumetrics=low`), 146 and the pistol (`volumetrics=high`); the Harrowmead
+  bake moved in its source-hash line alone; parity; `merge:hash` identical on eight maps and
+  its new collider data identical across two runs; the draw log equal to the parent's and to
+  itself across two processes; the bounds check equal over 145,620 comparisons and catching
+  all of them under `--perturb`; `post.mjs`, `gi.mjs`, `census`, `surfaces.mjs` and both
+  `pipelines.mjs` runs equal; `?profile&gpu` within 2.2%; typecheck, build, corecheck, `gate`
+  and `shaders`. **The draw log's BEFORE reads more strongly than this entry's wording**: in
+  every state but `F2` and the card raised over the editor's build, Babylon draws nothing, visits
+  no group 0 and compiles no effect (the post chain has been ours since X5.2d), so "draws the post
+  chain alone" above is "draws nothing". **Not run**: a server's match in a browser, the phone.
 
 - **X5.3b — the viewer** (no change to a round) — **S–M**.
   - **Where it lives** (row "X5.3, the viewer's key and reach"): `src/viewer/`, DEV only,

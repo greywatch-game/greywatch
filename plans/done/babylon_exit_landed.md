@@ -10721,3 +10721,110 @@ rendering the main camera after `onAfterCameraRender` but the gizmo layer, no la
 beside the gizmo note in `docs/rendering.md` and in `PostPasses`' header; X5.3 and X5.4 retire it.
 **Measured**: `post.mjs --against` b1203cc's log, both pages: equal, 30,073 values a page, nothing
 excused. Typecheck, build, corecheck and parity pass.
+
+### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it) — X5.3a **LANDED** (f51b043)
+
+The plan's `BABYLON_EXIT.md` holds X5.3's brief, its ONE RULE, the step's own rule on retiring
+an oracle, "Every sub-step owes" and the five sub-steps.
+
+**X5.3a LANDED** (f51b043; 2026-11-09; no change to the game: two build-gate scripts, a probe,
+a Node check, the generators' `--out`, docs; under `src/` only Harrowmead's `layout.ts` comment
+and its bake's source-hash line). Measured headless on the Windows box against a BEFORE at
+fba1119, in a worktree with its own `npm ci --prefer-offline` and a fresh copy of the main
+tree's `ref/`.
+
+- **`npm run maps:check`** (`scripts/check-maps.mjs`, row "X5.3, the generators only"). Every
+  generator takes `--out <dir>` (two lines at its `out`, beside a header paragraph), which writes
+  the two files there and nothing in `src/`. The check runs the seven as child processes AT ONCE
+  into the OS's temp directory (removed after) and compares `layout.ts` and `heights.ts` with the
+  committed files after CRLF to LF on both sides, nothing else normalised; it fails on one byte,
+  naming the map, the file, the first differing line and both texts, or on a generator that exits
+  non-zero. Its map list is `collision-hash.mjs`'s `MAPS` (the proving ground, `DEV_MAPS`, is not
+  checked). It stands in `npm run build` right after `check-collision.mjs`. **About a second**
+  for the seven, where the plan said about five: they run in parallel. Run before the folds, it
+  named exactly the two differences the planning read found (Sarab line 1486, the dry patch's
+  comment; Harrowmead line 1272, `ReflectionSystem.encloses`). **Negative test**: each of the
+  fourteen files in turn had one digit past its middle changed by hand and the check run, then
+  the file restored: 14 of 14 failed, each naming its own map, file and line.
+- **The two comments folded** (row "X5.3, the two comments and `develop`"). `generate-sarab.mjs`
+  emits the dry patch's three-line comment as strings in its `grass.push` (they were a JS comment
+  in the generator); the committed `layout.ts` is unchanged. `npm run harrowmead` re-run: its
+  `layout.ts` moved one line (`ReflectionSystem`'s `exclusionOf`, c4d3021's correction), its
+  `heights.ts` none; `npm run collision -- harrowmead`: the bake's diff is its `sourceHash` line
+  alone (`8142fa1a6e05e881` to `5062fce84c859ab9`; 1,300 boxes, 309 strut boxes in 15 groups);
+  `npm run parity`: all eight maps pass. X3.7's owed comment is closed.
+- **The draw log** (`plans/webgpu-ref/drawlog.mjs`, the Phase 4 gate's scratch
+  `gate-p4/renderlog.mjs` made an instrument; its header is its contract). One page a map
+  (Coldharbour by default), `?seed=5101`; through the menu, the building card, deploy, the KIT lid
+  over deploy, a life (every primary fired, a frag, the third slot, pane 21 broken, then walked at
+  the far flag until the authority killed the player), the death cam, deploy, a short life with
+  the PAUSE lid raised and lowered, the ROUND-OVER card (`Game.endRound(0)`), the menu, a second
+  round and a short life, the menu, and `F2`, whose leaving opens a fresh round
+  (`toggleEditor` calls `startRound`), so the script waits for that round's deploy and then goes
+  to the menu. A step not reached fails the run (exit 2). By frame class (the editor's card
+  apart): every `_draw` keyed by mesh or effect and target; every group-0 visit
+  (`onBeforeRenderingGroupObservable`) keyed by target; every effect `createEffect` ADDS to the
+  engine's cache, and every new compute effect; `scene.meshes`' sizes and, every twentieth frame,
+  its folded names. Each key is the SET of per-frame counts it took and whether it was there
+  every frame, so the log does not ride how many frames fit in a state. `--against` compares by
+  path, `--ignore` a regular expression over the paths. **The BEFORE** (fba1119; every step
+  reached, the player killed): in `menu`, `loading`, `deploy`, `loadout`, `playing`, `dying`,
+  `paused` and `roundover` Babylon **draws nothing, visits no group 0 and compiles no effect**;
+  `scene.meshes` is 1,783 in a round (the colliders, `localShadowProxy`), 1 or 2 on the menu
+  (`localShadowProxy`, `localShadowClear`). `editor`: 3 effect keys (the `moonShadow`,
+  `nearShadow` and `foliageDepth` shadow maps) and 356 mesh keys, group 0 visited into the frame,
+  the glow mask, the lamps' atlas (four times a frame) and the three shadow maps, 14 effects
+  compiled, 4,408 meshes. `loading (from the editor)`: 273 mesh keys into the frame, group 0 into
+  the frame and the glow mask, no compile. Two effects were compiled before the probe could hook
+  the engine (`clearQuad`, `localShadowClear`), recorded as `compiledAtBoot`. **Measured**: the
+  step's log equal to the parent's, and a second process's equal to the first's (their frames
+  differing: 7,120 and 6,829 of `playing`, 504 and 503 of `dying`); about a minute and a half a
+  run. The comparator was checked by hand on a doctored copy (a draw, a compile and a mesh count
+  added: three paths named; the copy against itself: none). **Where the plan reads otherwise**:
+  its "every other state draws the post chain alone" was written before X5.2d made the whole chain
+  ours, and Babylon draws nothing there. The script's header and the README's bullet were
+  reworded after the runs (comments only).
+- **`merge:hash` prints the collider DATA** (X5.3e's BEFORE): in `lists`, `boxGroups` as the
+  `colliderBoxes` indices, `rayGroups` a hash of each strut group's boxes (the `colliderBoxes`
+  fields), `terrainGeometry` each floor block's positions and indices hashed; the per-map line
+  says how many of each (Coldharbour 45 box groups, 31 strut groups, 24 floor blocks; Cinderhaven
+  845, 53, 189). A baseline without them compares everything else. **Measured**: the shipped
+  build `--against` the parent's baseline, identical on eight maps; a second run `--against` the
+  first, identical, the new lists included. (A shipped build holds no visual with a mesh any more,
+  `record bounds: 0 of 0` on both trees, which is the gap the bounds check fills.)
+- **The bounds check** (`scripts/bounds-check.mjs`, row "X5.3, `merge:hash --editor`"), in
+  `math-check.mjs`'s style but loading the game's modules through Vite's SSR loader, as
+  `kit-hash.mjs` does. "Every kind" is every `BUILDERS` key built bare and every scatter kind at
+  seed 1 at each foliage rung; each part's positions as the `Float32Array` a mesh holds, under six
+  seeded OFF-identity matrices (its own `worldMatrixOf` times a placement, a turn about Y and a
+  translation, and seeded `Compose`s, zero and negative scale axes among them); `boundsOf`
+  against a NullEngine `Mesh` holding the same positions with the same sixteen floats frozen as
+  its world matrix (`freezeWorldMatrix`, `refreshBoundingInfo`), box and sphere by `Object.is`.
+  The matrix is built once, on our side, and copied: `math-check` owns the composition.
+  **Measured**: 145,620 comparisons over 24,270 parts of 153 kinds, all equal, about 23 s.
+  **Negative test** (`--perturb`, the X translation of OUR matrix moved 2^-10 m): 145,620 of
+  145,620 differ. A float32 STEP was tried first and caught 144,557: on a zero translation the
+  step is a denormal, which the double arithmetic after it absorbs.
+- **The bank**, 147 rows by `exact.mjs`: **default** 146 byte-equal and
+  `harrowmead-view-pistol-reload` within its flake (2 pixels by 1/255); **`volumetrics=low`** 147
+  byte-equal; **`volumetrics=high`** 146 and the pistol within its flake. `sarab-ground` was
+  byte-equal in all three, so the Sarab procedure was not needed. The same rows red against `ref/`
+  on both sides (34, 102, 93).
+- **The probes against the parent's logs**: `post.mjs --against`, both pages, equal: 30,073 values
+  a page, nothing excused (a minute a run here, where its header says 25); `gi.mjs --against`
+  equal (914,611 and 254,731 values); `census --against` equal (403, 595, 619, 168);
+  `surfaces.mjs --out` on all seven maps, the two JSON files byte-identical; `pipelines.mjs
+  hollowmere` (109 modules, 3 of Babylon's pipelines, 90 of ours, none after the install) and
+  `coldharbour --round` (each install 0 / 21 / 12, nothing in play) identical on both trees.
+- **Live** (X5.2d's live script, both trees: a Hollowmere round, every post setting toggled in
+  play, the shafts' rungs, render scale at both glow rungs, a resize and back, a teardown, a
+  second round, Coldharbour, `F2` with a drag and the glow rung changed, the round after): all 32
+  phases equal in modules, Babylon's synchronous pipelines, post processes and errors; no
+  `uncapturederror`, page or console error, no in-play compile. `?profile&gpu` (Coldharbour and
+  Hollowmere, four alternating runs a tree, report version 37): `render` 1.004 to 1.010 and 0.886
+  to 0.882 ms, `gpu.frame` 2.646 to 2.645 and 2.531 to 2.588 ms (within 2.2%); Babylon's draw
+  calls 0.
+- **Gates**: typecheck, build (`check-maps` in it, `check-babylon-free`, `check-proving`),
+  corecheck, parity, `gate` (seven maps clean) and `shaders` (clean on seven) pass.
+  **Not run**: a server's match in a browser (the live checks are the page's own match), the
+  phone.
