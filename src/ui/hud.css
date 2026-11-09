@@ -26,9 +26,10 @@
    Top right, in the gap above the killfeed's 104px — the minimap owns
    the left corner and the ticket gauge the middle. It is an INSTRUMENT
    rather than chrome, which is why it is deliberately absent from the
-   .overlaid, .paused and .editing lists further down: you want it on the
-   menu, you want it while a round is held, and you especially want it in
-   the editor. `.kitting` is a blanket rule and carves it out by name.
+   .overlaid and .paused lists further down: you want it on the menu, you
+   want it while a round is held, and you especially want it in the viewer
+   and the editor. `.kitting` and `.editing` are blanket rules and carve it
+   out by name.
 
    Above every screen, which is the whole point of it: #overlay (10),
    #loadout (11) and #settings (12) are later siblings under #hud with
@@ -1390,18 +1391,19 @@
 #hud.dying #capture-status,
 #hud.dying #lock-hint { display: none; }
 
-/* --- map editor (dev only) --- */
+/* --- the map viewer and the map editor (dev only) --- */
 /* The gameplay chrome is meaningless with no player, and the hitmarker and
    arcs actively get in the way of clicking things. HUD.setEditing() puts
    .editing on #hud; hiding here rather than per element means update()
-   can keep writing to those nodes without fighting the toggle. */
-#hud.editing #scrim,
-#hud.editing #ticket-bar,
-#hud.editing #flag-strip,
-#hud.editing #capture-status,
-#hud.editing #hitmarker,
-#hud.editing #damage-dirs,
-#hud.editing #hud-bottom,
-#hud.editing #killfeed,
-#hud.editing #scorefeed,
-#hud.editing #lock-hint { display: none; }
+   can keep writing to those nodes without fighting the toggle.
+   It is a CATCH-ALL since the viewer (`BABYLON_EXIT.md` X5.3b), because the
+   viewer is a LID over a round where the editor was a state with nothing
+   under it: the deploy screen, the minimap, the gun marker and the use prompt
+   are all standing under it, and visibility (the kit screen's `.kitting`
+   rule) brings each back on the lowering exactly as it was, unredrawn. The
+   two dev panels are carved out by name, and so are the instruments — the
+   frame rate, the profiler's chip, the cull check — and the toasts, which
+   are how either tool says it could not open. */
+#hud.editing > *:not(#viewer-panel):not(#editor-panel):not(#hud-fps):not(#prof):not(#cullcheck):not(#toasts) {
+  visibility: hidden;
+}

@@ -287,11 +287,12 @@ booked and never reached (a build that failed under it) is dropped by
 `docs/profiling.md`, "The benchmark", has the run itself.
 
 **`dying` is the death cam and is a STEP, not a lid** — `updateWorld` runs in full
-underneath it. **`loadout`, `settings`, `lobby` and `paused` are lids**: a screen
-laid over a state, which taking it off puts back rather than moving the game on.
-The loadout screen covers `menu` or `deploy`; a pause covers `playing`, `dying` or
-`deploy`, so a pause taken while waiting out a respawn returns to the deploy map
-rather than dropping the player into the world.
+underneath it. **`loadout`, `settings`, `lobby`, `paused` and the dev-only
+`viewer` are lids**: a screen laid over a state, which taking it off puts back
+rather than moving the game on. The loadout screen covers `menu` or `deploy`; a
+pause covers `playing`, `dying` or `deploy`, so a pause taken while waiting out a
+respawn returns to the deploy map rather than dropping the player into the world;
+the viewer covers the pause's three (below, "The map viewer's lid").
 
 ## The table, and why it is a table
 
@@ -303,9 +304,9 @@ new screen does not compile until it has answered all four questions, and
 
 | field | the question | answered `true` by |
 | --- | --- | --- |
-| `covers` | which states may this be raised over? (`null` makes it a step) | the four lids |
-| `holdsWorld` | in the page's own match, is the world under this genuinely stopped — the HUD's clock and the audio with it? | `paused` |
-| `roundBehind` | in a server's match, does the authority's fight carry on behind this with nothing else stepping it? | the three lids that can cover a round, and `deploy` |
+| `covers` | which states may this be raised over? (`null` makes it a step) | the five lids |
+| `holdsWorld` | in the page's own match, is the world under this genuinely stopped — the HUD's clock and the audio with it? | `paused`, `viewer` |
+| `roundBehind` | in a server's match, does the authority's fight carry on behind this with nothing else stepping it? | the four lids that can cover a round, and `deploy` |
 | `inRound` | is the player in a round here — is the scoreboard owed? | `deploy`, `playing`, `dying`, `bench` |
 
 This replaced three `-From` fields on `Game`, a two-deep chain of `if`s that
@@ -460,6 +461,44 @@ is bound to and the markup outlives none of these transitions. The keyboard door
 is the one that was actually being fallen through: pad Start closes the kit
 screen and is that very key, and when a round ends under it the round-over card
 arrives beneath the player's fingers.
+
+## The map viewer's lid (dev only)
+
+**`F2` in a DEV build raises the map viewer (`src/viewer/`, `BABYLON_EXIT.md`
+X5.3b) as a LID over a round**, where the editor it replaces was a STEP of its
+own over a build of its own (`editor`, `Shift+F2` until X5.3c deletes it). Its
+row is the pause's, for the pause's reasons:
+
+| field | answer | why |
+| --- | --- | --- |
+| `covers` | `playing`, `dying`, `deploy` | the three states a round is in, both kinds of round; nothing on the menu, a build, the round-over card, a benchmark or another lid (row "X5.3, the viewer's key and reach") |
+| `holdsWorld` | `true` | in the page's own match the world under it is stopped as under the pause — nothing posts an `advance`, so the match's clock and its fight are held (the HUD's clock at `dt` 0 and the audio suspended with it, `toggleViewer` doing the pause's suspension by hand) |
+| `roundBehind` | `true` | in a server's round the authority carries on, so `updateRoundBehind` steps the netplay frame under it: the bodies and the fleet move, and the player's own body stands where the authority has it (no `move` is sent from a lid) |
+| `inRound` | `false` | a lid takes the board away |
+
+**It is the one lid that MOVES the camera, and so the one that owes the camera
+back.** Its frame (`Game.updateViewer`) is the editor's camera tail, renamed: the
+free camera (`ViewerCamera`, writing `CameraSystem`'s `FreeCamera`, which the post
+chain is bound to) is the shadow focus, and the round's own bodies are passed to
+the tail, so what is drawn is the round's frame — its GI, glazing, fires, grass,
+water, bodies and hulls — through the round's path, with no second one. The tail
+runs at the frame's `dt`, as the editor's did, so the foliage, the water and the
+lamps' flicker go on moving over a held match while the bodies stand still.
+**Taking it down** (`Game.takeDown` → `closeViewer`, however it comes down: `F2`
+again, or a step the wire decides under it) puts back the camera's pose as the
+lid found it, the map's own environment over the work light
+(`ViewerSession.dispose`), the HUD's chrome (`HUD.setEditing`), the weapon as it
+was (`Player.bodyIsHidden`) and the audio clock. **`F2`'s own lowering also owes
+the pointer lock** back to a live frame (the resume's route), and runs the camera
+tail once at no time from the shadow focus the lid found — because a `deploy`
+under it runs no tail of its own, and the viewer's camera moved the shadow window,
+the light slots and the lamps' atlas with it.
+
+**It is raised BEFORE the pointer lock is let go**, so the state is `viewer` by the
+time the lock's loss arrives and the loss pauses nothing (the trigger asks for
+`playing` or `dying`, below); and `toggleViewer` asks the state before its import
+as well as raising after it, so `F2` from a state the table refuses fetches
+nothing.
 
 ## The pointer lock
 

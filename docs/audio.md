@@ -934,7 +934,8 @@ dynamic `import()` gate as the editor, and it is the reason these numbers can be
 set honestly at all: you cannot mix a shooter from a spreadsheet, and the only
 useful place to judge a footstep is under fire.
 
-- **It does not take a screen down**, unlike `F2`. There is no state
+- **It does not take a screen down**, unlike the editor's `Shift+F2`, and is
+  no lid either, unlike the viewer's `F2` (`docs/states.md`). There is no state
   transition, no map rebuild and nothing to put back — the round carries on
   underneath it, which is the entire workflow. It sits at `z-index: 40`, over
   the whole `src/ui/` ladder, so the menu's ambience and the kit screen's

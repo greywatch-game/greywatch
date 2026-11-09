@@ -353,9 +353,13 @@ node plans/webgpu-ref/drawlog.mjs [map...] [--out=f.json] [--against=f.json] [--
   building card, deploy, the kit lid, a life (every primary fired, a frag, the third
   slot, a pane broken, a flying hull pinned where there is one, then walked at the far
   flag until the authority kills the player), the death cam, deploy, a life under the
-  pause lid, the round-over card, the menu, a second round, the menu and `F2` (the
-  editor, `--no-editor` to leave it out); a step it does not reach fails the run (exit
-  2). By FRAME CLASS (the state at the engine's begin-frame, the card raised from the
+  pause lid, the round-over card, the menu, a second round, the menu and the editor
+  (`Game.toggleEditor`, `Shift+F2` since X5.3b; `--no-editor` to leave it out); and,
+  since X5.3b, the map VIEWER's lid (`F2`) raised over the first deploy, the death cam
+  and the second life, flown to a flag with its plan shown and its work light toggled
+  (`--no-viewer` to leave it out; a parent with no viewer is compared with
+  `--ignore='^[a-z]+/viewer(/|$)'`); a step it does not reach fails the run (exit 2).
+  By FRAME CLASS (the state at the engine's begin-frame, the card raised from the
   editor apart): every `_draw` keyed by mesh or effect and target, every visit of
   rendering group 0 keyed by target, every effect (and compute effect) COMPILED, and
   `scene.meshes`' sizes and folded names — each key as the SET of per-frame counts it

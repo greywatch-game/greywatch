@@ -742,7 +742,9 @@ without that subtract turns feedback into a punishment.
 - **The pointer lock is deliberately KEPT.** There is nothing to click, and dropping
   it would trip the lock-loss pause on the very frame the shot begins. `enterDeploy`
   releases it one state later — and it is also the single funnel for retiring the body,
-  so every path out (the clock, the round ending, F2) hands the rig back.
+  so every path out (the clock, the round ending, the editor's `Shift+F2`) hands the
+  rig back. The map viewer's `F2` is not a path out: it is a lid that HOLDS the page's
+  own match, the cam with it, and lowering it puts `dying` back where it was.
 
 `HUD.setDeathCam` raises `.dying`, which hides the same four things `.paused` does
 and is a class of its own anyway: a pause hides them because the world stopped; this

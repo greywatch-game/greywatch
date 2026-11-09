@@ -4,7 +4,7 @@
  * `gate-p4/renderlog.mjs` made an instrument.
  *
  *   node plans/webgpu-ref/drawlog.mjs [map...] [--out=f.json] [--against=f.json]
- *     [--ignore=<regex>] [--no-editor] [--limit=<seconds>]
+ *     [--ignore=<regex>] [--no-editor] [--no-viewer] [--limit=<seconds>]
  *
  * Owns: nothing but a report and, when asked, one JSON file. It draws nothing
  * and changes no state of the game's but what its script plays.
@@ -61,6 +61,17 @@
  * from its deploy to the menu) unless `--no-editor`. **A step it does not
  * reach fails the run** (exit 2): a log missing a state is not a log of it.
  *
+ * **The VIEWER** (`BABYLON_EXIT.md` X5.3b, the dev-only map viewer's lid, `F2`
+ * since then) is raised three times unless `--no-viewer`: over the first
+ * deploy (after the kit lid), over the death cam the first life ends in, and
+ * over the second life before its pause — each time flown to a flag, its nav
+ * plan and marks shown, its work light taken off and put back, and lowered
+ * through `Game.toggleViewer` as `F2` lowers it. Its frames are the class
+ * `viewer`. The page's own match is held under it, so the classes around it
+ * are the ones a run without it logs, which is how a parent with no viewer is
+ * compared: `--ignore='^[a-z]+/viewer(/|$)'`. The editor's step calls
+ * `Game.toggleEditor`, which is `Shift+F2`'s since X5.3b, as it was `F2`'s.
+ *
  * `--against` compares the recorded classes with an earlier `--out`'s and exits
  * 1 on any difference, naming each by path (`<map>/<class>/<field>/<key>`);
  * `--ignore` takes a regular expression over those paths, for a difference a
@@ -79,6 +90,7 @@ const args = process.argv.slice(2);
 const MAPS = args.filter((a) => !a.startsWith("--"));
 if (MAPS.length === 0) MAPS.push("coldharbour");
 const EDITOR = !args.includes("--no-editor");
+const VIEWER = !args.includes("--no-viewer");
 const val = (k) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3);
 const OUT = val("out");
 const AGAINST = val("against");
@@ -505,6 +517,32 @@ const frames = (page, n) =>
     n,
   );
 
+/** Runs IN THE PAGE: flies a raised viewer to a flag and shows what it has. */
+async function viewerLook() {
+  const g = window.__celshock;
+  const v = g.viewer;
+  if (!v) return false;
+  const fr = (k) =>
+    new Promise((res) => {
+      let i = 0;
+      const o = g.scene.onAfterRenderObservable.add(() => {
+        if (++i < k) return;
+        g.scene.onAfterRenderObservable.remove(o);
+        res();
+      });
+    });
+  await fr(30);
+  const cp = g.map.controlPoints[0];
+  v.flyTo(cp.pos.x, g.map.terrain.heightAt(cp.pos.x, cp.pos.z), cp.pos.z);
+  v.setNav(true);
+  await fr(30);
+  v.setWorkLight(false);
+  await fr(30);
+  v.setWorkLight(true);
+  await fr(30);
+  return true;
+}
+
 async function logMap(browser, url, map) {
   const sep = url.endsWith("/") ? "" : "/";
   const { page, pageErrors, consoleErrors, consoleLines } = await bootMap(browser, `${url}${sep}?seed=${SEED}`, map, {
@@ -520,6 +558,16 @@ async function logMap(browser, url, map) {
     if (!ok) missed.push(what);
   };
   const state = () => page.evaluate(() => window.__celshock.state);
+  // The viewer's lid over `under`, raised and lowered as `F2` does it.
+  const viewerOver = async (under) => {
+    if (!VIEWER) return;
+    await page.evaluate(() => window.__celshock.toggleViewer());
+    need((await state()) === "viewer", `F2, the viewer over ${under}`);
+    need(await page.evaluate(viewerLook), `the viewer flown and its plan shown over ${under}`);
+    await page.evaluate(() => window.__celshock.toggleViewer());
+    need((await state()) === under, `the viewer lowered back to ${under}`);
+    await frames(page, 30);
+  };
 
   await frames(page, 60); // the menu at boot
   await installRound(page);
@@ -531,14 +579,18 @@ async function logMap(browser, url, map) {
   await page.evaluate(() => window.__celshock.closeLoadout());
   need((await state()) === "deploy", "the kit lid lowered");
   await frames(page, 30);
+  await viewerOver("deploy");
   let l = await page.evaluate(life, 1);
   steps.push(`life 1: ${l.log.join("; ")}`);
   need(l.reached.spawn, "life 1 spawned");
   need(l.reached.dying, "life 1 killed (the death cam)");
+  if ((await state()) === "dying") await viewerOver("dying");
+  else if (VIEWER) need(false, "the death cam still up for the viewer");
   need(await page.evaluate(waitState, ["deploy", 60]), "deploy after the death cam");
   await frames(page, 60);
   l = await page.evaluate(life, 2);
   need(l.reached.spawn, "life 2 spawned");
+  await viewerOver("playing");
   await page.evaluate(() => window.__celshock.pause());
   need((await state()) === "paused", "the pause lid over playing");
   await frames(page, 60);

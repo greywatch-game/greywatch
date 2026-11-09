@@ -113,7 +113,7 @@ export class EditorPanel {
           <div><b>F</b> tool: <span id="ed-tool">sculpt</span></div>
           <div id="ed-tool-hint"><b>LMB drag</b> &uarr;&darr; raise / lower ground</div>
         </div>
-        <div><b>F2</b> back to the game (discards unsaved)</div>
+        <div><b>Shift+F2</b> back to the game (discards unsaved)</div>
       </div>
     `;
     document.getElementById("hud")!.appendChild(this.root);

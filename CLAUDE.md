@@ -314,7 +314,12 @@ the one screen the TABLE cannot own**, so a caller that wants it up raises it
 AFTER its own `go`. **The question a
 lid raises is never which screen is up, but whether what is under it is moving**:
 in the page's own match a pause genuinely holds the world, and in a server's
-round it holds nothing, because the authority never heard the key.
+round it holds nothing, because the authority never heard the key. **The
+dev-only map VIEWER is a lid too** (`viewer`, `F2`, `src/viewer/`, the section
+below): it covers the three states a round is in, holds the page's own match
+as the pause does, and is the one lid that MOVES the camera, so taking it down
+puts back the camera, the weapon, the HUD's chrome and the map's own
+environment.
 
 `Game.updateGameplay` has a load-bearing order at the end of the frame: camera
 update → carried-light updates → `lighting.update(dt, camera.position, mats)`.
@@ -487,7 +492,7 @@ being a STATE rather than a lid, takes only the HUD's gameplay chrome off
 (`#hud.deploying`), because it draws the tickets and the flags itself; a new
 gauge that must be read between lives owes that list a look. **A front-end lid
 raised over other SCREENS takes them off the glass** (`#hud.kitting`,
-`#hud.setting`, `#hud.lobbying` — `visibility`, so they return unredrawn) and
+`#hud.setting`, `#hud.lobbying`, and the dev viewer's `#hud.editing` — `visibility`, so they return unredrawn) and
 is laid over the SCENE, so a new child of `#hud` that must survive one is carved
 out of every such rule by name, as `#hud-fps` is.
 
@@ -759,7 +764,7 @@ the four with vehicles on them**; **Sarab and Cinderhaven are the two with all
 THREE KINDS and the two that are not 8v8** — 24 a side, online and off. **Every
 shipped map is SEEDED by a generator** (the commands above), which CHECKS that
 every front door opens onto a street, a yard or the green, and emits an ordinary
-`layout.ts` — which an `F2` save still patches, and which then FAILS `npm run
+`layout.ts` — which an editor save (`Shift+F2`) still patches, and which then FAILS `npm run
 build` (`maps:check`) until that edit is folded into the generator and re-run.
 **Cinderhaven's rules are general rather than details of that map**
 (`docs/world.md`); the one that reaches outside the world layer is that **there
@@ -805,16 +810,28 @@ layout gotchas that have already cost time, the valley rim's contract with the
 sky, the borderland, the three rim forms, the mouth and the leash, the margin
 that IS the landform, and the proving ground's bake and build sentinel.
 
-### The map editor (dev only)
+### The map viewer and the map editor (dev only)
 
-`F2` in a dev build opens `src/editor/`: free-fly the real scene, click to
-select, drag gizmos, edit properties, sculpt terrain, lay a path road point by
-point. It is reached through **one
-dynamic `import()` inside an `import.meta.env.DEV` branch** in
-`Game.toggleEditor` — the *whole method body* is behind that gate, which is what
-makes the chunk unreachable under `vite build`. **Never import `src/editor/`
-statically.** Saving **patches `layout.ts`'s text and does not regenerate it**:
-an untouched entry is re-emitted byte for byte. There is no undo.
+**`F2` in a dev build raises the MAP VIEWER** (`src/viewer/`, `BABYLON_EXIT.md`
+X5.3b): a LID over a ROUND (`playing`, `dying` or `deploy`, in either kind of
+round, and nothing from any other state), so what it shows is the round's own
+frame drawn by the round's own path — a free camera on `CameraSystem`'s, the
+validation list, and the nav graph and the layout's proxies as a 2D PLAN in its
+panel through `ui/mapPlan.ts` and `ui/mapPaint.ts`. **It adds no draw and no
+pipeline, of Babylon's or of ours**; a 3D overlay is a step of its own. It
+reaches the game through **one dynamic `import()` inside an
+`import.meta.env.DEV` branch** in `Game.toggleViewer`, the *whole method body*
+behind that gate, as the mixer's is — what makes the chunk unreachable under
+`vite build`. **Never import `src/viewer/` statically, and nothing in it
+imports `src/editor/`.**
+
+**The editor is `Shift+F2` until X5.3c deletes it**, standing beside the viewer
+as the oracle the viewer's checks are graded against: free-fly the real scene,
+click to select, drag gizmos, edit properties, sculpt terrain, lay a path road
+point by point, reached the same way through `Game.toggleEditor`. **Never import
+`src/editor/` statically.** Saving **patches `layout.ts`'s text and does not
+regenerate it**: an untouched entry is re-emitted byte for byte. There is no
+undo.
 
 → **[`docs/editor.md`](docs/editor.md)** — the two pointer modes and the terrain
 brush, the three rebuild tiers, `SelectionRef` and the three files that must

@@ -1,12 +1,19 @@
 # The map editor (dev only)
 
-What `F2` opens, what it deliberately refuses to do, the two pointer modes, the
+What `Shift+F2` opens, what it deliberately refuses to do, the two pointer modes, the
 three rebuild tiers, and how a save patches authored source rather than
 regenerating it. Split out of [`CLAUDE.md`](../CLAUDE.md), which keeps the
 summary; this file is the contract for `src/editor/` and the dev-only write
 endpoint in `vite.config.ts`.
 
-`F2` in a dev build opens `src/editor/` — free-fly the real scene, click to select,
+**`Shift+F2` since `BABYLON_EXIT.md` X5.3b**, which gave `F2` to the map VIEWER
+(`src/viewer/`, a lid over a round: `CLAUDE.md`, `docs/states.md`). The editor
+stands beside the viewer until X5.3c deletes it, as the oracle the viewer's moved
+checks are graded against (its own `validate.ts`, `navOverlay.ts`, camera and
+work light, of which the viewer holds copies), and nothing in it changed but the
+key.
+
+`Shift+F2` in a dev build opens `src/editor/` — free-fly the real scene, click to select,
 drag gizmos, edit properties, add and delete entries. Everything under
 `src/editor/` is reached through **one dynamic `import()` inside a
 `import.meta.env.DEV` branch in `Game.toggleEditor`**, and the *whole method body*
@@ -45,7 +52,7 @@ Things it deliberately does not do:
   editor build never merges its blocks, so it never wore the palette; its
   emissives are `getEmissive`'s `StandardMaterial`s, which `GlowPass` blooms
   as ever) — and the reference bank cannot see it: `npm run merge:hash --
-  --editor` and `F2` by hand (select, drag, sculpt, save) are what watch it.
+  --editor` and `Shift+F2` by hand (select, drag, sculpt, save) are what watch it.
 - **Its world has NO GI until X5.3** (the owner's decision of 2026-11-07,
   `BABYLON_EXIT.md` X5.1b's row 1): Babylon's cel materials are handed nothing
   of the irradiance volume's and hold GI `off` (`CelMaterialFactory.babylonGi`,
@@ -423,7 +430,7 @@ team with no home spawn deploys at the origin. None can happen by dragging
 something, and all are errors.
 
 **There is no undo.** The escape hatch is that leaving the editor rebuilds from the
-layout module, so F2 (which asks first when there are unsaved edits) throws away
+layout module, so `Shift+F2` (which asks first when there are unsaved edits) throws away
 everything since the last save.
 
 `vite.config.ts` holds the dev-only write endpoint. It is deliberately outside

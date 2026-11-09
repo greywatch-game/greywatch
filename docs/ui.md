@@ -68,6 +68,19 @@ through with it, which reads as two screens up at once; the shell answered
 that with an opaque variant of its veil (`.ui-solid`), and the answer outlived
 it by being turned round.
 
+**The dev-only map viewer is the one lid over the SCENE that takes every screen
+off the glass**, because it is a tool for looking at the world rather than a
+screen of the game's (`BABYLON_EXIT.md` X5.3b, `docs/states.md`): `HUD.setEditing`
+puts `.editing` on `#hud`, and `hud.css` hides every child of `#hud` by
+`visibility` but the viewer's and the editor's panels and the instruments
+(`#hud-fps`, the profiler's `#prof`, `#cullcheck`) and `#toasts` — the deploy
+screen and the minimap under it come back unredrawn, as under `.kitting`. Its
+panel (`viewer/ViewerPanel.ts`) is a dev panel in the editor's look — the old
+interface font, bare pixels, no unit — and its plan is the FOURTH surface
+`ui/mapPlan.ts` foresaw: `planFromWorld` painted by `paintPlan`, the deploy
+screen's projection, with the viewer's overlays over it in the editor's colours,
+which no player reads and which the ownership rule below therefore does not bind.
+
 **Nothing under `#hud` is scaled to a short viewport any more.** `--ov-scale`
 drew a screen at the size it was authored for and scaled it down, and at its
 old 0.45 a landscape phone got a legible desktop menu rendered at 45%. Each
@@ -710,7 +723,8 @@ is for, and it decides how it is drawn.
   which is the same one fact `drawSlot` and the `1`/`2` keys already share.
 
 **One stylesheet per module that writes markup, imported by that module**
-(`HUD.ts`→`hud.css` … `editor/EditorPanel.ts`→`editor/panel.css`); `main.ts`
+(`HUD.ts`→`hud.css` … `editor/EditorPanel.ts`→`editor/panel.css`,
+`viewer/ViewerPanel.ts`→`viewer/viewer.css`); `main.ts`
 imports `base.css` first. Vite bundles them into one hashed stylesheet the built
 `index.html` links from its head. All of it was once ~2,050 lines inline in
 `index.html`, which cost three things worth not paying again: no compile-time link

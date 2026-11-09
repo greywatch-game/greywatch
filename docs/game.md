@@ -144,7 +144,7 @@ map the page had just built; a `Match` reads `MapDef.collision` through
 stale colliders on the authority's side until `npm run collision` re-bakes it.
 The same rule a server match always had, now met in the dev loop. **An owned
 match has no idle timer, so nothing closes it but the page**: `leaveMatch`
-does, from `enterMenu`, from F2 into the editor and at the top of every
+does, from `enterMenu`, from `Shift+F2` into the editor and at the top of every
 `openLocalRound`, so the menu, the editor and a server's match hold no second
 world.
 
@@ -566,6 +566,24 @@ takes it away, because a lid is a screen the player asked for.
 controls are owed to `playing` alone, which is narrower than `inRound`, and a
 frame that paused, died or deployed has already taken them away by the time it
 reads the state.
+
+**The map viewer's frame is an ARM, and the one arm of a state that simulates
+nothing to run the camera tail** (`Game.updateViewer`, `BABYLON_EXIT.md` X5.3b,
+`docs/states.md`, "The map viewer's lid"). It sits between `updateRoundBehind` —
+which, the viewer answering `roundBehind`, steps a server's round under it — and
+`LocalOwner.pass`, which hands the page's own match the whole frame as a `hold`,
+the viewer answering `holdsWorld`. It moves the free camera and then runs
+`updateSceneForCamera` at the frame's `dt` from it, with the round's bodies as the
+grass's pushers and no player: the shadow window, the bodies' map, the light
+slots, the lamps' atlas, the water's and the grass's own clocks and the wind —
+the half of a played frame that needs only a posed camera, which is the editor's
+tail renamed. So every row of the table above reads the viewer's camera as it
+reads the player's: the EYE (`followEye`), the bounce around it (`gi.update`),
+the EAR (`sfx.setListener`, over an audio clock suspended in the page's own
+match), and the draws before the render. It is in the arm and not in `tick`
+because it is owed by that one state rather than by a span of them. Lowering
+the lid with `F2` runs the tail once more at `dt` 0 from the shadow focus the lid
+found, for the deploy screen's sake, which runs no tail of its own.
 
 Every row above shares a shape worth recognising before adding another: the
 thing being pushed is owed by a **span** of states rather than by one, and the

@@ -1,0 +1,141 @@
+/**
+ * viewer.css — The dev-only map viewer's panel.
+ * Owns: #viewer-panel and everything under it.
+ * Imported by ViewerPanel.ts, which is only reachable through the dynamic
+ * import() in Game.toggleViewer — so this rides the viewer's own chunk and no
+ * part of it reaches a production build. It must never be imported from
+ * index.html or from anything on the static graph.
+ *
+ * The rule that takes the round's chrome and screens off the glass while the
+ * viewer is up is NOT here: it hangs off `#hud.editing`, which `HUD.setEditing`
+ * puts on, so it is `hud.css`'s (`docs/ui.md`: a screen's state rules go with
+ * whoever sets the class).
+ *
+ * `editor/panel.css` trimmed, and on purpose in the same look: a dense numeric
+ * tool rather than part of the game's presentation, so it keeps the old
+ * interface font and does not move when the HUD is restyled. Its sizes are
+ * bare pixels for the same reason — a dev panel is no instrument and no
+ * chrome, so the HUD's unit ladder does not reach it.
+ */
+
+#viewer-panel {
+  font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 296px;
+  max-height: calc(100vh - 28px);
+  overflow-y: auto;
+  padding: 12px 14px;
+  background: rgba(6, 8, 14, 0.9);
+  border: 2px solid #000;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2);
+  /* Same opt-in as #deploy: #hud is pointer-events:none. */
+  pointer-events: auto;
+  font-size: 12px;
+  color: #dfe6f2;
+}
+#viewer-panel h2 {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 4px;
+  color: #35f0ff;
+  margin-bottom: 10px;
+}
+#viewer-panel .vw-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 2px 0;
+  font-variant-numeric: tabular-nums;
+}
+#viewer-panel .vw-key {
+  color: #ffe680;
+  letter-spacing: 2px;
+  opacity: 0.75;
+}
+#viewer-panel .vw-plan-box {
+  margin-top: 10px;
+  width: 296px;
+  height: 296px;
+  background: #000;
+}
+/* The backing store is the DPR's; the box is the panel's. Clicks on it fly the
+   camera, so it says so with the cursor. */
+#viewer-panel .vw-plan {
+  display: block;
+  width: 296px;
+  height: 296px;
+  cursor: crosshair;
+}
+/* Two rows of picks, each a grid of equal shares (`docs/ui.md`: never a
+   wrapping flex row) — the toggles, then the nav's two choices. */
+#viewer-panel .vw-controls,
+#viewer-panel .vw-picks {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  align-items: center;
+}
+#viewer-panel .vw-picks { grid-template-columns: 1fr 1fr; }
+#viewer-panel .vw-controls label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  letter-spacing: 1px;
+}
+#viewer-panel .vw-controls input[type="checkbox"] { accent-color: #35f0ff; }
+#viewer-panel select {
+  min-width: 0;
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: #dfe6f2;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  padding: 2px 4px;
+}
+#viewer-panel select:focus { outline: none; border-color: #35f0ff; }
+#viewer-panel .vw-note {
+  margin-top: 6px;
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: #8a93a6;
+}
+#viewer-panel .vw-title {
+  color: #35f0ff;
+  font-weight: 800;
+  letter-spacing: 2px;
+  margin-bottom: 6px;
+}
+#viewer-panel .vw-findings {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  max-height: 30vh;
+  overflow-y: auto;
+}
+#viewer-panel .vw-finding {
+  padding: 3px 6px;
+  margin-bottom: 3px;
+  font-size: 11px;
+  line-height: 1.35;
+  cursor: pointer;
+  border-left: 2px solid currentColor;
+  background: rgba(255, 255, 255, 0.04);
+}
+#viewer-panel .vw-finding:hover { background: rgba(255, 255, 255, 0.12); }
+#viewer-panel .vw-finding.error { color: #ff5a4f; }
+#viewer-panel .vw-finding.warning { color: #ffc46b; }
+#viewer-panel .vw-finding.info { color: #8a93a6; }
+#viewer-panel .vw-ok { color: #7fd66a; font-size: 11px; letter-spacing: 1px; }
+#viewer-panel .vw-help {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  line-height: 1.7;
+  opacity: 0.6;
+}
+#viewer-panel .vw-help b { color: #ffc46b; font-weight: 700; }

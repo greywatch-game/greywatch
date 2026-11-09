@@ -2462,6 +2462,16 @@ export class Player implements Combatant {
   }
 
   /**
+   * What `setBodyHidden` last said — read by the one caller that hides the
+   * weapon for a while and must put back what it found rather than guess it
+   * from the state: the dev-only map viewer, a lid that can be raised over a
+   * player who is driving as well as one on foot (`Game.toggleViewer`).
+   */
+  get bodyIsHidden(): boolean {
+    return this.bodyHidden;
+  }
+
+  /**
    * Hands the weapon to the loadout screen's turntable, or takes it back.
    * Pure pass-through apart from the visibility: the pose is the viewmodel's,
    * and nothing about the weapon's state — magazine, reload, spread — changes

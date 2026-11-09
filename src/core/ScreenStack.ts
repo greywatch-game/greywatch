@@ -69,7 +69,9 @@
  * spawn event is what puts them in the world.
  *
  * `editor` sits outside the cycle: a dev-only side state reachable from anywhere
- * with F2, and leaving it always restarts the round rather than resuming,
+ * with Shift+F2 (F2 itself is the viewer lid since `BABYLON_EXIT.md` X5.3b,
+ * the editor standing beside it until X5.3c deletes it), and leaving it always
+ * restarts the round rather than resuming,
  * because the systems that cache the `GameMap` cannot be handed a map that was
  * rebuilt underneath them.
  *
@@ -116,8 +118,17 @@ export type StepState =
  * step in the cycle — a server's round and the page's own are the same
  * `loading -> deploy -> playing` cycle, differing only in who hosts the match
  * (`NetSession.local`).
+ *
+ * `viewer` is the dev-only map viewer (`F2`, `src/viewer/`, `BABYLON_EXIT.md`
+ * X5.3b): a free camera, the nav graph and the layout's marks on a plan, laid
+ * over a ROUND rather than built beside one — so it covers the three states
+ * a round is in, exactly as the pause does, and holds the page's own match as
+ * the pause does. It is the one lid that MOVES the camera, which is why
+ * lowering it puts the camera back (`ViewerSession.dispose`): the deploy
+ * screen under it writes no camera of its own. It never ships — the table
+ * names it in every build, and only a DEV build's `F2` can raise it.
  */
-export type LidState = "paused" | "loadout" | "settings" | "lobby";
+export type LidState = "paused" | "loadout" | "settings" | "lobby" | "viewer";
 
 export type GameState = StepState | LidState;
 
@@ -143,8 +154,8 @@ export type ScreenSpec = {
   /**
    * In the page's OWN match: is the world under this screen genuinely STOPPED?
    *
-   * Only the pause card is, and it is asked of the whole stack rather than of
-   * the top of it (`ScreenStack.holdsWorld`) — the settings screen holds nothing
+   * The pause card is, and the viewer laid over a round as a pause is; it is
+   * asked of the whole stack rather than of the top of it (`ScreenStack.holdsWorld`) — the settings screen holds nothing
    * by itself, and a pause underneath it is still a pause. It is what the HUD's
    * own clock keys off: the killfeed and the toasts belong to the frame, so they
    * freeze with it and fade with it, and the failure either way round is a fight
@@ -165,9 +176,10 @@ export type ScreenSpec = {
    * with nothing else stepping the frame that draws it? (In the page's own
    * match nothing is behind any of these to carry on — they hold it.)
    *
-   * True for every lid, and the answer is the same for all four for one reason:
-   * the round underneath does not care which screen is on top of it, only
-   * whether the authority is still running it. Left out, sixteen bodies stand
+   * True for every lid that can cover a round — the pause, the kit and
+   * settings screens and the viewer — and the answer is the same for all four
+   * for one reason: the round underneath does not care which screen is on top
+   * of it, only whether the authority is still running it. Left out, sixteen bodies stand
    * frozen behind the card and snap to where they really are on the frame the
    * player resumes.
    *
@@ -247,6 +259,17 @@ const SCREENS: Record<GameState, ScreenSpec> = {
     covers: ["menu"],
     holdsWorld: false,
     roundBehind: false,
+    inRound: false,
+  },
+  // The pause's row, and for the pause's reasons: the round's three states and
+  // no other (nothing on the menu, `BABYLON_EXIT.md` row "X5.3, the viewer's
+  // key and reach"), the page's own match held under it, a server's carried on
+  // behind it — its bodies, its fleet and the player's body where the authority
+  // has it — and the board taken away, as a lid takes it.
+  viewer: {
+    covers: ["playing", "dying", "deploy"],
+    holdsWorld: true,
+    roundBehind: true,
     inRound: false,
   },
 };

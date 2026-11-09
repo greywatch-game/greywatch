@@ -359,8 +359,10 @@ plans/webgpu-ref/     # The exit's probes and the reference bank, indexed by
                       #   scene.meshes by frame class, live, through the
                       #   menu, the card, deploy, the kit and pause lids, a
                       #   life to the death cam, the round-over card, a
-                      #   second round and F2; per-frame count SETS, so it
-                      #   compares with itself and a parent (`--against`)
+                      #   second round and the editor; the VIEWER's lid over
+                      #   deploy, the death cam and a life (X5.3b, its own
+                      #   class); per-frame count SETS, so it compares with
+                      #   itself and a parent (`--against`)
 
 index.html          # The head, and NO interface CSS beyond the two things shown
                     #   while there IS no interface: a black background (so a
@@ -570,7 +572,8 @@ src/
                         #   page's own match, what owes a server's frame, what
                         #   is owed the scoreboard), and the raised-lid stack. A
                         #   new state does not compile without a row. `bench`
-                        #   is the benchmark's step, outside the cycle
+                        #   is the benchmark's step, outside the cycle; `viewer`
+                        #   the dev map viewer's lid, the pause's row (X5.3b)
     InputManager.ts     # Keyboard/mouse + gamepad + TOUCH state, and rumble.
                         #   Three sources, one composition, one set of fields —
                         #   and the clock that says which device is in hand.
@@ -1582,7 +1585,32 @@ src/
                         #     value lines inside each table's own block, posts
                         #     it back. Refuses rather than writing partially
       mixer.css         #   Imported by index.ts so it rides the same chunk
-  editor/               # Dev-only map editor (F2). Dynamically imported —
+  viewer/               # Dev-only MAP VIEWER (F2, BABYLON_EXIT.md X5.3b): a LID
+                        #   over a round. Dynamically imported (Game.toggleViewer,
+                        #   the mixer's gate) — never statically imported from
+                        #   anywhere, and never importing src/editor/
+    index.ts            #   The session: what it borrows (the round's camera and
+                        #   map), the findings, the toggles, and putting back the
+                        #   camera's pose and the map's own environment
+    ViewerCamera.ts     #   Free-fly drive of CameraSystem's FreeCamera: the
+                        #     editor's camera on src/math vectors
+    ViewerPanel.ts      #   The panel: readout, plan, toggles, findings, help
+    viewer.css          #   Imported by ViewerPanel so it rides the dynamic
+                        #   chunk. Never link it from HTML
+    ViewerPlan.ts       #   The overlays as a 2D PLAN: planFromWorld + paintPlan,
+                        #     the nav buckets at a pixel a cell, the marks and
+                        #     the camera; a click warps it. No draw, no pipeline
+    navPlan.ts          #   navOverlay's classification without its draw (per
+                        #     surface, per cell by layer) and the flow fields it
+                        #     sweeps on the standing graph on demand
+    marks.ts            #   The proxies' shapes without their meshes: flags at
+                        #     their true radius, spawns, water/grass, scatter
+    validate.ts         #   The editor's checks, moved (src/math's Vector3)
+    workLight.ts        #   Brightened EnvironmentSpec for looking at a night map
+    tuning.ts           #   Tool constants (NOT src/config/ — not gameplay)
+  editor/               # Dev-only map editor (Shift+F2 since X5.3b; deleted at
+                        #   X5.3c, standing beside the viewer as its oracle).
+                        #   Dynamically imported —
     index.ts            #   never statically imported from anywhere, or it
     EditorCamera.ts     #   lands in the production bundle
     EditorPanel.ts

@@ -41,7 +41,10 @@
  * match. Browser listeners are `installDomListeners`. Screen callbacks are `wireScreens`.
  * `tick` is a dispatch: the input handling for each screen is its own
  * `update*Screen`/`updateMenuCard`/`updatePauseMenu` method, and only `playing`,
- * `dying` and `editor` are inline, because they are two lines each.
+ * `dying`, `editor` and `viewer` are inline, because they are two lines each.
+ * The dev-only map VIEWER (`F2`, `toggleViewer`) is a LID over a round, the one
+ * that moves the camera; the editor is `Shift+F2` until `BABYLON_EXIT.md` X5.3c
+ * deletes it.
  * The remembered difficulty/map/loadout live in `prefs.ts`, the display
  * settings in `settings.ts`; neither applies anything, that is this file's job.
  * Which SERVER is `net/RegionBook.ts` — the list, the pick, and the automatic
@@ -268,6 +271,7 @@ import {
 import { Leash, LEASH_KILLER } from "../world/leash";
 import { perTeamOf, type Heightfield } from "../world/layout";
 import type { EditorSession } from "../editor";
+import type { ViewerSession } from "../viewer";
 import type { MixerSession } from "../dev/mixer";
 import type { BenchScript } from "../bench/BenchScript";
 import { MAPS, loadHeights, type MapDef } from "../world/maps";
@@ -1395,6 +1399,23 @@ export class Game {
   private mixer: MixerSession | null = null;
   /** `editorLoading`'s twin, for the same one-cold-import-wide window. */
   private mixerLoading = false;
+
+  /**
+   * The dev-only map viewer's session (`F2`, `src/viewer/`, `BABYLON_EXIT.md`
+   * X5.3b), non-null only while its lid is up. A LID, unlike the editor and
+   * unlike the mixer: `toggleViewer` raises it over a round and `takeDown`
+   * puts it away, however it comes down.
+   */
+  private viewer: ViewerSession | null = null;
+  /** `editorLoading`'s twin, for the same one-cold-import-wide window. */
+  private viewerLoading = false;
+  /**
+   * What the viewer's lid found and puts back that is not the session's own:
+   * whether the weapon was hidden (it is hidden under the lid, the camera it
+   * hangs from being the viewer's), and the shadow window's focus, which the
+   * viewer's camera tail moves and a deploy screen under it would not move back.
+   */
+  private viewerFound = { bodyHidden: true, focus: new Vector3() };
 
   /**
    * The map being played, as the layout/environment pair `src/world/maps.ts`
@@ -3189,14 +3210,16 @@ export class Game {
       this.profChip.keep();
     });
 
-    // The map editor and the audio mixer are development tools: the whole of
-    // src/editor and src/dev is behind a dynamic import so none of it reaches
-    // a production bundle.
+    // The map viewer, the map editor and the audio mixer are development
+    // tools: the whole of src/viewer, src/editor and src/dev is behind a
+    // dynamic import so none of it reaches a production bundle. `F2` is the
+    // viewer; the editor is `Shift+F2` until X5.3c deletes it, standing beside
+    // the viewer as the oracle it is graded against (`BABYLON_EXIT.md` X5.3b).
     if (import.meta.env.DEV) {
       window.addEventListener("keydown", (e) => {
         if (e.code === "F2") {
           e.preventDefault();
-          void this.toggleEditor();
+          void (e.shiftKey ? this.toggleEditor() : this.toggleViewer());
         } else if (e.code === "F4") {
           e.preventDefault();
           void this.toggleMixer();
@@ -3526,6 +3549,9 @@ export class Game {
         return;
       case "lobby":
         this.lobbyScreen.hide();
+        return;
+      case "viewer":
+        this.closeViewer();
         return;
       default: {
         const unhandled: never = lid;
@@ -4592,6 +4618,11 @@ export class Game {
       case "editor":
         this.updateEditor(dt);
         break;
+      // The dev-only viewer's lid. A server's round behind it is stepped by
+      // `updateRoundBehind` above, as under the pause; the page's own is held.
+      case "viewer":
+        this.updateViewer(dt);
+        break;
       // Bracketed as `gameplay`, because that is what it is — a played frame
       // whose body is a script — and a capture of one reads against a capture
       // of the other under the same phase tree.
@@ -5435,6 +5466,101 @@ export class Game {
   }
 
   /**
+   * `F2`: the dev-only MAP VIEWER, raised as a lid over a round or lowered
+   * (`BABYLON_EXIT.md` X5.3b; rows "X5.3, the viewer's key and reach" and "the
+   * viewer's overlays"). It covers `playing`, `dying` and `deploy` in both
+   * kinds of round, and from every other state — the menu, a build, the
+   * round-over card, another lid, a benchmark, the editor — it does nothing
+   * (`SCREENS.viewer.covers` refuses it).
+   *
+   * The mixer's shape: the whole body behind the DEV gate, which is what makes
+   * `src/viewer/` unreachable under `vite build`, and a latch across the one
+   * cold import. It is a LID where the mixer is a panel, so it is raised
+   * BEFORE anything is changed — the state is `viewer` by the time the pointer
+   * lock is let go, so its loss pauses nothing (`installDomListeners`) — and
+   * everything it changes is put back by `closeViewer`, which `takeDown` calls
+   * however the lid comes down: this method lowering it, or a step the wire
+   * decides under it (a `died`, a `roundover`, a rotation, a lost host).
+   */
+  private async toggleViewer(): Promise<void> {
+    if (!import.meta.env.DEV) return;
+    if (this.viewer) {
+      if (!this.lowerLid("viewer")) return;
+      // Back into a live frame: the pointer lock it held is owed back, by the
+      // resume's own route and for its reasons (`resume`). The deploy screen
+      // takes none.
+      if (this.state === "playing" || this.state === "dying") {
+        this.input.consumeFire();
+        this.lockChase.owe();
+      }
+      // The camera tail once more, at no time and from where the lid found
+      // it: the viewer's camera moved the shadow window, the light slots and
+      // the lamps' atlas with it, and a deploy screen under the lid runs no
+      // tail of its own to move them back. A live frame's next tail would.
+      if (this.map) this.updateSceneForCamera(0, this.shadowFocus.copyFrom(this.viewerFound.focus), null, this.pushers);
+      return;
+    }
+    if (this.viewerLoading || !this.map) return;
+    // Asked before the import as well as after it, so F2 on the menu fetches
+    // nothing; the raise below is the guard that counts.
+    if (this.state !== "playing" && this.state !== "dying" && this.state !== "deploy") return;
+    this.viewerLoading = true;
+    let createViewer;
+    try {
+      ({ createViewer } = await import("../viewer"));
+    } catch (err) {
+      console.error("[viewer] could not open", err);
+      this.hud.toast("could not open the viewer");
+      return;
+    } finally {
+      // `toggleEditor`'s reason: everything below is synchronous, and a throw
+      // in the import must not wedge F2 for the rest of the session.
+      this.viewerLoading = false;
+    }
+    const map = this.map;
+    if (this.viewer || !map || !this.raiseLid("viewer")) return;
+    this.viewerFound.bodyHidden = this.player.bodyIsHidden;
+    this.viewerFound.focus.copyFrom(this.shadowFocus);
+    // The weapon hangs from the camera the viewer is about to fly.
+    this.player.setBodyHidden(true);
+    this.hud.setEditing(true);
+    // A resume's lock still being chased is not the viewer's to take.
+    this.lockChase.cancel();
+    // Held as the pause holds it: in the page's own match the world under the
+    // lid is stopped, and so is the audio clock with it (`pause`'s reasons). A
+    // server's round goes on making noise, and is left to.
+    if (this.worldHeld) this.sfx.setSuspended(true);
+    if (document.pointerLockElement) document.exitPointerLock();
+    this.viewer = createViewer({
+      canvas: this.canvas,
+      camera: this.cameraSys.camera,
+      input: this.input,
+      map,
+      layout: this.mapDef.layout,
+      environment: this.mapDef.environment,
+      fixtures: this.lighting.fixtures,
+      applyEnvironment: (env) => {
+        applyEnvironment(this.scene, env, this.mats);
+        this.celInk.applyEnvironment();
+      },
+    });
+  }
+
+  /**
+   * What the viewer's lid changed, undone — half of `takeDown("viewer")`, and
+   * called from nowhere else. The session puts back the camera and the map's
+   * own environment itself (`ViewerSession.dispose`); this puts back what was
+   * the page's: the HUD's chrome, the weapon as it was, and the audio clock.
+   */
+  private closeViewer(): void {
+    this.viewer?.dispose();
+    this.viewer = null;
+    this.hud.setEditing(false);
+    this.player.setBodyHidden(this.viewerFound.bodyHidden);
+    this.sfx.setSuspended(false);
+  }
+
+  /**
    * Enters or leaves the map editor. Dev-only, and the import is dynamic so
    * `src/editor` never reaches a production bundle.
    *
@@ -6179,6 +6305,28 @@ export class Game {
       .copyFrom(this.cameraSys.camera.position)
       .addInPlace(editor.forward.scale(8));
     this.updateSceneForCamera(dt, this.shadowFocus, null, NO_SOLDIERS);
+  }
+
+  /**
+   * The viewer's frame: the editor's tail, renamed (`BABYLON_EXIT.md` X5.3b).
+   * The free camera is the shadow focus, biased ahead as the editor's was, and
+   * the ROUND's bodies are what the grass bends round — the pushers the last
+   * world frame filled, held with the world in the page's own match and
+   * refilled by `updateRoundBehind` in a server's — so the bodies and hulls are
+   * drawn and cast by the round's own draws. No player: no blob shadows and no
+   * carried lamp are placed, as in the editor (the lamp stays where it was).
+   */
+  private updateViewer(dt: number): void {
+    const viewer = this.viewer;
+    if (!viewer) return;
+    viewer.update(dt);
+    // `src/math`'s forward, so its numbers cross by value and never as an
+    // object a Babylon method would read `_x` off.
+    const f = viewer.forward;
+    this.shadowFocus
+      .copyFrom(this.cameraSys.camera.position)
+      .addInPlaceFromFloats(f.x * 8, f.y * 8, f.z * 8);
+    this.updateSceneForCamera(dt, this.shadowFocus, null, this.pushers);
   }
 
   /**
