@@ -120,8 +120,8 @@ client builds too) and fails `npm run build` on any path that reaches Babylon. S
 `dist-server` loads no Babylon at all, and what the client is gated on — an
 adapter, a device, the two WASMs it must never fetch — is the client's alone.
 The one place the two sides still have to agree is the world they stand in,
-and that is `collision.ts` and `src/world/solid.ts` below, neither of which is
-a rendering question.
+and that is `collision.ts` and `src/world/RayWorld.ts` below, neither of which
+is a rendering question.
 
 ## The three decisions everything else follows from
 

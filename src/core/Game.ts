@@ -2096,7 +2096,8 @@ export class Game {
     // this queue held it: a curtain wall only saves the shading of the shaft
     // behind it if the pane is down first. A round's panes are our renderer's
     // since `BABYLON_EXIT.md` X4.6e, drawn nearest first AHEAD of everything of
-    // ours (`GlassDraw`, `glassPull`); an editor build's are still here.
+    // ours (`GlassDraw`, `glassPull`), and no build makes a pane MESH since
+    // the map editor's went (`BABYLON_EXIT.md` X5.3c).
     //
     // The comparator is ours rather than `RenderingGroup.frontToBackSortCompare`
     // because that one reads `subMesh._distanceToCamera`, which Babylon fills in
@@ -2112,7 +2113,7 @@ export class Game {
     // scatter and the floor, the rim and the roads after them
     // (`render/Renderer.ts`, `"beforeAlphaTest"`) — so the floor behind a
     // building fails the depth test before it shades. What this sort still
-    // orders is what Babylon draws — in a round, since X4.6e, nothing — and
+    // orders is what Babylon draws — in any state, since X5.3c, nothing — and
     // what is left of the cost of ours coming after it is `FINDINGS.md` 61's.
     this.scene.setRenderingOrder(0, (a, b) => {
       const eye = this.scene.activeCamera?.globalPosition;
@@ -2194,8 +2195,9 @@ export class Game {
     // THE FRAME: the render target the scene draws straight into, with its
     // depth, and clears itself (Babylon's own clear of a camera's output
     // target, under `scene.autoClear`) — the camera's `outputRenderTarget`
-    // through each frame's camera render (off after it, for an editor
-    // build's gizmo layer), owned by the post chain's pass owner,
+    // through each frame's camera render (off after it, a window kept for
+    // the map editor's gizmo layer, which went at X5.3c; X5.3d retires it),
+    // owned by the post chain's pass owner,
     // `PostPasses`, which opens every pass of the chain after that render.
     // No Babylon `PostProcess` stands on the camera since X5.2d: the ink,
     // whose input this target was, is the chain's first stage of OURS.
@@ -2223,8 +2225,9 @@ export class Game {
     // The cel shader outputs display-ready colours, and Babylon's image
     // processing would re-apply gamma and wash them out — so it is OFF, as
     // `DefaultRenderingPipeline`'s `imageProcessingEnabled = false` left it
-    // until X5.2c2 deleted the pipeline (its only pass was FXAA). An editor
-    // build's Babylon materials read this; a round's draws are all ours.
+    // until X5.2c2 deleted the pipeline (its only pass was FXAA). Only a
+    // Babylon material reads this, and none has drawn in any state since the
+    // map editor went (`BABYLON_EXIT.md` X5.3c): every draw is ours.
     this.scene.imageProcessingConfiguration.isEnabled = false;
     // `scene.autoClear` is Babylon's default, TRUE, since X5.2c2's picture
     // change (the owner's decision, `BABYLON_EXIT.md` row "X5.2, autoClear"):
@@ -2327,9 +2330,11 @@ export class Game {
     // at its cube, and a break collapses a pane in its buffer.
     this.glassDraw = new GlassDraw(this.renderer, (into) => this.glassPull(into));
     // Same relationship to `mats` as the two above, in the other direction:
-    // this one PUBLISHES to it — the default cube an editor build's glazing
-    // samples, born on every pane material — and points a round's glazing at
-    // the cubes it bakes from the map itself.
+    // this one PUBLISHES to it — the default cube, born on every pane
+    // material (wrapped for Babylon's glazing, which only the map editor's
+    // build drew: no Babylon pane is drawn since X5.3c, and X5.3d deletes the
+    // wrap) — and
+    // points a round's glazing at the cubes it bakes from the map itself.
     this.reflections = new ReflectionSystem(this.scene, this.mats, this.probeBake, this.glassDraw);
     // A cube is baked once per install and keeps the bounce it was baked
     // under, so the bake waits for the volume `installMap` has just cleared —
@@ -2409,8 +2414,9 @@ export class Game {
     // The two events a break's picture needs, wired here beside `onRound` for
     // that line's reason: the simulation keeps the panes, the boxes and the
     // nav graph and draws nothing; the view collapses the glazing when a pane
-    // goes (by any path, a late joiner's catch-up included) and writes the
-    // collider mesh's editor flags when its box leaves the world.
+    // goes (by any path, a late joiner's catch-up included) and clears the
+    // collider mesh's flags when its box leaves the world (read by nothing
+    // since the map editor went; X5.3e stops making the mesh).
     this.glass.onBroken = (pane) => this.glassFx.collapse(pane);
     this.glass.onCleared = (pane) => this.glassFx.clear(pane);
     this.deathCam = new DeathCam();

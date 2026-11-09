@@ -134,10 +134,10 @@ export interface BoxSpec {
    * pane. Declared by `Build.pane({ breakable: true })` and by nothing else.
    *
    * Intact, it is exactly `porous` — a body walks into it, a round goes
-   * through — which is why the two pick predicates in `solid.ts` need no new
-   * term for glass at all. Broken, `GlassFx` clears `solid` outright and
-   * it leaves both. That is the whole of the mechanism; the flag exists so the
-   * things that must NOT see a pane can name it.
+   * through — which is why `RayWorld`'s two queries, `castBody` and
+   * `castRound`, need no new term for glass at all. Broken, `RayWorld.remove`
+   * clears its box and it leaves both. That is the whole of the mechanism;
+   * the flag exists so the things that must NOT see a pane can name it.
    *
    * Three of them: `CoverMap` (bots would take cover behind a window),
    * `vertexShading` (glass casts no ambient shadow), and the collision bake,

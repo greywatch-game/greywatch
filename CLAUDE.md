@@ -23,7 +23,7 @@ substitute: read the companion before changing that subsystem.
 | [`docs/deaths.md`](docs/deaths.md) | ragdolls, glass shards, Havok, the death cam |
 | [`docs/vehicles.md`](docs/vehicles.md) | a vehicle of either kind, a new kind, its hull collider, its picture (`VehicleView`), the chase camera, mounting, the respawn |
 | [`docs/antitank.md`](docs/antitank.md) | the third slot, the launcher, the mine, the rocket that flies, a bot with a tube |
-| [`docs/audio.md`](docs/audio.md) | a sound, a sample, `audio/`, the audio budget |
+| [`docs/audio.md`](docs/audio.md) | a sound, a sample, `audio/`, the audio budget, the mixer or the dev write endpoint |
 | [`docs/pwa.md`](docs/pwa.md) | `public/`, `src/pwa/`, the service worker |
 | [`docs/multiplayer.md`](docs/multiplayer.md) | anything under `server/` or `src/net/`, the roster, the collision bake, the regions, the two images and the proxy in front of them |
 | [`docs/game.md`](docs/game.md) | extracting anything from `Game.ts`, `installMap`, what a frame owes |

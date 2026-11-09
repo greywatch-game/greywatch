@@ -280,16 +280,6 @@ export class TerrainField {
     const cell = this.field?.cell ?? 1;
     return { x: -this.half + i * cell, z: -this.half + j * cell };
   }
-
-  /** Nearest grid vertex to a world position, clamped into the grid. */
-  nearestVertex(x: number, z: number): { i: number; j: number } {
-    const f = this.field;
-    if (!f) return { i: 0, j: 0 };
-    return {
-      i: Math.round(clamp((x + this.half) / f.cell, 0, f.size)),
-      j: Math.round(clamp((z + this.half) / f.cell, 0, f.size)),
-    };
-  }
 }
 
 /**

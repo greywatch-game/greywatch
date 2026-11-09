@@ -233,12 +233,13 @@ export class ReflectionSystem {
    * Called from `Game.installMap` for the reason every line around it is: the
    * map this bakes is the one just built, and the last one's queue is gone.
    *
-   * **A build our bake holds no world for bakes nothing** — an EDITOR build,
-   * and a round whose world has already failed (`BlockHandover`, which hands
-   * the bake its world a line earlier in `installMap`). A pane keeps the
-   * glazing material `MapBuilder` gave it, born holding the default cube at a
-   * strength of ZERO (`CelMaterialFactory.applyReflection`), so it shows the
-   * analytic sky half of the reflection and no more.
+   * **A build our bake holds no world for bakes nothing** — a round whose
+   * world has already failed (`BlockHandover`, which hands the bake its world
+   * a line earlier in `installMap`), and the map editor's build while it
+   * stood. A pane keeps the glazing material `MapBuilder` gave it, born
+   * holding the default cube at a strength of ZERO
+   * (`CelMaterialFactory.applyReflection`), so it shows the analytic sky half
+   * of the reflection and no more.
    *
    * A bake is affordable because the world is static, so it is a BUILD STEP
    * rather than a pass. (The map editor, the one place the world was not
@@ -489,7 +490,7 @@ export class ReflectionSystem {
     }
   }
 
-  /** A round's group's surface of the glazing draw: the one its record names, or null (an editor build's). */
+  /** A group's surface of the glazing draw: the one its record names, or null (a group with a mesh, which no build makes since X5.3c). */
   private surfaceOf(group: PaneGroup): GlassDraw["surfaces"][number] | null {
     if (group.mesh) return null;
     const surfaces = this.glass.surfaces;
@@ -603,8 +604,8 @@ function probeCap(size: number, budgetMiB: number): number {
  *
  * The doubling is over the block GRID rather than over metres, so the cells
  * nest exactly and a group cannot land in two of them. A block key that does
- * not parse — the editor's, which keys per placement — is its own cell, and
- * the loop bails rather than spinning: an editor build bakes nothing anyway.
+ * not parse — the map editor's keyed per placement; none has since X5.3c — is
+ * its own cell, and the loop bails rather than spinning.
  */
 function blocksPerCell(groups: readonly PaneGroup[], cap: number): number {
   const blocks = new Set(groups.map((g) => g.block));
@@ -686,9 +687,10 @@ function centreOf(b: SurfaceBounds, out: Vector3): Vector3 {
  * what `blocksPerCell` does past the pool budget, and every block a probe
  * serves has to come out: the probe stands at one of them and the set is the
  * only honest statement of which. On every map in the tree the set holds one
- * key. A key that is not a pair of integers (an editor's, which bakes nothing)
- * leaves nothing out. **A cell of more than 32 blocks (`perCell` 6 and up,
- * which nothing in the tree reaches) leaves out the WHOLE cell**, served or
+ * key. A key that is not a pair of integers (the map editor's was, and it
+ * baked nothing; none is since X5.3c) leaves nothing out. **A cell of more
+ * than 32 blocks (`perCell` 6 and up, which nothing in the tree reaches)
+ * leaves out the WHOLE cell**, served or
  * not: every bit is set here, and the cull drops a block past the 32nd
  * whatever the bits say (`probeExcludes`) — one rule, stated on both sides.
  */

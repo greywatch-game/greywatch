@@ -994,6 +994,41 @@ three of those are all that compiles: both tables are `satisfies Record<…>`,
 the panel's `LABELS` and `AUDITIONS` are `Record`s over the unions. It cannot
 reach the game half-added.
 
+#### The dev write endpoint it saves through
+
+`vite.config.ts` holds the dev-only write endpoint. It is deliberately outside
+`tsconfig.json`'s `include` (the root tsconfig pins its `types`, so no Node
+global reaches the browser compile), so it stays trivial and the real logic
+lives in `src/dev/mixer/source.ts` under the typecheck. Its `handleHotUpdate`
+swallows the mixer's own writes: `mix.ts` has no `import.meta.hot.accept`, so
+an update would propagate to `main.ts`, find no accepting module, and
+full-reload the page on every save.
+
+**Both sides of that swallow go through `norm`, and they have to.** The written
+path comes from `resolve`, which uses the platform's own separators, while Vite
+normalises the `ctx.file` it hands `handleHotUpdate` to POSIX ones — so on Windows
+the Set was keyed on `C:\...\layout.ts` and probed with `C:/.../layout.ts` and never
+matched. Nothing throws and no save fails; the page simply full-reloads on every
+save, taking the camera and the whole session with it, which reads as the tool
+crashing on save rather than as a path bug — and it cannot reproduce for anyone
+authoring on Linux. Normalising both sides rather than adopting Vite's spelling
+is what stops the two drifting apart again.
+
+**`vite.config.ts`'s `WRITABLE` stays a literal table — one row, the mixer's.**
+Path safety comes from the client's path only ever being *looked up* in it and
+never used to build a path, so a regex or a directory listing trades the
+guarantee for convenience in the tools here that write to disk.
+
+**That endpoint has one CLIENT and a second ARM, and neither loosens the
+table.** The mixer patches `src/config/mix.ts` through it, the one row in
+`WRITABLE` (the map editor's rows, three a map, went with it at
+`BABYLON_EXIT.md` X5.3c, and the URL keeps the name it gave it); and `GET
+/__layout?path=…` hands back a writable file's current text, because a tool
+that PATCHES needs the bytes it is patching and the alternative — a `?raw`
+import — is frozen at module load and would silently re-apply a stale baseline
+after the first save. The GET goes through the *same* literal lookup as the
+write, so it can no more read an arbitrary path than the write can reach one.
+
 ## The pipeline
 
 ```

@@ -1401,8 +1401,8 @@ src/
                         #   Its CPU HALF (the window, the lights, the channels,
                         #   the hull slots, the params, the schedule): `update`
                         #   ARMS a dispatch its GPU half, render/GiCompute.ts,
-                        #   records (X5.1b). An editor build's Babylon materials
-                        #   hold GI off until X5.3
+                        #   records (X5.1b). Babylon's materials' GI-off set
+                        #   (the map editor's) draws nothing since X5.3c
     AmbienceSystem.ts   # Where the world makes a noise on its own: the emitter
                         #   registry MapBuilder fills, and the nearest-first
                         #   ranking that spends CONFIG.audio.ambience.maxVoices
@@ -2636,8 +2636,8 @@ src/
                         #   stage (tongue, ember, bounds marker) and the
                         #   banded pixel, its bloom under GLOW_MASK (off the
                         #   instance under FLAME_INSTANCED). Babylon-free:
-                        #   FlameShader.ts (an editor build) and
-                        #   render/flameProgram.ts declare them
+                        #   FlameShader.ts (its stages drawn by nothing since
+                        #   X5.3c) and render/flameProgram.ts declare them
       blast.ts          # The blast's BILLOW as plain strings (X4.4c): the
                         #   noise, the lumped vertex stage and the pixel — fire,
                         #   lit smoke, dissolve — and its bloom under GLOW_MASK,

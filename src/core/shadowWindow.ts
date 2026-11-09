@@ -99,7 +99,9 @@ export function depthBias(metres: number, depthRange: number): number {
 /**
  * What a window places and a transform reads of a directional light: where it
  * points and where it stands. A Babylon `DirectionalLight` is one (the world's
- * maps keep theirs, for an editor build's generators); the bodies' map holds
+ * maps keep theirs, for Babylon's shadow generators, which only the map
+ * editor's build drew — none since `BABYLON_EXIT.md` X5.3c, and X5.3d deletes
+ * them); the bodies' map holds
  * the pair alone (`BodyShadows`), its map being our renderer's.
  */
 export interface ShadowLight {

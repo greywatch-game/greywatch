@@ -616,12 +616,8 @@ function layAt(
  * the height — so what a layout's `poleLift` says is exactly "this flag, that
  * much higher", and a roof that the cast found a little under the drawn one is
  * corrected without the clearance test re-running against the roof itself.
- *
- * Exported because the map editor drew its flag proxy here (a pole it stood
- * at the point's own `y` would have said nothing about where the flag is);
- * the round's own zones are its caller since that editor went.
  */
-export function flagMount(
+function flagMount(
   cp: ControlPointDef,
   terrain: TerrainField,
   obstacles: ObstacleField,

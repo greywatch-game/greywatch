@@ -267,11 +267,11 @@ interface Pool {
  * Exact rather than a name test: a material carrying an `emissiveColor` is a
  * light source — `CelMaterialFactory.getEmissive`'s unlit `StandardMaterial`,
  * or the fire (`FlameMaterial`), which declares one for this test and the
- * glow's, and is worn by an EDITOR build's fires alone (a round's are our
- * renderer's since `BABYLON_EXIT.md` X4.4d, and no size gate drops one there
- * either: `offersBlock` reads the reach alone) — the map's emissive palette,
- * `EmissiveWorldMaterial`, declares one too, and is worn by no mesh: our
- * renderer draws it.
+ * glow's, and is worn by no mesh since the map editor's fires went with it
+ * (`BABYLON_EXIT.md` X5.3c; every fire is our renderer's since X4.4d, and no
+ * size gate drops one: `offersBlock` reads the reach alone) — the map's
+ * emissive palette, `EmissiveWorldMaterial`, declares one too, and is worn by
+ * no mesh: our renderer draws it.
  * Every lit surface wears a plain `ShaderMaterial`, which has no such property
  * to read.
  */

@@ -32,8 +32,6 @@ import {
 
 /** One textured surface's world scale and relief. */
 interface FloorSurface {
-  /** What the surface is called. */
-  label: string;
   /**
    * Metres spanned by one texture repeat. Bigger reads as coarser ground and
    * repeats less often across a 240 m valley; smaller reads as finer grain and
@@ -63,22 +61,22 @@ interface FloorSurface {
  * without the other.
  */
 const SURFACES: Record<FloorPatternId, FloorSurface> = {
-  dirt: { label: "dirt", metersPerTile: 4, bumpScale: 0.05 },
-  gravel: { label: "gravel", metersPerTile: 2.5, bumpScale: 0.03 },
-  sand: { label: "sand", metersPerTile: 5, bumpScale: 0.015 },
-  turf: { label: "turf", metersPerTile: 4.5, bumpScale: 0.03 },
+  dirt: { metersPerTile: 4, bumpScale: 0.05 },
+  gravel: { metersPerTile: 2.5, bumpScale: 0.03 },
+  sand: { metersPerTile: 5, bumpScale: 0.015 },
+  turf: { metersPerTile: 4.5, bumpScale: 0.03 },
   // Settled clods ~46 cm across, carved ~4 cm deep between their crowns, and
   // moss pillowed over them. Deeper than `dirt` because a mound spends its
   // depth on a slope where a plate spends it on a step: at 0.025 this was a
   // centimetre of parallax and read as a painted sheet.
-  loam: { label: "forest loam", metersPerTile: 5.5, bumpScale: 0.08 },
+  loam: { metersPerTile: 5.5, bumpScale: 0.08 },
 };
 
 /** What a map may state for its floor. `flat` is the shipped, untextured one. */
 export type FloorSurfaceId = "flat" | FloorPatternId;
 
 /** The default: the plain cel colour the floor was before surfaces existed. */
-export const DEFAULT_FLOOR_SURFACE: FloorSurfaceId = "flat";
+const DEFAULT_FLOOR_SURFACE: FloorSurfaceId = "flat";
 
 /**
  * The material every terrain block wears.

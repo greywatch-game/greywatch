@@ -1,9 +1,10 @@
 /**
  * wgsl/flame.ts — The FIRE as plain strings both renderers assemble: Babylon's
- * (`shaders/FlameShader.ts`, the `FlameMaterial` and its glow-mask twin an
- * EDITOR build draws the world's fires with) and ours (`render/flameProgram.ts`,
- * which draws every fire in a round since `BABYLON_EXIT.md` X4.4d — the
- * world's and the molotov's). The vertex stage that writhes, leans, licks and
+ * (`shaders/FlameShader.ts`, the `FlameMaterial` and its glow-mask twin, which
+ * the map editor drew its fires with and no state draws since it went at
+ * `BABYLON_EXIT.md` X5.3c; X5.3d deletes those stages) and ours
+ * (`render/flameProgram.ts`, which draws every fire since X4.4d — the world's
+ * and the molotov's). The vertex stage that writhes, leans, licks and
  * hooks a tongue and carries an ember up out of the bed, and the pixel that
  * bands it in the fire's five inks — and, under `GLOW_MASK`, that pixel's
  * bloom, drawn by the same vertex stage, so its LEQUAL test ties against the

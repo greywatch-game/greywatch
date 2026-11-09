@@ -10722,7 +10722,7 @@ beside the gizmo note in `docs/rendering.md` and in `PostPasses`' header; X5.3 a
 **Measured**: `post.mjs --against` b1203cc's log, both pages: equal, 30,073 values a page, nothing
 excused. Typecheck, build, corecheck and parity pass.
 
-### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it) — X5.3a **LANDED** (f51b043, its review 85a2273), X5.3b **LANDED** (111829f, its review 64de1d1), X5.3c **LANDED** (1b1f829)
+### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it) — X5.3a **LANDED** (f51b043, its review 85a2273), X5.3b **LANDED** (111829f, its review 64de1d1), X5.3c **LANDED** (1b1f829, its review HASHREV)
 
 The plan's `BABYLON_EXIT.md` holds X5.3's brief, its ONE RULE, the step's own rule on retiring
 an oracle, "Every sub-step owes" and the five sub-steps.
@@ -11171,7 +11171,15 @@ logs in the session's scratchpad, `x53c/`.
   seam, `GiVolume`'s GI-`off` line, `shadowWindow.ts`, four lines of `Game`'s constructor about
   the glazing queue, the gizmo layer, image processing and the default cube) and the matching
   `FILES.md` lines and `docs/rendering.md` (58 mentions) are left for X5.3d, whose Rewrites name
-  them; every comment elsewhere that described the editor as standing was rewritten. (2)
+  them; every comment elsewhere that described the editor as standing was rewritten. **Corrected
+  by its review** (below): X5.3d's Rewrites did not name all of them — `Game`'s four lines,
+  `GiVolume`'s, `shadowWindow.ts` and most of `docs/rendering.md`'s mentions fell outside its
+  topics — and comments elsewhere still described the editor as standing (`world/solid.ts` named in
+  four places, `wgsl/flame.ts`, `WorldCulling`, `Game`'s glass wiring, `index.html`, among
+  others); the review rewrote both sets and X5.3d's lists name what is left. Nor did this note say
+  that the plan's `docs/audio.md` rewrite ("the mixer owns the endpoint") was not done:
+  `docs/editor.md`'s contract for the dev write endpoint went with that file, and the review moved
+  it into `docs/audio.md`. (2)
   `FINDINGS.md` 71's `.editing` sentence was trimmed beside 10, 26 and 39. (3) `FLOOR_SURFACE_IDS`
   went with `floorSurfaceLabel`. (4) **`CLAUDE.md` is 1,600 lines** (from 1,616): the editor
   section became "The map viewer (dev only)" at 17 lines from 28, and the rest of what this step
@@ -11182,3 +11190,79 @@ logs in the session's scratchpad, `x53c/`.
 - **For the reviewer**: `installMap` (now argument-free) against the parent's round path; the
   `MapBuilder` deletions (`scatterRegion`, `struts`, `paneGroup`'s lost `placement` parameter) and
   `PaneBlocks.finish` writing `metadata.block` unconditionally; the instruments' refusals.
+
+**Its review** (HASHREV; 2026-11-09; no change to the game: comments, documents, and dead members
+only the editor reached) found no bug, the round path unchanged, and four documentation findings and
+one minor point, each checked against the tree first. Measured headless on the Windows box against
+a BEFORE at 2ee7794, in the worktree `greywatch-2-before-x53a` moved there (no `npm ci`:
+`package-lock.json` unchanged), its `ref/` identical to the main tree's. Script and logs in the
+session's scratchpad, `x53c-fix/` (`run.sh`).
+
+- **`world/solid.ts` was still named as standing** (doc 1): in `docs/vehicles.md` (a hull's line of
+  sight), `docs/multiplayer.md` (what the two sides must agree on), `MapBuilder`'s header and
+  `BoxSpec.glass` in `kit/core.ts`. Each now says what is true: no query takes a predicate, so none
+  is minted (`RayWorld`'s `castBody`, `castRound` and `blocked`, a hull passed as `skip`, as
+  `CLAUDE.md` says); `RayWorld.ts` is what the two sides share; `castBody` and `castRound` split
+  `porous` from `rayOnly`; a broken pane leaves both by `RayWorld.remove`. The grep for `solid.ts`
+  and `SOLID_ONLY` outside history now returns `RayWorld.ts`' account of where the predicates went,
+  `docs/vehicles.md`'s of the gate's old terms, and `BABYLON_EXIT.md`'s X5.3c entry.
+- **The dev write endpoint's contract was homeless** (doc 2): `docs/editor.md` held it and went,
+  and the plan's "`docs/audio.md` (the mixer owns the endpoint)" was not done. Moved verbatim from
+  `docs/editor.md` at c5f4206 into a new "The dev write endpoint it saves through" under
+  `docs/audio.md`'s "F4: setting them, and writing them back": the endpoint outside the typecheck,
+  the `handleHotUpdate` swallow, `norm` on both sides of it, the literal `WRITABLE` table and the
+  GET arm. Adapted only where it was no longer true: "three lines per map" is "one row, the
+  mixer's"; the "second CLIENT" is the one client (the editor's rows and the URL's name said in a
+  clause); the logic lives in `src/dev/mixer/source.ts`, not `src/editor/serialize.ts`; `mix.ts` is
+  the file whose writes are swallowed; "every `Ctrl+S`, taking the camera, the selection and the
+  whole session" is "every save, taking the camera and the whole session", "the editor crashing"
+  "the tool crashing"; and "`@types/node` is not installed", false since `server/` installed it, is
+  the root tsconfig's pinned `types`, as `vite.config.ts`' header says. `CLAUDE.md`'s
+  `docs/audio.md` row gains "the mixer or the dev write endpoint", in the row (net zero lines).
+- **Comments still describing the editor as standing** (doc 3): `wgsl/flame.ts`' header,
+  `WorldCulling`'s emissive note, `Game`'s glass wiring ("writes the collider mesh's editor flags",
+  now "clears the collider mesh's flags ... read by nothing since the map editor went; X5.3e stops
+  making the mesh", `GlassSystem`'s and `CLAUDE.md`'s wording) and `index.html`'s stylesheet list
+  (`src/viewer/viewer.css`). The case-insensitive grep over `src/`, `index.html`, `scripts/`,
+  `server/`, `docs/`, `FILES.md`, `VERIFYING.md`, `AGENTS.md` and `.claude/skills` found more,
+  rewritten: `CelShader`'s still-camera note (the viewer's free-fly camera; the floor-colour field
+  in the past) and its glazing recipe comment; `ReflectionSystem`'s `build`, `surfaceOf`,
+  `blocksPerCell` and `exclusionOf` comments; `kit/terrain.ts`' road-ink note; `templeRuin.ts`' "the
+  map editor's free camera". What it returns besides is history, the viewer's account of what it
+  copied, or the files X5.3d rewrites.
+- **The "editor build" text X5.3d's Rewrites did not name** (doc 4), done now: `Game`'s four
+  constructor comments (the opaque queue's glazing, with its "in a round" now "in any state"; the
+  frame target's gizmo window; image processing; the default cube), `GiVolume`'s GI-`off` line and
+  `shadowWindow.ts`' `ShadowLight` note, with `FILES.md`'s `GiVolume` and `wgsl/flame.ts` lines; and
+  in `docs/rendering.md` the wear's and the ink's work light (the viewer's), the grass (three), the
+  water (three), the landform's handover, the bodies' shadow map (three: every state prepares), the
+  bodies and the hulls (installed with every map), the pools (two), the particles (three), block
+  visibility and the size gate (three), the constraints (three), the palette's history (three), the
+  frame's render pass id and the capture zone. A sentence about a Babylon path still in the tree
+  says it draws nothing since X5.3c and goes at X5.3d; one about the editor build as live is about
+  the present. **X5.3d's Rewrites now name what is left for it**: the `docs/rendering.md` sections
+  by name (the volume, the fire's `ShaderMaterial`, the glazing and the bake, the lamps, the
+  back-to-front run's glazing, and in "Our renderer's frame" the shadow passes, the gizmo note, the
+  generators and the lamps' render target), "the comments on the paths this step deletes" beside
+  the eight headers, and `FILES.md`'s six lines by file.
+- **Dead public members only the editor reached** (the nit; `noUnusedLocals` cannot see a member),
+  each grepped across `src/`, `scripts/`, `server/` and `plans/webgpu-ref/` for a reader first, none
+  found: `InputManager.altHeld`, the field and its per-frame write (Alt stays in `BOUND_CODES`, a
+  comment saying why: its browser default stays suppressed); `TerrainField.nearestVertex`;
+  `CaptureZoneSystem.flagMount`'s `export`, and the comment saying the editor was why;
+  `floorSurfaces.ts`' `DEFAULT_FLOOR_SURFACE` export (the constant stays, read in the file) and
+  `FloorSurface.label` with its five values. `ShadowSystem.invalidate()`, whose one caller was the
+  editor's drag, is left and added to X5.3d's Deleted list.
+- **The X5.3c note corrected** in place (deviation 1, above): it said X5.3d's Rewrites named every
+  left-over comment and that every other standing comment was rewritten, and it was silent on
+  `docs/audio.md`.
+- **Measured**, owed because the removals change JS a round runs (`InputManager.update`, the
+  floor's surface table, `TerrainField`'s class): `merge:hash` (shipped) `--against` the BEFORE's
+  baseline, identical on eight maps; the bank by `exact.mjs`, **default** 146 byte-equal and
+  `harrowmead-view-pistol-reload` within its flake (2 pixels by 1/255), **`volumetrics=low`** 147,
+  **`volumetrics=high`** 147, `sarab-ground` byte-equal in all three, the same rows red against
+  `ref/` on both trees (34, 102, 93). Typecheck, build, corecheck, parity, `maps:check` 7 of 7,
+  `gate` (seven maps clean) and `shaders` (clean on seven). **Not re-run**: the probes, the draw
+  log, the live rounds and `?profile&gpu`: what was removed has no reader, and the bank's bytes
+  and `merge:hash` are the proof a round did not move.
+- **`CLAUDE.md`**: 1,600 lines before and after.

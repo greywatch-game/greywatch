@@ -560,8 +560,8 @@ interface BuildRun {
  * (`Build.strut`, merged by `struts()`) are the reverse — the timber a round
  * stops on, with no body behind it and no `WorldBox` at all. A fence is a 1.4 m
  * porous slab for walking into and nine merged posts and rails for shooting at.
- * See `BoxSpec.porous` / `BoxSpec.rayOnly`, and `solid.ts` for the two
- * predicates that split them.
+ * See `BoxSpec.porous` / `BoxSpec.rayOnly`, and `RayWorld`'s `castBody` and
+ * `castRound` for the two queries that split them.
  */
 export class MapBuilder {
   constructor(

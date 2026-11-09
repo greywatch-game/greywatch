@@ -14,8 +14,9 @@
  * set of seven textures published to `CelMaterialFactory.setGi` for its whole
  * life — whatever the setting, and before any map — because our frame binds
  * all seven and an unbound one loses the draw, and the factory stands up its
- * BABYLON materials' GI-`off` set at that first call (an editor build has no
- * GI until `BABYLON_EXIT.md` X5.3, the owner's decision); constructed AFTER
+ * BABYLON materials' GI-`off` set at that first call (only the map editor's
+ * build drew with it, GI off by the owner's decision; no Babylon material
+ * draws since `BABYLON_EXIT.md` X5.3c, and X5.3d deletes it); constructed AFTER
  * `ProbeBake`, because the GPU half's late prepare is pushed in this
  * constructor and the bake, which samples the volume, must record ahead of
  * it (`GiCompute`'s header); a dispatch is ARMED in `update` past the

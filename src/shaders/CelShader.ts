@@ -1029,12 +1029,12 @@ export class CelMaterialFactory {
    * `updateCamera` skips the walk when the camera has not moved, so a material
    * minted during a still frame is a material the walk will not visit again
    * until something moves — and a still frame is not the rare case: a paused
-   * round, a kit screen, a player standing still and the editor's free-fly
+   * round, a kit screen, a player standing still and the viewer's free-fly
    * camera resting on its panel are all exactly still, to the bit. Seeded from
    * anything else, such a material fogs and rims against wherever it was
-   * seeded instead of against the eye; from the origin, and the editor's
-   * floor-colour field repaints the whole terrain in a material that thinks
-   * the viewer is standing in the middle of the map.
+   * seeded instead of against the eye; from the origin, and the map editor's
+   * floor-colour field (while it stood) repainted the whole terrain in a
+   * material that thought the viewer was standing in the middle of the map.
    *
    * The origin is the seed because the origin is what an unwritten `vec3`
    * uniform already is, so the invariant "every material in the cache holds
@@ -1817,7 +1817,8 @@ export class CelMaterialFactory {
       mat.zOffsetUnits = CelMaterialFactory.GLASS_DEPTH_UNITS;
       // A recipe, as every material our renderer draws keeps one: a round's
       // glazing is ours (`render/GlassDraw.ts`, `BABYLON_EXIT.md` X4.6e), and
-      // an editor build's draws this material, which states the same values.
+      // this material, which states the same values, is the one the map
+      // editor's build drew until X5.3c.
       this.bear(mat, variant, CelMaterialFactory.GLASS_DEPTH_UNITS);
       this.own(mat, "baseColor", Color3.FromHexString(hex));
       if (backed) {

@@ -293,9 +293,9 @@ export function buildRoad(
     // the slope-scaled half of the offset grows with the grazing angle, so
     // measured down an avenue at eye height, ink thinned to 1 cm still
     // swallowed every dash past ~35 m. What made this expensive to find is that
-    // it did not happen in the EDITOR, where roads have always been left
-    // uninked for a different reason — the markings were on screen the whole
-    // time they were being authored.
+    // it did not happen in the map EDITOR (gone since X5.3c), where roads were
+    // always left uninked for a different reason — the markings were on screen
+    // the whole time they were being authored.
     //
     // The same shell is what painted every mixed junction black, because a road
     // crossing a road is exactly "anything laid on the road": `MapBuilder` no

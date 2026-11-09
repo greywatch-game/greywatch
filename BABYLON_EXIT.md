@@ -4592,7 +4592,7 @@ loss**: Babylon's post chain rebuilds after a loss today and ours will not
   header; `FINDINGS.md` 5, 16 and 52; the gate note after Phase 4 (above) and the
   "Contracts this plan rewrites" rows for the glow and `shaderLanguage`.
 
-### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it; the split was proposed by a planning agent's read at b3cea5d) — X5.3a **LANDED** (f51b043, its review 85a2273), X5.3b **LANDED** (111829f, its review 64de1d1), X5.3c **LANDED** (1b1f829)
+### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it; the split was proposed by a planning agent's read at b3cea5d) — X5.3a **LANDED** (f51b043, its review 85a2273), X5.3b **LANDED** (111829f, its review 64de1d1), X5.3c **LANDED** (1b1f829, its review HASHREV)
 
 **This replaces the entry that ported the editor.** That entry put `F2`'s editor on our
 renderer: its unmerged build drawn per item, picking against `RayWorld`, our own move and
@@ -5025,6 +5025,28 @@ reviews: the first is the feature, the second is the renderer. The colliders com
   phone. **`CLAUDE.md`** went from 1,616 lines to 1,600, still over its ~1,500 cap (the note says
   why that is left).
 
+  **Its review** (HASHREV; 2026-11-09; no change to the game; the full note is in
+  `plans/done/babylon_exit_landed.md`) found no bug, the round path unchanged, and four
+  documentation findings and one minor point. `world/solid.ts` was still named as standing in
+  `docs/vehicles.md`, `docs/multiplayer.md`, `MapBuilder`'s header and `kit/core.ts`; each now names
+  `RayWorld`'s queries. The dev write endpoint's contract, homeless since `docs/editor.md` went, is
+  moved verbatim into `docs/audio.md` ("The dev write endpoint it saves through"), and `CLAUDE.md`'s
+  `docs/audio.md` row points at it (net zero lines: 1,600). Comments still describing the editor as
+  standing are rewritten (`wgsl/flame.ts`, `WorldCulling`, `Game`'s glass wiring, `index.html`,
+  `CelShader`, `ReflectionSystem`'s body, two kit files), and so is the "editor build" text this
+  sub-step's note had left to X5.3d where X5.3d's Rewrites did not name it (`Game`'s four
+  constructor comments, `GiVolume`, `shadowWindow.ts`, and in `docs/rendering.md` the grass, water,
+  bodies, hulls, pools, particles, block visibility and size gate, ink, constraints, capture zone
+  and more); X5.3d's Rewrites now name what is left, and its Deleted list gains
+  `ShadowSystem.invalidate()`. Dead members the editor alone reached are removed:
+  `InputManager.altHeld`, `TerrainField.nearestVertex`, `flagMount`'s `export`,
+  `DEFAULT_FLOOR_SURFACE`'s `export` and `FloorSurface.label`. The note's deviation (1) is
+  corrected. **Measured** against a BEFORE at 2ee7794, owed because the dead members' removal
+  changes JS a round runs: `merge:hash` (shipped) identical on eight maps; the bank by `exact.mjs`
+  146 byte-equal and the pistol's flake (2 pixels by 1/255), 147 under `volumetrics=low`, 147
+  under `volumetrics=high`; typecheck, build, corecheck, parity, `maps:check` 7 of 7, `gate` and
+  `shaders`.
+
 - **X5.3d — Babylon's draw paths the editor kept, deleted** (no change to the picture) —
   **M**. Each is unreachable after X5.3c, and each is checked unreachable before it is
   deleted (a DEV throw on the path for one bank run, or the draw log).
@@ -5054,6 +5076,8 @@ reviews: the first is the feature, the second is the renderer. The colliders com
     - `FrameProfile`'s `getShadowGenerator()` read.
     - `GiVolume.worldMoved` and `LocalShadows`' moved-fixture re-bake, if no caller is
       left.
+    - `ShadowSystem.invalidate()`, whose one caller was the map editor's drag (X5.3c's
+      review).
   - **Left for X6.1, guarded:** Babylon's declarations of the cel program
     (`celVertex`/`celFragment` in `ShaderStore`) and the factory's per-frame pushes into
     Babylon materials (the palette, `windTime` over the cache, and the light, camera and
@@ -5082,10 +5106,19 @@ reviews: the first is the feature, the second is the renderer. The colliders com
       - the glow paragraph's mask clause.
     - **`docs/rendering.md`:** the shadow maps, the lamps, the glazing and the default
       cube, the volume, the fire, the glow's mask, the gizmo note beside the frame-target
-      rule, and "Our renderer's frame" (items 6 and 10).
-    - **Headers:** the seam's, and those of `PostPasses`, `ShadowSystem`, `LocalShadows`,
-      `CelShader`, `FlameShader`, `GlowPass`, `ReflectionSystem` and `wrappedTextures`.
-    - **`FILES.md`.**
+      rule, and "Our renderer's frame" (items 6 and 10). The editor-build text left in it
+      for this step (X5.3c's review rewrote the rest): the volume ("Its GPU half, ours"
+      and "Contracts that reach outside it"), the fire's `ShaderMaterial` ("Fire: the one
+      surface…"), "The glazing and the reflection bake", the lamps' atlas ("The lamps'
+      shadows"), "The back-to-front run"'s glazing and default cube, and in "Our
+      renderer's frame" the shadow passes Babylon still draws, the gizmo note, the world
+      maps' generators and `shadowPass`, and the lamps' render target.
+    - **Headers, and the comments on the paths this step deletes:** the seam's, and those
+      of `PostPasses`, `ShadowSystem`, `LocalShadows`, `CelShader`, `FlameShader`,
+      `GlowPass`, `ReflectionSystem` and `wrappedTextures`.
+    - **`FILES.md`:** the lines of `wrappedTextures`, `ShadowSystem`, `LocalShadows`,
+      `ReflectionSystem`, `FlameShader` and `PostPasses`, which still name an editor
+      build.
     - **`FINDINGS.md`:** 68 trimmed.
     - **This file:** X5.4's texture item (no Babylon reader left).
 

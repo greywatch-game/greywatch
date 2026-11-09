@@ -3451,7 +3451,7 @@ because each will be re-introduced by anything that adds a second vehicle.
   30, 40 or 50 m dead ahead. The fix is the chase camera's — take the hull out of
   the answer for the length of the ray, made by the CALLER as the query's `skip`
   (`RayWorld.blocked`, through `BattleSystem.losBetween`), no allocation and no
-  write to the hull; `world/solid.ts` forbids minting a predicate that closes
+  write to the hull; no query takes a predicate, so none is minted that closes
   over one. `Game`'s `CrewCtx.visibleFrom` is where it lives.
 - **A whisker fan must reach the nose, and must be denser than the narrowest
   thing it may not hit.** With the probes spread evenly from a third of the reach,

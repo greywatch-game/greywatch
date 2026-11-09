@@ -396,12 +396,6 @@ export class InputManager {
   pointerLocked = false;
   gamepadConnected = false;
   /**
-   * Held: the modifier key. No gameplay meaning (the map editor used it to
-   * suspend grid snapping until `BABYLON_EXIT.md` X5.3c deleted it). Read per frame rather than latched so a keyup lost
-   * to a window blur cannot leave it stuck on (blur clears the key set).
-   */
-  altHeld = false;
-  /**
    * True this frame when any pad axis (past the deadzone) or button is
    * active. This is what lets aim assist tell "player is driving the pad"
    * apart from "pad is idle on the desk while the mouse does the aiming".
@@ -819,7 +813,6 @@ export class InputManager {
       this.crouchLatched ||
       this.keys.has("ControlLeft") ||
       this.keys.has("ControlRight");
-    this.altHeld = this.keys.has("AltLeft") || this.keys.has("AltRight");
     // Back / View button (6 on the standard mapping is LT, 8 is Back).
     // Latched by the control layer for the reason ADS is: Tab is held by a
     // finger with nothing else to do, and no thumb here has one to spare.
@@ -1198,6 +1191,8 @@ const BOUND_CODES = new Set([
   "ShiftRight",
   "ControlLeft",
   "ControlRight",
+  // Read by nothing since the map editor went (`BABYLON_EXIT.md` X5.3c); kept
+  // so Alt's browser default (focusing the menu bar) stays suppressed.
   "AltLeft",
   "AltRight",
 ]);
