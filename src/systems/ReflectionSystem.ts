@@ -55,21 +55,16 @@
  *   (`ProbeBake.cube`); since X4.6e none of the pools' is wrapped for Babylon.
  * - **The DEFAULT cube is a cube of ours that nothing ever bakes**, made in
  *   the constructor before any map exists (WebGPU makes it zeroed: alpha 0,
- *   the sky) and bound only at a strength of 0 — the glazing material a pane
- *   is born with (`CelMaterialFactory.setDefaultReflection`), through the ONE
- *   wrapped view left (`wrapCubeTexture`), which an editor build's glazing
- *   samples until `BABYLON_EXIT.md` X5.3; and directly the water of a build
- *   that bakes nothing, and a round's glazing in a build whose world our bake
- *   does not hold (`pointDefault`). It replaced Babylon's probe 0 at X3.7c.
- * - A map with no glazing bakes no glazing probe. The default cube stays
- *   bound to the glazing material regardless.
- * - **An EDITOR build bakes nothing either**, for the reason the whole file is
- *   affordable: a bake is a build step because the world is static, and the
- *   editor is the one place it is not. See `build`.
+ *   the sky) and bound only at a strength of 0 — directly, to the water of a
+ *   build that bakes nothing and to a round's glazing in a build whose world
+ *   our bake does not hold (`pointDefault`). It replaced Babylon's probe 0 at
+ *   X3.7c. It was also every Babylon glazing material's from birth, through a
+ *   wrapped view (`wrapCubeTexture`), which the map editor's build's glazing
+ *   sampled; that view went at `BABYLON_EXIT.md` X5.3d.
+ * - A map with no glazing bakes no glazing probe.
  */
 import { type Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import { wrapCubeTexture } from "../core/wrappedTextures";
 import { Vector3 as MathVector3 } from "../math";
 import type { GlassDraw } from "../render/GlassDraw";
 import type { ProbeBake, ProbeExclusion, ProbeJob } from "../render/ProbeBake";
@@ -174,14 +169,12 @@ export class ReflectionSystem {
     // records a probe released here as the same frame's main pass begins.
     // Nothing outside this file knows the bake is spread.
     scene.onBeforeRenderTargetsRenderObservable.add(() => this.releaseOurs());
-    // The default cube exists before any map does, because `MapBuilder` asks
-    // for a glazing material during the build and that material has to be
-    // born with a cube bound to it — see `CelMaterialFactory
-    // .setDefaultReflection`. Nothing bakes into it: WebGPU makes it zeroed,
-    // alpha 0 on every face and level, which is the sky — and it is only ever
-    // bound at a strength of 0 (`applyReflection`), so no pixel reads it.
+    // The default cube exists before any map does: nothing bakes into it
+    // (WebGPU makes it zeroed, alpha 0 on every face and level, which is the
+    // sky), and it is only ever bound at a strength of 0, so no pixel reads
+    // it — the water of a build that bakes nothing, and a round's glazing
+    // whose world our bake does not hold (`pointDefault`).
     this.defaultCube = bake.cube("default").texture;
-    this.mats.setDefaultReflection(wrapCubeTexture(scene, this.defaultCube, "reflection default"));
   }
 
   /**
@@ -236,10 +229,10 @@ export class ReflectionSystem {
    * **A build our bake holds no world for bakes nothing** — a round whose
    * world has already failed (`BlockHandover`, which hands the bake its world
    * a line earlier in `installMap`), and the map editor's build while it
-   * stood. A pane keeps the glazing material `MapBuilder` gave it, born
-   * holding the default cube at a strength of ZERO
-   * (`CelMaterialFactory.applyReflection`), so it shows the analytic sky half
-   * of the reflection and no more.
+   * stood. A pane keeps the recipe `MapBuilder`'s glazing material was born
+   * with, a probe of strength ZERO (`CelMaterialFactory.applyReflection`),
+   * pointed at the default cube (`pointDefault`), so it shows the analytic
+   * sky half of the reflection and no more.
    *
    * A bake is affordable because the world is static, so it is a BUILD STEP
    * rather than a pass. (The map editor, the one place the world was not

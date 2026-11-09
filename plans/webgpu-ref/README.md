@@ -371,7 +371,13 @@ node plans/webgpu-ref/drawlog.mjs [map...] [--out=f.json] [--against=f.json] [--
   the only classes in which Babylon draws, visits group 0 or compiles an effect; in every
   other state it does none of the three (the post chain is ours since X5.2d). Since
   X5.3c neither class exists, and a parent's log is compared with
-  `--ignore='^[a-z]+/(editor|loading \(from the editor\))(/|$)'`.
+  `--ignore='^[a-z]+/(editor|loading \(from the editor\))(/|$)'`. **Since X5.3d it also
+  reads the game's own DEV counter of Babylon effect compiles** (`Game.babylonCompiles`,
+  `src/core/babylonCompiles.ts`) at every frame's end and FAILS the run (exit 1) where it
+  is not 0 in every class, whatever `--against` says; it is kept beside the classes, so a
+  parent's log without one compares. `compiledAtBoot` is the engine's own `clearQuad` alone
+  since X5.3d deleted `localShadowClear`, and no mesh stands at the boot any more (the
+  `Mesh.render` hook waits for the first).
 
 `cold-stagger.mjs` is **gone and is not coming back**. It existed to bake
 Coldharbour's forty cube probes four a frame because doing all forty at once

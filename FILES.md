@@ -661,15 +661,14 @@ src/
                         #   Also the light's view-projection as Babylon's
                         #   generator composed it (lightTransformToRef, the one
                         #   copy both read; ShadowLight, what a light is to
-                        #   both), and the 1x1 LIT texture a shadow map
+                        #   both: a plain pair, no Babylon light since
+                        #   X5.3d), and the 1x1 LIT texture a shadow map
                         #   switched OFF is bound as (a declared sampler must
                         #   be bound)
     wrappedTextures.ts  # Babylon's wrapped VIEWS of textures OUR renderer
                         #   owns: a shadow texture's (wrapShadowTexture, for
-                        #   ShadowSystem, BodyShadows and LocalShadows) and a
-                        #   probe's cube
-                        #   (wrapCubeTexture: the default cube alone since
-                        #   X4.6e, for an editor build's glazing); disposing
+                        #   ShadowSystem, BodyShadows and LocalShadows; a
+                        #   probe's cube had one too until X5.3d); disposing
                         #   one destroys the texture it wraps
     proxyBoxes.ts       # What a soldier and a hull ARE to a shadow: boxes,
                         #   packed as instance matrices. RAGDOLL_BONES and the
@@ -678,6 +677,13 @@ src/
                         #   BodyShadows and LocalShadows so a body throws one
                         #   silhouette under every light. No Babylon (a root
                         #   of check-babylon-free)
+    babylonCompiles.ts  # The DEV counter of BABYLON EFFECT COMPILES, which
+                        #   must read 0 in every state (X5.3d): createEffect
+                        #   and createComputeEffect wrapped on the engine from
+                        #   Game's construction (the engine's own clearQuad,
+                        #   made before it, not counted), each compile said as
+                        #   a console warning. The draw log asserts it. Until
+                        #   X6.1 deletes the cel program's Babylon declarations
     webgpuLeaks.ts      # What Babylon's WebGPU arm never gives back of a map:
                         #   a released effect's uniform-buffer pools (patched
                         #   onto the engine once, in main.ts) and the bind-group
@@ -1417,9 +1423,10 @@ src/
                         #   world's casters in two cascades (near + far),
                         #   re-rendered only when the snapped focus moves;
                         #   the four world maps OUR renderer's
-                        #   (render/WorldShadows) in every round, on every
-                        #   rung, its own ShadowGenerators an editor build's
-                        #   alone (X5.3's to delete)
+                        #   (render/WorldShadows) in every state, on every
+                        #   rung, the lit 1x1 until the first map hands them
+                        #   their casters. No Babylon light or generator since
+                        #   X5.3d: a map's light is a plain pair (MapLight)
     BodyShadows.ts      # The BODIES' shadow map: soldiers and hulls and nothing
                         #   static, re-rendered every frame, its own tighter
                         #   window (4.7 cm texels against the world's 5.4).
@@ -1439,12 +1446,12 @@ src/
                         #   static tile; bodies, hulls and every MOVING light's
                         #   colliders are box proxies redrawn each frame in one
                         #   draw. The vertex stage maps each face into its own
-                        #   tile, so one pass fills many. Decides everything;
-                        #   draws it only while the atlas is Babylon's (an
-                        #   editor build's, its render target kept for it
-                        #   alone, X5.3's to delete) — OUR renderer's
-                        #   (render/LampAtlas) in every round, handed the
-                        #   frame's AtlasWork
+                        #   tile, so one pass fills many. Decides everything
+                        #   and draws nothing: the atlas is OUR renderer's
+                        #   (render/LampAtlas), handed the frame's AtlasWork,
+                        #   none until the first map hands it its casters
+                        #   (Babylon's render target, programs and proxy mesh
+                        #   went at X5.3d)
     LightningStrikes.ts # When lightning strikes, from where, how bright: a
                         #   seeded SCHEDULE read off a clock (the authority's
                         #   in a match; offline its own, which holds with the
@@ -1464,9 +1471,10 @@ src/
                         #   loading card) — the only bake since X3.7c, which
                         #   deleted Babylon's ReflectionProbes. Owns the
                         #   DEFAULT cube, one of ours nothing bakes, bound at a
-                        #   strength of 0; an editor build, or a round whose
-                        #   world failed, bakes nothing. Points a round's
-                        #   glazing at its probe's recipe and cube (X4.6e)
+                        #   strength of 0 (no wrapped view of it since X5.3d);
+                        #   a round whose world failed bakes nothing. Points a
+                        #   round's glazing at its probe's recipe and cube
+                        #   (X4.6e)
     Atmosphere.ts       # The ash field: DECIDES its box, colours, rate, lives
                         #   and blend on a ParticleField of ours, rebuilt to the
                         #   capacity the map's density needs; the mote texture
@@ -2564,11 +2572,12 @@ src/
                         #   compose the ink runs as its last line (no pass:
                         #   its text the ink's compiled module's glowAt, its
                         #   inputs composeNear/composeWide/composeIntensity,
-                        #   X5.2d). Public API only;
-                        #   `Game` supplies the rules (what blooms, how
-                        #   bright); the mask pass's opening announced from
-                        #   inside its clear (onMaskOpenObservable), where
-                        #   OUR palette draws FIRST (render/WorldGlow.ts)
+                        #   X5.2d). Public API only; the mask pass's opening
+                        #   announced from inside its clear
+                        #   (onMaskOpenObservable), where OUR palette draws
+                        #   FIRST (render/WorldGlow.ts), and every draw in it
+                        #   ours — its render list empty, its Babylon mesh
+                        #   path (override materials, SelfMasking) gone X5.3d
     Fxaa.ts             # FXAA's CPU half (the switch) and `stage`, the post
                         #   chain's stage our renderer draws it as since X5.2c2
                         #   (wgsl/fxaa.ts): Babylon's shader with
@@ -2631,13 +2640,13 @@ src/
                         #   over the floor, its patches stitched edge to edge
                         #   (`TURF_LODS`). One lighting function for both.
                         #   Babylon-free: render/grassProgram.ts assembles it
-      flame.ts          # The FIRE as plain strings both renderers assemble
+      flame.ts          # The FIRE as plain strings our renderer assembles
                         #   (X4.4d): the noise and drawn clock, the vertex
                         #   stage (tongue, ember, bounds marker) and the
                         #   banded pixel, its bloom under GLOW_MASK (off the
                         #   instance under FLAME_INSTANCED). Babylon-free:
-                        #   FlameShader.ts (its stages drawn by nothing since
-                        #   X5.3c) and render/flameProgram.ts declare them
+                        #   render/flameProgram.ts declares them (FlameShader's
+                        #   Babylon stages did too, until X5.3d)
       blast.ts          # The blast's BILLOW as plain strings (X4.4c): the
                         #   noise, the lumped vertex stage and the pixel — fire,
                         #   lit smoke, dissolve — and its bloom under GLOW_MASK,
@@ -2726,12 +2735,11 @@ src/
                         #   volumetricStages declares them
     FlameShader.ts      # THE FIRE: every open flame's one material. Tongues
                         #   that boil on twos in hard bands, embers on the
-                        #   smooth clock, and the glow-mask TWIN that runs the
-                        #   same vertex stage so the bloom ties its depth —
-                        #   Babylon's stages an EDITOR build's alone since
-                        #   X4.4d; its `values` are what our renderer draws a
-                        #   round's fires with (render/FlameDraw.ts), the
-                        #   bodies shaders/wgsl/flame.ts. WGSL
+                        #   smooth clock. A recipe key with no Babylon stage
+                        #   or mask twin since X5.3d: its `values` are what
+                        #   our renderer draws every fire with
+                        #   (render/FlameDraw.ts, its bloom too), the bodies
+                        #   shaders/wgsl/flame.ts. The inks
     BlastShader.ts      # A BLAST's billow, what it is drawn WITH: BlastPaint,
                         #   the drawing, the flame's inks, the soot and the
                         #   dust, and the clock (no material since X4.4c: our
@@ -2768,9 +2776,8 @@ src/
     PostPasses.ts       # The post chain's Babylon-side PASS OWNER (X5.2c1):
                         #   owns the FRAME (X5.2d) — the render target the
                         #   scene draws straight into and clears itself, the
-                        #   camera's outputRenderTarget through the camera's
-                        #   render (off after it, for the editor's gizmo
-                        #   layer), made as the
+                        #   camera's outputRenderTarget for good (no window
+                        #   since X5.3d), made as the
                         #   ink's input was (FRAME_TARGETS) — and after the
                         #   camera's render opens the pool passes for our
                         #   stages, one target a pass position, bound and
@@ -2783,12 +2790,12 @@ src/
                         #   here meets Babylon (types only). Its header numbers
                         #   every internal it reaches: device, lazy pass, the
                         #   bundle list our draws are QUEUED into, the pass's
-                        #   attachments, the render target's y-flip, group 0's
-                        #   onBeforeTransparentRendering, a texture's own view,
-                        #   Babylon's sampler cache, the upload encoder
-                        #   submitted ahead of the draws (prepareEncoder), and
-                        #   group 0's _renderAlphaTest, wrapped for the point
-                        #   between its opaque and alpha-tested lists — ten.
+                        #   attachments, the render target's y-flip, a
+                        #   texture's own view, Babylon's sampler cache and the
+                        #   upload encoder submitted ahead of the draws
+                        #   (prepareEncoder) — eight, 6 and 10 (group 0's
+                        #   hooks) retired at X5.3d: every point of group 0
+                        #   told at the draw phase's end.
                         #   The glow's mask pass reached by the same items
                         #   (passIs, queue) when GlowPass announces it; the
                         #   glow's blur passes and the post chain's (X5.2b,
@@ -3176,7 +3183,8 @@ src/
                         #   asked once a session, a failure told to the
                         #   round's failure (Game.worldFailed)
     lampDepth.ts        # The lamps' DEPTH program (X3.6b): LocalShadows'
-                        #   localShadowDepth — a face's perspective offset
+                        #   localShadowDepth (Babylon's, deleted at X5.3d)
+                        #   ported — a face's perspective offset
                         #   into its tile, the radial distance, the off-face
                         #   discard — as a static face over the world's
                         #   arrays (and its scatter twin) and as the proxy

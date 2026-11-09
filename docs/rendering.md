@@ -547,7 +547,7 @@ wider of the two and it does nothing.
 Since `BABYLON_EXIT.md` X5.1b the passes, the buffers and the textures are our
 renderer's (`render/GiCompute.ts`), Babylon's `ComputeShader`, `StorageBuffer`
 and `RawTexture3D` ported exactly: **Babylon makes no compute pipeline and
-dispatches nothing**, in a round or an editor build. `GiVolume` kept its CPU
+dispatches nothing**, in any state. `GiVolume` kept its CPU
 half line for line; what changed is where its decisions are RECORDED.
 
 - **Five pipelines, asked at construction** (`PipelineCache.compute`, layout
@@ -575,7 +575,8 @@ half line for line; what changed is where its decisions are RECORDED.
   the HOST's sampler, always — the owner's decision of 2026-11-07. Babylon's
   compute bind took a sampler off the internal texture's cached fields, which
   only a Babylon bind fills (the light shafts in a round until X5.2c2 made them
-  ours, bound through the host too; an editor build's materials), so with the
+  ours, bound through the host too; the map editor's build's materials until
+  X5.3c), so with the
   shafts off from boot it had been repeat/nearest at anisotropy 1; X5.1a
   measured no byte of the trace move between the two.
 - **The dispatch is ARMED in `update` and RECORDED by a late prepare**
@@ -583,8 +584,8 @@ half line for line; what changed is where its decisions are RECORDED.
   compute passes into the host's prepare encoder, which the host submits
   ahead of every pass of its own — so the main pass and the glow's mask read
   this frame's compose, as they did with Babylon's dispatch on its render
-  encoder. (An editor build's Babylon passes read nothing of the volume: since
-  X5.1b's picture change every Babylon cel material holds GI `off`.) **The reflection bake reads the
+  encoder. (No Babylon pass reads the volume: no Babylon material draws in any
+  state since X5.3c, and none is bound to it since X5.3d.) **The reflection bake reads the
   PREVIOUS frame's, and that rests on REGISTRATION order alone**: the late
   list runs in push order, and `ProbeBake` pushes in its constructor, which
   `Game` runs before `GiVolume`'s. A construction order changed, or the bake
@@ -600,8 +601,9 @@ half line for line; what changed is where its decisions are RECORDED.
 - **A clear of the history lands where Babylon's did**: one asked before a
   dispatch is armed is recorded ahead of it, one asked after it behind it, and
   on a frame that dispatches nothing at that frame's prepare.
-- **Nothing is destroyed at the call.** `setMap`, `setQuality`, `worldMoved` and
-  `clearMap` replace resources mid-frame, and a dispatch armed before a door
+- **Nothing is destroyed at the call.** `setMap`, `setQuality` and
+  `clearMap` replace resources mid-frame (and so did `worldMoved`, the map
+  editor's drag's, until X5.3d), and a dispatch armed before a door
   records on what stood when it was armed, so every retired buffer and texture
   is destroyed after the frame's submit (`FrameHost.afterSubmit`, the engine's
   end of frame), as Babylon deferred its own; an immediate `destroy()` fails
@@ -633,25 +635,16 @@ phone**, which is why a coarse pointer defaults to `low` — `FINDINGS.md` 44.
 
 ### Contracts that reach outside it
 
-- **Seven textures and six uniforms on every cel material, bound always**
-  (`GI_SAMPLER_NAMES`, `GI_UNIFORM_NAMES`), through the factory's `applyShadow`,
-  the one door all six creation paths share. `GiVolume` publishes a real set in
+- **Seven textures and six uniforms in every cel draw's FRAME, bound always**
+  (`GI_SAMPLER_NAMES`, `GI_UNIFORM_NAMES`). `GiVolume` publishes a real set in
   its constructor and keeps one published whatever the setting; OUR renderer's
   frame reads it (`fillFrame`, `fillFrameTextures`) — our own textures since
-  X5.1b, the GPU half's. Grass and water do not
-  declare them and keep the flat path.
-- **An editor build has NO GI until `BABYLON_EXIT.md` X5.3**, by the owner's
-  decision of 2026-11-07 (X5.1b's row 1). Its world is drawn by BABYLON's cel
-  materials until then, and none of them is handed the volume: every one is
-  bound, on creation and for good, to what the setting `off` gives
-  (`CelMaterialFactory.babylonGi` — seven single texels of Babylon's own, made
-  as `GiVolume` makes them at `off`, and `giShade.w` at 0, which is the whole of
-  "off" to `giCoord`; the lightning's fill is the live `giExtra`, as at `off`).
-  So an editor build's Babylon world draws as if GI were off, and a tier change
-  walks no material. The volume still steps in an editor build — our draws
-  there (the sky, the bodies, the weapon, the particles) read it — and the
-  editor regains it when X5.3 draws its world with ours. A dev-only picture
-  change, made in its own commit ahead of X5.1b's move.
+  X5.1b, the GPU half's. No Babylon cel material is bound to it: the map
+  editor's build drew its world with Babylon's and held every one at GI `off`
+  (`CelMaterialFactory.babylonGi`, seven single texels of Babylon's own, by the
+  owner's decision of 2026-11-07, X5.1b's row 1), and that set went at
+  `BABYLON_EXIT.md` X5.3d. Grass and water do not declare them and keep the
+  flat path.
 - **`GameMap.colliderAlbedo` stays parallel to `colliderBoxes`** — `recordBox`
   is the one place either grows. It is client-only: the collision bake, the
   server and `npm run parity` have never heard of it.
@@ -1248,9 +1241,10 @@ geometry from `world/flame.ts`, and a building says `b.flame(...)` beside its
 `b.light` and `b.sound`. It replaced a static emissive cone. **Every fire of a
 ROUND is our renderer's since `BABYLON_EXIT.md` X4.4d** — the world's and the
 molotov's, drawn on the material's VALUES by its program ("The pools, ours":
-"The fires") — and the `ShaderMaterial` draws an EDITOR build's fires alone;
-both read the one copy of its bodies (`shaders/wgsl/flame.ts`). The rules that
-reach outside it:
+"The fires"), off the one copy of its bodies (`shaders/wgsl/flame.ts`). The
+`ShaderMaterial` is a recipe key and draws nothing: its Babylon stages and its
+glow-mask twin, which drew the map editor's build's fires alone after X4.4d,
+were deleted at X5.3d. The rules that reach outside it:
 
 - **It is merged like any other part, so everything it needs per vertex is in
   its UVs** — layer in `uv.x`'s whole part (outer tongue, core, ember, bounds
@@ -1494,21 +1488,22 @@ is one the bake would owe and cannot draw** — REFUSED at the TAKE, on every
 map whether it has glazing or not (`BlockHandover.install`'s `strayMesh`): the
 world fails (`Game.worldFailed`, the menu and a toast), and a DEV build throws
 after it so `merge:hash` refuses the map. **A build our bake holds no world
-for bakes nothing** — an editor build, and a round whose world has already
-failed — and a bake that cannot draw the world it was handed fails the world
+for bakes nothing** — a round whose world has already failed, and the map
+editor's build while it stood — and a bake that cannot draw the world it was handed fails the world
 too (below). A bake that drained depends on our renderer for nothing: its
 cubes stand.
 
 - **`ProbeBake` owns the cubes** (`rgba8unorm`, six layers, the full mip
   chain, `COPY_SRC` so a readback needs no help), never destroyed but with
   the bake; each is handed out as a `ProbeCube`, and `ReflectionSystem`'s
-  pools (`pools`, by pool and slot) are the one index of them. **The water reads
-  its cube where it lies (`WaterDraw`, X4.6d), and Babylon's glazing, the one reader
-  left, samples a WRAPPED cube view** (`core/wrappedTextures.ts`'
-  `wrapCubeTexture`: a cube over all six layers and every level, trilinear,
-  and `INVCUBIC_MODE`, from which Babylon's bind derives the wrap as it did
-  for a probe's cube) — never disposed either, since disposing a wrapped
-  view destroys the cube. **The DEFAULT cube is a cube of ours that nothing
+  pools (`pools`, by pool and slot) are the one index of them. **Every reader
+  reads a cube where it lies**: the water since X4.6d (`WaterDraw`), a round's
+  glazing since X4.6e (`GlassDraw.point`), each through a view of its own over
+  all six layers and every level, sampled as Babylon's WRAPPED view of a cube
+  sampled it (trilinear, and the wrap `INVCUBIC_MODE` gave). That wrapped view
+  (`wrapCubeTexture`) went at `BABYLON_EXIT.md` X5.3d with its last reader,
+  the map editor's build's glazing, which sampled the default cube through it.
+  **The DEFAULT cube is a cube of ours that nothing
   bakes** (`ReflectionSystem`'s constructor, before any map): WebGPU makes a
   texture zeroed, so it is alpha 0 on every face and level — the sky — and it
   is only ever bound at a strength of 0, where `mix(sky, city, 0)` is the sky
@@ -1655,8 +1650,8 @@ them binds on any map that ships**:
   on a stalled probe count or a backstop clock and lets the remainder land in
   the round. **A pane whose probe has not baked yet is not a bug and needs no
   wait**: a cube born zeroed is alpha 0 everywhere, which is the analytic sky a
-  pane shows before any probe has claimed it — the state an editor build leaves
-  every pane in permanently. See [`docs/states.md`](states.md).
+  pane shows before any probe has claimed it — the state the map editor's build
+  left every pane in permanently. See [`docs/states.md`](states.md).
 - **`radius` (800 m) is the only term in the bake priced on the map's SIZE.** A
   probe draws the world within 800 m of it, measured to the NEAR SIDE of each
   surface's bounding sphere: `distance - radiusWorld`, which is what keeps a
@@ -1752,26 +1747,24 @@ Six things about it are load-bearing:
   so a cube rendered into comes out mirrored about the horizon; Babylon says as
   much by giving a cube render target `INVCUBIC_MODE`, and its own reflection
   path spends `INVERTCUBICMAP` on the same line. Ours draws its faces upside
-  down as every render target is, and its wrapped view takes the same mode,
-  so the one flip serves both. Getting it wrong puts the
+  down as every render target is, and every reader samples as that mode had a
+  view sample, so the one flip serves both. Getting it wrong puts the
   pavement where the sky belongs, which reads as glass that is merely too dark.
-- **Cubes are pooled and never destroyed**, like the bot rigs, each with its
-  wrapped view. A map with fewer glazed blocks than the last leaves the spare
-  cubes holding the last map's picture, which nothing samples.
-- **An EDITOR build bakes nothing**, which is not a saving so much as the
+- **Cubes are pooled and never destroyed**, like the bot rigs. A map with
+  fewer glazed blocks than the last leaves the spare cubes holding the last
+  map's picture, which nothing samples.
+- **The map editor's build baked nothing** (until X5.3c deleted it), which was not a saving so much as the
   feature's own premise being withdrawn. A bake is affordable because it is a
-  BUILD STEP over a static world, and the editor is the one place in the game
-  where a build is not rare — every tier-3 rebuild would buy another — and an
-  editor build is Babylon's whole, which our bake draws none of. Measured on
+  BUILD STEP over a static world, and the editor was the one place in the game
+  where a build was not rare — every tier-3 rebuild would have bought another —
+  and an editor build was Babylon's whole, which our bake draws none of. Measured on
   Babylon's bake, which an editor build skipped the same way: 40 probes over
   405 meshes in a round against 82 over 610 in the editor (`PaneBlocks` keys
   per PLACEMENT there), which came to one frame of ~300,000 draw calls after
-  every param edit, add, delete or brush stroke. What the editor gives up is
-  the city in its glass: a pane keeps the material `MapBuilder` gave it, which
-  holds the default cube at strength ZERO, so it shows the analytic sky half
-  and no more. That is the state a pane is in before any probe claims it
-  rather than a new one, and it is the right trade in a view that already
-  strips the map's night back to a work light.
+  every param edit, add, delete or brush stroke. What the editor gave up was
+  the city in its glass: a pane kept the material `MapBuilder` gave it, which
+  held the default cube at strength ZERO, so it showed the analytic sky half
+  and no more — the state a pane is in before any probe claims it.
 
 The remaining approximation is that a probe serves a whole block: a pane
 returns the right city seen from the middle of its own block rather than from
@@ -1940,20 +1933,19 @@ nothing: the dither was never in the grade, and the fix is at the source. The sk
 needing it (233 runs against 229): stars, the galactic band and the halo are
 painted over the whole ramp, and the clouds stand in front of it.
 
-The exceptions are `ShadowSystem`'s `DirectionalLight`s, which no material
-reads: each exists only to define a shadow camera — for its `ShadowGenerator`
-(an editor build's), or for the map our renderer draws in its place since
-X3.6a ("Our renderer's frame"). The moon's is the world's, and the near
-cascade's, the foliage's (see below) and the lightning's are pinned to layers
-no world mesh carries (`includeOnlyWithLayerMask`), so none can reach a
-`StandardMaterial`. **The bodies' map has no Babylon light at all since
-X4.1c**: `BodyShadows` holds where its light points and stands as a plain pair
-(`ShadowLight`), there being no generator for one to frame. The cel fragment shader samples
+**The scene has no Babylon light at all since `BABYLON_EXIT.md` X5.3d.** A
+shadow map's light only ever defined a shadow camera, and every map's holds
+where it points and stands as a plain pair (`ShadowLight`): the bodies' since
+X4.1c (`BodyShadows`), the world's four since X5.3d (`ShadowSystem`'s
+`MapLight`, with its window's side beside it), when the `DirectionalLight`s
+went with the `ShadowGenerator`s they framed — which drew the map editor's
+build's maps alone after X3.6a, our renderer drawing every round's ("Our
+renderer's frame"). The cel fragment shader samples
 both depth maps as one hard two-level term gating the key light. The world's
 window follows the player (texel-snapped, re-rendered only when the snapped
-focus moves), casters are the map's merged static meshes re-registered every
-round via `shadows.setCasters(map.visuals)` (skipping anything flat with
-`metadata.noShadowCaster`).
+focus moves), and its casters are the map's merged static surfaces the
+handover holds every round (`BlockHandover`'s `PASS_CASTS`: nothing flat with
+`metadata.noShadowCaster`, nothing blended), read by `shadows.setCasters()`.
 
 **Where a window STANDS is `core/shadowWindow.ts`** — one texel snap every map
 places itself with, because two copies of it is two maps looking at two places
@@ -1962,7 +1954,7 @@ off one focus.
 ### The world's map records BACK faces, and the foliage has a map of its own
 
 **The world's depth map stores the FAR side of every caster**
-(`forceBackFacesOnly`), and its bias is **5 cm, stated in metres**
+(a generator's `forceBackFacesOnly`, `WorldDepth`'s `"back"`), and its bias is **5 cm, stated in metres**
 (`CONFIG.graphics.shadows.bias`, converted to normalised depth by
 `core/shadowWindow.ts`'s `depthBias`). It used to store front faces with a bias
 of 0.0035 of normalised depth — **63 cm** over the 179 m volume, a number nobody
@@ -2000,7 +1992,7 @@ failed on the broadleafs, which are BOXES: a box face has one cosine, so at a
 14.5-degree sun almost every shaded face read as the deep middle of the crown.
 
 **So the foliage has a third map** — `ShadowSystem`'s own second light and
-generator, over the same window and focus, recording the FRONT faces of the
+map, over the same window and focus, recording the FRONT faces of the
 translucent SOLIDS and nothing else (`CelMaterialFactory.isSolid`: a
 `TranslucencySpec` that states a `depth`). A solid's translucency is lit where
 the face lies within `depth` metres behind the first lit foliage along the
@@ -2123,14 +2115,14 @@ comparable). Read it as free and re-measure before believing any figure smaller
 than the spread.
 
 **The depth pass draws only the casters standing in the window, and has to do that
-culling itself** — a generator's on the CPU here, ours on the GPU over the
-light's frustum since X3.6a (`WorldDepth`). Babylon culls nothing off an
-explicit `renderList`:
+culling itself** — on the GPU over the light's frustum since X3.6a
+(`WorldDepth`), and on the CPU for a generator until X5.3d deleted them. Babylon
+culled nothing off an explicit `renderList`:
 `ObjectRenderer._prepareRenderingManager` dispatches every enabled, visible mesh in
 it, so the pass was submitting the whole village on every re-render — 314 casters and
 79k triangles against the ~150 that can reach a 110 m window.
-`ShadowSystem.cullToWindow`, hung off the shadow map's `getCustomRenderList`, is the
-fix, and it is **lossless rather than a quality trade**: the light is orthographic,
+`ShadowSystem.cullToWindow`, hung off the generator's `getCustomRenderList`, was the
+fix, and it was **lossless rather than a quality trade** — as the GPU's is: the light is orthographic,
 so a caster's shadow lands at its own position in the light's plane and a box test
 there cannot drop anything that could have darkened a texel.
 
@@ -2158,9 +2150,8 @@ along-sun reach for free, and along that axis it is `depthRange` rather than
 `frustumSize` that binds. And the price is texel density, `frustumSize /
 mapSize`: 5.4 cm at 110, 9.8 cm at 200. The four-tap kernel is sized in TEXELS
 so it still cancels the staircase, but the range over which an edge is sub-pixel
-scales with it. `mapSize` stays global — it is fixed at `ShadowGenerator`
-construction, and raising it is four times the fill on a pass that re-renders
-whenever the snapped focus moves.
+scales with it. `mapSize` stays global — the rung's, and raising it is four
+times the fill on a pass that re-renders whenever the snapped focus moves.
 
 The count above is Hollowmere's; note both numbers move with the window, since a
 200 m square straddles roughly twice the 48 m blocks a 110 m one does.
@@ -2189,10 +2180,10 @@ A fresh install on a coarse pointer gets `low`, on `defaultGiQuality`'s test.
 declares every shadow sampler, and a declared sampler with nothing behind it is
 a bind group that fails to build. It is 8-bit RGBA on purpose — 255 reads back
 as depth 1.0, past every receiver, and a 32-bit float is not filterable under
-WebGPU. A rung change REBUILDS a generator at its new size (a
-`ShadowGenerator`'s size is fixed at construction) and re-adds the casters
-`setCasters` last handed over — or, while the maps are our renderer's, re-makes
-its texture, owed a draw; a map whose size did not move is left alone.
+WebGPU. A rung change re-makes a map of ours at its new size, owed a draw (a
+generator was REBUILT and handed the casters again until X5.3d); a map whose
+size did not move is left alone. Before the first map hands our renderer its
+casters every map is the lit 1x1.
 **The sizes start at -1, not 0**, because 0 is off's own size and a first
 `setQuality("off")` that compared equal to it bound nothing at all — measured,
 every cel material's bind group failed and the round never left `loading`.
@@ -2255,7 +2246,7 @@ agree** — a mismatch is a shadow drawn on the wrong side of the lamp.
 
 **The lamps are split by REFRESH RATE, which is the moon's rule.** A FIXTURE
 (`lighting.add`, `shadow: "fixture"` by default) has a STATIC layer — the map's
-real visual meshes, culled per face to the light's sphere — baked once and kept
+real world casters, culled per face to the light's frustum — baked once and kept
 while the light holds its tiles, and a DYNAMIC layer of bodies and hulls,
 redrawn every frame, only while one is within reach. The shader takes the `min`
 of the two, exactly as the moon's world and body maps. A light that MOVES
@@ -2267,31 +2258,23 @@ dynamic tile in the frame is ONE draw**, whatever it holds. The phone rung
 bakes its fixtures from proxies too (`meshes: false`) and holds its dynamic
 tiles for two frames (`every`).
 
-**One pass fills many tiles because the projection is not Babylon's.** The
+**One pass fills many tiles because the projection is not a pass's own.** The
 depth vertex stage builds the face's own perspective and then SCALES AND
 OFFSETS clip space into that face's tile of the atlas — affine in `w`, so it
 commutes with the divide — and the fragment stage discards whatever fell
 outside the face's frustum, the per-tile clip the hardware can no longer do. A
-proxy's instance names its tile (`tileId`); a mesh cannot, so a static bake is
-one pass per face with the tile as a uniform, **one material per face in
-flight** (`staticFacesPerFrame`) so no uniform buffer is rewritten between two
-passes of one frame.
+proxy's instance names its tile; a static bake is one pass per face with the
+tile as a value of its own, up to `staticFacesPerFrame` a frame.
 
-**Nothing clears the atlas but the clear sheet.** A static tile survives every
-pass that does not redraw it, so the render target's own clear is replaced by
-an observer that clears only a NEW target; each pass's tiles are reset first
-by a sheet of one quad per tile, collapsed to nothing where its flag is 0,
-drawn at depth ALWAYS in a pass of its own. The work `update` lays out is
-CONSUMED by `render` — a state that runs no `update` must not re-bake last
-frame's queue every frame.
-
-**All of that is the path that keeps the atlas BABYLON's** — an editor
-build's, since X3.7b. Since X3.6b the atlas is OUR renderer's in every round
-(`render/LampAtlas.ts`), and the same passes are drawn there in the same
-order — a tile cleared by a copy rather than a sheet, a static face over the
-world's casters culled for it rather than a list of meshes picked by bounds,
-the proxies as one instanced box — off the same decisions, which stay here
-(see "Our renderer's frame").
+**The atlas is OUR renderer's** (`render/LampAtlas.ts`, since X3.6b in every
+round): every tile a pass writes is cleared first, by a copy, and nothing else
+is ever cleared, a static tile surviving every pass that does not redraw it —
+off decisions that stay here (see "Our renderer's frame"). Babylon's own path,
+a render target with its clear replaced, a sheet of one quad per tile drawn at
+depth ALWAYS to reset the flagged tiles, a material per static face in flight
+over a list of meshes picked by bounds and the proxies as a thin-instanced
+`localShadowProxy`, drew the map editor's build's atlas alone after X3.7b,
+cleared itself once at the boot, and went at `BABYLON_EXIT.md` X5.3d.
 
 **A tile stores RADIAL distance over the light's range, from BACK faces**, and
 the receiver is offset along its true facet toward the light — the moon map's
@@ -2733,8 +2716,8 @@ sparks' blooms go into the glow's mask in that same order, behind the moon's
   stands in for was a whole matrix to the compiler. It is offered as its mesh was — its block's
   cell (`WorldCulling.offersBlock`), the size gate on its record's sphere, the sphere's frustum
   test (`Game.glassPull`). Its material is its probe's recipe (`glassProbeRecipe`) and its cube
-  is read where the bake left it, sampled as `wrapCubeTexture`'s view sampled it; no baked cube
-  is wrapped for Babylon any more, the default cube alone being, for an editor build.
+  is read where the bake left it, sampled as `wrapCubeTexture`'s view sampled it; no cube is
+  wrapped for Babylon any more (the default cube's view, for the map editor's build, went at X5.3d).
 - **The `backed` panes write depth and are not in the run**: they are drawn nearest first by
   `eyeDistanceSq`, AHEAD of everything else of ours at `"beforeAlphaTest"` — the one run, the
   palette, the blocks — where Babylon's opaque list drew them, which is the whole of what makes
@@ -2763,9 +2746,9 @@ sparks' blooms go into the glow's mask in that same order, behind the moon's
   world, and a live probe found it.
 - **No pose for the warm-up**: every pipeline of these is on the round's declared list
   (`Game.roundPipelines`), so `stageWarmFrame` poses nothing.
-- **An editor build's glazing stays Babylon's until X5.3**, one mesh per placement per material
-  over the default cube, on Babylon's lists with the editor's own `ed-*` proxies. No pool and no
-  blob is ever raised there, so the run never meets that list.
+- **The map editor's build's glazing was Babylon's**, one mesh per placement per material over
+  the default cube, on Babylon's lists with the editor's own `ed-*` proxies, until X5.3c deleted
+  that build (and X5.3d the default cube's wrapped view it sampled).
 
 ## The water: a mirror with a body under it
 
@@ -2795,9 +2778,9 @@ buffer over one storage array. What it keeps, and what proved each:
 - **Three textures, three owners.** The BED-DEPTH map is ours, `r8unorm`, one a body, one a build. The
   FOAM mask stays a `Texture` of Babylon's, read through the seam (`hostTexture`), so its decode and its
   mips are what they were; it owes its own step, with the rest of what is read that way. The MIRROR
-  is the bake's cube, read where it lies through a view over all six faces and every level, and
-  **`wrapCubeTexture` has only the glazing left as a reader**; the water's pool makes no wrapped view
-  now. **Both samplers of ours are stated as Babylon's bind built them, measured at the BEFORE**: the
+  is the bake's cube, read where it lies through a view over all six faces and every level; the
+  water's pool makes no wrapped view (and `wrapCubeTexture` itself went at X5.3d with its last
+  reader, the map editor's build's glazing). **Both samplers of ours are stated as Babylon's bind built them, measured at the BEFORE**: the
   bed linear, clamped, `mipmapFilter` linear and `maxAnisotropy` 4 for its one level, because Babylon
   turns the anisotropy on for `BILINEAR`; the cube linear in all three, `repeat` as `INVCUBIC_MODE`
   gives it, `maxAnisotropy` 4.
@@ -3476,20 +3459,19 @@ follow:
   changed. So **a `FrameDraw` changes none of the four**, or restores each:
   one left changed is Babylon's next draws drawn with it.
 
-**The main pass is told apart by its TARGET, not by the group.** The glow,
-and every shadow pass Babylon still draws (an editor build's world maps and
-lamps' atlas; no probe face since X3.7c, no bodies' map since X4.1c) draw
-rendering group 0 too, each into its own target. The frame's target is the one bound as
-`onBeforeDrawPhaseObservable` fires (the scene binds it, the camera's
+**The main pass is told apart by its TARGET.** The frame's target is the one
+bound as `onBeforeDrawPhaseObservable` fires (the scene binds it, the camera's
 `outputRenderTarget`, since X5.2d; the post chain bound the ink's input there
-before),
-and a group counts only if it finishes into that same target before the
-draw phase ends (`FrameHost.onMainPass`). **The window alone is not
-enough.** The probes and the shadow maps draw before the phase, but the
-glow renders its mask from `onAfterDrawPhaseObservable` ITSELF. Whether
-its group 0 fell inside the window would depend on which observer was
-added first, and the review of X3.2 found the renderer safe only because
-`Game` happened to build it before `GlowPass`.
+before), and the points are told at the draw phase's end with that same target
+bound (`FrameHost.onMainPass`). Until X5.3d a GROUP counted only if it
+finished into that target before the phase ended, because the glow's mask and
+every shadow pass Babylon drew (the map editor's build's world maps and lamps'
+atlas, the last) drew rendering group 0 too, and the glow renders its mask from
+`onAfterDrawPhaseObservable` ITSELF — whether its group 0 fell inside the
+window depended on which observer was added first, and the review of X3.2
+found the renderer safe only because `Game` happened to build it before
+`GlowPass`. No pass of Babylon's draws a group since X5.3c, and the seam
+reaches none since X5.3d (items 6 and 10 retired).
 
 **The glow's MASK is one of the two other kinds of Babylon pass that ours
 draws in (X3.6d), and it is ANNOUNCED rather than found.** No target test could tell
@@ -3557,15 +3539,13 @@ fusion drops the 8-bit rounding between them: never byte-exact, a later
 (`onAfterCameraRenderObservable`). **The scene draws STRAIGHT INTO the frame**
 (X5.2d): `PostPasses`' `RenderTargetTexture`, made as Babylon made the ink's
 input (`rgba8unorm`, NEAREST, the render size, its `depth32float` depth and no
-stencil: `FRAME_TARGETS`), held as the camera's `outputRenderTarget` from the
-end of one frame's render to the end of the next frame's camera render — taken
-off once the chain is recorded, because an editor build's gizmo layer
-(`UtilityLayerRenderer`) renders with the same camera after it and would
-otherwise draw into the frame the chain has already read, and put back as the
-scene's render ends (`onAfterRenderObservable`; **the rule it rests on: never
-render the main camera after `onAfterCameraRender` but for the gizmo layer —
-no later `onAfterRenderObservable` observer rendering it, one `scene.render()`
-a tick; X5.3 and X5.4 retire it**) —
+stencil: `FRAME_TARGETS`), held as the camera's `outputRenderTarget` for good —
+until X5.3d it was taken off once the chain was recorded and put back as the
+scene's render ended, a window kept for the map editor's gizmo layer alone
+(`UtilityLayerRenderer`, which rendered with the same camera after the chain),
+on the rule that nothing else renders the main camera after
+`onAfterCameraRender`; X5.3d retired both, the layer having gone at X5.3c, and
+X5.4 deletes the field with the frame —
 resized to the render size before the scene first binds it
 (`onBeforeRenderObservable`) and named for the stage that reads it
 (`PostProcessRTT-celInk`, as Babylon named the ink's input). Babylon reads that
@@ -3599,8 +3579,12 @@ which are their owner's, and the two passes the frame's own clear moved
 **A draw lands at one of SEVEN points of the main pass** (`DrawPoint`), six of
 them about rendering group 0, and in this order every frame (the moon's, the sixth,
 `"beforeBlended"`, is X4.5c's: past the group's particles and ahead of its
-transparent list, the seam's item 6 itself; see "The sky" — and behind the moon there
-the one back-to-front run of the glazing and the fades, X4.6e's, where that list began):
+transparent list, where the seam's item 6 told it until X5.3d; see "The sky" — and behind the moon there
+the one back-to-front run of the glazing and the fades, X4.6e's, where that list began).
+**Since X5.3d all six of the group's are told at the draw phase's END, in this
+order** (below): Babylon draws nothing in the group, so nothing of Babylon's
+falls between them, and each list is where the group's list it was named for
+began:
 
 - **`"first"`: as the pass starts, ahead of everything of Babylon's** (X4.5a).
   It hangs off the draw phase's own observable, right after `begin`, so it is
@@ -3613,15 +3597,11 @@ the one back-to-front run of the glazing and the fades, X4.6e's, where that list
   climbed and showed through where the dome was hidden, and the same triangle
   writing depth at the near plane hid everything Babylon's and ours.
 - **`"beforeAlphaTest"`: where the group's opaque meshes end and its
-  ALPHA-TESTED meshes begin** (X3.5). Babylon has no hook there, so the seam
-  WRAPS the group's `_renderAlphaTest` while the main pass's group 0 renders
-  (item 10): the wrapper is made once, installed as the group starts — re-read
-  every frame, since the sort setters replace the function — restored as it
-  ends, and fires the point before the call that hands it the
-  `_alphaTestSubMeshes` list, never the earlier call with the depth-only list.
-  A frame whose alpha-tested list is empty makes no such call, and the point
-  fires at `"opaque"`'s trigger instead, immediately AHEAD of it, so the
-  order holds every frame. **The LANDFORM is drawn here** — the floor, the
+  ALPHA-TESTED meshes begin** (X3.5). Babylon has no hook there, so until
+  X5.3d the seam WRAPPED the group's `_renderAlphaTest` while the main pass's
+  group 0 rendered (item 10) and fired the point before the call that handed
+  it the `_alphaTestSubMeshes` list — or, with that list empty, immediately
+  ahead of `"opaque"`. **The LANDFORM is drawn here** — the floor, the
   rim and the road merge — because the turf is a blend at `"opaque"`, behind this
   point, that writes no depth and must land on a floor already drawn ("The
   turf", above). **The one run of the zones, the blades and the water is first here**
@@ -3645,16 +3625,14 @@ the one back-to-front run of the glazing and the fades, X4.6e's, where that list
 - **`"opaque"`: where the group's opaque and alpha-tested meshes end**, before
   anything blended in it. **No opaque draw of ours goes later**, because
   the blended surfaces write no depth: an opaque wall drawn after the
-  glazing or the water in front of it paints over them. The point is the
+  glazing or the water in front of it paints over them. The point was the
   FIRST of the things Babylon's `RenderingGroup.render` does after its
-  alpha-tested list: its sprites (an observable only once Babylon's sprite
-  component is loaded, which nothing here loads), its particles, and
-  `onBeforeTransparentRendering`, which it always reaches. **Babylon draws no
-  particle since X4.7d**, so the seam hooks the sprites and that last slot alone
-  (its particle observable went with the last of Babylon's fields); while it
-  drew them, the slot alone was too late — the particles came before it, so a
-  wall drawn there would have painted over every particle in front of it, and
-  every field of ours is drawn at `"particles"`, right behind this point.
+  alpha-tested list — its sprites, its particles, and
+  `onBeforeTransparentRendering` — so the seam hooked the sprites and that
+  last slot until X5.3d, and the particles' observable until X4.7d (with
+  Babylon's particles there, the slot alone was too late: a wall drawn there
+  would have painted over every particle in front of it). Every field of
+  ours is drawn at `"particles"`, right behind this point.
 - **`"particles"`: right behind the whole of `"opaque"`, in the same slot of the
   host's** (X4.7c), whatever order anything was added in, and so behind the turf,
   which is added at `"opaque"` at every install — a draw added at `"opaque"` at
@@ -3673,16 +3651,19 @@ the one back-to-front run of the glazing and the fades, X4.6e's, where that list
 **Babylon visits no EMPTY group, and no draw of ours needs it to** (X4.5a, the
 owner's decision of 2026-10-31). `RenderingManager.render` skips a group whose
 `_empty` is set and raises no observable for it, so with nothing of Babylon's in
-group 0 none of the hooks above would run, silently. **So the seam's end-of-phase
-observer asks whether the group was visited, and if it was not, tells
-`beforeAlphaTest`, `afterOpaque` and `afterGroup` together, in that order, there**
-(`babylonSeam.ts`, `onMainPass`): no new internal, and ahead of the glow's mask
-and `FrameDepth`, which hang off the same observable, because it was inserted
-first. No group above 0 holds anything, so where the group would have been and
-that point are the same place. On a frame Babylon does visit the group nothing
-moved: every point keeps its exact place among Babylon's lists, which is what
-keeps the picture while Babylon still has meshes there. It is the path every
-frame takes once the last of them leaves (X4.7). **Measured**: a map stating no
+group 0 none of the group's own hooks would run, silently. **So the seam's
+end-of-phase observer tells `beforeAlphaTest`, `afterOpaque`, `beforeBlended`
+and `afterGroup` together, in that order, there** (`babylonSeam.ts`,
+`onMainPass`): no internal, and ahead of the glow's mask and `FrameDepth`, which
+hang off the same observable, because it was inserted first. No group above 0
+holds anything, so where the group would have been and that point are the same
+place. Until X5.3d it did so only on a frame the group was NOT visited, and a
+frame Babylon did visit it told each point inside it (items 6 and 10, the group
+and sprite observables), so every point kept its exact place among Babylon's
+lists while Babylon still had meshes there; the last of them went with the map
+editor's build at X5.3c, the Phase 4 gate and X5.3a's draw log having measured
+a round to visit the group on no frame in any state, and X5.3d made this the one
+path. **Measured** (X4.5a): a map stating no
 `sky`, over the menu with the kit screen up, group 0 visited on 0 of 30 frames,
 draws queued on all 30, and the frame byte-equal to the same frame with the sky
 up; at the parent, that frame lost the card and the weapon (97% of its pixels)
@@ -3696,8 +3677,22 @@ sky's draws asking whether a map stands (see "The sky") —
 while the next frame that has something does all of it afresh, so nothing
 binds a value a skipped frame left stale.
 
-Every opaque draw of Babylon's in the group lands BEFORE an opaque draw of
-ours. **Between two draws that both WRITE depth** that changes only which of
+**Babylon draws NOTHING in the frame, and a DEV counter holds it there**
+(`core/babylonCompiles.ts`, `BABYLON_EXIT.md` X5.3d): `Game` wraps the engine's
+`createEffect` and `createComputeEffect` from its construction, and every
+effect compiled after that — a Babylon draw cannot happen without one — is
+counted and said as a console WARNING; the draw log reads the count in every
+state and fails a run where it is not 0. What the engine compiled for itself
+while it was built (`clearQuad`, the clear quad's own) is not counted. It is a
+warning and not an error because two instruments compile on purpose: the
+harness's readiness wait (`scene.isReady()`) compiles Babylon's `default`
+material for the collider meshes, which wear none (one a page, until X5.3e
+takes the meshes away), and `shaders.mjs` compiles every cel variant.
+It is what lets the cel program's Babylon declarations (`celVertex`,
+`celFragment`) and the factory's per-frame pushes into Babylon materials stand
+until X6.1 as recipe keys and nothing more. While Babylon still drew in the
+group, the rule was: every opaque draw of Babylon's in the group landed BEFORE
+an opaque draw of ours, and of the rest, **between two draws that both WRITE depth** that changes only which of
 two surfaces at EXACTLY the same depth wins under `less-equal` — in the
 PICTURE (the palette's ties are tabled in "The palette, ours", under the glow).
 **A draw that writes NO depth is another matter**: nothing stops a
@@ -3781,7 +3776,8 @@ the shader names it, made once and filled in place.
   something will draw.
 - **It is a PULL off the fields, never a push or a read of a material.**
   Half of what a cel material holds is never pushed. The shadow matrices
-  are the generators' own, which Babylon rewrites in place. The clouds,
+  are rewritten in place by their owners (a generator's by Babylon, until
+  X5.3d deleted them). The clouds,
   the flash, the lamps' slots and the GI vectors are rewritten in place by
   their owners. A copy taken off the fields cannot miss a change; an
   interceptor on the setters would.
@@ -4343,7 +4339,7 @@ the four textures, `render/WorldDepth.ts` draws the casters into them, and
 is redrawn — the lights, the snap, the hold, the strike — and hands the
 light's matrix over.
 
-- **The maps are ours WHOLE in every round.** `BlockHandover` sees every
+- **The maps are ours WHOLE in every state.** `BlockHandover` sees every
   surface the build makes and asks of each whether Babylon's generator
   would have drawn it — not `noShadowCaster`, not blended — and, if so,
   holds it: a surface the main pass takes casts from its own group, the
@@ -4354,10 +4350,12 @@ light's matrix over.
   the glazing, which casts nothing, and a fire that casts is refused). The casters are handed to `WorldShadows`
   (`setCasters`) at every install; a caster it cannot hold — not block
   merged, not at identity, `updatable` — is REFUSED (since X3.7b: until then
-  it left the whole map's shadows to the generators). **An editor build's
-  are the generators'**, as ever. Half a map drawn by each side would be the
-  order of two renderers deciding one depth test, and a caster drawn by
-  neither a hole.
+  it left the whole map's shadows to the generators). The map editor's build's
+  were the generators' until X5.3c, and the generators went at X5.3d: until
+  the first map hands ours its casters (the boot, the menu) every map is the
+  lit 1x1, drawn by nobody, and ours keeps them from then on. Half a map drawn
+  by each side would be the order of two renderers deciding one depth test,
+  and a caster drawn by neither a hole.
 - **Casters that cannot be drawn are the world's failure** (X3.7b, X3.7c):
   the handover hands `WorldShadows` the casters WITH the install's failure
   (`setCasters(depth, failed)`), and a casters' build that fails is never
@@ -4419,9 +4417,9 @@ light's matrix over.
   memory: 40 MiB of textures on the `high` rung where the generators held
   about 120, against 10-28 MiB for the culls' second view.
 - **Not timed on our side**: the shadow maps' culls are not in `gpu.cull`,
-  and `shadowPass` (`FrameProfile`) brackets only Babylon's generators, which
-  a round no longer has at all — the world's maps since X3.6a, the bodies'
-  since X4.1c (an editor build's are the generators' still).
+  and `shadowPass` (`FrameProfile`) bracketed only Babylon's generators —
+  none in a round since X3.6a (the bodies' since X4.1c), none anywhere since
+  X5.3d, so nothing opens it.
 
 **The lamps' ATLAS is drawn by our side too, into a texture it owns**
 (`BABYLON_EXIT.md` X3.6b): every pass of it, static and dynamic.
@@ -4434,14 +4432,15 @@ over once a frame (`AtlasWork`, `LampAtlas.queue`).
 - **It is ours WITH the world's maps.** `BlockHandover` holds the same
   casters for both and hands them to `WorldShadows` and `LampAtlas` together
   (`setCasters`), at slots of the culls apart — the world's four first, then
-  `staticFacesPerFrame` for the atlas — on every rung; an editor build
-  leaves the atlas to `LocalShadows`' render target (kept for it alone,
-  X5.3's to delete), as it leaves the maps to the generators, and casters
+  `staticFacesPerFrame` for the atlas — on every rung (the map editor's
+  build left the atlas to `LocalShadows`' render target until X5.3c, which
+  went at X5.3d with the generators: before the first map hands ours its
+  casters there is no atlas, its readers bound to the lit 1x1), and casters
   the atlas cannot draw — their build failed, or its proxies' pipeline,
   asked ONCE for the session, so every world handed over after it fails on
   it — fail the world through the failure handed over with them
   (`setCasters(depth, slot, failed)`), torn down after the task in hand for
-  the maps' reason. `LocalShadows.setWorld` reads who holds it,
+  the maps' reason. `LocalShadows.setWorld` reads whether ours holds it,
   after the install, as `ShadowSystem.setCasters` does.
 - **The atlas's casters are its own pass, `PASS_LAMPS`**: every surface not
   `noShadowCaster`, BLENDED OR NOT, because `LocalShadows`' bake drew its
@@ -5759,7 +5758,7 @@ because it seemed wise.**
   exact rather than a guess at a name: only a light source carries an
   `emissiveColor` — `CelMaterialFactory.getEmissive`'s unlit `StandardMaterial`,
   or the fire's `FlameMaterial`, which declares one for exactly this test and the
-  glow's (worn by no mesh since X5.3c deleted the map editor's build, whose fires
+  bloom's colour (worn by no mesh since X5.3c deleted the map editor's build, whose fires
   alone wore it from X4.4d; every fire is our renderer's, which no size gate
   drops either) — and every lit surface wears a plain `ShaderMaterial`, which has no
   such property to read at all. **Our GPU cull keeps the same exemption** for
@@ -5882,10 +5881,13 @@ all in the counter this finding is named after. Not chased.
   black solely so its own buffer would depth-occlude; not doing that is worth ~20%
   of the frame on the three big maps ("What it measured when it landed", below),
   and the occlusion is exact
-  rather than approximate. **The mask writes NO depth**: every mesh it draws wrote
-  its own in the main pass, so an LEQUAL test is the whole of the occlusion, and
-  a blended mesh that wrote none there must not start writing one into the buffer
-  the ink and the blur read.
+  rather than approximate. **The mask writes NO depth**: every surface drawn into
+  it wrote its own in the main pass, so an LEQUAL test is the whole of the
+  occlusion, and a blended surface that wrote none there must not start writing
+  one into the buffer the ink and the blur read. **Every draw in it is OURS**
+  since X5.3c (the palette, the visors, the pieces, the billows, the fires, the
+  weapon, the moon): its render list is empty, answered so every frame, and
+  Babylon draws nothing there.
 - **The mask is SIZED, SHARED AND DRAWN IN ONE FUNCTION**, which is the whole of
   the resize rule. It reads the size of the depth it is about to borrow, resizes to
   it, re-shares when either end of the share has moved (a share is a relation
@@ -5898,26 +5900,20 @@ all in the counter this finding is named after. Not chased.
   wall; and its `renderList` must be `null` rather than the empty array a target is
   born with, or `getCustomRenderList` is handed nothing and the mask is black with
   no error anywhere.
-- **The mask is drawn with an OVERRIDE material, not the mesh's own.** Every
-  glowing mesh wears an unlit `StandardMaterial` faded by `EmissiveFog`, but that
-  fade goes toward the FOG colour, and a bloom of the fog colour is a pale haze
-  round every far lamp on a bright map. So a small WGSL material (variants for an
-  emissive texture, an opacity texture and blending) takes each mesh's colour from
-  `Game`'s `GlowRules.colour`, which fades toward black by the mesh's
-  bounding-sphere centre. It has no instance attributes; nothing glowing is
-  instanced, and a DEV build warns the first time something is. **Which meshes
-  bloom is one rule read every frame**: an emissive colour, no `metadata.noGlow`,
-  and `GlowRules.admits` (the kit screen's stage-only test) — so a mesh built at
-  any time is in or out by its own metadata, and nothing excludes a mesh by hand.
-- **A material whose vertices MOVE brings its own mask** (`SelfMasking`). The
-  stock variants transform by `world` and `viewProjection` alone, so a displaced
-  surface would draw its REST pose into the mask and lose the LEQUAL tie wherever
-  it had moved. The fire is the one such material: `FlameMaterial.glowMask`
-  hands back a twin compiled from the same WGSL under `GLOW_MASK`, fed the same
-  clock, and painted through the same `GlowRules.colour` — the map editor's
-  build's fires from X4.4d, drawn by nothing since X5.3c and X5.3d's to delete;
-  every fire draws its mask by OUR program's twin
-  (`render/FlameDraw.ts`), after the billows', each one's colour the same rule's.
+- **The mask was drawn with an OVERRIDE material, not the mesh's own, and every
+  draw of ours keeps its rule.** A glowing surface's unlit colour is faded by
+  `EmissiveFog` toward the FOG colour, and a bloom of the fog colour is a pale
+  haze round every far lamp on a bright map. So each draw into the mask takes its
+  colour from `Game.bloomColour` (the rules the comments call `GlowRules`), which
+  fades toward black by the distance that draw measured, and asks
+  `Game.glowAdmits` (the kit screen's stage-only test) — so nothing excludes a
+  surface by hand. Babylon's mesh path — the small WGSL override material
+  (`glowMask*`, variants for an emissive texture, an opacity texture and
+  blending), `SelfMasking` (the fire's twin, `FlameMaterial.glowMask`) and the
+  per-mesh `noGlow` read — drew nothing in a round after the Phase 4 gate and
+  nothing at all after X5.3c, and went at `BABYLON_EXIT.md` X5.3d (row "X5.3,
+  the collider meshes", its scope note); every fire draws its mask by OUR program's twin
+  (`render/FlameDraw.ts`), after the billows'.
 - **The emissive PALETTE is OUR renderer's, in the main pass and its share of
   the mask, in every round** (`render/WorldBlocks.ts`, `render/WorldGlow.ts`,
   `BABYLON_EXIT.md` X3.6d, X3.6e, X3.7b; "The palette, ours", under "The
@@ -7009,9 +7005,9 @@ inverted depth tests PARTITION the emissive pixels exactly (926 + 748 against
 renderer, in the main pass and into the glow's mask, in every round, and
 Babylon is made no mesh of them** (since X3.7b; `render/WorldBlocks.ts` for the
 frame, `render/WorldGlow.ts` for the mask; `BABYLON_EXIT.md` X3.6d, X3.6e), and
-`GlowPass` draws everything else in the mask as before: the bodies, the
-effects, the fire's twin and the viewmodel, each of those but the effects ours by
-now, and the moon's ours too since X4.5c (`SkyDraw`). There is no Babylon
+everything else in the mask is ours too — the bodies, the effects, the fire's
+twin, the viewmodel and the moon (`SkyDraw`, X4.5c) — `GlowPass` drawing
+nothing there since its mesh path went at X5.3d. There is no Babylon
 draw of the palette left anywhere since X3.7c — its Babylon stages and mask
 twin, which no round and no editor build drew any more, are deleted. The mask is the depth
 share carried one step further, and it rests on the same tie: a mask draw
@@ -7265,7 +7261,7 @@ dome, and the two are not in any bake.
   alpha 1. Everything past its 600 m radius is only in front of it because it draws
   after it.
 - **The moon is after the particles and ahead of the blended meshes**
-  (`"beforeBlended"`, the seam's item 6), blended by `ALPHA_COMBINE`, no depth
+  (`"beforeBlended"`, where the seam's item 6 told it until X5.3d), blended by `ALPHA_COMBINE`, no depth
   written, so it paints over ash and rotor wash in front of it, as Babylon's
   blended queue did — both ours (the ash since X4.7c, the wash since X4.7d), at
   `"particles"`, in creation order, the ash ahead of the rings in every shipped

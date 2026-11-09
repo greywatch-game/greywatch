@@ -3,11 +3,11 @@
  * (`BABYLON_EXIT.md` rule 5: the side that does not own a texture reads a
  * wrapped view of it, never a copy): a shadow texture's
  * (`wrapShadowTexture`, which `ShadowSystem`, `BodyShadows` and
- * `LocalShadows` hand their readers) and a reflection probe's cube
- * (`wrapCubeTexture`: the DEFAULT cube, which every glazing material is born
- * holding and an editor build's glazing samples until `BABYLON_EXIT.md` X5.3 —
- * the water reads its cube directly since X4.6d and a round's glazing since
- * X4.6e, so no baked cube is wrapped).
+ * `LocalShadows` hand their readers). A reflection probe's cube had one too
+ * (`wrapCubeTexture`, the DEFAULT cube a Babylon glazing material was born
+ * holding), deleted at `BABYLON_EXIT.md` X5.3d with the map editor's glazing
+ * that sampled it: the water reads its cube directly since X4.6d and a
+ * round's glazing since X4.6e.
  * Owns nothing: each call makes a view, and its caller holds it.
  * Invariants: a view samples as the Babylon texture it stands in for did —
  * its filter, its wrap, its dimension and its mip chain; a wrapped view is
@@ -16,7 +16,7 @@
  * Never: renders; copies a texture.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
  *
- * In `core/` rather than beside any caller because four systems hand these
+ * In `core/` rather than beside any caller because three systems hand these
  * out, and a system reaching into another is what `Game`'s wiring exists to
  * prevent (`core/shadowWindow.ts`, which held them until X3.6c, is the
  * precedent).
@@ -45,33 +45,5 @@ export function wrapShadowTexture(scene: Scene, texture: GPUTexture, name: strin
   wrapped.name = name;
   wrapped.wrapU = Texture.CLAMP_ADDRESSMODE;
   wrapped.wrapV = Texture.CLAMP_ADDRESSMODE;
-  return wrapped;
-}
-
-/**
- * Babylon's view of a reflection probe's CUBE our renderer owns
- * (`render/ProbeBake.ts`, `BABYLON_EXIT.md` X3.6c) — what the glazing is handed
- * (Babylon's `ReflectionProbe` cube was, until X3.7c),
- * sampled as that cube was: a cube view over all six layers and the whole mip chain,
- * trilinear, and the coordinates mode Babylon's cube render target takes
- * (`INVCUBIC_MODE`), from which Babylon's bind derives the cube's wrap. Here
- * beside `wrapShadowTexture` because it is the same crossing for a second
- * kind of texture.
- *
- * **Disposing it DESTROYS the cube**, as `wrapShadowTexture`'s does: the cube
- * pool is never disposed, and neither is a view of it.
- */
-export function wrapCubeTexture(scene: Scene, texture: GPUTexture, name: string): BaseTexture {
-  const engine = scene.getEngine() as WebGPUEngine;
-  const internal = engine.wrapWebGPUTexture(texture);
-  // Read by the re-point below, which makes the view a cube's and gives it
-  // every level.
-  internal.isCube = true;
-  internal.generateMipMaps = texture.mipLevelCount > 1;
-  engine.updateWrappedWebGPUTexture(internal, texture);
-  engine.updateTextureSamplingMode(Texture.TRILINEAR_SAMPLINGMODE, internal);
-  const wrapped = new BaseTexture(scene, internal);
-  wrapped.name = name;
-  wrapped.coordinatesMode = Texture.INVCUBIC_MODE;
   return wrapped;
 }

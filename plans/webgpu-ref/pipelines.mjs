@@ -258,10 +258,10 @@ async function playRound(page) {
     // shard in the main pass), so a pane phase that created nothing can be
     // told from one whose shards were never on screen to compile anything.
     // Any mesh of the scene's (its colliders, in a round where every pool is
-    // our renderer's since BABYLON_EXIT.md X4.6e): the prototype that owns `render`.
-    let meshProto = Object.getPrototypeOf(g.scene.meshes[0]);
-    while (!Object.prototype.hasOwnProperty.call(meshProto, "render")) meshProto = Object.getPrototypeOf(meshProto);
-    const render = meshProto.render;
+    // our renderer's since BABYLON_EXIT.md X4.6e): the prototype that owns
+    // `render`. Found once the first install has made one — at the menu the
+    // scene holds no mesh since X5.3d deleted `localShadowProxy` — which
+    // names nothing less: only a creation IN PLAY is filed by its mesh.
     let shardDraws = 0;
     // Since BABYLON_EXIT.md X4.4c a shard is our renderer's (`debrisDraw`):
     // each one handed over inside the render counts, as a mesh drawn did.
@@ -272,15 +272,24 @@ async function playRound(page) {
         for (let k = 0; k < n; k++) if (this.debrisDrawn[k] < this.debris.pieces.length) shardDraws++;
       };
     }
-    meshProto.render = function (...a) {
-      if (this.name.startsWith("shard")) shardDraws++;
-      window.__gpuMesh = this.name;
-      try {
-        return render.apply(this, a);
-      } finally {
-        window.__gpuMesh = undefined;
-      }
+    let hooked = false;
+    const hookMeshes = () => {
+      if (hooked || !g.scene.meshes[0]) return;
+      hooked = true;
+      let meshProto = Object.getPrototypeOf(g.scene.meshes[0]);
+      while (!Object.prototype.hasOwnProperty.call(meshProto, "render")) meshProto = Object.getPrototypeOf(meshProto);
+      const render = meshProto.render;
+      meshProto.render = function (...a) {
+        if (this.name.startsWith("shard")) shardDraws++;
+        window.__gpuMesh = this.name;
+        try {
+          return render.apply(this, a);
+        } finally {
+          window.__gpuMesh = undefined;
+        }
+      };
     };
+    hookMeshes();
     const count = () => ({ babylon: L.pipelines.length, ours: L.ours.length, modules: L.modules.length, did: { ...did } });
     const phases = [];
     let mark = count();
@@ -420,6 +429,7 @@ async function playRound(page) {
       window.__gpuPhase = "install";
       g.startRound();
       await until(() => g.state === "deploy", "deploy", 100000);
+      hookMeshes();
       const after = count();
       installs.push({ babylon: after.babylon - before.babylon, ours: after.ours - before.ours, modules: after.modules - before.modules });
     };

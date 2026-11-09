@@ -5257,12 +5257,13 @@ pointer, its history unchanged):
       menu and deploy, 100,485 in 120 editor frames; corrected by X5.1b's review), both gone
       before this step; they wait for it only so the group moves under one bank proof, not
       for any reader.
-    - **shared with an editor build until X5.3**: the cel materials' own (`CelShader`'s
-      `recipe.textures`) and the shadow maps `ShadowBindings` still wraps. X5.3 takes away the
-      editor's Babylon draw that samples them (rule 5: a resource lives with what produces it),
-      and leaves them here. **Since the editor is retired (row "X5.3, retire the editor",
-      decided 2026-11-08) and X5.3d deletes its Babylon draws, no Babylon reader of these is
-      left either**: they move as the first group does, waiting only for the one bank proof.
+    - **shared with the map editor's build until X5.3c**: the cel materials' own (`CelShader`'s
+      `recipe.textures`) and the shadow maps `ShadowBindings` still wraps. X5.3 took away the
+      editor's Babylon draw that sampled them (rule 5: a resource lives with what produces it),
+      and left them here. **No Babylon reader of these is left** (X5.3c deleted the editor, row
+      "X5.3, retire the editor"; X5.3d deleted the Babylon draw paths it kept, and its DEV
+      counter of Babylon effect compiles reads 0 in every state): they move as the first group
+      does, waiting only for the one bank proof.
     - **not this step's**: `GiVolume`'s seven, X5.1's — ours since X5.1b (`render/GiCompute.ts`),
       no longer behind `hostTexture` at all.
     Each is drawn, uploaded and mipped by us, its levels and format stated as the foam's are,

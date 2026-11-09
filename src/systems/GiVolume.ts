@@ -13,10 +13,9 @@
  * Invariants: constructed BEFORE the first cel material, and it keeps a full
  * set of seven textures published to `CelMaterialFactory.setGi` for its whole
  * life — whatever the setting, and before any map — because our frame binds
- * all seven and an unbound one loses the draw, and the factory stands up its
- * BABYLON materials' GI-`off` set at that first call (only the map editor's
- * build drew with it, GI off by the owner's decision; no Babylon material
- * draws since `BABYLON_EXIT.md` X5.3c, and X5.3d deletes it); constructed AFTER
+ * all seven and an unbound one loses the draw (no BABYLON material is bound
+ * to the volume: the GI-`off` set the factory stood up for the map editor's
+ * build went at `BABYLON_EXIT.md` X5.3d); constructed AFTER
  * `ProbeBake`, because the GPU half's late prepare is pushed in this
  * constructor and the bake, which samples the volume, must record ahead of
  * it (`GiCompute`'s header); a dispatch is ARMED in `update` past the
@@ -229,7 +228,7 @@ export class GiVolume {
   /**
    * Changes the tier. A different grid is a different set of textures, so
    * the GPU half stands a new set up, re-points the frame's seven at it (the
-   * same objects, so nothing is walked: a Babylon cel material holds GI `off`,
+   * same objects, so nothing is walked: no Babylon cel material holds one,
    * `CelMaterialFactory.setGi`) and retires the old one past the frame's
    * submit. The volume re-converges from scratch at the warm budget.
    */
@@ -270,16 +269,6 @@ export class GiVolume {
   clearMap(): void {
     this.map = null;
     this.disposeMapBuffers();
-  }
-
-  /**
-   * The standing map's boxes moved in place — the map editor's drag, released.
-   * No caller since the editor went (`BABYLON_EXIT.md` X5.3c); X5.3d deletes it.
-   * Re-uploads them and starts the history again, as a fresh install does;
-   * the boxes are copied to the GPU at `setMap`, so nothing else would notice.
-   */
-  worldMoved(): void {
-    if (this.map) this.uploadMap(this.map);
   }
 
   /**

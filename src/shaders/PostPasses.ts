@@ -8,8 +8,7 @@
  * made the ink's input, the post chain's first target: `rgba8unorm`, NEAREST,
  * no mips, the render size, WITH its `depth32float` depth and no stencil —
  * `render/targets.ts`' `FRAME_TARGETS`), held as the camera's
- * `outputRenderTarget` from the end of one frame's render to the end of the
- * next frame's camera render; the pool our stages hand on through (made
+ * `outputRenderTarget` for good; the pool our stages hand on through (made
  * the same way without depth, one target a pass POSITION, grown when a stage
  * of ours follows another: X5.2c2); and the order the chain's passes are
  * opened in.
@@ -21,7 +20,7 @@
  * `PostProcess.activate` gave the ink's input until X5.2d — so the frame's
  * OPENING pass is the frame's and no longer the canvas's (X5.2c1's reading of
  * `outputRenderTarget`, "What it is today"), and Babylon's render pass id for
- * the camera's draws is the frame's (an editor build's meshes draw with it);
+ * the camera's draws is the frame's;
  * no Babylon `PostProcess` stands on the camera, so `_finalizeFrame` returns
  * at once, and every pass of the chain is ours: after the camera's render
  * (`onAfterCameraRenderObservable`), our first stage — the ink — reads the
@@ -35,19 +34,17 @@
  * named for the stage that READS it, as Babylon names a post-process's input
  * (`PostProcessRTT-<label>`); every target follows the render size, the frame
  * resized before the scene first binds it (`onBeforeRenderObservable`); and
- * `outputRenderTarget` is taken OFF the camera once the chain is recorded and
- * put back as the scene's render ends (`onAfterRenderObservable`), so it
- * stands through every read Babylon makes of it as a frame starts
- * (`_checkCameraRenderTarget` re-arms the colour clear before anything else
- * in the frame runs) and through the camera's render, and NOT while
- * anything renders with the same camera after it — an editor build's gizmo
- * layer (`UtilityLayerRenderer`, on `onAfterRenderCameraObservable`), which
- * draws over the finished canvas as it did, where with the field set it
- * would bind the frame the chain has already read and draw into nothing
- * shown — which rests on a RULE: nothing renders the main camera after
- * `onAfterCameraRender` but that gizmo layer (no later
- * `onAfterRenderObservable` observer renders it, and `Game` calls
- * `scene.render()` once a tick); X5.3 and X5.4 retire it. And the frame's
+ * `outputRenderTarget` stands on the camera through every frame — every read
+ * Babylon makes of it as a frame starts (`_checkCameraRenderTarget` re-arms
+ * the colour clear before anything else in the frame runs) and through the
+ * camera's render. (Until `BABYLON_EXIT.md` X5.3d it was taken OFF the camera
+ * once the chain was recorded and put back as the scene's render ended, a
+ * window kept for the map editor's gizmo layer alone, which rendered with
+ * the same camera after the chain and would otherwise have drawn into the
+ * frame the chain had already read; the layer went with the editor at X5.3c,
+ * and the window and the rule it rested on — nothing renders the main camera
+ * after `onAfterCameraRender` but that layer — at X5.3d. X5.4 deletes the
+ * field with the frame.) And the frame's
  * clear is Babylon's only under `scene.autoClear` (its colour AND its depth:
  * the camera's output target is cleared only then, where
  * `PostProcess.activate` cleared the ink's input's depth whatever the
@@ -96,15 +93,12 @@ export class PostPasses implements PostPassOwner {
     this.frameHandle = hostTexture(this.frameTarget);
     // The scene binds and clears it as a frame starts, and the camera's
     // render binds it again (`Scene._bindFrameBuffer`): set before the first
-    // frame, and again as each frame's render ends, ready for the next.
+    // frame, and never taken off.
     camera.outputRenderTarget = this.frameTarget;
     // Before the scene's first bind of the frame: the frame at this frame's
     // render size, named for its reader.
     scene.onBeforeRenderObservable.add(() => this.prepareFrame());
     scene.onAfterCameraRenderObservable.add(() => this.record());
-    scene.onAfterRenderObservable.add(() => {
-      camera.outputRenderTarget = this.frameTarget;
-    });
   }
 
   /** The chain whose passes this opens, once `Game` has built it — its stages read the frame. */
@@ -146,15 +140,10 @@ export class PostPasses implements PostPassOwner {
     if (first) this.label(this.frameTarget, first);
   }
 
-  /**
-   * After the camera's render: the chain's passes, the frame drawn — and the
-   * frame off the camera until the scene's render ends (the header: an
-   * editor build's gizmo layer renders with this camera after it).
-   */
+  /** After the camera's render: the chain's passes, the frame drawn. */
   private record(): void {
     if (this.scene.activeCamera !== this.camera) return;
     this.chain?.record(this);
-    this.camera.outputRenderTarget = null;
   }
 
   openCanvas(): void {

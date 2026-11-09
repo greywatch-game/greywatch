@@ -1,7 +1,8 @@
 /**
  * render/lampDepth.ts — The lamps' DEPTH program: what a tile of the lamps'
  * atlas records of a caster, declared for our renderer (`BABYLON_EXIT.md`
- * X3.6b) — `LocalShadows`' own `localShadowDepth` shader, in the pulled form
+ * X3.6b) — `LocalShadows`' own `localShadowDepth` shader (Babylon's
+ * declaration of it deleted at X5.3d with the atlas it drew), in the pulled form
  * the cel stage and the directional depth program (`render/celDepth.ts`)
  * share — in its two forms: a fixture's STATIC face, drawn over the world's
  * groups with the tile a uniform, and the PROXIES, a unit box drawn once an

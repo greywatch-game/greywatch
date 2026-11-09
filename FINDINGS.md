@@ -2993,9 +2993,12 @@ at a phone-height viewport and at 1080p, with a case that releases the latch
 
 ### How to settle it
 
-It ends with Babylon's meshes: nothing of ours latches, every pool being gated
-on the sphere it is drawn with. An editor build's glazing is the one gated
-Babylon surface left until X5.3, and no row is an editor build.
+It ended with Babylon's meshes: nothing of ours latches, every pool being gated
+on the sphere it is drawn with, and no Babylon surface is gated since X5.3c
+deleted the map editor's build, whose glazing was the last (X5.3d deleting what
+Babylon kept for it). What is left is the lesson for any later port that gates
+on bounds it did not compute this frame: a live probe, above, never the bank.
+Delete the entry with Babylon (X6.1).
 
 ## 69. `depth.mjs glass` throws: the `GLASS_DEPTH_UNITS` sweep owes a port to our glazing
 

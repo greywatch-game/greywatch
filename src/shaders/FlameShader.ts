@@ -1,26 +1,27 @@
 /**
  * FlameShader.ts — The one material every open fire in the world wears: a
- * vertex-animated, hard-banded flame drawn as if by hand, and the twin of it
- * `GlowPass` draws the fire's bloom with — and, since `BABYLON_EXIT.md`
- * X4.4d, what our renderer draws every fire of a ROUND with, as data
- * (`FlameRecipe`, `render/FlameDraw.ts`): no Babylon mesh wears this material
- * in a round, and its Babylon stages draw an EDITOR build's fires alone (an
- * editor's world is Babylon's whole).
- * Owns: Babylon's declarations of both WGSL stages (their bodies are
- * `wgsl/flame.ts`'s, the one copy both renderers assemble), the inks a fire
- * is painted in, the `FlameMaterial` class, and its own values as our
- * renderer reads them (`values`: the motion, the paint and the clock — the
- * eye, the wind's bearing, the fog and the opaque alpha being the FRAME's
- * there, `render/frame.ts`, the very numbers the factory pushes onto this
- * material). Reads its motion from `CONFIG.graphics.flame`; is fed the world
- * clock, the fog and the eye by `CelMaterialFactory`, which is the only thing
- * that makes one (`getFlame`), and writes the frame's opaque alpha, 0 (no
- * bake draws a fire, `FINDINGS.md` 51).
+ * vertex-animated, hard-banded flame drawn as if by hand — what our renderer
+ * draws every fire with, as data (`FlameRecipe`, `render/FlameDraw.ts`, since
+ * `BABYLON_EXIT.md` X4.4d), the fire's bloom included. No Babylon mesh wears
+ * this material: it is a RECIPE KEY (the merge keys a fire's surfaces by it,
+ * `isFlame`), and its Babylon stages and its glow-mask twin, which drew the
+ * map editor's build's fires alone after X4.4d, were deleted at X5.3d — so
+ * the `ShaderMaterial` names a program nothing declares, and a compile of it
+ * is what the DEV counter of Babylon effect compiles exists to catch
+ * (`core/babylonCompiles.ts`).
+ * Owns: the inks a fire is painted in, the `FlameMaterial` class, and its own
+ * values as our renderer reads them (`values`: the motion, the paint and the
+ * clock — the eye, the wind's bearing, the fog and the opaque alpha being the
+ * FRAME's there, `render/frame.ts`, the very numbers the factory pushes onto
+ * this material). The program's body is `wgsl/flame.ts`'s, which our
+ * renderer assembles (`render/flameProgram.ts`). Reads its motion from
+ * `CONFIG.graphics.flame`; is fed the world clock, the fog and the eye by
+ * `CelMaterialFactory`, which is the only thing that makes one (`getFlame`),
+ * and writes the frame's opaque alpha, 0 (no bake draws a fire, `FINDINGS.md`
+ * 51).
  * Invariants: the geometry it draws is `world/flame.ts`'s, whose UV channel is
  * the whole of its per-vertex vocabulary (below) — nothing else may wear it.
- * The mask twin runs the SAME vertex function over the same uniforms, which is
- * what lets its LEQUAL test tie against the depth the flame wrote. It never
- * casts a shadow (the world's map re-renders only when its focus moves, so an
+ * It never casts a shadow (the world's map re-renders only when its focus moves, so an
  * animated caster turns it into a per-frame redraw) and never takes a vertex
  * colour buffer (`vertexShading` skips it). Every DERIVATIVE the fragment
  * stage takes is taken before its first branch on the layer — WGSL defines
@@ -81,23 +82,16 @@
  */
 import {
   Color3,
-  Constants,
   ShaderLanguage,
   ShaderMaterial,
-  ShaderStore,
   Vector2,
   Vector3,
   Vector4,
   type Material,
-  type Matrix,
-  type Mesh,
   type Scene,
-  type SubMesh,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { FlameField, FlameRecipe } from "../render/flameProgram";
-import type { SelfMasking } from "./GlowPass";
-import { FLAME_SHARED, FLAME_SURFACE, FLAME_VERTEX } from "./wgsl/flame";
 
 /**
  * The inks a fire is painted in, coolest first. Art, not tuning — and
@@ -123,69 +117,6 @@ const CORE = FIRE_INKS.core;
  */
 const GLOW = "#ff8a2a";
 
-ShaderStore.ShadersStoreWGSL["flameVertexShader"] = `
-attribute position: vec3f;
-attribute normal: vec3f;
-attribute uv: vec2f;
-
-uniform world: mat4x4f;
-uniform viewProjection: mat4x4f;
-uniform camPos: vec3f;
-uniform time: f32;
-uniform windDir: vec2f;
-uniform motion: vec4f;   // x = boil fps; y = writhe, z = lean, w = lick (shares of the fire's height)
-uniform curl: vec2f;     // x = hook (a share); y = how far a spark is drawn out
-uniform embers: vec4f;   // x = rise, y = lives a second, z = drift (shares), w = ember radius (m)
-
-varying vPosW: vec3f;
-varying vNormalW: vec3f;
-varying vT: f32;
-varying vLayer: f32;
-varying vField: vec3f;
-
-${FLAME_SHARED}
-${FLAME_VERTEX}
-
-@vertex
-fn main(input: VertexInputs) -> FragmentInputs {
-  flameVertex();
-}
-`;
-
-ShaderStore.ShadersStoreWGSL["flameFragmentShader"] = `
-varying vPosW: vec3f;
-varying vNormalW: vec3f;
-varying vT: f32;
-varying vLayer: f32;
-varying vField: vec3f;
-
-// The cel materials' eye, not Babylon's \`cameraPosition\` — see \`FlameMaterial.setEye\`.
-uniform camPos: vec3f;
-uniform time: f32;
-uniform motion: vec4f;
-uniform boil: vec3f;      // x = how ragged, y = how fast the field climbs (per s), z = bite
-uniform charColor: vec3f;
-uniform deepColor: vec3f;
-uniform midColor: vec3f;
-uniform hotColor: vec3f;
-uniform coreColor: vec3f;
-#ifdef GLOW_MASK
-uniform glowColor: vec4f;
-#else
-uniform fogColor: vec3f;
-uniform fogParams: vec2f;
-uniform opaqueAlpha: f32;
-#endif
-
-${FLAME_SHARED}
-${FLAME_SURFACE}
-
-@fragment
-fn main(input: FragmentInputs) -> FragmentOutputs {
-  fragmentOutputs.color = flameSurface();
-}
-`;
-
 const COMMON_UNIFORMS = [
   "world",
   "viewProjection",
@@ -203,50 +134,15 @@ const COMMON_UNIFORMS = [
   "coreColor",
 ];
 
-/** What `GlowPass` hands a self-masking material to call on every mask draw. */
-type GlowMaskPaint = Parameters<SelfMasking["glowMask"]>[0];
-
-/**
- * The flame's glow-mask twin: the same vertex stage, so it ties the depth the
- * flame wrote, and a fragment stage that writes the bloom colour per band.
- * Configured exactly as `GlowPass`'s own mask variants are.
- */
-class FlameMaskMaterial extends ShaderMaterial {
-  constructor(
-    scene: Scene,
-    private readonly paint: GlowMaskPaint,
-  ) {
-    super(
-      "flameGlowMask",
-      scene,
-      { vertex: "flame", fragment: "flame" },
-      {
-        attributes: ["position", "normal", "uv"],
-        uniforms: [...COMMON_UNIFORMS, "glowColor"],
-        defines: ["#define GLOW_MASK"],
-        shaderLanguage: ShaderLanguage.WGSL,
-      },
-    );
-    this.disableDepthWrite = true;
-    this.depthFunction = Constants.LEQUAL;
-    this.backFaceCulling = true;
-  }
-
-  override bindForSubMesh(world: Matrix, mesh: Mesh, subMesh: SubMesh): void {
-    super.bindForSubMesh(world, mesh, subMesh);
-    this.paint(mesh, subMesh);
-  }
-}
-
 /**
  * The fire. One per `CelMaterialFactory`, shared by every flame in the world,
  * which is what lets a block's fires merge into one draw.
  */
-export class FlameMaterial extends ShaderMaterial implements SelfMasking, FlameRecipe {
+export class FlameMaterial extends ShaderMaterial implements FlameRecipe {
   /**
-   * What `GlowPass` and `WorldCulling` read to know this is a light source —
+   * What `WorldCulling` and the handover read to know this is a light source —
    * the same property an emissive `StandardMaterial` carries, and the only
-   * thing either asks.
+   * thing either asks — and the fire's bloom colour (`Game`'s glow rules).
    */
   readonly emissiveColor = Color3.FromHexString(GLOW);
 
@@ -262,7 +158,6 @@ export class FlameMaterial extends ShaderMaterial implements SelfMasking, FlameR
    */
   readonly values: Readonly<Record<FlameField, Float32Array>>;
 
-  private readonly masks: FlameMaskMaterial[] = [];
   private readonly eye = Vector3.Zero();
 
   constructor(scene: Scene) {
@@ -296,33 +191,16 @@ export class FlameMaterial extends ShaderMaterial implements SelfMasking, FlameR
     this.freeze();
   }
 
-  /**
-   * The mask this material's meshes are drawn into the glow with — asked by
-   * `GlowPass`, once. See `SelfMasking` there.
-   */
-  glowMask(paint: GlowMaskPaint): ShaderMaterial {
-    const mask = new FlameMaskMaterial(this.getScene(), paint);
-    this.configure(mask);
-    mask.setFloat("time", this.clock);
-    mask.freeze();
-    this.masks.push(mask);
-    return mask;
-  }
-
-  private clock = 0;
-
-  /** The world clock, onto this and every mask twin — they must never differ. */
+  /** The world clock, into `values` and onto this material. */
   setClock(seconds: number): void {
-    this.clock = seconds;
     this.values.time[0] = seconds;
     this.setFloat("time", seconds);
-    for (const mask of this.masks) mask.setFloat("time", seconds);
   }
 
   /**
    * The eye the fire fogs against and turns its silhouette from — the cel
-   * materials' own (`CelMaterialFactory.updateCamera`), onto this and every
-   * mask twin. Never `ShaderMaterial`'s `cameraPosition`: Babylon writes that
+   * materials' own (`CelMaterialFactory.updateCamera`), onto this material.
+   * Never `ShaderMaterial`'s `cameraPosition`: Babylon writes that
    * from `scene.activeCamera`, which Babylon's reflection probe never
    * changed, so its bake drew every fire it captured as seen from wherever
    * the player stood — the reason the palette took the same eye, when
@@ -331,7 +209,6 @@ export class FlameMaterial extends ShaderMaterial implements SelfMasking, FlameR
   setEye(pos: Vector3): void {
     this.eye.copyFrom(pos);
     this.setVector3("camPos", this.eye);
-    for (const mask of this.masks) mask.setVector3("camPos", this.eye);
   }
 
   setFog(color: Color3, start: number, end: number): void {
@@ -339,10 +216,7 @@ export class FlameMaterial extends ShaderMaterial implements SelfMasking, FlameR
     this.setVector2("fogParams", new Vector2(start, end));
   }
 
-  /**
-   * The motion and the paint, identical on the flame and its mask — and,
-   * configuring this material itself, into `values`, off the same objects.
-   */
+  /** The motion and the paint, onto this material and into `values`, off the same objects. */
   private configure(mat: ShaderMaterial): void {
     const f = CONFIG.graphics.flame;
     const w = CONFIG.wind.dir;

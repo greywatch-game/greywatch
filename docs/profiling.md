@@ -429,8 +429,10 @@ frame                       the whole tick, wall to wall
 ├─ audio                    pushHullEngines
 └─ render                   scene.render()
    ├─ shadowPass            a Babylon generator's depth map, on the frames
-   │                        that re-render it — none in any build since
-   │                        X5.3c (a round's since X4.1c), every map ours
+   │                        that re-rendered it — none in a round since
+   │                        X4.1c, nothing opens it since X5.3d deleted the
+   │                        generators (every map ours, on the prepare
+   │                        encoder)
    ├─ glow                  GlowPass: its mask and four blurs at the end of
    │                        the draw phase (the compose is inside the ink;
    │                        the blurs and the box filter OUR draws since

@@ -6,11 +6,9 @@
  * `FrameHost`: the device, what the open pass draws into, a slot in
  * Babylon's own draw order (`queue`), the encoder submitted ahead of the
  * frame's draws (`prepareEncoder`), the camera's matrix, the frame's main
- * pass told apart from every render target that also draws rendering group
- * 0 — its start, and the three points inside it where that group's alpha-tested
- * meshes begin, where its opaque and alpha-tested meshes end, and where its
- * transparent meshes begin, all told whether Babylon has anything in the group
- * or not — and a
+ * pass told apart from every other pass — its start, and the points of
+ * rendering group 0 (`MainPassHooks`), all told at the end of the camera's
+ * draw phase, Babylon drawing nothing in the group — and a
  * Babylon texture's own view and sampler (`bind`); and `hostTexture`, the one
  * crossing that turns a Babylon texture into the handle the renderer holds.
  * Items 2 to 5 are reached in a second pass of Babylon's too, the glow's MASK
@@ -34,7 +32,9 @@
  * is `import type`, so the Babylon-free gate walks this file as it walks the
  * rest of `src/render/`); every Babylon INTERNAL anything in `src/render/`
  * reaches is reached here and is on the numbered list below — the list may
- * grow through Phase 3 and only shrinks after it (`BABYLON_EXIT.md` rule 4);
+ * grow through Phase 3 and only shrinks after it (`BABYLON_EXIT.md` rule 4),
+ * and a retired item's number is never given to another (EIGHT items since
+ * X5.3d retired 6 and 10);
  * a draw is QUEUED, never issued — see item 3; nothing here allocates on a
  * frame once the first has run.
  * Never: imports a Babylon value; hands a Babylon object to anything that
@@ -71,22 +71,6 @@
  *      up — our clip-space y owes the same flip there, and the winding with it
  *      (E:2842); and WHICH target, which is how `onMainPass` knows the frame's
  *      from the glow's (see it).
- *   6. `RenderingGroup.onBeforeTransparentRendering`
- *      (`Rendering/renderingGroup.js`), reached by the public
- *      `scene.renderingManager.getRenderingGroup`, on a class Babylon tags
- *      `@internal`. One slot, called in `render` after the group's opaque and
- *      alpha-tested meshes, its sprites and its particles, ahead of its
- *      transparent meshes. Only the SCENE's manager is reached — every render
- *      target owns a manager of its own — so it fires in the camera's pass and
- *      in no other. The `beforeBlended` point is this same slot (X4.5c): the
- *      moon's draw and the one back-to-front run of ours (X4.6e) hang on it,
- *      and are told there on a frame Babylon visits the group — in a round
- *      none since X4.7d took the last of Babylon's particle systems (the rotor
- *      wash; the ash went at X4.7c), so a round's points are told by the
- *      fallback below, and an editor build's group, which still holds
- *      Babylon's meshes until X5.3, is where this slot still fires. Every
- *      particle field is ours, drawn at the `"particles"` point, told with
- *      `"opaque"`.
  *   7. `internalTexture._hardwareTexture.view` (`WebGPU/webgpuHardwareTexture
  *      .js`): the `GPUTextureView` Babylon itself binds for a texture
  *      (`webgpuCacheBindGroups.js`, `getBindGroups`), so ours is the same view
@@ -110,26 +94,24 @@
  *      flush mid-frame replaces it, which is why it is read at the call and
  *      never kept: whichever one is current is submitted before the draws
  *      recorded after it, and inside the timer.
- *  10. `RenderingGroup._renderAlphaTest` and `_alphaTestSubMeshes`
- *      (`Rendering/renderingGroup.js`, the group item 6 reaches): `render`
- *      draws its opaque list, then calls `_renderAlphaTest` with
- *      `_alphaTestSubMeshes` — and calls the same function once BEFORE that,
- *      with its depth-only list, which is why the argument is compared and
- *      never the call counted. Babylon has no hook between the two lists, so
- *      the function is WRAPPED while the main pass's group renders: the
- *      wrapper is made once, installed as the group starts and restored as it
- *      ends (and on `dispose`), and re-read at every start because the
- *      `alphaTestSortCompareFn` setter replaces it (`Game` sets the group's
- *      order through `setRenderingOrder`). A list empty that frame is never
- *      handed over, so the point falls back to `"opaque"`'s trigger (the first
- *      of the sprites, item 6 or the group's end), ahead of it.
+ *
+ * Items 6 and 10 were RETIRED at `BABYLON_EXIT.md` X5.3d, and their numbers
+ * are not reused: `RenderingGroup.onBeforeTransparentRendering` (6), the
+ * scene's group 0's slot ahead of its transparent meshes, and
+ * `RenderingGroup._renderAlphaTest` with `_alphaTestSubMeshes` (10), wrapped
+ * while that group rendered — where the `beforeBlended` and `beforeAlphaTest`
+ * points were told on a frame Babylon VISITED group 0. Since X5.3c none does:
+ * the map editor's build, whose world was Babylon's, was the last thing that
+ * did, and the Phase 4 gate and X5.3a's draw log measured a round to visit
+ * none in any state (`onMainPass`).
  *
  * Public API used here and nowhere else in `src/render/`, for the same
  * reason (it is Babylon's shape): `engine.currentSampleCount`, the engine's
  * end of frame (`onEndFrameObservable`, `afterSubmit`, `BABYLON_EXIT.md` X5.1b),
- * `scene.getTransformMatrix()`, the scene's draw-phase, rendering-group and
- * sprite observables (`onMainPass`; its particle observable went with the last
- * of Babylon's particle systems at X4.7d), and a texture's readiness,
+ * `scene.getTransformMatrix()`, the scene's draw-phase observables
+ * (`onMainPass`; its rendering-group and sprite observables went with items 6
+ * and 10 at X5.3d, its particle observable with the last of Babylon's
+ * particle systems at X4.7d), and a texture's readiness,
  * wrap modes and filtering level and the engine's empty textures and
  * anisotropy cap (`bind`).
  *
@@ -151,9 +133,7 @@
 import type {
   BaseTexture,
   InternalTexture,
-  Observable,
   Observer,
-  RenderingGroupInfo,
   Scene,
   WebGPUEngine,
 } from "@babylonjs/core";
@@ -209,14 +189,6 @@ export function hostTexture(texture: BaseTexture): HostTexture {
 
 interface RenderTargetInternals {
   readonly _disableEngineYFlip?: boolean;
-}
-
-/** Items 6 and 10: the scene's rendering group, as far as this file reaches into it. */
-interface GroupInternals {
-  onBeforeTransparentRendering: (() => void) | undefined;
-  /** Called with the depth-only list, then with `_alphaTestSubMeshes`; replaced by the sort setters. */
-  _renderAlphaTest: (this: GroupInternals, subMeshes: unknown) => void;
-  readonly _alphaTestSubMeshes: unknown;
 }
 
 /** What Babylon's bundle list runs: `run` with the pass, and `clone` for its snapshot path. */
@@ -328,167 +300,60 @@ export class BabylonFrameHost implements FrameHost {
   /**
    * The frame's main pass is the TARGET bound as the draw phase begins — the
    * frame, the camera's `outputRenderTarget`, which the scene's camera render
-   * binds (the post chain's first, bound by `_prepareFrame`, until X5.2d) —
-   * and a group rendering into THAT target before the draw phase ends. Both
-   * halves are needed: probes and shadow maps draw before the phase (so
-   * outside it), but
-   * the glow renders its mask from `onAfterDrawPhaseObservable` itself, so
-   * whether its group 0 lands inside the window depends on which observer
-   * was added first. The target does not.
+   * binds — and the draw phase's end with THAT target still bound (item 5).
+   * The draw phase's observables are raised by `Scene._renderForCamera`
+   * alone, no render target's manager raising them (`GlowPass.render`'s
+   * note), and the end's observer is inserted ahead of the glow's, so the
+   * target always holds there; it is asked as it was asked while a group's
+   * hooks could fire inside a probe's or the glow's pass.
    *
-   * WHERE IT BEGINS is the draw phase's own observable, which fires whatever
-   * the group holds: `first` is told there, right after `begin`, ahead of
-   * everything Babylon queues in the pass.
+   * WHERE IT BEGINS is the draw phase's own observable: `first` is told
+   * there, right after `begin`, ahead of everything queued in the pass.
    *
-   * **THE GROUP'S FOUR POINTS ARE TOLD ON A FRAME IT DOES NOT RENDER TOO.**
-   * Babylon visits no empty group (`RenderingManager.render` skips a group
-   * whose `_empty` is set, and it raises no observable for one), so with
-   * nothing of Babylon's in it none of the group's hooks below would run. So
-   * the phase's end asks whether the group was visited, and if it was not,
-   * tells all four in their order, there: no internal beyond the public
-   * observables, and it is ahead of the glow's mask, which renders from the
-   * same observer list, because this one is inserted FIRST. No group above
-   * `groupId` holds anything (`BABYLON_EXIT.md` X4.3d), so nothing of Babylon's
-   * is drawn between where the group would have been and that point.
+   * **THE GROUP'S FOUR POINTS ARE TOLD AT THE PHASE'S END, in their order**
+   * (`beforeAlphaTest`, `afterOpaque`, `beforeBlended`, `afterGroup`): Babylon
+   * draws nothing in rendering group 0 — no mesh of a round's, in any state,
+   * since `BABYLON_EXIT.md` X4.7d took its last particle system, and none of
+   * any build's since X5.3c took the map editor's — and visits no empty
+   * group (`RenderingManager.render` raises no observable for one), so there
+   * is nothing of Babylon's between the points for them to fall between.
+   * Until X5.3d a frame on which Babylon DID visit the group was told each
+   * point inside it, through items 6 and 10 and the group and sprite
+   * observables; that path, the map editor's build's alone since X5.3c, went
+   * with them, and this tells the points where it told them on every frame
+   * of a round already. The observer is inserted FIRST on the phase's end,
+   * ahead of the glow's mask, which renders from the same observer list. No
+   * group above 0 holds anything (`BABYLON_EXIT.md` X4.3d).
    *
-   * WHERE THE ALPHA-TESTED MESHES BEGIN is the call item 10 wraps, made with
-   * the group's alpha-tested list — after its depth-only and opaque lists.
-   * Babylon skips the call for a list empty that frame (and for a group
-   * drawn with `renderAlphaTestMeshes` off), and then the point is answered
-   * where the opaque meshes end, immediately ahead of that hook: so it fires
-   * once a group, always before `afterOpaque`.
-   *
-   * WHERE THE OPAQUE MESHES END is the first of two things the group does
-   * after its opaque and alpha-tested lists, whichever it reaches: its
-   * sprites (an observable only once the sprite component is loaded, raised
-   * only when the group holds some), or item 6, which it always reaches. Its
-   * particles came between the two until X4.7d, when the last of Babylon's
-   * went (every field is ours, at `"particles"`), and so did the hook on them.
-   * A group with neither, a `customRenderFunction`'s, is answered as it ends,
-   * before `afterGroup`.
-   *
-   * WHERE THE TRANSPARENT MESHES BEGIN is item 6 itself, past the sprites
-   * whichever of the two answered the point above; a
-   * `customRenderFunction`'s group, which never reaches it, is answered as it
-   * ends, behind that point and before `afterGroup`.
+   * `_groupId` is the group the hooks are named for (`MainPassHooks`), which
+   * nothing here reaches for any more.
    */
-  onMainPass(groupId: number, hooks: MainPassHooks): { dispose(): void } {
+  onMainPass(_groupId: number, hooks: MainPassHooks): { dispose(): void } {
     const scene = this.scene;
     const e = this.e;
     let frame: RenderTargetInternals | null | undefined;
-    /** Whether group `groupId` of the main pass was visited this draw phase. */
-    let visited = false;
-    /**
-     * Inside group `groupId` of the main pass, and whether its alpha-tested
-     * meshes have begun and its opaque meshes ended.
-     */
-    let inGroup = false;
-    let alphaBegun = false;
-    let opaqueDone = false;
-    let blendedBegun = false;
-    const inMainPass = (): boolean => frame !== undefined && e._currentRenderTarget === frame;
-    const alphaTestBegins = (): void => {
-      if (!inGroup || alphaBegun) return;
-      alphaBegun = true;
-      hooks.beforeAlphaTest();
-    };
-    const opaqueEnds = (): void => {
-      if (!inGroup || opaqueDone) return;
-      // A group whose alpha-tested list was empty never called item 10.
-      alphaTestBegins();
-      opaqueDone = true;
-      hooks.afterOpaque();
-    };
-    const blendedBegins = (): void => {
-      if (!inGroup || blendedBegun) return;
-      // A group with no sprites reached nothing else first.
-      opaqueEnds();
-      blendedBegun = true;
-      hooks.beforeBlended();
-    };
-    // Items 6 and 10. Typed as always set; item 6 is one slot nothing in
-    // Babylon fills, and item 10 is set by the group's constructor.
-    const group = scene.renderingManager.getRenderingGroup(groupId) as unknown as GroupInternals;
-    /** Item 10: the group's own function while the wrapper stands in for it; null otherwise. */
-    let alphaTest: GroupInternals["_renderAlphaTest"] | null = null;
-    const wrapped = (subMeshes: unknown): void => {
-      if (subMeshes === group._alphaTestSubMeshes) alphaTestBegins();
-      // Installed only with `alphaTest` set, and `unwrap` is the one place
-      // that clears it — after taking the wrapper out.
-      alphaTest!.call(group, subMeshes);
-    };
-    const unwrap = (): void => {
-      if (alphaTest && group._renderAlphaTest === wrapped) group._renderAlphaTest = alphaTest;
-      alphaTest = null;
-    };
     const before: Observer<Scene> = scene.onBeforeDrawPhaseObservable.add(() => {
       frame = e._currentRenderTarget;
-      visited = false;
       hooks.begin();
       hooks.first();
     });
     const after: Observer<Scene> = scene.onAfterDrawPhaseObservable.add(
       () => {
-        // The group held nothing of Babylon's this frame (the method's doc).
-        if (!visited && inMainPass()) {
+        if (frame !== undefined && e._currentRenderTarget === frame) {
           hooks.beforeAlphaTest();
           hooks.afterOpaque();
           hooks.beforeBlended();
           hooks.afterGroup();
         }
         frame = undefined;
-        inGroup = false;
-        unwrap();
       },
       undefined,
       true,
     );
-    const groupStart: Observer<RenderingGroupInfo> = scene.onBeforeRenderingGroupObservable.add(
-      (info) => {
-        if (info.renderingGroupId !== groupId || !inMainPass()) return;
-        visited = true;
-        inGroup = true;
-        alphaBegun = false;
-        opaqueDone = false;
-        blendedBegun = false;
-        // Re-read every frame: the sort setters replace the function.
-        const own = group._renderAlphaTest;
-        if (own !== wrapped) {
-          alphaTest = own;
-          group._renderAlphaTest = wrapped;
-        }
-      },
-    );
-    const groupEnd: Observer<RenderingGroupInfo> = scene.onAfterRenderingGroupObservable.add(
-      (info) => {
-        if (!inGroup || info.renderingGroupId !== groupId) return;
-        blendedBegins();
-        inGroup = false;
-        unwrap();
-        hooks.afterGroup();
-      },
-    );
-    // The sprites' observable exists only once Babylon's sprite component is
-    // loaded (`spriteSceneComponent`), and nothing draws a sprite without it.
-    type Sprites = { onBeforeSpritesRenderingObservable?: Observable<Scene> };
-    const spriteHook = (scene as Sprites).onBeforeSpritesRenderingObservable;
-    const sprites = spriteHook?.add(opaqueEnds) ?? null;
-    // Item 6.
-    if (group.onBeforeTransparentRendering) {
-      throw new Error(`babylonSeam: rendering group ${groupId}'s transparent hook is already taken`);
-    }
-    group.onBeforeTransparentRendering = blendedBegins;
     return {
       dispose: () => {
         scene.onBeforeDrawPhaseObservable.remove(before);
         scene.onAfterDrawPhaseObservable.remove(after);
-        scene.onBeforeRenderingGroupObservable.remove(groupStart);
-        scene.onAfterRenderingGroupObservable.remove(groupEnd);
-        if (sprites) spriteHook?.remove(sprites);
-        if (group.onBeforeTransparentRendering === blendedBegins) {
-          group.onBeforeTransparentRendering = undefined;
-        }
-        unwrap();
       },
     };
   }

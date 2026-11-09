@@ -411,8 +411,13 @@ for (const id of MAPS) {
       );
     }
 
+    // Every `ShaderMaterial` but the fire's: `FlameMaterial` is a recipe key
+    // whose Babylon stages were deleted at `BABYLON_EXIT.md` X5.3d (our
+    // renderer draws every fire, `render/flameProgram.ts`, whose modules are
+    // on the round's declared list), so there is no Babylon program of it
+    // left to compile.
     const shaders = [...g.scene.materials].filter(
-      (m) => m._options && Array.isArray(m._options.defines),
+      (m) => m._options && Array.isArray(m._options.defines) && m.constructor?.name !== "FlameMaterial",
     );
     // WebGPU compiles a pipeline asynchronously, so readiness is polled rather
     // than read: `isReady` is what ASKS for the compile as well as what reports

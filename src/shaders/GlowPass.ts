@@ -2,20 +2,22 @@
  * GlowPass.ts — The game's bloom, as a pass it OWNS end to end: the emissive
  * mask, the blur, and what the additive compose adds (its two blurred targets
  * and its intensity; the arithmetic is the ink's last line, X5.2d). Owns its
- * targets, its override materials and the depth it borrows, and the blur's
- * passes — it binds each of its targets itself — though not the blur's
- * DRAWS, which are our renderer's (`GlowBlurDraws`, handed in by `Game`,
- * X5.2b); reads no game state (what may glow and how brightly are
- * `GlowRules`, handed in by `Game`) and writes to no mesh.
+ * targets and the depth it borrows, and the mask's and the blur's passes —
+ * it binds each of its targets itself — though not one DRAW in them: every
+ * draw in the mask is our renderer's, told when the pass opens and closes,
+ * and so are the blur's (`GlowBlurDraws`, handed in by `Game`, X5.2b). Reads
+ * no game state and writes to no mesh.
  * Invariants: the mask is drawn against the frame's OWN depth, borrowed at the
  * size that depth is at on the frame it is borrowed — so a bloom that reaches
  * through a wall is a bug here and never a tuning question; nothing here draws
  * into that depth; the mask is THIS pass's texture even where our renderer
  * draws into it (`BABYLON_EXIT.md` rule 5, X3.6d): the moment its pass opens
- * is announced (`onMaskOpenObservable`, from inside the clear, before any
- * mesh of Babylon's is queued) — so this file imports nothing of
- * `src/render/`, and what our renderer draws there never reaches this list
- * (`BlockHandover` says why); and every Babylon call is public API.
+ * is announced (`onMaskOpenObservable`, from inside the clear) and the moment
+ * it closes (`onMaskCloseObservable`) — so this file imports nothing of
+ * `src/render/`; the mask's render list is EMPTY, Babylon drawing no mesh
+ * into it (its mesh path, the override materials and `SelfMasking`, went at
+ * X5.3d with the map editor's build, the last thing it drew); and every
+ * Babylon call is public API.
  *
  * WHAT IT REPLACED, AND WHY. The bloom was a `GlowLayer` with `GlowDepth`
  * bolted on from the outside. The layer is built to own four things — its
@@ -59,16 +61,18 @@
  * resolution (`glowDown`, four bilinear taps reading every pixel once) and
  * blurs from that.
  *
- * THE MASK IS DRAWN WITH AN OVERRIDE MATERIAL, NOT WITH THE MESH'S OWN. Every
- * glowing mesh wears an unlit `StandardMaterial` already faded by `EmissiveFog`,
- * and drawing that would be simpler — but `EmissiveFog` fades a colour TOWARD
- * THE FOG, and a bloom of the fog colour is a white haze round every distant
- * lamp on a bright map. So the mask is one small WGSL material (a few variants,
- * below) handed each mesh's colour by `GlowRules.colour`, which fades toward
- * black instead. It writes NO depth: every mesh it draws already wrote its own
- * into the frame's buffer in the main pass, so an LEQUAL test against that
- * buffer is the whole of the occlusion — and a blended mesh that wrote none
- * must not start writing one here, or the ink and the blur read it.
+ * THE MASK WAS DRAWN WITH AN OVERRIDE MATERIAL, NOT WITH THE MESH'S OWN, and
+ * every draw of ours there keeps the rule: a glowing surface's own unlit
+ * colour is already faded by `EmissiveFog` TOWARD THE FOG, and a bloom of the
+ * fog colour is a white haze round every distant lamp on a bright map — so
+ * the mask is handed each surface's colour faded toward black instead
+ * (`Game.bloomColour`, the rules `Game` holds). It writes NO depth: every
+ * surface it draws already wrote its own into the frame's buffer in the main
+ * pass, so an LEQUAL test against that buffer is the whole of the occlusion —
+ * and a blended surface that wrote none must not start writing one here, or
+ * the ink and the blur read it. (Babylon's override materials, the
+ * `glowMask*` programs, drew the map editor's build's meshes here until
+ * `BABYLON_EXIT.md` X5.3d.)
  *
  * THE LOOK is Babylon's glow layer as it was tuned: a Gaussian `kernelBlur`
  * at half resolution and again at quarter, the two summed, scaled by
@@ -120,8 +124,7 @@
  * world's lit windows and lenses FIRST in this pass, right after the clear —
  * the palette was in Babylon's opaque queue, ahead of every blended mask
  * draw, and first keeps that order. Its MAIN pass is ours too (X3.6e), and
- * Babylon is made no mesh of it in a round or an editor build (an editor's
- * blocks are never merged), so it has no twin here: a palette surface ours
+ * Babylon is made no mesh of it, so it has no twin here: a palette surface ours
  * cannot hold and a mask it cannot draw are the world's failure, and
  * `noGlow` is read per surface at the take. The BODIES' visors are ours too
  * (`render/BodyDraw.ts`, X4.1d: no rig is a Babylon mesh), drawn first in
@@ -136,99 +139,25 @@
  * Babylon mesh), drawn at the open behind every other draw of ours, so still
  * ahead of the blended meshes here, of which it was the first by distance; the
  * opaque ones lying between, each having written the depth it is rejected by,
- * cannot be told from either order. Everything else in the mask — the sparks
- * and an EDITOR build's every emissive — is still drawn here, and no surface of
- * Babylon's left pairs a texture with a glow, so the `EMISSIVE` and `OPACITY`
- * variants have no caller until the mask is ours (with the main pass, X5.4:
- * `BABYLON_EXIT.md` X5.2's row "the mask").
- *
- * A MATERIAL WHOSE VERTICES MOVE BRINGS ITS OWN MASK (`SelfMasking`). The
- * stock variants transform by `world` and `viewProjection` alone, so a surface
- * displaced in its vertex stage — the fire (`FlameShader`) — would draw its
- * rest pose into the mask and fail the LEQUAL tie everywhere it had moved. Such
- * a material hands back a twin that runs its own vertex stage, and is painted
- * through the same `GlowRules.colour` as everything else (the fire; a blast's
- * billows were the other until `BABYLON_EXIT.md` X4.4c, when our renderer
- * took them and their mask, `render/BlastDraw.ts`).
- *
- * MESH INSTANCES ARE NOT SUPPORTED, and nothing glowing uses them: the mask
- * shader has no instance attributes, so an instanced emissive would draw one
- * copy. A DEV build says so the first time it meets one.
+ * cannot be told from either order. So are the sparks, the pools' pieces,
+ * the billows and the fires (X4.4), each told where Babylon's mask drew its
+ * meshes. Nothing of Babylon's draws in the mask since X5.3c: the `EMISSIVE`
+ * and `OPACITY` variants, `SelfMasking` (a material whose vertices move
+ * bringing its own twin, the fire's) and the per-mesh dressing were the map
+ * editor's build's alone, and were deleted at X5.3d. The PASS stays here until
+ * the mask moves with the main pass (X5.4: `BABYLON_EXIT.md` X5.2's row "the
+ * mask").
  */
 import {
   Color4,
   Constants,
   Observable,
   RenderTargetTexture,
-  ShaderLanguage,
-  ShaderMaterial,
-  ShaderStore,
   type AbstractMesh,
-  type BaseTexture,
   type Camera,
-  type Material,
-  type Matrix,
-  type Mesh,
-  type Nullable,
   type Scene,
-  type StandardMaterial,
-  type SubMesh,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
-
-ShaderStore.ShadersStoreWGSL["glowMaskVertexShader"] = `
-attribute position: vec3f;
-#ifdef UV
-attribute uv: vec2f;
-varying vUV: vec2f;
-#endif
-
-uniform world: mat4x4f;
-uniform viewProjection: mat4x4f;
-
-@vertex
-fn main(input: VertexInputs) -> FragmentInputs {
-  // The SAME expression, in the same order, as the StandardMaterial that drew
-  // this mesh into the frame — world first, then the view-projection — so the
-  // LEQUAL test against the depth that material wrote ties exactly.
-  let worldPos = uniforms.world * vec4f(vertexInputs.position, 1.0);
-  vertexOutputs.position = uniforms.viewProjection * worldPos;
-#ifdef UV
-  vertexOutputs.vUV = vertexInputs.uv;
-#endif
-}
-`;
-
-ShaderStore.ShadersStoreWGSL["glowMaskFragmentShader"] = `
-#ifdef UV
-varying vUV: vec2f;
-#endif
-#ifdef EMISSIVE
-var emissiveSamplerSampler: sampler;
-var emissiveSampler: texture_2d<f32>;
-#endif
-#ifdef OPACITY
-var opacitySamplerSampler: sampler;
-var opacitySampler: texture_2d<f32>;
-#endif
-
-// rgb = the bloom colour GlowRules.colour wrote, a = the material's alpha.
-uniform glowColor: vec4f;
-
-@fragment
-fn main(input: FragmentInputs) -> FragmentOutputs {
-  var colour = uniforms.glowColor;
-  // Babylon's glow map, term for term: the opacity map's alpha scales the
-  // colour's alpha, and the emissive map multiplies the lot.
-#ifdef OPACITY
-  colour = vec4f(colour.rgb, colour.a * textureSample(opacitySampler, opacitySamplerSampler, fragmentInputs.vUV).a);
-#endif
-#ifdef EMISSIVE
-  colour = colour * textureSample(emissiveSampler, emissiveSamplerSampler, fragmentInputs.vUV);
-#endif
-  fragmentOutputs.color = colour;
-}
-`;
 
 /** A rung of the Glow setting — derived from the config for `VolumetricRung`'s reason. */
 export type GlowRung = keyof typeof CONFIG.graphics.glowTiers;
@@ -287,117 +216,6 @@ export interface GlowBlurDraws {
     outputHeight: number,
   ): void;
 }
-
-/** What `Game` decides about the bloom, and the only game knowledge this pass sees. */
-export interface GlowRules {
-  /**
-   * Whether an emissive mesh without `metadata.noGlow` may bloom this frame.
-   * Asked once per mesh per frame, while the list is built.
-   */
-  admits(mesh: AbstractMesh): boolean;
-  /**
-   * The bloom colour for one mesh, written into `out` — rgb the colour, a the
-   * material's alpha. Asked at bind time, once per draw.
-   */
-  colour(mesh: AbstractMesh, material: StandardMaterial, out: Color4): void;
-}
-
-/**
- * A glowing material that draws its own mask — see the header. `glowMask` is
- * asked ONCE per material; the twin it returns must write `glowColor` from
- * the paint call after its own bind, never write depth, and test LEQUAL.
- */
-export interface SelfMasking {
-  glowMask(paint: (mesh: AbstractMesh, sub: SubMesh) => void): ShaderMaterial;
-}
-
-function selfMasking(material: Material): material is Material & SelfMasking {
-  return typeof (material as Partial<SelfMasking>).glowMask === "function";
-}
-
-/** The emissive half of a material, as far as this pass reads it. */
-type Emissive = Material & {
-  emissiveColor?: { r: number; g: number; b: number };
-  emissiveTexture?: BaseTexture | null;
-  opacityTexture?: BaseTexture | null;
-};
-
-/**
- * The mask material. A `ShaderMaterial` whose per-mesh values are written at
- * bind time — `bindForSubMesh` is where the draw's own effect is in hand, which
- * `onBindObservable` does not give.
- */
-class GlowMaskMaterial extends ShaderMaterial {
-  constructor(
-    scene: Scene,
-    private readonly flags: number,
-    private readonly paint: (mesh: AbstractMesh, material: GlowMaskMaterial, sub: SubMesh) => void,
-  ) {
-    const uv = (flags & (EMISSIVE | OPACITY)) !== 0;
-    const samplers: string[] = [];
-    const defines: string[] = [];
-    if (uv) defines.push("#define UV");
-    if (flags & EMISSIVE) {
-      samplers.push("emissiveSampler");
-      defines.push("#define EMISSIVE");
-    }
-    if (flags & OPACITY) {
-      samplers.push("opacitySampler");
-      defines.push("#define OPACITY");
-    }
-    super(
-      `glowMask-${flags}`,
-      scene,
-      { vertex: "glowMask", fragment: "glowMask" },
-      {
-        attributes: uv ? ["position", "uv"] : ["position"],
-        uniforms: ["world", "viewProjection", "glowColor"],
-        samplers,
-        defines,
-        // Blended exactly when the mesh's own material is, which also sorts it
-        // into the same queue it drew in; `needAlphaBlendingForMesh` adds a
-        // mesh faded by `visibility` on its own.
-        needAlphaBlending: (flags & BLEND) !== 0,
-        shaderLanguage: ShaderLanguage.WGSL,
-      },
-    );
-    this.disableDepthWrite = true;
-    this.depthFunction = Constants.LEQUAL;
-    this.backFaceCulling = true;
-    // **FROZEN, like every other `ShaderMaterial` in the tree**, and this one
-    // was the exception rather than the decision — `FlameMaterial.glowMask`
-    // already freezes the twin it hands this same pass. `ShaderMaterial.isReady`
-    // runs for every submesh of every draw and rebuilds the whole define set
-    // before it can answer: two arrays, a `#define` per entry and a join, all
-    // of it thrown away against the string already on the wrapper
-    // (docs/rendering.md, "Frozen materials", where that walk is a fifth of
-    // everything this game allocates). The define set here is fixed at construction — it IS the
-    // cache key, `flags` — so there is nothing for the rebuild to discover.
-    //
-    // It is safe for the reason `CelMaterialFactory.remember` records: what
-    // `isReady` would vary the defines on is a property of the MESH (a vertex
-    // colour buffer, instancing, bones, morph targets), and this cache is
-    // keyed so that cannot differ — `flags` carries the two textures and the
-    // blend, instancing is unsupported outright (see the header), and no
-    // glowing mesh has bones or morph targets. What freezing does NOT stop is
-    // the uniform push: `_mustRebind` does not consult it, so `bindForSubMesh`
-    // and the `glowColor` every draw writes through it keep flowing.
-    this.freeze();
-  }
-
-  get samplesTextures(): boolean {
-    return (this.flags & (EMISSIVE | OPACITY)) !== 0;
-  }
-
-  override bindForSubMesh(world: Matrix, mesh: Mesh, subMesh: SubMesh): void {
-    super.bindForSubMesh(world, mesh, subMesh);
-    this.paint(mesh, this, subMesh);
-  }
-}
-
-const EMISSIVE = 1;
-const OPACITY = 2;
-const BLEND = 4;
 
 /** The mask's clear: black, alpha 1 — the value the compose's missing alpha term assumes. */
 const NEUTRAL = new Color4(0, 0, 0, 1);
@@ -471,20 +289,12 @@ export class GlowPass {
   private sharedFrom: object | null = null;
   private sharedTo: object | null = null;
 
-  private readonly materials = new Map<number | string, GlowMaskMaterial>();
-  /** The twins `SelfMasking` materials handed back, one per source material. */
-  private readonly ownMasks = new WeakMap<Material, ShaderMaterial>();
-  /** What each mesh wears in the mask pass, so the override is only set when it changes. */
-  private readonly worn = new WeakMap<AbstractMesh, ShaderMaterial>();
-  /** The list handed back each frame, reused so a frame allocates nothing. */
-  private readonly kept: AbstractMesh[] = [];
-  private readonly colour = new Color4();
-  private warnedInstances = false;
+  /** The mask's render list: always empty — nothing of Babylon's draws there (the header). */
+  private readonly none: AbstractMesh[] = [];
 
   constructor(
     private readonly scene: Scene,
     private readonly camera: Camera,
-    private readonly rules: GlowRules,
     private readonly draws: GlowBlurDraws,
   ) {
     this.mask = this.target("glowMask", Constants.TEXTURETYPE_UNSIGNED_BYTE);
@@ -498,27 +308,25 @@ export class GlowPass {
     // Babylon's default clear rather than adding to one.
     //
     // And the pass OPENS here: the clear ends whatever pass was open and
-    // begins the mask's at once, the list already built and nothing of it
-    // queued — so this, and not a rendering group's hook (an empty group is
-    // never visited), nor the target's after-render (past the blended draws),
-    // nor a second clear observer (whose order would be a race), is where a
-    // draw that must come FIRST is told (`onMaskOpenObservable`).
+    // begins the mask's at once — so this, and not a rendering group's hook
+    // (an empty group is never visited), nor the target's after-render, nor a
+    // second clear observer (whose order would be a race), is where a draw
+    // that must come FIRST is told (`onMaskOpenObservable`).
     this.mask.onClearObservable.add((e) => {
       e.clear(NEUTRAL, true, false, false);
       this.onMaskOpenObservable.notifyObservers();
     });
     // …and the target's after-render is where one that must come LAST is told
-    // (`onMaskCloseObservable`): past every draw of Babylon's, blended ones
-    // included, and raised inside the unbind before the pass ends, so a draw
-    // queued there still lands in it.
+    // (`onMaskCloseObservable`): raised inside the unbind before the pass
+    // ends, so a draw queued there still lands in it.
     this.mask.onAfterRenderObservable.add(() => this.onMaskCloseObservable.notifyObservers());
-    // NULL, not the empty array a target is born with: with no list of its own
-    // the target hands `getCustomRenderList` the frame's ACTIVE meshes — the
-    // culling already done — and with an empty one it hands it nothing, which
-    // is a mask with no lamps in it and no error anywhere.
+    // NULL, not the empty array a target is born with, and answered with an
+    // empty list every frame: the render list the mask was drawn with while
+    // Babylon's mesh path stood (the frame's active meshes, filtered to the
+    // emissive ones), with nothing left in it — so the pass is rendered,
+    // cleared, opened and closed exactly as it was, and Babylon draws nothing.
     this.mask.renderList = null;
-    this.mask.getCustomRenderList = (_pass, list, length) =>
-      this.buildList(list, length);
+    this.mask.getCustomRenderList = () => this.none;
 
     const half = Constants.TEXTURETYPE_HALF_FLOAT;
     this.down = this.target("glowDown", half);
@@ -572,83 +380,6 @@ export class GlowPass {
   /** The compose's scale on the summed halves (`CONFIG.graphics.glowIntensity`). */
   get composeIntensity(): number {
     return CONFIG.graphics.glowIntensity;
-  }
-
-  /** The emissive meshes of this frame, dressed for the mask. */
-  private buildList(list: Nullable<readonly AbstractMesh[]>, length: number): AbstractMesh[] {
-    const kept = this.kept;
-    kept.length = 0;
-    if (!list) return kept;
-    for (let i = 0; i < length; i++) {
-      const mesh = list[i];
-      const material = mesh.material as Emissive | null;
-      const e = material?.emissiveColor;
-      if (!material || !e || (e.r <= 0 && e.g <= 0 && e.b <= 0)) continue;
-      if (mesh.metadata?.noGlow === true) continue;
-      if (!this.rules.admits(mesh)) continue;
-      if (import.meta.env.DEV && !this.warnedInstances && (mesh as Mesh).hasInstances) {
-        this.warnedInstances = true;
-        console.warn(`GlowPass: "${mesh.name}" is instanced; the mask draws one copy of it`);
-      }
-      this.dress(mesh, material);
-      kept.push(mesh);
-    }
-    return kept;
-  }
-
-  /** Puts the right mask variant on a mesh, touching Babylon only when it changed. */
-  private dress(mesh: AbstractMesh, material: Emissive): void {
-    if (selfMasking(material)) {
-      let own = this.ownMasks.get(material);
-      if (!own) {
-        own = material.glowMask((m, sub) => this.paintColour(m, sub));
-        this.ownMasks.set(material, own);
-      }
-      if (this.worn.get(mesh) === own) return;
-      this.worn.set(mesh, own);
-      this.mask.setMaterialForRendering(mesh, own);
-      return;
-    }
-    const flags =
-      (material.emissiveTexture ? EMISSIVE : 0) |
-      (material.opacityTexture ? OPACITY : 0) |
-      (material.needAlphaBlending() ? BLEND : 0);
-    // The source's polygon offset is part of the variant: the LEQUAL tie
-    // against the frame's depth only holds if the mask is biased exactly as
-    // the draw that wrote it was (a lit room over a `backed` pane is, see
-    // `CelMaterialFactory.getEmissive`).
-    const units = material.zOffsetUnits;
-    const key = units === 0 ? flags : `${flags}@${units}`;
-    let mat = this.materials.get(key);
-    if (!mat) {
-      mat = new GlowMaskMaterial(this.scene, flags, (m, self, sub) => this.paint(m, self, sub));
-      mat.zOffsetUnits = units;
-      this.materials.set(key, mat);
-    }
-    if (this.worn.get(mesh) === mat) return;
-    this.worn.set(mesh, mat);
-    this.mask.setMaterialForRendering(mesh, mat);
-  }
-
-  /** Writes one draw's colour and textures, off the mesh's own material. */
-  private paint(mesh: AbstractMesh, mat: GlowMaskMaterial, sub: SubMesh): void {
-    const effect = sub.effect;
-    const material = mesh.material as Emissive | null;
-    if (!effect || !material) return;
-    this.paintColour(mesh, sub);
-    if (mat.samplesTextures) {
-      if (material.emissiveTexture) effect.setTexture("emissiveSampler", material.emissiveTexture);
-      if (material.opacityTexture) effect.setTexture("opacitySampler", material.opacityTexture);
-    }
-  }
-
-  /** One draw's bloom colour, the half of `paint` every mask shares. */
-  private paintColour(mesh: AbstractMesh, sub: SubMesh): void {
-    const effect = sub.effect;
-    const material = mesh.material;
-    if (!effect || !material) return;
-    this.rules.colour(mesh, material as StandardMaterial, this.colour);
-    effect.setDirectColor4("glowColor", this.colour);
   }
 
   /**
@@ -806,7 +537,6 @@ export class GlowPass {
   }
 
   dispose(): void {
-    for (const mat of this.materials.values()) mat.dispose();
     this.mask.dispose();
     this.down.dispose();
     this.nearH.dispose();

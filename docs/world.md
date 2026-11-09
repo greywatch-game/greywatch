@@ -769,8 +769,8 @@ big the map is.
 What it costs is texel density — `window / mapSize`, so 5.4 cm at 110 and 9.8 cm
 at 200. The four-tap kernel is measured in TEXELS and still cancels the
 staircase, but the distance at which a shadow edge is sub-pixel roughly doubles.
-`mapSize` stays global: it is baked into the `ShadowGenerator` at construction,
-and 4096 would be four times the fill on a pass that runs on most frames.
+`mapSize` stays global: it is the rung's (`CONFIG.graphics.shadowTiers`), and
+4096 would be four times the fill on a pass that runs on most frames.
 
 Three rules:
 

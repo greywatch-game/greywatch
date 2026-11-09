@@ -98,11 +98,11 @@ export function depthBias(metres: number, depthRange: number): number {
 
 /**
  * What a window places and a transform reads of a directional light: where it
- * points and where it stands. A Babylon `DirectionalLight` is one (the world's
- * maps keep theirs, for Babylon's shadow generators, which only the map
- * editor's build drew — none since `BABYLON_EXIT.md` X5.3c, and X5.3d deletes
- * them); the bodies' map holds
- * the pair alone (`BodyShadows`), its map being our renderer's.
+ * points and where it stands. A Babylon `DirectionalLight` was one, the world's
+ * maps keeping theirs for Babylon's shadow generators until `BABYLON_EXIT.md`
+ * X5.3d deleted both; every map holds the pair alone now (`BodyShadows`, and
+ * `ShadowSystem`'s `MapLight`, with its window's side beside it), every map
+ * being our renderer's.
  */
 export interface ShadowLight {
   readonly direction: Vector3;
@@ -154,10 +154,10 @@ export function lightTransformToRef(
  */
 export class ShadowWindow {
   /**
-   * The two cross-axes of the light's own basis, kept after `place` so a
-   * caller can project into it — `ShadowSystem`'s render-list cull does. The
-   * third axis is the light's direction, which `DirectionalLight` already
-   * holds.
+   * The two cross-axes of the light's own basis, as `place` last found them
+   * (a generator's render-list cull projected into them until
+   * `BABYLON_EXIT.md` X5.3d). The third axis is the light's direction, which
+   * the light already holds.
    */
   readonly axisX = new Vector3(1, 0, 0);
   readonly axisY = new Vector3(0, 1, 0);

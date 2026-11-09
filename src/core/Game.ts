@@ -77,14 +77,17 @@
  * The map is a `MapDef` held in one field (`mapDef`) and built in one method
  * (`installMap`), which a round start goes through and nothing else — no
  * map's layout or environment may be named anywhere else in here.
- * Also owns: the glow's RULES (`GlowRules` — which meshes may bloom this frame,
- * and the distance fade on each — the bloom is the one
- * pass that reads a material and never asks where the mesh stands, so without
- * it a glow is the last thing left when the world around it has gone to fog —
- * asked of Babylon's meshes by `GlowPass` and of the emissive palette by our
- * renderer's `WorldGlow`, one statement each (`glowAdmits`, `bloomColour`), and
- * of the moon by `SkyDraw`, which `admits` alone reaches, a moon having no fade),
- * ShadowSystem wiring (casters re-registered per round from map.visuals),
+ * Also owns: the glow's RULES (`GlowRules` — what may bloom this frame, and
+ * the distance fade on each — the bloom is the one
+ * pass that reads a material and never asks where the surface stands, so
+ * without it a glow is the last thing left when the world around it has gone
+ * to fog — one statement each, `glowAdmits` and `bloomColour`, asked by every
+ * draw of ours into the glow's mask (the emissive palette's `WorldGlow`, the
+ * visors, the pieces, the billows, the fires) and of the moon by `SkyDraw`,
+ * which `admits` alone reaches, a moon having no fade; `GlowPass` asked them
+ * of Babylon's meshes through an interface of that name until
+ * `BABYLON_EXIT.md` X5.3d),
+ * ShadowSystem wiring (told per round when the handover has its casters),
  * WorldCulling wiring (the map filed per install, the eye pushed from `tick` in
  * every state beside the shader's own — it decides how much of the map Babylon
  * walks each frame and writes nothing onto any mesh),
@@ -334,6 +337,7 @@ import { Sfx } from "./Sfx";
 import { UrlOverrides, urlFlag } from "./urlOverrides";
 import { setViewerTeam, teamLook } from "./teamView";
 import { forgetBindGroups } from "./webgpuLeaks";
+import { type BabylonCompiles, watchBabylonCompiles } from "./babylonCompiles";
 
 /**
  * The bodies in the round when there is no round — the menu and the building
@@ -898,6 +902,13 @@ export class Game {
    * (`systems/LightningStrikes.ts`) and spent in `pushLightning`.
    */
   private readonly lightning = new LightningStrikes();
+  /**
+   * The DEV counter of Babylon effect compiles, which must read 0 in every
+   * state (`core/babylonCompiles.ts`); null in a production build. Public for
+   * the draw log (`plans/webgpu-ref/drawlog.mjs`), which fails a run where it
+   * moved.
+   */
+  readonly babylonCompiles: BabylonCompiles | null = null;
   private shadows: ShadowSystem;
   /** The world's directional maps as our renderer owns them: every round's. */
   private readonly worldShadows: WorldShadows;
@@ -1909,6 +1920,9 @@ export class Game {
   ) {
     this.canvas = canvas;
     this.engine = engine;
+    // Before anything of the game's can make a Babylon effect: every one made
+    // from here on is counted, and must not be (`core/babylonCompiles.ts`).
+    if (import.meta.env.DEV) this.babylonCompiles = watchBabylonCompiles(engine);
     // **The page's own match host** — in a Worker or on a channel in this
     // thread (`src/net/matchHost.ts`), chosen by
     // the boot and handed in as `havok` and `engine` are. Every round that is
@@ -2138,10 +2152,14 @@ export class Game {
     // compose in its own last line; the glow puts no pass on the camera at
     // all, so building it here puts nothing in the chain ahead of the ink.
     //
-    // The RULES are this file's, because both are questions about the game.
+    // The RULES are this file's, because both are questions about the game
+    // (`glowAdmits`, `bloomColour`, which every draw of ours into the mask
+    // asks, each with the distance it measured: the "`GlowRules`" the
+    // comments here name, the interface `GlowPass` took for its own mesh path
+    // until `BABYLON_EXIT.md` X5.3d).
     //
     // The bloom is the ONE pass that reads a material and never asks where the
-    // mesh carrying it stands, so without the fade a glow is the last thing left
+    // surface carrying it stands, so without the fade a glow is the last thing left
     // when everything around it has gone to fog: Greyfen's chapel windows are
     // 0.08 m slivers whose whole read at 60 m is bloom, and they sat on a wall
     // faded almost to white as three saturated cyan bars. Fogging the emissive
@@ -2159,25 +2177,6 @@ export class Game {
     const glowBlur = new GlowBlur(this.renderer, glowKernels(window.devicePixelRatio || 1));
     this.glowBlur = glowBlur;
     const glow = new GlowPass(this.scene, this.cameraSys.camera, {
-      admits: () => this.glowAdmits(),
-      colour: (mesh, material, out) => {
-        // The sphere's CENTRE, deliberately — not the NEAR point, which is
-        // what a per-mesh ink width used to be measured to. A bloom is a soft
-        // blob with no edge to speak of, so its middle is where it reads
-        // from; the near
-        // point of a block-merged mesh (the chapel's six windows are one,
-        // 8.5 m of radius) sits a whole radius early and fogged them by 16%
-        // where the wall behind was at 35%. Every glowing mesh here is a
-        // fitting or a window, so a centre is never far from the light it
-        // stands for.
-        const sphere = mesh.getBoundingInfo().boundingSphere;
-        const d = Vector3.Distance(
-          sphere.centerWorld,
-          this.cameraSys.camera.globalPosition,
-        );
-        this.bloomColour(material, 1 - fogAmountAt(d), out);
-      },
-    }, {
       downReady: () => glowBlur.downReady(),
       blurReady: (kernel) => glowBlur.blurReady(kernel),
       down: (source, w, h, outputHeight) => glowBlur.down(hostTexture(source), w, h, outputHeight),
@@ -2194,10 +2193,10 @@ export class Game {
     glow.onMaskCloseObservable.add(() => this.renderer.glowMaskClosing());
     // THE FRAME: the render target the scene draws straight into, with its
     // depth, and clears itself (Babylon's own clear of a camera's output
-    // target, under `scene.autoClear`) — the camera's `outputRenderTarget`
-    // through each frame's camera render (off after it, a window kept for
-    // the map editor's gizmo layer, which went at X5.3c; X5.3d retires it),
-    // owned by the post chain's pass owner,
+    // target, under `scene.autoClear`) — the camera's `outputRenderTarget`,
+    // for good (the window it was taken off for after the camera's render,
+    // the map editor's gizmo layer's, went at X5.3d), owned by the post
+    // chain's pass owner,
     // `PostPasses`, which opens every pass of the chain after that render.
     // No Babylon `PostProcess` stands on the camera since X5.2d: the ink,
     // whose input this target was, is the chain's first stage of OURS.
@@ -2330,11 +2329,11 @@ export class Game {
     // at its cube, and a break collapses a pane in its buffer.
     this.glassDraw = new GlassDraw(this.renderer, (into) => this.glassPull(into));
     // Same relationship to `mats` as the two above, in the other direction:
-    // this one PUBLISHES to it — the default cube, born on every pane
-    // material (wrapped for Babylon's glazing, which only the map editor's
-    // build drew: no Babylon pane is drawn since X5.3c, and X5.3d deletes the
-    // wrap) — and
-    // points a round's glazing at the cubes it bakes from the map itself.
+    // this one reads it — each glazing group's recipe — and points a round's
+    // glazing at the cubes it bakes from the map itself, or at its default
+    // cube, which nothing bakes. (It published that cube to every pane
+    // material too, wrapped for Babylon's glazing, which only the map
+    // editor's build drew; the wrap went at X5.3d.)
     this.reflections = new ReflectionSystem(this.scene, this.mats, this.probeBake, this.glassDraw);
     // A cube is baked once per install and keeps the bounce it was baked
     // under, so the bake waits for the volume `installMap` has just cleared —
@@ -5660,7 +5659,7 @@ export class Game {
     this.grass.dispose();
     this.reflections.clear();
     this.atmosphere.apply(undefined, 0, 0);
-    this.shadows.setCasters([]);
+    this.shadows.setCasters();
     // A body map failing for a map that is gone is no news of the next one —
     // and no body is drawn over the menu.
     this.bodyShadowMap.setFailure();
@@ -5949,17 +5948,13 @@ export class Game {
     // night village reads as a lens fault over a bright one.
     this.post.setGrade(environment.grade);
     // AFTER `handover.install`, which hands `WorldShadows` the casters of a
-    // round: who draws this map's shadows is read off that here.
-    this.shadows.setCasters(map.visuals);
-    // The lamps' casters: the colliders a MOVING light's proxies are drawn
-    // from, and the visuals a fixture's static tile is baked from. Every light
-    // holding tiles loses them — they were the last map's.
-    this.localShadows.setWorld(
-      map.size,
-      map.colliderBoxes,
-      map.rayGroups,
-      map.visuals,
-    );
+    // round: this map's shadows are read off that here.
+    this.shadows.setCasters();
+    // The lamps' world: the colliders a MOVING light's proxies are drawn from
+    // (a fixture's static tile is baked from the casters the handover handed
+    // `LampAtlas`). Every light holding tiles loses them — they were the last
+    // map's.
+    this.localShadows.setWorld(map.size, map.colliderBoxes, map.rayGroups);
     // What the bounce light traces: the fresh map's colliders, their albedo and
     // its floor. The volume restarts unconverged and spends its first sweeps at
     // the warm budget; nothing it does is a draw call.

@@ -1,0 +1,99 @@
+/**
+ * babylonCompiles.ts — the DEV counter of BABYLON EFFECT COMPILES, which must
+ * read 0 in every state (`BABYLON_EXIT.md` X5.3d, "Left for X6.1, guarded").
+ * Owns: one count per engine and the set of effects it has already counted.
+ * Invariants: counts only after `watchBabylonCompiles` — which `Game` calls
+ * first thing in its constructor — so what the ENGINE compiles for itself
+ * while it is built is never counted: `clearQuad`, `WebGPUClearQuad`'s, made
+ * by `WebGPUEngine.initAsync` and kept for the engine's life, the one Babylon
+ * effect that can never go while Babylon is the engine. Every compile after
+ * that is a Babylon MATERIAL being drawn, or about to be, and none may be: no
+ * Babylon mesh is drawn and no Babylon material compiles in any state since
+ * the map editor went (X5.3c), our renderer drawing everything off recipes,
+ * and the cel program's Babylon declarations and the factory's per-frame
+ * pushes into Babylon materials stand until X6.1 only as long as this says
+ * nothing is compiled from them. Public API alone: `createEffect` and
+ * `createComputeEffect` are wrapped on the INSTANCE, and an effect is counted
+ * the first time either hands it back — Babylon hands back the effect it
+ * already holds for a source and defines it has compiled, so a new object is
+ * a compile. (An effect compiled BEFORE the watch and asked for again after
+ * it would be counted too, there being no public way to list the engine's
+ * cache: nothing asks for `clearQuad` by name, the clear quad holding its
+ * own.)
+ * Never: runs in a production build (the caller's `import.meta.env.DEV`);
+ * changes what either call does or returns.
+ * Contract: `docs/rendering.md`, "Our renderer's frame"; the draw log
+ * (`plans/webgpu-ref/drawlog.mjs`) reads `count` in every state and fails a
+ * run where it is not 0.
+ *
+ * **It WARNS rather than errs, because two instruments compile on purpose.**
+ * The harness's readiness wait (`waitUntilDrawn`: `scene.isReady()`, which
+ * the bank, `gate.mjs`, `post.mjs` and `surfaces.mjs` stand on) asks every
+ * mesh's material, and the collider meshes wear none, so it compiles
+ * Babylon's `default` `StandardMaterial` once a page — measured at X5.3d, one
+ * on every map, the game itself compiling nothing; and `shaders.mjs` compiles
+ * every Babylon cel variant by design, which is what it checks. A console
+ * error would fail each of those on its own instrument; the game never asks
+ * either (X5.3e, taking the collider meshes away, takes the first with them).
+ */
+import type { AbstractEngine } from "@babylonjs/core";
+
+/** What `Game` holds and the draw log reads (`window.__celshock.babylonCompiles`). */
+export interface BabylonCompiles {
+  /** Babylon effects compiled since the watch began. Must be 0. */
+  readonly count: number;
+  /** Their names, in the order they were compiled. */
+  readonly names: readonly string[];
+}
+
+/** An effect as far as this reads it: its name, a string or a stage map. */
+interface Named {
+  readonly name: unknown;
+}
+
+function nameOf(effect: Named): string {
+  const n = effect.name;
+  if (typeof n === "string") return n.length > 80 ? `${n.slice(0, 77)}...` : n;
+  if (n && typeof n === "object") {
+    const stages = n as Record<string, unknown>;
+    const s = stages.vertex ?? stages.vertexElement ?? stages.compute ?? stages.computeElement;
+    if (typeof s === "string") return s.length > 80 ? `${s.slice(0, 77)}...` : s;
+  }
+  return "(inline)";
+}
+
+/**
+ * Starts counting `engine`'s effect compiles. Each one is said on the console
+ * as a WARNING, once (the header says why not an error); the draw log is what
+ * fails on one.
+ */
+export function watchBabylonCompiles(engine: AbstractEngine): BabylonCompiles {
+  const seen = new WeakSet<object>();
+  const names: string[] = [];
+  const state = { count: 0, names };
+  const counted = <T>(effect: T): T => {
+    if (effect && typeof effect === "object" && !seen.has(effect)) {
+      seen.add(effect);
+      state.count++;
+      const name = nameOf(effect as unknown as Named);
+      names.push(name);
+      console.warn(
+        `[babylon] an effect was compiled (${name}): no Babylon material may compile in any state (BABYLON_EXIT.md X5.3d)`,
+      );
+    }
+    return effect;
+  };
+  type Create = (...args: unknown[]) => unknown;
+  const host = engine as unknown as { createEffect: Create; createComputeEffect?: Create };
+  const effect = host.createEffect;
+  host.createEffect = function (this: unknown, ...args: unknown[]) {
+    return counted(effect.apply(this, args));
+  };
+  const compute = host.createComputeEffect;
+  if (compute) {
+    host.createComputeEffect = function (this: unknown, ...args: unknown[]) {
+      return counted(compute.apply(this, args));
+    };
+  }
+  return state;
+}

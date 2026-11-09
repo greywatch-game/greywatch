@@ -34,6 +34,16 @@
  *   moved — never on a clock, which a two-frame state is hit or missed by as
  *   the machine's pace decides.
  *
+ * **And the game's own DEV counter of Babylon effect compiles**
+ * (`Game.babylonCompiles`, `src/core/babylonCompiles.ts`, `BABYLON_EXIT.md`
+ * X5.3d), read at every frame's end: the values it took in each class, kept
+ * beside the classes (`babylonCompiles`) rather than in them, so a parent's
+ * log without one compares, and ASSERTED — a run in which it is not 0 in
+ * every class fails (exit 1), whatever `--against` says. It counts from the
+ * game's construction, so what the engine compiled for itself while it was
+ * built (`clearQuad`, the engine's own and in `compiledAtBoot`) is not in it;
+ * a tree before X5.3d has no counter, which the report says.
+ *
  * **A draw between frames** — issued after one frame's end and before the
  * next's begin, as a render target rendered from a promise would be — is
  * folded into a class of its own, `between frames`, rather than cleared
@@ -142,6 +152,7 @@ function installHooks() {
 
   const L = (window.__drawLog = {
     classes: {},
+    counter: {},
     frames: {},
     cls: null,
     frameNo: 0,
@@ -209,6 +220,13 @@ function installHooks() {
     }
     L.visit = false;
     L.lastSize = n;
+    // The game's own counter (the header), its value at this frame's end.
+    const bc = g.babylonCompiles;
+    if (bc) {
+      const seen = (L.counter[L.cls] ??= []);
+      if (!seen.includes(bc.count)) seen.push(bc.count);
+    }
+    if (!L.meshHooked) hookMeshRender();
   });
 
   const bump = (map, key) => map.set(key, (map.get(key) ?? 0) + 1);
@@ -222,12 +240,18 @@ function installHooks() {
     bump(L.draw, key);
     return draw.apply(this, a);
   };
-  // `Mesh.render`, found on the prototype chain of a mesh the scene holds —
-  // at boot, on the menu, that is `localShadowProxy` (there is no map yet, so
-  // no collider), and any `Mesh` serves, since the hook is on the prototype —
-  // so a draw inside it is named by its mesh.
-  const anyMesh = scene.meshes[0];
-  if (anyMesh) {
+  // `Mesh.render`, found on the prototype chain of a mesh the scene holds,
+  // so a draw inside it is named by its mesh — any `Mesh` serves, since the
+  // hook is on the prototype. At boot the menu has none (no map, and since
+  // X5.3d no `localShadowProxy`), so the hook waits for the first frame that
+  // ends with a mesh in the scene (a map's colliders): a mesh is drawn only
+  // once one exists, so nothing is drawn unnamed but in the frame a first
+  // mesh was made and drawn in.
+  L.meshHooked = false;
+  function hookMeshRender() {
+    const anyMesh = scene.meshes[0];
+    if (!anyMesh) return;
+    L.meshHooked = true;
     let proto = Object.getPrototypeOf(anyMesh);
     while (proto && !Object.prototype.hasOwnProperty.call(proto, "render")) proto = Object.getPrototypeOf(proto);
     const render = proto.render;
@@ -240,9 +264,8 @@ function installHooks() {
         L.meshCtx = keep;
       }
     };
-  } else {
-    L.notes.push("no mesh in the scene at boot: draws are keyed by effect alone");
   }
+  hookMeshRender();
   scene.onBeforeRenderingGroupObservable.add((info) => {
     if (info.renderingGroupId === 0) bump(L.group0, targetOf());
   });
@@ -624,7 +647,15 @@ async function logMap(browser, url, map) {
         meshes: { sizes: [...v.meshes.sizes].sort((a, b) => a - b), names: sortObj(v.meshes.names) },
       };
     }
-    return { classes: sortObj(classes), compiledAtBoot: L.compiledAtBoot, frames: L.frames, did: L.did, notes: L.notes };
+    const bc = window.__celshock.babylonCompiles;
+    return {
+      classes: sortObj(classes),
+      compiledAtBoot: L.compiledAtBoot,
+      babylonCompiles: bc ? { byClass: sortObj(Object.fromEntries(Object.entries(L.counter).map(([c, v]) => [c, [...v].sort((a, b) => a - b)]))), count: bc.count, names: [...bc.names] } : null,
+      frames: L.frames,
+      did: L.did,
+      notes: L.notes,
+    };
   });
   const warns = consoleLines.filter((x) => /\[pipelines\]/.test(x));
   await page.close();
@@ -633,6 +664,7 @@ async function logMap(browser, url, map) {
     seed: SEED,
     classes: rec.classes,
     compiledAtBoot: rec.compiledAtBoot,
+    babylonCompiles: rec.babylonCompiles,
     info: { frames: rec.frames, did: rec.did, notes: rec.notes, steps, missed },
     errors: { page: pageErrors, console: consoleErrors, pipelines: warns },
   };
@@ -666,7 +698,13 @@ function report(r) {
   for (const s of r.info.steps) console.log(`  ${s}`);
   console.log(`  did: ${JSON.stringify(r.info.did)}${r.info.notes.length ? `  notes: ${r.info.notes.join("; ")}` : ""}`);
   console.log(`  frames by class: ${JSON.stringify(r.info.frames)}`);
-  console.log(`  Babylon effects compiled before the probe hooked the engine: ${r.compiledAtBoot.length}`);
+  console.log(`  Babylon effects compiled before the probe hooked the engine: ${r.compiledAtBoot.length} (${r.compiledAtBoot.join(", ")})`);
+  const bc = r.babylonCompiles;
+  console.log(
+    bc
+      ? `  the game's counter of Babylon effect compiles: ${bc.count}${bc.names.length ? ` (${bc.names.join(", ")})` : ""}; by class ${JSON.stringify(bc.byClass)}`
+      : "  the game's counter of Babylon effect compiles: none in this tree (before BABYLON_EXIT.md X5.3d)",
+  );
   for (const [cls, c] of Object.entries(r.classes)) {
     const draws = Object.entries(c.draws);
     const meshKeys = draws.filter(([k]) => k.includes("mesh:"));
@@ -703,6 +741,12 @@ if (OUT) {
   console.log(`\nwrote ${OUT}`);
 }
 let code = 0;
+// The game's counter must read 0 in every class (the header).
+const counted = Object.values(result).filter((r) => r.babylonCompiles && (r.babylonCompiles.count !== 0 || Object.values(r.babylonCompiles.byClass).some((v) => v.some((n) => n !== 0))));
+if (counted.length) {
+  console.log(`\nBABYLON COMPILED: the game's counter is not 0 on ${counted.map((r) => `${r.map} (${r.babylonCompiles.count}: ${r.babylonCompiles.names.join(", ")})`).join("; ")}`);
+  code = 1;
+}
 if (incomplete) {
   console.log(`\nINCOMPLETE: a step was not reached (${Object.values(result).flatMap((r) => r.info.missed).join("; ")})`);
   code = 2;

@@ -1318,28 +1318,31 @@ export class FrameProfile {
   }
 
   /**
-   * Hangs the three spans inside `render` off Babylon's own observables.
+   * Hangs the spans inside `render` off Babylon's own observables — two of
+   * the three, `shadowPass` having nothing left to bracket (below).
    *
    * **This is the one place this file's own arrangement bends, and the reason
    * is that there is nowhere in `Game.ts` to put these brackets.** Every other
    * phase is a pair of lines in a method whose order `Game` already declares;
    * these three are boundaries INSIDE `scene.render()`, and the alternative to
    * an observer is no measurement at all. Nothing here reaches for a system —
-   * the shadow map is found through the SCENE (`scene.lights`) and the glow is
-   * handed in as two observables (`GlowSpans`), so `ShadowSystem` and
-   * `GlowPass` still have not heard of this file and do not have to.
+   * the glow is handed in as two observables (`GlowSpans`), so `GlowPass`
+   * still has not heard of this file and does not have to. (`shadowPass` was a
+   * Babylon shadow generator's map, found through the SCENE's lights; the
+   * scene has neither since `BABYLON_EXIT.md` X5.3d, every map being our
+   * renderer's, so the phase is opened by nothing.)
    *
    * **THE THREE CANNOT OVERLAP, and that is a fact about where Babylon runs
    * them rather than a hope.** `Scene._renderForCamera` is one order:
    *
-   *  1. the render targets — the shadow map among them — all of it before
-   *     the draw phase opens;
+   *  1. the render targets — a generator's shadow map among them, until
+   *     X5.3d — all of it before the draw phase opens;
    *  2. `onBeforeDrawPhaseObservable`, the rendering manager, and
    *     `onAfterDrawPhaseObservable`, which is the camera's own pass and where
    *     the glow draws its mask and blurs it, after every group has drawn;
    *  3. the post chain, where the ink runs the glow's compose as its last line.
    *
-   * So the shadow map is in (1), `drawWorld` and then the glow's mask are in
+   * So a shadow map was in (1), `drawWorld` and then the glow's mask are in
    * (2), and the glow's compose is in (3), unnamed. What is left inside
    * `render` and named by nothing is the active-mesh evaluation, our
    * renderer's start of the main pass (below), the post chain, a frame's share
@@ -1394,19 +1397,10 @@ export class FrameProfile {
     const drawOff = scene.onAfterDrawPhaseObservable.add(() => this.endAdd(P.drawWorld));
     off.push(() => scene.onAfterDrawPhaseObservable.remove(drawOff));
 
-    // Every shadow map in the scene, which is ShadowSystem's one directional
-    // light. Its texture is created once at a fixed `mapSize` and never
-    // re-created, so unlike the glow's it needs no re-binding.
-    for (const light of scene.lights) {
-      const map = light.getShadowGenerator()?.getShadowMap();
-      if (!map) continue;
-      const bind = map.onBeforeBindObservable.add(() => this.begin(P.shadowPass));
-      off.push(() => map.onBeforeBindObservable.remove(bind));
-      const unbind = map.onAfterUnbindObservable.add(() =>
-        this.endAdd(P.shadowPass),
-      );
-      off.push(() => map.onAfterUnbindObservable.remove(unbind));
-    }
+    // `shadowPass` is bracketed by nothing: it was a Babylon shadow
+    // generator's map, found through `scene.lights`, and the scene has no
+    // light and no generator since `BABYLON_EXIT.md` X5.3d (every map ours,
+    // drawn on the upload encoder ahead of the frame's draws).
 
     // The glow: its mask and blur at the end of the draw phase, which closes
     // `drawWorld` as it opens. See the method's header.

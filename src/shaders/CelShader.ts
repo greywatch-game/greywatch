@@ -73,14 +73,11 @@
 import {
   type BaseTexture,
   Color3,
-  Constants,
-  RawTexture3D,
   Scene,
   ShaderLanguage,
   ShaderMaterial,
   ShaderStore,
   StandardMaterial,
-  Texture,
   Vector2,
   Vector3,
   Vector4,
@@ -112,7 +109,6 @@ import { ShadowBindings } from "./ShadowBindings";
 // numbers live with the fragment's body, which our own renderer reads too.
 import "./wgsl/includes";
 import { MAX_PALETTE, MAX_POINT_LIGHTS } from "./wgsl/celSurface";
-import { GI_SLOTS } from "./wgsl/giTrace";
 
 export { MAX_PALETTE, MAX_POINT_LIGHTS };
 
@@ -348,11 +344,6 @@ export interface GiWindow {
  */
 export interface GiBinding extends GiWindow {
   textures: Record<(typeof GI_SAMPLER_NAMES)[number], OwnTexture>;
-}
-
-/** What a BABYLON cel material is bound to for the volume: Babylon's own textures (GI `off`, `babylonGi`). */
-interface BabylonGi extends GiWindow {
-  textures: Record<(typeof GI_SAMPLER_NAMES)[number], BaseTexture>;
 }
 
 ShaderStore.ShadersStoreWGSL["celVertexShader"] = `
@@ -1068,18 +1059,6 @@ export class CelMaterialFactory {
    */
   private gi: GiBinding | null = null;
   /**
-   * What every BABYLON cel material is bound to for the volume — an editor
-   * build's world, the only Babylon cel draw left (`BABYLON_EXIT.md` X5.3):
-   * GI `off`, always, by the owner's decision of 2026-11-07 (X5.1b's row 1).
-   * Seven single texels of Babylon's own, as `GiVolume` stands up at `off`,
-   * and the window's vectors with `giShade.w` at 0 — which is the whole of
-   * "off" to the shader (`giCoord` answers "outside" before any fetch). The
-   * lightning's sky fill (`giExtra`) is the LIVE vector, held by reference,
-   * because a flash rides whatever the tier, `off` included. Built at the
-   * first `setGi`; never replaced, so no tier change walks the cache.
-   */
-  private babylonGi: BabylonGi | null = null;
-  /**
    * The flat albedo each single-colour material was minted with, for the one
    * reader that needs a colour back from a MATERIAL: `MapBuilder`, which hands
    * the GI trace a colour per collider box. Weak, because the cache is not the
@@ -1088,8 +1067,7 @@ export class CelMaterialFactory {
   private readonly albedos = new WeakMap<object, Color3>();
 
   /**
-   * What each glazing material was built FROM: which glass it is (`glassKind`)
-   * and the materials `setDefaultReflection` re-binds.
+   * What each glazing material was built FROM: which glass it is (`glassKind`).
    *
    * The reflection is the one piece of shared state that is not shared: every
    * other uniform in here is the same on every material in the cache, and a
@@ -1101,20 +1079,6 @@ export class CelMaterialFactory {
     ShaderMaterial,
     { hex: string; glass: GlassSpec; backed: string | null }
   >();
-  /**
-   * The cube a glazing material is BORN holding, before any probe has claimed
-   * it — `ReflectionSystem`'s default cube, a cube of our renderer's nothing
-   * bakes, published once at construction.
-   *
-   * It is bound with a strength of 0, so what is in it never reaches a pixel.
-   * The binding is not optional even so: a `samplerCube` with nothing on its
-   * unit reads whatever 2D texture is there, which is undefined behaviour
-   * rather than a black fetch. This is what makes "a glazing material always
-   * has a cube" true from the moment `MapBuilder` asks for one, which is
-   * before any probe has been placed.
-   */
-  private defaultCube: BaseTexture | null = null;
-
   /**
    * The current map's albedo palette, flattened, as the shader indexes it.
    *
@@ -1818,7 +1782,7 @@ export class CelMaterialFactory {
       // A recipe, as every material our renderer draws keeps one: a round's
       // glazing is ours (`render/GlassDraw.ts`, `BABYLON_EXIT.md` X4.6e), and
       // this material, which states the same values, is the one the map
-      // editor's build drew until X5.3c.
+      // editor's build drew until X5.3c — a recipe key since.
       this.bear(mat, variant, CelMaterialFactory.GLASS_DEPTH_UNITS);
       this.own(mat, "baseColor", Color3.FromHexString(hex));
       if (backed) {
@@ -2071,8 +2035,9 @@ export class CelMaterialFactory {
    * by the same three methods, beside their walks, so a fire can never keep
    * different time or weather from the wall behind it. Since
    * `BABYLON_EXIT.md` X4.4d our renderer draws every fire of a round off its
-   * `values` (the clock among them) and the frame's eye and fog, and the
-   * `ShaderMaterial` draws an editor build's fires alone.
+   * `values` (the clock among them) and the frame's eye and fog. The
+   * `ShaderMaterial` is a recipe key and draws nothing: its Babylon stages,
+   * which drew the map editor's build's fires alone, were deleted at X5.3d.
    */
   getFlame(): FlameMaterial {
     if (!this.flame) {
@@ -2356,8 +2321,7 @@ export class CelMaterialFactory {
    * `ShadowBindings`' maps (the host's handles, or ours where ours draws one)
    * and the irradiance volume's seven, OUR renderer's own since
    * `BABYLON_EXIT.md` X5.1b (`OwnTexture`s, read where they lie: no Babylon
-   * material holds them, an editor build's holding GI `off`, `babylonGi`). A
-   * pull, beside `fillFrame`; allocates nothing.
+   * material holds them). A pull, beside `fillFrame`; allocates nothing.
    */
   fillFrameTextures(out: FrameTextures): void {
     this.shadows.fillFrameTextures(out);
@@ -2372,16 +2336,6 @@ export class CelMaterialFactory {
     out.giVis1 = gi.textures.giVis1;
     out.giVis2 = gi.textures.giVis2;
     out.giVis3 = gi.textures.giVis3;
-  }
-
-  /**
-   * The cube every glazing material is bound to until a probe claims it.
-   * Called once, by `ReflectionSystem`'s constructor, before `MapBuilder` has
-   * asked for a pane material at all. See `defaultCube`.
-   */
-  setDefaultReflection(cube: BaseTexture): void {
-    this.defaultCube = cube;
-    for (const mat of this.glassRecipes.keys()) this.applyReflection(mat);
   }
 
   /**
@@ -2479,72 +2433,12 @@ export class CelMaterialFactory {
    * (`fillFrame`, `fillFrameTextures`), which pulls it every frame, so a tier
    * change standing up a new set walks nothing.
    *
-   * **No Babylon cel material is handed it** (`babylonGi`): they are an
-   * editor build's world alone, and the owner decided on 2026-11-07 that an
-   * editor build has no GI until X5.3 (`BABYLON_EXIT.md` X5.1b's row 1). They
-   * are bound to GI `off` on creation (`applyShadow`), once, for good.
+   * **No Babylon cel material is handed it**: none draws (`BABYLON_EXIT.md`
+   * X5.3c), and the GI-`off` set they held for the map editor's build went at
+   * X5.3d.
    */
   setGi(binding: GiBinding): void {
     this.gi = binding;
-    this.babylonGi ??= this.offGi(binding.extra);
-  }
-
-  /**
-   * GI `off` for a Babylon cel material, as `GiVolume` stands it up for the
-   * setting: seven single texels, made as its `makeTextures(null)` makes them,
-   * and a window whose `giShade.w` is 0. `extra` is the live lightning fill.
-   */
-  private offGi(extra: Vector4): BabylonGi {
-    const g = CONFIG.gi;
-    const make = (name: string, half: boolean): RawTexture3D => {
-      const tex = new RawTexture3D(
-        null,
-        1,
-        1,
-        1,
-        Constants.TEXTUREFORMAT_RGBA,
-        this.scene,
-        false,
-        false,
-        Texture.BILINEAR_SAMPLINGMODE,
-        half ? Constants.TEXTURETYPE_HALF_FLOAT : Constants.TEXTURETYPE_UNSIGNED_BYTE,
-        Constants.TEXTURE_CREATIONFLAG_STORAGE,
-      );
-      tex.name = `celGiOff-${name}`;
-      tex.wrapU = Texture.WRAP_ADDRESSMODE;
-      tex.wrapV = Texture.CLAMP_ADDRESSMODE;
-      tex.wrapR = Texture.WRAP_ADDRESSMODE;
-      return tex;
-    };
-    return {
-      textures: {
-        giIrr: make("irr", true),
-        giDir: make("dir", true),
-        giAux: make("aux", false),
-        giVis0: make("vis0", false),
-        giVis1: make("vis1", false),
-        giVis2: make("vis2", false),
-        giVis3: make("vis3", false),
-      },
-      grid: new Vector4(1, 1, 1, 1),
-      window: new Vector4(0, 1, 0, 0),
-      shade: new Vector4(g.strength, g.floor, g.aoKeep, 0),
-      band: new Vector4(3, 1, 1, 0),
-      extra,
-      slotChannel: new Float32Array(GI_SLOTS),
-    };
-  }
-
-  private applyGi(mat: ShaderMaterial): void {
-    const gi = this.babylonGi;
-    if (!gi) return;
-    for (const name of GI_SAMPLER_NAMES) mat.setTexture(name, gi.textures[name]);
-    mat.setVector4("giGrid", gi.grid);
-    mat.setVector4("giWindow", gi.window);
-    mat.setVector4("giShade", gi.shade);
-    mat.setVector4("giBand", gi.band);
-    mat.setVector4("giExtra", gi.extra);
-    mat.setFloats("giSlotChannel", gi.slotChannel as unknown as number[]);
   }
 
   /**
@@ -2651,14 +2545,14 @@ export class CelMaterialFactory {
   }
 
   /**
-   * Seeds a new cel material with every shadow it samples, then the
-   * irradiance volume. Both ride this one door because every one of the six
-   * creation paths comes through it, so no cel material can be born without
-   * a texture its sampler list declares.
+   * Seeds a new cel material with every shadow it samples. Every one of the
+   * six creation paths comes through this one door. (The irradiance volume's
+   * seven are bound to no Babylon material: a GI-`off` set of Babylon's
+   * own, `babylonGi`, stood there for the map editor's build alone until
+   * `BABYLON_EXIT.md` X5.3d. Our renderer's frame binds the volume's own.)
    */
   private applyShadow(mat: ShaderMaterial): void {
     this.shadows.applyShadow(mat);
-    this.applyGi(mat);
   }
 
   private applyPointLights(mat: ShaderMaterial): void {
@@ -2773,16 +2667,17 @@ export class CelMaterialFactory {
   }
 
   /**
-   * What a glazing material is BORN with: a bound cube and a strength of zero,
-   * which is a pane that reflects the sky and nothing else.
+   * What a glazing material's recipe is BORN with: a probe of strength
+   * zero, which is a pane that reflects the sky and nothing else.
    *
    * Unlike every other `apply*` here this is not a copy of shared state, and
    * that is the whole shape of the reflection: `glassProbeRecipe` is what
-   * gives a round's group a real one, on the spot rather than from a walk; an
-   * editor build's glazing keeps this, its default cube at a strength of 0.
+   * gives a round's group a real one, on the spot rather than from a walk.
+   * The cube is no part of a recipe (`GlassDraw.point` binds it); the default
+   * cube a Babylon glazing material was bound to went with the map editor's
+   * build that sampled it, at `BABYLON_EXIT.md` X5.3d.
    */
   private applyReflection(mat: ShaderMaterial): void {
-    if (this.defaultCube) mat.setTexture("reflectionCube", this.defaultCube);
     this.own(mat, "reflectBoxMin", Vector3.Zero());
     this.own(mat, "reflectBoxMax", Vector3.Zero());
     this.own(mat, "reflectProbe", new Vector4(0, 0, 0, 0));

@@ -538,9 +538,9 @@ their layout declares), or the draw is silently lost. **A shared body declares
 NOTHING** (`wgsl/chunks.ts`): `src/render/` includes it, so both sides declare.
 
 **Every cel material is FROZEN, and `CelMaterialFactory.remember` is the one
-door into the cache.** **What breaks it is a mesh that GAINS or LOSES a vertex
-COLOUR buffer, bones or morph targets after its first draw** — it keeps the
-effect it compiled first, silently, unless given `resetDrawCache()`.
+door into the cache** — a RECIPE our renderer reads: **no Babylon material
+compiles in any state**, which a DEV counter the draw log asserts holds there
+(`core/babylonCompiles.ts`, until X6.1 deletes the cel program's declarations).
 
 Cel materials carry their own light as uniforms (key, ambient, sky fill, up to
 16 point lights) and `LightingSystem` is the sole owner of dynamic light: **a
@@ -554,14 +554,12 @@ is OUR renderer's** (`render/GiCompute.ts`, X5.1b): `update` ARMS a dispatch and
 a LATE prepare records it, **pushed after `ProbeBake`'s — the bake reading last
 frame's compose rests on that registration order alone** — and an armed frame
 whose prepares never ran is dropped and THROWN in a dev build (logged once in
-production), never skipped in silence. **An editor build has
-NO GI until X5.3** (the owner's decision): no Babylon cel material is handed the
-volume, every one holding GI `off` (`CelMaterialFactory.babylonGi`).
+production), never skipped in silence.
 
 **THERE ARE TWO SHADOW MAPS, AND WHICH CASTERS GO IN WHICH IS DECIDED BY REFRESH
 RATE RATHER THAN BY WHAT THEY ARE.** The world's re-renders only when its
-texel-snapped focus MOVES, so **nothing that ANIMATES may be registered with
-`shadows.setCasters`**. Soldiers and hulls have a map of their own
+texel-snapped focus MOVES, so **nothing that ANIMATES may be a world caster**
+(`BlockHandover`'s `PASS_CASTS`). Soldiers and hulls have a map of their own
 (`systems/BodyShadows.ts`, drawn by `render/BodyShadowMap.ts`): **a rig's shape
 is `RAGDOLL_BONES` and a hull's is its collider box, off its OWN fields and
 never its mesh**, and **the local player casts nothing**. **The world's map is
@@ -656,22 +654,22 @@ the first reading the frame, the last active one given the canvas, any other
 a pool target of its own), whose passes `shaders/PostPasses.ts` opens with
 public API, and **no Babylon `PostProcess` stands on the camera**. **The scene
 draws STRAIGHT INTO the frame** — `PostPasses`' render target, the camera's
-`outputRenderTarget` through the camera's render (off after it, for the
-editor's gizmo layer), its formats `FRAME_TARGETS`' — **and clears it
+`outputRenderTarget` for good, its formats `FRAME_TARGETS`' — **and clears it
 itself** (Babylon's clear of a camera's output target, under `scene.autoClear`),
 so **the frame's opening pass is the frame's, not the canvas's**, and
 **`FrameDepth` reads its depth by the public getter**.
 
-**The GLOW draws the EMISSIVE meshes and nothing else, its occlusion being the
-FRAME's own depth buffer** (`src/shaders/GlowPass.ts`). **Its blur and box
+**The GLOW's mask is the EMISSIVE surfaces and nothing else, every draw in it
+OURS, its occlusion being the FRAME's own depth buffer** (`src/shaders/GlowPass.ts`
+binds the pass; Babylon draws no mesh there since X5.3d). **Its blur and box
 filter are OUR draws in passes `GlowPass` still binds** (`render/GlowBlur.ts`,
 Babylon's `kernelBlur` ported as compiled): the blur's TEXT is a function of
 its kernel, so every rung at every render scale is declared at construction
 (`glowKernels`) and a pixel-ratio change's new widths are the one exception
 to the seal — no bloom is drawn while they compile, an accepted live
-difference (`docs/rendering.md`). **What may bloom is read
-per mesh every frame** — an emissive colour, no `metadata.noGlow`, and `Game`'s
-`GlowRules` — so nothing excludes a mesh by hand; **on the kit screen only the
+difference (`docs/rendering.md`). **What may bloom is asked
+by every draw every frame** — an emissive colour, no `noGlow`, and `Game`'s
+rules (`glowAdmits`, `bloomColour`) — so nothing excludes a surface by hand; **on the kit screen only the
 STAGE blooms** (`Game.glowAdmits`). **A map's merged emissives are a PALETTE
 like its albedo** (`shaders/EmissiveWorld.ts`): their colour is a slot in
 `uv2.x` under a WHITE `emissiveColor`, so **a new reader asking a material what
@@ -682,7 +680,7 @@ draw**, **`noGlow` is read PER SURFACE at the take** (a world fire's too), and
 **OUR renderer (`src/render/`) draws INSIDE Babylon's frame through ONE seam**
 (`render/babylonSeam.ts`, the only file there that names Babylon, and only as
 types), and **no draw of ours needs anything of Babylon's in group 0**: the seam
-tells every point whether Babylon visits the group or not. The frame's uniforms are PULLED off the factory's fields
+tells every point at the draw phase's end, Babylon visiting no group. The frame's uniforms are PULLED off the factory's fields
 (`CelMaterialFactory.fillFrame`), so **a new value every cel material holds owes
 `render/frame.ts` a field and `fillFrame` a line** — a shared TEXTURE the same,
 in `FRAME_TEXTURES` and `fillFrameTextures`. **A material's OWN value is set
@@ -966,14 +964,13 @@ record. `GameMap.world` keeps it for every surface:
   writes no depth at all. It was called `noOutline` while an inverted hull read
   it; **it is deliberately absent now from grass, water and both debris pools**,
   which the ink does draw on purpose.
-- `noGlow: true` — out of the bloom. `GlowPass` reads it per mesh every frame,
-  so a mesh built at any time needs only the flag — but the emissive PALETTE
-  and a world FIRE, which have no mesh, read it at the TAKE, PER SURFACE
+- `noGlow: true` — out of the bloom. Every draw into the glow's mask is ours, and
+  the emissive PALETTE and a world FIRE, which have no mesh, read it at the TAKE, PER SURFACE
   (`BlockHandover`, `takeFire`), so it must be on the part when the build hands it over: it keeps that surface out of the mask alone;
-  a spark, disc, scorch or blob has no mesh either and blooms by KIND (`FarthestRun`'s `blooms`: a spark alone). A mesh that stays in bloom is faded with distance instead
-  (`GlowRules.colour` in `Game`); the moon is no mesh, and not in the valley
+  a spark, disc, scorch or blob has no mesh either and blooms by KIND (`FarthestRun`'s `blooms`: a spark alone). A surface that stays in bloom is faded with distance instead
+  (`Game.bloomColour`); the moon is no mesh, and not in the valley
   to be fogged out of.
-- `noShadowCaster: true` — excluded from `ShadowSystem.setCasters()`. Flat receivers
+- `noShadowCaster: true` — excluded from the shadow casters (`BlockHandover`'s pass masks). Flat receivers
   (ground, roads) need it: casting from them is pure shadow acne.
 - `block: "3,2"` — which map block a merged visual came from (the block's side
   is `MapLayout.blockSize`, 48 m by default). A **value**,

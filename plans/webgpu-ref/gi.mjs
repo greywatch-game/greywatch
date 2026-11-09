@@ -458,7 +458,7 @@ await page.evaluate(async () => {
     return st.call(this, channel, texture, ...rest);
   };
   // The volume's doors, stamped with the frame and the state.
-  for (const k of ["setMap", "setQuality", "clearMap", "worldMoved"]) {
+  for (const k of ["setMap", "setQuality", "clearMap"]) {
     const f = gi[k];
     gi[k] = function (...a) {
       const c = { call: k, arg: k === "setQuality" ? a[0] : undefined, frame: P.frame, state: g.state };
@@ -1349,7 +1349,7 @@ for (let mi = 0; mi < maps.length; mi++) {
     return { records: P.records.map((r) => [r.f, r.state, r.gi.some((x) => x[0] === "gi-trace") ? 1 : 0]), calls: P.callsAll };
   });
   for (const c of calls) {
-    if (c.call !== "setMap" && c.call !== "setQuality" && c.call !== "worldMoved") continue;
+    if (c.call !== "setMap" && c.call !== "setQuality") continue;
     if (c.arg === "off") {
       report.firstDispatch.push({ what: `setQuality(off) at frame ${c.frame} in ${c.state}`, frames: null, state: "none: nothing dispatches at off" });
       continue;
