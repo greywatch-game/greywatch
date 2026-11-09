@@ -356,16 +356,6 @@ function fingerprintMap() {
       if (!mine.every((x, k) => Object.is(x, theirs[k]))) boundsCheck.unequal.push([i, m.name]);
     });
   }
-  // A mesh's SURFACE index, by identity — the index its entry in `visuals`
-  // above has: -1 is a mesh no surface's record names.
-  const visualIndex = new Map();
-  if (surfaces) surfaces.forEach((s, i) => {
-    const v = visualOf(s, i);
-    if (v >= 0) visualIndex.set(map.visuals[v], i);
-  });
-  else map.visuals.forEach((m, i) => visualIndex.set(m, i));
-  const indexOfVisual = (m) => visualIndex.get(m) ?? -1;
-
   return {
     visuals,
     lists: {
@@ -380,10 +370,9 @@ function fingerprintMap() {
       ]),
       // A group's SURFACE index: its record's (`PaneGroup.record`) since
       // BABYLON_EXIT.md X4.6e, where a round's group has no mesh; its mesh's
-      // before, which was that same index.
-      paneGroups: (map.paneGroups ?? []).map((pg) => [
-        typeof pg.record === "number" ? pg.record : indexOfVisual(pg.mesh), [...pg.panes], pg.block,
-      ]),
+      // before, which was that same index (and `PaneGroup.mesh` is gone since
+      // X5.3e, so the record is the one answer).
+      paneGroups: (map.paneGroups ?? []).map((pg) => [pg.record, [...pg.panes], pg.block]),
       pieces: map.world ? map.world.pieces.map((p) => [p.list, p.index]) : null,
       // The collider DATA (BABYLON_EXIT.md X5.3a), and since X5.3e the whole
       // of a collider: `boxGroups` as DATA — the `colliderBoxes` indices each

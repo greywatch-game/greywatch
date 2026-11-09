@@ -3124,3 +3124,22 @@ carves it out since X5.3b's review.
 Either carve `#mixer-panel` out of `.kitting` and `.setting` by name (as
 `#hud-fps` is), or correct the sentence in `docs/audio.md`; then F4 over the kit
 screen in a dev build.
+
+## 72. The canopy-closure probe owes a port: a round has no visual mesh to pick and a crown is no collider
+
+**Open since `BABYLON_EXIT.md` X5.3e** (recorded by its review). `VERIFYING.md`'s
+canopy recipe made the visual meshes pickable and cast straight up from a grid
+of ground points, the hit fraction being the closure. A round's world has been
+our renderer's since X3.7 and X4.6e, so `scene.meshes` is 0 in `playing` and a
+pick meets nothing; X5.3e took the colliders out of the scene as well, and they
+were never the answer, since a crown is no collider and `map.rays` cannot see
+it. The figures it took stand as measured (Greyfen's canopy tree ~60-100 m2 of
+effective crown) but cannot be re-taken.
+
+### How to settle it
+
+Port the cast to the scatter as our renderer is handed it
+(`BuildOptions.onScatter`, `world/scatterVariants.ts`): each `ScatterSet`'s
+parts in the variant's own frame, through each placement's world matrix
+(`matrices`), a vertical ray tested against those triangles (a crown's bounds
+first). Then re-take Greyfen's canopy tree once against the figure above.

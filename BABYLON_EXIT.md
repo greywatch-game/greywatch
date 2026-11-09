@@ -4592,7 +4592,7 @@ loss**: Babylon's post chain rebuilds after a loss today and ours will not
   header; `FINDINGS.md` 5, 16 and 52; the gate note after Phase 4 (above) and the
   "Contracts this plan rewrites" rows for the glow and `shaderLanguage`.
 
-### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it; the split was proposed by a planning agent's read at b3cea5d) — X5.3a **LANDED** (f51b043, its review 85a2273), X5.3b **LANDED** (111829f, its review 64de1d1), X5.3c **LANDED** (1b1f829, its review a22098a), X5.3d **LANDED** (8be80ec, its review 85ab629), X5.3e **LANDED** (a86cdae)
+### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it; the split was proposed by a planning agent's read at b3cea5d) — X5.3a **LANDED** (f51b043, its review 85a2273), X5.3b **LANDED** (111829f, its review 64de1d1), X5.3c **LANDED** (1b1f829, its review a22098a), X5.3d **LANDED** (8be80ec, its review 85ab629), X5.3e **LANDED** (a86cdae, its review HASHREV)
 
 **This replaces the entry that ported the editor.** That entry put `F2`'s editor on our
 renderer: its unmerged build drawn per item, picking against `RayWorld`, our own move and
@@ -5207,7 +5207,8 @@ reviews: the first is the feature, the second is the renderer. The colliders com
   - **Rewrites:**
     - **`CLAUDE.md`:** "Visual meshes and collider proxies" (the table's Collider row, no
       mesh), the glass paragraph's one write, and the metadata contract (`solid` leaves
-      it: six flags and two values).
+      it: six flags and two values — five, counted, its review found: the "seven" it took
+      one from was already one over).
     - **`docs/world.md`:** the collider merge and the struts.
     - **`docs/build.md`:** `merge:hash`'s lists.
     - **`FINDINGS.md`:** 26's collider sub-thread closed with its numbers.
@@ -5239,6 +5240,24 @@ reviews: the first is the feature, the second is the renderer. The colliders com
   a match, the mixer and viewer keys; `?profile&gpu` within 2.8%; typecheck, build, corecheck,
   `gate`, `shaders`, `maps:check`. Install (`FINDINGS.md` 26, closed): `build:total` 2-16% faster,
   the heap a map holds roughly halved (12-54 MB a map). **Not run**: the phone.
+
+  **Its review** (HASHREV; 2026-11-09; no change to the game: comments, documents, two
+  instruments and a skill's script; the full note is in `plans/done/babylon_exit_landed.md`)
+  found no bug in the game. `VERIFYING.md`'s canopy recipe picked visual meshes a round no
+  longer makes, and a crown is no collider for `map.rays` to stand in: it is marked as owing a
+  port, `FINDINGS.md` 72 saying how (the scatter's sets, through each placement's matrix). The
+  metadata contract's count was one over before this step and stayed so: **five** flags and two
+  values (`CLAUDE.md`, this entry's Rewrites and the note's deviation 2 say so). `PhysicsWorld`'s
+  floor and box comments no longer name a clone or a collider mesh; `CLAUDE.md`'s `merge:hash`
+  line names the collider data, its "a collider is never a candidate" goes (vacuous, and a line
+  saved: 1,597 lines still), and `MapBuilder`'s header no longer names `solid`. The bake's
+  emitted header, held byte for byte by this step, is booked on X6.1's Rewrites with the
+  sentences to change. `merge:hash` drops its dead `PaneGroup.mesh` fallback and the index it
+  used; the model-detail skill's `perf.mjs` printed Babylon's scene vertices and active meshes,
+  0 in every round, and prints our renderer's (the world's recorded vertices and its draws).
+  **Measured**: both production builds with Vite's hashes folded out, no shipped JS differing
+  (the build stamp and `sw.js`' version alone), so no bank owed; `merge:hash --against` a77fcd7's
+  baseline identical on eight maps; `perf.mjs` on Greyfen; typecheck, build and corecheck.
 
 **Verify, the whole step:**
 
@@ -5408,6 +5427,19 @@ pointer, its history unchanged):
 - **Rewrites:** a sweep of `CLAUDE.md`, `docs/build.md`,
   `docs/rendering.md`, `FILES.md` and `VERIFYING.md` for anything still
   describing Babylon.
+  - **The collision bake's emitted header** (`scripts/bake-collision.mjs`' `emit`,
+    so all eight `src/world/*/collision.ts`), which X5.3e held byte for byte (row "X5.3,
+    the collider meshes": `npm run collision` showing no diff at all; booked here by its
+    review, the script's comment pointing here). Three passages still say a collider is a
+    mesh: "One group per collider mesh, because the server merges each group the way the
+    client does" (`rayGroups`: one group a placement's struts, kept grouped on both sides);
+    "that the client merged into one collider mesh each because they are a scatter
+    region's props. What reads it now is a body's sweep, whose ties go in the order the
+    client made those meshes" (`boxGroups`: the client GROUPS them, and the tie order is
+    the groups' own, `RayWorld`'s rank on both sides); and "Anything named here is not
+    also given a mesh of its own" (no collider is a mesh: delete it). Reword the template
+    and re-bake every map in one commit whose diff is that text alone — the boxes, the
+    groups and the source hashes unchanged, which `check-collision` and parity confirm.
 
 ### X6.2 — Merge to `develop` — **S** (decision)
 

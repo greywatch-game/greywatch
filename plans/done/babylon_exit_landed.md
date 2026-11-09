@@ -10722,7 +10722,7 @@ beside the gizmo note in `docs/rendering.md` and in `PostPasses`' header; X5.3 a
 **Measured**: `post.mjs --against` b1203cc's log, both pages: equal, 30,073 values a page, nothing
 excused. Typecheck, build, corecheck and parity pass.
 
-### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it) — X5.3a **LANDED** (f51b043, its review 85a2273), X5.3b **LANDED** (111829f, its review 64de1d1), X5.3c **LANDED** (1b1f829, its review a22098a), X5.3d **LANDED** (8be80ec, its review 85ab629), X5.3e **LANDED** (a86cdae)
+### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it) — X5.3a **LANDED** (f51b043, its review 85a2273), X5.3b **LANDED** (111829f, its review 64de1d1), X5.3c **LANDED** (1b1f829, its review a22098a), X5.3d **LANDED** (8be80ec, its review 85ab629), X5.3e **LANDED** (a86cdae, its review HASHREV)
 
 The plan's `BABYLON_EXIT.md` holds X5.3's brief, its ONE RULE, the step's own rule on retiring
 an oracle, "Every sub-step owes" and the five sub-steps.
@@ -11585,9 +11585,9 @@ identical to the main tree's. Scripts and logs in the session's scratchpad, `x53
   is deleted as well: `GlassFx.clear` was its one listener, and a hook with no listener whose
   documented purpose was the deleted write would be dead. (2) The metadata contract: the plan says
   `solid` leaves it, six flags and two values; `porous`, `rayOnly`, `glass` and `surface` lost their
-  only mesh writer too, so `CLAUDE.md` keeps six flags and two values but says a collider's are
-  fields on its BOX (`porous`, with `glass`; `rayOnly`) or the ray's answer (`surface`,
-  `RayHit.surface`), and there is no `solid`. (3) `recordBox` is folded into `collider()`, so the
+  only mesh writer too, so `CLAUDE.md` keeps six flags and two values (five, counted — corrected
+  by its review, below) but says a collider's are fields on its BOX (`porous`, with `glass`;
+  `rayOnly`) or the ray's answer (`surface`, `RayHit.surface`), and there is no `solid`. (3) `recordBox` is folded into `collider()`, so the
   documented "one place a collider is made" is one function. (4) `surfaces.mjs` (not on the
   plan's list) is fixed, as above. (5) The DEV `assertSweepOrder` is deleted with the meshes it
   checked. (6) The bake's emitted header still says "collider mesh": rewording it would move all
@@ -11599,3 +11599,48 @@ identical to the main tree's. Scripts and logs in the session's scratchpad, `x53
   memo); `strayMesh` now refusing any mesh at all; the readiness wait flipping on frame 1 where it
   flipped on 3 or 4 (the bank byte-equal across it, but any later probe that counted frames from
   it would see the difference); `GlassSystem` without `onCleared`.
+
+**Its review** (HASHREV; 2026-11-09; no change to the game: comments, documents, two instruments
+and a skill's script) found no bug in the game, and documentation and instrument findings, each
+checked against the tree first. Measured headless on the Windows box against a BEFORE at a77fcd7,
+in the worktree `greywatch-2-before-x53a` moved there (`package-lock.json` unchanged, no `npm ci`).
+Scripts and logs in the session's scratchpad, `x53e-fix/` (`run.sh`, `distcmp.mjs`).
+
+- **The canopy recipe** (`VERIFYING.md`): it made the visual meshes pickable and cast straight up,
+  and this step's added clause said a pick then met only the visuals — but a round makes no visual
+  mesh at all (`scene.meshes` 0 in `playing`, the world our renderer's since X3.7b), so a pick
+  meets nothing, and `map.rays` cannot stand in, a crown being no collider. The recipe now says it
+  owes a port, and `FINDINGS.md` 72 (new; 69 is `depth.mjs glass`'s alone) says how: each
+  `ScatterSet`'s parts through each placement's matrix (`BuildOptions.onScatter`), a vertical ray
+  against those triangles, then Greyfen's canopy tree re-taken once. Its sweep note above it says
+  no merged mesh is made at all, the grouping being data.
+- **The metadata contract's count**: the list names five flags (`porous`, `rayOnly`, `noInk`,
+  `noGlow`, `noShadowCaster`) and two values (`block`, `surface`; `glass` is a `WorldBox` field
+  inside `porous`' bullet). The "seven" this step took `solid` from was already one over, so
+  "six" was too: `CLAUDE.md` says five, and the plan's Rewrites line and deviation 2 above carry
+  the correction rather than lose what was planned.
+- **Comments**: `PhysicsWorld.setMap`'s floor (each block's own vertex arrays, no mesh made of
+  them) and its box orientation (the turn the collider mesh had while it was one);
+  `MapBuilder`'s header ("a visual is never tested: no ray or sweep reads a mesh", not a flag that
+  no longer exists); `CLAUDE.md`'s `merge:hash` command line (the collider data named, as
+  `FILES.md` has it) and the vacuous "a collider is never a candidate" deleted (1,597 lines before
+  and after).
+- **Booked**: the bake's emitted header (deviation 6) on X6.1's Rewrites, its three passages
+  quoted, to be reworded with all eight bakes re-made in one text-only commit;
+  `bake-collision.mjs`' comment points there.
+- **Instruments**: `merge-hash.mjs`' `paneGroups` reads `pg.record` alone — the `PaneGroup.mesh`
+  fallback was dead (`record` is a number on every build) and `visualIndex`/`indexOfVisual`, its
+  only user, go with it. The model-detail skill's `perf.mjs` printed `scene.getTotalVertices()`
+  and `getActiveMeshes().length`, 0 in every round (its run at a77fcd7 printed "scene vertices 0"),
+  and `SKILL.md` §7 asked for both: it prints the world's vertices (`GameMap.world`'s
+  `vertexCount`s, the blocks, the floor and every scatter placement's copy) and the world's draws
+  (`Game.handover.stats.drawn`, `census.mjs`' world term — one draw a material over the GPU's
+  cull, so it moves with a material and not with the vantage), and §7 asks for those.
+- **Measured.** Both production builds compared with Vite's hashes folded out: no shipped JS
+  differs (`index.html`'s build stamp and line endings, `sw.js`' version), so the bank was not
+  owed. `merge:hash --against` a baseline taken at a77fcd7: identical on eight maps, the pane
+  groups among the lists (78, 28, 14 and the proving ground's 734). `perf.mjs` on Greyfen
+  (`--at 80,34,0`): 8,984,379 world vertices and 16 draws at each vantage, 414-471 fps (the
+  parent's printed 0 vertices, then lost the device mid-run, `FINDINGS.md` 64's hang under an
+  uncapped frame). Typecheck, build (its gates) and corecheck.
+- **Not run**: the probes, the bank and the live rounds: nothing shipped moved.

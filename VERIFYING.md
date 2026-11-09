@@ -1329,12 +1329,15 @@ is one machine's:
   Babylon's own `moveWithCollisions` was inert in a headless page — a body
   pushed 10 m into a `checkCollisions` box travelled the full 10 — which is why
   the merged scatter colliders were once verified for BODIES only by
-  equivalence; the merged mesh is read by nothing now.
+  equivalence; since `BABYLON_EXIT.md` X5.3e there is no merged mesh at all,
+  the grouping being data (`boxGroups`).
 - **A canopy is checked by firing rays at the sky, not by looking at a
-  screenshot.** Make the visual meshes pickable (they are `isPickable = false`
-  by default), sample a grid of ground points inside the stand, cast straight up
-  (no collider is a mesh since `BABYLON_EXIT.md` X5.3e, so a pick meets only the
-  visuals), and the hit fraction is the closure. Pair it with the local stem density off `map.colliderBoxes` and the
+  screenshot** — and **the recipe owes a PORT** (`FINDINGS.md` 72). It made the
+  visual meshes pickable, sampled a grid of ground points inside the stand and
+  cast straight up, and the hit fraction was the closure. A round makes no
+  visual mesh to pick any more (the world is our renderer's, `scene.meshes` 0
+  in `playing`), and `map.rays` cannot stand in: a crown is no collider. Pair
+  it with the local stem density off `map.colliderBoxes` and the
   two give the crown's effective area: for randomly placed crowns
   `closure = 1 - exp(-rho * Aeff)`, so `Aeff = -ln(1 - closure) / rho` — which is
   what makes "is a bigger crown worth more than another frond" a measurement

@@ -514,9 +514,10 @@ export class PhysicsWorld {
 
     for (const b of map.colliderBoxes) {
       const shape = hp.box([0, 0, 0], [0, 0, 0, 1], [b.w, b.h, b.d]);
-      // MapBuilder.collider writes `mesh.rotation.set(rotX, rotY, 0)` and
-      // Babylon's Euler order is yaw-pitch-roll, so this is the same
-      // orientation — which is what carries the ramps across for free.
+      // A box turns as its collider mesh did while it was one (until
+      // BABYLON_EXIT.md X5.3e), `rotation.set(rotX, rotY, 0)` in Babylon's
+      // yaw-pitch-roll Euler order, so this is the same orientation — which
+      // is what carries the ramps across for free.
       // `src/math`'s quaternion is Babylon's bit for bit.
       //
       // Bucketed by the box's CENTRE, and a box wider than a block is
@@ -530,9 +531,9 @@ export class PhysicsWorld {
     }
 
     // The floor is the documented collider exception: a heightfield has no box
-    // to stand in for it, so its blocks are mesh clones and come across as
-    // mesh shapes — built from the clones' own vertex arrays
-    // (`GameMap.terrainGeometry`), never from the meshes. They are static, so
+    // to stand in for it, so its blocks come across as mesh shapes — built
+    // from each block's own vertex arrays (`GameMap.terrainGeometry`), and
+    // no mesh is made of them. They are static, so
     // each BVH is built once per map and never again — and they are bucketed
     // by their CENTRE exactly as a box is, so a patch cut on a lattice of its
     // own (`GameMap.terrainBlock`) is in one bucket and hanging out of it,

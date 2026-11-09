@@ -12,8 +12,8 @@
  * "hard" to the impact effects; the floor, which is no box, is the one thing
  * that answers "ground" (`RayWorld`, off `TerrainField`). Geometry added by any
  * other path is invisible to rays AND bots. Colliders must line up with the visuals they
- * stand in for (sparks land on colliders). Visuals must never be pickable or
- * solid. Builders arrive at identity transform; merging then transforming is
+ * stand in for (sparks land on colliders). A visual is never tested: no ray or
+ * sweep reads a mesh. Builders arrive at identity transform; merging then transforming is
  * what makes the merge safe. Must NOT special-case Hollowmere — a second map
  * is one new layout file, and build() takes the layout, the environment and the
  * heightfield as arguments precisely so nothing here can reach for a named one.

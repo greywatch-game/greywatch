@@ -124,7 +124,9 @@ async function bakeMap(browser, url, id) {
     // merged the same way. Flattening it would leave the server guessing
     // where one fence ends and the next begins, and the bake's text (below,
     // which still says "collider mesh") is held byte for byte across that
-    // change: `npm run collision` after it moved nothing.
+    // change: `npm run collision` after it moved nothing. Its rewording, and
+    // the re-bake of all eight maps it costs, is booked on X6.1's Rewrites
+    // (by X5.3e's review), each sentence to change quoted there.
     // Panes, in build order — which is what makes the index into this array a
     // name the client and the authority both know a pane by. Seven numbers and
     // an index: no `rotX` (nothing in the kit tilts a sheet), and `box` is the

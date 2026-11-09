@@ -170,8 +170,9 @@ npm run kit:hash   # fingerprint every kit builder over every placement, the
                    #   footprint table (`scripts/lib/footprints.mjs`)
 npm run merge:hash # kit:hash's other half: builds every map in a real browser
                    #   and hashes what the MERGE hands the world — every
-                   #   visual, collider and terrain collider, and the box
-                   #   lists — and fails on any mesh left a PART. Proves a
+                   #   merged visual, the box lists and the collider DATA
+                   #   (`boxGroups` as indices, each strut group and floor
+                   #   block hashed) — and fails on any mesh left a PART. Proves a
                    #   change to how parts are built or merged moved nothing,
                    #   and is owed by every Babylon upgrade (docs/build.md).
                    #   `-- --out f.json`, `--against f.json`, `--maps a,b`
@@ -622,13 +623,12 @@ cannot hold is REFUSED (a DEV throw `merge:hash` fails on), and a pass of ours
 that cannot draw its world tells the failure it was HANDED WITH it:
 **`Game.worldFailed`**, the menu and a toast, never a fallback.
 **The frame WALKS the scene, and the scene is the map.** `WorldCulling`
-**replaces `scene.getActiveMeshCandidates` and writes nothing onto any mesh**.
-**A collider is never a candidate**, and a CELL is grown from the RECORDS
-(`GameMap.world`, whole). **The SCATTER is drawn ONCE**, as INSTANCES of its
-variants. **A block-keyed surface (a pane, a fire) is offered only while
-the camera is inside the map's `fogEnd`**, **everything else is ELIGIBLE**,
-and **anything EMISSIVE is exempt** from the size gate.
-**Nothing pooled may ever be block-keyed.**
+**replaces `scene.getActiveMeshCandidates` and writes nothing onto any mesh**;
+a CELL is grown from the RECORDS (`GameMap.world`, whole). **The SCATTER is
+drawn ONCE**, as INSTANCES of its variants. **A block-keyed surface (a pane, a
+fire) is offered only while the camera is inside the map's `fogEnd`**,
+**everything else is ELIGIBLE**, and **anything EMISSIVE is exempt** from the
+size gate. **Nothing pooled may ever be block-keyed.**
 **EVERY BODY, HULL AND WEAPON IS OUR RENDERER'S, and Babylon is made NO RIG,
 HULL OR VIEWMODEL MESH** (`render/BodyDraw.ts`, `HullDraw.ts`, `ViewDraw.ts`):
 a body or a hull is an INSTANCE of its kit, drawn while its switch is on and
@@ -927,7 +927,7 @@ block's own *vertex data* (`GameMap.terrainGeometry`, no mesh). It emits no
 a horizontal step, vertical placement is the ground probe's job, and bots never sweep.
 ### Mesh metadata is a contract
 
-Six flags and two values, all read elsewhere; new geometry that omits them
+Five flags and two values, all read elsewhere; new geometry that omits them
 misbehaves silently. **A collider's are fields on its BOX** (`BoxSpec` onto the
 `WorldBox`) **or the ray's answer** (`surface`), and there is no `solid` flag: a
 box in `colliderBoxes` or a strut in `rayGroups` IS the solid world, and nothing
