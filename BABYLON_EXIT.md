@@ -4592,7 +4592,7 @@ loss**: Babylon's post chain rebuilds after a loss today and ours will not
   header; `FINDINGS.md` 5, 16 and 52; the gate note after Phase 4 (above) and the
   "Contracts this plan rewrites" rows for the glow and `shaderLanguage`.
 
-### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it; the split was proposed by a planning agent's read at b3cea5d) — X5.3a **LANDED** (f51b043, its review HASHREV)
+### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it; the split was proposed by a planning agent's read at b3cea5d) — X5.3a **LANDED** (f51b043, its review 85a2273)
 
 **This replaces the entry that ported the editor.** That entry put `F2`'s editor on our
 renderer: its unmerged build drawn per item, picking against `RayWorld`, our own move and
@@ -4791,7 +4791,7 @@ reviews: the first is the feature, the second is the renderer. The colliders com
   no group 0 and compiles no effect (the post chain has been ours since X5.2d), so "draws the post
   chain alone" above is "draws nothing". **Not run**: a server's match in a browser, the phone.
 
-  **Its review** (HASHREV; 2026-11-09; no change to the game; the full note is in
+  **Its review** (85a2273; 2026-11-09; no change to the game; the full note is in
   `plans/done/babylon_exit_landed.md`) found one bug and nine minor points. **The bug**: the draw
   log's mesh names were read on the session's `frameNo % 20`, so the two-frame card over the
   editor's build was sampled or not as the machine's pace decided; they are now read on a class

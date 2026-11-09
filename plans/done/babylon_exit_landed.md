@@ -10722,7 +10722,7 @@ beside the gizmo note in `docs/rendering.md` and in `PostPasses`' header; X5.3 a
 **Measured**: `post.mjs --against` b1203cc's log, both pages: equal, 30,073 values a page, nothing
 excused. Typecheck, build, corecheck and parity pass.
 
-### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it) — X5.3a **LANDED** (f51b043, its review HASHREV)
+### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it) — X5.3a **LANDED** (f51b043, its review 85a2273)
 
 The plan's `BABYLON_EXIT.md` holds X5.3's brief, its ONE RULE, the step's own rule on retiring
 an oracle, "Every sub-step owes" and the five sub-steps.
@@ -10829,7 +10829,7 @@ tree's `ref/`.
   **Not run**: a server's match in a browser (the live checks are the page's own match), the
   phone.
 
-**Its review** (HASHREV; 2026-11-09; no change to the game: the draw log, `merge:hash`'s
+**Its review** (85a2273; 2026-11-09; no change to the game: the draw log, `merge:hash`'s
 comparator, the bounds check, the generators' `--out`, comments and documents; nothing under
 `src/`) found one bug and nine minor points, each checked against the tree first.
 
