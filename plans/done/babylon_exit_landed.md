@@ -9863,7 +9863,7 @@ seven minor points, each verified against the tree first.
   row's freeze calls; Hollowmere's 16 rows ran it); the throw itself provoked; corecheck,
   parity, `gate`, `shaders` (no game code moved).
 
-### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07; its decisions the owner's, 2026-11-07 and 2026-11-08, rows in "Decisions that are yours") — X5.2a **LANDED** (e5d9390, its review 55ef32c, its held finding F1 fixed 738f5e3), X5.2b **LANDED** (f697f0e, its review e5ab075), X5.2c1 **LANDED** (4747fe7, its review bfa6a6b), X5.2c2 the shafts and the blur **LANDED** (14dd887, its review 7c5030f), its FXAA **LANDED** (cb17a73, its picture change a459e7c, their review 117c5fd), X5.2d **LANDED** (HASHX52D, a picture change, row "X5.2, the boot canvas") — **all LANDED**
+### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07; its decisions the owner's, 2026-11-07 and 2026-11-08, rows in "Decisions that are yours") — X5.2a **LANDED** (e5d9390, its review 55ef32c, its held finding F1 fixed 738f5e3), X5.2b **LANDED** (f697f0e, its review e5ab075), X5.2c1 **LANDED** (4747fe7, its review bfa6a6b), X5.2c2 the shafts and the blur **LANDED** (14dd887, its review 7c5030f), its FXAA **LANDED** (cb17a73, its picture change a459e7c, their review 117c5fd), X5.2d **LANDED** (4f83650, a picture change, row "X5.2, the boot canvas") — **all LANDED**
 
 The plan's `BABYLON_EXIT.md` holds X5.2's brief, its ONE RULE, shape (A), "What it is
 today" (corrected in place by X5.2a, each correction marked) and the five sub-steps.
@@ -10610,7 +10610,7 @@ page, FXAA's draw's X5.2b fields alone excused (30 paths, the new scenario's two
 `fxaa-alone`'s canvas `1735d52707135209` (desk) and `38f1059d519aab3f` (phone) on both trees.
 Typecheck, build and corecheck pass.
 
-**X5.2d LANDED** (HASHX52D; 2026-11-08; a `Picture change:` by the owner's decision, row "X5.2,
+**X5.2d LANDED** (4f83650; 2026-11-08; a `Picture change:` by the owner's decision, row "X5.2,
 the boot canvas": the boot frames before the chain first draws; otherwise no change to the picture
 was measured; no report version, the ink's draw queued inside `render` where Babylon's was).
 **What moved**: the INK is OUR draw, the post chain's FIRST stage (`shaders/CelInk.ts`, its CPU
