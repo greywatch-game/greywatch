@@ -4592,7 +4592,7 @@ loss**: Babylon's post chain rebuilds after a loss today and ours will not
   header; `FINDINGS.md` 5, 16 and 52; the gate note after Phase 4 (above) and the
   "Contracts this plan rewrites" rows for the glow and `shaderLanguage`.
 
-### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it; the split was proposed by a planning agent's read at b3cea5d) — X5.3a **LANDED** (f51b043, its review 85a2273), X5.3b **LANDED** (111829f, its review 64de1d1), X5.3c **LANDED** (1b1f829, its review HASHREV)
+### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it; the split was proposed by a planning agent's read at b3cea5d) — X5.3a **LANDED** (f51b043, its review 85a2273), X5.3b **LANDED** (111829f, its review 64de1d1), X5.3c **LANDED** (1b1f829, its review a22098a)
 
 **This replaces the entry that ported the editor.** That entry put `F2`'s editor on our
 renderer: its unmerged build drawn per item, picking against `RayWorld`, our own move and
@@ -5025,7 +5025,7 @@ reviews: the first is the feature, the second is the renderer. The colliders com
   phone. **`CLAUDE.md`** went from 1,616 lines to 1,600, still over its ~1,500 cap (the note says
   why that is left).
 
-  **Its review** (HASHREV; 2026-11-09; no change to the game; the full note is in
+  **Its review** (a22098a; 2026-11-09; no change to the game; the full note is in
   `plans/done/babylon_exit_landed.md`) found no bug, the round path unchanged, and four
   documentation findings and one minor point. `world/solid.ts` was still named as standing in
   `docs/vehicles.md`, `docs/multiplayer.md`, `MapBuilder`'s header and `kit/core.ts`; each now names
