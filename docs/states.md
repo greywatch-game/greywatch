@@ -80,7 +80,10 @@ way out of a round: `enterMenu` tears the map down and `MenuBackdrop.show` raise
 `#menu-shot` from 0 over its 0.4 s transition, about 300 to 400 ms on Coldharbour, over the
 last map's colour. From the round-over card there is no fade, its picture being up already.
 
-**Those windows show `scene.clearColor` through the post chain.** **At the boot
+**Those windows show `scene.clearColor` through the post chain** — and since
+X5.2c2's picture change (`scene.autoClear` true) the canvas itself is cleared to it as
+every frame opens, so the page's first two or three frames, before the chain first draws,
+show it too, under the boot screen. **At the boot
 that is the boot map's `skyColor`** (`applyClearColor`, from `Game`'s
 constructor, the one write, which `applyEnvironment` goes through too):
 `Game.mapDef` is `readMap()`, `applySky` paints that map and `showMenu`

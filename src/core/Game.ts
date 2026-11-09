@@ -2210,13 +2210,15 @@ export class Game {
     // until X5.2c2 deleted the pipeline (its only pass was FXAA). An editor
     // build's Babylon materials read this; a round's draws are all ours.
     this.scene.imageProcessingConfiguration.isEnabled = false;
-    // And the scene does not clear the CANVAS's colour as a frame opens, as
-    // `DefaultRenderingPipeline` set it (`_setAutoClearAndTextureSharing`) for
-    // as long as it stood: the frame's opening canvas pass LOADS its colour and
-    // clears only the engine's depth (`autoClearDepthAndStencil`). Stated here
-    // so deleting the pipeline moves nothing (X5.2c2); the owner decided it goes
-    // back to Babylon's default, true, as a picture change of its own.
-    this.scene.autoClear = false;
+    // `scene.autoClear` is Babylon's default, TRUE, since X5.2c2's picture
+    // change (the owner's decision, `BABYLON_EXIT.md` row "X5.2, autoClear"):
+    // the frame's opening canvas pass clears the canvas's colour to the scene's
+    // clear colour beside the engine's depth. `DefaultRenderingPipeline` held it
+    // false while it stood; the last pass of the chain overwrites the canvas
+    // whole on every frame it draws, so what moved is only the page's first
+    // frames, before the chain first draws (the clear colour, opaque, where
+    // they were transparent), under the boot screen. X5.2d's scene clear into
+    // the frame's own target rests on it.
     // FXAA: OUR draw since X5.2c2, the post chain's first stage of ours, after
     // the ink it antialiases (`shaders/Fxaa.ts`).
     this.fxaa = new Fxaa();

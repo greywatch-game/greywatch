@@ -92,3 +92,18 @@
 # attach (its switch is its stage's `active()`); the probe no longer logs either.
 **.chain.slots.fxaa
 **.chain.slots.fxaaAttached
+
+# X5.2c2's picture change (`scene.autoClear` true, the owner's decision, row
+# "X5.2, autoClear"), against the FXAA commit's log: the frame's OPENING canvas
+# pass — always `passes[0]`, the scene's first bind, so the index names that pass
+# alone in every scenario — clears its colour to the scene's clear colour where
+# it loaded it, so its load op, clear value and the canvas's hash after it move;
+# every later pass, the final canvas's hash among them, is unmoved (the last
+# pass overwrites the canvas whole). COMMENTED OUT, being for a comparison ACROSS
+# the change only — a later sub-step compares against a parent on the same side
+# of it and must see its own passes[0]; pass them as --ignore= by hand to compare
+# a log from before it:
+#   **.passes[0].color[0].loadOp
+#   **.passes[0].color[0].clear
+#   **.passes[0].out[0].hash
+#   **.chain.autoClear

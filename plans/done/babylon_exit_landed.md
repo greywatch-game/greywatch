@@ -9863,7 +9863,7 @@ seven minor points, each verified against the tree first.
   row's freeze calls; Hollowmere's 16 rows ran it); the throw itself provoked; corecheck,
   parity, `gate`, `shaders` (no game code moved).
 
-### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07; its decisions the owner's, 2026-11-07 and 2026-11-08, rows in "Decisions that are yours") — X5.2a **LANDED** (e5d9390, its review 55ef32c, its held finding F1 fixed 738f5e3), X5.2b **LANDED** (f697f0e, its review e5ab075), X5.2c1 **LANDED** (4747fe7, its review bfa6a6b), X5.2c2 the shafts and the blur **LANDED** (14dd887, its review 7c5030f), its FXAA **LANDED** (HASHF)
+### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07; its decisions the owner's, 2026-11-07 and 2026-11-08, rows in "Decisions that are yours") — X5.2a **LANDED** (e5d9390, its review 55ef32c, its held finding F1 fixed 738f5e3), X5.2b **LANDED** (f697f0e, its review e5ab075), X5.2c1 **LANDED** (4747fe7, its review bfa6a6b), X5.2c2 the shafts and the blur **LANDED** (14dd887, its review 7c5030f), its FXAA **LANDED** (HASHF, its picture change HASHP)
 
 The plan's `BABYLON_EXIT.md` holds X5.2's brief, its ONE RULE, shape (A), "What it is
 today" (corrected in place by X5.2a, each correction marked) and the five sub-steps.
@@ -10567,3 +10567,27 @@ WebGPU, is not in the text (`Fxaa.ts`' header; `Game.setFxaaEnabled`).
   Hollowmere `lanterns` byte-equal in all four pairings, the rest within each tree's own
   floor. **`?profile&gpu`** (Coldharbour and Hollowmere, the parent and the step alternating four times; this session's GPU frame ran ~1.7x the earlier sessions' on BOTH trees): `render` 0.94 → 0.92 and 0.83 → 0.81 ms (means), `gpu.frame` Coldharbour 4.37 → 4.35 ms; Hollowmere's `gpu.frame` spread 3.7-5.9 ms on both trees (parent 4.48/5.66/5.22/5.86, step 4.92/3.74/3.88/5.20), wider than 8% within each tree and not slower on the step; Babylon's draw calls 2 → 1. `gate` (7), `shaders` (7), typecheck, build,
   corecheck and parity pass.
+
+**X5.2c2's picture change — `scene.autoClear` true** (HASHP; 2026-11-08; the owner's decision,
+row "X5.2, autoClear"): `Game` no longer states `scene.autoClear = false`, so the scene is at
+Babylon's default, as the plan said deleting the pipeline would leave it. **What moved**: the
+frame's OPENING canvas pass — the scene's first bind, which clears the engine's depth —
+CLEARS its colour to the scene's clear colour where it loaded it. **Measured**: the probe
+`--against` the FXAA commit's log, both pages, sixteen scenarios: exactly that pass's load op
+(`load` → `clear`), clear value (null → the clear colour, Hollowmere's `[0.0314, 0.0510,
+0.0863, 1]`) and the canvas's hash after it (transparent zeros → the clear colour), and
+`chain.autoClear` — 128 paths, 4 a scenario; every later pass and every FINAL canvas hash
+equal in all 32 scenarios (the last pass overwrites the canvas whole, no blend). **The
+picture moves on the page's first frames alone**: two or three frames of every boot (both
+pages, every boot of the live half), before the chain first draws, show the boot map's clear
+colour, opaque, where the parent's canvas held transparent zeros — under the boot screen
+(`#boot`, opaque, which starts its fade two animation frames after `Game`'s constructor).
+**The canvas-only frame after a render-scale change or a resize is unaffected**: its canvas
+pass is not the scene's clear and still loads, on both sides (the plan predicted it would
+move; measured, it does not). The bank, 147 rows by `exact.mjs` against the FXAA commit's
+frames: default 147 byte-equal; `volumetrics=low` 146 byte-equal and `sarab-ground` 98
+pixels by 2/255 (Sarab alone under the same query, two processes a tree: each tree drew
+both frames, one process each — cross-process residue), `sarab-shelf` within its flake;
+`volumetrics=high` 147 byte-equal; the same rows red against `ref/` (34, 102, 93); `gate`
+(7 maps) clean. The lines naming it are in `post-expected.txt`, commented out (a later
+sub-step compares against a parent on the same side of the change).
