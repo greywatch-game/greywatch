@@ -4592,7 +4592,7 @@ loss**: Babylon's post chain rebuilds after a loss today and ours will not
   header; `FINDINGS.md` 5, 16 and 52; the gate note after Phase 4 (above) and the
   "Contracts this plan rewrites" rows for the glow and `shaderLanguage`.
 
-### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it; the split was proposed by a planning agent's read at b3cea5d) — X5.3a **LANDED** (f51b043, its review 85a2273)
+### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it; the split was proposed by a planning agent's read at b3cea5d) — X5.3a **LANDED** (f51b043, its review 85a2273), X5.3b **LANDED** (111829f)
 
 **This replaces the entry that ported the editor.** That entry put `F2`'s editor on our
 renderer: its unmerged build drawn per item, picking against `RayWorld`, our own move and
@@ -4867,6 +4867,30 @@ reviews: the first is the feature, the second is the renderer. The colliders com
     - `CLAUDE.md`'s state-machine and lid sentences;
     - the viewer's contract headers;
     - `FILES.md`.
+
+  **X5.3b LANDED** (111829f; 2026-11-09; no change to a round: a dev-only lid, the editor's key,
+  documents and the draw log). The full note is in `plans/done/babylon_exit_landed.md`. `F2` raises
+  the viewer (`src/viewer/`, one dynamic `import()` behind the DEV gate in `Game.toggleViewer`) over
+  `playing`, `dying` and `deploy`, `SCREENS.viewer` as planned; the overlays are a 2D plan in its
+  panel (`planFromWorld` + `paintPlan`, the nav buckets at a pixel a cell, the marks, the camera
+  warped by a click). **Where the plan's text was not followed to the letter**: the moved modules
+  (`EditorCamera`, `validate.ts`, `navOverlay`'s classification, the proxies, the work light) are
+  COPIES — the editor keeps its own, untouched but for its key and its panel's key line, so it
+  stands as the oracle (X5.3c deletes the directory, its list gaining `EditorCamera.ts`,
+  `EditorPanel.ts`, `panel.css`, `navOverlay.ts`, `proxies.ts`, `validate.ts`, `workLight.ts` and
+  `tuning.ts`); `validate`'s `ref` is a `FindingRef` of its own; `HUD.setEditing`'s `.editing` rule
+  is a catch-all by visibility, since the lid stands over the deploy screen and the minimap;
+  lowering with `F2` also runs the camera tail once at `dt` 0 from the shadow focus the lid found.
+  **Measured** against a BEFORE at f5c22c5: `validate`'s findings equal to the editor's own on all
+  seven maps; the nav classification equal to `navOverlay`'s float for float (84 comparisons, every
+  route, round and editor maps); the draw log with the viewer up — no Babylon draw, no group-0
+  visit, no effect compile, no `[pipelines]` line — every other class equal to X5.3a's BEFORE, with
+  the viewer and without it, and to itself across two processes; the page's own match held (0
+  `advance`s under the lid); a server's round carrying on (`npm run server`, `?mp=`); `F2` from
+  the three states and nothing from fifteen others; every bank row byte-equal (147, 147, 146 and the
+  pistol's flake); probes, `merge:hash`, `maps:check` equal; absent from `dist/`; `?profile&gpu`
+  within 2.2%; typecheck, build, corecheck, parity, `gate` and `shaders`. **Not run**: the phone;
+  by a person's hands, the mouse look and the plan's click (scripted only).
 
 - **X5.3c — the editor deleted** (no change to the game; the editor's instruments
   retired, row "X5.3, retire the editor") — **M**.

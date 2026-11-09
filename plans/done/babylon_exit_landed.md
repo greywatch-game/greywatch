@@ -10722,7 +10722,7 @@ beside the gizmo note in `docs/rendering.md` and in `PostPasses`' header; X5.3 a
 **Measured**: `post.mjs --against` b1203cc's log, both pages: equal, 30,073 values a page, nothing
 excused. Typecheck, build, corecheck and parity pass.
 
-### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it) — X5.3a **LANDED** (f51b043, its review 85a2273)
+### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it) — X5.3a **LANDED** (f51b043, its review 85a2273), X5.3b **LANDED** (111829f)
 
 The plan's `BABYLON_EXIT.md` holds X5.3's brief, its ONE RULE, the step's own rule on retiring
 an oracle, "Every sub-step owes" and the five sub-steps.
@@ -10885,3 +10885,132 @@ comparator, the bounds check, the generators' `--out`, comments and documents; n
 **Gates**: typecheck, build (`check-maps` and `check-proving` in it), corecheck, parity,
 `maps:check`, the bounds check and `--perturb`, `merge:hash --against` fba1119's baseline, the
 draw log as above. Nothing under `src/` moved, so the bank was not re-run.
+
+**X5.3b LANDED** (111829f; 2026-11-09; no change to a round: a dev-only lid and its modules, the
+editor moved to `Shift+F2`, the `.editing` rule, a getter on `Player`, documents, and the draw log's
+viewer steps). Measured headless on the Windows box against a BEFORE at f5c22c5, in the worktree
+`greywatch-2-before-x53a` moved there (`package-lock.json` had not moved since fba1119, so no `npm
+ci`), its `ref/` identical to the main tree's; X5.3a's review's draw log at fba1119 as the draw
+log's BEFORE (nothing under `src/` moved between the two).
+
+- **What it is.** `src/viewer/`, reached only through `Game.toggleViewer`'s one dynamic `import()`,
+  the whole method body behind the DEV gate as `toggleMixer`'s is; nothing in it imports
+  `src/editor/`. `index.ts` (the session: it saves the camera's pose — position, the full rotation
+  with its roll, the field of view — opens the free camera where the eye already is, sweeps `home0`
+  and `home1` on the standing graph for `validate`'s check 2, runs `validate`, builds the plan and
+  the panel, applies the work light; `dispose` puts back the map's own environment and the pose),
+  `ViewerCamera.ts` (`EditorCamera` on `src/math` vectors, `setTarget` handed a `toBabylon` copy, the
+  wheel over the panel scrolling it rather than changing speed), `validate.ts` (the editor's
+  checks, `at` a `src/math` `Vector3` — `cp.pos.clone()` where the editor had `toBabylon(cp.pos)` —
+  and `ref` a `FindingRef` of its own), `navPlan.ts` (`navOverlay`'s per-surface decision in its
+  order; a per-cell reduction by slot, or every slot with red over amber over green; `fieldFor`,
+  the graph's own field or one swept with `MapBuilder.derive`'s goal and radius), `marks.ts` (the
+  proxies' shapes: flags at their true radius, spawn arrows, water and grass rects, scatter rings
+  and frames turned by `MapBuilder`'s `rotY`), `ViewerPlan.ts` (`planFromWorld` painted by
+  `paintPlan` over the play square, the deploy screen's projection; the nav buckets as an
+  `ImageData` a pixel a cell scaled unsmoothed; the marks, `paintZone`/`paintFlagIcon` for the
+  flags; the camera's dot and cone, held to the edge past the square; a click warps the camera to
+  18 m over the floor and 22 m back, the editor's `goTo` stand-off), `ViewerPanel.ts` and
+  `viewer.css` (the readout, the plan, three toggles and two picks as grids of equal shares, the
+  findings, key help), `workLight.ts`, `tuning.ts`. **No draw and no pipeline** of ours or
+  Babylon's: the plan is a 2D canvas.
+- **The lid.** `SCREENS.viewer` is `{ covers: ["playing","dying","deploy"], holdsWorld: true,
+  roundBehind: true, inRound: false }`, `LidState` gains `viewer`, `takeDown` gains its arm
+  (`closeViewer`: the session's `dispose`, `HUD.setEditing(false)`, the weapon as the lid found it —
+  `Player.bodyIsHidden`, a getter added, so a driver's hidden weapon stays hidden — and
+  `sfx.setSuspended(false)`). `toggleViewer` asks the state before its import (so `F2` on the menu
+  fetches nothing) and raises the lid BEFORE it changes anything, so the pointer lock's loss lands
+  on `viewer` and pauses nothing; it hides the weapon, puts `.editing` on the HUD, cancels a
+  resume's lock chase, suspends the audio clock where the world is held (the pause's reason), lets
+  go of the lock and builds the session. Lowering it with `F2` owes the lock back to a live frame
+  (the resume's route) and runs `updateSceneForCamera` once at `dt` 0 from the shadow focus the
+  lid found — the deploy screen under it runs no tail, and the viewer's camera moved the shadow
+  window, the light slots and the lamps' atlas. `updateViewer` is the editor's tail renamed, with
+  the round's `pushers` where the editor passed `NO_SOLDIERS`, its forward crossing into the
+  Babylon shadow focus by value. `hud.css`'s `.editing` list becomes a catch-all by visibility
+  (`.kitting`'s shape), carving out both dev panels, `#hud-fps`, `#prof`, `#cullcheck` and
+  `#toasts`: the lid stands over the deploy screen, the minimap and the gun marker, and they come
+  back unredrawn.
+- **Where the plan's text was not followed to the letter, and why.** (1) The modules the plan
+  says MOVE (`EditorCamera`, `validate.ts`, the work light) and those whose part moves
+  (`navOverlay`'s classification, the proxies' shapes, the panel, the tuning) are COPIES: the
+  editor keeps its own, untouched but for the one line of `Game` that moves its key and its
+  panel's "back to the game" key line, so it stands beside the viewer as the oracle its checks are
+  graded against. X5.3c deletes the directory whole; its explicit list gains `EditorCamera.ts`,
+  `EditorPanel.ts`, `panel.css`, `navOverlay.ts`, `proxies.ts`, `validate.ts`, `workLight.ts` and
+  `tuning.ts`. (2) `validate`'s `ref` is `FindingRef` (three of `SelectionRef`'s members) so the
+  viewer imports nothing of the editor's. (3) The `.editing` catch-all above. (4) The dt-0 tail on
+  `F2`'s lowering. (5) The work light opens ON, the editor's default. (6) Over a held world the
+  tail runs at the frame's `dt`, as the editor's did: the foliage, the water and the lamps'
+  flicker move while the bodies stand still (the plan's "the editor's tail, renamed").
+- **`validate` against the editor** (a scratch script, one boot, the seven maps in turn: deploy,
+  `toggleViewer`, the viewer's findings; `toggleEditor` — `Shift+F2`'s, which took the viewer down
+  through `go("editor")` on every map — and the editor's own findings off its unmerged build;
+  severity, text, `at` as three numbers, `ref` and weight compared as JSON): **equal on all seven**
+  (Hollowmere 9, Greyfen 6, Coldharbour 9, Harrowmead 8, Sarab 8, Cinderhaven 629, Kurenai 0). The
+  round's merged build and the editor's unmerged one give the same boxes and so the same graph.
+- **The nav classification against `navOverlay`** (the same script, the editor's module imported
+  off the dev server and built on the same map): its three buckets' thin-instance translations
+  against `classifyNav`'s buckets laid out in the overlay's order (`x`, `y + 0.08`, `z`, through
+  `Math.fround`), with no route and to each of the five flags, on the round's map and on the
+  editor's — **84 comparisons, every one equal, float for float**, the counts with them
+  (Cinderhaven 984,771 walkable and 2,494 cut off; no map has an unrouted cell to any flag).
+- **The draw log** (`plans/webgpu-ref/drawlog.mjs`, which now raises the viewer over the first
+  deploy, the death cam and the second life — flown to a flag, its plan's nav on, the work light off
+  and on — unless `--no-viewer`): the `viewer` class (366 frames) has **no Babylon draw, no group-0
+  visit, no effect compile**, `scene.meshes` the round's 1,783, and the run **no `[pipelines]`
+  line**; every other class **equal to X5.3a's BEFORE** (`--ignore='^coldharbour/viewer(/|$)'`,
+  the one path ignored being the new class), equal again with `--no-viewer`, and a second run with
+  the viewer equal to the first.
+- **The page's own match held** (a scratch script, Hollowmere and Coldharbour, the lid over deploy
+  and over a life, flown to the last flag for three seconds; `LocalMatch.advance` and `hold`
+  counted): **0 `advance`s under the lid** (374 to 378 `hold`s), the fight hash
+  (`markFight`/`fight`) unmoved, the tickets, every roster body and the player where they stood;
+  after the lowering over a life, 379 and 380 `advance`s and the bodies moving. (The hash folded no
+  event in those windows, so it is the advances and the bodies that carry this.)
+- **A server's round** (`npm run build:server`, `dist-server/index.js` on port 8097, the page joined
+  by `?mp=`, Hollowmere): over deploy and over a life the bodies moved under the lid (the
+  authority's clock 3.0 s on), the player's own predicted body did not, and the lid lowered to the
+  state it covered; the `F2` KEY raised and lowered it over a life; over the death cam (the player
+  walked at the far flag until the authority killed them) it raised, held 60 frames and lowered to
+  `dying`, the panel and `.editing` gone. Not seen: a step the wire decides arriving UNDER the lid
+  (it goes through `go` and `takeDown`, as a pause's does).
+- **`F2` from every state** (the key, through Playwright): the viewer from `deploy`, `playing` and
+  `dying` and back to each; nothing from the menu, the settings, kit and lobby lids over it, the
+  building card, the kit, settings and pause lids over deploy, the pause over a life and over the
+  death cam, the settings over the pause, the round-over card, the editor (`Shift+F2`, which also
+  took it out to the round it opens) and a benchmark (`?bench=hollowmere`): **18 of 18**.
+- **The bank**, 147 rows by `exact.mjs`: **default** 147 byte-equal; **`volumetrics=low`** 147;
+  **`volumetrics=high`** 146 and `harrowmead-view-pistol-reload` within its flake (2 pixels by
+  1/255). `sarab-ground` byte-equal in all three. The same rows red against `ref/` on both sides
+  (34, 102, 93).
+- **The probes** against the parent's logs: `post.mjs --against`, both pages, equal, 30,073 values
+  a page, nothing excused; `gi.mjs --against` equal (914,611 and 254,731 values); `census
+  --against` equal (403, 595, 619, 168); `surfaces.mjs --out` on all seven maps, the two JSON files
+  byte-identical; `pipelines.mjs hollowmere` (109 modules, 3 of Babylon's pipelines, 90 of ours,
+  none after the install) and `coldharbour --round` (each install 0 / 21 / 12, nothing in play) the
+  same on both trees. `merge:hash` (shipped) identical on eight maps.
+- **Live** (X5.3a's live script, both trees, with the viewer's lid over a life where the tree has
+  one — raised, flown with its nav on, the work light off and on, a render-scale and a glow-rung
+  change under it, lowered): the 32 phases both trees run equal in modules, Babylon's synchronous
+  pipelines, post processes and errors; under the viewer no new pipeline of Babylon's, no in-play
+  compile of ours, no `uncapturederror`, page or console error.
+- **Absent from `dist/`**: no chunk of `src/viewer/`; "MAP VIEWER", `vw-pos`, `vw-plan`,
+  `classifyNav` and `workLightEnvironment` in no emitted file; `toggleViewer` is `{}` in the
+  bundle (the DEV gate folded) and `closeViewer` remains as `takeDown`'s arm over a field that is
+  never set; the panels' ids are in the shipped stylesheet only as the `.editing` rule's
+  carve-outs.
+- **`?profile&gpu`** (Coldharbour and Hollowmere, four alternating runs a tree, report version 37):
+  `render` 0.876 → 0.857 and 0.750 → 0.760 ms, `gpu.frame` 2.634 → 2.642 and 2.532 → 2.532 ms
+  (within 2.2%); Babylon's draw calls 0.
+- **Gates**: typecheck, build (`check-maps`, `check-babylon-free`, `check-proving` in it), corecheck,
+  parity, `maps:check` 7 of 7, `gate` (seven maps clean) and `shaders` (clean on seven) pass.
+- **Not run**: the phone; by a person's hands, the mouse look and the plan's click (both driven by
+  script only: the camera warped through the session, a key pressed through Playwright).
+- **Rewrites**: `CLAUDE.md` (the lid paragraph, "The map viewer and the map editor (dev only)", the
+  front-end lid rule's `#hud.editing`, the editor save's key), `docs/states.md` ("The map viewer's
+  lid", its four answers; the table's counts), `docs/ui.md` (the panel's stylesheet, the
+  `.editing` catch-all, the plan as the fourth surface), `docs/game.md` (the viewer's frame), and
+  `Shift+F2` in `docs/editor.md`, `docs/audio.md`, `docs/deaths.md` and `docs/game.md`;
+  `FILES.md`; `plans/webgpu-ref/README.md` and the draw log's header; the contract headers of every
+  new module, `ScreenStack.ts`'s and `Game.ts`'s.
