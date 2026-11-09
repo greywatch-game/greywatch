@@ -9,7 +9,7 @@
  * uniforms, uploaded by LightingSystem once per frame. Flat/faceted shading is
  * recovered in the fragment shader from screen-space derivatives — NEVER call
  * convertToFlatShadedMesh(). Output is display-ready color, which is why
- * pipeline.imageProcessingEnabled must stay false. Output is also opaque, and
+ * `scene.imageProcessingConfiguration.isEnabled` must stay false (`Game`). Output is also opaque, and
  * an opaque cel fragment writes `opaqueAlpha` rather than 1 — the frame's alpha
  * channel is TRANSLUCENT COVERAGE and a probe's is the cube's own mask, so the
  * two passes want opposite values out of the same line (see that uniform, and

@@ -680,9 +680,9 @@ part of the picture, not a grade over one: FXAA behind it antialiases the lines
 (they come off a depth buffer, which has no antialiasing of its own), and the
 shafts, the smear and the grain all land on top of inked geometry rather than
 under it. A `PostProcess` given a camera attaches itself and `attachPostProcess`
-APPENDS, so what is constructed first runs first — which is why `Game` builds it
-above the `DefaultRenderingPipeline`; the passes after FXAA are stages of our post
-chain since X5.2c1 and X5.2c2, which follow Babylon's whole list.
+APPENDS — and it is the only one: FXAA, the shafts, the smear and the grain are
+stages of our post chain (X5.2c1, X5.2c2), after Babylon's whole list, in the
+host's order.
 
 **It needs no normal buffer, and the reason is worth knowing before anyone adds
 one.** A `GeometryBufferRenderer` re-renders the map — the wall the light
@@ -1911,8 +1911,8 @@ for the same reason the cel shader offsets along the facet rather than the
 bumped normal — the relief is a fiction, and the shadow must not move with it.
 
 **Every surface shader dithers its own output, and the grade is the wrong place
-for it.** The chain is `hdr = false`, so the scene is quantised the instant it
-lands in FXAA's input target, and the fog and mist ramps are shallow enough to
+for it.** The chain is 8-bit (`rgba8unorm` targets), so the scene is quantised the instant it
+lands in the frame's render target, and the fog and mist ramps are shallow enough to
 cross a quantisation step every few degrees of screen — measured at contours
 nearly **seven pixels wide** on a plain village wall. `shaders/Dither.ts` adds
 one LSB of triangular noise immediately before `fragmentOutputs.color` in the
@@ -3514,9 +3514,10 @@ reaching play before they are built skips the same way.
 
 **The POST CHAIN's tail is the third (X5.2c1), and it is a HOST of declared
 stages, not a pass a module owns.** `render/PostChain.ts` holds an ordered list
-of `PostStage`s — the shafts (one a rung), the blur and the grade since X5.2c2
-(`volumetricStages`, `MotionBlur.stage`, `PaperGrain.stage`) — each DECLARING
-its program as Babylon compiled it (`shaders/wgsl/volumetrics.ts`,
+of `PostStage`s — FXAA, the shafts (one a rung), the blur and the grade since X5.2c2
+(`Fxaa.stage`, `volumetricStages`, `MotionBlur.stage`, `PaperGrain.stage`), after
+Babylon's prefix, the ink alone — each DECLARING
+its program as Babylon compiled it (`shaders/wgsl/fxaa.ts`, `volumetrics.ts`,
 `motionBlur.ts`, `paperGrain.ts`, the parent's device text character for
 character), its uniform block and its `fill`, its extra bindings (the frame's
 depth; the shafts' shadow maps and cloud field, each with the sampler it is
@@ -5792,7 +5793,9 @@ all in the counter this finding is named after. Not chased.
 
 ## Rendering constraints that look like bugs if you undo them
 
-- `pipeline.imageProcessingEnabled` must stay `false`: the cel shader outputs
+- `scene.imageProcessingConfiguration.isEnabled` must stay `false` (`Game` states it, where
+  `DefaultRenderingPipeline`'s `imageProcessingEnabled = false` set it until X5.2c2
+  deleted the pipeline; an editor build's Babylon materials are what read it): the cel shader outputs
   display-ready colors and Babylon's image-processing pass re-gammas them and washes
   the palette out. That is also why the vignette/grain/aberration/damage flash grade is
   hand-written (`src/shaders/PaperGrain.ts`).
@@ -6101,28 +6104,26 @@ all in the counter this finding is named after. Not chased.
 - **The post-process chain has an order, and a display setting that switches an
   effect off REMOVES its pass** rather than zeroing its uniforms — an attached but idle
   pass still reads and writes the whole frame. The order is FXAA, shafts (`Volumetrics`),
-  motion blur, paper grain. FXAA is Babylon's pass, holding a SLOT claimed while the
-  chain is being built, which `detachPostProcess` nulls and an indexed
-  `attachPostProcess` refills (`Game.setFxaaEnabled`) — never `pipeline.fxaaEnabled`,
-  which rebuilds the pipeline and re-appends FXAA. **The shafts, the blur (X5.2c2) and
-  the grade (X5.2c1) are stages of OUR post chain** ("Our renderer's frame"), after
+  motion blur, paper grain. **All four are stages of OUR post chain** (the grade since
+  X5.2c1, FXAA, the shafts and the blur since X5.2c2; "Our renderer's frame"), after
   Babylon's whole list, in the host's list order (`Game` assembles it), each switch its
   stage's `active()`: no slot, no append and no dance. Nothing throws if
   the order is wrong; the symptom is grain over a
   smear, which reads as a dirty lens. The red damage flash is painted by the grade's
   shader and goes off with it, leaving the HUD's damage arcs to tell the player where a
   hit came from.
-- **FXAA's PASS is Babylon's and its SHADER is ours** (`shaders/Fxaa.ts`), because the
+- **FXAA is OUR stage, and its SHADER was ours before its pass was** (`shaders/Fxaa.ts`,
+  the text as compiled in `shaders/wgsl/fxaa.ts` since X5.2c2, Babylon's own `fxaa`
+  vertex stage beside it — no `scale` multiply — and its input read bilinear), because the
   one number that decides how soft the frame is — FXAA's sub-pixel blend — is a `const`
   in Babylon's text, at 1.0, FXAA's own "softer" limit. In this game nearly every pixel
   is past the edge test (one-pixel ink, a relief grain per pixel), so at 1.0 the pass
   blurred the frame more than it antialiased it, and a player preferred it off on a
   desktop. The text is Babylon's token for token but for `CONFIG.graphics.fxaa`'s three
-  constants, and it gets in by being registered first under `fxaaPixelShader`: Babylon's
-  lazy shader module only registers itself `if` the name is empty. **Nothing throws if
-  that race is ever lost** — the frame is just soft again — so `Game` checks
-  `fxaaShaderIsOurs` on the pass's first apply in a DEV build. The varyings and
-  `texelSize` are the contract with Babylon's vertex shader and must not be renamed.
+  constants; until X5.2c2 it got in by being registered first under `fxaaPixelShader`
+  for Babylon's own pass, and since then it is simply the stage's module, so there is no
+  registration race left to lose. Its MALI arm never ran under WebGPU (the driver info
+  Babylon tested is the empty string on every device) and is not in the text.
   Measured against FXAA off (mean |Laplacian| of luma, frozen frame, 1920x1080),
   Greyfen's `treeline` keeps 54% of its fine detail at 1.0 and 78% at the shipped 0.25,
   with the trunks' stairs smoothed alike; the edge threshold is not a lever here (0.166
@@ -7706,7 +7707,7 @@ the only thing that makes a beam a beam — closed into haze. For thin air all t
 forms are the same number, so a map whose shafts were already faint is unmoved.
 
 **`anisotropy` is held below what real haze measures, and the constraint is the
-8-bit chain.** `DefaultRenderingPipeline` is built with `hdr = false`, so whatever
+8-bit chain.** Every target of the post chain is `rgba8unorm`, so whatever
 the forward lobe returns has to fit in the same 0..1 the village is drawn in —
 there is no tonemapper downstream to pull a highlight back. Off the phase
 function: g 0.68 is **54x** brighter looking into the light than across it, which

@@ -469,8 +469,8 @@ export const graphics = {
      * whole thing a screen-space smear cannot do.
      *
      * **It is held well below what real haze measures, and the constraint is
-     * the 8-BIT CHAIN rather than the air.** `DefaultRenderingPipeline` is
-     * built with `hdr = false` (see `Dither.ts`), so whatever the forward lobe
+     * the 8-BIT CHAIN rather than the air.** Every target of the post chain is
+     * `rgba8unorm` (see `Dither.ts`), so whatever the forward lobe
      * returns has to fit in the same 0..1 the village is drawn in — there is no
      * tonemapper downstream to pull a highlight back. Measured off the phase
      * function: g 0.68 is **54x** brighter looking into the moon than across

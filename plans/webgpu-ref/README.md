@@ -331,7 +331,8 @@ node plans/webgpu-ref/post.mjs --compare=a.json --against=b.json
   a section a sub-step, each line saying why — X5.2b's three on the glow's draws first,
   X5.2c1's the same three on the grade's draw and three of Babylon's own `chain` fields,
   X5.2c2's the same three on the shafts' and the blur's draws, the shafts' two shadow
-  maps' view and sampler descriptors (their owner's since) and the shafts' slot —
+  maps' view and sampler descriptors (their owner's since) and the shafts' slot, then the
+  same three on FXAA's draw and its slot and attach (the probe logs neither since) —
   and a later sub-step adds its own section there. **Key a line on the draw's stage**
   (`**.draws[stage=glow.*].viewport`), never on a pass index: an index names whatever
   draw a scenario puts at it, so it would excuse the same field on another stage's draw

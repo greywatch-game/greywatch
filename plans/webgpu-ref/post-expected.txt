@@ -79,3 +79,16 @@
 # And Babylon's bookkeeping: the shafts hold no slot in the camera's list
 # (their switch is their stage's `active()`, latched as their attach was).
 **.chain.slots.shafts
+
+# X5.2c2, FXAA: our draw, the chain's first stage of ours after the ink
+# (`shaders/Fxaa.ts`, `wgsl/fxaa.ts`), compared with the Babylon draw it
+# replaced; `DefaultRenderingPipeline` deleted, the `scene.autoClear = false` it
+# set stated by `Game` in its place, so every pass's clear is the parent's.
+# X5.2b's three fields, for X5.2b's reasons:
+**.draws[stage=fxaa].pipeline.call
+**.draws[stage=fxaa].bundle
+**.draws[stage=fxaa].viewport
+# And Babylon's bookkeeping: FXAA holds no slot in the camera's list and has no
+# attach (its switch is its stage's `active()`); the probe no longer logs either.
+**.chain.slots.fxaa
+**.chain.slots.fxaaAttached

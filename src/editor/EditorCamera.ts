@@ -4,9 +4,10 @@
  * its speed step. Owns no camera of its own.
  *
  * It writes CameraSystem's FreeCamera rather than creating a second one on
- * purpose: DefaultRenderingPipeline and PaperGrain are bound to that camera
- * INSTANCE, so a second camera would render without FXAA or the grade until
- * both were rebound. Nothing needs restoring on the way out either —
+ * purpose: the ink and the post chain's pass owner (`PostPasses`, which opens
+ * FXAA's, the shafts', the blur's and the grade's passes) are bound to that
+ * camera INSTANCE, so a second camera would render without them until both
+ * were rebound. Nothing needs restoring on the way out either —
  * CameraSystem.update() writes position, target and fov absolutely every
  * frame, so the first gameplay frame overwrites everything done here.
  *

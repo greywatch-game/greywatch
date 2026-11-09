@@ -2524,11 +2524,11 @@ src/
                         #   bright); the mask pass's opening announced from
                         #   inside its clear (onMaskOpenObservable), where
                         #   OUR palette draws FIRST (render/WorldGlow.ts)
-    Fxaa.ts             # FXAA's fragment shader, registered under the name
-                        #   Babylon's pass looks up so it runs this text: the
-                        #   same shader with CONFIG.graphics.fxaa's three
-                        #   constants (sub-pixel blend 0.25 where Babylon's 1.0
-                        #   blurred the frame). Owns no pass
+    Fxaa.ts             # FXAA's CPU half (the switch) and `stage`, the post
+                        #   chain's stage our renderer draws it as since X5.2c2
+                        #   (wgsl/fxaa.ts): Babylon's shader with
+                        #   CONFIG.graphics.fxaa's three constants (sub-pixel
+                        #   blend 0.25 where Babylon's 1.0 blurred the frame)
     FrameDepth.ts       # The frame's own depth attachment, captured once and
                         #   wrapped for the two passes that sample it (the ink's
                         #   edges, the blur's weapon mask). Renders and copies
@@ -2651,6 +2651,13 @@ src/
                         #   constants where they were; the bindings, the
                         #   lattice constants and the 496-byte block's layout.
                         #   Babylon-free: PaperGrain.stage declares them
+      fxaa.ts           # FXAA's two modules AS COMPILED (X5.2c2): Babylon's
+                        #   own fxaa vertex stage (no scale multiply, the eight
+                        #   sample coordinates) and the fragment with CONFIG's
+                        #   three constants, the parent's device text character
+                        #   for character (no Mali arm: it never ran under
+                        #   WebGPU); the bindings and the 16-byte block.
+                        #   Babylon-free: Fxaa.stage declares them
       motionBlur.ts     # The BLUR's two modules AS COMPILED (X5.2c2): the
                         #   postprocess vertex stage with the blur's LeftOver
                         #   and the smear's fragment, the parent's device text

@@ -10,9 +10,10 @@
  * Invariant: it must run on the value being QUANTISED, which means last, and it
  * must not be animated. Contract: `docs/rendering.md`.
  *
- * WHY THIS EXISTS. The whole chain is 8-bit: `DefaultRenderingPipeline` is built
- * with `hdr = false`, so the scene is quantised the instant it lands in FXAA's
- * input render target. Over that sit the two widest, shallowest gradients the
+ * WHY THIS EXISTS. The whole chain is 8-bit: every target of the post chain is
+ * `rgba8unorm` (as `DefaultRenderingPipeline`, built with `hdr = false`, made
+ * them until X5.2c2 deleted it), so the scene is quantised the instant it lands
+ * in the frame's render target. Over that sit the two widest, shallowest gradients the
  * cel shader draws — the `t*t` distance fog across a 22→78 m band, and the
  * exponential ground mist under it. A gradient that shallow crosses a
  * quantisation step every few degrees of screen, and every crossing is a

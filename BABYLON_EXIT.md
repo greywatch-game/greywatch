@@ -3422,7 +3422,7 @@ correction marked "X5.1a"):
   of the eventual change, the rest the multi-bounce iteration's: 99% by two); no Babylon
   compute in a round or an editor build.
 
-### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07: the owner instructed that steps be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split below was proposed by the orchestrating session from a planning agent's read at 33a8d35, and its two shaping decisions taken by the owner the same day, its seven others the next, rows in "Decisions that are yours") — X5.2a **LANDED** (e5d9390, its review 55ef32c, its held finding F1 fixed 738f5e3), X5.2b **LANDED** (f697f0e, its review e5ab075), X5.2c1 **LANDED** (4747fe7, its review bfa6a6b), X5.2c2 the shafts and the blur **LANDED** (14dd887, its review 7c5030f); its FXAA pass and X5.2d not started
+### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07: the owner instructed that steps be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split below was proposed by the orchestrating session from a planning agent's read at 33a8d35, and its two shaping decisions taken by the owner the same day, its seven others the next, rows in "Decisions that are yours") — X5.2a **LANDED** (e5d9390, its review 55ef32c, its held finding F1 fixed 738f5e3), X5.2b **LANDED** (f697f0e, its review e5ab075), X5.2c1 **LANDED** (4747fe7, its review bfa6a6b), X5.2c2 the shafts and the blur **LANDED** (14dd887, its review 7c5030f), its FXAA **LANDED** (HASHF); X5.2d not started
 
 `FrameDepth`, `CelInk` with the glow's compose in its last line, the glow's
 blur, FXAA (already our own fragment), `Volumetrics`, `MotionBlur` and
@@ -3725,7 +3725,7 @@ marked "X5.2a"):
   depth)" meets the first two points and the two frame-start reads**: the canvas's
   opening pass and the render pass id move with it, `_checkCameraRenderTarget` re-arms
   `_cleared` every frame and the camera's render binds the target again, so under
-  `scene.autoClear` (true from X5.2c2) the scene's colour clear lands on that target once
+  `scene.autoClear` (true from X5.2c2's picture change, row "X5.2, autoClear") the scene's colour clear lands on that target once
   a frame — at the first bind, the second held off by `!rtt._cleared` — and its depth and
   stencil clear at both.
 - **Render scale** is `engine.setHardwareScalingLevel(1 / (dpr × renderScale))`
@@ -4333,6 +4333,45 @@ owes" below.
   sampler or a shadow map changing too, not only a resize. **`post.mjs`** no longer logs the
   shafts' slot (it was `undefined`, so absent: `--compare` of the two logs above still
   equal on both pages).
+
+  **X5.2c2's FXAA LANDED** (HASHF; 2026-11-08; no change to the picture; no report version).
+  **What moved**: FXAA is OUR draw, the post chain's first stage of ours after the ink
+  (`shaders/Fxaa.ts`: the switch and `stage`; `shaders/wgsl/fxaa.ts`: Babylon's own `fxaa`
+  vertex stage — `vUV` with NO `scale` multiply, the eight sample coordinates off
+  `texelSize` — and the fragment with `CONFIG.graphics.fxaa`'s three constants, both the
+  parent's device text character for character; its 16-byte block, `texelSize` one over the
+  render size; its input read bilinear — linear/linear, mip nearest, clamp, clamp, repeat,
+  lod 0..0, anisotropy 1 — as Babylon's `FxaaPostProcess` bound it). Babylon's chain is the
+  INK ALONE, so `Game.postPrefixTail` is the ink. **`DefaultRenderingPipeline` is deleted**,
+  and with it the two things it set on the scene, each stated by `Game` in its place so
+  nothing moves: `imageProcessingConfiguration.isEnabled = false` (an editor build's Babylon
+  materials read it; false through every phase of the live run, the editor's included, on
+  both trees) and `scene.autoClear = false` — which the owner decided goes back to true as a
+  picture change of its own (row "X5.2, autoClear", next). The FXAA slot trick, the
+  ShaderStore registration and `fxaaShaderIsOurs` are gone; the Mali arm, never run under
+  WebGPU, is not in the text (`Fxaa.ts`' header; `Game.setFxaaEnabled`).
+  **Measured** (BEFOREs at 41fb598 in a worktree with its own `npm ci` and a copy of `ref/`):
+  - **The bank**, 147 rows, by `exact.mjs`: **default** 146 byte-equal and `sarab-ground`
+    100 pixels by 2/255 — Sarab alone, two processes a tree: all four frames byte-equal to the step's full-run frame, so the parent's processes draw the step's frame (cross-process residue); **`volumetrics=low`** 147 byte-equal; **`volumetrics=high`**
+    147 byte-equal; the same rows red against `ref/` on both sides (34, 102, 93).
+  - **The probe** `--against` 14dd887's log, both pages: equal, excusing FXAA's draw's
+    `pipeline.call`, `bundle` and `viewport` (X5.2b's three) and the `chain.slots.fxaa` and
+    `fxaaAttached` the probe no longer logs (X5.2c2's FXAA section of `post-expected.txt`);
+    every pass's load op and clear value the parent's, the opening canvas pass's included.
+  - **`gi.mjs --against`** 14dd887's logs, default and `--shafts-off`: equal.
+  - **Live** (both trees): our ten modules at the boot (FXAA's two beside the shafts', the
+    blur's and the grade's) and none after; Babylon's `fxaa` modules gone; Babylon's
+    synchronous pipelines 26 → 25 by the end; no in-play compile, no error;
+    `imageProcessingConfiguration.isEnabled` false and `applyByPostProcess` false in the menu,
+    a round and the editor on both trees.
+  - **Pipelines**: `coldharbour --round` identical; `hollowmere` Babylon's 5 → 4, ours 86 →
+    88, modules 113 → 109 (the pipeline's own post-processes' modules gone with it), nothing
+    after. **`surfaces.mjs`**: Babylon's draws through no mesh are the ink's alone (`fxaa ->
+    PostProcessRTT-volumetrics_medium` gone). **`census --against`** equal (403, 595, 619,
+    168). **The editor's eight eyes**: Coldharbour `menu`, `curtain2`, `curtain40` and
+    Hollowmere `lanterns` byte-equal in all four pairings, the rest within each tree's own
+    floor. **`?profile&gpu`** (Coldharbour and Hollowmere, the parent and the step alternating four times; this session's GPU frame ran ~1.7x the earlier sessions' on BOTH trees): `render` 0.94 → 0.92 and 0.83 → 0.81 ms (means), `gpu.frame` Coldharbour 4.37 → 4.35 ms; Hollowmere's `gpu.frame` spread 3.7-5.9 ms on both trees (parent 4.48/5.66/5.22/5.86, step 4.92/3.74/3.88/5.20), wider than 8% within each tree and not slower on the step; Babylon's draw calls 2 → 1. `gate` (7), `shaders` (7), typecheck, build,
+    corecheck and parity pass.
 - **X5.2d — the head: the ink and the glow's compose are ours.** The scene draws
   straight into the frame's render target (`outputRenderTarget` with depth),
   its formats equal to `FRAME_TARGETS` (`render/targets.ts`), the clear moved
@@ -4695,5 +4734,6 @@ Phase 1 actually took.
 | X5.2 | **A profiler report version.** | **Decided** 2026-11-08 by the owner, the planner's recommendation: none under shape (A) while `render`, `glow` and `gpu.frame` keep their meaning, which each sub-step checks rather than assumes; a sub-step that moves a draw out of its span (the blur's out of `glow`) bumps the version and says why. |
 | X5.2 | **X0.3's scope** in the whole step's Verify. | **Decided** 2026-11-08 by the owner, the planner's recommendation: the desktop `bench.mjs --max`, three runs at the parent and three after; a phone `?bench&gpu` capture optional and the owner's, the Verify not waiting on it. |
 | X5.2 | **"The bank with every post setting on and off"**: the bank holds one row a setting off, none with every tail pass off. | **Decided** 2026-11-08 by the owner, the planner's recommendation: X5.2a's added rows (`post-alloff`, `post-damage`, `post-scale50`, `post-scale75`, `post-glowlow`) beside the bank's one-pass-off rows are its meaning; no pairwise or full-combination rows. |
+| X5.2 | **autoClear** (X5.2c2): deleting `DefaultRenderingPipeline` takes away the `scene.autoClear = false` it set, so the frame's opening canvas pass CLEARS its colour where it loaded it. Measured with the probe: every final canvas equal in all 32 scenarios (the last pass overwrites the canvas whole), the canvas-only frame after a render-scale change or a resize unaffected (its pass is not the scene's clear), and the page's first three frames of every boot — before the chain first draws, under the boot screen — holding the boot map's clear colour, opaque, where the parent held transparent zeros. Hold `autoClear` false (byte-exact) or let it return to true as the plan says (a picture change)? | **Decided** 2026-11-08 by the owner: **true, as the plan says, as a picture change** — FXAA lands byte-exact first with an explicit `scene.autoClear = false` standing in for the pipeline's, then a commit of its own whose subject starts `Picture change:` turns it back to true, with its numbers. X5.2d's text reads `autoClear` true. |
 | X5.4 | Phase 4's gate found the canvas and raw textures our draws read through the seam (`hostTexture`: the motes, the puff, the scorch, the blob, the sky's, the cel materials' own, the shadow maps it wraps) named by no step before X6.1, X5.4's foam item covering only a texture Babylon decoded and mipped. When do they go? | **Decided** 2026-11-07 by the owner: in X5.4, beside the foam, as one item under one bank proof — the five ours alone since Phase 4 wait only for that, the cel materials' and the shadow maps' because an editor build samples them until X5.3; `GiVolume`'s seven stay X5.1's. |
 | X6.2 | Is it ready to merge to `develop`? | Only when X6.2's "Before" list passes in full. |

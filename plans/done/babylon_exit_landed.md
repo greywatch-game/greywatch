@@ -9863,7 +9863,7 @@ seven minor points, each verified against the tree first.
   row's freeze calls; Hollowmere's 16 rows ran it); the throw itself provoked; corecheck,
   parity, `gate`, `shaders` (no game code moved).
 
-### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07; its decisions the owner's, 2026-11-07 and 2026-11-08, rows in "Decisions that are yours") — X5.2a **LANDED** (e5d9390, its review 55ef32c, its held finding F1 fixed 738f5e3), X5.2b **LANDED** (f697f0e, its review e5ab075), X5.2c1 **LANDED** (4747fe7, its review bfa6a6b), X5.2c2 the shafts and the blur **LANDED** (14dd887, its review 7c5030f); its FXAA pass not started
+### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07; its decisions the owner's, 2026-11-07 and 2026-11-08, rows in "Decisions that are yours") — X5.2a **LANDED** (e5d9390, its review 55ef32c, its held finding F1 fixed 738f5e3), X5.2b **LANDED** (f697f0e, its review e5ab075), X5.2c1 **LANDED** (4747fe7, its review bfa6a6b), X5.2c2 the shafts and the blur **LANDED** (14dd887, its review 7c5030f), its FXAA **LANDED** (HASHF)
 
 The plan's `BABYLON_EXIT.md` holds X5.2's brief, its ONE RULE, shape (A), "What it is
 today" (corrected in place by X5.2a, each correction marked) and the five sub-steps.
@@ -10528,3 +10528,42 @@ the owner where X5.2c1's is recorded. **`PostChain`'s header** says a group is r
 sampler or a shadow map changing too, not only a resize. **`post.mjs`** no longer logs the
 shafts' slot (it was `undefined`, so absent: `--compare` of the two logs above still
 equal on both pages).
+
+**X5.2c2's FXAA LANDED** (HASHF; 2026-11-08; no change to the picture; no report version).
+**What moved**: FXAA is OUR draw, the post chain's first stage of ours after the ink
+(`shaders/Fxaa.ts`: the switch and `stage`; `shaders/wgsl/fxaa.ts`: Babylon's own `fxaa`
+vertex stage — `vUV` with NO `scale` multiply, the eight sample coordinates off
+`texelSize` — and the fragment with `CONFIG.graphics.fxaa`'s three constants, both the
+parent's device text character for character; its 16-byte block, `texelSize` one over the
+render size; its input read bilinear — linear/linear, mip nearest, clamp, clamp, repeat,
+lod 0..0, anisotropy 1 — as Babylon's `FxaaPostProcess` bound it). Babylon's chain is the
+INK ALONE, so `Game.postPrefixTail` is the ink. **`DefaultRenderingPipeline` is deleted**,
+and with it the two things it set on the scene, each stated by `Game` in its place so
+nothing moves: `imageProcessingConfiguration.isEnabled = false` (an editor build's Babylon
+materials read it; false through every phase of the live run, the editor's included, on
+both trees) and `scene.autoClear = false` — which the owner decided goes back to true as a
+picture change of its own (row "X5.2, autoClear", next). The FXAA slot trick, the
+ShaderStore registration and `fxaaShaderIsOurs` are gone; the Mali arm, never run under
+WebGPU, is not in the text (`Fxaa.ts`' header; `Game.setFxaaEnabled`).
+**Measured** (BEFOREs at 41fb598 in a worktree with its own `npm ci` and a copy of `ref/`):
+- **The bank**, 147 rows, by `exact.mjs`: **default** 146 byte-equal and `sarab-ground`
+  100 pixels by 2/255 — Sarab alone, two processes a tree: all four frames byte-equal to the step's full-run frame, so the parent's processes draw the step's frame (cross-process residue); **`volumetrics=low`** 147 byte-equal; **`volumetrics=high`**
+  147 byte-equal; the same rows red against `ref/` on both sides (34, 102, 93).
+- **The probe** `--against` 14dd887's log, both pages: equal, excusing FXAA's draw's
+  `pipeline.call`, `bundle` and `viewport` (X5.2b's three) and the `chain.slots.fxaa` and
+  `fxaaAttached` the probe no longer logs (X5.2c2's FXAA section of `post-expected.txt`);
+  every pass's load op and clear value the parent's, the opening canvas pass's included.
+- **`gi.mjs --against`** 14dd887's logs, default and `--shafts-off`: equal.
+- **Live** (both trees): our ten modules at the boot (FXAA's two beside the shafts', the
+  blur's and the grade's) and none after; Babylon's `fxaa` modules gone; Babylon's
+  synchronous pipelines 26 → 25 by the end; no in-play compile, no error;
+  `imageProcessingConfiguration.isEnabled` false and `applyByPostProcess` false in the menu,
+  a round and the editor on both trees.
+- **Pipelines**: `coldharbour --round` identical; `hollowmere` Babylon's 5 → 4, ours 86 →
+  88, modules 113 → 109 (the pipeline's own post-processes' modules gone with it), nothing
+  after. **`surfaces.mjs`**: Babylon's draws through no mesh are the ink's alone (`fxaa ->
+  PostProcessRTT-volumetrics_medium` gone). **`census --against`** equal (403, 595, 619,
+  168). **The editor's eight eyes**: Coldharbour `menu`, `curtain2`, `curtain40` and
+  Hollowmere `lanterns` byte-equal in all four pairings, the rest within each tree's own
+  floor. **`?profile&gpu`** (Coldharbour and Hollowmere, the parent and the step alternating four times; this session's GPU frame ran ~1.7x the earlier sessions' on BOTH trees): `render` 0.94 → 0.92 and 0.83 → 0.81 ms (means), `gpu.frame` Coldharbour 4.37 → 4.35 ms; Hollowmere's `gpu.frame` spread 3.7-5.9 ms on both trees (parent 4.48/5.66/5.22/5.86, step 4.92/3.74/3.88/5.20), wider than 8% within each tree and not slower on the step; Babylon's draw calls 2 → 1. `gate` (7), `shaders` (7), typecheck, build,
+  corecheck and parity pass.

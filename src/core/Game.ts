@@ -86,12 +86,11 @@
  * WorldCulling wiring (the map filed per install, the eye pushed from `tick` in
  * every state beside the shader's own — it decides how much of the map Babylon
  * walks each frame and writes nothing onto any mesh),
- * pipeline.imageProcessingEnabled === false, window.__celshock debug handle.
+ * scene.imageProcessingConfiguration.isEnabled === false, window.__celshock debug handle.
  */
 import {
   Color3,
   Color4,
-  DefaultRenderingPipeline,
   Matrix,
   type Plane,
   type PostProcess,
@@ -141,7 +140,7 @@ import { PostChain } from "../render/PostChain";
 import { PaperGrain } from "../shaders/PaperGrain";
 import { PostPasses } from "../shaders/PostPasses";
 import { CelInk } from "../shaders/CelInk";
-import { fxaaShaderIsOurs } from "../shaders/Fxaa";
+import { Fxaa } from "../shaders/Fxaa";
 import { FrameDepth } from "../shaders/FrameDepth";
 import { GlowPass, glowKernels } from "../shaders/GlowPass";
 import { MotionBlur } from "../shaders/MotionBlur";
@@ -1317,13 +1316,11 @@ export class Game {
    */
   private volumetricsAttached = false;
   /**
-   * The pipeline's FXAA pass and where it sits in the camera's chain, claimed
-   * once in the constructor so the setting can take it off and put it back
-   * without moving anything behind it. See `setFxaaEnabled`.
+   * FXAA's CPU half and the post chain's stage it is drawn as
+   * (`shaders/Fxaa.ts`, `BABYLON_EXIT.md` X5.2c2): the chain's first stage of
+   * ours, straight after the ink. See `setFxaaEnabled`.
    */
-  private fxaa: PostProcess;
-  private fxaaSlot = 0;
-  private fxaaAttached = true;
+  private fxaa: Fxaa;
   private motionBlur: MotionBlur;
   /**
    * The ink. One full-screen edge over the depth the frame already wrote —
@@ -2207,34 +2204,22 @@ export class Game {
     // a mask that redrew the whole visible scene to occlude itself
     // (docs/rendering.md, "The glow: what the depth share replaced").
     glow.drawsInto(this.celInk.pass);
-    const pipeline = new DefaultRenderingPipeline("post", false, this.scene, [
-      this.cameraSys.camera,
-    ]);
-    // The cel shader outputs display-ready colors; the default image
-    // processing pass would re-apply gamma and wash them out.
-    pipeline.imageProcessingEnabled = false;
-    // FXAA is BUILT always and taken off the camera by the setting
-    // (`setFxaaEnabled`), never by `fxaaEnabled`: that setter rebuilds the
-    // pipeline, which re-attaches its passes by APPENDING. So its slot is
-    // claimed here, while it is the last pass in the chain: detaching nulls its
-    // entry, and re-attaching appends it again and hands back the index, which
-    // is the one public way to learn it. The null left behind is skipped by
-    // the chain. (It is the last of Babylon's passes after the ink since
-    // X5.2c2: the shafts and the blur are stages of our post chain.)
-    pipeline.fxaaEnabled = true;
-    this.fxaa = pipeline.fxaa;
-    this.cameraSys.camera.detachPostProcess(this.fxaa);
-    this.fxaaSlot = this.cameraSys.camera.attachPostProcess(this.fxaa);
-    // The pass is Babylon's and the SHADER is ours (`shaders/Fxaa.ts`),
-    // registered under the name the pass looks up. If Babylon's own text ever
-    // wins that race the frame is simply soft again, so a DEV build says so.
-    if (import.meta.env.DEV) {
-      this.fxaa.onApplyObservable.addOnce(() => {
-        if (!fxaaShaderIsOurs()) {
-          console.warn("FXAA is running Babylon's shader, not shaders/Fxaa.ts");
-        }
-      });
-    }
+    // The cel shader outputs display-ready colours, and Babylon's image
+    // processing would re-apply gamma and wash them out — so it is OFF, as
+    // `DefaultRenderingPipeline`'s `imageProcessingEnabled = false` left it
+    // until X5.2c2 deleted the pipeline (its only pass was FXAA). An editor
+    // build's Babylon materials read this; a round's draws are all ours.
+    this.scene.imageProcessingConfiguration.isEnabled = false;
+    // And the scene does not clear the CANVAS's colour as a frame opens, as
+    // `DefaultRenderingPipeline` set it (`_setAutoClearAndTextureSharing`) for
+    // as long as it stood: the frame's opening canvas pass LOADS its colour and
+    // clears only the engine's depth (`autoClearDepthAndStencil`). Stated here
+    // so deleting the pipeline moves nothing (X5.2c2); the owner decided it goes
+    // back to Babylon's default, true, as a picture change of its own.
+    this.scene.autoClear = false;
+    // FXAA: OUR draw since X5.2c2, the post chain's first stage of ours, after
+    // the ink it antialiases (`shaders/Fxaa.ts`).
+    this.fxaa = new Fxaa();
     // The light shafts: volumetric moonlight marched through the shadow
     // volume, after FXAA and before the blur — they belong to the same instant
     // as the geometry, so they have to smear and be graded with it. The CPU
@@ -2253,15 +2238,16 @@ export class Game {
     this.motionBlur = new MotionBlur(this.cameraSys.camera, this.frameDepth);
     // Vignette/grain/aberration go last, over the finished frame. Grain in
     // particular has to land AFTER the blur: smeared grain reads as smudge.
-    // The shafts, the blur (X5.2c2) and the grade (X5.2c1) are OUR draws: the
-    // post chain's host, its stages in THIS order, after Babylon's prefix
-    // (the ink, FXAA), whose passes `PostPasses` opens — built after the glow
+    // FXAA, the shafts, the blur (X5.2c2) and the grade (X5.2c1) are OUR
+    // draws: the post chain's host, its stages in THIS order, after Babylon's
+    // prefix (the ink alone), whose passes `PostPasses` opens — built after the glow
     // and the frame depth, whose draw-phase observers must run before it
     // points the prefix at its output. The order is the host's list, not an
     // append, and a setting turns a stage off rather than taking a pass off a
     // camera, so there is no slot to hold.
     this.post = new PaperGrain(this.cameraSys.camera, this.frameDepth);
     this.postChain = new PostChain(this.renderer, [
+      this.fxaa.stage,
       ...volumetricStages(this.frameDepth, () => (this.volumetricsAttached ? this.volumetrics : null)),
       this.motionBlur.stage,
       this.post.stage,
@@ -4051,26 +4037,19 @@ export class Game {
   }
 
   /**
-   * Takes FXAA off the camera or puts it back, into the slot it was built in.
+   * Turns FXAA on or off: its stage's `active()`, so off is a pass the post
+   * chain does not open.
    *
    * A setting rather than a fixed part of the chain because what it costs is
    * a phone's: on a high-density panel the backing store already holds two or
    * more device pixels per CSS pixel, so a stair is far less visible, and it is
    * a whole-frame read and write on a GPU whose frame is fill rather than draw
-   * calls (`FINDINGS.md` 5). The shader is Babylon's text (`shaders/Fxaa.ts`),
-   * whose Mali arm (the early exit moved to the end) never runs under WebGPU:
-   * the driver info Babylon tests for it is the empty string on every device.
-   *
-   * Detached and re-attached at `fxaaSlot`: `detachPostProcess` NULLS the
-   * entry rather than removing it, and `attachPostProcess` with an index
-   * refills a null, so the order is untouched either way.
+   * calls (`FINDINGS.md` 5). The shader is Babylon's text as compiled
+   * (`shaders/wgsl/fxaa.ts`): its Mali arm never ran under WebGPU, the driver
+   * info Babylon tested for it being the empty string on every device.
    */
   private setFxaaEnabled(on: boolean): void {
-    if (on === this.fxaaAttached) return;
-    const camera = this.cameraSys.camera;
-    if (on) camera.attachPostProcess(this.fxaa, this.fxaaSlot);
-    else camera.detachPostProcess(this.fxaa);
-    this.fxaaAttached = on;
+    this.fxaa.setEnabled(on);
   }
 
   /**
@@ -4089,14 +4068,12 @@ export class Game {
    * The LAST live pass of Babylon's prefix of the post chain this frame — the
    * one whose target is our first stage's input while a stage of ours is
    * active (`PostPasses`, which hangs Babylon's clear of that target on its
-   * `apply`). Read off the order this file assembled: the ink, then FXAA
-   * while it is on the camera — the shafts and the blur are stages of OUR
-   * chain since X5.2c2. A wrong answer would have our first stage read a
-   * clear colour; a DEV build throws on it instead (a ready tail that never
-   * applied, `PostPasses.closeWindow`).
+   * `apply`). Since X5.2c2 that is the INK, always: FXAA, the shafts and the
+   * blur are stages of OUR chain, so Babylon's list is the ink alone. A wrong
+   * answer would have our first stage read a clear colour; a DEV build throws
+   * on it instead (a ready tail that never applied, `PostPasses.closeWindow`).
    */
   private postPrefixTail(): PostProcess {
-    if (this.fxaaAttached) return this.fxaa;
     return this.celInk.pass;
   }
 

@@ -184,8 +184,8 @@ ash since X4.7c, their pipelines on the list; measured at X4.7d on Cinderhaven,
 Sarab and Hollowmere, Babylon compiles nothing at a vantage: the post chain's
 six on the frames before the card — five since X5.2b made the glow's blur ours
 and declared it, four since X5.2c1 made the grade ours ("the post chain" on the
-list), two since X5.2c2 made the shafts — every rung — and the blur ours on the
-same entry — and `GiVolume`'s three computes under it
+list), one — the ink's — since X5.2c2 made FXAA, the shafts at every rung and the
+blur ours on the same entry — and `GiVolume`'s three computes under it
 until X5.1b made them ours and declared them; retiring the vantages is X5.4's): the glazing, the three blended pools and the
 blob shadow were Babylon's until X4.6e, posed here, and nothing is posed now. **When the wait ends, our cache is SEALED** (`PipelineCache.seal`)
 until the map is torn down: a pipeline of ours compiled in play is a DEV

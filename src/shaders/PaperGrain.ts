@@ -12,7 +12,7 @@
  * as Babylon bound it).
  * Why hand-written: Babylon's image-processing pass re-gammas the cel shader's
  * already display-ready colors and washes the palette out — which is also why
- * pipeline.imageProcessingEnabled stays false. Keep the grade in this pass.
+ * `scene.imageProcessingConfiguration.isEnabled` stays false (`Game`). Keep the grade in this pass.
  * Invariants: the grade is the chain's LAST stage by the HOST's order, not by
  * anything here — it is the last entry of `PostChain`'s list, and the host
  * hands the last ACTIVE stage the canvas; nothing here knows it is last or
