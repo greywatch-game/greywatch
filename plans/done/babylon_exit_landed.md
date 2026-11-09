@@ -9863,7 +9863,7 @@ seven minor points, each verified against the tree first.
   row's freeze calls; Hollowmere's 16 rows ran it); the throw itself provoked; corecheck,
   parity, `gate`, `shaders` (no game code moved).
 
-### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07; its decisions the owner's, 2026-11-07 and 2026-11-08, rows in "Decisions that are yours") — X5.2a **LANDED** (e5d9390, its review 55ef32c, its held finding F1 fixed 738f5e3), X5.2b **LANDED** (f697f0e, its review e5ab075), X5.2c1 **LANDED** (4747fe7, its review bfa6a6b), X5.2c2 the shafts and the blur **LANDED** (14dd887, its review 7c5030f), its FXAA **LANDED** (HASHF, its picture change HASHP)
+### X5.2 — The post chain — **M–L, as five sub-steps** (split 2026-11-07; its decisions the owner's, 2026-11-07 and 2026-11-08, rows in "Decisions that are yours") — X5.2a **LANDED** (e5d9390, its review 55ef32c, its held finding F1 fixed 738f5e3), X5.2b **LANDED** (f697f0e, its review e5ab075), X5.2c1 **LANDED** (4747fe7, its review bfa6a6b), X5.2c2 the shafts and the blur **LANDED** (14dd887, its review 7c5030f), its FXAA **LANDED** (cb17a73, its picture change a459e7c)
 
 The plan's `BABYLON_EXIT.md` holds X5.2's brief, its ONE RULE, shape (A), "What it is
 today" (corrected in place by X5.2a, each correction marked) and the five sub-steps.
@@ -10529,7 +10529,7 @@ sampler or a shadow map changing too, not only a resize. **`post.mjs`** no longe
 shafts' slot (it was `undefined`, so absent: `--compare` of the two logs above still
 equal on both pages).
 
-**X5.2c2's FXAA LANDED** (HASHF; 2026-11-08; no change to the picture; no report version).
+**X5.2c2's FXAA LANDED** (cb17a73; 2026-11-08; no change to the picture; no report version).
 **What moved**: FXAA is OUR draw, the post chain's first stage of ours after the ink
 (`shaders/Fxaa.ts`: the switch and `stage`; `shaders/wgsl/fxaa.ts`: Babylon's own `fxaa`
 vertex stage — `vUV` with NO `scale` multiply, the eight sample coordinates off
@@ -10568,7 +10568,7 @@ WebGPU, is not in the text (`Fxaa.ts`' header; `Game.setFxaaEnabled`).
   floor. **`?profile&gpu`** (Coldharbour and Hollowmere, the parent and the step alternating four times; this session's GPU frame ran ~1.7x the earlier sessions' on BOTH trees): `render` 0.94 → 0.92 and 0.83 → 0.81 ms (means), `gpu.frame` Coldharbour 4.37 → 4.35 ms; Hollowmere's `gpu.frame` spread 3.7-5.9 ms on both trees (parent 4.48/5.66/5.22/5.86, step 4.92/3.74/3.88/5.20), wider than 8% within each tree and not slower on the step; Babylon's draw calls 2 → 1. `gate` (7), `shaders` (7), typecheck, build,
   corecheck and parity pass.
 
-**X5.2c2's picture change — `scene.autoClear` true** (HASHP; 2026-11-08; the owner's decision,
+**X5.2c2's picture change — `scene.autoClear` true** (a459e7c; 2026-11-08; the owner's decision,
 row "X5.2, autoClear"): `Game` no longer states `scene.autoClear = false`, so the scene is at
 Babylon's default, as the plan said deleting the pipeline would leave it. **What moved**: the
 frame's OPENING canvas pass — the scene's first bind, which clears the engine's depth —
