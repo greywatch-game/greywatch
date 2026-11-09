@@ -98,10 +98,6 @@ export class Fxaa {
     };
   }
 
-  get isEnabled(): boolean {
-    return this.enabled;
-  }
-
   /** Turns FXAA on or off: its stage's `active()`, so off is a pass the host does not open. */
   setEnabled(on: boolean): void {
     this.enabled = on;

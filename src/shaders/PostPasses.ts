@@ -37,7 +37,8 @@
  * frame that pass draws nothing (its effect not ready), as a pass of its own
  * where that one stood (a DEV build THROWS if that pass is ready, which is a
  * tail `Game` named wrongly, not one that drew nothing) — so what our first
- * stage reads on any frame is what the grade read as Babylon's last pass; a
+ * stage reads on any frame is what it read as Babylon's next pass (the grade
+ * at X5.2c1, FXAA when it is on since X5.2c2); a
  * target is named for the stage that READS it, as Babylon names a
  * post-process's input (`PostProcessRTT-<label>`);
  * a pool target is bound (the whole target as the viewport) and cleared to
@@ -126,7 +127,8 @@ export class PostPasses implements PostPassOwner {
     this.camera.outputRenderTarget = this.output;
     this.open = true;
     this.cleared = false;
-    // The clear Babylon's `activate` gave the grade's input, in the same
+    // The clear Babylon's `activate` gave our first stage's input (FXAA's
+    // when it is on, since X5.2c2; the grade's at X5.2c1), in the same
     // pass: inside the prefix's last `apply`, after its own observers and
     // before its draw, so the pass the bind left pending opens cleared.
     // Hung once on whichever pass is the tail, and moved when a setting
@@ -160,14 +162,15 @@ export class PostPasses implements PostPassOwner {
     if (!this.cleared) {
       // ...or `Game.postPrefixTail` named a pass that is not the prefix's
       // last, which this cannot tell from that: the real last pass drew, and
-      // this clear would land after it and grade a clear colour, silently.
+      // this clear would land after it and our first stage would read a
+      // clear colour, silently.
       // Babylon's `apply` returns nothing exactly while `!isReady()`, and
       // no readiness changes inside a frame, so a READY tail that never
       // applied is the wrong one — thrown in a DEV build, as `GiCompute`
       // throws a dispatch nobody recorded; production keeps the clear.
       if (import.meta.env.DEV && this.tail?.isReady()) {
         throw new Error(
-          `post: the prefix's tail "${this.tail.name}" is ready and never applied this frame — Game.postPrefixTail does not name the prefix's last pass, and the fallback clear would wipe the grade's input`,
+          `post: the prefix's tail "${this.tail.name}" is ready and never applied this frame — Game.postPrefixTail does not name the prefix's last pass, and the fallback clear would wipe our first stage's input`,
         );
       }
       this.clear();

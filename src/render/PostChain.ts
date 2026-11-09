@@ -2,11 +2,12 @@
  * render/PostChain.ts — The post chain's HOST (`BABYLON_EXIT.md` X5.2c1): the
  * ordered list of full-screen stages OUR renderer draws after Babylon's
  * prefix of the chain, the ink alone (FXAA, the shafts — a stage a rung —
- * the blur and the grade since X5.2c2), each one DECLARED rather than wired, and the one loop that
- * routes them — a pass per active stage, in list order, each reading the one
- * before's output, the LAST active stage given the canvas and any other a
- * target of the owner's POOL, one a pass POSITION (so each pass of a frame
- * writes a target of its own, as each Babylon pass had an input of its own).
+ * the blur and the grade since X5.2c2), each one DECLARED rather than wired,
+ * and the one loop that routes them — a pass per active stage, in list
+ * order, each reading the one before's output, the LAST active stage given
+ * the canvas and any other a target of the owner's POOL, one a pass POSITION
+ * (so each pass of a frame writes a target of its own, as each Babylon pass
+ * had an input of its own).
  * Owns: `PostChain`; `PostStage` (what a stage declares), `PostExtra` (a
  * texture a stage reads beside its input) and `PostPassOwner` (what the side
  * that OPENS the passes must do); Babylon's full-screen quad as a vertex and

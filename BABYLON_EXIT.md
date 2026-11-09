@@ -4396,6 +4396,24 @@ owes" below.
   `volumetrics=high` 147 byte-equal; the same rows red against `ref/` (34, 102, 93); `gate`
   (7 maps) clean. The lines naming it are in `post-expected.txt`, commented out (a later
   sub-step compares against a parent on the same side of the change).
+
+  **Their review** (HASHR2; 2026-11-08; no change to the picture: comments, documents, a
+  probe scenario) found nothing real across cb17a73, a459e7c and 83d5255 and eight minor
+  points, each checked against the tree first. **Stale text**: `Settings.fxaa` ("off detaches
+  the pass"), `Game`'s ink comment (FXAA missing from our stages; the append sentence now the
+  ink's alone), `post-expected.txt`'s FXAA section (`autoClear = false` stated only until the
+  picture change), the decision row ("first two or three frames"), and the prefix output's
+  clear named "the grade's input" in `docs/rendering.md` and `PostPasses` (its DEV throw's
+  message among them, the logic unchanged) — since X5.2c2 it is our FIRST stage's, FXAA's when
+  it is on. `Fxaa.isEnabled` had no reader and is gone. `PostChain`'s header rewrapped.
+  **Coverage**: no scenario and no bank row drew FXAA straight into the canvas (every other
+  tail pass off), so `post.mjs` gains a seventeenth, `fxaa-alone`, appended at the END so every
+  scenario before it stands where it did. **Measured**: the probe with it (`--no-live`, both
+  pages) at 41fb598 — FXAA Babylon's pass into the canvas — and at cb17a73 — FXAA our stage
+  into the canvas — compared `--against` with `post-expected.txt`: **equal**, 29,651 values a
+  page, FXAA's draw's X5.2b fields alone excused (30 paths, the new scenario's two among them);
+  `fxaa-alone`'s canvas `1735d52707135209` (desk) and `38f1059d519aab3f` (phone) on both trees.
+  Typecheck, build and corecheck pass.
 - **X5.2d — the head: the ink and the glow's compose are ours.** The scene draws
   straight into the frame's render target (`outputRenderTarget` with depth),
   its formats equal to `FRAME_TARGETS` (`render/targets.ts`), the clear moved
@@ -4758,6 +4776,6 @@ Phase 1 actually took.
 | X5.2 | **A profiler report version.** | **Decided** 2026-11-08 by the owner, the planner's recommendation: none under shape (A) while `render`, `glow` and `gpu.frame` keep their meaning, which each sub-step checks rather than assumes; a sub-step that moves a draw out of its span (the blur's out of `glow`) bumps the version and says why. |
 | X5.2 | **X0.3's scope** in the whole step's Verify. | **Decided** 2026-11-08 by the owner, the planner's recommendation: the desktop `bench.mjs --max`, three runs at the parent and three after; a phone `?bench&gpu` capture optional and the owner's, the Verify not waiting on it. |
 | X5.2 | **"The bank with every post setting on and off"**: the bank holds one row a setting off, none with every tail pass off. | **Decided** 2026-11-08 by the owner, the planner's recommendation: X5.2a's added rows (`post-alloff`, `post-damage`, `post-scale50`, `post-scale75`, `post-glowlow`) beside the bank's one-pass-off rows are its meaning; no pairwise or full-combination rows. |
-| X5.2 | **autoClear** (X5.2c2): deleting `DefaultRenderingPipeline` takes away the `scene.autoClear = false` it set, so the frame's opening canvas pass CLEARS its colour where it loaded it. Measured with the probe: every final canvas equal in all 32 scenarios (the last pass overwrites the canvas whole), the canvas-only frame after a render-scale change or a resize unaffected (its pass is not the scene's clear), and the page's first three frames of every boot — before the chain first draws, under the boot screen — holding the boot map's clear colour, opaque, where the parent held transparent zeros. Hold `autoClear` false (byte-exact) or let it return to true as the plan says (a picture change)? | **Decided** 2026-11-08 by the owner: **true, as the plan says, as a picture change** — FXAA lands byte-exact first with an explicit `scene.autoClear = false` standing in for the pipeline's, then a commit of its own whose subject starts `Picture change:` turns it back to true, with its numbers. X5.2d's text reads `autoClear` true. |
+| X5.2 | **autoClear** (X5.2c2): deleting `DefaultRenderingPipeline` takes away the `scene.autoClear = false` it set, so the frame's opening canvas pass CLEARS its colour where it loaded it. Measured with the probe: every final canvas equal in all 32 scenarios (the last pass overwrites the canvas whole), the canvas-only frame after a render-scale change or a resize unaffected (its pass is not the scene's clear), and the page's first two or three frames of every boot — before the chain first draws, under the boot screen — holding the boot map's clear colour, opaque, where the parent held transparent zeros. Hold `autoClear` false (byte-exact) or let it return to true as the plan says (a picture change)? | **Decided** 2026-11-08 by the owner: **true, as the plan says, as a picture change** — FXAA lands byte-exact first with an explicit `scene.autoClear = false` standing in for the pipeline's, then a commit of its own whose subject starts `Picture change:` turns it back to true, with its numbers. X5.2d's text reads `autoClear` true. |
 | X5.4 | Phase 4's gate found the canvas and raw textures our draws read through the seam (`hostTexture`: the motes, the puff, the scorch, the blob, the sky's, the cel materials' own, the shadow maps it wraps) named by no step before X6.1, X5.4's foam item covering only a texture Babylon decoded and mipped. When do they go? | **Decided** 2026-11-07 by the owner: in X5.4, beside the foam, as one item under one bank proof — the five ours alone since Phase 4 wait only for that, the cel materials' and the shadow maps' because an editor build samples them until X5.3; `GiVolume`'s seven stay X5.1's. |
 | X6.2 | Is it ready to merge to `develop`? | Only when X6.2's "Before" list passes in full. |

@@ -83,7 +83,8 @@
 # X5.2c2, FXAA: our draw, the chain's first stage of ours after the ink
 # (`shaders/Fxaa.ts`, `wgsl/fxaa.ts`), compared with the Babylon draw it
 # replaced; `DefaultRenderingPipeline` deleted, the `scene.autoClear = false` it
-# set stated by `Game` in its place, so every pass's clear is the parent's.
+# set stated by `Game` in its place (at cb17a73, until the picture change below,
+# a459e7c, put it back to true), so every pass's clear is the parent's.
 # X5.2b's three fields, for X5.2b's reasons:
 **.draws[stage=fxaa].pipeline.call
 **.draws[stage=fxaa].bundle

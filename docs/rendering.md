@@ -3546,11 +3546,12 @@ opening canvas pass; as the camera picks its render pass id; and as
 `_finalizeFrame` binds its last pass's target, the only one meant — and at five
 more, inert under the window, which `BABYLON_EXIT.md`'s "What it is today"
 lists); the target is CLEARED to the scene's clear colour in the pass that
-writes it, as Babylon's `PostProcess.activate` cleared the grade's input — from
+writes it, as Babylon's `PostProcess.activate` cleared the input of Babylon's next
+pass — whichever stage of ours reads it first, FXAA when it is on — from
 the prefix's last pass's `onApplyObservable` (`Game.postPrefixTail`), or in a
 pass of its own on a frame that pass draws nothing (a DEV build THROWS if that
 pass is READY, since a ready pass that never applied is a tail named wrongly,
-whose fallback clear would wipe the grade's input); then the canvas is opened with
+whose fallback clear would wipe our first stage's input); then the canvas is opened with
 `restoreDefaultFramebuffer`, as `_finalizeFrame` opened it, and the stage's draw
 goes in through `Renderer.postStageOpened` (`passIs` against `canvasTargets`:
 the swap chain's format, the ENGINE's `depth32float`, written with compare

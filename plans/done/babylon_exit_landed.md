@@ -10591,3 +10591,21 @@ both frames, one process each — cross-process residue), `sarab-shelf` within i
 `volumetrics=high` 147 byte-equal; the same rows red against `ref/` (34, 102, 93); `gate`
 (7 maps) clean. The lines naming it are in `post-expected.txt`, commented out (a later
 sub-step compares against a parent on the same side of the change).
+
+**Their review** (HASHR2; 2026-11-08; no change to the picture: comments, documents, a
+probe scenario) found nothing real across cb17a73, a459e7c and 83d5255 and eight minor
+points, each checked against the tree first. **Stale text**: `Settings.fxaa` ("off detaches
+the pass"), `Game`'s ink comment (FXAA missing from our stages; the append sentence now the
+ink's alone), `post-expected.txt`'s FXAA section (`autoClear = false` stated only until the
+picture change), the decision row ("first two or three frames"), and the prefix output's
+clear named "the grade's input" in `docs/rendering.md` and `PostPasses` (its DEV throw's
+message among them, the logic unchanged) — since X5.2c2 it is our FIRST stage's, FXAA's when
+it is on. `Fxaa.isEnabled` had no reader and is gone. `PostChain`'s header rewrapped.
+**Coverage**: no scenario and no bank row drew FXAA straight into the canvas (every other
+tail pass off), so `post.mjs` gains a seventeenth, `fxaa-alone`, appended at the END so every
+scenario before it stands where it did. **Measured**: the probe with it (`--no-live`, both
+pages) at 41fb598 — FXAA Babylon's pass into the canvas — and at cb17a73 — FXAA our stage
+into the canvas — compared `--against` with `post-expected.txt`: **equal**, 29,651 values a
+page, FXAA's draw's X5.2b fields alone excused (30 paths, the new scenario's two among them);
+`fxaa-alone`'s canvas `1735d52707135209` (desk) and `38f1059d519aab3f` (phone) on both trees.
+Typecheck, build and corecheck pass.

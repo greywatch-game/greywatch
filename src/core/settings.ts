@@ -136,7 +136,8 @@ export type Settings = {
    */
   paperGrain: boolean;
   /**
-   * FXAA, the antialiasing pass over the inked frame. Off detaches the pass.
+   * FXAA, the antialiasing pass over the inked frame. Off is its post chain
+   * stage's `active()` false: the stage is not drawn (`Fxaa.setEnabled`).
    *
    * On by default everywhere, which is the chain as it was before the setting
    * existed. It is here for a PHONE: on a high-density panel a stair is a

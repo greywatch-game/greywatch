@@ -2175,11 +2175,11 @@ export class Game {
     // Babylon's, where its group 1 drew them (`Renderer.glowMaskClosing`,
     // BABYLON_EXIT.md X4.3c's review, the owner's decision).
     glow.onMaskCloseObservable.add(() => this.renderer.glowMaskClosing());
-    // THE INK GOES ON FIRST, and the ordering is the whole of why it is
-    // constructed here, ahead of FXAA (the shafts, the blur and the grade
-    // are our post chain's stages, after Babylon's whole list). A
-    // `PostProcess` given a camera attaches itself, and `attachPostProcess`
-    // APPENDS — so what is built first runs first. The ink is part of the
+    // THE INK GOES ON FIRST, and it is the one pass of the chain Babylon
+    // still draws: a `PostProcess` given a camera attaches itself, and the
+    // ink is the only one built (FXAA, the shafts, the blur and the grade are
+    // our post chain's stages, after Babylon's whole list, in the host's
+    // order — X5.2c1, X5.2c2). The ink is part of the
     // PICTURE and not a grade over one: FXAA below then antialiases the lines
     // it draws (they come off a depth buffer, which has no antialiasing of its
     // own), and the shafts, the smear and the grain all land on top of inked

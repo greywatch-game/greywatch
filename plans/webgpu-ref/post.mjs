@@ -180,7 +180,10 @@ const EYE = { pos: [2, 1.7, 18], target: [0, 2.2, -14] };
  * The scenarios, in the one order a boot runs them: every render scale at
  * both glow rungs (the blur's kernel text is a function of the pair), every
  * shafts rung, each tail pass off, every tail pass off, the blur in flight,
- * the damage flash, and the base again (the camera's list after every toggle).
+ * the damage flash, and the base again (the camera's list after every toggle)
+ * — then FXAA ALONE (every other tail pass off: FXAA drawn straight into the
+ * canvas), appended by X5.2c2's review at the END so every scenario before it
+ * stands where it did, and a log without it differs only by that scenario.
  */
 const SCENARIOS = [
   { id: "base" },
@@ -199,6 +202,7 @@ const SCENARIOS = [
   { id: "alloff", settings: { fxaa: false, volumetrics: "off", motionBlur: false, paperGrain: false } },
   { id: "damage", damage: true },
   { id: "base-again" },
+  { id: "fxaa-alone", settings: { volumetrics: "off", motionBlur: false, paperGrain: false } },
 ];
 
 /** Frames to converge before the freeze and to settle after it — `bank.mjs`'s. */

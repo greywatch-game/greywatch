@@ -294,9 +294,10 @@ node plans/webgpu-ref/post.mjs --compare=a.json --against=b.json
 - **`post.mjs`** is the post chain read off the DEVICE pass by pass (`BABYLON_EXIT.md`
   X5.2a; its header is its contract): Hollowmere's `lanterns` eye, shot as `bank.mjs`
   shoots a row, at two page sizes (`desk`, 1920x1080 at 1, the bank's; `phone`, 832x384
-  at a device scale of 2.8125) through sixteen scenarios a boot (every render scale at
+  at a device scale of 2.8125) through seventeen scenarios a boot (every render scale at
   both glow rungs, every shafts rung, each tail pass off, all of them off, the blur in
-  flight, the damage flash held, and the base again after every toggle), two frames
+  flight, the damage flash held, the base again after every toggle, and — since X5.2c2's
+  review — FXAA alone, drawn straight into the canvas), two frames
   captured each and the second logged: every render pass in submit order with its
   attachments, load and store ops and clear values, a SHA-256 of each target as its pass
   left it (a copy recorded on the pass's own encoder after its `end`), and every draw a
