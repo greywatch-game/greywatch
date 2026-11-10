@@ -28,7 +28,8 @@
  * sampler that is `linear` for minification and nothing else, levels top
  * down, each pass loading its level and storing it — recorded on an encoder of
  * its own and submitted at once; **a mipped texture has NO VIEW until its chain
- * is recorded**, so nothing ever samples a half-made chain (a draw over one
+ * is recorded** (and, if the mip pipeline failed, a view of its top level
+ * alone), so nothing ever samples a half-made chain (a draw over one
  * draws nothing, as a Babylon material not ready drew nothing): Babylon built
  * its mip pipeline synchronously at its engine's boot and recorded a chain
  * with its upload, and ours is the cache's one (`PipelineCache`, the
@@ -164,13 +165,14 @@ interface Owed {
 /**
  * A texture's view, whole, stated as Babylon's hardware texture stated the one
  * it bound (`createGPUTextureForInternalTexture`): every level, its one layer,
- * every aspect — what a bare `createView()` defaults to, written out.
+ * every aspect — what a bare `createView()` defaults to, written out. `levels`
+ * is short of every level only for a chain the mip pipeline never drew (`chain`).
  */
-function whole(texture: GPUTexture): GPUTextureView {
+function whole(texture: GPUTexture, levels = texture.mipLevelCount): GPUTextureView {
   return texture.createView({
     format: texture.format,
     dimension: "2d",
-    mipLevelCount: texture.mipLevelCount,
+    mipLevelCount: levels,
     baseArrayLayer: 0,
     baseMipLevel: 0,
     arrayLayerCount: 1,
@@ -275,7 +277,8 @@ export class TextureMaker {
    * it is, the handle binds the stand-in Babylon bound for a texture not ready —
    * the engine's empty texel at `NEAREST_SAMPLINGMODE`, wrapped as the texture
    * is wrapped. `whenReady` is told once it is, or with the error if it fails
-   * (the stand-in stays).
+   * — the fetch, the decode, or the upload after it (the stand-in stays) — and
+   * is told exactly once either way.
    */
   image(
     label: string,
@@ -290,6 +293,7 @@ export class TextureMaker {
       addressModeU: sampling.addressModeU,
       addressModeV: sampling.addressModeV,
     });
+    const standIn = { view: made.view, sampler: made.sampler };
     void fetch(url)
       .then((r) => {
         if (!r.ok) throw new Error(`${label}: ${r.status} ${r.statusText}`);
@@ -298,22 +302,36 @@ export class TextureMaker {
       .then((data) =>
         createImageBitmap(new Blob([data], { type: "" }), { premultiplyAlpha: "none", colorSpaceConversion: "none" }),
       )
-      .then(
-        (bitmap) => {
+      .then((bitmap) => {
+        let texture: GPUTexture | null = null;
+        try {
           const { width, height } = bitmap;
-          const texture = this.texture(label, width, height, "rgba8unorm", true);
+          texture = this.texture(label, width, height, "rgba8unorm", true);
           this.device.queue.copyExternalImageToTexture(
             { source: bitmap, flipY: true },
             { texture, premultipliedAlpha: false },
             [width, height, 1],
           );
-          bitmap.close();
           made.texture = texture;
           // The stand-in stays bound until the chain is recorded — at once, the
           // pipeline having settled long before any decode lands.
           this.mips({ made, texture, sampling });
-          whenReady(null);
-        },
+        } catch (error: unknown) {
+          // A throw past the decode (the device lost under it) fails as a fetch
+          // or a decode does: the stand-in bound, the texture made for it
+          // retired, and `whenReady` told below — or the scene's pending data
+          // is never released and nothing waiting on `isReady` ever runs.
+          made.texture = null;
+          made.view = standIn.view;
+          made.sampler = standIn.sampler;
+          if (texture) this.retired.push(texture);
+          throw error;
+        } finally {
+          bitmap.close();
+        }
+      })
+      .then(
+        () => whenReady(null),
         (error: unknown) => whenReady(error),
       );
     return made;
@@ -375,9 +393,9 @@ export class TextureMaker {
     });
   }
 
-  /** `made` bound as `texture`, whole, with `sampling`'s sampler. */
-  private show(made: MadeTexture, texture: GPUTexture, sampling: GPUSamplerDescriptor): void {
-    made.view = whole(texture);
+  /** `made` bound as `texture` — whole, or its top `levels` — with `sampling`'s sampler. */
+  private show(made: MadeTexture, texture: GPUTexture, sampling: GPUSamplerDescriptor, levels = texture.mipLevelCount): void {
+    made.view = whole(texture, levels);
     made.sampler = this.sampler(sampling);
   }
 
@@ -393,10 +411,13 @@ export class TextureMaker {
    */
   private chain({ made, texture, sampling }: Owed): void {
     const encoder = this.device.createCommandEncoder({ label: `${texture.label}: mips` });
-    this.chains.record(texture, encoder);
+    const recorded = this.chains.record(texture, encoder);
     this.chains.forget(texture);
     this.device.queue.submit([encoder.finish()]);
-    this.show(made, texture, sampling);
+    // Not recorded (the mip pipeline failed), levels 1 and down were never
+    // written — zeros, which a far sample reads as black — so the texture is
+    // shown with its top level alone, as the constructor's log says.
+    this.show(made, texture, sampling, recorded ? texture.mipLevelCount : 1);
   }
 
   /** The engine's empty texel's view, made at the first ask. */

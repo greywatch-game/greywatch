@@ -158,6 +158,20 @@ inside a constructor or a method, where a device already exists, the globals
 are fine. Found by X5.2b's review, which caught two such modules (one of them
 there since X5.1b).
 
+**`scripts/check-webgpu-globals.mjs` holds it, from `npm run build` beside the
+deep-import gate** (added by `BABYLON_EXIT.md` X5.4d's review: until then only
+`kit:hash`'s Node run caught one, and only in a module the world's builders
+reach). It parses every file under `src/` and `main.ts` with TypeScript's parser
+alone — no program, no checker, about a second — and refuses any identifier
+spelled `GPU` and a capital that is READ while the module is evaluated: a
+statement, a top-level initializer, an enum member, a class's `extends`, a
+computed member name, a static field or block. A function's parameters and body
+and an instance field's initializer are exempt (they run once a device exists),
+as are type positions, property names and any name the file binds itself
+(Babylon's `GPUParticleSystem` is an import). It reads syntax, so a function
+CALLED at the top level that names one inside is the case it cannot see — `kit:hash`
+still catches that where it reaches.
+
 ## Havok's `.wasm` is the one binary that ships
 
 ~2 MB, pulled in by `@babylonjs/havok` for the ragdolls and the glass. It is

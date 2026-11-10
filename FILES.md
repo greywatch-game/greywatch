@@ -135,6 +135,11 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
   check-deep-imports.mjs      # BUILD GATE: refuses a deep static import into
                               #   @babylonjs/core under src/ and main.ts — an
                               #   absolute rule tsc cannot see
+  check-webgpu-globals.mjs    # BUILD GATE: refuses a WebGPU global (`GPU` and
+                              #   a capital) READ at a module's top level under
+                              #   src/ and main.ts, which throws before main.ts'
+                              #   WebGPU gate runs. TypeScript's parser alone;
+                              #   function bodies and instance fields exempt
   check-babylon-free.mjs      # BUILD GATE: refuses any VALUE import path to
                               #   @babylonjs/core from server/, src/sim/ or a
                               #   simulation module (its SIMULATIONS list,

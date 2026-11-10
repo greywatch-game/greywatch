@@ -7282,9 +7282,12 @@ of empty dome.
   that question, which is exactly why it goes unnoticed: what it breaks is the
   TOOLING that does. The kit backdrop's paint spent a day inside the
   bay-follows-the-DOM repaint and took `npm run shots` down on every map with
-  it (`VERIFYING.md` has the hunt). Every `DynamicTexture` in the tree is
-  uploaded in its own constructor now; a repaint later is a repaint, never the
-  first one.
+  it (`VERIFYING.md` has the hunt). Every `DynamicTexture` was uploaded in its
+  own constructor by the end; what stands for one now (a `Picture`) is uploaded by
+  the `TextureMaker.picture` call that makes its texture, and the one texture
+  that holds `scene.isReady()` while it loads is the water's foam, whose pending
+  data `TextureMaker.image`'s `whenReady` releases on every path, a failed upload
+  included.
 - **Sky textures are uploaded UNFLIPPED (`flipY: false`, `update(false)` while they
   were `DynamicTexture`s).** A canvas upload flips Y by default, which maps canvas row 0 to `v = 1` — the *nadir* on Babylon's
   sphere, whose UVs run `v = acos(y)/PI` down from the zenith. A sky painted top-down

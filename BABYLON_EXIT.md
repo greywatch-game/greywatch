@@ -5888,6 +5888,9 @@ measurement until the sub-step that replaces both.
   - What the owner's answer says, tested by `lost.mjs` destroying the device on purpose
     at the menu, the building card, deploy and a life, offline and in a match, twice in a
     row (the loop guard).
+  - **Owes `Renderer.dispose` and `TextureMaker.dispose` destroying every texture the maker
+    made** — the live ones and the lit texel, not only the retired and the empty texel —
+    since nothing calls either until a lost device does (found by X5.4d's review).
   - **Verify:** `lost.mjs`; every bank row (no frame without a loss moves); the boot's
     failure branches unchanged.
   - **Rewrites:** `docs/states.md` or `docs/game.md` (where the loss goes); `CLAUDE.md`

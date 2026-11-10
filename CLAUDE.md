@@ -79,7 +79,8 @@ bleed). **Babylon.js** + **TypeScript** + **Vite**; ES modules, Node 24+,
 one. `main.ts` gates the boot on `navigator.gpu` AND an adapter, so a browser
 without one gets a sentence instead of a black page — **and no module may name
 a WebGPU global (`GPUBufferUsage`, …) at its top level**, which throws before
-the gate runs (`docs/build.md`).
+the gate runs — `scripts/check-webgpu-globals.mjs` fails the build on one
+(`docs/build.md`).
 
 **The engine is built with `compatibilityMode = false`, and that is load-bearing
 rather than a tuning flag. Do not delete it to tidy the boot.** Its risk is
