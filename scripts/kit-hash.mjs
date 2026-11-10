@@ -885,7 +885,7 @@ async function hashModelJobs(jobs) {
     const B = await server.ssrLoadModule("@babylonjs/core");
     B.Logger.LogLevels = B.Logger.NoneLogLevel;
     const load = (p) => server.ssrLoadModule(p);
-    const [W, VM, PL, PV, GR, MO, RPG, MINE, VK, SM, CZ, FIN, TV, VT, PA, CFG, GB, ZD] = await Promise.all(
+    const [W, VM, PL, PV, GR, MO, RPG, MINE, VK, SM, CZ, FIN, TV, VT, PA, CFG, GB, ZD, RID] = await Promise.all(
       [
         "/src/entities/weapons.ts",
         "/src/entities/ViewModel.ts",
@@ -905,6 +905,7 @@ async function hashModelJobs(jobs) {
         "/src/config/index.ts",
         "/src/geometry/buffer.ts",
         "/src/render/ZoneDraw.ts",
+        "/src/core/renderId.ts",
       ].map(load),
     );
     // A pool's piece parts as the meshes they were until X4.4b (the header):
@@ -941,14 +942,16 @@ async function hashModelJobs(jobs) {
         if (p.kind.startsWith("weapon:")) {
           const id = p.kind.slice("weapon:".length);
           // Built alone, as before: a tree with no camera, the weapon's root
-          // at its top level.
-          tree = new VT.ViewTree(scene, null);
+          // at its top level. Every tree here is keyed on a render id of its
+          // own at 0 (`core/renderId.ts`, X5.4b), as the fresh scene's never
+          // rendered id was.
+          tree = new VT.ViewTree(new RID.RenderId(), null);
           const parts = weaponBuilders[id](scene, mats, `view_${id}`, tree, null);
           if (p.finish) FIN.applyFinish(mats, parts.finish, p.finish);
           data = parts;
         } else if (p.kind === "viewmodel") {
           const camera = new B.TransformNode("camera", scene);
-          const vm = new VM.ViewModel(scene, mats, camera);
+          const vm = new VM.ViewModel(scene, mats, camera, new RID.RenderId());
           tree = vm.tree;
           if (p.weapon) vm.setWeapon(p.weapon);
           if (p.sight) vm.setSight(p.sight);
@@ -971,7 +974,7 @@ async function hashModelJobs(jobs) {
           const camera = new B.TransformNode("camera", scene);
           // As `Game` builds the pair: the picture, then the player that
           // puts it away (`applyVisibility`) — which is part of the record.
-          const view = new PV.PlayerView(scene, mats, camera);
+          const view = new PV.PlayerView(scene, mats, camera, new RID.RenderId());
           new PL.Player(view);
           tree = view.model.tree;
           // The casing pool, as the meshes it was (X4.4b): one a case, made

@@ -50,14 +50,18 @@
  *   surface whose joint chain is switched on and whose own `isVisible` is set,
  *   whatever its role — through the `RenderCache` as `_evaluateActiveMeshes`
  *   computed it, at the provisional id the cache SETTLES at the render's
- *   evaluation id from inside the render
- *   (`onAfterActiveMeshesEvaluationObservable`): so the stamps Babylon's own
+ *   evaluation id when the render id tells its evaluation
+ *   (`RenderId.onEvaluated`, `core/renderId.ts`: where Babylon's render
+ *   evaluated, once the id has moved): so the stamps Babylon's own
  *   evaluation left are the ones the next frame's readers meet, and narrowing
  *   the set (to one role, say), or settling at another id, would move the
  *   next frame's `muzzleWorld` and `throwHandWorld` — two command inputs
  *   (X4.3b's review). A segment's matrix is its joint's world as the
  *   evaluation left it, read by `Game.drawView` straight after. The walk from
  *   the root never enters a switched-off subtree.
+ * - **The render id is OURS** (`RenderId`, `BABYLON_EXIT.md` X5.4b), handed
+ *   in: a counter with Babylon's meaning, moved where `scene.render` moved
+ *   Babylon's. This file names neither Babylon's id nor its scene.
  * - **The readers answer Babylon's answers** (`read`, `world`): the render-id
  *   cache, never a fresh compose — two of them are command inputs. See
  *   `RenderCache`. A script that wants a joint's world composes its own copy
@@ -68,7 +72,7 @@
  * Never: make or parent a mesh, compose a joint outside the cache, or read a
  * node's matrix (the camera's world is read through the root).
  */
-import type { Scene } from "@babylonjs/core";
+import type { RenderId } from "../core/renderId";
 import type { GeometryBuffer } from "../geometry/buffer";
 import { Quaternion, Vector3 } from "../math";
 import { Part } from "../world/parts";
@@ -212,10 +216,10 @@ export class ViewTree {
   private spare: ViewMesh[] = [];
 
   constructor(
-    scene: Scene,
+    renderId: RenderId,
     readonly camera: ViewCamera | null,
   ) {
-    this.cache = new RenderCache(() => scene.getRenderId());
+    this.cache = new RenderCache(() => renderId.current);
     if (camera) {
       const root = this.add(camera.name, null);
       root.outside = () => camera.getWorldMatrix();
@@ -225,10 +229,10 @@ export class ViewTree {
     } else {
       this.root = null;
     }
-    // Inside the render, once Babylon has moved the id it evaluated at —
-    // whether or not Babylon draws anything at all.
-    scene.onAfterActiveMeshesEvaluationObservable.add(() => {
-      this.cache.settle(scene.getRenderId());
+    // At the render's evaluation, once the id has moved to the one it
+    // evaluated at — whether or not anything is drawn at all.
+    renderId.onEvaluated(() => {
+      this.cache.settle(renderId.current);
     });
   }
 

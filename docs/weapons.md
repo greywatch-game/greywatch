@@ -77,8 +77,11 @@ two meshes an arm, one per colour.
   world the last render composed for a node drawn in it, however it has moved
   since, and a compose off its ancestors' cached worlds only for one that was
   not. `RenderCache` (`rigJoints.ts`) reproduces that rule, stamped by the
-  render's own evaluation, so the answers are Babylon's to the bit (X4.3b's
-  oracle, and the owner's decision that they stay so). **A new reader asks the
+  render's own evaluation and keyed since `BABYLON_EXIT.md` X5.4b on a render id
+  of OURS with Babylon's meaning (`core/renderId.ts`, moved at the two points a
+  frame Babylon's moved), so the answers are Babylon's to the bit (X4.3b's
+  oracle, `plans/webgpu-ref/readers.mjs`, and the owner's decision that they
+  stay so). **A new reader asks the
   tree (`ViewTree.read` / `world`) and never composes a joint itself**, and every
   write to a joint's channels goes through `ViewModel.wrote`, which is the dirty
   flag each Babylon vector kept.

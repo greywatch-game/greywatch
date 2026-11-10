@@ -158,6 +158,7 @@ import {
   PartNode,
 } from "../world/parts";
 import { ReloadGesture, type ReloadInput, type ReloadPose, type ReloadRig } from "./ReloadGesture";
+import type { RenderId } from "../core/renderId";
 import type { Joint } from "./rigJoints";
 import {
   segmentBounds,
@@ -796,7 +797,7 @@ export class ViewModel {
    */
   private readonly spinQ = new Quaternion();
 
-  constructor(scene: Scene, mats: CelMaterialFactory, camera: ViewCamera) {
+  constructor(scene: Scene, mats: CelMaterialFactory, camera: ViewCamera, renderId: RenderId) {
     const v = CONFIG.viewmodel;
     this.mats = mats;
     this.hipPos = new Vector3(v.hipPos.x, v.hipPos.y, v.hipPos.z);
@@ -804,7 +805,7 @@ export class ViewModel {
 
     // The camera's stand-in is the tree's root: everything below is a joint
     // made where a `TransformNode` used to be, in the same order.
-    const tree = new ViewTree(scene, camera);
+    const tree = new ViewTree(renderId, camera);
     this.tree = tree;
     const eye = tree.root!;
     this.body = tree.joint("viewmodel_body", eye);

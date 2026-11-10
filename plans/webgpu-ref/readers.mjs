@@ -17,9 +17,11 @@
  * start, `OrdnanceCommand.origin`), `throwHandWorld` (a grenade's,
  * `GrenadeCommand.origin`), `ejectPortWorld` (the brass; the plan's "eye port")
  * and the reload's gravity, taken through the inverse of the weapon root's world
- * (`ViewModel.evaluateReload`, "the root's inverse"). The cache is keyed on
+ * (`ViewModel.evaluateReload`, "the root's inverse"). The cache was keyed on
  * Babylon's RENDER ID and settled from inside Babylon's render, both of which
- * X5.4 takes away; so this is the BEFORE every sub-step that moves either is
+ * X5.4 takes away (since X5.4b it is keyed on a counter of OURS moved where
+ * Babylon's moved, `src/core/renderId.ts`, a DEV shadow holding the two a
+ * constant apart); so this is the BEFORE every sub-step that moves either is
  * graded against.
  *
  * **`record`** plays a LIVE offline round on Harrowmead (an armoured map, so the

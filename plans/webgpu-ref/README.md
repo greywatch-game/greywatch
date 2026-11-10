@@ -457,18 +457,22 @@ does.
   pose PINNED at each frame's before-draw (after the camera's updates, before its
   matrices are computed) as a function of the step — X5.4f's and
   X5.4h's BEFORE, compared across processes and trees.
-- **`leaks.mjs`** is the BABYLON-LEAK probe (X5.4a; X5.4b's proof for
-  `src/core/webgpuLeaks.ts`): one Coldharbour page, the boot settled as the
-  baseline, two rounds each with a life and a teardown, a map change and a round
-  there, and at each step (after a forced GC) every `_deletePipelineContext` since
-  the baseline, every bind group Babylon's cache made (read across its own reset),
-  every `createBindGroup` on the device, the live `GPUBuffer`s and the JS heap — by
-  frame class. **A POSITIVE CONTROL runs first** (X5.4a's review), in a class of its own
+- **`leaks.mjs`** is the BABYLON-LEAK probe (X5.4a; the proof X5.4b deleted
+  `src/core/webgpuLeaks.ts` on, and the regression read while Babylon's engine
+  stands): one Coldharbour page, the boot settled as the
+  baseline, `--rounds` rounds (two; X5.4b read four) each with a life and a teardown,
+  a map change and a round there, and at each step (after a forced GC) every
+  `_deletePipelineContext` since the baseline, every bind group Babylon's cache made
+  (read across any reset of it), every `createBindGroup` on the device, the live
+  `GPUBuffer`s and their MB, and the JS heap — by frame class. **A POSITIVE CONTROL runs first** (X5.4a's review), in a class of its own
   kept out of every read: a throwaway effect (clearQuad's WGSL under a define of its own)
   compiled and disposed through Babylon's release path, which must count one context
   deleted, and the engine's own bind-group cache asked once to make an empty set, which
   must count one call and one creation and no device bind group — or the run fails. It
-  records; X5.4b grades.
+  records; X5.4b graded it (no context released and no cached bind group made after the
+  boot in any class; the heap and the live buffers flat over four Coldharbour rounds with
+  the file and without) and deleted the file, after which the control's own released
+  effect is the one live buffer more than at a parent with it.
 - **`lost.mjs`** destroys the device every draw is made on, from the page, at the
   menu, the building card, deploy and a life, each on a fresh page, and records
   what follows for `--seconds`: the state, the frames drawn and submitted, whether

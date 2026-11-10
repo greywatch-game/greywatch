@@ -1,38 +1,44 @@
 /**
- * The BABYLON-LEAK probe (`BABYLON_EXIT.md` X5.4a: X5.4b's proof for
- * `src/core/webgpuLeaks.ts`). That file patches the two things Babylon's WebGPU
- * backend never gives back — a released effect's pipeline context, which
- * `_deletePipelineContext` on WebGPU never disposes, and the bind-group cache
- * (`WebGPUCacheBindGroups`), which is never pruned — and both bite only while
- * Babylon still RELEASES effects and still MAKES bind groups. Since X5.3d no
- * Babylon material compiles in any state and since X5.2d no Babylon pass draws,
- * so the question X5.4b asks is whether either still happens at all after the
- * boot; this counts both, and nothing else changes.
+ * The BABYLON-LEAK probe (`BABYLON_EXIT.md` X5.4a: X5.4b's proof for deleting
+ * `src/core/webgpuLeaks.ts`, which it did). That file patched the two things
+ * Babylon's WebGPU backend never gives back — a released effect's pipeline
+ * context, which `_deletePipelineContext` on WebGPU never disposes, and the
+ * bind-group cache (`WebGPUCacheBindGroups`), which is never pruned — and both
+ * bite only while Babylon still RELEASES effects and still MAKES bind groups.
+ * Since X5.3d no Babylon material compiles in any state and since X5.2d no
+ * Babylon pass draws, so the question X5.4b asked is whether either still
+ * happens at all after the boot; this counts both, and nothing else changes. It
+ * stays as the regression read for as long as Babylon's engine stands (to
+ * X5.4h): a count that moves off zero is the patch's two leaks back.
  *
  * ```
- * node plans/webgpu-ref/leaks.mjs [map] [--then=<map>] [--frames=600]
+ * node plans/webgpu-ref/leaks.mjs [map] [--then=<map>] [--frames=600] [--rounds=2]
  * ```
  *
  * One page (Coldharbour by default, the map `webgpuLeaks.ts`' header measured),
  * the round's seed pinned: the boot settled at the menu (the BASELINE: whatever
- * the boot made is the boot's), then two rounds — each installed, a life of
+ * the boot made is the boot's), then `--rounds` rounds (two by default; X5.4b
+ * read four, the deleted file's own measurement) — each installed, a life of
  * `--frames` frames in play, and torn down to the menu — then a MAP CHANGE (to
  * `--then`, Hollowmere by default, through `Game.setMap` as the menu does it), a
  * round there and its teardown. At the end of each step, read after a forced GC
  * (the DevTools protocol's `HeapProfiler.collectGarbage`), and per frame class
  * (the game's state at the frame adapter's begin):
  *
- * - every call of the engine's `_deletePipelineContext` since the baseline (the
- *   method `webgpuLeaks.ts` wraps; counted on the engine, outside that wrapper,
- *   so its own dispose is not counted twice) and whether it was handed a context;
+ * - every call of the engine's `_deletePipelineContext` since the baseline
+ *   (counted on the engine; at a parent with `webgpuLeaks.ts`, outside its
+ *   wrapper, so its own dispose is not counted twice) and whether it was handed
+ *   a context;
  * - every bind group Babylon's cache CREATED since the baseline
  *   (`WebGPUCacheBindGroups.NumBindGroupsCreatedTotal` read across every
- *   `getBindGroups`, so the cache's own reset at a teardown, `forgetBindGroups`,
- *   does not hide one), and every `GPUDevice.createBindGroup` beside it, ours
- *   and Babylon's together;
- * - the live `GPUBuffer`s (made less destroyed, off the device) and the JS heap
- *   used (`Runtime.getHeapUsage`) — `webgpuLeaks.ts`' own measurement, which
- *   X5.4b repeats over four Coldharbour rounds before it deletes the file.
+ *   `getBindGroups`, so a reset of the cache — the deleted file's
+ *   `forgetBindGroups` at a parent's teardown — does not hide one), and every
+ *   `GPUDevice.createBindGroup` beside it, ours and Babylon's together;
+ * - the live `GPUBuffer`s (made less destroyed, off the device), their BYTES (each
+ *   buffer's descriptor size, a destroyed one's taken off once) and the JS heap
+ *   used (`Runtime.getHeapUsage`) — `webgpuLeaks.ts`' own measurement (its heap
+ *   and its MB of live buffers), which X5.4b repeated over four Coldharbour rounds
+ *   at the parent and after the deletion.
  *
  * **A POSITIVE CONTROL runs first, at the menu, before the baseline**
  * (X5.4a's review: a reading of zero is X5.4b's licence to delete a file, so the
@@ -45,7 +51,8 @@
  *   compiled and cached, waited until ready, and disposed — Babylon's own path,
  *   `Effect.dispose` to `_releaseEffect` to `_deletePipelineContext` with its
  *   context, through `webgpuLeaks.ts`' wrapper. It must count 1 release, 1 with
- *   a context. (The game's DEV counter of Babylon compiles WARNS on it, once:
+ *   a context (through `webgpuLeaks.ts`' wrapper at a parent that has it).
+ *   (The game's DEV counter of Babylon compiles WARNS on it, once:
  *   the control compiles on purpose, as `shaders.mjs` does, and nothing here
  *   reads that counter.)
  * - **one bind-group set made by the engine's own cache**: the engine's
@@ -57,7 +64,13 @@
  *   device's `createBindGroup` none.
  *
  * Anything else fails the run (exit 1): the hooks are not where the engine
- * reaches them, and the counts after them grade nothing. **Otherwise it exits
+ * reaches them, and the counts after them grade nothing. **The control is also
+ * the one place leak (1) still shows**: with `webgpuLeaks.ts` gone (X5.4b) its
+ * released effect keeps its pipeline context's uniform buffer, so every read
+ * from the baseline on holds ONE more live `GPUBuffer` than at a parent with
+ * the file (measured alone: 142 live buffers at the menu, 143 after the
+ * control's release; 142 and 142 at the parent) — the control's, not the
+ * game's. **Otherwise it exits
  * 0 whatever it counts**: it records, and X5.4b grades. A lost device ends it
  * (`harness.mjs`, exit 4), and so does a hard limit (exit 3).
  */
@@ -68,6 +81,7 @@ const opt = (k, d) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length 
 const MAP = args.find((a) => !a.startsWith("--")) ?? "coldharbour";
 const THEN = opt("then", "hollowmere");
 const FRAMES = Number(opt("frames", "600"));
+const ROUNDS = Number(opt("rounds", "2"));
 const SEED = 5101;
 if (!MAP_IDS.includes(MAP) || !MAP_IDS.includes(THEN)) throw new Error(`a map of ${MAP_IDS.join(", ")}`);
 
@@ -75,20 +89,26 @@ hardLimit(1800);
 
 /** In every page before the game's first line: the device's buffers and bind groups, counted. */
 function deviceCounts() {
-  const C = (window.__leakDev = { buffers: 0, destroyed: 0, bindGroups: 0 });
+  const C = (window.__leakDev = { buffers: 0, destroyed: 0, bindGroups: 0, liveBytes: 0 });
   const D = window.GPUDevice?.prototype;
   if (!D) return;
   const dead = new WeakSet();
+  const size = new WeakMap();
   const createBuffer = D.createBuffer;
   D.createBuffer = function (...a) {
     C.buffers++;
-    return createBuffer.apply(this, a);
+    const b = createBuffer.apply(this, a);
+    const n = Number(a[0]?.size) || 0;
+    size.set(b, n);
+    C.liveBytes += n;
+    return b;
   };
   const destroy = GPUBuffer.prototype.destroy;
   GPUBuffer.prototype.destroy = function (...a) {
     if (!dead.has(this)) {
       dead.add(this);
       C.destroyed++;
+      C.liveBytes -= size.get(this) ?? 0;
     }
     return destroy.apply(this, a);
   };
@@ -209,13 +229,14 @@ const read = async (step) => {
       cacheCreated: sum("cacheCreated"),
       deviceBindGroups: d.bindGroups - L.dev0.bindGroups,
       liveBuffers: d.buffers - d.destroyed,
+      liveBufferMB: +(d.liveBytes / 1048576).toFixed(1),
       byClass: JSON.parse(JSON.stringify(Object.fromEntries(Object.entries(L.byClass).filter(([c]) => c !== "(control)")))),
     };
   }, step);
   r.heapMB = +(heap.usedSize / 1048576).toFixed(1);
   reads.push(r);
   console.log(
-    `${step.padEnd(30)} ${r.state.padEnd(9)} deletes ${r.deletes} (with a context ${r.deletesWithContext}), Babylon's cache made ${r.cacheCreated} bind groups, the device ${r.deviceBindGroups}; live buffers ${r.liveBuffers}, heap ${r.heapMB} MB`,
+    `${step.padEnd(30)} ${r.state.padEnd(9)} deletes ${r.deletes} (with a context ${r.deletesWithContext}), Babylon's cache made ${r.cacheCreated} bind groups, the device ${r.deviceBindGroups}; live buffers ${r.liveBuffers} (${r.liveBufferMB} MB), heap ${r.heapMB} MB`,
   );
 };
 const life = async () => {
@@ -228,9 +249,9 @@ const toMenu = async () => {
   await frames(60);
 };
 
-console.log(`leaks.mjs: ${MAP}, then ${THEN}; ${FRAMES} frames a life; seed ${SEED}`);
+console.log(`leaks.mjs: ${MAP} ${ROUNDS} rounds, then ${THEN}; ${FRAMES} frames a life; seed ${SEED}`);
 await read("baseline (the menu at boot)");
-for (const n of [1, 2]) {
+for (let n = 1; n <= ROUNDS; n++) {
   await installRound(page);
   await frames(30);
   await read(`round ${n}: deploy`);

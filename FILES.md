@@ -374,9 +374,10 @@ plans/webgpu-ref/     # The exit's probes and the reference bank, indexed by
                       #   through every state with the pose pinned
   leaks.mjs           # The Babylon-leak probe (X5.4a): pipeline contexts
                       #   released and cached bind groups made after the boot,
-                      #   live GPUBuffers and the heap, over two rounds, a
-                      #   teardown and a map change — webgpuLeaks.ts' proof,
-                      #   after a positive control that both hooks count
+                      #   live GPUBuffers (and their MB) and the heap, over
+                      #   --rounds rounds (two), a teardown and a map change —
+                      #   the proof that deleted webgpuLeaks.ts (X5.4b), after
+                      #   a positive control that both hooks count
   lost.mjs            # The device destroyed on purpose at the menu, the card,
                       #   deploy and a life, and what follows recorded (X5.4a;
                       #   graded from X5.4i)
@@ -700,12 +701,14 @@ src/
                         #   made before it, not counted), each compile said as
                         #   a console warning. The draw log asserts it. Until
                         #   X6.1 deletes the cel program's Babylon declarations
-    webgpuLeaks.ts      # What Babylon's WebGPU arm never gives back of a map:
-                        #   a released effect's uniform-buffer pools (patched
-                        #   onto the engine once, in main.ts) and the bind-group
-                        #   cache (flushed by Game.teardownMap). ~30 MB heap +
-                        #   ~28 MB GPU a Coldharbour build, kept for the life
-                        #   of the tab before these
+    renderId.ts         # The RENDER ID as a counter of ours with Babylon's
+                        #   meaning (X5.4b): what the viewmodel's RenderCache
+                        #   is keyed on, moved at the two points a frame
+                        #   scene.render moved Babylon's and settled at its
+                        #   evaluation (driveFromScene, off the scene's public
+                        #   observables until the scene stops rendering), a
+                        #   DEV shadow holding it a constant off Babylon's
+                        #   (drift, must be 0)
     teamView.ts         # Which side the player is LOOKING from: the one remap
                         #   between the authority's team INDEX and the team a
                         #   body is DRAWN and NAMED as, so every player sees
@@ -852,7 +855,8 @@ src/
                         #   per-frame evaluation (syncSwitches, draw: every
                         #   surface on and visible, the segments it found
                         #   handed out) and the readers, out of rigJoints'
-                        #   RenderCache
+                        #   RenderCache, keyed on the RenderId it is handed
+                        #   (X5.4b)
     ReloadGesture.ts    # The reload decided, not drawn: a pure function of
                         #   phase, seconds and dry/tactical giving the weapon's
                         #   curve and its impact rings, both hands, both
@@ -1132,7 +1136,8 @@ src/
                         #   ragdoll's pose array (Joint.pose), the body's one
                         #   measure (the root capsule's sphere), and
                         #   RenderCache, Babylon's render-id cache reproduced
-                        #   for the viewmodel's readers
+                        #   for the viewmodel's readers (on our render id,
+                        #   core/renderId.ts, since X5.4b)
     soldierBones.ts     # The ragdoll's bone table, no Babylon: BoneJoint,
                         #   BoneSpec and RAGDOLL_BONES (each bone's box and
                         #   mass in its joint's frame), measured off

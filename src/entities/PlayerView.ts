@@ -44,6 +44,7 @@ import { Vector3 } from "../math";
 import { Part } from "../world/parts";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { Piece, pieceKit, type PieceKit, type PiecePart } from "./pieces";
+import type { RenderId } from "../core/renderId";
 import type { PlayerPicture } from "./Player";
 import type { Joint } from "./rigJoints";
 import { ViewModel } from "./ViewModel";
@@ -105,10 +106,10 @@ export class PlayerView implements PlayerPicture {
    */
   private hidden = true;
 
-  constructor(scene: Scene, mats: CelMaterialFactory, camera: ViewCamera) {
+  constructor(scene: Scene, mats: CelMaterialFactory, camera: ViewCamera, renderId: RenderId) {
     // The weapon hangs off the camera: in first person the rifle you see is a
     // viewmodel, posed in camera space.
-    this.model = new ViewModel(scene, mats, camera);
+    this.model = new ViewModel(scene, mats, camera, renderId);
 
     // --- gunfeel dressing: muzzle flash star + brass pool (player only) ---
     // The flash is three crossed emissive petals at the muzzle; per shot it

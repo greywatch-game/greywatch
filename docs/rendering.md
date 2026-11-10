@@ -3435,10 +3435,11 @@ recorded into (`FrameHost.prepareEncoder`, below). X3.5 added a tenth: the
 group's `_renderAlphaTest`, WRAPPED while the main pass's group 0 renders, so
 a draw can land between its opaque and alpha-tested lists (below). That list
 only shrinks after Phase 3.
-Three older touches in two files (`webgpuLeaks`, `FrameProfile`) are not the
-renderer's and stay where they are, listed in the seam's header with the step
-each leaves at; one of them patches a Babylon class's prototype, a value this
-directory may not import. `FrameDepth`'s, the fourth, left at
+Two older touches in one file (`FrameProfile`'s) are not the renderer's and
+stay where they are, listed in the seam's header with the step each leaves at;
+one of them patches a Babylon class's prototype, a value this directory may not
+import. A third, `webgpuLeaks`' (`_deletePipelineContext`), was deleted at
+`BABYLON_EXIT.md` X5.4b, Babylon releasing no effect after the boot. `FrameDepth`'s, the fourth, left at
 `BABYLON_EXIT.md` X5.2d: it reads the frame's depth by Babylon's public getter.
 `ReflectionSystem`'s two (`_releaseRenderPassId`, `_removeDrawWrapper`) went
 with Babylon's bake at X3.7c.
@@ -5046,8 +5047,9 @@ the frame that are load-bearing.
   `ViewTree.draw` evaluates every surface switched on and visible — whatever
   its role, the glasses and the card included — through the `RenderCache`,
   settled at the render's
-  evaluation id from inside the render, exactly as Babylon's
-  `_evaluateActiveMeshes` stamped the nodes; narrowing it (to one role, say)
+  evaluation id where the render evaluated, exactly as Babylon's
+  `_evaluateActiveMeshes` stamped the nodes — the id OURS since
+  `BABYLON_EXIT.md` X5.4b (`core/renderId.ts`), moved where Babylon's moved; narrowing it (to one role, say)
   would move the next frame's `muzzleWorld` and `throwHandWorld`, two command
   inputs (X4.3b's review, and X4.3c's and X4.3d's replay oracle, which proved
   it did not).

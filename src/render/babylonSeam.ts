@@ -115,12 +115,14 @@
  * wrap modes and filtering level and the engine's empty textures and
  * anisotropy cap (`bind`).
  *
- * WHAT IS NOT HERE. Three touches of Babylon internals in two files predate
- * this one and stay where they were written, because none of them is our
- * renderer's and one cannot move here at all: `core/webgpuLeaks.ts`
- * (`_deletePipelineContext`) and `core/FrameProfile.ts` (the timestamp query,
- * and a patch on `WebGPUCacheRenderPipeline`'s prototype — a Babylon VALUE,
- * which this directory may not import). Each leaves with Babylon (X6.1).
+ * WHAT IS NOT HERE. Two touches of Babylon internals in one file predate
+ * this one and stay where they were written, because neither is our
+ * renderer's and one cannot move here at all: `core/FrameProfile.ts`'s (the
+ * timestamp query, and a patch on `WebGPUCacheRenderPipeline`'s prototype — a
+ * Babylon VALUE, which this directory may not import), which leave with
+ * Babylon (X6.1). A third, `core/webgpuLeaks.ts`'
+ * (`_deletePipelineContext`), was deleted at X5.4b: Babylon releases no
+ * effect and makes no bind group after the boot.
  * `shaders/FrameDepth.ts`' (the frame's depth texture,
  * `_currentRenderTarget._depthStencilTexture`) left at `BABYLON_EXIT.md`
  * X5.2d: it reads the frame's own render target's PUBLIC

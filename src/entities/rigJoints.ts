@@ -11,7 +11,8 @@
  * Owns: `Joint`, `JointTree` (the composition, and a fresh chain), the body's
  * one MEASURE (`measureBody`, the sphere the root's capsule used to answer),
  * and `RenderCache` — Babylon's render-id cache, reproduced for the one tree
- * whose readers must keep Babylon's answers (X4.3b).
+ * whose readers must keep Babylon's answers (X4.3b), keyed since X5.4b on a
+ * render id of ours (`core/renderId.ts`).
  * Invariants:
  * - **No `@babylonjs/core`.** `src/math` only (`scripts/check-babylon-free.mjs`
  *   holds it as a root): these matrices are drawn with no node behind them
@@ -334,16 +335,19 @@ function unmoved(j: Joint, s: Float64Array): boolean {
  * cached world if it and every ancestor are SYNCHRONIZED (nothing written,
  * no ancestor recomposed since), and is recomposed off its parent's
  * `getWorldMatrix` otherwise. Both branches stamp the joint with the current
- * id, and only a recompose touches the parent. The render id is BABYLON's
- * (`scene.getRenderId()`, handed in), because Babylon moves it in places this
- * file cannot see.
+ * id, and only a recompose touches the parent. The render id is handed in as a
+ * function, and it is OURS (`core/renderId.ts`, `BABYLON_EXIT.md` X5.4b): a
+ * counter with Babylon's meaning, moved at the two points a frame
+ * `scene.render` moved Babylon's (X5.4a's log). Only EQUALITY between ids is
+ * ever asked, so a counter moved where Babylon's moved gives every answer
+ * Babylon's id gave.
  *
  * **The render's own evaluation is the other half**: `evaluate` is what
  * `_evaluateActiveMeshes` did to each mesh it took, run by `viewTree.ts`
  * before the render at a PROVISIONAL id (negative and never repeated, so
- * nothing can answer to it), and `settle` hands every joint it stamped the real id from
- * inside the render, once Babylon has incremented it — so the next frame's
- * readers meet exactly the stamps Babylon's own evaluation left.
+ * nothing can answer to it), and `settle` hands every joint it stamped the real id
+ * where the render evaluated, once the id has moved (`RenderId.onEvaluated`) — so
+ * the next frame's readers meet exactly the stamps Babylon's own evaluation left.
  *
  * Synchronization is the one approximation, and it is on the camera alone:
  * an outside root is synchronized while its matrix is unchanged, where

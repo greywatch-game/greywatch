@@ -336,7 +336,7 @@ import { PointerLockChase } from "./PointerLockChase";
 import { Sfx } from "./Sfx";
 import { UrlOverrides, urlFlag } from "./urlOverrides";
 import { setViewerTeam, teamLook } from "./teamView";
-import { forgetBindGroups } from "./webgpuLeaks";
+import { driveFromScene, RenderId } from "./renderId";
 import { type BabylonCompiles, watchBabylonCompiles } from "./babylonCompiles";
 
 /**
@@ -1355,6 +1355,14 @@ export class Game {
    * rocket and a grenade start.
    */
   private playerView: PlayerView;
+  /**
+   * The RENDER ID the viewmodel's render cache is keyed on — ours, with
+   * Babylon's meaning (`core/renderId.ts`, `BABYLON_EXIT.md` X5.4b), moved
+   * where `scene.render` moves Babylon's. Public for a probe: in a DEV build
+   * its `drift` counts reads at which it and Babylon's stopped moving
+   * together, and must read 0.
+   */
+  readonly renderId = new RenderId();
   private canvas: HTMLCanvasElement;
   /**
    * The bloom — mask, blur and compose — which `shaders/GlowPass.ts` owns.
@@ -2440,8 +2448,11 @@ export class Game {
       this.nearestPull(into),
     );
     // The weapon hangs from the camera (its tree's root reads the camera's
-    // world, `ViewModel.tree`), so the camera has to exist first.
-    this.playerView = new PlayerView(this.scene, this.mats, this.cameraSys.camera);
+    // world, `ViewModel.tree`), so the camera has to exist first. Its render
+    // cache is keyed on OUR render id, moved where the scene's render moves
+    // Babylon's — driven before anything hangs on it (`core/renderId.ts`).
+    driveFromScene(this.renderId, this.scene);
+    this.playerView = new PlayerView(this.scene, this.mats, this.cameraSys.camera, this.renderId);
     this.player = new Player(this.playerView);
     this.player.shotRand = this.random.stream(STREAM.player);
     this.player.setBodyHidden(true); // hidden until a round starts
@@ -5716,10 +5727,6 @@ export class Game {
     this.deployScreen.clearMap();
     this.minimap.clearMap();
     this.mapBuilder.release();
-    // And what BABYLON kept of it, which the lines above cannot reach: every
-    // bind group cached against the map's buffers and textures, ~15k a
-    // Coldharbour, none of which can ever be hit again (`webgpuLeaks.ts`).
-    forgetBindGroups();
   }
 
   /**
