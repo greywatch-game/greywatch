@@ -679,14 +679,15 @@ src/
                         #   generator composed it (lightTransformToRef, the one
                         #   copy both read; ShadowLight, what a light is to
                         #   both: a plain pair, no Babylon light since
-                        #   X5.3d), and the 1x1 LIT texture a shadow map
-                        #   switched OFF is bound as (a declared sampler must
-                        #   be bound)
+                        #   X5.3d). (The 1x1 LIT texture a map switched OFF is
+                        #   bound as went to render/TextureMaker at X5.4d)
     wrappedTextures.ts  # Babylon's wrapped VIEWS of textures OUR renderer
                         #   owns: a shadow texture's (wrapShadowTexture, for
                         #   ShadowSystem, BodyShadows and LocalShadows; a
-                        #   probe's cube had one too until X5.3d); disposing
-                        #   one destroys the texture it wraps
+                        #   probe's cube had one too until X5.3d), read by
+                        #   Babylon's cel materials alone since X5.4d (which
+                        #   never draw); disposing one destroys the texture
+                        #   it wraps
     proxyBoxes.ts       # What a soldier and a hull ARE to a shadow: boxes,
                         #   packed as instance matrices. RAGDOLL_BONES and the
                         #   collider — a hull's off its OWN fields (pos, yaw,
@@ -1336,12 +1337,13 @@ src/
                         #   burst never touches the WASM heap. No chunk mesh
                         #   (a PosedPiece our renderer draws, X4.4c); no scorch
                         #   mesh either since X4.6e (a fade of its kit, its map
-                        #   Babylon's through the seam)
+                        #   a canvas painted here, ours since X5.4d)
     glassFracture.ts    # The crack pattern itself: radials out of the hole,
                         #   concentrics across them, clipped to the frame. Pure
                         #   arithmetic — no Babylon, no state
     puffTexture.ts      # The one puff in the game, drawn at runtime: three
-                        #   overlapping gradients, no image file. The rotor's
+                        #   overlapping gradients, no image file, made our
+                        #   texture (TextureMaker.picture, X5.4d). The rotor's
                         #   ring is its one user now the blast is billows.
                         #   Needs a canvas, so nothing on the server reaches it
     RotorWash.ts        # What a helicopter does to the surface when it comes
@@ -1494,7 +1496,7 @@ src/
     Atmosphere.ts       # The ash field: DECIDES its box, colours, rate, lives
                         #   and blend on a ParticleField of ours, rebuilt to the
                         #   capacity the map's density needs; the mote texture
-                        #   (Babylon's, through the seam). render/ParticleDraw.ts
+                        #   (a canvas, ours since X5.4d). render/ParticleDraw.ts
                         #   steps and draws it (X4.7c). No CPU fallback
     Sky.ts              # Generated dome, textured moon, and the cloud RING —
                         #   one soup of faceted masses standing in the
@@ -1503,7 +1505,9 @@ src/
                         #   paint, where dome and disc stand, the ring's turn,
                         #   clock, order and shadow are here; render/SkyDraw.ts
                         #   and render/CloudDraw.ts draw them (X4.5b, X4.5c): no
-                        #   sky mesh and no sky material
+                        #   sky mesh and no sky material; the dome's and the
+                        #   disc's canvases and the shadow field our textures
+                        #   (TextureMaker, X5.4d)
     cloudMasses.ts      # The cloud ring's SHAPE: cumulus heaps, banks and
                         #   puffs of round lobes on flat bellies, buried facets
                         #   dropped, as one triangle soup carrying the facet
@@ -1591,7 +1595,9 @@ src/
                         #   sites to the reflection bake, once a build, and hands
                         #   each body the cube it is handed back. Its PICTURE is
                         #   render/WaterDraw.ts (X4.6d): no mesh, no material,
-                        #   and the values plain arrays; the foam a Babylon Texture
+                        #   and the values plain arrays; the foam mask ours
+                        #   (TextureMaker.image, X5.4d), the scene's pending
+                        #   data while it decodes
     GrassSystem.ts      # The grass field stood around the EYE: patches of
                         #   blade seeds chosen per frame in view (`follow`,
                         #   pushed from `tick` in every state), each drawn from
@@ -2013,7 +2019,9 @@ src/
                         #   `kit:hash` fails if a replay and its builder differ
     textures.ts         # Generated canvas textures: the cobbles, and the floor
                         #   surfaces — noise fields posterized onto a ramp of
-                        #   the map's floorColor, albedo and height in one pass
+                        #   the map's floorColor, albedo and height in one pass;
+                        #   handed out as Pictures, the factory making each our
+                        #   texture (X5.4d) — this file never touches a GPU
     floorSurfaces.ts    # What the valley floor is MADE of: the surface roster
                         #   and the ONE place a floor material is built
     environment.ts      # EnvironmentSpec + applyEnvironment, applyClearColor
@@ -2571,7 +2579,10 @@ src/
     ShadowBindings.ts   # Every shadow a lit material samples (world, bodies,
                         #   lamps' atlas, lightning, clouds, foliage) bound
                         #   onto the factory's cache and the grass/water
-                        #   consumers. `mats.shadows`; GI stays in the factory
+                        #   consumers. `mats.shadows`; GI stays in the factory.
+                        #   Every texture our frame binds of it is ours: a map's
+                        #   own, the lit texel where it is off, the clouds'
+                        #   field (X5.4d)
     CelInk.ts           # THE INK: one full-screen edge over the depth the
                         #   frame already wrote. Replaced Babylon's outline
                         #   hull AND MapBuilder's ink twins — Coldharbour
@@ -2832,7 +2843,8 @@ src/
                         #   sampler NOW, a call after every frame's submit —
                         #   afterSubmit, X5.1b), PassTargets, HostTexture
     Renderer.ts         # Renderer: the frame's uniforms, textures and their
-                        #   group 0, the pipeline cache, the FrameDraws it
+                        #   group 0, the pipeline cache, the TextureMaker
+                        #   (the textures the game paints, X5.4d), the FrameDraws it
                         #   queues at seven points of the MAIN pass — first,
                         #   ahead of everything of Babylon's (X4.5a; the dome,
                         #   X4.5c), and of group 0, needing nothing in it:
@@ -3034,8 +3046,8 @@ src/
                         #   its grid or its far quad, a range of
                         #   one index buffer; the shared block, a group 0 of its own
                         #   (the six shadow maps), each body's block, bed-depth
-                        #   texture and group 1, the two samplers; the foam stays
-                        #   Babylon's through the seam, a cube is read where it lies
+                        #   texture and group 1, the two samplers; the foam ours
+                        #   (TextureMaker, X5.4d), a cube is read where it lies
     waterProgram.ts     # Its program (X4.6d): WATER_SHARED, WATER_BODY, the three
                         #   textures, the frame's block with the water's own names
                         #   renamed out of it, the prefix of the frame's textures
@@ -3231,7 +3243,20 @@ src/
     cubeMips.ts         # A cube's MIP CHAIN as WE make it (X3.6c): each level
                         #   of each face from the one above, Babylon's
                         #   generateCubeMipmaps filter for filter; a pass and
-                        #   bind group per face per level, kept with the cube
+                        #   bind group per face per level, kept with the cube.
+                        #   A 2D texture's chain too, its one layer the one
+                        #   face (TextureMaker, X5.4d)
+    TextureMaker.ts     # THE TEXTURES THE GAME MAKES FOR ITSELF as OURS
+                        #   (X5.4d), each as Babylon made it, read off the
+                        #   device: a painted canvas (Picture — the grounds,
+                        #   the sky's dome and moon, the motes, the puff, the
+                        #   scorch, the blob), raw texels (the cloud field, the
+                        #   no-cloud texel, the lit texel) and the foam decoded;
+                        #   rgba8unorm/rg8unorm, usage 23, Babylon's flips, mip
+                        #   filter (CubeMips; a mipped texture has no view until
+                        #   its chain is recorded) and samplers (SAMPLING,
+                        #   anisotropic); a picture made once; a released
+                        #   texture destroyed after the frame's submit
     ProbeBake.ts        # The reflection bake as OURS (X3.6c): the cube pool
                         #   (never destroyed, COPY_SRC; each a ProbeCube that
                         #   ReflectionSystem indexes), each released probe's six

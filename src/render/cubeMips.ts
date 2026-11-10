@@ -2,7 +2,10 @@
  * render/cubeMips.ts — A cube texture's MIP CHAIN as our renderer makes it
  * (`BABYLON_EXIT.md` X3.6c): each level of each face drawn from the level
  * above, as Babylon's `WebGPUTextureManager.generateCubeMipmaps` draws a
- * reflection probe's after its sixth face.
+ * reflection probe's after its sixth face — and, since X5.4d, a 2D texture's,
+ * its one layer the one face, as `generateMipmaps` drew the chain of every
+ * texture the game paints with mips (`TextureMaker`): the same shader, the same
+ * sampler, one pipeline in the cache for both.
  * Owns: `CubeMips` — the pipeline (asked through the renderer's
  * `PipelineCache`, so the building card's warm-up waits on it), the sampler,
  * and each cube's chain: a pass and a bind group per face per level, made

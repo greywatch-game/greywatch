@@ -4,6 +4,10 @@
  * rim, hard stepped shadows, opt-in toon specular) and CelMaterialFactory,
  * the cache every lit material comes from. The shadows every material samples
  * are bound by `ShadowBindings` (`mats.shadows`), which this seeds on create.
+ * A material's OWN textures (a ground's albedo and height map) are our
+ * renderer's, made off their `Picture`s through the renderer's `TextureMaker`
+ * and kept in the material's recipe alone (`ownTexture`, `BABYLON_EXIT.md`
+ * X5.4d): no Babylon material draws or compiles, so none is handed one.
  * Invariants: the scene holds NO Babylon light (a map's shadow light is
  * ShadowSystem's `MapLight`, a plain pair since `BABYLON_EXIT.md` X5.3d), and
  * no material ever read one — light arrives via these uniforms, uploaded by LightingSystem once per frame. Flat/faceted shading is
@@ -71,7 +75,6 @@
  * body reads is declared here AND there; the body itself is edited once.
  */
 import {
-  type BaseTexture,
   Color3,
   Scene,
   ShaderLanguage,
@@ -98,9 +101,8 @@ import {
   type CelMaterialTexture,
   type CelRecipe,
 } from "../render/celMaterial";
-import { hostTexture } from "../render/babylonSeam";
-import type { HostTexture } from "../render/frameHost";
 import type { OwnTexture } from "../render/HostBindGroup";
+import type { Picture, TextureMaker } from "../render/TextureMaker";
 import { ShadowBindings } from "./ShadowBindings";
 // The shared chunks self-register in the IncludesShadersStoreWGSL; import
 // them for that effect so the #include<cel...> lines below can never be
@@ -611,7 +613,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
 
 /** A `CelRecipe` as the factory writes it. */
 interface MutableRecipe extends CelRecipe {
-  readonly textures: Partial<Record<CelMaterialTexture, HostTexture>>;
+  readonly textures: Partial<Record<CelMaterialTexture, OwnTexture>>;
 }
 
 /**
@@ -776,7 +778,7 @@ export interface LightingView {
    * itself is lit by. The area is the UNHELD one: a reflection bake's hold is
    * about the cube, not the bounce.
    */
-  readonly cloudMap: BaseTexture;
+  readonly cloudMap: OwnTexture;
   readonly cloudArea: Vector4;
   readonly cloudRay: Vector4;
 }
@@ -1096,8 +1098,16 @@ export class CelMaterialFactory {
    */
   readonly shadows: ShadowBindings;
 
-  constructor(private scene: Scene) {
-    this.shadows = new ShadowBindings(scene, this.cache);
+  constructor(
+    private scene: Scene,
+    /**
+     * Our renderer's maker of the textures the game paints: a ground's albedo
+     * and height map are made through it (`ownTexture`), and the shadows' lit
+     * texel and no-cloud texel (`ShadowBindings`).
+     */
+    private readonly textures: TextureMaker,
+  ) {
+    this.shadows = new ShadowBindings(textures, this.cache);
   }
 
   /**
@@ -1236,12 +1246,16 @@ export class CelMaterialFactory {
     this.materialEpoch++;
   }
 
-  /** `own` for one of a material's own textures. */
-  private ownTexture(mat: ShaderMaterial, name: CelMaterialTexture, tex: BaseTexture): void {
-    mat.setTexture(name, tex);
+  /**
+   * `own` for one of a material's own textures — kept in its recipe alone, the
+   * picture made into OUR texture (`TextureMaker.picture`, once per canvas):
+   * no Babylon material draws or compiles (`core/babylonCompiles.ts`), so
+   * none is handed one (`BABYLON_EXIT.md` X5.4d).
+   */
+  private ownTexture(mat: ShaderMaterial, name: CelMaterialTexture, picture: Picture): void {
     const recipe = this.recipes.get(mat);
     if (!recipe) return;
-    recipe.textures[name] = hostTexture(tex);
+    recipe.textures[name] = this.textures.picture(picture);
     this.materialEpoch++;
   }
 
@@ -1813,7 +1827,8 @@ export class CelMaterialFactory {
    * updates reach it like any flat colour.
    *
    * @param key cache key, e.g. "cobble" — one material per texture/scale pair
-   * @param tex tiling texture; mipmaps + anisotropy are the caller's job
+   * @param tex tiling picture; mipmaps + anisotropy are the caller's job
+   *   (its `Picture`), its texture made here, once per canvas
    * @param texScale texture repeats per metre (1 / metres-per-tile)
    * @param opts.spec enables the toon specular band (wet sheen); omit for matte
    * @param opts.bump height map matching the albedo texel-for-texel — the
@@ -1826,11 +1841,11 @@ export class CelMaterialFactory {
    */
   getGroundTextured(
     key: string,
-    tex: BaseTexture,
+    tex: Picture,
     texScale: number,
     opts: {
       spec?: SpecSpec;
-      bump?: BaseTexture;
+      bump?: Picture;
       bumpScale?: number;
       depthUnits?: number;
     } = {},
@@ -2318,8 +2333,8 @@ export class CelMaterialFactory {
   /**
    * The frame's TEXTURES for our renderer (`render/frame.ts`,
    * `FRAME_TEXTURES`): this hands over the same objects off the same fields —
-   * `ShadowBindings`' maps (the host's handles, or ours where ours draws one)
-   * and the irradiance volume's seven, OUR renderer's own since
+   * `ShadowBindings`' maps (ours, or the lit texel where a map is off, and the
+   * clouds' field, `BABYLON_EXIT.md` X5.4d) and the irradiance volume's seven, OUR renderer's own since
    * `BABYLON_EXIT.md` X5.1b (`OwnTexture`s, read where they lie: no Babylon
    * material holds them). A pull, beside `fillFrame`; allocates nothing.
    */

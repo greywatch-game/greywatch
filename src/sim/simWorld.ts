@@ -19,7 +19,7 @@
  * proving the derived structures agree.
  *
  * Why a rebuild and not a build: `MapBuilder` builds meshes and materials and
- * reaches a canvas through `floorMaterial` (`DynamicTexture.getContext()`), and
+ * reaches a canvas through `floorMaterial` (`world/textures.ts` paints one), and
  * this process has neither a canvas nor, now, an engine. See
  * `scripts/bake-collision.mjs`.
  *

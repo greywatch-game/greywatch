@@ -27,8 +27,8 @@
  * texture bound to it, the cloud field among them, and `GiCompute.isReady`
  * asks only its pipelines, so a cloud field not yet ready would now arm and
  * advance a slice nothing records (`GiCompute`'s header) — unreachable today,
- * both candidate cloud fields being `RawTexture`s built from data, ready at
- * creation. It adds NO draw calls
+ * both candidate cloud fields being raw textures written at creation
+ * (`TextureMaker.raw`). It adds NO draw calls
  * (the frame is draw-call bound, `docs/rendering.md`): everything it does is
  * compute and three texture fetches in a shader that already runs. It reads
  * the scene's light off `CelMaterialFactory.readLighting`, never off the map,
@@ -63,11 +63,11 @@
  * light), and they are re-bounced from scratch every frame near the eye and
  * never remembered, so their bounce rises and dies exactly with the light.
  */
-import { type BaseTexture, Color3, Vector3, Vector4 } from "@babylonjs/core";
+import { Color3, Vector3, Vector4 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { GiQuality } from "../core/settings";
-import { hostTexture } from "../render/babylonSeam";
 import { GiCompute } from "../render/GiCompute";
+import type { OwnTexture } from "../render/HostBindGroup";
 import type { Renderer } from "../render/Renderer";
 import type { CelMaterialFactory, GiBinding, PointLightData } from "../shaders/CelShader";
 import { GI_HULL_SLOTS, GI_LAYOUT, GI_MAX_FAST, GI_MAX_SLOW, GI_SLOTS } from "../shaders/wgsl/giTrace";
@@ -142,7 +142,7 @@ export class GiVolume {
    */
   readonly gpu: GiCompute;
   /** The cloud field last handed to the trace — see `writeParams`. */
-  private cloudBound: BaseTexture | null = null;
+  private cloudBound: OwnTexture | null = null;
 
   private readonly paramData = new Float32Array(GI_LAYOUT.size * 4);
   /** The hull slots' scratch, rewritten into the box buffer every frame. */
@@ -859,16 +859,17 @@ export class GiVolume {
     // under a cloud bounces the key it is lit by (`cloudLitAt`). The texture
     // is handed over here rather than once because `ShadowBindings` swaps its
     // own "no cloud" texel for `Sky`'s field after the volume exists — and
-    // only when it CHANGED. It is the HOST's texture, bound with the host's
-    // own view and sampler at each dispatch (`GiCompute`; the owner's
-    // decision of 2026-11-07, `BABYLON_EXIT.md` X5.1b's row 2).
+    // only when it CHANGED. It is our renderer's texture since
+    // `BABYLON_EXIT.md` X5.4d (`TextureMaker`), bound with its own view and
+    // sampler at each dispatch (`GiCompute`) — the host's, the owner's
+    // decision of 2026-11-07 (X5.1b's row 2), until it was ours.
     const ca = lit.cloudArea;
     const cr = lit.cloudRay;
     put4(p, s + 52, ca.x, ca.y, ca.z, ca.w);
     put4(p, s + 56, cr.x, cr.y, cr.z, cr.w);
     const cloud = lit.cloudMap;
     if (cloud !== this.cloudBound) {
-      this.gpu.cloud = hostTexture(cloud);
+      this.gpu.cloud = cloud;
       this.cloudBound = cloud;
     }
 

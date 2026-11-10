@@ -53,7 +53,6 @@
  * owner's: `systems/Atmosphere.ts`, `systems/RotorWash.ts`).
  * Contract: `docs/rendering.md`, "The particles".
  */
-import type { HostTexture } from "./frameHost";
 import { HostBindGroup, OwnTexture, type TextureHandles } from "./HostBindGroup";
 import type { BuiltPipeline } from "./PipelineCache";
 import { ParticleField, type ParticleFieldOptions } from "./ParticleField";
@@ -132,8 +131,8 @@ type DrawValues = {
 /** A field's GPU half. */
 interface Slot {
   readonly field: ParticleField;
-  readonly texture: HostTexture;
-  readonly textureReady: () => boolean;
+  /** Its sprite, as its owner holds it (`TextureMaker`'s, `BABYLON_EXIT.md` X5.4d). */
+  readonly texture: OwnTexture;
   readonly random: readonly [GPUTexture, GPUTexture];
   readonly randomViews: readonly [GPUTextureView, GPUTextureView];
   readonly params: GPUBuffer;
@@ -142,7 +141,7 @@ interface Slot {
   readonly block: UniformBlockBuffer;
   readonly values: DrawValues;
   /** The draw's texture handles, the field's own record so a frame's refresh allocates nothing. */
-  readonly handles: { diffuseSampler: HostTexture; colorGradientSampler?: OwnTexture };
+  readonly handles: { diffuseSampler: OwnTexture; colorGradientSampler?: OwnTexture };
   gradients: Gradients | null;
   buffers: Buffers | null;
   /** This frame's draw: instances, 0 for none. */
@@ -234,7 +233,7 @@ export class ParticleDraw {
    * A field, built and at the END of the list: its two random textures drawn
    * now, as Babylon's constructor drew them. Not started (`ParticleField.start`).
    */
-  create(name: string, options: ParticleFieldOptions, texture: HostTexture, textureReady: () => boolean): ParticleField {
+  create(name: string, options: ParticleFieldOptions, texture: OwnTexture): ParticleField {
     const field = new ParticleField(name, options, this.deviceMaxTexture);
     const n = field.randomTextureSize;
     const device = this.device;
@@ -267,7 +266,6 @@ export class ParticleDraw {
     const slot: Slot = {
       field,
       texture,
-      textureReady,
       random: [r1, r2],
       randomViews: [v1, v2],
       params: device.createBuffer({
@@ -359,7 +357,8 @@ export class ParticleDraw {
 
   private readyOf(slot: Slot): boolean {
     const field = slot.field;
-    if (!slot.textureReady()) return false;
+    // Babylon's `texture.isReady()`: a texture of ours is ready while it has a view.
+    if (!slot.texture.view) return false;
     if (!this.render[field.features][field.blendMode]) return false;
     if (!field.updateCreated) {
       field.updateCreated = true;

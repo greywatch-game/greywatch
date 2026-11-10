@@ -6,8 +6,11 @@
  * too, until they became drawn billows (`BlastFx`). Size, rotation, colour and
  * count are what vary a cloud, never the sprite.
  * Invariants: no state that outlives the call. It is a function rather than a
- * shared instance because a `DynamicTexture` belongs to a scene; each system
- * holds its own and disposes it with itself.
+ * shared instance because each system holds its own texture and releases it
+ * with itself (`TextureMaker.release`). The canvas is painted as the
+ * `DynamicTexture` it was painted on, and made OUR texture as Babylon made that
+ * one (`TextureMaker.picture`, `BABYLON_EXIT.md` X5.4d): 128 square, flipped,
+ * no mips, sampled flat.
  *
  * Three overlapping gradients at FIXED offsets rather than random ones — one
  * texture is shared by every puff in every cloud a system holds, so the variety
@@ -18,17 +21,12 @@
  * server runs the grenade SIMULATION alone and never builds a picture
  * (`GrenadeFx`, `RotorWash`), so nothing on that side reaches this.
  */
-import { DynamicTexture, type Scene } from "@babylonjs/core";
+import { type MadeTexture, newCanvas, SAMPLING, type TextureMaker } from "../render/TextureMaker";
 
-export function buildPuffTexture(scene: Scene, name: string): DynamicTexture {
+export function buildPuffTexture(textures: TextureMaker, name: string): MadeTexture {
   const size = 128;
-  const texture = new DynamicTexture(
-    name,
-    { width: size, height: size },
-    scene,
-    false,
-  );
-  const ctx = texture.getContext();
+  const canvas = newCanvas(size, size);
+  const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
   const lobes: [number, number, number][] = [
     [64, 64, 46],
     [46, 52, 30],
@@ -42,7 +40,5 @@ export function buildPuffTexture(scene: Scene, name: string): DynamicTexture {
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, size, size);
   }
-  texture.update();
-  texture.hasAlpha = true;
-  return texture;
+  return textures.picture({ label: name, canvas, flipY: true, mips: false, sampling: SAMPLING.flat });
 }

@@ -16,12 +16,12 @@
  * PULL off what it kept at birth, and never read off a Babylon material; a
  * recipe's `values` hold exactly the fields its variant declares, each a
  * tight `Float32Array` as `frame.ts`'s are.
- * Never: imports Babylon — a texture is a `HostTexture`, which only the
- * frame's host can resolve.
+ * Never: imports Babylon — a texture is an `OwnTexture`, our renderer's own
+ * (`TextureMaker`'s, `BABYLON_EXIT.md` X5.4d), bound where it lies.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
  */
 import { MAX_PALETTE } from "../shaders/wgsl/celSurface";
-import type { HostTexture } from "./frameHost";
+import type { OwnTexture } from "./HostBindGroup";
 import { guardHolds } from "./wgsl/layout";
 import type { Binding, UniformField } from "./wgsl/assemble";
 
@@ -106,5 +106,5 @@ export interface CelRecipe {
   /** The block, filled in place; `CelMaterialFactory.materialEpoch` moves when any is rewritten. */
   readonly values: MaterialUniforms;
   /** One per texture the variant binds. */
-  readonly textures: Readonly<Partial<Record<CelMaterialTexture, HostTexture>>>;
+  readonly textures: Readonly<Partial<Record<CelMaterialTexture, OwnTexture>>>;
 }

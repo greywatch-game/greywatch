@@ -4,8 +4,8 @@
  * post chain's stages it is drawn as.
  * Owns: `Volumetrics` — the rung it was built at, the camera basis it
  * reconstructs rays from, the three maps it marches through as they were
- * pushed (each as Babylon holds it and, where it is our renderer's, as our
- * renderer holds it), the map's air and the moon's colour and bearing — and
+ * pushed (each as OUR renderer holds it: a map's own, the lit texel where one
+ * is off, the clouds' field), the map's air and the moon's colour and bearing — and
  * `volumetricStages`, one `PostStage` a RUNG (`render/PostChain.ts`,
  * `BABYLON_EXIT.md` X5.2c2: the program as Babylon compiled it,
  * `wgsl/volumetrics.ts`; its 320-byte block; the frame's depth, the two
@@ -23,11 +23,13 @@
  * and only once it has latched the pass READY (`Game.syncVolumetrics`, as it
  * used to attach it) — the same frame for a pass `setVolumetrics` has just
  * built, every input being standing by then, so only the session's first
- * render, before the frame's depth exists, has no shafts, exactly as before. A
- * shadow map our renderer owns is bound as OURS (`own ?? hostTexture`, the
- * pattern `ShadowBindings.fillFrameTextures` follows); the clouds' field is
- * Babylon's, through `hostTexture`, with the host's sampler. Its block is
- * filled when the host draws it, every float every time.
+ * render, before the frame's depth exists, has no shafts, exactly as before.
+ * Every map is bound as OUR renderer's texture with its own sampler — a shadow
+ * map's owner's, the lit texel's where it is off and the clouds' field
+ * (`TextureMaker`'s since `BABYLON_EXIT.md` X5.4d, as Babylon's
+ * `RawTexture`s were made and sampled), as `ShadowBindings.fillFrameTextures`
+ * hands our frame. Its block is filled when the host draws it, every float
+ * every time.
  * Never: draws, binds or owns a GPU resource (the host does); reads the AIM
  * rather than the rendered camera (the blur reads the aim, and says why).
  * Contract: `docs/rendering.md`.
@@ -91,12 +93,11 @@
  * this CPU half rather than re-configuring it when the player moves the
  * slider, and why every rung's stage stands in the chain from the start.
  */
-import type { BaseTexture, Camera, Matrix } from "@babylonjs/core";
+import type { Camera, Matrix } from "@babylonjs/core";
 import { Vector3, Vector4 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { depthBias } from "../core/shadowWindow";
 import { hostTexture } from "../render/babylonSeam";
-import type { HostTexture } from "../render/frameHost";
 import type { OwnTexture } from "../render/HostBindGroup";
 import type { PostStage } from "../render/PostChain";
 import type { FrameDepth } from "./FrameDepth";
@@ -151,19 +152,17 @@ export class Volumetrics {
     0.5 *
     CONFIG.graphics.volumetrics.reachFraction;
   /**
-   * The moon's depth map and its view*projection, pushed by `Game` — as
-   * Babylon holds it, and as OUR renderer holds it while the map is ours
-   * (`ShadowSystem.ownDepthMap`), which is what is bound then.
+   * The moon's depth map and its view*projection, pushed by `Game` — as OUR
+   * renderer holds it, or the lit texel while it is off
+   * (`ShadowSystem.depthMap`), which is what is bound.
    */
-  private shadowMap: BaseTexture | null = null;
-  private ownShadowMap: OwnTexture | null = null;
+  private shadowMap: OwnTexture | null = null;
   private lightMatrix: Matrix | null = null;
-  /** The BODIES' depth map and ITS view*projection — `BodyShadows`', via `Game`, both ways as the world's. */
-  private bodyShadowMap: BaseTexture | null = null;
-  private ownBodyShadowMap: OwnTexture | null = null;
+  /** The BODIES' depth map and ITS view*projection — `BodyShadows`', via `Game`, as the world's. */
+  private bodyShadowMap: OwnTexture | null = null;
   private bodyLightMatrix: Matrix | null = null;
   /** The clouds' shadow field and how it is read — `Sky`'s, via `Game`. */
-  private cloudShadowMap: BaseTexture | null = null;
+  private cloudShadowMap: OwnTexture | null = null;
   private readonly cloudArea = new Vector4(0, 0, 0, 1);
   private readonly cloudRay = new Vector4(0, 0, 0, 0);
   /** The map's own air, as multipliers on the config. See `setEnv`. */
@@ -191,24 +190,22 @@ export class Volumetrics {
     );
   }
 
-  /** The moon's depth map, its view*projection, and the map as our renderer holds it when it is ours — `ShadowSystem`'s, via `Game`. */
-  setShadow(map: BaseTexture, matrix: Matrix, own: OwnTexture | null): void {
+  /** The moon's depth map as our renderer holds it (or the lit texel) and its view*projection — `ShadowSystem`'s, via `Game`. */
+  setShadow(map: OwnTexture, matrix: Matrix): void {
     this.shadowMap = map;
-    this.ownShadowMap = own;
     this.lightMatrix = matrix;
   }
 
   /**
-   * The BODIES' depth map, its view*projection and our renderer's own
-   * texture behind it — `BodyShadows`', via `Game`.
+   * The BODIES' depth map as our renderer holds it (or the lit texel) and
+   * its view*projection — `BodyShadows`', via `Game`.
    *
    * Pushed on the same line as `setShadow` and for the same reason: both
    * owners mutate their matrix in place, so re-reading every frame is the
    * only thing that does not lean on that.
    */
-  setBodyShadow(map: BaseTexture, matrix: Matrix, own: OwnTexture | null): void {
+  setBodyShadow(map: OwnTexture, matrix: Matrix): void {
     this.bodyShadowMap = map;
-    this.ownBodyShadowMap = own;
     this.bodyLightMatrix = matrix;
   }
 
@@ -217,7 +214,7 @@ export class Volumetrics {
    * `Game`, on the line after `setBodyShadow` and every frame, because the
    * crossfade moves with the drift. See `celCloud`.
    */
-  setCloudShadow(map: BaseTexture, area: Vector4, ray: Vector4): void {
+  setCloudShadow(map: OwnTexture, area: Vector4, ray: Vector4): void {
     this.cloudShadowMap = map;
     this.cloudArea.copyFrom(area);
     this.cloudRay.copyFrom(ray);
@@ -340,19 +337,19 @@ export class Volumetrics {
     b[B.intensity] = v.intensity * this.intensityMult;
   }
 
-  /** The world's shadow map as it is bound: ours while it is ours, Babylon's otherwise; null until pushed. */
-  worldMap(): HostTexture | OwnTexture | null {
-    return this.ownShadowMap ?? (this.shadowMap && hostTexture(this.shadowMap));
+  /** The world's shadow map as it is bound: ours, or the lit texel while it is off; null until pushed. */
+  worldMap(): OwnTexture | null {
+    return this.shadowMap;
   }
 
   /** The bodies' map, the same way. */
-  bodiesMap(): HostTexture | OwnTexture | null {
-    return this.ownBodyShadowMap ?? (this.bodyShadowMap && hostTexture(this.bodyShadowMap));
+  bodiesMap(): OwnTexture | null {
+    return this.bodyShadowMap;
   }
 
-  /** The clouds' field: Babylon's texture, through the host, with the host's sampler. */
-  cloudField(): HostTexture | null {
-    return this.cloudShadowMap && hostTexture(this.cloudShadowMap);
+  /** The clouds' field: ours (`Sky.cloudShadowMap`), with its own sampler. */
+  cloudField(): OwnTexture | null {
+    return this.cloudShadowMap;
   }
 }
 

@@ -16,7 +16,8 @@
  * sample a wrapped view of each (rule 5). Casters ours cannot draw are the
  * world's failure (`BlockHandover`, X3.7b). Until the first map hands ours
  * its casters — the boot, the menu, a first round whose world failed — every
- * map is bound as the lit 1x1 (`litShadowTexture`) and drawn by nobody; once
+ * map is bound as the lit texel (`TextureMaker.lit`, `ShadowBindings.lit`) and
+ * drawn by nobody; once
  * ours holds them it keeps them, a teardown clearing them to lit
  * (`WorldShadows`). Babylon's `ShadowGenerator`s, which drew the maps for the
  * map editor's build alone after X3.7b and stood empty at the boot, were
@@ -30,8 +31,9 @@
  * player's ground probe found, the nav-surface height for a bot). A blob is
  * a FADE of its kit (`entities/fades.ts`), drawn by OUR renderer in the one
  * back-to-front run (`render/FarthestRun.ts`, `BABYLON_EXIT.md` X4.6e), where
- * Babylon's transparent list drew its mesh; its map stays a Babylon texture,
- * read through the seam (`blobMap`).
+ * Babylon's transparent list drew its mesh; its map is a canvas painted here
+ * and made OUR texture as Babylon's `DynamicTexture` made it (`blobMap`,
+ * `TextureMaker.picture`, `BABYLON_EXIT.md` X5.4d).
  *
  * Invariants:
  * - The light position is snapped to the shadow map's texel grid as it
@@ -67,7 +69,7 @@
  *   drawn once along a strike, on the frame it starts, so the moon's maps
  *   never move for a flash. Render-once, back faces, its own window.
  * - Either map may be OFF (`CONFIG.graphics.shadowTiers`), and off is a bound
- *   1x1 lit texture (`litShadowTexture`) rather than an absent one: every
+ *   1x1 lit texture (`ShadowBindings.lit`) rather than an absent one: every
  *   consumer declares both samplers. A rung change re-makes a map of ours at
  *   the new size, owed a draw.
  * - The maps' first hand to our renderer re-publishes each to every reader,
@@ -80,24 +82,16 @@
  * - updateBlobs takes the player's ground height rather than probing for it:
  *   Player.floorY is that number, already found this frame.
  */
-import {
-  type BaseTexture,
-  DynamicTexture,
-  Matrix,
-  type Scene,
-  Vector3,
-} from "@babylonjs/core";
+import { type BaseTexture, Matrix, type Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { BLOB, Fade, fadeKit, type FadeKit } from "../entities/fades";
 import { createDisc } from "../geometry/primitives";
 import { Vector3 as MathVector3 } from "../math";
-import { hostTexture } from "../render/babylonSeam";
-import type { HostTexture } from "../render/frameHost";
 import type { OwnTexture } from "../render/HostBindGroup";
+import { type MadeTexture, newCanvas, SAMPLING, type TextureMaker } from "../render/TextureMaker";
 import {
   depthBias,
   lightTransformToRef,
-  litShadowTexture,
   SHADOW_NEAR,
   type ShadowLight,
   ShadowWindow,
@@ -214,8 +208,8 @@ export class ShadowSystem {
   readonly blobKit: FadeKit = fadeKit(
     createDisc({ radius: CONFIG.graphics.shadows.blobRadius, tessellation: 32 }),
   );
-  /** The radial gradient every blob is cut by, a Babylon texture through the seam (rule 5). */
-  readonly blobMap: HostTexture;
+  /** The radial gradient every blob is cut by: our texture, painted here (`BABYLON_EXIT.md` X5.4d). */
+  readonly blobMap: MadeTexture;
   /**
    * Wired by `Game`: where a downed body's shadow goes, into `out`, and how
    * strong (0..1). 0 means "nothing to shade", which is every corpse nobody
@@ -263,25 +257,18 @@ export class ShadowSystem {
   private readonly held = new Vector3(Infinity, Infinity, Infinity);
 
   /**
-   * The moon's depth map, for a reader that is not a material.
+   * The moon's depth map, for a reader that is not a material — as OUR
+   * renderer holds it (`render/WorldShadows.ts`), or the lit texel while it is
+   * not ours or off (`BABYLON_EXIT.md` X5.4d): what the shafts bind, as
+   * `ShadowBindings` hands our frame.
    *
    * `mats` gets this pushed when it changes, and the texture object is stable
    * while its contents re-render — so a second reader that is not in the
    * factory's lists (the volumetric pass, a stage of our post chain and no
    * material) has to come and ask. It is the same texture, not a copy.
    */
-  get depthMap(): BaseTexture {
-    return this.mapTexture(this.maps.far);
-  }
-
-  /**
-   * The same map as OUR renderer holds it while it is ours
-   * (`render/WorldShadows.ts`), or null while it is not ours or off —
-   * what the shafts bind in place of Babylon's wrapped view, as
-   * `ShadowBindings` hands our frame (`BABYLON_EXIT.md` X5.2c2).
-   */
-  get ownDepthMap(): OwnTexture | null {
-    return this.ours && this.maps.far.wrapped ? this.world.own("far") : null;
+  get depthMap(): OwnTexture {
+    return this.ownOf(this.maps.far) ?? this.mats.shadows.lit;
   }
 
   /**
@@ -312,6 +299,8 @@ export class ShadowSystem {
     quality: ShadowQuality,
     /** Our renderer's maps: who draws the world's shadows whenever the handover holds every caster. */
     private readonly world: WorldShadows,
+    /** Our renderer's maker of the textures the game paints: the blobs' gradient. */
+    textures: TextureMaker,
   ) {
     const c = CONFIG.graphics.shadows;
     // A fixed square ortho window each: one fitted to the casters would
@@ -340,22 +329,17 @@ export class ShadowSystem {
 
     // Blob shadow: a radial-gradient disc, unlit black, depth-write off so it
     // layers over the ground without z-fighting (`render/FadeDraw.ts` holds
-    // the state its material had).
-    const tex = new DynamicTexture(
-      "blobShadowTex",
-      { width: 128, height: 128 },
-      scene,
-      false,
-    );
-    const ctx = tex.getContext();
+    // the state its material had). Painted on a canvas as the
+    // `DynamicTexture` it was painted on, uploaded flipped with no mips.
+    const canvas = newCanvas(128, 128);
+    const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
     const grad = ctx.createRadialGradient(64, 64, 6, 64, 64, 64);
     grad.addColorStop(0, "rgba(0,0,0,1)");
     grad.addColorStop(0.55, "rgba(0,0,0,0.55)");
     grad.addColorStop(1, "rgba(0,0,0,0)");
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, 128, 128);
-    tex.update();
-    this.blobMap = hostTexture(tex);
+    this.blobMap = textures.picture({ label: "blobShadowTex", canvas, flipY: true, mips: false, sampling: SAMPLING.flat });
   }
 
   /**
@@ -431,10 +415,14 @@ export class ShadowSystem {
     }
   }
 
-  /** What `map` is bound as: our texture, or the lit 1x1 while it has none. */
-  private mapTexture(map: WorldMap): BaseTexture {
-    const texture = this.ours ? map.wrapped : null;
-    return texture ?? litShadowTexture(this.scene);
+  /** Babylon's view of `map` for its cel materials: our texture's, or none while it has none. */
+  private mapTexture(map: WorldMap): BaseTexture | null {
+    return this.ours ? map.wrapped : null;
+  }
+
+  /** `map` as our renderer holds it, or null while it is not ours or off (the lit texel is bound then). */
+  private ownOf(map: WorldMap): OwnTexture | null {
+    return this.ours && map.wrapped ? this.world.own(map.name) : null;
   }
 
   /** `map`'s light matrix as ours draws it — null while it is off or not ours. */
@@ -450,7 +438,7 @@ export class ShadowSystem {
     const c = CONFIG.graphics.shadows;
     const shadows = this.mats.shadows;
     const texture = this.mapTexture(map);
-    const own = this.ours && map.wrapped ? this.world.own(map.name) : null;
+    const own = this.ownOf(map);
     switch (map.name) {
       case "far":
         shadows.setShadowMap(texture, own);

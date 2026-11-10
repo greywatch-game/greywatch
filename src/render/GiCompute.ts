@@ -30,10 +30,12 @@
  * buffer bound whole (offset 0, its size) — the trace's 0-4 the four read
  * buffers and the state, 5 and 6 the cloud field's sampler and view; compose
  * 0-4, then its three storage views at 5-7; vis 0-4, 5 the visibility buffer,
- * 6-9 its four views; the CLOUD FIELD is the host's texture
- * (`hostTexture`, `FrameHost.bind`: the host's own view and sampler, read at
- * each dispatch — the owner's decision of 2026-11-07, X5.1b's row 2), the one
- * thing here another side owns; a dispatch is three compute passes, the trace
+ * 6-9 its four views; the CLOUD FIELD is `Sky`'s texture as our renderer
+ * holds it (`TextureMaker`'s since `BABYLON_EXIT.md` X5.4d: its own view and
+ * sampler, read at each dispatch — the host's view and sampler until then, the
+ * owner's decision of 2026-11-07, X5.1b's row 2, which the move restates: the
+ * texture's sampler is the one Babylon's cache made for it), the one
+ * thing here another system owns; a dispatch is three compute passes, the trace
  * at `budget` workgroups and compose and vis at `groups`, each pass one
  * pipeline and one `dispatchWorkgroups` as Babylon's `_computeDispatch` began
  * one, recorded ONLY on a frame whose `dispatch` call ARMED it — so a frame on
@@ -68,7 +70,7 @@
  * yet READY would there have held the CPU half back and here arms, advances
  * and records nothing (`record`, said once): unreachable today, both
  * candidate cloud fields (`Sky.cloudShadowMap`, `ShadowBindings`' no-cloud
- * texel) being `RawTexture`s built from data and ready at creation; a buffer
+ * texel) being raw textures written at creation (`TextureMaker.raw`); a buffer
  * or texture replaced or dropped is destroyed after
  * the frame's submit (`FrameHost.afterSubmit`), never at the call — a door
  * may run between an armed dispatch and its prepare, which then records on
@@ -81,7 +83,6 @@
  */
 import { CONFIG } from "../config";
 import { GI_STATE_VEC4, giComposeSource, giTraceSource, giVisSource } from "../shaders/wgsl/giTrace";
-import type { BoundTexture, HostTexture } from "./frameHost";
 import { OwnTexture } from "./HostBindGroup";
 import type { FramePrepare, Renderer } from "./Renderer";
 
@@ -166,8 +167,8 @@ export class GiCompute {
   readonly frameTextures: Record<GiTextureName, OwnTexture>;
   /** How many frames this has recorded the volume's passes on — the harness's count (`__refGiCount`). */
   recorded = 0;
-  /** The cloud field the trace lights its hits by, as the host's handle; null binds nothing (no dispatch). */
-  cloud: HostTexture | null = null;
+  /** The cloud field the trace lights its hits by, as its owner holds it; null binds nothing (no dispatch). */
+  cloud: OwnTexture | null = null;
 
   private readonly device: GPUDevice;
   private readonly params: GPUBuffer;
@@ -188,14 +189,13 @@ export class GiCompute {
   private armedBudget = 0;
   private armedGroups = 0;
   private readonly armedClears: GPUBuffer[] = [];
-  private readonly bound: BoundTexture = { view: null, sampler: null };
   private readonly unhook: () => void;
   private readonly unsubmit: { dispose(): void };
   private warnedUnrecorded = false;
   private warnedCloud = false;
 
   constructor(
-    private readonly renderer: Renderer,
+    renderer: Renderer,
     paramBytes: number,
   ) {
     const device = renderer.device;
@@ -459,20 +459,20 @@ export class GiCompute {
   private traceGroup(res: Resources, trace: GPUComputePipeline): GPUBindGroup | null {
     const cloud = this.cloud;
     if (!cloud) return null;
-    const b = this.bound;
-    this.renderer.host.bind(cloud, b);
-    if (!b.view || !b.sampler) return null;
-    if (res.traceGroup && res.traceOf === trace && res.traceView === b.view && res.traceSampler === b.sampler) {
+    const view = cloud.view;
+    const sampler = cloud.sampler;
+    if (!view || !sampler) return null;
+    if (res.traceGroup && res.traceOf === trace && res.traceView === view && res.traceSampler === sampler) {
       return res.traceGroup;
     }
     res.traceGroup = this.device.createBindGroup({
       label: "gi: trace",
       layout: trace.getBindGroupLayout(0),
-      entries: [...this.common(res), { binding: 5, resource: b.sampler }, { binding: 6, resource: b.view }],
+      entries: [...this.common(res), { binding: 5, resource: sampler }, { binding: 6, resource: view }],
     });
     res.traceOf = trace;
-    res.traceView = b.view;
-    res.traceSampler = b.sampler;
+    res.traceView = view;
+    res.traceSampler = sampler;
     return res.traceGroup;
   }
 

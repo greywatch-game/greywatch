@@ -19,7 +19,7 @@
  *
  * Why the data exists: the server simulates with no Babylon and no canvas,
  * and `MapBuilder` builds meshes and reaches a
- * `DynamicTexture` through `floorMaterial`, so it cannot run there. The server
+ * canvas through `floorMaterial`, so it cannot run there. The server
  * rebuilds the solid world from these boxes instead, as data. That is sound
  * because `MapBuilder.collider()` is the one place a collider is made and a
  * `WorldBox` records everything a ray or a sweep asks of it — so both sides

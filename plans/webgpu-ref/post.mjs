@@ -1038,7 +1038,11 @@ function postAdapter() {
       const vol = g.volumetrics;
       const handed = { shadowMap: g.shadows?.depthMap, bodyShadowMap: g.bodyShadows?.depthMap, cloudShadowMap: g.sky?.cloudShadowMap };
       for (const [k, name] of [["shadowMap", "shadow.world"], ["bodyShadowMap", "shadow.bodies"], ["cloudShadowMap", "cloud.field"]]) {
-        const t = hw((vol?.[k] ?? handed[k])?.getInternalTexture?.());
+        // A Babylon texture (a parent before X5.4d: the maps' wrapped views and
+        // the lit texel, the cloud field) by its hardware texture; one of OUR
+        // renderer's (an `OwnTexture`, X5.4d on) by the texture its view is of.
+        const x = vol?.[k] ?? handed[k];
+        const t = hw(x?.getInternalTexture?.()) ?? (x?.view ? (P.views.get(x.view)?.texture ?? null) : null);
         if (t && !m.has(t)) {
           m.set(t, name);
           inputs.add(t);

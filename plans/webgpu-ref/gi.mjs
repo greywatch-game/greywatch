@@ -85,9 +85,12 @@
  * own pull, `cachedSampling` null — no Babylon bind of ours exists, the owner's
  * row 1). A SAMPLER's descriptor is logged as the device reads it,
  * `GPUSamplerDescriptor`'s own members alone: Babylon's cache hands the device a
- * key of its own (`anisotropyEnabled`) that WebGPU ignores. Read directly, and so Babylon's on both trees: the CLOUD FIELD (its
- * internal texture's sampling fields, and `host.bind` of it), which is Babylon's
- * texture through X5.1b and until X5.4; and the live half's wraps
+ * key of its own (`anisotropyEnabled`) that WebGPU ignores. Read directly: the
+ * CLOUD FIELD — Babylon's texture at a parent before X5.4d (its internal
+ * texture's sampling fields, and `host.bind` of it), and OURS from X5.4d
+ * (`TextureMaker`: its own view and sampler; the Babylon fields read null,
+ * `samplerSerial`'s second half is run as found, and a comparison across the
+ * two names those paths with `--ignore`); and the live half's wraps
  * (`_computeDispatch`, `_setTexture`, the two encoders), which measure Babylon
  * and are printed, not compared.
  *
@@ -144,6 +147,10 @@
  * tokens, descriptors, bind entries, samplers, sizes, the prepare counts) but the
  * frames they were made on; a lamp's `result` is arithmetic on the colour and is
  * printed, not compared. It names the first difference per map and exits 1.
+ * **`--ignore=<regex>,…`** excuses the comparison paths it matches
+ * (`<map>.statics.…`, `<map>.<scenario>.…`), counting each pattern's differing
+ * hits and saying one that excused nothing (X5.4d: the cloud field's Babylon
+ * fields).
  *
  * A lost device ends it (`harness.mjs`'s header, exit 4), and so does a hard
  * limit (exit 3).
@@ -156,6 +163,14 @@ const opt = (k, d) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length 
 const OUT = opt("out", "");
 const AGAINST = opt("against", "");
 const COMPARE = opt("compare", "");
+// `--ignore=<regex>,…`: paths of the comparison (`<map>.statics.…`,
+// `<map>.<scenario>.…`) a step names as an EXPECTED difference — X5.4d's cloud
+// field, whose Babylon fields have no counterpart on our texture. Each pattern's
+// hits are said, and one that excused nothing is said too.
+const IGNORE = opt("ignore", "")
+  .split(",")
+  .filter(Boolean)
+  .map((r) => new RegExp(r));
 // `--no-editor` is accepted and does nothing: the editor's arm is retired (X5.3c).
 const STATES = !args.includes("--no-states");
 // A boot with the light shafts OFF: the one Babylon pass in a round that binds
@@ -744,7 +759,9 @@ await page.evaluate(async () => {
       hullData: b64(v.hullData),
       params: b64(v.paramData),
       sceneRows: b64(v.sceneRows),
-      cloud: v.cloudBound ? v.cloudBound.name : null,
+      // The field's name: a Babylon texture's (a parent before X5.4d), or our
+      // texture's label (`TextureMaker`, the same "cloudShadow").
+      cloud: v.cloudBound ? (v.cloudBound.name ?? v.cloudBound.texture?.label ?? null) : null,
     };
   };
   /** One step: a token, the frame it was spent on, the CPU half, the GPU half. */
@@ -813,21 +830,31 @@ const frames = (n) =>
     for (let i = 0; i < n; i++) await P.nextFrame();
   }, n);
 
-/** The cloud field's sampler: the trace's bind group's, and what our host resolves for the same texture. */
+/**
+ * The cloud field's sampler: the trace's bind group's, and what our frame binds
+ * for the same texture — our host's resolve of Babylon's texture at a parent
+ * before X5.4d, the field's own sampler on OUR texture after (`TextureMaker`,
+ * the field an `OwnTexture`: no internal texture, no Babylon fields, which
+ * read null).
+ */
 const samplers = () =>
   page.evaluate(() => {
     const g = window.__celshock;
     const P = window.__giProbe;
     const cloud = g.mats.readLighting().cloudMap;
-    const internal = cloud.getInternalTexture();
+    const ours = typeof cloud.getInternalTexture !== "function";
+    const internal = ours ? null : cloud.getInternalTexture();
     const bg = P.bindGroups["gi-trace"];
     const traceSampler = bg?.raw?.find((x) => x.binding === 5)?.resource ?? null;
     const out = { view: null, sampler: null };
-    g.renderer.host.bind(cloud, out);
+    if (ours) {
+      out.view = cloud.view;
+      out.sampler = cloud.sampler;
+    } else g.renderer.host.bind(cloud, out);
     const lit = g.mats.readLighting();
     return {
-      cloud: cloud.name,
-      internalCached: {
+      cloud: ours ? (cloud.texture?.label ?? null) : cloud.name,
+      internalCached: internal && {
         wrapU: internal._cachedWrapU,
         wrapV: internal._cachedWrapV,
         wrapR: internal._cachedWrapR,
@@ -835,7 +862,7 @@ const samplers = () =>
         samplingMode: internal.samplingMode,
         useMipMaps: internal.useMipMaps,
       },
-      texture: { wrapU: cloud.wrapU, wrapV: cloud.wrapV, wrapR: cloud.wrapR, anisotropy: cloud.anisotropicFilteringLevel },
+      texture: ours ? null : { wrapU: cloud.wrapU, wrapV: cloud.wrapV, wrapR: cloud.wrapR, anisotropy: cloud.anisotropicFilteringLevel },
       trace: traceSampler ? P.samplerDesc.get(traceSampler) ?? "undescribed" : null,
       host: out.sampler ? P.samplerDesc.get(out.sampler) ?? "undescribed" : null,
       same: Boolean(traceSampler) && traceSampler === out.sampler,
@@ -1188,10 +1215,17 @@ async function samplerAB(n) {
     const g = window.__celshock;
     const P = window.__giProbe;
     const cloud = g.mats.readLighting().cloudMap;
-    const it = cloud.getInternalTexture();
-    const found = { u: it._cachedWrapU, v: it._cachedWrapV, r: it._cachedWrapR, a: it._cachedAnisotropicFilteringLevel };
+    // OUR texture since X5.4d (`TextureMaker`): no internal texture and no
+    // Babylon fields to force, its sampler its own — the run is made twice as
+    // it is found, so the two halves still say the trace is a function of it.
+    const ours = typeof cloud.getInternalTexture !== "function";
+    const it = ours ? null : cloud.getInternalTexture();
+    const found = it ? { u: it._cachedWrapU, v: it._cachedWrapV, r: it._cachedWrapR, a: it._cachedAnisotropicFilteringLevel } : null;
     const host = { view: null, sampler: null };
-    g.renderer.host.bind(cloud, host);
+    if (ours) {
+      host.view = cloud.view;
+      host.sampler = cloud.sampler;
+    } else g.renderer.host.bind(cloud, host);
     const bound = () => P.bindGroups["gi-trace"].raw.find((x) => x.binding === 5).resource;
     const run = async () => {
       g.gi.setMap(g.map, g.gi.floorAlbedo.toHexString());
@@ -1207,17 +1241,21 @@ async function samplerAB(n) {
     // (the light shafts', every frame they are on) writes these four fields,
     // so they are pinned as accessors that answer the forced value and
     // swallow the write, and taken off again after.
-    const filled = found.u !== null && found.u !== undefined;
-    const forced = filled
-      ? { _cachedWrapU: null, _cachedWrapV: null, _cachedWrapR: null, _cachedAnisotropicFilteringLevel: null }
-      : { _cachedWrapU: cloud.wrapU, _cachedWrapV: cloud.wrapV, _cachedWrapR: cloud.wrapR, _cachedAnisotropicFilteringLevel: Math.min(cloud.anisotropicFilteringLevel, g.engine.getCaps().maxAnisotropy) };
+    const filled = found !== null && found.u !== null && found.u !== undefined;
+    const forced = !it
+      ? {}
+      : filled
+        ? { _cachedWrapU: null, _cachedWrapV: null, _cachedWrapR: null, _cachedAnisotropicFilteringLevel: null }
+        : { _cachedWrapU: cloud.wrapU, _cachedWrapV: cloud.wrapV, _cachedWrapR: cloud.wrapR, _cachedAnisotropicFilteringLevel: Math.min(cloud.anisotropicFilteringLevel, g.engine.getCaps().maxAnisotropy) };
     for (const [k, v] of Object.entries(forced)) Object.defineProperty(it, k, { configurable: true, get: () => v, set: () => {} });
     const b = await run();
-    for (const k of Object.keys(forced)) delete it[k];
-    it._cachedWrapU = found.u;
-    it._cachedWrapV = found.v;
-    it._cachedWrapR = found.r;
-    it._cachedAnisotropicFilteringLevel = found.a;
+    if (it) {
+      for (const k of Object.keys(forced)) delete it[k];
+      it._cachedWrapU = found.u;
+      it._cachedWrapV = found.v;
+      it._cachedWrapR = found.r;
+      it._cachedAnisotropicFilteringLevel = found.a;
+    }
     g.gi.setMap(g.map, g.gi.floorAlbedo.toHexString());
     await P.step([]);
     const restored = P.samplerDesc.get(bound());
@@ -1233,8 +1271,12 @@ async function samplerAB(n) {
       }
     }
     return {
-      found: { wrapU: found.u, wrapV: found.v, wrapR: found.r, anisotropy: found.a },
-      forced: filled ? "null (nothing of Babylon's bound it)" : "our host's (a Babylon bind with the texture's own wrap and anisotropy)",
+      found: found && { wrapU: found.u, wrapV: found.v, wrapR: found.r, anisotropy: found.a },
+      forced: !it
+        ? "nothing: the field is ours (X5.4d), its sampler its own"
+        : filled
+          ? "null (nothing of Babylon's bound it)"
+          : "our host's (a Babylon bind with the texture's own wrap and anisotropy)",
       asFound: { sampler: a.sampler, isHosts: a.isHosts, log: a.log },
       unbound: { sampler: b.sampler, isHosts: b.isHosts, log: b.log },
       host: P.samplerDesc.get(host.sampler) ?? "undescribed",
@@ -1442,7 +1484,13 @@ function compareLogs(a, b) {
     console.log(`against: ${m}`);
     failed = true;
   };
+  const excused = IGNORE.map(() => 0);
   const walk = (x, y, path) => {
+    const ig = IGNORE.findIndex((r) => r.test(path));
+    if (ig >= 0) {
+      if (JSON.stringify(x) !== JSON.stringify(y)) excused[ig]++;
+      return null;
+    }
     if (typeof x !== typeof y) return `${path} is ${JSON.stringify(x)?.slice(0, 80)} here and ${JSON.stringify(y)?.slice(0, 80)} there`;
     if (Array.isArray(x)) {
       if (!Array.isArray(y) || x.length !== y.length) return `${path} has length ${x.length} here and ${y?.length} there`;
@@ -1516,6 +1564,7 @@ function compareLogs(a, b) {
     console.log(`against ${x.map}: ${failed ? "DIFFERS (above)" : `equal, ${compared} values over every scenario's steps`}`);
     failed = failed || before;
   }
+  IGNORE.forEach((r, i) => console.log(`against: --ignore ${r.source} excused ${excused[i]} differing path(s)${excused[i] ? "" : " (it matched nothing that differs)"}`));
   if (!failed) console.log("against: equal");
   return failed;
 }

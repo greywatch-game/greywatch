@@ -261,7 +261,7 @@ export class SkyDraw {
     };
   }
 
-  /** As the main pass begins: the frame's stand, its blocks off the recipes, the textures through the host. */
+  /** As the main pass begins: the frame's stand, its blocks off the recipes, the textures as `Sky` holds them. */
   private readonly prepare = (): void => {
     this.stats.drawn = 0;
     this.stats.masked = 0;

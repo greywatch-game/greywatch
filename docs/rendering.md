@@ -570,9 +570,13 @@ half line for line; what changed is where its decisions are RECORDED.
 - **The frame binds the seven as ITS OWN** (`OwnTexture`, `fillFrameTextures`),
   no longer through `hostTexture`: the same seven objects for the volume's
   life, their view rewritten in place by a tier change, so nothing is walked.
-- **The cloud field is the one thing in it another side owns**, and it is
-  bound through the host (`hostTexture`, `FrameHost.bind`, items 7 and 8) with
-  the HOST's sampler, always — the owner's decision of 2026-11-07. Babylon's
+- **The cloud field is the one thing in it another system owns** (`Sky`'s),
+  and since `BABYLON_EXIT.md` X5.4d it is OUR renderer's texture
+  (`TextureMaker`), bound with its own view and sampler — the descriptor
+  Babylon's cache made for it (clamped, linear, anisotropy 4), which is what
+  the host's bind handed over until then: through the host (`hostTexture`,
+  `FrameHost.bind`, items 7 and 8) with the HOST's sampler, always, the
+  owner's decision of 2026-11-07. Babylon's
   compute bind took a sampler off the internal texture's cached fields, which
   only a Babylon bind fills (the light shafts in a round until X5.2c2 made them
   ours, bound through the host too; the map editor's build's materials until
@@ -2177,7 +2181,9 @@ rungs because `ShadowQuality` is derived from the first and indexes the second.
 A fresh install on a coarse pointer gets `low`, on `defaultGiQuality`'s test.
 
 **A map that is OFF is a bound 1x1 LIT texture, never an absent one**
-(`core/shadowWindow.ts`'s `litShadowTexture`): every `celShadow` consumer
+(`TextureMaker.lit`, `ShadowBindings.lit`; `core/shadowWindow.ts`'s
+`litShadowTexture`, a `RawTexture`, until `BABYLON_EXIT.md` X5.4d made it ours
+as Babylon made it): every `celShadow` consumer
 declares every shadow sampler, and a declared sampler with nothing behind it is
 a bind group that fails to build. It is 8-bit RGBA on purpose — 255 reads back
 as depth 1.0, past every receiver, and a 32-bit float is not filterable under
@@ -2777,8 +2783,12 @@ buffer over one storage array. What it keeps, and what proved each:
   would be 17 sampled textures in the stage, over WebGPU's promised 16, and a material never
   declared the foliage or the irradiance. The group is `WaterDraw`'s, over the frame's handles.
 - **Three textures, three owners.** The BED-DEPTH map is ours, `r8unorm`, one a body, one a build. The
-  FOAM mask stays a `Texture` of Babylon's, read through the seam (`hostTexture`), so its decode and its
-  mips are what they were; it owes its own step, with the rest of what is read that way. The MIRROR
+  FOAM mask is ours since `BABYLON_EXIT.md` X5.4d (`TextureMaker.image`): decoded as Babylon's `Texture`
+  decoded it (the file's bytes in an untyped `Blob`, `createImageBitmap` unpremultiplied and unconverted),
+  uploaded flipped, its nine levels Babylon's filter, its sampler Babylon's (repeat, linear, anisotropy
+  4); until it decodes it binds what Babylon bound for a texture not ready (the engine's empty texel,
+  `NEAREST`, wrapped as the foam is), and it is the scene's PENDING DATA meanwhile, as the `Texture` was,
+  so `scene.isReady()` waits for it. The MIRROR
   is the bake's cube, read where it lies through a view over all six faces and every level; the
   water's pool makes no wrapped view (and `wrapCubeTexture` itself went at X5.3d with its last
   reader, the map editor's build's glazing). **Both samplers of ours are stated as Babylon's bind built them, measured at the BEFORE**: the
@@ -3301,14 +3311,15 @@ carry a single level, so level 0 is not a compromise there: it is what the GLSL
 meant.
 
 **Five fetches in the game are the exception, and for them the implicit LOD IS
-the filtering.** The ground albedo and its height map are `DynamicTexture`s
-built with mips and `anisotropicFilteringLevel = 8`, and a reflection probe's
+the filtering.** The ground albedo and its height map are painted canvases made
+textures with mips and anisotropy 8 (`DynamicTexture`s until `BABYLON_EXIT.md`
+X5.4d, `TextureMaker.picture` since, made as those were), and a reflection probe's
 cube carries a chain — the bake's, made by `render/cubeMips.ts` to the filter
 Babylon's `ReflectionProbe` used. `textureSampleLevel(…, 0.0)`
 on any of the three would delete that chain — and on the height map it would
 delete an argument as well, because `perturbNormal` relies on two taps a texel
 apart converging with distance and states that as the whole reason it needs no
-explicit fade. The other two are the water's: the foam mask is a plain `Texture`
+explicit fade. The other two are the water's: the foam mask is a decoded image
 and carries a chain like any other, and the BED DEPTH map is the one that turns
 the rule into a trap.
 
@@ -3817,30 +3828,32 @@ seven. Each is pushed onto every cel material as shared state, so it is one
 bind group a frame rather than one per material.
 
 - **`CelMaterialFactory.fillFrameTextures`** hands over the very objects it
-  binds (`ShadowBindings.fillFrameTextures`, the volume's set), as
-  `HostTexture` handles that only the host can resolve — the seam's
-  `hostTexture` is the one crossing that mints one — or, for a texture OUR
-  renderer owns, as an `OwnTexture` read where it lies: every map
-  `ShadowBindings` holds as its `own` (the world's since X3.6a) and, since
-  X5.1b, the irradiance volume's seven (`render/GiCompute.ts`).
-- **The host resolves a handle EVERY frame** (`FrameHost.bind`) into
-  Babylon's own `GPUTextureView` and the `GPUSampler` out of Babylon's own
-  cache, for the state Babylon's bind would use. So nothing is copied
-  (`BABYLON_EXIT.md` rule 5), no filter rule is restated, and a texture its
-  owner replaces — a quality change re-creates a shadow map — is picked up
+  binds (`ShadowBindings.fillFrameTextures`, the volume's set), every one an
+  `OwnTexture` of OUR renderer's read where it lies: every map
+  `ShadowBindings` holds as its `own` (the world's since X3.6a), the lit
+  texel where a map is off and the clouds' field (`TextureMaker`'s since
+  X5.4d) and, since X5.1b, the irradiance volume's seven
+  (`render/GiCompute.ts`). No frame texture is a `HostTexture` any more.
+- **A handle is read EVERY frame**, its view and sampler as its owner holds
+  them now — or, for a texture the HOST still owns (the glow's targets, the
+  post chain's frame and pool, `FrameDepth`'s wrapper, X5.4e and X5.4f's),
+  resolved by the host (`FrameHost.bind`) into Babylon's own `GPUTextureView`
+  and the `GPUSampler` out of Babylon's own cache, for the state Babylon's bind
+  would use. So nothing is copied (`BABYLON_EXIT.md` rule 5), and a texture
+  its owner replaces — a quality change re-creates a shadow map — is picked up
   on the next frame.
 - **A bind group is re-made only on the frame a view or sampler changed**
   (`render/HostBindGroup.ts`, which builds it from the group's DECLARED
   entries by the numbering the WGSL is declared with, `firstBindings`).
 - **A handle not published yet is null, and the frame draws nothing that
   binds it**, as a Babylon material with that sampler unbound draws nothing.
-  A texture not READY binds Babylon's empty texture of its kind, as
-  Babylon's own bind does. **A material's own texture not ready is the one
-  place the two sides differ**: Babylon's material is not ready and Babylon
-  SKIPS the mesh, while ours draws it over the engine's empty texture. Since
-  X3.5 that reaches the floor's and the roads' ground textures, and it is a
-  stated ASSUMPTION rather than a fix — they are procedural, made on a canvas
-  at build time, and ready at once.
+  A host texture not READY binds Babylon's empty texture of its kind, as
+  Babylon's own bind does, and so does the foam while it decodes (ours, the
+  same texel). **A material's own texture not ready** — a ground's, whose
+  mips wait on the mip pipeline ("The textures the game paints") — has no
+  view, so its group is not made and the draw draws nothing: what Babylon did
+  with a material not ready, skipping the mesh. It is procedural, made on a
+  canvas at build time, and in practice ready at once.
 
 **A cel material reaches our side as its RECIPE, never as itself**
 (`render/celMaterial.ts`, `CelMaterialFactory.celRecipe`): its variant, its
@@ -3848,7 +3861,10 @@ depth bias (`zOffsetUnits`) and its own block and textures — group 1, what a
 material is born with from its own spec. **Every per-material value is set
 through the factory's `own`** (`ownTexture` for a texture), which sets it on
 the material AND writes it into the material's recipe in one statement. So
-a value our side lacks cannot be one Babylon's has. The recipe is kept only
+a value our side lacks cannot be one Babylon's has. A TEXTURE is the one
+exception since `BABYLON_EXIT.md` X5.4d: `ownTexture` makes the picture our
+texture (`TextureMaker.picture`) and keeps it in the recipe ALONE — no Babylon
+material draws or compiles (`core/babylonCompiles.ts`), so none is handed one. The recipe is kept only
 by the getters whose meshes our side takes: `getWorldCel`, `get`,
 `getGlossy`, `getTranslucent` and `getGroundTextured`. A rewrite after birth
 moves `materialEpoch` (`setGroundSpec` re-applies the ground's sheen), and a
@@ -4580,6 +4596,49 @@ bake" above; what it owes this frame is below.
 - **It is a LATE prepare** (`Renderer.onFrame(prepare, true)`), after the
   world's maps and the atlas whatever order the two were added in, because a
   face samples both.
+
+### The textures the game paints
+
+**Every texture the game makes for itself is OUR renderer's**
+(`render/TextureMaker.ts`, `Renderer.textureMaker`; `BABYLON_EXIT.md` X5.4d),
+and each is made exactly as Babylon 9.28 made it — read off the device at the
+step's BEFORE, every level of every one a frame binds byte-compared: the grounds' albedos and
+height maps (`world/textures.ts`), the sky's dome and moon, the ash's mote, the
+rotor wash's puff, the scorch, the blob, the clouds' shadow field, the lit
+texel, the no-cloud texel and the water's foam. **The canvases stay the game's
+painting** (`newCanvas`: a document canvas, as `DynamicTexture` made one, or an
+`OffscreenCanvas` where there is no document), handed over as a `Picture` — the
+canvas, whether it is flipped, whether it is mipped and how it is sampled.
+
+- **Format, usage and size are Babylon's**: `rgba8unorm` (`rg8unorm` for the
+  cloud field and the no-cloud texel), usage `COPY_SRC | COPY_DST |
+  TEXTURE_BINDING | RENDER_ATTACHMENT` (23) on every one, the full chain where
+  mips were asked and one level where not, viewed whole.
+- **A canvas is uploaded by `copyExternalImageToTexture`** with its `flipY`
+  (`DynamicTexture.update()`'s default true; the sky's `update(false)`) and
+  `premultipliedAlpha: false`; a raw texture by `writeTexture` (Babylon wrote the
+  cloud field's 512-byte rows through a mapped buffer, the same bytes); the foam
+  by `createImageBitmap` over its bytes as `LoadImage` made one.
+- **The mip chain is Babylon's filter**, through the cache's one mip pipeline,
+  the reflection bake's own (`render/cubeMips.ts`): level by level, a strip of
+  four corners sampling the level above through a sampler that states only
+  `minFilter: "linear"`. Babylon built that pipeline synchronously at its boot;
+  ours resolves when it resolves, so **a mipped texture has no view until its
+  chain is recorded** — the sky's dome, painted in `Game`'s constructor, waits
+  for it (no frame draws the sky until a map stands), and no draw ever samples a
+  half-made chain.
+- **A sampler is the descriptor Babylon's cache made** (`SAMPLING`,
+  `anisotropic`): flat for a texture with no mips (linear, no mip filter, the
+  LOD held at 0, clamped — the canvases' and the lit texel's), anisotropic at
+  the texture's level where Babylon turned anisotropy on — a mipped texture at
+  trilinear (4 by default, the grounds' 8) and the cloud field at bilinear with
+  no mips (`useMipMaps || samplingMode === 2`) — and `w` repeating on every one.
+- **A picture is made ONCE** (`picture` keeps one texture a `Picture`), and a
+  texture released (`release`: the sky's per map, the puff with its rings) is
+  destroyed after the next frame's submit, never inside a frame that may bind it.
+- **The foam is the scene's pending data while it decodes**, as Babylon's
+  `Texture` was, so `scene.isReady()` — what the bank and `npm run shots` read
+  a frame by — waits for it exactly as it did.
 
 ## The bodies, ours: every soldier an instance of its kit
 
@@ -5397,8 +5456,9 @@ recorded dev-only difference was gone at X4.7d).
   accumulates into it). The camera is handed in APART — the view, the projection,
   the view's inverse by `invertToRef` and the eye, read off the scene by `Game` as
   the frame draws (`ParticleCamera`) — never the frame's fused matrix, which is a
-  different rounding. The mote texture and the rotor wash's puff stay Babylon's
-  `DynamicTexture`s, bound through the seam (`hostTexture`, `bind`) until X5.4.
+  different rounding. The mote texture and the rotor wash's puff are ours since
+  X5.4d, painted canvases made as the `DynamicTexture`s they were
+  (`TextureMaker.picture`, "The textures the game paints").
 - **No particle is drawn in the glow's mask, a shadow map or a bake**, as before.
 - **Its pipelines are on the round's declared list** (`Game.roundPipelines`, "the
   ash and the rotor wash": the ash's update and its draw at BOTH blends, since a
@@ -7211,8 +7271,10 @@ all. `Ridge.ts`'s `MIN_SLOPE` is the other
 half of the contract; lowering the rim without moving these cutoffs uncovers a band
 of empty dome.
 
-- **A `DynamicTexture` must be uploaded WHERE IT IS BUILT, and the cost of not
-  doing it is invisible in the picture.** `update()` is what makes one READY,
+- **A `DynamicTexture` had to be uploaded WHERE IT WAS BUILT, and the cost of not
+  doing it was invisible in the picture** — kept as history: since
+  `BABYLON_EXIT.md` X5.4d no `DynamicTexture` is left (`TextureMaker.picture`
+  uploads a canvas in the call that makes its texture). `update()` was what made one READY,
   and an un-uploaded texture on a material makes
   `StandardMaterial.isReadyForSubMesh` return false before it builds an effect
   — so `scene.isReady()`, which walks every mesh in the scene whether it draws
@@ -7223,8 +7285,8 @@ of empty dome.
   it (`VERIFYING.md` has the hunt). Every `DynamicTexture` in the tree is
   uploaded in its own constructor now; a repaint later is a repaint, never the
   first one.
-- **Sky textures are uploaded with `update(false)`.** `DynamicTexture.update()`
-  flips Y by default, which maps canvas row 0 to `v = 1` — the *nadir* on Babylon's
+- **Sky textures are uploaded UNFLIPPED (`flipY: false`, `update(false)` while they
+  were `DynamicTexture`s).** A canvas upload flips Y by default, which maps canvas row 0 to `v = 1` — the *nadir* on Babylon's
   sphere, whose UVs run `v = acos(y)/PI` down from the zenith. A sky painted top-down
   and then flipped puts its stars, band and halo under the map and leaves the visible
   half showing the fog colour the gradient ends on. It does not look upside down; it
@@ -7237,9 +7299,9 @@ of empty dome.
   (`acrossSeam`). The left and right edges are the same piece of sky, a canvas clips
   instead of wrapping, and the widest mark on the dome is the moon's halo — wider, at
   these settings, than the moon's own distance from the wrap column. Miss this and you
-  get a bright gradient ending in a straight vertical line down the sky. `wrapU =
-  WRAP_ADDRESSMODE` is also required (Babylon's `DynamicTexture` defaults BOTH axes to
-  CLAMP) but only fixes the filtering: the seam that shows is in the paint. `v` stays
+  get a bright gradient ending in a straight vertical line down the sky. A
+  repeating `u` is also required (the dome's sampler; Babylon's `DynamicTexture`
+  defaulted BOTH axes to CLAMP) but only fixes the filtering: the seam that shows is in the paint. `v` stays
   clamped — it runs pole to pole and has nothing to meet.
 
 `Game.applySky()` no-ops when the environment object is unchanged. The map is
@@ -7249,7 +7311,8 @@ unchanged sky is pure cost.
 **The dome and the moon are OUR renderer's (`render/SkyDraw.ts`, `render/skyProgram.ts`,
 the bodies in `shaders/wgsl/sky.ts`; `BABYLON_EXIT.md` X4.5c): Babylon is made no
 `sky-dome` or `sky-moon` mesh and no material**, as the clouds are not, and
-`Sky` still paints the two `DynamicTexture`s, read through the seam's view of them.
+`Sky` still paints the two textures, on canvases our renderer makes textures of
+(`TextureMaker.picture`, X5.4d).
 What is drawn is what `StandardMaterial` compiled for these two, read off the effect
 Babylon built rather than off its options (`EMISSIVE`, `OPACITY` on the moon,
 nothing lit, fogged, tone-mapped or image-processed): the colour is the CLAMPED sum
@@ -7672,10 +7735,10 @@ declared when the chain is built (`volumetricStages`), so a rung changed in play
 compiles nothing. The stage is drawn only once `Game.syncVolumetrics` has
 latched every input present, as the pass used to be attached — the same frame
 for a pass a rung change has just built, so only the session's first render,
-before the frame's depth exists, has no shafts, as before. **Its shadow maps are bound as OUR renderer holds
-them** (`own ?? hostTexture`, `ShadowBindings`' pattern: the same texture,
-through its owner's view and sampler), **the clouds' field through the host**
-with the host's sampler.
+before the frame's depth exists, has no shafts, as before. **Its three maps are bound as OUR renderer holds
+them** (`ShadowBindings`' pattern: the same texture, through its owner's view and
+sampler) — a shadow map's own or the lit texel where it is off, and the clouds'
+field, ours since X5.4d (through the host, with the host's sampler, until then).
 
 **The reach is the shadow window's HALF side.** `EnvironmentSpec.lighting
 .shadowWindow` is a square centred on the player, so from the eye there is only

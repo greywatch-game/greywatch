@@ -10,7 +10,11 @@
  * stand at the ORIGIN with each body's bounds stated by hand: the grid is moved by
  * a uniform and clamped to each rect in the vertex stage, so no vertex ever changes.
  * The one tiling texture left (the foam mask) is loaded once and reused across
- * rebuilds, and it is a texture of Babylon's, read through the seam.
+ * rebuilds — OUR texture since `BABYLON_EXIT.md` X5.4d, decoded, flipped and
+ * mipped as Babylon's `Texture` did it (`TextureMaker.image`), and held as
+ * scene's PENDING DATA while it decodes, as that `Texture` held it, so
+ * `scene.isReady()` waits for it as it did (what the bank and `npm run shots`
+ * read a frame by).
  * A rect without its own `y` floats ankle-deep above the TERRAIN under it, not
  * above absolute zero — that is what lets a pool sit recessed in a dug bed.
  * The BED-DEPTH map is per body and per build — it is baked against the
@@ -21,12 +25,11 @@
  * cube every body must be born holding.
  * Contract: `docs/rendering.md`, "The water".
  */
-import { type Scene, Texture, Vector3 } from "@babylonjs/core";
+import { type Scene, Vector3 } from "@babylonjs/core";
 
 import { CONFIG } from "../config";
 import { Color3 } from "../math";
-import { hostTexture } from "../render/babylonSeam";
-import type { HostTexture } from "../render/frameHost";
+import { anisotropic, type MadeTexture, type TextureMaker } from "../render/TextureMaker";
 import type { WaterDraw, WaterMirror, WaterShape, WaterSurface } from "../render/WaterDraw";
 import { createWaterBodyValues, createWaterShared, type WaterShared } from "../render/waterProgram";
 import { MAX_POINT_LIGHTS, type CelMaterialFactory, type PointLightData } from "../shaders/CelShader";
@@ -158,8 +161,8 @@ interface BedMap {
  */
 export class WaterSystem {
   private bodies: WaterBody[] = [];
-  private foam: Texture | null = null;
-  private foamHandle: HostTexture | null = null;
+  /** The foam mask, ours: the engine's empty texel while it decodes (`TextureMaker.image`). */
+  private foam: MadeTexture | null = null;
   /** What every body reads alike; null with no water standing. */
   private values: WaterShared | null = null;
   /** The factory's LIVE key, by reference: `commit` copies it, so an environment pushed lights the water in its frame. */
@@ -181,6 +184,8 @@ export class WaterSystem {
     private scene: Scene,
     private mats: CelMaterialFactory,
     private draw: WaterDraw,
+    /** Our renderer's maker of the textures the game decodes for itself: the foam mask. */
+    private readonly textures: TextureMaker,
   ) {}
 
   /** The sphere every body is gated and sorted by, and which of its shapes it draws: the draw's, for `Game`. */
@@ -214,8 +219,15 @@ export class WaterSystem {
       // surface seen this close to edge-on, and it was in here — but the one
       // tiled image left is a shoreline mask read through a `smoothstep`, and
       // the surface it used to be needed for is summed rather than sampled.
-      this.foam = new Texture(foamUrl, this.scene);
-      this.foamHandle = hostTexture(this.foam);
+      // (What Babylon's sampler cache made of a mipped `Texture` at trilinear
+      // still carried its default anisotropy of 4, and so does this.)
+      const scene = this.scene;
+      const foam = this.textures.image("water-foam", foamUrl, anisotropic("repeat", "repeat", 4), (error) => {
+        scene.removePendingData(foam);
+        if (error) console.error("water: the foam mask did not load", error);
+      });
+      scene.addPendingData(foam);
+      this.foam = foam;
     }
 
     // Pass one: the bed under every rect, and where the water in it is. Both
@@ -289,7 +301,7 @@ export class WaterSystem {
       // The grid and the quad stand at the origin and never move: the vertex stage
       // puts every vertex where it belongs, so the bounds it is culled against are
       // the rect's, stated by hand, with the tallest crest the field can raise over it.
-      const surface = this.draw.addBody(body, bed, this.foamHandle!, refl.cube, [
+      const surface = this.draw.addBody(body, bed, this.foam, refl.cube, [
         r.x - hx,
         surfaceY - trains.crest,
         r.z - hz,

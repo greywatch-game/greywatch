@@ -112,12 +112,12 @@
  * the split every picture in the game takes (`GrenadeFx`, `CombatFx`): the
  * server does not construct this class at all.
  */
-import { Color3, type DynamicTexture, type Scene, Vector3 } from "@babylonjs/core";
+import { Color3, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { Vehicle } from "../entities/Vehicle";
-import { hostTexture } from "../render/babylonSeam";
 import type { ParticleDraw } from "../render/ParticleDraw";
 import type { ParticleField } from "../render/ParticleField";
+import type { MadeTexture, TextureMaker } from "../render/TextureMaker";
 import type { EnvironmentSpec } from "../world/environment";
 import type { WaterRect } from "../world/MapBuilder";
 import { waterY, type TerrainField } from "../world/TerrainField";
@@ -182,7 +182,7 @@ interface Palette {
 export class RotorWash {
   private readonly washes: Wash[] = [];
   private readonly pools: Pool[] = [];
-  private texture: DynamicTexture | null = null;
+  private texture: MadeTexture | null = null;
   /**
    * The map's colours, and the reason they are held rather than pushed.
    *
@@ -208,9 +208,10 @@ export class RotorWash {
   private washCount = 0;
 
   constructor(
-    private readonly scene: Scene,
     /** Our renderer's particle fields, which step and draw the rings built here. */
     private readonly draw: ParticleDraw,
+    /** Our renderer's maker of the textures the game paints: the puff the rings share. */
+    private readonly textures: TextureMaker,
   ) {}
 
   /** The packed sites. Valid up to `siteCount`; see `washSites`. */
@@ -530,7 +531,7 @@ export class RotorWash {
     const w = CONFIG.vehicles.wash;
     const s = w.spray;
     const life = wet ? s.life : w.life;
-    const texture = (this.texture ??= buildPuffTexture(this.scene, "rotorWash"));
+    const texture = (this.texture ??= buildPuffTexture(this.textures, "rotorWash"));
     // Its two random textures are drawn here, as `GPUParticleSystem`'s
     // constructor drew them; its emitter is a point (the origin until `drive`
     // moves it), as the `Vector3` handed Babylon's was.
@@ -544,8 +545,7 @@ export class RotorWash {
         randomTextureSize: 4096,
         features: "ring",
       },
-      hostTexture(texture),
-      () => texture.isReady(),
+      texture,
     );
     system.blendMode = "standard";
     system.updateSpeed = 1 / 60;
@@ -678,7 +678,7 @@ export class RotorWash {
     this.disposeRings();
     this.pools.length = 0;
     this.washCount = 0;
-    this.texture?.dispose();
+    if (this.texture) this.textures.release(this.texture);
     this.texture = null;
   }
 }

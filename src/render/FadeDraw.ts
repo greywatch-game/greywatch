@@ -24,9 +24,10 @@
  * LEQUAL, back faces culled but for the scorch's (none), and the scorch alone
  * biased (`zOffsetUnits` -4 and `zOffset` -2, the bias and its slope); the
  * mask's twin is the spark's, blended as the mask material drew a mesh under
- * `visibility` 1, its colour `GlowRules`' (the pull's `glow`); the two maps
- * stay Babylon's textures, read through the seam (`hostTexture`, rule 5), so
- * their canvases' decode and their samplers are what they were; the arrays
+ * `visibility` 1, its colour `GlowRules`' (the pull's `glow`); the two maps are
+ * our renderer's own since `BABYLON_EXIT.md` X5.4d (`TextureMaker`'s, the
+ * canvases uploaded and sampled as Babylon's `DynamicTexture`s were), bound
+ * where they lie; the arrays
  * are uploaded as Babylon uploaded a mesh's (float32); a frame with a
  * pipeline unbuilt or a map unpublished draws no fade; a pipeline that FAILS
  * is the round's failure (`install`'s), and so is a refused main pass or mask
@@ -47,8 +48,7 @@
 import { PLACED_WORDS } from "./celVertex";
 import type { EmissiveRecipe } from "./emissiveWorld";
 import { FADE_BLOCK, FADE_GEOMETRY, FADE_TEXTURES, fadeDefines, fadePrograms, type FadeVariant } from "./fadeProgram";
-import type { HostTexture } from "./frameHost";
-import { HostBindGroup } from "./HostBindGroup";
+import { HostBindGroup, type OwnTexture } from "./HostBindGroup";
 import type { BuiltPipeline, PipelineState } from "./PipelineCache";
 import type { FrameContext, Renderer } from "./Renderer";
 import { FRAME_TARGETS, GLOW_TARGETS } from "./targets";
@@ -102,8 +102,8 @@ export class FadeDraw {
   private readonly plain: HostBindGroup;
   private readonly scorchGroup: HostBindGroup;
   private readonly blobGroup: HostBindGroup;
-  private readonly scorchHandles: { readonly opacityTex: HostTexture };
-  private readonly blobHandles: { readonly opacityTex: HostTexture };
+  private readonly scorchHandles: { readonly opacityTex: OwnTexture };
+  private readonly blobHandles: { readonly opacityTex: OwnTexture };
   /** Each kit's indices: first, count, base vertex. */
   private readonly ranges: Uint32Array;
   private readonly index: GPUBuffer;
@@ -137,9 +137,9 @@ export class FadeDraw {
     private readonly paint: EmissiveRecipe,
     /** The factory's epoch: `paint`'s values are copied again when it moves. */
     private readonly epochOf: () => number,
-    /** The scorch's map and the blob's, Babylon's textures through the seam. */
-    scorchMap: HostTexture,
-    blobMap: HostTexture,
+    /** The scorch's map and the blob's, ours (`TextureMaker`'s). */
+    scorchMap: OwnTexture,
+    blobMap: OwnTexture,
   ) {
     const device = renderer.device;
     this.device = device;

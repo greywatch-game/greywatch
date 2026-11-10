@@ -41,8 +41,8 @@ node plans/webgpu-ref/pipelines.mjs [map] [--seconds N] [--round]
 node plans/webgpu-ref/surfaces.mjs [map...] [--rows=<id,...>] [--pixels] [--keep=<dir>] [--out=<f.json>]
 node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--gpu] [--max] [--size WxH] [--out f.json] [--against f.json]
 node plans/webgpu-ref/particles.mjs [map...] [--frames=N] [--out=f.json] [--against=f.json]
-node plans/webgpu-ref/gi.mjs [map...] [--out=f.json] [--against=f.json] [--shafts-off] [--no-states]
-node plans/webgpu-ref/gi.mjs --compare=a.json --against=b.json
+node plans/webgpu-ref/gi.mjs [map...] [--out=f.json] [--against=f.json] [--ignore=<regex,...>] [--shafts-off] [--no-states]
+node plans/webgpu-ref/gi.mjs --compare=a.json --against=b.json [--ignore=<regex,...>]
 node plans/webgpu-ref/post.mjs [--sizes=desk,phone] [--out=f.json] [--against=f.json] [--no-live]
 node plans/webgpu-ref/post.mjs --compare=a.json --against=b.json
 node plans/webgpu-ref/drawlog.mjs [map...] [--out=f.json] [--against=f.json] [--ignore=<regex>] [--no-viewer] [--limit=<seconds>]
@@ -309,8 +309,10 @@ does.
   no browser. Every read of the volume's own resources — the thirteen, and what our
   frame binds for the seven — goes through one adapter (`window.__giGpu`), Babylon's at
   a parent before X5.1b, and OURS (`GiVolume.gpu`, `render/GiCompute.ts`) wherever it
-  is present; the cloud field, Babylon's texture until X5.4, and the live half's
-  Babylon wraps are read directly (its header). A sampler is logged by the members
+  is present; the cloud field — Babylon's texture at a parent before X5.4d, OUR
+  texture (`TextureMaker`) from X5.4d, its Babylon-only fields reading null, which a
+  comparison across the two names with `--ignore` (path regexes, each pattern's hits
+  said) — and the live half's Babylon wraps are read directly (its header). A sampler is logged by the members
   `GPUSamplerDescriptor` has (Babylon's cache hands the device one of its own,
   `anisotropyEnabled`, which WebGPU ignores; X5.1b).
   **The harness holds the volume by stubbing its `update`**, and that is a contract a

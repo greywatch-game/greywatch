@@ -1,11 +1,10 @@
 /**
  * shadowWindow.ts — where a directional shadow camera STANDS, and the texel
  * snap that stops its edges crawling; the light's view-projection as
- * Babylon's `ShadowGenerator` composed it (`lightTransformToRef`); and the LIT
- * texture a map switched off reads (`litShadowTexture`), the one Babylon
- * texture every shadow reader may be bound to that nothing renders.
- * (Babylon's wrapped views of OUR renderer's textures are
- * `core/wrappedTextures.ts`'.) Owns the light's own cross-axis basis and the
+ * Babylon's `ShadowGenerator` composed it (`lightTransformToRef`). (The LIT
+ * texel a map switched off reads is our renderer's since `BABYLON_EXIT.md`
+ * X5.4d, `TextureMaker.lit`; Babylon's wrapped views of OUR renderer's
+ * textures are `core/wrappedTextures.ts`'.) Owns the light's own cross-axis basis and the
  * last snapped focus, and `ShadowLight`, what a light is to both; owns no
  * light, no generator and no render target, and never renders anything.
  * Invariants: `place` writes `light.position` and nothing else on the light —
@@ -39,39 +38,7 @@
  * because an unsnapped slide along the light shifts receiver depths against
  * caster depths and the hard edges crawl just the same.
  */
-import { type BaseTexture, Matrix, RawTexture, type Scene, Vector3 } from "@babylonjs/core";
-
-/**
- * A 1x1 texture that every shadow lookup in the game reads as FULLY LIT — what
- * a map that is switched OFF (`CONFIG.graphics.shadowTiers`) is bound as.
- *
- * **A sampler a material declares must be BOUND** (`SHADOW_SAMPLER_NAMES`), so
- * off cannot be "no texture": it has to be a texture whose every depth is the
- * far plane. An 8-bit 255 reads back as exactly 1.0, which is past every
- * receiver the two-level compare can hold, and it is the FORMAT that matters
- * rather than the value — a 32-bit float is not filterable under WebGPU and
- * fails the bind group the depth maps' filtering sampler asks for.
- *
- * One per scene, and never disposed by a caller: the maps swap it in and out
- * of their bindings, and a map switched back on stops pointing at it rather
- * than freeing it.
- */
-export function litShadowTexture(scene: Scene): BaseTexture {
-  const held = litByScene.get(scene);
-  if (held) return held;
-  const tex = RawTexture.CreateRGBATexture(
-    new Uint8Array([255, 255, 255, 255]),
-    1,
-    1,
-    scene,
-    false,
-    false,
-  );
-  tex.name = "litShadow";
-  litByScene.set(scene, tex);
-  return tex;
-}
-const litByScene = new WeakMap<Scene, BaseTexture>();
+import { Matrix, Vector3 } from "@babylonjs/core";
 
 /**
  * The near plane of every shadow volume in the game, in metres along the

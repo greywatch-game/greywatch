@@ -4,7 +4,9 @@
  * facet off the key light. All three are OUR renderer's draws
  * (`render/SkyDraw.ts`, `render/CloudDraw.ts`; `BABYLON_EXIT.md` X4.5b, X4.5c) and
  * Babylon is made no sky mesh and no sky material: `Sky` paints the two textures
- * (Babylon's `DynamicTexture`s, read through the seam) and stays the owner of
+ * (on canvases, made OUR textures as Babylon's `DynamicTexture`s were,
+ * `TextureMaker.picture`, `BABYLON_EXIT.md` X5.4d) and the clouds' shadow
+ * field (`TextureMaker.raw`, as its `RawTexture` was) and stays the owner of
  * where the pieces stand, the turn, the matched clock, the painter's order, the
  * flash and the cloud shadow, pushing every value of the ring every frame in
  * every state. **It is DRAWN only while a map stands** (`setStanding`): it owes a
@@ -18,27 +20,15 @@
  * Rebuilt from an EnvironmentSpec via apply() — keep it data-driven, no Hollowmere
  * specifics.
  */
-import {
-  Camera,
-  Color3,
-  Constants,
-  DynamicTexture,
-  Matrix,
-  Quaternion,
-  RawTexture,
-  Scene,
-  Texture,
-  Vector3,
-  Vector4,
-} from "@babylonjs/core";
+import { Camera, Color3, Matrix, Quaternion, Scene, Vector3, Vector4 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { clamp } from "../core/math";
 import { BACKSIDE, createDisc, createSphere } from "../geometry/primitives";
 import type { GeometryBuffer } from "../geometry/buffer";
-import { hostTexture } from "../render/babylonSeam";
 import type { CloudDraw } from "../render/CloudDraw";
 import type { SkyDraw, SkyPiece } from "../render/SkyDraw";
 import type { SkyField } from "../render/skyProgram";
+import { anisotropic, type MadeTexture, newCanvas, type TextureMaker } from "../render/TextureMaker";
 import { CloudPaint } from "../shaders/CloudShader";
 import { mulberry32 } from "../world/rng";
 import type { EnvironmentSpec, SkySpec } from "../world/environment";
@@ -66,8 +56,9 @@ import { type CloudShadowArea, CloudShadowRaster, LOBE_STRIDE } from "./cloudSha
  * builder guarantees: v = acos(y)/PI down from the zenith, u = atan2(-z, x)
  * around the horizon.
  *
- * **Every sky texture is uploaded with `update(false)`, and that is
- * load-bearing.** `DynamicTexture.update()` defaults to flipping Y, which
+ * **Every sky texture is uploaded UNFLIPPED (`flipY: false`, what
+ * `update(false)` was), and that is load-bearing.** A `DynamicTexture.update()`
+ * flipped Y by default, as a `Picture` does, which
  * turns canvas row 0 into v = 1 — the NADIR on the sphere above. Painting a
  * sky top-down (the only sane way to write it: row 0 is the zenith, row h/2
  * the horizon) and letting it flip puts the stars, the galactic band and the
@@ -122,7 +113,7 @@ export class Sky {
    * between them, and a third being written for the position after.
    * `Game` binds the texture once and pushes the two vectors every frame.
    */
-  readonly cloudShadowMap: RawTexture;
+  readonly cloudShadowMap: MadeTexture;
   /** x, y the field's key-space corner, z 1 / its side, w how lit its inside is (1 = off). */
   readonly cloudShadowArea = new Vector4(0, 0, 0, 1);
   /** x, y the light's s.xz / s.y, z the crossfade from R to G. */
@@ -183,24 +174,23 @@ export class Sky {
     private readonly cloudDraw: CloudDraw,
     /** The dome's and the disc's, for the session: `Sky` hands it each sky. */
     private readonly skyDraw: SkyDraw,
+    /** Our renderer's maker of the textures the game paints: the dome's, the disc's and the shadow field. */
+    private readonly textures: TextureMaker,
   ) {
     const n = CONFIG.sky.clouds.shadow.size;
-    // One texture for the life of the process, so the materials are bound to
-    // it once: what changes is its contents and the vectors that place it.
-    this.cloudShadowMap = new RawTexture(
+    // One texture for the life of the process, so its readers are bound to it
+    // once: what changes is its contents and the vectors that place it. Two
+    // bytes a texel, no mips, never flipped, sampled as Babylon sampled the
+    // `RawTexture` it was — `BILINEAR_SAMPLINGMODE`, clamped, which its sampler
+    // cache made anisotropic at the texture's default level of 4.
+    this.cloudShadowMap = textures.raw(
+      "cloudShadow",
       this.shadowUpload,
       n,
       n,
-      Constants.TEXTUREFORMAT_RG,
-      scene,
-      false,
-      false,
-      Constants.TEXTURE_BILINEAR_SAMPLINGMODE,
-      Constants.TEXTURETYPE_UNSIGNED_BYTE,
+      "rg8unorm",
+      anisotropic("clamp-to-edge", "clamp-to-edge", 4),
     );
-    this.cloudShadowMap.name = "cloudShadow";
-    this.cloudShadowMap.wrapU = Constants.TEXTURE_CLAMP_ADDRESSMODE;
-    this.cloudShadowMap.wrapV = Constants.TEXTURE_CLAMP_ADDRESSMODE;
   }
 
   /**
@@ -283,7 +273,7 @@ export class Sky {
       this.domeValues,
       domeTex,
     );
-    this.disposables.push(domeTex);
+    this.disposables.push({ dispose: () => this.textures.release(domeTex) });
 
     // --- moon: emissive disc, deliberately left inside the bloom ---
     // Omitted entirely at radius 0 — an overcast sky has a source but no
@@ -321,7 +311,7 @@ export class Sky {
       // (`GlowPass`), and at `moonEmissiveBoost` the bloom saturates the disc
       // white again over a beacon — measured on Cinderhaven, byte-identical in
       // either group with the glow on, different with it off.
-      this.disposables.push(moonTex);
+      this.disposables.push({ dispose: () => this.textures.release(moonTex) });
     }
     this.skyDraw.setSky(dome, moon, this.standSky);
 
@@ -484,7 +474,7 @@ export class Sky {
     this.writeField(this.shadowFields[this.shadowR], from, true);
     this.writeField(this.shadowFields[this.shadowG], from + step, true);
     this.stageCloudShadow(this.shadowR, this.shadowG, 0, this.shadowTexels.length);
-    this.cloudShadowMap.update(this.shadowUpload);
+    this.textures.write(this.cloudShadowMap, this.shadowUpload);
     this.shadowStaged = 0;
     this.writeField(this.shadowFields[this.shadowNext], from + 2 * step, false);
     this.cloudShadowRay.z = step > 0 ? clamp((turn - from) / step, 0, 1) : 0;
@@ -524,7 +514,7 @@ export class Sky {
       this.shadowStaged = to;
     }
     if (t >= 1 && this.shadowStaged >= all) {
-      this.cloudShadowMap.update(this.shadowUpload);
+      this.textures.write(this.cloudShadowMap, this.shadowUpload);
       const was = this.shadowR;
       this.shadowR = this.shadowG;
       this.shadowG = this.shadowNext;
@@ -889,17 +879,12 @@ export class Sky {
     env: EnvironmentSpec,
     moonDir: Vector3,
     rand: () => number,
-  ): DynamicTexture {
+  ): MadeTexture {
     const cfg = CONFIG.sky;
     const w = cfg.domeTextureWidth;
     const h = cfg.domeTextureHeight;
-    const tex = new DynamicTexture(
-      "sky-dome-tex",
-      { width: w, height: h },
-      this.scene,
-      true,
-    );
-    const ctx = context2d(tex);
+    const canvas = newCanvas(w, h);
+    const ctx = context2d(canvas);
 
     // Gradient — canvas row 0 is v=1 (the zenith), row h/2 is the horizon.
     // The bright band peaks at row ~0.43h, about 12 deg ABOVE the horizon,
@@ -965,16 +950,20 @@ export class Sky {
     });
 
     // Not flipped — see the class doc; this is the whole sky's orientation.
-    tex.update(false);
     // The dome wraps all the way round the horizon, so u must wrap with it.
-    // DynamicTexture defaults BOTH axes to CLAMP, which leaves the column at
-    // u = 0 filtering against its own edge texels instead of against the far
-    // side of the sky — a hairline seam even where the painted content is
+    // A DynamicTexture defaulted BOTH axes to CLAMP, which leaves the column
+    // at u = 0 filtering against its own edge texels instead of against the
+    // far side of the sky — a hairline seam even where the painted content is
     // continuous. v stays clamped: it runs pole to pole and has nothing to
-    // meet.
-    tex.wrapU = Texture.WRAP_ADDRESSMODE;
-    tex.wrapV = Texture.CLAMP_ADDRESSMODE;
-    return tex;
+    // meet. Mipped, at the anisotropy Babylon's cache gave a mipped texture
+    // at its default level of 4.
+    return this.textures.picture({
+      label: "sky-dome-tex",
+      canvas,
+      flipY: false,
+      mips: true,
+      sampling: anisotropic("repeat", "clamp-to-edge", 4),
+    });
   }
 
   /**
@@ -1098,16 +1087,11 @@ export class Sky {
    * grey maria mottled across it. The material tints it, so this is painted
    * neutral — and the limb falloff is why the disc has no polygon edge.
    */
-  private paintMoonTexture(rand: () => number): DynamicTexture {
+  private paintMoonTexture(rand: () => number): MadeTexture {
     const cfg = CONFIG.sky;
     const size = cfg.moonTextureSize;
-    const tex = new DynamicTexture(
-      "sky-moon-tex",
-      { width: size, height: size },
-      this.scene,
-      true,
-    );
-    const ctx = context2d(tex);
+    const canvas = newCanvas(size, size);
+    const ctx = context2d(canvas);
     ctx.clearRect(0, 0, size, size);
     const c = size / 2;
     const r = size / 2;
@@ -1150,16 +1134,22 @@ export class Sky {
     ctx.fillRect(0, 0, size, size);
     ctx.globalCompositeOperation = "source-over";
 
-    tex.update(false);
-    tex.hasAlpha = true;
-    return tex;
+    // Not flipped, mipped and clamped, as the dome is and as the
+    // `DynamicTexture` it was left it.
+    return this.textures.picture({
+      label: "sky-moon-tex",
+      canvas,
+      flipY: false,
+      mips: true,
+      sampling: anisotropic("clamp-to-edge", "clamp-to-edge", 4),
+    });
   }
 
   dispose(): void {
     this.clear();
     // Not one of `disposables`: it outlives every ring, bound once for the
     // life of the process — so it goes only with the sky itself.
-    this.cloudShadowMap.dispose();
+    this.textures.release(this.cloudShadowMap);
   }
 }
 
@@ -1188,24 +1178,23 @@ function skyValues(emissive: Color3): SkyValues {
 }
 
 /** What `SkyDraw` is handed of a piece: its arrays as the GPU reads them, and what it is drawn with. */
-function skyPiece(geometry: GeometryBuffer, values: SkyValues, texture: DynamicTexture): SkyPiece {
+function skyPiece(geometry: GeometryBuffer, values: SkyValues, texture: MadeTexture): SkyPiece {
   return {
     positions: Float32Array.from(geometry.positions),
     uvs: Float32Array.from(geometry.uvs!),
     indices: Uint32Array.from(geometry.indices),
-    recipe: { values, texture: hostTexture(texture) },
+    recipe: { values, texture },
   };
 }
 
 /**
- * A DynamicTexture's context, typed as the DOM one it actually is. Babylon's
- * `ICanvasRenderingContext` is a subset written for its headless/native
- * backends and is missing the compositing and ImageData calls the sky needs
+ * A canvas's 2D context, asked as a `DynamicTexture` asked it (no options),
+ * typed as the document's: the sky needs its compositing and ImageData calls
  * (`globalCompositeOperation` for the additive passes, `createImageData` for
  * the cloud mask, which is written per pixel rather than drawn).
  */
-function context2d(tex: DynamicTexture): CanvasRenderingContext2D {
-  return tex.getContext() as unknown as CanvasRenderingContext2D;
+function context2d(canvas: HTMLCanvasElement | OffscreenCanvas): CanvasRenderingContext2D {
+  return canvas.getContext("2d") as CanvasRenderingContext2D;
 }
 
 /**

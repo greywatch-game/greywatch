@@ -3,7 +3,12 @@
  * (`BABYLON_EXIT.md` rule 5: the side that does not own a texture reads a
  * wrapped view of it, never a copy): a shadow texture's
  * (`wrapShadowTexture`, which `ShadowSystem`, `BodyShadows` and
- * `LocalShadows` hand their readers). A reflection probe's cube had one too
+ * `LocalShadows` hand their readers). Since X5.4d their one reader is the
+ * Babylon cel materials (`ShadowBindings`), which neither draw nor compile in
+ * any state and stay declared until X6.1: every draw of ours binds the shadow
+ * texture itself, and a map that is off is the lit texel of OUR renderer's
+ * (`TextureMaker.lit`), which no Babylon reader is handed. What a view still
+ * does is HOLD its texture's life (below). A reflection probe's cube had one too
  * (`wrapCubeTexture`, the DEFAULT cube a Babylon glazing material was born
  * holding), deleted at `BABYLON_EXIT.md` X5.3d with the map editor's glazing
  * that sampled it: the water reads its cube directly since X4.6d and a

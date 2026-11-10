@@ -14,8 +14,10 @@
  * says whether it has anything to draw this frame (`Active`), the
  * `FramePrepare`s run as the pass begins, whoever is told of a refused pass
  * (`onRefused`, and the mask's `onGlowMaskRefused`),
- * the hook into the host's main pass, and the `PassTimer` that times the
- * prepares' passes under `?gpu` (`timer`); `FrameDraw`, `FramePrepare`,
+ * the hook into the host's main pass, the `PassTimer` that times the
+ * prepares' passes under `?gpu` (`timer`), and the `TextureMaker` that makes
+ * the textures the game paints for itself (`textureMaker`, `BABYLON_EXIT.md`
+ * X5.4d); `FrameDraw`, `FramePrepare`,
  * `DrawPoint`, `FrameContext` and `RendererOptions`.
  * Invariants: every GPU resource it holds it made, on the host's device, and
  * destroys in `dispose` (`BABYLON_EXIT.md` rule 5 — a texture another side
@@ -152,6 +154,7 @@ import { HostBindGroup } from "./HostBindGroup";
 import { type PassTiming, PassTimer } from "./PassTimer";
 import { PipelineCache } from "./PipelineCache";
 import { FRAME_TARGETS, GLOW_BLUR_TARGETS, GLOW_TARGETS } from "./targets";
+import { TextureMaker } from "./TextureMaker";
 
 /** What a draw is handed beside the pass. */
 export interface FrameContext {
@@ -253,6 +256,8 @@ export class Renderer {
   readonly textures: FrameTextures = createFrameTextures();
   /** The prepares' pass timer, under `?gpu` on a device that can; null otherwise. */
   readonly timer: PassTimer | null;
+  /** The textures the game paints, decodes and writes for itself, made as Babylon made them. */
+  readonly textureMaker: TextureMaker;
   private readonly frameBindings: HostBindGroup;
 
   /** In the order added, one list per point. Arrays, so a frame's walk allocates no iterator. */
@@ -317,6 +322,7 @@ export class Renderer {
     this.host = host;
     this.device = host.device;
     this.pipelines = new PipelineCache(this.device);
+    this.textureMaker = new TextureMaker(this.device, host, this.pipelines);
     this.timer =
       options.timePasses && this.device.features.has("timestamp-query") ? new PassTimer(this.device) : null;
     this.frameBuffer = new FrameUniformBuffer(this.device, "main pass");
@@ -577,6 +583,7 @@ export class Renderer {
     this.maskRefusals.length = 0;
     this.frameBuffer.destroy();
     this.timer?.dispose();
+    this.textureMaker.dispose();
   }
 
   private readonly begin = (): void => {

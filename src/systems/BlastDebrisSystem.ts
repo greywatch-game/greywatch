@@ -17,8 +17,9 @@
  * `BABYLON_EXIT.md` X4.6e**: each mark a FADE of its kit (`entities/fades.ts`),
  * drawn in the one back-to-front run among the see-through panes
  * (`Game.farthestPull`), where it fades by `visibility` as Babylon's
- * transparent sort faded its mesh; its map stays a Babylon texture, read
- * through the seam (`scorchMap`).
+ * transparent sort faded its mesh; its map is ours since X5.4d, a canvas
+ * painted here as the `DynamicTexture` it was (`scorchMap`,
+ * `TextureMaker.picture`).
  *
  * ## What makes this worth having is that it knows what it went off ON
  *
@@ -64,20 +65,13 @@
  * exactly, and for its reason: rubble that vanishes mid-flight is worse than
  * rubble that never flew, while a chunk lying in the road is fair game.
  */
-import {
-  Color3,
-  CreateBoxVertexData,
-  DynamicTexture,
-  Quaternion,
-  Scene,
-  Vector3,
-} from "@babylonjs/core";
+import { Color3, CreateBoxVertexData, Quaternion, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { Fade, fadeKit, type FadeKit, SCORCH } from "../entities/fades";
 import { createDisc } from "../geometry/primitives";
 import { Quaternion as MathQuaternion } from "../math";
-import { hostTexture } from "../render/babylonSeam";
-import type { HostTexture } from "../render/frameHost";
+import type { OwnTexture } from "../render/HostBindGroup";
+import { newCanvas, SAMPLING, type TextureMaker } from "../render/TextureMaker";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { ShaderMaterial } from "@babylonjs/core";
 import type { EnvironmentSpec } from "../world/environment";
@@ -238,12 +232,13 @@ export class BlastDebrisSystem implements PhysicsClient {
   private seed = 0x5bd1;
 
   constructor(
-    scene: Scene,
+    /** Our renderer's maker of the textures the game paints: the scorch's map. */
+    textures: TextureMaker,
     private factory: CelMaterialFactory,
     private physics: PhysicsWorld,
   ) {
     physics.register(this);
-    this.scorch = new ScorchMarks(scene);
+    this.scorch = new ScorchMarks(textures);
     this.buildPool();
     const chunks = this.bursts.flatMap((b) => b.chunks);
     this.pieces = chunks.map((c) => c.piece);
@@ -338,8 +333,8 @@ export class BlastDebrisSystem implements PhysicsClient {
     return this.scorch.kit;
   }
 
-  /** The scorch's map, Babylon's texture as our renderer holds it (rule 5). */
-  get scorchMap(): HostTexture {
+  /** The scorch's map: our texture, painted here (`BABYLON_EXIT.md` X5.4d). */
+  get scorchMap(): OwnTexture {
     return this.scorch.map;
   }
 
@@ -676,12 +671,12 @@ class ScorchMarks {
   readonly fades: Fade[] = [];
   /** The arrays `MeshBuilder.CreateDisc` made every mark's mesh of: built at radius 1 and scaled. */
   readonly kit: FadeKit = fadeKit(createDisc({ radius: 1, tessellation: 24 }));
-  /** The alpha map, a Babylon texture through the seam. */
-  readonly map: HostTexture;
+  /** The alpha map, our texture. */
+  readonly map: OwnTexture;
 
-  constructor(scene: Scene) {
+  constructor(textures: TextureMaker) {
     const s = CONFIG.grenade.scorch;
-    this.map = hostTexture(buildScorchTexture(scene));
+    this.map = buildScorchTexture(textures);
     for (let i = 0; i < s.marks; i++) {
       // Built at radius 1 and scaled, which a flat disc may do and a physics
       // body may not: nothing here is under the solver.
@@ -759,15 +754,10 @@ const FORWARD = new Vector3(0, 0, 1);
  * gradient is a shadow; the spokes out of the middle are the thing an eye reads
  * as something having been thrown outward from a point.
  */
-function buildScorchTexture(scene: Scene): DynamicTexture {
+function buildScorchTexture(textures: TextureMaker): OwnTexture {
   const size = 256;
-  const texture = new DynamicTexture(
-    "blastScorchTex",
-    { width: size, height: size },
-    scene,
-    false,
-  );
-  const ctx = texture.getContext();
+  const canvas = newCanvas(size, size);
+  const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
   const c = size / 2;
   ctx.clearRect(0, 0, size, size);
 
@@ -811,7 +801,7 @@ function buildScorchTexture(scene: Scene): DynamicTexture {
     ctx.fill();
   }
 
-  texture.update();
-  texture.hasAlpha = true;
-  return texture;
+  // Painted as the `DynamicTexture` it was painted on and made our texture as
+  // Babylon made that one (`BABYLON_EXIT.md` X5.4d): flipped, no mips, flat.
+  return textures.picture({ label: "blastScorchTex", canvas, flipY: true, mips: false, sampling: SAMPLING.flat });
 }

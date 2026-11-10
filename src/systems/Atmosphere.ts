@@ -18,9 +18,10 @@
  * random textures and seeds, its clock (`scene.getAnimationRatio()`) and its
  * emission. This file DECIDES the field — its box, its colours, its rate, its
  * lives, its blend — and never draws it; the field is a `ParticleField`, whose
- * names are Babylon's, so the arithmetic below did not move. The one thing that
- * stays Babylon's is the mote TEXTURE, a `DynamicTexture` bound through the seam
- * (`hostTexture`) until the game owns the frame (X5.4).
+ * names are Babylon's, so the arithmetic below did not move. Its mote TEXTURE is
+ * ours too since X5.4d: a canvas painted here as the `DynamicTexture` it was
+ * painted on, made our texture as Babylon made that one
+ * (`TextureMaker.picture`).
  *
  * There is no CPU fallback and there is deliberately no capability check: the
  * game is WebGPU or nothing — `main.ts` gates the boot on `navigator.gpu` AND
@@ -29,11 +30,11 @@
  * execute on any browser that can run this game is a branch nothing will ever
  * exercise, so it would rot.
  */
-import { Color4, DynamicTexture, Scene, Vector3 } from "@babylonjs/core";
+import { Color4, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import { hostTexture } from "../render/babylonSeam";
 import type { ParticleDraw } from "../render/ParticleDraw";
 import type { ParticleField } from "../render/ParticleField";
+import { type MadeTexture, newCanvas, SAMPLING, type TextureMaker } from "../render/TextureMaker";
 import type { ParticleSpec } from "../world/environment";
 
 /**
@@ -74,30 +75,26 @@ export class Atmosphere {
    * field test and no spec lookup at all.
    */
   private follow: number | null = null;
-  private texture: DynamicTexture;
+  private texture: MadeTexture;
 
   constructor(
-    scene: Scene,
     /** Our renderer's particle fields, which step and draw the one built here. */
     private readonly draw: ParticleDraw,
+    /** Our renderer's maker of the textures the game paints: the mote's. */
+    private readonly textures: TextureMaker,
   ) {
     // Soft round mote, generated so the game still ships no image files.
     const size = 64;
-    this.texture = new DynamicTexture(
-      "mote",
-      { width: size, height: size },
-      scene,
-      false,
-    );
-    const ctx = this.texture.getContext();
+    const canvas = newCanvas(size, size);
+    const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
     const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
     gradient.addColorStop(0, "rgba(255,255,255,1)");
     gradient.addColorStop(0.4, "rgba(255,255,255,0.55)");
     gradient.addColorStop(1, "rgba(255,255,255,0)");
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, size, size);
-    this.texture.update();
-    this.texture.hasAlpha = true;
+    // Flipped, no mips, sampled flat: `DynamicTexture.update()`'s defaults.
+    this.texture = textures.picture({ label: "mote", canvas, flipY: true, mips: false, sampling: SAMPLING.flat });
   }
 
   /**
@@ -115,9 +112,8 @@ export class Atmosphere {
    * empty, exactly as it did on the CPU path.
    */
   private build(capacity: number): ParticleField {
-    const texture = this.texture;
     // Its emitter is the origin until `apply` moves it, as `Vector3.Zero()` was.
-    return this.draw.create("motes", { capacity }, hostTexture(texture), () => texture.isReady());
+    return this.draw.create("motes", { capacity }, this.texture);
   }
 
   /**
@@ -265,7 +261,7 @@ export class Atmosphere {
     this.system = null;
     this.capacity = 0;
     this.follow = null;
-    this.texture.dispose();
+    this.textures.release(this.texture);
   }
 }
 

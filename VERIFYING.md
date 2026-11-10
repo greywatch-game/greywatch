@@ -388,7 +388,9 @@ you are on before you believe anything else in this section.
   went from failing after 120 s to a picture in 2.8 s, and Sarab in 5.9 s.
   (Since `BABYLON_EXIT.md` X4.3d the card is no mesh and has no
   `DynamicTexture`: it is a segment our renderer draws, its canvas made and
-  uploaded at its first paint, so it cannot hold the scene unready.)
+  uploaded at its first paint, so it cannot hold the scene unready; and since
+  X5.4d no `DynamicTexture` is left in the tree — every canvas the game paints
+  is OUR texture, made in the call that paints it, `render/TextureMaker.ts`.)
   **What generalises is the diagnosis**: when `scene.isReady()` will not flip,
   list the meshes where `!mesh.isReady(true)` — it is usually ONE, and it is
   usually a texture rather than a shader. Material-less meshes (the colliders
@@ -2039,12 +2041,12 @@ is one machine's:
   blade pixel is a blend of grass and ground. Grab at full canvas size.
 - **A generated texture is inspectable in a second, without booting the game**,
   and the ground surfaces should be looked at both ways. Bundle
-  `src/world/textures.ts` with esbuild against a **stub `@babylonjs/core`**
-  (`--alias:@babylonjs/core=...`) exporting a `DynamicTexture` that wraps a real
-  `<canvas>` and answers `getContext()`/`update()`, load the bundle into an
-  `about:blank` page with `addScriptTag`, and `toDataURL()` whatever the module
-  hands back — the REAL recipes, no engine, no map build, ~1 s for every surface
-  at every tint. Draw them 4x4 as well: a tile that looks right on its own can
+  `src/world/textures.ts` with esbuild (it imports Babylon for a TYPE alone, and
+  since `BABYLON_EXIT.md` X5.4d hands back a `Picture`, its painted `<canvas>`
+  and how it is sampled, so no stub `@babylonjs/core` is wanted any more), load the
+  bundle into an `about:blank` page with `addScriptTag`, and `toDataURL()` the
+  `canvas` of whatever the module hands back — the REAL recipes, no engine, no
+  map build, ~1 s for every surface at every tint. Draw them 4x4 as well: a tile that looks right on its own can
   still carry a blotch big enough to advertise its own period, and that is only
   visible repeated. Counting distinct colours in the result is the cheap check
   that a posterized ramp is actually being used — a surface spending 98% of its

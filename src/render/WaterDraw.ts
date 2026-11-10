@@ -13,8 +13,9 @@
  * Invariants: it DECIDES NOTHING — which of a body's two shapes is drawn is
  * `WaterSystem`'s (`near`), whether it passes the size gate is `Game.drawWater`'s
  * (`kept`), and where it falls among everything else nearest first is the run's
- * (`NearestRun`); the foam mask stays a texture of Babylon's, read through the seam
- * (`hostTexture`, rule 5), so its decode and its mips are what they were; the
+ * (`NearestRun`); the foam mask is ours since `BABYLON_EXIT.md` X5.4d
+ * (`TextureMaker.image`: its decode and its mips Babylon's, its stand-in while it
+ * decodes the engine's empty texel), bound where it lies; the
  * bed-depth texture is ours, `r8unorm`, row 0 the min-Z edge, sampled as Babylon
  * sampled it (linear, clamped, anisotropic, whatever its one level); a cube is READ
  * where the bake left it, through a view of its own over all six faces and every
@@ -33,7 +34,6 @@
  * block, the body's and its three textures, 2 the vertices its stage reads at the
  * index it names; a draw is `drawIndexed` over the grid's or the quad's range.
  */
-import type { HostTexture } from "./frameHost";
 import { HostBindGroup, OwnTexture } from "./HostBindGroup";
 import type { BuiltPipeline } from "./PipelineCache";
 import type { Renderer } from "./Renderer";
@@ -89,7 +89,7 @@ export class WaterSurface {
     readonly block: UniformBlockBuffer,
     readonly bed: GPUTexture,
     readonly group: HostBindGroup,
-    readonly handles: { readonly foamTex: HostTexture; readonly depthTex: OwnTexture; readonly reflectionCube: OwnTexture },
+    readonly handles: { readonly foamTex: OwnTexture; readonly depthTex: OwnTexture; readonly reflectionCube: OwnTexture },
   ) {}
 }
 
@@ -224,7 +224,7 @@ export class WaterDraw {
   addBody(
     values: WaterBodyValues,
     bed: { readonly data: Uint8Array<ArrayBuffer>; readonly nx: number; readonly nz: number },
-    foam: HostTexture,
+    foam: OwnTexture,
     mirror: GPUTexture,
     box: readonly [number, number, number, number, number, number],
   ): WaterSurface {

@@ -1782,7 +1782,7 @@ cross-origin case then costs is a header and a cleared buffer — see "Regions".
 
 The server has no canvas and no engine, so **`MapBuilder` cannot run there at
 all** — it builds meshes and materials, and reaches a canvas through
-`floorMaterial` (`DynamicTexture.getContext()`).
+`floorMaterial` (`world/textures.ts` paints the floor on one).
 
 It rebuilds the solid world instead, from `src/world/<map>/collision.ts`
 (generated; see `scripts/bake-collision.mjs`), and rebuilds it as DATA. That is

@@ -3,12 +3,15 @@
  * road may be paved with and the valley floor's own surfaces, painted per texel
  * out of deterministic noise and cached per scene. Zero asset files.
  * Owns: the tiling noise primitives, one field recipe per surface, and the two
- * painters that turn a field into an albedo and into a height map.
+ * painters that turn a field into an albedo and into a height map — each
+ * handed out as a `Picture` (a painted canvas and how it is to be sampled), which
+ * the material factory makes our renderer's texture (`TextureMaker.picture`,
+ * `BABYLON_EXIT.md` X5.4d): this file paints and never touches a GPU.
  * Invariants: SIZE must stay a power of two for mipmaps AND must stay 512 —
  * `CelShader`'s bump tap is a hard-coded `1.0 / 512.0` and reads the albedo and
  * the height map as the same size; every field is periodic over the tile, so
  * nothing may sample a lattice or a cell grid without wrapping; and
- * anisotropicFilteringLevel stays 8 or the ground shimmers at grazing angles.
+ * the anisotropy stays 8 or the ground shimmers at grazing angles.
  *
  * **A surface is a FIELD, not a scatter of shapes.** Every tone and every
  * height here is a function evaluated at a texel, and the pixels are written
@@ -49,13 +52,14 @@
  * Textures are authored in display space and sampled raw, matching the
  * no-image-processing pipeline (same convention as the player skin).
  */
-import { DynamicTexture, Scene, Texture } from "@babylonjs/core";
+import type { Scene } from "@babylonjs/core";
 import { clamp01, smoothstep } from "../core/math";
+import { anisotropic, newCanvas, type Picture } from "../render/TextureMaker";
 import { mulberry32 } from "./rng";
 import type { RoadSurface } from "./roads";
 
-/** The 2D context a `DynamicTexture` hands back. */
-type Ctx = ReturnType<DynamicTexture["getContext"]>;
+/** The 2D context a canvas hands back, asked as a `DynamicTexture` asked it. */
+type Ctx = CanvasRenderingContext2D;
 
 /**
  * Cobblestone world scale: one texture repeat spans this many metres. The
@@ -1392,37 +1396,44 @@ const PALETTES: Record<FloorPatternId, (base: string) => Rgb[]> = {
  * Textures
  * ------------------------------------------------------------------------ */
 
-/** Generated textures are per-scene and built once, on first use. */
-const cache = new WeakMap<Scene, Map<string, DynamicTexture>>();
+/**
+ * Generated pictures are per-scene and painted once, on first use; the
+ * texture each becomes is our renderer's, made once per picture
+ * (`TextureMaker.picture`, `BABYLON_EXIT.md` X5.4d).
+ */
+const cache = new WeakMap<Scene, Map<string, Picture>>();
+
+/**
+ * Every ground's sampling: wrapped both ways, mipped, and at anisotropy 8 —
+ * ground is viewed at grazing angles constantly, and without anisotropy the
+ * pattern shimmers and there is no post AA to hide it. What Babylon's sampler
+ * cache made of the `DynamicTexture` this was, trilinear with mips at that level.
+ */
+const GROUND_SAMPLING = anisotropic("repeat", "repeat", 8);
 
 function getGenerated(
   scene: Scene,
   key: string,
   draw: (ctx: Ctx) => void,
-): DynamicTexture {
+): Picture {
   let byKey = cache.get(scene);
   if (!byKey) {
     byKey = new Map();
     cache.set(scene, byKey);
   }
-  let tex = byKey.get(key);
-  if (!tex) {
-    tex = new DynamicTexture(key, { width: SIZE, height: SIZE }, scene, true);
-    tex.wrapU = Texture.WRAP_ADDRESSMODE;
-    tex.wrapV = Texture.WRAP_ADDRESSMODE;
-    // Ground textures are viewed at grazing angles constantly; without
-    // anisotropy the pattern shimmers and there is no post AA to hide it.
-    tex.anisotropicFilteringLevel = 8;
-    tex.hasAlpha = false;
-    draw(tex.getContext());
-    tex.update();
-    byKey.set(key, tex);
+  let picture = byKey.get(key);
+  if (!picture) {
+    const canvas = newCanvas(SIZE, SIZE);
+    draw(canvas.getContext("2d") as Ctx);
+    // Flipped and mipped, as `update()` uploaded the `DynamicTexture` it was.
+    picture = { label: key, canvas, flipY: true, mips: true, sampling: GROUND_SAMPLING };
+    byKey.set(key, picture);
   }
-  return tex;
+  return picture;
 }
 
 /** The village street cobblestone: irregular setts in dark mortar. */
-export function getCobblestoneTexture(scene: Scene): DynamicTexture {
+export function getCobblestoneTexture(scene: Scene): Picture {
   return getGenerated(scene, "cobblestone", (ctx) =>
     paintAlbedo(ctx, fieldOf("cobble", cobbleField).tone, COBBLE_PALETTE),
   );
@@ -1432,7 +1443,7 @@ export function getCobblestoneTexture(scene: Scene): DynamicTexture {
  * Matching height map for the cobblestone albedo — the same field, so every
  * crown sits on the sett it belongs to and the mortar stays a groove.
  */
-export function getCobblestoneBumpTexture(scene: Scene): DynamicTexture {
+export function getCobblestoneBumpTexture(scene: Scene): Picture {
   return getGenerated(scene, "cobblestone-bump", (ctx) =>
     paintHeight(ctx, fieldOf("cobble", cobbleField).height),
   );
@@ -1450,7 +1461,7 @@ export function getRoadTexture(
   scene: Scene,
   id: RoadPatternId,
   baseHex: string,
-): DynamicTexture {
+): Picture {
   return getGenerated(scene, `road-${id}-${baseHex}`, (ctx) =>
     paintAlbedo(
       ctx,
@@ -1468,7 +1479,7 @@ export function getRoadTexture(
 export function getRoadBumpTexture(
   scene: Scene,
   id: RoadPatternId,
-): DynamicTexture {
+): Picture {
   return getGenerated(scene, `road-${id}-bump`, (ctx) =>
     paintHeight(ctx, fieldOf(`road-${id}`, ROAD_FIELDS[id]).height),
   );
@@ -1485,7 +1496,7 @@ export function getFloorTexture(
   scene: Scene,
   id: FloorPatternId,
   baseHex: string,
-): DynamicTexture {
+): Picture {
   return getGenerated(scene, `floor-${id}-${baseHex}`, (ctx) =>
     paintAlbedo(ctx, fieldOf(id, FIELDS[id]).tone, PALETTES[id](baseHex)),
   );
@@ -1499,7 +1510,7 @@ export function getFloorTexture(
 export function getFloorBumpTexture(
   scene: Scene,
   id: FloorPatternId,
-): DynamicTexture {
+): Picture {
   return getGenerated(scene, `floor-${id}-bump`, (ctx) =>
     paintHeight(ctx, fieldOf(id, FIELDS[id]).height),
   );

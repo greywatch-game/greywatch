@@ -96,7 +96,6 @@ import { ProxyBoxes, type ShadowBody, type ShadowHull } from "../core/proxyBoxes
 import {
   depthBias,
   lightTransformToRef,
-  litShadowTexture,
   SHADOW_NEAR,
   type ShadowLight,
   ShadowWindow,
@@ -160,14 +159,13 @@ export class BodyShadows {
   private readonly picked: (ShadowBody | null)[] = [];
   private readonly pickedDist: number[] = [];
 
-  /** The bodies' depth map, for `ShadowBindings` and `Volumetrics`: our texture's wrapped view, or the lit 1x1. */
-  get depthMap(): BaseTexture {
-    return this.wrapped ?? litShadowTexture(this.scene);
-  }
-
-  /** The same map as OUR renderer holds it (`render/BodyShadowMap.ts`), or null on a rung with none — the shafts' binding, as `ShadowSystem.ownDepthMap`'s. */
-  get ownDepthMap(): OwnTexture | null {
-    return this.wrapped ? this.map.own : null;
+  /**
+   * The bodies' depth map as OUR renderer holds it (`render/BodyShadowMap.ts`),
+   * or the lit texel on a rung with none (`BABYLON_EXIT.md` X5.4d) — the shafts'
+   * binding, as `ShadowSystem.depthMap`'s.
+   */
+  get depthMap(): OwnTexture {
+    return this.wrapped ? this.map.own : this.mats.shadows.lit;
   }
 
   /**
@@ -221,7 +219,7 @@ export class BodyShadows {
     } else {
       this.count = 0;
     }
-    this.mats.shadows.setBodyShadowMap(this.depthMap, this.wrapped ? this.map.own : null);
+    this.mats.shadows.setBodyShadowMap(this.wrapped, this.wrapped ? this.map.own : null);
     this.mats.shadows.setBodyShadowParams(depthBias(c.bias, c.depthRange));
     this.mats.shadows.setBodyShadowMatrix(this.lightMatrix);
   }

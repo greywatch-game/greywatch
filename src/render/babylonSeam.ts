@@ -82,9 +82,14 @@
  *      Babylon's own cache for the state Babylon would bind, so its filter
  *      and wrap rules are not restated here.
  *      Items 7 and 8 lost the irradiance volume's seven at `BABYLON_EXIT.md`
- *      X5.1b — they are our renderer's own (`render/GiCompute.ts`) — and gained
- *      a COMPUTE reader: the volume's trace binds the cloud field through them
- *      (the host's view and sampler, the owner's decision), as the frame does.
+ *      X5.1b — they are our renderer's own (`render/GiCompute.ts`) — and, at
+ *      X5.4d, every texture the game makes for itself (`TextureMaker`: the
+ *      grounds, the sky's, the motes, the puff, the scorch, the blob, the
+ *      cloud field — and with it the volume trace's COMPUTE read of it, X5.1b's
+ *      — the lit texel and the foam). What they still reach is the host's own
+ *      targets: the glow's (`GlowPass`: the mask and its two composes, the
+ *      blur's sources), the post chain's frame and pool (`PostPasses`) and
+ *      `FrameDepth`'s wrapper — X5.4e's and X5.4f's to take.
  *   9. `engine._uploadEncoder` (E:519, E:2388) — the encoder Babylon finishes
  *      and submits FIRST in `flushFramebuffer`, ahead of `_renderEncoder`
  *      (E:2381-2382), and the one `_timestampQuery.startFrame` opens the frame's

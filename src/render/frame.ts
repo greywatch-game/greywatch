@@ -7,9 +7,10 @@
  * `Float32Array` per field, named as the shader names it) and
  * `createFrameUniforms`; `FRAME_TEXTURES`, the rest of group 0 — every
  * shadow map, the foliage map and the irradiance volume — and
- * `FrameTextures`, the handles they are bound from — the host's, or our
+ * `FrameTextures`, the handles they are bound from — every one our
  * renderer's own (`OwnTexture`: the world's shadow maps since X3.6a, the
- * irradiance volume's seven since X5.1b, `render/GiCompute.ts`).
+ * irradiance volume's seven since X5.1b, `render/GiCompute.ts`, and the lit
+ * texel and the cloud field since X5.4d, `render/TextureMaker.ts`).
  * Invariants: one LAYOUT in every variant but the last field — a name only
  * some programs read is declared for all of them, and the one guarded field,
  * the 2 KB palette, is LAST, so every variant reads the same offsets (the
@@ -18,7 +19,7 @@
  * (`FrameUniformBuffer`) knows the padding; the struct is filled by whoever
  * already publishes the value (`CelMaterialFactory.fillFrame`), never read
  * off a Babylon material; so are the textures (`CelMaterialFactory
- * .fillFrameTextures`), as handles only the host resolves.
+ * .fillFrameTextures`), read where their owners hold them.
  * Never: imports Babylon; allocates per frame — the struct is made once and
  * filled in place.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
@@ -37,7 +38,6 @@
  */
 import { MAX_PALETTE, MAX_POINT_LIGHTS } from "../shaders/wgsl/celSurface";
 import { GI_SLOTS } from "../shaders/wgsl/giTrace";
-import type { HostTexture } from "./frameHost";
 import type { OwnTexture } from "./HostBindGroup";
 import type { Binding, UniformField } from "./wgsl/assemble";
 
@@ -163,16 +163,15 @@ export const FRAME_TEXTURES = [
 export type FrameTexture = (typeof FRAME_TEXTURES)[number]["name"];
 
 /**
- * The frame's textures as last pulled: a handle per binding — the host's, or
- * one of our renderer's own — or null for one its owner has not published
- * yet: a frame with any null draws nothing, as a Babylon material with a
- * sampler unbound draws nothing.
+ * The frame's textures as last pulled: a handle per binding, our renderer's
+ * own, or null for one its owner has not published yet: a frame with any null
+ * draws nothing, as a Babylon material with a sampler unbound draws nothing.
  */
-export type FrameTextures = { [K in FrameTexture]: HostTexture | OwnTexture | null };
+export type FrameTextures = { [K in FrameTexture]: OwnTexture | null };
 
 /** Every frame texture unpublished. Made once by whoever fills it. */
 export function createFrameTextures(): FrameTextures {
-  const out: Partial<Record<FrameTexture, HostTexture | OwnTexture | null>> = {};
+  const out: Partial<Record<FrameTexture, OwnTexture | null>> = {};
   for (const t of FRAME_TEXTURES) out[t.name] = null;
   return out as FrameTextures;
 }

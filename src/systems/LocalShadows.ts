@@ -82,7 +82,6 @@ import {
 import { CONFIG } from "../config";
 import { ProxyBoxes, type ShadowBody, type ShadowHull } from "../core/proxyBoxes";
 import type { ShadowQuality } from "../core/settings";
-import { litShadowTexture } from "../core/shadowWindow";
 import { wrapShadowTexture } from "../core/wrappedTextures";
 import type { AtlasWork, LampAtlas } from "../render/LampAtlas";
 import { MAX_TILES } from "../render/lampDepth";
@@ -311,10 +310,7 @@ export class LocalShadows {
     );
     const c = CONFIG.graphics.localShadows;
     slots.params.set(c.bias, c.normalBias, 0, 0);
-    this.mats.shadows.setLocalShadowMap(
-      this.wrapped ?? litShadowTexture(this.scene),
-      this.wrapped ? this.lamps.own : null,
-    );
+    this.mats.shadows.setLocalShadowMap(this.wrapped, this.wrapped ? this.lamps.own : null);
     this.publish([]);
   }
 

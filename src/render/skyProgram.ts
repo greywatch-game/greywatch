@@ -4,7 +4,7 @@
  * what `StandardMaterial` drew the two with and `GlowPass`'s mask material the
  * moon's bloom with, until X4.5c.
  * Owns: `SKY_BLOCK` (group 1: a piece's world, its emissive colour and its bloom
- * colour), `SKY_TEXTURE` (group 1 after it: the painted texture, the host's),
+ * colour), `SKY_TEXTURE` (group 1 after it: the painted texture, ours),
  * `SKY_GEOMETRY` (group 2: its positions, uvs and index), `SKY_VARYINGS`,
  * `SkyRecipe` (what a piece is drawn WITH, as plain data), `SKY_BLEND` and
  * `skyPrograms`, the modules.
@@ -17,7 +17,7 @@
  * Never: imports Babylon; restates a body.
  * Contract: `docs/rendering.md`, "The sky".
  */
-import type { HostTexture } from "./frameHost";
+import type { OwnTexture } from "./HostBindGroup";
 import { FRAME_BLOCK, FRAME_TEXTURES } from "./frame";
 import { FRAME_TARGETS, GLOW_TARGETS } from "./targets";
 import { SKY_SURFACE, SKY_VERTEX } from "../shaders/wgsl/sky";
@@ -41,7 +41,7 @@ export const SKY_BLOCK = {
   ],
 } as const satisfies Binding;
 
-/** Group 1 after the block: the painted texture, the host's own view and sampler. */
+/** Group 1 after the block: the painted texture, with its own view and sampler (`TextureMaker`'s, `BABYLON_EXIT.md` X5.4d). */
 export const SKY_TEXTURE = { kind: "sampled", name: "skyTexture", type: "texture_2d<f32>" } as const satisfies Binding;
 
 /** A field of `SKY_BLOCK`, by the name the body reads it as. */
@@ -64,7 +64,7 @@ export const SKY_VARYINGS = [{ name: "vUV", type: "vec2f" }] as const;
  */
 export interface SkyRecipe {
   readonly values: Readonly<Record<SkyField, Float32Array>>;
-  readonly texture: HostTexture;
+  readonly texture: OwnTexture;
 }
 
 /** `ALPHA_COMBINE`'s factors (Babylon's `alphaCullingState`, mode 2): the moon's, in both passes. */

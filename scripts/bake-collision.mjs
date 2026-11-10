@@ -7,7 +7,7 @@
  *
  * **Why a bake and not a server-side build.** The server runs the simulation
  * with no Babylon and no canvas, and `MapBuilder` builds
- * meshes and reaches a `DynamicTexture` through `floorMaterial` →
+ * meshes and reaches a canvas through `floorMaterial` →
  * `textures.ts`, so the server cannot run a build at all. What it CAN do is
  * reproduce the solid world from the boxes, because `MapBuilder.collider()` is
  * the only place a collider is made and the `WorldBox` it records (`w/h/d`,

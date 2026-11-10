@@ -401,14 +401,21 @@ async function reportFeet(result, notBuilt) {
 /**
  * The material factory every build is handed: a material is named for the
  * factory call that asked for it, so a builder that paints a part another
- * colour changes the drawing's hash. A Babylon object among the arguments (the
- * road's ground texture) is named by its class and name, being a graph that
- * points back at the engine. `scene` is read per call, so one stub serves a
- * worker that makes a fresh Scene per build.
+ * colour changes the drawing's hash. A Babylon object among the arguments is
+ * named by its class and name, being a graph that points back at the engine;
+ * so is the road's ground texture, a `Picture` since `BABYLON_EXIT.md` X5.4d
+ * (`Picture:<label>`, where it was `DynamicTexture:<name>`: a fingerprint
+ * taken before X5.4d differs on the road's 53 builds by that name alone —
+ * X5.4d's note has the run that shows it). `scene` is read per call, so one
+ * stub serves a worker that makes a fresh Scene per build.
  */
 function stubMats(B, cache, scene) {
   const plain = (_k, v) =>
-    v && typeof v === "object" && typeof v.getClassName === "function" ? `${v.getClassName()}:${v.name}` : v;
+    v && typeof v === "object" && typeof v.getClassName === "function"
+      ? `${v.getClassName()}:${v.name}`
+      : v && typeof v === "object" && v.canvas && typeof v.label === "string" && v.sampling
+        ? `Picture:${v.label}`
+        : v;
   return new Proxy(
     {},
     {

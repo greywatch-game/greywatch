@@ -1951,7 +1951,10 @@ export class Game {
     // The scene has no Babylon lights at all: cel materials carry their own
     // key/ambient/point-light uniforms (fed by the LightingSystem) and every
     // effect material is unlit emissive.
-    this.mats = new CelMaterialFactory(this.scene);
+    // Our renderer first: the factory makes a ground's textures, and its
+    // shadows their lit and no-cloud texels, through the renderer's maker
+    // (`TextureMaker`, `BABYLON_EXIT.md` X5.4d). The two pulls below read the
+    // factory only once a frame is drawn.
     this.renderer = new Renderer(
       new BabylonFrameHost(this.engine, this.scene),
       (out) => this.mats.fillFrame(out),
@@ -1960,13 +1963,14 @@ export class Game {
       // for `timestamp-query`, and the renderer builds no timer without it.
       { timePasses: urlFlag("gpu") },
     );
+    this.mats = new CelMaterialFactory(this.scene, this.renderer.textureMaker);
     this.prof.setCullTimer(this.renderer.timer);
     // The world's four directional maps as our renderer draws them, in every
     // round (`BABYLON_EXIT.md` X3.6a, X3.7b).
     this.worldShadows = new WorldShadows(this.renderer);
     // Stepped moon shadows + contact blobs. Must exist before any cel
     // material is created so the shadow map binds on creation.
-    this.shadows = new ShadowSystem(this.scene, this.mats, this.shadowQuality, this.worldShadows);
+    this.shadows = new ShadowSystem(this.scene, this.mats, this.shadowQuality, this.worldShadows, this.renderer.textureMaker);
     // Same rule as the line above, and it binds a sampler every cel material
     // DECLARES: `SHADOW_SAMPLER_NAMES` lists `bodyShadowMap`, and a declared
     // sampler with nothing behind it is a bind group that fails to build and
@@ -2308,18 +2312,18 @@ export class Game {
       (out) => this.readParticleCamera(out),
       () => this.scene.getAnimationRatio(),
     );
-    this.atmosphere = new Atmosphere(this.scene, this.particleDraw);
+    this.atmosphere = new Atmosphere(this.particleDraw, this.renderer.textureMaker);
     // Beside the mote field because it is the same kind of thing — a standing
     // GPU emitter driven off where something is, its rings fields of ours on
     // the same `ParticleDraw` (X4.7d) — and NOT beside the fleet, which it
     // never touches. The server builds no such class at all.
-    this.rotorWash = new RotorWash(this.scene, this.particleDraw);
+    this.rotorWash = new RotorWash(this.particleDraw, this.renderer.textureMaker);
     // `mats` is not for building materials here — both systems' pictures are our
     // renderer's. It is the holder of the map's key, the one thing either asks it
     // for (`keyLight`); the shadow map, its matrix and its params reach both
     // shaders off the frame (see `celShadow`).
     this.waterDraw = new WaterDraw(this.renderer);
-    this.water = new WaterSystem(this.scene, this.mats, this.waterDraw);
+    this.water = new WaterSystem(this.scene, this.mats, this.waterDraw, this.renderer.textureMaker);
     this.grassDraw = new GrassDraw(this.renderer);
     this.grass = new GrassSystem(this.grassDraw, this.mats);
     // A round's GLAZING is our renderer's (`BABYLON_EXIT.md` X4.6e): the
@@ -2405,7 +2409,7 @@ export class Game {
     this.physics = new PhysicsWorld(havok);
     this.ragdolls = new RagdollSystem(this.physics);
     this.debris = new DebrisSystem(this.mats, this.physics);
-    this.blastDebris = new BlastDebrisSystem(this.scene, this.mats, this.physics);
+    this.blastDebris = new BlastDebrisSystem(this.renderer.textureMaker, this.mats, this.physics);
     this.glass = new GlassSystem();
     this.glassFx = new GlassFx(this.glassDraw);
     // The one event a break's picture needs, wired here beside `onRound` for
@@ -2631,7 +2635,7 @@ export class Game {
     this.debrisKeys = new Float64Array(this.debrisDraw.capacity);
     // The fading pools (`BABYLON_EXIT.md` X4.6e): the four kits each pool
     // made its meshes of, the sparks' and the discs' colours a slot each, the
-    // scorch's and the blob's maps through the seam.
+    // scorch's and the blob's maps (ours, `TextureMaker`'s since X5.4d).
     this.fadeKits = [this.combatFx.sparkKit, this.combatFx.discKit, this.blastDebris.scorchKit, this.shadows.blobKit];
     this.fadePools = [this.combatFx.fades, this.blastDebris.scorchFades, this.shadows.blobFades];
     this.fadeDraw = new FadeDraw(
@@ -2736,7 +2740,7 @@ export class Game {
     // The sky is painted once here, the boot map's, and re-applied per round
     // alongside the environment; it is DRAWN only while a map stands
     // (`Sky.setStanding`, from `installMap` and `teardownMap`).
-    this.sky = new Sky(this.scene, this.cloudDraw, this.skyDraw);
+    this.sky = new Sky(this.scene, this.cloudDraw, this.skyDraw, this.renderer.textureMaker);
     // The clouds' shadow field, bound once: `Sky` keeps one texture for the
     // life of the process and rewrites it as the ring drifts. Until now every
     // material held `ShadowBindings`' own "no cloud" texel.
@@ -4032,9 +4036,9 @@ export class Game {
   }
 
   /**
-   * The shafts' frame: the three shadow maps they march through, pushed —
-   * each as Babylon holds it and, while it is our renderer's, as ours, which
-   * the stage binds (`own ?? hostTexture`) — and the stage latched on on the
+   * The shafts' frame: the three maps they march through, pushed — each as
+   * OUR renderer holds it (a map's own, the lit texel where it is off, the
+   * clouds' field), which the stage binds — and the stage latched on on the
    * first frame every input exists, its depth image the last (or off if one
    * stops existing). Once a frame, from `tick`, after every state has had its
    * go at the camera and before the render the shafts are drawn in.
@@ -4047,13 +4051,11 @@ export class Game {
     // `ShadowSystem.lightMatrix` explains — the generator mutates that matrix
     // in place, and leaning on it is leaning on an implementation detail of
     // Babylon's.
-    const map = this.shadows.depthMap;
-    if (map) vol.setShadow(map, this.shadows.lightMatrix, this.shadows.ownDepthMap);
+    vol.setShadow(this.shadows.depthMap, this.shadows.lightMatrix);
     // And the bodies', which is what lets a soldier standing in a beam cut it.
     // Re-read for the same reason the line above is: both generators mutate
     // their matrix in place.
-    const bodyMap = this.bodyShadows.depthMap;
-    if (bodyMap) vol.setBodyShadow(bodyMap, this.bodyShadows.lightMatrix, this.bodyShadows.ownDepthMap);
+    vol.setBodyShadow(this.bodyShadows.depthMap, this.bodyShadows.lightMatrix);
     // And the clouds', so a beam stops where the ground under it goes into a
     // cloud's shadow.
     vol.setCloudShadow(
