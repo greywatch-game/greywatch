@@ -11707,7 +11707,7 @@ here).
 Scripts and logs in the session's scratchpad, `x53-whole/` (`bank.sh`, `sarab.sh`, `run2.sh`,
 `dl-fix.mjs`, `viewer7.mjs`, `status.txt`).
 
-### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef)
+### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88)
 
 The plan's `BABYLON_EXIT.md` holds X5.4's brief, "What the frame is today", its ONE RULE, the
 step's own two rules, "Every sub-step owes" and the nine sub-steps.
@@ -12013,7 +12013,7 @@ frames, `x54c-uncommitted.patch`).
   `pipe-hollowmere-after.log`), the device's two synchronous pipelines the boot's in every run. The
   entry's status paragraph was re-set as sentences, claiming nothing new.
 
-**X5.4d LANDED** (ffbf2ed; 2026-11-10; no change to the picture). Measured headless on the Windows box
+**X5.4d LANDED** (ffbf2ed, its review 2145e88; 2026-11-10; no change to the picture). Measured headless on the Windows box
 against a BEFORE at c83841c, in the worktree `greywatch-2-before-x53a` (moved there, detached; its
 `node_modules` valid, no dependency having moved; its `ref/` the main tree's), every run alone on the
 GPU. No device lost in any run.
@@ -12095,3 +12095,39 @@ GPU. No device lost in any run.
 Scripts and logs in the session's scratchpad, `x54d/` (`textures.mjs`, `standin.mjs`, `live.mjs`,
 `before.sh`, `after.sh`, `probes.sh`, `sarab.sh`, the BEFORE and AFTER logs, kept frames and texture
 dumps).
+
+**Its review** (2145e88; 2026-11-10; no change to the picture: two failure paths in `TextureMaker`, a
+build gate and docs) found two bugs on paths no frame takes, and no question for the owner.
+
+- **The foam's pending data on a failed upload**: `image`'s success callback sat in a `.then(ok, err)`
+  pair, so a throw in `texture()` or `copyExternalImageToTexture` after the decode (a device lost
+  mid-decode) escaped as an unhandled rejection, `whenReady` was never called, `WaterSystem`'s pending
+  data stayed, and anything waiting on `scene.isReady()` (`shots`, the bank) would hang. The upload is
+  now a step of its own: a throw restores the stand-in's view and sampler, retires the texture made
+  for it and rejects into the one `whenReady(error)`; success is told after it, once either way.
+- **A failed mip pipeline**: `chain()` showed every level although `record` had drawn none of levels 1
+  and down (zeros, a far sample black), while the constructor logs that the texture is "bound with its
+  top level alone". The view is now `mipLevelCount: 1` when `record` returns false.
+- **A build gate for `CLAUDE.md`'s WebGPU-globals rule**: `scripts/check-webgpu-globals.mjs`, in
+  `npm run build` beside `check-deep-imports.mjs`, parses `src/` and `main.ts` with TypeScript's parser
+  alone (about a second) and refuses an identifier spelled `GPU` and a capital read while a module is
+  evaluated; function bodies and parameters, instance fields, types, property names and the file's own
+  bindings are exempt, and a function called at the top level is the case it cannot see. Clean on 504
+  files; a planted file failed on all nine of its top-level uses and none of its exempt ones, and a
+  line planted in `GlowBlur.ts` failed it. `docs/build.md`, `FILES.md` and `CLAUDE.md` name it.
+- **`docs/rendering.md`**: the `DynamicTexture` bullet said none is left and then that every one "is
+  uploaded in its own constructor now"; corrected.
+- **Booked on X5.4i**: `Renderer.dispose`/`TextureMaker.dispose` destroying every texture the maker
+  made (the live ones and the lit texel), since nothing calls either until a lost device does.
+- **Measured**: a scratch Node run of `TextureMaker` over a stubbed device, the parent's and the fix's
+  (the parent: `whenReady` never called and an unhandled rejection, nine levels viewed over an
+  unwritten chain; the fix: `whenReady(error)`, the empty texel bound, one level; both success paths
+  unchanged); `kit:hash --against` the parent identical (3,722 builds); the bank by `exact.mjs`
+  against a BEFORE at 3a509a3 in `greywatch-2-before-x53a` (moved there; no dependency moved) on
+  eight rows, each map's sequence to its last named row — the `ground` rows of Greyfen, Harrowmead,
+  Hollowmere and Coldharbour, `greyfen-marsh`, `harrowmead-millpond`, `hollowmere-sky-moon` and
+  `coldharbour-sky-disc` — all byte-equal; typecheck, build (the new gate among them), corecheck.
+  **Not run**: the full bank, the probes and a live session (only failure paths moved).
+
+Scripts and logs in the session's scratchpad, `x54d-review/` (`failpaths.ts` and its two bundles and
+results, the kit and bank logs and kept frames).

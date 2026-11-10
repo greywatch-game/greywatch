@@ -5331,7 +5331,7 @@ pointer, its history unchanged):
   when it lands, owes three things: its generator's emitted header rewritten, its
   `params.ts` and `WRITABLE` rows dropped, and a `maps:check` entry.
 
-### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d; it was sized **M** before the split, and the read below re-sizes it) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014, its review clean), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed)
+### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d; it was sized **M** before the split, and the read below re-sizes it) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014, its review clean), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88)
 
 - **Do:**
   - Our own `requestAnimationFrame` loop.
@@ -5746,7 +5746,7 @@ measurement until the sub-step that replaces both.
     `wrappedTextures`; `docs/rendering.md` (the water's foam, the grounds, the sky,
     the pools); `FILES.md`.
 
-  **X5.4d LANDED** (ffbf2ed; 2026-11-10; no change to the picture). The full note is in
+  **X5.4d LANDED** (ffbf2ed, its review 2145e88; 2026-11-10; no change to the picture). The full note is in
   `plans/done/babylon_exit_landed.md`. **`render/TextureMaker.ts`** (`Renderer.textureMaker`) makes
   every texture the game makes for itself as Babylon made it, read off the device at c83841c: the
   grounds (`world/textures.ts` hands a `Picture`), the sky's dome and moon, the motes, the puff, the
@@ -5766,6 +5766,20 @@ measurement until the sub-step that replaces both.
   corecheck, parity, `gate`, `shaders`. **`hostTexture` and items 7 and 8 stay**: the glow's targets,
   `PostPasses`' frame and pool and `FrameDepth`'s wrapper still read through them (X5.4e, X5.4f).
   **Not run**: `?profile&gpu` (no span moved) and the phone.
+
+  **Its review** (2145e88; 2026-11-10; no change to the picture: two failure paths, a build gate and
+  docs; the full note is in `plans/done/babylon_exit_landed.md`) found two bugs on paths no frame
+  takes and asked nothing of the owner. A throw in the foam's upload after its decode (a device lost
+  mid-decode) skipped `whenReady`, so the scene's pending data stayed and `shots` or the bank would hang
+  on `isReady`: now the stand-in is restored and `whenReady(error)` told on every path. A failed mip
+  pipeline still showed every level over an unwritten chain: now its top level alone, as the log says.
+  It added the build gate `CLAUDE.md`'s rule against a WebGPU global at a module's top level lacked
+  (`scripts/check-webgpu-globals.mjs`, which `kit:hash` alone had caught in this step), corrected
+  `docs/rendering.md`'s stale `DynamicTexture` sentence, and booked `TextureMaker.dispose` destroying
+  every texture it made on X5.4i. **Measured**: a stubbed device forcing both paths (the parent hung
+  and showed nine levels; the fix tells and shows one); `kit:hash` identical; eight bank rows by
+  `exact.mjs` against 3a509a3 byte-equal (four `ground`, `greyfen-marsh`, `harrowmead-millpond`,
+  `hollowmere-sky-moon`, `coldharbour-sky-disc`); typecheck, build, corecheck.
 
 - **X5.4e — the frame's passes before the chain are ours** (no change to the picture)
   — **L**. The Do's mask item, and the first half of its post passes' item.
