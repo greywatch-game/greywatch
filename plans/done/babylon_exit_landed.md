@@ -10722,7 +10722,7 @@ beside the gizmo note in `docs/rendering.md` and in `PostPasses`' header; X5.3 a
 **Measured**: `post.mjs --against` b1203cc's log, both pages: equal, 30,073 values a page, nothing
 excused. Typecheck, build, corecheck and parity pass.
 
-### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it) — X5.3a **LANDED** (f51b043, its review 85a2273), X5.3b **LANDED** (111829f, its review 64de1d1), X5.3c **LANDED** (1b1f829, its review a22098a), X5.3d **LANDED** (8be80ec, its review 85ab629), X5.3e **LANDED** (a86cdae, its review 4a14f8b)
+### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it) — X5.3a **LANDED** (f51b043, its review 85a2273), X5.3b **LANDED** (111829f, its review 64de1d1), X5.3c **LANDED** (1b1f829, its review a22098a), X5.3d **LANDED** (8be80ec, its review 85ab629), X5.3e **LANDED** (a86cdae, its review 4a14f8b) — **all five LANDED**, the whole step verified (2026-11-10)
 
 The plan's `BABYLON_EXIT.md` holds X5.3's brief, its ONE RULE, the step's own rule on retiring
 an oracle, "Every sub-step owes" and the five sub-steps.
@@ -11644,3 +11644,65 @@ Scripts and logs in the session's scratchpad, `x53e-fix/` (`run.sh`, `distcmp.mj
   parent's printed 0 vertices, then lost the device mid-run, `FINDINGS.md` 64's hang under an
   uncapped frame). Typecheck, build (its gates) and corecheck.
 - **Not run**: the probes, the bank and the live rounds: nothing shipped moved.
+
+**X5.3, the whole step verified** (2026-11-10; no change to the game: this note, the plan's Verify
+line and both X5.3 headings). The whole of X5.3a to X5.3e, HEAD 2c2e4f6 against a BEFORE at
+fba1119, X5.3a's parent (the worktree `greywatch-2-before-x53a`, left detached there and clean), on
+the Windows box, headless, every run alone on the GPU and under a hard limit. Two earlier attempts
+stopped on a lost device (`DXGI_ERROR_DEVICE_HUNG`, `nvlddmkm` 153, SM exceptions on GPC 4 / TPC
+2); the card was then slightly underclocked and undervolted by its owner, and this run opened with
+two health checks (`bank.mjs hollowmere --check --keep --limit=600`, 20 rows, and a full
+Coldharbour take, 43 rows), both complete. **No device lost in any run**, and no `nvlddmkm` event
+from the first run to the last (one 153 sat in the log five minutes after the boot, before any run
+here).
+
+- **The bank, end to end**, 147 rows by `exact.mjs`, `--check --keep` alone at each tree:
+  **default** 147 byte-equal; **`volumetrics=low`** 147 byte-equal; **`volumetrics=high`** 146 and
+  `sarab-ground` 97 pixels by 2/255 (the known flakes, the pistol and `sarab-shelf`, byte-equal in
+  all three). No one-sided row. **The Sarab procedure** (`exact.mjs`' header: `bank.mjs sarab
+  --check --query=volumetrics=high --keep`, two processes a tree): fba1119's two processes and its
+  full bank drew one frame, HEAD's full bank and first process the other, HEAD's second process
+  fba1119's frame byte for byte, every other Sarab row byte-equal. HEAD's bank frame is the one
+  fba1119's own bank drew at X5.3a (that step's BEFORE, the same worktree) and every X5.3 step's
+  bank under this query since, so both frames are fba1119's: cross-process residue of the recorded
+  class, not a move. The same rows red against `ref/` on both trees (34, 102, 93); no page or
+  console error.
+- **Babylon draws no mesh and compiles no material in any state** (`drawlog.mjs`, seven maps, with
+  the viewer and with `--no-viewer`): no Babylon draw, no group-0 visit and the DEV counter 0 in
+  every class on every map (menu, loading, deploy, the kit lid, playing, dying, the pause, the
+  round-over card, and the viewer over deploy, the death cam and a life), no draw between frames,
+  no page or console error, no `[pipelines]` line. **The death cam was not reached on Sarab (both
+  runs) or Kurenai (the viewer run)**: the far-flag walk left the player alive after its 240 s
+  (Sarab stuck at -255, -260, 645 m from D, on both; Kurenai 144 m from E). Re-run once from a
+  scratch copy of the tool that, only when that walk ends alive, walks out of the play square until
+  the authority's leash kills the player: every step reached on both maps, both ways, the same
+  verdict. (The tool's walk owes a look on Sarab; nothing in the game.) **Coldharbour against
+  fba1119's draw log** (X5.3a's BEFORE, `--out` at fba1119 with HEAD's tool): 341 differences, 326
+  of them `scene.meshes` (1,783 to 0 in every round class, 1-2 to 0 on the menu and the building
+  card, every name gone: X5.3e and before it X5.3c/d), and 15 more: the `editor` and `loading (from
+  the editor)` classes gone (X5.3c), the `viewer` class new (X5.3b; no draw, compile or mesh), the
+  boot's `localShadowClear` effect gone from `compiledAtBoot` (the lamp atlas's Babylon clear sheet,
+  X5.3d), the counter new (X5.3d), and the uncompared `info` (frames a class, rounds counted, the
+  steps' text).
+- **A round's `scene.meshes` holds no world mesh**: 0 in every class on seven maps (the draw log),
+  and 0 in every state the viewer run read (menu, deploy, the viewer, playing, after each lowering,
+  the menu again), offline and in a match.
+- **The seam lists eight items** (`render/babylonSeam.ts` 1-5 and 7-9, 6 and 10 retired) and
+  **`maps:check` is in `npm run build`** (a negative edit failing it): the first attempt's, at the
+  same HEAD, with typecheck, build and corecheck.
+- **`F2` over a round on every map, offline and in a match** (a scratch script; Playwright pressed
+  `F2` and held `W`): seven maps in the page's own match and seven in a server's (`npm run
+  build:server`, a fresh `dist-server/index.js` per map on its own port, `?mp=`, `localRound`
+  false), each over `deploy` and over `playing`: the lid up (`viewer`), the panel shown and
+  `.editing` on, the plan drawn (296 by 296, 7,486 to 22,846 colours by map), the nav layer
+  switched on (the plan redrawn, its counts written), the validation list, the camera flown about 16 m by `W` and the `pos` readout
+  moving, `F2` again back to the state covered with the panel and `.editing` gone and the camera's
+  pose back exactly (28 of 28 lowerings, an error of 0), the life still live, a teardown to the
+  menu; **182 of 182 checks**, no page or console error, no compile in play, the counter 0
+  throughout. A screenshot of each viewer over deploy looked at (Sarab's in a match: the panel, the
+  plan with its marks and flags, eight notes).
+- **Parity** on eight maps: every field equal.
+- **Not verified**: the phone; a person's hands on the viewer (the keys were Playwright's).
+
+Scripts and logs in the session's scratchpad, `x53-whole/` (`bank.sh`, `sarab.sh`, `run2.sh`,
+`dl-fix.mjs`, `viewer7.mjs`, `status.txt`).

@@ -4592,7 +4592,7 @@ loss**: Babylon's post chain rebuilds after a loss today and ours will not
   header; `FINDINGS.md` 5, 16 and 52; the gate note after Phase 4 (above) and the
   "Contracts this plan rewrites" rows for the glow and `shaderLanguage`.
 
-### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it; the split was proposed by a planning agent's read at b3cea5d) — X5.3a **LANDED** (f51b043, its review 85a2273), X5.3b **LANDED** (111829f, its review 64de1d1), X5.3c **LANDED** (1b1f829, its review a22098a), X5.3d **LANDED** (8be80ec, its review 85ab629), X5.3e **LANDED** (a86cdae, its review 4a14f8b)
+### X5.3 — Retire the editor — **M, as five sub-steps** (decided 2026-11-08: the owner retired the `F2` editor rather than port it, row "X5.3, retire the editor", and answered the seven questions of its plan the same day, the rows after it; the split was proposed by a planning agent's read at b3cea5d) — X5.3a **LANDED** (f51b043, its review 85a2273), X5.3b **LANDED** (111829f, its review 64de1d1), X5.3c **LANDED** (1b1f829, its review a22098a), X5.3d **LANDED** (8be80ec, its review 85ab629), X5.3e **LANDED** (a86cdae, its review 4a14f8b) — **all five LANDED**, the whole step verified (2026-11-10)
 
 **This replaces the entry that ported the editor.** That entry put `F2`'s editor on our
 renderer: its unmerged build drawn per item, picking against `RayWorld`, our own move and
@@ -5269,6 +5269,19 @@ reviews: the first is the feature, the second is the renderer. The colliders com
 - `F2` opens the viewer over a round on every map, offline and in a match.
 - A round's bank rows are byte-equal to a BEFORE at X5.3a's parent, end to end, as well
   as step by step.
+
+**DONE** (2026-11-10, HEAD 2c2e4f6 against a BEFORE at fba1119, X5.3a's parent; the note "X5.3,
+the whole step verified" in `plans/done/babylon_exit_landed.md`). The bank by `exact.mjs`, 147
+rows: **default** 147 byte-equal, **`volumetrics=low`** 147, **`volumetrics=high`** 146 and
+`sarab-ground` 97 pixels by 2/255 — two frames fba1119 itself draws (its X5.3a bank run one, its
+three processes here the other), HEAD's processes drawing both: cross-process residue, no one-sided
+row. The draw log on all seven maps, with the viewer and without: no Babylon draw, no group-0
+visit, the DEV counter 0 in every class, `scene.meshes` 0 in every class; Coldharbour against
+fba1119's log differing by the editor's two classes (X5.3c), the viewer's (X5.3b), the lamp
+atlas's boot clear (X5.3d), the counter (X5.3d) and `scene.meshes` 1,783 to 0 (X5.3e). The seam's
+eight items; `maps:check` in the build. `F2` (the key, Playwright) over `deploy` and `playing` on
+seven maps offline and in a server's match: 182 of 182 checks. Parity on eight maps. No device
+lost.
 
 **What the earlier decisions that name X5.3 become** (each earlier place carries a
 pointer, its history unchanged):
