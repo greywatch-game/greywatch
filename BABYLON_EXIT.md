@@ -5331,7 +5331,7 @@ pointer, its history unchanged):
   when it lands, owes three things: its generator's emitted header rewritten, its
   `params.ts` and `WRITABLE` rows dropped, and a `maps:check` entry.
 
-### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d; it was sized **M** before the split, and the read below re-sizes it) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014, its review clean), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2)
+### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d; it was sized **M** before the split, and the read below re-sizes it) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014, its review clean), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef)
 
 - **Do:**
   - Our own `requestAnimationFrame` loop.
@@ -5685,7 +5685,7 @@ measurement until the sub-step that replaces both.
   - **Rewrites:** `CLAUDE.md`'s pipeline warm-up paragraph; `PipelineWarmup`'s header;
     `docs/rendering.md` and `docs/states.md` where they describe the vantages.
 
-  **X5.4c LANDED** (4db13df, its picture change 4ebd8b2; 2026-11-10). The full note is in
+  **X5.4c LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef; 2026-11-10). The full note is in
   `plans/done/babylon_exit_landed.md`. **The gate**: the vantage log on all seven shipped maps at
   4cf59ad (`pipelines.mjs` on each map standing still and `--round` on the four armoured ones: 15
   installs, 11 vantages each) read NOTHING created at any vantage by either cache and nothing in
@@ -5704,6 +5704,17 @@ measurement until the sub-step that replaces both.
   `particles.mjs`, `post.mjs` at both sizes, `surfaces.mjs`, `readers.mjs` replay and camera all
   equal to the parent's; `gate`, `shaders`, typecheck, build (its gates), corecheck, parity.
   **Not run**: `?profile&gpu` (no span moved) and the phone.
+
+  **Its review** (47948ef; 2026-11-10; no change to the game: two instruments' comments and
+  `FINDINGS.md`; the full note is in `plans/done/babylon_exit_landed.md`) found no bug and no
+  question for the owner. It noted that the lamp-atlas side effect carries ~12 frames into play, by
+  the same mechanism the owner's row "X5.4c, the vantages' lamp shadows" covers (`FINDINGS.md` 73),
+  so it asks nothing beyond that row. Two minor points were fixed: `harness.mjs`' `placeVantage`
+  comment and the reference README named the
+  card's warm-up as a caller of `updateSceneForCamera` and a `bodies` argument the tail no longer
+  takes; and `FINDINGS.md` 16's "Hollowmere standing still" bullet was deleted as disproved —
+  `pipelines.mjs hollowmere`, whose window is the 16 seconds from the spawn, created nothing in any
+  second at 8c0e184, ef22e79, 4cf59ad, 4db13df and 4ebd8b2.
 
 - **X5.4d — the textures the game draws are ours** (no change to the picture) — **M**.
   The Do's foam and texture items, under one bank proof.

@@ -11707,7 +11707,7 @@ here).
 Scripts and logs in the session's scratchpad, `x53-whole/` (`bank.sh`, `sarab.sh`, `run2.sh`,
 `dl-fix.mjs`, `viewer7.mjs`, `status.txt`).
 
-### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2)
+### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef)
 
 The plan's `BABYLON_EXIT.md` holds X5.4's brief, "What the frame is today", its ONE RULE, the
 step's own two rules, "Every sub-step owes" and the nine sub-steps.
@@ -11930,7 +11930,7 @@ every run alone on the GPU. No device lost in any run.
 Scripts and logs in the session's scratchpad, `x54b/` (`before.sh`, `after.sh`, `probes.sh`,
 `sarab.sh`, `live.mjs`, `ctrlbuf.mjs`, the BEFORE and AFTER logs and kept frames).
 
-**X5.4c LANDED** (4db13df, its picture change 4ebd8b2; 2026-11-10). Measured headless on the
+**X5.4c LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef; 2026-11-10). Measured headless on the
 Windows box against a BEFORE at 4cf59ad, in the worktree `greywatch-2-before-x53a` (moved there,
 detached; its `node_modules` valid, no dependency having moved; its `ref/` identical to the main
 tree's), every run alone on the GPU. No device lost in any run.
@@ -11993,3 +11993,22 @@ tree's), every run alone on the GPU. No device lost in any run.
 Scripts and logs in the session's scratchpad, `x54c/` (`vantages.sh`, `before.sh`, `after.sh`,
 `aproof.sh`, `final.sh`, `probes.sh`, `sealed.mjs`, `atlas.mjs`, the BEFORE and AFTER logs and kept
 frames, `x54c-uncommitted.patch`).
+
+**Its review** (47948ef; 2026-11-10; no change to the game: two instruments' comments and
+`FINDINGS.md`) found no bug and no question for the owner.
+
+- **The lamp atlas into play**: the side effect on the lamps' shadow atlas carries ~12 frames into
+  play, by the same mechanism the owner's row "X5.4c, the vantages' lamp shadows" covers
+  (`FINDINGS.md` 73), so it asks nothing beyond that row.
+- **Stale comments**: `harness.mjs`' `placeVantage` still said the tail was the one the card's
+  warm-up used and spoke of a `bodies` argument (`updateSceneForCamera` lost that parameter in
+  4ebd8b2; the bodies are the roster's, read inside the tail, and the empty list is the grass's
+  pushers), and the reference README named the warm-up as a caller; both now name the viewer and
+  the card's last frame (`finishBakeWait`).
+- **`FINDINGS.md` 16's "Hollowmere standing still"** (5 of Babylon's pipelines and 1 module in the
+  second second after the spawn, on X4.5a's tree) deleted as disproved: plain `pipelines.mjs
+  hollowmere`, whose per-second window is the 16 seconds from `spawnPlayer`, created nothing in any
+  second at 8c0e184 and ef22e79 (`x54a/pipelines-hollowmere-before.log`, `-after.log`) and at
+  4cf59ad, 4db13df and 4ebd8b2 (`x54c/pipe-hollowmere-head.log`, `a-pipe-hollowmere.log`,
+  `pipe-hollowmere-after.log`), the device's two synchronous pipelines the boot's in every run. The
+  entry's status paragraph was re-set as sentences, claiming nothing new.
