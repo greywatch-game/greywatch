@@ -7,9 +7,11 @@
  * declared entries have settled, and the two wall clocks it is capped by.
  * Owns no camera, no mesh, no draw and no system: `Game` declares the list
  * (`Game.roundPipelines`), places the camera at `vantage`, draws the frame,
- * and reports back through `afterFrame` how many pipelines Babylon's cache had
- * built by the end of it; our renderer's own cache it is handed and reads
- * (`CompileProgress`). It decides WHEN, never HOW.
+ * and asks `afterFrame` after it; our renderer's cache it is handed and reads
+ * (`CompileProgress`), and Babylon's it no longer reads at all (since
+ * `BABYLON_EXIT.md` X5.4c: X5.4a's vantage log and X5.4c's found it creating
+ * nothing at any vantage on all seven maps, and nothing of Babylon's draws in
+ * a round). It decides WHEN, never HOW.
  * Invariants: it ends. Every path through `afterFrame` either holds, moves to
  * the next vantage or reports done, and the frame cap per vantage and the two
  * wall-clock caps end it whatever the counters do — a warm-up that cannot
@@ -28,7 +30,7 @@
  * the world under the card (`BABYLON_EXIT.md` X3.7b: `Game.worldFailed`),
  * Babylon holding no mesh of it to compile at a vantage instead. A vantage is
  * then held until it has drawn `CONFIG.graphics.warmup.quietFrames` in a row
- * that created nothing in either cache and left nothing of ours compiling,
+ * that settled nothing in our cache and left nothing of ours compiling,
  * because a mesh whose effect is still compiling is SKIPPED by a frame rather
  * than compiled by it and turns up on the next one. "Ours" is the whole of our
  * renderer's cache, so a compile a torn-down map left in flight holds the wait
@@ -96,7 +98,7 @@ export class PipelineWarmup {
   private frames = 0;
   /** Of those, how many in a row created nothing. */
   private quiet = 0;
-  /** Both caches' counts, summed, after the last frame. */
+  /** Our cache's settled count after the last frame. */
   private lastCount: number;
   private readonly since = performance.now();
   /** When the first vantage was stood at — what `capMs` is measured from. */
@@ -112,21 +114,19 @@ export class PipelineWarmup {
    * flags. Each becomes an eye at standing height above it; the frustum is off
    * for these frames, so which way it faces does not matter, but where it
    * STANDS does: the shadow window, the bodies' map and the lamps that win a
-   * shadow tile are all chosen around the eye. `createdSoFar` is Babylon's
-   * pipeline cache's running count, `ours` is our renderer's cache, and
+   * shadow tile are all chosen around the eye. `ours` is our renderer's cache, and
    * `declared` is the round's declared list (`Game.roundPipelines`), waited
    * on by name before the first vantage.
    */
   constructor(
     points: readonly Vector3[],
-    createdSoFar: number,
     private readonly ours: CompileProgress,
     private readonly declared: readonly DeclaredPipelines[],
   ) {
     this.vantages = points.map(
       (p) => new Vector3(p.x, p.y + EYE_HEIGHT, p.z),
     );
-    this.lastCount = createdSoFar + ours.settled;
+    this.lastCount = ours.settled;
     this.declaredSettled = declared.map(() => false);
     this.declaredPending = declared.length;
     declared.forEach((entry, i) => {
@@ -144,14 +144,13 @@ export class PipelineWarmup {
   }
 
   /**
-   * One frame, reported after its render. `created` is Babylon's pipeline
-   * cache's running count. Returns true when the warm-up is over — every
-   * vantage settled, or a cap reached.
+   * One frame, reported after its render. Returns true when the warm-up is
+   * over — every vantage settled, or a cap reached.
    */
-  afterFrame(created: number): boolean {
+  afterFrame(): boolean {
     const cfg = CONFIG.graphics.warmup;
     const now = performance.now();
-    const count = created + this.ours.settled;
+    const count = this.ours.settled;
     const fresh = count - this.lastCount;
     this.lastCount = count;
     this.built += fresh;

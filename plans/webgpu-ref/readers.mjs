@@ -37,7 +37,7 @@
  * is the INPUT, made once at the parent and replayed on both trees.
  *
  * **`replay`** re-issues a record's calls frame for frame in `deploy` (the world
- * held, the round's seed pinned), from `Game.stageWarmFrame` — a hook every frame
+ * held, the round's seed pinned), from `Game.followEye` — a hook every frame
  * passes before it is drawn — with the camera put back at each call and at each
  * hand-over and `Math.random` seeded for the flash and the brass, and logs: every
  * reader's answer as float64 bits (the muzzle and the hand as the record's calls
@@ -388,11 +388,12 @@ async function record(FRAMES) {
     inp.slotPressed = s.slot;
     if (pf === 1350) g.player.setThrowable("molotov");
   };
-  // The camera at each frame's hand-over (the frame passes `stageWarmFrame`
-  // before it follows the eye and draws).
+  // The camera at each frame's hand-over (the frame passes `followEye`
+  // before it draws; `stageWarmFrame`, the hook until BABYLON_EXIT.md X5.4c
+  // deleted it, ran straight before it with nothing between).
   const frameCams = [];
-  const stage = g.stageWarmFrame;
-  g.stageWarmFrame = function (...a) {
+  const stage = g.followEye;
+  g.followEye = function (...a) {
     frameCams.push({ f: X.frame, cam: camState() });
     return stage.apply(this, a);
   };
@@ -417,7 +418,7 @@ async function record(FRAMES) {
     });
   });
   inp.update = update;
-  g.stageWarmFrame = stage;
+  g.followEye = stage;
   return {
     events,
     frameCams,
@@ -464,14 +465,14 @@ async function replay(log) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
   let fr = -1;
-  const stage = g.stageWarmFrame;
+  const stage = g.followEye;
   let done;
   const finished = new Promise((r) => (done = r));
   const readersFrom = X.readers.length;
   const idsFrom = X.ids.length;
   const digestsFrom = X.digests.length;
   const frameAt = new Map();
-  g.stageWarmFrame = function () {
+  g.followEye = function (...a) {
     if (fr >= 0 && fr <= last) {
       frameAt.set(X.frame, fr);
       for (const e of byFrame.get(fr) ?? []) {
@@ -493,7 +494,7 @@ async function replay(log) {
       const c = frameCam.get(fr);
       if (c) setCam(c);
     }
-    return stage.call(this);
+    return stage.apply(this, a);
   };
   const off = window.__refFrame().onDrawn(() => {
     fr++;
@@ -503,9 +504,9 @@ async function replay(log) {
     }
   });
   await finished;
-  g.stageWarmFrame = stage;
+  g.followEye = stage;
   // Renumbered onto the record's frames: a replay frame's events ran at
-  // `stageWarmFrame`, before that frame's draw moved `X.frame`.
+  // `followEye`, before that frame's draw moved `X.frame`.
   const at = (f) => frameAt.get(f) ?? null;
   const readers = X.readers.slice(readersFrom).map((r) => ({ ...r, f: at(r.f) }));
   const ids = X.ids.slice(idsFrom).map((r) => ({ ...r, f: at(r.f) }));

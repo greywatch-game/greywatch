@@ -438,7 +438,7 @@ does.
   molotov) and logs every call into `ViewModel` and `PlayerView`, the camera at each
   frame's hand-over, every answer as float64 bits and the origins the page
   submitted: the INPUT, made once at a parent, not compared. `replay` re-issues it
-  frame for frame in a held `deploy` (from `Game.stageWarmFrame`, the flash's and
+  frame for frame in a held `deploy` (from `Game.followEye`, the flash's and
   the brass's `Math.random` seeded) and logs every answer, a digest of every joint
   the frame evaluated (read where it lies, never through the cache) and the three
   origins recomputed by `Game`'s floors and held to the live page's bits — the

@@ -102,7 +102,6 @@ import {
   type SubMesh,
   Vector3,
   Viewport,
-  WebGPUCacheRenderPipeline,
   type WebGPUEngine,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
@@ -7948,7 +7947,6 @@ export class Game {
     // X4.4e) — and the map's own, asked by its install.
     wait.warm = new PipelineWarmup(
       points,
-      WebGPUCacheRenderPipeline.NumCacheMiss,
       this.renderer.pipelines,
       this.roundPipelines,
     );
@@ -8016,7 +8014,7 @@ export class Game {
     const wait = this.bakeWait;
     if (!wait) return;
     if (wait.warm) {
-      if (wait.warm.afterFrame(WebGPUCacheRenderPipeline.NumCacheMiss)) {
+      if (wait.warm.afterFrame()) {
         this.finishBakeWait();
       }
       return;

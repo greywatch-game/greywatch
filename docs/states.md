@@ -223,8 +223,8 @@ contract:
   that camera, because in the page's own match nothing in `deploy` would place
   the shadow window again.
 - **It ends.** A vantage is left after `CONFIG.graphics.warmup.quietFrames`
-  frames that compiled nothing in EITHER cache and left nothing of ours
-  compiling, or `maxFramesPerVantage` frames whatever, and the vantages are
+  frames that settled nothing in our cache and left nothing of ours
+  compiling (Babylon's is no longer read: `BABYLON_EXIT.md` X5.4c), or `maxFramesPerVantage` frames whatever, and the vantages are
   capped by `capMs`, measured from the first; what they do not reach compiles
   in the round, as all of it used to. The opening wait has a cap of its own,
   `oursCapMs`, and it is long, like the bake's drain: a pipeline of ours past

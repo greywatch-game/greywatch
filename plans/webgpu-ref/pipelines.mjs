@@ -479,8 +479,8 @@ async function playRound(page) {
  * what each cache CREATED on it — off the device (`createRenderPipeline` and
  * `createComputePipeline`, Babylon's, synchronous; `create*PipelineAsync`, our
  * renderer's; `createShaderModule`, both) and as the warm-up itself counted it
- * (Babylon's cache's miss count, our cache's settled compiles, ours still
- * compiling) — and WHY the warm-up held or moved: the opening wait for ours
+ * (our cache's settled compiles, ours still compiling; Babylon's cache's miss
+ * count until X5.4c, which stopped the warm-up reading it) — and WHY the warm-up held or moved: the opening wait for ours
  * (`ours` while ours compiles or a declared entry is unsettled), a vantage held
  * for a frame that created something or left ours compiling, or held counting
  * its quiet frames, and the move to the next vantage (quiet reached, or the
@@ -497,12 +497,12 @@ function hookWarmup(page) {
     const proto = PipelineWarmup.prototype;
     const orig = proto.afterFrame;
     const counts = () => ({ babylon: L.pipelines.length, ours: L.ours.length, modules: L.modules.length });
-    proto.afterFrame = function (created) {
+    proto.afterFrame = function (...a) {
       if (!this.__log) {
-        // A new warm-up (one an install): its first frame is counted from what
-        // the constructor read, Babylon's count being its `lastCount` less ours.
+        // A new warm-up (one an install). Babylon's pipeline-cache count is no
+        // longer the warm-up's (X5.4c): Babylon's creations are read off the
+        // device alone.
         this.__log = { vantages: this.vantages.map((v) => [v.x, v.y, v.z].map((n) => +n.toFixed(2))), frames: [] };
-        this.__created = this.lastCount - this.ours.settled;
         this.__settled = this.ours.settled;
         // The DEVICE's counts start here, at the first frame asked about (the
         // constructor is not wrapped, so nothing earlier is read): its first
@@ -518,25 +518,24 @@ function hookWarmup(page) {
       const compiling = this.ours.compiling;
       const pending = this.declaredPending;
       const dev = counts();
-      const done = orig.call(this, created);
+      const done = orig.apply(this, a);
       const moved = this.index !== before.index;
       let why;
       if (before.index < 0) {
         why = !moved ? `ours: ${compiling} compiling, ${pending} declared unsettled` : compiling > 0 || pending > 0 ? "ours: cap reached" : "ours: settled";
       } else if (moved) {
-        why = before.quiet + 1 >= cfg.quietFrames && created - this.__created + settled - this.__settled === 0 && compiling === 0 ? "moved: quiet reached" : "moved: frame cap";
+        why = before.quiet + 1 >= cfg.quietFrames && settled - this.__settled === 0 && compiling === 0 ? "moved: quiet reached" : "moved: frame cap";
       } else {
-        why = created - this.__created > 0 || settled - this.__settled > 0 ? "held: created" : compiling > 0 ? "held: ours compiling" : `held: quiet ${this.quiet} of ${cfg.quietFrames}`;
+        why = settled - this.__settled > 0 ? "held: created" : compiling > 0 ? "held: ours compiling" : `held: quiet ${this.quiet} of ${cfg.quietFrames}`;
       }
       if (done) why += this.index >= this.vantages.length ? "; done" : "; done (the wall-clock cap)";
       this.__log.frames.push({
         vantage: before.index,
         frame: before.index < 0 ? null : before.frames + 1,
         device: { babylon: dev.babylon - this.__device.babylon, ours: dev.ours - this.__device.ours, modules: dev.modules - this.__device.modules },
-        warmup: { babylon: created - this.__created, oursSettled: settled - this.__settled, oursCompiling: compiling },
+        warmup: { oursSettled: settled - this.__settled, oursCompiling: compiling },
         why,
       });
-      this.__created = created;
       this.__settled = settled;
       this.__device = dev;
       return done;
@@ -553,14 +552,14 @@ function printWarmups(list) {
       `
   warm-up ${i + 1}: ${w.vantages.length} vantages, ${w.frames.length} frames asked (${w.frames.length - at.length} waiting for ours);` +
         ` at the vantages, device: babylon ${sum("device", "babylon")}, ours ${sum("device", "ours")}, modules ${sum("device", "modules")};` +
-        ` warm-up: babylon ${sum("warmup", "babylon")}, ours settled ${sum("warmup", "oursSettled")}`,
+        ` warm-up: ours settled ${sum("warmup", "oursSettled")}`,
     );
     for (const f of w.frames) {
-      const made = f.device.babylon || f.device.ours || f.device.modules || f.warmup.babylon || f.warmup.oursSettled;
+      const made = f.device.babylon || f.device.ours || f.device.modules || f.warmup.oursSettled;
       if (!made && !/^moved|ours: (settled|cap)|done/.test(f.why)) continue;
       console.log(
         `    ${f.vantage < 0 ? "ours" : `v${f.vantage} f${f.frame}`}: device ${f.device.babylon}/${f.device.ours}/${f.device.modules}` +
-          ` warm-up ${f.warmup.babylon}/${f.warmup.oursSettled} compiling ${f.warmup.oursCompiling} — ${f.why}`,
+          ` warm-up ${f.warmup.oursSettled} compiling ${f.warmup.oursCompiling} — ${f.why}`,
       );
     }
   });

@@ -762,7 +762,7 @@ src/
                         #   the map's (PipelineCache's CompileProgress) —
                         #   under oursCapMs, then the vantages (home spawns
                         #   and flags) for Babylon's meshes, the quiet-frame
-                        #   count off both caches, and the cap. Decides WHEN;
+                        #   count off our cache, and the cap. Decides WHEN;
                         #   Game stages each frame (WorldCulling.setWarm; the
                         #   warm(on) poses of the three pools still Babylon's,
                         #   sparks, discs, scorch, until X4.6)
