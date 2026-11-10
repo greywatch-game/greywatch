@@ -12012,3 +12012,86 @@ frames, `x54c-uncommitted.patch`).
   4cf59ad, 4db13df and 4ebd8b2 (`x54c/pipe-hollowmere-head.log`, `a-pipe-hollowmere.log`,
   `pipe-hollowmere-after.log`), the device's two synchronous pipelines the boot's in every run. The
   entry's status paragraph was re-set as sentences, claiming nothing new.
+
+**X5.4d LANDED** (ffbf2ed; 2026-11-10; no change to the picture). Measured headless on the Windows box
+against a BEFORE at c83841c, in the worktree `greywatch-2-before-x53a` (moved there, detached; its
+`node_modules` valid, no dependency having moved; its `ref/` the main tree's), every run alone on the
+GPU. No device lost in any run.
+
+- **What moved**: `render/TextureMaker.ts` (new; `Renderer.textureMaker`) makes every texture the game
+  makes for itself, as Babylon 9.28 made it: a painted canvas (`Picture` — the grounds' albedos and
+  height maps, `world/textures.ts`, which now paints and hands a `Picture` and touches no GPU; the
+  sky's dome and moon; the motes; the rotor wash's puff; the scorch; the blob), raw texels (the cloud
+  field, `ShadowBindings`' no-cloud texel, the lit 1x1 — `TextureMaker.lit`, where
+  `core/shadowWindow.ts`' `litShadowTexture` was) and the water's foam decoded (`image`). Deleted:
+  every `hostTexture` call for these, `CelMaterialFactory.ownTexture`'s Babylon `setTexture`, and every
+  `DynamicTexture`, `RawTexture` and the foam's `Texture`. The frame's textures are all `OwnTexture`s
+  now; a map that is off binds our lit texel (`ShadowBindings.lit`; the Babylon cel materials, which
+  never draw, are handed a map's wrapped view where it stands and nothing where it is off).
+- **What Babylon did, read off the device at the BEFORE and restated**: `rgba8unorm` (`rg8unorm` for the
+  cloud field and the no-cloud texel), usage 23 on every one, `floor(log2(max)) + 1` levels where mips
+  were asked (the grounds 10, the dome 13 at 4096x2048, the moon and the foam 9) and one where not; a
+  canvas by `copyExternalImageToTexture` with `flipY` (`update()`'s true, the sky's `update(false)`) and
+  `premultipliedAlpha: false`; the foam by `LoadImage`'s path under WebGPU
+  (`forceBitmapOverHTMLImageElement`: the file's bytes in an untyped `Blob`, `createImageBitmap` with
+  `premultiplyAlpha: "none"`, `colorSpaceConversion: "none"`), flipped; raw texels unflipped (Babylon
+  wrote the cloud field's 512-byte rows through a mapped buffer, ours by `writeTexture`: the same
+  bytes); the chain by `generateMipmaps`' filter, through the cache's one `rgba8unorm` mip pipeline,
+  the reflection bake's `CubeMips` — Babylon built its own synchronously at boot, so a mipped texture
+  of ours has NO VIEW until its chain is recorded (the dome, painted in `Game`'s constructor, waits; no
+  frame draws it then); the samplers Babylon's cache made — flat (linear, no mip filter, LOD 0..0,
+  clamped) for the canvases with no mips and the lit texel, anisotropic (linear x3) at 4 for the dome,
+  the moon, the foam and the cloud field (bilinear, which Babylon's cache made anisotropic without
+  mips) and at 8 for the grounds, `w` repeating on all; every view the whole one Babylon's hardware
+  texture stated, written out. The foam binds the engine's empty texel (NEAREST, its own wrap) while it
+  decodes and is the scene's PENDING DATA meanwhile, as Babylon's `Texture` was, so `scene.isReady()`
+  waits for it as it did.
+- **The proof, texture by texture** (`x54d/textures.mjs`, scratch): every map's sequence installed on one
+  page, then the shadow rungs `low` and `off`; every handle a draw of ours binds (the cel recipes, the
+  particle, fade, sky and water handles, the frame's textures, the volume's cloud field, the shafts'
+  three) read for its texture's, view's and sampler's descriptors and every level's bytes: **262 rows,
+  1,378 levels, 307 distinct, all equal**, at the tree and again on the committed tree; uploads equal per
+  kind (counts, sizes, flips, premultiplication); creations per kind equal (17 grounds, 7 domes, 7
+  moons, the puff and so on), each picture made once. The foam's stand-in (`x54d/standin.mjs`, a
+  cache-missing handle asked at once): a 1x1 `rgba8unorm` of zeros, usage 23, nearest, repeat — equal.
+- **Every bank row** by `exact.mjs`, `--check --keep` at each tree: default 146 byte-equal and
+  `sarab-ground` 100 pixels by 2/255 — the cross-process residue of its class: Sarab alone, two
+  processes a tree, drew both of its frames (e4daf907…, bac833b0…) in the parent's processes and the
+  step's alike; `volumetrics=low` 147 byte-equal; `=high` 146 and `harrowmead-view-pistol-reload` within
+  its flake. **By name**, byte-equal in all three: the six particle rows (`cinderhaven-particles-embers`,
+  `-ring-ash`, `-spray`, `kurenai-particles-leaves`, `sarab-particles-dust`, `hollowmere-sky-motes`),
+  every blast row (`coldharbour-blast`, the seven `fx-blast-*`), the blob rows (`fx-blob-sort`,
+  `fx-blob-glass`), the scorch rows, the water rows (`greyfen-marsh`, `harrowmead-millpond`, the three
+  `shore-*`, `sarab-shore-flip`, `sarab-pane-water`, `coldharbour-fx-water-fade`) and the sky rows.
+- **The probes against the parent's logs**: `gi.mjs` equal (914,607 and 254,727 values) with the four
+  Babylon-only cloud-field fields named (`--ignore`, new: `samplersFresh.internalCached` and `.texture`,
+  `samplerSerial.found` and `.forced`, null on ours — the trace's sampler, its bind group's view and
+  texture descriptors, and every step equal); `post.mjs` equal at both sizes (31,879 values each) with
+  NO `--ignore` — the shafts' cloud binding, named `cloud.field`, equal down to its view's descriptor, so
+  `post-expected.txt` gains no section; `surfaces.mjs` identical; `particles.mjs` (45,120 numbers),
+  `census` (168), the draw log, `readers.mjs replay` and `camera` equal; `pipelines.mjs hollowmere` and
+  `coldharbour --round` as the parent (107 modules, 2 of Babylon's pipelines, 90 of ours, nothing in
+  play).
+- **The world layer**: `merge:hash` identical on all eight maps; `kit:hash` identical with a `Picture`
+  named as the `DynamicTexture` was (`DynamicTexture:<label>`, a scratch run), and committed naming it
+  `Picture:<label>`, which moves the road's 53 builds by that name alone against a fingerprint from
+  before.
+- **Live** (`x54d/live.mjs`, X5.4b's script with the texture checks): offline Hollowmere then a map
+  change to Coldharbour (the kit lid, `F2`, a life firing and throwing and on Coldharbour the launcher,
+  every post setting, the shadow rung `low`, `off` and back, render scale 0.75 and back, a resize, the
+  pause, teardowns), and a match on each map: 39 steps, the maker's released textures all destroyed by
+  a frame's end (the replaced dome and moon, the no-cloud texel), every picture made once, nothing
+  owed, the DEV compile counter 0, render-id drift 0, no page or console error.
+- **Typecheck, build** (its gates, `maps:check` among them), **corecheck, parity**, **`gate`** and
+  **`shaders`** (seven maps clean each).
+- **`hostTexture` and the seam's items 7 and 8 stay**: their readers left are the host's own targets —
+  the glow's (the blur's sources, the ink's mask and composes), `PostPasses`' frame and pool and
+  `FrameDepth`'s wrapper, X5.4e's and X5.4f's. The seam's header records it.
+- **A trap met on the way**: a module-level `GPUTextureUsage` in the new file threw under `kit:hash`'s
+  Node run (CLAUDE.md's rule against WebGPU globals at a module's top level, which no build gate
+  catches); the usage is named at the call.
+- **Not run**: `?profile&gpu` (no span moved), the phone.
+
+Scripts and logs in the session's scratchpad, `x54d/` (`textures.mjs`, `standin.mjs`, `live.mjs`,
+`before.sh`, `after.sh`, `probes.sh`, `sarab.sh`, the BEFORE and AFTER logs, kept frames and texture
+dumps).

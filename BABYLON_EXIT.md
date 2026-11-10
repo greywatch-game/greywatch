@@ -5331,7 +5331,7 @@ pointer, its history unchanged):
   when it lands, owes three things: its generator's emitted header rewritten, its
   `params.ts` and `WRITABLE` rows dropped, and a `maps:check` entry.
 
-### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d; it was sized **M** before the split, and the read below re-sizes it) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014, its review clean), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef)
+### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d; it was sized **M** before the split, and the read below re-sizes it) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014, its review clean), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed)
 
 - **Do:**
   - Our own `requestAnimationFrame` loop.
@@ -5745,6 +5745,27 @@ measurement until the sub-step that replaces both.
   - **Rewrites:** the headers of each module touched, `ShadowBindings`, `CelShader` and
     `wrappedTextures`; `docs/rendering.md` (the water's foam, the grounds, the sky,
     the pools); `FILES.md`.
+
+  **X5.4d LANDED** (ffbf2ed; 2026-11-10; no change to the picture). The full note is in
+  `plans/done/babylon_exit_landed.md`. **`render/TextureMaker.ts`** (`Renderer.textureMaker`) makes
+  every texture the game makes for itself as Babylon made it, read off the device at c83841c: the
+  grounds (`world/textures.ts` hands a `Picture`), the sky's dome and moon, the motes, the puff, the
+  scorch, the blob, the cloud field, the no-cloud and lit texels, the foam (decoded as `LoadImage` did,
+  the engine's empty texel bound and the scene's pending data while it decodes); the chain through the
+  cache's one mip pipeline (`CubeMips`), a mipped texture viewless until its chain is recorded; every
+  sampler and view Babylon's. **Measured**: every texture a draw of ours binds, over seven maps and the
+  shadow rungs low and off — 262 rows, 1,378 levels, descriptors and bytes all equal, the foam's
+  stand-in equal; the bank by `exact.mjs` default 146 and `sarab-ground` 100 pixels by 2/255 (both its
+  frames drawn by the parent's processes and the step's, the Sarab procedure), `volumetrics=low` 147,
+  `=high` 146 and the pistol flake — by name the six particle rows and every blast, blob, scorch, water
+  and sky row byte-equal in all three; `gi.mjs` equal but four Babylon-only cloud fields named by its
+  new `--ignore`; `post.mjs` equal at both sizes with no `--ignore`; `surfaces`, `particles`, `census`,
+  the draw log, `readers` replay and camera equal; `pipelines.mjs` as the parent; `merge:hash`
+  identical; `kit:hash` identical but the road's 53 builds' stub name (`Picture:<label>`); a live
+  session offline and in a match (released textures destroyed, each made once); typecheck, build,
+  corecheck, parity, `gate`, `shaders`. **`hostTexture` and items 7 and 8 stay**: the glow's targets,
+  `PostPasses`' frame and pool and `FrameDepth`'s wrapper still read through them (X5.4e, X5.4f).
+  **Not run**: `?profile&gpu` (no span moved) and the phone.
 
 - **X5.4e — the frame's passes before the chain are ours** (no change to the picture)
   — **L**. The Do's mask item, and the first half of its post passes' item.
