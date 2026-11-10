@@ -5331,7 +5331,7 @@ pointer, its history unchanged):
   when it lands, owes three things: its generator's emitted header rewritten, its
   `params.ts` and `WRITABLE` rows dropped, and a `maps:check` entry.
 
-### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d; it was sized **M** before the split, and the read below re-sizes it) — X5.4a **LANDED** (ef22e79)
+### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d; it was sized **M** before the split, and the read below re-sizes it) — X5.4a **LANDED** (ef22e79, its review c160eb1)
 
 - **Do:**
   - Our own `requestAnimationFrame` loop.
@@ -5599,6 +5599,15 @@ measurement until the sub-step that replaces both.
   usage 17, `premultiplied`; and **a destroyed device today leaves a dead frame** (Babylon restores a
   new device, every draw of ours fails validation against it, and the restore compiles `clearQuad`).
   **Not run**: the live rounds, `?profile&gpu`, `F2` and the phone (nothing under `src/` moved).
+
+  **Its review** (c160eb1; 2026-11-10; no change to the game: this file and four instruments; the full
+  note is in `plans/done/babylon_exit_landed.md`) found no bug in the game. "What the frame is
+  today" and X5.4e's Verify still said the mask's render moved the render id: both restated off the
+  log (two points, both inside `scene.render`), X5.4b's item naming them. `readers.mjs`' replay now
+  FAILS short of every live answer and its `--against` takes `post.mjs`' `--ignore`; the camera
+  pin's and `beforeDraw`'s texts say where they run (after the camera's updates, before any
+  matrix); `leaks.mjs` opens with a POSITIVE CONTROL (an effect released through Babylon's path, the
+  engine's cache asked once), which held at HEAD with the counts after it equal to X5.4a's.
 
 - **X5.4b — the render cache on a frame id of ours, and Babylon's leaks retired** (no
   change to the game) — **S**.

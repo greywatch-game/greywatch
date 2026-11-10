@@ -11707,7 +11707,7 @@ here).
 Scripts and logs in the session's scratchpad, `x53-whole/` (`bank.sh`, `sarab.sh`, `run2.sh`,
 `dl-fix.mjs`, `viewer7.mjs`, `status.txt`).
 
-### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d) — X5.4a **LANDED** (ef22e79)
+### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d) — X5.4a **LANDED** (ef22e79, its review c160eb1)
 
 The plan's `BABYLON_EXIT.md` holds X5.4's brief, "What the frame is today", its ONE RULE, the
 step's own two rules, "Every sub-step owes" and the nine sub-steps.
@@ -11814,3 +11814,43 @@ tree's), every run alone on the GPU. No device lost in any run.
 
 Scripts and logs in the session's scratchpad, `x54a/` (`probes.sh`, `after.sh`, `sarab.sh`,
 `adaptercheck.mjs`, the BEFORE and AFTER logs and kept frames, `rec.json`).
+
+**Its review** (c160eb1; 2026-11-10; no change to the game: `BABYLON_EXIT.md`, `readers.mjs`,
+`leaks.mjs`, `pipelines.mjs`, `harness.mjs`' adapter doc, the README and `FILES.md`) found no bug in
+the game, and plan and instrument findings, each checked against the tree and Babylon 9.28's
+source first.
+
+- **The plan's render-id claim**: "What the frame is today" still cited the mask's
+  `RenderTargetTexture.render` (762/769) and the readiness timer as advances, and X5.4e's Verify
+  ("the mask's render no longer moves Babylon's id") rested on it. Restated off this sub-step's
+  log: twice a frame, `_renderFrame` (`scene.pure.js` 4573, under `renderTargetsEnabled`) and
+  `_renderForCamera` (4069); 762/769 are the 2D-array/3D and cube branches; the timer
+  (2146-2150) can advance it only while a readiness wait finds the scene not ready, and did in
+  neither run. X5.4b's item names the two points; X5.4e owes the counter nothing for the mask.
+- **`readers.mjs`**: `replay` exited 0 with `faithful.matched < faithful.live`; it now fails (a
+  record with one answer added: 547 of 548, exit 1). `compare` gains `--ignore` in `post.mjs`'
+  shape (path patterns, `*`/`**`, `@file`; each pattern's hits counted, one matching nothing
+  said), because X5.4f's `ids` will differ wholesale — shown on hand-edited copies of X5.4a's
+  replay: the render-id log rewritten differs without it and is equal under `--ignore=ids`, a
+  reader's flipped bit still differs under it.
+- **The camera pin** (`readers.mjs`' header, `frameAdapter`'s `beforeDraw`, the README): said to
+  run "ahead of the camera's update"; `onBeforeRenderObservable` fires AFTER
+  `activeCamera.update()` (`scene.pure.js` 4522-4545). Harmless, since `_renderForCamera`
+  computes the matrices later off the pose as it stands; the texts now say that.
+- **`leaks.mjs`' positive control** (X5.4b deletes `webgpuLeaks.ts` on a zero): before the
+  baseline, in a class of its own kept out of every read, clearQuad's WGSL compiled under a define
+  of its own and disposed through `Effect.dispose` → `_releaseEffect` → `_deletePipelineContext`,
+  and the engine's own `_cacheBindGroups.getBindGroups` asked once (a forced creation on a
+  pipeline context with no binding: nothing in the cache's tree, no GPU bind group). **At HEAD:
+  1 context deleted, 1 with a context, 1 call, 1 set made, the device's `createBindGroup` 0** —
+  both hooks count; anything else exits 1. The counts after it equal X5.4a's log (0 and 0 in
+  every class; device bind groups 1,903, 1,919, 2,090, 2,200; live buffers 142 to 155; the heap
+  within 0.1 MB).
+- **`pipelines.mjs`** read `this.__deviceAtStart`, never set: dropped, with a comment (the first
+  vantage frame's device delta is 0 by construction, as it was). Hollowmere's vantage log equal
+  to X5.4a's, timings aside.
+- **Also re-run**: `readers.mjs replay` of X5.4a's record (547 of 547, three origins identical,
+  `--against` X5.4a's replay equal), a fresh record and its replay (547 of 547), `camera
+  --against` X5.4a's log (equal, 104 frames); typecheck and build (its gates).
+
+Scripts and logs in the session's scratchpad, `x54a-review/`.
