@@ -11707,7 +11707,7 @@ here).
 Scripts and logs in the session's scratchpad, `x53-whole/` (`bank.sh`, `sarab.sh`, `run2.sh`,
 `dl-fix.mjs`, `viewer7.mjs`, `status.txt`).
 
-### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d) — X5.4a **LANDED** (ef22e79, its review c160eb1)
+### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014)
 
 The plan's `BABYLON_EXIT.md` holds X5.4's brief, "What the frame is today", its ONE RULE, the
 step's own two rules, "Every sub-step owes" and the nine sub-steps.
@@ -11854,3 +11854,78 @@ source first.
   --against` X5.4a's log (equal, 104 frames); typecheck and build (its gates).
 
 Scripts and logs in the session's scratchpad, `x54a-review/`.
+
+**X5.4b LANDED** (aa83014; 2026-11-10; no change to the game). Measured headless on the Windows
+box against a BEFORE at 35afbe1, in the worktree `greywatch-2-before-x53a` (moved there, detached;
+its `node_modules` valid, no dependency having moved; its `ref/` identical to the main tree's),
+every run alone on the GPU. No device lost in any run.
+
+- **The counter** (`src/core/renderId.ts`, new): `RenderId` — `current`, `advance`, `onEvaluated`
+  and `evaluated`, and a DEV `shadow` — and `driveFromScene`, which moves it where `scene.render`
+  moves Babylon's render id, off the scene's PUBLIC observables: the frame's
+  `onAfterRenderTargetsRenderObservable` (the first public raise after `_renderFrame`'s increment;
+  only under `renderTargetsEnabled`, as the increment is, and told apart from the camera's own raise
+  of the same observable by a flag the camera's begin and end set) and
+  `onBeforeCameraRenderObservable` (the first after `_renderForCamera`'s, with only Babylon's own
+  code between: the viewport, the bind and its clear, which has no observer, and
+  `updateTransformMatrix`), each observer inserted FIRST; and the evaluation told off
+  `onAfterActiveMeshesEvaluationObservable`, hung at the moment `ViewTree` used to hang its
+  `settle`, so nothing moved in that observable's order. The cache compares ids for equality only,
+  so a counter moved at the same points answers every read as Babylon's did. `Game` owns one
+  (public: `renderId`), drives it just before the `PlayerView` is built, and hands it down
+  `PlayerView` → `ViewModel` → `ViewTree` (whose constructor takes it in the scene's place:
+  `src/entities/` names neither Babylon's id nor its evaluation observable). `kit-hash.mjs` hands
+  each tree a fresh one at 0, as the fresh scene's never-rendered id was (`kit:hash --models`
+  identical to the parent's).
+- **The DEV shadow**: at every read of `current` (each `RenderCache.read`/`world` and each frame's
+  `settle`), ours less Babylon's must be what it was when the drive began; a read where it is not
+  counts `drift` and says a console error once per new difference (re-based after it). It reads 0
+  everywhere, and ours EQUALS Babylon's at every page's end (the drive starts with both at 0).
+  **Its positive control** (`x54b/live.mjs`): one `scene.incrementRenderId()` by hand over deploy —
+  `drift` 0 to 1 and exactly one `RenderId:` console error. Deleted by X5.4f with the scene's render.
+- **`webgpuLeaks.ts` deleted**, with its patch in `main.ts` and its flush in `teardownMap`.
+  `leaks.mjs coldharbour --rounds=4` (the probe gained `--rounds` and the live buffers' MB for this),
+  at the parent (the file in) and after (the file gone): the control held at both ends (1 context
+  released, 1 with a context, 1 cache call, 1 set made, the device's `createBindGroup` 0); after the
+  boot **0 pipeline contexts released and 0 bind groups made by Babylon's cache, in every class**
+  (menu, loading, deploy, playing; about 3,800 frames) at both ends; the menu after each of the four
+  teardowns 159 live buffers and 34.9 MB at the parent, 160 and 34.9 MB after, the heap 61.1, 60.1,
+  60.9, 61.2 MB and 60.5, 59.5, 60.3, 60.5 MB — flat at both ends, where the file's own measurement
+  (before it existed) was 127 → 200 MB of heap and 0 → 91 MB of buffers over four rounds; the
+  device's bind groups 1,903, 2,090, 2,261, 2,432 (ours, at each install) and Hollowmere's round
+  after the map change 266/267 buffers, the same at both ends. **The one live buffer more after**
+  is the probe's own control: measured alone (`x54b/ctrlbuf.mjs`), 142 live buffers at the menu and
+  142 after the control's effect is released at the parent, 142 and 143 after — leak (1) is still
+  Babylon's, and nothing in the game releases an effect. `leaks.mjs`' header and the README say so.
+- **Every bank row** by `exact.mjs`, `--check --keep` at each tree: **default** 147 byte-equal;
+  **`volumetrics=high`** 147 byte-equal; **`volumetrics=low`** 146 and `sarab-ground` 98 pixels by
+  2/255. **The Sarab procedure** under `--query=volumetrics=low` (`bank.mjs sarab --check --keep`,
+  two processes a tree): the after tree's full-bank frame is the one the parent's two processes and
+  the after tree's first drew, the parent's full-bank frame the one the after tree's second drew —
+  both frames the parent's own, cross-process residue of the recorded class; every other Sarab row
+  byte-equal between the trees (the shelf within its flake in one pair).
+- **`readers.mjs`**: `replay` of X5.4a's record (made at 8c0e184; no game code moved since) at both
+  ends — 1,502 frames, 1,505 evaluations, **547 of 547 live answers** and the three origins
+  identical to the live page's, and the after replay EQUAL to the parent's (frames, readers, digests,
+  the render-id log, the origins); `camera` equal to the parent's (104 frames).
+- **The probes against the parent's logs**: the draw log (Coldharbour, with the viewer) equal, no
+  page or console error; `census` equal (168 and 168); `gi.mjs` equal (914,611 and 254,731 values);
+  `particles.mjs` equal (45,120 numbers); `post.mjs` equal at both sizes with no `--ignore` (31,879
+  values a size, the whole frame and the boot included); `surfaces.mjs`' log identical; `pipelines.mjs
+  hollowmere` and `coldharbour --round` creating the same (nothing in play, nothing at a vantage;
+  only the timings differ).
+- **Live** (`x54b/live.mjs`, the DEV build): offline on Hollowmere, then a map change to Coldharbour
+  in the same page — deploy, the kit lid, `F2` up and down, a life firing 120 frames and throwing a
+  frag (on Coldharbour the launcher too), fxaa, motion blur, paper grain, both glow rungs, three shafts
+  rungs, a shadow rung and back, render scale 0.75 and back, a resize to 1280x721 and back, the pause,
+  the teardown; and a server's match (`dist-server/index.js`) on each map — deploy, the kit lid, `F2`,
+  a life, glow and render scale, the teardown. `drift` 0 on every page, ours equal to Babylon's
+  (4,270, 1,136, 1,806 at the end), the DEV compile counter 0, no page or console error. Run twice,
+  the second on the committed code.
+- **Typecheck, build** (its gates, `maps:check` among them), **corecheck, parity** (eight maps),
+  **`gate`** (seven maps clean) and **`shaders`** (seven maps clean).
+- **Not run**: `?profile&gpu` (no span moved: the counter moves inside spans that already bracketed
+  Babylon's), the phone, and `merge:hash` (the world layer untouched).
+
+Scripts and logs in the session's scratchpad, `x54b/` (`before.sh`, `after.sh`, `probes.sh`,
+`sarab.sh`, `live.mjs`, `ctrlbuf.mjs`, the BEFORE and AFTER logs and kept frames).

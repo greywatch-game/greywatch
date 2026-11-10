@@ -5331,7 +5331,7 @@ pointer, its history unchanged):
   when it lands, owes three things: its generator's emitted header rewritten, its
   `params.ts` and `WRITABLE` rows dropped, and a `maps:check` entry.
 
-### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d; it was sized **M** before the split, and the read below re-sizes it) — X5.4a **LANDED** (ef22e79, its review c160eb1)
+### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d; it was sized **M** before the split, and the read below re-sizes it) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014)
 
 - **Do:**
   - Our own `requestAnimationFrame` loop.
@@ -5628,6 +5628,33 @@ measurement until the sub-step that replaces both.
     draw log's states and the live script; the bank byte-equal; typecheck (dead code).
   - **Rewrites:** the headers of `rigJoints.ts` and `viewTree.ts`; `docs/game.md`'s
     teardown (`forgetBindGroups`); `main.ts`' comment; `FILES.md`.
+
+  **X5.4b LANDED** (aa83014; 2026-11-10; no change to the game). The full note is in
+  `plans/done/babylon_exit_landed.md`. **The counter** is `src/core/renderId.ts`' `RenderId`,
+  moved at the two points (the frame's `onAfterRenderTargetsRenderObservable` under
+  `renderTargetsEnabled`, told apart from the camera's own raise of it, and
+  `onBeforeCameraRenderObservable`, each observer inserted first) and settled off
+  `onAfterActiveMeshesEvaluationObservable`, by `driveFromScene` until X5.4f; `Game` owns it and
+  hands it to `PlayerView` → `ViewModel` → `ViewTree`; its DEV shadow (`drift`, a console error)
+  goes at X5.4f. **`webgpuLeaks.ts` deleted**: `leaks.mjs` over four Coldharbour rounds (`--rounds`,
+  new) read no pipeline context released and no cached bind group made after the boot in any class,
+  at the parent and after, and the menu after each teardown flat at both ends (159 and 160 live
+  buffers, 34.9 MB; heap 60.1–61.2 MB and 59.5–60.5 MB) — the one buffer more being the probe's
+  own control, whose released effect keeps its context's uniform buffer without the patch.
+  **Measured** against a BEFORE at 35afbe1: the bank by `exact.mjs` 147 byte-equal (default), 147
+  (`volumetrics=high`), and under `volumetrics=low` 146 with `sarab-ground` 98 pixels by 2/255,
+  the Sarab procedure (two processes a tree) showing both of its frames drawn by the parent's
+  own processes; `readers.mjs replay` 547 of 547 live answers, the three origins bit for bit,
+  equal to the parent's replay with its render-id log; the camera log, the draw log, `census`,
+  `gi.mjs`, `particles.mjs` and `post.mjs` at both sizes equal with no `--ignore`; `surfaces.mjs`
+  identical; both `pipelines.mjs` runs creating the same; `kit:hash --models` identical. **The DEV
+  shadow silent** over the bank, the draw log and a live session (offline on Hollowmere then a
+  map change to Coldharbour: the kit lid, `F2`, a life firing, throwing and on Coldharbour the
+  launcher, every post setting toggled, a shadow rung, render scale 0.75 and back, a resize, the
+  pause, teardowns; a match on each map), ours equal to Babylon's id at every page's end, and its
+  POSITIVE CONTROL (one `scene.incrementRenderId()` by hand) read as one drift and one error.
+  Typecheck, build (its gates, `maps:check` among them), corecheck, parity, `gate` and `shaders`.
+  **Not run**: `?profile&gpu` (nothing a span brackets moved) and the phone.
 
 - **X5.4c — the warm-up waits for the declared list** (no change to the picture) —
   **S**. The Do's `PipelineWarmup` item.
