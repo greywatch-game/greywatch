@@ -11706,3 +11706,111 @@ here).
 
 Scripts and logs in the session's scratchpad, `x53-whole/` (`bank.sh`, `sarab.sh`, `run2.sh`,
 `dl-fix.mjs`, `viewer7.mjs`, `status.txt`).
+
+### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d) — X5.4a **LANDED** (ef22e79)
+
+The plan's `BABYLON_EXIT.md` holds X5.4's brief, "What the frame is today", its ONE RULE, the
+step's own two rules, "Every sub-step owes" and the nine sub-steps.
+
+**X5.4a LANDED** (ef22e79; 2026-11-10; no change to the game: instruments, `plans/webgpu-ref/README.md`
+and `FILES.md`; nothing under `src/` or `server/`). Measured headless on the Windows box against a
+BEFORE at 8c0e184, in the worktree `greywatch-2-before-x53a` (moved there, detached; its
+`node_modules` valid, no dependency having moved since fba1119; its `ref/` identical to the main
+tree's), every run alone on the GPU. No device lost in any run.
+
+- **The frame adapter** (`harness.mjs`' `frameAdapter`, `window.__refFrame()`, `postAdapter`'s
+  precedent): `drawn`/`onDrawn` (the scene's after-render), `beforeDraw`/`onBeforeDraw` (its
+  before-render), `submitted`/`onSubmitted` and `onBegin` (the engine's end and begin of frame),
+  `index` (the scene's frame id), `ready` (`scene.isReady()`), `device`, `canvas`, `canvasDepth`,
+  `encoderRole`, `scheduleDelta` (the engine's `getDeltaTime`, `particles.mjs`' schedule, and
+  `null` to hand it back) and `host`. Babylon's arm alone, each member the same observable with the
+  same add-and-remove, or the same field, as the read it replaced. Installed by `bootMap` as an init
+  script ahead of a caller's own, and evaluated by every harness function and by `pipelines.mjs`,
+  whose page is its own. Moved onto it: the harness (`installRound`, `waitUntilDrawn`,
+  `placeVantage`'s waits and two before-draws, `freeze`'s waits, `settle`, `fps`), `census`,
+  `drawlog`, `gate`, `gi`, `particles`, `pipelines`, `post`, `shaders` and `surfaces`; `bank.mjs`
+  and `bench.mjs` read no frame of their own (the harness's waits; the page's profiler), so there
+  was nothing in either to move. What a probe measures OF Babylon (its `_draw`s, rendering groups,
+  compiled effects, the engine's statics in `post.mjs`' chain) stays Babylon's. **The adapter
+  against the reads it replaced** (a scratch check, Coldharbour, 120 frames each at the menu, deploy
+  and a life): every `index`, `ready`, `device`, `canvas`, `canvasDepth`, `encoderRole` and `host`
+  answer equal to Babylon's read on the same frame, every one-shot `drawn()` resolving on the frame
+  Babylon's after-render did, and each of the adapter's four hooks raised straight after its
+  Babylon twin at the same frame id (240 of 240 each, three states).
+- **`post.mjs` logs the whole frame** (X5.4e's to X5.4h's BEFORE): each scenario's `whole`, the
+  captured frame in submit order — every `queue.submit`, its command buffers with each encoder's role
+  and label, and on each, in recording order, every render pass (its index in `passes`, its timestamp
+  writes), every compute pass (label, timestamp writes, dispatches by pipeline and workgroups) and
+  every encoder-level copy, clear, resolve or timestamp; the queue's writes counted before each
+  submit; `wholeSteady` beside `steady`. And `statics.boot`: every `requestAdapter`'s options, every
+  `requestDevice`'s descriptor, every `configure`'s argument and the device's label and features.
+  The opening clear pass and the mask's clear and depth attachment were already passes of `passes`.
+  **Read at the frame** (`desk`, `base`): one submit, the upload encoder (the cluster cull's and the
+  instance cull's compute passes among three `clearBuffer`s) then the render encoder's twelve render
+  passes, 13 `writeBuffer`s (8,880 bytes) before it and none after. **What the boot asks** (X5.4h's
+  BEFORE): `requestAdapter` twice — `main.ts`' gate with `{ powerPreference: "high-performance" }`,
+  then Babylon's with its whole engine options object; `requestDevice` once with
+  `{ label: "BabylonWebGPUDevice0" }` and nothing else (no feature, no limit; the device's features
+  `core-features-and-limits`); `configure` once: `bgra8unorm`, usage 17 (`RENDER_ATTACHMENT |
+  COPY_SRC`), `premultiplied`, no colour space, tone mapping or view formats. `wholeSteady` 17 of 17
+  at both sizes.
+- **`readers.mjs`** (X4.3b's readers' oracle, committed; X4.3b's scratch probe's shape at HEAD's
+  names): `record` on Harrowmead, 1,500 frames of X4.3b's schedule — 3,072 calls; answers: 29
+  `muzzleWorld`, 2 `throwHandWorld`, 28 `ejectPortWorld`, 244 root inverses and 244 gravities
+  (X4.3b's own counts); three origins (a frag, a rocket, a molotov). `replay` in deploy: 1,502
+  frames, 1,505 evaluations digested, **547 of 547 live answers reproduced** and **the three origins
+  recomputed by `Game`'s floors identical to the live page's bits**. **The render id moves TWICE a
+  frame in a round, both inside `scene.render`**: in `Scene._renderFrame` (after its render
+  targets' block) and in `Scene._renderForCamera` — 1,502 and 1,502 over the record, 1,505 and
+  1,505 over the replay, every one inside a frame. **The glow mask's render does not move it** (the
+  plan's "What the frame is today" cited `renderTargetTexture.pure.js` 762 and 769, which are its
+  2D-array or 3D and cube branches; the mask is a plain 2D target), and **no readiness timer moved
+  it** in either run. So X5.4b's counter, "advanced at EVERY point X5.4a's log found", is those two
+  points. `camera`: thirteen steps (the menu, the card, deploy, the kit lid, deploy, a life, render
+  scale 0.75, a resize to 1280x721, back, the pause, resumed, the round-over card, the menu), eight
+  frames each, 104 frames, the pose pinned at each frame's before-render; every step reached.
+- **The warm-up's vantage log** (`pipelines.mjs`, both modes): Hollowmere and Coldharbour's two
+  `--round` installs — eleven vantages each, one frame waiting for ours (settled at once), then
+  every vantage moving on quiet after two frames, **nothing created at any vantage by either
+  cache**, off the device or as the warm-up counted. X5.4c owes the other five maps.
+- **`leaks.mjs`**: Coldharbour, two rounds with a 600-frame life and a teardown each, a map change
+  to Hollowmere and a round there: **no `_deletePipelineContext` call and no bind group made by
+  Babylon's cache after the boot, in any class** (and the cache never asked); its total stood at 0
+  at the baseline too, so the probe had no positive control in a round (nothing of Babylon's draws).
+  The device's bind groups 1,903, 2,090, 2,200 (ours, at each install); live `GPUBuffer`s 159 after
+  each Coldharbour teardown and 155 after Hollowmere's; the heap at the menu 59.0 to 60.9 MB after
+  each. Two processes, the same counts.
+- **`lost.mjs`** (Hollowmere, six seconds after each loss), today's behaviour recorded: at all four
+  moments the old device's `lost` says `destroyed`, Babylon logs "WebGPU context lost" and
+  "successfully restored" with a NEW device (`BabylonWebGPUDevice1`), and the page goes on drawing
+  and submitting about 125 frames a second (a loss on the card goes on to deploy), but **every
+  frame of ours is invalid**: our buffers, pipelines and views belong to the old device, and every
+  submit fails validation ("associated with [Device ...0], and cannot be used with [Device ...1]")
+  until the warning cap — a dead frame. Babylon's restore also compiles `clearQuad`, which the DEV
+  counter warns on. X5.4i's BEFORE.
+- **Every bank row** by `exact.mjs`, `--check --keep` at each tree: **default** 146 and
+  `sarab-ground` 100 pixels by 2/255 (the two known flakes within their bounds);
+  **`volumetrics=low`** 147 byte-equal; **`volumetrics=high`** 147 byte-equal. **The Sarab
+  procedure** (`bank.mjs sarab --check --keep`, two processes a tree): 8c0e184's full bank and its
+  first process drew one frame, its second process the other — the frame HEAD's full bank and both
+  of HEAD's processes drew — so both frames are 8c0e184's own: cross-process residue of the recorded
+  class. Every other Sarab row byte-equal (the shelf within its flake).
+- **The probes against the parent's logs**: the draw log (Coldharbour, with the viewer) equal;
+  `census` equal (168 and 168); `gi.mjs` equal on both maps (914,611 and 254,731 values);
+  `particles.mjs` equal (45,120 numbers over 480 frames; its first run threw on a `delete
+  e.getDeltaTime` the move had left behind, fixed by the adapter's `scheduleDelta(null)` before the
+  commit and re-run); `surfaces.mjs`' log identical; `pipelines.mjs hollowmere` and `coldharbour
+  --round` creating the same (nothing in play; the round's shot counts ride the wall clock);
+  `post.mjs` at both sizes equal with its three new parts named
+  (`--ignore=**.whole,**.wholeSteady,*.statics.boot`; 30,073 values a size). **Each new or changed
+  probe equal to itself across two processes**: `readers.mjs replay` (frames, readers, digests, the
+  render-id log, the origins), `readers.mjs camera`, `post.mjs` (`desk`, `--no-live`, the whole frame
+  and the boot included: 31,879 values) and the vantage log.
+- **Typecheck, build (its gates, `maps:check` among them), corecheck, parity** (eight maps), `gate`
+  (seven maps clean) and `shaders` (seven maps clean).
+- **Not run**: the live rounds, the post settings toggled live, `?profile&gpu`, `F2` and the phone —
+  nothing under `src/` moved, and the bank, the draw log and the gate read the game's own frames;
+  `lost.mjs` in a server's match and twice in a row (X5.4i's, when it grades).
+
+Scripts and logs in the session's scratchpad, `x54a/` (`probes.sh`, `after.sh`, `sarab.sh`,
+`adaptercheck.mjs`, the BEFORE and AFTER logs and kept frames, `rec.json`).

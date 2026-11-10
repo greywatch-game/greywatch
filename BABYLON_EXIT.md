@@ -5331,7 +5331,7 @@ pointer, its history unchanged):
   when it lands, owes three things: its generator's emitted header rewritten, its
   `params.ts` and `WRITABLE` rows dropped, and a `maps:check` entry.
 
-### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d; it was sized **M** before the split, and the read below re-sizes it)
+### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d; it was sized **M** before the split, and the read below re-sizes it) — X5.4a **LANDED** (ef22e79)
 
 - **Do:**
   - Our own `requestAnimationFrame` loop.
@@ -5570,6 +5570,28 @@ measurement until the sub-step that replaces both.
     equal to the Babylon reads they replaced on the same frames; the bank byte-equal; the
     draw log equal to its parent's.
   - **Rewrites:** `plans/webgpu-ref/README.md`, the probes' headers, `FILES.md`.
+
+  **X5.4a LANDED** (ef22e79; 2026-11-10; no change to the game: instruments, the README and
+  `FILES.md`). The full note is in `plans/done/babylon_exit_landed.md`. **Measured** against a BEFORE
+  at 8c0e184: the bank by `exact.mjs` 146 and `sarab-ground`'s cross-process residue (default; both
+  frames 8c0e184's own by the Sarab procedure), 147 (`volumetrics=low`), 147 (`=high`); the draw log,
+  `census`, `gi.mjs`, `particles.mjs`, `surfaces.mjs`, both `pipelines.mjs` runs and `post.mjs` at
+  both sizes equal to the parent's (post's three new parts named by `--ignore`); `readers.mjs`'
+  replay (547 of 547 live answers, the three origins bit for bit), the camera log, `post.mjs` and the
+  vantage log each equal to itself across two processes; the adapter's answers equal to Babylon's
+  reads on the same frames; typecheck, build, corecheck, parity, `gate` and `shaders`. **What the
+  instruments found, for the sub-steps after**: **the render id moves twice a frame in a round,
+  both inside `scene.render`** — `Scene._renderFrame` and `_renderForCamera`; the glow mask's render
+  does NOT move it (the 762/769 cited above are `RenderTargetTexture`'s 2D-array, 3D and cube
+  branches; the mask is plain 2D) and no readiness timer did — so X5.4b's counter moves at those
+  two points; **no pipeline context is released and no bind group made by Babylon's cache after the
+  boot** over two Coldharbour rounds, their teardowns, a map change and a Hollowmere round (X5.4b's
+  first condition for deleting `webgpuLeaks.ts`; its heap measurement is still owed there); **no
+  cache creates anything at any warm-up vantage** on Hollowmere and Coldharbour (X5.4c owes five
+  more maps); the boot asks `requestDevice` for nothing but a label and configures `bgra8unorm`,
+  usage 17, `premultiplied`; and **a destroyed device today leaves a dead frame** (Babylon restores a
+  new device, every draw of ours fails validation against it, and the restore compiles `clearQuad`).
+  **Not run**: the live rounds, `?profile&gpu`, `F2` and the phone (nothing under `src/` moved).
 
 - **X5.4b — the render cache on a frame id of ours, and Babylon's leaks retired** (no
   change to the game) — **S**.
