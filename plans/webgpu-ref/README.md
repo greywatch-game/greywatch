@@ -693,8 +693,8 @@ for each step of the exit:
 
 **`placeVantage` also places the camera-dependent passes at each row's eye**
 — the two cascades, the bodies' map, the lamps' atlas, the water and the grass
-— by `Game.updateSceneForCamera` at dt 0, the path the viewer and the warm-up
-use. Before X0.1 they stayed wherever the install left them, so a frame far
+— by `Game.updateSceneForCamera` at dt 0, the path the viewer and the building
+card's last frame (`finishBakeWait`) use. Before X0.1 they stayed wherever the install left them, so a frame far
 from the spawn photographed no shadow window at all.
 
 ## What is NOT in it

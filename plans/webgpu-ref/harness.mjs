@@ -753,15 +753,18 @@ export function placeVantage(page, vantage) {
     }
 
     // **The camera-dependent passes are placed at the vantage**, by the same
-    // tail the viewer's free camera and the building card's warm-up use, at
-    // dt 0 so nothing is stepped: the world's two cascades, the bodies' map,
+    // tail the viewer's free camera and the building card's last frame use
+    // (`finishBakeWait`, round the deploy camera; the warm-up has drawn
+    // nothing since X5.4c), at dt 0 so nothing is stepped: the world's two
+    // cascades, the bodies' map,
     // the lamps' atlas and their slots, the water and the grass. Without it
     // they stay wherever the install left them, which on a big map is
     // hundreds of metres from the frame — and a bank that cannot see the
     // shadow window cannot check it. Focus as `updateCameraAndLighting` puts
     // it: ahead of the eye along the view.
     const focus = target.subtract(cam.position).normalize().scaleInPlace(8).addInPlace(cam.position);
-    // No bodies argument: the default is the roster's, which is what is drawn.
+    // The bodies are the roster's (`mapBodies`, read inside the tail), which
+    // is what is drawn; the empty list is the grass's pushers, so no blade bends.
     g.updateSceneForCamera(0, focus, null, []);
 
     // The flags FLOWN (X4.6a): the zone system stepped by the door a round steps

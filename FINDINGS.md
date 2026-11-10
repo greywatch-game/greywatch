@@ -786,25 +786,26 @@ the next one by the economy — two grenades a life, a 3.6 s tank reload.
 ## 16. The round's pipelines are compiled under the building card now — what the warm-up does not reach, and the phone
 
 **Status:** the warm-up LANDED (`core/PipelineWarmup.ts`, `docs/states.md`,
-"a SECOND phase"); what is open is the phone, and one thing it does not
-reach (the irradiance volume's compute pipelines, the other, are our
-renderer's and on the declared list since `BABYLON_EXIT.md` X5.1b, its note
-holding the numbers). (Two more are settled. A lamp's PROXY variant compiled in play on
+"a SECOND phase"). Since `BABYLON_EXIT.md` X5.4c the card draws NOTHING for a
+pipeline's sake: every pipeline in a round is our renderer's, so the warm-up
+is a wait for the declared list and the map's own, its vantages retired on
+`pipelines.mjs`' log reading nothing created at any vantage by either cache on
+all seven maps. What is open is the phone.
+
+Four things are settled. The irradiance volume's compute pipelines, which the
+warm-up did not reach, are our renderer's and on the declared list since X5.1b,
+its note holding the numbers. A lamp's PROXY variant compiled in play on
 Kurenai, a body drawn into a lamp's tile only when a casting lamp stood near
-it: since X3.6b the atlas is our renderer's, its one proxies' pipeline asked at
-`LampAtlas`'s construction and on the round's declared list — an offline
-Kurenai round with proxies drawn on 3,730 frames created nothing in play,
-ours or Babylon's, 2026-11-01. And a weapon or optic the card never drew,
-whose glass compiled on its first draw, was settled by `BABYLON_EXIT.md` X4.3d:
-every pipeline of the weapon, its glass and the kit card among them, is our
-renderer's and asked at construction, and a first ADS through either glass creates nothing. And the
-pool poses described below are only Babylon's now: since X4.4e every pool of
-ours is on the round's declared list, its pipelines asked at construction and
-none posed; the sparks, the dust discs and the scorch keep theirs until X4.6.
-And since X5.4c the card draws NOTHING for a pipeline's sake: every pipeline
-in a round is our renderer's, so the warm-up is a wait for the declared list
-and the map's own, its vantages retired on `pipelines.mjs`' log reading nothing
-created at any vantage by either cache on all seven maps.)
+it; since X3.6b the atlas is our renderer's, its one proxies' pipeline asked
+at `LampAtlas`'s construction and on the round's declared list, and an offline
+Kurenai round with proxies drawn on 3,730 frames created nothing in play, ours
+or Babylon's (2026-11-01). A weapon or optic the card never drew, whose glass
+compiled on its first draw, was settled by X4.3d: every pipeline of the
+weapon, its glass and the kit card among them, is our renderer's and asked at
+construction, and a first ADS through either glass creates nothing. And the
+pool poses described below were Babylon's alone from X4.4e, when every pool of
+ours joined the round's declared list, its pipelines asked at construction and
+none posed; the sparks, the dust discs and the scorch kept theirs until X4.6.
 
 WebGPU builds a render pipeline on the first draw that needs one, and that
 draw's frame pays — Dawn compiles behind the create call, so the stall lands on
@@ -839,10 +840,6 @@ keyed on the pose, not on the mesh.
   was 1,268 ms with 34 creations near it and its first blast 403 ms (finding
   13's session, Greyfen, 2026-10-05); a capture there owes `createdNear` on the
   spawn and first-blast frames, and the card's extra time on that device.
-- **Hollowmere standing still.** Plain `pipelines.mjs hollowmere` (no `--round`,
-  which needs armour) creates 5 of Babylon's pipelines and 1 module in its second
-  second after the spawn, on every run: X4.5a's tree, 89879c6 and f035cc6 alike,
-  so no sky step's. Not the clouds, since that map has no ring. Unattributed.
 
 **And a separate stall the counting found, which is NOT a compile**: the deploy
 screen's first second runs 974 and 613 ms frames on Hollowmere and 480 on
