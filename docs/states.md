@@ -164,76 +164,58 @@ consequences:
   a measured fill once a frame goes by with some of the bake done. Most maps
   drain on the first frame and never reach that call.
 
-**And the wait has a SECOND phase now: the pipeline warm-up.** WebGPU builds a
-render pipeline on the first draw that needs one, and that draw's frame pays
-for it — on Coldharbour the spawn frame ran 139 ms and the first blast 185 ms
-on the Windows box, and a phone paid 1,268 and 403 (`FINDINGS.md` 16). So when
-the bake has drained, or been given up on, `bakeWait.warm` holds the card for
-a few more frames that draw the WHOLE map from each home spawn and each flag in
-turn (`core/PipelineWarmup.ts`), until a frame compiles nothing. It is a phase
+**And the wait has a SECOND phase now: the pipeline warm-up.** A render
+pipeline compiled on the frame that first needs it costs that frame — on
+Coldharbour the spawn frame ran 139 ms and the first blast 185 ms on the
+Windows box, and a phone paid 1,268 and 403 (`FINDINGS.md` 16), while Babylon
+compiled its pipelines on first draw. So when the bake has drained, or been
+given up on, `bakeWait.warm` holds the card until every pipeline of OUR
+renderer the round can use is built (`core/PipelineWarmup.ts`). It is a phase
 of the same wait rather than a wait of its own, on purpose: `go` and
 `buildPending` already answer for that one, so nothing had to be taught it
-exists. **It OPENS with no vantage at all, waiting for OUR renderer's
-pipelines** (`render/PipelineCache.ts`, handed in as `CompileProgress`): the
-round's DECLARED list (`Game.roundPipelines` — the bodies, the hulls, the
-weapon, the bodies' shadow map, the lamps' proxies, every effect pool of
-ours, the clouds, the ash and the irradiance volume's five compute pipelines
-(`BABYLON_EXIT.md` X5.1b), each asked once at `Game`'s construction, waited on by name: a cap
-reached names those unsettled) and the map's own, asked as its install built
-them (the lamps' atlas's CASTERS among them). They compile off the frame, so drawing does not hurry
-them, but a group of ours still compiling draws NOTHING and Babylon no longer
-draws the blocks in the main pass — so the vantages are drawn with ours
-built, and nothing of ours is POSED at one (`BABYLON_EXIT.md` X4.4e: the
-`warm(on)` poses of the pools that are ours became that list). **The
-vantages are for Babylon's own meshes** — in a round nothing of Babylon's at
-all since X5.2d, the post chain ours whole (every particle field is ours since `BABYLON_EXIT.md` X4.7d, the
-ash since X4.7c, their pipelines on the list; measured at X4.7d on Cinderhaven,
-Sarab and Hollowmere, Babylon compiles nothing at a vantage: the post chain's
-six on the frames before the card — five since X5.2b made the glow's blur ours
-and declared it, four since X5.2c1 made the grade ours ("the post chain" on the
-list), one — the ink's — since X5.2c2 made FXAA, the shafts at every rung and the
-blur ours on the same entry, NONE since X5.2d made the ink ours there too, so no
-Babylon `PostProcess` is left — and `GiVolume`'s three computes under it
-until X5.1b made them ours and declared them; retiring the vantages is X5.4's): the glazing, the three blended pools and the
-blob shadow were Babylon's until X4.6e, posed here, and nothing is posed now. **When the wait ends, our cache is SEALED** (`PipelineCache.seal`)
-until the map is torn down: a pipeline of ours compiled in play is a DEV
-warning naming it — what the list missed — with ONE exception, asked as one
-(`PipelineCache.get(spec, unsealed)`): a device-pixel-ratio change's new glow
-blur widths, up to five, which `GlowBlur.declare` asks from
+exists. **It is a WAIT and draws nothing for a pipeline's sake**
+(`render/PipelineCache.ts`, handed in as `CompileProgress`): the round's
+DECLARED list (`Game.roundPipelines` — the bodies, the hulls, the weapon, the
+bodies' shadow map, the lamps' proxies, every effect pool of ours, the sky, the
+clouds, the ash, the glow's blur, the post chain and the irradiance volume's
+five compute pipelines (`BABYLON_EXIT.md` X5.1b), each asked once at `Game`'s
+construction, waited on by name: a cap reached names those unsettled) and the
+map's own, asked as its install built them (the lamps' atlas's CASTERS among
+them). They compile off the frame, so drawing does not hurry them, but a group
+of ours still compiling draws NOTHING — so the round must not open on one — and
+nothing of ours is POSED for one (`BABYLON_EXIT.md` X4.4e: the `warm(on)` poses
+of the pools that are ours became that list). **Until X5.4c it also had
+VANTAGES**: it stood the camera at each home spawn and each flag in turn and
+drew the whole map from there, the cull and the frustum off, until a frame
+compiled nothing, because a Babylon mesh's pipeline was compiled by drawing it.
+As Babylon's draws left the round (every pool by X4.6e, the irradiance
+volume's computes at X5.1b, the post chain's last at X5.2d) the vantages had
+nothing left to compile, and X5.4a's and X5.4c's logs (`pipelines.mjs`) read
+nothing created at any vantage by either cache on all seven shipped maps, so
+X5.4c retired them. **When the wait ends, our cache is SEALED**
+(`PipelineCache.seal`) until the map is torn down: a pipeline of ours compiled
+in play is a DEV warning naming it — what the list missed — with ONE exception,
+asked as one (`PipelineCache.get(spec, unsealed)`): a device-pixel-ratio
+change's new glow blur widths, up to five, which `GlowBlur.declare` asks from
 `Game.applyRenderScale` (`BABYLON_EXIT.md` X5.2's row "pipelines"), the bloom
-skipped while they compile (`docs/rendering.md`). Three rules hold it to `loading`'s
-contract:
+skipped while they compile (`docs/rendering.md`). Two rules hold it to
+`loading`'s contract:
 
-- **Nothing a warm frame changes outlives that frame.** `Game.stageWarmFrame`
-  stands the camera at the vantage, offers every mesh but the blocks our
-  renderer draws, whose cull is handed an unbounded reach and no size gate
-  instead (`WorldCulling.setWarm`), turns Babylon's frustum test off
-  (`skipFrustumClipping`) and shows an idle member of each pool still
-  Babylon's — `CombatFx`'s sparks and dust discs, `BlastDebrisSystem`'s scorch
-  — and the player's blob, posed as it is in flight — our cull keeps its
-  frustum, which costs nothing, since our pipelines are not compiled by
-  drawing;
-  `unstageWarmFrame` puts every one of those back straight after the render. A
-  wait abandoned between two frames therefore leaves no map drawn unculled and
-  no camera parked at a flag.
-- **It simulates nothing.** The camera-dependent passes are placed by
-  `updateSceneForCamera` at `dt` 0 — the viewer's tail — and the bounce volume
-  and the ear are not moved at all, because both are owed to the camera the
-  deploy screen will be drawn from. That tail runs once more at the end, around
-  that camera, because in the page's own match nothing in `deploy` would place
-  the shadow window again.
-- **It ends.** A vantage is left after `CONFIG.graphics.warmup.quietFrames`
-  frames that settled nothing in our cache and left nothing of ours
-  compiling (Babylon's is no longer read: `BABYLON_EXIT.md` X5.4c), or `maxFramesPerVantage` frames whatever, and the vantages are
-  capped by `capMs`, measured from the first; what they do not reach compiles
-  in the round, as all of it used to. The opening wait has a cap of its own,
-  `oursCapMs`, and it is long, like the bake's drain: a pipeline of ours past
-  it is a HOLE in the frame rather than a hitch, so the cap is a backstop for
-  a compile that never settles, never a budget. **A pipeline of ours that
-  FAILS ends `loading` in the MENU** (`Game.worldFailed`, `BABYLON_EXIT.md`
-  X3.7b): Babylon is made no mesh of what ours draws, so there is nothing to
-  fall back on, and `enterMenu`'s `go` takes the card and the wait down as it
-  does for a floor the network ate.
+- **It simulates nothing and moves nothing.** Its frames are `loading`'s own,
+  from wherever the build left the camera; the wait only reads our cache's
+  counts after each render. When it ends, `finishBakeWait` places the
+  camera-dependent passes (the shadow window, the bodies' map, the lamps'
+  slots) once, around the camera the deploy screen is drawn from, at `dt` 0 —
+  the viewer's tail — because in the page's own match nothing in `loading` or
+  `deploy` places them.
+- **It ends.** The wait has a cap, `CONFIG.graphics.warmup.oursCapMs`, and it
+  is long, like the bake's drain: a pipeline of ours past it is a HOLE in the
+  frame rather than a hitch, so the cap is a backstop for a compile that never
+  settles, never a budget. **A pipeline of ours that FAILS ends `loading` in
+  the MENU** (`Game.worldFailed`, `BABYLON_EXIT.md` X3.7b): Babylon is made no
+  mesh of what ours draws, so there is nothing to fall back on, and
+  `enterMenu`'s `go` takes the card and the wait down as it does for a floor
+  the network ate.
 
 **News from the authority that needs a world is HELD across `buildPending`, not
 applied and not dropped**, and there are two of them for the same reason.

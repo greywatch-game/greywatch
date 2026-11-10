@@ -800,14 +800,18 @@ every pipeline of the weapon, its glass and the kit card among them, is our
 renderer's and asked at construction, and a first ADS through either glass creates nothing. And the
 pool poses described below are only Babylon's now: since X4.4e every pool of
 ours is on the round's declared list, its pipelines asked at construction and
-none posed; the sparks, the dust discs and the scorch keep theirs until X4.6.)
+none posed; the sparks, the dust discs and the scorch keep theirs until X4.6.
+And since X5.4c the card draws NOTHING for a pipeline's sake: every pipeline
+in a round is our renderer's, so the warm-up is a wait for the declared list
+and the map's own, its vantages retired on `pipelines.mjs`' log reading nothing
+created at any vantage by either cache on all seven maps.)
 
 WebGPU builds a render pipeline on the first draw that needs one, and that
 draw's frame pays — Dawn compiles behind the create call, so the stall lands on
 first USE and never in the call (`docs/profiling.md`, "Compiles"). The loading
-card now draws the whole map from each home spawn and flag until a frame
-compiles nothing, and every idle pool a round draws from shows one member, posed
-as in flight, for those frames. Measured on the Windows box headless, a scripted
+card then drew (until `BABYLON_EXIT.md` X5.4c) the whole map from each home spawn
+and flag until a frame compiled nothing, and every idle pool a round draws from
+showed one member, posed as in flight, for those frames. Measured on the Windows box headless, a scripted
 opening — deploy, spawn, a turn, a burst, the sight up, a blast, a molotov's
 fire — counting creations per phase (2026-10-07):
 
@@ -3143,3 +3147,47 @@ Port the cast to the scatter as our renderer is handed it
 parts in the variant's own frame, through each placement's world matrix
 (`matrices`), a vertical ray tested against those triangles (a crown's bounds
 first). Then re-take Greyfen's canopy tree once against the figure above.
+
+---
+
+## 73. The deploy screen never finishes a lamp's shadow: the atlas is chosen and baked once at the card's end, and not again until play
+
+**Open since `BABYLON_EXIT.md` X5.4c**, which found it: its picture change (the
+vantages retired) moved the lamp-lit bank rows because the vantages had been
+leaving the atlas part-baked for the deploy screen, and this is what was under
+them. In the page's own match nothing in `loading` or `deploy` runs the camera
+tail (`Game.updateSceneForCamera`), so `LocalShadows` chooses its lamps and
+bakes their static faces exactly ONCE before the deploy screen —
+`finishBakeWait`'s one call, at `dt` 0, around the deploy camera — and one call
+bakes `staticFacesPerFrame` (3) faces. A lamp's static layer is published only
+at all of its faces (`LocalShadows`' invariant), so every other lamp holding
+tiles shades by the irradiance volume's visibility instead of its shadow for as
+long as the deploy screen is up, and its tiles fill only once a life starts and
+the tail runs every frame.
+
+**Measured** (2026-11-10, the Windows box, offline: `LocalShadows.entries` at
+deploy straight after the install and 60 frames later, a scratch probe of X5.4c's
+session): at X5.4c, on Harrowmead, Greyfen and Hollowmere alike, six lamps hold
+tiles, ONE has 3 of its 6 faces baked and the other five 0 — and 60 frames later
+every count is the same. At its parent (4cf59ad, the vantages in) Hollowmere read
+the same, and the other two read whatever the last vantages left: Greyfen four
+lamps at 6/6 and two at 3/6, Harrowmead one at 6/6, one at 3/6, four at 0/6 and
+one DIFFERENT lamp holding tiles (68, 2.69, -27.6 against -68, 2.7, -27.6 after:
+`keepMargin`'s preference for a light already holding them). **Derived from the
+code**: a server's round is the same, its deploy screen running no tail either;
+the pause and the round-over card hold whatever the last live frame left, which
+is a finished atlas around the player.
+
+### What a fix has to answer
+
+- **Whether a HELD world may run the atlas's half of the tail.** The deploy
+  screen simulates nothing and must not; choosing lamps and baking their tiles
+  is a picture pass like the irradiance volume, which already runs in every
+  state with a map. Six lamps at three faces a frame is twelve frames to finish.
+  `docs/game.md`'s table of what `tick` pushes in every state is where it would
+  be written.
+- **The tail or only `LocalShadows.update`**: the tail also places the shadow
+  window, the bodies' map and the lights' slots, which `finishBakeWait` already
+  places once and nothing moves while the deploy camera stands still.
+- **What it moves**: every bank row lit by a lamp the bank's sequence leaves
+  part-baked — a `Picture change:` with the bank's numbers, and the owner's call.

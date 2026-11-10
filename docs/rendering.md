@@ -591,7 +591,7 @@ half line for line; what changed is where its decisions are RECORDED.
   `Game` runs before `GiVolume`'s. A construction order changed, or the bake
   hooked again after the volume, reverses it with no error.
 - **Only a frame `update` armed records anything**, so a frame whose `update`
-  did not run (the harness's hold, a warm-up vantage) dispatches nothing. **And
+  did not run (the harness's hold; a warm-up vantage until X5.4c) dispatches nothing. **And
   the converse is an ERROR**: `Renderer.begin` runs no prepare on a frame with
   nothing of ours active, while `update` has already moved its cursor, its
   warm frames and its dirty channels for the slice — so an armed dispatch
@@ -2746,7 +2746,7 @@ sparks' blooms go into the glow's mask in that same order, behind the moon's
   row can tell apart"**: no row can, because the harness's `scene.isReady()` computed every mesh's
   world, and a live probe found it.
 - **No pose for the warm-up**: every pipeline of these is on the round's declared list
-  (`Game.roundPipelines`), so `stageWarmFrame` poses nothing.
+  (`Game.roundPipelines`), which the building card waits on, and nothing is posed.
 - **The map editor's build's glazing was Babylon's**, one mesh per placement per material over
   the default cube, on Babylon's lists with the editor's own `ed-*` proxies, until X5.3c deleted
   that build (and X5.3d the default cube's wrapped view it sampled).
@@ -4072,10 +4072,10 @@ its settled promise.
   included**, so no frame of the round draws with one still compiling — and
   since Babylon no longer draws the blocks in the main pass, a group of ours
   still compiling is a HOLE rather than a hitch. The wait is the pipeline
-  warm-up's opening phase (`core/PipelineWarmup.ts`, `docs/states.md`): it
-  reads `PipelineCache`'s compile counts (`CompileProgress`) and stands at no
-  vantage until nothing of ours is compiling, under `oursCapMs`, a backstop
-  rather than a budget. **Our pipelines are not compiled by DRAWING**, as
+  pipeline warm-up (`core/PipelineWarmup.ts`, `docs/states.md`): it
+  reads `PipelineCache`'s compile counts (`CompileProgress`) and waits until
+  nothing of ours is compiling, under `oursCapMs`, a backstop rather than a
+  budget, and draws nothing for it (no vantage since X5.4c). **Our pipelines are not compiled by DRAWING**, as
   Babylon's are: our renderer states every field of one itself and asks for
   it as the map is built, so the warm-up only has to wait. A group whose
   pipeline fails FAILS THE INSTALL UNDER THE CARD, in the turn ITS compile
@@ -4533,7 +4533,7 @@ cast and as what — and hands the frame's proxies over (`BodyShadowMap.draw`).
   every frame from the proxy's thin instances. **An update holding no proxy
   OWES a clear**, if it holds any, on that same next frame — Babylon's empty
   frame, and never sooner: an empty update made AFTER a frame's render (the
-  warm-up's last, `finishBakeWait`) must leave that frame's map alone, and a
+  card's last, `finishBakeWait`) must leave that frame's map alone, and a
   first cut that cleared at once, by a submit of its own, landed the clear
   BEFORE the frame's recorded draw (the host's encoder is submitted at the
   frame's end) and left the death cam's stand-in in the map for the rest of
@@ -4818,9 +4818,8 @@ differs only on the frame a moving part crosses the gate's edge. **The
 FRUSTUM is the render's to answer**, as it was Babylon's for a mesh: the pull
 switches off every segment whose world sphere is outside the camera's planes
 (`Game.hullPull`, `BoundingSphere.isInFrustum` — the default sphere-only
-strategy — against `scene.frustumPlanes`, none while the warm-up skips the
-frustum), so a hull out of frame costs no draw and no vertex: without it the
-first cut drew all six of Sarab's hulls at every vantage, +25 draws on every
+strategy — against `scene.frustumPlanes`), so a hull out of frame costs no draw and no vertex: without it the
+first cut drew all six of Sarab's hulls at every bank vantage, +25 draws on every
 census row of an armour map that frames none.
 
 **A far hull draws its REDUCED set: the detail tier** (`BABYLON_EXIT.md`
@@ -4840,9 +4839,7 @@ gate's eye and pixels a radian, against `CONFIG.graphics.culling.hullDetail`
 (32 px); under it, `writeHullDrawing` writes every detail segment as nothing.
 **It is a swap on top of the per-segment gate, never in place of it**: no hull
 leaves by it, a hull drawn in full has its detail segments gated one by one as
-ever, and no segment but a detail one is touched. It is off while the warm-up
-stands (`setWarm`), so the full set is the one the building card shows — one
-pipeline either way. **Why 32**: at 32 px a tank's measure (11.1 m) puts the
+ever, and no segment but a detail one is touched. One pipeline either way. **Why 32**: at 32 px a tank's measure (11.1 m) puts the
 largest detail part, the idler's 0.72 m disc, at ~2 px and a road wheel's hub
 at ~1.6, so what goes is a part that has already stopped reading as one;
 photographed full against reduced on open ground at an 832x384 view, where
@@ -4900,8 +4897,7 @@ its collider box off its own fields, cast into the bodies' map only within
 its window (56 m at most, far short of a floor that is ~419 m at its least)
 and into the lamps' atlas only inside the reach of a lamp the eye chose —
 the few ranked nearest it — so a hull past its distance casting there would
-need a shadowed lamp chosen 400 m off; not seen, and not prevented. Off
-while the warm-up stands (a hull is whole in the views it draws). A frame with
+need a shadowed lamp chosen 400 m off; not seen, and not prevented. A frame with
 a hull fading is up to two draws a rank — at most 52 hull draws for the
 widest kit's 26 ranks, whatever the fleet — each GROUP's draw running to its
 own longest range at that rank, and a group with nothing live there issuing
@@ -4914,8 +4910,7 @@ the look (`docs/world.md`'s "What a map stating it owes").
 
 **Its two pipelines — plain and faded — are asked once, at `Game`'s
 construction**, so the warm-up's wait for ours covers both and a hull's first
-fade compiles nothing in the round; a hull stands at its hardstanding in the
-views the warm-up draws, so it poses none. **A failure is the round's**, the
+fade compiles nothing in the round, and none is posed for it. **A failure is the round's**, the
 bodies' routing: either pipeline failing, or a refused main pass while
 installed, tells `Game.worldFailed`. It is installed with every map, each a ROUND's since
 X5.3c deleted the map editor's build (which built no fleet and drew no hull), and the menu
@@ -5231,7 +5226,7 @@ molotov's flames, made at the game's construction, then the world's fires in
 birth order — a flame while it is switched on (its world composed this frame,
 its sphere `worldSphere`'s), a world fire while its block's cell is OFFERED
 (`WorldCulling.offersBlock`: the cell, the reach and the hysteresis a filed
-mesh was a candidate by, the warm-up's every cell included); the frustum
+mesh was a candidate by); the frustum
 test under the mesh's culling strategy (the sphere alone); group 0's opaque
 order (nearest centre first, that order breaking a tie, stable); and the
 bloom's distance fade, a `noGlow` world fire left out of the mask. A fire is

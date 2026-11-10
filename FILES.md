@@ -753,19 +753,14 @@ src/
                         #   buildReport, buildTrace and
                         #   the stats. Allocates freely and never writes the
                         #   ProfileRing it is lent
-    PipelineWarmup.ts   # Where the building card stands the camera while the
-                        #   round's render pipelines are compiled, and when it
-                        #   may stop: first a wait at no vantage for OUR
-                        #   renderer's pipelines — the round's DECLARED list
-                        #   (DeclaredPipelines, Game.roundPipelines: bodies,
-                        #   hulls, weapon, every pool of ours) by name, and
-                        #   the map's (PipelineCache's CompileProgress) —
-                        #   under oursCapMs, then the vantages (home spawns
-                        #   and flags) for Babylon's meshes, the quiet-frame
-                        #   count off our cache, and the cap. Decides WHEN;
-                        #   Game stages each frame (WorldCulling.setWarm; the
-                        #   warm(on) poses of the three pools still Babylon's,
-                        #   sparks, discs, scorch, until X4.6)
+    PipelineWarmup.ts   # When the building card may come down: the wait
+                        #   for OUR renderer's pipelines — the round's
+                        #   DECLARED list (DeclaredPipelines,
+                        #   Game.roundPipelines: bodies, hulls, weapon, every
+                        #   pool of ours) by name, and the map's
+                        #   (PipelineCache's CompileProgress) — under
+                        #   oursCapMs. Decides WHEN and draws nothing; the
+                        #   vantages it stood the camera at went at X5.4c
     FrameCap.ts         # The frame-rate cap (Settings.fpsCap): the engine's
                         #   frame REQUESTER, refusing a refresh before the
                         #   next frame is DUE. A deadline, not Babylon's

@@ -218,14 +218,14 @@ does.
   note has the readings). The camera's path is a function of FRAMES and it is
   turned onto the pane before the pane breaks, so what is on screen when an
   effect is first drawn does not ride the machine's frame rate; the pane
-  phase says how many shard draws the main pass made. **Since X5.4a both modes print
-  the warm-up's VANTAGE LOG** (X5.4c's BEFORE): every frame the building card's
-  warm-up was asked about (`PipelineWarmup.afterFrame`, wrapped on its prototype),
-  what each cache created on it — off the device (Babylon's synchronous pipelines,
-  our asynchronous ones, the modules) and as the warm-up counted it — and why it
-  held or moved (waiting for ours, a vantage held for a creation, for ours
-  compiling or counting its quiet frames, a move on quiet or on the frame cap, the
-  end).
+  phase says how many shard draws the main pass made. **Both modes print the warm-up's
+  WAIT LOG**: every frame the building card's warm-up was asked about
+  (`PipelineWarmup.afterFrame`, wrapped on its prototype), what each cache created
+  on it off the device (Babylon's synchronous pipelines, our asynchronous ones,
+  the modules) and our cache's settled compiles, and why it held or ended (ours
+  compiling or a declared entry unsettled, settled, the cap). From X5.4a to X5.4c
+  it was the VANTAGE LOG, which read nothing created at any vantage by either
+  cache on all seven shipped maps — the reading X5.4c retired the vantages on.
 
 - **`surfaces.mjs`** is where each surface `BABYLON_EXIT.md` X4.6 moves sits in
   Babylon's frame, MEASURED: it shoots a map's sequence as `bank.mjs` does and

@@ -283,19 +283,16 @@ is torn down — and anything new that `installMap` hands a map to owes a line
 there that takes it back.
 
 **`loading` ends in a PIPELINE WARM-UP** (`core/PipelineWarmup.ts`): after the
-reflection bake, the card draws the whole map from each home spawn and flag
-until a frame compiles nothing, because WebGPU compiles a pipeline on the frame
-that first draws it. **It OPENS by waiting for OUR renderer's pipelines** — the
-round's DECLARED list (`Game.roundPipelines`: bodies, hulls, weapon, every
+reflection bake, the card stays up until every pipeline of OUR renderer the
+round can use is built, because a pipeline compiled on the frame that first
+needs it costs that frame. **It is a WAIT and draws nothing** — it waits for
+the round's DECLARED list (`Game.roundPipelines`: bodies, hulls, weapon, every
 pool of ours and the irradiance volume's compute, asked once at construction)
 and the map's, which its install asks — and our cache is SEALED once the card
 is down (a compile in play is a DEV warning, but for the glow blur's new widths
-on a pixel-ratio change, `GlowBlur.declare`). **A new draw of ours joins that list.** The vantages are for
-BABYLON's meshes — in a round nothing of Babylon's draws at all (the post
-chain is ours whole since X5.2d, "the post chain" on the list) — and
-**no pool is posed**: every one is ours since X4.6e (the sparks, the dust
-discs, the scorch and the blob the last), so on that list, and nothing is shown
-for a pipeline's sake.
+on a pixel-ratio change, `GlowBlur.declare`). **A new draw of ours joins that
+list**, or its first use compiles in play: no camera is stood anywhere and
+nothing is posed or shown for a pipeline's sake (the vantages went at X5.4c).
 
 **A LID is a screen laid over a state, which taking it off puts back rather than
 moving the game on — and which state is which, and what each one owes, is

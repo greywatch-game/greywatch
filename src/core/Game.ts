@@ -1105,18 +1105,16 @@ export class Game {
    * and every effect pool of ours (the pieces: the tracers, the brass, the
    * thrown and laid bodies of both sides of the wire; the marks; the
    * billows; the shards and the rubble; the fires; and since X4.6e the
-   * sparks, the dust discs, the scorch and the blobs) and the glazing. The building card's
-   * warm-up waits on this list by name
-   * before its first vantage (`core/PipelineWarmup.ts`), beside the map's
-   * own pipelines, which its install asked; and our cache is SEALED once
-   * the card is down (`PipelineCache.seal`), so a compile in play is a
-   * DEV warning naming what this list missed — but for the glow blur's new
-   * widths on a device-pixel-ratio change (`applyRenderScale`), the one ask
-   * the seal allows. **This is what the
-   * `warm(on)` poses of the pools that are ours became**: nothing of ours
-   * is posed at a vantage. A new draw of ours joins it, or its first use
-   * compiles in the round. No pool is Babylon's since X4.6e, so none is posed
-   * (`stageWarmFrame`).
+   * sparks, the dust discs, the scorch and the blobs) and the glazing. The building card
+   * waits on this list by name (`core/PipelineWarmup.ts`), beside the map's
+   * own pipelines, which its install asked — and on nothing else: nothing is
+   * drawn for a pipeline's sake (no vantage since X5.4c) — and our cache is
+   * SEALED once the card is down (`PipelineCache.seal`), so a compile in play
+   * is a DEV warning naming what this list missed — but for the glow blur's
+   * new widths on a device-pixel-ratio change (`applyRenderScale`), the one
+   * ask the seal allows. **This is what the `warm(on)` poses of the pools
+   * that are ours became** (X4.4e). A new draw of ours joins it, or its first
+   * use compiles in the round.
    */
   private readonly roundPipelines: readonly DeclaredPipelines[];
   /**
@@ -1228,21 +1226,15 @@ export class Game {
     since: number;
     /**
      * The wait's SECOND phase, once the bake has drained or been given up on:
-     * the pipeline warm-up, which draws the whole map from every place a life
-     * can start so that WebGPU compiles the round's pipelines under the card
-     * rather than on the spawn frame (`FINDINGS.md` 16). Null while the bake
-     * is still draining. It is part of THIS wait rather than one of its own so
-     * that everything which already ends the wait — `go`, and `buildPending`'s
+     * the pipeline warm-up, which waits for every pipeline of ours the round
+     * can use — the declared list and the map's — so none is compiled on the
+     * spawn frame (`FINDINGS.md` 16). Null while the bake is still
+     * draining. It is part of THIS wait rather than one of its own so that
+     * everything which already ends the wait — `go`, and `buildPending`'s
      * reading of it — ends the warm-up too without being told it exists.
      */
     warm: PipelineWarmup | null;
   } | null = null;
-  /**
-   * The camera's pose while a warm-up frame stands it at a vantage, put back
-   * straight after that frame's render — see `stageWarmFrame`. Scratch rather
-   * than a copy per frame.
-   */
-  private readonly warmPose = { pos: new Vector3(), rot: new Vector3() };
   /**
    * The authority put us in the world while there was no world to put us in.
    *
@@ -2013,8 +2005,7 @@ export class Game {
     // once — a segment's vertices carrying its colour's slot in the hulls'
     // one palette, which the charred paint is a slot of too — and its
     // pipeline asked for the session, so the building card's warm-up waits
-    // for it like any of ours. A hull stands at its hardstanding in the
-    // views the warm-up draws, so it poses none of its own.
+    // for it like any of ours, and none is posed for it.
     const kits = hullKits();
     const palette = hullPalette(kits);
     this.hullKitIndex = new Map(kits.map((kit, i) => [kit, i]));
@@ -4008,7 +3999,7 @@ export class Game {
     // and Kurenai state one).
     this.atmosphere.update(this.cameraSys.camera.position);
     // Every hull composed, once, and asked its draw-distance FADE: after the
-    // cull, whose `offer` just set the eye and the warm-up the fade is asked
+    // cull, whose `offer` just set the eye the fade is asked
     // from, and BEFORE the wash below, which fades with its hull — the drawing
     // reads the same fades inside the render (`drawHulls`). Nothing writes a
     // hull's joints after this in the frame: `VehicleViews.update` ran in the
@@ -4713,12 +4704,6 @@ export class Game {
     // frame already has and not a new one.
     const fleetStepped = this.fleetStepped;
     this.fleetStepped = false;
-    // The building card's pipeline warm-up, if one is standing: the camera at
-    // a vantage for THIS frame only, and the whole map offered to the render.
-    // Before the eye is followed, which is what carries the vantage into the
-    // cull, the water and the grass; put back straight after the render, so
-    // nothing of it reaches the next frame. See `stageWarmFrame`.
-    const warming = this.stageWarmFrame();
     this.prof.begin(P.culling);
     this.followEye(fleetStepped);
     this.prof.end(P.culling);
@@ -4735,11 +4720,8 @@ export class Game {
     // hulls and the params written and the dispatch ARMED; the three passes
     // are RECORDED by our renderer's late prepare as the main pass begins
     // (`GiCompute`), so under `render`, and the GPU's share is in `gpu.frame`.
-    // Never from a warm-up's vantage: the volume converges around the camera
-    // behind the card, and one dragged to every flag in turn would have to
-    // converge again around the deploy screen.
     this.prof.begin(P.gi);
-    if (this.map && !warming) {
+    if (this.map) {
       this.gi.update(this.cameraSys.camera.position, this.lighting, this.map.rays.hulls);
     }
     this.prof.end(P.gi);
@@ -4763,15 +4745,10 @@ export class Game {
     // order it was ever owed, and it is now last in the frame rather than last
     // in the world step — so the rule that nothing may move the camera after
     // it is if anything harder to break.
-    //
-    // Never from a warm-up's vantage either, or the map's fires pan to each
-    // flag the building card stands at in turn.
-    if (!warming) {
-      this.sfx.setListener(
-        this.cameraSys.camera.position,
-        this.cameraSys.forwardToRef(this.listenerForward),
-      );
-    }
+    this.sfx.setListener(
+      this.cameraSys.camera.position,
+      this.cameraSys.forwardToRef(this.listenerForward),
+    );
     this.pushHullEngines(fleetStepped);
     this.pushAmbience();
     this.prof.end(P.audio);
@@ -4819,7 +4796,6 @@ export class Game {
     this.drawBlended();
     this.scene.render();
     this.prof.end(P.render);
-    if (warming) this.unstageWarmFrame();
     // AFTER the render, because the render is the thing being waited for: a
     // frame's share of the reflection bake is released from inside
     // `scene.render` and has already been issued by the time this line runs,
@@ -7057,8 +7033,7 @@ export class Game {
    * did with each batch's mesh, step for step: a batch is drawn when it is
    * visible and its sphere (`BillowBatch.centre`/`radius`, the bounds it set
    * by hand) passes the frustum test of the mesh's culling strategy, the
-   * sphere alone (`inFrustum`, off this render's planes, none while the
-   * scene skips clipping) — a billow is emissive, so the size gate never
+   * sphere alone (`inFrustum`, off this render's planes) — a billow is emissive, so the size gate never
    * dropped one; the main pass's draws in group 0's opaque order, nearest
    * first by `eyeDistanceSq` off `globalPosition`, the batches' own order
    * (their meshes', the active list's) breaking a tie, stable; each draw its
@@ -7070,7 +7045,7 @@ export class Game {
    */
   private blastPull(into: BlastDraw, glowOn: boolean): void {
     const eye = this.cameraSys.camera.globalPosition;
-    const planes = this.scene.skipFrustumClipping ? null : this.scene.frustumPlanes;
+    const planes = this.scene.frustumPlanes;
     const batches = this.grenadeFx.blasts.batches;
     const drawn = this.blastDrawn;
     const keys = this.blastKeys;
@@ -7197,8 +7172,7 @@ export class Game {
    * `BABYLON_EXIT.md` X4.6d), where the render has placed the camera — what Babylon
    * did with these meshes on its opaque list, step for step: a surface is drawn when
    * it is kept and its sphere passes the frustum test of the mesh's culling strategy,
-   * the sphere alone (`inPlanes`, off this render's planes, none while the scene skips
-   * clipping); nearest first by `eyeDistanceSq` off `globalPosition`, the order the
+   * the sphere alone (`inPlanes`, off this render's planes); nearest first by `eyeDistanceSq` off `globalPosition`, the order the
    * meshes were made in breaking a tie (a sheet's field and band share one sphere),
    * stable. The blades are one key, their field's centre, a patch's own frustum test
    * being `GrassSystem.follow`'s; how an equal key falls BETWEEN the three lists is the
@@ -7279,8 +7253,7 @@ export class Game {
 
   /**
    * This render's frustum planes copied to numbers (`heldPlanes`), and whether
-   * a surface is to be tested against them: a render has given planes and the
-   * scene does not skip clipping (the warm-up's frames do).
+   * a surface is to be tested against them: a render has given planes.
    */
   private holdPlanes(): boolean {
     const planes = this.scene.frustumPlanes;
@@ -7296,7 +7269,7 @@ export class Game {
       }
       this.planesHeld = true;
     }
-    return !!planes && !this.scene.skipFrustumClipping;
+    return !!planes;
   }
 
   /**
@@ -7307,7 +7280,7 @@ export class Game {
    * offered (`WorldCulling.offersBlock`, what its mesh was a candidate by), the
    * size gate keeps its record's sphere (`keepsSphere`, as `offer` asked it of
    * the filed mesh) and the sphere passes the frustum test of the mesh's
-   * culling strategy (`inPlanes`, none while the scene skips clipping); a
+   * culling strategy (`inPlanes`); a
    * BACKED one into group 0's opaque order, nearest first by `eyeDistanceSq`
    * off `globalPosition`, stable (`fileNearest`), which `GlassDraw` draws first
    * at `"beforeAlphaTest"`; a SEE-THROUGH one kept, with its key in the
@@ -7493,8 +7466,7 @@ export class Game {
    * is offered (`WorldCulling.offersBlock`, what its mesh was a candidate
    * by) at identity, its sphere its record's — each kept if its sphere passes
    * the frustum test of the mesh's culling strategy, the sphere alone
-   * (`inFrustum`, off this render's planes, none while the scene skips
-   * clipping). A fire is emissive, so the size gate never dropped one. The
+   * (`inFrustum`, off this render's planes). A fire is emissive, so the size gate never dropped one. The
    * main pass's draws in group 0's opaque order, nearest first by
    * `eyeDistanceSq` off `globalPosition`, the active list's order breaking a
    * tie, stable; and, with `glowOn`, the mask's draws in the active list's
@@ -7505,7 +7477,7 @@ export class Game {
    */
   private flamePull(into: FlameDraw, glowOn: boolean): void {
     const eye = this.cameraSys.camera.globalPosition;
-    const planes = this.scene.skipFrustumClipping ? null : this.scene.frustumPlanes;
+    const planes = this.scene.frustumPlanes;
     const flames = this.grenadeFx.flames;
     const shape = this.grenadeFx.flameShape;
     const fires = this.handover.fires;
@@ -7754,8 +7726,8 @@ export class Game {
    * the one compose a hull gets a frame) — and its whole measure asked its
    * draw-distance FADE (`WorldCulling.hullFade`, `BABYLON_EXIT.md` X4.2d),
    * into `hullFades` by its index in the fleet. Called once a frame, in every
-   * state, from `followEye` straight after the cull (the eye and the warm-up
-   * the fade is asked from are `offer`'s, this frame) and before the two
+   * state, from `followEye` straight after the cull (the eye the fade is
+   * asked from is `offer`'s, this frame) and before the two
    * readers: `RotorWash.update`, which scales its emitters' rate and its
    * ripple by the fade (the post-commit review's owner decision: a hull's
    * wash fades with it), and `drawHulls`, which draws off the same compose.
@@ -7788,9 +7760,7 @@ export class Game {
    * - each segment outside the camera's FRUSTUM switched off for the frame —
    *   its matrix zeroed in `matrices` — by Babylon's own test of a mesh
    *   (`BoundingSphere.isInFrustum`, the default sphere-only strategy) against
-   *   the planes this render computed (`scene.frustumPlanes`), and none while
-   *   the warm-up skips the frustum (`skipFrustumClipping`), as Babylon skipped
-   *   it for a mesh;
+   *   the planes this render computed (`scene.frustumPlanes`);
    * - each hull's segments in the ORDER Babylon's queue drew a hull's meshes —
    *   `bodyPull`'s sort, off `globalPosition`, for `bodyPull`'s reason: group
    *   0's opaque sort, nearest first by `eyeDistanceSq` and, between two at one
@@ -7801,7 +7771,7 @@ export class Game {
    */
   private hullPull(order: Uint32Array, matrices: Float32Array, n: number): void {
     const eye = this.cameraSys.camera.globalPosition;
-    const planes = this.scene.skipFrustumClipping ? null : this.scene.frustumPlanes;
+    const planes = this.scene.frustumPlanes;
     const segments = this.hullDraw.segments;
     const c = this.hullSpheres;
     const keys = this.hullKeys;
@@ -7921,79 +7891,23 @@ export class Game {
 
   /**
    * The bake is done with (drained, or given up on), and the card stays up for
-   * the warm-up instead of coming down.
-   *
-   * **The vantages are every place a life can start or be fought over** — the
-   * two home spawns and the flags — because the shadow window, the bodies' map
-   * and which lamps win a shadow tile are all chosen around the EYE, so a
-   * pipeline those passes need is only compiled by a frame whose eye is near
-   * the thing that needs it. The main pass is not: a warm frame offers it the
-   * whole map (`stageWarmFrame`). Without a map there is nothing to warm and
-   * the wait simply ends.
+   * the warm-up instead of coming down: the wait for every pipeline of ours
+   * the round can use (`PipelineWarmup`) — the round's declared list, asked
+   * once for the session, so no body, hull, weapon or pool of ours is stood
+   * up here for a pipeline to compile on (`BABYLON_EXIT.md` X4.1d, X4.4e),
+   * and the map's own, asked by its install. Nothing is drawn for a
+   * pipeline's sake: the card's frames are `loading`'s own, from the camera
+   * the build left (the vantages that stood it at every spawn and flag went
+   * at X5.4c, a log on all seven maps showing neither cache creating anything
+   * at one). Without a map there is nothing to wait for and the wait simply
+   * ends.
    */
   private beginWarmup(wait: NonNullable<Game["bakeWait"]>): void {
-    const map = this.map;
-    if (!map) {
+    if (!this.map) {
       this.finishBakeWait();
       return;
     }
-    const points: Vector3[] = [];
-    for (const sp of map.spawns) if (sp.team !== null) points.push(toBabylon(sp.pos));
-    for (const cp of map.controlPoints) points.push(toBabylon(cp.pos));
-    // Our renderer's pipelines are awaited by the warm-up itself, before its
-    // first vantage (see `PipelineWarmup`): the round's declared list, asked
-    // once for the session — so no body, hull, weapon or pool of ours is
-    // stood up here for a pipeline to compile on (`BABYLON_EXIT.md` X4.1d,
-    // X4.4e) — and the map's own, asked by its install.
-    wait.warm = new PipelineWarmup(
-      points,
-      this.renderer.pipelines,
-      this.roundPipelines,
-    );
-  }
-
-  /**
-   * Stands the camera at the warm-up's vantage for this frame and draws the
-   * whole map from there: every cell and pool offered (`WorldCulling.setWarm`)
-   * and the frustum test off, so everything in the scene that is switched on
-   * reaches a draw — and through it a pipeline — whichever way the eye faces.
-   * The camera-dependent passes (the two shadow maps, the lamps' atlas, the
-   * water, the grass) are placed by the same tail the viewer's free camera
-   * uses, at `dt` 0, so nothing is stepped: `loading` still simulates nothing.
-   *
-   * Returns whether it staged anything, and `unstageWarmFrame` undoes ALL of it
-   * straight after this frame's render. That is the reason nothing here may
-   * outlive its frame: a wait that `go` abandons between two frames then leaves
-   * nothing behind it — no map drawn unculled, no camera parked at a flag.
-   */
-  private stageWarmFrame(): boolean {
-    const vantage = this.bakeWait?.warm?.vantage;
-    if (!vantage) return false;
-    const camera = this.cameraSys.camera;
-    this.warmPose.pos.copyFrom(camera.position);
-    this.warmPose.rot.copyFrom(camera.rotation);
-    this.shadowFocus.copyFrom(vantage);
-    camera.position.copyFrom(vantage);
-    // Nothing of the round's pools is posed here: every one of them is OUR
-    // renderer's — a tracer, a mark, a case, a thrown or laid body, a billow, a
-    // shard, a chunk, a flame and, since `BABYLON_EXIT.md` X4.6e, a spark, a
-    // dust disc, a scorch and a blob — and on the round's declared list
-    // (`roundPipelines`, X4.4e), as every body, hull, weapon and pane is.
-    this.updateSceneForCamera(0, this.shadowFocus, null, NO_SOLDIERS, NO_SOLDIERS);
-    this.culling.setWarm(true);
-    this.scene.skipFrustumClipping = true;
-    return true;
-  }
-
-  /** Puts back everything `stageWarmFrame` changed, after the render. */
-  private unstageWarmFrame(): void {
-    this.scene.skipFrustumClipping = false;
-    this.culling.setWarm(false);
-    // Position and rotation outright rather than through `place`, whose
-    // `setTarget` would re-derive the rotation from a target the camera may
-    // never have been pointed at.
-    this.cameraSys.camera.position.copyFrom(this.warmPose.pos);
-    this.cameraSys.camera.rotation.copyFrom(this.warmPose.rot);
+    wait.warm = new PipelineWarmup(this.renderer.pipelines, this.roundPipelines);
   }
 
   /**
@@ -8076,10 +7990,10 @@ export class Game {
   private finishBakeWait(): void {
     const warmed = this.bakeWait?.warm != null;
     this.bakeWait = null;
-    // The warm-up placed the shadow window, the bodies' map and the lamps'
-    // slots around its LAST vantage, and nothing in `deploy` places them again
-    // — so they are placed once more around the camera the deploy screen is
-    // actually drawn from, at `dt` 0 as the warm frames were.
+    // Nothing in `loading` places the shadow window, the bodies' map and the
+    // lamps' slots, and nothing in `deploy` does either in the page's own
+    // match — so they are placed once here, around the camera the deploy
+    // screen is drawn from, at `dt` 0, as the viewer's tail places them.
     if (warmed) {
       this.shadowFocus.copyFrom(this.cameraSys.camera.position);
       this.updateSceneForCamera(0, this.shadowFocus, null, NO_SOLDIERS);
@@ -11816,7 +11730,7 @@ export class Game {
 
   /**
    * The half of the tail that needs only a posed camera — shared with the map
-   * viewer and the building card's warm-up, which have no player and no aim
+   * viewer and the building card's last frame, which have no player and no aim
    * assist but still have to keep fog, shadows, outlines, lights, water, grass
    * and audio agreeing about where the eye is.
    *
@@ -11834,13 +11748,11 @@ export class Game {
     shadowFocus: Vector3,
     player: Player | null,
     pushers: readonly Combatant[],
-    // The bodies the two shadow passes draw. The roster's, but for the
-    // building card's warm-up, which has no roster in the field and hands in
-    // none — see `stageWarmFrame`.
-    bodies: readonly ShadowBody[] = this.mapBodies(),
   ): void {
     // Any tail pays what a lowered viewer owed (`honourSceneOwed`).
     this.sceneOwed = false;
+    // The bodies the two shadow passes draw: the roster's.
+    const bodies: readonly ShadowBody[] = this.mapBodies();
     this.shadows.update(shadowFocus, this.mats);
     // The bodies' map follows the same focus and is rebuilt from whatever is
     // DRAWN — `rig.enabled` inside, which is true of a living bot, of

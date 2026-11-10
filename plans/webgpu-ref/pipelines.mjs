@@ -57,10 +57,13 @@
  * names a particle field's (no mesh is drawing when one compiles) and a
  * compute pipeline's.
  *
- * **Both modes print the warm-up's VANTAGE LOG** (`BABYLON_EXIT.md` X5.4a, X5.4c's
- * BEFORE; `hookWarmup`): every frame the building card's warm-up was asked about,
- * what each cache created on it and why it held or moved. Frames are counted
- * through the frame adapter (`harness.mjs`' `frameAdapter`, X5.4a).
+ * **Both modes print the warm-up's WAIT LOG** (`hookWarmup`): every frame the
+ * building card's warm-up was asked about, what each cache created on it and why
+ * it held or ended. It was the VANTAGE LOG from `BABYLON_EXIT.md` X5.4a to X5.4c,
+ * which read it on all seven shipped maps — nothing created at any vantage by
+ * either cache — and retired the vantages; the warm-up is now a wait for our
+ * renderer's pipelines alone. Frames are counted through the frame adapter
+ * (`harness.mjs`' `frameAdapter`, X5.4a).
  *
  * **A lost device ends it** (`harness.mjs`'s header, exit 4), and so does a hard
  * limit (exit 3, `--limit=<seconds>`): `--round`'s `until` counts FRAMES, so
@@ -473,67 +476,46 @@ async function playRound(page) {
 }
 
 /**
- * **The warm-up's VANTAGE LOG** (`BABYLON_EXIT.md` X5.4a, X5.4c's BEFORE): every
- * frame the building card's warm-up was asked about (`PipelineWarmup.afterFrame`,
- * wrapped on its prototype, which reads and writes nothing of the game's), with
- * what each cache CREATED on it — off the device (`createRenderPipeline` and
- * `createComputePipeline`, Babylon's, synchronous; `create*PipelineAsync`, our
- * renderer's; `createShaderModule`, both) and as the warm-up itself counted it
- * (our cache's settled compiles, ours still compiling; Babylon's cache's miss
- * count until X5.4c, which stopped the warm-up reading it) — and WHY the warm-up held or moved: the opening wait for ours
- * (`ours` while ours compiles or a declared entry is unsettled), a vantage held
- * for a frame that created something or left ours compiling, or held counting
- * its quiet frames, and the move to the next vantage (quiet reached, or the
- * frame cap) or the end (done, or the wall-clock cap). One list per install, the
- * frames numbered from the install's first. Installed once, before the first
- * install; nothing in it reaches the game.
+ * **The warm-up's WAIT LOG** (`BABYLON_EXIT.md` X5.4a's vantage log, its vantages
+ * retired by X5.4c): every frame the building card's warm-up was asked about
+ * (`PipelineWarmup.afterFrame`, wrapped on its prototype, which reads and writes
+ * nothing of the game's), with what each cache CREATED on it — off the device
+ * (`createRenderPipeline` and `createComputePipeline`, Babylon's, synchronous;
+ * `create*PipelineAsync`, our renderer's; `createShaderModule`, both) and our
+ * cache's settled compiles and ours still compiling — and WHY the wait held or
+ * ended: ours compiling or a declared entry unsettled, settled, or the cap. One
+ * list per install, the frames numbered from the install's first. Installed once,
+ * before the first install; nothing in it reaches the game.
  */
 function hookWarmup(page) {
   return page.evaluate(async () => {
     const L = window.__gpuLog;
     window.__warmLog = [];
     const { PipelineWarmup } = await import("/src/core/PipelineWarmup.ts");
-    const { CONFIG } = await import("/src/config/index.ts");
     const proto = PipelineWarmup.prototype;
     const orig = proto.afterFrame;
     const counts = () => ({ babylon: L.pipelines.length, ours: L.ours.length, modules: L.modules.length });
     proto.afterFrame = function (...a) {
       if (!this.__log) {
-        // A new warm-up (one an install). Babylon's pipeline-cache count is no
-        // longer the warm-up's (X5.4c): Babylon's creations are read off the
-        // device alone.
-        this.__log = { vantages: this.vantages.map((v) => [v.x, v.y, v.z].map((n) => +n.toFixed(2))), frames: [] };
+        // A new wait (one an install): the DEVICE's counts start at its first
+        // frame asked about (the constructor is not wrapped), so that frame's
+        // `device` is 0 by construction.
+        this.__log = { frames: [] };
         this.__settled = this.ours.settled;
-        // The DEVICE's counts start here, at the first frame asked about (the
-        // constructor is not wrapped, so nothing earlier is read): its first
-        // frame's `device` is 0 by construction, and anything created between
-        // the construction and this frame shows in the warm-up's own count
-        // (`lastCount`, above) and not in `device`.
         this.__device = counts();
         window.__warmLog.push(this.__log);
       }
-      const cfg = CONFIG.graphics.warmup;
-      const before = { index: this.index, frames: this.frames, quiet: this.quiet };
       const settled = this.ours.settled;
       const compiling = this.ours.compiling;
       const pending = this.declaredPending;
       const dev = counts();
       const done = orig.apply(this, a);
-      const moved = this.index !== before.index;
-      let why;
-      if (before.index < 0) {
-        why = !moved ? `ours: ${compiling} compiling, ${pending} declared unsettled` : compiling > 0 || pending > 0 ? "ours: cap reached" : "ours: settled";
-      } else if (moved) {
-        why = before.quiet + 1 >= cfg.quietFrames && settled - this.__settled === 0 && compiling === 0 ? "moved: quiet reached" : "moved: frame cap";
-      } else {
-        why = settled - this.__settled > 0 ? "held: created" : compiling > 0 ? "held: ours compiling" : `held: quiet ${this.quiet} of ${cfg.quietFrames}`;
-      }
-      if (done) why += this.index >= this.vantages.length ? "; done" : "; done (the wall-clock cap)";
+      const why = !done ? `held: ${compiling} compiling, ${pending} declared unsettled` : compiling > 0 || pending > 0 ? "done: cap reached" : "done: settled";
       this.__log.frames.push({
-        vantage: before.index,
-        frame: before.index < 0 ? null : before.frames + 1,
+        frame: this.__log.frames.length + 1,
         device: { babylon: dev.babylon - this.__device.babylon, ours: dev.ours - this.__device.ours, modules: dev.modules - this.__device.modules },
-        warmup: { oursSettled: settled - this.__settled, oursCompiling: compiling },
+        oursSettled: settled - this.__settled,
+        oursCompiling: compiling,
         why,
       });
       this.__settled = settled;
@@ -543,24 +525,19 @@ function hookWarmup(page) {
   });
 }
 
-/** The vantage log (`hookWarmup`): per install, every frame that created something or moved, and the totals. */
+/** The wait log (`hookWarmup`): per install, every frame that created something or ended it, and the totals. */
 function printWarmups(list) {
   (list ?? []).forEach((w, i) => {
-    const at = w.frames.filter((f) => f.vantage >= 0);
-    const sum = (k, kk) => at.reduce((a, f) => a + f[k][kk], 0);
+    const sum = (k) => w.frames.reduce((acc, f) => acc + f.device[k], 0);
     console.log(
       `
-  warm-up ${i + 1}: ${w.vantages.length} vantages, ${w.frames.length} frames asked (${w.frames.length - at.length} waiting for ours);` +
-        ` at the vantages, device: babylon ${sum("device", "babylon")}, ours ${sum("device", "ours")}, modules ${sum("device", "modules")};` +
-        ` warm-up: ours settled ${sum("warmup", "oursSettled")}`,
+  warm-up ${i + 1}: ${w.frames.length} frame(s) asked; device: babylon ${sum("babylon")}, ours ${sum("ours")}, modules ${sum("modules")};` +
+        ` ours settled ${w.frames.reduce((acc, f) => acc + f.oursSettled, 0)}`,
     );
     for (const f of w.frames) {
-      const made = f.device.babylon || f.device.ours || f.device.modules || f.warmup.oursSettled;
-      if (!made && !/^moved|ours: (settled|cap)|done/.test(f.why)) continue;
-      console.log(
-        `    ${f.vantage < 0 ? "ours" : `v${f.vantage} f${f.frame}`}: device ${f.device.babylon}/${f.device.ours}/${f.device.modules}` +
-          ` warm-up ${f.warmup.oursSettled} compiling ${f.warmup.oursCompiling} — ${f.why}`,
-      );
+      const made = f.device.babylon || f.device.ours || f.device.modules || f.oursSettled;
+      if (!made && !/^done/.test(f.why)) continue;
+      console.log(`    f${f.frame}: device ${f.device.babylon}/${f.device.ours}/${f.device.modules} settled ${f.oursSettled} compiling ${f.oursCompiling} — ${f.why}`);
     }
   });
 }

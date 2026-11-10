@@ -201,8 +201,8 @@ interface Cell {
   /** Whether what was filed here is in the candidate list right now. */
   on: boolean;
   /**
-   * Whether what is filed here was OFFERED by the list as last built — `on`,
-   * or every cell under the warm-up — snapshotted where `rebuildList` builds
+   * Whether what is filed here was OFFERED by the list as last built — `on`
+   * — snapshotted where `rebuildList` builds
    * that list, so it changes exactly when a filed mesh's candidacy does
    * (`offersBlock`). False until the first list after `setMap`, as a filed
    * mesh is no candidate until then.
@@ -347,8 +347,7 @@ export class WorldCulling {
    * The reach and the size gate as this file decides them THIS frame, for
    * our renderer's GPU cull (`render/ClusterCull.ts`): rewritten in place by
    * every `update`. The reach is the distance a cell switches ON at, from
-   * the eye to the cell's box, and Infinity while everything is offered; the
-   * size gate is `offer`'s own, off under the warm-up.
+   * the eye to the cell's box; the size gate is `offer`'s own.
    */
   readonly reachGate: ReachGate = {
     reach: Number.POSITIVE_INFINITY,
@@ -359,13 +358,6 @@ export class WorldCulling {
 
   /** Set when the candidate list no longer matches the state above. */
   private listDirty = true;
-
-  /**
-   * Whether this frame offers EVERYTHING — every cell, every pool and no size
-   * gate — for the building card's pipeline warm-up (`core/PipelineWarmup.ts`).
-   * See `setWarm`.
-   */
-  private warm = false;
 
   /** Squared distances a cell switches at. Infinite reach culls nothing. */
   private on = Number.POSITIVE_INFINITY;
@@ -600,7 +592,7 @@ export class WorldCulling {
    * and a flag's surface (`Game.drawZones`), which our renderer draws and
    * which are no candidate: the test `offer` asks of a loose mesh (`tooSmall`, from the
    * eye and at the scale it was last handed, and true while the gate is off
-   * — the warm-up, a gate of 0 px, no camera), asked of the sphere its caller
+   * — a gate of 0 px, no camera), asked of the sphere its caller
    * composed. A hull is gated PER SEGMENT, as its meshes were gated while
    * they were loose: dropping a hull whole would draw at range every part this
    * gate drops there now. The sphere is the caller's, composed this frame, so
@@ -623,8 +615,7 @@ export class WorldCulling {
    * (`vehicleRig.measureHull`): `tooSmall`, the size gate's own arithmetic,
    * from the same eye and at the same pixels a radian, against
    * `CONFIG.graphics.culling.hullDetail` instead of `minPixels`. True — the
-   * full set — while the tier is off: the warm-up (so the full set is the
-   * one it shows), a threshold of 0, no camera. It is a SWAP and nothing
+   * full set — while the tier is off: a threshold of 0, no camera. It is a SWAP and nothing
    * else: no hull is dropped by it, and the per-segment gate
    * (`keepsSphere`) still answers for every segment drawn, the detail ones
    * of a hull drawn in full among them (decided 2026-10-31). It has NO
@@ -650,8 +641,7 @@ export class WorldCulling {
    * switch at range for the fade to beat, as a body's roster switch is
    * (`offer`'s distance edge). The DISTANCE only — there is no whole-hull
    * size edge (decided 2026-10-31: the per-segment gate, `keepsSphere`,
-   * still answers for every segment drawn, faded or not). 1 while the
-   * warm-up stands, so the warm-up shows every hull whole, and on a map
+   * still answers for every segment drawn, faded or not). 1 on a map
    * that states no distance (`Infinity`, every shipped map) — the literal 1,
    * so a reader multiplying by it changes nothing. Read by `Game.fadeHulls`
    * straight after `update`, the same frame, for the drawing and the rotor
@@ -659,7 +649,7 @@ export class WorldCulling {
    */
   hullFade(x: number, y: number, z: number): number {
     const far = this.hullDraw;
-    if (this.warm || !Number.isFinite(far)) return 1;
+    if (!Number.isFinite(far)) return 1;
     const e = this.gateEye;
     const dx = x - e.x;
     const dy = y - e.y;
@@ -708,7 +698,7 @@ export class WorldCulling {
    * Whether the block-keyed surfaces of `block`'s cell are offered THIS
    * frame — what a mesh filed in that cell was a candidate by, as the list
    * was last built (`rebuildList`): its cell within reach, with its
-   * hysteresis, or every cell under the warm-up; false for a block no cell
+   * hysteresis; false for a block no cell
    * was grown for, and from `setMap` until the first list after it. Read by
    * `Game.flamePull` for each world fire (`BABYLON_EXIT.md` X4.4d) and
    * `Game.glassPull` for each pane group (X4.6e), after
@@ -754,28 +744,6 @@ export class WorldCulling {
     this.stats.poolsOn = poolsOn;
     if (this.listDirty) this.rebuildList();
     this.offer(eye);
-  }
-
-  /**
-   * Offers every mesh this file would otherwise hold back, for as long as it is
-   * on: every cell whatever its distance, and no size gate — for a body as for
-   * a mesh (`drawsBody`). What is switched OFF is still dropped by
-   * `offer`, because Babylon would drop it too; what warm changes for our
-   * renderer's surfaces, which are no candidates, is `reachGate` — no reach
-   * and no size gate — handed to its cull, which keeps its own frustum.
-   *
-   * It exists for one caller — the warm-up under the building card, which
-   * draws the whole map once from each vantage so that every pipeline the
-   * round will need is compiled before the round can see the cost — and that
-   * caller turns it on and back off around a single render, so a wait that is
-   * abandoned between frames cannot leave the map unculled. It is still a
-   * claim about the LIST and nothing else: no mesh is written, which is this
-   * file's first invariant.
-   */
-  setWarm(on: boolean): void {
-    if (on === this.warm) return;
-    this.warm = on;
-    this.listDirty = true;
   }
 
   /**
@@ -828,12 +796,12 @@ export class WorldCulling {
     data.length = 0;
     // What a filed mesh of each cell is a candidate by, from now until the
     // next build of the list — read back by the block (`offersBlock`).
-    for (const cell of this.cells) cell.offered = cell.on || this.warm;
+    for (const cell of this.cells) cell.offered = cell.on;
     let loose = 0;
     for (const mesh of this.scene.meshes) {
       const cell = this.cellOf.get(mesh);
       if (cell) {
-        if (cell.on || this.warm) data.push(mesh);
+        if (cell.on) data.push(mesh);
         continue;
       }
       loose++;
@@ -918,7 +886,7 @@ export class WorldCulling {
     // the slider.
     const cam = this.scene.activeCamera;
     const minPx = CONFIG.graphics.culling.minPixels;
-    const gate = !this.warm && minPx > 0 && cam !== null;
+    const gate = minPx > 0 && cam !== null;
     const engine = this.scene.getEngine();
     const pixelsPerRad = cam !== null
       ? (engine.getRenderHeight() * engine.getHardwareScalingLevel()) /
@@ -926,13 +894,13 @@ export class WorldCulling {
       : 0;
     const perRad = gate ? pixelsPerRad : 0;
     // The hulls' detail tier (`keepsDetail`) on the same pixels a radian, and
-    // with its own switch: off while warm, so the warm-up shows the full set.
+    // with its own switch.
     const detailPx = CONFIG.graphics.culling.hullDetail;
-    this.detailPerRad = !this.warm && detailPx > 0 ? pixelsPerRad : 0;
+    this.detailPerRad = detailPx > 0 ? pixelsPerRad : 0;
     this.detailPx2 = detailPx * detailPx;
     const px2 = minPx * minPx;
     const reachGate = this.reachGate;
-    reachGate.reach = this.warm ? Number.POSITIVE_INFINITY : this.on;
+    reachGate.reach = this.on;
     reachGate.sizeGate = gate;
     reachGate.perRad = perRad;
     reachGate.px2 = px2;
@@ -957,7 +925,7 @@ export class WorldCulling {
     // the other — on a phone the size gate is the NEARER one.
     const fadeBand = CONFIG.graphics.culling.bodyFade;
     const bodyDraw = this.bodyDraw;
-    const distanceFade = !this.warm && Number.isFinite(bodyDraw);
+    const distanceFade = Number.isFinite(bodyDraw);
     // Whole above `size` times the gate: compared squared, as `tooSmall` is.
     const wholePx2 = px2 * fadeBand.size * fadeBand.size;
     const sizeBand = minPx * (fadeBand.size - 1);

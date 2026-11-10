@@ -364,8 +364,7 @@ export class BenchScript {
    * absorb their one jump the same way every time, agreed to 6%. So a settle
    * runs until its last `frames` frames were all quiet — none over
    * `quietFactor` times the fastest it has seen and `quietSlackMs` over it —
-   * and `settleCap` times its own length whatever. `PipelineWarmup` leaves a vantage on the
-   * same kind of rule.
+   * and `settleCap` times its own length whatever.
    *
    * It is wall clock, and it is allowed to be only because of what a settle
    * is: never measured, and the world held through it, so its length moves

@@ -1618,38 +1618,22 @@ export const graphics = {
    * The pipeline warm-up: the last thing the building card covers, after the
    * reflection bake has drained (`Game.bakeWait`, `core/PipelineWarmup.ts`).
    *
-   * WebGPU compiles a render pipeline the first time a draw needs one, and the
-   * frame that draw lands on pays for it — 139 ms on the spawn frame on
-   * Coldharbour on the Windows box, 1,268 ms on a phone (`FINDINGS.md` 16). So
-   * the card stands the camera at every place a life can start and draws the
-   * WHOLE map from there, frustum and cull cells off, until a frame compiles
-   * nothing; the pipelines that frame would have built are then cached before
-   * the round can see them.
+   * A pipeline compiled on the frame that first needs it costs that frame —
+   * 139 ms on the spawn frame on Coldharbour on the Windows box, 1,268 ms on a
+   * phone (`FINDINGS.md` 16), when Babylon compiled them on first draw. Ours
+   * are asked ahead and compile off the frame, so the card only WAITS for them
+   * — the round's declared list (`Game.roundPipelines`) and the map's — and
+   * draws nothing for their sake (the vantages it stood at every spawn and
+   * flag went at `BABYLON_EXIT.md` X5.4c).
    */
   warmup: {
     /**
-     * Frames at one vantage that must compile nothing before the next one is
-     * stood at. Two, because a material whose effect was not ready on the
-     * first frame is skipped by that frame's draw rather than compiled, and
-     * shows up on the second.
-     */
-    quietFrames: 2,
-    /** The most frames spent at one vantage, quiet or not. */
-    maxFramesPerVantage: 8,
-    /**
-     * The backstop on the vantages, in milliseconds from the first one (the
-     * wait for our renderer's pipelines before it is `oursCapMs`'s). A
-     * warm-up that runs out simply stops: whatever it did not reach compiles
-     * in the round, as all of it did before this existed.
-     */
-    capMs: 8_000,
-    /**
-     * The most the warm-up waits, before its first vantage, for our
-     * renderer's own pipelines (`render/PipelineCache.ts`), in milliseconds.
-     * Long, as the bake's drain is, and for the same reason: a pipeline of
-     * ours still compiling past it is a group of the world drawn by NOBODY
-     * until it lands — a hole, not a hitch — so this is a backstop for a
-     * compile that never settles, never a budget.
+     * The most the card waits for our renderer's pipelines
+     * (`render/PipelineCache.ts`), in milliseconds. Long, as the bake's drain
+     * is, and for the same reason: a pipeline of ours still compiling past it
+     * is a group of the world drawn by NOBODY until it lands — a hole, not a
+     * hitch — so this is a backstop for a compile that never settles, never a
+     * budget.
      */
     oursCapMs: 90_000,
   },
