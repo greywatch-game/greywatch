@@ -34,8 +34,32 @@
  *   used (`Runtime.getHeapUsage`) — `webgpuLeaks.ts`' own measurement, which
  *   X5.4b repeats over four Coldharbour rounds before it deletes the file.
  *
- * Exits 0 whatever it counts: it records, and X5.4b grades. A lost device ends
- * it (`harness.mjs`, exit 4), and so does a hard limit (exit 3).
+ * **A POSITIVE CONTROL runs first, at the menu, before the baseline**
+ * (X5.4a's review: a reading of zero is X5.4b's licence to delete a file, so the
+ * probe must first be seen to count). Inside one task, in a frame class of its
+ * own (`(control)`, kept out of every sum and every step's read):
+ *
+ * - **a throwaway effect released**: clearQuad's own WGSL (already in the shader
+ *   store: the engine's clear quad compiled it at the boot) asked of
+ *   `engine.createEffect` under a define of the control's own, so a NEW effect is
+ *   compiled and cached, waited until ready, and disposed — Babylon's own path,
+ *   `Effect.dispose` to `_releaseEffect` to `_deletePipelineContext` with its
+ *   context, through `webgpuLeaks.ts`' wrapper. It must count 1 release, 1 with
+ *   a context. (The game's DEV counter of Babylon compiles WARNS on it, once:
+ *   the control compiles on purpose, as `shaders.mjs` does, and nothing here
+ *   reads that counter.)
+ * - **one bind-group set made by the engine's own cache**: the engine's
+ *   `_cacheBindGroups.getBindGroups` called once with a real draw context
+ *   (`engine.createDrawContext`), a material context forcing creation
+ *   (`forceBindGroupCreation`, which skips the cache's tree, so nothing is left
+ *   in it) and a pipeline context stating no binding (so no layout is read and
+ *   no GPU bind group made). It must count 1 call and 1 creation, and the
+ *   device's `createBindGroup` none.
+ *
+ * Anything else fails the run (exit 1): the hooks are not where the engine
+ * reaches them, and the counts after them grade nothing. **Otherwise it exits
+ * 0 whatever it counts**: it records, and X5.4b grades. A lost device ends it
+ * (`harness.mjs`, exit 4), and so does a hard limit (exit 3).
  */
 import { bootMap, hardLimit, installRound, launchClient, MAP_IDS, root, startDevServer } from "./harness.mjs";
 
@@ -127,11 +151,45 @@ await page.evaluate(async () => {
     bucket().cacheCreated += after >= before ? after - before : after;
     return r;
   };
-  L.dev0 = { ...window.__leakDev };
   // What the BOOT made, so a count of zero after it reads against a counter
   // that is live: Babylon's cache's own total at the baseline.
   return Cache.NumBindGroupsCreatedTotal;
 }).then((n) => console.log(`at the baseline Babylon's cache had made ${n} bind groups (the boot's)`));
+
+// THE POSITIVE CONTROL (the header): both hooks seen to count, in a class of
+// their own, before anything is read.
+const control = await page.evaluate(async () => {
+  const g = window.__celshock;
+  const L = window.__leaks;
+  const e = g.engine;
+  const CONTROL = "(control)";
+  const effect = e.createEffect("clearQuad", [], ["color", "depthValue"], undefined, "#define LEAKS_MJS_CONTROL\n", undefined, undefined, undefined, undefined, 1 /* ShaderLanguage.WGSL */);
+  for (let frames = 0; !effect.isReady(); frames++) {
+    if (frames > 600) return { error: `the control's effect never became ready (${effect.getCompilationError?.() ?? "no error said"})` };
+    await window.__refFrame().drawn();
+  }
+  const devBefore = window.__leakDev.bindGroups;
+  L.cls = CONTROL;
+  try {
+    effect.dispose();
+    const draw = e.createDrawContext();
+    const material = e.createMaterialContext();
+    material.forceBindGroupCreation = true;
+    const stated = { shaderProcessingContext: { bufferNames: [], samplerNames: [], textureNames: [], bindGroupLayoutEntries: [] }, bindGroupLayouts: [] };
+    e._cacheBindGroups.getBindGroups(stated, draw, material);
+  } finally {
+    L.cls = g.state;
+  }
+  const b = L.byClass[CONTROL] ?? { deletes: 0, deletesWithContext: 0, cacheCreated: 0, cacheCalls: 0 };
+  return { deletes: b.deletes, deletesWithContext: b.deletesWithContext, cacheCalls: b.cacheCalls, cacheCreated: b.cacheCreated, deviceBindGroups: window.__leakDev.bindGroups - devBefore };
+});
+const controlHeld = !control.error && control.deletes === 1 && control.deletesWithContext === 1 && control.cacheCalls === 1 && control.cacheCreated === 1 && control.deviceBindGroups === 0;
+console.log(
+  control.error
+    ? `the positive control FAILED: ${control.error}`
+    : `the positive control: an effect released, ${control.deletes} pipeline context${control.deletes === 1 ? "" : "s"} deleted (${control.deletesWithContext} with a context); the engine's cache asked ${control.cacheCalls} time${control.cacheCalls === 1 ? "" : "s"}, ${control.cacheCreated} bind-group set made, the device's createBindGroup ${control.deviceBindGroups} — ${controlHeld ? "both hooks count" : "FAILED (1, 1, 1, 1 and 0 wanted)"}`,
+);
+await page.evaluate(() => (window.__leaks.dev0 = { ...window.__leakDev }));
 
 const reads = [];
 const read = async (step) => {
@@ -141,7 +199,8 @@ const read = async (step) => {
   const r = await page.evaluate((step) => {
     const L = window.__leaks;
     const d = window.__leakDev;
-    const sum = (k) => Object.values(L.byClass).reduce((a, b) => a + b[k], 0);
+    const steps = Object.entries(L.byClass).filter(([c]) => c !== "(control)").map(([, b]) => b);
+    const sum = (k) => steps.reduce((a, b) => a + b[k], 0);
     return {
       step,
       state: window.__celshock.state,
@@ -150,7 +209,7 @@ const read = async (step) => {
       cacheCreated: sum("cacheCreated"),
       deviceBindGroups: d.bindGroups - L.dev0.bindGroups,
       liveBuffers: d.buffers - d.destroyed,
-      byClass: JSON.parse(JSON.stringify(L.byClass)),
+      byClass: JSON.parse(JSON.stringify(Object.fromEntries(Object.entries(L.byClass).filter(([c]) => c !== "(control)")))),
     };
   }, step);
   r.heapMB = +(heap.usedSize / 1048576).toFixed(1);
@@ -199,4 +258,4 @@ if (pageErrors.length || consoleErrors.length) {
 }
 await browser.close();
 vite.stop();
-process.exit(0);
+process.exit(controlHeld ? 0 : 1);

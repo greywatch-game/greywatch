@@ -5438,12 +5438,19 @@ the sub-step that lands it).
 - **Every draw of ours is queued into Babylon's bundle list** (seam item 3) inside a
   pass Babylon opened, and every prepare of ours is recorded on Babylon's upload encoder
   (item 9), which is submitted first and inside the `?gpu` timer.
-- **Babylon's render id moves more than once a frame.** `Scene._renderForCamera`
-  increments it, the glow mask's `RenderTargetTexture.render` increments it
-  (`renderTargetTexture.pure.js` 762, 769), and `executeWhenReady`'s timer does outside
-  any frame. The `RenderCache` compares ids for equality only, so "a frame counter of
-  our own with the same meaning" is a counter advanced at EVERY one of those points that
-  a round reaches, not one a frame.
+- **Babylon's render id moves TWICE a frame in a round, both inside `scene.render`**
+  (X5.4a's log, read off the page; corrected by X5.4a's review, this read having first
+  named the glow mask's render and a readiness timer as well): `Scene._renderFrame`
+  increments it after its custom render targets' block under `renderTargetsEnabled`
+  (`scene.pure.js` 4573), and `Scene._renderForCamera` does (4069). **The glow mask's
+  render does NOT move it**: `renderTargetTexture.pure.js` 762 and 769 are
+  `RenderTargetTexture._render`'s 2D-array or 3D and cube branches, and the mask is a
+  plain 2D target, which takes the third branch and increments nothing. `executeWhenReady`'s
+  timer can (`scene.pure.js` 2146-2150, outside any frame, only while a readiness wait
+  finds the scene not ready), and did in neither of X5.4a's runs. The `RenderCache`
+  compares ids for equality only, so "a frame counter of our own with the same meaning" is
+  a counter advanced at those two points and at no other: a sub-step that moves the mask
+  or the readiness wait owes the counter nothing.
 - **The instruments lean on Babylon's loop as much as the game does**: `harness.mjs`
   waits on `scene.onAfterRenderObservable` and `onBeforeRenderObservable` and reads
   `scene.getFrameId()`; `gi.mjs`, `post.mjs` and `drawlog.mjs` step on
@@ -5597,7 +5604,8 @@ measurement until the sub-step that replaces both.
   change to the game) — **S**.
   - **The `RenderCache`** (`rigJoints.ts`, `viewTree.ts`) is keyed on a counter of ours
     (a module in `src/core/` or `src/render/`, named by the implementer), advanced at
-    EVERY point X5.4a's log found Babylon's render id moving in a round, and settled
+    EVERY point X5.4a's log found Babylon's render id moving in a round (two, both inside
+    `scene.render`: `_renderFrame`'s and `_renderForCamera`'s; "What the frame is today"), and settled
     where the evaluation settled it. While `scene.render()` still runs, ours is advanced
     from the same public observables, and a DEV assertion holds `ours - Babylon's`
     constant at every read for this sub-step's proof (deleted by X5.4f, when the scene
@@ -5683,8 +5691,10 @@ measurement until the sub-step that replaces both.
     the mask and the blur.
   - **Verify:** `post.mjs --against` at both sizes, every pass's bytes equal and the
     encoder roles and labels the only named differences; every bank row; `gi.mjs`;
-    `surfaces.mjs`; `particles.mjs`; the draw log; `readers.mjs` (the mask's render no
-    longer moves Babylon's id: ours must still move where it did); `?profile&gpu`
+    `surfaces.mjs`; `particles.mjs`; the draw log; `readers.mjs` bit for bit, its render-id
+    log unchanged (the mask's render never moved Babylon's id — X5.4a's log — so moving its
+    pass adds no advance to X5.4b's counter, whose two stay where `scene.render` makes
+    them); `?profile&gpu`
     (`drawWorld` and `glow` keep their meaning: no report version).
   - **Rewrites:** `docs/rendering.md`'s "Our renderer's frame" and "The glow"; `CLAUDE.md`'s
     "The scene draws STRAIGHT INTO the frame" and the glow paragraph; the headers of

@@ -375,7 +375,8 @@ plans/webgpu-ref/     # The exit's probes and the reference bank, indexed by
   leaks.mjs           # The Babylon-leak probe (X5.4a): pipeline contexts
                       #   released and cached bind groups made after the boot,
                       #   live GPUBuffers and the heap, over two rounds, a
-                      #   teardown and a map change — webgpuLeaks.ts' proof
+                      #   teardown and a map change — webgpuLeaks.ts' proof,
+                      #   after a positive control that both hooks count
   lost.mjs            # The device destroyed on purpose at the menu, the card,
                       #   deploy and a life, and what follows recorded (X5.4a;
                       #   graded from X5.4i)

@@ -47,9 +47,9 @@ node plans/webgpu-ref/post.mjs [--sizes=desk,phone] [--out=f.json] [--against=f.
 node plans/webgpu-ref/post.mjs --compare=a.json --against=b.json
 node plans/webgpu-ref/drawlog.mjs [map...] [--out=f.json] [--against=f.json] [--ignore=<regex>] [--no-viewer] [--limit=<seconds>]
 node plans/webgpu-ref/readers.mjs record --out=rec.json [--map=harrowmead] [--frames=1500]
-node plans/webgpu-ref/readers.mjs replay --log=rec.json [--out=f.json] [--against=f.json]
-node plans/webgpu-ref/readers.mjs camera [--out=f.json] [--against=f.json]
-node plans/webgpu-ref/readers.mjs --compare=a.json --against=b.json
+node plans/webgpu-ref/readers.mjs replay --log=rec.json [--out=f.json] [--against=f.json] [--ignore=pattern,…|@file]
+node plans/webgpu-ref/readers.mjs camera [--out=f.json] [--against=f.json] [--ignore=…]
+node plans/webgpu-ref/readers.mjs --compare=a.json --against=b.json [--ignore=…]
 node plans/webgpu-ref/leaks.mjs [map] [--then=<map>] [--frames=600]
 node plans/webgpu-ref/lost.mjs [map] [--at=menu,loading,deploy,playing] [--seconds=10] [--out=f.json]
 ```
@@ -57,7 +57,8 @@ node plans/webgpu-ref/lost.mjs [map] [--at=menu,loading,deploy,playing] [--secon
 **Every question a script here asks about the FRAME goes through ONE adapter**
 (`harness.mjs`' `frameAdapter`, `window.__refFrame()`, `BABYLON_EXIT.md` X5.4a;
 `postAdapter`'s precedent): "the frame was drawn" (`drawn`, `onDrawn`), "its
-update is about to run" (`beforeDraw`, `onBeforeDraw`), "it was submitted"
+draw is about to run" (`beforeDraw`, `onBeforeDraw`: after the frame's camera
+updates and before any of its matrices is computed), "it was submitted"
 (`submitted`, `onSubmitted`, and `onBegin` for its opening), its index, whether
 the scene can draw (`ready`), the device, the canvas and its pass's depth, which
 encoder a command was recorded on (`encoderRole`), the frame's delta when a probe
@@ -441,7 +442,11 @@ does.
   the brass's `Math.random` seeded) and logs every answer, a digest of every joint
   the frame evaluated (read where it lies, never through the cache) and the three
   origins recomputed by `Game`'s floors and held to the live page's bits — the
-  oracle, compared across processes and trees (`--against`). Both log every change
+  oracle, compared across processes and trees (`--against`), and a replay that
+  reproduces FEWER live answers than its record holds FAILS the run, whatever
+  `--against` says (X5.4a's review). `--against` excuses only what `--ignore` names,
+  `post.mjs`' path patterns (`ids` the render-id log whole, as X5.4f will owe it), each
+  pattern's hits said and one that excused nothing said too. Both log every change
   of Babylon's RENDER ID with the site that made it (the camera's render, the
   mask's, a render target's, the readiness timer; the scene's `_renderId` made an
   accessor that reads and writes the same number), relative to the run's first
@@ -449,7 +454,8 @@ does.
   `globalPosition` as float bits, with the inputs they were computed from, eight
   frames a state through the menu, the card, deploy, the kit lid, a life, a
   render-scale change, a resize, the pause, the round-over card and the menu, the
-  pose PINNED at each frame's own update as a function of the step — X5.4f's and
+  pose PINNED at each frame's before-draw (after the camera's updates, before its
+  matrices are computed) as a function of the step — X5.4f's and
   X5.4h's BEFORE, compared across processes and trees.
 - **`leaks.mjs`** is the BABYLON-LEAK probe (X5.4a; X5.4b's proof for
   `src/core/webgpuLeaks.ts`): one Coldharbour page, the boot settled as the
@@ -457,7 +463,12 @@ does.
   there, and at each step (after a forced GC) every `_deletePipelineContext` since
   the baseline, every bind group Babylon's cache made (read across its own reset),
   every `createBindGroup` on the device, the live `GPUBuffer`s and the JS heap — by
-  frame class. It records; X5.4b grades.
+  frame class. **A POSITIVE CONTROL runs first** (X5.4a's review), in a class of its own
+  kept out of every read: a throwaway effect (clearQuad's WGSL under a define of its own)
+  compiled and disposed through Babylon's release path, which must count one context
+  deleted, and the engine's own bind-group cache asked once to make an empty set, which
+  must count one call and one creation and no device bind group — or the run fails. It
+  records; X5.4b grades.
 - **`lost.mjs`** destroys the device every draw is made on, from the page, at the
   menu, the building card, deploy and a life, each on a fresh page, and records
   what follows for `--seconds`: the state, the frames drawn and submitted, whether

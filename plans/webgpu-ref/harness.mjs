@@ -220,9 +220,14 @@ export const MAP_IDS = MAPS.map((m) => m.id);
  * - `drawn()`: a promise of the next frame's DRAW having happened (the scene's
  *   render returned), and `onDrawn(fn)` for every one until the remover it
  *   hands back is called;
- * - `beforeDraw(fn)`: `fn` once, in the next frame, before its draw (where the
- *   scene's own update runs, ahead of the camera), and `onBeforeDraw(fn)` in
- *   every one until the remover it hands back is called;
+ * - `beforeDraw(fn)`: `fn` once, in the next frame, before its draw (the
+ *   scene's before-render: AFTER the frame's camera updates — the game's in
+ *   `Game.tick` and Babylon's `activeCamera.update()`, which `_renderFrame`
+ *   calls just before raising it, `scene.pure.js` 4522-4545 — and BEFORE the
+ *   frame's render targets, its view and projection and the scene's transform
+ *   matrix, which `_renderForCamera` computes later off the pose as it stands,
+ *   so a pose written here is the one the frame is drawn from), and
+ *   `onBeforeDraw(fn)` in every one until the remover it hands back is called;
  * - `submitted()`: a promise of the next frame's work having been SUBMITTED
  *   (the engine's end of frame), `onSubmitted(fn)` for every one, and
  *   `onBegin(fn)` for the opening of every frame (the engine's begin);

@@ -504,7 +504,12 @@ function hookWarmup(page) {
         this.__log = { vantages: this.vantages.map((v) => [v.x, v.y, v.z].map((n) => +n.toFixed(2))), frames: [] };
         this.__created = this.lastCount - this.ours.settled;
         this.__settled = this.ours.settled;
-        this.__device = this.__deviceAtStart ?? counts();
+        // The DEVICE's counts start here, at the first frame asked about (the
+        // constructor is not wrapped, so nothing earlier is read): its first
+        // frame's `device` is 0 by construction, and anything created between
+        // the construction and this frame shows in the warm-up's own count
+        // (`lastCount`, above) and not in `device`.
+        this.__device = counts();
         window.__warmLog.push(this.__log);
       }
       const cfg = CONFIG.graphics.warmup;

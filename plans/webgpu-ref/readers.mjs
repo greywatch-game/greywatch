@@ -5,9 +5,9 @@
  *
  * ```
  * node plans/webgpu-ref/readers.mjs record --out=rec.json [--map=harrowmead] [--frames=1500]
- * node plans/webgpu-ref/readers.mjs replay --log=rec.json [--out=rep.json] [--against=rep0.json]
- * node plans/webgpu-ref/readers.mjs camera [--out=cam.json] [--against=cam0.json]
- * node plans/webgpu-ref/readers.mjs --compare=a.json --against=b.json
+ * node plans/webgpu-ref/readers.mjs replay --log=rec.json [--out=rep.json] [--against=rep0.json] [--ignore=pattern,…|@file]
+ * node plans/webgpu-ref/readers.mjs camera [--out=cam.json] [--against=cam0.json] [--ignore=…]
+ * node plans/webgpu-ref/readers.mjs --compare=a.json --against=b.json [--ignore=…]
  * ```
  *
  * **Why.** Four answers about the player's own weapon are read out of the
@@ -67,9 +67,16 @@
  * seed pinned, through the menu, the building card, deploy, the kit lid, a life,
  * a render-scale change, a resize, the pause lid, the round-over card and the
  * menu again, N frames of each logged. The camera's pose is PINNED every frame at
- * the frame's own update (the frame adapter's `beforeDraw`, ahead of the camera's
- * update), as a function of the step and its frame, so what is logged is the
- * camera's arithmetic and nothing of the game's timing: per frame the inputs
+ * the frame adapter's `onBeforeDraw` (the scene's before-render), as a function of
+ * the step and its frame. That runs AFTER the frame's camera updates — the game's
+ * own, in `Game.tick`, and Babylon's `activeCamera.update()`, which `_renderFrame`
+ * calls just before raising it (`scene.pure.js` 4522-4545) — and BEFORE any matrix
+ * is computed: `_renderForCamera` computes the view, the projection and the
+ * scene's transform matrix later in the same render, off the pose as it stands.
+ * So the pin overwrites whatever either update left, every matrix logged is
+ * computed off the pinned pose, and what is logged is the camera's arithmetic and
+ * nothing of the game's timing (the inputs, read at the draw, are the pose the
+ * matrices were computed from): per frame the inputs
  * (position and rotation as float64 bits, the field of view, the clip planes,
  * the mode, the render size and the aspect the engine handed the camera) and the
  * outputs Babylon computed (the view, the projection and the scene's transform
@@ -80,6 +87,23 @@
  * camera log's its steps', and neither depends on how fast the machine ran.
  * `--compare` compares two logs with no browser. A lost device ends a run
  * (`harness.mjs`, exit 4), and so does a hard limit (exit 3).
+ *
+ * **What fails a run** (exit 1): a page or console error; in `replay`, any of
+ * the record's origins not recomputed to the live page's bits, or FEWER live
+ * answers reproduced than the record holds (`faithful.matched` short of
+ * `faithful.live`: the replay is not the round it replays, whatever `--against`
+ * says); and any difference `--against` or `--compare` finds that `--ignore`
+ * does not name.
+ *
+ * **`--ignore` names the differences a sub-step EXPECTS** (`post.mjs`' shape),
+ * so none is excused by reading past it: a comma list of PATH patterns
+ * (repeatable, or `@file`, one a line, `#` comments), `*` any run within one
+ * segment (`ids[*]` any index) and `**` any run of segments, matched against
+ * the whole path (`ids[12].site`, `log[40].projection`) or any prefix of it —
+ * so `ids` excuses the render-id log whole, as X5.4f will owe it when Babylon's
+ * id stops moving, and `**.top` one field on every element. What each pattern
+ * excused is counted and said, and a pattern that excused nothing is said too,
+ * because a difference a step named and did not make is a finding.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { bootMap, hardLimit, HEIGHT, installRound, launchClient, root, startDevServer, WIDTH } from "./harness.mjs";
@@ -94,6 +118,13 @@ const LOG = opt("log", "");
 const MAP = opt("map", MODE === "camera" ? "hollowmere" : "harrowmead");
 const FRAMES = Number(opt("frames", "1500"));
 const SEED = 5101;
+/** The paths `--against` excuses (`compare`): `--ignore=a,b` (repeatable), or `--ignore=@file`. */
+const IGNORE = args
+  .filter((a) => a.startsWith("--ignore="))
+  .flatMap((a) => a.slice("--ignore=".length).split(","))
+  .flatMap((p) => (p.startsWith("@") ? readFileSync(p.slice(1), "utf8").split(/\r?\n/).map((l) => l.replace(/#.*/, "")) : [p]))
+  .map((p) => p.trim())
+  .filter(Boolean);
 
 if (COMPARE) {
   if (!AGAINST) throw new Error("--compare=<a.json> wants --against=<b.json>");
@@ -132,6 +163,9 @@ try {
 summarise(result);
 if (OUT) writeFileSync(OUT, JSON.stringify(result));
 let failed = result.errors.page.length > 0 || result.errors.console.length > 0 || (result.originsChecked && result.originsChecked.some((o) => !o.same));
+// A replay that reproduced fewer live answers than its record holds is not the
+// round it replays, and grades nothing (the header's "What fails a run").
+if (result.faithful && result.faithful.matched < result.faithful.live) failed = true;
 if (AGAINST) failed = compare(result, JSON.parse(readFileSync(AGAINST, "utf8"))) || failed;
 process.exit(failed ? 1 : 0);
 
@@ -700,7 +734,7 @@ function summarise(r) {
   if (r.mode === "replay") {
     const n = (k) => r.readers.filter((x) => x.k === k).length;
     console.log(`  ${r.frames} frames replayed, ${r.digests.length} evaluations digested, readers: muzzle ${n("muzzle")}, hand ${n("hand")}, port ${n("port")}, inverse ${n("inverse")}, fall ${n("fall")}`);
-    console.log(`  faithful: ${r.faithful.matched} of ${r.faithful.live} live answers reproduced (${r.faithful.replayed} replayed)`);
+    console.log(`  faithful: ${r.faithful.matched} of ${r.faithful.live} live answers reproduced (${r.faithful.replayed} replayed)${r.faithful.matched < r.faithful.live ? " — NOT FAITHFUL: the run fails" : ""}`);
     for (const o of r.originsChecked) console.log(`  origin ${o.k} on frame ${o.f}: ${o.same ? "IDENTICAL to the live page's" : `DIFFERS (${o.why ?? JSON.stringify(o)})`}`);
   }
   if (r.mode === "camera") {
@@ -713,18 +747,33 @@ function summarise(r) {
   }
 }
 
-/** Two logs of one mode, compared value by value; true on a difference. */
+/**
+ * Two logs of one mode, compared value by value; true on a difference that
+ * `--ignore` does not name (the header). A pattern is anchored at both ends and
+ * tested at every node of the walk, so one matching a prefix of a path excuses
+ * everything under it.
+ */
 function compare(a, b) {
   if (a.mode !== b.mode) {
     console.log(`against: a ${a.mode} log here and a ${b.mode} log there`);
     return true;
   }
   const parts = a.mode === "camera" ? ["steps", "log"] : a.mode === "replay" ? ["frames", "readers", "digests", "ids", "originsChecked"] : ["readers", "origins", "ids"];
+  const escape = (t) => t.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
+  const token = (t) => (t === "**" ? ".*" : t === "*" ? "[^.]*" : escape(t));
+  const ignores = IGNORE.map((pattern) => ({ pattern, re: new RegExp(`^${pattern.split(/(\*\*|\*)/).map(token).join("")}$`), hits: 0, values: 0 }));
+  const count = (v) => (Array.isArray(v) ? v.reduce((s, e) => s + count(e), 0) : v && typeof v === "object" ? Object.values(v).reduce((s, e) => s + count(e), 0) : 1);
   let diffs = 0;
   const say = (m) => {
     if (diffs++ < 40) console.log(`against: ${m}`);
   };
   const walk = (x, y, path) => {
+    const ig = ignores.find((r) => r.re.test(path));
+    if (ig) {
+      ig.hits++;
+      ig.values += Math.max(count(x), count(y));
+      return;
+    }
     const kind = (v) => (v === null ? "null" : Array.isArray(v) ? "array" : typeof v);
     if (kind(x) !== kind(y)) return say(`${path} is ${JSON.stringify(x)?.slice(0, 120)} here and ${JSON.stringify(y)?.slice(0, 120)} there`);
     if (Array.isArray(x)) {
@@ -740,6 +789,7 @@ function compare(a, b) {
   };
   for (const p of parts) walk(a[p], b[p], p);
   if (diffs > 40) console.log(`against: … and ${diffs - 40} more`);
+  for (const r of ignores) console.log(`against: --ignore ${r.pattern} ${r.hits ? `excused ${r.hits} path${r.hits === 1 ? "" : "s"} (${r.values} values)` : "matched NOTHING"}`);
   console.log(diffs ? `against: DIFFERS (${diffs})` : `against: equal (${parts.join(", ")})`);
   return diffs > 0;
 }
