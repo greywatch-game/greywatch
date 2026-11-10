@@ -5331,7 +5331,7 @@ pointer, its history unchanged):
   when it lands, owes three things: its generator's emitted header rewritten, its
   `params.ts` and `WRITABLE` rows dropped, and a `maps:check` entry.
 
-### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d; it was sized **M** before the split, and the read below re-sizes it) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014)
+### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d; it was sized **M** before the split, and the read below re-sizes it) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014, its review clean)
 
 - **Do:**
   - Our own `requestAnimationFrame` loop.
@@ -5655,6 +5655,19 @@ measurement until the sub-step that replaces both.
   POSITIVE CONTROL (one `scene.incrementRenderId()` by hand) read as one drift and one error.
   Typecheck, build (its gates, `maps:check` among them), corecheck, parity, `gate` and `shaders`.
   **Not run**: `?profile&gpu` (nothing a span brackets moved) and the phone.
+
+  **Its review** (2026-11-10; no change to the game, nothing to fix) found no bug and no question
+  for the owner. It confirmed the two advances against `scene.pure.js` (4573/4581 under
+  `renderTargetsEnabled`, 4069/4085), the `inCamera` test against the camera's own raise (4164),
+  one camera and one `scene.render` in every state (the death cam, `F2`, the kit bay and the
+  warm-up included), and that Babylon's other increment sites (camera-attached render targets
+  4122/4138, `customRenderFunction`, the readiness timer, cube and array targets, effect layers,
+  rig cameras) are used by nothing in a round, the DEV shadow catching any of them both ways
+  until X5.4f. One optional robustness point was left, deliberately: `inCamera` is cleared by a
+  plain observer on `onAfterCameraRenderObservable` (`renderId.ts`), so a throw inside the camera
+  render would leave it set and skip the next frame's frame-level advance; a throw there is
+  already a broken frame, and the DEV shadow reports the one-frame mismatch. X5.4f moves the
+  advances into our own loop, which retires the flag.
 
 - **X5.4c — the warm-up waits for the declared list** (no change to the picture) —
   **S**. The Do's `PipelineWarmup` item.
