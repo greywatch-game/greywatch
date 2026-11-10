@@ -5331,7 +5331,7 @@ pointer, its history unchanged):
   when it lands, owes three things: its generator's emitted header rewritten, its
   `params.ts` and `WRITABLE` rows dropped, and a `maps:check` entry.
 
-### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d; it was sized **M** before the split, and the read below re-sizes it) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014, its review clean)
+### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d; it was sized **M** before the split, and the read below re-sizes it) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014, its review clean), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2)
 
 - **Do:**
   - Our own `requestAnimationFrame` loop.
@@ -5669,8 +5669,8 @@ measurement until the sub-step that replaces both.
   already a broken frame, and the DEV shadow reports the one-frame mismatch. X5.4f moves the
   advances into our own loop, which retires the flag.
 
-- **X5.4c — the warm-up waits for the declared list** (no change to the picture) —
-  **S**. The Do's `PipelineWarmup` item.
+- **X5.4c — the warm-up waits for the declared list** (no change to the picture; a picture change
+  by the owner's decision, row "X5.4c, the vantages' lamp shadows") — **S**. The Do's `PipelineWarmup` item.
   - **The vantages go**, and with them Babylon's pipeline-cache count
     (`createdSoFar`), once X5.4a's log shows that NEITHER cache creates anything at any
     vantage on seven maps. Anything of OURS the log finds created at a vantage (a
@@ -5684,6 +5684,26 @@ measurement until the sub-step that replaces both.
     seven maps, before and after (expected shorter).
   - **Rewrites:** `CLAUDE.md`'s pipeline warm-up paragraph; `PipelineWarmup`'s header;
     `docs/rendering.md` and `docs/states.md` where they describe the vantages.
+
+  **X5.4c LANDED** (4db13df, its picture change 4ebd8b2; 2026-11-10). The full note is in
+  `plans/done/babylon_exit_landed.md`. **The gate**: the vantage log on all seven shipped maps at
+  4cf59ad (`pipelines.mjs` on each map standing still and `--round` on the four armoured ones: 15
+  installs, 11 vantages each) read NOTHING created at any vantage by either cache and nothing in
+  play. **4db13df** (no change to the picture): the warm-up stops reading Babylon's pipeline cache's
+  miss count, and `readers.mjs` hooks `Game.followEye` — the bank byte-equal in all three runs.
+  **4ebd8b2** (`Picture change:`, row "X5.4c, the vantages' lamp shadows", decided 2026-11-10 by the
+  owner): the vantages go and the warm-up is a WAIT for the declared list and the map's own
+  pipelines. The vantage frames ran the camera tail, so they had left the lamps' shadow atlas
+  part-built for the deploy screen, and nothing in the page's own `deploy` re-chooses or bakes a lamp
+  tile (`FINDINGS.md` 73, open). So 16 bank rows move, identically in all three runs, and every
+  other row stays byte-equal: on Greyfen, Harrowmead, Kurenai and Sarab, worst `greyfen-treeline`
+  (473,099 pixels, worst 86/255, mean 0.72) and `harrowmead-menu` (170,558, 155, 0.73). Hollowmere,
+  Coldharbour and Cinderhaven are byte-equal. **Measured as well**: the seal's DEV warning silent
+  and nothing created in play over two rounds on each of the seven maps (the viewer flown to every
+  old vantage); the card shorter by the vantages' 174–317 ms; `gi.mjs`, the draw log, `census`,
+  `particles.mjs`, `post.mjs` at both sizes, `surfaces.mjs`, `readers.mjs` replay and camera all
+  equal to the parent's; `gate`, `shaders`, typecheck, build (its gates), corecheck, parity.
+  **Not run**: `?profile&gpu` (no span moved) and the phone.
 
 - **X5.4d — the textures the game draws are ours** (no change to the picture) — **M**.
   The Do's foam and texture items, under one bank proof.

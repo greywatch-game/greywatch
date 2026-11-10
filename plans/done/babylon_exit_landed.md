@@ -11707,7 +11707,7 @@ here).
 Scripts and logs in the session's scratchpad, `x53-whole/` (`bank.sh`, `sarab.sh`, `run2.sh`,
 `dl-fix.mjs`, `viewer7.mjs`, `status.txt`).
 
-### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014)
+### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2)
 
 The plan's `BABYLON_EXIT.md` holds X5.4's brief, "What the frame is today", its ONE RULE, the
 step's own two rules, "Every sub-step owes" and the nine sub-steps.
@@ -11929,3 +11929,67 @@ every run alone on the GPU. No device lost in any run.
 
 Scripts and logs in the session's scratchpad, `x54b/` (`before.sh`, `after.sh`, `probes.sh`,
 `sarab.sh`, `live.mjs`, `ctrlbuf.mjs`, the BEFORE and AFTER logs and kept frames).
+
+**X5.4c LANDED** (4db13df, its picture change 4ebd8b2; 2026-11-10). Measured headless on the
+Windows box against a BEFORE at 4cf59ad, in the worktree `greywatch-2-before-x53a` (moved there,
+detached; its `node_modules` valid, no dependency having moved; its `ref/` identical to the main
+tree's), every run alone on the GPU. No device lost in any run.
+
+- **The gate the brief set, before any code moved**: `pipelines.mjs`' vantage log at 4cf59ad on
+  all seven shipped maps — each standing still, and `coldharbour`, `harrowmead`, `sarab` and
+  `cinderhaven --round` (two installs each): 15 installs, 11 vantages each, one frame waiting for
+  ours (settled at once), every vantage moving on quiet after two frames, and **nothing created at
+  any vantage by either cache**, off the device or as the warm-up counted it; nothing in play.
+- **4db13df, no change to the picture**: `PipelineWarmup` stops taking
+  `WebGPUCacheRenderPipeline.NumCacheMiss` (its quiet frames count our cache alone; Babylon's
+  created nothing at a vantage, above), `Game` drops the import; `pipelines.mjs` reads Babylon's
+  creations off the device alone; `readers.mjs`' per-frame hook moves from `Game.stageWarmFrame` to
+  `Game.followEye`, the next call in `tick`. The bank by `exact.mjs` 146 byte-equal and
+  `harrowmead-view-pistol-reload` within its known flake (default and `volumetrics=low`), 147
+  byte-equal (`=high`); `pipelines.mjs hollowmere` and `coldharbour --round` as the parent's;
+  `readers.mjs replay` of X5.4a's record 547 of 547, the three origins identical, equal to the
+  parent's replay under the old hook.
+- **4ebd8b2, `Picture change:`** (row "X5.4c, the vantages' lamp shadows", decided 2026-11-10 by
+  the owner: take it): the vantages retired — `stageWarmFrame`, `unstageWarmFrame`, `warmPose`,
+  `WorldCulling.setWarm` and its flag, the `skipFrustumClipping` reads (nothing sets it now),
+  `updateSceneForCamera`'s `bodies` parameter, `CONFIG.graphics.warmup`'s `quietFrames`,
+  `maxFramesPerVantage` and `capMs`; the warm-up is a WAIT for the declared list and the map's own
+  pipelines under `oursCapMs`; `finishBakeWait` still places the camera's passes once around the
+  deploy camera and seals the cache; the bake's drain stays. `pipelines.mjs`' vantage log becomes the
+  WAIT log.
+- **Why the picture moved** (found by the first run, which stopped and reported; confirmed):
+  `LocalShadows.entries` at deploy and 60 frames later (unchanged in both trees). Before, Harrowmead
+  held a lamp at 6/6 faces baked, one at 3/6, four at 0/6, one of them a DIFFERENT lamp (68, 2.69,
+  -27.6 against -68, 2.7, -27.6 after: `keepMargin`'s preference for a light already holding tiles),
+  and Greyfen four at 6/6 and two at 3/6. After, both read one lamp at 3/6 and five at 0/6, at other
+  tile bases. Hollowmere was identical in both trees. The vantage frames ran the camera tail at each
+  vantage, and nothing in the page's own `deploy` re-chooses or bakes a lamp tile, so the deploy
+  screen and every bank row after it inherited what the last vantages left (`FINDINGS.md` 73, new,
+  open: the deploy screen never finishes a lamp's shadow).
+- **Every bank row** by `exact.mjs`, `--check --keep` at each tree, 147 rows a run: 16 moved,
+  identically in default, `volumetrics=low` and `=high` (the numbers in 4ebd8b2's message):
+  `greyfen-canopy`, `-crossing`, `-grass-high`, `-grass-low`, `-grass-medium`, `-ground`, `-marsh`,
+  `-shore-ahead`, `-treeline` (473,099 pixels, worst 86/255, mean 0.7245), `harrowmead-menu`
+  (170,558, 155, 0.7258), `-millpond`, `kurenai-crossing`, `-menu` (65,100, 52, 0.0431), `sarab-menu`,
+  `-shelf`, `-wadi`; every other row byte-equal (the one known flake in two runs). Re-taken on the
+  committed tree: the same 16 with the same numbers in all three runs, and frame for frame equal to
+  the first after-run.
+- **The seal and the card** (`x54c/sealed.mjs`, the DEV build, offline, one page a map, two rounds
+  with a teardown between: the viewer flown over deploy to every old vantage at four headings, eight
+  frames each, then a life firing round the compass, a throw and on an armoured map the launcher):
+  **no seal warning and nothing created in play on any of the seven maps**, at both ends. The card
+  (`startRound` to `deploy`) shorter by the vantages' share, which read 174–317 ms before: e.g.
+  Hollowmere 2,761/1,718 → 2,817/1,605 ms, Kurenai 3,252/2,898 → 2,950/2,641, Cinderhaven
+  5,178/5,110 → 4,964/4,875 (the build's own time varies by more). `pipelines.mjs` on all seven and
+  `--round` on the four after: the wait one frame, nothing created in it or in play.
+- **The probes against the parent's logs**: `gi.mjs` equal (914,611 and 254,731 values — the card's
+  frames no longer step the volume from a vantage, and it never stepped there); the draw log equal;
+  `census` equal (168); `particles.mjs` equal (45,120 numbers); `post.mjs` equal at both sizes (31,879
+  values each, no `--ignore`); `surfaces.mjs` identical; `readers.mjs replay` and `camera` equal.
+- **Typecheck, build** (its gates, `maps:check` among them), **corecheck, parity**, **`gate`** (seven
+  maps clean) and **`shaders`** (seven maps clean).
+- **Not run**: `?profile&gpu` (no span moved), the phone, `merge:hash` (the world layer untouched).
+
+Scripts and logs in the session's scratchpad, `x54c/` (`vantages.sh`, `before.sh`, `after.sh`,
+`aproof.sh`, `final.sh`, `probes.sh`, `sealed.mjs`, `atlas.mjs`, the BEFORE and AFTER logs and kept
+frames, `x54c-uncommitted.patch`).
