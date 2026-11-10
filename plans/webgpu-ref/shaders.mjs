@@ -360,13 +360,8 @@ for (const id of MAPS) {
 
   const out = await page.evaluate(async () => {
     const g = window.__celshock;
-    const frame = () =>
-      new Promise((res) => {
-        const seen = g.scene.onAfterRenderObservable.add(() => {
-          g.scene.onAfterRenderObservable.remove(seen);
-          res();
-        });
-      });
+    // The frame adapter (`harness.mjs`, X5.4a), installed by `bootMap`.
+    const frame = () => window.__refFrame().drawn();
     // Everything that carries no vertex colour buffer is built by PLAYING:
     // the viewmodel, the rigs, the ink twins and the effect meshes.
     g.spawnPlayer();

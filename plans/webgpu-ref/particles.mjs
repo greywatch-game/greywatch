@@ -320,7 +320,8 @@ await page.evaluate(() => {
   g.scene.onBeforeRenderingGroupObservable.add((info) => {
     if (info.renderingGroupId === 0 && e._currentRenderTarget === target) visited = true;
   });
-  g.scene.onAfterRenderObservable.add(() => {
+  // The frame's draw through the frame adapter (`harness.mjs`, X5.4a).
+  window.__refFrame().onDrawn(() => {
     window.__phasePasses = window.__passes.slice(window.__phaseStart ?? 0);
     window.__path = visited ? "group" : "fallback";
     window.__passes.length = 0;
@@ -373,7 +374,7 @@ for (const id of maps) {
     const F = window.__fields;
     const order = F.all().map(F.name);
     const draws = window.__draws.slice(drawsFrom);
-    const frame = () => new Promise((res) => g.scene.onAfterRenderObservable.addOnce(res));
+    const frame = () => window.__refFrame().drawn();
     // The constant 16 ms until the window opens; the schedule through it (the header).
     g.scene.useConstantAnimationDeltaTime = true;
     const cam = g.cameraSys.camera;
@@ -423,14 +424,10 @@ for (const id of maps) {
       if (F.all().every(F.ready)) break;
     }
     F.enable(true);
-    // The window's clock: the engine's frame delta answered by frame, counted
-    // from the window's first, and the scene's own clamp left to read it.
-    const e = g.engine;
-    const frame0 = e.frameId;
-    e.getDeltaTime = () => {
-      const k = (e.frameId - frame0) % 60;
-      return k === 29 ? 0.25 : k === 59 ? 1500 : 16.7;
-    };
+    // The window's clock: the frame's delta answered by frame, counted from
+    // the window's first, and the scene's own clamp left to read it — through
+    // the frame adapter (`harness.mjs`, X5.4a: the engine's `getDeltaTime`).
+    window.__refFrame().scheduleDelta((k) => (k % 60 === 29 ? 0.25 : k % 60 === 59 ? 1500 : 16.7));
     g.scene.useConstantAnimationDeltaTime = false;
     const log = [];
     for (const p of places) {
@@ -442,7 +439,7 @@ for (const id of maps) {
     }
     F.enable(true);
     g.followEye = window.__fe;
-    delete e.getDeltaTime;
+    window.__refFrame().scheduleDelta(null);
     g.scene.useConstantAnimationDeltaTime = false;
     if (keep) {
       hull.pos.copyFrom(keep.pos);

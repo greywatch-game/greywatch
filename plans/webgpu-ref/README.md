@@ -46,7 +46,33 @@ node plans/webgpu-ref/gi.mjs --compare=a.json --against=b.json
 node plans/webgpu-ref/post.mjs [--sizes=desk,phone] [--out=f.json] [--against=f.json] [--no-live]
 node plans/webgpu-ref/post.mjs --compare=a.json --against=b.json
 node plans/webgpu-ref/drawlog.mjs [map...] [--out=f.json] [--against=f.json] [--ignore=<regex>] [--no-viewer] [--limit=<seconds>]
+node plans/webgpu-ref/readers.mjs record --out=rec.json [--map=harrowmead] [--frames=1500]
+node plans/webgpu-ref/readers.mjs replay --log=rec.json [--out=f.json] [--against=f.json]
+node plans/webgpu-ref/readers.mjs camera [--out=f.json] [--against=f.json]
+node plans/webgpu-ref/readers.mjs --compare=a.json --against=b.json
+node plans/webgpu-ref/leaks.mjs [map] [--then=<map>] [--frames=600]
+node plans/webgpu-ref/lost.mjs [map] [--at=menu,loading,deploy,playing] [--seconds=10] [--out=f.json]
 ```
+
+**Every question a script here asks about the FRAME goes through ONE adapter**
+(`harness.mjs`' `frameAdapter`, `window.__refFrame()`, `BABYLON_EXIT.md` X5.4a;
+`postAdapter`'s precedent): "the frame was drawn" (`drawn`, `onDrawn`), "its
+update is about to run" (`beforeDraw`, `onBeforeDraw`), "it was submitted"
+(`submitted`, `onSubmitted`, and `onBegin` for its opening), its index, whether
+the scene can draw (`ready`), the device, the canvas and its pass's depth, which
+encoder a command was recorded on (`encoderRole`), the frame's delta when a probe
+schedules it (`scheduleDelta`, `particles.mjs`) and what owns the frame (`host`).
+**Babylon's arm alone at X5.4a**, answering exactly what each read it replaced
+answered (the same observable, the same add-and-remove, the same field), and
+installed on every page `bootMap` opens. Every probe here and the harness moved
+onto it then — `bank.mjs` and `bench.mjs` read no frame of their own (the
+harness's waits, the page's profiler) — so a sub-step of X5.4 that takes the
+loop, the encoders or the device from Babylon adds OUR arm there, picked first,
+in its own commit, and no probe has to be taught. What a probe measures OF
+Babylon — its `_draw`s (`census`, `drawlog`, `surfaces`), its rendering groups,
+its compiled effects, its engine's statics in `post.mjs`' chain — is not a
+question about the frame: it stays Babylon's, and goes as each thing it reads
+does.
 
 - **`gate.mjs`** boots every shipped map, plays a real round on each and fails
   loudly if any is not clean — the engine is WebGPU, the round reaches
@@ -191,7 +217,14 @@ node plans/webgpu-ref/drawlog.mjs [map...] [--out=f.json] [--against=f.json] [--
   note has the readings). The camera's path is a function of FRAMES and it is
   turned onto the pane before the pane breaks, so what is on screen when an
   effect is first drawn does not ride the machine's frame rate; the pane
-  phase says how many shard draws the main pass made.
+  phase says how many shard draws the main pass made. **Since X5.4a both modes print
+  the warm-up's VANTAGE LOG** (X5.4c's BEFORE): every frame the building card's
+  warm-up was asked about (`PipelineWarmup.afterFrame`, wrapped on its prototype),
+  what each cache created on it — off the device (Babylon's synchronous pipelines,
+  our asynchronous ones, the modules) and as the warm-up counted it — and why it
+  held or moved (waiting for ours, a vantage held for a creation, for ours
+  compiling or counting its quiet frames, a move on quiet or on the frame cap, the
+  end).
 
 - **`surfaces.mjs`** is where each surface `BABYLON_EXIT.md` X4.6 moves sits in
   Babylon's frame, MEASURED: it shoots a map's sequence as `bank.mjs` does and
@@ -340,7 +373,20 @@ node plans/webgpu-ref/drawlog.mjs [map...] [--out=f.json] [--against=f.json] [--
   moved (the opening pass, `passes[0]`, the frame's where it was the canvas's, and the
   scene's pass, `passes[1]`, loading what it cleared — the one place an index is the
   key, since each names the same pass in every scenario) —
-  and a later sub-step adds its own section there. **Key a line on the draw's stage**
+  and a later sub-step adds its own section there. **Since X5.4a it logs the WHOLE
+  frame** (X5.4e's to X5.4h's BEFORE), beside the chain's passes and without moving
+  them, so a parent's log compares with its new parts named
+  (`--ignore=**.whole,**.wholeSteady,*.statics.boot`): each scenario's `whole` is the
+  captured frame in SUBMIT order — every submit, its command buffers with each
+  encoder's role and label, and on each, in recording order, every render pass (by
+  its index in `passes`, with its timestamp writes), every COMPUTE pass (its label,
+  timestamp writes and dispatches by pipeline and workgroups) and every
+  encoder-level copy, clear, resolve or timestamp, with the queue's writes counted
+  before each submit (`wholeSteady` says it held over the two captured frames); and
+  `statics.boot` is, once a boot, every `requestAdapter`'s options, every
+  `requestDevice`'s descriptor (features, limits, label), every
+  `GPUCanvasContext.configure`'s argument, and the device's label and features.
+  **Key a line on the draw's stage**
   (`**.draws[stage=glow.*].viewport`), never on a pass index: an index names whatever
   draw a scenario puts at it, so it would excuse the same field on another stage's draw
   (X5.2b's review).
@@ -380,6 +426,44 @@ node plans/webgpu-ref/drawlog.mjs [map...] [--out=f.json] [--against=f.json] [--
   X5.3d's review). `compiledAtBoot` is the engine's own `clearQuad` alone
   since X5.3d deleted `localShadowClear`, and no mesh stands at the boot any more (the
   `Mesh.render` hook waits for the first).
+
+- **`readers.mjs`** is X4.3b's READERS' ORACLE committed, and the CAMERA LOG
+  (`BABYLON_EXIT.md` X5.4a; its header is its contract). The four answers read out
+  of the viewmodel's render cache — `muzzleWorld`, `throwHandWorld`,
+  `ejectPortWorld` and the reload's gravity through the inverse of the weapon
+  root's world — two of them command inputs. `record` plays a live offline round
+  on Harrowmead through X4.3b's schedule (the rifle hip and aimed, a sprint, a
+  tactical and a dry reload, a frag, the pistol, the launcher and a rocket, a
+  molotov) and logs every call into `ViewModel` and `PlayerView`, the camera at each
+  frame's hand-over, every answer as float64 bits and the origins the page
+  submitted: the INPUT, made once at a parent, not compared. `replay` re-issues it
+  frame for frame in a held `deploy` (from `Game.stageWarmFrame`, the flash's and
+  the brass's `Math.random` seeded) and logs every answer, a digest of every joint
+  the frame evaluated (read where it lies, never through the cache) and the three
+  origins recomputed by `Game`'s floors and held to the live page's bits — the
+  oracle, compared across processes and trees (`--against`). Both log every change
+  of Babylon's RENDER ID with the site that made it (the camera's render, the
+  mask's, a render target's, the readiness timer; the scene's `_renderId` made an
+  accessor that reads and writes the same number), relative to the run's first
+  frame. `camera` logs the view, the projection, the scene's transform matrix and
+  `globalPosition` as float bits, with the inputs they were computed from, eight
+  frames a state through the menu, the card, deploy, the kit lid, a life, a
+  render-scale change, a resize, the pause, the round-over card and the menu, the
+  pose PINNED at each frame's own update as a function of the step — X5.4f's and
+  X5.4h's BEFORE, compared across processes and trees.
+- **`leaks.mjs`** is the BABYLON-LEAK probe (X5.4a; X5.4b's proof for
+  `src/core/webgpuLeaks.ts`): one Coldharbour page, the boot settled as the
+  baseline, two rounds each with a life and a teardown, a map change and a round
+  there, and at each step (after a forced GC) every `_deletePipelineContext` since
+  the baseline, every bind group Babylon's cache made (read across its own reset),
+  every `createBindGroup` on the device, the live `GPUBuffer`s and the JS heap — by
+  frame class. It records; X5.4b grades.
+- **`lost.mjs`** destroys the device every draw is made on, from the page, at the
+  menu, the building card, deploy and a life, each on a fresh page, and records
+  what follows for `--seconds`: the state, the frames drawn and submitted, whether
+  the frame adapter answers a new device, what the old device's `lost` said and
+  every console line. Its pages wear no device watch (a loss is the point). It
+  records today's dead frame (X5.4a) and grades nothing until X5.4i.
 
 `cold-stagger.mjs` is **gone and is not coming back**. It existed to bake
 Coldharbour's forty cube probes four a frame because doing all forty at once

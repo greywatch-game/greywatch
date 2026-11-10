@@ -381,12 +381,16 @@ function recordFrame(page) {
   return page.evaluate(async () => {
     const g = window.__celshock;
     const s = window.__surf;
+    // The frame through the frame adapter (`harness.mjs`, X5.4a): from before
+    // its draw to the draw's end, both read synchronously as the frame raises them.
+    const F = window.__refFrame();
     return new Promise((res) => {
-      g.scene.onBeforeRenderObservable.addOnce(() => {
+      F.beforeDraw(() => {
         s.log = [];
         s.engine = [];
         s.rec = true;
-        g.scene.onAfterRenderObservable.addOnce(() => {
+        const off = F.onDrawn(() => {
+          off();
           s.rec = false;
           // What the frustum kept and nothing drew: the size gate's (`WorldCulling.offer`).
           const drawn = new Set(s.log.filter((it) => it.pass === "main").map((it) => it.id));

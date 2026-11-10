@@ -210,6 +210,95 @@ function limited(what, ms, work) {
 export const MAP_IDS = MAPS.map((m) => m.id);
 
 /**
+ * **The FRAME, reached through ONE adapter** (`window.__refFrame()`,
+ * `BABYLON_EXIT.md` X5.4a; `postAdapter`'s precedent): every question a script
+ * here asks about the page's frame — rather than about what the frame drew —
+ * answered off whichever host the page has, so a sub-step of X5.4 that takes
+ * one of them from Babylon adds OUR arm here, picked first, and no probe has to
+ * be taught. The questions:
+ *
+ * - `drawn()`: a promise of the next frame's DRAW having happened (the scene's
+ *   render returned), and `onDrawn(fn)` for every one until the remover it
+ *   hands back is called;
+ * - `beforeDraw(fn)`: `fn` once, in the next frame, before its draw (where the
+ *   scene's own update runs, ahead of the camera), and `onBeforeDraw(fn)` in
+ *   every one until the remover it hands back is called;
+ * - `submitted()`: a promise of the next frame's work having been SUBMITTED
+ *   (the engine's end of frame), `onSubmitted(fn)` for every one, and
+ *   `onBegin(fn)` for the opening of every frame (the engine's begin);
+ * - `index()`: the frame's index (the scene's frame id), `ready()` whether
+ *   the scene's every draw can be made this frame (`scene.isReady()`; the post
+ *   chain's stages that are ours are `postAdapter`'s `ready`, asked beside it);
+ * - `device()`, `canvas()` and `canvasDepth()`: the `GPUDevice` every draw is
+ *   made on, the canvas and the canvas pass's depth texture;
+ * - `encoderRole(encoder)`: which of the frame's command encoders that is
+ *   (`"render"`, `"upload"`, `"other"`);
+ * - `scheduleDelta(fn)`: the frame's DELTA (the milliseconds the scene's own
+ *   step reads, `getDeltaTime`) answered from now on by `fn(k)`, `k` the
+ *   frames since the call (`particles.mjs`' schedule), and `scheduleDelta(null)`
+ *   handing it back to the frame's own clock;
+ * - `host()`: what owns the frame, for a report (the engine's class).
+ *
+ * **Babylon's arm alone at X5.4a**, and it answers exactly what the reads it
+ * replaced answered (the same observable, the same add-and-remove, the same
+ * field), so moving a probe onto it moved nothing. Installed on every page
+ * `bootMap` opens (an init script, ahead of a caller's own: it reads the game
+ * only when asked) and by the first call that needs it on any other;
+ * idempotent. `window.__refFrame()` is asked FRESH at every use, as
+ * `__refPost()` is, so an arm a sub-step adds can depend on the moment.
+ */
+export function frameAdapter() {
+  window.__refFrame ??= () => {
+    const g = window.__celshock;
+    const scene = g.scene;
+    const e = g.engine;
+    return {
+      arm: "babylon",
+      drawn: () =>
+        new Promise((res) => {
+          const o = scene.onAfterRenderObservable.add(() => {
+            scene.onAfterRenderObservable.remove(o);
+            res();
+          });
+        }),
+      onDrawn: (fn) => {
+        const o = scene.onAfterRenderObservable.add(fn);
+        return () => scene.onAfterRenderObservable.remove(o);
+      },
+      beforeDraw: (fn) => void scene.onBeforeRenderObservable.addOnce(fn),
+      onBeforeDraw: (fn) => {
+        const o = scene.onBeforeRenderObservable.add(fn);
+        return () => scene.onBeforeRenderObservable.remove(o);
+      },
+      submitted: () => new Promise((res) => void e.onEndFrameObservable.addOnce(() => res())),
+      onSubmitted: (fn) => {
+        const o = e.onEndFrameObservable.add(fn);
+        return () => e.onEndFrameObservable.remove(o);
+      },
+      onBegin: (fn) => {
+        const o = e.onBeginFrameObservable.add(fn);
+        return () => e.onBeginFrameObservable.remove(o);
+      },
+      index: () => scene.getFrameId(),
+      ready: () => scene.isReady(),
+      device: () => e._device ?? null,
+      canvas: () => e.getRenderingCanvas(),
+      canvasDepth: () => e._depthTexture ?? null,
+      scheduleDelta: (fn) => {
+        if (fn === null) {
+          delete e.getDeltaTime;
+          return;
+        }
+        const frame0 = e.frameId;
+        e.getDeltaTime = () => fn(e.frameId - frame0);
+      },
+      encoderRole: (enc) => (enc === e._renderEncoder ? "render" : enc === e._uploadEncoder ? "upload" : "other"),
+      host: () => ({ engine: e.constructor.name, webgpu: Boolean(e.isWebGPU) }),
+    };
+  };
+}
+
+/**
  * A page with a booted `Game` on the named map, and nothing else done to it.
  *
  * Errors are collected rather than thrown: a boot that fails shows up as
@@ -252,6 +341,9 @@ export async function bootMap(browser, url, id, { hideUI = true, init = null, vi
     if (m.type() === "error") consoleErrors.push(m.text());
   });
   await page.addInitScript(([k, v]) => window.localStorage.setItem(k, v), [MAP_KEY, id]);
+  // The frame adapter, ahead of the caller's own init, so a probe's init may
+  // ask it from the game's first frame (it reads the game only when asked).
+  await page.addInitScript(frameAdapter);
   if (init) await (Array.isArray(init) ? page.addInitScript(init[0], init[1]) : page.addInitScript(init));
   const started = Date.now();
   await page.goto(url, { waitUntil: "domcontentloaded" });
@@ -286,7 +378,7 @@ export async function bootMap(browser, url, id, { hideUI = true, init = null, vi
  * a forced re-bake measures instead.
  */
 export function installRound(page) {
-  return limited("installRound", 900_000, page.evaluate(async () => {
+  return limited("installRound", 900_000, page.evaluate(frameAdapter).then(() => page.evaluate(async () => {
     const g = window.__celshock;
     const t0 = performance.now();
     g.startRound();
@@ -296,12 +388,7 @@ export function installRound(page) {
     });
     const installMs = Math.round(performance.now() - t0);
     const frameStart = performance.now();
-    await new Promise((res) => {
-      const seen = g.scene.onAfterRenderObservable.add(() => {
-        g.scene.onAfterRenderObservable.remove(seen);
-        res();
-      });
-    });
+    await window.__refFrame().drawn();
     return {
       installMs,
       bakeFrameMs: Math.round(performance.now() - frameStart),
@@ -314,7 +401,7 @@ export function installRound(page) {
       bakePending: g.reflections.bakePending,
       paneGroups: g.map.paneGroups.length,
     };
-  }));
+  })));
 }
 
 /**
@@ -326,22 +413,17 @@ export function installRound(page) {
  */
 export function waitUntilDrawn(page, timeoutMs = 120_000) {
   // Its own deadline is read between frames, so it cannot fire when they stop.
-  return limited("waitUntilDrawn", timeoutMs + 60_000, page.evaluate(postAdapter).then(() => page.evaluate(async (timeout) => {
-    const g = window.__celshock;
+  return limited("waitUntilDrawn", timeoutMs + 60_000, page.evaluate(frameAdapter).then(() => page.evaluate(postAdapter)).then(() => page.evaluate(async (timeout) => {
     const deadline = performance.now() + timeout;
     let frames = 0;
     for (;;) {
-      await new Promise((res) => {
-        const seen = g.scene.onAfterRenderObservable.add(() => {
-          g.scene.onAfterRenderObservable.remove(seen);
-          res();
-        });
-      });
+      await window.__refFrame().drawn();
       frames++;
       // The post chain's stages that are OUR draws are not in
       // `scene.isReady()` (X5.2c1): the adapter's readiness arm asks our
-      // pipelines (Babylon's arm, at a parent, answers true).
-      if (g.scene.isReady() && window.__refPost().ready()) return { drawnOnFrame: frames };
+      // pipelines (Babylon's arm, at a parent, answers true). The frame's own
+      // readiness is the frame adapter's (`scene.isReady()`, X5.4a).
+      if (window.__refFrame().ready() && window.__refPost().ready()) return { drawnOnFrame: frames };
       if (performance.now() > deadline) throw new Error("scene never became ready");
     }
   }, timeoutMs)));
@@ -359,7 +441,7 @@ export function waitUntilDrawn(page, timeoutMs = 120_000) {
  * SURFACE — upper envelope, because that is the floor as drawn.
  */
 export function placeVantage(page, vantage) {
-  return page.evaluate(postAdapter).then(() => page.evaluate(async (v) => {
+  return page.evaluate(frameAdapter).then(() => page.evaluate(postAdapter)).then(() => page.evaluate(async (v) => {
     const g = window.__celshock;
     // A seeded `Math.random` for the length of `fn` and put back — how a
     // subject whose LAYOUT is drawn at random (a blast, a muzzle flash) is
@@ -687,12 +769,7 @@ export function placeVantage(page, vantage) {
     // The zones keep what they were flown to: a later row showing them owes
     // its own `flown`, and no row before these shows them flown.
     if (v.flown) {
-      await new Promise((res) => {
-        const o = g.scene.onAfterRenderObservable.add(() => {
-          g.scene.onAfterRenderObservable.remove(o);
-          res();
-        });
-      });
+      await window.__refFrame().drawn();
       const points = g.zones.zones.map((_, i) => ({ meter: v.flown.meters[i] ?? 0 }));
       const steps = Math.round(v.flown.seconds * 60);
       for (let i = 0; i < steps; i++) g.zones.update(1 / 60, points, cam.position);
@@ -773,12 +850,7 @@ export function placeVantage(page, vantage) {
       // fixed point. Only a reload reads the cache (`evaluateReload` returns
       // before it otherwise), so no other row renders the extra frame.
       if (p.reloading || p.reloadBlend > 0.001) {
-        await new Promise((res) => {
-          const o = g.scene.onAfterRenderObservable.add(() => {
-            g.scene.onAfterRenderObservable.remove(o);
-            res();
-          });
-        });
+        await window.__refFrame().drawn();
         pose();
       }
       // One round fired: the flash's roll and scale are drawn at random, so
@@ -821,12 +893,7 @@ export function placeVantage(page, vantage) {
       // first, the held reload's reason.
       if (fx.events.some((e) => e.brass)) {
         g.playerView.stowed(false);
-        await new Promise((res) => {
-          const o = g.scene.onAfterRenderObservable.add(() => {
-            g.scene.onAfterRenderObservable.remove(o);
-            res();
-          });
-        });
+        await window.__refFrame().drawn();
       }
       const B = (p) => new Vec3(p[0], p[1], p[2]);
       const raise = (e) => {
@@ -1026,18 +1093,13 @@ export function placeVantage(page, vantage) {
       window.__refMotes = true;
       for (let frames = 0; !F.ready(ps); frames++) {
         if (frames > 1200) throw new Error("the mote field never became ready");
-        await new Promise((res) => {
-          const o = g.scene.onAfterRenderObservable.add(() => {
-            g.scene.onAfterRenderObservable.remove(o);
-            res();
-          });
-        });
+        await window.__refFrame().drawn();
       }
       // The step's length is a mote's seconds, and it is stated here rather
       // than in `Atmosphere`: nothing but this row wants the field off its rate.
       ps.updateSpeed = v.motes.step;
       await new Promise((res) => {
-        g.scene.onBeforeRenderObservable.addOnce(() => {
+        window.__refFrame().beforeDraw(() => {
           seeded(0xa6, () => {
             for (let i = 0; i < v.motes.steps; i++) F.step(ps);
           });
@@ -1110,15 +1172,10 @@ export function placeVantage(page, vantage) {
       for (const f of stated) F.prime(f);
       for (let frames = 0; !stated.every(F.ready); frames++) {
         if (frames > 1200) throw new Error("a stated field never became ready");
-        await new Promise((res) => {
-          const o = g.scene.onAfterRenderObservable.add(() => {
-            g.scene.onAfterRenderObservable.remove(o);
-            res();
-          });
-        });
+        await window.__refFrame().drawn();
       }
       await new Promise((res) => {
-        g.scene.onBeforeRenderObservable.addOnce(() => {
+        window.__refFrame().beforeDraw(() => {
           // In the frame's order: the scene's list, the fields the row states.
           const order = F.all().filter((f) => stated.includes(f));
           seeded(0xa6, () => {
@@ -1299,7 +1356,7 @@ function postAdapter() {
  */
 export function freeze(page, set = FREEZE_SET, { windTime = 0, turn = 0, strike = null, damage = false } = {}) {
   // Its sweeps' own cap counts frames, so it cannot fire when they stop.
-  return limited("freeze", 1_800_000, page.evaluate(postAdapter).then(() => page.evaluate(async ([f, wind, blurTurn, sweeps, strikeAt, flash]) => {
+  return limited("freeze", 1_800_000, page.evaluate(frameAdapter).then(() => page.evaluate(postAdapter)).then(() => page.evaluate(async ([f, wind, blurTurn, sweeps, strikeAt, flash]) => {
     const g = window.__celshock;
     const post = window.__refPost();
     // The real updaters, recorded ONCE per page — so only of objects the page
@@ -1582,12 +1639,7 @@ export function freeze(page, set = FREEZE_SET, { windTime = 0, turn = 0, strike 
       let frames = 0;
       while (gi.warmFrames > 0) {
         if (++frames > cap) throw new Error("the irradiance volume never finished its sweeps");
-        await new Promise((res) => {
-          const o = g.scene.onAfterRenderObservable.add(() => {
-            g.scene.onAfterRenderObservable.remove(o);
-            res();
-          });
-        });
+        await window.__refFrame().drawn();
       }
       gi.update = () => {};
       // **THE HOLD IS THE STUB, and that is a contract the port keeps**
@@ -1630,12 +1682,7 @@ export function freeze(page, set = FREEZE_SET, { windTime = 0, turn = 0, strike 
         r.rebake();
         for (let frames = 0; r.bakePending > 0; frames++) {
           if (frames > 600) throw new Error("the re-bake never drained");
-          await new Promise((res) => {
-            const o = g.scene.onAfterRenderObservable.add(() => {
-              g.scene.onAfterRenderObservable.remove(o);
-              res();
-            });
-          });
+          await window.__refFrame().drawn();
         }
       } else {
         for (const p of r.probes ?? []) p.cubeTexture.resetRefreshCounter();
@@ -1699,17 +1746,16 @@ export function thaw(page) {
  * The limit is the header's, roomy enough for a Chromebook's half a frame a second.
  */
 export function settle(page, n = 6, limitMs = Math.max(120_000, n * 5_000)) {
-  return limited(`settle(${n})`, limitMs, page.evaluate(async (frames) => {
-    const g = window.__celshock;
+  return limited(`settle(${n})`, limitMs, page.evaluate(frameAdapter).then(() => page.evaluate(async (frames) => {
     let seen = 0;
     await new Promise((res) => {
-      const o = g.scene.onAfterRenderObservable.add(() => {
+      const off = window.__refFrame().onDrawn(() => {
         if (++seen < frames) return;
-        g.scene.onAfterRenderObservable.remove(o);
+        off();
         res();
       });
     });
-  }, n));
+  }, n)));
 }
 
 /**
@@ -1776,15 +1822,15 @@ export async function describeStack(browser, url) {
   };
 }
 
-/** Frames per second over a wall-clock window, measured off the scene's own counter. */
+/** Frames per second over a wall-clock window, measured off the frame adapter's index (the scene's own counter). */
 export function fps(page, ms) {
-  return page.evaluate(async (windowMs) => {
-    const g = window.__celshock;
-    const f0 = g.scene.getFrameId();
+  return page.evaluate(frameAdapter).then(() => page.evaluate(async (windowMs) => {
+    const F = window.__refFrame();
+    const f0 = F.index();
     const t0 = performance.now();
     await new Promise((res) => setTimeout(res, windowMs));
-    return +((g.scene.getFrameId() - f0) / ((performance.now() - t0) / 1000)).toFixed(1);
-  }, ms);
+    return +((F.index() - f0) / ((performance.now() - t0) / 1000)).toFixed(1);
+  }, ms));
 }
 
 /**

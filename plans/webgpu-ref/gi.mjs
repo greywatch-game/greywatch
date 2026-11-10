@@ -317,12 +317,10 @@ function deviceProbe(shaftsOff) {
     return P.encId.get(enc);
   };
   P.encOf = encOf;
-  // Which of Babylon's two encoders an event was recorded on, read AT the
-  // event: both are replaced at every flush (`flushFramebuffer`).
-  const roleOf = (enc) => {
-    const e = P.engine;
-    return !e ? "?" : enc === e._renderEncoder ? "render" : enc === e._uploadEncoder ? "upload" : "other";
-  };
+  // Which of the frame's encoders an event was recorded on, read AT the
+  // event (Babylon replaces both at every flush, `flushFramebuffer`), through
+  // the frame adapter (`harness.mjs`, X5.4a) once the game's hooks are on.
+  const roleOf = (enc) => (!P.engine ? "?" : window.__refFrame().encoderRole(enc));
   if (E) {
     wrap(E, "beginComputePass", function (orig, a) {
       const pass = orig.apply(this, a);
@@ -391,8 +389,9 @@ const { page, pageErrors, consoleErrors } = await bootMap(browser, `${vite.url}$
 page.on("dialog", (d) => void d.accept());
 
 // The hooks on the game, once a boot: the frame clock, the counters and the
-// adapter. Everything is read at the END of a frame (`onEndFrameObservable`,
-// after Babylon's submit), so a copy submitted there sees the frame's work.
+// adapter. Everything is read at the END of a frame (the frame adapter's
+// `onSubmitted`, `harness.mjs`, X5.4a: Babylon's `onEndFrameObservable`, after
+// its submit, at every parent so far), so a copy submitted there sees the frame's work.
 await page.evaluate(async () => {
   const g = window.__celshock;
   const P = window.__giProbe;
@@ -490,7 +489,10 @@ await page.evaluate(async () => {
     return writeParams.apply(this, a);
   };
   P.engine = e;
-  e.onEndFrameObservable.add(() => {
+  // The frame's end through the frame adapter (`harness.mjs`, X5.4a): after
+  // the frame's submit (Babylon's end of frame at every parent so far).
+  const F = window.__refFrame();
+  F.onSubmitted(() => {
     const ev = P.events;
     P.events = [];
     const giPasses = [];
@@ -531,7 +533,7 @@ await page.evaluate(async () => {
     P.ended = [];
     P.bindCount = {};
   });
-  P.nextFrame = () => new Promise((res) => e.onEndFrameObservable.addOnce(() => res()));
+  P.nextFrame = () => F.submitted();
 
   // **The GPU half, through ONE adapter.** Babylon's arm: the seven
   // `RawTexture3D`s' and the six `StorageBuffer`s' GPU objects, what our frame
@@ -618,7 +620,7 @@ await page.evaluate(async () => {
   const BPP = { rgba16float: 8, rgba8unorm: 4, rg8unorm: 2, rgba32float: 16, r8unorm: 1 };
   /** One resource's bytes, rows unpadded; null when there is none or it cannot be copied. */
   P.read = async (names, keep = []) => {
-    const dev = e._device;
+    const dev = F.device();
     const out = {};
     const jobs = [];
     P.self = true;

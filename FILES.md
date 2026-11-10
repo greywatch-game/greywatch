@@ -354,7 +354,7 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   `npm run kit:hash -- --feet`, and an edit
                               #   re-seeds every map it moves
 plans/webgpu-ref/     # The exit's probes and the reference bank, indexed by
-                      #   its own README.md rather than here, bar one:
+                      #   its own README.md rather than here, bar four:
   drawlog.mjs         # The DRAW LOG (BABYLON_EXIT.md X5.3a): Babylon's
                       #   `_draw`s, group-0 visits, effect compiles and
                       #   scene.meshes by frame class, live, through the
@@ -365,6 +365,20 @@ plans/webgpu-ref/     # The exit's probes and the reference bank, indexed by
                       #   deploy, the death cam and a life (X5.3b, its own
                       #   class); per-frame count SETS, so it compares with
                       #   itself and a parent (`--against`)
+  readers.mjs         # X4.3b's READERS' ORACLE committed (BABYLON_EXIT.md
+                      #   X5.4a): a live round RECORDED, then REPLAYED in a
+                      #   held deploy — the four render-cache readers as
+                      #   float64 bits, every evaluated joint, the submitted
+                      #   origins recomputed, every render-id change and its
+                      #   site; and `camera`, the camera's matrices per frame
+                      #   through every state with the pose pinned
+  leaks.mjs           # The Babylon-leak probe (X5.4a): pipeline contexts
+                      #   released and cached bind groups made after the boot,
+                      #   live GPUBuffers and the heap, over two rounds, a
+                      #   teardown and a map change — webgpuLeaks.ts' proof
+  lost.mjs            # The device destroyed on purpose at the menu, the card,
+                      #   deploy and a life, and what follows recorded (X5.4a;
+                      #   graded from X5.4i)
 
 index.html          # The head, and NO interface CSS beyond the two things shown
                     #   while there IS no interface: a black background (so a

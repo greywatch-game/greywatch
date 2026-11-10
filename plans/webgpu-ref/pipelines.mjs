@@ -57,12 +57,18 @@
  * names a particle field's (no mesh is drawing when one compiles) and a
  * compute pipeline's.
  *
+ * **Both modes print the warm-up's VANTAGE LOG** (`BABYLON_EXIT.md` X5.4a, X5.4c's
+ * BEFORE; `hookWarmup`): every frame the building card's warm-up was asked about,
+ * what each cache created on it and why it held or moved. Frames are counted
+ * through the frame adapter (`harness.mjs`' `frameAdapter`, X5.4a).
+ *
  * **A lost device ends it** (`harness.mjs`'s header, exit 4), and so does a hard
  * limit (exit 3, `--limit=<seconds>`): `--round`'s `until` counts FRAMES, so
  * under a stopped frame counter its own limit never fires. One such run sat
  * about 11 hours (`FINDINGS.md` 64).
  */
 import {
+  frameAdapter,
   hardLimit,
   startDevServer,
   root,
@@ -120,8 +126,11 @@ await page.addInitScript((mapId) => {
     };
   }
 }, MAP);
+// The frame adapter (`harness.mjs`, X5.4a), which `bootMap` would install.
+await page.addInitScript(frameAdapter);
 await page.goto(vite.url, { waitUntil: "domcontentloaded" });
 await page.waitForFunction(() => Boolean(window.__celshock), null, { timeout: 180_000 });
+await hookWarmup(page);
 
 if (ROUND) {
   await playRound(page);
@@ -142,15 +151,16 @@ const out = await page.evaluate(async (seconds) => {
   const atInstall = { modules: L.modules.length, pipelines: L.pipelines.length };
   g.spawnPlayer();
   const buckets = [];
+  const F = window.__refFrame();
   for (let s = 0; s < seconds; s++) {
-    const f = g.scene.getFrameId();
+    const f = F.index();
     const m = L.modules.length;
     const p = L.pipelines.length;
     const pm = L.pipelineMs;
     await new Promise((res) => setTimeout(res, 1000));
     buckets.push({
       sec: s + 1,
-      fps: g.scene.getFrameId() - f,
+      fps: F.index() - f,
       newModules: L.modules.length - m,
       newPipelines: L.pipelines.length - p,
       pipelineMs: +(L.pipelineMs - pm).toFixed(1),
@@ -167,6 +177,7 @@ const out = await page.evaluate(async (seconds) => {
       pipelineMs: +L.pipelineMs.toFixed(1),
     },
     buckets,
+    warmups: window.__warmLog.splice(0),
   };
 }, SECONDS);
 
@@ -182,6 +193,7 @@ for (const b of out.buckets) {
       `${String(b.pipelineMs).padStart(11)}`,
   );
 }
+printWarmups(out.warmups);
 await browser.close();
 vite.stop();
 
@@ -198,9 +210,9 @@ async function playRound(page) {
     const frames = (n) =>
       new Promise((res) => {
         let k = 0;
-        const o = g.scene.onAfterRenderObservable.add(() => {
+        const off = window.__refFrame().onDrawn(() => {
           if (++k < n) return;
-          g.scene.onAfterRenderObservable.remove(o);
+          off();
           res();
         });
       });
@@ -442,7 +454,7 @@ async function playRound(page) {
     const made = L.pipelines
       .filter((x) => x.phase.startsWith("life"))
       .map((x) => `${x.phase}: ${x.mesh ?? "(no Babylon mesh drawing)"}\n      ${(x.stack ?? []).join("\n      ")}`);
-    return { made, phases, installs, did, total: { babylon: sum("babylon"), ours: sum("ours"), modules: sum("modules") } };
+    return { made, phases, installs, did, total: { babylon: sum("babylon"), ours: sum("ours"), modules: sum("modules") }, warmups: window.__warmLog.splice(0) };
   });
   console.log(`map ${MAP} --round`);
   console.log(`  created by each install (left out): ${JSON.stringify(out.installs)}`);
@@ -457,4 +469,94 @@ async function playRound(page) {
   console.log(`\n  in play, both lives: ${JSON.stringify(out.total)}`);
   console.log(`  what was done, both rounds: ${JSON.stringify(out.did)}`);
   for (const m of out.made) console.log(`  made in play — ${m}`);
+  printWarmups(out.warmups);
+}
+
+/**
+ * **The warm-up's VANTAGE LOG** (`BABYLON_EXIT.md` X5.4a, X5.4c's BEFORE): every
+ * frame the building card's warm-up was asked about (`PipelineWarmup.afterFrame`,
+ * wrapped on its prototype, which reads and writes nothing of the game's), with
+ * what each cache CREATED on it — off the device (`createRenderPipeline` and
+ * `createComputePipeline`, Babylon's, synchronous; `create*PipelineAsync`, our
+ * renderer's; `createShaderModule`, both) and as the warm-up itself counted it
+ * (Babylon's cache's miss count, our cache's settled compiles, ours still
+ * compiling) — and WHY the warm-up held or moved: the opening wait for ours
+ * (`ours` while ours compiles or a declared entry is unsettled), a vantage held
+ * for a frame that created something or left ours compiling, or held counting
+ * its quiet frames, and the move to the next vantage (quiet reached, or the
+ * frame cap) or the end (done, or the wall-clock cap). One list per install, the
+ * frames numbered from the install's first. Installed once, before the first
+ * install; nothing in it reaches the game.
+ */
+function hookWarmup(page) {
+  return page.evaluate(async () => {
+    const L = window.__gpuLog;
+    window.__warmLog = [];
+    const { PipelineWarmup } = await import("/src/core/PipelineWarmup.ts");
+    const { CONFIG } = await import("/src/config/index.ts");
+    const proto = PipelineWarmup.prototype;
+    const orig = proto.afterFrame;
+    const counts = () => ({ babylon: L.pipelines.length, ours: L.ours.length, modules: L.modules.length });
+    proto.afterFrame = function (created) {
+      if (!this.__log) {
+        // A new warm-up (one an install): its first frame is counted from what
+        // the constructor read, Babylon's count being its `lastCount` less ours.
+        this.__log = { vantages: this.vantages.map((v) => [v.x, v.y, v.z].map((n) => +n.toFixed(2))), frames: [] };
+        this.__created = this.lastCount - this.ours.settled;
+        this.__settled = this.ours.settled;
+        this.__device = this.__deviceAtStart ?? counts();
+        window.__warmLog.push(this.__log);
+      }
+      const cfg = CONFIG.graphics.warmup;
+      const before = { index: this.index, frames: this.frames, quiet: this.quiet };
+      const settled = this.ours.settled;
+      const compiling = this.ours.compiling;
+      const pending = this.declaredPending;
+      const dev = counts();
+      const done = orig.call(this, created);
+      const moved = this.index !== before.index;
+      let why;
+      if (before.index < 0) {
+        why = !moved ? `ours: ${compiling} compiling, ${pending} declared unsettled` : compiling > 0 || pending > 0 ? "ours: cap reached" : "ours: settled";
+      } else if (moved) {
+        why = before.quiet + 1 >= cfg.quietFrames && created - this.__created + settled - this.__settled === 0 && compiling === 0 ? "moved: quiet reached" : "moved: frame cap";
+      } else {
+        why = created - this.__created > 0 || settled - this.__settled > 0 ? "held: created" : compiling > 0 ? "held: ours compiling" : `held: quiet ${this.quiet} of ${cfg.quietFrames}`;
+      }
+      if (done) why += this.index >= this.vantages.length ? "; done" : "; done (the wall-clock cap)";
+      this.__log.frames.push({
+        vantage: before.index,
+        frame: before.index < 0 ? null : before.frames + 1,
+        device: { babylon: dev.babylon - this.__device.babylon, ours: dev.ours - this.__device.ours, modules: dev.modules - this.__device.modules },
+        warmup: { babylon: created - this.__created, oursSettled: settled - this.__settled, oursCompiling: compiling },
+        why,
+      });
+      this.__created = created;
+      this.__settled = settled;
+      this.__device = dev;
+      return done;
+    };
+  });
+}
+
+/** The vantage log (`hookWarmup`): per install, every frame that created something or moved, and the totals. */
+function printWarmups(list) {
+  (list ?? []).forEach((w, i) => {
+    const at = w.frames.filter((f) => f.vantage >= 0);
+    const sum = (k, kk) => at.reduce((a, f) => a + f[k][kk], 0);
+    console.log(
+      `
+  warm-up ${i + 1}: ${w.vantages.length} vantages, ${w.frames.length} frames asked (${w.frames.length - at.length} waiting for ours);` +
+        ` at the vantages, device: babylon ${sum("device", "babylon")}, ours ${sum("device", "ours")}, modules ${sum("device", "modules")};` +
+        ` warm-up: babylon ${sum("warmup", "babylon")}, ours settled ${sum("warmup", "oursSettled")}`,
+    );
+    for (const f of w.frames) {
+      const made = f.device.babylon || f.device.ours || f.device.modules || f.warmup.babylon || f.warmup.oursSettled;
+      if (!made && !/^moved|ours: (settled|cap)|done/.test(f.why)) continue;
+      console.log(
+        `    ${f.vantage < 0 ? "ours" : `v${f.vantage} f${f.frame}`}: device ${f.device.babylon}/${f.device.ours}/${f.device.modules}` +
+          ` warm-up ${f.warmup.babylon}/${f.warmup.oursSettled} compiling ${f.warmup.oursCompiling} — ${f.why}`,
+      );
+    }
+  });
 }

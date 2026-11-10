@@ -118,6 +118,27 @@
  * `PostPasses.frameTarget`), so no Babylon pass is left for Babylon's arm to
  * name but the glow's mask's targets, which are `GlowPass`' own.
  *
+ * **Since X5.4a the log holds the WHOLE frame** (X5.4e's to X5.4h's BEFORE),
+ * beside the passes above and without moving them: each scenario's `whole` is
+ * the second captured frame in SUBMIT order — every `queue.submit`, its command
+ * buffers in order, each one's encoder's role (`encoderRole`, the frame
+ * adapter's) and label, and on each, in recording order, every render pass (its
+ * index in `passes`, its timestamp writes), every COMPUTE pass (its label, its
+ * timestamp writes and its dispatches, by pipeline — its module's label and
+ * entry point, counters folded — and workgroups) and every encoder-level copy,
+ * clear, resolve or timestamp, by what it names; and the queue's writes counted
+ * before each submit. `wholeSteady` says whether it held across the two captured
+ * frames, apart from `steady`, so a parent's log still compares. The frame's
+ * opening clear pass, the glow mask's clear and its depth attachment are passes
+ * of `passes` already. And `statics.boot`, once a boot: every `requestAdapter`'s
+ * options, every `requestDevice`'s descriptor (the features, the limits and the
+ * label asked), every `GPUCanvasContext.configure`'s argument, and the label and
+ * features of the device the frame is drawn on. A parent's log lacks the three:
+ * `--ignore=**.whole,**.wholeSteady,*.statics.boot` names them. **The frame's
+ * clock goes through the frame adapter** (`harness.mjs`' `frameAdapter`: its
+ * begin, its submit, the device, the canvas and its depth), so a sub-step that
+ * takes one of them from Babylon adds its arm there and this file reads it.
+ *
  * **And beside the log, measured and NOT compared** (they ride the machine's
  * timing): the LIVE frames — from the scenarios' page's first frame to thirty
  * frames into `deploy` (`boot`), and on a SECOND, FRESH page at the same size
@@ -263,6 +284,18 @@ function deviceProbe() {
     pending: [],
     liveFrames: [],
     stageOf: new WeakMap(),
+    // The WHOLE frame (X5.4a): every pass of either kind and every
+    // encoder-level command, per encoder in recording order, and the submits.
+    encItems: new WeakMap(),
+    encRoles: new WeakMap(),
+    encLabels: new WeakMap(),
+    cpasses: new WeakMap(),
+    computePipes: new WeakMap(),
+    frameSubmits: [],
+    writes: null,
+    // Once a boot (X5.4a): what the adapter and the device were asked with,
+    // and every configure of a canvas context.
+    boot: { adapterOptions: [], deviceDescriptors: [], configures: [] },
   });
   const wrap = (proto, name, fn) => {
     const orig = proto?.[name];
@@ -273,6 +306,30 @@ function deviceProbe() {
   };
   const D = window.GPUDevice?.prototype;
   if (!D) return;
+  // What the boot ASKS for, once a boot (X5.4a: X5.4h's BEFORE): every
+  // `requestAdapter`'s options, every `requestDevice`'s descriptor (the
+  // features, the limits and the label asked), and below every
+  // `GPUCanvasContext.configure`'s argument whole.
+  wrap(window.GPU?.prototype, "requestAdapter", function (orig, a) {
+    const o = a[0];
+    P.boot.adapterOptions.push(o === undefined ? "none" : { ...o });
+    return orig.apply(this, a);
+  });
+  wrap(window.GPUAdapter?.prototype, "requestDevice", function (orig, a) {
+    const d = a[0];
+    P.boot.deviceDescriptors.push(
+      d === undefined
+        ? "none"
+        : {
+            label: d.label ?? null,
+            requiredFeatures: d.requiredFeatures ? [...d.requiredFeatures] : null,
+            requiredLimits: d.requiredLimits ? { ...d.requiredLimits } : null,
+            defaultQueue: d.defaultQueue ? { ...d.defaultQueue } : null,
+            keys: Object.keys(d).sort(),
+          },
+    );
+    return orig.apply(this, a);
+  });
   wrap(D, "createShaderModule", function (orig, a) {
     const m = orig.apply(this, a);
     if (!P.self) {
@@ -360,6 +417,11 @@ function deviceProbe() {
   const Q = window.GPUQueue?.prototype;
   wrap(Q, "writeBuffer", function (orig, a) {
     const [buffer, off, data, dataOffset = 0, size] = a;
+    if (P.writes && !P.self) {
+      P.writes.writeBuffer++;
+      const el = data?.BYTES_PER_ELEMENT ?? 1;
+      P.writes.bytes += size !== undefined ? size * el : (data?.byteLength ?? 0) - dataOffset * el;
+    }
     const mirror = P.mirrors.get(buffer);
     if (mirror) {
       let bytes;
@@ -374,9 +436,25 @@ function deviceProbe() {
     }
     return orig.apply(this, a);
   });
+  for (const k of ["writeTexture", "copyExternalImageToTexture"]) {
+    wrap(Q, k, function (orig, a) {
+      if (P.writes && !P.self) P.writes[k]++;
+      return orig.apply(this, a);
+    });
+  }
   const C = window.GPUCanvasContext?.prototype;
   wrap(C, "configure", function (orig, a) {
     const d = a[0] ?? {};
+    P.boot.configures.push({
+      format: d.format ?? null,
+      usage: d.usage ?? null,
+      alphaMode: d.alphaMode ?? null,
+      colorSpace: d.colorSpace ?? null,
+      toneMapping: d.toneMapping ? { ...d.toneMapping } : null,
+      viewFormats: d.viewFormats ? [...d.viewFormats] : null,
+      deviceLabel: d.device?.label ?? null,
+      keys: Object.keys(d).sort(),
+    });
     P.context = { format: d.format, usage: d.usage, alphaMode: d.alphaMode ?? "opaque", colorSpace: d.colorSpace ?? "srgb", toneMapping: d.toneMapping?.mode ?? "standard", viewFormats: [...(d.viewFormats ?? [])] };
     return orig.apply(this, a);
   });
@@ -426,9 +504,17 @@ function deviceProbe() {
   });
 
   const E = window.GPUCommandEncoder?.prototype;
-  const roleOf = (enc) => {
-    const e = P.engine;
-    return !e ? "?" : enc === e._renderEncoder ? "render" : enc === e._uploadEncoder ? "upload" : "other";
+  // Which of the frame's encoders, through the frame adapter (`harness.mjs`,
+  // X5.4a) once the game's hooks are on.
+  const roleOf = (enc) => (!P.engine ? "?" : window.__refFrame().encoderRole(enc));
+  // An encoder's items, in recording order, for the whole-frame log; its role
+  // read at its FIRST item (Babylon replaces its two at every flush).
+  const item = (enc, it) => {
+    if (!P.encItems.has(enc)) {
+      P.encItems.set(enc, []);
+      P.encRoles.set(enc, roleOf(enc));
+    }
+    P.encItems.get(enc).push(it);
   };
   wrap(E, "beginRenderPass", function (orig, a) {
     const pass = orig.apply(this, a);
@@ -455,8 +541,64 @@ function deviceProbe() {
     P.passes.set(pass, rec);
     if (!P.encPasses.has(this)) P.encPasses.set(this, []);
     P.encPasses.get(this).push(rec);
+    if (P.capture) item(this, { kind: "render", rec, timestampWrites: d.timestampWrites ? { begin: d.timestampWrites.beginningOfPassWriteIndex ?? null, end: d.timestampWrites.endOfPassWriteIndex ?? null } : null, occlusion: Boolean(d.occlusionQuerySet) });
     return pass;
   });
+  // The COMPUTE passes and the encoder-level commands of a captured frame
+  // (X5.4a): each pass's label, timestamp writes and dispatches (by pipeline,
+  // its module's label and entry point, the counters folded out of both), and
+  // each copy, clear, resolve or timestamp by what it names.
+  const fold = (t) => String(t ?? "").replace(/\d+/g, "#");
+  for (const k of ["createComputePipeline", "createComputePipelineAsync"]) {
+    wrap(D, k, function (orig, a) {
+      const r = orig.apply(this, a);
+      const d = a[0] ?? {};
+      const mod = P.modules.get(d.compute?.module);
+      const name = `${fold(d.label || mod?.label || "?")}:${d.compute?.entryPoint ?? "main"}`;
+      if (r && typeof r.then === "function") r.then((p) => P.computePipes.set(p, name));
+      else P.computePipes.set(r, name);
+      return r;
+    });
+  }
+  wrap(E, "beginComputePass", function (orig, a) {
+    const pass = orig.apply(this, a);
+    if (P.self || !P.capture) return pass;
+    const d = a[0] ?? {};
+    const rec = { label: fold(d.label ?? ""), inFrame: P.inFrame, timestampWrites: d.timestampWrites ? { begin: d.timestampWrites.beginningOfPassWriteIndex ?? null, end: d.timestampWrites.endOfPassWriteIndex ?? null } : null, pipe: null, dispatches: [] };
+    P.cpasses.set(pass, rec);
+    item(this, { kind: "compute", rec });
+    return pass;
+  });
+  const CPE = window.GPUComputePassEncoder?.prototype;
+  wrap(CPE, "setPipeline", function (orig, a) {
+    const rec = P.cpasses.get(this);
+    if (rec) rec.pipe = a[0];
+    return orig.apply(this, a);
+  });
+  for (const k of ["dispatchWorkgroups", "dispatchWorkgroupsIndirect"]) {
+    wrap(CPE, k, function (orig, a) {
+      const rec = P.cpasses.get(this);
+      if (rec) rec.dispatches.push({ pipeline: P.computePipes.get(rec.pipe) ?? "unwrapped", call: k, args: k === "dispatchWorkgroups" ? [a[0], a[1] ?? 1, a[2] ?? 1] : [a[1] ?? 0] });
+      return orig.apply(this, a);
+    });
+  }
+  const texName = (t) => (t ? (window.__postGpu?.target(t) ?? (P.canvas.has(t) ? "canvas" : `-${t.format} ${t.width}x${t.height}`)) : null);
+  const copyEnd = (x) => (x?.texture ? { texture: texName(x.texture), mip: x.mipLevel ?? 0 } : x?.buffer ? { buffer: x.buffer.size, offset: x.offset ?? 0 } : null);
+  const ext = (sz) => (Array.isArray(sz) ? [sz[0], sz[1] ?? 1, sz[2] ?? 1] : sz && typeof sz === "object" ? [sz.width, sz.height ?? 1, sz.depthOrArrayLayers ?? 1] : sz);
+  for (const [k, desc] of [
+    ["copyBufferToBuffer", (a) => ({ src: a[0]?.size ?? null, dst: a[2]?.size ?? null, bytes: a[4] ?? null })],
+    ["copyBufferToTexture", (a) => ({ src: copyEnd(a[0]), dst: copyEnd(a[1]), size: ext(a[2]) })],
+    ["copyTextureToBuffer", (a) => ({ src: copyEnd(a[0]), dst: copyEnd(a[1]), size: ext(a[2]) })],
+    ["copyTextureToTexture", (a) => ({ src: copyEnd(a[0]), dst: copyEnd(a[1]), size: ext(a[2]) })],
+    ["clearBuffer", (a) => ({ buffer: a[0]?.size ?? null, offset: a[1] ?? 0, bytes: a[2] ?? null })],
+    ["resolveQuerySet", (a) => ({ first: a[1], count: a[2] })],
+    ["writeTimestamp", (a) => ({ index: a[1] })],
+  ]) {
+    wrap(E, k, function (orig, a) {
+      if (P.capture && !P.self) item(this, { kind: "cmd", cmd: { call: k, ...desc(a) } });
+      return orig.apply(this, a);
+    });
+  }
   const RPE = window.GPURenderPassEncoder?.prototype;
   for (const k of CMDS) {
     wrap(RPE, k, function (orig, a) {
@@ -492,12 +634,12 @@ function deviceProbe() {
     if (!dev) return { which, skip: "no device" };
     P.self = true;
     const buffer = dev.createBuffer({ size: bpr * h, usage: 1 | 8 });
-    P.self = false;
     rec.enc.copyTextureToBuffer(
       { texture: tex, mipLevel: mip, origin: { x: 0, y: 0, z: layer }, aspect: depth ? "depth-only" : "all" },
       { buffer, offset: 0, bytesPerRow: bpr, rowsPerImage: h },
       { width: w, height: h, depthOrArrayLayers: 1 },
     );
+    P.self = false;
     return { which, buffer, w, h, bpr, bpt, hash: null };
   };
   wrap(RPE, "end", function (orig, a) {
@@ -526,6 +668,11 @@ function deviceProbe() {
   wrap(C, "configure", function (orig, a) {
     P.device = a[0]?.device ?? null;
     return orig.apply(this, a);
+  });
+  wrap(D, "createCommandEncoder", function (orig, a) {
+    const enc = orig.apply(this, a);
+    P.encLabels.set(enc, a[0]?.label ?? "");
+    return enc;
   });
   wrap(E, "finish", function (orig, a) {
     const cb = orig.apply(this, a);
@@ -578,6 +725,20 @@ function deviceProbe() {
   P.sha = sha;
   wrap(Q, "submit", function (orig, a) {
     const cbs = [...(a[0] ?? [])];
+    // A captured frame's SUBMIT BOUNDARIES (X5.4a): each submit, its command
+    // buffers in order, each one's encoder's role and label and everything
+    // recorded on it, and the queue's writes made since the submit before.
+    if (P.capture && !P.self) {
+      P.frameSubmits.push({
+        inFrame: P.inFrame,
+        writes: P.writes,
+        buffers: cbs.map((cb) => {
+          const enc = P.cbEnc.get(cb);
+          return { role: enc ? (P.encRoles.get(enc) ?? roleOf(enc)) : "unwrapped", label: fold(P.encLabels.get(enc) ?? ""), items: (enc && P.encItems.get(enc)) ?? [] };
+        }),
+      });
+      P.writes = { writeBuffer: 0, bytes: 0, writeTexture: 0, copyExternalImageToTexture: 0 };
+    }
     const recs = [];
     for (const cb of cbs) {
       const enc = P.cbEnc.get(cb);
@@ -621,20 +782,27 @@ function deviceProbe() {
     get: () => game,
     set: (g) => {
       game = g;
-      const e = g.engine;
-      P.engine = e;
-      e.onBeginFrameObservable.add(() => {
+      P.engine = g.engine;
+      // The frame's begin and end through the frame adapter (`harness.mjs`,
+      // X5.4a): Babylon's engine observables at every parent so far.
+      const F = window.__refFrame();
+      F.onBegin(() => {
         P.frame++;
         P.inFrame = true;
         if (P.arm > 0) {
           P.arm--;
           P.capture = true;
           P.frameRec = { frame: P.frame, passes: [] };
+          P.frameSubmits.length = 0;
+          P.writes = { writeBuffer: 0, bytes: 0, writeTexture: 0, copyExternalImageToTexture: 0 };
         }
       });
-      e.onEndFrameObservable.add(() => {
+      F.onSubmitted(() => {
         window.__postGpu?.refresh();
         if (P.capture) {
+          P.frameRec.submits = P.frameSubmits.splice(0);
+          P.frameRec.writesAfter = P.writes;
+          P.writes = null;
           P.frameRec.passes = P.frameOrder.splice(0);
           P.captured.push(P.frameRec);
           P.capture = false;
@@ -850,7 +1018,8 @@ function postAdapter() {
         const d = hw(frame.renderTarget?._depthStencilTexture);
         if (d) m.set(d, "frame.depth");
       }
-      if (g.engine._depthTexture) m.set(g.engine._depthTexture, "canvas.depth");
+      const canvasDepth = window.__refFrame().canvasDepth();
+      if (canvasDepth) m.set(canvasDepth, "canvas.depth");
       const glow = g.glow;
       if (glow) {
         for (const k of ["mask", "down", "nearH", "near", "wideH", "wide"]) {
@@ -937,7 +1106,7 @@ function postAdapter() {
         hardwareScalingLevel: e.getHardwareScalingLevel(),
         renderSize: [e.getRenderWidth(), e.getRenderHeight()],
         renderSizeTrue: [e.getRenderWidth(true), e.getRenderHeight(true)],
-        canvasSize: [g.engine.getRenderingCanvas()?.width ?? null, g.engine.getRenderingCanvas()?.height ?? null],
+        canvasSize: [window.__refFrame().canvas()?.width ?? null, window.__refFrame().canvas()?.height ?? null],
         devicePixelRatio: window.devicePixelRatio,
         autoClear: scene.autoClear,
         autoClearDepthAndStencil: scene.autoClearDepthAndStencil,
@@ -1026,7 +1195,9 @@ for (const sizeId of SIZE_IDS) {
     console.error(`[${sizeId}] ${sc.id}: frozen`);
     const [a, b] = await capture(page, 2);
     const steady = JSON.stringify(a.frame) === JSON.stringify(b.frame);
-    out.scenarios[sc.id] = { steady, chain: b.chain, passes: b.frame.passes };
+    // The whole frame beside the passes (X5.4a), and whether IT was steady
+    // across the two captured frames, said apart so a parent's log compares.
+    out.scenarios[sc.id] = { steady, chain: b.chain, passes: b.frame.passes, whole: b.whole, wholeSteady: JSON.stringify(a.whole) === JSON.stringify(b.whole) };
     const canvas = b.frame.passes.flatMap((p) => p.out).filter((o) => o.target === "canvas").pop();
     console.log(`${sizeId.padEnd(5)} ${sc.id.padEnd(16)} ${steady ? "steady" : "NOT STEADY"}  ${b.frame.passes.length} passes, canvas ${canvas?.hash?.slice(0, 16) ?? "?"}  chain [${b.chain.list.map((x) => (x.hole ? "_" : x.stage)).join(" ")}]`);
   }
@@ -1075,7 +1246,12 @@ for (const sizeId of SIZE_IDS) {
     await change("shafts-low-to-high", () => {
       const g = window.__celshock;
       g.setSetting("volumetrics", "low");
-      return new Promise((r) => g.engine.onEndFrameObservable.addOnce(() => r(void g.setSetting("volumetrics", "high"))));
+      return new Promise((r) => {
+        const off = window.__refFrame().onSubmitted(() => {
+          off();
+          r(void g.setSetting("volumetrics", "high"));
+        });
+      });
     });
     if (sizeId === "desk") {
       await live.evaluate(() => (window.__postProbe.liveFrames.length = 0));
@@ -1139,11 +1315,10 @@ function settleLive(page, n) {
   return page.evaluate(
     (n) =>
       new Promise((res) => {
-        const e = window.__celshock.engine;
         let seen = 0;
-        const o = e.onEndFrameObservable.add(() => {
+        const off = window.__refFrame().onSubmitted(() => {
           if (++seen < n) return;
-          e.onEndFrameObservable.remove(o);
+          off();
           res();
         });
       }),
@@ -1156,13 +1331,15 @@ function allReady(page) {
   return page.evaluate(
     () =>
       new Promise((res, rej) => {
-        const e = window.__celshock.engine;
         let n = 0;
         const check = () => {
           window.__postGpu.refresh();
           if (window.__postGpu.stages().every((s) => s.ready || s.off)) return res(n);
           if (++n > 1200) return rej(new Error(`post stages never ready: ${JSON.stringify(window.__postGpu.stages())}`));
-          e.onEndFrameObservable.addOnce(check);
+          const off = window.__refFrame().onSubmitted(() => {
+            off();
+            check();
+          });
         };
         check();
       }),
@@ -1205,9 +1382,9 @@ async function capture(page, n) {
     P.captured.length = 0;
     P.arm = n;
     await new Promise((res) => {
-      const o = g.engine.onEndFrameObservable.add(() => {
+      const off = window.__refFrame().onSubmitted(() => {
         if (P.captured.length < n) return;
-        g.engine.onEndFrameObservable.remove(o);
+        off();
         res();
       });
     });
@@ -1409,12 +1586,35 @@ async function capture(page, n) {
         if (typeof o === "string" && /^sha:#\d+$/.test(o)) return `sha:${hashes[Number(o.slice(5))]}`;
         return o;
       };
-      return { passes: fill(passes) };
+      // The WHOLE frame (X5.4a), in submit order: each submit, its command
+      // buffers, and each one's items in recording order — a render pass by
+      // its index in `passes` (whose own record is there), a compute pass and
+      // an encoder-level command whole — with the queue's writes before it.
+      const at = new Map(recs.map((rec, i) => [rec, i]));
+      const whole = {
+        submits: (fr.submits ?? []).map((sub) => ({
+          inFrame: sub.inFrame,
+          writes: sub.writes,
+          buffers: sub.buffers.map((b) => ({
+            role: b.role,
+            label: b.label,
+            items: b.items.map((it) =>
+              it.kind === "render"
+                ? { render: at.get(it.rec) ?? null, timestampWrites: it.timestampWrites, occlusion: it.occlusion }
+                : it.kind === "compute"
+                  ? { compute: { label: it.rec.label, inFrame: it.rec.inFrame, timestampWrites: it.rec.timestampWrites, dispatches: it.rec.dispatches } }
+                  : it,
+            ),
+          })),
+        })),
+        writesAfter: fr.writesAfter ?? null,
+      };
+      return { passes: fill(passes), whole };
     };
     const frames = [];
     for (const fr of P.captured.splice(0)) frames.push(await summarise(fr));
     const chain = window.__postGpu.chain();
-    return frames.map((frame) => ({ frame, chain }));
+    return frames.map(({ whole, ...frame }) => ({ frame, whole, chain }));
   }, n);
 }
 
@@ -1423,7 +1623,7 @@ function statics(page) {
   return page.evaluate(async () => {
     const P = window.__postProbe;
     const g = window.__celshock;
-    const dev = g.engine._device;
+    const dev = window.__refFrame().device();
     const lim = {};
     for (const k of ["maxInterStageShaderVariables", "maxInterStageShaderComponents", "maxColorAttachments", "maxSampledTexturesPerShaderStage", "maxSamplersPerShaderStage", "maxUniformBufferBindingSize", "maxTextureDimension2D", "maxBindGroups"]) lim[k] = dev.limits?.[k] ?? null;
     // What Babylon's FXAA reads to decide its `MALI` define
@@ -1442,6 +1642,9 @@ function statics(page) {
       compatibilityMode: g.engine.compatibilityMode,
       depthFormat: g.engine._mainRenderPassWrapper?.depthTextureFormat ?? null,
       modules: P.moduleTable ?? {},
+      // What the boot asked for (X5.4a): the adapter's options, the device's
+      // descriptor, every canvas configure; and what the device it got holds.
+      boot: { ...P.boot, deviceLabel: dev.label ?? null, deviceFeatures: [...(dev.features ?? [])].sort() },
     };
   });
 }

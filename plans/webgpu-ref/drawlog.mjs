@@ -183,7 +183,10 @@ function installHooks() {
       r.frames++;
     }
   };
-  e.onBeginFrameObservable.add(() => {
+  // The frame's begin and end through the frame adapter (`harness.mjs`,
+  // X5.4a): Babylon's engine observables at every parent so far.
+  const F = window.__refFrame();
+  F.onBegin(() => {
     // Whatever was drawn since the last frame ENDED (a render target rendered
     // from a promise, say) is outside every frame: it is folded into a class
     // of its own rather than cleared unread, or it is a draw no log shows.
@@ -201,7 +204,7 @@ function installHooks() {
     L.frames[L.cls] = (L.frames[L.cls] ?? 0) + 1;
     L.frameNo++;
   });
-  e.onEndFrameObservable.add(() => {
+  F.onSubmitted(() => {
     if (L.cls === null) return;
     const c = classOf(L.cls);
     fold1(c.draws, L.draw);
@@ -335,9 +338,9 @@ async function life(n) {
   const fr = (k) =>
     new Promise((res) => {
       let i = 0;
-      const o = g.scene.onAfterRenderObservable.add(() => {
+      const off = window.__refFrame().onDrawn(() => {
         if (++i < k) return;
-        g.scene.onAfterRenderObservable.remove(o);
+        off();
         res();
       });
     });
@@ -528,11 +531,10 @@ const frames = (page, n) =>
   page.evaluate(
     (n) =>
       new Promise((res) => {
-        const g = window.__celshock;
         let k = 0;
-        const o = g.scene.onAfterRenderObservable.add(() => {
+        const off = window.__refFrame().onDrawn(() => {
           if (++k < n) return;
-          g.scene.onAfterRenderObservable.remove(o);
+          off();
           res();
         });
       }),
@@ -547,9 +549,9 @@ async function viewerLook() {
   const fr = (k) =>
     new Promise((res) => {
       let i = 0;
-      const o = g.scene.onAfterRenderObservable.add(() => {
+      const off = window.__refFrame().onDrawn(() => {
         if (++i < k) return;
-        g.scene.onAfterRenderObservable.remove(o);
+        off();
         res();
       });
     });

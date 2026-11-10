@@ -86,12 +86,8 @@ function arm(page) {
 function read(page) {
   return page.evaluate(async () => {
     const g = window.__celshock;
-    await new Promise((res) => {
-      const o = g.scene.onAfterRenderObservable.add(() => {
-        g.scene.onAfterRenderObservable.remove(o);
-        res();
-      });
-    });
+    // The frame adapter (`harness.mjs`, X5.4a), installed by `bootMap`.
+    await window.__refFrame().drawn();
     // Null before X3.3c unless the switch was on, so a BEFORE taken in a
     // worktree of then counts Babylon alone. The BODIES are ours since
     // X4.1d (`BodyDraw`, its main-pass draws), counted with the world's — a

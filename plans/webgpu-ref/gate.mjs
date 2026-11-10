@@ -102,30 +102,32 @@ for (const id of targets) {
       // Babylon's `ReflectionProbe`s until X3.7c deleted them).
       let bakeFrames = 0;
       let bakePendingMax = 0;
-      const bakeWatch = g.scene.onAfterRenderObservable.add(() => {
+      // The frame adapter (`harness.mjs`, X5.4a), installed by `bootMap`.
+      const F = window.__refFrame();
+      const bakeWatchOff = F.onDrawn(() => {
         bakeFrames++;
         bakePendingMax = Math.max(bakePendingMax, g.reflections.bakePending);
       });
       g.spawnPlayer();
       const window_ = async (ms) => {
-        const f0 = g.scene.getFrameId();
+        const f0 = F.index();
         const t0 = performance.now();
         await new Promise((res) => setTimeout(res, ms));
-        return +((g.scene.getFrameId() - f0) / ((performance.now() - t0) / 1000)).toFixed(1);
+        return +((F.index() - f0) / ((performance.now() - t0) / 1000)).toFixed(1);
       };
       const coldFps = await window_(coldMs);
       await new Promise((res) => setTimeout(res, warmupMs));
       // Per-frame times, so what comes out is milliseconds and not a ratio.
       const times = [];
       let last = performance.now();
-      const o = g.scene.onAfterRenderObservable.add(() => {
+      const timesOff = F.onDrawn(() => {
         const now = performance.now();
         times.push(now - last);
         last = now;
       });
       const warmFps = await window_(warmMs);
-      g.scene.onAfterRenderObservable.remove(o);
-      g.scene.onAfterRenderObservable.remove(bakeWatch);
+      timesOff();
+      bakeWatchOff();
       times.sort((a, b) => a - b);
       return {
         coldFps,
@@ -140,8 +142,8 @@ for (const id of targets) {
         // own local match (`BABYLON_EXIT.md` X2.5c).
         bodies: g.net ? g.net.roster.soldiers.length : 0,
         activeMeshes: g.scene.getActiveMeshes().length,
-        isWebGPU: !!g.engine.isWebGPU,
-        engine: g.engine.constructor.name,
+        isWebGPU: F.host().webgpu,
+        engine: F.host().engine,
       };
     },
     [COLD_MS, WARMUP_MS, WARM_MS],
