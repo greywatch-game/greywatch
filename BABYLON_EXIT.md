@@ -5331,7 +5331,7 @@ pointer, its history unchanged):
   when it lands, owes three things: its generator's emitted header rewritten, its
   `params.ts` and `WRITABLE` rows dropped, and a `maps:check` entry.
 
-### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d; it was sized **M** before the split, and the read below re-sizes it) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014, its review clean), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88), X5.4e **LANDED** (74d246c, its review bc6892c)
+### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d; it was sized **M** before the split, and the read below re-sizes it) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014, its review clean), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88), X5.4e **LANDED** (74d246c, its review bc6892c), X5.4f **LANDED** (cfe4d8e, c37ae6d)
 
 - **Do:**
   - Our own `requestAnimationFrame` loop.
@@ -5885,6 +5885,56 @@ measurement until the sub-step that replaces both.
     it: the row "Havok and `scene.physicsEnabled`"); `docs/states.md`; `docs/game.md`'s
     pushes table ("immediately before `scene.render`"); `docs/rendering.md`; the headers
     of every module that hung off a scene observable; `FILES.md` (`PostPasses` out).
+
+  **X5.4f LANDED** (cfe4d8e the instruments, c37ae6d the step; 2026-11-10; no change to the picture).
+  The full note is in `plans/done/babylon_exit_landed.md`. **`core/SceneFrame.ts`** is the frame:
+  `Game.tick` calls `sceneFrame.render()` where it called `scene.render()`, and it does what that did
+  for this game in Babylon's order — the frame id, `scene.animate()` (the particle fields' animation
+  ratio; physics off), the camera's `update()`, `onBeforeRenderObservable` (the frame sized), the render
+  targets' point, the render id's first advance (under `renderTargetsEnabled`), then the camera's
+  render: the second advance, `scene.updateTransformMatrix()` (public API, so every matrix is
+  Babylon's arithmetic), the evaluation, the render targets' point again (raised twice, as the scene's
+  was), the draw phase, `onAfterCameraRenderObservable` (the chain), `onAfterRenderObservable`, and the
+  canvas's pass if nothing began one — each point a Babylon `Observable` of the frame's own named for
+  the scene's it replaces; X5.4a's parent inventory (no other observer, no component stage, no render
+  target, no mesh, no particle system, no animatable) is what fixed which steps are kept. It is our
+  renderer's `FrameHost` (beside the seam's device, encoder and end of frame). **`render/ChainPasses.ts`**
+  begins the chain's passes as Babylon did, on the encoder it submits first: a pool target as
+  `PostPasses`' `RenderTargetTexture` (`rgba8unorm`, usage 23, remade with the render size), cleared
+  to the scene's colour, labelled for its reader; the canvas's pass as `_startMainRenderPass(false)` —
+  the swap chain's texture viewed as `ViewDescriptorSwapChain`, a `depth32float` of the swap chain's
+  size (usage 16, never cleared: nothing reads it), both loaded, `MainRenderPass` — begun EXACTLY once
+  a frame, by the last stage or empty at the frame's end, where `_renderFrame`'s closing
+  `restoreDefaultFramebuffer` began Babylon's. **Retired**: the seam's items 2, 3, 4, 5, 7 and 8,
+  `hostTexture`, `HostTexture`/`BoundTexture`, `FrameHost`'s `queue`, `passIs`, `openPass` and `bind`
+  (the seam is `BabylonEngineSeam`: items 1 and 9 and `afterSubmit`), `Renderer.postStageOpened`,
+  `shaders/PostPasses.ts`, `driveFromScene` and the render id's DEV shadow, `WorldCulling`'s candidate
+  list (the hook, `eligible`, the emissive exemption, a loose mesh's gate; the cells, the reach, the
+  gate's numbers and the pools' fades kept). **Measured** against a BEFORE at 221abf1, every run alone
+  on the GPU, no device lost: **cfe4d8e** (instruments only: the frame adapter's arm of ours and its
+  `onDrawPhase`, `readers.mjs`' `ours`, `drawlog.mjs`' `renders`, `post.mjs`' pool, the parity and
+  shots scripts) read at the parent against the old instruments' logs — the draw log, `census`,
+  `gi.mjs`, `particles.mjs`, `surfaces.mjs`, `post.mjs` at both sizes, `readers.mjs` replay and camera
+  — all equal. **c37ae6d**: the bank by `exact.mjs` default 147 byte-equal, `volumetrics=low` 147,
+  `=high` 146 and the pistol flake; `post.mjs` at both sizes 30,143 values equal with only X5.4f's
+  section of `post-expected.txt` (every chain pass's `role` render → upload — every pass of every
+  scenario reads `upload` — and `whole`'s per-buffer item lists; the frame's command order the same
+  item for item over 34 scenarios, 562 items, and every queue write the same in number and bytes); the
+  live half's pass patterns as the parent's, the boot frames' canvas passes included; `gi.mjs`
+  (914,604 and 254,724 values), the draw log (`scene.render` 0 a frame in every class), `census` (147
+  rows), `particles.mjs` (45,120), `surfaces.mjs` (5,719, the chain's draws marked where ours records
+  them) and `readers.mjs` camera equal; `readers.mjs` replay 547 of 547 live answers, the three origins
+  identical, our render id 2 a frame (3,010 advances) as at the parent, Babylon's `ids` excused (it no
+  longer moves: 3,010 changes → 0); both `pipelines.mjs` runs creating nothing, as the parent; the menu's
+  canvas (boot frames 1 to 12 and 60 frames on) hashed equal to the parent's; a live session (offline
+  Hollowmere then Coldharbour: the kit lid, `F2`, a life firing, throwing and the launcher, every post
+  setting, the shadow rungs, render scale 0.75/0.5/1, a resize, a ratio change to 1.25 and back, frame
+  caps of 30 and 60 over a pan held at 30.0/30.0 and 60.0/60.1 fps, the pause, teardowns; a match on
+  each map): every frame our frame drew had nothing on Babylon's render encoder and exactly one canvas
+  pass and one swap-chain texture, the only other frames Babylon's resize frames
+  (`_initializeMainAttachments`, the same 12 and 2 and 2 at the parent), compiles 0, no error; typecheck,
+  build (its gates), corecheck, parity, `gate` and `shaders`. **`?profile&gpu`** (`bench.mjs hollowmere coldharbour --gpu --capped --runs 2`, parent and step alternating twice): `gpu.frame` within 0.3% on every group, and `render` 25–36% LOWER (Hollowmere 0.271/0.269 → 0.174/0.170 ms on the vantages, 0.396/0.396 → 0.285/0.291 in the fight; Coldharbour 0.310/0.303 → 0.210/0.204, 0.408/0.420 → 0.313/0.314) — outside the 8% band in the cheaper direction, named for the owner: `scene.render()`'s own bookkeeping is gone (the active-mesh walk, the stages, the binds, the post-process manager, the bundle-list queueing). `render` brackets the handover and `SceneFrame.render`, the chain's passes recorded inside it now (the canvas pass's draw ran in Babylon's `endFrame` until X5.4f, in `present`); `present` is Babylon's `endFrame` (`flushFramebuffer`'s finish and submit, no pass left to end). `?bench=hollowmere`'s `bench.fight.hash` 549487ba93bceefe in every run on both trees (Coldharbour's de5622634abca6e7). `gpu.mainPass` and `SceneInstrumentation`'s timers stop moving (nothing raises them), X5.4g's report version.
+  **Not run**: the phone.
 
 - **X5.4g — the loop and its clocks are ours** (no change to the picture; a report
   version) — **M**. The Do's loop, `FrameCap` and profiler items.
