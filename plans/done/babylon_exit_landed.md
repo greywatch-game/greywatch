@@ -11707,7 +11707,7 @@ here).
 Scripts and logs in the session's scratchpad, `x53-whole/` (`bank.sh`, `sarab.sh`, `run2.sh`,
 `dl-fix.mjs`, `viewer7.mjs`, `status.txt`).
 
-### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88), X5.4e **LANDED** (74d246c, its review bc6892c), X5.4f **LANDED** (cfe4d8e, c37ae6d)
+### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88), X5.4e **LANDED** (74d246c, its review bc6892c), X5.4f **LANDED** (cfe4d8e, c37ae6d, its review b3cb649)
 
 The plan's `BABYLON_EXIT.md` holds X5.4's brief, "What the frame is today", its ONE RULE, the
 step's own two rules, "Every sub-step owes" and the nine sub-steps.
@@ -12335,3 +12335,45 @@ Measured headless on the Windows box against a BEFORE at 221abf1, in the worktre
 Scripts and logs in the session's scratchpad, `x54f/` (`before.sh`, `after2.sh`, `probes2.sh`,
 `inventory.mjs`, `live.mjs`, `menu.mjs`, `gpu-capped.sh`, `gpuread.cjs`, `same.cjs`, the BEFORE,
 BEFORE-new and AFTER logs and kept frames).
+
+**Its review** (b3cb649; 2026-11-10; no change to the game: a tool script, comments and docs) found one
+bug, in a tool, and the rest text still describing the scene's frame.
+
+- **`views.mjs`** (`.claude/skills/map-layout/scripts/`): waited on `g.scene.onAfterRenderObservable`,
+  never raised since this step, so it hung at its first vantage; its 120 s deadline was read only from
+  inside that callback. Now `(g.sceneFrame ?? g.scene).onAfterRenderObservable`, as cfe4d8e did for
+  `capture-map-shots.mjs` and `check-world-parity.mjs`, and each wait is a timer as well (its deadline
+  plus 5 s, as the parity script's `stalled`), so a page that stops drawing gives up. `node --check`,
+  and one headless run on this machine: Hollowmere, one vantage, photographed. No other script under
+  `scripts/` or `.claude/skills/*/scripts/` hooks the scene (`plans/webgpu-ref/`'s `drawlog`,
+  `particles` and `surfaces` still add to `scene.onBeforeRenderingGroupObservable`, which no longer
+  fires; left as they are: instruments whose logs were proven equal at this step, outside the review's
+  scope).
+- **`VERIFYING.md`**: the frame's index for `scene.getFrameId()` (which reads 0 now; `g.sceneFrame
+  .index` is what stops at 2 headless), `g.sceneFrame`'s `onAfterRenderObservable` (twice) and
+  `onBeforeRenderObservable` for the scene's, and a manual `scene.render()` said to draw nothing of
+  ours (the frame being `g.sceneFrame.render()`; a manual call of that untested).
+- **`Game.ts`**: the comment above `new WorldCulling` said it took over `scene.getActiveMeshCandidates`
+  and the scene's observables; it says what it decides now.
+- **`WorldCulling`**: the header's invariant, the `Cell` doc, `update`'s and `rebuildList`'s docs now
+  say the candidate list is history; `cellOf`, a map whose value nothing read, is `filed`, a set that
+  only dedupes the filing and counts it (`stats.blocked`) — nothing moves; `stats.scene` documented as
+  refreshed by `rebuildList` alone.
+- **`docs/rendering.md`**: the candidate-list paragraph and the size gate's opening marked as history;
+  the glow blur's source read through its own `FrameTarget.view` and the glow's one sampler
+  (`TextureMaker`'s), not `FrameHost.bind` (deleted at X5.4e).
+- **`FrameProfile`**: the render spans' boundaries are inside `SceneFrame.render`, and `hookRender`
+  hangs off the frame's observables, not Babylon's.
+- **`SceneFrame`'s contract** cited a `docs/game.md` section, "What a frame owes", that did not exist
+  (CLAUDE.md's table also says game.md covers it): written, a short account of `tick` calling the
+  frame and the frame's observables, pointing at the header and `docs/rendering.md` for the order.
+- **`ChainPasses.dispose`** has no caller and destroys the pool and the canvas's depth at once; the
+  owner is `Game`, so `Renderer.dispose` does not reach it. Named in the header as the teardown-only
+  path (as `FrameTargets`'), and booked on X5.4i: the loss's teardown calls it beside
+  `Renderer.dispose`, between frames, after the last submit, which also removes its end-of-frame
+  observer.
+- **Information, booked on X5.4h**: Babylon's engine still makes its own main depth
+  (`_initializeMainAttachments`) beside `ChainPasses`' canvas depth — two swap-chain-sized depths,
+  nothing reading Babylon's — until X5.4h stops constructing the engine.
+- **Measured**: typecheck, build (its gates), corecheck. **Not run**: a live session — no path a frame
+  takes moved.

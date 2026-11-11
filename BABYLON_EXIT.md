@@ -5331,7 +5331,7 @@ pointer, its history unchanged):
   when it lands, owes three things: its generator's emitted header rewritten, its
   `params.ts` and `WRITABLE` rows dropped, and a `maps:check` entry.
 
-### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d; it was sized **M** before the split, and the read below re-sizes it) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014, its review clean), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88), X5.4e **LANDED** (74d246c, its review bc6892c), X5.4f **LANDED** (cfe4d8e, c37ae6d)
+### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d; it was sized **M** before the split, and the read below re-sizes it) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014, its review clean), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88), X5.4e **LANDED** (74d246c, its review bc6892c), X5.4f **LANDED** (cfe4d8e, c37ae6d, its review b3cb649)
 
 - **Do:**
   - Our own `requestAnimationFrame` loop.
@@ -5936,6 +5936,26 @@ measurement until the sub-step that replaces both.
   build (its gates), corecheck, parity, `gate` and `shaders`. **`?profile&gpu`** (`bench.mjs hollowmere coldharbour --gpu --capped --runs 2`, parent and step alternating twice): `gpu.frame` within 0.3% on every group, and `render` 25–36% LOWER (Hollowmere 0.271/0.269 → 0.174/0.170 ms on the vantages, 0.396/0.396 → 0.285/0.291 in the fight; Coldharbour 0.310/0.303 → 0.210/0.204, 0.408/0.420 → 0.313/0.314) — outside the 8% band in the cheaper direction, named for the owner: `scene.render()`'s own bookkeeping is gone (the active-mesh walk, the stages, the binds, the post-process manager, the bundle-list queueing). `render` brackets the handover and `SceneFrame.render`, the chain's passes recorded inside it now (the canvas pass's draw ran in Babylon's `endFrame` until X5.4f, in `present`); `present` is Babylon's `endFrame` (`flushFramebuffer`'s finish and submit, no pass left to end). `?bench=hollowmere`'s `bench.fight.hash` 549487ba93bceefe in every run on both trees (Coldharbour's de5622634abca6e7). `gpu.mainPass` and `SceneInstrumentation`'s timers stop moving (nothing raises them), X5.4g's report version.
   **Not run**: the phone.
 
+  **Its review** (b3cb649; 2026-11-10; no change to the game: a tool script, comments and docs; the full
+  note is in `plans/done/babylon_exit_landed.md`) found one bug, in a tool: the map-layout skill's
+  `views.mjs` waited on the scene's `onAfterRenderObservable`, which nothing raises since this step, so
+  it hung at its first vantage, its deadline read only from inside that callback — moved to our frame's
+  point as cfe4d8e moved the parity and shots scripts, the deadline a timer as well (no other script
+  under `scripts/` or `.claude/skills/*/scripts/` hooked the scene). The rest was text still describing
+  the scene's frame: `VERIFYING.md`'s five hooks (`scene.getFrameId()` reads 0 now; the frame's `index`
+  is what stops at 2 headless); `Game.ts`' and `WorldCulling`'s account of the candidate list (its
+  `cellOf` map, whose value nothing read, a `filed` set now; `stats.scene` documented as
+  `rebuildList`'s alone); `docs/rendering.md`'s candidate-list and size-gate prose, and the glow blur's
+  source said to be read through `FrameHost.bind`, deleted at X5.4e; `FrameProfile`'s render-span
+  notes; and `SceneFrame`'s contract citing a `docs/game.md` section that did not exist (written: "What
+  a frame owes"). `ChainPasses.dispose` has no caller and destroys at once: named in its header as a
+  teardown's path, and booked on X5.4i (the loss's teardown calls it beside `Renderer.dispose`, which
+  does not reach it). For information, booked on X5.4h: Babylon's engine still makes its own main depth
+  beside `ChainPasses`' canvas depth — two swap-chain-sized depths — until the engine goes.
+  **Measured**: typecheck, build (its gates), corecheck; `node --check` and one headless run of
+  `views.mjs` (Hollowmere, one vantage, photographed). **Not run**: a live session (nothing a frame
+  runs moved).
+
 - **X5.4g — the loop and its clocks are ours** (no change to the picture; a report
   version) — **M**. The Do's loop, `FrameCap` and profiler items.
   - **Our own `requestAnimationFrame` loop**, `FrameCap` its admitter (the requester
@@ -5981,6 +6001,11 @@ measurement until the sub-step that replaces both.
     Deleted with the engine: `compatibilityMode` and its rule, the seam (no item left:
     `babylonSeam.ts` goes and `frameHost.ts` names our host alone), `CreateAsync`'s
     paragraph, and `webgpuLeaks.ts` if X5.4b left it.
+  - **Babylon's main depth goes with the engine** (information only, from X5.4f's review):
+    until then the engine still makes its own swap-chain-sized depth
+    (`_initializeMainAttachments`, remade on a resize) beside `ChainPasses`' canvas depth,
+    which is the one every canvas pass attaches since X5.4f — two swap-chain-sized depths,
+    nothing reading Babylon's. Not constructing the engine removes it; nothing else owes it.
   - **Verify:** the camera log bit for bit; `post.mjs` at both sizes (the phone's DPR
     2.8125); every bank row; `post.mjs`'s device and context lines equal but the label;
     a resize, an orientation change, fullscreen, a browser zoom and a monitor change
