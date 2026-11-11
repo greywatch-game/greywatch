@@ -599,3 +599,23 @@ thing being pushed is owed by a **span** of states rather than by one, and the
 span does not match "is the world moving". Anything with that shape belongs in
 `tick` and gets a row in the table, and anything without it belongs in the
 state's own arm.
+
+### What a frame owes
+
+**The frame is drawn by the game, once a frame in every state**:
+`Game.tick` calls `sceneFrame.render()` (`core/SceneFrame.ts`, `BABYLON_EXIT.md`
+X5.4f) inside the `render` span, after the draws the table above hands our
+renderer (`drawBodies` to `drawBlended`) and before `updateBakeWait`, where it
+called `scene.render()` until that step. **The scene is never rendered.** The
+frame does what `scene.render()` did for this game, in Babylon's order — its
+index, `scene.animate()` (the particle fields' animation ratio), the camera's
+update, the render id's two advances, `scene.updateTransformMatrix()`, the
+evaluation, the draw phase, the post chain, and the canvas's pass if nothing
+began one — and raises its OWN observables, each named for the scene's it
+replaces, at the point the scene raised that one. So **a module that hung off
+a scene observable hangs off the frame's now, and a new one hangs there too:
+nothing raises the scene's**, and a script waiting on a drawn frame waits on
+`g.sceneFrame.onAfterRenderObservable` and counts `g.sceneFrame.index`
+(`VERIFYING.md`). The order point for point, and what `scene.render()` did
+that this does not, is `SceneFrame`'s header and `docs/rendering.md`, "Our
+renderer's frame".

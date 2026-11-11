@@ -2376,12 +2376,15 @@ export class Game {
     // and the shadows it samples, which our renderer draws a frame or more
     // after the install, once its pipelines are built (`ShadowSystem.ready`).
     this.reflections.setBakeGate(() => this.gi.converged && this.shadows.ready);
-    // Takes over `scene.getActiveMeshCandidates`, and offers the WHOLE scene
-    // until a map is installed — so where in this constructor it stands
-    // decides nothing: it rebuilds its list off `scene.meshes` wholesale the
-    // first time it is asked, and the scene's own observables only ever set a
-    // flag. Nothing it does is visible to a ray, a collision, a shadow caster
-    // or a cube probe; see `WorldCulling`, which is the whole argument.
+    // Decides what our renderer's draws are offered — the map's cull cells
+    // and their reach, the size gate, the pooled bodies' verdicts and fades,
+    // the hulls' — and hooks nothing of the scene's (its candidate list for
+    // Babylon's mesh walk went with the walk, `BABYLON_EXIT.md` X5.4f). It
+    // holds no cell until `installMap` hands it a map and no body until the
+    // pools are installed, so where in this constructor it stands decides
+    // nothing. Nothing it does is visible to a
+    // ray, a collision, a shadow caster or a cube probe; see `WorldCulling`,
+    // which is the whole argument.
     this.culling = new WorldCulling(this.scene);
     // The world our renderer draws, in every pass, with no fallback: what it
     // cannot draw is the round's end (`worldFailed`).

@@ -5754,8 +5754,12 @@ a block-keyed mesh that is no map visual: `setMap` files nothing and hands
 back the reason, which `Game.installMap` spends on `worldFailed` rather than
 an uncaught throw.
 
-**The candidate list is `scene.meshes` MINUS things, in scene ORDER, and the
-order was measured rather than assumed.** A list assembled as loose-then-cells
+**The candidate list WAS `scene.meshes` MINUS things, in scene ORDER, and the
+order was measured rather than assumed** — history since `BABYLON_EXIT.md`
+X5.4f, which retired the list with the mesh walk: what a cell decides now is
+read back by the block (`offersBlock`) and handed to our renderer's culls as
+numbers (`reachGate`, `reachBoxOf`), and no order of meshes reaches anything.
+The argument, as it stood: a list assembled as loose-then-cells
 holds exactly the same meshes and hands them over differently, and the order
 reaches the picture: `_activeMeshes` is what the glow's mask is built from
 and what the transparent queue's distance sort breaks ties by, and neither is
@@ -5765,10 +5769,15 @@ vantages come back to four decimal places.
 
 ### The size gate: what is too small to be worth drawing
 
-`WorldCulling.offer` runs once a frame and drops two kinds of candidate. The
-first is anything switched off — `!isVisible` or `!isEnabled()`, the two
-rejections `_evaluateActiveMeshes` makes anyway, made before the expensive part
-rather than after. The second is anything too SMALL to see.
+`WorldCulling.offer` runs once a frame and decides this frame's gate: its
+scale for our renderer's GPU cull (`reachGate`), each pooled body's verdict
+and fade (`drawsBody`, `bodyFade`), and the arithmetic a draw asks of its own
+sphere (`keepsSphere`, `keepsDetail`). Until `BABYLON_EXIT.md` X5.4f it also
+dropped two kinds of CANDIDATE from Babylon's list: anything switched off —
+`!isVisible` or `!isEnabled()`, the two rejections `_evaluateActiveMeshes`
+makes anyway, made before the expensive part rather than after — and anything
+too SMALL to see. The list is gone; the second rejection is what survives, and
+it is this section's subject.
 
 **The threshold is a size on the SCREEN, not a distance in the world.**
 `CONFIG.graphics.culling.minPixels` is the projected DIAMETER of a mesh's
@@ -5777,8 +5786,10 @@ One number is therefore right at every resolution and every field of view, and
 it tightens by itself when a sight goes up, because narrowing the FOV is exactly
 what makes a far thing bigger. It is compared SQUARED — a `sqrt` per candidate
 measured as a net LOSS at the thresholds that drop little. A mesh filed in a
-cell is measured off its RECORD's sphere (the cell's own source, the same bits);
-everything else — a loose mesh, a pool's root — off its own bounding info.
+cell was measured off its RECORD's sphere (the cell's own source, the same bits);
+everything else — a loose mesh, a pool's root — off its own bounding info. No
+candidate is left (X5.4f): a draw of our renderer's hands the gate the sphere
+it composes this frame (`keepsSphere`), a pooled body its own measure.
 
 **The scaling level in that formula is what makes the pixel a fixed unit, and
 without it the gate was a different gate on every rung of the render-scale
@@ -6100,8 +6111,12 @@ all in the counter this finding is named after. Not chased.
   arrives as Babylon fed it, a `float32x2` attribute off its quad
   (`PipelineSpec.vertexBuffers`), the pipelines are laid out as Babylon's (group 0
   empty, the source, its sampler, `Internals` and the pass's `LeftOver` in group 1),
-  the source is read through Babylon's own view and sampler for it
-  (`FrameHost.bind`), and each of the five passes has a `LeftOver` of its own, as
+  the source is read through its own view (`FrameTarget.view`, the one view
+  `FrameTargets` makes of each target, as Babylon's hardware texture viewed it)
+  and the glow's one sampler (`TextureMaker`'s, made to the descriptor Babylon's
+  cache made for a bilinear render target: anisotropy 4, clamped) — through
+  Babylon's own view and sampler (`FrameHost.bind`, deleted) until X5.4e made
+  the targets ours — and each of the five passes has a `LeftOver` of its own, as
   Babylon's owner-keyed slots gave each draw context one. **Every rung at every
   render scale is declared at construction** (`glowKernels`, on the round's list as
   "the glow's blur"), so a Glow or Render Scale setting changed in play compiles

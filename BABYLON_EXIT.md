@@ -6004,6 +6004,12 @@ measurement until the sub-step that replaces both.
     the maker's), the one exception to "destroyed after the frame's submit" (`FrameTargets`'
     header, X5.4e's review): so the loss's teardown calls it BETWEEN frames, after the last
     submit, and no frame records into a disposed renderer after it.
+  - **Owes `ChainPasses.dispose` a call of its own in the same teardown** (found by X5.4f's
+    review): the chain's pass owner is `Game`'s, not the `Renderer`'s, so `Renderer.dispose`
+    leaves its pool, the canvas's depth and its end-of-frame observer behind. Its `dispose`
+    destroys both AT ONCE and removes that observer (`afterSubmit`), the same teardown-only
+    exception (`ChainPasses`' header), so it is called beside `Renderer.dispose`, between
+    frames, after the last submit.
   - **Verify:** `lost.mjs`; every bank row (no frame without a loss moves); the boot's
     failure branches unchanged.
   - **Rewrites:** `docs/states.md` or `docs/game.md` (where the loss goes); `CLAUDE.md`

@@ -92,18 +92,29 @@ try {
       // Ready first (WebGPU compiles pipelines lazily and presents nothing
       // until they exist), then a few frames for the shadow map and the post
       // chain to settle — capture-map-shots.mjs has the measurement.
-      const until = (done) =>
+      // The frame drawn is OUR frame's point since BABYLON_EXIT.md X5.4f
+      // (`Game.sceneFrame`: the scene is never rendered), the scene's before.
+      // The deadline is a TIMER as well as a test read from a frame, so a page
+      // that has stopped drawing still gives up rather than hanging the run.
+      const drawn = (g.sceneFrame ?? g.scene).onAfterRenderObservable;
+      const until = (done, ms) =>
         new Promise((res) => {
-          const o = g.scene.onAfterRenderObservable.add(() => {
-            if (!done()) return;
-            g.scene.onAfterRenderObservable.remove(o);
+          const giveUp = performance.now() + ms;
+          let o = null;
+          const stalled = setTimeout(() => {
+            drawn.remove(o);
+            res();
+          }, ms + 5_000);
+          o = drawn.add(() => {
+            if (!done() && performance.now() <= giveUp) return;
+            clearTimeout(stalled);
+            drawn.remove(o);
             res();
           });
         });
-      const giveUp = performance.now() + 120_000;
-      await until(() => g.scene.isReady() || performance.now() > giveUp);
+      await until(() => g.scene.isReady(), 120_000);
       let n = 0;
-      await until(() => ++n >= 8);
+      await until(() => ++n >= 8, 120_000);
     }, v);
     writeFileSync(join(outDir, `${name}.jpg`), await page.screenshot({ type: "jpeg", quality: 85 }));
     console.log(`  ${name}`);

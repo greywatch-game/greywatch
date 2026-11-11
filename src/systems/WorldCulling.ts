@@ -23,9 +23,15 @@
  * snapshotted only when a cell crosses its threshold (`rebuildList`), and the
  * pools' verdicts and the gate's numbers are taken every frame (`offer`).
  * Invariants: it NEVER writes `setEnabled`, `isVisible`, `isPickable` or any
- * other property on a mesh — the whole of what it does is decide which meshes
- * Babylon is offered as candidates for the ACTIVE-MESH pass, and nothing else
- * in Babylon or in this game reads that list. So every ray, every collision,
+ * other property on a mesh — the whole of what it does is decide answers our
+ * renderer's DRAWS read and nothing else does: the reach and the size gate
+ * (`reachGate`, `reachBoxOf`), whether a cell's block-keyed surfaces are
+ * offered (`offersBlock`), each pooled body's verdict and fade (`drawsBody`,
+ * `bodyFade`) and the gate asked of a sphere or a hull (`keepsSphere`,
+ * `keepsDetail`, `hullFade`). Until `BABYLON_EXIT.md` X5.4f it also decided
+ * which meshes Babylon was offered as candidates for the ACTIVE-MESH pass;
+ * that list is gone with the walk, and nothing of Babylon's reads anything
+ * here. So every ray, every collision,
  * every shadow caster, every cube probe and every vertex range into a pane is
  * indifferent to it BY CONSTRUCTION. It must stay that way: the moment this
  * disables a mesh it acquires all four of those problems at once. And every
@@ -185,9 +191,11 @@ export const NO_REACH: BlockBox = {
  * One cull cell: a map block's own world box, and whether what was filed under
  * it is in the frame.
  *
- * The cell does not hold its meshes — `cellOf` points the other way, from a
- * mesh to its cell, because the list is rebuilt by walking the scene in ORDER
- * rather than by concatenating cells (see `rebuildList`).
+ * The cell holds no meshes. Until `BABYLON_EXIT.md` X5.4f a map pointed the
+ * other way, from a mesh to its cell, because the candidate list was rebuilt
+ * by walking the scene in ORDER rather than by concatenating cells; the walk
+ * and the list are gone, and what is left of the filing is `filed`, a set
+ * that only dedupes a block-keyed mesh and counts it (`stats.blocked`).
  *
  * The bounds are the SURFACES' rather than the block's nominal square — read
  * off each one's record (`SurfaceRecord.bounds`), mesh or none — which is
@@ -204,14 +212,14 @@ interface Cell {
   maxX: number;
   maxY: number;
   maxZ: number;
-  /** Whether what was filed here is in the candidate list right now. */
+  /** Whether the cell is within reach right now, as `evaluate` last decided (with its hysteresis). */
   on: boolean;
   /**
-   * Whether what is filed here was OFFERED by the list as last built — `on`
-   * — snapshotted where `rebuildList` builds
-   * that list, so it changes exactly when a filed mesh's candidacy does
-   * (`offersBlock`). False until the first list after `setMap`, as a filed
-   * mesh is no candidate until then.
+   * Whether what is filed here is OFFERED — `on`, snapshotted where
+   * `rebuildList` runs, which is where the candidate list was built until
+   * `BABYLON_EXIT.md` X5.4f, so it changes exactly when a filed mesh's
+   * candidacy did (`offersBlock`). False until the first rebuild after
+   * `setMap`, as a filed mesh was no candidate until then.
    */
   offered: boolean;
 }
@@ -265,8 +273,13 @@ interface Pool {
 }
 
 export class WorldCulling {
-  /** Every drawn map mesh that carries a block, and the cell it was filed in. */
-  private cellOf = new Map<AbstractMesh, Cell>();
+  /**
+   * Every Babylon map mesh that carries a block, filed once (none on a
+   * shipped build). Read only to dedupe the filing and to count it
+   * (`stats.blocked`): no list is built from it since the mesh walk went
+   * (`BABYLON_EXIT.md` X5.4f).
+   */
+  private filed = new Set<AbstractMesh>();
   private cells: Cell[] = [];
   /** Each cell by its block key — what `reachBoxOf` answers our renderer's surfaces off. */
   private cellByKey = new Map<string, Cell>();
@@ -309,6 +322,12 @@ export class WorldCulling {
    * is no behaviour behind it and nothing in the game reads it.
    */
   readonly stats = {
+    /**
+     * `scene.meshes.length` as of the last `rebuildList` — refreshed there
+     * and nowhere else, so it lags a mesh added or removed between rebuilds
+     * (a cell crossing its threshold, or `setMap`). Nothing is filed from it
+     * since the candidate list went (`BABYLON_EXIT.md` X5.4f).
+     */
     scene: 0,
     blocked: 0,
     /** Pooled BODIES (`setPools`), none of them a mesh since X4.1d. */
@@ -341,7 +360,7 @@ export class WorldCulling {
    * leaves it: the caller fails the world on it (`Game.worldFailed`).
    */
   setMap(map: GameMap | null, fogEnd: number): string | null {
-    this.cellOf = new Map();
+    this.filed = new Set();
     this.cellByKey = new Map();
     this.cells = [];
     this.listDirty = true;
@@ -429,11 +448,10 @@ export class WorldCulling {
     // the tower is a sheet of glass hanging in the fog with nothing behind it).
     for (const mesh of map.visuals) {
       const key = blockOf(mesh.metadata);
-      if (key === null || this.cellOf.has(mesh)) continue;
+      if (key === null || this.filed.has(mesh)) continue;
       const record = recordByMesh.get(mesh);
       if (!record) return `"${mesh.name}" carries a block but is no map visual`;
-      // Its own record is filed under the same key, so the cell exists.
-      this.cellOf.set(mesh, this.cellByKey.get(key)!);
+      this.filed.add(mesh);
       this.stats.blocked++;
     }
     this.stats.cells = this.cells.length;
@@ -620,7 +638,9 @@ export class WorldCulling {
   }
 
   /**
-   * Picks this frame's candidate list. Called from `Game.tick` in EVERY state,
+   * Decides this frame's answers — the cells, the pools' verdicts and the
+   * gate (a candidate list until `BABYLON_EXIT.md` X5.4f). Called from
+   * `Game.tick` in EVERY state,
    * beside `CelMaterialFactory.updateCamera` and for the same reason: every
    * state renders and only some of them simulate, so a menu or a deploy screen
    * with a live view behind it would otherwise be looking at whatever
@@ -628,8 +648,8 @@ export class WorldCulling {
    *
    * Cheap when nothing has moved — the cells are re-evaluated only once the
    * camera has travelled `CONFIG.graphics.culling.step`, the pools are one
-   * property read each, and the list is rebuilt only when one of the two
-   * answers changes.
+   * property read each, and the cells' offers are snapshotted again
+   * (`rebuildList`) only when a cell crosses its threshold or a map is set.
    */
   update(eye: Vector3): void {
     const step = CONFIG.graphics.culling.step;
@@ -676,8 +696,11 @@ export class WorldCulling {
   }
 
   /**
-   * The candidate list, and it is `scene.meshes` MINUS things rather than a
-   * list of its own — which is a full walk of the scene, on purpose.
+   * What each cell OFFERS (`offersBlock`), snapshotted when an answer
+   * changes. **Until `BABYLON_EXIT.md` X5.4f this built the candidate list**,
+   * which was `scene.meshes` MINUS things rather than a list of its own — a
+   * full walk of the scene, on purpose; the rest of this comment is that
+   * list's argument, kept as the history of the order it chose.
    *
    * **The order is the reason, and it was measured rather than assumed.** A
    * list assembled as `loose` then `cells` holds exactly the same meshes and

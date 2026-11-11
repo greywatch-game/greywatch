@@ -633,8 +633,10 @@ you are on before you believe anything else in this section.
     simulation** — the boot path, `__celshock`, state transitions, the screens,
     rules, damage arithmetic, nav — none of which needs a presented frame, and
     it is much faster to start. Use it for those. It gets two frames in before
-    the device goes, so `scene.getFrameId()` stops at 2 and `engine.getFps()`
-    reads ~3 forever; do not read either as a stall.
+    the device goes, so the frame's index (`g.sceneFrame.index`) stops at 2 and
+    `engine.getFps()` reads ~3 forever; do not read either as a stall. (That
+    index was `scene.getFrameId()` until `BABYLON_EXIT.md` X5.4f; the scene is
+    never rendered since, so `getFrameId()` reads 0 on every machine.)
 
 - **The engine fetches glslang and twgsl from `cdn.babylonjs.com`, so match
   `**/*.babylonjs.com/**` and never a hostname from memory.** Four files —
@@ -1128,7 +1130,11 @@ is one machine's:
   **5.4/255** with the clocks pinned and this one left running, **0.23** with it
   stubbed, and **0.0** with the whole of `updateGameplay` stubbed.
 - **`engine.stopRenderLoop()` plus a manual `scene.render()` does NOT give
-  `page.screenshot` a new frame**, and the failure is the worst shape there is:
+  `page.screenshot` a new frame** — and since `BABYLON_EXIT.md` X5.4f a manual
+  `scene.render()` draws nothing of ours at all, the frame being
+  `g.sceneFrame.render()` (`core/SceneFrame.ts`, called from `Game.tick`); a
+  manual call of THAT is untested, so presume the finding holds for it too.
+  The failure is the worst shape there is:
   every pair reads **0% of pixels differ**, including a deliberate change, so an
   A/B concludes that whatever it was testing does nothing. Keep the render loop
   running and freeze the SIMULATION instead — stubbing `g.updateGameplay` holds
@@ -1451,7 +1457,9 @@ is one machine's:
     PREVIOUS combination's settled values. A predicate over those is true before
     a single frame has re-posed anything, and what you then measure is the old
     weapon's pose against the new weapon's sight node. Count
-    `scene.onAfterRenderObservable` and wait three frames past the fit change; at
+    `g.sceneFrame.onAfterRenderObservable` (the frame's own since
+    `BABYLON_EXIT.md` X5.4f: the scene's is never raised) and wait three
+    frames past the fit change; at
     2 fps that is a real wait, and the tell that you skipped it is
     `view.weapon.position` reading **identical across combinations** while
     `view.adsPos` varies. Read the two side by side and they must be equal.
@@ -1599,7 +1607,10 @@ is one machine's:
   headless that ratio is the real frame delta (~30 at 2 fps, not clamped), so a
   2.4 s cloud is three frames. Override `scene.getAnimationRatio`: 0 freezes the
   dust, and `seconds * 60` for exactly one rendered frame (counted on
-  `scene.onAfterRenderObservable`) steps the cloud to a known age and holds it.
+  `g.sceneFrame.onAfterRenderObservable`, the frame's own since
+  `BABYLON_EXIT.md` X5.4f; the scene's is never raised) steps the cloud to a
+  known age and holds it. The ratio is still the scene's: our frame calls
+  `scene.animate()`, which sets it.
   Also: `dust.burst()` needs a real `Vector3` (`copyFrom` reads `_x`/`_y`/`_z`, so
   a plain `{x,y,z}` silently gives a cloud at NaN), and `getActiveCount()` is the
   ring size, not live puffs. **There are TWO of these pools now** —
@@ -1678,7 +1689,8 @@ is one machine's:
   page boots, and copies after the engine's flush
   (`g.engine.onEndFrameObservable`) to read the frame just drawn. It holds
   bodies only where the window is: re-place it inside the render
-  (`scene.onBeforeRenderObservable`, `g.bodyShadows.update(focus, g.mats,
+  (`g.sceneFrame.onBeforeRenderObservable` — the frame's own since
+  `BABYLON_EXIT.md` X5.4f, the scene's never raised — `g.bodyShadows.update(focus, g.mats,
   g.mapBodies(), g.vehicles.hulls)`) on a body or a hull, or it reads lit.
   There is no Babylon side left to compare against; X4.1c's comparison kept
   the deleted generator as a temporary twin fed the same matrices array.

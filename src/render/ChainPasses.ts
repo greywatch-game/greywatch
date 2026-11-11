@@ -38,7 +38,13 @@
  *   asked for it (`PostChain.record`) before the next is begun; nothing here
  *   allocates on a frame but the swap chain's view (Babylon made one a frame
  *   too); a texture this replaces is destroyed after the frame's submit
- *   (`FrameHost.afterSubmit`), never inside a frame that may still bind it.
+ *   (`FrameHost.afterSubmit`), never inside a frame that may still bind it —
+ *   the one exception being `dispose`, which destroys the pool and the
+ *   canvas's depth AT ONCE, and removes its end-of-frame observer, because it
+ *   is a TEARDOWN with no frame after it (as `FrameTargets.dispose` is). It
+ *   has NO caller yet: `ChainPasses` is `Game`'s, not the `Renderer`'s, so
+ *   `Renderer.dispose` does not reach it, and a lost device's teardown owes
+ *   it a call of its own, between frames, after the last submit (X5.4i).
  * Never: imports Babylon; draws — a stage of the chain does, into the pass
  * this begins (`PostChain`); clears the frame (`Renderer.end` does).
  * Contract: `docs/rendering.md`, "Our renderer's frame".

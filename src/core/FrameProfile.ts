@@ -87,10 +87,11 @@
  *    `drawOverlay`, held the rendering groups above 0 until `BABYLON_EXIT.md`
  *    X4.3d emptied them, and was retired with report version 24).
  *    They are the one part of this file `Game` does not bracket, because the
- *    boundaries they want are inside a Babylon call and there is nowhere in
- *    `Game.ts` to put them — `hookRender` hangs them off the frame's own
- *    points instead (the game's frame's since `BABYLON_EXIT.md` X5.4f,
- *    `core/SceneFrame.ts`; the scene's observables until then), and carries
+ *    boundaries they want are inside the frame's render (`SceneFrame.render`,
+ *    the game's own since `BABYLON_EXIT.md` X5.4f; inside `scene.render()`, a
+ *    Babylon call, until then) and there is nowhere in `Game.ts` to put
+ *    them — `hookRender` hangs them off the frame's own points instead (its
+ *    observables, `core/SceneFrame.ts`; the scene's until X5.4f), and carries
  *    the argument that they cannot overlap.
  *
  *    **What they measure is CPU, and under `compatibilityMode = false` that is
@@ -1333,8 +1334,11 @@ export class FrameProfile {
   }
 
   /**
-   * Hangs the spans inside `render` off Babylon's own observables — two of
-   * the three, `shadowPass` having nothing left to bracket (below).
+   * Hangs the spans inside `render` off the FRAME's own observables
+   * (`core/SceneFrame.ts`: Babylon `Observable`s of the game's frame, named
+   * for the scene's they replaced at `BABYLON_EXIT.md` X5.4f, and the glow's
+   * two) — two of the three, `shadowPass` having nothing left to bracket
+   * (below).
    *
    * **This is the one place this file's own arrangement bends, and the reason
    * is that there is nowhere in `Game.ts` to put these brackets.** Every other
