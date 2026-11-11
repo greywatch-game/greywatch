@@ -5331,7 +5331,7 @@ pointer, its history unchanged):
   when it lands, owes three things: its generator's emitted header rewritten, its
   `params.ts` and `WRITABLE` rows dropped, and a `maps:check` entry.
 
-### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d; it was sized **M** before the split, and the read below re-sizes it) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014, its review clean), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88), X5.4e **LANDED** (74d246c, its review bc6892c), X5.4f **LANDED** (cfe4d8e, c37ae6d, its review b3cb649), X5.4g **LANDED** (c461635, acbd9e4)
+### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d; it was sized **M** before the split, and the read below re-sizes it) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014, its review clean), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88), X5.4e **LANDED** (74d246c, its review bc6892c), X5.4f **LANDED** (cfe4d8e, c37ae6d, its review b3cb649), X5.4g **LANDED** (c461635, acbd9e4, its review fcca130)
 
 - **Do:**
   - Our own `requestAnimationFrame` loop.
@@ -6070,6 +6070,47 @@ measurement until the sub-step that replaces both.
   the `SceneInstrumentation` counters it rode beside, and a creation's `effect`/`defines` with the
   naming patch.
 
+  **Its review** (fcca130; 2026-11-11; no change to the picture: the profiler's attribution, a guard,
+  a loop method no game path calls, comments, docs and two tool scripts; the full note is in
+  `plans/done/babylon_exit_landed.md`) found one bug: **a pre-arm frame's GPU reading was filed on the
+  first recorded row** — the frame timer runs all session under `?gpu`, so at the first `endFrame`
+  after an `arm` it can be MAPPING an earlier, unrecorded frame's reading, and `pollGpu` claimed the
+  row on `inFlight`, though that frame was never timed (its encoder's `open` refused). `FrameTimer`
+  now says whether the encoder being recorded is the one it OPENED (`timing`), and only that claims a
+  row; reproduced at 39 of 40 arms between frames and gone after (below). The rest: the reading
+  requires both stamps written and the end at or after the begin (one unwritten stamp was a
+  clock-sized frame); `FrameLoop.stop`, `stopRenderLoop`'s port, which the two physics-ref scripts
+  call (the engine's was a no-op since this step); `VERIFYING.md`'s particle-clock recipe made true
+  (an accessor on `g.sceneFrame.animationRatio`, which `render()` overwrites; 0 is not a freeze, a
+  field reading `ratio || 1`; a clock override bottoms out at 0.06 on the 1 ms `MinDeltaTime`; the
+  blast's dust is billows now, stepped by `grenadeFx.update`) and its `getFps` and stopped-loop
+  citations; the particle clock's text in `docs/rendering.md` and `docs/vehicles.md`; `main.ts`' `?gpu`
+  paragraph; `arm`'s second argument; **`present` is more than the submit** — `FrameSubmit.submit`, the
+  timer's `mapAsync` and the next encoder's making with its opening pass, as `flushFramebuffer` made
+  Babylon's next encoders inside the same span — which corrects this note's "ends at the submit's
+  return"; and `FrameLoop.held` tests the loss AHEAD of the cap where the parent's cap admitted each
+  refresh first, so the first frame after a restore steps across the whole loss (stated, and booked on
+  X5.4i). **"`?gpu` needs no browser flag from v38" was an inference** (every v38 reading had the
+  flag): **measured** now — a Chromium launched without `--enable-unsafe-webgpu` (`writeTimestamp`
+  absent) read `gpu.frame` on 4,443 rows of `?bench=hollowmere&gpu`, mean 4.651 ms. **Booked**: on
+  X5.4h, the clock's samples at the engine's own `beginFrame` (kept byte for byte at our own boot and
+  resize, or named) and `held` off the engine's context observables; on X5.4i, `FrameLoop.stop` and
+  `FrameSubmit.dispose` (named in its header as the teardown path, no caller) in the loss's teardown,
+  between frames after the last submit, and the `held`/`elapsed` point. **The reviewer's point A** —
+  the timer's two EMPTY passes rather than stamps on the frame's first and last real passes: sound on
+  Vulkan and D3D12, unverified on a backend that may overlap independent passes (Metal, a tiler), where
+  the closing stamp could land early and under-measure — was put to the owner and **decided
+  2026-11-11: accepted as they are** (row "X5.4g, the frame timer's passes"), with a `?profile&gpu`
+  check booked on the branch's phone preview URL, fixed only if the phone reads implausibly low.
+  **Found while fixing, not fixed**: `PassTimer` (`gpu.cull`) claims its row on `inFlight` the same
+  way, so the first row after an `arm` can take an earlier frame's cull reading too.
+  **Measured**: typecheck, build (its gates), corecheck; `node --check` on the three scripts;
+  `bench.mjs hollowmere --gpu --capped --runs 1` on this tree, `gpu.frame` 4.445/4.471/5.173 ms on the
+  three groups (the landed 4.442/4.452 vantages, 5.166/5.166 fight), fight `549487ba93bceefe`; forty
+  arms between frames under `?gpu` (`armtest.mjs`, half with the read-back delayed 40 ms): at the
+  parent's claim 39 filed a stale reading onto an untimed row 0, at the fix 0, all 393 timed rows
+  filed. **Not run**: the phone; the bank (nothing drawn moved).
+
 - **X5.4h — the device and the canvas are ours** (no change to the picture) — **M**
   (decision: row "X5.4, Babylon's engine"). The Do's canvas item and render scale's
   setter.
@@ -6159,7 +6200,10 @@ measurement until the sub-step that replaces both.
     if the answer adds a rule others can break.
 
 **Verify, the whole step:** the Do's Verify above, against a BEFORE at X5.4a's parent end
-to end as well as step by step; Babylon's GPU engine not constructed (or the owner's
+to end as well as step by step; on the branch's phone preview URL (row "X5.4, the phone"),
+a `?profile&gpu` capture whose `gpu.frame` is judged against the phone's earlier readings at
+the same settings (row "X5.4g, the frame timer's passes": the two empty passes are fixed only
+if the phone reads implausibly low); Babylon's GPU engine not constructed (or the owner's
 reading of row "X5.4, Babylon's engine"); the seam deleted; `scene.render` never called;
 then the `exit-phase-5` tag ("The branch").
 
@@ -6417,6 +6461,7 @@ Phase 1 actually took.
 | X5.4 | One step or several? | **Instructed by the owner 2026-11-10**: X5.4 implemented in sub-steps, each implemented, reviewed and fixed by agents. **The nine-way split was proposed by a planning agent's read at 9cf2a6d** (X5.4): X5.4a the instruments, X5.4b the render cache's own frame id and Babylon's leaks, X5.4c the warm-up's vantages, X5.4d the textures the game draws, X5.4e the passes before the chain, X5.4f the chain, the canvas and no `scene.render`, X5.4g the loop and its clocks, X5.4h the device and the canvas, X5.4i a lost device. Settled by the read, not left to the owner: every pass of ours recorded on the encoder Babylon submits first until X5.4g (item 9, no new item), so `gpu.frame` and `present` keep Babylon's measurement until the sub-step that replaces both; ONE report version at X5.4g for every retired Babylon counter, `gpu.mainPass` and `shadowPass`; the warm-up's vantages retired only on a log that shows neither cache creating anything at one; the device asked exactly as Babylon asks (no limits, `timestamp-query` alone under `?gpu`), because the glow blur's text reads a device limit. |
 | X5.4h | **Babylon's engine** (decided 2026-11-10 by the owner: **(A)**, the `NullEngine`): Phase 5 "ends when Babylon's engine is not constructed", but the `Scene` (105 files name it), `CameraSystem`'s `FreeCamera` — whose projection Babylon computes off `engine.getAspectRatio` and the engine's `isNDCHalfZRange`, true on WebGPU and false on a `NullEngine` — and the cel materials' `ShaderMaterial` recipe keys all need an engine object until X6.1 removes them. (A) X5.4h constructs a `NullEngine` under the scene — no Babylon device, canvas context, loop or GPU object — with the camera's projection held to the bit (the `NullEngine` told WebGPU's conventions and the render size, or the projection frozen off a `src/math` port with `freezeProjectionMatrix`), and Phase 5's end condition read as "Babylon's GPU engine is not constructed"; (B) the `WebGPUEngine` stays constructed and idle until X6.1 as the device's source: seam item 1 and the seam stay, and a lost device stays Babylon's to re-create, so X5.4i moves to X6.1; (C) X6.1's camera and scene removal pulled into X5.4. | **Decided** 2026-11-10 by the owner: **(A)**, the planner's recommendation. The device, the canvas and the loss become ours, which is what the phase is for; a `NullEngine` is Babylon's own data-only engine (the server's until X2.3), and X6.1 deletes it with the package. (B) leaves device-loss unbuildable; (C) roughly doubles the step and moves X6.1's proofs into it. |
 | X5.4i | **A lost device** (decided 2026-11-10 by the owner: **(A)**, reload to the menu): what does a player see? Today Babylon re-creates its OWN device on a loss and our renderer keeps the one it read through item 1 at construction, so every draw of ours stops (X5.4a's `lost.mjs` records it); there is no recovery to keep byte for byte. (A) the page reloads itself to the menu with a one-line notice (a `sessionStorage` marker; the settings survive in `localStorage`), and a second loss inside a short window shows the boot's "No graphics device" plate instead of looping — offline the round is lost, in a match the player rejoins; (B) in place: a new device and every GPU resource of the session and the map rebuilt (the renderer's caches, the body, hull and weapon kits, the world's blocks, the shadow maps, the volume, the probes), the round kept, the page's own match surviving in its Worker; (C) the failure plate alone. | **Decided** 2026-11-10 by the owner: **(A)**, the planner's recommendation, for X5.4: small, honest, and better than today's dead frame. Record (B) in `FINDINGS.md` as a feature for after X6.2 ("No new features inside a step"): it reaches every owner of a GPU resource in the tree. |
-| X5.4 | **The phone** (decided 2026-11-10 by the owner: **(B)**, a preview URL for the branch): X5.4's Verify asks for X0.3 against X0.4's "before" on every device and a phone install from the home screen, offline, and no step since X2.5c's early merge has reached the phone ("Not run: the phone" on every X5 sub-step). The phone takes only a deployed URL (`PERF_PLAN.md` P0). (A) a third early `--no-ff` merge of the branch into `develop` at the Phase 5 gate, after the whole step's desktop Verify (X2.5c's precedent) — `develop` then carries Phases 3 to 5 and X6.2's `revert -m 1` no longer takes them out; (B) the branch deployed at a preview URL of its own, if the hosting allows a second one; (C) the phone deferred to X6.2's "Before". | **Decided** 2026-11-10 by the owner: **(B)**, the branch deployed at a preview URL of its own (the owner sets it up): X5.4g and X5.4h move the loop, the device, the canvas, the DPR and the context the PWA installs over — the phone-shaped risks — and X6.2 is too late to find them. |
+| X5.4 | **The phone** (decided 2026-11-10 by the owner: **(B)**, a preview URL for the branch): X5.4's Verify asks for X0.3 against X0.4's "before" on every device and a phone install from the home screen, offline, and no step since X2.5c's early merge has reached the phone ("Not run: the phone" on every X5 sub-step). The phone takes only a deployed URL (`PERF_PLAN.md` P0). (A) a third early `--no-ff` merge of the branch into `develop` at the Phase 5 gate, after the whole step's desktop Verify (X2.5c's precedent) — `develop` then carries Phases 3 to 5 and X6.2's `revert -m 1` no longer takes them out; (B) the branch deployed at a preview URL of its own, if the hosting allows a second one; (C) the phone deferred to X6.2's "Before". | **Decided** 2026-11-10 by the owner: **(B)**, the branch deployed at a preview URL of its own (the owner sets it up): X5.4g and X5.4h move the loop, the device, the canvas, the DPR and the context the PWA installs over — the phone-shaped risks — and X6.2 is too late to find them. The preview's check owes a `?profile&gpu` capture too (row "X5.4g, the frame timer's passes", 2026-11-11). |
+| X5.4g | **The frame timer's passes** (point A of X5.4g's review): `gpu.frame`'s two stamps are written by two EMPTY compute passes of the timer's own, the frame encoder's first and last commands, rather than on the frame's first and last real passes (which pass is first or last is not known where each is begun). Sound on Vulkan and D3D12, where passes in one encoder run in order; unverified on a backend that may overlap independent passes (Metal, a tiler), where the closing stamp could land before the work it should follow and under-measure. (A) accept them; (B) stamp the real first and last passes. | **Decided** 2026-11-11 by the owner: **(A)**, accept them as they are, with a `?profile&gpu` check booked on the branch's phone preview URL (the whole step's Verify); fixed only if the phone reads implausibly low. No code change. |
 | X5.4c | **The vantages' lamp shadows**: X5.4c's Do retires the warm-up's vantages on a log showing neither pipeline cache creating anything at one (all seven maps, 15 installs, 11 vantages each), but the bank moves on 16 rows of Greyfen, Harrowmead, Kurenai and Sarab (worst `greyfen-treeline`, 473,099 pixels, mean 0.72/255; `harrowmead-menu`, 170,558 pixels, worst 155/255): the vantage frames ran the camera tail at every spawn and flag, so they left the lamps' shadow atlas (`LocalShadows`: which lamps hold tiles, by `keepMargin`'s preference for a holder, at which tile bases, how many static faces baked) part-built for the deploy screen and every bank row after it, and nothing in the page's own `deploy` re-chooses or bakes lamp tiles (`FINDINGS.md` 73). (A) take the picture change: the vantages go, the deploy screen's lamp shadows are what `finishBakeWait`'s one placement leaves; (B) keep the vantages' side effect some deliberate way. | **Decided** 2026-11-10 by the owner: **(A)**, the orchestrating session's recommendation — the state the vantages left behind was accidental and the new one is the honest one. Landed as X5.4c's `Picture change:` commit, with the bank's numbers; the deploy screen's unbaked lamps recorded as `FINDINGS.md` 73, open. |
 | X6.2 | Is it ready to merge to `develop`? | Only when X6.2's "Before" list passes in full. |

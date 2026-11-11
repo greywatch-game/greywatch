@@ -11707,7 +11707,7 @@ here).
 Scripts and logs in the session's scratchpad, `x53-whole/` (`bank.sh`, `sarab.sh`, `run2.sh`,
 `dl-fix.mjs`, `viewer7.mjs`, `status.txt`).
 
-### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88), X5.4e **LANDED** (74d246c, its review bc6892c), X5.4f **LANDED** (cfe4d8e, c37ae6d, its review b3cb649), X5.4g **LANDED** (c461635, acbd9e4)
+### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88), X5.4e **LANDED** (74d246c, its review bc6892c), X5.4f **LANDED** (cfe4d8e, c37ae6d, its review b3cb649), X5.4g **LANDED** (c461635, acbd9e4, its review fcca130)
 
 The plan's `BABYLON_EXIT.md` holds X5.4's brief, "What the frame is today", its ONE RULE, the
 step's own two rules, "Every sub-step owes" and the nine sub-steps.
@@ -12480,3 +12480,93 @@ lost in any run.
 Scripts and logs in the session's scratchpad, `x54g/` (`before.sh`, `beforenew.sh`, `after.sh`,
 `probes.sh`, `bench.sh`, `rest.sh`, `smoke.mjs`, `live.mjs`, `residue.mjs`, `viewer.mjs`,
 `x54g-ignore.txt`, the BEFORE, BEFORE-new and AFTER logs and kept frames, `edits/`).
+
+**Its review** (fcca130; 2026-11-11; no change to the picture) found one bug, in the profiler's
+attribution, and the rest guards, a loop method, text and bookings.
+
+- **A pre-arm frame's GPU reading filed on the first recorded row** (`FrameProfile.pollGpu`): `arm`
+  resets `gpuPendingRow` and `gpuLastCount`, but the frame timer runs all session under `?gpu`, so at
+  the first `endFrame` after an `arm` it can be MAPPING a reading of an earlier frame the ring never
+  recorded; `inFlight` was true then, the row was claimed, and that reading was filed into it — a
+  frame that was never timed, its encoder's `open` refused while the timer was MAPPING. `FrameTimer`
+  gains `timing` (the encoder being recorded is the one it OPENED), a `GpuFrameTimer` interface in
+  `FrameProfile` carries it, and only `timing` claims a row. Every landing order: a timed frame's
+  reading is the next to land (the timer opens nothing while one is in flight), `endFrame` runs after
+  the frame's render and before its submit, the count's move is read before the row's own claim, a
+  reading landing with no row claimed (begun before an `arm`) files nothing, and an untimed frame
+  claims nothing whatever is being read back. Nothing allocates. **Reproduced** (`armtest.mjs`: the
+  menu under `?gpu`, the profiler armed forty times inside the loop's end of frame, half the trials
+  with the read-back delayed 40 ms, the timer's state recorded at each row's `endFrame`): at the
+  parent's claim (`inFlight`, swapped back into the working tree for the run) 39 of 40 trials filed a
+  reading onto an untimed row 0 — the timer MAPPING at the first `endFrame`, delayed or not — and at
+  the fix 0 (37 of its 40 trials MAPPING there), with all 393 timed rows filed and the one trial whose
+  row 0 was timed filed (3.308 ms).
+- **`FrameTimer`'s guard**: `ns > 0` missed a single unwritten stamp beside a written one (a
+  difference the size of the clock); the reading now requires both stamps non-zero and the end at or
+  after the begin, else it lands as 0. The two empty passes are unchanged (point A, below).
+- **`FrameLoop.stop()`**: `engine.stopRenderLoop()` is a no-op since the loop is ours, and
+  `plans/physics-ref/clients.mjs` (its header says the loop is stopped) and `drop.mjs` called it. The
+  loop gains `stop` (the pending refresh cancelled, none requested again, not restartable; no caller in
+  the game), both scripts call `g.frameLoop.stop()` and fall back to the engine on an older tree, and
+  `VERIFYING.md`'s stopped-loop finding names it. `node --check` on both.
+- **`VERIFYING.md`'s particle clock**: it said to override `scene.getAnimationRatio` and that our
+  frame calls `scene.animate()`; neither is true, and `ParticleDraw` reads `sceneFrame.animationRatio`,
+  which `SceneFrame.render` overwrites every frame. The recipe is an accessor,
+  `Object.defineProperty(g.sceneFrame, "animationRatio", { configurable: true, get: () => r, set() {} })`
+  (the setter owed: `render()` assigns it, and a getter alone throws in strict code), undone by
+  `delete`. Checked against the code, two more corrections: **0 is not a freeze** (`ParticleField`
+  reads `ratio || 1`, as Babylon wrote it), so a freeze is a tiny positive ratio; and a clock override
+  cannot freeze either, `render()` clamping the delta to `Scene.MinDeltaTime` (1 ms), a ratio of
+  0.06. The bullet's "blast dust" pools (`g.grenades.dust`, `.smoke`) no longer exist: the blast's
+  dust and smoke are `BlastFx` billows, stepped by `g.grenadeFx.update(dt)`; the particle fields the
+  recipe is for are the ash and the rotor wash's rings.
+- **Text**: `docs/rendering.md`'s and `docs/vehicles.md`'s particle clock (`SceneFrame.animationRatio`,
+  `scene.getAnimationRatio()` until this step); `VERIFYING.md`'s two `getFps` citations
+  (`g.frameLoop.clock.getFps()`; the engine's moves only at a resize) and `docs/profiling.md`'s
+  procedure's; `main.ts`' `?gpu` paragraph (our timestamp queries read the GPU, the phases time the
+  recording of the frame's one encoder — no render bundle, no `gpuTimeInFrameForMainPass`);
+  `FrameProfile`'s header (`arm`'s SECOND argument); **`present`** in `docs/profiling.md` (the tree and
+  "`present`, and the three roots"), `profilePhases.ts`, `FrameProfile.presented` and `FrameLoop`: it
+  is `FrameSubmit.submit` — the timer closed, the finish and the submit, then the timer's `mapAsync`
+  and the next frame's encoder made with the timer's opening pass — as Babylon's `flushFramebuffer`
+  made its next encoders inside the same span; this note's "`present` ends at the submit's return"
+  was short of that.
+- **`held` overstated the port**: at the parent the cap's requester admitted every refresh first and
+  Babylon tested `_contextWasLost` inside the frame it was handed; `held` short-circuits `admit`, so
+  the first frame after a restore reads a `FrameCap.elapsed` spanning the loss (clamped by `tick` to
+  `MAX_FRAME_DT`). Stated in `FrameLoop`'s header and `held`, `Game.ts` and `docs/game.md`; moot until
+  X5.4i and booked there.
+- **"From v38 `?gpu` is sufficient" was an inference** (every v38 reading had the flag). **Measured**
+  (`noflag.mjs`): `?bench=hollowmere&gpu`, headless, `channel: "chromium"`, 3440x1440, capped, NO
+  `--enable-unsafe-webgpu` (`GPUCommandEncoder.prototype.writeTimestamp` absent, the adapter's
+  `timestamp-query` present): `frameMeasurable` true, `gpu.frame` 4,443 samples, mean 4.651 ms, p95
+  5.835; `gpu.cull` 4,716; fight `549487ba93bceefe`; no error. Recorded in `VERIFYING.md` (its
+  Windows-box bullet no longer says the flag is what every `gpu.frame` needs), `docs/profiling.md` and
+  `bench.mjs`; a phone's Chrome is unmeasured.
+- **Booked on X5.4h**: the clock's samples at the engine's own `beginFrame` (`main.ts`, 12 at the boot,
+  2 a resize; without the boot's the first frame reads 0 and Infinity where the parent read ~549 ms
+  and 3.6 fps) to be taken at our own boot and resize byte for byte, or named for the owner; `held`
+  off the engine's two context observables, to the device's `lost`. **On X5.4i**: `FrameLoop.stop`
+  then `FrameSubmit.dispose` (the timer's query set and two buffers destroyed at once; named in its
+  header as the teardown path, as `ChainPasses`' and `FrameTargets`'; no caller) in the loss's
+  teardown, between frames after the last submit, never inside a frame while the timer is OPEN on an
+  encoder that will still be submitted — the encoder made after the last submit abandoned; and the
+  `held`/`elapsed` point. `FILES.md`'s three rows.
+- **Point A** (the reviewer's, architectural): the timer's two EMPTY passes rather than the frame's
+  first and last real passes — sound on Vulkan and D3D12; unverified on a backend that may overlap
+  independent passes (Metal, a tiler), where the closing stamp could land early and under-measure. Put
+  to the owner and **decided 2026-11-11: accepted as they are**, with a `?profile&gpu` check booked on
+  the branch's phone preview URL (the whole step's Verify, and row "X5.4, the phone"), fixed only if
+  the phone reads implausibly low. Row "X5.4g, the frame timer's passes". No code change.
+- **Found while fixing, not fixed**: `PassTimer` (`gpu.cull`) claims on `inFlight` the same way (true
+  while an earlier frame's cull reading is MAPPING), so the first row after an `arm` can take a stale
+  cull reading; its precise fix needs the timer to say which frame recorded the reading, since a
+  frame with no main pass leaves a recorded reading unsettled across frames.
+- **Measured**: typecheck, build (its gates), corecheck. `bench.mjs hollowmere --gpu --capped --runs 1`
+  on this tree: `gpu.frame` 4.445/4.471/5.173 ms (vantages, path, fight; 984/703/1181 samples) against
+  the landed note's 4.442/4.452 and 5.166/5.166, `gpu.cull` 0.6% of it, fight `549487ba93bceefe`.
+  **Not run**: the phone; the bank and the probes (nothing drawn moved: the profiler, a guard on a
+  reading, a method no frame calls, text).
+
+Scripts and logs in the session's scratchpad (`noflag.mjs`, `armtest.mjs`, `bench-flag.txt`,
+`build.txt`).
