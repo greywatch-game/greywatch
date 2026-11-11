@@ -458,12 +458,17 @@ frame                       the whole tick, wall to wall
                             opened by nothing after X5.3d, was retired with
                             report version 38.
 
-present                     the span around the frame's ONE queue.submit,
-                            AFTER tick returns (`FrameLoop`, X5.4g): the
-                            frame timer closed, the encoder finished and
-                            submitted. Babylon's endFrame until X5.4g (its
-                            flushFramebuffer, the same finish and submit). A
-                            ROOT, not a child of frame — see below.
+present                     FrameSubmit.submit, the span around the frame's
+                            ONE queue.submit, AFTER tick returns (`FrameLoop`,
+                            X5.4g): the frame timer closed, the encoder
+                            finished and submitted, then the timer's
+                            read-back begun (mapAsync, under ?gpu) and the
+                            next frame's encoder made, with the timer's
+                            opening pass when it times that frame. Babylon's
+                            endFrame until X5.4g (its flushFramebuffer, the
+                            same finish and submit, which made its next
+                            encoders inside it too). A ROOT, not a child of
+                            frame — see below.
 
 sim                         OFFLINE: SimCore.step in the page's own local
 │                           match, timed BY THE CORE, carried back on the
@@ -916,8 +921,12 @@ the tick.
 `tick` returns (`core/FrameLoop.ts`, `BABYLON_EXIT.md` X5.4g): the frame's GPU
 timer closed, its ONE encoder finished and handed to the queue in its ONE
 `queue.submit` (`render/FrameSubmit.ts`) — the span AROUND that submit, which
-the loop closes (`FrameProfile.presented`) right after `submit` returns,
-because there is no line in `Game.ts` that could hold it. What the loop does
+the loop closes (`FrameProfile.presented`) right after `FrameSubmit.submit`
+returns, because there is no line in `Game.ts` that could hold it. **That is
+more than the submit**: after it, still inside `present`, the timer's
+read-back is begun under `?gpu` (its `mapAsync`) and the NEXT frame's encoder
+is made, with the timer's opening pass when it times that frame — as Babylon's
+`flushFramebuffer` made its next frame's encoders inside the same span. What the loop does
 after it — the frame id moved, the end of frame told (the retirements every
 `FrameHost.afterSubmit` holds), the next refresh requested — is in the
 residue. Until X5.4g `present` was Babylon's `WebGPUEngine.endFrame`: closing
@@ -1715,7 +1724,10 @@ different facts and neither is "the GPU took no time".
 **BOTH COUNTERS ARE OUR TIMESTAMP QUERIES since report version 38**
 (`BABYLON_EXIT.md` X5.4g, the loop and its clocks ours), and **neither needs a
 browser flag**: each is a pass descriptor's `timestampWrites`, which needs the
-device's `timestamp-query` and nothing else. **`gpu.frame` is the whole frame,
+device's `timestamp-query` and nothing else (measured on the Windows box at
+X5.4g's review: a capture in a Chromium launched without
+`--enable-unsafe-webgpu`, `writeTimestamp` absent, read `gpu.frame` on 4,443
+rows; a phone's Chrome is unmeasured). **`gpu.frame` is the whole frame,
 from before its first pass starts to after its last pass ends**
 (`render/FrameTimer.ts`): the frame is ONE encoder submitted once
 (`render/FrameSubmit.ts`), and the timer writes its two stamps with two EMPTY
@@ -1768,7 +1780,8 @@ quantised to 100 µs; a browser that did quantise would mostly read a cull as
 **The read-back is mapped on the NEXT main pass**, after the submit that
 carries its copy (a buffer pending a map fails the submit that uses it), and
 one reading is in flight at a time; it is attributed by the timer's own
-`inFlight` and `count`, the two transitions `gpu.frame` is read by. It
+`inFlight` and `count`, the two transitions `gpu.frame` is read by (the frame
+timer's claim being `timing` rather than `inFlight`, below). It
 allocates once a READING (the `mapAsync` and the view of its range), never
 once a frame, and nothing at all without `?gpu`.
 
@@ -1786,7 +1799,7 @@ every frame):
 
 | | attribution | coverage |
 | --- | --- | --- |
-| `gpu.frame`, `series.gpuFrameMs` | **exact**, by watching `FrameTimer`'s `inFlight` and `count` (Babylon's measure's own state machine to v37) | a SUBSET — only one measurement is in flight at a time |
+| `gpu.frame`, `series.gpuFrameMs` | **exact**, by watching `FrameTimer`'s `timing` and `count` — a row is claimed only by a frame the timer was OPEN for, never merely while a reading is in flight, which at the first row after an `arm` can be an unrecorded frame's (fixed at X5.4g's review; Babylon's measure's own state machine to v37) | a SUBSET — only one measurement is in flight at a time |
 | `gpu.cull`, `series.gpuCullMs` | **exact**, by watching `PassTimer`'s `inFlight` and `count` | a subset, on rows of its OWN |
 
 **"A subset" is not "about half" in an uncapped run**: the read-back's round
@@ -2014,7 +2027,8 @@ or nothing works):
 2. Into `playing` with long Enter presses, then `player.takeDamage = () => {}`
    so a long capture is not interrupted by dying.
 3. Count real `requestAnimationFrame` callbacks over the window rather than
-   trusting `Engine.getFps` — the cost being measured is a fraction of a
+   trusting the readout's `g.frameLoop.clock.getFps()` (`Engine.getFps` before
+   `BABYLON_EXIT.md` X5.4g) — the cost being measured is a fraction of a
    percent, and a 30-frame rolling mean cannot see it.
 4. Read the capture out with `window.__profile.capture("smoke", false)`.
 5. Check the disarmed page returns `null` and has no `#prof` up. **A profiler

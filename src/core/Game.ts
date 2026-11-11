@@ -1972,7 +1972,10 @@ export class Game {
     // delta and the rate are Babylon's sample for sample.
     this.frameLoop = new FrameLoop(this.frameCap, seam.device, this.prof, clock, urlFlag("gpu"));
     // A lost device held Babylon's loop (`_contextWasLost`) until its engine
-    // restored one; it holds ours the same way until X5.4i decides a loss.
+    // restored one, and it holds ours until X5.4i decides a loss — ahead of
+    // the cap where Babylon's test came after the cap had admitted each
+    // refresh, so the first frame after a restore steps across the whole loss
+    // (`FrameLoop.held`'s note, booked on X5.4i).
     this.engine.onContextLostObservable.add(() => {
       this.frameLoop.held = true;
     });

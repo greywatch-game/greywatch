@@ -312,15 +312,17 @@ window.addEventListener("DOMContentLoaded", async () => {
   //
   // **`?gpu` is the one thing about this engine that a SETTING could never
   // turn on**, which is why it is a boot flag and not a row in the settings
-  // screen. Every phase the frame profiler records is CPU: under
-  // `compatibilityMode = false` they time the RECORDING of a render bundle,
-  // and `queue.submit` queues rather than blocks, so a GPU that is behind is
-  // invisible to all of them — which is exactly where `FINDINGS.md` §1 ended
-  // up after everything on the CPU side had been eliminated. Babylon can read
-  // it (`gpuTimeInFrameForMainPass`), but only if `timestamp-query` is a
-  // REQUIRED FEATURE of the device, and a device's features are fixed when it
-  // is created. So this costs a reload, and it is off for everybody who has
-  // not asked.
+  // screen. Every phase the frame profiler records is CPU: they time the
+  // RECORDING of the frame's commands into its one encoder
+  // (`render/FrameSubmit.ts`), and `queue.submit` queues rather than blocks,
+  // so a GPU that is behind is invisible to all of them — which is exactly
+  // where `FINDINGS.md` §1 ended up after everything on the CPU side had been
+  // eliminated. Our timestamp queries read it (`render/FrameTimer.ts`'s
+  // `gpu.frame`, `render/PassTimer.ts`'s `gpu.cull`; Babylon's
+  // `gpuTimeInFrameForMainPass` until `BABYLON_EXIT.md` X5.4g), but only if
+  // `timestamp-query` is a REQUIRED FEATURE of the device, and a device's
+  // features are fixed when it is created. So this costs a reload, and it is
+  // off for everybody who has not asked.
   //
   // **The adapter is asked FIRST, because a required feature it does not have
   // makes `requestDevice` REJECT** — and that would turn a diagnostic flag

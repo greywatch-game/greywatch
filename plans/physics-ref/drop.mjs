@@ -324,8 +324,12 @@ function drop(page, opts) {
       // but a deploy screen over a live view is a frame's worth of CPU landing
       // in the middle of the step being measured, and the per-step figures
       // scattered by a factor of two before this line. The page is closed
-      // immediately after the run, so the loop is not started again.
-      g.engine.stopRenderLoop();
+      // immediately after the run, so the loop is not started again. The loop
+      // is the game's own since `BABYLON_EXIT.md` X5.4g (`Game.frameLoop`,
+      // whose `stop` is `stopRenderLoop`'s port; the engine's is a no-op
+      // there, the engine running no loop). An older tree has no `stop`.
+      if (g.frameLoop?.stop) g.frameLoop.stop();
+      else g.engine.stopRenderLoop();
 
       // --- where the bodies go ----------------------------------------------
       // Seeded, never `Math.random()`: the world layer's rule, and here it is

@@ -739,7 +739,9 @@ src/
                         #   frame's begin and end as Observables of its own,
                         #   the frame id, the ONE submit (FrameSubmit) and the
                         #   profiler's present around it; held while the
-                        #   device is lost, as Babylon's loop was
+                        #   device is lost (ahead of the cap, where Babylon
+                        #   tested after it); stop(), stopRenderLoop's port,
+                        #   a script's (no caller in the game)
     teamView.ts         # Which side the player is LOOKING from: the one remap
                         #   between the authority's team INDEX and the team a
                         #   body is DRAWN and NAMED as, so every player sees
@@ -2853,12 +2855,15 @@ src/
                         #   Babylon's flushFramebuffer made its next; every
                         #   pass of the frame recorded into it (prepareEncoder),
                         #   finished and handed over in one queue.submit; the
-                        #   frame's GPU timer under ?gpu
+                        #   frame's GPU timer under ?gpu; dispose the teardown
+                        #   path, no caller until X5.4i
     FrameTimer.ts       # ?gpu's whole-frame timer (gpu.frame, X5.4g): two
                         #   EMPTY compute passes of its own, the frame's
                         #   encoder's first and last commands, stamping its
                         #   start and end; one reading in flight, mapped after
-                        #   the submit that carries it. Needs no browser flag
+                        #   the submit that carries it; timing says the
+                        #   encoder being recorded is the one timed (what
+                        #   claims a profiler row). Needs no browser flag
     frameHost.ts        # FrameHost (what the renderer needs from whoever owns
                         #   the frame — the game's frame since X5.4f,
                         #   core/SceneFrame.ts: the device, the draw phase's

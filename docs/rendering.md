@@ -5522,9 +5522,12 @@ recorded dev-only difference was gone at X4.7d).
   field's construction, 32,768 at a ring's (its width stated, 4096), 4 ×
   capacity at its first update — 540 a dust ring, 504 a spray ring, which a ring
   AT REST draws too, at its first render after every reset — as X4.7a counted.
-- **The clock is Babylon's**: `updateSpeed` × `scene.getAnimationRatio()` (`|| 1`),
-  read as the main pass begins, which is where `animate()` read it — after
-  `Scene.animate`, with its 1..1000 ms clamp — on every frame the scene draws
+- **The clock is Babylon's**: `updateSpeed` × the frame's animation ratio
+  (`SceneFrame.animationRatio`, `|| 1`; `scene.getAnimationRatio()` until
+  `BABYLON_EXIT.md` X5.4g, which ported `Scene.animate`'s arithmetic over our
+  loop's delta, `FrameClock.getDeltaTime()`, with its 1..1000 ms clamp, into
+  `SceneFrame.render`), read as the main pass begins, which is where
+  `animate()` read it — after the ratio is set — on every frame the frame draws
   with the switch on (`ParticleDraw.enabled`, `scene.particlesEnabled`'s twin, the
   bank's freeze's alone to touch) and every STARTED field; a stopped field is
   still started, so it drains and is drawn, over the menu too, as Babylon's did.

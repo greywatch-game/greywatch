@@ -3,8 +3,9 @@
  * X5.4g): what Babylon's engine ran for it until then — `runRenderLoop`, the
  * animation-frame request, `beginFrame`, `endFrame` and its submit,
  * `getDeltaTime` and `getFps` — done by the game, in Babylon's order.
- * Owns: `FrameLoop` — the `requestAnimationFrame` chain, `FrameCap` asked of
- * every refresh (its ADMITTER, no longer a requester Babylon calls), the
+ * Owns: `FrameLoop` — the `requestAnimationFrame` chain (and `stop`, its
+ * end), `FrameCap` asked of every refresh (its ADMITTER, no longer a
+ * requester Babylon calls), the
  * frame's begin and end as OBSERVABLES of its own, each named for the
  * engine's it replaces (`onBeginFrameObservable`, `onEndFrameObservable`),
  * the frame's id (what `engine.frameId` was: moved once a frame, after its
@@ -35,7 +36,10 @@
  *   it from the engine's `onBeginFrameObservable`, hooked before
  *   `initAsync` (`main.ts`), until `BABYLON_EXIT.md` X5.4h retires the engine.
  * - **A lost device holds the loop** (`held`), as `_contextWasLost` held
- *   Babylon's — no frame and no ask of the cap while the engine restores.
+ *   Babylon's — no frame while the engine restores — but ahead of the cap
+ *   rather than after it, so nothing is asked of the cap either and the first
+ *   frame after a restore steps across the whole loss (`held`'s note;
+ *   `BABYLON_EXIT.md` X5.4i).
  * - The world is NOT stepped by this clock: `Game.tick` steps it by
  *   `FrameCap.elapsed`, the refresh stamps (`FrameCap`'s header); this delta
  *   is what the readout, the profiler and the particle fields' animation
@@ -119,7 +123,7 @@ export class FrameClock {
   }
 }
 
-/** What the loop tells the profiler: the end of its `present` span, the submit having returned. */
+/** What the loop tells the profiler: the end of its `present` span, `FrameSubmit.submit` having returned (the next encoder made). */
 export interface PresentSpan {
   presented(): void;
 }
@@ -133,10 +137,17 @@ export class FrameLoop {
   frameId = 0;
   /**
    * True while the graphics device is LOST and its engine restoring it, when
-   * an admitted refresh runs nothing: Babylon's `_processFrame` tested
-   * `_contextWasLost` first, ahead of its cap. Written by `Game` from the
-   * engine's two context observables until `BABYLON_EXIT.md` X5.4i decides
-   * what a loss is.
+   * a refresh runs nothing, as `_contextWasLost` held Babylon's loop. **Not
+   * quite as it did**: at the parent the cap's requester ADMITTED every
+   * refresh first (`FrameCap`'s stamps and schedule moving) and Babylon's
+   * `_renderLoop` tested the loss inside the frame it was handed, whereas here
+   * `held` is tested ahead of `admit` and the cap is not asked at all — so the
+   * first frame after a restore reads a `FrameCap.elapsed` spanning the whole
+   * loss (which `Game.tick` clamps to the wire's `MAX_FRAME_DT`), where the
+   * parent's read one refresh. Moot while a loss is never restored into a
+   * round, and booked on `BABYLON_EXIT.md` X5.4i, which decides what a loss
+   * is. Written by `Game` from the engine's two context observables until
+   * X5.4h/X5.4i move it to the device's `lost`.
    */
   held = false;
   /** The frame's encoder and its submit. */
@@ -144,6 +155,8 @@ export class FrameLoop {
   private frame: (() => void) | null = null;
   /** The browser's handle for the refresh being waited on, 0 for none. */
   private handle = 0;
+  /** Set by `stop`: no refresh is requested again. */
+  private stopped = false;
 
   constructor(
     private readonly cap: FrameCap,
@@ -167,8 +180,22 @@ export class FrameLoop {
     this.handle = window.requestAnimationFrame(this.step);
   }
 
+  /**
+   * Ends the loop, as `engine.stopRenderLoop()` ended Babylon's: the pending
+   * refresh cancelled and none requested again — a frame running when it is
+   * called (from inside `tick` or an observer) completes, and requests no
+   * next one. Nothing in the game calls it: it is a script's, and the
+   * teardown's when `BABYLON_EXIT.md` X5.4i decides a loss. Not restartable.
+   */
+  stop(): void {
+    this.stopped = true;
+    if (this.handle !== 0) window.cancelAnimationFrame(this.handle);
+    this.handle = 0;
+  }
+
   private readonly step = (t: number): void => {
     this.handle = 0;
+    if (this.stopped) return;
     if (!this.held && this.cap.admit(t)) {
       // `beginFrame`: the clock's sample (`_measureFps`), then its observable.
       this.clock.sample();
@@ -183,6 +210,6 @@ export class FrameLoop {
     }
     // Only now, as `_renderLoop` queued its next frame after `_processFrame`:
     // a frame that threw above has requested nothing.
-    if (this.handle === 0) this.handle = window.requestAnimationFrame(this.step);
+    if (this.handle === 0 && !this.stopped) this.handle = window.requestAnimationFrame(this.step);
   };
 }

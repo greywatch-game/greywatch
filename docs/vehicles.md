@@ -2933,8 +2933,10 @@ because it was Babylon's:
   nothing and costs nothing (at rest it still dispatches and draws nothing: its
   count is zero until it first emits, and stays up after until a reset).
 - **`updateSpeed` is `1/60`**, which is what makes the numbers mean what they say:
-  the GPU clock advances by `updateSpeed * scene.getAnimationRatio()` and that ratio
-  is `dt * 60`, so a lifetime is seconds and an emit power is m/s. (`Atmosphere`'s
+  the GPU clock advances by `updateSpeed` × the frame's animation ratio
+  (`SceneFrame.animationRatio`, `scene.getAnimationRatio()` until
+  `BABYLON_EXIT.md` X5.4g) and that ratio is `dt * 60`, so a lifetime is
+  seconds and an emit power is m/s. (`Atmosphere`'s
   0.012 is deliberately not that.)
 - **A ring's gradients are BAKED ONCE**, at its first ready test, as Babylon made
   its textures once — so they are stated in `RotorWash.buildRing` before

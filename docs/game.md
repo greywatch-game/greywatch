@@ -636,7 +636,10 @@ that throws stops the loop as Babylon's did. **The world is stepped by the
 REFRESH stamps (`FrameCap.elapsed`), never by the loop's delta**, which is the
 readout's, the profiler's and the particle fields' clock. A lost device holds
 the loop (`held`) until the engine restores one, as `_contextWasLost` held
-Babylon's, until X5.4i decides a loss. Babylon's own `beginFrame` and
+Babylon's — but ahead of the cap, where Babylon's test came after the cap had
+admitted the refresh, so the first frame after a restore steps across the
+whole loss (`FrameLoop.held`) — until X5.4i decides a loss. `stop` ends the
+loop as `engine.stopRenderLoop` did (a script's, never the game's). Babylon's own `beginFrame` and
 `endFrame` still run inside a RESIZE (`_initializeMainAttachments`, its own
 flush and its own depth's clear) until X5.4h stops constructing the engine;
 they hold nothing of ours, and the clock takes its sample there as Babylon's

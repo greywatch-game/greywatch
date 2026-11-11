@@ -140,11 +140,14 @@ export const PHASES = [
   "glow",
   "drawWorld",
   /**
-   * The frame's END, after `tick` has returned: the span around the frame's
-   * ONE `queue.submit` — the frame's GPU timer closed, the encoder finished
-   * and submitted (`core/FrameLoop.ts`, `render/FrameSubmit.ts`,
-   * `BABYLON_EXIT.md` X5.4g; Babylon's `endFrame` until then, its
-   * `flushFramebuffer` the same finish and submit).
+   * The frame's END, after `tick` has returned: `FrameSubmit.submit`, the
+   * span around the frame's ONE `queue.submit` — the frame's GPU timer
+   * closed, the encoder finished and submitted, then, under `?gpu`, the
+   * timer's read-back begun (its `mapAsync`), and the NEXT frame's encoder
+   * made, with the timer's opening pass when it times that frame
+   * (`core/FrameLoop.ts`, `render/FrameSubmit.ts`, `BABYLON_EXIT.md` X5.4g;
+   * Babylon's `endFrame` until then, whose `flushFramebuffer` was the same
+   * finish and submit and made its next frame's encoders inside it too).
    *
    * **It is the one phase in this list that is NOT inside `frame`**, and it is
    * here because the residue outside the tick was the whole of an unexplained

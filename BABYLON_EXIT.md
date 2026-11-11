@@ -6094,6 +6094,18 @@ measurement until the sub-step that replaces both.
     (`_initializeMainAttachments`, remade on a resize) beside `ChainPasses`' canvas depth,
     which is the one every canvas pass attaches since X5.4f — two swap-chain-sized depths,
     nothing reading Babylon's. Not constructing the engine removes it; nothing else owes it.
+  - **What our loop still takes from the engine** (from X5.4g's review), both gone with it:
+    - **The clock's samples at the engine's own `beginFrame`**: `main.ts` samples
+      `FrameClock` on `engine.onBeginFrameObservable` (12 at the boot, 2 a resize —
+      `_initializeMainAttachments`' frames), where Babylon's performance monitor took
+      them. X5.4g measured why they matter: without the boot's, the first frame reads a
+      delta of 0 and a rate of Infinity, where the parent read ~549 ms and 3.6 fps.
+      Under THE ONE RULE, X5.4h samples the clock at its OWN boot and its own resize,
+      where `_initializeMainAttachments` ran its `beginFrame`, the samples kept byte for
+      byte — or names the change for the owner.
+    - **`FrameLoop.held`** is driven from the engine's two context observables
+      (`Game.ts`, beside `new FrameLoop`): with no engine to observe, it moves to the
+      device's `lost` (X5.4h's device; what a loss then does is X5.4i's).
   - **Verify:** the camera log bit for bit; `post.mjs` at both sizes (the phone's DPR
     2.8125); every bank row; `post.mjs`'s device and context lines equal but the label;
     a resize, an orientation change, fullscreen, a browser zoom and a monitor change
@@ -6123,6 +6135,24 @@ measurement until the sub-step that replaces both.
     destroys both AT ONCE and removes that observer (`afterSubmit`), the same teardown-only
     exception (`ChainPasses`' header), so it is called beside `Renderer.dispose`, between
     frames, after the last submit.
+  - **Owes the frame loop stopped and `FrameSubmit` disposed in the same teardown** (found
+    by X5.4g's review): `FrameLoop.stop` (`stopRenderLoop`'s port, the pending refresh
+    cancelled and none requested again) first, so no frame runs into what is torn down;
+    then `FrameSubmit.dispose`, which destroys the frame timer's query set and both its
+    buffers AT ONCE and has no caller (its header names it the teardown path, as
+    `ChainPasses`' and `FrameTargets`' do) — between frames, after the last submit, never
+    inside a frame while the timer is OPEN on an encoder that will still be submitted; the
+    encoder made after the last submit, which the timer may have opened, is abandoned,
+    never finished or submitted.
+  - **`FrameLoop.held` tests the loss AHEAD of the cap** (found by X5.4g's review): at the
+    parent the cap's requester admitted every refresh first (its stamps and schedule
+    moving) and Babylon's `_renderLoop` tested `_contextWasLost` inside the frame it was
+    handed; now `held` short-circuits `FrameCap.admit`, so the first frame after a restore
+    reads a `FrameCap.elapsed` spanning the whole loss (clamped by `Game.tick` to the
+    wire's `MAX_FRAME_DT`) where the parent's read one refresh. Moot while no loss is
+    restored into a round; under the owner's answer (a reload to the menu) it stays moot,
+    and this step says so in `FrameLoop`'s header — or, if a loss ever resumes a frame,
+    the cap is asked ahead of `held`, as Babylon's order had it.
   - **Verify:** `lost.mjs`; every bank row (no frame without a loss moves); the boot's
     failure branches unchanged.
   - **Rewrites:** `docs/states.md` or `docs/game.md` (where the loss goes); `CLAUDE.md`

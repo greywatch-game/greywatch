@@ -135,7 +135,8 @@
  * fixed: the round is built with nothing allowed into the engine (the game's
  * own step and every way into the three pools are held off until the script
  * starts — a bot killed under the deploy screen would otherwise have thrown a
- * corpse into the world first), the render loop is stopped, each pool's
+ * corpse into the world first), the render loop is stopped (the game's
+ * own, `Game.frameLoop.stop`, since `BABYLON_EXIT.md` X5.4g), each pool's
  * jitter stream is re-seeded by its own `reset`, and every spawn, burst and
  * step is the script's. What is left is Havok's determinism given identical
  * calls, which is the instrument `drop.mjs` measured.
@@ -197,7 +198,11 @@ function quietRound(page) {
       const poll = () => (g.state === "deploy" ? res() : setTimeout(poll, 10));
       poll();
     });
-    g.engine.stopRenderLoop();
+    // The game's own loop since `BABYLON_EXIT.md` X5.4g (`Game.frameLoop`),
+    // whose `stop` is `stopRenderLoop`'s port — the engine's is a no-op
+    // there, the engine running no loop. An older tree has no `stop`.
+    if (g.frameLoop?.stop) g.frameLoop.stop();
+    else g.engine.stopRenderLoop();
   });
 }
 

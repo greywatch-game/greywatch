@@ -45,8 +45,10 @@
  *   one's samples. The two are sampled on different rows, so the share is a
  *   ratio of means. Neither needs a browser flag from report version 38
  *   (`BABYLON_EXIT.md` X5.4g: `frame` is our timer's, pass descriptors'
- *   stamps); before it `frame` was Babylon's `writeTimestamp`, and read 0 in
- *   a browser without `--enable-unsafe-webgpu`. Babylon's draw count, a
+ *   stamps; measured at X5.4g's review, a capture in a Chromium without the
+ *   flag reading `gpu.frame` on 4,443 rows — `VERIFYING.md`); before it
+ *   `frame` was Babylon's `writeTimestamp`, and read 0 in a browser without
+ *   `--enable-unsafe-webgpu`. Babylon's draw count, a
  *   column of the medians, is "-" from v38, which retired it.
  * - `install`, from the URL to the first bench frame — `VERIFYING.md`'s free
  *   control: when the installs differ, the frame rates are not comparable.

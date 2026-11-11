@@ -50,7 +50,7 @@
  *
  * **A BENCHMARK borrows the same ring, and asks three things of it nothing else
  * does** (`?bench=<map>`, `bench/BenchScript.ts`): a ring SIZED to its script
- * rather than to `CONFIG.profiling.frames` (`arm`'s third argument), so
+ * rather than to `CONFIG.profiling.frames` (`arm`'s second argument), so
  * nothing the run drew is ever lapped out of its capture; a SEGMENT label on
  * every row (`setSegments`, `setSegment`), so a capture can say what each
  * frame was showing; and `halt`, which stops the recording at the run's last
@@ -244,19 +244,31 @@ function describeScript(s: LoafScript): string {
  * One of OUR GPU timers, as this file reads it — the frame's
  * (`render/FrameTimer.ts`, `gpu.frame`) and the culls' (`render/PassTimer.ts`,
  * `gpu.cull`) — structural, so nothing here imports the renderer. Both are
- * attributed by two transitions: `inFlight` turns true while the frame being
- * timed is recorded — the frame timer's as the frame's encoder is made, after
- * the submit before it; the cull timer's during the frame's render — so
- * either way before `endFrame` polls it, and the row that first sees it is
- * the row measured; `count` moving is the reading landing, a map-async round
- * trip later. One reading is in flight at a time, so both are SAMPLED. They
- * are ours and public, so nothing here is guarded: each is there under `?gpu`
- * on a device with `timestamp-query`, or it is null.
+ * attributed by two transitions: a row is CLAIMED by the frame being timed,
+ * before `endFrame` polls it, and `count` moving is the reading landing, a
+ * map-async round trip later. The cull timer's claim is `inFlight`, which
+ * turns true during the frame's render; the frame timer's is `timing`
+ * (`GpuFrameTimer`). One reading is in flight at a time, so both are
+ * SAMPLED. They are ours and public, so nothing here is guarded: each is
+ * there under `?gpu` on a device with `timestamp-query`, or it is null.
  */
 interface GpuPassTimer {
   readonly ms: number;
   readonly count: number;
   readonly inFlight: boolean;
+}
+
+/**
+ * The frame's timer, which also says whether the encoder being recorded now
+ * is the one its next reading measures (`timing`: it was OPEN for it). That,
+ * and never `inFlight`, is what claims a row: the timer runs all session
+ * under `?gpu`, so at the first `endFrame` after an `arm` it may be reading
+ * back an EARLIER frame, one the ring never recorded — `inFlight` is true
+ * then, and the frame being recorded was not timed at all, its encoder's
+ * `open` refused.
+ */
+interface GpuFrameTimer extends GpuPassTimer {
+  readonly timing: boolean;
 }
 
 /**
@@ -382,7 +394,7 @@ export class FrameProfile {
   private cullPendingRow = -1;
   private cullLastCount = -1;
   /** The frame's GPU timer (`render/FrameTimer.ts`), pushed by `Game` once; null without `?gpu`. */
-  private frameTimer: GpuPassTimer | null = null;
+  private frameTimer: GpuFrameTimer | null = null;
   /** The row a whole-frame measurement is in flight for, and the timer's count then. */
   private gpuPendingRow = -1;
   private gpuLastCount = -1;
@@ -674,7 +686,7 @@ export class FrameProfile {
    * `gpu.frame` — null where none was built. Set by `Game` at construction;
    * polled every frame, as the cull timer is.
    */
-  setFrameTimer(timer: GpuPassTimer | null): void {
+  setFrameTimer(timer: GpuFrameTimer | null): void {
     this.frameTimer = timer;
   }
 
@@ -1296,11 +1308,14 @@ export class FrameProfile {
 
   /**
    * Closes `present` on the frame that has just been submitted — called by the
-   * frame loop right after its one `queue.submit` returns
-   * (`core/FrameLoop.ts`, `BABYLON_EXIT.md` X5.4g), so the span is the end of
-   * the frame after `tick`: the frame timer closed, the encoder finished and
-   * the submit. Until X5.4g it hung off the engine's end-of-frame
-   * notification (`hookEngine`), after Babylon's `endFrame`.
+   * frame loop right after `FrameSubmit.submit` returns (`core/FrameLoop.ts`,
+   * `BABYLON_EXIT.md` X5.4g), so the span is the end of the frame after
+   * `tick`: the frame timer closed, the encoder finished, the one
+   * `queue.submit`, then the timer's read-back begun (`mapAsync`, under
+   * `?gpu`) and the next frame's encoder made, with the timer's opening pass
+   * when it times that frame — as Babylon's `flushFramebuffer` made its next
+   * encoders inside the same span. Until X5.4g it hung off the engine's
+   * end-of-frame notification (`hookEngine`), after Babylon's `endFrame`.
    *
    * **The second place a bracket lives outside `Game.ts`, and for the
    * opposite reason to the frame's spans.** Those are boundaries INSIDE the
@@ -1657,6 +1672,16 @@ export class FrameProfile {
    * BELONGS TO, which is not this one — both of our timers, by the same two
    * transitions (`GpuPassTimer`). Nothing is allocated, and the whole thing is
    * a few reads on a healthy frame; nothing without `?gpu`.
+   *
+   * **The frame timer's row is claimed only by a frame it is TIMING**
+   * (`GpuFrameTimer.timing`, asked here, after the frame's render and before
+   * its submit), so every landing order files a reading against the frame it
+   * measured: a timed frame's reading is the next to land, the timer opening
+   * nothing while one is in flight, so a claim is answered by the next move
+   * of `count`, which is read before this row's own claim and so never files
+   * onto it. A reading that lands with no row claimed (one begun before an
+   * `arm`) moves the count and files nothing, and a frame that is not timed
+   * claims nothing, whatever is being read back.
    */
   private pollGpu(i: number): void {
     const frame = this.frameTimer;
@@ -1670,8 +1695,8 @@ export class FrameProfile {
           this.gpuPendingRow = -1;
         }
       }
-      // A fresh reading is in flight and nothing is claimed for it yet.
-      if (this.gpuPendingRow < 0 && frame.inFlight) this.gpuPendingRow = i;
+      // This frame is timed, and its reading is the next to land.
+      if (this.gpuPendingRow < 0 && frame.timing) this.gpuPendingRow = i;
     }
     this.pollGpuCull(i);
   }

@@ -7,7 +7,8 @@
  * Owns: `FrameTimer` — a timestamp query set of two stamps, the buffer they
  * resolve into and the one they are read back through, the two pass
  * descriptors that write them (made once), and the last reading (`ms`,
- * `count`, `inFlight`).
+ * `count`, `inFlight`, and `timing`, whether the encoder being recorded is the
+ * one the next reading measures).
  * Invariants: the stamps are written by two EMPTY compute passes of this
  * file's own — the first command of the frame's encoder (`open`, the
  * beginning of its pass) and the last (`close`, the end of its pass) — so a
@@ -77,11 +78,23 @@ export class FrameTimer {
 
   /**
    * Whether a reading is open, recorded or being read back — true from the
-   * frame it times opening until its reading lands, which is what files it
-   * against the right row (`FrameProfile`'s `pollGpuFrame`).
+   * frame it times opening until its reading lands.
    */
   get inFlight(): boolean {
     return this.state !== IDLE;
+  }
+
+  /**
+   * Whether the encoder being recorded into now is TIMED — `open` took it, and
+   * its reading is the next to land. Asked between the encoder's making and
+   * its submit (the profiler's `endFrame`, the last line of `Game.tick`), it
+   * is what says the frame being recorded is the one the next reading
+   * measures, which `inFlight` cannot: that is true too while an EARLIER
+   * frame's reading is read back, a frame this one's `open` was refused for
+   * (`FrameProfile`'s `pollGpu`).
+   */
+  get timing(): boolean {
+    return this.state === OPEN;
   }
 
   /**
@@ -126,15 +139,19 @@ export class FrameTimer {
   private readonly landed = (): void => {
     if (this.disposed) return;
     const words = new Uint32Array(this.readback.getMappedRange(0, 16));
-    // Each stamp is a u64 of nanoseconds; their difference fits a double.
+    // Each stamp is a u64 of nanoseconds, read as its low and high halves;
+    // their difference fits a double.
+    const stamped = (words[0] | words[1]) !== 0 && (words[2] | words[3]) !== 0;
     const ns = (words[3] - words[1]) * 4294967296 + (words[2] - words[0]);
     this.readback.unmap();
     this.state = IDLE;
-    // A pass the GPU could not stamp resolves to zeros, and a negative is a
+    // A pass the GPU could not stamp resolves to zeros — BOTH stamps are
+    // asked, since one unwritten stamp beside a written one is a difference
+    // as large as the clock, not a frame — and an end before its begin is a
     // clock that was reset: neither is a reading, so it lands as 0 — which a
     // capture reads as an unmeasured frame — and still bumps `count`, or the
     // row waiting for it would take the NEXT reading instead.
-    this.ms = ns > 0 ? ns / 1e6 : 0;
+    this.ms = stamped && ns > 0 ? ns / 1e6 : 0;
     this.count++;
   };
 

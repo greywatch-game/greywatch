@@ -197,12 +197,14 @@ you are on before you believe anything else in this section.
   presents perfectly well: 240 swap-chain frames, no device loss. So the flag
   buys no ADAPTER on this machine and the channel is the whole game, which is
   the exact inverse of the Chromebook below.
-  **It is not dead weight, though, and this file said it was for a
-  milestone.** `--enable-unsafe-webgpu` is also what exposes
-  `GPUCommandEncoder.writeTimestamp`, which is the whole of the profiler's
-  whole-frame GPU counter — so `launchClient` passing it is why every
-  `gpu.frame` reading in this file exists, and a stock Chrome reading the same
-  build gets `samples: 0`. See the `?gpu` bullet below.
+  **It was not dead weight until report v38, though, and this file said it
+  was for a milestone.** `--enable-unsafe-webgpu` is what exposes
+  `GPUCommandEncoder.writeTimestamp`, which was the whole of the profiler's
+  whole-frame GPU counter (Babylon's) — so `launchClient` passing it is why
+  every `gpu.frame` reading in this file before v38 exists, and a stock
+  Chrome reading those builds got `samples: 0`. From v38 (`BABYLON_EXIT.md`
+  X5.4g) the counter is ours, pass descriptors' stamps, and was measured
+  without the flag. See the `?gpu` bullet below.
 - **`--use-angle=d3d11` is a trap.** It gets an adapter and then fails
   `requestDevice` with `DynamicLib.Open: dxil.dll Windows Error: 87`. No ANGLE
   override is needed or wanted here.
@@ -323,6 +325,13 @@ you are on before you believe anything else in this section.
   6.746 ms tick.
   **From report v38 `?gpu` is sufficient**: both counters are pass
   descriptors' stamps, which need `timestamp-query` and no browser flag.
+  Measured on this box (2026-11-11, X5.4g's review): `?bench=hollowmere&gpu`
+  in a Chromium launched WITHOUT `--enable-unsafe-webgpu` (headless,
+  `channel: "chromium"`, `GPUCommandEncoder.prototype.writeTimestamp`
+  absent, so the flag was truly off) read `frameMeasurable: true` and
+  `gpu.frame` on 4,443 rows, mean 4.651 ms, with `gpu.cull` on 4,716 — the
+  flagged run beside it 4.445/4.471/5.173 ms on the three groups. A phone's
+  Chrome is unmeasured.
   **Before v38 it was necessary and not sufficient: the whole-frame counter
   also needed `--enable-unsafe-webgpu`** (Babylon's `writeTimestamp`), which
   `launchClient` passes and a browser started by hand does not; without it a
@@ -354,8 +363,11 @@ you are on before you believe anything else in this section.
   25 on the relative bar, the baseline going 7.8 → 15.1 → 39 ms over the first
   two seconds. `frame.hitchThresholdMs` and `frame.baselineMs` are in every
   capture, so a script can assert on both rather than inferring them.
-- **Counting `requestAnimationFrame` callbacks beats `Engine.getFps` for
-  anything under a percent.** That readout is a 30-frame rolling mean and cannot
+- **Counting `requestAnimationFrame` callbacks beats the readout's `getFps`
+  for anything under a percent** — `g.frameLoop.clock.getFps()` since
+  `BABYLON_EXIT.md` X5.4g (`FrameClock`, Babylon's arithmetic ported; the
+  engine's own `getFps()` moves only at a resize now, the engine running no
+  loop), `Engine.getFps` before. That readout is a 30-frame rolling mean and cannot
   see a fractional-percent change; a rAF count over eight seconds is what
   resolved the profiler's own overhead at all (128.3/128.4/128.8 armed against
   129.1/129.2/130.6 disarmed). Note which side moved: the ARMED readings agree
@@ -636,7 +648,11 @@ you are on before you believe anything else in this section.
     rules, damage arithmetic, nav — none of which needs a presented frame, and
     it is much faster to start. Use it for those. It gets two frames in before
     the device goes, so the frame's index (`g.sceneFrame.index`) stops at 2 and
-    `engine.getFps()` reads ~3 forever; do not read either as a stall. (That
+    the frame rate stops where those frames left it — `engine.getFps()` read
+    ~3 forever under Babylon's loop; since `BABYLON_EXIT.md` X5.4g the readout
+    is `g.frameLoop.clock.getFps()`, the same arithmetic over the same
+    samples (not re-measured here), and the engine's own moves only at a
+    resize — so do not read either as a stall. (That
     index was `scene.getFrameId()` until `BABYLON_EXIT.md` X5.4f; the scene is
     never rendered since, so `getFrameId()` reads 0 on every machine.)
 
@@ -1131,11 +1147,15 @@ is one machine's:
   is most of the residue. Measured on Hollowmere: a control pair read mean
   **5.4/255** with the clocks pinned and this one left running, **0.23** with it
   stubbed, and **0.0** with the whole of `updateGameplay` stubbed.
-- **`engine.stopRenderLoop()` plus a manual `scene.render()` does NOT give
+- **A stopped loop plus a manual `scene.render()` does NOT give
   `page.screenshot` a new frame** — and since `BABYLON_EXIT.md` X5.4f a manual
   `scene.render()` draws nothing of ours at all, the frame being
   `g.sceneFrame.render()` (`core/SceneFrame.ts`, called from `Game.tick`); a
   manual call of THAT is untested, so presume the finding holds for it too.
+  **The loop is the game's since X5.4g, so `engine.stopRenderLoop()` stops
+  NOTHING** — the engine runs no loop — and the stop is `g.frameLoop.stop()`
+  (`core/FrameLoop.ts`, its port: the pending refresh cancelled, none
+  requested again, not restartable, so close the page after it).
   The failure is the worst shape there is:
   every pair reads **0% of pixels differ**, including a deliberate change, so an
   A/B concludes that whatever it was testing does nothing. Keep the render loop
@@ -1604,20 +1624,30 @@ is one machine's:
   went; `g.blastDebris.scorch.marks` is the decal pool. **Put the blast on OPEN
   GROUND**: a control point on Coldharbour is a monument, and a mark laid on its
   plinth is inside the plinth.
-- **The blast DUST is not steppable that way** — the puffs run on the GPU and
-  advance on RENDERED frames by `updateSpeed * scene.getAnimationRatio()`, and
-  headless that ratio is the real frame delta (~30 at 2 fps, not clamped), so a
-  2.4 s cloud is three frames. Override `scene.getAnimationRatio`: 0 freezes the
-  dust, and `seconds * 60` for exactly one rendered frame (counted on
-  `g.sceneFrame.onAfterRenderObservable`, the frame's own since
-  `BABYLON_EXIT.md` X5.4f; the scene's is never raised) steps the cloud to a
-  known age and holds it. The ratio is still the scene's: our frame calls
-  `scene.animate()`, which sets it.
-  Also: `dust.burst()` needs a real `Vector3` (`copyFrom` reads `_x`/`_y`/`_z`, so
-  a plain `{x,y,z}` silently gives a cloud at NaN), and `getActiveCount()` is the
-  ring size, not live puffs. **There are TWO of these pools now** —
-  `g.grenades.dust` and `g.grenades.smoke`, the same class with different
-  numbers — and the freeze has to cover both, because they share the one clock.
+- **The blast's dust and smoke are no GPU pool any more**: they are billows
+  (`systems/BlastFx.ts`, `g.grenadeFx.blasts`), stepped by
+  `g.grenadeFx.update(dt)` like any other pool, so a script steps them as it
+  steps the flight. **What is NOT steppable that way is a PARTICLE FIELD** —
+  the ash and the rotor wash's dust and spray rings (`render/ParticleDraw.ts`,
+  Babylon's `GPUParticleSystem` ported), which run on the GPU and advance on
+  RENDERED frames by `updateSpeed * ratio`. The ratio is
+  `g.sceneFrame.animationRatio` (`core/SceneFrame.ts`, `scene.getAnimationRatio()`
+  until `BABYLON_EXIT.md` X5.4g: neither `scene.animate()` nor that getter is
+  called any more, so overriding it does nothing), which `render()` OVERWRITES
+  every frame from the loop's delta — headless the real frame delta, ~30 at
+  2 fps, clamped only at 1000 ms — so a 2.4 s cloud is three frames. Pin it
+  with an accessor: `Object.defineProperty(g.sceneFrame, "animationRatio",
+  { configurable: true, get: () => r, set() {} })` — the SETTER is owed,
+  because `render()` assigns it and a getter alone throws in the module's
+  strict code — and `delete g.sceneFrame.animationRatio` puts the plain field
+  back. **0 is NOT a freeze**: a field reads `ratio || 1`, as Babylon wrote it,
+  so 0 steps a whole sixtieth. Freeze with a tiny positive `r` (`1e-6`), and
+  step a ring (`updateSpeed` 1/60) to a known age with `r = seconds * 60` for
+  exactly one rendered frame (counted on `g.sceneFrame.onAfterRenderObservable`,
+  the frame's own since X5.4f; the scene's is never raised). **Overriding the
+  CLOCK instead cannot freeze anything**: `render()` clamps the loop's delta to
+  `Scene.MinDeltaTime`, 1 ms, so the smallest ratio a clock override reaches
+  is 0.06.
 - **`Game.setMap` takes the INDEX into `MAPS`, not a `MapDef` and not an id.**
   A script that hands it the def gets `Cannot read properties of undefined
   (reading 'id')` from inside `setMap`, which reads like the map is missing. The

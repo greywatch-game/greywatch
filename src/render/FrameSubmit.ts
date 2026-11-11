@@ -13,7 +13,16 @@
  * — so work recorded between frames (an upload whose decode landed on a
  * task) is the next frame's, submitted ahead of nothing it was recorded
  * after; `submit` finishes the encoder and hands it to the queue in ONE
- * `queue.submit` of ONE command buffer, never mid-frame; the timer's two
+ * `queue.submit` of ONE command buffer, never mid-frame; `dispose` is the
+ * TEARDOWN path — it destroys the timer's query set and both its buffers AT
+ * ONCE, a buffer mid-map rejecting its map — and it has NO caller yet:
+ * `FrameSubmit` is the frame loop's, which nothing tears down, and a lost
+ * device's teardown owes it a call of its own (X5.4i) after the frame loop is
+ * stopped (`FrameLoop.stop`), between frames, after the last submit — never
+ * inside a frame, while the timer is OPEN on an encoder that will still be
+ * submitted; the encoder made after the last submit, which the timer may
+ * have opened, is abandoned, never finished or submitted, because it names
+ * the destroyed query set; the timer's two
  * stamps are the encoder's first and last commands, opened as the encoder
  * is made (Babylon's `startFrame` on its new upload encoder) and closed as it
  * is finished, its read-back begun after the submit that carries it; nothing
@@ -64,6 +73,7 @@ export class FrameSubmit {
     this.current = this.make();
   }
 
+  /** The teardown (the header): the timer's queries and buffers destroyed at once. No caller until X5.4i. */
   dispose(): void {
     this.timer?.dispose();
   }
