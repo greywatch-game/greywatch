@@ -130,6 +130,13 @@ then the frame loop itself, at which point taking the frame is mostly deletion.
 5. **A GPU resource lives with whatever produces it.** While both renderers
    run, the side that does not own a texture or buffer reads a wrapped view of
    it through the seam. It never copies it and never owns a second one.
+   **Read since X5.4h as "a GPU resource lives with whatever produces it, and
+   nothing else holds a view of it"**: no wrapped view is left — the default
+   cube's went at X5.3d, and the shadow maps' at X5.4h with Babylon's engine (a
+   `NullEngine` cannot wrap a GPU texture, and their readers were cel materials
+   that never draw) — and the seam they were read through was deleted with its
+   last item, the device (rule 4). Every resource a frame binds is our
+   renderer's own, bound where it lies.
 6. **`src/render/` and `src/math/` never import `@babylonjs/core`.** X2.3 adds
    a build gate for `server/` and the simulation; X3.2 adds these two
    directories to it; X6.1 widens it to the whole tree. The one exception is
@@ -6258,6 +6265,28 @@ measurement until the sub-step that replaces both.
     restored into a round; under the owner's answer (a reload to the menu) it stays moot,
     and this step says so in `FrameLoop`'s header — or, if a loss ever resumes a frame,
     the cap is asked ahead of `held`, as Babylon's order had it.
+  - **Owes `LampAtlas.dispose` in the same teardown, not `LocalShadows.dispose`** (found by
+    X5.4h's review): at the parent `LocalShadows.dispose` disposed Babylon's wrapped view of
+    the atlas, which destroyed the atlas texture with it; since X5.4h it only clears its
+    `made` flag and releases nothing (its doc says so), and `Renderer.dispose` does not
+    reach the atlas. So the teardown releases the atlas through `LampAtlas.dispose`, beside
+    `Renderer.dispose`, between frames after the last submit.
+  - **The owner's answer goes in `Game`'s `device.lost` handler** (found by X5.4h's review):
+    the constructor's `device.lost.then(…)`, which today holds the loop for one task (the
+    hold above). **It must not filter out the reason `"destroyed"`**: `lost.mjs` simulates
+    a loss with `device.destroy()`, which resolves `lost` with that reason, so a handler
+    that answered only `"unknown"` would leave the instrument grading nothing. **And a
+    teardown that destroys the device itself must not re-enter the handler**: the
+    device's own `destroy()` resolves the same promise.
+  - **One clock sample fewer on a loss** (found by X5.4h's review): at the parent Babylon's
+    restore took one more sample of the frame's clock — `_restoreEngineAfterContextLost`,
+    then `initAsync`, then `_initializeMainAttachments`, then `beginFrame` — and since
+    X5.4h no restore runs, so none is taken. It matters only on a loss, inside the dead
+    frame the owner accepted, and a reload to the menu leaves it moot; this step says so.
+  - **What a reload needs nothing for** (found by X5.4h's review): `CanvasSurface.adoptInput`'s
+    canvas listeners, `main.ts`' `uncapturederror` listener and the canvas context's
+    `unconfigure` — a page reload drops all three with the document. Only an in-place
+    recovery (the owner's (B), a feature after X6.2) would owe them.
   - **Verify:** `lost.mjs`; every bank row (no frame without a loss moves); the boot's
     failure branches unchanged.
   - **Rewrites:** `docs/states.md` or `docs/game.md` (where the loss goes); `CLAUDE.md`
@@ -6365,6 +6394,7 @@ Each is rewritten by the step that breaks it, in the same commit.
 | --- | --- |
 | `CLAUDE.md`: `compatibilityMode = false` is load-bearing | X5.4 (deleted at X5.4h with the engine) |
 | `BABYLON_EXIT.md` rule 4, and `CLAUDE.md`: our renderer meets Babylon's engine through ONE seam | X5.4h (the seam deleted with its last item, the device: rule 4 reads "no file touches a Babylon internal" until X6.1; `CLAUDE.md`'s device and canvas paragraph in its place) |
+| `BABYLON_EXIT.md` rule 5: the side that does not own a resource reads a wrapped view of it through the seam | X5.4h (the last wrapped views, the shadow maps', deleted with Babylon's engine, and the seam with its last item: rule 5 reads "a GPU resource lives with whatever produces it, and nothing else holds a view of it" until X6.1) |
 | `CLAUDE.md`: no deep static import, keep `optimizeDeps.exclude`; the two WASMs that never ship | X6.1 |
 | `CLAUDE.md`: every cel material is frozen; `remember`; a vertex colour buffer gained after a first draw | end of Phase 4 (deleted); since the editor's retirement no Babylon material draws in any state (X5.3d, its DEV counter), and the rule goes with the Babylon declarations at X6.1 |
 | `CLAUDE.md`: the map editor (dev only), its dynamic-import rule and `docs/editor.md`; the generators' "the editor patches"; the dev write endpoint's map rows; `installMap`'s two callers; the terrain-patch rule's two callers; the two-`Vector3` crossings | X5.3b, X5.3c (the viewer replaces the editor; row "X5.3, retire the editor") |

@@ -278,7 +278,10 @@ async function captureMap(browser, url, id, vantage) {
   // one — which is the bug `SCALE` exists to fix, so it is checked rather
   // than trusted.
   const backing = await page.evaluate(() => {
-    const e = window.__celshock.scene.getEngine();
+    // The canvas is the game's own since X5.4h (`Game.surface`,
+    // `core/CanvasSurface.ts`); an older tree's is Babylon's engine's.
+    const g = window.__celshock;
+    const e = g.surface ?? g.scene.getEngine();
     return [e.getRenderWidth(), e.getRenderHeight()];
   });
   await page.close();

@@ -619,9 +619,12 @@ function burstSpacing(rounds: number): number {
 
 /**
  * Top-level orchestrator: owns the scene, all systems, the game state machine,
- * and the per-frame update loop. The ENGINE is the one thing here it does not
- * own — `main.ts` builds it (WebGPU's is async) and hands it in, exactly as it
- * hands in Havok.
+ * and the per-frame update loop. The DEVICE and the CANVAS are the things here
+ * it does not make — `main.ts` asks for the device (WebGPU's is async),
+ * configures the canvas's context and hands both in as the device and the
+ * `CanvasSurface`, exactly as it hands in Havok (`BABYLON_EXIT.md` X5.4h).
+ * The engine the Babylon scene stands on until X6.1 is built here, a
+ * `NullEngine` over that surface (`core/SceneEngine.ts`).
  *
  * Systems never import each other — `Game` is the only place they meet, and
  * cross-system behavior belongs in this wiring rather than in an import.
@@ -2002,7 +2005,8 @@ export class Game {
     this.scene = new Scene(this.sceneEngine);
     // What the scene's input manager did to the canvas when the scene attached
     // it, on Babylon's engine (`CanvasSurface.adoptInput`): the tab index, the
-    // press and release default-prevented and focusing, the pointer captured.
+    // press and release default-prevented and focusing, the pointer captured,
+    // and the release it made on a blur or a cancel with a press held.
     surface.adoptInput();
     // The `Scene` constructor sets this true, and it is held FALSE: Babylon
     // steps a scene's physics engine from `scene.animate()`, which our frame

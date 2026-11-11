@@ -1,11 +1,21 @@
 /**
  * EmissiveFog.ts — Per-pixel distance fog for the unlit emissive materials.
- * Owns: a `MaterialPluginBase` bolted onto every material `getEmissive()` hands
- * out, and the fog values it binds. Invariants: the fog it uploads must be the
- * SAME fog the cel shader is given — `CelMaterialFactory.setEnvironment` is the
- * only caller of `setEmissiveFog`, exactly as it is the one writer of the band
- * `CelInk` fades on, so a lit window cannot describe different weather from the
- * wall it is set into.
+ * Owns: a `MaterialPluginBase` that was bolted onto every material
+ * `getEmissive()` hands out, and the fog values it binds. **INERT since
+ * `BABYLON_EXIT.md` X5.4h, until X6.1 removes it**: the scene stands on a
+ * `NullEngine` (`core/SceneEngine.ts`), whose `isWebGPU` is false, so
+ * `attachEmissiveFog` returns at its guard and attaches nothing, and the fog
+ * `setEmissiveFog` still writes is read by no plugin — nor needed by any draw:
+ * no Babylon material draws or compiles in any state (`core/babylonCompiles.ts`),
+ * and every emissive surface the frame draws is our renderer's (the map's
+ * palette carrying this file's curve in its own WGSL, `EmissiveWorld.ts` and
+ * `render/emissiveWorld.ts`). Kept, guard and all, until
+ * X6.1 takes the `StandardMaterial` recipe keys with it. Invariants (while it
+ * attached, and still true of what it is handed): the fog it uploads must be
+ * the SAME fog the cel shader is given — `CelMaterialFactory.setEnvironment` is
+ * the only caller of `setEmissiveFog`, exactly as it is the one writer of the
+ * band `CelInk` fades on, so a lit window cannot describe different weather
+ * from the wall it is set into.
  *
  * WHY THIS EXISTS. `getEmissive()` returns an unlit `StandardMaterial` — one
  * of the passes in this game that never runs the cel shader, and the last of
@@ -186,7 +196,8 @@ export function attachEmissiveFog(material: StandardMaterial): void {
 /**
  * Installs this fog into every emissive material at once. No recompile and no
  * cache walk: the values are uniforms, uploaded per draw from the module state
- * this writes.
+ * this writes. Since X5.4h no plugin is attached to read it (the header):
+ * the write stands, and goes with the plugin at X6.1.
  */
 export function setEmissiveFog(color: Color3, start: number, end: number): void {
   fog.color.copyFrom(color);

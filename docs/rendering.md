@@ -3493,7 +3493,9 @@ monitor): once as the boot configures the context, and at every size that
 takes (`CanvasSurface.onSized`), so its deltas are Babylon's sample for
 sample. What the scene's input manager did to the canvas element on
 Babylon's engine — the tab index, a press and a release default-prevented and
-focusing, the pointer captured — is the surface's too (`adoptInput`).
+focusing, the pointer captured, and the release Babylon made for a press that
+ended without one (a blur with it held, a cancel), which focused the canvas
+too — is the surface's too (`adoptInput`).
 **Babylon's `WebGPUEngine` is not constructed**: the scene stands on a
 `NullEngine` until X6.1 (`core/SceneEngine.ts`, row "X5.4, Babylon's engine"),
 told WebGPU's depth range (`isNDCHalfZRange`, which `Vector3.ProjectToRef`
@@ -4692,13 +4694,15 @@ cast and as what — and hands the frame's proxies over (`BodyShadowMap.draw`).
   renderer prepares nothing in, which no state measured is (every state
   prepares every frame, above) — clears at once, into the
   host's prepare encoder, behind anything already recorded there.
-  A rung change re-makes the texture AFRESH (the old wrapped view, disposed,
-  destroys the one it wraps) and draws the proxies last packed from where the
-  light stands, as a fresh generator rendered its first frame; a new light
-  direction re-states the map the same way.
-- **Babylon's readers sample a WRAPPED view** (`wrapShadowTexture`) and our
-  frame binds the texture itself (`ShadowBindings`' `own.bodyShadowMap`) —
-  rule 5 both ways, as the world's maps.
+  A rung change re-makes the texture AFRESH whatever its size (as it was
+  while Babylon's wrapped view of it, let go with it, destroyed it too, until
+  X5.4h) and draws the proxies last packed from where the light stands, as a
+  fresh generator rendered its first frame; a new light direction re-states
+  the map the same way.
+- **Our frame binds the texture itself** (`ShadowBindings`' `own.bodyShadowMap`),
+  as the world's maps. Babylon's readers sampled a WRAPPED view
+  (`wrapShadowTexture`) until `BABYLON_EXIT.md` X5.4h, which went with
+  Babylon's engine: the cel materials that held it neither draw nor compile.
 - **Measured against the generator** (X4.1c): a temporary twin of the old
   generator, fed the same instances and the same light in one page, read back
   texel for texel over live rounds on all seven maps with the window walked

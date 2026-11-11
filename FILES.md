@@ -742,7 +742,8 @@ src/
                         #   sample), and adoptInput (what Babylon's scene
                         #   input manager did to the canvas element: tab
                         #   index, press/release default-prevented and
-                        #   focusing, pointer capture)
+                        #   focusing, pointer capture, and the release it
+                        #   made on a blur or a cancel with a press held)
     SceneEngine.ts      # The engine the Babylon Scene stands on until X6.1
                         #   (X5.4h, row "X5.4, Babylon's engine"): a
                         #   NullEngine told WebGPU's depth range
@@ -2674,9 +2675,13 @@ src/
                         #   (wgsl/fxaa.ts): Babylon's shader with
                         #   CONFIG.graphics.fxaa's three constants (sub-pixel
                         #   blend 0.25 where Babylon's 1.0 blurred the frame)
-    EmissiveFog.ts      # The same fog as a material plugin on every unlit
+    EmissiveFog.ts      # The same fog as a material plugin for every unlit
                         #   emissive material — windows, flames, tracers. WGSL
-                        #   only, which is what isCompatible states
+                        #   only, which is what isCompatible states. INERT
+                        #   since X5.4h (the scene's NullEngine is no WebGPU
+                        #   engine: its guard attaches nothing, and the fog
+                        #   setEmissiveFog writes is read by nothing) until
+                        #   X6.1 removes it
     EmissiveWorld.ts    # THE EMISSIVE PALETTE: the one material a map's merged
                         #   windows, lenses and embers wear, the colour a slot
                         #   in uv2.x — since X3.7c a material OBJECT and no
@@ -3199,8 +3204,8 @@ src/
     FadeDraw.ts         # The FADING pools as OUR renderer draws them (X4.6e):
                         #   every spark, dust disc, scorch and blob shadow, a
                         #   draw an instance of its kit, and a spark's bloom in
-                        #   the glow's mask; each material's state, the two
-                        #   opacity maps Babylon's through the seam
+                        #   the glow's mask; each material's state, and the
+                        #   two opacity maps, ours since X5.4d (TextureMaker's)
     fadeProgram.ts      # Its program (X4.6e): FADE_BLOCK (the colours and the
                         #   fog band), the opacity map, the geometry and each
                         #   drawn fade's world, look and bloom; four variants

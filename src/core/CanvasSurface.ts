@@ -46,7 +46,25 @@
  *   first is what keeps the browser's compatibility `mousedown`/`mouseup` off a
  *   press on the canvas, which `InputManager`'s `mouseMask` never saw), and the
  *   pointer CAPTURED by the canvas on a press made without a pointer lock,
- *   released on its `pointerup` or `pointercancel`. Its picking, its cursor
+ *   released on its `pointerup` or `pointercancel`. **And the release Babylon
+ *   SYNTHESIZED** (`DeviceEventFactory`) where a press on the canvas ended
+ *   without one — the canvas's `blur` with a press held, a `pointercancel`, a
+ *   pen's `pointerleave`, and on macOS Chromium a `lostpointercapture` with
+ *   `buttons > 1` (`webDeviceInputSystem.js` 547-625, 664-680): the capture
+ *   released, and that release taken through `InputManager._onPointerUp` as a
+ *   real one is — the canvas focused (its `preventDefault` a no-op on a made
+ *   event) — if the scene had heard the press. Both of Babylon's layers are
+ *   kept, because they can disagree: the DEVICE's (`held`: a press it recorded
+ *   and no release ended, by pointer, mouse or touch, a pen being a touch) and
+ *   the SCENE's (`active`, `_activePointerIds` as written, -1 a free slot); a
+ *   mouse's made release carries pointer id 1 (`_CreatePointerEvent`), the
+ *   mouse's own on Chromium, so on Firefox (its mouse 0) it focuses nothing
+ *   and leaves the scene's slot stale, as Babylon did. Not kept: a CHORD's
+ *   buttons (a second button pressed or let go under the first reached the
+ *   scene as a `pointermove`, which only focused a canvas the first press had
+ *   focused), the touch limit (`_maxTouchPoints`, more touches than a hand
+ *   has), and a touch of pointer id 0 left uncaptured (no browser numbers a
+ *   touch 0). Its picking, its cursor
  *   (the scene's default, the empty string, written over an empty string) and
  *   its device bookkeeping reached nothing of the game's and are not kept; its
  *   context menu is refused by `InputManager` at the document, and the
@@ -160,9 +178,34 @@ export class CanvasSurface {
     const canvas = this.canvas;
     // `WebDeviceInputSystem._enableEvents`: the engine's `canvasTabIndex`, 1.
     if (canvas.tabIndex === -1) canvas.tabIndex = 1;
-    // The pointers a press on the canvas began, as `_activePointerIds` held
-    // them: a release is the scene's only after its press was.
-    const down = new Set<number>();
+    // The DEVICE's layer (`WebDeviceInputSystem`'s `_inputs` and
+    // `_activeTouchIds`): each pointer a press on the canvas began and no
+    // release has ended, and its kind (`_getPointerType`: a pen is a touch).
+    const held = new Map<number, "mouse" | "touch">();
+    // The SCENE's (`InputManager._activePointerIds`, -1 a free slot): the id
+    // each press it heard carried. A release is the scene's only after its
+    // press was.
+    const active: number[] = [];
+    // `InputManager._onPointerUp`: the slot freed, then — on a real release —
+    // the event default-prevented, and the canvas focused.
+    const sceneUp = (pointerId: number, evt: PointerEvent | null): void => {
+      const slot = active.indexOf(pointerId);
+      if (slot === -1) return;
+      active[slot] = -1;
+      evt?.preventDefault();
+      canvas.focus();
+    };
+    // The release Babylon MADE for a press that ended without one (the
+    // header): the capture released, then — if the device held the press —
+    // the made `pointerup` taken by the scene, a mouse's carrying pointer id
+    // 1 (`DeviceEventFactory._CreatePointerEvent`), a touch's its own.
+    const letGo = (pointerId: number): void => {
+      if (canvas.hasPointerCapture?.(pointerId)) canvas.releasePointerCapture(pointerId);
+      const kind = held.get(pointerId);
+      if (kind === undefined) return;
+      held.delete(pointerId);
+      sceneUp(kind === "mouse" ? 1 : pointerId, null);
+    };
     canvas.addEventListener("pointerdown", (evt) => {
       // `_pointerDownEvent`: the canvas captures the pointer unless it is locked.
       if (!document.pointerLockElement) {
@@ -172,21 +215,36 @@ export class CanvasSurface {
           // DO NOTHING, as Babylon did.
         }
       }
-      down.add(evt.pointerId);
+      held.set(evt.pointerId, evt.pointerType === "touch" || evt.pointerType === "pen" ? "touch" : "mouse");
       // `InputManager._onPointerDown`.
+      const free = active.indexOf(-1);
+      if (free === -1) active.push(evt.pointerId);
+      else active[free] = evt.pointerId;
       evt.preventDefault();
       canvas.focus();
     });
     canvas.addEventListener("pointerup", (evt) => {
       if (canvas.hasPointerCapture?.(evt.pointerId)) canvas.releasePointerCapture(evt.pointerId);
-      if (!down.delete(evt.pointerId)) return;
-      // `InputManager._onPointerUp`.
-      evt.preventDefault();
-      canvas.focus();
+      // `_pointerUpEvent`: a release the device holds no press for is dropped.
+      if (!held.delete(evt.pointerId)) return;
+      sceneUp(evt.pointerId, evt);
     });
-    canvas.addEventListener("pointercancel", (evt) => {
-      if (canvas.hasPointerCapture?.(evt.pointerId)) canvas.releasePointerCapture(evt.pointerId);
-      down.delete(evt.pointerId);
+    // `_pointerCancelEvent` (a mouse's, and `_pointerCancelTouch`).
+    canvas.addEventListener("pointercancel", (evt) => letGo(evt.pointerId));
+    // `_pointerLeaveEvent`: a pen leaving the range the hardware can see.
+    canvas.addEventListener("pointerleave", (evt) => {
+      if (evt.pointerType === "pen") letGo(evt.pointerId);
     });
+    // `_pointerBlurEvent`: every press held when the canvas loses focus.
+    canvas.addEventListener("blur", () => {
+      for (const pointerId of [...held.keys()]) letGo(pointerId);
+    });
+    // `_pointerMacOsChromeOutEvent`, Babylon's workaround for a capture
+    // Chromium on macOS loses: tested as Babylon tested it, once.
+    if (/(Mac|iPhone|iPod|iPad)/i.test(navigator.platform) && navigator.userAgent.indexOf("Chrome") !== -1) {
+      canvas.addEventListener("lostpointercapture", (evt) => {
+        if (evt.buttons > 1) letGo(evt.pointerId);
+      });
+    }
   }
 }

@@ -1946,8 +1946,11 @@ export class CelMaterialFactory {
       mat.specularColor = Color3.Black();
       mat.disableLighting = true;
       // Unlit means unfogged, which at village scale means a lit window burning
-      // through the fog wall at full saturation. The plugin has to go on before
-      // anything draws with the material — hence here, not in setEnvironment.
+      // through the fog wall at full saturation. The plugin had to go on before
+      // anything drew with the material — hence here, not in setEnvironment.
+      // INERT since `BABYLON_EXIT.md` X5.4h (until X6.1 removes it): on the
+      // scene's `NullEngine` its guard returns and nothing is attached — no
+      // Babylon material draws, and our renderer fogs every emissive itself.
       attachEmissiveFog(mat);
       this.emissiveCache.set(key, mat);
     }
@@ -2119,7 +2122,8 @@ export class CelMaterialFactory {
     // notably it must NOT be given `outlineEntries`, which leaves out every
     // viewmodel mesh.
     // And the third pass that never runs the cel shader: the unlit emissive
-    // materials behind every window, flame and tracer.
+    // materials behind every window, flame and tracer — no plugin reads it
+    // since X5.4h (`EmissiveFog`'s header: inert until X6.1).
     setEmissiveFog(fogState.color, fogState.start, fogState.end);
     this.emissiveFogRange[0] = fogState.start;
     this.emissiveFogRange[1] = 1 / Math.max(0.001, fogState.end - fogState.start);
