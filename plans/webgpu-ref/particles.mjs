@@ -312,11 +312,13 @@ await page.evaluate(() => {
   const e = g.engine;
   let target;
   let visited = false;
-  g.scene.onBeforeDrawPhaseObservable.add(() => {
+  // The draw phase through the frame adapter (`harness.mjs`, X5.4f: the
+  // scene's observable on Babylon's arm, our frame's on ours).
+  window.__refFrame().onDrawPhase(() => {
     window.__phaseStart = window.__passes.length;
     target = e._currentRenderTarget;
     visited = false;
-  });
+  }, null);
   g.scene.onBeforeRenderingGroupObservable.add((info) => {
     if (info.renderingGroupId === 0 && e._currentRenderTarget === target) visited = true;
   });

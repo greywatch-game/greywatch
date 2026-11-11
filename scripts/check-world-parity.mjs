@@ -157,7 +157,7 @@ async function inspectClient(browser, url, id) {
             return reject(
               new Error(
                 `never reached deploy in ${deadlineMs / 1000} s (state ` +
-                  `"${g.state}", frame ${g.scene.getFrameId()})`,
+                  `"${g.state}", frame ${g.sceneFrame?.index ?? g.scene.getFrameId()})`,
               ),
             );
           }
@@ -176,30 +176,33 @@ async function inspectClient(browser, url, id) {
       (deadlineMs) =>
         new Promise((resolve) => {
           const s = window.__celshock.scene;
+          // The frame drawn: OUR frame's point since BABYLON_EXIT.md X5.4f
+          // (`Game.sceneFrame`: the scene is never rendered), the scene's before.
+          const drawn = (window.__celshock.sceneFrame ?? s).onAfterRenderObservable;
           const until = performance.now() + deadlineMs;
           let frames = 0;
           // The deadline below is only ever read FROM a frame, so a page that
           // has stopped drawing would never reach it. This is the clock that
           // does not need one.
           const stalled = setTimeout(() => {
-            s.onAfterRenderObservable.remove(seen);
+            drawn.remove(seen);
             resolve({
               ready: false,
               frames,
               blocking: ["(no frame rendered — device lost?)"],
             });
           }, deadlineMs + 5_000);
-          const seen = s.onAfterRenderObservable.add(() => {
+          const seen = drawn.add(() => {
             frames++;
             if (s.isReady()) {
               clearTimeout(stalled);
-              s.onAfterRenderObservable.remove(seen);
+              drawn.remove(seen);
               resolve({ ready: true, frames });
               return;
             }
             if (performance.now() < until) return;
             clearTimeout(stalled);
-            s.onAfterRenderObservable.remove(seen);
+            drawn.remove(seen);
             // Name the offenders, with the material each one's first submesh
             // actually resolves to — a mesh carrying none answers with the
             // scene's default, and which of the two it is decides where to look.

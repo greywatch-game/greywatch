@@ -75,6 +75,25 @@ its compiled effects, its engine's statics in `post.mjs`' chain — is not a
 question about the frame: it stays Babylon's, and goes as each thing it reads
 does.
 
+**OUR arm since X5.4f, picked first** (`Game.sceneFrame`, `src/core/SceneFrame.ts`:
+the scene is never rendered). `drawn`/`onDrawn`, `beforeDraw`/`onBeforeDraw` and
+the index are answered off our frame's own points (each a Babylon `Observable`
+named for the scene's it replaces, raised where Babylon raised that one), the
+canvas pass's depth off our pass owner (`Game.chainPasses`); the engine's
+questions (begin, submit, the device, the encoders, the delta) stay Babylon's
+until X5.4g and X5.4h. It gained one question in the same commit, on both arms:
+**`onDrawPhase(begin, end, endFirst)`**, the frame camera's draw phase, which
+`census.mjs`, `gi.mjs`, `particles.mjs` and `surfaces.mjs` hung off the scene's
+two draw-phase observables directly and ask the adapter for since. The same
+commit taught `readers.mjs` to log OUR render id's advances (`ours`) beside
+Babylon's (`ids`, which stops moving), `drawlog.mjs` to count `scene.render`
+calls per class (`renders`, beside the classes; 0 asserted under our frame),
+`post.mjs` to name our pool by its targets' textures, and `scripts/
+check-world-parity.mjs` and `capture-map-shots.mjs` to wait on our frame's
+draw. **Proven to read the same on the parent**: every probe it touched, run at
+221abf1 with the new instruments against the logs the old ones wrote there,
+equal (X5.4f's record).
+
 - **`gate.mjs`** boots every shipped map, plays a real round on each and fails
   loudly if any is not clean — the engine is WebGPU, the round reaches
   `playing`, the reflection bake has drained by deploy and stays drained

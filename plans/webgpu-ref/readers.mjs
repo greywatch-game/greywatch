@@ -102,8 +102,16 @@
  * (repeatable, or `@file`, one a line, `#` comments), `*` any run within one
  * segment (`ids[*]` any index) and `**` any run of segments, matched against
  * the whole path (`ids[12].site`, `log[40].projection`) or any prefix of it —
- * so `ids` excuses the render-id log whole, as X5.4f will owe it when Babylon's
- * id stops moving, and `**.top` one field on every element. What each pattern
+ * so `ids` excuses the render-id log whole, as X5.4f owes it now Babylon's
+ * id has stopped moving, and `**.top` one field on every element.
+ *
+ * **And OUR render id's advances** (`ours`, X5.4f): every call of
+ * `Game.renderId.advance` (`core/renderId.ts`), per frame and whether it was
+ * inside one, logged beside Babylon's — the counter the viewmodel's cache is
+ * keyed on, moved off the scene's observables until X5.4f and by our frame
+ * (`core/SceneFrame.ts`) after it. It reads the same on both sides of that
+ * step, which is what says the counter moved at the same points once
+ * Babylon's id, which the DEV shadow held it against, no longer moves. What each pattern
  * excused is counted and said, and a pattern that excused nothing is said too,
  * because a difference a step named and did not make is a finding.
  */
@@ -182,7 +190,17 @@ function installIds() {
   const g = window.__celshock;
   const F = window.__refFrame();
   const scene = g.scene;
-  const X = (window.__rd = { frame: 0, inFrame: false, ids: [], base: null });
+  const X = (window.__rd = { frame: 0, inFrame: false, ids: [], ours: [], base: null });
+  // OUR render id (X5.4f): each advance, wrapped on the instance.
+  const rid = g.renderId;
+  if (rid) {
+    const adv = rid.advance;
+    rid.advance = function () {
+      X.ours.push({ f: X.frame, inFrame: X.inFrame });
+      if (X.ours.length > 200000) X.ours.splice(0, 50000);
+      return adv.call(this);
+    };
+  }
   F.onBegin(() => (X.inFrame = true));
   F.onSubmitted(() => (X.inFrame = false));
   F.onDrawn(() => X.frame++);
@@ -403,6 +421,7 @@ async function record(FRAMES) {
   g.setThrowable("frag");
   const readersFrom = X.readers.length;
   const idsFrom = X.ids.length;
+  const oursFrom = X.ours.length;
   g.spawnPlayer();
   await new Promise((res) => {
     const p = () => (g.state === "playing" ? res() : setTimeout(p, 5));
@@ -425,6 +444,7 @@ async function record(FRAMES) {
     readers: X.readers.slice(readersFrom),
     origins,
     ids: X.ids.slice(idsFrom),
+    ours: X.ours.slice(oursFrom),
     frames: X.frame - start,
     state: g.state,
     alive: g.player.alive,
@@ -470,6 +490,7 @@ async function replay(log) {
   const finished = new Promise((r) => (done = r));
   const readersFrom = X.readers.length;
   const idsFrom = X.ids.length;
+  const oursFrom = X.ours.length;
   const digestsFrom = X.digests.length;
   const frameAt = new Map();
   g.followEye = function (...a) {
@@ -510,6 +531,7 @@ async function replay(log) {
   const at = (f) => frameAt.get(f) ?? null;
   const readers = X.readers.slice(readersFrom).map((r) => ({ ...r, f: at(r.f) }));
   const ids = X.ids.slice(idsFrom).map((r) => ({ ...r, f: at(r.f) }));
+  const ours = X.ours.slice(oursFrom).map((r) => ({ ...r, f: at(r.f) }));
   const digests = X.digests.slice(digestsFrom).map((d) => ({ ...d, f: at(d.f) }));
   // The origins the record submitted, recomputed from THIS replay's answers by
   // `Game`'s own floors, operation for operation (a Vector3's arithmetic is
@@ -565,6 +587,7 @@ async function replay(log) {
     readers,
     digests,
     ids: ids.map(({ top, ...rest }) => rest),
+    ours,
     idSites: [...new Set(X.ids.slice(idsFrom).map((r) => `${r.site} <- ${r.top}`))],
     originsChecked,
     faithful: { live: liveReaders.length, replayed: readers.length, matched },
@@ -734,6 +757,13 @@ function summarise(r) {
     console.log(`  render id changes: ${JSON.stringify(bySite)}`);
   }
   if (r.idSites) for (const s of r.idSites) console.log(`    site ${s}`);
+  if (r.ours) {
+    const per = new Map();
+    for (const x of r.ours) per.set(x.f, (per.get(x.f) ?? 0) + 1);
+    const counts = {};
+    for (const n of per.values()) counts[n] = (counts[n] ?? 0) + 1;
+    console.log(`  our render id: ${r.ours.length} advances over ${per.size} frames (advances a frame: ${JSON.stringify(counts)}; ${r.ours.filter((x) => !x.inFrame).length} between frames)`);
+  }
   if (r.mode === "replay") {
     const n = (k) => r.readers.filter((x) => x.k === k).length;
     console.log(`  ${r.frames} frames replayed, ${r.digests.length} evaluations digested, readers: muzzle ${n("muzzle")}, hand ${n("hand")}, port ${n("port")}, inverse ${n("inverse")}, fall ${n("fall")}`);
@@ -761,7 +791,7 @@ function compare(a, b) {
     console.log(`against: a ${a.mode} log here and a ${b.mode} log there`);
     return true;
   }
-  const parts = a.mode === "camera" ? ["steps", "log"] : a.mode === "replay" ? ["frames", "readers", "digests", "ids", "originsChecked"] : ["readers", "origins", "ids"];
+  const parts = a.mode === "camera" ? ["steps", "log"] : a.mode === "replay" ? ["frames", "readers", "digests", "ids", "ours", "originsChecked"] : ["readers", "origins", "ids", "ours"];
   const escape = (t) => t.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
   const token = (t) => (t === "**" ? ".*" : t === "*" ? "[^.]*" : escape(t));
   const ignores = IGNORE.map((pattern) => ({ pattern, re: new RegExp(`^${pattern.split(/(\*\*|\*)/).map(token).join("")}$`), hits: 0, values: 0 }));

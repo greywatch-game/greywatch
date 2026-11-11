@@ -245,22 +245,22 @@ async function captureMap(browser, url, id, vantage) {
       // and the frame that answers that question is `scene.isReady()`.
       const readyBy = performance.now() + readyTimeout;
       await new Promise((resolve, reject) => {
-        const seen = g.scene.onAfterRenderObservable.add(() => {
+        const seen = (g.sceneFrame ?? g.scene).onAfterRenderObservable.add(() => {
           if (!g.scene.isReady()) {
             if (performance.now() < readyBy) return;
-            g.scene.onAfterRenderObservable.remove(seen);
+            (g.sceneFrame ?? g.scene).onAfterRenderObservable.remove(seen);
             reject(new Error("scene never became ready"));
             return;
           }
-          g.scene.onAfterRenderObservable.remove(seen);
+          (g.sceneFrame ?? g.scene).onAfterRenderObservable.remove(seen);
           resolve();
         });
       });
       await new Promise((resolve) => {
         let n = 0;
-        const seen = g.scene.onAfterRenderObservable.add(() => {
+        const seen = (g.sceneFrame ?? g.scene).onAfterRenderObservable.add(() => {
           if (++n < frames) return;
-          g.scene.onAfterRenderObservable.remove(seen);
+          (g.sceneFrame ?? g.scene).onAfterRenderObservable.remove(seen);
           resolve();
         });
       });

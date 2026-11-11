@@ -165,12 +165,16 @@ function hangProbe(page) {
     };
     window.__surf = s;
     s.classOf = classOf;
-    scene.onBeforeDrawPhaseObservable.add(() => {
+    // The draw phase's two ends through the frame adapter (`harness.mjs`,
+    // X5.4f: the scene's observables on Babylon's arm, our frame's on ours),
+    // the end inserted FIRST as it was on the scene's.
+    const F = window.__refFrame();
+    F.onDrawPhase(() => {
       s.frame = e._currentRenderTarget;
       s.inMask = false;
       s.visited = false;
       if (s.rec) s.log.push({ mark: "phase" });
-    });
+    }, null);
     // WHICH PATH the seam took this phase (`render/babylonSeam.ts`, `onMainPass`):
     // group 0 of the main pass visited, so our points were told inside it, or
     // not, so they were told at the phase's end (X4.5a's fallback). Read off the
@@ -178,11 +182,11 @@ function hangProbe(page) {
     scene.onBeforeRenderingGroupObservable.add((info) => {
       if (info.renderingGroupId === 0 && s.frame !== undefined && e._currentRenderTarget === s.frame) s.visited = true;
     });
-    scene.onAfterDrawPhaseObservable.add(
+    F.onDrawPhase(
+      null,
       () => {
         if (s.rec) s.log.push({ mark: "phaseEnd", path: s.visited ? "group" : "fallback" });
       },
-      undefined,
       true,
     );
     // `Mesh.render`, found on the prototype chain of a mesh — any `Mesh`

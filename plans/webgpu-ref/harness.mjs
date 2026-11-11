@@ -238,11 +238,17 @@ export const MAP_IDS = MAPS.map((m) => m.id);
  *   made on, the canvas and the canvas pass's depth texture;
  * - `encoderRole(encoder)`: which of the frame's command encoders that is
  *   (`"render"`, `"upload"`, `"other"`);
+ * - `onDrawPhase(begin, end, endFirst)`: `begin` as the frame camera's draw
+ *   phase opens and `end` as it closes, every frame, until the remover it
+ *   hands back is called — `end` inserted FIRST at the close with `endFirst`
+ *   (ahead of our renderer's main pass, as `surfaces.mjs` and `census.mjs`
+ *   insert theirs), else last; either may be null;
  * - `scheduleDelta(fn)`: the frame's DELTA (the milliseconds the scene's own
  *   step reads, `getDeltaTime`) answered from now on by `fn(k)`, `k` the
  *   frames since the call (`particles.mjs`' schedule), and `scheduleDelta(null)`
  *   handing it back to the frame's own clock;
- * - `host()`: what owns the frame, for a report (the engine's class).
+ * - `host()`: what owns the frame, for a report (the engine's class, and
+ *   whose frame: `babylon`'s render or `ours`).
  *
  * **Babylon's arm alone at X5.4a**, and it answers exactly what the reads it
  * replaced answered (the same observable, the same add-and-remove, the same
@@ -251,13 +257,27 @@ export const MAP_IDS = MAPS.map((m) => m.id);
  * only when asked) and by the first call that needs it on any other;
  * idempotent. `window.__refFrame()` is asked FRESH at every use, as
  * `__refPost()` is, so an arm a sub-step adds can depend on the moment.
+ *
+ * **OUR arm since X5.4f, picked first** (`Game.sceneFrame`,
+ * `src/core/SceneFrame.ts`): the scene is never rendered, so the questions a
+ * scene's render answered are answered off our frame's points, each named for
+ * the scene observable it replaces and raised where Babylon raised that one —
+ * `drawn`/`onDrawn` off its `onAfterRenderObservable`, `beforeDraw`/
+ * `onBeforeDraw` off its `onBeforeRenderObservable` (after the camera's
+ * update, before its matrices), `onDrawPhase` off its two draw-phase
+ * observables, the index off its own count (what `scene.getFrameId()` was),
+ * and the canvas pass's depth off our pass owner (`Game.chainPasses`). The
+ * engine's questions — begin, submit, the device, the encoders, the delta —
+ * are still Babylon's (X5.4g's and X5.4h's). Both arms answer every question
+ * the same way at the same point of a frame: a probe reads the same on a
+ * parent and after (X5.4f's record: the probes run at 221abf1 under both).
  */
 export function frameAdapter() {
   window.__refFrame ??= () => {
     const g = window.__celshock;
     const scene = g.scene;
     const e = g.engine;
-    return {
+    const babylon = {
       arm: "babylon",
       drawn: () =>
         new Promise((res) => {
@@ -298,7 +318,50 @@ export function frameAdapter() {
         e.getDeltaTime = () => fn(e.frameId - frame0);
       },
       encoderRole: (enc) => (enc === e._renderEncoder ? "render" : enc === e._uploadEncoder ? "upload" : "other"),
-      host: () => ({ engine: e.constructor.name, webgpu: Boolean(e.isWebGPU) }),
+      onDrawPhase: (begin, end, endFirst = false) => {
+        const b = begin ? scene.onBeforeDrawPhaseObservable.add(begin) : null;
+        const a = end ? scene.onAfterDrawPhaseObservable.add(end, undefined, endFirst) : null;
+        return () => {
+          if (b) scene.onBeforeDrawPhaseObservable.remove(b);
+          if (a) scene.onAfterDrawPhaseObservable.remove(a);
+        };
+      },
+      host: () => ({ engine: e.constructor.name, webgpu: Boolean(e.isWebGPU), frame: "babylon" }),
+    };
+    // OURS (X5.4f): the frame is the game's (`Game.sceneFrame`), its points
+    // Babylon's observables of its own, named for the scene's they replace.
+    const f = g.sceneFrame;
+    if (!f) return babylon;
+    return {
+      ...babylon,
+      arm: "ours",
+      drawn: () =>
+        new Promise((res) => {
+          const o = f.onAfterRenderObservable.add(() => {
+            f.onAfterRenderObservable.remove(o);
+            res();
+          });
+        }),
+      onDrawn: (fn) => {
+        const o = f.onAfterRenderObservable.add(fn);
+        return () => f.onAfterRenderObservable.remove(o);
+      },
+      beforeDraw: (fn) => void f.onBeforeRenderObservable.addOnce(fn),
+      onBeforeDraw: (fn) => {
+        const o = f.onBeforeRenderObservable.add(fn);
+        return () => f.onBeforeRenderObservable.remove(o);
+      },
+      index: () => f.index,
+      canvasDepth: () => g.chainPasses?.canvasDepthTexture ?? null,
+      onDrawPhase: (begin, end, endFirst = false) => {
+        const b = begin ? f.onBeforeDrawPhaseObservable.add(begin) : null;
+        const a = end ? f.onAfterDrawPhaseObservable.add(end, undefined, endFirst) : null;
+        return () => {
+          if (b) f.onBeforeDrawPhaseObservable.remove(b);
+          if (a) f.onAfterDrawPhaseObservable.remove(a);
+        };
+      },
+      host: () => ({ engine: e.constructor.name, webgpu: Boolean(e.isWebGPU), frame: "ours" }),
     };
   };
 }

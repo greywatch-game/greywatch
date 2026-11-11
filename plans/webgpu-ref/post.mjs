@@ -122,7 +122,13 @@
  * textures under the same names — and their passes are recorded on Babylon's
  * UPLOAD encoder (their `role`), and `chain()` reads ours where Babylon's
  * render targets were (the glow's target sizes, the frame's depth), null for
- * the three Babylon sampling fields ours has no counterpart of.
+ * the three Babylon sampling fields ours has no counterpart of. **Since X5.4f
+ * the POOL and the canvas's pass are ours** (`Game.chainPasses`,
+ * `render/ChainPasses.ts`): a pool target named by its GPU texture (its
+ * `texture`, where Babylon's was its render target's internal texture), the
+ * canvas's depth through the frame adapter's `canvasDepth` (our pass owner's,
+ * where it was the engine's), and every chain pass recorded on the UPLOAD
+ * encoder too — the render encoder holds nothing.
  *
  * **Since X5.4a the log holds the WHOLE frame** (X5.4e's to X5.4h's BEFORE),
  * beside the passes above and without moving them: each scenario's `whole` is
@@ -952,8 +958,12 @@ function postAdapter() {
       const m = new Map();
       if (!ours.grain()) return m;
       const active = g.postChain.stages.filter((st) => st.active());
+      // The pool's owner: OURS since X5.4f (`Game.chainPasses`, a target's GPU
+      // texture its own `texture`), `PostPasses`' Babylon render target before.
+      const owner = g.chainPasses ?? g.postPasses;
       for (let k = 0; k < active.length - 1; k++) {
-        const t = hw(g.postPasses.poolTarget(k)?.getInternalTexture?.());
+        const pt = owner.poolTarget(k);
+        const t = pt?.getInternalTexture ? hw(pt.getInternalTexture()) : (pt?.texture ?? null);
         if (t) m.set(t, `${active[k].name}.out`);
       }
       return m;
@@ -1017,7 +1027,7 @@ function postAdapter() {
       });
       // Ours (X5.2c1): the prefix's output, which the last live Babylon pass
       // writes and our first stage reads, is that pass's `.out`.
-      const prefix = ours.grain() ? hw(g.postPasses.prefixTarget?.getInternalTexture?.()) : null;
+      const prefix = ours.grain() ? hw(g.postPasses?.prefixTarget?.getInternalTexture?.()) : null;
       if (prefix && live.length) m.set(prefix, `${live[live.length - 1].name}.out`);
       // Ours (X5.2c2): the pool, each target by the stage writing it.
       for (const [t, name] of ours.pool()) m.set(t, name);

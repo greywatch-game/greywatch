@@ -458,7 +458,9 @@ await page.evaluate(async () => {
     P.vp++;
     return vp.call(this, out);
   };
-  g.scene.onBeforeDrawPhaseObservable.add(() => P.dp++);
+  // The draw phase through the frame adapter (`harness.mjs`, X5.4f: the
+  // scene's observable on Babylon's arm, our frame's on ours).
+  window.__refFrame().onDrawPhase(() => P.dp++, null);
   // Babylon's materials binding the volume's textures or the cloud field: a
   // Babylon draw sampling them, counted at the engine's bind.
   const st = e._setTexture;

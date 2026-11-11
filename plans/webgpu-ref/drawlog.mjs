@@ -48,6 +48,14 @@
  * built (`clearQuad`, the engine's own and in `compiledAtBoot`) is not in it;
  * a tree before X5.3d has no counter, which the report says.
  *
+ * **And the scene's RENDERS** (`BABYLON_EXIT.md` X5.4f): every call of
+ * `scene.render`, counted per frame, and the counts each class took kept
+ * beside the classes (`renders`), never compared — 1 a frame in every class at
+ * every parent before X5.4f, which takes the frame from Babylon
+ * (`core/SceneFrame.ts`): on a tree with OUR frame (`Game.sceneFrame`) a run
+ * in which a class rendered the scene at all fails (exit 1), whatever
+ * `--against` says.
+ *
  * **A draw between frames** — issued after one frame's end and before the
  * next's begin, as a render target rendered from a promise would be — is
  * folded into a class of its own, `between frames`, rather than cleared
@@ -167,7 +175,15 @@ function installHooks() {
     meshCtx: null,
     compiledAtBoot: Object.keys(e._compiledEffects ?? {}).map(effectKey).sort(),
     notes: [],
+    renders: {},
+    renderCalls: 0,
   });
+  // The scene's renders (the header): counted per frame, folded at its end.
+  const render = scene.render;
+  scene.render = function (...a) {
+    L.renderCalls++;
+    return render.apply(this, a);
+  };
   const classOf = (c) =>
     (L.classes[c] ??= { draws: {}, group0: {}, compiles: {}, computeCompiles: {}, meshes: { sizes: [], names: {} } });
   /** The class of what was drawn between one frame's end and the next's begin. */
@@ -234,6 +250,9 @@ function installHooks() {
       if (!seen.includes(bc.count)) seen.push(bc.count);
     }
     if (!L.meshHooked) hookMeshRender();
+    const rs = (L.renders[L.cls] ??= []);
+    if (!rs.includes(L.renderCalls)) rs.push(L.renderCalls);
+    L.renderCalls = 0;
   });
 
   const bump = (map, key) => map.set(key, (map.get(key) ?? 0) + 1);
@@ -657,6 +676,8 @@ async function logMap(browser, url, map) {
     }
     const bc = window.__celshock.babylonCompiles;
     return {
+      renders: sortObj(Object.fromEntries(Object.entries(L.renders).map(([c, v]) => [c, [...v].sort((a, b) => a - b)]))),
+      ours: Boolean(window.__celshock.sceneFrame),
       classes: sortObj(classes),
       compiledAtBoot: L.compiledAtBoot,
       babylonCompiles: bc ? { byClass: sortObj(Object.fromEntries(Object.entries(L.counter).map(([c, v]) => [c, [...v].sort((a, b) => a - b)]))), count: bc.count, names: [...bc.names] } : null,
@@ -673,6 +694,7 @@ async function logMap(browser, url, map) {
     classes: rec.classes,
     compiledAtBoot: rec.compiledAtBoot,
     babylonCompiles: rec.babylonCompiles,
+    renders: { byClass: rec.renders, ours: rec.ours },
     info: { frames: rec.frames, did: rec.did, notes: rec.notes, steps, missed },
     errors: { page: pageErrors, console: consoleErrors, pipelines: warns },
   };
@@ -713,6 +735,7 @@ function report(r) {
       ? `  the game's counter of Babylon effect compiles: ${bc.count}${bc.names.length ? ` (${bc.names.join(", ")})` : ""}; by class ${JSON.stringify(bc.byClass)}`
       : "  the game's counter of Babylon effect compiles: none in this tree (before BABYLON_EXIT.md X5.3d)",
   );
+  console.log(`  scene.render calls a frame, by class (${r.renders.ours ? "our frame" : "Babylon's render"}): ${JSON.stringify(r.renders.byClass)}`);
   for (const [cls, c] of Object.entries(r.classes)) {
     const draws = Object.entries(c.draws);
     const meshKeys = draws.filter(([k]) => k.includes("mesh:"));
@@ -763,6 +786,13 @@ if (visited.length) {
 const counted = Object.values(result).filter((r) => r.babylonCompiles && (r.babylonCompiles.count !== 0 || Object.values(r.babylonCompiles.byClass).some((v) => v.some((n) => n !== 0))));
 if (counted.length) {
   console.log(`\nBABYLON COMPILED: the game's counter is not 0 on ${counted.map((r) => `${r.map} (${r.babylonCompiles.count}: ${r.babylonCompiles.names.join(", ")})`).join("; ")}`);
+  code = 1;
+}
+// With our frame (X5.4f), no class may render the scene (the header).
+const rendered = Object.values(result).filter((r) => r.renders.ours && Object.values(r.renders.byClass).some((v) => v.some((n) => n !== 0)));
+if (rendered.length) {
+  console.log(`
+SCENE RENDERED: scene.render was called under our frame on ${rendered.map((r) => `${r.map} (${JSON.stringify(r.renders.byClass)})`).join("; ")}`);
   code = 1;
 }
 if (incomplete) {

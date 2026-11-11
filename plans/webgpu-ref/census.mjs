@@ -68,11 +68,17 @@ function arm(page) {
     const scene = g.scene;
     const engine = scene.getEngine();
     const c = { frame: undefined, babylon: 0 };
-    scene.onBeforeDrawPhaseObservable.add(() => {
-      c.frame = engine._currentRenderTarget;
-      c.babylon = 0;
-    });
-    scene.onAfterDrawPhaseObservable.add(() => (c.frame = undefined), undefined, true);
+    // The draw phase's two ends through the frame adapter (`harness.mjs`,
+    // X5.4f: the scene's observables on Babylon's arm, our frame's on ours),
+    // the end inserted FIRST as it was on the scene's.
+    window.__refFrame().onDrawPhase(
+      () => {
+        c.frame = engine._currentRenderTarget;
+        c.babylon = 0;
+      },
+      () => (c.frame = undefined),
+      true,
+    );
     const draw = engine._draw.bind(engine);
     engine._draw = (...a) => {
       if (c.frame !== undefined && engine._currentRenderTarget === c.frame) c.babylon++;
