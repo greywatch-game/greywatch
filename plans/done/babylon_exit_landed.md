@@ -11707,7 +11707,7 @@ here).
 Scripts and logs in the session's scratchpad, `x53-whole/` (`bank.sh`, `sarab.sh`, `run2.sh`,
 `dl-fix.mjs`, `viewer7.mjs`, `status.txt`).
 
-### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88), X5.4e **LANDED** (74d246c, its review bc6892c), X5.4f **LANDED** (cfe4d8e, c37ae6d, its review b3cb649), X5.4g **LANDED** (c461635, acbd9e4, its review fcca130)
+### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88), X5.4e **LANDED** (74d246c, its review bc6892c), X5.4f **LANDED** (cfe4d8e, c37ae6d, its review b3cb649), X5.4g **LANDED** (c461635, acbd9e4, its review fcca130), X5.4h **LANDED** (fc76336, c01c54b)
 
 The plan's `BABYLON_EXIT.md` holds X5.4's brief, "What the frame is today", its ONE RULE, the
 step's own two rules, "Every sub-step owes" and the nine sub-steps.
@@ -12570,3 +12570,105 @@ attribution, and the rest guards, a loop method, text and bookings.
 
 Scripts and logs in the session's scratchpad (`noflag.mjs`, `armtest.mjs`, `bench-flag.txt`,
 `build.txt`).
+
+**X5.4h LANDED** (fc76336 the instruments, c01c54b the step; 2026-11-11; no change to the picture).
+Measured headless on the Windows box against a BEFORE at a7600ea7, in the worktree
+`greywatch-2-before-x53a` (moved there, detached; no dependency moved; its `ref/` kept; moved again to
+fc76336 for the new instruments' parent run), every run alone on the GPU. No device lost in any run.
+
+- **What moved**: `main.ts` asks for the adapter (`{powerPreference}`; Babylon's `initAsync` passed its
+  whole options object, of which WebGPU reads `powerPreference` alone) and the device (no limits; no
+  feature but `timestamp-query`, under `?gpu` and filtered against the adapter's features as
+  `initAsync` filtered it; label `GreywatchDevice` where Babylon's was `BabylonWebGPUDevice0`), adds
+  Babylon's uncaptured-error listener (twenty warnings with their frame), configures the canvas's
+  context (`navigator.gpu.getPreferredCanvasFormat()`, usage `16 | 1`, premultiplied — `_configureContext`),
+  takes the clock's first sample there (`_initializeMainAttachments`' `beginFrame` as `initAsync` ended,
+  whatever the size), hangs it on `CanvasSurface.onSized` and runs the surface's first `resize` — the
+  boot's three failure branches unchanged. `core/CanvasSurface.ts` (new): `AbstractEngine.resize` (the
+  bounding rect read first, `clientWidth || rect.width || width * level || 100`, over the level) and
+  `setSize` (`| 0`, written only when it moved, then `onSized`) ported; the device-ratio branch not
+  (`adaptToDeviceRatio` was never passed); `setHardwareScalingLevel`, `getHardwareScalingLevel`,
+  `getRenderWidth`/`Height` (the backing store: no Babylon render target bound since X5.4f) and
+  `getAspectRatio`; `DisableTouchAction`'s attribute and inline styles; `adoptInput`, the scene input
+  manager's effect on the canvas. `core/SceneEngine.ts` (new): a `NullEngine` with `isNDCHalfZRange`
+  true (the camera's projection and `ProjectToRef`, which reads the last engine built) and the surface's
+  size and level. `Game` takes `device` and `surface` for the engine; every reader of a size, a level or
+  an aspect ratio asks the surface (`chainPasses.prepareFrame`, `prof.arm` twice, `applyRenderScale`,
+  `updateKitStage`, `holdBench`, the gun marker, `WorldCulling`, `GlowPass`, `Sky`); `SceneFrame` takes
+  the device; `FrameLoop.held` off `device.lost`. Deleted: `render/babylonSeam.ts`,
+  `core/wrappedTextures.ts` (`ShadowBindings`' setters take our texture alone; `ShadowSystem`,
+  `BodyShadows` and `LocalShadows` keep a `made` flag where they kept the view), `compatibilityMode`.
+- **The runtime inventory first** (`x54h/inventory.mjs`, every method of the scene's engine called after
+  the boot over a Hollowmere session, with its game and Babylon callers; the canvas's, window's and
+  document's listeners through the DevTools protocol): at the parent the game reached the engine for the
+  render size, the level and the aspect ratio (the readers above), the shadow wraps, the resize path and
+  Material contexts, and Babylon's camera for the aspect ratio and `getDeltaTime`
+  (`TargetCameraMovement.computeCurrentFrameDeltas`); the engine's observers were the clock's begin, a
+  Babylon end of frame, the two context observables and two of its own; the canvas held tab index 1, the
+  touch-action attribute and styles, and twelve listeners (Babylon's engine's and the input manager's).
+  After: the camera's reads and the Material contexts alone, on the `SceneEngine`; the canvas's tab
+  index, attribute and styles the same, its listeners our three.
+- **The instruments** (fc76336, in their own commit, no change to the game): "Babylon's engine" is the
+  scene's in the frame adapter and every probe (`Game.engine` at a parent, the same object); the
+  adapter's device arm on `Game.surface` (`device`, `canvas`, `host`); `census.mjs` tolerates no `_draw`;
+  `post.mjs` reads the canvas off the surface and its statics off the device with no engine (Babylon's
+  WebGPU `extractDriverInfo` is the empty string; `compatibilityMode` null; the canvas pass's depth
+  format `ChainPasses'`); `leaks.mjs` skips its control on a non-WebGPU engine; `shaders.mjs` skips
+  Babylon's half. Run at the parent against a7600ea7's own instruments' logs: all equal (`BABYLON_EXIT.md`).
+- **Every bank row** by `exact.mjs`, `--check --keep` at each tree: default, `volumetrics=low` and
+  `=high` each 147 of 147 byte-equal (no flake appeared).
+- **`post.mjs` at both sizes**: 31,833 values equal at each; X5.4h's section of `post-expected.txt` names
+  `statics.compatibilityMode`, eight `statics.boot.adapterOptions[*]` keys (`antialias`, `stencil`,
+  `deterministicLockstep`, `lockstepMaxSteps`, `timeStep`, `deviceDescriptor`, `enableGPUDebugMarkers`,
+  `swapChainFormat`), `statics.boot.deviceDescriptors[*].label`, `statics.boot.configures[*].deviceLabel`
+  and `statics.boot.deviceLabel` — each excusing 2 paths; with it, equal. Every limit, every feature and
+  every `configure` argument but the device equal.
+- **The probes**: the draw log equal but `compiledAtBoot` (`clearQuad` → none); `census` (168) equal;
+  `gi.mjs` equal; `particles.mjs` equal by `Object.is`; `surfaces.mjs` equal (5,719); `readers.mjs` replay
+  (the three origins identical, `ours` and `ids` equal) and camera (104 frames) equal; `pipelines.mjs
+  hollowmere` 101 modules and 0 of Babylon's pipelines where the parent read 107 and 2, ours 90, nothing
+  a second; `coldharbour --round` nothing in play on either; `leaks.mjs` 0 released and 0 cached at every
+  step, live buffers 132/401/149/401/149/256/145 against 142/411/159/411/159/266/155, the MB and the
+  device's bind groups equal, the heap ~0.5 MB lower; `gate` and `shaders` 7 maps clean (Babylon's half
+  of `shaders` skipped and said).
+- **The clock** (`x54h/clock.mjs`, two boots a size): at the first frame's end the clock held 2 gaps at
+  desk and 3 at the phone's 2.8125 on both trees (the boot's sample, the first resize, the constructor's
+  render-scale resize on the phone, the first frame), the first delta 397–532 ms against the parent's
+  397–426, the boot-to-resize gap 0.1 ms against 0.6 (Babylon's resize work between).
+- **Live** (`x54h/live.mjs`, X5.4g's with the resizes counted where they took and the clock's resize
+  samples, and four more moves): 47 steps, PASS on both; every frame `0/0/1/1/1/2`; offline 24 resizes
+  and 24 resize samples, the matches 2 and 2, as the parent; orientation 1080x1920 and back, fullscreen
+  (no size change headless), zoom 125% (canvas 1920x1080 at level 0.8) and back, monitor at a ratio of 2
+  (3840x2160 at 0.5) and back — each move's canvas, render size, frame and depth size, resizes and samples
+  equal to the parent's; caps 30.02/29.97 and 60.11/59.93 fps, p50 32/16 ms; compiles 0, no error.
+- **The bench's hold** (`x54h/hold.mjs`, `?bench=hollowmere` at 832x384 at 2.8125, touch): the run
+  started after `holdWait` on 1170x540 matched (holdStill 1.94 s; the parent's 1.88), and with a resize
+  mid-settle on 1125x506 matched (1.10; 1.10).
+- **The menu** (`x54f/menu.mjs`): boot frames 1–12 and 61–65 hashed equal.
+- **The PWA** (`x54h/pwa.mjs`, the production build under `vite preview`, the worker installed off the
+  launch and controlling, the context offline): the game boots to the menu and draws at desk and phone
+  size, `/profile_viewer.html` is the viewer and `/nope.html` the game, as the parent, one offline
+  `ERR_FAILED` console line on both trees. A home-screen install is not possible headless.
+- **`lost.mjs`**: the frames and the state go on after a destroyed device, as at the parent; the
+  adapter answers the same, dead, device (the parent's a restored `BabylonWebGPUDevice1`); the console's
+  restore lines and the restore's `clearQuad` compile gone.
+- **`?profile&gpu`** (`x54h/bench.sh`: `bench.mjs hollowmere coldharbour --gpu --capped --runs 2`, parent
+  and step alternating twice): `gpu.frame` within 0.4% on every group in both pairs. `render`: the second
+  pair within 8% (Hollowmere vantages/path/fight 0.1745/0.178/0.2995 → 0.1735/0.1795/0.2955 ms;
+  Coldharbour 0.205/0.2075/0.317 → 0.201/0.213/0.315); the first pair Hollowmere within 5.5%
+  (0.1865/0.183/0.3155 → 0.177/0.193/0.300) and Coldharbour 13–16% higher (0.2065/0.2185/0.3175 →
+  0.2335/0.2515/0.3695, its `tick` up with it) — one slow run of the step's, the parent's two runs
+  agreeing with each other and the step's second with both. Fights `549487ba93bceefe` and
+  `de5622634abca6e7` on all eight runs a map.
+- **Typecheck, build** (its gates, on c01c54b's tree), **corecheck, parity**.
+- **Not run**: the phone; a real monitor change (emulated as a ratio of 2); `merge:hash` (the world layer
+  untouched).
+- **Named for the owner**: (1) a lost device holds the loop for one task, then draws the dead frame —
+  booked on X5.4i; (2) the scene input manager's effect on the canvas (`adoptInput`) and
+  `DisableTouchAction` ported, Babylon's other listeners gone; (3) the shadow maps' wrapped views
+  deleted; (4) `EmissiveFog`'s plugin no longer attached; (5) the camera's movement reads a
+  `getDeltaTime` of 0, inert; (6) the engine's class `SceneEngine`, a `NullEngine`.
+
+Scripts and logs in the session's scratchpad, `x54h/` (`before.sh`, `rest-before.sh`, `after.sh`,
+`probes.sh`, `bench.sh`, `inventory.mjs`, `clock.mjs`, `live.mjs`, `hold.mjs`, `pwa.mjs`, the BEFORE,
+BEFORE-new and AFTER logs and kept frames).

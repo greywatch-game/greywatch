@@ -5336,7 +5336,7 @@ pointer, its history unchanged):
   when it lands, owes three things: its generator's emitted header rewritten, its
   `params.ts` and `WRITABLE` rows dropped, and a `maps:check` entry.
 
-### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d; it was sized **M** before the split, and the read below re-sizes it) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014, its review clean), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88), X5.4e **LANDED** (74d246c, its review bc6892c), X5.4f **LANDED** (cfe4d8e, c37ae6d, its review b3cb649), X5.4g **LANDED** (c461635, acbd9e4, its review fcca130)
+### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d; it was sized **M** before the split, and the read below re-sizes it) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014, its review clean), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88), X5.4e **LANDED** (74d246c, its review bc6892c), X5.4f **LANDED** (cfe4d8e, c37ae6d, its review b3cb649), X5.4g **LANDED** (c461635, acbd9e4, its review fcca130), X5.4h **LANDED** (fc76336, c01c54b)
 
 - **Do:**
   - Our own `requestAnimationFrame` loop.
@@ -6162,6 +6162,60 @@ measurement until the sub-step that replaces both.
     rule 4's reading in this file's Contracts table; `docs/build.md`; `docs/rendering.md`;
     `docs/pwa.md` if it names the engine; `main.ts`' header; `FILES.md`.
 
+  **X5.4h LANDED** (fc76336 the instruments, c01c54b the step; 2026-11-11; no change to the picture).
+  The full note is in `plans/done/babylon_exit_landed.md`. **The device and the canvas are the game's**:
+  `main.ts` asks for the adapter (`{powerPreference}`, all of Babylon's engine options WebGPU reads) and
+  the device (no limits; `timestamp-query` alone, under `?gpu`, filtered against the adapter as
+  `initAsync` filtered it; a label of ours) and configures the context (the preferred format, usage 17,
+  premultiplied) exactly as `WebGPUEngine.initAsync` did, the three failure branches unchanged.
+  **`core/CanvasSurface.ts`** is the canvas: `AbstractEngine.resize`/`setSize` ported as written,
+  `setHardwareScalingLevel` (`applyRenderScale`'s setter), the render size and `getAspectRatio` every
+  reader asks (the gun marker, the kit stage, the bench hold, the profiler, the chain's frame size,
+  `WorldCulling`'s size gate, `GlowPass`'s kernel and output height, and `Sky`'s cloud depth line, which
+  the plan's list missed), `onSized` where `_initializeMainAttachments` ran (the clock's sample), and what
+  Babylon's engine and its scene's input manager did to the canvas element. **`core/SceneEngine.ts`** is
+  the scene's engine until X6.1 (row "X5.4, Babylon's engine", (A)): a `NullEngine` told
+  `isNDCHalfZRange` and the surface's size and level. **Deleted**: `compatibilityMode` and its rule, the
+  seam (`render/babylonSeam.ts`; rule 4 now reads "no file touches a Babylon internal"), `CreateAsync`'s
+  paragraph, `core/wrappedTextures.ts`, and with the engine its main depth, resize frames and clear quad.
+  **Measured** against a BEFORE at a7600ea7, every run alone on the GPU, no device lost. **fc76336**
+  (Babylon's engine the SCENE's in every probe, the adapter's device arm on `Game.surface`) read at the
+  parent against the old instruments' logs: the draw log, `census` (168), `gi.mjs` (914,604 and 254,724),
+  `particles.mjs` (45,120), `surfaces.mjs` (5,719), `post.mjs` at both sizes (31,845 each), `readers.mjs`
+  replay and camera all equal; `leaks`, `shaders` and `gate` clean. **c01c54b**: the bank by `exact.mjs`
+  147 of 147 byte-equal in all three runs; `post.mjs` at both sizes 31,833 values equal (every pass and
+  queue write) with only X5.4h's section of `post-expected.txt` — the device's label, the engine's
+  adapter-options keys WebGPU does not read, `compatibilityMode` false → null; the camera log and
+  `readers.mjs` replay bit for bit; `gi.mjs`, `census`, `particles.mjs`, `surfaces.mjs` equal; the draw
+  log equal but `compiledAtBoot` (clearQuad → none); `pipelines.mjs` as the parent but Babylon's 2 boot
+  pipelines and 6 modules (ours 90, nothing in play); `leaks.mjs` 0/0, 10 live buffers fewer at every
+  step, the control skipped; `gate` and `shaders` 7 maps clean; the menu's canvas (boot frames 1–12,
+  61–65) hashed equal; the clock's boot samples as the parent's (2 at desk, 3 at the phone's 2.8125 before
+  the first frame's end); a live session (`x54h/live.mjs`, 47 steps, PASS on both: X5.4g's plus an
+  orientation change, fullscreen, a 125% browser zoom and a monitor change emulated as a ratio of 2 —
+  every move's canvas, level, resizes and clock samples equal, caps 30.02/29.97 and 60.11/59.93 fps);
+  the bench's hold-settle identical; the PWA (production build, the worker controlling, offline) as the
+  parent at both sizes; `lost.mjs` the same dead frame. **`?profile&gpu`** (`bench.mjs hollowmere
+  coldharbour --gpu --capped --runs 2`, parent and step alternating twice): `gpu.frame` within 0.4% on
+  every group; `render` within 8% in the second pair (Hollowmere 0.1745/0.178/0.2995 → 0.1735/0.1795/
+  0.2955 ms, Coldharbour 0.205/0.2075/0.317 → 0.201/0.213/0.315), the first pair's Coldharbour 13–16%
+  higher (0.2065/0.2185/0.3175 → 0.2335/0.2515/0.3695) — one slow run of the step's, not reproduced; the
+  fight hashes `549487ba93bceefe` and `de5622634abca6e7` on all eight runs a map. Typecheck, build (its
+  gates), corecheck and parity. **Not run**: the phone (and so a home-screen install); a real monitor
+  change (emulated); `merge:hash` (the world layer untouched).
+  **Named for the owner**: (1) a lost device holds the loop for ONE task — the time Babylon's
+  `_restoreEngineAfterContextLost` took to flag its restore — and then draws on the lost device, the dead
+  frame it was (the plan's "held on `lost`" alone would have frozen `tick`), booked on X5.4i; (2) what
+  Babylon's scene input manager did to the canvas is PORTED (`CanvasSurface.adoptInput`: tab index 1, a
+  press and a release default-prevented and focusing the canvas — which keeps the browser's compatibility
+  `mousedown`/`mouseup` off `InputManager.mouseMask` — and the pointer captured without a lock), and
+  `DisableTouchAction`'s attribute and styles; Babylon's other canvas, window and gamepad listeners fed
+  nothing and are gone; (3) the shadow maps' wrapped views are deleted (a `NullEngine` cannot wrap a GPU
+  texture; their readers were cel materials that never draw); (4) `EmissiveFog`'s plugin is no longer
+  attached (`isWebGPU` false on a `NullEngine`; those materials never compile); (5) the camera's movement
+  reads the `NullEngine`'s `getDeltaTime` of 0, inert because nothing writes `cameraDirection` or
+  `cameraRotation` (the camera log equal); (6) the engine's class is `SceneEngine`, a `NullEngine`.
+
 - **X5.4i — a lost device** (a change to what a player sees on a loss, which today is a
   dead frame) — **S–M** (decision: row "X5.4, a lost device"). The Do's device-loss
   item.
@@ -6190,6 +6244,11 @@ measurement until the sub-step that replaces both.
     inside a frame while the timer is OPEN on an encoder that will still be submitted; the
     encoder made after the last submit, which the timer may have opened, is abandoned,
     never finished or submitted.
+  - **The hold X5.4h left a loss** (booked by X5.4h): `Game` sets `FrameLoop.held` off the
+    device's own `lost` and clears it ONE task later, the time Babylon's
+    `_restoreEngineAfterContextLost` took to flag its restore, so the frames after a loss are
+    drawn on the lost device — today's dead frame, kept no worse (held for good, `tick` would
+    stop and the menu and the match with it). The owner's answer replaces both halves.
   - **`FrameLoop.held` tests the loss AHEAD of the cap** (found by X5.4g's review): at the
     parent the cap's requester admitted every refresh first (its stamps and schedule
     moving) and Babylon's `_renderLoop` tested `_contextWasLost` inside the frame it was
