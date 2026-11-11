@@ -11707,7 +11707,7 @@ here).
 Scripts and logs in the session's scratchpad, `x53-whole/` (`bank.sh`, `sarab.sh`, `run2.sh`,
 `dl-fix.mjs`, `viewer7.mjs`, `status.txt`).
 
-### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88), X5.4e **LANDED** (74d246c, its review bc6892c), X5.4f **LANDED** (cfe4d8e, c37ae6d, its review b3cb649), X5.4g **LANDED** (c461635, acbd9e4, its review fcca130), X5.4h **LANDED** (fc76336, c01c54b, its review 7e771ee, 204ee7b)
+### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88), X5.4e **LANDED** (74d246c, its review bc6892c), X5.4f **LANDED** (cfe4d8e, c37ae6d, its review b3cb649), X5.4g **LANDED** (c461635, acbd9e4, its review fcca130), X5.4h **LANDED** (fc76336, c01c54b, its review 7e771ee, 204ee7b), X5.4i **LANDED** (6c89e8b, a4ca446)
 
 The plan's `BABYLON_EXIT.md` holds X5.4's brief, "What the frame is today", its ONE RULE, the
 step's own two rules, "Every sub-step owes" and the nine sub-steps.
@@ -12754,3 +12754,94 @@ booked.
 
 Scripts and logs in the session's scratchpad (`inputcheck.mjs`, `in-new.json`, `in-head.json`,
 `in-parent.json`, `build.txt`).
+
+**X5.4i LANDED** (6c89e8b the instruments, a4ca446 the step; 2026-11-11; no change to the picture; what a
+loss does is the owner's (A), row "X5.4, a lost device"). Measured headless on the Windows box against a
+BEFORE at 5be4571, in the worktree `greywatch-2-before-x53a` (moved there, detached; `npm ci`; its `ref/`
+kept), every run alone on the GPU. No device lost in any run but on purpose.
+
+- **What moved**: `Game`'s `device.lost` handler is `Game.deviceLost`, replacing X5.4h's one-task hold.
+  Every reason is answered, `"destroyed"` included (`lost.mjs` destroys the device); the game never
+  destroys its own device, and a promise settles once, so nothing in the answer re-enters it. The
+  TEARDOWN runs off that microtask, between frames after the last submit (a frame is one synchronous
+  loop step), each step on its own (`eachStep`: a throw is said, the rest go on), in the booked order:
+  `FrameLoop.stop`; `Renderer.dispose`, whose `TextureMaker.dispose` destroys every texture the maker
+  made — the live ones, the lit texel, the retired and the empty texel — through `everMade`, a set of
+  `WeakRef`s pruned when it doubles (the empty texel also held strongly, since only its view is kept
+  otherwise), so nothing a dropped handle would have let go is kept alive; `ChainPasses.dispose`;
+  `FrameSubmit.dispose` (the encoder after the last submit abandoned); `LampAtlas.dispose`. The ANSWER
+  is in a `finally`, whatever the teardown did: `core/deviceLoss.ts` (new) records the loss in
+  `sessionStorage` (`greywatch.deviceLost`: `Date.now()` and the notice) and answers `"reload"` —
+  `location.reload()`, the constructor toasting the notice once after `showMenu` — or `"plate"` for a
+  second loss inside `CONFIG.graphics.deviceLossWindow` (60 s: a whole reload with a slow phone's
+  ~20 s boot and some menu, three times over; a loss after ordinary play still gets its reload) or for
+  storage that cannot be read or written. The plate is `main.ts`'s `deviceLostForGood`, handed to
+  `Game`: the kept `#boot` element put back in the document, its fade undone, failed by `deviceFailed`
+  (the boot's own branch, one function for both); `bootDone`'s fade and its removal skip a failed
+  plate (found while writing the boot-loss case below: without it a plate raised before the boot's two
+  frames would fade to nothing). Under it the page is let go: `leaveMatch` (a server's slot back to its
+  bot, the page's own match closed), `Sfx.setSuspended`, `exitPointerLock`. `FrameLoop.held` deleted.
+- **The bookings**: `Renderer.dispose` and `TextureMaker.dispose` (every texture), `ChainPasses.dispose`,
+  `FrameLoop.stop` and `FrameSubmit.dispose`, `LampAtlas.dispose` — each has its caller, in that order;
+  the hold replaced; the hold's order against the cap and the restore's one clock sample moot (no frame
+  resumes; `FrameLoop`'s header says what a loss survived in place would owe); the answer in the
+  `device.lost` handler, `"destroyed"` not filtered, no re-entry; nothing owed under a reload for
+  `adoptInput`'s listeners, `main.ts`' `uncapturederror` listener or the context's `unconfigure`
+  (confirmed: the document goes with them; said in `deviceLost`'s doc, `main.ts` and `docs/game.md`).
+- **The instruments** (6c89e8b): `lost.mjs` sees a reload and grades (A) — navigations, toasts by an
+  init script on every document, the frames from each page's boot, the plate, the loss record, a
+  setting changed before the loss (`fpsCounter`), `--match` (`dist-server`, `?server=`, `joinMatch`, a
+  rejoin after the reload), `--twice`, `--stale`, `--strict`; `harness.mjs` hears the game's own
+  "WebGPU device lost" line. Run at the parent (copied in, then restored), offline and `--match`, both
+  `--twice`: the dead frame (no navigation, the frames going on, no plate, no toast), every verdict "no".
+- **`lost.mjs` on the step**: offline `--twice --strict` at the menu, the card, deploy and a life, and
+  `--match --twice --strict` at the card, deploy and a life — every first loss one navigation, at the
+  menu drawing again within 1–2 s, the notice toast once (with the match's tail in the match), the
+  setting kept, in the match a rejoin reaching `deploy` (the server: "player left; slot 0 back to a bot",
+  then a new peer took slot 0); every second loss no navigation, the plate failed and on top ("Cannot
+  start" / "No graphics device"), the frame count frozen. `--stale` (menu, a life): the second reloads
+  too. A loss under the card logs one in-flight error from the build the reload cuts off (the water's
+  foam fetch aborted), harmless. `x54i/plateleave.mjs`: a second loss in a server's match left it AT the
+  loss (the server's "left" at the destroy, before the page closed), `net` null, the sound paused; the
+  state under the plate reads `paused` (the page's own lock and focus handling, under the plate, no
+  frame drawn).
+- **The boot's branches** (`x54i/branches.mjs`, an init script each, both trees): `navigator.gpu`
+  absent and a null adapter both "No WebGPU", a rejected device request "No graphics device" — texts,
+  classes and screenshots equal to the parent's (`3357374cddcf28d5`, `58a47318381e064b`). A device
+  destroyed a microtask after every `requestDevice` (lost before `Game` exists, on every boot): the
+  parent boots to the menu on a dead device; the step reloads ONCE, then stands the plate, its
+  screenshot `58a47318381e064b` — the boot's own plate, byte for byte.
+- **Every bank row** by `exact.mjs`: default and `volumetrics=high` 147 of 147 byte-equal; `low` 146 and
+  `sarab-ground` MOVED 98 pixels, worst 2/255, the known cross-process class. The Sarab procedure
+  (`bank.mjs sarab --check --keep --query=volumetrics=low`, two processes a side, then three more at the
+  parent): the step's processes drew `b2f7998…` (the bank's and one) and `bb382a4…` (one), the parent's
+  five (and its bank run) all `bb382a4…` — the parent's frame is one the step's processes draw, the
+  documented criterion.
+- **The probes**: the draw log equal; `census` 168 equal; `gi.mjs` equal (914,604 and 254,724);
+  `particles.mjs` equal by `Object.is` (45,120); `surfaces.mjs` equal (5,719); `post.mjs` at both sizes
+  31,837 values equal; `readers.mjs` replay and camera (104 frames) equal; `pipelines.mjs hollowmere` and
+  `coldharbour --round` as the parent; `leaks.mjs` equal (live buffers 132/395/401/149/401/401/149, the
+  control counting); `gate` and `shaders` 7 maps clean; the menu's boot frames (`x54f/menu.mjs`) hashed
+  equal; `x54h/live.mjs` PASS on both (47 steps, 878 and 880 frames, every shape `0/0/1/1/1/2`); the PWA
+  (`x54h/pwa.mjs`) as the parent at both sizes (its one offline `ERR_FAILED` line on both).
+- **`?profile&gpu`** (`x54i/bench.sh`, `bench.mjs hollowmere coldharbour --gpu --capped --runs 2`, parent
+  and step alternating twice): `render` vantages/path/fight Hollowmere 0.157/0.1655/0.2935 →
+  0.149/0.1645/0.2875 and 0.1585/0.1675/0.2915 → 0.161/0.1715/0.2945 ms, Coldharbour 0.1935/0.201/0.318 →
+  0.191/0.201/0.3075 and 0.194/0.201/0.3275 → 0.193/0.200/0.306 (every group within 6.6%); `gpu.frame`
+  within 0.6% on every group; the fights `549487ba93bceefe` and `de5622634abca6e7` on all eight runs a map.
+- **Typecheck, build** (its gates), **corecheck, parity**.
+- **Not run**: the phone; a real TDR (a loss is simulated by `destroy()`, as the plan asks);
+  `merge:hash` (the world layer untouched); the whole-step Verify.
+- **Named for the owner**: (1) the notice is the existing toast (2.6 s, the `worldFailed` precedent),
+  shown as the menu comes up, partly under the boot screen's 0.3 s fade; (2) "in a match the player
+  rejoins" is read as: back at the menu, told to rejoin from Online, rejoining as a new peer — no
+  automatic rejoin and no reconnect into their own slot (neither exists; either is new protocol or a
+  feature); (3) under the plate the page stands, its loop stopped, the match left, the sound suspended
+  — a manual reload boots afresh, and a loss within the window of the last is the plate again; (4) a
+  loss landing between the device request and the constructor is heard once the constructor hangs its
+  handler (the promise already settled) and reloads; a constructor that THROWS on the dead device after
+  hanging it reloads too, where the boot's "Start-up failed" plate stood before; (5) the window is 60 s
+  from the last loss, on the wall clock (`Date.now()`), per tab.
+
+Scripts and logs in the session's scratchpad, `x54i/` (`before.sh`, `after.sh`, `probes.sh`, `bench.sh`,
+`branches.mjs`, `plateleave.mjs`, the BEFORE and AFTER logs, kept frames and screenshots).

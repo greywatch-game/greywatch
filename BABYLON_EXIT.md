@@ -5343,7 +5343,7 @@ pointer, its history unchanged):
   when it lands, owes three things: its generator's emitted header rewritten, its
   `params.ts` and `WRITABLE` rows dropped, and a `maps:check` entry.
 
-### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d; it was sized **M** before the split, and the read below re-sizes it) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014, its review clean), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88), X5.4e **LANDED** (74d246c, its review bc6892c), X5.4f **LANDED** (cfe4d8e, c37ae6d, its review b3cb649), X5.4g **LANDED** (c461635, acbd9e4, its review fcca130), X5.4h **LANDED** (fc76336, c01c54b, its review 7e771ee, 204ee7b)
+### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d; it was sized **M** before the split, and the read below re-sizes it) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014, its review clean), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88), X5.4e **LANDED** (74d246c, its review bc6892c), X5.4f **LANDED** (cfe4d8e, c37ae6d, its review b3cb649), X5.4g **LANDED** (c461635, acbd9e4, its review fcca130), X5.4h **LANDED** (fc76336, c01c54b, its review 7e771ee, 204ee7b), X5.4i **LANDED** (6c89e8b, a4ca446)
 
 - **Do:**
   - Our own `requestAnimationFrame` loop.
@@ -6326,6 +6326,42 @@ measurement until the sub-step that replaces both.
     failure branches unchanged.
   - **Rewrites:** `docs/states.md` or `docs/game.md` (where the loss goes); `CLAUDE.md`
     if the answer adds a rule others can break.
+
+  **X5.4i LANDED** (6c89e8b the instruments, a4ca446 the step; 2026-11-11; no change to the picture;
+  the loss's behaviour is the owner's (A)). The full note is in `plans/done/babylon_exit_landed.md`.
+  **A lost device reloads the page to the menu**: `Game.deviceLost`, the constructor's
+  `device.lost.then(…)`, answers every reason, `"destroyed"` with the rest (a promise settles once, so
+  nothing re-enters it; the game never destroys its device). A TEARDOWN, between frames after the last
+  submit, each step on its own so a throw is said and the rest go on, in the order this sub-step booked:
+  `FrameLoop.stop`, `Renderer.dispose` (its `TextureMaker.dispose` now destroys EVERY texture the maker
+  made — live, the lit texel, retired, the empty texel — through a weak record of each, so no dropped
+  handle is kept alive for it), `ChainPasses.dispose`, `FrameSubmit.dispose` (the encoder after the last
+  submit abandoned, never finished), `LampAtlas.dispose`. Then, in a `finally`, the ANSWER
+  (`core/deviceLoss.ts`): the loss recorded in `sessionStorage` with its notice and the page RELOADED, the
+  menu toasting the notice once ("the graphics device was lost, so the game restarted", "— rejoin the
+  match from Online" in a server's round), the settings `localStorage`'s and untouched; a second loss
+  inside `CONFIG.graphics.deviceLossWindow` (60 s), or storage that cannot be read or written, stands the
+  boot's own "No graphics device" plate back up (`main.ts`'s `deviceLostForGood`, one `deviceFailed` for
+  both) and lets the page go under it — the match left, the sound suspended, the pointer lock released.
+  **`FrameLoop.held` is deleted**: no frame runs after a loss, so its order against the cap and the
+  restore's one clock sample are moot (`FrameLoop`'s header says what a loss survived in place would owe
+  both). Nothing is owed under a reload for `adoptInput`'s listeners, the `uncapturederror` listener or the
+  context's configuration. (B) is `FINDINGS.md` 74. **Measured** against a BEFORE at 5be4571: the bank by
+  `exact.mjs` 147 of 147 byte-equal at default and `volumetrics=high`; at `low` 146 and `sarab-ground`
+  (98 pixels, worst 2/255, the known class), by the Sarab procedure the parent's frame drawn by one of
+  the step's three processes and by all five of the parent's; the draw log, `census` (168), `gi.mjs`,
+  `particles.mjs`, `surfaces.mjs` (5,719), `post.mjs` at both sizes (31,837 values each), `readers.mjs`
+  replay and camera, both `pipelines.mjs` runs and `leaks.mjs` equal to the parent's; the menu's boot frames
+  hashed equal; `x54h/live.mjs` PASS on both (47 steps); the PWA as the parent; `gate` and `shaders` 7
+  maps clean; `?profile&gpu` (two pairs) `render` within 6.6% and `gpu.frame` within 0.6%, the fights
+  `549487ba93bceefe` and `de5622634abca6e7` on every run. `lost.mjs --twice --strict` offline (menu, the
+  card, deploy, a life) and `--match` (the card, deploy, a life): every first loss one reload to the
+  menu, drawing, the notice once, the setting kept, in the match a rejoin to `deploy`; every second the
+  plate on top, no reload, no frame after; `--stale` reloads again; at the parent every verdict "no",
+  the dead frame. The boot's three branches simulated (no `navigator.gpu`, a null adapter, a rejected
+  device request) read and screenshot equal to the parent's; a device lost at every boot reloads once,
+  then stands the plate, its screenshot equal to the boot's own. Typecheck, build, corecheck, parity.
+  **Not run**: the phone; a real TDR (simulated by `destroy()`); `merge:hash` (the world layer untouched).
 
 **Verify, the whole step:** the Do's Verify above, against a BEFORE at X5.4a's parent end
 to end as well as step by step; on the branch's phone preview URL (row "X5.4, the phone"),
