@@ -11707,7 +11707,7 @@ here).
 Scripts and logs in the session's scratchpad, `x53-whole/` (`bank.sh`, `sarab.sh`, `run2.sh`,
 `dl-fix.mjs`, `viewer7.mjs`, `status.txt`).
 
-### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88), X5.4e **LANDED** (74d246c)
+### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88), X5.4e **LANDED** (74d246c, its review bc6892c)
 
 The plan's `BABYLON_EXIT.md` holds X5.4's brief, "What the frame is today", its ONE RULE, the
 step's own two rules, "Every sub-step owes" and the nine sub-steps.
@@ -12225,3 +12225,20 @@ dependency moved; its `ref/` the main tree's), every run alone on the GPU. No de
 Scripts and logs in the session's scratchpad, `x54e/` (`before.sh`, `after.sh`, `probes.sh`,
 `sarab.sh`, `gpu.sh`, `gpu-capped.sh`, `wholeflat.cjs`, `writes.mjs`, `surfcmp.cjs`, `live.mjs`,
 `dpr.mjs`, the BEFORE and AFTER logs and kept frames).
+
+**Its review** (bc6892c; 2026-11-10; no change to the game: comments and docs) found no bug, and
+its two questions for the owner were the items accepted above.
+
+- **`drawWorld`'s note**: `FrameProfile.hookRender`'s comment and `docs/profiling.md` said the span
+  does not hold our renderer's `begin` "and its `first` point". Since X5.4e `first` is recorded in
+  `Renderer.end`, the first list in the main pass, inside the span; only `begin` (the frame's fill
+  and every prepare) runs ahead of its opening. Both corrected to the code.
+- **`Game.ts`**: the comment of the deleted `frameDepth` field was left above `skyEnv`'s; removed.
+- **`FrameTargets.dispose`** destroys every live texture at once, the one path not following its
+  header's "destroyed after the frame's submit". Kept rather than deferred: it is a TEARDOWN with no
+  frame after it (its one caller `Renderer.dispose`, which destroys its frame buffer at once too, and
+  which nothing calls until X5.4i's lost device), and the deferral it would need is a submit that
+  never comes. The header names the exception and what the caller owes; X5.4i's plan text books it
+  (the loss's teardown calls `Renderer.dispose` between frames, after the last submit).
+- **Measured**: typecheck, build (its gates), corecheck. **Not run**: a live session — no path a
+  frame takes moved.

@@ -5331,7 +5331,7 @@ pointer, its history unchanged):
   when it lands, owes three things: its generator's emitted header rewritten, its
   `params.ts` and `WRITABLE` rows dropped, and a `maps:check` entry.
 
-### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d; it was sized **M** before the split, and the read below re-sizes it) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014, its review clean), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88), X5.4e **LANDED** (74d246c)
+### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d; it was sized **M** before the split, and the read below re-sizes it) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014, its review clean), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88), X5.4e **LANDED** (74d246c, its review bc6892c)
 
 - **Do:**
   - Our own `requestAnimationFrame` loop.
@@ -5851,6 +5851,15 @@ measurement until the sub-step that replaces both.
   the owner: the CPU `render` span 26–30% lower (Babylon's mask render and the glow's binds gone;
   `gpu.frame` within 0.4%), and `autoClearDepthAndStencil` held false beside the Do's `autoClear`
   (so Babylon adds no canvas depth-clear pass; device-identical).
+
+  **Its review** (bc6892c; 2026-11-10; no change to the game: comments and docs; the full note is
+  in `plans/done/babylon_exit_landed.md`) found no bug. `FrameProfile`'s `drawWorld` note and
+  `docs/profiling.md` said the span lacked the main pass's `first` point, which `Renderer.end` now
+  records inside it (only `begin` is outside); the deleted `frameDepth` field's comment was left in
+  `Game.ts`; and `FrameTargets.dispose` destroys at once, against its header's "after the frame's
+  submit" — kept (a teardown with no frame after it, as `Renderer.dispose` destroys its frame
+  buffer), named in the header, and the ordering it owes booked on X5.4i. **Measured**: typecheck,
+  build, corecheck. **Not run**: a live session (nothing a frame runs moved).
 
 - **X5.4f — the chain and the canvas are ours, and the scene stops rendering** (no
   change to the picture) — **M–L**. The post passes' item's second half.
