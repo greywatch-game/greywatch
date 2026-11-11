@@ -117,7 +117,12 @@ export const PHASES = [
   "gi",
   /** `pushHullEngines` — the fleet's voices. */
   "audio",
-  /** `scene.render()`. The big one, and see `FrameProfile`'s header on why. */
+  /**
+   * The frame's render: the bodies', hulls', weapon's and pools' handover and
+   * `SceneFrame.render` — `scene.render()` until `BABYLON_EXIT.md` X5.4f, the
+   * same steps in the same order since. The big one, and see `FrameProfile`'s
+   * header on why.
+   */
   "render",
   /**
    * The three spans INSIDE `render`, and the only ones in this list that

@@ -1,25 +1,23 @@
 /**
  * render/HostBindGroup.ts — One bind group built from a group's DECLARED
- * entries: the uniform and storage buffers our renderer owns, the textures
- * the host owns, resolved through it every frame, and the textures our
- * renderer owns, read where they lie.
+ * entries: the uniform and storage buffers our renderer owns and the
+ * textures our renderer owns, read where they lie, every frame.
  * Owns: `HostBindGroup` — the entries' binding numbers for one variant, what
  * each texture resolved to last, and one `GPUBindGroup` per layout it has
  * been asked for; `OwnTexture`, a texture of our renderer's as a group binds
  * it.
  * Invariants: the binding numbers are `firstBindings`', the rule the WGSL is
  * declared by, so the group and the module are one statement; a texture is
- * the host's own view and sampler (`FrameHost.bind`) or, for one our
- * renderer owns, the view and sampler its owner holds (`OwnTexture` —
- * `BABYLON_EXIT.md` rule 5: the owner reads its own, through no host),
- * either compared every frame and never kept across a change — a group is
+ * the view and sampler its owner holds (`OwnTexture` — `BABYLON_EXIT.md`
+ * rule 5: the owner reads its own; every texture a draw of ours binds is our
+ * renderer's since X5.4f, the host's own resolved through `FrameHost.bind`
+ * until then), compared every frame and never kept across a change — a group is
  * re-made only on the frame something behind one of its handles moved, and
  * a group with a texture missing is not made at all (null: the caller draws
  * nothing); `refresh` allocates nothing.
  * Never: imports Babylon; copies a texture; owns a buffer it was handed.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
  */
-import type { BoundTexture, FrameHost, HostTexture } from "./frameHost";
 import { firstBindings, type Binding } from "./wgsl/assemble";
 import { guardHolds } from "./wgsl/layout";
 
@@ -28,7 +26,7 @@ interface TextureSlot {
   readonly name: string;
   readonly sampler: number;
   readonly view: number;
-  readonly bound: BoundTexture;
+  readonly bound: { view: GPUTextureView | null; sampler: GPUSampler | null };
 }
 
 /**
@@ -41,13 +39,12 @@ export class OwnTexture {
   sampler: GPUSampler | null = null;
 }
 
-/** What a group's textures are looked up in: a handle per declared name, the host's or our own. */
-export type TextureHandles = { readonly [name: string]: HostTexture | OwnTexture | null | undefined };
+/** What a group's textures are looked up in: a handle per declared name, our renderer's own. */
+export type TextureHandles = { readonly [name: string]: OwnTexture | null | undefined };
 
 export class HostBindGroup {
   private readonly buffers: GPUBindGroupEntry[] = [];
   private readonly slots: TextureSlot[] = [];
-  private readonly scratch: BoundTexture = { view: null, sampler: null };
   private readonly made = new Map<GPUBindGroupLayout, GPUBindGroup>();
   /** Every texture resolved to a view and a sampler at the last `refresh`. */
   private complete = false;
@@ -83,26 +80,19 @@ export class HostBindGroup {
     });
   }
 
-  /** Re-resolves every texture through `host`; call once a frame before `get`. */
-  refresh(host: FrameHost, handles: TextureHandles): void {
+  /** Re-reads every texture where its owner holds it; call once a frame before `get`. */
+  refresh(handles: TextureHandles): void {
     let complete = true;
     let changed = false;
-    const scratch = this.scratch;
     for (let i = 0; i < this.slots.length; i++) {
       const slot = this.slots[i];
       const handle = handles[slot.name];
-      if (handle instanceof OwnTexture) {
-        scratch.view = handle.view;
-        scratch.sampler = handle.sampler;
-      } else if (handle) host.bind(handle, scratch);
-      else {
-        scratch.view = null;
-        scratch.sampler = null;
-      }
-      if (!scratch.view || !scratch.sampler) complete = false;
-      if (scratch.view !== slot.bound.view || scratch.sampler !== slot.bound.sampler) {
-        slot.bound.view = scratch.view;
-        slot.bound.sampler = scratch.sampler;
+      const view = handle ? handle.view : null;
+      const sampler = handle ? handle.sampler : null;
+      if (!view || !sampler) complete = false;
+      if (view !== slot.bound.view || sampler !== slot.bound.sampler) {
+        slot.bound.view = view;
+        slot.bound.sampler = sampler;
         changed = true;
       }
     }

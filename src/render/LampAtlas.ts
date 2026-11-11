@@ -245,7 +245,7 @@ export class LampAtlas {
       proxyTiles: this.proxyTiles,
     });
     // No textures: resolved once, whole for good.
-    this.proxyGeometry.refresh(renderer.host, {});
+    this.proxyGeometry.refresh({});
 
     const program = lampProxyDepth();
     this.proxiesReady = renderer.pipelines

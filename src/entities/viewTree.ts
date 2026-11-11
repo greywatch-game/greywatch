@@ -61,7 +61,7 @@
  *   the root never enters a switched-off subtree.
  * - **The render id is OURS** (`RenderId`, `BABYLON_EXIT.md` X5.4b), handed
  *   in: a counter with Babylon's meaning, moved where `scene.render` moved
- *   Babylon's. This file names neither Babylon's id nor its scene.
+ *   Babylon's — by our frame since X5.4f (`core/SceneFrame.ts`). This file names neither Babylon's id nor its scene.
  * - **The readers answer Babylon's answers** (`read`, `world`): the render-id
  *   cache, never a fresh compose — two of them are command inputs. See
  *   `RenderCache`. A script that wants a joint's world composes its own copy
@@ -344,7 +344,7 @@ export class ViewTree {
   }
 
   /**
-   * The frame's evaluation, immediately before `scene.render`: every surface
+   * The frame's evaluation, immediately before the frame's render: every surface
    * the render took — on and visible — evaluated as Babylon evaluated it, and
    * listed in `evaluated` for our renderer, whatever its role.
    */

@@ -188,7 +188,7 @@ export class GrassDraw {
     device.queue.writeTexture({ texture }, mask, { bytesPerRow: nx * 4, rowsPerImage: nz }, { width: nx, height: nz });
     this.mask = texture;
     this.maskHandle.view = texture.createView({ label: "grass: mask" });
-    this.material.refresh(this.renderer.host, { maskTex: this.maskHandle });
+    this.material.refresh({ maskTex: this.maskHandle });
     this.values = values;
   }
 
@@ -209,7 +209,7 @@ export class GrassDraw {
     this.mask?.destroy();
     this.mask = null;
     this.maskHandle.view = null;
-    this.material.refresh(this.renderer.host, { maskTex: this.maskHandle });
+    this.material.refresh({ maskTex: this.maskHandle });
     this.values = null;
     this.committed = false;
     this.ours = false;
@@ -320,7 +320,7 @@ export class GrassDraw {
     kind.buffers.patches = patches;
     kind.arrays = new HostBindGroup(this.device, `${kind.label}: geometry`, kind.geometry, [], kind.buffers);
     // No textures: resolved once, whole for good.
-    kind.arrays.refresh(this.renderer.host, {});
+    kind.arrays.refresh({});
   }
 
   /**

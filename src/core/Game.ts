@@ -50,7 +50,8 @@
  * pick — and it neither stores nor draws, for the same split: `setRegion` here
  * is what writes the pref and what tells the lobby screen.
  * State machine: menu -> deploy -> playing (deploy re-entered on each death)
- * -> roundover. The 3D scene renders live behind every state. The SHAPE of it
+ * -> roundover. The frame is drawn live behind every state (ours since
+ * `BABYLON_EXIT.md` X5.4f, `core/SceneFrame.ts`: the scene is never rendered). The SHAPE of it
  * is `ScreenStack.ts` and not this file: what a screen may cover, what it holds
  * in the page's own match, what it owes a server's round and whether the
  * scoreboard is owed to
@@ -112,7 +113,8 @@ import {
   fogAmountAt,
   writePaletteIndex,
 } from "../shaders/CelShader";
-import { BabylonFrameHost } from "../render/babylonSeam";
+import { BabylonEngineSeam } from "../render/babylonSeam";
+import { ChainPasses } from "../render/ChainPasses";
 import { Renderer } from "../render/Renderer";
 import { BodyDraw } from "../render/BodyDraw";
 import { HullDraw } from "../render/HullDraw";
@@ -141,7 +143,6 @@ import { WorldShadows } from "../render/WorldShadows";
 import { GlowBlur } from "../render/GlowBlur";
 import { PostChain } from "../render/PostChain";
 import { PaperGrain } from "../shaders/PaperGrain";
-import { PostPasses } from "../shaders/PostPasses";
 import { CelInk } from "../shaders/CelInk";
 import { Fxaa } from "../shaders/Fxaa";
 import { GlowPass, glowKernels } from "../shaders/GlowPass";
@@ -334,7 +335,8 @@ import { PointerLockChase } from "./PointerLockChase";
 import { Sfx } from "./Sfx";
 import { UrlOverrides, urlFlag } from "./urlOverrides";
 import { setViewerTeam, teamLook } from "./teamView";
-import { driveFromScene, RenderId } from "./renderId";
+import { RenderId } from "./renderId";
+import { SceneFrame } from "./SceneFrame";
 import { type BabylonCompiles, watchBabylonCompiles } from "./babylonCompiles";
 
 /**
@@ -1342,12 +1344,20 @@ export class Game {
   private playerView: PlayerView;
   /**
    * The RENDER ID the viewmodel's render cache is keyed on — ours, with
-   * Babylon's meaning (`core/renderId.ts`, `BABYLON_EXIT.md` X5.4b), moved
-   * where `scene.render` moves Babylon's. Public for a probe: in a DEV build
-   * its `drift` counts reads at which it and Babylon's stopped moving
-   * together, and must read 0.
+   * Babylon's meaning (`core/renderId.ts`, `BABYLON_EXIT.md` X5.4b), moved by
+   * our frame where `scene.render` moved Babylon's (`sceneFrame`, X5.4f).
+   * Public for a probe (`plans/webgpu-ref/readers.mjs`).
    */
   readonly renderId = new RenderId();
+  /**
+   * THE FRAME, ours (`core/SceneFrame.ts`, `BABYLON_EXIT.md` X5.4f): what
+   * `scene.render()` did, in its order, called from `tick` in its place —
+   * the scene is never rendered. Its points are where every module that hung
+   * off a scene observable hangs now, and our renderer's host is its
+   * (`SceneFrame.host`). Public for the harness's frame adapter
+   * (`plans/webgpu-ref/harness.mjs`).
+   */
+  readonly sceneFrame: SceneFrame;
   private canvas: HTMLCanvasElement;
   /**
    * The bloom — mask, blur and compose — which `shaders/GlowPass.ts` owns.
@@ -1367,13 +1377,15 @@ export class Game {
   /**
    * The post chain's stages, every one OUR draw since `BABYLON_EXIT.md`
    * X5.2d (the ink, FXAA, the shafts, the blur, the grade), the host that
-   * routes them (`render/PostChain.ts`) and the Babylon-side owner that owns
-   * the frame the scene draws into and opens their passes after the camera's
-   * render (`shaders/PostPasses.ts`). Public for the harness's and the
-   * probe's adapters (`plans/webgpu-ref/harness.mjs`, `post.mjs`).
+   * routes them (`render/PostChain.ts`) and the owner that sizes the frame
+   * our renderer draws and begins every pass of theirs after the camera's
+   * render, into its pool and the canvas (`render/ChainPasses.ts`, ours since
+   * X5.4f; `shaders/PostPasses.ts`, with Babylon's public API, before). Public
+   * for the harness's and the probe's adapters (`plans/webgpu-ref/harness.mjs`,
+   * `post.mjs`).
    */
   readonly postChain: PostChain;
-  readonly postPasses: PostPasses;
+  readonly chainPasses: ChainPasses;
   /**
    * The dev audio mixer's session, or null. `F4`.
    *
@@ -1942,6 +1954,11 @@ export class Game {
     // until the scene goes (`CLAUDE.md`, "Deaths, glass, and the one physics
     // engine").
     this.scene.physicsEnabled = false;
+    // THE FRAME is ours (`core/SceneFrame.ts`, `BABYLON_EXIT.md` X5.4f): what
+    // `scene.render()` did, in its order, so the scene is never rendered.
+    // Before anything hangs on its points, and before our renderer, whose
+    // host it is.
+    this.sceneFrame = new SceneFrame(this.scene, this.renderId, new BabylonEngineSeam(this.engine));
     // The scene has no Babylon lights at all: cel materials carry their own
     // key/ambient/point-light uniforms (fed by the LightingSystem) and every
     // effect material is unlit emissive.
@@ -1950,7 +1967,7 @@ export class Game {
     // (`TextureMaker`, `BABYLON_EXIT.md` X5.4d). The two pulls below read the
     // factory only once a frame is drawn.
     this.renderer = new Renderer(
-      new BabylonFrameHost(this.engine, this.scene),
+      this.sceneFrame.host,
       (out) => this.mats.fillFrame(out),
       (out) => this.mats.fillFrameTextures(out),
       // `?gpu` times our culls too (`gpu.cull`); `main.ts` asked the device
@@ -2176,7 +2193,7 @@ export class Game {
     const glowBlur = new GlowBlur(this.renderer, glowKernels(window.devicePixelRatio || 1));
     this.glowBlur = glowBlur;
     const targets = this.renderer.targets;
-    const glow = new GlowPass(this.scene, this.cameraSys.camera, {
+    const glow = new GlowPass(this.scene, this.sceneFrame, this.cameraSys.camera, {
       // The frame's size — its depth's, which the mask borrows. Worth ~20% of
       // the frame on the three big maps against a mask that redrew the whole
       // visible scene to occlude itself (docs/rendering.md, "The glow: what
@@ -2194,12 +2211,42 @@ export class Game {
     this.glow = glow;
     // THE FRAME: our renderer's target (`Renderer.targets.frame`, with its
     // depth, X5.4e), which its own passes clear and draw — sized as the frame
-    // starts by the post chain's pass owner, `PostPasses`, which opens every
-    // pass of the chain after the camera's render. No Babylon `PostProcess`
-    // stands on the camera since X5.2d, and no `outputRenderTarget` since
-    // X5.4e: the camera renders into nothing of its own, the scene drawing
-    // nothing.
-    this.postPasses = new PostPasses(this.scene, this.cameraSys.camera, targets);
+    // starts by the post chain's pass owner, `ChainPasses` (ours since X5.4f),
+    // which begins every pass of the chain after the camera's render, into
+    // its pool and the canvas. No Babylon `PostProcess` stands on the camera
+    // since X5.2d, no `outputRenderTarget` since X5.4e, and the scene is
+    // never rendered since X5.4f.
+    const chainPasses = new ChainPasses(
+      this.renderer.device,
+      this.sceneFrame.host,
+      targets,
+      // The context the engine configured: a canvas has one `webgpu` context.
+      canvas.getContext("webgpu") as GPUCanvasContext,
+    );
+    this.chainPasses = chainPasses;
+    {
+      const camera = this.cameraSys.camera;
+      const engine = this.engine;
+      // Before anything in the frame draws (`onBeforeRenderObservable`, where
+      // `PostPasses.prepareFrame` hung): the frame at this frame's render size,
+      // read as Babylon sized a post-process's input
+      // (`getRenderWidth(true) * 1 | 0`), named for its reader.
+      this.sceneFrame.onBeforeRenderObservable.add(() => {
+        if (this.scene.activeCamera !== camera) return;
+        chainPasses.prepareFrame(
+          engine.getRenderWidth(true) | 0,
+          engine.getRenderHeight(true) | 0,
+          this.postChain?.firstActive() ?? null,
+        );
+      });
+      // After the camera's render: the chain's passes, the frame drawn.
+      this.sceneFrame.onAfterCameraRenderObservable.add(() => {
+        if (this.scene.activeCamera !== camera) return;
+        chainPasses.record(this.postChain);
+      });
+      // The frame's end: the canvas's pass, on a frame nothing began it.
+      this.sceneFrame.finishWith(() => chainPasses.finishFrame());
+    }
     // THE INK GOES FIRST: our post chain's first stage (X5.2d), reading the
     // frame the scene drew. It is part of the PICTURE and not a grade over
     // one: FXAA below then antialiases the lines it draws (they come off a
@@ -2253,7 +2300,7 @@ export class Game {
     // particular has to land AFTER the blur: smeared grain reads as smudge.
     // The ink (X5.2d), FXAA, the shafts, the blur (X5.2c2) and the grade
     // (X5.2c1) are OUR draws: the post chain's host, its stages in THIS
-    // order over the frame our renderer drew, whose passes `PostPasses` opens
+    // order over the frame our renderer drew, whose passes `ChainPasses` begins
     // after the camera's render. The order is the host's list, not an
     // append, and a setting turns a stage off rather than taking a pass off a
     // camera, so there is no slot to hold.
@@ -2265,7 +2312,6 @@ export class Game {
       this.motionBlur.stage,
       this.post.stage,
     ]);
-    this.postPasses.drive(this.postChain);
     this.sfx = new Sfx();
     this.hud = new HUD();
     // After the HUD: its root is the element every screen appends to.
@@ -2324,7 +2370,7 @@ export class Game {
     // cube, which nothing bakes. (It published that cube to every pane
     // material too, wrapped for Babylon's glazing, which only the map
     // editor's build drew; the wrap went at X5.3d.)
-    this.reflections = new ReflectionSystem(this.scene, this.mats, this.probeBake, this.glassDraw);
+    this.reflections = new ReflectionSystem(this.scene, this.sceneFrame, this.mats, this.probeBake, this.glassDraw);
     // A cube is baked once per install and keeps the bounce it was baked
     // under, so the bake waits for the volume `installMap` has just cleared —
     // and the shadows it samples, which our renderer draws a frame or more
@@ -2431,9 +2477,8 @@ export class Game {
     );
     // The weapon hangs from the camera (its tree's root reads the camera's
     // world, `ViewModel.tree`), so the camera has to exist first. Its render
-    // cache is keyed on OUR render id, moved where the scene's render moves
-    // Babylon's — driven before anything hangs on it (`core/renderId.ts`).
-    driveFromScene(this.renderId, this.scene);
+    // cache is keyed on OUR render id, moved by our frame where the scene's
+    // render moved Babylon's (`core/renderId.ts`, `SceneFrame.render`).
     this.playerView = new PlayerView(this.scene, this.mats, this.cameraSys.camera, this.renderId);
     this.player = new Player(this.playerView);
     this.player.shotRand = this.random.stream(STREAM.player);
@@ -3843,7 +3888,7 @@ export class Game {
   private setProfiling(on: boolean): void {
     if (on === this.prof.armed) return;
     if (on) {
-      this.prof.arm(this.scene, this.glow);
+      this.prof.arm(this.scene, this.sceneFrame, this.glow);
       this.prof.setMap(this.mapDef.id);
     } else {
       this.prof.disarm();
@@ -4784,11 +4829,14 @@ export class Game {
     // …and the glazing and the fading pools (X4.6e), all of them read inside the
     // render, where the camera and the frustum are this frame's.
     this.drawBlended();
-    this.scene.render();
+    // THE FRAME, ours (`core/SceneFrame.ts`, `BABYLON_EXIT.md` X5.4f): what
+    // `scene.render()` did, in its order — the camera's update and matrices,
+    // the render id, the draw phase, the post chain — where it was called.
+    this.sceneFrame.render();
     this.prof.end(P.render);
     // AFTER the render, because the render is the thing being waited for: a
     // frame's share of the reflection bake is released from inside
-    // `scene.render` and has already been issued by the time this line runs,
+    // the frame's render and has already been issued by the time this line runs,
     // so asking here is asking about a frame that happened rather than one
     // that is about to. It is not an arm of the switch above and must not
     // become one — `loading` simulates nothing and this decides nothing about
@@ -4796,8 +4844,8 @@ export class Game {
     if (this.bakeWait) this.updateBakeWait();
 
     // The frame is closed LAST, after the bake's drain, so `frame` is the whole
-    // of what the render loop did rather than most of it — and after
-    // `scene.render()` in particular, because Babylon's counters are what that
+    // of what the render loop did rather than most of it — and after the
+    // frame's render in particular, because the counters are what that
     // render just did and asking any earlier reports the previous frame's.
     //
     // The context is gathered behind `armed` rather than pushed unconditionally
@@ -6444,7 +6492,7 @@ export class Game {
    * which the drawing draws behind its screen door — and their centres kept for
    * the order and the bloom the render pulls (`bodyPull`). Once a frame, in EVERY
    * state, after everything that poses or places a body and after the cull,
-   * immediately before `scene.render` — inside the render span, where
+   * immediately before the frame's render — inside the render span, where
    * Babylon composed the rigs' meshes until X4.1a, so the profiler's
    * attribution does not move. A body not drawn is not composed — and while
    * the draw is not installed (the menu) none is: `commit`
@@ -6485,7 +6533,7 @@ export class Game {
   /**
    * What our renderer PULLS inside the render (`BodyDraw`'s prepare), where
    * the render has placed the camera — whose `globalPosition` is the
-   * inverted view matrix's translation, which `scene.render` makes, not
+   * inverted view matrix's translation, which the frame's render makes, not
    * `camera.position` — for this frame's `n` drawn bodies (`drawBodies`):
    *
    * - each body's segments in the ORDER Babylon's queue drew a rig's meshes:
@@ -6804,7 +6852,7 @@ export class Game {
    *
    * Once a frame, in EVERY state, after everything that moves a piece (the
    * pools' own steps, `NetSession.update`, `PlayerView.stepped`) and after
-   * the cull, immediately before `scene.render` — inside the render span,
+   * the cull, immediately before the frame's render — inside the render span,
    * where Babylon composed the pools' meshes until X4.4b. While the draw is
    * not installed (the menu) none is composed.
    */
@@ -7672,7 +7720,7 @@ export class Game {
    * present hulls drawn whole, then fading ones, in hardstanding order.
    *
    * Once a frame, in EVERY state, after everything that writes a joint and
-   * after the cull, immediately before `scene.render` — inside the render
+   * after the cull, immediately before the frame's render — inside the render
    * span, where Babylon composed the hulls' nodes until X4.2a (the compose
    * itself is `fadeHulls`', in the cull span, since X4.2d's post-commit
    * review). A hull not present is not drawn, and while the draw is not
@@ -11323,7 +11371,7 @@ export class Game {
     this.prof.disarm();
     // Two spare rows: the frame that ends the run is recorded half-way, and
     // a ring that laps by one would drop the run's first frame.
-    this.prof.arm(this.scene, this.glow, script.frames + 2);
+    this.prof.arm(this.scene, this.sceneFrame, this.glow, script.frames + 2);
     this.prof.setMap(this.mapDef.id);
     this.prof.setSegments(script.segments);
     this.profChip.setArmed(true);
@@ -11731,7 +11779,7 @@ export class Game {
    *
    * The shader's own eye is deliberately NOT here. It is the one thing in this
    * list a state that simulates nothing still owes, so `tick` pushes it for
-   * every state instead — see the call above `scene.render()`.
+   * every state instead — see the call above the frame's render.
    */
   private updateSceneForCamera(
     dt: number,

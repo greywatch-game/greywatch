@@ -393,7 +393,7 @@ export class ProbeBake {
     const view = this.view;
     if (released.length === 0 || !view || !this.ready) return;
     const frame = this.frame;
-    this.frameBindings.refresh(this.renderer.host, this.renderer.textures);
+    this.frameBindings.refresh(this.renderer.textures);
     if (!view.drawable(this.group0)) return;
     const probes = Math.min(released.length, this.perFrame);
     // The frame every face shares, once; each face's camera — its

@@ -338,7 +338,8 @@ function unmoved(j: Joint, s: Float64Array): boolean {
  * id, and only a recompose touches the parent. The render id is handed in as a
  * function, and it is OURS (`core/renderId.ts`, `BABYLON_EXIT.md` X5.4b): a
  * counter with Babylon's meaning, moved at the two points a frame
- * `scene.render` moved Babylon's (X5.4a's log). Only EQUALITY between ids is
+ * `scene.render` moved Babylon's (X5.4a's log) — by our frame since X5.4f
+ * (`core/SceneFrame.ts`), the scene never rendered. Only EQUALITY between ids is
  * ever asked, so a counter moved where Babylon's moved gives every answer
  * Babylon's id gave.
  *

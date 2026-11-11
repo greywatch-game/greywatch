@@ -194,3 +194,19 @@
 # writes on both trees, listed write by write).
 **.whole.submits[*].writes.writeBuffer
 **.whole.submits[*].writes.bytes
+#
+# X5.4f: the post chain's passes are OUR renderer's (`render/ChainPasses.ts`):
+# a pool target made as `PostPasses` made its `RenderTargetTexture` and its pass
+# begun as `bindFramebuffer` and `clear` began one, the canvas's pass begun as
+# `_startMainRenderPass(false)` began Babylon's main pass (the swap chain's
+# texture, a `depth32float` of our own, both loaded) — every pass's
+# attachments, label, targets, draws, bind groups and hashes compared, and
+# equal, and every queue write the same in number and bytes — but recorded on
+# Babylon's UPLOAD encoder after the frame's own passes, where Babylon began
+# them on its RENDER encoder, which holds nothing now. So every chain pass's
+# `role` moves (render → upload; every pass of every scenario reads `upload`
+# after it), and `whole`'s per-buffer item lists move with them; the frame's
+# command ORDER across the two buffers is the same item for item (X5.4f's
+# record: `wholeflat.cjs` over all 34 scenarios, 562 items).
+**.passes[*].role
+**.whole.submits[*].buffers[*].items

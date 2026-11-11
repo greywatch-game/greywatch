@@ -294,10 +294,9 @@ export class BodyDraw {
       bodyOrder: this.orderBuffer,
       bodyMatrices: this.matrixBuffer,
     };
-    const host = renderer.host;
     this.geometry = new HostBindGroup(device, "bodies: geometry", BODY_GEOMETRY, [], shared);
     // No textures: resolved once, whole for good.
-    this.geometry.refresh(host, {});
+    this.geometry.refresh({});
 
     this.celBlock = new UniformBlockBuffer(device, CEL_MATERIAL_BLOCK, BODY_CEL_DEFINES, "bodies: material");
     this.celGroup = new HostBindGroup(
@@ -308,16 +307,16 @@ export class BodyDraw {
       { [CEL_MATERIAL_BLOCK.var]: this.celBlock.buffer },
     );
     // The variant binds no texture of its own.
-    this.celGroup.refresh(host, {});
+    this.celGroup.refresh({});
     this.visorBlock = new UniformBlockBuffer(device, EMISSIVE_BLOCK, EMISSIVE_BLOCK_DEFINES, "bodies: visor");
     this.visorGroup = new HostBindGroup(device, "bodies: visor", [EMISSIVE_BLOCK], [], {
       [EMISSIVE_BLOCK.var]: this.visorBlock.buffer,
     });
-    this.visorGroup.refresh(host, {});
+    this.visorGroup.refresh({});
     this.glowGroup = new HostBindGroup(device, "bodies: bloom", BODY_GLOW, [], { bodyGlow: this.glowBuffer });
-    this.glowGroup.refresh(host, {});
+    this.glowGroup.refresh({});
     this.fadeGroup = new HostBindGroup(device, "bodies: fades", BODY_FADE, [], { bodyFade: this.fadeBuffer });
-    this.fadeGroup.refresh(host, {});
+    this.fadeGroup.refresh({});
 
     const programs = bodyPrograms(kits.length, segments, celSpan, visorSpan);
     const ask = (

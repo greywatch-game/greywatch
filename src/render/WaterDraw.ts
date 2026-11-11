@@ -209,7 +209,7 @@ export class WaterDraw {
     this.vertices = up("vertices", positions, GPUBufferUsage.STORAGE);
     this.geometry = new HostBindGroup(device, "water: geometry", WATER_GEOMETRY, [], { positionData: this.vertices });
     // No textures: resolved once, whole for good.
-    this.geometry.refresh(this.renderer.host, {});
+    this.geometry.refresh({});
     this.grid = { first: 0, count: grid.indices.length, baseVertex: 0 };
     this.quad = { first: grid.indices.length, count: quad.indices.length, baseVertex: grid.positions.length / 3 };
     this.values = values;
@@ -369,10 +369,9 @@ export class WaterDraw {
     this.ours = committed && values !== null && this.built !== null && this.geometry !== null;
     if (!this.ours) return;
     this.shared.write(values!);
-    const host = this.renderer.host;
-    this.frameGroup.refresh(host, this.renderer.textures);
+    this.frameGroup.refresh(this.renderer.textures);
     const surfaces = this.surfaces;
-    for (let i = 0; i < surfaces.length; i++) surfaces[i].group.refresh(host, surfaces[i].handles);
+    for (let i = 0; i < surfaces.length; i++) surfaces[i].group.refresh(surfaces[i].handles);
   };
 
   /** `Renderer.onRefused`: the main pass drew nothing of ours, this included. */

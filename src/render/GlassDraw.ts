@@ -333,7 +333,7 @@ export class GlassDraw {
       transforms: buffer("transforms", transforms, GPUBufferUsage.STORAGE),
     });
     // No textures: resolved once, whole for good.
-    this.geometry.refresh(this.renderer.host, {});
+    this.geometry.refresh({});
     this.backedOrder = new Int32Array(this.surfaces.length);
     this.backedKeys = new Float64Array(this.surfaces.length);
   }
@@ -362,7 +362,7 @@ export class GlassDraw {
       [CEL_MATERIAL_BLOCK.var]: block.buffer,
     });
     const handles = { reflectionCube };
-    group.refresh(this.renderer.host, handles);
+    group.refresh(handles);
     surface.material = { block, group, handles };
   }
 

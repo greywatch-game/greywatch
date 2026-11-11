@@ -3425,20 +3425,47 @@ comment. Escape the backtick or write the name bare. It is the same class of tra
 as the `//`-with-a-`;` one below and it bites in the opposite direction: that one
 is the preprocessor eating code, this one is JavaScript eating the shader.
 
-## Our renderer's frame: inside Babylon's, through one seam
+## Our renderer's frame: the game's, through one seam to the engine
 
-**Our renderer (`src/render/`) draws inside Babylon's frame and owns
-everything it draws with**: the frame's uniform buffer, every bind-group
-layout and every pipeline — and since `BABYLON_EXIT.md` X5.4e the frame's own
-TARGETS and PASSES (below). It reaches Babylon through ONE object,
-`BabylonFrameHost` (`render/babylonSeam.ts`), which implements the
-renderer's `FrameHost` interface (`render/frameHost.ts`). Nothing else in
-the directory names a Babylon type. The seam only names them: every import
-there is `import type`, so the Babylon-free gate walks it with the rest of
-the directory. When the game takes the frame (`BABYLON_EXIT.md` X5.4), a
-host of its own implements `FrameHost` and the renderer does not notice.
+**The FRAME is the game's since `BABYLON_EXIT.md` X5.4f** (`core/SceneFrame.ts`):
+the scene is never rendered. `Game.tick` calls `sceneFrame.render()` where it
+called `scene.render()`, and it does what that did for this game, in its
+order, read off Babylon 9.28's `Scene._renderFrame` and `_renderForCamera` and
+the frame's logs (`plans/webgpu-ref/post.mjs`, `readers.mjs`): the frame id;
+`scene.animate()` (public API: the animation RATIO the particle fields' clock
+reads); the active camera's `update()`; `onBeforeRenderObservable` (the frame
+sized, `ChainPasses.prepareFrame`); `onBeforeRenderTargetsRenderObservable`
+(the reflection bake's share); the render id's first advance (under
+`renderTargetsEnabled`); then the camera's render — the second advance,
+`scene.updateTransformMatrix()` (public API, so the view, the projection and
+the scene's transform matrix are Babylon's own arithmetic, to the bit — the
+camera log, `readers.mjs camera`, holds it), the EVALUATION (the viewmodel's
+render cache settled, `RenderId.evaluated`), the render targets' point again
+(raised twice a frame, as the scene's was), the draw phase's two ends (our
+renderer's `begin` and `end`, the glow, the profiler's `drawWorld`), and
+`onAfterCameraRenderObservable` (the post chain); and last
+`onAfterRenderObservable` and the canvas's pass if nothing began one. Each
+point is a Babylon `Observable` of the FRAME's own, named for the scene's it
+replaces, so every observer behaves as it did; nothing raises the scene's. What
+`scene.render()` did and this does not is what nothing in a round reached —
+the readiness check, transient components, the per-frame counters
+(`SceneInstrumentation`'s, which therefore stop moving), the component stages,
+the custom and camera render targets, Babylon's binds and clears, the
+active-mesh walk (`WorldCulling`'s candidate list is retired with it), the
+rendering manager, the post-process manager, the pointer pick and the dispose
+queue — listed in `SceneFrame`'s header.
+
+**Our renderer (`src/render/`) owns everything it draws with**: the frame's
+uniform buffer, every bind-group layout and every pipeline, the frame's own
+TARGETS and PASSES (X5.4e, below) and the post chain's (X5.4f, below). Its
+`FrameHost` (`render/frameHost.ts`) is the game's frame's (`SceneFrame.host`),
+which reaches Babylon's ENGINE through ONE object, `BabylonEngineSeam`
+(`render/babylonSeam.ts`): the device, the encoder Babylon submits first and
+the end of frame. Nothing else in the directory names a Babylon type. The seam
+only names them: every import there is `import type`, so the Babylon-free gate
+walks it with the rest of the directory.
 **Every Babylon INTERNAL the renderer reaches is on the numbered list in the
-seam's header.** At X3.2 there were five: the device, the lazily-started
+seam's header** — TWO since X5.4f, the device (1) and the upload encoder (9). At X3.2 there were five: the device, the lazily-started
 pass, the bundle list, the pass's attachment wrapper, and the render
 target (its identity and its flip). X3.3a added three: rendering group 0's
 `onBeforeTransparentRendering`, a texture's own `GPUTextureView`, and the
@@ -3447,7 +3474,8 @@ encoder Babylon submits ahead of the frame's draws, which the cluster cull is
 recorded into (`FrameHost.prepareEncoder`, below). X3.5 added a tenth: the
 group's `_renderAlphaTest`, WRAPPED while the main pass's group 0 renders, so
 a draw can land between its opaque and alpha-tested lists (below). That list
-only shrinks after Phase 3.
+only shrinks after Phase 3: X5.3d retired 6 and 10, and X5.4f 2, 3, 4, 5, 7
+and 8 with the last passes of Babylon's they reached, the post chain's.
 Two older touches in one file (`FrameProfile`'s) are not the renderer's and
 stay where they are, listed in the seam's header with the step each leaves at;
 one of them patches a Babylon class's prototype, a value this directory may not
@@ -3464,7 +3492,7 @@ with Babylon's bake at X3.7c.
 and its blur's five (`rgba16float`), each as Babylon's `RenderTargetTexture`
 made the target it replaces — one level, one sample, usage 23, viewed whole,
 zero-filled when made — and remakes one where its owner resized Babylon's: the
-frame and its depth when the render size moves (`PostPasses.prepareFrame`, as
+frame and its depth when the render size moves (`ChainPasses.prepareFrame`, as
 the frame starts), the glow's six on every `GlowPass` resize (a size or rung
 change; Babylon's `resize` remade a target whatever its size). The renderer
 records the passes into the encoder Babylon submits FIRST (item 9), after the
@@ -3477,10 +3505,11 @@ MAIN pass, the colour loaded and the depth cleared again, as the camera's
 render bound the target, both every frame the camera draws, whatever is to
 draw; then, from the same end, the MASK (`recordGlowMask`: cleared to black
 with alpha 1, the frame's depth loaded) and each pass of the BLUR
-(`glowBlurPass`: loaded, no depth). The post chain, which `PostPasses` still
-opens on Babylon's RENDER encoder, reads them; `gpu.frame` and `present` keep
-Babylon's meaning, since every pass is still inside its timer and its one
-submit. **So the scene clears nothing**: `Game` holds `scene.autoClear` AND
+(`glowBlurPass`: loaded, no depth). The post chain, whose passes are ours too
+since X5.4f and recorded after these in the same encoder (`ChainPasses`,
+below), reads them; `gpu.frame` and `present` keep Babylon's meaning, since
+every pass is still inside its timer and its one submit, and Babylon's RENDER
+encoder, submitted after, holds nothing. **So the scene clears nothing**: `Game` holds `scene.autoClear` AND
 `autoClearDepthAndStencil` false, and the camera has no `outputRenderTarget`
 (X5.2d's field, deleted) — with no output target, Babylon's only clear would be
 one of the CANVAS at the frame's first bind, a pass no frame before had; the
@@ -3488,9 +3517,11 @@ camera's own render binds nothing (`Scene.render` hands it `bindFrameBuffer` =
 "has an output target"). The canvas's boot frames keep X5.2d's state (what the
 swap chain hands over).
 
-**A draw into a pass of BABYLON's is QUEUED into Babylon's order, never
-issued** — since X5.4e only the post chain's (below); the main pass, the mask
-and the blur were the same until then. Under
+**A draw into a pass of BABYLON's was QUEUED into Babylon's order, never
+issued** — the main pass, the mask and the blur until X5.4e, the post chain's
+until X5.4f; no draw of ours is in a pass of Babylon's since, the rule below
+being the history of why every `FrameDraw` still sets everything it uses and
+changes none of the four. Under
 `compatibilityMode = false` Babylon does not draw into the pass as it goes.
 It records render bundles into `engine._bundleList` and replays the list
 into the pass when the pass ENDS. A raw `pass.draw` from an observable
@@ -3593,23 +3624,38 @@ which is what keeps the door open for two neighbours to be FUSED later (a
 fusion drops the 8-bit rounding between them: never byte-exact, a later
 `Picture change:`). The passes are Babylon's, opened by the Babylon-side owner
 `shaders/PostPasses.ts` with public API, after the camera's render
-(`onAfterCameraRenderObservable`). **The chain reads OUR frame**
+(`onAfterCameraRenderObservable`), until **X5.4f made them ours**
+(`render/ChainPasses.ts`, recorded into the encoder Babylon submits first,
+after the frame's own): a pool target is made as `PostPasses` made its
+`RenderTargetTexture` (`rgba8unorm`, one level, usage 23, viewed whole, remade
+when the render size moves) and its pass begun as `bindFramebuffer` and
+`clear` began one — the colour cleared to the scene's clear colour, no depth,
+labelled `PostProcessRTT-<reader> - RenderPass` — whether or not its stage
+then draws; the canvas's pass is Babylon's MAIN pass — the swap chain's
+current texture, viewed as `ViewDescriptorSwapChain` described it, and a
+`depth32float` of the swap chain's size (usage 16, never cleared: nothing reads
+it, the grade writes it under `always`), both LOADED, labelled
+`MainRenderPass` — begun EXACTLY ONCE a frame: by the last stage, or, on a
+frame no stage reached the canvas, empty at the frame's end
+(`ChainPasses.finishFrame`), where `Scene._renderFrame`'s closing
+`restoreDefaultFramebuffer` began Babylon's. **The chain reads OUR frame**
 (`FrameTargets.frame`, X5.4e; the scene drew STRAIGHT INTO a frame of
 `PostPasses`' from X5.2d — a `RenderTargetTexture` made as Babylon made the
 ink's input, held as the camera's `outputRenderTarget`, which the scene bound
 and cleared itself — until X5.4e made the frame and its passes ours, above),
 sized to the render size as the frame starts (`onBeforeRenderObservable`, by
-`PostPasses`, which reads it) and named for the stage that reads it
+`ChainPasses`, which reads it; `PostPasses` until X5.4f) and named for the stage that reads it
 (`PostProcessRTT-celInk`, as Babylon named the ink's input: the label the
 frame's two passes wear). **The frame's OPENING pass is the frame's** (an empty
 pass, the clear) where it was the canvas's until X5.2d, and the main pass LOADS
 the colour that pass cleared. No
 Babylon `PostProcess` stands on the camera, so `_finalizeFrame` returns at once. The canvas is opened with
 `restoreDefaultFramebuffer`, as `_finalizeFrame` opened it for Babylon's last
-pass, and the last stage's draw goes in through `Renderer.postStageOpened`
+pass, and the last stage's draw went in through `Renderer.postStageOpened`
 (`passIs` against `canvasTargets`: the swap chain's format, the ENGINE's
 `depth32float`, written with compare `always` as Babylon's last pass wrote it,
-not flipped). **The canvas is cleared by no pass any more**: the last stage
+not flipped), until X5.4f: the canvas's pass is begun from those targets since,
+so the stage takes its pipeline by construction. **The canvas is cleared by no pass any more**: the last stage
 overwrites it whole on every frame the chain draws, and on a boot frame before
 the chain's pipelines are built it holds what the swap chain hands over
 (transparent zeros) where the scene's opening clear left the clear colour —
@@ -3801,14 +3847,15 @@ against them by construction** (X5.4e; until then `Renderer` checked BABYLON's
 open pass against them on every frame, `FrameHost.passIs`, and a pass that
 differed drew nothing — the bundle trap, where one pipeline whose attachment
 state the pass cannot take poisons the bundle and blacks out the frame; that
-check stands for the post chain's passes, still Babylon's). What is left to
+check stood for the post chain's passes, Babylon's until X5.4f, which are begun
+from `POST_TARGETS` and `canvasTargets` since). What is left to
 refuse is a frame whose targets are not made yet with something to draw.
 **Drawing nothing is a HOLE wherever ours stands in for Babylon's**, so every
 `onRefused` listener is told on the frame it happens: `BlockHandover` stops
 our side and fails the world (`Game.worldFailed`, after the task in hand),
 since X3.7b there being no Babylon mesh to give a block back to. The refused
 frame is the one drawn without them, and the last of the round. No frame draws
-before `PostPasses` has sized the targets, so this is a backstop, not a path.
+before `ChainPasses` has sized the targets, so this is a backstop, not a path.
 
 **The frame's uniforms are ONE block, declared once and filled by a pull.**
 `render/frame.ts`'s `FRAME_BLOCK` is group 0, binding 0 of every program.
@@ -3870,12 +3917,11 @@ bind group a frame rather than one per material.
   X5.4d) and, since X5.1b, the irradiance volume's seven
   (`render/GiCompute.ts`). No frame texture is a `HostTexture` any more.
 - **A handle is read EVERY frame**, its view and sampler as its owner holds
-  them now — or, for a texture the HOST still owns (the post chain's pool,
-  X5.4f's; the glow's targets, the frame and `FrameDepth`'s wrapper were until
-  X5.4e),
-  resolved by the host (`FrameHost.bind`) into Babylon's own `GPUTextureView`
-  and the `GPUSampler` out of Babylon's own cache, for the state Babylon's bind
-  would use. So nothing is copied (`BABYLON_EXIT.md` rule 5), and a texture
+  them now — every one our renderer's since X5.4f (a texture the HOST owned —
+  the post chain's pool until X5.4f; the glow's targets, the frame and
+  `FrameDepth`'s wrapper until X5.4e — was resolved by the host,
+  `FrameHost.bind`, into Babylon's own `GPUTextureView` and the `GPUSampler`
+  out of Babylon's own cache). So nothing is copied (`BABYLON_EXIT.md` rule 5), and a texture
   its owner replaces — a quality change re-creates a shadow map — is picked up
   on the next frame.
 - **A bind group is re-made only on the frame a view or sampler changed**
@@ -5527,7 +5573,11 @@ AREA. Measured (`ENGINE_UPGRADE.md` S0, wall 1): **1.10 us per mesh per frame**,
 of a 30.3 ms frame at 1500 m and 7.6 of 10.1 ms at 900/300. Frustum culling does
 not help; it is the decision this walk REACHES.
 
-**The lever is `Scene.getActiveMeshCandidates` and it must stay that lever.**
+**The lever was `Scene.getActiveMeshCandidates`, and it stayed that lever
+until the walk itself went** (`BABYLON_EXIT.md` X5.4f: the scene is never
+rendered, so nothing asks it, and the candidate list is retired; the cells,
+the reach, the size gate and the pools' fades this section argues are what
+`WorldCulling` still decides for our renderer's culls).
 This is the supported extension point — it is what `createOrUpdateSelectionOctree`
 replaces — it is read in exactly one place, and a mesh left out of it is skipped
 ENTIRELY rather than skipped cheaply.

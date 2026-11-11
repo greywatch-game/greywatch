@@ -56,7 +56,7 @@
  * `writeHullDrawing` writes each segment's world (that local times its
  * joint's) for the drawing, once a frame from `Game` — the compose in
  * `fadeHulls` (the cull span), the write in `drawHulls` — after every write
- * and before `scene.render`. No node of a hull is in the scene. The muzzles and the
+ * and before the frame's render (`SceneFrame.render`). No node of a hull is in the scene. The muzzles and the
  * sight are joints with no segment, which nothing in the game reads: the
  * simulation replays them off the record (`hullFrame.ts`' `hullPointToRef`),
  * the same chain these compose.

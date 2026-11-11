@@ -198,7 +198,6 @@ export class BlastDraw {
     this.billowBuffer = frameBuffer("billows", this.billows.byteLength);
     this.warmthBuffer = frameBuffer("warmth", this.warmth.byteLength);
     this.glowBuffer = frameBuffer("bloom", this.glow.byteLength);
-    const host = renderer.host;
     this.geometry = new HostBindGroup(device, "blasts: geometry", BLAST_GEOMETRY, [], {
       positionData: storage("positions", positions),
       indexData: storage("indices", indices),
@@ -208,12 +207,12 @@ export class BlastDraw {
       blastGlow: this.glowBuffer,
     });
     // No textures: resolved once, whole for good.
-    this.geometry.refresh(host, {});
+    this.geometry.refresh({});
     this.block = new UniformBlockBuffer(device, BLAST_BLOCK, BLOCK_DEFINES, "blasts: material");
     this.material = new HostBindGroup(device, "blasts: material", [BLAST_BLOCK], BLOCK_DEFINES, {
       [BLAST_BLOCK.var]: this.block.buffer,
     });
-    this.material.refresh(host, {});
+    this.material.refresh({});
 
     const programs = blastPrograms();
     const ask = (

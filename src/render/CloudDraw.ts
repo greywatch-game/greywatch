@@ -76,7 +76,7 @@ export class CloudDraw {
   private refusalTold = false;
 
   constructor(
-    private readonly renderer: Renderer,
+    renderer: Renderer,
     failed: (reason: string) => void,
   ) {
     const device = renderer.device;
@@ -86,7 +86,7 @@ export class CloudDraw {
     this.material = new HostBindGroup(device, "clouds: material", [CLOUD_BLOCK], BLOCK_DEFINES, {
       [CLOUD_BLOCK.var]: this.block.buffer,
     });
-    this.material.refresh(renderer.host, {});
+    this.material.refresh({});
 
     const program = cloudProgram();
     this.ready = renderer.pipelines
@@ -159,7 +159,7 @@ export class CloudDraw {
       indexData: this.indexBuffer,
     });
     // No textures: resolved once, whole for good.
-    this.geometry.refresh(this.renderer.host, {});
+    this.geometry.refresh({});
     this.count = indices.length;
     this.recipe = recipe;
   }

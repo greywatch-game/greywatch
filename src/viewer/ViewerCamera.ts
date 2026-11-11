@@ -11,9 +11,10 @@
  * Babylon's. The editor's copy went with the editor (X5.3c).
  *
  * It writes CameraSystem's FreeCamera rather than creating a second one on
- * purpose: the post chain's pass owner (`PostPasses`, which sizes the frame and
- * opens every stage's pass, the ink's among them since `BABYLON_EXIT.md` X5.2d)
- * and the glow are bound to that camera INSTANCE, so a second camera would
+ * purpose: the post chain's pass owner (`ChainPasses` since `BABYLON_EXIT.md`
+ * X5.4f, `PostPasses` before it, which sizes the frame and begins every
+ * stage's pass, the ink's among them since X5.2d) and the glow are bound to
+ * that camera INSTANCE (`scene.activeCamera` is asked to be it), so a second camera would
  * render without the chain or the bloom until they were rebound.
  * What it overwrites is put back by the session that made it
  * (`ViewerSession.dispose`), because the viewer is a LID: the deploy screen

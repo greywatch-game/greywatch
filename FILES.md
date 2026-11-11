@@ -711,10 +711,21 @@ src/
                         #   meaning (X5.4b): what the viewmodel's RenderCache
                         #   is keyed on, moved at the two points a frame
                         #   scene.render moved Babylon's and settled at its
-                        #   evaluation (driveFromScene, off the scene's public
-                        #   observables until the scene stops rendering), a
-                        #   DEV shadow holding it a constant off Babylon's
-                        #   (drift, must be 0)
+                        #   evaluation — by our frame since X5.4f
+                        #   (SceneFrame; off the scene's public observables,
+                        #   with a DEV shadow against Babylon's id, before)
+    SceneFrame.ts       # THE FRAME, ours (X5.4f): what scene.render() did for
+                        #   this game, in its order — the frame id,
+                        #   scene.animate (the animation ratio), the camera's
+                        #   update, the render id's two advances,
+                        #   scene.updateTransformMatrix (Babylon's matrices,
+                        #   public API), the evaluation, the draw phase, the
+                        #   post chain — called from Game.tick in its place,
+                        #   so the scene is never rendered. Its points are
+                        #   Babylon Observables of its own named for the
+                        #   scene's they replace; its host is our renderer's
+                        #   FrameHost (the seam's device, encoder and end of
+                        #   frame beside the scene's matrix and clear colour)
     teamView.ts         # Which side the player is LOOKING from: the one remap
                         #   between the authority's team INDEX and the team a
                         #   body is DRAWN and NAMED as, so every player sees
@@ -1522,9 +1533,11 @@ src/
                         #   the key onto one plane in KEY space, written as a
                         #   field a slice at a time for Sky to crossfade and
                         #   celCloud to cut. Pure arithmetic — no Babylon
-    WorldCulling.ts     # How much of the map the frame's own mesh walk is
-                        #   offered. Replaces scene.getActiveMeshCandidates and
-                        #   writes NOTHING onto a mesh, which is what leaves
+    WorldCulling.ts     # How much of the map the frame's own mesh walk was
+                        #   offered, and what our renderer's culls are handed
+                        #   in its place. Replaced scene.getActiveMeshCandidates
+                        #   until the scene stopped rendering (X5.4f: the
+                        #   candidate list retired) and writes NOTHING onto a mesh, which is what leaves
                         #   every ray, the shadow map, every cube probe and
                         #   every sweep unable to tell it ran. No collider
                         #   is a mesh (X5.3e), a mesh carrying metadata.block
@@ -2800,43 +2813,27 @@ src/
                         #   X5.2c1 (render/PostChain.ts; its modules
                         #   wgsl/paperGrain.ts). The player's setting is still
                         #   stored as `filmGrain`, which is what it used to be
-    PostPasses.ts       # The post chain's Babylon-side PASS OWNER (X5.2c1):
-                        #   SIZES our renderer's FRAME (FrameTargets, X5.4e;
-                        #   its own render target, the camera's
-                        #   outputRenderTarget, X5.2d to X5.4e) to the render
-                        #   size as the frame starts, names it for its reader,
-                        #   and after the camera's render opens the pool passes
-                        #   for our stages, one target a pass position, bound
-                        #   and cleared as activate bound and cleared a
-                        #   reader's input (X5.2c2), and the canvas
-                        #   (restoreDefaultFramebuffer); public API only
   render/               # OUR renderer (BABYLON_EXIT.md Phase 3). Never imports
                         #   Babylon — the build gate walks every file in it
-    babylonSeam.ts      # THE SEAM: BabylonFrameHost, the one place anything
-                        #   here meets Babylon (types only). Its header numbers
-                        #   every internal it reaches: device, lazy pass, the
-                        #   bundle list our draws are QUEUED into, the pass's
-                        #   attachments, the render target's y-flip, a
-                        #   texture's own view, Babylon's sampler cache and the
-                        #   upload encoder submitted ahead of the draws
-                        #   (prepareEncoder, where the frame's own passes are
-                        #   recorded since X5.4e) — eight, 6 and 10 (group 0's
-                        #   hooks) retired at X5.3d. The draw phase's two ends
-                        #   (onDrawPhase) and the scene's clear colour, public
-                        #   API; items 2 to 5, 7 and 8 reached in the post
-                        #   chain's passes alone since X5.4e (the main pass, the
-                        #   mask and the blur ours), X5.4f's to take.
-                        #   hostTexture, the one crossing that mints a
-                        #   HostTexture
+    babylonSeam.ts      # THE SEAM: BabylonEngineSeam, the one place anything
+                        #   here meets Babylon's engine (types only). Its
+                        #   header numbers every internal it reaches: TWO
+                        #   since X5.4f — the device (1) and the upload encoder
+                        #   submitted first (9, prepareEncoder, where every
+                        #   pass of the frame is recorded) — and the engine's
+                        #   end of frame (afterSubmit), public API; 2 to 5, 7
+                        #   and 8 (the open pass, the bundle list, its
+                        #   attachments and flip, a Babylon texture's view and
+                        #   sampler, and hostTexture) retired at X5.4f, 6 and
+                        #   10 (group 0's hooks) at X5.3d
     frameHost.ts        # FrameHost (what the renderer needs from whoever owns
-                        #   the frame: the device, the draw phase's two ends
-                        #   (onDrawPhase, X5.4e), the scene's clear colour, the
-                        #   queue into a post chain pass its owner asks from
-                        #   inside (X5.2c1), the encoder it submits ahead of
-                        #   the draws — where the frame's own passes are
-                        #   recorded — a texture's view and sampler NOW, a
-                        #   call after every frame's submit — afterSubmit,
-                        #   X5.1b), DrawPhaseHooks, PassTargets, HostTexture
+                        #   the frame — the game's frame since X5.4f,
+                        #   core/SceneFrame.ts: the device, the draw phase's
+                        #   two ends (onDrawPhase, X5.4e), the camera's matrix,
+                        #   the scene's clear colour, the encoder every pass of
+                        #   the frame is recorded into, a call after every
+                        #   frame's submit — afterSubmit, X5.1b),
+                        #   DrawPhaseHooks, PassTargets
     FrameTargets.ts     # THE FRAME'S OWN TARGETS (X5.4e): the frame and its
                         #   depth, the glow's mask and its blur's five, each
                         #   made as Babylon's render target was (one level,
@@ -2844,6 +2841,18 @@ src/
                         #   targets its pipelines are built against, and
                         #   remade where Babylon's was resized; the glow's
                         #   sampler; the frame's pass label. Records nothing
+    ChainPasses.ts      # THE POST CHAIN'S PASS OWNER, ours (X5.4f; Babylon's
+                        #   shaders/PostPasses.ts with public API from X5.2c1):
+                        #   sizes the frame as the frame starts and names it
+                        #   for its reader; the POOL (one target a pass
+                        #   position, made as Babylon's RenderTargetTexture
+                        #   was, rgba8unorm, usage 23, remade with the render
+                        #   size) and its passes, cleared to the scene's
+                        #   colour; the CANVAS's pass (Babylon's main pass: the
+                        #   swap chain's texture, a depth32float of its own,
+                        #   both loaded), begun exactly once a frame — by the
+                        #   last stage, or empty at the frame's end
+                        #   (finishFrame) — all into the prepare encoder
     Renderer.ts         # Renderer: the frame's uniforms, textures and their
                         #   group 0, the pipeline cache, the TextureMaker
                         #   (the textures the game paints, X5.4d), the frame's
@@ -2877,11 +2886,11 @@ src/
                         #   the mask's pass (recordGlowMask), off the main
                         #   pass's frame (onGlowMaskRefused); a GLOW BLUR
                         #   draw in a pass begun around it (glowBlurPass,
-                        #   X5.2b, X5.4e); a POST CHAIN stage's draw QUEUED
-                        #   into the host's pass (postStageOpened, X5.2c1),
-                        #   refused unless the targets its pipeline was built
-                        #   for; a prepare is handed the FrameContext (group
-                        #   0) as a draw is
+                        #   X5.2b, X5.4e); a prepare is handed the FrameContext
+                        #   (group 0) as a draw is. (A POST CHAIN stage's draw
+                        #   was QUEUED into the host's pass, postStageOpened,
+                        #   from X5.2c1 until X5.4f: its passes are
+                        #   ChainPasses')
     targets.ts          # FRAME_TARGETS, stated once: rgba8unorm, depth32float,
                         #   1 sample, flipY (the frame FrameTargets makes, as
                         #   CelInk's input was; not the canvas);
@@ -2909,8 +2918,8 @@ src/
     FrameUniformBuffer.ts # The frame block's UniformBlockBuffer, laid out for
                         #   the palette's variant; one buffer per pass
     HostBindGroup.ts    # A bind group from a group's DECLARED entries: our
-                        #   buffers, the host's textures and our own
-                        #   (OwnTexture), re-resolved every frame and re-made
+                        #   buffers and our textures (OwnTexture; the host's
+                        #   too until X5.4f), re-read every frame and re-made
                         #   only when a view moved
     PipelineCache.ts    # Shader modules, explicit bind-group layouts and
                         #   createRenderPipelineAsync pipelines, keyed on
@@ -3107,8 +3116,9 @@ src/
                         #   a pass per active stage in list order, the first
                         #   reading the frame, the last given the canvas
                         #   (canvasTargets) and any other a pool target
-                        #   (POST_TARGETS), opened by a PostPassOwner
-                        #   (shaders/PostPasses.ts); Babylon's quad, Internals,
+                        #   (POST_TARGETS), begun by a PostPassOwner
+                        #   (render/ChainPasses.ts, X5.4f) and ended here;
+                        #   Babylon's quad, Internals,
                         #   each stage's block, sampler, pipelines and groups;
                         #   "the post chain" on Game.roundPipelines
     ParticleDraw.ts     # EVERY PARTICLE FIELD as OUR renderer runs it (X4.7c

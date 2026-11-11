@@ -15,8 +15,10 @@
  * into that depth in the mask; the targets are resized here, all six at once,
  * whenever the frame's size or the rung moved, before the mask is asked for;
  * this file imports nothing of `src/render/` (`GlowDraws` is the crossing);
- * and every Babylon call is public API (the draw phase's observable, the
- * engine's render height and scaling level).
+ * and every Babylon call is public API (the engine's render height and
+ * scaling level); the end of the draw phase is the game's own frame's
+ * (`core/SceneFrame.ts`, `BABYLON_EXIT.md` X5.4f; the scene's observable
+ * until then).
  *
  * WHAT IT REPLACED, AND WHY. The bloom was a `GlowLayer` with `GlowDepth`
  * bolted on from the outside. The layer is built to own four things — its
@@ -152,6 +154,7 @@
  */
 import { type Camera, Observable, type Scene } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import type { SceneFrame } from "../core/SceneFrame";
 
 /** A rung of the Glow setting — derived from the config for `VolumetricRung`'s reason. */
 export type GlowRung = keyof typeof CONFIG.graphics.glowTiers;
@@ -251,10 +254,12 @@ export class GlowPass {
 
   constructor(
     private readonly scene: Scene,
+    /** The frame whose draw phase's end the mask is drawn at (`core/SceneFrame.ts`). */
+    frame: Pick<SceneFrame, "onAfterDrawPhaseObservable">,
     private readonly camera: Camera,
     private readonly draws: GlowDraws,
   ) {
-    scene.onAfterDrawPhaseObservable.add(() => this.render());
+    frame.onAfterDrawPhaseObservable.add(() => this.render());
   }
 
   /**
@@ -283,15 +288,15 @@ export class GlowPass {
    * mask's pass are never two sizes.
    */
   private render(): void {
-    // Only `Scene._renderForCamera` notifies this observable (Babylon 9.28,
-    // `scene.pure.js` 4180; no render target's manager does, a reflection
-    // probe's bake included), so this guards against a camera other than the
+    // Only the frame's camera render raises this point (`SceneFrame.render`,
+    // where `Scene._renderForCamera` raised the scene's, Babylon 9.28,
+    // `scene.pure.js` 4180), so this guards against a camera other than the
     // frame's being drawn, which nothing does today. Harmless, and kept.
     if (this.scene.activeCamera !== this.camera) return;
     const draws = this.draws;
     const w = draws.frameWidth();
     const h = draws.frameHeight();
-    // No frame made yet (no `PostPasses.prepareFrame` has sized one): no depth
+    // No frame made yet (no `ChainPasses.prepareFrame` has sized one): no depth
     // to borrow — as Babylon's mask had no frame target to share one from.
     if (w === 0 || h === 0) return;
     this.onBeforeWorkObservable.notifyObservers();

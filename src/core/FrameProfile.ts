@@ -88,8 +88,10 @@
  *    X4.3d emptied them, and was retired with report version 24).
  *    They are the one part of this file `Game` does not bracket, because the
  *    boundaries they want are inside a Babylon call and there is nowhere in
- *    `Game.ts` to put them — `hookRender` hangs them off the scene's own
- *    observables instead, and carries the argument that they cannot overlap.
+ *    `Game.ts` to put them — `hookRender` hangs them off the frame's own
+ *    points instead (the game's frame's since `BABYLON_EXIT.md` X5.4f,
+ *    `core/SceneFrame.ts`; the scene's observables until then), and carries
+ *    the argument that they cannot overlap.
  *
  *    **What they measure is CPU, and under `compatibilityMode = false` that is
  *    the recording of a render BUNDLE rather than the work the GPU then does.**
@@ -149,6 +151,17 @@ import {
   type ProfileSegment,
 } from "./profileReport";
 import { urlFlag } from "./urlOverrides";
+
+/**
+ * What the profiler needs of the FRAME: its draw phase's two ends.
+ * Structural, so this file imports no frame — `SceneFrame` satisfies it
+ * (`BABYLON_EXIT.md` X5.4f; the scene did until then) and `Game` hands it over
+ * at `arm`.
+ */
+export interface DrawPhaseSpans {
+  readonly onBeforeDrawPhaseObservable: Observable<void>;
+  readonly onAfterDrawPhaseObservable: Observable<void>;
+}
 
 /**
  * What the profiler needs of the glow: a pair of notifications around each
@@ -840,6 +853,7 @@ export class FrameProfile {
    */
   arm(
     scene: Scene,
+    frame: DrawPhaseSpans,
     glow: GlowSpans | null = null,
     frames: number = CONFIG.profiling.frames,
   ): void {
@@ -935,7 +949,7 @@ export class FrameProfile {
     // brackets. Registered before `on`, which costs nothing: every one of them
     // goes through `begin`/`endAdd` and returns on the same first line as the
     // rest of this class.
-    this.hookRender(scene, glow);
+    this.hookRender(frame, glow);
     this.hookEngine(scene);
     this.hookCreation();
     this.watchWindow();
@@ -1190,8 +1204,9 @@ export class FrameProfile {
    * Hangs `present` off the ENGINE's end-of-frame notification.
    *
    * **The second place a bracket lives outside `Game.ts`, and for the opposite
-   * reason to `hookRender`'s.** Those three are boundaries INSIDE
-   * `scene.render()`; this one is a boundary `Game` never sees at all, because
+   * reason to `hookRender`'s.** Those three are boundaries INSIDE the frame's
+   * render (`SceneFrame.render`; `scene.render()` until `BABYLON_EXIT.md`
+   * X5.4f); this one is a boundary `Game` never sees at all, because
    * `endFrame` is called by Babylon's render loop after `tick` has returned.
    * There is no line in `Game.ts` that could hold it.
    *
@@ -1324,7 +1339,10 @@ export class FrameProfile {
    * **This is the one place this file's own arrangement bends, and the reason
    * is that there is nowhere in `Game.ts` to put these brackets.** Every other
    * phase is a pair of lines in a method whose order `Game` already declares;
-   * these three are boundaries INSIDE `scene.render()`, and the alternative to
+   * these three are boundaries INSIDE the frame's render (`SceneFrame.render`,
+   * where they were inside `scene.render()` until `BABYLON_EXIT.md` X5.4f:
+   * the points are the frame's own since, raised where the scene raised its
+   * observables, `DrawPhaseSpans`), and the alternative to
    * an observer is no measurement at all. Nothing here reaches for a system —
    * the glow is handed in as two observables (`GlowSpans`), so `GlowPass`
    * still has not heard of this file and does not have to. (`shadowPass` was a
@@ -1387,16 +1405,16 @@ export class FrameProfile {
    * **A render target is bracketed BIND to UNBIND.** The glow is not bracketed
    * as a target at all: it notifies around its mask AND its blur together.
    */
-  private hookRender(scene: Scene, glow: GlowSpans | null): void {
+  private hookRender(frame: DrawPhaseSpans, glow: GlowSpans | null): void {
     const off = this.unhook;
 
     // `drawWorld`: the camera's draw phase, closed where the glow's work opens
     // (below) or, on a frame the glow does no work, where the phase ends — an
     // `endAdd` on a span already closed returns on its first test.
-    const drawOn = scene.onBeforeDrawPhaseObservable.add(() => this.begin(P.drawWorld));
-    off.push(() => scene.onBeforeDrawPhaseObservable.remove(drawOn));
-    const drawOff = scene.onAfterDrawPhaseObservable.add(() => this.endAdd(P.drawWorld));
-    off.push(() => scene.onAfterDrawPhaseObservable.remove(drawOff));
+    const drawOn = frame.onBeforeDrawPhaseObservable.add(() => this.begin(P.drawWorld));
+    off.push(() => frame.onBeforeDrawPhaseObservable.remove(drawOn));
+    const drawOff = frame.onAfterDrawPhaseObservable.add(() => this.endAdd(P.drawWorld));
+    off.push(() => frame.onAfterDrawPhaseObservable.remove(drawOff));
 
     // `shadowPass` is bracketed by nothing: it was a Babylon shadow
     // generator's map, found through `scene.lights`, and the scene has no
@@ -1439,7 +1457,7 @@ export class FrameProfile {
   /**
    * Closes the frame, samples Babylon's counters and advances the ring.
    *
-   * Last line of `tick`, after `scene.render()`: the counters are what that
+   * Last line of `tick`, after the frame's render: the counters are what that
    * render just did, and asking before it would report the previous frame's.
    */
   endFrame(realDeltaMs: number): void {

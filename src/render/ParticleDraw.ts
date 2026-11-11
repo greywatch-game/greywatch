@@ -181,7 +181,7 @@ export class ParticleDraw {
   private readonly deviceMaxTexture: number;
 
   constructor(
-    private readonly renderer: Renderer,
+    renderer: Renderer,
     /** Fills the camera as this frame draws it (`ParticleCamera`). */
     private readonly readCamera: (out: ParticleCamera) => void,
     /** The scene's animation ratio this frame (`scene.getAnimationRatio()`): the fields' clock. */
@@ -448,7 +448,7 @@ export class ParticleDraw {
       }
       slot.block.write(slot.values);
       const b = slot.buffers!;
-      b.draw[field.targetIndex].refresh(this.renderer.host, slot.handles as TextureHandles);
+      b.draw[field.targetIndex].refresh(slot.handles as TextureHandles);
     }
   };
 

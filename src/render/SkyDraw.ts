@@ -113,7 +113,7 @@ export class SkyDraw {
   private maskRefusalTold = false;
 
   constructor(
-    private readonly renderer: Renderer,
+    renderer: Renderer,
     /** `GlowRules.admits`, asked of the moon once a frame. */
     private readonly admits: () => boolean,
     failed: (reason: string) => void,
@@ -247,7 +247,7 @@ export class SkyDraw {
       indexData: indices,
     });
     // No textures: resolved once, whole for good.
-    geometry.refresh(this.renderer.host, {});
+    geometry.refresh({});
     return {
       recipe: piece.recipe,
       block,
@@ -278,14 +278,13 @@ export class SkyDraw {
     this.moonOurs = moon !== null && inView && this.moonPipeline !== null;
     this.maskOurs =
       moon !== null && inView && this.maskPipeline !== null && blooms(moon.recipe.values.skyGlow) && this.admits();
-    const host = this.renderer.host;
     if (dome && this.domeOurs) {
       dome.block.write(dome.recipe.values);
-      dome.material.refresh(host, dome.textures);
+      dome.material.refresh(dome.textures);
     }
     if (moon && (this.moonOurs || this.maskOurs)) {
       moon.block.write(moon.recipe.values);
-      moon.material.refresh(host, moon.textures);
+      moon.material.refresh(moon.textures);
     }
   };
 

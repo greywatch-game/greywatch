@@ -320,7 +320,6 @@ export class PoolDraw {
     this.orderBuffer = frameBuffer("orders", this.upload.byteLength);
     this.matrixBuffer = frameBuffer("matrices", this.matrices.byteLength);
     this.glowBuffer = frameBuffer("bloom", this.glow.byteLength);
-    const host = renderer.host;
     this.positionBuffer = storage("positions", positions, dynamic);
     this.normalBuffer = storage("normals", normals, dynamic);
     this.dynamic = dynamic;
@@ -335,7 +334,7 @@ export class PoolDraw {
       bodyMatrices: this.matrixBuffer,
     });
     // No textures: resolved once, whole for good.
-    this.geometry.refresh(host, {});
+    this.geometry.refresh({});
 
     this.celBlock = new UniformBlockBuffer(device, CEL_MATERIAL_BLOCK, BODY_CEL_DEFINES, `${name}: material`);
     this.celGroup = new HostBindGroup(
@@ -346,15 +345,15 @@ export class PoolDraw {
       { [CEL_MATERIAL_BLOCK.var]: this.celBlock.buffer },
     );
     // The variant binds no texture of its own.
-    this.celGroup.refresh(host, {});
+    this.celGroup.refresh({});
     if (hasUnlit) {
       this.unlitBlock = new UniformBlockBuffer(device, EMISSIVE_BLOCK, EMISSIVE_BLOCK_DEFINES, `${name}: unlit`);
       this.unlitGroup = new HostBindGroup(device, `${name}: unlit`, [EMISSIVE_BLOCK], [], {
         [EMISSIVE_BLOCK.var]: this.unlitBlock.buffer,
       });
-      this.unlitGroup.refresh(host, {});
+      this.unlitGroup.refresh({});
       this.glowGroup = new HostBindGroup(device, `${name}: bloom`, BODY_GLOW, [], { bodyGlow: this.glowBuffer });
-      this.glowGroup.refresh(host, {});
+      this.glowGroup.refresh({});
     } else {
       this.unlitBlock = null;
       this.unlitGroup = null;

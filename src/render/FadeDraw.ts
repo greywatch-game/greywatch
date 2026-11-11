@@ -182,7 +182,7 @@ export class FadeDraw {
         [FADE_BLOCK.var]: this.block.buffer,
       });
     this.plain = group("paint", "emissive");
-    this.plain.refresh(renderer.host, {});
+    this.plain.refresh({});
     this.scorchGroup = group("scorch", "scorch");
     this.blobGroup = group("blob", "blob");
     this.scorchHandles = { opacityTex: scorchMap };
@@ -271,7 +271,7 @@ export class FadeDraw {
       fadeLook: this.lookBuffer,
       fadeGlow: this.glowBuffer,
     });
-    this.geometry.refresh(this.renderer.host, {});
+    this.geometry.refresh({});
   }
 
   /** The first `n` drawn fades' worlds, looks and blooms queued for this frame: the run's pull, once it has written them. */
@@ -404,9 +404,8 @@ export class FadeDraw {
       this.epoch = epoch;
       this.block.write(this.paint.values);
     }
-    const host = this.renderer.host;
-    this.scorchGroup.refresh(host, this.scorchHandles);
-    this.blobGroup.refresh(host, this.blobHandles);
+    this.scorchGroup.refresh(this.scorchHandles);
+    this.blobGroup.refresh(this.blobHandles);
   };
 
   /** `Renderer.onRefused`: the main pass drew nothing of ours, these included. */

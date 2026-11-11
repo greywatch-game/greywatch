@@ -270,10 +270,9 @@ export class HullDraw {
       bodyOrder: this.orderBuffer,
       bodyMatrices: this.matrixBuffer,
     };
-    const host = renderer.host;
     this.geometry = new HostBindGroup(device, "hulls: geometry", BODY_GEOMETRY, [], shared);
     // No textures: resolved once, whole for good.
-    this.geometry.refresh(host, {});
+    this.geometry.refresh({});
 
     this.celBlock = new UniformBlockBuffer(device, CEL_MATERIAL_BLOCK, HULL_CEL_DEFINES, "hulls: material");
     this.celGroup = new HostBindGroup(
@@ -284,9 +283,9 @@ export class HullDraw {
       { [CEL_MATERIAL_BLOCK.var]: this.celBlock.buffer },
     );
     // The variant binds no texture of its own.
-    this.celGroup.refresh(host, {});
+    this.celGroup.refresh({});
     this.fadeGroup = new HostBindGroup(device, "hulls: fades", BODY_FADE, [], { bodyFade: this.fadeBuffer });
-    this.fadeGroup.refresh(host, {});
+    this.fadeGroup.refresh({});
 
     const programs = hullPrograms(segments, this.span, charredSlot);
     const ask = (

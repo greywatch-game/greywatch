@@ -354,10 +354,25 @@ function hangProbe(page) {
       [r.runMaskLate, "maskLate"],
     ]);
     const queue = r.host.queue;
-    r.host.queue = function (run) {
-      if (s.rec) s.log.push({ mark: points.get(run) ?? "queued" });
-      return queue.call(this, run);
-    };
+    if (typeof queue === "function") {
+      r.host.queue = function (run) {
+        if (s.rec) s.log.push({ mark: points.get(run) ?? "queued" });
+        return queue.call(this, run);
+      };
+    } else if (g.postChain?.states) {
+      // OURS (`BABYLON_EXIT.md` X5.4f): no host queue — the post chain's
+      // stages draw into the passes our pass owner begins (`ChainPasses`), so a
+      // stage's draw is marked `queued` where it is recorded, at the same point
+      // of the frame its queueing was (`PostChain.record`, after the camera's
+      // render), and only when it draws, as the queue was asked only then.
+      for (const st of g.postChain.states) {
+        const run = st.run;
+        st.run = function (pass) {
+          if (s.rec) s.log.push({ mark: "queued" });
+          return run.call(this, pass);
+        };
+      }
+    }
     if (typeof r.recordGlowMask === "function") {
       // OURS (`BABYLON_EXIT.md` X5.4e): the main pass, the mask and the blur
       // are the renderer's own passes, their draws RECORDED rather than queued

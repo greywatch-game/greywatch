@@ -20,9 +20,9 @@
  * bindings: `PipelineCache` builds the layout from them), its uniform block
  * (its size and `fill`, handed the size of what it reads — the render size,
  * which every target of the chain is), its EXTRA bindings (`PostExtra`: a
- * texture of the host's, bound with the host's own view and sampler, or one
- * of our renderer's, `OwnTexture`, bound with its owner's; with a sampler
- * binding if it is sampled), the SAMPLER it reads its input with (a property of the
+ * texture of our renderer's, `OwnTexture`, bound with its owner's view and
+ * sampler; with a sampler binding if it is sampled — a texture of the host's,
+ * bound through the host, until `BABYLON_EXIT.md` X5.4f), the SAMPLER it reads its input with (a property of the
  * CONSUMER, never of the target it reads, so it is made here from the
  * stage's descriptor), whether it is `active()` (its setting), and whether it
  * reads its input point-wise or across a neighbourhood (`reads`, what a later
@@ -38,16 +38,18 @@
  * `depth32float` written, compare `always` (`canvasTargets`), and into a
  * texture with no depth (`POST_TARGETS`); `Internals` is Babylon's
  * `UBDontInvertY` into the canvas (+1) and `UBInvertY` into a texture (-1),
- * then the render height; a stage draws only into a pass that is exactly its
- * pipeline's targets (`Renderer.postStageOpened`), and only once its pipeline
+ * then the render height; a stage draws into the pass its owner BEGAN for it,
+ * made from exactly those targets (`render/ChainPasses.ts`, `BABYLON_EXIT.md`
+ * X5.4f — a pass of the HOST's, checked against them per frame by
+ * `Renderer.postStageOpened`, until then), and only once its pipeline
  * for that target is built (a stage not built draws nothing: `drawsReady`
  * says so, and the round's declared list waits for every one, so play never
  * reaches it); nothing here allocates on a frame once its bind groups are
  * made (at the stage's first draw — a shafts rung's at its first frame —
  * and remade only when a view or a sampler it binds changes: a resize, a
  * shadow map re-made by a quality change or handed between its owners).
- * Never: imports Babylon; binds a target — the `PostPassOwner` binds every
- * one, with Babylon's public API, until the game owns the frame (X5.4); draws
+ * Never: imports Babylon; begins a pass — the `PostPassOwner` begins every
+ * one (`ChainPasses`), and `record` ends each once its stage has drawn; draws
  * a stage that is not `active()`; reads the canvas or its depth.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
  *
@@ -59,8 +61,8 @@
  * rounding between two passes, so it is never byte-exact and is a later
  * `Picture change:`.
  */
-import type { BoundTexture, HostTexture, PassTargets } from "./frameHost";
-import { OwnTexture } from "./HostBindGroup";
+import type { PassTargets } from "./frameHost";
+import type { OwnTexture } from "./HostBindGroup";
 import type { BuiltPipeline, PipelineSpec, PipelineState, ShaderSource } from "./PipelineCache";
 import type { Renderer } from "./Renderer";
 import { canvasTargets, POST_TARGETS } from "./targets";
@@ -70,15 +72,15 @@ import type { AssembledBinding } from "./wgsl/assemble";
  * A texture a stage reads beside its input: its binding in group 1, the
  * binding of the sampler it is read with if it is SAMPLED (absent for one
  * read by `textureLoad`, the frame's depth), and what is bound there this
- * frame — the host's texture, bound with the host's own view and sampler,
- * or one our renderer owns, bound with the view and sampler its owner holds
- * (`OwnTexture`, `BABYLON_EXIT.md` rule 5: the shafts' shadow maps, X5.2c2).
+ * frame — one our renderer owns, bound with the view and sampler its owner
+ * holds (`OwnTexture`, `BABYLON_EXIT.md` rule 5: the shafts' shadow maps,
+ * X5.2c2; every one ours since X5.4d).
  */
 export interface PostExtra {
   readonly binding: number;
   readonly samplerBinding?: number;
   /** The texture now, or null while it does not exist yet (the stage then draws nothing). */
-  texture(): HostTexture | OwnTexture | null;
+  texture(): OwnTexture | null;
 }
 
 /** One stage of the chain, as it DECLARES itself (see the header). */
@@ -114,9 +116,10 @@ export interface PostStage {
 }
 
 /**
- * What the side that OPENS the chain's passes does (`shaders/PostPasses.ts`
- * until X5.4): the scene draws `frame`, and each stage of ours draws into a
- * pass it opens, in the order `record` asks.
+ * What the side that BEGINS the chain's passes does (`render/ChainPasses.ts`
+ * since `BABYLON_EXIT.md` X5.4f; `shaders/PostPasses.ts`, with Babylon's
+ * public API, from X5.2c1): our renderer draws `frame`, and each stage draws
+ * into a pass it begins, in the order `record` asks, which `record` ends.
  */
 export interface PostPassOwner {
   /**
@@ -129,16 +132,18 @@ export interface PostPassOwner {
   readonly width: number;
   readonly height: number;
   /**
-   * Opens a pass into pool target `slot` — the POSITION of the pass among
+   * Begins a pass into pool target `slot` — the POSITION of the pass among
    * this frame's passes into the pool, 0 first, so each pass of a frame has a
-   * target of its own as each Babylon pass had an input of its own — bound
+   * target of its own as each Babylon pass had an input of its own — begun
    * and cleared as Babylon's `PostProcess.activate` bound and cleared the
    * input of `reader` (the stage that will read it), named for `reader`;
-   * returns the target.
+   * returns the pass, which the caller ends.
    */
-  openPool(slot: number, reader: PostStage): HostTexture;
-  /** Opens the canvas's pass: the last active stage's. */
-  openCanvas(): void;
+  openPool(slot: number, reader: PostStage): GPURenderPassEncoder;
+  /** What pool target `slot` holds once its pass has ended: the next stage's input. */
+  poolOutput(slot: number): OwnTexture;
+  /** Begins the canvas's pass, the last active stage's; returns it, which the caller ends. */
+  openCanvas(): GPURenderPassEncoder;
 }
 
 /** The two kinds of target a stage is drawn into. */
@@ -210,7 +215,6 @@ export class PostChain {
   private readonly internalsHeight = [-1, -1];
   /** Group 0, which every pipeline here declares EMPTY, made once against the first layout seen. */
   private empty: GPUBindGroup | null = null;
-  private readonly bound: BoundTexture = { view: null, sampler: null };
 
   constructor(
     private readonly renderer: Renderer,
@@ -275,26 +279,30 @@ export class PostChain {
   /**
    * The chain's passes for this frame, in list order: each active stage is
    * handed the output before it (the first, the frame) and drawn into the
-   * pass the owner opens for it — the canvas for the last, a pool target
-   * for any other, one a position (`PostPassOwner.openPool`). Called by the
-   * owner once the scene has drawn `frame`; a stage whose pipeline is not
-   * built, or whose bindings do not exist yet, draws nothing in its pass.
+   * pass the owner begins for it — the canvas for the last, a pool target
+   * for any other, one a position (`PostPassOwner.openPool`) — which is ended
+   * here once it has. Called by the owner once our renderer has drawn
+   * `frame`; a stage whose pipeline is not built, or whose bindings do not
+   * exist yet, draws nothing in its pass, which is begun and ended all the
+   * same (as Babylon began a pass it had bound and cleared).
    */
   record(owner: PostPassOwner): void {
     const last = this.lastActive();
     if (last < 0) return;
-    let input: HostTexture | OwnTexture = owner.frame;
+    let input: OwnTexture = owner.frame;
     let slot = 0;
     for (let i = 0; i <= last; i++) {
       const s = this.states[i];
       if (!s.stage.active()) continue;
       if (i === last) {
-        owner.openCanvas();
-        this.draw(s, CANVAS, input, owner);
+        const pass = owner.openCanvas();
+        this.draw(s, CANVAS, input, owner, pass);
+        pass.end();
       } else {
-        const out = owner.openPool(slot, this.nextActive(i));
-        this.draw(s, POOL, input, owner);
-        input = out;
+        const pass = owner.openPool(slot, this.nextActive(i));
+        this.draw(s, POOL, input, owner, pass);
+        pass.end();
+        input = owner.poolOutput(slot);
         slot++;
       }
     }
@@ -350,8 +358,14 @@ export class PostChain {
     );
   }
 
-  /** The stage's block, its bind group and its draw, queued into the pass just opened. */
-  private draw(state: StageState, kind: number, input: HostTexture | OwnTexture, owner: PostPassOwner): void {
+  /** The stage's block, its bind group and its draw, recorded into the pass just begun. */
+  private draw(
+    state: StageState,
+    kind: number,
+    input: OwnTexture,
+    owner: PostPassOwner,
+    pass: GPURenderPassEncoder,
+  ): void {
     const built = state.pipelines[kind];
     if (!built) {
       // Never asked for this kind (a list that grew): asked now, as a miss.
@@ -359,26 +373,17 @@ export class PostChain {
       return;
     }
     const st = state.stage;
-    const host = this.renderer.host;
-    const b = this.bound;
-    // The frame is ours (its own view); a pool target the host's, read
-    // through the host's own view (`FrameHost.bind`) until X5.4f.
-    if (input instanceof OwnTexture) b.view = input.view;
-    else host.bind(input, b);
-    const inputView = b.view;
+    // The frame and a pool target are ours alike (a pool target the host's,
+    // read through the host's own view, until `BABYLON_EXIT.md` X5.4f).
+    const inputView = input.view;
     if (!inputView) return;
     for (let i = 0; i < st.extras.length; i++) {
       const x = st.extras[i];
       const t = x.texture();
-      if (!t) return;
-      if (t instanceof OwnTexture) {
-        b.view = t.view;
-        b.sampler = t.sampler;
-      } else host.bind(t, b);
-      if (!b.view) return;
-      if (x.samplerBinding !== undefined && !b.sampler) return;
-      state.extraViews[i] = b.view;
-      state.extraSamplers[i] = x.samplerBinding !== undefined ? b.sampler : null;
+      if (!t || !t.view) return;
+      if (x.samplerBinding !== undefined && !t.sampler) return;
+      state.extraViews[i] = t.view;
+      state.extraSamplers[i] = x.samplerBinding !== undefined ? t.sampler : null;
     }
     // The block, written only when a value moved.
     st.fill(state.values, owner.width, owner.height);
@@ -427,7 +432,7 @@ export class PostChain {
     }
     this.empty ??= this.device.createBindGroup({ label: "post chain: group 0", layout: built.groups[0], entries: [] });
     state.pipeline = built;
-    this.renderer.postStageOpened(kind === CANVAS ? this.canvas : POST_TARGETS, state.run);
+    state.run(pass);
   }
 
   private run(pass: GPURenderPassEncoder, state: StageState): void {

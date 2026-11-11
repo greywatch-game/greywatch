@@ -22,7 +22,8 @@
  * through none of their own (the ink reads the frame with its own sampler,
  * every stage the depth by `textureLoad`); a target is made at its first size
  * and REMADE when its owner resized Babylon's — the frame and its depth when
- * the render size moves (`PostPasses` resized its target only then), the
+ * the render size moves (`PostPasses` resized its target only then, and
+ * `ChainPasses` asks it so since X5.4f), the
  * glow's six on every `sizeGlow` (`GlowPass` resized all six on a size or rung
  * change, and Babylon's `resize` remade a target whatever its size) — so a
  * remade target holds zeros; the texture it replaces is destroyed after
@@ -36,7 +37,7 @@
  * Never: imports Babylon; records a pass — `Renderer` records every pass into
  * these (the frame's clear and main pass, the mask) and the glow's blur
  * draws into the other five (`GlowBlur`); sizes itself — the frame is sized
- * by whoever reads the render size (`PostPasses`), the glow's by its rules
+ * by whoever reads the render size (`ChainPasses`), the glow's by its rules
  * (`GlowPass`).
  * Contract: `docs/rendering.md`, "Our renderer's frame" and "The glow".
  */
@@ -80,7 +81,7 @@ export class FrameTargets {
   /**
    * The label the frame's two passes wear: Babylon labelled a pass by its
    * target's name, and named the frame for the stage that READS it
-   * (`PostProcessRTT-<label>`, `PostPasses.prepareFrame`).
+   * (`PostProcessRTT-<label>`, `ChainPasses.prepareFrame`).
    */
   frameLabel = "postChain frame - RenderPass";
   private readonly retired: GPUTexture[] = [];

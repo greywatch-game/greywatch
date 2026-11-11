@@ -322,7 +322,6 @@ export class ViewDraw {
     };
     this.matrixBuffer = frameBuffer("matrices", this.matrices.byteLength);
     this.glowBuffer = frameBuffer("bloom", this.glow.byteLength);
-    const host = renderer.host;
     this.geometry = new HostBindGroup(device, "view: geometry", VIEW_GEOMETRY, [], {
       positionData: storage("positions", positions),
       normalData: storage("normals", normals),
@@ -333,18 +332,18 @@ export class ViewDraw {
       viewMatrices: this.matrixBuffer,
     });
     // No textures: resolved once, whole for good.
-    this.geometry.refresh(host, {});
+    this.geometry.refresh({});
     this.emissiveBlock = new UniformBlockBuffer(device, EMISSIVE_BLOCK, EMISSIVE_BLOCK_DEFINES, "view: emissive");
     this.emissiveGroup = new HostBindGroup(device, "view: emissive", [EMISSIVE_BLOCK], [], {
       [EMISSIVE_BLOCK.var]: this.emissiveBlock.buffer,
     });
-    this.emissiveGroup.refresh(host, {});
+    this.emissiveGroup.refresh({});
     this.glowGroup = new HostBindGroup(device, "view: bloom", VIEW_GLOW, [], { viewGlow: this.glowBuffer });
-    this.glowGroup.refresh(host, {});
+    this.glowGroup.refresh({});
     this.glassGroup = new HostBindGroup(device, "view: glass", VIEW_GLASS, [], {
       viewGlass: storage("glass", glassTable),
     });
-    this.glassGroup.refresh(host, {});
+    this.glassGroup.refresh({});
     // The card's sampler: what Babylon's WebGPU cache made of a trilinear
     // sampling mode with no mips — linear both ways, the LOD clamped to 0,
     // clamped in u and v (w at its default, which a 2D lookup never reads),
@@ -362,7 +361,7 @@ export class ViewDraw {
       maxAnisotropy: 1,
     });
     this.cardGroup = new HostBindGroup(device, "view: kit card", VIEW_CARD, [], {});
-    this.cardGroup.refresh(host, { viewCard: this.cardHandle });
+    this.cardGroup.refresh({ viewCard: this.cardHandle });
 
     const emissive = viewEmissivePrograms();
     const blended = viewBlendedPrograms();
@@ -442,7 +441,7 @@ export class ViewDraw {
       });
       this.cardTexture = texture;
       this.cardHandle.view = texture.createView();
-      this.cardGroup.refresh(this.renderer.host, { viewCard: this.cardHandle });
+      this.cardGroup.refresh({ viewCard: this.cardHandle });
       this.cardDestination = { texture, premultipliedAlpha: false };
       this.cardExtent[0] = w;
       this.cardExtent[1] = h;
@@ -482,7 +481,7 @@ export class ViewDraw {
       this.emissiveBlock.write(this.emissiveRecipe.values);
       for (const [recipe, slot] of this.materials) {
         slot.block.write(recipe.values);
-        slot.group.refresh(this.renderer.host, recipe.textures);
+        slot.group.refresh(recipe.textures);
       }
     }
   }
@@ -518,7 +517,7 @@ export class ViewDraw {
       { [CEL_MATERIAL_BLOCK.var]: block.buffer },
     );
     block.write(recipe.values);
-    group.refresh(this.renderer.host, recipe.textures);
+    group.refresh(recipe.textures);
     this.materials.set(recipe, { block, group, pipeline: this.cels.get(key)! });
   }
 

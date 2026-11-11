@@ -65,6 +65,7 @@
  */
 import { type Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import type { SceneFrame } from "../core/SceneFrame";
 import { Vector3 as MathVector3 } from "../math";
 import type { GlassDraw } from "../render/GlassDraw";
 import type { ProbeBake, ProbeExclusion, ProbeJob } from "../render/ProbeBake";
@@ -158,6 +159,8 @@ export class ReflectionSystem {
 
   constructor(
     private readonly scene: Scene,
+    /** The frame whose render-target points release the bake (`core/SceneFrame.ts`). */
+    frame: Pick<SceneFrame, "onBeforeRenderTargetsRenderObservable">,
     private readonly mats: CelMaterialFactory,
     /** Our renderer's half of the bake: the cubes and their faces. */
     private readonly bake: ProbeBake,
@@ -165,10 +168,12 @@ export class ReflectionSystem {
     private readonly glass: Pick<GlassDraw, "surfaces" | "point">,
   ) {
     // This frame's share of whatever bake is outstanding. It rides the render
-    // targets' hook rather than a `Game.tick` call because our renderer
-    // records a probe released here as the same frame's main pass begins.
-    // Nothing outside this file knows the bake is spread.
-    scene.onBeforeRenderTargetsRenderObservable.add(() => this.releaseOurs());
+    // targets' point rather than a `Game.tick` call because our renderer
+    // records a probe released here as the same frame's main pass begins —
+    // the game's own frame's point since `BABYLON_EXIT.md` X5.4f
+    // (`SceneFrame`: raised TWICE a frame, the frame's and the camera's, as the
+    // scene's observable was). Nothing outside this file knows the bake is spread.
+    frame.onBeforeRenderTargetsRenderObservable.add(() => this.releaseOurs());
     // The default cube exists before any map does: nothing bakes into it
     // (WebGPU makes it zeroed, alpha 0 on every face and level, which is the
     // sky), and it is only ever bound at a strength of 0, so no pixel reads

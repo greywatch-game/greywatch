@@ -427,7 +427,9 @@ frame                       the whole tick, wall to wall
 │                           inside render since X5.1b, by our late prepare
 │                           (their GPU time is gpu.frame's)
 ├─ audio                    pushHullEngines
-└─ render                   scene.render()
+└─ render                   the handover and SceneFrame.render (the frame,
+                            ours since X5.4f; scene.render() until then —
+                            the same steps in the same order)
    ├─ shadowPass            a Babylon generator's depth map, on the frames
    │                        that re-rendered it — none in a round since
    │                        X4.1c, nothing opens it since X5.3d deleted the
@@ -441,7 +443,9 @@ frame                       the whole tick, wall to wall
    │                        chain after it is in `render` and named by
    │                        nothing, OURS WHOLE since X5.2d (the grade since
    │                        X5.2c1, the ink last), queued at the camera's end
-   │                        (`PostPasses`) — no span moved, no report version
+   │                        (`PostPasses`) and its passes ours since X5.4f
+   │                        (`ChainPasses`, recorded at the same point) — no
+   │                        span moved, no report version
    └─ drawWorld             the camera's DRAW PHASE up to the glow's work
                             (report version 36): Babylon's group 0 when it
                             visits one, and our draws only QUEUED here at
@@ -607,8 +611,11 @@ against `frameMs`: where the two rise together the main thread was busy, and
 where `frameMs` rises alone it was not.
 
 **The last three are not brackets in `Game.ts` and cannot be**, because the
-boundaries they want are inside `scene.render()`. `FrameProfile.hookRender`
-hangs them off the scene's own observables at `arm` and takes them off again at
+boundaries they want are inside the frame's render (`SceneFrame.render`;
+`scene.render()` until `BABYLON_EXIT.md` X5.4f). `FrameProfile.hookRender`
+hangs them off the frame's own points (`DrawPhaseSpans`: the frame's draw-phase
+observables, raised where the scene raised its own, which it hung off until
+X5.4f) at `arm` and takes them off again at
 `disarm`, finding the shadow map through `scene.lights` and taking the glow
 as two observables handed to `arm` (`GlowSpans`) — so no system knows about
 them either.
@@ -1202,8 +1209,14 @@ panel's cap means something outside this instrument is.
 draw-call bound and Babylon's WebGPU backend charges CPU per draw — which is why
 `SceneInstrumentation`'s counters ride alongside: `drawCalls`, `activeMeshes`,
 `meshWalkMs` (the scene walk `ENGINE_UPGRADE.md` S1 is about) and `renderTargetsMs` (the shadow map
-and the reflection bake). Those four are what the big bar is made of, and a
-change in them is the change worth chasing. Two readings taken by hand-wrapping
+and the reflection bake). Those four are what the big bar was made of, and a
+change in them is the change worth chasing. **Since `BABYLON_EXIT.md` X5.4f
+the scene is never rendered** (`core/SceneFrame.ts`), so nothing raises the
+observables `SceneInstrumentation` times and the three timers stay at what
+they last read (0 from an arm after boot; `drawCalls` and `activeMeshes` were
+0 already, Babylon drawing nothing), and `gpu.mainPass` times no pass: the
+canvas's pass is ours (`render/ChainPasses.ts`) and carries no timestamp of
+Babylon's. Both are retired in X5.4g's report version; read neither. Two readings taken by hand-wrapping
 belong beside it (Windows box, live round, 2026-08-26, before the paint palette —
 `docs/rendering.md`, "Why the frame is draw-call bound"):
 

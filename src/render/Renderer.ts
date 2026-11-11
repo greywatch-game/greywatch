@@ -2,8 +2,10 @@
  * render/Renderer.ts — Our renderer: the device, the frame's uniforms and
  * their buffer, the pipeline cache, the frame's own targets and passes — the
  * opening clear, the main pass, the glow's mask and its blur (`BABYLON_EXIT.md`
- * X5.4e) — and the draws it records into them, and into the post chain's
- * passes, the only ones of the HOST's it draws in (X5.2c1, until X5.4f).
+ * X5.4e) — and the draws it records into them. (The post chain's passes,
+ * which the HOST opened and this queued a stage's draw into until X5.4f, are
+ * our renderer's too: `render/ChainPasses.ts` begins them and the chain draws
+ * in them, `render/PostChain.ts`.)
  * Owns: `Renderer` — the frame's `FrameUniforms` and `FrameUniformBuffer`,
  * its `FrameTextures` and the bind group they make with the buffer (group 0
  * of every program, `FrameContext.frameGroup`, handed to a prepare as to a
@@ -49,8 +51,10 @@
  * camera draws, whatever is to draw; then, asked by `GlowPass` from the same
  * end, the mask (`recordGlowMask`: cleared to black with alpha 1, the frame's
  * depth loaded) and the blur's passes (`glowBlurPass`, each loaded) — so the
- * post chain, which the host opens on the encoder it submits AFTER this one,
- * reads them, and `gpu.frame` and `present` keep Babylon's meaning until X5.4g;
+ * post chain, whose passes `ChainPasses` begins in the same encoder after
+ * these (X5.4f; the host opened them on the encoder it submits after this
+ * one until then), reads them, and `gpu.frame` and `present` keep Babylon's
+ * meaning until X5.4g;
  * every target is made from the targets its pipelines are built against
  * (`FRAME_TARGETS`, `GLOW_TARGETS`, `GLOW_BLUR_TARGETS`), so a pass of ours
  * takes them by construction and is never tested; a frame draws only if it was
@@ -63,19 +67,16 @@
  * LAST (`addGlowMaskLate`) — with the main pass's refusal rule and listeners
  * of its own (`onGlowMaskRefused`);
  * a GLOW BLUR draw reads no frame of ours, so it is recorded whether or not
- * `begin` filled one; a POST-CHAIN draw (`postStageOpened`,
- * `render/PostChain.ts`) is QUEUED into the host's pass, only one that is
- * exactly the targets its stage's pipeline was built for;
+ * `begin` filled one;
  * **no draw here needs anything of Babylon's in group 0**: the points are told
  * by this file, in their order, at the end of every draw phase
  * (`BABYLON_EXIT.md` X4.5a, X5.4e);
  * the mask reads the MAIN pass's frame — the same camera, in the same submit
  * — so it binds the same group 0; nothing here allocates on a frame.
- * Never: imports Babylon — it is handed a `FrameHost`; draws into any of the
- * HOST's passes but a pass of the post chain when asked from inside it (a
- * prepare's pass into a texture of ours is the prepare's); reads a Babylon
- * material; records a pass of the frame's anywhere but the host's prepare
- * encoder.
+ * Never: imports Babylon — it is handed a `FrameHost`; draws into a pass of
+ * anyone else's (a prepare's pass into a texture of ours is the prepare's;
+ * the post chain's are `ChainPasses`'); reads a Babylon material; records a
+ * pass of the frame's anywhere but the host's prepare encoder.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
  *
  * WHERE A DRAW LANDS, at one of seven points of the main pass, six of them
@@ -146,7 +147,7 @@ import {
   type FrameTextures,
   type FrameUniforms,
 } from "./frame";
-import type { FrameHost, PassTargets } from "./frameHost";
+import type { FrameHost } from "./frameHost";
 import { type FrameTarget, FrameTargets } from "./FrameTargets";
 import { FrameUniformBuffer } from "./FrameUniformBuffer";
 import { HostBindGroup } from "./HostBindGroup";
@@ -310,8 +311,6 @@ export class Renderer {
   private refused = false;
   /** The same, for the glow's mask. */
   private maskRefused = false;
-  /** The same, for a stage of the post chain (`postStageOpened`). */
-  private postRefused = false;
   /** The frame's clear colour this frame (`FrameHost.clearColor`), written in place. */
   private readonly clearValue: GPUColorDict = { r: 0, g: 0, b: 0, a: 1 };
   /**
@@ -565,34 +564,6 @@ export class Renderer {
     pass.end();
   }
 
-  /**
-   * A pass of the POST CHAIN is open (`render/PostChain.ts`, `BABYLON_EXIT.md`
-   * X5.2c1): its owner (`shaders/PostPasses.ts`) has bound the target a stage
-   * of ours draws into — the canvas, Babylon's main pass, for the last active
-   * stage — and the chain asks, before anything else is bound, for `run` to
-   * draw there. Queues it — only into a pass that is exactly `targets`, the
-   * attachments the stage's pipeline was built for; one that is not draws
-   * nothing of ours, with one console error per change — and says whether it
-   * did. It reads no frame of ours, so it is queued whether or not `begin`
-   * filled one. `run` is queued as handed, so it must be the same function
-   * every frame (`FrameHost.queue` keeps one list item per function).
-   */
-  postStageOpened(targets: PassTargets, run: (pass: GPURenderPassEncoder) => void): boolean {
-    if (!this.host.passIs(targets)) {
-      if (!this.postRefused) {
-        console.error(
-          "render: a pass of the post chain is not what its stage's targets state — drawing nothing of ours in it",
-          { open: this.host.openPass(), stated: targets },
-        );
-      }
-      this.postRefused = true;
-      return false;
-    }
-    this.postRefused = false;
-    this.host.queue(run);
-    return true;
-  }
-
   dispose(): void {
     this.hook.dispose();
     this.firstDraws.length = 0;
@@ -651,7 +622,7 @@ export class Renderer {
     this.host.viewProjection(this.frame.viewProjection);
     this.frameBuffer.write(this.frame);
     this.fillTextures(this.textures);
-    this.frameBindings.refresh(this.host, this.textures);
+    this.frameBindings.refresh(this.textures);
     const prepares = this.prepares;
     const late = this.latePrepares;
     if (prepares.length + late.length === 0) return;
@@ -675,7 +646,7 @@ export class Renderer {
    * Babylon ran its queue: the moment the next pass of the frame began, which
    * was the glow's mask's, right behind this. A frame `begin` did not fill
    * still clears and opens the main pass, as Babylon's did; a frame whose
-   * targets are not made yet (no `PostPasses.prepareFrame` has sized them)
+   * targets are not made yet (no `ChainPasses.prepareFrame` has sized them)
    * records nothing, and is a refusal if something was to draw.
    */
   private readonly end = (): void => {

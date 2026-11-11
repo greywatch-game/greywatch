@@ -985,7 +985,8 @@ export class ViewModel {
    * listed for our renderer (`ViewTree.evaluated`, which `Game.drawView`
    * hands over).
    * Called by `Game.drawView` once a frame in every state, after every write
-   * and immediately before `scene.render`, beside `drawBodies` and `drawHulls`.
+   * and immediately before the frame's render (`SceneFrame.render`), beside
+   * `drawBodies` and `drawHulls`.
    */
   drawView(): void {
     this.tree.draw();

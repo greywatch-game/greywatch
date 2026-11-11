@@ -146,12 +146,11 @@ export class FlameDraw {
   ) {
     const device = renderer.device;
     this.device = device;
-    const host = renderer.host;
     this.block = new UniformBlockBuffer(device, FLAME_BLOCK, BLOCK_DEFINES, "fires: material");
     this.material = new HostBindGroup(device, "fires: material", [FLAME_BLOCK], BLOCK_DEFINES, {
       [FLAME_BLOCK.var]: this.block.buffer,
     });
-    this.material.refresh(host, {});
+    this.material.refresh({});
 
     const programs = flamePrograms();
     const ask = (
@@ -263,7 +262,7 @@ export class FlameDraw {
       flameGlow: glowBuffer,
     });
     // No textures: resolved once, whole for good.
-    geometry.refresh(this.renderer.host, {});
+    geometry.refresh({});
     this.world = { owned, matrixBuffer, glowBuffer, geometry, first, count };
   }
 

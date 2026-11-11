@@ -32,8 +32,11 @@ inside and taken that away. `VERIFYING.md` says how to wait for it from a script
 ## The cycle
 
 `Game`'s state machine is `menu -> loading -> deploy -> playing -> dying ->
-deploy`, with `roundover` when a side runs out of tickets. The 3D scene renders
-in **every** state, which is what lets the deploy screen sit over a live view.
+deploy`, with `roundover` when a side runs out of tickets. The FRAME is drawn
+in **every** state, which is what lets the deploy screen sit over a live view —
+ours since `BABYLON_EXIT.md` X5.4f (`core/SceneFrame.ts`: what `scene.render()`
+did, in its order, called from `tick` where it was; the scene itself is never
+rendered, and Babylon begins no pass in any state).
 **In the page's own match that view is HELD**: `deploy` steps no world —
 `tick`'s arm runs the deploy screen and the page's own respawn countdown and
 nothing else, so nothing posts the match an `advance` (`updateWorld` is the one

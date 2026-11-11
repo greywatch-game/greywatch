@@ -129,7 +129,7 @@ export class WorldDepth {
           buffers,
         );
         // No textures: resolved once, whole for good.
-        bound.refresh(renderer.host, {});
+        bound.refresh({});
         return bound;
       };
       return { group, plain: make(false), scatter: group.scatterRange >= 0 && instances ? make(true) : null };

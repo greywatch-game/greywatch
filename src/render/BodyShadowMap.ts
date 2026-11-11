@@ -149,7 +149,7 @@ export class BodyShadowMap {
       proxyMatrices: this.matrices,
     });
     // No textures: resolved once, whole for good.
-    this.geometry.refresh(renderer.host, {});
+    this.geometry.refresh({});
 
     const program = bodyDepth();
     this.ready = renderer.pipelines

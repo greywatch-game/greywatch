@@ -11,10 +11,11 @@
  * each pass of the glow's blur is — our renderer's own targets since
  * `BABYLON_EXIT.md` X5.4e, MADE from these (`render/FrameTargets.ts`), so
  * each of those passes takes its pipelines by construction; and
- * `POST_TARGETS` and `canvasTargets` what a post-chain stage's pass is, a pass
- * of the HOST's until X5.4f, checked by `Renderer` on every frame it draws
- * there (`FrameHost.passIs`) — a pass that is not REFUSES the draw rather
- * than recording a pipeline it cannot take.
+ * `POST_TARGETS` and `canvasTargets` what a post-chain stage's pass is —
+ * our renderer's own since X5.4f, BEGUN from these (`render/ChainPasses.ts`),
+ * where until then it was a pass of the HOST's, checked by `Renderer` on
+ * every frame it drew there (`FrameHost.passIs`), a pass that was not
+ * refusing the draw.
  * Never: imports Babylon; is read off the pass per draw — a pipeline is
  * compiled ahead, so the formats it is compiled for must be known ahead.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
@@ -27,6 +28,7 @@
  * keyed on attachment state). What the frame draws into is the FRAME — our
  * renderer's target since `BABYLON_EXIT.md` X5.4e (`FrameTargets.frame`),
  * `PostPasses`' render target (the camera's `outputRenderTarget`) from X5.2d
+ * to X5.4e
  * — made as the post chain's first target, `CelInk`'s input, was: one
  * `rgba8unorm` colour attachment (a post-process's default texture), one
  * sample (`main.ts` builds the engine with `antialias: false`), and

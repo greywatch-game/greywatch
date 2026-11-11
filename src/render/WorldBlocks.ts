@@ -996,7 +996,7 @@ export class WorldBlocks {
     const entries = celGeometry(stride);
     group.geometry = new HostBindGroup(this.renderer.device, label, entries, defines, buffers);
     // No textures: resolved once, whole for good.
-    group.geometry.refresh(this.renderer.host, {});
+    group.geometry.refresh({});
   }
 
   /** Asks for a group's pipeline; a failure hands every member to `onFailed`, at once. */
@@ -1083,7 +1083,7 @@ export class WorldBlocks {
     block.write(recipe.values);
     const group = new HostBindGroup(device, label, [EMISSIVE_BLOCK], [], { [EMISSIVE_BLOCK.var]: block.buffer });
     // No textures: resolved once, whole for good.
-    group.refresh(this.renderer.host, {});
+    group.refresh({});
     return { recipe, block, group };
   }
 
@@ -1094,7 +1094,7 @@ export class WorldBlocks {
       buffers[a.from] = group.arrays[k];
     });
     group.geometry = new HostBindGroup(this.renderer.device, `world blocks: ${labelOf(group)} geometry`, EMISSIVE_GEOMETRY, [], buffers);
-    group.geometry.refresh(this.renderer.host, {});
+    group.geometry.refresh({});
   }
 
   private materialOf(recipe: CelRecipe): MaterialSlot {
@@ -1203,7 +1203,7 @@ export class WorldBlocks {
         group.material.recipe.defines,
         buffers,
       );
-      bound.refresh(this.renderer.host, {});
+      bound.refresh({});
       return bound;
     });
     const view: DrawView = { cull: clusters, instances, geometry };
@@ -1395,7 +1395,7 @@ export class WorldBlocks {
    */
   private groupsFor(group: Group, built: BuiltPipeline, geometry: HostBindGroup | null, group0: FrameGroup): boolean {
     const material = group.material;
-    if (material) material.group.refresh(this.renderer.host, material.recipe.textures);
+    if (material) material.group.refresh(material.recipe.textures);
     const own = material ? material.group : group.emissive?.group;
     const frame = group0(built.groups[0]);
     const mine = own?.get(built.groups[1]);

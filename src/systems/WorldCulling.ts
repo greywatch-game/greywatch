@@ -1,21 +1,27 @@
 /**
- * WorldCulling.ts — What the frame's own mesh walk is allowed to see.
- * Owns: `Scene.getActiveMeshCandidates`; the map's cull CELLS, one a block,
+ * WorldCulling.ts — What the frame's own mesh walk was allowed to see, and
+ * what our renderer's culls are handed in its place.
+ * **The mesh walk is gone** (`BABYLON_EXIT.md` X5.4f): the scene is never
+ * rendered (`core/SceneFrame.ts`), so `Scene.getActiveMeshCandidates` is never
+ * asked, and the candidate list this file handed Babylon every frame — the
+ * `eligible` list and its per-frame `candidates`, the emissive exemption, a
+ * loose mesh's size gate — was retired with it. The prose below argues the
+ * design the cells, the gate and the pools still carry; where it speaks of
+ * the candidate list, read it as the history of the numbers this file still
+ * decides.
+ * Owns: the map's cull CELLS, one a block,
  * each cell's box grown from the RECORDS of every surface filed under its
  * block (`SurfaceRecord.bounds`, X3.7a) — a surface our renderer draws, which
  * has no mesh since X3.7b, as much as one Babylon draws — and Babylon's
- * block-keyed meshes filed into them; the list handed back to Babylon each
- * frame; and the reach and the size gate this file decides, handed to our
+ * block-keyed meshes filed into them (none on a shipped build); and the reach
+ * and the size gate this file decides, handed to our
  * renderer's GPU cull as numbers (`reachGate`) with the box each of its
  * surfaces is measured to (`reachBoxOf`, by the BLOCK) — and, since
  * `BABYLON_EXIT.md` X4.4d, whether a cell's block-keyed surfaces are offered
  * this frame (`offersBlock`), which our renderer's FIRES are drawn by.
- * There are TWO lists and they run on different clocks: `eligible` is the
- * structural answer, rebuilt only when a cell, a pool or the scene's
- * membership moves, and `candidates` is that list minus whatever is switched
- * off THIS frame (`offer`, run every frame). The second exists because an
- * effect pool idles with `isVisible = false` several times a second and a
- * rebuild is `O(scene)`.
+ * Two answers run on different clocks: what a cell OFFERS (`offersBlock`) is
+ * snapshotted only when a cell crosses its threshold (`rebuildList`), and the
+ * pools' verdicts and the gate's numbers are taken every frame (`offer`).
  * Invariants: it NEVER writes `setEnabled`, `isVisible`, `isPickable` or any
  * other property on a mesh — the whole of what it does is decide which meshes
  * Babylon is offered as candidates for the ACTIVE-MESH pass, and nothing else
@@ -152,7 +158,7 @@ import type { AbstractMesh, Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { type BlockBox, F32_MAX, type ReachGate } from "../render/ClusterCull";
 import type { GameMap } from "../world/MapBuilder";
-import type { SurfaceBounds, SurfaceRecord } from "../world/worldGeometry";
+import type { SurfaceRecord } from "../world/worldGeometry";
 
 /**
  * The reach box of the LANDFORM — the floor, the rim and the road merge, which
@@ -258,78 +264,7 @@ interface Pool {
   fade: number;
 }
 
-/**
- * Whether a mesh's paint EMITS light, which is the one thing a size gate must
- * never drop.
- *
- * Exact rather than a name test: a material carrying an `emissiveColor` is a
- * light source — `CelMaterialFactory.getEmissive`'s unlit `StandardMaterial`,
- * or the fire (`FlameMaterial`), which declares one for this test and the
- * glow's, and is worn by no mesh since the map editor's fires went with it
- * (`BABYLON_EXIT.md` X5.3c; every fire is our renderer's since X4.4d, and no
- * size gate drops one: `offersBlock` reads the reach alone) — the map's
- * emissive palette, `EmissiveWorldMaterial`, declares one too, and is worn by
- * no mesh: our renderer draws it.
- * Every lit surface wears a plain `ShaderMaterial`, which has no such property
- * to read.
- */
-function glows(mesh: AbstractMesh): boolean {
-  const mat = mesh.material as { emissiveColor?: { r: number; g: number; b: number } } | null;
-  const e = mat?.emissiveColor;
-  return e !== undefined && e.r + e.g + e.b > 0.01;
-}
-
 export class WorldCulling {
-  /**
-   * The list Babylon is handed. An `ISmartArrayLike`, which is `{ data, length
-   * }` and nothing else — written as a plain object rather than a `SmartArray`
-   * so this file imports no Babylon value at all.
-   */
-  private readonly candidates: { data: AbstractMesh[]; length: number } = {
-    data: [],
-    length: 0,
-  };
-
-  /**
-   * What the list would be if nothing in it were switched off — the structural
-   * answer, rebuilt only when a cell, a pool or the scene's membership moves.
-   *
-   * `candidates` is this list minus whatever is switched off THIS frame, and
-   * the two are separate because they change on completely different clocks: a
-   * cell crosses its threshold when the camera has walked twenty metres, and a
-   * tracer goes out four frames after it was fired. Marking the list dirty for
-   * the second would mean a full `O(scene)` rebuild many times a frame, which
-   * is the wrong trade in the other direction — see `offer`.
-   */
-  private eligible: AbstractMesh[] = [];
-
-  /**
-   * How `offer`'s size gate treats a mesh, where the plain per-mesh test is
-   * not the answer — decided once when the list is built rather than per
-   * frame, and ABSENT for the ordinary case.
-   *
-   * **Anything EMISSIVE maps to `null` and is never gated at all**, because
-   * the glow makes a sub-pixel emitter visible well past its own geometry and
-   * dropping one puts a lit window out on a night map. The test is exact
-   * rather than a guess at a name: only a light source HAS an `emissiveColor`
-   * at all — see `glows`. (A body's visor is no mesh since `BABYLON_EXIT.md`
-   * X4.1d, so it no longer meets this rule: it is drawn with its body and
-   * drops WITH it — `drawsBody` — never left hanging where the soldier was.)
-   *
-   * **A mesh filed in a CELL maps to its record's bounds** (`SurfaceRecord.
-   * bounds`), and is tested off that sphere rather than its mesh's, because
-   * X3.7 asks the size gate to read the record wherever the cells do
-   * (`BABYLON_EXIT.md` X3.7a). A candidate is still a mesh; the record and the
-   * mesh hold the same numbers bit for bit (`npm run merge:hash` checks every
-   * visual), so the verdict is the one the mesh's own sphere gave. Every
-   * other mesh — a loose one, an effect — is absent and tested off its own
-   * bounding info.
-   */
-  private gateOf = new Map<AbstractMesh, SurfaceBounds | null>();
-
-  /** Every mesh filed in a cell, and the bounds its record holds — see `gateOf`. */
-  private filedBounds = new Map<AbstractMesh, SurfaceBounds>();
-
   /** Every drawn map mesh that carries a block, and the cell it was filed in. */
   private cellOf = new Map<AbstractMesh, Cell>();
   private cells: Cell[] = [];
@@ -356,7 +291,7 @@ export class WorldCulling {
     px2: 0,
   };
 
-  /** Set when the candidate list no longer matches the state above. */
+  /** Set when what a cell offers no longer matches the state above. */
   private listDirty = true;
 
   /** Squared distances a cell switches at. Infinite reach culls nothing. */
@@ -378,35 +313,17 @@ export class WorldCulling {
     blocked: 0,
     /** Pooled BODIES (`setPools`), none of them a mesh since X4.1d. */
     pooled: 0,
-    loose: 0,
     cells: 0,
     cellsOn: 0,
     poolsOn: 0,
-    /** The eligible list: what a rebuild produced. */
-    candidates: 0,
-    /** What Babylon was actually handed this frame — `candidates` minus the
-     * meshes that are switched off right now. See `offer`. */
-    offered: 0,
   };
 
-  constructor(private scene: Scene) {
-    // The one hook. Babylon calls this from `_evaluateActiveMeshes` and from
-    // nowhere else that matters here — picking walks `scene.meshes`, a render
-    // target with an explicit `renderList` walks that list, and the collision
-    // coordinator walks the collidable meshes. All three are why this is safe.
-    scene.getActiveMeshCandidates = () => this.candidates;
-    // A flag rather than any real work, because these fire for every mesh a
-    // build creates and destroys — of the order of a million on a 1500 m map
-    // while every part was a mesh (`ENGINE_UPGRADE.md`, wall 4), thousands of
-    // colliders until `BABYLON_EXIT.md` X5.3e — and the rebuild they ask for
-    // is owed once.
-    scene.onNewMeshAddedObservable.add(() => {
-      this.listDirty = true;
-    });
-    scene.onMeshRemovedObservable.add(() => {
-      this.listDirty = true;
-    });
-  }
+  /**
+   * No hook any more: `Scene.getActiveMeshCandidates` was replaced here, and
+   * the scene's mesh-added and mesh-removed observables dirtied the list,
+   * until the scene stopped rendering (`BABYLON_EXIT.md` X5.4f).
+   */
+  constructor(private scene: Scene) {}
 
   /**
    * Files a freshly built map. Called from `Game.installMap` and from nowhere
@@ -426,20 +343,12 @@ export class WorldCulling {
   setMap(map: GameMap | null, fogEnd: number): string | null {
     this.cellOf = new Map();
     this.cellByKey = new Map();
-    this.filedBounds = new Map();
     this.cells = [];
     this.listDirty = true;
     this.evalX = Number.POSITIVE_INFINITY;
     this.evalZ = Number.POSITIVE_INFINITY;
     this.stats.blocked = 0;
     this.stats.cells = 0;
-    // The lists handed to Babylon, emptied rather than only marked dirty:
-    // `offer` rewrites `candidates` by LENGTH, so everything past it is last
-    // build's meshes, disposed and kept alive by this array alone.
-    this.candidates.data.length = 0;
-    this.candidates.length = 0;
-    this.eligible.length = 0;
-    this.gateOf = new Map();
     if (!map) {
       this.on = Number.POSITIVE_INFINITY;
       this.onSq = Number.POSITIVE_INFINITY;
@@ -525,7 +434,6 @@ export class WorldCulling {
       if (!record) return `"${mesh.name}" carries a block but is no map visual`;
       // Its own record is filed under the same key, so the cell exists.
       this.cellOf.set(mesh, this.cellByKey.get(key)!);
-      this.filedBounds.set(mesh, record.bounds);
       this.stats.blocked++;
     }
     this.stats.cells = this.cells.length;
@@ -792,44 +700,24 @@ export class WorldCulling {
    * in the list now).
    */
   private rebuildList(): void {
-    const data = this.eligible;
-    data.length = 0;
-    // What a filed mesh of each cell is a candidate by, from now until the
-    // next build of the list — read back by the block (`offersBlock`).
+    // What a filed surface of each cell is offered by, from now until the
+    // next build — read back by the block (`offersBlock`). The candidate list
+    // this built beside it (`eligible`: `scene.meshes` minus the cells out of
+    // reach, in scene order, and the size gate's per-mesh answers) was
+    // retired with the mesh walk (`BABYLON_EXIT.md` X5.4f).
     for (const cell of this.cells) cell.offered = cell.on;
-    let loose = 0;
-    for (const mesh of this.scene.meshes) {
-      const cell = this.cellOf.get(mesh);
-      if (cell) {
-        if (cell.on) data.push(mesh);
-        continue;
-      }
-      loose++;
-      data.push(mesh);
-    }
-    // The emissive exemption, then a filed mesh's record, which the size gate
-    // reads where the cells do (X3.7a). Everything the gate tests off its own
-    // mesh is left out, so that case is a miss rather than an entry.
-    this.gateOf = new Map();
-    for (const mesh of data) {
-      if (glows(mesh)) this.gateOf.set(mesh, null);
-      else {
-        const bounds = this.filedBounds.get(mesh);
-        if (bounds) this.gateOf.set(mesh, bounds);
-      }
-    }
     this.listDirty = false;
     let cellsOn = 0;
     for (const cell of this.cells) if (cell.on) cellsOn++;
     this.stats.scene = this.scene.meshes.length;
-    this.stats.loose = loose;
     this.stats.cellsOn = cellsOn;
-    this.stats.candidates = data.length;
   }
 
   /**
-   * This frame's list: the eligible meshes minus the ones that are switched
-   * off right now.
+   * This frame's gate and the pools' verdicts — and until `BABYLON_EXIT.md`
+   * X5.4f this frame's candidate LIST, the eligible meshes minus the ones
+   * switched off right now, which the two paragraphs below argue and which
+   * went with the mesh walk.
    *
    * **It drops exactly what `_evaluateActiveMeshes` would drop, and it drops it
    * before the expensive part rather than after.** That walk rejects a mesh on
@@ -863,9 +751,6 @@ export class WorldCulling {
    * `rebuildList`'s argument about `_activeMeshes` ordering survives intact.
    */
   private offer(eye: Vector3): void {
-    const src = this.eligible;
-    const out = this.candidates.data;
-    const n = src.length;
     // Pixels per radian, from the camera's own field of view and the height it
     // is rendering at — so the threshold is a size on the SCREEN and needs no
     // per-map tuning. Read once a frame: the FOV moves when a sight goes up.
@@ -992,72 +877,14 @@ export class WorldCulling {
       }
       pool.fade = fade;
     }
-    let k = 0;
-    for (let i = 0; i < n; i++) {
-      const mesh = src[i];
-      if (!mesh.isVisible || !mesh.isEnabled()) continue;
-      // **Every Babylon mesh is in rendering group 0** (`BABYLON_EXIT.md`
-      // X4.3d): one in a group above it would bring Babylon's per-group
-      // depth clear back between it and the world — splitting the frame's one
-      // depth image, which the ink, the blur and the glow read — and would no
-      // longer be exempt from the size gate below. Said once per mesh.
-      if (import.meta.env.DEV && mesh.renderingGroupId !== 0) warnGroup(mesh);
-      // **The gate is about WORLD geometry.** What is drawn against the EYE
-      // rather than standing in the map is no candidate: the viewmodel, which
-      // had a rendering group of its own that this test exempted until it
-      // was our renderer's whole (`BABYLON_EXIT.md` X4.3c, X4.3d). Its world
-      // bounding info was never what this could read — the viewmodel hangs
-      // off the camera and is handed its matrices after this, just before the
-      // render (`ViewModel.drawView`), so at this point in the frame the gun's
-      // bounds were the last frame's — once, before any draw, the ORIGIN.
-      // Asked for its size, it answered "1.8 px at 726 m" — the distance from
-      // the origin to the player — and the gate deleted the weapon out of the
-      // player's hands.
-      if (gate) {
-        // ONE lookup, which is why the two answers share a map: this runs on
-        // every candidate every frame, and the emissive exemption used to be
-        // the only question here.
-        const how = this.gateOf.get(mesh);
-        if (how === undefined) {
-          if (tooSmallMesh(mesh, eye, perRad, px2)) continue;
-        } else if (how !== null) {
-          // A filed surface's record, the same sphere its mesh holds — see
-          // `gateOf`.
-          if (tooSmall(how.centerX, how.centerY, how.centerZ, how.radius, eye, perRad, px2)) continue;
-        }
-      }
-      out[k++] = mesh;
-    }
-    // Length rather than truncation: the backing array is reused every frame
-    // and Babylon reads `length`, so shrinking `data` would be a free-list
-    // churn this is trying to avoid.
-    out.length = k > out.length ? k : out.length;
-    this.candidates.length = k;
-    this.stats.offered = k;
+    // The candidate walk that followed — the eligible meshes switched on and
+    // through the size gate, handed to Babylon — was retired with the mesh
+    // walk (`BABYLON_EXIT.md` X5.4f): no Babylon mesh is drawn.
   }
-}
-
-/** The meshes `warnGroup` has spoken of (DEV). */
-const groupWarned = new WeakSet<AbstractMesh>();
-
-/** DEV: a candidate outside rendering group 0, said once per mesh (`offer`). */
-function warnGroup(mesh: AbstractMesh): void {
-  if (groupWarned.has(mesh)) return;
-  groupWarned.add(mesh);
-  console.warn(
-    `culling: "${mesh.name}" is in rendering group ${mesh.renderingGroupId} — every Babylon mesh belongs in group 0 (one depth image for the frame, BABYLON_EXIT.md X4.3d)`,
-  );
 }
 
 /** `offer`'s scratch for a body's measure. */
 const bodySphere: BodyMeasure = { x: 0, y: 0, z: 0, radius: 0 };
-
-/** `tooSmall` off a mesh's own world bounding sphere. */
-function tooSmallMesh(mesh: AbstractMesh, eye: Vector3, perRad: number, px2: number): boolean {
-  const sphere = mesh.getBoundingInfo().boundingSphere;
-  const c = sphere.centerWorld;
-  return tooSmall(c.x, c.y, c.z, sphere.radiusWorld, eye, perRad, px2);
-}
 
 /**
  * Whether a world bounding sphere projects smaller than the gate, in CSS

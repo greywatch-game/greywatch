@@ -353,7 +353,9 @@ eight). Raising the DISTANCE is what makes the pool busier — raise the two tog
 FINDINGS #8's older 1.37 ms for four does not reproduce; see the note there.
 
 - **`scene.physicsEnabled` is FALSE and must stay false.** Babylon steps physics
-  from `scene.animate()` on every RENDERED frame, and this game renders in every state
+  from `scene.animate()`, which our frame calls on every frame (`core/SceneFrame.ts`,
+  `BABYLON_EXIT.md` X5.4f: the animation ratio the particle fields' clock reads; the
+  scene's render called it until then), and a frame is drawn in every state
   — so a scene-driven step would leave corpses tumbling under the pause card, under the
   deploy map and behind the menu. The scene has no physics engine any more, so
   there is nothing for it to step; `Game` writes the flag false straight after

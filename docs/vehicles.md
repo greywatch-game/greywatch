@@ -1136,7 +1136,7 @@ side's colours (`HullKit`), built ONCE a kind and a side — the first rig of
 the pair merges it, every later one hangs it without making a part
 (`segmentOf`) — and every hull is drawn as an instance of it
 (`render/HullDraw.ts`, `docs/rendering.md`'s "The hulls, ours"): `Game.
-drawHulls`, beside `drawBodies` immediately before `scene.render`, writes
+drawHulls`, beside `drawBodies` immediately before the frame's render (`SceneFrame.render`), writes
 each present hull's drawing off the tree `Game.fadeHulls` composed earlier in
 the frame (in the cull span, since X4.2d's post-commit review, so the rotor
 wash can be handed the same fade) — each segment's world (its local times its

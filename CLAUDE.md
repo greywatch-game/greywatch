@@ -273,8 +273,10 @@ plays against the old colliders until `npm run collision` re-bakes them.
 
 `Game`'s state machine is `menu -> loading -> deploy -> playing -> dying ->
 deploy`, with `roundover` when a side runs out of tickets, and `bench` — the
-benchmark `?bench=<map>` plays — off to one side of it. **The 3D
-scene renders in every state** — in the page's own match over a HELD world,
+benchmark `?bench=<map>` plays — off to one side of it. **The frame is
+drawn in every state** — ours (`core/SceneFrame.ts`: what `scene.render()`
+did, in its order, called where it was; **the scene is never rendered**) — in
+the page's own match over a HELD world,
 advanced only through `updateWorld` (`playing`, `dying`, `bench`) — and
 `loading` and `dying` are **STEPS, not lids**: `updateWorld` runs in full under
 the death cam, and nothing may simulate under the building card. **The
@@ -620,8 +622,9 @@ OUR renderer's in every pass and **Babylon is made NO MESH of them**
 cannot hold is REFUSED (a DEV throw `merge:hash` fails on), and a pass of ours
 that cannot draw its world tells the failure it was HANDED WITH it:
 **`Game.worldFailed`**, the menu and a toast, never a fallback.
-**The frame WALKS the scene, and the scene is the map.** `WorldCulling`
-**replaces `scene.getActiveMeshCandidates` and writes nothing onto any mesh**;
+**The frame no longer WALKS the scene** — the scene is never rendered, so
+`WorldCulling`'s candidate list went with the walk (X5.4f) — and it **writes
+nothing onto any mesh**;
 a CELL is grown from the RECORDS (`GameMap.world`, whole). **The SCATTER is
 drawn ONCE**, as INSTANCES of its variants. **A block-keyed surface (a pane, a
 fire) is offered only while the camera is inside the map's `fogEnd`**,
@@ -649,13 +652,18 @@ moon, and **Babylon's scene holds no particle system**. **So is the WHOLE
 post chain — the ink, FXAA, the shafts, a stage a rung, the blur and the
 grade** (`render/PostChain.ts`, X5.2c1 to X5.2d: a host of DECLARED stages,
 the first reading the frame, the last active one given the canvas, any other
-a pool target of its own), whose passes `shaders/PostPasses.ts` opens with
-public API, and **no Babylon `PostProcess` stands on the camera**. **The FRAME
-and its passes are OURS** (`render/FrameTargets.ts`, X5.4e: the frame, its
-depth, the glow's six, each made as Babylon made it, every pass before the chain
-recorded into the encoder Babylon submits first), so **the scene clears
-nothing** (`autoClear` and `autoClearDepthAndStencil` FALSE, no
-`outputRenderTarget`) and **the frame's opening pass is the frame's**.
+a pool target of its own), whose passes are OURS (`render/ChainPasses.ts`,
+X5.4f: the pool and the canvas's pass — the swap chain's texture, with a depth
+of its own — begun as Babylon began them), and **no Babylon `PostProcess`
+stands on the camera**. **The FRAME and its passes are OURS**
+(`render/FrameTargets.ts`, X5.4e: the frame, its depth, the glow's six, each
+made as Babylon made it), **every pass of the frame is recorded into the
+encoder Babylon submits first** and Babylon's own holds nothing, so **the
+scene clears nothing** (`autoClear` and `autoClearDepthAndStencil` FALSE, no
+`outputRenderTarget`), **the frame's opening pass is the frame's**, and **the
+canvas's pass is begun EXACTLY ONCE a frame** — by the chain's last stage, or
+empty at the frame's end (`ChainPasses.finishFrame`), as Babylon's render
+began its main pass.
 
 **The GLOW's mask is the EMISSIVE surfaces and nothing else, every draw in it
 OURS, its occlusion being the FRAME's own depth buffer** (`src/shaders/GlowPass.ts`
@@ -676,11 +684,21 @@ it emits must ask the vertex for that one**. **The palette has NO Babylon
 draw**, **`noGlow` is read PER SURFACE at the take** (a world fire's too), and
 **a palette surface ours cannot hold is REFUSED**.
 
-**OUR renderer (`src/render/`) draws INSIDE Babylon's frame through ONE seam**
+**The FRAME is the game's** (`core/SceneFrame.ts`, X5.4f): `Game.tick` calls
+`sceneFrame.render()` where it called `scene.render()`, and it does what that
+did for this game in its order — the scene's animations (`scene.animate()`,
+the particle fields' clock), the camera's update, the render id's two
+advances, `scene.updateTransformMatrix()` (public API, so every matrix is
+Babylon's to the bit), the evaluation, the draw phase, the chain — raising its
+OWN observables, each named for the scene's it replaces, at the points the
+scene raised that one. **A module that hung off a scene observable hangs off
+the frame's now, and a new one hangs there too**: nothing raises the scene's.
+**OUR renderer (`src/render/`) meets Babylon's ENGINE through ONE seam**
 (`render/babylonSeam.ts`, the only file there that names Babylon, and only as
-types), and **no draw of ours needs anything of Babylon's in group 0**: the seam
-tells the draw phase's two ends, and our renderer records every point at the
-end, Babylon visiting no group. The frame's uniforms are PULLED off the factory's fields
+types: the device, the encoder Babylon submits first, the end of frame —
+items 1 and 9), and **no draw of ours needs anything of Babylon's in group 0**:
+the frame tells the draw phase's two ends, and our renderer records every point
+at the end. The frame's uniforms are PULLED off the factory's fields
 (`CelMaterialFactory.fillFrame`), so **a new value every cel material holds owes
 `render/frame.ts` a field and `fillFrame` a line** — a shared TEXTURE the same,
 in `FRAME_TEXTURES` and `fillFrameTextures`. **A material's OWN value is set
@@ -1064,7 +1082,9 @@ the death cam's stand-in body, a broken pane's shards and a blast's rubble.
 **Nothing under it feeds navigation, cover or hit detection** — a corpse is not in
 `NavGrid`, not in `ObstacleField`, not in `hittablesAgainst`, and neither a shard
 nor a chunk is either. `scene.physicsEnabled` is **false and must stay false**
-until the scene goes, and Havok never touches a node at all.
+until the scene goes — the scene is never rendered, but our frame calls
+`scene.animate()` for its animation ratio, which steps a scene physics engine
+under it — and Havok never touches a node at all.
 **What the pool holds for a body is its RIG** (a `NetSoldier`'s, or the death
 cam's stand-in), never the simulation's `Bot`.
 
@@ -1305,7 +1325,7 @@ is already declared, so **the phase list IS that order** and no system had to be
 taught the profiler exists. A phase is a name in `PHASES`, a parent in
 `PARENT_OF` and a `begin`/`end` pair, and **the spans NEST and do not
 partition** — read a report as an attribution. `render`'s three spans hang off
-the SCENE's own observables (`hookRender`); **`present` is NOT inside `frame`**,
+the FRAME's own points (`hookRender`, `core/SceneFrame.ts`); **`present` is NOT inside `frame`**,
 hung off the engine's end of frame (`hookEngine`); and **`sim` is the core
 TIMING ITSELF** with a clock its host injects (`SimCoreOptions.timing`), **never
 for an outcome**, and only for the page's OWN match. So there are **THREE

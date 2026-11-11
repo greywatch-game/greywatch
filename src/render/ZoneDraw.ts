@@ -345,7 +345,7 @@ export class ZoneDraw {
       transforms: buffer("transforms", new Float32Array(4), GPUBufferUsage.STORAGE),
     });
     // No textures: resolved once, whole for good.
-    this.geometry.refresh(this.renderer.host, {});
+    this.geometry.refresh({});
     this.order = new Int32Array(this.surfaces.length);
     this.keys = new Float64Array(this.surfaces.length);
   }
@@ -411,7 +411,7 @@ export class ZoneDraw {
       [CEL_MATERIAL_BLOCK.var]: block.buffer,
     });
     // The variants bind no texture of their own.
-    group.refresh(this.renderer.host, {});
+    group.refresh({});
     material = { variant, block, group };
     this.materials.set(recipe, material);
     return material;
