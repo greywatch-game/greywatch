@@ -56,6 +56,16 @@
  * in which a class rendered the scene at all fails (exit 1), whatever
  * `--against` says.
  *
+ * **And Babylon's BEGIN-FRAMES** (`BABYLON_EXIT.md` X5.4g): every call of the
+ * engine's `beginFrame`, counted per frame and folded at its end beside the
+ * renders (`begins`), never compared — 1 a frame in every class at every
+ * parent before X5.4g, whose render loop was Babylon's — and apart from them
+ * the calls made inside the engine's own resize (`_initializeMainAttachments`'
+ * begin and end of frame, Babylon's still until X5.4h), counted in a total
+ * of their own (`resizeBegins`). On a tree with OUR loop (`Game.frameLoop`) a
+ * run in which a class saw a `beginFrame` outside a resize fails (exit 1),
+ * whatever `--against` says.
+ *
  * **A draw between frames** — issued after one frame's end and before the
  * next's begin, as a render target rendered from a promise would be — is
  * folded into a class of its own, `between frames`, rather than cleared
@@ -177,7 +187,29 @@ function installHooks() {
     notes: [],
     renders: {},
     renderCalls: 0,
+    begins: {},
+    beginCalls: 0,
+    inResize: 0,
+    resizeBegins: 0,
   });
+  // The engine's begin-frames (the header): counted per frame, a resize's apart.
+  const beginFrame = e.beginFrame;
+  e.beginFrame = function (...a) {
+    if (L.inResize > 0) L.resizeBegins++;
+    else L.beginCalls++;
+    return beginFrame.apply(this, a);
+  };
+  const initMain = e._initializeMainAttachments;
+  if (typeof initMain === "function") {
+    e._initializeMainAttachments = function (...a) {
+      L.inResize++;
+      try {
+        return initMain.apply(this, a);
+      } finally {
+        L.inResize--;
+      }
+    };
+  }
   // The scene's renders (the header): counted per frame, folded at its end.
   const render = scene.render;
   scene.render = function (...a) {
@@ -253,6 +285,9 @@ function installHooks() {
     const rs = (L.renders[L.cls] ??= []);
     if (!rs.includes(L.renderCalls)) rs.push(L.renderCalls);
     L.renderCalls = 0;
+    const bs = (L.begins[L.cls] ??= []);
+    if (!bs.includes(L.beginCalls)) bs.push(L.beginCalls);
+    L.beginCalls = 0;
   });
 
   const bump = (map, key) => map.set(key, (map.get(key) ?? 0) + 1);
@@ -678,6 +713,9 @@ async function logMap(browser, url, map) {
     return {
       renders: sortObj(Object.fromEntries(Object.entries(L.renders).map(([c, v]) => [c, [...v].sort((a, b) => a - b)]))),
       ours: Boolean(window.__celshock.sceneFrame),
+      begins: sortObj(Object.fromEntries(Object.entries(L.begins).map(([c, v]) => [c, [...v].sort((a, b) => a - b)]))),
+      loop: Boolean(window.__celshock.frameLoop),
+      resizeBegins: L.resizeBegins,
       classes: sortObj(classes),
       compiledAtBoot: L.compiledAtBoot,
       babylonCompiles: bc ? { byClass: sortObj(Object.fromEntries(Object.entries(L.counter).map(([c, v]) => [c, [...v].sort((a, b) => a - b)]))), count: bc.count, names: [...bc.names] } : null,
@@ -695,6 +733,7 @@ async function logMap(browser, url, map) {
     compiledAtBoot: rec.compiledAtBoot,
     babylonCompiles: rec.babylonCompiles,
     renders: { byClass: rec.renders, ours: rec.ours },
+    begins: { byClass: rec.begins, ours: rec.loop, resize: rec.resizeBegins },
     info: { frames: rec.frames, did: rec.did, notes: rec.notes, steps, missed },
     errors: { page: pageErrors, console: consoleErrors, pipelines: warns },
   };
@@ -736,6 +775,7 @@ function report(r) {
       : "  the game's counter of Babylon effect compiles: none in this tree (before BABYLON_EXIT.md X5.3d)",
   );
   console.log(`  scene.render calls a frame, by class (${r.renders.ours ? "our frame" : "Babylon's render"}): ${JSON.stringify(r.renders.byClass)}`);
+  if (r.begins) console.log(`  engine.beginFrame calls a frame outside a resize, by class (${r.begins.ours ? "our loop" : "Babylon's loop"}): ${JSON.stringify(r.begins.byClass)}; inside a resize ${r.begins.resize}`);
   for (const [cls, c] of Object.entries(r.classes)) {
     const draws = Object.entries(c.draws);
     const meshKeys = draws.filter(([k]) => k.includes("mesh:"));
@@ -793,6 +833,12 @@ const rendered = Object.values(result).filter((r) => r.renders.ours && Object.va
 if (rendered.length) {
   console.log(`
 SCENE RENDERED: scene.render was called under our frame on ${rendered.map((r) => `${r.map} (${JSON.stringify(r.renders.byClass)})`).join("; ")}`);
+  code = 1;
+}
+// With our loop (X5.4g), no class may see Babylon's beginFrame outside a resize (the header).
+const begun = Object.values(result).filter((r) => r.begins?.ours && Object.values(r.begins.byClass).some((v) => v.some((n) => n !== 0)));
+if (begun.length) {
+  console.log(`\nBABYLON BEGAN A FRAME: engine.beginFrame was called outside a resize under our loop on ${begun.map((r) => `${r.map} (${JSON.stringify(r.begins.byClass)})`).join("; ")}`);
   code = 1;
 }
 if (incomplete) {

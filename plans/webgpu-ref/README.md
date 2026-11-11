@@ -94,6 +94,23 @@ draw. **Proven to read the same on the parent**: every probe it touched, run at
 221abf1 with the new instruments against the logs the old ones wrote there,
 equal (X5.4f's record).
 
+**OUR LOOP's arm since X5.4g, picked over Babylon's engine questions**
+(`Game.frameLoop`, `src/core/FrameLoop.ts`): `onBegin` and `submitted`/
+`onSubmitted` are the loop's own begin and end of frame (each a Babylon
+`Observable` named for the engine's it replaces, raised where the engine raised
+it: after the clock's sample, and after the loop's ONE submit and its frame id's
+move); `scheduleDelta` answers the loop's clock (`FrameClock.getDeltaTime`, the
+port of the engine's, which our frame's animation ratio and `Game.tick` read),
+keyed on the loop's `frameId`; and `encoderRole` names the frame's one encoder
+`"frame"` (`FrameSubmit.encoder`), Babylon's two keeping `"upload"` and
+`"render"`. The device is the engine's still (X5.4h). The begin and the end are
+OUR frames': Babylon's resize frames (its own begin and end of frame inside
+`_initializeMainAttachments`) raised the engine's at a parent and raise nothing
+here. The same commit taught `drawlog.mjs` to count the engine's `beginFrame`
+per class (`begins`, beside the classes, a resize's apart; 0 outside a resize
+asserted under our loop) and `bench.mjs` to read a report without Babylon's
+draw count (report version 38 retired it).
+
 - **`gate.mjs`** boots every shipped map, plays a real round on each and fails
   loudly if any is not clean — the engine is WebGPU, the round reaches
   `playing`, the reflection bake has drained by deploy and stays drained
@@ -456,7 +473,10 @@ equal (X5.4f's record).
   is not 0 in every class, whatever `--against` says; it is kept beside the classes, so a
   parent's log without one compares. A VISIT of group 0 in any class fails the run the
   same way (exit 1), since `onMainPass` assumes none (the seam's items 6 and 10 retired;
-  X5.3d's review). `compiledAtBoot` is the engine's own `clearQuad` alone
+  X5.3d's review). **Since X5.4f it counts `scene.render` per class** (`renders`; 0
+  asserted under our frame) **and since X5.4g the engine's `beginFrame`** (`begins`, a
+  resize's counted apart in `resizeBegins`; 0 outside a resize asserted under our
+  loop). `compiledAtBoot` is the engine's own `clearQuad` alone
   since X5.3d deleted `localShadowClear`, and no mesh stands at the boot any more (the
   `Mesh.render` hook waits for the first).
 

@@ -229,24 +229,27 @@ export const MAP_IDS = MAPS.map((m) => m.id);
  *   so a pose written here is the one the frame is drawn from), and
  *   `onBeforeDraw(fn)` in every one until the remover it hands back is called;
  * - `submitted()`: a promise of the next frame's work having been SUBMITTED
- *   (the engine's end of frame), `onSubmitted(fn)` for every one, and
- *   `onBegin(fn)` for the opening of every frame (the engine's begin);
+ *   (the engine's end of frame; our loop's since X5.4g), `onSubmitted(fn)`
+ *   for every one, and `onBegin(fn)` for the opening of every frame (the
+ *   engine's begin; our loop's);
  * - `index()`: the frame's index (the scene's frame id), `ready()` whether
  *   the scene's every draw can be made this frame (`scene.isReady()`; the post
  *   chain's stages that are ours are `postAdapter`'s `ready`, asked beside it);
  * - `device()`, `canvas()` and `canvasDepth()`: the `GPUDevice` every draw is
  *   made on, the canvas and the canvas pass's depth texture;
  * - `encoderRole(encoder)`: which of the frame's command encoders that is
- *   (`"render"`, `"upload"`, `"other"`);
+ *   (`"render"`, `"upload"` — Babylon's two — `"frame"`, our loop's one since
+ *   X5.4g, `"other"`);
  * - `onDrawPhase(begin, end, endFirst)`: `begin` as the frame camera's draw
  *   phase opens and `end` as it closes, every frame, until the remover it
  *   hands back is called — `end` inserted FIRST at the close with `endFirst`
  *   (ahead of our renderer's main pass, as `surfaces.mjs` and `census.mjs`
  *   insert theirs), else last; either may be null;
  * - `scheduleDelta(fn)`: the frame's DELTA (the milliseconds the scene's own
- *   step reads, `getDeltaTime`) answered from now on by `fn(k)`, `k` the
- *   frames since the call (`particles.mjs`' schedule), and `scheduleDelta(null)`
- *   handing it back to the frame's own clock;
+ *   step reads, `getDeltaTime` — the engine's, our loop's clock's since X5.4g,
+ *   which the frame's animation ratio reads) answered from now on by `fn(k)`,
+ *   `k` the frames since the call (`particles.mjs`' schedule), and
+ *   `scheduleDelta(null)` handing it back to the frame's own clock;
  * - `host()`: what owns the frame, for a report (the engine's class, and
  *   whose frame: `babylon`'s render or `ours`).
  *
@@ -268,9 +271,24 @@ export const MAP_IDS = MAPS.map((m) => m.id);
  * observables, the index off its own count (what `scene.getFrameId()` was),
  * and the canvas pass's depth off our pass owner (`Game.chainPasses`). The
  * engine's questions — begin, submit, the device, the encoders, the delta —
- * are still Babylon's (X5.4g's and X5.4h's). Both arms answer every question
- * the same way at the same point of a frame: a probe reads the same on a
- * parent and after (X5.4f's record: the probes run at 221abf1 under both).
+ * stayed Babylon's at X5.4f. Both arms answer every question the same way at
+ * the same point of a frame: a probe reads the same on a parent and after
+ * (X5.4f's record: the probes run at 221abf1 under both).
+ *
+ * **And OUR LOOP's arm since X5.4g, picked over Babylon's engine questions**
+ * (`Game.frameLoop`, `src/core/FrameLoop.ts`): the loop is the game's, so
+ * `onBegin` is its `onBeginFrameObservable` (after the clock's sample, before
+ * `tick`, where the engine's `beginFrame` raised its own), `submitted`/
+ * `onSubmitted` its `onEndFrameObservable` (after its ONE submit and the
+ * frame id's move, where `endFrame` raised the engine's), `scheduleDelta` its
+ * clock's `getDeltaTime` keyed on its `frameId` (the engine's
+ * `getDeltaTime`/`frameId` before), and `encoderRole` names the frame's one
+ * encoder `"frame"` (`FrameSubmit.encoder`), Babylon's two keeping their
+ * names — they hold nothing of ours and are submitted only by the engine's
+ * own resize. The device is still the engine's (X5.4h). The begin and the
+ * end fire on our frames alone: Babylon's resize frames (its own
+ * `beginFrame`/`endFrame` inside `_initializeMainAttachments`) raised them
+ * at a parent and raise nothing of ours.
  */
 export function frameAdapter() {
   window.__refFrame ??= () => {
@@ -332,7 +350,7 @@ export function frameAdapter() {
     // Babylon's observables of its own, named for the scene's they replace.
     const f = g.sceneFrame;
     if (!f) return babylon;
-    return {
+    const ours = {
       ...babylon,
       arm: "ours",
       drawn: () =>
@@ -362,6 +380,32 @@ export function frameAdapter() {
         };
       },
       host: () => ({ engine: e.constructor.name, webgpu: Boolean(e.isWebGPU), frame: "ours" }),
+    };
+    // OUR LOOP (X5.4g): the frame's begin, its submit, its delta and its one
+    // encoder are the game's (`Game.frameLoop`).
+    const l = g.frameLoop;
+    if (!l) return ours;
+    return {
+      ...ours,
+      submitted: () => new Promise((res) => void l.onEndFrameObservable.addOnce(() => res())),
+      onSubmitted: (fn) => {
+        const o = l.onEndFrameObservable.add(fn);
+        return () => l.onEndFrameObservable.remove(o);
+      },
+      onBegin: (fn) => {
+        const o = l.onBeginFrameObservable.add(fn);
+        return () => l.onBeginFrameObservable.remove(o);
+      },
+      scheduleDelta: (fn) => {
+        if (fn === null) {
+          delete l.clock.getDeltaTime;
+          return;
+        }
+        const frame0 = l.frameId;
+        l.clock.getDeltaTime = () => fn(l.frameId - frame0);
+      },
+      encoderRole: (enc) =>
+        enc === l.submit.encoder ? "frame" : enc === e._renderEncoder ? "render" : enc === e._uploadEncoder ? "upload" : "other",
     };
   };
 }

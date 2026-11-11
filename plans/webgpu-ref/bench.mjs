@@ -43,8 +43,11 @@
  *   rows and `gpu.cull`'s — our culls' compute passes, report version 18 —
  *   medians over the runs, the cull's as a share of the frame, and each
  *   one's samples. The two are sampled on different rows, so the share is a
- *   ratio of means. `frame` reads 0 in a browser without
- *   `--enable-unsafe-webgpu`; the cull needs no flag.
+ *   ratio of means. Neither needs a browser flag from report version 38
+ *   (`BABYLON_EXIT.md` X5.4g: `frame` is our timer's, pass descriptors'
+ *   stamps); before it `frame` was Babylon's `writeTimestamp`, and read 0 in
+ *   a browser without `--enable-unsafe-webgpu`. Babylon's draw count, a
+ *   column of the medians, is "-" from v38, which retired it.
  * - `install`, from the URL to the first bench frame — `VERIFYING.md`'s free
  *   control: when the installs differ, the frame rates are not comparable.
  * - `--against f.json` (a previous `--out`): each group's median mean as a
@@ -184,7 +187,7 @@ for (const id of targets) {
         `${g.mean.toFixed(2).padStart(7)} ${g.p95.toFixed(2).padStart(7)} ` +
         `${g.onePercentLow.toFixed(1).padStart(6)} ${g.tick.toFixed(2).padStart(6)} ` +
         `${(g.sim === null ? "-" : g.sim.toFixed(2)).padStart(6)} ` +
-        `${String(g.drawCalls).padStart(6)}  ${(g.spread * 100).toFixed(1).padStart(5)}%` +
+        `${String(g.drawCalls ?? "-").padStart(6)}  ${(g.spread * 100).toFixed(1).padStart(5)}%` +
         (g.spread > SPREAD_FLAG ? "  OVER 8%" : ""),
     );
   }
@@ -366,7 +369,9 @@ function summarise(id, runs) {
       fps: med((g) => g.fps),
       tick: med((g) => g.tick),
       render: med((g) => g.render),
-      drawCalls: Math.round(med((g) => g.drawCalls)),
+      // Babylon's draw count (to report version 37); null from v38, which
+      // retired it with the rest of Babylon's counters (`BABYLON_EXIT.md` X5.4g).
+      drawCalls: per.every((g) => g.drawCalls !== undefined) ? Math.round(med((g) => g.drawCalls)) : null,
       gpuFrame: med((g) => g.gpuFrame),
       gpuSamples: med((g) => g.gpuSamples),
       // Our culls' GPU time (report version 18); 0 on an older capture.

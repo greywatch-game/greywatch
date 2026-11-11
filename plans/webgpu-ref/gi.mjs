@@ -406,7 +406,8 @@ page.on("dialog", (d) => void d.accept());
 // The hooks on the game, once a boot: the frame clock, the counters and the
 // adapter. Everything is read at the END of a frame (the frame adapter's
 // `onSubmitted`, `harness.mjs`, X5.4a: Babylon's `onEndFrameObservable`, after
-// its submit, at every parent so far), so a copy submitted there sees the frame's work.
+// its submit, at every parent before X5.4g; our loop's, after its one submit,
+// since), so a copy submitted there sees the frame's work.
 await page.evaluate(async () => {
   const g = window.__celshock;
   const P = window.__giProbe;

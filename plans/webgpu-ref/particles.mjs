@@ -20,8 +20,10 @@
  * field and frame by frame, and names the first number that differs.
  *
  * **What makes two runs comparable.** The clock is a SCHEDULE, not the wall
- * clock: through the window the engine's frame delta (`getDeltaTime`, the one
- * number `Scene.animate` reads) is answered by frame, counted from the window's
+ * clock: through the window the frame's delta (`getDeltaTime`, the one
+ * number `Scene.animate` reads — the engine's, and since `BABYLON_EXIT.md`
+ * X5.4g our loop's clock's, which our frame's port of `Scene.animate`'s
+ * arithmetic reads, `SceneFrame.animationRatio`) is answered by frame, counted from the window's
  * first, 16.7 ms on most frames, 0.25 ms on the thirtieth of every sixty and
  * 1,500 ms on the sixtieth, and the scene computes its animation ratio off it
  * by its own path — **the 1..1000 ms clamp included** (`Scene.MinDeltaTime`,
@@ -428,7 +430,8 @@ for (const id of maps) {
     F.enable(true);
     // The window's clock: the frame's delta answered by frame, counted from
     // the window's first, and the scene's own clamp left to read it — through
-    // the frame adapter (`harness.mjs`, X5.4a: the engine's `getDeltaTime`).
+    // the frame adapter (`harness.mjs`, X5.4a: the engine's `getDeltaTime`;
+    // our loop's clock's since X5.4g).
     window.__refFrame().scheduleDelta((k) => (k % 60 === 29 ? 0.25 : k % 60 === 59 ? 1500 : 16.7));
     g.scene.useConstantAnimationDeltaTime = false;
     const log = [];
