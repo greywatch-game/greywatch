@@ -1372,10 +1372,11 @@ export class FrameProfile {
    * `thinWebGPUEngine.js` 59-67 — which with Babylon's particles in group 0
    * was HERE, their compute dispatch ending the pass, about half of this span
    * in a live round at X4.7b's review, and without them was the glow's mask,
-   * so from X4.7c to X5.4e it landed in `glow`: `docs/profiling.md`.) **What it does
-   * NOT hold is the seam's own start of the pass** — our renderer's `begin`
-   * (the frame's uniforms and every prepare recorded onto the upload encoder)
-   * and its `first` point: the seam's observer on the same
+   * so from X4.7c to X5.4e it landed in `glow`: `docs/profiling.md`.) Its
+   * `first` point is here too, recorded first in that pass (`Renderer.end`).
+   * **What it does NOT hold is the seam's own start of the frame** — our
+   * renderer's `begin` (the frame's uniforms and every prepare recorded onto
+   * the upload encoder): the seam's observer on the same
    * `onBeforeDrawPhaseObservable` was added when `Game` built the renderer,
    * before any `arm`, so it runs ahead of this span's opening, under `render`
    * and named by nothing, as it did when this span was the groups'. Until

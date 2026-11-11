@@ -27,8 +27,12 @@
  * change, and Babylon's `resize` remade a target whatever its size) — so a
  * remade target holds zeros; the texture it replaces is destroyed after
  * the frame's submit (`FrameHost.afterSubmit`), never inside a frame that may
- * still bind it; a target not made yet has no view, and a pass or a stage
- * reading it draws nothing.
+ * still bind it — the one exception being `dispose`, which destroys every
+ * texture AT ONCE because it is a TEARDOWN with no frame after it (its one
+ * caller, `Renderer.dispose`, as `Renderer` destroys its frame buffer; its
+ * caller owes it a moment between frames, after the last submit, which a lost
+ * device's teardown is — X5.4i); a target not made yet has no view, and a
+ * pass or a stage reading it draws nothing.
  * Never: imports Babylon; records a pass — `Renderer` records every pass into
  * these (the frame's clear and main pass, the mask) and the glow's blur
  * draws into the other five (`GlowBlur`); sizes itself — the frame is sized

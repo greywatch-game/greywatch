@@ -633,9 +633,11 @@ the menu, every bank row, and from X4.7c and X4.7d every frame of a round —
 no span opened at all, and our draws queued at the group's points (told then
 by the seam's fallback at the phase's end, `docs/rendering.md`) fell under no
 span. Now it is entered on every frame the camera draws, and reads the same
-whichever path told our points. **What it does not hold** is the seam's start
-of the main pass — our renderer's `begin` (the frame's uniforms and every
-PREPARE recorded onto the upload encoder) and its `first` point — because the
+whichever path told our points. Since `BABYLON_EXIT.md` X5.4e it also holds
+the whole main pass, its `first` point included: our renderer records that
+pass at the phase's END (`Renderer.end`), inside the span. **What it does not
+hold** is the seam's START of the frame — our renderer's `begin` (the frame's
+uniforms and every PREPARE recorded onto the upload encoder) — because the
 seam's observer on the same observable was added when `Game` built the
 renderer, before any `arm`, and so runs ahead of the span's opening: under
 `render`, named by nothing, as it was before.

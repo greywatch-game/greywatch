@@ -1329,10 +1329,6 @@ export class Game {
    * `shaders/CelInk.ts` owns the argument and the measurements.
    */
   private celInk: CelInk;
-  /**
-   * The frame's depth, wrapped once for the two passes that sample it. Held
-   * only so the pair are handed the same object — nothing here reads it.
-   */
   /** The environment the sky is currently painted for — see applySky(). */
   private skyEnv: EnvironmentSpec | null = null;
   private player: Player;

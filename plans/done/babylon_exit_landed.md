@@ -12216,6 +12216,11 @@ dependency moved; its `ref/` the main tree's), every run alone on the GPU. No de
 - **Typecheck, build** (its gates, `maps:check` among them), **corecheck, parity**, **`gate`** and
   **`shaders`** (seven maps clean each).
 - **Not run**: the phone; `merge:hash` (the world layer untouched).
+- **Accepted** by the orchestrating session on the owner's standing instruction, and surfaced to the
+  owner: the CPU `render` span 26–30% lower, outside the Verify's 8% band in the cheaper direction
+  (Babylon's mask render and the glow's binds gone; `gpu.frame` within 0.4%), and
+  `autoClearDepthAndStencil` held false beside the Do's `autoClear` (so Babylon adds no canvas
+  depth-clear pass; the device's log identical).
 
 Scripts and logs in the session's scratchpad, `x54e/` (`before.sh`, `after.sh`, `probes.sh`,
 `sarab.sh`, `gpu.sh`, `gpu-capped.sh`, `wholeflat.cjs`, `writes.mjs`, `surfcmp.cjs`, `live.mjs`,

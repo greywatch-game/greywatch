@@ -5847,6 +5847,10 @@ measurement until the sub-step that replaces both.
   Coldharbour's fight) — outside the 8% band, in the cheaper direction, named for the owner; the
   main pass's recording moves from `glow` to `drawWorld` (no report version: neither bracket moved).
   Live, typecheck, build, corecheck, parity, `gate` and `shaders` clean. **Not run**: the phone.
+  **Accepted** by the orchestrating session on the owner's standing instruction, and surfaced to
+  the owner: the CPU `render` span 26–30% lower (Babylon's mask render and the glow's binds gone;
+  `gpu.frame` within 0.4%), and `autoClearDepthAndStencil` held false beside the Do's `autoClear`
+  (so Babylon adds no canvas depth-clear pass; device-identical).
 
 - **X5.4f — the chain and the canvas are ours, and the scene stops rendering** (no
   change to the picture) — **M–L**. The post passes' item's second half.
@@ -5937,6 +5941,10 @@ measurement until the sub-step that replaces both.
   - **Owes `Renderer.dispose` and `TextureMaker.dispose` destroying every texture the maker
     made** — the live ones and the lit texel, not only the retired and the empty texel —
     since nothing calls either until a lost device does (found by X5.4d's review).
+    `Renderer.dispose` destroys AT ONCE (its frame buffer, `FrameTargets.dispose`'s seven,
+    the maker's), the one exception to "destroyed after the frame's submit" (`FrameTargets`'
+    header, X5.4e's review): so the loss's teardown calls it BETWEEN frames, after the last
+    submit, and no frame records into a disposed renderer after it.
   - **Verify:** `lost.mjs`; every bank row (no frame without a loss moves); the boot's
     failure branches unchanged.
   - **Rewrites:** `docs/states.md` or `docs/game.md` (where the loss goes); `CLAUDE.md`
