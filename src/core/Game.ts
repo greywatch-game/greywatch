@@ -94,7 +94,8 @@
  * walks each frame and writes nothing onto any mesh),
  * the answer to a LOST graphics device (`deviceLost`, `BABYLON_EXIT.md` X5.4i:
  * the teardown between frames, then the page reloaded to the menu, or the
- * boot's plate for a second loss inside the window — `core/deviceLoss.ts`),
+ * boot's plate for a second loss inside the window — `core/deviceLoss.ts` —
+ * and no build or match opened after it, `deviceIsLost`),
  * scene.imageProcessingConfiguration.isEnabled === false, window.__celshock debug handle.
  */
 import {
@@ -1406,6 +1407,20 @@ export class Game {
   readonly frameLoop: FrameLoop;
   /** The boot's "No graphics device" plate, put back up (`main.ts`): `deviceLost`'s second answer. */
   private readonly deviceFailed: () => void;
+  /**
+   * The graphics device was lost (`deviceLost`, its first line), and is never
+   * found again: the page reloads or stands the plate. From then on no BUILD
+   * and no MATCH is opened — `startRound`, `buildRound` and `joinMatch`
+   * refuse, the three doors every other one goes through (`openLocalRound`
+   * is `buildRound`'s alone). `buildRound` is the one that matters: the two
+   * frames `startRound` books it behind are the browser's, not the loop's, so
+   * `FrameLoop.stop` does not cancel them, and a loss inside them would
+   * otherwise open the page's own match afresh (`deviceGone` having left the
+   * last) and build the whole map on the dead device under the plate. It
+   * asks again past each of its awaits for the same reason. Nothing else
+   * reads it.
+   */
+  private deviceIsLost = false;
   private canvas: HTMLCanvasElement;
   /**
    * The bloom — mask, blur and compose — which `shaders/GlowPass.ts` owns.
@@ -4654,8 +4669,15 @@ export class Game {
    * the document goes with them. What this does not do is resume a frame —
    * so `FrameLoop`'s order against the cap and the clock sample a restore
    * once took are moot (`FrameLoop`'s header).
+   *
+   * **Nothing is opened after it** (`deviceIsLost`, set FIRST): a build
+   * `startRound` had already booked two frames ahead, or a join, a welcome
+   * or a bench's script reaching for a round while the reload is under way
+   * or the plate stands, is refused at its door — so the plate's page holds
+   * nothing, and a reload's last moments start nothing on the dead device.
    */
   private deviceLost(info: GPUDeviceLostInfo): void {
+    this.deviceIsLost = true;
     console.warn(`WebGPU device lost (${info.reason}): ${info.message}`);
     const notice =
       "the graphics device was lost, so the game restarted" +
@@ -6388,7 +6410,10 @@ export class Game {
     // build that has already run is one it is safe to replace — which is what
     // an authority rotating the map under a client mid-drain asks for. `go`
     // below ends the standing wait.
-    if (this.buildPending()) return;
+    //
+    // And never once the device is lost (`deviceIsLost`): a round asked for
+    // then — a welcome, a bench — would be built on a dead device.
+    if (this.deviceIsLost || this.buildPending()) return;
     // The round in hand is the one about to be built, which has installed
     // nothing yet: a failure of the map still standing under the card is the
     // old map's (`worldFailed`).
@@ -6464,7 +6489,11 @@ export class Game {
     // under a Restart. Asked BEFORE the open below, or the page hosts and
     // joins a match behind the menu that nothing plays and that turns the
     // lobby's Join into a dead button (`joinMatch` refuses while one stands).
-    if (this.state !== "loading") return;
+    // And not after a LOST device (`deviceIsLost`): these two frames are the
+    // browser's, which `FrameLoop.stop` does not cancel, the state is still
+    // `loading`, and `deviceGone` has left the match, so the open below would
+    // start a fresh one and the build would run on the dead device.
+    if (this.deviceIsLost || this.state !== "loading") return;
     // **The round's seed** — fresh each round unless the URL fixed it, which
     // is how a round is played again; written where a person can read it
     // back, since a round's seed is the only handle on a bug in it. In the
@@ -6490,7 +6519,7 @@ export class Game {
     const net = this.net;
     if (net) {
       await net.joinSent();
-      if (this.net !== net || this.state !== "loading") return;
+      if (this.deviceIsLost || this.net !== net || this.state !== "loading") return;
     }
     // Which map, and the ground under it — in that order, and until the two
     // agree about which map they are.
@@ -6546,8 +6575,9 @@ export class Game {
     // a quit or the page's own match failing (`failLocalRound`) took the session
     // and the state away while it was out, and `enterMenu` puts the map back
     // to the same pick, so the loop above cannot see it. A build carried on
-    // behind the menu would open a deploy screen with no round under it.
-    if (this.net !== net || this.state !== "loading") return;
+    // behind the menu would open a deploy screen with no round under it. A
+    // device lost while it was out is the same (`deviceIsLost`).
+    if (this.deviceIsLost || this.net !== net || this.state !== "loading") return;
     // The card went up naming the map the player chose; a welcome that moved
     // it names another. A no-op for the same map, which is every round in the
     // page's own match.
@@ -9784,7 +9814,9 @@ export class Game {
   joinMatch(
     opts: { matchId?: string; create?: boolean; mapId?: string; regionId?: string } = {},
   ): void {
-    if (this.net) return;
+    // Not over a standing session, and not after a LOST device
+    // (`deviceIsLost`): a join then would connect a round to a dead device.
+    if (this.net || this.deviceIsLost) return;
     // Refused before anything is built or connected, which is the cheapest of
     // the three places this can be caught and the only one that leaves the
     // player looking at the list they picked from.

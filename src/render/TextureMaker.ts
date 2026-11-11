@@ -196,9 +196,12 @@ export class TextureMaker {
   private readonly retired: GPUTexture[] = [];
   /**
    * Every texture made, held WEAKLY: what `dispose` destroys — the live ones,
-   * the lit texel, the retired and the empty texel alike — without keeping
-   * alive one whose handle the game dropped unreleased, which the collector
-   * would otherwise have taken. Pruned of the collected as it grows (`made`).
+   * the lit texel, the retired and the empty texel alike (every one comes
+   * through `texture`) — without keeping alive one whose handle the game
+   * dropped unreleased, which the collector would otherwise have taken.
+   * Pruned of the collected as it grows (`made`). A retired texture stays in
+   * it until it is collected, so `dispose` may destroy one the frame's submit
+   * already did: `GPUTexture.destroy` is idempotent.
    */
   private readonly everMade = new Set<WeakRef<GPUTexture>>();
   /** `everMade`'s size after its last prune: it is pruned again at twice that. */
@@ -206,8 +209,11 @@ export class TextureMaker {
   private readonly afterSubmit: { dispose(): void };
   /**
    * The engine's empty texel (`AbstractEngine.emptyTexture`): four zero bytes,
-   * made at the first ask — held, and not only its view, so `dispose` can
-   * destroy it.
+   * made at the first ask. Held STRONGLY, not only its view, because nothing
+   * else holds the `GPUTexture` itself (a stand-in binds the view), so without
+   * it the collector could take the object and `everMade`'s weak record of it
+   * would find nothing for `dispose` to destroy. `dispose` destroys it through
+   * both; the second is a no-op.
    */
   private blank: GPUTexture | null = null;
   private blankView: GPUTextureView | null = null;
@@ -389,8 +395,10 @@ export class TextureMaker {
    * `BABYLON_EXIT.md` X5.4i, through `Renderer.dispose`): EVERY texture the
    * maker made and the collector has not taken destroyed AT ONCE — the live
    * ones, the lit texel, the retired and the empty texel — the one exception
-   * to "destroyed after the frame's submit" (the header). A handle bound
-   * after it binds a destroyed texture.
+   * to "destroyed after the frame's submit" (the header). One already
+   * destroyed (a retired texture the frame's submit took, the empty texel
+   * reached twice) is destroyed again, which `GPUTexture.destroy` allows. A
+   * handle bound after it binds a destroyed texture.
    */
   dispose(): void {
     this.afterSubmit.dispose();

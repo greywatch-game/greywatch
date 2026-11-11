@@ -183,19 +183,24 @@ record.
 
 ## The constructor takes what it cannot build, and stays SYNCHRONOUS
 
-**There are four arguments beside the canvas and they are arguments for the
-same reason**: `havok` is the instantiated physics WASM, `device` the
+**There are six arguments beside the canvas, and the first four are arguments
+for the same reason**: `havok` is the instantiated physics WASM, `device` the
 `GPUDevice` and `surface` the canvas its context is configured on
 (`core/CanvasSurface.ts`) — the game's own since `BABYLON_EXIT.md` X5.4h, asked
 for and configured as Babylon's `WebGPUEngine` did, whose `initAsync` resolving
 was this argument until then — and `local` is the page's own match host
 (`MatchHost`, X2.5c C4), whose Worker has already answered its first call or
-been given up on for the page's own thread. All are awaited by `main.ts` and a
+been given up on for the page's own thread. The other two are the BOOT's,
+handed in because they began before the constructor or belong to its screen:
+`clock`, the frame's `FrameClock`, made by the boot before the canvas's first
+size and sampled at every size since (X5.4h), and `deviceFailed`, which puts
+the boot's "No graphics device" plate back up for a second lost device
+(X5.4i, "A lost device" below). The four are awaited by `main.ts` and a
 failure of any is the boot screen's business — the host
 cannot fail by its Worker, which falls back to the page, only by the in-page
 module's fetch failing too — so nothing in this file is written twice for a
 machine that never got one, and there is no init state, no `ready` flag and no
-"has it arrived yet" question anywhere below. The host is the one of the three
+"has it arrived yet" question anywhere below. The host is the one of the four
 that can be REPLACED after the boot (`LocalOwner.rehost`, above), which is why
 `LocalOwner` keeps the host and everything reads the match off it rather than
 holding the match.
@@ -672,8 +677,16 @@ the reload brings up shows the notice once, as a toast; the settings are
 puts the boot's own "No graphics device" plate back up (`main.ts`,
 `deviceLostForGood`) and lets the page go under it — the match left, the sound
 suspended, the pointer lock released — so a device that dies on every boot
-cannot loop the page. Storage that cannot be read or written is answered with
-the plate too. **Offline the round is lost; in a server's match the player has
+cannot loop the page. **Storage that cannot be read or written is answered with
+the plate too, and that includes the FIRST loss**: a page whose
+`sessionStorage` throws never reloads on a loss, because a reload it cannot
+record is one the guard cannot see (`core/deviceLoss.ts`; an open question for
+the owner, `plans/done/babylon_exit_landed.md`). **And nothing is OPENED after
+a loss** (`Game.deviceIsLost`, set first): `startRound`, `buildRound` and
+`joinMatch` refuse, so a build `startRound` booked two frames ahead — frames
+the browser's and not the loop's, which `stop` does not cancel — or a join or
+a welcome reaching for a round cannot open a match or build a map on the dead
+device, under the plate or in a reload's last moments. **Offline the round is lost; in a server's match the player has
 left it**, its slot going back to its bot as any leaving peer's does
 (`docs/multiplayer.md`), and the notice says to rejoin it from Online — there
 is no reconnect into your own slot, and the reload is not one. What a reload

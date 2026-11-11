@@ -603,7 +603,8 @@ src/
                         #   never assigns a state — go/raiseLid/lowerLid, and
                         #   takeDown for what a screen means on screen. A LOST
                         #   device is deviceLost (X5.4i): the teardown, then the
-                        #   page reloaded to the menu, or the boot's plate
+                        #   page reloaded to the menu, or the boot's plate;
+                        #   no build or match opened after it (deviceIsLost)
     deviceLoss.ts       # What a lost graphics device leaves the page
                         #   (X5.4i): the last loss in sessionStorage (its
                         #   time and the menu's notice), the loop guard —

@@ -3510,8 +3510,8 @@ hands the Babylon cel materials, which neither draw nor compile, no texture).
 frame's submit and the lamps' atlas disposed between frames after the last
 submit (each `dispose` destroys AT ONCE, the teardown's exception to
 "destroyed after the frame's submit"), and the page reloaded to the menu — or,
-a second time inside a minute, the boot's "No graphics device" plate
-(`docs/game.md`, "A lost device"). Nothing of ours is rebuilt in place; that is
+a second time inside `CONFIG.graphics.deviceLossWindow`, the boot's "No
+graphics device" plate (`docs/game.md`, "A lost device"). Nothing of ours is rebuilt in place; that is
 `FINDINGS.md` 74.
 
 **Our renderer (`src/render/`) owns everything it draws with**: the frame's

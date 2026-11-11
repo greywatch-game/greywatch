@@ -17,7 +17,11 @@
  * - **Storage that cannot be written is answered with the plate**, never a
  *   reload: a reload this cannot record is one the guard cannot see, and the
  *   reload after it could be the loop. Storage that cannot be READ is the
- *   same: nothing says this is not the second loss.
+ *   same: nothing says this is not the second loss. **That holds for the
+ *   FIRST loss too**: a page whose `sessionStorage` throws (a storage
+ *   policy that refuses it) never reloads on a loss and goes straight to the
+ *   plate — kept so, and named for the owner (`BABYLON_EXIT.md` X5.4i's
+ *   review, `plans/done/babylon_exit_landed.md`).
  * - The entry is `sessionStorage`'s, so it is the TAB's and dies with it: a
  *   new tab or window starts with no loss behind it. The settings are not
  *   here and need nothing — they are `localStorage`'s (`core/settings.ts`),
@@ -25,7 +29,11 @@
  * - The clock is the wall clock (`Date.now()`), the one that runs across a
  *   reload. It decides a page's answer, never a round's outcome.
  * - The notice is read ONCE: the first boot after the reload shows it and
- *   clears it, keeping the loss's time for the guard.
+ *   clears it, keeping the loss's time for the guard. The notice is `Game`'s
+ *   (`deviceLost`), and its "rejoin the match from Online" assumes the reload
+ *   lands on the menu: under the dev and smoke URL `?mp`, whose reload joins a
+ *   match by itself (`Game.joinFromUrl`), that clause is wrong, and is left so
+ *   (`?mp` is no player's URL).
  * Never: reloads, tears anything down or draws (the caller does each:
  *   `Game`'s `device.lost`); throws (every storage access is caught).
  * Contract: `docs/game.md` ("A lost device"), `docs/states.md`.
