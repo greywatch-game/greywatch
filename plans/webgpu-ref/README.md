@@ -125,7 +125,8 @@ compiles read 0. The same commit made `census.mjs` tolerate an engine with no
 statics off the device (Babylon's `extractDriverInfo`, the empty string on
 WebGPU; `compatibilityMode` null with no engine; the canvas pass's depth format
 `ChainPasses`'), `leaks.mjs` SKIP its positive control and say so on a
-`NullEngine` (it needs a WebGPU engine to compile and cache), and `shaders.mjs`
+`NullEngine` (it needs a WebGPU engine to compile and cache; X5.4h's review
+gave it a device half that runs on every tree), and `shaders.mjs`
 skip Babylon's half (no backend to compile against; each material's defines
 still read for ours).
 
@@ -545,8 +546,13 @@ still read for ours).
   the file and without) and deleted the file, after which the control's own released
   effect is the one live buffer more than at a parent with it. **Since X5.4h** the
   scene's engine is a `NullEngine` (no backend, no pipeline context, no cache): the
-  two counts are 0 by construction, the control is SKIPPED and said so, and the
-  device's counts, the live buffers and the heap are read as before.
+  two counts are 0 by construction, Babylon's half of the control is SKIPPED and
+  said so, and the device's counts, the live buffers and the heap are read as
+  before. **The control's DEVICE half runs on every tree** (X5.4h's review): one
+  256-byte buffer made and destroyed and one bind group made over it, on the
+  device the game draws with (`Game.renderer.device`), which must move the
+  device hooks' counters by 1 buffer, 1 destroyed, 256 live bytes and back, and
+  1 bind group — or the run fails.
 - **`lost.mjs`** destroys the device every draw is made on, from the page, at the
   menu, the building card, deploy and a life, each on a fresh page, and records
   what follows for `--seconds`: the state, the frames drawn and submitted, whether

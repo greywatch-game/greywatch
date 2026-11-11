@@ -12,10 +12,11 @@
  * X5.4h): a count that moves off zero is the patch's two leaks back. **Since
  * X5.4h Babylon's engine is a `NullEngine`** (`src/core/SceneEngine.ts`): it
  * has no WebGPU backend, no pipeline context and no bind-group cache, so the
- * two counts are 0 by construction and the positive control cannot run (it
- * needs a WebGPU engine to compile an effect and fill a cache): it is said to
- * be skipped, and the device's counts, the live buffers and the heap are
- * read as before.
+ * two counts are 0 by construction and Babylon's half of the positive control
+ * cannot run (it needs a WebGPU engine to compile an effect and fill a
+ * cache): it is said to be skipped, and the device's counts, the live buffers
+ * and the heap are read as before — under the DEVICE's half of the control
+ * (below, X5.4h's review), which runs on every tree.
  *
  * ```
  * node plans/webgpu-ref/leaks.mjs [map] [--then=<map>] [--frames=600] [--rounds=2]
@@ -69,8 +70,16 @@
  *   no GPU bind group made). It must count 1 call and 1 creation, and the
  *   device's `createBindGroup` none.
  *
+ * - **the DEVICE's half** (X5.4h's review: since X5.4h the only half that can
+ *   run, on any tree): one buffer of 256 bytes made and destroyed, and one
+ *   bind group made over it, through the device every draw is made on
+ *   (`Game.renderer.device`) — the device hooks' own counters must move: 1
+ *   buffer made, 1 destroyed, the live bytes 256 between the two and back to
+ *   where they were after, and 1 bind group. Nothing of it outlives the
+ *   control (a bind group has no `destroy`; its buffer is destroyed).
+ *
  * Anything else fails the run (exit 1): the hooks are not where the engine
- * reaches them, and the counts after them grade nothing. **The control is also
+ * or the device reaches them, and the counts after them grade nothing. **The control is also
  * the one place leak (1) still shows**: with `webgpuLeaks.ts` gone (X5.4b) its
  * released effect keeps its pipeline context's uniform buffer, so every read
  * from the baseline on holds ONE more live `GPUBuffer` than at a parent with
@@ -220,6 +229,38 @@ console.log(
     ? `the positive control FAILED: ${control.error}`
     : `the positive control: an effect released, ${control.deletes} pipeline context${control.deletes === 1 ? "" : "s"} deleted (${control.deletesWithContext} with a context); the engine's cache asked ${control.cacheCalls} time${control.cacheCalls === 1 ? "" : "s"}, ${control.cacheCreated} bind-group set made, the device's createBindGroup ${control.deviceBindGroups} — ${controlHeld ? "both hooks count" : "FAILED (1, 1, 1, 1 and 0 wanted)"}`,
 );
+// THE DEVICE'S HALF of the control (the header): the device hooks seen to
+// count on the device the game draws with, on every tree.
+const deviceControl = await page.evaluate(() => {
+  const device = window.__celshock.renderer?.device;
+  if (!device) return { error: "no device on Game.renderer" };
+  const d = window.__leakDev;
+  const before = { ...d };
+  const buffer = device.createBuffer({ size: 256, usage: GPUBufferUsage.UNIFORM, label: "leaks.mjs control" });
+  const madeBytes = d.liveBytes - before.liveBytes;
+  const layout = device.createBindGroupLayout({ entries: [{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } }] });
+  device.createBindGroup({ layout, entries: [{ binding: 0, resource: { buffer } }] });
+  buffer.destroy();
+  return {
+    buffers: d.buffers - before.buffers,
+    destroyed: d.destroyed - before.destroyed,
+    madeBytes,
+    bytesAfter: d.liveBytes - before.liveBytes,
+    bindGroups: d.bindGroups - before.bindGroups,
+  };
+});
+const deviceHeld =
+  !deviceControl.error &&
+  deviceControl.buffers === 1 &&
+  deviceControl.destroyed === 1 &&
+  deviceControl.madeBytes === 256 &&
+  deviceControl.bytesAfter === 0 &&
+  deviceControl.bindGroups === 1;
+console.log(
+  deviceControl.error
+    ? `the device's control FAILED: ${deviceControl.error}`
+    : `the device's control: ${deviceControl.buffers} buffer made (${deviceControl.madeBytes} bytes live) and ${deviceControl.destroyed} destroyed (${deviceControl.bytesAfter} bytes left), ${deviceControl.bindGroups} bind group made — ${deviceHeld ? "the device hooks count" : "FAILED (1, 256, 1, 0 and 1 wanted)"}`,
+);
 await page.evaluate(() => (window.__leaks.dev0 = { ...window.__leakDev }));
 
 const reads = [];
@@ -290,4 +331,4 @@ if (pageErrors.length || consoleErrors.length) {
 }
 await browser.close();
 vite.stop();
-process.exit(controlHeld ? 0 : 1);
+process.exit(controlHeld && deviceHeld ? 0 : 1);
