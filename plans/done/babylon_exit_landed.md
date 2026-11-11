@@ -11707,7 +11707,7 @@ here).
 Scripts and logs in the session's scratchpad, `x53-whole/` (`bank.sh`, `sarab.sh`, `run2.sh`,
 `dl-fix.mjs`, `viewer7.mjs`, `status.txt`).
 
-### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88), X5.4e **LANDED** (74d246c, its review bc6892c), X5.4f **LANDED** (cfe4d8e, c37ae6d, its review b3cb649)
+### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88), X5.4e **LANDED** (74d246c, its review bc6892c), X5.4f **LANDED** (cfe4d8e, c37ae6d, its review b3cb649), X5.4g **LANDED** (c461635, acbd9e4)
 
 The plan's `BABYLON_EXIT.md` holds X5.4's brief, "What the frame is today", its ONE RULE, the
 step's own two rules, "Every sub-step owes" and the nine sub-steps.
@@ -12377,3 +12377,106 @@ bug, in a tool, and the rest text still describing the scene's frame.
   nothing reading Babylon's — until X5.4h stops constructing the engine.
 - **Measured**: typecheck, build (its gates), corecheck. **Not run**: a live session — no path a frame
   takes moved.
+
+**X5.4g LANDED** (c461635 the instruments, acbd9e4 the step; 2026-11-10; no change to the picture;
+report version 38). Measured headless on the Windows box against a BEFORE at cada12d, in the worktree
+`greywatch-2-before-x53a` (moved there, detached; no dependency moved; its `ref/` the main tree's;
+moved again to c461635 for the new instruments' parent run), every run alone on the GPU. No device
+lost in any run.
+
+- **What moved**: `core/FrameLoop.ts` (new) is the loop, started where `engine.runRenderLoop` was, in
+  `AbstractEngine._renderLoop`'s order (`abstractEngine.pure.js` 433-501): `FrameCap.admit` asked of
+  every refresh (the `ICustomAnimationFrameRequester` shape deleted; FrameCap keeps the deadline, the
+  stamps and `elapsed`); an admitted refresh samples the clock (`beginFrame`'s `_measureFps`), raises
+  the loop's `onBeginFrameObservable`, runs `tick`, then the end — `FrameSubmit.submit`, the profiler's
+  `presented`, `frameId` moved, `onEndFrameObservable` raised (where `endFrame` moved and raised the
+  engine's) — and requests the next refresh last, so a throw stops the loop as Babylon's did; `held`
+  (written from the engine's `onContextLostObservable`/`onContextRestoredObservable`) skips frames as
+  `_contextWasLost` did. `FrameClock` is `PerformanceMonitor`/`RollingAverage(30)` and `_measureFps`
+  ported (the variance dropped: nothing reads it), made in `main.ts` before `new WebGPUEngine`'s
+  `initAsync` and hooked on the engine's `onBeginFrameObservable`, injected into `Game`. `render/
+  FrameSubmit.ts` (new): the encoder (label `frame encoder`), finished and submitted as one command
+  buffer, the next made right after; `render/FrameTimer.ts` (new): `?gpu`'s whole-frame timer, a query
+  set of two written by two empty compute passes (`timestampWrites` begin on the first, end on the
+  last), resolved and copied in the encoder, mapped after the submit, one reading in flight, read by
+  the profiler as the cull timer is. The seam keeps item 1 (`BabylonEngineSeam.device`); item 9 and
+  `afterSubmit` retired; `SceneFrame`'s host takes the encoder and the end of frame off the loop.
+  `SceneFrame.animationRatio` replaces `scene.animate()` (`Scene.animate`'s non-lock-step branch:
+  `useConstantAnimationDeltaTime` 16 ms, else the loop's delta clamped to `Scene.MinDeltaTime`..
+  `MaxDeltaTime`, times 60/1000), `ParticleDraw` reading it; `timeWith(prof, glow)` brackets
+  `drawWorld` after the draw phase's opening and close and the glow's work off its two notifications.
+  `FrameProfile.arm(surface, frames)`: no scene, frame or glow handed in; `hookRender`, `hookEngine`,
+  `recordPresent`, `SceneInstrumentation`, the five counter arrays, `gpuMs`, `frameIdAt`, the
+  `WebGPUCacheRenderPipeline` patch and its effect names gone; `presented()` public; `setFrameTimer`.
+  `profilePhases`: `shadowPass` gone. `profileReport` v38 (its history line says what retired). `main.ts`
+  no longer sets `enableGPUTimingMeasurements` (`timestamp-query` still asked under `?gpu`).
+- **The first frames' clock**: first built inside `Game` (the hook on the engine in its constructor),
+  the clock had no sample before the loop's first frame, so frame 1 read a delta of 0 and a rate of
+  Infinity where the parent read 454.6 ms and 4.4 fps (Babylon's monitor had sampled `initAsync`'s
+  resize frame, in `main.ts`, before `Game` existed) — and `tick`'s first `dt` (the `elapsed`
+  fallback) would have been 0 for the parent's 0.05. Moved to the boot, the step reads the parent's
+  shape: 549.2 ms and 3.6 fps, then the same run of deltas (`x54g/smoke.mjs`).
+- **The instruments** (c461635, in their own commit, no change to the game): `harness.mjs`' frame
+  adapter gains the loop's arm, picked over Babylon's engine questions when `Game.frameLoop` exists
+  (`onBegin`, `submitted`/`onSubmitted`, `scheduleDelta` on the clock keyed on the loop's `frameId`,
+  `encoderRole` naming our encoder `frame`); `drawlog.mjs` counts the engine's `beginFrame` per class
+  (`begins`, a resize's apart in `resizeBegins`; 0 outside a resize asserted under our loop);
+  `bench.mjs` prints `-` for a report without Babylon's draw count. Run at the parent (c461635 in the
+  worktree) against the logs cada12d's own instruments wrote: the draw log (Babylon's `beginFrame` 1 a
+  frame in every class there), `census` (147 rows), `gi.mjs` (914,604 and 254,724 values),
+  `particles.mjs` (45,120), `surfaces.mjs` (5,719), `post.mjs` at both sizes (31,879 values each),
+  `readers.mjs` replay (547 of 547) and camera — all equal.
+- **Every bank row** by `exact.mjs`, `--check --keep` at each tree, 147 rows a run: default 145
+  byte-equal, `harrowmead-view-pistol-reload` (2 pixels by 1/255) and `sarab-shelf` (1 pixel by 1/255)
+  within their flakes; `volumetrics=low` 147 byte-equal; `=high` 147 byte-equal.
+- **`post.mjs` at both sizes** against the parent's (new-instrument) log with ONLY X5.4g's section of
+  `post-expected.txt`: 30,075 values equal at each size; named, `**.passes[*].role` (392 paths: upload
+  → frame) and `**.whole.submits[*].buffers` (34: one buffer, `frame`/`frame encoder`, where there were
+  two, Babylon's `upload`/`[#|#] - UploadEncoder` and an empty `render`) — `x54e/wholeflat.cjs` over all
+  34 scenarios: 562 items, the command order the same item for item and every submit's writes equal
+  in number and bytes (12 writes, 8,672 bytes on the phone's scenarios).
+- **The probes**: the draw log equal, `begins` 0 a frame in every class and no resize in its run;
+  `census` 147 rows equal; `gi.mjs` equal; `particles.mjs` equal by `Object.is` (45,120 numbers, the
+  schedule's delta through the loop's clock); `surfaces.mjs` equal (5,719); `readers.mjs` replay 547 of
+  547 live answers, the three origins, `ours` and `ids` equal; camera equal; `pipelines.mjs
+  hollowmere` (107 modules, 2 of Babylon's pipelines, 90 of ours, nothing per second) and `coldharbour
+  --round` (nothing in play) as the parent; `leaks.mjs` (two Coldharbour rounds, a map change, a
+  Hollowmere round) as the parent at every step, live buffers included (142, 405, 411, 159 … 155).
+- **The menu** (`x54f/menu.mjs`, both trees): boot frames 1 to 12 and 61 to 65 hashed equal.
+- **Live** (`x54g/live.mjs`, both trees; X5.4f's script, its per-frame shape now Babylon's
+  `beginFrame` outside a resize / commands on Babylon's two encoders outside a resize / `queue.submit`
+  calls outside a resize / canvas passes / swap textures / render-id advances): 45 steps, PASS on both.
+  The step's every frame reads `0/0/1/1/1/2` (3,184 offline and 543 and 880 in the two matches); the
+  parent's `1/12..789/1/1/1/2` and 12, 2 and 2 resize frames of Babylon's own on both. Caps over a
+  pan: 29.97/29.94 and 60.07/60.04 fps, p50 32 and 16 ms (parent 29.97/29.94 and 60.11/60.23). Compiles
+  0, retired lists empty, no page or console error.
+- **`bench.mjs greyfen sarab --max`**, three runs a tree (`x54g/max-*.json`): group means Greyfen
+  5.32/6.02/6.82 → 4.89/6.01/6.83 ms (vantages' spread 17% and 35%, both OVER 8% — the noise X0.4
+  recorded there), Sarab 3.80/4.28/4.05 → 3.84/4.21/4.06; fights `83e8e74ef36916ba` and
+  `986c2e35557fb679` on every run.
+- **`?profile&gpu`** (`x54g/bench.sh`: `bench.mjs hollowmere coldharbour --gpu --capped --runs 2`,
+  parent and step alternating twice): `gpu.frame` within 1.0%, every group lower; `render` within 8%
+  (the widest, Coldharbour's fight 0.294 → 0.313 in the first pair and 0.315 → 0.300 in the second);
+  the numbers are in `BABYLON_EXIT.md`. Fights 549487ba93bceefe and de5622634abca6e7 on all eight runs a
+  map. `frame` + `present` against the wall clock (`x54g/residue.mjs`): the residue 91.0% → 91.2%
+  (Hollowmere) and 89.6% → 89.8% (Coldharbour) of a 7.96 ms vsync interval, `present` 0.026/0.025 →
+  0.019/0.018 ms — what `endFrame` did after its submit (the observers, the retirements) now outside it.
+- **`lost.mjs`** (both trees, the four moments): the state machine and the frames go on as at the
+  parent (a dead frame, X5.4i's); the parent's 250 cross-device validation warnings a loss (our passes
+  recorded into Babylon's restored device's encoder) are gone — our commands go to our own,
+  destroyed, device. The frames' submitted count is the drawn count now (one submit a frame; the
+  parent's counted Babylon's end of frame, one ahead).
+- **The viewer** (`x54g/viewer.mjs`): a v37 capture and trace (the parent) and a v38 capture and
+  trace (the step) loaded into the step's `/profile_viewer.html`: no script error; the draw-call
+  panel shown for the v37 capture and left out for the v38 one, the trace's counter panel likewise.
+- **Typecheck, build** (its gates), **corecheck, parity**, **`gate`** (7 maps clean) and **`shaders`** (7
+  maps clean).
+- **Not run**: the phone; `merge:hash` (the world layer untouched).
+- **Named for the owner**: `present` ends at the submit's return; the GPU timer's stamps are two
+  empty passes of its own; `activeMeshes` and a creation's `effect`/`defines` retired with the counters
+  and the patch they came from; Babylon's resize frames (`_initializeMainAttachments`) still run, 12 at
+  the boot and 2 a resize, and the clock samples there as Babylon's monitor did, until X5.4h.
+
+Scripts and logs in the session's scratchpad, `x54g/` (`before.sh`, `beforenew.sh`, `after.sh`,
+`probes.sh`, `bench.sh`, `rest.sh`, `smoke.mjs`, `live.mjs`, `residue.mjs`, `viewer.mjs`,
+`x54g-ignore.txt`, the BEFORE, BEFORE-new and AFTER logs and kept frames, `edits/`).
