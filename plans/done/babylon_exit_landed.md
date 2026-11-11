@@ -11707,7 +11707,7 @@ here).
 Scripts and logs in the session's scratchpad, `x53-whole/` (`bank.sh`, `sarab.sh`, `run2.sh`,
 `dl-fix.mjs`, `viewer7.mjs`, `status.txt`).
 
-### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88), X5.4e **LANDED** (74d246c, its review bc6892c), X5.4f **LANDED** (cfe4d8e, c37ae6d, its review b3cb649), X5.4g **LANDED** (c461635, acbd9e4, its review fcca130), X5.4h **LANDED** (fc76336, c01c54b)
+### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88), X5.4e **LANDED** (74d246c, its review bc6892c), X5.4f **LANDED** (cfe4d8e, c37ae6d, its review b3cb649), X5.4g **LANDED** (c461635, acbd9e4, its review fcca130), X5.4h **LANDED** (fc76336, c01c54b, its review 7e771ee, 204ee7b)
 
 The plan's `BABYLON_EXIT.md` holds X5.4's brief, "What the frame is today", its ONE RULE, the
 step's own two rules, "Every sub-step owes" and the nine sub-steps.
@@ -12672,3 +12672,85 @@ fc76336 for the new instruments' parent run), every run alone on the GPU. No dev
 Scripts and logs in the session's scratchpad, `x54h/` (`before.sh`, `rest-before.sh`, `after.sh`,
 `probes.sh`, `bench.sh`, `inventory.mjs`, `clock.mjs`, `live.mjs`, `hold.mjs`, `pwa.mjs`, the BEFORE,
 BEFORE-new and AFTER logs and kept frames).
+
+**Its review** (7e771ee the instrument, 204ee7b the fixes; 2026-11-11; no change to the picture) found
+no real or architectural issue: ten NITs, each checked against the code and each holding, fixed or
+booked.
+
+- **`CanvasSurface.adoptInput` was a partial port** (`webDeviceInputSystem.js` 547-625 and 664-680,
+  `eventFactory.js`, `scene.inputManager.js` 753-771): where a press on the canvas ended without a
+  release — the canvas's `blur` with a press held, a `pointercancel`, a pen's `pointerleave`, and on
+  macOS Chromium a `lostpointercapture` with `buttons > 1` — Babylon released the capture and made a
+  `pointerup` (`DeviceEventFactory`) that `InputManager._onPointerUp` took as a real one, focusing the
+  canvas (its `preventDefault` a no-op on a made event). The port released the capture on a
+  `pointercancel` and did nothing else. Now ported, with Babylon's two layers kept apart because they
+  can disagree: the DEVICE's (`held`: a press recorded and no release ended, by pointer, mouse or touch,
+  a pen a touch; a real `pointerup` the device holds no press for dropped, as `_pointerUpEvent` dropped
+  it once the made one had zeroed the button) and the SCENE's (`active`, `_activePointerIds` as
+  written, -1 a free slot); a mouse's made release carries pointer id 1 (`_CreatePointerEvent`), the
+  mouse's own on Chromium, so on Firefox (its mouse 0) it focuses nothing and leaves the scene's slot
+  stale, as Babylon did. Not kept, and said in the header: a CHORD's buttons (a second button under the
+  first reached the scene as a `pointermove`, and only focused a canvas the first press focused), the
+  touch limit, and a touch numbered 0 left uncaptured. **Checked headless** (`inputcheck.mjs`,
+  Hollowmere, seed 5101: the next-map and Settings buttons and the settings' back, a click mid-screen
+  at the menu (it lands on the canvas), the menu's Deploy to `deploy`, `spawnPlayer`, a click on the
+  canvas in the round taking the lock, a press held while focus is moved to an input, then released,
+  and a CDP touch started and cancelled on the canvas; every pointer, mouse, click, capture and focus
+  event logged at the document with `defaultPrevented`, the capture, the lock and the focused element),
+  on three trees: this one, cdfb0b63's `CanvasSurface.ts` swapped in, and the parent a7600ea7 in a
+  worktree of its own (its own `npm ci`). **Against cdfb0b63** equal but the held blur: there the input
+  took the focus and the later real `pointerup` was default-prevented and refocused the canvas; here
+  the canvas is refocused at the blur (the input never takes it) and the later `pointerup` is not
+  default-prevented. **Against the parent, IDENTICAL**, all 64 entries: Babylon's own input manager.
+  The touch cancel, the pointer lock and the menu's buttons equal on all three. `TouchControls` (the
+  window's pointer events, its own elements' capture) and `InputManager` (the document's) are
+  untouched: neither reads the canvas's focus or capture.
+- **`leaks.mjs`'s control had nothing left on a `NullEngine`**: Babylon's half (an effect released, the
+  cache asked) is skipped since X5.4h, which left the device's counts, the live buffers and their MB
+  under no control. A DEVICE half now runs on every tree, before `dev0` is taken: a 256-byte buffer
+  made and destroyed and a bind group made over it on `Game.renderer.device`, which must move the
+  hooks' counters by 1 buffer, 256 live bytes, 1 destroyed and back to 0, and 1 bind group, or the run
+  fails. Its own commit (7e771ee), the header and the README. **Run once** (coldharbour, one round of
+  120 frames, then hollowmere): "1 buffer made (256 bytes live) and 1 destroyed (0 bytes left), 1 bind
+  group made — the device hooks count"; Babylon's half skipped; 0 contexts released and 0 cached bind
+  groups made after the boot in every class; live buffers 132 at the menu, 145 to 149 after each
+  teardown.
+- **`EmissiveFog` is dead**: on the `NullEngine` its guard (`isWebGPU` false) attaches nothing, and
+  `setEmissiveFog` writes a fog no plugin reads. Text only, the plugin kept until X6.1: its header (INERT
+  since X5.4h, until X6.1; every emissive surface drawn being our renderer's, the palette carrying the
+  curve in its own WGSL), `setEmissiveFog`'s doc, `CelShader`'s call site and `setEnvironment`'s
+  comment, `FILES.md`'s row.
+- **Text**: `Game`'s class doc said `main.ts` builds the engine and hands it in — now `main.ts` hands in
+  the device and the surface, and `Game` builds the scene's engine (`SceneEngine`); `docs/rendering.md`'s
+  body-shadow map said, in the present tense, that the old wrapped view destroys the one it wraps and
+  that Babylon's readers sample a wrapped view — now past, as the world maps' section; `BABYLON_EXIT.md`
+  rule 5 said a wrapped view is read "through the seam", which is deleted — now read since X5.4h as "a
+  GPU resource lives with whatever produces it, and nothing else holds a view of it" (no wrapped view
+  left: the default cube's went at X5.3d, the shadow maps' at X5.4h), with a Contracts row as rule 4's
+  reading has; `FILES.md`'s FadeDraw row said the two opacity maps are "Babylon's through the seam" —
+  ours since X5.4d (`TextureMaker`'s); `LocalShadows.dispose` releases nothing since X5.4h (at the
+  parent it disposed the wrapped view, which destroyed the atlas texture) and nothing calls it — its
+  doc says so; `adoptInput`'s summaries in `docs/rendering.md`, `FILES.md` and `Game`.
+- **`scripts/capture-map-shots.mjs`** read the backing store off `scene.getEngine()` (the `NullEngine`,
+  told the surface's size, so it answered right); it reads `Game.surface` now, the engine on an older
+  tree. `node --check`.
+- **Booked on X5.4i**: the teardown releases the lamp atlas through `LampAtlas.dispose` (which
+  `Renderer.dispose` does not reach), beside `Renderer.dispose`, not through `LocalShadows.dispose`; the
+  owner's answer goes in `Game`'s `device.lost` handler, which must not filter out the reason
+  `"destroyed"` (`lost.mjs` simulates a loss with `device.destroy()`) and must not be re-entered by a
+  teardown that destroys the device itself; at the parent Babylon's restore took one more clock sample
+  (`_restoreEngineAfterContextLost`, `initAsync`, `_initializeMainAttachments`, `beginFrame`), which
+  matters only on a loss, inside the accepted dead frame; and `adoptInput`'s canvas listeners, `main.ts`'
+  `uncapturederror` listener and the context's `unconfigure` need nothing under a page reload.
+- **A third Coldharbour `?profile&gpu` pair** (run by the owner: `bench.mjs coldharbour --gpu --capped
+  --runs 2`): `render` vantages/path/fight 0.2765/0.265/0.3275 ms at the parent (a run that overlapped a
+  build, slow) against 0.196/0.2035/0.307 at the step; `gpu.frame` 4.169/4.156/4.969 against
+  4.173/4.168/4.961; the fight `de5622634abca6e7` on both. With the second pair, this confirms that the
+  first pair's Coldharbour 13–16% was one slow run of the step's.
+- **Measured**: typecheck, build (its gates), corecheck; `node --check` on `leaks.mjs` and
+  `capture-map-shots.mjs`; `leaks.mjs` once; `inputcheck.mjs` on three trees. **Not run**: the bank and
+  the probes (nothing drawn moved: an input port, an instrument, text); the
+  phone.
+
+Scripts and logs in the session's scratchpad (`inputcheck.mjs`, `in-new.json`, `in-head.json`,
+`in-parent.json`, `build.txt`).

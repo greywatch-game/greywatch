@@ -5343,7 +5343,7 @@ pointer, its history unchanged):
   when it lands, owes three things: its generator's emitted header rewritten, its
   `params.ts` and `WRITABLE` rows dropped, and a `maps:check` entry.
 
-### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d; it was sized **M** before the split, and the read below re-sizes it) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014, its review clean), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88), X5.4e **LANDED** (74d246c, its review bc6892c), X5.4f **LANDED** (cfe4d8e, c37ae6d, its review b3cb649), X5.4g **LANDED** (c461635, acbd9e4, its review fcca130), X5.4h **LANDED** (fc76336, c01c54b)
+### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d; it was sized **M** before the split, and the read below re-sizes it) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014, its review clean), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88), X5.4e **LANDED** (74d246c, its review bc6892c), X5.4f **LANDED** (cfe4d8e, c37ae6d, its review b3cb649), X5.4g **LANDED** (c461635, acbd9e4, its review fcca130), X5.4h **LANDED** (fc76336, c01c54b, its review 7e771ee, 204ee7b)
 
 - **Do:**
   - Our own `requestAnimationFrame` loop.
@@ -6222,6 +6222,41 @@ measurement until the sub-step that replaces both.
   attached (`isWebGPU` false on a `NullEngine`; those materials never compile); (5) the camera's movement
   reads the `NullEngine`'s `getDeltaTime` of 0, inert because nothing writes `cameraDirection` or
   `cameraRotation` (the camera log equal); (6) the engine's class is `SceneEngine`, a `NullEngine`.
+
+  **Its review** (7e771ee the instrument, 204ee7b the fixes; 2026-11-11; no change to the picture: one
+  input port completed, an instrument's control, a script's read, text and bookings; the full note is in
+  `plans/done/babylon_exit_landed.md`) found no real or architectural issue; ten NITs, all fixed or
+  booked. **`adoptInput` was a partial port**: Babylon also SYNTHESIZED a release where a press on the
+  canvas ended without one — the canvas's `blur` with a press held, a `pointercancel`, a pen's
+  `pointerleave`, macOS Chromium's `lostpointercapture` with `buttons > 1` — and took it through
+  `InputManager._onPointerUp`, which focused the canvas; the port released the capture on a cancel
+  alone. Now ported with Babylon's two layers apart (the device's held presses, the scene's
+  `_activePointerIds`, a mouse's made release carrying id 1), so point (2) above is the scene input
+  manager's effect on the canvas IN FULL, but the chord, the touch limit and a touch numbered 0.
+  **Checked headless** (`inputcheck.mjs`: menu buttons, the menu's Deploy, a click on the canvas at the
+  menu and in the round with the lock it takes, a press held while focus moves to an input, a CDP touch
+  cancelled on the canvas): the event log equal to cdfb0b63's but the held blur (the canvas refocused at
+  the blur, the later real `pointerup` not default-prevented), and **equal, entry for entry, to the
+  parent a7600ea7's**, Babylon's own input manager. **`leaks.mjs`** gains a DEVICE half to its positive
+  control, run on every tree (a 256-byte buffer made and destroyed, a bind group over it, on
+  `Game.renderer.device`: 1, 256, 1, back to 0, and 1), since Babylon's half is skipped on the
+  `NullEngine`; run once, it counts. **Text**: `Game`'s class doc (the device and the surface handed in,
+  the scene's engine built in `Game`); `docs/rendering.md`'s body-shadow map (the wrapped view in the
+  past tense); `EmissiveFog` INERT since this step until X6.1 (its header, `setEmissiveFog`, the call
+  site, `setEnvironment`, `FILES.md`; the plugin kept); rule 5 read since this step as "a GPU resource
+  lives with whatever produces it, and nothing else holds a view of it", with a Contracts row as rule
+  4's; `FILES.md`'s FadeDraw row (the opacity maps ours since X5.4d); `LocalShadows.dispose`'s doc (it
+  releases nothing since this step; nothing calls it); `capture-map-shots.mjs` reads the backing store
+  off `Game.surface`. **Booked on X5.4i**: `LampAtlas.dispose` in the teardown, not
+  `LocalShadows.dispose`; the owner's answer in `Game`'s `device.lost` handler, which must not filter
+  out `"destroyed"` nor be re-entered by a teardown destroying the device; the restore's one clock sample
+  more at the parent, only on a loss; nothing owed under a reload by `adoptInput`'s and
+  `uncapturederror`'s listeners or the context's `unconfigure`. **A third Coldharbour `?profile&gpu`
+  pair** (the owner's, `bench.mjs coldharbour --gpu --capped --runs 2`): `render` 0.2765/0.265/0.3275 ms
+  at the parent (a run overlapping a build, slow) against 0.196/0.2035/0.307 at the step, `gpu.frame`
+  4.169/4.156/4.969 against 4.173/4.168/4.961, the fight `de5622634abca6e7` on both — with the second
+  pair, the first pair's 13–16% was one slow run. **Measured**: typecheck, build (its gates), corecheck;
+  `node --check` on both scripts. **Not run**: the bank and the probes (nothing drawn moved); the phone.
 
 - **X5.4i — a lost device** (a change to what a player sees on a loss, which today is a
   dead frame) — **S–M** (decision: row "X5.4, a lost device"). The Do's device-loss
