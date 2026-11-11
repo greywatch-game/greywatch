@@ -75,7 +75,8 @@
  *
  * WHAT IT COSTS THE CPU, which is the question that was actually asked: one
  * full-screen draw and a dozen uniform writes. Every input it needs already
- * exists and is already computed — the depth image is `FrameDepth`'s, shared
+ * exists and is already computed — the depth image is the frame's own
+ * (`FrameTargets.depth`, our renderer's), shared
  * with the ink and the blur; the shadow map and its matrix are `ShadowSystem`'s
  * and are published to the cel materials whether this exists or not; the camera
  * basis is read straight out of the view matrix. It builds nothing, walks
@@ -97,10 +98,9 @@ import type { Camera, Matrix } from "@babylonjs/core";
 import { Vector3, Vector4 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { depthBias } from "../core/shadowWindow";
-import { hostTexture } from "../render/babylonSeam";
+import type { FrameTargets } from "../render/FrameTargets";
 import type { OwnTexture } from "../render/HostBindGroup";
 import type { PostStage } from "../render/PostChain";
-import type { FrameDepth } from "./FrameDepth";
 import {
   VOLUMETRICS_BLOCK as B,
   VOLUMETRICS_FRAGMENT_BINDINGS,
@@ -176,7 +176,7 @@ export class Volumetrics {
      * what bounds every ray at the geometry already drawn, and it is why this
      * pass has to stay downstream of whichever pass the scene draws into.
      */
-    private readonly depth: FrameDepth,
+    private readonly frame: FrameTargets,
     readonly rung: VolumetricRung,
   ) {}
 
@@ -186,7 +186,7 @@ export class Volumetrics {
       this.shadowMap !== null &&
       this.bodyShadowMap !== null &&
       this.cloudShadowMap !== null &&
-      this.depth.texture !== null
+      this.frame.depth.view !== null
     );
   }
 
@@ -361,7 +361,7 @@ export class Volumetrics {
  * Babylon named each rung's pass `volumetrics_<rung>`, which is each stage's
  * label: its pipelines' and the target it reads (`PostProcessRTT-<it>`).
  */
-export function volumetricStages(depth: FrameDepth, live: () => Volumetrics | null): PostStage[] {
+export function volumetricStages(frame: FrameTargets, live: () => Volumetrics | null): PostStage[] {
   const rungs = Object.keys(CONFIG.graphics.volumetrics.rungs) as VolumetricRung[];
   return rungs.map((rung): PostStage => {
     const at = (): Volumetrics | null => {
@@ -384,11 +384,11 @@ export function volumetricStages(depth: FrameDepth, live: () => Volumetrics | nu
       inputSampler: INPUT_SAMPLER,
       blockFloats: B.floats,
       // The frame's depth by `textureLoad` (no sampler), then the three maps
-      // each with the sampler it is bound with. Each is null until it exists
+      // each with the sampler it is bound with. Each is viewless or null until it exists
       // (the stage then draws nothing); `Game` latches the stage on only once
       // all four do, which is what `ready` asks.
       extras: [
-        { binding: 1, texture: () => (depth.texture ? hostTexture(depth.texture as never) : null) },
+        { binding: 1, texture: () => frame.depth },
         { binding: 2, samplerBinding: 6, texture: () => at()?.worldMap() ?? null },
         { binding: 3, samplerBinding: 7, texture: () => at()?.bodiesMap() ?? null },
         { binding: 4, samplerBinding: 8, texture: () => at()?.cloudField() ?? null },

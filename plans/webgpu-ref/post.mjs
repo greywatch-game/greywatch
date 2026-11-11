@@ -116,7 +116,13 @@
  * modules `celInk: …`) and the FRAME (`frame` and `frame.depth`: the render
  * target the scene draws into, the camera's `outputRenderTarget`,
  * `PostPasses.frameTarget`), so no Babylon pass is left for Babylon's arm to
- * name but the glow's mask's targets, which are `GlowPass`' own.
+ * name but the glow's mask's targets, which are `GlowPass`' own. **Since
+ * X5.4e those are OURS too** — the frame, its depth and the glow's six
+ * (`Game.renderer.targets`, `render/FrameTargets.ts`), named by their GPU
+ * textures under the same names — and their passes are recorded on Babylon's
+ * UPLOAD encoder (their `role`), and `chain()` reads ours where Babylon's
+ * render targets were (the glow's target sizes, the frame's depth), null for
+ * the three Babylon sampling fields ours has no counterpart of.
  *
  * **Since X5.4a the log holds the WHOLE frame** (X5.4e's to X5.4h's BEFORE),
  * beside the passes above and without moving them: each scenario's `whole` is
@@ -894,6 +900,9 @@ function postAdapter() {
   // Babylon's was, and the target the scene draws into — the camera's
   // `outputRenderTarget`, `PostPasses.frameTarget` — is `frame`, its depth
   // `frame.depth`, as Babylon's first live pass's input and its depth were.
+  // X5.4e: the FRAME, its depth and the glow's six are OUR renderer's
+  // (`Game.renderer.targets`, `render/FrameTargets.ts`), each a GPU texture of
+  // its own, named `frame`, `frame.depth` and `glow.<k>` as Babylon's were.
   const OURS = [
     ["paperGrain: ", "grain"],
     ["volumetrics_", "shafts"],
@@ -936,6 +945,8 @@ function postAdapter() {
       }
       return out;
     },
+    /** Our renderer's frame targets (X5.4e), or null on a tree before them. */
+    frameTargets: () => g.renderer?.targets ?? null,
     /** This frame's pool targets by writer: the k-th active stage but the last writes slot k. */
     pool() {
       const m = new Map();
@@ -1010,9 +1021,14 @@ function postAdapter() {
       if (prefix && live.length) m.set(prefix, `${live[live.length - 1].name}.out`);
       // Ours (X5.2c2): the pool, each target by the stage writing it.
       for (const [t, name] of ours.pool()) m.set(t, name);
-      // Ours (X5.2d): the frame, which the scene draws into and the ink reads.
+      // Ours (X5.2d): the frame, which the scene draws into and the ink reads
+      // — `PostPasses`' Babylon target until X5.4e, OUR renderer's after it.
+      const ownTargets = ours.frameTargets();
       const frame = g.postPasses?.frameTarget;
-      if (frame) {
+      if (ownTargets) {
+        if (ownTargets.frame.texture) m.set(ownTargets.frame.texture, "frame");
+        if (ownTargets.depth.texture) m.set(ownTargets.depth.texture, "frame.depth");
+      } else if (frame) {
         const t = hw(frame.getInternalTexture?.());
         if (t) m.set(t, "frame");
         const d = hw(frame.renderTarget?._depthStencilTexture);
@@ -1021,11 +1037,10 @@ function postAdapter() {
       const canvasDepth = window.__refFrame().canvasDepth();
       if (canvasDepth) m.set(canvasDepth, "canvas.depth");
       const glow = g.glow;
-      if (glow) {
-        for (const k of ["mask", "down", "nearH", "near", "wideH", "wide"]) {
-          const t = hw(glow[k]?.renderTarget?.texture);
-          if (t) m.set(t, `glow.${k}`);
-        }
+      for (const k of ["mask", "down", "nearH", "near", "wideH", "wide"]) {
+        // Ours (X5.4e) by its GPU texture; Babylon's render target's before.
+        const t = ownTargets ? ownTargets[k].texture : hw(glow?.[k]?.renderTarget?.texture);
+        if (t) m.set(t, `glow.${k}`);
       }
       // The INPUTS no stage writes, named by their producer rather than
       // matched by format and size: the shafts' two shadow maps (the world's
@@ -1080,7 +1095,18 @@ function postAdapter() {
         ready: pp.isReady?.() ?? null,
       });
       const glow = g.glow;
-      const rt = (t) => (t ? { width: t.getSize().width, height: t.getSize().height, samplingMode: t.samplingMode, wrapU: t.wrapU, wrapV: t.wrapV } : null);
+      const ownTargets = ours.frameTargets();
+      // A glow target's size, and Babylon's render target's sampling fields
+      // where it is Babylon's: ours (X5.4e) has none — its sampler is a
+      // descriptor, compared draw by draw in every bind group that reads it —
+      // so those three are null on ours, a difference named in
+      // `post-expected.txt`'s X5.4e section.
+      const rt = (t, k) =>
+        ownTargets
+          ? { width: ownTargets[k].width, height: ownTargets[k].height, samplingMode: null, wrapU: null, wrapV: null }
+          : t
+            ? { width: t.getSize().width, height: t.getSize().height, samplingMode: t.samplingMode, wrapU: t.wrapU, wrapV: t.wrapV }
+            : null;
       // The blur's kernel as each of the four held it, and whether each pass
       // and the box filter could draw: Babylon's `ThinBlurPostProcess`es, or
       // ours (X5.2b), `GlowPass.blurKernel` the same ideal width four times.
@@ -1104,7 +1130,7 @@ function postAdapter() {
               kernel: blurs.kernel,
               blurReady: blurs.blurReady,
               downReady: blurs.downReady,
-              targets: Object.fromEntries(["mask", "down", "nearH", "near", "wideH", "wide"].map((k) => [k, rt(glow[k])])),
+              targets: Object.fromEntries(["mask", "down", "nearH", "near", "wideH", "wide"].map((k) => [k, rt(glow[k], k)])),
             }
           : null,
         hardwareScalingLevel: e.getHardwareScalingLevel(),
@@ -1130,7 +1156,17 @@ function postAdapter() {
               skipFinalColorClamp: ipc.skipFinalColorClamp,
             }
           : null,
-        frameDepth: g.frameDepth?.texture ? { width: g.frameDepth.texture.getSize?.().width ?? null, height: g.frameDepth.texture.getSize?.().height ?? null, isInkDepth: g.frameDepth.source === (g.postPasses?.frameTarget?.renderTarget?._depthStencilTexture ?? g.celInk?.pass?.inputTexture?._depthStencilTexture) } : null,
+        // The depth every stage reads, and whether it is the frame's own: Babylon's
+        // `FrameDepth` capture of the frame target's depth until X5.4e; ours
+        // after it, `FrameTargets.depth`, the frame's own depth by construction
+        // (the main pass attaches it and every stage binds the same object).
+        frameDepth: ownTargets
+          ? ownTargets.depth.view
+            ? { width: ownTargets.depth.width, height: ownTargets.depth.height, isInkDepth: true }
+            : null
+          : g.frameDepth?.texture
+            ? { width: g.frameDepth.texture.getSize?.().width ?? null, height: g.frameDepth.texture.getSize?.().height ?? null, isInkDepth: g.frameDepth.source === (g.postPasses?.frameTarget?.renderTarget?._depthStencilTexture ?? g.celInk?.pass?.inputTexture?._depthStencilTexture) }
+            : null,
       };
     },
   };

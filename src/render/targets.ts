@@ -6,12 +6,15 @@
  * format.
  * Owns: `FRAME_TARGETS`, `GLOW_TARGETS`, `GLOW_BLUR_TARGETS`, `POST_TARGETS`,
  * `canvasTargets`, `SHADOW_TARGETS` and `targetsKey`.
- * Invariants: `FRAME_TARGETS` is what the host's main pass is,
- * `GLOW_TARGETS` what its glow mask's pass is, `GLOW_BLUR_TARGETS` what
- * each pass of the glow's blur is, and `POST_TARGETS` and `canvasTargets`
- * what a post-chain stage's pass is (`FrameHost.passIs`), each
- * checked by `Renderer` on every frame it draws there — a pass that is not
- * REFUSES the frame's draws rather than recording a pipeline it cannot take.
+ * Invariants: `FRAME_TARGETS` is what the frame's main pass is,
+ * `GLOW_TARGETS` what the glow mask's pass is and `GLOW_BLUR_TARGETS` what
+ * each pass of the glow's blur is — our renderer's own targets since
+ * `BABYLON_EXIT.md` X5.4e, MADE from these (`render/FrameTargets.ts`), so
+ * each of those passes takes its pipelines by construction; and
+ * `POST_TARGETS` and `canvasTargets` what a post-chain stage's pass is, a pass
+ * of the HOST's until X5.4f, checked by `Renderer` on every frame it draws
+ * there (`FrameHost.passIs`) — a pass that is not REFUSES the draw rather
+ * than recording a pipeline it cannot take.
  * Never: imports Babylon; is read off the pass per draw — a pipeline is
  * compiled ahead, so the formats it is compiled for must be known ahead.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
@@ -21,16 +24,16 @@
  * pass's by a format, a count or a sample count is refused — and one refused
  * pipeline poisons the bundle and blacks out the frame (`docs/rendering.md`:
  * "The trap it found" for the cascade, "The MRT route, spiked" for bundles
- * keyed on attachment state). What the frame draws into is the FRAME,
- * `PostPasses`' render target (the camera's `outputRenderTarget` since
- * `BABYLON_EXIT.md` X5.2d), made as the post chain's first target, `CelInk`'s
- * input, was: one `rgba8unorm` colour attachment (a post-process's
- * default texture), one sample (`main.ts` builds the engine with
- * `antialias: false`), and `depth32float` (`stencil: false`;
- * `plans/webgpu-ref/depth.mjs`). And it is a TEXTURE, which Babylon renders
- * upside down — so `flipY`, which negates clip-space y in every vertex stage
- * and mirrors every triangle's winding (`PipelineCache` derives the front
- * face from it).
+ * keyed on attachment state). What the frame draws into is the FRAME — our
+ * renderer's target since `BABYLON_EXIT.md` X5.4e (`FrameTargets.frame`),
+ * `PostPasses`' render target (the camera's `outputRenderTarget`) from X5.2d
+ * — made as the post chain's first target, `CelInk`'s input, was: one
+ * `rgba8unorm` colour attachment (a post-process's default texture), one
+ * sample (`main.ts` builds the engine with `antialias: false`), and
+ * `depth32float` (`stencil: false`; `plans/webgpu-ref/depth.mjs`). And it is a
+ * TEXTURE, which Babylon rendered upside down and ours renders the same way —
+ * so `flipY`, which negates clip-space y in every vertex stage and mirrors
+ * every triangle's winding (`PipelineCache` derives the front face from it).
  */
 import type { PassTargets } from "./frameHost";
 
@@ -43,12 +46,12 @@ export const FRAME_TARGETS: PassTargets = {
 };
 
 /**
- * The glow's MASK pass (`shaders/GlowPass.ts`), which our renderer draws the
- * emissive palette into (`render/WorldGlow.ts`, `BABYLON_EXIT.md` X3.6d): the
- * mask is Babylon's render target, an `rgba8unorm` colour
- * (`TEXTURETYPE_UNSIGNED_BYTE`), and its depth is the FRAME's, borrowed
- * (`shareDepth`), so `depth32float`; one sample; and a texture, drawn upside
- * down. The same values as `FRAME_TARGETS`, stated apart because they are
+ * The glow's MASK pass, which our renderer draws the emissive palette into
+ * (`render/WorldGlow.ts`, `BABYLON_EXIT.md` X3.6d) and records itself since
+ * X5.4e (`Renderer.recordGlowMask`): the mask is made as Babylon's render
+ * target was, an `rgba8unorm` colour (`TEXTURETYPE_UNSIGNED_BYTE`), and its
+ * depth is the FRAME's, borrowed (as `shareDepth` attached it), so
+ * `depth32float`; one sample; and a texture, drawn upside down. The same values as `FRAME_TARGETS`, stated apart because they are
  * true for another reason — a change to the post chain's first target and a
  * change to the mask's format are two changes, and each pass refuses its own.
  */
@@ -60,13 +63,13 @@ export const GLOW_TARGETS: PassTargets = {
 };
 
 /**
- * A pass of the glow's BLUR (`shaders/GlowPass.ts`, which binds each target
- * itself; `render/GlowBlur.ts` draws in it, `BABYLON_EXIT.md` X5.2b): the box
- * filter's and the four blurs' targets are Babylon render targets of
- * `TEXTURETYPE_HALF_FLOAT`, so `rgba16float`, with NO depth (`generateDepthBuffer`
- * false, and the pass is bound without one); one sample; and a texture, drawn
- * upside down — the probe read every one of the five so (`plans/webgpu-ref/
- * post.mjs`, X5.2a).
+ * A pass of the glow's BLUR (`render/GlowBlur.ts` draws in it, `BABYLON_EXIT.md`
+ * X5.2b; `Renderer.glowBlurPass` begins it, X5.4e): the box filter's and the
+ * four blurs' targets are made as Babylon's render targets of
+ * `TEXTURETYPE_HALF_FLOAT` were, so `rgba16float`, with NO depth
+ * (`generateDepthBuffer` false, and the pass begun without one); one sample;
+ * and a texture, drawn upside down — the probe read every one of the five so
+ * (`plans/webgpu-ref/post.mjs`, X5.2a).
  */
 export const GLOW_BLUR_TARGETS: PassTargets = {
   colorFormats: ["rgba16float"],

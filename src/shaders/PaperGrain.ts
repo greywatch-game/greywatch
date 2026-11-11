@@ -19,9 +19,9 @@
  * that it writes the canvas. `setEnabled` is its `active()`, so the grade off
  * is a stage the host skips, and the last stage still active writes the
  * canvas (the ink, the chain's first, is never off: X5.2d). It SAMPLES the frame's
- * depth (`FrameDepth`, shared with the ink, the blur and the shafts) to put
- * the paper on the surfaces rather than on the glass, so like them it has to
- * stay downstream of the pass the scene draws into. Its block is filled when
+ * depth (`FrameTargets.depth`, shared with the ink, the blur and the shafts)
+ * to put the paper on the surfaces rather than on the glass, so like them it
+ * has to stay downstream of the frame's main pass. Its block is filled when
  * the host draws it — after the render has settled the view matrix, the one
  * the depth was written with — and every float of it every time.
  * Never: draws, binds or owns a GPU resource (the host does); reads the AIM
@@ -31,10 +31,9 @@
  */
 import type { Camera } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import { hostTexture } from "../render/babylonSeam";
 import type { PostStage } from "../render/PostChain";
 import type { EnvironmentSpec } from "../world/environment";
-import type { FrameDepth } from "./FrameDepth";
+import type { FrameTargets } from "../render/FrameTargets";
 import {
   PAPER_GRAIN_BLOCK as B,
   PAPER_GRAIN_FRAGMENT,
@@ -167,8 +166,8 @@ export class PaperGrain {
 
   constructor(
     private readonly camera: Camera,
-    /** The frame's own depth image — what puts the paper on the surfaces. */
-    depth: FrameDepth,
+    /** The frame's targets, for its own depth image — what puts the paper on the surfaces. */
+    frame: FrameTargets,
   ) {
     this.stage = {
       name: "grain",
@@ -185,11 +184,11 @@ export class PaperGrain {
       blockBinding: 4,
       inputSampler: INPUT_SAMPLER,
       blockFloats: B.floats,
-      // The frame's depth, read by `textureLoad` (no sampler). Null before
-      // the first draw phase has captured it, and the stage then draws
-      // nothing — it cannot be by the time the host draws, the capture being
-      // on the draw phase of the same `scene.render()`.
-      extras: [{ binding: 1, texture: () => (depth.texture ? hostTexture(depth.texture as never) : null) }],
+      // The frame's depth (`FrameTargets.depth`, our renderer's), read by
+      // `textureLoad` (no sampler). Viewless before the first frame has sized
+      // it, and the stage then draws nothing — it cannot be by the time the
+      // chain draws, the frame being sized as the same render starts.
+      extras: [{ binding: 1, texture: () => frame.depth }],
       active: () => this.enabled,
       fill: (block, width, height) => this.fill(block, width, height),
     };

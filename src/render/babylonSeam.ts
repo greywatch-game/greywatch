@@ -1,33 +1,28 @@
 /**
  * render/babylonSeam.ts — The ONE place our renderer meets Babylon's: the
- * device, the pass that is open, its attachments, and a slot in Babylon's own
- * draw order to record into.
+ * device, the frame's draw phase and its clear colour, the passes of the post
+ * chain Babylon still opens, and a slot in Babylon's own draw order to record
+ * into there.
  * Owns: `BabylonFrameHost`, Babylon's engine and scene as our renderer's
- * `FrameHost`: the device, what the open pass draws into, a slot in
- * Babylon's own draw order (`queue`), the encoder submitted ahead of the
- * frame's draws (`prepareEncoder`), the camera's matrix, the frame's main
- * pass told apart from every other pass — its start, and the points of
- * rendering group 0 (`MainPassHooks`), all told at the end of the camera's
- * draw phase, Babylon drawing nothing in the group — and a
- * Babylon texture's own view and sampler (`bind`); and `hostTexture`, the one
- * crossing that turns a Babylon texture into the handle the renderer holds.
- * Items 2 to 5 are reached in a second pass of Babylon's too, the glow's MASK
- * (`BABYLON_EXIT.md` X3.6d): our renderer is TOLD when that pass opens
- * (`GlowPass.onMaskOpenObservable`, wired by `Game`) and then asks `passIs`
- * and `queue`s into it exactly as into the main pass — no internal beyond
- * the list below, and no hook here, because the mask's owner announces it.
- * And in the glow's BLUR passes (X5.2b), which `GlowPass` binds on its own
- * targets with public API and asks our renderer to draw in from between the
- * bind and the unbind (`Renderer.glowBlurOpened`): the same `passIs` and
- * `queue`, and no item more. And in the POST CHAIN's passes (X5.2c1; the
- * whole chain since X5.2d), which `shaders/PostPasses.ts` opens with public
- * API after the camera's render — the canvas's, Babylon's main pass, by
- * `restoreDefaultFramebuffer` — and asks our renderer to draw in
+ * `FrameHost`: the device, the moments the frame camera's draw phase opens and
+ * closes (`onDrawPhase`), the scene's clear colour, what an open pass of
+ * Babylon's draws into, a slot in Babylon's own draw order (`queue`), the
+ * encoder submitted ahead of the frame's draws (`prepareEncoder`), the
+ * camera's matrix, and a Babylon texture's own view and sampler (`bind`); and
+ * `hostTexture`, the one crossing that turns a Babylon texture into the handle
+ * the renderer holds.
+ * **The frame's own passes are not Babylon's** (`BABYLON_EXIT.md` X5.4e): its
+ * opening clear, its main pass, the glow's mask and the glow's five blur
+ * passes are our renderer's, on targets of its own (`render/FrameTargets.ts`),
+ * recorded into the encoder of item 9 — so this file tells the renderer only
+ * WHEN (the draw phase's two observables, public API), and items 2 to 5 and 7
+ * and 8 are reached in the POST CHAIN's passes alone, which
+ * `shaders/PostPasses.ts` opens with public API after the camera's render —
+ * the canvas's, Babylon's main pass, by `restoreDefaultFramebuffer`, and a
+ * target of its pool — and asks our renderer to draw in
  * (`Renderer.postStageOpened`): `passIs` (item 5 telling the canvas, which is
- * no render target and so not flipped) and `queue` again, and no item more.
- * The frame those stages read is `PostPasses`' render target, which the scene
- * binds for the main pass (the camera's `outputRenderTarget`, public API):
- * item 5 tells the main pass by THAT target, as it told the ink's input.
+ * no render target and so not flipped, from a pool target) and `queue`, and
+ * `bind` for a pool target the next stage reads. X5.4f takes those.
  * Invariants: NAMES Babylon's types and loads none of it (every import here
  * is `import type`, so the Babylon-free gate walks this file as it walks the
  * rest of `src/render/`); every Babylon INTERNAL anything in `src/render/`
@@ -50,10 +45,12 @@
  *      as internal; there is no other door to it.
  *   2. `engine._getCurrentRenderPass()` — the open pass, STARTED if Babylon
  *      has delayed it (E:933). Called only so (3) has a pass to run in, and
- *      only on a frame something of ours draws — and in a glow blur pass,
- *      where nothing of Babylon's draws since X5.2b, it is what begins the
- *      pass Babylon's `bindFramebuffer` delayed, with the load ops that bind
- *      gave it.
+ *      only in a pass of the post chain something of ours draws in — where,
+ *      Babylon drawing nothing, it is what begins the pass Babylon's
+ *      `bindFramebuffer` delayed, with the load ops that bind gave it. (The
+ *      main pass, the glow's mask and its blur reached it too until
+ *      `BABYLON_EXIT.md` X5.4e made them our own passes; items 2 to 5 are the
+ *      chain's alone now, and X5.4f takes them with it.)
  *   3. `engine._bundleList.addItem({ run })` (`WebGPU/webgpuBundleList.js`).
  *      Under `compatibilityMode = false` Babylon does not draw into the pass
  *      as it goes: it records render BUNDLES into this list and replays the
@@ -69,8 +66,9 @@
  *      whether the open pass draws into a TEXTURE, which Babylon draws upside
  *      down (`internals.yFactor_` = -1) so a later sample reads it the GL way
  *      up — our clip-space y owes the same flip there, and the winding with it
- *      (E:2842); and WHICH target, which is how `onMainPass` knows the frame's
- *      from the glow's (see it).
+ *      (E:2842): a pool target of the post chain's from the canvas. (WHICH
+ *      target it was told the frame's main pass from the glow's mask too, in
+ *      `onMainPass`, until X5.4e made both our own.)
  *   7. `internalTexture._hardwareTexture.view` (`WebGPU/webgpuHardwareTexture
  *      .js`): the `GPUTextureView` Babylon itself binds for a texture
  *      (`webgpuCacheBindGroups.js`, `getBindGroups`), so ours is the same view
@@ -86,10 +84,12 @@
  *      X5.4d, every texture the game makes for itself (`TextureMaker`: the
  *      grounds, the sky's, the motes, the puff, the scorch, the blob, the
  *      cloud field — and with it the volume trace's COMPUTE read of it, X5.1b's
- *      — the lit texel and the foam). What they still reach is the host's own
- *      targets: the glow's (`GlowPass`: the mask and its two composes, the
- *      blur's sources), the post chain's frame and pool (`PostPasses`) and
- *      `FrameDepth`'s wrapper — X5.4e's and X5.4f's to take.
+ *      — the lit texel and the foam), and at X5.4e the frame's own targets (the
+ *      frame and its depth, the glow's mask and its blur's five: our
+ *      renderer's, `render/FrameTargets.ts`, where `PostPasses`, `GlowPass` and
+ *      `FrameDepth`'s wrapper held Babylon's). What they still reach is the
+ *      post chain's POOL (`PostPasses`), a target a stage after the first
+ *      reads — X5.4f's to take.
  *   9. `engine._uploadEncoder` (E:519, E:2388) — the encoder Babylon finishes
  *      and submits FIRST in `flushFramebuffer`, ahead of `_renderEncoder`
  *      (E:2381-2382), and the one `_timestampQuery.startFrame` opens the frame's
@@ -98,7 +98,10 @@
  *      ended inside one call, so it has no pass open while ours records. A
  *      flush mid-frame replaces it, which is why it is read at the call and
  *      never kept: whichever one is current is submitted before the draws
- *      recorded after it, and inside the timer.
+ *      recorded after it, and inside the timer. Since X5.4e the frame's own
+ *      passes are recorded into it too, after the prepares (`Renderer.end`,
+ *      `recordGlowMask`, `glowBlurPass`), so the post chain, on the render
+ *      encoder, reads what they drew.
  *
  * Items 6 and 10 were RETIRED at `BABYLON_EXIT.md` X5.3d, and their numbers
  * are not reused: `RenderingGroup.onBeforeTransparentRendering` (6), the
@@ -108,15 +111,16 @@
  * points were told on a frame Babylon VISITED group 0. Since X5.3c none does:
  * the map editor's build, whose world was Babylon's, was the last thing that
  * did, and the Phase 4 gate and X5.3a's draw log measured a round to visit
- * none in any state (`onMainPass`).
+ * none in any state (`onDrawPhase`).
  *
  * Public API used here and nowhere else in `src/render/`, for the same
  * reason (it is Babylon's shape): `engine.currentSampleCount`, the engine's
  * end of frame (`onEndFrameObservable`, `afterSubmit`, `BABYLON_EXIT.md` X5.1b),
- * `scene.getTransformMatrix()`, the scene's draw-phase observables
- * (`onMainPass`; its rendering-group and sprite observables went with items 6
- * and 10 at X5.3d, its particle observable with the last of Babylon's
- * particle systems at X4.7d), and a texture's readiness,
+ * `scene.getTransformMatrix()`, `scene.clearColor` (`clearColor`, X5.4e), the
+ * scene's draw-phase observables (`onDrawPhase`; its rendering-group and
+ * sprite observables went with items 6 and 10 at X5.3d, its particle
+ * observable with the last of Babylon's particle systems at X4.7d), and a
+ * texture's readiness,
  * wrap modes and filtering level and the engine's empty textures and
  * anisotropy cap (`bind`).
  *
@@ -130,9 +134,9 @@
  * effect and makes no bind group after the boot.
  * `shaders/FrameDepth.ts`' (the frame's depth texture,
  * `_currentRenderTarget._depthStencilTexture`) left at `BABYLON_EXIT.md`
- * X5.2d: it reads the frame's own render target's PUBLIC
- * `renderTarget.depthStencilTexture` (row "X5.2, `FrameDepth`"), and X5.4
- * deletes it once the depth is ours. `systems/ReflectionSystem.ts`' two
+ * X5.2d, reading the frame's own render target's PUBLIC
+ * `renderTarget.depthStencilTexture` (row "X5.2, `FrameDepth`"), and the
+ * file went at X5.4e: the depth is our renderer's (`FrameTargets.depth`). `systems/ReflectionSystem.ts`' two
  * (`_releaseRenderPassId`, `_removeDrawWrapper`) left with Babylon's bake at
  * X3.7c. So rule 4 holds here as "every internal OUR RENDERER reaches";
  * `BABYLON_EXIT.md` records that reading at X3.2.
@@ -146,9 +150,9 @@ import type {
 } from "@babylonjs/core";
 import type {
   BoundTexture,
+  DrawPhaseHooks,
   FrameHost,
   HostTexture,
-  MainPassHooks,
   PassTargets,
 } from "./frameHost";
 
@@ -264,8 +268,9 @@ export class BabylonFrameHost implements FrameHost {
   }
 
   /**
-   * Items 2 and 3, into whichever pass is open: the main pass at one of its
-   * hooks, the glow's mask as it opens, or a pass of the glow's blur. Babylon's bundles reset the
+   * Items 2 and 3, into whichever pass is open: a pass of the post chain, its
+   * owner asking from inside it (the main pass, the glow's mask and its blur
+   * until `BABYLON_EXIT.md` X5.4e). Babylon's bundles reset the
    * pipeline, the bind groups and the vertex and index buffers around an
    * item. The viewport, the scissor,
    * the stencil reference and the blend constant they do NOT reset, and
@@ -304,62 +309,38 @@ export class BabylonFrameHost implements FrameHost {
     return { dispose: () => engine.onEndFrameObservable.remove(o) };
   }
 
+  /** The scene's clear colour, public API: the value Babylon's clear of the frame read (`Scene._clearFrameBuffer`). */
+  clearColor(out: GPUColorDict): void {
+    const c = this.scene.clearColor;
+    out.r = c.r;
+    out.g = c.g;
+    out.b = c.b;
+    out.a = c.a;
+  }
+
   /**
-   * The frame's main pass is the TARGET bound as the draw phase begins — the
-   * frame, the camera's `outputRenderTarget`, which the scene's camera render
-   * binds — and the draw phase's end with THAT target still bound (item 5).
-   * The draw phase's observables are raised by `Scene._renderForCamera`
-   * alone, no render target's manager raising them (`GlowPass.render`'s
-   * note), and the end's observer is inserted ahead of the glow's, so the
-   * target always holds there; it is asked as it was asked while a group's
-   * hooks could fire inside a probe's or the glow's pass.
+   * The frame camera's DRAW PHASE, public API: `begin` on the scene's
+   * `onBeforeDrawPhaseObservable`, `end` on its `onAfterDrawPhaseObservable`,
+   * inserted FIRST there, ahead of the glow's mask, which renders from the
+   * same observer list. Both are raised by `Scene._renderForCamera` alone (the
+   * frame's one camera, `scene.pure.js` 4174 and 4180), never by a render
+   * target's own manager, and Babylon draws nothing between them: no mesh of a
+   * round's in any state since `BABYLON_EXIT.md` X4.7d, none of any build's
+   * since X5.3c, and it visits no empty group (`RenderingManager.render`
+   * raises no observable for one). That is ASSUMED here, not checked: the draw
+   * log is what asserts it (`plans/webgpu-ref/drawlog.mjs` fails a run with a
+   * group-0 visit in any class).
    *
-   * WHERE IT BEGINS is the draw phase's own observable: `first` is told
-   * there, right after `begin`, ahead of everything queued in the pass.
-   *
-   * **THE GROUP'S FOUR POINTS ARE TOLD AT THE PHASE'S END, in their order**
-   * (`beforeAlphaTest`, `afterOpaque`, `beforeBlended`, `afterGroup`): Babylon
-   * draws nothing in rendering group 0 — no mesh of a round's, in any state,
-   * since `BABYLON_EXIT.md` X4.7d took its last particle system, and none of
-   * any build's since X5.3c took the map editor's — and visits no empty
-   * group (`RenderingManager.render` raises no observable for one), so there
-   * is nothing of Babylon's between the points for them to fall between.
-   * That is ASSUMED here, not checked: the draw log is what asserts it
-   * (`plans/webgpu-ref/drawlog.mjs` fails a run with a group-0 visit in any
-   * class), and the game carries no check of its own.
-   * Until X5.3d a frame on which Babylon DID visit the group was told each
-   * point inside it, through items 6 and 10 and the group and sprite
-   * observables; that path, the map editor's build's alone since X5.3c, went
-   * with them, and this tells the points where it told them on every frame
-   * of a round already. The observer is inserted FIRST on the phase's end,
-   * ahead of the glow's mask, which renders from the same observer list. No
-   * group above 0 holds anything (`BABYLON_EXIT.md` X4.3d).
-   *
-   * `_groupId` is the group the hooks are named for (`MainPassHooks`), which
-   * nothing here reaches for any more.
+   * Until X5.4e this was `onMainPass`, which told the main pass's points
+   * inside BABYLON's pass — the frame's target, the camera's
+   * `outputRenderTarget`, bound as the phase began and asked again (item 5)
+   * as it ended — so they could be queued there (item 3). The pass is the
+   * renderer's own since, recorded at `end`, so only the moments are told.
    */
-  onMainPass(_groupId: number, hooks: MainPassHooks): { dispose(): void } {
+  onDrawPhase(hooks: DrawPhaseHooks): { dispose(): void } {
     const scene = this.scene;
-    const e = this.e;
-    let frame: RenderTargetInternals | null | undefined;
-    const before: Observer<Scene> = scene.onBeforeDrawPhaseObservable.add(() => {
-      frame = e._currentRenderTarget;
-      hooks.begin();
-      hooks.first();
-    });
-    const after: Observer<Scene> = scene.onAfterDrawPhaseObservable.add(
-      () => {
-        if (frame !== undefined && e._currentRenderTarget === frame) {
-          hooks.beforeAlphaTest();
-          hooks.afterOpaque();
-          hooks.beforeBlended();
-          hooks.afterGroup();
-        }
-        frame = undefined;
-      },
-      undefined,
-      true,
-    );
+    const before: Observer<Scene> = scene.onBeforeDrawPhaseObservable.add(() => hooks.begin());
+    const after: Observer<Scene> = scene.onAfterDrawPhaseObservable.add(() => hooks.end(), undefined, true);
     return {
       dispose: () => {
         scene.onBeforeDrawPhaseObservable.remove(before);

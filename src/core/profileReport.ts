@@ -1351,8 +1351,9 @@ export function buildReport(
     // absent on a frame Babylon visited no group (the menu, a frame with
     // nothing of Babylon's in group 0); on a frame it did visit one, v36 adds
     // the rendering manager's own walk and, on such a frame the glow skips,
-    // the seam's `after` observer and `FrameDepth`'s identity test — nothing
-    // measurable. Nothing else changed meaning.
+    // the seam's `after` observer and `FrameDepth`'s identity test (both gone
+    // or changed since, `BABYLON_EXIT.md` X5.4e) — nothing measurable. Nothing
+    // else changed meaning.
     // 37: `pools.particles`, a draw a particle field of ours (the ash, since
     // `BABYLON_EXIT.md` X4.7c), in `pools.drawn` too and no longer in
     // `counters.drawCalls`, where Babylon's draw of the field was. Its update is a prepare's

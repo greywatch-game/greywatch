@@ -1,20 +1,21 @@
 /**
  * render/Renderer.ts — Our renderer: the device, the frame's uniforms and
- * their buffer, the pipeline cache, and the draws it records into the
- * frame's main pass — and into the glow's passes and the post chain's, the
- * only others of the host's it draws in: the mask (`BABYLON_EXIT.md` X3.6d),
- * the blur's five (X5.2b), and a post-chain stage's (X5.2c1).
+ * their buffer, the pipeline cache, the frame's own targets and passes — the
+ * opening clear, the main pass, the glow's mask and its blur (`BABYLON_EXIT.md`
+ * X5.4e) — and the draws it records into them, and into the post chain's
+ * passes, the only ones of the HOST's it draws in (X5.2c1, until X5.4f).
  * Owns: `Renderer` — the frame's `FrameUniforms` and `FrameUniformBuffer`,
  * its `FrameTextures` and the bind group they make with the buffer (group 0
  * of every program, `FrameContext.frameGroup`, handed to a prepare as to a
- * draw), the `PipelineCache`, the `FrameDraw`s at each of the seven
- * points they may be drawn at and those drawn in the glow's mask — first
- * (`addGlowMask`, and behind those `addGlowMaskBlended`) or last
+ * draw), the `PipelineCache`, the frame's targets (`targets`, `FrameTargets`)
+ * and the descriptors of the passes it records into them, the `FrameDraw`s at
+ * each of the seven points they may be drawn at and those drawn in the glow's
+ * mask — first (`addGlowMask`, and behind those `addGlowMaskBlended`) or last
  * (`addGlowMaskLate`) — each with the predicate that
  * says whether it has anything to draw this frame (`Active`), the
- * `FramePrepare`s run as the pass begins, whoever is told of a refused pass
- * (`onRefused`, and the mask's `onGlowMaskRefused`),
- * the hook into the host's main pass, the `PassTimer` that times the
+ * `FramePrepare`s run as the draw phase begins, whoever is told of a refused
+ * pass (`onRefused`, and the mask's `onGlowMaskRefused`),
+ * the hook into the host's draw phase, the `PassTimer` that times the
  * prepares' passes under `?gpu` (`timer`), and the `TextureMaker` that makes
  * the textures the game paints for itself (`textureMaker`, `BABYLON_EXIT.md`
  * X5.4d); `FrameDraw`, `FramePrepare`,
@@ -25,7 +26,7 @@
  * filled by the `fill` it is handed (`CelMaterialFactory.fillFrame`) and the
  * host's camera, and its textures by `fillTextures`
  * (`CelMaterialFactory.fillFrameTextures`) resolved through the host, once
- * per frame as the main pass begins, and uploaded only when something will
+ * per frame as the draw phase begins, and uploaded only when something will
  * draw — a draw is counted only while its predicate says it has something
  * (none: always), so a frame with nothing of ours committed (the menu with no
  * kit screen up) fills nothing, uploads nothing, refreshes no bind group and
@@ -39,51 +40,48 @@
  * sees it, the LATE ones after the rest (`onFrame`'s `late`) — and, with a
  * `timer`, is handed the `PassTiming` its passes take
  * their timestamp writes from on a frame being timed, null on every other
- * (`gpu.cull`); without one, timing costs the frame one null test; a frame
- * draws only if it was
- * FILLED this frame (a draw added
- * mid-phase waits for the next) and only if the open pass is exactly
- * `FRAME_TARGETS`, checked every frame — a pass that is not draws nothing
- * that frame, with one console error per change, rather than recording a
- * pipeline the pass cannot take (that blacks out the frame under bundles),
- * and every `onRefused` listener is told, on every frame it is refused, so
- * whoever handed the draw over can say so (the world's failure, since
- * nothing else would draw it);
- * a GLOW MASK draw is recorded only when the mask's owner says its pass has
- * OPENED (`glowMaskOpened`, wired by `Game` to `GlowPass`, which owns the
- * mask: rule 5 — ours draws INTO Babylon's pass, as it does the main one),
- * on a frame whose `begin` filled the frame, FIRST in that pass, right after
- * its clear, and only if the open pass is exactly `GLOW_TARGETS` — with the
- * main pass's refusal rule and listeners of its own (`onGlowMaskRefused`);
- * a LATE mask draw (`addGlowMaskLate`) is recorded when the owner says the
- * same pass is CLOSING (`glowMaskClosing`: every mesh of Babylon's queued in
- * it, the pass not yet ended), LAST in it, on that open's verdict — the pass
- * is the one the open checked, and Babylon no longer names it as the bound
- * target by then, so it is never asked again;
- * a GLOW BLUR draw (`glowBlurOpened`, `render/GlowBlur.ts`) is queued when the
- * glow's owner has bound one of the blur's targets itself and asks — into a
- * pass that is exactly `GLOW_BLUR_TARGETS`, one that is not drawing nothing of
- * ours with one console error per change — and reads no frame of ours, so it
- * is queued whether or not `begin` filled one; a POST-CHAIN draw
- * (`postStageOpened`, `render/PostChain.ts`) the same, into a pass that is
+ * (`gpu.cull`); without one, timing costs the frame one null test;
+ * **the frame's passes are recorded into that same encoder, after the
+ * prepares, as Babylon began them** (`BABYLON_EXIT.md` X5.4e, read off the
+ * device at its BEFORE): at the draw phase's END the opening pass (the
+ * frame's colour cleared to the host's clear colour, its depth to 1) and the
+ * main pass (the colour loaded, the depth cleared again), every frame the
+ * camera draws, whatever is to draw; then, asked by `GlowPass` from the same
+ * end, the mask (`recordGlowMask`: cleared to black with alpha 1, the frame's
+ * depth loaded) and the blur's passes (`glowBlurPass`, each loaded) — so the
+ * post chain, which the host opens on the encoder it submits AFTER this one,
+ * reads them, and `gpu.frame` and `present` keep Babylon's meaning until X5.4g;
+ * every target is made from the targets its pipelines are built against
+ * (`FRAME_TARGETS`, `GLOW_TARGETS`, `GLOW_BLUR_TARGETS`), so a pass of ours
+ * takes them by construction and is never tested; a frame draws only if it was
+ * FILLED this frame (a draw added mid-phase waits for the next), and a frame
+ * whose targets are not made yet records no pass, every `onRefused` listener
+ * told, with one console error per change, if something was to draw (the
+ * world's failure, since nothing else would draw it);
+ * a GLOW MASK draw is recorded in the mask's pass on a frame whose `begin`
+ * filled the frame, FIRST in it, right after its clear (`addGlowMask`), or
+ * LAST (`addGlowMaskLate`) — with the main pass's refusal rule and listeners
+ * of its own (`onGlowMaskRefused`);
+ * a GLOW BLUR draw reads no frame of ours, so it is recorded whether or not
+ * `begin` filled one; a POST-CHAIN draw (`postStageOpened`,
+ * `render/PostChain.ts`) is QUEUED into the host's pass, only one that is
  * exactly the targets its stage's pipeline was built for;
- * **no draw here needs anything of Babylon's in group 0**: the host tells all
- * of the points on every main pass, a frame on which Babylon visits no group
- * included (`MainPassHooks`, `BABYLON_EXIT.md` X4.5a);
- * it reads the MAIN pass's frame — the same camera, in the same submit — so
- * it binds the same group 0; nothing here allocates on a frame.
+ * **no draw here needs anything of Babylon's in group 0**: the points are told
+ * by this file, in their order, at the end of every draw phase
+ * (`BABYLON_EXIT.md` X4.5a, X5.4e);
+ * the mask reads the MAIN pass's frame — the same camera, in the same submit
+ * — so it binds the same group 0; nothing here allocates on a frame.
  * Never: imports Babylon — it is handed a `FrameHost`; draws into any of the
- * HOST's passes but the main one, the glow's mask when told it opened, and a
- * pass of the glow's blur or of the post chain when asked from inside it (a
+ * HOST's passes but a pass of the post chain when asked from inside it (a
  * prepare's pass into a texture of ours is the prepare's); reads a Babylon
- * material; finds the glow's mask by testing a pass's targets — it is TOLD.
+ * material; records a pass of the frame's anywhere but the host's prepare
+ * encoder.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
  *
- * WHERE A DRAW LANDS, in the host's own order, at one of seven points of the
- * main pass, six of them about rendering group `groupId` (0: the world)
- * (`DrawPoint`), which come in this order in every frame, whatever the group
- * holds (on a frame Babylon does not visit the group, all of them are told
- * together at the end of the phase, in this order):
+ * WHERE A DRAW LANDS, at one of seven points of the main pass, six of them
+ * named for rendering group 0 (the world) as Babylon's queues ordered it
+ * (`DrawPoint`), which come in this order in every frame, recorded together at
+ * the end of the draw phase (`end`):
  * - `"first"`: as the pass starts, ahead of everything of the host's. A draw
  *   that writes no depth and is MEANT to be painted over belongs here: anything
  *   drawn after a depthless sky must be nearer than it or the sky paints over it,
@@ -149,12 +147,13 @@ import {
   type FrameUniforms,
 } from "./frame";
 import type { FrameHost, PassTargets } from "./frameHost";
+import { type FrameTarget, FrameTargets } from "./FrameTargets";
 import { FrameUniformBuffer } from "./FrameUniformBuffer";
 import { HostBindGroup } from "./HostBindGroup";
 import { type PassTiming, PassTimer } from "./PassTimer";
 import { PipelineCache } from "./PipelineCache";
-import { FRAME_TARGETS, GLOW_BLUR_TARGETS, GLOW_TARGETS } from "./targets";
-import { TextureMaker } from "./TextureMaker";
+import { FRAME_TARGETS } from "./targets";
+import { anisotropic, TextureMaker } from "./TextureMaker";
 
 /** What a draw is handed beside the pass. */
 export interface FrameContext {
@@ -172,10 +171,12 @@ export interface FrameContext {
 
 /**
  * One thing drawn in the main pass — or in the glow's mask (`addGlowMask`).
- * It sets its own pipeline, bind groups and buffers (the host leaves none
- * set), changes none of the host's dynamic state (`FrameHost.queue`), and
- * draws only with pipelines built against its pass's targets
- * (`FRAME_TARGETS`, `GLOW_TARGETS`).
+ * It sets its own pipeline, bind groups and buffers (the draw before it in the
+ * pass may have left any of them), changes none of the pass's viewport,
+ * scissor, stencil reference or blend constant (no draw of the frame's sets
+ * one, and each holds the pass's defaults, as Babylon's did), and draws only
+ * with pipelines built against its pass's targets (`FRAME_TARGETS`,
+ * `GLOW_TARGETS`).
  */
 export type FrameDraw = (pass: GPURenderPassEncoder, ctx: FrameContext) => void;
 
@@ -183,11 +184,12 @@ export type FrameDraw = (pass: GPURenderPassEncoder, ctx: FrameContext) => void;
  * Work for the frame that must reach the GPU before the main pass's draws do
  * — a compute cull, or a pass into a texture our renderer owns that the
  * frame samples (a world shadow map, `WorldShadows`). Run once a frame as
- * the pass begins, after the frame is filled; it records into `encoder`, the
- * host's own, which is submitted ahead of every pass of the host's and inside
- * the frame's GPU timer (`FrameHost.prepareEncoder`) — a pass it records is
- * begun and ended there — and it records nothing into the main pass, submits
- * nothing and keeps neither.
+ * the draw phase begins, after the frame is filled; it records into
+ * `encoder`, the host's own, which is submitted ahead of every pass of the
+ * host's and inside the frame's GPU timer (`FrameHost.prepareEncoder`) — a
+ * pass it records is begun and ended there, ahead of the frame's own passes,
+ * which are recorded into the same encoder after it — and it records nothing
+ * into the main pass, submits nothing and keeps neither.
  * `timing` is non-null on a frame whose passes are timed (`PassTimer`): each
  * CULL's compute pass it records then begins with `timing.pass(its descriptor)`,
  * so `gpu.cull` is the sum of them; a compute pass that is no cull — the
@@ -210,8 +212,6 @@ export type FramePrepare = (
 
 /** How a `Renderer` is built beyond its host and its fills. */
 export interface RendererOptions {
-  /** The rendering group its draws are hooked into: 0, the world. */
-  readonly groupId?: number;
   /**
    * Time the prepares' compute passes (`PassTimer`, `gpu.cull`): `?gpu`,
    * and only where the device has `timestamp-query` — asked of the device,
@@ -258,6 +258,11 @@ export class Renderer {
   readonly timer: PassTimer | null;
   /** The textures the game paints, decodes and writes for itself, made as Babylon made them. */
   readonly textureMaker: TextureMaker;
+  /**
+   * The targets the frame's own passes draw into — the frame and its depth,
+   * the glow's mask and its blur's five (`BABYLON_EXIT.md` X5.4e).
+   */
+  readonly targets: FrameTargets;
   private readonly frameBindings: HostBindGroup;
 
   /** In the order added, one list per point. Arrays, so a frame's walk allocates no iterator. */
@@ -288,8 +293,6 @@ export class Renderer {
   /** Drawn LAST in the glow's mask, in the order added (`addGlowMaskLate`). */
   private readonly maskLateDraws: FrameDraw[] = [];
   private readonly maskLateActive: (Active | null)[] = [];
-  /** The open's verdict on this frame's mask pass, which its close spends (`glowMaskClosing`). */
-  private maskOpenOk = false;
   private readonly maskRefusals: (() => void)[] = [];
   /** What every draw and prepare is handed: the frame block's buffer and its group 0. */
   private readonly ctx: FrameContext;
@@ -297,21 +300,42 @@ export class Renderer {
   /** Whether `begin` filled and uploaded the frame this draw phase. */
   private filled = false;
   /**
-   * Whether `begin` filled the frame for the glow's mask, which opens after
-   * the main pass — until it does: spent by the FIRST open after `begin`. The
-   * mask is opened once a frame (one camera: `GlowPass.render` returns for
-   * any other), and a second open in one frame would queue nothing of ours
-   * while the palette is in neither side's list (it is no candidate).
+   * Whether `begin` filled the frame for the glow's mask, which is recorded
+   * after the main pass — until it is: spent by the FIRST mask after `begin`.
+   * The mask is recorded once a frame (one camera: `GlowPass.render` returns
+   * for any other), and a second in one frame would draw nothing of ours.
    */
   private maskFilled = false;
-  /** Whether the last pass checked was refused — so a refusal is reported once per change. */
+  /** Whether the last frame could not record its main pass — so a refusal is reported once per change. */
   private refused = false;
   /** The same, for the glow's mask. */
   private maskRefused = false;
-  /** The same, for the glow's blur. */
-  private blurRefused = false;
   /** The same, for a stage of the post chain (`postStageOpened`). */
   private postRefused = false;
+  /** The frame's clear colour this frame (`FrameHost.clearColor`), written in place. */
+  private readonly clearValue: GPUColorDict = { r: 0, g: 0, b: 0, a: 1 };
+  /**
+   * The frame's two passes and the mask's, as Babylon began them (X5.4e's
+   * BEFORE, `plans/webgpu-ref/post.mjs`), each a descriptor made once and
+   * re-pointed at its targets' views every frame. The OPENING pass clears the
+   * frame's colour to the scene's clear colour and its depth to 1, where
+   * `Scene.render`'s first bind cleared the camera's output target
+   * (`_clearFrameBuffer`); the MAIN pass loads that colour and clears the depth
+   * again, as the camera's render bound the target and cleared its depth.
+   */
+  private readonly clearColour: GPURenderPassColorAttachment;
+  private readonly clearDepth: GPURenderPassDepthStencilAttachment;
+  private readonly clearPass: GPURenderPassDescriptor;
+  private readonly mainColour: GPURenderPassColorAttachment;
+  private readonly mainDepth: GPURenderPassDepthStencilAttachment;
+  private readonly mainPass: GPURenderPassDescriptor;
+  /** The mask's: its colour cleared to black, alpha 1 (`GlowPass`' old `NEUTRAL`), the frame's depth LOADED. */
+  private readonly maskColour: GPURenderPassColorAttachment;
+  private readonly maskDepth: GPURenderPassDepthStencilAttachment;
+  private readonly maskPass: GPURenderPassDescriptor;
+  /** A pass of the glow's blur: its target LOADED, no depth (`glowBlurPass`). */
+  private readonly blurColour: GPURenderPassColorAttachment;
+  private readonly blurPass: GPURenderPassDescriptor;
 
   constructor(
     host: FrameHost,
@@ -323,6 +347,11 @@ export class Renderer {
     this.device = host.device;
     this.pipelines = new PipelineCache(this.device);
     this.textureMaker = new TextureMaker(this.device, host, this.pipelines);
+    this.targets = new FrameTargets(
+      this.device,
+      host,
+      this.textureMaker.sampler(anisotropic("clamp-to-edge", "clamp-to-edge", 4)),
+    );
     this.timer =
       options.timePasses && this.device.features.has("timestamp-query") ? new PassTimer(this.device) : null;
     this.frameBuffer = new FrameUniformBuffer(this.device, "main pass");
@@ -339,14 +368,37 @@ export class Renderer {
       flipY: FRAME_TARGETS.flipY,
       frameGroup: (layout) => bindings.get(layout),
     };
-    this.hook = host.onMainPass(options.groupId ?? 0, {
-      begin: this.begin,
-      first: this.first,
-      beforeAlphaTest: this.beforeAlphaTest,
-      afterOpaque: this.afterOpaque,
-      beforeBlended: this.beforeBlended,
-      afterGroup: this.afterGroup,
-    });
+    // A view of `null` until the first frame points each at its target.
+    const nothing = null as unknown as GPUTextureView;
+    this.clearColour = { view: nothing, clearValue: this.clearValue, loadOp: "clear", storeOp: "store" };
+    this.clearDepth = {
+      view: nothing,
+      depthClearValue: 1,
+      depthLoadOp: "clear",
+      depthStoreOp: "store",
+      depthReadOnly: false,
+      stencilReadOnly: false,
+    };
+    this.clearPass = { label: "", colorAttachments: [this.clearColour], depthStencilAttachment: this.clearDepth };
+    this.mainColour = { view: nothing, loadOp: "load", storeOp: "store" };
+    this.mainDepth = { ...this.clearDepth };
+    this.mainPass = { label: "", colorAttachments: [this.mainColour], depthStencilAttachment: this.mainDepth };
+    this.maskColour = { view: nothing, clearValue: { r: 0, g: 0, b: 0, a: 1 }, loadOp: "clear", storeOp: "store" };
+    this.maskDepth = {
+      view: nothing,
+      depthLoadOp: "load",
+      depthStoreOp: "store",
+      depthReadOnly: false,
+      stencilReadOnly: false,
+    };
+    this.maskPass = {
+      label: this.targets.mask.passLabel,
+      colorAttachments: [this.maskColour],
+      depthStencilAttachment: this.maskDepth,
+    };
+    this.blurColour = { view: nothing, loadOp: "load", storeOp: "store" };
+    this.blurPass = { label: "", colorAttachments: [this.blurColour] };
+    this.hook = host.onDrawPhase({ begin: this.begin, end: this.end });
   }
 
   /**
@@ -389,12 +441,14 @@ export class Renderer {
   }
 
   /**
-   * Calls `refused` on every frame whose main pass is not `FRAME_TARGETS` and
-   * something was to draw, until the returned function is called — at each
-   * point with something to draw, so up to five times a frame, which a
-   * listener must take as one refusal. It runs INSIDE the render, after this
-   * frame's prepares were recorded, so it may take draws and prepares off
-   * this renderer but must free nothing this frame's commands hold.
+   * Calls `refused` on every frame whose main pass cannot be recorded — its
+   * targets not made yet — while something was to draw, until the returned
+   * function is called; once a frame. (Until `BABYLON_EXIT.md` X5.4e it was a
+   * pass of BABYLON's that was not `FRAME_TARGETS`, told at each point; the
+   * pass is ours since, made from those targets.) It runs INSIDE the render,
+   * after this frame's prepares were recorded, so it may take draws and
+   * prepares off this renderer but must free nothing this frame's commands
+   * hold.
    */
   onRefused(refused: () => void): () => void {
     this.refusals.push(refused);
@@ -406,10 +460,9 @@ export class Renderer {
 
   /**
    * Draws `draw` in the glow's MASK pass from the next frame on, until the
-   * returned function is called: FIRST in that pass, right after its clear,
-   * ahead of every mesh Babylon draws into it — on every frame the mask's
-   * owner says its pass opened (`glowMaskOpened`). Its pipelines are built
-   * against `GLOW_TARGETS`, and it reads the main pass's frame
+   * returned function is called: FIRST in that pass, right after its clear —
+   * on every frame its owner records it (`recordGlowMask`). Its pipelines are
+   * built against `GLOW_TARGETS`, and it reads the main pass's frame
    * (`FrameContext`): the mask is drawn from the same camera in the same
    * submit.
    */
@@ -420,11 +473,11 @@ export class Renderer {
   /**
    * Draws `draw` in the glow's MASK pass from the next frame on, until the
    * returned function is called: where `addGlowMask`'s go and behind every one of
-   * them, whatever order anything was added in — so still ahead of every mesh of
-   * Babylon's. A draw that was first of the mask's BLENDED list belongs here: only
-   * Babylon's mask-opaque meshes lie between the two places, and each of those
-   * wrote the depth a blended draw at its pixel is rejected by, so neither order
-   * is seen (the moon, `SkyDraw`, `BABYLON_EXIT.md` X4.5c).
+   * them, whatever order anything was added in. A draw that was first of the
+   * mask's BLENDED list belongs here: only Babylon's mask-opaque meshes lay
+   * between the two places (none since X5.3c), and each of those wrote the
+   * depth a blended draw at its pixel is rejected by, so neither order was seen
+   * (the moon, `SkyDraw`, `BABYLON_EXIT.md` X4.5c).
    */
   addGlowMaskBlended(draw: FrameDraw, active?: Active): () => void {
     return hang(this.maskBlendedDraws, this.maskBlendedActive, draw, active);
@@ -432,23 +485,21 @@ export class Renderer {
 
   /**
    * Draws `draw` LAST in the glow's MASK pass from the next frame on, until
-   * the returned function is called: after every mesh Babylon draws into it
-   * and every `addGlowMask` draw, on every frame the mask's owner says its
-   * pass is closing (`glowMaskClosing`) — where Babylon's group 1 drew the
-   * viewmodel's emissives (`BABYLON_EXIT.md` X4.3c's review). The same
-   * pipelines and frame as `addGlowMask`'s.
+   * the returned function is called: after every `addGlowMask` and
+   * `addGlowMaskBlended` draw, at the pass's close (`recordGlowMask`) — where
+   * Babylon's group 1 drew the viewmodel's emissives (`BABYLON_EXIT.md` X4.3c's
+   * review). The same pipelines and frame as `addGlowMask`'s.
    */
   addGlowMaskLate(draw: FrameDraw, active?: Active): () => void {
     return hang(this.maskLateDraws, this.maskLateActive, draw, active);
   }
 
   /**
-   * Calls `refused` on every frame the glow's mask pass is not
-   * `GLOW_TARGETS` and something was to draw in it, until the returned
-   * function is called. Like `onRefused`'s, it runs INSIDE the render — in
-   * the mask's clear, after Babylon built the mask's list — so it may take
-   * draws and prepares off this renderer but must free nothing this frame's
-   * commands hold.
+   * Calls `refused` on every frame the glow's mask pass cannot be recorded —
+   * its target not made yet — while something was to draw in it, until the
+   * returned function is called. Like `onRefused`'s, it runs INSIDE the
+   * render, so it may take draws and prepares off this renderer but must free
+   * nothing this frame's commands hold.
    */
   onGlowMaskRefused(refused: () => void): () => void {
     this.maskRefusals.push(refused);
@@ -459,72 +510,59 @@ export class Renderer {
   }
 
   /**
-   * The glow's mask pass has OPENED: its owner calls this from inside its
-   * clear (`GlowPass.onMaskOpenObservable`), the pass begun and nothing of
-   * Babylon's queued in it yet. Queues the mask's draws there — on a frame
-   * `begin` filled, and only into a pass that is exactly `GLOW_TARGETS`; one
-   * that is not draws nothing of ours, with one console error per change,
-   * and every `onGlowMaskRefused` listener is told.
+   * The glow's MASK pass, recorded now into the host's prepare encoder, after
+   * the main pass (`GlowPass.render` asks, from the draw phase's end, its
+   * targets sized): the mask cleared to black with alpha 1 and the frame's own
+   * depth LOADED, as Babylon's `onClearObservable` cleared it and its
+   * `shareDepth` attached that depth (`BABYLON_EXIT.md` X5.4e). Its two
+   * announcements are its two ends: the `addGlowMask` and `addGlowMaskBlended`
+   * draws FIRST, where the open was told inside the clear, and the
+   * `addGlowMaskLate` draws LAST, where the close was told inside the unbind —
+   * Babylon draws nothing between them since X5.3c. Drawn only on a frame
+   * `begin` filled; a mask not made yet (no frame drawn) is a pass that cannot
+   * be recorded, and every `onGlowMaskRefused` listener is told, with one
+   * console error per change.
    */
-  glowMaskOpened(): void {
+  recordGlowMask(): void {
     const filled = this.maskFilled;
     this.maskFilled = false;
-    this.maskOpenOk = false;
-    const opening = this.maskDraws.length + this.maskBlendedDraws.length;
-    if (!filled || opening + this.maskLateDraws.length === 0) return;
-    if (!this.host.passIs(GLOW_TARGETS)) {
-      if (!this.maskRefused) {
-        console.error(
-          "render: the glow's mask pass is not what GLOW_TARGETS states — drawing nothing of ours in it",
-          { open: this.host.openPass(), stated: GLOW_TARGETS },
-        );
+    const t = this.targets;
+    if (!t.mask.view || !t.depth.view) {
+      if (filled && this.maskDraws.length + this.maskBlendedDraws.length + this.maskLateDraws.length > 0) {
+        if (!this.maskRefused) console.error("render: the glow's mask has no target yet — drawing nothing of ours in it");
+        this.maskRefused = true;
+        const refusals = this.maskRefusals;
+        for (let i = 0; i < refusals.length; i++) refusals[i]();
       }
-      this.maskRefused = true;
-      const refusals = this.maskRefusals;
-      for (let i = 0; i < refusals.length; i++) refusals[i]();
       return;
     }
     this.maskRefused = false;
-    this.maskOpenOk = true;
-    if (opening > 0) this.host.queue(this.runMask);
-  }
-
-  /**
-   * The glow's mask pass is CLOSING: its owner calls this once every mesh of
-   * Babylon's is queued in it and before the pass ends
-   * (`GlowPass.onMaskCloseObservable`). Queues the LATE mask draws there, on
-   * the verdict the open made of the same pass — Babylon no longer names it
-   * as the bound target by now, so it is not asked again.
-   */
-  glowMaskClosing(): void {
-    const ok = this.maskOpenOk;
-    this.maskOpenOk = false;
-    if (ok && this.maskLateDraws.length > 0) this.host.queue(this.runMaskLate);
-  }
-
-  /**
-   * A pass of the glow's BLUR is open: its owner (`GlowPass`) has bound one of
-   * its own targets and asks, from between that bind and its unbind, for
-   * `run` to draw there (`render/GlowBlur.ts`, `BABYLON_EXIT.md` X5.2b).
-   * Queues it — only into a pass that is exactly `GLOW_BLUR_TARGETS`; one that
-   * is not draws nothing of ours, with one console error per change — and says
-   * whether it did. `run` is queued as handed, so it must be the same function
-   * every frame (`FrameHost.queue` keeps one list item per function).
-   */
-  glowBlurOpened(run: (pass: GPURenderPassEncoder) => void): boolean {
-    if (!this.host.passIs(GLOW_BLUR_TARGETS)) {
-      if (!this.blurRefused) {
-        console.error(
-          "render: a pass of the glow's blur is not what GLOW_BLUR_TARGETS states — drawing nothing of ours in it",
-          { open: this.host.openPass(), stated: GLOW_BLUR_TARGETS },
-        );
-      }
-      this.blurRefused = true;
-      return false;
+    this.maskColour.view = t.mask.view;
+    this.maskDepth.view = t.depth.view;
+    const pass = this.host.prepareEncoder().beginRenderPass(this.maskPass);
+    if (filled) {
+      if (this.maskDraws.length + this.maskBlendedDraws.length > 0) this.runMask(pass);
+      if (this.maskLateDraws.length > 0) this.runMaskLate(pass);
     }
-    this.blurRefused = false;
-    this.host.queue(run);
-    return true;
+    pass.end();
+  }
+
+  /**
+   * A pass of the glow's BLUR, recorded now into the host's prepare encoder:
+   * `target` LOADED and stored, no depth, as Babylon's `bindFramebuffer` began
+   * one with nothing to clear (`render/GlowBlur.ts`, `BABYLON_EXIT.md` X5.2b,
+   * X5.4e), `run` its one draw. Asked by `GlowBlur` only once its draw can be
+   * made, so a pass whose program is not built is not begun at all, as
+   * Babylon began none that drew nothing. Reads no frame of ours, so it is
+   * recorded whether or not `begin` filled one.
+   */
+  glowBlurPass(target: FrameTarget, run: (pass: GPURenderPassEncoder) => void): void {
+    if (!target.view) return;
+    this.blurColour.view = target.view;
+    this.blurPass.label = target.passLabel;
+    const pass = this.host.prepareEncoder().beginRenderPass(this.blurPass);
+    run(pass);
+    pass.end();
   }
 
   /**
@@ -583,6 +621,7 @@ export class Renderer {
     this.maskRefusals.length = 0;
     this.frameBuffer.destroy();
     this.timer?.dispose();
+    this.targets.dispose();
     this.textureMaker.dispose();
   }
 
@@ -601,8 +640,8 @@ export class Renderer {
       anyActive(this.particles, this.particlesActive) ||
       anyActive(this.blended, this.blendedActive) ||
       anyActive(this.after, this.afterActive);
-    // The glow's mask opens after the main pass, and draws from the frame
-    // filled here.
+    // The glow's mask is recorded after the main pass, and draws from the
+    // frame filled here.
     this.maskFilled =
       anyActive(this.maskDraws, this.maskActive) ||
       anyActive(this.maskBlendedDraws, this.maskBlendedActive) ||
@@ -623,48 +662,62 @@ export class Renderer {
     if (timing) timing.close(encoder);
   };
 
-  private readonly first = (): void => {
-    if (this.filled && this.firstDraws.length > 0 && this.passOk()) this.host.queue(this.runFirst);
-  };
-
-  private readonly beforeAlphaTest = (): void => {
-    if (this.filled && this.beforeAlpha.length + this.surfaced.length > 0 && this.passOk()) {
-      this.host.queue(this.runBeforeAlpha);
-    }
-  };
-
-  private readonly afterOpaque = (): void => {
-    if (this.filled && this.opaque.length + this.particles.length > 0 && this.passOk()) {
-      this.host.queue(this.runOpaque);
-    }
-  };
-
-  private readonly beforeBlended = (): void => {
-    if (this.filled && this.blended.length > 0 && this.passOk()) this.host.queue(this.runBlended);
-  };
-
-  private readonly afterGroup = (): void => {
+  /**
+   * The draw phase's END (`FrameHost.onDrawPhase`): the frame's OPENING pass —
+   * its colour cleared to the scene's clear colour, its depth to 1 — and then
+   * its MAIN pass, recorded now into the host's prepare encoder after the
+   * prepares `begin` recorded there, with every point told in its order: the
+   * opening clear and the main pass are what Babylon began on its render
+   * encoder for the camera's output target (`Scene._clearFrameBuffer` at
+   * `Scene.render`'s first bind, then the camera's render, which cleared the
+   * depth again), on every frame the camera drew, whatever was queued
+   * (`BABYLON_EXIT.md` X5.4e). The draws are RECORDED in place of queued, where
+   * Babylon ran its queue: the moment the next pass of the frame began, which
+   * was the glow's mask's, right behind this. A frame `begin` did not fill
+   * still clears and opens the main pass, as Babylon's did; a frame whose
+   * targets are not made yet (no `PostPasses.prepareFrame` has sized them)
+   * records nothing, and is a refusal if something was to draw.
+   */
+  private readonly end = (): void => {
     const filled = this.filled;
     this.filled = false;
-    if (filled && this.after.length > 0 && this.passOk()) this.host.queue(this.runAfter);
-  };
-
-  /** Whether the open pass is `FRAME_TARGETS`; a refusal is reported once per change. */
-  private passOk(): boolean {
-    if (!this.host.passIs(FRAME_TARGETS)) {
-      if (!this.refused) {
-        console.error(
-          "render: the main pass is not what FRAME_TARGETS states — drawing nothing of ours",
-          { open: this.host.openPass(), stated: FRAME_TARGETS },
-        );
-      }
-      this.refused = true;
-      const refusals = this.refusals;
-      for (let i = 0; i < refusals.length; i++) refusals[i]();
-      return false;
+    const t = this.targets;
+    if (!t.frame.view || !t.depth.view) {
+      if (filled) this.refuse();
+      return;
     }
     this.refused = false;
-    return true;
+    this.host.clearColor(this.clearValue);
+    const label = t.frameLabel;
+    this.clearColour.view = t.frame.view;
+    this.clearDepth.view = t.depth.view;
+    this.clearPass.label = label;
+    this.mainColour.view = t.frame.view;
+    this.mainDepth.view = t.depth.view;
+    this.mainPass.label = label;
+    const encoder = this.host.prepareEncoder();
+    encoder.beginRenderPass(this.clearPass).end();
+    const pass = encoder.beginRenderPass(this.mainPass);
+    if (filled) {
+      // The seven points in their order (the header): `"first"`, then
+      // `"beforeAlphaTest"` and `"afterSurfaces"`, `"opaque"` and
+      // `"particles"`, `"beforeBlended"`, and `"afterGroup"` — each list
+      // asked through its own field, so an instrument may wrap one.
+      if (this.firstDraws.length > 0) this.runFirst(pass);
+      if (this.beforeAlpha.length + this.surfaced.length > 0) this.runBeforeAlpha(pass);
+      if (this.opaque.length + this.particles.length > 0) this.runOpaque(pass);
+      if (this.blended.length > 0) this.runBlended(pass);
+      if (this.after.length > 0) this.runAfter(pass);
+    }
+    pass.end();
+  };
+
+  /** The main pass could not be recorded with something to draw: every `onRefused` listener told, one error per change. */
+  private refuse(): void {
+    if (!this.refused) console.error("render: the frame has no target yet — drawing nothing of ours");
+    this.refused = true;
+    const refusals = this.refusals;
+    for (let i = 0; i < refusals.length; i++) refusals[i]();
   }
 
   private readonly runFirst = (pass: GPURenderPassEncoder): void => {

@@ -1,8 +1,9 @@
 /**
  * render/GlowBlur.ts — The glow's blur and box downsample as OUR draws
  * (`BABYLON_EXIT.md` X5.2b): Babylon's `kernelBlur` and the `glowDown` effect,
- * ported as compiled, drawn into the passes `GlowPass` opens on targets it
- * owns, with no change to that pass structure.
+ * ported as compiled, each drawn in a pass of our own (`Renderer.glowBlurPass`,
+ * X5.4e) on the glow's targets (`FrameTargets`), as `GlowPass` asks, with no
+ * change to the pass structure Babylon's own draws had.
  * Owns: `GlowBlur` — one pipeline per compiled kernel width asked
  * (`wgsl/glowBlur.ts`' `glowBlurModules`, at the device's own
  * `maxInterStageShaderVariables`, Babylon's `maxVaryingVectors`) and the box
@@ -21,18 +22,19 @@
  * the source at 0, its sampler at 1, `Internals` at 2, the pass's `LeftOver` at
  * 3, each block 8 and 16 bytes as Babylon's, written as Babylon computed it
  * (`delta` is `(1 / width) * direction.x, (1 / height) * direction.y` of the
- * TARGET, in float64, then rounded); the source is read through Babylon's own
- * view and sampler for it (`FrameHost.bind`: the glow's targets are Babylon's
- * render targets, read where they lie, rule 5); a pass is drawn only into a
- * pass that is `GLOW_BLUR_TARGETS` (`Renderer.glowBlurOpened`); the kernels
+ * TARGET, in float64, then rounded); the source is read through its own view
+ * and the sampler Babylon's cache made for the glow's targets (`FrameTargets`:
+ * ours since `BABYLON_EXIT.md` X5.4e, Babylon's render targets before, read
+ * through the seam); a pass is drawn only into a target made as
+ * `GLOW_BLUR_TARGETS` states, by construction (`Renderer.glowBlurPass`); the kernels
  * `declare` is handed are asked as they are handed, and one first asked at
  * draw time is asked as a miss (the seal says so in play); a kernel whose
  * pipeline is not built yet is NOT drawn — the pass is skipped, its target
  * keeping what it held (the difference below); nothing here allocates on a
  * frame once its bind groups are made (they are remade only when a source's
  * view or sampler changes: a resize).
- * Never: imports Babylon; binds its own targets — `GlowPass` binds each one
- * and asks from inside it; draws into any pass but one `GlowPass` has bound.
+ * Never: imports Babylon; begins a pass itself — `Renderer.glowBlurPass` does,
+ * around the draw; draws a pass `GlowPass` has not asked for.
  *
  * A KNOWN LIVE DIFFERENCE, ACCEPTED BY THE OWNER ON 2026-11-08 (`BABYLON_EXIT.md`
  * X5.2's row "a DPR change in play"): that skip is NOT what Babylon did.
@@ -49,7 +51,7 @@
  * built skips the blur the same way.
  * Contract: `docs/rendering.md`, "The glow: what the depth share replaced".
  */
-import type { BoundTexture, HostTexture } from "./frameHost";
+import type { FrameTarget } from "./FrameTargets";
 import type { BuiltPipeline, PipelineSpec, ShaderSource } from "./PipelineCache";
 import type { Renderer } from "./Renderer";
 import { GLOW_BLUR_TARGETS } from "./targets";
@@ -126,9 +128,11 @@ export class GlowBlur {
   private readonly passes: PassState[] = [];
   /** Group 0, which every pipeline here declares EMPTY, made once against the first layout seen. */
   private empty: GPUBindGroup | null = null;
-  private readonly bound: BoundTexture = { view: null, sampler: null };
-  /** One queued function a pass, so `FrameHost.queue` allocates nothing. */
+  /** One draw function a pass, made once, so a frame's passes allocate nothing. */
   private readonly runs: ((pass: GPURenderPassEncoder) => void)[] = [];
+  /** What blurs 1 to 3 read (the first's is the mask or the box filter's output) and what the four draw into. */
+  private readonly sources: readonly FrameTarget[];
+  private readonly outputs: readonly FrameTarget[];
 
   constructor(
     private readonly renderer: Renderer,
@@ -138,6 +142,9 @@ export class GlowBlur {
     const device = renderer.device;
     this.device = device;
     this.limit = device.limits.maxInterStageShaderVariables;
+    const t = renderer.targets;
+    this.sources = [t.mask, t.nearH, t.near, t.wideH];
+    this.outputs = [t.nearH, t.near, t.wideH, t.wide];
     this.quad = this.buffer("glow blur: quad", QUAD, QUAD_USAGE);
     this.indices = this.buffer("glow blur: quad indices", QUAD_INDICES, INDEX_USAGE);
     this.internals = device.createBuffer({
@@ -214,27 +221,29 @@ export class GlowBlur {
   }
 
   /**
-   * Draws the box filter into the pass `GlowPass` has just bound (`glow.down`),
-   * reading `source` (the mask) of `width` x `height`: Babylon's `scale` (1, 1)
-   * and `texel`, one texel of the source. `outputHeight` is the render height
+   * The box filter's pass (`glow.down`), into the glow's `down` target, reading
+   * the mask, of `width` x `height`: Babylon's `scale` (1, 1) and `texel`, one
+   * texel of the source. `outputHeight` is the render height
    * (`Internals.textureOutputHeight_`, as Babylon's engine wrote it).
    */
-  down(source: HostTexture, width: number, height: number, outputHeight: number): void {
+  down(width: number, height: number, outputHeight: number): void {
+    const t = this.renderer.targets;
     this.write(this.passes[DOWN], 1, 1, 1 / width, 1 / height);
-    this.draw(DOWN, this.downPipeline, source, outputHeight);
+    this.draw(DOWN, this.downPipeline, t.mask, t.down, outputHeight);
   }
 
   /**
-   * Draws blur pass `index` (0 to 3: near across, near down, wide across,
-   * wide down) into the pass `GlowPass` has just bound, a target of `width` x
-   * `height`, reading `source` with the kernel of ideal width `kernel`,
-   * `across` or down — `delta` as `ThinBlurPostProcess.bind` computes it.
+   * Blur pass `index` (0 to 3: near across, near down, wide across, wide down)
+   * into its target (`nearH`, `near`, `wideH`, `wide`), of `width` x `height`,
+   * reading the pass before's output — the first, the box filter's output
+   * `fromDown`, else the mask — with the kernel of ideal width `kernel`,
+   * `across` or down: `delta` as `ThinBlurPostProcess.bind` computes it.
    */
   blur(
     index: number,
     kernel: number,
     across: boolean,
-    source: HostTexture,
+    fromDown: boolean,
     width: number,
     height: number,
     outputHeight: number,
@@ -242,7 +251,8 @@ export class GlowBlur {
     const dx = across ? 1 : 0;
     const dy = across ? 0 : 1;
     this.write(this.passes[index], (1 / width) * dx, (1 / height) * dy, 0, 0);
-    this.draw(index, this.blurs.get(blurKernel(kernel)) ?? null, source, outputHeight);
+    const source = index === 0 && fromDown ? this.renderer.targets.down : this.sources[index];
+    this.draw(index, this.blurs.get(blurKernel(kernel)) ?? null, source, this.outputs[index], outputHeight);
   }
 
   dispose(): void {
@@ -297,8 +307,8 @@ export class GlowBlur {
     this.device.queue.writeBuffer(state.block, 0, v);
   }
 
-  /** The pass's bind group for this frame's source, and the draw queued into the open pass. */
-  private draw(index: number, pipeline: BuiltPipeline | null, source: HostTexture, outputHeight: number): void {
+  /** The pass's bind group for this frame's source, and its pass recorded with the draw in it. */
+  private draw(index: number, pipeline: BuiltPipeline | null, source: FrameTarget, target: FrameTarget, outputHeight: number): void {
     if (!pipeline) return;
     const state = this.passes[index];
     if (outputHeight !== this.internalsHeight) {
@@ -306,29 +316,29 @@ export class GlowBlur {
       this.internalsValues[1] = outputHeight;
       this.device.queue.writeBuffer(this.internals, 0, this.internalsValues);
     }
-    const b = this.bound;
-    this.renderer.host.bind(source, b);
-    if (!b.view || !b.sampler) return;
+    const view = source.view;
+    const sampler = source.sampler;
+    if (!view || !sampler) return;
     const layout = pipeline.groups[1];
-    if (!state.group || state.groupLayout !== layout || state.groupView !== b.view || state.groupSampler !== b.sampler) {
+    if (!state.group || state.groupLayout !== layout || state.groupView !== view || state.groupSampler !== sampler) {
       state.group = this.device.createBindGroup({
         label: "glow blur: source",
         layout,
         entries: [
-          { binding: 0, resource: b.view },
-          { binding: 1, resource: b.sampler },
+          { binding: 0, resource: view },
+          { binding: 1, resource: sampler },
           // Sized, as Babylon binds a block: the whole of each.
           { binding: 2, resource: { buffer: this.internals, offset: 0, size: 8 } },
           { binding: 3, resource: { buffer: state.block, offset: 0, size: 16 } },
         ],
       });
       state.groupLayout = layout;
-      state.groupView = b.view;
-      state.groupSampler = b.sampler;
+      state.groupView = view;
+      state.groupSampler = sampler;
     }
     this.empty ??= this.device.createBindGroup({ label: "glow blur: group 0", layout: pipeline.groups[0], entries: [] });
     state.pipeline = pipeline;
-    this.renderer.glowBlurOpened(this.runs[index]);
+    this.renderer.glowBlurPass(target, this.runs[index]);
   }
 
   private readonly run = (pass: GPURenderPassEncoder, state: PassState): void => {

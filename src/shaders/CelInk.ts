@@ -50,10 +50,11 @@
  * +34.7% and +32.6%**, against control drifts of 3.0% and 5.6%. Hollowmere was
  * discarded: 57.7% drift, the round had walked somewhere else.
  *
- * WHAT MAKES IT POSSIBLE is that the frame's own depth image is sampleable,
- * which `FrameDepth` owns and argues in full — this pass was where that
- * capture used to live, and it moved out when `MotionBlur` became its second
- * reader. What is left here is the one fact that is this shader's: **no
+ * WHAT MAKES IT POSSIBLE is that the frame's own depth image is sampleable —
+ * our renderer's since `BABYLON_EXIT.md` X5.4e (`FrameTargets.depth`, made
+ * with `TEXTURE_BINDING`), `FrameDepth`'s capture of Babylon's before it; this
+ * pass was where that capture first lived, and it moved out when `MotionBlur`
+ * became its second reader. What is left here is the one fact that is this shader's: **no
  * sampler is needed and therefore none can be wrong.** The declaration is
  * `texture_depth_2d`, off which Babylon's WGSL processor inferred
  * `sampleType: "depth"` and which our pipeline cache lays out the same, and
@@ -156,7 +157,7 @@
  * compiled text and the stage below hold it as the processor left it.
  *
  * **At `depthTexture`, the frame's depth:**
- * The MAIN pass's depth attachment, out of the shared FrameDepth. Declared as a
+ * The MAIN pass's depth attachment, the frame's own (`FrameTargets.depth`). Declared as a
  * depth texture so Babylon's WGSL processor gives the binding sampleType
  * "depth"; every read below is a textureLoad, so this pass declares no sampler
  * for it and there is none to get wrong.
@@ -330,10 +331,9 @@
  */
 import type { Camera } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import { hostTexture } from "../render/babylonSeam";
+import type { FrameTargets } from "../render/FrameTargets";
 import type { PostStage } from "../render/PostChain";
 import { fogBand } from "./CelShader";
-import type { FrameDepth } from "./FrameDepth";
 import type { GlowPass } from "./GlowPass";
 import {
   CEL_INK_BLOCK as B,
@@ -370,14 +370,15 @@ export class CelInk {
 
   constructor(
     private readonly camera: Camera,
-    /**
-     * The bloom: its emissive mask (`GlowPass.mask`), read as the ink's mask,
-     * and the blurred halves and the intensity the compose adds
-     * (`composeNear`, `composeWide`, `composeIntensity`). Read, never written.
-     */
+    /** The bloom's rules: the intensity the compose adds (`composeIntensity`). Read, never written. */
     private readonly glow: GlowPass,
-    /** The frame's own depth image. Shared — see `FrameDepth`. */
-    depth: FrameDepth,
+    /**
+     * The frame's targets (`render/FrameTargets.ts`, our renderer's): the
+     * frame's own depth image, shared with every stage, and the bloom's
+     * emissive mask, read as the ink's mask, with the two blurred halves the
+     * compose adds (`near`, `wide`). Read, never written.
+     */
+    frame: FrameTargets,
   ) {
     this.stage = {
       name: "ink",
@@ -396,17 +397,17 @@ export class CelInk {
       inputSampler: INPUT_SAMPLER,
       blockFloats: B.floats,
       extras: [
-        // The frame's depth, read by `textureLoad` (no sampler). Null before
-        // the first draw phase has captured it, and the stage then draws
-        // nothing — it cannot be by the time the host draws, the capture
-        // being on the draw phase of the same `scene.render()`.
-        { binding: 1, texture: () => (depth.texture ? hostTexture(depth.texture as never) : null) },
-        // The glow's mask and its two blurred targets, each through the
-        // host's own view and sampler (bilinear, clamped, as Babylon bound
-        // them). The glow owns all three from construction.
-        { binding: 2, samplerBinding: 6, texture: () => hostTexture(glow.mask) },
-        { binding: 3, samplerBinding: 7, texture: () => hostTexture(glow.composeNear) },
-        { binding: 4, samplerBinding: 8, texture: () => hostTexture(glow.composeWide) },
+        // The frame's depth, read by `textureLoad` (no sampler). Viewless
+        // before the first frame has sized it, and the stage then draws
+        // nothing — it cannot be by the time the chain draws, the frame being
+        // sized as the same render starts.
+        { binding: 1, texture: () => frame.depth },
+        // The glow's mask and its two blurred targets, each through its own
+        // view and the sampler Babylon's cache made for the glow's targets
+        // (bilinear, clamped: `FrameTargets`, ours since X5.4e).
+        { binding: 2, samplerBinding: 6, texture: () => frame.mask },
+        { binding: 3, samplerBinding: 7, texture: () => frame.near },
+        { binding: 4, samplerBinding: 8, texture: () => frame.wide },
       ],
       // Never off: the ink is part of the picture, not a setting.
       active: () => true,

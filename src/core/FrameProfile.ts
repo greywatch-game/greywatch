@@ -1363,16 +1363,16 @@ export class FrameProfile {
    * whose ash is ours), the seam's telling of the same points at the phase's
    * end, which is inserted FIRST on that observable and so lands ahead of the
    * glow. **So it is entered on every frame the camera draws, and reads the
-   * same whichever path told our points.** Our recording itself lands where
-   * Babylon runs the queue, which is wherever the main pass ENDS
-   * (`_endCurrentRenderPass` runs `_bundleList`, `thinWebGPUEngine.js`
-   * 59-67) — and with Babylon's particles in group 0 that is HERE for every
-   * point queued ahead of them (`first`, `beforeAlphaTest`, `opaque`), since
-   * their compute dispatch ends the pass (`engine.computeShader.pure.js`
-   * 203): about half of this span in a live round today (X4.7b's review).
-   * Without them the glow's mask ends the pass and that recording lands in
-   * `glow`, so across X4.7c and X4.7d about 0.06 ms moves from here to there
-   * (`docs/profiling.md`). **What it does
+   * same whichever path told our points.** Our recording of the main pass is
+   * HERE since `BABYLON_EXIT.md` X5.4e: the pass is our renderer's own,
+   * recorded at the phase's end by the seam's observer, which is inserted
+   * first, ahead of both the glow's work and this span's close. (While the
+   * draws were QUEUED into Babylon's pass they were recorded wherever that
+   * pass ENDED — `_endCurrentRenderPass` ran `_bundleList`,
+   * `thinWebGPUEngine.js` 59-67 — which with Babylon's particles in group 0
+   * was HERE, their compute dispatch ending the pass, about half of this span
+   * in a live round at X4.7b's review, and without them was the glow's mask,
+   * so from X4.7c to X5.4e it landed in `glow`: `docs/profiling.md`.) **What it does
    * NOT hold is the seam's own start of the pass** — our renderer's `begin`
    * (the frame's uniforms and every prepare recorded onto the upload encoder)
    * and its `first` point: the seam's observer on the same

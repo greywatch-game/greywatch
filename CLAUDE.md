@@ -650,18 +650,19 @@ post chain — the ink, FXAA, the shafts, a stage a rung, the blur and the
 grade** (`render/PostChain.ts`, X5.2c1 to X5.2d: a host of DECLARED stages,
 the first reading the frame, the last active one given the canvas, any other
 a pool target of its own), whose passes `shaders/PostPasses.ts` opens with
-public API, and **no Babylon `PostProcess` stands on the camera**. **The scene
-draws STRAIGHT INTO the frame** — `PostPasses`' render target, the camera's
-`outputRenderTarget` for good, its formats `FRAME_TARGETS`' — **and clears it
-itself** (Babylon's clear of a camera's output target, under `scene.autoClear`),
-so **the frame's opening pass is the frame's, not the canvas's**, and
-**`FrameDepth` reads its depth by the public getter**.
+public API, and **no Babylon `PostProcess` stands on the camera**. **The FRAME
+and its passes are OURS** (`render/FrameTargets.ts`, X5.4e: the frame, its
+depth, the glow's six, each made as Babylon made it, every pass before the chain
+recorded into the encoder Babylon submits first), so **the scene clears
+nothing** (`autoClear` and `autoClearDepthAndStencil` FALSE, no
+`outputRenderTarget`) and **the frame's opening pass is the frame's**.
 
 **The GLOW's mask is the EMISSIVE surfaces and nothing else, every draw in it
 OURS, its occlusion being the FRAME's own depth buffer** (`src/shaders/GlowPass.ts`
-binds the pass; Babylon draws no mesh there since X5.3d). **Its blur and box
-filter are OUR draws in passes `GlowPass` still binds** (`render/GlowBlur.ts`,
-Babylon's `kernelBlur` ported as compiled): the blur's TEXT is a function of
+holds the rules — when, what size, which kernel — and our renderer records the
+pass, `Renderer.recordGlowMask`). **Its blur and box filter are OUR draws in
+passes of our own** (`render/GlowBlur.ts`, Babylon's `kernelBlur` ported as
+compiled): the blur's TEXT is a function of
 its kernel, so every rung at every render scale is declared at construction
 (`glowKernels`) and a pixel-ratio change's new widths are the one exception
 to the seal — no bloom is drawn while they compile, an accepted live
@@ -678,7 +679,8 @@ draw**, **`noGlow` is read PER SURFACE at the take** (a world fire's too), and
 **OUR renderer (`src/render/`) draws INSIDE Babylon's frame through ONE seam**
 (`render/babylonSeam.ts`, the only file there that names Babylon, and only as
 types), and **no draw of ours needs anything of Babylon's in group 0**: the seam
-tells every point at the draw phase's end, Babylon visiting no group. The frame's uniforms are PULLED off the factory's fields
+tells the draw phase's two ends, and our renderer records every point at the
+end, Babylon visiting no group. The frame's uniforms are PULLED off the factory's fields
 (`CelMaterialFactory.fillFrame`), so **a new value every cel material holds owes
 `render/frame.ts` a field and `fillFrame` a line** — a shared TEXTURE the same,
 in `FRAME_TEXTURES` and `fillFrameTextures`. **A material's OWN value is set

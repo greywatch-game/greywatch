@@ -18,19 +18,18 @@
  * is teleported, or the jump reads as one blurred frame. Turning it off is a
  * stage the host does not draw (`setEnabled` is its `active()`), not a zeroed
  * strength: the shader's early-out is still a full-screen copy.
- * It SAMPLES the frame's depth (`FrameDepth`, shared with `CelInk`) for one
- * question only: is this pixel the WEAPON, which is the one thing on screen
- * this pass must not touch. That image belongs to the pass the scene draws
- * into, so this one has to stay downstream of it.
+ * It SAMPLES the frame's depth (`FrameTargets.depth`, shared with `CelInk`)
+ * for one question only: is this pixel the WEAPON, which is the one thing on
+ * screen this pass must not touch. That image belongs to the frame's main
+ * pass, so this one has to stay downstream of it.
  * Never: draws, binds or owns a GPU resource (the host does).
  * Contract: `docs/rendering.md`.
  */
 import type { Camera } from "@babylonjs/core";
 import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import { hostTexture } from "../render/babylonSeam";
 import type { PostStage } from "../render/PostChain";
-import type { FrameDepth } from "./FrameDepth";
+import type { FrameTargets } from "../render/FrameTargets";
 import {
   MOTION_BLUR_BLOCK as B,
   MOTION_BLUR_FRAGMENT,
@@ -162,11 +161,11 @@ export class MotionBlur {
   constructor(
     private readonly camera: Camera,
     /**
-     * The frame's own depth image, shared with the ink. It is what names the
-     * viewmodel — see the class comment — and it is the reason this pass has
-     * to stay downstream of whichever pass the scene draws into.
+     * The frame's targets, for its own depth image, shared with the ink. It
+     * is what names the viewmodel — see the class comment — and it is the
+     * reason this pass has to stay downstream of the frame's main pass.
      */
-    depth: FrameDepth,
+    frame: FrameTargets,
   ) {
     this.stage = {
       name: "blur",
@@ -183,11 +182,11 @@ export class MotionBlur {
       blockBinding: 4,
       inputSampler: INPUT_SAMPLER,
       blockFloats: B.floats,
-      // The frame's depth, read by `textureLoad` (no sampler). Null before
-      // the first draw phase has captured it, and the stage then draws
-      // nothing — it cannot be by the time the host draws, the capture being
-      // on the draw phase of the same `scene.render()`.
-      extras: [{ binding: 1, texture: () => (depth.texture ? hostTexture(depth.texture as never) : null) }],
+      // The frame's depth (`FrameTargets.depth`, our renderer's), read by
+      // `textureLoad` (no sampler). Viewless before the first frame has sized
+      // it, and the stage then draws nothing — it cannot be by the time the
+      // chain draws, the frame being sized as the same render starts.
+      extras: [{ binding: 1, texture: () => frame.depth }],
       active: () => this.enabled,
       fill: (block, width, height) => this.fill(block, width, height),
     };

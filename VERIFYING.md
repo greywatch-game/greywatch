@@ -2107,7 +2107,7 @@ is one machine's:
   is a query string, `?volumetrics=low|medium|high`, which overrides the player
   setting for the session the way `?profile` does. `Game.volumetrics` is null
   only when the setting says `off`, and the pass is attached one frame LATER than
-  it is built — `syncVolumetrics` waits for `FrameDepth` to have an image, so
+  it is built — `syncVolumetrics` waits for the frame's depth to be made, so
   `camera._postProcesses` is the honest check rather than the field.
 - **A heavy frame outruns Playwright's default 30 s `page.screenshot` deadline**,
   and the error names the screenshot rather than the cause. Coldharbour with the

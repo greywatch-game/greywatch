@@ -2,18 +2,21 @@
  * render/frameHost.ts — What our renderer needs from whoever owns the frame,
  * stated as an interface so the owner can change without the renderer
  * noticing.
- * Owns: `FrameHost`, `PassTargets`, `MainPassHooks`, `HostTexture` and
+ * Owns: `FrameHost`, `DrawPhaseHooks`, `PassTargets`, `HostTexture` and
  * `BoundTexture`.
  * Invariants: everything a `FrameHost` hands over is WebGPU's or plain data —
  * a device, a pass encoder, a command encoder, a texture view and a sampler,
- * formats, floats; a draw reaches the pass through `queue` and nothing else,
- * in the host's own order — in the main pass, in the glow's mask when
- * that pass's owner says it opened, or in a pass of the glow's blur or of the
- * post chain when its owner asks from inside it; work owed ahead of the draws reaches the GPU
- * through `prepareEncoder` and nothing else — recorded there, never kept,
- * finished or submitted by the renderer; what may only happen once the frame
- * is submitted (a destroy) waits for `afterSubmit`; a texture the host owns is handed over as ITS view, read where it
- * lies and never copied (`BABYLON_EXIT.md` rule 5).
+ * formats, floats; the frame's own passes — its opening clear, its main pass,
+ * the glow's mask and blur — are the RENDERER's (`render/FrameTargets.ts`,
+ * `BABYLON_EXIT.md` X5.4e), recorded into `prepareEncoder` at the moments the
+ * host tells (`onDrawPhase`); a draw reaches a pass the HOST opened — the post
+ * chain's, until X5.4f — through `queue` and nothing else, in the host's own
+ * order, when its owner asks from inside it; work owed ahead of the draws
+ * reaches the GPU through `prepareEncoder` and nothing else — recorded there,
+ * never kept, finished or submitted by the renderer; what may only happen once
+ * the frame is submitted (a destroy) waits for `afterSubmit`; a texture the
+ * host owns is handed over as ITS view, read where it lies and never copied
+ * (`BABYLON_EXIT.md` rule 5).
  * Never: imports Babylon. Babylon's host is `babylonSeam.ts`'s
  * `BabylonFrameHost`, until the game owns the frame (`BABYLON_EXIT.md` X5.4)
  * and a host of its own implements this instead.
@@ -49,43 +52,18 @@ export interface BoundTexture {
 }
 
 /**
- * The six points of the frame's main pass a renderer is told of, in the
- * order they come, once each in EVERY main pass: `begin` and `first` as the
- * pass starts, then `beforeAlphaTest`, `afterOpaque`, `beforeBlended` and
- * `afterGroup`. **A frame on which rendering group `groupId` holds nothing still
- * gets all six**: the group's four are told together where it would have been
- * drawn, the host having nothing of its own to order them against.
+ * The frame's DRAW PHASE as the host runs it: `begin` as it opens and `end` as
+ * it closes, once each a frame the frame's camera draws, the host drawing
+ * nothing of its own between the two. The renderer fills the frame and records
+ * its prepares at `begin`, and records the frame's own passes — the opening
+ * clear and the main pass, its seven points in their order — at `end`
+ * (`Renderer`, `BABYLON_EXIT.md` X5.4e).
  */
-export interface MainPassHooks {
-  /** Once, as the main pass's drawing starts. */
+export interface DrawPhaseHooks {
+  /** Once, as the draw phase opens. */
   begin(): void;
-  /**
-   * Once, right after `begin`, ahead of everything the host draws in the
-   * pass — rendering group `groupId`'s opaque meshes first among them.
-   */
-  first(): void;
-  /**
-   * Once, after rendering group `groupId`'s OPAQUE meshes have been queued
-   * and before its ALPHA-TESTED meshes are. In a frame whose group has no
-   * alpha-tested mesh to draw, immediately before `afterOpaque` instead — so
-   * it always comes before that hook, and nothing of the group's is queued
-   * between the two.
-   */
-  beforeAlphaTest(): void;
-  /**
-   * Once, after rendering group `groupId`'s OPAQUE and alpha-tested meshes
-   * have been queued and before anything blended in it is — its sprites, its
-   * particles and its transparent meshes.
-   */
-  afterOpaque(): void;
-  /**
-   * Once, after rendering group `groupId`'s sprites and particles have been
-   * queued and before its transparent meshes are: so always after `afterOpaque`,
-   * with whatever is blended and is not a mesh between the two.
-   */
-  beforeBlended(): void;
-  /** Once, after rendering group `groupId` has been queued whole. */
-  afterGroup(): void;
+  /** Once, as it closes — ahead of everything else told there (the glow's mask among them). */
+  end(): void;
 }
 
 /** Whoever owns the frame, as the renderer sees it. */
@@ -97,8 +75,9 @@ export interface FrameHost {
   passIs(t: PassTargets): boolean;
   /**
    * Records `run` into the open pass at this point in the host's draw order —
-   * the main pass at one of its hooks (`onMainPass`), or the glow's mask,
-   * which its owner announces as it opens (`Renderer.glowMaskOpened`).
+   * a pass of the post chain, asked from inside it (`Renderer.postStageOpened`;
+   * the main pass, the glow's mask and its blur were queued here too until
+   * `BABYLON_EXIT.md` X5.4e made them the renderer's own passes).
    * It is called once, later in the same frame, with the pass. The pipeline,
    * bind groups and buffers are unset when it starts, so it sets every one it
    * uses; the viewport, scissor, stencil reference and blend constant are the
@@ -112,13 +91,20 @@ export interface FrameHost {
    * main pass's draws read what it wrote, a pass into a texture of the
    * renderer's (a world shadow map) is drawn before any of the host's passes
    * samples it, and the frame's GPU timer (`?gpu`, `gpu.frame`) measures
-   * either as the frame's. Asked as the main pass begins and used at once:
-   * never kept, never finished, never submitted, and a pass begun in it is
-   * ended before the call returns.
+   * either as the frame's. The frame's own passes are recorded here too, after
+   * the prepares (`Renderer`, `BABYLON_EXIT.md` X5.4e): it is submitted ahead
+   * of every pass the HOST opens, the post chain's, which read them. Asked at
+   * the call and used at once: never kept, never finished, never submitted,
+   * and a pass begun in it is ended before the call returns.
    */
   prepareEncoder(): GPUCommandEncoder;
   /** The view-projection the frame's camera is drawn with, as 16 floats. */
   viewProjection(out: Float32Array): void;
+  /**
+   * The colour the frame is cleared to as it opens — the scene's clear colour,
+   * the value Babylon's own clear of the frame read — written into `out`.
+   */
+  clearColor(out: GPUColorDict): void;
   /**
    * Calls `run` after EVERY frame's submit — once the frame's commands have
    * been handed to the queue, so a buffer or texture they hold may be
@@ -127,11 +113,10 @@ export interface FrameHost {
    */
   afterSubmit(run: () => void): { dispose(): void };
   /**
-   * Hooks the frame's MAIN pass — never a shadow map's, a probe's or any other
-   * render target's — at the points of `MainPassHooks`, for rendering group
-   * `groupId`.
+   * Hooks the frame camera's DRAW PHASE (`DrawPhaseHooks`) — never a shadow
+   * map's, a probe's or any other render target's, none of which raises one.
    */
-  onMainPass(groupId: number, hooks: MainPassHooks): { dispose(): void };
+  onDrawPhase(hooks: DrawPhaseHooks): { dispose(): void };
   /**
    * What `t` binds as NOW — exactly the view and sampler the host itself
    * would bind for it, a texture not yet ready included — into `out`. Read

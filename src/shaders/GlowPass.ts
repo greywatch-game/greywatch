@@ -1,23 +1,22 @@
 /**
- * GlowPass.ts — The game's bloom, as a pass it OWNS end to end: the emissive
- * mask, the blur, and what the additive compose adds (its two blurred targets
- * and its intensity; the arithmetic is the ink's last line, X5.2d). Owns its
- * targets and the depth it borrows, and the mask's and the blur's passes —
- * it binds each of its targets itself — though not one DRAW in them: every
- * draw in the mask is our renderer's, told when the pass opens and closes,
- * and so are the blur's (`GlowBlurDraws`, handed in by `Game`, X5.2b). Reads
- * no game state and writes to no mesh.
- * Invariants: the mask is drawn against the frame's OWN depth, borrowed at the
- * size that depth is at on the frame it is borrowed — so a bloom that reaches
- * through a wall is a bug here and never a tuning question; nothing here draws
- * into that depth; the mask is THIS pass's texture even where our renderer
- * draws into it (`BABYLON_EXIT.md` rule 5, X3.6d): the moment its pass opens
- * is announced (`onMaskOpenObservable`, from inside the clear) and the moment
- * it closes (`onMaskCloseObservable`) — so this file imports nothing of
- * `src/render/`; the mask's render list is EMPTY, Babylon drawing no mesh
- * into it (its mesh path, the override materials and `SelfMasking`, went at
- * X5.3d with the map editor's build, the last thing it drew); and every
- * Babylon call is public API.
+ * GlowPass.ts — The game's bloom, as RULES it owns end to end: when the mask
+ * and its blur are drawn (the end of the draw phase), at what sizes (the
+ * mask at the frame's, the blur below it by the rung), with which kernel, and
+ * what the additive compose adds (its intensity; the arithmetic is the ink's
+ * last line, X5.2d). Owns the rung, the sizes it last gave the targets and
+ * the kernel it last read — but since `BABYLON_EXIT.md` X5.4e no target and no
+ * pass: the mask, its blur's five and every pass into them are OUR renderer's
+ * (`render/FrameTargets.ts`, `Renderer.recordGlowMask`, `render/GlowBlur.ts`),
+ * asked for through `GlowDraws`, which `Game` hands in. Reads no game state
+ * and writes to no mesh.
+ * Invariants: the mask is drawn against the frame's OWN depth, at the size
+ * that depth is at on the frame it is borrowed — so a bloom that reaches
+ * through a wall is a bug here and never a tuning question; nothing draws
+ * into that depth in the mask; the targets are resized here, all six at once,
+ * whenever the frame's size or the rung moved, before the mask is asked for;
+ * this file imports nothing of `src/render/` (`GlowDraws` is the crossing);
+ * and every Babylon call is public API (the draw phase's observable, the
+ * engine's render height and scaling level).
  *
  * WHAT IT REPLACED, AND WHY. The bloom was a `GlowLayer` with `GlowDepth`
  * bolted on from the outside. The layer is built to own four things — its
@@ -32,11 +31,13 @@
  *
  * - **No schedule to move.** The mask is a target nothing else renders; it is
  *   rendered once, from the end of the draw phase, where the depth is final.
- * - **No clear to replace.** Colour only, installed once on a texture nothing
- *   else ever recreates — `resize` swaps its wrapper and keeps the observer.
- * - **No framebuffer to re-bind by internal.** The frame is the render
- *   target the scene draws into (`PostPasses`' frame, `BABYLON_EXIT.md`
- *   X5.2d) and its `renderTarget`, a public getter.
+ * - **No clear to replace.** Colour only, the depth loaded: the mask's pass is
+ *   our renderer's (`BABYLON_EXIT.md` X5.4e), begun with exactly those ops.
+ *   (While it was Babylon's, an observer on the target's clear replaced the
+ *   default, installed once on a texture nothing else recreated.)
+ * - **No framebuffer to re-bind by internal.** The frame is our renderer's
+ *   target (`FrameTargets.frame`, X5.4e; `PostPasses`' render target and its
+ *   public `renderTarget` from X5.2d).
  * - **No frame lost on a resize.** The layer's
  *   texture and the depth it borrowed resized on different schedules, and the
  *   frame between was encoded with a colour attachment at one size and a depth
@@ -81,17 +82,17 @@
  * before it, so a bloom lies over the ink lines around its lamp rather than
  * under them.
  *
- * THE BLUR IS OUR RENDERER'S DRAWS IN THIS FILE'S PASSES (`render/GlowBlur.ts`,
- * `BABYLON_EXIT.md` X5.2b). Each of the five targets is bound and unbound here,
- * with public API, which is what opens and ends its pass; between the two this
- * file hands `draws` the source and the sizes, and our renderer queues the draw
- * into the open pass — Babylon's `kernelBlur` and the box filter, ported as
- * compiled, so nothing of Babylon's draws there and the pass structure is the
- * one Babylon's own draws had. The kernel is still read HERE every frame
+ * THE BLUR IS OUR RENDERER'S DRAWS IN OUR RENDERER'S PASSES (`render/GlowBlur.ts`,
+ * `BABYLON_EXIT.md` X5.2b; the passes since X5.4e, where this file bound and
+ * unbound each of its five targets with public API until then). This file asks
+ * for each pass in order — the box filter on `low`, then the four blurs — and
+ * our renderer begins it on its target, draws Babylon's `kernelBlur` or the box
+ * filter, ported as compiled, and ends it: the pass structure Babylon's own
+ * draws had. The kernel is still read HERE every frame
  * (`kernelTexels`), and `glowKernels` is the same formula asked of every rung
  * at every render scale ahead, because the blur's text is the kernel's and its
  * pipelines are declared (X5.2's row "pipelines"). A pass whose program is not
- * built is not bound — which is NOT what Babylon did: it compiled a new width
+ * built is not begun — which is NOT what Babylon did: it compiled a new width
  * synchronously at its first draw and drew the bloom. Ours compiles off the
  * frame, so after a device-pixel-ratio change in play (or one in the menu
  * whose widths are not built by the time the round plays) the ink composes
@@ -121,7 +122,7 @@
  *
  * THE EMISSIVE PALETTE'S MASK IS OUR RENDERER'S, and nothing of it is drawn
  * here (`render/WorldGlow.ts`, X3.6d, X3.7b, X3.7c): it draws the merged
- * world's lit windows and lenses FIRST in this pass, right after the clear —
+ * world's lit windows and lenses FIRST in the mask's pass, right after the clear —
  * the palette was in Babylon's opaque queue, ahead of every blended mask
  * draw, and first keeps that order. Its MAIN pass is ours too (X3.6e), and
  * Babylon is made no mesh of it, so it has no twin here: a palette surface ours
@@ -132,8 +133,8 @@
  * body. So are the WEAPON's lit parts (`render/ViewDraw.ts`, X4.3c: no
  * viewmodel part is a Babylon mesh since X4.3d), drawn LAST in the pass — after
  * every mesh of Babylon's, blended ones included — as Babylon's group 1 drew
- * them, told by `onMaskCloseObservable` (X4.3c's review, the owner's
- * decision): so a blended emissive that writes no depth (an impact's spark
+ * them — at the pass's close, `onMaskCloseObservable` until X5.4e (X4.3c's
+ * review, the owner's decision): so a blended emissive that writes no depth (an impact's spark
  * fading) in front of a lit weapon part lands UNDER the weapon's colour, as
  * it did. The MOON is ours too (`render/SkyDraw.ts`, X4.5c: no sky piece is a
  * Babylon mesh), drawn at the open behind every other draw of ours, so still
@@ -144,19 +145,12 @@
  * meshes. Nothing of Babylon's draws in the mask since X5.3c: the `EMISSIVE`
  * and `OPACITY` variants, `SelfMasking` (a material whose vertices move
  * bringing its own twin, the fire's) and the per-mesh dressing were the map
- * editor's build's alone, and were deleted at X5.3d. The PASS stays here until
- * the mask moves with the main pass (X5.4: `BABYLON_EXIT.md` X5.2's row "the
- * mask").
+ * editor's build's alone, and were deleted at X5.3d. The PASS moved with the
+ * main pass at X5.4e (`BABYLON_EXIT.md` X5.2's row "the mask"): our renderer
+ * records it, the mask cleared to black with alpha 1 and the frame's depth
+ * loaded, as `onClearObservable` cleared it and `shareDepth` attached it.
  */
-import {
-  Color4,
-  Constants,
-  Observable,
-  RenderTargetTexture,
-  type AbstractMesh,
-  type Camera,
-  type Scene,
-} from "@babylonjs/core";
+import { type Camera, Observable, type Scene } from "@babylonjs/core";
 import { CONFIG } from "../config";
 
 /** A rung of the Glow setting — derived from the config for `VolumetricRung`'s reason. */
@@ -190,44 +184,51 @@ export function glowKernels(dpr: number): number[] {
 }
 
 /**
- * The blur's DRAWS, which are our renderer's (`render/GlowBlur.ts`,
- * `BABYLON_EXIT.md` X5.2b), handed in by `Game` as `GlowRules` is — so this
- * file imports nothing of `src/render/`. Each draw is asked from INSIDE a pass
- * this file has bound on one of its own targets, and queues into it.
+ * What this pass asks of OUR renderer, which owns the glow's targets and
+ * records every pass of it (`render/FrameTargets.ts`, `Renderer.recordGlowMask`,
+ * `render/GlowBlur.ts`; `BABYLON_EXIT.md` X5.2b, X5.4e) — handed in by `Game`,
+ * as `GlowRules` is, so this file imports nothing of `src/render/`.
  */
-export interface GlowBlurDraws {
+export interface GlowDraws {
+  /** The frame's width and height this frame — its depth's, which the mask borrows; 0 before a frame is made. */
+  frameWidth(): number;
+  frameHeight(): number;
+  /** The six targets' sizes: the mask's, then the box filter's, the near pair's and the wide pair's. */
+  resize(
+    maskW: number,
+    maskH: number,
+    downW: number,
+    downH: number,
+    nearW: number,
+    nearH: number,
+    wideW: number,
+    wideH: number,
+  ): void;
+  /** The mask's pass, recorded now: its clear, the draws first in it and the draws last. */
+  mask(): void;
   /** Whether the box filter can draw this frame (its pipeline built). */
   downReady(): boolean;
   /** Whether a blur of ideal width `kernel` can draw this frame — a width not built yet is skipped (Babylon compiled one synchronously and drew it: the header's accepted difference). */
   blurReady(kernel: number): boolean;
-  /** The box filter of `source`, the mask, of `width` x `height`, into the bound target; `outputHeight` the render height. */
-  down(source: RenderTargetTexture, width: number, height: number, outputHeight: number): void;
+  /** The box filter's pass: the mask, of `width` x `height`, into the `down` target; `outputHeight` the render height. */
+  down(width: number, height: number, outputHeight: number): void;
   /**
-   * Blur pass `index` (0 to 3) of `source` into the bound target of `width` x
-   * `height`, `across` or down, with the kernel of ideal width `kernel`.
+   * Blur pass `index` (0 to 3) into its target of `width` x `height`, `across`
+   * or down, with the kernel of ideal width `kernel` — the first reading the
+   * box filter's output `fromDown`, else the mask; each other the one before's.
    */
   blur(
     index: number,
     kernel: number,
     across: boolean,
-    source: RenderTargetTexture,
+    fromDown: boolean,
     width: number,
     height: number,
     outputHeight: number,
   ): void;
 }
 
-/** The mask's clear: black, alpha 1 — the value the compose's missing alpha term assumes. */
-const NEUTRAL = new Color4(0, 0, 0, 1);
-
 export class GlowPass {
-  /**
-   * The emissive meshes alone, full resolution, UNBLURRED, depth-tested against
-   * this frame. `CelInk` reads it as its emissive mask. The object is stable
-   * for the life of the pass; `resize` swaps what is under it.
-   */
-  readonly mask: RenderTargetTexture;
-
   /**
    * Fired around the pass's own work — the mask and its blur, at the end of
    * the draw phase — so the frame profiler can bracket it without this file
@@ -237,120 +238,23 @@ export class GlowPass {
   readonly onBeforeWorkObservable = new Observable<void>();
   readonly onAfterWorkObservable = new Observable<void>();
 
-  /**
-   * Fired as the MASK's pass opens: inside its clear, with the pass begun and
-   * nothing of Babylon's queued in it yet, every frame the mask is drawn —
-   * whether or not this pass has a mesh of its own to draw. What `Game` hands
-   * our renderer, which draws the emissive palette there FIRST
-   * (`Renderer.glowMaskOpened`). Inside the work bracket above, so the
-   * profiler's `glow` phase is ours too.
-   */
-  readonly onMaskOpenObservable = new Observable<void>();
-
-  /**
-   * Fired as the MASK's pass is about to CLOSE: every mesh of Babylon's
-   * queued in it and the pass not yet ended — the target's after-render,
-   * which Babylon raises inside its unbind, before it ends the pass
-   * (`unBindFramebuffer`'s callback). What `Game` hands our renderer, which
-   * draws the WEAPON's lit parts there LAST (`Renderer.glowMaskClosing`,
-   * `BABYLON_EXIT.md` X4.3c's review), where Babylon's group 1 drew them.
-   * Public API alone: the observable is the target's own.
-   */
-  readonly onMaskCloseObservable = new Observable<void>();
-
-  /**
-   * The mask box-filtered to quarter resolution, which the `low` rung blurs
-   * from (see the header). 1x1 on `high`, which never reads it.
-   */
-  private readonly down: RenderTargetTexture;
-  /** `downsample` below the frame: the horizontal pass's output, then the finished blur. */
-  private readonly nearH: RenderTargetTexture;
-  private readonly near: RenderTargetTexture;
-  /** Half of `near` again, blurred from it. */
-  private readonly wideH: RenderTargetTexture;
-  private readonly wide: RenderTargetTexture;
-
-  /** What blurs 1 to 3 read: the pass before's output (the first's is read at draw time, `firstSource`). */
-  private readonly sources: readonly RenderTargetTexture[];
-  /** The blur's targets, in pass order. */
-  private readonly outputs: readonly RenderTargetTexture[];
-  /** What the first blur reads this frame: `down` on `low` once it is drawn, else the mask. */
-  private firstSource: RenderTargetTexture;
   private rung: GlowRung = "high";
   /** Set when the rung moves, so the next frame re-sizes the targets whatever the frame did. */
   private stale = false;
   /** The kernel the blur last read (`kernelTexels`), ideal and unrounded, as Babylon's blurs held it. */
   private kernel = 1;
-
-  /** The render target the scene draws into, whose depth the mask borrows. */
-  private frame: RenderTargetTexture | null = null;
-
-  /** Both ends of the last depth share. A share is a relation between two targets. */
-  private sharedFrom: object | null = null;
-  private sharedTo: object | null = null;
-
-  /** The mask's render list: always empty — nothing of Babylon's draws there (the header). */
-  private readonly none: AbstractMesh[] = [];
+  /** The size the mask was last given (0 before the first), and the four blur passes' targets'. */
+  private maskW = 0;
+  private maskH = 0;
+  private readonly outW = [0, 0, 0, 0];
+  private readonly outH = [0, 0, 0, 0];
 
   constructor(
     private readonly scene: Scene,
     private readonly camera: Camera,
-    private readonly draws: GlowBlurDraws,
+    private readonly draws: GlowDraws,
   ) {
-    this.mask = this.target("glowMask", Constants.TEXTURETYPE_UNSIGNED_BYTE);
-    this.mask.renderParticles = false;
-    this.mask.renderSprites = false;
-    // The whole target, whatever the camera's viewport says.
-    this.mask.ignoreCameraViewport = true;
-    // COLOUR ONLY. The depth attachment is the frame's, borrowed; a clear that
-    // took it would leave nothing to occlude against, and every lamp in the
-    // map would bloom through the wall it hangs on. An observer here replaces
-    // Babylon's default clear rather than adding to one.
-    //
-    // And the pass OPENS here: the clear ends whatever pass was open and
-    // begins the mask's at once — so this, and not a rendering group's hook
-    // (an empty group is never visited), nor the target's after-render, nor a
-    // second clear observer (whose order would be a race), is where a draw
-    // that must come FIRST is told (`onMaskOpenObservable`).
-    this.mask.onClearObservable.add((e) => {
-      e.clear(NEUTRAL, true, false, false);
-      this.onMaskOpenObservable.notifyObservers();
-    });
-    // …and the target's after-render is where one that must come LAST is told
-    // (`onMaskCloseObservable`): raised inside the unbind before the pass
-    // ends, so a draw queued there still lands in it.
-    this.mask.onAfterRenderObservable.add(() => this.onMaskCloseObservable.notifyObservers());
-    // NULL, not the empty array a target is born with, and answered with an
-    // empty list every frame: the render list the mask was drawn with while
-    // Babylon's mesh path stood (the frame's active meshes, filtered to the
-    // emissive ones), with nothing left in it — so the pass is rendered,
-    // cleared, opened and closed exactly as it was, and Babylon draws nothing.
-    this.mask.renderList = null;
-    this.mask.getCustomRenderList = () => this.none;
-
-    const half = Constants.TEXTURETYPE_HALF_FLOAT;
-    this.down = this.target("glowDown", half);
-    this.firstSource = this.mask;
-    this.nearH = this.target("glowNearH", half);
-    this.near = this.target("glowNear", half);
-    this.wideH = this.target("glowWideH", half);
-    this.wide = this.target("glowWide", half);
-    // The first pass's source is read at draw time: it is the mask or `down`.
-    this.sources = [this.mask, this.nearH, this.near, this.wideH];
-    this.outputs = [this.nearH, this.near, this.wideH, this.wide];
-
     scene.onAfterDrawPhaseObservable.add(() => this.render());
-  }
-
-  /**
-   * Names the render target the scene draws into, whose depth the mask
-   * borrows (`PostPasses`' frame, the camera's `outputRenderTarget`).
-   *
-   * **`frame` must carry a depth buffer** — the frame's own, which the scene
-   * draws into — and `render` asserts it in a DEV build.
-   */
-  drawsInto(frame: RenderTargetTexture): void {
-    this.frame = frame;
   }
 
   /**
@@ -364,29 +268,17 @@ export class GlowPass {
     this.stale = true;
   }
 
-  /**
-   * The compose's two blurred halves — the near target and the wide one —
-   * which the ink's stage binds beside the mask (`CelInk`, X5.2d). Both exist
-   * from construction; `resize` swaps what is under each, never the object.
-   */
-  get composeNear(): RenderTargetTexture {
-    return this.near;
-  }
-
-  get composeWide(): RenderTargetTexture {
-    return this.wide;
-  }
-
   /** The compose's scale on the summed halves (`CONFIG.graphics.glowIntensity`). */
   get composeIntensity(): number {
     return CONFIG.graphics.glowIntensity;
   }
 
   /**
-   * The mask and its blur, at the end of the draw phase.
+   * The mask and its blur, at the end of the draw phase — after our renderer
+   * recorded the frame's main pass, whose observer is inserted first there.
    *
-   * Sized, shared and drawn in one function, which is the whole of the resize
-   * fix: the size is READ off the depth this is about to borrow, on the frame
+   * Sized and drawn in one function, which is the whole of the resize fix:
+   * the size is READ off the frame whose depth the mask borrows, on the frame
    * it is borrowed, so the colour attachment and the depth attachment of the
    * mask's pass are never two sizes.
    */
@@ -396,43 +288,16 @@ export class GlowPass {
     // probe's bake included), so this guards against a camera other than the
     // frame's being drawn, which nothing does today. Harmless, and kept.
     if (this.scene.activeCamera !== this.camera) return;
-    const frame = this.frame?.renderTarget;
-    if (!frame) return;
-    if (!frame.depthStencilTexture) {
-      // The same failure `GlowDepth` guarded: a frame with no depth to share
-      // is a mask with no occluders, every lamp blooming through its wall.
-      // The frame is made with its depth (`PostPasses`), so this is an
-      // assertion about what `Game` handed `drawsInto`.
-      if (import.meta.env.DEV) {
-        throw new Error(
-          "GlowPass: the frame has no depth to share — the mask would occlude against nothing",
-        );
-      }
-      return;
-    }
+    const draws = this.draws;
+    const w = draws.frameWidth();
+    const h = draws.frameHeight();
+    // No frame made yet (no `PostPasses.prepareFrame` has sized one): no depth
+    // to borrow — as Babylon's mask had no frame target to share one from.
+    if (w === 0 || h === 0) return;
     this.onBeforeWorkObservable.notifyObservers();
-
-    const w = frame.width;
-    const h = frame.height;
-    const size = this.mask.getSize();
-    if (this.stale || size.width !== w || size.height !== h) this.resize(w, h);
-
-    const dest = this.mask.renderTarget;
-    if (dest && (frame !== this.sharedFrom || dest !== this.sharedTo)) {
-      frame.shareDepth(dest);
-      this.sharedFrom = frame;
-      this.sharedTo = dest;
-    }
-    this.mask.render();
+    if (this.stale || this.maskW !== w || this.maskH !== h) this.resize(w, h);
+    draws.mask();
     this.blur();
-
-    // Put the frame back, because the draw phase's contract is that the frame
-    // is what is bound when it ends: anything Babylon draws after the phase
-    // (its after-camera-draw stage) lands in it. It begins no pass of its
-    // own — a bind is lazy, and the post chain's first bind ends it unbegun.
-    // (`FrameDepth` read the bound target for the frame's depth until X5.2d;
-    // it reads the frame's own `depthStencilTexture` now.)
-    this.scene.getEngine().bindFramebuffer(frame, undefined, undefined, undefined, true);
     this.onAfterWorkObservable.notifyObservers();
   }
 
@@ -441,43 +306,32 @@ export class GlowPass {
    * near being half resolution on `high` and quarter on `low` — where the mask
    * is box-filtered into `down` first and the first pass reads that instead.
    *
-   * **Every pass is bound HERE, on a target of this file's, and drawn by OUR
-   * renderer** (`draws`, `BABYLON_EXIT.md` X5.2b): the bind opens the pass,
-   * our draw is queued into it, the unbind ends it — the structure Babylon's
-   * own draws had, with Babylon drawing nothing in it. A pass whose program is
-   * not built is not bound at all, its target keeping what it held — zeros,
-   * after the resize a device-pixel-ratio change brings, so no bloom for the
-   * frames its new widths compile, where Babylon compiled them synchronously
-   * and drew them (the header's accepted live difference).
+   * **Every pass is OUR renderer's** (`draws`, `BABYLON_EXIT.md` X5.2b, X5.4e),
+   * the structure Babylon's own draws had. A pass whose program is not built
+   * is not begun at all, its target keeping what it held — zeros, after the
+   * resize a device-pixel-ratio change brings, so no bloom for the frames its
+   * new widths compile, where Babylon compiled them synchronously and drew
+   * them (the header's accepted live difference).
    */
   private blur(): void {
-    const engine = this.scene.getEngine();
     // Read every frame: the render-scale setting moves the backing store.
     const kernel = this.kernelTexels();
     this.kernel = kernel;
     // `Internals.textureOutputHeight_`, which Babylon's engine wrote the
     // render height into (`_initializeMainAttachments`) and no blur reads.
-    const outputHeight = engine.getRenderHeight(true);
+    const outputHeight = this.scene.getEngine().getRenderHeight(true);
     const draws = this.draws;
     // Until the box filter's program has compiled, the first pass reads the
     // mask direct — undersampled for a frame or two rather than blurring
     // nothing.
-    this.firstSource = this.mask;
-    const down = this.down.renderTarget;
-    if (this.downsampleBy() > 2 && down && draws.downReady()) {
-      engine.bindFramebuffer(down, undefined, undefined, undefined, true);
-      const size = this.mask.getSize();
-      draws.down(this.mask, size.width, size.height, outputHeight);
-      engine.unBindFramebuffer(down);
-      this.firstSource = this.down;
+    let fromDown = false;
+    if (this.downsampleBy() > 2 && draws.downReady()) {
+      draws.down(this.maskW, this.maskH, outputHeight);
+      fromDown = true;
     }
     for (let i = 0; i < 4; i++) {
-      const target = this.outputs[i].renderTarget;
-      if (!target || !draws.blurReady(kernel)) continue;
-      engine.bindFramebuffer(target, undefined, undefined, undefined, true);
-      const source = i === 0 ? this.firstSource : this.sources[i];
-      draws.blur(i, kernel, i % 2 === 0, source, target.width, target.height, outputHeight);
-      engine.unBindFramebuffer(target);
+      if (!draws.blurReady(kernel)) continue;
+      draws.blur(i, kernel, i % 2 === 0, i === 0 && fromDown, this.outW[i], this.outH[i], outputHeight);
     }
   }
 
@@ -488,18 +342,21 @@ export class GlowPass {
 
   private resize(w: number, h: number): void {
     this.stale = false;
-    this.mask.resize({ width: w, height: h });
     const by = this.downsampleBy();
     const nw = Math.max(1, Math.floor(w / by));
     const nh = Math.max(1, Math.floor(h / by));
     const ww = Math.max(1, Math.floor(nw / 2));
     const wh = Math.max(1, Math.floor(nh / 2));
-    // The box filter's output IS the near size, four mask pixels to a texel.
-    this.down.resize(by > 2 ? { width: nw, height: nh } : { width: 1, height: 1 });
-    this.nearH.resize({ width: nw, height: nh });
-    this.near.resize({ width: nw, height: nh });
-    this.wideH.resize({ width: ww, height: wh });
-    this.wide.resize({ width: ww, height: wh });
+    // The box filter's output IS the near size, four mask pixels to a texel;
+    // 1x1 on `high`, which never reads it.
+    const down = by > 2;
+    this.draws.resize(w, h, down ? nw : 1, down ? nh : 1, nw, nh, ww, wh);
+    this.maskW = w;
+    this.maskH = h;
+    this.outW[0] = this.outW[1] = nw;
+    this.outH[0] = this.outH[1] = nh;
+    this.outW[2] = this.outW[3] = ww;
+    this.outH[2] = this.outH[3] = wh;
   }
 
   /** How far below the frame the near target sits, off the rung. */
@@ -521,27 +378,5 @@ export class GlowPass {
    */
   private kernelTexels(): number {
     return kernelTexelsAt(this.downsampleBy(), this.scene.getEngine().getHardwareScalingLevel());
-  }
-
-  private target(name: string, type: number): RenderTargetTexture {
-    const rtt = new RenderTargetTexture(name, { width: 1, height: 1 }, this.scene, {
-      generateMipMaps: false,
-      generateDepthBuffer: false,
-      generateStencilBuffer: false,
-      type,
-      samplingMode: Constants.TEXTURE_BILINEAR_SAMPLINGMODE,
-    });
-    rtt.wrapU = Constants.TEXTURE_CLAMP_ADDRESSMODE;
-    rtt.wrapV = Constants.TEXTURE_CLAMP_ADDRESSMODE;
-    return rtt;
-  }
-
-  dispose(): void {
-    this.mask.dispose();
-    this.down.dispose();
-    this.nearH.dispose();
-    this.near.dispose();
-    this.wideH.dispose();
-    this.wide.dispose();
   }
 }

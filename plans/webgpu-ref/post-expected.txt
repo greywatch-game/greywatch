@@ -151,3 +151,46 @@
 **.passes[0].out[1]
 **.passes[1].color[0].loadOp
 **.passes[1].color[0].clear
+#
+# X5.4e: the frame's passes before the chain are OUR renderer's
+# (`render/FrameTargets.ts`, `Renderer.end`, `recordGlowMask`, `glowBlurPass`):
+# the frame's opening clear, the main pass, the glow's mask and its blur's five,
+# each on a target made as Babylon made it and begun with Babylon's load ops and
+# clear values — every pass's attachments, label, targets, draws and hashes
+# compared, and equal — but recorded on Babylon's UPLOAD encoder, the one it
+# submits first, after the prepares, where Babylon began them on its RENDER
+# encoder. So those passes' `role` moves (render → upload: the opening pass, the
+# main pass, the mask and the four or five blurs — `passes[0]` to `passes[7]`,
+# the chain's passes after them keeping `render`), and `whole`'s per-buffer item
+# lists move with them; the frame's command ORDER across the two buffers is the
+# same item for item (X5.4e's record: `wholeflat.cjs`).
+**.passes[0].role
+**.passes[1].role
+**.passes[2].role
+**.passes[3].role
+**.passes[4].role
+**.passes[5].role
+**.passes[6].role
+**.passes[7].role
+**.whole.submits[*].buffers[*].items
+# The scene clears nothing: `scene.autoClear` and `autoClearDepthAndStencil` are
+# held false, the frame's clear being ours (with no output target on the camera
+# the scene's one clear would be a pass of its own on the canvas).
+**.chain.autoClear
+**.chain.autoClearDepthAndStencil
+# The glow's six are our renderer's, whose sampler is a descriptor compared draw
+# by draw in every bind group that reads them: Babylon's render target's three
+# sampling fields (`samplingMode`, `wrapU`, `wrapV`) have no counterpart and
+# read null.
+**.chain.glow.targets.*.samplingMode
+**.chain.glow.targets.*.wrapU
+**.chain.glow.targets.*.wrapV
+# And ONE queue write a frame fewer (272 bytes): Babylon's own scene uniform
+# buffer for the glow mask's render target (`Scene ubo #0 for glowMask`:
+# viewProjection, view, projection, vEyePosition, inverseProjection), which the
+# target's render rewrote (`updateTransformMatrix(true)`) and no draw read — the
+# mask's render list was empty. Every other write of the frame is the same, in
+# the same order and size (X5.4e's record: `writes.mjs`, one deploy frame's
+# writes on both trees, listed write by write).
+**.whole.submits[*].writes.writeBuffer
+**.whole.submits[*].writes.bytes

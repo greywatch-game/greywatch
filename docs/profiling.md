@@ -681,6 +681,17 @@ fallback's telling of our points alone; what the wash's dispatch used to drag in
 it was small on these runs (a ring splits the pass only while it holds a count),
 and the glow's share of it is inside the clock's grain.
 
+**From X5.4e the main pass's RECORDING is in `drawWorld`, and no longer in
+`glow`** (no report version: neither span's bracket moved). The main pass is our
+renderer's own since then, its draws RECORDED rather than queued, at the draw
+phase's end by the seam's observer, which is inserted first there — so ahead of
+the glow's work opening, which closes `drawWorld`. Until then the recording ran
+wherever Babylon ended its pass, which from X4.7c was the glow's mask's start,
+inside `glow`. So a capture read across X5.4e has to expect the same move as
+X4.7c's the other way: `drawWorld` up and `glow` down by the main pass's
+recording, `render` the same. The mask's and the blur's recording stay in
+`glow`, as their passes did.
+
 **Measured at X5.1b** (the irradiance volume's GPU half ours: `?profile&gpu`, a live
 round under `?seed=5101`, 600 frames a capture after 300 to settle, parent and step
 alternating twice in one session on the Windows box, the frame capped at ~126 fps):
@@ -1335,8 +1346,11 @@ step's Coldharbour rounds, the measurement above): the ash's compute dispatch
 ends the main pass inside group 0, so the recordings queued ahead of it (`first`,
 `beforeAlphaTest`, `opaque`) run inside `drawWorld`, about half of its 0.132 ms,
 and with the particles off that half moves to `glow` (0.078 → 0.140 ms). The
-weapon's `"afterGroup"` recording runs at the main pass's END either way — when
-the glow's mask ends it, inside `glow`. The viewer prints it as `weapon`.
+weapon's `"afterGroup"` recording ran at the main pass's END either way — when
+the glow's mask ended it, inside `glow`. **Since X5.4e every point's recording,
+the weapon's included, is inside `drawWorld`**: the main pass is our renderer's,
+recorded at the draw phase's end ahead of the glow ("From X5.4e", above). The
+viewer prints it as `weapon`.
 **On a frame Babylon visits no group** (`BABYLON_EXIT.md` X4.5a's fallback: the
 menu, and since X4.5c, with no dome to hold the group, any frame of a round with
 nothing of Babylon's in view) the seam tells the group's points at the draw

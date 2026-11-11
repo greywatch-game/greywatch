@@ -80,9 +80,10 @@ way out of a round: `enterMenu` tears the map down and `MenuBackdrop.show` raise
 `#menu-shot` from 0 over its 0.4 s transition, about 300 to 400 ms on Coldharbour, over the
 last map's colour. From the round-over card there is no fade, its picture being up already.
 
-**Those windows show `scene.clearColor` through the post chain** — the scene
-clears the FRAME to it as every frame opens (`scene.autoClear` true, X5.2c2's picture
-change; the frame the scene draws into, `PostPasses`', since X5.2d). The canvas is
+**Those windows show `scene.clearColor` through the post chain** — the FRAME is
+cleared to it as every frame opens (by the scene under `scene.autoClear`, X5.2c2's
+picture change, into `PostPasses`' frame from X5.2d; by our renderer's own opening
+pass since X5.4e, which reads the same colour, the scene clearing nothing). The canvas is
 cleared by no pass since X5.2d, so the page's first frames, before the chain first
 draws, hold what the swap chain hands over (transparent zeros), under the boot screen,
 where X5.2c2's picture change had them show the clear colour — X5.2d's own picture

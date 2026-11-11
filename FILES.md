@@ -2596,35 +2596,26 @@ src/
                         #   FIRST stage, our renderer's draw since X5.2d
                         #   (wgsl/celInk.ts; the glow's compose its last
                         #   line); the source's notes kept verbatim
-    GlowPass.ts         # THE BLOOM, owned end to end: an emissive-only mask
-                        #   drawn against the FRAME's depth (shared, sized in
-                        #   the same function that draws it), Babylon's kernel
-                        #   blur at half and quarter resolution (quarter and
-                        #   eighth off a box downsample on the Glow setting's
-                        #   `low`) — each pass bound HERE and drawn by OUR
-                        #   renderer since X5.2b (GlowBlurDraws, handed in;
-                        #   glowKernels, every rung at every render scale, for
-                        #   its declared pipelines) — and an additive
+    GlowPass.ts         # THE BLOOM'S RULES, owned end to end: an
+                        #   emissive-only mask drawn against the FRAME's depth
+                        #   (sized in the same function that asks for it),
+                        #   Babylon's kernel blur at half and quarter
+                        #   resolution (quarter and eighth off a box downsample
+                        #   on the Glow setting's `low`), and an additive
                         #   compose the ink runs as its last line (no pass:
-                        #   its text the ink's compiled module's glowAt, its
-                        #   inputs composeNear/composeWide/composeIntensity,
-                        #   X5.2d). Public API only; the mask pass's opening
-                        #   announced from inside its clear
-                        #   (onMaskOpenObservable), where OUR palette draws
-                        #   FIRST (render/WorldGlow.ts), and every draw in it
-                        #   ours — its render list empty, its Babylon mesh
-                        #   path (override materials, SelfMasking) gone X5.3d
+                        #   its text the ink's compiled module's glowAt,
+                        #   composeIntensity, X5.2d) — WHEN, at what sizes and
+                        #   with which kernel (glowKernels, every rung at every
+                        #   render scale, for its declared pipelines). Since
+                        #   X5.4e no target and no pass: the mask, the blur's
+                        #   five and their passes are OUR renderer's
+                        #   (FrameTargets, Renderer.recordGlowMask, GlowBlur),
+                        #   asked through GlowDraws, handed in. Public API only
     Fxaa.ts             # FXAA's CPU half (the switch) and `stage`, the post
                         #   chain's stage our renderer draws it as since X5.2c2
                         #   (wgsl/fxaa.ts): Babylon's shader with
                         #   CONFIG.graphics.fxaa's three constants (sub-pixel
                         #   blend 0.25 where Babylon's 1.0 blurred the frame)
-    FrameDepth.ts       # The frame's own depth attachment, captured once and
-                        #   wrapped for the stages that sample it (the ink's
-                        #   edges, the shafts, the blur's weapon mask, the
-                        #   grade), read off the frame's render target by the
-                        #   PUBLIC depthStencilTexture since X5.2d. Renders and
-                        #   copies nothing; owns no pass
     EmissiveFog.ts      # The same fog as a material plugin on every unlit
                         #   emissive material — windows, flames, tracers. WGSL
                         #   only, which is what isCompatible states
@@ -2810,15 +2801,14 @@ src/
                         #   wgsl/paperGrain.ts). The player's setting is still
                         #   stored as `filmGrain`, which is what it used to be
     PostPasses.ts       # The post chain's Babylon-side PASS OWNER (X5.2c1):
-                        #   owns the FRAME (X5.2d) — the render target the
-                        #   scene draws straight into and clears itself, the
-                        #   camera's outputRenderTarget for good (no window
-                        #   since X5.3d), made as the
-                        #   ink's input was (FRAME_TARGETS) — and after the
-                        #   camera's render opens the pool passes for our
-                        #   stages, one target a pass position, bound and
-                        #   cleared as activate bound and cleared a reader's
-                        #   input (X5.2c2), and the canvas
+                        #   SIZES our renderer's FRAME (FrameTargets, X5.4e;
+                        #   its own render target, the camera's
+                        #   outputRenderTarget, X5.2d to X5.4e) to the render
+                        #   size as the frame starts, names it for its reader,
+                        #   and after the camera's render opens the pool passes
+                        #   for our stages, one target a pass position, bound
+                        #   and cleared as activate bound and cleared a
+                        #   reader's input (X5.2c2), and the canvas
                         #   (restoreDefaultFramebuffer); public API only
   render/               # OUR renderer (BABYLON_EXIT.md Phase 3). Never imports
                         #   Babylon — the build gate walks every file in it
@@ -2829,28 +2819,40 @@ src/
                         #   attachments, the render target's y-flip, a
                         #   texture's own view, Babylon's sampler cache and the
                         #   upload encoder submitted ahead of the draws
-                        #   (prepareEncoder) — eight, 6 and 10 (group 0's
-                        #   hooks) retired at X5.3d: every point of group 0
-                        #   told at the draw phase's end.
-                        #   The glow's mask pass reached by the same items
-                        #   (passIs, queue) when GlowPass announces it; the
-                        #   glow's blur passes and the post chain's (X5.2b,
-                        #   X5.2c1) when their owners ask from inside them.
+                        #   (prepareEncoder, where the frame's own passes are
+                        #   recorded since X5.4e) — eight, 6 and 10 (group 0's
+                        #   hooks) retired at X5.3d. The draw phase's two ends
+                        #   (onDrawPhase) and the scene's clear colour, public
+                        #   API; items 2 to 5, 7 and 8 reached in the post
+                        #   chain's passes alone since X5.4e (the main pass, the
+                        #   mask and the blur ours), X5.4f's to take.
                         #   hostTexture, the one crossing that mints a
                         #   HostTexture
     frameHost.ts        # FrameHost (what the renderer needs from whoever owns
-                        #   the frame: the device, the queue — into the main
-                        #   pass, the glow's mask when its owner says it
-                        #   opened, or a glow blur or post chain pass its owner
-                        #   asks from inside (X5.2b, X5.2c1) — the five main-pass hooks, told on every
-                        #   main pass whatever group 0 holds, the encoder it
-                        #   submits ahead of the draws, a texture's view and
-                        #   sampler NOW, a call after every frame's submit —
-                        #   afterSubmit, X5.1b), PassTargets, HostTexture
+                        #   the frame: the device, the draw phase's two ends
+                        #   (onDrawPhase, X5.4e), the scene's clear colour, the
+                        #   queue into a post chain pass its owner asks from
+                        #   inside (X5.2c1), the encoder it submits ahead of
+                        #   the draws — where the frame's own passes are
+                        #   recorded — a texture's view and sampler NOW, a
+                        #   call after every frame's submit — afterSubmit,
+                        #   X5.1b), DrawPhaseHooks, PassTargets, HostTexture
+    FrameTargets.ts     # THE FRAME'S OWN TARGETS (X5.4e): the frame and its
+                        #   depth, the glow's mask and its blur's five, each
+                        #   made as Babylon's render target was (one level,
+                        #   usage 23, viewed whole, zeros when made) from the
+                        #   targets its pipelines are built against, and
+                        #   remade where Babylon's was resized; the glow's
+                        #   sampler; the frame's pass label. Records nothing
     Renderer.ts         # Renderer: the frame's uniforms, textures and their
                         #   group 0, the pipeline cache, the TextureMaker
-                        #   (the textures the game paints, X5.4d), the FrameDraws it
-                        #   queues at seven points of the MAIN pass — first,
+                        #   (the textures the game paints, X5.4d), the frame's
+                        #   targets and its own PASSES (X5.4e: the opening
+                        #   clear and the main pass at the draw phase's end,
+                        #   the mask, the blur's, into the prepare encoder
+                        #   after the prepares, with Babylon's load ops and
+                        #   clear values), the FrameDraws it
+                        #   records at seven points of the MAIN pass — first,
                         #   ahead of everything of Babylon's (X4.5a; the dome,
                         #   X4.5c), and of group 0, needing nothing in it:
                         #   before its alpha-tested meshes (the palette FIRST
@@ -2866,23 +2868,22 @@ src/
                         #   the LATE ones after the rest (a probe's bake, which
                         #   samples what the others draw), recorded into the
                         #   host's prepareEncoder, never submitted, and timed
-                        #   under ?gpu (its PassTimer, gpu.cull); refuses to
-                        #   draw if the pass is not FRAME_TARGETS, and tells
+                        #   under ?gpu (its PassTimer, gpu.cull); a frame whose
+                        #   targets are not made yet draws nothing, and tells
                         #   onRefused listeners. And the GLOW MASK's draws
                         #   (addGlowMask, X3.6d, and behind those
-                        #   addGlowMaskBlended, the moon's bloom, X4.5c):
-                        #   queued FIRST in GlowPass's
-                        #   mask when told it opened (glowMaskOpened), off the
-                        #   main pass's frame, refused unless GLOW_TARGETS
-                        #   (onGlowMaskRefused); a GLOW BLUR draw queued into
-                        #   the pass GlowPass has bound when asked from inside
-                        #   it (glowBlurOpened, X5.2b), refused unless
-                        #   GLOW_BLUR_TARGETS; a POST CHAIN stage's draw the
-                        #   same (postStageOpened, X5.2c1), refused unless the
-                        #   targets its pipeline was built for; a prepare is handed the
-                        #   FrameContext (group 0) as a draw is
+                        #   addGlowMaskBlended, the moon's bloom, X4.5c, and
+                        #   addGlowMaskLate, the weapon's): FIRST and LAST in
+                        #   the mask's pass (recordGlowMask), off the main
+                        #   pass's frame (onGlowMaskRefused); a GLOW BLUR
+                        #   draw in a pass begun around it (glowBlurPass,
+                        #   X5.2b, X5.4e); a POST CHAIN stage's draw QUEUED
+                        #   into the host's pass (postStageOpened, X5.2c1),
+                        #   refused unless the targets its pipeline was built
+                        #   for; a prepare is handed the FrameContext (group
+                        #   0) as a draw is
     targets.ts          # FRAME_TARGETS, stated once: rgba8unorm, depth32float,
-                        #   1 sample, flipY (the frame PostPasses owns, made as
+                        #   1 sample, flipY (the frame FrameTargets makes, as
                         #   CelInk's input was; not the canvas);
                         #   GLOW_TARGETS, the glow mask's: the same values for
                         #   its own reason (an rgba8unorm target, the frame's
@@ -3086,8 +3087,8 @@ src/
                         #   after the submit (FrameHost.afterSubmit). The cloud
                         #   field the host's, with the host's sampler
     GlowBlur.ts         # THE GLOW'S BLUR AND BOX FILTER as OUR draws (X5.2b),
-                        #   queued into the passes GlowPass binds on its own
-                        #   targets (Renderer.glowBlurOpened, GLOW_BLUR_TARGETS):
+                        #   each in a pass of our own on the glow's targets
+                        #   (Renderer.glowBlurPass, FrameTargets, X5.4e):
                         #   a pipeline a compiled kernel width (declared at
                         #   construction, "the glow's blur" on
                         #   Game.roundPipelines; a DPR change's new widths the
@@ -3096,7 +3097,7 @@ src/
                         #   drew it: a live difference the owner accepted),
                         #   Babylon's quad as a vertex and an index buffer,
                         #   Internals and a LeftOver block a pass, the source
-                        #   read through the host's own view and sampler. Babylon's pipeline state field for field
+                        #   read through its own view and the glow's sampler. Babylon's pipeline state field for field
     PostChain.ts        # THE POST CHAIN'S HOST (X5.2c1): an ordered list of
                         #   DECLARED stages (PostStage: program as compiled,
                         #   block and fill, extra bindings, the input's sampler,
@@ -3275,7 +3276,7 @@ src/
                         #   tells the failure handed with it (the handover
                         #   fails the world). The only bake since X3.7c
     WorldGlow.ts        # The emissive palette's share of the glow's MASK as
-                        #   OURS (X3.6d): drawn FIRST in GlowPass's mask pass
+                        #   OURS (X3.6d): drawn FIRST in the glow's mask pass
                         #   (Renderer.addGlowMask), from the main view's culls
                         #   (WorldBlocks.glowView), a pipeline a bias, no depth
                         #   written, LEQUAL against OUR main pass's palette

@@ -779,8 +779,8 @@ wide frame — at the hip fov on a 21:9 panel the horizontal edge is 50.9° off-
 has fully dissolved at 78 m reported 49 m to this pass and kept **0.78 of its
 ink** and a near-bold nib: line work standing in front of fog
 that had already taken away what it outlined. Turning to face it walks theta back
-to zero and takes the symptom with it. **Anything else that reads `FrameDepth`
-and wants a DISTANCE owes the same conversion** — `MotionBlur` already builds the
+to zero and takes the symptom with it. **Anything else that reads the frame's
+depth (`FrameTargets.depth`) and wants a DISTANCE owes the same conversion** — `MotionBlur` already builds the
 same ray for its reprojection.
 
 **Two things stand in for the hull's per-mesh control, and NEITHER is a flag.**
@@ -912,13 +912,14 @@ as its `onApply` filled it — the `mat3x3f` written as three vec4 columns, the
 repack Babylon's uniform buffer did — and its HISTORY still the CPU's previous
 basis, not a texture; off is a stage the host does not open.
 
-**The depth image is SHARED and its owner is `shaders/FrameDepth.ts`** — one
-capture, one wrapper, read by the ink, the shafts, this pass and the grade. It
-is the depth of the FRAME, the render target the scene draws into
-(`PostPasses`' frame, the camera's `outputRenderTarget`, `BABYLON_EXIT.md`
-X5.2d; the ink's input before it), read by Babylon's public getter
-(`renderTarget.depthStencilTexture`) — so a pass that samples it must stay
-downstream of the scene's draw, which every stage of the chain is.
+**The depth image is SHARED and its owner is our renderer** — the frame's own
+depth (`render/FrameTargets.ts`, `FrameTargets.depth`, `BABYLON_EXIT.md`
+X5.4e), read where it lies by the ink, the shafts, this pass and the grade. It
+is the depth the MAIN pass draws (and the glow's mask borrows); until X5.4e it
+was `shaders/FrameDepth.ts`' capture of the frame target's depth (`PostPasses`'
+frame, the camera's `outputRenderTarget`, X5.2d; the ink's input before it) —
+so a pass that samples it must stay downstream of the main pass, which every
+stage of the chain is.
 
 ## The wind, and the one thing in the world that moves
 
@@ -3428,7 +3429,8 @@ is the preprocessor eating code, this one is JavaScript eating the shader.
 
 **Our renderer (`src/render/`) draws inside Babylon's frame and owns
 everything it draws with**: the frame's uniform buffer, every bind-group
-layout and every pipeline. It reaches Babylon through ONE object,
+layout and every pipeline — and since `BABYLON_EXIT.md` X5.4e the frame's own
+TARGETS and PASSES (below). It reaches Babylon through ONE object,
 `BabylonFrameHost` (`render/babylonSeam.ts`), which implements the
 renderer's `FrameHost` interface (`render/frameHost.ts`). Nothing else in
 the directory names a Babylon type. The seam only names them: every import
@@ -3451,11 +3453,44 @@ stay where they are, listed in the seam's header with the step each leaves at;
 one of them patches a Babylon class's prototype, a value this directory may not
 import. A third, `webgpuLeaks`' (`_deletePipelineContext`), was deleted at
 `BABYLON_EXIT.md` X5.4b, Babylon releasing no effect after the boot. `FrameDepth`'s, the fourth, left at
-`BABYLON_EXIT.md` X5.2d: it reads the frame's depth by Babylon's public getter.
+`BABYLON_EXIT.md` X5.2d (it read the frame's depth by Babylon's public getter),
+and the file itself at X5.4e, the depth being ours.
 `ReflectionSystem`'s two (`_releaseRenderPassId`, `_removeDrawWrapper`) went
 with Babylon's bake at X3.7c.
 
-**A draw is QUEUED into Babylon's order, never issued.** Under
+**The FRAME is ours, and so is every pass before the post chain**
+(`BABYLON_EXIT.md` X5.4e). `render/FrameTargets.ts` makes the frame
+(`rgba8unorm`) and its depth (`depth32float`), the glow's mask (`rgba8unorm`)
+and its blur's five (`rgba16float`), each as Babylon's `RenderTargetTexture`
+made the target it replaces — one level, one sample, usage 23, viewed whole,
+zero-filled when made — and remakes one where its owner resized Babylon's: the
+frame and its depth when the render size moves (`PostPasses.prepareFrame`, as
+the frame starts), the glow's six on every `GlowPass` resize (a size or rung
+change; Babylon's `resize` remade a target whatever its size). The renderer
+records the passes into the encoder Babylon submits FIRST (item 9), after the
+prepares, each with the load ops and clear values Babylon began it with, read
+off the device at the parent (`plans/webgpu-ref/post.mjs`' whole-frame log):
+at the draw phase's END, the frame's OPENING pass — its colour cleared to the
+scene's clear colour (`FrameHost.clearColor`), its depth to 1, what
+`Scene.render`'s first bind of the camera's output target cleared — and the
+MAIN pass, the colour loaded and the depth cleared again, as the camera's
+render bound the target, both every frame the camera draws, whatever is to
+draw; then, from the same end, the MASK (`recordGlowMask`: cleared to black
+with alpha 1, the frame's depth loaded) and each pass of the BLUR
+(`glowBlurPass`: loaded, no depth). The post chain, which `PostPasses` still
+opens on Babylon's RENDER encoder, reads them; `gpu.frame` and `present` keep
+Babylon's meaning, since every pass is still inside its timer and its one
+submit. **So the scene clears nothing**: `Game` holds `scene.autoClear` AND
+`autoClearDepthAndStencil` false, and the camera has no `outputRenderTarget`
+(X5.2d's field, deleted) — with no output target, Babylon's only clear would be
+one of the CANVAS at the frame's first bind, a pass no frame before had; the
+camera's own render binds nothing (`Scene.render` hands it `bindFrameBuffer` =
+"has an output target"). The canvas's boot frames keep X5.2d's state (what the
+swap chain hands over).
+
+**A draw into a pass of BABYLON's is QUEUED into Babylon's order, never
+issued** — since X5.4e only the post chain's (below); the main pass, the mask
+and the blur were the same until then. Under
 `compatibilityMode = false` Babylon does not draw into the pass as it goes.
 It records render bundles into `engine._bundleList` and replays the list
 into the pass when the pass ENDS. A raw `pass.draw` from an observable
@@ -3466,17 +3501,25 @@ in order, with the real encoder, at the pass's end. Two consequences
 follow:
 
 - The bundles around an item reset the pipeline, the bind groups and the
-  vertex and index buffers, so **a `FrameDraw` sets every one it uses**.
+  vertex and index buffers, so **a draw sets every one it uses** — which in a
+  pass of our own is owed for the same reason: the draw before it may have
+  left any of them.
 - They do NOT reset the viewport, the scissor, the stencil reference or the
   blend constant, and Babylon re-emits one only when its own cache thinks it
   changed. So **a `FrameDraw` changes none of the four**, or restores each:
   one left changed is Babylon's next draws drawn with it.
 
-**The main pass is told apart by its TARGET.** The frame's target is the one
-bound as `onBeforeDrawPhaseObservable` fires (the scene binds it, the camera's
+**The main pass is the renderer's own, recorded at the draw phase's END**
+(`FrameHost.onDrawPhase`, X5.4e): the seam tells the draw phase's two ends
+(`begin`: the fill and the prepares; `end`: the opening clear and the main
+pass, every point in its order) and nothing else, Babylon drawing nothing
+between them. The draws are RECORDED where Babylon RAN its queue — the moment
+the next pass of the frame began, the glow's mask's, which is right behind the
+end. Until X5.4e the main pass was BABYLON's and told apart by its TARGET —
+the one bound as `onBeforeDrawPhaseObservable` fired (the camera's
 `outputRenderTarget`, since X5.2d; the post chain bound the ink's input there
-before), and the points are told at the draw phase's end with that same target
-bound (`FrameHost.onMainPass`). Until X5.3d a GROUP counted only if it
+before), the points told at the draw phase's end with that same target bound
+(`FrameHost.onMainPass`, item 5). Until X5.3d a GROUP counted only if it
 finished into that target before the phase ended, because the glow's mask and
 every shadow pass Babylon drew (the map editor's build's world maps and lamps'
 atlas, the last) drew rendering group 0 too, and the glow renders its mask from
@@ -3486,16 +3529,18 @@ found the renderer safe only because `Game` happened to build it before
 `GlowPass`. No pass of Babylon's draws a group since X5.3c, and the seam
 reaches none since X5.3d (items 6 and 10 retired).
 
-**The glow's MASK is one of the two other kinds of Babylon pass that ours
-draws in (X3.6d), and it is ANNOUNCED rather than found.** No target test could tell
-the renderer the mask's pass is open without a hook of its own in the seam,
-and none is needed: the mask's owner says so. `GlowPass` raises
-`onMaskOpenObservable` from inside its own clear, the pass begun and nothing
-of Babylon's queued in it; `Game` hands that to `Renderer.glowMaskOpened`,
-which queues the mask's draws (`addGlowMask`) there — FIRST — through the same
-`queue` and `passIs` as the main pass, against `GLOW_TARGETS` (the same values
-as `FRAME_TARGETS`, stated apart because they are true for another reason),
-refusing a pass that is not with the main pass's rule and listeners of its own
+**The glow's MASK is a pass of the renderer's own, ASKED for by its rules'
+owner** (X3.6d; ours since X5.4e). `GlowPass` decides when (the draw phase's
+end, after the main pass) and at what size, and asks `Renderer.recordGlowMask`
+(through the `GlowDraws` `Game` hands it), which records the pass: the mask
+cleared, the frame's depth loaded, the mask's draws (`addGlowMask`, then
+`addGlowMaskBlended`) FIRST, where Babylon's open was announced from inside its
+clear, and the late ones (`addGlowMaskLate`, the weapon's lit parts) LAST, where
+its close was announced inside its unbind — Babylon drew nothing between them
+since X5.3c. Its pipelines are built against `GLOW_TARGETS` (the same values as
+`FRAME_TARGETS`, stated apart because they are true for another reason), and
+the target is made from them; a mask not made yet is the one pass it cannot
+record, refused with the main pass's rule and listeners of its own
 (`onGlowMaskRefused`). It draws only on a frame whose `begin` filled the frame,
 and it binds the main pass's group 0: the mask is drawn from the same camera,
 in the same submit, so the frame block written once for the main pass is the
@@ -3503,18 +3548,17 @@ mask's too. `begin` fills the frame when either pass has a draw, and a
 `FramePrepare` is handed the `FrameContext` (its fourth argument) to ask
 whether a draw can bind this frame (`WorldGlow`'s verdict).
 
-**The glow's BLUR is the other (X5.2b), and it is ASKED for from inside the
-pass.** `GlowPass` still binds each of its five targets itself — the box
-filter's `glow.down` on `low`, then `glowNearH`, `glowNear`, `glowWideH` and
-`glowWide` — with the public `bindFramebuffer` and `unBindFramebuffer`, and
-between the two hands our `GlowBlur` (`render/GlowBlur.ts`, through the
-`GlowBlurDraws` `Game` gives it) the source and the sizes; the draw goes in
-through `Renderer.glowBlurOpened`, the same `queue` and `passIs`, against
-`GLOW_BLUR_TARGETS` (`rgba16float`, no depth, one sample, flipped). It reads
-no frame of ours, so it is queued whether `begin` filled one or not. So the
-passes are what they were — Babylon opens each, loads its target and ends it
-— and Babylon draws nothing in them; a pass whose program is not built yet is
-not bound at all. **That skip is a known live difference, accepted by the owner
+**The glow's BLUR is ours too (X5.2b; its passes since X5.4e), and ASKED for
+the same way.** `GlowPass` asks for each of its five — the box filter's
+`glow.down` on `low`, then `glowNearH`, `glowNear`, `glowWideH` and `glowWide`
+— and our `GlowBlur` (`render/GlowBlur.ts`) writes the pass's block, makes its
+bind group and draws in a pass `Renderer.glowBlurPass` begins around it,
+loading its target with no depth, as Babylon's `bindFramebuffer` began one,
+against targets made as `GLOW_BLUR_TARGETS` states (`rgba16float`, no depth,
+one sample, flipped). It reads no frame of ours, so it is recorded whether
+`begin` filled one or not. So the passes are what they were — each loads its
+target and is ended — and a pass whose program is not built yet is not begun at
+all. **That skip is a known live difference, accepted by the owner
 on 2026-11-08** (`BABYLON_EXIT.md` X5.2's row "a DPR change in play"): Babylon
 compiled a new width synchronously at its first draw (`createRenderPipeline`),
 taking the hitch and drawing the bloom, where ours compiles off the frame — so
@@ -3549,29 +3593,17 @@ which is what keeps the door open for two neighbours to be FUSED later (a
 fusion drops the 8-bit rounding between them: never byte-exact, a later
 `Picture change:`). The passes are Babylon's, opened by the Babylon-side owner
 `shaders/PostPasses.ts` with public API, after the camera's render
-(`onAfterCameraRenderObservable`). **The scene draws STRAIGHT INTO the frame**
-(X5.2d): `PostPasses`' `RenderTargetTexture`, made as Babylon made the ink's
-input (`rgba8unorm`, NEAREST, the render size, its `depth32float` depth and no
-stencil: `FRAME_TARGETS`), held as the camera's `outputRenderTarget` for good —
-until X5.3d it was taken off once the chain was recorded and put back as the
-scene's render ended, a window kept for the map editor's gizmo layer alone
-(`UtilityLayerRenderer`, which rendered with the same camera after the chain),
-on the rule that nothing else renders the main camera after
-`onAfterCameraRender`; X5.3d retired both, the layer having gone at X5.3c, and
-X5.4 deletes the field with the frame —
-resized to the render size before the scene first binds it
-(`onBeforeRenderObservable`) and named for the stage that reads it
-(`PostProcessRTT-celInk`, as Babylon named the ink's input). Babylon reads that
-field all through a frame (`BABYLON_EXIT.md`'s "What it is today" lists the
-eight points), and with it set as a frame starts **the scene CLEARS the frame itself** —
-`_checkCameraRenderTarget` re-arms its `_cleared` as the frame starts,
-`Scene.render`'s first bind clears its colour and depth (under
-`scene.autoClear`), and the camera's render binds it again and clears its depth
-— which is the clear `PostProcess.activate` gave the ink's input; so **the
-frame's OPENING pass is the frame's** (an empty pass, the clear) where it was
-the canvas's, the pass the scene draws in LOADS the colour that pass cleared,
-and Babylon's render pass id for the camera's draws is the frame's (no
-Babylon mesh draws with it since X5.3c deleted the map editor's build). No
+(`onAfterCameraRenderObservable`). **The chain reads OUR frame**
+(`FrameTargets.frame`, X5.4e; the scene drew STRAIGHT INTO a frame of
+`PostPasses`' from X5.2d — a `RenderTargetTexture` made as Babylon made the
+ink's input, held as the camera's `outputRenderTarget`, which the scene bound
+and cleared itself — until X5.4e made the frame and its passes ours, above),
+sized to the render size as the frame starts (`onBeforeRenderObservable`, by
+`PostPasses`, which reads it) and named for the stage that reads it
+(`PostProcessRTT-celInk`, as Babylon named the ink's input: the label the
+frame's two passes wear). **The frame's OPENING pass is the frame's** (an empty
+pass, the clear) where it was the canvas's until X5.2d, and the main pass LOADS
+the colour that pass cleared. No
 Babylon `PostProcess` stands on the camera, so `_finalizeFrame` returns at once. The canvas is opened with
 `restoreDefaultFramebuffer`, as `_finalizeFrame` opened it for Babylon's last
 pass, and the last stage's draw goes in through `Renderer.postStageOpened`
@@ -3664,11 +3696,12 @@ began:
 **Babylon visits no EMPTY group, and no draw of ours needs it to** (X4.5a, the
 owner's decision of 2026-10-31). `RenderingManager.render` skips a group whose
 `_empty` is set and raises no observable for it, so with nothing of Babylon's in
-group 0 none of the group's own hooks would run, silently. **So the seam's
-end-of-phase observer tells `beforeAlphaTest`, `afterOpaque`, `beforeBlended`
-and `afterGroup` together, in that order, there** (`babylonSeam.ts`,
-`onMainPass`): no internal, and ahead of the glow's mask and `FrameDepth`, which
-hang off the same observable, because it was inserted first. No group above 0
+group 0 none of the group's own hooks would run, silently. **So the renderer
+records every point together, in their order, at the draw phase's end**
+(`Renderer.end`, told by the seam's `onDrawPhase`; until X5.4e the seam's
+`onMainPass` told them into Babylon's pass): no internal, and ahead of the
+glow's mask, which hangs off the same observable, because it was inserted
+first. No group above 0
 holds anything, so where the group would have been and that point are the same
 place. Until X5.3d it did so only on a frame the group was NOT visited, and a
 frame Babylon did visit it told each point inside it (items 6 and 10, the group
@@ -3736,16 +3769,17 @@ over.
 **The attachments are stated ONCE** (`render/targets.ts`, `FRAME_TARGETS`).
 A pipeline is compiled AHEAD of the frame that draws with it, so its formats
 must be known ahead. What the frame draws into is NOT the canvas: it is the
-FRAME, `PostPasses`' render target, the camera's `outputRenderTarget`, which
-the scene binds as the frame starts (`BABYLON_EXIT.md` X5.2d; the post chain
-bound its first target, `CelInk`'s input, before the draw phase until then,
-and the frame is made as that input was). So the frame is:
+FRAME, our renderer's target (`FrameTargets.frame`, made from `FRAME_TARGETS`
+since `BABYLON_EXIT.md` X5.4e; `PostPasses`' render target from X5.2d, and the
+post chain's first target, `CelInk`'s input, before — the frame is made as that
+input was). So the frame is:
 
 - one `rgba8unorm` colour attachment (a post-process's default);
 - one sample (`antialias: false`);
 - `depth32float` (`stencil: false`; `plans/webgpu-ref/depth.mjs`);
-- a TEXTURE, which Babylon draws upside down so a later sample reads it the
-  GL way up.
+- a TEXTURE, which Babylon drew upside down so a later sample reads it the
+  GL way up — and ours is drawn the same way, so every pipeline stays as it
+  was.
 
 `flipY` is that last fact. Every vertex stage of ours negates clip-space y
 under it, or its picture is mirrored against everything Babylon drew into
@@ -3762,18 +3796,19 @@ face would cull the world's front faces in one of the two kinds of pass.
 test triangle was authored to the rule it tested. The first real mesh drawn
 (X3.3a's blocks) was what found it.
 
-**`Renderer` checks the open pass against `FRAME_TARGETS` on every frame it
-draws, and a pass that differs draws nothing that frame**, with one console
-error per change. The check compares in place (`FrameHost.passIs`), so it
-allocates nothing. This is the bundle trap again: one pipeline whose attachment state
-the pass cannot take poisons the bundle and blacks out the frame. **Drawing
-nothing is a HOLE wherever ours stands in for Babylon's**, so every
+**The main pass is made FROM `FRAME_TARGETS`, so it takes every pipeline built
+against them by construction** (X5.4e; until then `Renderer` checked BABYLON's
+open pass against them on every frame, `FrameHost.passIs`, and a pass that
+differed drew nothing — the bundle trap, where one pipeline whose attachment
+state the pass cannot take poisons the bundle and blacks out the frame; that
+check stands for the post chain's passes, still Babylon's). What is left to
+refuse is a frame whose targets are not made yet with something to draw.
+**Drawing nothing is a HOLE wherever ours stands in for Babylon's**, so every
 `onRefused` listener is told on the frame it happens: `BlockHandover` stops
 our side and fails the world (`Game.worldFailed`, after the task in hand),
 since X3.7b there being no Babylon mesh to give a block back to. The refused
-frame is the one drawn without them, and the last of the round. Nothing
-ships a pass that differs — `CelInk` is fixed first in the chain — so this
-is a backstop, not a path.
+frame is the one drawn without them, and the last of the round. No frame draws
+before `PostPasses` has sized the targets, so this is a backstop, not a path.
 
 **The frame's uniforms are ONE block, declared once and filled by a pull.**
 `render/frame.ts`'s `FRAME_BLOCK` is group 0, binding 0 of every program.
@@ -3835,8 +3870,9 @@ bind group a frame rather than one per material.
   X5.4d) and, since X5.1b, the irradiance volume's seven
   (`render/GiCompute.ts`). No frame texture is a `HostTexture` any more.
 - **A handle is read EVERY frame**, its view and sampler as its owner holds
-  them now — or, for a texture the HOST still owns (the glow's targets, the
-  post chain's frame and pool, `FrameDepth`'s wrapper, X5.4e and X5.4f's),
+  them now — or, for a texture the HOST still owns (the post chain's pool,
+  X5.4f's; the glow's targets, the frame and `FrameDepth`'s wrapper were until
+  X5.4e),
   resolved by the host (`FrameHost.bind`) into Babylon's own `GPUTextureView`
   and the `GPUSampler` out of Babylon's own cache, for the state Babylon's bind
   would use. So nothing is copied (`BABYLON_EXIT.md` rule 5), and a texture
@@ -5075,9 +5111,10 @@ the frame that are load-bearing.
   the LEQUAL tie holds, in EVERY state: the weapon is the stage, which the
   kit screen keeps blooming, and the draw says so itself (`Game.glowAdmits`
   answers for the world alone). **LAST in that pass, as Babylon drew it**
-  (`Renderer.addGlowMaskLate`, told by `GlowPass.onMaskCloseObservable` —
-  the mask target's after-render, raised inside its unbind before the pass
-  ends): after the palette and the visors (first) and after every mesh of
+  (`Renderer.addGlowMaskLate`, recorded at the pass's close by
+  `recordGlowMask` since `BABYLON_EXIT.md` X5.4e — told until then by
+  `GlowPass.onMaskCloseObservable`, the mask target's after-render, raised
+  inside its unbind before the pass ended): after the palette and the visors (first) and after every mesh of
   Babylon's, blended ones included, which is where group 1 drew the weapon's
   emissives. The order decides any pixel two mask draws both pass — an exact
   depth tie between depth-writing draws (a tracer lying along a petal), and,
@@ -5946,20 +5983,23 @@ all in the counter this finding is named after. Not chased.
   occlusion, and a blended surface that wrote none there must not start writing
   one into the buffer the ink and the blur read. **Every draw in it is OURS**
   since X5.3c (the palette, the visors, the pieces, the billows, the fires, the
-  weapon, the moon): its render list is empty, answered so every frame, and
-  Babylon draws nothing there.
-- **The mask is SIZED, SHARED AND DRAWN IN ONE FUNCTION**, which is the whole of
-  the resize rule. It reads the size of the depth it is about to borrow, resizes to
-  it, re-shares when either end of the share has moved (a share is a relation
-  between two targets), and draws. The layer's texture and that depth resized on
-  different schedules, and one frame per `engine.resize()` was encoded with a
-  colour attachment at one size and a depth at another and rejected whole — a
-  dragged window lost one frame in two.
-  **Two failures to remember** because both are silent: the target's clear must be
-  COLOUR ONLY, or the borrowed depth is wiped and every lamp blooms through its
-  wall; and its `renderList` must be `null` rather than the empty array a target is
-  born with, or `getCustomRenderList` is handed nothing and the mask is black with
-  no error anywhere.
+  weapon, the moon), and since X5.4e so is the PASS (`Renderer.recordGlowMask`,
+  into `FrameTargets.mask`): Babylon draws nothing there and opens nothing.
+- **The mask is SIZED AND DRAWN IN ONE FUNCTION** (`GlowPass.render`), which is
+  the whole of the resize rule. It reads the size of the depth it is about to
+  borrow (the frame's, `FrameTargets.depth`), resizes the glow's six to it, and
+  asks for the pass, which attaches that depth as it stands. The layer's texture
+  and that depth resized on different schedules, and one frame per
+  `engine.resize()` was encoded with a colour attachment at one size and a depth
+  at another and rejected whole — a dragged window lost one frame in two.
+  **One failure to remember** because it is silent: the mask's clear must be
+  COLOUR ONLY — its depth LOADED — or the borrowed depth is wiped and every lamp
+  blooms through its wall. (While the pass was Babylon's, until
+  `BABYLON_EXIT.md` X5.4e, there was a second: its `renderList` had to be `null`
+  rather than the empty array a target is born with, or `getCustomRenderList`
+  was handed nothing and the mask was black with no error anywhere; and the
+  share was re-made whenever either end of it moved, a share being a relation
+  between two targets.)
 - **The mask was drawn with an OVERRIDE material, not the mesh's own, and every
   draw of ours keeps its rule.** A glowing surface's unlit colour is faded by
   `EmissiveFog` toward the FOG colour, and a bloom of the fog colour is a pale
@@ -5978,8 +6018,9 @@ all in the counter this finding is named after. Not chased.
   the mask, in every round** (`render/WorldBlocks.ts`, `render/WorldGlow.ts`,
   `BABYLON_EXIT.md` X3.6d, X3.6e, X3.7b; "The palette, ours", under "The
   glow: what the depth share replaced", below), and Babylon is made no mesh
-  of it. **The mask stays this pass's**: ours draws INTO it, FIRST, as its
-  pass opens (`GlowPass.onMaskOpenObservable`, from inside the clear), and
+  of it. **The mask's pass is ours** (`Renderer.recordGlowMask`, X5.4e): the
+  palette draws FIRST in it, right after its clear (until X5.4e INTO
+  `GlowPass`' pass, as it opened: `onMaskOpenObservable`, from inside the clear), and
   no Babylon draw of the palette is left (X3.7c deleted its stages and its
   mask twin: the map editor's build never merged its blocks, so never wore
   it either). **`noGlow` is read PER SURFACE, at the
@@ -5996,7 +6037,8 @@ all in the counter this finding is named after. Not chased.
   size its kernel was tuned at.
 - **The blur and the box filter are OUR draws, ported as compiled** (`BABYLON_EXIT.md`
   X5.2b: `render/GlowBlur.ts`, its modules `shaders/wgsl/glowBlur.ts`), in the
-  passes `GlowPass` binds on its own targets ("Our renderer's frame", above).
+  passes of our own on the glow's targets since X5.4e (`Renderer.glowBlurPass`,
+  `FrameTargets`; "Our renderer's frame", above).
   **The blur's TEXT is a function of its kernel**: Babylon's `ThinBlurPostProcess`
   rounds the ideal width to the nearest odd one whose half is even
   (`_nearestBestKernel`), computes a sigma-1/3 Gaussian over it, pairs the taps for
@@ -6143,7 +6185,7 @@ all in the counter this finding is named after. Not chased.
   END of group 0 ("The weapon, ours", below), where group 1's queues and the
   card's slot were. Its depth clear was switched OFF while it held anything,
   so the frame kept one depth image holding the world and the gun that
-  `FrameDepth` and `GlowPass` both read; drawn at the end of group 0, the gun
+  the post chain and the glow's mask both read; drawn at the end of group 0, the gun
   is in that image by construction, and the line that switched the clear off
   went with the group. **The moon
   disc used to share the group and does not any more**: it drew after every
@@ -6234,7 +6276,7 @@ all in the counter this finding is named after. Not chased.
   it replaced — which is why the setting no longer says "film".** Walking past a wall
   under a screen grain slides the wall under a
   texture that stays put — a film over the scene rather than a world drawn on paper. So
-  `PaperGrain` turns the frame's depth (`FrameDepth`) back into a position and evaluates
+  `PaperGrain` turns the frame's depth (`FrameTargets.depth`) back into a position and evaluates
   a 3D noise there. A texture fixed in the world has no single size, so it is a stack of
   power-of-two OCTAVES, each fixed in the world, weighted by how many metres a pixel
   covers at that distance (Bénard et al.'s dynamic solid textures): walking toward a wall
@@ -7075,23 +7117,25 @@ writes no depth and tests LEQUAL against the depth the main pass wrote, so it
 lands exactly where that pass's draw of the same vertex landed — since X3.6e a
 draw of OURS, by the same vertex module.
 
-- **The mask stays `GlowPass`'s** (`BABYLON_EXIT.md` rule 5): its texture, its
-  clear, its borrowed depth and its blur, which `CelInk` reads. Ours draws
-  INTO its pass, as it draws into the main pass, through the same seam items
-  (`FrameHost.queue`, `passIs` against `GLOW_TARGETS`) and no new one —
-  nothing wrapped, nothing copied.
-- **Where in the mask: FIRST, right after the clear.** `GlowPass` announces
-  the pass from inside its own clear observer (`onMaskOpenObservable`):
-  WebGPU's `clear()` ends whatever pass was open and begins the mask's at
-  once, after Babylon has built the mask's list and before it has queued any
-  of it, every frame, whether or not its own list holds anything. Three other
-  places were rejected: a rendering group's hook (an EMPTY group is never
-  visited, and group 0 of the mask often is once the palette is ours), the
-  target's after-render (ours would land after the blended mask draws and
-  paint over a tracer or a fire), and a second observer on the clear (order
-  between two observers is a race, the class of bug X3.2's seam was written to
-  end). First is also the order Babylon kept: the palette drew in its OPAQUE
-  queue, ahead of every blended mask draw. With no depth written, order
+- **The mask is our renderer's since `BABYLON_EXIT.md` X5.4e**
+  (`FrameTargets.mask`, `Renderer.recordGlowMask`): its texture, its clear, its
+  borrowed depth and its blur, which `CelInk` reads. Until then it was
+  `GlowPass`'s (rule 5), ours drawing INTO its pass, as into the main pass,
+  through the same seam items (`FrameHost.queue`, `passIs` against
+  `GLOW_TARGETS`).
+- **Where in the mask: FIRST, right after the clear.** Until X5.4e `GlowPass`
+  announced the pass from inside its own clear observer
+  (`onMaskOpenObservable`): WebGPU's `clear()` ended whatever pass was open and
+  began the mask's at once, after Babylon had built the mask's list and before
+  it had queued any of it, every frame, whether or not its own list held
+  anything; since X5.4e our renderer records the pass and draws first in it,
+  the same place. Three other places were rejected then: a rendering group's
+  hook (an EMPTY group is never visited, and group 0 of the mask often was
+  once the palette was ours), the target's after-render (ours would land after
+  the blended mask draws and paint over a tracer or a fire), and a second
+  observer on the clear (order between two observers is a race, the class of
+  bug X3.2's seam was written to end). First is also the order Babylon kept:
+  the palette drew in its OPAQUE queue, ahead of every blended mask draw. With no depth written, order
   matters only where two mask draws pass on one pixel; what is left is a
   coplanar opaque emissive tie, which the mask's readback measures
   (`BABYLON_EXIT.md` X3.6d).
@@ -7676,7 +7720,7 @@ effect. It raymarches the air: step along each pixel's view ray in world space,
 ask the moon's shadow map whether each step is lit, weight it by a height-falloff
 haze density, and add the sum back into the frame through a Henyey-Greenstein
 phase function. It is bounded at the near end by the camera and at the far end by
-whichever comes first — the geometry the frame already drew (`FrameDepth`) or the
+whichever comes first — the geometry the frame already drew (its depth) or the
 edge of what the shadow map knows.
 
 **IT REPLACED A SCREEN-SPACE PASS AND THAT PASS IS GONE.** `GodRays` accumulated
@@ -7712,7 +7756,7 @@ against the shafts' own 32 taps:
 CPU `tick` did not move on either map in either direction, which is the whole
 design: the march builds nothing, walks nothing, adds no draw to the scene, and
 every input it reads was already computed for something else — the depth image is
-`FrameDepth`'s (shared with the ink and the blur), and the shadow map and its
+the frame's own (`FrameTargets.depth`, shared with the ink and the blur), and the shadow map and its
 matrix are `ShadowSystem`'s, published to the cel materials whether this exists or
 not. That matters on a frame that is draw-call bound with the GPU at 25-30%
 ("Why the frame is draw-call bound", above).

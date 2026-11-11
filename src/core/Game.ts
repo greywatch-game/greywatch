@@ -112,7 +112,7 @@ import {
   fogAmountAt,
   writePaletteIndex,
 } from "../shaders/CelShader";
-import { BabylonFrameHost, hostTexture } from "../render/babylonSeam";
+import { BabylonFrameHost } from "../render/babylonSeam";
 import { Renderer } from "../render/Renderer";
 import { BodyDraw } from "../render/BodyDraw";
 import { HullDraw } from "../render/HullDraw";
@@ -144,7 +144,6 @@ import { PaperGrain } from "../shaders/PaperGrain";
 import { PostPasses } from "../shaders/PostPasses";
 import { CelInk } from "../shaders/CelInk";
 import { Fxaa } from "../shaders/Fxaa";
-import { FrameDepth } from "../shaders/FrameDepth";
 import { GlowPass, glowKernels } from "../shaders/GlowPass";
 import { MotionBlur } from "../shaders/MotionBlur";
 import { Volumetrics, volumetricStages, type VolumetricRung } from "../shaders/Volumetrics";
@@ -1334,7 +1333,6 @@ export class Game {
    * The frame's depth, wrapped once for the two passes that sample it. Held
    * only so the pair are handed the same object — nothing here reads it.
    */
-  private frameDepth: FrameDepth;
   /** The environment the sky is currently painted for — see applySky(). */
   private skyEnv: EnvironmentSpec | null = null;
   private player: Player;
@@ -2137,8 +2135,8 @@ export class Game {
       return eyeDistanceSq(a, eye) - eyeDistanceSq(b, eye);
     });
     // **ONE depth image for the frame** — the world and the gun together —
-    // which `FrameDepth` hands to the ink and the blur, and which `GlowPass`
-    // occludes the bloom against. The viewmodel had a rendering group of its
+    // which every post stage reads (`FrameTargets.depth`, our renderer's), and
+    // which the glow's mask occludes the bloom against. The viewmodel had a rendering group of its
     // own until `BABYLON_EXIT.md` X4.3d, whose depth clear (Babylon's default
     // for every group above 0) was switched off here so the three readers saw
     // more than the gun; every surface of it is our renderer's now, drawn at
@@ -2174,45 +2172,38 @@ export class Game {
     // mesh here (`SkyDraw`). It is also the one glowing thing that must never
     // fog, not being in the valley, so it is handed no fade at all.
     // The blur and the box filter are OUR draws (X5.2b), declared at the
-    // device pixel ratio the page boots at; `GlowPass` binds each pass and asks
-    // for them from inside it, handing its own targets, which cross here.
+    // device pixel ratio the page boots at; and since X5.4e every pass of the
+    // glow is our renderer's, on its own targets (`Renderer.targets`): the
+    // mask (`recordGlowMask`: the palette, the visors, the pools FIRST, the
+    // weapon's lit parts LAST) and the blur's five. `GlowPass` keeps the RULES
+    // — when, at what size, which kernel — and asks for each.
     const glowBlur = new GlowBlur(this.renderer, glowKernels(window.devicePixelRatio || 1));
     this.glowBlur = glowBlur;
+    const targets = this.renderer.targets;
     const glow = new GlowPass(this.scene, this.cameraSys.camera, {
+      // The frame's size — its depth's, which the mask borrows. Worth ~20% of
+      // the frame on the three big maps against a mask that redrew the whole
+      // visible scene to occlude itself (docs/rendering.md, "The glow: what
+      // the depth share replaced").
+      frameWidth: () => targets.depth.width,
+      frameHeight: () => targets.depth.height,
+      resize: (mw, mh, dw, dh, nw, nh, ww, wh) => targets.sizeGlow(mw, mh, dw, dh, nw, nh, ww, wh),
+      mask: () => this.renderer.recordGlowMask(),
       downReady: () => glowBlur.downReady(),
       blurReady: (kernel) => glowBlur.blurReady(kernel),
-      down: (source, w, h, outputHeight) => glowBlur.down(hostTexture(source), w, h, outputHeight),
-      blur: (i, kernel, across, source, w, h, outputHeight) =>
-        glowBlur.blur(i, kernel, across, hostTexture(source), w, h, outputHeight),
+      down: (w, h, outputHeight) => glowBlur.down(w, h, outputHeight),
+      blur: (i, kernel, across, fromDown, w, h, outputHeight) =>
+        glowBlur.blur(i, kernel, across, fromDown, w, h, outputHeight),
     });
     this.glow = glow;
-    // The mask's pass has opened: our renderer's palette goes in FIRST, ahead
-    // of everything `GlowPass` draws there (`Renderer.glowMaskOpened`).
-    glow.onMaskOpenObservable.add(() => this.renderer.glowMaskOpened());
-    // …and closing: the weapon's lit parts go in LAST, after everything of
-    // Babylon's, where its group 1 drew them (`Renderer.glowMaskClosing`,
-    // BABYLON_EXIT.md X4.3c's review, the owner's decision).
-    glow.onMaskCloseObservable.add(() => this.renderer.glowMaskClosing());
-    // THE FRAME: the render target the scene draws straight into, with its
-    // depth, and clears itself (Babylon's own clear of a camera's output
-    // target, under `scene.autoClear`) — the camera's `outputRenderTarget`,
-    // for good (the window it was taken off for after the camera's render,
-    // the map editor's gizmo layer's, went at X5.3d), owned by the post
-    // chain's pass owner,
-    // `PostPasses`, which opens every pass of the chain after that render.
-    // No Babylon `PostProcess` stands on the camera since X5.2d: the ink,
-    // whose input this target was, is the chain's first stage of OURS.
-    this.postPasses = new PostPasses(this.scene, this.cameraSys.camera);
-    // The frame is the target whose depth the mask borrows. Worth ~20% of the
-    // frame on the three big maps against a mask that redrew the whole visible
-    // scene to occlude itself (docs/rendering.md, "The glow: what the depth
-    // share replaced").
-    glow.drawsInto(this.postPasses.frameTarget);
-    // The frame's own depth image, captured ONCE and read by four stages —
-    // the ink's edges, the shafts' march, the blur's weapon mask and the
-    // grade's position. It has to exist before any of them, since a stage
-    // whose depth is still null draws nothing; `FrameDepth` argues the rest.
-    this.frameDepth = new FrameDepth(this.scene, this.cameraSys.camera, this.postPasses.frameTarget);
+    // THE FRAME: our renderer's target (`Renderer.targets.frame`, with its
+    // depth, X5.4e), which its own passes clear and draw — sized as the frame
+    // starts by the post chain's pass owner, `PostPasses`, which opens every
+    // pass of the chain after the camera's render. No Babylon `PostProcess`
+    // stands on the camera since X5.2d, and no `outputRenderTarget` since
+    // X5.4e: the camera renders into nothing of its own, the scene drawing
+    // nothing.
+    this.postPasses = new PostPasses(this.scene, this.cameraSys.camera, targets);
     // THE INK GOES FIRST: our post chain's first stage (X5.2d), reading the
     // frame the scene drew. It is part of the PICTURE and not a grade over
     // one: FXAA below then antialiases the lines it draws (they come off a
@@ -2222,7 +2213,7 @@ export class Game {
     // its own (`GlowPass`'s header): after the ink, so a bloom lies over the
     // lines round its lamp rather than under them, and before FXAA and
     // everything else, which treat it as part of the picture.
-    this.celInk = new CelInk(this.cameraSys.camera, glow, this.frameDepth);
+    this.celInk = new CelInk(this.cameraSys.camera, glow, targets);
     // The cel shader outputs display-ready colours, and Babylon's image
     // processing would re-apply gamma and wash them out — so it is OFF, as
     // `DefaultRenderingPipeline`'s `imageProcessingEnabled = false` left it
@@ -2230,18 +2221,19 @@ export class Game {
     // Babylon material reads this, and none has drawn in any state since the
     // map editor went (`BABYLON_EXIT.md` X5.3c): every draw is ours.
     this.scene.imageProcessingConfiguration.isEnabled = false;
-    // `scene.autoClear` is Babylon's default, TRUE, since X5.2c2's picture
-    // change (the owner's decision, `BABYLON_EXIT.md` row "X5.2, autoClear"):
-    // the frame's opening canvas pass clears the canvas's colour to the scene's
-    // clear colour beside the engine's depth. `DefaultRenderingPipeline` held it
-    // false while it stood; the last pass of the chain overwrites the canvas
-    // whole on every frame it draws, so what moved is only the page's first
-    // frames, before the chain first draws (the clear colour, opaque, where
-    // they were transparent), under the boot screen. The scene's clear of the
-    // frame's own target (X5.2d, `PostPasses`) rests on it — and since X5.2d
-    // that clear lands on the frame, not the canvas, so those boot frames
-    // hold the swap chain's transparent zeros again: X5.2d's picture change,
-    // the owner's decision (`BABYLON_EXIT.md` row "X5.2, the boot canvas").
+    // The scene clears NOTHING (`BABYLON_EXIT.md` X5.4e): the frame's clear —
+    // its colour to the scene's clear colour and its depth, then its depth
+    // again — is our renderer's own opening pass and main pass
+    // (`Renderer.end`), where it was the scene's clear of the camera's output
+    // target under `autoClear` (X5.2d to X5.4e). With no output target on the
+    // camera the scene's only clear would be one of the CANVAS, at the frame's
+    // first bind, under either flag — a pass of Babylon's that no frame before
+    // this step began — so both are held false. The canvas's boot frames keep
+    // X5.2d's state (no clear: what the swap chain hands over, the owner's
+    // decision, row "X5.2, the boot canvas"), and every frame the chain draws
+    // its last stage overwrites the canvas whole.
+    this.scene.autoClear = false;
+    this.scene.autoClearDepthAndStencil = false;
     // FXAA: OUR draw since X5.2c2, the post chain's stage after the ink it
     // antialiases (`shaders/Fxaa.ts`).
     this.fxaa = new Fxaa();
@@ -2253,27 +2245,27 @@ export class Game {
     // drawn while the pass `syncVolumetrics` latched ready is at its rung.
     const bootRung = this.overrides.volumetrics(this.settings.volumetrics);
     if (bootRung) {
-      const first = new Volumetrics(this.cameraSys.camera, this.frameDepth, bootRung);
+      const first = new Volumetrics(this.cameraSys.camera, targets, bootRung);
       this.volumetrics = first;
       this.volumetricsRung = bootRung;
       this.seedVolumetrics(first, this.mapDef.environment);
     }
     // Then the look smears, with the shafts already in the frame — they belong
     // to the same instant as the geometry, so they have to blur with it.
-    this.motionBlur = new MotionBlur(this.cameraSys.camera, this.frameDepth);
+    this.motionBlur = new MotionBlur(this.cameraSys.camera, targets);
     // Vignette/grain/aberration go last, over the finished frame. Grain in
     // particular has to land AFTER the blur: smeared grain reads as smudge.
     // The ink (X5.2d), FXAA, the shafts, the blur (X5.2c2) and the grade
     // (X5.2c1) are OUR draws: the post chain's host, its stages in THIS
-    // order over the frame the scene drew, whose passes `PostPasses` opens
+    // order over the frame our renderer drew, whose passes `PostPasses` opens
     // after the camera's render. The order is the host's list, not an
     // append, and a setting turns a stage off rather than taking a pass off a
     // camera, so there is no slot to hold.
-    this.post = new PaperGrain(this.cameraSys.camera, this.frameDepth);
+    this.post = new PaperGrain(this.cameraSys.camera, targets);
     this.postChain = new PostChain(this.renderer, [
       this.celInk.stage,
       this.fxaa.stage,
-      ...volumetricStages(this.frameDepth, () => (this.volumetricsAttached ? this.volumetrics : null)),
+      ...volumetricStages(targets, () => (this.volumetricsAttached ? this.volumetrics : null)),
       this.motionBlur.stage,
       this.post.stage,
     ]);
@@ -3921,7 +3913,7 @@ export class Game {
     this.volumetricsAttached = false;
     this.volumetricsRung = want;
     if (!want) return;
-    const vol = new Volumetrics(this.cameraSys.camera, this.frameDepth, want);
+    const vol = new Volumetrics(this.cameraSys.camera, this.renderer.targets, want);
     this.seedVolumetrics(vol, this.mapDef.environment);
     this.volumetrics = vol;
   }

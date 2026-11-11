@@ -354,12 +354,42 @@ function hangProbe(page) {
       if (s.rec) s.log.push({ mark: points.get(run) ?? "queued" });
       return queue.call(this, run);
     };
-    const opened = r.glowMaskOpened;
-    r.glowMaskOpened = function () {
-      s.inMask = true;
-      if (s.rec) s.log.push({ mark: "maskOpened" });
-      return opened.call(this);
-    };
+    if (typeof r.recordGlowMask === "function") {
+      // OURS (`BABYLON_EXIT.md` X5.4e): the main pass, the mask and the blur
+      // are the renderer's own passes, their draws RECORDED rather than queued
+      // into Babylon's — so each point's list is marked as the renderer runs
+      // it (it asks each through its own field), the mask where its pass is
+      // recorded (`recordGlowMask`, the open's place), and a blur pass as the
+      // `queued` mark its queue made. The marks keep their names and order but
+      // one: `first` now lands at the phase's end with the rest, where the
+      // seam queued it as the phase began (it RAN with the rest there).
+      for (const [run, mark] of points) {
+        const key = Object.keys(r).find((k) => r[k] === run);
+        if (!key) continue;
+        r[key] = function (pass) {
+          if (s.rec) s.log.push({ mark });
+          return run.call(this, pass);
+        };
+      }
+      const recordMask = r.recordGlowMask;
+      r.recordGlowMask = function () {
+        s.inMask = true;
+        if (s.rec) s.log.push({ mark: "maskOpened" });
+        return recordMask.call(this);
+      };
+      const blurPass = r.glowBlurPass;
+      r.glowBlurPass = function (target, run) {
+        if (s.rec) s.log.push({ mark: "queued" });
+        return blurPass.call(this, target, run);
+      };
+    } else {
+      const opened = r.glowMaskOpened;
+      r.glowMaskOpened = function () {
+        s.inMask = true;
+        if (s.rec) s.log.push({ mark: "maskOpened" });
+        return opened.call(this);
+      };
+    }
     // An empty function on every point, so each is in the log whether or not
     // anything of ours is on it this frame. A map's own draws stay where they
     // are: these are behind them in their lists.

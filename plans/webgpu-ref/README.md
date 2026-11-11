@@ -252,6 +252,10 @@ does.
   target`, under a row when it differs from the row before and totalled per draw over
   the run at the end. A frozen frame still raises only what that frame raises, so the
   gate read a live round's log beside it (its record names the script).
+  **Since X5.4e our points are marked as the renderer RUNS each list** (the main
+  pass, the mask and the blur are its own passes, recorded rather than queued):
+  the marks keep their names and order but `first`, which lands at the phase's
+  end with the rest where it was queued as the phase began.
 
 - **`particles.mjs`** is the GPU particle fields' CPU half, logged frame by frame in
   a live frame loop over the deploy screen's HELD world (`BABYLON_EXIT.md` X4.7a; not a
@@ -389,6 +393,13 @@ does.
   `statics.boot` is, once a boot, every `requestAdapter`'s options, every
   `requestDevice`'s descriptor (features, limits, label), every
   `GPUCanvasContext.configure`'s argument, and the device's label and features.
+  **Since X5.4e the frame, its depth and the glow's six are OUR renderer's**
+  (`Game.renderer.targets`, `render/FrameTargets.ts`), named by the adapter's
+  arm under the same names (`frame`, `frame.depth`, `glow.<k>`), and the passes
+  into them are recorded on Babylon's UPLOAD encoder: a parent's log compares
+  with their encoder roles and `whole`'s per-buffer item lists named (the
+  X5.4e section of `post-expected.txt`), the frame's command order across the
+  encoder boundary checked apart (X5.4e's record names the script).
   **Key a line on the draw's stage**
   (`**.draws[stage=glow.*].viewport`), never on a pass index: an index names whatever
   draw a scenario puts at it, so it would excuse the same field on another stage's draw

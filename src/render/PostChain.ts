@@ -119,8 +119,12 @@ export interface PostStage {
  * pass it opens, in the order `record` asks.
  */
 export interface PostPassOwner {
-  /** What the first active stage reads: the frame the scene drew (its depth is `FrameDepth`'s). */
-  readonly frame: HostTexture;
+  /**
+   * What the first active stage reads: the frame our renderer drew
+   * (`FrameTargets.frame`; its depth is `FrameTargets.depth`, an extra), read
+   * through its own view — ours since `BABYLON_EXIT.md` X5.4e.
+   */
+  readonly frame: OwnTexture;
   /** The render size, which every target of the chain is. */
   readonly width: number;
   readonly height: number;
@@ -279,7 +283,7 @@ export class PostChain {
   record(owner: PostPassOwner): void {
     const last = this.lastActive();
     if (last < 0) return;
-    let input = owner.frame;
+    let input: HostTexture | OwnTexture = owner.frame;
     let slot = 0;
     for (let i = 0; i <= last; i++) {
       const s = this.states[i];
@@ -347,7 +351,7 @@ export class PostChain {
   }
 
   /** The stage's block, its bind group and its draw, queued into the pass just opened. */
-  private draw(state: StageState, kind: number, input: HostTexture, owner: PostPassOwner): void {
+  private draw(state: StageState, kind: number, input: HostTexture | OwnTexture, owner: PostPassOwner): void {
     const built = state.pipelines[kind];
     if (!built) {
       // Never asked for this kind (a list that grew): asked now, as a miss.
@@ -357,7 +361,10 @@ export class PostChain {
     const st = state.stage;
     const host = this.renderer.host;
     const b = this.bound;
-    host.bind(input, b);
+    // The frame is ours (its own view); a pool target the host's, read
+    // through the host's own view (`FrameHost.bind`) until X5.4f.
+    if (input instanceof OwnTexture) b.view = input.view;
+    else host.bind(input, b);
     const inputView = b.view;
     if (!inputView) return;
     for (let i = 0; i < st.extras.length; i++) {
