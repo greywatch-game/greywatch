@@ -1049,9 +1049,10 @@ export class LocalShadows {
    * Forgets that an atlas stands, and releases NOTHING: the atlas is
    * `LampAtlas`'s, destroyed by its own `dispose` (and our renderer's). Until
    * `BABYLON_EXIT.md` X5.4h this disposed Babylon's wrapped view of it, which
-   * destroyed the atlas texture with it; nothing calls it, and the teardown
-   * X5.4i owes releases the atlas through `LampAtlas.dispose` (which
-   * `Renderer.dispose` does not reach), beside the renderer's, not here.
+   * destroyed the atlas texture with it; nothing calls it, and a lost
+   * device's teardown releases the atlas through `LampAtlas.dispose` (which
+   * `Renderer.dispose` does not reach), beside the renderer's, not here
+   * (`Game.deviceLost`, `BABYLON_EXIT.md` X5.4i).
    */
   dispose(): void {
     this.made = false;

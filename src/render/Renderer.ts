@@ -23,7 +23,11 @@
  * X5.4d); `FrameDraw`, `FramePrepare`,
  * `DrawPoint`, `FrameContext` and `RendererOptions`.
  * Invariants: every GPU resource it holds it made, on the host's device, and
- * destroys in `dispose` (`BABYLON_EXIT.md` rule 5); the frame's uniforms are
+ * destroys in `dispose` (`BABYLON_EXIT.md` rule 5) — AT ONCE, its frame
+ * buffer, the frame's targets and every texture its maker made, so its one
+ * caller, a lost device's teardown (`Game.deviceLost`, X5.4i), calls it
+ * between frames, after the last submit, the loop stopped and no frame
+ * recording into it after; the frame's uniforms are
  * filled by the `fill` it is handed (`CelMaterialFactory.fillFrame`) and the
  * host's camera, and its textures by `fillTextures`
  * (`CelMaterialFactory.fillFrameTextures`) resolved through the host, once

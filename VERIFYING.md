@@ -85,7 +85,13 @@ you are on before you believe anything else in this section.
   `shaders` and `pipelines`. A page you make yourself wears `watchDevice(page)`; a
   frame count in a page's own loop never fires under a stopped counter, so it wants a
   wall-clock limit beside it. **The console line is a WARNING first** (Dawn's, then
-  Babylon's "WebGPU context lost"), so a filter on `error` does not hear it. Exit
+  Babylon's "WebGPU context lost" at a tree with Babylon's engine, the game's own
+  "WebGPU device lost (reason)" since `BABYLON_EXIT.md` X5.4h), so a filter on
+  `error` does not hear it. **Since X5.4i a loss RELOADS the page to the menu**
+  (`Game.deviceLost`), so a page left to itself does not freeze on one any more:
+  it navigates, which a script waiting on its frames reads as a new page or an
+  `evaluate` whose context was destroyed — the harness stops on the game's line
+  first. Exit
   through `process.exit`, which takes the browser and the dev server with it, and not
   through `browser.close()`, which can hang on the same GPU. **An outer `timeout -k` is
   the last resort**: its SIGKILL skips those handlers and can leave a Chromium tree

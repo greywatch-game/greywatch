@@ -36,11 +36,20 @@
  *   Since `BABYLON_EXIT.md` X5.4h those points are the game's: the boot's
  *   sample once the context is configured, and the canvas's `onSized`
  *   (`core/CanvasSurface.ts`, `main.ts`).
- * - **A lost device holds the loop** (`held`), as `_contextWasLost` held
- *   Babylon's — for the task Babylon's engine took to flag its restore — but
- *   ahead of the cap rather than after it, so nothing is asked of the cap
- *   either and the first frame after it steps across the whole hold
- *   (`held`'s note; `BABYLON_EXIT.md` X5.4i).
+ * - **A lost device ENDS the loop** (`stop`, the first thing `Game`'s
+ *   answer to a loss does, `BABYLON_EXIT.md` X5.4i): no frame is drawn on a
+ *   lost device and none is resumed — the page reloads to the menu, or stands
+ *   under the boot's plate. So there is no hold any more (`held`, X5.4h's,
+ *   which held the loop for the task Babylon's engine took to flag a restore
+ *   and then drew on the lost device), and the two things a hold owed the
+ *   parent are moot: whether the loss is tested ahead of the cap or after it
+ *   (Babylon's `_renderLoop` tested `_contextWasLost` inside a refresh the
+ *   cap had admitted, so its first frame after a restore read one refresh of
+ *   `FrameCap.elapsed`), and the one clock sample Babylon's restore took
+ *   (`_restoreEngineAfterContextLost`, `initAsync`,
+ *   `_initializeMainAttachments`, `beginFrame`). If a loss is ever survived
+ *   in place (`FINDINGS.md` 74), the frame it resumes owes both: the cap
+ *   asked ahead of the hold, as Babylon's order had it, and that sample.
  * - The world is NOT stepped by this clock: `Game.tick` steps it by
  *   `FrameCap.elapsed`, the refresh stamps (`FrameCap`'s header); this delta
  *   is what the readout, the profiler and the particle fields' animation
@@ -136,23 +145,6 @@ export class FrameLoop {
   readonly onEndFrameObservable = new Observable<void>();
   /** Frames submitted: what `engine.frameId` answered, moved at each end. */
   frameId = 0;
-  /**
-   * True while the graphics device is LOST and held, when a refresh runs
-   * nothing, as `_contextWasLost` held Babylon's loop. Written by `Game` off
-   * the device's own `lost` (`BABYLON_EXIT.md` X5.4h; the engine's two
-   * context observables until then), for the one task Babylon's engine took
-   * to flag a restore — there being no engine to restore one, the frames
-   * after it are drawn on the lost device, the dead frame they were.
-   * **Not quite as Babylon held it**: the cap's requester ADMITTED every
-   * refresh first (`FrameCap`'s stamps and schedule moving) and Babylon's
-   * `_renderLoop` tested the loss inside the frame it was handed, whereas here
-   * `held` is tested ahead of `admit` and the cap is not asked at all — so the
-   * first frame after the hold reads a `FrameCap.elapsed` spanning the whole
-   * of it (which `Game.tick` clamps to the wire's `MAX_FRAME_DT`), where
-   * Babylon's read one refresh. Booked on `BABYLON_EXIT.md` X5.4i, which
-   * decides what a loss is.
-   */
-  held = false;
   /** The frame's encoder and its submit. */
   readonly submit: FrameSubmit;
   private frame: (() => void) | null = null;
@@ -187,8 +179,9 @@ export class FrameLoop {
    * Ends the loop, as `engine.stopRenderLoop()` ended Babylon's: the pending
    * refresh cancelled and none requested again — a frame running when it is
    * called (from inside `tick` or an observer) completes, and requests no
-   * next one. Nothing in the game calls it: it is a script's, and the
-   * teardown's when `BABYLON_EXIT.md` X5.4i decides a loss. Not restartable.
+   * next one. The game calls it once, first in a lost device's teardown
+   * (`Game.deviceLost`, `BABYLON_EXIT.md` X5.4i); a script may too. Not
+   * restartable.
    */
   stop(): void {
     this.stopped = true;
@@ -199,7 +192,7 @@ export class FrameLoop {
   private readonly step = (t: number): void => {
     this.handle = 0;
     if (this.stopped) return;
-    if (!this.held && this.cap.admit(t)) {
+    if (this.cap.admit(t)) {
       // `beginFrame`: the clock's sample (`_measureFps`), then its observable.
       this.clock.sample();
       this.onBeginFrameObservable.notifyObservers();

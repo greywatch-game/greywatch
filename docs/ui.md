@@ -136,7 +136,14 @@ under reduced motion. **A failure fills both halves** (`bootFailed(cause,
 message)`): the plate turns to "Cannot start" over the cause in a few words,
 the bar goes and the edge turns red, and the note becomes the sentence a player
 can act on — "not a secure origin", "no WebGPU", "no graphics device", "no
-physics engine" or "start-up failed".
+physics engine" or "start-up failed". **It comes back ONCE after the boot, and
+only as that third failure**: a graphics device lost a second time inside
+`CONFIG.graphics.deviceLossWindow` (`BABYLON_EXIT.md` X5.4i, `docs/game.md`, "A
+lost device") — `main.ts` keeps the element it took off, puts it back in the
+document with its fade undone, and fails it as the boot does, the same words
+in the same plate, over a page whose frame has stopped. The FIRST loss reloads
+the page, and the menu it comes back to says so in a toast (`#toasts`, the
+`worldFailed` precedent: one lowercase line), which is all the notice there is.
 
 Each screen builds its own root element and appends it to `#hud`, which is why
 construction order in `Game`'s constructor matters exactly once: `HUD` writes

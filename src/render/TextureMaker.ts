@@ -9,7 +9,8 @@
  * `GPUSampler` per sampling state it was asked for, its mip chains
  * (`CubeMips`, over the cache's one `rgba8unorm` mip pipeline) and the
  * textures whose chains wait on that pipeline, the foam's stand-in texel, and
- * the textures released and waiting for the frame's submit; `MadeTexture`, a
+ * the textures released and waiting for the frame's submit, and a WEAK record
+ * of every texture it made, for its teardown; `MadeTexture`, a
  * texture of its making as a bind group binds it; `Picture`; the sampling
  * states (`SAMPLING`, `anisotropic`); `newCanvas`, a canvas as Babylon made one
  * for a `DynamicTexture`.
@@ -42,7 +43,10 @@
  * `GPUSamplerDescriptor` as Babylon's sampler cache made it (`SAMPLING`), one
  * sampler per state; a picture is made ONCE however often it is asked
  * (`picture`); a released texture is destroyed after the next frame's submit
- * (`FrameHost.afterSubmit`), never inside a frame that may still bind it.
+ * (`FrameHost.afterSubmit`), never inside a frame that may still bind it —
+ * but by `dispose`, the teardown a lost device runs between frames with none
+ * after it (`Game.deviceLost`, `BABYLON_EXIT.md` X5.4i), which destroys every
+ * texture it made at once, the live ones and the lit texel with the rest.
  * Never: imports Babylon; draws in a frame; keeps a canvas past its upload but
  * as the key its texture is found by.
  * Contract: `docs/rendering.md`, "Our renderer's frame" and "The textures the
@@ -190,8 +194,21 @@ export class TextureMaker {
   /** Mipped textures made before it settled, their chains owed. */
   private readonly owed: Owed[] = [];
   private readonly retired: GPUTexture[] = [];
+  /**
+   * Every texture made, held WEAKLY: what `dispose` destroys — the live ones,
+   * the lit texel, the retired and the empty texel alike — without keeping
+   * alive one whose handle the game dropped unreleased, which the collector
+   * would otherwise have taken. Pruned of the collected as it grows (`made`).
+   */
+  private readonly everMade = new Set<WeakRef<GPUTexture>>();
+  /** `everMade`'s size after its last prune: it is pruned again at twice that. */
+  private prunedAt = 0;
   private readonly afterSubmit: { dispose(): void };
-  /** The engine's empty texel (`AbstractEngine.emptyTexture`): four zero bytes, made at the first ask. */
+  /**
+   * The engine's empty texel (`AbstractEngine.emptyTexture`): four zero bytes,
+   * made at the first ask — held, and not only its view, so `dispose` can
+   * destroy it.
+   */
   private blank: GPUTexture | null = null;
   private blankView: GPUTextureView | null = null;
   private litTexel: MadeTexture | null = null;
@@ -367,16 +384,29 @@ export class TextureMaker {
     if (texture) this.retired.push(texture);
   }
 
+  /**
+   * The teardown, with no frame after it (a lost device's, `Game.deviceLost`,
+   * `BABYLON_EXIT.md` X5.4i, through `Renderer.dispose`): EVERY texture the
+   * maker made and the collector has not taken destroyed AT ONCE — the live
+   * ones, the lit texel, the retired and the empty texel — the one exception
+   * to "destroyed after the frame's submit" (the header). A handle bound
+   * after it binds a destroyed texture.
+   */
   dispose(): void {
     this.afterSubmit.dispose();
-    this.destroyRetired();
+    for (const ref of this.everMade) ref.deref()?.destroy();
+    this.everMade.clear();
     this.blank?.destroy();
     this.blank = null;
+    this.prunedAt = 0;
+    this.retired.length = 0;
+    this.owed.length = 0;
     this.blankView = null;
+    this.litTexel = null;
   }
 
   private texture(label: string, width: number, height: number, format: GPUTextureFormat, mips: boolean): GPUTexture {
-    return this.device.createTexture({
+    return this.made(this.device.createTexture({
       label,
       size: [width, height, 1],
       format,
@@ -390,7 +420,18 @@ export class TextureMaker {
         GPUTextureUsage.TEXTURE_BINDING |
         GPUTextureUsage.RENDER_ATTACHMENT,
       mipLevelCount: mips ? Math.floor(Math.log2(Math.max(width, height))) + 1 : 1,
-    });
+    }));
+  }
+
+  /** `texture`, remembered for `dispose`: weakly, the collected pruned once the set has doubled. */
+  private made(texture: GPUTexture): GPUTexture {
+    const made = this.everMade;
+    made.add(new WeakRef(texture));
+    if (made.size >= 2 * this.prunedAt + 64) {
+      for (const ref of made) if (ref.deref() === undefined) made.delete(ref);
+      this.prunedAt = made.size;
+    }
+    return texture;
   }
 
   /** `made` bound as `texture` — whole, or its top `levels` — with `sampling`'s sampler. */

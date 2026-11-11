@@ -612,9 +612,9 @@ half line for line; what changed is where its decisions are RECORDED.
   is destroyed after the frame's submit (`FrameHost.afterSubmit`, the engine's
   end of frame), as Babylon deferred its own; an immediate `destroy()` fails
   the whole command buffer.
-- **A lost device is not survived**, as for every draw of ours
-  (`FINDINGS.md` 64): Babylon's `_rebuildComputeEffects` rebuilt its three; ours
-  are made once.
+- **A lost device is not survived in place**, as for every draw of ours
+  (`FINDINGS.md` 74): Babylon's `_rebuildComputeEffects` rebuilt its three; ours
+  are made once, and a loss reloads the page (`docs/game.md`, "A lost device").
 
 ### What it costs
 
@@ -3505,9 +3505,14 @@ main depth (the canvas pass's is `ChainPasses`'), its resize frames (a flush,
 a pass on the swap chain's texture that loaded it and cleared that depth, a
 submit), its clear quad, and the shadow maps' wrapped views (`ShadowBindings`
 hands the Babylon cel materials, which neither draw nor compile, no texture).
-A lost device holds the loop for the task Babylon's engine took to flag a
-restore, and then draws on the lost device — the dead frame it was — until
-X5.4i decides what a loss is.
+**A lost device is answered by the PAGE, not by the renderer** (X5.4i,
+`Game.deviceLost`): the loop stopped, our renderer, the chain's passes, the
+frame's submit and the lamps' atlas disposed between frames after the last
+submit (each `dispose` destroys AT ONCE, the teardown's exception to
+"destroyed after the frame's submit"), and the page reloaded to the menu — or,
+a second time inside a minute, the boot's "No graphics device" plate
+(`docs/game.md`, "A lost device"). Nothing of ours is rebuilt in place; that is
+`FINDINGS.md` 74.
 
 **Our renderer (`src/render/`) owns everything it draws with**: the frame's
 uniform buffer, every bind-group layout and every pipeline, the frame's own

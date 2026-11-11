@@ -29,7 +29,8 @@
  * material did; the depth attachment is cleared by each pass and kept by
  * none, because no tile is drawn by two; a texture is born CLEARED to the
  * far value by a submit of its own, and is destroyed when the atlas is
- * re-sized or this is disposed (Babylon held a wrapped view of it until
+ * re-sized or this is disposed (`dispose`'s one caller a lost device's
+ * teardown, `Game.deviceLost`, X5.4i; Babylon held a wrapped view of it until
  * `BABYLON_EXIT.md` X5.4h, and destroyed it again when the view went); `ready` is
  * false until the proxies' pipeline (`proxiesReady`, on the round's declared
  * list) and the casters are built, and `LocalShadows` shadows no light until

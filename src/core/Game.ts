@@ -92,6 +92,9 @@
  * WorldCulling wiring (the map filed per install, the eye pushed from `tick` in
  * every state beside the shader's own — it decides how much of the map Babylon
  * walks each frame and writes nothing onto any mesh),
+ * the answer to a LOST graphics device (`deviceLost`, `BABYLON_EXIT.md` X5.4i:
+ * the teardown between frames, then the page reloaded to the menu, or the
+ * boot's plate for a second loss inside the window — `core/deviceLoss.ts`),
  * scene.imageProcessingConfiguration.isEnabled === false, window.__celshock debug handle.
  */
 import {
@@ -151,6 +154,7 @@ import { callsign } from "../entities/callsigns";
 import { OTHER_TEAM, type Combatant, type Team } from "../entities/Combatant";
 import type { CanvasSurface } from "./CanvasSurface";
 import { FrameCap } from "./FrameCap";
+import { answerLoss, takeLossNotice } from "./deviceLoss";
 import { type FrameClock, FrameLoop } from "./FrameLoop";
 import { FrameProfile } from "./FrameProfile";
 import { type DeclaredPipelines, PipelineWarmup } from "./PipelineWarmup";
@@ -647,6 +651,23 @@ function hashId(id: string): number {
     h = Math.imul(h, 0x01000193);
   }
   return h >>> 0;
+}
+
+/**
+ * Runs `steps` in order, each on its own: one that throws is said on the
+ * console and stops none after it — a lost device's teardown and the page
+ * let go under its plate (`Game.deviceLost`), where a throw from a dispose
+ * meeting a dead device, or a field a constructor that threw never set, must
+ * not leave the rest undone.
+ */
+function eachStep(what: string, steps: readonly (() => void)[]): void {
+  for (const step of steps) {
+    try {
+      step();
+    } catch (error) {
+      console.error(`[device] ${what}: a step threw, the rest go on`, error);
+    }
+  }
 }
 
 export class Game {
@@ -1383,6 +1404,8 @@ export class Game {
    * (`plans/webgpu-ref/harness.mjs`).
    */
   readonly frameLoop: FrameLoop;
+  /** The boot's "No graphics device" plate, put back up (`main.ts`): `deviceLost`'s second answer. */
+  private readonly deviceFailed: () => void;
   private canvas: HTMLCanvasElement;
   /**
    * The bloom — mask, blur and compose — which `shaders/GlowPass.ts` owns.
@@ -1950,8 +1973,15 @@ export class Game {
      * loop samples it at every frame of its own.
      */
     clock: FrameClock,
+    /**
+     * Puts the boot's "No graphics device" plate back up (`main.ts`, whose
+     * screen it is): a device lost a second time inside the window
+     * (`deviceLost`, `core/deviceLoss.ts`).
+     */
+    deviceFailed: () => void,
   ) {
     this.canvas = canvas;
+    this.deviceFailed = deviceFailed;
     this.surface = surface;
     // The engine the scene stands on (`core/SceneEngine.ts`): a `NullEngine`,
     // the last engine built, so `Vector3.ProjectToRef` reads its depth range.
@@ -1984,23 +2014,13 @@ export class Game {
     // engine ran `_initializeMainAttachments` and its performance monitor took
     // a sample — so the delta and the rate are Babylon's sample for sample.
     this.frameLoop = new FrameLoop(this.frameCap, device, this.prof, clock, urlFlag("gpu"));
-    // A LOST device (`BABYLON_EXIT.md` X5.4h: the device's own `lost`, where
-    // Babylon's engine raised `onContextLostObservable`) holds the loop for
-    // as long as Babylon's held it: `_restoreEngineAfterContextLost` flagged
-    // the restore one task later (a zero `setTimeout`, its new device's
-    // `initAsync` not awaited), and from then on every frame was drawn on the
-    // device that was lost — a dead frame. There is no engine to restore a
-    // device now, so the loop resumes at the same task's boundary and draws
-    // the same dead frame, until X5.4i decides what a loss is (row "X5.4, a
-    // lost device"). Ahead of the cap where Babylon's test came after the cap
-    // had admitted each refresh (`FrameLoop.held`'s note, booked on X5.4i).
-    void device.lost.then((info) => {
-      console.warn(`WebGPU device lost (${info.reason}): ${info.message}`);
-      this.frameLoop.held = true;
-      setTimeout(() => {
-        this.frameLoop.held = false;
-      }, 0);
-    });
+    // A LOST device (`BABYLON_EXIT.md` X5.4i, row "X5.4, a lost device"):
+    // the teardown, then the page RELOADED to the menu — or, a second time
+    // inside the window, the boot's plate (`deviceLost`). Every reason is
+    // answered, `"destroyed"` with the rest: a device of ours is never
+    // destroyed on purpose, and `lost.mjs` loses one by destroying it. A
+    // promise settles once, so nothing in the answer re-enters it.
+    void device.lost.then((info) => this.deviceLost(info));
     this.prof.setFrameTimer(this.frameLoop.submit.timer);
     this.scene = new Scene(this.sceneEngine);
     // What the scene's input manager did to the canvas when the scene attached
@@ -2896,6 +2916,11 @@ export class Game {
     // before the first frame rather than on the first visit to the screen.
     this.applySettings();
     this.showMenu();
+    // What a lost device left for the menu the reload brought up (`deviceLost`,
+    // `core/deviceLoss.ts`), once: the toast `worldFailed` and the lobby say
+    // theirs in.
+    const lossNotice = takeLossNotice();
+    if (lossNotice !== null) this.hud.toast(lossNotice);
     // Debug/test handle (used by automated smoke tests).
     (window as unknown as { __celshock: Game }).__celshock = this;
     // The profiler's own handle, beside it and for the same reason — but this
@@ -4588,6 +4613,87 @@ export class Game {
       this.enterMenu();
       this.hud.toast(`${owner.name} could not be drawn on this device`);
     });
+  }
+
+  /**
+   * The graphics device was LOST (`BABYLON_EXIT.md` X5.4i, the owner's (A),
+   * row "X5.4, a lost device"): every draw of ours is made on that device
+   * and on no other, nothing here rebuilds one in place (`FINDINGS.md` 74), so
+   * the page RELOADS itself to the menu, a one-line notice left for it
+   * (`core/deviceLoss.ts`) — the round lost offline, the match left in a
+   * server's, to be rejoined from the lobby; the settings are
+   * `localStorage`'s and survive it. A second loss inside
+   * `CONFIG.graphics.deviceLossWindow` of the last puts the boot's "No
+   * graphics device" plate back up instead (`deviceFailed`), and leaves the
+   * page standing under it: the loop stopped, the match left, the sound
+   * suspended, the pointer let go.
+   *
+   * **The teardown first, then the answer, whatever the teardown does**: a
+   * throw from any of it (a field a constructor that threw never set, a
+   * dispose meeting a dead device) is said and the answer still runs — a
+   * dead frame that never reloads is the one outcome this exists to end. It
+   * runs off the device's `lost`, a microtask, so between frames: after the
+   * last frame's submit, with none recording (a frame is one synchronous
+   * `FrameLoop` step, and nothing settles inside one). In the order the loss
+   * owes it (`BABYLON_EXIT.md` X5.4i): the loop STOPPED, so no frame runs
+   * into what follows; our renderer disposed — its frame buffer, the
+   * frame's targets and every texture the maker made, destroyed at once (the
+   * one exception to "destroyed after the frame's submit", there being no
+   * frame after it); the chain's passes, its pool and the canvas's depth,
+   * which are `Game`'s and not the renderer's; the frame's submit, its
+   * timer's queries and buffers — the encoder made after the last submit
+   * abandoned, never finished; and the lamps' atlas, which nothing else
+   * reaches (`LocalShadows.dispose` releases nothing). Under a reload most of
+   * it is moot, the page dropping everything; it is done anyway, so each
+   * dispose path has its caller and the plate's page holds nothing.
+   *
+   * **The device is not destroyed here**: a lost one has nothing to give
+   * back, and the page drops it. Nor does a reload owe anything for what the
+   * surface hung on the canvas (`CanvasSurface.adoptInput`'s listeners),
+   * the boot's `uncapturederror` listener or the context's configuration:
+   * the document goes with them. What this does not do is resume a frame —
+   * so `FrameLoop`'s order against the cap and the clock sample a restore
+   * once took are moot (`FrameLoop`'s header).
+   */
+  private deviceLost(info: GPUDeviceLostInfo): void {
+    console.warn(`WebGPU device lost (${info.reason}): ${info.message}`);
+    const notice =
+      "the graphics device was lost, so the game restarted" +
+      (this.remoteRound ? " — rejoin the match from Online" : "");
+    try {
+      eachStep("the lost device's teardown", [
+        () => this.frameLoop.stop(),
+        () => this.renderer.dispose(),
+        () => this.chainPasses.dispose(),
+        () => this.frameLoop.submit.dispose(),
+        () => this.lampAtlas.dispose(),
+      ]);
+    } finally {
+      if (answerLoss(Date.now(), notice) === "reload") {
+        console.warn("[device] reloading to the menu");
+        location.reload();
+      } else {
+        console.warn("[device] lost again inside the window: the page stays on the boot's plate");
+        this.deviceGone();
+      }
+    }
+  }
+
+  /**
+   * The second answer to a lost device (`deviceLost`): the boot's plate up
+   * FIRST, then the page let go of under it, each step on its own so one
+   * that throws stops none after it — the match left (a server's slot back
+   * to its bot, the page's own match closed), the sound suspended (a held
+   * ambience would drone under the plate for ever) and the pointer lock
+   * released (the plate is read with a cursor).
+   */
+  private deviceGone(): void {
+    eachStep("letting the page go", [
+      () => this.deviceFailed(),
+      () => this.leaveMatch(),
+      () => this.sfx.setSuspended(true),
+      () => document.exitPointerLock(),
+    ]);
   }
 
   /**

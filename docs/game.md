@@ -637,15 +637,54 @@ around that submit, moves the loop's `frameId` and raises its
 `onEndFrameObservable` — and only then requests the next refresh, so a frame
 that throws stops the loop as Babylon's did. **The world is stepped by the
 REFRESH stamps (`FrameCap.elapsed`), never by the loop's delta**, which is the
-readout's, the profiler's and the particle fields' clock. A lost device (the
-device's own `lost` since X5.4h) holds the loop (`held`) for the one task
-Babylon's engine took to flag a restore, as `_contextWasLost` held Babylon's —
-but ahead of the cap, where Babylon's test came after the cap had admitted the
-refresh, so the first frame after it steps across the whole hold
-(`FrameLoop.held`) — and then draws on the lost device, the dead frame it was,
-until X5.4i decides a loss. `stop` ends the loop as `engine.stopRenderLoop`
-did (a script's, never the game's). Babylon's own `beginFrame` and `endFrame`
+readout's, the profiler's and the particle fields' clock. A lost device ENDS
+the loop (`stop`, as `engine.stopRenderLoop` did; below). Babylon's own `beginFrame` and `endFrame`
 ran inside a RESIZE (`_initializeMainAttachments`) until X5.4h stopped
 constructing the engine; the clock samples where it did — once as the boot
 configures the canvas's context and at every size that takes
 (`CanvasSurface.onSized`), as Babylon's monitor did.
+
+### A lost device
+
+**A LOST DEVICE RELOADS THE PAGE TO THE MENU** (`Game.deviceLost`,
+`core/deviceLoss.ts`, `BABYLON_EXIT.md` X5.4i, the owner's (A)). Every draw
+of ours is made on the one device `main.ts` asked for, and nothing rebuilds
+one in place (`FINDINGS.md` 74 is what that would take), so the answer is the
+page's rather than a state's. The device's own `lost` — every reason, the
+`"destroyed"` a script's `device.destroy()` resolves it with included — runs a
+TEARDOWN and then the ANSWER, the answer whatever the teardown does (each step
+on its own: a throw is said and the rest go on). The teardown runs between
+frames, after the last submit, none recording into it — a frame is one
+synchronous step of the loop and a promise settles between two — in the order
+the loss owes it: the loop STOPPED, so no frame runs into what follows;
+`Renderer.dispose` (its frame buffer, the frame's targets and every texture
+`TextureMaker` made, destroyed at once); `ChainPasses.dispose` (the chain's
+pool and the canvas's depth, which are `Game`'s and which the renderer does
+not reach); `FrameSubmit.dispose` (the frame timer's queries and buffers; the
+encoder made after the last submit abandoned, never finished); and
+`LampAtlas.dispose` (`LocalShadows.dispose` releases nothing). The device is
+not destroyed by it — a lost one has nothing to give back, and a promise that
+settles once cannot be re-entered anyway. Then the answer: a first loss
+records itself in `sessionStorage` with a one-line notice and RELOADS; the menu
+the reload brings up shows the notice once, as a toast; the settings are
+`localStorage`'s and come back as they were. **A second loss inside
+`CONFIG.graphics.deviceLossWindow` (60 s) of the last does not reload**: it
+puts the boot's own "No graphics device" plate back up (`main.ts`,
+`deviceLostForGood`) and lets the page go under it — the match left, the sound
+suspended, the pointer lock released — so a device that dies on every boot
+cannot loop the page. Storage that cannot be read or written is answered with
+the plate too. **Offline the round is lost; in a server's match the player has
+left it**, its slot going back to its bot as any leaving peer's does
+(`docs/multiplayer.md`), and the notice says to rejoin it from Online — there
+is no reconnect into your own slot, and the reload is not one. What a reload
+owes nothing: the canvas's listeners (`CanvasSurface.adoptInput`), the boot's
+`uncapturederror` listener and the context's configuration, which the
+document takes with it. What no frame resumes owes nothing either:
+`FrameLoop`'s order against the cap and the clock sample Babylon's restore
+took (`FrameLoop`'s header) — both owed by a loss survived in place, if one
+ever is. A loss before `Game` exists is the boot's (the device's request
+failing is its third failure branch); one landing between the request and the
+constructor is heard the moment the constructor hangs its handler on the
+already-settled promise, and reloads; one under the building card or the
+deploy screen is the same reload — nothing about the state it lands in
+changes the answer.

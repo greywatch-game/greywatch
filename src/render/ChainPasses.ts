@@ -43,10 +43,11 @@
  *   (`FrameHost.afterSubmit`), never inside a frame that may still bind it —
  *   the one exception being `dispose`, which destroys the pool and the
  *   canvas's depth AT ONCE, and removes its end-of-frame observer, because it
- *   is a TEARDOWN with no frame after it (as `FrameTargets.dispose` is). It
- *   has NO caller yet: `ChainPasses` is `Game`'s, not the `Renderer`'s, so
- *   `Renderer.dispose` does not reach it, and a lost device's teardown owes
- *   it a call of its own, between frames, after the last submit (X5.4i).
+ *   is a TEARDOWN with no frame after it (as `FrameTargets.dispose` is). Its
+ *   one caller is a lost device's teardown (`Game.deviceLost`, X5.4i), right
+ *   after `Renderer.dispose`, between frames, after the last submit, the loop
+ *   stopped: `ChainPasses` is `Game`'s, not the `Renderer`'s, so
+ *   `Renderer.dispose` does not reach it.
  * Never: imports Babylon; draws — a stage of the chain does, into the pass
  * this begins (`PostChain`); clears the frame (`Renderer.end` does).
  * Contract: `docs/rendering.md`, "Our renderer's frame".

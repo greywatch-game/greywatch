@@ -22,6 +22,15 @@ must not be one: the states in this file are states of a `Game` that exists,
 and everything before the constructor returns is `index.html`'s markup and
 `main.ts`'s failure branches.
 
+**A lost graphics device is not a state either, and it is not answered by
+one** (`Game.deviceLost`, `BABYLON_EXIT.md` X5.4i): whatever state it lands in
+— the menu, the building card, deploy, a life, a lid — the loop is stopped,
+our renderer torn down, and the PAGE reloads to `menu`, where a toast says
+what happened; a second inside `CONFIG.graphics.deviceLossWindow` puts the
+boot's "No graphics device" plate back up over a page that stays where it
+stopped. So no row of `SCREENS` has to say what it does on a loss, and a new
+screen owes it nothing (`docs/game.md`, "A lost device").
+
 **What that buys is the property ~40 smoke scripts rest on**: because every
 await is `main.ts`'s, the constructor stays SYNCHRONOUS, so `window.__celshock`
 is non-null with every pool built the moment it returns and the machine is in

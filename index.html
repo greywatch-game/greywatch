@@ -82,7 +82,9 @@
          constructor returns the canvas is an empty black rectangle anyway.
          Faded and then removed from the DOM outright by `main.ts` — not
          merely hidden, since a fixed layer over a first-person shooter that
-         is transparent still eats the pointer.
+         is transparent still eats the pointer — and put back, failed, only
+         when the graphics device is lost a second time inside a minute
+         (`main.ts`'s `deviceLostForGood`).
          ================================================================= */
       #boot {
         --u: clamp(0.5px, calc(100vmin / 1080), 2.4px);

@@ -409,7 +409,10 @@ main.ts             # Bootstrap. Imports src/ui/base.css FIRST. Awaits the two
                     #   _initializeMainAttachments did. Owns the boot screen: names each
                     #   await on its load plate, paints before the constructor,
                     #   fades it on the first drawn frame, or fills plate and
-                    #   note with one of the four failures.
+                    #   note with one of the four failures — and puts it back
+                    #   up, as "No graphics device", for a device lost twice
+                    #   inside the window (deviceLostForGood, handed to Game,
+                    #   X5.4i).
 vite.config.ts      # The client build, and the three plugins only it can hold:
                     #   the DEV-only write endpoint the F4 mixer saves
                     #   through (WRITABLE, the literal table of files it may
@@ -598,7 +601,16 @@ src/
                         #   installDomListeners, wireScreens; tick dispatches
                         #   one method per screen. Holds ONE ScreenStack and
                         #   never assigns a state — go/raiseLid/lowerLid, and
-                        #   takeDown for what a screen means on screen
+                        #   takeDown for what a screen means on screen. A LOST
+                        #   device is deviceLost (X5.4i): the teardown, then the
+                        #   page reloaded to the menu, or the boot's plate
+    deviceLoss.ts       # What a lost graphics device leaves the page
+                        #   (X5.4i): the last loss in sessionStorage (its
+                        #   time and the menu's notice), the loop guard —
+                        #   answerLoss: a reload, or the boot's "No graphics
+                        #   device" plate for a second loss inside
+                        #   CONFIG.graphics.deviceLossWindow — and the notice
+                        #   read once after the reload (takeLossNotice)
     ScreenStack.ts      # The state machine's shape as data: GameState, the
                         #   SCREENS table (what a lid covers, what holds the
                         #   page's own match, what owes a server's frame, what
@@ -759,12 +771,10 @@ src/
                         #   its performance monitor's arithmetic ported), the
                         #   frame's begin and end as Observables of its own,
                         #   the frame id, the ONE submit (FrameSubmit) and the
-                        #   profiler's present around it; held while the
-                        #   device is lost — off the device's own lost since
-                        #   X5.4h, for the task Babylon's engine took to flag a
-                        #   restore (ahead of the cap, where Babylon tested
-                        #   after it); stop(), stopRenderLoop's port, a
-                        #   script's (no caller in the game)
+                        #   profiler's present around it; stop(),
+                        #   stopRenderLoop's port, the first step of a lost
+                        #   device's teardown (Game.deviceLost, X5.4i; no hold
+                        #   any more — no frame is drawn after a loss)
     teamView.ts         # Which side the player is LOOKING from: the one remap
                         #   between the authority's team INDEX and the team a
                         #   body is DRAWN and NAMED as, so every player sees
@@ -2873,7 +2883,8 @@ src/
                         #   pass of the frame recorded into it (prepareEncoder),
                         #   finished and handed over in one queue.submit; the
                         #   frame's GPU timer under ?gpu; dispose the teardown
-                        #   path, no caller until X5.4i
+                        #   path, a lost device's (X5.4i), the encoder after
+                        #   the last submit abandoned
     FrameTimer.ts       # ?gpu's whole-frame timer (gpu.frame, X5.4g): two
                         #   EMPTY compute passes of its own, the frame's
                         #   encoder's first and last commands, stamping its
@@ -3330,7 +3341,9 @@ src/
                         #   filter (CubeMips; a mipped texture has no view until
                         #   its chain is recorded) and samplers (SAMPLING,
                         #   anisotropic); a picture made once; a released
-                        #   texture destroyed after the frame's submit
+                        #   texture destroyed after the frame's submit, and
+                        #   every texture it made (held weakly) at once by
+                        #   dispose, a lost device's teardown (X5.4i)
     ProbeBake.ts        # The reflection bake as OURS (X3.6c): the cube pool
                         #   (never destroyed, COPY_SRC; each a ProbeCube that
                         #   ReflectionSystem indexes), each released probe's six

@@ -56,6 +56,23 @@ export const graphics = {
    * which the deadline holds by itself — see `FrameCap`.
    */
   frameCapSlackMs: 4,
+  /**
+   * How soon after a lost graphics device a SECOND loss is read as a device
+   * that will not hold, in seconds — `core/deviceLoss.ts`, `BABYLON_EXIT.md`
+   * X5.4i. A loss RELOADS the page to the menu; a second inside this window
+   * of the first puts the boot's "No graphics device" plate up instead of
+   * reloading again, so a device that dies on every boot cannot loop the page.
+   *
+   * It has to cover a whole reload and some menu after it, or a device that
+   * dies a few seconds into every boot loops anyway: the boot is the bundle
+   * (cached by the service worker), Havok's ~2 MB, the match host and the
+   * constructor — seconds on a desktop and up to some twenty on a slow phone —
+   * and the frames before the menu is drawn. A minute is that three times over
+   * with room to spare, and still short enough that a loss after ordinary play
+   * — a driver update, a laptop swapping GPUs, a single TDR mid-round — gets
+   * the reload it can use rather than a dead end.
+   */
+  deviceLossWindow: 60,
   /** Emissive glow (neon, reticle, tracers) — `GlowPass`'s bloom strength. */
   glowIntensity: 1.15,
   /**

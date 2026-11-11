@@ -77,7 +77,11 @@ and what it must never do. Read it before editing that file.
 bleed). **Babylon.js** + **TypeScript** + **Vite**; ES modules, Node 24+,
 **WebGPU** — there is no WebGL fallback engine in the tree and there must not be
 one. `main.ts` gates the boot on `navigator.gpu` AND an adapter, so a browser
-without one gets a sentence instead of a black page — **and no module may name
+without one gets a sentence instead of a black page. **A LOST device RELOADS
+the page to the menu** (`Game.deviceLost`, `docs/game.md`), a second inside
+`CONFIG.graphics.deviceLossWindow` standing the boot's "No graphics device"
+plate instead — so nothing of the game's may `destroy()` the device it draws
+with, and nothing is rebuilt in place (`FINDINGS.md` 74) — **and no module may name
 a WebGPU global (`GPUBufferUsage`, …) at its top level**, which throws before
 the gate runs — `scripts/check-webgpu-globals.mjs` fails the build on one
 (`docs/build.md`).

@@ -32,7 +32,8 @@
  * texture AT ONCE because it is a TEARDOWN with no frame after it (its one
  * caller, `Renderer.dispose`, as `Renderer` destroys its frame buffer; its
  * caller owes it a moment between frames, after the last submit, which a lost
- * device's teardown is — X5.4i); a target not made yet has no view, and a
+ * device's teardown is — `Game.deviceLost`, X5.4i, the loop stopped first); a
+ * target not made yet has no view, and a
  * pass or a stage reading it draws nothing.
  * Never: imports Babylon; records a pass — `Renderer` records every pass into
  * these (the frame's clear and main pass, the mask) and the glow's blur

@@ -26,7 +26,12 @@
  * the first rendered frame, or turned into the failure message on a machine
  * that cannot run the game at all. That message is the second half of the
  * same job: without it, "no WebGPU" and "still loading" are the same screen
- * forever.
+ * forever. **It comes back ONCE after the boot**, failed with the boot's own
+ * "No graphics device" plate: when the graphics device is lost a second time
+ * inside a short window (`Game.deviceLost`, `core/deviceLoss.ts`,
+ * `BABYLON_EXIT.md` X5.4i) — the first loss reloads the page, and this is
+ * what stops a device that dies on every boot looping it (`deviceLostForGood`,
+ * handed to `Game`).
  *
  * **There are TWO things the game cannot start without, and they are checked
  * here for the same reason.** The GPU is one; Havok is the other. The physics
@@ -190,6 +195,42 @@ function bootFailed(cause: string, message: string): void {
 }
 
 /**
+ * The third failure: the adapter said yes and no graphics device could be had
+ * — at the boot (the device's request), or, put back up by `Game`, a device
+ * lost a second time inside `CONFIG.graphics.deviceLossWindow`
+ * (`BABYLON_EXIT.md` X5.4i, `core/deviceLoss.ts`), which the page answers with
+ * this plate rather than another reload. One text, so the two read alike.
+ */
+function deviceFailed(): void {
+  bootFailed(
+    "No graphics device",
+    "This browser has WebGPU but could not start a graphics device, so the " +
+      "game cannot run. Check that hardware acceleration is switched on and " +
+      "that the graphics driver is up to date.",
+  );
+}
+
+/**
+ * The boot screen, held from the boot on: `bootDone` takes it out of the
+ * document, and a device lost for good (`deviceLostForGood`) puts it back.
+ */
+let bootScreen: HTMLElement | null = null;
+
+/**
+ * `deviceFailed` over a page that has booted (`Game`'s second answer to a lost
+ * device): the boot screen put back as it was taken off — in the document,
+ * its fade undone — and then failed as the boot fails it.
+ */
+function deviceLostForGood(): void {
+  const boot = bootScreen;
+  if (boot) {
+    boot.classList.remove("done");
+    if (!boot.isConnected) document.body.appendChild(boot);
+  }
+  deviceFailed();
+}
+
+/**
  * Resolves once the page has PAINTED what was written before it. A rAF
  * callback runs before the frame it belongs to is drawn, so the timeout after
  * it is what lands on the far side of that paint. The constructor is one
@@ -222,15 +263,21 @@ function bootDone(): void {
   requestAnimationFrame(() =>
     requestAnimationFrame(() => {
       const boot = document.getElementById("boot");
-      if (!boot) return;
+      // Never over a failure: a device lost for good before these two frames
+      // (`deviceLostForGood`) has put the plate up, and it stays up.
+      if (!boot || boot.classList.contains("failed")) return;
       boot.classList.add("done");
-      setTimeout(() => boot.remove(), 350);
+      // …nor if it failed inside the fade, which `deviceLostForGood` undid.
+      setTimeout(() => {
+        if (!boot.classList.contains("failed")) boot.remove();
+      }, 350);
     }),
   );
 }
 
 window.addEventListener("DOMContentLoaded", async () => {
   const canvas = document.getElementById("game-canvas") as HTMLCanvasElement;
+  bootScreen = document.getElementById("boot");
   /** The game, once built: what the device's error listener reads its frame off. */
   let game: Game | null = null;
   // FIRST, and before the physics download: a machine with no WebGPU should
@@ -367,8 +414,9 @@ window.addEventListener("DOMContentLoaded", async () => {
     // Babylon's first device listener, as `initAsync` added it: the first
     // twenty uncaptured errors said on the console with the frame they came
     // in (Dawn's own report of each is the browser's). Its second, the LOST
-    // device, is `Game`'s (`FrameLoop.held`; what a loss then does is
-    // `BABYLON_EXIT.md` X5.4i's).
+    // device, is `Game`'s (`Game.deviceLost`, `BABYLON_EXIT.md` X5.4i): the
+    // page reloads to the menu, so this listener needs nothing on a loss —
+    // the document goes with it.
     let uncaptured = -1;
     device.addEventListener("uncapturederror", (event) => {
       const error = (event as GPUUncapturedErrorEvent).error;
@@ -395,12 +443,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     surface.onSized(() => clock.sample());
     surface.resize();
   } catch (err) {
-    bootFailed(
-      "No graphics device",
-      "This browser has WebGPU but could not start a graphics device, so the " +
-        "game cannot run. Check that hardware acceleration is switched on and " +
-        "that the graphics driver is up to date.",
-    );
+    deviceFailed();
     throw err;
   }
   // **Where the page's own match runs** (`BABYLON_EXIT.md` X2.5c C4): in a
@@ -434,7 +477,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   bootStage("Building the world");
   await painted();
   try {
-    game = new Game(canvas, havok, device, surface, local, clock);
+    game = new Game(canvas, havok, device, surface, local, clock, deviceLostForGood);
   } catch (err) {
     // Re-thrown: the message is for the player, the console is for whoever
     // has to work out which of a hundred systems failed to construct.

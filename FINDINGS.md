@@ -2789,8 +2789,8 @@ stage over them, or in the new upload.
 
 **Status:** open; measured 2026-10-23 and 2026-11-04 on the desktop (the RTX box,
 Chrome's Dawn on D3D12), cause unknown. **The newest reading says the tree is not
-what provokes it** ("The paired test"), and **the game has no answer when it
-happens** ("What a player gets").
+what provokes it** ("The paired test"), and **since `BABYLON_EXIT.md` X5.4i the
+game answers it with a reload to the menu** ("What a player gets").
 
 ### What was measured
 
@@ -2871,21 +2871,20 @@ tried**.
 
 ### What a player gets
 
-**Nothing: the frame stops for good with no message.** Dawn's `DXGI_ERROR_DEVICE_HUNG`
-and Babylon's "WebGPU context lost" are warnings on the console, Babylon says
-"successfully restored", then "A fatal error occurred during WebGPU creation" and
-"Device failed at creation", and the frame counter never moves again (held at 397 in
-`deploy` over 120 s of polling, the page visible and focused, `evaluate` answering).
-**Nothing in `src/` handles it**: no listener on the device's `lost`, nothing on
-Babylon's context-lost observables, no toast and no way back to the menu, so the game
-looks frozen and only a reload gets out. Pre-existing and not fixed here. What it would
-take is a small door beside `Game.worldFailed`'s toast, and whether a player's own TDR
-is common enough to earn it is unmeasured. The bank's tools no longer hang on it
-(`harness.mjs`, `VERIFYING.md`). **Every draw and pass of OUR renderer is made once on
-the device it was handed and never rebuilt**, so a restored device would bring none of
-them back either; since `BABYLON_EXIT.md` X5.1b that includes the irradiance volume's
-three compute passes, which Babylon's `_rebuildComputeEffects` used to rebuild — one
-more thing a door here would owe a rebuild of, not a new way to fail.
+**Since `BABYLON_EXIT.md` X5.4i, a reload to the menu.** Until then it was nothing:
+the frame stopped for good with no message (Dawn's `DXGI_ERROR_DEVICE_HUNG` and
+Babylon's "WebGPU context lost" warnings on the console, Babylon's "successfully
+restored", then "A fatal error occurred during WebGPU creation" and "Device failed at
+creation", and the frame counter never moving again — held at 397 in `deploy` over
+120 s of polling, the page visible and focused, `evaluate` answering), and only a
+reload got out. Now the device is the game's (X5.4h), and its `lost` is answered by
+the page (`Game.deviceLost`, `docs/game.md`, "A lost device"): the loop stopped, our
+renderer torn down, and the page reloaded to the menu with a one-line notice — a
+second loss inside a minute shows the boot's "No graphics device" plate instead. What
+is still open here is the HANG itself, which no answer to it touches, and whether a
+player's own TDR is common enough to earn more than a reload: survived in place, the
+round kept, is `FINDINGS.md` 74. The bank's tools stop on it (`harness.mjs`,
+`VERIFYING.md`), the game's own console line among the ones they hear since X5.4i.
 
 ### How to settle it
 - A fresh boot of the machine, then the loop again (the scratch watchdog,
@@ -3188,3 +3187,49 @@ is a finished atlas around the player.
   places once and nothing moves while the deploy camera stands still.
 - **What it moves**: every bank row lit by a lamp the bank's sequence leaves
   part-baked — a `Picture change:` with the bank's numbers, and the owner's call.
+
+## 74. A lost device costs the round: surviving one IN PLACE is a feature for after the exit
+
+**Recorded by `BABYLON_EXIT.md` X5.4i** (row "X5.4, a lost device", the owner's
+decision of 2026-11-10: (A) for the exit, this as (B) after X6.2, "no new features
+inside a step"). Not measured: a design that is not built.
+
+**What a loss does since X5.4i** (`Game.deviceLost`, `docs/game.md`, "A lost
+device"): the page reloads to the menu with a one-line notice, the settings kept;
+offline the round is lost, and in a server's match the player has left it and rejoins
+from the lobby as a new peer (`docs/multiplayer.md`, "Reconnect into your own slot",
+is not built either). A second loss inside `CONFIG.graphics.deviceLossWindow` shows
+the boot's plate.
+
+**What (B) would be**: a new device asked for exactly as the boot asks (`main.ts`,
+the same descriptor, or a shader moves — the glow blur's text reads a device limit),
+the canvas's context configured on it, and EVERY GPU resource of the session and of
+the standing map rebuilt on it — the renderer's caches and pipelines (the declared
+list `PipelineWarmup` waits on), the body, hull and weapon kits, the world's blocks,
+the scatter's instances, the shadow maps and the lamps' atlas, the irradiance
+volume and its traces, the reflection probes, every texture `TextureMaker` made
+(the pictures' canvases are kept as their keys, so they can be uploaded again), the
+effect pools, the particle fields — while the round goes on: the page's own match
+lives in its Worker and never touched the device, so it survives as it is, and a
+server's match never knew. It reaches every owner of a GPU resource in the tree,
+which is why it is not a step's.
+
+**What it would owe that a reload does not** (X5.4h's review): the canvas's
+listeners (`CanvasSurface.adoptInput`), the boot's `uncapturederror` listener and
+the context's `unconfigure`, each kept or re-hung on the new device; the frame's
+order against the cap on the frame it resumes (`FrameLoop`'s header: the cap asked
+ahead of a hold, as Babylon's `_renderLoop` had it, so the first frame steps one
+refresh and not the whole loss), and the clock sample Babylon's restore took
+(`_restoreEngineAfterContextLost`, `initAsync`, `_initializeMainAttachments`,
+`beginFrame`). **Every `dispose` the reload's teardown calls is the first half of
+it** (`Renderer`, `ChainPasses`, `FrameSubmit`, `LampAtlas`), and none of the rest
+has a dispose path that has ever been called.
+
+### How to settle it
+
+- Measure first: how often a player's device is lost at all (a counter beside the
+  profiler's, or a line in a capture), on the phones and laptops it would be for.
+  A reload costs the round and seconds; if losses are rare, (A) is the answer.
+- If it is built: `lost.mjs --twice` grades it as it grades (A), with the verdict
+  turned round — no reload, the round still standing, frames drawn on a NEW device —
+  and every bank row taken after a restore against one taken without.
