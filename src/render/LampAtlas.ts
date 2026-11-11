@@ -29,9 +29,8 @@
  * material did; the depth attachment is cleared by each pass and kept by
  * none, because no tile is drawn by two; a texture is born CLEARED to the
  * far value by a submit of its own, and is destroyed when the atlas is
- * re-sized or this is disposed — and by Babylon, at the end of its frame,
- * when a wrapped view of it is disposed, so whoever wraps one lets the view
- * go only with the texture it wraps (`LocalShadows.remake`); `ready` is
+ * re-sized or this is disposed (Babylon held a wrapped view of it until
+ * `BABYLON_EXIT.md` X5.4h, and destroyed it again when the view went); `ready` is
  * false until the proxies' pipeline (`proxiesReady`, on the round's declared
  * list) and the casters are built, and `LocalShadows` shadows no light until
  * it is true — a proxies' pipeline
@@ -293,7 +292,7 @@ export class LampAtlas {
     return this.work !== null;
   }
 
-  /** The atlas, or null while it has none — what a Babylon reader is handed a wrapped view of. */
+  /** The atlas, or null while it has none. */
   get texture(): GPUTexture | null {
     return this.colour;
   }

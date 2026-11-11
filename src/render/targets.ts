@@ -20,9 +20,10 @@
  * compiled ahead, so the formats it is compiled for must be known ahead.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
  *
- * WHY THESE. Under `compatibilityMode = false` Babylon records render
- * bundles, and a bundle or pipeline whose attachment state differs from the
- * pass's by a format, a count or a sample count is refused — and one refused
+ * WHY THESE. A pipeline whose attachment state differs from the pass's by a
+ * format, a count or a sample count is refused (and while Babylon recorded
+ * render bundles under `compatibilityMode = false`, until `BABYLON_EXIT.md`
+ * X5.4e, one refused
  * pipeline poisons the bundle and blacks out the frame (`docs/rendering.md`:
  * "The trap it found" for the cascade, "The MRT route, spiked" for bundles
  * keyed on attachment state). What the frame draws into is the FRAME — our
@@ -31,7 +32,8 @@
  * to X5.4e
  * — made as the post chain's first target, `CelInk`'s input, was: one
  * `rgba8unorm` colour attachment (a post-process's default texture), one
- * sample (`main.ts` builds the engine with `antialias: false`), and
+ * sample (Babylon's engine was built with `antialias: false`, and `main.ts`
+ * asks for no multisampling since X5.4h), and
  * `depth32float` (`stencil: false`; `plans/webgpu-ref/depth.mjs`). And it is a
  * TEXTURE, which Babylon rendered upside down and ours renders the same way —
  * so `flipY`, which negates clip-space y in every vertex stage and mirrors

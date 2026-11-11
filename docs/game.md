@@ -183,12 +183,15 @@ record.
 
 ## The constructor takes what it cannot build, and stays SYNCHRONOUS
 
-**There are three arguments beside the canvas and they are arguments for the
-same reason**: `havok` is the instantiated physics WASM, `engine` is a
-`WebGPUEngine` whose `initAsync` has already resolved, and `local` is the page's
-own match host (`MatchHost`, X2.5c C4), whose Worker has already answered its
-first call or been given up on for the page's own thread. All three are awaited
-by `main.ts` and a failure of any is the boot screen's business — the host
+**There are four arguments beside the canvas and they are arguments for the
+same reason**: `havok` is the instantiated physics WASM, `device` the
+`GPUDevice` and `surface` the canvas its context is configured on
+(`core/CanvasSurface.ts`) — the game's own since `BABYLON_EXIT.md` X5.4h, asked
+for and configured as Babylon's `WebGPUEngine` did, whose `initAsync` resolving
+was this argument until then — and `local` is the page's own match host
+(`MatchHost`, X2.5c C4), whose Worker has already answered its first call or
+been given up on for the page's own thread. All are awaited by `main.ts` and a
+failure of any is the boot screen's business — the host
 cannot fail by its Worker, which falls back to the page, only by the in-page
 module's fetch failing too — so nothing in this file is written twice for a
 machine that never got one, and there is no init state, no `ready` flag and no
@@ -634,13 +637,15 @@ around that submit, moves the loop's `frameId` and raises its
 `onEndFrameObservable` — and only then requests the next refresh, so a frame
 that throws stops the loop as Babylon's did. **The world is stepped by the
 REFRESH stamps (`FrameCap.elapsed`), never by the loop's delta**, which is the
-readout's, the profiler's and the particle fields' clock. A lost device holds
-the loop (`held`) until the engine restores one, as `_contextWasLost` held
-Babylon's — but ahead of the cap, where Babylon's test came after the cap had
-admitted the refresh, so the first frame after a restore steps across the
-whole loss (`FrameLoop.held`) — until X5.4i decides a loss. `stop` ends the
-loop as `engine.stopRenderLoop` did (a script's, never the game's). Babylon's own `beginFrame` and
-`endFrame` still run inside a RESIZE (`_initializeMainAttachments`, its own
-flush and its own depth's clear) until X5.4h stops constructing the engine;
-they hold nothing of ours, and the clock takes its sample there as Babylon's
-monitor did.
+readout's, the profiler's and the particle fields' clock. A lost device (the
+device's own `lost` since X5.4h) holds the loop (`held`) for the one task
+Babylon's engine took to flag a restore, as `_contextWasLost` held Babylon's —
+but ahead of the cap, where Babylon's test came after the cap had admitted the
+refresh, so the first frame after it steps across the whole hold
+(`FrameLoop.held`) — and then draws on the lost device, the dead frame it was,
+until X5.4i decides a loss. `stop` ends the loop as `engine.stopRenderLoop`
+did (a script's, never the game's). Babylon's own `beginFrame` and `endFrame`
+ran inside a RESIZE (`_initializeMainAttachments`) until X5.4h stopped
+constructing the engine; the clock samples where it did — once as the boot
+configures the canvas's context and at every size that takes
+(`CanvasSurface.onSized`), as Babylon's monitor did.

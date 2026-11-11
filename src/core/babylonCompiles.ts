@@ -3,11 +3,12 @@
  * read 0 in every state (`BABYLON_EXIT.md` X5.3d, "Left for X6.1, guarded").
  * Owns: one count per engine and the set of effects it has already counted.
  * Invariants: counts only after `watchBabylonCompiles` — which `Game` calls
- * first thing in its constructor — so what the ENGINE compiles for itself
- * while it is built is never counted: `clearQuad`, `WebGPUClearQuad`'s, made
- * by `WebGPUEngine.initAsync` and kept for the engine's life, the one Babylon
- * effect that can never go while Babylon is the engine. Every compile after
- * that is a Babylon MATERIAL being drawn, or about to be, and none may be: no
+ * first thing in its constructor, on the scene's engine as it is built (a
+ * `NullEngine` since `BABYLON_EXIT.md` X5.4h, `core/SceneEngine.ts`, which
+ * compiles nothing for itself; Babylon's `WebGPUEngine` until then, whose
+ * `initAsync` compiled `clearQuad` before the watch and kept it for the
+ * engine's life). Every compile after that is a Babylon MATERIAL being drawn,
+ * or about to be, and none may be: no
  * Babylon mesh is drawn and no Babylon material compiles in any state since
  * the map editor went (X5.3c), our renderer drawing everything off recipes,
  * and the cel program's Babylon declarations and the factory's per-frame
@@ -18,8 +19,8 @@
  * already holds for a source and defines it has compiled, so a new object is
  * a compile. (An effect compiled BEFORE the watch and asked for again after
  * it would be counted too, there being no public way to list the engine's
- * cache: nothing asks for `clearQuad` by name, the clear quad holding its
- * own.) **There is one door it does not see**: an `EffectWrapper` built with
+ * cache: none is compiled before it on a `NullEngine`.) **There is one door
+ * it does not see**: an `EffectWrapper` built with
  * `useShaderStore` false, Babylon's default, makes its `Effect` with `new`
  * rather than through `createEffect` (`Materials/effectRenderer.pure.js`), so
  * a wrapper built that way (an `EffectRenderer`'s pass, say) would compile

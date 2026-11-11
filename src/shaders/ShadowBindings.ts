@@ -16,9 +16,10 @@
  * `RawTexture`s were; a frame texture is null only before its owner first
  * publishes it (a frame with one null draws nothing). The Babylon cel
  * materials, which neither draw nor compile in any state
- * (`core/babylonCompiles.ts`) and stay declared until X6.1, are still handed a
- * map's wrapped view where the map stands, and nothing where it is off or for
- * the clouds: no Babylon texture is left to hand them. So a new material is seeded on the spot
+ * (`core/babylonCompiles.ts`) and stay declared until X6.1, are handed no
+ * texture at all: the maps' wrapped views went with Babylon's engine
+ * (`BABYLON_EXIT.md` X5.4h), and no Babylon texture is left to hand them. So
+ * a new material is seeded on the spot
  * (`applyShadow`, called by every creation path in the factory), each map is published before the first material
  * is asked for, and the clouds start on a texel of their own. The per-frame
  * pushes (the clouds, the lightning, the lamp slots) write into objects every
@@ -31,7 +32,7 @@
  * volume is NOT here: it is bound only on cel materials and stays with the
  * factory (`setGi`), which binds it straight after this on creation.
  */
-import { type BaseTexture, Color3, Matrix, type ShaderMaterial, Vector3, Vector4 } from "@babylonjs/core";
+import { Color3, Matrix, type ShaderMaterial, Vector3, Vector4 } from "@babylonjs/core";
 import type { FrameTextures, FrameUniforms } from "../render/frame";
 import type { OwnTexture } from "../render/HostBindGroup";
 import { type MadeTexture, SAMPLING, type TextureMaker } from "../render/TextureMaker";
@@ -41,10 +42,9 @@ export class ShadowBindings {
   /**
    * The world's four maps, the bodies' and the lamps' atlas as OUR renderer
    * binds them (`render/WorldShadows.ts`, `render/BodyShadowMap.ts`,
-   * `render/LampAtlas.ts`, `BABYLON_EXIT.md` X3.6a, X4.1c and X3.6b): the
-   * textures the fields below are Babylon's wrapped views of, handed to our
-   * frame as themselves — or the lit texel while a map is off (X5.4d). Null
-   * only until a map is first published.
+   * `render/LampAtlas.ts`, `BABYLON_EXIT.md` X3.6a, X4.1c and X3.6b), handed
+   * to our frame as themselves — or the lit texel while a map is off (X5.4d).
+   * Null only until a map is first published.
    */
   private readonly own: {
     shadowMap: OwnTexture | null;
@@ -61,20 +61,17 @@ export class ShadowBindings {
     foliageMap: null,
     localAtlasMap: null,
   };
-  // Shadow-map state, pushed onto every cel material as it is created: each
-  // map as Babylon's wrapped view of ours, null while it is off.
-  private shadowMap: BaseTexture | null = null;
+  // Shadow-map state, pushed onto every cel material as it is created (the
+  // maps themselves are `own`'s, our frame's alone).
   private shadowMatrix = Matrix.Identity();
   private shadowParams = new Vector4(0.0025, 0.15, 0.06, 0);
   // The world's NEAR cascade: the same casters over a small window around
   // the player at a fine texel — see `ShadowSystem`'s near map. x = depth
   // bias, y = its own facet offset in metres.
-  private nearShadowMap: BaseTexture | null = null;
   private nearShadowMatrix = Matrix.Identity();
   private readonly nearShadowParams = new Vector4(0, 0, 0, 0);
   // The bodies' map, the same three things over again — see
   // `SHADOW_UNIFORM_NAMES` for why none of it is shared with the pair above.
-  private bodyShadowMap: BaseTexture | null = null;
   private bodyShadowMatrix = Matrix.Identity();
   private bodyShadowParams = new Vector4(0.0015, 0, 0, 0);
   // The clouds' shadow — see `setCloudShadow`. The texture is this object's
@@ -94,14 +91,12 @@ export class ShadowBindings {
   private readonly cloudShadowPushed = new Vector4(0, 0, 0, 1);
   // The foliage's front-face map — see `setFoliageMap`. Cel materials only:
   // the water has no translucency and does not declare it.
-  private foliageMap: BaseTexture | null = null;
   private foliageMatrix = Matrix.Identity();
   private foliageParams = new Vector4(0, 0, 0, 0);
   // The lamps' atlas — see `setLocalShadowMap`. The per-slot arrays are handed
   // to every consumer BY REFERENCE and rewritten in place, so a frame's
   // assignment reaches every material without a walk: a `ShaderMaterial`
   // keeps the array it was given and re-reads it on every bind.
-  private localAtlasMap: BaseTexture | null = null;
   private readonly pointSpot = new Float32Array(MAX_POINT_LIGHTS * 4).map(
     (_, i) => (i % 4 === 3 ? -2 : 0),
   );
@@ -115,7 +110,6 @@ export class ShadowBindings {
   // black whenever no flash is up, which is the shader's early-out.
   private readonly flashDir = new Vector3(0, -1, 0);
   private readonly flashColor = new Color3(0, 0, 0);
-  private flashMap: BaseTexture | null = null;
   private flashMatrix = Matrix.Identity();
   private readonly flashParams = new Vector4(0, 0, 0, 0);
 
@@ -241,15 +235,12 @@ export class ShadowBindings {
   /**
    * Binds the ShadowSystem's depth map — once a rung, and once each time the
    * map changes hands; the texture object is stable while its contents
-   * re-render. `map` is Babylon's wrapped view of it for the Babylon cel
-   * materials, and `own` the same texture as our renderer holds it, which our
-   * frame binds; both null while the map is off, which our frame binds as the
-   * lit texel (`TextureMaker.lit`) and the Babylon materials as nothing.
+   * re-render. `own` is the texture as our renderer holds it, which our
+   * frame binds; null while the map is off, which our frame binds as the lit
+   * texel (`TextureMaker.lit`).
    */
-  setShadowMap(map: BaseTexture | null, own: OwnTexture | null): void {
-    this.shadowMap = map;
+  setShadowMap(own: OwnTexture | null): void {
     this.own.shadowMap = own ?? this.lit;
-    if (map) this.eachShadowReader((mat) => mat.setTexture("shadowMap", map));
   }
 
   /** The light's view*projection; re-uploaded when the shadow camera moves. */
@@ -263,10 +254,8 @@ export class ShadowBindings {
    * 1x1 on a rung without one, read through a matrix that puts every receiver
    * OUTSIDE its window so the far map answers alone.
    */
-  setNearShadowMap(map: BaseTexture | null, own: OwnTexture | null): void {
-    this.nearShadowMap = map;
+  setNearShadowMap(own: OwnTexture | null): void {
     this.own.nearShadowMap = own ?? this.lit;
-    if (map) this.eachShadowReader((mat) => mat.setTexture("nearShadowMap", map));
   }
 
   /** The near light's view*projection; re-uploaded when its window moves. */
@@ -286,19 +275,17 @@ export class ShadowBindings {
 
   /**
    * The BODIES' map, bound once a rung for the same reason the world's is:
-   * the texture object is stable while its contents re-render. `map` and
-   * `own` as `setShadowMap`'s (`render/BodyShadowMap.ts`, ours since X4.1c),
-   * both null on a rung that has none.
+   * the texture object is stable while its contents re-render. `own` as
+   * `setShadowMap`'s (`render/BodyShadowMap.ts`, ours since X4.1c), null on a
+   * rung that has none.
    *
    * Unlike the world's it re-renders EVERY frame, and nothing here has to know
    * that — a texture is a texture. What does change is that this one can never
    * be skipped: it is in `SHADOW_SAMPLER_NAMES`, so a material that lists it and
    * never receives it loses every draw.
    */
-  setBodyShadowMap(map: BaseTexture | null, own: OwnTexture | null): void {
-    this.bodyShadowMap = map;
+  setBodyShadowMap(own: OwnTexture | null): void {
     this.own.bodyShadowMap = own ?? this.lit;
-    if (map) this.eachShadowReader((mat) => mat.setTexture("bodyShadowMap", map));
   }
 
   /** The bodies' light view*projection; re-uploaded when THAT window moves. */
@@ -338,10 +325,8 @@ export class ShadowBindings {
   }
 
   /** The lightning's own depth map, bound once per rung like the others, and `own` as `setShadowMap`'s. */
-  setFlashMap(map: BaseTexture | null, own: OwnTexture | null): void {
-    this.flashMap = map;
+  setFlashMap(own: OwnTexture | null): void {
     this.own.flashMap = own ?? this.lit;
-    if (map) this.eachShadowReader((mat) => mat.setTexture("flashMap", map));
   }
 
   /** That map's view*projection, re-uploaded when a strike re-aims it. */
@@ -361,10 +346,8 @@ export class ShadowBindings {
    * which is a rung change or the atlas changing hands; the two vectors are
    * held by reference and are rewritten in place.
    */
-  setLocalShadowMap(map: BaseTexture | null, own: OwnTexture | null): void {
-    this.localAtlasMap = map;
+  setLocalShadowMap(own: OwnTexture | null): void {
     this.own.localAtlasMap = own ?? this.lit;
-    if (map) this.eachShadowReader((mat) => mat.setTexture("localAtlasMap", map));
   }
 
   /**
@@ -403,10 +386,8 @@ export class ShadowBindings {
    * Pushed over the CACHE, as every setter here is at bottom: the water carried
    * no translucency and declared none, while it had a material.
    */
-  setFoliageMap(map: BaseTexture | null, own: OwnTexture | null): void {
-    this.foliageMap = map;
+  setFoliageMap(own: OwnTexture | null): void {
     this.own.foliageMap = own ?? this.lit;
-    if (map) this.cels.forEach((mat) => mat.setTexture("foliageMap", map));
   }
 
   /** The foliage light's view*projection; re-uploaded when its window moves. */
@@ -457,30 +438,22 @@ export class ShadowBindings {
    * after it.
    */
   applyShadow(mat: ShaderMaterial): void {
-    if (this.shadowMap) mat.setTexture("shadowMap", this.shadowMap);
     mat.setVector4("cloudShadow", this.cloudShadowPushed);
     mat.setVector4("cloudShadowRay", this.cloudShadowRay);
     mat.setMatrix("lightMatrix", this.shadowMatrix);
     mat.setVector4("shadowParams", this.shadowParams);
-    if (this.nearShadowMap) mat.setTexture("nearShadowMap", this.nearShadowMap);
     mat.setMatrix("nearLightMatrix", this.nearShadowMatrix);
     mat.setVector4("nearShadowParams", this.nearShadowParams);
-    if (this.bodyShadowMap) {
-      mat.setTexture("bodyShadowMap", this.bodyShadowMap);
-    }
     mat.setMatrix("bodyLightMatrix", this.bodyShadowMatrix);
     mat.setVector4("bodyShadowParams", this.bodyShadowParams);
-    if (this.localAtlasMap) mat.setTexture("localAtlasMap", this.localAtlasMap);
     mat.setArray4("pointSpot", this.pointSpot as unknown as number[]);
     mat.setArray4("pointShade", this.pointShade as unknown as number[]);
     mat.setVector4("localAtlas", this.localAtlas);
     mat.setVector4("localParams", this.localParams);
-    if (this.flashMap) mat.setTexture("flashMap", this.flashMap);
     mat.setMatrix("flashLightMatrix", this.flashMatrix);
     mat.setVector4("flashParams", this.flashParams);
     mat.setVector3("flashDir", this.flashDir);
     mat.setColor3("flashColor", this.flashColor);
-    if (this.foliageMap) mat.setTexture("foliageMap", this.foliageMap);
     mat.setMatrix("foliageLightMatrix", this.foliageMatrix);
     mat.setVector4("foliageParams", this.foliageParams);
   }

@@ -651,12 +651,14 @@ you are on before you believe anything else in this section.
     the frame rate stops where those frames left it — `engine.getFps()` read
     ~3 forever under Babylon's loop; since `BABYLON_EXIT.md` X5.4g the readout
     is `g.frameLoop.clock.getFps()`, the same arithmetic over the same
-    samples (not re-measured here), and the engine's own moves only at a
-    resize — so do not read either as a stall. (That
+    samples (not re-measured here), and since X5.4h there is no
+    `WebGPUEngine` to read at all (the scene's is a `NullEngine`) — so do not
+    read the readout as a stall. (That
     index was `scene.getFrameId()` until `BABYLON_EXIT.md` X5.4f; the scene is
     never rendered since, so `getFrameId()` reads 0 on every machine.)
 
-- **The engine fetches glslang and twgsl from `cdn.babylonjs.com`, so match
+- **Babylon's `WebGPUEngine` fetched glslang and twgsl from `cdn.babylonjs.com`
+  (none is built since `BABYLON_EXIT.md` X5.4h, so nothing can now), so match
   `**/*.babylonjs.com/**` and never a hostname from memory.** Four files —
   `v9.19.1/glslang/glslang.{js,wasm}` and `v9.19.1/twgsl/twgsl.{js,wasm}` —
   pulled the first time a GLSL shader reaches the backend. **Nothing in the tree
@@ -664,7 +666,7 @@ you are on before you believe anything else in this section.
   what it costs is `docs/pwa.md`'s offline promise: a game that needs the
   network on its first draw. `harness.mjs` owns the check and every script it
   boots gets it — `bootMap` records every request to the domain AND aborts the
-  route, and `assertNoTranspiler` reads the engine.
+  route, and `assertNoTranspiler` reads the scene's engine.
 
   **Four traps in that one check, and the last two are the reason it is two
   halves rather than one.** It has already produced a false PASS by watching
@@ -698,15 +700,18 @@ is one machine's:
   `corecheck`**: both are the authority's (X2.5c C4), and the page's
   `g.conquest` is a MIRROR the next snapshot overwrites.
 - **`window.__celshock` now appears THREE awaits later than it used to.**
-  `main.ts` awaits an adapter and a device (`checkWebGPU`, then
-  `new WebGPUEngine(...)` + `initAsync()`), then `loadHavok()`, then the
+  `main.ts` awaits an adapter and a device (`checkWebGPU`, then — since
+  `BABYLON_EXIT.md` X5.4h — its own `requestAdapter` and `requestDevice` and
+  the canvas's `configure`, where `new WebGPUEngine(...)` + `initAsync()`
+  stood), then `loadHavok()`, then the
   page's own match host (`openMatchHost`, a Worker answering its first call)
   before constructing `Game`, so a script that polls for the handle is waiting
   on a GPU device, a ~2 MB physics binary and a Worker as well as on the
   bundle — give
   `waitForFunction` a generous timeout and do not read the absence of the handle
   as a construction failure. The upside is unchanged and is the whole point of
-  keeping the constructor synchronous: `g.engine`, `g.physics.havok` (the raw
+  keeping the constructor synchronous: `g.renderer.device` and `g.surface` (the
+  canvas, `core/CanvasSurface.ts`; `g.engine` until X5.4h), `g.physics.havok` (the raw
   module and world, `havok.ts` — there is no Babylon plugin any more) and the
   pools are non-null on the FIRST evaluate, so nothing has to wait for anything
   separately. To exercise the failure branch, `page.route("**/*.wasm", r
@@ -744,7 +749,9 @@ is one machine's:
 - **A DEPTH BIAS set live does NOTHING, and it fails silently in the direction
   that looks like an answer.** `material.zOffsetUnits` (and `zOffset`) is baked
   into the WebGPU render BUNDLE the first time that material draws, and this
-  engine is built with `compatibilityMode = false`, so a bundle is recorded once
+  engine was built with `compatibilityMode = false` (a Babylon material draws in
+  no state since X5.3c, and no `WebGPUEngine` is built since X5.4h: the finding
+  is Babylon's, kept for the method), so a bundle is recorded once
   and replayed — a sweep that boots, draws, and then walks a material through
   0, -2, -4, -8, -16 photographs the FIRST value five times and reports a
   perfectly flat curve. It is the same value at every rung, which reads exactly
@@ -1152,8 +1159,9 @@ is one machine's:
   `scene.render()` draws nothing of ours at all, the frame being
   `g.sceneFrame.render()` (`core/SceneFrame.ts`, called from `Game.tick`); a
   manual call of THAT is untested, so presume the finding holds for it too.
-  **The loop is the game's since X5.4g, so `engine.stopRenderLoop()` stops
-  NOTHING** — the engine runs no loop — and the stop is `g.frameLoop.stop()`
+  **The loop is the game's since X5.4g, so `engine.stopRenderLoop()` stopped
+  NOTHING** — the engine ran no loop, and since X5.4h there is no `g.engine`
+  to call it on — and the stop is `g.frameLoop.stop()`
   (`core/FrameLoop.ts`, its port: the pending refresh cancelled, none
   requested again, not restartable, so close the page after it).
   The failure is the worst shape there is:

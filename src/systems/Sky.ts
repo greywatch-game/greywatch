@@ -22,6 +22,7 @@
  */
 import { Camera, Color3, Matrix, Quaternion, Scene, Vector3, Vector4 } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import type { CanvasSurface } from "../core/CanvasSurface";
 import { clamp } from "../core/math";
 import { BACKSIDE, createDisc, createSphere } from "../geometry/primitives";
 import type { GeometryBuffer } from "../geometry/buffer";
@@ -176,6 +177,8 @@ export class Sky {
     private readonly skyDraw: SkyDraw,
     /** Our renderer's maker of the textures the game paints: the dome's, the disc's and the shadow field. */
     private readonly textures: TextureMaker,
+    /** The canvas: the render size the clouds' depth line is derived at (`core/CanvasSurface.ts`, `BABYLON_EXIT.md` X5.4h). */
+    private readonly surface: Pick<CanvasSurface, "getRenderWidth" | "getRenderHeight">,
   ) {
     const n = CONFIG.sky.clouds.shadow.size;
     // One texture for the life of the process, so its readers are bound to it
@@ -356,9 +359,8 @@ export class Sky {
     // every resize, and the camera could be swapped out from under a cache.
     const cam = this.scene.activeCamera;
     if (cam) {
-      const engine = this.scene.getEngine();
-      const w = Math.max(1, engine.getRenderWidth());
-      const h = Math.max(1, engine.getRenderHeight());
+      const w = Math.max(1, this.surface.getRenderWidth());
+      const h = Math.max(1, this.surface.getRenderHeight());
       const half = Math.tan(cam.fov * 0.5);
       const horizontal = cam.fovMode === Camera.FOVMODE_HORIZONTAL_FIXED;
       const tanX = horizontal ? half : (half * w) / h;

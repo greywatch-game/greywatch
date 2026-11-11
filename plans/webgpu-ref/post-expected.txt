@@ -224,3 +224,31 @@
 # scenarios, 562 items), and every queue write the same in number and bytes.
 **.passes[*].role
 **.whole.submits[*].buffers
+#
+# X5.4h: the DEVICE and the CANVAS are the game's (`main.ts`,
+# `src/core/CanvasSurface.ts`) and Babylon's `WebGPUEngine` is not constructed
+# (the scene stands on a `NullEngine`, `src/core/SceneEngine.ts`). The device is
+# asked for exactly as Babylon asked for its own — no limits, no feature but
+# `timestamp-query` under `?gpu` — and the context configured exactly as it
+# configured its own (the format, usage 17, premultiplied): every limit, every
+# feature, every `configure` argument but the device it names, and every pass
+# of every scenario, with every queue write, equal. What moves is named here:
+# the device's LABEL (ours, where Babylon's was `BabylonWebGPUDevice0`) wherever
+# it is recorded; the engine's own adapter request, which passed Babylon's whole
+# options object to `requestAdapter` (`antialias`, `stencil`, the lock-step
+# three, `deviceDescriptor`, `enableGPUDebugMarkers`, `swapChainFormat` — none
+# of them a member WebGPU's `GPURequestAdapterOptions` reads) where ours passes
+# `powerPreference` alone, the one it reads, the same in both; and
+# `compatibilityMode`, an engine flag with no engine to hold it (null).
+*.statics.compatibilityMode
+*.statics.boot.adapterOptions[*].antialias
+*.statics.boot.adapterOptions[*].stencil
+*.statics.boot.adapterOptions[*].deterministicLockstep
+*.statics.boot.adapterOptions[*].lockstepMaxSteps
+*.statics.boot.adapterOptions[*].timeStep
+*.statics.boot.adapterOptions[*].deviceDescriptor
+*.statics.boot.adapterOptions[*].enableGPUDebugMarkers
+*.statics.boot.adapterOptions[*].swapChainFormat
+*.statics.boot.deviceDescriptors[*].label
+*.statics.boot.configures[*].deviceLabel
+*.statics.boot.deviceLabel

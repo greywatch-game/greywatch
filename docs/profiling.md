@@ -1491,9 +1491,10 @@ bound render target, and a property read rather than a layout), the window's
 CSS size as last read (on every `resize` and once a second, hooked with the
 profiler's others — `innerWidth` read per frame can flush a layout, and a
 size kept only by the event a stale canvas missed would miss it too) and the
-engine's scaling level. `viewport` lists every (window, backing store) pair
+canvas's scaling level (the engine's until `BABYLON_EXIT.md` X5.4h, the game's
+`CanvasSurface` since). `viewport` lists every (window, backing store) pair
 the window's rows saw, most frames first, with the canvas Babylon's `resize`
-would have made of that window (`expected`, the CSS size over the level,
+(ported as written, `core/CanvasSurface.ts`) would have made of that window (`expected`, the CSS size over the level,
 truncated as `setSize` truncates) and **`matched` false where the canvas was
 more than a pixel off it — a canvas that did not follow its window, drawing a
 different workload from the one the window implies**. Every `SegmentStat`

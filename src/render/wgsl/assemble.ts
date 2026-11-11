@@ -36,8 +36,8 @@
  * `fragmentInputs.position` — turned around ONTO THE CANVAS, where
  * `yFactor_` is 1. So a fragment built for a texture pass needs nothing, and
  * the vertex stage's flip is written here. A fragment for the CANVAS is
- * REFUSED: its position rule reads the render height, which the engine
- * rewrites on every resize (`_initializeMainAttachments`), and no frame field
+ * REFUSED: its position rule reads the render height, which moves on every
+ * resize (the canvas's, `core/CanvasSurface.ts`), and no frame field
  * carries it yet — nothing of ours draws onto the canvas before the game owns
  * the frame (`BABYLON_EXIT.md` X5), and the step that draws there owes the
  * frame that field. The dither keyed on the pixel (`celDither`) and the facet

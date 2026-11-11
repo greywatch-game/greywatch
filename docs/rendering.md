@@ -3425,7 +3425,7 @@ comment. Escape the backtick or write the name bare. It is the same class of tra
 as the `//`-with-a-`;` one below and it bites in the opposite direction: that one
 is the preprocessor eating code, this one is JavaScript eating the shader.
 
-## Our renderer's frame: the game's, through one seam to the engine
+## Our renderer's frame: the game's, on the game's device
 
 **The FRAME is the game's since `BABYLON_EXIT.md` X5.4f** (`core/SceneFrame.ts`):
 the scene is never rendered. `Game.tick` calls `sceneFrame.render()` where it
@@ -3469,21 +3469,54 @@ and handed to the queue in ONE `queue.submit` (`render/FrameSubmit.ts`) —
 then raises its end, which is where `FrameHost.afterSubmit` is told. Under
 `?gpu` the same encoder carries the frame's GPU timer, two empty passes of its
 own as its first and last commands (`render/FrameTimer.ts`, `gpu.frame`).
-Babylon's two encoders hold nothing of ours and are submitted only by its
-own resize (`_initializeMainAttachments`' begin and end of frame, until X5.4h
-stops constructing the engine).
+Babylon's two encoders held nothing of ours from then and were submitted only
+by its own resize (`_initializeMainAttachments`' begin and end of frame) until
+X5.4h stopped constructing the engine.
+
+**The DEVICE and the CANVAS are the game's since `BABYLON_EXIT.md` X5.4h.**
+`main.ts` asks for the adapter (the boot's `powerPreference`, all of Babylon's
+engine options WebGPU reads) and the device (NO limits, no feature but
+`timestamp-query` under `?gpu` and where the adapter has it, a label of ours)
+and configures the canvas's context (the preferred format, `RENDER_ATTACHMENT
+| COPY_SRC`, premultiplied) exactly as `WebGPUEngine.initAsync` did, because a
+shader moves if they are not: the glow blur's text is built at the device's
+`maxInterStageShaderVariables`. `core/CanvasSurface.ts` owns the canvas:
+Babylon's `resize` and `setSize` ported as written (the CSS size off
+`clientWidth` or the bounding rect, over the scaling level, `| 0`, written only
+when it moved), the scaling level `Game.applyRenderScale` sets (the render
+scale's setter), and every answer about the size — the gun marker, the kit
+stage's aspect, the bench's hold, the chain's frame size, `WorldCulling`'s size
+gate, `GlowPass`'s kernel and the clouds' depth line all ask the SURFACE. The
+frame's clock takes a sample where Babylon's engine ran
+`_initializeMainAttachments` (its `beginFrame` sampled Babylon's performance
+monitor): once as the boot configures the context, and at every size that
+takes (`CanvasSurface.onSized`), so its deltas are Babylon's sample for
+sample. What the scene's input manager did to the canvas element on
+Babylon's engine — the tab index, a press and a release default-prevented and
+focusing, the pointer captured — is the surface's too (`adoptInput`).
+**Babylon's `WebGPUEngine` is not constructed**: the scene stands on a
+`NullEngine` until X6.1 (`core/SceneEngine.ts`, row "X5.4, Babylon's engine"),
+told WebGPU's depth range (`isNDCHalfZRange`, which `Vector3.ProjectToRef`
+reads off the last engine built too) and the surface's size, so the camera's
+projection is Babylon's to the bit (the camera log). Gone with the engine: its
+main depth (the canvas pass's is `ChainPasses`'), its resize frames (a flush,
+a pass on the swap chain's texture that loaded it and cleared that depth, a
+submit), its clear quad, and the shadow maps' wrapped views (`ShadowBindings`
+hands the Babylon cel materials, which neither draw nor compile, no texture).
+A lost device holds the loop for the task Babylon's engine took to flag a
+restore, and then draws on the lost device — the dead frame it was — until
+X5.4i decides what a loss is.
 
 **Our renderer (`src/render/`) owns everything it draws with**: the frame's
 uniform buffer, every bind-group layout and every pipeline, the frame's own
 TARGETS and PASSES (X5.4e, below) and the post chain's (X5.4f, below). Its
 `FrameHost` (`render/frameHost.ts`) is the game's frame's (`SceneFrame.host`),
-which reaches Babylon's ENGINE through ONE object, `BabylonEngineSeam`
-(`render/babylonSeam.ts`): the device — the encoder and the end of frame being
-the game's loop's since X5.4g. Nothing else in the directory names a Babylon type. The seam
-only names them: every import there is `import type`, so the Babylon-free gate
-walks it with the rest of the directory.
-**Every Babylon INTERNAL the renderer reaches is on the numbered list in the
-seam's header** — ONE since X5.4g, the device (1); TWO from X5.4f, with the upload encoder (9). At X3.2 there were five: the device, the lazily-started
+and nothing it hands over is Babylon's: the device is the game's (X5.4h), the
+encoder and the end of frame the game's loop's (X5.4g). **Nothing in the
+directory names a Babylon type since X5.4h**, which deleted the seam
+(`render/babylonSeam.ts`, `BabylonEngineSeam`) with its last item, the
+device. **Every Babylon INTERNAL the renderer reached was on the numbered list
+in the seam's header** (`BABYLON_EXIT.md` rule 4) — NONE since X5.4h; ONE from X5.4g, the device (1); TWO from X5.4f, with the upload encoder (9). At X3.2 there were five: the device, the lazily-started
 pass, the bundle list, the pass's attachment wrapper, and the render
 target (its identity and its flip). X3.3a added three: rendering group 0's
 `onBeforeTransparentRendering`, a texture's own `GPUTextureView`, and the
@@ -3493,8 +3526,8 @@ recorded into (`FrameHost.prepareEncoder`, below). X3.5 added a tenth: the
 group's `_renderAlphaTest`, WRAPPED while the main pass's group 0 renders, so
 a draw can land between its opaque and alpha-tested lists (below). That list
 only shrinks after Phase 3: X5.3d retired 6 and 10, X5.4f 2, 3, 4, 5, 7
-and 8 with the last passes of Babylon's they reached, the post chain's, and
-X5.4g 9 with Babylon's submit. Two older touches in one file
+and 8 with the last passes of Babylon's they reached, the post chain's,
+X5.4g 9 with Babylon's submit, and X5.4h 1 with Babylon's engine. Two older touches in one file
 (`FrameProfile`'s: Babylon's timestamp query, and a patch on a Babylon class's
 prototype, a value this directory may not import) were never the renderer's
 and were retired at X5.4g with the instruments they fed (report version 38). A third, `webgpuLeaks`' (`_deletePipelineContext`), was deleted at
@@ -4483,15 +4516,15 @@ light's matrix over.
   rest of the map, and until X3.7c through a `lose` and a listener. `Game`
   tears the round down after the task in hand, because a failure can land
   INSIDE a render whose unsubmitted commands still hold the textures the
-  map's teardown destroys (`WorldShadows.setSize` destroys at once; disposing
-  Babylon's wrapped view of one destroys the `GPUTexture` it wraps too, at the
-  end of Babylon's frame — so a texture of ours is always made afresh under a
-  fresh view).
-- **Babylon's readers sample a WRAPPED view** (`WebGPUEngine.
-  wrapWebGPUTexture`, re-pointed at itself so it has a view, nearest and
-  clamped as the generator's map was), and our frame binds the texture
-  itself (`OwnTexture`, through `ShadowBindings.fillFrameTextures`) — rule 5
-  both ways. **The format is `r16float`, where Babylon's was `rgba16float`**
+  map's teardown destroys (`WorldShadows.setSize` destroys at once — and a
+  texture of ours is made afresh whatever its size, as it was while Babylon's
+  wrapped view of it, let go with it, destroyed it too, until X5.4h).
+- **Our frame binds the texture itself** (`OwnTexture`, through
+  `ShadowBindings.fillFrameTextures`). Babylon's readers sampled a WRAPPED view
+  until `BABYLON_EXIT.md` X5.4h (`WebGPUEngine.wrapWebGPUTexture`, re-pointed
+  at itself so it had a view, nearest and clamped as the generator's map was),
+  which went with Babylon's engine: the cel materials that held it neither draw
+  nor compile. **The format is `r16float`, where Babylon's was `rgba16float`**
   with the depth in red and 1 in the other three, which no reader reads
   (`textureGather` of channel 0, the volumetrics' `.x`): the same numbers in
   a quarter of the memory. **The casters are held on EVERY rung, `off`

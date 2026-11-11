@@ -9,7 +9,8 @@
 export const graphics = {
   /**
    * The render-scale ladder, as a fraction of the display's NATIVE pixels —
-   * `engine.setHardwareScalingLevel(1 / (devicePixelRatio * scale))`.
+   * `surface.setHardwareScalingLevel(1 / (devicePixelRatio * scale))`
+   * (`core/CanvasSurface.ts`, Babylon's engine's until `BABYLON_EXIT.md` X5.4h).
    *
    * Native rather than CSS pixels because CSS pixels are not a resolution: on a
    * 2x panel one CSS pixel is four real ones, so a ladder in CSS terms means

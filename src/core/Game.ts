@@ -103,7 +103,6 @@ import {
   type SubMesh,
   Vector3,
   Viewport,
-  type WebGPUEngine,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { Vector3 as MathVector3, type Vector3Like } from "../math";
@@ -113,7 +112,6 @@ import {
   fogAmountAt,
   writePaletteIndex,
 } from "../shaders/CelShader";
-import { BabylonEngineSeam } from "../render/babylonSeam";
 import { ChainPasses } from "../render/ChainPasses";
 import { Renderer } from "../render/Renderer";
 import { BodyDraw } from "../render/BodyDraw";
@@ -151,6 +149,7 @@ import { Volumetrics, volumetricStages, type VolumetricRung } from "../shaders/V
 import { difficultyNames, profileFor } from "../entities/BotSkill";
 import { callsign } from "../entities/callsigns";
 import { OTHER_TEAM, type Combatant, type Team } from "../entities/Combatant";
+import type { CanvasSurface } from "./CanvasSurface";
 import { FrameCap } from "./FrameCap";
 import { type FrameClock, FrameLoop } from "./FrameLoop";
 import { FrameProfile } from "./FrameProfile";
@@ -338,6 +337,7 @@ import { UrlOverrides, urlFlag } from "./urlOverrides";
 import { setViewerTeam, teamLook } from "./teamView";
 import { RenderId } from "./renderId";
 import { SceneFrame } from "./SceneFrame";
+import { SceneEngine } from "./SceneEngine";
 import { type BabylonCompiles, watchBabylonCompiles } from "./babylonCompiles";
 
 /**
@@ -647,14 +647,26 @@ function hashId(id: string): number {
 }
 
 export class Game {
-  private engine: WebGPUEngine;
+  /**
+   * THE CANVAS (`core/CanvasSurface.ts`, `BABYLON_EXIT.md` X5.4h): its WebGPU
+   * context, its backing store's size and the scaling level that size is read
+   * through — what every reader of a render size, a scaling level or an
+   * aspect ratio asks. The render-scale setting's setter is
+   * `applyRenderScale`. Public for the probes (`plans/webgpu-ref/harness.mjs`).
+   */
+  readonly surface: CanvasSurface;
+  /**
+   * The engine the Babylon scene stands on until X6.1: a `NullEngine` told
+   * WebGPU's depth range and the surface's size (`core/SceneEngine.ts`, row
+   * "X5.4, Babylon's engine"). The scene's and its camera's alone.
+   */
+  private readonly sceneEngine: SceneEngine;
   private scene: Scene;
   private mats: CelMaterialFactory;
   /**
-   * OUR renderer (`src/render/`), drawing inside Babylon's frame through the
-   * seam (`render/babylonSeam.ts`). Built once with the factory whose fields
-   * fill its frame; it draws nothing until something is `add`ed to it
-   * (`BABYLON_EXIT.md` Phase 3), and costs one empty branch a frame until then.
+   * OUR renderer (`src/render/`), every pass of the frame on the game's own
+   * device (`BABYLON_EXIT.md` X5.4f to X5.4h). Built once with the factory
+   * whose fields fill its frame.
    */
   readonly renderer: Renderer;
   /**
@@ -1908,45 +1920,45 @@ export class Game {
   /**
    * **The two things the game cannot start without are both arguments now, and
    * they are arguments for the same reason.** `havok` is the instantiated WASM
-   * module (see `PhysicsWorld`); `engine` is a `WebGPUEngine` whose
-   * `initAsync` has already resolved. Both are REQUIRED, both are awaited by
-   * `main.ts` before this constructor is reached, and a failure of either is
-   * the boot screen's business — so nothing in here has to be written twice
-   * for a machine that never got one.
+   * module (see `PhysicsWorld`); `device` is the `GPUDevice` and `surface` the
+   * canvas its WebGPU context is configured on (`core/CanvasSurface.ts`), both
+   * the GAME's since `BABYLON_EXIT.md` X5.4h, asked for and configured by
+   * `main.ts` as Babylon's `WebGPUEngine` asked for and configured its own.
+   * All are REQUIRED, all are awaited by `main.ts` before this constructor is
+   * reached, and a failure of any is the boot screen's business — so nothing
+   * in here has to be written twice for a machine that never got one.
    *
-   * The engine used to be built here, back when it was a `WebGLEngine` and its
-   * constructor was synchronous. WebGPU's is not: an adapter and a device are
-   * both `await`s. What did NOT change is that this constructor stays
-   * synchronous — `Game` is not a `static async create()`, because
-   * `window.__celshock` existing with every pool non-null the moment the
-   * constructor returns is what ~40 smoke scripts rest on (`VERIFYING.md`).
-   * Awaiting in `main.ts` and injecting the result is what keeps both of those
-   * true at once, and it is the move `havok` already made.
-   *
-   * The MSAA and stencil arguments moved with the options they are about, and
-   * are in `main.ts` beside the `initAsync` call — where there is also a note
-   * on why `WebGPUEngine.CreateAsync` is not what builds this.
+   * What did NOT change is that this constructor stays synchronous — `Game`
+   * is not a `static async create()`, because `window.__celshock` existing
+   * with every pool non-null the moment the constructor returns is what ~40
+   * smoke scripts rest on (`VERIFYING.md`). Awaiting in `main.ts` and
+   * injecting the result is what keeps both of those true at once, and it is
+   * the move `havok` already made.
    */
   constructor(
     canvas: HTMLCanvasElement,
     havok: HavokInstance,
-    engine: WebGPUEngine,
+    device: GPUDevice,
+    surface: CanvasSurface,
     local: MatchHost,
     /**
-     * The frame's clock (`FrameClock`), made by the boot before the engine's
-     * first `beginFrame` and sampled at every one of the engine's since
-     * (`main.ts`); our loop samples it at every frame of its own.
+     * The frame's clock (`FrameClock`), made by the boot before the canvas's
+     * first size and sampled at every size that took since (`main.ts`); our
+     * loop samples it at every frame of its own.
      */
     clock: FrameClock,
   ) {
     this.canvas = canvas;
-    this.engine = engine;
+    this.surface = surface;
+    // The engine the scene stands on (`core/SceneEngine.ts`): a `NullEngine`,
+    // the last engine built, so `Vector3.ProjectToRef` reads its depth range.
+    this.sceneEngine = new SceneEngine(surface);
     // Before anything of the game's can make a Babylon effect: every one made
     // from here on is counted, and must not be (`core/babylonCompiles.ts`).
-    if (import.meta.env.DEV) this.babylonCompiles = watchBabylonCompiles(engine);
+    if (import.meta.env.DEV) this.babylonCompiles = watchBabylonCompiles(this.sceneEngine);
     // **The page's own match host** — in a Worker or on a channel in this
     // thread (`src/net/matchHost.ts`), chosen by
-    // the boot and handed in as `havok` and `engine` are. Every round that is
+    // the boot and handed in as `havok` and the device are. Every round that is
     // not a server's is a match on it (`openLocalRound`).
     this.localOwner = new LocalOwner(local, {
       fileTiming: (timing) => this.prof.fileTiming(P.sim, SIM_SLOTS, timing),
@@ -1959,31 +1971,39 @@ export class Game {
       replaced: (host) => this.prof.setSimMode(host.mode),
     });
     this.prof.setSimMode(local.mode);
-    const seam = new BabylonEngineSeam(this.engine);
     // THE LOOP is ours (`core/FrameLoop.ts`, `BABYLON_EXIT.md` X5.4g): the
     // refresh `FrameCap` admits, the clock, the frame's one encoder and its
     // one submit — `?gpu` times the whole frame on it (`gpu.frame`; `main.ts`
     // asked the device for `timestamp-query`). Started at the constructor's
     // end, where `runRenderLoop` was.
-    // The clock is the boot's (`main.ts`), sampled at the engine's own
-    // `beginFrame` too, which since this step runs only inside a resize
-    // (`_initializeMainAttachments`' frame, until X5.4h stops constructing the
-    // engine) — where Babylon's performance monitor took a sample — so the
-    // delta and the rate are Babylon's sample for sample.
-    this.frameLoop = new FrameLoop(this.frameCap, seam.device, this.prof, clock, urlFlag("gpu"));
-    // A lost device held Babylon's loop (`_contextWasLost`) until its engine
-    // restored one, and it holds ours until X5.4i decides a loss — ahead of
-    // the cap where Babylon's test came after the cap had admitted each
-    // refresh, so the first frame after a restore steps across the whole loss
-    // (`FrameLoop.held`'s note, booked on X5.4i).
-    this.engine.onContextLostObservable.add(() => {
+    // The clock is the boot's (`main.ts`), sampled at every size of the
+    // canvas that took too (`CanvasSurface.onSized`, X5.4h), where Babylon's
+    // engine ran `_initializeMainAttachments` and its performance monitor took
+    // a sample — so the delta and the rate are Babylon's sample for sample.
+    this.frameLoop = new FrameLoop(this.frameCap, device, this.prof, clock, urlFlag("gpu"));
+    // A LOST device (`BABYLON_EXIT.md` X5.4h: the device's own `lost`, where
+    // Babylon's engine raised `onContextLostObservable`) holds the loop for
+    // as long as Babylon's held it: `_restoreEngineAfterContextLost` flagged
+    // the restore one task later (a zero `setTimeout`, its new device's
+    // `initAsync` not awaited), and from then on every frame was drawn on the
+    // device that was lost — a dead frame. There is no engine to restore a
+    // device now, so the loop resumes at the same task's boundary and draws
+    // the same dead frame, until X5.4i decides what a loss is (row "X5.4, a
+    // lost device"). Ahead of the cap where Babylon's test came after the cap
+    // had admitted each refresh (`FrameLoop.held`'s note, booked on X5.4i).
+    void device.lost.then((info) => {
+      console.warn(`WebGPU device lost (${info.reason}): ${info.message}`);
       this.frameLoop.held = true;
-    });
-    this.engine.onContextRestoredObservable.add(() => {
-      this.frameLoop.held = false;
+      setTimeout(() => {
+        this.frameLoop.held = false;
+      }, 0);
     });
     this.prof.setFrameTimer(this.frameLoop.submit.timer);
-    this.scene = new Scene(this.engine);
+    this.scene = new Scene(this.sceneEngine);
+    // What the scene's input manager did to the canvas when the scene attached
+    // it, on Babylon's engine (`CanvasSurface.adoptInput`): the tab index, the
+    // press and release default-prevented and focusing, the pointer captured.
+    surface.adoptInput();
     // The `Scene` constructor sets this true, and it is held FALSE: Babylon
     // steps a scene's physics engine from `scene.animate()`, which our frame
     // no longer calls (`SceneFrame` ports its animation ratio, X5.4g), and the
@@ -1996,7 +2016,7 @@ export class Game {
     // `scene.render()` did, in its order, so the scene is never rendered.
     // Before anything hangs on its points, and before our renderer, whose
     // host it is.
-    this.sceneFrame = new SceneFrame(this.scene, this.renderId, seam, this.frameLoop);
+    this.sceneFrame = new SceneFrame(this.scene, this.renderId, device, this.frameLoop);
     // The scene has no Babylon lights at all: cel materials carry their own
     // key/ambient/point-light uniforms (fed by the LightingSystem) and every
     // effect material is unlit emissive.
@@ -2106,7 +2126,7 @@ export class Game {
       CONFIG.graphics.localShadows.staticFacesPerFrame,
       CONFIG.graphics.localShadows.maxProxies,
     );
-    this.localShadows = new LocalShadows(this.scene, this.mats, this.shadowQuality, this.lampAtlas);
+    this.localShadows = new LocalShadows(this.mats, this.shadowQuality, this.lampAtlas);
     // The reflection probes' cubes as our renderer bakes them, in every round
     // (`BABYLON_EXIT.md` X3.6c, X3.7b):
     // the probe's eye is PASSED in a frame of the bake's own, which the
@@ -2231,7 +2251,7 @@ export class Game {
     const glowBlur = new GlowBlur(this.renderer, glowKernels(window.devicePixelRatio || 1));
     this.glowBlur = glowBlur;
     const targets = this.renderer.targets;
-    const glow = new GlowPass(this.scene, this.sceneFrame, this.cameraSys.camera, {
+    const glow = new GlowPass(this.scene, this.sceneFrame, this.cameraSys.camera, this.surface, {
       // The frame's size — its depth's, which the mask borrows. Worth ~20% of
       // the frame on the three big maps against a mask that redrew the whole
       // visible scene to occlude itself (docs/rendering.md, "The glow: what
@@ -2262,13 +2282,12 @@ export class Game {
       this.renderer.device,
       this.sceneFrame.host,
       targets,
-      // The context the engine configured: a canvas has one `webgpu` context.
-      canvas.getContext("webgpu") as GPUCanvasContext,
+      // The context the boot configured (`main.ts`): a canvas has one.
+      surface.context,
     );
     this.chainPasses = chainPasses;
     {
       const camera = this.cameraSys.camera;
-      const engine = this.engine;
       // Before anything in the frame draws (`onBeforeRenderObservable`, where
       // `PostPasses.prepareFrame` hung): the frame at this frame's render size,
       // read as Babylon sized a post-process's input
@@ -2276,8 +2295,8 @@ export class Game {
       this.sceneFrame.onBeforeRenderObservable.add(() => {
         if (this.scene.activeCamera !== camera) return;
         chainPasses.prepareFrame(
-          engine.getRenderWidth(true) | 0,
-          engine.getRenderHeight(true) | 0,
+          surface.getRenderWidth(true) | 0,
+          surface.getRenderHeight(true) | 0,
           this.postChain?.firstActive() ?? null,
         );
       });
@@ -2429,7 +2448,7 @@ export class Game {
     // nothing. Nothing it does is visible to a
     // ray, a collision, a shadow caster or a cube probe; see `WorldCulling`,
     // which is the whole argument.
-    this.culling = new WorldCulling(this.scene);
+    this.culling = new WorldCulling(this.scene, this.surface);
     // The world our renderer draws, in every pass, with no fallback: what it
     // cannot draw is the round's end (`worldFailed`).
     this.handover = new BlockHandover(
@@ -2820,7 +2839,7 @@ export class Game {
     // The sky is painted once here, the boot map's, and re-applied per round
     // alongside the environment; it is DRAWN only while a map stands
     // (`Sky.setStanding`, from `installMap` and `teardownMap`).
-    this.sky = new Sky(this.scene, this.cloudDraw, this.skyDraw, this.renderer.textureMaker);
+    this.sky = new Sky(this.scene, this.cloudDraw, this.skyDraw, this.renderer.textureMaker, this.surface);
     // The clouds' shadow field, bound once: `Sky` keeps one texture for the
     // life of the process and rewrites it as the ring drifts. Until now every
     // material held `ShadowBindings`' own "no cloud" texel.
@@ -3262,7 +3281,7 @@ export class Game {
       }
     });
     window.addEventListener("keydown", () => this.sfx.unlock(), { once: true });
-    // Through `applyRenderScale` rather than straight to `engine.resize`,
+    // Through `applyRenderScale` rather than straight to `surface.resize`,
     // because `devicePixelRatio` is not a constant: it changes when a window
     // crosses to a monitor with a different density and when the page is
     // zoomed, and the scaling level is computed from it. Setting the level
@@ -3935,7 +3954,7 @@ export class Game {
   private setProfiling(on: boolean): void {
     if (on === this.prof.armed) return;
     if (on) {
-      this.prof.arm(this.engine);
+      this.prof.arm(this.surface);
       this.prof.setMap(this.mapDef.id);
     } else {
       this.prof.disarm();
@@ -3944,10 +3963,13 @@ export class Game {
   }
 
   /**
-   * Sizes the backing store from the player's render scale and the display.
+   * Sizes the backing store from the player's render scale and the display:
+   * the render-scale setting's SETTER (`BABYLON_EXIT.md` X5.4h), on the
+   * game's own canvas (`core/CanvasSurface.ts`, Babylon's `resize` and
+   * `setSize` ported).
    *
-   * Babylon's scaling level is the RECIPROCAL of the resolution — level 1 means
-   * one backing pixel per CSS pixel, which is what the engine has always run at
+   * The scaling level is the RECIPROCAL of the resolution — level 1 means one
+   * backing pixel per CSS pixel, which is what Babylon's engine always ran at
    * because `adaptToDeviceRatio` was never passed. On a 2x panel that is a
    * quarter of the display's pixels, upscaled by the compositor. The setting is
    * expressed against the DISPLAY instead (see `CONFIG.graphics.renderScales`),
@@ -3959,13 +3981,14 @@ export class Game {
    *
    * **It is therefore also where anything stated in BACKING-STORE pixels is
    * re-derived**, because this is the one line that moves them — or read per
-   * frame, which is what both readers do: `GlowPass` re-derives its blur
-   * kernel from the scaling level before each blur, and `WorldCulling`'s size
-   * gate converts beside the camera's FOV, which it has to read anyway.
+   * frame off the surface, which is what both readers do: `GlowPass`
+   * re-derives its blur kernel from the scaling level before each blur, and
+   * `WorldCulling`'s size gate converts beside the camera's FOV, which it has
+   * to read anyway.
    */
   private applyRenderScale(): void {
     const dpr = window.devicePixelRatio || 1;
-    this.engine.setHardwareScalingLevel(1 / (dpr * this.settings.renderScale));
+    this.surface.setHardwareScalingLevel(1 / (dpr * this.settings.renderScale));
     // The glow's blur at every rung and render scale at THIS ratio: a no-op
     // unless the ratio moved, and then its new widths (up to five) are the one
     // exception to the seal (`BABYLON_EXIT.md` X5.2's row "pipelines"). The
@@ -4210,7 +4233,7 @@ export class Game {
       -(drag.x * i.dragRate + this.input.stickLookX * i.stickRate * dt),
       -(drag.y * i.dragRate + this.input.stickLookY * i.stickRate * dt),
       camera.fov,
-      this.engine.getAspectRatio(camera),
+      this.surface.getAspectRatio(camera),
       // The hole the SCREEN says it has left, measured this frame. It used to
       // be a constant in `CONFIG.viewmodel.inspect` welded to a CSS
       // percentage, and moving it here is what let the kit screen be laid out
@@ -11418,7 +11441,7 @@ export class Game {
     this.prof.disarm();
     // Two spare rows: the frame that ends the run is recorded half-way, and
     // a ring that laps by one would drop the run's first frame.
-    this.prof.arm(this.engine, script.frames + 2);
+    this.prof.arm(this.surface, script.frames + 2);
     this.prof.setMap(this.mapDef.id);
     this.prof.setSegments(script.segments);
     this.profChip.setArmed(true);
@@ -11451,8 +11474,8 @@ export class Game {
     if (run.hold !== "settle") return;
     const c = CONFIG.profiling.bench;
     run.holdFor += seconds;
-    const cw = this.engine.getRenderWidth(true);
-    const ch = this.engine.getRenderHeight(true);
+    const cw = this.surface.getRenderWidth(true);
+    const ch = this.surface.getRenderHeight(true);
     const ww = window.innerWidth;
     const wh = window.innerHeight;
     if (
@@ -11471,7 +11494,7 @@ export class Game {
     }
     // What `AbstractEngine.resize` makes of the window — the test the
     // capture's `viewport` applies (`profileReport.ts`).
-    const level = this.engine.getHardwareScalingLevel();
+    const level = this.surface.getHardwareScalingLevel();
     const matched =
       Math.abs(cw - ((ww / level) | 0)) <= 1 && Math.abs(ch - ((wh / level) | 0)) <= 1;
     const screen = document.fullscreenElement !== null || run.holdFor >= c.holdWait;
@@ -12114,8 +12137,8 @@ export class Game {
       this.hud.setGunMarker(null);
       return;
     }
-    const w = this.engine.getRenderWidth();
-    const h = this.engine.getRenderHeight();
+    const w = this.surface.getRenderWidth();
+    const h = this.surface.getRenderHeight();
     this.markerViewport.width = w;
     this.markerViewport.height = h;
     Vector3.ProjectToRef(

@@ -97,8 +97,9 @@ class EmissiveFogPlugin extends MaterialPluginBase {
    * screen saying "something went wrong" about a shader language.
    *
    * WGSL and only WGSL, deliberately. There is no GLSL path left in this game
-   * to be compatible with: the engine is `WebGPUEngine`, every shader in the
-   * tree is WGSL and nothing sets `StandardMaterial.ForceGLSL`. A GLSL arm here
+   * to be compatible with: the engine was `WebGPUEngine` (a `NullEngine`
+   * since `BABYLON_EXIT.md` X5.4h, on which nothing is attached at all), every
+   * shader in the tree is WGSL and nothing sets `StandardMaterial.ForceGLSL`. A GLSL arm here
    * would be a second copy of the injected code that nothing compiles and
    * nobody could tell had rotted.
    */
@@ -166,14 +167,18 @@ class EmissiveFogPlugin extends MaterialPluginBase {
  * with it — a plugin added after an effect is built does not reach that effect.
  */
 export function attachEmissiveFog(material: StandardMaterial): void {
-  // **Defensive: nothing reaches this under an engine that cannot draw** — no
-  // script builds an emissive under one. Kept because the failure it guards is
-  // silent about its cause: off WebGPU, `Material._createUniformBuffer` picks
-  // GLSL for a `StandardMaterial`, `isCompatible` above answers false, and
-  // `_addPlugin` THROWS on the mismatch rather than declining — which once
-  // killed every match server inside `new SimCore()` with a message about a
-  // shader language and nothing about where. A fog is a PICTURE; skipping it
-  // there costs nothing.
+  // **Every material reaches this under an engine that cannot draw since
+  // `BABYLON_EXIT.md` X5.4h** — the scene stands on a `NullEngine`
+  // (`core/SceneEngine.ts`) — so no emissive is fogged here any more, and
+  // none needs it: no Babylon material draws or compiles in any state
+  // (`core/babylonCompiles.ts`), the bloom and every emissive draw being our
+  // renderer's, and this plugin goes with the `StandardMaterial` recipe keys
+  // at X6.1. The guard must stay while it does: off WebGPU,
+  // `Material._createUniformBuffer` picks GLSL for a `StandardMaterial`,
+  // `isCompatible` above answers false, and `_addPlugin` THROWS on the
+  // mismatch rather than declining — which once killed every match server
+  // inside `new SimCore()` with a message about a shader language and nothing
+  // about where.
   if (!material.getScene().getEngine().isWebGPU) return;
   new EmissiveFogPlugin(material);
 }

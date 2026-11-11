@@ -15,8 +15,9 @@
  * into that depth in the mask; the targets are resized here, all six at once,
  * whenever the frame's size or the rung moved, before the mask is asked for;
  * this file imports nothing of `src/render/` (`GlowDraws` is the crossing);
- * and every Babylon call is public API (the engine's render height and
- * scaling level); the end of the draw phase is the game's own frame's
+ * and every Babylon call is public API; the render height and the scaling
+ * level are the canvas's (`core/CanvasSurface.ts`, `BABYLON_EXIT.md` X5.4h;
+ * the engine's until then); the end of the draw phase is the game's own frame's
  * (`core/SceneFrame.ts`, `BABYLON_EXIT.md` X5.4f; the scene's observable
  * until then).
  *
@@ -154,7 +155,11 @@
  */
 import { type Camera, Observable, type Scene } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import type { CanvasSurface } from "../core/CanvasSurface";
 import type { SceneFrame } from "../core/SceneFrame";
+
+/** What the glow reads off the canvas (`core/CanvasSurface.ts`). */
+type RenderSurface = Pick<CanvasSurface, "getRenderHeight" | "getHardwareScalingLevel">;
 
 /** A rung of the Glow setting — derived from the config for `VolumetricRung`'s reason. */
 export type GlowRung = keyof typeof CONFIG.graphics.glowTiers;
@@ -257,6 +262,8 @@ export class GlowPass {
     /** The frame whose draw phase's end the mask is drawn at (`core/SceneFrame.ts`). */
     frame: Pick<SceneFrame, "onAfterDrawPhaseObservable">,
     private readonly camera: Camera,
+    /** The canvas: its render height and scaling level (`core/CanvasSurface.ts`, `BABYLON_EXIT.md` X5.4h). */
+    private readonly surface: RenderSurface,
     private readonly draws: GlowDraws,
   ) {
     frame.onAfterDrawPhaseObservable.add(() => this.render());
@@ -323,8 +330,9 @@ export class GlowPass {
     const kernel = this.kernelTexels();
     this.kernel = kernel;
     // `Internals.textureOutputHeight_`, which Babylon's engine wrote the
-    // render height into (`_initializeMainAttachments`) and no blur reads.
-    const outputHeight = this.scene.getEngine().getRenderHeight(true);
+    // render height into (`_initializeMainAttachments`) and no blur reads:
+    // the canvas's, the surface's since X5.4h.
+    const outputHeight = this.surface.getRenderHeight(true);
     const draws = this.draws;
     // Until the box filter's program has compiled, the first pass reads the
     // mask direct — undersampled for a frame or two rather than blurring
@@ -382,6 +390,6 @@ export class GlowPass {
    * of 1 on `high` this is exactly the kernel the layer ran with.
    */
   private kernelTexels(): number {
-    return kernelTexelsAt(this.downsampleBy(), this.scene.getEngine().getHardwareScalingLevel());
+    return kernelTexelsAt(this.downsampleBy(), this.surface.getHardwareScalingLevel());
   }
 }

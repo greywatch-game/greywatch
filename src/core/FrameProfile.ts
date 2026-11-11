@@ -152,9 +152,9 @@ import { urlFlag } from "./urlOverrides";
 /**
  * What the profiler reads of the canvas, once a row: the backing store's size
  * and the scaling level that made it of the window. Structural, so this file
- * imports no engine — Babylon's `WebGPUEngine` satisfies it until
- * `BABYLON_EXIT.md` X5.4h moves the canvas to the game, and `Game` hands it
- * over at `arm`.
+ * imports no canvas — the game's `CanvasSurface` satisfies it (Babylon's
+ * `WebGPUEngine` did until `BABYLON_EXIT.md` X5.4h), and `Game` hands it over
+ * at `arm`.
  */
 export interface RenderSurface {
   getRenderWidth(useScreen?: boolean): number;

@@ -82,10 +82,18 @@ a WebGPU global (`GPUBufferUsage`, …) at its top level**, which throws before
 the gate runs — `scripts/check-webgpu-globals.mjs` fails the build on one
 (`docs/build.md`).
 
-**The engine is built with `compatibilityMode = false`, and that is load-bearing
-rather than a tuning flag. Do not delete it to tidy the boot.** Its risk is
-state changing between draws: if a rendering bug ever appears that shows only
-while something is MOVING, flip this first (`docs/rendering.md`).
+**The DEVICE and the CANVAS are the game's** (`BABYLON_EXIT.md` X5.4h): `main.ts`
+asks for the adapter and the device and configures the canvas's context
+EXACTLY as Babylon's `WebGPUEngine` did — no limits, no feature but
+`timestamp-query` under `?gpu`, the preferred format, `RENDER_ATTACHMENT |
+COPY_SRC`, premultiplied — because a shader moves if it does not (the glow
+blur's text reads a device limit), and the canvas's size, scaling level and
+aspect ratio are `core/CanvasSurface.ts`'s (Babylon's `resize`/`setSize`
+ported). **Babylon's `WebGPUEngine` is not constructed**: the scene stands on a
+`NullEngine` until X6.1 (`core/SceneEngine.ts`), told WebGPU's depth range and
+the canvas's size so the camera's projection is Babylon's to the bit — **a
+reader of a render size, a scaling level or an aspect ratio asks the SURFACE,
+never the scene's engine**.
 
 **Zero model files, and SEVENTEEN audio files** — every mesh is built from
 primitives at runtime (for the world kit, the scatter props and every model
@@ -121,8 +129,10 @@ thing** (`ReportVoice.mix`, `EngineKind.mix`, `AmbienceKind.mix`).
 **Havok's `.wasm` (~2 MB) is the one binary that ships**, never named by path
 and never also hand-placed in `public/`. **It is REQUIRED**: `main.ts` awaits
 `loadHavok()` before it constructs `Game`, so nothing downstream asks whether
-physics has arrived. **No shader in `src/` may be GLSL** — `WebGPUEngine`
-fetches two more WASMs the moment one is. **Never add a deep static import into
+physics has arrived. **No shader in `src/` may be GLSL** — Babylon's
+`WebGPUEngine` fetched two more WASMs the moment one was, and though no Babylon
+engine compiles anything since X5.4h, the Babylon cel declarations stay WGSL
+until X6.1 removes them. **Never add a deep static import into
 `@babylonjs/core`, and never drop `optimizeDeps.exclude` from `vite.config.ts`**
 — both break a DEV session only; `npm run build` fails on the first. **There is
 no rigged character asset in the tree**: do not reintroduce a GLB body, and do
@@ -701,9 +711,9 @@ end as observables of its own (named for the engine's), and the frame's ONE
 encoder and ONE `queue.submit` (`render/FrameSubmit.ts`) — so
 `FrameHost.afterSubmit` is told after OUR submit, and a module that hung off the
 engine's end of frame hangs off the loop's. **OUR renderer (`src/render/`)
-meets Babylon's ENGINE through ONE seam** (`render/babylonSeam.ts`, the only
-file there that names Babylon, and only as types: the device — item 1), and
-**no draw of ours needs anything of Babylon's in group 0**:
+names nothing of Babylon's** — the seam (`render/babylonSeam.ts`) went with
+Babylon's engine at X5.4h, its last item the device, which is the game's
+(`main.ts`) — and **no draw of ours needs anything of Babylon's in group 0**:
 the frame tells the draw phase's two ends, and our renderer records every point
 at the end. The frame's uniforms are PULLED off the factory's fields
 (`CelMaterialFactory.fillFrame`), so **a new value every cel material holds owes
@@ -717,7 +727,7 @@ irradiance volume, the four light terms, the colour buffer and the map's grime,
 the shadow window and every map's reason, the rungs, the lamps' atlas, lightning,
 the ink's NIB and its coverage channel, the wind's rigs, the fire, the glazing and
 reflection bake, the grass and turf, the water, the WGSL traps, our renderer's
-frame and its seam, the candidate list and size gate, the bodies, hulls, weapon
+frame, its device and canvas, the candidate list and size gate, the bodies, hulls, weapon
 and pools, the glow's failed attempts and the palette, and the sky.
 ### The map is data, not code
 

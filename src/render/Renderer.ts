@@ -23,8 +23,7 @@
  * X5.4d); `FrameDraw`, `FramePrepare`,
  * `DrawPoint`, `FrameContext` and `RendererOptions`.
  * Invariants: every GPU resource it holds it made, on the host's device, and
- * destroys in `dispose` (`BABYLON_EXIT.md` rule 5 — a texture another side
- * owns is READ through the seam, never copied); the frame's uniforms are
+ * destroys in `dispose` (`BABYLON_EXIT.md` rule 5); the frame's uniforms are
  * filled by the `fill` it is handed (`CelMaterialFactory.fillFrame`) and the
  * host's camera, and its textures by `fillTextures`
  * (`CelMaterialFactory.fillFrameTextures`) resolved through the host, once

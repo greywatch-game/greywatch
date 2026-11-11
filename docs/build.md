@@ -144,6 +144,19 @@ without one gets a sentence instead of a black page; what that costs is reach,
 and Firefox on Linux/macOS plus older Android and iOS no longer boot at all.
 Both phones are PWA install targets, so this is a product fact, not a detail.
 
+**The device is the game's since `BABYLON_EXIT.md` X5.4h, and Babylon's
+`WebGPUEngine` is not built.** `main.ts` asks for the adapter and the device
+and configures the canvas's context itself, exactly as the engine's
+`initAsync` did (no limits; no feature but `timestamp-query`, under `?gpu`;
+the preferred format, `RENDER_ATTACHMENT | COPY_SRC`, premultiplied), with the
+boot's three failure branches unchanged — no WebGPU (or an insecure origin),
+no physics, no graphics device. The Babylon `Scene` that still stands until
+X6.1 is built on a `NullEngine` (`src/core/SceneEngine.ts`), Babylon's own
+data-only engine: no device, no canvas, nothing it could compile with. So
+`WebGPUEngine.CreateAsync`'s missing `reject` (a rejected `initAsync` that
+never settled, and a boot screen that said "loading" forever) is no longer a
+trap here: the boot awaits WebGPU's own promises.
+
 **The gate runs AFTER the module graph is evaluated** — `main.ts` imports
 `Game` statically, and everything under it — **so nothing at a module's TOP
 LEVEL may name a WebGPU global** (`GPUBufferUsage`, `GPUTextureUsage`,
@@ -192,15 +205,19 @@ of what the optional version cost, are in [`deaths.md`](deaths.md).
 
 ## The two WASMs that must never ship, and are not in the bundle at all
 
-Havok's is the one binary that ships. There are two more the ENGINE will fetch
-at runtime if anything lets it, and they are the reason a shader language is a
-build contract rather than a rendering detail: **glslang and twgsl, four files
-off `cdn.babylonjs.com/v9.28.0/`** (the installed version, which Babylon
-writes into the path itself) — `glslang/glslang.{js,wasm}` and
-`twgsl/twgsl.{js,wasm}`. `WebGPUEngine` builds them lazily, inside
-`prepareGlslangAndTintAsync`, the first time a shader reaching the backend is
+Havok's is the one binary that ships. There were two more Babylon's ENGINE
+would fetch at runtime if anything let it, and they are the reason a shader
+language is a build contract rather than a rendering detail: **glslang and
+twgsl, four files off `cdn.babylonjs.com/v9.28.0/`** (the installed version,
+which Babylon writes into the path itself) — `glslang/glslang.{js,wasm}` and
+`twgsl/twgsl.{js,wasm}`. `WebGPUEngine` built them lazily, inside
+`prepareGlslangAndTintAsync`, the first time a shader reaching the backend was
 GLSL rather than WGSL; it is how the WebGPU port compiled the tree's GLSL under
-the new engine for five milestones before the sources were rewritten.
+the new engine for five milestones before the sources were rewritten. **Since
+`BABYLON_EXIT.md` X5.4h no `WebGPUEngine` is built** — the scene stands on a
+`NullEngine`, which compiles for no backend — so nothing of Babylon's can
+reach the CDN; the gates below stand until X6.1 removes the Babylon
+declarations they guard, and `assertNoTranspiler` reads the scene's engine.
 
 **Every shader in the tree is WGSL now, so a fetch is a regression and what it
 costs is the offline promise.** They are not in the bundle, they are not
@@ -212,8 +229,9 @@ to. Nothing about it is visible on a developer's machine.
 **Two gates watch for it and both are needed, because each is blind where the
 other sees.** `plans/webgpu-ref/harness.mjs` aborts `**/*.babylonjs.com/**` on
 every page it boots and records every request to it, and `assertNoTranspiler`
-reads `engine._glslang` / `engine._tintWASM` after a sweep that really compiled
-something. A route filter proves only what was REQUESTED and a shader nobody
+reads `engine._glslang` / `engine._tintWASM` (the scene's engine) after a sweep
+that really compiled something (Babylon's half of `shaders.mjs`, skipped with no
+backend since X5.4h). A route filter proves only what was REQUESTED and a shader nobody
 compiled requests nothing; the engine state proves the stronger thing and is
 silenced by the abort, since an aborted fetch leaves both fields null. `gate.mjs`
 and `shaders.mjs` fail on both. `VERIFYING.md` has the measurements.

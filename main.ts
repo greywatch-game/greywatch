@@ -37,13 +37,17 @@
  * a ~2 MB precached download and buys the entire game the right to assume a
  * solver exists. A rejection is this file's failure message like any other.
  *
- * **The engine is now the same shape, and that is what the second await is.**
- * A `WebGLEngine` was built inside the `Game` constructor because its
- * constructor was synchronous; `WebGPUEngine`'s is not — an adapter and a
- * device are both promises. So the engine is created here and INJECTED, which
- * keeps `Game`'s constructor synchronous and `window.__celshock` non-null the
- * moment it returns (`VERIFYING.md`), and makes the engine exactly the move
- * `havok` already made rather than a second, differently-shaped one.
+ * **The graphics device is the same shape, and that is what the second await
+ * is.** An adapter and a device are both promises, so the device is asked for
+ * HERE, the canvas's WebGPU context configured on it and the canvas's size
+ * taken (`core/CanvasSurface.ts`), and the device and the surface INJECTED,
+ * which keeps `Game`'s constructor synchronous and `window.__celshock`
+ * non-null the moment it returns (`VERIFYING.md`) — the move `havok` made.
+ * They are the GAME's since `BABYLON_EXIT.md` X5.4h, asked for and configured
+ * exactly as Babylon's `WebGPUEngine.initAsync` asked for and configured its
+ * own (the comment at the request says how); Babylon's engine is not
+ * constructed, the scene standing on a `NullEngine` until X6.1
+ * (`core/SceneEngine.ts`).
  *
  * **The page's own match host is the third** (`BABYLON_EXIT.md` X2.5c C4):
  * every round that is not a server's is a `Match` the page hosts, in a Worker
@@ -55,7 +59,7 @@
  * load, when there is no game to boot and the plate says so.
  */
 import "./src/ui/base.css";
-import { WebGPUEngine } from "@babylonjs/core";
+import { CanvasSurface } from "./src/core/CanvasSurface";
 import { FrameClock } from "./src/core/FrameLoop";
 import { Game } from "./src/core/Game";
 import { loadHavok } from "./src/systems/PhysicsWorld";
@@ -76,9 +80,10 @@ type GpuVerdict = "ok" | "insecure" | "unavailable";
  * `powerPreference` is a HINT and not a request — the browser may hand back
  * whatever it likes — but its default on a hybrid machine is the INTEGRATED
  * adapter, and this frame is draw-call bound on hardware nobody here owns
- * (`docs/rendering.md`, "Why the frame is draw-call bound"). Babylon forwards
- * the whole engine options object to `requestAdapter`, so the constructor
- * below carries it; the two bare probes carry it too, because **a probe that
+ * (`docs/rendering.md`, "Why the frame is draw-call bound"). The device's
+ * request carries it (as Babylon's engine options did, which it forwarded to
+ * `requestAdapter` whole until `BABYLON_EXIT.md` X5.4h); the two bare probes
+ * carry it too, because **a probe that
  * asks a DIFFERENT adapter is answering about a GPU the game will not run
  * on** — the boot gate would clear a machine whose other adapter fails, and
  * the `?gpu` feature test would read `timestamp-query` off one device and
@@ -94,21 +99,16 @@ type GpuVerdict = "ok" | "insecure" | "unavailable";
  * WebGPU, and the cost of the guard is one extra `requestAdapter` on a boot
  * that has already failed one. So `checkWebGPU` drops the hint and asks again
  * before it refuses, and what it drops it drops for the REST OF THE BOOT —
- * the probe and the engine read this variable, so the three cannot end up
- * asking for different adapters, which is the failure this comment opened by
- * describing.
+ * the probe and the device's request read this variable, so the three cannot
+ * end up asking for different adapters, which is the failure this comment
+ * opened by describing.
  *
- * **What does NOT guard it is a try/catch around `initAsync`**, which is the
- * obvious shape and is worse in three ways: `initAsync` rejects for every
- * other reason too (no adapter at all, a device lost on creation, a driver
- * that fell over), so a retry pays a second full init and puts the SECOND
- * failure on the boot screen for the cases that actually happen; the dead
- * engine cannot be cleaned up, since `WebGPUEngine.dispose` dereferences
- * `_timestampQuery` and `_device` unconditionally and both are undefined
- * before an adapter (`webgpuEngine.pure.js:3025`) — so it throws, and the
- * half-built engine stays in `EngineStore.Instances` for the life of the
- * page; and the retry would have to restate the engine's options, which is
- * how `?gpu` quietly stops measuring anything.
+ * **What does NOT guard it is a retry around the device's request**, which is
+ * the obvious shape and is worse: the request rejects for every other reason
+ * too (no adapter at all, a device lost on creation, a driver that fell over),
+ * so a retry pays a second request and puts the SECOND failure on the boot
+ * screen for the cases that actually happen, and it would have to restate the
+ * device's descriptor, which is how `?gpu` quietly stops measuring anything.
  *
  * What the hint costs is battery on an unplugged laptop, which is the trade a
  * shooter makes.
@@ -116,8 +116,8 @@ type GpuVerdict = "ok" | "insecure" | "unavailable";
 let power: GPUPowerPreference | undefined = "high-performance";
 
 /**
- * WebGPU or nothing — every cel material, the shadow map and the GPU particle
- * systems assume it, and there is no WebGL fallback engine in the tree.
+ * WebGPU or nothing — every draw in the game is our renderer's, on a WebGPU
+ * device, and there is no WebGL fallback in the tree.
  *
  * **The throwaway-canvas probe this replaces is GONE, not edited.** WebGL2 had
  * to be asked for on a canvas, so the old gate created one, took a context off
@@ -205,12 +205,13 @@ function painted(): Promise<void> {
 /**
  * Takes the boot screen down, after a frame has actually been drawn.
  *
- * NOT when the constructor returns: it ends by registering the render loop,
- * so at that moment the canvas is still the empty black rectangle it was
- * created as, and removing the cover there trades a boot screen for a black
- * flash. Two frames of grace — Babylon queues its first tick from inside the
- * constructor, so it is already ahead of the first callback below, and the
- * second is there so this never rests on that ordering.
+ * NOT when the constructor returns: it ends by starting the frame loop, so
+ * at that moment the canvas is still the empty black rectangle it was created
+ * as, and removing the cover there trades a boot screen for a black flash.
+ * Two frames of grace — the loop queues its first frame from inside the
+ * constructor (`core/FrameLoop.ts`), so it is already ahead of the first
+ * callback below, and the second is there so this never rests on that
+ * ordering.
  *
  * Then a FADE rather than a cut (`#boot.done`, which also stops it taking the
  * pointer at once), so the menu's own entrance is what the eye lands on. The
@@ -230,6 +231,8 @@ function bootDone(): void {
 
 window.addEventListener("DOMContentLoaded", async () => {
   const canvas = document.getElementById("game-canvas") as HTMLCanvasElement;
+  /** The game, once built: what the device's error listener reads its frame off. */
+  let game: Game | null = null;
   // FIRST, and before the physics download: a machine with no WebGPU should
   // not spend 2 MB to be told no. It is also the cheapest of the three checks
   // — no canvas, no file, one round trip to the browser's own GPU service.
@@ -277,40 +280,34 @@ window.addEventListener("DOMContentLoaded", async () => {
   // the same reason the Havok one has one: the generic catch below says
   // "reloading may fix it", which here is advice that mostly cannot work.
   //
-  // **No MSAA, and that is a saving rather than a downgrade.** Asking for it
-  // gave a 4x multisampled DEFAULT framebuffer — but the pipeline runs FXAA,
-  // so every pass of the scene renders into post-process render targets and
-  // the only thing ever drawn to the default framebuffer is the final
-  // full-screen quad. The multisampling was antialiasing one quad's edges, of
-  // which there are none, and paying a resolve every frame and ~30 MB at 720p
-  // (66 MB at 1080p) to do it. FXAA still does the actual antialiasing.
+  // **THE DEVICE AND THE CANVAS ARE THE GAME'S** (`BABYLON_EXIT.md` X5.4h):
+  // asked for and configured below EXACTLY as Babylon's `WebGPUEngine.initAsync`
+  // asked for and configured its own (Babylon 9.28, `webgpuEngine.pure.js`
+  // 412-553 and 785-790), because a shader moves if they are not — the glow
+  // blur's text is built at the device's `maxInterStageShaderVariables`
+  // (`render/GlowBlur.ts`). So: the adapter with this boot's `powerPreference`
+  // (all of Babylon's engine options that WebGPU reads); a device asked for NO
+  // limits and no feature but `timestamp-query`, and that one only under
+  // `?gpu` and only where the adapter has it (Babylon filtered its required
+  // features against the adapter's); the context configured with the
+  // preferred canvas format, `RENDER_ATTACHMENT | COPY_SRC` and premultiplied
+  // alpha. Only the device's LABEL is ours. Babylon's engine is not
+  // constructed: the scene stands on a `NullEngine` until X6.1
+  // (`core/SceneEngine.ts`, row "X5.4, Babylon's engine").
   //
-  // No stencil either: nothing in `src/` uses one, and there is no
-  // `HighlightLayer` (the effect layer that would). Under WebGPU that flag
-  // does one thing more than it used to, and it is worth knowing before
-  // anything is re-tuned: it picks the DEPTH FORMAT. False gives
-  // `depth32float`, true would give `depth24plus-stencil8`, and `depthBias` is
-  // defined in a different unit for a float format — which is why the glass
-  // and outline z-offsets are re-derived rather than carried over.
+  // **No MSAA, and that is a saving rather than a downgrade.** The canvas's
+  // texture is written by one full-screen quad a frame (the post chain's last
+  // stage, `render/ChainPasses.ts`), so a multisampled one would antialias the
+  // edges of one quad, of which there are none, for a resolve every frame and
+  // ~30 MB at 720p. FXAA does the antialiasing. Nor a stencil: nothing uses
+  // one, and the canvas pass's depth is a `depth32float` (`ChainPasses`), as
+  // Babylon's engine made its own with `stencil: false`.
   //
-  // `adaptToDeviceRatio` is deliberately still not passed. It would pin the
-  // backing store to the display, and the resolution is a player setting —
-  // `applyRenderScale` owns the scaling level from the first `applySettings`.
+  // The scaling level is 1 until `Game.applyRenderScale` sets it from the
+  // first `applySettings` (`core/CanvasSurface.ts`): the resolution is a
+  // player setting, and Babylon's `adaptToDeviceRatio` was never passed.
   //
-  // **`WebGPUEngine.CreateAsync` is NOT used, and that is not a style choice.**
-  // It is `new WebGPUEngine(...)` followed by `initAsync()` wrapped in `new
-  // Promise((resolve) => ...)` — with no `reject`
-  // (`webgpuEngine.pure.js:235-241`, Babylon 9.28.0, and the same in 9.19.1).
-  // So when `initAsync`
-  // rejects, the promise it hands back never settles: `await` on it waits
-  // forever, this `catch` is unreachable, and the failure surfaces as an
-  // unhandled rejection in the console behind a boot screen that says
-  // "loading" until the tab is closed. That is the exact failure this screen
-  // exists to prevent. Calling the two halves by hand is the same code path
-  // and rejects properly. If a future Babylon fixes the wrapper, this can go
-  // back to one line — check for the missing `reject` before assuming it did.
-  //
-  // **`?gpu` is the one thing about this engine that a SETTING could never
+  // **`?gpu` is the one thing about this device that a SETTING could never
   // turn on**, which is why it is a boot flag and not a row in the settings
   // screen. Every phase the frame profiler records is CPU: they time the
   // RECORDING of the frame's commands into its one encoder
@@ -343,63 +340,60 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
-  let engine;
+  let device: GPUDevice;
+  let surface: CanvasSurface;
   // THE FRAME'S CLOCK (`core/FrameLoop.ts`'s `FrameClock`, `BABYLON_EXIT.md`
   // X5.4g): Babylon's `getDeltaTime` and `getFps` ported, sampled where the
-  // engine's performance monitor was — at every `beginFrame` of the engine's
-  // from its construction on (its own, since X5.4g, only inside a resize:
-  // `initAsync`'s first and every one after) and at every frame of our loop.
-  // Made here, before the engine's first `beginFrame`, so the first frame
-  // reads the gap Babylon's did; injected into `Game` with the engine.
+  // engine's performance monitor was — at every frame of our loop, and at
+  // every `beginFrame` Babylon's engine ran of its own, which since X5.4g was
+  // the one inside `_initializeMainAttachments`: once as `initAsync` ended,
+  // whatever the size, and again at every size that took. Since X5.4h those
+  // points are ours: the sample right after the context is configured, and
+  // the surface's `onSized` (`core/CanvasSurface.ts`) — so the first frame
+  // reads the gap Babylon's did, sample for sample.
   const clock = new FrameClock();
   bootStage("Graphics device");
   try {
-    engine = new WebGPUEngine(canvas, {
-      antialias: false,
-      stencil: false,
-      powerPreference: power,
-      ...(gpuTimingOk
-        ? { deviceDescriptor: { requiredFeatures: ["timestamp-query"] } }
-        : {}),
+    const adapter = await navigator.gpu.requestAdapter({ powerPreference: power });
+    if (!adapter) {
+      throw new Error("Could not retrieve a WebGPU adapter (adapter is null or undefined).");
+    }
+    const descriptor: GPUDeviceDescriptor = {};
+    if (gpuTimingOk) {
+      descriptor.requiredFeatures = (["timestamp-query"] as const).filter((f) => adapter.features.has(f));
+    }
+    descriptor.label = "GreywatchDevice";
+    device = await adapter.requestDevice(descriptor);
+    // Babylon's first device listener, as `initAsync` added it: the first
+    // twenty uncaptured errors said on the console with the frame they came
+    // in (Dawn's own report of each is the browser's). Its second, the LOST
+    // device, is `Game`'s (`FrameLoop.held`; what a loss then does is
+    // `BABYLON_EXIT.md` X5.4i's).
+    let uncaptured = -1;
+    device.addEventListener("uncapturederror", (event) => {
+      const error = (event as GPUUncapturedErrorEvent).error;
+      const frame = game?.frameLoop.frameId ?? 0;
+      if (++uncaptured < 20) {
+        console.warn(`[Frame ${frame}] WebGPU uncaptured error (${uncaptured + 1}): ${error} - ${error.message}`);
+      } else if (uncaptured++ === 20) {
+        console.warn(
+          `[Frame ${frame}] WebGPU uncaptured error: too many warnings (20), no more warnings will be reported to the console for this device.`,
+        );
+      }
     });
-    engine.onBeginFrameObservable.add(() => clock.sample());
-    await engine.initAsync();
-    // The feature above is all `?gpu` needs: the frame's timer and the culls'
-    // are ours (`render/FrameTimer.ts`, `render/PassTimer.ts`), built where
-    // the device has it. Babylon's own (`enableGPUTimingMeasurements`, its
-    // query set and its `writeTimestamp` around its encoders) is not turned
-    // on since `BABYLON_EXIT.md` X5.4g: nothing reads it.
-    // **This frame is DRAW-CALL bound, and this line is worth ~26% of it on
-    // the two big maps. Do not delete it as a stray flag.**
-    // `docs/rendering.md`'s "Why the frame is draw-call bound" has the
-    // measurement in full; the short version is that Coldharbour renders at a
-    // sixteenth of the pixels for the same milliseconds, spends
-    // 19.6 ms of a 21.5 ms frame inside `scene.render`, and costs almost
-    // exactly what its draw count says it should against Hollowmere's — 3.09x
-    // the draws for 3.18x the frame, where triangles are 1.96x and do not fit.
-    // Babylon's WebGPU backend pays a pipeline-state hash, a bind-group cache
-    // lookup and a dynamic-UBO offset on EVERY draw, which is why the engine
-    // swap made the small maps faster and the big ones much slower: it raised
-    // the slope, and the crossover is the draw count.
-    //
-    // `compatibilityMode = false` is the render-bundle submission path. It
-    // changes HOW draws are submitted and nothing about WHAT is drawn, which
-    // is both why it is safe and why it is the evidence for the paragraph
-    // above. Measured through this boot path with `gate.mjs --uncap`, paired
-    // in one session: Hollowmere 165.8 -> 192.6, Greyfen 183.9 -> 211.1,
-    // Coldharbour 47.2 -> 59.4, Harrowmead 54.2 -> 68.6, with p95 on the two
-    // big maps coming down 22.7 -> 18.6 ms and 20.2 -> 17.2 ms.
-    //
-    // **What it is NOT is free, and the risk has a shape**: Babylon documents
-    // non-compatibility mode as needing care when state changes between draws,
-    // which is exactly what a frozen reference frame cannot exercise. So the
-    // bank is not the evidence here even though it is clean on all sixteen
-    // frames — the evidence is a live round with the bots fighting, six
-    // ragdolls falling, every pane on Coldharbour broken in one frame, six
-    // blasts overlapping and a turret tracking, run with the flag and without
-    // it and reporting the same thing. If a rendering bug ever appears that
-    // only shows while something is MOVING, this is the first line to flip.
-    engine.compatibilityMode = false;
+    const context = canvas.getContext("webgpu");
+    if (!context) throw new Error("The canvas has no WebGPU context.");
+    const format = navigator.gpu.getPreferredCanvasFormat();
+    // `_configureContext`: RENDER_ATTACHMENT | COPY_SRC, premultiplied (the
+    // engine's `premultipliedAlpha`, true by default).
+    context.configure({ device, format, usage: 16 | 1, alphaMode: "premultiplied" });
+    surface = new CanvasSurface(canvas, context, format);
+    // `initAsync`'s `_initializeMainAttachments`, then its `resize()`: the
+    // first sample whatever the size, then one more for every size that takes
+    // from here on, the boot's first `resize` among them.
+    clock.sample();
+    surface.onSized(() => clock.sample());
+    surface.resize();
   } catch (err) {
     bootFailed(
       "No graphics device",
@@ -412,7 +406,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   // **Where the page's own match runs** (`BABYLON_EXIT.md` X2.5c C4): in a
   // Worker, or on a channel in this thread under `?simpage` and whenever the
   // Worker cannot be had — chosen here, awaited (a Worker's module has to load
-  // and answer) and INJECTED like the engine, so the constructor stays
+  // and answer) and INJECTED like the device, so the constructor stays
   // synchronous. A Worker that will not come up never fails the boot — the
   // page hosts the match instead, and the console says which and why — but
   // the in-page host is a module fetched on demand (`server/localMatch.ts`,
@@ -440,7 +434,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   bootStage("Building the world");
   await painted();
   try {
-    new Game(canvas, havok, engine, local, clock);
+    game = new Game(canvas, havok, device, surface, local, clock);
   } catch (err) {
     // Re-thrown: the message is for the player, the console is for whoever
     // has to work out which of a hundred systems failed to construct.

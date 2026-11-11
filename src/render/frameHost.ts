@@ -16,10 +16,11 @@
  * waits for `afterSubmit`; no texture of the host's is bound by anything of
  * the renderer's (the host owns none it draws with since X5.4f).
  * Never: imports Babylon. The host is the game's own frame since X5.4f
- * (`core/SceneFrame.ts`), which reaches Babylon's engine for the device alone,
- * through `babylonSeam.ts`; the encoder, the frame's one submit and the end
- * of frame are the game's own loop's since X5.4g (`core/FrameLoop.ts`,
- * `render/FrameSubmit.ts`).
+ * (`core/SceneFrame.ts`), and nothing it hands over is Babylon's: the encoder,
+ * the frame's one submit and the end of frame are the game's own loop's since
+ * X5.4g (`core/FrameLoop.ts`, `render/FrameSubmit.ts`), and the device is the
+ * game's own since X5.4h (`main.ts`, asked for as Babylon's engine asked for
+ * its own; the seam, `babylonSeam.ts`, deleted with the engine).
  * Contract: `docs/rendering.md`, "Our renderer's frame".
  */
 

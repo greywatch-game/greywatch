@@ -4,7 +4,8 @@
  * Babylon's `ShadowGenerator` composed it (`lightTransformToRef`). (The LIT
  * texel a map switched off reads is our renderer's since `BABYLON_EXIT.md`
  * X5.4d, `TextureMaker.lit`; Babylon's wrapped views of OUR renderer's
- * textures are `core/wrappedTextures.ts`'.) Owns the light's own cross-axis basis and the
+ * textures, `core/wrappedTextures.ts`', went with Babylon's engine at X5.4h.)
+ * Owns the light's own cross-axis basis and the
  * last snapped focus, and `ShadowLight`, what a light is to both; owns no
  * light, no generator and no render target, and never renders anything.
  * Invariants: `place` writes `light.position` and nothing else on the light —

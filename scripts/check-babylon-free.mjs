@@ -23,9 +23,9 @@
  *     the page's own included (`SimCore`, `SimPlayer`, `LagComp`,
  *     `buildSimWorld`), so a file added there is held whoever builds it.
  *   - `src/render/`, every file in it: our own renderer, which takes a GPU
- *     device and never a Babylon value (`BABYLON_EXIT.md` rule 6) — its seam
- *     (`src/render/babylonSeam.ts`) NAMES Babylon's types, erased, and loads
- *     none of it — and what it reaches, so the shared shader bodies it
+ *     device and never a Babylon value (`BABYLON_EXIT.md` rule 6) — and,
+ *     since X5.4h deleted its seam with Babylon's engine, names none of
+ *     Babylon's types either — and what it reaches, so the shared shader bodies it
  *     assembles (`src/shaders/wgsl/chunks.ts`) are held Babylon-free by the
  *     same walk.
  *   - `src/math/`, every file in it but the crossing (`NOT_ROOTS`): the

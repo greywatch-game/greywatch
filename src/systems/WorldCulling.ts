@@ -162,6 +162,7 @@
  */
 import type { AbstractMesh, Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import type { CanvasSurface } from "../core/CanvasSurface";
 import { type BlockBox, F32_MAX, type ReachGate } from "../render/ClusterCull";
 import type { GameMap } from "../world/MapBuilder";
 import type { SurfaceRecord } from "../world/worldGeometry";
@@ -342,7 +343,11 @@ export class WorldCulling {
    * the scene's mesh-added and mesh-removed observables dirtied the list,
    * until the scene stopped rendering (`BABYLON_EXIT.md` X5.4f).
    */
-  constructor(private scene: Scene) {}
+  constructor(
+    private scene: Scene,
+    /** The canvas: the render height and the scaling level the size gate reads (`core/CanvasSurface.ts`, `BABYLON_EXIT.md` X5.4h). */
+    private readonly surface: Pick<CanvasSurface, "getRenderHeight" | "getHardwareScalingLevel">,
+  ) {}
 
   /**
    * Files a freshly built map. Called from `Game.installMap` and from nowhere
@@ -795,9 +800,9 @@ export class WorldCulling {
     const cam = this.scene.activeCamera;
     const minPx = CONFIG.graphics.culling.minPixels;
     const gate = minPx > 0 && cam !== null;
-    const engine = this.scene.getEngine();
+    const surface = this.surface;
     const pixelsPerRad = cam !== null
-      ? (engine.getRenderHeight() * engine.getHardwareScalingLevel()) /
+      ? (surface.getRenderHeight() * surface.getHardwareScalingLevel()) /
         (cam.fov || 1)
       : 0;
     const perRad = gate ? pixelsPerRad : 0;

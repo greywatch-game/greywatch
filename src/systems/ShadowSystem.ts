@@ -12,8 +12,10 @@
  * **The world's maps are OUR renderer's** (`BABYLON_EXIT.md` X3.6a, X3.7b):
  * the handover hands `WorldShadows` the casters on every shadow rung
  * (`WorldShadows.casters`, set by `BlockHandover`), the four maps are
- * textures `render/WorldShadows.ts` owns and draws, and Babylon's readers
- * sample a wrapped view of each (rule 5). Casters ours cannot draw are the
+ * textures `render/WorldShadows.ts` owns and draws, bound by our frame as
+ * themselves — no Babylon reader is handed one since `BABYLON_EXIT.md` X5.4h,
+ * which took the wrapped views away with Babylon's engine (the cel materials
+ * that held them neither draw nor compile). Casters ours cannot draw are the
  * world's failure (`BlockHandover`, X3.7b). Until the first map hands ours
  * its casters — the boot, the menu, a first round whose world failed — every
  * map is bound as the lit texel (`TextureMaker.lit`, `ShadowBindings.lit`) and
@@ -82,7 +84,7 @@
  * - updateBlobs takes the player's ground height rather than probing for it:
  *   Player.floorY is that number, already found this frame.
  */
-import { type BaseTexture, Matrix, type Scene, Vector3 } from "@babylonjs/core";
+import { Matrix, type Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { BLOB, Fade, fadeKit, type FadeKit } from "../entities/fades";
 import { createDisc } from "../geometry/primitives";
@@ -96,7 +98,6 @@ import {
   type ShadowLight,
   ShadowWindow,
 } from "../core/shadowWindow";
-import { wrapShadowTexture } from "../core/wrappedTextures";
 import type { ShadowQuality } from "../core/settings";
 import type { Combatant } from "../entities/Combatant";
 import { WORLD_SHADOW_MAPS, type WorldShadowMap, type WorldShadows } from "../render/WorldShadows";
@@ -129,7 +130,7 @@ function mapLight(direction: Vector3, side: number): MapLight {
 
 /**
  * One world map: its light, its window (the snap is in texels of ITS size),
- * its resolution under the current rung, our texture's wrapped view while it
+ * its resolution under the current rung, whether our texture stands while it
  * is ours, and the matrix it is drawn and read with.
  */
 interface WorldMap {
@@ -138,8 +139,8 @@ interface WorldMap {
   readonly win: ShadowWindow;
   /** 0 is off, -1 not yet set — see `docs/rendering.md`, "The shadow rungs". */
   size: number;
-  /** Babylon's view of our texture, while the map is ours and has one. */
-  wrapped: BaseTexture | null;
+  /** Our texture stands: the map is ours and has one. */
+  made: boolean;
   /** The light's view-projection while the map is ours, rewritten in place. */
   readonly matrix: Matrix;
 }
@@ -311,7 +312,7 @@ export class ShadowSystem {
       light,
       win: new ShadowWindow(),
       size: -1,
-      wrapped: null,
+      made: false,
       matrix: new Matrix(),
     });
     this.maps = {
@@ -381,23 +382,15 @@ export class ShadowSystem {
   }
 
   /**
-   * `map`'s texture of ours re-made at its size — cleared to lit — and
-   * Babylon's view of it with it. Disposing the old view destroys the texture
-   * it wraps (Babylon releases it at the end of its frame), so the texture is
-   * made AFRESH whatever its size, never kept under a view that is going.
+   * `map`'s texture of ours re-made at its size — cleared to lit — AFRESH
+   * whatever its size, as it was while Babylon's view of it was let go with
+   * it (until `BABYLON_EXIT.md` X5.4h): the old one destroyed, a new one made.
    */
   private remakeOurs(map: WorldMap): void {
-    map.wrapped?.dispose();
-    map.wrapped = null;
+    map.made = false;
     this.world.setSize(map.name, 0);
     this.world.setSize(map.name, map.size);
-    map.wrapped = this.wrap(map.name);
-  }
-
-  /** Babylon's view of our `name` texture, sampled as a generator's map was (`wrapShadowTexture`). */
-  private wrap(name: WorldShadowMap): BaseTexture | null {
-    const texture = this.world.texture(name);
-    return texture ? wrapShadowTexture(this.scene, texture, `${name}Shadow`) : null;
+    map.made = this.world.texture(map.name) !== null;
   }
 
   /**
@@ -415,14 +408,9 @@ export class ShadowSystem {
     }
   }
 
-  /** Babylon's view of `map` for its cel materials: our texture's, or none while it has none. */
-  private mapTexture(map: WorldMap): BaseTexture | null {
-    return this.ours ? map.wrapped : null;
-  }
-
   /** `map` as our renderer holds it, or null while it is not ours or off (the lit texel is bound then). */
   private ownOf(map: WorldMap): OwnTexture | null {
-    return this.ours && map.wrapped ? this.world.own(map.name) : null;
+    return this.ours && map.made ? this.world.own(map.name) : null;
   }
 
   /** `map`'s light matrix as ours draws it — null while it is off or not ours. */
@@ -431,22 +419,22 @@ export class ShadowSystem {
   }
 
   /**
-   * `map`'s texture and parameters, bound to every consumer — and our own
-   * texture beside it to our renderer's frame, while the map is ours.
+   * `map`'s texture and parameters, bound to every consumer — our own
+   * texture to our renderer's frame while the map is ours, the lit texel
+   * otherwise.
    */
   private publish(map: WorldMap): void {
     const c = CONFIG.graphics.shadows;
     const shadows = this.mats.shadows;
-    const texture = this.mapTexture(map);
     const own = this.ownOf(map);
     switch (map.name) {
       case "far":
-        shadows.setShadowMap(texture, own);
+        shadows.setShadowMap(own);
         shadows.setShadowParams(depthBias(c.bias, c.depthRange), c.darkness, c.normalBias);
         shadows.setShadowMatrix(this.lightMatrix);
         return;
       case "near":
-        shadows.setNearShadowMap(texture, own);
+        shadows.setNearShadowMap(own);
         shadows.setNearShadowParams(
           depthBias(c.bias, c.depthRange),
           (c.nearNormalBiasTexels * c.nearWindow) / Math.max(1, map.size),
@@ -454,14 +442,14 @@ export class ShadowSystem {
         shadows.setNearShadowMatrix(this.matrixOf(map) ?? this.nearOffMatrix);
         return;
       case "flash": {
-        shadows.setFlashMap(texture, own);
+        shadows.setFlashMap(own);
         shadows.setFlashParams(depthBias(c.bias, c.depthRange));
         const matrix = this.matrixOf(map);
         if (matrix) shadows.setFlashMatrix(matrix);
         return;
       }
       case "foliage": {
-        shadows.setFoliageMap(texture, own);
+        shadows.setFoliageMap(own);
         shadows.setFoliageParams(depthBias(1, c.depthRange));
         const matrix = this.matrixOf(map);
         if (matrix) shadows.setFoliageMatrix(matrix);

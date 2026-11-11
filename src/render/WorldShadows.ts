@@ -36,9 +36,8 @@
  * the last strike again; the far, near and lightning maps keep
  * the casters' BACK faces and the foliage's their front, each its own pass
  * mask (`PASS_CASTS`, `PASS_SOLID`); a texture is destroyed when its map is
- * re-sized or this is disposed — and by Babylon, at the end of its frame,
- * when a wrapped view of it is disposed, so whoever wraps one lets the view
- * go only with the texture it wraps (`ShadowSystem.remakeOurs`); nothing
+ * re-sized or this is disposed (Babylon held a wrapped view of it until
+ * `BABYLON_EXIT.md` X5.4h, and destroyed it again when the view went); nothing
  * here allocates on a frame but the passes WebGPU makes.
  * Never: imports Babylon; decides where a light stands or when a window has
  * moved — the matrix is handed in, as `ShadowSystem` places it; reads a node.
@@ -182,7 +181,7 @@ export class WorldShadows {
     return WORLD_SHADOW_MAPS.length;
   }
 
-  /** `name`'s texture, or null while it has none — what a Babylon reader is handed a wrapped view of. */
+  /** `name`'s texture, or null while it has none. */
   texture(name: WorldShadowMap): GPUTexture | null {
     return this.maps[name].colour;
   }

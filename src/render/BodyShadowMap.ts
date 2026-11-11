@@ -31,9 +31,8 @@
  * past every receiver), then every instance — and keeps the casters' BACK
  * faces, as `forceBackFacesOnly` did; a texture is born and re-made CLEARED
  * TO LIT by a submit of its own, and is destroyed when the map is re-sized or
- * this is disposed — and by Babylon, at the end of its frame, when a wrapped
- * view of it is disposed, so whoever wraps one lets the view go only with the
- * texture it wraps (`BodyShadows.setQuality`); until the pipeline is built an
+ * this is disposed (Babylon held a wrapped view of it until `BABYLON_EXIT.md`
+ * X5.4h, and destroyed it again when the view went); until the pipeline is built an
  * ask waits, and a pipeline that FAILS is never drawn and is told to every
  * failure handed over (`setFailure`: the round's, `Game.worldFailed`) — every
  * round after it fails on it too, rather than play with no body map; nothing
@@ -178,7 +177,7 @@ export class BodyShadowMap {
     this.unhook = renderer.onFrame(this.prepare);
   }
 
-  /** The map, or null while it has none — what a Babylon reader is handed a wrapped view of. */
+  /** The map, or null while it has none. */
   get texture(): GPUTexture | null {
     return this.colour;
   }

@@ -9,9 +9,9 @@
  * `Scene._renderForCamera` raised that one (Babylon 9.28, `scene.pure.js`
  * 4492-4612 and 4055-4198), and the `FrameHost` our renderer is handed
  * (`host`): the draw phase this frame tells, the scene's camera matrix and
- * clear colour, the device still reached through the seam
- * (`render/babylonSeam.ts`, item 1), and the encoder and the end of frame of
- * the game's own loop (`core/FrameLoop.ts`, `BABYLON_EXIT.md` X5.4g); the
+ * clear colour, the game's own device (`main.ts`, `BABYLON_EXIT.md` X5.4h),
+ * and the encoder and the end of frame of the game's own loop
+ * (`core/FrameLoop.ts`, X5.4g); the
  * particle fields' ANIMATION RATIO (`animationRatio`, what
  * `scene.getAnimationRatio()` answered); and two of the frame profiler's
  * spans, `drawWorld` and `glow`, bracketed here (`timeWith`).
@@ -85,7 +85,6 @@
  * ("Our renderer's frame").
  */
 import { Observable, Scene } from "@babylonjs/core";
-import type { BabylonEngineSeam } from "../render/babylonSeam";
 import type { DrawPhaseHooks, FrameHost } from "../render/frameHost";
 import type { FrameLoop } from "./FrameLoop";
 import { P } from "./profilePhases";
@@ -125,7 +124,7 @@ export class SceneFrame {
   readonly onAfterCameraRenderObservable = new Observable<void>();
   /** The frame drawn: `Scene.onAfterRenderObservable`'s point. */
   readonly onAfterRenderObservable = new Observable<void>();
-  /** Our renderer's host: the draw phase told here, the rest the scene's and the seam's. */
+  /** Our renderer's host: the draw phase told here, the matrix and the clear colour the scene's, the device and the encoder the game's. */
   readonly host: FrameHost;
   /**
    * The particle fields' clock this frame — what `scene.getAnimationRatio()`
@@ -141,13 +140,14 @@ export class SceneFrame {
   constructor(
     private readonly scene: Scene,
     private readonly ids: RenderId,
-    seam: BabylonEngineSeam,
+    /** The game's device (`main.ts`). */
+    device: GPUDevice,
     private readonly loop: FrameLoop,
   ) {
     const frame = this;
     const ends = loop.onEndFrameObservable;
     this.host = {
-      device: seam.device,
+      device,
       // The loop's encoder (`FrameSubmit`), asked at the call.
       prepareEncoder: () => loop.submit.encoder,
       // The loop's end of frame: told after its one submit.

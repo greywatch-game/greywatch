@@ -29,17 +29,18 @@
  *   delta the newest gap and the rate 1000 over the window's mean — so the
  *   readout and the profiler's real delta read what Babylon's `getDeltaTime`
  *   and `getFps` did. **It is sampled where Babylon's monitor was**: at every
- *   frame's begin, and at every `beginFrame` Babylon's engine still runs of
- *   its own — since this step only the one inside a resize
- *   (`_initializeMainAttachments`, flushing and clearing its own depth:
- *   `initAsync`'s at the boot and every resize's after), which the boot tells
- *   it from the engine's `onBeginFrameObservable`, hooked before
- *   `initAsync` (`main.ts`), until `BABYLON_EXIT.md` X5.4h retires the engine.
+ *   frame's begin, and wherever Babylon's engine ran a `beginFrame` of its
+ *   own, which since X5.4g was only the one inside
+ *   `_initializeMainAttachments` — once as the boot's device came up,
+ *   whatever the size, and at every size of the canvas that took after it.
+ *   Since `BABYLON_EXIT.md` X5.4h those points are the game's: the boot's
+ *   sample once the context is configured, and the canvas's `onSized`
+ *   (`core/CanvasSurface.ts`, `main.ts`).
  * - **A lost device holds the loop** (`held`), as `_contextWasLost` held
- *   Babylon's — no frame while the engine restores — but ahead of the cap
- *   rather than after it, so nothing is asked of the cap either and the first
- *   frame after a restore steps across the whole loss (`held`'s note;
- *   `BABYLON_EXIT.md` X5.4i).
+ *   Babylon's — for the task Babylon's engine took to flag its restore — but
+ *   ahead of the cap rather than after it, so nothing is asked of the cap
+ *   either and the first frame after it steps across the whole hold
+ *   (`held`'s note; `BABYLON_EXIT.md` X5.4i).
  * - The world is NOT stepped by this clock: `Game.tick` steps it by
  *   `FrameCap.elapsed`, the refresh stamps (`FrameCap`'s header); this delta
  *   is what the readout, the profiler and the particle fields' animation
@@ -129,25 +130,27 @@ export interface PresentSpan {
 }
 
 export class FrameLoop {
-  /** A frame opening, after the clock's sample and before `tick`: `engine.onBeginFrameObservable`'s point. */
+  /** A frame opening, after the clock's sample and before `tick`: Babylon's `engine.onBeginFrameObservable`'s point. */
   readonly onBeginFrameObservable = new Observable<void>();
-  /** A frame's commands submitted and its id moved: `engine.onEndFrameObservable`'s point. */
+  /** A frame's commands submitted and its id moved: Babylon's `engine.onEndFrameObservable`'s point. */
   readonly onEndFrameObservable = new Observable<void>();
   /** Frames submitted: what `engine.frameId` answered, moved at each end. */
   frameId = 0;
   /**
-   * True while the graphics device is LOST and its engine restoring it, when
-   * a refresh runs nothing, as `_contextWasLost` held Babylon's loop. **Not
-   * quite as it did**: at the parent the cap's requester ADMITTED every
+   * True while the graphics device is LOST and held, when a refresh runs
+   * nothing, as `_contextWasLost` held Babylon's loop. Written by `Game` off
+   * the device's own `lost` (`BABYLON_EXIT.md` X5.4h; the engine's two
+   * context observables until then), for the one task Babylon's engine took
+   * to flag a restore — there being no engine to restore one, the frames
+   * after it are drawn on the lost device, the dead frame they were.
+   * **Not quite as Babylon held it**: the cap's requester ADMITTED every
    * refresh first (`FrameCap`'s stamps and schedule moving) and Babylon's
    * `_renderLoop` tested the loss inside the frame it was handed, whereas here
    * `held` is tested ahead of `admit` and the cap is not asked at all — so the
-   * first frame after a restore reads a `FrameCap.elapsed` spanning the whole
-   * loss (which `Game.tick` clamps to the wire's `MAX_FRAME_DT`), where the
-   * parent's read one refresh. Moot while a loss is never restored into a
-   * round, and booked on `BABYLON_EXIT.md` X5.4i, which decides what a loss
-   * is. Written by `Game` from the engine's two context observables until
-   * X5.4h/X5.4i move it to the device's `lost`.
+   * first frame after the hold reads a `FrameCap.elapsed` spanning the whole
+   * of it (which `Game.tick` clamps to the wire's `MAX_FRAME_DT`), where
+   * Babylon's read one refresh. Booked on `BABYLON_EXIT.md` X5.4i, which
+   * decides what a loss is.
    */
   held = false;
   /** The frame's encoder and its submit. */
@@ -162,7 +165,7 @@ export class FrameLoop {
     private readonly cap: FrameCap,
     device: GPUDevice,
     private readonly present: PresentSpan,
-    /** The frame's clock, made by the boot and sampled at the engine's own begin-frames too (`main.ts`). */
+    /** The frame's clock, made by the boot and sampled at its own points too: the device's coming up and every size that took (`main.ts`). */
     readonly clock: FrameClock,
     /** Whether the frame's GPU time is measured (`?gpu`). */
     timeFrame: boolean,

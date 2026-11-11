@@ -1639,7 +1639,8 @@ function viewportSizes(r: ProfileRing, at: readonly number[]): ViewportSize[] {
     const ww = r.windowW[i];
     const wh = r.windowH[i];
     // `AbstractEngine.resize` hands `setSize` the CSS size over the level,
-    // and `setSize` truncates (`| 0`). The canvas's own CSS box is what it
+    // and `setSize` truncates (`| 0`) — ported as written since X5.4h
+    // (`core/CanvasSurface.ts`). The canvas's own CSS box is what it
     // measures; the window stands in for it because `#game-canvas` fills the
     // page, and a pixel of slack absorbs the two roundings.
     const ew = (ww / level) | 0;

@@ -9,11 +9,11 @@
  * any more.
  * Invariants:
  * - The map is OUR renderer's in every state and on every rung that has one:
- *   Babylon's readers (the cel materials, the
- *   volumetric march) sample a wrapped view of its texture
- *   (`wrapShadowTexture`), our frame binds the texture itself (rule 5), and
- *   there is no generator to fall back to — a map ours cannot draw is the
- *   round's failure (`BodyShadowMap.setFailure`, wired by `Game`).
+ *   our frame binds the texture itself, no Babylon reader is handed it (the
+ *   wrapped view the cel materials held went with Babylon's engine,
+ *   `BABYLON_EXIT.md` X5.4h), and there is no generator to fall back to — a
+ *   map ours cannot draw is the round's failure (`BodyShadowMap.setFailure`,
+ *   wired by `Game`).
  * - It is drawn every frame it is UPDATED, whole, from the proxies packed
  *   that frame, as Babylon's generator re-rendered every frame from the
  *   proxy's thin instances; a frame that packs none clears it.
@@ -90,7 +90,7 @@
  * shadow 150 m along a low sun, and no window a client can afford contains
  * that. It casts when it is low, which is when a player is under it.
  */
-import { type BaseTexture, Matrix, type Scene, Vector3 } from "@babylonjs/core";
+import { Matrix, type Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { ProxyBoxes, type ShadowBody, type ShadowHull } from "../core/proxyBoxes";
 import {
@@ -100,7 +100,6 @@ import {
   type ShadowLight,
   ShadowWindow,
 } from "../core/shadowWindow";
-import { wrapShadowTexture } from "../core/wrappedTextures";
 import type { ShadowQuality } from "../core/settings";
 import type { BodyShadowMap } from "../render/BodyShadowMap";
 import type { OwnTexture } from "../render/HostBindGroup";
@@ -135,8 +134,8 @@ export class BodyShadows {
    * (`setBodyShadowMatrix`), as the generator's was.
    */
   private readonly matrix = new Matrix();
-  /** Babylon's view of our texture, while the map has one. */
-  private wrapped: BaseTexture | null = null;
+  /** Our texture stands: the map has one. */
+  private made = false;
   /** Instance matrices, packed. Never reallocated. */
   private readonly matrices: Float32Array<ArrayBuffer>;
   /** How many of `matrices` are live this frame. */
@@ -165,7 +164,7 @@ export class BodyShadows {
    * binding, as `ShadowSystem.depthMap`'s.
    */
   get depthMap(): OwnTexture {
-    return this.wrapped ? this.map.own : this.mats.shadows.lit;
+    return this.made ? this.map.own : this.mats.shadows.lit;
   }
 
   /**
@@ -206,20 +205,19 @@ export class BodyShadows {
     const c = CONFIG.graphics.bodyShadows;
     const tier = CONFIG.graphics.shadowTiers[quality];
     if (tier.bodies === this.mapSize && tier.bodyWindow === this.window) return;
-    this.wrapped?.dispose();
-    this.wrapped = null;
+    this.made = false;
     this.map.setSize(0);
     this.mapSize = tier.bodies;
     this.window = tier.bodyWindow;
     this.win.invalidate();
     if (tier.bodies > 0) {
       this.map.setSize(tier.bodies);
-      this.wrapped = wrapShadowTexture(this.scene, this.map.texture!, "bodyShadow");
+      this.made = true;
       this.restate();
     } else {
       this.count = 0;
     }
-    this.mats.shadows.setBodyShadowMap(this.wrapped, this.wrapped ? this.map.own : null);
+    this.mats.shadows.setBodyShadowMap(this.made ? this.map.own : null);
     this.mats.shadows.setBodyShadowParams(depthBias(c.bias, c.depthRange));
     this.mats.shadows.setBodyShadowMatrix(this.lightMatrix);
   }

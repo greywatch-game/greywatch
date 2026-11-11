@@ -6,8 +6,9 @@
  * proxies every moving shadow is drawn as), the per-slot cone/tile arrays the
  * shaders read (written into `ShadowBindings`' own arrays, which every
  * `celShadow` consumer holds by reference), the proxies' arrays and the face
- * records (`AtlasWork`'s: our renderer draws the atlas, `render/LampAtlas.ts`),
- * and Babylon's wrapped view of the atlas. Owns no light — `LightingSystem`
+ * records (`AtlasWork`'s: our renderer draws the atlas, `render/LampAtlas.ts`;
+ * Babylon's wrapped view of it went with Babylon's engine, `BABYLON_EXIT.md`
+ * X5.4h). Owns no light — `LightingSystem`
  * decides which lights exist and which won a slot, and this decides only
  * which of THOSE cast.
  * Invariants:
@@ -72,17 +73,10 @@
  * proxy's instance names its tile, so one draw covers every face of every
  * moving light; a static bake is a pass per face with the tile as a uniform.
  */
-import {
-  type BaseTexture,
-  Matrix,
-  Quaternion,
-  type Scene,
-  Vector3,
-} from "@babylonjs/core";
+import { Matrix, Quaternion, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { ProxyBoxes, type ShadowBody, type ShadowHull } from "../core/proxyBoxes";
 import type { ShadowQuality } from "../core/settings";
-import { wrapShadowTexture } from "../core/wrappedTextures";
 import type { AtlasWork, LampAtlas } from "../render/LampAtlas";
 import { MAX_TILES } from "../render/lampDepth";
 import {
@@ -153,12 +147,12 @@ interface Entry {
 
 export class LocalShadows {
   /**
-   * The atlas is our renderer's (`LampAtlas`), and Babylon reads `wrapped`:
-   * false only until the first map hands ours its casters — see the header.
+   * The atlas is our renderer's (`LampAtlas`): false only until the first map
+   * hands ours its casters — see the header.
    */
   private ours = false;
-  /** Babylon's view of our renderer's atlas, while it is ours and has one. */
-  private wrapped: BaseTexture | null = null;
+  /** Our renderer's atlas stands: it is ours and has one. */
+  private made = false;
   /**
    * The atlas has been stood up once — false only until the constructor's
    * `setQuality`, which must stand it up even at a rung equal to `tier`'s
@@ -218,7 +212,6 @@ export class LocalShadows {
   private readonly scratchU = new Vector3();
 
   constructor(
-    private readonly scene: Scene,
     private readonly mats: CelMaterialFactory,
     quality: ShadowQuality,
     /** Our renderer's atlas: who draws it whenever the handover holds every caster. */
@@ -277,15 +270,14 @@ export class LocalShadows {
    * The atlas at `tier`'s size while ours holds it — none on a rung without
    * one, nor before ours holds it — bound to every reader. Every light loses its tiles,
    * because a tile's index means a different rectangle at a different size
-   * and a fresh texture holds none of them. Babylon's view of our texture is
-   * let go first, which destroys the texture it wraps, so ours is re-made
-   * AFRESH whatever its size (`wrapShadowTexture`).
+   * and a fresh texture holds none of them. Ours is re-made AFRESH whatever
+   * its size, as it was while Babylon's view of it was let go first (until
+   * `BABYLON_EXIT.md` X5.4h).
    */
   private remake(): void {
     const tier = this.tier;
     this.releaseAll();
-    this.wrapped?.dispose();
-    this.wrapped = null;
+    this.made = false;
     this.lamps.setSize(0, 0);
     this.tilesPerRow = 0;
     this.tileCount = 0;
@@ -296,7 +288,7 @@ export class LocalShadows {
       this.owner = new Array(this.tileCount).fill(null);
       if (this.ours) {
         this.lamps.setSize(tier.atlas, tier.tile);
-        this.wrapped = wrapShadowTexture(this.scene, this.lamps.texture!, "localShadowAtlas");
+        this.made = true;
       }
     }
     this.standing = true;
@@ -310,7 +302,7 @@ export class LocalShadows {
     );
     const c = CONFIG.graphics.localShadows;
     slots.params.set(c.bias, c.normalBias, 0, 0);
-    this.mats.shadows.setLocalShadowMap(this.wrapped, this.wrapped ? this.lamps.own : null);
+    this.mats.shadows.setLocalShadowMap(this.made ? this.lamps.own : null);
     this.publish([]);
   }
 
@@ -1054,8 +1046,7 @@ export class LocalShadows {
   }
 
   dispose(): void {
-    this.wrapped?.dispose();
-    this.wrapped = null;
+    this.made = false;
   }
 
   /** How many tiles are held, for the profiler and the debug overlay. */

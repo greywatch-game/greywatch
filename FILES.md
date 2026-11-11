@@ -398,8 +398,13 @@ main.ts             # Bootstrap. Imports src/ui/base.css FIRST. Awaits the two
                     #   things the game cannot start without — the WebGPU device
                     #   and the Havok WASM — and the page's own match's host
                     #   (`openMatchHost`: a Worker, or the page, never a
-                    #   failure), then builds the Game, which takes all three
-                    #   as arguments. Owns the boot screen: names each
+                    #   failure), then builds the Game, which takes them all
+                    #   as arguments. The device and the canvas's context are
+                    #   ASKED FOR and CONFIGURED here as Babylon's WebGPUEngine
+                    #   did (X5.4h: no limits, timestamp-query under ?gpu, the
+                    #   preferred format, usage 17, premultiplied); the
+                    #   frame's clock sampled where the engine's
+                    #   _initializeMainAttachments did. Owns the boot screen: names each
                     #   await on its load plate, paints before the constructor,
                     #   fades it on the first drawn frame, or fills plate and
                     #   note with one of the four failures.
@@ -688,13 +693,6 @@ src/
                         #   both: a plain pair, no Babylon light since
                         #   X5.3d). (The 1x1 LIT texture a map switched OFF is
                         #   bound as went to render/TextureMaker at X5.4d)
-    wrappedTextures.ts  # Babylon's wrapped VIEWS of textures OUR renderer
-                        #   owns: a shadow texture's (wrapShadowTexture, for
-                        #   ShadowSystem, BodyShadows and LocalShadows; a
-                        #   probe's cube had one too until X5.3d), read by
-                        #   Babylon's cel materials alone since X5.4d (which
-                        #   never draw); disposing one destroys the texture
-                        #   it wraps
     proxyBoxes.ts       # What a soldier and a hull ARE to a shadow: boxes,
                         #   packed as instance matrices. RAGDOLL_BONES and the
                         #   collider — a hull's off its OWN fields (pos, yaw,
@@ -704,9 +702,11 @@ src/
                         #   of check-babylon-free)
     babylonCompiles.ts  # The DEV counter of BABYLON EFFECT COMPILES, which
                         #   must read 0 in every state (X5.3d): createEffect
-                        #   and createComputeEffect wrapped on the engine from
-                        #   Game's construction (the engine's own clearQuad,
-                        #   made before it, not counted), each compile said as
+                        #   and createComputeEffect wrapped on the scene's
+                        #   engine from Game's construction (a NullEngine
+                        #   since X5.4h, compiling nothing of its own; the
+                        #   WebGPUEngine's clearQuad, made before it, was not
+                        #   counted), each compile said as
                         #   a console warning. The draw log asserts it. Until
                         #   X6.1 deletes the cel program's Babylon declarations
     renderId.ts         # The RENDER ID as a counter of ours with Babylon's
@@ -727,10 +727,28 @@ src/
                         #   so the scene is never rendered. Its points are
                         #   Babylon Observables of its own named for the
                         #   scene's they replace; its host is our renderer's
-                        #   FrameHost (the seam's device, the loop's encoder
+                        #   FrameHost (the game's device, the loop's encoder
                         #   and end of frame, the scene's matrix and clear
                         #   colour). Brackets the profiler's drawWorld and
                         #   glow (timeWith, X5.4g)
+    CanvasSurface.ts    # THE CANVAS, ours (X5.4h): its WebGPU context and
+                        #   format (configured by main.ts), its backing
+                        #   store's size and scaling level — Babylon's
+                        #   resize/setSize PORTED (clientWidth or the bounding
+                        #   rect over the level, | 0), setHardwareScalingLevel
+                        #   (applyRenderScale's setter), the render size and
+                        #   aspect ratio every reader asks — onSized (where
+                        #   _initializeMainAttachments ran: the clock's
+                        #   sample), and adoptInput (what Babylon's scene
+                        #   input manager did to the canvas element: tab
+                        #   index, press/release default-prevented and
+                        #   focusing, pointer capture)
+    SceneEngine.ts      # The engine the Babylon Scene stands on until X6.1
+                        #   (X5.4h, row "X5.4, Babylon's engine"): a
+                        #   NullEngine told WebGPU's depth range
+                        #   (isNDCHalfZRange) and the surface's size and level,
+                        #   so the camera's projection and ProjectToRef are
+                        #   Babylon's to the bit. No device, no canvas
     FrameLoop.ts        # THE LOOP, ours (X5.4g): what runRenderLoop,
                         #   beginFrame and endFrame did — the
                         #   requestAnimationFrame chain FrameCap admits, the
@@ -739,9 +757,11 @@ src/
                         #   frame's begin and end as Observables of its own,
                         #   the frame id, the ONE submit (FrameSubmit) and the
                         #   profiler's present around it; held while the
-                        #   device is lost (ahead of the cap, where Babylon
-                        #   tested after it); stop(), stopRenderLoop's port,
-                        #   a script's (no caller in the game)
+                        #   device is lost — off the device's own lost since
+                        #   X5.4h, for the task Babylon's engine took to flag a
+                        #   restore (ahead of the cap, where Babylon tested
+                        #   after it); stop(), stopRenderLoop's port, a
+                        #   script's (no caller in the game)
     teamView.ts         # Which side the player is LOOKING from: the one remap
                         #   between the authority's team INDEX and the team a
                         #   body is DRAWN and NAMED as, so every player sees
@@ -2840,16 +2860,6 @@ src/
                         #   stored as `filmGrain`, which is what it used to be
   render/               # OUR renderer (BABYLON_EXIT.md Phase 3). Never imports
                         #   Babylon — the build gate walks every file in it
-    babylonSeam.ts      # THE SEAM: BabylonEngineSeam, the one place anything
-                        #   here meets Babylon's engine (types only). Its
-                        #   header numbers every internal it reaches: ONE
-                        #   since X5.4g — the device (1); 9 (the upload
-                        #   encoder submitted first) and the engine's end of
-                        #   frame retired at X5.4g, the loop's own; 2 to 5, 7
-                        #   and 8 (the open pass, the bundle list, its
-                        #   attachments and flip, a Babylon texture's view and
-                        #   sampler, and hostTexture) at X5.4f, 6 and 10
-                        #   (group 0's hooks) at X5.3d
     FrameSubmit.ts      # THE FRAME'S ONE ENCODER AND ONE SUBMIT (X5.4g):
                         #   made at construction and after every submit, as
                         #   Babylon's flushFramebuffer made its next; every
@@ -2866,7 +2876,9 @@ src/
                         #   claims a profiler row). Needs no browser flag
     frameHost.ts        # FrameHost (what the renderer needs from whoever owns
                         #   the frame — the game's frame since X5.4f,
-                        #   core/SceneFrame.ts: the device, the draw phase's
+                        #   core/SceneFrame.ts: the game's device (X5.4h, the
+                        #   seam, babylonSeam.ts, deleted with Babylon's
+                        #   engine), the draw phase's
                         #   two ends (onDrawPhase, X5.4e), the camera's matrix,
                         #   the scene's clear colour, the encoder every pass of
                         #   the frame is recorded into and a call after every

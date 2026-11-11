@@ -23,7 +23,8 @@
  *   did.
  * - **The canvas's pass is Babylon's MAIN pass** (`_startMainRenderPass(false)`):
  *   the swap chain's current texture (`getCurrentTexture`, on the context
- *   Babylon configured — the canvas's one `webgpu` context) viewed as
+ *   the boot configured — the canvas's one `webgpu` context, `main.ts`,
+ *   Babylon's engine's until `BABYLON_EXIT.md` X5.4h) viewed as
  *   `ViewDescriptorSwapChain` described it, LOADED and stored; the canvas's
  *   depth LOADED and stored, no stencil; labelled `MainRenderPass`. It is begun
  *   EXACTLY ONCE a frame, as Babylon's was: by the chain's last stage
@@ -31,8 +32,9 @@
  *   frame's end (`finishFrame`), where `Scene._renderFrame`'s closing
  *   `restoreDefaultFramebuffer` began it with nothing to draw. The canvas's
  *   depth is never cleared: Babylon's engine cleared its own when it made it
- *   (a resize's `_initializeMainAttachments`, Babylon's still), and nothing
- *   reads either — the grade writes it under `always` (`PostChain`).
+ *   (a resize's `_initializeMainAttachments`, until X5.4h stopped constructing
+ *   the engine and its depth with it), and nothing reads it — the grade
+ *   writes it under `always` (`PostChain`).
  * - Every pass is recorded into the host's prepare encoder (`FrameHost
  *   .prepareEncoder`), after the frame's own, and ENDED by the call that
  *   asked for it (`PostChain.record`) before the next is begun; nothing here

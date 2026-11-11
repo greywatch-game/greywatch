@@ -121,7 +121,12 @@ then the frame loop itself, at which point taking the frame is mostly deletion.
    `src/render/babylonSeam.ts`, created by X3.2. Its header keeps a numbered
    list of what it reaches into. The list may grow through Phase 3 and must
    only shrink after it. A step that needs a second place to touch an internal
-   is a step that has gone wrong.
+   is a step that has gone wrong. **Read since X5.4h as "no file touches a
+   Babylon internal"**: the seam was deleted with its last item, the device,
+   when Babylon's `WebGPUEngine` stopped being constructed (the scene stands on
+   a `NullEngine` through public API alone, `src/core/SceneEngine.ts`), and a
+   step that needs an internal before X6.1 brings the seam back as a step that
+   has gone wrong.
 5. **A GPU resource lives with whatever produces it.** While both renderers
    run, the side that does not own a texture or buffer reads a wrapped view of
    it through the seam. It never copies it and never owns a second one.
@@ -6299,7 +6304,8 @@ Each is rewritten by the step that breaks it, in the same commit.
 
 | contract | step |
 | --- | --- |
-| `CLAUDE.md`: `compatibilityMode = false` is load-bearing | X5.4 (deleted) |
+| `CLAUDE.md`: `compatibilityMode = false` is load-bearing | X5.4 (deleted at X5.4h with the engine) |
+| `BABYLON_EXIT.md` rule 4, and `CLAUDE.md`: our renderer meets Babylon's engine through ONE seam | X5.4h (the seam deleted with its last item, the device: rule 4 reads "no file touches a Babylon internal" until X6.1; `CLAUDE.md`'s device and canvas paragraph in its place) |
 | `CLAUDE.md`: no deep static import, keep `optimizeDeps.exclude`; the two WASMs that never ship | X6.1 |
 | `CLAUDE.md`: every cel material is frozen; `remember`; a vertex colour buffer gained after a first draw | end of Phase 4 (deleted); since the editor's retirement no Babylon material draws in any state (X5.3d, its DEV counter), and the rule goes with the Babylon declarations at X6.1 |
 | `CLAUDE.md`: the map editor (dev only), its dynamic-import rule and `docs/editor.md`; the generators' "the editor patches"; the dev write endpoint's map rows; `installMap`'s two callers; the terrain-patch rule's two callers; the two-`Vector3` crossings | X5.3b, X5.3c (the viewer replaces the editor; row "X5.3, retire the editor") |
