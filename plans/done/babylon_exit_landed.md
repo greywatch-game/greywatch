@@ -11707,7 +11707,7 @@ here).
 Scripts and logs in the session's scratchpad, `x53-whole/` (`bank.sh`, `sarab.sh`, `run2.sh`,
 `dl-fix.mjs`, `viewer7.mjs`, `status.txt`).
 
-### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88)
+### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88), X5.4e **LANDED** (74d246c)
 
 The plan's `BABYLON_EXIT.md` holds X5.4's brief, "What the frame is today", its ONE RULE, the
 step's own two rules, "Every sub-step owes" and the nine sub-steps.
@@ -12131,3 +12131,92 @@ build gate and docs) found two bugs on paths no frame takes, and no question for
 
 Scripts and logs in the session's scratchpad, `x54d-review/` (`failpaths.ts` and its two bundles and
 results, the kit and bank logs and kept frames).
+
+**X5.4e LANDED** (74d246c; 2026-11-10; no change to the picture). Measured headless on the Windows box
+against a BEFORE at 0fdf80c, in the worktree `greywatch-2-before-x53a` (moved there, detached; no
+dependency moved; its `ref/` the main tree's), every run alone on the GPU. No device lost in any run.
+
+- **What moved**: `render/FrameTargets.ts` (new; `Renderer.targets`) makes the frame (`rgba8unorm`),
+  its depth (`depth32float`), the glow's mask (`rgba8unorm`) and its blur's five (`rgba16float`), each
+  as Babylon's `RenderTargetTexture` made it — one level, one sample, `2d`, usage 23, viewed whole by
+  the one view both attached and sampled (Babylon's hardware view and attachment view had the same
+  seven fields), zeros when made — remade where Babylon's was resized: the frame and its depth when
+  the render size moves (`PostPasses.prepareFrame`, which resized its own target only then), the
+  glow's six on every `GlowPass` resize, a size or a rung change (Babylon's `resize` remade a target
+  whatever its size), a replaced texture destroyed after the submit; the glow's six read through the
+  sampler Babylon's cache made for a bilinear target at its default anisotropy of 4 (`anisotropic`).
+  The Renderer records every pass before the chain into the encoder Babylon submits first (item 9),
+  after the prepares: at the draw phase's end (`Renderer.end`, told by the seam's new `onDrawPhase`)
+  the opening pass — the frame cleared to the scene's clear colour (`FrameHost.clearColor`) and its
+  depth to 1 — and the main pass — the colour loaded, the depth cleared again — whatever is to draw,
+  every point's list RECORDED in its order; then, asked by `GlowPass` from the same end, the mask
+  (`recordGlowMask`: cleared to black, alpha 1, the frame's depth loaded, the first draws at its open
+  and the late at its close) and each blur pass (`glowBlurPass`: loaded, no depth), labelled as
+  Babylon labelled them (`PostProcessRTT-celInk`, `glowMask`, `glowDown` … `glowWide`). `GlowPass` keeps
+  the rules (when, the sizes, the kernel) and asks through `GlowDraws`; `GlowBlur` draws into our
+  targets; `PostPasses` sizes our frame and names it for its reader, and still opens the chain's
+  passes on Babylon's render encoder. **Deleted**: `shaders/FrameDepth.ts` (every stage reads
+  `FrameTargets.depth`), `PostPasses`' frame target, the camera's `outputRenderTarget` and the DEV throw
+  on a false `autoClear`, `GlowPass`' six Babylon targets, binds, clear and close observables and frame
+  rebind, `onMainPass` and its item-5 test, and the seam's queueing for the main pass, the mask and the
+  blur. Items 2 to 5, 7 and 8 keep readers in the post chain's passes alone (X5.4f's), so the seam's
+  list does not shrink here.
+- **A deviation from the Do, named**: the Do turns `scene.autoClear` false; `autoClearDepthAndStencil`
+  is held false beside it. With no output target on the camera, `Scene.render`'s first
+  `_clearFrameBuffer` clears the CANVAS under either flag (`_clear`), and the default `true` would have
+  begun a pass of Babylon's on the canvas, clearing the engine's depth, which no frame before this step
+  had — an extra pass in the whole-frame log. The camera's own render binds nothing with no output
+  target (`_processSubCameras(camera, !!camera.outputRenderTarget)`), so with both false Babylon begins
+  no pass before the chain's.
+- **`post.mjs` at both sizes** against the parent with ONLY the new X5.4e section of
+  `post-expected.txt` (the earlier sections excuse fields of earlier parents and were left out of the
+  comparison): 29,829 values equal at each size — every pass's attachments, load and store ops, clear
+  values, labels, draws, pipelines, bind groups and target hashes, the statics. Named: the moved
+  passes' `role` (render → upload), `whole`'s per-buffer item lists — the frame's command order across
+  the two buffers the same item for item over all 34 scenarios, 562 items (`x54e/wholeflat.cjs`) —
+  `chain.autoClear` and `autoClearDepthAndStencil`, the glow targets' three Babylon sampling fields
+  (null on ours), and ONE queue write a frame fewer, 272 bytes: Babylon's scene uniform buffer for
+  the mask's render target (`Scene ubo #0 for glowMask`), rewritten by its render and read by no draw;
+  every other write of a deploy frame the same, in order and size (`x54e/writes.mjs`, both trees).
+  Both AFTER runs compare equal. The live half (printed) keeps each state's pass pattern; its frame
+  offsets wander as between two parent runs.
+- **Every bank row** by `exact.mjs`, `--check --keep` at each tree, 147 rows a run: default 147
+  byte-equal; `volumetrics=high` 146 and `harrowmead-view-pistol-reload` within its flake;
+  `volumetrics=low` 145, `sarab-shelf` within its flake and `sarab-ground` 98 pixels by 2/255 — the
+  Sarab procedure (`x54e/sarab.sh`, two processes a tree): the parent drew `bb382a4a…` twice, the step
+  `bb382a4a…` and `b2f79984…`, and `b2f79984…` is the frame the parent trees' own processes drew at
+  X5.4a's and X5.4b's BEFOREs (their kept `before-low`), so both frames are the parent's.
+- **The probes against the parent's logs**: `gi.mjs` equal (914,604 and 254,724 values); the draw log
+  equal; `census` equal on every map; `particles.mjs` equal (45,120 numbers) — its printed draw-phase
+  window counts 12 render passes where the parent's counted 10, the frame's opening and main passes
+  being recorded inside it now (splits 0 at both); `surfaces.mjs`' 147 rows equal (`x54e/surfcmp.cjs`)
+  but `first`'s mark, which lands at the phase's end where its draws run (an instrument change: our
+  points are marked as the renderer runs each list); `readers.mjs replay` 547 of 547 live answers, the
+  three origins identical, the render-id log unchanged, and `camera` equal; `pipelines.mjs hollowmere`
+  (107 modules, 2 of Babylon's pipelines, 90 of ours, nothing per second) and `coldharbour --round`
+  (each install 0 / 21 / 12, nothing in play) as the parent.
+- **`?profile&gpu`** (`bench.mjs hollowmere coldharbour --gpu --capped --runs 2`, parent and step
+  alternating twice): `gpu.frame` within 0.4% on every group (Hollowmere 4.486/4.486 → 4.490/4.494 ms on
+  the vantages, 5.222/5.239 → 5.213/5.213 in the fight; Coldharbour 5.006/5.002 → 5.004/4.984 in the
+  fight); **`render` 26–30% LOWER** (Hollowmere 0.385/0.373 → 0.270/0.272 vantages, 0.393/0.388 →
+  0.272/0.278 path, 0.528/0.532 → 0.389/0.387 fight; Coldharbour 0.409/0.414 → 0.299/0.300, 0.409/0.422 →
+  0.303/0.303, 0.543/0.538 → 0.416/0.415) — outside the Verify's 8% band, in the cheaper direction: no
+  Babylon render target is rendered (the mask's `RenderTargetTexture.render` of an empty list, its two
+  `updateTransformMatrix(true)` and its UBO), no bind and unbind a pass, no bundle-list queueing.
+  Uncapped (`--gpu` without `--capped`, the same alternation) `render` is mostly a wait on the GPU
+  (1.4–3.9 ms, swinging run to run) and was not read. The main pass's recording moves from `glow` to
+  `drawWorld` (`docs/profiling.md`); no report version, neither bracket having moved.
+- **Live** (`x54e/live.mjs`, X5.4d's script with a pixel-ratio change and the targets' checks): offline
+  Hollowmere then Coldharbour (the kit lid, `F2`, a life firing and throwing and the launcher, every
+  post setting, the shadow rungs, render scale, a resize, a ratio change, the pause, teardowns) and a
+  match on each map — 41 steps, render-id drift 0, the DEV compile counter 0, the targets' retired list
+  empty, no page or console error. The ratio change on its own (`x54e/dpr.mjs`, 1 → 1.5 → 1): the
+  render size, the frame and the glow's targets follow, the three new blur widths compile in ~4
+  frames with the blur skipped meanwhile (X5.2's accepted difference) and drawn after, no error.
+- **Typecheck, build** (its gates, `maps:check` among them), **corecheck, parity**, **`gate`** and
+  **`shaders`** (seven maps clean each).
+- **Not run**: the phone; `merge:hash` (the world layer untouched).
+
+Scripts and logs in the session's scratchpad, `x54e/` (`before.sh`, `after.sh`, `probes.sh`,
+`sarab.sh`, `gpu.sh`, `gpu-capped.sh`, `wholeflat.cjs`, `writes.mjs`, `surfcmp.cjs`, `live.mjs`,
+`dpr.mjs`, the BEFORE and AFTER logs and kept frames).

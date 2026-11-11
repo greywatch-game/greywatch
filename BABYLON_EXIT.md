@@ -5331,7 +5331,7 @@ pointer, its history unchanged):
   when it lands, owes three things: its generator's emitted header rewritten, its
   `params.ts` and `WRITABLE` rows dropped, and a `maps:check` entry.
 
-### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d; it was sized **M** before the split, and the read below re-sizes it) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014, its review clean), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88)
+### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d; it was sized **M** before the split, and the read below re-sizes it) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014, its review clean), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88), X5.4e **LANDED** (74d246c)
 
 - **Do:**
   - Our own `requestAnimationFrame` loop.
@@ -5815,6 +5815,38 @@ measurement until the sub-step that replaces both.
     "The scene draws STRAIGHT INTO the frame" and the glow paragraph; the headers of
     `GlowPass`, `PostPasses`, `targets.ts`, `frameHost.ts`, `Renderer`, the seam (its
     items' remaining readers); `FILES.md` (`FrameDepth` out).
+
+  **X5.4e LANDED** (74d246c; 2026-11-10; no change to the picture). The full note is in
+  `plans/done/babylon_exit_landed.md`. **`render/FrameTargets.ts`** (`Renderer.targets`) makes the
+  frame (`rgba8unorm`) and its depth (`depth32float`), the glow's mask and its blur's five
+  (`rgba16float`) as Babylon's render targets were (one level, usage 23, viewed whole, zeros when
+  made; the frame remade when the render size moves, the glow's six on every `GlowPass` resize, as
+  Babylon's `resize` remade a target whatever its size), and the Renderer records the opening clear,
+  the main pass (`Renderer.end`, at the draw phase's end), the mask (`recordGlowMask`) and the blur's
+  passes (`glowBlurPass`) into the encoder Babylon submits first, after the prepares, each with the
+  load ops and clear values `post.mjs`' whole-frame log read at the parent. The scene clears
+  nothing: `scene.autoClear` AND `autoClearDepthAndStencil` false — a deviation from the Do, which
+  named the first alone: with no output target, `autoClearDepthAndStencil` left at its default would
+  have Babylon clear the canvas's depth in a pass of its own, which no frame before had — the camera's
+  `outputRenderTarget` and `FrameDepth` deleted, the seam's host telling the draw phase's two ends
+  (`onDrawPhase`, replacing `onMainPass`) and the scene's clear colour. **Measured** against a BEFORE
+  at 0fdf80c: `post.mjs` at both sizes equal (29,829 values each) with only the X5.4e section of
+  `post-expected.txt` — the moved passes' encoder roles and `whole`'s per-buffer items (the frame's
+  command order the same item for item over 34 scenarios, a scratch check), `autoClear` and
+  `autoClearDepthAndStencil`, Babylon's three sampling fields on the glow's targets, and ONE queue
+  write a frame fewer, 272 bytes: Babylon's scene uniform buffer for the mask's render target, read
+  by no draw (every other write the same, write by write); the bank by `exact.mjs` default 147
+  byte-equal, `volumetrics=high` 146 and the pistol flake, `volumetrics=low` 145, the `sarab-shelf`
+  flake and `sarab-ground` 98 pixels by 2/255 — both its frames drawn by parent processes (the Sarab
+  procedure and the frames kept at X5.4a's and X5.4b's BEFOREs); `gi.mjs`, the draw log, `census`,
+  `particles.mjs`, `readers.mjs` replay (547 of 547, the origins, the render-id log unchanged) and
+  camera equal; `surfaces.mjs` equal but `first`'s mark, now where it runs; both `pipelines.mjs` runs
+  as the parent. **`?profile&gpu`** (`bench.mjs --gpu --capped`, Hollowmere and Coldharbour, parent
+  and step alternating twice): `gpu.frame` within 0.4% on every group, and `render` 26–30% LOWER
+  (0.385/0.373 → 0.270/0.272 ms on Hollowmere's vantages; 0.543/0.538 → 0.416/0.415 on
+  Coldharbour's fight) — outside the 8% band, in the cheaper direction, named for the owner; the
+  main pass's recording moves from `glow` to `drawWorld` (no report version: neither bracket moved).
+  Live, typecheck, build, corecheck, parity, `gate` and `shaders` clean. **Not run**: the phone.
 
 - **X5.4f — the chain and the canvas are ours, and the scene stops rendering** (no
   change to the picture) — **M–L**. The post passes' item's second half.
