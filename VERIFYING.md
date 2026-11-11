@@ -311,24 +311,26 @@ you are on before you believe anything else in this section.
   bring it.** `timestamp-query` is a device feature, so it is asked for when
   the device is created and cannot be armed afterwards by anything — see
   `docs/profiling.md`. Boot with `?profile&gpu` and read `gpu.frame`, which
-  is the whole frame, from Babylon's upload encoder to its render encoder;
-  `gpu.mainPass` is the final full-screen quad in
-  this pipeline and reads in tens of microseconds, so a script that asserts on
-  it is asserting on a composite. `gpu.frame` samples about HALF the frames —
+  is the whole frame, from before its first pass to after its last — our
+  frame timer's two stamps around the frame's one encoder since report v38
+  (`BABYLON_EXIT.md` X5.4g; Babylon's upload encoder to its render encoder
+  before, beside a `gpu.mainPass` that was the final full-screen quad and is
+  retired). `gpu.frame` samples about HALF the frames —
   only one measurement is in flight at a time — so `gpu.frame.samples` is the
   denominator, and a 0 in `series.gpuFrameMs` is an unmeasured frame rather
   than a fast one. Measured on this box: 130.0 fps with `?gpu` against 129.9
   without, and Cinderhaven at 1718x858 reads 1.372 ms mean GPU against a
   6.746 ms tick.
-  **`?gpu` is necessary and not sufficient: the whole-frame counter also needs
-  `--enable-unsafe-webgpu`**, which `launchClient` passes and a browser started
-  by hand does not. Without it the capture reads `available: true` and
-  `frame.samples: 0` — a real measurement of zero taken 747 times, not an
-  absent one — while `gpu.mainPass` keeps working and makes the report look
-  healthy. `gpu.frameMeasurable` (report v9) is the field that tells the two
-  apart; check it before believing a zero. Verified both ways on this box:
-  1549 samples with `--enable-unsafe-webgpu`, 0 without, same build and same
-  map.
+  **From report v38 `?gpu` is sufficient**: both counters are pass
+  descriptors' stamps, which need `timestamp-query` and no browser flag.
+  **Before v38 it was necessary and not sufficient: the whole-frame counter
+  also needed `--enable-unsafe-webgpu`** (Babylon's `writeTimestamp`), which
+  `launchClient` passes and a browser started by hand does not; without it a
+  capture read `available: true` and `frame.samples: 0` — a real measurement
+  of zero taken 747 times — while `gpu.mainPass` kept working, and
+  `gpu.frameMeasurable` (report v9) was the field that told the two apart.
+  Verified both ways on this box then: 1549 samples with the flag, 0 without,
+  same build and same map.
   **`gpu.cull` (report v18) is our culls alone and needs no flag** — stamps
   on their own compute passes, read to the microsecond on this box's
   Chromium with the flag and without; it is part of `gpu.frame`, never added
@@ -1686,8 +1688,9 @@ is one machine's:
   `g.bodyShadowMap.colour` is our `r16float` texture, made WITHOUT
   `COPY_SRC`, so a readback adds it in an init script (wrap
   `GPUDevice.prototype.createTexture`, label `"body shadows"`) before the
-  page boots, and copies after the engine's flush
-  (`g.engine.onEndFrameObservable`) to read the frame just drawn. It holds
+  page boots, and copies after the frame's submit
+  (`g.frameLoop.onEndFrameObservable` — our loop's since `BABYLON_EXIT.md`
+  X5.4g; the engine's never raised in a frame since) to read the frame just drawn. It holds
   bodies only where the window is: re-place it inside the render
   (`g.sceneFrame.onBeforeRenderObservable` — the frame's own since
   `BABYLON_EXIT.md` X5.4f, the scene's never raised — `g.bodyShadows.update(focus, g.mats,

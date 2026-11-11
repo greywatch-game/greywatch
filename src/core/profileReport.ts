@@ -29,13 +29,6 @@ import { onePercentLow } from "./frameStats";
 import { P, PARENT_OF, PHASES, ROOTS, SLOTS, type Phase } from "./profilePhases";
 
 /**
- * How much of a creation's define set a COMPACT report carries, in characters.
- * A cel variant's set runs to several hundred, and the compact form is sized to
- * survive a phone's clipboard; the download carries every one whole.
- */
-const DEFINES_CAP = 160;
-
-/**
  * The duration a frame has to reach before the browser reports it at all.
  *
  * **Fixed by the specification at 50 ms, and it is the one number that decides
@@ -48,47 +41,6 @@ const DEFINES_CAP = 160;
  * idle" when the truth is that nobody looked.
  */
 const LOAF_FLOOR_MS = 50;
-
-/**
- * Whether this browser can measure a WHOLE FRAME's GPU time at all, which is a
- * different question from whether the adapter has `timestamp-query`.
- *
- * **Babylon brackets the whole command encoder with
- * `GPUCommandEncoder.writeTimestamp`, and Chrome exposes that method only
- * behind `--enable-unsafe-webgpu`** — while the FEATURE itself, and the
- * `timestampWrites` pass descriptor the MAIN PASS counter is written with, need
- * no flag at all. So on a stock browser the adapter reports the feature,
- * `enableGPUTimingMeasurements` takes, `gpuTimeInFrameForMainPass` appears and
- * `available` is therefore TRUE — while `WebGPUDurationMeasure.stop` returns a
- * literal 0, which `endFrame` accepts because `duration >= 0`. The counter then
- * records a real measurement of ZERO on every frame: 747 of them over one
- * measured session, against 626 genuine samples with the flag. `over` filters
- * every one of them out on `> 0` and the report says `samples: 0`.
- *
- * **Which is indistinguishable from "the GPU took no time", and that is the
- * whole reason this exists.** It is the third fact in the row `loaf.supported`
- * and `memory.heapLive` already state — "nobody asked", "the adapter refused"
- * and "this browser cannot express the answer" are three different things and
- * none of them is a reading. It cost a capture taken to settle `FINDINGS.md`
- * #1: `?gpu` armed, the feature present, `available` true, and the one
- * question the flag exists to answer came back empty.
- *
- * The METHOD is absent from `@webgpu/types` — it was removed from the spec,
- * which is why Chrome keeps it behind a flag — so the prototype is cast rather
- * than typed. **It is reached through `globalThis` rather than named**, which
- * is not style: `server/tsconfig.json` narrows `types` to `["node"]` and still
- * includes `../src`, so the bare identifier is undeclared in the authority's
- * typecheck even though it is declared in the client's — and it is undefined
- * at RUNTIME there too, in plain Node.
- */
-function gpuFrameMeasurable(): boolean {
-  const ctor = (
-    globalThis as unknown as {
-      GPUCommandEncoder?: { prototype?: { writeTimestamp?: unknown } };
-    }
-  ).GPUCommandEncoder;
-  return typeof ctor?.prototype?.writeTimestamp === "function";
-}
 
 /**
  * What a pipeline-or-module creation was, and the byte the ring stores for it.
@@ -120,15 +72,15 @@ export interface CreationEvent {
    */
   frameMs: number;
   /**
-   * Babylon's label for a render pipeline: its colour and depth formats, sample
-   * count and texture state, which is as close as the DEVICE gets to saying
-   * which pass it was for. Empty for whatever Babylon creates unlabelled.
+   * The descriptor's label: our renderer names every pipeline and module it
+   * makes for its program, which is as close as the DEVICE gets to saying
+   * which draw it was for. Empty for whatever is created unlabelled. Until
+   * report version 38 a render pipeline built through Babylon's cache also
+   * carried the `effect` it was for and its `defines` (a patch on Babylon's
+   * descriptor builder); no Babylon pipeline is made after the boot, and both
+   * are gone.
    */
   label: string;
-  /** The shader name, for a render pipeline built through Babylon's cache. */
-  effect: string;
-  /** That effect's define set — the variant. Truncated in a compact report. */
-  defines: string;
   /** Time inside the create call itself, which is not the compile. */
   callMs: number;
 }
@@ -240,15 +192,13 @@ export interface HitchFrame {
   loafScriptMs: number;
   loafRenderMs: number;
   /**
-   * GPU time for the main pass on this frame, **0 where none resolved** — see
-   * `ProfileReport.gpu`. A hitch whose wall clock is a quarter of a second
-   * over a GPU time of a few milliseconds is not waiting on the GPU.
-   */
-  gpuMs: number;
-  /**
    * Whole-frame GPU time on this frame, **0 where this frame was not one of
    * the sampled ones** — which is most of them. Where it is non-zero it is the
    * number that matters: a 240 ms wall clock over 3 ms of GPU is not the GPU.
+   * (Until report version 38 a hitch also carried `gpuMs`, Babylon's main
+   * pass, and Babylon's counters — `drawCalls`, `activeMeshes`,
+   * `meshWalkMs`, `renderTargetsMs`, `particlesMs` — every one idle since
+   * `BABYLON_EXIT.md` X5.4f.)
    */
   gpuFrameMs: number;
   /**
@@ -256,11 +206,6 @@ export interface HitchFrame {
    * see `ProfileReport.gpu.cull`. Report version 18.
    */
   gpuCullMs: number;
-  drawCalls: number;
-  activeMeshes: number;
-  meshWalkMs: number;
-  renderTargetsMs: number;
-  particlesMs: number;
   /**
    * Pipelines and shader modules created ON this frame, and on it plus the
    * `CONFIG.profiling.creationLead` frames before it.
@@ -343,8 +288,7 @@ export interface SegmentStat {
   tick: number;
   tickP95: number;
   render: number;
-  drawCalls: number;
-  activeMeshes: number;
+  /** (Babylon's `drawCalls` and `activeMeshes` were beside `render` until report version 38.) */
   gpuFrame: number;
   gpuSamples: number;
   /**
@@ -778,14 +722,13 @@ export interface ProfileReport {
     gcEvents: number;
     gcPerSec: number;
   };
-  counters: {
-    drawCalls: number;
-    activeMeshes: number;
-    meshWalkMs: number;
-    renderTargetsMs: number;
-    /** The GPU clouds and the mote field, which no phase covers. */
-    particlesMs: number;
-  };
+  /*
+   * `counters` — Babylon's `SceneInstrumentation` (the draw count, the active
+   * meshes, the mesh walk, the render-target and particle times) — was here
+   * until report version 38. Every one was Babylon's and idle once the scene
+   * stopped rendering (`BABYLON_EXIT.md` X5.4f); our renderer's draws are
+   * counted by `blocks`, `bodies`, `hulls`, `view` and `pools`.
+   */
   /**
    * What the BROWSER said about the same frames, which is the only thing in
    * this report that is not this instrument's own measurement.
@@ -830,7 +773,7 @@ export interface ProfileReport {
     worst: LoafFrame[];
   };
   /**
-   * What the GPU spent on the main pass, where the boot asked for it.
+   * What the GPU spent, where the boot asked for it.
    *
    * **`requested` and `available` are two questions and a capture answers
    * both**, the rule `loaf.supported` and `memory.heapLive` already state:
@@ -839,47 +782,47 @@ export interface ProfileReport {
    * `main.ts`, which is the only place it can act, because a device's features
    * are fixed when it is created.
    *
-   * **It is the MAIN PASS only.** Shadow maps, the glow's targets and the
-   * reflection bake are render targets with counters of their own that this
-   * does not read, so a frame whose GPU cost is in a target reads low here.
+   * **Both counters are OUR timestamp queries** since report version 38
+   * (`BABYLON_EXIT.md` X5.4g): pass descriptors' stamps, which need the
+   * device's `timestamp-query` and no browser flag.
    */
   gpu: {
+    /** `?gpu` was in the URL. */
     requested: boolean;
+    /** The frame's GPU timer was built: `?gpu`, and a device with `timestamp-query`. */
     available: boolean;
     /**
-     * Whether this browser can express a whole-frame answer — see
-     * `gpuFrameMeasurable`. **False with `frame.samples: 0` means the reading
-     * was impossible, not that the GPU was idle**, and on Chrome that is the
-     * ordinary case: it needs `--enable-unsafe-webgpu` on the command line,
-     * which `available` does not. `mainPass` is unaffected either way.
+     * Whether a whole-frame answer could be expressed at all. **Since report
+     * version 38 it is `available`**: the frame's stamps are our passes'.
+     * Before it `gpu.frame` was Babylon's `writeTimestamp` around its two
+     * encoders, which Chrome keeps behind `--enable-unsafe-webgpu`, so on a
+     * stock browser this was false and `frame.samples` 0 with `available`
+     * true — the reading impossible, never a GPU that was idle.
      */
     frameMeasurable: boolean;
     /**
-     * The WHOLE frame's GPU time, which is the one to read. Sampled rather than
-     * continuous — only one measurement is in flight at a time — so `samples`
-     * is the denominator and the mean is over those rows, never over the
-     * window. **Read it against `frameMeasurable` and never alone.**
+     * The WHOLE frame's GPU time, which is the one to read: from before the
+     * frame's first pass starts to after its last pass ends, the frame's one
+     * encoder bracketed by two empty passes of the timer's own
+     * (`render/FrameTimer.ts`; Babylon's encoders bracketed by
+     * `writeTimestamp` until report version 38, the same span). Sampled rather
+     * than continuous — only one measurement is in flight at a time — so
+     * `samples` is the denominator and the mean is over those rows, never over
+     * the window. (`mainPass`, Babylon's main-pass counter beside it, timed
+     * nothing once the canvas's pass was ours, `BABYLON_EXIT.md` X5.4f, and
+     * was retired with report version 38.)
      */
     frame: { samples: number; meanMs: number; p95Ms: number; maxMs: number };
-    /**
-     * The MAIN PASS only, which in this pipeline is **the final full-screen
-     * quad** and not the scene: the world renders into post-process targets, so
-     * this reads in the tens of MICROSECONDS and is not a claim about the GPU
-     * being idle. Kept because it is measured per frame and attributed exactly,
-     * which `frame` above cannot be, so it is the cross-check rather than the
-     * answer.
-     */
-    mainPass: { frames: number; meanMs: number; p95Ms: number; maxMs: number };
     /**
      * OUR renderer's culls — the cluster cull's and the instance cull's
      * compute passes, each stamped at its own start and end and summed
      * (`render/PassTimer.ts`) — which are part of `frame`: they are recorded
-     * into the encoder Babylon opens the frame's counter on. Sampled, one
-     * reading in flight at a time, so `samples` is the denominator, as for
-     * `frame`. `timed` says a timer was built at all (`?gpu` on a device
-     * with `timestamp-query`); timed with `samples: 0` is a window in which
-     * nothing was culled (the menu) or no reading landed. It needs no
-     * browser flag, and that is no claim about `frame`. Report version 18.
+     * into the frame's one encoder, inside its timer. Sampled, one reading in
+     * flight at a time, so `samples` is the denominator, as for `frame`, on
+     * rows of its own. `timed` says a timer was built at all (`?gpu` on a
+     * device with `timestamp-query`); timed with `samples: 0` is a window in
+     * which nothing was culled (the menu) or no reading landed. Report
+     * version 18.
      */
     cull: { timed: boolean; samples: number; meanMs: number; p95Ms: number; maxMs: number };
   };
@@ -888,14 +831,12 @@ export interface ProfileReport {
    *
    * **`observed` first, for the reason every other probe here ships its own
    * availability**: a window with no creations in it is a finding only where
-   * the hook was installed. `named` says whether Babylon's descriptor builder
-   * was found to name them; after a Babylon upgrade a capture with `observed`
-   * true and `named` false means the internal moved, not that nothing had a
-   * name.
+   * the hook was installed. (`named`, whether Babylon's descriptor builder was
+   * found to name them by effect, went with that naming at report version 38:
+   * a creation is named by its label alone.)
    */
   pipelines: {
     observed: boolean;
-    named: boolean;
     render: number;
     compute: number;
     modules: number;
@@ -923,19 +864,10 @@ export interface ProfileReport {
     /** Collections per frame, and the used heap in MB. See `memory`. */
     gc: number[];
     heapMb: number[];
-    /**
-     * Babylon's two counters, per frame.
-     *
-     * **They are here because the means alone cannot answer the question they
-     * are most often asked.** `counters.drawCalls` is one number for the whole
-     * window and a hitch record carries its own — so a draw count that RAMPS
-     * across a second, which is what a batch of pipelines coming into view
-     * looks like, was visible only as five disconnected hitch records and had
-     * to be inferred. With the series it is a line you can lay against
-     * `frameMs`.
+    /*
+     * Babylon's two counters per frame, `drawCalls` and `activeMeshes`, were
+     * here until report version 38, and `gpuMs` (Babylon's main pass) below.
      */
-    drawCalls: number[];
-    activeMeshes: number[];
     /**
      * The long animation frame on each row, 0 where there was none — see
      * `ProfileReport.loaf`. Laid against `frameMs` it is the whole reading:
@@ -943,12 +875,6 @@ export interface ProfileReport {
      * `frameMs` rises alone it was not.
      */
     loafMs: number[];
-    /**
-     * GPU time for the main pass per row, **0 where no reading resolved for
-     * that frame** rather than where the GPU was idle. Lay it against
-     * `frameMs`: a wall clock that rises while this stays flat is not the GPU.
-     */
-    gpuMs: number[];
     /**
      * Whole-frame GPU time on the rows that were measured, **0 on the rest —
      * which is most of them**, because only one measurement is in flight at a
@@ -1020,11 +946,6 @@ export interface ProfileRing {
   readonly py: Float32Array;
   readonly pz: Float32Array;
   readonly botsAlive: Uint16Array;
-  readonly drawCalls: Uint32Array;
-  readonly activeMeshes: Uint32Array;
-  readonly meshWalkMs: Float32Array;
-  readonly rttMs: Float32Array;
-  readonly particlesMs: Float32Array;
   /** Per row: the backing store, the window's CSS size and the scaling level — `FrameProfile.canvasW`. */
   readonly canvasW: Uint16Array;
   readonly canvasH: Uint16Array;
@@ -1047,7 +968,6 @@ export interface ProfileRing {
   readonly loafScriptMs: Float32Array;
   readonly loafRenderMs: Float32Array;
   readonly loafHead: Uint8Array;
-  readonly gpuMs: Float32Array;
   readonly gpuFrameMs: Float32Array;
   readonly gpuCullMs: Float32Array;
   readonly madeRender: Uint16Array;
@@ -1058,12 +978,9 @@ export interface ProfileRing {
   readonly logKind: Uint8Array;
   readonly logMs: Float32Array;
   readonly logLabel: readonly string[];
-  readonly logEffect: readonly string[];
-  readonly logDefines: readonly string[];
   readonly logCursor: number;
   readonly logFilled: number;
   readonly createObserved: boolean;
-  readonly createNamed: boolean;
   readonly loafSupported: boolean;
   readonly loafWorst: readonly LoafRecord[];
   readonly heapLive: boolean;
@@ -1080,15 +997,12 @@ export interface ProfileRing {
   readonly graphics: ProfileGraphics | null;
   readonly graphicsAt: number;
   readonly gpuRequested: boolean;
-  /**
-   * Whether the engine carries a main-pass GPU counter at all — asked of the
-   * engine by the recorder, which is the half that holds Babylon's internals.
-   */
+  /** Whether the frame's GPU timer was built — see `ProfileReport.gpu`. */
   readonly gpuAvailable: boolean;
   /** Whether our renderer built a pass timer — see `ProfileReport.gpu.cull`. */
   readonly cullTimed: boolean;
-  /** The engine, for the backing store's size. Null where there is no scene. */
-  readonly engine: {
+  /** The canvas, for the backing store's size. Null where none was handed over. */
+  readonly surface: {
     getRenderWidth(): number;
     getRenderHeight(): number;
   } | null;
@@ -1132,10 +1046,7 @@ export function buildReport(
     frameMs: [],
     gc: [],
     heapMb: [],
-    drawCalls: [],
-    activeMeshes: [],
     loafMs: [],
-    gpuMs: [],
     gpuFrameMs: [],
     gpuCullMs: [],
     pipelines: [],
@@ -1149,10 +1060,7 @@ export function buildReport(
       series.frameMs.push(round(frames[k]));
       series.gc.push(r.gcAt[i]);
       series.heapMb.push(r.heapMb ? round(r.heapMb[i], 2) : 0);
-      series.drawCalls.push(r.drawCalls[i]);
-      series.activeMeshes.push(r.activeMeshes[i]);
       series.loafMs.push(round(r.loafMs[i]));
-      series.gpuMs.push(round(r.gpuMs[i], 3));
       series.gpuFrameMs.push(round(r.gpuFrameMs[i], 3));
       series.gpuCullMs.push(round(r.gpuCullMs[i], 4));
       series.pipelines.push(r.madeRender[i] + r.madeCompute[i]);
@@ -1361,7 +1269,30 @@ export function buildReport(
     // dispatch ending the main pass inside group 0, which ran our queued opaque
     // recording there), and it is not in `gpu.cull`, being no cull. Nothing else
     // changed meaning.
-    version: 37,
+    // 38: Babylon's instruments RETIRED (`BABYLON_EXIT.md` X5.4g, the loop and
+    // its clocks ours): `counters` and its five figures, `drawCalls`/
+    // `activeMeshes` in `segments` and `series`, every hitch's `gpuMs`,
+    // `drawCalls`, `activeMeshes`, `meshWalkMs`, `renderTargetsMs` and
+    // `particlesMs` — Babylon's `SceneInstrumentation` and its active meshes,
+    // which nothing raised once the scene stopped rendering (X5.4f) — and
+    // `gpu.mainPass` with `series.gpuMs`, Babylon's main-pass counter, which
+    // timed no pass of Babylon's after X5.4f; `pipelines.named` and a
+    // creation's `effect` and `defines`, Babylon's effect a pipeline built
+    // through its cache was named by (no Babylon pipeline is made after the
+    // boot); and the `shadowPass` phase, which nothing opened after X5.3d.
+    // `gpu.frame` is OURS — two empty passes of our frame timer bracketing
+    // the frame's one encoder, from before its first pass to after its last
+    // (`render/FrameTimer.ts`), where it was Babylon's `writeTimestamp`
+    // around its two encoders, the same span — so it needs no browser flag,
+    // and `gpu.frameMeasurable` is `gpu.available`, the timer built. `present`
+    // is the span around the frame's one `queue.submit` of ours
+    // (`core/FrameLoop.ts`), where it was Babylon's `endFrame`; and `drawWorld`
+    // and `glow` are bracketed by the frame itself (`SceneFrame`), where the
+    // recorder hung them off the frame's observables — neither bracket moved.
+    // The frame's delta (the wall clock a row reads) is the loop's own port of
+    // Babylon's `getDeltaTime`. A v37 capture reads the same in every field
+    // left; its retired ones are Babylon's and read 0 from X5.4f on.
+    version: 38,
     build: buildStamp(),
     takenAt: new Date().toISOString(),
     reason,
@@ -1417,7 +1348,6 @@ export function buildReport(
     loaf: loafFacts(r, first, n, cap),
     gpu: gpuFacts(r, first, n, cap),
     pipelines: creationFacts(r, first, n, cap, full),
-    counters: counterMeans(r, first, n, cap),
     phases,
     hitches: worstHitches(r),
     series: full ? series : undefined,
@@ -1540,23 +1470,16 @@ function creationFacts(
       if (frameAt[(first + mid) % cap] <= t) lo = mid;
       else hi = mid - 1;
     }
-    const defines = r.logDefines[at];
     recent.push({
       ago: round(Math.max(0, newest - t) / 1000, 2),
       kind: CREATED[r.logKind[at]],
       frameMs: lo < n ? round(r.frameMs[(first + lo) % cap]) : 0,
       label: r.logLabel[at],
-      effect: r.logEffect[at],
-      defines:
-        full || defines.length <= DEFINES_CAP
-          ? defines
-          : defines.slice(0, DEFINES_CAP - 1) + "…",
       callMs: round(r.logMs[at], 3),
     });
   }
   return {
     observed: r.createObserved,
-    named: r.createNamed,
     render,
     compute,
     modules,
@@ -1617,8 +1540,6 @@ function segmentStat(
   let ticks = 0;
   let render = 0;
   let renders = 0;
-  let draws = 0;
-  let meshes = 0;
   let gpu = 0;
   let gpuN = 0;
   let cull = 0;
@@ -1648,8 +1569,6 @@ function segmentStat(
       render += r.durMs[g];
       renders++;
     }
-    draws += r.drawCalls[i];
-    meshes += r.activeMeshes[i];
     if (r.gpuFrameMs[i] > 0) {
       gpu += r.gpuFrameMs[i];
       gpuN++;
@@ -1678,8 +1597,6 @@ function segmentStat(
     tick: t ? round(t.mean) : 0,
     tickP95: t ? round(t.p95) : 0,
     render: renders > 0 ? round(render / renders) : 0,
-    drawCalls: Math.round(draws / m),
-    activeMeshes: Math.round(meshes / m),
     gpuFrame: gpuN > 0 ? round(gpu / gpuN, 3) : 0,
     gpuSamples: gpuN,
     gpuCull: cullN > 0 ? round(cull / cullN, 4) : 0,
@@ -1744,34 +1661,6 @@ function viewportSizes(r: ProfileRing, at: readonly number[]): ViewportSize[] {
   return [...byKey.values()].sort((a, b) => b.frames - a.frames);
 }
 
-function counterMeans(
-  r: ProfileRing,
-  first: number,
-  n: number,
-  cap: number,
-): ProfileReport["counters"] {
-  let draws = 0;
-  let meshes = 0;
-  let walk = 0;
-  let rtt = 0;
-  let particles = 0;
-  for (let k = 0; k < n; k++) {
-    const i = (first + k) % cap;
-    draws += r.drawCalls[i];
-    meshes += r.activeMeshes[i];
-    walk += r.meshWalkMs[i];
-    rtt += r.rttMs[i];
-    particles += r.particlesMs[i];
-  }
-  return {
-    drawCalls: Math.round(draws / n),
-    activeMeshes: Math.round(meshes / n),
-    meshWalkMs: round(walk / n),
-    renderTargetsMs: round(rtt / n),
-    particlesMs: round(particles / n),
-  };
-}
-
 /**
  * What the GPU spent, over the rows that got a reading.
  *
@@ -1807,24 +1696,17 @@ function gpuFacts(
     return { n: 0, meanMs: 0, p95Ms: 0, maxMs: 0 };
   };
   const whole = over(r.gpuFrameMs);
-  const main = over(r.gpuMs);
   // A cull is tens of microseconds: a tenth of one is the grain worth keeping.
   const cull = over(r.gpuCullMs, 4);
   return {
     requested: r.gpuRequested,
     available: r.gpuAvailable,
-    frameMeasurable: gpuFrameMeasurable(),
+    frameMeasurable: r.gpuAvailable,
     frame: {
       samples: whole.n,
       meanMs: whole.meanMs,
       p95Ms: whole.p95Ms,
       maxMs: whole.maxMs,
-    },
-    mainPass: {
-      frames: main.n,
-      meanMs: main.meanMs,
-      p95Ms: main.p95Ms,
-      maxMs: main.maxMs,
     },
     cull: {
       timed: r.cullTimed,
@@ -1939,14 +1821,8 @@ function worstHitches(r: ProfileRing): HitchFrame[] {
       loafBlockMs: round(r.loafBlockMs[i]),
       loafScriptMs: round(r.loafScriptMs[i]),
       loafRenderMs: round(r.loafRenderMs[i]),
-      gpuMs: round(r.gpuMs[i], 3),
       gpuFrameMs: round(r.gpuFrameMs[i], 3),
       gpuCullMs: round(r.gpuCullMs[i], 4),
-      drawCalls: r.drawCalls[i],
-      activeMeshes: r.activeMeshes[i],
-      meshWalkMs: round(r.meshWalkMs[i]),
-      renderTargetsMs: round(r.rttMs[i]),
-      particlesMs: round(r.particlesMs[i]),
       createdOn: madeAt(r, i),
       createdNear: madeNear(r, i),
       phases,
@@ -2056,15 +1932,8 @@ export function buildTrace(r: ProfileRing, maxFrames: number): string {
           "}",
       );
     }
-    parts.push(
-      '{"name":"draws","ph":"C","pid":1,"tid":1,"ts":' +
-        base.toFixed(1) +
-        ',"args":{"drawCalls":' +
-        r.drawCalls[i] +
-        ',"activeMeshes":' +
-        r.activeMeshes[i] +
-        "}}",
-    );
+    // (A `draws` counter track, Babylon's draw count and active meshes, rode
+    // here until report version 38.)
     if (r.heapMb) {
       parts.push(
         '{"name":"heapMb","ph":"C","pid":1,"tid":1,"ts":' +
@@ -2109,13 +1978,13 @@ export function buildTrace(r: ProfileRing, maxFrames: number): string {
 
 function deviceFacts(r: ProfileRing): ProfileReport["device"] {
   const nav = navigator as Navigator & { deviceMemory?: number };
-  const engine = r.engine;
+  const surface = r.surface;
   return {
     userAgent: navigator.userAgent,
     devicePixelRatio: window.devicePixelRatio || 1,
     window: `${window.innerWidth}x${window.innerHeight}`,
-    backingStore: engine
-      ? `${engine.getRenderWidth()}x${engine.getRenderHeight()}`
+    backingStore: surface
+      ? `${surface.getRenderWidth()}x${surface.getRenderHeight()}`
       : "?",
     hardwareConcurrency: navigator.hardwareConcurrency || 0,
     deviceMemoryGb: nav.deviceMemory ?? null,

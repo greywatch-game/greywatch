@@ -57,10 +57,12 @@
  * its cursor, its warm frames and its dirty channels for the slice, which
  * would be skipped silently (X5.1a measured that frame never happening, in
  * every state) — a throw NEVER PROVOKED, by any run, and thrown where it
- * stops everything: inside the engine's `onEndFrameObservable`
- * (`FrameHost.afterSubmit`), whose `notifyObservers` catches nothing, so it
- * leaves Babylon's `endFrame` before the render loop queues its next frame —
- * a dev build's render loop STOPS, every end-of-frame observer added after
+ * stops everything: inside the frame loop's end of frame (`FrameHost
+ * .afterSubmit`, `FrameLoop.onEndFrameObservable` since `BABYLON_EXIT.md`
+ * X5.4g; the engine's `onEndFrameObservable` until then), whose
+ * `notifyObservers` catches nothing, so it leaves the loop's step before it
+ * requests its next frame — a dev build's render loop STOPS, as Babylon's
+ * did from its `endFrame`, every end-of-frame observer added after
  * this one is skipped, and the retired buffers and textures are left
  * undestroyed; the CPU half has already advanced by then, so this is the
  * "fail loudly" branch X5.1b's brief asked for, never a recovery; the

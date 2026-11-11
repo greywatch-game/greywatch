@@ -429,7 +429,9 @@ public/             # Copied to dist/ VERBATIM — unhashed URLs named by hand
                     #   no imports, no network, never typechecked — the sw.js
                     #   arrangement. It is the SECOND navigable document, so
                     #   its path is in sw.js's DOCS or it becomes the game
-                    #   offline. docs/profiling.md is the contract
+                    #   offline. Reads every report version, the fields v38
+                    #   retired drawn where a capture has them and left out
+                    #   where it does not. docs/profiling.md is the contract
   regions.json      # Which match servers this deployment offers, by host. The
                     #   one file a deployer edits on the box: adding, moving or
                     #   draining a region is not a rebuild. no-cache in nginx
@@ -715,8 +717,9 @@ src/
                         #   (SceneFrame; off the scene's public observables,
                         #   with a DEV shadow against Babylon's id, before)
     SceneFrame.ts       # THE FRAME, ours (X5.4f): what scene.render() did for
-                        #   this game, in its order — the frame id,
-                        #   scene.animate (the animation ratio), the camera's
+                        #   this game, in its order — the frame id, the
+                        #   animation ratio (Scene.animate's arithmetic over
+                        #   the loop's delta since X5.4g), the camera's
                         #   update, the render id's two advances,
                         #   scene.updateTransformMatrix (Babylon's matrices,
                         #   public API), the evaluation, the draw phase, the
@@ -724,8 +727,19 @@ src/
                         #   so the scene is never rendered. Its points are
                         #   Babylon Observables of its own named for the
                         #   scene's they replace; its host is our renderer's
-                        #   FrameHost (the seam's device, encoder and end of
-                        #   frame beside the scene's matrix and clear colour)
+                        #   FrameHost (the seam's device, the loop's encoder
+                        #   and end of frame, the scene's matrix and clear
+                        #   colour). Brackets the profiler's drawWorld and
+                        #   glow (timeWith, X5.4g)
+    FrameLoop.ts        # THE LOOP, ours (X5.4g): what runRenderLoop,
+                        #   beginFrame and endFrame did — the
+                        #   requestAnimationFrame chain FrameCap admits, the
+                        #   clock (FrameClock: Babylon's getDeltaTime and getFps,
+                        #   its performance monitor's arithmetic ported), the
+                        #   frame's begin and end as Observables of its own,
+                        #   the frame id, the ONE submit (FrameSubmit) and the
+                        #   profiler's present around it; held while the
+                        #   device is lost, as Babylon's loop was
     teamView.ts         # Which side the player is LOOKING from: the one remap
                         #   between the authority's team INDEX and the team a
                         #   body is DRAWN and NAMED as, so every player sees
@@ -748,11 +762,16 @@ src/
                         #   The RECORDER only: lends the ring to profileReport
                         #   at a capture. A benchmark's ring is sized to its
                         #   script, labelled by segment, and HALTED at its end
-                        #   rather than disarmed, so it can still be read
+                        #   rather than disarmed, so it can still be read.
+                        #   Hooks the device and the window, nothing of a
+                        #   frame's: the frame brackets drawWorld and glow,
+                        #   the loop closes present (presented), both GPU
+                        #   timers are ours (FrameTimer, PassTimer) — X5.4g
     profilePhases.ts    # The profiler's phase list (PHASES, the slot ids P
                         #   and SLOTS) and the tree it nests in (PARENT_OF,
                         #   ROOTS) — `sim` a third root beside `frame` and
-                        #   `present`, with the core's five children. Both halves read it, which is why it is
+                        #   `present`, with the core's five children; two
+                        #   spans inside render (shadowPass retired at v38). Both halves read it, which is why it is
                         #   neither's — kept in either, they would be a cycle
     profileReport.ts    # What a capture SAYS: the ProfileReport shape (the
                         #   JSON the viewer reads; v14 adds SegmentStat.sim,
@@ -766,7 +785,10 @@ src/
                         #   no Babylon counter sees since X4.1d; v22 hulls,
                         #   our hull draws, the same since X4.2b; v23 view,
                         #   the weapon's, since X4.3c; v24 retires
-                        #   drawOverlay, its groups empty since X4.3d),
+                        #   drawOverlay, its groups empty since X4.3d; v38
+                        #   retires Babylon's instruments — counters,
+                        #   gpu.mainPass, pipelines.named, shadowPass — and
+                        #   gpu.frame is our FrameTimer's, X5.4g),
                         #   buildReport, buildTrace and
                         #   the stats. Allocates freely and never writes the
                         #   ProfileRing it is lent
@@ -778,9 +800,10 @@ src/
                         #   (PipelineCache's CompileProgress) — under
                         #   oursCapMs. Decides WHEN and draws nothing; the
                         #   vantages it stood the camera at went at X5.4c
-    FrameCap.ts         # The frame-rate cap (Settings.fpsCap): the engine's
-                        #   frame REQUESTER, refusing a refresh before the
-                        #   next frame is DUE. A deadline, not Babylon's
+    FrameCap.ts         # The frame-rate cap (Settings.fpsCap): the ADMITTER
+                        #   our loop asks of every refresh (FrameLoop, X5.4g;
+                        #   the engine's frame requester before), refusing a
+                        #   refresh before the next frame is DUE. A deadline, not Babylon's
                         #   maxFPS accumulator, which turns a 30 cap into 20
                         #   on a panel a hair over 60 Hz. Rate 0 admits every
                         #   refresh. Also the SIMULATION's clock: `elapsed` is
@@ -2817,22 +2840,33 @@ src/
                         #   Babylon — the build gate walks every file in it
     babylonSeam.ts      # THE SEAM: BabylonEngineSeam, the one place anything
                         #   here meets Babylon's engine (types only). Its
-                        #   header numbers every internal it reaches: TWO
-                        #   since X5.4f — the device (1) and the upload encoder
-                        #   submitted first (9, prepareEncoder, where every
-                        #   pass of the frame is recorded) — and the engine's
-                        #   end of frame (afterSubmit), public API; 2 to 5, 7
+                        #   header numbers every internal it reaches: ONE
+                        #   since X5.4g — the device (1); 9 (the upload
+                        #   encoder submitted first) and the engine's end of
+                        #   frame retired at X5.4g, the loop's own; 2 to 5, 7
                         #   and 8 (the open pass, the bundle list, its
                         #   attachments and flip, a Babylon texture's view and
-                        #   sampler, and hostTexture) retired at X5.4f, 6 and
-                        #   10 (group 0's hooks) at X5.3d
+                        #   sampler, and hostTexture) at X5.4f, 6 and 10
+                        #   (group 0's hooks) at X5.3d
+    FrameSubmit.ts      # THE FRAME'S ONE ENCODER AND ONE SUBMIT (X5.4g):
+                        #   made at construction and after every submit, as
+                        #   Babylon's flushFramebuffer made its next; every
+                        #   pass of the frame recorded into it (prepareEncoder),
+                        #   finished and handed over in one queue.submit; the
+                        #   frame's GPU timer under ?gpu
+    FrameTimer.ts       # ?gpu's whole-frame timer (gpu.frame, X5.4g): two
+                        #   EMPTY compute passes of its own, the frame's
+                        #   encoder's first and last commands, stamping its
+                        #   start and end; one reading in flight, mapped after
+                        #   the submit that carries it. Needs no browser flag
     frameHost.ts        # FrameHost (what the renderer needs from whoever owns
                         #   the frame — the game's frame since X5.4f,
                         #   core/SceneFrame.ts: the device, the draw phase's
                         #   two ends (onDrawPhase, X5.4e), the camera's matrix,
                         #   the scene's clear colour, the encoder every pass of
-                        #   the frame is recorded into, a call after every
-                        #   frame's submit — afterSubmit, X5.1b),
+                        #   the frame is recorded into and a call after every
+                        #   frame's submit — afterSubmit, X5.1b — both the
+                        #   game's loop's since X5.4g),
                         #   DrawPhaseHooks, PassTargets
     FrameTargets.ts     # THE FRAME'S OWN TARGETS (X5.4e): the frame and its
                         #   depth, the glow's mask and its blur's five, each

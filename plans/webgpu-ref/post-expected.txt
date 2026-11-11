@@ -210,3 +210,17 @@
 # record: `wholeflat.cjs` over all 34 scenarios, 562 items).
 **.passes[*].role
 **.whole.submits[*].buffers[*].items
+#
+# X5.4g: the frame's ONE encoder and ONE submit are ours (`render/FrameSubmit.ts`,
+# `core/FrameLoop.ts`): every pass of the frame is recorded into the encoder our
+# loop makes after each submit, where it was recorded into Babylon's UPLOAD
+# encoder (the seam's item 9, retired), and the frame is submitted as ONE command
+# buffer, where Babylon's `flushFramebuffer` submitted two (its upload encoder,
+# then its render encoder, empty since X5.4f). So every pass's `role` moves
+# (upload → frame), and each submit's `buffers` moves with it: one buffer
+# (`frame`, labelled `frame encoder`) where there were two (`upload`, labelled
+# `[#|#] - UploadEncoder`, and an empty `render`). The frame's command ORDER and
+# items are the same item for item (X5.4g's record: `wholeflat.cjs` over all 34
+# scenarios, 562 items), and every queue write the same in number and bytes.
+**.passes[*].role
+**.whole.submits[*].buffers

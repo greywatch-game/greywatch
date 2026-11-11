@@ -34,7 +34,8 @@
  * Never: imports Babylon; touches the GPU; draws a random number (the
  * constructor's two textures and the first update's seeds are drawn by
  * `ParticleDraw`, in Babylon's calls and order); reads a clock of its own — the
- * step is handed in (`animate`'s `ratio`, `scene.getAnimationRatio()`).
+ * step is handed in (`animate`'s `ratio`, the frame's animation ratio —
+ * `SceneFrame.animationRatio`, `scene.getAnimationRatio()` until X5.4g).
  * Contract: `docs/rendering.md`, "The particles".
  *
  * WHAT IS NOT PORTED, because no field of the game's sets it: emit-rate,

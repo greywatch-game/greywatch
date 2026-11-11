@@ -125,26 +125,33 @@ export const PHASES = [
    */
   "render",
   /**
-   * The three spans INSIDE `render`, and the only ones in this list that
-   * `Game` does not bracket — see `FrameProfile.hookRender`, which is also
-   * where the argument that they cannot overlap each other is written down.
-   * (`drawOverlay`, the rendering groups above 0, was the fourth until
-   * `BABYLON_EXIT.md` X4.3d emptied them: report version 24.)
+   * The two spans INSIDE `render`, and the only ones in this list that `Game`
+   * does not bracket: the FRAME does (`SceneFrame.render` and `timeWith`,
+   * `BABYLON_EXIT.md` X5.4g; `FrameProfile.hookRender` hung them off the
+   * frame's observables until then). `drawWorld` is the camera's draw phase
+   * up to the glow's work, `glow` that work — the mask and its blur — and the
+   * glow's work runs inside the draw phase's close, after our renderer's main
+   * pass and after `drawWorld` has closed, so the two cannot overlap.
+   * (`shadowPass`, a Babylon shadow generator's map, was the third until
+   * report version 38 retired it, nothing having opened it since
+   * `BABYLON_EXIT.md` X5.3d; `drawOverlay`, the rendering groups above 0, a
+   * fourth until X4.3d emptied them: report version 24.)
    */
-  "shadowPass",
   "glow",
   "drawWorld",
   /**
-   * The engine's own END of the frame: everything `endFrame` does after `tick`
-   * has returned, which on WebGPU is closing the render pass and
-   * `queue.submit`.
+   * The frame's END, after `tick` has returned: the span around the frame's
+   * ONE `queue.submit` — the frame's GPU timer closed, the encoder finished
+   * and submitted (`core/FrameLoop.ts`, `render/FrameSubmit.ts`,
+   * `BABYLON_EXIT.md` X5.4g; Babylon's `endFrame` until then, its
+   * `flushFramebuffer` the same finish and submit).
    *
    * **It is the one phase in this list that is NOT inside `frame`**, and it is
    * here because the residue outside the tick was the whole of an unexplained
    * hitch: a real capture read 42.2 ms of wall clock against a 15.1 ms tick
    * with no collection on it, and nothing in the instrument could say which
    * side of the submit the missing 27 ms was on. See
-   * `FrameProfile.recordPresent`, and `PARENT_OF`, where being a root is
+   * `FrameProfile.presented`, and `PARENT_OF`, where being a root is
    * declared.
    *
    * What is still outside everything, after this, is the gap from the submit to
@@ -192,7 +199,7 @@ export const P = Object.fromEntries(
  *
  * **There are three roots because the frame has two parts and only one of
  * them is the tick — and the simulation is no longer either.** `frame` is
- * `Game.tick`, wall to wall; `present` is what the engine does after it
+ * `Game.tick`, wall to wall; `present` is the frame's submit after it
  * returns; `sim` is the core's step, in the local match. None
  * contains another, and a reader that drew `present` or `sim` inside `frame`
  * would be drawing a containment that does not exist — which is exactly what the fallback tree in
@@ -233,14 +240,13 @@ export const PARENT_OF: Readonly<
   gi: "frame",
   audio: "frame",
   render: "frame",
-  shadowPass: "render",
   glow: "render",
   drawWorld: "render",
 };
 
 /**
- * The phases nothing contains: `frame` (the tick), `present` (what the
- * engine does after it) and `sim` (the core's step, on its own thread or
+ * The phases nothing contains: `frame` (the tick), `present` (the submit
+ * after it) and `sim` (the core's step, on its own thread or
  * between frames).
  *
  * DERIVED from the two tables above rather than written out, so it cannot go

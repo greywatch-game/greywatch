@@ -38,7 +38,8 @@
  *   was made of while it was a mesh (until X5.3e).
  * - Stepping is `update()`'s job and it is only ever called from a gameplay
  *   path — `Game.stepAftermath`, and nowhere else. The scene has no physics
- *   engine for `scene.animate()` to step behind a pause card, and `Game`,
+ *   engine for `scene.animate()` to step behind a pause card (and nothing
+ *   calls `scene.animate()` since `BABYLON_EXIT.md` X5.4g), and `Game`,
  *   which owns the scene, still holds `scene.physicsEnabled` false until the
  *   scene goes (see `CLAUDE.md`, "Deaths, glass, and the one physics engine").
  * - The sim is a FIXED step with a CARRIED remainder, so a tumble is identical

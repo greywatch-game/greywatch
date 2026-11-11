@@ -608,8 +608,9 @@ X5.4f) inside the `render` span, after the draws the table above hands our
 renderer (`drawBodies` to `drawBlended`) and before `updateBakeWait`, where it
 called `scene.render()` until that step. **The scene is never rendered.** The
 frame does what `scene.render()` did for this game, in Babylon's order — its
-index, `scene.animate()` (the particle fields' animation ratio), the camera's
-update, the render id's two advances, `scene.updateTransformMatrix()`, the
+index, the scene's animations (`Scene.animate`'s arithmetic ported over the
+loop's delta, X5.4g: `SceneFrame.animationRatio`, the particle fields' clock),
+the camera's update, the render id's two advances, `scene.updateTransformMatrix()`, the
 evaluation, the draw phase, the post chain, and the canvas's pass if nothing
 began one — and raises its OWN observables, each named for the scene's it
 replaces, at the point the scene raised that one. So **a module that hung off
@@ -619,3 +620,24 @@ nothing raises the scene's**, and a script waiting on a drawn frame waits on
 (`VERIFYING.md`). The order point for point, and what `scene.render()` did
 that this does not, is `SceneFrame`'s header and `docs/rendering.md`, "Our
 renderer's frame".
+
+**And the LOOP around it is the game's** (`core/FrameLoop.ts`,
+`BABYLON_EXIT.md` X5.4g): what Babylon's `runRenderLoop`, `beginFrame` and
+`endFrame` did, in their order. Every display refresh is asked of `FrameCap`
+(the admitter, the frame-rate cap); an admitted one samples the clock
+(`FrameClock`: Babylon's `getDeltaTime` and `getFps`, its performance
+monitor's arithmetic ported), raises the loop's `onBeginFrameObservable`, runs
+`tick`, submits the frame's ONE encoder in ONE `queue.submit`
+(`render/FrameSubmit.ts` — every pass of the frame is recorded into it, and
+`FrameHost.afterSubmit` is told after it), closes the profiler's `present`
+around that submit, moves the loop's `frameId` and raises its
+`onEndFrameObservable` — and only then requests the next refresh, so a frame
+that throws stops the loop as Babylon's did. **The world is stepped by the
+REFRESH stamps (`FrameCap.elapsed`), never by the loop's delta**, which is the
+readout's, the profiler's and the particle fields' clock. A lost device holds
+the loop (`held`) until the engine restores one, as `_contextWasLost` held
+Babylon's, until X5.4i decides a loss. Babylon's own `beginFrame` and
+`endFrame` still run inside a RESIZE (`_initializeMainAttachments`, its own
+flush and its own depth's clear) until X5.4h stops constructing the engine;
+they hold nothing of ours, and the clock takes its sample there as Babylon's
+monitor did.

@@ -152,6 +152,7 @@ import { difficultyNames, profileFor } from "../entities/BotSkill";
 import { callsign } from "../entities/callsigns";
 import { OTHER_TEAM, type Combatant, type Team } from "../entities/Combatant";
 import { FrameCap } from "./FrameCap";
+import { type FrameClock, FrameLoop } from "./FrameLoop";
 import { FrameProfile } from "./FrameProfile";
 import { type DeclaredPipelines, PipelineWarmup } from "./PipelineWarmup";
 import { P } from "./profilePhases";
@@ -716,9 +717,9 @@ export class Game {
    */
   private readonly prof = new FrameProfile();
   /**
-   * The frame-rate cap (`Settings.fpsCap`). Installed as the engine's frame
-   * requester once, in the constructor, and only ever re-RATED after — at 0 it
-   * admits every refresh, so the loop runs exactly as it did without one.
+   * The frame-rate cap (`Settings.fpsCap`): the ADMITTER our loop asks of
+   * every refresh (`frameLoop`), only ever re-RATED after the constructor — at
+   * 0 it admits every refresh, so the loop runs exactly as it did without one.
    */
   private readonly frameCap = new FrameCap();
   /** The profiler's corner of the HUD. Up only while the ring is recording. */
@@ -1358,6 +1359,15 @@ export class Game {
    * (`plans/webgpu-ref/harness.mjs`).
    */
   readonly sceneFrame: SceneFrame;
+  /**
+   * THE LOOP, ours (`core/FrameLoop.ts`, `BABYLON_EXIT.md` X5.4g): the
+   * animation-frame request `FrameCap` admits, the clock (`getDeltaTime` and
+   * `getFps`, Babylon's arithmetic), the frame's one encoder and one submit,
+   * and the frame's begin and end — what Babylon's `runRenderLoop`,
+   * `beginFrame` and `endFrame` were. Public for the harness's frame adapter
+   * (`plans/webgpu-ref/harness.mjs`).
+   */
+  readonly frameLoop: FrameLoop;
   private canvas: HTMLCanvasElement;
   /**
    * The bloom — mask, blur and compose — which `shaders/GlowPass.ts` owns.
@@ -1922,6 +1932,12 @@ export class Game {
     havok: HavokInstance,
     engine: WebGPUEngine,
     local: MatchHost,
+    /**
+     * The frame's clock (`FrameClock`), made by the boot before the engine's
+     * first `beginFrame` and sampled at every one of the engine's since
+     * (`main.ts`); our loop samples it at every frame of its own.
+     */
+    clock: FrameClock,
   ) {
     this.canvas = canvas;
     this.engine = engine;
@@ -1943,22 +1959,41 @@ export class Game {
       replaced: (host) => this.prof.setSimMode(host.mode),
     });
     this.prof.setSimMode(local.mode);
-    this.engine.customAnimationFrameRequester = this.frameCap.requester;
+    const seam = new BabylonEngineSeam(this.engine);
+    // THE LOOP is ours (`core/FrameLoop.ts`, `BABYLON_EXIT.md` X5.4g): the
+    // refresh `FrameCap` admits, the clock, the frame's one encoder and its
+    // one submit — `?gpu` times the whole frame on it (`gpu.frame`; `main.ts`
+    // asked the device for `timestamp-query`). Started at the constructor's
+    // end, where `runRenderLoop` was.
+    // The clock is the boot's (`main.ts`), sampled at the engine's own
+    // `beginFrame` too, which since this step runs only inside a resize
+    // (`_initializeMainAttachments`' frame, until X5.4h stops constructing the
+    // engine) — where Babylon's performance monitor took a sample — so the
+    // delta and the rate are Babylon's sample for sample.
+    this.frameLoop = new FrameLoop(this.frameCap, seam.device, this.prof, clock, urlFlag("gpu"));
+    // A lost device held Babylon's loop (`_contextWasLost`) until its engine
+    // restored one; it holds ours the same way until X5.4i decides a loss.
+    this.engine.onContextLostObservable.add(() => {
+      this.frameLoop.held = true;
+    });
+    this.engine.onContextRestoredObservable.add(() => {
+      this.frameLoop.held = false;
+    });
+    this.prof.setFrameTimer(this.frameLoop.submit.timer);
     this.scene = new Scene(this.engine);
     // The `Scene` constructor sets this true, and it is held FALSE: Babylon
-    // steps a scene's physics engine from `scene.animate()` on every RENDERED
-    // frame, and this game renders under the menu, the deploy map and a pause.
-    // The scene has no physics engine any more (`PhysicsWorld` owns Havok's
-    // world outright and is stepped from `stepAftermath` alone), so there is
-    // nothing for it to step — the flag is written because the rule stands
-    // until the scene goes (`CLAUDE.md`, "Deaths, glass, and the one physics
-    // engine").
+    // steps a scene's physics engine from `scene.animate()`, which our frame
+    // no longer calls (`SceneFrame` ports its animation ratio, X5.4g), and the
+    // scene has no physics engine any more (`PhysicsWorld` owns Havok's world
+    // outright and is stepped from `stepAftermath` alone), so there is nothing
+    // for it to step — the flag is written because the rule stands until the
+    // scene goes (`CLAUDE.md`, "Deaths, glass, and the one physics engine").
     this.scene.physicsEnabled = false;
     // THE FRAME is ours (`core/SceneFrame.ts`, `BABYLON_EXIT.md` X5.4f): what
     // `scene.render()` did, in its order, so the scene is never rendered.
     // Before anything hangs on its points, and before our renderer, whose
     // host it is.
-    this.sceneFrame = new SceneFrame(this.scene, this.renderId, new BabylonEngineSeam(this.engine));
+    this.sceneFrame = new SceneFrame(this.scene, this.renderId, seam, this.frameLoop);
     // The scene has no Babylon lights at all: cel materials carry their own
     // key/ambient/point-light uniforms (fed by the LightingSystem) and every
     // effect material is unlit emissive.
@@ -2209,6 +2244,10 @@ export class Game {
         glowBlur.blur(i, kernel, across, fromDown, w, h, outputHeight),
     });
     this.glow = glow;
+    // The two spans inside the frame's render are the FRAME's to bracket
+    // (`SceneFrame.timeWith`, `BABYLON_EXIT.md` X5.4g): `drawWorld` in its
+    // draw phase and `glow` around this pass's work.
+    this.sceneFrame.timeWith(this.prof, glow);
     // THE FRAME: our renderer's target (`Renderer.targets.frame`, with its
     // depth, X5.4e), which its own passes clear and draw — sized as the frame
     // starts by the post chain's pass owner, `ChainPasses` (ours since X5.4f),
@@ -2338,13 +2377,15 @@ export class Game {
     this.lightning.onStrike = (distance) => this.sfx.thunder(distance);
     // Every particle field's update and draw is our renderer's (X4.7c the ash,
     // X4.7d the rotor wash), on Babylon's clock:
-    // the scene's animation ratio, read as the frame draws, which is when
-    // `GPUParticleSystem.animate` read it; and the camera as `_render` bound it,
-    // the view and the projection APART, the view's inverse and the eye.
+    // the frame's animation ratio (`SceneFrame.animationRatio`,
+    // `Scene.animate`'s arithmetic over our loop's delta since X5.4g), read as
+    // the frame draws, which is when `GPUParticleSystem.animate` read it; and
+    // the camera as `_render` bound it, the view and the projection APART, the
+    // view's inverse and the eye.
     this.particleDraw = new ParticleDraw(
       this.renderer,
       (out) => this.readParticleCamera(out),
-      () => this.scene.getAnimationRatio(),
+      () => this.sceneFrame.animationRatio,
     );
     this.atmosphere = new Atmosphere(this.particleDraw, this.renderer.textureMaker);
     // Beside the mote field because it is the same kind of thing — a standing
@@ -2846,7 +2887,7 @@ export class Game {
     // carrying both plays the benchmark.
     if (this.overrides.bench !== null) void this.bootBench(this.overrides.bench);
     else this.joinFromUrl();
-    this.engine.runRenderLoop(() => this.tick());
+    this.frameLoop.start(() => this.tick());
   }
 
   /**
@@ -3891,7 +3932,7 @@ export class Game {
   private setProfiling(on: boolean): void {
     if (on === this.prof.armed) return;
     if (on) {
-      this.prof.arm(this.scene, this.sceneFrame, this.glow);
+      this.prof.arm(this.engine);
       this.prof.setMap(this.mapDef.id);
     } else {
       this.prof.disarm();
@@ -4550,7 +4591,7 @@ export class Game {
     // that took this frame and the last, which is how long apart the two are
     // SEEN — stepping the world by when a callback got the thread is judder
     // under an evenly paced display (`FrameCap`'s header).
-    const real = this.engine.getDeltaTime() / 1000;
+    const real = this.frameLoop.clock.getDeltaTime() / 1000;
     // …except under a benchmark, where every frame is the FIXED step whatever
     // either clock says (`CONFIG.profiling.bench`): what a run compares is the
     // cost of the same frames, so the frames may not depend on the device.
@@ -4569,7 +4610,7 @@ export class Game {
     // instrument, and a frame rate that stops being reported the moment you
     // open a menu is a frame rate you cannot investigate. It takes the real
     // delta rather than the clamped one — see `HUD.setFps`.
-    this.hud.setFps(this.engine.getFps(), real);
+    this.hud.setFps(this.frameLoop.clock.getFps(), real);
     // A round on screen keeps it on, a menu and a pause let it sleep
     // (`pwa/register.ts`); unchanged, it returns on its first line.
     keepScreenAwake(this.screens.inRound);
@@ -11374,7 +11415,7 @@ export class Game {
     this.prof.disarm();
     // Two spare rows: the frame that ends the run is recorded half-way, and
     // a ring that laps by one would drop the run's first frame.
-    this.prof.arm(this.scene, this.sceneFrame, this.glow, script.frames + 2);
+    this.prof.arm(this.engine, script.frames + 2);
     this.prof.setMap(this.mapDef.id);
     this.prof.setSegments(script.segments);
     this.profChip.setArmed(true);

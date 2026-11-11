@@ -3432,8 +3432,10 @@ the scene is never rendered. `Game.tick` calls `sceneFrame.render()` where it
 called `scene.render()`, and it does what that did for this game, in its
 order, read off Babylon 9.28's `Scene._renderFrame` and `_renderForCamera` and
 the frame's logs (`plans/webgpu-ref/post.mjs`, `readers.mjs`): the frame id;
-`scene.animate()` (public API: the animation RATIO the particle fields' clock
-reads); the active camera's `update()`; `onBeforeRenderObservable` (the frame
+the scene's animations — the animation RATIO the particle fields' clock reads,
+`Scene.animate`'s arithmetic PORTED over the loop's delta since X5.4g
+(`SceneFrame.animationRatio`; `scene.animate()`, public API, until then, which
+read Babylon's `getDeltaTime`); the active camera's `update()`; `onBeforeRenderObservable` (the frame
 sized, `ChainPasses.prepareFrame`); `onBeforeRenderTargetsRenderObservable`
 (the reflection bake's share); the render id's first advance (under
 `renderTargetsEnabled`); then the camera's render — the second advance,
@@ -3442,30 +3444,46 @@ the scene's transform matrix are Babylon's own arithmetic, to the bit — the
 camera log, `readers.mjs camera`, holds it), the EVALUATION (the viewmodel's
 render cache settled, `RenderId.evaluated`), the render targets' point again
 (raised twice a frame, as the scene's was), the draw phase's two ends (our
-renderer's `begin` and `end`, the glow, the profiler's `drawWorld`), and
+renderer's `begin` and `end`, the glow, and the profiler's `drawWorld` and
+`glow`, which the frame brackets itself since X5.4g), and
 `onAfterCameraRenderObservable` (the post chain); and last
 `onAfterRenderObservable` and the canvas's pass if nothing began one. Each
 point is a Babylon `Observable` of the FRAME's own, named for the scene's it
 replaces, so every observer behaves as it did; nothing raises the scene's. What
 `scene.render()` did and this does not is what nothing in a round reached —
 the readiness check, transient components, the per-frame counters
-(`SceneInstrumentation`'s, which therefore stop moving), the component stages,
+(`SceneInstrumentation`'s, which therefore stopped moving and were retired with
+the profiler's report version 38 at X5.4g), the component stages,
 the custom and camera render targets, Babylon's binds and clears, the
 active-mesh walk (`WorldCulling`'s candidate list is retired with it), the
 rendering manager, the post-process manager, the pointer pick and the dispose
 queue — listed in `SceneFrame`'s header.
+
+**The LOOP is the game's since `BABYLON_EXIT.md` X5.4g** (`core/FrameLoop.ts`):
+a `requestAnimationFrame` chain that asks `FrameCap` of every refresh, samples
+its clock (`FrameClock`, Babylon's performance monitor's arithmetic, so
+`getDeltaTime` and `getFps` read as Babylon's did), raises its begin, runs
+`tick`, and SUBMITS — the frame's ONE command encoder, made after each submit
+as Babylon made its next, every pass of the frame recorded into it, finished
+and handed to the queue in ONE `queue.submit` (`render/FrameSubmit.ts`) —
+then raises its end, which is where `FrameHost.afterSubmit` is told. Under
+`?gpu` the same encoder carries the frame's GPU timer, two empty passes of its
+own as its first and last commands (`render/FrameTimer.ts`, `gpu.frame`).
+Babylon's two encoders hold nothing of ours and are submitted only by its
+own resize (`_initializeMainAttachments`' begin and end of frame, until X5.4h
+stops constructing the engine).
 
 **Our renderer (`src/render/`) owns everything it draws with**: the frame's
 uniform buffer, every bind-group layout and every pipeline, the frame's own
 TARGETS and PASSES (X5.4e, below) and the post chain's (X5.4f, below). Its
 `FrameHost` (`render/frameHost.ts`) is the game's frame's (`SceneFrame.host`),
 which reaches Babylon's ENGINE through ONE object, `BabylonEngineSeam`
-(`render/babylonSeam.ts`): the device, the encoder Babylon submits first and
-the end of frame. Nothing else in the directory names a Babylon type. The seam
+(`render/babylonSeam.ts`): the device — the encoder and the end of frame being
+the game's loop's since X5.4g. Nothing else in the directory names a Babylon type. The seam
 only names them: every import there is `import type`, so the Babylon-free gate
 walks it with the rest of the directory.
 **Every Babylon INTERNAL the renderer reaches is on the numbered list in the
-seam's header** — TWO since X5.4f, the device (1) and the upload encoder (9). At X3.2 there were five: the device, the lazily-started
+seam's header** — ONE since X5.4g, the device (1); TWO from X5.4f, with the upload encoder (9). At X3.2 there were five: the device, the lazily-started
 pass, the bundle list, the pass's attachment wrapper, and the render
 target (its identity and its flip). X3.3a added three: rendering group 0's
 `onBeforeTransparentRendering`, a texture's own `GPUTextureView`, and the
@@ -3474,12 +3492,12 @@ encoder Babylon submits ahead of the frame's draws, which the cluster cull is
 recorded into (`FrameHost.prepareEncoder`, below). X3.5 added a tenth: the
 group's `_renderAlphaTest`, WRAPPED while the main pass's group 0 renders, so
 a draw can land between its opaque and alpha-tested lists (below). That list
-only shrinks after Phase 3: X5.3d retired 6 and 10, and X5.4f 2, 3, 4, 5, 7
-and 8 with the last passes of Babylon's they reached, the post chain's.
-Two older touches in one file (`FrameProfile`'s) are not the renderer's and
-stay where they are, listed in the seam's header with the step each leaves at;
-one of them patches a Babylon class's prototype, a value this directory may not
-import. A third, `webgpuLeaks`' (`_deletePipelineContext`), was deleted at
+only shrinks after Phase 3: X5.3d retired 6 and 10, X5.4f 2, 3, 4, 5, 7
+and 8 with the last passes of Babylon's they reached, the post chain's, and
+X5.4g 9 with Babylon's submit. Two older touches in one file
+(`FrameProfile`'s: Babylon's timestamp query, and a patch on a Babylon class's
+prototype, a value this directory may not import) were never the renderer's
+and were retired at X5.4g with the instruments they fed (report version 38). A third, `webgpuLeaks`' (`_deletePipelineContext`), was deleted at
 `BABYLON_EXIT.md` X5.4b, Babylon releasing no effect after the boot. `FrameDepth`'s, the fourth, left at
 `BABYLON_EXIT.md` X5.2d (it read the frame's depth by Babylon's public getter),
 and the file itself at X5.4e, the depth being ours.
@@ -3495,8 +3513,8 @@ zero-filled when made — and remakes one where its owner resized Babylon's: the
 frame and its depth when the render size moves (`ChainPasses.prepareFrame`, as
 the frame starts), the glow's six on every `GlowPass` resize (a size or rung
 change; Babylon's `resize` remade a target whatever its size). The renderer
-records the passes into the encoder Babylon submits FIRST (item 9), after the
-prepares, each with the load ops and clear values Babylon began it with, read
+records the passes into the frame's encoder (Babylon's upload encoder, item 9,
+until X5.4g made it ours, `render/FrameSubmit.ts`), after the prepares, each with the load ops and clear values Babylon began it with, read
 off the device at the parent (`plans/webgpu-ref/post.mjs`' whole-frame log):
 at the draw phase's END, the frame's OPENING pass — its colour cleared to the
 scene's clear colour (`FrameHost.clearColor`), its depth to 1, what
@@ -3507,9 +3525,10 @@ draw; then, from the same end, the MASK (`recordGlowMask`: cleared to black
 with alpha 1, the frame's depth loaded) and each pass of the BLUR
 (`glowBlurPass`: loaded, no depth). The post chain, whose passes are ours too
 since X5.4f and recorded after these in the same encoder (`ChainPasses`,
-below), reads them; `gpu.frame` and `present` keep Babylon's meaning, since
-every pass is still inside its timer and its one submit, and Babylon's RENDER
-encoder, submitted after, holds nothing. **So the scene clears nothing**: `Game` holds `scene.autoClear` AND
+below), reads them; `gpu.frame` and `present` kept Babylon's meaning, every
+pass inside its timer and its one submit and Babylon's RENDER encoder,
+submitted after, holding nothing — until X5.4g made the encoder, the submit
+and both measurements ours (`docs/profiling.md`). **So the scene clears nothing**: `Game` holds `scene.autoClear` AND
 `autoClearDepthAndStencil` false, and the camera has no `outputRenderTarget`
 (X5.2d's field, deleted) — with no output target, Babylon's only clear would be
 one of the CANVAS at the frame's first bind, a pass no frame before had; the
@@ -3625,8 +3644,8 @@ fusion drops the 8-bit rounding between them: never byte-exact, a later
 `Picture change:`). The passes are Babylon's, opened by the Babylon-side owner
 `shaders/PostPasses.ts` with public API, after the camera's render
 (`onAfterCameraRenderObservable`), until **X5.4f made them ours**
-(`render/ChainPasses.ts`, recorded into the encoder Babylon submits first,
-after the frame's own): a pool target is made as `PostPasses` made its
+(`render/ChainPasses.ts`, recorded into the frame's encoder — Babylon's until
+X5.4g, ours since — after the frame's own): a pool target is made as `PostPasses` made its
 `RenderTargetTexture` (`rgba8unorm`, one level, usage 23, viewed whole, remade
 when the render size moves) and its pass begun as `bindFramebuffer` and
 `clear` began one — the colour cleared to the scene's clear colour, no depth,
@@ -4127,13 +4146,14 @@ its settled promise.
   depth-ordered draw can let the GPU skip hidden pixels.
 - **The cull is RECORDED into the host's encoder, never submitted on its
   own.** As the main pass begins (`Renderer.onFrame`) every `FramePrepare`
-  is handed `FrameHost.prepareEncoder()`, which the seam answers with
-  Babylon's upload encoder (item 9) — the one Babylon finishes and submits
-  FIRST, ahead of the render encoder the draws are recorded into. So the cull
-  reaches the GPU before the draws that read it, and it is inside the frame's
-  GPU timer (`?gpu`, `gpu.frame`, which Babylon opens on that same encoder;
-  `docs/profiling.md`). The encoder is read at the call and never kept: a
-  mid-frame flush replaces it, and whichever is current is submitted before
+  is handed `FrameHost.prepareEncoder()`, which the host answers with the
+  frame's ONE encoder (`render/FrameSubmit.ts` since `BABYLON_EXIT.md` X5.4g;
+  Babylon's upload encoder, item 9, which it finished and submitted FIRST,
+  ahead of the render encoder the draws were recorded into, until then). So
+  the cull reaches the GPU before the draws that read it, and it is inside the
+  frame's GPU timer (`?gpu`, `gpu.frame`, whose stamps bracket that same
+  encoder; `docs/profiling.md`). The encoder is read at the call and never
+  kept: Babylon's mid-frame flush replaced it, and whichever is current is submitted before
   the draws recorded after it. X3.3b submitted a command buffer of its own,
   which the queue ran ahead of the frame's but which no `gpu.frame` saw.
   Under `?gpu` each cull's pass also carries timestamp writes on the frames
@@ -4502,7 +4522,7 @@ light's matrix over.
   submit, and each map's draws read the indices its own dispatch wrote just
   before them.
 - **A map is drawn only when ASKED**, on the next frame our renderer
-  prepares, into the encoder Babylon submits ahead of every pass of its own
+  prepares, into the frame's encoder ahead of every pass recorded after it
   (`FramePrepare`) — so a probe or the main pass that frame samples the map
   drawn for it. A texture is born cleared to LIT by a submit of its own, and
   cleared again when the casters go. **`ShadowSystem.ready` is what a reader
@@ -4626,8 +4646,8 @@ cast and as what — and hands the frame's proxies over (`BodyShadowMap.draw`).
   unrolled (`proxyBoxPositions`, the lamps' proxies'), the back faces kept,
   into `r16float` beside a `depth32float` attachment of its own.
 - **Drawn whole on every frame it is UPDATED**, on the next frame our
-  renderer prepares, into the encoder Babylon submits ahead of every pass of
-  its own: cleared to lit, then every instance, as the generator re-rendered
+  renderer prepares, into the frame's encoder ahead of every pass recorded
+  after it: cleared to lit, then every instance, as the generator re-rendered
   every frame from the proxy's thin instances. **An update holding no proxy
   OWES a clear**, if it holds any, on that same next frame — Babylon's empty
   frame, and never sooner: an empty update made AFTER a frame's render (the
@@ -5523,7 +5543,7 @@ recorded dev-only difference was gone at X4.7d).
   growing toward `ceil(emitRate × maxLifeTime)` under the capacity and never
   shrinking but on a reset, the emit range off the circular write pointer.
 - **The update runs OUTSIDE the main pass**: a prepare of ours dispatches it into
-  the host's prepare encoder (`FrameHost.prepareEncoder`, item 9: submitted first,
+  the host's prepare encoder (`FrameHost.prepareEncoder`, the frame's one encoder:
   inside the GPU timer, untimed by `gpu.cull`, being no cull). Babylon's dispatch
   ended the main pass from inside group 0 (`_computeDispatch`), which restarted
   with `load`; ours splits nothing, and the bytes say the split cost no pixel.

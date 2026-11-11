@@ -15,7 +15,8 @@
  * X4.7c it is OUR renderer's (`render/ParticleDraw.ts`): a compute update and an
  * instanced draw, Babylon 9.28's `GPUParticleSystem` on
  * `ComputeShaderParticleSystem` ported exactly, its shaders as compiled, its
- * random textures and seeds, its clock (`scene.getAnimationRatio()`) and its
+ * random textures and seeds, its clock (the animation ratio, `scene.getAnimationRatio()`'s
+ * arithmetic on our frame since X5.4g) and its
  * emission. This file DECIDES the field — its box, its colours, its rate, its
  * lives, its blend — and never draws it; the field is a `ParticleField`, whose
  * names are Babylon's, so the arithmetic below did not move. Its mote TEXTURE is

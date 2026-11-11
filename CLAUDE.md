@@ -658,7 +658,8 @@ of its own — begun as Babylon began them), and **no Babylon `PostProcess`
 stands on the camera**. **The FRAME and its passes are OURS**
 (`render/FrameTargets.ts`, X5.4e: the frame, its depth, the glow's six, each
 made as Babylon made it), **every pass of the frame is recorded into the
-encoder Babylon submits first** and Babylon's own holds nothing, so **the
+frame's ONE encoder, submitted once** (`render/FrameSubmit.ts`, X5.4g) and
+Babylon's encoders hold nothing, so **the
 scene clears nothing** (`autoClear` and `autoClearDepthAndStencil` FALSE, no
 `outputRenderTarget`), **the frame's opening pass is the frame's**, and **the
 canvas's pass is begun EXACTLY ONCE a frame** — by the chain's last stage, or
@@ -686,17 +687,23 @@ draw**, **`noGlow` is read PER SURFACE at the take** (a world fire's too), and
 
 **The FRAME is the game's** (`core/SceneFrame.ts`, X5.4f): `Game.tick` calls
 `sceneFrame.render()` where it called `scene.render()`, and it does what that
-did for this game in its order — the scene's animations (`scene.animate()`,
-the particle fields' clock), the camera's update, the render id's two
+did for this game in its order — the scene's animations (`Scene.animate`'s
+ratio, the particle fields' clock, ported over the loop's delta since X5.4g),
+the camera's update, the render id's two
 advances, `scene.updateTransformMatrix()` (public API, so every matrix is
 Babylon's to the bit), the evaluation, the draw phase, the chain — raising its
 OWN observables, each named for the scene's it replaces, at the points the
 scene raised that one. **A module that hung off a scene observable hangs off
 the frame's now, and a new one hangs there too**: nothing raises the scene's.
-**OUR renderer (`src/render/`) meets Babylon's ENGINE through ONE seam**
-(`render/babylonSeam.ts`, the only file there that names Babylon, and only as
-types: the device, the encoder Babylon submits first, the end of frame —
-items 1 and 9), and **no draw of ours needs anything of Babylon's in group 0**:
+**The LOOP is the game's too** (`core/FrameLoop.ts`, X5.4g): its
+`requestAnimationFrame` chain, `FrameCap` the admitter, the frame's begin and
+end as observables of its own (named for the engine's), and the frame's ONE
+encoder and ONE `queue.submit` (`render/FrameSubmit.ts`) — so
+`FrameHost.afterSubmit` is told after OUR submit, and a module that hung off the
+engine's end of frame hangs off the loop's. **OUR renderer (`src/render/`)
+meets Babylon's ENGINE through ONE seam** (`render/babylonSeam.ts`, the only
+file there that names Babylon, and only as types: the device — item 1), and
+**no draw of ours needs anything of Babylon's in group 0**:
 the frame tells the draw phase's two ends, and our renderer records every point
 at the end. The frame's uniforms are PULLED off the factory's fields
 (`CelMaterialFactory.fillFrame`), so **a new value every cel material holds owes
@@ -1082,9 +1089,9 @@ the death cam's stand-in body, a broken pane's shards and a blast's rubble.
 **Nothing under it feeds navigation, cover or hit detection** — a corpse is not in
 `NavGrid`, not in `ObstacleField`, not in `hittablesAgainst`, and neither a shard
 nor a chunk is either. `scene.physicsEnabled` is **false and must stay false**
-until the scene goes — the scene is never rendered, but our frame calls
-`scene.animate()` for its animation ratio, which steps a scene physics engine
-under it — and Havok never touches a node at all.
+until the scene goes — the scene is never rendered and nothing calls
+`scene.animate()`, which steps a scene physics engine (our frame ports its
+animation ratio) — and Havok never touches a node at all.
 **What the pool holds for a body is its RIG** (a `NetSoldier`'s, or the death
 cam's stand-in), never the simulation's `Bot`.
 
@@ -1324,14 +1331,24 @@ INSIDE the render, one AFTER it and one inside the core.** `tick`,
 is already declared, so **the phase list IS that order** and no system had to be
 taught the profiler exists. A phase is a name in `PHASES`, a parent in
 `PARENT_OF` and a `begin`/`end` pair, and **the spans NEST and do not
-partition** — read a report as an attribution. `render`'s three spans hang off
-the FRAME's own points (`hookRender`, `core/SceneFrame.ts`); **`present` is NOT inside `frame`**,
-hung off the engine's end of frame (`hookEngine`); and **`sim` is the core
+partition** — read a report as an attribution. `render`'s two spans,
+`drawWorld` and `glow`, are bracketed by the FRAME itself
+(`core/SceneFrame.ts`, `timeWith`); **`present` is NOT inside `frame`**: it
+is the span around the frame's ONE `queue.submit`, closed by the LOOP
+(`core/FrameLoop.ts`, `FrameProfile.presented`); and **`sim` is the core
 TIMING ITSELF** with a clock its host injects (`SimCoreOptions.timing`), **never
 for an outcome**, and only for the page's OWN match. So there are **THREE
 ROOTS** (`ROOTS`, derived so it cannot drift), and **what is left over is the
 answer, not a gap**: `frame` + `present` short of the wall clock is a wait
 nobody can name.
+
+**The loop and its clocks are the game's** (`core/FrameLoop.ts`): a
+`requestAnimationFrame` chain `FrameCap` ADMITS, and the frame's delta and rate
+(`FrameClock`) are Babylon's `getDeltaTime` and `getFps` arithmetic ported, so
+the readout and the profiler's real delta read one number. **That delta is an
+INSTRUMENT's and the particle fields' clock, never the world's**: the world
+steps by `FrameCap.elapsed` (the refresh stamps), and under a benchmark by the
+fixed step.
 
 **THE BENCHMARK IS A URL** (`?bench=<map>`, `bench/BenchScript.ts`), ending in a
 labelled capture on a HALTED ring, so a phone runs it off the link and one tap.
@@ -1340,11 +1357,13 @@ world must step by `tick`'s `dt` and by no clock of its own: anything that reads
 the refresh clock, the wall clock or `Math.random` for an OUTCOME makes two runs
 fight two fights, and the capture's `bench.fight.hash` is what says so.
 
-**What all of them measure is CPU**, and under `compatibilityMode = false` that
-is the recording of a render BUNDLE rather than the work the GPU then does.
-**GPU time is a BOOT FLAG** (`?gpu`), and **necessary but not sufficient**: the
-whole-frame counter also needs `--enable-unsafe-webgpu` on the BROWSER. Read
-`gpu.frame`, never `gpu.mainPass`.
+**What all of them measure is CPU**: the RECORDING of the frame's commands,
+not the work the GPU then does. **GPU time is a BOOT FLAG** (`?gpu`), and both
+counters are OUR timestamp queries (report version 38): `gpu.frame` from
+before the frame's first pass to after its last (`render/FrameTimer.ts`),
+`gpu.cull` our culls inside it — pass descriptors' stamps, so neither needs a
+browser flag. **Anything of ours that reaches the GPU outside the frame's one
+encoder is outside `gpu.frame`.**
 
 **A capture is READ at `/profile_viewer.html`**, one import-free, network-free
 page in `public/`. **That path is spelled in THREE places** — the file in
@@ -1359,8 +1378,8 @@ covers, the residue and the report versions that made it a subtraction, the
 long-animation-frame reading and why its absence is the finding, how to take
 and read a capture, the viewer and the three rules for editing it, the relative
 hitch bar, the GC sentinel and the heap probe, how to find WHO allocates, the
-trace export, `?gpu` (`frameMeasurable`, the two counters), and the levers
-deliberately not in it.
+trace export, `?gpu` (the two counters and what retired Babylon's), and the
+levers deliberately not in it.
 ### The installable app
 
 The build installs to a home screen and launches fullscreen, landscape and

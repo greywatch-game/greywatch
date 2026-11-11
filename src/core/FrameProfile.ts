@@ -2,9 +2,8 @@
  * FrameProfile.ts — where a frame's milliseconds went, recorded continuously
  * and captured backwards.
  * Owns: the RECORDER — the ring that holds the recent past, the brackets that
- * fill it, the hooks on the scene, the engine, the device and the window's
- * size (`watchWindow`), the clock-grain, overhead and heap probes, and the
- * `window.__profile` handle. The phase list
+ * fill it, the hooks on the device and the window's size (`watchWindow`), the
+ * clock-grain, overhead and heap probes, and the `window.__profile` handle. The phase list
  * is `profilePhases.ts`'s and what a capture SAYS is `profileReport.ts`'s,
  * which this hands a `ProfileRing` at the moment of a capture. Owns NO game
  * state and reads none: `Game` brackets the phases it already sequences,
@@ -79,39 +78,42 @@
  *    territory and always will be.
  *  - **The frame is draw-call bound** (`docs/rendering.md`, "Why the frame is
  *    draw-call bound"), so the JS phases attribute the third of the frame
- *    that was never the problem and `render` is the enormous bar.
- *    `SceneInstrumentation`'s counters are carried beside them for that
- *    reason — the mesh walk, the render-target time, the particle time and
- *    the draw count are what the big bar is made of — and **three spans open
- *    INSIDE it now**: `shadowPass`, `glow` and `drawWorld` (a fourth,
- *    `drawOverlay`, held the rendering groups above 0 until `BABYLON_EXIT.md`
- *    X4.3d emptied them, and was retired with report version 24).
- *    They are the one part of this file `Game` does not bracket, because the
- *    boundaries they want are inside the frame's render (`SceneFrame.render`,
- *    the game's own since `BABYLON_EXIT.md` X5.4f; inside `scene.render()`, a
- *    Babylon call, until then) and there is nowhere in `Game.ts` to put
- *    them — `hookRender` hangs them off the frame's own points instead (its
- *    observables, `core/SceneFrame.ts`; the scene's until X5.4f), and carries
- *    the argument that they cannot overlap.
+ *    that was never the problem and `render` is the enormous bar — and **two
+ *    spans open INSIDE it**: `drawWorld` and `glow`. They are bracketed by the
+ *    frame itself (`core/SceneFrame.ts`, `BABYLON_EXIT.md` X5.4g), because the
+ *    boundaries they want are inside the frame's render and there is nowhere
+ *    in `Game.ts` to put them; until X5.4g this file hung them off the
+ *    frame's observables (`hookRender`; the scene's until X5.4f), and they
+ *    were three with `shadowPass`, a Babylon shadow generator's map, which
+ *    nothing opened after X5.3d and which report version 38 retired (a
+ *    fourth, `drawOverlay`, held the rendering groups above 0 until X4.3d
+ *    emptied them, retired with report version 24). Babylon's
+ *    `SceneInstrumentation` counters — the draw count, the active meshes, the
+ *    mesh walk, the render-target and particle times — rode beside them while
+ *    the big bar was Babylon's; nothing raised them once the scene stopped
+ *    rendering (X5.4f), and report version 38 retired them too.
  *
- *    **What they measure is CPU, and under `compatibilityMode = false` that is
- *    the recording of a render BUNDLE rather than the work the GPU then does.**
- *    That is still the right thing to be watching — the whole of that
- *    measurement is that this frame is bound by the submission and not by the
- *    pixels — but a group whose bundle Babylon reuses reads cheap while the
- *    GPU is saturated, and nothing here would say so. **GPU time is here
+ *    **What they measure is CPU: the RECORDING of the frame's commands, not
+ *    the work the GPU then does.** That is still the right thing to be
+ *    watching — the whole of that measurement is that this frame is bound by
+ *    the submission and not by the pixels — but a recording can read cheap
+ *    while the GPU is saturated, and nothing on the CPU would say so. **GPU time is here
  *    now, and only when the boot asked for it** (`?gpu` — see `main.ts`,
  *    which is the only place it can act, because a device's features are
  *    fixed when the device is created and a required feature the adapter
  *    lacks makes `requestDevice` REJECT). That is why it is a boot flag
  *    rather than a setting, and why it costs a reload.
- *    Read `gpu.frame` and not `gpu.mainPass`: this pipeline draws the world
- *    into post-process targets, so the "main pass" is the final full-screen
- *    quad and reads in the tens of microseconds. Measured cost of the flag:
- *    130.0 fps against 129.9 disarmed, which is nothing. **`gpu.cull` is the
- *    one GPU counter that is OURS rather than Babylon's** — our renderer's
- *    culls, stamped on their own compute passes (`render/PassTimer.ts`), a
- *    part of `gpu.frame` and attributed the way it is (`GpuPassTimer`).
+ *    **Both GPU counters are OURS** since `BABYLON_EXIT.md` X5.4g:
+ *    `gpu.frame`, the whole frame, from before its first pass to after its
+ *    last (`render/FrameTimer.ts`, two empty passes of its own bracketing the
+ *    frame's one encoder), and `gpu.cull`, our renderer's culls, stamped on
+ *    their own compute passes (`render/PassTimer.ts`), a part of `gpu.frame`
+ *    — both attributed the same way (`GpuPassTimer`). Until X5.4g `gpu.frame`
+ *    was Babylon's (`writeTimestamp` around its two encoders, which needed
+ *    `--enable-unsafe-webgpu` in Chrome) and `gpu.mainPass` Babylon's
+ *    main-pass counter, which timed nothing after X5.4f and which report
+ *    version 38 retired. Measured cost of the flag: 130.0 fps against 129.9
+ *    disarmed, which is nothing.
  *  - **The heap is usually FROZEN and the GC is only ever INFERRED.** Chrome
  *    rate-limits the bucketised `performance.memory` to one update every twenty
  *    minutes on purpose, so on a stock browser its reading does not move and a
@@ -128,12 +130,6 @@
  *    for; the same hitch with none is not, and eliminating the leading suspect
  *    is worth as much as confirming it — it is how §1 cleared the collector.
  */
-import {
-  SceneInstrumentation,
-  WebGPUCacheRenderPipeline,
-  type Observable,
-  type Scene,
-} from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { P, SLOTS } from "./profilePhases";
 import {
@@ -154,24 +150,16 @@ import {
 import { urlFlag } from "./urlOverrides";
 
 /**
- * What the profiler needs of the FRAME: its draw phase's two ends.
- * Structural, so this file imports no frame — `SceneFrame` satisfies it
- * (`BABYLON_EXIT.md` X5.4f; the scene did until then) and `Game` hands it over
- * at `arm`.
+ * What the profiler reads of the canvas, once a row: the backing store's size
+ * and the scaling level that made it of the window. Structural, so this file
+ * imports no engine — Babylon's `WebGPUEngine` satisfies it until
+ * `BABYLON_EXIT.md` X5.4h moves the canvas to the game, and `Game` hands it
+ * over at `arm`.
  */
-export interface DrawPhaseSpans {
-  readonly onBeforeDrawPhaseObservable: Observable<void>;
-  readonly onAfterDrawPhaseObservable: Observable<void>;
-}
-
-/**
- * What the profiler needs of the glow: a pair of notifications around each
- * piece of its work. Structural, so this file imports no pass — `GlowPass`
- * satisfies it and `Game` hands it over at `arm`.
- */
-export interface GlowSpans {
-  readonly onBeforeWorkObservable: Observable<void>;
-  readonly onAfterWorkObservable: Observable<void>;
+export interface RenderSurface {
+  getRenderWidth(useScreen?: boolean): number;
+  getRenderHeight(useScreen?: boolean): number;
+  getHardwareScalingLevel(): number;
 }
 
 /**
@@ -253,75 +241,22 @@ function describeScript(s: LoafScript): string {
 }
 
 /**
- * Babylon's GPU counter, and the one private field this file reads.
- *
- * **The frame id is not optional and taking the value without it would be this
- * session's pairing bug for the third time.** `WebGPUTimestampQuery.endPass`
- * stamps `engine.frameId` when the pass closes and resolves the duration in a
- * `.then()` a map-async round trip later — so the number sitting in the
- * counter belongs to a frame one to three rows BACK, and filing it against the
- * row that happened to read it would attribute a hitch's GPU cost to the frame
- * after it. `_gpuTimeInFrameId` is which frame the counter currently holds.
- * It is private in Babylon and there is no public equivalent, and it is read
- * anyway because the alternative is not a simpler instrument but a wrong one.
- */
-interface GpuCounter {
-  readonly counter: { readonly current: number };
-  readonly _gpuTimeInFrameId: number;
-}
-
-/**
- * Babylon's WHOLE-FRAME GPU counter, which is the one that answers the
- * question, and the two internal fields it takes to attribute.
- *
- * **The main-pass counter is not the scene in this pipeline.** Every pass of
- * the world renders into a post-process target and the only thing drawn to the
- * default framebuffer is the final full-screen quad (`main.ts` says so about
- * the MSAA it therefore does not ask for), so
- * `gpuTimeInFrameForMainPass` times that quad: measured at **27 microseconds**
- * on Hollowmere, which is correct for one quad and would be a catastrophic
- * misreading of "the GPU is idle". `gpuFrameTimeCounter` brackets the whole
- * command encoder instead.
- *
- * It carries no frame id, so it is attributed by watching the state machine
- * that produces it. `_measureDurationState` is 0 while nothing is in flight
- * and 1 from the frame a measurement STARTS (at the engine's `beginFrame`,
- * before `Game.tick`) — so the row that sees the transition is the row being
- * measured, and `counter.count` says when its result has landed. Only one
- * measurement is in flight at a time, which is why this samples a subset of
- * frames rather than all of them and why `gpu.frame.samples` ships beside the
- * mean.
- *
- * **All three fields are Babylon internals and a version bump can take them
- * away.** Every read is guarded and the failure is `available: false` rather
- * than a throw; after upgrading Babylon, take a `?gpu` capture and check that
- * `gpu.frame.samples` is not zero.
- */
-interface GpuTimestampQuery {
-  readonly gpuFrameTimeCounter?: { readonly current: number; readonly count: number };
-  readonly _measureDurationState?: number;
-}
-
-/**
- * Our renderer's pass timer (`render/PassTimer.ts`), as this file reads it —
- * structural, so nothing here imports the renderer. It is attributed exactly
- * as `GpuTimestampQuery`'s counter is: `inFlight` turns true during the
- * render of the frame being timed, which is before `endFrame` polls it, so
- * the row that first sees it is the row measured; `count` moving is the
- * reading landing, a map-async round trip later. One reading is in flight
- * at a time. It is ours and public, so nothing here is guarded: it is
- * there under `?gpu` on a device with `timestamp-query`, or it is null.
+ * One of OUR GPU timers, as this file reads it — the frame's
+ * (`render/FrameTimer.ts`, `gpu.frame`) and the culls' (`render/PassTimer.ts`,
+ * `gpu.cull`) — structural, so nothing here imports the renderer. Both are
+ * attributed by two transitions: `inFlight` turns true while the frame being
+ * timed is recorded — the frame timer's as the frame's encoder is made, after
+ * the submit before it; the cull timer's during the frame's render — so
+ * either way before `endFrame` polls it, and the row that first sees it is
+ * the row measured; `count` moving is the reading landing, a map-async round
+ * trip later. One reading is in flight at a time, so both are SAMPLED. They
+ * are ours and public, so nothing here is guarded: each is there under `?gpu`
+ * on a device with `timestamp-query`, or it is null.
  */
 interface GpuPassTimer {
   readonly ms: number;
   readonly count: number;
   readonly inFlight: boolean;
-}
-
-interface GpuEngine {
-  readonly frameId: number;
-  readonly gpuTimeInFrameForMainPass?: GpuCounter;
-  readonly _timestampQuery?: GpuTimestampQuery;
 }
 
 /**
@@ -338,57 +273,6 @@ const DEVICE_CREATES: readonly (readonly [string, number])[] = [
   ["createComputePipelineAsync", 1],
   ["createShaderModule", 2],
 ];
-
-/**
- * The part of a Babylon `Effect` a creation is named by: its shader name and
- * its define set, which together are the VARIANT — and the variant is what a
- * warm-up pass would have to draw to have compiled it in advance.
- */
-interface NamedEffect {
-  readonly name?: unknown;
-  readonly defines?: unknown;
-}
-
-/**
- * The effect whose render pipeline is about to be created, set by the wrapper on
- * Babylon's descriptor builder and taken by the wrapper on the device.
- *
- * **Module scope and not a field because Babylon's cache calls it, not this
- * class**, and the two calls are adjacent by construction:
- * `_createRenderPipeline` and `preWarmPipeline` both pass
- * `_buildRenderPipelineDescriptor(effect, …)` straight into the device's create
- * call. The device wrapper clears it, so a pipeline Babylon creates WITHOUT that
- * builder (the clear quad, the mipmap generator) goes unnamed rather than
- * inheriting the last effect's name.
- */
-let namingEffect: NamedEffect | null = null;
-
-/**
- * Whether a missing descriptor builder has been reported. Once per PAGE and
- * not once per arm, because the method is gone for the life of the bundle and
- * re-arming would only repeat the same sentence.
- */
-let warnedUnnamed = false;
-
-/**
- * The shader an effect was compiled from, as a string the effect already holds.
- *
- * `Effect.name` is either the shader's name or an `IShaderPath` object; the
- * object's keys are read rather than serialised, because nothing in the
- * recording path may build a string. A `vertexSource`-only path would be the
- * whole shader text, so it is named "inline" instead of carried.
- */
-function effectName(e: NamedEffect): string {
-  const n = e.name;
-  if (typeof n === "string") return n;
-  if (n && typeof n === "object") {
-    const p = n as Record<string, unknown>;
-    for (const k of ["vertex", "vertexElement", "fragment", "fragmentElement", "compute"]) {
-      if (typeof p[k] === "string") return p[k] as string;
-    }
-  }
-  return "inline";
-}
 
 export class FrameProfile {
   /**
@@ -412,11 +296,6 @@ export class FrameProfile {
   private py: Float32Array | null = null;
   private pz: Float32Array | null = null;
   private botsAlive: Uint16Array | null = null;
-  private drawCalls: Uint32Array | null = null;
-  private activeMeshes: Uint32Array | null = null;
-  private meshWalkMs: Float32Array | null = null;
-  private rttMs: Float32Array | null = null;
-  private particlesMs: Float32Array | null = null;
   /**
    * The size each row was DRAWN at, and the window it was drawn in.
    *
@@ -487,17 +366,13 @@ export class FrameProfile {
   private loafHead: Uint8Array | null = null;
 
   /**
-   * GPU time for the main pass, per row, in milliseconds — and the engine frame
-   * id each row carried, which is what files it correctly.
+   * Whole-frame GPU time, on the rows that were actually measured.
    *
-   * **Zero means NOT RESOLVED and never "the GPU was instant"**, the same rule
-   * `loafMs` and `heapLive` obey. A reading arrives one to three frames after
-   * the frame it describes and only the newest is held, so a row whose result
-   * was overtaken keeps its zero. `gpu.frames` says how many rows in the
-   * window actually got one.
+   * **Zero means NOT MEASURED and never "the GPU was instant"**, the same rule
+   * `loafMs` and `heapLive` obey. One reading is in flight at a time and it
+   * lands a frame or more after the frame it describes, so most rows keep
+   * their zero; `gpu.frame.samples` says how many in the window got one.
    */
-  private gpuMs: Float32Array | null = null;
-  /** Whole-frame GPU time, on the rows that were actually measured. */
   private gpuFrameMs: Float32Array | null = null;
   /** Our culls' GPU time (`gpu.cull`), on the rows that were measured. */
   private gpuCullMs: Float32Array | null = null;
@@ -506,12 +381,11 @@ export class FrameProfile {
   /** The row a cull reading is in flight for, and the timer's count then. */
   private cullPendingRow = -1;
   private cullLastCount = -1;
-  private frameIdAt: Uint32Array | null = null;
-  /** The row a whole-frame measurement is in flight for, and the count when it began. */
+  /** The frame's GPU timer (`render/FrameTimer.ts`), pushed by `Game` once; null without `?gpu`. */
+  private frameTimer: GpuPassTimer | null = null;
+  /** The row a whole-frame measurement is in flight for, and the timer's count then. */
   private gpuPendingRow = -1;
   private gpuLastCount = -1;
-  /** The frame id whose GPU time has already been filed, so it is filed once. */
-  private gpuFiledId = -1;
   /** Set from `?gpu` on arming — see `main.ts`, which is where it has to act. */
   private gpuRequested = false;
 
@@ -535,22 +409,18 @@ export class FrameProfile {
    * **Filed by absolute TIME rather than by ring row**, and mapped to a row only
    * when a capture is built: a creation can land between `endFrame` and the next
    * `beginFrame`, where the row it belongs to has no stamp yet, and time is the
-   * one coordinate both rings share without an identity pair. The strings are
-   * REFERENCES Babylon already holds (a label, a shader name, a define set) —
-   * storing one allocates nothing, which is what lets this live inside the
-   * recording path.
+   * one coordinate both rings share without an identity pair. The label is
+   * a REFERENCE the descriptor already holds — storing it allocates nothing,
+   * which is what lets this live inside the recording path.
    */
   private logT: Float64Array | null = null;
   private logKind: Uint8Array | null = null;
   private logMs: Float32Array | null = null;
   private logLabel: string[] = [];
-  private logEffect: string[] = [];
-  private logDefines: string[] = [];
   private logCursor = 0;
   private logFilled = 0;
-  /** Whether the device's create methods are wrapped, and whether creations can be named. */
+  /** Whether the device's create methods are wrapped. */
   private createObserved = false;
-  private createNamed = false;
 
   /**
    * Whether this browser reports long animation frames at all.
@@ -607,11 +477,13 @@ export class FrameProfile {
   private readonly openAt = new Float64Array(SLOTS);
 
   /**
-   * The observers `hookRender` hung off the scene, as teardowns.
+   * The hooks `arm` installed — the device's create methods, the window's
+   * size, the long-frame observer — as teardowns.
    *
    * Built once by `arm` and run by `disarm`, which is what keeps the promise
    * the header makes about a disarmed profiler: not merely that its entry
-   * points return early, but that it is not ON the scene at all.
+   * points return early, but that it is not ON the device or the window at
+   * all.
    */
   private unhook: (() => void)[] = [];
 
@@ -632,13 +504,13 @@ export class FrameProfile {
 
   /**
    * When `endFrame` finished, and the ring row it had just written — the two
-   * facts `recordPresent` needs and cannot get for itself.
+   * facts `presented` needs and cannot get for itself.
    *
-   * `lastSlot` exists because `endFrame` ADVANCES `cursor`, and the engine's
-   * end-of-frame notification arrives after that: by then `cursor` names the
-   * frame about to start, and writing `present` there would file it one frame
-   * late, forever. -1 until a frame has closed, which is the state an arm in
-   * the middle of a frame leaves behind.
+   * `lastSlot` exists because `endFrame` ADVANCES `cursor`, and the loop's
+   * submit comes after that: by then `cursor` names the frame about to start,
+   * and writing `present` there would file it one frame late, forever. -1
+   * until a frame has closed, which is the state an arm in the middle of a
+   * frame leaves behind.
    */
   private tickEndAt = 0;
   private lastSlot = -1;
@@ -658,8 +530,8 @@ export class FrameProfile {
   private hitchAt: number[] = [];
   private hitchWhen: number[] = [];
 
-  private scene: Scene | null = null;
-  private instr: SceneInstrumentation | null = null;
+  /** The canvas `arm` was handed, read once a row. Null disarmed. */
+  private surface: RenderSurface | null = null;
 
   private grainMs = 0;
   private overheadUs = 0;
@@ -791,10 +663,19 @@ export class FrameProfile {
   /**
    * Our renderer's pass timer, whose readings are `gpu.cull` — null where
    * none was built (no `?gpu`, or no `timestamp-query`). Set by `Game` at
-   * construction; polled every frame, like Babylon's counters.
+   * construction; polled every frame.
    */
   setCullTimer(timer: GpuPassTimer | null): void {
     this.cullTimer = timer;
+  }
+
+  /**
+   * The frame's GPU timer (`render/FrameTimer.ts`), whose readings are
+   * `gpu.frame` — null where none was built. Set by `Game` at construction;
+   * polled every frame, as the cull timer is.
+   */
+  setFrameTimer(timer: GpuPassTimer | null): void {
+    this.frameTimer = timer;
   }
 
   /**
@@ -852,12 +733,7 @@ export class FrameProfile {
    * They cost a few milliseconds once, during a settings toggle — never in a
    * frame.
    */
-  arm(
-    scene: Scene,
-    frame: DrawPhaseSpans,
-    glow: GlowSpans | null = null,
-    frames: number = CONFIG.profiling.frames,
-  ): void {
+  arm(surface: RenderSurface, frames: number = CONFIG.profiling.frames): void {
     if (this.on) return;
     // A HALTED ring is still held, and arming again replaces it.
     if (this.frameAt) this.disarm();
@@ -877,11 +753,6 @@ export class FrameProfile {
     this.py = new Float32Array(n);
     this.pz = new Float32Array(n);
     this.botsAlive = new Uint16Array(n);
-    this.drawCalls = new Uint32Array(n);
-    this.activeMeshes = new Uint32Array(n);
-    this.meshWalkMs = new Float32Array(n);
-    this.rttMs = new Float32Array(n);
-    this.particlesMs = new Float32Array(n);
     this.canvasW = new Uint16Array(n);
     this.canvasH = new Uint16Array(n);
     this.windowW = new Uint16Array(n);
@@ -897,10 +768,8 @@ export class FrameProfile {
     this.loafScriptMs = new Float32Array(n);
     this.loafRenderMs = new Float32Array(n);
     this.loafHead = new Uint8Array(n);
-    this.gpuMs = new Float32Array(n);
     this.gpuFrameMs = new Float32Array(n);
     this.gpuCullMs = new Float32Array(n);
-    this.frameIdAt = new Uint32Array(n);
     this.madeRender = new Uint16Array(n);
     this.madeCompute = new Uint16Array(n);
     this.madeModules = new Uint16Array(n);
@@ -910,11 +779,8 @@ export class FrameProfile {
     this.logKind = new Uint8Array(logCap);
     this.logMs = new Float32Array(logCap);
     this.logLabel = new Array<string>(logCap).fill("");
-    this.logEffect = new Array<string>(logCap).fill("");
-    this.logDefines = new Array<string>(logCap).fill("");
     this.logCursor = 0;
     this.logFilled = 0;
-    this.gpuFiledId = -1;
     this.gpuPendingRow = -1;
     this.gpuLastCount = -1;
     this.cullPendingRow = -1;
@@ -934,24 +800,11 @@ export class FrameProfile {
     this.hitchBarMs = CONFIG.profiling.hitchMs;
     this.gcPending = 0;
 
-    this.scene = scene;
-    // Babylon's own counters, and they are the half of the frame the JS spans
-    // cannot reach. Constructed here rather than in the ctor because each
-    // capture flag hangs observers off the scene, which is a cost a disarmed
-    // profiler must not be paying.
-    this.instr = new SceneInstrumentation(scene);
-    this.instr.captureActiveMeshesEvaluationTime = true;
-    this.instr.captureRenderTargetsRenderTime = true;
-    // The one counter with a MAP behind it rather than a subsystem: the GPU
-    // clouds a blast raises and the mote field Sarab emits around the eye are
-    // the only particles in the game, and nothing else prices either.
-    this.instr.captureParticlesRenderTime = true;
-    // …and the three spans inside `render`, which are observers rather than
-    // brackets. Registered before `on`, which costs nothing: every one of them
-    // goes through `begin`/`endAdd` and returns on the same first line as the
-    // rest of this class.
-    this.hookRender(frame, glow);
-    this.hookEngine(scene);
+    this.surface = surface;
+    // The spans inside `render` are the frame's own brackets
+    // (`SceneFrame.timeWith`) and `present` the loop's (`presented`), so
+    // nothing hangs off a frame here: what is hooked is the device and the
+    // window.
     this.hookCreation();
     this.watchWindow();
 
@@ -975,7 +828,7 @@ export class FrameProfile {
   /**
    * Stops recording and KEEPS the ring, to be read — the end of a benchmark.
    *
-   * Everything that hangs off the scene, the engine and the device comes off,
+   * Everything that hangs off the device and the window comes off,
    * exactly as `disarm` takes it off, so a halted profiler costs what a
    * disarmed one does. What stays is the ring and the facts pushed into it,
    * which is what lets `capture` and `trace` keep answering about the run —
@@ -1000,8 +853,6 @@ export class FrameProfile {
     for (const off of this.unhook) off();
     this.unhook = [];
     this.tickEndAt = 0;
-    this.instr?.dispose();
-    this.instr = null;
   }
 
   /** Stops recording and gives the memory back. The last report survives. */
@@ -1012,9 +863,7 @@ export class FrameProfile {
     this.unhook = [];
     this.tickEndAt = 0;
     this.lastSlot = -1;
-    this.instr?.dispose();
-    this.instr = null;
-    this.scene = null;
+    this.surface = null;
     this.startMs = null;
     this.durMs = null;
     this.entered = null;
@@ -1024,11 +873,6 @@ export class FrameProfile {
     this.py = null;
     this.pz = null;
     this.botsAlive = null;
-    this.drawCalls = null;
-    this.activeMeshes = null;
-    this.meshWalkMs = null;
-    this.rttMs = null;
-    this.particlesMs = null;
     this.canvasW = null;
     this.canvasH = null;
     this.windowW = null;
@@ -1045,10 +889,8 @@ export class FrameProfile {
     this.loafScriptMs = null;
     this.loafRenderMs = null;
     this.loafHead = null;
-    this.gpuMs = null;
     this.gpuFrameMs = null;
     this.gpuCullMs = null;
-    this.frameIdAt = null;
     this.madeRender = null;
     this.madeCompute = null;
     this.madeModules = null;
@@ -1057,15 +899,10 @@ export class FrameProfile {
     this.logKind = null;
     this.logMs = null;
     this.logLabel = [];
-    this.logEffect = [];
-    this.logDefines = [];
     this.logCursor = 0;
     this.logFilled = 0;
-    // The wrappers came off with `unhook` above; these only say so.
+    // The wrappers came off with `unhook` above; this only says so.
     this.createObserved = false;
-    this.createNamed = false;
-    namingEffect = null;
-    this.gpuFiledId = -1;
     this.gpuPendingRow = -1;
     this.gpuLastCount = -1;
     this.cullPendingRow = -1;
@@ -1123,10 +960,11 @@ export class FrameProfile {
    * Closes a span that may open MORE THAN ONCE in a frame, adding to whatever
    * the frame already has in that slot.
    *
-   * **Every one of `hookRender`'s spans needs this**, which is the whole
-   * reason it is a second method rather than `end` growing a flag: a rendering group
-   * is entered once per group per camera, and a plain `end` would report the
-   * LAST of those as the phase's whole cost.
+   * **The frame's two spans inside `render` need this** (`SceneFrame`'s
+   * `drawWorld`, closed at the glow's work and again after the draw phase —
+   * the second a no-op when the first ran), which is the whole reason it is a
+   * second method rather than `end` growing a flag: a span entered more than
+   * once a frame would report the LAST of its pieces as its whole cost.
    *
    * **`entered` is what says "first this frame", and it is sound because
    * `endFrame` clears the slots of the frame it is about to overwrite** — the
@@ -1202,31 +1040,6 @@ export class FrameProfile {
   }
 
   /**
-   * Hangs `present` off the ENGINE's end-of-frame notification.
-   *
-   * **The second place a bracket lives outside `Game.ts`, and for the opposite
-   * reason to `hookRender`'s.** Those three are boundaries INSIDE the frame's
-   * render (`SceneFrame.render`; `scene.render()` until `BABYLON_EXIT.md`
-   * X5.4f); this one is a boundary `Game` never sees at all, because
-   * `endFrame` is called by Babylon's render loop after `tick` has returned.
-   * There is no line in `Game.ts` that could hold it.
-   *
-   * `onEndFrameObservable` fires at the END of `WebGPUEngine.endFrame`, after
-   * `flushFramebuffer` has run `queue.submit` — so the span this closes covers
-   * the render pass being closed and the command buffers being submitted, which
-   * is where a stall on the way to the screen would land. What it deliberately
-   * does NOT cover is the wait for the next frame to start; that stays as the
-   * residue between `frame` + `present` and the wall clock, and naming it would
-   * mean claiming to know which of the compositor, the driver and the panel it
-   * belonged to.
-   */
-  private hookEngine(scene: Scene): void {
-    const engine = scene.getEngine();
-    const done = engine.onEndFrameObservable.add(() => this.recordPresent());
-    this.unhook.push(() => engine.onEndFrameObservable.remove(done));
-  }
-
-  /**
    * Wraps the device's create methods so every pipeline and shader module lands
    * on the frame it was made in — the hook `FINDINGS.md` 1 asked for to settle
    * whether a hitch sits one or two frames after a creation.
@@ -1239,14 +1052,12 @@ export class FrameProfile {
    * same methods first (`plans/webgpu-ref/pipelines.mjs` does, in an init
    * script) is wrapped in turn and put back exactly as it was found.
    *
-   * **Naming is the second, optional half and it IS a Babylon internal**:
-   * `WebGPUCacheRenderPipeline._buildRenderPipelineDescriptor` is the one place
-   * that holds the effect a render pipeline is for, so it is wrapped to leave
-   * that effect where the device wrapper can see it. A version that renames it
-   * costs the NAMES and nothing else — `pipelines.named` goes false and every
-   * count stays right — the arrangement `GpuTimestampQuery`'s fields have. It
-   * also warns ONCE on the console, because a flag in a capture is only seen
-   * by somebody who already knows to look for it.
+   * **A creation is named by its descriptor's LABEL alone** since report
+   * version 38: every pipeline made in a round is our renderer's, labelled
+   * where it is made, and the Babylon effect a pipeline built through
+   * Babylon's cache was named by (a patch on
+   * `WebGPUCacheRenderPipeline._buildRenderPipelineDescriptor`) names
+   * nothing any more — no Babylon pipeline is made after the boot.
    *
    * One argument and no rest parameter on every wrapper: all five create
    * methods take a single descriptor, and `...args` would be an array per call.
@@ -1275,40 +1086,12 @@ export class FrameProfile {
       this.createObserved = true;
     }
 
-    const cache = WebGPUCacheRenderPipeline.prototype as unknown as Record<string, unknown>;
-    const build = cache._buildRenderPipelineDescriptor;
-    if (typeof build !== "function") {
-      if (!warnedUnnamed) {
-        warnedUnnamed = true;
-        console.warn(
-          "FrameProfile: WebGPUCacheRenderPipeline._buildRenderPipelineDescriptor " +
-            "is gone (a Babylon upgrade?) — pipeline creations are still counted " +
-            "but will not be named. See docs/profiling.md.",
-        );
-      }
-      return;
-    }
-    const describe = build as (this: unknown, e: NamedEffect, t: unknown, s: unknown) => unknown;
-    cache._buildRenderPipelineDescriptor = function named(
-      this: unknown,
-      effect: NamedEffect,
-      topology: unknown,
-      samples: unknown,
-    ): unknown {
-      namingEffect = effect;
-      return describe.call(this, effect, topology, samples);
-    };
-    this.unhook.push(() => {
-      cache._buildRenderPipelineDescriptor = build;
-      namingEffect = null;
-    });
-    this.createNamed = true;
   }
 
   /**
    * Files one creation: a count on the row being recorded, and an entry in the
-   * log. Nothing here builds a string — every one stored is a reference the
-   * descriptor or the effect already held.
+   * log. Nothing here builds a string — the one stored is a reference the
+   * descriptor already held.
    */
   private noteCreated(kind: number, t0: number, callMs: number, desc: unknown): void {
     const i = this.cursor;
@@ -1323,119 +1106,8 @@ export class FrameProfile {
     this.logMs![at] = callMs;
     const label = (desc as { label?: unknown } | null)?.label;
     this.logLabel[at] = typeof label === "string" ? label : "";
-    // Only a render pipeline is built through the descriptor builder, and a
-    // module or compute pipeline must not inherit the last render's effect.
-    const effect = kind === 0 ? namingEffect : null;
-    this.logEffect[at] = effect ? effectName(effect) : "";
-    this.logDefines[at] = effect && typeof effect.defines === "string" ? effect.defines : "";
-    if (kind === 0) namingEffect = null;
     this.logCursor = (at + 1) % this.logT!.length;
     if (this.logFilled < this.logT!.length) this.logFilled++;
-  }
-
-  /**
-   * Hangs the spans inside `render` off the FRAME's own observables
-   * (`core/SceneFrame.ts`: Babylon `Observable`s of the game's frame, named
-   * for the scene's they replaced at `BABYLON_EXIT.md` X5.4f, and the glow's
-   * two) — two of the three, `shadowPass` having nothing left to bracket
-   * (below).
-   *
-   * **This is the one place this file's own arrangement bends, and the reason
-   * is that there is nowhere in `Game.ts` to put these brackets.** Every other
-   * phase is a pair of lines in a method whose order `Game` already declares;
-   * these three are boundaries INSIDE the frame's render (`SceneFrame.render`,
-   * where they were inside `scene.render()` until `BABYLON_EXIT.md` X5.4f:
-   * the points are the frame's own since, raised where the scene raised its
-   * observables, `DrawPhaseSpans`), and the alternative to
-   * an observer is no measurement at all. Nothing here reaches for a system —
-   * the glow is handed in as two observables (`GlowSpans`), so `GlowPass`
-   * still has not heard of this file and does not have to. (`shadowPass` was a
-   * Babylon shadow generator's map, found through the SCENE's lights; the
-   * scene has neither since `BABYLON_EXIT.md` X5.3d, every map being our
-   * renderer's, so the phase is opened by nothing.)
-   *
-   * **THE THREE CANNOT OVERLAP, and that is a fact about where Babylon runs
-   * them rather than a hope.** `Scene._renderForCamera` is one order:
-   *
-   *  1. the render targets — a generator's shadow map among them, until
-   *     X5.3d — all of it before the draw phase opens;
-   *  2. `onBeforeDrawPhaseObservable`, the rendering manager, and
-   *     `onAfterDrawPhaseObservable`, which is the camera's own pass and where
-   *     the glow draws its mask and blurs it, after every group has drawn;
-   *  3. the post chain, where the ink runs the glow's compose as its last line.
-   *
-   * So a shadow map was in (1), `drawWorld` and then the glow's mask are in
-   * (2), and the glow's compose is in (3), unnamed. What is left inside
-   * `render` and named by nothing is the active-mesh evaluation, our
-   * renderer's start of the main pass (below), the post chain, a frame's share
-   * of a reflection bake, and the present.
-   *
-   * **`drawWorld` is the camera's DRAW PHASE, not its rendering groups**
-   * (`BABYLON_EXIT.md` X4.7b, report version 36): it opens on
-   * `onBeforeDrawPhaseObservable` and closes where the glow's work opens —
-   * the glow's mask renders from `onAfterDrawPhaseObservable` BEFORE the
-   * observer here that would otherwise close it (the glow's was added at
-   * construction, ours at `arm`) — or at the phase's end on a frame the glow
-   * does no work. The draw phase fires from `Scene._renderForCamera` alone,
-   * never from a render target's own manager, so no gate is needed against a
-   * shadow map's groups or the mask's. What it holds is the rendering manager
-   * — group 0 when Babylon visits it, its particles and our renderer's draws
-   * QUEUED at its points — and, on a frame Babylon visits NO group (X4.5a's
-   * fallback: the menu, every bank row, and from X4.7c a round on the maps
-   * whose ash is ours), the seam's telling of the same points at the phase's
-   * end, which is inserted FIRST on that observable and so lands ahead of the
-   * glow. **So it is entered on every frame the camera draws, and reads the
-   * same whichever path told our points.** Our recording of the main pass is
-   * HERE since `BABYLON_EXIT.md` X5.4e: the pass is our renderer's own,
-   * recorded at the phase's end by the seam's observer, which is inserted
-   * first, ahead of both the glow's work and this span's close. (While the
-   * draws were QUEUED into Babylon's pass they were recorded wherever that
-   * pass ENDED — `_endCurrentRenderPass` ran `_bundleList`,
-   * `thinWebGPUEngine.js` 59-67 — which with Babylon's particles in group 0
-   * was HERE, their compute dispatch ending the pass, about half of this span
-   * in a live round at X4.7b's review, and without them was the glow's mask,
-   * so from X4.7c to X5.4e it landed in `glow`: `docs/profiling.md`.) Its
-   * `first` point is here too, recorded first in that pass (`Renderer.end`).
-   * **What it does NOT hold is the seam's own start of the frame** — our
-   * renderer's `begin` (the frame's uniforms and every prepare recorded onto
-   * the upload encoder): the seam's observer on the same
-   * `onBeforeDrawPhaseObservable` was added when `Game` built the renderer,
-   * before any `arm`, so it runs ahead of this span's opening, under `render`
-   * and named by nothing, as it did when this span was the groups'. Until
-   * version 36 it was the rendering groups' (gated on being in the draw
-   * phase), so it opened only on a frame Babylon visited one; group 1 was
-   * `drawOverlay` until X4.3d emptied it (report version 24).
-   *
-   * **A render target is bracketed BIND to UNBIND.** The glow is not bracketed
-   * as a target at all: it notifies around its mask AND its blur together.
-   */
-  private hookRender(frame: DrawPhaseSpans, glow: GlowSpans | null): void {
-    const off = this.unhook;
-
-    // `drawWorld`: the camera's draw phase, closed where the glow's work opens
-    // (below) or, on a frame the glow does no work, where the phase ends — an
-    // `endAdd` on a span already closed returns on its first test.
-    const drawOn = frame.onBeforeDrawPhaseObservable.add(() => this.begin(P.drawWorld));
-    off.push(() => frame.onBeforeDrawPhaseObservable.remove(drawOn));
-    const drawOff = frame.onAfterDrawPhaseObservable.add(() => this.endAdd(P.drawWorld));
-    off.push(() => frame.onAfterDrawPhaseObservable.remove(drawOff));
-
-    // `shadowPass` is bracketed by nothing: it was a Babylon shadow
-    // generator's map, found through `scene.lights`, and the scene has no
-    // light and no generator since `BABYLON_EXIT.md` X5.3d (every map ours,
-    // drawn on the upload encoder ahead of the frame's draws). The phase
-    // stays in `PHASES` until X5.4's spans retire it, a report version.
-
-    // The glow: its mask and blur at the end of the draw phase, which closes
-    // `drawWorld` as it opens. See the method's header.
-    if (!glow) return;
-    const before = glow.onBeforeWorkObservable.add(() => {
-      this.endAdd(P.drawWorld);
-      this.begin(P.glow);
-    });
-    off.push(() => glow.onBeforeWorkObservable.remove(before));
-    const after = glow.onAfterWorkObservable.add(() => this.endAdd(P.glow));
-    off.push(() => glow.onAfterWorkObservable.remove(after));
   }
 
   /**
@@ -1459,10 +1131,11 @@ export class FrameProfile {
   }
 
   /**
-   * Closes the frame, samples Babylon's counters and advances the ring.
+   * Closes the frame, files what landed for it and advances the ring.
    *
-   * Last line of `tick`, after the frame's render: the counters are what that
-   * render just did, and asking before it would report the previous frame's.
+   * Last line of `tick`, after the frame's render: what is read here is what
+   * that render just did, and asking before it would report the previous
+   * frame's.
    */
   endFrame(realDeltaMs: number): void {
     if (!this.on) return;
@@ -1480,7 +1153,7 @@ export class FrameProfile {
     this.frameAt![i] = this.frameT0;
     this.segmentAt![i] = this.segmentNow;
     // **The interval that has just elapsed belongs to the row BEFORE this
-    // one.** `Game.tick` reads `getDeltaTime()` on its FIRST line, so
+    // one.** `Game.tick` reads the frame's delta on its FIRST line, so
     // `realDeltaMs` is `start(i) - start(i-1)` — the gap the PREVIOUS frame
     // filled with its tick and its submit. Written into row `i` it is read
     // against the spans of the frame only now beginning, and that is a
@@ -1493,7 +1166,7 @@ export class FrameProfile {
     // +0.1 and its negative count from 133 to 0, and a negative residue is
     // impossible.
     //
-    // `present` needed no such move and never had this bug: `recordPresent`
+    // `present` needed no such move and never had this bug: `presented`
     // already writes into `lastSlot`, for the same reason stated there.
     const prev = this.lastSlot;
     if (prev >= 0) this.frameMs![prev] = realDeltaMs;
@@ -1501,20 +1174,12 @@ export class FrameProfile {
     // the row may still hold the previous lap's. `buildReport` drops the
     // newest row rather than reading this zero as an instant frame.
     this.frameMs![i] = 0;
-    const instr = this.instr;
-    if (instr && this.scene) {
-      this.drawCalls![i] = instr.drawCallsCounter.current;
-      this.activeMeshes![i] = this.scene.getActiveMeshes().length;
-      this.meshWalkMs![i] = instr.activeMeshesEvaluationTimeCounter.current;
-      this.rttMs![i] = instr.renderTargetsRenderTimeCounter.current;
-      this.particlesMs![i] = instr.particlesRenderTimeCounter.current;
-    }
-    // The size this row was drawn at — see `canvasW`. A row with no engine
+    // The size this row was drawn at — see `canvasW`. A row with no surface
     // reads 0, which the report skips.
-    const engine = this.scene?.getEngine() ?? null;
-    this.canvasW![i] = engine ? engine.getRenderWidth(true) : 0;
-    this.canvasH![i] = engine ? engine.getRenderHeight(true) : 0;
-    this.scaleAt![i] = engine ? engine.getHardwareScalingLevel() : 0;
+    const surface = this.surface;
+    this.canvasW![i] = surface ? surface.getRenderWidth(true) : 0;
+    this.canvasH![i] = surface ? surface.getRenderHeight(true) : 0;
+    this.scaleAt![i] = surface ? surface.getHardwareScalingLevel() : 0;
     this.windowW![i] = this.winW;
     this.windowH![i] = this.winH;
     // The collections the sentinel reported since the last frame closed, and
@@ -1611,7 +1276,6 @@ export class FrameProfile {
     // The GPU's readings are ASSIGNED to a row only when one lands for it,
     // so a row that is not measured on this lap would keep the last lap's —
     // a reading from another stretch of the session, filed in this window.
-    this.gpuMs![this.cursor] = 0;
     this.gpuFrameMs![this.cursor] = 0;
     this.gpuCullMs![this.cursor] = 0;
     // …and the hitch this lap is about to overwrite stops being a hitch. The
@@ -1623,7 +1287,7 @@ export class FrameProfile {
       this.hitchAt.shift();
       this.hitchWhen.shift();
     }
-    // The handover to `recordPresent`, and it is the LAST line for a reason:
+    // The handover to `presented`, and it is the LAST line for a reason:
     // everything above is this instrument's own bookkeeping, and charging that
     // to the submit would be the profiler measuring itself.
     this.lastSlot = i;
@@ -1631,20 +1295,34 @@ export class FrameProfile {
   }
 
   /**
-   * Closes `present` on the frame that has just been submitted.
+   * Closes `present` on the frame that has just been submitted — called by the
+   * frame loop right after its one `queue.submit` returns
+   * (`core/FrameLoop.ts`, `BABYLON_EXIT.md` X5.4g), so the span is the end of
+   * the frame after `tick`: the frame timer closed, the encoder finished and
+   * the submit. Until X5.4g it hung off the engine's end-of-frame
+   * notification (`hookEngine`), after Babylon's `endFrame`.
+   *
+   * **The second place a bracket lives outside `Game.ts`, and for the
+   * opposite reason to the frame's spans.** Those are boundaries INSIDE the
+   * frame's render; this one is a boundary `Game` never sees at all, because
+   * the submit runs after `tick` has returned. What it deliberately does NOT
+   * cover is the wait for the next frame to start; that stays as the residue
+   * between `frame` + `present` and the wall clock, and naming it would mean
+   * claiming to know which of the compositor, the driver and the panel it
+   * belonged to.
    *
    * **Written straight into the ring rather than through `end`, because the
    * cursor has already moved on.** `endFrame` is the last line of `tick` and
-   * advances `cursor`; the engine notifies after `tick` returns, so the row
-   * this belongs to is `lastSlot` and not `cursor`. `endFrame` clears the
-   * NEXT row's `entered` flags, never the one just written, so stamping it
-   * here is safe.
+   * advances `cursor`; the submit comes after `tick` returns, so the row this
+   * belongs to is `lastSlot` and not `cursor`. `endFrame` clears the NEXT
+   * row's `entered` flags, never the one just written, so stamping it here
+   * is safe.
    *
-   * `tickEndAt` is zeroed on the way through so a second notification inside
-   * one frame cannot write twice — there is exactly one `endFrame` per render
-   * loop today, and this costs one comparison to not depend on that.
+   * `tickEndAt` is zeroed on the way through so a second call inside one
+   * frame cannot write twice — there is exactly one submit per frame, and
+   * this costs one comparison to not depend on that.
    */
-  private recordPresent(): void {
+  presented(): void {
     if (!this.on) return;
     const t0 = this.tickEndAt;
     if (t0 === 0) return;
@@ -1701,8 +1379,6 @@ export class FrameProfile {
    * state nothing here is null but the heap series.
    */
   private ring(): ProfileRing {
-    const engine = this.scene?.getEngine() ?? null;
-    const gpu = engine as unknown as GpuEngine | null;
     return {
       capacity: this.capacity,
       cursor: this.cursor,
@@ -1716,11 +1392,6 @@ export class FrameProfile {
       py: this.py!,
       pz: this.pz!,
       botsAlive: this.botsAlive!,
-      drawCalls: this.drawCalls!,
-      activeMeshes: this.activeMeshes!,
-      meshWalkMs: this.meshWalkMs!,
-      rttMs: this.rttMs!,
-      particlesMs: this.particlesMs!,
       canvasW: this.canvasW!,
       canvasH: this.canvasH!,
       windowW: this.windowW!,
@@ -1736,7 +1407,6 @@ export class FrameProfile {
       loafScriptMs: this.loafScriptMs!,
       loafRenderMs: this.loafRenderMs!,
       loafHead: this.loafHead!,
-      gpuMs: this.gpuMs!,
       gpuFrameMs: this.gpuFrameMs!,
       gpuCullMs: this.gpuCullMs!,
       madeRender: this.madeRender!,
@@ -1747,12 +1417,9 @@ export class FrameProfile {
       logKind: this.logKind!,
       logMs: this.logMs!,
       logLabel: this.logLabel,
-      logEffect: this.logEffect,
-      logDefines: this.logDefines,
       logCursor: this.logCursor,
       logFilled: this.logFilled,
       createObserved: this.createObserved,
-      createNamed: this.createNamed,
       loafSupported: this.loafSupported,
       loafWorst: this.loafWorst,
       heapLive: this.heapLive,
@@ -1774,9 +1441,9 @@ export class FrameProfile {
       graphics: this.graphics,
       graphicsAt: this.graphicsAt,
       gpuRequested: this.gpuRequested,
-      gpuAvailable: !!gpu?.gpuTimeInFrameForMainPass,
+      gpuAvailable: this.frameTimer !== null,
       cullTimed: this.cullTimer !== null,
-      engine,
+      surface: this.surface,
     };
   }
 
@@ -1986,74 +1653,35 @@ export class FrameProfile {
   }
 
   /**
-   * Files whatever GPU time has resolved since the last frame against the ROW
-   * IT BELONGS TO, which is not this one.
-   *
-   * The engine's frame id advances once per frame exactly as the ring does, so
-   * the row is `i` minus however many frames back the reading is — an
-   * arithmetic step rather than a search, and `frameIdAt` is then checked
-   * rather than trusted, because a ring that has lapped past the frame in
-   * question must drop the reading instead of writing it somewhere plausible.
-   *
-   * Nothing is allocated and the whole thing is four reads on a healthy frame.
-   * With `?gpu` absent `gpuTimeInFrameForMainPass` is undefined and this
-   * returns on its second line.
+   * Files whatever GPU time has landed since the last frame against the ROW IT
+   * BELONGS TO, which is not this one — both of our timers, by the same two
+   * transitions (`GpuPassTimer`). Nothing is allocated, and the whole thing is
+   * a few reads on a healthy frame; nothing without `?gpu`.
    */
   private pollGpu(i: number): void {
-    this.pollGpuCull(i);
-    const engine = this.scene?.getEngine() as unknown as GpuEngine | undefined;
-    if (!engine) return;
-    this.frameIdAt![i] = engine.frameId;
-    this.pollGpuFrame(i, engine);
-
-    const perf = engine.gpuTimeInFrameForMainPass;
-    if (!perf) return;
-    const id = perf._gpuTimeInFrameId;
-    if (id < 0 || id === this.gpuFiledId) return;
-    this.gpuFiledId = id;
-    const back = engine.frameId - id;
-    if (back < 0 || back >= this.filled + 1) return;
-    const row = (i - back + this.capacity) % this.capacity;
-    // The check that makes the arithmetic safe rather than merely quick.
-    if (this.frameIdAt![row] !== id) return;
-    // Babylon reports NANOSECONDS.
-    this.gpuMs![row] = perf.counter.current / 1e6;
-  }
-
-  /**
-   * The whole frame's GPU time, filed against the row it was measured on.
-   *
-   * Two transitions and nothing else — see `GpuTimestampQuery` for why they
-   * are the attribution. A measurement STARTS at the engine's `beginFrame`,
-   * which is before `Game.tick`, so a row that finds the state non-zero with
-   * nothing already pending is the row being measured; the result LANDS later
-   * and `count` moving is what says so.
-   */
-  private pollGpuFrame(i: number, engine: GpuEngine): void {
-    const q = engine._timestampQuery;
-    const counter = q?.gpuFrameTimeCounter;
-    if (!counter) return;
-    const count = counter.count;
-    if (this.gpuLastCount < 0) this.gpuLastCount = count;
-    else if (count !== this.gpuLastCount) {
-      this.gpuLastCount = count;
-      if (this.gpuPendingRow >= 0) {
-        this.gpuFrameMs![this.gpuPendingRow] = counter.current / 1e6;
-        this.gpuPendingRow = -1;
+    const frame = this.frameTimer;
+    if (frame) {
+      const count = frame.count;
+      if (this.gpuLastCount < 0) this.gpuLastCount = count;
+      else if (count !== this.gpuLastCount) {
+        this.gpuLastCount = count;
+        if (this.gpuPendingRow >= 0) {
+          this.gpuFrameMs![this.gpuPendingRow] = frame.ms;
+          this.gpuPendingRow = -1;
+        }
       }
+      // A fresh reading is in flight and nothing is claimed for it yet.
+      if (this.gpuPendingRow < 0 && frame.inFlight) this.gpuPendingRow = i;
     }
-    // A fresh measurement is in flight and nothing is claimed for it yet.
-    if (this.gpuPendingRow < 0 && (q?._measureDurationState ?? 0) !== 0) {
-      this.gpuPendingRow = i;
-    }
+    this.pollGpuCull(i);
   }
 
   /**
    * Our culls' GPU time, filed against the row it was measured on — the
-   * same two transitions as `pollGpuFrame`, read off `GpuPassTimer`. A
-   * reading that lands as 0 (one that could not be read) leaves its row's
-   * zero, which is "not measured". Three reads on a healthy frame; nothing
-   * without a timer.
+   * same two transitions as `pollGpu`'s for the frame, read off
+   * `GpuPassTimer`. A reading that lands as 0 (one that could not be read)
+   * leaves its row's zero, which is "not measured". Three reads on a healthy
+   * frame; nothing without a timer.
    */
   private pollGpuCull(i: number): void {
     const t = this.cullTimer;

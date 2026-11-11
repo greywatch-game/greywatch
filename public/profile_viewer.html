@@ -33,6 +33,14 @@
 
   The phase tree comes from the capture (`ProfileReport.tree`); `FALLBACK_TREE`
   below is only for captures older than that field. See docs/profiling.md.
+
+  It reads EVERY report version, old fields and new: report version 38
+  (`BABYLON_EXIT.md` X5.4g) retired Babylon's instruments — `counters`, the
+  draw and mesh series, a hitch's Babylon counters, `gpu.mainPass`,
+  `pipelines.named` with a creation's `effect` and `defines`, a trace's
+  `draws` track and the `shadowPass` phase — so every place that reads one
+  draws it where it is and leaves its tile, column or panel out where it is
+  not, rather than printing a dash for a field the build never had.
 -->
 <style>
   :root { color-scheme: light dark; }
@@ -625,7 +633,7 @@ table.compiles td.num { text-align: right; font-variant-numeric: tabular-nums; }
       </div>
     </div>
 
-    <div class="panel">
+    <div class="panel" id="p-counters">
       <header><h2>Draw calls &amp; active meshes</h2></header>
       <div class="body flush">
         <div class="chart">
@@ -677,11 +685,13 @@ const FALLBACK_TREE = {
   localShadows: "camera",
   hudDraw: "frame", post: "frame", culling: "frame", gi: "frame", audio: "frame",
   render: "frame",
+  // `shadowPass` (to report v37) and `drawOverlay` (to v23) are kept for the
+  // traces that carry them: a trace states no tree.
   shadowPass: "render", glow: "render", drawWorld: "render", drawOverlay: "render",
 };
 
 /* The phases nothing contains. `present` is deliberately ABSENT from the tree
-   above rather than parented to `frame`: it is what the engine does AFTER the
+   above rather than parented to `frame`: it is the frame's submit AFTER the
    tick returns, so drawing it inside `frame` would draw a containment that does
    not exist. A capture carries its own `roots` (report version 3 and later);
    this is the fallback for older ones and for a TRACE, which has nowhere to
@@ -847,7 +857,14 @@ function gpuRead(r) {
     };
   }
   if (g.frameMeasurable === true) {
-    return { state: "empty", why: "the counter is measurable here but resolved nothing — check the Babylon internals it rides on" };
+    // From report v38 the counter is the game's own frame timer; before it,
+    // Babylon's, read through three of its internals.
+    return {
+      state: "empty",
+      why: r.version >= 38
+        ? "the frame timer was built but no reading landed in this window"
+        : "the counter is measurable here but resolved nothing — check the Babylon internals it rides on",
+    };
   }
   return {
     state: "ambiguous",
@@ -1207,13 +1224,17 @@ function renderReport(r) {
       pl.modules + " modules · " + pl.hitchesNear + " of " + f.hitches + " slow frames on one",
       pl.hitchesNear ? "gpu" : null));
   }
-  const c = r.counters || {};
-  stats.appendChild(tile("Draw calls", String(c.drawCalls != null ? c.drawCalls : "—"), "", (c.activeMeshes != null ? c.activeMeshes + " meshes" : "")));
-  // Particles are only on a capture from a build that measures them, and the
-  // line says nothing rather than "0.00 ms" on one that does not.
-  const walkSub = "rtt " + fmt(c.renderTargetsMs, 2) + " ms"
-    + (c.particlesMs != null ? " / particles " + fmt(c.particlesMs, 2) + " ms" : "");
-  stats.appendChild(tile("Mesh walk", fmt(c.meshWalkMs, 2), " ms", walkSub));
+  // Babylon's counters, to report v37: absent from v38 on, and so are their
+  // tiles rather than two tiles of dashes.
+  const c = r.counters;
+  if (c) {
+    stats.appendChild(tile("Draw calls", String(c.drawCalls != null ? c.drawCalls : "—"), "", (c.activeMeshes != null ? c.activeMeshes + " meshes" : "")));
+    // Particles are only on a capture from a build that measures them, and the
+    // line says nothing rather than "0.00 ms" on one that does not.
+    const walkSub = "rtt " + fmt(c.renderTargetsMs, 2) + " ms"
+      + (c.particlesMs != null ? " / particles " + fmt(c.particlesMs, 2) + " ms" : "");
+    stats.appendChild(tile("Mesh walk", fmt(c.meshWalkMs, 2), " ms", walkSub));
+  }
 
   /* charts */
   const series = r.series;
@@ -1338,8 +1359,11 @@ function renderCompiles(pl, bar) {
   if (!pl || !pl.observed) { panel.hidden = true; return; }
   panel.hidden = false;
   const list = pl.recent || [];
+  // A creation's Babylon effect and its defines, to report v37 (`named`, the
+  // builder found to name them); from v38 a creation is its label alone.
+  const named = pl.named !== undefined;
   $("n-compiles").textContent = pl.render + " render · " + pl.compute + " compute · " +
-    pl.modules + " modules" + (pl.named ? "" : " · unnamed — Babylon's builder was not found") +
+    pl.modules + " modules" + (pl.named === false ? " · unnamed — Babylon's builder was not found" : "") +
     (list.length < pl.render + pl.compute + pl.modules ? " · newest " + list.length + " listed" : "");
   if (!list.length) {
     const tr = el("tr"), td = el("td", "empty", "Nothing was created in this window — so no slow frame in it was a first-use compile.");
@@ -1347,7 +1371,9 @@ function renderCompiles(pl, bar) {
     return;
   }
   const head = el("tr");
-  for (const k of ["ago", "kind", "frame", "shader", "pass", "defines"]) head.appendChild(el("th", null, k));
+  for (const k of named ? ["ago", "kind", "frame", "shader", "pass", "defines"] : ["ago", "kind", "frame", "label"]) {
+    head.appendChild(el("th", null, k));
+  }
   table.appendChild(head);
   for (const e of list) {
     const tr = el("tr");
@@ -1356,11 +1382,13 @@ function renderCompiles(pl, bar) {
     const fm = el("td", null, e.frameMs ? fmt(e.frameMs, 1) + " ms" : "—");
     if (e.frameMs >= bar) fm.className = "slow";
     tr.appendChild(fm);
-    tr.appendChild(el("td", null, e.effect || "—"));
+    if (named) tr.appendChild(el("td", null, e.effect || "—"));
     tr.appendChild(el("td", "mono", (e.label || "").replace(/^RenderPipeline_/, "") || "—"));
-    const df = el("td", "mono defs", (e.defines || "").replace(/#define /g, "").replace(/\s*\n\s*/g, " ").trim() || "—");
-    df.title = e.defines || "";
-    tr.appendChild(df);
+    if (named) {
+      const df = el("td", "mono defs", (e.defines || "").replace(/#define /g, "").replace(/\s*\n\s*/g, " ").trim() || "—");
+      df.title = e.defines || "";
+      tr.appendChild(df);
+    }
     table.appendChild(tr);
   }
 }
@@ -1391,7 +1419,9 @@ function renderBench(r) {
   const all = (seg.groups || []).concat(seg.list || []);
   const sized = all.some(s => s.backingStore !== undefined && (s.sizes > 1 || s.staleFrames > 0 ||
     s.backingStore !== all[0].backingStore));
-  for (const k of ["", "frames", "fps", "mean", "p95", "1% low", "tick", "render", "sim", "draws", "gpu", "cull"].concat(sized ? ["size"] : [])) {
+  // Babylon's draw count, to report v37.
+  const draws = all.some((s) => s.drawCalls !== undefined);
+  for (const k of ["", "frames", "fps", "mean", "p95", "1% low", "tick", "render", "sim"].concat(draws ? ["draws"] : [], ["gpu", "cull"], sized ? ["size"] : [])) {
     head.appendChild(el("th", null, k));
   }
   table.appendChild(head);
@@ -1408,7 +1438,7 @@ function renderBench(r) {
     // The core's step on the rows that ran one (report version 14); "—" on a
     // stretch that stepped nothing and on an older capture, which never said.
     tr.appendChild(el("td", "num", s.sim ? fmt(s.sim.mean, 2) + " ms" : "—"));
-    tr.appendChild(el("td", "num", String(s.drawCalls)));
+    if (draws) tr.appendChild(el("td", "num", String(s.drawCalls)));
     tr.appendChild(el("td", "num", s.gpuSamples ? fmt(s.gpuFrame, 2) + " ms" : "—"));
     // Our culls (report version 18), in microseconds: "—" where none landed.
     tr.appendChild(el("td", "num", s.gpuCullSamples ? fmt(s.gpuCull * 1000, 0) + " µs" : "—"));
@@ -1607,11 +1637,14 @@ function hitchRow(h, read, below) {
   const w = (k, v) => { const x = el("div"); x.appendChild(el("b", null, k + " ")); x.appendChild(document.createTextNode(v)); where.appendChild(x); };
   w("at", "(" + h.x + ", " + h.y + ", " + h.z + ")");
   w("bots", String(h.botsAlive));
-  w("draws", String(h.drawCalls));
-  w("meshes", String(h.activeMeshes));
-  w("walk", fmt(h.meshWalkMs, 2) + " ms");
-  w("rtt", fmt(h.renderTargetsMs, 2) + " ms");
-  if (h.particlesMs != null) w("particles", fmt(h.particlesMs, 2) + " ms");
+  // Babylon's counters on the frame, to report v37.
+  if (h.drawCalls != null) {
+    w("draws", String(h.drawCalls));
+    w("meshes", String(h.activeMeshes));
+    w("walk", fmt(h.meshWalkMs, 2) + " ms");
+    w("rtt", fmt(h.renderTargetsMs, 2) + " ms");
+    if (h.particlesMs != null) w("particles", fmt(h.particlesMs, 2) + " ms");
+  }
   if (GPU_OK && h.gpuFrameMs > 0) w("gpu", fmt(h.gpuFrameMs, 2) + " ms");
   if (h.gpuCullMs > 0) w("cull", fmt(h.gpuCullMs * 1000, 0) + " µs");
   if (h.createdNear != null) w("compiled", h.createdOn + " here, " + h.createdNear + " within 2 frames");
@@ -2072,6 +2105,9 @@ function renderTrace(t) {
 
   flame = { spans, marks, gcs, t0, t1, view0: t0, view1: t1, maxDepth, lanes, laneOf, gut: 0 };
   drawFlame();
+  // Babylon's draw counter track, to report v37's builds: a trace from a later
+  // build carries none, and the panel goes rather than standing empty.
+  $("p-counters").hidden = !counters.length;
   drawCounters(counters, t0, t1);
 
   // Totals, as the same ladder the report uses.

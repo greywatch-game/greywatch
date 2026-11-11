@@ -56,6 +56,7 @@
  */
 import "./src/ui/base.css";
 import { WebGPUEngine } from "@babylonjs/core";
+import { FrameClock } from "./src/core/FrameLoop";
 import { Game } from "./src/core/Game";
 import { loadHavok } from "./src/systems/PhysicsWorld";
 import { openMatchHost, type MatchHost } from "./src/net/matchHost";
@@ -341,6 +342,14 @@ window.addEventListener("DOMContentLoaded", async () => {
   }
 
   let engine;
+  // THE FRAME'S CLOCK (`core/FrameLoop.ts`'s `FrameClock`, `BABYLON_EXIT.md`
+  // X5.4g): Babylon's `getDeltaTime` and `getFps` ported, sampled where the
+  // engine's performance monitor was — at every `beginFrame` of the engine's
+  // from its construction on (its own, since X5.4g, only inside a resize:
+  // `initAsync`'s first and every one after) and at every frame of our loop.
+  // Made here, before the engine's first `beginFrame`, so the first frame
+  // reads the gap Babylon's did; injected into `Game` with the engine.
+  const clock = new FrameClock();
   bootStage("Graphics device");
   try {
     engine = new WebGPUEngine(canvas, {
@@ -351,11 +360,13 @@ window.addEventListener("DOMContentLoaded", async () => {
         ? { deviceDescriptor: { requiredFeatures: ["timestamp-query"] } }
         : {}),
     });
+    engine.onBeginFrameObservable.add(() => clock.sample());
     await engine.initAsync();
-    // Two halves, and the feature above is only the first: Babylon allocates
-    // the query set and the counter on this setter, so without it the feature
-    // is on the device and nothing measures anything.
-    if (gpuTimingOk) engine.enableGPUTimingMeasurements = true;
+    // The feature above is all `?gpu` needs: the frame's timer and the culls'
+    // are ours (`render/FrameTimer.ts`, `render/PassTimer.ts`), built where
+    // the device has it. Babylon's own (`enableGPUTimingMeasurements`, its
+    // query set and its `writeTimestamp` around its encoders) is not turned
+    // on since `BABYLON_EXIT.md` X5.4g: nothing reads it.
     // **This frame is DRAW-CALL bound, and this line is worth ~26% of it on
     // the two big maps. Do not delete it as a stray flag.**
     // `docs/rendering.md`'s "Why the frame is draw-call bound" has the
@@ -427,7 +438,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   bootStage("Building the world");
   await painted();
   try {
-    new Game(canvas, havok, engine, local);
+    new Game(canvas, havok, engine, local, clock);
   } catch (err) {
     // Re-thrown: the message is for the player, the console is for whoever
     // has to work out which of a hundred systems failed to construct.

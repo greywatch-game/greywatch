@@ -184,7 +184,7 @@ export class ParticleDraw {
     renderer: Renderer,
     /** Fills the camera as this frame draws it (`ParticleCamera`). */
     private readonly readCamera: (out: ParticleCamera) => void,
-    /** The scene's animation ratio this frame (`scene.getAnimationRatio()`): the fields' clock. */
+    /** The frame's animation ratio (`SceneFrame.animationRatio`, what `scene.getAnimationRatio()` answered until X5.4g): the fields' clock. */
     private readonly ratio: () => number,
   ) {
     const device = renderer.device;

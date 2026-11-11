@@ -58,12 +58,14 @@ single run of this.
 **The span calls are not where it goes, and that is worth knowing before
 optimising the wrong half.** `probeOverhead` measures one `begin`/`end` pair at
 **0.22 us** (0.225, 0.22, 0.22 across the three runs — the stable figure here),
-which over ~22 pairs is **~5 us a frame**, or 0.06% of a 7.8 ms one. The rest is
-`SceneInstrumentation`'s observers and the `getActiveMeshes()` read in
-`endFrame`. If the cost ever has to come down, that is the end to look at.
+which over ~22 pairs is **~5 us a frame**, or 0.06% of a 7.8 ms one. The rest
+was `SceneInstrumentation`'s observers and the `getActiveMeshes()` read in
+`endFrame`, both retired with report version 38 (`BABYLON_EXIT.md` X5.4g), so
+the cost measured here is an upper bound on a capture from v38 on.
 
 **The four spans inside `render` added about four more pairs a frame** (three
-since X4.3d retired `drawOverlay`) — the rendering groups and the glow's mask
+since X4.3d retired `drawOverlay`, two since report version 38 retired
+`shadowPass`; the frame brackets them since X5.4g) — the rendering groups and the glow's mask
 and blur, with the shadow map's on the handful of frames that re-render it — which is ~0.9 us against the 5 above
 and well inside the run-to-run spread the paired runs already showed. It is
 arithmetic on the same probe rather than a new measurement, and the reason it
@@ -430,11 +432,6 @@ frame                       the whole tick, wall to wall
 └─ render                   the handover and SceneFrame.render (the frame,
                             ours since X5.4f; scene.render() until then —
                             the same steps in the same order)
-   ├─ shadowPass            a Babylon generator's depth map, on the frames
-   │                        that re-rendered it — none in a round since
-   │                        X4.1c, nothing opens it since X5.3d deleted the
-   │                        generators (every map ours, on the prepare
-   │                        encoder)
    ├─ glow                  GlowPass: its mask and four blurs at the end of
    │                        the draw phase (the compose is inside the ink;
    │                        the blurs and the box filter OUR draws since
@@ -445,7 +442,9 @@ frame                       the whole tick, wall to wall
    │                        X5.2c1, the ink last), queued at the camera's end
    │                        (`PostPasses`) and its passes ours since X5.4f
    │                        (`ChainPasses`, recorded at the same point) — no
-   │                        span moved, no report version
+   │                        span moved, no report version. BRACKETED BY THE
+   │                        FRAME since X5.4g (`SceneFrame.timeWith`, off the
+   │                        glow's two notifications)
    └─ drawWorld             the camera's DRAW PHASE up to the glow's work
                             (report version 36): Babylon's group 0 when it
                             visits one, and our draws only QUEUED here at
@@ -453,11 +452,18 @@ frame                       the whole tick, wall to wall
                             below. Entered on every frame the camera draws.
                             (Until v36 the rendering groups alone; and
                             `drawOverlay`, the groups above 0, was retired
-                            with report version 24.)
+                            with report version 24.) BRACKETED BY THE FRAME
+                            since X5.4g (`SceneFrame.render`). `shadowPass`,
+                            a Babylon generator's map beside these two,
+                            opened by nothing after X5.3d, was retired with
+                            report version 38.
 
-present                     the engine's endFrame AFTER tick returns: the
-                            render pass closed and queue.submit. A ROOT, not a
-                            child of frame — see below.
+present                     the span around the frame's ONE queue.submit,
+                            AFTER tick returns (`FrameLoop`, X5.4g): the
+                            frame timer closed, the encoder finished and
+                            submitted. Babylon's endFrame until X5.4g (its
+                            flushFramebuffer, the same finish and submit). A
+                            ROOT, not a child of frame — see below.
 
 sim                         OFFLINE: SimCore.step in the page's own local
 │                           match, timed BY THE CORE, carried back on the
@@ -479,7 +485,8 @@ sim                         OFFLINE: SimCore.step in the page's own local
 
 **That subtraction only means anything because a row's wall clock is the
 interval its OWN spans fill, and until report version 4 it was not.**
-`Game.tick` reads `getDeltaTime()` on its first line, so what `endFrame`
+`Game.tick` reads the frame's delta on its first line (`FrameClock
+.getDeltaTime()`, Babylon's `getDeltaTime()` ported, X5.4g), so what `endFrame`
 receives is the gap that has just CLOSED — `start(i) - start(i-1)`, filled by
 the frame BEFORE this one. Filed against row `i` it was read against the spans
 of the frame only now beginning, which is a confident wrong answer rather than a
@@ -487,7 +494,7 @@ missing one: a 90.6 ms tick, 86.6 of it `drawWorld`, arrived as a 91.5 ms wall
 clock on the next row, whose own tick was a healthy 9.5 — reported as **82 ms
 outside the game with no collection on it**, which is exactly the shape
 `FINDINGS.md` §1 spent two milestones chasing. `endFrame` writes the delta
-into `lastSlot` now, as `recordPresent` already did, and files a hitch against
+into `lastSlot` now, as `present` already was (`presented`), and files a hitch against
 the frame that FILLED the interval rather than the one recovering from it.
 
 Over the three vsync-off captures that found it (Chrome 152, 3440x1440 G-Sync
@@ -610,28 +617,31 @@ Report **version 5**. `series.loafMs` is the per-row series and reads best laid
 against `frameMs`: where the two rise together the main thread was busy, and
 where `frameMs` rises alone it was not.
 
-**The last three are not brackets in `Game.ts` and cannot be**, because the
+**The last two are not brackets in `Game.ts` and cannot be**, because the
 boundaries they want are inside the frame's render (`SceneFrame.render`;
-`scene.render()` until `BABYLON_EXIT.md` X5.4f). `FrameProfile.hookRender`
-hangs them off the frame's own points (`DrawPhaseSpans`: the frame's draw-phase
-observables, raised where the scene raised its own, which it hung off until
-X5.4f) at `arm` and takes them off again at
-`disarm`, finding the shadow map through `scene.lights` and taking the glow
-as two observables handed to `arm` (`GlowSpans`) — so no system knows about
-them either.
+`scene.render()` until `BABYLON_EXIT.md` X5.4f). **The FRAME brackets them**
+since X5.4g: `SceneFrame.render` opens `drawWorld` once its draw phase's
+opening is told and closes it after the close, and the glow's two
+notifications close it early and bracket `glow` (`SceneFrame.timeWith`, set
+once by `Game`; `GlowSpans`) — so no system knows about them either, and a
+disarmed profiler is told four calls a frame that return on their first line.
+Until X5.4g `FrameProfile.hookRender` hung them off the frame's draw-phase
+observables (and the scene's until X5.4f) at `arm`, and took them off at
+`disarm`; with `shadowPass` beside them, a Babylon generator's map found
+through `scene.lights`, which nothing opened after X5.3d and report version
+38 retired.
 
-**They cannot overlap, and the method's header carries the proof** rather than
-the assertion: `Scene._renderForCamera` runs the render targets (the shadow
-map) *before* it opens the draw phase, the camera's own pass *inside* it with
-the glow's mask and blur at its very end, and the post chain — the ink, with
-the glow's compose as its last line — *after* it closes. **`drawWorld` is that
-draw phase** (report version 36, `BABYLON_EXIT.md` X4.7b): it opens on
-`onBeforeDrawPhaseObservable` and **the glow closes it when its own span
-opens**, since its mask renders from the end-of-draw observable before the
-profiler's own observer there runs (which closes it instead on a frame the
-glow does no work). Only `Scene._renderForCamera` fires the draw phase, so a
-render target's own rendering manager — the shadow map's, the mask's — adds
-nothing to it and no gate is needed.
+**They cannot overlap**: the frame's order is `Scene._renderForCamera`'s — the
+render targets *before* it opens the draw phase, the camera's own pass
+*inside* it with the glow's mask and blur at its very end, and the post chain
+— the ink, with the glow's compose as its last line — *after* it closes.
+**`drawWorld` is that draw phase** (report version 36, `BABYLON_EXIT.md`
+X4.7b): it opens after `onBeforeDrawPhaseObservable`'s observers and **the
+glow closes it when its own span opens**, since its mask renders from the
+end-of-draw observable (after our renderer's main pass, inserted first
+there); on a frame the glow does no work the frame closes it after the
+observable instead. Only the camera's render tells the draw phase, so a
+render target's work adds nothing to it and no gate is needed.
 
 Until version 36 it was the rendering GROUPS instead, gated on being in the
 draw phase, and that made it an instrument the exit would empty: Babylon
@@ -643,11 +653,10 @@ span. Now it is entered on every frame the camera draws, and reads the same
 whichever path told our points. Since `BABYLON_EXIT.md` X5.4e it also holds
 the whole main pass, its `first` point included: our renderer records that
 pass at the phase's END (`Renderer.end`), inside the span. **What it does not
-hold** is the seam's START of the frame — our renderer's `begin` (the frame's
-uniforms and every PREPARE recorded onto the upload encoder) — because the
-seam's observer on the same observable was added when `Game` built the
-renderer, before any `arm`, and so runs ahead of the span's opening: under
-`render`, named by nothing, as it was before.
+hold** is our renderer's START of the frame — its `begin` (the frame's
+uniforms and every PREPARE recorded onto the frame's encoder) — because its
+observer on the same observable is told before the frame opens the span:
+under `render`, named by nothing, as it was before.
 
 **Measured at X4.7b** (headless on the Windows box, `?profile`, 600 frames a
 capture): on the menu, the parent entered `drawWorld` on no frame and the step
@@ -722,8 +731,9 @@ on Hollowmere headless, 969 frames at 101 fps: `render` 4.86 ms, of which
 since) 0.25 and `shadowPass` 0.73 — 86% of the bar attributed, and the glow's share of the whole frame **10.5%**, which
 is the first continuous reading of a figure `CLAUDE.md` had only from an A/B.
 
-**`shadowPass` reads on a HANDFUL of frames and that is the finding, not a
-fault.** The depth map was then Babylon's, `REFRESHRATE_RENDER_ONCE` with a
+**`shadowPass` read on a HANDFUL of frames and that was the finding, not a
+fault** (retired with report version 38, nothing having opened it since
+X5.3d; kept here for the reading it carries). The depth map was then Babylon's, `REFRESHRATE_RENDER_ONCE` with a
 manual reset, so it re-rendered only when the texel-snapped light window moved —
 3 frames in 969 on that run; ours keeps the same rule (`ShadowSystem.redraw`,
 owed only on a frame the window moves) and the generator is gone since
@@ -737,16 +747,16 @@ bracketed (their culls are not in `gpu.cull` either) — and the map editor's
 build, whose generators were the last to enter it, is gone since X5.3c. The
 reading above is from before both.
 
-**What they measure is CPU.** Under `compatibilityMode = false` that is the
-recording of a render BUNDLE and not the work the GPU then does — still the
-right thing to watch, since the whole of `docs/rendering.md`'s "Why the frame
-is draw-call bound" is that this frame
-is bound by submission, but a group whose bundle Babylon reuses reads cheap
-while the GPU is busy. See **GPU time** below.
+**What they measure is CPU**: the RECORDING of the frame's commands and not the
+work the GPU then does — still the right thing to watch, since the whole of
+`docs/rendering.md`'s "Why the frame is draw-call bound" is that this frame is
+bound by submission, but a recording can read cheap while the GPU is busy. See
+**GPU time** below.
 
 **A span that opens more than once a frame closes through `endAdd`**, which
-ADDS rather than assigns — a rendering group is entered once per group, the glow
-twice — and `entered` is what tells it which close is the frame's first. That
+ADDS rather than assigns — `drawWorld` is closed at the glow's work and again
+after the draw phase, the second a no-op when the first ran — and `entered` is
+what tells it which close is the frame's first. That
 works because `endFrame` clears the slots of the frame it is about to
 overwrite; nothing else in the file depends on that write, and this does.
 
@@ -763,7 +773,8 @@ interesting frame of a session would be the wrong kind of missing.
 
 **Adding a phase** is a name in `PHASES`, a parent in `PARENT_OF` (it will not
 compile without one) and a `begin`/`end` pair — or, inside `render`, a
-`begin`/`endAdd` pair on an observable in `hookRender`; or, inside the core's
+`begin`/`endAdd` pair in the frame (`SceneFrame.render`, or off a notification
+handed to `SceneFrame.timeWith`, as the glow's are); or, inside the core's
 step, an entry in `SIM_PHASES` (`src/sim/stepTiming.ts`), an
 `openPhase`/`closePhase` pair in `SimCore.advance` and a slot in `Game`'s
 `SIM_SLOT`, which is a `Record` over the core's names and will not compile
@@ -901,18 +912,25 @@ the tick.
 ### `present`, and the three roots
 
 **`present` is the one phase that is not inside `frame`.** `frame` is
-`Game.tick`, wall to wall. `present` is what Babylon's render loop does *after*
-`tick` returns: `WebGPUEngine.endFrame` closes the current render pass, runs
-`flushFramebuffer` — which is `queue.submit` — and then fires
-`onEndFrameObservable`. `FrameProfile.hookEngine` hangs the close off that
-notification, because there is no line in `Game.ts` that could hold it.
+`Game.tick`, wall to wall. `present` is what the frame LOOP does *after*
+`tick` returns (`core/FrameLoop.ts`, `BABYLON_EXIT.md` X5.4g): the frame's GPU
+timer closed, its ONE encoder finished and handed to the queue in its ONE
+`queue.submit` (`render/FrameSubmit.ts`) — the span AROUND that submit, which
+the loop closes (`FrameProfile.presented`) right after `submit` returns,
+because there is no line in `Game.ts` that could hold it. What the loop does
+after it — the frame id moved, the end of frame told (the retirements every
+`FrameHost.afterSubmit` holds), the next refresh requested — is in the
+residue. Until X5.4g `present` was Babylon's `WebGPUEngine.endFrame`: closing
+the current render pass, `flushFramebuffer` (its two encoders finished and
+submitted), and the engine's own end-of-frame observers ahead of the
+profiler's, the close hung off `onEndFrameObservable` (`hookEngine`).
 
 It cannot go through `begin`/`end` like everything else, and the reason is the
 ring rather than the clock: `endFrame` is the last line of `tick` and ADVANCES
-`cursor`, so by the time the engine notifies, `cursor` names the frame about to
-start. `recordPresent` writes into `lastSlot` instead — the row `endFrame` just
-finished — and stamps `tickEndAt` as the last thing it does, so the profiler's
-own bookkeeping is not charged to the submit.
+`cursor`, so by the time the loop submits, `cursor` names the frame about to
+start. `presented` writes into `lastSlot` instead — the row `endFrame` just
+finished — and `endFrame` stamps `tickEndAt` as the last thing it does, so the
+profiler's own bookkeeping is not charged to the submit.
 
 **So a report now decomposes the wall clock into three parts, and the third is
 an answer rather than a gap:**
@@ -1200,23 +1218,22 @@ below one clock grain: input, roundBehind, onFoot, conquest, vehicles, bots,
 `frame` span is the TICK; `frame.mean` in the summary block above it is the
 WALL CLOCK between frames. Here the tick is 4.7 ms of a 9.4 ms interval —
 **50.4%** — and the other half is the browser: vsync wait, present, compositing,
-whatever the page is doing outside `runRenderLoop`. A share near 100% means the
+whatever the page is doing outside its frame loop. A share near 100% means the
 game is the bottleneck; a share near 50% on a machine that is not hitting its
 panel's cap means something outside this instrument is.
 
 **`render` is one enormous bar and always will be.** That is `docs/rendering.md`'s
 "Why the frame is draw-call bound" — the frame is
-draw-call bound and Babylon's WebGPU backend charges CPU per draw — which is why
-`SceneInstrumentation`'s counters ride alongside: `drawCalls`, `activeMeshes`,
-`meshWalkMs` (the scene walk `ENGINE_UPGRADE.md` S1 is about) and `renderTargetsMs` (the shadow map
-and the reflection bake). Those four are what the big bar was made of, and a
-change in them is the change worth chasing. **Since `BABYLON_EXIT.md` X5.4f
-the scene is never rendered** (`core/SceneFrame.ts`), so nothing raises the
-observables `SceneInstrumentation` times and the three timers stay at what
-they last read (0 from an arm after boot; `drawCalls` and `activeMeshes` were
-0 already, Babylon drawing nothing), and `gpu.mainPass` times no pass: the
-canvas's pass is ours (`render/ChainPasses.ts`) and carries no timestamp of
-Babylon's. Both are retired in X5.4g's report version; read neither. Two readings taken by hand-wrapping
+draw-call bound and Babylon's WebGPU backend charged CPU per draw — which is why
+`SceneInstrumentation`'s counters rode alongside until report version 38:
+`drawCalls`, `activeMeshes`, `meshWalkMs` (the scene walk `ENGINE_UPGRADE.md`
+S1 is about) and `renderTargetsMs` (the shadow map and the reflection bake).
+Those four were what the big bar was made of while it was Babylon's. **Since
+`BABYLON_EXIT.md` X5.4f the scene is never rendered** (`core/SceneFrame.ts`),
+so nothing raised the observables `SceneInstrumentation` times, and
+`gpu.mainPass` timed no pass; **report version 38 (X5.4g) retired all of
+them**. Our renderer's own draws are counted at the capture (`blocks`,
+`bodies`, `hulls`, `view`, `pools`). Two readings taken by hand-wrapping
 belong beside it (Windows box, live round, 2026-08-26, before the paint palette —
 `docs/rendering.md`, "Why the frame is draw-call bound"):
 
@@ -1416,6 +1433,24 @@ says how many, none of them in `counters.drawCalls` any more. **From report vers
 fading pools' — a draw a spark, dust disc, scorch or blob (`render/FadeDraw.ts`) — and
 `pools.masked` the sparks' blooms, and `pools.fades` says how many.
 
+**Report version 38 RETIRED Babylon's instruments** (`BABYLON_EXIT.md` X5.4g,
+the loop and its clocks ours): `counters` (the draw count, the active meshes,
+the mesh walk, the render-target and particle times — `SceneInstrumentation`,
+idle since the scene stopped rendering at X5.4f), their place in `segments`,
+`series` and every hitch, `gpu.mainPass` and `series.gpuMs` (Babylon's
+main-pass counter, which timed no pass after X5.4f), `pipelines.named` with a
+creation's `effect` and `defines` (the naming patch on Babylon's descriptor
+builder, no Babylon pipeline being made after the boot), the trace's `draws`
+counter track, and the `shadowPass` phase (opened by nothing since X5.3d).
+`gpu.frame` is our frame timer's from v38 (above, "GPU time"),
+`gpu.frameMeasurable` reads `available`, `present` is the span around our one
+`queue.submit`, and `drawWorld` and `glow` are bracketed by the frame — none
+of which moved a bracket's meaning, so every field a v37 capture shares with
+a v38 one reads the same. So from v38 a main pass's draws are the sum of
+`blocks.drawn`, `bodies.drawn`, `hulls.drawn`, `view.drawn` and
+`pools.drawn`, every draw of the frame being ours; the paragraphs above that
+add `counters.drawCalls` describe the builds that still had it.
+
 **Report version 24 RETIRED `drawOverlay`** (`BABYLON_EXIT.md` X4.3d): it was
 the rendering groups above 0, which by X4.3c held the optics' glass alone and
 since X4.3d hold nothing, so it recorded nothing. `drawWorld` is every group's
@@ -1532,8 +1567,10 @@ What it draws:
   as references, and collections on a rail along the top.
 - **The heap**, where it is live, with the collections aligned to it — and the
   frozen notice where it is not, rather than a flat line.
-- **Draw calls and active meshes per frame**, under the other two and on the
-  same x, so a ramp in the draw count can be laid against the frames it cost.
+- **Draw calls and active meshes per frame** (Babylon's, to report version
+  37: from v38 the counters are retired and the panel is absent), under the
+  other two and on the same x, so a ramp in the draw count can be laid against
+  the frames it cost.
   Both are counts of the same kind of thing, which is the only reason they share
   an axis. They are in the SERIES rather than only in the summary because the
   means cannot answer the question they are most often asked: a batch of
@@ -1622,8 +1659,9 @@ with it, and nothing here should try. (`/profile_viewer.html` will draw a flame
 chart from one, because the phone that took the capture has no Perfetto and no
 file manager worth the name; it is a look, not a replacement.) The spans nest properly by
 construction (`frame` ⊃ `gameplay` ⊃ `world` ⊃ `bots`, each start stored
-relative to its own frame), so a flame chart falls out with no further work, and
-`drawCalls`/`activeMeshes` ride along as counter tracks.
+relative to its own frame), so a flame chart falls out with no further work
+(`drawCalls`/`activeMeshes` rode along as a counter track to report version
+37's builds, and the viewer draws one where a trace carries it).
 
 **THE WINDOW IS CENTRED ON THE WORST FRAME IN THE RING, and that is this
 file's one design decision finally applied to the one place it had been left
@@ -1664,9 +1702,8 @@ format, not this instrument's — so for anything but the shape of a frame,
 
 ## GPU time, and why it is a BOOT FLAG
 
-Everything else here is CPU, and under `compatibilityMode = false` that is the
-recording of a render bundle rather than the work the GPU then does. **`?gpu`
-adds the other half**, and it is the one thing in this instrument that a setting
+Everything else here is CPU — the recording of the frame's commands rather than
+the work the GPU then does. **`?gpu` adds the other half**, and it is the one thing in this instrument that a setting
 could never turn on: `timestamp-query` is a device FEATURE, a device's features
 are fixed when it is created, and a required feature the adapter does not have
 makes `requestDevice` **reject**. So `main.ts` asks the adapter first and boots
@@ -1675,49 +1712,45 @@ failure — and a capture carries `gpu.requested` and `gpu.available` as two
 separate questions, because "nobody asked" and "the adapter refused" are
 different facts and neither is "the GPU took no time".
 
-**AND THERE IS A THIRD QUESTION, WHICH IS THE ONE THAT ACTUALLY BITES:
-`gpu.frameMeasurable`.** `?gpu` is necessary and not sufficient — on Chrome
-the whole-frame counter ALSO needs **`--enable-unsafe-webgpu` on the command
-line**, and without it the report comes back `requested: true, available: true,
-frame.samples: 0`, which reads exactly like a GPU that did no work. Babylon
-brackets the whole frame — from its upload encoder, where it opens, to its
-render encoder, where it closes — with `GPUCommandEncoder.writeTimestamp`,
-which was removed from the WebGPU spec and which Chrome therefore keeps behind
-that flag; the FEATURE and the `timestampWrites` pass descriptor `gpu.mainPass`
-is written with need no flag at all, which is why the main-pass counter keeps
-working and lends the report its false air of health. `WebGPUDurationMeasure
-.stop` then returns a literal 0, `endFrame` accepts it because `duration >= 0`,
-and the counter records a real measurement of ZERO on every frame — **747 of
-them over one measured session, against 626 genuine samples with the flag** —
-all of which the `> 0` filter removes.
+**BOTH COUNTERS ARE OUR TIMESTAMP QUERIES since report version 38**
+(`BABYLON_EXIT.md` X5.4g, the loop and its clocks ours), and **neither needs a
+browser flag**: each is a pass descriptor's `timestampWrites`, which needs the
+device's `timestamp-query` and nothing else. **`gpu.frame` is the whole frame,
+from before its first pass starts to after its last pass ends**
+(`render/FrameTimer.ts`): the frame is ONE encoder submitted once
+(`render/FrameSubmit.ts`), and the timer writes its two stamps with two EMPTY
+compute passes of its own, the encoder's first command — recorded as the
+encoder is made, right after the previous frame's submit, as Babylon opened its
+counter on its new upload encoder — and its last, before it is finished, so
+every pass of the frame is inside it whichever is first or last. Its stamps are
+resolved and copied into a read-back buffer in that same encoder and the buffer
+is mapped right after the submit that carries the copy; one reading is in
+flight at a time, so it is SAMPLED. **Anything of ours that reaches the GPU
+outside the frame's one encoder is outside `gpu.frame`** (a `queue.writeBuffer`
+lands ahead of the submit and is no pass), so new GPU work owes that route or
+its own timer. `gpu.frameMeasurable` stays in the report and reads `available`
+from v38 — a whole-frame answer can be expressed wherever the timer was built.
 
-**This cost a capture and would have cost the next one.** A `?gpu` run taken to
-settle `FINDINGS.md` #1 came back empty with every other field looking right.
-So: `frameMeasurable: false` with `samples: 0` means the reading was
-impossible, and only `frameMeasurable: true` with `samples: 0` would mean
-something is wrong with the wiring. `launchClient` (`scripts/browser.mjs`, which
-`plans/webgpu-ref/harness.mjs` re-exports) passes the flag already, which is why every headless number below was
-taken with it — **a reading from the harness does not prove a stock browser can
-take one**.
+**Until report version 38 `gpu.frame` was BABYLON's, and needed a flag.**
+Babylon bracketed its two encoders — from its upload encoder, where it opened,
+to its render encoder, where it closed — with `GPUCommandEncoder
+.writeTimestamp`, which was removed from the WebGPU spec and which Chrome keeps
+behind **`--enable-unsafe-webgpu`**; without it the report came back
+`requested: true, available: true, frame.samples: 0`, a real measurement of
+ZERO taken on every frame (747 of them over one session, against 626 genuine
+samples with the flag), which read exactly like a GPU that did no work — and
+`gpu.frameMeasurable` (report v9) was the field that told the two apart. A
+`?gpu` run taken to settle `FINDINGS.md` #1 came back empty that way with every
+other field looking right. Beside it rode **`gpu.mainPass`**, Babylon's
+`gpuTimeInFrameForMainPass` — the pass that targets the default framebuffer,
+which in this pipeline was the final full-screen quad (**27 microseconds** on
+Hollowmere: right for one quad, a catastrophic misreading of "the GPU is
+idle"), and which timed no pass at all once the canvas's pass was ours
+(X5.4f). v38 retired it. `launchClient` (`scripts/browser.mjs`, which
+`plans/webgpu-ref/harness.mjs` re-exports) still passes the flag, so a reading
+from the harness is unaffected; a stock browser now reads the same.
 
-**Read `gpu.frame`, not `gpu.mainPass`.** Babylon's
-`gpuTimeInFrameForMainPass` is the pass that targets the default framebuffer —
-and in this pipeline the world renders into post-process targets, so the only
-thing drawn there is the final full-screen quad. It measured **27 microseconds**
-on Hollowmere, which is right for one quad and would be a catastrophic
-misreading of "the GPU is idle". `gpu.frame` brackets the whole frame: it is
-opened on Babylon's UPLOAD encoder (`_timestampQuery.startFrame`), which is
-submitted first, and closed on the RENDER encoder in `endFrame`. **Our
-renderer's cluster cull is inside it** (`render/ClusterCull.ts`): it is
-recorded into that same upload encoder as the main pass begins
-(`FrameHost.prepareEncoder`, item 9 of `render/babylonSeam.ts`'s list),
-never submitted as a command buffer of its own, so its GPU time is the
-frame's (`BABYLON_EXIT.md` X3.3c). **Anything of ours that reaches the GPU
-outside the host's encoders is outside `gpu.frame`**, so new GPU work owes
-the same route or its own timer.
-
-**`gpu.cull` is the culls ALONE, and it is the one GPU counter that is ours
-rather than Babylon's** (report version 18). Under `?gpu`, on a device with
+**`gpu.cull` is the culls ALONE** (report version 18, ours from the first). Under `?gpu`, on a device with
 `timestamp-query`, the `Renderer` builds a `PassTimer`
 (`render/PassTimer.ts`), and on a frame it times every `FramePrepare` is
 handed a `PassTiming`: each compute pass of ours begins with
@@ -1727,11 +1760,11 @@ cluster cull's and the instance cull's — so the gaps between them, and the
 index buffer's clear ahead of the first, are not in it. It is inside
 `gpu.frame`, so the two are read side by side and never added. **A new
 compute pass of ours owes the same call**, or it is in `gpu.frame` and in no
-counter that names it. It needs no browser flag — the stamps are the pass
-descriptor's, which `gpu.mainPass` already showed Chrome allows — and on the
-Windows box's Chromium they come back to the microsecond with and without
-`--enable-unsafe-webgpu`, so nothing here is quantised to 100 µs; a browser
-that did quantise would mostly read a cull as 0, which files as unmeasured.
+counter that names it. Its stamps, like the frame timer's, are the pass
+descriptor's, and on the Windows box's Chromium they come back to the
+microsecond with and without `--enable-unsafe-webgpu`, so nothing here is
+quantised to 100 µs; a browser that did quantise would mostly read a cull as
+0, which files as unmeasured.
 **The read-back is mapped on the NEXT main pass**, after the submit that
 carries its copy (a buffer pending a map fails the submit that uses it), and
 one reading is in flight at a time; it is attributed by the timer's own
@@ -1747,12 +1780,13 @@ Cinderhaven 49/46/66 against 5.36/5.72/5.56. `gpu.frame` itself read within
 0.03 ms of the same paths a day earlier, so the timer costs nothing that
 counter can see (`FINDINGS.md` 61).
 
-The three are attributed differently and the report says so:
+The two are attributed the same way and the report says so (`gpu.mainPass`,
+to v37, was attributed exactly by the frame id Babylon stamped, on nearly
+every frame):
 
 | | attribution | coverage |
 | --- | --- | --- |
-| `gpu.mainPass`, `series.gpuMs` | **exact** — Babylon stamps the frame id and the row is derived from it | nearly every frame |
-| `gpu.frame`, `series.gpuFrameMs` | **exact**, by watching the measure's own state machine | a SUBSET — only one measurement is in flight at a time |
+| `gpu.frame`, `series.gpuFrameMs` | **exact**, by watching `FrameTimer`'s `inFlight` and `count` (Babylon's measure's own state machine to v37) | a SUBSET — only one measurement is in flight at a time |
 | `gpu.cull`, `series.gpuCullMs` | **exact**, by watching `PassTimer`'s `inFlight` and `count` | a subset, on rows of its OWN |
 
 **"A subset" is not "about half" in an uncapped run**: the read-back's round
@@ -1766,14 +1800,13 @@ means the same thing it means in `loafMs`. **Since version 18 a GPU reading
 is cleared when the ring laps its row**, as the LoAF's is: before it a row
 not measured on this lap kept the last lap's.
 
-**Three Babylon internals hold it up** — `_gpuTimeInFrameId`,
-`_timestampQuery` and `_measureDurationState` — because neither counter is
-attributable from the public surface, and filing a GPU reading against the frame
-that happened to read it would be this file's pairing bug for the third time.
-Every read is guarded and the failure is `available: false` rather than a
-throw. **After upgrading Babylon, take a `?gpu` capture and check
-`gpu.frame.samples` is not zero** — with `--enable-unsafe-webgpu`, or the
-check tests the flag rather than the internals.
+**No Babylon internal holds it up any more.** To report version 37 three did —
+`_gpuTimeInFrameId`, `_timestampQuery` and `_measureDurationState` — because
+neither of Babylon's counters was attributable from its public surface, and
+every read was guarded so a Babylon upgrade read `available: false`. Both
+timers are ours now and public (`GpuPassTimer` in `FrameProfile`), so nothing
+is guarded: a timer is there under `?gpu` on a device with
+`timestamp-query`, or it is null.
 
 Measured cost: **130.0 fps with the flag against 129.9 without**, and on
 Cinderhaven at 1718x858 the GPU reads 1.372 ms mean and 2.729 p95 against a
@@ -1824,32 +1857,25 @@ settle. Report version 11 carries it three ways:
   collections' rail along the top, and the trace export puts a `compile`
   instant on each frame that had one.
 
-**What a creation is NAMED by is the part a warm-up needs.** A render pipeline
-built through Babylon's cache carries the effect it is for — the shader's name
-and its define set, which together are the VARIANT — and Babylon's own label,
-which gives the target's colour and depth formats, sample count and texture
-state (as close as the device gets to saying which pass it was for). That list
-is what a warm-up pass would have to compile in advance. Shader modules and
-compute pipelines are counted but not named; the pipeline that uses a module
-carries the name.
+**What a creation is NAMED by is the part a warm-up needs**: its descriptor's
+LABEL, which our renderer gives every pipeline and module it makes for the
+program it is (as close as the device gets to saying which draw it was for).
+That list is what the warm-up compiles in advance (`core/PipelineWarmup.ts`).
+Until report version 38 a render pipeline built through Babylon's cache also
+carried the EFFECT it was for and its define set (`effect`, `defines`), found
+by a patch on Babylon's descriptor builder, with `pipelines.named` saying the
+patch had found it; no Babylon pipeline is made after the boot, and v38 retired
+all three.
 
-**How it hooks in, and the one internal it leans on.** The device's create
-methods are wrapped on `GPUDevice.prototype` — a standard surface no Babylon
-upgrade can move, which the engine's device picks up through its prototype —
-and put back exactly as found on `disarm`, so a disarmed profiler is not on
-the device at all and a script that wrapped them first
-(`plans/webgpu-ref/pipelines.mjs` does) is wrapped in turn and restored. The NAMING wraps
-`WebGPUCacheRenderPipeline._buildRenderPipelineDescriptor`, a Babylon
-internal and the only place that holds the effect: **after a Babylon upgrade,
-check that a capture reads `pipelines.named: true`**, because if that method
-moves the counts stay right and only the names go. The profiler also warns
-once on the console when it arms without it, so the loss does not wait on
-somebody reading that flag. Nothing in the recording path builds a string —
-the log holds references Babylon already owns, in
-arrays sized on arming (`CONFIG.profiling.creationsKept`) — so the
-no-allocation rule holds; a compact capture carries
-`creationsReported` of them with long define sets truncated, the download all
-of them whole.
+**How it hooks in.** The device's create methods are wrapped on
+`GPUDevice.prototype` — a standard surface no upgrade can move, which every
+device picks up through its prototype — and put back exactly as found on
+`disarm`, so a disarmed profiler is not on the device at all and a script that
+wrapped them first (`plans/webgpu-ref/pipelines.mjs` does) is wrapped in turn
+and restored. Nothing in the recording path builds a string — the log holds
+the descriptors' own label strings, in arrays sized on arming
+(`CONFIG.profiling.creationsKept`) — so the no-allocation rule holds; a compact
+capture carries `creationsReported` of them, the download all of them.
 
 **The first reading** (Coldharbour, headless on the Windows box, 2026-10-04,
 `?profile`, spawn and stand, three runs): the spawn frame ran 240-308 ms with
@@ -1906,7 +1932,7 @@ is 1.9% of frames held an extra interval against **100% of frames arriving
 unevenly** — and it is worse, reported as such from the chair before any of this
 was computed.
 
-There is a second-order version. `dt` is `getDeltaTime()`, the interval BEFORE
+There is a second-order version. `dt` was `getDeltaTime()`, the interval BEFORE
 the frame, but the frame is displayed for the interval AFTER it — so each frame
 advances the world by ~0.9 ms (p95: 4.8) more or less than the time it is shown
 for. Vsync was hiding that too. **A frame pacer owes a dt that is smoothed or
@@ -1914,8 +1940,10 @@ predicted**, not the raw lagging one, and the pacer (`src/core/FrameCap.ts`,
 the `fpsCap` setting) now hands the world one: `Game.tick` steps by
 `FrameCap.elapsed`, the gap between the REFRESH timestamps that took this frame
 and the last, which is a whole number of refreshes rather than whenever the
-callback got the thread. **The profiler still reads the raw `getDeltaTime()`**
-— it measures when the work ran, and the world moves by when it is seen.
+callback got the thread. **The profiler still reads the raw delta** — Babylon's
+`getDeltaTime()`, ported as `FrameClock.getDeltaTime()` with our loop
+(`core/FrameLoop.ts`, `BABYLON_EXIT.md` X5.4g) — it measures when the work
+ran, and the world moves by when it is seen.
 Measured on the Windows box under a 30 cap, Hollowmere, 180 frames headed: the
 raw delta ran 31.7–35.0 ms (sd 0.70, p95 error against 33.3 of 1.23 ms) and the
 refresh step 32.8–33.8 (sd 0.25, p95 error 0.37); headless, the p95 error went
