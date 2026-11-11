@@ -411,7 +411,8 @@ page.on("dialog", (d) => void d.accept());
 await page.evaluate(async () => {
   const g = window.__celshock;
   const P = window.__giProbe;
-  const e = g.engine;
+  // Babylon's engine, the scene's (`harness.mjs`' `frameAdapter`): `Game.engine` at a parent, a `NullEngine` since X5.4h.
+  const e = g.scene.getEngine();
   const gi = g.gi;
   P.src = await import("/src/shaders/wgsl/giTrace.ts");
   P.records = [];
@@ -1249,7 +1250,7 @@ async function samplerAB(n) {
       ? {}
       : filled
         ? { _cachedWrapU: null, _cachedWrapV: null, _cachedWrapR: null, _cachedAnisotropicFilteringLevel: null }
-        : { _cachedWrapU: cloud.wrapU, _cachedWrapV: cloud.wrapV, _cachedWrapR: cloud.wrapR, _cachedAnisotropicFilteringLevel: Math.min(cloud.anisotropicFilteringLevel, g.engine.getCaps().maxAnisotropy) };
+        : { _cachedWrapU: cloud.wrapU, _cachedWrapV: cloud.wrapV, _cachedWrapR: cloud.wrapR, _cachedAnisotropicFilteringLevel: Math.min(cloud.anisotropicFilteringLevel, g.scene.getEngine().getCaps().maxAnisotropy) };
     for (const [k, v] of Object.entries(forced)) Object.defineProperty(it, k, { configurable: true, get: () => v, set: () => {} });
     const b = await run();
     if (it) {

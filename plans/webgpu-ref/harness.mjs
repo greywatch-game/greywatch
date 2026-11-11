@@ -285,16 +285,29 @@ export const MAP_IDS = MAPS.map((m) => m.id);
  * `getDeltaTime`/`frameId` before), and `encoderRole` names the frame's one
  * encoder `"frame"` (`FrameSubmit.encoder`), Babylon's two keeping their
  * names — they hold nothing of ours and are submitted only by the engine's
- * own resize. The device is still the engine's (X5.4h). The begin and the
- * end fire on our frames alone: Babylon's resize frames (its own
- * `beginFrame`/`endFrame` inside `_initializeMainAttachments`) raised them
- * at a parent and raise nothing of ours.
+ * own resize. The begin and the end fire on our frames alone: Babylon's
+ * resize frames (its own `beginFrame`/`endFrame` inside
+ * `_initializeMainAttachments`) raised them at a parent and raise nothing of
+ * ours.
+ *
+ * **And OUR DEVICE's arm since X5.4h, picked over Babylon's device and
+ * canvas** (`Game.surface`, `src/core/CanvasSurface.ts`): Babylon's
+ * `WebGPUEngine` is not constructed, so `device` is the game's own (the
+ * renderer's, `Game.renderer.device`, which `main.ts` asked for), `canvas`
+ * the surface's, and `host` names the scene's engine (a `NullEngine`,
+ * `SceneEngine`) beside a `webgpu` that says whether the frame's device is a
+ * `GPUDevice`. "Babylon's engine" everywhere in this adapter and in the
+ * probes is THE SCENE'S (`scene.getEngine()`) — at a parent the
+ * `WebGPUEngine` the game held as `Game.engine`, the same object — so a probe
+ * hooking Babylon's begin-frames, draws or compiles hooks the `NullEngine`
+ * after X5.4h and reads the 0 Babylon does there.
  */
 export function frameAdapter() {
   window.__refFrame ??= () => {
     const g = window.__celshock;
     const scene = g.scene;
-    const e = g.engine;
+    // Babylon's engine: the SCENE's (the header) — `Game.engine` at a parent.
+    const e = scene.getEngine();
     const babylon = {
       arm: "babylon",
       drawn: () =>
@@ -385,7 +398,7 @@ export function frameAdapter() {
     // encoder are the game's (`Game.frameLoop`).
     const l = g.frameLoop;
     if (!l) return ours;
-    return {
+    const loop = {
       ...ours,
       submitted: () => new Promise((res) => void l.onEndFrameObservable.addOnce(() => res())),
       onSubmitted: (fn) => {
@@ -406,6 +419,20 @@ export function frameAdapter() {
       },
       encoderRole: (enc) =>
         enc === l.submit.encoder ? "frame" : enc === e._renderEncoder ? "render" : enc === e._uploadEncoder ? "upload" : "other",
+    };
+    // OUR DEVICE (X5.4h): the device and the canvas are the game's
+    // (`Game.surface`); Babylon's engine is the scene's `NullEngine`.
+    const s = g.surface;
+    if (!s) return loop;
+    return {
+      ...loop,
+      device: () => g.renderer.device,
+      canvas: () => s.canvas,
+      host: () => ({
+        engine: e.constructor.name,
+        webgpu: typeof GPUDevice !== "undefined" && g.renderer.device instanceof GPUDevice,
+        frame: "ours",
+      }),
     };
   };
 }
@@ -1976,7 +2003,9 @@ export function fps(page, ms) {
  */
 export function assertNoTranspiler(page) {
   return page.evaluate(() => {
-    const e = window.__celshock.engine;
+    // Babylon's engine, the scene's (`frameAdapter`'s header): a `NullEngine`
+    // since X5.4h, which no GLSL can reach a backend through at all.
+    const e = window.__celshock.scene.getEngine();
     const bad = [];
     for (const k of ["_glslang", "_tintWASM"]) {
       if (e[k] !== undefined && e[k] !== null) {

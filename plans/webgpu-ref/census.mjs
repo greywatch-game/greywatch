@@ -79,11 +79,15 @@ function arm(page) {
       () => (c.frame = undefined),
       true,
     );
-    const draw = engine._draw.bind(engine);
-    engine._draw = (...a) => {
-      if (c.frame !== undefined && engine._currentRenderTarget === c.frame) c.babylon++;
-      return draw(...a);
-    };
+    // Babylon's draws, on the scene's engine (a `NullEngine` since X5.4h,
+    // which has no `_draw` and draws nothing: 0 by construction).
+    const draw = engine._draw?.bind(engine);
+    if (draw) {
+      engine._draw = (...a) => {
+        if (c.frame !== undefined && engine._currentRenderTarget === c.frame) c.babylon++;
+        return draw(...a);
+      };
+    }
     window.__census = c;
   });
 }

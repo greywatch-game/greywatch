@@ -103,13 +103,31 @@ move); `scheduleDelta` answers the loop's clock (`FrameClock.getDeltaTime`, the
 port of the engine's, which our frame's animation ratio and `Game.tick` read),
 keyed on the loop's `frameId`; and `encoderRole` names the frame's one encoder
 `"frame"` (`FrameSubmit.encoder`), Babylon's two keeping `"upload"` and
-`"render"`. The device is the engine's still (X5.4h). The begin and the end are
-OUR frames': Babylon's resize frames (its own begin and end of frame inside
-`_initializeMainAttachments`) raised the engine's at a parent and raise nothing
-here. The same commit taught `drawlog.mjs` to count the engine's `beginFrame`
-per class (`begins`, beside the classes, a resize's apart; 0 outside a resize
-asserted under our loop) and `bench.mjs` to read a report without Babylon's
-draw count (report version 38 retired it).
+`"render"`. The begin and the end are OUR frames': Babylon's resize frames (its
+own begin and end of frame inside `_initializeMainAttachments`) raised the
+engine's at a parent and raise nothing here. The same commit taught
+`drawlog.mjs` to count the engine's `beginFrame` per class (`begins`, beside the
+classes, a resize's apart; 0 outside a resize asserted under our loop) and
+`bench.mjs` to read a report without Babylon's draw count (report version 38
+retired it).
+
+**OUR DEVICE's arm since X5.4h, picked over Babylon's device and canvas**
+(`Game.surface`, `src/core/CanvasSurface.ts`): Babylon's `WebGPUEngine` is not
+constructed, so `device` is the game's own (`Game.renderer.device`, asked for
+by `main.ts`), `canvas` the surface's, and `host` names the scene's engine (a
+`NullEngine`, `SceneEngine`) beside `webgpu`, whether the frame's device is a
+`GPUDevice`. **"Babylon's engine" in the adapter and in every probe is the
+SCENE's** (`scene.getEngine()`) — at a parent the `WebGPUEngine` the game held
+as `Game.engine`, the same object, so moving the probes onto it moved nothing
+there — and after X5.4h the `NullEngine`, whose begin-frames, draws and
+compiles read 0. The same commit made `census.mjs` tolerate an engine with no
+`_draw`, `post.mjs` read the canvas's size and level off the surface and its
+statics off the device (Babylon's `extractDriverInfo`, the empty string on
+WebGPU; `compatibilityMode` null with no engine; the canvas pass's depth format
+`ChainPasses`'), `leaks.mjs` SKIP its positive control and say so on a
+`NullEngine` (it needs a WebGPU engine to compile and cache), and `shaders.mjs`
+skip Babylon's half (no backend to compile against; each material's defines
+still read for ours).
 
 - **`gate.mjs`** boots every shipped map, plays a real round on each and fails
   loudly if any is not clean — the engine is WebGPU, the round reaches
@@ -477,8 +495,9 @@ draw count (report version 38 retired it).
   asserted under our frame) **and since X5.4g the engine's `beginFrame`** (`begins`, a
   resize's counted apart in `resizeBegins`; 0 outside a resize asserted under our
   loop). `compiledAtBoot` is the engine's own `clearQuad` alone
-  since X5.3d deleted `localShadowClear`, and no mesh stands at the boot any more (the
-  `Mesh.render` hook waits for the first).
+  since X5.3d deleted `localShadowClear` — empty since X5.4h, the scene's engine a
+  `NullEngine` that compiles nothing for itself — and no mesh stands at the boot any
+  more (the `Mesh.render` hook waits for the first).
 
 - **`readers.mjs`** is X4.3b's READERS' ORACLE committed, and the CAMERA LOG
   (`BABYLON_EXIT.md` X5.4a; its header is its contract). The four answers read out
@@ -524,13 +543,18 @@ draw count (report version 38 retired it).
   records; X5.4b graded it (no context released and no cached bind group made after the
   boot in any class; the heap and the live buffers flat over four Coldharbour rounds with
   the file and without) and deleted the file, after which the control's own released
-  effect is the one live buffer more than at a parent with it.
+  effect is the one live buffer more than at a parent with it. **Since X5.4h** the
+  scene's engine is a `NullEngine` (no backend, no pipeline context, no cache): the
+  two counts are 0 by construction, the control is SKIPPED and said so, and the
+  device's counts, the live buffers and the heap are read as before.
 - **`lost.mjs`** destroys the device every draw is made on, from the page, at the
   menu, the building card, deploy and a life, each on a fresh page, and records
   what follows for `--seconds`: the state, the frames drawn and submitted, whether
   the frame adapter answers a new device, what the old device's `lost` said and
   every console line. Its pages wear no device watch (a loss is the point). It
-  records today's dead frame (X5.4a) and grades nothing until X5.4i.
+  records today's dead frame (X5.4a) and grades nothing until X5.4i. Since X5.4h
+  the device is the game's (the adapter's device arm): no engine restores a new
+  one, so the adapter answers the same, dead, device after a loss.
 
 `cold-stagger.mjs` is **gone and is not coming back**. It existed to bake
 Coldharbour's forty cube probes four a frame because doing all forty at once

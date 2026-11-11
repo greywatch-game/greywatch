@@ -311,7 +311,8 @@ await page.evaluate(() => {
   // The passes between the draw phase's start and the frame's end, read after
   // the frame; and WHICH PATH the seam took (`babylonSeam.onMainPass`): group 0
   // of the main pass visited, or not (X4.5a's fallback), by the seam's own test.
-  const e = g.engine;
+  // Babylon's engine, the scene's (`harness.mjs`' `frameAdapter`): `Game.engine` at a parent, a `NullEngine` since X5.4h.
+  const e = g.scene.getEngine();
   let target;
   let visited = false;
   // The draw phase through the frame adapter (`harness.mjs`, X5.4f: the

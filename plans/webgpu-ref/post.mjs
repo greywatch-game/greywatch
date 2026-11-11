@@ -794,7 +794,10 @@ function deviceProbe() {
     get: () => game,
     set: (g) => {
       game = g;
-      P.engine = g.engine;
+      // Babylon's engine, the scene's (`harness.mjs`' `frameAdapter`) — read
+      // when the game is handed over, before its scene exists, so it is
+      // `Game.engine` at a parent and a mark that the hooks are on since X5.4h.
+      P.engine = g.engine ?? g.surface ?? null;
       // The frame's begin and end through the frame adapter (`harness.mjs`,
       // X5.4a): Babylon's engine observables at every parent so far.
       const F = window.__refFrame();
@@ -1079,7 +1082,9 @@ function postAdapter() {
     chain() {
       const cam = g.cameraSys.camera;
       const scene = g.scene;
-      const e = g.engine;
+      // The canvas's size and scaling level: the game's surface since X5.4h
+      // (`core/CanvasSurface.ts`), Babylon's engine before.
+      const e = g.surface ?? g.engine;
       const ipc = scene.imageProcessingConfiguration;
       const names = new Map(babylon.stages().filter((s) => s.pp).map((s) => [s.pp, s.name]));
       const pass = (pp) => ({
@@ -1677,10 +1682,12 @@ function statics(page) {
     const lim = {};
     for (const k of ["maxInterStageShaderVariables", "maxInterStageShaderComponents", "maxColorAttachments", "maxSampledTexturesPerShaderStage", "maxSamplersPerShaderStage", "maxUniformBufferBindingSize", "maxTextureDimension2D", "maxBindGroups"]) lim[k] = dev.limits?.[k] ?? null;
     // What Babylon's FXAA reads to decide its `MALI` define
-    // (`ThinFXAAPostProcess._GetDefines`): the engine's driver info.
+    // (`ThinFXAAPostProcess._GetDefines`): the engine's driver info — since
+    // X5.4h, with no `WebGPUEngine`, what its `extractDriverInfo` always
+    // answered: the empty string (`webgpuEngine.pure.js` 2370).
     let driverInfo = null;
     try {
-      driverInfo = g.engine.extractDriverInfo?.() ?? null;
+      driverInfo = g.engine ? (g.engine.extractDriverInfo?.() ?? null) : "";
     } catch (e) {
       driverInfo = `throws: ${e.message}`;
     }
@@ -1689,8 +1696,10 @@ function statics(page) {
       preferredCanvasFormat: navigator.gpu.getPreferredCanvasFormat(),
       context: P.context,
       driverInfo,
-      compatibilityMode: g.engine.compatibilityMode,
-      depthFormat: g.engine._mainRenderPassWrapper?.depthTextureFormat ?? null,
+      // Babylon's engine's (no engine since X5.4h: null, and the canvas pass's
+      // depth is `ChainPasses`' — the format its pass attaches).
+      compatibilityMode: g.engine ? g.engine.compatibilityMode : null,
+      depthFormat: g.engine ? (g.engine._mainRenderPassWrapper?.depthTextureFormat ?? null) : (g.chainPasses?.canvasDepthTexture?.format ?? null),
       modules: P.moduleTable ?? {},
       // What the boot asked for (X5.4a): the adapter's options, the device's
       // descriptor, every canvas configure; and what the device it got holds.

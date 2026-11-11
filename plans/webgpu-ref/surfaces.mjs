@@ -133,7 +133,8 @@ const OVERLAPS = [
 function hangProbe(page) {
   return page.evaluate(() => {
     const g = window.__celshock;
-    const e = g.engine;
+    // Babylon's engine, the scene's (`harness.mjs`' `frameAdapter`): `Game.engine` at a parent, a `NullEngine` since X5.4h.
+    const e = g.scene.getEngine();
     const scene = g.scene;
     const classOf = (mesh, mat) => {
       const n = mesh.name;

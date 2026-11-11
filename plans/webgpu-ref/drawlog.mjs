@@ -139,7 +139,8 @@ hardLimit(1800 * MAPS.length);
 /** Runs IN THE PAGE: the hooks. See the header for what each records. */
 function installHooks() {
   const g = window.__celshock;
-  const e = g.engine;
+  // Babylon's engine, the scene's (`harness.mjs`' `frameAdapter`): `Game.engine` at a parent, a `NullEngine` since X5.4h.
+  const e = g.scene.getEngine();
   const scene = g.scene;
   const fold = (n) => String(n).replace(/\d+/g, "#");
   const hash = (s) => {

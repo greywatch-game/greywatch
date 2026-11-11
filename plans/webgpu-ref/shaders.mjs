@@ -13,7 +13,12 @@
  * eighth cel variant failing to compile on the one map that carries it, because
  * a material that never binds costs a draw and no diagnostic.
  *
- * **It compiles the cel material TWICE, once per renderer.** Both bodies,
+ * **It compiled the cel material TWICE, once per renderer, until X5.4h.** Since
+ * `BABYLON_EXIT.md` X5.4h the scene stands on a `NullEngine`
+ * (`src/core/SceneEngine.ts`): there is no Babylon backend to compile a
+ * material against, so Babylon's half is SKIPPED (each material's define set is
+ * still read off it, which is what our half is asked to build) and said so;
+ * at a parent it runs as below. Both bodies,
  * the vertex stage's and the fragment's, are one text each
  * (`shaders/wgsl/chunks.ts`) with two readers, Babylon's material and our own
  * `src/render/`, and each declares what the bodies read its own way — so a
@@ -420,7 +425,9 @@ for (const id of MAPS) {
     // WebGPU compiles a pipeline asynchronously, so readiness is polled rather
     // than read: `isReady` is what ASKS for the compile as well as what reports
     // it, and the first call on a variant nothing has drawn always says no.
-    let pending = shaders;
+    // Not asked at all with no Babylon backend (X5.4h: a `NullEngine`).
+    const babylonGpu = Boolean(g.scene.getEngine().isWebGPU);
+    let pending = babylonGpu ? shaders : [];
     for (let i = 0; i < 240 && pending.length > 0; i++) {
       pending = pending.filter((m) => !m.isReady(probe));
       if (pending.length > 0) await frame();
@@ -473,7 +480,7 @@ for (const id of MAPS) {
         defines: defines.join("+"),
         cel: isCel,
         ready: !pending.includes(mat),
-        error: effect?.getCompilationError?.() || "",
+        error: babylonGpu ? effect?.getCompilationError?.() || "" : "",
       });
     }
 
@@ -499,6 +506,7 @@ for (const id of MAPS) {
       cutBiases: [...cutBiases].sort((a, b) => a - b),
       modules,
       moduleCount: window.__modules.length,
+      babylonGpu,
     };
   });
 
@@ -530,7 +538,8 @@ for (const id of MAPS) {
     `${id.padEnd(13)} ${String(celCount).padStart(3)} cel materials  ` +
       `${String(out.moduleCount).padStart(3)} modules  ` +
       `${out.cel.length} variants  ${ours.length - badOurs.length}/${ours.length} ours ` +
-      `(palette biases [${out.paletteBiases.join(", ")}], cut [${out.cutBiases.join(", ")}])  ${status}`,
+      `(palette biases [${out.paletteBiases.join(", ")}], cut [${out.cutBiases.join(", ")}])  ${status}` +
+      (out.babylonGpu ? "" : "  (Babylon's half skipped: no Babylon backend, X5.4h)"),
   );
   for (const o of badOurs) {
     failures.push(`${id}: ours ${o.error}`);

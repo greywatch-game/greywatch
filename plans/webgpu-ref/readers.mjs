@@ -635,7 +635,9 @@ async function cameraLog(page) {
     });
     F.onDrawn(() => {
       if (C.step && C.k < C.n && g.state === C.want) {
-        const e = g.engine;
+        // Babylon's engine, the scene's: what the camera's projection reads
+        // (`Game.engine` at a parent, a `NullEngine` since X5.4h).
+        const e = g.scene.getEngine();
         const v = cam.getViewMatrix();
         const p = cam.getProjectionMatrix();
         const t = g.scene.getTransformMatrix();

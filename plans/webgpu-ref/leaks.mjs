@@ -9,7 +9,13 @@
  * Babylon pass draws, so the question X5.4b asked is whether either still
  * happens at all after the boot; this counts both, and nothing else changes. It
  * stays as the regression read for as long as Babylon's engine stands (to
- * X5.4h): a count that moves off zero is the patch's two leaks back.
+ * X5.4h): a count that moves off zero is the patch's two leaks back. **Since
+ * X5.4h Babylon's engine is a `NullEngine`** (`src/core/SceneEngine.ts`): it
+ * has no WebGPU backend, no pipeline context and no bind-group cache, so the
+ * two counts are 0 by construction and the positive control cannot run (it
+ * needs a WebGPU engine to compile an effect and fill a cache): it is said to
+ * be skipped, and the device's counts, the live buffers and the heap are
+ * read as before.
  *
  * ```
  * node plans/webgpu-ref/leaks.mjs [map] [--then=<map>] [--frames=600] [--rounds=2]
@@ -153,7 +159,8 @@ await page.evaluate(async () => {
     L.cls = g.state;
     bucket().frames++;
   });
-  const e = g.engine;
+  // Babylon's engine, the scene's (`Game.engine` at a parent).
+  const e = g.scene.getEngine();
   const del = e._deletePipelineContext;
   e._deletePipelineContext = function (ctx, ...rest) {
     const b = bucket();
@@ -181,7 +188,9 @@ await page.evaluate(async () => {
 const control = await page.evaluate(async () => {
   const g = window.__celshock;
   const L = window.__leaks;
-  const e = g.engine;
+  // Babylon's engine, the scene's: a `NullEngine` since X5.4h (the header).
+  const e = g.scene.getEngine();
+  if (!e.isWebGPU) return { skipped: e.constructor.name };
   const CONTROL = "(control)";
   const effect = e.createEffect("clearQuad", [], ["color", "depthValue"], undefined, "#define LEAKS_MJS_CONTROL\n", undefined, undefined, undefined, undefined, 1 /* ShaderLanguage.WGSL */);
   for (let frames = 0; !effect.isReady(); frames++) {
@@ -203,9 +212,11 @@ const control = await page.evaluate(async () => {
   const b = L.byClass[CONTROL] ?? { deletes: 0, deletesWithContext: 0, cacheCreated: 0, cacheCalls: 0 };
   return { deletes: b.deletes, deletesWithContext: b.deletesWithContext, cacheCalls: b.cacheCalls, cacheCreated: b.cacheCreated, deviceBindGroups: window.__leakDev.bindGroups - devBefore };
 });
-const controlHeld = !control.error && control.deletes === 1 && control.deletesWithContext === 1 && control.cacheCalls === 1 && control.cacheCreated === 1 && control.deviceBindGroups === 0;
+const controlHeld = Boolean(control.skipped) || (!control.error && control.deletes === 1 && control.deletesWithContext === 1 && control.cacheCalls === 1 && control.cacheCreated === 1 && control.deviceBindGroups === 0);
 console.log(
-  control.error
+  control.skipped
+    ? `the positive control is SKIPPED: Babylon's engine is a ${control.skipped}, no WebGPU backend to release an effect or fill a cache (X5.4h)`
+    : control.error
     ? `the positive control FAILED: ${control.error}`
     : `the positive control: an effect released, ${control.deletes} pipeline context${control.deletes === 1 ? "" : "s"} deleted (${control.deletesWithContext} with a context); the engine's cache asked ${control.cacheCalls} time${control.cacheCalls === 1 ? "" : "s"}, ${control.cacheCreated} bind-group set made, the device's createBindGroup ${control.deviceBindGroups} — ${controlHeld ? "both hooks count" : "FAILED (1, 1, 1, 1 and 0 wanted)"}`,
 );
