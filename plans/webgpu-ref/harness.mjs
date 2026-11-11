@@ -155,12 +155,17 @@ export const EXIT_DEVICE_LOST = 4;
 
 /**
  * Every console line a lost device has been seen to say, in the order it says
- * them: Dawn's, Babylon's, and Babylon's failing to get it back. Matched on the
- * TEXT, because Dawn's and Babylon's first are `warning`s, so a filter on
- * `error` hears only the last, if that.
+ * them: Dawn's, Babylon's, and Babylon's failing to get it back — and the
+ * game's own since Babylon's engine went (`Game`'s `device.lost` handler,
+ * "WebGPU device lost (reason): …", `BABYLON_EXIT.md` X5.4h), which this did
+ * not hear until X5.4i made the answer to a loss a RELOAD of the page to the
+ * menu: a run that waited on that page's frames would meet a new page, or a
+ * context destroyed under its `evaluate`, rather than this stop. Matched on the TEXT, because Dawn's,
+ * Babylon's first and the game's are `warning`s, so a filter on `error` hears
+ * only the last, if that.
  */
 const DEVICE_LOST_LINE =
-  /DXGI_ERROR_DEVICE_|GetDeviceRemovedReason|WebGPU context lost|Device failed at creation|fatal error occurred during WebGPU/;
+  /DXGI_ERROR_DEVICE_|GetDeviceRemovedReason|WebGPU context lost|WebGPU device lost|Device failed at creation|fatal error occurred during WebGPU/;
 
 /** What the run was last waiting on: said when it is given up on. */
 let waitingOn = "the start of the run";

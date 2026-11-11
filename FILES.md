@@ -384,8 +384,10 @@ plans/webgpu-ref/     # The exit's probes and the reference bank, indexed by
                       #   the proof that deleted webgpuLeaks.ts (X5.4b), after
                       #   a positive control that both hooks count
   lost.mjs            # The device destroyed on purpose at the menu, the card,
-                      #   deploy and a life, and what follows recorded (X5.4a;
-                      #   graded from X5.4i)
+                      #   deploy and a life, offline or in a server's match
+                      #   (--match), once or twice (--twice, --stale), and what
+                      #   follows recorded: the reload, the notice, the plate,
+                      #   a setting, the rejoin (X5.4a; graded from X5.4i)
 
 index.html          # The head, and NO interface CSS beyond the two things shown
                     #   while there IS no interface: a black background (so a

@@ -51,7 +51,7 @@ node plans/webgpu-ref/readers.mjs replay --log=rec.json [--out=f.json] [--agains
 node plans/webgpu-ref/readers.mjs camera [--out=f.json] [--against=f.json] [--ignore=…]
 node plans/webgpu-ref/readers.mjs --compare=a.json --against=b.json [--ignore=…]
 node plans/webgpu-ref/leaks.mjs [map] [--then=<map>] [--frames=600]
-node plans/webgpu-ref/lost.mjs [map] [--at=menu,loading,deploy,playing] [--seconds=10] [--out=f.json]
+node plans/webgpu-ref/lost.mjs [map] [--at=menu,loading,deploy,playing] [--seconds=10] [--match] [--twice] [--stale] [--strict] [--out=f.json]
 ```
 
 **Every question a script here asks about the FRAME goes through ONE adapter**
@@ -558,9 +558,28 @@ still read for ours).
   what follows for `--seconds`: the state, the frames drawn and submitted, whether
   the frame adapter answers a new device, what the old device's `lost` said and
   every console line. Its pages wear no device watch (a loss is the point). It
-  records today's dead frame (X5.4a) and grades nothing until X5.4i. Since X5.4h
-  the device is the game's (the adapter's device arm): no engine restores a new
-  one, so the adapter answers the same, dead, device after a loss.
+  recorded the dead frame (X5.4a to X5.4h; since X5.4h the device is the game's,
+  the adapter's device arm, and no engine restores a new one, so the adapter
+  answered the same, dead, device after a loss). **Since X5.4i's instruments it
+  sees a RELOAD and GRADES the owner's answer** (row "X5.4, a lost device"): each
+  moment on a fresh context (a fresh `sessionStorage`), the main frame's
+  navigations counted, every toast recorded by an init script that runs on every
+  document the page loads (so after a reload too), the frames counted from each
+  page's own boot, the boot's plate read (in the document, failed, on top, its
+  word, cause and sentence), the game's loss record in `sessionStorage` read, and a
+  setting changed through the game's own door before the loss (`fpsCounter`) read
+  after it. `--match` plays each moment in a server's match (`dist-server`, built
+  by `npm run build:server`, on a port of its own; the page joined by
+  `joinMatch()` with `?server=`, the lobby's join, never `?mp`, which would
+  rejoin by itself on a reload) and, after a reload to the menu, joins again and
+  records whether it reaches `deploy`; `--twice` loses the device a SECOND time
+  once the first has settled, inside the game's window, and `--stale` backdates
+  the first loss's record an hour before it. A verdict a loss: a first loss
+  RELOADS to the menu, drawing, the notice shown once and the setting kept; a
+  second inside the window does not reload and stands the boot's "No graphics
+  device" plate on top with no frame drawn under it; `--strict` exits 1 on a
+  verdict that is not that. At a parent every verdict reads "no" and the run
+  records the dead frame as before.
 
 `cold-stagger.mjs` is **gone and is not coming back**. It existed to bake
 Coldharbour's forty cube probes four a frame because doing all forty at once
