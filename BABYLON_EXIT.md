@@ -5343,7 +5343,7 @@ pointer, its history unchanged):
   when it lands, owes three things: its generator's emitted header rewritten, its
   `params.ts` and `WRITABLE` rows dropped, and a `maps:check` entry.
 
-### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d; it was sized **M** before the split, and the read below re-sizes it) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014, its review clean), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88), X5.4e **LANDED** (74d246c, its review bc6892c), X5.4f **LANDED** (cfe4d8e, c37ae6d, its review b3cb649), X5.4g **LANDED** (c461635, acbd9e4, its review fcca130), X5.4h **LANDED** (fc76336, c01c54b, its review 7e771ee, 204ee7b), X5.4i **LANDED** (6c89e8b, a4ca446)
+### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d; it was sized **M** before the split, and the read below re-sizes it) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014, its review clean), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88), X5.4e **LANDED** (74d246c, its review bc6892c), X5.4f **LANDED** (cfe4d8e, c37ae6d, its review b3cb649), X5.4g **LANDED** (c461635, acbd9e4, its review fcca130), X5.4h **LANDED** (fc76336, c01c54b, its review 7e771ee, 204ee7b), X5.4i **LANDED** (6c89e8b, a4ca446, its review 01f8775)
 
 - **Do:**
   - Our own `requestAnimationFrame` loop.
@@ -6327,7 +6327,7 @@ measurement until the sub-step that replaces both.
   - **Rewrites:** `docs/states.md` or `docs/game.md` (where the loss goes); `CLAUDE.md`
     if the answer adds a rule others can break.
 
-  **X5.4i LANDED** (6c89e8b the instruments, a4ca446 the step; 2026-11-11; no change to the picture;
+  **X5.4i LANDED** (6c89e8b the instruments, a4ca446 the step, its review 01f8775; 2026-11-11; no change to the picture;
   the loss's behaviour is the owner's (A)). The full note is in `plans/done/babylon_exit_landed.md`.
   **A lost device reloads the page to the menu**: `Game.deviceLost`, the constructor's
   `device.lost.then(…)`, answers every reason, `"destroyed"` with the rest (a promise settles once, so
@@ -6362,6 +6362,32 @@ measurement until the sub-step that replaces both.
   device request) read and screenshot equal to the parent's; a device lost at every boot reloads once,
   then stands the plate, its screenshot equal to the boot's own. Typecheck, build, corecheck, parity.
   **Not run**: the phone; a real TDR (simulated by `destroy()`); `merge:hash` (the world layer untouched).
+
+  **Its review** (01f8775; 2026-11-11; no change to the picture: a guard on a lost device's page, the
+  rest text; the full note is in `plans/done/babylon_exit_landed.md`) found one real issue and six
+  NITs, all fixed or booked: the real one and five NITs fixed, the sixth named for the owner. **A loss
+  in the two frames between `startRound` and `buildRound` was not caught**: those are the browser's
+  `requestAnimationFrame`s, which `FrameLoop.stop` does not cancel, so `buildRound` ran with the state
+  still `loading` and, on the plate's path, `deviceGone`'s `leaveMatch` having cleared `net`, opened a
+  fresh owned match and built the whole map on the dead device under the plate. Now `Game.deviceIsLost`,
+  set on `deviceLost`'s first line, is refused at `startRound`, `buildRound` (its first line and past
+  both its awaits) and `joinMatch` — the doors every other one goes through; the bench's awaited import,
+  a welcome or a `roundstart`, `joinFromUrl`'s regions read and the lobby reach `startRound` or
+  `joinMatch`, and the bake wait and the warm-up advance only from `tick`. The reviewer's `cardrace.mjs`
+  (a second loss in the task that calls `startRound`): before, `loading`, `net` held (`local=true`),
+  `buildPending` false — the build had run; after, `loading`, `net` null, `buildPending` true — nothing
+  built, no match. **Text**: `docs/game.md`'s constructor paragraph names six arguments (`clock` since
+  X5.4h, `deviceFailed` since this step); `docs/states.md` says the page is let go under the plate, not
+  "stays where it stopped" (the lock's release raises the pause lid in a round); `TextureMaker`'s
+  comments made true (the empty texel is in `everMade` too, held strongly because only its view is
+  otherwise held; a texture destroyed twice is harmless); `deviceLoss.ts` notes the notice's "rejoin"
+  clause is wrong under `?mp`, whose reload rejoins by itself, and is left so; `docs/rendering.md` and
+  `index.html` name `CONFIG.graphics.deviceLossWindow` where they said "a minute". **Named for the
+  owner, unchanged**: storage that cannot be read or written answers the FIRST loss with the plate,
+  never a reload (stated plainly in `deviceLoss.ts` and `docs/game.md`). **Measured**: typecheck, build
+  (its gates), corecheck; `cardrace.mjs` before and after; `lost.mjs hollowmere --twice --strict` offline
+  (menu, the card, deploy, a life) and `--match` (the card, deploy, a life), every verdict YES. **Not
+  run**: the bank and the probes (no draw path touched); the phone.
 
 **Verify, the whole step:** the Do's Verify above, against a BEFORE at X5.4a's parent end
 to end as well as step by step; on the branch's phone preview URL (row "X5.4, the phone"),

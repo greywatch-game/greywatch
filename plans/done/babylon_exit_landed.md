@@ -11707,7 +11707,7 @@ here).
 Scripts and logs in the session's scratchpad, `x53-whole/` (`bank.sh`, `sarab.sh`, `run2.sh`,
 `dl-fix.mjs`, `viewer7.mjs`, `status.txt`).
 
-### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88), X5.4e **LANDED** (74d246c, its review bc6892c), X5.4f **LANDED** (cfe4d8e, c37ae6d, its review b3cb649), X5.4g **LANDED** (c461635, acbd9e4, its review fcca130), X5.4h **LANDED** (fc76336, c01c54b, its review 7e771ee, 204ee7b), X5.4i **LANDED** (6c89e8b, a4ca446)
+### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88), X5.4e **LANDED** (74d246c, its review bc6892c), X5.4f **LANDED** (cfe4d8e, c37ae6d, its review b3cb649), X5.4g **LANDED** (c461635, acbd9e4, its review fcca130), X5.4h **LANDED** (fc76336, c01c54b, its review 7e771ee, 204ee7b), X5.4i **LANDED** (6c89e8b, a4ca446, its review 01f8775)
 
 The plan's `BABYLON_EXIT.md` holds X5.4's brief, "What the frame is today", its ONE RULE, the
 step's own two rules, "Every sub-step owes" and the nine sub-steps.
@@ -12845,3 +12845,56 @@ kept), every run alone on the GPU. No device lost in any run but on purpose.
 
 Scripts and logs in the session's scratchpad, `x54i/` (`before.sh`, `after.sh`, `probes.sh`, `bench.sh`,
 `branches.mjs`, `plateleave.mjs`, the BEFORE and AFTER logs, kept frames and screenshots).
+
+**Its review** (01f8775; 2026-11-11; no change to the picture: a guard on a lost device's page, the rest
+comments and documents) found one real issue and six NITs, all fixed or booked: the real one and five
+NITs fixed, the sixth (finding 6) named for the owner and left as it is.
+
+- **Real, reproduced**: a loss in the two `requestAnimationFrame`s between `Game.startRound` and
+  `buildRound` was not caught. Those frames are the browser's, not the loop's, so `FrameLoop.stop` does
+  not cancel them; `buildRound`'s guard (`state !== "loading"`) passed, the state still `loading`; on the
+  plate's path `deviceGone`'s `leaveMatch` had cleared `net`, so `!remoteRound` held and `openLocalRound`
+  opened a FRESH owned match, and the later `this.net !== net` guard compared against that new session —
+  the whole map built on the dead device, under the plate, contradicting `deviceLost`'s and `deviceGone`'s
+  docs, `docs/game.md` and `docs/states.md`. The same window on the reload path was harmless, and is
+  closed by the same guard. **Fixed** by `Game.deviceIsLost`, set on `deviceLost`'s first line and never
+  cleared, refused at `startRound`, `buildRound` (its first line and past both its awaits, `joinSent` and
+  the floor's fetch) and `joinMatch`; `openLocalRound` is `buildRound`'s alone. The other deferred doors,
+  searched: the bench's awaited import, a welcome or `roundstart`, `joinFromUrl`'s regions read and the
+  lobby all reach `startRound` or `joinMatch`; `worldFailed`'s microtask and `failLocalRound` go to the
+  menu and open nothing; the bake wait and the pipeline warm-up advance only from `tick`, which the
+  stopped loop no longer runs. **The reviewer's `cardrace.mjs`** (a loss record backdated a second, then
+  `startRound()` and `device.destroy()` in one task, read 8 s later): before the fix `state` `loading`,
+  `net` held (`local=true`), `buildPending` false (the build had run and opened its bake wait), the plate
+  failed, the sound paused; after it `state` `loading`, `net` null, `buildPending` true (nothing built),
+  the plate failed, the sound paused; no navigation either time.
+- **NITs fixed**: (2) `docs/game.md`'s constructor paragraph said "four arguments beside the canvas";
+  it names six now — `clock` (X5.4h) and `deviceFailed` (this step) the boot's — and "the one of the
+  three" is "the one of the four"; (3) `docs/states.md` said the page under the plate "stays where it
+  stopped" — it is let go under it, and the lock's release raises the pause lid in a round, so the state
+  reads `paused`; (4) `TextureMaker`'s comment said the empty texel is held strongly for destruction's
+  sake, but it is in `everMade` too (it comes through `texture()`), and retired textures are destroyed
+  twice: the comments now say both, `GPUTexture.destroy` being idempotent, and the strong hold is KEPT —
+  `blank` has no other reader, but nothing else holds the `GPUTexture` object (a stand-in binds its
+  view), so without it the weak record could find nothing to destroy; (5) under `?mp` the reload joins
+  a match by itself (`joinFromUrl`), so the notice's "— rejoin the match from Online" is wrong there:
+  noted in the header of `deviceLoss.ts` (the smaller change; `?mp` is a dev and smoke URL); (7)
+  `docs/rendering.md` and the comment in `index.html` said "inside a minute" and now name
+  `CONFIG.graphics.deviceLossWindow` (`docs/ui.md` already did). `FILES.md`'s `Game` row.
+- **Named for the owner (finding 6), behaviour unchanged**: when `sessionStorage` cannot be read or
+  written (blocked storage), the FIRST loss gets the plate and never a reload — a reload the guard cannot
+  record is one it cannot see, so a device that dies on every boot could loop the page. A browser or
+  policy that refuses session storage therefore gets the "No graphics device" plate on any loss, where
+  every other page gets a reload to the menu. Stated plainly now in the header of `deviceLoss.ts` and in
+  `docs/game.md`. **The alternative** is a URL marker: record the loss in the URL itself and reload with
+  `location.replace` (a query parameter the boot reads and strips, so it survives the reload without any
+  storage and adds no history entry), which would give a blocked-storage page its one reload and still
+  see the second loss. Whether to keep the plate or take the marker is the owner's.
+- **Measured**: typecheck, build (its gates), corecheck; `cardrace.mjs` before and after (above);
+  `lost.mjs hollowmere --twice --strict` offline at the menu, the card, deploy and a life, and `--match`
+  (`npm run build:server`) at the card, deploy and a life — every verdict YES: every first loss one
+  navigation to the menu, drawing, the notice once (with the match's tail in the match), the setting
+  kept, in the match a rejoin reaching `deploy`; every second loss no navigation, the plate failed and on
+  top, no frame after. **Not run**: the bank and the probes (no draw path touched); the phone.
+
+Logs in the session's scratchpad (`lost-offline.log`, `lost-match.log`).
