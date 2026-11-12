@@ -11707,7 +11707,7 @@ here).
 Scripts and logs in the session's scratchpad, `x53-whole/` (`bank.sh`, `sarab.sh`, `run2.sh`,
 `dl-fix.mjs`, `viewer7.mjs`, `status.txt`).
 
-### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88), X5.4e **LANDED** (74d246c, its review bc6892c), X5.4f **LANDED** (cfe4d8e, c37ae6d, its review b3cb649), X5.4g **LANDED** (c461635, acbd9e4, its review fcca130), X5.4h **LANDED** (fc76336, c01c54b, its review 7e771ee, 204ee7b), X5.4i **LANDED** (6c89e8b, a4ca446, its review 01f8775)
+### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88), X5.4e **LANDED** (74d246c, its review bc6892c), X5.4f **LANDED** (cfe4d8e, c37ae6d, its review b3cb649), X5.4g **LANDED** (c461635, acbd9e4, its review fcca130), X5.4h **LANDED** (fc76336, c01c54b, its review 7e771ee, 204ee7b), X5.4i **LANDED** (6c89e8b, a4ca446, its review 01f8775) — **all nine LANDED**, the whole step verified (desktop, 2026-11-12), the phone owed
 
 The plan's `BABYLON_EXIT.md` holds X5.4's brief, "What the frame is today", its ONE RULE, the
 step's own two rules, "Every sub-step owes" and the nine sub-steps.
@@ -12898,3 +12898,193 @@ NITs fixed, the sixth (finding 6) named for the owner and left as it is.
   top, no frame after. **Not run**: the bank and the probes (no draw path touched); the phone.
 
 Logs in the session's scratchpad (`lost-offline.log`, `lost-match.log`).
+
+**X5.4, the whole step verified (desktop)** (2026-11-12; no change to the game: this note, the plan's
+Verify line and both X5.4 headings). The whole of X5.4a to X5.4i, HEAD e95cea9 against a BEFORE at
+8c0e184, X5.4a's parent (the worktree `greywatch-2-before-x53a`, moved there detached; no dependency
+moved, so no `npm ci`; its `ref/` identical to the main tree's), on the Windows box, headless, every
+run alone on the GPU. **Every probe was run with HEAD's instruments on both trees**: HEAD's
+`plans/webgpu-ref/` laid over the BEFORE for its runs. As a check that they read the old tree as its
+own did, the BEFORE's bank under them came out byte-equal to X5.4a's BEFORE at the same commit, which
+its own instruments took: 146 + `sarab-ground` at default, and 145 + the shelf flake + `sarab-ground` at
+both `=low` and `=high`. That `sarab-ground` is the known cross-process residue, 98–100 pixels by
+2/255. **No device lost; no `nvlddmkm` event** in the four hours of runs. The worktree was put back
+clean at 5be4571 afterwards.
+
+- **The bank**, by `exact.mjs`, 147 rows a run. Each run took `--check --keep` once at each tree.
+  - **The expected difference.** The only rows that moved are X5.4c's `Picture change:` (4ebd8b2,
+    row "X5.4c, the vantages' lamp shadows"): the same 16 rows in all three runs. Each row's pixels,
+    worst and mean are EQUAL to 4ebd8b2's recorded numbers, with one exception at `=low`, explained
+    below. Pixels / worst / mean at default | `=low` | `=high`:
+    - `greyfen-canopy`: 240/26/0.0001 | 243/26/0.0001 | 242/26/0.0001
+    - `greyfen-crossing`: 101/15 | 102/15 | 102/15
+    - `greyfen-grass-high`: 29/2 | 29/2 | 28/2
+    - `greyfen-grass-low`: 51/15 | 50/15 | 53/15
+    - `greyfen-grass-medium`: 57/15 | 56/15 | 59/15
+    - `greyfen-ground`: 1365/18/0.0011 | 1356/17/0.0011 | 1373/17/0.0011
+    - `greyfen-marsh`: 4618/31/0.002 | 4616/31/0.002 | 4629/31/0.002
+    - `greyfen-shore-ahead`: 11/2 in all three
+    - `greyfen-treeline`: 473,099/86/0.7245 | 473,192/86/0.7245 | 473,137/86/0.7244
+    - `harrowmead-menu`: 170,558/155/0.7258 | 170,503/158/0.7252 | 170,443/155/0.7258
+    - `harrowmead-millpond`: 3348/25/0.0026 | 3355/25/0.0026 | 3355/25/0.0026
+    - `kurenai-crossing`: 389/10 | 399/10 | 392/10
+    - `kurenai-menu`: 65,100/52/0.0431 | 65,175/55/0.0432 | 65,118/51/0.0431
+    - `sarab-menu`: 125/38 in all three
+    - `sarab-shelf`: 346/24 | 348/24 | 348/24
+    - `sarab-wadi`: 852/81/0.0024 | 851/80/0.0024 | 852/80/0.0024
+  - **The one exception**: `sarab-shelf` at `=low` reads 348 where 4ebd8b2 recorded 347. The extra
+    pixel is the BEFORE's own one-pixel shelf flake: this BEFORE's shelf is one pixel off X5.4a's
+    BEFORE of the same commit, and against X5.4a's BEFORE HEAD's shelf reads 347/24/0.0002 exactly.
+  - **Every other row**: byte-equal at default (131) and at `=high` (131). At `=low`, 130 are
+    byte-equal and `harrowmead-view-pistol-reload` is within its flake (2 pixels by 1/255).
+    `sarab-ground` is byte-equal in all three runs, and no row is one-sided.
+  - **HEAD against the step that made the change**: HEAD's kept frames are byte-equal to X5.4c's own
+    after-run on every row at `=high` (147). At `=low` that holds for every row but the pistol
+    flake, and at default for every row but `sarab-ground` (the cross-process class).
+- **The draw log** (Coldharbour, with the viewer): no Babylon draw, no group-0 visit, the DEV counter 0
+  and `scene.meshes` 0 in every class on both trees. Against the BEFORE it differs in ONE compared
+  field, `compiledAtBoot`: `clearQuad` → none (X5.4h's). Its two per-class counters read as each step
+  named: `scene.render` 1 → 0 a frame in every class (X5.4f), and the engine's `beginFrame` outside a
+  resize 1 → 0 (X5.4g).
+- **`post.mjs`, at `desk` and `phone`.** Against the BEFORE it is equal at each size (29,689 values)
+  under the X5.4e, X5.4f, X5.4g and X5.4h sections of `post-expected.txt` and no others. Those
+  sections excuse 2,190 paths a size:
+  - every pass's `role`: 392 paths;
+  - each submit's `buffers` (one `frame encoder` where there were Babylon's upload and render
+    encoders) and its writes: 34 each;
+  - `autoClear` and `autoClearDepthAndStencil`: 34 each;
+  - the glow targets' three Babylon sampling fields: 204 each;
+  - the device's label and the adapter options: X5.4h's 13 statics.
+
+  What the sections excuse was checked to be what they promise (`x54e/wholeflat.cjs`). The frame's
+  command order is the same item for item over 34 scenarios, 562 items. The writes are exactly ONE
+  `writeBuffer` and 272 bytes fewer in every scenario (13/8,944 → 12/8,672): Babylon's scene UBO for
+  the mask, X5.4e's.
+- **`gi.mjs`**: equal on both maps (914,604 and 254,724 values) under X5.4d's four Babylon-only
+  cloud-field fields (`samplersFresh.internalCached`/`.texture`, `samplerSerial.found`/`.forced`), and
+  nothing else.
+- **`surfaces.mjs`**: 735 differing leaves, every one an `order[].mark` or `seenFirst`, X5.4e's `first`
+  mark. Under `x54e/surfcmp.cjs` (the mark moved to the phase's end), all 147 rows are equal.
+- **`census`**: equal (168 and 168). **`particles.mjs`**: equal by `Object.is` (45,120 numbers over 480
+  frames). **`readers.mjs camera`**: equal (104 frames).
+- **`readers.mjs replay`** (X5.4a's record): 547 of 547 live answers, and the three origins identical
+  on both trees. Under `--ignore=ids,ours` it is equal. Babylon's render-id log goes from 3,010 changes
+  (1,505 at the scene's render and 1,505 at the camera's) to 0 (X5.4f). Ours goes from 0 to 3,010
+  advances, 2 a frame (X5.4b).
+- **`pipelines.mjs`**:
+  - Hollowmere: 107 modules and 2 of Babylon's pipelines become 101 and 0 (X5.4h); ours 90; nothing a
+    second.
+  - Coldharbour `--round`: each install 0 / 21 / 12 then 0 / 0 / 0, nothing in play, on both.
+  - The warm-up: 23 frames asked (the vantages) becomes 1 (X5.4c).
+- **`leaks.mjs`**: 0 pipeline contexts released and 0 cached bind groups at every step on both. Babylon's
+  half of the control runs at the BEFORE and is skipped at HEAD; the device's half counts on both. Live
+  buffers are 10 fewer at every step (142/405/411/159/411/411/159/159/266/155 →
+  132/395/401/149/401/401/149/149/256/145, X5.4h's); the MB equal; the heap 1–2 MB lower.
+  - **The device's bind groups differ, and no sub-step's note named it** (X5.4c to X5.4f ran no
+    `leaks.mjs`): 1,903/1,919/2,090/2,200 → 1,851/1,916/2,084/2,194 (Coldharbour round 1's deploy and
+    life, round 2, Hollowmere's life).
+  - **Bisected** with HEAD's `leaks.mjs` at each commit: 4cf59ad and 4db13df read the BEFORE's
+    numbers, and 4ebd8b2, ffbf2ed, 74d246c and c37ae6d read HEAD's. So the move is X5.4c's
+    `Picture change:` commit.
+  - **Attributed by label** (`bglabels.mjs`, Coldharbour, 4db13df against 4ebd8b2). At 4db13df the
+    vantage frames, the map drawn whole with the cull off, made under the card a bind group for every
+    pane block's glass recipe (46), the fires' two and four water bodies'. At 4ebd8b2 each is made at
+    its first draw in play, and three of them (two water bodies and one pane-block recipe) were never
+    drawn in that 150-frame life: 1,950 → 1,947 over the session.
+  - So it is the mechanism of the change the owner took, not a leak: the vantages' share of first
+    draws. **For the owner**: those bind groups are now made in play, at a surface's first draw. The
+    record named no pipeline made in play, and none is.
+- **`lost.mjs` (Hollowmere)**:
+  - At HEAD, `--twice --strict` offline (the menu, the card, deploy, a life) and `--match` (the card,
+    deploy, a life; `dist-server` built for each tree) graded **YES on every verdict**. Every first
+    loss is one navigation to the menu, drawing, with the notice shown once and the setting kept; in
+    the match the player rejoined to `deploy`. Every second loss gives no navigation, the boot's
+    "Cannot start" / "No graphics device" plate failed and on top, and no frame after.
+  - At the BEFORE every verdict is "no" (8 offline, 6 in the match): the dead frame. Babylon's "context
+    lost" and "successfully restored", then 250 cross-device validation warnings until the cap, while
+    the frames and the state go on.
+- **Structure, at runtime** (`structure.mjs`, Hollowmere: the menu, the card, deploy, a life and back
+  to the menu; the page's own Babylon found on the resource timeline and asserted to be the game's):
+  - **HEAD**: `EngineStore.Instances` holds ONE engine, a `SceneEngine` (a `NullEngine`, not a
+    `WebGPUEngine`), and it is the scene's. `scene.render` (wrapped) was called 0 times over 328 of
+    our frames. `/src/render/babylonSeam.ts` does not exist (a 404).
+  - **The BEFORE**: one `WebGPUEngine`, `scene.render` 345 times over 348 frames, and the seam
+    present.
+  - **In the code** at HEAD: no `WebGPUEngine` and no `scene.render(` outside comments.
+    `core/SceneEngine.ts` is the one `NullEngine`. `render/babylonSeam.ts` was deleted by c01c54b.
+- **`F2`, the viewer** (`viewer7.mjs`, the key and `W` by Playwright): over `deploy` and over a life,
+  on all seven maps offline (one page, a teardown and a map change between) and on Hollowmere and
+  Coldharbour in a server's match (`?mp`). In each:
+  - the lid is up, with the panel and `.editing`;
+  - the plan is drawn (296 by 296, 7,505 to 16,856 colours);
+  - the nav layer is switched on and its counts written;
+  - the camera is flown about 14.8 m with the `pos` readout moving;
+  - `F2` goes back to the state covered with the pose exactly back (an error of 0);
+  - the DEV compile counter reads 0 and there is no page or console error.
+
+  **113 of 113 checks.**
+- **Live** (`x54h/live.mjs` at HEAD; not applicable at 8c0e184, which has neither `Game.renderId` nor
+  the loop it counts): PASS, 47 steps.
+  - Every frame read `0/0/1/1/1/2`: 5,127 offline, 539 and 877 in the matches.
+  - 24 resizes offline; caps of 30 and 60 over a pan at 29.95/30.04 and 60.08/60.09 fps, p50 32 and
+    16 ms; compiles 0; no error.
+- **The PWA** (`x54h/pwa.mjs`, each tree's production build under `vite preview`, the worker
+  controlling, the context offline), at desk and at the phone's 832x384 at 2.8125:
+  - the menu drawn at 1920x1080 and 1170x540 on both trees;
+  - `/profile_viewer.html` is the viewer and `/nope.html` the game;
+  - one offline `ERR_FAILED` console line on both trees, as X5.4h recorded (the script's strict
+    console check flags it on both).
+  - A home-screen install is not possible headless.
+- **The menu** (`x54f/menu.mjs`): boot frames 1–12 and 61–65 hashed equal to the BEFORE's.
+- **The gates**: typecheck, build (its gates, `maps:check` and the WebGPU-globals check among them),
+  corecheck (all passed), `maps:check` alone, parity (eight maps, every field) and `gate` (seven maps
+  clean on both). `shaders` is clean on seven maps on both trees; Babylon's half was skipped at HEAD,
+  as X5.4h said.
+- **Performance** (3440x1440, HEAD's `bench.mjs` on both trees):
+  - **`--max`** (`greyfen sarab`, three runs a tree), every group's mean within the run-to-run noise:
+    - Greyfen 5.18/5.86/6.69 → 5.13/5.91/6.69 ms. The vantages' spread is 12% and 27%, as X0.4
+      found it. Their 1% low reads 12.0 → 101.0 ms: one long frame in the `vantage menu` hold, which
+      the BEFORE's runs show too (that hold's mean 4.25/4.64/1.64 ms against a p95 of 0.9).
+    - Sarab 3.68/4.24/3.98 → 3.80/4.13/3.97.
+    - The fight hashes are `83e8e74ef36916ba` and `986c2e35557fb679` on all six runs a map.
+  - **`--capped`** (`hollowmere coldharbour --runs 2`): even pacing on both trees, every group's mean
+    7.95–7.97 ms with p95 8.10. `render` is 14–29% lower (0.244/0.257/0.380 → 0.174/0.185/0.319 ms on
+    Hollowmere, 0.300/0.296/0.388 → 0.221/0.230/0.334 on Coldharbour).
+  - **`?profile&gpu`** (`--gpu --capped --runs 2`, the BEFORE and HEAD alternating twice):
+    - **What each side measures.** Both sides' `gpu.frame` brackets the whole frame's GPU work on the
+      one queue, so the comparison is like for like in scope though not in mechanism:
+      - at 8c0e184 (report v37) it is Babylon's timer, from the opening of its upload encoder to the
+        close of its render encoder, which then held every pass of ours;
+      - at HEAD (v38) it is `FrameTimer`'s two empty passes, the first and last commands of the
+        frame's one encoder.
+      - X5.4g measured the switch of mechanism at within 1%.
+    - **`gpu.frame` 0.0–1.3% LOWER on every group of both pairs.**
+      - Hollowmere vantages/path/fight 4.388/4.3725/5.1115 → 4.363/4.370/5.053 ms, then
+        4.393/4.394/5.1155 → 4.348/4.356/5.0525.
+      - Coldharbour 4.095/4.0925/4.8985 → 4.0885/4.0815/4.855, then 4.092/4.083/4.901 →
+        4.0815/4.0815/4.851.
+    - **`render` 42–56% LOWER**, X5.4e's and X5.4f's cheaper direction (Babylon's mask render, its
+      binds and `scene.render`'s bookkeeping gone).
+      - Hollowmere 0.403/0.424/0.5685 → 0.1815/0.188/0.3135, then 0.4085/0.4275/0.5625 →
+        0.183/0.195/0.3265.
+      - Coldharbour 0.458/0.4335/0.5815 → 0.2245/0.232/0.325, then 0.459/0.4435/0.592 →
+        0.226/0.2365/0.3295.
+    - The fight hashes are `549487ba93bceefe` and `de5622634abca6e7` on every run of both trees.
+  - **`frame` + `present` against the wall clock** (`x54g/residue.mjs`, `?bench=<map>&gpu`, capped,
+    the whole ring):
+    - Hollowmere 0.950 + 0.016 of 7.957 ms (residue 87.9%) → 0.702 + 0.020 of 7.969 (90.9%).
+    - Coldharbour 1.051 + 0.017 of 7.967 (86.6%) → 0.816 + 0.020 of 7.960 (89.5%).
+    - `present` is Babylon's `endFrame` at the BEFORE and our submit with the next encoder's making
+      at HEAD (X5.4g). The whole ring's `gpu.frame` reads 4.614 → 4.561 and 4.395 → 4.338.
+- **Not run**:
+  - the phone: its `?profile&gpu` on the preview URL (row "X5.4, the phone"; row "X5.4g, the frame
+    timer's passes") and a home-screen install;
+  - X0.3 on any device but this one;
+  - a real TDR (`destroy()` stands in);
+  - `merge:hash` (the world layer untouched).
+
+  **The `exit-phase-5` tag waits on the phone.**
+
+Scripts and logs in the session's scratchpad, `x54-whole/` (`before.sh`, `after.sh`, `probes.sh`,
+`bisect.sh`, `bglabels.mjs`, `structure.mjs`, `viewer7.mjs`, `func.sh`, `bench.sh`,
+`x54-post-ignore.txt`, the BEFORE and AFTER logs and kept frames).

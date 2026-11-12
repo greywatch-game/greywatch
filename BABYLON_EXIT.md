@@ -5343,7 +5343,7 @@ pointer, its history unchanged):
   when it lands, owes three things: its generator's emitted header rewritten, its
   `params.ts` and `WRITABLE` rows dropped, and a `maps:check` entry.
 
-### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d; it was sized **M** before the split, and the read below re-sizes it) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014, its review clean), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88), X5.4e **LANDED** (74d246c, its review bc6892c), X5.4f **LANDED** (cfe4d8e, c37ae6d, its review b3cb649), X5.4g **LANDED** (c461635, acbd9e4, its review fcca130), X5.4h **LANDED** (fc76336, c01c54b, its review 7e771ee, 204ee7b), X5.4i **LANDED** (6c89e8b, a4ca446, its review 01f8775)
+### X5.4 — Take the frame — **L, as nine sub-steps** (split 2026-11-10: the owner instructed that X5.4 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 9cf2a6d; it was sized **M** before the split, and the read below re-sizes it) — X5.4a **LANDED** (ef22e79, its review c160eb1), X5.4b **LANDED** (aa83014, its review clean), X5.4c **LANDED** (4db13df, its picture change 4ebd8b2, its review 47948ef), X5.4d **LANDED** (ffbf2ed, its review 2145e88), X5.4e **LANDED** (74d246c, its review bc6892c), X5.4f **LANDED** (cfe4d8e, c37ae6d, its review b3cb649), X5.4g **LANDED** (c461635, acbd9e4, its review fcca130), X5.4h **LANDED** (fc76336, c01c54b, its review 7e771ee, 204ee7b), X5.4i **LANDED** (6c89e8b, a4ca446, its review 01f8775) — **all nine LANDED**, the whole step verified (desktop, 2026-11-12), the phone owed
 
 - **Do:**
   - Our own `requestAnimationFrame` loop.
@@ -6396,6 +6396,33 @@ the same settings (row "X5.4g, the frame timer's passes": the two empty passes a
 if the phone reads implausibly low); Babylon's GPU engine not constructed (or the owner's
 reading of row "X5.4, Babylon's engine"); the seam deleted; `scene.render` never called;
 then the `exit-phase-5` tag ("The branch").
+
+**The whole step verified (desktop), the phone owed** (2026-11-12, HEAD e95cea9 against a BEFORE at
+8c0e184, X5.4a's parent, every probe HEAD's instruments on both trees; the note "X5.4, the whole step
+verified (desktop)" in `plans/done/babylon_exit_landed.md`). The bank by `exact.mjs`, 147 rows a run:
+131 byte-equal at default and `=high`, 130 and the pistol flake at `=low`, and in all three the 16 rows
+of X5.4c's `Picture change:` (4ebd8b2) — Greyfen, Harrowmead, Kurenai and Sarab — each equal in pixels,
+worst and mean to 4ebd8b2's record (at `=low` `sarab-shelf` reads 348 where it recorded 347: the
+BEFORE's own one-pixel shelf flake, 347 against X5.4a's BEFORE of the same commit). Every probe's
+end-to-end difference is one a sub-step named: `post.mjs` at both sizes equal under X5.4e–h's sections
+(the frame's command order the same item for item over 34 scenarios, 562 items; one queue write, 272
+bytes, fewer a frame); `gi.mjs` under X5.4d's four fields; `surfaces.mjs` under X5.4e's `first` mark;
+the draw log's `scene.render` 1 → 0 a frame (X5.4f), the engine's `beginFrame` 1 → 0 (X5.4g) and
+`clearQuad` gone from the boot (X5.4h); `readers.mjs` replay 547 of 547 and the origins identical,
+Babylon's id 3,010 → 0 and ours 0 → 3,010 (X5.4b, X5.4f); the camera log, `census` (168) and
+`particles.mjs` equal; `pipelines.mjs` Babylon's 2 pipelines and 6 modules gone (X5.4h) and the wait 23
+frames → 1 (X5.4c); `leaks.mjs` 10 live buffers fewer (X5.4h) and the device's bind groups at deploy
+52 fewer on Coldharbour — bisected to 4ebd8b2: the retired vantages made every pane block's, the
+fires' and four water bodies' bind groups under the card, now made at their first draw in play.
+`lost.mjs --twice --strict` offline and `--match` YES on every verdict, every verdict "no" at the
+parent. Babylon's only engine at runtime a `SceneEngine` (a `NullEngine`), `scene.render` called 0
+times, `render/babylonSeam.ts` absent. `F2` over deploy and a life on seven maps offline and two in a
+match, 113 of 113; `x54h/live.mjs` PASS (47 steps); the PWA offline and the menu's boot frames as the
+parent; typecheck, build (its gates), corecheck, `maps:check`, parity, `gate` and `shaders` clean.
+`?profile&gpu`: `gpu.frame` 0.0–1.3% LOWER on every group of both pairs, `render` 42–56% LOWER
+(X5.4e's and X5.4f's cheaper direction); `bench.mjs --max` within noise; the fight hashes
+`549487ba93bceefe` and `de5622634abca6e7` on every run. No device lost. **Owed**: the phone's
+`?profile&gpu` on the preview URL (row "X5.4, the phone"), then the `exit-phase-5` tag.
 
 ---
 
