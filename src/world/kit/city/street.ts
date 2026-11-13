@@ -5,7 +5,6 @@
  * `./index.ts` — a street light carries a lens always and a light only when
  * a layout marks it `lit`.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import {
   Build,
@@ -32,11 +31,10 @@ import {
  * silhouette from eye height and never from the side.
  */
 export function buildBarrier(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
 ): Structure {
-  const b = new Build(scene, mats, "barrier");
+  const b = new Build(mats, "barrier");
   const len = p.length ?? 6;
   const h = 0.9;
   const units = Math.max(1, Math.round(len / 3));
@@ -79,11 +77,10 @@ export function buildBarrier(
  * edge to avoid.
  */
 export function buildQuay(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
 ): Structure {
-  const b = new Build(scene, mats, "quay");
+  const b = new Build(mats, "quay");
   const len = p.length ?? 40;
   /** How far the deck reaches out over the water from the ground's own edge. */
   const deck = p.depth ?? 4;
@@ -174,11 +171,10 @@ export function buildQuay(
  * before and 783 after.
  */
 export function buildCar(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
 ): Structure {
-  const b = new Build(scene, mats, "car");
+  const b = new Build(mats, "car");
   const paint = p.tint ?? ENAMEL;
   const len = 4.4;
   const wide = 1.86;
@@ -386,11 +382,10 @@ export function buildCar(
  * what a cantilevered arm against the sky already is.
  */
 export function buildStreetLight(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
 ): Structure {
-  const b = new Build(scene, mats, "streetlight");
+  const b = new Build(mats, "streetlight");
   const h = p.height ?? 7.5;
   const reach = 2.2;
   b.cyl(h, 0.16, 0.3, 8, 0, h / 2, 0, ALLOY);

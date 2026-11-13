@@ -131,7 +131,6 @@
  * Fixed geometry apart from `litWindows`, so what varies between the shutters
  * and the growth is drawn from one fixed seed rather than a placement's.
  */
-import { Scene } from "@babylonjs/core";
 import { computeNormals, GeometryBuffer } from "../../../geometry/buffer";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import { mulberry32 } from "../../rng";
@@ -881,11 +880,10 @@ const FRONT_PILASTER = 3.2 / 2 + 0.45;
  * spinner would break three of them silently.
  */
 export function buildJungleManor(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
 ): Structure {
-  const b = new Build(scene, mats, "manor");
+  const b = new Build(mats, "manor");
   const lit = p.litWindows ?? false;
   const rnd = mulberry32(0x6d616e72);
 

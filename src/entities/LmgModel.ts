@@ -12,7 +12,7 @@
  * sight's base bridges to the front station at exactly the rail's height —
  * see `MOUNT`. The carry handle is FOLDED down the left flank for that reason.
  */
-import { Scene, Vector3 } from "@babylonjs/core";
+import { Vector3 } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { buildOptics, ironSightFloor, type OpticMount } from "./optics";
 import {
@@ -134,14 +134,13 @@ const MAG_HAND = new Vector3(-0.052, -0.05, -0.28);
  * `docs/weapons.md`'s procedural-models section.
  */
 export function buildLmg(
-  scene: Scene,
   mats: CelMaterialFactory,
   prefix: string,
   view: ViewTree,
   parent: Joint | null,
 ): WeaponParts {
   const root = view.joint(`${prefix}_lmg`, parent);
-  const b = new WeaponBuild(scene, mats, prefix, view, root);
+  const b = new WeaponBuild(mats, prefix, view, root);
   const f = BORE_Y;
 
   // --- receiver: a stamped steel box, riveted, the bore through its middle ---

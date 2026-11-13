@@ -6,7 +6,6 @@
  * set's rules in `./index.ts`. Invariants: fixed geometry, so nothing is
  * seeded. Never imports another builder.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import {
   Build,
@@ -37,11 +36,10 @@ import { TRANSLUCENCY } from "./shared";
  * which is right, because it is not cover.
  */
 export function buildFishRack(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
 ): Structure {
-  const b = new Build(scene, mats, "fishrack");
+  const b = new Build(mats, "fishrack");
   const len = p.length ?? 9;
   const h = 2.6;
   /** Half the splay of an A-frame's feet. */
@@ -114,11 +112,10 @@ export function buildFishRack(
  * round ought to stop in it.
  */
 export function buildSaltPan(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
 ): Structure {
-  const b = new Build(scene, mats, "saltpan");
+  const b = new Build(mats, "saltpan");
   const w = p.width ?? 22;
   const d = p.depth ?? 14;
   const kerb = 0.45;

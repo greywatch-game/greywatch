@@ -4,7 +4,6 @@
  * Part of the temple-town set: follows the contract in kit/core.ts and the
  * set's rules in `./index.ts`.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import { mulberry32 } from "../../rng";
 import {
@@ -111,12 +110,11 @@ const GIBOSHI: [number, number][] = [
  * preview) it is drawn over a nominal channel 1.2 m deep.
  */
 export function buildArchBridge(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
   ctx?: BuildCtx,
 ): Structure {
-  const b = new Build(scene, mats, "taikobashi");
+  const b = new Build(mats, "taikobashi");
   const len = p.length ?? 10;
   const w = p.width ?? 3.0;
   const rise = ARCH_CROWN + ARCH_DROP;

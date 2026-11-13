@@ -29,7 +29,7 @@
  * owes the support under it**, and the failure is a hole in the weapon rather
  * than anything a build would refuse.
  */
-import { Scene, Vector3 } from "@babylonjs/core";
+import { Vector3 } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { buildOptics, ironSightFloor, type OpticMount } from "./optics";
 import {
@@ -191,14 +191,13 @@ const SUPPORT_ELBOW = new Vector3(-0.3, -0.51 + BORE_Y, 0.14);
  * to move independently.
  */
 export function buildSniper(
-  scene: Scene,
   mats: CelMaterialFactory,
   prefix: string,
   view: ViewTree,
   parent: Joint | null,
 ): WeaponParts {
   const root = view.joint(`${prefix}_sniper`, parent);
-  const b = new WeaponBuild(scene, mats, prefix, view, root);
+  const b = new WeaponBuild(mats, prefix, view, root);
 
   // --- the action: AI's long rectangular receiver, wrapped around the BORE ---
   // Half its section is under the axis, where the other weapons have air, which

@@ -8,7 +8,7 @@
  * before it is moved — `weaponKit.ts` owns that contract and the primitives.
  * The optics are `optics.ts`'s, built against `MOUNT` rather than re-tuned.
  */
-import { Scene, Vector3 } from "@babylonjs/core";
+import { Vector3 } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { buildOptics, type OpticMount } from "./optics";
 import {
@@ -122,14 +122,13 @@ const MAG_Z = -0.268;
  * `docs/weapons.md`'s procedural-models section.
  */
 export function buildCarbine(
-  scene: Scene,
   mats: CelMaterialFactory,
   prefix: string,
   view: ViewTree,
   parent: Joint | null,
 ): WeaponParts {
   const root = view.joint(`${prefix}_carbine`, parent);
-  const b = new WeaponBuild(scene, mats, prefix, view, root);
+  const b = new WeaponBuild(mats, prefix, view, root);
 
   // --- the carry handle, with the rail on its top face ---
   // One profile: rear post up off the action, the bar forward, the front post

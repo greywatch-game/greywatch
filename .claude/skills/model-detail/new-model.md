@@ -22,12 +22,14 @@ server's bake — follows from what the builder declares.
   stair lane).
 - **Signature**:
   ```ts
-  export function buildThing(scene: Scene, mats: CelMaterialFactory, p: BuildParams = {}, ctx?: BuildCtx): Structure {
-    const b = new Build(scene, mats, "thing");
+  export function buildThing(mats: CelMaterialFactory, p: BuildParams = {}, ctx?: BuildCtx): Structure {
+    const b = new Build(mats, "thing");
     ...
     return b;
   }
   ```
+  No scene (`BABYLON_EXIT.md` X6.1d): the factory is all a builder is
+  handed, and the pictures a ground surface wears are cached under it.
   Drop `ctx` if it neither seeds nor reads the ground. Build at the ORIGIN,
   unrotated, ground at y = 0; the layout's `rotY` turns it. Every part through
   `Build` — never `MeshBuilder` directly.

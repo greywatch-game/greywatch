@@ -7,7 +7,6 @@
  * `./index.ts`. Invariants: not climbable; fixed by its plan, so nothing is
  * seeded. Never imports another builder.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import {
   Build,
@@ -92,11 +91,10 @@ import {
  * the ground rather than conformed to it — every placement stands on a pad.
  */
 export function buildLighthouse(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
 ): Structure {
-  const b = new Build(scene, mats, "lighthouse");
+  const b = new Build(mats, "lighthouse");
   const h = p.height ?? 26;
   const baseH = 2.6;
   /** Where the gallery's corbel course sits. The shaft is everything under. */

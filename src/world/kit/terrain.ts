@@ -7,7 +7,6 @@
  * must stay within CONFIG.nav.stepHeight of adjacent ground and ramps need
  * rotX on the COLLIDER, not just the visual.
  */
-import { Scene } from "@babylonjs/core";
 import { GeometryBuffer } from "../../geometry/buffer";
 import type { CelMaterialFactory } from "../../shaders/CelShader";
 import {
@@ -61,11 +60,10 @@ import { mulberry32 } from "../rng";
  * graveyard platform; the top face and the ramp are both walkable colliders.
  */
 export function buildTerrace(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
 ): Structure {
-  const b = new Build(scene, mats, "terrace");
+  const b = new Build(mats, "terrace");
   const w = p.width ?? 30;
   const d = p.depth ?? 26;
   const h = p.height ?? 2;
@@ -94,11 +92,10 @@ export function buildTerrace(
  * exit is a trap, and the nav grid needs somewhere to route bots through.
  */
 export function buildRamp(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
 ): Structure {
-  const b = new Build(scene, mats, "ramp");
+  const b = new Build(mats, "ramp");
   const w = p.width ?? 5;
   const len = p.length ?? 8;
   const h = p.height ?? 1.5;
@@ -156,7 +153,6 @@ export function buildRamp(
  * fast path is why a flat map costs exactly what it used to.
  */
 export function buildRoad(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
   ctx?: BuildCtx,
@@ -164,7 +160,7 @@ export function buildRoad(
   // Biased toward the eye, and it is the BUILDER that carries it so the slab
   // and the paint laid on it move together — see `ROAD_DEPTH_UNITS`, and the
   // note below on how far a centimetre of lift actually gets.
-  const b = new Build(scene, mats, "road", ROAD_DEPTH_UNITS);
+  const b = new Build(mats, "road", ROAD_DEPTH_UNITS);
   const surface = roadSurface(p.surface);
   const top = roadTop(surface);
   // Sunk the same 7 cm into the floor whatever it is riding at — see the note
@@ -797,12 +793,11 @@ function balustrade(
  * nothing can pass under.
  */
 export function buildBoardwalk(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
   ctx?: BuildCtx,
 ): Structure {
-  const b = new Build(scene, mats, "boardwalk");
+  const b = new Build(mats, "boardwalk");
   const len = p.length ?? 14;
   const w = p.width ?? 2.4;
   const rails = p.railSide ?? "both";
@@ -1053,12 +1048,11 @@ const STAIR_STRING_D = 0.5;
  * itself before it stops looking like a stair.
  */
 export function buildStairs(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
   ctx?: BuildCtx,
 ): Structure {
-  const b = new Build(scene, mats, "stairs");
+  const b = new Build(mats, "stairs");
   const w = p.width ?? 2.4;
   const rise = p.height ?? 2.5;
   const rails = p.railSide ?? "both";
@@ -1260,12 +1254,11 @@ export function buildStairs(
  * `BuildCtx` (a preview) it is drawn from a bank at +Z out over a bed 0.6 deep.
  */
 export function buildJetty(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
   ctx?: BuildCtx,
 ): Structure {
-  const b = new Build(scene, mats, "jetty");
+  const b = new Build(mats, "jetty");
   const len = p.length ?? 18;
   const w = 3;
 

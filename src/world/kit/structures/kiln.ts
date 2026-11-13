@@ -3,7 +3,6 @@
  * Part of the structures set: follows the contract in kit/core.ts, and the
  * cover heights and round-collider rule in `./index.ts`.
  */
-import type { Scene } from "@babylonjs/core";
 import type { Part } from "../../parts";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import { mulberry32 } from "../../rng";
@@ -74,12 +73,11 @@ import {
  * clipping brick on its way over the top.
  */
 export function buildKiln(
-  scene: Scene,
   mats: CelMaterialFactory,
   _p: BuildParams = {},
   ctx?: BuildCtx,
 ): Structure {
-  const b = new Build(scene, mats, "kiln");
+  const b = new Build(mats, "kiln");
   // --- the collider: unchanged ---------------------------------------------
   b.block({ w: 3.4, h: 2.6, d: 3.4, x: 0, y: 1.3, z: 0 });
 

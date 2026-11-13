@@ -56,7 +56,7 @@
  * ejection port have to hang off something that survives a loadout change, so
  * `ViewModel` owns those joints and moves them to whichever weapon is fitted.
  */
-import { Scene, Vector3 } from "@babylonjs/core";
+import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { createBox, createCylinder } from "../geometry/primitives";
 import type { CelMaterialFactory } from "../shaders/CelShader";
@@ -399,7 +399,6 @@ export interface WeaponParts {
  * joint, or null for a weapon built alone, as `kit:hash` builds one).
  */
 export type WeaponBuilder = (
-  scene: Scene,
   mats: CelMaterialFactory,
   prefix: string,
   view: ViewTree,
@@ -407,8 +406,8 @@ export type WeaponBuilder = (
 ) => WeaponParts;
 
 /**
- * The primitive helpers a weapon model is written in, bound to one scene,
- * material factory, name prefix and root.
+ * The primitive helpers a weapon model is written in, bound to one material
+ * factory, name prefix and root.
  *
  * `collect` gathers into the CURRENT colour-group map, which `merge` swaps out
  * — the weapon is merged before any optic is built, so a sight's parts can
@@ -438,7 +437,6 @@ export class WeaponBuild {
   private readonly paints = new Map<string, { name: string; glossy: boolean }>();
 
   constructor(
-    readonly scene: Scene,
     private readonly mats: CelMaterialFactory,
     private readonly prefix: string,
     /** The viewmodel's tree: every mesh made here is hung in it, and every live part is a joint of it. */

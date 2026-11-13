@@ -3,7 +3,6 @@
  * Part of the temple-town set: follows the contract in kit/core.ts and the
  * set's rules in `./index.ts`.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import { mulberry32 } from "../../rng";
 import {
@@ -58,12 +57,11 @@ import { GRANITE, GRANITE_DARK, SHOJI_GLOW, SUMI } from "./palette";
  * parts would be a merge of thousands.
  */
 export function buildToro(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
   ctx?: BuildCtx,
 ): Structure {
-  const b = new Build(scene, mats, "toro");
+  const b = new Build(mats, "toro");
   const s = p.height ? p.height / 2.3 : 1;
 
   // --- the collider, exactly as it was -------------------------------------------

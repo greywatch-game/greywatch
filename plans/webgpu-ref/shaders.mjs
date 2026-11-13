@@ -388,7 +388,7 @@ for (const id of MAPS) {
     // would go uncompiled for the life of the project and rot unnoticed — the
     // exact failure this script exists for. Minting it here is a page that is
     // about to be thrown away asking the factory a question.
-    // Its albedo is any ground's PICTURE (the cobbles', painted once a scene and
+    // Its albedo is any ground's PICTURE (the cobbles', painted once a factory and
     // shared): since `BABYLON_EXIT.md` X5.4d a ground's texture is our renderer's,
     // made off a `Picture` (`TextureMaker`), and no Babylon material holds one.
     const anyGround = [...g.mats.cache.values()].find((m) =>
@@ -396,7 +396,7 @@ for (const id of MAPS) {
     );
     if (anyGround) {
       const { getCobblestoneTexture } = await import("/src/world/textures.ts");
-      // The pictures' cache key through the adapter (X6.1a): the scene, or the factory.
+      // The pictures' cache key through the adapter (X6.1a): the factory since X6.1d.
       g.mats.getGroundTextured("smoke-flat", getCobblestoneTexture(F.pictureKey()), 1);
     }
 

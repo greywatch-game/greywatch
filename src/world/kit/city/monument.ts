@@ -4,7 +4,6 @@
  * the downtown set: follows the contract in kit/core.ts and the set's rules
  * in `./index.ts`.
  */
-import { Scene } from "@babylonjs/core";
 import { CONFIG } from "../../../config";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import { mulberry32 } from "../../rng";
@@ -95,11 +94,10 @@ const BRONZE = "#33413b";
  * vertices, placed once a map.
  */
 export function buildMonument(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
 ): Structure {
-  const b = new Build(scene, mats, "monument");
+  const b = new Build(mats, "monument");
   const w = p.width ?? 11;
   const step = 0.34;
   if (import.meta.env.DEV && step > CONFIG.nav.stepHeight) {

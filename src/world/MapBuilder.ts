@@ -1022,7 +1022,7 @@ export class MapBuilder {
       // need to read the ground under its footprint — one sample at the centre
       // is not enough for 130 m of road. The result is still origin-local.
       const builder = BUILDERS[p.kind];
-      const built: Structure = builder(this.scene, this.mats, p.params ?? {}, {
+      const built: Structure = builder(this.mats, p.params ?? {}, {
         terrain,
         x: p.x,
         y: origin.y,
@@ -1359,7 +1359,6 @@ export class MapBuilder {
     const ridge = run.layout.ridge;
     const floorMat = floorMaterial(
       this.mats,
-      this.scene,
       env.floorColor,
       env.floorSurface,
     );

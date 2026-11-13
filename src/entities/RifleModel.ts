@@ -8,7 +8,7 @@
  * along with the primitives this is written in. The optics are `optics.ts`'s,
  * shared with the SMG rather than duplicated here.
  */
-import { Scene, Vector3 } from "@babylonjs/core";
+import { Vector3 } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { buildOptics, ironSightFloor, type OpticMount } from "./optics";
 import {
@@ -132,14 +132,13 @@ const SUPPORT_ELBOW = new Vector3(-0.3, -0.5, 0.12);
  * the lens, and it costs four draws however many boxes go into it.
  */
 export function buildRifle(
-  scene: Scene,
   mats: CelMaterialFactory,
   prefix: string,
   view: ViewTree,
   parent: Joint | null,
 ): WeaponParts {
   const root = view.joint(`${prefix}_rifle`, parent);
-  const b = new WeaponBuild(scene, mats, prefix, view, root);
+  const b = new WeaponBuild(mats, prefix, view, root);
 
   // --- upper receiver: the SCAR's spine. One long, deep aluminium extrusion
   // from the stock hinge to the gas block, with the lower hung under its rear

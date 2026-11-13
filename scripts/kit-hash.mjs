@@ -13,9 +13,9 @@
  * `Scene`, no `StandardMaterial`, no `Mesh`, `TransformNode` or
  * `BoundingInfo` is made, and the package is not loaded by this script (the
  * game's modules it loads still import it until X6.1's later sub-steps take
- * it out of them). A builder's `Scene` is a plain stand-in (`StubScene`: all
- * a builder does with one is key its pictures' cache, `world/textures.ts`),
- * and a material is a plain named object (`StubMaterial`).
+ * it out of them). A builder takes no scene (X6.1d): its pictures are
+ * cached under the material factory it is handed (`world/textures.ts`), here
+ * the stub factory, and a material is a plain named object (`StubMaterial`).
  *
  * **What a record IS — what the drawing is, not the Babylon mesh it used to
  * become** (X6.1a restated it; a fingerprint taken before X6.1a is of the
@@ -36,7 +36,7 @@
  * the same spelling and moving a builder onto `src/math/` (X6.1e) cannot
  * change a fingerprint by spelling alone; a number JSON cannot spell
  * (`Infinity`, `NaN`, `-0`) is spelled as a string; a material is
- * `material:<name>`, the scene `scene`, a picture `Picture:<label>`.
+ * `material:<name>`, a picture `Picture:<label>`.
  *
  * **What the old record took from Babylon's defaults, field by field**: the
  * mesh's quaternion zeroing its Euler angles, the attributes cut to the
@@ -283,17 +283,12 @@ class StubMaterial {
   }
 }
 
-/** The scene stand-in: what a builder keys its pictures' cache on, and nothing else (the header). */
-class StubScene {
-  name = "scene";
-}
-
 /** A `Picture` (`render/TextureMaker.ts`), by shape. */
 const isPicture = (v) => v.canvas && typeof v.label === "string" && v.sampling;
 
 /**
  * The plain-data replacer every record is spelled through (the header): a
- * material, the scene, a picture or a segment NAMED (a graph of its own, or a
+ * material, a picture or a segment NAMED (a graph of its own, or a
  * drawing hashed as a record of its own), and a part NAMED where it is one of
  * `recorded` (a record of its own) and walked anywhere else; a joint of `tree`
  * named for what it stands for; a math value spelled by kind and value; a
@@ -306,7 +301,6 @@ function plainOf(mats = null, tree = null, recorded = null) {
     if (typeof v === "number") return num(v);
     if (!v || typeof v !== "object") return v;
     if (v instanceof StubMaterial) return `material:${v.name}`;
-    if (v instanceof StubScene) return "scene";
     if (isPicture(v)) return `Picture:${v.label}`;
     if (isSegment(v)) return `segment:${v.name}`;
     if (recorded?.has(v)) return `part:${v.name}`;
@@ -516,8 +510,11 @@ async function hashJobs(jobs) {
     const plain = plainOf(mats);
     const terrain = { flat: false, surfaceAt: swell, heightAt: swell };
     for (const [key, p] of jobs) {
-      // A fresh scene and a fresh factory a build, as a NullEngine's Scene was.
-      const scene = new StubScene();
+      // A fresh factory a build (its materials cleared). The pictures are
+      // keyed on the factory OBJECT (`world/textures.ts`, X6.1d), so a worker
+      // paints each once where a fresh stand-in scene a build painted it per
+      // build; a picture is spelled by its label (`plainOf`), so a hash cannot
+      // tell.
       cache.clear();
       try {
         if (p.scatter) {
@@ -535,7 +532,7 @@ async function hashJobs(jobs) {
           ? undefined
           : { terrain, x: p.x, z: p.z, y: floor + (p.y ?? 0), floor, rotY: p.rotY ?? 0 };
         // What the merge is handed: the structure's parts, then its panes'.
-        const s = p.bare ? BUILDERS[p.kind](scene, mats) : BUILDERS[p.kind](scene, mats, p.params ?? {}, ctx);
+        const s = p.bare ? BUILDERS[p.kind](mats) : BUILDERS[p.kind](mats, p.params ?? {}, ctx);
         const draw = createHash("sha256");
         for (const part of [...s.meshes, ...s.paneMeshes]) {
           draw.update(partRecord(part, plain, ["part", s.freeform.has(part)]));
@@ -814,7 +811,6 @@ async function hashModelJobs(jobs) {
       cache.clear();
       TV.setViewerTeam(0);
       Math.random = mulberry32(0x6d0de15);
-      const scene = new StubScene();
       // Every surface's record, in the order it was made; then every joint's.
       const surfaces = [];
       const joints = [];
@@ -848,11 +844,11 @@ async function hashModelJobs(jobs) {
           // Built alone: a tree with no camera, the weapon's root at its top
           // level, keyed on a render id of its own at 0 (`core/renderId.ts`).
           tree = new VT.ViewTree(new RID.RenderId(), null);
-          const parts = weaponBuilders[id](scene, mats, `view_${id}`, tree, null);
+          const parts = weaponBuilders[id](mats, `view_${id}`, tree, null);
           if (p.finish) FIN.applyFinish(mats, parts.finish, p.finish);
           data = parts;
         } else if (p.kind === "viewmodel") {
-          const vm = new VM.ViewModel(scene, mats, cameraStandIn(), new RID.RenderId());
+          const vm = new VM.ViewModel(mats, cameraStandIn(), new RID.RenderId());
           tree = vm.tree;
           if (p.weapon) vm.setWeapon(p.weapon);
           if (p.sight) vm.setSight(p.sight);
@@ -874,7 +870,7 @@ async function hashModelJobs(jobs) {
         } else if (p.kind === "player") {
           // As `Game` builds the pair: the picture, then the player that
           // puts it away (`applyVisibility`) — which is part of the record.
-          const view = new PV.PlayerView(scene, mats, cameraStandIn(), new RID.RenderId());
+          const view = new PV.PlayerView(mats, cameraStandIn(), new RID.RenderId());
           new PL.Player(view);
           tree = view.model.tree;
           // The casing pool (X4.4b): one a case, after the tree's surfaces, hidden.

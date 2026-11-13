@@ -4,7 +4,6 @@
  * Part of the temple-town set: follows the contract in kit/core.ts and the
  * set's rules in `./index.ts`.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import { mulberry32 } from "../../rng";
 import {
@@ -98,12 +97,11 @@ const TERA: readonly (readonly [number, number, number, number])[] = [
  * by 3.4 m, and the lantern by 2.4.
  */
 export function buildTempleGate(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
   ctx?: BuildCtx,
 ): Structure {
-  const b = new Build(scene, mats, "sanmon");
+  const b = new Build(mats, "sanmon");
   const opening = 4.6;
   const wing = 2.4;
   const w = opening + wing * 2;

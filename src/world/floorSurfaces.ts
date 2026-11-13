@@ -22,7 +22,6 @@
  * which also keeps it out of that registry — see `CelMaterialFactory.applySpec`,
  * which only records the materials it actually makes glossy.
  */
-import type { Scene } from "@babylonjs/core";
 import type { MaterialKey } from "../shaders/MaterialKey";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import {
@@ -94,7 +93,6 @@ const DEFAULT_FLOOR_SURFACE: FloorSurfaceId = "flat";
  */
 export function floorMaterial(
   mats: CelMaterialFactory,
-  scene: Scene,
   floorColor: string,
   surface: FloorSurfaceId | undefined,
 ): MaterialKey {
@@ -103,10 +101,10 @@ export function floorMaterial(
   const spec = SURFACES[id];
   return mats.getGroundTextured(
     `${id}-${floorColor.slice(1)}`,
-    getFloorTexture(scene, id, floorColor),
+    getFloorTexture(mats, id, floorColor),
     1 / spec.metersPerTile,
     {
-      bump: getFloorBumpTexture(scene, id),
+      bump: getFloorBumpTexture(mats, id),
       bumpScale: spec.bumpScale,
     },
   );

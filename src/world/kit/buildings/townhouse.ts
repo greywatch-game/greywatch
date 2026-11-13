@@ -4,7 +4,6 @@
  * Part of the buildings set: follows the contract in kit/core.ts; the set's
  * files are listed in `./index.ts`.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import {
   Build,
@@ -75,12 +74,11 @@ import { LAMPLIT, SHOPLIT, offFace, casement, doorway, framing } from "./village
  * doorway is a collider's and is centred.
  */
 export function buildTownhouse(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
   ctx?: BuildCtx,
 ): Structure {
-  const b = new Build(scene, mats, "townhouse");
+  const b = new Build(mats, "townhouse");
   const w = p.width ?? 6.5;
   const d = p.depth ?? 6.5;
   const h = p.height ?? 6.8;

@@ -124,7 +124,7 @@
  *   allowed to be drawn — and it goes up and down with the pose, which is
  *   what keeps it out of every other state in the game.
  */
-import { Matrix as BabylonMatrix, Scene, Vector3 as BabylonVector3 } from "@babylonjs/core";
+import { Matrix as BabylonMatrix, Vector3 as BabylonVector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { clamp, hermite, impulse } from "../core/math";
 import type { CelMaterialFactory } from "../shaders/CelShader";
@@ -797,7 +797,7 @@ export class ViewModel {
    */
   private readonly spinQ = new Quaternion();
 
-  constructor(scene: Scene, mats: CelMaterialFactory, camera: ViewCamera, renderId: RenderId) {
+  constructor(mats: CelMaterialFactory, camera: ViewCamera, renderId: RenderId) {
     const v = CONFIG.viewmodel;
     this.mats = mats;
     this.hipPos = new Vector3(v.hipPos.x, v.hipPos.y, v.hipPos.z);
@@ -822,7 +822,7 @@ export class ViewModel {
     // stall the frame it happened on.
     for (const id of CARRIED_IDS) {
       const root = tree.joint(`viewmodel_${id}`, this.weapon);
-      const parts = WEAPON_BUILDERS[id](scene, mats, `view_${id}`, tree, root);
+      const parts = WEAPON_BUILDERS[id](mats, `view_${id}`, tree, root);
       const supportArm = tree.joint(`viewmodel_${id}_supportArm`, root);
       // Both hands hang off a joint of their own, so either gesture can take
       // one off the weapon. Both sit at identity, so a weapon that never moves

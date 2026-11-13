@@ -4,7 +4,6 @@
  * Part of the structures set: follows the contract in kit/core.ts, and the
  * cover heights and round-collider rule in `./index.ts`.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import {
   Build,
@@ -96,11 +95,10 @@ const TRESTLE_BENT = 4.0;
  * rule every other pitched slab in the kit follows.
  */
 export function buildTrestleBridge(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
 ): Structure {
-  const b = new Build(scene, mats, "trestle");
+  const b = new Build(mats, "trestle");
   /** The WATER span. The two approaches are extra, and considerable. */
   const len = p.length ?? 26;
   const w = p.width ?? 3.2;

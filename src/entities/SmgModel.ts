@@ -9,7 +9,7 @@
  * The optics are `optics.ts`'s, and land correctly on this weapon's lower rail
  * without a number being re-tuned because they are built against `MOUNT`.
  */
-import { Scene, Vector3 } from "@babylonjs/core";
+import { Vector3 } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { buildOptics, type OpticMount } from "./optics";
 import {
@@ -94,14 +94,13 @@ const SUPPORT_ELBOW = new Vector3(-0.3, -0.48 + BORE_Y, 0.0);
  * `docs/weapons.md`'s procedural-models section.
  */
 export function buildSmg(
-  scene: Scene,
   mats: CelMaterialFactory,
   prefix: string,
   view: ViewTree,
   parent: Joint | null,
 ): WeaponParts {
   const root = view.joint(`${prefix}_smg`, parent);
-  const b = new WeaponBuild(scene, mats, prefix, view, root);
+  const b = new WeaponBuild(mats, prefix, view, root);
 
   // --- upper receiver: an AR flat-top, and the rail over it and the
   // handguard in one unbroken run ---

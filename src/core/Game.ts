@@ -2572,7 +2572,7 @@ export class Game {
     // world, `ViewModel.tree`), so the camera has to exist first. Its render
     // cache is keyed on OUR render id, moved by our frame where the scene's
     // render moved Babylon's (`core/renderId.ts`, `SceneFrame.render`).
-    this.playerView = new PlayerView(this.scene, this.mats, this.cameraSys.camera, this.renderId);
+    this.playerView = new PlayerView(this.mats, this.cameraSys.camera, this.renderId);
     this.player = new Player(this.playerView);
     this.player.shotRand = this.random.stream(STREAM.player);
     this.player.setBodyHidden(true); // hidden until a round starts

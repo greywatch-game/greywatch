@@ -489,8 +489,9 @@ same run against 8bf7789's baseline is `identical`.
 **And `kit:hash` runs with no Babylon since X6.1a, its record restated off what
 the drawing IS** (`scripts/kit-hash.mjs`' header): no `NullEngine`, `Scene`,
 `StandardMaterial`, `Mesh`, `TransformNode` or `BoundingInfo` is made — a
-builder's scene is a plain stand-in (all it keys is its pictures' cache) and a
-material a plain named object — and a part is hashed as its attributes and
+builder takes no scene since X6.1d (its pictures are cached under the stub
+factory it is handed, a scene's stand-in until then) and a material is a plain
+named object — and a part is hashed as its attributes and
 indices WHOLE (each array's type, its numbers as exact doubles), its
 transform as far as it decides the matrix (the quaternion where the part or
 joint carries one, else its Euler angles — `worldMatrixOf`'s choice, so a dead

@@ -3,7 +3,6 @@
  * Part of the temple-town set: follows the contract in kit/core.ts and the
  * set's rules in `./index.ts`.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import { mulberry32 } from "../../rng";
 import {
@@ -114,12 +113,11 @@ import { curvedRoof, roofHeight, type RoofSpec } from "./roof";
  * collider (the altar's railing and figures, the upper walls on the hall's).
  */
 export function buildTempleHall(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
   ctx?: BuildCtx,
 ): Structure {
-  const b = new Build(scene, mats, "hondo");
+  const b = new Build(mats, "hondo");
   const w = p.width ?? 20;
   const d = p.depth ?? 15;
   const plinthH = 0.55;

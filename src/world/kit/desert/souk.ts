@@ -4,7 +4,6 @@
  * follows the contract in kit/core.ts and the set's rules in `./index.ts`.
  * Invariants: colliders in the set's order. Never imports another builder.
  */
-import { Scene } from "@babylonjs/core";
 import { CONFIG } from "../../../config";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import {
@@ -44,11 +43,10 @@ import {
  * market read as a market.
  */
 export function buildSouk(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
 ): Structure {
-  const b = new Build(scene, mats, "souk");
+  const b = new Build(mats, "souk");
   const len = p.length ?? 30;
   const w = p.width ?? 11;
   const ys = levels(1, STOREY);

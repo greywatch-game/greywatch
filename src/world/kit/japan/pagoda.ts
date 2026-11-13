@@ -4,7 +4,6 @@
  * Part of the temple-town set: follows the contract in kit/core.ts and the
  * set's rules in `./index.ts`.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import { mulberry32 } from "../../rng";
 import {
@@ -85,12 +84,11 @@ import { curvedRoof, roofHeight, type RoofSpec } from "./roof";
  * puts `pagoda` in `CONFORMS_TO_TERRAIN`.
  */
 export function buildPagoda(
-  scene: Scene,
   mats: CelMaterialFactory,
   _p: BuildParams = {},
   ctx?: BuildCtx,
 ): Structure {
-  const b = new Build(scene, mats, "pagoda");
+  const b = new Build(mats, "pagoda");
   const plinthH = 0.55;
   const base = 6.2;
 

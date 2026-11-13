@@ -8,7 +8,6 @@
  * drawing; what varies is seeded off where she stands (`streetSeed`), never
  * `Math.random()`. Never imports another builder.
  */
-import { Scene } from "@babylonjs/core";
 import { GeometryBuffer } from "../../../geometry/buffer";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import { mulberry32 } from "../../rng";
@@ -390,12 +389,11 @@ const PORTS = ["LH", "CH", "PD", "FR", "SH"] as const;
  * to the ground under each.
  */
 export function buildCareenedHull(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
   ctx?: BuildCtx,
 ): Structure {
-  const b = new Build(scene, mats, "hull");
+  const b = new Build(mats, "hull");
   const len = p.length ?? 11;
 
   // --- The colliders, exactly as the boxes-and-posts hull declared them:

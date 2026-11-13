@@ -6,7 +6,6 @@
  * `./index.ts`. Invariants: three colliders, two on a brick one; everything
  * else is drawing. Never calls `Math.random()`.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import { mulberry32 } from "../../rng";
 import {
@@ -196,11 +195,10 @@ function towerRoll(...ns: number[]): number {
  * on and none of it a collider — is `drawTower`'s.
  */
 export function buildTower(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
 ): Structure {
-  const b = new Build(scene, mats, "tower");
+  const b = new Build(mats, "tower");
   const w = p.width ?? 18;
   const d = p.depth ?? 16;
   const h = p.height ?? 34;

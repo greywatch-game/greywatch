@@ -1104,7 +1104,8 @@ Three of those rows are load-bearing beyond their own map.
   Coldharbour's `build:total` 993 → 1049 ms on the first build and 869/843 →
   855/821 on the two after it; Harrowmead 861 → 918, then 700/659 → 693/651. So
   ~56 ms per surface a map actually uses, paid on the first build of a page and
-  never again — the field is memoised per pattern and the textures per scene,
+  never again — the field is memoised per pattern and the textures per material
+  factory (one a session, as the scene they were keyed on until X6.1d was),
   exactly as the floor's are — plus ~2 MB of GPU per surface for the albedo and
   the height map. A map that lays no asphalt never builds the asphalt field.
 

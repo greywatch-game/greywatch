@@ -6,7 +6,6 @@
  * in kit/core.ts and the set's rules in `./index.ts`. Invariants: colliders
  * in the set's order. Never imports another builder.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import {
   Build,
@@ -68,11 +67,10 @@ const STOREY_RC = 3.2;
  * `assertClimbable` says so.
  */
 export function buildShellBlock(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
 ): Structure {
-  const b = new Build(scene, mats, "shell");
+  const b = new Build(mats, "shell");
   const w = p.width ?? 20;
   const d = p.depth ?? 15;
   const floors = Math.max(2, Math.min(4, p.floors ?? 3));

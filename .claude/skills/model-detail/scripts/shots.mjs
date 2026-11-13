@@ -71,10 +71,9 @@ try {
       const kit = await import("/src/world/BuildingKit.ts");
       const out = [];
       for (const p of variants) {
-        // A builder's scene is only its pictures' cache key: the frame
-        // adapter's (`scripts/lib/frameAdapter.mjs`, BABYLON_EXIT.md X6.1a) —
-        // the scene, or the factory with none.
-        const s = kit.BUILDERS[kind](window.__refFrame().pictureKey(), g.mats, p);
+        // A builder takes the factory and no scene (BABYLON_EXIT.md X6.1d):
+        // its pictures are cached under the factory it is handed.
+        const s = kit.BUILDERS[kind](g.mats, p);
         let verts = 0;
         const colours = new Set();
         // Parts (`world/parts.ts`), not meshes: nothing was put in the scene.

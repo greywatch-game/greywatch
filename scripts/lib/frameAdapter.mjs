@@ -191,9 +191,10 @@
  *   (`world/environment.ts` writes it), or with no scene the frame host's
  *   (`SceneFrame.host.clearColor`, what our passes clear to).
  * - `pictureKey()`: what the kit's pictures are cached under
- *   (`world/textures.ts`' `WeakMap`, which a builder's `Scene` parameter
- *   reaches): the scene, or with no scene the factory — X6.1d caches them per
- *   factory (or renderer) and owes the probes that pass one its own.
+ *   (`world/textures.ts`' `WeakMap`): the material FACTORY on both arms since
+ *   `BABYLON_EXIT.md` X6.1d, which keyed the cache on it where it was keyed on
+ *   the scene a builder was handed (the scene, or the factory with no scene,
+ *   before it). A builder takes no scene since then: it is handed `g.mats`.
  * - `babylon()`: `{ scene, engine }` while there is a scene, else `null` — for
  *   the probes that MEASURE Babylon itself (its `_draw`s, its rendering
  *   groups, its effects, its pipeline contexts): what they hook is RETIRED
@@ -370,7 +371,7 @@ export function frameAdapter() {
       transpilers: () => (e ? { _glslang: e._glslang, _tintWASM: e._tintWASM } : null),
       compiles: () => (g.babylonCompiles ? g.babylonCompiles.count : null),
       babylon: () => (scene ? { scene, engine: e } : null),
-      pictureKey: () => scene ?? g.mats,
+      pictureKey: () => g.mats,
       clearColor: () => {
         if (scene) {
           const c = scene.clearColor;

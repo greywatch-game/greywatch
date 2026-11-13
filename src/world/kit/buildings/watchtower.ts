@@ -4,7 +4,6 @@
  * Part of the buildings set: follows the contract in kit/core.ts; the set's
  * files are listed in `./index.ts`.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import { mulberry32 } from "../../rng";
 import {
@@ -97,12 +96,11 @@ import {
  * is what puts `watchtower` in `CONFORMS_TO_TERRAIN`.
  */
 export function buildWatchtower(
-  scene: Scene,
   mats: CelMaterialFactory,
   _p: BuildParams = {},
   ctx?: BuildCtx,
 ): Structure {
-  const b = new Build(scene, mats, "watchtower");
+  const b = new Build(mats, "watchtower");
   const legs = 1.9;
   const deck = 5.0;
   const deckT = 0.3;

@@ -4,7 +4,6 @@
  * Part of the buildings set: follows the contract in kit/core.ts; the set's
  * files are listed in `./index.ts`.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import {
   Build,
@@ -62,8 +61,8 @@ import {
  * `frameT / 2` proud of the boards, the battens behind it stand less, and the
  * two layers read in that order wherever the ink is still drawing a line.
  */
-export function buildBarn(scene: Scene, mats: CelMaterialFactory): Structure {
-  const b = new Build(scene, mats, "barn");
+export function buildBarn(mats: CelMaterialFactory): Structure {
+  const b = new Build(mats, "barn");
   const w = 16;
   const d = 22;
   const h = 8;

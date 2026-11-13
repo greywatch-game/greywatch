@@ -203,8 +203,8 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
   kit-hash.mjs                # `npm run kit:hash`: fingerprints every kit
                               #   builder over every placement, and every
                               #   scatter prop over fixed seeds and foliage
-                              #   rungs, with NO Babylon (X6.1a: a stand-in
-                              #   scene and plain named materials) — the
+                              #   rungs, with NO Babylon (X6.1a: plain named
+                              #   materials; no scene, X6.1d) — the
                               #   DRAWING (the PARTS the merge is handed, a prop
                               #   flattened, each hashed as what it IS: its
                               #   arrays whole as exact doubles, its transform,
@@ -1894,7 +1894,8 @@ src/
                         #   Babylon API. Colliders are NOT parts, nor meshes
     BuildingKit.ts      # Facade: shared types + BUILDERS registry
     kit/core.ts         #   Build accumulator (box/wall/guard/flight/...),
-                        #   palette, builder contract, and the forest's
+                        #   palette, builder contract (handed the factory
+                        #   and no scene, X6.1d), and the forest's
                         #   drawing words (limb/rope/slab/fern/curtain) the
                         #   jungle ruin, the temple and the manor grow from;
                         #   `StoneBatch` and `Mesher`, one surface per colour
@@ -2119,7 +2120,8 @@ src/
                         #   surfaces — noise fields posterized onto a ramp of
                         #   the map's floorColor, albedo and height in one pass;
                         #   handed out as Pictures, the factory making each our
-                        #   texture (X5.4d) — this file never touches a GPU
+                        #   texture (X5.4d) and keying their cache (X6.1d,
+                        #   where the scene did) — this file never touches a GPU
     floorSurfaces.ts    # What the valley floor is MADE of: the surface roster
                         #   and the ONE place a floor material is built
     environment.ts      # EnvironmentSpec + applyEnvironment, applyClearColor

@@ -3,7 +3,6 @@
  * three seeded plantings. Part of the downtown set: follows the contract in
  * kit/core.ts and the set's rules in `./index.ts`.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import { mulberry32 } from "../../rng";
 import {
@@ -83,12 +82,11 @@ const PLANTER_LEAVES = 900;
  * It seeds off where it stands, so it is in `CONFORMS_TO_TERRAIN`.
  */
 export function buildPlanter(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
   ctx?: BuildCtx,
 ): Structure {
-  const b = new Build(scene, mats, "planter");
+  const b = new Build(mats, "planter");
   const w = p.width ?? 2.6;
   const d = p.depth ?? 1.4;
   const h = 0.95;

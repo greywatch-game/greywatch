@@ -4,7 +4,6 @@
  * Part of the structures set: follows the contract in kit/core.ts, and the
  * cover heights and round-collider rule in `./index.ts`.
  */
-import type { Scene } from "@babylonjs/core";
 import { Matrix, Vector3 } from "../../../math";
 import type { Part } from "../../parts";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
@@ -58,12 +57,11 @@ import { reframe, about, cartWheel, cartSack, cartFork, cartCask } from "./cartP
  * has all four tyres on the road.
  */
 export function buildCart(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
   ctx?: BuildCtx,
 ): Structure {
-  const b = new Build(scene, mats, "cart");
+  const b = new Build(mats, "cart");
   const ruined = p.ruined ?? false;
   const seed = streetSeed(3.4, 2.0, 1.7, ctx);
   /**

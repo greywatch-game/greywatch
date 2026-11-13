@@ -24,7 +24,7 @@
  * numbers. Units are the models' throughout: ~1.4 per metre, which puts this
  * weapon at 0.33 long against the rifle's 1.27.
  */
-import { Scene, Vector3 } from "@babylonjs/core";
+import { Vector3 } from "@babylonjs/core";
 import { createSphere } from "../geometry/primitives";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { Part } from "../world/parts";
@@ -120,14 +120,13 @@ const PISTOL_EYE_RELIEF = 0.33;
  * `docs/weapons.md`'s procedural-models section.
  */
 export function buildPistol(
-  scene: Scene,
   mats: CelMaterialFactory,
   prefix: string,
   view: ViewTree,
   parent: Joint | null,
 ): WeaponParts {
   const root = view.joint(`${prefix}_pistol`, parent);
-  const b = new WeaponBuild(scene, mats, prefix, view, root);
+  const b = new WeaponBuild(mats, prefix, view, root);
 
   // --- the barrel: the one part of the top half that does NOT recoil ---
   // Built on the frame, under the slide, and long enough to fill it: a slide

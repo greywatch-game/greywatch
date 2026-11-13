@@ -4,7 +4,6 @@
  * Part of the structures set: follows the contract in kit/core.ts, and the
  * cover heights and round-collider rule in `./index.ts`.
  */
-import type { Scene } from "@babylonjs/core";
 import { Matrix } from "../../../math";
 import type { Part } from "../../parts";
 import { CONFIG } from "../../../config";
@@ -68,12 +67,11 @@ const TRANSLUCENCY = CONFIG.graphics.translucency;
  * the ground under them rather than to the one sample under its middle.
  */
 export function buildStall(
-  scene: Scene,
   mats: CelMaterialFactory,
   _p: BuildParams = {},
   ctx?: BuildCtx,
 ): Structure {
-  const b = new Build(scene, mats, "stall");
+  const b = new Build(mats, "stall");
   // ---- the collider: the counter, as it always was.
   b.block({ w: 3.4, h: 1.1, d: 1.5, x: 0, y: 0.55, z: 0 });
 

@@ -7,7 +7,6 @@
  * kit/core.ts and the set's rules in `./index.ts`. Invariants: fixed
  * geometry, so nothing is seeded. Never imports another builder.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import {
   Build,
@@ -71,8 +70,8 @@ const GRADE = 0.34;
  * plan, and a `width` that moved any of the three would move the other two
  * wrong and say nothing.
  */
-export function buildSmelter(scene: Scene, mats: CelMaterialFactory): Structure {
-  const b = new Build(scene, mats, "smelter");
+export function buildSmelter(mats: CelMaterialFactory): Structure {
+  const b = new Build(mats, "smelter");
 
   // --- the plan ---------------------------------------------------------
   /** Wall thickness. Masonry carrying a roof this wide has to READ thick. */

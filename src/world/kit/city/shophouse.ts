@@ -4,7 +4,6 @@
  * `REVEAL`. Part of the downtown set: follows the contract in kit/core.ts and
  * the set's rules in `./index.ts`.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import { mulberry32 } from "../../rng";
 import {
@@ -121,11 +120,10 @@ import {
  * rendered five-storey block by accident.
  */
 export function buildShophouse(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
 ): Structure {
-  const b = new Build(scene, mats, "shophouse");
+  const b = new Build(mats, "shophouse");
   const w = p.width ?? 13;
   const d = p.depth ?? 16;
   const floors = Math.max(2, p.floors ?? 3);

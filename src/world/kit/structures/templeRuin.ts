@@ -4,7 +4,6 @@
  * Part of the structures set: follows the contract in kit/core.ts, and the
  * cover heights and round-collider rule in `./index.ts`.
  */
-import { Scene } from "@babylonjs/core";
 import { CONFIG } from "../../../config";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import { mulberry32 } from "../../rng";
@@ -202,12 +201,11 @@ const CORE_BACK = 0.05;
  * `CONFORMS_TO_TERRAIN`.
  */
 export function buildTempleRuin(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
   ctx?: BuildCtx,
 ): Structure {
-  const b = new Build(scene, mats, "temple");
+  const b = new Build(mats, "temple");
   const w = p.width ?? 26;
   const d = p.depth ?? 22;
   // Keep the top tier from inverting on a small footprint: three tiers need six

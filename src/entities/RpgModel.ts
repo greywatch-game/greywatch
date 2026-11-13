@@ -29,7 +29,7 @@
  * reticle is still the point of impact: the derivation never cared which way
  * the sight sat, only where its centre is.
  */
-import { Scene, Vector3 } from "@babylonjs/core";
+import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { createBox, createCylinder } from "../geometry/primitives";
 import { type CelMaterialFactory } from "../shaders/CelShader";
@@ -161,14 +161,13 @@ const SUPPORT_ELBOW = new Vector3(-0.28, -0.516, 0.497);
  * fat head; all three have to be inside the frame at once for that.
  */
 export function buildRpg(
-  scene: Scene,
   mats: CelMaterialFactory,
   prefix: string,
   view: ViewTree,
   parent: Joint | null,
 ): WeaponParts {
   const root = view.joint(`${prefix}_rpg`, parent);
-  const b = new WeaponBuild(scene, mats, prefix, view, root);
+  const b = new WeaponBuild(mats, prefix, view, root);
 
   // --- the tube: one run from the shoulder to the muzzle, in three diameters
   // so it reads as pressed steel rather than as a length of pipe ---

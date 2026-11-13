@@ -37,7 +37,7 @@
  * but the model's own answers (`carriedSight`, `reloadAction`, the reload's
  * head pose), which are the drawing's to give.
  */
-import { Matrix, Scene } from "@babylonjs/core";
+import { Matrix } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { createBox, createPlane, DOUBLESIDE } from "../geometry/primitives";
 import { Vector3 } from "../math";
@@ -106,10 +106,10 @@ export class PlayerView implements PlayerPicture {
    */
   private hidden = true;
 
-  constructor(scene: Scene, mats: CelMaterialFactory, camera: ViewCamera, renderId: RenderId) {
+  constructor(mats: CelMaterialFactory, camera: ViewCamera, renderId: RenderId) {
     // The weapon hangs off the camera: in first person the rifle you see is a
     // viewmodel, posed in camera space.
-    this.model = new ViewModel(scene, mats, camera, renderId);
+    this.model = new ViewModel(mats, camera, renderId);
 
     // --- gunfeel dressing: muzzle flash star + brass pool (player only) ---
     // The flash is three crossed emissive petals at the muzzle; per shot it

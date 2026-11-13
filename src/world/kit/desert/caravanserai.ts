@@ -6,7 +6,6 @@
  * set's rules in `./index.ts`. Invariants: colliders in the set's order.
  * Never imports another builder.
  */
-import { Scene } from "@babylonjs/core";
 import { CONFIG } from "../../../config";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import {
@@ -121,11 +120,10 @@ function arcade(
  * nothing reaches.
  */
 export function buildCaravanserai(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
 ): Structure {
-  const b = new Build(scene, mats, "serai");
+  const b = new Build(mats, "serai");
   const w = p.width ?? 44;
   const d = p.depth ?? 38;
   const skin = p.tint ?? MUDBRICK;

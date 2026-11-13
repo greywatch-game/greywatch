@@ -4,7 +4,6 @@
  * Part of the temple-town set: follows the contract in kit/core.ts and the
  * set's rules in `./index.ts`.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import { mulberry32 } from "../../rng";
 import {
@@ -101,12 +100,11 @@ import {
  * it). The repeated work is laid through `StoneBatch`, one surface per colour.
  */
 export function buildMachiya(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
   ctx?: BuildCtx,
 ): Structure {
-  const b = new Build(scene, mats, "machiya");
+  const b = new Build(mats, "machiya");
   const w = p.width ?? 7;
   const d = p.depth ?? 11;
   const plaster = p.tint ?? SHIKKUI;

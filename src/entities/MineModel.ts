@@ -26,7 +26,7 @@
  * closer to the eye and does nothing else, which is exactly what looking hard
  * at a thing in your hands does.
  */
-import { Scene, Vector3 } from "@babylonjs/core";
+import { Vector3 } from "@babylonjs/core";
 import { createCylinder, createSphere } from "../geometry/primitives";
 import { type CelMaterialFactory } from "../shaders/CelShader";
 import { Part } from "../world/parts";
@@ -64,14 +64,13 @@ const SUPPORT_ELBOW = new Vector3(-0.34, -0.5, -0.34);
  * ~40 parts, merged to one mesh per colour like every other model here.
  */
 export function buildMine(
-  scene: Scene,
   mats: CelMaterialFactory,
   prefix: string,
   view: ViewTree,
   parent: Joint | null,
 ): WeaponParts {
   const root = view.joint(`${prefix}_mine`, parent);
-  const b = new WeaponBuild(scene, mats, prefix, view, root);
+  const b = new WeaponBuild(mats, prefix, view, root);
 
   // The plate itself, lying flat: a squat cylinder standing on its own axis,
   // so it is built with `pin` on the Y axis rather than with `tube`.

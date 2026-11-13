@@ -4,7 +4,6 @@
  * Part of the structures set: follows the contract in kit/core.ts, and the
  * cover heights and round-collider rule in `./index.ts`.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import { mulberry32 } from "../../rng";
 import {
@@ -65,12 +64,11 @@ import {
  * nominal creek a metre and a quarter deep.
  */
 export function buildBridge(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
   ctx?: BuildCtx,
 ): Structure {
-  const b = new Build(scene, mats, "bridge");
+  const b = new Build(mats, "bridge");
   const len = p.length ?? 12;
   const w = p.width ?? 3.2;
   const deckT = 0.28;

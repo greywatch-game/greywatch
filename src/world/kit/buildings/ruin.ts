@@ -4,7 +4,6 @@
  * Part of the buildings set: follows the contract in kit/core.ts; the set's
  * files are listed in `./index.ts`.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import { mulberry32 } from "../../rng";
 import {
@@ -97,12 +96,11 @@ import {
  * to the ground under them, which is what puts `ruin` in `CONFORMS_TO_TERRAIN`.
  */
 export function buildRuin(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
   ctx?: BuildCtx,
 ): Structure {
-  const b = new Build(scene, mats, "ruin");
+  const b = new Build(mats, "ruin");
   const w = p.width ?? 10;
   const d = p.depth ?? 8;
   const t = 0.5;

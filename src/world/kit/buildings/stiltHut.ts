@@ -4,7 +4,6 @@
  * Part of the buildings set: follows the contract in kit/core.ts; the set's
  * files are listed in `./index.ts`.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import {
   Build,
@@ -191,12 +190,11 @@ const MATTING = "#7f7862";
  * slot and does not start now.
  */
 export function buildStiltHut(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
   ctx?: BuildCtx,
 ): Structure {
-  const b = new Build(scene, mats, "stilthut");
+  const b = new Build(mats, "stilthut");
   const w = p.width ?? 6.4;
   const d = p.depth ?? 5.2;
   const h = p.height ?? 2.8;

@@ -148,7 +148,8 @@ UNPROVEN, X6.1a's review); the particle fields and their switch
 (`fields`, `particles`) and the frame's constant delta (`constantDelta`, which
 THROWS with no scene until X6.1h); the frame's clear colour (`clearColor`);
 every material on the page (`materials`, the factory's with no scene); the
-pictures' cache key a builder's scene is (`pictureKey`); and — `null`, RETIRED,
+pictures' cache key (`pictureKey`, the factory on both arms since X6.1d keyed
+the cache on it, where it was the scene a builder was handed); and — `null`, RETIRED,
 with no scene — what the scene holds (`counts`), the engine's two GLSL fields
 (`transpilers`), and the scene and its engine themselves (`babylon()`), for
 the probes that MEASURE Babylon (`census`, `drawlog`, `surfaces`, `particles`,

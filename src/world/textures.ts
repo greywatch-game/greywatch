@@ -1,7 +1,7 @@
 /**
  * textures.ts — Runtime-generated canvas textures: the three carriageways a
  * road may be paved with and the valley floor's own surfaces, painted per texel
- * out of deterministic noise and cached per scene. Zero asset files.
+ * out of deterministic noise and cached per material factory. Zero asset files.
  * Owns: the tiling noise primitives, one field recipe per surface, and the two
  * painters that turn a field into an albedo and into a height map — each
  * handed out as a `Picture` (a painted canvas and how it is to be sampled), which
@@ -52,9 +52,9 @@
  * Textures are authored in display space and sampled raw, matching the
  * no-image-processing pipeline (same convention as the player skin).
  */
-import type { Scene } from "@babylonjs/core";
 import { clamp01, smoothstep } from "../core/math";
 import { anisotropic, newCanvas, type Picture } from "../render/TextureMaker";
+import type { CelMaterialFactory } from "../shaders/CelShader";
 import { mulberry32 } from "./rng";
 import type { RoadSurface } from "./roads";
 
@@ -1397,11 +1397,15 @@ const PALETTES: Record<FloorPatternId, (base: string) => Rgb[]> = {
  * ------------------------------------------------------------------------ */
 
 /**
- * Generated pictures are per-scene and painted once, on first use; the
- * texture each becomes is our renderer's, made once per picture
- * (`TextureMaker.picture`, `BABYLON_EXIT.md` X5.4d).
+ * Generated pictures are per material FACTORY and painted once, on first use;
+ * the texture each becomes is our renderer's, made once per picture
+ * (`TextureMaker.picture`, `BABYLON_EXIT.md` X5.4d). The factory is the key
+ * because it is what makes a texture of a picture (`getGroundTextured`) and
+ * what every caller already holds — a builder's `mats` — and it is one a
+ * session, as the scene this was keyed on until `BABYLON_EXIT.md` X6.1d was.
+ * Nothing is read off it: it is a key and nothing else.
  */
-const cache = new WeakMap<Scene, Map<string, Picture>>();
+const cache = new WeakMap<CelMaterialFactory, Map<string, Picture>>();
 
 /**
  * Every ground's sampling: wrapped both ways, mipped, and at anisotropy 8 —
@@ -1412,14 +1416,14 @@ const cache = new WeakMap<Scene, Map<string, Picture>>();
 const GROUND_SAMPLING = anisotropic("repeat", "repeat", 8);
 
 function getGenerated(
-  scene: Scene,
+  mats: CelMaterialFactory,
   key: string,
   draw: (ctx: Ctx) => void,
 ): Picture {
-  let byKey = cache.get(scene);
+  let byKey = cache.get(mats);
   if (!byKey) {
     byKey = new Map();
-    cache.set(scene, byKey);
+    cache.set(mats, byKey);
   }
   let picture = byKey.get(key);
   if (!picture) {
@@ -1433,8 +1437,8 @@ function getGenerated(
 }
 
 /** The village street cobblestone: irregular setts in dark mortar. */
-export function getCobblestoneTexture(scene: Scene): Picture {
-  return getGenerated(scene, "cobblestone", (ctx) =>
+export function getCobblestoneTexture(mats: CelMaterialFactory): Picture {
+  return getGenerated(mats, "cobblestone", (ctx) =>
     paintAlbedo(ctx, fieldOf("cobble", cobbleField).tone, COBBLE_PALETTE),
   );
 }
@@ -1443,8 +1447,8 @@ export function getCobblestoneTexture(scene: Scene): Picture {
  * Matching height map for the cobblestone albedo — the same field, so every
  * crown sits on the sett it belongs to and the mortar stays a groove.
  */
-export function getCobblestoneBumpTexture(scene: Scene): Picture {
-  return getGenerated(scene, "cobblestone-bump", (ctx) =>
+export function getCobblestoneBumpTexture(mats: CelMaterialFactory): Picture {
+  return getGenerated(mats, "cobblestone-bump", (ctx) =>
     paintHeight(ctx, fieldOf("cobble", cobbleField).height),
   );
 }
@@ -1458,11 +1462,11 @@ export function getCobblestoneBumpTexture(scene: Scene): Picture {
  * own streets the cache is the one place that would go quietly wrong.
  */
 export function getRoadTexture(
-  scene: Scene,
+  mats: CelMaterialFactory,
   id: RoadPatternId,
   baseHex: string,
 ): Picture {
-  return getGenerated(scene, `road-${id}-${baseHex}`, (ctx) =>
+  return getGenerated(mats, `road-${id}-${baseHex}`, (ctx) =>
     paintAlbedo(
       ctx,
       fieldOf(`road-${id}`, ROAD_FIELDS[id]).tone,
@@ -1477,10 +1481,10 @@ export function getRoadTexture(
  * bump map.
  */
 export function getRoadBumpTexture(
-  scene: Scene,
+  mats: CelMaterialFactory,
   id: RoadPatternId,
 ): Picture {
-  return getGenerated(scene, `road-${id}-bump`, (ctx) =>
+  return getGenerated(mats, `road-${id}-bump`, (ctx) =>
     paintHeight(ctx, fieldOf(`road-${id}`, ROAD_FIELDS[id]).height),
   );
 }
@@ -1493,11 +1497,11 @@ export function getRoadBumpTexture(
  * `CelMaterialFactory`'s spec registry documents from the other side.
  */
 export function getFloorTexture(
-  scene: Scene,
+  mats: CelMaterialFactory,
   id: FloorPatternId,
   baseHex: string,
 ): Picture {
-  return getGenerated(scene, `floor-${id}-${baseHex}`, (ctx) =>
+  return getGenerated(mats, `floor-${id}-${baseHex}`, (ctx) =>
     paintAlbedo(ctx, fieldOf(id, FIELDS[id]).tone, PALETTES[id](baseHex)),
   );
 }
@@ -1508,10 +1512,10 @@ export function getFloorTexture(
  * bump map.
  */
 export function getFloorBumpTexture(
-  scene: Scene,
+  mats: CelMaterialFactory,
   id: FloorPatternId,
 ): Picture {
-  return getGenerated(scene, `floor-${id}-bump`, (ctx) =>
+  return getGenerated(mats, `floor-${id}-bump`, (ctx) =>
     paintHeight(ctx, fieldOf(id, FIELDS[id]).height),
   );
 }

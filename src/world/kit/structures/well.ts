@@ -4,7 +4,6 @@
  * Part of the structures set: follows the contract in kit/core.ts, and the
  * cover heights and round-collider rule in `./index.ts`.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import { mulberry32 } from "../../rng";
 import {
@@ -70,12 +69,11 @@ import {
  * the ground under each — which is what puts it in `CONFORMS_TO_TERRAIN`.
  */
 export function buildWell(
-  scene: Scene,
   mats: CelMaterialFactory,
   _p: BuildParams = {},
   ctx?: BuildCtx,
 ): Structure {
-  const b = new Build(scene, mats, "well");
+  const b = new Build(mats, "well");
   // ---- the collider: the drum, as a dodecagon — the union of six bars, each
   // reaching a pair of opposite flats and exactly as wide as one side, so its
   // corners are the polygon's own. Squares would make a star.

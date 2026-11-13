@@ -4,7 +4,6 @@
  * Part of the buildings set: follows the contract in kit/core.ts; the set's
  * files are listed in `./index.ts`.
  */
-import { Scene } from "@babylonjs/core";
 import { CONFIG } from "../../../config";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import { mulberry32 } from "../../rng";
@@ -178,12 +177,11 @@ const RUIN_FLOOR = 0.45;
  * under them, which is what puts `jungleRuin` in `CONFORMS_TO_TERRAIN`.
  */
 export function buildJungleRuin(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
   ctx?: BuildCtx,
 ): Structure {
-  const b = new Build(scene, mats, "jungleruin");
+  const b = new Build(mats, "jungleruin");
   const w = p.width ?? 12;
   const d = p.depth ?? 9;
   const h = p.height ?? 3.6;

@@ -283,7 +283,7 @@ try {
   for (const kind of Object.keys(BUILDERS).sort()) {
     let s;
     try {
-      s = BUILDERS[kind](scene, mats);
+      s = BUILDERS[kind](mats);
     } catch (e) {
       buildErrors.push(`${kind}: ${e?.message ?? e}`);
       continue;

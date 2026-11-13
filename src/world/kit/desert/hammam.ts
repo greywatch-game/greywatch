@@ -5,7 +5,6 @@
  * Invariants: colliders in the set's order — the deck, its parapet, then the
  * domes standing on it. Never imports another builder.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import {
   ALLOY,
@@ -67,11 +66,10 @@ import {
  * is anything able to stand between them.
  */
 export function buildHammam(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
 ): Structure {
-  const b = new Build(scene, mats, "hammam");
+  const b = new Build(mats, "hammam");
   const w = p.width ?? 18;
   const d = p.depth ?? 14;
   const skin = p.tint ?? WHITEWASH;

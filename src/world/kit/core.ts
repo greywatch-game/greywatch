@@ -42,10 +42,14 @@
  *   inside a 0.4 m wall, the boarding closes over it, and the elevation is
  *   drawn as one flat colour with a door in it. `buildBarn` owns the worked
  *   version, and its header says what that cost.
+ * - A builder is `(mats, params?, ctx?)` and is handed NO scene
+ *   (`BABYLON_EXIT.md` X6.1d): the material factory is the one object it
+ *   builds against, and the pictures a carriageway wears (`groundMaterial`)
+ *   are cached under it (`world/textures.ts`), one cache a session as the
+ *   scene's was.
  * - No Hollowmere special-casing; register new builders in
  *   BuildingKit.ts's BUILDERS.
  */
-import type { Scene } from "@babylonjs/core";
 import type { MaterialKey } from "../../shaders/MaterialKey";
 import { CONFIG } from "../../config";
 import type {
@@ -878,7 +882,6 @@ export class Build implements Structure {
   freeform = new Set<Part>();
 
   constructor(
-    private scene: Scene,
     private mats: CelMaterialFactory,
     private tag: string,
     /**
@@ -1026,11 +1029,11 @@ export class Build implements Structure {
     if (paving === "cobble") {
       return this.mats.getGroundTextured(
         "cobble",
-        getCobblestoneTexture(this.scene),
+        getCobblestoneTexture(this.mats),
         COBBLE_TEX_SCALE,
         {
           spec: CONFIG.graphics.spec.cobble,
-          bump: getCobblestoneBumpTexture(this.scene),
+          bump: getCobblestoneBumpTexture(this.mats),
           bumpScale: CONFIG.graphics.cobbleBumpScale,
           depthUnits: this.depthUnits,
         },
@@ -1042,10 +1045,10 @@ export class Build implements Structure {
     const { metersPerTile, bumpScale } = ROAD_PATTERNS[paving];
     return this.mats.getGroundTextured(
       `road-${paving}`,
-      getRoadTexture(this.scene, paving, base),
+      getRoadTexture(this.mats, paving, base),
       1 / metersPerTile,
       {
-        bump: getRoadBumpTexture(this.scene, paving),
+        bump: getRoadBumpTexture(this.mats, paving),
         bumpScale,
         depthUnits: this.depthUnits,
       },

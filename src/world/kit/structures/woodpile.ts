@@ -3,7 +3,6 @@
  * Part of the structures set: follows the contract in kit/core.ts, and the
  * cover heights and round-collider rule in `./index.ts`.
  */
-import { Scene } from "@babylonjs/core";
 import { GeometryBuffer } from "../../../geometry/buffer";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import { mulberry32 } from "../../rng";
@@ -63,12 +62,11 @@ import {
  * which puts `woodpile` in `CONFORMS_TO_TERRAIN`.
  */
 export function buildWoodpile(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
   ctx?: BuildCtx,
 ): Structure {
-  const b = new Build(scene, mats, "woodpile");
+  const b = new Build(mats, "woodpile");
   const len = p.length ?? 5;
   // ---- the collider: the box it has always been.
   b.block({ w: len, h: 1.9, d: 1.3, x: 0, y: 0.95, z: 0 });

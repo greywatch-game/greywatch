@@ -4,7 +4,6 @@
  * Part of the temple-town set: follows the contract in kit/core.ts and the
  * set's rules in `./index.ts`.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import { mulberry32 } from "../../rng";
 import {
@@ -63,12 +62,11 @@ import {
  * a fall shows a deeper course at its low end rather than a gap.
  */
 export function buildGardenWall(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
   ctx?: BuildCtx,
 ): Structure {
-  const b = new Build(scene, mats, "tsuijibei");
+  const b = new Build(mats, "tsuijibei");
   const len = p.length ?? 12;
   const h = p.height ?? 2.4;
   const plaster = p.tint ?? TSUCHI;

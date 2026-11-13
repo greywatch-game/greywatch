@@ -8,7 +8,7 @@
  * before it is moved — `weaponKit.ts` owns that contract and the primitives.
  * The optics are `optics.ts`'s, built against `MOUNT` rather than re-tuned.
  */
-import { Scene, Vector3 } from "@babylonjs/core";
+import { Vector3 } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { buildOptics, ironSightFloor, type OpticMount } from "./optics";
 import {
@@ -122,14 +122,13 @@ const SUPPORT_ELBOW = new Vector3(-0.3, -0.5 + BORE_Y, 0.1);
  * `docs/weapons.md`'s procedural-models section.
  */
 export function buildDmr(
-  scene: Scene,
   mats: CelMaterialFactory,
   prefix: string,
   view: ViewTree,
   parent: Joint | null,
 ): WeaponParts {
   const root = view.joint(`${prefix}_dmr`, parent);
-  const b = new WeaponBuild(scene, mats, prefix, view, root);
+  const b = new WeaponBuild(mats, prefix, view, root);
 
   // --- upper receiver: the HK417 upper, one size up from an AR's ---
   b.slab("upper", BODY, [
