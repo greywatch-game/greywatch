@@ -13135,7 +13135,7 @@ DPR 2.8125, an 832x384 window) on Chrome 157 where the last were 156.
 
 ## Phase 6 — The cut
 
-### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0)
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21)
 
 The plan's `BABYLON_EXIT.md` holds X6.1's brief, "What Babylon still is in the tree", its ONE RULE,
 the step's own four rules, "Every sub-step owes" and the ten sub-steps.
@@ -13397,3 +13397,69 @@ it writes (their header comment alone), `src/world/fingerprint.ts`' comments and
   clean.
 - **Not run**: as X6.1b — the bank, the probes, `kit:hash`, `merge:hash` and the live rounds (no
   builder, frame or merge touched).
+
+**X6.1c LANDED** (7b35c21; 2026-11-13; no change to the picture). Measured headless on the Windows box
+against a BEFORE at 9f657153 in the worktree `greywatch-2-before-x53a` (moved there, detached; its
+`node_modules` valid, no dependency having moved), every GPU run alone on the GPU. No device lost.
+
+- **The key** (`src/shaders/MaterialKey.ts`, Babylon-free): `name`, `program` (`cel`, `emissive`,
+  `emissiveWorld`, `flame`, `blast`), and the fields a reader still asks — `emissiveColor` (null on
+  anything that emits nothing), `alpha`, `backFaceCulling`, `zOffset`, `zOffsetUnits` — plus `blended`,
+  which `BlockHandover.blends` asks (it read `transparencyMode`, never set, and `needAlphaBlending`,
+  true on a see-through pane alone), each the value the Babylon material held (Babylon's defaults where
+  the factory set none), all set at construction. `serial` is a counter over keys alone; `Game`'s order
+  of the weapon's opaque segments sorts by it where it sorted by Babylon's `uniqueId` (both count in
+  creation order, so any two materials compare as they did). `isCelMaterial` is the vertex bake's
+  question (`takesShading`: `instanceof ShaderMaterial` less the fire and the palette). The factory
+  mints one for every variant and takes no scene; `EmissiveWorldMaterial`, `FlameMaterial` and
+  `BlastPaint` extend it (the fire's values set off the same Babylon vector types, so every number
+  rounds as its uniform held it). A mesh `worldMeshes` makes (only of a refused surface, in a world that
+  fails) is dressed with no material: nothing reads one.
+- **Deleted**: `CelShader.ts`' `celVertexShader` and `celFragmentShader` and every list a
+  `ShaderMaterial` was constructed with (`UNIFORMS`, `ATTRIBUTES`, `PALETTE_ATTRIBUTES`, `SAMPLERS`, the
+  `SHADOW_`, `GI_` and `PROBE_` name lists, `babylonDefines`); `wgsl/includes.ts` (the registrations and
+  the `celInstances` pair); `EmissiveFog.ts`; `core/babylonCompiles.ts` and `Game.babylonCompiles`;
+  `remember`'s freeze (the door stays); every push into a Babylon material (`applyEnvironment`,
+  `applyCamera`, `applyWind`, `applyPointLights`, `applyShadow`, `applyPalette` and the walks in
+  `setEnvironment`, `setPalette`, `setPointLights`, `updateWind`, `updateCamera` and `setGroundRelief`;
+  `ShadowBindings`' lent cache, `eachShadowReader` and `applyShadow` — every setter stores what the
+  frame pulls); `FlameMaterial.setEye`/`setFog`; `wgsl/flame.ts`' `#else` arm (the bloom off
+  `uniforms.glowColor`) and, since it then guarded nothing, `FLAME_INSTANCED` from `flameProgram`'s
+  define lists. `MaterialPluginBase`, `UniformBuffer`, `StandardMaterial`, `ShaderMaterial`,
+  `ShaderStore`, `ShaderLanguage` and `Material` are named nowhere.
+- **Moved, not lost**: what the deleted Babylon declarations said each name means (the alpha channel's
+  two meanings, the wind, the wear, the shadows, the clouds, the lightning, the volume, the attributes,
+  the varyings, the derivative argument) is beside our declarations in `render/frame.ts`,
+  `render/celMaterial.ts`, `render/celVertex.ts` and `render/celFragment.ts`; `applyEnvironment`'s wear
+  argument is in `fillFrame`.
+- **The gate**: `check-babylon-free.mjs`' `DIRECTORIES` gains `src/shaders/wgsl` (its one Babylon
+  importer, `includes.ts`, gone); 247 modules walked, clean.
+- **Instruments**: the frame adapter's `materials()` is the factory's on both arms (no material is the
+  scene's) and `compiles()` RETIRED; `shaders.mjs` reads a material's variant off its recipe
+  (`celRecipe(m).defines`, the set `_options.defines` held) and retires Babylon's half and its stand-in
+  mesh; the draw log names its counter retired.
+- **Every bank row** by `exact.mjs`, `--check --keep` at each tree: default, `volumetrics=low` and
+  `volumetrics=high` each **147 of 147 byte-equal** (the pistol flake did not trip).
+- **Our programs' text**: a Vite-SSR dump of 185 assembled modules (every cel variant at the frame, glow
+  and shadow targets, plain, scatter and placed; the fire, the blast, the palette, the fades, the view's,
+  the bodies', the depth and lamp twins, the sky, clouds, water, grass and hulls) sha-identical to the
+  parent's; `shaders` the same lines as the parent's on seven maps.
+- **The probes against the parent's**: `kit:hash` (3,722 builds) and `--models` identical; `merge:hash`
+  identical on all eight maps; the draw log equal (Coldharbour, with the viewer; the counter's record
+  `null`); `post.mjs` equal at both sizes (31,837 values each); `census` equal (168); `surfaces.mjs`
+  equal (5,719 values); `particles.mjs` equal (45,120 numbers over 480 frames); `gi.mjs` equal (914,604
+  and 254,724 values); `readers.mjs` replay equal and the camera log equal; `pipelines.mjs hollowmere`
+  and `coldharbour --round` nothing made in play (the rounds' shot counts ride the wall clock, as at the
+  parent); `leaks.mjs` 0 in every class; `gate` all seven clean; parity (eight maps), `geometry-check`,
+  `math-check`, `bounds-check`, `sweep-check`, typecheck, build and corecheck clean.
+- **The census** (`scripts/babylon-census.mjs --against` the parent's): 143 files to 133 (115 with a
+  value import), 37 names shrank, 0 grew; the bundle 102 files, 16,818.8 kB raw and 6,018.3 kB gzipped
+  (from 16,846.3 and 6,027.4), the JS 12,187.4 and 3,087.7 kB.
+- **Not run**: the live rounds, the post settings toggled live, `?profile&gpu` and `F2` — the bank, the
+  probes and the dump read the game's own frames and modules. **Flagged**: `plans/webgpu-ref/depth.mjs`
+  pokes Babylon material API (`setColor3`, `clone`, `zOffsetUnits` on a pane's mesh); its `glass` mode
+  has had no pane mesh since X4.6e and its `zoffset` mode now finds no `clone` on a key, so it is left
+  as it stood, unrun.
+
+Scripts and logs in the session's scratchpad, `x61c/` (`before.sh`, `after.sh`, `probes.sh`,
+`progtext.mjs`, the BEFORE and AFTER logs, kept frames, fingerprints and the census JSON).

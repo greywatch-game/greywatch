@@ -6455,7 +6455,7 @@ installed app. **Owed**: the `exit-phase-5` tag.
 
 ## Phase 6 — The cut
 
-### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0)
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21)
 
 - **Do:**
   - Delete `babylonSeam.ts`, `src/math/babylon.ts` and every adapter.
@@ -6863,6 +6863,26 @@ Then the cut, then the sweep.
     - the headers of `CelShader.ts`, `EmissiveWorld.ts`, `FlameShader.ts`,
       `BlastShader.ts`, `ShadowBindings.ts`, `wgsl/includes.ts` and `wgsl/flame.ts`;
     - the Contracts table's frozen-material row, and `FILES.md`.
+
+  **X6.1c LANDED** (7b35c21; 2026-11-13; no change to the picture; the full note is in
+  `plans/done/babylon_exit_landed.md`). A material is a `MaterialKey` of ours (`shaders/MaterialKey.ts`:
+  `name`, `program`, `emissiveColor`, `alpha`, `backFaceCulling`, `zOffset`, `zOffsetUnits`, `blended`,
+  and a creation `serial` over keys alone that the weapon's opaque sort reads where it read `uniqueId`),
+  minted by the factory for every variant, `EmissiveWorldMaterial`, `FlameMaterial` and `BlastPaint`
+  among them as subclasses; `instanceof ShaderMaterial` is `isCelMaterial`, and `BlockHandover`'s blend
+  test the key's `blended`. Deleted: `CelShader.ts`' two `ShaderStore` stages and every Babylon list,
+  `wgsl/includes.ts`, `EmissiveFog.ts`, `core/babylonCompiles.ts` (the draw log's arm retired),
+  `remember`'s freeze, every push into a Babylon material (and `ShadowBindings`' Babylon half), and
+  `wgsl/flame.ts`' Babylon arm with `FLAME_INSTANCED`, which then guarded nothing. What the deleted
+  declarations said each name means moved beside our declarations (`render/frame.ts`, `celMaterial.ts`,
+  `celVertex.ts`, `celFragment.ts`); `check-babylon-free`'s `DIRECTORIES` gains `src/shaders/wgsl`.
+  **Measured** against a BEFORE at 9f657153: the bank by `exact.mjs` 147 of 147 byte-equal in all three
+  runs; 185 assembled modules of ours sha-identical; `shaders` the same lines; `kit:hash` and `--models`
+  identical; `merge:hash` identical on eight maps; the draw log, `post.mjs` (both sizes), `census`,
+  `surfaces.mjs`, `particles.mjs`, `gi.mjs`, `readers.mjs` replay and the camera log equal;
+  `pipelines.mjs` nothing built in play; `leaks.mjs` 0; `gate` clean; parity, the four copy checks,
+  typecheck, build and corecheck clean. **The census**: 143 files to 133, 37 names shrank, 0 grew; the
+  bundle 16,818.8 kB raw, 6,018.3 kB gzipped (from 16,846.3 and 6,027.4).
 
 - **X6.1d — the kit and the models take no scene** (no change to the game) — **S–M**,
   mechanical over about 65 files.
