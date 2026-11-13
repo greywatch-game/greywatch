@@ -13135,7 +13135,7 @@ DPR 2.8125, an 832x384 window) on Chrome 157 where the last were 156.
 
 ## Phase 6 — The cut
 
-### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c)
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d)
 
 The plan's `BABYLON_EXIT.md` holds X6.1's brief, "What Babylon still is in the tree", its ONE RULE,
 the step's own four rules, "Every sub-step owes" and the ten sub-steps.
@@ -13336,3 +13336,29 @@ committed in four commits: the adapter (f8f6525: findings 1, 2, 3 and 5 and the 
 
 Scripts and logs in the session's scratchpad, `x61a-fix/` (`verify.sh`, `bystep.cjs`,
 `noscene-door.mjs`, the camera logs, the fingerprints, the views and shots).
+
+**X6.1b LANDED** (47eca5d; 2026-11-13; no change to the game: `scripts/bake-collision.mjs` and the
+eight bakes it writes, their header comment alone). The Rewrites' bake item, as booked by X5.3e's
+review: the three passages of `emit`'s template that still said a collider is a mesh reworded —
+`rayGroups` is one group per placement (its posts and rails), kept grouped because `RayWorld` indexes
+it group by group on both sides; `boxGroups` is the boxes the client groups by locality (a scatter
+region's blocking props), whose ties go in the groups' own order, `RayWorld`'s rank on both sides;
+"Anything named here is not also given a mesh of its own" deleted. Then `npm run collision` over all
+eight maps (the proving ground's included) in the same commit. The script's header: "`MapBuilder`
+builds meshes" dropped (the canvas through `floorMaterial` is what keeps a build off the server), and
+a paragraph stating that the emitted prose is part of the bake — a change to the template re-bakes
+every map in a commit whose diff is that text alone, X6.1b the precedent; its comment that pointed at
+X6.1's Rewrites says X6.1b did it.
+
+- **Measured** on the Windows box against the parent (6fee01ac): each bake's diff is 9 lines out and 9
+  in, every one a ` * ` comment line inside the header, no `sourceHash` and no data line (0 other
+  lines in the committed diff); each file below its header comment byte-identical to the parent's
+  (CRs stripped, sha256, all eight); the bake's printed box, strut and group counts as the files hold.
+  `check-collision` (every map current), `npm run parity` (all eight maps, the server matching on all
+  17 fields, every scene ready after 1 frame), `maps:check`, typecheck, corecheck and build (its gates,
+  `check-proving`) clean.
+- **The census** at 47eca5d as at X6.1a: 143 files import the package (120 with a value import),
+  `Scene` 77 + 16, `ssrLoadModule` 2, page-side loads 2; the bundle 102 files, 16,846.3 kB raw and
+  6,027.4 kB gzipped — unchanged, the emitted prose being a comment the build drops.
+- **Not run**: the bank and the probes (nothing a frame reads moved), `kit:hash` and `merge:hash` (no
+  builder, model, material or merge touched), the live rounds.
