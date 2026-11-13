@@ -19,10 +19,13 @@
  *
  * **What a record IS — what the drawing is, not the Babylon mesh it used to
  * become** (X6.1a restated it; a fingerprint taken before X6.1a is of the
- * other format and compares with nothing here). A part's record is its name,
- * its material's name, its metadata, its transform as the part holds it
- * (position, Euler rotation, scaling and quaternion, every one as set), and
- * then every attribute it carries (`positions`, `normals`, `uvs`, `uvs2`,
+ * other format and compares with nothing here, and so is one taken before
+ * X6.1a's review, which recorded the Euler angles beside a quaternion). A
+ * part's record is its name, its material's name, its metadata, its transform
+ * as far as it decides the part's matrix (position, scaling, and the
+ * quaternion where the part carries one, else its Euler angles —
+ * `worldMatrixOf`'s choice, so a dead Euler write under a quaternion is no
+ * change; X6.1a's review), and then every attribute it carries (`positions`, `normals`, `uvs`, `uvs2`,
  * `colors`) and its indices, each WHOLE, with its array's TYPE (a `number[]`
  * holds doubles and a `Float32Array` does not) and its numbers as exact
  * doubles. A structure's record adds whether the part is `freeform`; its
@@ -145,7 +148,8 @@
  * every role) is a part's record with the joint it hangs from, its own
  * switch, its `isVisible`, its role and a glass's look, and its local
  * bounds, in the order the tree hung them; each other joint is a joint's
- * record (name, parent, own switch, channels, quaternion, pivot), in the
+ * record (name, parent, own switch, channels — the quaternion OR the Euler
+ * angles, whichever decides the joint — and pivot), in the
  * order the joints were made. A joint in the builder's data, or as a parent,
  * is named for what it stands for (`camera:<name>` the root — the tree's
  * camera a plain stand-in, `segment:<name>` a surface's joint,
@@ -321,14 +325,20 @@ const isSegment = (v) => v?.constructor?.name === "ViewSegment";
 /** A `rigJoints.ts` joint, by shape. */
 const isJoint = (v) => v.constructor?.name === "Joint" && "world" in v && "scaling" in v;
 
-/** A part's transform as it holds it: position, Euler rotation, scaling, quaternion (the header). */
+/**
+ * A part's transform as far as it decides the part's matrix (the header):
+ * its position, its rotation — the QUATERNION where it carries one, else its
+ * Euler angles, which is the choice `worldMatrixOf` (`world/parts.ts`) makes,
+ * so Euler angles written under a quaternion are dead and not recorded — and
+ * its scaling. Which of the two it is is spelled, so a part that gains or
+ * loses a quaternion is a change.
+ */
 function transformOf(p) {
   const q = p.rotationQuaternion;
   return [
     [p.position.x, p.position.y, p.position.z],
-    [p.rotation.x, p.rotation.y, p.rotation.z],
+    q ? ["quaternion", q.x, q.y, q.z, q.w] : ["euler", p.rotation.x, p.rotation.y, p.rotation.z],
     [p.scaling.x, p.scaling.y, p.scaling.z],
-    q ? [q.x, q.y, q.z, q.w] : null,
   ];
 }
 
@@ -582,7 +592,12 @@ function labelOf(tree, j) {
   return segment ? `segment:${segment.name}` : `joint:${j.name}`;
 }
 
-/** A joint's record (the header): its name, parent, own switch, channels, quaternion and pivot. */
+/**
+ * A joint's record (the header): its name, parent, own switch, channels and
+ * pivot — its rotation the quaternion where it carries one, else its Euler
+ * angles, as `transformOf` and for the same reason (`rigJoints.ts`' compose
+ * reads the quaternion OVER the Euler angles while one is set).
+ */
 function jointRecord(tree, j, plain) {
   const head = [
     "joint",
@@ -590,9 +605,10 @@ function jointRecord(tree, j, plain) {
     j.parent ? labelOf(tree, j.parent) : null,
     j.enabled,
     [j.position.x, j.position.y, j.position.z],
-    [j.rotation.x, j.rotation.y, j.rotation.z],
+    j.quaternion
+      ? ["quaternion", j.quaternion.x, j.quaternion.y, j.quaternion.z, j.quaternion.w]
+      : ["euler", j.rotation.x, j.rotation.y, j.rotation.z],
     [j.scaling.x, j.scaling.y, j.scaling.z],
-    j.quaternion ? [j.quaternion.x, j.quaternion.y, j.quaternion.z, j.quaternion.w] : null,
     j.pivot ? Array.from(j.pivot.m) : null,
   ];
   return Buffer.from(JSON.stringify(head, plain));

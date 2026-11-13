@@ -488,7 +488,10 @@ the drawing IS** (`scripts/kit-hash.mjs`' header): no `NullEngine`, `Scene`,
 builder's scene is a plain stand-in (all it keys is its pictures' cache) and a
 material a plain named object — and a part is hashed as its attributes and
 indices WHOLE (each array's type, its numbers as exact doubles), its
-transform as it holds it, its material's name and its metadata, where it was
+transform as far as it decides the matrix (the quaternion where the part or
+joint carries one, else its Euler angles — `worldMatrixOf`'s choice, so a dead
+Euler write is no change; X6.1a's review), its material's name and its
+metadata, where it was
 hashed as the Babylon mesh it used to become (float32, the quaternion zeroing
 the Euler angles, and in `--models` every flag Babylon's defaults supplied).
 The bounding box Babylon computed is restated off `boundsOf`, the defaults are
@@ -499,4 +502,7 @@ compares with nothing**: take the BEFORE with the same script. At X6.1a's
 parent the two instruments saw the same builds — every key, no error, and
 every build that one called equal to another the other did too, drawing,
 colliders and `set` alike (3,722 kit builds, 244 model builds) — and `--feet`
-printed the same table.
+printed the same table. X6.1a's review changed the format once more (the
+rotation above), so a fingerprint taken before it compares with nothing
+either; the review's and X6.1a's saw the same builds in the same classes on
+the same game, and the colliders' hashes did not move.
