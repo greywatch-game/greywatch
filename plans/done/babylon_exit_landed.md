@@ -13135,7 +13135,7 @@ DPR 2.8125, an 832x384 window) on Chrome 157 where the last were 156.
 
 ## Phase 6 — The cut
 
-### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d)
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0)
 
 The plan's `BABYLON_EXIT.md` holds X6.1's brief, "What Babylon still is in the tree", its ONE RULE,
 the step's own four rules, "Every sub-step owes" and the ten sub-steps.
@@ -13337,12 +13337,14 @@ committed in four commits: the adapter (f8f6525: findings 1, 2, 3 and 5 and the 
 Scripts and logs in the session's scratchpad, `x61a-fix/` (`verify.sh`, `bystep.cjs`,
 `noscene-door.mjs`, the camera logs, the fingerprints, the views and shots).
 
-**X6.1b LANDED** (47eca5d; 2026-11-13; no change to the game: `scripts/bake-collision.mjs` and the
+**X6.1b LANDED** (47eca5d, its review 07b99a0; 2026-11-13; no change to the game: `scripts/bake-collision.mjs` and the
 eight bakes it writes, their header comment alone). The Rewrites' bake item, as booked by X5.3e's
 review: the three passages of `emit`'s template that still said a collider is a mesh reworded —
-`rayGroups` is one group per placement (its posts and rails), kept grouped because `RayWorld` indexes
-it group by group on both sides; `boxGroups` is the boxes the client groups by locality (a scatter
-region's blocking props), whose ties go in the groups' own order, `RayWorld`'s rank on both sides;
+`rayGroups` is one group per placement (its posts and rails), kept grouped because the server rebuilds
+the same list from it and parity compares it group by group (`RayWorld` indexes every strut on its
+own, as its review corrected); `boxGroups` is the boxes the client groups by locality (the scatter's
+blocking props, one group per cluster square), whose ties go in the groups' own order, `RayWorld`'s
+rank on both sides;
 "Anything named here is not also given a mesh of its own" deleted. Then `npm run collision` over all
 eight maps (the proving ground's included) in the same commit. The script's header: "`MapBuilder`
 builds meshes" dropped (the canvas through `floorMaterial` is what keeps a build off the server), and
@@ -13350,8 +13352,8 @@ a paragraph stating that the emitted prose is part of the bake — a change to t
 every map in a commit whose diff is that text alone, X6.1b the precedent; its comment that pointed at
 X6.1's Rewrites says X6.1b did it.
 
-- **Measured** on the Windows box against the parent (6fee01ac): each bake's diff is 9 lines out and 9
-  in, every one a ` * ` comment line inside the header, no `sourceHash` and no data line (0 other
+- **Measured** on the Windows box against the parent (6fee01ac): each bake's diff is 10 lines out and
+  10 in, every one a ` * ` comment line inside the header, no `sourceHash` and no data line (0 other
   lines in the committed diff); each file below its header comment byte-identical to the parent's
   (CRs stripped, sha256, all eight); the bake's printed box, strut and group counts as the files hold.
   `check-collision` (every map current), `npm run parity` (all eight maps, the server matching on all
@@ -13362,3 +13364,36 @@ X6.1's Rewrites says X6.1b did it.
   6,027.4 kB gzipped — unchanged, the emitted prose being a comment the build drops.
 - **Not run**: the bank and the probes (nothing a frame reads moved), `kit:hash` and `merge:hash` (no
   builder, model, material or merge touched), the live rounds.
+
+**Its review** (07b99a0; 2026-11-13; no change to the game: `scripts/bake-collision.mjs`, the eight bakes
+it writes (their header comment alone), `src/world/fingerprint.ts`' comments and
+`docs/multiplayer.md`) found one real issue and three NITs, all fixed, in one commit.
+
+- **Real, finding 1**: the emitted `rayGroups` text said "`RayWorld` indexes them group by group on
+  both sides, and a flat list could not say where one fence ends and the next begins". False:
+  `RayWorld`'s constructor flattens `rayGroups` and indexes every strut on its own (`take(box,
+  BLOCKS_ROUND)` per strut); the grouping is read only by the server rebuilding the same list from the
+  bake and by parity's fingerprint, which hashes each group's length. **Fixed**: "One group per
+  placement, its posts and rails, kept grouped as the client groups them, because the server rebuilds
+  the same list from them and parity compares it group by group; `RayWorld` indexes every strut on its
+  own." The same claim fixed in `docs/multiplayer.md` (the world the server stands in) and in X6.1b's
+  two LANDED notes.
+- **NIT, finding 2**: both notes said each bake's diff was "9 lines out and 9 in";
+  `git diff --numstat 6fee01ac 47eca5d4` read 10 and 10. Corrected.
+- **NIT, finding 3**: `boxGroups`' "a scatter region's blocking props" was imprecise —
+  `MapBuilder.clusterColliders` buckets the scatter's blocking props by `CLUSTER` square across every
+  region, not per region. Now "the scatter's blocking props, one group per cluster square across every
+  region", in the same re-bake.
+- **NIT, finding 4**: `fingerprint.ts`' "merged it into different meshes" and "share a mesh", stale
+  since X5.3e: now two sides that built or split the timber differently "hold different lists", and
+  the boxes' grouping is "which of them share a group, and in what order (a body's sweep breaks ties
+  in it)".
+- **Measured** on the Windows box: `npm run collision` over all eight maps, each bake's diff against
+  the parent (6fee01ac) and against 47eca5d 11 comment lines in and 10 out, every one a ` * ` line
+  inside the header, 0 other lines; each file below its header comment byte-identical to the
+  parent's (CRs stripped, sha256, all eight); the printed box, strut and group counts as before.
+  `check-collision` (every map current), `npm run parity` (all eight maps, 17 fields each, every scene
+  ready after 1 frame), `maps:check`, typecheck, corecheck and build (its gates, `check-proving`)
+  clean.
+- **Not run**: as X6.1b — the bank, the probes, `kit:hash`, `merge:hash` and the live rounds (no
+  builder, frame or merge touched).

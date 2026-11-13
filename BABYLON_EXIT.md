@@ -6455,7 +6455,7 @@ installed app. **Owed**: the `exit-phase-5` tag.
 
 ## Phase 6 — The cut
 
-### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d)
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0)
 
 - **Do:**
   - Delete `babylonSeam.ts`, `src/math/babylon.ts` and every adapter.
@@ -6793,17 +6793,34 @@ Then the cut, then the sweep.
     only: the boxes, the groups and the source hashes unchanged.
   - **Rewrites:** the script's header, and its comment pointing here.
 
-  **X6.1b LANDED** (47eca5d; 2026-11-13; no change to the game: `scripts/bake-collision.mjs` and the
+  **X6.1b LANDED** (47eca5d, its review 07b99a0; 2026-11-13; no change to the game: `scripts/bake-collision.mjs` and the
   eight bakes' header comment alone; the full note is in `plans/done/babylon_exit_landed.md`). The three
-  passages reworded (`rayGroups` one group per placement, grouped because `RayWorld` indexes it so on
-  both sides; `boxGroups` grouped by locality, its ties in the groups' own order, `RayWorld`'s rank;
+  passages reworded (`rayGroups` one group per placement, kept grouped because the server rebuilds the
+  same list from it — `RayWorld` indexes every strut on its own, as its review corrected;
+  `boxGroups` grouped by locality, its ties in the groups' own order, `RayWorld`'s rank;
   the "not also given a mesh" sentence deleted) and all eight maps re-baked in that commit. The script's
   header drops "`MapBuilder` builds meshes" and states that the emitted prose is part of the bake; its
   comment that pointed here says X6.1b did it. **Measured** against the parent (6fee01ac): each bake's
-  diff 9 comment lines out and 9 in, no `sourceHash` or data line; each file below its header
+  diff 10 comment lines out and 10 in, no `sourceHash` or data line; each file below its header
   byte-identical to the parent's (all eight); `check-collision`, `parity` (eight maps, 17 fields each),
   `maps:check`, typecheck, corecheck and build clean; the census and the bundle (16,846.3 kB raw,
   6,027.4 kB gzipped) as at X6.1a.
+
+  **Its review** (07b99a0; 2026-11-13; no change to the game: `scripts/bake-collision.mjs`, the eight
+  bakes' header comment, `src/world/fingerprint.ts`' comments and `docs/multiplayer.md`; the full note
+  is in `plans/done/babylon_exit_landed.md`) found one real issue and three NITs, all fixed. **The real
+  one**: the emitted `rayGroups` text said `RayWorld` indexes the struts group by group on both sides —
+  it flattens `rayGroups` and indexes every strut on its own; the grouping is read only by the server
+  rebuilding the same list and by parity's fingerprint (each group's length). It now says the groups
+  are kept as the client groups them because the server rebuilds the same list from them and parity
+  compares it group by group, `RayWorld` indexing every strut on its own; the same claim fixed in
+  `docs/multiplayer.md` and in both LANDED notes. **The NITs**: the notes' "9 lines out and 9 in" was
+  10 and 10; `boxGroups`' "a scatter region's blocking props" is the scatter's blocking props, one group
+  per cluster square across every region (`clusterColliders` buckets by `CLUSTER` square); and
+  `fingerprint.ts`' "merged it into different meshes" and "share a mesh" speak of lists and groups.
+  **Measured** against the parent (6fee01ac): each bake's diff 11 comment lines in and 10 out, no
+  `sourceHash` or data line; each file below its header byte-identical (all eight); `check-collision`,
+  `parity` (eight maps, 17 fields each), `maps:check`, typecheck, corecheck and build clean.
 
 - **X6.1c — the material recipe keys are ours, and the cel program's Babylon declarations
   go** (no change to the picture) — **M**. The Do's "What X5.3 leaves it" and `wgsl/flame.ts`
